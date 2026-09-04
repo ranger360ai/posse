@@ -345,7 +345,9 @@ func TestQACheckThreeMessageArmRenders(t *testing.T) {
 	hook := CommitGuardHook(VisibilityPublic, set, lit)
 
 	gate := strings.Index(hook, `if [ "$posse_beads_visibility" = `+shQuote(VisibilityPublic)+` ]; then`)
-	content := strings.Index(hook, "─── check 3: identity literals and instance patterns")
+	// The banner names check 3's sources and gained a third when the crew
+	// names did (ranger-base-cdxpf); the landmark is its stable head.
+	content := strings.Index(hook, "─── check 3: identity literals")
 	path := strings.Index(hook, "check 3, second arm: the same patterns over ADDED staged PATHS")
 	message := strings.Index(hook, "check 3, third arm: the commit MESSAGE")
 	ceilingMsg := strings.Index(hook, "the data ceiling, third arm: the commit MESSAGE")

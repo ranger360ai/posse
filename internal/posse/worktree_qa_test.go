@@ -114,10 +114,14 @@ func TestDispatchGivesEachPersonaItsOwnTree(t *testing.T) {
 	// ranger stages and does not commit; scout commits the unqualified way.
 	write(t, filepath.Join(mOne.Dir, "rangers.txt"), "ranger's in-flight fix\n")
 	mustGit(t, mOne.Dir, "add", "rangers.txt")
-	write(t, filepath.Join(mTwo.Dir, "scouts.txt"), "scout's fix\n")
+	// Not named for the seat: check 3's crew arm refuses a staged PATH
+	// carrying a persona name in a public-stamped repo (ranger-base-cdxpf),
+	// and this fixture's home staffs one (ranger is a name posse ships as an
+	// example role, so it is outside that wall; scout is not).
+	write(t, filepath.Join(mTwo.Dir, "fix.txt"), "the second session's fix\n")
 	mustGit(t, mTwo.Dir, "config", "user.email", "s@example.com")
 	mustGit(t, mTwo.Dir, "config", "user.name", "s")
-	mustGit(t, mTwo.Dir, "add", "scouts.txt")
+	mustGit(t, mTwo.Dir, "add", "fix.txt")
 	mustGit(t, mTwo.Dir, "commit", "-q", "-m", "scout's bead")
 
 	if files := mustGit(t, mTwo.Dir, "show", "--name-only", "--format=", "HEAD"); strings.Contains(files, "rangers.txt") {

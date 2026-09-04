@@ -3,6 +3,9 @@
 *Status: accepted 2026-08-27 (operator ratified; the D4 ceilings blessed
 as shipped example defaults) · owner: architect ·
 extends ADR 0012 D2 and the beads visibility guard (rangerhq-hrz) · amended
+2026-09-04 (D2 check 3: a FOURTH derived source, the crew names, over the
+ADDED staged PATHS alone — ADR 0012 D2 / App.A 5 at commit time,
+ranger-base-cdxpf, from ranger-base-o3g6a) · amended
 2026-09-04 (D2 check 3 and Residuals: the identity literals are grepped over
 ALL staged files, not all staged "text" files — the reader carries `--text`
 because git's binary call flips on one NUL; ADR 0048 D2 as amended,
@@ -129,6 +132,39 @@ install and at every persona launch).
    exclusion — `prepare-commit-msg` runs before the editor opens and is
    handed git's template alone (measured); that path is the operator's own
    hand, and the second layer for it is a `commit-msg` hook.
+
+   *Amended 2026-09-04 (ranger-base-cdxpf, from ranger-base-o3g6a): a
+   FOURTH derived source — this box's CREW NAMES, over the ADDED staged
+   PATHS and nothing else.* The staged-path arm above matches the
+   identity literals, which a file named after a SEAT carries none of; a
+   probe named for a QA seat was added, committed clean, and rode main
+   for a day until ADR 0012 App.A 5's two pins were taught to read a
+   file's name. The suite catching it afterwards is not the wall. So the
+   names are derived at render time exactly as the other three are —
+   `ListAgents` over this home's `agents/`, LESS every name posse has
+   ever shipped an example PID under — matched case-insensitively and
+   with no word boundary, because the separator in Go's own file names
+   is `_` and no boundary fires beside one (measured, ranger-base-o3g6a).
+   Its refusal is its own: ADR 0012 D2's remedy is to name the file for
+   the ROLE, not ADR 0024 D3's restate-and-cite.
+
+   THE TWO DECISIONS this carries, both measured over this repo's 830
+   tracked paths at the fix. **Paths only**, not check 3's three
+   subjects: a crew name in a staged LINE is legitimate where ADR 0012
+   D2 leaves it — `docs/`, the root narrative, a D6-grandfathered id —
+   and a commit message names the persona who wrote it, so a content or
+   message arm would refuse what this constitution allows. **Derived,
+   less the shipped roles**: a hardcoded crew list in the tree would BE
+   what App.A 5 forbids, and the seed staffs a fresh home with ROLE
+   names — the depersonalized vocabulary D2 tells a writer to rename TO
+   — so a wall built from those would refuse its own remedy. The census
+   is one-sided enough to decide it: this instance's 11 PID names hit 1
+   path (the ADR named for a seat, the real hit); the 9 names the seed
+   ships hit 285, one of them 273 on its own — every QA test file in
+   the tree. The residual, stated: a PID named for a common word is a
+   substring match over every path and refuses honest commits until the
+   lane is renamed. It cannot be silent — the refusal names the path and
+   the persona, and the override is one env var.
 
    The literals live only in the
    rendered hook under the repo's hooks dir — never in a commit, never

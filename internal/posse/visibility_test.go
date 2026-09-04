@@ -813,7 +813,7 @@ func TestInstanceOpsPatternGuardsAPublicRepo(t *testing.T) {
 	// twice and refuse it with check 2's remedy instead of ADR 0048's.
 	if md := strings.Index(hook, "check 2: the SHIPPED OpsPatterns"); md < 0 {
 		t.Error("check 2's header is gone — this count no longer knows what it is counting")
-	} else if c3 := strings.Index(hook, "check 3: identity literals and instance patterns"); c3 < md {
+	} else if c3 := strings.Index(hook, "check 3: identity literals"); c3 < md {
 		t.Error("fixture premise: check 2 must render before check 3")
 	} else if strings.Contains(hook[md:c3], "posse_check 'client-acme'") {
 		t.Error("the instance pattern is still stamped into check 2 (ADR 0048 D2 moved it to check 3)")

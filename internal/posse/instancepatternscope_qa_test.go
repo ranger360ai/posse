@@ -279,7 +279,7 @@ func TestQAInstancePatternRendersWithoutAnyIdentity(t *testing.T) {
 		t.Fatal("an empty identity with a non-empty pattern list must still render check 3 (ADR 0048 D2)")
 	}
 	for _, want := range []string{
-		"check 3: identity literals and instance patterns",
+		"check 3: identity literals", // the banner names its sources and gained a third (ranger-base-cdxpf); this is its stable head
 		"posse_check '" + qaInstanceClass + "'",
 		"an instance-defined visibility class in a staged file",
 		"an instance-defined visibility class in a staged PATH",

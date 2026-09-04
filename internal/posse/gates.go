@@ -2842,7 +2842,10 @@ func opsCheckCall(indent, class, ere string, classOnly bool) string {
 // function serves all three, over the ADDED lines of every staged text
 // file, code included, AND over the ADDED staged paths (ranger-base-dmsbu:
 // a filename is where an operator-shaped artifact puts the operator, and a
-// pure move has no added lines at all).
+// pure move has no added lines at all) — and, over those staged paths
+// ALONE, this box's crew names (DeriveCrewLiterals, ranger-base-cdxpf: a
+// filename is also where a SEAT ships, and ADR 0012 D2 leaves the crew
+// standing in a line where nothing exempts them in a name).
 //
 // ADR 0048 D2 then MOVED this instance's own config patterns
 // (OpsPatternSet.Extra, config beads_visibility_patterns:) out of check 2
@@ -3208,6 +3211,7 @@ func (r visGuardRefusal) render(ind string) string {
 const (
 	identityScanLabel    = "identity literal scan"
 	instanceScanLabel    = "instance pattern scan"
+	crewScanLabel        = "crew name scan"
 	dataCeilingScanLabel = "data ceiling scan"
 	stagedPathMatched    = "matched in the staged added path(s) — the FILENAME, not its content:"
 	stagedLineMatched    = "matched in the staged additions:"
@@ -3262,24 +3266,39 @@ func twoArmScan(ind, title, head string, sources []visScanSource) string {
 	i1, i2 := ind+"  ", ind+"    "
 	var content, loop, pathRefusals, pathInit strings.Builder
 	for _, s := range sources {
-		content.WriteString(i1 + "posse_bad=''\n" + s.checks(i1) + s.content.render(i1))
+		// A source may sit out an arm, and one does: the crew names are
+		// PATHS ONLY (ranger-base-cdxpf, IdentityLiteral.PathsOnly says
+		// why). An absent arm is an absent refusal — the zero
+		// visGuardRefusal, whose badVar is "" — and skipping it here is
+		// what keeps its checks from being rendered over a subject its
+		// rule does not govern.
+		if s.content.badVar != "" {
+			content.WriteString(i1 + "posse_bad=''\n" + s.checks(i1) + s.content.render(i1))
+		}
 		loop.WriteString(i2 + "posse_bad=''\n" + s.checks(i2) + pathAccum(i2, s.pathVar))
 		pathRefusals.WriteString(s.path.render(i1))
 		pathInit.WriteString(i1 + s.pathVar + "=''\n")
 	}
-	return head + shComment(ind, `--text and grep -a, both load-bearing (ranger-base-h137b): git
+	// No source scans content: no diff, and no `if` with an empty body —
+	// which is not a shell program at all.
+	contentArm := ""
+	if content.Len() > 0 {
+		contentArm = shComment(ind, `--text and grep -a, both load-bearing (ranger-base-h137b): git
 classifies a text file carrying one NUL byte as BINARY and prints
 "Binary files ... differ" for it, never a '+' line — so this reader
 judged a markdown file with captured output appended to it, and said
 nothing. --text restores the lines; -a stops grep collapsing the
 NUL-bearing stream to "Binary file (standard input) matches". The
 $(...) capture strips the NULs, so nothing downstream sees one.`) +
-		ind + `posse_added=$(git diff --cached -U0 ` + diffReaderShape + ` "$posse_base" 2>/dev/null |
+			ind + `posse_added=$(git diff --cached -U0 ` + diffReaderShape + ` "$posse_base" 2>/dev/null |
 ` + i1 + `grep -a '^+' | grep -av '^+++')
 ` + ind + `if [ -n "$posse_added" ]; then
 ` + content.String() + ind + `fi
 
-` + shComment(ind, `─── `+title+`, second arm: the same patterns over ADDED staged PATHS ─────
+`
+	}
+	return head + contentArm +
+		shComment(ind, `─── `+title+`, second arm: the same patterns over ADDED staged PATHS ─────
 Every flag below is load-bearing and measured (git 2.50.1):
   --no-renames  with move detection ON — git's default since 2.9 —
                 --diff-filter=A prints NOTHING for a pure move, so the
@@ -3484,7 +3503,17 @@ func messageArm(ind, head string, sources []visScanSource) string {
 	i1, i2 := ind+"  ", ind+"    "
 	var body strings.Builder
 	for _, s := range sources {
+		// Absent arm, absent refusal — twoArmScan's rule, read over the
+		// third subject: the crew names are PATHS ONLY, so they say
+		// nothing about a message that names the persona who wrote it
+		// (ranger-base-cdxpf).
+		if s.message.badVar == "" {
+			continue
+		}
 		body.WriteString(i2 + "posse_bad=''\n" + s.checks(i2) + s.message.render(i2))
+	}
+	if body.Len() == 0 {
+		return ""
 	}
 	return head + ind + `if [ -f "${1:-}" ]; then
 ` + i1 + `posse_added=$(cat "$1" 2>/dev/null)
@@ -3517,7 +3546,10 @@ already; the second layer for it is a commit-msg hook.`)
 // identityGuardCheck renders check 3's block: this box's own identity
 // literals (ADR 0024 D2) AND this instance's config patterns (ADR 0048 D2)
 // against the ADDED LINES of every staged text file, code included, AND
-// against the ADDED staged PATHS. "" only when BOTH lists are empty — a box
+// against the ADDED staged PATHS — plus this box's crew names (ADR 0012 D2
+// and App.A 5, ranger-base-cdxpf) against the ADDED staged PATHS ALONE. The
+// crew names arrive in the same `identity` slice, flagged PathsOnly, and
+// are partitioned out below. "" only when BOTH lists are empty — a box
 // that derived nothing (no git email, no .beads/redirect, an unset $HOME)
 // and configured nothing skips the block whole rather than paying for a
 // full `git diff` that can never find a match. An empty identity with a
@@ -3565,14 +3597,42 @@ func identityGuardCheck(identity []IdentityLiteral, extra []OpsPattern) string {
 	if len(identity) == 0 && len(extra) == 0 {
 		return ""
 	}
+	// THREE SOURCES OUT OF TWO ARGUMENTS. The derived slice carries two
+	// kinds and the literal itself says which (IdentityLiteral.PathsOnly):
+	// an operator identity literal has no legitimate public use in a line,
+	// a path or a message alike, and a crew persona name is refused in a
+	// PATH only (ranger-base-cdxpf). Partitioned here rather than at the
+	// call sites so every renderer of this hook — the two installers, the
+	// session-hooks redirect and the L3 probe — is handed ONE list and
+	// cannot pass a different partition of it than the wall renders.
+	var idLits, crew []IdentityLiteral
+	for _, lit := range identity {
+		if lit.PathsOnly {
+			crew = append(crew, lit)
+			continue
+		}
+		idLits = append(idLits, lit)
+	}
+
 	// Identity literals are regexp-ESCAPED fixed strings; an instance
 	// pattern is already an ERE in the two-reader dialect (validateOpsERE).
 	// Both end up as one posse_check call, which is why the same shell
 	// function serves checks 0, 2 and 3.
 	idChecks := func(indent string) string {
 		var b strings.Builder
-		for _, lit := range identity {
+		for _, lit := range idLits {
 			b.WriteString(opsCheckCall(indent, lit.Class, identityLiteralERE(lit.Value), false))
+		}
+		return b.String()
+	}
+	// Case-insensitive, boundary-free (crewLiteralERE), and NOT class-only:
+	// the refusal names the persona and the path, because the reader is the
+	// instance the name belongs to and the remedy is a rename they have to
+	// be able to make.
+	crewChecks := func(indent string) string {
+		var b strings.Builder
+		for _, lit := range crew {
+			b.WriteString(opsCheckCall(indent, lit.Class, crewLiteralERE(lit.Value), false))
 		}
 		return b.String()
 	}
@@ -3588,7 +3648,7 @@ func identityGuardCheck(identity []IdentityLiteral, extra []OpsPattern) string {
 	// uses and the order a hook file reads in. Each is skipped whole when
 	// its list is empty.
 	var sources []visScanSource
-	if len(identity) > 0 {
+	if len(idLits) > 0 {
 		sources = append(sources, visScanSource{
 			checks:  idChecks,
 			pathVar: "posse_ibad",
@@ -3665,8 +3725,34 @@ func identityGuardCheck(identity []IdentityLiteral, extra []OpsPattern) string {
 		})
 	}
 
-	head := "\n" + shComment("  ", `─── check 3: identity literals and instance patterns ───────────────────
-(ADR 0024 D2 for the derived literals, ADR 0048 D2 for the config ones.)
+	// The crew names, PATHS ONLY (ranger-base-cdxpf). Third source, third
+	// set of words: a persona name is not an operator identity literal and
+	// not an instance-defined class, and a writer refused here is sent to
+	// ADR 0012 D2's remedy — name the file for the role — not to
+	// restate-and-cite. It renders LAST of the three so a path tripping
+	// more than one is refused in the operator's words first; those are the
+	// stricter rule (an identity literal is refused in a line as well) and
+	// this one is a rename.
+	if len(crew) > 0 {
+		sources = append(sources, visScanSource{
+			checks:  crewChecks,
+			pathVar: "posse_nbad",
+			path: visGuardRefusal{
+				badVar:       "posse_nbad",
+				label:        crewScanLabel,
+				logTail:      "(public repo, staged path)",
+				overrideAt:   " (staged path)",
+				overrideWhat: "a crew persona name is going into a public repo in a staged PATH",
+				header:       "a crew persona name in a staged PATH",
+				rule:         CrewRule,
+				matched:      stagedPathMatched,
+				wayThrough:   CrewWayThrough,
+			},
+		})
+	}
+	head := "\n" + shComment("  ", `─── check 3: identity literals, instance patterns, crew names ──────────
+(ADR 0024 D2 for the derived literals, ADR 0048 D2 for the config ones,
+ADR 0012 D2 / App.A 5 for the crew names.)
 The literals are derived from THIS box at render time — whoami, git
 config user.email, and the instance repo path (dirname of
 .beads/redirect's target, both ~-relative and absolute) — never a
@@ -3674,12 +3760,25 @@ shipped constant, never a commit: only this rendered hook file carries
 them (identityGuardCheck's own caller, DeriveIdentityLiterals,
 visibility.go). The instance patterns come from the operator's config
 (`+OpsPatternsConfigKey+`:) and are untracked for the same reason.
+The crew names are derived the same way and from the same box — the
+PIDs in this home's agents/, less every name posse itself ships as an
+example role (DeriveCrewLiterals) — and they are the one source that
+does NOT scan all three subjects: PATHS ONLY, case-insensitively and
+with no word boundary. A persona name in a staged LINE or in a commit
+message is legitimate in the places ADR 0012 D2 leaves it (docs/, the
+root narrative, a D6-grandfathered id, the message naming who wrote
+it); a file NAME ships in every clone with nothing to exempt it, which
+is the shape that rode main for a day (ranger-base-o3g6a).
 Rendered as regexp-escaped fixed strings and as EREs respectively, so
 the SAME matcher checks 0 and 2 already call above covers this too.
-THREE SUBJECTS, in this order: the ADDED lines of ALL staged TEXT files,
-any path, code included — unlike check 2, which is markdown-only; then
-the ADDED staged PATHS; then every line of the commit MESSAGE (ADR 0024
-D2 / ADR 0048 D2 as amended 2026-09-03, ranger-base-1nbtn). Neither an
+THREE SUBJECTS for those two, in this order: the ADDED lines of ALL
+staged TEXT files, any path, code included — unlike check 2, which is
+markdown-only; then the ADDED staged PATHS; then every line of the
+commit MESSAGE (ADR 0024 D2 / ADR 0048 D2 as amended 2026-09-03,
+ranger-base-1nbtn). A source with nothing to say about a subject
+renders no arm for it at all, which is why a hook whose only check-3
+source is the crew names carries no content arm and no message arm —
+what is not in the file is not a rule this box left out. Neither an
 operator's identity nor one instance's confidential vocabulary has a
 legitimate public use anywhere, so the detector-source residual check 2
 accepts does not apply here — and a commit message is content that
@@ -4440,8 +4539,11 @@ func runAdrCensus(dir string, files []string, env []string, stdout, stderr io.Wr
 // no interest in ADR 0024 D2 check 3 (a byte-exact fixture for a marker or
 // ordering test, say) keeps compiling unchanged; a caller that must match
 // what InstallCommitGuardHook actually writes has to pass the SAME slice
-// DeriveIdentityLiterals(hookRepo(dir)) would derive, or the two renders
-// diverge on check 3 alone.
+// (a.commitGuardLiterals(dir): the derived identity literals AND this box's
+// crew names) or the two renders diverge on check 3 alone. It carries both
+// kinds because a variadic parameter can only be one — and because the
+// literal itself says which arms it belongs in (IdentityLiteral.PathsOnly),
+// so nothing is lost by shipping them in one slice.
 func CommitGuardHook(visibility string, set OpsPatternSet, identity ...IdentityLiteral) string {
 	return commitGuardHead + hookStampFunc + visibilityGuardBody(visibility, set, identity) +
 		constitutionGuardBody() + adrShaGuardBody() + sharedIndexBody
@@ -4480,6 +4582,26 @@ func hookRepo(dir string) string {
 	return common
 }
 
+// commitGuardLiterals is the ONE derivation every renderer of the commit
+// guard uses: ADR 0024 D2 check 3's identity literals off hookRepo(dir),
+// then this box's crew names (ADR 0012 D2, ranger-base-cdxpf), which are
+// the home's and not the repo's. Both are box-derived and neither is ever
+// committed.
+//
+// One function because the renders are compared BYTE FOR BYTE: the two
+// installers write the hook, RenderSessionHooks writes the same bytes into
+// a session hooks dir, and the L3 probe decides "ours" by rendering it
+// again (ADR 0023). A second site deriving a different set reads as "ours
+// but stale" on every launch — the defect ranger-base-up22 fixed for the
+// visibility mark and the same one waiting behind a second literal source.
+func (a *App) commitGuardLiterals(dir string) ([]IdentityLiteral, error) {
+	identity, err := DeriveIdentityLiterals(hookRepo(dir))
+	if err != nil {
+		return nil, err
+	}
+	return append(identity, a.DeriveCrewLiterals()...), nil
+}
+
 // InstallCommitGuardHook writes the guard into the repo at dir (its common
 // git dir, so worktrees share it), stamped with what config says about that
 // repo's beads db — hookRepo, because the file lands in the shared repo and
@@ -4497,7 +4619,7 @@ func hookRepo(dir string) string {
 // renders wrong.
 func (a *App) InstallCommitGuardHook(dir string) (path, visibility, source string, err error) {
 	visibility, source = a.BeadsVisibility(hookRepo(dir))
-	identity, err := DeriveIdentityLiterals(hookRepo(dir))
+	identity, err := a.commitGuardLiterals(dir)
 	if err != nil {
 		return "", "", "", err
 	}
@@ -4509,7 +4631,7 @@ func (a *App) InstallCommitGuardHook(dir string) (path, visibility, source strin
 // occupied by bd's own shim is chained rather than refused (rangerhq-mgdk).
 func (a *App) InstallCommitGuardHookChained(dir string) (path, visibility, source string, err error) {
 	visibility, source = a.BeadsVisibility(hookRepo(dir))
-	identity, err := DeriveIdentityLiterals(hookRepo(dir))
+	identity, err := a.commitGuardLiterals(dir)
 	if err != nil {
 		return "", "", "", err
 	}
@@ -4828,14 +4950,14 @@ func (a *App) probeL3HooksIn(dir string, wantPrePush bool, red *l3Redirect) l3Ho
 	// the install two lines above it in herdrback reads every worktree
 	// launch in a marked repo as "ours but stale" (ranger-base-up22).
 	visibility, _ := a.BeadsVisibility(hookRepo(dir))
-	// The SAME set, and the SAME identity literals, the install stamps
-	// with — or an instance that adds a pattern, or check 3's derived
-	// literals, reads as "ours but stale" on every launch (the identity
+	// The SAME set, and the SAME derived literals — identity AND crew — the
+	// install stamps with, or an instance that adds a pattern, or that
+	// staffs a new lane, reads as "ours but stale" on every launch (the identity
 	// half of ADR 0023 is byte-for-byte). A derivation error here (a
 	// literal with a single quote) is not this probe's to report — an
 	// install that hit it already failed loudly — so it degrades to no
 	// literals rather than propagating.
-	identity, _ := DeriveIdentityLiterals(hookRepo(dir))
+	identity, _ := a.commitGuardLiterals(dir)
 	commitRender := CommitGuardHook(visibility, a.OpsPatternSet(), identity...)
 
 	var prePushIdentity, prePushStale bool

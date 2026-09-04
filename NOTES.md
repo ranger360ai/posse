@@ -4317,7 +4317,16 @@ path, and — since ADR 0024 D2 check 3 and ADR 0048 D2 as amended 2026-09-03
 exactly as a staged line does; the remedy there is to rewrite the message,
 and what you typed is still in `.git/COMMIT_EDITMSG` until the next commit
 overwrites it. The derived identity literals of check 3 get the same three
-subjects. The shipped list stays markdown-only and is NOT scanned over the
+subjects. Check 3 derives one more set with a scope of its own: this box's
+CREW NAMES — the PIDs in your `agents/`, less every name posse itself ships
+as an example role — matched over ADDED STAGED PATHS ALONE, case-insensitively
+and with no word boundary (ADR 0012 D2 and App.A 5 at commit time,
+ranger-base-cdxpf). A persona name in a staged line or a commit message is
+left alone on purpose: the crew stand in `docs/` and the root narrative as
+historical actors, and a message names whoever wrote it. A file NAME ships in
+every clone with nothing to exempt it, and the way through is ADR 0012 D2's
+own — name the file for the ROLE, not the seat.
+The shipped list stays markdown-only and is NOT scanned over the
 message — its own source is byte-identical to a hit, a config pattern is
 never in source, and the message decision is its own census: of 29 hits
 over the 1136 messages then on main, 22 were the software's own vocabulary

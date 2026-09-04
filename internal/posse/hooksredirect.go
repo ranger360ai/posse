@@ -87,7 +87,7 @@ func (a *App) RenderSessionHooks(session, dir string, m managedHooks, wantPrePus
 		return nil, Die("managed hooks path %s is not absolute — not rendering a redirect around it", m.Dir)
 	}
 	visibility, _ := a.BeadsVisibility(hookRepo(dir))
-	identity, err := DeriveIdentityLiterals(hookRepo(dir))
+	identity, err := a.commitGuardLiterals(dir)
 	if err != nil {
 		return nil, err
 	}

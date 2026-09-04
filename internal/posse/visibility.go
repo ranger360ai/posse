@@ -31,6 +31,9 @@ import (
 	"regexp"
 	"regexp/syntax"
 	"strings"
+	"unicode"
+
+	"github.com/ranger360ai/posse"
 )
 
 // Visibility marks. UNMARKED IS PUBLIC — fail closed, so a newly added repo
@@ -693,6 +696,20 @@ func opsClassLabel(class string) string {
 type IdentityLiteral struct {
 	Class string
 	Value string
+	// PathsOnly narrows this literal to ONE of check 3's three subjects:
+	// the ADDED staged paths. The content and the message arms skip it.
+	//
+	// Zero for everything DeriveIdentityLiterals derives — an operator's
+	// username, e-mail or instance path has no legitimate public use in a
+	// LINE either, which is what makes those three subjects one rule. It is
+	// set for the crew names (DeriveCrewLiterals, ranger-base-cdxpf), where
+	// the three subjects come apart: ADR 0012 D2 depersonalizes names in the
+	// shipped trees and D6 grandfathers ids, docs/ and the root narrative
+	// keep the crew as historical actors, and a commit message names the
+	// persona that wrote it. A content arm over these would refuse text the
+	// constitution allows; a PATH ships in every clone under a name nothing
+	// exempts.
+	PathsOnly bool
 }
 
 // IdentityRule is what a check-3 refusal names. The enumeration at the end
@@ -881,6 +898,135 @@ func identityLiteralERE(s string) string {
 			b.WriteByte('\\')
 		}
 		b.WriteRune(r)
+	}
+	return b.String()
+}
+
+// ─── ADR 0024 D2 check 3, the crew names: PATHS ONLY (ranger-base-cdxpf) ──
+
+// CrewLiteralClass is the class a crew-name refusal names, and the one thing
+// that tells the two derived sources apart in a refusal a writer reads: an
+// operator identity literal sends them to ADR 0024 D3 (restate and cite), a
+// persona name sends them to ADR 0012 D2 (name the role, not the seat).
+const CrewLiteralClass = "persona"
+
+// CrewRule is what a crew-name refusal names.
+const CrewRule = `ADR 0012 D2 and App.A 5: the crew this instance staffs its lanes with is not
+the deployer's — a persona name in a tree that ships becomes the ROLE it
+plays. The names are derived from this box at hook-render time (the PIDs in
+this home's agents/, less every name posse itself has ever shipped as an
+example role), never shipped and never committed. ONE subject, not check 3's
+three: the ADDED staged PATHS, move detection off so a move's destination
+counts as new. A crew name in a staged LINE is a different question — docs/
+and the root narrative keep the crew as historical actors and D6 grandfathers
+ids — so this arm reads file NAMES and nothing else.`
+
+// CrewWayThrough is the remedy. One arm, one remedy: there is no content to
+// generalize here, only a name to change.
+const CrewWayThrough = `the way through: name the file for the ROLE, not the seat — ADR 0012 D2's own
+remedy, and the rename rangerhq-24yt already made across this suite (a QA
+seat's probe is <role>_probe_test.go). A rename is a fresh added entry and is
+scanned again, so the new name has to be clean too. A file whose name merely
+CONTAINS a crew name lands here for the same reason it lands in the shipped
+pins: this arm matches without a word boundary, because the separator in Go's
+own file names is an underscore and no boundary ever fires beside one
+(measured, ranger-base-o3g6a). Nothing in the file's CONTENT is refused by
+this arm.`
+
+// DeriveCrewLiterals derives check 3's crew-name literals from the box: the
+// PIDs this home staffs (agents/*.md, ListAgents — the same list dispatch
+// routes on), matched in the ADDED staged PATHS alone.
+//
+// WHY THE GATE NEEDED THIS AT ALL (ranger-base-cdxpf, from ranger-base-o3g6a):
+// check 3 has had a staged-PATH arm since ranger-base-wlsv1, but its literal
+// set is DeriveIdentityLiterals — whoami, the git e-mails, the instance path.
+// A file named after a SEAT carries none of those, so a probe named for a QA
+// seat rode main for a day, refused by nothing until the suite's own pins
+// were taught to read names. The suite catches it after the fact; this
+// catches it at the commit.
+//
+// DERIVED, NEVER SHIPPED, for the reason every other check-3 literal is
+// (ADR 0024 D2): a hardcoded crew list in the tree would be the very thing
+// ADR 0012 App.A 5 forbids — the originating instance's names, shipped to
+// every deployer, in the file that exists to keep them out. ListAgents reads
+// the operator's own directory, so a fresh deployer's wall is built from
+// THEIR crew.
+//
+// LESS THE SHIPPED ROLES, and this is the half that decides whether the wall
+// is usable at all. The seed tree staffs a fresh home with ROLE names —
+// exactly the depersonalized vocabulary ADR 0012 D2 tells a writer to rename
+// TO — and a wall that refused those would refuse its own remedy. MEASURED
+// over this repo's 830 tracked paths at the fix: the 11 PID names this
+// instance staffs hit 1 path (the ADR named for a seat, which is the real
+// hit); the 9 names the seed ships hit 285, `qa` alone 273 — every
+// *_qa_test.go in the tree. So the set is ListAgents minus every name posse
+// has ever shipped an example under (retirableExampleNames over the EMBED,
+// not a seed directory on disk: the exclusion is the wall's, and examples/
+// beside a dev binary is the operator's to edit).
+//
+// The residual, stated: a PID named for a common word is still a substring
+// match over every path, and would refuse honest commits until it is
+// renamed. It cannot be silent — the refusal names the path and the persona,
+// the override is one env var, and renaming a lane is the operator's own
+// hand. That is qibCrewPathPattern's accepted trade (instancebound_qa_test.go)
+// read from the commit side, and it is the same trade for the same reason: a
+// false negative here is a crew name riding main under a green wall.
+//
+// ValidName filters the listing because a name that is not a PID name is not
+// a lane — and because it is what makes the rendered ERE trivially safe: the
+// charset is [A-Za-z0-9_-], so nothing here can carry a quote or a
+// metacharacter into the hook (the panic class DeriveIdentityLiterals refuses
+// an install over cannot arise).
+func (a *App) DeriveCrewLiterals() []IdentityLiteral {
+	shipped := map[string]bool{}
+	for _, n := range retirableExampleNames(posse.Seed) {
+		shipped[strings.ToLower(n)] = true
+	}
+	var out []IdentityLiteral
+	seen := map[string]bool{}
+	add := func(v string) {
+		key := strings.ToLower(v) // the match is case-insensitive, so the dedupe is too
+		if v == "" || len(v) > identityLiteralMaxLen || seen[key] {
+			return
+		}
+		seen[key] = true
+		out = append(out, IdentityLiteral{Class: CrewLiteralClass, Value: v, PathsOnly: true})
+	}
+	for _, name := range a.ListAgents() {
+		if !ValidName(name) || shipped[strings.ToLower(name)] {
+			continue
+		}
+		add(name)
+		// The separator-stripped spelling, for the same reason the shipped
+		// pin carries one (qibCrewNames): a hyphenated PID becomes one word
+		// wherever a name has to be an identifier, and the camelCase form
+		// that produces is reached by the fold below, not by the hyphen.
+		add(strings.NewReplacer("-", "", "_", "").Replace(name))
+	}
+	return out
+}
+
+// crewLiteralERE renders a crew name as a CASE-INSENSITIVE ERE — one
+// bracket per cased letter, which is how a POSIX ERE says (?i) with no flag
+// to pass: posse_check is one shell function serving checks 0, 2 and 3, and
+// giving it a per-call grep flag would be a second dialect for one source.
+//
+// Case-insensitive because the shipped pins are (qibCrewPathPattern's (?i)),
+// and the subject is a PATH: Go's own files are lower-case by convention,
+// which is exactly why a capitalized one under testdata/ or docs/ is where a
+// name would survive. No word boundary anywhere, deliberately — see
+// CrewWayThrough, and the measurement behind it.
+func crewLiteralERE(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if lo, up := unicode.ToLower(r), unicode.ToUpper(r); lo != up {
+			b.WriteByte('[')
+			b.WriteRune(up)
+			b.WriteRune(lo)
+			b.WriteByte(']')
+			continue
+		}
+		b.WriteString(identityLiteralERE(string(r)))
 	}
 	return b.String()
 }
