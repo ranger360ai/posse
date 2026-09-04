@@ -1086,8 +1086,17 @@ func TestQARefillFiresASecondBeadIntoTheSameSeat(t *testing.T) {
 // held by no live session — and ADR 0030 §1's recovery arm did exactly what
 // it says for a claim nothing holds. The lie was the STORE's: real bd never
 // lists a closed bead as ready, and the fake did for the life of a test
-// (fakeBdNoteClosed/fakeBdReadyDropClosed, herdr_test.go). With the fake
+// (fakeBdShownStatus/fakeBdReadyDropClosed, herdr_test.go). With the fake
 // honest, the sweep may reap what it likes and no bead is fired twice.
+//
+// BOTH names 3075168 wrote in that citation were wrong, and they were fixed
+// by two different beads a quarter of an hour apart. The ready-side one went
+// first: the filter has been fakeBdReadyDropClosed since 455d344, so
+// fakeBdDropClosed named `list`'s filter and not the one this paragraph is
+// about — corrected on main by 46d9ec3 (ranger-base-m4730). The other is
+// corrected here (ranger-base-oruvy): fakeBdNoteClosed has never existed,
+// 3075168 added fakeBdShownStatus and this comment in the same commit, and
+// `git log -S fakeBdNoteClosed` finds the name in no other commit.
 //
 // -race was never the discriminator, the CLOCK was, so this arm collapses
 // PromptGrace rather than taking two minutes to cross it: the reap only a
