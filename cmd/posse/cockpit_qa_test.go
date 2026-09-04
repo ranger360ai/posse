@@ -1029,23 +1029,48 @@ func TestCockpitDispWidthUnicode16Gaps(t *testing.T) {
 // description says "remove the t.Skip when this closes", and it has closed
 // while the defect has not. Measured at 9761b7d with the skip lifted: all five
 // rows below still fail, dispWidth 0/0/1/1/1 against a terminal advance of
-// 2/2/3/2/2. So the id here is the OPEN bead that owns the fix; 6889 stays in
-// the prose above because that is where the measurements were made.
-func TestCockpitCellScanFoldGuards(t *testing.T) {
-	t.Skip("ranger-base-7bdbb (folded ranger-base-6889): lone skin tone, dangling ZWJ and VS15-on-wide fold when the terminal does not")
+// 2/2/3/2/2.
+//
+// And now ranger-base-7bdbb has closed too — "not doing", operator triage
+// sweep 2026-09-04 (monica): the cell-width holes are declined, not owed. So
+// there is no open bead left to park on, and a park naming a closed id reads
+// as an instruction to un-skip, which reds the suite (re-measured at 374d3b8
+// under ranger-base-09yjv: the same five rows, dispWidth 0/0/1/1/1). Inverted
+// instead, the way a DECLINED defect is pinned elsewhere in this package
+// (cockpitwidth_37buk_qa_test.go, gateschainpathleak_qa_test.go): the
+// assertion below is what cellScan answers TODAY, so the fold is measured on
+// every run instead of skipped, and this goes RED the day cellScan learns the
+// terminal's answer — which is the day to restore the `terminal` column as
+// the expectation.
+func TestQACockpitCellScanStillFoldsWhatTheTerminalDraws(t *testing.T) {
 	for _, c := range []struct {
-		in   string
-		want int
+		in       string
+		want     int // what dispWidth answers TODAY
+		terminal int // what the terminal actually advances
 	}{
-		{"🏻", 2},   // U+1F3FB with nothing before it
-		{"👨‍", 2},  // ZWJ at the end of the string
-		{"👨‍x", 3}, // ZWJ before a rune it cannot join
-		{"中︎", 2},  // VS15 does not narrow an ideograph
-		{"🀄︎", 2},  // ...nor a wide symbol
+		{"🏻", 0, 2},   // U+1F3FB with nothing before it
+		{"👨‍", 0, 2},  // ZWJ at the end of the string
+		{"👨‍x", 1, 3}, // ZWJ before a rune it cannot join
+		{"中︎", 1, 2},  // VS15 does not narrow an ideograph
+		{"🀄︎", 1, 2},  // ...nor a wide symbol
 	} {
-		if got := dispWidth(c.in); got != c.want {
-			t.Errorf("dispWidth(%q) = %d, the terminal advances %d", c.in, got, c.want)
+		got := dispWidth(c.in)
+		if got == c.want {
+			continue
 		}
+		if got == c.terminal {
+			t.Errorf("FIXED: dispWidth(%q) = %d, which is what the terminal advances — cellScan no longer folds this, so restore the `terminal` column as the expectation (ranger-base-7bdbb, closed not doing 2026-09-04)", c.in, got)
+			continue
+		}
+		t.Errorf("dispWidth(%q) = %d, not the %d cellScan has answered since ranger-base-6889 was measured (the terminal advances %d)", c.in, got, c.want, c.terminal)
+	}
+
+	// The arm above is a claim about cellScan's FOLD, not about the width
+	// table, so it needs a glyph the fold handles correctly or a build that
+	// answered 0 everywhere would pass it: a real skin-tone SEQUENCE folds to
+	// one emoji of two cells, and that is what the terminal draws.
+	if got := dispWidth("👍🏻"); got != 2 {
+		t.Errorf("dispWidth(%q) = %d — a skin tone modifying the rune before it is one two-cell emoji; with this wrong the fold arm above measures nothing", "👍🏻", got)
 	}
 }
 

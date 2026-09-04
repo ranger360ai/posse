@@ -22,6 +22,19 @@ package main
 // and most direct of those sites — qaForeignBoth's own `git init`, a bare
 // name with no cmd.Env at all — and goes RED the day it is scrubbed, which
 // is the day to delete this file and let the suite's own hermeticity speak.
+//
+// DECLINED, not owed: ranger-base-1xln6 (this leak, refiled) was closed "not
+// doing" by the operator triage sweep of 2026-09-04 (monica) — "test hygiene
+// at three QA sites with no observed failure; not a defect". Re-measured at
+// 374d3b8 under ranger-base-09yjv, and the reason holds for a reason worth
+// writing down: a full GREEN `cmd/posse` run pushes 284 git invocations
+// through a gates-shaped PATH element (136 rev-parse, 34 diff, 18 log, 17
+// config, 12 init, 12 hash-object, … and two `git commit`), and every one of
+// those argv forms is ALLOWED by the crew's rendered gate — the two commits
+// are path-limited, which is exactly what `Bash(git commit unless --)`
+// permits. The leak costs nothing while that stays true; the day a crew deny
+// covers one of those verbs, the three sites go red or, worse, green on a
+// refusal the probes cannot tell from the gate chain's own.
 
 import (
 	"os"
