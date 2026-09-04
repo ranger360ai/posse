@@ -8,7 +8,10 @@ takes the next number no bead has claimed · amended 2026-09-04 (title, Context,
 D2, Consequences, Alternatives: the scope is every staged FILE, not every
 staged "text" file — "text" was the reader's mechanism written down as the
 rule, and git's text/binary call is a guess on the file's own bytes that one
-NUL flips; ranger-base-9307c, from ranger-base-h137b).*
+NUL flips; ranger-base-9307c, from ranger-base-h137b) · amended 2026-09-03
+(D2: the commit MESSAGE is a third arm, with check 3's literals — product
+decision that date on ranger-base-1nbtn, landed 2026-09-04 in
+ranger-base-qk8i9, which is why this line sits after the 09-04 one above).*
 
 > The seed surface must carry zero bare occurrences of the harness's
 > pre-publication name (rangerhq-7xpn AC7; the marker form `<name>-<id>`
@@ -70,9 +73,13 @@ vocabulary and a `PromotedPath` edit, so the operator writes it
 
 **D2 — instance patterns get check 3's scope, not check 2's.** A config
 pattern is scanned over the ADDED lines of every staged file, code
-included, and over the ADDED staged paths — the two arms
-`identityGuardCheck` already renders — while the shipped `OpsPatterns`
-stay markdown-only in check 2. *Every staged file, not every staged "text"
+included, over the ADDED staged paths, and over every line of the commit
+MESSAGE — the three arms `identityGuardCheck` renders (the message is the
+third since ranger-base-1nbtn, ADR 0024 D2 check 3 as amended 2026-09-03;
+built with check 3's own in ranger-base-qk8i9) — while the shipped
+`OpsPatterns` stay markdown-only in check 2, and are not scanned over the
+message at all: that is a census, not an oversight, and ADR 0024's
+Consequences carries it. *Every staged file, not every staged "text"
 file (amended 2026-09-04, ranger-base-9307c, from ranger-base-h137b).* The
 reader is `git diff --cached -U0 --text`, and the scope IS that reader's
 output: the ADDED lines of whatever is staged, bytes as they are. "Text"

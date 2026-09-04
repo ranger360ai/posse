@@ -1489,14 +1489,20 @@ confidential vocabulary to the lint without it ever entering this repo.
 Its sibling `data_ceiling_patterns:` (same shape, one class namespace
 across both) is scanned in every hooked repo whatever its stamp, above the
 visibility gate: visibility says where content may go, the ceiling says
-whether it may exist in a local file here at all (ADR 0050). It has three
-arms where the visibility wall has two: added lines, added paths, and every
-line of the COMMIT MESSAGE — a message replicates with the branch, so a
-paste in one is as durable as a paste in a file. A message given with `-m`,
-`-F`, `-F -` or reused by `--amend` is scanned; one typed in your EDITOR is
-not, because the hook runs before the editor opens (ADR 0050 D5). A refused
-message is not lost: it is in `.git/COMMIT_EDITMSG` until your next commit
-overwrites it.
+whether it may exist in a local file here at all (ADR 0050). Both walls
+have the same three arms: added lines, added paths, and every line of the
+COMMIT MESSAGE — a message replicates with the branch, so a paste in one is
+as durable as a paste in a file (ADR 0050 D2 for the ceiling, ADR 0024 D2
+check 3 and ADR 0048 D2 for the visibility patterns and this box's derived
+identity literals, all as amended 2026-09-03). What differs is the gate and
+the remedy: the ceiling refuses in every repo and first, the visibility
+arms only in a public-stamped one. A message given with `-m`, `-F`, `-F -`
+or reused by `--amend` is scanned; one typed in your EDITOR is not, because
+the hook runs before the editor opens (ADR 0050 D5). A refused message is
+not lost: it is in `.git/COMMIT_EDITMSG` until your next commit overwrites
+it. The SHIPPED pattern list is the one thing not read over a message,
+which is a measured decision rather than an oversight (ADR 0024
+Consequences).
 `install-hooks` prints what it stamped in and, by class, what it refused —
 the ceiling line for private-stamped repos too.
 

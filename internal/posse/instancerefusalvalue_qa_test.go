@@ -13,7 +13,10 @@ package posse
 //
 // THE RULE, and it is per ENTRY and not per check: an entry from config
 // beads_visibility_patterns: is refused by CLASS and HIT COUNT alone,
-// wherever it is scanned — check 0's beads jsonl and both of check 3's arms.
+// wherever it is scanned — check 0's beads jsonl and all THREE of check 3's
+// arms since ranger-base-qk8i9 gave it the commit message (the message arm's
+// own withholding pin is TestQAInstancePatternRefusesTheCommitMessage-
+// ClassOnly, checkthreemessage_qa_test.go).
 // A shipped OpsPattern keeps ADR 0024 D2's shape: its text is in this
 // repo's own source, so showing a writer the string they tripped on costs
 // nothing and is what makes the refusal actionable.
@@ -29,8 +32,9 @@ package posse
 // EVERY PIN HERE IS MUTATION-CHECKED. The five mutants, and what each one
 // reds — run on ranger-base-8114t, one at a time against a golden copy:
 //
-//	M1  exChecks renders plain (opsCheckCall(..., false)), so check 3's two
-//	    arms disclose again ..... PIN 1, PIN 2, PIN 4
+//	M1  exChecks renders plain (opsCheckCall(..., false)), so check 3's arms
+//	    disclose again ..... PIN 1, PIN 2, PIN 4 (and, since qk8i9, the
+//	    message arm's withholding pin — one closure, all three arms)
 //	M2  check 0's set.Extra loop renders plain ..... PIN 3, PIN 4, and
 //	    TestInstanceOpsPatternGuardsAPublicRepo
 //	M3  posse_check's class-only branch writes $2 and the matched text
@@ -45,8 +49,8 @@ package posse
 //	M6  posse_check writes a literal `1 hit(s)` instead of $posse_n ..... PIN
 //	    1 alone, whose fixture is the only one that matches twice
 //
-// Check 3's content and path arms render from ONE closure at two indents,
-// so no mutant separates PIN 1 from PIN 2. They are still two pins: the
+// Check 3's content, path and message arms render from ONE closure at two
+// indents, so no mutant separates PIN 1 from PIN 2. They are still two pins: the
 // path arm is the one place a matching subject is legitimately printed, and
 // PIN 2 is the assertion that says exactly how far that goes.
 

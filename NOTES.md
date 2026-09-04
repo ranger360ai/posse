@@ -4311,9 +4311,18 @@ artifact and the only thing that says which file. The patterns live in the opera
 stamped into `.git/hooks/`, both untracked: the vocabulary never enters the
 public repo, which is the point of the key. Their SCOPE is wider than the
 shipped list's since ADR 0048: an instance pattern is scanned over the added
-lines of every staged text file, code included, and over every added staged
-path — the shipped list stays markdown-only, because its own source is
-byte-identical to a hit and a config pattern is never in source.
+lines of every staged text file, code included, over every added staged
+path, and — since ADR 0024 D2 check 3 and ADR 0048 D2 as amended 2026-09-03
+— over every line of the COMMIT MESSAGE, which replicates with the branch
+exactly as a staged line does; the remedy there is to rewrite the message,
+and what you typed is still in `.git/COMMIT_EDITMSG` until the next commit
+overwrites it. The derived identity literals of check 3 get the same three
+subjects. The shipped list stays markdown-only and is NOT scanned over the
+message — its own source is byte-identical to a hit, a config pattern is
+never in source, and the message decision is its own census: of 29 hits
+over the 1136 messages then on main, 22 were the software's own vocabulary
+(fixture figures, blessed defaults, documented key values), and a message
+has no shape table to disposition them by.
 
 **The data ceiling** (ADR 0050) is the second key, `data_ceiling_patterns:`,
 same shape and one class namespace with the first, and it answers a
@@ -4322,13 +4331,15 @@ whether it may exist in a local file here at all. A visibility pattern is
 inert in a repo stamped `private` — on purpose, the stamp is the visibility
 record — which is exactly the repo an instance holding someone else's data
 keeps its beads in. So the ceiling is scanned in every repo this instance
-hooks whatever its stamp, above the visibility gate, over three arms — the
-same two as check 3 (added lines of every staged text file, added staged
-paths) and a third the visibility wall does not have, every line of the
-COMMIT MESSAGE (ADR 0050 D2 as amended 2026-09-03: the message lands in the
-commit object and replicates with the branch, and the hook is already
-holding it as its first argument) — always by class alone, a refusal being
-itself a local file. Its remedy is not "re-file it in the private db" but
+hooks whatever its stamp, above the visibility gate, over the same three
+arms as check 3 — added lines of every staged text file, added staged
+paths, and every line of the COMMIT MESSAGE (ADR 0050 D2 as amended
+2026-09-03: the message lands in the commit object and replicates with the
+branch, and the hook is already holding it as its first argument — check 3
+gained the same subject the same day and reads it through the same
+renderer, so what separates the two walls there is the gate and the remedy,
+not the subject) — always by class alone, a refusal being itself a local
+file. Its remedy is not "re-file it in the private db" but
 remove the paste and keep the system of record's id; for the message arm,
 rewrite the message, and the text you typed is still in
 `.git/COMMIT_EDITMSG` until your next commit overwrites it. A message typed

@@ -6,7 +6,10 @@ extends ADR 0012 D2 and the beads visibility guard (rangerhq-hrz) · amended
 2026-09-04 (D2 check 3 and Residuals: the identity literals are grepped over
 ALL staged files, not all staged "text" files — the reader carries `--text`
 because git's binary call flips on one NUL; ADR 0048 D2 as amended,
-ranger-base-9307c, from ranger-base-h137b)*
+ranger-base-9307c, from ranger-base-h137b) · amended 2026-09-03 (D2 check 3
+and Consequences: the commit MESSAGE is a THIRD subject of check 3 — product
+decision that date on ranger-base-1nbtn, landed 2026-09-04 in
+ranger-base-qk8i9, which is why this line sits after the 09-04 one above)*
 
 ## Context
 
@@ -107,7 +110,27 @@ install and at every persona launch).
    filename is exactly where an operator-shaped artifact puts the
    operator; added ENTRIES is the path analogue of added lines, and it is
    check 1's rule verbatim — a modified existing path cleared this the
-   day it was added, and a deletion carries a path away. The literals live only in the
+   day it was added, and a deletion carries a path away.
+
+   *Amended 2026-09-03 (ranger-base-1nbtn, product; built in
+   ranger-base-qk8i9): a THIRD subject — the commit MESSAGE.* The hook is
+   handed the message file as its first argument; check 3's literals and
+   (per ADR 0048 D2) the instance patterns are matched over every line of
+   it as given, comment-looking lines included, with the same words,
+   override and log shape, tail = the content arm's existing tail with
+   ", commit message)" in place of its closing paren. The principle is
+   check 3's own: these strings have no legitimate public use anywhere,
+   and a message replicates with the branch. MEASURED over the 1136
+   messages then on main: identity literals in 5, four of them the class's
+   real target; this instance's one config pattern in 18, every one
+   avoidable by the ADR 0048 habit of saying "the pre-publication name".
+   The refusal costs one re-issued command: git keeps the refused message
+   in `.git/COMMIT_EDITMSG`. A message typed in the EDITOR is the stated
+   exclusion — `prepare-commit-msg` runs before the editor opens and is
+   handed git's template alone (measured); that path is the operator's own
+   hand, and the second layer for it is a `commit-msg` hook.
+
+   The literals live only in the
    rendered hook under the repo's hooks dir — never in a commit, never
    in the shipped list. The renderer refuses a literal containing a
    single quote, the same init-panic class as the pattern list. The bead
@@ -223,7 +246,8 @@ clean tree having measured a quarter of it (ranger-base-4v7f9).
   runbook NAMED after a plan brand still passes, because that class has
   the detector-source residual check 3's literals do not, and its
   false-positive number over a path list is unmeasured. This wall scans
-  added lines and added paths, never commit metadata: the author field is
+  added lines, added paths and, since 2026-09-03, the commit message (check
+  3 and the ceiling only) — never commit METADATA: the author field is
   whatever `user.email` resolves to for that commit and is the operator's
   to set — which is why the e-mail literal is derived from EVERY config
   scope (ranger-base-yqstz), not the one the repo happens to resolve to,
@@ -232,14 +256,23 @@ clean tree having measured a quarter of it (ranger-base-4v7f9).
   `private` runs none of them — by design for visibility, and a hole for an
   instance holding someone else's data, whose bead repo is private on
   purpose; ADR 0050 adds a second key, `data_ceiling_patterns:`, rendered
-  ABOVE the gate with check 3's two arms — and, since ADR 0050 D2 as
-  amended 2026-09-03, a third arm of its own over every line of the COMMIT
-  MESSAGE, which is why the "never commit metadata" above is scoped to this
-  wall rather than to the slot (built in ranger-base-nfg8l, third arm in
-  ranger-base-o2v6n) — refused by class alone in every hooked repo:
+  ABOVE the gate with all three of check 3's arms — added lines, added
+  paths and, since 2026-09-03, the commit MESSAGE, which both walls read
+  through one renderer (built in ranger-base-nfg8l, the ceiling's message
+  arm in ranger-base-o2v6n, check 3's in ranger-base-qk8i9) — refused by
+  class alone in every hooked repo:
   visibility says where content may go, the ceiling says whether it may
   exist here at all. The boundary remains the routing rule plus repo
-  visibility.
+  visibility. Check 2's shipped list does NOT scan the message, by census
+  rather than by the detector-source argument (which is about SOURCE and
+  does not reach a message): over the same 1136 messages the shipped list
+  hit 29, of which 22 are the software's own vocabulary — fixture figures,
+  blessed defaults, documented key values, credential-store file names —
+  the residue shapes the markdown bar dispositions by table, and a message
+  has no table; the seven real hits all predate 2026-08-30. A pin
+  (`TestQAShippedPatternsDoNotScanTheCommitMessage`) holds the decision;
+  the trigger for re-opening it is a live figure found in a message at
+  verify time.
 - The identity-literal false-positive rate is ASSUMED low (the literals
   are paths and an e-mail); the build bead's done-when includes the hrz
   method — measure against the post-scrub tree and require zero hits.

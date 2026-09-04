@@ -589,11 +589,14 @@ func TestQAWarnOpsContentSpeaksTheCeilingUnderEveryStamp(t *testing.T) {
 // ceiling-matching MESSAGE committed clean while the same bytes in a staged
 // file were refused. That measurement is kept below as the control.
 
-// qaCeilingMsgCommit stages a clean file and commits it with msg through
-// form — "-m" or "-F -", the crew's own (AGENTS.md) — path-limited, because
-// the shared-index arm in the same hook refuses an unqualified commit and a
-// pin that tripped THAT wall would be green over no ceiling at all.
-func qaCeilingMsgCommit(t *testing.T, w *visWall, repo, rel, body, form, msg string, env []string) (string, error) {
+// qaMsgCommit stages a clean file and commits it with msg through form —
+// "-m" or "-F -", the crew's own (AGENTS.md) — path-limited, because the
+// shared-index arm in the same hook refuses an unqualified commit and a pin
+// that tripped THAT wall would be green over no wall at all. Shared with
+// check 3's message pins (checkthreemessage_qa_test.go, ranger-base-qk8i9):
+// the two walls read the message through one renderer, so their pins type
+// one the same way.
+func qaMsgCommit(t *testing.T, w *visWall, repo, rel, body, form, msg string, env []string) (string, error) {
 	t.Helper()
 	w.stage(t, repo, rel, body)
 	if form == "-F -" {
@@ -631,7 +634,7 @@ func TestQADataCeilingRefusesTheCommitMessage(t *testing.T) {
 	for i, form := range []string{"-m", "-F -"} {
 		t.Run(form, func(t *testing.T) {
 			rel := "internal/posse/msg" + string(rune('a'+i)) + ".go"
-			out, err := qaCeilingMsgCommit(t, w, w.priv, rel, clean, form, msg, w.persona)
+			out, err := qaMsgCommit(t, w, w.priv, rel, clean, form, msg, w.persona)
 			if err == nil {
 				t.Fatalf("the ceiling must refuse a commit MESSAGE carrying the vocabulary (%s):\n%s", form, out)
 			}
@@ -680,7 +683,7 @@ func TestQADataCeilingRefusesTheCommitMessage(t *testing.T) {
 	}
 	for i, form := range []string{"-m", "-F -"} {
 		rel := "internal/posse/ctl" + string(rune('a'+i)) + ".go"
-		if out, err := qaCeilingMsgCommit(t, ctl, ctl.priv, rel, clean, form, msg, ctl.persona); err != nil {
+		if out, err := qaMsgCommit(t, ctl, ctl.priv, rel, clean, form, msg, ctl.persona); err != nil {
 			t.Errorf("control: the same ERE as a VISIBILITY pattern must let the message through in a private repo (%s): %v\n%s", form, err, out)
 		}
 	}
@@ -706,7 +709,7 @@ func TestQADataCeilingRefusesAReusedMessage(t *testing.T) {
 		t.Fatalf("fixture premise: the first commit must run under a hook with NO ceiling, got %+v", set.Ceiling)
 	}
 	msg := "import the " + qaCeilingHit + " extract\n"
-	if out, err := qaCeilingMsgCommit(t, w, w.priv, "internal/posse/a.go", "package posse\n", "-m", msg, w.persona); err != nil {
+	if out, err := qaMsgCommit(t, w, w.priv, "internal/posse/a.go", "package posse\n", "-m", msg, w.persona); err != nil {
 		t.Fatalf("fixture premise: with no ceiling configured this message must commit: %v\n%s", err, out)
 	}
 
@@ -752,7 +755,7 @@ func TestQADataCeilingRefusesAReusedMessage(t *testing.T) {
 func TestQADataCeilingScansCommentLookingLines(t *testing.T) {
 	w := qaCeilingWall(t, "")
 	msg := "wire the export\n\n# " + qaCeilingHit + "\n"
-	out, err := qaCeilingMsgCommit(t, w, w.priv, "internal/posse/c.go", "package posse\n", "-F -", msg, w.persona)
+	out, err := qaMsgCommit(t, w, w.priv, "internal/posse/c.go", "package posse\n", "-F -", msg, w.persona)
 	if err == nil {
 		t.Fatalf("a comment-looking line in the message must still be scanned:\n%s", out)
 	}
@@ -764,7 +767,7 @@ func TestQADataCeilingScansCommentLookingLines(t *testing.T) {
 	// commits, and git kept the '#' line — so the line the arm scans is a
 	// line that really lands.
 	ctl := newVisWallCfg(t, "instance", "")
-	if out, err := qaCeilingMsgCommit(t, ctl, ctl.priv, "internal/posse/c.go", "package posse\n", "-F -", msg, ctl.persona); err != nil {
+	if out, err := qaMsgCommit(t, ctl, ctl.priv, "internal/posse/c.go", "package posse\n", "-F -", msg, ctl.persona); err != nil {
 		t.Fatalf("control: with no ceiling this message must commit: %v\n%s", err, out)
 	}
 	body, err := ctl.git(ctl.priv, nil, "log", "-1", "--format=%B")
@@ -828,7 +831,7 @@ func TestQADataCeilingMessageRefusalLeavesTheMessageAndOverrides(t *testing.T) {
 		t.Fatalf("fixture premise: the scratch repo must have a HEAD to be unchanged: %v %s", err, head0)
 	}
 	msg := "wire it\n\nfrom the " + qaCeilingHit + " banner\n"
-	out, err := qaCeilingMsgCommit(t, w, w.priv, rel, "package posse\n", "-F -", msg, w.persona)
+	out, err := qaMsgCommit(t, w, w.priv, rel, "package posse\n", "-F -", msg, w.persona)
 	if err == nil {
 		t.Fatalf("fixture premise: the message must be refused:\n%s", out)
 	}

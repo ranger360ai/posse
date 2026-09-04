@@ -2753,7 +2753,8 @@ const commitGuardHead = `#!/bin/sh
 # and the commit message, under EVERY visibility stamp), the beads
 # visibility guard (rangerhq-hrz, extended by ADR 0024 D2 checks 1+2+3 to a
 # docs-genre allowlist, an OpsPatterns scan over staged markdown, and a scan
-# for this box's own identity literals over every staged text file), the
+# for this box's own identity literals and this instance's config patterns
+# over every staged text file, every added path and the commit message), the
 # constitution-path guard (ranger-base-ak3e), the ADR sha-stamp guard
 # (ADR 0051 D4/D5, ranger-base-glewr) and the shared-index commit guard
 # (rangerhq-lmq9).
@@ -3114,12 +3115,13 @@ if [ "$posse_beads_visibility" = ` + shQuote(VisibilityPublic) + ` ]; then
 `
 }
 
-// visGuardRefusal is check 3's refusal shape, written once. Four call sites
-// — the CONTENT arm and the PATH arm, each for the derived identity
-// literals and for the instance patterns ADR 0048 D2 moved into this scope
-// — differ only in their words, and the words are the part a reader of a
-// refusal needs to be right; the shape (override branch, one refusals.log
-// line each way, exit 1) is the same wall every time.
+// visGuardRefusal is check 3's refusal shape, written once. SIX call sites
+// — the CONTENT arm, the PATH arm and, since ranger-base-qk8i9, the
+// MESSAGE arm, each for the derived identity literals and for the instance
+// patterns ADR 0048 D2 moved into this scope — differ only in their words,
+// and the words are the part a reader of a refusal needs to be right; the
+// shape (override branch, one refusals.log line each way, exit 1) is the
+// same wall every time.
 //
 // WHAT NEVER GOES IN: a pattern's VALUE. The header line and both
 // refusals.log lines name the CLASS only — an instance pattern IS this
@@ -3134,7 +3136,9 @@ if [ "$posse_beads_visibility" = ` + shQuote(VisibilityPublic) + ` ]; then
 // artifact and the only thing that says WHICH file. The two IDENTITY
 // refusals keep ADR 0024 D2's shape, matched text included: a derived
 // literal is the operator's own username or email, and the box it names is
-// the box reading the refusal.
+// the box reading the refusal — and that stays true of the MESSAGE arm: the
+// text it prints back is a message the same writer just typed, on the box
+// the literal names.
 type visGuardRefusal struct {
 	badVar       string // the shell variable this arm accumulated its hits in
 	label        string // what refusals.log calls this scan
@@ -3218,14 +3222,18 @@ const (
 // what the FILE was stamped with, which is the same thing.
 const dataCeilingStampTail = "stamp: $posse_beads_visibility"
 
-// visScanSource is one list the two-arm scan runs: how its checks render
-// at an indent, the accumulator its path arm folds into, and the two
-// refusals — content, path — it speaks in.
+// visScanSource is one list the scan runs: how its checks render at an
+// indent, the accumulator its path arm folds into, and the three refusals —
+// content, path, message — it speaks in. The first two are twoArmScan's;
+// the third is messageArm's, and a source whose wall does not scan the
+// message leaves it zero (nothing in this file does today — both walls
+// scan all three since ranger-base-o2v6n and ranger-base-qk8i9).
 type visScanSource struct {
 	checks  func(indent string) string
 	pathVar string
 	content visGuardRefusal
 	path    visGuardRefusal
+	message visGuardRefusal
 }
 
 // twoArmScan renders the shape ranger-base-uzgkz built for check 3 and ADR
@@ -3411,15 +3419,25 @@ refused with the stricter remedy — there is no private db to re-file it in.`)
 		wayThrough:   DataCeilingMessageWayThrough,
 		footer:       footer,
 	}
-	return twoArmScan("", "the data ceiling", head, []visScanSource{src}) + ceilingMessageArm(checks, msg)
+	src.message = msg
+	return twoArmScan("", "the data ceiling", head, []visScanSource{src}) + messageArm("", ceilingMessageHead, []visScanSource{src})
 }
 
-// ceilingMessageArm renders the ceiling's THIRD arm (ADR 0050 D2 as amended
-// 2026-09-03, ranger-base-pqlxr): the commit MESSAGE, every line of it, as
-// given. It renders AFTER the two-arm scan and still above the visibility
-// gate, so the order a reader gets is content, path, message, gate.
+// messageArm renders the THIRD arm both walls have: the commit MESSAGE,
+// every line of it, as given (the ceiling's since ADR 0050 D2 as amended
+// 2026-09-03, ranger-base-pqlxr; check 3's since ADR 0024 D2 / ADR 0048 D2
+// as amended 2026-09-03, ranger-base-1nbtn, built in ranger-base-qk8i9).
+// ONE reader of "$1" for both, for the reason twoArmScan is one function:
+// the walls differ in their words and their gate, never in what they read.
+// It renders AFTER the two-arm scan — the ceiling's above the visibility
+// gate, check 3's inside it — so the order a reader gets is content, path,
+// message, and the ceiling's three before the gate line.
 //
-// WHY THE MESSAGE IS A SUBJECT AT ALL. D5 says the wall guards the durable,
+// One `cat` per wall, not per source: the sources share $posse_added and
+// each resets its own $posse_bad before its checks, exactly as the content
+// arm does. head is the arm's own banner, already rendered at ind.
+//
+// WHY THE MESSAGE IS A SUBJECT AT ALL. D5 says the ceiling guards the durable,
 // replicated copy and excludes the working tree, the transcript and the
 // pane capture. A commit message is none of those: it lands in the commit
 // object and replicates with the branch. It is also the most-quoted
@@ -3455,14 +3473,33 @@ refused with the stricter remedy — there is no private db to re-file it in.`)
 // That is also what puts --amend inside: git hands the hook HEAD's message
 // there, so a message REUSED after the ceiling was configured is scanned.
 //
-// THE ONE PATH IT DOES NOT REACH, stated (D5): a message typed in the
-// EDITOR. prepare-commit-msg runs before the editor opens, so on that path
-// $1 holds git's template alone — measured. The editor path is the
-// operator's own hand, which is above the ceiling already; the second layer
-// for it is a commit-msg hook, and the trigger for filing it is the first
-// "commit message" line under this label in refusals.log.
-func ceilingMessageArm(checks func(indent string) string, msg visGuardRefusal) string {
-	return "\n" + shComment("", `─── the data ceiling, third arm: the commit MESSAGE (ADR 0050 D2) ──────
+// THE ONE PATH IT DOES NOT REACH, stated (ADR 0050 D5, and ADR 0024 D2 for
+// check 3): a message typed in the EDITOR. prepare-commit-msg runs before
+// the editor opens, so on that path $1 holds git's template alone —
+// measured. The editor path is the operator's own hand, which is above both
+// walls already; the second layer for it is a commit-msg hook, and the
+// trigger for filing it is the first "commit message" line under either
+// label in refusals.log.
+func messageArm(ind, head string, sources []visScanSource) string {
+	i1, i2 := ind+"  ", ind+"    "
+	var body strings.Builder
+	for _, s := range sources {
+		body.WriteString(i2 + "posse_bad=''\n" + s.checks(i2) + s.message.render(i2))
+	}
+	return head + ind + `if [ -f "${1:-}" ]; then
+` + i1 + `posse_added=$(cat "$1" 2>/dev/null)
+` + i1 + `if [ -n "$posse_added" ]; then
+` + body.String() + i1 + `fi
+` + ind + `fi
+`
+}
+
+// ceilingMessageHead is the ceiling's message-arm banner (ADR 0050 D2 as
+// amended 2026-09-03). Check 3's is checkThreeMessageHead below: the arm is
+// one mechanism, and the two walls say different things about it because a
+// writer who trips one is sent to a different remedy than a writer who
+// trips the other.
+var ceilingMessageHead = "\n" + shComment("", `─── the data ceiling, third arm: the commit MESSAGE (ADR 0050 D2) ──────
 "$1" is the message file git is about to take — the same file the
 shared-index arm below compares against MERGE_MSG. Read whole and scanned
 by line, comment-looking lines included: git's default cleanup for -m and
@@ -3475,15 +3512,7 @@ overwrites it (measured).
 A message typed in the EDITOR is NOT scanned here and cannot be: this hook
 runs before the editor opens and is handed git's template alone (measured,
 git 2.50.1). That path is the operator's own hand, above the ceiling
-already; the second layer for it is a commit-msg hook.`) +
-		`if [ -f "${1:-}" ]; then
-  posse_added=$(cat "$1" 2>/dev/null)
-  if [ -n "$posse_added" ]; then
-    posse_bad=''
-` + checks("    ") + msg.render("    ") + `  fi
-fi
-`
-}
+already; the second layer for it is a commit-msg hook.`)
 
 // identityGuardCheck renders check 3's block: this box's own identity
 // literals (ADR 0024 D2) AND this instance's config patterns (ADR 0048 D2)
@@ -3584,6 +3613,17 @@ func identityGuardCheck(identity []IdentityLiteral, extra []OpsPattern) string {
 				matched:      stagedPathMatched,
 				wayThrough:   IdentityWayThrough,
 			},
+			message: visGuardRefusal{
+				badVar:       "posse_bad",
+				label:        identityScanLabel,
+				logTail:      "(public repo, commit message)",
+				overrideAt:   " (commit message)",
+				overrideWhat: "an operator identifier is going into a public repo in the commit MESSAGE",
+				header:       "an operator identity literal in the commit MESSAGE",
+				rule:         IdentityRule,
+				matched:      commitMessageMatched,
+				wayThrough:   IdentityMessageWayThrough,
+			},
 		})
 	}
 	if len(extra) > 0 {
@@ -3611,6 +3651,17 @@ func identityGuardCheck(identity []IdentityLiteral, extra []OpsPattern) string {
 				matched:      stagedPathMatched,
 				wayThrough:   OpsInstanceWayThrough,
 			},
+			message: visGuardRefusal{
+				badVar:       "posse_bad",
+				label:        instanceScanLabel,
+				logTail:      "(public repo, commit message)",
+				overrideAt:   " (commit message)",
+				overrideWhat: "instance-defined content is going into a public repo in the commit MESSAGE",
+				header:       "an instance-defined visibility class in the commit MESSAGE",
+				rule:         OpsInstanceRule,
+				matched:      commitMessageMatched,
+				wayThrough:   OpsInstanceMessageWayThrough,
+			},
 		})
 	}
 
@@ -3625,13 +3676,51 @@ visibility.go). The instance patterns come from the operator's config
 (`+OpsPatternsConfigKey+`:) and are untracked for the same reason.
 Rendered as regexp-escaped fixed strings and as EREs respectively, so
 the SAME matcher checks 0 and 2 already call above covers this too.
-Scanned over the ADDED lines of ALL staged TEXT files, any path, code
-included — unlike check 2, which is markdown-only: neither an operator's
-identity nor one instance's confidential vocabulary has a legitimate
-public use anywhere, so the detector-source residual check 2 accepts
-does not apply here.`)
-	return twoArmScan("  ", "check 3", head, sources)
+THREE SUBJECTS, in this order: the ADDED lines of ALL staged TEXT files,
+any path, code included — unlike check 2, which is markdown-only; then
+the ADDED staged PATHS; then every line of the commit MESSAGE (ADR 0024
+D2 / ADR 0048 D2 as amended 2026-09-03, ranger-base-1nbtn). Neither an
+operator's identity nor one instance's confidential vocabulary has a
+legitimate public use anywhere, so the detector-source residual check 2
+accepts does not apply here — and a commit message is content that
+replicates with the branch, not the commit METADATA the wall still does
+not read (the author field is whatever user.email resolves to, and that
+is the operator's to set).
+The shipped OpsPatterns in check 2 above do NOT scan the message, and
+that is a census rather than an oversight: over the 1136 messages then
+on main the shipped list hit 29, 22 of them the software's own
+vocabulary — fixture figures, blessed defaults, documented key values —
+and a message has no shape table to disposition the residue by
+(ranger-base-1nbtn, pinned by TestQAShippedPatternsDoNotScanTheCommit-
+Message).`)
+	return twoArmScan("  ", "check 3", head, sources) +
+		messageArm("  ", checkThreeMessageHead, sources)
 }
+
+// checkThreeMessageHead is check 3's message-arm banner (ADR 0024 D2 check
+// 3 and ADR 0048 D2, both as amended 2026-09-03, ranger-base-1nbtn). The
+// mechanism is messageArm's and is shared with the ceiling; what differs is
+// what a writer is told, and check 3 has two things to tell them the
+// ceiling does not: this arm is INSIDE the visibility gate, and the
+// ceiling's message arm has already run and refuses first.
+var checkThreeMessageHead = "\n" + shComment("  ", `─── check 3, third arm: the commit MESSAGE ─────────────────────────────
+"$1" is the message file git is about to take — the same file the ceiling
+above and the shared-index arm below already read. Read whole and scanned
+by line, comment-looking lines included: git's default cleanup for -m and
+-F keeps a '#'-leading line, so a pasted heading lands in the commit
+object and replicates with the branch. Inside the gate with the rest of
+check 3: an identity literal or an instance class is about where content
+may GO, so a private-stamped repo runs none of this — which is the one
+thing that separates this arm from the ceiling's, and why the ceiling's
+runs first and refuses with the stricter remedy when both would speak.
+The remedy differs from the staged file's — rewrite the message — because
+the text is not in a file the writer can edit; it is still in
+.git/COMMIT_EDITMSG, local and unreplicated, until the next commit
+overwrites it (measured).
+A message typed in the EDITOR is NOT scanned here and cannot be: this
+hook runs before the editor opens and is handed git's template alone
+(measured, git 2.50.1). That path is the operator's own hand; the second
+layer for it is a commit-msg hook.`)
 
 // pathAccum is how one path's hits are folded into an arm's accumulator:
 // posse_check keeps the class and the matched text but not the subject, so

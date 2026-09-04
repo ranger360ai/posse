@@ -1,7 +1,10 @@
 package posse
 
-// THE EDGES OF CHECK 3'S TWO ARMS FOR AN INSTANCE PATTERN (ADR 0048 D2,
-// ranger-base-uzgkz, added verifying it under ranger-base-qjqa3).
+// THE EDGES OF CHECK 3'S CONTENT AND PATH ARMS FOR AN INSTANCE PATTERN (ADR
+// 0048 D2, ranger-base-uzgkz, added verifying it under ranger-base-qjqa3).
+// The third arm ranger-base-qk8i9 added — the commit MESSAGE — has its own
+// file, checkthreemessage_qa_test.go; every commit below types a message
+// that carries nothing, so what these edges measure is still the two arms.
 //
 // instancepatternscope_qa_test.go pins the mechanism: a NEW .go file's added
 // line, a NEW path, the marker exception, the shipped list staying markdown-

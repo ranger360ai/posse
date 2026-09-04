@@ -376,7 +376,8 @@ is ONE deployment's own confidential vocabulary, and it has no legitimate
 public use anywhere in this repo. Unlike the shipped ops-pattern list, which
 is markdown-only because its own source is byte-identical to a hit, an
 instance pattern is scanned over the ADDED lines of every staged text file,
-code included, and over the ADDED staged paths.`
+code included, over the ADDED staged paths, and over every line of the
+COMMIT MESSAGE.`
 
 // OpsInstanceWayThrough is the remedy an instance-pattern refusal names. It
 // covers both arms for the reason IdentityWayThrough does — the arms differ
@@ -422,6 +423,27 @@ posse gates install-hooks.`
 // list is instance-wide: one list, applied to every repo this instance
 // renders a commit hook into, whatever that repo's stamp (ADR 0050 D1).
 const DataCeilingConfigKey = "data_ceiling_patterns"
+
+// OpsInstanceMessageWayThrough is the instance patterns' MESSAGE remedy
+// (ADR 0048 D2 as amended 2026-09-03, ranger-base-1nbtn). Same two
+// departures from OpsInstanceWayThrough as the identity constant above —
+// there is nothing staged to edit, and the refused text is still in
+// .git/COMMIT_EDITMSG — plus the one this list has and identity does not:
+// the refusal named a class and a count and never the text, so a writer
+// looking for what tripped it reads their own message, not the refusal.
+const OpsInstanceMessageWayThrough = `the way through: rewrite the commit message. The class named above is this
+instance's vocabulary, not this repo's, and a message replicates with the
+branch exactly as a staged line does — generalize whatever carries it, or
+re-file the fact in the private db and have the message cite its bead id
+(ADR 0024 D3, restate-and-cite). Nothing was committed: HEAD is unchanged
+and your tree and index are exactly where you left them. The message you
+typed is still in .git/COMMIT_EDITMSG, a local file that never replicates
+and that your next commit overwrites. The refusal gives the class and a hit
+count and never the text it matched (ADR 0048 D2) — that text is the thing
+being kept out of a public tree, and a refusal is read in a terminal and
+pasted onto beads; read your own message for what the class names. If the
+pattern itself is wrong, only the operator can change it (config ` + OpsPatternsConfigKey + `:) and re-run
+posse gates install-hooks.`
 
 // dataCeilingConfigWhy is the reason line a ceiling refusal carries — where
 // the pattern came from, nothing about what it is for.
@@ -673,14 +695,19 @@ type IdentityLiteral struct {
 	Value string
 }
 
-// IdentityRule is what a check-3 refusal names.
+// IdentityRule is what a check-3 refusal names. The enumeration at the end
+// is the one a refused writer reads, so it says THREE subjects (ADR 0024 D2
+// as amended 2026-09-03, ranger-base-1nbtn, built in ranger-base-qk8i9): a
+// rule naming two while the wall scans three sends them hunting for a
+// staged line that is not there. Same reason DataCeilingRule says three.
 const IdentityRule = `ADR 0024 D2 check 3: the operator's identity has no legitimate public use in
 this repo — the box's own username, git email, and the instance repo's path
 are derived at hook-render time (never shipped, never committed) and refused
 wherever they appear in the ADDED lines of any staged text file, code
-included, and in the ADDED staged paths (a filename is exactly where an
+included, in the ADDED staged paths (a filename is exactly where an
 operator-shaped artifact puts the operator; move detection off, so a move's
-destination counts as new).`
+destination counts as new), and in every line of the COMMIT MESSAGE, which
+replicates with the branch exactly as a staged line does.`
 
 // IdentityWayThrough is the remedy a check-3 refusal names — both ways
 // through, since ranger-base-dmsbu gave check 3 a second arm: content is
@@ -693,6 +720,27 @@ carries it (a comment, a fixture, a hardcoded path), or move the content to
 the instance tree (ADR 0024 D3, restate-and-cite). For a PATH: name the file
 without it, or write it in the instance tree — a rename is a fresh added
 entry and is scanned again, so the new name has to be clean too.`
+
+// IdentityMessageWayThrough is the MESSAGE arm's remedy (ADR 0024 D2 check
+// 3 as amended 2026-09-03, ranger-base-1nbtn, built in ranger-base-qk8i9).
+// It differs from IdentityWayThrough at the one point that matters to a
+// writer: there is no staged file to edit and no path to rename — the text
+// is in the message git was about to take, so the way through is to write
+// the message again. And the refused message does not vanish: after a
+// prepare-commit-msg refusal .git/COMMIT_EDITMSG still holds it and HEAD is
+// unchanged (measured, git 2.50.1, ranger-base-pqlxr). That file is local,
+// never replicated, and the next commit overwrites it — the same residual a
+// refused staged file already leaves; say so rather than let a writer
+// discover it.
+const IdentityMessageWayThrough = `the way through: rewrite the commit message. Nothing that names this
+operator, this box, or this instance's path belongs in a public repo's
+history, and a message replicates with the branch exactly as a staged line
+does — generalize whatever carries it, or say what you did without the
+identifier and cite the bead id (ADR 0024 D3, restate-and-cite). Nothing was
+committed: HEAD is unchanged and your tree and index are exactly where you
+left them. The message you typed is still in .git/COMMIT_EDITMSG, a local
+file that never replicates and that your next commit overwrites; that is the
+same residual a refused staged file leaves.`
 
 // identityLiteralMaxLen guards against a pathologically long identity value
 // rendering into the hook a pattern so long the hook file stops being

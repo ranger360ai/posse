@@ -97,7 +97,11 @@ commit message)`. Not a new wall: an arm of this one, no new git command.
 Its remedy differs from the file arm's: rewrite the message with the system
 of record's id; the refused text is still in `.git/COMMIT_EDITMSG`, a local
 unreplicated file the next commit overwrites — the same residual as a
-refused staged file.
+refused staged file. *Since 2026-09-03 the message is check 3's third
+subject too* (ADR 0024 D2 / ADR 0048 D2 as amended, ranger-base-1nbtn,
+built in ranger-base-qk8i9): one renderer reads `"$1"` for both walls, and
+the ceiling's arm still runs first — above the gate, with the stricter
+remedy — so a message that trips both is refused by the ceiling.
 
 **D3 — one set, read once, seen identically by every renderer.** The
 three sites that render the hook today (the install, the chained install,

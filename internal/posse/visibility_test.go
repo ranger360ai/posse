@@ -780,20 +780,29 @@ func TestInstanceOpsPatternGuardsAPublicRepo(t *testing.T) {
 	//   check 2, staged markdown    the SHIPPED list alone
 	//   check 3, added LINES        identity literals + this instance's
 	//   check 3, added PATHS        identity literals + this instance's
+	//   check 3, commit MESSAGE     identity literals + this instance's
 	// One accepted config pattern here, so: shipped twice, the instance's
-	// three times, the identity literals twice. The path arm renders inside
-	// a per-path loop because posse_check keeps the class and the matched
-	// text but not the subject, and the refusal has to name the path.
+	// four times, the identity literals three times. The path arm renders
+	// inside a per-path loop because posse_check keeps the class and the
+	// matched text but not the subject, and the refusal has to name the path.
+	//
+	// CHECK 3'S THIRD ARM is ranger-base-qk8i9 (ADR 0024 D2 check 3 and ADR
+	// 0048 D2 as amended 2026-09-03, ranger-base-1nbtn): every line of the
+	// commit message, through the same reader the ceiling's third arm uses.
+	// It is what turned the instance's three into four and the identity's
+	// two into three — and check 2's count did NOT move, which is the
+	// census-backed half of the same decision (pinned by
+	// TestQAShippedPatternsDoNotScanTheCommitMessage).
 	//
 	// PLUS THREE since ADR 0050 (ranger-base-nfg8l, third arm in
 	// ranger-base-o2v6n): the data ceiling renders its own block above the
 	// visibility gate with check 3's two arms — added LINES and added PATHS
-	// — and with a THIRD arm check 3 does not have, every line of the commit
-	// MESSAGE, so the one ceiling pattern configured above is stamped three
-	// times. Seven call sites now, not four.
-	identityCalls := 2 * len(testIdentity(t, pub))
-	if want, got := 2*len(OpsPatterns)+3+identityCalls+3, strings.Count(hook, "posse_check "); got != want {
-		t.Errorf("want the shipped list twice, the instance's pattern three times, the ceiling's three times and %d identity checks (%d), got %d", identityCalls, want, got)
+	// — and with a third over every line of the commit MESSAGE, so the one
+	// ceiling pattern configured above is stamped three times. Eight call
+	// sites now, not four.
+	identityCalls := 3 * len(testIdentity(t, pub))
+	if want, got := 2*len(OpsPatterns)+4+identityCalls+3, strings.Count(hook, "posse_check "); got != want {
+		t.Errorf("want the shipped list twice, the instance's pattern four times, the ceiling's three times and %d identity checks (%d), got %d", identityCalls, want, got)
 	}
 	if n := strings.Count(hook, "posse_check 'restricted-banner'"); n != 3 {
 		t.Errorf("the ceiling pattern must be stamped at exactly its three arms, got %d", n)
