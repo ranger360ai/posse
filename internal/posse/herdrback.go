@@ -185,6 +185,18 @@ type HerdrMeta struct {
 	// redirect, and what did it chain into" except the record.
 	HooksMode    string
 	ManagedHooks string
+
+	// Unreadable is the one field that is not IN the record: it is readMeta's
+	// verdict on the bytes, true when the file was there and carried no
+	// record at all. Never written, and false on a record built by hand — the
+	// default has to be "this is a record", because a literal is one.
+	//
+	// It exists because "no workspace recorded" and "read nothing at all"
+	// were one value, and only one of them means the session is gone
+	// (ranger-base-82e40). A reader that cannot tell them apart answers a
+	// live session's unreadable meta with `recipe` — which is deliberately
+	// not withheld — and the seat reads free.
+	Unreadable bool
 }
 
 // SocketID names the herdr server a session belongs to: the resolved path of
@@ -316,42 +328,80 @@ func genToken(file string, bound time.Time) string {
 
 func (b *HerdrBackend) metaDir() string { return filepath.Join(b.App.StateDir, "herdr") }
 
+// metaTempPattern names replaceMeta's half-written file. The meta dir is also
+// the session NAMESPACE — metaNames reads every `*.yaml` in it as a session —
+// so this must be a name no listing can mistake for one: dot-prefixed, and
+// with no `.yaml` suffix. A rename removes it on the ordinary path, so what
+// the rule is really for is the litter a kill or a power cut leaves between
+// the create and the rename: a name, once, is a phantom seat forever.
+const metaTempPattern = ".meta-*"
+
 func (b *HerdrBackend) metaPath(name string) string {
 	return filepath.Join(b.metaDir(), name+".yaml")
 }
 
+// readMeta reads one session record. The bool answers only "is there a file
+// here" — a name with no meta — and is deliberately unchanged: every caller
+// that reads it as "this home does not hold that session" (nameFree,
+// MarkCrew's foreign case, mustNotOrphan) is asking about the FILE.
+//
+// Whether the file carried a RECORD is a second question, and the record
+// answers it itself (HerdrMeta.Unreadable). The two are not the same, and
+// reading them as one is ranger-base-82e40: a file with nothing in it read as
+// a record with no workspace, which is a `recipe` — a session already gone.
+//
+// It is ONE read. Every field used to be its own YamlGet, and YamlGet opens
+// the file, so a record was 24 separate opens: with the atomic write above
+// each of them still sees a whole record, but not necessarily the SAME one,
+// so a meta rewritten mid-read could be assembled half from each. One read,
+// one record.
 func (b *HerdrBackend) readMeta(name string) (*HerdrMeta, bool) {
 	p := b.metaPath(name)
 	if _, err := os.Stat(p); err != nil {
 		return nil, false
 	}
+	// One read, and every field still names the reader it calls rather than
+	// a local helper wrapping it. A gate censuses who may declare an exact
+	// model by grepping this package for the reader's own name and the key
+	// beside it (ADR 0053 D5, exactmodel_qa_test.go); a `get` closure hid
+	// this file's one legitimate read from that scan, and the census went
+	// silent rather than red — MEASURED on this bead, and the same trap for
+	// any later gate written the same way.
+	lines := readLines(p)
 	return &HerdrMeta{
-		Name:         name,
-		Workspace:    YamlGet(p, "workspace"),
-		Pane:         YamlGet(p, "pane"),
-		Emoji:        YamlGet(p, "emoji"),
-		Envs:         YamlGet(p, "envs"),
-		Agent:        YamlGet(p, "agent"),
-		Runtime:      YamlGet(p, "runtime"),
-		Tier:         YamlGet(p, "tier"),
-		Model:        YamlGet(p, "model"),
-		Dir:          YamlGet(p, "dir"),
-		Repo:         YamlGet(p, "repo"),
-		Branch:       YamlGet(p, "branch"),
-		Cmd:          YamlGet(p, "cmd"),
-		Cage:         YamlGet(p, "cage"),
-		Sockets:      YamlGet(p, "sockets"),
-		Degraded:     YamlGet(p, "degraded"),
-		Fallback:     YamlGet(p, "fallback"),
-		TurnFailure:  YamlGet(p, "turn_failure"),
-		Bead:         YamlGet(p, "bead"),
-		HooksMode:    YamlGet(p, "hooks_mode"),
-		ManagedHooks: YamlGet(p, "managed_hooks"),
-		Crew:         YamlGet(p, "crew") == "true",
-		Socket:       YamlGet(p, "socket"),
-		Gen:          YamlGet(p, "gen"),
-		Launched:     parseLaunched(YamlGet(p, "launched")),
-		Prompted:     parseLaunched(YamlGet(p, "prompted")),
+		Name: name,
+		// writeMeta emits `name:` first and always, with a session name that
+		// is never empty, so bytes carrying no readable name are bytes that
+		// carry no record: an empty file, a file this pass may not read, or
+		// one truncated before its first line landed. Asked of the file's own
+		// field rather than of the argument above, which is where the name
+		// came from and would say "readable" about anything.
+		Unreadable:   yamlGetLines(lines, "name") == "",
+		Workspace:    yamlGetLines(lines, "workspace"),
+		Pane:         yamlGetLines(lines, "pane"),
+		Emoji:        yamlGetLines(lines, "emoji"),
+		Envs:         yamlGetLines(lines, "envs"),
+		Agent:        yamlGetLines(lines, "agent"),
+		Runtime:      yamlGetLines(lines, "runtime"),
+		Tier:         yamlGetLines(lines, "tier"),
+		Model:        yamlGetLines(lines, "model"),
+		Dir:          yamlGetLines(lines, "dir"),
+		Repo:         yamlGetLines(lines, "repo"),
+		Branch:       yamlGetLines(lines, "branch"),
+		Cmd:          yamlGetLines(lines, "cmd"),
+		Cage:         yamlGetLines(lines, "cage"),
+		Sockets:      yamlGetLines(lines, "sockets"),
+		Degraded:     yamlGetLines(lines, "degraded"),
+		Fallback:     yamlGetLines(lines, "fallback"),
+		TurnFailure:  yamlGetLines(lines, "turn_failure"),
+		Bead:         yamlGetLines(lines, "bead"),
+		HooksMode:    yamlGetLines(lines, "hooks_mode"),
+		ManagedHooks: yamlGetLines(lines, "managed_hooks"),
+		Crew:         yamlGetLines(lines, "crew") == "true",
+		Socket:       yamlGetLines(lines, "socket"),
+		Gen:          yamlGetLines(lines, "gen"),
+		Launched:     parseLaunched(yamlGetLines(lines, "launched")),
+		Prompted:     parseLaunched(yamlGetLines(lines, "prompted")),
 	}, true
 }
 
@@ -476,7 +526,59 @@ func (b *HerdrBackend) writeMeta(m *HerdrMeta) error {
 	if !m.Prompted.IsZero() {
 		fmt.Fprintf(&s, "prompted: %s\n", m.Prompted.UTC().Format(time.RFC3339Nano))
 	}
-	return os.WriteFile(b.metaPath(m.Name), []byte(s.String()), 0o644)
+	return b.replaceMeta(m.Name, s.String())
+}
+
+// replaceMeta puts the rendered record at the meta's path in one step, so no
+// reader can ever see a half-written one (ranger-base-82e40).
+//
+// This was os.WriteFile, which TRUNCATES and then writes. Every reader of
+// these files runs in another process and takes no lock — listSessions holds
+// none, and writeMeta is called on ordinary passes (backfillServer, NoteBead,
+// the Prompted stamp) and not only at a launch — so the truncate is a window
+// in which a LIVE session's meta reads as a record with no workspace. That is
+// not a harmless empty read: listSessions classifies a meta naming no
+// workspace as a `recipe`, a session already gone, and deliberately does not
+// withhold it, so personaActive finds the seat in neither the rows nor the
+// withheld list and reports it FREE. A fresh Run then seats a second bead
+// into the live session — ADR 0028 §3's occupancy and ADR 0022's single
+// writer defeated through a door ranger-base-5kiu4's fix does not cover.
+//
+// A rename is the whole fix and needs no lock: readers see either the old
+// record or the new one, never a state between them, and that holds for every
+// reader of these metas rather than for one path. The temp file is made in
+// the meta dir itself — a rename is only atomic within a filesystem — and is
+// dot-prefixed with no `.yaml` suffix so metaNames cannot mistake one for a
+// session name while it exists, and so a crash between create and rename
+// leaves litter rather than a phantom seat.
+func (b *HerdrBackend) replaceMeta(name, body string) error {
+	dir := b.metaDir()
+	f, err := os.CreateTemp(dir, metaTempPattern)
+	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	if _, err := f.WriteString(body); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	// CreateTemp opens at 0600; these records are world-readable like every
+	// meta written before this landed. They carry env-set NAMES and never
+	// values (see HerdrMeta.Envs), so the mode is continuity, not a grant.
+	if err := os.Chmod(tmp, 0o644); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, b.metaPath(name)); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return nil
 }
 
 // ─── the crew marker (ADR 0008) ───────────────────────────────────────────────
@@ -777,15 +879,29 @@ func (b *HerdrBackend) listSessions() ([]HerdrSession, []string, error) {
 	// (ADR 0011 §2, rangerhq-9nso).
 	sock, gen := SocketID(), ServerGen()
 	kept := 0
-	var withheld []string  // every meta the guards below left out, by name (metaNames order: os.ReadDir sorts)
-	var spared []string    // missing from the listing, but not proven dead — with why
-	var strangers []string // in the listing under an id another workspace now holds
-	var recipes []string   // metas naming no workspace: the session is gone, its recipe kept
+	var withheld []string   // every meta the guards below left out, by name (metaNames order: os.ReadDir sorts)
+	var spared []string     // missing from the listing, but not proven dead — with why
+	var strangers []string  // in the listing under an id another workspace now holds
+	var recipes []string    // metas naming no workspace: the session is gone, its recipe kept
+	var unreadable []string // files carrying no record at all: not gone, unanswerable
 	var out []HerdrSession
 	claimed := map[string]bool{} // workspace ids owned by a meta file
 	for _, name := range b.metaNames() {
 		m, ok := b.readMeta(name)
 		if !ok {
+			continue
+		}
+		// A file carrying no record at all is not a recipe. It reads like
+		// one — no workspace, nothing to prove dead — and that is exactly
+		// the trap: `recipe` is a positive claim that the session is GONE,
+		// and it is the one classification below that is not withheld, so
+		// making it about a live session hands its seat away
+		// (ranger-base-82e40). What can be said about these bytes is that
+		// this listing cannot answer for the name, which is what withheld
+		// means. The meta is kept, like every other withheld one.
+		if m.Unreadable {
+			unreadable = append(unreadable, name)
+			withheld = append(withheld, name)
 			continue
 		}
 		// A meta naming no workspace is not a session that might be alive
@@ -880,6 +996,11 @@ func (b *HerdrBackend) listSessions() ([]HerdrSession, []string, error) {
 		b.warn("posse: %d session meta file(s) kept, not listed: another workspace holds the id they recorded, so the name would address a stranger's pane (rangerhq-yt1p) — %s\n"+
 			"  repair by matching each meta's filename against the workspace `label` in `herdr workspace list --json` and rewriting workspace:/pane: to it (NOTES, handoff post-flight), or delete the meta in %s to discard the session\n",
 			len(strangers), strings.Join(strangers, "; "), b.metaDir())
+	}
+	if len(unreadable) > 0 {
+		b.warn("posse: %d session meta file(s) kept, not listed: the file is there and carries no record, so this listing cannot say whether the session is alive (ranger-base-82e40) — %s\n"+
+			"  a session whose meta reads like this holds its dispatch seat until the file is repaired or deleted in %s\n",
+			len(unreadable), strings.Join(unreadable, ", "), b.metaDir())
 	}
 	if len(recipes) > 0 {
 		b.warn("posse: %d session(s) closed without a replacement, recipe kept: %s — rebuild with `posse relaunch <name>`, or delete %s to discard\n",

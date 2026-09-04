@@ -3761,6 +3761,22 @@ func (d *Dispatcher) personaActive(persona, dir string) (string, string) {
 		if !ok { // read out from under us: nothing left to be busy about
 			continue
 		}
+		// A file with no record in it is not a recipe, and the distinction
+		// is this seat (ranger-base-82e40): "no workspace recorded" reads
+		// identically to "read nothing at all", and skipping on the second
+		// one frees a seat whose session may be perfectly alive. Held here
+		// as well as withheld in listSessions because the error path below
+		// takes its names straight off disk with no guard having filtered
+		// them, so this is the only place that reading is made.
+		//
+		// It holds ahead of the crew and agent filters below, and has to:
+		// those are facts read off the meta, and this is the meta that
+		// could not be read. So an unreadable crew meta freezes its lane
+		// until the file is repaired — the cost the listing's warn line
+		// names, and the right way round against two agents in one tree.
+		if m.Unreadable {
+			return name, held
+		}
 		// A meta naming no workspace is a recipe kept for `posse relaunch`,
 		// not a session that might be alive (rangerhq-v52t) — listSessions
 		// sorts those out before it withholds anything, so this is a no-op

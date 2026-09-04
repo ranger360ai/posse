@@ -10,6 +10,7 @@ package posse
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -195,54 +196,67 @@ func TestBackfillPreservesLaunchedAndKnownFields(t *testing.T) {
 	}
 }
 
-// mustRefuseWrites makes path unwritable and then PROVES it, because 0444 is
-// a promise about a uid and not about a file. Root carries CAP_DAC_OVERRIDE
-// and rewrites a 0444 file anyway. Measured 2026-08-29, alpine:3 on
-// overlayfs, as uid 0 and as uid 65534:
+// mustRefuseWrites makes the session meta at path unwritable and then PROVES
+// it, because a mode is a promise about a uid and not about a file. Root
+// carries CAP_DAC_OVERRIDE and writes wherever it likes.
+//
+// It fences the DIRECTORY, and that is ranger-base-82e40 rather than a taste:
+// writeMeta no longer opens the target and truncates it, it writes a temp
+// beside it and renames over the top, so the record is replaced whole and no
+// reader can see it half written. A rename asks the directory for permission
+// and never the file, so `chmod 0444` on the meta — what this staged until
+// that landed — stops nothing, and the arm below would have measured a
+// backfill it believed had failed. The comment this replaces said a read-only
+// parent "never guarded an existing file, which is the only kind writeMeta
+// targets": true of the old writer, and the create in the meta dir is exactly
+// what the new one needs permission for.
+//
+// The uid caveat is unchanged and is why the probe stays. Measured 2026-08-29,
+// alpine:3 on overlayfs, as uid 0 and as uid 65534:
 //
 //	                                       uid 0    uid 65534
 //	chmod 0444 f; printf y >> f            wrote    refused
 //	chmod 0555 d; : > d/new                wrote    refused
 //	chmod 0555 d; printf y >> d/existing   wrote    WROTE
 //
-// The third row is why a read-only PARENT directory is not the fix here: the
-// capability bypasses a directory's write bit too, and even unprivileged it
-// never guarded an existing file — which is the only kind writeMeta targets.
-// So a caller that only chmods is asserting the environment its author had.
-// Under a hand-rolled `docker run --rm -v "$PWD":/w -w /w golang:1.26 go
-// test ./...` the suite runs as uid 0, the backfill SUCCEEDS, and the arm
-// below reports a product defect that is not there — which is how
-// ranger-base-c00 was found, while rehearsing a release. The repo's own gate
-// is not that command: `make test-linux` runs the container as the invoking
-// user (scripts/test-linux.sh), CI and darwin are non-root too, and the arm
-// is honestly green in all three. It is the by-hand run that lies, and that
-// is the run a releaser reaches for.
+// The middle row is the one that governs now, and root defeats it. Under a
+// hand-rolled `docker run --rm -v "$PWD":/w -w /w golang:1.26 go test ./...`
+// the suite runs as uid 0, the write SUCCEEDS, and the arm below reports a
+// product defect that is not there — which is how ranger-base-c00 was found,
+// while rehearsing a release. The repo's own gate is not that command: `make
+// test-linux` runs the container as the invoking user (scripts/test-linux.sh),
+// CI and darwin are non-root too, and the arm is honestly green in all three.
+// It is the by-hand run that lies, and that is the run a releaser reaches for.
 //
-// Nothing in userspace makes a file readable and root-unwritable portably —
-// it takes an immutable flag or a read-only mount, neither of which a `go
-// test` may assume — and readable is not optional here: the meta has to
-// survive readMeta for the backfill to be attempted at all. When the
+// Nothing in userspace makes a directory listable and root-unwritable
+// portably — it takes an immutable flag or a read-only mount, neither of
+// which a `go test` may assume — and readable is not optional here: the meta
+// has to survive readMeta for the write to be attempted at all. When the
 // environment cannot pose the question, the honest report is that it did not
 // ask, not a red that names the wrong culprit. crew_test.go's unwritable-meta
-// arm is this same probe written inline, and costscan_root_qa_test.go guards
-// its unreadable arms on Geteuid; unify them deliberately, not by accident.
+// arm calls this rather than repeating it inline, which is the unification
+// the note here used to ask for.
 func mustRefuseWrites(t *testing.T, path string) {
 	t.Helper()
-	if err := os.Chmod(path, 0o444); err != nil {
+	dir := filepath.Dir(path)
+	if err := os.Chmod(dir, 0o555); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { os.Chmod(path, 0o644) })
-	// O_WRONLY alone: the same permission check os.WriteFile's
-	// O_WRONLY|O_CREATE|O_TRUNC makes, without the truncation, so a probe
-	// that finds the file writable has not damaged it.
-	f, err := os.OpenFile(path, os.O_WRONLY, 0)
+	// Ahead of any cleanup t.TempDir registered, so the tree can be removed:
+	// cleanups run last-registered-first, and this dir is inside it.
+	t.Cleanup(func() { os.Chmod(dir, 0o755) })
+	// The same call the writer makes, and the same permission check: a probe
+	// that finds the directory writable has damaged nothing.
+	f, err := os.CreateTemp(dir, ".write-probe-*")
 	if err == nil {
+		name := f.Name()
 		f.Close()
-		t.Skipf("uid %d can write %s at mode 0444 — root with CAP_DAC_OVERRIDE, "+
-			"or a filesystem that ignores the bit. A backfill write that fails "+
+		os.Remove(name)
+		t.Skipf("uid %d can create files in %s at mode 0555 — root with CAP_DAC_OVERRIDE, "+
+			"or a filesystem that ignores the bit. A meta write that fails "+
 			"cannot be staged here, so the arm below would measure the "+
 			"environment and not the promise (ranger-base-c00). Run the suite "+
-			"as an unprivileged uid to exercise it.", os.Getuid(), path)
+			"as an unprivileged uid to exercise it.", os.Getuid(), dir)
 	}
 }
 

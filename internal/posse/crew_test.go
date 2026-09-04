@@ -139,17 +139,19 @@ func TestCrewMarkMissedIsReported(t *testing.T) {
 
 	// A meta that will not take the write is missed too, and says which of
 	// the two it is: "no session meta" would be a lie here.
+	//
+	// Staged through mustRefuseWrites rather than by chmodding the meta,
+	// which is what this did until ranger-base-82e40: writeMeta renames a
+	// temp over the record now, and a rename asks the DIRECTORY, so a 0444
+	// file takes the write like any other and the arm below would have
+	// asserted a missed mark that was not missed. The helper carries the
+	// uid caveat both arms need — it skips rather than lying when the
+	// process can write anyway.
 	if os.Geteuid() == 0 {
 		t.Log("running as root: the unwritable-meta arm cannot be built, skipping it")
 	} else {
 		mustCreate(t, b, NewSessionOpts{Name: "readonly"})
-		if err := os.Chmod(b.metaPath("readonly"), 0o444); err != nil {
-			t.Fatal(err)
-		}
-		if f, err := os.OpenFile(b.metaPath("readonly"), os.O_WRONLY, 0); err == nil {
-			f.Close()
-			t.Skip("this filesystem ignores the read-only bit: the write cannot be made to fail")
-		}
+		mustRefuseWrites(t, b.metaPath("readonly"))
 		missed := b.MarkCrew("readonly")
 		if !strings.Contains(missed, "readonly") || !strings.Contains(missed, "NOT recorded") {
 			t.Errorf("an unwritable meta must be reported missed: %q", missed)
