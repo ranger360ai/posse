@@ -42,6 +42,37 @@ departing overlay files, and writes nothing.
 
 ### Added
 
+**A watch pass now says when the launcher binary running it is behind its
+own repo, and `posse status` answers the same question on demand.**
+
+A stale launcher does not fail. It dispatches, merges back and files beads
+exactly as designed — it just does so with the defects its own repo fixed
+hours ago, and the beads it files are indistinguishable from real ones.
+`git log` shows nothing, because `main` is perfect; it is the binary that is
+behind. On 2026-09-04 a build sat at eight hours and 34 commits behind, two
+of which each independently stop one merge-back block from being re-filed,
+and the block was filed a fourth time 77 minutes after the second of them
+landed — costing a dispatched seat a whole session re-deriving a verdict
+that two commits on `main` already held.
+
+The reading is the running binary's own build stamp counted against the
+branch of the checkout it came out of, which the stamp itself picks out of
+the repos this instance knows about; nothing a session worktree holds can
+move it. `posse status` prints it every time, including "not counted" and
+why. The watch loop prints it only when it is behind, and then on a doubling
+cadence — at 1, 2, 4, 8, 16, 32 commits — so a fleet falling further behind
+gets louder while a fleet standing still goes quiet.
+
+It is deliberately in the PASS and not in the loop preamble beside the
+binary's identity: a launcher is built from the tip and the loop is started
+right after, so a start-of-loop reading speaks at the one moment the number
+is always zero (measured at 0 on both of that day's installs). The gap is
+created entirely afterwards, under a loop that cannot change its own binary.
+
+A reading, never a control: it prints, it warns, it decides nothing, and it
+does not move `posse status`'s exit code. Installing over a binary that is
+dispatching a live fleet stays the operator's move.
+
 **The commit hook now refuses a sha in `docs/adr/` that is not on your main
 checkout's branch, and prints the token.**
 

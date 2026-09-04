@@ -859,6 +859,23 @@ func main() {
 		// Printed always, warned only on a disagreement — a box legitimately
 		// runs a posse that is not first on PATH.
 		posse.ReportPosseBinary(out)
+		// …and how far behind its own repo that binary is
+		// (ranger-base-z3hx6). The line above says WHICH posse is
+		// answering; this one says whether the answer is current. A stale
+		// launcher does not fail — it dispatches, merges back and files
+		// beads exactly as designed, with the defects its own repo fixed
+		// hours ago, and on 2026-09-04 an eight-hour install lag cost four
+		// seats re-deriving a verdict two landed commits already held.
+		// Printed in every case, including "cannot be counted": an operator
+		// who typed a command is owed a sentence, and an abstention
+		// rendered as silence reads as an all-clear.
+		//
+		// A reading, not a condition: it does not join the governance set
+		// below and does not move this command's exit code. Only the
+		// operator can install over a binary that is dispatching a live
+		// fleet (guardrail 3), so this is the signal and not the remedy —
+		// possebinary.go's rule, one line down from where it is stated.
+		fmt.Fprintln(out, a.Launcher().Line())
 		set, failed := posse.ShopCheck(posse.StatusInputs(a, hb, os.Stderr))
 		fmt.Fprintf(out, "shop check · %s · %s\n", posse.GovSummary(set), posse.AbbrevHome(a.Home))
 		// The shop pulse, on the header and in place of any raw open count

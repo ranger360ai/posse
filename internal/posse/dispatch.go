@@ -96,6 +96,17 @@ type Dispatcher struct {
 	// (ADR 0016 §3) — the subscription DIALS, where every other herdr read
 	// in the suite goes through the fake CLI.
 	Hints func(ctx context.Context, report func(string)) <-chan HerdrHint
+	// Lag is the launcher-lag reading Watch resolves once and re-counts
+	// every pass (ranger-base-z3hx6, launcherlag.go). nil = ask this
+	// instance, which is what a real loop does.
+	//
+	// A seam and not a package var, on the runningPosse rule: the reading
+	// keys off VersionString(), a TEST binary carries no vcs stamp at all
+	// (cagestale.go's header), and every test in this package would
+	// therefore see the same "+dev" abstention. Handing the resolution in
+	// lets a pin drive the loop with a real repo and a real stamp without
+	// any test mutating state the parallel suite shares.
+	Lag func() LauncherLag
 
 	DryRun        bool
 	Resume        bool          // re-prompt in_progress beads even when the holder's session is alive and idle

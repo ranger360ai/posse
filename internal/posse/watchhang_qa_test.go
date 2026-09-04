@@ -850,6 +850,7 @@ func TestQAWatchStreamWritesGoThroughTheDispatcher(t *testing.T) {
 		{"watch.go", `"backup: %v — the backup clock is disarmed for this loop`, "config error, before the backup clock starts"},
 		{"watch.go", "LaunchCapLine(max, d.App.DispatchEpoch(d.errw()))", "launch ration header, said once at the top of the log"},
 		{"watch.go", "ReportPosseBinary(d.Out)", "which binary this loop is, said once"},
+		{"watch.go", "fmt.Fprintln(d.Out, lag.Line())", "the launcher-lag ABSTENTION, said once in the header; the number itself goes through d.println in the pass"},
 		{"watch.go", `d.App.ReportHookWall(d.Out, "watch")`, "L3 hook wall, swept once"},
 		{"watch.go", "d.App.PlanUsageStaleAfter(d.errw())", "the stale-after TYPO line, said once"},
 		{"watch.go", `"warning: cannot record the watch loop at %s`, "stampWatchPid, called from the header at Watch's head"},

@@ -267,6 +267,26 @@ func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string,
 	// this; the whole value is that a log an operator reads back over ten
 	// hours names the binary that wrote it.
 	ReportPosseBinary(d.Out)
+	// …and how far behind its own repo that binary is, resolved once here
+	// and COUNTED every pass below (ranger-base-z3hx6, launcherlag.go). The
+	// resolution belongs up here with the other once-per-loop readings for
+	// their reason — a loop IS a binary somebody just started, and which
+	// checkout it came out of cannot change under it. The number is the
+	// half that can: main moved 34 commits under a binary that was its tip
+	// when this line printed, and every one of them was a fix the fleet was
+	// not getting. An abstention is said HERE and once: a reading that
+	// cannot be taken must not render as silence, which is what an
+	// all-clear looks like.
+	readLag := d.Lag
+	if readLag == nil {
+		readLag = d.App.Launcher
+	}
+	lag := readLag()
+	lagWhySaid := lag.Why
+	if !lag.Known() {
+		fmt.Fprintln(d.Out, lag.Line())
+	}
+	var lagSaid lagDrumbeat
 	// The L3 wall across every repo config declares, swept once, here
 	// (ranger-base-ixv4). Once and not per pass on purpose: the hook bodies
 	// are compiled into the binary, so the answer can only change when the
@@ -368,6 +388,28 @@ func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string,
 		// above, said once.
 		if st := d.App.PlanStaleness("watch", d.now(), io.Discard); st.Stale {
 			d.println(st.Line())
+		}
+		// Whether the binary running this pass is behind the repo it was
+		// built from (ranger-base-z3hx6). In the pass and not the preamble
+		// because the preamble already ran: the gap is created AFTER the
+		// install, and both times it was measured the count at install time
+		// was 0. One `git rev-list --count` in one repo — unlike the hook
+		// wall above, this answer moves without the binary moving, which is
+		// exactly the defect, so it is the one reading here that has to be
+		// re-taken rather than cached. Said on a doubling cadence
+		// (lagDrumbeat), so a fleet falling further behind gets louder and a
+		// fleet standing still goes quiet.
+		if lag = lag.Count(); lag.Known() {
+			if lagSaid.say(lag.Behind) {
+				d.println(lag.BehindLine())
+			}
+		} else if lag.Why != lagWhySaid {
+			// The reading STOPPED being takeable mid-loop — the checkout
+			// moved or went away. Said once per reason, on the preamble's
+			// rule: an instrument that quietly stopped reads exactly like a
+			// fleet that is up to date.
+			lagWhySaid = lag.Why
+			d.println(lag.Line())
 		}
 		n, err := d.Run(dirFilter, personaFilter, max)
 		if err != nil {
