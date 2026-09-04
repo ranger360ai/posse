@@ -37,7 +37,16 @@ half unlanded on the day it was written. Tense fixed, the one
 contradiction resolved toward D5, and the landings recorded
 (ranger-base-4poib 36e8584, ranger-base-ddivo 58ac284). No decision
 moved: every rejection, every parked shape and the do-nothing decision
-stand exactly as ranger-base-z089h left them.*
+stand exactly as ranger-base-z089h left them. Corrected 2026-09-04
+(ranger-base-vfx8g, from the verify bundle ranger-base-v4zlr): all
+three of this page's "open" citations named a bead that had closed.
+V1b and D2's ASSUMED half called ranger-base-au0o4 the open holder of
+the credentials-file 200 probe — it closed 2026-09-02 without
+answering it, and nothing has held that probe since; D2's MEASURED
+half called ranger-base-wd4be open after it landed. V1b now states the
+probe is UNHELD, why the three beads that touched it did not answer
+it, and what the unbounded built-but-unconfirmed state costs D2's
+non-darwin adapter. No decision moved.*
 
 ## Context
 
@@ -355,15 +364,19 @@ now measured and the other is not:
   envelope with `accessToken` and seven siblings there — the same
   envelope the darwin keychain item holds, so one parser covers both.
   The directory follows the runtime's config-dir variables, not the
-  home directory by definition (ranger-base-wd4be, open).
+  home directory by definition (ranger-base-wd4be, landed 2026-09-02
+  as d309e2b).
 - ASSUMED, probe before trusting: that token returns 200 on the usage
   endpoint. An artifact cannot answer liveness; this needs a real
   login, and because the envelope is measured identical on both
   platforms it needs a credentials-file token from *any* box, not a
-  Debian clean room. Held by ranger-base-au0o4 (open, operator-extended
-  2026-09-01 to cover exactly this token against that endpoint). If the
-  probe fails, the adapter's honest error still beats today's
-  "keychain unreadable" — and the guard-off path in D3 catches it.
+  Debian clean room. UNHELD as of 2026-09-04: ranger-base-au0o4 was
+  operator-extended 2026-09-01 to cover exactly this token against
+  that endpoint, closed 2026-09-02 without answering it, and no bead
+  has taken it since — the standing account, and what the gap costs,
+  are in V1b. If the probe is ever taken and fails, the adapter's
+  honest error still beats today's "keychain unreadable" — and the
+  guard-off path in D3 catches it.
 
 The instance ADR reserved this probe when it rejected the file *on
 macOS*; the darwin rule as measured is the composite above.
@@ -879,11 +892,32 @@ design puts more weight on files. What is actually traded:
     actually does".
   - V1b (probe, any box holding a credentials-file token — not Debian,
     not a container): that token returns 200 on the usage endpoint. An
-    artifact cannot answer liveness. Held by ranger-base-au0o4 (open,
-    operator-extended 2026-09-01). Until it lands, D2's non-darwin
-    adapter is built-but-unconfirmed and `meterUnconfirmed` says so in
-    its error text; that wording stays true until the 200 is on the
-    bead.
+    artifact cannot answer liveness. UNHELD, and said so here
+    2026-09-04 (ranger-base-vfx8g, from ranger-base-v4zlr): no bead
+    holds this probe, and no seat on this box can take it. What the
+    three beads that touched it actually did: ranger-base-au0o4 held
+    it, operator-extended 2026-09-01 to cover exactly this token
+    against that endpoint, and closed 2026-09-02 without it — the
+    endpoint answered 429, and so did a control request carrying no
+    Authorization header at all, so those codes were about the source
+    and said nothing about any credential. ranger-base-dvxac, its
+    re-ask after the window, closed the same day and also without a
+    code for this token. ranger-base-hs0dl (closed 2026-09-04)
+    measured a *different* credential — the env-set session mint the
+    Context section names, 429 on both runs with the keychain token
+    reading 200 in the same minute — which settles ranger-base-wkai3
+    option B, not this. And the file is absent on
+    this box (ranger-base-ydjz, ranger-base-au0o4), so nothing here
+    can present the token V1b names: taking it needs a box that holds
+    one, and repointing this line at a bead that cannot run on the box
+    it is filed against is how it went stale the first time. WHAT THAT
+    COSTS: D2's non-darwin adapter stays built-but-unconfirmed with no
+    dated end to that state. `meterUnconfirmed`
+    (`internal/posse/credential.go`) says exactly that in its error
+    text, and it is now the only thing carrying the gap to a user — so
+    that wording does not come out until a code, 200 or not, is
+    measured from a credentials-file token and the bead that measured
+    it is named here.
 - V2 (unit): a non-darwin build never execs `security` — the GOOS
   switch is total, and no non-darwin error string contains "keychain".
 - V3 (unit): `NoSource` renders as guard-off/unconfigured in the
