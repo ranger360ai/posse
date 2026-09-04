@@ -82,6 +82,15 @@ func TestQADrainEndsAWatchLoopWaitingOnASession(t *testing.T) {
 	// inside the pass — proof that the 120s leg really does hold it, and
 	// that the arm above measured the cancel and not the fixture running out
 	// of work. A false failure here needs the leg to end 60x early.
+	//
+	// What holds it is the fixture's own gather window (drainFixture), since
+	// ranger-base-3ryit: a production loop bounds its gather at the base
+	// interval and CARRIES a leg like this one into the next pass, so
+	// "the pass has not returned" stopped being a reading of the leg. The
+	// window is set an hour wide here to keep this arm measuring exactly what
+	// it always measured — a drain that has to interrupt a gather, which is
+	// the shape SIGKILL was needed for. The carried shape has its own drain
+	// pin (passcarry_qa_test.go).
 	t.Run("left alone, the loop stays in the pass", func(t *testing.T) {
 		out, done, _ := drainFixture(t)
 
@@ -129,6 +138,12 @@ func drainFixture(t *testing.T) (out *syncBuf, done <-chan int, cancel context.C
 	agentPerLaunch(t, fake)
 	qaRepo(t, b.App, `[{"id":"a-1","title":"t","labels":["go"]}]`, "")
 	os.WriteFile(filepath.Join(fake, "prompt-delay-ms"), []byte(drainLegMS), 0o644)
+	// The gather window, wide (ranger-base-3ryit): Watch would otherwise set
+	// it to this fixture's 20ms base interval, carry the leg and come round
+	// — and then neither arm below would be about a gather at all. An hour is
+	// two orders of magnitude past every window either arm asserts in, the
+	// same margin drainLegMS keeps against the leg.
+	d.GatherWindow = time.Hour
 
 	ctx, cancel := context.WithCancel(context.Background())
 	passes := make(chan int, 1)

@@ -3,6 +3,9 @@
 *Status: accepted 2026-08-27 (spike + decision on ranger-base-cpo9, crew
 session with the operator) · owner: richard · amends 0011 (kept-list) and
 0020 §5 · implements 0016 · supersedes the design ask on ranger-base-l8u7 ·
+amended 2026-09-04 (§1 the Run is long-lived, the PASS is bounded: the
+gather has a window and carries what is still in flight —
+ranger-base-3ryit) ·
 amended 2026-09-02 (§2 a constitution refusal is not an attempt —
 ranger-base-39jnl) ·
 amended 2026-08-28 (§1 the refill re-offers every free seat and the settle
@@ -70,7 +73,32 @@ with ready beads in their lanes sat out seven hours. With the refill
 running the whole fire path, each settle sweeps everything the tick would
 have, so a lost settle costs latency only until the next settle or the
 Run's return — the original guarantee, restored by moving the tick onto an
-event that still happens. The reap sweep rides the same event for the same
+event that still happens.
+
+*(amended 2026-09-04, ranger-base-3ryit — as built)* **The Run is long-lived;
+the PASS is bounded.** "Long-lived" was built as "returns when the in-flight
+set drains", and that set is fed by the very refill this section adds: every
+settle launches, every launch joins the set, and on a shop busy enough to keep
+refilling it never empties. MEASURED 2026-09-04: pass 1 held "4 prompt(s) in
+flight, gathering" for 2h20m while refills kept landing work — the merge-back
+sweep, the hook wall, the backup and guard tickers, the plan read, the epoch
+accounting and any offer of ready work to a seat that freed with **no settle**
+behind it did not run at all, and nothing said so; a P1 the operator asked for
+by name sat ready and unhired for an hour with its seat empty. A pass whose
+duties are time-based may not be gated on session-shaped waits. So the gather
+takes a window (the loop's base interval): legs that land inside it are judged
+and refill exactly as above, and legs still outstanding are **carried** — the
+wait goroutines and their fan-in belong to the loop, not to the pass, so the
+next pass takes them back, nothing is judged twice and nothing is dropped. The
+busy map and the per-slot failure count are carried with them, because a
+carried leg's seat is still occupied (§3). The cost is bounded and named: a
+settle landing after the window is judged up to one interval later, which is
+the latency 0016's hint exists to remove and which this ADR already prices as
+latency, never correctness. And the loop gains the reading that was missing — a
+pass that has not completed inside a budget derived from that window is a
+finding, said once, naming the set holding it (watchdog.go).
+
+The reap sweep rides the same event for the same
 reason: it fired at "pass start", which a long-lived Run re-denominates
 into "process start" (26 done-sessions piled up in a day); it now runs at
 every settle — the event that makes a per-bead session sweepable — with

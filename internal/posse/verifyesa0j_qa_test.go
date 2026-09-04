@@ -140,8 +140,8 @@ func TestQAShimsRelaunchRetypesTheGatePrefix(t *testing.T) {
 //
 // MUTATIONS RUN: add a second `d.Refill = true` in dispatch.go → census reds;
 // move `d.refire(` behind a second call site → census reds; delete the
-// `d.stopping()` continue in Run's gather
-// loop → the behavioural arm reds.
+// `d.stopping()` early return in the gather's judge (passcarry.go) → the
+// behavioural arm reds.
 func TestQAOneThrottleOnlyWatchArmsTheRefill(t *testing.T) {
 	t.Parallel()
 	// Every non-test .go file in this package, as bytes. `go test` runs
@@ -188,23 +188,31 @@ func TestQAOneThrottleOnlyWatchArmsTheRefill(t *testing.T) {
 			callers = append(callers, f.name)
 		}
 	}
-	if len(callers) != 1 || callers[0] != "dispatch.go" {
-		t.Errorf("ADR 0028 §4: refire has exactly one caller, inside Run — found %v", callers)
+	// passcarry.go since ranger-base-3ryit: the gather that owns this call
+	// moved out of Run with the carry, and `judge` is reached from nowhere
+	// but Run's own gather round. The invariant is unchanged and so is
+	// everything below it — one caller, behind the Refill gate, in the same
+	// function, on the pass's own goroutine.
+	if len(callers) != 1 || callers[0] != "passcarry.go" {
+		t.Fatalf("ADR 0028 §4: refire has exactly one caller, in the pass's own gather — found %v", callers)
 	}
 	// …and that one call site is behind the Refill gate, in the same
 	// function. A refire reachable with Refill unset is a one-shot pass that
 	// refills, which is the invariant read backwards.
-	disp := ""
+	held := ""
 	for _, f := range src {
-		if f.name == "dispatch.go" {
-			disp = f.body
+		if f.name == callers[0] {
+			held = f.body
 		}
 	}
-	at := strings.Index(disp, "d.refire(")
-	gate := strings.LastIndex(disp[:at], "if !d.Refill {")
-	fn := strings.LastIndex(disp[:at], "\nfunc ")
-	if at < 0 || gate < 0 || gate < fn {
-		t.Errorf("the refire call must sit behind `if !d.Refill { continue }` in the same function (refire@%d gate@%d func@%d)", at, gate, fn)
+	at := strings.Index(held, "d.refire(")
+	if at < 0 {
+		t.Fatalf("fixture: %s was censused for the call and does not contain it", callers[0])
+	}
+	gate := strings.LastIndex(held[:at], "if !d.Refill {")
+	fn := strings.LastIndex(held[:at], "\nfunc ")
+	if gate < 0 || gate < fn {
+		t.Errorf("the refire call must sit behind `if !d.Refill {` in the same function (refire@%d gate@%d func@%d)", at, gate, fn)
 	}
 }
 

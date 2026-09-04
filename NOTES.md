@@ -367,8 +367,26 @@ of the harness core:
    map (ADR 0028 §3: seats this `Run` fired into, released at their
    settle; what a fire pass merely *reads* about a seat expires with that
    pass) — so a `Run` under `--watch` keeps refilling for as long as there
-   is ready work for any free seat, and only returns once the cascade
-   quiets. A one-shot
+   is ready work for any free seat.
+   **The gather is bounded, and what is still in flight is carried**
+   (ranger-base-3ryit, `internal/posse/passcarry.go`). "Only returns once
+   the cascade quiets" is what this used to say and it was the defect: every
+   refill's own prompt joins the set the pass is draining, so on a busy shop
+   the set is fed faster than it empties and the pass never comes round —
+   MEASURED 2026-09-04, 2h20m of `4 prompt(s) in flight, gathering` with no
+   pass summary, while the merge-back sweep, the hook wall, the backup and
+   guard tickers, the plan read, the epoch accounting and **any offer of
+   ready work to a seat that freed with no settle behind it** simply did not
+   run, and nothing said so. A pass now gathers for `GatherWindow` (the
+   loop's base interval), judges what landed, and returns; legs still
+   outstanding stay in flight and the next pass takes them back — the wait
+   goroutines and their fan-in belong to the loop, not the pass, so nothing
+   is judged twice or dropped. The occupancy map is carried with them
+   (a carried leg's seat is still occupied), a pass that carries anything
+   says so in one line naming the beads and their sessions, and the silence
+   watchdog gained a second reading: no completed pass inside its budget is
+   a finding, said once, naming the set holding it (`watchdog.go`).
+   A one-shot
    `dispatch` (no `--watch`) never sets `Refill` and never refires: it
    fires once, gathers, and returns, exactly as before this ADR. `--watch`
    also wakes the next pass on a herdr settle hint instead of waiting out

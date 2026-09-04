@@ -6,13 +6,23 @@ package posse
 // in cmd/posse — ends the loop.
 //
 // "Between passes" is what that used to mean, and under a rolling Run (ADR
-// 0028 §1) it stopped being a bound at all: the Run does not return while a
-// bead is in flight, and a wait leg is fifteen minutes with a ladder above
+// 0028 §1) it stopped being a bound at all: the Run did not return while a
+// bead was in flight, and a wait leg is fifteen minutes with a ladder above
 // it that runs for four hours. So the stop reaches the gather too
 // (ranger-base-e9d9): a leg already landed is judged, one still in flight is
 // abandoned with its claim KEPT, and the loop exits. Nothing is unclaimed
 // and nothing is killed — a persona mid-turn keeps working, and the next
 // loop finds its bead held, not free.
+//
+// A pass is bounded again (ranger-base-3ryit, passcarry.go): it gathers for
+// GatherWindow and RETURNS, carrying whatever is still in flight into the
+// next pass. It had to be — every settle-driven refill fed the set the pass
+// was draining, so on a busy shop the set never emptied and 2h20m went by
+// with no pass at all, the sweep and the tickers and every seat that freed
+// without a settle silently not running. The stop still reaches the gather
+// for the case above, and now also joins what a pass was carrying
+// (drainCarried), which is where the same "claim kept" line comes from once
+// the pass that fired the leg has already returned.
 //
 // The loop is also where the readings that must not depend on a pass live.
 // Three clocks start with it and are joined by it — the pulse (ADR 0027), the
@@ -118,11 +128,35 @@ func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string,
 	// (stopCtx's own doc names both readers).
 	d.Refill = true
 	d.stopCtx = ctx
+	// And the bound on how long one pass may gather before it lets this loop
+	// come round (ranger-base-3ryit, passcarry.go): the base interval, which
+	// is the cadence every duty that lives in the pass — the sweep, the
+	// tickers, the plan read, the epoch accounting, and an offer of ready
+	// work to a seat that freed with no settle to hang a refill on — was
+	// always promised. Legs still in flight when it closes are carried to the
+	// next pass, not abandoned.
+	//
+	// The loop's default, not its law: a caller that set its own window keeps
+	// it, which is how the two fixtures that need a pass held open across a
+	// live leg (drain_qa_test.go, guardclock_qa_test.go) still measure what
+	// they were cut to measure.
+	if d.GatherWindow <= 0 {
+		d.GatherWindow = base
+	}
 	// Identity, not liveness: which pid, since when, under what argv. The
 	// lock above is what anything asking "is the loop running?" tests
 	// (rangerhq-gir5); this is what it quotes once the answer is yes.
 	defer d.dropWatchPid()
 	d.stampWatchPid()
+	// The join for the legs a stopping loop is CARRYING (drainCarried,
+	// ranger-base-3ryit). Registered after the pid record's defer and before
+	// every clock's, so LIFO puts it exactly where it belongs: the clocks are
+	// joined first, then the abandoned legs report their "claim kept" —
+	// which is the drain's own observable (ranger-base-e9d9) and belongs in
+	// this loop's log — and only then do the pid record and the lock say the
+	// loop is gone. Before the carry this join was the gather loop's own: a
+	// Run counted every leg it fired back down to zero before it returned.
+	defer d.drainCarried()
 	// The pulse (ADR 0027 §1-2, rangerhq-4ish): a shop-check ticker that
 	// starts with this loop and dies with it. Disarmed (no pulse_interval:
 	// in config) starts nothing; a config error disarms this run rather
@@ -288,6 +322,10 @@ func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string,
 	// Seeded before it starts so its first tick measures from the loop's
 	// start: the header lines above write d.Out directly and stamp nothing.
 	d.noteWrite()
+	// And the same seeding for its second reading, the pass clock
+	// (ranger-base-3ryit): a loop that has not completed a pass yet is
+	// measured from its start, not from a zero.
+	d.notePass()
 	dogCtx, dogCancel := context.WithCancel(ctx)
 	dogDone := make(chan struct{})
 	defer func() {
@@ -296,7 +334,7 @@ func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string,
 	}()
 	go func() {
 		defer close(dogDone)
-		d.watchdogLoop(dogCtx, base, watchdogBudget(maxInterval, d.PromptWaitMS))
+		d.watchdogLoop(dogCtx, base, watchdogBudget(maxInterval, d.PromptWaitMS), watchdogPassBudget(maxInterval, base))
 	}()
 	passes := 0
 	wait := base
@@ -328,6 +366,12 @@ func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string,
 		if err != nil {
 			d.printf("✗ pass failed: %v\n", err)
 		}
+		// The pass came round (ranger-base-3ryit). Stamped here rather than
+		// inside Run because a pass that FAILED still completed — it is the
+		// pass not returning at all that this clock is a reading of, and a
+		// loop reporting a failed pass every interval is not the silence the
+		// watchdog is looking for.
+		d.notePass()
 		if ctx.Err() != nil {
 			return passes, nil
 		}
@@ -338,7 +382,15 @@ func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string,
 		case refresh <- struct{}{}:
 		default:
 		}
-		wait = NextInterval(wait, base, maxInterval, n)
+		// A pass that carried prompts is not a quiet pass (ranger-base-3ryit).
+		// The backoff's question is "did this loop have anything to do?", and
+		// before the carry the answer could only be read off the beads this
+		// pass judged, because a pass with work outstanding never returned to
+		// be asked. It returns now, with n=0 and four agents mid-turn, and
+		// doubling the interval over that would back the shop off exactly
+		// when its seats are about to come free.
+		held := d.inFlightCount()
+		wait = NextInterval(wait, base, maxInterval, n+held)
 		d.printf("   %d dispatched · next pass in %s (ctrl-c to stop)\n", n, wait.Round(time.Second))
 		// One timer per pass; a hint cuts it short instead of waiting it
 		// out (ADR 0028 §1) — the next pass's own fireLoop re-verifies
@@ -349,6 +401,16 @@ func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string,
 			case <-ctx.Done():
 				timer.Stop()
 				return passes, nil
+			case <-d.settled():
+				// A leg this loop was CARRYING has landed
+				// (ranger-base-3ryit): its bead is judged and its seat
+				// refilled by a pass, so take the next one now. Same
+				// trigger as the herdr hint below and strictly more
+				// reliable — it is this process's own channel, not an
+				// event socket — and it is what keeps the carry from
+				// costing a settle up to one interval.
+				timer.Stop()
+				tick = true
 			case h, ok := <-hints:
 				if !ok {
 					// The subscriber is gone for good (ctx ended, or it

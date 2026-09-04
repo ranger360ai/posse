@@ -273,6 +273,12 @@ func guardClockFixture(t *testing.T, cfg string) *guardRig {
 		t.Fatalf("config: %v", err)
 	}
 	os.WriteFile(filepath.Join(fake, "prompt-delay-ms"), []byte(drainLegMS), 0o644)
+	// The gather window, wide, for drainFixture's reason (ranger-base-3ryit):
+	// since the gather is bounded per pass, a loop left to its own window
+	// would carry this leg and come round — and stillGathering below, which
+	// is what makes every assertion here about the CLOCK rather than about a
+	// second pass, needs the pass genuinely held.
+	d.GatherWindow = time.Hour
 
 	ctx, cancel := context.WithCancel(context.Background())
 	loop := make(chan struct{})

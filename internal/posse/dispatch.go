@@ -142,6 +142,16 @@ type Dispatcher struct {
 	// one-shot Run (cmd/posse's `dispatch`, every direct test call) never
 	// sets this and never refires.
 	Refill bool
+	// GatherWindow bounds how long one pass waits on the prompts it is
+	// gathering before it returns and lets the loop come round
+	// (ranger-base-3ryit, passcarry.go). Watch sets it to the loop's base
+	// interval; legs still outstanding when it closes are CARRIED — the next
+	// pass takes them back at the head of its own gather, nothing is judged
+	// twice and nothing is dropped. Read only when Refill is set: a one-shot
+	// Run has no next pass to carry anything into and gathers to zero, as it
+	// always did. Zero on a Refill Run means DefaultGatherWindow, so
+	// "rolling" can never again mean "unbounded".
+	GatherWindow time.Duration
 	// stopCtx is the watch loop's own context — the one SIGTERM and SIGINT
 	// end (cmd/posse: signal.NotifyContext). Watch sets it; a one-shot Run
 	// leaves it nil, and nil means "no loop to stop", never "stopped".
@@ -164,6 +174,23 @@ type Dispatcher struct {
 
 	mu         sync.Mutex
 	lastPrompt map[string]time.Time // session → when this process last prompted it
+
+	// The in-flight set and everything whose lifetime is the set's, not the
+	// pass's (ranger-base-3ryit, passcarry.go — its head is the whole story).
+	// inflight is the prompts this loop is still waiting on, results the one
+	// fan-in every wait goroutine writes to for the life of the loop, and
+	// busySeats/seatFail the two maps a carried leg's seat must stay held in.
+	// All four are the pass goroutine's to mutate; the watchdog reads
+	// inflight, and lastPass, through mu.
+	inflight  []*pendingBead
+	results   chan gathered
+	wake      chan struct{}
+	busySeats map[string]string
+	seatFail  map[string]int
+	// lastPass is when a pass last COMPLETED, and passStallSaid keeps the
+	// watchdog's finding about it to one line per stall (watchdog.go).
+	lastPass      time.Time
+	passStallSaid bool
 
 	// lastWrite is when this Dispatcher last wrote a line, guarded by outMu
 	// because every writer already holds it. See LastWrite and watchdog.go.
@@ -380,10 +407,14 @@ func (d *Dispatcher) println(a ...any) {
 }
 
 // LastWrite is when this Dispatcher last wrote a line through the three
-// above, zero if it never has. It is the watchdog's ONLY input
-// (watchdog.go): under a rolling Run a pass is not a heartbeat, but a
-// healthy loop — gathering or idle — is never quiet for long, and "the log
-// stopped" is the observable the operator used to find ranger-base-wj7e9.
+// above, zero if it never has. It is the watchdog's SILENCE input
+// (watchdog.go): a healthy loop — gathering or idle — is never quiet for
+// long, and "the log stopped" is the observable the operator used to find
+// ranger-base-wj7e9. It was that watchdog's only input until
+// ranger-base-3ryit made the pass a heartbeat again (the gather is bounded,
+// so a pass that does not come round is a finding); the two readings are
+// taken off one tick and neither subsumes the other — a loop refilling seats
+// with half its duties parked satisfies this one all night.
 //
 // So the three above are the PASS's writers, and a clock that runs on a
 // goroutine of its own — the guard clock, the backup clock, the watchdog
@@ -2315,7 +2346,16 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 		// The start-of-pass sweep above already reaped for this pass; a
 		// quiet pass needs no epilogue reap of its own.
 		d.println("no ready work")
-		return 0, nil
+		// An empty QUEUE is not an empty shop (ranger-base-3ryit). Legs
+		// carried from an earlier pass are still this loop's to judge, and
+		// this is the only place they can be judged — nothing else reads the
+		// fan-in. A settle judged here refills like any other: refire takes
+		// its own fresh bd reading, which may well have found nothing here
+		// only because the seat it wants was busy a moment ago.
+		heldSeats, heldFail := d.seatState()
+		q, working := d.gatherRound(personaFilter, dirFilter, max, heldSeats, heldFail)
+		d.reportGather(working)
+		return q, nil
 	}
 	// bd hands back its own order; the pass wants a queue (rangerhq-1r2).
 	OrderBeads(beads, d.Resume)
@@ -2346,12 +2386,19 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 	// the life of that pass and lives in the seatMap beside it; caching one
 	// here made a seat busy at the head of a seven-hour Run busy for seven
 	// hours.
-	busy := map[string]string{}
-	// ADR 0013 §2 "Ceiling": session failures per slot, on the same
-	// lifetime as busy above and for the same reason — the count that
-	// decides "second failure" must span this Run's refires, or a seat
-	// whose CLI is broken pays a fresh startup wait on every refill.
-	sessFail := map[string]int{}
+	//
+	// Its lifetime is the IN-FLIGHT SET's, not the pass's
+	// (ranger-base-3ryit): a leg carried past the end of a pass still
+	// occupies its seat, so under Refill this is the loop's own map and a
+	// pass boundary releases nothing. A one-shot Run drains its gather to
+	// zero before it returns and still gets the fresh, empty, pass-local map
+	// it always had (seatState).
+	//
+	// ADR 0013 §2 "Ceiling" rides with it: session failures per slot, same
+	// lifetime and for the same reason — the count that decides "second
+	// failure" must span this loop's refires, or a seat whose CLI is broken
+	// pays a fresh startup wait on every refill.
+	busy, sessFail := d.seatState()
 	var dispatched int
 	var pending []*pendingBead
 	if room, ok := d.epochRoom(max); ok {
@@ -2381,91 +2428,20 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 	// against bd and herdr fresh rather than trusted from the settle alone
 	// (refire). A one-shot Run leaves d.Refill unset and this loop drains
 	// exactly as it always gathered: judged, counted, done.
-	if len(pending) > 0 {
-		d.printf("… %d prompt(s) in flight, gathering\n", len(pending))
+	//
+	// And the gather is BOUNDED per pass (ranger-base-3ryit, passcarry.go):
+	// every refill feeds the set this loop is draining, so on a busy shop
+	// the set never emptied and the pass never came round — 2h20m of it,
+	// with the sweep, the tickers and every seat that freed without a settle
+	// simply not running. What lands inside the window is judged here; what
+	// is still outstanding is carried, and the next pass takes it back.
+	d.enqueue(pending)
+	if n := d.inFlightCount(); n > 0 {
+		d.printf("… %d prompt(s) in flight, gathering\n", n)
 	}
-	type gathered struct {
-		is      RepoIssue
-		persona string
-		working bool
-		err     error
-	}
-	results := make(chan gathered, 8)
-	watch := func(p *pendingBead) {
-		working, err := d.gather(p)
-		results <- gathered{p.is, p.persona, working, err}
-	}
-	for _, p := range pending {
-		go watch(p)
-	}
-	stillWorking, active := 0, len(pending)
-	for active > 0 {
-		g := <-results
-		active--
-		if g.err != nil {
-			d.printf("✗ %-14s %v\n", g.is.ID, g.err)
-		} else {
-			if g.working {
-				stillWorking++
-			}
-			dispatched++
-		}
-		if !d.Refill {
-			continue
-		}
-		// The sweep, on the event that MAKES a session sweepable
-		// (ranger-base-t8tq). Both of the other call sites — before routing
-		// above, the epilogue below — fire once per Run, which was once per
-		// pass until ADR 0028 §1 made this Run long-lived and then became
-		// once per PROCESS. MEASURED 2026-08-28: one pass ran 7h09m and 22
-		// done-sessions piled up behind it, every one of them swept in the
-		// first seconds after the loop was bounced. A settle is the
-		// moment a per-bead session stops being anybody's, so it is where
-		// the sweep belongs under a rolling Run — including for a bead still
-		// working (its seat frees nothing, but the graveyard behind it is
-		// not about this bead). The sweep reads every bead fresh and swallows
-		// its own read failures (autoreap.go), so a settle it cannot sweep
-		// after costs nothing but the next settle's sweep.
-		d.autoReapPass(afterRouting)
-		if g.working {
-			continue
-		}
-		if d.stopping() {
-			// The loop is stopping: the seat this settle just freed is
-			// still recorded free (below), but nothing fires into it.
-			continue
-		}
-		seat := SessionFor(g.persona, g.is.Dir)
-		delete(busy, seat)
-		// The refill runs the fire path for every free seat, not only for
-		// the one that just settled (ranger-base-t8tq). ADR 0028 §1 as
-		// accepted said "re-runs the fire path for the freed seat", on "the
-		// level-triggered tick still sweeps everything, so a lost event
-		// costs latency, never correctness" — but under S4 the tick is
-		// Watch's, and Watch does not get its loop back until this Run
-		// returns. A Run that keeps refilling never returns, so a seat this
-		// Run did not fire into is a seat nothing ever offers work to again:
-		// MEASURED 2026-08-28, ~90% of a day's closes on the one seat that
-		// kept settling while three seats with ready work in their lanes sat
-		// out seven hours. So the settle is the tick, and it sweeps what the
-		// tick would have. personaFilter is still the operator's --persona,
-		// the busy map still refuses a seat with a bead on it, and each seat
-		// is re-read live (seatMap), so this fires no seat a fresh pass
-		// would not have fired.
-		more, attempts, err := d.refire(seat, g.is.ID, personaFilter, dirFilter, max, busy, sessFail)
-		if err != nil {
-			d.printf("✗ refill %s: %v\n", g.persona, err)
-		} else if !d.DryRun {
-			d.epochAttempts += attempts
-		}
-		for _, np := range more {
-			active++
-			go watch(np)
-		}
-	}
-	if stillWorking > 0 {
-		d.printf("◷ %d bead(s) still with their agent — claims kept; a later pass sees them held, not free\n", stillWorking)
-	}
+	judged, stillWorking := d.gatherRound(personaFilter, dirFilter, max, busy, sessFail)
+	dispatched += judged
+	d.reportGather(stillWorking)
 
 	// ADR 0013 §5's first obligation, at the end of the pass and after the
 	// gather so it sits with the summary: every pass NAMES how many beads it

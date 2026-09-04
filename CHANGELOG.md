@@ -306,6 +306,37 @@ nothing.
 
 ### Fixed
 
+**`dispatch --watch` ran for hours without completing a pass on a busy shop,
+and half its duties silently did not run.**
+
+*Affected: every `--watch` loop busy enough to keep refilling seats.* A pass
+gathered until every prompt it was waiting on had settled, and each settle
+refilled the seat it freed — so each refill's own prompt joined the set the
+pass was draining, and on a busy shop the set was fed faster than it emptied.
+MEASURED 2026-09-04: one loop held `4 prompt(s) in flight, gathering` for
+2h20m. The loop looked healthy from the outside — sessions launching, work
+landing, the pulse ticking — because refills are not passes: the merge-back
+sweep, the hook-wall check, the backup ticker, the plan-guard read, the
+launch-cap epoch accounting and any offer of ready work to a seat that became
+free with **no settle** behind it all live in the pass, and none of them ran.
+A P1 the operator had asked for by name sat ready and unhired for an hour with
+its persona's seat empty.
+
+The gather is now bounded per pass. Prompts that settle inside the window are
+judged and refill their seats exactly as before; prompts still outstanding are
+*carried* into the next pass — the same wait, the same claim, judged by
+whichever pass sees it land. A pass that returns with work outstanding says so
+in one line, naming the beads, their sessions and how long each has been in
+flight:
+
+    … 2 prompt(s) still in flight, carried into the next pass: ranger-base-hl0sp in gwart-posse-… 10m15s, …
+
+And the silence watchdog gained a second reading for whatever holds a pass open
+next time: no completed pass inside its budget is a finding, said once, naming
+the in-flight set that is holding it. The existing reading watches for the log
+stopping, which this incident never did — the refills scrolling past kept it
+quiet all night.
+
 **An older `posse` earlier on PATH refused every dispatched launch for 90
 minutes, pointing at a file that was present and hash-matched.**
 

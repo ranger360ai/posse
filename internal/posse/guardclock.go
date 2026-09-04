@@ -13,6 +13,12 @@ package posse
 // minutes. The guard never evaluated, so arm 2 (loadguardkill.go) never ran,
 // and the operator ended them by hand.
 //
+// (ranger-base-3ryit bounded the gather, so the pass recurs again — but this
+// clock is not thereby redundant, and its two arms below say why: it ticks at
+// the base interval where a quiet pass backs off to `--max-interval`, it
+// evaluates while a pass is inside its own window, and the orphan census it
+// carries runs on ticks the pass's reading would never have taken at all.)
+//
 // So the reading gets its own clock, on the same shape as the pulse (ADR
 // 0027) and the backup clock (ADR 0036 §4) one file over: a goroutine that
 // starts with the watch loop, ticks at the operator's `--interval`
