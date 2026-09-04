@@ -193,14 +193,31 @@ bd sync               # Sync with git
   nobody runs whole", and gofmt is one of five in internal/posse today:
 
   ```
-  TestTreeIsGofmtClean                     make fmt-check          ~1.5s
-  TestShippedTreeNamesRolesNotThisCrew     no fast door yet
-  TestShippedStringsNameRolesNotThisCrew   no fast door yet
-  TestTestCorpusHidesNoCrewNameBehindAnEscape  no fast door yet
-  TestHerdrSelectorsAreNamedByADR0016      no fast door yet
+  TestTreeIsGofmtClean                     make fmt-check       ~1.5s
+  TestShippedTreeNamesRolesNotThisCrew     make crew-check      ~2.5s
+  TestShippedStringsNameRolesNotThisCrew   make crew-check
+  TestTestCorpusHidesNoCrewNameBehindAnEscape  make crew-check
+  TestHerdrSelectorsAreNamedByADR0016      make selector-check  ~0.5s
   ```
 
-  The four without a door are reachable only by naming them in your `-run`,
-  and the crew-name pair has reddened main more than once. Add them by hand
-  when your change touches shipped strings, `etc/`, `examples/` or a herdr
-  selector.
+  **`make tree-check` is all five, 5.1s warm and ~16s cold** (the cold half
+  is compiling internal/posse's test binary; ranger-base-ik44f) — that is
+  the one command to type after a filtered run, and it is a prerequisite of
+  `make test` for the same reason `fmt-check` is. The other two doors are
+  worth knowing by name: `make crew-check` when your change touched `cmd/`,
+  `internal/`, `etc/`, `examples/` or any `*_test.go`, and `make
+  selector-check` when it touched `herdrevents.go` or ADR 0016. `crew-check`
+  replaces the hand-composed `grep -rn '<every crew name>' cmd etc examples
+  internal *_test.go` that standing orders used to carry: it prints path,
+  line and the offending name, and it IS the pin, so it cannot disagree with
+  the suite.
+
+  These four doors run the pin under a `-run` filter rather than
+  reimplementing it in shell, which is the difference from `fmt-check`
+  (gofmt is a tool; a `gofmt -l` cannot disagree with `go/format`). A shell
+  rewrite of an ast parse would be a second implementation to keep in sync
+  by hand — a door that goes narrower than the pin while both look green.
+  **A tree-wide pin added tomorrow needs a door here**: the class is derived
+  mechanically (the tests in `internal/posse` that call `qibRepoRoot`) and
+  `treewidedoor_qa_test.go` reds until every member is named by a Makefile
+  door variable.

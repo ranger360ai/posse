@@ -42,7 +42,7 @@ FMT_ROOTS := cmd internal *.go
 BUILD_STAMP := $(shell $(GOBIN) run ./cmd/buildstamp)
 LDFLAGS     := -X github.com/ranger360ai/posse/internal/posse.Build=$(BUILD_STAMP)
 
-.PHONY: build release install deploy test test-reuse fmt-check verify-test-times verify-suite-lock verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-govern-honesty verify-grok-pin verify-codex-pin verify-credential-paths verify-hook-freshness verify-bd-pin verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
+.PHONY: build release install deploy test test-reuse fmt-check crew-check selector-check tree-check verify-test-times verify-suite-lock verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-govern-honesty verify-grok-pin verify-codex-pin verify-credential-paths verify-hook-freshness verify-bd-pin verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
 
 build:
 	$(GOBIN) build -ldflags '$(LDFLAGS)' -o bin/posse-go ./cmd/posse
@@ -180,7 +180,7 @@ release-notes:
 # against the fleet load guard's ceiling of 60 — so the shop stopped hiring at
 # the moment five seats were about to free. A `-run` filter or a named package
 # is NOT queued. `make verify-suite-lock` (~5s) pins the slots.
-test: fmt-check verify-test-times verify-parallel verify-suite-lock
+test: fmt-check verify-test-times verify-parallel verify-suite-lock tree-check
 	scripts/test-times.sh $(GOBIN) test -timeout 25m ./...
 	@scripts/audit-silent-reverts.sh --quiet
 
@@ -284,6 +284,67 @@ fmt-check:
 		echo "$$out" | sed 's|^|  |'; \
 		exit 1; \
 	fi
+
+# The other four doors in the same class (ranger-base-ik44f, discovered from
+# rulbl above). The class is "a QA test whose subject is the TREE, living
+# inside a package nobody runs whole": internal/posse is ~950s, so every seat
+# runs a focused `-run` filter, `-run` selects by test NAME, and a tree-wide
+# pin is nobody's subject — so no filter ever names it and the pin is
+# unreachable at exactly the moment it would have mattered. gofmt got the
+# first door; these are the rest.
+#
+# WHY A `-run` FILTER AND NOT A SECOND IMPLEMENTATION. fmt-check re-runs the
+# TOOL (`gofmt -l`) because gofmt is a tool. These pins are Go: their reading
+# is an ast parse, an unquote and a case-boundary scan, and a shell rewrite of
+# that would be a second implementation to keep in sync by hand — a door that
+# drifts NARROWER than the pin while both look green, which is worse than no
+# door. So the door runs the pin itself. MEASURED 2026-09-04: the package's
+# test binary compiles in ~11s cold, the four tests run in ~3s (all four take
+# t.Parallel), and `make tree-check` is 5.1s warm — against the ~950s of
+# running internal/posse whole.
+#
+# `-count=1` because a door that can answer from cache is a door that can lie:
+# the drift these pins are about arrives as a new file in a walked directory,
+# and nothing promises `go test`'s cache key notices one.
+#
+# `-timeout 15m` is the house floor (ranger-base-2ggb, pinned by
+# TestQANoEntryPointRunsGoTestOnTheDefaultTimeout): every entry point that
+# runs `go test` makes the timeout decision rather than inheriting the 10m
+# default. These two run ~7s of tests, so the number is a formality here —
+# but a door exempted from the rule is the next entry point nobody notices.
+#
+# One variable per door, and QA_TOOL_PINS names the pin whose door is a tool
+# rather than a filter, so treewidedoor_qa_test.go can check the union against
+# a walk of internal/posse for the tests that read the repo root — a new
+# tree-wide pin fails that check until it is given a door here.
+QA_CREW_PINS     := TestShippedTreeNamesRolesNotThisCrew|TestShippedStringsNameRolesNotThisCrew|TestTestCorpusHidesNoCrewNameBehindAnEscape
+QA_SELECTOR_PINS := TestHerdrSelectorsAreNamedByADR0016
+QA_TOOL_PINS     := TestTreeIsGofmtClean
+
+# The crew-name trio, one door between them because they are one question —
+# does the shipped tree name this instance's crew (ADR 0012 App.A 5) — asked
+# of raw lines, of shipped string literals, and of the escapes in the test
+# corpus. ~2.5s of tests. The substitute this replaces was a hand-composed
+# `grep -rn '<every crew name>' cmd etc examples internal *_test.go`, off a
+# list of names a seat had to remember; this one prints path, line and the
+# offending name, and it IS the pin, so it cannot disagree with the suite.
+# Type it before you commit when your change touched cmd/, internal/, etc/,
+# examples/ or any *_test.go.
+crew-check:
+	$(GOBIN) test ./internal/posse -timeout 15m -count=1 -run '^($(QA_CREW_PINS))$$'
+
+# ADR 0016 §1's four wire selectors, as named by the ADR page. ~0.5s, nearly
+# all of it the same package compile crew-check already paid for. Type it when you touch herdrevents.go or
+# the ADR.
+selector-check:
+	$(GOBIN) test ./internal/posse -timeout 15m -count=1 -run '^($(QA_SELECTOR_PINS))$$'
+
+# The whole class, one command: every tree-wide pin in internal/posse — 5.1s
+# warm, ~16s cold. No recipe of its own — the doors are its prerequisites, so `make -n
+# tree-check` prints exactly what a seat would otherwise have to type. It is a
+# prerequisite of `make test` for rulbl's reason: a full run fails on it in
+# seconds instead of at ~950.
+tree-check: fmt-check crew-check selector-check
 
 # Register the cockpit plugin with the running herdr (local dev link).
 # The manifest runs ./bin/posse relative to the plugin root; that is a symlink
