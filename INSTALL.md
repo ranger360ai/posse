@@ -1502,7 +1502,12 @@ the hook runs before the editor opens (ADR 0050 D5). git's own template is
 not a subject either: on every path but `-m`/`-F` the arm reads through
 `git stripspace --strip-comments`, so the `On branch` line, the `#` status
 block and a merge's conflict list — which git strips and which never reach
-the commit — cannot refuse your commit (ranger-base-h3s6q). A refused
+the commit — cannot refuse your commit (ranger-base-h3s6q). If your
+`core.commentChar` is `auto`, git picks the character per message and
+`stripspace` does not: the arm takes it from the template git already wrote
+into the file, and where git wrote no template it strips nothing and reads
+the file whole, because under `auto` that is exactly what git keeps
+(ranger-base-vzx2n). A refused
 message is not lost: it is in `.git/COMMIT_EDITMSG` until your next commit
 overwrites it. The SHIPPED pattern list is the one thing not read over a
 message, which is a measured decision rather than an oversight (ADR 0024

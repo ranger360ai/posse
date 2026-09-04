@@ -33,16 +33,21 @@ package posse
 // `--cleanup=strip` the '#' line lands in the commit object and replicates
 // with the branch; the arm never saw it.
 //
-// EVERY PIN HERE IS PARKED (t.Skip) and every one of them was run unparked
-// and RED first — the run is on ranger-base-27mqp. Each carries the control
-// that says the wall is awake in that repo at that moment, so a green pin
-// cannot be a rig that refuses nothing. Unpark by deleting the t.Skip line.
+// EVERY PIN HERE WAS PARKED (t.Skip) AND RED when it was written — the run
+// is on ranger-base-27mqp. They were unparked by ranger-base-vzx2n, which
+// fixed the reader; each still carries the control that says the wall is
+// awake in that repo at that moment, so a green pin cannot be a rig that
+// refuses nothing. MUTATION, run 2026-09-04: disable the `auto` branch of
+// the reader in messageArm (gates.go) and all three go red again, each on
+// its own assertion.
 //
-// WHAT THE FIX IS is the code lane's call and these pins do not prescribe
-// one — asking git for the character it will actually use (`git config
-// --get core.commentChar` resolved the way commit.c resolves it) and
-// stripping with that, or reading the message the way git will KEEP it by
-// another route, are both defensible and they are not the same change.
+// WHAT THE FIX IS was the code lane's call and these pins did not prescribe
+// one. What landed: for `auto` — and only for `auto`, because every explicit
+// value stripspace already resolves — the character is read back off the
+// template git ALREADY wrote into "$1" (git makes the choice before this
+// hook runs), and is handed to stripspace. Where git appended no template it
+// strips nothing under `auto`, so the file is read whole; the pin for that
+// half is TestQACheckThreeMessageArmUnderAutoWithNoTemplateAppended below.
 
 import (
 	"os"
@@ -105,7 +110,6 @@ func qaAutoSwitched(t *testing.T, w *visWall, repo string) string {
 // RUN UNPARKED 2026-09-04, RED: the commit landed
 // `wire it\n# cite QUOKKA RESTRICTED here` and refusals.log carried nothing.
 func TestQACeilingMessageArmUnderAnAutoCommentChar(t *testing.T) {
-	t.Skip("PARKED (ranger-base-27mqp): red today — the fix for h3s6q finding 2 reads the message with a stripspace that does not resolve core.commentChar=auto")
 	w := qaCeilingWall(t, "")
 	env := qaAutoCommentCharRepo(t, w, w.priv, "# cite "+qaCeilingHit+" here\n")
 
@@ -145,7 +149,6 @@ func TestQACeilingMessageArmUnderAnAutoCommentChar(t *testing.T) {
 //
 // RUN UNPARKED 2026-09-04, RED.
 func TestQACheckThreeMessageArmUnderAnAutoCommentChar(t *testing.T) {
-	t.Skip("PARKED (ranger-base-27mqp): red today — same reader, same auto-comment-char blind spot, in the public repo's identity arm")
 	w := newVisWall(t)
 	username := w.literal(t, "username")
 	env := qaAutoCommentCharRepo(t, w, w.pub, "# followed "+username+"'s note from tuesday\n")
@@ -190,7 +193,6 @@ func TestQACheckThreeMessageArmUnderAnAutoCommentChar(t *testing.T) {
 // RUN UNPARKED 2026-09-04, RED: "data-ceiling content in the commit MESSAGE
 // ... export-name: 1 hit(s)".
 func TestQACeilingMessageArmUnderAnAutoCommentCharStillReadsGitsTemplate(t *testing.T) {
-	t.Skip("PARKED (ranger-base-27mqp): red today — finding 2's over-refusal returns whenever git's template is not '#'")
 	w := qaCeilingWall(t, "")
 	env := qaAutoCommentCharRepo(t, w, w.priv, "# notes\n")
 
@@ -215,4 +217,71 @@ func TestQACeilingMessageArmUnderAnAutoCommentCharStillReadsGitsTemplate(t *test
 	t.Errorf("git wrote its status block with ';' and the arm stripped '#', so an UNTRACKED path git listed "+
 		"in its own template refused an editor commit whose typed message is clean — the remedy 'rewrite the "+
 		"commit message' clears nothing:\n%s", out)
+}
+
+// PIN, the other half of ranger-base-vzx2n's fix: `auto` WITH NO TEMPLATE
+// APPENDED. The fix takes the comment character off the template git wrote,
+// so it has to say what it does when git wrote none — commit.status=false
+// here, and the same file shape reaches the hook on the merge path (git
+// hands it MERGE_MSG as merge wrote it) and under `--amend --no-edit`.
+//
+// The answer git itself gives: under `auto` the character is chosen so that
+// it starts no line of the message, so the only lines git ever strips are
+// the ones git appended. No template, nothing stripped — so the whole file
+// is what will land and the whole file is what must be scanned. A reader
+// that guessed a character here would strip a body line git keeps, which is
+// the hole this bead closed, pointing the other way.
+//
+// FIXTURE PREMISE, asserted before the verdict: git really appended no
+// comment block for this commit, so the reader really is in the fallback.
+//
+// CONTROL, asserted after the verdict: the SAME editor commit over a
+// template with nothing classed in it LANDS. The fallback reads the file
+// whole, and a whole-file read is the shape that over-refuses — this is what
+// says it did not simply start refusing every editor commit in the repo.
+//
+// MUTATION: disable the reader's `auto` branch and this pin reds — the
+// stripspace that answers '#' takes the identity literal's line out of the
+// scan and the commit lands with it in a PUBLIC repo.
+func TestQACheckThreeMessageArmUnderAutoWithNoTemplateAppended(t *testing.T) {
+	w := newVisWall(t)
+	username := w.literal(t, "username")
+	env := qaAutoCommentCharRepo(t, w, w.pub, "# followed "+username+"'s note from tuesday\n")
+	if out, err := w.git(w.pub, nil, "config", "commit.status", "false"); err != nil {
+		t.Fatalf("git config commit.status: %v %s", err, out)
+	}
+
+	w.stage(t, w.pub, "internal/posse/probe.go", "package posse\n\n// nothing identifying in here at all.\n")
+	out, err := w.git(w.pub, env, "commit", "--", "internal/posse/probe.go")
+
+	// PREMISE: no comment block was appended, so the fallback is what ran.
+	msg, rerr := os.ReadFile(filepath.Join(w.pub, ".git", "COMMIT_EDITMSG"))
+	if rerr != nil {
+		t.Fatalf("reading COMMIT_EDITMSG: %v", rerr)
+	}
+	if strings.Contains(string(msg), "\n; ") {
+		t.Fatalf("fixture premise: commit.status=false must have left git's template out of the file:\n%s", msg)
+	}
+
+	if err == nil {
+		landed, lerr := w.git(w.pub, nil, "log", "-1", "--format=%B")
+		if lerr != nil {
+			t.Fatalf("git log: %v %s", lerr, landed)
+		}
+		if strings.Contains(landed, username) {
+			t.Errorf("an operator identity literal reached a PUBLIC repo's commit object on a '#' line git KEEPS — "+
+				"there was no template to strip under core.commentChar=auto and the arm stripped anyway:\n%s", landed)
+		}
+		return
+	}
+	if !strings.Contains(out, "identity literal in the commit MESSAGE") {
+		t.Fatalf("fixture premise: if this commit is refused at all it must be the MESSAGE arm that spoke:\n%s", out)
+	}
+
+	// CONTROL: the same editor commit over a clean template must land.
+	clean := qaAutoCommentCharRepo(t, w, w.pub, "# a heading nobody can be identified by\n")
+	w.stage(t, w.pub, "internal/posse/ctl.go", "package posse\n")
+	if o, e := w.git(w.pub, clean, "commit", "--", "internal/posse/ctl.go"); e != nil {
+		t.Fatalf("fixture premise: an editor commit with nothing classed in it must land: %v\n%s", e, o)
+	}
 }
