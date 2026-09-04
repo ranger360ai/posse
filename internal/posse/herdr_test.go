@@ -181,7 +181,7 @@ func fakeBd(args []string) int {
 			return 1
 		}
 		if b, err := os.ReadFile("fake-ready.json"); err == nil {
-			fmt.Print(fakeBdApplyState(string(b)))
+			fmt.Print(fakeBdDropClosed(fakeBdApplyState(string(b))))
 		} else {
 			fmt.Print("[]")
 		}
@@ -787,6 +787,68 @@ func fakeBdUpdate(args []string) int {
 	fakeBdSaveState(st)
 	fmt.Print("{}")
 	return 0
+}
+
+// fakeBdDropClosed is bd's own first contract on `ready`, which this fake
+// broke for the life of every test (ranger-base-y3x6n): a closed bead is not
+// ready work, and no reading of the real store can hand one back.
+//
+// The fixture cannot read fake-show.json as "closed since the start" — it is
+// the END state, written before the pass that is supposed to do the work, so
+// filtering on it alone would drop every bead before it was ever dispatched.
+// What says the work HAPPENED is the claim, which the fake already records
+// (fakeBdUpdate). So: a bead this fake has handed to somebody AND whose show
+// answers "closed" is done, and `ready` stops offering it. Both halves are
+// read live, so a test that rewrites fake-show.json to un-close a bead, or
+// unclaims it, gets it back in the queue.
+//
+// MEASURED (ranger-base-y3x6n): without this, a Run whose own sweep reaps a
+// settled session — any Run slower than PromptGrace, which is every one of
+// them under -race — got the same bead offered back by the next `ready`,
+// found no live holder for it (its session had just been reaped) and
+// RELAUNCHED it under ADR 0030 §1's recovery arm. A third `workspace create`
+// for two beads, out of a store real bd would never have answered that way.
+func fakeBdDropClosed(list string) string {
+	var issues []map[string]any
+	if json.Unmarshal([]byte(list), &issues) != nil {
+		return list
+	}
+	st, shown := fakeBdState(), fakeBdShownStatus()
+	open := make([]map[string]any, 0, len(issues))
+	for _, is := range issues {
+		id, _ := is["id"].(string)
+		status, _ := is["status"].(string)
+		claimed := st[id].assignee() != ""
+		if status == "closed" || (claimed && shown[id] == "closed") {
+			continue
+		}
+		open = append(open, is)
+	}
+	if len(open) == len(issues) {
+		return list
+	}
+	b, err := json.Marshal(open)
+	if err != nil {
+		return list
+	}
+	return string(b)
+}
+
+// fakeBdShownStatus is what this repo's `show` currently answers, by id.
+func fakeBdShownStatus() map[string]string {
+	b, err := os.ReadFile("fake-show.json")
+	if err != nil {
+		return nil
+	}
+	var issues []fakeBdIssue
+	if json.Unmarshal(b, &issues) != nil {
+		return nil
+	}
+	st := make(map[string]string, len(issues))
+	for _, is := range issues {
+		st[is.ID] = is.Status
+	}
+	return st
 }
 
 // fakeBdApplyState overlays recorded claim state on a canned issue list, so

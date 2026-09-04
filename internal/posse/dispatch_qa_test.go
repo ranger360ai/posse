@@ -1072,6 +1072,117 @@ func TestQARefillFiresASecondBeadIntoTheSameSeat(t *testing.T) {
 	}
 }
 
+// ranger-base-y3x6n: the same refill seat, on a Run slow enough that its own
+// judging sweep reaps the session it has just judged. That is not an exotic
+// Run — a settle more than PromptGrace (30s) after the launch is every real
+// leg there is — it is only exotic in the SUITE, where a whole Run finishes
+// inside the grace and the reap never fires.
+//
+// MEASURED on a clean main at a637e71: `go test -race` on the two arms above
+// failed with THREE `workspace create`s for two beads, and the extra one was
+// neither a second seat nor a data race (no -race report was printed). It was
+// a-1 RELAUNCHED: the sweep in judge() closed a-1's workspace, the refill's
+// own fresh `bd ready` offered a-1 straight back — in_progress, ranger's, now
+// held by no live session — and ADR 0030 §1's recovery arm did exactly what
+// it says for a claim nothing holds. The lie was the STORE's: real bd never
+// lists a closed bead as ready, and the fake did for the life of a test
+// (fakeBdNoteClosed/fakeBdDropClosed, herdr_test.go). With the fake honest,
+// the sweep may reap what it likes and no bead is fired twice.
+//
+// -race was never the discriminator, the CLOCK was, so this arm collapses
+// PromptGrace rather than taking two minutes to cross it: the reap only a
+// slow box reached is reached on every box, in about a second, and the suite
+// sees it without -race — which neither `make test` nor scripts/test-times.sh
+// runs.
+func TestQARefillSlowEnoughToReapItsOwnSessionStillLaunchesOnePerBead(t *testing.T) {
+	t.Parallel()
+	b, fake := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+	// The one time-dependent knob in the path: at its default the settle is
+	// judged inside the grace and nothing is reaped mid-Run, which is why a
+	// fast box was green and -race was not.
+	d.PromptGrace = time.Nanosecond
+	writePersona(t, b.App, "ranger", "[go]")
+	repo := t.TempDir()
+	os.WriteFile(filepath.Join(repo, "fake-ready.json"),
+		[]byte(`[{"id":"a-1","title":"t","labels":["go"]},{"id":"a-2","title":"u","labels":["go"]}]`), 0o644)
+	os.WriteFile(filepath.Join(repo, "fake-show.json"),
+		[]byte(`[{"id":"a-1","status":"closed"},{"id":"a-2","status":"closed"}]`), 0o644)
+	os.WriteFile(b.App.ConfigPath, []byte("beads:\n  - "+repo+"\n"), 0o644)
+	agentPerLaunch(t, fake)
+	d.Refill = true
+
+	n, err := d.Run("", "", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, log := dispatcherOut(d), calls(t, fake)
+	if n != 2 {
+		t.Errorf("want both beads dispatched from this one Run, got %d:\n%s", n, out)
+	}
+	// The witness that the reap this arm is about actually happened: a
+	// green run with no `workspace close` in it measured nothing.
+	if !strings.Contains(log, "workspace close") {
+		t.Fatalf("this arm is about a Run that reaps mid-flight — nothing was reaped:\n%s", log)
+	}
+	if got := strings.Count(log, "workspace create"); got != 2 {
+		t.Errorf("want one session per bead and no relaunch of a reaped one, got %d:\n%s", got, log)
+	}
+	for _, id := range []string{"a-1", "a-2"} {
+		if got := strings.Count(log, "workspace create --label "+SessionForBead("ranger", repo, id)); got != 1 {
+			t.Errorf("%s must be created exactly once, got %d:\n%s", id, got, log)
+		}
+	}
+}
+
+// ranger-base-y3x6n, the fixture contract the arm above rests on: bd's
+// `ready` never answers with a closed bead, so neither may the fake. It
+// cannot read fake-show.json alone to know that — that file is the END state
+// of a pass that has not run yet, and every dispatch fixture in the suite
+// writes it up front, so dropping on it would mean nothing was ever
+// dispatched. The claim is what says the work happened. Both halves live, so
+// the queue follows the fixture rather than latching.
+func TestQAFakeBdReadyDropsABeadItHasShownClosed(t *testing.T) {
+	t.Parallel()
+	b, _ := newTestBackend(t)
+	repo := qaRepo(t, b.App, `[{"id":"a-1","title":"t","labels":["go"]},{"id":"a-2","title":"u","labels":["go"]}]`,
+		`[{"id":"a-1","status":"closed"}]`)
+	bd := Bd{Bin: fakeBinFor(t, "bd")}
+	ids := func(t *testing.T, why string) []string {
+		t.Helper()
+		is, err := bd.Ready(repo, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, i := range is {
+			out = append(out, i.ID)
+		}
+		t.Logf("%s: %v", why, out)
+		return out
+	}
+
+	// The end state alone is not a close that has happened: nobody has
+	// worked a-1 yet, and a fixture that dropped it here would never
+	// dispatch anything.
+	if got := ids(t, "before the claim"); len(got) != 2 {
+		t.Fatalf("an unclaimed bead is ready work whatever show says, got %v", got)
+	}
+	if _, err := bd.Claim(repo, "a-1", "ranger"); err != nil {
+		t.Fatal(err)
+	}
+	if got := ids(t, "claimed and shown closed"); len(got) != 1 || got[0] != "a-2" {
+		t.Errorf("a claimed bead whose show says closed must leave the queue, got %v", got)
+	}
+	// Live, not latched: the same bead un-closed by the fixture comes back,
+	// which is what keeps a two-pass test able to say "and then it was not
+	// closed after all".
+	os.WriteFile(filepath.Join(repo, "fake-show.json"), []byte(`[{"id":"a-1","status":"in_progress"}]`), 0o644)
+	if got := ids(t, "shown open again"); len(got) != 2 {
+		t.Errorf("the drop must follow the store, not latch, got %v", got)
+	}
+}
+
 // The same setup with d.Refill unset (a one-shot dispatch, or Watch before
 // this bead) must still leave the second repo's bead for a later pass —
 // refilling is Watch's own (ADR 0028 §4), never a one-shot Run's. The first
@@ -1665,7 +1776,6 @@ func TestDispatchQuestionBeadCostsNoAttempt(t *testing.T) {
 		`[{"id":"q-1","title":"ask the operator","priority":1,"labels":["question"],"assignee":"coordinator"},
 		  {"id":"a-1","title":"work","priority":2,"labels":["go"]}]`,
 		`[{"id":"a-1","title":"work","status":"closed","assignee":"ranger"}]`)
-	_ = repo
 	idleClaude(t, fake)
 	os.WriteFile(filepath.Join(fake, "pane-run-starts-agent"), nil, 0o644)
 
@@ -1682,12 +1792,19 @@ func TestDispatchQuestionBeadCostsNoAttempt(t *testing.T) {
 	}
 
 	// Without --persona it is still reported, and still costs no attempt.
+	// A FRESH work bead, because the pass above claimed a-1 and judged it
+	// closed and bd does not offer a closed bead twice (ranger-base-y3x6n):
+	// asking this pass about a-1 would be asking the store for something no
+	// reading of it can answer.
+	os.WriteFile(filepath.Join(repo, "fake-ready.json"),
+		[]byte(`[{"id":"q-1","title":"ask the operator","priority":1,"labels":["question"],"assignee":"coordinator"},
+		  {"id":"a-2","title":"more work","priority":2,"labels":["go"]}]`), 0o644)
 	d2 := newTestDispatcher(t, b)
 	d2.DryRun = true
 	if _, err := d2.Run("", "", 1); err != nil {
 		t.Fatal(err)
 	}
-	if out := dispatcherOut(d2); !strings.Contains(out, "q-1") || !strings.Contains(out, "a-1") {
+	if out := dispatcherOut(d2); !strings.Contains(out, "q-1") || !strings.Contains(out, "a-2") {
 		t.Errorf("unfiltered pass must report the question and still dispatch:\n%s", out)
 	}
 }
