@@ -285,3 +285,72 @@ func TestQACheckThreeMessageArmUnderAutoWithNoTemplateAppended(t *testing.T) {
 		t.Fatalf("fixture premise: an editor commit with nothing classed in it must land: %v\n%s", e, o)
 	}
 }
+
+// PIN, ranger-base-vl9g8, found verifying vzx2n's own fix. The reader takes
+// the comment character off the block git already wrote, and the first cut
+// of it took the LAST LINE of "$1" and used that line's first character.
+// git's block is last only when nothing follows it, and under `commit -v` /
+// commit.verbose=true something does: git appends the scissors marker and
+// then the staged DIFF, so "$1" ends in `+line`. No character is detected,
+// the reader falls back to reading the file WHOLE, and h3s6q's over-refusal
+// is back — git's status block, untracked filenames and all, handed to the
+// scan on an editor commit whose typed message is clean, with the remedy
+// "rewrite the commit message" that clears none of it. `-v` is one flag, or
+// one config line the writer owns.
+//
+// This is TestQACeilingMessageArmUnderAnAutoCommentCharStillReadsGitsTemplate
+// with commit.verbose turned on, and it is a separate pin because that one
+// stays green across the whole change: without `-v` the block IS last, so
+// the old selector and the new one agree, and only this shape tells them
+// apart.
+//
+// WHAT MAKES IT PASS: the character is taken from the last line of "$1" that
+// is a bare comment character alone. A unified diff cannot contain one —
+// every line of it carries ' ', '+', '-', '@', '\' or a header word in
+// column one — so the last such line is git's block under `-v` and without
+// it alike.
+//
+// FIXTURE PREMISE, asserted before the verdict: git really wrote a ';'
+// template (so the two readers had something to disagree about) AND really
+// appended the diff after it (so the file does not end in git's block).
+//
+// CONTROL, asserted first: the same `-v` editor commit with nothing classed
+// anywhere lands, so a green verdict is not a wall that refuses nothing.
+//
+// RUN BEFORE THE FIX, RED: "data-ceiling content in the commit MESSAGE ...
+// export-name: 1 hit(s)". MUTATION: put the old `sed -n '$p' | cut -c1`
+// selector back and this reds while the other four stay green.
+func TestQACeilingMessageArmUnderAnAutoCommentCharWithAVerboseCommit(t *testing.T) {
+	w := qaCeilingWall(t, "")
+	env := qaAutoCommentCharRepo(t, w, w.priv, "# notes\n")
+	if out, err := w.git(w.priv, nil, "config", "commit.verbose", "true"); err != nil {
+		t.Fatalf("git config commit.verbose: %v %s", err, out)
+	}
+
+	// CONTROL: nothing classed anywhere — this `-v` editor commit must land.
+	w.stage(t, w.priv, "internal/posse/ctl.go", "package posse\n")
+	if out, err := w.git(w.priv, env, "commit", "--", "internal/posse/ctl.go"); err != nil {
+		t.Fatalf("fixture premise: a clean -v editor commit must land: %v\n%s", err, out)
+	}
+	msg := qaAutoSwitched(t, w, w.priv)
+	if !strings.Contains(msg, "\ndiff --git ") {
+		t.Fatalf("fixture premise: commit.verbose=true must have appended the diff after git's block, "+
+			"or \"$1\" still ends in that block and this pin is the one next door:\n%s", msg)
+	}
+
+	// PROBE: ONE untracked file, never staged, never typed. git lists its
+	// NAME in the status block it is about to strip.
+	write(t, filepath.Join(w.priv, qaExportStem+"42.csv"), "x\n")
+	w.stage(t, w.priv, "internal/posse/probe.go", "package posse\n")
+	out, err := w.git(w.priv, env, "commit", "--", "internal/posse/probe.go")
+	if err == nil {
+		return // the defect is gone; nothing else to say.
+	}
+	if !strings.Contains(out, "data-ceiling content in the commit MESSAGE") {
+		t.Fatalf("fixture premise: the probe must be refused by the MESSAGE arm if it is refused at all:\n%s", out)
+	}
+	t.Errorf("under core.commentChar=auto a `-v` commit's file ends in the diff, not in git's block, so the "+
+		"arm detected no comment character, read the whole file and refused an editor commit over an "+
+		"UNTRACKED path git listed in a template it strips — the remedy 'rewrite the commit message' "+
+		"clears nothing:\n%s", out)
+}

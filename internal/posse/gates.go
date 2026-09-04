@@ -3614,33 +3614,46 @@ refused with the stricter remedy — there is no private db to re-file it in.`)
 // SO FOR `auto` THE CHARACTER COMES FROM THE FILE, NOT THE CONFIG. git has
 // already made the choice by the time this hook runs — it writes its
 // template before prepare-commit-msg (measured) — so the block it wrote is
-// the answer, written down. That block is the run of comment lines at the
-// end of "$1", so the last line's first character is the character git
-// chose. It is accepted only when it is one git can choose (commit.c's
-// candidate list, the `case` below), when the file carries a bare line of it
-// (git's block always has one between its paragraphs) and when at least four
-// lines start with it (the smallest block measured was ten). The read is
-// then stripspace with THAT character, which stripspace does resolve.
+// the answer, written down. What is looked for is the LAST line of "$1"
+// that is a bare comment character on its own — one of commit.c's ten
+// candidates and nothing else on the line (`#;@!$%^&|:`, read out of the
+// git binary under test, not copied from memory). git's block always has
+// such a line between its paragraphs, and the character on it is the
+// character git chose. It is accepted when at least four lines of the file
+// start with it — the smallest block measured was five, `merge --edit`'s;
+// the plain editor commit's was eleven, `-v`'s fifteen and `--amend`'s
+// seventeen. The read is then stripspace with THAT character, which
+// stripspace does resolve.
+//
+// WHY THE BARE LINE AND NOT THE FILE'S LAST LINE (ranger-base-vl9g8, found
+// verifying vzx2n's own fix). The first cut of this took the last line of
+// "$1" and used its first character. That is git's block only when git's
+// block is last, and under `commit -v` / commit.verbose=true it is not: git
+// appends the scissors marker and then the staged DIFF, so "$1" ends in
+// `+line`, no character is detected, and the whole file — git's status
+// block, untracked filenames and all — goes to the scan. That is exactly
+// h3s6q's over-refusal returning, one common flag away, with the remedy
+// "rewrite the commit message" that clears none of it. A bare comment-char
+// line cannot appear in a unified diff (every diff line carries a ' ', '+',
+// '-', '@', '\' or a header word in column one), so taking the LAST one
+// finds git's block under `-v` and without it alike, and a body line still
+// loses to the block that comes after it. MEASURED, git 2.50.1, over five
+// shapes of "$1": plain editor commit, `-v`, `--amend`, `merge --edit`, and
+// commit.status=false.
 //
 // NO BLOCK, NO STRIP, and that is not a hedge — it is what git does. Under
 // `auto` the character is chosen so that it starts no line of the message,
 // so the ONLY lines git strips are the ones git itself appended. Where it
-// appended none — commit.status=false, the merge path where "$1" is
-// MERGE_MSG as merge wrote it, `--amend --no-edit` — git strips nothing of
-// the body, the whole file is exactly what it will keep, and the whole file
-// is what is read (measured). Every way the detection can drift lands in
-// that same read, which is the fail-CLOSED side. It costs something in one
-// place: a `-v` commit's file ends in the diff below the scissors rather
-// than in git's block, so no character is detected and the block is read
-// with everything else. The diff below it is read on every config already —
-// it is not comment-prefixed and stripspace never took it out — so what `-v`
-// under `auto` adds to the scan is git's status block, and the direction is
-// over-refusal, never a leak.
+// appended none — commit.status=false, where "$1" is the commit.template
+// body alone and git writes no block at all (measured), `--amend --no-edit`
+// — git strips nothing of the body, the whole file is exactly what it will
+// keep, and the whole file is what is read. Every way the detection can
+// drift lands in that same read, which is the fail-CLOSED side.
 //
-// RESIDUAL, stated: a message with no block of git's whose own last line is
-// a bare '#', ';', '@' … and which carries four or more lines starting with
-// that same character would be read as a block and stripped. That one is
-// fail-OPEN, and it is the price of not carrying a second copy of
+// RESIDUAL, stated: a message with no block of git's that itself carries a
+// bare '#', ';', '@' … line and four or more lines starting with that same
+// character would be read as a block and stripped. That one is fail-OPEN,
+// and it is the price of not carrying a second copy of
 // adjust_comment_line_char here; the shape is not one a writer types by
 // accident, and it is narrower than the hole it replaces, which needed only
 // one '#'-leading line.
@@ -3696,13 +3709,9 @@ func messageArm(ind, head string, sources []visScanSource) string {
 ` + i2 + `if [ "$posse_cc" != auto ]; then
 ` + i3 + `posse_cc=''
 ` + i2 + `else
-` + i3 + `posse_cc=$(sed -n '$p' "$1" 2>/dev/null | cut -c1)
-` + i3 + `case "$posse_cc" in
-` + i3 + `  '#'|';'|'@'|'!'|'$'|'%'|'^'|'&'|'|'|':')
-` + i3 + `    grep -qaxF "$posse_cc" "$1" 2>/dev/null &&
-` + i3 + `      [ "$(cut -c1 "$1" 2>/dev/null | grep -caxF "$posse_cc")" -ge 4 ] || posse_cc=whole ;;
-` + i3 + `  *) posse_cc=whole ;;
-` + i3 + `esac
+` + i3 + `posse_cc=$(grep -axE '[#;@!$%^&|:]' "$1" 2>/dev/null | tail -n 1)
+` + i3 + `[ -n "$posse_cc" ] &&
+` + i3 + `  [ "$(cut -c1 "$1" 2>/dev/null | grep -caxF "$posse_cc")" -ge 4 ] || posse_cc=whole
 ` + i2 + `fi
 ` + i1 + `fi
 ` + i1 + `if [ "$posse_cc" = whole ]; then
@@ -3744,9 +3753,10 @@ unscanned under commit.cleanup=verbatim, measured).
 core.commentChar=auto is not a character but a choice git makes per
 message, and stripspace answers '#' for it whatever git chose — so
 wherever the read strips, the character is taken from the template git
-already wrote (the comment run at the end of "$1") and handed to
-stripspace, and where git appended no template it strips nothing and the
-file is read whole (ranger-base-vzx2n).
+already wrote — the LAST line of "$1" that is a bare comment character on
+its own, which is git's block under "commit -v" and without it alike — and
+handed to stripspace; where git appended no block it strips nothing and
+the file is read whole (ranger-base-vzx2n, ranger-base-vl9g8).
 The refusal's remedy differs from the staged file's — rewrite the message,
 cite the id — because the text is not in a file the writer can edit; it is
 still in .git/COMMIT_EDITMSG, local and unreplicated, until the next
@@ -4095,8 +4105,10 @@ the handle: "message" is -m/-F, where git appends no template and keeps a
 '#'-leading line, so a pasted heading lands and the read is whole.
 Wherever the read strips, the comment character is taken from the
 template git already wrote if core.commentChar is "auto", because for
-that one value stripspace answers '#' whatever git chose
-(ranger-base-vzx2n). Inside the gate with the rest of
+that one value stripspace answers '#' whatever git chose — the last bare
+comment-character line of "$1", which finds git's block under "commit -v"
+too, where the file ends in the diff (ranger-base-vzx2n,
+ranger-base-vl9g8). Inside the gate with the rest of
 check 3: an identity literal or an instance class is about where content
 may GO, so a private-stamped repo runs none of this — which is the one
 thing that separates this arm from the ceiling's, and why the ceiling's
