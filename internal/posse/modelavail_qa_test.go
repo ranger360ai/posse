@@ -342,7 +342,7 @@ func TestQA7vpAnExpiredSnapshotIsQuotedAndObeyedByNothing(t *testing.T) {
 // asked-for id, say so once, and leave no `fallback:` mark behind.
 func TestQA7vpAStaleCatalogLaunchesTheAskedForIdAndMarksNothing(t *testing.T) {
 	t.Parallel()
-	b, _ := newTestBackend(t)
+	b, fake := newTestBackend(t)
 	var hits atomic.Int64
 	b.App.ModelLister = failingLister(&hits)
 	qaPID(t, b, "architect", TierStrong)
@@ -353,11 +353,19 @@ func TestQA7vpAStaleCatalogLaunchesTheAskedForIdAndMarksNothing(t *testing.T) {
 	if err := b.CreateSession(NewSessionOpts{Name: "st", Agent: "architect", Dir: t.TempDir()}); err != nil {
 		t.Fatalf("the preflight must never refuse a launch (rule 3): %v", err)
 	}
-	sh, err := os.ReadFile(filepath.Join(b.App.StateDir, "launch", "st.sh"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(sh), "--model 'claude-fable-5-1'") {
+	// launchLog, not state/launch/st.sh. Which of the two places the
+	// rendered line lands in is a fact about its LENGTH, not about the
+	// launch: under PaneLineMax it is TYPED and no script is written at all
+	// (paneline.go). Reading the script directly made this pin an assertion
+	// about how long the line happens to be on this box — and on
+	// ci.yml's ubuntu-latest it is shorter, because Linux has no
+	// `sandbox-exec -f …` prefix and /tmp/… paths where darwin has
+	// /var/folders/…/T/…, so the line fit, nothing spilled, and the pin
+	// died on `no such file or directory` while the launch it was asking
+	// about was correct (ranger-base-90y3c). The helper reads both places
+	// and already carries this warning.
+	sh := launchLog(t, b.App, fake)
+	if !strings.Contains(sh, "--model 'claude-fable-5-1'") {
 		t.Errorf("the launch must carry the id it was asked for:\n%s", sh)
 	}
 	m, ok := b.readMeta("st")
