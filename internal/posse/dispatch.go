@@ -3684,13 +3684,32 @@ func hasLabel(labels []string, want string) bool {
 // operator's conversation, and without the skip a herdr restart would
 // freeze every lane holding a crew-marked seat.
 //
-// KNOWN, filed rather than folded in: the `err != nil` arm below still
-// reads an unreadable herd as a free seat. That is the same sentence with
-// a different cause and it is not this bead's measurement — ranger-base-3yqyg.
+// A listing that could not be read AT ALL is the third door onto the same
+// double-seating (ranger-base-3yqyg), and it was the loudest: `err != nil`
+// reported ("", "") — the answer a genuinely idle persona gives — so ONE
+// failed `workspace list` / `agent list` made every seat in the shop read
+// free and the pass fired into all of them. Nothing above here aborts:
+// reconcileSeats returns early on the same error without touching its map,
+// and no other caller on the fire path reads the listing. The reachable
+// shape is a TRANSIENT read failure over a live herd; with herdr genuinely
+// down the launch fails on its own anyway, so the cost of abstaining here
+// is a pass, and the cost of not abstaining is two agents in one worktree.
+//
+// It is answered per-SEAT like the withheld case and by the same loop,
+// because an error is the widest abstention there is: the listing declined
+// to answer for EVERY session it holds a meta for, so the meta names on
+// disk are the withheld list. That keeps the two costs the doc above
+// states — a seat with a live session is held, a persona with no session
+// to be unreadable is still hired — rather than freezing the shop on a
+// reading nobody could take. The status is its own (`seatUnreadable`):
+// "one meta this listing would not answer for" and "the herd could not be
+// listed" are different repairs, and the seat clause is where an operator
+// reads which one they have.
 func (d *Dispatcher) personaActive(persona, dir string) (string, string) {
 	sessions, withheld, err := d.HB.listSessions()
+	held := seatUnlisted
 	if err != nil {
-		return "", ""
+		sessions, withheld, held = nil, d.HB.metaNames(), seatUnreadable
 	}
 	prefix := SessionFor(persona, dir)
 	for _, s := range sessions {
@@ -3742,19 +3761,34 @@ func (d *Dispatcher) personaActive(persona, dir string) (string, string) {
 		if !ok { // read out from under us: nothing left to be busy about
 			continue
 		}
+		// A meta naming no workspace is a recipe kept for `posse relaunch`,
+		// not a session that might be alive (rangerhq-v52t) — listSessions
+		// sorts those out before it withholds anything, so this is a no-op
+		// on the withheld list and the same reading on the error path,
+		// where the names come off disk with no guard having filtered them.
+		if m.Workspace == "" {
+			continue
+		}
 		if m.Crew || (m.Agent != "" && m.Agent != persona) {
 			continue
 		}
-		return name, seatUnlisted
+		return name, held
 	}
 	return "", ""
 }
 
-// seatUnlisted is personaActive's third status beside herdr's `working`
-// and `blocked`: a session this listing withheld. It is not a herdr status
-// and must not be compared against one — it says the seat is taken and
-// that nobody can currently say by what.
+// seatUnlisted is one of personaActive's two own statuses beside herdr's
+// `working` and `blocked`: a session this listing withheld. It is not a
+// herdr status and must not be compared against one — it says the seat is
+// taken and that nobody can currently say by what.
 const seatUnlisted = "unlisted"
+
+// seatUnreadable is the same claim about a seat under a listing that could
+// not be read at all: the herd did not answer, so this seat's session — if
+// it has one — cannot be shown idle. It is kept apart from seatUnlisted
+// because the repairs differ: one stale meta is repaired per meta, a herd
+// that will not list is repaired at herdr.
+const seatUnreadable = "unreadable"
 
 // strand records a session this pass launched and could not use, so the
 // working/blocked guard ignores it for the rest of the pass. It is

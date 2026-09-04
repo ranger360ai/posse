@@ -37,8 +37,9 @@ type Herdr struct {
 	// which for the --watch loop IS its log (nothing sets Dispatcher.Err in
 	// production, so every other posse warning lands there too). It is
 	// written HERE rather than left to the caller because most callers of a
-	// herdr read swallow the error by design — personaActive answers
-	// ("","") on any error, and a hang that only ever became a seat reading
+	// herdr read swallow the error by design — personaActive turns one
+	// into a seat verdict rather than a returned error (it HOLDS the seat,
+	// ranger-base-3yqyg), and a hang that only ever became a seat reading
 	// nobody printed is the silence this bead is about.
 	Hangw io.Writer
 }

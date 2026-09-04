@@ -1009,6 +1009,17 @@ func fakeHerdr(args []string) int {
 			id, label, id, id))
 	case "workspace list":
 		fakeUnhideWhenLocked()
+		// list-error (file) fails the listing itself — the read every seat
+		// walk starts from, and the one failure whose blast radius is the
+		// whole shop rather than one meta (ranger-base-3yqyg). "code|message"
+		// like create-error.
+		if b, err := os.ReadFile(filepath.Join(fakeDir(), "list-error")); err == nil {
+			code, msg, ok := strings.Cut(strings.TrimSpace(string(b)), "|")
+			if !ok {
+				msg = "fake herdr: workspace list refused"
+			}
+			return fakeErr(code, msg)
+		}
 		// Like real herdr, a workspace's agent_status mirrors the agent
 		// detected in it (agents.json), unless the test set it directly.
 		ws := fakeHiddenFromList(fakeLoadWS())
