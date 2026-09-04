@@ -86,7 +86,15 @@ func sbGitInit(t *testing.T, dir string) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not available")
 	}
-	if out, err := exec.Command("git", "-C", dir, "init", "-q").CombinedOutput(); err != nil {
+	// `-b main` and not the box's default. git's own built-in default is
+	// still `master`, and `init.defaultBranch` is set on the box that wrote
+	// this (by /Library/Developer/CommandLineTools' system gitconfig, not
+	// by anything in HOME — so the fixture's HOME isolation does not reach
+	// it) and unset on GitHub's runners. The fixtures built here go on to
+	// `git rebase main`, which on a runner met `fatal: invalid upstream
+	// 'main'` — two QA pins red on macos-latest for as long as ci.yml has
+	// existed, over the name of a branch (ranger-base-90y3c).
+	if out, err := exec.Command("git", "-C", dir, "init", "-q", "-b", "main").CombinedOutput(); err != nil {
 		t.Skipf("git init: %v %s", err, out)
 	}
 }
