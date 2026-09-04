@@ -29,7 +29,15 @@ measured failure of it survives their promotion; a gauge, a
 once-per-token alarm and a fifth 401 class are priced and parked. D4
 keeps posse off the refreshToken; wkai3 option B is ordered first, and
 "ask the owner to refresh" waits behind its number as
-ranger-base-jefo0.*
+ranger-base-jefo0. Corrected 2026-09-04 (ranger-base-vxbfm, from the
+verify bundle ranger-base-9mys1): six passages elsewhere on this page
+read as if the parked gauge and alarm were built, or still carried the
+08-28 weighting D5 as amended had struck, and option 0's ground was
+half unlanded on the day it was written. Tense fixed, the one
+contradiction resolved toward D5, and the landings recorded
+(ranger-base-4poib 36e8584, ranger-base-ddivo 58ac284). No decision
+moved: every rejection, every parked shape and the do-nothing decision
+stand exactly as ranger-base-z089h left them.*
 
 ## Context
 
@@ -412,7 +420,15 @@ refresh`:
     09-01→09-03 blindness — but that incident was ddivo's quiet cache
     and 4poib's unnamed expiry, both since fixed, so no measured
     failure of *this* option survives their promotion. It is the
-    decision until one does.
+    decision until one does. *2026-09-04 (ranger-base-vxbfm):* when
+    this option was written "already exists twice over" was half a
+    forecast — ddivo was on main (58ac284) but 4poib was still only in
+    its session tree, and no dep made this decision wait on the
+    landing. Both halves are on main now: 4poib landed as 36e8584
+    (rebased from the sha its close named, same patch-id), ddivo as
+    58ac284. The sentence is a fact as of this line, and this line is
+    the record of the check; the next option that leans on an unlanded
+    bead gets a dep on the landing bead, not a sentence.
   - **B — the meter reads the mint** (ranger-base-wkai3 option B, the
     operator's own "measure first" ruling of 2026-09-01; the number is
     ranger-base-hs0dl, a P4 one-shot for an uncaged shell). One
@@ -772,8 +788,14 @@ design puts more weight on files. What is actually traded:
   that matters — the unattended 8h — which is 1b's whole question.
 - **A per-pass stderr line for the meter, like the mints'**
   (2026-09-03). Rejected: it is the "never quiet" reason, verbatim —
-  the line would print on every pass of every day. The gauge sits
-  where the reading already prints; the alarm fires once per token.
+  the line would print on every pass of every day. That reason is
+  MEASURED (ranger-base-b1al) and carries this rejection by itself.
+  *Corrected 2026-09-04 (ranger-base-vxbfm):* the bullet closed on
+  "the gauge sits where the reading already prints; the alarm fires
+  once per token" — present tense for two shapes D5 priced and PARKED.
+  Neither is built. They are where a quiet meter surface WOULD go if
+  either is ever built (D5 shapes 1 and 2, V14/V15); the rejection
+  above does not wait on them and does not rest on them.
 - **A config key for the alarm horizon** (2026-09-03). Rejected under
   D6: a number nobody has measured does not become a knob; it becomes
   a constant with ASSUMED on it, moved the day a measurement says
@@ -781,8 +803,13 @@ design puts more weight on files. What is actually traded:
 - **Reading the store during a 429 cooldown to refresh the gauge**
   (2026-09-03). Not taken here: it is one `security` exec per TTL
   without a request, which this page permits, but the field it feeds
-  is ranger-base-mc66k's streak reset, and the gauge's dated read time
-  already keeps it honest without it.
+  is ranger-base-mc66k's streak reset, and — *corrected 2026-09-04
+  (ranger-base-vxbfm); this bullet read "the gauge's dated read time
+  already keeps it honest", a fifth instance of the same present-tense
+  slip the four above fix* — the gauge's dated read time WOULD keep it
+  honest without it, if D5 shape 1 is ever built. Nothing here is
+  built, so this bullet rejects a refresh for a surface that does not
+  exist yet; the mc66k ground stands on its own either way.
 - **A `secrets/` directory now** (harness-credential class made
   concrete). Rejected here 2026-08-26: posse has zero resident harness
   credentials — the meter token measured 403 out of every mintable
@@ -804,10 +831,19 @@ design puts more weight on files. What is actually traded:
 - **The meter in the timer surfaces (this ADR's own original D5
   letter).** Rejected 2026-08-28 (ranger-base-swqk) on the three
   reasons now in D5, after the build recorded the divergence
-  (ranger-base-k6ha). The honest accounting: the load-bearing reason
-  (no hand to warn) is structural and TTL-independent; the noise
-  reason is ASSUMED pending ranger-base-b1al; the cost reason is a
-  per-pass `security` exec that the session-only rule avoids entirely.
+  (ranger-base-k6ha). The honest accounting, *revised 2026-09-04
+  (ranger-base-vxbfm) because it still recorded the 08-28 weighting
+  and contradicted D5 as amended 60 lines above*: the load-bearing
+  reason (no hand to warn) is MEASURED FALSE and struck
+  (ranger-base-4poib — the hand is the whole mechanism, and 8h is
+  shorter than a working day); the noise reason is MEASURED, not
+  assumed — ranger-base-b1al read a 6h30m horizon — and it is what
+  carries this rejection now, since an 8h clock sits inside every
+  window and the meter cannot borrow the mints' "inside 14 days"
+  line; the cost reason is a per-pass `security` exec that the
+  session-only rule avoids entirely, and it still holds for THIS
+  shape — D5's re-weigh voids it only for the snapshot-carried gauge,
+  which reads no store.
 - **An "already expired only" meter line** — the zero-noise
   compromise: surface the meter unasked only once its envelope date is
   past. Rejected: at that moment the usage read is failing, and ADR
@@ -818,11 +854,18 @@ design puts more weight on files. What is actually traded:
   The okbr-shaped outage (an hour of unnoticed blind passes) was a
   visibility failure of the blind signal, and okbr's shape diagnostics
   plus ADR 0018's clock are its fix — not a second copy of the alarm.
-  *2026-09-03:* the cost half of this rejection ("arming the per-pass
-  keychain exec") is void — the expiry rides in the snapshot, see D5
-  as amended — and the gauge now does print an EXPIRED state; what
-  survives of the rejection is that it is a *reading with a date*,
-  not a second alarm, and the alarm proper fires before the bite.
+  *2026-09-03, corrected 2026-09-04 (ranger-base-vxbfm):* the cost
+  half of this rejection ("arming the per-pass keychain exec") is
+  void — the expiry rides in the snapshot, see D5 as amended. The
+  rest of this annotation was written in the present tense ("the
+  gauge now does print an EXPIRED state", "the alarm proper fires
+  before the bite") for two shapes that were then, and are now,
+  PARKED and unbuilt; read it as conditional. IF D5 shape 1 is built
+  its gauge prints an EXPIRED state, and IF shape 2 is built its
+  alarm fires before the bite. What survives of the rejection either
+  way is that this line would be a *reading with a date*, not a
+  second alarm. Nothing of either is built — D5: "the decision:
+  nothing is built", V14–V16 parked.
 
 ## Verification (laurie's checklist)
 
@@ -859,11 +902,16 @@ design puts more weight on files. What is actually traded:
   timer surface — pinned with a positive witness on the same box (a
   near-expiry session mint that does appear), so the absence half
   cannot pass by measuring nothing. *Amended 2026-09-03
-  (ranger-base-z089h):* "neither timer surface" means the mints'
-  header segment and the per-pass stderr line; the meter's expiry now
-  appears in the **plan** segment beside the reading (V14) and that is
-  not a violation of this row — the pin keeps the mint segment and the
-  per-pass line meter-free.
+  (ranger-base-z089h), corrected 2026-09-04 (ranger-base-vxbfm):*
+  "neither timer surface" means the mints' header segment and the
+  per-pass stderr line. The amendment then said the meter's expiry
+  "now appears" in the **plan** segment beside the reading (V14). It
+  does not: V14 is PARKED and nothing is built, and a verification row
+  is the one place a reader cannot check a claim against, because the
+  row IS the check. Restated: IF V14's gauge is ever built the plan
+  segment is where it goes, and that is not a violation of this row —
+  the pin keeps the mint segment and the per-pass line meter-free
+  either way.
 - V7 (unit): one envelope fixture parses identically through the
   keychain-blob path and the file path — the okbr diagnostics are
   provably shared, not forked.
@@ -937,7 +985,9 @@ design puts more weight on files. What is actually traded:
   changes with the row present (expiry gates nothing — the positive
   arm runs a 99%/99% reading through three passes with the alarm up
   and asserts the same decisions as without it).
-- V16 (unit, parked 2026-09-03; needs ranger-base-4poib landed): a 401 with `AuthFailure.ExpiresAt` in the
+- V16 (unit, parked 2026-09-03; ranger-base-4poib landed 2026-09-04 as
+  36e8584, so this row's precondition is met and only the parked shape
+  remains): a 401 with `AuthFailure.ExpiresAt` in the
   future classes `PlanFailRejected`, token `401-live`, `Stale()` false,
   sentence names `/login` and never "run `claude` once"; past and zero
   expiry stay `PlanFailStale`, token `401`; the governance row keys
