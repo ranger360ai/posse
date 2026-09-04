@@ -261,6 +261,78 @@ func TestCreateSessionRefusesOverTheLoadGuard(t *testing.T) {
 	}
 }
 
+// ─── the escape hatch's second half (ranger-base-6s00n) ─────────────────────
+//
+// The FLEET refusal's advice is "set config load_guard: 0 to launch anyway".
+// `load_guard:` lives in config.yaml, which ADR 0015 §3 puts in the promoted
+// set — so on a home with a manifest that edit drifts the home from
+// promoted.json and the launch verify then refuses EVERY dispatched launch
+// until `posse promote` re-stamps it. Naming the knob and not that is a
+// refusal that walks the operator into a wider one.
+//
+// Both arms are pinned, because the fix is a CONDITIONAL sentence: an
+// unpromoted home has nothing verifying that edit, and prescribing a promote
+// there is the near-right instruction that teaches people to skim.
+
+// A home nobody has promoted: the bare knob, and no promote it does not need.
+func TestFleetRefusalNamesOnlyTheKnobOnAnUnpromotedHome(t *testing.T) {
+	t.Parallel()
+	b, _ := newTestBackend(t)
+	b.App.Load1 = func() (float64, error) { return 263, nil }
+
+	err := b.CreateSession(NewSessionOpts{Name: "s1", Dir: t.TempDir(), Bead: "x-1"})
+	if err == nil {
+		t.Fatal("a launch the fleet decided on must not reach a saturated box")
+	}
+	if !strings.Contains(err.Error(), "load_guard: 0") {
+		t.Errorf("the escape hatch must still be named: %v", err)
+	}
+	for _, no := range []string{"posse promote", "promoted.json", "ADR 0015"} {
+		if strings.Contains(err.Error(), no) {
+			t.Errorf("no manifest verifies this home's config.yaml — %q sends the operator at a command that does nothing here: %v", no, err)
+		}
+	}
+}
+
+// A promoted home: the same knob, plus what that edit costs and who undoes
+// it. The site is planLaunch's else arm, so this is what a dispatch pass, a
+// refill and the pulse all print.
+func TestFleetRefusalNamesTheRePromoteOnAPromotedHome(t *testing.T) {
+	t.Parallel()
+	b, _ := newTestBackend(t)
+	promotedTestHome(t, b)
+	b.App.Load1 = func() (float64, error) { return 263, nil }
+
+	err := b.CreateSession(NewSessionOpts{Name: "s1", Dir: t.TempDir(), Agent: "ranger", Bead: "x-1"})
+	if err == nil {
+		t.Fatal("a launch the fleet decided on must not reach a saturated box")
+	}
+	// The witness and the knob are unchanged — this bead widens the advice,
+	// it does not trade one half of the sentence for the other.
+	for _, want := range []string{"load guard", "263.00", "load_guard: 0", "config.yaml", "posse promote", "ADR 0015"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal must carry %q: %v", want, err)
+		}
+	}
+}
+
+// The manifest this binary cannot READ is the launch verify's own failure
+// mode — PromoteVerdict.Err is not OK(), so dispatch refuses on it too. The
+// advice has to follow the verify, not the happy path.
+func TestFleetRefusalTreatsAnUnreadableManifestAsPromoted(t *testing.T) {
+	t.Parallel()
+	b, _ := newTestBackend(t)
+	if err := os.WriteFile(b.App.PromoteManifestPath(), []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if v := b.App.VerifyPromoted(); v.OK() {
+		t.Fatal("fixture: an unreadable manifest must not verify clean")
+	}
+	if got := b.App.LoadGuardEscape(); !strings.Contains(got, "posse promote") {
+		t.Errorf("a manifest posse cannot read still refuses every dispatched launch; the advice must say so: %q", got)
+	}
+}
+
 // ─── the fleet/crew split (ranger-base-jfe5z) ───────────────────────────────
 //
 // OPERATOR RULING 2026-09-04: "the load guard should apply to fleet, never

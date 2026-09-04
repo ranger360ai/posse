@@ -114,6 +114,30 @@ func (a *App) LoadHigh(errw io.Writer) string {
 	return fmt.Sprintf("load guard: 1-min loadavg %.2f is over load_guard: %g", load, limit)
 }
 
+// LoadGuardEscape is the advice half of the FLEET refusal — how to launch
+// anyway, once the box has been named. The knob is real and a fleet ceiling
+// is a legitimate thing to change, but `load_guard:` lives in `config.yaml`,
+// which is in the promoted set (ADR 0015 §3). On a home with a manifest that
+// edit is not free: it drifts the home from `promoted.json`, and the launch
+// verify then refuses EVERY dispatched launch until `posse promote`
+// re-stamps it. A refusal that names the knob and not that consequence sends
+// the operator out of one hard stop and into a wider one (ranger-base-6s00n).
+//
+// `posse promote` is named only where it applies, the same way
+// constitutionLandRefusal names it only when a promoted path is in the hit:
+// on a home with no manifest nothing verifies the edit and the bare knob is
+// the whole truth, and prescribing a command that would do nothing about
+// what was just read is what teaches people to skim refusals. A manifest
+// this binary cannot READ counts as present — that is the launch verify's
+// own failure mode (PromoteVerdict.Err), and it refuses on it too.
+func (a *App) LoadGuardEscape() string {
+	const knob = "set config load_guard: 0 to launch anyway"
+	if m, err := ReadPromoteManifest(a.PromoteManifestPath()); err == nil && m == nil {
+		return knob
+	}
+	return knob + " — but config.yaml is promoted (ADR 0015 §3), so that edit needs a `posse promote` after it or the launch verify refuses every dispatched launch"
+}
+
 // ─── who is burning it (ranger-base-0p6x) ───────────────────────────────────
 //
 // The guard above measures the symptom perfectly and says nothing about the

@@ -1514,13 +1514,17 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 	// same culprits as a WARNING and proceeds, marking nothing degraded.
 	// The refusal below is what a dispatch pass, its refills and the pulse
 	// still get, unchanged; `load_guard: 0` still turns the whole thing off.
+	// Its advice half is LoadGuardEscape, which names the re-promote that
+	// knob needs on a home whose config.yaml a manifest attests
+	// (ranger-base-6s00n) — the fleet ceiling is a legitimate config change,
+	// but on a promoted home an unattested one refuses every later dispatch.
 	if why := a.LoadHigh(b.warnWriter()); why != "" {
 		if o.ByHand {
 			b.warn("posse: %s — launching %s anyway: this guard holds the FLEET back, not a launch you typed (ranger-base-jfe5z)%s\n",
 				why, o.Name, a.LoadCulpritLine())
 		} else {
-			return nil, Die("%s — refusing to launch %s into a saturated box; wait for it to drain, or set config load_guard: 0 to launch anyway%s",
-				why, o.Name, a.LoadCulpritLine())
+			return nil, Die("%s — refusing to launch %s into a saturated box; wait for it to drain, or %s%s",
+				why, o.Name, a.LoadGuardEscape(), a.LoadCulpritLine())
 		}
 	}
 	a.TightenEnvPerms(os.Stderr)    // every launch re-asserts 700/600 on envs/
