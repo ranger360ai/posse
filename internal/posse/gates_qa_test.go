@@ -421,9 +421,27 @@ func TestQA2f5rBlessedFormTakesWorkingTree(t *testing.T) {
 }
 
 // The table's LongMin is a MEASUREMENT, and a measurement rots. Every long
-// spoiler must carry one, and it must be git's own boundary: git resolves
-// it, and one character shorter git refuses to resolve. A stale number is
-// a hole (too long) or noise (too short), and both fail here.
+// spoiler must carry one, it must be a real prefix of its option, and the
+// arms the shim renders from it must COVER every abbreviation the git on
+// this box resolves. A LongMin that is too long is a hole: git takes
+// `--inc`, the shim's arms start at `--incl`, and the option walks past the
+// wall (ranger-base-l1at).
+//
+// It used to demand git's exact boundary — LongMin resolves and one
+// character shorter does not — and that is not a property one table can
+// have. git's boundary moves with git's option table: measured 2026-09-04
+// (ranger-base-90y3c), `git commit --int` IS `--interactive` on git 2.50.1
+// and is ambiguous on git 2.55.0, where the shortest is `--intera`. Both
+// gits are in play at once here — the box runs one, ci.yml's two runners
+// run the other — so equality was a red on one platform or the other on
+// every push, and it was the PIN that was wrong: `--int` covers git 2.55's
+// `--intera` fine, being shorter.
+//
+// The other direction is not a hole and is not free-floating either. Arms
+// are LITERAL case patterns, one per length (longArms), not prefix
+// matches, so an over-short LongMin adds arms for spellings git itself
+// refuses as ambiguous — it costs case lines and refuses nothing git would
+// have run. So it is reported, with both numbers, rather than failed on.
 func TestQASpoilerLongMinIsGitsBoundary(t *testing.T) {
 	t.Parallel()
 	for key, sp := range qualifierSpoilers {
@@ -439,9 +457,29 @@ func TestQASpoilerLongMinIsGitsBoundary(t *testing.T) {
 				t.Errorf("%q spoiler %s has no LongMin: its abbreviations walk past the wall (ranger-base-l1at)", key, o)
 				continue
 			}
+			if min == "" || !strings.HasPrefix(o, min) {
+				t.Errorf("%q spoiler %s: LongMin %q is not a prefix of it, so longArms renders the literal alone and every abbreviation walks past", key, o, min)
+				continue
+			}
 			got := qaGitResolves(t, o)
-			if len(got) == 0 || got[0] != min {
-				t.Errorf("%q spoiler %s: LongMin is %s but git's shortest is %v", key, o, min, got)
+			if len(got) == 0 {
+				t.Errorf("%q spoiler %s: this git resolves NO prefix of it, not even the full spelling — the probe is not measuring git's parser", key, o)
+				continue
+			}
+			// The wall property, and the only one that is a property: every
+			// abbreviation THIS git resolves has an arm.
+			arms := map[string]bool{}
+			for _, a := range longArms(o, min) {
+				arms[a] = true
+			}
+			for _, g := range got {
+				if !arms[g] {
+					t.Errorf("%q spoiler %s: git resolves %s and the rendered arms %v do not cover it — LongMin %q is a hole", key, o, g, longArms(o, min), min)
+				}
+			}
+			if len(got[0]) > len(min) {
+				t.Logf("%q spoiler %s: LongMin is %s, this git's shortest is %s — covered, with %d arm(s) of slack (git version drift, not a hole)",
+					key, o, min, got[0], len(got[0])-len(min))
 			}
 		}
 	}
