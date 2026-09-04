@@ -132,6 +132,31 @@ KEEP=${POSSE_TESTBIN_KEEP:-3}
 
 die() { printf 'gotest.sh: %s\n' "$*" >&2; exit 2; }
 
+# `stat` is not one program, and the difference is invisible from either box.
+# BSD stat (macOS) spells the format `-f` and prints mtime as %m and the
+# name as %N; GNU stat (Linux, which is what ubuntu-latest runs) spells it
+# `-c` and calls the same two fields %Y and %n. A BSD format string handed
+# to GNU stat does not fail in a way any caller here could see: GNU reads
+# `-f` as --file-system and prints a filesystem report for a file literally
+# named "%m %N", so `find -exec stat -f ...` yielded lines this script then
+# parsed as garbage. Measured on ubuntu-latest 2026-09-04 (ranger-base-90y3c):
+# --prune deleted NOTHING there for as long as this file has existed, and
+# the self-test's own inode arm read a filesystem banner and called it an
+# inode — a false pass, on the one arm the whole script exists for.
+#
+# So the spelling is picked by PROBE, once, and both readers go through it.
+# The probe is `-c`, because that is the flag BSD stat does not have at all
+# (`stat: illegal option -- c`, exit 1) while GNU answers it; probing `-f`
+# instead tells you nothing, since both accept the flag and only the
+# MEANING differs.
+if stat -c '%Y' . >/dev/null 2>&1; then
+	stat_mtime_name() { stat -c '%Y %n' "$@"; }
+	stat_inode()      { stat -c '%i' "$@"; }
+else
+	stat_mtime_name() { stat -f '%m %N' "$@"; }
+	stat_inode()      { stat -f '%i' "$@"; }
+fi
+
 # slug turns an import path into a filename component: the last two elements,
 # non-alphanumerics folded to '-'. Two packages with the same last element
 # (cmd/posse and internal/posse) must not collide, and they do not: the sha is
@@ -165,14 +190,14 @@ prune() {
 	for sl in $(find "$CACHE" -maxdepth 1 -name '*.test' -type f 2>/dev/null |
 			sed 's|.*/||; s|-[0-9a-f]\{16\}\.test$||' | sort -u); do
 		n=0
-		# Newest first (BSD stat prints mtime as an epoch), keep $KEEP.
+		# Newest first (both stats print mtime as an epoch), keep $KEEP.
 		while read -r _ f; do
 			n=$((n + 1))
 			[ "$n" -le "$KEEP" ] && continue
 			rm -f "$f"
 			echo "pruned $(basename "$f")"
-		done < <(find "$CACHE" -maxdepth 1 -name "$sl-*.test" -type f \
-				-exec stat -f '%m %N' {} \; | sort -rn)
+		done < <(find "$CACHE" -maxdepth 1 -name "$sl-*.test" -type f |
+				while read -r p; do stat_mtime_name "$p"; done | sort -rn)
 	done
 	echo "gotest.sh: kept $KEEP per package in $CACHE"
 }
@@ -269,7 +294,8 @@ self_test() {
 	# NO cached binary has to print its own FAIL, or a mutant that guts run()
 	# entirely takes the whole self-test down silently and reads as a
 	# survivor (it did, the first time this was mutation-checked).
-	cachedinode() { find "${SELFTEST_TMP}/cache" -name '*.test' -exec stat -f '%i' {} \; 2>/dev/null | head -1 || true; }
+	cachedinode() { find "${SELFTEST_TMP}/cache" -name '*.test' 2>/dev/null |
+		while read -r p; do stat_inode "$p"; done 2>/dev/null | head -1 || true; }
 	cachedcount() { find "${SELFTEST_TMP}/cache" -name '*.test' 2>/dev/null | wc -l | tr -d ' '; }
 	SELFTEST_TMP=$(mktemp -d)
 	trap 'rm -rf "${SELFTEST_TMP:-}"' EXIT
@@ -310,7 +336,15 @@ self_test() {
 	i1=$(cachedinode)
 	out=$( cd "$pkg" && "$SELF" . -run TestAlpha 2>&1 ) || { echo "$out"; fail "arm1 second run" "run failed"; }
 	i2=$(cachedinode)
-	if [ -n "$i1" ] && [ "$i1" = "$i2" ]; then
+	# NUMERIC, not merely non-empty. A reader that is not returning inodes
+	# at all returns the same non-inode twice and satisfies `-n` plus
+	# equality — which is exactly how the BSD-only `stat -f` above passed
+	# this arm on ubuntu-latest while measuring a filesystem banner
+	# (ranger-base-90y3c). The arm the whole script exists for must not be
+	# green over a reader that reads nothing.
+	local numeric=no
+	case $i1 in ''|*[!0-9]*) ;; *) numeric=yes ;; esac
+	if [ "$numeric" = yes ] && [ "$i1" = "$i2" ]; then
 		say "reuse: unchanged package keeps one inode"
 	else
 		fail "reuse: unchanged package keeps one inode" "$i1 vs $i2"
