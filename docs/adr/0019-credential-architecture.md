@@ -23,11 +23,13 @@ default case only; the adapter derives the name it reads. Amended
 2026-09-03 (ranger-base-z089h, from ranger-base-4poib): the meter
 credential's life is MEASURED at 8h and its only writer is the
 operator's own interactive claude — D5's load-bearing reason ("no hand
-to warn") is false, so the meter gets a gauge and a once-per-token
-alarm off the shared snapshot at zero new store reads; D4 keeps posse
-off the refreshToken and puts "ask the owner to refresh" to the
-operator as ranger-base-jefo0; a 401 on an unexpired credential is a
-fifth failure class.*
+to warn") is false. Nothing is built: the at-the-bite line
+(ranger-base-4poib, ranger-base-ddivo) is the smallest shape and no
+measured failure of it survives their promotion; a gauge, a
+once-per-token alarm and a fifth 401 class are priced and parked. D4
+keeps posse off the refreshToken; wkai3 option B is ordered first, and
+"ask the owner to refresh" waits behind its number as
+ranger-base-jefo0.*
 
 ## Context
 
@@ -397,9 +399,28 @@ refresh`:
   loop. Since ADR 0042 every crew runtime runs on the mint and is
   shimmed off the item, so the operator's own shell is the only writer
   there is, and any 8h in which it does not run `claude` is 8h of a
-  blind meter. Three ways to close that gap were priced; the bullet
-  above stands for the first and the operator decides the second:
+  blind meter. Four ways to meet that were priced, smallest first
+  (operator standing order 2026-09-03, "simplest way, or not at all");
+  the bullet above stands, and nothing below it is built:
 
+  - **0 — do nothing beyond what is already built.** The at-the-bite
+    line already exists twice over: ranger-base-4poib's 401 names the
+    expiry it read and how long ago, and ranger-base-ddivo's loud line
+    prints the blind age on every watch pass, in `posse status` and in
+    the header within one TTL of the death. The hand runs `claude`; 8h
+    later the same line returns. What this costs is MEASURED: the
+    09-01→09-03 blindness — but that incident was ddivo's quiet cache
+    and 4poib's unnamed expiry, both since fixed, so no measured
+    failure of *this* option survives their promotion. It is the
+    decision until one does.
+  - **B — the meter reads the mint** (ranger-base-wkai3 option B, the
+    operator's own "measure first" ruling of 2026-09-01; the number is
+    ranger-base-hs0dl, a P4 one-shot for an uncaged shell). One
+    env-set override in front of the store read; the mint has no 8h
+    clock and its `# expires=` stamp already rides the session
+    surfaces, so the whole question dissolves. This is the smallest
+    shape that removes the clock rather than announcing it, and every
+    larger one below waits on its number.
   - **1a — posse performs the OAuth refresh itself.** REJECTED, and
     the rejection is the architecture's, not a permission the operator
     could grant: (i) it makes posse a second writer of a rotating pair,
@@ -415,8 +436,9 @@ refresh`:
     (iv) it voids the property ADR 0042 measured and keeps: the pair
     has one writer *program*, and posse's shim is what holds eleven
     runtimes to it.
-  - **1b — posse asks the owner.** PROPOSED to the operator as
-    ranger-base-jefo0, not taken: the watch loop execs the operator's
+  - **1b — posse asks the owner.** Priced and parked as
+    ranger-base-jefo0, blocked on hs0dl: it is asked only if B measures
+    dead, and no build bead exists for it. The shape: the watch loop execs the operator's
     own runtime binary — uncaged, unshimmed, no mint in its
     environment, the two config-dir variables pinned as the launch pins
     them — with the cheapest invocation that makes the runtime's own
@@ -432,13 +454,9 @@ refresh`:
     about three times a day, possibly a turn on their window per
     refresh, and two runtime processes on one pair (ASSUMED benign —
     the runtime already handles its own multiple windows — and the
-    probe checks it). If they refuse, this bullet stays as written
-    and D5's gauge is how the hand learns when.
-  - **B — the meter reads the mint** (ranger-base-wkai3 option B).
-    Ordered first if ranger-base-hs0dl measures 200: the mint has no
-    8h clock and its `# expires=` stamp already rides the session
-    surfaces, so 1b and the alarm half of D5 dissolve. Not this page's
-    to take before the number.
+    probe checks it). It is a new unattended actor on the operator's
+    account and a new state (S3 under a locked keychain): two of the
+    racing signals, so it earns a build only by B's measured failure.
 - never touches a metered credential: `ANTHROPIC_API_KEY` remains
   rejected on the money line (rangerhq-kiz), restated here.
 - with no arguments: a report — each (runtime, purpose), its source,
@@ -518,7 +536,19 @@ the measurement:
   `CredMeta.ExpiresAt` — which the reader then drops. The expiry is in
   the bytes the instance already reads; the design writes it down.
 
-The decision, three parts:
+**The decision: nothing is built.** The do-nothing option leads and
+wins (operator standing order 2026-09-03). What the operator asked for
+— "learns before the blindness and not after" — is worth at most the
+horizon before an 8h death, and it reaches a hand only if one is at
+the desk, where the report already answers "when does it die" in one
+command. The unasked at-the-bite line (ranger-base-ddivo, within one
+TTL, three surfaces, with 4poib's expiry in its sentence) is the
+smallest shape that meets the observable "the operator learns", and
+no measured failure of it exists after those two promote: the
+09-01→09-03 blindness was their absence, not the absence of a
+pre-warning. The three shapes below are PRICED AND PARKED, smallest
+first, with no build beads; each earns a bead only by a measured cost
+of an 8h blindness that the at-the-bite line did not prevent:
 
 1. **The snapshot carries the presented credential's expiry.** The
    shared reading (`planEntry`) gains the `ExpiresAt` and `Source` of
@@ -548,8 +578,16 @@ The decision, three parts:
    `guard-credential` row takes over on the next read, as today. Under
    1b, if taken, the same row is what the owner-refresh reads as its
    trigger and what shows whether it worked.
-3. **A fifth failure class.** A 401 presented with a credential whose
-   stored `expiresAt` is in the future is `PlanFailRejected`
+3. **A fifth failure class — last, and only after a sighting.** The
+   state (a 401 with a future stored expiry) is UNOBSERVED; a class
+   for it is a path with no caller. If it is ever observed, the first
+   shape is a one-line prose change to `PlanFailStale`'s header word
+   ("credential refused (401)" is true in all three arms and the
+   sentence carries the diagnosis), and the class below is the shape
+   after that, kept here so the sighting is not filed as "stale" and
+   cleared by a command that cannot clear it. As designed: a 401
+   presented with a credential whose stored `expiresAt` is in the
+   future is `PlanFailRejected`
    ("credential refused while live (401)", token `401-live`): the
    operator's move is `/login`, because a `claude` run with a live
    access token performs no write (D2 store 3's detective bullet says
@@ -875,8 +913,11 @@ design puts more weight on files. What is actually traded:
   variable with a trailing slash and log in; the item's suffix says
   whether the config-dir arm hashes the value verbatim (ASSUMED in D2)
   or a cleaned path.
-- V14 (unit, added 2026-09-03 ranger-base-z089h, build
-  ranger-base-z0gkm; either box): the snapshot written by a successful
+- V14–V16 are PARKED with the shapes they pin (D5 as amended: nothing
+  built; the beads cut for them were closed not-doing the same day,
+  ranger-base-z0gkm / m6y0v / zxpcz, and a future build re-files
+  against these rows). V17 runs only after ranger-base-hs0dl.
+- V14 (unit, parked 2026-09-03 ranger-base-z089h; either box): the snapshot written by a successful
   read carries the presented credential's `ExpiresAt` and `Source`;
   the four surfaces that print the shared reading print the death time
   and the snapshot's read time beside it from the FILE — pinned by a
@@ -888,7 +929,7 @@ design puts more weight on files. What is actually traded:
   carries still prints the read time. Mutation checks: drop the read
   time; render from a live store read instead of the snapshot; render
   a zero as fresh.
-- V15 (unit, added 2026-09-03, build ranger-base-m6y0v): the alarm
+- V15 (unit, parked 2026-09-03): the alarm
   row's key is the token's own `expiresAt`; two ticks inside the
   horizon on one snapshot raise one row; a snapshot with an advanced
   expiry raises a second with a different key; a past expiry raises
@@ -896,16 +937,16 @@ design puts more weight on files. What is actually traded:
   changes with the row present (expiry gates nothing — the positive
   arm runs a 99%/99% reading through three passes with the alarm up
   and asserts the same decisions as without it).
-- V16 (unit, added 2026-09-03, build ranger-base-zxpcz, blocked on
-  ranger-base-4poib landing): a 401 with `AuthFailure.ExpiresAt` in the
+- V16 (unit, parked 2026-09-03; needs ranger-base-4poib landed): a 401 with `AuthFailure.ExpiresAt` in the
   future classes `PlanFailRejected`, token `401-live`, `Stale()` false,
   sentence names `/login` and never "run `claude` once"; past and zero
   expiry stay `PlanFailStale`, token `401`; the governance row keys
   differ between the two; `PlanFailureOf` still returns exactly one
   class for every error fixture in the table. Mutation check: collapse
   the two keys.
-- V17 (operator, added 2026-09-03; uncaged shell only): the probe on
-  ranger-base-jefo0 — which runtime verb performs the refresh write
-  non-interactively, what an open interactive window does across it,
-  and the keychain's lock state during the run. Its answer is 1b's
-  build-or-refuse (ranger-base-bc02b).
+- V17 (operator, added 2026-09-03; uncaged shell only; after hs0dl
+  measures B dead): the probe on ranger-base-jefo0 — which runtime
+  verb performs the refresh write non-interactively, what an open
+  interactive window does across it, and the keychain's lock state
+  during the run. Its answer is 1b's build-or-refuse; the build bead
+  is filed then, not before.
