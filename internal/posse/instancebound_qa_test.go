@@ -31,6 +31,14 @@ package posse
 // rest of the corpus, or dropped where the attribution read worse renamed
 // than gone (ADR 0012 D2/D6). See qibRootTestFloor below.
 //
+// WIDENED again by ranger-base-o3g6a from lines to NAMES. Both pins below
+// read file CONTENTS and nothing else: this walk computed relPath for its
+// message and then matched `line` only, and the literal pin parses string
+// literals, which a file name is not. A path ships in every clone exactly as
+// a line does, and one file — a probe named after a QA seat, arrived at
+// 95e7939 — sat on main under both greens for a day. Both walks now match the
+// path they already had in hand, and say which kind of hit each one is.
+//
 // An archive id survives a sweep either way — "measured (rangerhq-lrnp)" is
 // the shape the amendment names: D6 grandfathers *ids* (nothing promises to
 // resolve one), D2 depersonalizes *names* (any deployer could have written
@@ -80,9 +88,10 @@ var qibShippedRoots = []string{"cmd", "internal", "etc", "examples"}
 // read there before an absence of hits means anything.
 var qibRootFloor = map[string]int{"cmd": 5, "internal": 150, "etc": 1, "examples": 15}
 
-// Assembled so this file itself does not contain the banned spellings.
-func qibCrewPattern() *regexp.Regexp {
-	names := []string{
+// Assembled so this file itself does not contain the banned spellings. One
+// list, two patterns below, so a name added here reaches both readers.
+func qibCrewNames() []string {
+	return []string{
 		"di" + "nesh",
 		"gil" + "foyle",
 		"hoo" + "ver",
@@ -98,29 +107,90 @@ func qibCrewPattern() *regexp.Regexp {
 		"da" + "ve",
 		"david" + "stacy",
 	}
-	return regexp.MustCompile(`(?i)\b(?:` + strings.Join(names, "|") + `)\b`)
 }
 
-// TestShippedTreeNamesRolesNotThisCrew reads EVERY line of EVERY file under
-// the three shipped trees — production Go, test Go, testdata, and the toml,
-// md and Dockerfiles that ship beside them. There is no per-file rule to get
-// wrong because the amendment left none: a file is in scope if it is in the
-// tree.
+// qibCrewPattern reads LINES, where \b is right: prose puts spaces and
+// punctuation around a name, and requiring them is what keeps the pin off
+// every word that merely contains one.
+func qibCrewPattern() *regexp.Regexp {
+	return regexp.MustCompile(`(?i)\b(?:` + strings.Join(qibCrewNames(), "|") + `)\b`)
+}
+
+// qibCrewPathPattern reads PATHS, and deliberately drops \b. A path is not
+// prose and has none of prose's boundaries: in Go's own file-naming
+// convention the separator is `_`, which is a word character, so \b never
+// fires beside it. Measured (ranger-base-o3g6a): the line pattern does NOT
+// match `internal/posse/<a QA seat>_as19_probe_test.go`, which is the exact
+// file this arm was written for. Requiring a boundary here would be a path
+// arm blind to the one hit that motivated it — asserted, not just said, in
+// TestShippedPinsSeeACrewNameInAPath.
 //
-// The repo root's directories are not walked here — its non-test .go is
+// The cost is a substring match: a file named after something that merely
+// CONTAINS a crew name would fail this pin. Nothing in the shipped tree does
+// (censused at the fix), the failure is loud and names the file, and the fix
+// for one is a rename — which is what a real hit needs anyway. A false
+// negative here is a crew name riding main under a green pin, which is the
+// defect this whole file exists to prevent, so the trade is not close.
+func qibCrewPathPattern() *regexp.Regexp {
+	return regexp.MustCompile(`(?i)(?:` + strings.Join(qibCrewNames(), "|") + `)`)
+}
+
+// qibReaders is the pair of patterns every scan needs: one for lines, one for
+// paths. They are different regexps for the reason qibCrewPathPattern gives,
+// and they travel together so no scanner can be handed one and quietly use it
+// for both — which is how a path arm would come out blind to `_`.
+type qibReaders struct{ line, path *regexp.Regexp }
+
+func qibCrewReaders() qibReaders {
+	return qibReaders{line: qibCrewPattern(), path: qibCrewPathPattern()}
+}
+
+// qibPathHit reports a crew name in a file's own PATH. The name a file ships
+// UNDER is not a line of any file, which is why nothing saw it: both pins
+// here read contents only (ranger-base-o3g6a). `re` must be
+// qibCrewPathPattern's, not the line pattern's — see there for why the two
+// are not one regexp.
+//
+// The hit is worded, and carries no line number, so a reader can tell it from
+// a content hit without going to look for a line that is not there.
+// Slash-separated so the message reads the same wherever the suite runs.
+func qibPathHit(re *regexp.Regexp, relPath string) []string {
+	rel := filepath.ToSlash(relPath)
+	loc := re.FindStringIndex(rel)
+	if loc == nil {
+		return nil
+	}
+	return []string{rel + ": in the FILE NAME, not its content: " + rel[loc[0]:loc[1]]}
+}
+
+// qibTreeScan is what one pass of TestShippedTreeNamesRolesNotThisCrew read.
+// The reading is factored out of the test (ranger-base-o3g6a) so the wrong
+// arm at the bottom of this file can point the same scanner at a scratch tree
+// it planted known hits in. Nothing is decided here: the floors and the
+// verdict stay with the caller.
+type qibTreeScan struct {
+	hits          []string
+	scanned       map[string]int
+	rootTestFiles int
+}
+
+// qibScanShippedTree reads EVERY line of EVERY file under the given roots —
+// production Go, test Go, testdata, and the toml, md and Dockerfiles that
+// ship beside them — plus the NAME each of them ships under. There is no
+// per-file rule to get wrong because the amendment left none: a file is in
+// scope if it is in the tree.
+//
+// The root's directories are not walked here — its non-test .go is
 // TestShippedStringsNameRolesNotThisCrew's fourth root below, and its .md is
 // the root narrative the amendment excludes on purpose. Its *_test.go family
-// WAS a real gap (ranger-base-4say) and gets its own non-recursive pass
-// below, after the three trees: root is where the QA suite lives, not a tree
-// this walk should recurse into (that would re-read cmd/, internal/, etc/
-// and examples/ a second time and double-count their hits).
-func TestShippedTreeNamesRolesNotThisCrew(t *testing.T) {
-	t.Parallel()
-	root := qibRepoRoot(t)
-	re := qibCrewPattern()
-	var hits []string
-	scanned := map[string]int{}
-	for _, rel := range qibShippedRoots {
+// WAS a real gap (ranger-base-4say) and gets its own non-recursive pass at
+// the end: root is where the QA suite lives, not a tree this walk should
+// recurse into (that would re-read cmd/, internal/, etc/ and examples/ a
+// second time and double-count their hits).
+func qibScanShippedTree(t *testing.T, root string, roots []string, re qibReaders) qibTreeScan {
+	t.Helper()
+	scan := qibTreeScan{scanned: map[string]int{}}
+	for _, rel := range roots {
 		err := filepath.WalkDir(filepath.Join(root, rel), func(path string, d os.DirEntry, err error) error {
 			if err != nil {
 				return err
@@ -135,11 +205,12 @@ func TestShippedTreeNamesRolesNotThisCrew(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			scanned[rel]++
+			scan.scanned[rel]++
 			relPath, _ := filepath.Rel(root, path)
+			scan.hits = append(scan.hits, qibPathHit(re.path, relPath)...)
 			for i, line := range bytes.Split(body, []byte("\n")) {
-				if loc := re.FindIndex(line); loc != nil {
-					hits = append(hits, relPath+":"+strconv.Itoa(i+1)+": "+string(line[loc[0]:loc[1]]))
+				if loc := re.line.FindIndex(line); loc != nil {
+					scan.hits = append(scan.hits, filepath.ToSlash(relPath)+":"+strconv.Itoa(i+1)+": "+string(line[loc[0]:loc[1]]))
 				}
 			}
 			return nil
@@ -148,7 +219,7 @@ func TestShippedTreeNamesRolesNotThisCrew(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// The repo root's *_test.go family (ranger-base-4say): the live-QA suite
+	// The root's *_test.go family (ranger-base-4say): the live-QA suite
 	// sitting beside go.mod, outside every tree walked above. Non-recursive —
 	// os.ReadDir does not descend, so cmd/, internal/, etc/ and examples/ are
 	// not re-read here, and docs/ and the root .md narrative (D6's excluded
@@ -157,31 +228,39 @@ func TestShippedTreeNamesRolesNotThisCrew(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rootTestFiles := 0
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), "_test.go") {
 			continue
 		}
-		rootTestFiles++
+		scan.rootTestFiles++
+		scan.hits = append(scan.hits, qibPathHit(re.path, e.Name())...)
 		body, err := os.ReadFile(filepath.Join(root, e.Name()))
 		if err != nil {
 			t.Fatal(err)
 		}
 		for i, line := range bytes.Split(body, []byte("\n")) {
-			if loc := re.FindIndex(line); loc != nil {
-				hits = append(hits, e.Name()+":"+strconv.Itoa(i+1)+": "+string(line[loc[0]:loc[1]]))
+			if loc := re.line.FindIndex(line); loc != nil {
+				scan.hits = append(scan.hits, e.Name()+":"+strconv.Itoa(i+1)+": "+string(line[loc[0]:loc[1]]))
 			}
 		}
 	}
+	return scan
+}
+
+func TestShippedTreeNamesRolesNotThisCrew(t *testing.T) {
+	t.Parallel()
+	root := qibRepoRoot(t)
+	scan := qibScanShippedTree(t, root, qibShippedRoots, qibCrewReaders())
+
 	// Same fm4p-lesson witness as the per-root floors below, sized off the 34
 	// *_test.go files at root when this pass was added — comfortably under
 	// that, so ordinary growth doesn't flake it, but nowhere near 0.
 	const qibRootTestFloor = 20
-	if rootTestFiles < qibRootTestFloor {
+	if scan.rootTestFiles < qibRootTestFloor {
 		t.Fatalf("only %d _test.go files read at the repo root (floor %d) — the walk found nothing to pin there",
-			rootTestFiles, qibRootTestFloor)
+			scan.rootTestFiles, qibRootTestFloor)
 	}
-	t.Logf("read %d _test.go files at repo root", rootTestFiles)
+	t.Logf("read %d _test.go files at repo root", scan.rootTestFiles)
 
 	// A pin that measures pure absence is satisfied by measuring nothing
 	// (the fm4p lesson, and the guard q3gp put on the pin below): say how
@@ -206,15 +285,15 @@ func TestShippedTreeNamesRolesNotThisCrew(t *testing.T) {
 	}
 	sort.Strings(floored)
 	for _, rel := range floored {
-		if scanned[rel] < qibRootFloor[rel] {
+		if scan.scanned[rel] < qibRootFloor[rel] {
 			t.Fatalf("only %d files read under %s/ (floor %d) — the walk found nothing to pin there",
-				scanned[rel], rel, qibRootFloor[rel])
+				scan.scanned[rel], rel, qibRootFloor[rel])
 		}
-		t.Logf("read %d files under %s/", scanned[rel], rel)
+		t.Logf("read %d files under %s/", scan.scanned[rel], rel)
 	}
-	if len(hits) > 0 {
+	if len(scan.hits) > 0 {
 		t.Errorf("ADR 0012 App.A 5: the shipped tree names the originating instance (%d hits):\n  %s",
-			len(hits), strings.Join(hits, "\n  "))
+			len(scan.hits), strings.Join(scan.hits, "\n  "))
 	}
 }
 
@@ -285,18 +364,19 @@ func qibShippedStrings(t *testing.T, path string) []struct {
 	return out
 }
 
-func TestShippedStringsNameRolesNotThisCrew(t *testing.T) {
-	t.Parallel()
-	root := qibRepoRoot(t)
-	re := qibCrewPattern()
-	var hits []string
-	scanned := 0
-	// The repo root is walked NON-recursively as a fourth root: its own .go
-	// files ship too (embed.go), and every subdirectory that holds shipped
-	// Go is already named above. The test files sitting there are outside
-	// TestShippedTreeNamesRolesNotThisCrew's three roots — that gap is the
-	// test corpus's, filed as ranger-base-4say and not swept here.
-	for _, rel := range []string{"cmd", "internal", "etc", "."} {
+// qibScanShippedStringFiles is TestShippedStringsNameRolesNotThisCrew's
+// reading, factored out of it (ranger-base-o3g6a) for the same reason as the
+// tree scanner above: the wrong arm at the bottom of this file points it at a
+// scratch tree with known hits planted in it. The floors and the verdict stay
+// with the caller.
+//
+// The repo root is walked NON-recursively as a fourth root: its own .go files
+// ship too (embed.go), and every subdirectory that holds shipped Go is already
+// named. The test files sitting there are outside qibScanShippedTree's roots —
+// that gap is the test corpus's, filed as ranger-base-4say and not swept here.
+func qibScanShippedStringFiles(t *testing.T, root string, roots []string, re qibReaders) (hits []string, scanned int) {
+	t.Helper()
+	for _, rel := range roots {
 		err := filepath.WalkDir(filepath.Join(root, rel), func(path string, d os.DirEntry, err error) error {
 			if err != nil {
 				return err
@@ -313,9 +393,13 @@ func TestShippedStringsNameRolesNotThisCrew(t *testing.T) {
 			}
 			scanned++
 			relPath, _ := filepath.Rel(root, path)
+			// The file's own name (ranger-base-o3g6a). This walk is the only
+			// reader of the repo root's non-test .go, so a crew name arriving
+			// as embed.go's neighbour is held here or nowhere.
+			hits = append(hits, qibPathHit(re.path, relPath)...)
 			for _, lit := range qibShippedStrings(t, path) {
 				for i, line := range strings.Split(lit.Text, "\n") {
-					loc := re.FindIndex([]byte(line))
+					loc := re.line.FindIndex([]byte(line))
 					if loc == nil {
 						continue
 					}
@@ -327,7 +411,7 @@ func TestShippedStringsNameRolesNotThisCrew(t *testing.T) {
 					if lit.Raw {
 						at += i
 					}
-					hits = append(hits, relPath+":"+strconv.Itoa(at)+": "+line[loc[0]:loc[1]])
+					hits = append(hits, filepath.ToSlash(relPath)+":"+strconv.Itoa(at)+": "+line[loc[0]:loc[1]])
 				}
 			}
 			return nil
@@ -336,6 +420,13 @@ func TestShippedStringsNameRolesNotThisCrew(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	return hits, scanned
+}
+
+func TestShippedStringsNameRolesNotThisCrew(t *testing.T) {
+	t.Parallel()
+	root := qibRepoRoot(t)
+	hits, scanned := qibScanShippedStringFiles(t, root, []string{"cmd", "internal", "etc", "."}, qibCrewReaders())
 	// A pin that measures pure absence is satisfied by measuring nothing
 	// (the fm4p lesson): say how many files were actually parsed.
 	if scanned < 20 {
@@ -345,5 +436,128 @@ func TestShippedStringsNameRolesNotThisCrew(t *testing.T) {
 	if len(hits) > 0 {
 		t.Errorf("ADR 0012 App.A 5: shipped string names the originating instance (%d hits):\n  %s",
 			len(hits), strings.Join(hits, "\n  "))
+	}
+}
+
+// ─── the wrong arm for both path arms (ranger-base-o3g6a) ────────────────────
+//
+// Both scanners above now match the NAME a file ships under as well as its
+// lines. An arm nobody has shown able to fail is an absence, not a pin — and
+// this one WAS an absence for as long as it existed: the tree walk built
+// relPath for its message and then matched `line` only, so a probe named
+// after a QA seat rode main green under both pins for a day.
+//
+// So: a scratch tree with the four cases that separate the arms — a name in
+// the path, a name in a comment, a name in a string literal, and a file that
+// is clean both ways — read by the same two scanners the pins above call.
+// Each must report exactly the hits planted and no others, and must say which
+// KIND each hit is, because a reader who cannot tell a name hit from a
+// content hit cannot act on either.
+func TestShippedPinsSeeACrewNameInAPath(t *testing.T) {
+	t.Parallel()
+	re := qibCrewReaders()
+	root := t.TempDir()
+	// Assembled the way qibCrewNames is, so this file still does not contain
+	// the spellings the pins ban.
+	crew := "lau" + "rie"
+	clean := "package main\n\n// a comment naming nobody\n"
+	inComment := "package main\n\n// measured by " + crew + " on a Tuesday\n"
+	inLiteral := "package main\n\nvar who = \"measured by " + crew + "\"\n"
+	if err := os.MkdirAll(filepath.Join(root, "cmd"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	plant := map[string]string{
+		// Under a walked root: clean, name-in-path, name-in-comment,
+		// name-in-literal.
+		filepath.Join("cmd", "innocent.go"):    clean,
+		filepath.Join("cmd", crew+"_probe.go"): clean,
+		filepath.Join("cmd", "incomment.go"):   inComment,
+		filepath.Join("cmd", "inliteral.go"):   inLiteral,
+		// At the root: the *_test.go family the tree scanner reads, and the
+		// non-test .go only the literal scanner reaches (embed.go's class).
+		crew + "_root_test.go": clean,
+		"clean_root_test.go":   clean,
+		crew + "_embed.go":     clean,
+	}
+	for rel, body := range plant {
+		if err := os.WriteFile(filepath.Join(root, rel), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// The reason the two patterns are not one pattern, asserted rather than
+	// left in a comment: `\b` does not fire before `_`, so the LINE pattern
+	// cannot see the planted path. Anyone who "simplifies" qibCrewPathPattern
+	// back to the line pattern fails here instead of shipping a blind arm.
+	planted := "cmd/" + crew + "_probe.go"
+	if re.line.MatchString(planted) {
+		t.Fatalf("the line pattern now matches %q — this fixture no longer measures the boundary trap that motivated the path arm", planted)
+	}
+	if !re.path.MatchString(planted) {
+		t.Fatalf("the path pattern does not match %q — the path arm is blind to the very shape it was written for", planted)
+	}
+
+	// file [kind], so the assertion reads on the two things that matter: which
+	// file, and whether the scanner called it a name or a content hit.
+	summarise := func(hits []string) []string {
+		out := make([]string, 0, len(hits))
+		for _, h := range hits {
+			kind := "content"
+			if strings.Contains(h, "in the FILE NAME") {
+				kind = "name"
+			}
+			out = append(out, strings.SplitN(h, ":", 2)[0]+" ["+kind+"]")
+		}
+		sort.Strings(out)
+		return out
+	}
+	same := func(got, want []string) bool {
+		if len(got) != len(want) {
+			return false
+		}
+		for i := range got {
+			if got[i] != want[i] {
+				return false
+			}
+		}
+		return true
+	}
+
+	// The tree scanner reads every line of every file under cmd/, plus the
+	// root's *_test.go family. It does NOT read the root's non-test .go —
+	// that is the literal scanner's fourth root — so <crew>_embed.go is
+	// correctly absent here.
+	scan := qibScanShippedTree(t, root, []string{"cmd"}, re)
+	wantTree := []string{
+		crew + "_root_test.go [name]",
+		"cmd/" + crew + "_probe.go [name]",
+		"cmd/incomment.go [content]",
+		"cmd/inliteral.go [content]",
+	}
+	sort.Strings(wantTree)
+	if got := summarise(scan.hits); !same(got, wantTree) {
+		t.Errorf("tree scanner hits:\n  got  %v\n  want %v", got, wantTree)
+	}
+	if scan.scanned["cmd"] != 4 || scan.rootTestFiles != 2 {
+		t.Errorf("tree scanner read cmd/=%d root _test.go=%d; want 4 and 2 — a control that read the wrong files proves nothing",
+			scan.scanned["cmd"], scan.rootTestFiles)
+	}
+
+	// The literal scanner parses with comments OFF, so incomment.go is
+	// correctly absent; it skips *_test.go, so the root test file is too. It
+	// is the only reader of the root's non-test .go, which is why the path
+	// arm belongs there as well as on the tree walk.
+	hits, scanned := qibScanShippedStringFiles(t, root, []string{"cmd", "."}, re)
+	wantLit := []string{
+		crew + "_embed.go [name]",
+		"cmd/" + crew + "_probe.go [name]",
+		"cmd/inliteral.go [content]",
+	}
+	sort.Strings(wantLit)
+	if got := summarise(hits); !same(got, wantLit) {
+		t.Errorf("literal scanner hits:\n  got  %v\n  want %v", got, wantLit)
+	}
+	if scanned != 5 {
+		t.Errorf("literal scanner parsed %d files; want 5 — a control that read the wrong files proves nothing", scanned)
 	}
 }
