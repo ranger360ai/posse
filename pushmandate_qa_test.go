@@ -203,6 +203,29 @@ func TestPushMandateCheckerDiscriminates(t *testing.T) {
 			t.Errorf("the line scanner reds a line that orders nobody to push: %q -> %v", fine, got)
 		}
 	}
+
+	// BOTH ON ONE LINE, which is the case the nine arms above cannot see
+	// (ranger-base-3nyqf, found verifying ranger-base-rulbl under
+	// ranger-base-y0r3m). Every line above holds exactly one "push", so the
+	// loop in mentionsPushAsAWord — the part that keeps looking after it
+	// rejects a letter-preceded match — was never exercised, and replacing
+	// the whole function with a single strings.Index passed all nine.
+	//
+	// A line naming a colliding identifier AND ordering the reader is not
+	// hypothetical: the AGENTS.md bullet ranger-base-rulbl added censuses
+	// tree-wide pins by name in a table, TestTestCorpusHidesNoCrewName
+	// BehindAnEscape among them, and ranger-base-ik44f is the bead for
+	// giving those rows a door — which is prose written beside those names.
+	// Without this arm, the seat who simplifies the scanner restores the
+	// blind spot it was narrowed to remove, and the suite says nothing.
+	for _, both := range []string{
+		"  TestTestCorpusHidesNoCrewNameBehindAnEscape — run it before you push",
+		"See TestTestCorpusHidesNoCrewNameBehindAnEscape, then push the branch yourself",
+	} {
+		if got := pushMentionFaults(both); len(got) != 1 {
+			t.Errorf("the line scanner stops at the first push-shaped substring: a line that names a colliding identifier AND orders the reader must still fault: %q -> %v", both, got)
+		}
+	}
 }
 
 // TestRepoAgentsMdCarriesNoPushMandate reads the orientation file dispatch
