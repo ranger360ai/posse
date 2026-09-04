@@ -1086,8 +1086,8 @@ func TestQARefillFiresASecondBeadIntoTheSameSeat(t *testing.T) {
 // held by no live session — and ADR 0030 §1's recovery arm did exactly what
 // it says for a claim nothing holds. The lie was the STORE's: real bd never
 // lists a closed bead as ready, and the fake did for the life of a test
-// (fakeBdNoteClosed/fakeBdDropClosed, herdr_test.go). With the fake honest,
-// the sweep may reap what it likes and no bead is fired twice.
+// (fakeBdNoteClosed/fakeBdReadyDropClosed, herdr_test.go). With the fake
+// honest, the sweep may reap what it likes and no bead is fired twice.
 //
 // -race was never the discriminator, the CLOCK was, so this arm collapses
 // PromptGrace rather than taking two minutes to cross it: the reap only a

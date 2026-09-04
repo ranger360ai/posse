@@ -534,6 +534,11 @@ func fakeBdFilterLabels(body, labels string) string {
 // 5b4e686 did to :245 — restored by 6ecb521 (ranger-base-jzoci); this comment
 // is the half of ranger-base-tenf5's fix that 6ecb521 did not carry, re-landed
 // under ranger-base-d91mf.
+//
+// A comment is not a reader, and the FOLD this one argues against compiles:
+// point `list` at fakeBdReadyDropClosed and the whole package still passed
+// (internal/posse ok 668.961s, 0 FAIL, ranger-base-m4730). The reader is
+// TestQAListAndReadyFakesAreNotOneFake.
 func fakeBdDropClosed(body string) string {
 	var list []map[string]any
 	if json.Unmarshal([]byte(body), &list) != nil {
