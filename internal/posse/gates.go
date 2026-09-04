@@ -2965,7 +2965,7 @@ if [ "$posse_beads_visibility" = ` + shQuote(VisibilityPublic) + ` ]; then
   # the repo's visibility exactly as the db does. GIT_INDEX_FILE is
   # inherited, so this reads the same index the commit will.
   posse_added=$(git diff --cached -U0 ` + diffReaderShape + ` "$posse_base" -- '.beads/*.jsonl' 2>/dev/null |
-    grep '^+' | grep -v '^+++')
+    grep -a '^+' | grep -av '^+++')
   if [ -n "$posse_added" ]; then
     posse_bad=''
 ` + checks.String() + `    if [ -n "$posse_bad" ]; then
@@ -3081,7 +3081,7 @@ if [ "$posse_beads_visibility" = ` + shQuote(VisibilityPublic) + ` ]; then
   # character walked ops content into a public tree (ranger-base-4b1z4,
   # measured). ':(icase)' is git's own magic for it.
   posse_added=$(git diff --cached -U0 ` + diffReaderShape + ` "$posse_base" -- ` + markdownPathspecArgs() + ` 2>/dev/null |
-    grep '^+' | grep -v '^+++')
+    grep -a '^+' | grep -av '^+++')
   if [ -n "$posse_added" ]; then
     posse_bad=''
 ` + shippedChecks.String() + `    if [ -n "$posse_bad" ]; then
@@ -3257,10 +3257,15 @@ func twoArmScan(ind, title, head string, sources []visScanSource) string {
 		pathRefusals.WriteString(s.path.render(i1))
 		pathInit.WriteString(i1 + s.pathVar + "=''\n")
 	}
-	return head + shComment(ind, `Binary files are already excluded: git diff with no --text emits
-"Binary files ... differ" for them, never a '+' line.`) +
+	return head + shComment(ind, `--text and grep -a, both load-bearing (ranger-base-h137b): git
+classifies a text file carrying one NUL byte as BINARY and prints
+"Binary files ... differ" for it, never a '+' line — so this reader
+judged a markdown file with captured output appended to it, and said
+nothing. --text restores the lines; -a stops grep collapsing the
+NUL-bearing stream to "Binary file (standard input) matches". The
+$(...) capture strips the NULs, so nothing downstream sees one.`) +
 		ind + `posse_added=$(git diff --cached -U0 ` + diffReaderShape + ` "$posse_base" 2>/dev/null |
-` + i1 + `grep '^+' | grep -v '^+++')
+` + i1 + `grep -a '^+' | grep -av '^+++')
 ` + ind + `if [ -n "$posse_added" ]; then
 ` + content.String() + ind + `fi
 
@@ -3925,9 +3930,15 @@ posse_adr_judge() {
     # the census alike, which is why the two-way pin could not see it
     # (ranger-base-0fz98). The token keeps its own spelling: the census
     # greps the file for it.
+    #
+    # grep -a on BOTH token sources: one NUL byte in a record makes the
+    # stream binary, grep answers "Binary file (standard input) matches"
+    # instead of the tokens, and this arm judged nothing — in the hook AND
+    # in the census, which cat's the whole file (ranger-base-h137b). The
+    # hook's reader carries --text for the same reason, one layer up.
     posse_adr_anc=''
     posse_adr_non=''
-    for posse_adr_t in $(posse_adr_judged "$posse_adr_f" | grep -oE '\b[0-9a-fA-F]{7,40}\b' | sort -u); do
+    for posse_adr_t in $(posse_adr_judged "$posse_adr_f" | grep -aoE '\b[0-9a-fA-F]{7,40}\b' | sort -u); do
       # Does not resolve to a commit HERE: prose, or another repo's. Not
       # this predicate's to judge, and passed.
       git cat-file -e "$posse_adr_t^{commit}" 2>/dev/null || continue
@@ -3947,7 +3958,7 @@ posse_adr_judge() {
     # RECORD rather than the judged lines, because a record about stale
     # shas usually already carries them (D5).
     posse_adr_anc=''
-    for posse_adr_t in $(posse_adr_record "$posse_adr_f" | grep -oE '\b[0-9a-fA-F]{7,40}\b' | sort -u); do
+    for posse_adr_t in $(posse_adr_record "$posse_adr_f" | grep -aoE '\b[0-9a-fA-F]{7,40}\b' | sort -u); do
       git cat-file -e "$posse_adr_t^{commit}" 2>/dev/null || continue
       git merge-base --is-ancestor "$posse_adr_t" "$posse_adr_base" 2>/dev/null || continue
       posse_adr_anc="$posse_adr_anc$posse_adr_t
@@ -3998,7 +4009,29 @@ posse_adr_judge() {
 // arm. One string for all of them, so the readers cannot drift on which
 // settings they survive. Rendered as flags rather than `-c` overrides so a
 // rendered command still reads as the one the comment beside it describes.
-const diffReaderShape = "--no-color --no-ext-diff --src-prefix=a/ --dst-prefix=b/"
+//
+// --text IS THE FIFTH, AND IT IS NOT A CONFIG SETTING (ranger-base-h137b,
+// measured): git classifies a file BINARY on its own bytes, and prints
+// "Binary files a/x and b/x differ" for it — never a '+' line, never a
+// '+++ b/' header. One NUL byte in a markdown file is enough, and appending
+// captured terminal output to a NOTES or RCA file is how it gets there; no
+// config, no .gitattributes, no intent required. Every reader then judged
+// nothing and said nothing, with git's own summary reading "0 insertions(+)".
+// The same blanking is reachable from the writer's config alone —
+// core.attributesFile naming a file that says `*.md -diff` — which the four
+// flags above do NOT close and --text does.
+//
+// STATED RESIDUAL: --text also hands a genuine blob's bytes to the pattern
+// scan, so a real binary can in principle match an ERE and be refused. That
+// is the fail-safe direction and the cheap one: the alternative is deciding
+// which text-shaped files are "really" prose, which is the guess that put
+// this hole here.
+//
+// --text ALONE ONLY MOVES THE SILENCE. With a NUL in the stream grep prints
+// "Binary file (standard input) matches" and the scan downstream matches
+// nothing, so every '^+' reader below greps with -a. Measured both ways on
+// this box; the pins are in binaryreader_qa_test.go.
+const diffReaderShape = "--no-color --no-ext-diff --src-prefix=a/ --dst-prefix=b/ --text"
 
 // adrShaGuardBody renders the hook's arm: adrShaPredicate with the hook's
 // two line sources — the ADDED lines of each staged docs/adr file are judged,
@@ -4048,14 +4081,14 @@ if git rev-parse --verify -q HEAD >/dev/null 2>&1; then posse_adr_head=HEAD; fi
 # files): the lines this commit is WRITING are judged, and the whole staged
 # blob is the record a twin may sit in.
 posse_adr_judged() {
-  git diff --cached -U0 ` + diffReaderShape + ` "$posse_adr_head" -- "$1" 2>/dev/null | grep '^+' | grep -v '^+++'
+  git diff --cached -U0 ` + diffReaderShape + ` "$posse_adr_head" -- "$1" 2>/dev/null | grep -a '^+' | grep -av '^+++'
 }
 posse_adr_record() {
   git show ":$1" 2>/dev/null
 }
 ` + adrShaPredicate() + `
 posse_adr_files=$(git diff --cached -U0 ` + diffReaderShape + ` "$posse_adr_head" -- ` + shQuote(AdrPathspec) + ` 2>/dev/null |
-  grep '^+++ b/' | cut -c7- | sort -u)
+  grep -a '^+++ b/' | cut -c7- | sort -u)
 if [ -n "$posse_adr_files" ]; then
   posse_adr_judge
   if [ -n "$posse_adr_refused" ]; then
@@ -4135,7 +4168,7 @@ done
 for posse_adr_l in $posse_adr_refused; do
   posse_adr_t=${posse_adr_l%% *}
   posse_adr_f=${posse_adr_l#* }
-  posse_adr_lines=$(grep -nE "\b$posse_adr_t\b" "$posse_adr_f" | cut -d: -f1 | tr '\n' ',' | sed 's/,$//')
+  posse_adr_lines=$(grep -anE "\b$posse_adr_t\b" "$posse_adr_f" | cut -d: -f1 | tr '\n' ',' | sed 's/,$//')
   echo "REFUSE $posse_adr_f:$posse_adr_lines $posse_adr_t resolves here but is not on $posse_adr_branch and no landed twin is in the record — cite the bead id (git log --grep), or put the twin beside it (ADR 0051 D2/D5)"
 done
 posse_adr_j=$(printf '%s' "$posse_adr_ancestors" | grep -c .)

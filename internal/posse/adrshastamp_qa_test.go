@@ -660,6 +660,15 @@ func adrTwoWayCases() []struct {
 		{"stale-under-diff.mnemonicPrefix", stale, false, "diff.mnemonicPrefix=true"},
 		{"stale-under-color.ui", stale, false, "color.ui=always"},
 		{"stale-under-diff.external", stale, false, "diff.external=true"},
+		// The BYTES, not a setting: one NUL makes the file binary, and this
+		// arm's file list is cut out of the reader's own '+++ b/' headers —
+		// which git does not print for a binary file, so the arm judged
+		// nothing at all while the census read the token straight off the
+		// working tree (ranger-base-h137b). --text and grep -a on the
+		// reader; the visibility checks' cells are in binaryreader_qa_test.go.
+		{"stale-with-a-nul-byte", func(r *adrRepo) string {
+			return "# x\n\ncaptured output\x00here\n\nStale `" + r.stale + "`.\n"
+		}, false, ""},
 	}
 }
 

@@ -72,11 +72,23 @@ func TestQAInstancePatternEdgeTakesARemoval(t *testing.T) {
 	}
 }
 
-// P4: a staged BINARY file must not break the scan. The render's comment
-// says git emits "Binary files ... differ" and never a '+' line; a text file
-// carrying a hit in the SAME commit must still be refused BY THE INSTANCE
-// ARM — asserted by name, because any other check refusing it would leave
-// this pin green over a hole.
+// P4: a staged BINARY file must not break the scan, and its BYTES are
+// judged like any others. A text file carrying a hit in the SAME commit
+// must still be refused BY THE INSTANCE ARM — asserted by name, because any
+// other check refusing it would leave this pin green over a hole.
+//
+// THE FIRST ARM'S EXPECTATION FLIPPED (ranger-base-h137b). It used to assert
+// that a blob carrying the class in its bytes COMMITS, because "a binary has
+// no added lines" — which was the reader's mechanism written down as if it
+// were the rule, and it was the hole: git calls a file binary on its own
+// bytes, so one NUL in a markdown file bought the same silence for ordinary
+// prose. The readers carry --text now, so there is no such thing as an
+// unscanned staged file, and ADR 0048 D2's own words are what this arm
+// measures: an instance class has no legitimate public use ANYWHERE in this
+// repo. STATED CONSEQUENCE: a genuine asset whose bytes happen to carry the
+// vocabulary is refused in a public repo, and the operator override is the
+// way through. The third arm below is the control that says this is a
+// pattern hit and not "the wall refuses binaries".
 func TestQAInstancePatternEdgeSurvivesABinaryInTheSameCommit(t *testing.T) {
 	w := qaInstanceWall(t)
 	writeBin := func(root string) {
@@ -92,10 +104,30 @@ func TestQAInstancePatternEdgeSurvivesABinaryInTheSameCommit(t *testing.T) {
 		}
 	}
 	writeBin(w.pub)
-	// A binary alone: the name is in its BYTES, and a binary has no added
-	// lines, so it commits. (Its PATH does not carry the name.)
-	if out, err := w.git(w.pub, w.persona, "commit", "-m", "x", "--", "assets/blob.bin"); err != nil {
-		t.Errorf("BINARY ALONE: a binary blob has no added lines and must commit: %v\n%s", err, out)
+	// A binary alone, the class in its BYTES (its PATH does not carry it):
+	// refused, and by the instance CONTENT arm.
+	out, err := w.git(w.pub, w.persona, "commit", "-m", "x", "--", "assets/blob.bin")
+	if err == nil {
+		t.Errorf("BINARY ALONE: the class in a blob's bytes must be refused — ranger-base-h137b:\n%s", out)
+	} else if !strings.Contains(out, "an instance-defined visibility class in a staged file") {
+		t.Errorf("BINARY ALONE: refused, but not by the instance content arm:\n%s", out)
+	}
+
+	// THE CONTROL: the same blob shape WITHOUT the class in it commits. A
+	// wall that refused every binary would leave the arm above green.
+	wc := qaInstanceWall(t)
+	pc := filepath.Join(wc.pub, "assets", "clean.bin")
+	if err := os.MkdirAll(filepath.Dir(pc), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(pc, []byte{0x00, 0x01, 0x02, 'q', 'u', 'i', 'e', 't', 0x00, 0xff}, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := wc.git(wc.pub, nil, "add", "--", "assets/clean.bin"); err != nil {
+		t.Fatalf("add binary: %v %s", err, out)
+	}
+	if out, err := wc.git(wc.pub, wc.persona, "commit", "-m", "x", "--", "assets/clean.bin"); err != nil {
+		t.Errorf("CONTROL: a blob carrying no class must still commit: %v\n%s", err, out)
 	}
 
 	// Binary + a text hit in one commit: the text hit must still be caught,
@@ -112,7 +144,7 @@ func TestQAInstancePatternEdgeSurvivesABinaryInTheSameCommit(t *testing.T) {
 		t.Fatalf("add binary: %v %s", err, out)
 	}
 	w2.stage(t, w2.pub, "notes.txt", "a line about "+qaInstanceName+" here\n")
-	out, err := w2.git(w2.pub, w2.persona, "commit", "-m", "x")
+	out, err = w2.git(w2.pub, w2.persona, "commit", "-m", "x")
 	if err == nil {
 		t.Errorf("BINARY + TEXT: the text hit must still be refused:\n%s", out)
 	} else if !strings.Contains(out, "an instance-defined visibility class in a staged file") {
