@@ -598,8 +598,8 @@ func TestSilentRevertSelfTestHasThePatchIdArms(t *testing.T) {
 func TestAuditPatchIdTwinArmHasItsOwnPin(t *testing.T) {
 	t.Parallel()
 	mutant, dir := srMutateScript(t,
-		`$1 !~ /^#/ && $2 == p { print $1 }`,
-		`$1 !~ /^#/ && $2 == "never" { print $1 }`)
+		`$1 !~ /^#/ && ($2 "") == (p "") { print $1 }`,
+		`$1 !~ /^#/ && ($2 "") == ("never") { print $1 }`)
 	out, code := srAudit(t, mutant, dir, "--self-test")
 	if code == 0 {
 		t.Fatalf("self-test exited 0 with no line ever matching a patch-id:\n%s", out)
@@ -640,7 +640,7 @@ func TestAuditTwinArmRefusesALandedLine(t *testing.T) {
 // rejected outright.
 func TestAuditTwinArmComparesTheToken(t *testing.T) {
 	t.Parallel()
-	mutant, dir := srMutateScript(t, `$2 == p { print $1 }`, `$2 ~ /^[0-9a-f]{40}$/ { print $1 }`)
+	mutant, dir := srMutateScript(t, `($2 "") == (p "")`, `($2 "") ~ /^[0-9a-f]{40}$/`)
 	out, code := srAudit(t, mutant, dir, "--self-test")
 	if code == 0 {
 		t.Fatalf("self-test exited 0 with any 40-hex token claiming any commit:\n%s", out)

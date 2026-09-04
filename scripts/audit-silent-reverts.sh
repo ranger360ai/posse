@@ -801,10 +801,18 @@ line_sha_landed() {
 # landed here triages by sha alone and its token is inert — that is the whole of
 # what keeps this from being a pattern that excuses the next commit with the
 # same diff.
+#
+# FORCE STRING on both sides, for the reason states_awk does (ranger-base-hhcu):
+# a field is a STRNUM and so is a -v assignment, and awk compares two strnums
+# NUMERICALLY when both look like numbers. A 40-hex patch-id of the form
+# <digit>e<digits> is valid scientific notation whose value overflows to +inf,
+# and +inf == +inf, so a coercing awk would hand one commit's token to another
+# commit's diff. Rare at 40 hex (~6e-8) and not rare enough to leave to luck in
+# the one comparison that decides whether a hit is excused.
 twin_line_for() {
   local pid=$1 tip=$2 s
   [ -f "$ALLOW" ] || return 0
-  for s in $(awk -v p="$pid" '$1 !~ /^#/ && $2 == p { print $1 }' "$ALLOW"); do
+  for s in $(awk -v p="$pid" '$1 !~ /^#/ && ($2 "") == (p "") { print $1 }' "$ALLOW"); do
     line_sha_landed "$s" "$tip" && continue
     printf '%s\n' "$s"
     return 0
@@ -872,7 +880,11 @@ audit() {
     printf '%s\n' "$detail"; printf '%s' "$twin_lines"
   fi
   for sha in $untriaged_shas; do
-    pid=$(printf '%s' "$hints" | awk -v s="$sha" '$1==s {print $2}')
+    # Strings on both sides again: two 7-hex shas land on the <digit>e<digits>
+    # shape about once in 270 each, which is the abbreviation hazard the whole
+    # of ranger-base-hhcu is about, and here it would print one commit's
+    # patch-id under another commit's sha.
+    pid=$(printf '%s' "$hints" | awk -v s="$sha" '($1 "") == (s "") {print $2}')
     printf '  UNTRIAGED: %s — a silent revert nobody has explained. Read it, then\n' "$sha"
     printf '             either fix it or paste this line into %s:\n' "$ALLOW"
     # D4: the line to paste, patch-id included, every time. Nobody is asked to
