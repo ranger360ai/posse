@@ -60,7 +60,13 @@ func TestQAConstitutionLandRefusesEveryClassMember(t *testing.T) {
 			if o.Merged {
 				t.Fatalf("a branch touching %s must not land: %+v", rel, o)
 			}
-			for _, want := range []string{rel, "class: " + member, "ADR 0015 §2/§3", "still holds every commit", "merge --ff-only"} {
+			// "Nothing was landed" and not "%s still holds every commit"
+			// (ranger-base-eq3ba): this string is o.Reason, and a merge-back
+			// bead embeds it verbatim for a seat to read later. The claim
+			// pinned here is what the launcher DID; that the branch is still
+			// there is TestMergeBlockedReasonsNeverPromiseTheBranch's subject
+			// and it is asserted nowhere.
+			for _, want := range []string{rel, "class: " + member, "ADR 0015 §2/§3", "Nothing was landed and nothing here was changed", "merge --ff-only"} {
 				if !strings.Contains(o.Reason, want) {
 					t.Errorf("the reason must carry %q, got:\n%s", want, o.Reason)
 				}

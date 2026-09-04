@@ -86,8 +86,15 @@ func TestQAAnUnreadableMetaDirHoldsTheSeat(t *testing.T) {
 	if sess, withheld, err := b.listSessions(); err == nil {
 		t.Errorf("the listing answered CLEAN on a meta dir it could not read: %d sessions, withheld=%v, err=<nil> — an empty herd and an unreadable one are the same answer again", len(sess), withheld)
 	}
-	if name, st := d.personaActive("developer", dir); name == "" {
-		t.Errorf("an unreadable meta DIR read as a FREE seat while the session is live: personaActive = %q %q, want the seat held — the listing did not answer for it, it could not be asked", name, st)
+	// BOTH returns, not just "not empty" (ranger-base-eq3ba, finding 1).
+	// Each of them reaches an operator: the status is seatPass.doing and
+	// seatWhy prints it ("developer unreadable"), and the name rides to the
+	// refill summary. The sibling arm pins both for the same reason
+	// (seatunreadable_qa_test.go) and this one inherited none of it —
+	// `seatUnreadable` → `seatUnlisted` and the slot name → any other string
+	// both survived the whole seat suite.
+	if name, st := d.personaActive("developer", dir); name != slot || st != seatUnreadable {
+		t.Errorf("an unreadable meta DIR must hold the seat under the SLOT's own name and say which repair it is: personaActive = %q %q, want %q %q — the seat is reported under its slot because no session name can be read, and a status that did not move would render two different repairs as one", name, st, slot, seatUnreadable)
 	}
 
 	// ARM 1: ranger-base-3yqyg's own trigger on top of it. Its err arm
@@ -96,8 +103,8 @@ func TestQAAnUnreadableMetaDirHoldsTheSeat(t *testing.T) {
 	if _, _, err := b.listSessions(); err == nil {
 		t.Fatalf("premise: the listing must fail")
 	}
-	if name, st := d.personaActive("developer", dir); name == "" {
-		t.Errorf("the err arm reported a FREE seat when metaNames' own ReadDir failed: personaActive = %q %q — 88c2507 claims an unreadable listing holds the seat it cannot answer for", name, st)
+	if name, st := d.personaActive("developer", dir); name != slot || st != seatUnreadable {
+		t.Errorf("the err arm must hold the seat when metaNames' own ReadDir failed: personaActive = %q %q, want %q %q — 88c2507 claims an unreadable listing holds the seat it cannot answer for", name, st, slot, seatUnreadable)
 	}
 }
 
@@ -165,5 +172,63 @@ func TestQAAMissingMetaDirIsStillAFreeSeat(t *testing.T) {
 
 	if name, st := d.personaActive("developer", dir); name != "" {
 		t.Errorf("a box with no meta dir at all froze a seat: personaActive = %q %q, want free — a directory that was never written is no sessions, not an unanswered question (ranger-base-jzxrh's control)", name, st)
+	}
+}
+
+// ranger-base-eq3ba (finding 1b): the seat status is one word for both
+// arms, so the LINE above the lane lines is where an operator learns which
+// reading failed — and it used to prescribe one repair for both.
+//
+// `seatUnreadable` has two producers: ranger-base-3yqyg's (herdr declined to
+// list) and this bead's (the meta directory the walk starts from could not be
+// read). reconcileSeats told every one of them "repair at herdr, not at a
+// meta", which sends an operator whose state dir is unreadable to restart a
+// herdr that is working. The listing's error names the meta dir when that is
+// the reading that failed, so the fix is that the line points AT the error
+// rather than asserting a place.
+//
+// Two arms, because "names the state dir" alone is satisfied by a line that
+// names it always: the herdr arm must still be about herdr.
+func TestQAAnUnreadableMetaDirIsRepairedWhereTheErrorPoints(t *testing.T) {
+	t.Parallel()
+	b, fake := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+	slot := SessionFor("ranger", "/repo")
+	busy := map[string]string{slot: "a-1"}
+	md := b.metaDir()
+	qaUnreadableMetaDir(t, b)
+
+	d.reconcileSeats(busy)
+	out := dispatcherOut(d)
+	if !strings.Contains(out, "herd unreadable") {
+		t.Fatalf("premise: the unreadable-listing line did not print at all, so nothing below is measured:\n%s", out)
+	}
+	if !strings.Contains(out, md) {
+		t.Errorf("the line does not name %s — the operator is told a listing failed and not which reading of it, and this is the one the error can name:\n%s", md, out)
+	}
+	if strings.Contains(out, "repair at herdr") {
+		t.Errorf("a meta DIRECTORY that could not be read was reported as a repair at herdr: the operator restarts a working herdr and the state dir stays unreadable:\n%s", out)
+	}
+	// And the holds are kept whatever the line says — the wording is the
+	// only thing this test is about (TestQAAnUnreadableHerdKeepsEverySeatHold
+	// owns the other half).
+	if busy[slot] != "a-1" {
+		t.Errorf("reconcileSeats released a hold under an unreadable meta dir: busy=%v", busy)
+	}
+
+	// THE OTHER ARM: herdr's own failure still reports herdr's own error,
+	// and says nothing about a directory it read fine.
+	if err := os.Chmod(md, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	qaListError(t, fake)
+	d2 := newTestDispatcher(t, b)
+	d2.reconcileSeats(map[string]string{slot: "a-1"})
+	herd := dispatcherOut(d2)
+	if !strings.Contains(herd, "herd unreadable") {
+		t.Fatalf("premise: the herdr arm printed no line:\n%s", herd)
+	}
+	if strings.Contains(herd, md) {
+		t.Errorf("a herdr that would not list was reported against the meta dir, which read fine — the line names a place off the error or it names one always:\n%s", herd)
 	}
 }

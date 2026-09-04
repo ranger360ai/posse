@@ -531,8 +531,13 @@ func TestMergeBackHandoffNeverPromisesTheBranchWillStillBeThere(t *testing.T) {
 	}
 	desc := mergeBlockedDescription(t, repo)
 
-	if strings.Contains(desc, "untouched") {
-		t.Errorf("the handoff still asserts the branch is untouched — the claim that was false at dispatch on g7br6 and nr3eq:\n%s", desc)
+	// The CLAIM and not the word (ranger-base-eq3ba): whichever o.Reason
+	// arm this fixture reached is embedded verbatim above the shelf-life
+	// block, so the description carries the same promise its reason does.
+	// Every arm is driven in TestMergeBlockedReasonsNeverPromiseTheBranch;
+	// this is the one that proves the two are joined end to end.
+	if claim := blockedPromise(desc); claim != "" {
+		t.Errorf("the handoff still asserts the branch is still there (%q) — the claim that was false at dispatch on g7br6 and nr3eq:\n%s", claim, desc)
 	}
 	if !strings.Contains(desc, "CHECK THE BRANCH") || !strings.Contains(desc, "rev-parse --verify "+tr.Branch) {
 		t.Errorf("the handoff does not tell the seat to read the branch before believing it:\n%s", desc)
@@ -544,6 +549,281 @@ func TestMergeBackHandoffNeverPromisesTheBranchWillStillBeThere(t *testing.T) {
 	}
 	if !strings.Contains(desc, blockedPinRef(tr.Branch)) {
 		t.Errorf("the handoff never names the pin %s:\n%s", blockedPinRef(tr.Branch), desc)
+	}
+}
+
+// ─── the promise, over every arm that can carry it (ranger-base-eq3ba) ──────
+//
+// The pin above drives ONE of the merge path's refusals — the conflict arm —
+// and greps its description for the WORD "untouched". That is the word
+// ranger-base-m3195 happened to delete, not the claim it was filed to remove:
+// at 3c2fa2a two arms that close never drove still said "%s still holds every
+// commit" in a sentence with no "untouched" in it (worktree.go's constitution
+// refusal and its replay-exhausted arm), and a third arm the close DID edit
+// had nothing holding its wording at all. Planting the word in each of those
+// three and re-running the merge suite left it green.
+//
+// So the claim is asserted instead of the word, and it is asserted over every
+// o.Reason spelling in the merge path rather than the one a single fixture
+// reaches: noteMergeBlocked embeds whichever one this pass produced
+// (dispatch.go), verbatim, in a bead a seat opens some unbounded time later.
+
+// blockedPromise names the claim no o.Reason may make, in any spelling: that
+// the branch is still there and still holds the work. It is a claim about the
+// FUTURE — true when the pass prints it, unknown by the time the handoff is
+// read — and it was false at dispatch twice on record (g7br6, nr3eq).
+//
+// The report of what the launcher DID is always allowed: "the rebase was
+// aborted", "nothing was landed", "nothing here was changed". Those stay true
+// forever, which is the whole distinction.
+func blockedPromise(reason string) string {
+	low := strings.ToLower(reason)
+	for _, claim := range []string{"untouched", "still holds", "still there", "still on the branch"} {
+		if strings.Contains(low, claim) {
+			return claim
+		}
+	}
+	return ""
+}
+
+// mergeBlockedReason is the sentence a merge-back bead would embed for this
+// fixture. The refusal is the premise: a fixture that landed, or that errored
+// before the function decided anything, files no bead and measures no wording
+// (MergeOutcome.Blocked's own doc says why both halves are load-bearing).
+func mergeBlockedReason(t *testing.T, tr *SessionTree) string {
+	t.Helper()
+	o, err := MergeSessionWork(tr)
+	if err != nil {
+		t.Fatalf("fixture: MergeSessionWork errored, so no reason was produced: %v", err)
+	}
+	if !o.Blocked() {
+		t.Fatalf("fixture: this arm must refuse and say why, got %+v", o)
+	}
+	return o.Reason
+}
+
+// wtTreeWithWork is the common half of every fixture below: a repo, a session
+// tree, and one commit on the branch — because a branch with nothing ahead of
+// its base never reaches a refusal at all.
+func wtTreeWithWork(t *testing.T) (string, *SessionTree) {
+	t.Helper()
+	a := wtApp(t)
+	repo := wtRepo(t)
+	tr, err := a.EnsureSessionTree(repo, "s-1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commitIn(t, tr.Path, "fix.txt", "the work\n", "s-1: the fix")
+	return repo, tr
+}
+
+// detachTreeHead puts the session's own tree off its branch and commits
+// there, which is where a persona's work goes when something detached the
+// worktree — the shape landed() exists for (ranger-base-dybv).
+func detachTreeHead(t *testing.T, tr *SessionTree) {
+	t.Helper()
+	if _, err := git(tr.Path, "checkout", "--detach"); err != nil {
+		t.Fatal(err)
+	}
+	commitIn(t, tr.Path, "detached.txt", "off the branch\n", "s-1: off the branch")
+}
+
+func TestMergeBlockedReasonsNeverPromiseTheBranch(t *testing.T) {
+	t.Parallel()
+	// One case per o.Reason spelling the merge path can hand
+	// noteMergeBlocked. `arm` is the per-case POSITIVE CONTROL: a substring
+	// only that sentence carries, so a fixture that fell through to some
+	// other refusal reds here instead of passing the claim check for an arm
+	// nobody drove. That is the failure the pin above had.
+	cases := []struct {
+		name, arm string
+		reason    func(*testing.T) string
+	}{
+		{
+			// worktree.go: the base is not a branch at all.
+			name: "the tree has no base branch to land on",
+			arm:  "there is no branch for",
+			reason: func(t *testing.T) string {
+				repo, tr := wtTreeWithWork(t)
+				// The reachable shape: a branch cut before the base was
+				// recorded, in a checkout that is now detached — so the
+				// record is empty AND the fallback has nothing to give.
+				mustGit(t, repo, "config", "--unset", baseKey(tr.Branch))
+				mustGit(t, repo, "checkout", "--detach")
+				// Read back through the sweep's own reader rather than
+				// hand-building the struct: Base is derived (baseOf), and a
+				// fixture that assigned it would be pinning my arithmetic.
+				trees, err := SessionTreesIn([]string{repo})
+				if err != nil || len(trees) != 1 {
+					t.Fatalf("fixture: %d trees, %v", len(trees), err)
+				}
+				if trees[0].Base != "" {
+					t.Fatalf("fixture: base = %q, want empty — this arm was not reached", trees[0].Base)
+				}
+				return mergeBlockedReason(t, trees[0])
+			},
+		},
+		{
+			// worktree.go, notOnBase: the operator's checkout is the one
+			// store on this path the launcher lock does not govern.
+			name: "the operator has another branch checked out",
+			arm:  "checked out, not",
+			reason: func(t *testing.T) string {
+				repo, tr := wtTreeWithWork(t)
+				mustGit(t, repo, "checkout", "-q", "-b", "sidetrack")
+				return mergeBlockedReason(t, tr)
+			},
+		},
+		{
+			// The same producer's other spelling. notOnBase is also read
+			// AFTER the rebase (worktree.go), so that arm is these two
+			// sentences and pinning them here pins it.
+			name: "the operator detached the checkout",
+			arm:  "has a detached HEAD, so",
+			reason: func(t *testing.T) string {
+				repo, tr := wtTreeWithWork(t)
+				mustGit(t, repo, "checkout", "--detach")
+				return mergeBlockedReason(t, tr)
+			},
+		},
+		{
+			// constitutionOnBranch's own error return: nothing lands on a
+			// diff git could not read. Produced by calling it rather than
+			// through MergeSessionWork, because every way to break that one
+			// diff also breaks the rev-list above it — which returns an
+			// error and files no bead. The sentence is the same sentence.
+			name: "git could not read the diff",
+			arm:  "so whether",
+			reason: func(t *testing.T) string {
+				_, tr := wtTreeWithWork(t)
+				broken := *tr
+				broken.Base = "no-such-base"
+				hit, why := constitutionOnBranch(&broken)
+				if why == "" {
+					t.Fatalf("fixture: the diff answered (%v), so this arm was not reached", hit)
+				}
+				return why
+			},
+		},
+		{
+			// The belt behind the commit wall (ranger-base-ak3e), and
+			// FINDING 2 of ranger-base-eq3ba: this arm said "%s still holds
+			// every commit" until this test.
+			name: "the branch touches the constitution",
+			arm:  "it touches the constitution",
+			reason: func(t *testing.T) string {
+				_, _, tr := constitutionLandTree(t, true)
+				commitIn(t, tr.Path, constitutionClassSpec[0]+"/probe.md", "rewritten\n", "s-1: edit the law")
+				return mergeBlockedReason(t, tr)
+			},
+		},
+		{
+			name: "the tree has uncommitted changes to rebase over",
+			arm:  "has uncommitted changes",
+			reason: func(t *testing.T) string {
+				repo, tr := wtTreeWithWork(t)
+				commitIn(t, repo, "other.txt", "meanwhile\n", "main moved")
+				write(t, filepath.Join(tr.Path, "wip.txt"), "not committed\n")
+				return mergeBlockedReason(t, tr)
+			},
+		},
+		{
+			name: "the replay conflicts and is aborted",
+			arm:  "the rebase was aborted, so this attempt changed nothing",
+			reason: func(t *testing.T) string {
+				repo, tr := wtTreeWithWork(t)
+				commitIn(t, tr.Path, "clash.txt", "the session's line\n", "s-1: mine")
+				commitIn(t, repo, "clash.txt", "the operator's line\n", "main: theirs")
+				return mergeBlockedReason(t, tr)
+			},
+		},
+		{
+			// ranger-base-5hqa's arm — and the one FINDING 4 found already
+			// correct with nothing holding it: the close edited this
+			// sentence and pinned a different one.
+			name: "the replay never reached a merge",
+			arm:  "failed before any merge",
+			reason: func(t *testing.T) string {
+				repo, tr := wtTreeWithWork(t)
+				commitIn(t, repo, "elsewhere.txt", "meanwhile\n", "main: moved on")
+				// A pre-rebase hook is the cheapest honest stand-in for the
+				// class (a full disk, a lock, a bad object): git exits
+				// non-zero before any merge and leaves no rebase state.
+				hooks := t.TempDir()
+				hook := filepath.Join(hooks, "pre-rebase")
+				write(t, hook, "#!/bin/sh\necho 'no space left on device (simulated)' >&2\nexit 1\n")
+				if err := os.Chmod(hook, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				mustGit(t, repo, "config", "core.hooksPath", hooks)
+				return mergeBlockedReason(t, tr)
+			},
+		},
+		{
+			// The replay worked and the fast-forward still would not: the
+			// base is where the rebase left it, so this is about the branch
+			// and not a lost race (worktree.go).
+			name: "the fast-forward refuses after a clean replay",
+			arm:  "still would not fast-forward after the rebase",
+			reason: func(t *testing.T) string {
+				repo, tr := wtTreeWithWork(t)
+				commitIn(t, repo, "other.txt", "meanwhile\n", "main moved")
+				// An untracked file the merge would overwrite: git refuses
+				// the ff without moving the base an inch.
+				write(t, filepath.Join(repo, "fix.txt"), "the operator's own copy\n")
+				return mergeBlockedReason(t, tr)
+			},
+		},
+		{
+			// FINDING 3 of ranger-base-eq3ba: this arm said "%s still holds
+			// every commit and the next pass retries" until this test.
+			name: "the base moved under every replay",
+			arm:  "never held still",
+			reason: func(t *testing.T) string {
+				repo, tr := wtTreeWithWork(t)
+				commitIn(t, repo, "other.txt", "meanwhile\n", "main moved")
+				count := raceOnRebase(t, repo, mergeRebaseAttempts)
+				reason := mergeBlockedReason(t, tr)
+				if got := countIn(t, count); got != mergeRebaseAttempts {
+					t.Fatalf("fixture: the rebase ran %d time(s), want %d — the race did not happen", got, mergeRebaseAttempts)
+				}
+				return reason
+			},
+		},
+		{
+			// landed()'s two arms: the work is in the TREE and not on the
+			// branch, which is the read ranger-base-dybv put a measurement
+			// behind. Both are reasons a merge-back bead embeds.
+			name: "the tree's HEAD is off its own branch",
+			arm:  "is on neither",
+			reason: func(t *testing.T) string {
+				_, tr := wtTreeWithWork(t)
+				detachTreeHead(t, tr)
+				return mergeBlockedReason(t, tr)
+			},
+		},
+		{
+			name: "no branch reaches the tree's work at all",
+			arm:  "no branch here reaches it",
+			reason: func(t *testing.T) string {
+				repo, tr := wtTreeWithWork(t)
+				detachTreeHead(t, tr)
+				mustGit(t, repo, "branch", "-D", tr.Branch)
+				return mergeBlockedReason(t, tr)
+			},
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			reason := c.reason(t)
+			if !strings.Contains(reason, c.arm) {
+				t.Fatalf("fixture: the reason is not this arm's — want %q in:\n%s", c.arm, reason)
+			}
+			if claim := blockedPromise(reason); claim != "" {
+				t.Errorf("this refusal promises the seat that the branch is still there (%q) — a claim about the future, embedded verbatim in a bead read long after the pass that wrote it:\n%s", claim, reason)
+			}
+		})
 	}
 }
 

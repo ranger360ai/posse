@@ -912,8 +912,14 @@ func MergeSessionWork(t *SessionTree) (MergeOutcome, error) {
 			return o, nil
 		}
 		if attempt >= mergeRebaseAttempts {
-			o.Reason = fmt.Sprintf("%s moved again under every one of %d replays (last %s → %s) and never held still long enough for %s to fast-forward onto it — %s still holds every commit and the next pass retries",
-				t.Base, mergeRebaseAttempts, abbrevSHA(wasAt), abbrevSHA(nowAt), t.Branch, t.Branch)
+			// "nothing was landed" and not "%s still holds every commit"
+			// (ranger-base-eq3ba, the same reading as the abort arm above):
+			// this reason is embedded VERBATIM in a merge-back bead a seat
+			// opens some unbounded time later, by which point the branch may
+			// have been retired out from under it. What this attempt did is
+			// land nothing, and that stays true forever.
+			o.Reason = fmt.Sprintf("%s moved again under every one of %d replays (last %s → %s) and never held still long enough for %s to fast-forward onto it — nothing was landed, and the next pass retries",
+				t.Base, mergeRebaseAttempts, abbrevSHA(wasAt), abbrevSHA(nowAt), t.Branch)
 			return o, nil
 		}
 	}
@@ -964,6 +970,15 @@ func constitutionOnBranch(t *SessionTree) ([]string, string) {
 // in force, so prescribing one there would send the operator to run a command
 // that does nothing about what they just read — the kind of near-right
 // instruction that teaches people to skim the refusal.
+//
+// It reports what the launcher DID — landed nothing, changed nothing — and
+// never that the branch still holds every commit (ranger-base-eq3ba). This
+// sentence is o.Reason, and noteMergeBlocked embeds o.Reason verbatim in a
+// merge-back bead read some unbounded time later; "%s still holds every
+// commit" was that bead's ranger-base-m3195 promise in one more spelling, on
+// an arm that close did not edit. The branch is still named — the `log -p`
+// and the `merge --ff-only` need it — but as the thing to act on, not as a
+// thing asserted to exist.
 func constitutionLandRefusal(t *SessionTree, hit []string) string {
 	promoted := false
 	for _, h := range hit {
@@ -976,8 +991,8 @@ func constitutionLandRefusal(t *SessionTree, hit []string) string {
 	if promoted {
 		then = ", then `posse promote`"
 	}
-	return fmt.Sprintf("it touches the constitution — %s — and ADR 0015 §2/§3 makes putting that in force the operator's act, not a fast-forward the launcher does unattended. %s still holds every commit and nothing here was changed. To land it: `git -C %s log -p %s...%s` to read it, then `git -C %s merge --ff-only %s`%s",
-		strings.Join(hit, ", "), t.Branch,
+	return fmt.Sprintf("it touches the constitution — %s — and ADR 0015 §2/§3 makes putting that in force the operator's act, not a fast-forward the launcher does unattended. Nothing was landed and nothing here was changed. To land it: `git -C %s log -p %s...%s` to read it, then `git -C %s merge --ff-only %s`%s",
+		strings.Join(hit, ", "),
 		AbbrevHome(t.Repo), t.Base, t.Branch,
 		AbbrevHome(t.Repo), t.Branch, then)
 }

@@ -1670,7 +1670,18 @@ func (m seatMap) hold(slot, bead string) { m.run[slot] = bead }
 func (d *Dispatcher) reconcileSeats(busy map[string]string) {
 	sessions, withheld, err := d.HB.listSessions()
 	if err != nil {
-		d.printf("↺ herd unreadable: the session listing failed (%v) — no hold released this pass, and every seat with a session meta is held rather than shown idle, so a lane reported busy below may be a listing that could not answer rather than a shop at work (repair at herdr, not at a meta)\n", err)
+		// The repair is where the ERROR points and not a fixed place
+		// (ranger-base-eq3ba). This listing fails from two different
+		// readings: herdr's own (`workspace list` / `agent list`), and the
+		// session meta DIRECTORY the walk starts from, which
+		// ranger-base-jzxrh made an error rather than an empty herd. The
+		// old clause said "repair at herdr, not at a meta" over both, so an
+		// operator holding a state dir they cannot read was sent to restart
+		// a herdr that was working — the near-right instruction that
+		// teaches people to skim. listSessions names the meta dir in that
+		// error ("read session meta dir %s: …"), so the error above is the
+		// specific answer and this clause only says to read it.
+		d.printf("↺ herd unreadable: the session listing failed (%v) — no hold released this pass, and every seat with a session meta is held rather than shown idle, so a lane reported busy below may be a listing that could not answer rather than a shop at work (repair where that error points — herdr, or the session state dir it could not read — and not at a single meta)\n", err)
 		return
 	}
 	if d.DryRun || len(busy) == 0 {
@@ -3785,8 +3796,15 @@ func (d *Dispatcher) personaActive(persona, dir string) (string, string) {
 			// wrong here holds a seat a reading could have freed, wrong the
 			// other way puts two agents in one worktree. The seat is
 			// reported under its own slot name because no session name can
-			// be read to report instead; the status says which repair it
-			// is, and it is at the state dir, not at a meta.
+			// be read to report instead.
+			//
+			// The status it carries is `seatUnreadable`, which is the same
+			// one ranger-base-3yqyg's arm above uses, and it does NOT say
+			// which repair this is (ranger-base-eq3ba): both arms mean "no
+			// listing could be read", and the two readings that can fail
+			// are herdr's and this directory. What separates them is the
+			// ERROR, which listSessions builds with the meta dir's own path
+			// in it and reconcileSeats prints above the lane lines.
 			return SessionFor(persona, dir), seatUnreadable
 		}
 		sessions, withheld, held = nil, names, seatUnreadable
@@ -3880,10 +3898,19 @@ func (d *Dispatcher) personaActive(persona, dir string) (string, string) {
 const seatUnlisted = "unlisted"
 
 // seatUnreadable is the same claim about a seat under a listing that could
-// not be read at all: the herd did not answer, so this seat's session — if
-// it has one — cannot be shown idle. It is kept apart from seatUnlisted
-// because the repairs differ: one stale meta is repaired per meta, a herd
-// that will not list is repaired at herdr.
+// not be read at all: nothing answered, so this seat's session — if it has
+// one — cannot be shown idle. It is kept apart from seatUnlisted because
+// those repairs differ in KIND: one stale meta is repaired per meta, and a
+// listing that did not answer is repaired at whatever could not be read.
+//
+// It has two producers and they are deliberately one status
+// (ranger-base-eq3ba). ranger-base-3yqyg's arm is herdr declining to list;
+// ranger-base-jzxrh's is the session meta DIRECTORY that could not be read,
+// which is where the listing's walk starts. A third status would be a third
+// word for "the listing did not answer" that still could not name a target
+// — the target is in the listing's own error, which carries the meta dir's
+// path when that is the reading that failed and herdr's message when it is
+// not, and which reconcileSeats prints above the lane lines it explains.
 const seatUnreadable = "unreadable"
 
 // strand records a session this pass launched and could not use, so the

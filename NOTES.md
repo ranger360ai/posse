@@ -5932,6 +5932,18 @@ no OPEN block names that branch (`prunePinnedBlocks`, run at pass start off the
 repo — by then the tree is gone and the session walk cannot reach it), and a
 store that will not answer leaves every pin standing.
 
+The promise is gone from **every** refusal, not only the one that was pinned
+(`ranger-base-eq3ba`). `noteMergeBlocked` embeds `o.Reason` verbatim, and
+`MergeSessionWork` has a dozen spellings of it: two of them — the constitution
+refusal and the replay-exhausted arm — still said *"<branch> still holds every
+commit"* after m3195 closed, in sentences carrying no "untouched" for its pin
+to grep. Each now reports what the launcher DID ("nothing was landed"), which
+stays true however long the bead waits, and
+`TestMergeBlockedReasonsNeverPromiseTheBranch` drives all twelve arms and
+asserts the CLAIM rather than one word — each with a substring only that arm's
+sentence carries, so a fixture that fell through to another refusal reds
+instead of passing for an arm nobody drove.
+
 Config: `worktrees:` (default `~/.posse/worktrees`, and it **must** be under
 `$HOME`) and `worktree_link:`, a declared list of repo-relative gitignored
 paths symlinked from the main checkout into each fresh tree (`plugin/bin`,
