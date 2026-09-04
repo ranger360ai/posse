@@ -1225,6 +1225,32 @@ func TestIdentityLiteralsNeverAppearInTheHarnessRepoUndispositioned(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A shared CI runner has no identity to protect and cannot be scrubbed
+	// of the one it has: on GitHub's runners user.Current() is the image's
+	// service account, literally "runner", and `git grep -F runner` over
+	// this repo hits 40-odd tracked files — `runs-on:`, `${{ runner.os }}`,
+	// /home/runner in a quoted log, and the English word. Those are not
+	// leaks and dispositioning them would hand a real hit a free pass, so
+	// the USERNAME class is dropped there; every other class still runs, so
+	// a runner that does set a user.email is still censused for it.
+	//
+	// Nothing is lost by the drop. The property is "the box that authors
+	// this repo's commits must not have committed its own identity", and
+	// the box that authors them is the one that runs the full suite; the
+	// wall that ENFORCES it is InstallCommitGuardHook, which is unaffected.
+	// It was this pin, on both jobs, on every push, that made ci.yml unable
+	// to say anything about anything else (ranger-base-90y3c).
+	if os.Getenv("CI") != "" {
+		var keep []IdentityLiteral
+		for _, lit := range identity {
+			if lit.Class == "username" {
+				t.Logf("CI: dropping the username literal %q — a shared runner's service account, not an author's identity", lit.Value)
+				continue
+			}
+			keep = append(keep, lit)
+		}
+		identity = keep
+	}
 	if len(identity) == 0 {
 		t.Skip("this box derives no identity literals — nothing to measure")
 	}
