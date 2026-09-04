@@ -32,6 +32,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 )
 
 // SkillsDir is RHQ_HOME/skills.
@@ -251,24 +252,59 @@ func (a *App) boundSkillLink(link string) (target string, ours bool) {
 	return t, true
 }
 
-// danglingSkillLink reports whether link is a symlink whose target does not
-// exist. Such an entry binds nothing, so it is a post-cutover relic and not
-// the operator's own file: the one this was filed for pointed into
+// danglingSkillLink reports whether link is a symlink whose target is gone.
+// Such an entry binds nothing, so it is a post-cutover relic and not the
+// operator's own file: the one this was filed for pointed into
 // ~/.config/rhq — the home retired days earlier (ADR 0015) — and its only
 // effect was to refuse every launch of the persona that named that skill,
 // until it was removed by hand (ranger-base-f6hiy).
 //
-// Only "does not exist" counts. A link into a directory this uid cannot
-// traverse, or a symlink loop, resolves to an error that is not
-// fs.ErrNotExist, is not evidence that the target is gone, and still
-// refuses — the never-clobber rule holds everywhere it can still be wrong.
+// Two errors say "gone", and they are the only two:
+//
+//   - ENOENT — a component of the target path is not there.
+//   - ENOTDIR — a component of it is an ordinary FILE, so the path cannot
+//     resolve now and cannot resolve later either. Reachable the moment a
+//     retired home is archived in place as a file rather than a directory,
+//     which is the same accident as the ENOENT one (ranger-base-epdyv).
+//
+// Nothing else counts. A link into a directory this uid cannot traverse
+// (EACCES), or a symlink loop (ELOOP), fails for a reason that is about the
+// path and not about the target: the target may be sitting right there, so
+// it is no evidence of a relic and it still refuses — the never-clobber
+// rule holds everywhere it can still be wrong.
+//
+// ENOTDIR has one spelling that is NOT evidence, which is why it is asked
+// twice: a target written with a trailing slash ("…/skills/x/") is ENOTDIR
+// whenever x is a file, and that x is a live file the operator linked. So
+// the second ask is on the target with the slash cleaned off, and only a
+// target that is gone by that spelling too is a relic. The second ask is
+// lexical (filepath.Clean also collapses ".."), which can disagree with the
+// kernel wherever a component is itself a symlink — and only ever in the
+// safe direction: the first ask has already said unresolvable, so the
+// second can turn a replace into a refusal and never the other way.
 func danglingSkillLink(link string) bool {
 	fi, err := os.Lstat(link)
 	if err != nil || fi.Mode()&os.ModeSymlink == 0 {
 		return false
 	}
 	_, err = os.Stat(link)
-	return errors.Is(err, fs.ErrNotExist)
+	if errors.Is(err, fs.ErrNotExist) {
+		return true
+	}
+	if !errors.Is(err, syscall.ENOTDIR) {
+		return false
+	}
+	t, err := os.Readlink(link)
+	if err != nil {
+		return false
+	}
+	if filepath.IsAbs(t) {
+		t = filepath.Clean(t)
+	} else {
+		t = filepath.Join(filepath.Dir(link), t)
+	}
+	_, err = os.Stat(t)
+	return errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR)
 }
 
 // sweepDeadSkillLinks removes our links whose skill has left

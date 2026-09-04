@@ -52,33 +52,63 @@ func relicRepo(t *testing.T, name string) (a *App, repo, dir string) {
 // way the incident spelled it — a path that never existed under this test's
 // HOME — because that is the whole shape: the target is not merely missing
 // from RHQ_HOME/skills, it is missing from the filesystem.
+//
+// Two rows, because "missing" has two errnos and only one of them was the
+// incident's. A retired home DELETED is ENOENT; the same home archived in
+// place as a file rather than a directory is ENOTDIR, and a path with an
+// ordinary file in the middle of it cannot resolve now or later either
+// (ranger-base-epdyv, escaped from the ranger-base-f6hiy close). The second
+// row is the one that fails on the ENOENT-only predicate.
 func TestRenderAgentsSkillsReplacesADanglingRelic(t *testing.T) {
 	t.Parallel()
-	a, repo, dir := relicRepo(t, "distributed-systems")
-	relic := filepath.Join(dir, "distributed-systems")
-	retired := filepath.Join(t.TempDir(), "retired-home", "skills", "distributed-systems")
-	if err := os.Symlink(retired, relic); err != nil {
-		t.Fatal(err)
-	}
+	for _, c := range []struct {
+		name  string
+		plant func(t *testing.T, relic string)
+	}{
+		{"the retired home is gone (ENOENT)", func(t *testing.T, relic string) {
+			retired := filepath.Join(t.TempDir(), "retired-home", "skills", "distributed-systems")
+			if err := os.Symlink(retired, relic); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"the retired home was archived in place as a file (ENOTDIR)", func(t *testing.T, relic string) {
+			archived := filepath.Join(t.TempDir(), "rhq")
+			if err := os.WriteFile(archived, []byte("tarball of the retired home\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(filepath.Join(archived, "skills", "distributed-systems"), relic); err != nil {
+				t.Fatal(err)
+			}
+		}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			a, repo, dir := relicRepo(t, "distributed-systems")
+			relic := filepath.Join(dir, "distributed-systems")
+			c.plant(t, relic)
 
-	if _, err := a.RenderAgentsSkills(repo, "developer", []string{"distributed-systems"}); err != nil {
-		t.Fatalf("a dangling relic must not refuse the launch: %v", err)
-	}
-	got, err := os.Readlink(relic)
-	if err != nil || got != a.SkillPath("distributed-systems") {
-		t.Errorf("relic not replaced: %q (%v), want %s", got, err, a.SkillPath("distributed-systems"))
-	}
-	if _, err := os.Stat(filepath.Join(relic, "SKILL.md")); err != nil {
-		t.Errorf("SKILL.md not reachable through the replacement: %v", err)
+			if _, err := a.RenderAgentsSkills(repo, "developer", []string{"distributed-systems"}); err != nil {
+				t.Fatalf("a dangling relic must not refuse the launch: %v", err)
+			}
+			got, err := os.Readlink(relic)
+			if err != nil || got != a.SkillPath("distributed-systems") {
+				t.Errorf("relic not replaced: %q (%v), want %s", got, err, a.SkillPath("distributed-systems"))
+			}
+			if _, err := os.Stat(filepath.Join(relic, "SKILL.md")); err != nil {
+				t.Errorf("SKILL.md not reachable through the replacement: %v", err)
+			}
+		})
 	}
 }
 
 // The control arm, and the one that decides whether the fix is a fix or a
 // hole: every OTHER kind of entry we did not write still refuses. Each row
 // is a thing that resolves — so it is somebody's file, and posse may not
-// have it — except the last, whose target exists but is unreachable: an
-// error that is not "does not exist" is not evidence that the target is
-// gone, and it keeps the refusal.
+// have it — except the last two, whose targets exist but do not resolve as
+// asked: an error that is not evidence the target is gone keeps the
+// refusal. The trailing-slash row makes that concrete for the errno the
+// relic rule now accepts (ENOTDIR), so the two pins disagree in the fixture
+// and not only in the prose.
 func TestRenderAgentsSkillsStillRefusesEveryLiveForeignEntry(t *testing.T) {
 	t.Parallel()
 	for _, c := range []struct {
@@ -106,6 +136,22 @@ func TestRenderAgentsSkillsStillRefusesEveryLiveForeignEntry(t *testing.T) {
 		}},
 		{"a symlink loop", func(t *testing.T, link string) {
 			if err := os.Symlink(link, link); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"a live target spelled with a trailing slash", func(t *testing.T, link string) {
+			live := filepath.Join(t.TempDir(), "skills", "distributed-systems")
+			if err := os.MkdirAll(filepath.Dir(live), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(live, []byte("the operator's own file\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			// os.Stat through this link is ENOTDIR — the trailing slash asks
+			// the kernel for a directory — and the file it names is sitting
+			// right there. The mirror of the ENOTDIR replace row: the errno
+			// alone does not decide, the target does.
+			if err := os.Symlink(live+"/", link); err != nil {
 				t.Fatal(err)
 			}
 		}},

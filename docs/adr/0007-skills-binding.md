@@ -94,12 +94,18 @@ and the dir belongs to the **repo**, not to the persona — so the launch
 adds its own links, never removes another persona's, and refuses rather
 than overwrite an entry posse did not write. Union semantics is what §4
 already licenses: posse guarantees presence, not absence. One entry is
-exempt from the refusal: a **dangling** symlink — a link whose target does
-not exist — binds nothing and is a relic of a moved or retired home rather
+exempt from the refusal: a **dangling** symlink — a link whose target is
+gone — binds nothing and is a relic of a moved or retired home rather
 than the operator's work, so the launch replaces it (ranger-base-f6hiy: a
 link into the pre-ADR-0015 `~/.config/rhq` survived the cutover and refused
 every launch of the persona binding that skill until it was removed by
-hand).
+hand). "Gone" is two errnos and only two: `ENOENT`, a component of the
+target path is not there, and `ENOTDIR`, a component of it is an ordinary
+file — the retired home archived in place rather than deleted, which cannot
+resolve now and cannot resolve later either (ranger-base-epdyv). Every
+other failure is about the *path* and not the target — a loop, a parent
+this uid cannot traverse, a live target spelled with a trailing slash — so
+it is no evidence of a relic and it still refuses.
 
 Empty `skills:` renders nothing (the placeholder vanishes with its
 space, like `{allow}`). Env always carries `RHQ_SKILLS_DIR`
