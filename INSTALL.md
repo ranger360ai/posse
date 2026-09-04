@@ -1510,14 +1510,20 @@ it from the template git already wrote into the file, and where git wrote no
 template it strips nothing and reads the file whole, because under `auto`
 that is exactly what git keeps (ranger-base-vzx2n).
 If you set `commit.cleanup` to `verbatim`, `whitespace`
-or `scissors`, git KEEPS that block in the commit object, so the arm reads
-the file whole and the block CAN refuse you — including over an untracked
-file's name you never staged. That refusal is true (those bytes would land)
-but it arrives before your editor opens, so the remedy is to clear the class
-out of the repo or to leave `commit.cleanup` at its default rather than to
-rewrite a message you have not typed yet (ranger-base-6y3z2). A
+or `scissors`, git strips no `#` line out of that file, so the arm reads it
+whole and the block CAN refuse you — including over an untracked
+file's name you never staged, before your editor opens. **The refusal names
+the mode and what clears it** (ranger-base-b21e0): delete git's block in the
+editor, or leave `commit.cleanup` at its default. Which of the three you set
+decides whether the refusal is true or generous, and the difference is
+measured: under `verbatim` and `whitespace` git's block LANDS in the commit
+object as it stands, so the wall is doing its job; under `scissors` git puts
+that block below its cut line and truncates all of it, so the bytes never
+land and the refusal is over-refusal — the hook says so rather than matching
+git's cut line, which would be a second copy of git's own rule. A
 `--cleanup=` given on the command line is invisible to the hook and reads
-as the default. A refused
+as the default, as is `-m … -e`, which gets a template while the hook still
+sees the `-m` source. A refused
 message is not lost: it is in `.git/COMMIT_EDITMSG` until your next commit
 overwrites it. The SHIPPED pattern list is the one thing not read over a
 message, which is a measured decision rather than an oversight (ADR 0024

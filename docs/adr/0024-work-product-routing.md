@@ -153,6 +153,15 @@ install and at every persona launch).
    config --get` answers for the config files and for `git -c`, not for
    the flag.*
 
+   *Amended 2026-09-04 (ranger-base-b21e0): the remedy, not the verdict.
+   Under those three modes the writer is refused before the editor opens,
+   possibly over a line git wrote, and "rewrite the commit message" named a
+   rewrite that had not happened. The refusal now names the live mode and
+   what clears it — delete git's block in the editor, or leave
+   `commit.cleanup` at its default — and stays silent where `$2` is
+   `message`, since git appends no template there and the old remedy is
+   doable as written. See ADR 0050 D2 for the `scissors` half.*
+
    *Amended 2026-09-04 (ranger-base-cdxpf, from ranger-base-o3g6a): a
    FOURTH derived source — this box's CREW NAMES, over the ADDED staged
    PATHS and nothing else.* The staged-path arm above matches the

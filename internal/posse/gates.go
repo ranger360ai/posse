@@ -3152,6 +3152,16 @@ type visGuardRefusal struct {
 	rule         string // the rule it names — a refusal that names no rule is a regex saying no
 	matched      string // the line that introduces the matched text
 	wayThrough   string
+	// keptModeVar is "" or the name of the shell variable messageArm sets to
+	// the live template-KEEPING cleanup mode (ranger-base-b21e0). Non-empty
+	// on the MESSAGE refusals alone, because that variable exists only inside
+	// messageArm and because it is only the message the mode decides the read
+	// of; the content and path arms read a diff and a listing and no cleanup
+	// mode touches either. When it is set the refusal appends
+	// MessageKeptTemplateNote after its remedy — and only when the variable
+	// is non-empty AT HOOK TIME, which is the mode being one of the three
+	// AND git being about to append a template.
+	keptModeVar string
 	// footer is the two lines after the remedy that say what this wall
 	// was stamped with. Empty means visPublicFooter — the stamp line the
 	// gated checks have always printed; the ceiling, which runs under every
@@ -3189,7 +3199,7 @@ func (r visGuardRefusal) render(ind string) string {
 ` + i3 + `echo "` + r.matched + `"
 ` + i3 + `printf '%s' "$` + r.badVar + `"
 ` + i3 + `echo ` + shQuote(r.wayThrough) + `
-` + i3 + `echo "  ` + footer[0] + `"
+` + r.keptModeNote(i3) + i3 + `echo "  ` + footer[0] + `"
 ` + i3 + `echo "  ` + footer[1] + `"
 ` + i3 + `echo "  override, operator-typed, never passed by dispatch:"
 ` + i3 + `echo "    ` + VisibilityOverrideEnv + `=` + VisibilityOverrideValue + ` git commit -F - -- <paths>"
@@ -3199,6 +3209,38 @@ func (r visGuardRefusal) render(ind string) string {
 ` + i2 + `fi
 ` + i2 + `exit 1
 ` + i1 + `fi
+` + ind + `fi
+`
+}
+
+// keptModeNote is the mode clause of the remedy, at the echo indent ind, or
+// "" for a refusal that has no kept-mode variable (every content and path
+// arm). It renders INSIDE the refusal's `{ ... } >&2` group and between the
+// remedy and the stamp lines, because it modifies the remedy: a writer who
+// reads "rewrite the commit message" and stops there has been told to do
+// something that may not be doable.
+//
+// The mode is printed from the variable rather than baked in — one hook file
+// serves whatever ~/.gitconfig says today, and the whole point of the note is
+// to name the setting the writer did not know was live. The "scissors" test is a
+// branch rather than a case in the note itself because the three modes agree
+// on what is READ and disagree on what LANDS: verbatim and whitespace put
+// git's block in the object (MessageKeptLandsNote, so the writer knows the
+// wall is not in their way), scissors truncates it (MessageScissorsNote, so
+// the writer knows it is).
+func (r visGuardRefusal) keptModeNote(ind string) string {
+	if r.keptModeVar == "" {
+		return ""
+	}
+	v := "$" + r.keptModeVar
+	return ind + `if [ -n "` + v + `" ]; then
+` + ind + `  echo "git's cleanup mode here is \"` + v + `\" (config commit.cleanup), and it decided this read:"
+` + ind + `  echo ` + shQuote(MessageKeptTemplateNote) + `
+` + ind + `  if [ "` + v + `" = scissors ]; then
+` + ind + `    echo ` + shQuote(MessageScissorsNote) + `
+` + ind + `  else
+` + ind + `    echo ` + shQuote(MessageKeptLandsNote) + `
+` + ind + `  fi
 ` + ind + `fi
 `
 }
@@ -3466,6 +3508,7 @@ refused with the stricter remedy — there is no private db to re-file it in.`)
 		rule:         DataCeilingRule,
 		matched:      commitMessageMatched,
 		wayThrough:   DataCeilingMessageWayThrough,
+		keptModeVar:  "posse_kept",
 		footer:       footer,
 	}
 	src.message = msg
@@ -3575,13 +3618,35 @@ refused with the stricter remedy — there is no private db to re-file it in.`)
 // wearing a config: under verbatim, whitespace or scissors the editor path
 // now reads git's template again, so ONE untracked file whose name carries a
 // class refuses those writers' editor commits before the editor opens. For
-// them the bytes genuinely land — the refusal is true — but the remedy line
-// still says "rewrite the commit message" and the rewrite has not happened
-// yet. The layer that can tell those two apart is the commit-msg hook this
-// file already names as missing, and this is a second reason to file it.
-// Under scissors the whole-file read also scans the block below the cut line
-// that git truncates, which is over-refusal on top of over-refusal; matching
-// that line here would be a second copy of git's rule, so it is not matched.
+// verbatim and whitespace the bytes genuinely land and the refusal is true;
+// under scissors the whole-file read also scans the block BELOW git's cut
+// line, which git truncates, and that is over-refusal on top of over-refusal.
+// Matching that cut line here would be a second copy of git's rule, so it is
+// not matched.
+//
+// WHAT THE REFUSAL SAYS ABOUT IT (ranger-base-b21e0, the message half of the
+// cost above). The verdict was already true; the REMEDY was not, because
+// "rewrite the commit message" names a rewrite that has not happened yet when
+// this hook runs before the editor opens. So the refusal now names the live
+// mode and what actually clears it — delete git's block in the editor, or
+// leave commit.cleanup at its default — and says which side of the line the
+// mode puts the writer on: verbatim and whitespace LAND the block
+// (MessageKeptLandsNote), scissors truncates it (MessageScissorsNote). It is
+// keptModeNote below, driven by $posse_kept, which messageArm sets only when
+// the config named one of the three AND "$2" is not "message": on -m/-F git
+// appends no template and every line is the writer's own, so the old remedy
+// is doable exactly as written and the note stays quiet. RESIDUAL, stated:
+// `git commit -m ... -e` opens an editor and DOES get a template while "$2"
+// is still "message" (MEASURED, git 2.50.1: source "message", the Please-enter
+// block in the file, and the whole block landed in the object), so that one
+// writer gets the unqualified remedy — the quiet direction, and the same shape
+// as the --cleanup flag being invisible. Closing it would mean asking whether
+// the file HOLDS comment lines, and the only reader of that which is not a
+// second copy of git's rule is stripspace itself — which cannot separate a
+// template git wrote from a '#' line the writer typed with -m, so it would buy
+// this path by mis-firing on that one.
+// The layer that could tell a typed line from a written one is still the
+// commit-msg hook this file names as missing; the remedy did not need it.
 //
 // WHAT THE FULL-FILE READ COST, measured before the split: ONE untracked
 // file whose NAME carried a ceiling class — never staged, never typed —
@@ -3702,9 +3767,12 @@ func messageArm(ind, head string, sources []visScanSource) string {
 	}
 	return head + ind + `if [ -f "${1:-}" ]; then
 ` + i1 + `posse_clean=$(git config --get commit.cleanup 2>/dev/null) || posse_clean=''
+` + i1 + `posse_kept=''
 ` + i1 + `case "$posse_clean" in
 ` + i1 + `  strip) posse_clean=strip ;;
-` + i1 + `  verbatim|whitespace|scissors) posse_clean=whole ;;
+` + i1 + `  verbatim|whitespace|scissors)
+` + i2 + `if [ "${2:-}" != "message" ]; then posse_kept=$posse_clean; fi
+` + i2 + `posse_clean=whole ;;
 ` + i1 + `  *) if [ "${2:-}" = "message" ]; then posse_clean=whole; else posse_clean=strip; fi ;;
 ` + i1 + `esac
 ` + i1 + `if [ "$posse_clean" = whole ]; then
@@ -3766,7 +3834,10 @@ the file is read whole (ranger-base-vzx2n, ranger-base-vl9g8).
 The refusal's remedy differs from the staged file's — rewrite the message,
 cite the id — because the text is not in a file the writer can edit; it is
 still in .git/COMMIT_EDITMSG, local and unreplicated, until the next
-commit overwrites it (measured).
+commit overwrites it (measured). Where the mode is one of the three that
+KEEP git's template the remedy says so and names it, because on that path
+the hit can be in a block the writer never typed and no rewrite of their
+own text clears (ranger-base-b21e0).
 A message typed in the EDITOR is not scanned here and cannot be: this hook
 runs before the editor opens, so the file holds git's template and
 whatever was already in it, never the words about to be typed (measured,
@@ -3915,6 +3986,7 @@ func identityGuardCheck(identity []IdentityLiteral, extra []OpsPattern) string {
 				rule:         IdentityRule,
 				matched:      commitMessageMatched,
 				wayThrough:   IdentityMessageWayThrough,
+				keptModeVar:  "posse_kept",
 			},
 		})
 	}
@@ -3953,6 +4025,7 @@ func identityGuardCheck(identity []IdentityLiteral, extra []OpsPattern) string {
 				rule:         OpsInstanceRule,
 				matched:      commitMessageMatched,
 				wayThrough:   OpsInstanceMessageWayThrough,
+				keptModeVar:  "posse_kept",
 			},
 		})
 	}
@@ -4122,7 +4195,9 @@ runs first and refuses with the stricter remedy when both would speak.
 The remedy differs from the staged file's — rewrite the message — because
 the text is not in a file the writer can edit; it is still in
 .git/COMMIT_EDITMSG, local and unreplicated, until the next commit
-overwrites it (measured).
+overwrites it (measured). Where the mode KEEPS git's template the remedy
+names the mode and what clears it, because the hit can be in a block the
+writer never typed (ranger-base-b21e0).
 A message typed in the EDITOR is not scanned here and cannot be: this
 hook runs before the editor opens, so the file holds git's template and
 whatever was already in it, never the words about to be typed (measured,

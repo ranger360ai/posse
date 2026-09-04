@@ -509,6 +509,69 @@ breach the ceiling by the wall's own hand. If the pattern itself is wrong,
 only the operator can change it (config ` + DataCeilingConfigKey + `:) and
 re-run posse gates install-hooks.`
 
+// MessageKeptTemplateNote is the clause the MESSAGE arm's remedy gains when
+// git's live cleanup mode KEEPS git's own template (ranger-base-b21e0, from
+// ranger-base-6y3z2). Both walls print it, after their own remedy and before
+// the stamp lines, and the mode it names is read at hook time — the note is
+// static, the mode is not.
+//
+// WHY IT EXISTS. Under commit.cleanup=verbatim, whitespace or scissors the
+// arm reads "$1" WHOLE, because under those modes git strips no comment line
+// out of it. That verdict is true and the refusal is honest. What was not
+// honest was the remedy: prepare-commit-msg runs BEFORE the editor opens, so
+// on that path the hit can be in a block the writer has not typed and cannot
+// rewrite — an UNTRACKED file's name in the status list, the branch name on
+// the "On branch" line, a merge's conflict list — and "rewrite the commit
+// message" names a rewrite that has not happened yet (ranger-base-h3s6q
+// finding 2, narrowed to the writers whose config keeps comments).
+//
+// WHAT IT SAYS is therefore what actually clears it, and the two things are
+// different in kind: delete git's block in the editor (this commit), or leave
+// commit.cleanup at its default (every commit after it, and the mode is one
+// line in ~/.gitconfig that needs no intent to acquire). It does NOT assert
+// the hit IS in git's block — the hook has the file and not the writer's
+// hands — so it says "if", and a writer whose hit really is in their own
+// typed text reads one paragraph they did not need.
+//
+// WHAT IT DOES NOT SAY HERE is whether that block reaches the object, because
+// the three modes do not agree and the difference is the whole of the next
+// two constants. The layer that could tell a typed line from a written one is
+// the commit-msg hook ADR 0050 D5 and ADR 0024 D2 already name as missing;
+// this is the message half of the same complaint and does not need it.
+const MessageKeptTemplateNote = `under that mode git strips no comment line out of this file, so git's own
+template is message here and is scanned as message: the "On branch" line,
+the staged, unstaged and UNTRACKED lists, a merge's conflict list. This hook
+runs BEFORE the editor opens, so it cannot tell a line you typed from a line
+git wrote — if what tripped this is in git's block rather than in your own
+text, no rewrite of your text clears it. Two things do: delete git's block in
+the editor before you save, or leave commit.cleanup at its default, where git
+strips that block itself and it never reaches the object.`
+
+// MessageKeptLandsNote is what "verbatim" and "whitespace" add: the block is
+// not merely scanned, it LANDS. MEASURED at the shell, git 2.50.1: an editor
+// commit under each of those two carried the whole template — the Please-enter
+// paragraph, "On branch main", the staged list and the untracked list — into
+// the commit object. A writer reading a refusal deserves to know which side of
+// that line they are on, because it is the difference between a wall doing its
+// job and a wall in their way (ranger-base-b21e0).
+const MessageKeptLandsNote = `and this refusal is not a false alarm: under that mode git's block reaches
+the commit object as it stands, untracked filenames and all (measured).`
+
+// MessageScissorsNote is the other side of it, and it is the second helping
+// ranger-base-b21e0 names: under "scissors" git puts its template BELOW the cut
+// line and truncates all of it, so the whole-file read scans bytes that never
+// reach the object (MEASURED at the shell, git 2.50.1: the same editor commit
+// landed with the typed line alone). Matching git's cut line in the reader
+// would be a second copy of git's own rule — the argument gates.go makes
+// against a literal '#', and a copy is a thing that drifts — so the block is
+// read and the refusal says so, which is the cheap direction: a writer who is
+// told why can delete it, and a reader who is not told learns nothing.
+const MessageScissorsNote = `and "scissors" is the mode that over-refuses here: git puts its block BELOW
+the cut line and truncates all of it, so those bytes never reach the object.
+This reader does not match that cut line, because matching it would be a
+second copy of git's own rule — so it reads the block, and says so rather
+than refusing you quietly.`
+
 // opsClassRE is what a class name may be. It is rendered into a shell word
 // and into a hook comment, and it is what a human reads in the refusal, so
 // it stays boring on purpose.

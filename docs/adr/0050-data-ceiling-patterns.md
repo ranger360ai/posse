@@ -151,7 +151,17 @@ and is the stated residual. The cost of the fail-closed side is h3s6q's
 complaint wearing a config — those three modes read git's template again, so
 one classed untracked path refuses those writers' editor commits before the
 editor opens, and the layer that can tell that apart is the `commit-msg` hook
-below. The exclusion stands as stated: a
+below. *(Amended 2026-09-04, ranger-base-b21e0: the REMEDY was the half of
+that cost the writer actually reads, and it did not need the second layer.
+Where the mode is one of the three, the refusal now names it and says what
+clears it — delete git's block in the editor, or leave `commit.cleanup` at
+its default — and says which way the mode cuts: `verbatim` and `whitespace`
+LAND that block in the object, `scissors` truncates it below its cut line, so
+under `scissors` the read is over-refusal and the refusal says so rather than
+matching the cut line. Both measured, git 2.50.1. The note is suppressed
+where `$2` is `message`, because git appends no template there and "rewrite
+the commit message" is doable exactly as written; `-m … -e` is the stated
+residual, alongside `--cleanup=`.)* The exclusion stands as stated: a
 message typed in the editor does not exist yet when the hook runs. What the
 editor path does scan is whatever was already in the file — a
 `commit.template` body, `MERGE_MSG` — which lands in the object like any

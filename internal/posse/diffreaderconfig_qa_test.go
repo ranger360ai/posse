@@ -291,7 +291,20 @@ func TestQAMessageArmReadsTwoWaysKeyedOnTheCleanupMode(t *testing.T) {
 		// The three modes that keep comments read the file WHOLE. All
 		// three, because git keeps its own template under every one of
 		// them (measured) and dropping any is the same fail-open again.
-		{`verbatim|whitespace|scissors) posse_clean=whole ;;`, 2},
+		// Three fragments rather than one line since ranger-base-b21e0,
+		// because the arm gained the remedy's mode capture and the two
+		// walls render it at different indents — so each fragment is
+		// asserted indent-free, the way the one-liner always was.
+		{`verbatim|whitespace|scissors)`, 2},
+		{`posse_clean=whole ;;`, 2},
+		// The remedy's handle on WHICH of the three is live, captured in
+		// the same arm rather than by reading the mode list a second time:
+		// a second copy of that list is the drift this file argues against
+		// everywhere else (ranger-base-b21e0). It is empty where "$2" is
+		// "message", because git appends no template on that path and the
+		// unqualified "rewrite the commit message" is doable as written.
+		{`if [ "${2:-}" != "message" ]; then posse_kept=$posse_clean; fi`, 2},
+		{`posse_kept=''`, 2},
 		// "strip" strips on EVERY path, -m/-F included: that is the
 		// over-refusal half of ranger-base-6y3z2.
 		{`strip) posse_clean=strip ;;`, 2},
