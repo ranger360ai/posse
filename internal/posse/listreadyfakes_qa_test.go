@@ -35,7 +35,21 @@ import (
 // open-vs-`--all` distinction ranger-base-j8qmj's merge-back dedupe turns on:
 // its two queries (OpenLabeledAny, AllLabeledAny) want opposite things from a
 // closed row, and against a fake that answers both the same they cannot be
-// told apart.
+// told apart. It is the dedupe CODE that turns on it — j8qmj's five dedupe
+// PINS pass either way (5/5 PASS on the mutant overlay below), which is the
+// whole reason this file exists.
+//
+// KILLS BOTH DIRECTIONS (measured 2026-09-04, ranger-base-ntuen, `go test
+// -overlay` so no mutant reached the tree; green unmutated in the same pair
+// of runs):
+//   - `list`'s call site → fakeBdReadyDropClosed: InProgress and
+//     OpenLabeledAny both got [], the two assertions aimed at it.
+//   - `ready`'s call site → fakeBdDropClosed: Ready got [a-1 a-2], the
+//     claimed-and-shown-closed row still offered as work (ranger-base-y3x6n's
+//     defect, in the mirror direction).
+//
+// So neither function is the other's superset in the direction anyone has
+// tried to fold it, and the fold now reds a test instead of only a comment.
 func TestQAListAndReadyFakesAreNotOneFake(t *testing.T) {
 	t.Parallel()
 	repo := t.TempDir()

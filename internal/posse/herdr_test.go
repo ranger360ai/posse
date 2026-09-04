@@ -900,9 +900,26 @@ func fakeBdUpdate(args []string) int {
 // own status field says closed and nothing else, which is what real bd's
 // default filter does. This one is `ready`, and its extra half — a bead the
 // fake has HANDED OUT whose `show` now answers closed — is a statement about
-// dispatch, not about the store's filter. Merging them would give `list`
-// that dispatch half and quietly break the open-vs-`--all` distinction
-// ranger-base-j8qmj's dedupe pins turn on. They collided as one name because
+// dispatch, not about the store's filter. Merging them gives `list` that
+// dispatch half, and against a fake that answers the open query and the
+// `--all` query the same, the merge-back dedupe's two reads (OpenLabeledAny,
+// AllLabeledAny) cannot be told apart — ranger-base-j8qmj's own defect,
+// reachable again through the fixture.
+//
+// This paragraph used to end "the open-vs-`--all` distinction
+// ranger-base-j8qmj's dedupe pins turn on". MEASURED TWICE, and they do not:
+// with `list`'s call site pointed at this function, j8qmj's five dedupe pins
+// pass unchanged (`go test -overlay`, ranger-base-90y3c, re-measured under
+// ranger-base-ntuen: 5/5 PASS on the same overlay that reds the test below)
+// and so does the
+// whole package (internal/posse ok 668.961s, 0 FAIL, ranger-base-m4730). The
+// dedupe CODE turns on the difference; no pin of j8qmj's reads it. What
+// holds the pair apart is TestQAListAndReadyFakesAreNotOneFake
+// (listreadyfakes_qa_test.go), which fails on the fold in EITHER direction —
+// `list`'s call site given this function, and `ready`'s given
+// fakeBdDropClosed (both measured, ranger-base-ntuen). A comment claiming a
+// reader it does not have is how the other half of this pair got read as
+// dead code and deleted (5b4e686). They collided as one name because
 // two seats added one each to this file on branches neither could see, and
 // merge-back is ff-only, so nothing built the pair until it was
 // already on main: `go vet ./...` went red at 3075168 and CI's macos and
