@@ -631,10 +631,18 @@ default_emoji: ⚙️
 # grok_pool_usd_per_point: 0.50    # dollars per percentage point of pool
 
 # ─── load guard ──────────────────────────────────────────────────────────────
-# The 1-minute load average above which this instance launches NOTHING: a
-# dispatch pass over it is skipped whole with a witness line, and `posse
-# new`, `posse relaunch`, a recipe and a cockpit launch all refuse. Nothing
-# already running is touched — a saturated box needs its sessions to finish.
+# The 1-minute load average above which this instance launches nothing OF ITS
+# OWN: a dispatch pass over it is skipped whole with a witness line, its
+# refills are skipped, and `posse relaunch` refuses. Nothing already running
+# is touched — a saturated box needs its sessions to finish.
+#
+# **It is the fleet's ceiling, never the crew's** (ranger-base-jfe5z). A
+# launch the operator typed — `posse new`, `posse up`, `posse recipe`, the
+# cockpit's `d` — is never refused by it: whoever typed that has already made
+# the judgement this guard exists to make for an unattended loop. The reading
+# is still taken and still printed, as a warning with the same culprit line,
+# because that is what makes the missing refusal safe; the session is not
+# marked degraded.
 #
 # Why it exists: a box whose load is far above its core count cannot schedule
 # fork(). Every command a session tries to spawn then hangs with no output at
@@ -687,7 +695,7 @@ default_emoji: ⚙️
 # that deliberately starts a long-lived process with a trailing `&` looks
 # exactly the same from here, so ending one is the operator's call and needs
 # an explicit exception, not a threshold that looked convincing.
-# load_guard: 25             # 1-min loadavg ceiling for launching; 0 = off
+# load_guard: 25             # 1-min loadavg ceiling for FLEET launches; 0 = off
 
 # ─── governance: what needs a human (`posse status`) ─────────────────────────
 # `posse status` computes the condition set — the closed, enumerated list of

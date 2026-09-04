@@ -3095,7 +3095,9 @@ func (d *Dispatcher) fire(is RepoIssue, persona, session, runtime, tier, tierWhy
 	prompt := func() string {
 		return workPrompt(is, d.App.promptContext(d.Bd, is, runtime, tier, session, ag))
 	}
-	l, err := d.launchSession(is, persona, session, runtime, tier, prompt, held)
+	// A pass decides this launch on its own, so the load guard is the
+	// fleet's own ceiling here and refuses (ranger-base-jfe5z).
+	l, err := d.launchSession(is, persona, session, runtime, tier, prompt, held, false)
 	if err != nil {
 		return nil, err
 	}
@@ -3782,7 +3784,13 @@ func (d *Dispatcher) launchTag(runtime, tier string) string {
 // moved this bead (ADR 0010). It is passed explicitly rather than resolved
 // here so that everything downstream of the decision — the meta, the prompt
 // header, the parity check — names the runtime the session actually got.
-func (d *Dispatcher) launchSession(is RepoIssue, persona, session, runtime, tier string, prompt func() string, held *LaunchLock) (launched, error) {
+//
+// byHand is the launch's provenance, forwarded to NewSessionOpts so the load
+// guard can tell the two callers apart (ranger-base-jfe5z): false from Run's
+// fire loop, which is the fleet deciding for itself and is refused on a
+// saturated box exactly as before, and true from LaunchBead, which is the
+// operator's own `d` on a row he picked.
+func (d *Dispatcher) launchSession(is RepoIssue, persona, session, runtime, tier string, prompt func() string, held *LaunchLock, byHand bool) (launched, error) {
 	s, resolveErr := d.HB.Resolve(session)
 	// The backstop under every dispatch path (rangerhq-ynx8): a foreign row
 	// is not this persona's session, whatever it is labelled. Refused rather
@@ -3828,7 +3836,7 @@ func (d *Dispatcher) launchSession(is RepoIssue, persona, session, runtime, tier
 	// because the launch line has already been typed.
 	if resolveErr != nil && prompt != nil {
 		if rt, err := d.App.LoadRuntime(runtime); err == nil && rt.PromptMode() == PromptArgv {
-			return d.launchWithPrompt(is, persona, session, runtime, tier, prompt, held)
+			return d.launchWithPrompt(is, persona, session, runtime, tier, prompt, held, byHand)
 		}
 	}
 	if resolveErr == nil {
@@ -3841,7 +3849,7 @@ func (d *Dispatcher) launchSession(is RepoIssue, persona, session, runtime, tier
 	if resolveErr != nil {
 		d.printf("· %-14s creating session %s (persona %s, %s, %s)\n", is.ID, session, persona, AbbrevHome(is.Dir), d.launchTag(runtime, tier))
 		if err := d.HB.createSession(NewSessionOpts{Name: session, Dir: is.Dir, Agent: persona, Runtime: runtime, Tier: tier,
-			AllowDegraded: d.AllowDegraded, Cage: d.Cage, Worktree: true, Bead: is.ID}, held); err != nil {
+			AllowDegraded: d.AllowDegraded, Cage: d.Cage, Worktree: true, Bead: is.ID, ByHand: byHand}, held); err != nil {
 			return launched{}, err
 		}
 		d.noteTree(is.ID, session)
@@ -3912,7 +3920,10 @@ type launched struct {
 // prompt gets on the typed path and for the same reason: the claim is made
 // before the risky step so the race loses cleanly, and the price of that is
 // handing the bead back when the risky step does not happen.
-func (d *Dispatcher) launchWithPrompt(is RepoIssue, persona, session, runtime, tier string, prompt func() string, held *LaunchLock) (launched, error) {
+// byHand is launchSession's own, forwarded unchanged: this is the same
+// launch on a `prompt: argv` runtime, so the load guard must read the same
+// provenance down either branch (ranger-base-jfe5z).
+func (d *Dispatcher) launchWithPrompt(is RepoIssue, persona, session, runtime, tier string, prompt func() string, held *LaunchLock, byHand bool) (launched, error) {
 	resumed, err := d.claim(is, persona)
 	if err != nil {
 		return launched{}, err
@@ -3923,7 +3934,7 @@ func (d *Dispatcher) launchWithPrompt(is RepoIssue, persona, session, runtime, t
 	}
 	d.printf("· %-14s creating session %s (persona %s, %s, %s; work prompt on the launch line)\n", is.ID, session, persona, AbbrevHome(is.Dir), d.launchTag(runtime, tier))
 	if err := d.HB.createSession(NewSessionOpts{Name: session, Dir: is.Dir, Agent: persona, Runtime: runtime, Tier: tier,
-		AllowDegraded: d.AllowDegraded, Cage: d.Cage, PromptFile: file, Worktree: true, Bead: is.ID}, held); err != nil {
+		AllowDegraded: d.AllowDegraded, Cage: d.Cage, PromptFile: file, Worktree: true, Bead: is.ID, ByHand: byHand}, held); err != nil {
 		return launched{}, d.unclaimAfterLaunchFailure(is, persona, resumed, err)
 	}
 	d.noteTree(is.ID, session)
@@ -4213,7 +4224,12 @@ func (d *Dispatcher) LaunchBead(is RepoIssue) (session string, err error) {
 	prompt := func() string {
 		return workPrompt(is, d.App.promptContext(d.Bd, is, launchRuntime, tier, session, ag))
 	}
-	l, err := d.launchSession(is, persona, session, launchRuntime, tier, prompt, lock)
+	// The operator picked this row and pressed `d`: the load guard warns
+	// rather than refuses, exactly as it does for `posse new`
+	// (ranger-base-jfe5z). Every other ceiling above — pause, budget, the
+	// crew/foreign holds, the tier refusal — still bites; this one is the
+	// only guard whose whole justification was that nobody was watching.
+	l, err := d.launchSession(is, persona, session, launchRuntime, tier, prompt, lock, true)
 	if err != nil {
 		return "", err
 	}

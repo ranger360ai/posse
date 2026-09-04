@@ -160,8 +160,10 @@ func main() {
 		args = need(args, 1, `posse new <name> [--dir <path>] [--env-file <name>]... [--cmd "..."] [--emoji <e>] [--agent <name>]`)
 		o := parseNewFlags(args)
 		// ADR 0008: a session the operator made by hand is one they made to
-		// talk to — dispatch leaves it alone until they release it.
-		o.Crew = true
+		// talk to — dispatch leaves it alone until they release it. And it
+		// is the operator's own judgement about the box, so the fleet's
+		// load guard warns here instead of refusing (ranger-base-jfe5z).
+		o.Crew, o.ByHand = true, true
 		if err := hb.CreateSession(o); err != nil {
 			die(err)
 		}
@@ -170,7 +172,7 @@ func main() {
 	case "attach", "up", "local", "focus":
 		args = need(args, 1, "posse attach <name>")
 		if (cmd == "up" || cmd == "local") && !hb.HasSession(args[0]) {
-			if err := hb.CreateSession(posse.NewSessionOpts{Name: args[0], Crew: true}); err != nil {
+			if err := hb.CreateSession(posse.NewSessionOpts{Name: args[0], Crew: true, ByHand: true}); err != nil {
 				die(err)
 			}
 		}
