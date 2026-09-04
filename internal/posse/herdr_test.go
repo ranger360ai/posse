@@ -526,6 +526,14 @@ func fakeBdFilterLabels(body, labels string) string {
 // fakeBdDropClosed is `bd list` WITHOUT `--all`: the closed rows are gone.
 // Anything the fixture did not give a status is kept — a row that never
 // said it was closed is not.
+//
+// ONE of a NAMED PAIR: fakeBdReadyDropClosed below is `ready`, and it is not
+// a superset of this one to be consolidated into — see its comment for why
+// the two questions are separate (ranger-base-pju9t). Deleting either leaves
+// the other's call site undefined and the package unbuildable, which is what
+// 5b4e686 did to :245 — restored by 6ecb521 (ranger-base-jzoci); this comment
+// is the half of ranger-base-tenf5's fix that 6ecb521 did not carry, re-landed
+// under ranger-base-d91mf.
 func fakeBdDropClosed(body string) string {
 	var list []map[string]any
 	if json.Unmarshal([]byte(body), &list) != nil {
@@ -789,7 +797,7 @@ func fakeBdUpdate(args []string) int {
 	return 0
 }
 
-// fakeBdDropClosed is bd's own first contract on `ready`, which this fake
+// fakeBdReadyDropClosed is bd's own first contract on `ready`, which this fake
 // broke for the life of every test (ranger-base-y3x6n): a closed bead is not
 // ready work, and no reading of the real store can hand one back.
 //
