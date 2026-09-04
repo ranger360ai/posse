@@ -3502,26 +3502,64 @@ refused with the stricter remedy — there is no private db to re-file it in.`)
 // wrongly, only stay silent, which is the same failure shape the whole hook
 // has when it is not installed at all.
 //
-// EVERY LINE, STRIPPED OF NOTHING, and that is measured rather than tidy
-// (git 2.50.1): the default --cleanup for -m and -F with no editor is
-// "whitespace", which KEEPS a '#'-leading line — so a pasted markdown
-// heading is a comment-looking line that commits. A reader who strips them
-// here opens a hole with the shape of the paste this wall exists for.
+// WHAT IS READ IS WHAT GIT WILL KEEP, and those are not the same bytes on
+// every path (ranger-base-h3s6q finding 2; measured, git 2.50.1). "$2" makes
+// exactly one decision here — how the file is read — and it makes it because
+// git's own cleanup differs exactly there:
 //
-// NO CASE ON "$2". The message-source argument does not decide anything:
-// the hook already distrusts it for the shared-index arm's exemptions (the
-// table above says why — $2 is "message" mid-merge and for a clean revert
-// alike), and a full-file scan is fail-safe on every path git can take.
-// That is also what puts --amend inside: git hands the hook HEAD's message
+//	$2 = "message"   -m and -F. git appends NO template on this path and the
+//	                 default cleanup is "whitespace", which KEEPS a
+//	                 '#'-leading line — so a pasted markdown heading is a
+//	                 comment-looking line that commits, and a reader that
+//	                 stripped it would open a hole with the shape of the
+//	                 paste this arm exists for. Read whole, stripped of
+//	                 nothing.
+//	anything else    the editor path ($2 unset), a commit.template, a merge,
+//	                 a squash, an --amend. git has already written its own
+//	                 template into the file — the "On branch <name>" line and
+//	                 the '#' status block listing staged, unstaged and
+//	                 UNTRACKED paths, and on a merge the "# Conflicts:" list
+//	                 of conflicted paths — and it strips every one of those
+//	                 lines, because "strip" is the cleanup whenever the
+//	                 message is edited. Read through stripspace.
+//
+// WHAT THE FULL-FILE READ COST, measured before the split: ONE untracked
+// file whose NAME carried a ceiling class — never staged, never typed —
+// refused every editor commit in the repo, with the remedy "rewrite the
+// commit message", which cannot clear a hit that is not in the message. A
+// branch named for a class did the same to every editor commit while the
+// identical commit with -m landed: same content, opposite verdicts, decided
+// by which commit form was typed. Nothing escaped — the direction is
+// fail-closed — what it cost was a writer who cannot do what the refusal
+// tells them.
+//
+// WHY THIS IS NOT `grep -v` OVER '^#'. The comment character is the writer's
+// config (core.commentChar, core.commentString since git 2.45), so a literal
+// '#' here is a second copy of git's rule and a copy is a thing that drifts.
+// `git stripspace --strip-comments` reads the same config git does —
+// measured with core.commentChar=';', where it strips a template a '^#'
+// grep would have handed straight to the scan.
+//
+// EVERY PATH IS STILL SCANNED, and $2 still decides nothing about WHETHER:
+// the hook distrusts it for the shared-index arm's exemptions (the table
+// above says why — $2 is "message" mid-merge and for a clean revert alike).
+// That is also what keeps --amend inside: git hands the hook HEAD's message
 // there, so a message REUSED after the ceiling was configured is scanned.
+//
+// RESIDUAL, stated: `--amend --no-edit` and `-C` append no template and
+// clean with "whitespace", so a '#'-leading line in the message being reused
+// does land and this arm no longer reads it. That text is already in a
+// commit object in this repo — the wall it had to pass is the commit that
+// first wrote it — and refusing the amend would not take it back out.
 //
 // THE ONE PATH IT DOES NOT REACH, stated (ADR 0050 D5, and ADR 0024 D2 for
 // check 3): a message typed in the EDITOR. prepare-commit-msg runs before
-// the editor opens, so on that path $1 holds git's template alone —
-// measured. The editor path is the operator's own hand, which is above both
-// walls already; the second layer for it is a commit-msg hook, and the
-// trigger for filing it is the first "commit message" line under either
-// label in refusals.log.
+// the editor opens, so on that path the file holds git's template and
+// whatever was already in it (a commit.template body, MERGE_MSG) and never a
+// word the writer is about to type. The editor path is the operator's own
+// hand, which is above both walls already; the second layer for it is a
+// commit-msg hook, and the trigger for filing it is the first "commit
+// message" line under either label in refusals.log.
 func messageArm(ind, head string, sources []visScanSource) string {
 	i1, i2 := ind+"  ", ind+"    "
 	var body strings.Builder
@@ -3539,7 +3577,11 @@ func messageArm(ind, head string, sources []visScanSource) string {
 		return ""
 	}
 	return head + ind + `if [ -f "${1:-}" ]; then
-` + i1 + `posse_added=$(cat "$1" 2>/dev/null)
+` + i1 + `if [ "${2:-}" = "message" ]; then
+` + i2 + `posse_added=$(cat "$1" 2>/dev/null)
+` + i1 + `else
+` + i2 + `posse_added=$(git stripspace --strip-comments < "$1" 2>/dev/null)
+` + i1 + `fi
 ` + i1 + `if [ -n "$posse_added" ]; then
 ` + body.String() + i1 + `fi
 ` + ind + `fi
@@ -3553,16 +3595,24 @@ func messageArm(ind, head string, sources []visScanSource) string {
 // trips the other.
 var ceilingMessageHead = "\n" + shComment("", `─── the data ceiling, third arm: the commit MESSAGE (ADR 0050 D2) ──────
 "$1" is the message file git is about to take — the same file the
-shared-index arm below compares against MERGE_MSG. Read whole and scanned
-by line, comment-looking lines included: git's default cleanup for -m and
--F keeps a '#'-leading line, so a pasted markdown heading lands in the
-commit object and replicates with the branch. The refusal's remedy differs
-from the staged file's — rewrite the message, cite the id — because the
-text is not in a file the writer can edit; it is still in
-.git/COMMIT_EDITMSG, local and unreplicated, until the next commit
-overwrites it (measured).
-A message typed in the EDITOR is NOT scanned here and cannot be: this hook
-runs before the editor opens and is handed git's template alone (measured,
+shared-index arm below compares against MERGE_MSG. WHAT IS READ IS WHAT
+GIT WILL KEEP. On the -m and -F path ($2 = "message") it is read whole,
+comment-looking lines included: git's cleanup there is "whitespace", which
+keeps a '#'-leading line, so a pasted markdown heading lands in the commit
+object and replicates with the branch. On every other path git has already
+written its own template into the file — the "On branch" line, the '#'
+status block listing staged, unstaged and UNTRACKED paths, a merge's
+"# Conflicts:" list — and strips all of it, so the read is
+"git stripspace --strip-comments" and the scan judges only what will
+survive into the object (ranger-base-h3s6q: a full-file read refused over
+an untracked file's NAME, with a remedy no rewrite could clear).
+The refusal's remedy differs from the staged file's — rewrite the message,
+cite the id — because the text is not in a file the writer can edit; it is
+still in .git/COMMIT_EDITMSG, local and unreplicated, until the next
+commit overwrites it (measured).
+A message typed in the EDITOR is not scanned here and cannot be: this hook
+runs before the editor opens, so the file holds git's template and
+whatever was already in it, never the words about to be typed (measured,
 git 2.50.1). That path is the operator's own hand, above the ceiling
 already; the second layer for it is a commit-msg hook.`)
 
@@ -3889,10 +3939,16 @@ the same path is refused exactly as before.`) +
 // ceiling's message arm has already run and refuses first.
 var checkThreeMessageHead = "\n" + shComment("  ", `─── check 3, third arm: the commit MESSAGE ─────────────────────────────
 "$1" is the message file git is about to take — the same file the ceiling
-above and the shared-index arm below already read. Read whole and scanned
-by line, comment-looking lines included: git's default cleanup for -m and
--F keeps a '#'-leading line, so a pasted heading lands in the commit
-object and replicates with the branch. Inside the gate with the rest of
+above and the shared-index arm below already read, through the same
+reader. WHAT IS READ IS WHAT GIT WILL KEEP. On the -m and -F path
+($2 = "message") it is read whole, comment-looking lines included: git's
+cleanup there is "whitespace", which keeps a '#'-leading line, so a pasted
+heading lands in the commit object and replicates with the branch. On
+every other path git has already written its own template into the file —
+the "On branch" line, the '#' status block, a merge's "# Conflicts:" list
+— and strips all of it, so the read is "git stripspace --strip-comments"
+and the scan judges only what will survive into the object
+(ranger-base-h3s6q). Inside the gate with the rest of
 check 3: an identity literal or an instance class is about where content
 may GO, so a private-stamped repo runs none of this — which is the one
 thing that separates this arm from the ceiling's, and why the ceiling's
@@ -3901,10 +3957,11 @@ The remedy differs from the staged file's — rewrite the message — because
 the text is not in a file the writer can edit; it is still in
 .git/COMMIT_EDITMSG, local and unreplicated, until the next commit
 overwrites it (measured).
-A message typed in the EDITOR is NOT scanned here and cannot be: this
-hook runs before the editor opens and is handed git's template alone
-(measured, git 2.50.1). That path is the operator's own hand; the second
-layer for it is a commit-msg hook.`)
+A message typed in the EDITOR is not scanned here and cannot be: this
+hook runs before the editor opens, so the file holds git's template and
+whatever was already in it, never the words about to be typed (measured,
+git 2.50.1). That path is the operator's own hand; the second layer for
+it is a commit-msg hook.`)
 
 // pathAccum is how one path's hits are folded into an arm's accumulator:
 // posse_check keeps the class and the matched text but not the subject, so
@@ -4385,17 +4442,58 @@ posse_adr_judge() {
 // core.attributesFile naming a file that says `*.md -diff` — which the four
 // flags above do NOT close and --text does.
 //
+// --no-textconv IS THE SIXTH, AND IT IS THE ONE WITH NO TELL AT ALL
+// (ranger-base-h3s6q finding 1, measured). git applies a
+// diff.<driver>.textconv driver BEFORE the diff and --no-ext-diff does not
+// cover it, so the reader is handed the CONVERTED text: a driver that drops
+// the classed line leaves a diff that looks perfectly ordinary. It is
+// reachable from the WRITER's config alone — core.attributesFile naming a
+// file that says `* diff=redact`, plus diff.redact.textconv — with nothing
+// staged, no .gitattributes in the tree and no intent required. Unlike the
+// --text case there is not even a "0 insertions(+)" tell: git's own commit
+// summary is computed WITHOUT textconv, so it reports the real line count
+// while every '^+' reader judged text the driver had already emptied.
+// Measured on this box: the data ceiling committed a classed line clean.
+// This shop had closed the same class once already on the other reader —
+// ranger-base-r5wpk put --no-textconv on memoryDiff (memoryland.go) for
+// exactly these routes; the wall's reader did not get the same list.
+//
+// NOT --no-relative, and that is measured rather than assumed
+// (ranger-base-h3s6q): git runs this hook with the working directory at the
+// TOP of the worktree even when the commit is typed from a subdirectory, so
+// diff.relative changes nothing any reader here sees. memoryDiff carries it
+// because that arm runs against the memory dir, which is a different
+// question.
+//
 // STATED RESIDUAL: --text also hands a genuine blob's bytes to the pattern
-// scan, so a real binary can in principle match an ERE and be refused. That
-// is the fail-safe direction and the cheap one: the alternative is deciding
+// scan, so a real binary can in principle match an ERE and be refused, and
+// every staged byte now flows through $posse_added and one grep per class
+// per arm. That is the fail-safe direction: the alternative is deciding
 // which text-shaped files are "really" prose, which is the guess that put
 // this hole here.
+//
+// IT IS NOT THE CHEAP ONE, and this comment said it was. MEASURED
+// (ranger-base-h3s6q finding 3; git 2.50.1, darwin/arm64, one configured
+// class, through the real rendered hook): ~0.55 s/MB of staged blob, linear
+// — 1 MB 0.81s, 5 MB 2.91s, 10 MB 5.61s, 20 MB 10.6s — against 0.38s for the
+// same 20 MB commit with --text off the content readers, a factor of 28. A
+// three-line markdown commit in the same repo is 0.27s, so that is the floor
+// it is added to. The diff is not where the time goes: the reader itself is
+// 0.12s on that blob, and the cost is the $(...) capture of the whole thing
+// into $posse_added and the `printf | grep -cE` per class in posse_check
+// (~2947), so it scales with the CLASS COUNT as well as the file size.
+// ACCEPTED with the number written down rather than capped: a size cap is a
+// mechanism written down as a rule, and that is exactly how this hole got
+// here the first time. Who pays is a hooked repo that commits assets; posse
+// itself has none. If a cap is ever wanted it needs its own bead — and an
+// elapsed-seconds assertion belongs to the box, which is the charter
+// scripts/test-times.sh already argues (Makefile, verify-test-times).
 //
 // --text ALONE ONLY MOVES THE SILENCE. With a NUL in the stream grep prints
 // "Binary file (standard input) matches" and the scan downstream matches
 // nothing, so every '^+' reader below greps with -a. Measured both ways on
 // this box; the pins are in binaryreader_qa_test.go.
-const diffReaderShape = "--no-color --no-ext-diff --src-prefix=a/ --dst-prefix=b/ --text"
+const diffReaderShape = "--no-color --no-ext-diff --no-textconv --src-prefix=a/ --dst-prefix=b/ --text"
 
 // adrShaGuardBody renders the hook's arm: adrShaPredicate with the hook's
 // two line sources — the ADDED lines of each staged docs/adr file are judged,

@@ -1498,10 +1498,14 @@ identity literals, all as amended 2026-09-03). What differs is the gate and
 the remedy: the ceiling refuses in every repo and first, the visibility
 arms only in a public-stamped one. A message given with `-m`, `-F`, `-F -`
 or reused by `--amend` is scanned; one typed in your EDITOR is not, because
-the hook runs before the editor opens (ADR 0050 D5). A refused message is
-not lost: it is in `.git/COMMIT_EDITMSG` until your next commit overwrites
-it. The SHIPPED pattern list is the one thing not read over a message,
-which is a measured decision rather than an oversight (ADR 0024
+the hook runs before the editor opens (ADR 0050 D5). git's own template is
+not a subject either: on every path but `-m`/`-F` the arm reads through
+`git stripspace --strip-comments`, so the `On branch` line, the `#` status
+block and a merge's conflict list — which git strips and which never reach
+the commit — cannot refuse your commit (ranger-base-h3s6q). A refused
+message is not lost: it is in `.git/COMMIT_EDITMSG` until your next commit
+overwrites it. The SHIPPED pattern list is the one thing not read over a
+message, which is a measured decision rather than an oversight (ADR 0024
 Consequences).
 `install-hooks` prints what it stamped in and, by class, what it refused —
 the ceiling line for private-stamped repos too.

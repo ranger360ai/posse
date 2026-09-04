@@ -125,7 +125,22 @@ beads jsonl that syncs to the work instance's internal remote, docs and
 memory files that get committed. It does not see the working tree, the
 session transcript, the pane capture, or a message typed in the EDITOR:
 `prepare-commit-msg` runs before the editor opens, so the editor path hands
-it only git's template (measured, git 2.50.1). The crew's commit form
+it only git's template (measured, git 2.50.1). *Amended 2026-09-04
+(ranger-base-h3s6q, from the verify of ranger-base-o2v6n): "hands it only
+git's template" was true of what the hook is GIVEN and false of what the arm
+READ. The arm scanned that template whole and refused over the `On branch`
+line and the `#` status block — staged, unstaged and UNTRACKED paths, and a
+merge's `# Conflicts:` list — none of which can reach the commit object
+(`--cleanup=strip` is the editor path's default), with a remedy, rewrite the
+message, that no rewrite can clear; measured, one untracked file named for a
+class refused every editor commit in the repo. The arm now reads the file
+whole only where git's cleanup KEEPS a comment line (`-m` and `-F`, `$2 =
+message`) and through `git stripspace --strip-comments` on every other path,
+so what it judges is what git will keep. The exclusion stands as stated: a
+message typed in the editor does not exist yet when the hook runs. What the
+editor path does scan is whatever was already in the file — a
+`commit.template` body, `MERGE_MSG` — which lands in the object like any
+other message.* The crew's commit form
 (`git commit -F - -- paths`, AGENTS.md) and every `-m`, `-F` and `--amend`
 commit are inside; the editor path is the operator's own hand, which is the
 boundary above the ceiling already (f85 §4). The second layer for it is a
@@ -146,7 +161,16 @@ routing" once the code bead lands.
 - A private repo pays one full `git diff --cached` per commit that it did
   not pay before — the same scan check 3 already runs in public repos.
   ASSUMED: same cost class; the public repo has run it on every commit
-  since ADR 0024 D2 without a bead about it.
+  since ADR 0024 D2 without a bead about it. *Amended 2026-09-04
+  (ranger-base-h3s6q): MEASURED, and the assumption held for the diff and
+  not for the scan. With `--text` on the content readers (ranger-base-h137b)
+  every staged byte flows through `$posse_added` and one `grep` per class
+  per arm: ~0.55 s/MB, linear (1 MB 0.81s · 5 MB 2.91s · 10 MB 5.61s · 20 MB
+  10.6s), against 0.38s for the same 20 MB commit with `--text` off — 28x,
+  and it scales with the class count too. The reader itself is 0.12s of it.
+  ACCEPTED with the number written down rather than capped: a size cap is a
+  mechanism written down as a rule, which is how the `--text` hole got here.
+  Who pays is a hooked repo that commits assets; posse has none.*
 - The work instance's config gains the key at M2, values written by the
   operator on the work box (a PromotedPath; a persona cannot). The class
   names are hoover's §3 (ii) list; the values never leave that box. On

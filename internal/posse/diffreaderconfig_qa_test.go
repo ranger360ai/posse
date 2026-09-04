@@ -1,13 +1,15 @@
 package posse
 
-// TWO PARKED PROBES, both found verifying ranger-base-8djyy (the four-close
-// batch h137b / eifaz / 6s00n / o2v6n). Each is a LIVE defect measured
-// through the real rendered hook, each is red today, and each is parked so
-// the suite stays green until the code lane takes it. Unpark by deleting the
-// t.Skip line — nothing else here changes.
+// WHAT THE WALL IS HANDED IS NOT WHAT THE WALL THINKS IT IS HANDED — the
+// two findings of ranger-base-8djyy's verify, from opposite ends, plus the
+// three pins that hold the fixes' MECHANISM rather than their verdict
+// (ranger-base-h3s6q).
 //
-// Both are about the same thing from opposite ends: WHAT THE WALL IS HANDED
-// is not what the wall thinks it is handed.
+// The first two arrived here PARKED and red, one per finding, each measured
+// through the real rendered hook. Both are unparked and green: the reader
+// carries --no-textconv, and the message arm reads through
+// `git stripspace --strip-comments` on every path but -m/-F. The rest of the
+// file is what stops a later edit from taking either fix back out quietly.
 
 import (
 	"os"
@@ -37,7 +39,6 @@ import (
 //
 // The fix is one flag on diffReaderShape. When it lands, delete the t.Skip.
 func TestQADiffReadersSurviveATextconvDriver(t *testing.T) {
-	t.Skip("PARKED: red today — ranger-base-h3s6q finding 1, the code lane's; the fix is --no-textconv on diffReaderShape")
 	w := qaCeilingWall(t, "")
 
 	// CONTROL / fixture premise: plain config, the ceiling refuses.
@@ -101,7 +102,6 @@ func TestQADiffReadersSurviveATextconvDriver(t *testing.T) {
 // refusal names the PATH and not the message" — the one thing it may not
 // stay is a refusal whose remedy is impossible.
 func TestQACeilingMessageArmDoesNotRefuseOnGitsOwnTemplate(t *testing.T) {
-	t.Skip("PARKED: red today — ranger-base-h3s6q finding 2, the code lane's")
 	w := qaCeilingWall(t, "")
 	ed := filepath.Join(t.TempDir(), "editor.sh")
 	write(t, ed, "#!/bin/sh\nprintf '%s\\n' 'wire it' > \"$1\"\n")
@@ -134,4 +134,154 @@ func TestQACeilingMessageArmDoesNotRefuseOnGitsOwnTemplate(t *testing.T) {
 	t.Errorf("an UNTRACKED path git listed in its own '#' status template refused an editor commit whose typed "+
 		"message is clean, with the remedy 'rewrite the commit message' — git strips every one of those lines "+
 		"(--cleanup=strip), so no rewrite clears it and the class never reaches the commit object:\n%s", out)
+}
+
+// PIN: the message arm follows the WRITER'S comment character, because git
+// does (ranger-base-h3s6q finding 2). The fix reads the message file through
+// `git stripspace --strip-comments` on every path but -m/-F, and the whole
+// reason it is stripspace and not `grep -v '^#'` is core.commentChar: a
+// literal '#' in the hook is a second copy of git's own rule, and this is
+// the arm where a drifted copy hands the scan a template git is about to
+// throw away.
+//
+// FIXTURE PREMISE, asserted before the verdict: the template git wrote for
+// this commit REALLY carried a ceiling class, on a REALLY ';'-prefixed line.
+// Without that the probe is a commit with nothing in it to trip on, and it
+// would be green against a wall that reads nothing at all. The editor
+// PREPENDS its line and leaves the template in place, so .git/COMMIT_EDITMSG
+// is still the evidence after the commit lands.
+//
+// SECOND PREMISE: the same class typed into a -m message in the same repo,
+// same moment, is still REFUSED. That is what says the ceiling is alive here
+// and that a landing commit is a verdict rather than a dead wall.
+//
+// MUTATION: replace the stripspace read with `grep -v '^#'` and this pin
+// reds (the ';' template reaches the scan and the commit is refused) while
+// every '#'-template pin stays green — which is why the comment char is a
+// pin of its own and not a line in the fix's comment.
+func TestQACeilingMessageArmFollowsTheWritersCommentChar(t *testing.T) {
+	w := qaCeilingWall(t, "")
+	if out, err := w.git(w.priv, nil, "config", "core.commentChar", ";"); err != nil {
+		t.Fatalf("git config core.commentChar: %v %s", err, out)
+	}
+	ed := filepath.Join(t.TempDir(), "editor.sh")
+	// The editor PREPENDS its line and leaves git's template where it is,
+	// so COMMIT_EDITMSG is still the evidence after the commit lands.
+	write(t, ed, "#!/bin/sh\n"+
+		"{ printf '%s\\n' 'wire it'; cat \"$1\"; } > \"$1.new\" && mv \"$1.new\" \"$1\"\n")
+	if err := os.Chmod(ed, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	env := append(append([]string(nil), w.persona...), "GIT_EDITOR="+ed)
+
+	// One UNTRACKED file whose NAME carries the export class: git lists it
+	// in the ';' status block and strips the whole block at cleanup.
+	write(t, filepath.Join(w.priv, qaExportStem+"42.csv"), "x\n")
+	w.stage(t, w.priv, "internal/posse/probe.go", "package posse\n")
+	out, err := w.git(w.priv, env, "commit", "--", "internal/posse/probe.go")
+	if err != nil {
+		t.Fatalf("a ';'-prefixed template is a template: git strips it and the arm must not read it: %v\n%s", err, out)
+	}
+	msg, rerr := os.ReadFile(filepath.Join(w.priv, ".git", "COMMIT_EDITMSG"))
+	if rerr != nil {
+		t.Fatalf("reading COMMIT_EDITMSG: %v", rerr)
+	}
+	if !strings.Contains(string(msg), ";\t"+qaExportStem) {
+		t.Fatalf("fixture premise: git's template must have carried the class on a ';' comment line:\n%s", msg)
+	}
+	landed, err := w.git(w.priv, nil, "log", "-1", "--format=%B")
+	if err != nil {
+		t.Fatalf("git log: %v %s", err, landed)
+	}
+	if strings.Contains(landed, qaExportStem) {
+		t.Errorf("the class reached the commit object after all — the arm was right to be asked:\n%s", landed)
+	}
+
+	// PREMISE, the other way: the wall is awake in this repo at this moment.
+	w.stage(t, w.priv, "internal/posse/ctl.go", "package posse\n")
+	if out, err := w.git(w.priv, w.persona, "commit", "-m", "cite "+qaExportStem+"42", "--", "internal/posse/ctl.go"); err == nil {
+		t.Fatalf("fixture premise: a class typed into a -m message must still be refused:\n%s", out)
+	}
+}
+
+// PIN: a merge's own "# Conflicts:" list is git's writing too, and it is the
+// second live spelling of finding 2 (ranger-base-h3s6q). git puts every
+// CONFLICTED PATH into MERGE_MSG as a comment line and strips them all at
+// cleanup; before the fix a conflicted path whose NAME carried a class
+// refused the merge commit, with the same impossible remedy — rewrite a
+// message that does not contain the hit.
+//
+// The path is planted through the hook (w.plant) because a path arm that
+// works is what refuses to ADD it; this pin is about the MESSAGE arm and
+// needs the path to already be history.
+//
+// FIXTURE PREMISE, asserted after the fact: COMMIT_EDITMSG really did carry
+// the conflicted path on a '#' line, so the arm really was handed the class.
+func TestQACeilingMessageArmDoesNotRefuseOnAMergesConflictList(t *testing.T) {
+	w := qaCeilingWall(t, "")
+	rel := "assets/" + qaExportStem + "42.csv"
+	w.plant(t, w.priv, rel, "base\n")
+	for _, step := range [][]string{
+		{"checkout", "-q", "-b", "side"},
+	} {
+		if out, err := w.git(w.priv, nil, step...); err != nil {
+			t.Fatalf("git %v: %v %s", step, err, out)
+		}
+	}
+	w.plant(t, w.priv, rel, "side\n")
+	if out, err := w.git(w.priv, nil, "checkout", "-q", "main"); err != nil {
+		t.Fatalf("git checkout main: %v %s", err, out)
+	}
+	w.plant(t, w.priv, rel, "main\n")
+
+	if out, err := w.git(w.priv, w.persona, "merge", "side"); err == nil {
+		t.Fatalf("fixture premise: the merge must CONFLICT on %s, or there is no conflict list to read:\n%s", rel, out)
+	}
+	write(t, filepath.Join(w.priv, filepath.FromSlash(rel)), "resolved\n")
+	if out, err := w.git(w.priv, nil, "add", "--", rel); err != nil {
+		t.Fatalf("git add %s: %v %s", rel, err, out)
+	}
+	env := append(append([]string(nil), w.persona...), "GIT_EDITOR=true")
+	if out, err := w.git(w.priv, env, "merge", "--continue"); err != nil {
+		t.Fatalf("git wrote the conflicted path into its own '#' block and strips it — the merge commit must land: %v\n%s", err, out)
+	}
+	msg, rerr := os.ReadFile(filepath.Join(w.priv, ".git", "COMMIT_EDITMSG"))
+	if rerr != nil {
+		t.Fatalf("reading COMMIT_EDITMSG: %v", rerr)
+	}
+	if !strings.Contains(string(msg), "#\t"+rel) {
+		t.Fatalf("fixture premise: git's conflict list must have carried the class on a '#' line:\n%s", msg)
+	}
+}
+
+// PIN, structural: ONE message reader per wall, in TWO forms, keyed on "$2"
+// — and the -m/-F form is still the whole file (ranger-base-h3s6q). The
+// split is the fix; the `cat` half is the hole the fix may not open. A
+// pasted '#'-leading line on the -m path commits (git's cleanup there is
+// "whitespace"), so a hook that stripped comments on every path would hand
+// the paste this arm exists for straight through — the behaviour pins for
+// that are in dataceiling_qa_test.go and checkthreemessage_qa_test.go; this
+// one holds the shape they rest on.
+func TestQAMessageArmReadsTwoWaysKeyedOnTheSourceArgument(t *testing.T) {
+	t.Parallel() // renders and reads strings; no repo, no env (ranger-base-pj87l)
+	set := OpsPatternSet{
+		Extra:   []OpsPattern{{Class: qaInstanceClass, ERE: qaInstanceERE}},
+		Ceiling: []OpsPattern{{Class: qaCeilingClass, ERE: qaCeilingERE}},
+	}
+	hook := CommitGuardHook(VisibilityPublic, set, IdentityLiteral{Class: "username", Value: "qa-fixture-operator"})
+	for _, want := range []struct {
+		frag string
+		n    int
+	}{
+		{`if [ "${2:-}" = "message" ]; then`, 2},
+		{`posse_added=$(cat "$1" 2>/dev/null)`, 2},
+		{`posse_added=$(git stripspace --strip-comments < "$1" 2>/dev/null)`, 2},
+	} {
+		if n := strings.Count(hook, want.frag); n != want.n {
+			t.Errorf("want %d × %q — one per wall — got %d", want.n, want.frag, n)
+		}
+	}
+	if strings.Contains(hook, "grep -v '^#'") || strings.Contains(hook, `grep -av '^#'`) {
+		t.Error("the comment character is core.commentChar, the WRITER's config: the hook must ask git, not carry a literal '#'")
+	}
 }

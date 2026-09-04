@@ -131,7 +131,12 @@ install and at every persona launch).
    in `.git/COMMIT_EDITMSG`. A message typed in the EDITOR is the stated
    exclusion — `prepare-commit-msg` runs before the editor opens and is
    handed git's template alone (measured); that path is the operator's own
-   hand, and the second layer for it is a `commit-msg` hook.
+   hand, and the second layer for it is a `commit-msg` hook. *Amended
+   2026-09-04 (ranger-base-h3s6q): the arm used to SCAN that template and
+   refuse over lines git strips. It now reads through `git stripspace
+   --strip-comments` on every path but `-m`/`-F`, where git's cleanup keeps
+   a `#` line and the file is still read whole. Same renderer, so this
+   holds for the ceiling's arm and check 3's alike.*
 
    *Amended 2026-09-04 (ranger-base-cdxpf, from ranger-base-o3g6a): a
    FOURTH derived source — this box's CREW NAMES, over the ADDED staged
