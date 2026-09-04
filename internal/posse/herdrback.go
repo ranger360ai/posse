@@ -15,8 +15,10 @@ package posse
 // fallback emoji); meta files whose workspace died are pruned on read.
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -746,15 +748,38 @@ func (b *HerdrBackend) MarkTurnFailure(name, message string) error {
 	return b.writeMeta(m)
 }
 
-func (b *HerdrBackend) metaNames() []string {
-	ents, _ := os.ReadDir(b.metaDir())
+// metaNames is the session NAMESPACE this box holds a meta for, and the
+// error is part of the answer (ranger-base-jzxrh).
+//
+// It used to drop it, and a meta DIRECTORY that cannot be read then
+// answered exactly like one with nothing in it. Both readers turn "no
+// names" into "no sessions" and dispatch turns that into a FREE seat: the
+// fourth door onto one double-seating, after ranger-base-6swlr,
+// ranger-base-5kiu4 and ranger-base-3yqyg — and the one under the third,
+// whose repair answers out of this list.
+//
+// A dir that does not EXIST is deliberately not that abstention. A fresh
+// install, or a state dir nothing has written yet, really does hold no
+// sessions, and answering that with an error would stop every lane in a new
+// shop from hiring (ranger-base-ifjgm in the safe direction, over the whole
+// shop). So ErrNotExist is the empty answer it has always been, and every
+// other ReadDir failure — EACCES on the dir alone, EIO on a mount that went
+// away, EMFILE under fd exhaustion — is returned as one.
+func (b *HerdrBackend) metaNames() ([]string, error) {
+	ents, err := os.ReadDir(b.metaDir())
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, err
+	}
 	var out []string
 	for _, e := range ents {
 		if !e.IsDir() && strings.HasSuffix(e.Name(), ".yaml") {
 			out = append(out, strings.TrimSuffix(e.Name(), ".yaml"))
 		}
 	}
-	return out
+	return out, nil
 }
 
 // ─── sessions ────────────────────────────────────────────────────────────────
@@ -886,7 +911,17 @@ func (b *HerdrBackend) listSessions() ([]HerdrSession, []string, error) {
 	var unreadable []string // files carrying no record at all: not gone, unanswerable
 	var out []HerdrSession
 	claimed := map[string]bool{} // workspace ids owned by a meta file
-	for _, name := range b.metaNames() {
+	// An unreadable meta dir is not an empty herd. Walking a nil slice here
+	// would build a CLEAN, empty listing — no rows, nothing withheld, no
+	// error — out of a directory nothing could be read from, and every
+	// caller reads that as "this box holds no sessions"
+	// (ranger-base-jzxrh). An error instead puts personaActive on its own
+	// abstention arm, which is already the right answer.
+	names, err := b.metaNames()
+	if err != nil {
+		return nil, nil, fmt.Errorf("read session meta dir %s: %w", b.metaDir(), err)
+	}
+	for _, name := range names {
 		m, ok := b.readMeta(name)
 		if !ok {
 			continue

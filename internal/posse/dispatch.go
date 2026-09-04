@@ -3768,7 +3768,28 @@ func (d *Dispatcher) personaActive(persona, dir string) (string, string) {
 	sessions, withheld, err := d.HB.listSessions()
 	held := seatUnlisted
 	if err != nil {
-		sessions, withheld, held = nil, d.HB.metaNames(), seatUnreadable
+		names, nerr := d.HB.metaNames()
+		if nerr != nil {
+			// The arm above answers a listing that would not answer by
+			// falling back on the meta NAMES — and here the meta dir is
+			// itself the thing that cannot be read (ranger-base-jzxrh).
+			// Falling through with no names reports ("", ""), the answer a
+			// genuinely idle persona gives, which is the exact free seat
+			// this arm exists to refuse.
+			//
+			// Nothing narrower is available: which personas hold a session
+			// is written in that directory, so a box whose meta dir will
+			// not list holds EVERY seat until it does. That is the widest
+			// cost in this function — the same one `emptyBoard` carries,
+			// stated in full above — and it is the fail-closed direction:
+			// wrong here holds a seat a reading could have freed, wrong the
+			// other way puts two agents in one worktree. The seat is
+			// reported under its own slot name because no session name can
+			// be read to report instead; the status says which repair it
+			// is, and it is at the state dir, not at a meta.
+			return SessionFor(persona, dir), seatUnreadable
+		}
+		sessions, withheld, held = nil, names, seatUnreadable
 	}
 	prefix := SessionFor(persona, dir)
 	for _, s := range sessions {

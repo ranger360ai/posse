@@ -122,8 +122,8 @@ func TestWriteMetaLeavesNothingThatReadsAsASession(t *testing.T) {
 	if err := b.writeMeta(&HerdrMeta{Name: "s1", Workspace: "w-s1", Bead: "a-1"}); err != nil {
 		t.Fatal(err)
 	}
-	if got := b.metaNames(); len(got) != 2 || got[0] != "s1" || got[1] != "s2" {
-		t.Errorf("metaNames() = %v, want [s1 s2]", got)
+	if got, err := b.metaNames(); err != nil || len(got) != 2 || got[0] != "s1" || got[1] != "s2" {
+		t.Errorf("metaNames() = %v, %v, want [s1 s2], <nil>", got, err)
 	}
 	ents, err := os.ReadDir(b.metaDir())
 	if err != nil {
@@ -146,8 +146,8 @@ func TestWriteMetaLeavesNothingThatReadsAsASession(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(b.metaDir(), litter), nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if got := b.metaNames(); len(got) != 2 {
-		t.Errorf("metaNames() = %v after a half-written meta was left behind: a temp file must never be readable as a session name — nothing later removes it, and every name in this dir is a seat", got)
+	if got, err := b.metaNames(); err != nil || len(got) != 2 {
+		t.Errorf("metaNames() = %v (err %v) after a half-written meta was left behind: a temp file must never be readable as a session name — nothing later removes it, and every name in this dir is a seat", got, err)
 	}
 }
 

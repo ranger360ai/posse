@@ -11,13 +11,11 @@ package posse
 // like one with nothing in it — and 3yqyg's repair, which stands on
 // metaNames, reports the free seat it was filed to remove.
 //
-// The first two tests are PARKED (t.Skip) because they fail on main today:
-// they are the shape of the fix, not a claim about it. Unpark by deleting
-// the t.Skip line. Both were shown able to fail before they were parked —
-// run unparked through `go test -overlay`, both fail with the message they
-// carry.
+// The first two tests were PARKED when this file was filed; the fix landed
+// with this bead and they are live. Both were shown able to fail before
+// they were unparked — see the bead's close for the mutants.
 //
-// The THIRD is not parked and must stay green: it is the control that keeps
+// The THIRD is the control, and it keeps
 // the fix from being "hold the seat on any error at all". A meta dir that
 // does not exist is not an abstention, it is a box with no sessions — a
 // fresh install, a state dir not yet made — and freezing the shop on that
@@ -56,18 +54,14 @@ func qaUnreadableMetaDir(t *testing.T, b *HerdrBackend) {
 	if _, err := os.ReadDir(md); err == nil {
 		t.Skip("this uid can still read a write-only directory — the lever cannot be armed here")
 	}
-	if names := b.metaNames(); len(names) != 0 {
-		t.Fatalf("premise: metaNames must come back EMPTY for these assertions to be about the seat: %v", names)
+	if names, err := b.metaNames(); len(names) != 0 || err == nil {
+		t.Fatalf("premise: metaNames must come back empty AND say it could not read, for these assertions to be about the seat: %v, %v", names, err)
 	}
 }
 
-// PARKED (ranger-base-jzxrh). Both arms, at the seat walk itself.
+// ranger-base-jzxrh. Both arms, at the seat walk itself.
 func TestQAAnUnreadableMetaDirHoldsTheSeat(t *testing.T) {
 	t.Parallel()
-	// PARKED, and t.Parallel stays ABOVE it so cmd/testparallel counts this
-	// test as parallel-safe the day it is unparked (make verify-parallel
-	// reads the first line and does not follow a skip).
-	t.Skip("PARKED: fails on main — ranger-base-jzxrh. Unpark by deleting this line.")
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	dir := "/src/posse"
@@ -82,12 +76,15 @@ func TestQAAnUnreadableMetaDirHoldsTheSeat(t *testing.T) {
 
 	qaUnreadableMetaDir(t, b)
 
-	// ARM 2, and it pre-dates ranger-base-3yqyg: NO listing error at all.
-	// listSessions walks metaNames, finds nothing to list and nothing to
-	// withhold, and returns a clean empty answer with err == nil — so
-	// nothing above personaActive aborts either.
-	if sess, withheld, err := b.listSessions(); err != nil || len(sess) != 0 || len(withheld) != 0 {
-		t.Fatalf("premise: the listing answers CLEAN and empty on an unreadable meta dir: %d sessions, withheld=%v, err=%v", len(sess), withheld, err)
+	// ARM 2, and it pre-dates ranger-base-3yqyg: NOTHING is wrong with herdr,
+	// only the dir. Before the fix listSessions walked metaNames, found
+	// nothing to list and nothing to withhold, and returned a clean empty
+	// answer with err == nil — so nothing above personaActive aborted
+	// either, and the seat below read free with no abstention anywhere in
+	// the chain. The listing must ERROR instead: that is what puts
+	// personaActive on ranger-base-3yqyg's arm at all.
+	if sess, withheld, err := b.listSessions(); err == nil {
+		t.Errorf("the listing answered CLEAN on a meta dir it could not read: %d sessions, withheld=%v, err=<nil> — an empty herd and an unreadable one are the same answer again", len(sess), withheld)
 	}
 	if name, st := d.personaActive("developer", dir); name == "" {
 		t.Errorf("an unreadable meta DIR read as a FREE seat while the session is live: personaActive = %q %q, want the seat held — the listing did not answer for it, it could not be asked", name, st)
@@ -104,15 +101,11 @@ func TestQAAnUnreadableMetaDirHoldsTheSeat(t *testing.T) {
 	}
 }
 
-// PARKED (ranger-base-jzxrh). The harm, end to end, on the shape that is
+// ranger-base-jzxrh. The harm, end to end, on the shape that is
 // actually reachable — the same pass ranger-base-3yqyg pins for its own
 // lever, with the meta dir as this one.
 func TestQAAFreshRunFindsNoFreeSeatUnderAnUnreadableMetaDir(t *testing.T) {
 	t.Parallel()
-	// PARKED, and t.Parallel stays ABOVE it so cmd/testparallel counts this
-	// test as parallel-safe the day it is unparked (make verify-parallel
-	// reads the first line and does not follow a skip).
-	t.Skip("PARKED: fails on main — ranger-base-jzxrh. Unpark by deleting this line.")
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
@@ -146,7 +139,7 @@ func TestQAAFreshRunFindsNoFreeSeatUnderAnUnreadableMetaDir(t *testing.T) {
 	}
 }
 
-// THE CONTROL, and it is NOT parked: it passes today and must keep passing.
+// THE CONTROL: it passed before the fix and must keep passing after it.
 //
 // A meta dir that does not exist is not an abstention. It is a box that
 // holds no sessions — a fresh install, a state dir nothing has written yet —
@@ -166,8 +159,8 @@ func TestQAAMissingMetaDirIsStillAFreeSeat(t *testing.T) {
 	if _, err := os.ReadDir(b.metaDir()); err == nil {
 		t.Fatalf("premise: the meta dir must be GONE — a present dir makes this control measure nothing")
 	}
-	if names := b.metaNames(); len(names) != 0 {
-		t.Fatalf("premise: metaNames over a missing dir is empty: %v", names)
+	if names, err := b.metaNames(); len(names) != 0 || err != nil {
+		t.Fatalf("premise: metaNames over a missing dir is empty and NOT an error — a dir that was never written is no sessions: %v, %v", names, err)
 	}
 
 	if name, st := d.personaActive("developer", dir); name != "" {
