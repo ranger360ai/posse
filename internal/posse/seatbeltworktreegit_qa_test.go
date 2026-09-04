@@ -709,9 +709,24 @@ func TestQAPackedRefsLockCreateGrantIsUnsafe(t *testing.T) {
 	} else if !strings.Contains(string(out), "File exists") {
 		t.Errorf("the operator's pack-refs failed for some other reason than the stray lock:\n%s", out)
 	}
-	if out, err := exec.Command("git", "-C", f.repo, "gc").CombinedOutput(); err == nil {
-		t.Error("the operator's own unsandboxed gc succeeded despite the stray lock — the shared-repo hazard this test pins is gone")
-	} else if !strings.Contains(string(out), "File exists") {
-		t.Errorf("the operator's gc failed for some other reason than the stray lock:\n%s", out)
+	// gc's EXIT STATUS is not where the hazard lives, and it moved.
+	// MEASURED 2026-09-04 (ranger-base-90y3c) over this exact repo shape, a
+	// stray packed-refs.lock and nothing else, on both gits in play here:
+	//
+	//   git 2.50.1 (this box)      gc rc=128  "fatal: failed to run pack-refs"
+	//   git 2.55.0 (both runners)  gc rc=0    "error: failed to run pack-refs"
+	//
+	// Same refusal, same stranded lock, demoted from fatal to error — so
+	// `err == nil` red macos-latest on every push while the hazard was
+	// exactly as bad as it had ever been. What did NOT move is asserted
+	// instead: gc still hits the lock and says so, and gc still leaves it
+	// there. Nobody's gc clears another process's lock, and that is what
+	// makes the strand permanent — which is the whole claim.
+	out, _ := exec.Command("git", "-C", f.repo, "gc").CombinedOutput()
+	if !strings.Contains(string(out), "File exists") {
+		t.Errorf("the operator's own unsandboxed gc no longer even reaches the stray lock — the shared-repo hazard this test pins is gone:\n%s", out)
+	}
+	if !wgExists(t, lock) {
+		t.Error("gc cleared the stray lock — the strand this test pins is not permanent after all, and the doc comment on sessionRefDirs's neighbour needs revisiting instead of this test")
 	}
 }
