@@ -260,19 +260,39 @@ func checkQueueRemote(queue, declared string) error {
 			AbbrevHome(queue), len(names), strings.Join(names, ", "), declared)
 	}
 	name := names[0]
-	fetch, err := git(queue, "remote", "get-url", name)
+	// --all on BOTH sides, because a remote may carry more than one url.
+	// git-remote(1) of get-url: "By default, only the first URL is listed",
+	// and git-config(1) of remote.<name>.url: "the first is used for
+	// fetching, and all are used for pushing (assuming no
+	// remote.<name>.pushurl is defined)". So a remote whose FIRST url is the
+	// sanctioned one and whose second is anywhere else printed declared on
+	// both single reads, passed, and every operator push landed at both — an
+	// off-box copy nobody sanctioned, which is the thing D2 exists to refuse
+	// (ranger-base-m6szh, escaped from ranger-base-ymgbo; MEASURED, git
+	// 2.50.1). A second push url was already caught; a second fetch url was
+	// not. Each side must now be exactly the declared URL and nothing else,
+	// and multi-line output fails that comparison on its own.
+	fetch, err := git(queue, "remote", "get-url", "--all", name)
 	if err != nil {
 		return err
 	}
-	push, err := git(queue, "remote", "get-url", "--push", name)
+	push, err := git(queue, "remote", "get-url", "--all", "--push", name)
 	if err != nil {
 		return err
 	}
 	if fetch != declared || push != declared {
-		return Die("%s remote %s is not the sanctioned one — declared %s (config queue_remote:), found fetch %s and push %s; the value is the URL exactly as `git remote get-url` prints it (ADR 0049 D2)",
-			AbbrevHome(queue), name, declared, fetch, push)
+		return Die("%s remote %s is not the sanctioned one — declared %s (config queue_remote:), found fetch %s and push %s; the value is the URL exactly as `git remote get-url` prints it, and a remote carrying a second URL is refused because every push lands at both (ADR 0049 D2)",
+			AbbrevHome(queue), name, declared, urlList(fetch), urlList(push))
 	}
 	return nil
+}
+
+// urlList renders what `git remote get-url --all` printed for one refusal
+// that a human reads: every URL found, comma-separated, on the refusal's own
+// line. The count is the finding — one line saying "found fetch A" while a
+// second URL sat below it is how the second URL stayed invisible.
+func urlList(out string) string {
+	return strings.Join(strings.Split(out, "\n"), ", ")
 }
 
 // BackupRemoteLine is the posture, one line, for `posse backup status`

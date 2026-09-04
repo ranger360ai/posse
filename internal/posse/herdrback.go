@@ -440,12 +440,18 @@ func (b *HerdrBackend) writeMeta(m *HerdrMeta) error {
 	if m.Bead != "" {
 		fmt.Fprintf(&s, "bead: %s\n", m.Bead)
 	}
-	// ADR 0052 D3. One line each. hooks_mode is a mode word; managed_hooks
-	// is a path, and an absolute path is NOT a single token — git accepts a
-	// core.hooksPath carrying a newline — so the flat-YAML reader that
-	// silently truncates one (ranger-base-ujdg) is guarded at the launch:
-	// planLaunch refuses a managed path that is not one line before any
-	// record is written (ranger-base-buvq4), and nothing else sets it.
+	// ADR 0052 D3. hooks_mode is a mode word; managed_hooks is a path, and
+	// an absolute path is NOT a single token — git accepts a core.hooksPath
+	// carrying a newline, a " #" or a trailing blank — so the flat-YAML
+	// reader, which truncates a newline (ranger-base-ujdg) and MANGLES four
+	// more shapes besides (ranger-base-m6szh), is guarded at the launch:
+	// planLaunch refuses a managed path that is not one line, and then any
+	// path flatScalarRoundTrip says this record would read back as something
+	// else, before any record is written (ranger-base-buvq4,
+	// ranger-base-m6szh). Nothing else sets it. The guard is the launch's
+	// and not this writer's on purpose: refusing generically here would
+	// change the outcome of launches whose repo path is pathological today,
+	// which is ranger-base-kn68j's decision to make for every field at once.
 	if m.HooksMode != "" {
 		fmt.Fprintf(&s, "hooks_mode: %s\n", m.HooksMode)
 	}
@@ -1769,6 +1775,20 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 			// the container tier below applies no redirect and records none.
 			if !caged && strings.ContainsAny(mh.Dir, "\n\r") {
 				return nil, Die("posse: %s — managed hooks path %q is not one line; the session record cannot carry it (ADR 0052 D3)", o.Name, mh.Dir)
+			}
+			// One line is necessary and not sufficient. The reader that
+			// stops at a newline also cuts the value at " #", strips a
+			// wrapping pair of double quotes, trims it and reads "~"/"null"
+			// as unset — each a legal path, each recorded WRONG rather than
+			// truncated, and none of them rescuable by any encoding this
+			// reader can decode (ranger-base-m6szh, escaped from
+			// ranger-base-buvq4, MEASURED). Refused on the same ground and
+			// at the same place: a record that quietly says a different path
+			// than the one this launch is running is worse than a launch
+			// that did not happen. Asked of the reader rather than of a list
+			// of its rules, so the guard cannot fall behind it again.
+			if got, ok := flatScalarRoundTrip(mh.Dir); !caged && !ok {
+				return nil, Die("posse: %s — managed hooks path %q cannot be recorded: the session record's flat-YAML reader would read it back as %q (ADR 0052 D3)", o.Name, mh.Dir, got)
 			}
 			b.warn("posse: %s in %s — %s\n", o.Name, AbbrevHome(dir), mh.line())
 			// ADR 0052 D2: the wall posse may not install THERE is rendered

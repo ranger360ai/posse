@@ -49,8 +49,18 @@ declared string, and then the source check passes. Everything else still
 refuses, and the refusal prints what was declared and what was found: a
 second remote of any name, a fetch URL that differs, a push URL that points
 elsewhere (`git remote get-url --push` answers the push URL and falls back
-to the fetch URL when none is set — **MEASURED** 2026-09-02, git 2.50.1). A
-queue with NO remote passes under either posture: the key sanctions, it
+to the fetch URL when none is set — **MEASURED** 2026-09-02, git 2.50.1).
+*(Amended 2026-09-04, ranger-base-m6szh: and a remote carrying a SECOND
+url. `get-url` lists only the first by default — git-remote(1) — while
+`remote.<name>.url` uses "the first for fetching, and all for pushing"
+— git-config(1) — so a remote whose first url was the declared one and
+whose second was anywhere else printed the declared URL on both single
+reads and passed, and every operator push landed at both. The check reads
+`--all` on both sides and requires each to be the declared URL and nothing
+else; the refusal prints every URL found. **MEASURED** 2026-09-03/04, git
+2.50.1.)*
+
+A queue with NO remote passes under either posture: the key sanctions, it
 does not require.
 
 **D3 — what the key is not.** Not a backup key: it is not in `backupKeys`,

@@ -93,6 +93,22 @@ managed hooks <dir> run after ours)`; the launch is not degraded; class
 stays Cooperative (ADR 0025). Session meta records `hooks_mode: redirect`
 and `managed_hooks: <dir>`.
 
+*(Amended 2026-09-03, ranger-base-buvq4, and 2026-09-04, ranger-base-m6szh:
+a managed dir the RECORD cannot carry refuses the launch, before a
+workspace, a render or a record exists. The meta is flat YAML whose reader
+stops at the first newline — a path's tail would read back as meta lines of
+its own, `crew: true` among them — and also cuts the value at `" #"`,
+strips a wrapping pair of double quotes, trims it, and reads `~`/`null` as
+unset. git accepts every one of those in `core.hooksPath`; posse cannot
+record them, and no encoding fixes it, because the comment cut runs before
+the quotes come off. So the guard asks the reader itself
+(`flatScalarRoundTrip`) and refuses what would read back as a different
+path, naming both. Only `" #"` is reachable through a real dir today —
+gitPathRaw trims git's output, so a trailing blank never arrives — and the
+guard is written against the reader rather than that list, because
+reachability is two other files' property. **MEASURED** 2026-09-04, git
+2.50.1.)*
+
 **4. Reach, stated honestly.** Env-borne means the wall keeps the
 absolute-path reach a file install had (M2) and loses to an emptied
 environment (M3) — the class ADR 0025 already assigned L3, since the hooks

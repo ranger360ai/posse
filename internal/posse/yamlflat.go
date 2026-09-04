@@ -60,6 +60,27 @@ func yamlGetLines(lines []string, key string) string {
 	return ""
 }
 
+// flatScalarRoundTrip answers what YamlGet would read back from a
+// `key: value` line written with v, and whether that is v itself. A writer
+// whose record has to be FAITHFUL asks this before it writes: the subset
+// above is lossy on purpose — it cuts at " #", strips a wrapping pair of
+// double quotes, trims the value and reads "~"/"null" as unset — and every
+// one of those is a legal absolute path (ranger-base-m6szh, escaped from
+// ranger-base-buvq4). MEASURED: no encoding rescues them either, because the
+// comment cut runs BEFORE the quotes come off, so `"/opt/x #v2"` reads back
+// as `"/opt/x`; quoting saves a trailing blank and an already-quoted value
+// and nothing else, and "~" reads unset however it is spelled. So the answer
+// a caller can act on is refuse-or-carry, not encode.
+//
+// Asked of the reader itself rather than of a copy of its rules, so a rule
+// yamlClean grows or drops needs no second edit here. It says nothing about
+// a value carrying a newline: that one is not a mangled value but a second
+// LINE, injecting fields of its own, and its callers refuse it by name.
+func flatScalarRoundTrip(v string) (string, bool) {
+	got := yamlGetLines(strings.Split("k: "+v, "\n"), "k")
+	return got, got == v
+}
+
 // YamlList returns list items of a top-level key (inline or block form).
 func YamlList(path, key string) []string { return yamlListLines(readLines(path), key) }
 
