@@ -76,7 +76,7 @@ func TestHerdrSubscribeRequestCarriesTheLiteralSelectors(t *testing.T) {
 	s := newHintServer(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	herdrHints(ctx, s.path, 20*time.Millisecond, panesAre("w1:p1", "w2:p1"), nil, isSettleHint, func(string) {})
+	herdrHints(ctx, s.path, 20*time.Millisecond, testHintFloor, panesAre("w1:p1", "w2:p1"), nil, isSettleHint, func(string) {})
 
 	var req struct {
 		Params struct {

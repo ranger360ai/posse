@@ -45,9 +45,12 @@ package posse
 // agent in, and treat `pane.agent_detected` and `workspace.created` as
 // "the pane set moved" — reconnect with a fresh list rather than miss a
 // seat that appeared after the subscription. The reconnect is planned, not
-// an outage, and says nothing in the log.
+// an outage, and says nothing in the log — and it is floored, because those
+// two kinds arrive at seat-churn rate and seat churn on this shop is 28/s
+// (herdrRedialFloor, ranger-base-7hjy4).
 //
-// The scoping divergence is filed for the architect (ranger-base-7t1w).
+// The scoping divergence is filed for the architect (ranger-base-7t1w); the
+// floor is ADR 0016 §1's 2026-09-04 amendment (ranger-base-3wkxf).
 
 import (
 	"context"
@@ -103,6 +106,60 @@ const HerdrPaneSubscription = "pane.agent_status_changed"
 // latency on a hint and nothing else (ADR 0016 §1).
 const herdrHintRetry = 5 * time.Second
 
+// herdrRedialFloor is the minimum gap between two dials of the one
+// subscription, counted from where the dial being replaced STARTED — so a
+// redial that comes due later than the floor pays nothing, and the floor is
+// the larger of itself and what that dial's own `panes()` cost.
+//
+// ADR 0016 §1 read "an immediate planned reconnect with a fresh list", and
+// for the case that sentence describes it still does: a seat appearing on a
+// shop that has been quiet longer than the floor is redialled the moment its
+// detection lands, because the connection it replaces is already older than
+// the floor. The word bends only inside a burst — and the ADR's own
+// Consequences said why the burst was never priced: "reconnects are planned,
+// silent, and bounded by seat churn — not by event volume".
+//
+// MEASURED 2026-09-04 on the live socket (herdr 0.8.2, protocol 19): on this
+// shop seat churn IS the event volume. A subscribe-only probe took 89
+// lifecycle envelopes in 3.16s and then 27s of silence, and 29 of its 30
+// `pane_agent_detected` named a pane that was NOT in the set the
+// subscription had been dialled with — the seats are real and the set
+// really is moving, so comparing the fresh list against the dialled one
+// would not have saved a single redial. ranger-base-7hjy4 counted what that
+// costs: 275 redials in 32s (8.6/s), each a forked `herdr agent list`
+// (~33ms wall here, 20 forks in 0.65s) plus a dial and a subscribe, about
+// 6% of one core.
+//
+// One second, and both halves of why:
+//   - it caps redials at 1/s, an 8.6x cut on the measured rate, and the
+//     fork goes with them: `panes()` is read inside the dial;
+//   - what it costs is a longer version of a gap this ADR already prices
+//     and sweeps — "a pane that appears and settles between two dials is
+//     missed by the stream and swept by the timer" — and one second is half
+//     the cockpit's 2s completeness tick and orders below the watch's
+//     NextInterval, so the floor never outlives the sweep that covers it.
+//
+// Inside a burst the floored redial also carries a BETTER list than the
+// unfloored one it replaces: waiting reads `panes()` later, so one
+// subscription covers every seat that appeared during the wait, where the
+// tight loop dialled once per event with a list already stale on arrival.
+//
+// MEASURED end to end by ranger-base-7hjy4's own repro — two `posse cockpit`
+// binaries differing only in this file, 32s each against the live socket
+// through a tallying RHQ_HERDR_BIN shim, empty RHQ_HOME: 666 herdr forks and
+// 252 redials (7.9/s) before, 184 forks and 31 redials (0.97/s) after. The
+// cap holds to within a rounding error, and both arms drew the same frame
+// with no `events unavailable` line — a floored redial is still a silent one.
+//
+// Filed as a divergence before it was built and AMENDED IN, not taken
+// silently: ADR 0016 §1's 2026-09-04 amendment (ranger-base-3wkxf) now says
+// "immediate above the floor", restates the Consequences bound as a rate
+// rather than as seat churn, and names the two pins below in §3's done-when.
+// The band is the ADR's: the floor's ceiling is the sweep that covers it,
+// its lower edge is a dial's own cost, and where in that band one second
+// sits is ASSUMED — the bead that moves it brings a measurement.
+const herdrRedialFloor = time.Second
+
 // SettledStatuses are the agent states this shop reads as "the seat's turn
 // is over" (ADR 0016 §2). `blocked` is deliberately not here: dispatch's own
 // AgentWait settles on it, but a blocked agent still holds its bead, so
@@ -136,7 +193,7 @@ var errRefreshPanes = errors.New("pane set changed")
 // recovery when it comes back. It is never fatal; with no herdr at all the
 // caller simply never receives a hint (ADR 0016 §2).
 func HerdrSettleHints(ctx context.Context, sock string, panes func() []string, refresh <-chan struct{}, report func(string)) <-chan HerdrHint {
-	return herdrHints(ctx, sock, herdrHintRetry, panes, refresh, isSettleHint, report)
+	return herdrHints(ctx, sock, herdrHintRetry, herdrRedialFloor, panes, refresh, isSettleHint, report)
 }
 
 // HerdrAllHints subscribes to herdr and yields every subscribed event, with
@@ -147,15 +204,16 @@ func HerdrSettleHints(ctx context.Context, sock string, panes func() []string, r
 // are identical to HerdrSettleHints; only which decoded events reach the
 // channel differs.
 func HerdrAllHints(ctx context.Context, sock string, panes func() []string, refresh <-chan struct{}, report func(string)) <-chan HerdrHint {
-	return herdrHints(ctx, sock, herdrHintRetry, panes, refresh, func(HerdrHint) bool { return true }, report)
+	return herdrHints(ctx, sock, herdrHintRetry, herdrRedialFloor, panes, refresh, func(HerdrHint) bool { return true }, report)
 }
 
-func herdrHints(ctx context.Context, sock string, retry time.Duration, panes func() []string, refresh <-chan struct{}, want func(HerdrHint) bool, report func(string)) <-chan HerdrHint {
+func herdrHints(ctx context.Context, sock string, retry, floor time.Duration, panes func() []string, refresh <-chan struct{}, want func(HerdrHint) bool, report func(string)) <-chan HerdrHint {
 	out := make(chan HerdrHint, 1)
 	go func() {
 		defer close(out)
 		down := false
 		for ctx.Err() == nil {
+			dialed := time.Now()
 			err := streamHerdrHints(ctx, sock, panes, refresh, out, want, func() {
 				if down {
 					report("herdr events restored")
@@ -166,9 +224,28 @@ func herdrHints(ctx context.Context, sock string, retry time.Duration, panes fun
 				return
 			}
 			// The pane set moved under a subscription that was fixed when
-			// it was dialled: redial at once, and say nothing — this is the
-			// adapter keeping up, not herdr failing.
+			// it was dialled: redial, and say nothing — this is the adapter
+			// keeping up, not herdr failing. The floor is measured from the
+			// dial this one replaces, so a connection that already outlived
+			// it redials at once and only a burst ever waits
+			// (herdrRedialFloor).
 			if errors.Is(err, errRefreshPanes) {
+				if wait := floor - time.Since(dialed); wait > 0 {
+					select {
+					case <-ctx.Done():
+						return
+					case <-time.After(wait):
+					}
+				}
+				// A poke that landed while this redial was already due is
+				// spent by it: the dial below re-reads panes(), which is the
+				// whole of what a poke asks for. Dropping it here is what
+				// keeps a consumer that pokes on its own cadence from buying
+				// a second dial per floor.
+				select {
+				case <-refresh:
+				default:
+				}
 				continue
 			}
 			if !down {

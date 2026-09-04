@@ -40,6 +40,12 @@ import (
 // fails on a genuine hang is the point.
 const hintWait = 30 * time.Second
 
+// testHintFloor is the redial floor for every test in this file that is not
+// ABOUT the floor: small enough that a planned reconnect is effectively
+// immediate, and deliberately not zero, so nothing here is pinned against
+// the floor being switched off.
+const testHintFloor = time.Millisecond
+
 // hintServer is the smallest thing that behaves like herdr's events socket:
 // accept, read one subscribe request, answer it, then push whatever the test
 // pushes. It can also refuse, answer wrongly, hang up, and talk nonsense —
@@ -170,6 +176,18 @@ func settled(pane, status string) string {
 		`"type":"pane_agent_status_changed"},"event":"pane.agent_status_changed"}`, status, pane, ws)
 }
 
+// detected is herdr's real pushed shape for a newly detected agent pane —
+// the lifecycle envelopes come back UNDERSCORED — and the event that makes
+// the adapter drop its connection and redial with a fresh list.
+func detected(pane string) string {
+	ws := pane
+	if i := strings.Index(pane, ":"); i > 0 {
+		ws = pane[:i]
+	}
+	return fmt.Sprintf(`{"data":{"agent":"claude","pane_id":%q,"workspace_id":%q,`+
+		`"type":"pane_agent_detected"},"event":"pane_agent_detected"}`, pane, ws)
+}
+
 func recvHint(t *testing.T, ch <-chan HerdrHint, within time.Duration) HerdrHint {
 	t.Helper()
 	select {
@@ -208,7 +226,7 @@ func TestHerdrHintsSubscribeRequest(t *testing.T) {
 	defer cancel()
 	var mu sync.Mutex
 	var lines []string
-	herdrHints(ctx, s.path, 20*time.Millisecond, panesAre("w1:p1", "w2:p1", "w1:p1", ""), nil, isSettleHint, collect(&mu, &lines))
+	herdrHints(ctx, s.path, 20*time.Millisecond, testHintFloor, panesAre("w1:p1", "w2:p1", "w1:p1", ""), nil, isSettleHint, collect(&mu, &lines))
 
 	var req struct {
 		ID     string `json:"id"`
@@ -259,7 +277,7 @@ func TestHerdrSettleHintsFilter(t *testing.T) {
 	defer cancel()
 	var mu sync.Mutex
 	var lines []string
-	hints := herdrHints(ctx, s.path, 20*time.Millisecond, panesAre("w1:p1", "w2:p1"), nil, isSettleHint, collect(&mu, &lines))
+	hints := herdrHints(ctx, s.path, 20*time.Millisecond, testHintFloor, panesAre("w1:p1", "w2:p1"), nil, isSettleHint, collect(&mu, &lines))
 	c := s.conn()
 
 	// Not settles: still working, blocked on the operator, an event kind
@@ -335,7 +353,7 @@ func TestHerdrHintsResubscribesWhenThePaneSetMoves(t *testing.T) {
 		ids []string
 	}
 	panes.ids = []string{"w1:p1"}
-	hints := herdrHints(ctx, s.path, 20*time.Millisecond, func() []string {
+	hints := herdrHints(ctx, s.path, 20*time.Millisecond, testHintFloor, func() []string {
 		panes.Lock()
 		defer panes.Unlock()
 		return append([]string(nil), panes.ids...)
@@ -384,7 +402,7 @@ func TestHerdrHintsRefreshPokeRedials(t *testing.T) {
 		ids []string
 	}
 	panes.ids = []string{"w1:p1"}
-	hints := herdrHints(ctx, s.path, 20*time.Millisecond, func() []string {
+	hints := herdrHints(ctx, s.path, 20*time.Millisecond, testHintFloor, func() []string {
 		panes.Lock()
 		defer panes.Unlock()
 		return append([]string(nil), panes.ids...)
@@ -428,7 +446,7 @@ func TestHerdrHintsPokeDuringHandshakeIsNotAnOutage(t *testing.T) {
 	var mu sync.Mutex
 	var lines []string
 	refresh := make(chan struct{}, 1)
-	herdrHints(ctx, s.path, 20*time.Millisecond, panesAre("w1:p1"), refresh, isSettleHint, collect(&mu, &lines))
+	herdrHints(ctx, s.path, 20*time.Millisecond, testHintFloor, panesAre("w1:p1"), refresh, isSettleHint, collect(&mu, &lines))
 
 	s.subscribed() // the request is out; the acknowledgement is 300ms away
 	refresh <- struct{}{}
@@ -458,7 +476,7 @@ func TestHerdrHintsBurstNeverBlocksTheReader(t *testing.T) {
 	defer cancel()
 	var mu sync.Mutex
 	var lines []string
-	hints := herdrHints(ctx, s.path, 20*time.Millisecond, panesAre("w1:p1"), nil, isSettleHint, collect(&mu, &lines))
+	hints := herdrHints(ctx, s.path, 20*time.Millisecond, testHintFloor, panesAre("w1:p1"), nil, isSettleHint, collect(&mu, &lines))
 	c := s.conn()
 
 	// 400 settles with nothing receiving. Each push carries a write
@@ -518,7 +536,7 @@ func TestHerdrHintsRetriesAndReportsOnce(t *testing.T) {
 			defer cancel()
 			var mu sync.Mutex
 			var lines []string
-			hints := herdrHints(ctx, s.path, 20*time.Millisecond, panesAre("w1:p1"), nil, isSettleHint, collect(&mu, &lines))
+			hints := herdrHints(ctx, s.path, 20*time.Millisecond, testHintFloor, panesAre("w1:p1"), nil, isSettleHint, collect(&mu, &lines))
 
 			s.subscribed()
 			tc.kill(s, s.conn())
@@ -582,7 +600,7 @@ func TestHerdrHintsRejectsBadAcknowledgements(t *testing.T) {
 			defer cancel()
 			var mu sync.Mutex
 			var lines []string
-			herdrHints(ctx, s.path, 20*time.Millisecond, panesAre("w9:p9"), nil, isSettleHint, collect(&mu, &lines))
+			herdrHints(ctx, s.path, 20*time.Millisecond, testHintFloor, panesAre("w9:p9"), nil, isSettleHint, collect(&mu, &lines))
 			s.subscribed()
 
 			if tc.quiet {
@@ -623,7 +641,7 @@ func TestHerdrHintsCancelClosesPromptly(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	var mu sync.Mutex
 	var lines []string
-	hints := herdrHints(ctx, s.path, time.Hour, panesAre("w1:p1"), nil, isSettleHint, collect(&mu, &lines))
+	hints := herdrHints(ctx, s.path, time.Hour, testHintFloor, panesAre("w1:p1"), nil, isSettleHint, collect(&mu, &lines))
 	s.conn()
 
 	cancel()
@@ -648,7 +666,7 @@ func TestHerdrHintsWithNoSocket(t *testing.T) {
 	var mu sync.Mutex
 	var lines []string
 	dead := filepath.Join(shortTempDir(t), "nothing-here.sock")
-	herdrHints(ctx, dead, 50*time.Millisecond, panesAre("w1:p1"), nil, isSettleHint, collect(&mu, &lines))
+	herdrHints(ctx, dead, 50*time.Millisecond, testHintFloor, panesAre("w1:p1"), nil, isSettleHint, collect(&mu, &lines))
 	read := func() []string {
 		mu.Lock()
 		defer mu.Unlock()
@@ -819,5 +837,110 @@ func TestWatchDegradesToTheTickWithNoHerdr(t *testing.T) {
 	}
 	if strings.Contains(out, "settle hint") {
 		t.Errorf("no socket, no hints:\n%s", out)
+	}
+}
+
+// The floor under the planned reconnect, and the storm it exists for.
+//
+// MEASURED 2026-09-04 on the live socket: `pane_agent_detected` and
+// `workspace.created` arrive at seat-churn rate, and seat churn on this shop
+// is 28/s — 89 lifecycle envelopes in 3.16s, 29 of 30 detections naming a
+// pane the subscription had not been dialled with. Every one of them cost a
+// forked `herdr agent list`, a dial and a subscribe (ranger-base-7hjy4:
+// 275 redials in 32s). The floor is what bounds that, and it bounds it by
+// RATE — the number of dials per window, not the number of events.
+//
+// The control arm is the point: the same storm with the floor switched off
+// redials as fast as the box will go, so this test is shown able to fail.
+func TestHerdrHintsRedialFloorBoundsAStorm(t *testing.T) {
+	t.Parallel()
+	const (
+		floor  = 50 * time.Millisecond
+		window = 400 * time.Millisecond
+	)
+	// dials counts the subscribe requests a shop that never stops churning
+	// gets out of the adapter in one window: every connection that comes up
+	// is told at once that a seat appeared, which is the whole loop.
+	dials := func(t *testing.T, floor time.Duration) (int, []string) {
+		t.Helper()
+		s := newHintServer(t)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		var mu sync.Mutex
+		var lines []string
+		// An hour of retry, so nothing here can be counting an OUTAGE
+		// backoff: only the planned-reconnect path can reach the socket
+		// twice in this window.
+		herdrHints(ctx, s.path, time.Hour, floor, panesAre("w1:p1"), nil, isSettleHint, collect(&mu, &lines))
+		s.subscribed()
+		n := 1
+		deadline := time.After(window)
+		for {
+			select {
+			case c := <-s.ready:
+				s.push(c, detected("w9:p9"))
+			case <-s.subs:
+				n++
+			case <-deadline:
+				mu.Lock()
+				got := append([]string(nil), lines...)
+				mu.Unlock()
+				return n, got
+			}
+		}
+	}
+
+	floored, said := dials(t, floor)
+	if cap := int(window/floor) + 2; floored > cap {
+		t.Errorf("%s of unbroken churn drove %d dials with a %s floor; the floor caps it at %d",
+			window, floored, floor, cap)
+	}
+	if floored < 2 {
+		t.Errorf("%d dials — the floor is a rate, not a stop: the storm must still be redialled", floored)
+	}
+	if len(said) != 0 {
+		t.Errorf("a floored redial is still a planned one and still silent; it said: %v", said)
+	}
+
+	unfloored, _ := dials(t, 0)
+	if unfloored <= floored*3 {
+		t.Errorf("control arm: the same storm with no floor drove %d dials against the floored %d — "+
+			"if those are the same number this test is measuring the harness, not the floor",
+			unfloored, floored)
+	}
+	t.Logf("%s of churn: %d dials floored at %s, %d unfloored", window, floored, floor, unfloored)
+}
+
+// The half of ADR 0016 §1's "immediate" the floor does NOT bend. The floor
+// is counted from where the dial it replaces STARTED, so a shop that has
+// been quiet longer than the floor pays nothing for it: the detection lands
+// on a connection already older than the floor and is redialled at once.
+// A floor armed from the EVENT instead would hold this one back a full
+// second on an idle shop, which is the settle latency the whole adapter
+// exists to buy.
+func TestHerdrHintsRedialIsImmediateAboveTheFloor(t *testing.T) {
+	t.Parallel()
+	const floor = time.Second
+	s := newHintServer(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var mu sync.Mutex
+	var lines []string
+	herdrHints(ctx, s.path, time.Hour, floor, panesAre("w1:p1"), nil, isSettleHint, collect(&mu, &lines))
+	s.subscribed()
+	c := s.conn()
+
+	// Quiet for longer than the floor.
+	time.Sleep(floor + 100*time.Millisecond)
+	s.push(c, detected("w2:p1"))
+	start := time.Now()
+	if req := s.subscribed(); !strings.Contains(req, `"w1:p1"`) {
+		t.Fatalf("the redial must carry a freshly derived pane set: %s", req)
+	}
+	// Half the floor: an immediate redial takes a socket round trip, and a
+	// floored one would take the whole second.
+	if took := time.Since(start); took > floor/2 {
+		t.Fatalf("a detection on a shop quiet for %s waited %s to redial; above the floor the "+
+			"reconnect is still immediate (ADR 0016 §1)", floor+100*time.Millisecond, took.Truncate(time.Millisecond))
 	}
 }
