@@ -19,7 +19,15 @@ darwin adapter now mirrors the composite's read order (keychain item,
 then the file only on item-not-found). Amended 2026-09-02
 (ranger-base-ig4op): store 1's NAME is derived from the same two
 config-dir variables as the file's directory — the constant is the
-default case only; the adapter derives the name it reads.*
+default case only; the adapter derives the name it reads. Amended
+2026-09-03 (ranger-base-z089h, from ranger-base-4poib): the meter
+credential's life is MEASURED at 8h and its only writer is the
+operator's own interactive claude — D5's load-bearing reason ("no hand
+to warn") is false, so the meter gets a gauge and a once-per-token
+alarm off the shared snapshot at zero new store reads; D4 keeps posse
+off the refreshToken and puts "ask the owner to refresh" to the
+operator as ranger-base-jefo0; a 401 on an unexpired credential is a
+fifth failure class.*
 
 ## Context
 
@@ -380,6 +388,57 @@ refresh`:
 - for `meter` credentials: **writes nothing**. It prints the
   store-of-record instruction ("run `claude` once to refresh").
   Copying the rotating token is the default.env bug and stays banned.
+
+  *Amended 2026-09-03 (ranger-base-z089h).* MEASURED 2026-09-03 on the
+  operator's own box (ranger-base-4poib): the access token's
+  `expiresAt` is exactly 8h after the last interactive `claude` write,
+  nothing else advances it, and the `refreshToken` beside it in the
+  same envelope (valid three weeks) is never used by anything but that
+  loop. Since ADR 0042 every crew runtime runs on the mint and is
+  shimmed off the item, so the operator's own shell is the only writer
+  there is, and any 8h in which it does not run `claude` is 8h of a
+  blind meter. Three ways to close that gap were priced; the bullet
+  above stands for the first and the operator decides the second:
+
+  - **1a — posse performs the OAuth refresh itself.** REJECTED, and
+    the rejection is the architecture's, not a permission the operator
+    could grant: (i) it makes posse a second writer of a rotating pair,
+    which is the lost-update problem D2's S2/S4 rows already describe
+    for one writer — whether the endpoint rotates the refresh token on
+    use, and whether a running interactive claude re-reads the item
+    before it refreshes, are both UNMEASURED and unmeasurable by a
+    persona; (ii) it is a new credentialed egress (credpin.go rule 4
+    admits exactly one host today) carrying the account's most
+    powerful credential; (iii) it re-implements the runtime's private
+    OAuth client — client id, endpoint, the composite's write-then-
+    delete rules — an interface with no contract and no exit hatch;
+    (iv) it voids the property ADR 0042 measured and keeps: the pair
+    has one writer *program*, and posse's shim is what holds eleven
+    runtimes to it.
+  - **1b — posse asks the owner.** PROPOSED to the operator as
+    ranger-base-jefo0, not taken: the watch loop execs the operator's
+    own runtime binary — uncaged, unshimmed, no mint in its
+    environment, the two config-dir variables pinned as the launch pins
+    them — with the cheapest invocation that makes the runtime's own
+    login loop perform the write (`claude auth status` exists in
+    2.1.260; whether it writes is the bead's probe, `claude -p` the
+    fallback), only when posse's own read of the item succeeded inside
+    the TTL (the keychain answered a moment ago, so the runtime's
+    non-transient-failure arm that manufactures S3 is not the one it
+    will take) and the snapshot says the credential is inside the
+    horizon of D5 or a 401-expired just landed. Single writer kept:
+    posse queues the request to the owner. What it costs is the
+    operator's to weigh: an unattended run of their account's runtime
+    about three times a day, possibly a turn on their window per
+    refresh, and two runtime processes on one pair (ASSUMED benign —
+    the runtime already handles its own multiple windows — and the
+    probe checks it). If they refuse, this bullet stays as written
+    and D5's gauge is how the hand learns when.
+  - **B — the meter reads the mint** (ranger-base-wkai3 option B).
+    Ordered first if ranger-base-hs0dl measures 200: the mint has no
+    8h clock and its `# expires=` stamp already rides the session
+    surfaces, so 1b and the alarm half of D5 dissolve. Not this page's
+    to take before the number.
 - never touches a metered credential: `ANTHROPIC_API_KEY` remains
   rejected on the money line (rangerhq-kiz), restated here.
 - with no arguments: a report — each (runtime, purpose), its source,
@@ -400,8 +459,10 @@ three places — see Alternatives): the `posse refresh` report answers
 for **both** purposes, on demand. The two timer surfaces — the cockpit
 header once inside 14 days, and one stderr line per dispatch pass in
 the same window — carry the **posse-owned session mints only**. The
-meter credential gets no unasked expiry surface, for three reasons of
-unequal weight:
+meter credential gets no unasked expiry surface *in those two
+surfaces*, for three reasons of unequal weight (as ruled 2026-08-28;
+re-weighed 2026-09-03 below, where the first is measured false and the
+third does not apply to the shape now taken):
 
 - **There is no hand to warn** (load-bearing, and independent of any
   TTL). D4 makes the runtime's login loop the meter credential's only
@@ -432,6 +493,80 @@ the read's success or failure remains the only actuator. "Cannot tell"
 is reported as exactly that, never as "fresh"; the timer surfaces'
 silence is ambiguous by construction (nothing expiring, or nothing
 dated), and the report is the one place that says which.
+
+**The meter's expiry, re-decided 2026-09-03** (ranger-base-z089h,
+from ranger-base-4poib). The three reasons above, re-weighed against
+the measurement:
+
+- *"There is no hand to warn"* is **false**. MEASURED: the next
+  rotation does not happen without an operator; the hand is the whole
+  mechanism, and 8h is shorter than a working day. Struck.
+- *"It would never be quiet"* is **true and sharper** — 8h is inside
+  every window — and it rules the *shape*, not the answer: the meter
+  cannot borrow the mints' "inside 14 days" line. What an 8h clock can
+  be quiet under is (a) a **gauge**, which is a reading and not a
+  warning — always on wherever the plan reading itself is printed, the
+  way the window percentages are — and (b) an **alarm keyed on the
+  token**, which fires once per credential life because the key is the
+  credential's own `expiresAt`, and that value changes exactly when
+  the hand acted.
+- *"The cost is per-pass"* is **void for this shape**. MEASURED in
+  code: the meter's store is read only where the shared snapshot is
+  refreshed (`PlanCache.Read` calls the reader on a miss, the reader
+  calls `MeterToken`, once per TTL for the whole instance), and the
+  parser already returns the envelope's `expiresAt` as
+  `CredMeta.ExpiresAt` — which the reader then drops. The expiry is in
+  the bytes the instance already reads; the design writes it down.
+
+The decision, three parts:
+
+1. **The snapshot carries the presented credential's expiry.** The
+   shared reading (`planEntry`) gains the `ExpiresAt` and `Source` of
+   the credential presented on the read that produced it, written on
+   success. Every surface that prints the shared reading — the cockpit
+   header's plan segment, `posse status`, `posse cost --plan`, the
+   watch preamble — prints beside it the credential's death time as
+   the snapshot carries it, with the snapshot's own read time, and
+   reads no store to do so: `credential dies 22:51Z (in 6h, read
+   14:52Z)`, or `credential EXPIRED 22:51Z (37m ago, read 14:52Z)`.
+   A zero expiry prints nothing there and "cannot tell" in the report,
+   as before. The gauge stays honest under a 429 cooldown and under
+   quiet exactly because it says when it was read: a refresh by hand
+   that the cache has not seen yet is a stale gauge, dated, and the
+   next successful read moves it. (That same field is
+   ranger-base-mc66k's "credential changed" signal — a store read
+   during cooldown is not an ask — but that build is that bead's.)
+2. **One alarm per credential life.** A governance row keyed
+   `meter-credential-dies:<expiresAt as unix seconds>` is raised while
+   the snapshot's expiry is inside the horizon and not yet past; the
+   pulse's own dedupe by key makes it fire once per token, and the
+   next token has a different key. The horizon is one hour — a
+   constant, ASSUMED, and not load-bearing: quietness comes from the
+   key, not the number, so a wrong horizon costs nuisance and never
+   correctness, and it is not a config key (D6: no speculative
+   config). Past expiry the row stops and the existing
+   `guard-credential` row takes over on the next read, as today. Under
+   1b, if taken, the same row is what the owner-refresh reads as its
+   trigger and what shows whether it worked.
+3. **A fifth failure class.** A 401 presented with a credential whose
+   stored `expiresAt` is in the future is `PlanFailRejected`
+   ("credential refused while live (401)", token `401-live`): the
+   operator's move is `/login`, because a `claude` run with a live
+   access token performs no write (D2 store 3's detective bullet says
+   so) and "run `claude` once" is therefore the wrong sentence. A 401
+   whose expiry is past, or unknown, stays `PlanFailStale` — same
+   move, run `claude` once — and ranger-base-4poib's three-armed
+   sentence already tells the two apart. The class is a class by this
+   page's own criterion (a different next move), the governance key
+   follows the token rather than the status code so the two 401s are
+   two rows, and ADR 0018 §2 is untouched: park-vs-degrade reads no
+   class. The future-expiry state is UNOBSERVED as of this writing;
+   the class exists so that its first observation is not filed as
+   "stale" and cleared by a command that cannot clear it.
+
+Unchanged, restated: expiry gates nothing. The gauge and the alarm
+decide no pass, start no clock, and park nothing; the read's success
+or failure remains the only actuator.
 
 **6. Per-runtime, no speculative config.** The seam is keyed by
 runtime. codex/grok: `session` stays undecided-refuse until their lane
@@ -588,7 +723,28 @@ design puts more weight on files. What is actually traded:
   Priced for the vault decision (epz8), not for this.
 - **posse refreshes the rotating token itself** (use the refreshToken).
   Two writers on one rotating credential; maximal blast radius for a
-  freshness bug. Standing rejection, unchanged.
+  freshness bug. Standing rejection, re-argued in full 2026-09-03 as
+  D4 §1a after the 8h measurement made it the clever fix: the value
+  went up and the physics did not move. The single-writer answer to
+  "the owner is not writing often enough" is to *ask the owner*
+  (D4 §1b, the operator's call), never to add a writer.
+- **The refresh verb execs `claude` for the meter, by the operator's
+  hand** (2026-09-03). Rejected: "run `claude` once" is already one
+  command, the verb would save nothing, and it does not touch the case
+  that matters — the unattended 8h — which is 1b's whole question.
+- **A per-pass stderr line for the meter, like the mints'**
+  (2026-09-03). Rejected: it is the "never quiet" reason, verbatim —
+  the line would print on every pass of every day. The gauge sits
+  where the reading already prints; the alarm fires once per token.
+- **A config key for the alarm horizon** (2026-09-03). Rejected under
+  D6: a number nobody has measured does not become a knob; it becomes
+  a constant with ASSUMED on it, moved the day a measurement says
+  where.
+- **Reading the store during a 429 cooldown to refresh the gauge**
+  (2026-09-03). Not taken here: it is one `security` exec per TTL
+  without a request, which this page permits, but the field it feeds
+  is ranger-base-mc66k's streak reset, and the gauge's dated read time
+  already keeps it honest without it.
 - **A `secrets/` directory now** (harness-credential class made
   concrete). Rejected here 2026-08-26: posse has zero resident harness
   credentials — the meter token measured 403 out of every mintable
@@ -624,6 +780,11 @@ design puts more weight on files. What is actually traded:
   The okbr-shaped outage (an hour of unnoticed blind passes) was a
   visibility failure of the blind signal, and okbr's shape diagnostics
   plus ADR 0018's clock are its fix — not a second copy of the alarm.
+  *2026-09-03:* the cost half of this rejection ("arming the per-pass
+  keychain exec") is void — the expiry rides in the snapshot, see D5
+  as amended — and the gauge now does print an EXPIRED state; what
+  survives of the rejection is that it is a *reading with a date*,
+  not a second alarm, and the alarm proper fires before the bite.
 
 ## Verification (laurie's checklist)
 
@@ -659,7 +820,12 @@ design puts more weight on files. What is actually traded:
   expiring inside the window appears in the report and in **neither**
   timer surface — pinned with a positive witness on the same box (a
   near-expiry session mint that does appear), so the absence half
-  cannot pass by measuring nothing.
+  cannot pass by measuring nothing. *Amended 2026-09-03
+  (ranger-base-z089h):* "neither timer surface" means the mints'
+  header segment and the per-pass stderr line; the meter's expiry now
+  appears in the **plan** segment beside the reading (V14) and that is
+  not a violation of this row — the pin keeps the mint segment and the
+  per-pass line meter-free.
 - V7 (unit): one envelope fixture parses identically through the
   keychain-blob path and the file path — the okbr diagnostics are
   provably shared, not forked.
@@ -709,3 +875,37 @@ design puts more weight on files. What is actually traded:
   variable with a trailing slash and log in; the item's suffix says
   whether the config-dir arm hashes the value verbatim (ASSUMED in D2)
   or a cleaned path.
+- V14 (unit, added 2026-09-03 ranger-base-z089h, build
+  ranger-base-z0gkm; either box): the snapshot written by a successful
+  read carries the presented credential's `ExpiresAt` and `Source`;
+  the four surfaces that print the shared reading print the death time
+  and the snapshot's read time beside it from the FILE — pinned by a
+  witness the store read would trip (V8's shape): with a stubbed
+  keychain CLI that counts its invocations, a cockpit tick, a `posse
+  status`, a `posse cost --plan` and a watch preamble over a fresh
+  snapshot add zero invocations. A zero expiry prints no gauge; a past
+  expiry prints EXPIRED with "ago"; a snapshot older than the expiry it
+  carries still prints the read time. Mutation checks: drop the read
+  time; render from a live store read instead of the snapshot; render
+  a zero as fresh.
+- V15 (unit, added 2026-09-03, build ranger-base-m6y0v): the alarm
+  row's key is the token's own `expiresAt`; two ticks inside the
+  horizon on one snapshot raise one row; a snapshot with an advanced
+  expiry raises a second with a different key; a past expiry raises
+  none; a zero expiry raises none; and no pass outcome, clock or park
+  changes with the row present (expiry gates nothing — the positive
+  arm runs a 99%/99% reading through three passes with the alarm up
+  and asserts the same decisions as without it).
+- V16 (unit, added 2026-09-03, build ranger-base-zxpcz, blocked on
+  ranger-base-4poib landing): a 401 with `AuthFailure.ExpiresAt` in the
+  future classes `PlanFailRejected`, token `401-live`, `Stale()` false,
+  sentence names `/login` and never "run `claude` once"; past and zero
+  expiry stay `PlanFailStale`, token `401`; the governance row keys
+  differ between the two; `PlanFailureOf` still returns exactly one
+  class for every error fixture in the table. Mutation check: collapse
+  the two keys.
+- V17 (operator, added 2026-09-03; uncaged shell only): the probe on
+  ranger-base-jefo0 — which runtime verb performs the refresh write
+  non-interactively, what an open interactive window does across it,
+  and the keychain's lock state during the run. Its answer is 1b's
+  build-or-refuse (ranger-base-bc02b).
