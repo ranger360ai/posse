@@ -181,7 +181,7 @@ func fakeBd(args []string) int {
 			return 1
 		}
 		if b, err := os.ReadFile("fake-ready.json"); err == nil {
-			fmt.Print(fakeBdDropClosed(fakeBdApplyState(string(b))))
+			fmt.Print(fakeBdReadyDropClosed(fakeBdApplyState(string(b))))
 		} else {
 			fmt.Print("[]")
 		}
@@ -808,7 +808,20 @@ func fakeBdUpdate(args []string) int {
 // found no live holder for it (its session had just been reaped) and
 // RELAUNCHED it under ADR 0030 §1's recovery arm. A third `workspace create`
 // for two beads, out of a store real bd would never have answered that way.
-func fakeBdDropClosed(list string) string {
+//
+// TWO functions, not one, and NAMED apart on purpose (ranger-base-pju9t).
+// `fakeBdDropClosed` above is `list` without `--all`: it drops a row whose
+// own status field says closed and nothing else, which is what real bd's
+// default filter does. This one is `ready`, and its extra half — a bead the
+// fake has HANDED OUT whose `show` now answers closed — is a statement about
+// dispatch, not about the store's filter. Merging them would give `list`
+// that dispatch half and quietly break the open-vs-`--all` distinction
+// ranger-base-j8qmj's dedupe pins turn on. They collided as one name because
+// two seats added one each to this file on branches neither could see, and
+// merge-back is ff-only, so nothing built the pair until it was
+// already on main: `go vet ./...` went red at 3075168 and CI's macos and
+// ubuntu jobs both failed on this one line.
+func fakeBdReadyDropClosed(list string) string {
 	var issues []map[string]any
 	if json.Unmarshal([]byte(list), &issues) != nil {
 		return list
