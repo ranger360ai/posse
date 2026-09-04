@@ -3,7 +3,7 @@ package posse
 // QA pins for the silent-revert detector (scripts/audit-silent-reverts.sh,
 // rangerhq-8rtf, verified under rangerhq-jkhb).
 //
-// Four claims:
+// Five claims:
 //
 //   1. The detector's own --self-test proves the detector FIRES, which is the
 //      only thing that separates "the audit ran" from "the audit works". But
@@ -35,10 +35,22 @@ package posse
 //      four pins at the end of this file are one per mutation, and no two of
 //      them red the same self-test arm.
 //
+//   5. A triage line survives the launcher's rebase (ADR 0054). The line names
+//      the sha the audit printed in a SESSION tree; the launcher rebases that
+//      tree at landing and mints another sha for the same diff, so on main the
+//      line names a commit no ref reaches and the landed twin is UNTRIAGED —
+//      measured 2026-09-04, e8c5e4e's line against its landed self c8adbcc,
+//      with main's only gate red on it for three consecutive runs. A line may
+//      now carry the diff's patch-id beside the sha, and it claims ONE commit:
+//      the oldest flagged one carrying that diff, and only when the line's own
+//      sha did not land here. This is a widening, so the pins at the end of
+//      this file are again one per mutation, each naming the arm it reds.
+//
 // Self-contained on purpose (own helpers, own fixture): they must survive
 // whatever the next persona does to the script's neighbours.
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -514,5 +526,274 @@ func TestAuditRenameDestinationIsStillCompared(t *testing.T) {
 	if strings.Contains(out, "a rename that also edits was flagged as a silent revert") {
 		t.Fatalf("expected the rename-that-edits arm to stay green over this mutation "+
 			"(invisible reads as excused); it did not, so this pin's rationale is stale:\n%s", out)
+	}
+}
+
+// --- ADR 0054: the triage line survives the launcher's rebase ---------------
+//
+// A persona reads a silent-revert hit in its own session tree and writes the
+// sha the audit printed into scripts/silent-reverts.allow. That sha is the
+// SESSION tree's. The launcher lands the tree with merge --ff-only and rebases
+// first when main has moved, which mints a new sha for the same diff, so on
+// main the line names a commit no ref reaches, the landed twin is UNTRIAGED,
+// and `make test` goes red on a hit that was read and explained. Measured
+// 2026-09-04: e8c5e4e is on zero refs, c8adbcc is its landed self, same author,
+// same second, same patch-id 77e50340…, and main's only gate had failed on that
+// one hit for three consecutive runs.
+//
+// The fix is D1's optional second token — the diff's patch-id — plus three
+// restrictions that keep it from becoming the pattern the allow file's header
+// refuses: the token speaks only for a line whose sha did NOT land here (D2),
+// it claims the OLDEST flagged commit carrying that diff and no other (D3),
+// and the UNTRIAGED hint prints the whole line to paste so nobody has to know
+// any of it (D4).
+//
+// Six self-test arms carry those claims, and the seven pins below are one per
+// mutation. No two red the same arm, which is the property that makes them
+// pins rather than seven copies of one exit status:
+//
+//	the token never matches                 reds twin (and the strip, and one-claim)
+//	the line's sha is never an ancestor     reds inert, and NOTHING else
+//	any 40-hex token matches                reds mismatch
+//	the one-claim guard is removed          reds one-claim, and nothing else
+//	the hint drops the patch-id             reds the hint arm, and nothing else
+//	the triage print keeps the token        reds the strip arm, and nothing else
+//
+// The last row is the one worth naming. Stripping the token out of the printed
+// reason is the whole reason the token can be OPTIONAL — a reason may not begin
+// with 40 hex — and no arm that only reads an exit status can see it, because a
+// triage that prints its reason badly still triages.
+
+// TestSilentRevertSelfTestHasThePatchIdArms pins the six arms themselves.
+// Deleting any of them leaves every other test in this file green, because they
+// all read an exit status a deleted arm no longer contributes to.
+func TestSilentRevertSelfTestHasThePatchIdArms(t *testing.T) {
+	t.Parallel()
+	script := srScript(t)
+	if err := exec.Command("git", "rev-parse", "--show-toplevel").Run(); err != nil {
+		t.Skipf("not a git checkout: %v", err)
+	}
+	out, code := srAudit(t, script, ".", "--self-test")
+	if code != 0 {
+		t.Fatalf("self-test failed: exit %d\n%s", code, out)
+	}
+	for _, want := range []string{
+		"self-test PASS: a line whose sha did not land triages its patch-id twin",
+		"self-test PASS: the triage print strips the patch-id token",
+		"self-test PASS: the token on an ANCESTOR's line is inert",
+		"self-test PASS: a token that is not this commit's patch-id triages nothing",
+		"self-test PASS: the UNTRIAGED hint carries the commit's real patch-id",
+		"self-test PASS: one patch-id claims one commit; the second twin stays UNTRIAGED",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("self-test no longer reports %q:\n%s", want, out)
+		}
+	}
+}
+
+// TestAuditPatchIdTwinArmHasItsOwnPin is the mechanism: a line's token has to be
+// compared against the flagged commit's patch-id at all. Break the comparison
+// and the arm is the pre-ADR behaviour — a rebased twin reads as untriaged and
+// the gate is red on a hit somebody already explained.
+func TestAuditPatchIdTwinArmHasItsOwnPin(t *testing.T) {
+	t.Parallel()
+	mutant, dir := srMutateScript(t,
+		`$1 !~ /^#/ && $2 == p { print $1 }`,
+		`$1 !~ /^#/ && $2 == "never" { print $1 }`)
+	out, code := srAudit(t, mutant, dir, "--self-test")
+	if code == 0 {
+		t.Fatalf("self-test exited 0 with no line ever matching a patch-id:\n%s", out)
+	}
+	if !strings.Contains(out, "the patch-id twin arm did not triage the landed twin") {
+		t.Fatalf("the twin arm did not name the defect it exists for:\n%s", out)
+	}
+}
+
+// TestAuditTwinArmRefusesALandedLine is D2, and it is the restriction that
+// keeps the token from being a pattern. A line whose sha IS an ancestor of the
+// scanned tip has already said what it came to say; letting its token speak
+// besides would excuse the NEXT commit with that diff, which is exactly the
+// incident's own shape (a second stale-index revert of the same fix has the
+// triaged revert's diff). Only the inert arm can see this: the twin arm stays
+// green over the mutation, because a predicate that admits everything admits
+// the true case too. Measured both directions.
+func TestAuditTwinArmRefusesALandedLine(t *testing.T) {
+	t.Parallel()
+	mutant, dir := srMutateScript(t, `line_sha_landed "$s" "$tip" && continue`, `false && continue`)
+	out, code := srAudit(t, mutant, dir, "--self-test")
+	if code == 0 {
+		t.Fatalf("self-test exited 0 with every allow line treated as un-landed:\n%s", out)
+	}
+	if !strings.Contains(out, "an ancestor's token triaged another commit's diff") {
+		t.Fatalf("the inert arm did not name the defect it exists for:\n%s", out)
+	}
+	if !strings.Contains(out, "self-test PASS: a line whose sha did not land triages its patch-id twin") {
+		t.Fatalf("expected the twin arm to stay green over this mutation (a predicate that "+
+			"admits everything admits the true case too); it did not, so this pin's rationale is stale:\n%s", out)
+	}
+}
+
+// TestAuditTwinArmComparesTheToken is the wrong arm for the one above: the
+// widening must be refused by the COMPARISON and not merely by the shape of the
+// token. Accepting any 40-hex second field turns the allow file into a list of
+// shas that excuse whatever is flagged next, which is alternative (d1) the ADR
+// rejected outright.
+func TestAuditTwinArmComparesTheToken(t *testing.T) {
+	t.Parallel()
+	mutant, dir := srMutateScript(t, `$2 == p { print $1 }`, `$2 ~ /^[0-9a-f]{40}$/ { print $1 }`)
+	out, code := srAudit(t, mutant, dir, "--self-test")
+	if code == 0 {
+		t.Fatalf("self-test exited 0 with any 40-hex token claiming any commit:\n%s", out)
+	}
+	if !strings.Contains(out, "the twin arm fired on a patch-id that does not match") {
+		t.Fatalf("the mismatch arm did not name the defect it exists for:\n%s", out)
+	}
+}
+
+// TestAuditPatchIdClaimsOneCommit is D3, and it is the whole difference between
+// this and a pattern: a glob excuses every future commit that deletes a path,
+// a token excuses the one commit whose diff the writer read, once. Remove the
+// guard that spends a token and the second twin — a second stale-index revert
+// of the same fix, the incident's own shape — is excused unread.
+func TestAuditPatchIdClaimsOneCommit(t *testing.T) {
+	t.Parallel()
+	mutant, dir := srMutateScript(t, `*" $pid "*) ;;`, `*" NEVER-SPENT "*) ;;`)
+	out, code := srAudit(t, mutant, dir, "--self-test")
+	if code == 0 {
+		t.Fatalf("self-test exited 0 with one token claiming every commit carrying its diff:\n%s", out)
+	}
+	if !strings.Contains(out, "one token left 0 commit(s) untriaged") {
+		t.Fatalf("the one-claim arm did not name the defect it exists for:\n%s", out)
+	}
+}
+
+// TestAuditUntriagedHintCarriesThePatchId is D4, and ADR 0054 Verification 2.
+// The teaching is the UNTRIAGED line: it prints the line to paste, patch-id
+// included, EVERY time, so nobody is asked to know the recipe or to guess
+// whether their commit will be rebased. Without it the writer has to know that
+// the token exists, which is the state alternative (e) was rejected for.
+func TestAuditUntriagedHintCarriesThePatchId(t *testing.T) {
+	t.Parallel()
+	mutant, dir := srMutateScript(t,
+		`printf '               %s %s <reason>\n' "$sha" "$pid"`,
+		`printf '               %s <reason>\n' "$sha"`)
+	out, code := srAudit(t, mutant, dir, "--self-test")
+	if code == 0 {
+		t.Fatalf("self-test exited 0 with the hint printing no patch-id:\n%s", out)
+	}
+	if !strings.Contains(out, "the UNTRIAGED hint did not carry the commit's patch-id") {
+		t.Fatalf("the hint arm did not name the defect it exists for:\n%s", out)
+	}
+}
+
+// TestAuditTriagePrintStripsTheToken is D1's other half, and the one an exit
+// status cannot see: a triage that prints its reason badly still triages. The
+// token is optional precisely because the print strips it — drop the strip and
+// every reason on a tokened line reads "77e50340…8 the launcher rebased this
+// one", which is how a grammar quietly stops being one.
+func TestAuditTriagePrintStripsTheToken(t *testing.T) {
+	t.Parallel()
+	mutant, dir := srMutateScript(t,
+		`if ($1 ~ /^[0-9a-f]{40}$/) sub($1" *", ""); print`,
+		`print`)
+	out, code := srAudit(t, mutant, dir, "--self-test")
+	if code == 0 {
+		t.Fatalf("self-test exited 0 with the triage print keeping the patch-id token:\n%s", out)
+	}
+	if !strings.Contains(out, "the triage print did not strip the patch-id token") {
+		t.Fatalf("the strip arm did not name the defect it exists for:\n%s", out)
+	}
+}
+
+// srAuditWithGitLog runs the audit over dir with a `git` shim first on PATH that
+// appends every invocation's argv to a log, then returns the audit's output,
+// its exit code and the log's contents. Counting the calls is the only honest
+// way to measure the ADR's cost clause: "the arm runs only when there is an
+// untriaged hit, so a clean run makes zero extra git calls."
+func srAuditWithGitLog(t *testing.T, script, dir string, args ...string) (string, int, string) {
+	t.Helper()
+	real, err := exec.LookPath("git")
+	if err != nil {
+		t.Skipf("git not on PATH: %v", err)
+	}
+	shimDir := t.TempDir()
+	logPath := filepath.Join(shimDir, "git-argv.log")
+	shim := fmt.Sprintf("#!/bin/sh\nprintf '%%s\\n' \"$*\" >> %q\nexec %q \"$@\"\n", logPath, real)
+	if err := os.WriteFile(filepath.Join(shimDir, "git"), []byte(shim), 0o755); err != nil {
+		t.Fatalf("write git shim: %v", err)
+	}
+	cmd := exec.Command(script, args...)
+	cmd.Dir = dir
+	cmd.Env = append(srEnv(), "PATH="+shimDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	out, err := cmd.CombinedOutput()
+	code := 0
+	if ee, ok := err.(*exec.ExitError); ok {
+		code = ee.ExitCode()
+	} else if err != nil {
+		t.Fatalf("run %s: %v\n%s", script, err, out)
+	}
+	logged, rerr := os.ReadFile(logPath)
+	if rerr != nil && !os.IsNotExist(rerr) {
+		t.Fatalf("read git log: %v", rerr)
+	}
+	// The shim has to have been used at all, or "zero patch-id calls" is a fact
+	// about a log nobody wrote (the absence-without-a-witness class this file
+	// already carries two pins for).
+	if !strings.Contains(string(logged), "rev-parse") {
+		t.Fatalf("the git shim was never called; PATH did not take:\n%s", logged)
+	}
+	return string(out), code, string(logged)
+}
+
+// TestAuditPatchIdArmCostsNothingOnACleanRun is ADR 0054's cost clause, and it
+// is the reason the arm sits behind `if [ "$untriaged" -gt 0 ]` rather than
+// being folded into the triage loop. `make test` runs this script with --quiet
+// over the full history on every seat and on both CI runners; a patch-id per
+// flagged commit is ~100ms each and every one of them is wasted on a run where
+// the sha match already cleared the file. Two arms, because "no patch-id was
+// computed" over a rig that never had one to compute is not a measurement:
+// the same fixture with its allow line removed must compute one.
+func TestAuditPatchIdArmCostsNothingOnACleanRun(t *testing.T) {
+	t.Parallel()
+	script := srScript(t)
+	repo := srPlantAddOnlyRevert(t)
+
+	// The wrong arm first: nothing is triaged, so the arm runs and the hint
+	// needs a patch-id. If this does not fire, the arm below measures nothing.
+	out, code, calls := srAuditWithGitLog(t, script, repo, "HEAD")
+	if code != 1 {
+		t.Fatalf("untriaged fixture did not exit 1: exit %d\n%s", code, out)
+	}
+	if !strings.Contains(calls, "patch-id") {
+		t.Fatalf("the arm computed no patch-id over an UNTRIAGED hit, so the clean-run "+
+			"arm below proves nothing:\n%s\ngit calls:\n%s", out, calls)
+	}
+
+	// Now triage the flagged commit by SHA — the six-of-eight case, a line
+	// written after landing — and the arm must not run at all.
+	sha := ""
+	for _, line := range strings.Split(out, "\n") {
+		if i := strings.Index(line, "UNTRIAGED: "); i >= 0 {
+			sha = strings.Fields(line[i+len("UNTRIAGED: "):])[0]
+			break
+		}
+	}
+	if sha == "" {
+		t.Fatalf("no UNTRIAGED sha to triage in:\n%s", out)
+	}
+	if err := os.MkdirAll(filepath.Join(repo, "scripts"), 0o755); err != nil {
+		t.Fatalf("mkdir scripts: %v", err)
+	}
+	allow := filepath.Join(repo, "scripts", "silent-reverts.allow")
+	if err := os.WriteFile(allow, []byte(sha+" benign, and read: the sha landed here\n"), 0o644); err != nil {
+		t.Fatalf("write allow: %v", err)
+	}
+	out, code, calls = srAuditWithGitLog(t, script, repo, "HEAD")
+	if code != 0 {
+		t.Fatalf("sha-triaged fixture did not exit 0: exit %d\n%s", code, out)
+	}
+	if strings.Contains(calls, "patch-id") {
+		t.Fatalf("the patch-id arm ran on a clean scan; ADR 0054's cost clause says it must "+
+			"not:\n%s\ngit calls:\n%s", out, calls)
 	}
 }

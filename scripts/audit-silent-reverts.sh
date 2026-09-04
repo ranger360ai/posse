@@ -154,8 +154,22 @@
 #     gap. It under-reports on short ranges, it does not false-positive.
 #
 # TRIAGE. Known-and-explained commits live in scripts/silent-reverts.allow, one
-# `<sha> <reason>` per line. Anything NOT in that file exits 1 — a new silent
-# revert is a build failure, and clearing it means writing down why.
+# `<sha> [<patch-id>] <reason>` per line. Anything NOT in that file exits 1 — a
+# new silent revert is a build failure, and clearing it means writing down why.
+#
+# THE OPTIONAL SECOND TOKEN is the diff's patch-id (ADR 0054). A persona reads a
+# hit in its own session tree and writes the sha this script printed; the
+# launcher rebases that tree onto main at landing and mints a NEW sha for the
+# same diff, so on main the line names a commit no ref reaches and the landed
+# twin reads as untriaged — the gate red on a hit that was read and explained
+# (2026-09-04, e8c5e4e's line against its landed self c8adbcc). So a line may
+# carry `git diff-tree -p <sha> | git patch-id --stable`'s first field beside
+# the sha. A line whose sha did NOT land here triages the one flagged commit
+# carrying its patch-id — the oldest, once, and a second twin stays untriaged
+# (D3, and it is the whole difference from a pattern). A line whose sha IS an
+# ancestor triages by sha alone and its token is inert (D2). Nobody has to know
+# any of this: the UNTRIAGED message below prints the whole line to paste, token
+# included, every time (D4).
 set -uo pipefail
 
 cd "$(git rev-parse --show-toplevel)" || exit 2
@@ -327,6 +341,101 @@ numeric_stream() {
 # this number exists to catch (ranger-base-z4vx).
 PLANTED=3
 
+# --- ADR 0054 fixtures: the patch-id twin -----------------------------------
+# The four plants below exercise the TRIAGE half rather than the detector half:
+# each plants a shape the detector already flags and then writes the fixture's
+# OWN scripts/silent-reverts.allow. This script cds to the toplevel of the repo
+# it is run in, so that file is the one the triage reads. It is deliberately not
+# committed — the scan reads git log, so an untracked allow file leaves the
+# planted commit count alone and every arm keeps its positive witness.
+#
+# `deadbee` is the stand-in for a sha that did not land here: the retired
+# session tree's, which on a fresh clone was never fetched at all and on the box
+# that minted it survives only until gc. The twin plant asserts it does not
+# resolve, because an arm whose "non-resolving" sha resolves is measuring the
+# sha path and saying nothing about the token.
+
+# Write the fixture's allow file. Called after the plant so the shas are real.
+plant_allow() {
+  mkdir -p scripts
+  printf '%s\n' "$@" > scripts/silent-reverts.allow
+}
+
+# TWIN — the shape the arm exists for. The line names a sha that does not
+# resolve here and carries the flagged commit's patch-id. Must triage, exit 0.
+plant_twin() {
+  plant_modify || return 2
+  plant_allow "deadbee $(patch_id HEAD) the launcher rebased this one; the token is what survived"
+  # Fixture witness (ranger-base-z4vx): the hazard has to be present. The line's
+  # sha must NOT resolve, and its second field must be a real 40-hex patch-id
+  # rather than the empty string a broken patch_id would leave behind.
+  git cat-file -e deadbee^{commit} 2>/dev/null && return 2
+  awk 'NR==1 && $2 ~ /^[0-9a-f]{40}$/ {ok=1} END {exit !ok}' scripts/silent-reverts.allow || return 2
+  return 0
+}
+
+# INERT — the WRONG ARM for twin, and the one that keeps the token from becoming
+# a pattern (D2). The same patch-id sits beside the sha of an ANCESTOR that is
+# not the flagged commit, so the line triages by sha alone, its token says
+# nothing, and the flagged commit is still UNTRIAGED: exit 1.
+plant_inert() {
+  plant_modify || return 2
+  plant_allow "$(git rev-parse --short=7 HEAD~1) $(patch_id HEAD) an ancestor's line — its token is inert"
+  # Fixture witness: the line's sha really is an ancestor of the scanned tip and
+  # really is NOT the flagged commit, or this arm is the mismatch arm again.
+  git merge-base --is-ancestor HEAD~1 HEAD || return 2
+  [ "$(git rev-parse --short=7 HEAD~1)" != "$(git rev-parse --short=7 HEAD)" ] || return 2
+  return 0
+}
+
+# MISMATCH — the second wrong arm. A non-resolving sha beside a patch-id that is
+# real but is not this commit's (the fix commit's, so the arm is refused by the
+# comparison and not by a malformed token). Nothing matches: exit 1.
+plant_mismatch() {
+  plant_modify || return 2
+  plant_allow "deadbee $(patch_id HEAD~1) a real patch-id, but not this commit's"
+  [ -n "$(patch_id HEAD~1)" ] || return 2
+  [ "$(patch_id HEAD~1)" != "$(patch_id HEAD)" ] || return 2
+  return 0
+}
+
+# ONE CLAIM — D3. fix, revert, fix again, revert again: the two reverts carry the
+# same patch-id, and one token may claim only the OLDER of them. Five commits,
+# so this arm carries its own count rather than bending PLANTED.
+#
+# DIVERGENCE from ADR 0054 Verification 1, which reads "(two flagged commits,
+# one patch-id) and one line". THREE commits are flagged here, and the ADR's
+# count cannot be built: putting fix.go back to v2 so the second revert can have
+# the first's diff is itself a move back to a state the path already held, so
+# the re-land BETWEEN the twins is flagged by construction — 1cc432e's shape,
+# which this script's header and the allow file both already record. The middle
+# commit therefore gets a plain sha line: fixture plumbing, an ancestor, no
+# token. What the ADR asks for holds exactly — one token, one claim, exactly one
+# UNTRIAGED, and it is the SECOND twin.
+plant_oneclaim() {
+  plant_repo || return 2
+  printf 'v2-THE-FIX\n' > fix.go
+  env -u RHQ_PERSONA git commit -qam "the fix"
+  printf 'v1\n' > fix.go
+  env -u RHQ_PERSONA git commit -qam "revert the fix"      # flagged; patch-id P
+  printf 'v2-THE-FIX\n' > fix.go
+  env -u RHQ_PERSONA git commit -qam "re-land the fix"     # flagged; 1cc432e's shape
+  printf 'v1\n' > fix.go
+  env -u RHQ_PERSONA git commit -qam "revert it again"     # flagged; patch-id P again
+  plant_allow \
+    "deadbee $(patch_id HEAD~2) the launcher rebased the FIRST revert — one claim, not two" \
+    "$(git rev-parse --short=7 HEAD~1) the re-land between the twins — fixture plumbing, not a twin"
+  # Fixture witness: the two reverts must really be patch-id twins and the
+  # re-land between them must really not be, or the arm measures nothing.
+  [ -n "$(patch_id HEAD)" ] || return 2
+  [ "$(patch_id HEAD)" = "$(patch_id HEAD~2)" ] || return 2
+  [ "$(patch_id HEAD~1)" != "$(patch_id HEAD)" ] || return 2
+  return 0
+}
+
+# The one-claim plant is five commits, not PLANTED's three.
+PLANTED_ONECLAIM=5
+
 self_test() {
   # Prove the detector fires on the real mechanism — BOTH halves — before
   # trusting a clean run against main, and prove it stays quiet on a move.
@@ -347,7 +456,7 @@ self_test() {
   # ABSENCE, and an absence is exactly what a fixture that was never built
   # hands it. A control that only counts absences needs a positive witness
   # that it looked at something; scan()'s own SCANNED line is that witness.
-  local rc=0 prc n out scanned shape d fdir nonhex an; d=$(mktemp -d)
+  local rc=0 prc n out scanned shape d fdir nonhex an want arc; d=$(mktemp -d)
   for shape in modify addonly move numeric renameedit delplusadd reland; do
     ( set -e; "plant_$shape" >/dev/null 2>&1; pwd > "$d/$shape" )
     prc=$?
@@ -434,6 +543,77 @@ self_test() {
         else echo "self-test FAIL: planted $shape revert not detected"; rc=1; fi ;;
     esac
   done
+  # --- ADR 0054: the patch-id twin arm --------------------------------------
+  # These four read the TRIAGE, not the detector, so they run the whole audit
+  # over the fixture rather than scan() alone — the allow file, the patch-id
+  # arm and the hint all live past scan(). Same two-sided fixture discipline as
+  # above: the plant's status on its own line, and every arm demands the scan
+  # report the commit count its plant means to build.
+  for shape in twin inert mismatch oneclaim; do
+    ( set -e; "plant_$shape" >/dev/null 2>&1; pwd > "$d/$shape" )
+    prc=$?
+    [ "$prc" -eq 0 ] || {
+        echo "self-test: $shape rig did not reproduce the mechanism"; return 2; }
+  done
+  for shape in twin inert mismatch oneclaim; do
+    want=$PLANTED
+    [ "$shape" = oneclaim ] && want=$PLANTED_ONECLAIM
+    out=$( cd "$(cat "$d/$shape")" && audit HEAD ); arc=$?
+    scanned=$(printf '%s\n' "$out" | awk '/^scanned [0-9]+ commits/ {print $2+0}')
+    [ -n "$scanned" ] || scanned=0
+    if [ "$scanned" -ne "$want" ]; then
+      echo "self-test FAIL: $shape rig scanned $scanned commits, want $want — the fixture was never built"
+      rc=1; continue
+    fi
+    case "$shape" in
+      twin)
+        # D2's positive half: the line's sha did not land, its token did.
+        if [ "$arc" -eq 0 ] && printf '%s\n' "$out" | grep -q 'triaged (patch-id twin of deadbee):'; then
+          echo "self-test PASS: a line whose sha did not land triages its patch-id twin"
+        else
+          echo "self-test FAIL: the patch-id twin arm did not triage the landed twin (exit $arc)"; rc=1
+        fi
+        # D1's other half, and it has nowhere else to be measured: the triage
+        # print strips the token, so a reason never starts with 40 hex. Without
+        # the strip this line reads "… — 77e50340…8 the launcher rebased …".
+        if printf '%s\n' "$out" | grep -q 'twin of deadbee): [0-9a-f]* — the launcher rebased'; then
+          echo "self-test PASS: the triage print strips the patch-id token"
+        else
+          echo "self-test FAIL: the triage print did not strip the patch-id token"; rc=1
+        fi ;;
+      inert)
+        if [ "$arc" -eq 1 ] && printf '%s\n' "$out" | grep -q 'UNTRIAGED:'; then
+          echo "self-test PASS: the token on an ANCESTOR's line is inert"
+        else
+          echo "self-test FAIL: an ancestor's token triaged another commit's diff (exit $arc)"; rc=1
+        fi ;;
+      mismatch)
+        if [ "$arc" -eq 1 ] && printf '%s\n' "$out" | grep -q 'UNTRIAGED:'; then
+          echo "self-test PASS: a token that is not this commit's patch-id triages nothing"
+        else
+          echo "self-test FAIL: the twin arm fired on a patch-id that does not match (exit $arc)"; rc=1
+        fi
+        # D4: the hint prints the line to paste, and the patch-id in it is the
+        # one git computes from the recipe the ADR names — asked here, of git,
+        # rather than of this script's own patch_id.
+        fdir=$(cat "$d/mismatch")
+        an=$( cd "$fdir" && git diff-tree -p HEAD | git patch-id --stable | awk 'NR==1 {print $1}' )
+        if [ -n "$an" ] && printf '%s\n' "$out" | grep -q " $an <reason>"; then
+          echo "self-test PASS: the UNTRIAGED hint carries the commit's real patch-id"
+        else
+          echo "self-test FAIL: the UNTRIAGED hint did not carry the commit's patch-id"; rc=1
+        fi ;;
+      oneclaim)
+        n=$(printf '%s\n' "$out" | grep -c 'UNTRIAGED:')
+        an=$( cd "$(cat "$d/oneclaim")" && git rev-parse --short=7 HEAD )
+        if [ "$n" -eq 1 ] && printf '%s\n' "$out" | grep -q "UNTRIAGED: $an"; then
+          echo "self-test PASS: one patch-id claims one commit; the second twin stays UNTRIAGED"
+        else
+          echo "self-test FAIL: one token left $n commit(s) untriaged, want exactly the second twin"; rc=1
+        fi ;;
+    esac
+  done
+
   [ "$rc" -eq 0 ] && echo "self-test PASS: detector flags the rangerhq-8rtf mechanism"
   return $rc
 }
@@ -585,35 +765,135 @@ states_awk() {
 
 scan() { raw_log "$1" | states_awk; }
 
+# --- TRIAGE (ADR 0054) ------------------------------------------------------
+# The allow file's grammar is `<sha> [<patch-id>] <reason>` (D1). Everything
+# below is what the optional second token buys; with no token in the file the
+# behaviour is exactly what it was, because the sha match is tried first and the
+# arm runs only over what the sha match left.
+
+# The patch-id of one commit's diff — the first field of
+# `git diff-tree -p <sha> | git patch-id --stable`, which is the recipe the
+# UNTRIAGED hint tells the reader to run, spelled the same way here so the two
+# cannot drift. Empty when there is no diff to hash (a root commit).
+patch_id() {
+  git diff-tree -p "$1" 2>/dev/null | git patch-id --stable 2>/dev/null | awk 'NR==1 {print $1}'
+}
+
+# The reason on the allow line(s) naming this sha, with the sha and the optional
+# patch-id token stripped. THE COST OF MAKING THE TOKEN OPTIONAL is that a
+# reason may not begin with 40 hex; the allow file's header says so. sub()
+# rebuilds $0's fields, so the second sub sees whatever followed the sha.
+allow_reason() {
+  awk -v s="$1" '$1 ~ "^"s { sub($1" *", ""); if ($1 ~ /^[0-9a-f]{40}$/) sub($1" *", ""); print }' "$ALLOW"
+}
+
+# D2's predicate: did this allow line's sha land here? BOTH halves are
+# load-bearing. On a fresh clone (ci.yml, fetch-depth: 0) an object on no ref is
+# never transferred, so a session sha does not resolve at all; on the box that
+# minted it the object still EXISTS for a fortnight after the rebase orphaned
+# it, on zero refs, and only merge-base can say it is not on the branch.
+line_sha_landed() {
+  git rev-parse --verify --quiet "$1^{commit}" >/dev/null 2>&1 || return 1
+  git merge-base --is-ancestor "$1" "$2" 2>/dev/null
+}
+
+# The allow line whose token claims this patch-id, or nothing. A line whose sha
+# landed here triages by sha alone and its token is inert — that is the whole of
+# what keeps this from being a pattern that excuses the next commit with the
+# same diff.
+twin_line_for() {
+  local pid=$1 tip=$2 s
+  [ -f "$ALLOW" ] || return 0
+  for s in $(awk -v p="$pid" '$1 !~ /^#/ && $2 == p { print $1 }' "$ALLOW"); do
+    line_sha_landed "$s" "$tip" && continue
+    printf '%s\n' "$s"
+    return 0
+  done
+}
+
+# The whole audit over one range, from the current directory: scan, triage,
+# report. Split out of the main body so a self-test arm can run the TRIAGE half
+# over a planted fixture (ADR 0054 Verification 1) — the allow file, the twin
+# arm and the hint all live past scan(). Reads QUIET. Returns 1 when something
+# is untriaged, 2 when the scan itself broke.
+audit() {
+  local range=${1:-HEAD} out scanned detail untriaged untriaged_shas sha pid tip
+  local twin_lines hints lsha spent remaining
+  out=$(scan "$range") || return 2
+  scanned=$(printf '%s\n' "$out" | awk -F'\t' '/^SCANNED/{print $2}')
+  detail=$(printf '%s\n' "$out" | grep -v $'^SHA\t' | grep -v '^SCANNED')
+  [ "$QUIET" -eq 1 ] || printf '%s\n' "$detail"
+
+  untriaged=0; untriaged_shas=""
+  while IFS=$'\t' read -r _ sha; do
+    if [ -f "$ALLOW" ] && grep -q "^$sha" "$ALLOW"; then
+      [ "$QUIET" -eq 1 ] || printf '  triaged: %s — %s\n' "$sha" "$(allow_reason "$sha")"
+    else
+      untriaged_shas="$untriaged_shas $sha"
+      untriaged=$((untriaged+1))
+    fi
+  done < <(printf '%s\n' "$out" | grep $'^SHA\t')
+
+  # The patch-id twin arm (D2/D3) and the hint's token (D4). It runs ONLY when
+  # something is untriaged — which is the state the gate is red in anyway — so a
+  # clean run makes zero extra git calls, and there is a pin in
+  # internal/posse/silentrevert_qa_test.go that counts them.
+  twin_lines=""; hints=""
+  if [ "$untriaged" -gt 0 ]; then
+    tip=${range##*..}
+    [ -n "$tip" ] || tip=HEAD
+    git rev-parse --verify --quiet "$tip^{commit}" >/dev/null 2>&1 || tip=HEAD
+    spent=" "; remaining=""; untriaged=0
+    # Scan order is oldest-first (raw_log --reverse), so the first commit a
+    # token matches IS the oldest flagged one carrying it: D3's one claim, in
+    # one pass, with `spent` spending the token on it.
+    for sha in $untriaged_shas; do
+      pid=$(patch_id "$sha"); lsha=""
+      case "$spent" in
+        *" $pid "*) ;;
+        *) [ -n "$pid" ] && lsha=$(twin_line_for "$pid" "$tip") ;;
+      esac
+      if [ -n "$lsha" ]; then
+        spent="$spent$pid "
+        twin_lines="$twin_lines  triaged (patch-id twin of $lsha): $sha — $(allow_reason "$lsha")
+"
+      else
+        remaining="$remaining $sha"
+        hints="$hints$sha $pid
+"
+        untriaged=$((untriaged+1))
+      fi
+    done
+    untriaged_shas=$remaining
+    [ "$QUIET" -eq 1 ] || printf '%s' "$twin_lines"
+  fi
+
+  if [ "$untriaged" -gt 0 ] && [ "$QUIET" -eq 1 ]; then
+    printf '%s\n' "$detail"; printf '%s' "$twin_lines"
+  fi
+  for sha in $untriaged_shas; do
+    pid=$(printf '%s' "$hints" | awk -v s="$sha" '$1==s {print $2}')
+    printf '  UNTRIAGED: %s — a silent revert nobody has explained. Read it, then\n' "$sha"
+    printf '             either fix it or paste this line into %s:\n' "$ALLOW"
+    # D4: the line to paste, patch-id included, every time. Nobody is asked to
+    # know the recipe or to guess whether their commit will be rebased.
+    if [ -n "$pid" ]; then printf '               %s %s <reason>\n' "$sha" "$pid"
+    else printf '               %s <reason>\n' "$sha"; fi
+  done
+
+  [ "$QUIET" -eq 1 ] && [ "$untriaged" -eq 0 ] \
+    && { echo "silent-revert audit: $scanned commits, 0 untriaged"; return 0; }
+  echo
+  echo "scanned $scanned commits; $untriaged untriaged silent revert(s)"
+  [ "$untriaged" -eq 0 ] || return 1
+  return 0
+}
+
+QUIET=0
 [ "${1:-}" = "--self-test" ] && { self_test; exit $?; }
 
 # --quiet: one summary line when clean, full detail when something is untriaged.
-QUIET=0
 [ "${1:-}" = "--quiet" ] && { QUIET=1; shift; }
 
-out=$(scan "${1:-HEAD}") || exit 2
-scanned=$(printf '%s\n' "$out" | awk -F'\t' '/^SCANNED/{print $2}')
-detail=$(printf '%s\n' "$out" | grep -v $'^SHA\t' | grep -v '^SCANNED')
-[ "$QUIET" -eq 1 ] || printf '%s\n' "$detail"
-
-untriaged=0
-while IFS=$'\t' read -r _ sha; do
-  if [ -f "$ALLOW" ] && grep -q "^$sha" "$ALLOW"; then
-    [ "$QUIET" -eq 1 ] || printf '  triaged: %s — %s\n' "$sha" "$(awk -v s="$sha" '$1 ~ "^"s {sub($1" *",""); print}' "$ALLOW")"
-  else
-    untriaged_shas="${untriaged_shas:-} $sha"
-    untriaged=$((untriaged+1))
-  fi
-done < <(printf '%s\n' "$out" | grep $'^SHA\t')
-
-if [ "$untriaged" -gt 0 ] && [ "$QUIET" -eq 1 ]; then printf '%s\n' "$detail"; fi
-for sha in ${untriaged_shas:-}; do
-  printf '  UNTRIAGED: %s — a silent revert nobody has explained. Read it, then\n' "$sha"
-  printf '             either fix it or write the reason in %s\n' "$ALLOW"
-done
-
-[ "$QUIET" -eq 1 ] && [ "$untriaged" -eq 0 ] \
-  && { echo "silent-revert audit: $scanned commits, 0 untriaged"; exit 0; }
-echo
-echo "scanned $scanned commits; $untriaged untriaged silent revert(s)"
-[ "$untriaged" -eq 0 ] || exit 1
+audit "${1:-HEAD}"
+exit $?
