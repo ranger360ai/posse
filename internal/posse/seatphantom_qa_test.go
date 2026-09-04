@@ -226,9 +226,9 @@ func TestSeatSessionSpellsTheDialFName(t *testing.T) {
 // That one pins the ERROR; an abstention is a nil error, and the two reach
 // reconcileSeats through different returns.
 //
-// MUTATION: drop the `withheld > 0` return from reconcileSeats → red on the
-// hold, on the release line, and on the workspace create. Same red from
-// `return out, 0, nil` in listSessions, which is the same defect one layer
+// MUTATION: drop the `len(withheld) > 0` return from reconcileSeats → red on
+// the hold, on the release line, and on the workspace create. Same red from
+// `return out, nil, nil` in listSessions, which is the same defect one layer
 // down.
 func TestQAAShortListingKeepsEverySeatHold(t *testing.T) {
 	t.Parallel()
@@ -252,12 +252,12 @@ func TestQAAShortListingKeepsEverySeatHold(t *testing.T) {
 	// The premise the incident turns on: the listing goes short while the
 	// session's meta stays on disk. Nothing died.
 	sess, withheld, err := b.listSessions()
-	if err != nil || withheld != 0 || len(sess) == 0 {
-		t.Fatalf("premise: before the restart the listing answers in full: n=%d withheld=%d err=%v", len(sess), withheld, err)
+	if err != nil || len(withheld) != 0 || len(sess) == 0 {
+		t.Fatalf("premise: before the restart the listing answers in full: n=%d withheld=%v err=%v", len(sess), withheld, err)
 	}
 	saveWSTo(t, fake, nil) // herdr came up empty; every meta kept, not listed
-	if sess, withheld, err = b.listSessions(); err != nil || withheld == 0 {
-		t.Fatalf("premise: an empty board withholds the metas with a NIL error — that is the whole defect: n=%d withheld=%d err=%v", len(sess), withheld, err)
+	if sess, withheld, err = b.listSessions(); err != nil || len(withheld) == 0 {
+		t.Fatalf("premise: an empty board withholds the metas with a NIL error — that is the whole defect: n=%d withheld=%v err=%v", len(sess), withheld, err)
 	}
 	mark := len(dispatcherOut(d))
 
@@ -277,7 +277,10 @@ func TestQAAShortListingKeepsEverySeatHold(t *testing.T) {
 	}
 }
 
-// The count is over ALL FOUR abstention arms, not just the empty board.
+// The withheld list is over ALL FOUR abstention arms, not just the empty
+// board. (It was a count when this pin was written; ranger-base-5kiu4 made it
+// the names, because personaActive has to narrow to one seat. Every assertion
+// here is about membership and reads len().)
 //
 // The cheap fix the bug report priced — reconcile only against a listing
 // holding at least one workspace — closes emptyBoard alone. This is the fixture that
@@ -299,8 +302,8 @@ func TestListSessionsCountsWhatItWithheld(t *testing.T) {
 	b.Warn = &warn
 	saveWSTo(t, fake, []fakeWS{{WorkspaceID: "w1", Label: "live"}})
 
-	if _, withheld, err := b.listSessions(); err != nil || withheld != 0 {
-		t.Fatalf("premise: a board this server can answer for withholds nothing: withheld=%d err=%v", withheld, err)
+	if _, withheld, err := b.listSessions(); err != nil || len(withheld) != 0 {
+		t.Fatalf("premise: a board this server can answer for withholds nothing: withheld=%v err=%v", withheld, err)
 	}
 
 	// Not empty, and still unanswerable: the meta names another server.
@@ -309,8 +312,8 @@ func TestListSessionsCountsWhatItWithheld(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if withheld != 1 {
-		t.Errorf("a meta withheld off a NON-EMPTY board must be counted, or the count is just emptyBoard by another name: withheld=%d n=%d warn=%q", withheld, len(sess), warn.String())
+	if len(withheld) != 1 {
+		t.Errorf("a meta withheld off a NON-EMPTY board must be counted, or the count is just emptyBoard by another name: withheld=%v n=%d warn=%q", withheld, len(sess), warn.String())
 	}
 	if !strings.Contains(warn.String(), "kept, not listed") {
 		t.Fatalf("premise: this fixture must actually trip an abstention: warn=%q", warn.String())
@@ -327,7 +330,7 @@ func TestListSessionsCountsWhatItWithheld(t *testing.T) {
 	if _, withheld, err = b.listSessions(); err != nil {
 		t.Fatal(err)
 	}
-	if withheld != 1 {
-		t.Errorf("a kept RECIPE is a session already gone, not one this listing could not answer for; counting it would freeze reconcileSeats for as long as the recipe sits there: withheld=%d warn=%q", withheld, warn.String())
+	if len(withheld) != 1 {
+		t.Errorf("a kept RECIPE is a session already gone, not one this listing could not answer for; counting it would freeze reconcileSeats for as long as the recipe sits there: withheld=%v warn=%q", withheld, warn.String())
 	}
 }

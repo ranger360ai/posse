@@ -1575,26 +1575,33 @@ func (m seatMap) hold(slot, bead string) { m.run[slot] = bead }
 // ADR 0028 §3's occupancy and ADR 0022's single writer both defeated.
 //
 // The doc this replaces argued the release was safe because personaActive
-// reads the same listing and would find the seat free too. That is true of a
-// FRESH Run, and it is exactly why it does not hold here: the standing Run's
-// map was the second, independent evidence source that survived a blind
-// read, and reconciling against the listing alone is what took that cover
-// away. So the listing is now asked whether it could answer at all
-// (listSessions' withheld count) before any hold is released on it, and a
-// listing that withheld anything releases nothing — the same abstention
-// Sessions() itself makes about the same metas.
+// reads the same listing and would find the seat free too. It did — and
+// that was never a reason the release was safe, it was the description of a
+// second bug: a FRESH Run seated a bead into the live session with no hold
+// to reconcile at all (ranger-base-5kiu4, measured). Both halves of the seat
+// walk now abstain, so the standing Run's map is again a second, independent
+// evidence source rather than a copy of one blind read. The listing is asked
+// whether it could answer at all (listSessions' withheld list) before any
+// hold is released on it, and a listing that withheld anything releases
+// nothing — the same abstention Sessions() itself makes about the same metas.
 //
-// The abstention is whole-pass, not per-seat, because the count cannot be
-// narrowed: emptyBoard withholds every meta at once and is a count by
-// construction (listSessions' doc). So one withheld meta holds every seat,
-// and it holds them for as long as its cause lasts — a `spared` meta clears
-// itself at PruneGrace, an empty board clears when herdr has the fleet back,
-// but a meta stamped with a socket that no longer exists is repaired by hand
-// or not at all, and until it is, this reconcile does nothing. That is the
+// The abstention here is whole-pass, not per-seat, which is now a CHOICE and
+// no longer a limit of the return value: listSessions carries the withheld
+// names, and personaActive narrows on exactly them. It is left whole here
+// because the two callers are asking different questions — personaActive
+// asks whether one seat can be hired into, this asks whether a reading is
+// good enough to retire a hold that has already been paid for — and because
+// erring here costs a held seat while erring the other way costs a shared
+// worktree. The cost is real and stated: one withheld meta holds every seat
+// for as long as its cause lasts. A `spared` meta clears itself at
+// PruneGrace and an empty board clears when herdr has the fleet back, but a
+// meta stamped with a socket that no longer exists is repaired by hand or
+// not at all, and until it is, this reconcile does nothing. That is the
 // ranger-base-ifjgm phantom again, which is why the line below prints on
 // every pass it declines: a hold that silently stops reconciling is exactly
 // the failure this function was written for, and the operator has to be able
 // to see the difference. Sessions() warns with the repair on the same pass.
+// Narrowing it to the seat is filed as ranger-base-t1q5p.
 //
 // It is still the right way round. Being wrong here holds a seat that a
 // reading could have freed; being wrong the other way puts two agents in one
@@ -1607,8 +1614,8 @@ func (d *Dispatcher) reconcileSeats(busy map[string]string) {
 	if err != nil {
 		return
 	}
-	if withheld > 0 {
-		d.printf("↺ seats kept: %d session meta(s) this herdr cannot answer for — no hold released this pass\n", withheld)
+	if len(withheld) > 0 {
+		d.printf("↺ seats kept: %d session meta(s) this herdr cannot answer for — no hold released this pass\n", len(withheld))
 		return
 	}
 	slots := make([]string, 0, len(busy))
@@ -3603,8 +3610,58 @@ func hasLabel(labels []string, want string) bool {
 // personaActive reports a live session of this persona in this repo that
 // herdr shows working or blocked — its per-bead sessions or the pre-Dial-F
 // persona session — as (name, status); ("", "") when none.
+//
+// It reads the listing TWICE, because the listing answers two different
+// questions and only one of them used to be asked (ranger-base-5kiu4).
+// The rows say who is working. The withheld list says which sessions this
+// listing declined to answer for at all — kept on disk, left out, warned
+// about (listSessions' doc). A seat walk that reads only the rows reads a
+// withheld session as an EMPTY SEAT, and that is the same defect
+// reconcileSeats had from the other side (ranger-base-6swlr): absence from
+// a listing that abstained is not death, and it is not idleness either.
+// Under any of the four abstentions a fresh Run — new process, empty busy
+// map, no hold for reconcileSeats to keep — seated a second bead into a
+// live session. MEASURED positive through `spared`, on the ordinary 5m
+// prune grace, so this is not only the herdr-restart shape.
+//
+// The answer here is per-SEAT and not the whole-pass abstention
+// reconcileSeats takes, which is why listSessions returns names rather
+// than the count it first carried. A seat is unavailable when the listing
+// cannot answer for a session IN THAT SEAT; a persona with no meta at all
+// has no session to be unreadable, and stalling the whole shop on one
+// stale meta would trade a double-seating for a fleet that stops hiring.
+// The withheld session is reported under a status of its own, because
+// "unlisted" is what is known about it — claiming `working` would be the
+// listing's lie in the other direction.
+//
+// Note also what a withheld seat is held AGAINST: an idle listed session
+// does not hold a seat (Dial F reuses it), and a withheld one does. That
+// is deliberate and it is the fail-closed direction — the status is what
+// the listing would not say.
+//
+// STATE THE COST, because on one arm it is the whole shop. `emptyBoard`
+// withholds every meta at once, so a herdr with no workspaces at all and
+// stale metas on disk holds every seat that has one, and dispatch fires
+// nothing until the board is not empty. It clears itself the moment ANY
+// workspace exists — a crew session, `posse new`, `posse relaunch` — and
+// the metas then resolve or prune by the ordinary path; Sessions() warns
+// with the repair on every pass meanwhile. The other three arms are
+// per-meta and cost one seat each. This is the same trade reconcileSeats
+// states: being wrong here holds a seat a reading could have freed, being
+// wrong the other way puts two agents in one worktree.
+//
+// The row filters below (crew, agent, this pass's own stranded launches)
+// are applied to a withheld meta too: they are facts read off the meta
+// file, not off the listing, so a herdr that cannot answer does not change
+// them. Crew is the one that matters — ADR 0008 keeps dispatch out of the
+// operator's conversation, and without the skip a herdr restart would
+// freeze every lane holding a crew-marked seat.
+//
+// KNOWN, filed rather than folded in: the `err != nil` arm below still
+// reads an unreadable herd as a free seat. That is the same sentence with
+// a different cause and it is not this bead's measurement — ranger-base-3yqyg.
 func (d *Dispatcher) personaActive(persona, dir string) (string, string) {
-	sessions, err := d.HB.Sessions()
+	sessions, withheld, err := d.HB.listSessions()
 	if err != nil {
 		return "", ""
 	}
@@ -3645,8 +3702,32 @@ func (d *Dispatcher) personaActive(persona, dir string) (string, string) {
 			return s.Name, s.Status
 		}
 	}
+	// Nothing in the listing holds this seat. That is only an empty seat if
+	// the listing answered for everything it holds a meta for.
+	for _, name := range withheld {
+		if name != prefix && !strings.HasPrefix(name, prefix+"-") {
+			continue
+		}
+		if d.stranded[name] {
+			continue
+		}
+		m, ok := d.HB.readMeta(name)
+		if !ok { // read out from under us: nothing left to be busy about
+			continue
+		}
+		if m.Crew || (m.Agent != "" && m.Agent != persona) {
+			continue
+		}
+		return name, seatUnlisted
+	}
 	return "", ""
 }
+
+// seatUnlisted is personaActive's third status beside herdr's `working`
+// and `blocked`: a session this listing withheld. It is not a herdr status
+// and must not be compared against one — it says the seat is taken and
+// that nobody can currently say by what.
+const seatUnlisted = "unlisted"
 
 // strand records a session this pass launched and could not use, so the
 // working/blocked guard ignores it for the rest of the pass. It is

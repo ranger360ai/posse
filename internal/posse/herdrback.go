@@ -679,7 +679,7 @@ type HerdrSession struct {
 // files pointing at dead workspaces are pruned; foreign workspaces are
 // listed under their label so the cockpit shows the whole herd.
 //
-// It drops listSessions' withheld count, which is the right reading for
+// It drops listSessions' withheld list, which is the right reading for
 // every caller that wants "what is here": a withheld session is not here.
 // A caller reasoning about what is GONE must use listSessions instead —
 // see its doc.
@@ -689,32 +689,36 @@ func (b *HerdrBackend) Sessions() ([]HerdrSession, error) {
 }
 
 // listSessions is Sessions with the one thing the listing knows about
-// itself and the return value never carried: how many session metas it
+// itself and the return value never carried: WHICH session metas it
 // WITHHELD — kept on disk, deliberately left out, and warned about on
 // stderr (ranger-base-6swlr).
 //
 // The guards below have four ways to withhold a meta whose session may be
 // perfectly alive, and all four return a nil error: emptyBoard and
-// cannotAnswerFor (counted in `kept`), `spared` — prunable() could not
-// prove death — and `strangers`, a live workspace under a recycled id.
-// Every one of them means "this listing cannot answer for that session",
-// and a caller that reads absence-from-the-listing as DEATH is then acting
-// on a refusal to answer. reconcileSeats did exactly that and released
-// dispatch seats into their own live sessions: one persona, two beads.
+// cannotAnswerFor (both `kept`), `spared` — prunable() could not prove
+// death — and `strangers`, a live workspace under a recycled id. Every one
+// of them means "this listing cannot answer for that session", and a
+// caller that reads absence-from-the-listing as DEATH is then acting on a
+// refusal to answer. reconcileSeats did exactly that and released dispatch
+// seats into their own live sessions: one persona, two beads.
 //
-// `recipes` is not counted. A meta naming no workspace is not a session
+// `recipes` is not withheld. A meta naming no workspace is not a session
 // this listing declined to answer for; it is a session already gone, whose
 // recipe was kept for `posse relaunch` (rangerhq-v52t).
 //
-// The count is deliberately not a per-session list. The loudest arm —
-// emptyBoard, a herdr that just came up — withholds every meta at once and
-// `kept` is a count by construction; a caller cannot narrow to the sessions
-// it cares about, so the only honest use of a nonzero count is to abstain
-// from the whole judgement.
-func (b *HerdrBackend) listSessions() ([]HerdrSession, int, error) {
+// It is the meta NAMES, which is the same namespace the listing's own rows
+// carry (HerdrSession.Name) and the namespace every seat prefix is written
+// in — so a caller asking about one seat can ask about one seat. That is
+// what personaActive needs (ranger-base-5kiu4): the whole-listing count
+// this first returned could only say "something is unreadable", which is
+// an honest abstention for reconcileSeats' whole pass and far too blunt
+// for a seat walk, where it would stall every lane in the shop on one
+// stale meta. Callers that only want "did this listing abstain at all"
+// take len().
+func (b *HerdrBackend) listSessions() ([]HerdrSession, []string, error) {
 	wss, err := b.H.Workspaces()
 	if err != nil {
-		return nil, 0, err
+		return nil, nil, err
 	}
 	byID := map[string]HerdrWorkspace{}
 	for _, ws := range wss {
@@ -725,7 +729,7 @@ func (b *HerdrBackend) listSessions() ([]HerdrSession, int, error) {
 	// only show a status when herdr actually detects an agent in there.
 	agents, err := b.H.Agents()
 	if err != nil {
-		return nil, 0, err
+		return nil, nil, err
 	}
 	hasAgent := map[string]bool{}
 	for _, ag := range agents {
@@ -767,6 +771,7 @@ func (b *HerdrBackend) listSessions() ([]HerdrSession, int, error) {
 	// (ADR 0011 §2, rangerhq-9nso).
 	sock, gen := SocketID(), ServerGen()
 	kept := 0
+	var withheld []string  // every meta the guards below left out, by name (metaNames order: os.ReadDir sorts)
 	var spared []string    // missing from the listing, but not proven dead — with why
 	var strangers []string // in the listing under an id another workspace now holds
 	var recipes []string   // metas naming no workspace: the session is gone, its recipe kept
@@ -803,6 +808,7 @@ func (b *HerdrBackend) listSessions() ([]HerdrSession, int, error) {
 		if live {
 			if why := b.notOurWorkspace(m, ws, gen); why != "" {
 				strangers = append(strangers, fmt.Sprintf("%s: %s", name, why))
+				withheld = append(withheld, name)
 				continue
 			}
 		}
@@ -814,11 +820,13 @@ func (b *HerdrBackend) listSessions() ([]HerdrSession, int, error) {
 			// cannotAnswerFor's, and both halves ask them (rangerhq-y4z).
 			if emptyBoard(sock, len(wss)) != "" || cannotAnswerFor(m, sock) != "" {
 				kept++
+				withheld = append(withheld, name)
 				continue
 			}
 			dead, why := b.prunable(m, gen)
 			if !dead {
 				spared = append(spared, fmt.Sprintf("%s: %s", name, why))
+				withheld = append(withheld, name)
 				continue
 			}
 			// Proven dead — by evidence gathered OUTSIDE the launcher lock,
@@ -827,6 +835,7 @@ func (b *HerdrBackend) listSessions() ([]HerdrSession, int, error) {
 			// it under the lock, where no create can be in flight.
 			if why := b.reclaim(name, sock, gen); why != "" {
 				spared = append(spared, fmt.Sprintf("%s: %s", name, why))
+				withheld = append(withheld, name)
 			}
 			continue
 		}
@@ -871,7 +880,7 @@ func (b *HerdrBackend) listSessions() ([]HerdrSession, int, error) {
 			len(recipes), strings.Join(recipes, ", "), b.metaDir())
 	}
 	sortHerdrSessions(out)
-	return out, kept + len(spared) + len(strangers), nil
+	return out, withheld, nil
 }
 
 // PruneGrace is how long a meta is immune to the inferential prune: a
