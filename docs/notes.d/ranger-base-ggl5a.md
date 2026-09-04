@@ -184,3 +184,74 @@ this pass names it rather than filing into that lane.
 One trap while counting: `bd list --all --limit 300` returns 302 rows and
 silently drops all four retire asks. The census above is at `--limit 5000`,
 which returns 1921 and is therefore complete.
+
+### Third pass: the tree is gone, and this block was filed in the eight minutes before the fix shipped (ranger-base-yqfxo)
+
+2026-09-04 07:08:30, a third filing against the same branch. This one needs no
+re-derivation, because **the branch and its worktree no longer exist.** The
+operator executed `ranger-base-s0ih6` — `git worktree remove` + `git branch -D`
+— and closed it at 07:33:56. Measured here at `main` `d3909c2`:
+
+| where a branch would show | result |
+|---|---|
+| `git for-each-ref \| grep 4ts30` | no rows |
+| `.git/refs/heads/posse/` loose ref · `.git/packed-refs` | absent · absent |
+| `.git/worktrees/` admin dir | absent |
+| `~/.posse/worktrees/posse/gwart-posse-ranger-base-4ts30` | does not exist |
+
+The work is still on `main`, re-confirmed rather than carried over: all nine
+digest values `a07bc2d` appends are in `main:internal/posse/exampledigests.go`
+(control arm through the same loop — a fabricated 64-hex digest reports
+`MISSING`), `git merge-base --is-ancestor 6a230eb main` is true, and the two
+pins pass unoverlaid at `d3909c2`, `ok … 3.652s`.
+
+**The third re-file is not a failure of either remedy. It is the gap between
+them,** and the gap is measurable to the minute:
+
+```
+00:41:02  s0ih6 filed (the operator retire ask)
+00:51     ggl5a closed do-not-land
+03:56:03  77e3h filed  ·  04:15:18 closed do-not-land
+05:51:26  c3ab918 — the j8qmj closed-aware dedupe — lands on main
+07:08:30  THIS BLOCK FILED
+07:16:28  ~/.local/bin/posse rebuilt at 0.4.0+9920e75
+07:33:56  s0ih6 closed: tree and branch removed
+```
+
+Both exits were already in flight when the sweep fired. The fix was on `main`
+for 77 minutes and reached the running launcher 7m58s **after** this bead was
+filed — 85m02s from commit to install, across 15 commits of drift
+(`git rev-list --count 9920e75..main`). `c3ab918` is an ancestor of `9920e75`
+(control: `d3909c2`, newer than the stamp, is not), so the binary running today
+carries the dedupe. The binary that ran the 07:08 sweep was overwritten, so
+"it lacked the fix" is an inference from the install time, not a reading of
+that binary.
+
+Same shape as `0109266` (ranger-base-pju9t), where nw9zg's fourth block came 77
+minutes after its fix landed with the launcher 34 commits behind. Two instances
+now: **a merge-back fix on `main` is not a merge-back fix in the sweep**, and
+the distance is one rebuild, not one commit.
+
+The dedupe works and `equivalentOnBase` still does not, exactly as the first
+pass predicted. In `dispatch-watch.log` after the upgrade, nw9zg flips `⚠` to
+`≡`; 4ts30 stays `⚠` to its last sighting and is silenced one line later by
+`↳ ranger-base-yqfxo already filed for gwart — not re-filed`. There was no
+trailer to find and there never will be. The fix stops the bead, not the
+warning.
+
+**What is new and operational: retiring the tree starts a clock on the
+evidence.** `a07bc2d` and `34a27b4` are now unreferenced loose objects — no ref
+contains them (`git for-each-ref --contains`, empty) and no reflog names them
+(`git reflog --all`, 0 hits) — with mtimes 2026-09-02 16:20:13 and 15:27:00.
+`gc.pruneExpire` is unset, so the default `2.weeks` applies and a `git gc` on or
+after roughly **2026-09-16** removes them. Every `git show <sha>` arm in this
+note stops working that day. What survives is what `main` holds — `a5a7cbc` and
+`6a230eb` — and this file. So a merge-back verdict closed by retirement must be
+self-contained in its note: the branch shas are a citation, not a source, and
+the landed counterpart sha is the only durable one.
+
+128 sweep passes have run since the branch last appeared (256 `pulse:` lines
+after the final `4ts30` line; `dispatch-watch.log` doubles every line, 69
+`4ts30` lines in all). It cannot re-file: there is nothing left to enumerate.
+Four passes, one verdict, unchanged since 00:51 — **superseded, do not land**,
+and now nothing to land it from.
