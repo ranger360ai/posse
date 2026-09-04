@@ -785,16 +785,18 @@ func TestInstanceOpsPatternGuardsAPublicRepo(t *testing.T) {
 	// a per-path loop because posse_check keeps the class and the matched
 	// text but not the subject, and the refusal has to name the path.
 	//
-	// PLUS TWO since ADR 0050 (ranger-base-nfg8l): the data ceiling renders
-	// its own block above the visibility gate with check 3's two arms —
-	// added LINES and added PATHS — so the one ceiling pattern configured
-	// above is stamped twice. Six call sites now, not four.
+	// PLUS THREE since ADR 0050 (ranger-base-nfg8l, third arm in
+	// ranger-base-o2v6n): the data ceiling renders its own block above the
+	// visibility gate with check 3's two arms — added LINES and added PATHS
+	// — and with a THIRD arm check 3 does not have, every line of the commit
+	// MESSAGE, so the one ceiling pattern configured above is stamped three
+	// times. Seven call sites now, not four.
 	identityCalls := 2 * len(testIdentity(t, pub))
-	if want, got := 2*len(OpsPatterns)+3+identityCalls+2, strings.Count(hook, "posse_check "); got != want {
-		t.Errorf("want the shipped list twice, the instance's pattern three times, the ceiling's twice and %d identity checks (%d), got %d", identityCalls, want, got)
+	if want, got := 2*len(OpsPatterns)+3+identityCalls+3, strings.Count(hook, "posse_check "); got != want {
+		t.Errorf("want the shipped list twice, the instance's pattern three times, the ceiling's three times and %d identity checks (%d), got %d", identityCalls, want, got)
 	}
-	if n := strings.Count(hook, "posse_check 'restricted-banner'"); n != 2 {
-		t.Errorf("the ceiling pattern must be stamped at exactly its two arms, got %d", n)
+	if n := strings.Count(hook, "posse_check 'restricted-banner'"); n != 3 {
+		t.Errorf("the ceiling pattern must be stamped at exactly its three arms, got %d", n)
 	}
 	// And the instance's pattern is NOT stamped into check 2's markdown
 	// scan any more: check 3 below already reads every staged text file,

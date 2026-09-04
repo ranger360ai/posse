@@ -1487,7 +1487,14 @@ confidential vocabulary to the lint without it ever entering this repo.
 Its sibling `data_ceiling_patterns:` (same shape, one class namespace
 across both) is scanned in every hooked repo whatever its stamp, above the
 visibility gate: visibility says where content may go, the ceiling says
-whether it may exist in a local file here at all (ADR 0050).
+whether it may exist in a local file here at all (ADR 0050). It has three
+arms where the visibility wall has two: added lines, added paths, and every
+line of the COMMIT MESSAGE — a message replicates with the branch, so a
+paste in one is as durable as a paste in a file. A message given with `-m`,
+`-F`, `-F -` or reused by `--amend` is scanned; one typed in your EDITOR is
+not, because the hook runs before the editor opens (ADR 0050 D5). A refused
+message is not lost: it is in `.git/COMMIT_EDITMSG` until your next commit
+overwrites it.
 `install-hooks` prints what it stamped in and, by class, what it refused —
 the ceiling line for private-stamped repos too.
 

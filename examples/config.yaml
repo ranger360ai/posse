@@ -254,6 +254,12 @@ default_emoji: ⚙️
 # stamp, above the visibility gate, and always refused by class alone. One
 # class namespace across the shipped list and both keys. The remedy is not
 # "re-file it": remove the paste, keep the system of record's id.
+# THREE ARMS where the visibility key has two: the added lines, the added
+# paths, and every line of the COMMIT MESSAGE (a message replicates with the
+# branch). `-m`, `-F`, `-F -` and a message reused by `--amend` are scanned;
+# one typed in your EDITOR is not — the hook runs before the editor opens
+# (ADR 0050 D5). A refused message stays in `.git/COMMIT_EDITMSG` until the
+# next commit overwrites it.
 # data_ceiling_patterns:
 #   restricted-banner: [[:upper:]]+-RESTRICTED
 #   export-name: export-[0-9]{8}\.(csv|xlsx)

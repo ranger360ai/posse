@@ -59,8 +59,12 @@ type visWall struct {
 	pub, priv, gates, home string
 	instance               string
 	git                    func(repo string, env []string, args ...string) (string, error)
-	persona                []string
-	identity               []IdentityLiteral
+	// gitIn is git with something on STDIN: the crew's own commit form is
+	// `git commit -F - -- <paths>` (AGENTS.md), so a pin over what a wall
+	// does to a MESSAGE has to be able to type one the way the crew does.
+	gitIn    func(repo string, env []string, stdin string, args ...string) (string, error)
+	persona  []string
+	identity []IdentityLiteral
 }
 
 func newVisWall(t *testing.T) *visWall { return newVisWallNamed(t, "instance") }
@@ -101,6 +105,13 @@ func newVisWallCfg(t *testing.T, instanceDir, extraConfig string) *visWall {
 	w.git = func(repo string, env []string, args ...string) (string, error) {
 		cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
 		cmd.Env = append(append([]string(nil), base...), env...)
+		out, err := cmd.CombinedOutput()
+		return string(out), err
+	}
+	w.gitIn = func(repo string, env []string, stdin string, args ...string) (string, error) {
+		cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
+		cmd.Env = append(append([]string(nil), base...), env...)
+		cmd.Stdin = strings.NewReader(stdin)
 		out, err := cmd.CombinedOutput()
 		return string(out), err
 	}

@@ -7,7 +7,11 @@ doc and the work-install runbook amend in ranger-base-83crg (security, hoover) �
 number: 0043–0045 stay pre-named by ADR 0040 §2; per 0040 §3.1 this file
 takes the next number no bead has claimed · amended 2026-09-04 (Context,
 D2: the two arms read every staged FILE, not every staged "text" file —
-ADR 0048 D2 as amended; ranger-base-9307c, from ranger-base-h137b).*
+ADR 0048 D2 as amended; ranger-base-9307c, from ranger-base-h137b) ·
+amended 2026-09-03 (D2, D5, Consequences: the commit MESSAGE is a THIRD
+subject — product decision that date on ranger-base-pqlxr, landed
+2026-09-04 in ranger-base-o2v6n, which is why this line sits after the
+09-04 one above).*
 
 > An instance that holds someone else's data has two different questions
 > to ask of a staged line. *May this be public?* is visibility, and ADR
@@ -83,6 +87,18 @@ line names the ceiling scan. The refusals.log label is new and names the
 stamp it ran under, so a reader can tell a private-repo ceiling hit from a
 public-repo one without opening the hook.
 
+*Amended 2026-09-03 (ranger-base-pqlxr, product; built in
+ranger-base-o2v6n): a THIRD subject — the commit MESSAGE.* The hook is
+handed the message file as its first argument and already reads it; the
+ceiling scans every line of it as given, comment-looking lines included (a
+`-m`/`-F` message keeps them under git's default cleanup, and a pasted
+markdown heading is one), class-only, same override, log tail `(stamp: N,
+commit message)`. Not a new wall: an arm of this one, no new git command.
+Its remedy differs from the file arm's: rewrite the message with the system
+of record's id; the refused text is still in `.git/COMMIT_EDITMSG`, a local
+unreplicated file the next commit overwrites — the same residual as a
+refused staged file.
+
 **D3 — one set, read once, seen identically by every renderer.** The
 three sites that render the hook today (the install, the chained install,
 the launcher's L3 identity probe) must all see the same ceiling list, or
@@ -103,7 +119,16 @@ the paste is durable.
 **D5 — what this wall is.** It guards the durable, replicated copy: the
 beads jsonl that syncs to the work instance's internal remote, docs and
 memory files that get committed. It does not see the working tree, the
-session transcript or the pane capture; the paste already happened when
+session transcript, the pane capture, or a message typed in the EDITOR:
+`prepare-commit-msg` runs before the editor opens, so the editor path hands
+it only git's template (measured, git 2.50.1). The crew's commit form
+(`git commit -F - -- paths`, AGENTS.md) and every `-m`, `-F` and `--amend`
+commit are inside; the editor path is the operator's own hand, which is the
+boundary above the ceiling already (f85 §4). The second layer for it is a
+`commit-msg` hook, which `--no-verify` skips; the trigger for filing it is
+the first "commit message" line under the ceiling label in `refusals.log`
+on the work box — the same trigger the runtime-side gate carries in
+Alternatives. For everything it does see, the paste already happened when
 the wall speaks. Routing plus the operator's hand stay the boundary above
 the ceiling (f85 §4). The posture's §3 (ii) sentence "as built, the ceiling
 has no wall" becomes "the ceiling has a wall at the commit; above it,
@@ -127,6 +152,9 @@ routing" once the code bead lands.
   its sibling, with the one-sentence distinction: visibility says where
   content may go, the ceiling says whether it may exist here at all.
 - The hook's head comment counts four walls in the slot, not three.
+- *Amended 2026-09-03:* the ceiling block counts three arms; the hook still
+  counts five walls. Docs that enumerated the ceiling's subjects as "check
+  3's two arms" say three.
 
 ## Alternatives rejected
 

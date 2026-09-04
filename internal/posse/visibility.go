@@ -428,15 +428,21 @@ const DataCeilingConfigKey = "data_ceiling_patterns"
 const dataCeilingConfigWhy = "a data-ceiling class (config " + DataCeilingConfigKey + ":)"
 
 // DataCeilingRule is what a ceiling refusal names. Its scope is check 3's
-// (the ADDED lines of every staged text file, and the ADDED staged paths)
-// and its gate is NONE: it runs above the visibility stamp, in every hooked
-// repo, because the question it asks is not about where the repo goes.
+// two arms (the ADDED lines of every staged file, and the ADDED staged
+// paths) plus a THIRD subject of the ceiling's own, the commit MESSAGE (ADR
+// 0050 D2 as amended 2026-09-03, ranger-base-pqlxr), and its gate is NONE:
+// it runs above the visibility stamp, in every hooked repo, because the
+// question it asks is not about where the repo goes. The enumeration below
+// is the one a writer reads in the refusal, so it says three subjects: a
+// rule that named two while the wall scanned three would send the reader
+// looking for a staged line that is not there.
 const DataCeilingRule = `ADR 0050 D2: a data-ceiling class (config ` + DataCeilingConfigKey + `:) names content
 that may not exist in a local file on this instance at all — not in a bead,
-a doc, a memory file or a source comment, whatever the repo's visibility
-stamp. The system of record's id is the sanctioned citation. The ceiling is
-scanned over the ADDED lines of every staged text file, code included, and
-over the ADDED staged paths, in every repo this instance hooks.`
+a doc, a memory file, a source comment or a commit message, whatever the
+repo's visibility stamp. The system of record's id is the sanctioned
+citation. The ceiling is scanned over the ADDED lines of every staged file,
+code included, over the ADDED staged paths, and over every line of the
+commit MESSAGE, in every repo this instance hooks.`
 
 // DataCeilingWayThrough is the ceiling's remedy, and it differs from every
 // visibility remedy at one point: there is no private db to re-file into.
@@ -453,6 +459,30 @@ would breach the ceiling by the wall's own hand; grep your own staged diff
 for what the class names. If the pattern itself is wrong, only the operator
 can change it (config ` + DataCeilingConfigKey + `:) and re-run
 posse gates install-hooks.`
+
+// DataCeilingMessageWayThrough is the THIRD arm's remedy (ADR 0050 D2 as
+// amended 2026-09-03). It differs from the staged-file remedy at the one
+// point that matters to a writer: the text is not in a file they can edit,
+// it is in the message git was about to take, so the way through is to
+// write the message again. And the refused message does not vanish —
+// measured on git 2.50.1: after a prepare-commit-msg refusal
+// .git/COMMIT_EDITMSG still holds it and HEAD is unchanged. That file is
+// local, never replicated, and the next commit overwrites it, which is the
+// same residual a refused staged file already leaves; say so rather than
+// let a writer discover it.
+const DataCeilingMessageWayThrough = `the way through: rewrite the commit message and cite the system of record's
+id — the id is what a message may carry, never the content behind it. There
+is no private db to re-file this into: the ceiling is about whether it may
+exist here at all, not about where it may go. Nothing was committed — HEAD
+is unchanged and your tree and index are exactly where you left them. The
+message you typed is still in .git/COMMIT_EDITMSG, a local file that never
+replicates and that your next commit overwrites; that is the same residual
+a refused staged file leaves. The refusal gives the class and a hit count
+and never the text it matched — a refusal is itself a local file (the
+terminal, the transcript, refusals.log), and printing the match would
+breach the ceiling by the wall's own hand. If the pattern itself is wrong,
+only the operator can change it (config ` + DataCeilingConfigKey + `:) and
+re-run posse gates install-hooks.`
 
 // opsClassRE is what a class name may be. It is rendered into a shell word
 // and into a hook comment, and it is what a human reads in the refusal, so

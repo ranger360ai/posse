@@ -4322,11 +4322,19 @@ whether it may exist in a local file here at all. A visibility pattern is
 inert in a repo stamped `private` — on purpose, the stamp is the visibility
 record — which is exactly the repo an instance holding someone else's data
 keeps its beads in. So the ceiling is scanned in every repo this instance
-hooks whatever its stamp, above the visibility gate, over the same two arms
-(added lines of every staged text file, added staged paths), always by class
-alone — a refusal is itself a local file — and its remedy is not "re-file
-it in the private db" but remove the paste and keep the system of record's
-id. `install-hooks` prints the ceiling line for private-stamped repos too.
+hooks whatever its stamp, above the visibility gate, over three arms — the
+same two as check 3 (added lines of every staged text file, added staged
+paths) and a third the visibility wall does not have, every line of the
+COMMIT MESSAGE (ADR 0050 D2 as amended 2026-09-03: the message lands in the
+commit object and replicates with the branch, and the hook is already
+holding it as its first argument) — always by class alone, a refusal being
+itself a local file. Its remedy is not "re-file it in the private db" but
+remove the paste and keep the system of record's id; for the message arm,
+rewrite the message, and the text you typed is still in
+`.git/COMMIT_EDITMSG` until your next commit overwrites it. A message typed
+in the EDITOR is the stated exclusion: `prepare-commit-msg` runs before the
+editor opens and is handed git's template alone. `install-hooks` prints the
+ceiling line for private-stamped repos too.
 
 **And it is still a lint, not a boundary** — same class as the allowlist,
 and the honesty is load-bearing here. An instance pattern is friction that

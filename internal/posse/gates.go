@@ -2749,13 +2749,14 @@ exit 1
 const commitGuardHead = `#!/bin/sh
 ` + sharedIndexMarker + ` — installed by posse gates install-hooks. Five walls
 # in one slot: the data ceiling (ADR 0050 — this instance's config
-# ` + DataCeilingConfigKey + `: over every staged text file and added path,
-# under EVERY visibility stamp), the beads visibility guard (rangerhq-hrz,
-# extended by ADR 0024 D2 checks 1+2+3 to a docs-genre allowlist, an
-# OpsPatterns scan over staged markdown, and a scan for this box's own
-# identity literals over every staged text file), the constitution-path
-# guard (ranger-base-ak3e), the ADR sha-stamp guard (ADR 0051 D4/D5,
-# ranger-base-glewr) and the shared-index commit guard (rangerhq-lmq9).
+# ` + DataCeilingConfigKey + `: over every staged text file, every added path
+# and the commit message, under EVERY visibility stamp), the beads
+# visibility guard (rangerhq-hrz, extended by ADR 0024 D2 checks 1+2+3 to a
+# docs-genre allowlist, an OpsPatterns scan over staged markdown, and a scan
+# for this box's own identity literals over every staged text file), the
+# constitution-path guard (ranger-base-ak3e), the ADR sha-stamp guard
+# (ADR 0051 D4/D5, ranger-base-glewr) and the shared-index commit guard
+# (rangerhq-lmq9).
 # Foreign hooks are never overwritten; remove this file to uninstall.
 # ADR 0002 §3.
 `
@@ -3206,6 +3207,7 @@ const (
 	dataCeilingScanLabel = "data ceiling scan"
 	stagedPathMatched    = "matched in the staged added path(s) — the FILENAME, not its content:"
 	stagedLineMatched    = "matched in the staged additions:"
+	commitMessageMatched = "matched in the commit message:"
 )
 
 // dataCeilingStampTail is what the ceiling's refusals.log lines carry after
@@ -3323,9 +3325,12 @@ func shComment(ind, text string) string {
 // dataCeilingCheck renders the data ceiling's block (ADR 0050 D2): this
 // instance's config data_ceiling_patterns: over the ADDED lines of every
 // staged text file and the ADDED staged paths — check 3's two arms, through
-// the same renderer — ABOVE the visibility gate, so it runs whatever the
-// repo's stamp. "" when the list is empty: an instance that configured no
-// ceiling pays for no diff.
+// the same renderer — and then over every line of the commit MESSAGE, which
+// is the ceiling's own third arm and check 3 does not have it (ADR 0050 D2
+// as amended 2026-09-03; ceilingMessageArm below carries the reasons). All
+// three ABOVE the visibility gate, so they run whatever the repo's stamp.
+// "" when the list is empty: an instance that configured no ceiling pays
+// for no diff and for no read of the message file.
 //
 // ALWAYS class-only, and not as a courtesy: a refusal is itself a local
 // file — the terminal, the transcript, the pane capture, refusals.log —
@@ -3386,12 +3391,98 @@ may exist in a local file on this instance AT ALL — a restricted-tier
 banner, a restricted system's hostname, its export file-name shape — and
 the answer does not depend on where the repo goes. The system of record's
 id is the sanctioned citation; the content behind it is not.
-Same two arms as check 3 below (ADDED lines of every staged text file, any
-path, code included; then ADDED staged paths), same matcher, same override,
-class-only ALWAYS: a refusal is itself a local file.
+THREE ARMS. The first two are check 3's below (ADDED lines of every staged
+text file, any path, code included; then ADDED staged paths). The third is
+the ceiling's own and check 3 does not have it: every line of the commit
+MESSAGE, which this hook is already holding in "$1" (ADR 0050 D2 as amended
+2026-09-03, ranger-base-pqlxr). Same matcher, same override, class-only
+ALWAYS: a refusal is itself a local file.
 Refused FIRST so a line that trips both this list and a visibility list is
 refused with the stricter remedy — there is no private db to re-file it in.`)
-	return twoArmScan("", "the data ceiling", head, []visScanSource{src})
+	msg := visGuardRefusal{
+		badVar:       "posse_bad",
+		label:        dataCeilingScanLabel,
+		logTail:      "(" + dataCeilingStampTail + ", commit message)",
+		overrideAt:   " (" + dataCeilingStampTail + ", commit message)",
+		overrideWhat: "content above this instance's data ceiling is going into the commit MESSAGE",
+		header:       "data-ceiling content in the commit MESSAGE",
+		rule:         DataCeilingRule,
+		matched:      commitMessageMatched,
+		wayThrough:   DataCeilingMessageWayThrough,
+		footer:       footer,
+	}
+	return twoArmScan("", "the data ceiling", head, []visScanSource{src}) + ceilingMessageArm(checks, msg)
+}
+
+// ceilingMessageArm renders the ceiling's THIRD arm (ADR 0050 D2 as amended
+// 2026-09-03, ranger-base-pqlxr): the commit MESSAGE, every line of it, as
+// given. It renders AFTER the two-arm scan and still above the visibility
+// gate, so the order a reader gets is content, path, message, gate.
+//
+// WHY THE MESSAGE IS A SUBJECT AT ALL. D5 says the wall guards the durable,
+// replicated copy and excludes the working tree, the transcript and the
+// pane capture. A commit message is none of those: it lands in the commit
+// object and replicates with the branch. It is also the most-quoted
+// artifact in this shop — a persona's message cites the context it worked
+// from, which is the paste shape exactly. MEASURED on ranger-base-zikpp: a
+// ceiling-matching message committed clean while the same bytes in a staged
+// file were refused.
+//
+// NO NEW GIT COMMAND, and no new dependency: the message file is $1 and
+// `cat` is already this hook's (the MERGE_MSG compare in the shared-index
+// arm reads the same file the same way).
+//
+// $1 SURVIVES THE CHAIN, and it is the one thing this arm needs that the
+// other two do not: posse's own dispatcher runs `"$d/posse-<slot>" "$@"`
+// (chainRender, and the note at gates.go ~2345 says so where the chain is
+// built), so a chained install hands the member the same argv git
+// handed the slot. RESIDUAL, stated: behind a FOREIGN dispatcher (INSTALL.md
+// §9) this arm sees whatever that dispatcher passes on. A dispatcher that
+// drops the argument leaves the arm reading nothing — it cannot refuse
+// wrongly, only stay silent, which is the same failure shape the whole hook
+// has when it is not installed at all.
+//
+// EVERY LINE, STRIPPED OF NOTHING, and that is measured rather than tidy
+// (git 2.50.1): the default --cleanup for -m and -F with no editor is
+// "whitespace", which KEEPS a '#'-leading line — so a pasted markdown
+// heading is a comment-looking line that commits. A reader who strips them
+// here opens a hole with the shape of the paste this wall exists for.
+//
+// NO CASE ON "$2". The message-source argument does not decide anything:
+// the hook already distrusts it for the shared-index arm's exemptions (the
+// table above says why — $2 is "message" mid-merge and for a clean revert
+// alike), and a full-file scan is fail-safe on every path git can take.
+// That is also what puts --amend inside: git hands the hook HEAD's message
+// there, so a message REUSED after the ceiling was configured is scanned.
+//
+// THE ONE PATH IT DOES NOT REACH, stated (D5): a message typed in the
+// EDITOR. prepare-commit-msg runs before the editor opens, so on that path
+// $1 holds git's template alone — measured. The editor path is the
+// operator's own hand, which is above the ceiling already; the second layer
+// for it is a commit-msg hook, and the trigger for filing it is the first
+// "commit message" line under this label in refusals.log.
+func ceilingMessageArm(checks func(indent string) string, msg visGuardRefusal) string {
+	return "\n" + shComment("", `─── the data ceiling, third arm: the commit MESSAGE (ADR 0050 D2) ──────
+"$1" is the message file git is about to take — the same file the
+shared-index arm below compares against MERGE_MSG. Read whole and scanned
+by line, comment-looking lines included: git's default cleanup for -m and
+-F keeps a '#'-leading line, so a pasted markdown heading lands in the
+commit object and replicates with the branch. The refusal's remedy differs
+from the staged file's — rewrite the message, cite the id — because the
+text is not in a file the writer can edit; it is still in
+.git/COMMIT_EDITMSG, local and unreplicated, until the next commit
+overwrites it (measured).
+A message typed in the EDITOR is NOT scanned here and cannot be: this hook
+runs before the editor opens and is handed git's template alone (measured,
+git 2.50.1). That path is the operator's own hand, above the ceiling
+already; the second layer for it is a commit-msg hook.`) +
+		`if [ -f "${1:-}" ]; then
+  posse_added=$(cat "$1" 2>/dev/null)
+  if [ -n "$posse_added" ]; then
+    posse_bad=''
+` + checks("    ") + msg.render("    ") + `  fi
+fi
+`
 }
 
 // identityGuardCheck renders check 3's block: this box's own identity

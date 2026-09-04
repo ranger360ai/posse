@@ -8,9 +8,11 @@ package posse
 // for an instance holding someone else's data, whose bead repo is private on
 // purpose. The ceiling asks a different question of a staged line — may this
 // exist in a local file at all? — so it renders ABOVE the gate, with check
-// 3's two arms (ADDED lines of every staged text file, ADDED staged paths),
-// through the same renderer ranger-base-uzgkz built, always class-only, in
-// its own words, first in order.
+// 3's two arms (ADDED lines of every staged text file, ADDED staged paths)
+// through the same renderer ranger-base-uzgkz built, plus a THIRD arm check
+// 3 does not have — every line of the commit MESSAGE (ADR 0050 D2 as
+// amended 2026-09-03, ranger-base-pqlxr, built in ranger-base-o2v6n) —
+// always class-only, in its own words, first in order.
 //
 // The fixture vocabulary ("QUOKKA", "quokka-export-") is a fixture's own,
 // never this box's: what these pins measure is the mechanism.
@@ -439,8 +441,8 @@ func TestQADataCeilingSharesOneClassNamespace(t *testing.T) {
 			t.Errorf("the private repo's hook must carry %q:\n%s", want, hook)
 		}
 	}
-	if n := strings.Count(hook, "posse_check '"+qaCeilingClass+"'"); n != 2 {
-		t.Errorf("the ceiling class must be stamped exactly twice (content arm, path arm), got %d", n)
+	if n := strings.Count(hook, "posse_check '"+qaCeilingClass+"'"); n != 3 {
+		t.Errorf("the ceiling class must be stamped exactly three times (content arm, path arm, commit-message arm), got %d", n)
 	}
 	if strings.Contains(hook, qaCeilingWord+"-twin") || strings.Contains(hook, qaCeilingWord+"[0-9]+") {
 		t.Error("the hook recorded a REFUSED entry's value — the class is the record")
@@ -465,6 +467,13 @@ func TestQADataCeilingIsSeenIdenticallyByTheL3Probe(t *testing.T) {
 		if p := a.probeL3Hooks(repo, false); !p.CommitGuard {
 			t.Errorf("L3 must vouch for the hook it just stamped with a ceiling (%s): %s", filepath.Base(repo), p.CommitGuardDegraded)
 		}
+	}
+	// And the THIRD arm rides that same set (ADR 0050 D2 as amended
+	// 2026-09-03): if it did not, the probe's re-render would differ from
+	// the installed file by exactly this block and every launch into a
+	// hooked repo would read "ours but stale".
+	if !strings.Contains(qaHookFile(t, w.priv), "third arm: the commit MESSAGE") {
+		t.Error("the stamped hook does not carry the ceiling's commit-message arm")
 	}
 	// And the file IS the render, not merely accepted by it.
 	vis, _ := a.BeadsVisibility(w.priv)
@@ -497,15 +506,32 @@ func TestQADataCeilingRendersAboveTheGateUnderEveryStamp(t *testing.T) {
 		if !(stamp < base && base < helper && helper < ceiling && ceiling < gate) {
 			t.Errorf("%s: want stamp < base < posse_check() < ceiling < gate, got stamp=%d base=%d helper=%d ceiling=%d gate=%d", vis, stamp, base, helper, ceiling, gate)
 		}
-		if strings.Count(hook, "posse_check '"+qaCeilingClass+"' '"+qaCeilingERE+"' "+opsClassOnlyArg) != 2 {
-			t.Errorf("%s: the ceiling must render class-only at both arms", vis)
+		// THREE ARMS, in one order (ranger-base-o2v6n): content, path,
+		// message, and all three above the gate. The order is not cosmetic
+		// — each arm sends the writer to a different remedy, and the one
+		// that speaks is the one whose subject they have to fix.
+		path := strings.Index(hook, "second arm: the same patterns over ADDED staged PATHS")
+		message := strings.Index(hook, "third arm: the commit MESSAGE")
+		if path < 0 || message < 0 {
+			t.Fatalf("%s: an arm's banner is missing (path=%d message=%d)", vis, path, message)
+		}
+		if !(ceiling < path && path < message && message < gate) {
+			t.Errorf("%s: want content < path < message < gate, got content=%d path=%d message=%d gate=%d", vis, ceiling, path, message, gate)
+		}
+		if msgArm := strings.Index(hook, `posse_added=$(cat "$1"`); msgArm < message || msgArm > gate {
+			t.Errorf("%s: the message arm must read $1 between its own banner and the gate, got %d (banner=%d gate=%d)", vis, msgArm, message, gate)
+		}
+		if strings.Count(hook, "posse_check '"+qaCeilingClass+"' '"+qaCeilingERE+"' "+opsClassOnlyArg) != 3 {
+			t.Errorf("%s: the ceiling must render class-only at all three arms", vis)
 		}
 		if !strings.Contains(hook, "─── the data ceiling (ADR 0050)") || !strings.Contains(hook, "Five walls") {
 			t.Errorf("%s: the block's banner and the head comment's count must name the ceiling", vis)
 		}
 	}
-	if hook := CommitGuardHook(VisibilityPrivate, OpsPatternSet{}); strings.Contains(hook, dataCeilingScanLabel) || strings.Contains(hook, "─── the data ceiling") {
-		t.Error("an empty ceiling list must render no block at all")
+	if hook := CommitGuardHook(VisibilityPrivate, OpsPatternSet{}); strings.Contains(hook, dataCeilingScanLabel) ||
+		strings.Contains(hook, "─── the data ceiling") || strings.Contains(hook, "third arm: the commit MESSAGE") ||
+		strings.Contains(hook, `posse_added=$(cat "$1"`) {
+		t.Error("an empty ceiling list must render no block at all — the message arm included: an instance with no ceiling pays for no read")
 	}
 }
 
@@ -551,4 +577,285 @@ func TestQAWarnOpsContentSpeaksTheCeilingUnderEveryStamp(t *testing.T) {
 	if len(lines) != 2 || !strings.HasPrefix(lines[0], "ceiling: ") || !strings.HasPrefix(lines[1], "visibility: ") || !strings.Contains(lines[1], "cost") {
 		t.Errorf("want the ceiling line then the visibility line, got:\n%s", w.String())
 	}
+}
+
+// ─── the THIRD arm: the commit MESSAGE (ADR 0050 D2 as amended 2026-09-03,
+// ranger-base-pqlxr, built in ranger-base-o2v6n) ──────────────────────────
+//
+// A commit message is none of D5's exclusions: it lands in the commit
+// object and replicates with the branch, and it is the most-quoted artifact
+// in this shop — a persona's message cites the context it worked from,
+// which is the paste shape exactly. MEASURED on ranger-base-zikpp: a
+// ceiling-matching MESSAGE committed clean while the same bytes in a staged
+// file were refused. That measurement is kept below as the control.
+
+// qaCeilingMsgCommit stages a clean file and commits it with msg through
+// form — "-m" or "-F -", the crew's own (AGENTS.md) — path-limited, because
+// the shared-index arm in the same hook refuses an unqualified commit and a
+// pin that tripped THAT wall would be green over no ceiling at all.
+func qaCeilingMsgCommit(t *testing.T, w *visWall, repo, rel, body, form, msg string, env []string) (string, error) {
+	t.Helper()
+	w.stage(t, repo, rel, body)
+	if form == "-F -" {
+		return w.gitIn(repo, env, msg, "commit", "-F", "-", "--", rel)
+	}
+	return w.git(repo, env, "commit", "-m", msg, "--", rel)
+}
+
+// PIN (g): the ceiling refuses a commit MESSAGE carrying the vocabulary,
+// under both of the forms that reach this hook with the message already in
+// hand — `-m` and the crew's `-F -` — while the staged file is SPOTLESS, so
+// nothing but the message can be what refused it. Class and hit count only;
+// stdout, stderr and refusals.log carry neither the ERE nor the text, and
+// the log line names the stamp and the subject.
+//
+// CONTROL, and it is ranger-base-zikpp's measurement kept as the failing
+// wrong arm: the same message with the same ERE configured under
+// beads_visibility_patterns: alone commits CLEAN in the private repo and
+// logs nothing under the ceiling's label. That is the pre-o2v6n world, and
+// it is what says this pin measured the third arm rather than the wall.
+//
+// MUTATION-CHECKED (go test -overlay, runs recorded on ranger-base-o2v6n):
+//   - the message arm removed: this pin reds under both forms, the control
+//     stays green.
+//   - the arm rendered INSIDE the stamp gate: this pin reds (private repo),
+//     and the public-stamp arm below stays green — two mutants, told apart.
+//   - the matched text printed (classOnly dropped from the message arm):
+//     the withholding assertions red and nothing else here does.
+func TestQADataCeilingRefusesTheCommitMessage(t *testing.T) {
+	w := qaCeilingWall(t, "")
+	// The MESSAGE carries the vocabulary; the staged file never does.
+	const clean = "package posse\n\n// nothing to see\n"
+	msg := "wire the export\n\nfrom the " + qaCeilingHit + " banner on the source system\n"
+
+	for i, form := range []string{"-m", "-F -"} {
+		t.Run(form, func(t *testing.T) {
+			rel := "internal/posse/msg" + string(rune('a'+i)) + ".go"
+			out, err := qaCeilingMsgCommit(t, w, w.priv, rel, clean, form, msg, w.persona)
+			if err == nil {
+				t.Fatalf("the ceiling must refuse a commit MESSAGE carrying the vocabulary (%s):\n%s", form, out)
+			}
+			for _, want := range []string{
+				"refused by posse gate: data-ceiling content in the commit MESSAGE",
+				"ADR 0050 D2",
+				qaCeilingClass + ": 1 hit(s)",
+				"matched in the commit message:",
+				"rewrite the commit message",
+				".git/COMMIT_EDITMSG",
+				"stamped: " + VisibilityPrivate,
+				DataCeilingConfigKey + ":",
+				VisibilityOverrideEnv + "=" + VisibilityOverrideValue,
+			} {
+				if !strings.Contains(out, want) {
+					t.Errorf("the message refusal must carry %q:\n%s", want, out)
+				}
+			}
+			// The staged file is clean, so the FILE arm must not be what
+			// spoke — or this pin is PIN (a) wearing a message.
+			for _, never := range []string{
+				"data-ceiling content in a staged file",
+				"data-ceiling content in a staged PATH",
+				"remove the paste from the staged file",
+				"matched: ",
+			} {
+				if strings.Contains(out, never) {
+					t.Errorf("a MESSAGE hit must not be refused in the staged file arm's words (%q):\n%s", never, out)
+				}
+			}
+			if !strings.Contains(w.log(t), "data ceiling scan [prepare-commit-msg hook] (stamp: "+VisibilityPrivate+", commit message)") {
+				t.Errorf("the refusal must be logged under the ceiling's label, naming the stamp and the subject:\n%s", w.log(t))
+			}
+			qaNoCeilingVocabulary(t, "the terminal refusal", out)
+			qaNoCeilingVocabulary(t, "refusals.log", w.log(t))
+			w.unstage(t, w.priv, rel)
+		})
+	}
+
+	// THE CONTROL (ranger-base-zikpp, measured before this arm existed):
+	// the same ERE as a VISIBILITY pattern, the same message, the same
+	// private repo — it commits, and the ceiling's label is never written.
+	ctl := newVisWallCfg(t, "instance", OpsPatternsConfigKey+":\n  "+qaCeilingClass+": "+qaCeilingERE+"\n")
+	if set := (&App{ConfigPath: ctl.home + "/config.yaml"}).OpsPatternSet(); len(set.Rejected) > 0 || len(set.Extra) != 1 || len(set.Ceiling) != 0 {
+		t.Fatalf("control premise: the visibility pattern must be accepted and no ceiling configured, got %+v %v %+v", set.Extra, set.Rejected, set.Ceiling)
+	}
+	for i, form := range []string{"-m", "-F -"} {
+		rel := "internal/posse/ctl" + string(rune('a'+i)) + ".go"
+		if out, err := qaCeilingMsgCommit(t, ctl, ctl.priv, rel, clean, form, msg, ctl.persona); err != nil {
+			t.Errorf("control: the same ERE as a VISIBILITY pattern must let the message through in a private repo (%s): %v\n%s", form, err, out)
+		}
+	}
+	if strings.Contains(ctl.log(t), dataCeilingScanLabel) {
+		t.Errorf("control: no ceiling was configured, so nothing may be logged under its label:\n%s", ctl.log(t))
+	}
+}
+
+// PIN (h): a message REUSED after the ceiling was configured. The
+// vocabulary is committed while the hook carries no ceiling at all, then
+// the operator adds the key and re-runs install-hooks, and `git commit
+// --amend` — which hands this hook HEAD's message, source "commit" — is
+// refused. Two things at once: the arm scans a message it did not see
+// typed, and it does not case on "$2".
+//
+// MUTATION-CHECKED: the arm rendered under `case "$2" in message)` — i.e.
+// skipping source=commit — reds THIS pin alone; PIN (g) stays green because
+// -m and -F - both arrive as source "message".
+func TestQADataCeilingRefusesAReusedMessage(t *testing.T) {
+	w := newVisWallCfg(t, "instance", "")
+	a := &App{ConfigPath: w.home + "/config.yaml"}
+	if set := a.OpsPatternSet(); len(set.Ceiling) != 0 {
+		t.Fatalf("fixture premise: the first commit must run under a hook with NO ceiling, got %+v", set.Ceiling)
+	}
+	msg := "import the " + qaCeilingHit + " extract\n"
+	if out, err := qaCeilingMsgCommit(t, w, w.priv, "internal/posse/a.go", "package posse\n", "-m", msg, w.persona); err != nil {
+		t.Fatalf("fixture premise: with no ceiling configured this message must commit: %v\n%s", err, out)
+	}
+
+	// The operator adds the key and re-stamps the hook — the only way the
+	// list ever reaches a repo (ADR 0050 D1/D3).
+	write(t, w.home+"/config.yaml", "beads_visibility:\n  "+w.pub+": public\n  "+w.priv+": private\n"+qaCeilingCfg)
+	if set := a.OpsPatternSet(); len(set.Ceiling) != 2 {
+		t.Fatalf("fixture premise: the ceiling must be accepted after the rewrite, got %+v", set.Ceiling)
+	}
+	if _, _, _, err := a.InstallCommitGuardHook(w.priv); err != nil {
+		t.Fatal(err)
+	}
+
+	// A NEW, clean staged file and --no-edit: nothing this commit writes
+	// carries the vocabulary. The only subject that does is the message it
+	// is reusing out of HEAD.
+	w.stage(t, w.priv, "internal/posse/b.go", "package posse\n\n// clean\n")
+	out, err := w.git(w.priv, w.persona, "commit", "--amend", "--no-edit", "--", "internal/posse/b.go")
+	if err == nil {
+		t.Fatalf("a REUSED message must be scanned by the ceiling:\n%s", out)
+	}
+	if !strings.Contains(out, "data-ceiling content in the commit MESSAGE") || !strings.Contains(out, qaCeilingClass+": 1 hit(s)") {
+		t.Errorf("the amend must be refused by the MESSAGE arm, by class:\n%s", out)
+	}
+	if !strings.Contains(w.log(t), "(stamp: "+VisibilityPrivate+", commit message)") {
+		t.Errorf("the refusal must be logged naming the subject:\n%s", w.log(t))
+	}
+	qaNoCeilingVocabulary(t, "the terminal refusal", out)
+	qaNoCeilingVocabulary(t, "refusals.log", w.log(t))
+}
+
+// PIN (i): a '#'-leading line is scanned, because git KEEPS it. The default
+// cleanup for a message given with -m or -F and no editor is "whitespace",
+// which strips nothing but blank space — so a pasted markdown heading lands
+// in the commit object. The CONTROL is git's own behaviour, asserted rather
+// than assumed: with no ceiling configured the same message commits and
+// `git log` shows the '#' line in HEAD. If a builder ever teaches this arm
+// to strip comment lines, the refusal goes away and the control still shows
+// the line landing — which is the hole, stated.
+//
+// MUTATION-CHECKED: the arm rendered over `grep -v '^#'` reds this pin
+// alone; (g), (h), (k) stay green.
+func TestQADataCeilingScansCommentLookingLines(t *testing.T) {
+	w := qaCeilingWall(t, "")
+	msg := "wire the export\n\n# " + qaCeilingHit + "\n"
+	out, err := qaCeilingMsgCommit(t, w, w.priv, "internal/posse/c.go", "package posse\n", "-F -", msg, w.persona)
+	if err == nil {
+		t.Fatalf("a comment-looking line in the message must still be scanned:\n%s", out)
+	}
+	if !strings.Contains(out, "data-ceiling content in the commit MESSAGE") || !strings.Contains(out, qaCeilingClass+": 1 hit(s)") {
+		t.Errorf("the '#' line must be refused by the MESSAGE arm, by class:\n%s", out)
+	}
+
+	// THE CONTROL: the same message under a wall with no ceiling. It
+	// commits, and git kept the '#' line — so the line the arm scans is a
+	// line that really lands.
+	ctl := newVisWallCfg(t, "instance", "")
+	if out, err := qaCeilingMsgCommit(t, ctl, ctl.priv, "internal/posse/c.go", "package posse\n", "-F -", msg, ctl.persona); err != nil {
+		t.Fatalf("control: with no ceiling this message must commit: %v\n%s", err, out)
+	}
+	body, err := ctl.git(ctl.priv, nil, "log", "-1", "--format=%B")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(body, "# "+qaCeilingHit) {
+		t.Errorf("control: git must KEEP the '#' line under the default cleanup — if it does not, this arm is scanning something that never commits:\n%q", body)
+	}
+}
+
+// PIN (j): THE RESIDUAL, pinned so it cannot change by accident. A message
+// typed in the EDITOR is not scanned and cannot be: prepare-commit-msg runs
+// BEFORE the editor opens and is handed git's template alone (measured,
+// git 2.50.1). So this commit LANDS, and the vocabulary is in HEAD — the
+// residual is real, not a rig artifact, which is why the second assertion
+// is here. ADR 0050 D5 states it; this pin goes red the day a commit-msg
+// layer is added, so that change is deliberate rather than discovered.
+func TestQADataCeilingResidualEditorTypedMessage(t *testing.T) {
+	w := qaCeilingWall(t, "")
+	ed := filepath.Join(t.TempDir(), "editor.sh")
+	write(t, ed, "#!/bin/sh\nprintf '%s\\n' 'from the "+qaCeilingHit+" banner' > \"$1\"\n")
+	if err := os.Chmod(ed, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	w.stage(t, w.priv, "internal/posse/d.go", "package posse\n")
+	out, err := w.git(w.priv, append(append([]string(nil), w.persona...), "GIT_EDITOR="+ed),
+		"commit", "--", "internal/posse/d.go")
+	if err != nil {
+		t.Fatalf("the EDITOR path is D5's stated exclusion — it must still land: %v\n%s", err, out)
+	}
+	body, err := w.git(w.priv, nil, "log", "-1", "--format=%B")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(body, qaCeilingHit) {
+		t.Fatalf("fixture premise: the editor's text must actually be the commit's message, got %q", body)
+	}
+	if strings.Contains(w.log(t), dataCeilingScanLabel) {
+		t.Errorf("nothing may be logged: the hook never saw this text:\n%s", w.log(t))
+	}
+}
+
+// PIN (k): the refusal's own claims, measured. After it, .git/COMMIT_EDITMSG
+// still holds the message the writer typed and HEAD is unchanged — which is
+// what the remedy tells them, and a remedy that names a file that is not
+// there is worse than none. Then the operator's override passes, says so,
+// and logs exactly ONE line whose tail names the commit message.
+//
+// MUTATION-CHECKED: the override branch dropped from the message arm reds
+// the second half; the OVERRIDDEN log line rendered without the subject
+// tail reds the last assertion.
+func TestQADataCeilingMessageRefusalLeavesTheMessageAndOverrides(t *testing.T) {
+	w := qaCeilingWall(t, "")
+	const rel = "internal/posse/e.go"
+	// A HEAD to be unchanged: the scratch repo starts with no commit at all,
+	// and "HEAD is unchanged" over an empty repo asserts nothing.
+	w.plant(t, w.priv, "internal/posse/base.go", "package posse\n")
+	head0, err := w.git(w.priv, nil, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatalf("fixture premise: the scratch repo must have a HEAD to be unchanged: %v %s", err, head0)
+	}
+	msg := "wire it\n\nfrom the " + qaCeilingHit + " banner\n"
+	out, err := qaCeilingMsgCommit(t, w, w.priv, rel, "package posse\n", "-F -", msg, w.persona)
+	if err == nil {
+		t.Fatalf("fixture premise: the message must be refused:\n%s", out)
+	}
+	// The refusal a writer reads before they reach for the override still
+	// withholds the value — class-only is the rule's own condition, not a
+	// courtesy, and this is the arm whose remedy points at a LOCAL file.
+	qaNoCeilingVocabulary(t, "the terminal refusal", out)
+	editmsg, rerr := os.ReadFile(filepath.Join(w.priv, ".git", "COMMIT_EDITMSG"))
+	if rerr != nil || !strings.Contains(string(editmsg), qaCeilingHit) {
+		t.Errorf("the remedy says the message is still in .git/COMMIT_EDITMSG — it must be (err=%v):\n%q", rerr, string(editmsg))
+	}
+	if head1, _ := w.git(w.priv, nil, "rev-parse", "HEAD"); head1 != head0 {
+		t.Errorf("a refused commit must leave HEAD alone: %q -> %q", head0, head1)
+	}
+
+	before := strings.Count(w.log(t), dataCeilingScanLabel)
+	out, err = w.gitIn(w.priv, append(append([]string(nil), w.persona...), VisibilityOverrideEnv+"="+VisibilityOverrideValue),
+		msg, "commit", "-F", "-", "--", rel)
+	if err != nil || !strings.Contains(out, dataCeilingScanLabel+" OVERRIDDEN") {
+		t.Fatalf("the operator's override must pass, and say so: %v\n%s", err, out)
+	}
+	log := w.log(t)
+	if after := strings.Count(log, dataCeilingScanLabel); after != before+1 {
+		t.Errorf("the override must log exactly one line, got %d new:\n%s", after-before, log)
+	}
+	if !strings.Contains(log, dataCeilingScanLabel+" OVERRIDDEN [prepare-commit-msg hook] (stamp: "+VisibilityPrivate+", commit message)") {
+		t.Errorf("the OVERRIDDEN line must name the stamp and the commit message:\n%s", log)
+	}
+	qaNoCeilingVocabulary(t, "refusals.log after the override", log)
 }

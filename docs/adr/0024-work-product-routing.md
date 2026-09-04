@@ -222,7 +222,7 @@ clean tree having measured a quarter of it (ranger-base-4v7f9).
   walks past any regex. Check 3 gained a path arm and check 2 deliberately did not: a
   runbook NAMED after a plan brand still passes, because that class has
   the detector-source residual check 3's literals do not, and its
-  false-positive number over a path list is unmeasured. The wall scans
+  false-positive number over a path list is unmeasured. This wall scans
   added lines and added paths, never commit metadata: the author field is
   whatever `user.email` resolves to for that commit and is the operator's
   to set — which is why the e-mail literal is derived from EVERY config
@@ -232,10 +232,14 @@ clean tree having measured a quarter of it (ranger-base-4v7f9).
   `private` runs none of them — by design for visibility, and a hole for an
   instance holding someone else's data, whose bead repo is private on
   purpose; ADR 0050 adds a second key, `data_ceiling_patterns:`, rendered
-  ABOVE the gate with check 3's two arms and refused by class alone in
-  every hooked repo: visibility says where content may go, the ceiling says
-  whether it may exist here at all (built in ranger-base-nfg8l).
-  The boundary remains the routing rule plus repo visibility.
+  ABOVE the gate with check 3's two arms — and, since ADR 0050 D2 as
+  amended 2026-09-03, a third arm of its own over every line of the COMMIT
+  MESSAGE, which is why the "never commit metadata" above is scoped to this
+  wall rather than to the slot (built in ranger-base-nfg8l, third arm in
+  ranger-base-o2v6n) — refused by class alone in every hooked repo:
+  visibility says where content may go, the ceiling says whether it may
+  exist here at all. The boundary remains the routing rule plus repo
+  visibility.
 - The identity-literal false-positive rate is ASSUMED low (the literals
   are paths and an e-mail); the build bead's done-when includes the hrz
   method — measure against the post-scrub tree and require zero hits.
