@@ -585,6 +585,18 @@ func TestTryLockLaunchesNamesWhichFailure(t *testing.T) {
 		t.Fatalf("the control arm could not take a free lock: %s", why)
 	}
 	lock.Release()
+	// Said out loud, not left to the dedupe below: `note` only catches a
+	// taken lock that carries some OTHER arm's class, so a reason of its
+	// own walked past this test entirely. MEASURED under -overlay
+	// (ranger-base-2ljyf): a take returning "lock taken" left this test
+	// green and was caught only by TestTryLockLaunchesDoesNotWait, while a
+	// take returning "a launcher is running" failed both. An empty why is
+	// the whole contract of the taken arm — both readers branch on the lock
+	// being nil, and neither has any business printing a reason for a lock
+	// it holds.
+	if why != "" {
+		t.Errorf("a lock that was TAKEN must carry no reason, got %q", why)
+	}
 	note("a free lock", why)
 
 	// Held: the one arm that means wait for someone else.
