@@ -2,8 +2,8 @@
 
 `merge-back blocked: posse/jian-yang-posse-ranger-base-tenf5 does not land on
 main` names a real rebase conflict, and the conflict is a DUPLICATE: the
-function that commit restores was already restored on `main` seven minutes
-later under a different bead. **Verdict: DO-NOT-LAND the branch.** But this is
+function that commit restores was already restored on `main` 5m39s later
+(`0837f2b` 08:14:38, `6ecb521` 08:20:17) under a different bead. **Verdict: DO-NOT-LAND the branch.** But this is
 not the clean do-not-land of `docs/notes.d/ranger-base-fmift.md` — the branch
 carried eight lines `main` never got, and they are re-landed here.
 
