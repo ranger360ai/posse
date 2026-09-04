@@ -112,3 +112,66 @@ timeout panic, exactly the shape the `Makefile`'s `-timeout 25m` comment
 so the flag is the difference between a red and a green and the red is the
 apparatus, not the tree. Run `make test`, never a bare `go test`, for anything
 you intend to read as a verdict.
+
+### The second run, and a red that is not this diff
+
+`main` moved from `e2757c0` to `607fc32` during that 858s run — the shelf-life
+trap `docs/notes.d/` has recorded before — so this branch was rebased onto
+`607fc32` and `make test` re-run there, because a green measured at the old sha
+does not describe the tree the launcher actually lands.
+
+That second run is **RED, and not from anything here**:
+
+```
+# github.com/ranger360ai/posse/internal/posse [.../internal/posse.test]
+internal/posse/herdr_test.go:245:11: undefined: fakeBdDropClosed
+FAIL	github.com/ranger360ai/posse/internal/posse [build failed]
+```
+
+Every other package stayed green in the same run (root 347.6s, `cmd/posse`
+231.6s). This commit adds one Markdown file and cannot affect a Go build, and
+the red reproduces on `607fc32` with nothing of this branch applied.
+
+The definition count on `main`, one call per commit
+(`git grep -c "func fakeBdDropClosed" <sha> -- internal/posse/herdr_test.go`):
+
+| commit | definitions | |
+|---|---|---|
+| `455d344` | 1 | fixed the redeclaration two seats had created |
+| `e2757c0` | 1 | where the green above was measured |
+| `c9820d1` | 1 | |
+| `5b4e686` | **0** | took out the last remaining definition |
+| `607fc32` | **0** | |
+
+`5b4e686` (ranger-base-5im1q) was written against a `main` where BOTH copies
+were live and says so in its own message; by the time it landed, `455d344`
+(ranger-base-pju9t) had already removed one. It then removed the other,
+believing it was the surviving duplicate — a stale fix that was correct when
+written and wrong when it landed, over an already-corrected defect. The call
+at line 245 and all three doc comments survived, which is the tell.
+
+Filed as **ranger-base-44jvd** (P0) with the recovery, rather than fixed here
+under strict scope. Note `ranger-base-jhyiv` is open against the same symbol
+and file in the OPPOSITE direction ("duplicate fakeBdDropClosed"), a condition
+that stopped being true at `455d344`.
+
+Worth keeping for the next reader: `go build ./...` is **green** on this
+defect, because the missing symbol lives in a `_test.go` file. Only a TEST
+build asks — `go vet ./internal/posse/` or `go test -c ./internal/posse/`.
+
+**Resolved while this was being written, by another lane.** `6ecb521`
+(ranger-base-jzoci, gwart, 2026-09-04 08:20:17) restored the definition —
+`git grep -c` gives 1 again at that commit. That bead was filed independently
+from the push lane as an escape from ranger-base-hlv21 about seven minutes
+before this one, so **ranger-base-44jvd is a duplicate** and is closed
+pointing at `6ecb521`. Kept in this note anyway, because the diagnosis is the
+durable part and the shape recurs: the count table above is one `git grep -c`
+loop and it names the over-removal in a single reading.
+
+The reason two beads exist for one red is worth its own line. Both were filed
+inside a ten-minute window by seats that could not see each other, which is
+what happens when `main` goes red on a busy queue — every seat rebasing onto
+it discovers the same break at once. Checking the open list first is
+necessary and was done here (122 open beads scanned, no hit for this symbol in
+this direction), and it is still not sufficient, because the duplicate had not
+been filed yet at the time of the scan.
