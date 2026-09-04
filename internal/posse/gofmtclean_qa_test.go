@@ -11,6 +11,17 @@ package posse
 // STATE of the tree with nothing holding it, which is how the same drift
 // arrived twice in one day and was found by hand both times.
 //
+// AND IT IS NOT THE ONLY READER ANY MORE (ranger-base-rulbl). Two more
+// commits reached main unformatted after this pin existed — ranger-base-edg8
+// and ranger-base-4v4r6 — because this test lives in internal/posse, a ~950s
+// package no seat runs whole, and a focused `-run` filter selects by test
+// NAME: nobody's filter has ever named `TreeIsGofmtClean`, because gofmt is
+// nobody's subject. `make fmt-check` is the ~1.5s door to the same question,
+// wired into `make test`'s sub-second preflight; gofmtdoor_qa_test.go at the
+// repo root pins that it exists, that it reaches every .go file this walk
+// does, and that it can fail. This test is still the pin. Run the door before
+// you commit whenever your run was a `-run` filter.
+//
 // go/format is what gofmt runs; comparing its output to the file is the same
 // question `gofmt -l` answers, without needing a gofmt on PATH — which in a
 // gated session is a shim, not the tool.
@@ -24,8 +35,11 @@ import (
 )
 
 // The roots `make fmt` writes, so the pin and its fix name the same files:
-// `gofmt -w cmd internal embed.go`. The root is walked non-recursively for
-// its own .go, which is embed.go and its neighbours.
+// `$(GOFMT) -w $(FMT_ROOTS)`, which is `cmd internal *.go`. The root is
+// walked non-recursively for its own .go, which is embed.go and its
+// neighbours. Those neighbours are 43 *_qa_test.go files that this walk read
+// and `make fmt` did not write until ranger-base-rulbl widened it — the
+// equality this comment claims was false for as long as the file existed.
 var qgfRoots = []string{"cmd", "internal", "."}
 
 func TestTreeIsGofmtClean(t *testing.T) {

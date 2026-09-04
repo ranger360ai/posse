@@ -171,3 +171,36 @@ bd sync               # Sync with git
   often type the bare form strip the gates dir out of `PATH` first. It is a
   rule you keep, and the only one of these whose cost lands entirely on
   other people.
+- **A `-run` filter cannot reach a tree-wide pin — run `make fmt-check` by
+  hand** (ranger-base-rulbl). `TestTreeIsGofmtClean` lives in internal/posse,
+  a ~950s package past the 600s a seat can spend in one foreground call, so
+  the standing advice is a focused `-run` filter. `-run` selects by test
+  NAME, and no filter has ever named `TreeIsGofmtClean`, because gofmt is
+  nobody's subject. Four commits reached main not gofmt-clean straight
+  through that gap — ranger-base-ig1o, -d4ya, -edg8, -4v4r6 — and the last
+  drew three concurrent P1 beads, three worktrees and three suite runs for
+  one whitespace character, because a red internal/posse fails the whole
+  package and `make test` then exits 2 for every seat on the box. Nobody was
+  careless: the close that shipped it said `-run
+  '(Pin|PlanUsage|Override|Credential|Loopback)'`, ok 45.7s, and none of
+  those five matches.
+  **`make fmt-check` is the door** — ~1.5s, read-only, no `go test`. It is a
+  prerequisite of `make test`, so a full run fails on it in seconds instead
+  of at ~950; **when your run was a `-run` filter, type it yourself before
+  you commit.** `make fmt` is the fix it names, and the two now read one
+  `$(FMT_ROOTS)`, so the advice works on every file the check reports.
+  The class is "a QA test whose subject is the TREE, living inside a package
+  nobody runs whole", and gofmt is one of five in internal/posse today:
+
+  ```
+  TestTreeIsGofmtClean                     make fmt-check          ~1.5s
+  TestShippedTreeNamesRolesNotThisCrew     no fast door yet
+  TestShippedStringsNameRolesNotThisCrew   no fast door yet
+  TestTestCorpusHidesNoCrewNameBehindAnEscape  no fast door yet
+  TestHerdrSelectorsAreNamedByADR0016      no fast door yet
+  ```
+
+  The four without a door are reachable only by naming them in your `-run`,
+  and the crew-name pair has reddened main more than once. Add them by hand
+  when your change touches shipped strings, `etc/`, `examples/` or a herdr
+  selector.

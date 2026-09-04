@@ -13,6 +13,20 @@
 GOBIN  ?= go
 BINDIR ?= $(HOME)/.local/bin
 
+# gofmt, and the files it is asked about. One pair of definitions because
+# `fmt` (which writes) and `fmt-check` (which reads) have to name the same
+# files or the reader's "run `make fmt`" is advice that does not work
+# (ranger-base-rulbl): before this, `fmt` named `embed.go` while
+# TestTreeIsGofmtClean walked the whole repo root, so the 43 *_qa_test.go
+# files beside embed.go were pinned by a test and fixed by nothing.
+#
+# The toolchain's gofmt, not PATH's. gofmt's output is version-specific and
+# the pin runs go/format from $(GOBIN)'s own toolchain, so a PATH gofmt from
+# a different Go would disagree with the test it is a door to; a gated
+# session's PATH is shims before tools.
+GOFMT     := $(shell $(GOBIN) env GOROOT)/bin/gofmt
+FMT_ROOTS := cmd internal *.go
+
 # Stamp the dev build so `posse version` / the cockpit say which build is live.
 # The release build stamps itself — it knows its sha is clean.
 #
@@ -28,7 +42,7 @@ BINDIR ?= $(HOME)/.local/bin
 BUILD_STAMP := $(shell $(GOBIN) run ./cmd/buildstamp)
 LDFLAGS     := -X github.com/ranger360ai/posse/internal/posse.Build=$(BUILD_STAMP)
 
-.PHONY: build release install deploy test test-reuse verify-test-times verify-suite-lock verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-govern-honesty verify-grok-pin verify-codex-pin verify-credential-paths verify-hook-freshness verify-bd-pin verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
+.PHONY: build release install deploy test test-reuse fmt-check verify-test-times verify-suite-lock verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-govern-honesty verify-grok-pin verify-codex-pin verify-credential-paths verify-hook-freshness verify-bd-pin verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
 
 build:
 	$(GOBIN) build -ldflags '$(LDFLAGS)' -o bin/posse-go ./cmd/posse
@@ -166,7 +180,7 @@ release-notes:
 # against the fleet load guard's ceiling of 60 — so the shop stopped hiring at
 # the moment five seats were about to free. A `-run` filter or a named package
 # is NOT queued. `make verify-suite-lock` (~5s) pins the slots.
-test: verify-test-times verify-parallel verify-suite-lock
+test: fmt-check verify-test-times verify-parallel verify-suite-lock
 	scripts/test-times.sh $(GOBIN) test -timeout 25m ./...
 	@scripts/audit-silent-reverts.sh --quiet
 
@@ -246,7 +260,30 @@ test-linux:
 	scripts/test-linux.sh
 
 fmt:
-	gofmt -w cmd internal embed.go
+	$(GOFMT) -w $(FMT_ROOTS)
+
+# The read-only half, and the whole of ranger-base-rulbl: ~1.5s (0.8s of it
+# this Makefile's own parse), no go test, no suite. `TestTreeIsGofmtClean`
+# (internal/posse/gofmtclean_qa_test.go) is the pin and stays the pin; this is
+# a door to it that opens in under two seconds instead of ~950.
+#
+# WHY A DOOR WAS NEEDED. That pin lives inside internal/posse, a ~950s
+# package, so the standing advice to every seat is a focused `-run` filter
+# instead. `-run` selects by test NAME, and no seat's filter has ever named
+# `TreeIsGofmtClean`, because gofmt is nobody's subject. Four commits reached
+# main not gofmt-clean that way (ranger-base-ig1o, -d4ya, -edg8, -4v4r6); the
+# last drew three concurrent P1 beads, three worktrees and three suite runs
+# for one whitespace character, because a red internal/posse fails the whole
+# package and `make test` then exits 2 for every seat on the box.
+#
+# Run it by hand before you commit whenever your run was a `-run` filter.
+fmt-check:
+	@out=$$($(GOFMT) -l $(FMT_ROOTS)); \
+	if [ -n "$$out" ]; then \
+		echo "not gofmt-clean — run \`make fmt\`:"; \
+		echo "$$out" | sed 's|^|  |'; \
+		exit 1; \
+	fi
 
 # Register the cockpit plugin with the running herdr (local dev link).
 # The manifest runs ./bin/posse relative to the plugin root; that is a symlink
