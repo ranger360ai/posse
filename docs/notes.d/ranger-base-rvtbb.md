@@ -83,3 +83,35 @@ instruments say the same word (`STRAND`) for both. Before hand-rebasing any
 block, run the pin the strand existed for at `main` **with the strand's own
 content overlaid**. Green-at-main says the deliverable is met; the overlay arm
 says whether landing it would take it back.
+
+### Third pass, and the exit this branch was missing (ranger-base-ygp08)
+
+2026-09-04. The same block was filed a **third** time against the same
+untouched branch (`ranger-base-c3xtt` 08-31 → `ranger-base-rvtbb` 09-03 →
+`ranger-base-ygp08` 09-04), because `noteMergeBlocked` dedupes over OPEN beads
+only (`ranger-base-j8qmj`) and a do-not-land verdict is closed by definition.
+Re-confirmed at `main` `e88366a`, both arms, in ~10s:
+
+```
+control    go test ./internal/posse/ -run 'TestBeadsVisibilityGuardHook$' -count=1   ok 5.6s
+wrong arm  same, with the strand's notes.txt->README.md probe overlaid              FAIL 4.8s
+```
+
+The wrong arm still names both OpsPatterns rules the fixture's deliberately
+ops-class line trips — the `cost` and `guard` classes, quoted in the test
+fixture itself and not restated here. Per-path content is unchanged from the
+rvtbb reading — 17 branch-only lines, 9 of them the strand's own hunk
+and 8 base lines `main` rewrote; the file is 639 on the branch against 1263 on
+`main` now. `git cherry main <B>` says `+` and no `-x` trailer for `3365977`
+exists on `main`, so `equivalentOnBase`/`measuredOnBase` have nothing to read
+and never will: the strand was superseded by an independent fix, never picked.
+
+**The lesson is not about the verdict, it is about the exit.** Three sibling
+branches in exactly this state each carry an `OPERATOR: retire ...` question
+bead (`ranger-base-s0ih6` 4ts30, `ranger-base-enaij` 9a53x, `ranger-base-s0eo2`
+nw9zg); this one carried none, which is the whole reason a settled verdict was
+re-derived twice. So the second close of a merge-back block is not "comment the
+verdict again" — it is **file the operator ask**, because the tree is the only
+thing that stops the loop and no persona can remove it (`git worktree remove`
+is denied by the auto-mode classifier, and `RemoveSessionTree` counts commits,
+not content). Filed for this branch as `ranger-base-4nco1`.
