@@ -28,7 +28,9 @@ package posse
 // means it is on main" stays true for the QA verify pass (ADR 0006 §3).
 //
 // WHAT WAS MEASURED, so the next reader does not have to (bd 0.49.1, git
-// 2.39.3, in a throwaway repo with a tracked `.beads/issues.jsonl`):
+// 2.39.3, in a throwaway repo with a tracked `.beads/issues.jsonl`, and
+// re-measured on bd 0.50.3 — see WHICH VERSION, WHICH STORE CLASS below,
+// because on 0.50.3 the class is the whole of it):
 //
 //   - With an ABSOLUTE `redirect`, bd reads and writes the main database
 //     from the worktree, creates no database of its own, and the graph does
@@ -64,6 +66,24 @@ package posse
 //
 //   - `redirect` is in bd's own bundled `.beads/.gitignore`, so writing one
 //     leaves the worktree clean in any bd-initialised repo.
+//
+//   - WHICH VERSION, WHICH STORE CLASS (2026-09-04, ranger-base-9lrzx). What
+//     the live pins in worktreelive_test.go assert out of the bullets above
+//     is re-measured on bd 0.50.3 and holds there — for a SQLite-backed
+//     store, which is what `bd init` built on 0.49.1 and what the operator's
+//     queue is.
+//     They do NOT hold for a no-db (JSONL-only) store, which is what
+//     0.50.3's default `--backend dolt` silently falls back to when bd is
+//     built without CGO: there bd reads the worktree's `redirect` for the
+//     RESOLUTION (`bd where` answers the main checkout's `.beads` and names
+//     the redirect that took it there) and then reads and writes the
+//     worktree's own `issues.jsonl` anyway, so a bead filed from the
+//     worktree never reaches the main graph. The fork is invisible from a
+//     read, because the worktree's checked-out jsonl carries the main rows
+//     by construction; only a write tells them apart.
+//     TestLiveWorktreeNoDbStoreForksTheGraph pins it. posse cannot fix that
+//     from here — it is bd's resolution, and seedBeadsRedirect is already
+//     naming the right directory.
 //
 //   - `git merge --ff-only <branch>` in the main checkout succeeds with
 //     unrelated uncommitted changes present, and refuses rather than
@@ -553,8 +573,11 @@ func seedTree(t *SessionTree, a *App) error {
 // and bd warns once and silently falls back to a stale path (rangerhq-09o2).
 // An absolute path has no such arithmetic to get wrong.
 //
-// Who reads it, since bd 0.49.1 does not (see the CORRECTED bullet above):
-// POSSE does. beadsHome (beadloss.go) resolves this file, and the seatbelt
+// Who reads it, since bd does not — not on 0.49.1 and not on 0.50.3 against
+// the SQLite store posse runs on, where bd resolves the worktree to the main
+// checkout by itself (see the CORRECTED and WHICH VERSION bullets above; a
+// no-db store does read this file, and then answers from the worktree's own
+// jsonl regardless, so it is no help there either): POSSE does. beadsHome (beadloss.go) resolves this file, and the seatbelt
 // writable set and the codex launch line are built from what it answers
 // (ADR 0012 D3-C). A worktree with no redirect leaves beadsHome answering
 // the worktree's own `.beads`, so a caged persona is granted a directory bd

@@ -46,6 +46,29 @@ package posse
 //     the directory bd resolves to. That is the arm that fails when
 //     seedBeadsRedirect does not run.
 //
+// WHICH bd, AND WHICH STORE CLASS (measured 2026-09-04, bd 0.50.3 —
+// ranger-base-9lrzx). Everything above was measured on bd 0.49.1, where a
+// plain `bd init` built a SQLite-backed store. On 0.50.3 the pins in this
+// file still hold FOR THAT CLASS — the worktree resolution, the redirect
+// precedence, the agreement arm and the staleness trap all pass against it.
+// (The one shape above no pin covers is the "fresh clone", and a spot-check
+// says the half that matters here survives too: with the database deleted
+// and the tracked jsonl left, bd rebuilds it in the MAIN checkout and not in
+// the worktree. It came back empty and prefixless in that spot-check, which
+// is not pinned and was not chased — see ranger-base-9lrzx.) What did change
+// on 0.50.3 is which class `bd init` builds by default: the default is
+// `--backend dolt`, and a bd built without CGO — the binary on this box —
+// falls back to a no-db (JSONL-only) store with nothing but a note on stdout ("dolt backend requires CGO (not available in this build).
+// Falling back to JSONL-only mode."). The class is not cosmetic. A redirect
+// into a no-db store is resolved by `bd where` and then ignored by the reads
+// and the writes, which go to the LOCAL `.beads/issues.jsonl` instead —
+// TestLiveWorktreeNoDbStoreForksTheGraph pins that shape, and it is why the
+// witness arm at the bottom of TestLiveWorktreeBdResolvesTheWorktreeItself
+// went dead rather than red. So liveBeadsRepo NAMES the class rather than
+// taking this box's default; the operator's own queue is SQLite, so SQLite
+// is both the class these findings were measured on and the class posse
+// actually runs against.
+//
 // Also measured 2026-08-25, and still true: the worktree's own checked-out
 // issues.jsonl, materialized with a fresh mtime, raises no staleness warning
 // however far forward its mtime is moved — bd checks the jsonl beside the
@@ -138,16 +161,45 @@ func stopLeakedDaemons(t *testing.T, dirs ...string) {
 	}
 }
 
-// liveBeadsRepo is a real git repo with a real bd database holding one row
-// titled `row`, committed. The daemon bd's own pre-commit hook starts here is
-// reaped in cleanup.
+// liveBeadsRepo is a real git repo with a real SQLite-backed bd database
+// holding one row titled `row`, committed. The daemon bd's own pre-commit
+// hook starts here is reaped in cleanup.
+//
+// SQLite is asked for by name because the default drifts: see WHICH bd, AND
+// WHICH STORE CLASS in the header. It is the class every finding in this
+// file was measured on and the class the operator's queue is.
 func liveBeadsRepo(t *testing.T, bd func(string, ...string) (string, error), row string) string {
 	t.Helper()
+	return liveBeadsRepoOfClass(t, bd, row, "sqlite")
+}
+
+// liveBeadsRepoOfClass is that repo in a named store class: "sqlite" for the
+// beads.db store, "no-db" for the JSONL-only one.
+//
+// The class is CHECKED after `bd init` rather than trusted to the flag, and
+// that check is the whole lesson of ranger-base-9lrzx: a fixture that takes
+// whatever class bd feels like building measures a different bd on a
+// different box, and reports it as an arm failing somewhere far away. If bd
+// ever accepts the flag and builds the other class, this fatals HERE, naming
+// both classes, instead.
+func liveBeadsRepoOfClass(t *testing.T, bd func(string, ...string) (string, error), row, class string) string {
+	t.Helper()
+	initArgs := []string{"init", "--backend", "sqlite"}
+	if class == "no-db" {
+		initArgs = []string{"init", "--no-db"}
+	}
 	repo := wtRepo(t)
-	if out, err := bd(repo, "init"); err != nil {
-		t.Skipf("bd init did not take in a throwaway repo: %v %s", err, out)
+	if out, err := bd(repo, initArgs...); err != nil {
+		t.Skipf("bd %s did not take in a throwaway repo: %v %s", strings.Join(initArgs, " "), err, out)
 	}
 	t.Cleanup(func() { stopLeakedDaemons(t, repo) })
+	built := "no-db"
+	if _, err := os.Stat(filepath.Join(repo, ".beads", "beads.db")); err == nil {
+		built = "sqlite"
+	}
+	if built != class {
+		t.Fatalf("bd accepted %q and built a %s store, not the %s one: the class this pin was measured on is gone, and every arm below would be asking a different bd", strings.Join(initArgs, " "), built, class)
+	}
 	if out, err := bd(repo, "create", row, "-t", "task"); err != nil {
 		t.Fatalf("bd create in %s: %v %s", repo, err, out)
 	}
@@ -317,7 +369,10 @@ func TestLiveWorktreeBdResolvesTheWorktreeItself(t *testing.T) {
 	// The witness: same plant, main checkout with no `.beads`, and now bd
 	// reads it. (posse writes no redirect in this shape — seedBeadsRedirect
 	// returns early with nothing to keep unforked — so the plant is by hand,
-	// as it is above.)
+	// as it is above.) It witnesses on the SQLite class only: a redirect into
+	// a no-db store resolves here and still answers from the local jsonl, so
+	// a fixture that quietly built one left this arm asserting nothing
+	// (ranger-base-9lrzx, and the header says how that happened).
 	bare, err := a.EnsureSessionTree(wtRepo(t), "s-2", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -329,7 +384,7 @@ func TestLiveWorktreeBdResolvesTheWorktreeItself(t *testing.T) {
 		t.Fatalf("the planted redirect is not one bd honours anywhere, so the arm above measured nothing: resolved %q, want %q", got, want)
 	}
 	if out, err := bd(bare.Path, "list"); err != nil || !strings.Contains(out, "in the other database") {
-		t.Fatalf("the planted redirect resolves but returns no rows, so it is not a live database: %v\n%s", err, out)
+		t.Fatalf("the planted redirect resolves but returns no rows, so it is not a live database — check the STORE CLASS before anything else, a no-db target resolves and then answers from the local jsonl (ranger-base-9lrzx): %v\n%s", err, out)
 	}
 }
 
@@ -343,5 +398,62 @@ func misdirect(t *testing.T, tree, target string) {
 	}
 	if err := os.WriteFile(filepath.Join(dir, "redirect"), []byte(target+"\n"), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// The store class the findings above do NOT hold for (measured 2026-09-04,
+// bd 0.50.3 — ranger-base-9lrzx).
+//
+// With a no-db (JSONL-only) main checkout, bd resolves the session worktree
+// to the main checkout's `.beads` — `bd where` says so and names posse's
+// redirect as what took it there — and then reads and writes the worktree's
+// OWN `.beads/issues.jsonl` anyway. A bead filed from the worktree is in the
+// worktree's jsonl and never reaches the main one: the graph forks, while
+// the resolution the cage's grant is built from stays perfectly correct.
+// (The read half hides it: the worktree's checked-out jsonl carries the main
+// checkout's rows by construction, so "the worktree sees the main rows" is
+// true there for a reason that has nothing to do with one graph. Only a
+// write tells the two apart, which is why this pin writes.)
+//
+// Pinned rather than fixed, because posse cannot fix it: it is bd's own
+// resolution, and the operator's queue is SQLite, where it does not happen.
+// If this goes red, bd has started honouring the redirect in no-db mode too
+// — that is bd fixing it, and the header above and worktree.go's note should
+// then say the class no longer matters.
+func TestLiveWorktreeNoDbStoreForksTheGraph(t *testing.T) {
+	t.Parallel()
+	bd := liveBd(t)
+	a := wtApp(t)
+	repo := liveBeadsRepoOfClass(t, bd, "in the main checkout", "no-db")
+	settleMainCheckout(t, bd, repo)
+
+	tr, err := a.EnsureSessionTree(repo, "s-1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { stopLeakedDaemons(t, tr.Path) })
+
+	// The resolution is right, and posse's redirect is what did it.
+	if got, want := resolvedBeads(t, bd, tr.Path), resolveExisting(filepath.Join(repo, ".beads")); got != want {
+		t.Fatalf("bd does not resolve the worktree to the main checkout on a no-db store either: resolved %q, want %q", got, want)
+	}
+	if got := resolveExisting(readRedirect(t, tr.Path)); got != resolveExisting(filepath.Join(repo, ".beads")) {
+		t.Fatalf("posse seeded %q, not the main checkout's `.beads` — this pin is measuring the wrong plant", got)
+	}
+
+	// The write is not.
+	if out, err := bd(tr.Path, "create", "from the worktree", "-t", "task"); err != nil {
+		t.Fatalf("bd create in the worktree: %v %s", err, out)
+	}
+	out, err := bd(repo, "list")
+	if err != nil {
+		t.Fatalf("bd list in the main checkout: %v %s", err, out)
+	}
+	if strings.Contains(out, "from the worktree") {
+		t.Errorf("bd now honours the redirect on a no-db store: the graph no longer forks, so this file's header and worktree.go's note are out of date:\n%s", out)
+	}
+	b, err := os.ReadFile(filepath.Join(tr.Path, ".beads", "issues.jsonl"))
+	if err != nil || !strings.Contains(string(b), "from the worktree") {
+		t.Errorf("the row is in neither jsonl, so the fork is somewhere this pin does not describe: %v\n%s", err, b)
 	}
 }
