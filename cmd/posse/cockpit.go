@@ -104,6 +104,7 @@ type cockpit struct {
 	width       int               // terminal size at the last draw; paging keys read it
 	height      int
 	mode        cockpitMode
+	lastFrame   string        // the frame on the glass; an identical one is dropped (see write)
 	confirm     confirmKind   // what a y answers in modeConfirm
 	target      confirmTarget // what that y acts on, aimed when the key was pressed
 	input       []rune        // prompt buffer
@@ -870,8 +871,12 @@ func runCockpit(a *posse.App, hb *posse.HerdrBackend, out io.Writer) error {
 		return c.displayOnly()
 	}
 	defer term.Restore(fd, old)
-	fmt.Fprint(c.out, "\033[?1049h\033[?25l")       // alt screen, hide cursor
-	defer fmt.Fprint(c.out, "\033[?25h\033[?1049l") // restore
+	// The alt screen's enter is the ONLY clear in the cockpit's whole
+	// output (ranger-base-w2uoe): every frame after this one homes and
+	// overwrites, so this is where the canvas is made blank, explicitly,
+	// rather than relying on 1049's own erase.
+	fmt.Fprint(c.out, "\033[?1049h\033[2J\033[?25l") // alt screen, clear, hide cursor
+	defer fmt.Fprint(c.out, "\033[?25h\033[?1049l")  // restore
 
 	keys := make(chan []byte, 8)
 	go func() {
@@ -2869,20 +2874,73 @@ func (c *cockpit) draw() {
 	c.width, c.height = w, h
 	c.buildRows()
 	c.offset = scrollTo(c.offset, c.cursorRow(), len(c.rows), viewportH(h))
-	fmt.Fprint(c.out, c.render(w, h))
+	c.write(c.render(w, h))
+}
+
+// write is the one place a frame reaches out, and it drops the frame that
+// is byte-identical to the one already on the glass (ranger-base-w2uoe).
+// render is a pure function of the model and the size it is asked for
+// (ADR 0004 §5), so an identical string IS an identical screen: draw has
+// fourteen call sites — a 2s ticker, WINCH, hints, hint reports, beads, the
+// cost/plan/gov ticks and each of their result channels, progress, results
+// and key handling — and every one of them repaints unconditionally.
+//
+// This is the only writer that may skip, and it is safe to skip only
+// because nothing else paints into the alt screen: c.out is written here,
+// at the alt-screen enter and at the exit, and the cockpit shells out to
+// nothing. A path that let another process draw over the frame would have
+// to clear lastFrame, or the next identical frame would be dropped onto a
+// screen that no longer matches it.
+func (c *cockpit) write(frame string) {
+	if frame == c.lastFrame {
+		return
+	}
+	c.lastFrame = frame
+	fmt.Fprint(c.out, frame)
 }
 
 // render is the whole view as a string, a pure function of (rows, cursor,
 // offset, mode, status) and the size it is asked for (ADR 0004 §5).
+//
+// The frame homes the cursor and erases line by line instead of opening
+// with ESC[2J (ranger-base-w2uoe): between a full erase and the paint the
+// terminal holds a blank screen, and on a slow or unsynchronised terminal
+// that blank IS the flicker. ESC[K after each line clears whatever the
+// last frame left to the right of this one, the closing ESC[J drops the
+// tail when the new frame is shorter than the last, and the DEC 2026 pair
+// around the whole thing asks terminals that support it (iTerm2, Ghostty,
+// WezTerm, kitty) to present the frame atomically — the ones that do not
+// ignore it. The alt-screen enter is the only clear left in the path.
 func (c *cockpit) render(w, h int) string {
 	var b strings.Builder
-	b.WriteString("\033[2J\033[H")
+	b.WriteString("\033[?2026h\033[H")
 	if c.mode == modePrompt {
 		b.WriteString("\033[?25h") // the prompt line is last: the cursor lands on it
 	} else {
 		b.WriteString("\033[?25l")
 	}
-	b.WriteString(strings.Join(c.renderLines(w, h), "\r\n"))
+	b.WriteString(eraseLines(c.renderLines(w, h), "\r\n"))
+	b.WriteString("\033[J\033[?2026l")
+	return b.String()
+}
+
+// eraseLines joins a frame's lines with nl, each followed by ESC[K so the
+// paint erases exactly the cells it overwrites and the stale tail beyond
+// them, with no moment where the row is blank.
+//
+// CR before LF is load-bearing on the tty path: a line that fills the
+// width leaves the cursor in the deferred-wrap state, and the CR cancels
+// it — a bare LF there would walk the frame down one row per full-width
+// line, which the old ESC[2J-per-frame hid by starting over every time.
+func eraseLines(lines []string, nl string) string {
+	var b strings.Builder
+	for i, ln := range lines {
+		if i > 0 {
+			b.WriteString(nl)
+		}
+		b.WriteString(ln)
+		b.WriteString("\033[K")
+	}
 	return b.String()
 }
 
@@ -3117,7 +3175,6 @@ func (c *cockpit) displayFrame() {
 		c.applyBeads(c.timedScanBeads())
 	}
 	c.takeGov()
-	fmt.Fprint(c.out, "\033[2J\033[H")
 	c.drawPlain()
 }
 
@@ -3144,7 +3201,16 @@ func (c *cockpit) applyGov(g govRead) {
 	c.pulse = g.pulse
 }
 
+// drawPlain is the non-tty frame. It carries the tty path's erase and
+// synchronisation (ranger-base-w2uoe) because the loop above it repaints
+// on the same cadence and stdin, not stdout, is what chose this path: a
+// cockpit whose stdin is not a tty is still very often being watched on
+// one. LF, not CRLF: this frame also goes into files and pipes.
 func (c *cockpit) drawPlain() {
 	c.buildRows()
-	fmt.Fprintln(c.out, strings.Join(c.renderLines(80, 0), "\n"))
+	var b strings.Builder
+	b.WriteString("\033[?2026h\033[H")
+	b.WriteString(eraseLines(c.renderLines(80, 0), "\n"))
+	b.WriteString("\033[J\033[?2026l\n")
+	c.write(b.String())
 }
