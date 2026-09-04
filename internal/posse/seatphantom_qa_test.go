@@ -209,3 +209,125 @@ func TestSeatSessionSpellsTheDialFName(t *testing.T) {
 		t.Errorf("a bead id is sanitized into the session name: %q, want %q", got, want)
 	}
 }
+
+// ranger-base-6swlr: the THIRD abstention — a listing that could be read,
+// returned no error, and still refused to answer for the seat's session.
+//
+// MEASURED 2026-09-03 by the QA lane verifying ranger-base-ifjgm (batch
+// ranger-base-zikpp) on main 58ac284. The pane was never killed and the meta
+// is intact; only the herdr LISTING goes empty, which is emptyBoard — a
+// server that just came up under a long-lived Run. Sessions() withholds
+// every meta, warns "N session meta file(s) kept, not listed", and returns
+// err=nil n=0. reconcileSeats read that as "reaped or gone", released the
+// seat and hired a-2 into a-1's live session: one persona, two beads, two
+// worktrees on one seat.
+//
+// This is the arm TestQAAnUnreadableHerdKeepsEverySeatHold does not cover.
+// That one pins the ERROR; an abstention is a nil error, and the two reach
+// reconcileSeats through different returns.
+//
+// MUTATION: drop the `withheld > 0` return from reconcileSeats → red on the
+// hold, on the release line, and on the workspace create. Same red from
+// `return out, 0, nil` in listSessions, which is the same defect one layer
+// down.
+func TestQAAShortListingKeepsEverySeatHold(t *testing.T) {
+	t.Parallel()
+	b, fake := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+	writePersona(t, b.App, "ranger", "[go]")
+	repo := qaRepo(t, b.App, `[{"id":"a-1","title":"t","labels":["go"]}]`, "")
+	agentPerLaunch(t, fake)
+	d.PromptGrace = 0
+
+	var inFlight []*pendingBead
+	t.Cleanup(func() { joinPrompts(t, inFlight) })
+
+	slot := SessionFor("ranger", repo)
+	busy, sessFail := map[string]string{}, map[string]int{}
+
+	inFlight = append(inFlight, seatFire(t, d, repo, "a-1", busy, sessFail)...)
+	if busy[slot] != "a-1" {
+		t.Fatalf("premise: a-1 must be seated, or the abstention below proves nothing: busy=%v\n%s", busy, dispatcherOut(d))
+	}
+	// The premise the incident turns on: the listing goes short while the
+	// session's meta stays on disk. Nothing died.
+	sess, withheld, err := b.listSessions()
+	if err != nil || withheld != 0 || len(sess) == 0 {
+		t.Fatalf("premise: before the restart the listing answers in full: n=%d withheld=%d err=%v", len(sess), withheld, err)
+	}
+	saveWSTo(t, fake, nil) // herdr came up empty; every meta kept, not listed
+	if sess, withheld, err = b.listSessions(); err != nil || withheld == 0 {
+		t.Fatalf("premise: an empty board withholds the metas with a NIL error — that is the whole defect: n=%d withheld=%d err=%v", len(sess), withheld, err)
+	}
+	mark := len(dispatcherOut(d))
+
+	inFlight = append(inFlight, seatFire(t, d, repo, "a-2", busy, sessFail)...)
+	out := dispatcherOut(d)[mark:]
+	if busy[slot] != "a-1" {
+		t.Errorf("released and re-hired on a listing that refused to answer: a hold may only go on evidence of death, and an abstention is not evidence: busy=%v\n%s", busy, out)
+	}
+	if strings.Contains(out, "released: no session") {
+		t.Errorf("a withheld session reported as a released seat:\n%s", out)
+	}
+	if !strings.Contains(out, "cannot answer for") {
+		t.Errorf("the pass must SAY it declined to reconcile — a hold that silently never releases is the phantom bug ranger-base-ifjgm was filed on:\n%s", out)
+	}
+	if strings.Contains(calls(t, fake), "workspace create --label "+SessionForBead("ranger", repo, "a-2")) {
+		t.Errorf("a-2 got a session while a-1's was live — one persona, two beads:\n%s", out)
+	}
+}
+
+// The count is over ALL FOUR abstention arms, not just the empty board.
+//
+// The cheap fix the bug report priced — reconcile only against a listing
+// holding at least one workspace — closes emptyBoard alone. This is the fixture that
+// tells the two apart: a board with a live workspace on it, and a meta
+// stamped with a DIFFERENT socket, so cannotAnswerFor withholds a session
+// off a listing that is not empty. `recipes` is the control: a meta naming
+// no workspace is a session already gone (rangerhq-v52t), not one this
+// listing declined to answer for, and counting it would freeze reconcile
+// for the life of every kept recipe.
+//
+// MUTATION: count recipes too → red on the control. Drop the strangers or
+// spared term → survives here, which is why the count is asserted as one
+// number against a fixture that moves it, and reconcileSeats abstains on
+// nonzero rather than on any one arm.
+func TestListSessionsCountsWhatItWithheld(t *testing.T) {
+	t.Setenv("HERDR_SOCKET_PATH", "/tmp/6swlr/ours.sock")
+	b, fake := newTestBackend(t)
+	var warn strings.Builder
+	b.Warn = &warn
+	saveWSTo(t, fake, []fakeWS{{WorkspaceID: "w1", Label: "live"}})
+
+	if _, withheld, err := b.listSessions(); err != nil || withheld != 0 {
+		t.Fatalf("premise: a board this server can answer for withholds nothing: withheld=%d err=%v", withheld, err)
+	}
+
+	// Not empty, and still unanswerable: the meta names another server.
+	qaStaleMeta(t, b, "theirs", "w405", "/tmp/6swlr/other.sock")
+	sess, withheld, err := b.listSessions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if withheld != 1 {
+		t.Errorf("a meta withheld off a NON-EMPTY board must be counted, or the count is just emptyBoard by another name: withheld=%d n=%d warn=%q", withheld, len(sess), warn.String())
+	}
+	if !strings.Contains(warn.String(), "kept, not listed") {
+		t.Fatalf("premise: this fixture must actually trip an abstention: warn=%q", warn.String())
+	}
+	for _, s := range sess {
+		if s.Name == "theirs" {
+			t.Fatalf("premise: the withheld session must be absent from the listing — that absence is what reconcileSeats misreads")
+		}
+	}
+
+	// The control: a session proven gone is not an abstention.
+	warn.Reset()
+	qaStaleMeta(t, b, "recipe", "", "/tmp/6swlr/ours.sock")
+	if _, withheld, err = b.listSessions(); err != nil {
+		t.Fatal(err)
+	}
+	if withheld != 1 {
+		t.Errorf("a kept RECIPE is a session already gone, not one this listing could not answer for; counting it would freeze reconcileSeats for as long as the recipe sits there: withheld=%d warn=%q", withheld, warn.String())
+	}
+}

@@ -1519,27 +1519,65 @@ func (m seatMap) hold(slot, bead string) { m.run[slot] = bead }
 // itself (fireLoop's `session = holder`). Any live session in the seat keeps
 // the hold; the seat is occupied whichever bead is on it.
 //
-// Two abstentions, both fail-closed — a hold is only ever released on
+// Three abstentions, all fail-closed — a hold is only ever released on
 // evidence, never on the absence of a reading:
 //
 //   - a session listing that failed to read. An unreadable herd is not an
 //     empty one (the same rule Sessions() itself applies to its metas).
+//
 //   - --dry-run, which holds seats it never launched into, so every one of
 //     its holds would reconcile away and the dry pass would report firing
 //     the same seat twice.
 //
-// Sessions() leaves a meta whose workspace it cannot prove dead OUT of its
-// listing (rangerhq-9nso), so a spared session reads as absent here — and
-// as absent to personaActive, the other half of the same seat walk, which
-// has always decided occupancy off exactly this listing. This releases a
-// seat no fresh Run would have found busy either; it does not widen what
-// dispatch treats as evidence.
+//   - a listing that ABSTAINED. Sessions() withholds a meta it cannot
+//     answer for and returns no error saying so (four arms: a herdr that
+//     just came up, a meta stamped with another socket or none, a spared
+//     meta prunable() could not prove dead, a recycled workspace id). Its
+//     sessions are live for all this listing knows, and they read here
+//     exactly like a reaped one.
+//
+// That third abstention is ranger-base-6swlr, and it is the one this code
+// shipped without. MEASURED 2026-09-03 by the QA lane verifying
+// ranger-base-ifjgm: over an empty board with the metas intact — a herdr restart under a long-lived Run — every seat
+// this Run held was released in one pass and re-hired while its session was
+// still alive. One persona, two beads, two worktrees on one seat, which is
+// ADR 0028 §3's occupancy and ADR 0022's single writer both defeated.
+//
+// The doc this replaces argued the release was safe because personaActive
+// reads the same listing and would find the seat free too. That is true of a
+// FRESH Run, and it is exactly why it does not hold here: the standing Run's
+// map was the second, independent evidence source that survived a blind
+// read, and reconciling against the listing alone is what took that cover
+// away. So the listing is now asked whether it could answer at all
+// (listSessions' withheld count) before any hold is released on it, and a
+// listing that withheld anything releases nothing — the same abstention
+// Sessions() itself makes about the same metas.
+//
+// The abstention is whole-pass, not per-seat, because the count cannot be
+// narrowed: emptyBoard withholds every meta at once and is a count by
+// construction (listSessions' doc). So one withheld meta holds every seat,
+// and it holds them for as long as its cause lasts — a `spared` meta clears
+// itself at PruneGrace, an empty board clears when herdr has the fleet back,
+// but a meta stamped with a socket that no longer exists is repaired by hand
+// or not at all, and until it is, this reconcile does nothing. That is the
+// ranger-base-ifjgm phantom again, which is why the line below prints on
+// every pass it declines: a hold that silently stops reconciling is exactly
+// the failure this function was written for, and the operator has to be able
+// to see the difference. Sessions() warns with the repair on the same pass.
+//
+// It is still the right way round. Being wrong here holds a seat that a
+// reading could have freed; being wrong the other way puts two agents in one
+// worktree.
 func (d *Dispatcher) reconcileSeats(busy map[string]string) {
 	if d.DryRun || len(busy) == 0 {
 		return
 	}
-	sessions, err := d.HB.Sessions()
+	sessions, withheld, err := d.HB.listSessions()
 	if err != nil {
+		return
+	}
+	if withheld > 0 {
+		d.printf("↺ seats kept: %d session meta(s) this herdr cannot answer for — no hold released this pass\n", withheld)
 		return
 	}
 	slots := make([]string, 0, len(busy))
