@@ -1,0 +1,107 @@
+package main
+
+// QA, rangerhq-qz51 — `posse gates <persona>` silently omitted a persona's
+// unresolvable runtime and exited 0. The parity table walks the CATALOG
+// (a.ListRuntimes), so a `runtime:` naming neither a built-in nor a
+// runtimes/<name>.yaml produced no row at all rather than a row saying so:
+// what INSTALL.md §7 sends an operator to read before their first dispatch
+// returned a wall of green for a persona that cannot launch.
+//
+// Driven through the built binary rather than against the renderer, because
+// the defect is the command's: both halves of it (the omission and the exit
+// status) live in the `gates` case, not in anything under internal/.
+
+import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// gatesQAHome writes a persona naming runtime rt and returns the RHQ_HOME.
+func gatesQAHome(t *testing.T, rt string) string {
+	t.Helper()
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, "agents"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	pid := "---\nname: builder\ndescription: builder\nruntime: " + rt + "\n---\nbuilder\n"
+	if err := os.WriteFile(filepath.Join(home, "agents", "builder.md"), []byte(pid), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return home
+}
+
+// gatesQARun runs `posse gates builder` from a scratch cwd — the report is
+// computed for the caller's directory, and this test is about the persona.
+func gatesQARun(t *testing.T, bin, home string) (string, int) {
+	t.Helper()
+	cmd := exec.Command(bin, "gates", "builder")
+	cmd.Dir = t.TempDir()
+	cmd.Env = []string{"HOME=" + filepath.Join(home, "h"), "RHQ_HOME=" + home, "PATH=/usr/bin:/bin"}
+	out, err := cmd.CombinedOutput()
+	code := 0
+	if ee, ok := err.(*exec.ExitError); ok {
+		code = ee.ExitCode()
+	} else if err != nil {
+		t.Fatalf("posse gates builder: %v\n%s", err, out)
+	}
+	return string(out), code
+}
+
+// The bead's own repro. Two things are asserted because the bead asked for
+// two: the name is IN the output (an operator reading the report learns
+// which runtime is missing), and the status is non-zero (a script or an
+// operator reading only the exit code is not told "cleared to dispatch").
+func TestQAGatesNamesUnresolvableRuntimeAndExitsNonZero(t *testing.T) {
+	bin := buildRhq(t)
+	out, code := gatesQARun(t, bin, gatesQAHome(t, "codex-local"))
+	if code == 0 {
+		t.Errorf("`posse gates builder` exited 0 for a persona whose runtime resolves to nothing — INSTALL.md §7 reads this before a first dispatch:\n%s", out)
+	}
+	if !strings.Contains(out, "codex-local") {
+		t.Errorf("the unresolvable runtime is not named anywhere in the report:\n%s", out)
+	}
+	if !strings.Contains(out, "cannot launch") {
+		t.Errorf("the report names the runtime but never says the persona cannot launch on it:\n%s", out)
+	}
+}
+
+// The control, and the arm that makes the one above mean something: with the
+// yaml present the SAME persona gets its row and exits 0. Without it a `gates`
+// that exited 1 on every persona alive would pass the test above.
+func TestQAGatesResolvableRuntimeRowsAndExitsZero(t *testing.T) {
+	bin := buildRhq(t)
+	home := gatesQAHome(t, "codex-local")
+	if err := os.MkdirAll(filepath.Join(home, "runtimes"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, "runtimes", "codex-local.yaml"), []byte("command: codex-local exec\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, code := gatesQARun(t, bin, home)
+	if code != 0 {
+		t.Errorf("`posse gates builder` exited %d with the persona's runtime resolvable:\n%s", code, out)
+	}
+	if !strings.Contains(out, "codex-local @ ") {
+		t.Errorf("a resolvable runtime must get its own parity row:\n%s", out)
+	}
+	if strings.Contains(out, "cannot launch") {
+		t.Errorf("nothing may say this persona cannot launch once its runtime resolves:\n%s", out)
+	}
+}
+
+// A built-in runtime is resolved by name and not by a runtimes/*.yaml, so it
+// exercises the other half of LoadRuntime's fork — the default persona shape,
+// which must stay silent and green.
+func TestQAGatesBuiltinRuntimeStaysGreen(t *testing.T) {
+	bin := buildRhq(t)
+	out, code := gatesQARun(t, bin, gatesQAHome(t, "claude"))
+	if code != 0 {
+		t.Errorf("`posse gates builder` exited %d on runtime: claude:\n%s", code, out)
+	}
+	if strings.Contains(out, "cannot launch") {
+		t.Errorf("a built-in runtime must not be reported unresolvable:\n%s", out)
+	}
+}

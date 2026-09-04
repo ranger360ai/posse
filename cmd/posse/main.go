@@ -1412,7 +1412,26 @@ func main() {
 		// one part of the check that depends on a directory (a runtime that
 		// reads the session dir's own config) is invisible otherwise.
 		cwd, _ := os.Getwd()
-		fmt.Fprintf(out, "parity (ADR 0002 §4, ADR 0003 §3) — what the wall realizes per runtime at cage shims, tier %s, launching in %s:\n", tier, posse.AbbrevHome(cwd))
+		// "launching in" names THIS SHELL's cwd, not the persona's home: an
+		// operator driving a second instance is usually standing in the other
+		// instance's repo, and read without the word "shell" the line looks
+		// like a fact about the persona (rangerhq-qz51).
+		fmt.Fprintf(out, "parity (ADR 0002 §4, ADR 0003 §3) — what the wall realizes per runtime at cage shims, tier %s, launching in this shell's cwd %s:\n", tier, posse.AbbrevHome(cwd))
+		// The persona's OWN runtime, before the table. The loop below walks
+		// the CATALOG, so a `runtime:` naming neither a built-in nor a
+		// runtimes/<name>.yaml is not a row reading "unresolvable" — it is no
+		// row at all, and what an operator reads is a wall of green for a
+		// persona that cannot launch (rangerhq-qz51). Reported here and
+		// exited on below rather than at the top: the gates dir, the shims
+		// and the refusals log are true whatever the runtime is, and
+		// `posse runtime check` already rules this way (the grid prints, the
+		// status is the verdict).
+		var runtimeErr error
+		if _, err := a.LoadRuntime(a.ResolveRuntime("", ag)); err != nil {
+			runtimeErr = err
+			fmt.Fprintf(out, "  ⚠️  runtime: %v\n", err)
+			fmt.Fprintf(out, "      %s cannot launch: no row below is its runtime — every row that follows is one this persona does not launch on (`posse agent check %s` refuses the same way)\n", ag.Name, ag.Name)
+		}
 		// One reading for the whole report: a reading per runtime is a
 		// request per runtime on a home whose probe is down, because a
 		// failed read stores nothing for the next one to share.
@@ -1475,6 +1494,13 @@ func main() {
 			}
 		} else {
 			fmt.Fprintln(out, "  refusals.log: empty")
+		}
+		// INSTALL.md §7 sells this command as the thing you read before your
+		// first dispatch, so its exit status is a verdict and not a
+		// formality: a wall of green over a persona whose runtime resolves to
+		// nothing exited 0 and read as "cleared to dispatch" (rangerhq-qz51).
+		if runtimeErr != nil {
+			os.Exit(1)
 		}
 
 	case "cage":

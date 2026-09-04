@@ -394,6 +394,25 @@ nothing.
 
 ### Fixed
 
+**`posse gates <persona>` printed a wall of green for a persona that could
+not launch at all, and exited 0.**
+
+*Affected: any persona whose `runtime:` names neither a built-in nor an
+existing `runtimes/<name>.yaml`.* The parity table is built by walking the
+runtime catalog, so an unresolvable runtime was not a row reading
+"unresolvable" — it was no row at all, and every row that did print belonged
+to a runtime that persona does not launch on. `posse agent check` had refused
+the same PID with `unknown runtime` all along; `posse gates`, which INSTALL.md
+§7 sends you to read *before* your first dispatch precisely to avoid a
+confusing refusal later, said nothing and exited 0.
+
+It now names the runtime above the table and exits 1, matching
+`posse agent check`. The rest of the report still prints — the gates dir, the
+shims and the refusals log are true whatever the runtime is. The header also
+says whose directory it computed the matrix for (`launching in this shell's
+cwd …`): driving a second instance, that is usually the *other* instance's
+repo.
+
 **`dispatch --watch` ran for hours without completing a pass on a busy shop,
 and half its duties silently did not run.**
 

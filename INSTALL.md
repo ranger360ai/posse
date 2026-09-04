@@ -768,6 +768,15 @@ $ posse gates <persona>
 `--allow-degraded`; dispatch never degrades on its own. Reading this
 *before* your first dispatch saves you a confusing refusal later.
 
+The table walks the runtime *catalog*, so a persona whose own `runtime:`
+resolves to nothing — no built-in, and no `runtimes/<name>.yaml` yet — has
+no row in it. That case is called out above the table (`⚠️  runtime:
+unknown runtime …`) and **exits 1**, the same verdict `posse agent check`
+gives it, because every row that follows is a runtime this persona does
+not launch on and a wall of green over them is not clearance
+(rangerhq-qz51). Before step 8 creates the profile this is the same
+forward reference as the lint above.
+
 **Path-scoped writes** (ADR 0014). `deny: [Edit, Write]` is still the
 whole-repo wall (the reviewer/security skeletons). A parametrized rule
 `Edit(docs/adr/**)` / `Write(docs/adr/**)` is a **subtree file-write
