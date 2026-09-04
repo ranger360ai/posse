@@ -24,7 +24,7 @@ package main
 // is the day to delete this file and let the suite's own hermeticity speak.
 //
 // DECLINED, not owed: ranger-base-1xln6 (this leak, refiled) was closed "not
-// doing" by the operator triage sweep of 2026-09-04 (monica) — "test hygiene
+// doing" by the operator triage sweep of 2026-09-04 — "test hygiene
 // at three QA sites with no observed failure; not a defect". Re-measured at
 // 374d3b8 under ranger-base-09yjv, and the reason holds for a reason worth
 // writing down: a full GREEN `cmd/posse` run pushes 284 git invocations

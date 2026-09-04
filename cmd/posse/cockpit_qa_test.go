@@ -1032,7 +1032,7 @@ func TestCockpitDispWidthUnicode16Gaps(t *testing.T) {
 // 2/2/3/2/2.
 //
 // And now ranger-base-7bdbb has closed too — "not doing", operator triage
-// sweep 2026-09-04 (monica): the cell-width holes are declined, not owed. So
+// sweep 2026-09-04: the cell-width holes are declined, not owed. So
 // there is no open bead left to park on, and a park naming a closed id reads
 // as an instruction to un-skip, which reds the suite (re-measured at 374d3b8
 // under ranger-base-09yjv: the same five rows, dispWidth 0/0/1/1/1). Inverted

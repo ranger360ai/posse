@@ -20,7 +20,7 @@ import (
 // counts ONE.
 //
 // ranger-base-7bdbb was CLOSED "not doing" by the operator triage sweep of
-// 2026-09-04 (monica): "cockpit cell-width for 191 rare wide code points;
+// 2026-09-04: "cockpit cell-width for 191 rare wide code points;
 // nobody has hit one". The table is therefore not moving, and this file was
 // a t.Skip parked on a bead that will never land — an instruction to
 // un-skip (which reds the suite: measured 7/7 failing at 374d3b8) attached
