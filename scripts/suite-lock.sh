@@ -12,7 +12,10 @@
 #        scripts/suite-lock.sh --status       who holds the slots right now
 #
 # Environment:
-#   POSSE_SUITE_SLOTS=2        full suites allowed to run at once
+#   POSSE_SUITE_SLOTS=2        full suites allowed to run at once. A value
+#                              that is not a positive integer is named on one
+#                              line and the default is used
+#                              (_suite_lock_slots says why)
 #   POSSE_SUITE_LOCK_DIR=...   where the slot files live
 #                              (default ${XDG_CACHE_HOME:-~/.cache}/posse)
 #   POSSE_SUITE_LOCK_POLL=5    seconds between attempts while queued
@@ -88,6 +91,47 @@ suite_lock_dir() {
 
 _suite_lock_say() { printf 'suite-lock: %s\n' "$*" >&2; }
 
+# _suite_lock_slots — how many slots this box hands out. POSSE_SUITE_SLOTS is
+# read HERE and nowhere else, so every reader gets the same number and a bad
+# value is caught once instead of five times. Sets _SUITE_LOCK_SLOTS rather
+# than printing it: a command substitution runs in a subshell, where the
+# said-it-already flag below could not survive to keep the warning off every
+# poll.
+#
+# A value that is not a positive integer is a typo, and the header's promise —
+# IT NEVER MAKES THE SUITE UNRUNNABLE — decides what to do about one: say so
+# on one line and use the default. Both spellings were measured on this box
+# (ranger-base-jhyiv, from ranger-base-han3i) and both were silent:
+#
+#   - non-numeric. `seq 1 two` prints nothing, so the sweep tries no slot at
+#     all, the acquire queues forever against holders it cannot name, and the
+#     waiting line ends at "held by " with nothing after it. `make test` with
+#     a typo in this variable hung with no diagnosis.
+#   - zero or negative. `seq` counts DOWN when the end is below the start, so
+#     POSSE_SUITE_SLOTS=0 iterated i=1 then i=0 and handed out TWO slots
+#     (measured: "slot 1 of 0", acquired), and -1 handed out three. A value
+#     meant to shut the queue off widened it instead.
+#
+# Neither is refused, because refusing is the one thing this file may not do.
+_suite_lock_slots() {
+	local n=${POSSE_SUITE_SLOTS:-2}
+	case $n in
+	'' | *[!0-9]*) ;;
+	*)
+		if [ "$n" -ge 1 ]; then
+			_SUITE_LOCK_SLOTS=$n
+			return 0
+		fi
+		;;
+	esac
+	_SUITE_LOCK_SLOTS=2
+	if [ -z "${_SUITE_LOCK_SLOTS_SAID:-}" ]; then
+		_SUITE_LOCK_SLOTS_SAID=1
+		_suite_lock_say "POSSE_SUITE_SLOTS='$n' is not a positive integer — using $_SUITE_LOCK_SLOTS"
+	fi
+	return 0
+}
+
 # _suite_lock_flock — take an exclusive non-blocking flock on the CALLER's
 # fd 9. Returns 0 when the slot is ours, 1 when somebody else holds it, and
 # 2 when there is no way to ask, which is a different answer and gets a
@@ -148,7 +192,8 @@ suite_lock_wanted() {
 _suite_lock_holders() {
 	local dir i f who
 	dir=$(suite_lock_dir)
-	for i in $(seq 1 "${POSSE_SUITE_SLOTS:-2}"); do
+	_suite_lock_slots
+	for i in $(seq 1 "$_SUITE_LOCK_SLOTS"); do
 		f=$dir/suite-slot.$i.lock
 		[ -f "$f" ] || continue
 		who=$(sed -n 's/^worktree: //p' "$f" 2>/dev/null | head -1)
@@ -185,7 +230,8 @@ _suite_lock_stamp() {
 _suite_lock_sweep() {
 	local dir i f rc
 	dir=$(suite_lock_dir)
-	for i in $(seq 1 "${POSSE_SUITE_SLOTS:-2}"); do
+	_suite_lock_slots
+	for i in $(seq 1 "$_SUITE_LOCK_SLOTS"); do
 		f=$dir/suite-slot.$i.lock
 		exec 9>>"$f" || continue
 		rc=0
@@ -232,6 +278,10 @@ suite_lock_acquire() {
 
 	local dir waited=0 announced=0 start
 	dir=$(suite_lock_dir)
+	# Resolved once, in THIS shell, before any subshell: the one warning a
+	# bad value earns is said here, and the flag it sets is inherited by
+	# every `$( )` below, so a queued run does not repeat it every poll.
+	_suite_lock_slots
 	if ! mkdir -p "$dir" 2>/dev/null; then
 		_suite_lock_say "cannot create $dir — running unserialized"
 		return 0
@@ -253,7 +303,7 @@ suite_lock_acquire() {
 			# stopped for a reason must never look like a run that
 			# has hung (launchlock.go says the same thing).
 			_suite_lock_say "waiting for suite lock held by $(_suite_lock_holders | paste -sd '; ' - )"
-			_suite_lock_say "${POSSE_SUITE_SLOTS:-2} full suites already running on this box; this one is queued (POSSE_SUITE_SLOTS to change, POSSE_SUITE_LOCK=0 to opt out)"
+			_suite_lock_say "$_SUITE_LOCK_SLOTS full suites already running on this box; this one is queued (POSSE_SUITE_SLOTS to change, POSSE_SUITE_LOCK=0 to opt out)"
 		fi
 		sleep "${POSSE_SUITE_LOCK_POLL:-5}"
 		waited=$(( $(date +%s) - start ))
@@ -271,9 +321,9 @@ suite_lock_acquire() {
 	export POSSE_SUITE_LOCK_HELD=$_SUITE_LOCK_SLOT
 	waited=$(( $(date +%s) - start ))
 	if [ "$waited" -ge 2 ]; then
-		_suite_lock_say "slot $_SUITE_LOCK_SLOT of ${POSSE_SUITE_SLOTS:-2} acquired after ${waited}s"
+		_suite_lock_say "slot $_SUITE_LOCK_SLOT of $_SUITE_LOCK_SLOTS acquired after ${waited}s"
 	else
-		_suite_lock_say "slot $_SUITE_LOCK_SLOT of ${POSSE_SUITE_SLOTS:-2}"
+		_suite_lock_say "slot $_SUITE_LOCK_SLOT of $_SUITE_LOCK_SLOTS"
 	fi
 	return 0
 }
@@ -292,8 +342,9 @@ suite_lock_release() {
 suite_lock_status() {
 	local dir held
 	dir=$(suite_lock_dir)
+	_suite_lock_slots
 	held=$(_suite_lock_holders)
-	printf 'suite-lock: %s slot(s), %s\n' "${POSSE_SUITE_SLOTS:-2}" "$dir"
+	printf 'suite-lock: %s slot(s), %s\n' "$_SUITE_LOCK_SLOTS" "$dir"
 	if [ -z "$held" ]; then
 		printf '  no slot file has ever been written here\n'
 		return 0
@@ -301,7 +352,7 @@ suite_lock_status() {
 	# The stamps say who wrote them LAST, which is not who holds them now.
 	# Ask the kernel for that, one slot at a time.
 	local i f
-	for i in $(seq 1 "${POSSE_SUITE_SLOTS:-2}"); do
+	for i in $(seq 1 "$_SUITE_LOCK_SLOTS"); do
 		f=$dir/suite-slot.$i.lock
 		[ -f "$f" ] || { printf '  slot %s: free (never used)\n' "$i"; continue; }
 		if ( exec 9>>"$f"; _suite_lock_flock ); then
@@ -561,6 +612,73 @@ STRICT
 			"rc=$(cat "$tmp/strict.rc" 2>/dev/null), out: $(tr '\n' '|' <"$tmp/strict.out" 2>/dev/null)"
 	fi
 	rm -f "$tmp/hold13"
+
+	wait 2>/dev/null
+
+	# ARM 12: a POSSE_SUITE_SLOTS that is not a positive integer still runs
+	# the suite, on the default, and NAMES the value it would not use. The
+	# header's promise is that nothing in this file can make the suite
+	# unrunnable, and a typo in that variable broke it three ways at once
+	# (ranger-base-jhyiv): `seq 1 two` printed nothing, so the sweep tried no
+	# slot, the acquire queued forever, and the line it queued behind read
+	# "held by " and named nobody. This arm is the one that hangs — not
+	# merely fails — on the unfixed script, which is why it is bounded.
+	# The holder is killed by PID and never merely waited for: a script
+	# without the check does not FAIL this arm, it hangs in it — the holder
+	# is still in the acquire loop, so it never reaches the line that
+	# watches its hold file, and a bare `wait` here would sit behind a
+	# process that is never coming back. Its own pid, never a pattern (the
+	# operator ruling of 2026-09-03).
+	local n hp rc12=0
+	for n in two 0 -1; do
+		rm -f "$tmp/m14" "$tmp/m14.log"
+		touch "$tmp/hold14"
+		POSSE_SUITE_SLOTS=$n "$tmp/holder.sh" "$SUITE_LOCK_LIB" "$tmp/m14" "$tmp/hold14" go test -timeout 25m ./... &
+		hp=$!
+		if ! wait_file "$tmp/m14" 8 || [ "$(slot_of "$tmp/m14")" = none ] ||
+			! grep -q 'not a positive integer' "$tmp/m14.log" 2>/dev/null; then
+			rc12=1
+			bad 'slots: a bad POSSE_SUITE_SLOTS runs on the default and says so' \
+				"POSSE_SUITE_SLOTS=$n gave slot '$(slot_of "$tmp/m14")' after 8s, log: $(tr '\n' '|' <"$tmp/m14.log" 2>/dev/null)"
+		fi
+		rm -f "$tmp/hold14"
+		kill "$hp" 2>/dev/null
+		wait "$hp" 2>/dev/null
+	done
+	[ "$rc12" = 0 ] && ok 'slots: a bad POSSE_SUITE_SLOTS runs on the default and says so'
+
+	# ARM 13, the control for arm 12: the fallback is the DEFAULT width and
+	# not a wider one. `seq` on this box counts DOWN when the end is below
+	# the start, so before the fix POSSE_SUITE_SLOTS=-1 iterated i=1, 0, -1
+	# and handed out THREE slots — a value meant to shut the queue off
+	# widened it, silently. Without this arm, arm 12 is equally green over a
+	# fallback that hands out as many slots as anyone asks for.
+	touch "$tmp/hold15" "$tmp/hold16" "$tmp/hold17"
+	local h15 h16 h17
+	POSSE_SUITE_SLOTS=-1 "$tmp/holder.sh" "$SUITE_LOCK_LIB" "$tmp/m15" "$tmp/hold15" go test -timeout 25m ./... &
+	h15=$!
+	wait_file "$tmp/m15" 10 || bad 'slots: a negative POSSE_SUITE_SLOTS does not widen the queue' 'first holder never acquired'
+	POSSE_SUITE_SLOTS=-1 "$tmp/holder.sh" "$SUITE_LOCK_LIB" "$tmp/m16" "$tmp/hold16" go test -timeout 25m ./... &
+	h16=$!
+	wait_file "$tmp/m16" 10 || bad 'slots: a negative POSSE_SUITE_SLOTS does not widen the queue' 'second holder never acquired'
+	POSSE_SUITE_SLOTS=-1 "$tmp/holder.sh" "$SUITE_LOCK_LIB" "$tmp/m17" "$tmp/hold17" go test -timeout 25m ./... &
+	h17=$!
+	sleep 2
+	if [ -e "$tmp/m17" ]; then
+		bad 'slots: a negative POSSE_SUITE_SLOTS does not widen the queue' \
+			"a third suite ran anyway, on slot $(slot_of "$tmp/m17")"
+	elif [ "$(slot_of "$tmp/m15")" = "$(slot_of "$tmp/m16")" ] ||
+		[ "$(slot_of "$tmp/m15")" = none ] || [ "$(slot_of "$tmp/m16")" = none ]; then
+		bad 'slots: a negative POSSE_SUITE_SLOTS does not widen the queue' \
+			"the two that did run got slots '$(slot_of "$tmp/m15")' and '$(slot_of "$tmp/m16")'"
+	else
+		ok 'slots: a negative POSSE_SUITE_SLOTS does not widen the queue'
+	fi
+	rm -f "$tmp/hold15" "$tmp/hold16" "$tmp/hold17"
+	# Same reason as arm 12: the third one may still be queued behind a
+	# queue that never opens, and it is not coming back on its own.
+	kill "$h15" "$h16" "$h17" 2>/dev/null
+	wait "$h15" "$h16" "$h17" 2>/dev/null
 
 	wait 2>/dev/null
 

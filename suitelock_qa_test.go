@@ -70,6 +70,13 @@ var suiteLockArms = []string{
 	"opt-out: POSSE_SUITE_LOCK=0 runs unserialized and says so",
 	"release: a slot handed back is free before the process exits",
 	"set -e: a queued acquire does not kill the wrapper",
+	// ranger-base-jhyiv: the two arms that hold the header's "it never makes
+	// the suite unrunnable" promise against the variable that decides the
+	// width. A non-numeric value queued forever against a line naming
+	// nobody; 0 and -1 handed out MORE slots than the default, because seq
+	// counts down.
+	"slots: a bad POSSE_SUITE_SLOTS runs on the default and says so",
+	"slots: a negative POSSE_SUITE_SLOTS does not widen the queue",
 }
 
 // Arm 1: `make test` still runs the queue's self-test, and `make
