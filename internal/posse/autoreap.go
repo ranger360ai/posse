@@ -86,6 +86,13 @@ func (a *App) AutoReap() bool {
 // `when` is the one thing the two sites do not share, and it gates exactly
 // one arm: a stampless session may be a seat this pass is about to reuse, and
 // only a sweep past routing can know it is not (ranger-base-f6lk, below).
+// Every line this sweep writes goes through d.printf/d.eprintf, never the
+// fmt functions (ranger-base-hpppv). It runs on Run's goroutine, and a
+// rolling Run has one gather goroutine per pending bead writing the same
+// stream (ADR 0028 §1) — a bare write here can land half-way through a
+// launch line. Stamping and not the quiet pair: this sweep IS the pass,
+// not a clock beside it, so its lines are the sign of life LastWrite is a
+// reading of.
 func (d *Dispatcher) autoReapPass(when reapWhen) {
 	// The refusals-spool fold (ADR 0025 §4, refusalfold.go) rides this sweep
 	// for the same reason the reap itself does: it is a host loop that
@@ -126,7 +133,7 @@ func (d *Dispatcher) autoReapPass(when reapWhen) {
 			continue
 		}
 		if d.DryRun {
-			fmt.Fprintf(d.Out, "would reap %s (%s)\n", s.Name, why)
+			d.printf("would reap %s (%s)\n", s.Name, why)
 			continue
 		}
 		// A shared checkout (no session worktree) has no branch for the
@@ -143,16 +150,16 @@ func (d *Dispatcher) autoReapPass(when reapWhen) {
 		// thing residueHolds refuses over.
 		if m, ok := d.HB.readMeta(s.Name); ok && SessionTreeOf(m) == nil {
 			if len(dirtyPaths(s.Dir)) > 0 {
-				fmt.Fprintf(d.errw(), "reap: %s (bead %s, closed) leaves %s dirty — no session branch to land it on\n",
+				d.eprintf("reap: %s (bead %s, closed) leaves %s dirty — no session branch to land it on\n",
 					s.Name, s.Bead, AbbrevHome(s.Dir))
 			}
 		}
 		landing, err := d.HB.KillSessionAndLand(s.Name)
 		if err != nil {
-			fmt.Fprintf(d.errw(), "reap: %s not killed: %v\n", s.Name, err)
+			d.eprintf("reap: %s not killed: %v\n", s.Name, err)
 			continue
 		}
-		fmt.Fprintf(d.Out, "reaped %s (%s)\n", s.Name, why)
+		d.printf("reaped %s (%s)\n", s.Name, why)
 		// Since ranger-base-qxvh that includes what became of the persona's
 		// standing orders: the sweep commits them, because this is the path
 		// that reaps at scale — ~30 in a day on the instance that motivated
@@ -162,7 +169,7 @@ func (d *Dispatcher) autoReapPass(when reapWhen) {
 		// bounded turns in a row would stall the pass this sweep is an
 		// epilogue to.
 		for _, line := range landing.Lines() {
-			fmt.Fprintf(d.Out, "  %s\n", line)
+			d.printf("  %s\n", line)
 		}
 	}
 }
@@ -246,7 +253,7 @@ func (d *Dispatcher) foldRefusalSpools() {
 			continue
 		}
 		if err := d.App.FoldRefusalsSpool(s.Agent, s.Name); err != nil {
-			fmt.Fprintf(d.errw(), "fold refusals spool for %s: %v\n", s.Name, err)
+			d.eprintf("fold refusals spool for %s: %v\n", s.Name, err)
 		}
 	}
 }
@@ -403,8 +410,12 @@ type reapPolicy struct {
 
 func (d *Dispatcher) reapPolicy(when reapWhen) reapPolicy {
 	return reapPolicy{
-		crew:      d.App.reapAfter("reap_crew_after", DefaultCrewReapAfter, d.errw()),
-		unpointed: d.App.reapAfter("reap_unpointed_after", DefaultUnpointedReapAfter, d.errw()),
+		// errWriter and not the bare d.errw(): reapAfter prints the config
+		// typo line through whatever it is handed, and this sweep runs beside
+		// a rolling Run's gathers (autoReapPass's doc). Handing it the raw
+		// writer is the same bare write as an fmt.Fprintf, one call deep.
+		crew:      d.App.reapAfter("reap_crew_after", DefaultCrewReapAfter, d.errWriter()),
+		unpointed: d.App.reapAfter("reap_unpointed_after", DefaultUnpointedReapAfter, d.errWriter()),
 		pulse:     pulsePersona(d.App),
 		when:      when,
 	}

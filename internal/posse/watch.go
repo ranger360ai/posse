@@ -210,7 +210,15 @@ func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string,
 			return HerdrSettleHints(ctx, SocketID(), panes, refresh, report)
 		}
 	}
-	hints := subscribe(ctx, func(line string) { fmt.Fprintf(d.Out, "   %s\n", line) })
+	// quietf and not a bare Fprintf, and quiet rather than stamping
+	// (ranger-base-hpppv). herdrHints calls this report from ITS OWN
+	// goroutine (herdrevents.go: "herdr events restored", "herdr events
+	// unavailable — polling"), so an outage notice can arrive while a
+	// gather is mid-line — outMu is what keeps it off the launch line it
+	// would otherwise land inside. Quiet because a herdr outage notice is
+	// a reading of the shop and not a sign of life from this loop, which
+	// is the rule LastWrite states and the three other clocks keep.
+	hints := subscribe(ctx, func(line string) { d.quietf("   %s\n", line) })
 	// The launch ration, said once, at the top of the log this loop writes
 	// for the rest of its life (ranger-base-t8tq, fix ask (b)). See
 	// LaunchCapLine: the number is the operator's, the UNIT is ADR 0028 §2's
@@ -292,9 +300,16 @@ func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string,
 	}()
 	passes := 0
 	wait := base
+	// From here down the loop writes through d.printf/d.println like the
+	// pass it is (ranger-base-hpppv). Stamping, because these lines are
+	// this loop's most direct sign of life — the banner, the pass result
+	// and the cadence line are exactly what LastWrite is a reading of —
+	// and under outMu, because the header block above is the only writer
+	// in this package that may take the stream bare, and it earns that by
+	// running before the first clock or gather exists.
 	for {
 		passes++
-		fmt.Fprintf(d.Out, "── pass %d · %s\n", passes, time.Now().Format("15:04:05"))
+		d.printf("── pass %d · %s\n", passes, time.Now().Format("15:04:05"))
 		// How old the reading this pass will rule on actually is, when that
 		// is past `plan_usage_stale_after:` (ranger-base-lpoui). In the
 		// pass preamble and not inside the guard on purpose: the guard's
@@ -307,11 +322,11 @@ func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string,
 		// reason a pass is slow. io.Discard: the typo line is the preamble's
 		// above, said once.
 		if st := d.App.PlanStaleness("watch", d.now(), io.Discard); st.Stale {
-			fmt.Fprintln(d.Out, st.Line())
+			d.println(st.Line())
 		}
 		n, err := d.Run(dirFilter, personaFilter, max)
 		if err != nil {
-			fmt.Fprintf(d.Out, "✗ pass failed: %v\n", err)
+			d.printf("✗ pass failed: %v\n", err)
 		}
 		if ctx.Err() != nil {
 			return passes, nil
@@ -324,7 +339,7 @@ func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string,
 		default:
 		}
 		wait = NextInterval(wait, base, maxInterval, n)
-		fmt.Fprintf(d.Out, "   %d dispatched · next pass in %s (ctrl-c to stop)\n", n, wait.Round(time.Second))
+		d.printf("   %d dispatched · next pass in %s (ctrl-c to stop)\n", n, wait.Round(time.Second))
 		// One timer per pass; a hint cuts it short instead of waiting it
 		// out (ADR 0028 §1) — the next pass's own fireLoop re-verifies
 		// against bd and herdr before it acts on anything the hint implied.
@@ -341,7 +356,7 @@ func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string,
 					hints = nil
 					continue
 				}
-				fmt.Fprintf(d.Out, "   settle hint · %s — waking the next pass now (ADR 0028 §1)\n", h)
+				d.printf("   settle hint · %s — waking the next pass now (ADR 0028 §1)\n", h)
 				timer.Stop()
 				tick = true
 			case <-timer.C:

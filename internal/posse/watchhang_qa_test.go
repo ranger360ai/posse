@@ -33,6 +33,9 @@ package posse
 import (
 	"context"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"io"
 	"os"
 	"os/exec"
@@ -799,35 +802,187 @@ func TestQAClockLinesDoNotFeedTheWatchdog(t *testing.T) {
 	}
 }
 
-// The other half of ranger-base-frqmn, which the arm above cannot see: a
-// pulse line written with fmt.Fprintf(d.Out, ...) takes no outMu, and a
-// gather writes the same stream from one goroutine per pending bead (ADR
-// 0028 §1), so a pulse line could land half-way through a launch line. A
-// bare write is also quiet, so the LastWrite arm above stays green over it.
-// This is the source pin for the writer: every write pulse.go makes to Out
-// or errw() goes through quietf/equietf — never the fmt functions and never
-// the stamping three, which would feed the watchdog. It counts what it
-// found, so a sweep over the wrong file fails instead of passing.
-func TestQAPulseWritesGoThroughTheQuietPair(t *testing.T) {
+// The other half of ranger-base-frqmn, which the arm above cannot see, and
+// widened to its class by ranger-base-hpppv: a line written with
+// fmt.Fprintf(d.Out, ...) takes no outMu, and a gather writes the same
+// stream from one goroutine per pending bead (ADR 0028 §1), so it can land
+// half-way through a launch line. A bare write is also quiet, so the
+// LastWrite arm above stays green over it — only reading the source catches
+// the outMu half.
+//
+// frqmn read one file. The same census then found two more writers of the
+// same stream (watch.go's herdr-hint callback, which herdrHints calls from
+// its own goroutine, and autoReapPass's six lines, which run beside a
+// rolling Run's gathers), and there is no reason to expect a fourth to be
+// found by a pin that only ever reads pulse.go. So the rule is stated over
+// the package instead: OUTSIDE dispatch.go, which defines the writers, no
+// non-test file in internal/posse names d.Out or d.errw() at all.
+//
+// Naming, not just writing: a callee handed d.errw() as an io.Writer prints
+// through it with no outMu held, which is the same defect one call deep
+// (ranger-base-9jojv). Stating it as "names" rather than "calls fmt.Fprintf
+// on" is what makes those visible, and each surviving one is an allowlist
+// entry below with the bead that will remove it.
+//
+// The allowlist is by SUBSTRING, so a site that moves keeps its exemption
+// and a site that is added does not — and every entry must match something,
+// so an exemption that outlives the code it excused fails the test rather
+// than quietly widening it.
+func TestQAWatchStreamWritesGoThroughTheDispatcher(t *testing.T) {
 	t.Parallel()
-	src, err := os.ReadFile("pulse.go")
+	// Read by the parser and not by grep, because `cmd.Output()` and a
+	// `d.Out` on some other struct both contain the string this is looking
+	// for, and neither is a write to this stream. What is swept is exactly:
+	// every method on *Dispatcher outside dispatch.go, and every d.Out /
+	// d.errw() inside one — func literals included, which is where the
+	// herdr-hint callback lives.
+	//
+	// Each entry: the file it lives in, the substring of the source line
+	// that identifies it, and why it may take the stream bare.
+	allowed := []struct{ file, site, why string }{
+		// watch.go's header block: everything above `passes := 0` runs
+		// before the first clock goroutine and the first gather exist, so
+		// there is nothing to interleave with and nothing yet to be a sign
+		// of life for. Deliberate, and documented at each site.
+		{"watch.go", `"warning: cannot hold the watch lock at %s`, "before any clock; the lock refusal precedes the loop"},
+		{"watch.go", `"pulse: %v — disarmed for this loop`, "config error, before the pulse clock starts"},
+		{"watch.go", `"backup: %v — the backup clock is disarmed for this loop`, "config error, before the backup clock starts"},
+		{"watch.go", "LaunchCapLine(max, d.App.DispatchEpoch(d.errw()))", "launch ration header, said once at the top of the log"},
+		{"watch.go", "ReportPosseBinary(d.Out)", "which binary this loop is, said once"},
+		{"watch.go", `d.App.ReportHookWall(d.Out, "watch")`, "L3 hook wall, swept once"},
+		{"watch.go", "d.App.PlanUsageStaleAfter(d.errw())", "the stale-after TYPO line, said once"},
+		{"watch.go", `"warning: cannot record the watch loop at %s`, "stampWatchPid, called from the header at Watch's head"},
+		// Writer handoffs still outstanding — the same defect one call
+		// deep. Filed, not excused: when ranger-base-9jojv routes them
+		// through d.errWriter(), the site stops matching and the entry
+		// must go with it or this test fails.
+		{"grokpool.go", "d.App.grokMeterInputs(d.errw())", "handoff, ranger-base-9jojv"},
+		{"uncounted.go", "d.App.UncountedCap(name, d.errw())", "handoff, ranger-base-9jojv"},
+		{"epoch.go", "errw := d.errw()", "handoff, ranger-base-9jojv"},
+		{"landsweep.go", "lockLaunches(d.App, d.Out)", "handoff, ranger-base-9jojv"},
+	}
+	hit := make(map[string]bool)
+	ents, err := os.ReadDir(".")
 	if err != nil {
 		t.Fatal(err)
 	}
-	quiet := strings.Count(string(src), "d.quietf(") + strings.Count(string(src), "d.equietf(")
-	if quiet < 5 {
-		t.Fatalf("found %d quiet writes in pulse.go; the sweep is not reading the file it thinks it is", quiet)
-	}
-	for i, ln := range strings.Split(string(src), "\n") {
-		for _, bad := range []string{
-			"Fprintf(d.Out", "Fprintln(d.Out", "Fprint(d.Out",
-			"Fprintf(d.errw()", "Fprintln(d.errw()", "Fprint(d.errw()",
-			"d.printf(", "d.eprintf(", "d.println(",
-		} {
-			if strings.Contains(ln, bad) {
-				t.Errorf("pulse.go:%d writes the watch stream with %s — outside outMu, or stamping LastWrite from a clock (ranger-base-frqmn):\n%s", i+1, bad, ln)
+	fset := token.NewFileSet()
+	files, methods, flagged := 0, 0, 0
+	for _, e := range ents {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		// dispatch.go IS the writers: printf/eprintf/println,
+		// quietf/equietf and the two io.Writer adapters beside them are the
+		// only bodies that may touch Out and errw() directly.
+		if name == "dispatch.go" {
+			continue
+		}
+		src, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		f, err := parser.ParseFile(fset, name, src, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		files++
+		lines := strings.Split(string(src), "\n")
+		for _, decl := range f.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Recv == nil || len(fn.Recv.List) != 1 || fn.Body == nil {
+				continue
 			}
+			star, ok := fn.Recv.List[0].Type.(*ast.StarExpr)
+			if !ok {
+				continue
+			}
+			if id, ok := star.X.(*ast.Ident); !ok || id.Name != "Dispatcher" {
+				continue
+			}
+			if len(fn.Recv.List[0].Names) == 0 {
+				continue // an unnamed receiver cannot reach either field
+			}
+			recv := fn.Recv.List[0].Names[0].Name
+			methods++
+			ast.Inspect(fn.Body, func(n ast.Node) bool {
+				sel, ok := n.(*ast.SelectorExpr)
+				if !ok || (sel.Sel.Name != "Out" && sel.Sel.Name != "errw") {
+					return true
+				}
+				if id, ok := sel.X.(*ast.Ident); !ok || id.Name != recv {
+					return true
+				}
+				pos := fset.Position(sel.Pos())
+				ln := ""
+				if pos.Line-1 < len(lines) {
+					ln = lines[pos.Line-1]
+				}
+				for _, a := range allowed {
+					if a.file == name && strings.Contains(ln, a.site) {
+						hit[a.file+"\x00"+a.site] = true
+						return true
+					}
+				}
+				flagged++
+				t.Errorf("%s:%d names the watch stream directly — write it through the Dispatcher (d.printf/d.eprintf/d.println for the pass, d.quietf/d.equietf for a clock, d.errWriter()/d.quietErrWriter() for a callee that takes a writer), or add it to the allowlist above with its reason (ranger-base-hpppv):\n\t%s", name, pos.Line, strings.TrimSpace(ln))
+				return true
+			})
 		}
 	}
-	t.Logf("checked %d quiet writes in pulse.go", quiet)
+	// The sweep must have read the package it thinks it did, and every
+	// exemption must still excuse something real.
+	// Floors, not counts: 102 files and 48 *Dispatcher methods when this was
+	// written, and the point is only that a sweep that reads nothing (wrong
+	// cwd, a parse that silently yielded no decls) fails loudly instead of
+	// passing over an empty set.
+	if files < 30 || methods < 40 {
+		t.Fatalf("swept %d non-test files and %d *Dispatcher methods in internal/posse; the sweep is not reading the package it thinks it is", files, methods)
+	}
+	for _, a := range allowed {
+		if !hit[a.file+"\x00"+a.site] {
+			t.Errorf("allowlist entry %s %q (%s) matched nothing — the site is gone, so the exemption must go too", a.file, a.site, a.why)
+		}
+	}
+	t.Logf("swept %d non-test files, %d *Dispatcher methods, %d allowlisted sites, %d flagged", files, methods, len(allowed), flagged)
+}
+
+// The stamping half of the same rule, which the sweep above cannot state: a
+// clock that runs on a goroutine of its own may write this stream, but its
+// line is a reading of the shop and not a sign of life from the loop, so it
+// must never stamp LastWrite (see LastWrite's doc, and ranger-base-0fz98
+// finding 3 for what a clock that does stamp costs — a stall the budget can
+// never reach). d.quietf/d.equietf hold outMu and stamp nothing; the
+// stamping three are the pass's.
+//
+// One file per clock, and each must have quiet writes to prove the sweep
+// read it, so a file renamed out from under this list fails rather than
+// passing over nothing.
+func TestQAClockFilesUseOnlyTheQuietPair(t *testing.T) {
+	t.Parallel()
+	for _, file := range []string{"pulse.go", "watchdog.go", "guardclock.go", "backuploop.go"} {
+		t.Run(file, func(t *testing.T) {
+			t.Parallel()
+			src, err := os.ReadFile(file)
+			if err != nil {
+				t.Fatal(err)
+			}
+			quiet := strings.Count(string(src), "d.quietf(") + strings.Count(string(src), "d.equietf(")
+			if quiet < 1 {
+				t.Fatalf("found no quiet writes in %s; the sweep is not reading the file it thinks it is", file)
+			}
+			for i, ln := range strings.Split(string(src), "\n") {
+				if strings.HasPrefix(strings.TrimSpace(ln), "//") {
+					continue
+				}
+				for _, bad := range []string{"d.printf(", "d.eprintf(", "d.println("} {
+					if strings.Contains(ln, bad) {
+						t.Errorf("%s:%d writes through %s — a clock on its own goroutine stamping LastWrite reports a stall exactly once and then feeds its own silence clock (ranger-base-0fz98 finding 3, ranger-base-frqmn):\n\t%s", file, i+1, bad, strings.TrimSpace(ln))
+					}
+				}
+			}
+			t.Logf("%s: %d quiet writes, no stamping writer", file, quiet)
+		})
+	}
 }

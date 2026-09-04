@@ -444,6 +444,22 @@ func (w dispatcherErrw) Write(p []byte) (int, error) {
 
 func (d *Dispatcher) quietErrWriter() io.Writer { return dispatcherErrw{d} }
 
+// errWriter is the stamping twin quietErrWriter's doc says had no caller.
+// It has one since ranger-base-hpppv: reapPolicy hands d.errw() to
+// App.reapAfter, which prints the config typo line, and autoReapPass runs on
+// Run's goroutine beside a rolling Run's gathers (ADR 0028 §1) — so that
+// line needs outMu like every other write the pass makes, and it stamps
+// because the sweep IS the pass. A callee that takes an io.Writer cannot
+// call d.eprintf; this is how it gets one.
+type dispatcherStampErrw struct{ d *Dispatcher }
+
+func (w dispatcherStampErrw) Write(p []byte) (int, error) {
+	w.d.eprintf("%s", p)
+	return len(p), nil
+}
+
+func (d *Dispatcher) errWriter() io.Writer { return dispatcherStampErrw{d} }
+
 // planGuard takes this pass's shared plan reading (rangerhq-jgm). The plan's
 // own rate windows are the real budget; `plan_guard_<window>:` (percent) are
 // the thresholds and none is set by default — with none set, no request is
