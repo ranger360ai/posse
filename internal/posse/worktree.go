@@ -1059,24 +1059,37 @@ func workHead(t *SessionTree) (string, bool) {
 // it does. nil is the honest default and means "no": one commit it cannot
 // account for and the branch is ahead by real work, which is a strand.
 //
-// Two ways a commit's work reaches the base under another sha, and the bug
-// that needs both (ranger-base-g2xf):
+// Three ways a commit's work reaches the base under another sha, and the
+// bugs that need all three (ranger-base-g2xf, ranger-base-emgdb):
 //
 //   - patch-id equivalence, which is what `git cherry` measures and what a
 //     non-interactive rebase drops on its own. One call for the whole
 //     branch, and the case that never reaches a human.
 //   - git's own `-x` trailer, `(cherry picked from commit <sha>)`. That is
-//     the ONLY evidence left when the pick was resolved by hand: the
-//     resolution amends the patch, so the patch-ids differ, `git cherry`
-//     says `+`, and the replay conflicts on the same hunk every time.
+//     the only evidence a PICK resolved by hand leaves: the resolution
+//     amends the patch, so the patch-ids differ, `git cherry` says `+`, and
+//     the replay conflicts on the same hunk every time.
+//   - the commit's own identity — author, AUTHOR date, subject — carried
+//     through unchanged by the rebase that landed it. That is the only
+//     evidence a REBASE resolved by hand leaves, because a rebase writes no
+//     trailer at all. ADR 0051 measured 48 of 134 landings — 36% — as
+//     rebases, so this is the arm the common case needs, not a corner:
+//     on ranger-base-nw9zg, main held all five
+//     commits (landed 2026-09-02 22:15:47) and only two were patch-id twins
+//     — the other three had absorbed a sibling's line in a shared Makefile
+//     .PHONY list and a scrub of the fixture literals main made on top. So
+//     the strand report was word-for-word a real one over work that was
+//     entirely on main, and it cost a P1 and a seat (ranger-base-emgdb).
 //
-// The two are not the same evidence, and every caller that would DESTROY
+// The three are not the same evidence, and every caller that would DESTROY
 // something has to tell them apart, which is why each pairing carries how it
 // was answered (ranger-base-as19). Patch-id equivalence is a measurement of
 // content: the base holds this patch, so the branch is the last copy of
-// nothing. The trailer is a record of somebody's decision — it cannot say
-// whether the resolution kept every hunk — so it is read as "the base holds
-// this work" and never as licence to throw the branch away.
+// nothing. The trailer is a record of somebody's decision and the identity
+// pairing is an inference about a replay — neither can say whether the
+// resolution kept every hunk, and 34a27b4/6a230eb above is a pair where it
+// demonstrably did not — so both are read as "the base holds this work" and
+// never as licence to throw the branch away.
 func equivalentOnBase(repo, base, tip string) []equiv {
 	out, err := git(repo, "rev-list", base+".."+tip)
 	if err != nil || out == "" {
@@ -1091,6 +1104,7 @@ func equivalentOnBase(repo, base, tip string) []equiv {
 		}
 	}
 	var eq []equiv
+	var replay map[string]string // built once, and only if a cheap arm misses
 	for _, sha := range strings.Fields(out) {
 		if upstream[sha] {
 			eq = append(eq, equiv{note: abbrevSHA(sha) + " as an equivalent patch on " + base, byPatch: true})
@@ -1101,19 +1115,83 @@ func equivalentOnBase(repo, base, tip string) []equiv {
 		// walking the whole history.
 		pick, err := git(repo, "log", "--format=%H", "-1", "--fixed-strings",
 			"--grep=cherry picked from commit "+sha, base, "--not", tip)
-		if err != nil || pick == "" {
+		if err == nil && pick != "" {
+			eq = append(eq, equiv{note: abbrevSHA(sha) + " as " + abbrevSHA(pick)})
+			continue
+		}
+		key := replayKey(repo, sha)
+		if key == "" {
 			return nil
 		}
-		eq = append(eq, equiv{note: abbrevSHA(sha) + " as " + abbrevSHA(pick)})
+		if replay == nil {
+			replay = replayIndex(repo, base, tip)
+		}
+		twin := replay[key]
+		if twin == "" {
+			return nil
+		}
+		eq = append(eq, equiv{
+			note:     abbrevSHA(sha) + " as " + abbrevSHA(twin) + " (same author, author date and subject)",
+			replayed: true,
+		})
 	}
 	return eq
 }
 
+// replayKey is the three fields a rebase carries through a commit unchanged
+// — author identity, AUTHOR date (not the committer's, which the replay
+// rewrites), and subject — and nothing else. "" for a commit git will not
+// describe, which the caller reads as unaccounted-for rather than looking
+// up: "" is also replayIndex's mark for an AMBIGUOUS key, and an unreadable
+// commit must not collide with one.
+func replayKey(repo, sha string) string {
+	k, err := git(repo, "log", "-1", "--format=%ae%x1f%aI%x1f%s", sha)
+	if err != nil {
+		return ""
+	}
+	return k
+}
+
+// replayIndex maps that key to the single commit on the base that carries
+// it, over the same bound the trailer lookup uses. A key TWO commits share
+// is mapped to "" — an ambiguous pairing is not a pairing, and the caller
+// reads "" as unaccounted-for, which is the honest default everywhere else
+// in equivalentOnBase.
+//
+// Measured before it was relied on: 1163 commits on this repo's main, 1163
+// distinct keys, no collision at all (ranger-base-emgdb).
+func replayIndex(repo, base, tip string) map[string]string {
+	out, err := git(repo, "log", "--format=%H%x1f%ae%x1f%aI%x1f%s", base, "--not", tip)
+	if err != nil {
+		return map[string]string{}
+	}
+	idx := map[string]string{}
+	for _, ln := range strings.Split(out, "\n") {
+		f := strings.SplitN(ln, "\x1f", 2)
+		if len(f) != 2 || f[0] == "" {
+			continue
+		}
+		if _, dup := idx[f[1]]; dup {
+			idx[f[1]] = "" // two commits, one key: nothing here is identified
+			continue
+		}
+		idx[f[1]] = f[0]
+	}
+	return idx
+}
+
 // equiv is one commit's account of itself on the base: the sentence a human
-// can check by hand, and which of the two kinds of evidence answered it.
+// can check by hand, and which of the three kinds of evidence answered it.
+//
+// byPatch is the only one that is a measurement of CONTENT, and it is the
+// one every destructive caller keys on (measuredOnBase). The other two are
+// records or inferences about what somebody's landing did, and adding one
+// can never widen what may be deleted.
 type equiv struct {
-	note    string
-	byPatch bool // measured by patch-id; false means git's -x trailer said so
+	note     string
+	byPatch  bool // measured by patch-id
+	replayed bool // paired by author identity, author date and subject
+	// neither: git's -x trailer said so
 }
 
 // equivNotes is the pairing as a reader sees it — the evidence is a fact
@@ -1140,12 +1218,12 @@ func measuredOnBase(eqs []equiv) bool {
 	return len(eqs) > 0
 }
 
-// trailerOnly is the pairing's UNMEASURED half: the commits accounted for by
-// git's `-x` trailer alone. A refusal names those and counts those — it used
-// to count every commit ahead of the base and list the patch-measured
-// pairing among them, which reads as though a measurement were missing when
-// it is not (ranger-base-x8jp).
-func trailerOnly(eqs []equiv) []string {
+// unmeasured is the pairing's UNMEASURED half: the commits no measurement of
+// content accounts for. A refusal names those and counts those — it used to
+// count every commit ahead of the base and list the patch-measured pairing
+// among them, which reads as though a measurement were missing when it is
+// not (ranger-base-x8jp).
+func unmeasured(eqs []equiv) []string {
 	var out []string
 	for _, e := range eqs {
 		if !e.byPatch {
@@ -1153,6 +1231,59 @@ func trailerOnly(eqs []equiv) []string {
 		}
 	}
 	return out
+}
+
+// unmeasuredEvidence names what the unmeasured half actually rests on. A
+// sentence naming the one kind of evidence it does not have is the same
+// overstatement ranger-base-x8jp and ranger-base-hk02 both removed, and the
+// third kind (ranger-base-emgdb) is not a record of anything.
+func unmeasuredEvidence(eqs []equiv) string {
+	trailer, replay := false, false
+	for _, e := range eqs {
+		switch {
+		case e.byPatch:
+		case e.replayed:
+			replay = true
+		default:
+			trailer = true
+		}
+	}
+	switch {
+	case trailer && replay:
+		return "git's own -x trailer and a replay of the same commit"
+	case replay:
+		return "a replay of the same commit"
+	default:
+		return "git's own -x trailer"
+	}
+}
+
+// unmeasuredClause is the whole of what a listing may say about the
+// unmeasured half: what accounts for it, and — in the same breath, because
+// the two were separable once and the second went missing — that it is not a
+// measurement of what the landing kept.
+func unmeasuredClause(eqs []equiv, base string) string {
+	var trailer, replay []string
+	for _, e := range eqs {
+		switch {
+		case e.byPatch:
+		case e.replayed:
+			replay = append(replay, e.note)
+		default:
+			trailer = append(trailer, e.note)
+		}
+	}
+	switch {
+	case len(trailer) > 0 && len(replay) > 0:
+		return fmt.Sprintf("recorded as landed in %s and replayed onto %s as %s — a decision and an identity match, and neither is a measurement of what the landing kept",
+			strings.Join(trailer, "; "), base, strings.Join(replay, "; "))
+	case len(replay) > 0:
+		return fmt.Sprintf("replayed onto %s as %s, which is an identity match and not a measurement of what the replay kept",
+			base, strings.Join(replay, "; "))
+	default:
+		return fmt.Sprintf("recorded as landed in %s, which is a decision and not a measurement of what the resolution kept",
+			strings.Join(trailer, "; "))
+	}
 }
 
 // contentNotOnBase names the paths the branch touched whose BYTES the base
@@ -1403,9 +1534,9 @@ func RemoveSessionTree(t *SessionTree, force bool) error {
 					}
 					redundant = true
 				case len(eq) > 0:
-					only := trailerOnly(eq)
-					return Die("%s is ahead of %s by %s commit(s), %d of which have no record of landing beyond git's own -x trailer (%s) — a trailer is somebody's decision, not a measurement of what the resolution kept, so this branch is still the last copy of those patches and is not removed here; compare them, then `git -C %s worktree remove %s && git -C %s branch -D %s`",
-						t.Branch, t.Base, n, len(only), strings.Join(only, ", "), AbbrevHome(t.Repo), AbbrevHome(t.Path), AbbrevHome(t.Repo), t.Branch)
+					only := unmeasured(eq)
+					return Die("%s is ahead of %s by %s commit(s), %d of which have no record of landing beyond %s (%s) — that is somebody's decision or an identity match, not a measurement of what the landing kept, so this branch is still the last copy of those patches and is not removed here; compare them, then `git -C %s worktree remove %s && git -C %s branch -D %s`",
+						t.Branch, t.Base, n, len(only), unmeasuredEvidence(eq), strings.Join(only, ", "), AbbrevHome(t.Repo), AbbrevHome(t.Path), AbbrevHome(t.Repo), t.Branch)
 				default:
 					return Die("%s has %s commit(s) not on %s — not removed", t.Branch, n, t.Base)
 				}
@@ -1635,12 +1766,13 @@ func unaccountedFor(t *SessionTree, force bool) string {
 		return fmt.Sprintf("%s holds %d commit(s) not on %s by sha and no record says which bead — but every one of them is already on %s as an equivalent patch (%s), so nothing here is unlanded and a human can retire the tree",
 			t.Branch, n, t.Base, t.Base, strings.Join(equivNotes(eq), "; "))
 	case len(eq) > 0:
-		// The -x trailer alone: somebody's decision that this landed, not a
-		// measurement of what their resolution kept. Not landed and not
-		// settled either — the same answer RemoveSessionTree gives before it
-		// declines to delete this shape.
-		return fmt.Sprintf("%s holds %d commit(s) not on %s by sha and no record says which bead — recorded as landed in %s, which is a decision and not a measurement of what the resolution kept; compare (`git log %s..%s`) before retiring the tree",
-			t.Branch, n, t.Base, strings.Join(trailerOnly(eq), "; "), t.Base, t.Branch)
+		// No measurement of content: somebody's decision that this landed
+		// (the -x trailer), or an identity match on a replay. Neither says
+		// what the resolution kept. Not landed and not settled either — the
+		// same answer RemoveSessionTree gives before it declines to delete
+		// this shape, and the clause names which of the two it has.
+		return fmt.Sprintf("%s holds %d commit(s) not on %s by sha and no record says which bead — %s; compare (`git log %s..%s`) before retiring the tree",
+			t.Branch, n, t.Base, unmeasuredClause(eq, t.Base), t.Base, t.Branch)
 	}
 	return fmt.Sprintf("%s holds %d commit(s) not on %s and no record says which bead — NOT landed; look at it (`git log %s..%s`) and `posse worktrees --land --force` when you want it",
 		t.Branch, n, t.Base, t.Base, t.Branch)
@@ -1673,11 +1805,11 @@ func treeState(t *SessionTree) string {
 			// RemoveSessionTree delete it unattended.
 			parts = append(parts, fmt.Sprintf("nothing unlanded (%s)", strings.Join(equivNotes(eq), "; ")))
 		case len(eq) > 0:
-			// The -x trailer alone: somebody's decision, not a measurement of
-			// what a by-hand resolution kept, so RemoveSessionTree still
-			// refuses to delete here — the listing should not read as settled
-			// either.
-			parts = append(parts, fmt.Sprintf("%s commit(s) not on %s by sha, recorded as landed in %s — compare before retiring", n, t.Base, strings.Join(trailerOnly(eq), "; ")))
+			// No measurement of content: the -x trailer, or an identity match
+			// on a replay. Neither says what a by-hand resolution kept, so
+			// RemoveSessionTree still refuses to delete here — the listing
+			// should not read as settled either.
+			parts = append(parts, fmt.Sprintf("%s commit(s) not on %s by sha, %s — compare before retiring", n, t.Base, unmeasuredClause(eq, t.Base)))
 		default:
 			who := "no record says which bead"
 			if t.Bead != "" {
