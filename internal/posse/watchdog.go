@@ -127,10 +127,15 @@ func watchdogBudget(maxInterval time.Duration, promptWaitMS int) time.Duration {
 // Built the same way the silence budget is: the longest a healthy pass can
 // legitimately take, times WatchdogFactor. That length is now knowable, which
 // is the whole reason this reading exists — a pass gathers for at most its
-// window (`GatherWindow`, the base interval) and then waits out at most one
-// backed-off interval before the next one starts. With production's 3m/3m
-// that is 2 x 6m = 12m, close under the ~15m the operator's standing
-// mitigation used by hand against the log.
+// window (`GatherWindow`) and then waits out at most one backed-off interval
+// before the next one starts. With production's 3m/3m that is 2 x 6m = 12m,
+// close under the ~15m the operator's standing mitigation used by hand
+// against the log.
+//
+// `window` is the caller's GatherWindow, which Watch defaults to the base
+// interval and otherwise leaves alone — so it is NOT interchangeable with
+// base, and passing base here made the witness fire on a healthy pass for
+// every caller that set a longer one (ranger-base-nzzuz finding 1).
 func watchdogPassBudget(maxInterval, window time.Duration) time.Duration {
 	quiet := maxInterval + window
 	if quiet <= 0 {

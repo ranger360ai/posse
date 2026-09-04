@@ -45,6 +45,7 @@ package posse
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -409,10 +410,10 @@ func TestQAThePassClockIsSeededBeforeTheFirstPass(t *testing.T) {
 	// is about a consequence and not about a field: an unseeded clock makes
 	// passStallTick silent however far past its budget it is asked, which is
 	// the failure mode this bead's ask 2 exists to end. The loop's own
-	// witness is not read here — with a caller's own GatherWindow the real
-	// budget is built from `base` and speaks early (ranger-base-ox49o's
-	// findings bundle), so an arm waiting for that line would pass for the
-	// mismatch's reason and red the day it is fixed.
+	// witness is not read here: since ranger-base-nzzuz the budget is built
+	// from this caller's own GatherWindow, so with an hour-long window no
+	// witness line is due for two hours — the silence of a HEALTHY pass,
+	// which is its own arm below, not this one.
 	fresh := newTestDispatcher(t, rig.d.HB)
 	var probe syncBuf
 	fresh.Out = &probe
@@ -422,5 +423,137 @@ func TestQAThePassClockIsSeededBeforeTheFirstPass(t *testing.T) {
 	fresh.passStallTick(time.Nanosecond)
 	if probe.String() != "" {
 		t.Errorf("premise: an unseeded clock is SILENT — that silence is what the seeding above buys:\n%s", probe.String())
+	}
+}
+
+// ranger-base-nzzuz finding 1 (from ranger-base-ox49o's verify of
+// ranger-base-3ryit, ask 2): the pass-stall witness must clock the window the
+// gather is actually bounded by, so it does not fire on a HEALTHY pass.
+//
+// The escape. watchdogPassBudget was handed (maxInterval, base) at Watch's
+// callsite, but a pass gathers for d.GatherWindow (gatherRound), which
+// watch.go only DEFAULTS to base and deliberately preserves when a caller set
+// its own — the two fixtures named in that comment (drain_qa_test.go,
+// guardclock_qa_test.go) and this file's own control arms are all such
+// callers. Any of them is past its budget before its first pass can
+// legitimately return: with base 50ms and maxInterval 100ms the budget is
+// 2 x 150ms = 300ms, against a window of one hour.
+//
+// MEASURED at the escape (main e88366a): this fixture printed, ~300ms in and
+// while pass 1 was still gathering, "watchdog: no pass has completed for 0s -
+// past its 0s budget ... nothing in flight - the pass is held by something
+// else" — a finding about a healthy pass that is holding a-1's leg, which is
+// also finding 2 (notePassStall spends the flag on that first tick, so no
+// later line corrects it).
+//
+// MUTATION: put `base` back at watch.go's callsite → the count below is 1.
+// The budget is the only thing that moves; every other pin over this bead,
+// including the seeding arm above, stays green under that mutant, which is
+// why this arm exists.
+func TestQAPassStallWitnessClocksTheGatherWindowNotTheBaseInterval(t *testing.T) {
+	t.Parallel()
+	// An hour-long window over a leg that never lands: pass 1 is structurally
+	// held for the whole test, so it is genuinely a pass that has not come
+	// round — and it is HEALTHY, because it is inside the window its caller
+	// asked for.
+	rig := carryFixture(t, time.Hour)
+	waitForOut(t, rig.out, "in flight, gathering")
+
+	// Ten times the budget the escape built (300ms), and sixty of this loop's
+	// watchdog ticks: the mutant's line lands in the first ~350ms, so this
+	// margin is for the fixture's forks, not for the claim.
+	time.Sleep(3 * time.Second)
+
+	s := rig.out.String()
+	// Premise: no pass completed in that window, or a re-stamped clock — and
+	// not the budget — is why the witness is silent.
+	if strings.Contains(s, passHeader+"2") {
+		t.Fatalf("premise: pass 1 must still be holding, or notePass re-armed the clock and this measures nothing:\n%s", s)
+	}
+	if n := strings.Count(s, "no pass has completed for"); n != 0 {
+		t.Errorf("a pass inside its own GatherWindow is healthy; the witness fired %d time(s) on it:\n%s", n, s)
+	}
+
+	// The POSITIVE CONTROL, so the zero above is an unfired witness and not an
+	// unreachable one: the clock is seeded, the witness is armed, and this
+	// buffer is where its line lands. Asked with a budget nothing can be
+	// inside, it speaks at once — which is exactly what the loop's own
+	// watchdog did while the budget was built from `base`.
+	rig.d.passStallTick(time.Nanosecond)
+	if !strings.Contains(rig.out.String(), "no pass has completed for") {
+		t.Errorf("control: this fixture's witness must be able to speak into this buffer, or the count above is vacuous:\n%s",
+			rig.out.String())
+	}
+}
+
+// ranger-base-nzzuz finding 3: gatherRound's window arm judges what has
+// ALREADY landed before the pass leaves, which is an explicit claim in its
+// doc ("everything ALREADY landed is judged before the pass leaves") and was
+// unpinned — replacing that arm with a bare `return judged, stillWorking`
+// left every test over passcarry and the watchdog green (seven, go test
+// -overlay, 2026-09-04).
+//
+// Debt rather than defect: the cost is one backoff of latency, and the settle
+// poke (d.settled(), pinned above) removes most of it — which is also why the
+// arm cannot be pinned through Watch, where the next pass follows in
+// milliseconds either way. So it is pinned at gatherRound, the surface that
+// makes the claim.
+//
+// WHY IT COUNTS AND DOES NOT WAIT: with the window already closed, both arms
+// of the select are ready at every iteration and Go picks between them at
+// random. The real code judges all `legs` either way — every result taken by
+// the results arm is judged there, and the first time the window arm wins,
+// judgeLanded drains the rest — so this arm is deterministically green. The
+// mutant only reaches `legs` if the results arm wins every draw, which is
+// 2^-(legs-1) per round and (2^-7)^3 over the loop below; it fails on the
+// first round that draws the window arm with anything still queued.
+func TestQAGatherRoundJudgesWhatLandedBeforeTheWindowClosed(t *testing.T) {
+	t.Parallel()
+	b, _ := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+	var out syncBuf
+	d.Out = &out
+	// Refill is what gives a pass a window at all (a one-shot Run drains to
+	// zero); NoReap keeps judge's sweep — which is not what is measured here
+	// — down to the refusals fold.
+	d.Refill = true
+	d.NoReap = true
+	// Closed before the first select, so every iteration is a live draw
+	// between the two arms rather than a race the test would be timing.
+	d.GatherWindow = time.Nanosecond
+
+	const legs, rounds = 8, 3
+	for r := 0; r < rounds; r++ {
+		d.results = make(chan gathered, 32)
+		var pend []*pendingBead
+		for i := 0; i < legs; i++ {
+			pend = append(pend, &pendingBead{
+				is:       RepoIssue{BdIssue: BdIssue{ID: fmt.Sprintf("a-%d", i)}},
+				persona:  "ranger",
+				session:  "ranger-posse-a",
+				prompted: time.Now(),
+			})
+		}
+		d.mu.Lock()
+		d.inflight = pend
+		d.mu.Unlock()
+		// In hand before the pass leaves: every leg has landed and is sitting
+		// in the fan-in. `working` keeps judge off the refill path — the
+		// claim is about judging what landed, not about what a verdict then
+		// hires.
+		for _, p := range pend {
+			d.results <- gathered{p: p, is: p.is, persona: "ranger", working: true}
+		}
+
+		judged, stillWorking := d.gatherRound("", "", 0, map[string]string{}, map[string]int{})
+		if judged != legs || stillWorking != legs {
+			t.Fatalf("round %d: %d results were in hand when the window closed; want all %d judged before the pass leaves, got judged=%d working=%d:\n%s",
+				r, legs, legs, judged, stillWorking, out.String())
+		}
+		// And the bookkeeping that goes with it: a judged leg is struck from
+		// the in-flight set, so nothing here is carried into a next pass.
+		if n := d.inFlightCount(); n != 0 {
+			t.Fatalf("round %d: a leg judged at the window close is not still in flight, got %d carried", r, n)
+		}
 	}
 }

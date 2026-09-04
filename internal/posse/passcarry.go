@@ -391,6 +391,15 @@ func (d *Dispatcher) lastPassAt() time.Time {
 
 // notePassStall arms the once-per-stall rule and reports whether this caller
 // is the one that gets to speak.
+//
+// The tick that speaks is the FIRST one past the budget, and it spends the
+// flag for the whole stall — no later tick corrects it. So the line is
+// rendered from the state at that instant, in-flight set included
+// (PassStallLine takes inFlightLine()), and a budget that expires before the
+// pass has enqueued anything renders "nothing in flight" about a pass that is
+// holding legs. The budget has to be past the point where the set is
+// populated, which is what building it from GatherWindow rather than from the
+// base interval buys (watch.go, ranger-base-nzzuz finding 2).
 func (d *Dispatcher) notePassStall() bool {
 	d.mu.Lock()
 	defer d.mu.Unlock()

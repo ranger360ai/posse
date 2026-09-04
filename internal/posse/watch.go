@@ -334,7 +334,14 @@ func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string,
 	}()
 	go func() {
 		defer close(dogDone)
-		d.watchdogLoop(dogCtx, base, watchdogBudget(maxInterval, d.PromptWaitMS), watchdogPassBudget(maxInterval, base))
+		// The pass budget is built from d.GatherWindow and not from `base`,
+		// and this call sits below the defaulting above for that reason: the
+		// gather it is a clock for is bounded by d.GatherWindow
+		// (passcarry.go), which base is only the DEFAULT for. Built from
+		// base, a caller with its own longer window was past its budget
+		// before its first pass could legitimately return, and the witness
+		// fired on a healthy pass (ranger-base-nzzuz finding 1).
+		d.watchdogLoop(dogCtx, base, watchdogBudget(maxInterval, d.PromptWaitMS), watchdogPassBudget(maxInterval, d.GatherWindow))
 	}()
 	passes := 0
 	wait := base
