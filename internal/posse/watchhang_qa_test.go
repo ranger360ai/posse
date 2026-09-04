@@ -820,9 +820,10 @@ func TestQAClockLinesDoNotFeedTheWatchdog(t *testing.T) {
 //
 // Naming, not just writing: a callee handed d.errw() as an io.Writer prints
 // through it with no outMu held, which is the same defect one call deep
-// (ranger-base-9jojv). Stating it as "names" rather than "calls fmt.Fprintf
-// on" is what makes those visible, and each surviving one is an allowlist
-// entry below with the bead that will remove it.
+// (ranger-base-9jojv, which routed the four this pin found through
+// d.outWriter()/d.errWriter()). Stating it as "names" rather than "calls
+// fmt.Fprintf on" is what makes those visible, and each surviving one is an
+// allowlist entry below with the reason it may take the stream bare.
 //
 // The allowlist is by SUBSTRING, so a site that moves keeps its exemption
 // and a site that is added does not — and every entry must match something,
@@ -862,14 +863,6 @@ func TestQAWatchStreamWritesGoThroughTheDispatcher(t *testing.T) {
 		{"watch.go", "d.rawOut = d.Out", "installing the tee, not writing"},
 		{"watch.go", "d.Out = io.MultiWriter(d.Out, lg)", "installing the tee, not writing"},
 		{"watch.go", "d.Err = io.MultiWriter(d.errw(), lg)", "installing the tee, not writing"},
-		// Writer handoffs still outstanding — the same defect one call
-		// deep. Filed, not excused: when ranger-base-9jojv routes them
-		// through d.errWriter(), the site stops matching and the entry
-		// must go with it or this test fails.
-		{"grokpool.go", "d.App.grokMeterInputs(d.errw())", "handoff, ranger-base-9jojv"},
-		{"uncounted.go", "d.App.UncountedCap(name, d.errw())", "handoff, ranger-base-9jojv"},
-		{"epoch.go", "errw := d.errw()", "handoff, ranger-base-9jojv"},
-		{"landsweep.go", "lockLaunches(d.App, d.Out)", "handoff, ranger-base-9jojv"},
 	}
 	hit := make(map[string]bool)
 	ents, err := os.ReadDir(".")
@@ -936,7 +929,7 @@ func TestQAWatchStreamWritesGoThroughTheDispatcher(t *testing.T) {
 					}
 				}
 				flagged++
-				t.Errorf("%s:%d names the watch stream directly — write it through the Dispatcher (d.printf/d.eprintf/d.println for the pass, d.quietf/d.equietf for a clock, d.errWriter()/d.quietErrWriter() for a callee that takes a writer), or add it to the allowlist above with its reason (ranger-base-hpppv):\n\t%s", name, pos.Line, strings.TrimSpace(ln))
+				t.Errorf("%s:%d names the watch stream directly — write it through the Dispatcher (d.printf/d.eprintf/d.println for the pass, d.quietf/d.equietf for a clock, d.outWriter()/d.errWriter()/d.quietErrWriter() for a callee that takes a writer), or add it to the allowlist above with its reason (ranger-base-hpppv):\n\t%s", name, pos.Line, strings.TrimSpace(ln))
 				return true
 			})
 		}
@@ -993,6 +986,118 @@ func TestQAClockFilesUseOnlyTheQuietPair(t *testing.T) {
 				}
 			}
 			t.Logf("%s: %d quiet writes, no stamping writer", file, quiet)
+		})
+	}
+}
+
+// overlapWriter reports any Write that begins while another is still in
+// flight. It dwells inside the window on purpose: a writer that takes no
+// lock then loses a nanosecond race would read as serialized, and a pin that
+// only fails on an unlucky schedule is not a pin.
+type overlapWriter struct {
+	mu      sync.Mutex
+	inFlt   int
+	overlap int
+	n       int
+	dwell   time.Duration
+}
+
+func (w *overlapWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	w.n++
+	w.inFlt++
+	if w.inFlt > 1 {
+		w.overlap++
+	}
+	w.mu.Unlock()
+
+	time.Sleep(w.dwell)
+
+	w.mu.Lock()
+	w.inFlt--
+	w.mu.Unlock()
+	return len(p), nil
+}
+
+func (w *overlapWriter) read() (writes, overlaps int) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.n, w.overlap
+}
+
+// The sweep above proves each handoff site NAMES one of the adapters. It
+// cannot prove the adapter does either thing the name promises: an adapter
+// whose Write called fmt.Fprintf(w.d.Out, ...) directly would keep every
+// site matching and put the defect straight back. So the three adapters are
+// measured here against the two properties they exist for
+// (ranger-base-9jojv).
+//
+// Serialization is asserted against the PASS's own writers and across BOTH
+// streams, because that is the guarantee outMu's doc actually makes — every
+// write to Out/errw() serialized against every other one — and because the
+// writer a callee is handed is written concurrently with a gather's lines by
+// construction (ADR 0028 §1). One overlapWriter is Out and Err both, so a
+// d.printf that lands mid-way through a handed-off line is caught even
+// though the two go to different sinks in production.
+func TestQAWriterHandoffAdaptersSerializeAndStamp(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name  string
+		get   func(*Dispatcher) io.Writer
+		stamp bool // does a line through it count as a sign of life?
+	}{
+		{"outWriter", func(d *Dispatcher) io.Writer { return d.outWriter() }, true},
+		{"errWriter", func(d *Dispatcher) io.Writer { return d.errWriter() }, true},
+		{"quietErrWriter", func(d *Dispatcher) io.Writer { return d.quietErrWriter() }, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			at := time.Date(2026, 9, 3, 4, 53, 18, 0, time.UTC)
+			w := &overlapWriter{dwell: 200 * time.Microsecond}
+			d := &Dispatcher{Out: w, Err: w, Now: func() time.Time { return at }}
+
+			const goroutines, each = 8, 20
+			var wg sync.WaitGroup
+			for g := 0; g < goroutines; g++ {
+				wg.Add(1)
+				go func(g int) {
+					defer wg.Done()
+					for i := 0; i < each; i++ {
+						if g%2 == 0 {
+							// The gather's half: an ordinary pass line.
+							d.printf("⚙ pass line %d/%d\n", g, i)
+							continue
+						}
+						// The callee's half: it has no Dispatcher and no
+						// outMu, only the io.Writer it was handed.
+						fmt.Fprintf(tc.get(d), "⏳ handed-off line %d/%d\n", g, i)
+					}
+				}(g)
+			}
+			wg.Wait()
+
+			writes, overlaps := w.read()
+			if want := goroutines * each; writes != want {
+				t.Fatalf("the sink saw %d writes, not %d — this arm did not exercise what it thinks it did", writes, want)
+			}
+			if overlaps != 0 {
+				t.Errorf("%d of %d writes began while another was still in flight: a callee handed %s writes outside outMu, which is the defect one call deep (ranger-base-9jojv)",
+					overlaps, writes, tc.name)
+			}
+
+			// And the stamping half: a line the PASS writes through a handed
+			// writer is a sign of life for the watchdog, a line a CLOCK
+			// writes is not (see LastWrite, ranger-base-0fz98).
+			at = at.Add(time.Hour)
+			d2 := &Dispatcher{Out: io.Discard, Err: io.Discard, Now: func() time.Time { return at }}
+			fmt.Fprintf(tc.get(d2), "a line\n")
+			switch got := d2.LastWrite(); {
+			case tc.stamp && !got.Equal(at):
+				t.Errorf("%s left LastWrite at %v: the pass wrote a line and the watchdog cannot see it", tc.name, got)
+			case !tc.stamp && !got.IsZero():
+				t.Errorf("%s moved LastWrite to %v: a clock's reading is not the loop writing", tc.name, got)
+			}
 		})
 	}
 }

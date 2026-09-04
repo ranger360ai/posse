@@ -107,7 +107,7 @@ func EpochStart(now time.Time, epoch time.Duration) time.Time {
 // configuration fact into a log twelve times an hour (the rule blindWarned
 // and planThreshWarned already keep).
 func (d *Dispatcher) rollEpoch(now time.Time) bool {
-	errw := d.errw()
+	errw := d.errWriter()
 	if d.epochWarned {
 		errw = io.Discard
 	}

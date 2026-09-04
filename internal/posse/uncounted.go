@@ -179,7 +179,7 @@ func (d *Dispatcher) uncountedFor(name string) *uncountedPool {
 		d.uncounted[name] = nil
 		return nil
 	}
-	n, raw := d.App.UncountedCap(name, d.errw())
+	n, raw := d.App.UncountedCap(name, d.errWriter())
 	p := &uncountedPool{Cap: n, Raw: raw, Why: accountDegrade(rt)}
 	if used, err := d.App.UncountedCount(name, d.now()); err != nil {
 		p.Unreadable = err

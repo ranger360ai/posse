@@ -136,7 +136,7 @@ func (d *Dispatcher) landClosedTrees(dirFilter string) {
 		// the common pass — nothing to land — never waits on another
 		// launcher at all.
 		if lock == nil {
-			if lock, err = lockLaunches(d.App, d.Out); err != nil {
+			if lock, err = lockLaunches(d.App, d.outWriter()); err != nil {
 				d.eprintf("posse: unlanded work not swept — the launcher lock is unavailable (%v)\n", err)
 				return
 			}

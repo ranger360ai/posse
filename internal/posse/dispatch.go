@@ -464,8 +464,9 @@ func (d *Dispatcher) equietf(format string, a ...any) {
 // writer instead of printing — App.LoadHigh — whose reading the guard clock
 // (guardclock.go) takes on its own goroutine while a gather is writing this
 // same stream, and a reading a clock could not take is a line but not a
-// sign of life (see LastWrite). Its stamping twin had no caller once the
-// guard clock went quiet, so there is none.
+// sign of life (see LastWrite). Its stamping twin, for the callees the PASS
+// hands a writer to, is errWriter below — this doc said there was none
+// while that was true, which it stopped being under ranger-base-hpppv.
 type dispatcherErrw struct{ d *Dispatcher }
 
 func (w dispatcherErrw) Write(p []byte) (int, error) {
@@ -475,13 +476,17 @@ func (w dispatcherErrw) Write(p []byte) (int, error) {
 
 func (d *Dispatcher) quietErrWriter() io.Writer { return dispatcherErrw{d} }
 
-// errWriter is the stamping twin quietErrWriter's doc says had no caller.
-// It has one since ranger-base-hpppv: reapPolicy hands d.errw() to
-// App.reapAfter, which prints the config typo line, and autoReapPass runs on
-// Run's goroutine beside a rolling Run's gathers (ADR 0028 §1) — so that
-// line needs outMu like every other write the pass makes, and it stamps
-// because the sweep IS the pass. A callee that takes an io.Writer cannot
-// call d.eprintf; this is how it gets one.
+// errWriter is quietErrWriter's stamping twin: it is for the callees the
+// PASS hands a writer to, rather than the ones a clock does. A callee that
+// takes an io.Writer cannot call d.eprintf, and a bare d.errw() handed over
+// is the same unlocked write one call deep, while a rolling Run has one
+// gather goroutine per pending bead on this stream (ADR 0028 §1). It stamps
+// because these writers ARE the pass (see LastWrite).
+//
+// The callers, every one of them a config-diagnostic line their callee
+// prints through whatever writer it is given: reapPolicy → App.reapAfter
+// (ranger-base-hpppv), and grokPoolGuard → grokMeterInputs, uncountedFor →
+// App.UncountedCap, rollEpoch → App.DispatchEpoch (ranger-base-9jojv).
 type dispatcherStampErrw struct{ d *Dispatcher }
 
 func (w dispatcherStampErrw) Write(p []byte) (int, error) {
@@ -490,6 +495,28 @@ func (w dispatcherStampErrw) Write(p []byte) (int, error) {
 }
 
 func (d *Dispatcher) errWriter() io.Writer { return dispatcherStampErrw{d} }
+
+// outWriter is errWriter on Out — the same handoff for a callee that prints
+// on stdout rather than stderr. Its caller is landClosedTrees, which hands
+// it to lockLaunches for the one line that function writes: the queue-wait
+// line said when another launcher holds the lock (ADR 0011 §1). The land
+// sweep runs on Run's goroutine beside the gathers, so that line needs outMu
+// like every other write the pass makes, and it stamps for the same reason
+// the sweep's own d.printf lines do.
+//
+// There is no quiet Out twin because nothing takes one: the clocks that
+// write Out print their own lines through quietf and hand no writer out.
+//
+// Named to match dispatcherStampErrw, and because dispatcherOut is already
+// a test helper in this package (herdr_test.go).
+type dispatcherStampOut struct{ d *Dispatcher }
+
+func (w dispatcherStampOut) Write(p []byte) (int, error) {
+	w.d.printf("%s", p)
+	return len(p), nil
+}
+
+func (d *Dispatcher) outWriter() io.Writer { return dispatcherStampOut{d} }
 
 // planGuard takes this pass's shared plan reading (rangerhq-jgm). The plan's
 // own rate windows are the real budget; `plan_guard_<window>:` (percent) are

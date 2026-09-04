@@ -381,7 +381,7 @@ func (d *Dispatcher) grokPoolGuard() *grokPoolState {
 	}
 	st := &grokPoolState{}
 	d.grokPool = st
-	th, reset, factor, armed, off := d.App.grokMeterInputs(d.errw())
+	th, reset, factor, armed, off := d.App.grokMeterInputs(d.errWriter())
 	st.Threshold = th
 	if st.Threshold == 0 {
 		return st // unarmed: today's behaviour, silently
