@@ -520,7 +520,7 @@ func TestQADataCeilingRendersAboveTheGateUnderEveryStamp(t *testing.T) {
 		if !(ceiling < path && path < message && message < gate) {
 			t.Errorf("%s: want content < path < message < gate, got content=%d path=%d message=%d gate=%d", vis, ceiling, path, message, gate)
 		}
-		if msgArm := strings.Index(hook, `posse_added=$(cat "$1"`); msgArm < message || msgArm > gate {
+		if msgArm := strings.Index(hook, `posse_msg=$(cat "$1"`); msgArm < message || msgArm > gate {
 			t.Errorf("%s: the message arm must read $1 between its own banner and the gate, got %d (banner=%d gate=%d)", vis, msgArm, message, gate)
 		}
 		if strings.Count(hook, "posse_check '"+qaCeilingClass+"' '"+qaCeilingERE+"' "+opsClassOnlyArg) != 3 {
@@ -532,7 +532,7 @@ func TestQADataCeilingRendersAboveTheGateUnderEveryStamp(t *testing.T) {
 	}
 	if hook := CommitGuardHook(VisibilityPrivate, OpsPatternSet{}); strings.Contains(hook, dataCeilingScanLabel) ||
 		strings.Contains(hook, "─── the data ceiling") || strings.Contains(hook, "third arm: the commit MESSAGE") ||
-		strings.Contains(hook, `posse_added=$(cat "$1"`) {
+		strings.Contains(hook, `posse_msg=$(cat "$1"`) {
 		t.Error("an empty ceiling list must render no block at all — the message arm included: an instance with no ceiling pays for no read")
 	}
 }

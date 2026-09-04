@@ -1,64 +1,75 @@
 package posse
 
-// THE MESSAGE ARM STILL READS EVERYTHING BELOW THE SCISSORS LINE
-// (ranger-base-dgh7y's other half, found verifying its close).
+// THE MESSAGE ARM READ EVERYTHING BELOW THE SCISSORS LINE
+// (ranger-base-xfgcn, ranger-base-dgh7y's other half, found verifying its
+// close; the fix is the cut in messageArm).
 //
-// ranger-base-dgh7y states the cost of the `commit.verbose` shape in two
+// ranger-base-dgh7y stated the cost of the `commit.verbose` shape in two
 // parts: "Everything git is about to throw away is scanned: the whole
 // semicolon-prefixed status block AND everything below the scissors line."
 // ranger-base-vl9g8's selector closed the FIRST part — the character git
 // chose is now read off the last BARE comment-character line, which a
 // unified diff cannot carry, so git's status block is stripped under `-v`
-// and without it alike. MEASURED here, and it is a live fix: with vzx2n's
-// `sed -n '$p' | cut -c1` selector put back under `go test -overlay`, only
-// TestQACeilingMessageArmUnderAnAutoCommentCharWithAVerboseCommit reds and
-// the five arms beside it stay green.
+// and without it alike.
 //
-// The SECOND part is untouched, and nothing closed it. The read is
-// `git stripspace --strip-comments`, which removes COMMENT lines; the diff
-// git appends below its scissors marker under `commit -v` is not
-// comment-prefixed, so it survives the strip and goes to the scan whole.
-// vzx2n's own comment said so out loud — "The diff below it is read on every
-// config already — it is not comment-prefixed and stripspace never took it
-// out" — and 9f34e96 deleted that sentence while closing the block half.
+// The SECOND part was untouched, and dgh7y was closed with no product
+// change. The read is `git stripspace --strip-comments`, which removes
+// COMMENT lines; the diff git appends below its scissors marker under
+// `commit -v` is not comment-prefixed, so it survived the strip and went to
+// the scan whole.
 //
-// WHAT IT COSTS, and it is not what the deleted sentence assumed. The arm's
-// sibling reads `git diff --cached -U0`: ADDED lines, zero context. What
-// git writes under `-v` is the same diff with THREE lines of context, so the
-// message arm scans lines no other arm sees and the writer did not write in
-// this commit:
+// WHAT IT COST, and it is not a longer status block. The arm's sibling reads
+// `git diff --cached -U0`: ADDED lines, zero context. What git writes under
+// `-v` is the same diff with THREE lines of context, so the message arm
+// scanned lines no other arm sees and the writer did not write in this
+// commit:
 //
-//   - an UNCHANGED line within three of a staged hunk refuses the commit
+//   - an UNCHANGED line within three of a staged hunk refused the commit
 //     (pin 1), and
 //   - REMOVING a classed line — the remediation the ceiling's own refusal
-//     demands — is refused by the ceiling (pin 2), because the removal is
+//     demands — was refused by the ceiling (pin 2), because the removal is
 //     in the diff git appended.
 //
 // Both under the remedy "rewrite the commit message", which clears neither.
-// One config key the writer owns (commit.verbose=true), or one flag. It is
-// fail-CLOSED — an over-refusal, never a leak — which is why this is a
+// One config key the writer owns (commit.verbose=true), or one flag. It was
+// fail-CLOSED — an over-refusal, never a leak — which is why it was a
 // findings bead and not a P1.
 //
 // NOT THE `auto` BRANCH'S. Pin 1 runs the same probe under
 // core.commentChar=auto and under no comment-char config at all, and both
-// arms refuse: the strip is what keeps the diff, on every config. So this
-// predates vzx2n and vl9g8 alike and neither introduced it.
+// arms refused: the strip is what kept the diff, on every config. So this
+// predated vzx2n and vl9g8 alike and neither introduced it.
 //
-// PARKED, because the fix is the code lane's and the suite stays green.
-// THE FINDING IS ranger-base-xfgcn, filed off ranger-base-6sw5a's verify.
-// UNPARK: delete the t.Skip line in each pin below.
-// RUN UNPARKED 2026-09-04 at main c68431d, git 2.50.1 (Apple Git-155),
-// darwin 25.4.0: BOTH RED, each on its own assertion, each refused by the
-// MESSAGE arm on the ceiling's restricted-banner class, one hit. Pin 1's
-// two arms red together. Each pin's controls held first — the wall refuses
-// the same class typed with -m (so it is awake), and the SAME edit with
-// commit.verbose off LANDS (so it is `-v` that does this and not the edit).
+// THE FIX, and what each pin here holds it to. The read stops at git's cut
+// line, where git's own cleanup stops: the FIRST line that is a comment
+// prefix plus git's marker, never matched on a line a unified diff could
+// carry, and only where git truncates there — commit.cleanup=scissors, or a
+// `diff --` line below the cut, which only a verbose commit appends. Pins 1
+// and 2 are the defect; pin 3 is the guard (a marker line git did NOT write
+// must not cut, because git does not truncate at it); pin 4 is which marker
+// (git takes the first, measured, and so must this).
 //
-// LIVE WHERE, stated exactly: not reached on this box at this instant, and
-// only because the installed render predates the h3s6q fix — the rendered
-// prepare-commit-msg here still reads "$1" whole on every path, so it
-// over-refuses more broadly already. This goes live at the next
-// `posse gates install-hooks` from a binary holding 9f34e96.
+// EACH PIN CARRIES ITS CONTROLS, asserted before the verdict: the same class
+// typed with -m in the same repo at the same moment is REFUSED (the wall is
+// awake), and where the pin measures `-v`, the SAME edit with commit.verbose
+// OFF LANDS (so it is `-v` that does it and not the edit).
+//
+// RUN PARKED AT c68431d, BOTH RED, three arms, each on its own assertion,
+// each refused by the MESSAGE arm on the ceiling's restricted-banner class,
+// one hit. MUTATION-CHECKED against the fix, `go test -overlay`, three
+// mutants, each killing only its own pins:
+//
+//	posse_cut never set (the pre-fix arm)  pins 1, 2, 4 RED, pin 3 green —
+//	                                       and the scissors pin next door,
+//	                                       cleanupremedy_qa_test.go.
+//	the guard replaced by `if false`       pin 3 alone RED.
+//	the LAST marker taken, not the first   pin 4 alone RED.
+//
+// LIVE WHERE, stated exactly: the defect was not reached on this box at the
+// instant it was found, and only because the installed render predates the
+// h3s6q fix — the rendered prepare-commit-msg there still reads "$1" whole on
+// every path, so it over-refuses more broadly already. Both the defect and
+// this fix reach a box at its next `posse gates install-hooks`.
 
 import (
 	"os"
@@ -97,7 +108,6 @@ func qaVerboseWallIsAwake(t *testing.T, w *visWall, env []string, rel string) {
 // what the ADDED-line arm reads, never shows it; the `-v` diff's three
 // lines of context do.
 func TestQACeilingMessageArmReadsBelowTheScissorsUnderCommitVerbose(t *testing.T) {
-	t.Skip("PARKED: ranger-base-xfgcn — unpark by deleting this line")
 	for _, tc := range []struct {
 		name string
 		auto bool
@@ -174,7 +184,6 @@ func TestQACeilingMessageArmReadsBelowTheScissorsUnderCommitVerbose(t *testing.T
 // to keep that class out of every local file refuses the commit that
 // removes it.
 func TestQACeilingMessageArmRefusesRemovingClassedContentUnderCommitVerbose(t *testing.T) {
-	t.Skip("PARKED: ranger-base-xfgcn — unpark by deleting this line")
 	w := qaCeilingWall(t, "")
 	env := append(append([]string(nil), w.persona...), "GIT_EDITOR="+qaVerboseEditor(t, "take it out"))
 	qaVerboseWallIsAwake(t, w, env, "internal/posse/ctl.go")
@@ -216,4 +225,111 @@ func TestQACeilingMessageArmRefusesRemovingClassedContentUnderCommitVerbose(t *t
 	t.Errorf("under commit.verbose the ceiling refused the REMOVAL of classed content — the one "+
 		"remediation that takes the class out of the tree — through its MESSAGE arm, because the "+
 		"removed line is in the diff git appended below the scissors and the arm reads it:\n%s", out)
+}
+
+// PIN 3. THE GUARD, and the only direction this fix could break: the cut is
+// git's truncation, not a marker line anyone can write. git truncates at its
+// cut line when the commit is verbose or when commit.cleanup is `scissors`,
+// and under every other mode a file that carries the marker is kept WHOLE —
+// MEASURED, git 2.50.1: a commit.template body with the marker in it landed
+// in the object with the text below the marker intact. So cutting on the
+// marker alone would take exactly that text off the scan, which is fail-OPEN
+// in a wall whose subject is text that may not land.
+//
+// The probe is that same template, under the default cleanup mode and no
+// verbose: git keeps the classed line below the forgery, so the arm must
+// still read it. Its FIXTURE PREMISE is measured here, with the hook
+// bypassed, rather than assumed — if git dropped those bytes the refusal
+// would be the over-refusal this file exists to remove.
+func TestQACeilingMessageArmDoesNotCutOnAForgedScissorsLine(t *testing.T) {
+	w := qaCeilingWall(t, "")
+	env := append(append([]string(nil), w.persona...), "GIT_EDITOR="+qaVerboseEditor(t, "wire it"))
+
+	// The marker line git writes, forged into a commit.template body — with
+	// the class BELOW it, and not comment-prefixed, so `strip` keeps it.
+	tpl := filepath.Join(t.TempDir(), "template")
+	write(t, tpl, "from the template\n# ------------------------ >8 ------------------------\n"+qaCeilingHit+"\n")
+	if out, err := w.git(w.priv, nil, "config", "commit.template", tpl); err != nil {
+		t.Fatalf("git config commit.template: %v %s", err, out)
+	}
+
+	// FIXTURE PREMISE: git keeps it. Bypassing the hook is the only way to
+	// land the commit the wall is about to refuse (visWall.plant's reason).
+	w.stage(t, w.priv, "internal/posse/premise.go", "package posse\n")
+	if o, e := w.git(w.priv, env, "-c", "core.hooksPath=/dev/null", "commit", "--", "internal/posse/premise.go"); e != nil {
+		t.Fatalf("planting the premise commit: %v %s", e, o)
+	}
+	landed, err := w.git(w.priv, nil, "log", "-1", "--format=%B")
+	if err != nil {
+		t.Fatalf("git log: %v %s", err, landed)
+	}
+	if !strings.Contains(landed, qaCeilingHit) {
+		t.Fatalf("fixture premise: with no verbose and no commit.cleanup=scissors git must KEEP the text "+
+			"below a marker line it did not write — it did not, so there is nothing here to be read:\n%s", landed)
+	}
+
+	w.stage(t, w.priv, "internal/posse/probe.go", "package posse\n")
+	out, err := w.git(w.priv, env, "commit", "--", "internal/posse/probe.go")
+	if err == nil {
+		t.Errorf("the arm cut at a marker line git did not write: with no verbose and no "+
+			"commit.cleanup=scissors git truncates nothing, so the classed line below it lands in the "+
+			"commit object and the arm must read it:\n%s", out)
+		return
+	}
+	if !strings.Contains(out, "data-ceiling content in the commit MESSAGE") {
+		t.Fatalf("fixture premise: this commit must be refused by the MESSAGE arm if it is refused at all:\n%s", out)
+	}
+}
+
+// PIN 4. WHICH cut line, and it is git's answer rather than a plausible one:
+// the FIRST. MEASURED, git 2.50.1 — with the marker forged into a
+// commit.template body under `-v`, git truncated at the FORGED line and its
+// own appended diff went with it, so everything below the forgery is gone
+// from the object. Taking the LAST such line instead reads text git threw
+// away, which is the over-refusal this file exists to remove, one forged line
+// further down.
+//
+// CONTROL, asserted first: the same class typed with -m in this repo at this
+// moment is REFUSED, so a landing commit here is the cut and not a sleeping
+// wall. FIXTURE PREMISE, measured after: with the hook bypassed the same
+// commit lands WITHOUT the classed line, which is what says git truncated it.
+func TestQACeilingMessageArmCutsAtGitsFirstScissorsLineNotItsLast(t *testing.T) {
+	w := qaCeilingWall(t, "")
+	env := append(append([]string(nil), w.persona...), "GIT_EDITOR="+qaVerboseEditor(t, "wire it"))
+	qaVerboseWallIsAwake(t, w, env, "internal/posse/ctl.go")
+
+	if out, err := w.git(w.priv, nil, "config", "commit.verbose", "true"); err != nil {
+		t.Fatalf("git config commit.verbose: %v %s", err, out)
+	}
+	// The class sits BELOW a forged marker and ABOVE git's own, which is the
+	// only region the two answers disagree about.
+	tpl := filepath.Join(t.TempDir(), "template")
+	write(t, tpl, "from the template\n# ------------------------ >8 ------------------------\n"+qaCeilingHit+"\n")
+	if out, err := w.git(w.priv, nil, "config", "commit.template", tpl); err != nil {
+		t.Fatalf("git config commit.template: %v %s", err, out)
+	}
+
+	w.stage(t, w.priv, "internal/posse/probe.go", "package posse\n")
+	out, err := w.git(w.priv, env, "commit", "--", "internal/posse/probe.go")
+	if err != nil {
+		if !strings.Contains(out, "data-ceiling content in the commit MESSAGE") {
+			t.Fatalf("fixture premise: if this commit is refused at all it must be the MESSAGE arm that "+
+				"spoke:\n%s", out)
+		}
+		t.Errorf("the arm cut at git's LAST marker line: git cuts at the FIRST — the class here is below a "+
+			"forged marker and above git's own, so git threw it away and the refusal is over the bytes "+
+			"git discarded:\n%s", out)
+		w.unstage(t, w.priv, "internal/posse/probe.go")
+	}
+
+	// FIXTURE PREMISE: git really did truncate it. The commit above landed
+	// through the wall, so its own object message is the evidence.
+	landed, lerr := w.git(w.priv, nil, "log", "-1", "--format=%B")
+	if lerr != nil {
+		t.Fatalf("git log: %v %s", lerr, landed)
+	}
+	if err == nil && strings.Contains(landed, qaCeilingHit) {
+		t.Fatalf("fixture premise: git must truncate at the FIRST marker line, so the class must NOT be in "+
+			"the object — it is, and this commit should have been refused:\n%s", landed)
+	}
 }

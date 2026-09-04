@@ -557,20 +557,33 @@ strips that block itself and it never reaches the object.`
 const MessageKeptLandsNote = `and this refusal is not a false alarm: under that mode git's block reaches
 the commit object as it stands, untracked filenames and all (measured).`
 
-// MessageScissorsNote is the other side of it, and it is the second helping
-// ranger-base-b21e0 names: under "scissors" git puts its template BELOW the cut
-// line and truncates all of it, so the whole-file read scans bytes that never
-// reach the object (MEASURED at the shell, git 2.50.1: the same editor commit
-// landed with the typed line alone). Matching git's cut line in the reader
-// would be a second copy of git's own rule — the argument gates.go makes
-// against a literal '#', and a copy is a thing that drifts — so the block is
-// read and the refusal says so, which is the cheap direction: a writer who is
-// told why can delete it, and a reader who is not told learns nothing.
-const MessageScissorsNote = `and "scissors" is the mode that over-refuses here: git puts its block BELOW
-the cut line and truncates all of it, so those bytes never reach the object.
-This reader does not match that cut line, because matching it would be a
-second copy of git's own rule — so it reads the block, and says so rather
-than refusing you quietly.`
+// MessageScissorsNote replaces MessageKeptTemplateNote under "scissors",
+// because under that mode the two paragraphs above are not true of the same
+// bytes. git puts its whole status block BELOW its cut line there and
+// truncates all of it, and since ranger-base-xfgcn the read stops at that line
+// too — so git's block is neither scanned nor kept, and what IS scanned is the
+// part git keeps: the writer's own text and whatever was in the file before
+// the editor opened (a commit.template body, a merge's MERGE_MSG and its
+// "# Conflicts:" list), comment lines included, since "scissors" strips none
+// of them. MEASURED, git 2.50.1: the cut line is written at the top of the
+// file under this mode and the same editor commit landed with the typed line
+// alone.
+//
+// b21e0 wrote the other note here — that the reader did NOT match the cut line
+// and said so rather than refusing quietly — and ranger-base-xfgcn is why it
+// no longer does: not matching it also refused the REMOVAL of a classed line
+// under commit.verbose, where the same untruncated read reached the diff git
+// appends. The cut line is matched in one place now, and this note says what
+// the writer is left with.
+const MessageScissorsNote = `under that mode git strips no comment line out of the part it keeps, so a
+'#' line ABOVE git's cut line — a commit.template body, a merge's
+"# Conflicts:" list — is message here and is scanned as message. This read
+stops at that cut line the way git's own cleanup does, so git's status block
+below it is neither scanned nor kept, and what tripped this is in the part
+that reaches the commit object as it stands. This hook runs BEFORE the editor
+opens: if what tripped it is a line git wrote rather than your own text,
+delete it in the editor before you save, or leave commit.cleanup at its
+default, where git strips comment lines itself.`
 
 // opsClassRE is what a class name may be. It is rendered into a shell word
 // and into a hook comment, and it is what a human reads in the refusal, so

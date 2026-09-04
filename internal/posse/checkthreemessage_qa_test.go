@@ -360,10 +360,16 @@ func TestQACheckThreeMessageArmRenders(t *testing.T) {
 	if !(ceilingMsg < gate && gate < content && content < path && path < message) {
 		t.Errorf("want ceiling message < gate < check 3 content < path < message, got %d %d %d %d %d", ceilingMsg, gate, content, path, message)
 	}
-	// One message reader, not two mechanisms: check 3's arm is the same
-	// `cat "$1"` the ceiling's is, rendered at check 3's indent.
-	if n := strings.Count(hook, `posse_added=$(cat "$1" 2>/dev/null)`); n != 2 {
-		t.Errorf("want exactly two message reads — one per wall — got %d", n)
+	// One message reader, not two mechanisms: check 3's arm reads the same
+	// `posse_msg` the ceiling's does, rendered at check 3's indent. The
+	// file itself is read once per wall into that variable, above the
+	// cleanup-mode branch, because the scissors cut applies to every mode
+	// (ranger-base-xfgcn).
+	if n := strings.Count(hook, `posse_msg=$(cat "$1" 2>/dev/null)`); n != 2 {
+		t.Errorf("want exactly two message file reads — one per wall — got %d", n)
+	}
+	if n := strings.Count(hook, `posse_added=$posse_msg`); n != 2 {
+		t.Errorf("want exactly two whole-message reads — one per wall — got %d", n)
 	}
 	// Counted from check 3's own banner to the end of the file: an instance
 	// pattern is rendered into check 0 as well (the beads jsonl), and a
@@ -391,7 +397,7 @@ func TestQACheckThreeMessageArmRenders(t *testing.T) {
 	// Nothing derived and nothing configured is still nothing — the message
 	// arm included: a box with neither pays for no read of the message file.
 	bare := CommitGuardHook(VisibilityPublic, OpsPatternSet{})
-	if strings.Contains(bare, "check 3, third arm") || strings.Contains(bare, `posse_added=$(cat "$1"`) {
+	if strings.Contains(bare, "check 3, third arm") || strings.Contains(bare, `posse_msg=$(cat "$1"`) {
 		t.Error("an empty check 3 and an empty ceiling must render no message arm at all")
 	}
 }

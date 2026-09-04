@@ -3222,12 +3222,15 @@ func (r visGuardRefusal) render(ind string) string {
 //
 // The mode is printed from the variable rather than baked in — one hook file
 // serves whatever ~/.gitconfig says today, and the whole point of the note is
-// to name the setting the writer did not know was live. The "scissors" test is a
-// branch rather than a case in the note itself because the three modes agree
-// on what is READ and disagree on what LANDS: verbatim and whitespace put
-// git's block in the object (MessageKeptLandsNote, so the writer knows the
-// wall is not in their way), scissors truncates it (MessageScissorsNote, so
-// the writer knows it is).
+// to name the setting the writer did not know was live. The "scissors" test is
+// a branch rather than a case in the note itself because that mode puts git's
+// block on the far side of its cut line, which the read stops at
+// (ranger-base-xfgcn): verbatim and whitespace scan git's block and LAND it
+// (MessageKeptTemplateNote + MessageKeptLandsNote, so the writer knows which
+// lines the wall could have read and that the wall is not in their way),
+// scissors scans neither (MessageScissorsNote, which says what IS above the
+// cut and therefore what tripped this). Both paragraphs are about the same
+// bytes, so under scissors they are replaced rather than added to.
 func (r visGuardRefusal) keptModeNote(ind string) string {
 	if r.keptModeVar == "" {
 		return ""
@@ -3235,10 +3238,10 @@ func (r visGuardRefusal) keptModeNote(ind string) string {
 	v := "$" + r.keptModeVar
 	return ind + `if [ -n "` + v + `" ]; then
 ` + ind + `  echo "git's cleanup mode here is \"` + v + `\" (config commit.cleanup), and it decided this read:"
-` + ind + `  echo ` + shQuote(MessageKeptTemplateNote) + `
 ` + ind + `  if [ "` + v + `" = scissors ]; then
 ` + ind + `    echo ` + shQuote(MessageScissorsNote) + `
 ` + ind + `  else
+` + ind + `    echo ` + shQuote(MessageKeptTemplateNote) + `
 ` + ind + `    echo ` + shQuote(MessageKeptLandsNote) + `
 ` + ind + `  fi
 ` + ind + `fi
@@ -3631,7 +3634,10 @@ refused with the stricter remedy — there is no private db to re-file it in.`)
 // mode and what actually clears it — delete git's block in the editor, or
 // leave commit.cleanup at its default — and says which side of the line the
 // mode puts the writer on: verbatim and whitespace LAND the block
-// (MessageKeptLandsNote), scissors truncates it (MessageScissorsNote). It is
+// (MessageKeptLandsNote), scissors puts it below a cut line this read now
+// stops at, so under that mode git's block is neither scanned nor kept and
+// the note says what IS above the cut instead (MessageScissorsNote, rewritten
+// by ranger-base-xfgcn). It is
 // keptModeNote below, driven by $posse_kept, which messageArm sets only when
 // the config named one of the three AND "$2" is not "message": on -m/-F git
 // appends no template and every line is the writer's own, so the old remedy
@@ -3696,7 +3702,10 @@ refused with the stricter remedy — there is no private db to re-file it in.`)
 // block is last, and under `commit -v` / commit.verbose=true it is not: git
 // appends the scissors marker and then the staged DIFF, so "$1" ends in
 // `+line`, no character is detected, and the whole file — git's status
-// block, untracked filenames and all — goes to the scan. That is exactly
+// block, untracked filenames and all — went to the scan (the diff itself is
+// off the read since ranger-base-xfgcn, below; the character detection is
+// still the reason a `-v` file's block has to be found by something other
+// than its last line). That is exactly
 // h3s6q's over-refusal returning, one common flag away, with the remedy
 // "rewrite the commit message" that clears none of it. A bare comment-char
 // line cannot appear in a unified diff (every diff line carries a ' ', '+',
@@ -3749,6 +3758,67 @@ refused with the stricter remedy — there is no private db to re-file it in.`)
 // hand, which is above both walls already; the second layer for it is a
 // commit-msg hook, and the trigger for filing it is the first "commit
 // message" line under either label in refusals.log.
+//
+// THE READ STOPS AT GIT'S CUT LINE (ranger-base-xfgcn, found verifying
+// vl9g8's close, and the second half of the cost ranger-base-dgh7y named and
+// was closed without). stripspace removes COMMENT lines; the diff
+// `commit -v` appends below the scissors marker is not comment-prefixed, so
+// it survived every strip and reached the scan whole. What that cost is not
+// a longer status block: the sibling arm reads `git diff --cached -U0` —
+// ADDED lines, zero context — while git writes that same diff with THREE
+// lines of context, so this arm refused over an UNCHANGED line within three
+// of a staged hunk, and over the REMOVAL of a classed line, which is the one
+// remediation the ceiling's own refusal demands. Both under "rewrite the
+// commit message", which clears neither. One config key the writer owns
+// (commit.verbose=true) or one flag, with no intent.
+//
+// SO THE FILE IS CUT WHERE GIT CUTS IT, and only where git cuts it. git
+// truncates at its cut line when the commit is verbose or when
+// commit.cleanup is `scissors`, and writes that line in exactly those two
+// cases. MEASURED, git 2.50.1: under commit.verbose=true the bytes below the
+// line are gone from the object under EVERY cleanup mode — `verbatim` and
+// `whitespace` included, which keep every byte above it — and under
+// `scissors` git puts its whole status block below the line, so nothing it
+// wrote is read there at all.
+//
+// `-v` IS A FLAG as well as a config key and a hook cannot see argv, so what
+// is read is what git wrote into the file. The line matched is git's own:
+// one comment prefix, one space, and the marker exactly as git spells it,
+// never on a line beginning ' ', '+', '-', '@' or '\' — a unified diff
+// cannot carry the marker in column one, so a staged file that contains one
+// (the pins in verbosescissors_qa_test.go do) cannot move the cut. The FIRST
+// such line wins because that is git's rule and not a guess at it: MEASURED,
+// git 2.50.1, with the marker forged into a commit.template body under `-v`,
+// git truncated at the FORGED line and its own diff went with it —
+// wt_status_locate_end takes the first, and so does this.
+//
+// The marker is git's constant written down, which is the copy this file
+// argues against everywhere else. It is taken on the terms the argument
+// allows: if git ever respells it the match finds nothing, no cut is made,
+// the read is the whole file again — the fail-CLOSED side, exactly where
+// this arm was before — and the verbose pins go red saying so.
+//
+// AND IT IS GUARDED, because that line's presence is not by itself git's
+// truncation. Two things license the cut and nothing else: commit.cleanup is
+// `scissors`, read from the config this arm has already asked for, or a
+// `diff --` line below the cut, which is the diff only a verbose commit
+// appends. MEASURED, git 2.50.1, and this is the fail-open the guard exists
+// for: a commit.template body carrying the marker line is NOT truncated by
+// git under any other mode — the text below it landed in the object — so
+// cutting there unguarded would take exactly that text off the scan.
+//
+// RESIDUALS, stated. Fail-CLOSED, so the same side this arm has always erred
+// on: a core.commentChar of '-' or '+' hides git's own cut line from the
+// match (neither is one of commit.c's ten `auto` candidates), and where that
+// happens a staged path whose NAME carries the marker can match instead — on
+// the `diff --git` header naming it — which cuts INSIDE the appended diff and
+// so reads more than git keeps, not less; with git's own line matched it is
+// first and that header is never reached. `--cleanup=scissors` as a FLAG is
+// invisible here like every other, so git's block is read under it as it was
+// before. Fail-OPEN, narrow and deliberate: a file git did not
+// write — a commit.template body, MERGE_MSG — carrying BOTH the marker line
+// at column one AND a `diff --` line below it, under neither verbose nor
+// scissors, is cut where git would not cut it.
 func messageArm(ind, head string, sources []visScanSource) string {
 	i1, i2, i3 := ind+"  ", ind+"    ", ind+"      "
 	var body strings.Builder
@@ -3768,6 +3838,11 @@ func messageArm(ind, head string, sources []visScanSource) string {
 	return head + ind + `if [ -f "${1:-}" ]; then
 ` + i1 + `posse_clean=$(git config --get commit.cleanup 2>/dev/null) || posse_clean=''
 ` + i1 + `posse_kept=''
+` + i1 + `posse_cut=$(grep -nE '^[^ +@\-][^ ]* ------------------------ >8 ------------------------$' "$1" 2>/dev/null | sed -n '1p' | cut -d: -f1)
+` + i1 + `if [ -n "$posse_cut" ] && [ "$posse_clean" != scissors ] &&
+` + i2 + `! sed -n "$((posse_cut + 1)),\$p" "$1" 2>/dev/null | grep -q '^diff --'; then
+` + i2 + `posse_cut=''
+` + i1 + `fi
 ` + i1 + `case "$posse_clean" in
 ` + i1 + `  strip) posse_clean=strip ;;
 ` + i1 + `  verbatim|whitespace|scissors)
@@ -3775,6 +3850,11 @@ func messageArm(ind, head string, sources []visScanSource) string {
 ` + i2 + `posse_clean=whole ;;
 ` + i1 + `  *) if [ "${2:-}" = "message" ]; then posse_clean=whole; else posse_clean=strip; fi ;;
 ` + i1 + `esac
+` + i1 + `if [ -n "$posse_cut" ]; then
+` + i2 + `posse_msg=$(head -n "$((posse_cut - 1))" "$1" 2>/dev/null)
+` + i1 + `else
+` + i2 + `posse_msg=$(cat "$1" 2>/dev/null)
+` + i1 + `fi
 ` + i1 + `if [ "$posse_clean" = whole ]; then
 ` + i2 + `posse_cc=whole
 ` + i1 + `else
@@ -3783,17 +3863,17 @@ func messageArm(ind, head string, sources []visScanSource) string {
 ` + i2 + `if [ "$posse_cc" != auto ]; then
 ` + i3 + `posse_cc=''
 ` + i2 + `else
-` + i3 + `posse_cc=$(grep -axE '[#;@!$%^&|:]' "$1" 2>/dev/null | sed -n '$p')
+` + i3 + `posse_cc=$(printf '%s\n' "$posse_msg" | grep -axE '[#;@!$%^&|:]' | sed -n '$p')
 ` + i3 + `[ -n "$posse_cc" ] &&
-` + i3 + `  [ "$(cut -c1 "$1" 2>/dev/null | grep -caxF "$posse_cc")" -ge 4 ] || posse_cc=whole
+` + i3 + `  [ "$(printf '%s\n' "$posse_msg" | cut -c1 | grep -caxF "$posse_cc")" -ge 4 ] || posse_cc=whole
 ` + i2 + `fi
 ` + i1 + `fi
 ` + i1 + `if [ "$posse_cc" = whole ]; then
-` + i2 + `posse_added=$(cat "$1" 2>/dev/null)
+` + i2 + `posse_added=$posse_msg
 ` + i1 + `elif [ -n "$posse_cc" ]; then
-` + i2 + `posse_added=$(git -c core.commentChar="$posse_cc" stripspace --strip-comments < "$1" 2>/dev/null)
+` + i2 + `posse_added=$(printf '%s\n' "$posse_msg" | git -c core.commentChar="$posse_cc" stripspace --strip-comments 2>/dev/null)
 ` + i1 + `else
-` + i2 + `posse_added=$(git stripspace --strip-comments < "$1" 2>/dev/null)
+` + i2 + `posse_added=$(printf '%s\n' "$posse_msg" | git stripspace --strip-comments 2>/dev/null)
 ` + i1 + `fi
 ` + i1 + `if [ -n "$posse_added" ]; then
 ` + body.String() + i1 + `fi

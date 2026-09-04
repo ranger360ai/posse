@@ -146,53 +146,120 @@ func TestQAMessageRemedyNamesTheCleanupModeThatKeptGitsTemplate(t *testing.T) {
 	}
 }
 
-// SCISSORS HAS THE SECOND HELPING, and it is the one the bead names: git puts
-// its whole template below the cut line and truncates it, so the whole-file read
-// scans bytes that never reach the object. The refusal says so rather than
-// matching the cut line, which would be a second copy of git's rule.
+// SCISSORS PUTS GIT'S BLOCK BELOW THE CUT LINE, AND THE READ STOPS THERE
+// (ranger-base-xfgcn). b21e0 shipped the other answer here: the arm did not
+// match git's cut line, so under `scissors` it read a block git truncates and
+// the note said so rather than refusing quietly. The same untruncated read
+// also refused an editor commit over an UNCHANGED context line, and over the
+// REMOVAL of a classed line, once `commit -v` put a diff below that marker
+// (verbosescissors_qa_test.go) — so the cut line is matched now, and this pin
+// is the `scissors` side of that one change.
 //
-// FIXTURE PREMISE, measured in this repo rather than asserted from the manual:
-// the same editor commit with the hook bypassed LANDS and does NOT carry the
-// untracked name. That is what makes "a hit there is over-refusal" a true
-// sentence here and not a claim about git in general.
+// ARM (a): git's status block is on the far side of the cut, so the untracked
+// filename that refused every editor commit under this mode now LANDS. Its
+// FIXTURE PREMISE is measured both ways: with the hook bypassed the same
+// commit's message does NOT carry the name (so git really truncates it, and
+// the refusal it used to draw really was over-refusal), and the identical
+// probe under `verbatim` — where git keeps its block ABOVE any cut — is still
+// REFUSED, which is what says arm (a) measures the cut line and not a wall
+// that fell asleep.
 //
-// RUN AGAINST THE PRE-FIX ARM 2026-09-04, RED: the refusal named no mode and
-// said nothing about the cut line.
-func TestQAMessageRemedyUnderScissorsSaysTheCutBlockIsRead(t *testing.T) {
-	w := newVisWall(t)
-	out := qaCleanupRemedyProbe(t, w, "scissors")
+// ARM (b): what is above the cut is still read, and still refused. A
+// commit.template body is the shortest reachable spelling of that: git puts
+// it at the top of the file, above its own cut line, and `scissors` strips no
+// comment line out of what it keeps, so those bytes reach the object exactly
+// as scanned. The refusal names the mode and carries the scissors note; it
+// must NOT carry the paragraph about git's status block being scanned, which
+// is no longer true under this mode.
+//
+// RUN AGAINST THE PRE-FIX ARM (gates.go before ranger-base-xfgcn): arm (a) is
+// RED — the untracked name refuses — and arm (b) is red on the note text.
+func TestQAMessageArmStopsAtGitsCutLineUnderScissors(t *testing.T) {
+	t.Run("git's block below the cut is no longer read", func(t *testing.T) {
+		w := newVisWall(t)
+		env := qaVerbatimRepo(t, w, w.pub, "scissors")
+		username := w.literal(t, "username")
 
-	if strings.Contains(qaFlat(out), "not a false alarm") {
-		t.Errorf("under scissors git truncates its own block, so the refusal must NOT tell the writer those "+
-			"bytes land — that clause belongs to verbatim and whitespace alone:\n%s", out)
-	}
-	for _, want := range []string{
-		`git's cleanup mode here is "scissors"`,
-		"over-refuses",
-		"truncates all of it",
-	} {
-		if !strings.Contains(qaFlat(out), qaFlat(want)) {
-			t.Errorf("under scissors the refusal must carry %q — the read reaches the block git truncates "+
-				"(ranger-base-b21e0):\n%s", want, out)
+		// CONTROL: the same probe under `verbatim`, where git's block is
+		// above any cut line, is REFUSED. Same wall, same instant, same
+		// untracked name — so a landing commit below is the cut line and
+		// not a wall that stopped refusing.
+		ctl := newVisWall(t)
+		ctlEnv := qaVerbatimRepo(t, ctl, ctl.pub, "verbatim")
+		write(t, filepath.Join(ctl.pub, ctl.literal(t, "username")+"-notes.txt"), "x\n")
+		ctl.stage(t, ctl.pub, "internal/posse/probe.go", "package posse\n")
+		if out, err := ctl.git(ctl.pub, ctlEnv, "commit", "--", "internal/posse/probe.go"); err == nil {
+			t.Fatalf("control: under commit.cleanup=verbatim git's block is ABOVE any cut line and must "+
+				"still refuse this, or the arm below measures nothing:\n%s", out)
 		}
-	}
 
-	// FIXTURE PREMISE: git truncates it. Bypassing the hook is the only way to
-	// land the commit the wall just refused, and it is history built for this
-	// assertion alone (visWall.plant's reason, same shape).
-	env := qaVerbatimRepo(t, w, w.pub, "scissors")
-	w.stage(t, w.pub, "internal/posse/premise.go", "package posse\n")
-	if o, e := w.git(w.pub, env, "-c", "core.hooksPath=/dev/null", "commit", "--", "internal/posse/premise.go"); e != nil {
-		t.Fatalf("planting the premise commit: %v %s", e, o)
-	}
-	landed, err := w.git(w.pub, nil, "log", "-1", "--format=%B")
-	if err != nil {
-		t.Fatalf("git log: %v %s", err, landed)
-	}
-	if strings.Contains(landed, w.literal(t, "username")) {
-		t.Fatalf("fixture premise: under commit.cleanup=scissors git must TRUNCATE its own template — it did "+
-			"not, so the refusal above is not over-refusal and the cut-line sentence is wrong:\n%s", landed)
-	}
+		write(t, filepath.Join(w.pub, username+"-notes.txt"), "x\n")
+		w.stage(t, w.pub, "internal/posse/probe.go", "package posse\n")
+		if out, err := w.git(w.pub, env, "commit", "--", "internal/posse/probe.go"); err != nil {
+			t.Errorf("under commit.cleanup=scissors git puts its status block BELOW its cut line and "+
+				"truncates all of it, so the arm must not read the UNTRACKED filename it lists there — "+
+				"the remedy 'rewrite the commit message' clears a name the writer never typed:\n%s", out)
+		}
+
+		// FIXTURE PREMISE, measured here rather than taken from the manual:
+		// git truncates that block. Bypassing the hook is the only way to
+		// land the commit the pre-fix wall refused (visWall.plant's reason).
+		w.stage(t, w.pub, "internal/posse/premise.go", "package posse\n")
+		if o, e := w.git(w.pub, env, "-c", "core.hooksPath=/dev/null", "commit", "--", "internal/posse/premise.go"); e != nil {
+			t.Fatalf("planting the premise commit: %v %s", e, o)
+		}
+		landed, err := w.git(w.pub, nil, "log", "-1", "--format=%B")
+		if err != nil {
+			t.Fatalf("git log: %v %s", err, landed)
+		}
+		if strings.Contains(landed, username) {
+			t.Fatalf("fixture premise: under commit.cleanup=scissors git must TRUNCATE the block carrying "+
+				"the untracked name — it did not, so the read above was not over-refusal:\n%s", landed)
+		}
+	})
+
+	t.Run("what is above the cut is still read", func(t *testing.T) {
+		w := newVisWall(t)
+		env := qaVerbatimRepo(t, w, w.pub, "scissors")
+		username := w.literal(t, "username")
+
+		// git puts a commit.template body ABOVE its cut line, and keeps
+		// every byte of it under this mode.
+		tpl := filepath.Join(t.TempDir(), "template")
+		write(t, tpl, "refs "+username+"\n")
+		if out, err := w.git(w.pub, nil, "config", "commit.template", tpl); err != nil {
+			t.Fatalf("git config commit.template: %v %s", err, out)
+		}
+		w.stage(t, w.pub, "internal/posse/probe.go", "package posse\n")
+		out, err := w.git(w.pub, env, "commit", "--", "internal/posse/probe.go")
+		if err == nil {
+			t.Fatalf("a commit.template body sits ABOVE git's cut line and lands in the object under "+
+				"commit.cleanup=scissors, so the arm must still read it:\n%s", out)
+		}
+		if !strings.Contains(qaFlat(out), "an operator identity literal in the commit MESSAGE") {
+			t.Fatalf("fixture premise: if this commit is refused at all it must be the MESSAGE arm that "+
+				"spoke, since the remedy under test is that arm's:\n%s", out)
+		}
+		for _, want := range []string{
+			`git's cleanup mode here is "scissors"`,
+			"This read stops at that cut line",
+			"neither scanned nor kept",
+		} {
+			if !strings.Contains(qaFlat(out), qaFlat(want)) {
+				t.Errorf("under scissors the refusal must carry %q — what is above the cut is what was "+
+					"read and what lands (ranger-base-xfgcn):\n%s", want, out)
+			}
+		}
+		// The verbatim/whitespace paragraphs are about git's status block,
+		// which this mode puts below the cut: printing them here would send
+		// the writer to delete a block the arm never read.
+		for _, no := range []string{"not a false alarm", "the staged, unstaged and UNTRACKED lists"} {
+			if strings.Contains(qaFlat(out), qaFlat(no)) {
+				t.Errorf("under scissors git's status block is below the cut and is not read, so the "+
+					"refusal must not carry %q:\n%s", no, out)
+			}
+		}
+	})
 }
 
 // THE ABSENCE PIN, and the only direction this change can break: where the

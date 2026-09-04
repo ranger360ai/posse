@@ -311,8 +311,12 @@ func TestQAMessageArmReadsTwoWaysKeyedOnTheCleanupMode(t *testing.T) {
 		// "$2" survives as the fallback for "default"/unset and nothing
 		// else — and there it still reads -m/-F whole.
 		{`*) if [ "${2:-}" = "message" ]; then posse_clean=whole; else posse_clean=strip; fi ;;`, 2},
-		{`posse_added=$(cat "$1" 2>/dev/null)`, 2},
-		{`posse_added=$(git stripspace --strip-comments < "$1" 2>/dev/null)`, 2},
+		// The file is read once per wall, ABOVE the branch: the scissors
+		// cut is git's on every mode, so both reads take the same bytes
+		// (ranger-base-xfgcn).
+		{`posse_msg=$(cat "$1" 2>/dev/null)`, 2},
+		{`posse_added=$posse_msg`, 2},
+		{"posse_added=$(printf '%s\\n' \"$posse_msg\" | git stripspace --strip-comments 2>/dev/null)", 2},
 	} {
 		if n := strings.Count(hook, want.frag); n != want.n {
 			t.Errorf("want %d × %q — one per wall — got %d", want.n, want.frag, n)

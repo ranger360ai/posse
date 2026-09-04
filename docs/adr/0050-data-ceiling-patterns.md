@@ -161,7 +161,26 @@ under `scissors` the read is over-refusal and the refusal says so rather than
 matching the cut line. Both measured, git 2.50.1. The note is suppressed
 where `$2` is `message`, because git appends no template there and "rewrite
 the commit message" is doable exactly as written; `-m … -e` is the stated
-residual, alongside `--cleanup=`.)* The exclusion stands as stated: a
+residual, alongside `--cleanup=`.)* *(Amended 2026-09-04,
+ranger-base-xfgcn: the read now STOPS at git's cut line, so the sentence
+above about not matching it no longer holds. `stripspace` removes comment
+lines and the diff `commit -v` appends below that marker is not
+comment-prefixed, so it reached the scan whole: an UNCHANGED line within
+three of a staged hunk refused an editor commit, and so did the REMOVAL of a
+classed line — the one remediation the ceiling's refusal demands — both under
+"rewrite the commit message", which clears neither, and both reachable from
+`commit.verbose=true` or `-v` with no intent. git truncates at that line when
+the commit is verbose or the mode is `scissors` and writes it in exactly
+those two cases, so the cut is taken only where git takes it: the FIRST such
+line, matched at column one where a unified diff cannot carry it, and only
+where `commit.cleanup` is `scissors` or a `diff --` line stands below it —
+without that guard a `commit.template` body carrying the marker would take
+its own text off the scan, which git does NOT truncate (measured, git
+2.50.1). Under `scissors` git's whole status block is below the cut, so it is
+now neither scanned nor kept and the refusal's note says what is ABOVE the
+cut instead. Residuals, all fail-closed: `--cleanup=scissors` as a flag, a
+`core.commentChar` of `-` or `+`, and a staged path whose name carries the
+marker.)* The exclusion stands as stated: a
 message typed in the editor does not exist yet when the hook runs. What the
 editor path does scan is whatever was already in the file — a
 `commit.template` body, `MERGE_MSG` — which lands in the object like any
