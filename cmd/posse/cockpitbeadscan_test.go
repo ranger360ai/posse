@@ -113,32 +113,59 @@ const bdCallsPerScan = 3
 
 // The defect in one assertion: refresh() must not sit inside the bd scans,
 // and a keystroke must not queue behind them.
+//
+// Nothing below reads a clock, and that is the point. The first cut asserted
+// that refresh RETURNED in under bdDelay, which couples the claim to the
+// box rather than to the code: refresh is refreshSessions plus kickBeads,
+// refreshSessions forks the herdr stub TWICE, and under a full parallel `go
+// test ./...` on this shop that pair cost 3.04s — so the pin reddened at
+// 3.038s over a scan it had itself proved was asynchronous
+// (ranger-base-ih0t8). Counting the bd forks at return would swap that 3s of
+// margin for a microsecond of it: the stub appends its line before it
+// sleeps, so "no bd call yet" races the scan goroutine merely being
+// scheduled, and it is the FAST box that would lose that race.
+//
+// The rig can be asked the question directly instead. c.beadsIn is raised by
+// kickBeads and lowered only by applyBeads, which the event loop — here,
+// this test — runs; c.beads is where the scan's answer lands. A refresh that
+// RAN the scan returns with the guard down and the answer already in hand,
+// and a scan holding three 3s stub sleeps cannot reach either state inside
+// the handful of statements between refresh returning and these checks.
 func TestCockpitRefreshDoesNotBlockOnTheBeadScan(t *testing.T) {
-	// 3s per bd call: a synchronous refresh costs 6s here, and the herdr
-	// stub the split DOES still pay costs well under one. The threshold
-	// sits between them rather than near zero, so a slow box cannot turn
-	// this into a flake.
+	// 3s per bd call, so one scan is three sleeps deep. That length is the
+	// separation the assertions rest on; none of them reads it as a
+	// threshold.
 	const bdDelay = 3 * time.Second
 	c, calls := beadScanRig(t, bdDelay, twoReady)
 
-	start := time.Now()
 	c.refresh()
-	if d := time.Since(start); d >= bdDelay {
-		t.Fatalf("refresh sat inside the bd scans for %v — it must start them, not run them", d)
+	if !c.beadsIn {
+		t.Fatal("refresh returned with no scan in flight — it must start the scan, not run it")
 	}
-	// Consequence 1 of the bead: the event loop can still reach the keys.
-	start = time.Now()
+	if len(c.beads) > 0 {
+		t.Fatal("the scan's answer was already on c.beads when refresh returned — refresh ran it rather than starting it")
+	}
+	if len(c.issues) > 0 {
+		t.Fatalf("refresh applied a scan it may only have started, got %+v", c.issues)
+	}
+	// Consequence 1 of the bead: the event loop can still reach the keys —
+	// and reaches them WHILE the scan is out, which is what "a keystroke did
+	// not queue behind the scan" means. One that had waited would come back
+	// to find the scan landed behind it.
 	if _, err := c.handleKey([]byte("j")); err != nil {
 		t.Fatal(err)
 	}
-	if d := time.Since(start); d >= bdDelay {
-		t.Errorf("a keystroke waited %v behind the scan", d)
+	if !c.beadsIn || len(c.beads) > 0 {
+		t.Errorf("a keystroke waited behind the scan: inFlight=%v delivered=%d", c.beadsIn, len(c.beads))
 	}
 
+	// A bound on a hang, not a second reading of the box: the load that
+	// stretched a fork to 3s stretches this scan's three forks too, and the
+	// only cost of waiting longer is how long a real hang takes to report.
 	select {
 	case r := <-c.beads:
 		c.applyBeads(r)
-	case <-time.After(20 * time.Second):
+	case <-time.After(60 * time.Second):
 		t.Fatal("the scan never landed on c.beads")
 	}
 	if n := bdCalls(t, calls); n != bdCallsPerScan {
