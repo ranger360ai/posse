@@ -2049,6 +2049,173 @@ func TestCockpitConsumeHintDirtyRefreshesOnReturnToNormal(t *testing.T) {
 	}
 }
 
+// countingAgentBackend is fakeAgentBackend with a tally and an optional
+// delay: the herdr stand-in appends one line per invocation, so a test can
+// measure how often the cockpit actually went to herdr rather than how often
+// it meant to. asked() is the count; slow makes each call cost, which is how
+// the floor's max() term is measured.
+func countingAgentBackend(t *testing.T, home string, slow time.Duration) (*posse.HerdrBackend, func() int) {
+	t.Helper()
+	t.Setenv("HERDR_SOCKET_PATH", filepath.Join(home, "no-such.sock"))
+	binDir := t.TempDir()
+	herdr := filepath.Join(binDir, "herdr")
+	tally := filepath.Join(binDir, "calls")
+	delay := ""
+	if slow > 0 {
+		delay = fmt.Sprintf("sleep %v\n", slow.Seconds())
+	}
+	script := `#!/bin/sh
+echo "$1 $2" >> ` + tally + `
+` + delay + `case "$1 $2" in
+"workspace list")
+  printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"w1","label":"w1","agent_status":"working"}]}}'
+  exit 0;;
+"agent list")
+  printf '%s\n' '{"result":{"agents":[{"agent":"claude","agent_status":"working","pane_id":"w1:p1","workspace_id":"w1"}]}}'
+  exit 0;;
+esac
+exit 1
+`
+	if err := os.WriteFile(herdr, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	asked := func() int {
+		b, err := os.ReadFile(tally)
+		if err != nil {
+			return 0
+		}
+		return strings.Count(string(b), "\n")
+	}
+	return &posse.HerdrBackend{App: &posse.App{Home: home}, H: posse.Herdr{Bin: herdr}, Warn: io.Discard}, asked
+}
+
+// ranger-base-un5y5: hints COALESCE inside hintFloor. ADR 0016 §1 promises
+// "a burst means look again once, not N refreshes" and rested it on the
+// adapter's capacity-one channel; that channel bounds how many hints are
+// outstanding, never how fast this consumer drains them, so a producer with
+// another event always ready turned this loop as fast as the box could go —
+// 313 full refreshSessions + buildRows + render iterations in 32 seconds
+// against a 2s tick, measured on an empty shop.
+//
+// This asserts that nothing happens inside the floor, so it carries the arm
+// that shows the rig CAN make it happen: the same cockpit, the same hint,
+// one field later, must still go to herdr.
+func TestCockpitHintsCoalesceInsideTheFloor(t *testing.T) {
+	home := t.TempDir()
+	hb, asked := countingAgentBackend(t, home, 0)
+	c := &cockpit{app: &posse.App{Home: home}, hb: hb, mode: modeNormal,
+		beads: make(chan beadRead, 8)}
+	// The bead half rides its own floor (ranger-base-u5rqp) and is pinned in
+	// TestCockpitHintKeepsTheBeadScanFloor; hold it so every herdr call
+	// counted below belongs to the session half this bead is about.
+	c.beadsAt, c.beadsNext = time.Now(), time.Now().Add(time.Hour)
+	// As if a hint had just been spent: nothing hint-driven may re-read yet.
+	c.hintNext = time.Now().Add(time.Hour)
+
+	// A burst at the rate measured on the live socket, and then some.
+	const burst = 20
+	spent := 0
+	for i := 0; i < burst; i++ {
+		if c.applyHint(posse.HerdrHint{Kind: "pane_agent_status_changed", PaneID: "w1:p1", AgentStatus: "working"}) {
+			spent++
+		}
+	}
+	if spent != 0 {
+		t.Errorf("%d of %d hints inside the floor were spent — hintFloor is not gating applyHint, and the cockpit is back to redrawing at whatever rate herdr emits", spent, burst)
+	}
+	if n := asked(); n != 0 {
+		t.Errorf("a coalesced burst asked herdr %d times; it must ask none — refreshSessions is the work ranger-base-un5y5 measured", n)
+	}
+	if !c.hintPending {
+		t.Error("a coalesced burst must leave hintPending set, or the loop's timer never fires and the burst's last event is stuck until the 2s tick")
+	}
+	if len(c.sessions) != 0 {
+		t.Error("a coalesced hint re-read the sessions anyway")
+	}
+
+	// The rig CAN read from exactly here. Without this arm every assertion
+	// above is green on a cockpit whose herdr simply does not answer.
+	c.hintNext = time.Time{}
+	if !c.applyHint(posse.HerdrHint{Kind: "pane_agent_status_changed", PaneID: "w1:p1", AgentStatus: "blocked"}) {
+		t.Fatal("rig: the first hint after a lifted floor must be spent at once — the operator's ⛔ keeps event latency (ADR 0016 §2)")
+	}
+	if len(c.sessions) == 0 || asked() == 0 {
+		t.Fatalf("rig: that spend read nothing (sessions=%d, herdr calls=%d) — the arms above measured nothing", len(c.sessions), asked())
+	}
+	if c.hintPending {
+		t.Error("a spend must clear the pending bit it just answered")
+	}
+}
+
+// The floor's gap is max(hintFloor, what that refresh itself cost), counted
+// from where it started — beadsNext's rule, so hint work can never take more
+// than half the cockpit's wall clock however slow herdr gets. A floor pinned
+// at the constant alone would let a 400ms refresh run back-to-back.
+func TestCockpitHintFloorIsAtLeastTheRefreshsOwnCost(t *testing.T) {
+	home := t.TempDir()
+	// Each herdr call sleeps, and refreshSessions makes two (Sessions, then
+	// AgentPanes for the pane-set poke), so one refresh costs well over
+	// hintFloor.
+	hb, _ := countingAgentBackend(t, home, 300*time.Millisecond)
+	c := &cockpit{app: &posse.App{Home: home}, hb: hb, mode: modeNormal,
+		beads: make(chan beadRead, 8)}
+	c.beadsAt, c.beadsNext = time.Now(), time.Now().Add(time.Hour)
+
+	start := time.Now()
+	if !c.applyHint(posse.HerdrHint{Kind: "pane_agent_status_changed", PaneID: "w1:p1", AgentStatus: "working"}) {
+		t.Fatal("setup: an unfloored hint must spend")
+	}
+	cost := time.Since(start)
+	if cost <= hintFloor {
+		t.Fatalf("setup: this refresh cost %v, which is not over the %v floor — the arm below measures nothing", cost, hintFloor)
+	}
+	gap := c.hintNext.Sub(start)
+	if gap <= hintFloor {
+		t.Errorf("a refresh costing %v armed only a %v floor: the constant alone is not the gap, or a slow herdr is asked back-to-back and hint work takes more than half the wall clock", cost, gap)
+	}
+	// A millisecond of slop: cost is timed from outside spendHint, so it is
+	// always a hair longer than the interval spendHint timed for itself.
+	if gap+time.Millisecond < cost {
+		t.Errorf("a refresh costing %v armed a %v floor: the gap must be the refresh's own cost", cost, gap)
+	}
+}
+
+// Both loops must actually USE the floor, not merely carry the fields: the
+// tty loop arms one timer per pending hint and spends it when it fires, and
+// the display-only loop waits the floor out before turning. A loop that
+// keeps applyHint but drops the timer never lands the last event of a burst
+// until the 2s tick; one that drops the wait is back to a frame per event.
+func TestBothCockpitLoopsRespectTheHintFloor(t *testing.T) {
+	b, err := os.ReadFile("cockpit.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(b)
+	for _, loop := range []struct {
+		header string
+		wants  []string
+	}{
+		{"func runCockpit(", []string{"armHintWait := func()", "case <-hintWait:", "c.hintPending && c.applyHint("}},
+		{"func (c *cockpit) displayOnly()", []string{"c.hintNext, c.hintPending = frameAt.Add(gap), false", "if d := time.Until(c.hintNext); d > 0"}},
+	} {
+		body := loopBody(t, src, loop.header)
+		for _, want := range loop.wants {
+			if !strings.Contains(body, want) {
+				t.Errorf("%s does not contain %q — that loop is not on the ranger-base-un5y5 hint floor, whatever the rest of the file does", loop.header, want)
+			}
+		}
+	}
+	// The tty loop arms from BOTH sides, and a Contains would be green on
+	// either one alone: the hint case arms the first timer of a burst, and
+	// the timer case re-arms when the floor moved under it (a key spending
+	// the dirty bit through spendHint). Drop the hint case's call and a
+	// burst's last event waits out the 2s tick; drop the timer case's and
+	// so does a hint the operator's key raced.
+	if n := strings.Count(loopBody(t, src, "func runCockpit("), "armHintWait()"); n < 2 {
+		t.Errorf("runCockpit calls armHintWait() %d times, want both the hint case's and the timer case's — one call site alone leaves a pending hint for the 2s tick", n)
+	}
+}
+
 // pokeHintsIfPanesMoved is the cockpit's own truth path for ADR 0016 §1's
 // refresh poke: it must fire only when the agent pane set actually differs
 // from what the subscription was last dialled or poked with, never on
