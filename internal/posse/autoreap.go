@@ -446,6 +446,22 @@ func (a *App) reapAfter(key string, def time.Duration, errw io.Writer) time.Dura
 // reapClassOf sorts a session into its population. It decides nothing about
 // whether the session is FINISHED — that is reapWhy's, on the store of record
 // — only whose question it is.
+//
+// Both name comparisons below are made against the session's CHECKOUT and
+// not its working directory, because the checkout is what dispatch built the
+// name out of: `SessionForBead(persona, is.Dir, is.ID)` (dispatch.go), where
+// is.Dir is the repo the bead lives in. A worktree session's own Dir is the
+// per-bead worktree, whose basename is the session name again — so
+// SessionFor(agent, Dir) renders the persona twice, `<persona>-<persona>-<repo>-<bead>`,
+// and matches NOTHING (ranger-base-fytno).
+//
+// That mismatch is not cosmetic. It made the crew arm below unreachable for
+// every session on a worktree fleet — which, since rangerhq-09o2, is every
+// dispatched session there is — so a crew-marked per-bead session over a
+// closed bead was skipped by every sweep, silently, forever, and was left for
+// a hand to kill. That is the exact population ranger-base-f6lk widened the
+// sweep to take, measured again on 2026-09-04 with eight seats held for up
+// to 9h while the same passes reaped six other sessions on cadence.
 func reapClassOf(s HerdrSession, pol reapPolicy) reapClass {
 	if s.Foreign || s.Name == "" || s.Dir == "" || s.Agent == "" {
 		return reapNothing
@@ -454,7 +470,7 @@ func reapClassOf(s HerdrSession, pol reapPolicy) reapClass {
 	// into it, but it is the persona's reusable session, never a per-bead
 	// one, and never Dial F's to reap (rangerhq-v330's join depends on it
 	// surviving between beads).
-	if s.Name == SessionFor(s.Agent, s.Dir) {
+	if s.Name == SessionFor(s.Agent, s.Checkout()) {
 		return reapNothing
 	}
 	if !s.Crew && s.Bead != "" {
@@ -464,7 +480,7 @@ func reapClassOf(s HerdrSession, pol reapPolicy) reapClass {
 		return reapNothing // ADR 0027's target, above
 	}
 	if s.Crew {
-		if pol.crew <= 0 || s.Bead == "" || s.Name != SessionForBead(s.Agent, s.Dir, s.Bead) {
+		if pol.crew <= 0 || s.Bead == "" || s.Name != SessionForBead(s.Agent, s.Checkout(), s.Bead) {
 			return reapNothing
 		}
 		return reapCrewClosed
@@ -487,7 +503,29 @@ func (d *Dispatcher) reapWhy(s HerdrSession, class reapClass, pol reapPolicy) (s
 	switch class {
 	case reapFleetClosed, reapCrewClosed:
 		is, err := d.Bd.Show(s.Dir, s.Bead)
-		if err != nil || is.Status != "closed" {
+		if err != nil {
+			// An unreadable store is not an open bead, and until
+			// ranger-base-fytno the two were the same silence: both fell
+			// out here saying nothing, so a session whose bead could not be
+			// READ was skipped by every sweep forever and no line anywhere
+			// named it. That is indistinguishable, from the outside, from a
+			// reaper that does not run — which is what the fleet read as on
+			// 2026-09-04, when eight finished sessions held their seats for
+			// up to 9h while the same passes reaped six others and said not
+			// one word about the eight.
+			//
+			// Fail-closed stays: a store that cannot answer never licenses
+			// a kill. What changes is that the refusal is SAID, on every
+			// pass it is true rather than once — the same repeat-until-fixed
+			// line residueHolds prints below, for the same reason. A bead
+			// that reads open is the ordinary case and stays silent; only
+			// the unanswerable one costs a line, so the volume is bounded by
+			// how many sessions are actually broken.
+			d.printf("◑ %s NOT reaped: bead %s cannot be read in %s: %v\n",
+				s.Name, s.Bead, AbbrevHome(s.Dir), err)
+			return "", false
+		}
+		if is.Status != "closed" {
 			return "", false
 		}
 		why = "bead " + s.Bead + " closed"
