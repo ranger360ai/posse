@@ -523,28 +523,6 @@ func fakeBdFilterLabels(body, labels string) string {
 	return string(b)
 }
 
-// fakeBdDropClosed is `bd list` WITHOUT `--all`: the closed rows are gone.
-// Anything the fixture did not give a status is kept — a row that never
-// said it was closed is not.
-func fakeBdDropClosed(body string) string {
-	var list []map[string]any
-	if json.Unmarshal([]byte(body), &list) != nil {
-		return body
-	}
-	kept := []map[string]any{}
-	for _, is := range list {
-		if st, _ := is["status"].(string); st == "closed" {
-			continue
-		}
-		kept = append(kept, is)
-	}
-	b, err := json.Marshal(kept)
-	if err != nil {
-		return "[]"
-	}
-	return string(b)
-}
-
 // fakeBdAddDep records `dep add <id> <blocker>` where `dep list <id>` will
 // find it. The fake's dep files are per-repo rather than per-issue, which is
 // enough for a caller that asks about the one bead it just filed against.
