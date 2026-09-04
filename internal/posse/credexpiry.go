@@ -44,6 +44,18 @@ package posse
 //     failure is a failed READ — blindness, ADR 0018, already loud, already
 //     clocked — and that is the actuator D5 says it should be.
 //
+//     MEASURED FALSE 2026-09-03 (ranger-base-4poib), and left standing here
+//     because the behaviour it justifies is ADR 0019 D5's and not this
+//     file's to overturn: the loop does NOT refresh it without an operator.
+//     The access token's expiresAt is exactly 8h after the last interactive
+//     `claude` write and nothing else moves it — the refreshToken beside it
+//     in the same item, valid three weeks, is never used. So the hand this
+//     paragraph says does not exist is the whole mechanism, and reason 1
+//     (it would never be quiet) is now the only one of the two standing.
+//     The amendment is ranger-base-z089h; until it lands, what 4poib bought
+//     is that the failed READ this paragraph points at finally names the
+//     expiry it read (planusage.go AuthFailure) instead of guessing.
+//
 // The narrowing is also what keeps these surfaces free: a session mint's
 // expiry is a stamp in a file posse already owns, so the pass reads a few
 // hundred bytes. Warning about the meter would mean execing `security` on
@@ -103,6 +115,35 @@ func (e CredExpiry) Brief(now time.Time) string {
 		return "EXPIRED"
 	}
 	return expiryIn(e.At.Sub(now))
+}
+
+// expiryAgo is expiryIn's inverse, and it exists because a credential can
+// be found already dead: "expires in -37m" is not a sentence, and "EXPIRED"
+// alone does not say whether the operator's last login wore off half an
+// hour ago or last week. That distinction is the whole diagnosis for the
+// meter credential, whose access token lives 8h (MEASURED 2026-09-03,
+// ranger-base-4poib) — an expiry an hour old means the login loop is simply
+// not being run, and one a week old means something else entirely.
+//
+// It carries minutes below an hour where expiryIn does not, for the same
+// reason: expiryIn's smallest caller is a 14-day window where "in 0h" is a
+// rounding, while an age of 37 minutes rendered "0h ago" is the answer
+// erased. Above an hour the two agree unit for unit, so a reading of one
+// stamp by two surfaces cannot disagree about how long "8d" is.
+//
+// It truncates, like expiryIn — an age reported short is the direction that
+// errs towards "look again", never towards "you have time".
+func expiryAgo(d time.Duration) string {
+	if d < time.Hour {
+		if d < time.Minute {
+			return "just now"
+		}
+		return fmt.Sprintf("%dm ago", int(d.Minutes()))
+	}
+	if d < 48*time.Hour {
+		return fmt.Sprintf("%dh ago", int(d.Hours()))
+	}
+	return fmt.Sprintf("%dd ago", int(d.Hours()/24))
 }
 
 // expiryIn is the one place a duration becomes words. Hours under two days

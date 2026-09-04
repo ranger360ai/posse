@@ -331,9 +331,30 @@ func renderExpiry(t, now time.Time) string {
 		return "cannot tell"
 	}
 	if d := t.Sub(now); d <= 0 {
-		return "EXPIRED " + t.Format(stampDate)
+		return "EXPIRED " + renderStamp(t) + " (" + expiryAgo(-d) + ")"
 	}
-	return fmt.Sprintf("%s (%s)", t.Format(stampDate), expiryIn(t.Sub(now)))
+	return fmt.Sprintf("%s (%s)", renderStamp(t), expiryIn(t.Sub(now)))
+}
+
+// renderStamp prints the precision the stamp HAS and no more, which is the
+// same rule stampDate's own comment states one way round: a session mint's
+// `# expires=` is a DAY, and giving it a time of day would be a precision
+// nobody measured.
+//
+// The other way round matters too, and did not until the meter credential
+// was measured (ranger-base-4poib): the runtime's access token carries a
+// millisecond `expiresAt` and lives EIGHT HOURS, so a date is not a
+// rendering of it — "EXPIRED 2026-09-03" read at 23:28 on 2026-09-03 does
+// not say whether that happened before breakfast or 37 minutes ago, and the
+// operator's next move differs. A day stamp parses to midnight UTC, so a
+// zero clock is exactly "this value is a day"; anything else was measured
+// to the minute and is printed to the minute.
+func renderStamp(t time.Time) string {
+	u := t.UTC()
+	if u.Hour() == 0 && u.Minute() == 0 && u.Second() == 0 && u.Nanosecond() == 0 {
+		return u.Format(stampDate)
+	}
+	return u.Format(stampDate + " 15:04Z")
 }
 
 // ─── the write: a session mint, into an env set, by the operator's hand ──────

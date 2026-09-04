@@ -185,9 +185,12 @@ func (r *AnthropicPlanReader) Read() (PlanUsage, error) {
 	// stops getting is the bearer.
 	credentialed := credentialedURL(r.URL, PlanUsageURL)
 	var tok string
-	// The store that answered, kept for the one sentence that needs it: a
-	// 401 has to name which of the darwin composite's two stores the token
-	// came out of (ADR 0019 D2 as amended, V9). Nothing branches on it.
+	// What the seam knows about the credential it handed back, kept for the
+	// one sentence that needs it: a 401 has to name which of the darwin
+	// composite's two stores the token came out of (ADR 0019 D2 as amended,
+	// V9) and, since ranger-base-4poib, the expiry the store carried — a
+	// 401 on a token that was already dead is a different operator move
+	// from a 401 on a live one. Nothing branches on either.
 	var meta CredMeta
 	if credentialed {
 		if r.Token == nil {
@@ -241,7 +244,15 @@ func (r *AnthropicPlanReader) Read() (PlanUsage, error) {
 	// contributes — the sentences are the harness's, because "what does an
 	// operator do about it" is not provider knowledge.
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		return nil, &AuthFailure{Status: resp.Status, Code: resp.StatusCode, Source: meta.Source}
+		// The expiry travels with the store's name, and for the same reason
+		// (ranger-base-4poib): both are facts about the credential that was
+		// PRESENTED, both are already in hand — meta is the seam's answer
+		// from the read a few lines up — and both change only the sentence.
+		// A 401 whose token's own expiresAt is in the past is a different
+		// operator move from a 401 on a live one, and without this they were
+		// one message.
+		return nil, &AuthFailure{Status: resp.Status, Code: resp.StatusCode, Source: meta.Source,
+			ExpiresAt: meta.ExpiresAt, At: r.now()}
 	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, Die("usage endpoint returned %s", resp.Status)

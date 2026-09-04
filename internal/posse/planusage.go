@@ -246,6 +246,48 @@ type AuthFailure struct {
 	// governance key and park-vs-degrade are all unchanged by it (ADR 0018
 	// §2 — policy reads no diagnosis string, and that includes this one).
 	Source string
+	// ExpiresAt is the expiry the seam read off the credential that was
+	// PRESENTED — CredMeta.ExpiresAt, already in the bytes the meter parsed
+	// the token out of, so naming it costs no second read of the store. Zero
+	// is "cannot tell", the seam's own honest answer, and it renders as the
+	// sentence this type has always printed.
+	//
+	// At is when the endpoint answered. The age is computed once, HERE, from
+	// two fixed times rather than from time.Now() inside Error(): this error
+	// is logged, cached and re-rendered long after the response, and "37m
+	// ago" must keep meaning 37 minutes after the read that saw it.
+	//
+	// Like Source, these change the SENTENCE and nothing else. A 401 stays a
+	// 401: Stale(), PlanFailureOf and the governance key are the four
+	// classes ADR 0019 D2 names, and a fifth is that ADR's to add, not this
+	// struct's (ranger-base-4poib).
+	ExpiresAt time.Time
+	At        time.Time
+}
+
+// expiredWhenPresented splits the 401 the bead ranger-base-4poib was filed
+// for. MEASURED 2026-09-03: the meter's access token lives exactly 8h from
+// the operator's last interactive `claude`, and the 401 that follows said
+// "credential stale" without ever naming the expiry it had just read — the
+// same sentence a 401 on a perfectly live token gets, which is a guess
+// wearing a diagnosis's clothes.
+//
+// Three answers, and the third is the one that was missing:
+//
+//   - unknown (zero, or no read time) — cannot tell, so the sentence is the
+//     one it has always been. Cannot-tell never becomes a claim.
+//   - true — the token was already dead when it was presented. `claude`
+//     really is the move, and now the operator can see it wore off 37
+//     minutes ago rather than wondering whether their morning login took.
+//   - false — the token had NOT expired and the endpoint still refused it.
+//     A refresh presents the same credential and gets the same answer;
+//     suspecting freshness here is what sent an operator to `/login` for a
+//     scope problem once already (the 403 finding, ADR 0019 D2).
+func (e *AuthFailure) expiredWhenPresented() (bool, bool) {
+	if e.ExpiresAt.IsZero() || e.At.IsZero() {
+		return false, false
+	}
+	return !e.ExpiresAt.After(e.At), true
 }
 
 func (e *AuthFailure) Error() string {
@@ -253,6 +295,19 @@ func (e *AuthFailure) Error() string {
 		return fmt.Sprintf("usage endpoint returned %s: this credential is not entitled to plan windows — a setup-token never will be, and this is not a freshness problem", e.Status)
 	}
 	s := fmt.Sprintf("usage endpoint returned %s: credential stale — run `claude` once to refresh", e.Status)
+	// The expiry posse READ, when it read one, instead of a guess about
+	// freshness (ranger-base-4poib). Both arms name the stamp: an operator
+	// who is told a date can check it, and one who is told "stale" can only
+	// believe it.
+	if expired, known := e.expiredWhenPresented(); known {
+		if expired {
+			s = fmt.Sprintf("usage endpoint returned %s: credential EXPIRED %s (%s) — run `claude` once to refresh",
+				e.Status, renderStamp(e.ExpiresAt), expiryAgo(e.At.Sub(e.ExpiresAt)))
+		} else {
+			s = fmt.Sprintf("usage endpoint returned %s: the credential posse presented had NOT expired (%s, %s) — so this is not a freshness problem and `claude` will hand back the same token; suspect scope or entitlement, the way a 403 does (ADR 0019 D2), or a credential revoked at the source",
+				e.Status, renderStamp(e.ExpiresAt), expiryIn(e.ExpiresAt.Sub(e.At)))
+		}
+	}
 	// A 401 on a token the darwin composite fell through for is a different
 	// operator move from a 401 on the keychain's own token, and the two are
 	// byte-identical without this clause (ADR 0019 D2 as amended, V9): the
