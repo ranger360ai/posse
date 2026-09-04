@@ -3503,25 +3503,78 @@ refused with the stricter remedy — there is no private db to re-file it in.`)
 // has when it is not installed at all.
 //
 // WHAT IS READ IS WHAT GIT WILL KEEP, and those are not the same bytes on
-// every path (ranger-base-h3s6q finding 2; measured, git 2.50.1). "$2" makes
-// exactly one decision here — how the file is read — and it makes it because
-// git's own cleanup differs exactly there:
+// every path (ranger-base-h3s6q finding 2; measured, git 2.50.1). Exactly one
+// thing decides how the file is read, and it is git's CLEANUP MODE — the
+// thing that decides whether git throws comment lines away before it writes
+// the object. Nothing else here reads it, so the arm asks for it by name:
 //
-//	$2 = "message"   -m and -F. git appends NO template on this path and the
-//	                 default cleanup is "whitespace", which KEEPS a
-//	                 '#'-leading line — so a pasted markdown heading is a
-//	                 comment-looking line that commits, and a reader that
-//	                 stripped it would open a hole with the shape of the
-//	                 paste this arm exists for. Read whole, stripped of
-//	                 nothing.
-//	anything else    the editor path ($2 unset), a commit.template, a merge,
-//	                 a squash, an --amend. git has already written its own
-//	                 template into the file — the "On branch <name>" line and
-//	                 the '#' status block listing staged, unstaged and
-//	                 UNTRACKED paths, and on a merge the "# Conflicts:" list
-//	                 of conflicted paths — and it strips every one of those
-//	                 lines, because "strip" is the cleanup whenever the
-//	                 message is edited. Read through stripspace.
+//	strip                       git removes every comment line. Read through
+//	                            stripspace: the template is not the object.
+//	verbatim, whitespace,       git removes no comment line — under
+//	scissors                    "verbatim" not even its own template (MEASURED
+//	                            below). Read WHOLE.
+//	default, unset, absent      "default" is not a mode, it is "strip if the
+//	                            message is edited, whitespace if not", and
+//	                            "$2" is the only handle this hook has on
+//	                            edited-ness: "message" is -m and -F, where git
+//	                            appends NO template and KEEPS a '#'-leading
+//	                            line, so a pasted markdown heading commits and
+//	                            the read is whole; anything else is the editor
+//	                            path, a commit.template, a merge, a squash, an
+//	                            --amend, where git has already written the
+//	                            "On branch <name>" line, the status block
+//	                            listing staged, unstaged and UNTRACKED paths
+//	                            and a merge's "# Conflicts:" list, and strips
+//	                            every one of them — read through stripspace.
+//
+// "$2" WAS THE WHOLE ANSWER UNTIL ranger-base-6y3z2 AND IT IS A PROXY, not
+// the mode: it says whether git will EDIT the message, which picks the mode
+// only while the mode is "default". Set commit.cleanup and the proxy breaks
+// in both directions, MEASURED at the shell, git 2.50.1 (Apple Git-155):
+//
+//	verbatim + editor   git KEPT its whole template in the commit object —
+//	                    the Please-enter paragraph, "On branch main", the
+//	                    staged list and the UNTRACKED file list, one of which
+//	                    is a file NAME. The arm read that file through
+//	                    stripspace and stripped exactly those lines out of the
+//	                    scan, so a class carried by a branch name, an
+//	                    untracked path or a conflict list reached a PUBLIC
+//	                    repo's commit object with no wall speaking. Fail-OPEN,
+//	                    and reachable from ~/.gitconfig alone.
+//	strip + -m          git stripped a '#'-leading line the arm had read whole
+//	                    and refused over. Over-refusal, the cheap direction:
+//	                    the writer clears it by rewriting.
+//
+// WHAT THE HOOK CAN AND CANNOT SEE OF THE MODE, measured in a hook that
+// printed both: `git config --get commit.cleanup` answers for ~/.gitconfig,
+// the repo config AND `git -c commit.cleanup=... commit` (git exports that
+// one in GIT_CONFIG_PARAMETERS, and `git config` reads it back). It does not
+// answer for `git commit --cleanup=...`: rc 1, empty, nothing in the
+// environment carries it. RESIDUAL, stated: the flag form is invisible here
+// and the arm reads the path the way "default" would. The config form needs
+// no intent — the flag has to be typed — and git's own template says which
+// mode is live ("Lines starting with '#' will be kept" against "will be
+// ignored"), so a later layer that wants the flag can read git's sentence;
+// this one does not, because a localized sentence is the same kind of copy
+// as the literal '#' rejected below and it drifts the same way.
+//
+// AN INVALID VALUE IS NOT THIS ARM'S PROBLEM: git rejects one outright
+// ("fatal: Invalid cleanup mode nonsense", and the value is case-sensitive —
+// "Verbatim" is fatal too), so the commit never reaches an object. Anything
+// unrecognized here lands in the "default" row, which is where the arm was
+// before this change.
+//
+// THE COST OF THE FAIL-CLOSED SIDE, stated because it is h3s6q's complaint
+// wearing a config: under verbatim, whitespace or scissors the editor path
+// now reads git's template again, so ONE untracked file whose name carries a
+// class refuses those writers' editor commits before the editor opens. For
+// them the bytes genuinely land — the refusal is true — but the remedy line
+// still says "rewrite the commit message" and the rewrite has not happened
+// yet. The layer that can tell those two apart is the commit-msg hook this
+// file already names as missing, and this is a second reason to file it.
+// Under scissors the whole-file read also scans the block below the cut line
+// that git truncates, which is over-refusal on top of over-refusal; matching
+// that line here would be a second copy of git's rule, so it is not matched.
 //
 // WHAT THE FULL-FILE READ COST, measured before the split: ONE untracked
 // file whose NAME carried a ceiling class — never staged, never typed —
@@ -3622,7 +3675,13 @@ func messageArm(ind, head string, sources []visScanSource) string {
 		return ""
 	}
 	return head + ind + `if [ -f "${1:-}" ]; then
-` + i1 + `if [ "${2:-}" = "message" ]; then
+` + i1 + `posse_clean=$(git config --get commit.cleanup 2>/dev/null) || posse_clean=''
+` + i1 + `case "$posse_clean" in
+` + i1 + `  strip) posse_clean=strip ;;
+` + i1 + `  verbatim|whitespace|scissors) posse_clean=whole ;;
+` + i1 + `  *) if [ "${2:-}" = "message" ]; then posse_clean=whole; else posse_clean=strip; fi ;;
+` + i1 + `esac
+` + i1 + `if [ "$posse_clean" = whole ]; then
 ` + i2 + `posse_cc=whole
 ` + i1 + `else
 ` + i2 + `posse_cc=$(git config --get core.commentString 2>/dev/null) ||
@@ -3660,22 +3719,27 @@ func messageArm(ind, head string, sources []visScanSource) string {
 var ceilingMessageHead = "\n" + shComment("", `─── the data ceiling, third arm: the commit MESSAGE (ADR 0050 D2) ──────
 "$1" is the message file git is about to take — the same file the
 shared-index arm below compares against MERGE_MSG. WHAT IS READ IS WHAT
-GIT WILL KEEP. On the -m and -F path ($2 = "message") it is read whole,
-comment-looking lines included: git's cleanup there is "whitespace", which
-keeps a '#'-leading line, so a pasted markdown heading lands in the commit
-object and replicates with the branch. On every other path git has already
-written its own template into the file — the "On branch" line, the '#'
-status block listing staged, unstaged and UNTRACKED paths, a merge's
-"# Conflicts:" list — and strips all of it, so the read is
-"git stripspace --strip-comments" and the scan judges only what will
+GIT WILL KEEP, and git's CLEANUP MODE is what decides which bytes those
+are, so the mode is what is asked for. Under "strip" git removes every
+comment line — the "On branch" line, the status block listing staged,
+unstaged and UNTRACKED paths, a merge's "# Conflicts:" list — so the read
+is "git stripspace --strip-comments" and the scan judges only what will
 survive into the object (ranger-base-h3s6q: a full-file read refused over
-an untracked file's NAME, with a remedy no rewrite could clear).
+an untracked file's NAME, with a remedy no rewrite could clear). Under
+"verbatim", "whitespace" or "scissors" git removes none of it, its own
+template included, so the file is read WHOLE. With commit.cleanup unset
+the mode is "default", which is "strip if the message is edited" — and
+"$2" is the handle on that: "message" is -m/-F, where git appends no
+template and KEEPS a '#'-leading line, so a pasted markdown heading lands
+in the object and the read is whole; every other path is read stripped
+(ranger-base-6y3z2: keying on "$2" alone let git's own template land
+unscanned under commit.cleanup=verbatim, measured).
 core.commentChar=auto is not a character but a choice git makes per
-message, and stripspace answers '#' for it whatever git chose — so on
-that one config the character is taken from the template git already
-wrote (the comment run at the end of "$1") and handed to stripspace, and
-where git appended no template it strips nothing and the file is read
-whole (ranger-base-vzx2n).
+message, and stripspace answers '#' for it whatever git chose — so
+wherever the read strips, the character is taken from the template git
+already wrote (the comment run at the end of "$1") and handed to
+stripspace, and where git appended no template it strips nothing and the
+file is read whole (ranger-base-vzx2n).
 The refusal's remedy differs from the staged file's — rewrite the message,
 cite the id — because the text is not in a file the writer can edit; it is
 still in .git/COMMIT_EDITMSG, local and unreplicated, until the next
@@ -4010,18 +4074,22 @@ the same path is refused exactly as before.`) +
 var checkThreeMessageHead = "\n" + shComment("  ", `─── check 3, third arm: the commit MESSAGE ─────────────────────────────
 "$1" is the message file git is about to take — the same file the ceiling
 above and the shared-index arm below already read, through the same
-reader. WHAT IS READ IS WHAT GIT WILL KEEP. On the -m and -F path
-($2 = "message") it is read whole, comment-looking lines included: git's
-cleanup there is "whitespace", which keeps a '#'-leading line, so a pasted
-heading lands in the commit object and replicates with the branch. On
-every other path git has already written its own template into the file —
-the "On branch" line, the '#' status block, a merge's "# Conflicts:" list
-— and strips all of it, so the read is "git stripspace --strip-comments"
-and the scan judges only what will survive into the object
-(ranger-base-h3s6q), with the comment character taken from the template
-git already wrote whenever core.commentChar is "auto", because for that
-one value stripspace answers '#' whatever git chose (ranger-base-vzx2n).
-Inside the gate with the rest of
+reader. WHAT IS READ IS WHAT GIT WILL KEEP, and git's CLEANUP MODE
+decides which bytes those are. Under "strip" git removes every comment
+line — the "On branch" line, the status block, a merge's "# Conflicts:"
+list — so the read is "git stripspace --strip-comments" and the scan
+judges only what will survive into the object (ranger-base-h3s6q). Under
+"verbatim", "whitespace" or "scissors" git removes none of it and the
+file is read WHOLE (ranger-base-6y3z2: under commit.cleanup=verbatim
+git kept its own template, an UNTRACKED file's NAME included, in a PUBLIC
+repo's commit object while this arm stripped exactly those lines out of
+the scan). With commit.cleanup unset the mode is "default" and "$2" is
+the handle: "message" is -m/-F, where git appends no template and keeps a
+'#'-leading line, so a pasted heading lands and the read is whole.
+Wherever the read strips, the comment character is taken from the
+template git already wrote if core.commentChar is "auto", because for
+that one value stripspace answers '#' whatever git chose
+(ranger-base-vzx2n). Inside the gate with the rest of
 check 3: an identity literal or an instance class is about where content
 may GO, so a private-stamped repo runs none of this — which is the one
 thing that separates this arm from the ceiling's, and why the ceiling's

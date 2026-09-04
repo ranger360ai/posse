@@ -1499,15 +1499,25 @@ the remedy: the ceiling refuses in every repo and first, the visibility
 arms only in a public-stamped one. A message given with `-m`, `-F`, `-F -`
 or reused by `--amend` is scanned; one typed in your EDITOR is not, because
 the hook runs before the editor opens (ADR 0050 D5). git's own template is
-not a subject either: on every path but `-m`/`-F` the arm reads through
-`git stripspace --strip-comments`, so the `On branch` line, the `#` status
-block and a merge's conflict list — which git strips and which never reach
-the commit — cannot refuse your commit (ranger-base-h3s6q). If your
-`core.commentChar` is `auto`, git picks the character per message and
-`stripspace` does not: the arm takes it from the template git already wrote
-into the file, and where git wrote no template it strips nothing and reads
-the file whole, because under `auto` that is exactly what git keeps
-(ranger-base-vzx2n). A refused
+not a subject either, WHERE GIT STRIPS IT: the arm reads
+`commit.cleanup` and, under `strip` (which is what an edited message gets by
+default), reads the file through `git stripspace --strip-comments`, so the
+`On branch` line, the `#` status block and a merge's conflict list — which
+git strips and which never reach the commit — cannot refuse your commit
+(ranger-base-h3s6q). If your `core.commentChar` is `auto`, git picks the
+character per message and `stripspace` does not: on that read the arm takes
+it from the template git already wrote into the file, and where git wrote no
+template it strips nothing and reads the file whole, because under `auto`
+that is exactly what git keeps (ranger-base-vzx2n).
+If you set `commit.cleanup` to `verbatim`, `whitespace`
+or `scissors`, git KEEPS that block in the commit object, so the arm reads
+the file whole and the block CAN refuse you — including over an untracked
+file's name you never staged. That refusal is true (those bytes would land)
+but it arrives before your editor opens, so the remedy is to clear the class
+out of the repo or to leave `commit.cleanup` at its default rather than to
+rewrite a message you have not typed yet (ranger-base-6y3z2). A
+`--cleanup=` given on the command line is invisible to the hook and reads
+as the default. A refused
 message is not lost: it is in `.git/COMMIT_EDITMSG` until your next commit
 overwrites it. The SHIPPED pattern list is the one thing not read over a
 message, which is a measured decision rather than an oversight (ADR 0024

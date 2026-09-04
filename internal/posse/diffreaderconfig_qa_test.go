@@ -8,8 +8,11 @@ package posse
 // The first two arrived here PARKED and red, one per finding, each measured
 // through the real rendered hook. Both are unparked and green: the reader
 // carries --no-textconv, and the message arm reads through
-// `git stripspace --strip-comments` on every path but -m/-F. The rest of the
-// file is what stops a later edit from taking either fix back out quietly.
+// `git stripspace --strip-comments` exactly where git's cleanup mode says
+// git will strip comments too (ranger-base-6y3z2 re-keyed that from "$2",
+// which was a proxy for the mode and broke under commit.cleanup). The rest
+// of the file is what stops a later edit from taking either fix back out
+// quietly.
 
 import (
 	"os"
@@ -254,15 +257,25 @@ func TestQACeilingMessageArmDoesNotRefuseOnAMergesConflictList(t *testing.T) {
 	}
 }
 
-// PIN, structural: ONE message reader per wall, in TWO forms, keyed on "$2"
-// — and the -m/-F form is still the whole file (ranger-base-h3s6q). The
-// split is the fix; the `cat` half is the hole the fix may not open. A
-// pasted '#'-leading line on the -m path commits (git's cleanup there is
-// "whitespace"), so a hook that stripped comments on every path would hand
-// the paste this arm exists for straight through — the behaviour pins for
-// that are in dataceiling_qa_test.go and checkthreemessage_qa_test.go; this
-// one holds the shape they rest on.
-func TestQAMessageArmReadsTwoWaysKeyedOnTheSourceArgument(t *testing.T) {
+// PIN, structural: ONE message reader per wall, in TWO forms, keyed on git's
+// CLEANUP MODE — and the -m/-F fallback is still the whole file
+// (ranger-base-h3s6q, re-keyed by ranger-base-6y3z2). The split is the fix;
+// the `cat` half is the hole the fix may not open. A pasted '#'-leading line
+// on the -m path commits (git's cleanup there is "whitespace"), so a hook
+// that stripped comments on every path would hand the paste this arm exists
+// for straight through — the behaviour pins for that are in
+// dataceiling_qa_test.go and checkthreemessage_qa_test.go; this one holds
+// the shape they rest on.
+//
+// WHY "$2" IS NO LONGER THE KEY, and why it is still in the block: "$2" says
+// whether git will EDIT the message, which picks the cleanup mode only while
+// the mode is "default". commit.cleanup=verbatim on the editor path made git
+// KEEP its own template — the "On branch" line and the UNTRACKED file list —
+// in the commit object while this arm stripped exactly those lines out of
+// the scan (ranger-base-6y3z2, measured, git 2.50.1). So the mode is asked
+// for by name and "$2" survives as the "default" row's proxy alone; a hook
+// that goes back to keying on "$2" first reds here.
+func TestQAMessageArmReadsTwoWaysKeyedOnTheCleanupMode(t *testing.T) {
 	t.Parallel() // renders and reads strings; no repo, no env (ranger-base-pj87l)
 	set := OpsPatternSet{
 		Extra:   []OpsPattern{{Class: qaInstanceClass, ERE: qaInstanceERE}},
@@ -273,13 +286,31 @@ func TestQAMessageArmReadsTwoWaysKeyedOnTheSourceArgument(t *testing.T) {
 		frag string
 		n    int
 	}{
-		{`if [ "${2:-}" = "message" ]; then`, 2},
+		// The mode is READ, from git, once per wall.
+		{`posse_clean=$(git config --get commit.cleanup 2>/dev/null)`, 2},
+		// The three modes that keep comments read the file WHOLE. All
+		// three, because git keeps its own template under every one of
+		// them (measured) and dropping any is the same fail-open again.
+		{`verbatim|whitespace|scissors) posse_clean=whole ;;`, 2},
+		// "strip" strips on EVERY path, -m/-F included: that is the
+		// over-refusal half of ranger-base-6y3z2.
+		{`strip) posse_clean=strip ;;`, 2},
+		// "$2" survives as the fallback for "default"/unset and nothing
+		// else — and there it still reads -m/-F whole.
+		{`*) if [ "${2:-}" = "message" ]; then posse_clean=whole; else posse_clean=strip; fi ;;`, 2},
 		{`posse_added=$(cat "$1" 2>/dev/null)`, 2},
 		{`posse_added=$(git stripspace --strip-comments < "$1" 2>/dev/null)`, 2},
 	} {
 		if n := strings.Count(hook, want.frag); n != want.n {
 			t.Errorf("want %d × %q — one per wall — got %d", want.n, want.frag, n)
 		}
+	}
+	// The mode must not be the FIRST question again: "$2" may only be
+	// reached from the `*)` arm above, where the newline after `then` is
+	// the tell that a whole branch hangs off it.
+	if strings.Contains(hook, "if [ \"${2:-}\" = \"message\" ]; then\n") {
+		t.Error(`"$2" is a proxy for the cleanup mode and it breaks the moment commit.cleanup is set ` +
+			`(ranger-base-6y3z2): the arm must read the mode first and fall back to "$2" only for "default"`)
 	}
 	if strings.Contains(hook, "grep -v '^#'") || strings.Contains(hook, `grep -av '^#'`) {
 		t.Error("the comment character is core.commentChar, the WRITER's config: the hook must ask git, not carry a literal '#'")

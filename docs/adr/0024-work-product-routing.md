@@ -138,6 +138,21 @@ install and at every persona launch).
    a `#` line and the file is still read whole. Same renderer, so this
    holds for the ceiling's arm and check 3's alike.*
 
+   *Amended 2026-09-04 (ranger-base-6y3z2): `$2` was a PROXY for git's
+   cleanup mode, and it breaks the moment `commit.cleanup` is set — one
+   line in `~/.gitconfig`, no intent required. Under
+   `commit.cleanup=verbatim` git KEEPS its own template in the commit
+   object, the `On branch` line and the UNTRACKED file list included, and
+   the arm stripped exactly those lines out of the scan: an identity
+   literal carried by a branch name or an untracked path reached a PUBLIC
+   repo's commit object with no wall speaking (measured, git 2.50.1). The
+   arm now reads `commit.cleanup` and strips only under `strip`;
+   `verbatim`, `whitespace` and `scissors` are read WHOLE, and `$2`
+   survives as the proxy for `default` alone. `git commit --cleanup=...`
+   is invisible to a hook and is the stated residual — measured, `git
+   config --get` answers for the config files and for `git -c`, not for
+   the flag.*
+
    *Amended 2026-09-04 (ranger-base-cdxpf, from ranger-base-o3g6a): a
    FOURTH derived source — this box's CREW NAMES, over the ADDED staged
    PATHS and nothing else.* The staged-path arm above matches the

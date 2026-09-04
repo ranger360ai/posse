@@ -4359,11 +4359,16 @@ rewrite the message, and the text you typed is still in
 `.git/COMMIT_EDITMSG` until your next commit overwrites it. A message typed
 in the EDITOR is the stated exclusion: `prepare-commit-msg` runs before the
 editor opens, so the message does not exist yet. What the hook is handed on
-that path is git's template, and the arm reads it the way git will — through
-`git stripspace --strip-comments`, so the `#` status block (untracked paths
-and a merge's conflict list included) is not a subject; only `-m` and `-F`
+that path is git's template, and the arm reads it the way git will — which
+means it asks git's CLEANUP MODE, not the source argument. Under `strip` the
+read is `git stripspace --strip-comments`, so the `#` status block (untracked
+paths and a merge's conflict list included) is not a subject; `-m` and `-F`
 are read whole, because there git's cleanup keeps a `#` line
-(ranger-base-h3s6q). `install-hooks` prints the
+(ranger-base-h3s6q); and under `commit.cleanup=verbatim`, `whitespace` or
+`scissors` git keeps that block in the object, so the whole file is read and
+the block IS a subject (ranger-base-6y3z2 — keying on the source argument let
+a branch name and an untracked path land in a public commit object
+unscanned). `install-hooks` prints the
 ceiling line for private-stamped repos too.
 
 **And it is still a lint, not a boundary** — same class as the allowlist,

@@ -136,7 +136,22 @@ message, that no rewrite can clear; measured, one untracked file named for a
 class refused every editor commit in the repo. The arm now reads the file
 whole only where git's cleanup KEEPS a comment line (`-m` and `-F`, `$2 =
 message`) and through `git stripspace --strip-comments` on every other path,
-so what it judges is what git will keep. The exclusion stands as stated: a
+so what it judges is what git will keep. Re-keyed 2026-09-04
+(ranger-base-6y3z2): `$2` was a PROXY for git's CLEANUP MODE and it breaks
+the moment `commit.cleanup` is set. Under `commit.cleanup=verbatim` git keeps
+its own template in the object — the `On branch` line, the staged list and the
+UNTRACKED file list — and the arm stripped exactly those lines out of the
+scan, so a class carried by a branch name, an untracked path or a merge's
+conflict list reached the commit object unrefused (measured, git 2.50.1); the
+mirror direction, `commit.cleanup=strip` with `-m`, stripped a `#` line the
+arm read whole and refused over. The arm now asks for the mode: `strip`
+strips, `verbatim`/`whitespace`/`scissors` are read WHOLE, and `$2` is the
+proxy for `default` alone. `git commit --cleanup=...` is invisible to a hook
+and is the stated residual. The cost of the fail-closed side is h3s6q's
+complaint wearing a config — those three modes read git's template again, so
+one classed untracked path refuses those writers' editor commits before the
+editor opens, and the layer that can tell that apart is the `commit-msg` hook
+below. The exclusion stands as stated: a
 message typed in the editor does not exist yet when the hook runs. What the
 editor path does scan is whatever was already in the file — a
 `commit.template` body, `MERGE_MSG` — which lands in the object like any
