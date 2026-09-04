@@ -162,21 +162,46 @@ func lockLaunches(a *App, out io.Writer) (*LaunchLock, error) {
 // single select loop, where a minutes-long wait behind a firing pass is a
 // frozen cockpit (rangerhq-09o2). The caller's fallback must be to do
 // nothing and say so — never to act unserialized.
-func tryLockLaunches(a *App) (*LaunchLock, bool) {
+//
+// It returns WHY it did not take the lock, "" when it did, in the shape
+// prunable and notOurWorkspace already use in this package. A bare false
+// said "held" for four unrelated events — an unmakeable state dir, an
+// unopenable lock file, an flock that failed for reasons of its own, and
+// the one real contention — so every reader downstream, an operator line
+// and a test's failure message alike, asserted a cause nobody had
+// measured. ranger-base-zppcv is what that costs: one red on the free-lock
+// arm reading "the non-blocking take failed on a free lock", byte-identical
+// to what a plain ENOTDIR open produces, and a whole verification pass
+// spent unable to get past "one of three things happened". Only the
+// EWOULDBLOCK arm means the lock is busy; the other three mean this box is
+// broken, which is worth saying out loud and never worth guessing.
+//
+// The contended arm stays silent-and-false for its callers regardless — the
+// string is what it is, and nothing here waits, retries or logs.
+func tryLockLaunches(a *App) (*LaunchLock, string) {
 	path := LaunchLockPath(a)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return nil, false
+		return nil, fmt.Sprintf("the launcher lock's directory could not be made: %v", err)
 	}
 	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o644)
 	if err != nil {
-		return nil, false
+		return nil, fmt.Sprintf("the launcher lock file could not be opened: %v", err)
 	}
 	if err := flock(f, syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		f.Close()
-		return nil, false
+		// EWOULDBLOCK is the only one of these that is another launcher.
+		// The rest — EBADF, ENOLCK, EINVAL — are the kernel refusing to
+		// answer the question, and neither caller waits on an answer: both
+		// defer to "the next quiet pass", which under a told-wrong reason
+		// is every pass from here on, each one spared by a launcher that
+		// does not exist.
+		if errors.Is(err, syscall.EWOULDBLOCK) {
+			return nil, "a launcher is running"
+		}
+		return nil, fmt.Sprintf("the launcher lock could not be taken: %v", err)
 	}
 	stampLockHolder(f)
-	return &LaunchLock{f: f}, true
+	return &LaunchLock{f: f}, ""
 }
 
 // flock is syscall.Flock with the EINTR retry a blocking LOCK_EX needs in a

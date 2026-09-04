@@ -1420,26 +1420,6 @@ func TestListSessionTreesNamesWhichBeadTheUnlandedWorkIsFor(t *testing.T) {
 	}
 }
 
-// The kill's non-blocking lock: with a launcher holding it, the session is
-// still killed, nothing is merged, and nothing is lost.
-func TestTryLockLaunchesDoesNotWait(t *testing.T) {
-	t.Parallel()
-	a := wtApp(t)
-	held, err := lockLaunches(a, io.Discard)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := tryLockLaunches(a); ok {
-		t.Fatal("the non-blocking take succeeded while the lock was held")
-	}
-	held.Release()
-	got, ok := tryLockLaunches(a)
-	if !ok {
-		t.Fatal("the non-blocking take failed on a free lock")
-	}
-	got.Release()
-}
-
 // ranger-base-g2xf: ahead by SHA is not ahead by work. A commit that was
 // cherry-picked onto the base keeps its own sha on the branch, so the branch
 // counts as ahead; and when the landing was resolved BY HAND the patches are

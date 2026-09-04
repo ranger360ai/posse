@@ -20,6 +20,7 @@ package posse
 // nothing depends on which goroutine the scheduler runs first.
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -501,4 +502,139 @@ func createdPersonas(t *testing.T, fake string) []string {
 		}
 	}
 	return order
+}
+
+// ─── the non-blocking take, and what it may say ─────────────────────────────
+
+// The kill's non-blocking lock: with a launcher holding it, the session is
+// still killed, nothing is merged, and nothing is lost.
+//
+// It lived in worktree_test.go with t.Parallel until ranger-base-zppcv, which
+// is the one acquisition test the ranger-base-9l77f rule missed — it holds a
+// lock, releases it, and asserts the release read as free, which is exactly
+// the shape this file is serial for. The line that failed the pass that filed
+// the bead is the free-lock take below, once, unreproducible at -count=200
+// alone. That is a candidate cause for that red and not a proof of one; the
+// product cause stays open on ranger-base-9l77f.
+func TestTryLockLaunchesDoesNotWait(t *testing.T) {
+	a := wtApp(t)
+	held, err := lockLaunches(a, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lock, why := tryLockLaunches(a)
+	if lock != nil {
+		lock.Release()
+		t.Fatal("the non-blocking take succeeded while the lock was held")
+	}
+	if why != "a launcher is running" {
+		t.Errorf("a held lock is contention and has to say so, got %q", why)
+	}
+	held.Release()
+	got, why := tryLockLaunches(a)
+	if got == nil {
+		t.Fatalf("the non-blocking take failed on a free lock: %s", why)
+	}
+	if why != "" {
+		t.Errorf("a lock that was TAKEN must carry no reason, got %q", why)
+	}
+	got.Release()
+}
+
+// The failures that are not contention, each saying which it is.
+//
+// ranger-base-zppcv: tryLockLaunches answered an unmakeable state dir, an
+// unopenable lock file and a genuinely held lock with one bare false, so
+// every reader downstream — `posse kill`'s deferral line, the prune's
+// sparing, the pin above — asserted "a launcher is running" over three
+// unrelated events. A red on the free-lock arm then cost a whole
+// verification pass, because nothing in the pin or under it could say which
+// of the three had happened.
+//
+// Both broken arms are built out of the filesystem rather than an -overlay
+// mutant, so what is pinned is the real MkdirAll and the real OpenFile
+// failing: a state dir that is a regular FILE is ENOTDIR, and a lock path
+// that is a DIRECTORY is EISDIR for O_RDWR. The fourth arm — an flock that
+// fails for reasons of its own (EBADF, ENOLCK) — has no portable fixture
+// and is left to the reading of launchlock.go.
+//
+// Serial with the rest of the file: its contention arm asserts acquisition.
+func TestTryLockLaunchesNamesWhichFailure(t *testing.T) {
+	// The class is the reason with its error text cut off. The texts carry
+	// a temp path, so comparing them whole would report four distinct
+	// reasons even if all four arms returned one sentence — the very thing
+	// this test exists to catch.
+	class := func(why string) string {
+		if i := strings.Index(why, ":"); i >= 0 {
+			return why[:i]
+		}
+		return why
+	}
+	seen := map[string]string{}
+	note := func(arm, why string) {
+		if prev, dup := seen[class(why)]; dup {
+			t.Errorf("%s reports what %s reports (%q) — the arms are indistinguishable again", arm, prev, why)
+		}
+		seen[class(why)] = arm
+	}
+
+	// Taken: no reason at all.
+	free := wtApp(t)
+	lock, why := tryLockLaunches(free)
+	if lock == nil {
+		t.Fatalf("the control arm could not take a free lock: %s", why)
+	}
+	lock.Release()
+	note("a free lock", why)
+
+	// Held: the one arm that means wait for someone else.
+	busy := wtApp(t)
+	held, err := lockLaunches(busy, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lock, why = tryLockLaunches(busy)
+	if lock != nil {
+		lock.Release()
+		t.Fatal("the non-blocking take succeeded while the lock was held")
+	}
+	held.Release()
+	if why != "a launcher is running" {
+		t.Errorf("a held lock: want %q, got %q", "a launcher is running", why)
+	}
+	note("a held lock", why)
+
+	broken := []struct {
+		arm     string
+		arrange func(t *testing.T, a *App)
+		want    string
+	}{
+		{"a state dir that is a regular file", func(t *testing.T, a *App) {
+			if err := os.WriteFile(a.StateDir, []byte("not a directory\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}, "directory could not be made"},
+		{"a lock path that is a directory", func(t *testing.T, a *App) {
+			if err := os.MkdirAll(LaunchLockPath(a), 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}, "could not be opened"},
+	}
+	for _, tc := range broken {
+		a := wtApp(t)
+		tc.arrange(t, a)
+		lock, why := tryLockLaunches(a)
+		if lock != nil {
+			lock.Release()
+			t.Errorf("%s: the lock was taken anyway", tc.arm)
+			continue
+		}
+		if !strings.Contains(why, tc.want) {
+			t.Errorf("%s: want a reason naming %q, got %q", tc.arm, tc.want, why)
+		}
+		if strings.Contains(why, "a launcher is running") {
+			t.Errorf("%s: reads as contention, so every pass from here on spares the work for a launcher that does not exist: %q", tc.arm, why)
+		}
+		note(tc.arm, why)
+	}
 }

@@ -1139,9 +1139,14 @@ func (b *HerdrBackend) prunable(m *HerdrMeta, gen string) (dead bool, why string
 // re-read finds nothing there at all, which is not a sparing: somebody else
 // already did the delete this pass had proved.
 func (b *HerdrBackend) reclaim(name, sock, gen string) string {
-	lock, ok := tryLockLaunches(b.App)
-	if !ok {
-		return "a launcher holds the launch lock, so the unlink is not taken now (ADR 0011 §1, rangerhq-3a5t) — the next quiet pass prunes it"
+	lock, why := tryLockLaunches(b.App)
+	if lock == nil {
+		// The reason is carried, not fixed: a lock this pass could not even
+		// open is not a launcher holding it, and a sparing that says so is
+		// the difference between a quiet pass and a broken box
+		// (ranger-base-zppcv). The lock is still named, because the sparing
+		// is read as a lock answer whichever of the four it was.
+		return "the launch lock was not taken (" + why + "), so the unlink is not taken now (ADR 0011 §1, rangerhq-3a5t) — the next quiet pass prunes it"
 	}
 	defer lock.Release()
 	// The whole check again, on the file as it is now. The listing-shaped
@@ -2919,9 +2924,9 @@ func (b *HerdrBackend) killAndLand(name string, opts KillOpts) (*KillLanding, er
 	// race costs nothing but time: the tree and its branch are kept, the
 	// line says so, and `posse worktrees --land` lands it afterwards. What
 	// it must never do is merge unserialized.
-	lock, ok := tryLockLaunches(b.App)
-	if !ok {
-		l.Kept = "a launcher is running — not landed; `posse worktrees --land` finishes it"
+	lock, why := tryLockLaunches(b.App)
+	if lock == nil {
+		l.Kept = why + " — not landed; `posse worktrees --land` finishes it"
 		return l, nil
 	}
 	defer lock.Release()

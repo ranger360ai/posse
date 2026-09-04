@@ -287,6 +287,18 @@ func main() {
 		"TestWatchStatusNeverTurnsAnUnaskableQuestionIntoNone": "asserts flock acquisition",
 		"TestWatchStatusNamesTheLogAndItsAge":                  "asserts flock acquisition",
 		"TestWatchReleasesLockBetweenPasses":                   "asserts flock acquisition",
+		// The two that ranger-base-zppcv moved into launchlock_test.go. The
+		// first carried t.Parallel in worktree_test.go and is the only
+		// acquisition test the rule above had missed: it releases a lock and
+		// asserts the release read as free, which is the 9l77f shape exactly,
+		// and its free-lock arm is the line that failed a pass unreproducibly.
+		// Both are INERT today and named anyway — they go through wtApp, so
+		// filter 3 calls them ineligible and `check` is quiet with or without
+		// these two lines (measured both ways). The judgment is what is being
+		// recorded: the day wtApp stops reading $HOME, the filter lets go and
+		// this is the only thing left holding them serial.
+		"TestTryLockLaunchesDoesNotWait":       "asserts flock acquisition",
+		"TestTryLockLaunchesNamesWhichFailure": "asserts flock acquisition",
 		// Drives a REAL backupLoop goroutine and times it: its treatment arm
 		// asserts the second archive lands in under the 60s interval, and its
 		// absence arm waits 3x that measured time. Both readings are wall
