@@ -291,3 +291,57 @@ func TestListSessionsNamesWhatItWithheld(t *testing.T) {
 		t.Errorf("a SPARED meta is withheld under its bare name, not the warning string: %q", withheld)
 	}
 }
+
+// ranger-base-ox49o (verify of ranger-base-5kiu4): the FOURTH filter on the
+// withheld walk — this pass's own stranded launches — held nothing up.
+//
+// personaActive skips a withheld meta on four facts read off the meta file:
+// the seat prefix, `d.stranded`, the crew mark and the agent. Three were
+// pinned at the close and mutation-checked; `d.stranded` was neither, and
+// dropping it left every pin in this file green (measured 2026-09-04,
+// go test -overlay).
+//
+// It is reachable and it is not the safe direction. `strand` records a
+// session this pass launched and could not prompt (dispatch.go, ADR 0013 §2)
+// so the rest of the pass may try that seat again — and the launch failures
+// that strand a session are exactly the ones that also take its workspace
+// out of the next listing, which is what makes the same meta withheld.
+// Without the skip the seat this pass just gave up on reads as OCCUPIED for
+// the rest of the pass, by a session nobody can address, and the retry the
+// ceiling deliberately grants it never happens.
+//
+// MUTATION: drop `if d.stranded[name] { continue }` from the withheld walk →
+// the second assertion reds; the first is the positive control that the seat
+// really was held before the strand, so an arm that holds nothing cannot
+// pass this by asserting an absence that is true of nothing.
+func TestQAAStrandedLaunchDoesNotHoldItsSeatThroughTheWithheldWalk(t *testing.T) {
+	t.Setenv("HERDR_SOCKET_PATH", "/tmp/5kiu4/ours.sock")
+	b, fake := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+	// A live workspace of somebody else's, so what follows is cannotAnswerFor
+	// and not emptyBoard by another name.
+	saveWSTo(t, fake, []fakeWS{{WorkspaceID: "w1", Label: "live"}})
+
+	dir := "/src/posse"
+	slot := SessionFor("developer", dir)
+	session := slot + "-a-1"
+	qaWithheldMeta(t, b, session, "", false)
+	if _, withheld, err := b.listSessions(); err != nil || len(withheld) != 1 {
+		t.Fatalf("premise: the meta must be withheld with a nil error: withheld=%v err=%v", withheld, err)
+	}
+
+	// POSITIVE CONTROL: before the strand the withheld meta holds the seat.
+	// Without this the assertion below would be an absence that is true of
+	// nothing at all.
+	if name, st := d.personaActive("developer", dir); name != session {
+		t.Fatalf("premise: an unstranded withheld meta must hold its seat: %q %q, want %q", name, st, session)
+	}
+
+	// This pass launched that session and could not use it (ADR 0013 §2).
+	d.strand(session)
+	if name, st := d.personaActive("developer", dir); name != "" {
+		t.Errorf("a session THIS PASS stranded held its own seat through the withheld walk: %q %q — "+
+			"the strand exists so the slot stays free for the retry the ceiling grants it, and the rows "+
+			"already read it that way", name, st)
+	}
+}

@@ -363,3 +363,64 @@ func TestQAPassStallWitnessSaysItOnceAndNamesTheSet(t *testing.T) {
 		t.Errorf("a completed pass re-arms the witness, got %d lines:\n%s", got, out.String())
 	}
 }
+
+// ranger-base-ox49o (verify of ranger-base-3ryit): the pass clock is SEEDED
+// at the loop's start, and that one line is the whole of ask 2's coverage of
+// the incident this bead was filed for.
+//
+// passStallTick returns early on `lastPassAt().IsZero()`. lastPass is stamped
+// in exactly two places (watch.go): once before the pass loop begins, and
+// once after every pass returns. The reported incident is a loop whose FIRST
+// pass never came round — 2h20m, no pass 2 — so if the clock were stamped
+// only by a COMPLETED pass, the witness would have been silent for exactly
+// the two hours it exists to report, and silently: a zero reads the same as
+// a healthy loop.
+//
+// ESCAPE this closes. At the close, `notePass` had no reader anywhere in the
+// repo outside watch.go/watchdog.go/passcarry.go, and the one pin over the
+// pass clock (above) stamps the clock BY HAND before it ticks — so deleting
+// the seeding from watch.go left all seven pins over this bead green
+// (measured 2026-09-04, go test -overlay).
+//
+// It is pinned at the seam and not off the real budget on purpose: the
+// budget is built from `base` while the gather runs for `d.GatherWindow`,
+// which Watch preserves when a caller sets its own (watch.go). An arm that
+// waited for a real witness line here would pass because of that mismatch
+// rather than because of the seeding, and would red the day it is fixed.
+//
+// MUTATION: drop `d.notePass()` from watch.go's clock seeding → the first
+// assertion reds on a zero, and the second on a witness that cannot speak.
+func TestQAThePassClockIsSeededBeforeTheFirstPass(t *testing.T) {
+	t.Parallel()
+	// An hour-long window over a leg that never lands: pass 1 is structurally
+	// held, so nothing below can be a pass that quietly completed.
+	rig := carryFixture(t, time.Hour)
+	waitForOut(t, rig.out, "in flight, gathering")
+	if s := rig.out.String(); strings.Contains(s, passHeader+"2") {
+		t.Fatalf("premise: pass 1 must still be holding, or this measures a completed pass:\n%s", s)
+	}
+
+	if last := rig.d.lastPassAt(); last.IsZero() {
+		t.Fatalf("a loop that has not completed a pass yet must measure from its START, not from a zero — " +
+			"the incident is a FIRST pass that never came round, and passStallTick returns early on IsZero")
+	}
+
+	// And the NEGATIVE CONTROL for what a zero costs, so the assertion above
+	// is about a consequence and not about a field: an unseeded clock makes
+	// passStallTick silent however far past its budget it is asked, which is
+	// the failure mode this bead's ask 2 exists to end. The loop's own
+	// witness is not read here — with a caller's own GatherWindow the real
+	// budget is built from `base` and speaks early (ranger-base-ox49o's
+	// findings bundle), so an arm waiting for that line would pass for the
+	// mismatch's reason and red the day it is fixed.
+	fresh := newTestDispatcher(t, rig.d.HB)
+	var probe syncBuf
+	fresh.Out = &probe
+	if !fresh.lastPassAt().IsZero() {
+		t.Fatalf("premise: a dispatcher that never ran Watch has an unstamped pass clock")
+	}
+	fresh.passStallTick(time.Nanosecond)
+	if probe.String() != "" {
+		t.Errorf("premise: an unseeded clock is SILENT — that silence is what the seeding above buys:\n%s", probe.String())
+	}
+}
