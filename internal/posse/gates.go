@@ -3641,6 +3641,12 @@ refused with the stricter remedy — there is no private db to re-file it in.`)
 // shapes of "$1": plain editor commit, `-v`, `--amend`, `merge --edit`, and
 // commit.status=false.
 //
+// The last line of that grep is taken with `sed -n '$p'` and not with
+// `tail -1`: the hooks may call only the commands scripts/cleanroom.sh names
+// in HOOK_DEPS and probes on every distro, sed is already one of them, and
+// TestHookDepsNamesEveryCommandTheRenderedHooksCall reds on a command that
+// is not (it did, on `tail`).
+//
 // NO BLOCK, NO STRIP, and that is not a hedge — it is what git does. Under
 // `auto` the character is chosen so that it starts no line of the message,
 // so the ONLY lines git strips are the ones git itself appended. Where it
@@ -3709,7 +3715,7 @@ func messageArm(ind, head string, sources []visScanSource) string {
 ` + i2 + `if [ "$posse_cc" != auto ]; then
 ` + i3 + `posse_cc=''
 ` + i2 + `else
-` + i3 + `posse_cc=$(grep -axE '[#;@!$%^&|:]' "$1" 2>/dev/null | tail -n 1)
+` + i3 + `posse_cc=$(grep -axE '[#;@!$%^&|:]' "$1" 2>/dev/null | sed -n '$p')
 ` + i3 + `[ -n "$posse_cc" ] &&
 ` + i3 + `  [ "$(cut -c1 "$1" 2>/dev/null | grep -caxF "$posse_cc")" -ge 4 ] || posse_cc=whole
 ` + i2 + `fi
