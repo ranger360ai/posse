@@ -171,18 +171,31 @@ func TestQAParityPrintsTheEnforcementClass(t *testing.T) {
 		t.Errorf("the class must reach the rendered line, not just the field:\n%s", line)
 	}
 
-	seat := a.CheckParity(ag, claude, CageSeatbelt, TierStrong)
-	if got := seat.Realized["Edit"]; got.Class != Enforced {
-		t.Errorf("L2 seatbelt is enforced (ADR 0025 §1), got %q", got.Class)
-	}
-	if line := seat.String(); !strings.Contains(line, "→ enforced (L2 seatbelt)") {
-		t.Errorf("the enforced class must reach the rendered line:\n%s", line)
-	}
-	// And the verb gate does NOT get stronger because the file wall did:
-	// same launch, both classes on the same block.
-	if line := seat.String(); !strings.Contains(line, "→ cooperative (L1 shim") {
-		t.Errorf("raising the cage must not reclass the cooperative verb gate:\n%s", line)
-	}
+	// The L2 half asks for a class that only a host WITH the seatbelt can
+	// realize. Where sandbox-exec does not exist — ci.yml's ubuntu-latest
+	// job — parity says `cage seatbelt is not available on this host/build`
+	// and the class is "", which is parity telling the truth about that
+	// host, not a regression in the Stringer. Its own subtest so the
+	// platform that cannot answer says SKIP by name instead of the whole
+	// pin going red for a reason that is not about the code
+	// (ranger-base-90y3c). macos-latest is where this half is measured.
+	t.Run("L2 seatbelt", func(t *testing.T) {
+		if !SeatbeltAvailable() {
+			t.Skip("no sandbox-exec on this host: the enforced class cannot exist here")
+		}
+		seat := a.CheckParity(ag, claude, CageSeatbelt, TierStrong)
+		if got := seat.Realized["Edit"]; got.Class != Enforced {
+			t.Errorf("L2 seatbelt is enforced (ADR 0025 §1), got %q", got.Class)
+		}
+		if line := seat.String(); !strings.Contains(line, "→ enforced (L2 seatbelt)") {
+			t.Errorf("the enforced class must reach the rendered line:\n%s", line)
+		}
+		// And the verb gate does NOT get stronger because the file wall did:
+		// same launch, both classes on the same block.
+		if line := seat.String(); !strings.Contains(line, "→ cooperative (L1 shim") {
+			t.Errorf("raising the cage must not reclass the cooperative verb gate:\n%s", line)
+		}
+	})
 	// A row that is not an adversarial gate claim carries no class and must
 	// still print its detail — "" is not a third class (ADR 0025 §1).
 	nc := RealizedGate{Detail: "nothing to class here"}

@@ -135,6 +135,25 @@ func TestSkillsCwdIsDeclarable(t *testing.T) {
 	}
 }
 
+// parityDegradedByPID drops the one Degraded line parity.go writes about the
+// HOST rather than about the PID: `cage <c> is not available on this
+// host/build`. The counts below are statements about what a DECLARATION
+// produced, and on a host with no seatbelt at all — ci.yml's ubuntu-latest
+// job — that line is a third entry nothing in the yaml put there, which red
+// this pin on every push for as long as the workflow has existed
+// (ranger-base-90y3c). Dropping it keeps the count exact on both platforms
+// AND keeps it a count: anything else the declaration grows still fails.
+func parityDegradedByPID(p Parity) []string {
+	var out []string
+	for _, d := range p.Degraded {
+		if strings.HasPrefix(d, "cage ") && strings.HasSuffix(d, " is not available on this host/build") {
+			continue
+		}
+		out = append(out, d)
+	}
+	return out
+}
+
 // self_sandbox: macOS refuses to nest seatbelts, so a self-sandboxing yaml
 // runtime was broken in a way nothing could say: the launch wrapped it and
 // the matrix claimed an L2 that could not exist.
@@ -156,7 +175,7 @@ func TestSelfSandboxIsDeclarable(t *testing.T) {
 	if !strings.Contains(strings.Join(p.DeclaredDifference, "\n"), "cage seatbelt cannot wrap selfbox") {
 		t.Errorf("self_sandbox must declare the nesting difference: %+v", p.DeclaredDifference)
 	}
-	if len(p.Degraded) != 2 || !strings.Contains(strings.Join(p.Degraded, "\n"), "Edit — needs cage: seatbelt") {
+	if d := parityDegradedByPID(p); len(d) != 2 || !strings.Contains(strings.Join(d, "\n"), "Edit — needs cage: seatbelt") {
 		t.Errorf("self_sandbox with no Enforced still leaves Edit/Write genuinely degraded: %+v", p.Degraded)
 	}
 	// Undeclared, the same yaml is seatbelt-wrappable — the nesting line is
