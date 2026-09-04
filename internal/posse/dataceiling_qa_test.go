@@ -7,12 +7,14 @@ package posse
 // stamped private runs none of them — by design for visibility, and a hole
 // for an instance holding someone else's data, whose bead repo is private on
 // purpose. The ceiling asks a different question of a staged line — may this
-// exist in a local file at all? — so it renders ABOVE the gate, with check
-// 3's two arms (ADDED lines of every staged file, ADDED staged paths)
-// through the same renderer ranger-base-uzgkz built, plus a THIRD arm check
-// 3 does not have — every line of the commit MESSAGE (ADR 0050 D2 as
-// amended 2026-09-03, ranger-base-pqlxr, built in ranger-base-o2v6n) —
-// always class-only, in its own words, first in order.
+// exist in a local file at all? — so it renders ABOVE the gate, over the
+// same three subjects check 3 scans inside it: ADDED lines of every staged
+// file and ADDED staged paths through the renderer ranger-base-uzgkz built,
+// plus every line of the commit MESSAGE (the ceiling's arm since ADR 0050
+// D2 as amended 2026-09-03, ranger-base-pqlxr, built in ranger-base-o2v6n;
+// check 3's since ranger-base-1nbtn, built in ranger-base-qk8i9) — always
+// class-only, in its own words, first in order. Same subjects, different
+// gate and different remedy: that is the whole difference between them.
 //
 // The fixture vocabulary ("QUOKKA", "quokka-export-") is a fixture's own,
 // never this box's: what these pins measure is the mechanism.

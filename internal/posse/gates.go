@@ -3374,11 +3374,14 @@ func shComment(ind, text string) string {
 
 // dataCeilingCheck renders the data ceiling's block (ADR 0050 D2): this
 // instance's config data_ceiling_patterns: over the ADDED lines of every
-// staged file and the ADDED staged paths — check 3's two arms, through
-// the same renderer — and then over every line of the commit MESSAGE, which
-// is the ceiling's own third arm and check 3 does not have it (ADR 0050 D2
-// as amended 2026-09-03; ceilingMessageArm below carries the reasons). All
-// three ABOVE the visibility gate, so they run whatever the repo's stamp.
+// staged file, the ADDED staged paths, and every line of the commit
+// MESSAGE — check 3's three subjects, through the same two renderers (the
+// ceiling's message arm since ADR 0050 D2 as amended 2026-09-03,
+// ranger-base-pqlxr; check 3's since ranger-base-1nbtn; ceilingMessageHead
+// below carries the reasons). All three ABOVE the visibility gate, so they
+// run whatever the repo's stamp, where check 3's three run inside it: same
+// subjects, different gate and different remedy, which is why the ceiling
+// refuses first.
 // "" when the list is empty: an instance that configured no ceiling pays
 // for no diff and for no read of the message file.
 //
@@ -3441,12 +3444,16 @@ may exist in a local file on this instance AT ALL — a restricted-tier
 banner, a restricted system's hostname, its export file-name shape — and
 the answer does not depend on where the repo goes. The system of record's
 id is the sanctioned citation; the content behind it is not.
-THREE ARMS. The first two are check 3's below (ADDED lines of every staged
-file, any path, code included; then ADDED staged paths). The third is
-the ceiling's own and check 3 does not have it: every line of the commit
-MESSAGE, which this hook is already holding in "$1" (ADR 0050 D2 as amended
-2026-09-03, ranger-base-pqlxr). Same matcher, same override, class-only
-ALWAYS: a refusal is itself a local file.
+THREE ARMS, and check 3 below scans the same three: ADDED lines of every
+staged file (any path, code included), then ADDED staged paths, then every
+line of the commit MESSAGE, which this hook is already holding in "$1"
+(the ceiling's arm since ADR 0050 D2 as amended 2026-09-03,
+ranger-base-pqlxr; check 3's since ranger-base-1nbtn). Same matcher, same
+override, class-only ALWAYS: a refusal is itself a local file.
+What separates the two walls is not the subject but the GATE and the
+REMEDY: these three run here, above posse_beads_visibility, under every
+stamp, where check 3's run inside it — so a repo stamped private runs
+check 3 not at all and this block in full.
 Refused FIRST so a line that trips both this list and a visibility list is
 refused with the stricter remedy — there is no private db to re-file it in.`)
 	msg := visGuardRefusal{

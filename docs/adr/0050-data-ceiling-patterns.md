@@ -40,7 +40,7 @@ subject — product decision that date on ranger-base-pqlxr, landed
   rides with a paste and never with a cite: restricted-tier classification
   banners, the hostnames and URL forms of restricted systems, their export
   file-name and attachment-marker patterns. Two of the three are content;
-  the third is a PATH — which is why check 3's two-arm scope (added lines,
+  the third is a PATH — which is why check 3's staged scope (added lines,
   added entries) is the right shape and check 2's markdown scope is not.
 - **The renderer already exists.** ranger-base-uzgkz (1e9b2ba) and
   ranger-base-8114t (ae7b08f) give check 3 one refusal shape with the
@@ -68,7 +68,7 @@ refuses is carried and named (class only), in the hook file and in
 `posse gates install-hooks` output, never dropped — the ADR 0048 rule.
 
 **D2 — the ceiling is its own block in the same hook, above the stamp
-gate, with check 3's two arms.** The `prepare-commit-msg` hook renders the
+gate, over check 3's subjects.** The `prepare-commit-msg` hook renders the
 ceiling scan FIRST — before `posse_beads_visibility` is tested — over the
 ADDED lines of every staged file and the ADDED staged paths (every file,
 whatever its bytes — the reader carries `--text`, ADR 0048 D2 as amended
