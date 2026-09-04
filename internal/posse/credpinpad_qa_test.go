@@ -69,7 +69,7 @@ func TestPaddedPlanUsageURLNeverReachesTheCredential(t *testing.T) {
 	}{
 		{"leading space", " " + clean},
 		{"trailing space", clean + " "},
-		{"trailing newline", clean + "\n"},          // RHQ_PLAN_USAGE_URL=$(cat portfile)
+		{"trailing newline", clean + "\n"}, // RHQ_PLAN_USAGE_URL=$(cat portfile)
 		{"leading tab", "\t" + clean},
 		{"trailing CRLF", clean + "\r\n"},
 		{"both ends", "  " + clean + "  "},
