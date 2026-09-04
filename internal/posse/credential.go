@@ -21,10 +21,12 @@ package posse
 // time, not with build tags: `make test-linux` is a release gate and every
 // branch of the switch must compile and be testable from either box.
 //
-//   - darwin: the macOS keychain item, read by execing /usr/bin/security
-//     ABSOLUTELY (ranger-base-ypf5) — a PATH lookup here resolved to the
-//     calling persona's own Bash(security:*) shim and refused posse's own
-//     monitoring read.
+//   - darwin: the runtime's own composite store, mirrored (ADR 0019 D2 as
+//     amended 2026-09-01) — the keychain item, read by execing
+//     /usr/bin/security ABSOLUTELY (ranger-base-ypf5; a PATH lookup here
+//     resolved to the calling persona's own Bash(security:*) shim and
+//     refused posse's own monitoring read), and the credentials file below
+//     it on exit 44 and on nothing else.
 //   - anything else: `.credentials.json` under the directory the runtime's
 //     own secure storage writes it to (CredentialsFile, and it is NOT the
 //     home by definition), Claude Code's own store of record where there is
@@ -180,17 +182,26 @@ func (a *App) ReadCredential(rt *Runtime, p CredPurpose) (string, CredMeta, erro
 	return "", CredMeta{}, Die("unknown credential purpose %q", p)
 }
 
-// MeterToken adapts the meter half to the `func() (string, error)` the two
-// HTTP readers hold in a field (AnthropicPlanReader.Token, ModelLister.Token
-// — fields so tests can inject a fake). It takes the runtime's NAME because
-// that is the whole of what a meter store is chosen by, and because both
-// readers are constructed without an App and so have no *Runtime to hand.
+// MeterToken adapts the meter half to the `func() (string, CredMeta, error)`
+// the two HTTP readers hold in a field (AnthropicPlanReader.Token,
+// ModelLister.Token — fields so tests can inject a fake). It takes the
+// runtime's NAME because that is the whole of what a meter store is chosen
+// by, and because both readers are constructed without an App and so have no
+// *Runtime to hand.
 //
 // This is what replaced KeychainToken at both call sites.
-func MeterToken(rt string) func() (string, error) {
-	return func() (string, error) {
-		tok, _, err := readMeterCredential(rt)
-		return tok, err
+//
+// The META rides along because on darwin the store that answered is no
+// longer a constant (ADR 0019 D2 as amended): a composite read falls through
+// to the credentials file, and a 401 on a token from there means something
+// different from a 401 on a token from the keychain — so the one surface
+// that renders the failure has to know which store it presented (V9). It is
+// one return of one read rather than a second lookup on purpose: two reads
+// of a rotating credential is how the sentence and the token come to
+// disagree, which is the whole of ADR 0019's Context.
+func MeterToken(rt string) func() (string, CredMeta, error) {
+	return func() (string, CredMeta, error) {
+		return readMeterCredential(rt)
 	}
 }
 
@@ -307,6 +318,21 @@ type runtimeStore struct {
 	// store, which is why it lives here and not on the error type: the
 	// keychain's cause is a per-binary ACL and a plain file's is not.
 	Fix string
+	// Fallthrough is the composite's SECOND read, and darwin's alone (ADR
+	// 0019 D2 as amended 2026-09-01, ranger-base-v3qi4). Claude Code's
+	// darwin secure storage is one store whose own name is
+	// `keychain-with-plaintext-fallback`: the keychain item, then the
+	// credentials file when the item did not answer.
+	//
+	// Given the primary's read error it answers the WHOLE call — a
+	// credential out of the second store under the second store's own name,
+	// so a 401 on it names where it came from, or the primary's own failure
+	// unchanged for every error that does not fall through.
+	//
+	// It is a hook and not a second store field because the fall-through is
+	// a rule about WHICH failures rather than a chain: exit 36 and a gate
+	// refusal must never reach the file, and a chain has no place to say so.
+	Fallthrough func(err error) (string, CredMeta, error)
 }
 
 func (s runtimeStore) absent() *NoSource {
@@ -460,6 +486,13 @@ func readStore(store runtimeStore) (string, CredMeta, error) {
 	}
 	blob, err := store.Read()
 	if err != nil {
+		// The composite's second store, when this platform has one and this
+		// failure is the one that falls through to it. Everything else —
+		// and every store with no fallthrough at all — is the read failure
+		// it arrived as.
+		if store.Fallthrough != nil {
+			return store.Fallthrough(err)
+		}
 		return "", CredMeta{}, store.failRead(err)
 	}
 	tok, meta, err := credentialToken(store.Name, blob)
@@ -545,9 +578,83 @@ func keychainItem() (name, note string) {
 // anyone asked for.
 const securityBin = "/usr/bin/security"
 
-// keychainStore is the darwin adapter: the read that used to be
-// KeychainToken/KeychainCredential, moved here as it stood. Errors never
-// quote the command's output — that output is the credential blob.
+// keychainACLFix is ADR 0019 D2's unreadable row in the operator's own
+// verbs, for every failure of the keychain read that is not "no such item".
+// The ACL is hypothetical on purpose — it is the cause that has actually
+// bitten (three times on 2026-08-24, every one of them a `make install`) and
+// the message says "may", because a keychain that answered and held nothing
+// usable is the same class and is fixed by the second half of the same line.
+const keychainACLFix = "this binary's keychain ACL may have been dropped by `make install`; grant access when prompted, or run `claude` once"
+
+// keychainFallbackFix is that move with the second cause the composite made
+// visible (ADR 0019 D2 as amended, V9). `security` exiting 44 is two
+// different facts wearing one exit code, and they are repaired at opposite
+// ends: the item really is gone and the runtime is living on its fallback
+// credentials file, or the item is there and THIS binary may no longer read
+// it. An operator told only the second goes and re-grants an ACL on an empty
+// keychain; told only the first, they `/login` a keychain that was never the
+// problem.
+//
+// ASSUMED, and operator-measurable only because every crew PID denies
+// `security` (ADR 0019 V10): a dropped posse ACL is believed to answer 36,
+// not 44, in which case this sentence is reached only by a genuinely empty
+// keychain and its first cause is the true one. It names both anyway — the
+// cost of the extra clause is a longer line, and the cost of guessing wrong
+// is the operator repairing the wrong end of the composite.
+const keychainFallbackFix = "the item did not answer this binary, which is two different things: it really is gone and claude is running on its fallback credentials file — repair the keychain (unlock it, grant access), then `/login` in claude — or this binary's keychain ACL may have been dropped by `make install`; grant access when prompted, or run `claude` once"
+
+// errSecItemNotFound is `security`'s exit for "no such item in this
+// keychain" — the ONE exit the composite falls through to the file on (ADR
+// 0019 D2's narrowing).
+//
+// 36 (user interaction not allowed) is deliberately NOT here, though the
+// runtime's own composite treats it as null too: the keychain ACL is per
+// binary, so posse's 36 speaks about posse's binary and not about the
+// keychain's contents. Mirroring the runtime's rule literally would read a
+// frozen S2 file after every `make install` and re-create the 2026-08-24
+// misdiagnosis with a new sentence.
+//
+// The runtime's third null — exit 0 with no output — is not here either, and
+// for a different reason: it is not a failure at all, so it never reaches
+// this question. `security … -w` on an item it found prints the password, so
+// an empty answer is an item holding an empty credential, which is the okbr
+// diagnosis (an incomplete credential, fixed by re-authenticating) and not a
+// keychain with nothing in it. Falling through would answer a login problem
+// with another store's token.
+const errSecItemNotFound = 44
+
+// keychainExit is a non-zero `security` exit carried past the sentence. The
+// sentence is byte-for-byte what it was — the operator gets no number they
+// cannot act on — and the composite gets to ask WHICH failure this was
+// without running the read a second time, which is how the read and the
+// decision about the read stay one read.
+type keychainExit struct {
+	item string
+	code int
+}
+
+func (e *keychainExit) Error() string { return fmt.Sprintf("keychain item %q unreadable", e.item) }
+
+// keychainItemNotFound reports the one exit that falls through.
+func keychainItemNotFound(err error) bool {
+	var ke *keychainExit
+	return errors.As(err, &ke) && ke.code == errSecItemNotFound
+}
+
+// execExitCode is a failed command's exit status, or -1 for a failure that
+// is not one. A `security` that could not be executed at all did not answer
+// 44 and must not be read as though it had.
+func execExitCode(err error) int {
+	var ee *exec.ExitError
+	if errors.As(err, &ee) {
+		return ee.ExitCode()
+	}
+	return -1
+}
+
+// keychainStore is the darwin adapter: the runtime's own composite store,
+// mirrored (ADR 0019 D2 as amended 2026-09-01, ranger-base-v3qi4). Errors
+// never quote the command's output — that output is the credential blob.
 func keychainStore() runtimeStore { return keychainStoreAt(securityBin) }
 
 // keychainStoreAt is that adapter with the binary named explicitly. Only a
@@ -563,29 +670,103 @@ func keychainStoreAt(bin string) runtimeStore {
 	// Keychain Access, and a second derivation is how the read and the
 	// sentence about it would come to disagree (ADR 0019 D2 store 1).
 	item, note := keychainItem()
-	return runtimeStore{
+	s := runtimeStore{
 		Name: fmt.Sprintf("keychain item %q", item) + note,
-		// ADR 0019 D2's unreadable row, in the operator's own verbs. The
-		// ACL is hypothetical on purpose — it is the cause that has
-		// actually bitten (three times on 2026-08-24, every one of them a
-		// `make install`) and the message says "may", because a keychain
-		// that answered and held nothing usable is the same class and is
-		// fixed by the second half of the same line.
-		Fix: "this binary's keychain ACL may have been dropped by `make install`; grant access when prompted, or run `claude` once",
+		Fix:  keychainACLFix,
 		Read: func() ([]byte, error) {
 			out, err := keychainCmd(bin, item).Output()
 			if err != nil {
 				// GateRefusal stays after part B removed its cause: it is
 				// what stops the 08-24 misdiagnosis returning if this ever
 				// regresses to a PATH lookup, and it names the command by
-				// the word a deny rule is spelled with.
+				// the word a deny rule is spelled with. It is asked FIRST
+				// and it never falls through: the item was not reached, so
+				// nothing about the keychain's contents was learned.
 				if g := gateRefusal(filepath.Base(bin), err); g != nil {
 					return nil, g
 				}
-				return nil, Die("keychain item %q unreadable", item)
+				return nil, &keychainExit{item: item, code: execExitCode(err)}
 			}
 			return out, nil
 		},
+	}
+	// The composite's read order, with D2's one narrowing: the file, only on
+	// 44, and only when it is there. `s` is captured rather than passed in
+	// so the primary this speaks for cannot be a different value from the
+	// one that failed.
+	s.Fallthrough = func(err error) (string, CredMeta, error) {
+		if !keychainItemNotFound(err) {
+			return "", CredMeta{}, s.failRead(err)
+		}
+		p, ok := keychainFallbackFile()
+		if !ok {
+			// 44 with no file stays CredUnreadable and stays blind, with
+			// ADR 0018's clock (D2, "Not changed"): the launcher box is a
+			// logged-in box by construction, so a vanished item there is an
+			// incident and not an unconfigured platform, and *NoSource here
+			// would be a guard that switches itself off. What it gains is
+			// the second cause, which is the whole of V9's first sentence.
+			blind := s
+			blind.Fix = keychainFallbackFix
+			return "", CredMeta{}, blind.failRead(err)
+		}
+		return readStore(keychainFallbackStore(p))
+	}
+	return s
+}
+
+// credentialsFileFallback is what the composite's SECOND store is called,
+// and so what the seam's Source says when a read fell through to it — ADR
+// 0019 D2 as amended, verbatim.
+//
+// It is a name of its own rather than the non-darwin store's, and the
+// difference is load-bearing: the same file off darwin is the store of
+// record and its sentences say so, while here it is the store the runtime
+// fell back to, which is a fact about the keychain. One name for both would
+// make a 401 unreadable at exactly the moment it matters.
+const credentialsFileFallback = "the Claude Code credentials file (keychain fallback)"
+
+// keychainFallbackFile is the composite's second store as a path, plus
+// whether it is sitting there now.
+//
+// The existence question is the COMPOSITE's, and deliberately not the file
+// store's Absent, because absence here is not structural absence. Off darwin
+// a missing credentials file means the runtime has never logged in on this
+// box — *NoSource, the guard off, no clock. On darwin the keychain is the
+// store of record, so a keychain answering 44 with no file beside it is an
+// incident on a box that is logged in by construction: blind, and ADR 0018's
+// clock runs.
+//
+// A resolver error is "not there": no home and no secure-storage override is
+// no path to open, and the keychain's own failure is the honest diagnosis.
+func keychainFallbackFile() (string, bool) {
+	p, err := CredentialsFile()
+	if err != nil {
+		return "", false
+	}
+	if _, err := os.Stat(p); err != nil {
+		return "", false
+	}
+	return p, true
+}
+
+// keychainFallbackStore is that file as a store: the SAME parser, the same
+// diagnostics, one name apart (ADR 0019 V7).
+func keychainFallbackStore(p string) runtimeStore {
+	return runtimeStore{
+		Name: credentialsFileFallback,
+		// Absent stays nil. The composite asked that question already, and a
+		// file that vanishes between the two is a read failure — blind —
+		// never *NoSource.
+		//
+		// Note stays empty too: meterUnconfirmed is V1's disclaimer about
+		// the NON-darwin adapter, which has never been run against a live
+		// login. This path's premise — that the runtime writes and reads
+		// this file on darwin — is MEASURED off the shipped bundle and off
+		// this box (ranger-base-xjj9/1lza), so borrowing that sentence here
+		// would disclaim something that was measured.
+		Fix:  keychainFallbackFix,
+		Read: credentialsFileRead(p, credentialsFileFallback),
 	}
 }
 
@@ -815,10 +996,23 @@ func credentialsFileStore(goos string) runtimeStore {
 		}
 		return nil
 	}
+	read := credentialsFileRead(p, name)
 	s.Read = func() ([]byte, error) {
 		if perr != nil {
 			return nil, perr
 		}
+		return read()
+	}
+	return s
+}
+
+// credentialsFileRead reads the runtime's credentials file under the name
+// that will carry the diagnosis. Two stores share it — the non-darwin store
+// of record, and the darwin composite's fallback — and they differ only in
+// what they are CALLED, which is the same rule credentialToken already keeps
+// for the envelope (ADR 0019 V7): one fixture, two paths, one diagnosis.
+func credentialsFileRead(p, name string) func() ([]byte, error) {
+	return func() ([]byte, error) {
 		b, err := os.ReadFile(p)
 		if err != nil {
 			// The path is the diagnosis and the contents are the credential:
@@ -828,7 +1022,6 @@ func credentialsFileStore(goos string) runtimeStore {
 		}
 		return b, nil
 	}
-	return s
 }
 
 // ─── the envelope, parsed one way for every platform ─────────────────────────

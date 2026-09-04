@@ -132,7 +132,7 @@ const (
 // nothing else needs to.
 type ModelLister struct {
 	URL   string
-	Token func() (string, error)
+	Token func() (string, CredMeta, error)
 	HTTP  *http.Client
 }
 
@@ -156,7 +156,11 @@ func (r *ModelLister) List() ([]string, error) {
 	if err := pinnedEndpoint("model list endpoint", r.URL, ModelListHost); err != nil {
 		return nil, err
 	}
-	tok, err := r.Token()
+	// The meter's metadata is dropped here and that is deliberate: this
+	// endpoint's failures are not a credential class (no *AuthFailure is
+	// built in this file), so naming the store would add a word no sentence
+	// here renders.
+	tok, _, err := r.Token()
 	if err != nil {
 		return nil, err
 	}

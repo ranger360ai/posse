@@ -237,13 +237,37 @@ type AuthFailure struct {
 	// line is display text and must never be parsed back into a decision.
 	Status string
 	Code   int
+	// Source is the seam's CredMeta.Source for the credential that was
+	// PRESENTED — the store it came out of, in the words an operator would
+	// use to go look at it. Empty when the caller did not say, which is
+	// every fake reader and every path that never read a store.
+	//
+	// It changes the SENTENCE and nothing else: the class, Stale(), the
+	// governance key and park-vs-degrade are all unchanged by it (ADR 0018
+	// §2 — policy reads no diagnosis string, and that includes this one).
+	Source string
 }
 
 func (e *AuthFailure) Error() string {
 	if e.Code == http.StatusForbidden {
 		return fmt.Sprintf("usage endpoint returned %s: this credential is not entitled to plan windows — a setup-token never will be, and this is not a freshness problem", e.Status)
 	}
-	return fmt.Sprintf("usage endpoint returned %s: credential stale — run `claude` once to refresh", e.Status)
+	s := fmt.Sprintf("usage endpoint returned %s: credential stale — run `claude` once to refresh", e.Status)
+	// A 401 on a token the darwin composite fell through for is a different
+	// operator move from a 401 on the keychain's own token, and the two are
+	// byte-identical without this clause (ADR 0019 D2 as amended, V9): the
+	// keychain did not answer, so `claude` refreshing clears the 401 while
+	// leaving posse reading a store the runtime may stop writing. The two
+	// causes are the ones the 44-and-no-file sentence names, because they
+	// are the same two.
+	//
+	// The test is equality against the seam's own constant, not a substring
+	// of it: this clause is true of exactly one store, and a store that is
+	// merely NAMED like it is not that store.
+	if e.Source == credentialsFileFallback {
+		s += fmt.Sprintf(" — and the token came from %s, so the keychain item did not answer: either it is gone and claude is living on that file, or this binary's keychain ACL was dropped by `make install`. Repair the keychain (unlock it, grant access), then `/login` in claude", e.Source)
+	}
+	return s
 }
 
 // Stale reports whether an interactive refresh is the move — 401 and only

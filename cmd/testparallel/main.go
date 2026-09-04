@@ -295,6 +295,17 @@ func main() {
 		// it takes ~11s serial). The pure-arithmetic half of the same fix,
 		// TestQABackupLevelIsSampledFasterThanItFires, is parallel.
 		"TestQABackupLoopSamplesTheLevelBetweenIntervals": "times a real loop against its own interval",
+		// Env-tainted through a FUNC VALUE, which the call graph cannot
+		// see: both reach unreadableKeychain (and its t.Setenv) as
+		// `tc.err(t)` / `mk(t)` out of a table, and an identifier that is
+		// never the callee of a CallExpr taints nothing. The taint is real —
+		// since the darwin adapter became a composite (ADR 0019 D2 as
+		// amended, ranger-base-5jdzh) a `security` exiting 44 consults the
+		// credentials file, so that helper has to name a config directory
+		// with no file in it or the row reads whatever the box has. Adding
+		// t.Parallel here panics; this map is where the tool is told.
+		"TestPlanReadHasFourCredentialFailureClasses": "env-tainted through a table's func value (unreadableKeychain)",
+		"TestTheFourCredentialClassesAreDistinct":     "env-tainted through a table's func value (unreadableKeychain)",
 	}
 	// Named parallel, and the counterpart of serial above: a test the three
 	// filters call ineligible, that a human has READ and cleared. These are

@@ -29,8 +29,16 @@ import (
 // real darwin adapter, reading a `security` that exits non-zero, through the
 // real readStore. The stub is NAMED to the adapter (ranger-base-ypf5 made
 // the exec absolute), so this row runs and means the same thing on linux.
+//
+// fallbackDir is what keeps exit 44 an unreadable store since the adapter
+// became the composite (ADR 0019 D2 as amended, ranger-base-5jdzh): 44 with
+// a fallback file beside it is a CREDENTIAL now, so this row has to name a
+// config directory with no file in it or it would read whatever the box
+// running the suite happens to have. It uses t.Setenv, which is why the
+// three tests below no longer run in parallel.
 func unreadableKeychain(t *testing.T) error {
 	t.Helper()
+	fallbackDir(t)
 	_, _, err := readStore(keychainStoreAt(keychainStub(t, "#!/bin/sh\nexit 44\n")))
 	if err == nil {
 		t.Fatal("a `security` that exits 44 is not a credential")
@@ -64,7 +72,7 @@ func wrongShapeKeychain(t *testing.T) error {
 // the distinctness assertions below (class, and the pairwise message
 // comparison) are what makes that impossible.
 func TestPlanReadHasFourCredentialFailureClasses(t *testing.T) {
-	t.Parallel()
+	// No t.Parallel: unreadableKeychain names a config directory (t.Setenv).
 	for _, tc := range []struct {
 		name  string
 		err   func(*testing.T) error
@@ -162,7 +170,7 @@ func statusRead(status int) func(*testing.T) error {
 // sentence. It is the mutation check on PlanFailureOf — delete any arm of
 // that switch and two rows here become one.
 func TestTheFourCredentialClassesAreDistinct(t *testing.T) {
-	t.Parallel()
+	// No t.Parallel: unreadableKeychain names a config directory (t.Setenv).
 	got := map[PlanFailure]string{}
 	for name, mk := range map[string]func(*testing.T) error{
 		"unreadable": unreadableKeychain,
@@ -259,7 +267,7 @@ func TestGateRefusalIsNotWrappedAsUnreadable(t *testing.T) {
 // stay one sentence with one store name substituted, and this is the pin on
 // the half of that rule this bead could have broken.
 func TestTheStoreFixRidesOnTheReadNotTheShape(t *testing.T) {
-	t.Parallel()
+	// No t.Parallel: unreadableKeychain names a config directory (t.Setenv).
 	read := unreadableKeychain(t)
 	if !strings.Contains(read.Error(), "make install") {
 		t.Errorf("a failed read carries the store's move: %q", read)
@@ -281,6 +289,7 @@ func TestTheStoreFixRidesOnTheReadNotTheShape(t *testing.T) {
 // names the class, not only the blind clock. 401 and 403 were pinned by
 // rangerhq-ytyj; this adds the class that had no sentence to name.
 func TestBlindSkipOnUnreadableCredentialNamesTheClass(t *testing.T) {
+	fallbackDir(t) // 44 with a file beside it is a credential now, not a failure
 	r := newBlindRig(t, guardOn)
 	r.d.Unattended = true
 	// The real adapter, with a `security` that fails: the guard asks for the

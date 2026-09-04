@@ -488,7 +488,7 @@ func TestPlanCacheLineRendersNothingOnAFailedRead(t *testing.T) {
 	t.Parallel()
 	r := newCacheRig(t)
 	c := r.caller("cost")
-	c.Reader = &AnthropicPlanReader{URL: deadURL(t), Token: func() (string, error) { return fakeToken, nil }}
+	c.Reader = &AnthropicPlanReader{URL: deadURL(t), Token: func() (string, CredMeta, error) { return fakeToken, CredMeta{}, nil }}
 
 	line, err := c.Line(5 * time.Minute)
 	if err == nil {

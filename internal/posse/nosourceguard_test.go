@@ -211,7 +211,7 @@ func TestPlanGuardUnconfiguredIsSaidOncePerProcess(t *testing.T) {
 func TestCodexAndGrokMeterReadsAreNoSourceAndRenderGuardOff(t *testing.T) {
 	for _, rt := range []string{"codex", "grok"} {
 		t.Run(rt, func(t *testing.T) {
-			tok, err := MeterToken(rt)()
+			tok, _, err := MeterToken(rt)()
 			if tok != "" {
 				t.Error("a runtime with no meter store must hand back no token")
 			}

@@ -241,8 +241,8 @@ func TestBlindDegradeDoesNotForkOnFailureClass(t *testing.T) {
 	r := newBlindRig(t, ledgerArmedCfg)
 	r.d.Unattended = true
 	r.d.Spend = func(time.Time) *CostReport { return spendOf(7.50, nil) }
-	keychainOnly(planReaderOf(r.d), func() (string, error) {
-		return "", Die("keychain item %q unreadable", KeychainService)
+	keychainOnly(planReaderOf(r.d), func() (string, CredMeta, error) {
+		return "", CredMeta{}, Die("keychain item %q unreadable", KeychainService)
 	})
 	r.at(4 * time.Hour)
 

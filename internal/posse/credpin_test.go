@@ -31,11 +31,11 @@ func refusingTransport(t *testing.T) *http.Client {
 
 // refusingToken fails the test if the keychain is read at all: a refused
 // host must cost the credential nothing, not even a read into memory.
-func refusingToken(t *testing.T) func() (string, error) {
+func refusingToken(t *testing.T) func() (string, CredMeta, error) {
 	t.Helper()
-	return func() (string, error) {
+	return func() (string, CredMeta, error) {
 		t.Error("the keychain was read for a host the pin refuses")
-		return fakeToken, nil
+		return fakeToken, CredMeta{}, nil
 	}
 }
 
@@ -185,7 +185,7 @@ func TestARedirectedCatalogNeverReachesTheCache(t *testing.T) {
 	rt := newRedirectTransport("listener.example", `{"data":[{"id":"probe-model"}],"has_more":false}`)
 	a.ModelLister = &ModelLister{
 		URL:   "http://127.0.0.1:9/v1/models",
-		Token: func() (string, error) { return fakeToken, nil },
+		Token: func() (string, CredMeta, error) { return fakeToken, CredMeta{}, nil },
 		HTTP:  rt.client,
 	}
 
@@ -209,7 +209,7 @@ func TestARedirectedCatalogNeverReachesTheCache(t *testing.T) {
 func TestARedirectedUsageResponseIsRefused(t *testing.T) {
 	t.Parallel()
 	rt := newRedirectTransport("listener.example", `{"five_hour":{"utilization":1}}`)
-	r := &AnthropicPlanReader{URL: "http://127.0.0.1:9/usage", Token: func() (string, error) { return fakeToken, nil }, HTTP: rt.client}
+	r := &AnthropicPlanReader{URL: "http://127.0.0.1:9/usage", Token: func() (string, CredMeta, error) { return fakeToken, CredMeta{}, nil }, HTTP: rt.client}
 	_, err := r.Read()
 	var pin *PinRefusal
 	if !errors.As(err, &pin) {
@@ -228,7 +228,7 @@ func TestThePinnedClientWillNotFollowARedirectOffTheHost(t *testing.T) {
 	cl := pinnedClient(time.Second, "model list endpoint", ModelListHost)
 	cl.Transport = rt.client.Transport
 
-	l := &ModelLister{URL: "http://127.0.0.1:9/v1/models", Token: func() (string, error) { return fakeToken, nil }, HTTP: cl}
+	l := &ModelLister{URL: "http://127.0.0.1:9/v1/models", Token: func() (string, CredMeta, error) { return fakeToken, CredMeta{}, nil }, HTTP: cl}
 	_, err := l.List()
 	var pin *PinRefusal
 	if !errors.As(err, &pin) {
@@ -289,9 +289,9 @@ func newOverrideRig(t *testing.T, status int, body, retryAfter string) *override
 	if r.Shared {
 		t.Fatal("an override's reading must not be shareable")
 	}
-	r.Token = func() (string, error) {
+	r.Token = func() (string, CredMeta, error) {
 		t.Error("the keychain was read for a listener the caller named")
-		return fakeToken, nil
+		return fakeToken, CredMeta{}, nil
 	}
 	rig.cache = &PlanCache{
 		Path:   filepath.Join(rig.dir, "plan-usage.json"),

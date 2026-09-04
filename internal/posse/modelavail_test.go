@@ -85,7 +85,7 @@ func newCatalogServer(t *testing.T, pages ...[]string) *catalogServer {
 func (cs *catalogServer) lister() *ModelLister {
 	return &ModelLister{
 		URL:   cs.URL,
-		Token: func() (string, error) { return fakeToken, nil },
+		Token: func() (string, CredMeta, error) { return fakeToken, CredMeta{}, nil },
 		HTTP:  cs.Client(),
 	}
 }
@@ -205,7 +205,7 @@ func TestModelCacheLogsAnUnreadableCatalogWithoutTheCredential(t *testing.T) {
 		// the compiled-in host (credpin.go), and the fake transport below
 		// is what actually answers.
 		URL:   "https://127.0.0.1:9/v1/models",
-		Token: func() (string, error) { return fakeToken, nil },
+		Token: func() (string, CredMeta, error) { return fakeToken, CredMeta{}, nil },
 		HTTP: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 			return &http.Response{
 				StatusCode: http.StatusUnauthorized,
@@ -694,7 +694,7 @@ func seedCatalogAged(t *testing.T, a *App, age time.Duration, ids ...string) tim
 func failingLister(hits *atomic.Int64) *ModelLister {
 	return &ModelLister{
 		URL:   "https://127.0.0.1:9/v1/models",
-		Token: func() (string, error) { return fakeToken, nil },
+		Token: func() (string, CredMeta, error) { return fakeToken, CredMeta{}, nil },
 		HTTP: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 			hits.Add(1)
 			return &http.Response{

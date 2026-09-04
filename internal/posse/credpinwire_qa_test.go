@@ -111,9 +111,9 @@ func TestLoopbackOverrideCarriesNoBearerToTheSocket(t *testing.T) {
 	if r.URLErr != nil {
 		t.Fatalf("loopback override refused: %v", r.URLErr)
 	}
-	r.Token = func() (string, error) {
+	r.Token = func() (string, CredMeta, error) {
 		t.Error("the keychain was read for a listener the caller named")
-		return fakeToken, nil
+		return fakeToken, CredMeta{}, nil
 	}
 
 	u, err := r.Read()
@@ -147,9 +147,9 @@ func TestNonLoopbackOverrideReachesNoSocketAndNoKeychain(t *testing.T) {
 	t.Setenv("RHQ_PLAN_USAGE_URL", "http://listener.example/usage")
 
 	r := NewAnthropicPlanReader()
-	r.Token = func() (string, error) {
+	r.Token = func() (string, CredMeta, error) {
 		t.Error("the keychain was read for a host the pin refuses")
-		return fakeToken, nil
+		return fakeToken, CredMeta{}, nil
 	}
 	_, err := r.Read()
 	var pin *PinRefusal
@@ -181,7 +181,7 @@ func TestPinnedClientRefusesARedirectBeforeDialingIt(t *testing.T) {
 
 	l := &ModelLister{
 		URL:   w.URL + "/v1/models",
-		Token: func() (string, error) { return fakeToken, nil },
+		Token: func() (string, CredMeta, error) { return fakeToken, CredMeta{}, nil },
 		HTTP:  pinnedClient(30*time.Second, "model list endpoint", ModelListHost),
 	}
 	start := time.Now()

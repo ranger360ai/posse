@@ -98,7 +98,7 @@ var anthropicPlanAdapter = planAdapter{
 // max(cost-window %, plan-window %) — 25p decides, this only exposes Read.
 type AnthropicPlanReader struct {
 	URL   string
-	Token func() (string, error)
+	Token func() (string, CredMeta, error)
 	HTTP  *http.Client
 	// URLErr is a refused RHQ_PLAN_USAGE_URL (credpin.go), carried here
 	// rather than returned by the constructor: every caller of that wants a
@@ -185,12 +185,16 @@ func (r *AnthropicPlanReader) Read() (PlanUsage, error) {
 	// stops getting is the bearer.
 	credentialed := credentialedURL(r.URL, PlanUsageURL)
 	var tok string
+	// The store that answered, kept for the one sentence that needs it: a
+	// 401 has to name which of the darwin composite's two stores the token
+	// came out of (ADR 0019 D2 as amended, V9). Nothing branches on it.
+	var meta CredMeta
 	if credentialed {
 		if r.Token == nil {
 			return nil, Die("plan reader not configured")
 		}
 		var err error
-		if tok, err = r.Token(); err != nil {
+		if tok, meta, err = r.Token(); err != nil {
 			return nil, err
 		}
 	}
@@ -237,7 +241,7 @@ func (r *AnthropicPlanReader) Read() (PlanUsage, error) {
 	// contributes — the sentences are the harness's, because "what does an
 	// operator do about it" is not provider knowledge.
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		return nil, &AuthFailure{Status: resp.Status, Code: resp.StatusCode}
+		return nil, &AuthFailure{Status: resp.Status, Code: resp.StatusCode, Source: meta.Source}
 	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, Die("usage endpoint returned %s", resp.Status)

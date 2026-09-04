@@ -73,10 +73,9 @@ func keychainStub(t *testing.T, script string) string {
 // through the GOOS switch and with its binary named: these tests are about
 // that adapter, and a stub answers on any box — so they run, and mean the
 // same thing, under `make test-linux` (ADR 0019 D2).
-func keychainTokenAt(bin string) func() (string, error) {
-	return func() (string, error) {
-		tok, _, err := readStore(keychainStoreAt(bin))
-		return tok, err
+func keychainTokenAt(bin string) func() (string, CredMeta, error) {
+	return func() (string, CredMeta, error) {
+		return readStore(keychainStoreAt(bin))
 	}
 }
 
@@ -86,7 +85,7 @@ func TestMeterTokenNamesTheGateRefusalNotAnOutage(t *testing.T) {
 	t.Parallel()
 	shim := gatedSecurityShim(t)
 
-	tok, err := keychainTokenAt(shim)()
+	tok, _, err := keychainTokenAt(shim)()
 	if err == nil {
 		t.Fatalf("a gated PATH must not yield a token: %q", tok)
 	}
@@ -108,10 +107,13 @@ func TestMeterTokenNamesTheGateRefusalNotAnOutage(t *testing.T) {
 // An ordinary exec failure is still the ordinary error: nothing about a
 // missing or broken `security` may be reported as our gate.
 func TestMeterTokenNonRefusalStaysUnreadable(t *testing.T) {
-	t.Parallel()
+	// No t.Parallel: fallbackDir names a config directory (t.Setenv). Exit 44
+	// falls through to the credentials file since the adapter became the
+	// composite, so this row has to name a directory with no file in it.
+	fallbackDir(t)
 	bin := keychainStub(t, "#!/bin/sh\necho boom >&2\nexit 44\n")
 
-	_, err := keychainTokenAt(bin)()
+	_, _, err := keychainTokenAt(bin)()
 	var g *GateRefusal
 	if err == nil || errors.As(err, &g) {
 		t.Fatalf("a plain exec failure is not a gate refusal: %v", err)
