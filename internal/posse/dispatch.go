@@ -1641,15 +1641,39 @@ func (m seatMap) hold(slot, bead string) { m.run[slot] = bead }
 // to see the difference. Sessions() warns with the repair on the same pass.
 // Narrowing it to the seat is filed as ranger-base-t1q5p.
 //
+// The ERROR arm owed the same line and did not pay it (ranger-base-wq1aq).
+// It is the widest decline there is — the listing answered for nothing, so
+// personaActive holds every seat that has a meta on disk — and it printed
+// nothing at all. What the operator saw instead was ADR 0020 §2's lane line,
+// "code lane busy: developer, hopper", which by design carries no status and
+// so reads exactly like an honestly full shop. Neither half of the seat walk
+// named herdr, and the two repairs are not the same: one stale meta is
+// repaired per meta, a herd that will not list is repaired at herdr. So the
+// error arm says so, once, before the fire loop that will print those lane
+// lines underneath it.
+//
+// That line is why the listing is READ before the two guards below rather
+// than after them. Under the old order a fresh Run — an empty busy map, the
+// exact shape ranger-base-3yqyg measured — returned at `len(busy) == 0`
+// without ever taking the reading, so the loudest case would have printed
+// nothing. On the error arm the read costs nothing: listSessions fails at
+// `Workspaces()`, before it touches a single meta. On the nil-error arm it
+// is the same reading `seatFor` takes moments later on the same pass, prune
+// included — one round trip, not a new class of side effect — and a pass
+// with no ready work returns before fireLoop and never reaches here.
+// --dry-run gets the line for the same reason it gets the lane lines: it
+// abstains from RELEASING a hold, and this says nothing about a hold.
+//
 // It is still the right way round. Being wrong here holds a seat that a
 // reading could have freed; being wrong the other way puts two agents in one
 // worktree.
 func (d *Dispatcher) reconcileSeats(busy map[string]string) {
-	if d.DryRun || len(busy) == 0 {
-		return
-	}
 	sessions, withheld, err := d.HB.listSessions()
 	if err != nil {
+		d.printf("↺ herd unreadable: the session listing failed (%v) — no hold released this pass, and every seat with a session meta is held rather than shown idle, so a lane reported busy below may be a listing that could not answer rather than a shop at work (repair at herdr, not at a meta)\n", err)
+		return
+	}
+	if d.DryRun || len(busy) == 0 {
 		return
 	}
 	if len(withheld) > 0 {

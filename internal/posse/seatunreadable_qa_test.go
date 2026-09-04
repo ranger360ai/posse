@@ -233,3 +233,118 @@ func TestPersonaActiveSkipsAStrandedSessionUnderAnUnreadableListing(t *testing.T
 		t.Errorf("a session this pass stranded held the seat under an unreadable listing: %q %q", name, st)
 	}
 }
+
+// ranger-base-wq1aq, the diagnosis half of the same bead. The seat verdicts
+// above are right and fail-closed; what an operator READ when they fired was
+// ADR 0020 §2's lane line and nothing else — "code lane busy: ranger", the
+// same sentence an honestly full shop prints. Neither half of the seat walk
+// said the listing had failed: laneBusyLine drops the status by design (§2
+// spells its shape by example), and reconcileSeats, which prints on every
+// other pass it declines, returned on `err` in silence.
+//
+// The line goes on reconcileSeats' error arm because that runs ONCE, at the
+// head of the fire loop, above the lane lines it explains. Where in that
+// function is decided by the FRESH RUN below: its busy map is empty, so a
+// diagnosis placed under the old `d.DryRun || len(busy) == 0` guard would
+// never run on the one shape ranger-base-3yqyg measured — a new process
+// offering a-2 the seat a-1 is live in.
+//
+// MUTATION: drop the printf from reconcileSeats' err arm → red on the fresh
+// Run's diagnosis assertion. Move the listSessions read back below the
+// `d.DryRun || len(busy) == 0` guard → red on the same one (the fresh Run
+// never takes the reading). Print the line whatever the listing said → red
+// on the control. Drop the `%v` and print a bare sentence → red on the
+// error-text assertion, which is the half that names the repair's target.
+func TestQAAnUnreadableListingSaysSoAboveTheLaneBusyLine(t *testing.T) {
+	t.Parallel()
+	b, fake := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+	writePersona(t, b.App, "ranger", "[go]")
+	repo := qaRepo(t, b.App, `[{"id":"a-1","title":"t","labels":["go"]}]`, "")
+	agentPerLaunch(t, fake)
+	d.PromptGrace = 0
+
+	var inFlight []*pendingBead
+	t.Cleanup(func() { joinPrompts(t, inFlight) })
+
+	slot := SessionFor("ranger", repo)
+	busy, sessFail := map[string]string{}, map[string]int{}
+	inFlight = append(inFlight, seatFire(t, d, repo, "a-1", busy, sessFail)...)
+	if busy[slot] != "a-1" {
+		t.Fatalf("premise: a-1 must be seated, or neither arm below has a busy lane to report: busy=%v\n%s", busy, dispatcherOut(d))
+	}
+
+	// The CONTROL, and it is the whole reason the line is worth anything: a
+	// lane that is honestly full, read through a listing that answered in
+	// full, says nothing about herdr. A diagnosis printed on every busy lane
+	// would be the ADR's own line with noise on top and would tell an
+	// operator exactly as much as the silence did.
+	mark := len(dispatcherOut(d))
+	inFlight = append(inFlight, seatFire(t, d, repo, "a-2", busy, sessFail)...)
+	ctrl := dispatcherOut(d)[mark:]
+	if !strings.Contains(ctrl, "lane busy: ranger") {
+		t.Fatalf("premise: a-2 must find the lane full while a-1's session is live:\n%s", ctrl)
+	}
+	if strings.Contains(ctrl, "herd unreadable") {
+		t.Errorf("a listing that answered in full was reported as unreadable — the line must be off the ERROR, or it says nothing about which shop the operator has:\n%s", ctrl)
+	}
+
+	// The bug's own shape: one read fails over a herd that is still there,
+	// and a NEW process — empty busy map, no hold to reconcile — walks the
+	// same seats.
+	qaListError(t, fake)
+	d2 := newTestDispatcher(t, b)
+	d2.PromptGrace = 0
+	fresh, freshFail := map[string]string{}, map[string]int{}
+	inFlight = append(inFlight, seatFire(t, d2, repo, "a-3", fresh, freshFail)...)
+	out := dispatcherOut(d2)
+
+	lane := strings.Index(out, "lane busy")
+	if lane < 0 {
+		t.Fatalf("premise: the seat walk must still report the lane busy — the correctness half is ranger-base-3yqyg's and is not what this pins:\n%s", out)
+	}
+	said := strings.Index(out, "herd unreadable")
+	if said < 0 {
+		t.Fatalf("a lane held by a listing that could not be read printed only the busy line: an operator reading it cannot tell a full shop from a herdr that will not answer, and the two are repaired in different places:\n%s", out)
+	}
+	if said > lane {
+		t.Errorf("the cause printed BELOW the symptom it explains: the reconcile runs at the head of the fire loop and its line must sit above every lane line of the pass it describes:\n%s", out)
+	}
+	// The error itself, not just a sentence about one: "timeout" is the
+	// difference between a herdr that is wedged and one that is not there,
+	// and it is the only part of this line that says what to go and look at.
+	if !strings.Contains(out, "no response from the herdr server") {
+		t.Errorf("the line did not carry the listing's own error, so it names no target for the repair it asks for:\n%s", out)
+	}
+}
+
+// The same line on the arm that HAS holds to keep, paired with the claim it
+// must not make. reconcileSeats' error arm returns without touching the map
+// (TestQAAnUnreadableHerdKeepsEverySeatHold pins that); this pins that it
+// says so rather than leaving the operator to infer it from a seat that
+// never frees.
+//
+// MUTATION: drop the printf → red. Say "released" instead of "kept" → red on
+// the second assertion, which is the sentence a phantom seat would read as
+// permission.
+func TestQAReconcileSeatsNamesTheFailedReadItKeptTheHoldsFor(t *testing.T) {
+	t.Parallel()
+	b, _ := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+	slot := SessionFor("ranger", "/repo")
+	busy := map[string]string{slot: "a-1"}
+
+	b.H = Herdr{Bin: filepath.Join(t.TempDir(), "herdr-that-is-not-there")}
+	d.reconcileSeats(busy)
+	out := dispatcherOut(d)
+
+	if busy[slot] != "a-1" {
+		t.Fatalf("premise: the hold must survive the failed read: busy=%v\n%s", busy, out)
+	}
+	if !strings.Contains(out, "herd unreadable") {
+		t.Errorf("the pass that declined to reconcile printed nothing: `seats kept` is printed on the withheld decline for exactly this reason, and the error arm is the WIDER decline of the two:\n%s", out)
+	}
+	if !strings.Contains(out, "no hold released this pass") {
+		t.Errorf("the line must say what it did NOT do: a hold kept and a hold released are the two states a phantom seat sits between:\n%s", out)
+	}
+}
