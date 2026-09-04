@@ -276,12 +276,32 @@ func (a *App) boundSkillLink(link string) (target string, ours bool) {
 // ENOTDIR has one spelling that is NOT evidence, which is why it is asked
 // twice: a target written with a trailing slash ("…/skills/x/") is ENOTDIR
 // whenever x is a file, and that x is a live file the operator linked. So
-// the second ask is on the target with the slash cleaned off, and only a
-// target that is gone by that spelling too is a relic. The second ask is
-// lexical (filepath.Clean also collapses ".."), which can disagree with the
-// kernel wherever a component is itself a symlink — and only ever in the
-// safe direction: the first ask has already said unresolvable, so the
-// second can turn a replace into a refusal and never the other way.
+// the second ask is on the target with that trailing slash taken off, and
+// only a target that is gone by that spelling too is a relic.
+//
+// The second ask REWRITES NOTHING ELSE, and that is the whole of its
+// correctness. It used to run filepath.Clean over the target, which also
+// collapses ".." — lexically, where the kernel does it by walking. The two
+// disagree wherever a component is itself a symlink, and the disagreement
+// was NOT in the safe direction: a target spelled sym/../live.md/ is
+// ENOTDIR on the first ask (the trailing slash, exactly the liar this ask
+// exists for), and Clean sends the second ask to a path the kernel never
+// goes to, which is not there — so a live file the operator linked was
+// called a relic and RenderAgentsSkills removed and rewrote it. Measured
+// end to end (ranger-base-jhyiv, from ranger-base-han3i). Trailing "/" and
+// "/." are the only two things trimmed here because they are the only two
+// that ask for a directory without changing which file the path names;
+// every other component, ".." included, is left for the kernel to walk.
+//
+// Both errnos are asked the second time, because "gone" means the same two
+// things here as it does above. Only ENOTDIR can actually come back: the
+// two paths differ by the trailing marker alone, so every component up to
+// the last resolves identically, and a last component that is not there
+// would already have made the FIRST ask ENOENT. So no fixture can kill a
+// mutant that drops fs.ErrNotExist from this line — it is a conjunct that
+// cannot fire, not an unpinned one (checked by mutation under
+// ranger-base-jhyiv). Dropping the OTHER half is caught, and so is any
+// second ask that rewrites the path: see TestDanglingSkillLinkErrnoTable.
 func danglingSkillLink(link string) bool {
 	fi, err := os.Lstat(link)
 	if err != nil || fi.Mode()&os.ModeSymlink == 0 {
@@ -298,13 +318,34 @@ func danglingSkillLink(link string) bool {
 	if err != nil {
 		return false
 	}
-	if filepath.IsAbs(t) {
-		t = filepath.Clean(t)
-	} else {
-		t = filepath.Join(filepath.Dir(link), t)
+	t = trimDirMarkers(t)
+	if !filepath.IsAbs(t) {
+		// Joined, never Cleaned: a relative target is resolved against the
+		// LINK's own directory and not the caller's cwd, and the result is
+		// handed to the kernel with its own components intact.
+		t = filepath.Dir(link) + string(filepath.Separator) + t
 	}
 	_, err = os.Stat(t)
 	return errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR)
+}
+
+// trimDirMarkers takes the trailing "/" and "/." off a symlink target. They
+// are the two spellings that DEMAND the target be a directory — which is
+// what makes a live FILE read ENOTDIR — and they are the only thing
+// danglingSkillLink's second ask is allowed to change: taking them off
+// cannot change which file the path names, while collapsing a ".." can and
+// did (see there). Root keeps its slash: "/" and "/." are the whole path.
+func trimDirMarkers(t string) string {
+	for {
+		switch {
+		case len(t) > 2 && strings.HasSuffix(t, "/."):
+			t = t[:len(t)-2]
+		case len(t) > 1 && strings.HasSuffix(t, "/"):
+			t = t[:len(t)-1]
+		default:
+			return t
+		}
+	}
 }
 
 // sweepDeadSkillLinks removes our links whose skill has left

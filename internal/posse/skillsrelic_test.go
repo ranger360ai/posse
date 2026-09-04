@@ -104,11 +104,12 @@ func TestRenderAgentsSkillsReplacesADanglingRelic(t *testing.T) {
 // The control arm, and the one that decides whether the fix is a fix or a
 // hole: every OTHER kind of entry we did not write still refuses. Each row
 // is a thing that resolves — so it is somebody's file, and posse may not
-// have it — except the last two, whose targets exist but do not resolve as
-// asked: an error that is not evidence the target is gone keeps the
-// refusal. The trailing-slash row makes that concrete for the errno the
+// have it — except the last three, whose targets exist but do not resolve
+// as asked: an error that is not evidence the target is gone keeps the
+// refusal. The two trailing-slash rows make that concrete for the errno the
 // relic rule now accepts (ENOTDIR), so the two pins disagree in the fixture
-// and not only in the prose.
+// and not only in the prose; the second of them is the shape that WAS
+// clobbered until ranger-base-jhyiv.
 func TestRenderAgentsSkillsStillRefusesEveryLiveForeignEntry(t *testing.T) {
 	t.Parallel()
 	for _, c := range []struct {
@@ -153,6 +154,38 @@ func TestRenderAgentsSkillsStillRefusesEveryLiveForeignEntry(t *testing.T) {
 			// alone does not decide, the target does.
 			if err := os.Symlink(live+"/", link); err != nil {
 				t.Fatal(err)
+			}
+		}},
+		{"a live target reached through a symlinked component and a ..", func(t *testing.T, link string) {
+			// The same trailing-slash liar as the row above, one step
+			// further out: the kernel walks sym -> store/home and then ".."
+			// back to store, so the target IS store/distributed-systems and
+			// it is live. A second ask that collapses that ".." lexically
+			// goes to a path the kernel never visits, finds nothing, and
+			// clobbers the operator's entry — measured end to end under
+			// ranger-base-han3i, fixed under ranger-base-jhyiv. This row is
+			// the end-to-end half; TestDanglingSkillLinkErrnoTable's row 12
+			// is the predicate half.
+			store := filepath.Join(t.TempDir(), "store")
+			if err := os.MkdirAll(filepath.Join(store, "home"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			live := filepath.Join(store, "distributed-systems")
+			if err := os.WriteFile(live, []byte("the operator's own skill\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			links := filepath.Join(t.TempDir(), "links")
+			if err := os.MkdirAll(links, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(filepath.Join(store, "home"), filepath.Join(links, "sym")); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(filepath.Join(links, "sym")+"/../distributed-systems/", link); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Stat(live); err != nil {
+				t.Fatalf("the fixture's target must be live before the call: %v", err)
 			}
 		}},
 		{"a link under a dir this uid cannot traverse", func(t *testing.T, link string) {
