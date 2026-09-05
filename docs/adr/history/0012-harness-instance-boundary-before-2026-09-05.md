@@ -251,7 +251,7 @@ use only at the authorized instance. Capability is not venue permission.
 The authorized instance owns its measured grid and probe record. No record
 transport is required: only a permitted generalized bug or coarse verdict
 can return, under the same audience boundary. Its work waits for the venue
-and an installed release containing required mechanisms. [0013 §9](0013-runtime-dispatch-contract.md)
+and an installed release containing required mechanisms. [0013 §9](../0013-runtime-dispatch-contract.md)
 owns onboarding mechanics. Rejected: testing in a forbidden venue, a filled
 public example, or a second record store across the boundary. This fold
 removes no code, state, key, actor or flag; transport value is ASSUMED with
