@@ -91,6 +91,19 @@ import (
 // not a fleet shape, and a session that sets CLAUDE_CODE_CUSTOM_OAUTH_URL
 // gets the dialog rather than a guess.
 func ClaudeConfigFile() string {
+	// "" when neither $HOME nor CLAUDE_CONFIG_DIR names a home to hang it
+	// off. filepath.Join drops an empty element, so Join("", ".claude.json")
+	// is ".claude.json" under whatever cwd the process happens to have — a
+	// file posse would READ for the operator's trusted directories and then
+	// WRITE the seed into, in a directory nobody named (ranger-base-58b5,
+	// from ranger-base-a3t1). The empty answer is already this package's
+	// shape for it: claudeHistoryPath returns "" for no home, and
+	// SeedClaudeTrust documents cfg == "" as a no-op and not a fallback.
+	// os.UserHomeDir() is no second source — on unix it IS $HOME (measured,
+	// go1.26.5: `env -i` gives err="$HOME is not defined").
+	if os.Getenv("HOME") == "" && os.Getenv("CLAUDE_CONFIG_DIR") == "" {
+		return ""
+	}
 	cfgDir := ClaudeConfigDirIn(os.Getenv("HOME"))
 	if p := filepath.Join(cfgDir, ".config.json"); fileExists(p) {
 		return p
@@ -438,6 +451,9 @@ func lockClaudeConfig(cfg string) (func(), error) {
 // the operator's config and nothing else, like every other probe there.
 func claudeTrustProbe() Silence {
 	p := ClaudeConfigFile()
+	if p == "" {
+		return noHomeSilence("CLAUDE_CONFIG_DIR", "cannot tell whether this directory is trusted")
+	}
 	b, err := os.ReadFile(p)
 	if err != nil {
 		return Silence{Unknown: true, Why: "unreadable " + AbbrevHome(p) + " — cannot tell whether this directory is trusted"}
@@ -527,6 +543,9 @@ func claudeOutsideReadSeen(state map[string]any) bool {
 // nothing else.
 func claudeOutsideReadProbe() Silence {
 	p := ClaudeConfigFile()
+	if p == "" {
+		return noHomeSilence("CLAUDE_CONFIG_DIR", "cannot tell whether the outside-read notice has been seen")
+	}
 	b, err := os.ReadFile(p)
 	if err != nil {
 		return Silence{Unknown: true, Why: "unreadable " + AbbrevHome(p) + " — cannot tell whether the outside-read notice has been seen"}

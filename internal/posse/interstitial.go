@@ -39,18 +39,51 @@ import (
 // probe that reads the wrong file is worse than one that says unknown.
 // $HOME and not os.UserHomeDir(), to match AbbrevHome: the two have to
 // agree or the path printed is not the path read.
+//
+// And "" when neither the override nor $HOME names one, which is that same
+// rule one step on. filepath.Join DROPS an empty element, so
+// Join(os.Getenv("HOME"), ".grok") is ".grok" — a directory under whatever
+// cwd the process happens to have, not a home. A repo carrying its own
+// .grok/config.toml would then have ITS answer reported as the operator's,
+// which is the wrong file this comment already refuses to read
+// (ranger-base-58b5, from ranger-base-a3t1). Same shape as
+// claudeHistoryPath: no home, no path, and the caller says unknown.
+//
+// os.UserHomeDir() is not a second source to fall back to. MEASURED,
+// go1.26.5 darwin/arm64, `env -i`: UserHomeDir="" err="$HOME is not
+// defined" — on unix it IS $HOME, so a fallback to it reads the same
+// nothing.
 func grokHome() string {
 	if v := os.Getenv("GROK_HOME"); v != "" {
 		return v
 	}
-	return filepath.Join(os.Getenv("HOME"), ".grok")
+	home := os.Getenv("HOME")
+	if home == "" {
+		return ""
+	}
+	return filepath.Join(home, ".grok")
 }
 
 func codexHome() string {
 	if v := os.Getenv("CODEX_HOME"); v != "" {
 		return v
 	}
-	return filepath.Join(os.Getenv("HOME"), ".codex")
+	home := os.Getenv("HOME")
+	if home == "" {
+		return ""
+	}
+	return filepath.Join(home, ".codex")
+}
+
+// noHomeSilence is what a probe answers when it has no home to read under:
+// UNKNOWN, and never "not silenced". The difference is the one these probes
+// are built on — a missing FILE is a reading, because these CLIs write these
+// keys themselves and a config without one is a box that has not been told,
+// while a missing HOME is no reading at all. Unknown is non-blocking
+// everywhere (DangerUnsilenced skips it): posse does not wall a launch on
+// what it did not read.
+func noHomeSilence(override, tail string) Silence {
+	return Silence{Unknown: true, Why: "$HOME is unset and " + override + " names no home either — nothing to read, so this " + tail}
 }
 
 // tomlFlag reads a bare `key = value` line from a TOML file. Deliberately
@@ -91,7 +124,11 @@ func tomlFlag(path, key string) (val string, found bool) {
 // "present and not false" rather than for "true". A bool test read a live
 // acked config as un-acked.
 func grokPrivacyProbe() Silence {
-	p := filepath.Join(grokHome(), "config.toml")
+	h := grokHome()
+	if h == "" {
+		return noHomeSilence("GROK_HOME", "cannot tell whether the banner has been answered")
+	}
+	p := filepath.Join(h, "config.toml")
 	v, ok := tomlFlag(p, "privacy_banner_acked")
 	if !ok || v == "" || v == "false" {
 		// No config and an unanswered config are the same reading here, and
@@ -108,7 +145,11 @@ func grokPrivacyProbe() Silence {
 // mid-life self-update, so grok has no update interstitial while it holds.
 // `make verify-grok-pin` is the assertion; this is the cheap read.
 func grokAutoUpdateProbe() Silence {
-	p := filepath.Join(grokHome(), "config.toml")
+	h := grokHome()
+	if h == "" {
+		return noHomeSilence("GROK_HOME", "cannot tell whether the pin is applied")
+	}
+	p := filepath.Join(h, "config.toml")
 	v, ok := tomlFlag(p, "auto_update")
 	if !ok {
 		return Silence{Why: "[cli] auto_update not set in " + AbbrevHome(p) + " — pin not applied (make verify-grok-pin)"}
@@ -165,13 +206,17 @@ func codexUpdateProbe() Silence { return codexUpdateSilence(codexInstalledVersio
 var codexInstalledVersion = func() string { return ProbeCLIVersion("codex") }
 
 func codexUpdateSilence(installed func() string) Silence {
+	h := codexHome()
+	if h == "" {
+		return noHomeSilence("CODEX_HOME", "cannot tell whether the update menu is silenced")
+	}
 	// The pin is a value, not a presence: a key that is present and true is
 	// the menu ARMED, so this must never read as "someone mentioned it".
-	cp := filepath.Join(codexHome(), "config.toml")
+	cp := filepath.Join(h, "config.toml")
 	if v, ok := tomlFlag(cp, "check_for_update_on_startup"); ok && v == "false" {
 		return Silence{Silenced: true, Why: "check_for_update_on_startup = false in " + AbbrevHome(cp) + " — the menu is never drawn (fleet pin, make verify-codex-pin)"}
 	}
-	p := filepath.Join(codexHome(), "version.json")
+	p := filepath.Join(h, "version.json")
 	b, err := os.ReadFile(p)
 	if err != nil {
 		// UNKNOWN, and this is the one probe where the difference is
