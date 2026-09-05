@@ -781,16 +781,33 @@ func TestQAConstitutionWallReadsTheMarkerFromTheBaseTreeToo(t *testing.T) {
 // lines, and re-scanning content that is already in history is the thing
 // check 1's "already cleared this the day it was added" rule rejects.
 //
+// The third class is ONE reader and reads no subject at all: the message
+// arm's REFERENCE (posse_rest, ranger-base-gyrnp), the staged diff rendered
+// the way `commit -v` renders it so that the lines git wrote below its cut
+// can be taken off the message read. It must carry neither -U0 nor
+// --no-renames: git's `-v` diff has three lines of context and git's own
+// rename detection, and a reference shaped otherwise MISMATCHES it — which
+// only leaves git's lines on the scan (fail-closed), but for every writer
+// rather than none. Pinned here by name so that the census cannot silently
+// widen into "any diff --cached line is fine".
+//
 // MUTATION-CHECKED: removing --no-renames from any one of the four name
 // readers reds this pin naming that line.
 func TestQAHookReadersAllDisableMoveDetection(t *testing.T) {
 	t.Parallel()
 	render := CommitGuardHook(VisibilityPublic, OpsPatternSet{},
 		IdentityLiteral{Class: "username", Value: "someone"})
-	var names, content int
+	var names, content, reference int
 	for _, line := range strings.Split(render, "\n") {
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmed, "#") || !strings.Contains(trimmed, "diff --cached") {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "posse_rest=$(git diff --cached ") {
+			reference++
+			if strings.Contains(trimmed, "-U0") || strings.Contains(trimmed, "--no-renames") {
+				t.Errorf("the message arm's reference must be shaped the way `commit -v` writes its diff — three lines of context, git's own rename detection — or it mismatches every writer's:\n  %s", trimmed)
+			}
 			continue
 		}
 		isName := strings.Contains(trimmed, "--name-only") || strings.Contains(trimmed, "--name-status")
@@ -812,5 +829,8 @@ func TestQAHookReadersAllDisableMoveDetection(t *testing.T) {
 	}
 	if content < 3 {
 		t.Errorf("expected the three -U0 content readers (checks 0, 2, 3), found %d", content)
+	}
+	if reference != 1 {
+		t.Errorf("expected exactly one reference reader (the message arm's posse_rest), found %d", reference)
 	}
 }
