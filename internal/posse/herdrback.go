@@ -2424,20 +2424,49 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 	// item 3, ranger-base-x5f6p). That deny names the file the runtime's
 	// own resolution points at — CLAUDE_SECURESTORAGE_CONFIG_DIR, then
 	// CLAUDE_CONFIG_DIR, then `~/.claude` (credentialDir) — read out of the
-	// LAUNCHER's environment, because the caged child inherits os.Environ()
-	// and the profile is rendered in this process. Env sets are not in that
-	// environment: they are overlaid on the child a hundred lines below,
-	// long after the profile is written. So a set exporting either name
-	// moves the in-cage runtime's credential write to a directory the wall
-	// never heard of, and every other layer reports a healthy launch.
+	// LAUNCHER's environment, because the profile is rendered in THIS
+	// process. Env sets are not in that environment: they are overlaid on
+	// the child a hundred lines below, long after the profile is written.
+	// So a set exporting either name moves the runtime's credential write
+	// to a directory the wall never heard of, and every other layer
+	// reports a healthy launch.
+	//
+	// The session does NOT inherit this process's environment, and an
+	// earlier draft of this comment said it did (ranger-base-r68d8). The
+	// session is a herdr workspace: CreateWorkspace hands the pane only
+	// the vars named explicitly, the pane is a child of the herdr DAEMON,
+	// and the runtime is typed into that pane's LOGIN shell — so what it
+	// reads is the daemon's environment plus whatever the login rc
+	// exports, the same three-way split ADR 0013 already records for PATH.
+	// Nothing makes these two names an exception: an `export
+	// CLAUDE_SECURESTORAGE_CONFIG_DIR=…` in a login rc reaches the runtime
+	// and never reaches this process, and the launcher's own
+	// `CLAUDE_CONFIG_DIR=… posse new` reaches this process and not the
+	// pane.
+	//
+	// What holds the wall and the write together is therefore not
+	// inheritance but the PIN (credentialDirPin, ADR 0019 D2 store 3,
+	// ranger-base-rq83c): the launch line carries both names in its
+	// `--settings` payload, resolved HERE, and the runtime applies each
+	// settings scope's env block OVER process.env in the order user,
+	// project, local, flag, policy — so the flag-scope payload lands after
+	// the pane's environment as surely as it lands after a settings file
+	// the persona wrote. MEASURED on claude 2.1.259; a launcher that
+	// merely EXPORTED the directory into the child would have lost to
+	// both. credentialpanesplit_qa_test.go pins that coupling from the
+	// rendered line, with the unpinned pane as its control.
 	//
 	// Refused rather than patched. Adding the set's directory to the deny
 	// would mean resolving the env sets before the profile is rendered,
 	// which reorders every refusal between here and there; refusing is
 	// additive, fail-closed, and it costs nothing measured — 0 env files
-	// carried either name when this was written. The remedy is in the
-	// message and it is a real one: exported where the launcher can see it,
-	// the variable moves the deny along with the write.
+	// carried either name when this was written. It is also the right
+	// shape after the pin rather than a leftover before it: an env set's
+	// variable is a scope the settings payload already outranks, so an
+	// APPEND there would be a wall that loses. The remedy is in the
+	// message and it is a real one: exported where the launcher can see
+	// it, the variable moves the deny and the pin together, and the pin is
+	// what moves the write.
 	//
 	// Only where the wall exists. A shims-tier session has no file-read
 	// deny for a variable to walk past, and a caged one renders its own

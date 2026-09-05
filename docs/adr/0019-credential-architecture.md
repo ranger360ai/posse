@@ -355,6 +355,33 @@ build tags, so `make test-linux` compiles and tests every branch:
        UNCAGED claude, which no launcher flag reaches: only a
        root-owned OS `managed-settings.json` covers it, and that is
        filed as an operator ask, not taken here.
+
+       The pin carries a SECOND environment split, found after it
+       landed (ranger-base-r68d8, amended 2026-09-05): a persona
+       session is not a child of the launcher at all. It is a herdr
+       workspace — `CreateWorkspace` hands the pane only the vars posse
+       names explicitly, the pane is a child of the herdr DAEMON, and
+       the runtime is typed into that pane's LOGIN shell — so what the
+       runtime reads is the daemon's environment plus the login rc's,
+       the same three-way split ADR 0013 records for PATH. Either
+       direction voids the deny exactly as the settings file did: an
+       `export CLAUDE_SECURESTORAGE_CONFIG_DIR=…` in a login rc reaches
+       an unattended runner and never reaches posse, and a
+       `CLAUDE_CONFIG_DIR=… posse new` reaches posse and never reaches
+       the pane. The pin closes it by the same mechanism and needs no
+       second one, because a flag-scope `env` block is applied over
+       `process.env` whatever that environment held —
+       `credentialpanesplit_qa_test.go` pins the coupling from the
+       rendered line, with the unpinned pane as its control. An env
+       var, which is what the finding first proposed, is the scope the
+       pin already outranks: the launch keeps REFUSING an env set that
+       carries either name rather than appending one (herdrback.go).
+       Residual, not closed here: a pane whose HOME differs from the
+       launcher's still resolves `$HOME/.claude` for itself on the arm
+       where no variable names the directory, since the pin's
+       secure-storage value there is the empty string that keeps the
+       keychain item unsuffixed (ranger-base-ig4op); posse sets no HOME
+       for a pane, so it is not a split posse opens.
      - liveness/revocation of any current instance is the operator's
        call (ranger-base-tyne), independent of this model.
 - linux (and any non-darwin): `~/.claude/.credentials.json`, fed
