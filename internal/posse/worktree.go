@@ -904,7 +904,38 @@ func seedBeadsRedirect(t *SessionTree) error {
 	if err := os.MkdirAll(dst, 0o755); err != nil {
 		return Die("session worktree beads redirect: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(dst, "redirect"), []byte(target+"\n"), 0o644); err != nil {
+	// And the same guard on the WRITE, which is of the same class and was
+	// cleared as "the WRITE, not a read" by the census above (ranger-base-lwfhe,
+	// escaping ranger-base-xc2s4). os.WriteFile opens O_WRONLY|O_CREATE|O_TRUNC,
+	// and open(2) for write on a FIFO with no reader blocks exactly as open for
+	// read on one with no writer does — so xc2s4's own EXPECTED, "the launch
+	// proceeds", was still false one statement further down. The reachable shape
+	// is the RELAUNCH: seeding is idempotent and re-run into an existing tree on
+	// purpose, and this destination is the SESSION's own worktree, so the
+	// precondition is WEAKER than the read arm's — that one needs write access to
+	// the main checkout, which git denies a named pipe, while every caged session
+	// can write its own tree by construction. One mkfifo there wedged every later
+	// dispatched launch into that tree, with nothing printed and no deadline.
+	//
+	// The answer is NOT the read's ("ignore it and carry on") and not ADR 0002
+	// §3's refusal either: this path is not a foreign hook in the operator's
+	// checkout but posse's own render, in a directory posse created three lines
+	// up, that only posse writes and only posse reads (beadsHome). A special file
+	// there is never something posse wrote, so it is nothing to preserve — and a
+	// refusal would let a session wedge its own relaunches for good, which is the
+	// bug with a message. Remove it and write the real redirect. A directory here
+	// still falls through to the WriteFile error, which returns rather than hangs.
+	//
+	// This guard is os.Stat, so it FOLLOWS a symlink: a symlink here pointing at
+	// a regular file answers true and the write goes THROUGH it, out of the tree.
+	// That is not this bead's wedge but a write escape, measured and filed as
+	// ranger-base-d14e1 (P1, security) rather than folded in — the fix is an
+	// lstat census across isRegularFile's five call sites, not a line here.
+	seeded := filepath.Join(dst, "redirect")
+	if !isRegularFile(seeded) {
+		_ = os.Remove(seeded)
+	}
+	if err := os.WriteFile(seeded, []byte(target+"\n"), 0o644); err != nil {
 		return Die("session worktree beads redirect: %v", err)
 	}
 	return nil

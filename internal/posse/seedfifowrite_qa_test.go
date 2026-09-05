@@ -41,7 +41,6 @@ import (
 
 func TestQAASeedIntoAFifoDestinationMustNotWedgeTheLaunch(t *testing.T) {
 	t.Parallel()
-	t.Skip("ranger-base-lwfhe (escape from ranger-base-xc2s4, found on ranger-base-g5xoy): seedBeadsRedirect (internal/posse/worktree.go) type-checks the redirect it READS and not the one it WRITES, so a 0644 FIFO at <tree>/.beads/redirect wedges every relaunch into that tree")
 
 	repo := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(repo, beadsDirName), 0o755); err != nil {
@@ -101,4 +100,66 @@ func readSeeded(t *testing.T, tree string) string {
 		t.Fatalf("seeded redirect at %s: %v", p, err)
 	}
 	return strings.TrimSpace(string(b))
+}
+
+// ranger-base-lwfhe, the same defect through the call a dispatched launch
+// actually makes. The pin above fabricates a SessionTree and calls
+// seedBeadsRedirect straight, which pins the statement but not the REACH: the
+// bead's whole reachability argument is the RELAUNCH — "Seeding is idempotent
+// and re-run on purpose", so (*App).EnsureSessionTree re-runs the write into
+// an EXISTING tree over whatever is at that path now — and a direct-call pin
+// stays green whether or not the relaunch branch still gets there. So this is
+// the read arm's structure, mirrored: redirectfifo_test.go pins its class at
+// BOTH levels (TestAFifoAtTheBeadsRedirectMustNotWedgeTheSeed and
+// TestEnsureSessionTreeMustNotWedgeOnAFifoRedirect) and the write arm now does
+// too. Real git repos, controls first; measured blocking at 60s before the fix.
+func TestQAARelaunchIntoATreeWhoseSeededRedirectIsAFifoMustNotWedge(t *testing.T) {
+	t.Parallel()
+	a := wtApp(t)
+	repo := wtRepo(t)
+	if err := os.MkdirAll(filepath.Join(repo, beadsDirName), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// First launch: seeds the tree normally.
+	var tr *SessionTree
+	var err error
+	if !returnsWithin(t, 60*time.Second, func() { tr, err = a.EnsureSessionTree(repo, "s-relaunch", nil) }) {
+		t.Fatalf("CONTROL: the first EnsureSessionTree blocked — the rig, not the code")
+	}
+	if err != nil || tr == nil {
+		t.Fatalf("CONTROL: first launch: tree=%v err=%v", tr, err)
+	}
+
+	// CONTROL: a plain relaunch into that same tree returns. Without this the
+	// arm below cannot tell the FIFO from the relaunch shape itself.
+	if !returnsWithin(t, 60*time.Second, func() { _, err = a.EnsureSessionTree(repo, "s-relaunch", nil) }) {
+		t.Fatalf("CONTROL: a plain relaunch blocked — the rig, not the code")
+	}
+	if err != nil {
+		t.Fatalf("CONTROL: plain relaunch: %v", err)
+	}
+
+	// THE ARM: the session replaces its OWN tree's redirect with a pipe —
+	// write access every caged session has by construction — and relaunches.
+	seeded := filepath.Join(tr.Path, beadsDirName, beadsRedirect)
+	if err := os.Remove(seeded); err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Mkfifo(seeded, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// The fixture's own witness: a pin over a plain file cannot pass here.
+	if fi, lerr := os.Lstat(seeded); lerr != nil || fi.Mode()&os.ModeNamedPipe == 0 {
+		t.Fatalf("fixture: %s is not a FIFO (err %v)", seeded, lerr)
+	}
+	if !returnsWithin(t, 60*time.Second, func() { _, err = a.EnsureSessionTree(repo, "s-relaunch", nil) }) {
+		t.Fatalf("EnsureSessionTree blocked forever relaunching into a tree whose own %s is a 0644 FIFO — the launcher still wedges, at the WRITE", seeded)
+	}
+	if err != nil {
+		t.Fatalf("relaunch over the FIFO: %v", err)
+	}
+	if got, want := readSeeded(t, tr.Path), filepath.Join(repo, beadsDirName); got != want {
+		t.Errorf("the relaunch left %s at %s, want the repo's own %s", got, seeded, want)
+	}
 }
