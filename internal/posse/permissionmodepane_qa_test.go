@@ -8,7 +8,10 @@ package posse
 // whatever mode it ended up in, and its command line is a claim about the
 // launch rather than a fact about the process.
 //
-// This file is the corpus that measurement produced. Every fixture below is
+// This file is the corpus that measurement produced, plus — under its own
+// banner near the bottom, and nowhere else — a handful of CONSTRUCTED borders
+// that pin what the reader does with a suffix nobody captured. Every fixture
+// above that banner is
 // verbatim `herdr pane read <pane> --format text` output from 2026-08-29,
 // captured on claude 2.1.251, codex-cli 0.150.1 and grok 1.0.5 against a
 // SCRATCH herdr server (the livesplash_test.go recipe: `herdr --session
@@ -299,6 +302,145 @@ func TestQAGrokPaneNamesOnlyTwoOfSixModes(t *testing.T) {
 	// splash up, and the session IS auto.
 	if got, ok := paneMode("grok", grokPaneSplashAuto); ok {
 		t.Errorf("a grok pane on its startup splash reported %q; that pane was launched --permission-mode auto and shows no suffix", got)
+	}
+}
+
+// ─── constructed borders: shapes grok 1.0.5 was NOT measured to draw ────────
+//
+// Everything above this line is a verbatim capture. Everything below it is
+// CONSTRUCTED, and the distinction is load-bearing: these are the borders a
+// LATER grok could draw — a wider pane, an extra token after the mode, a
+// counter where the mode used to be, an empty pad — and no capture of any of
+// them exists. They pin the reader's CONTRACT (what it does with a suffix
+// outside the measured vocabulary), never grok's behaviour, and nothing here
+// may ever be cited as evidence about what a real pane renders.
+//
+// The shape each one is built on is the real one: grokPaneAuto's border with
+// its suffix swapped, so the "╰", the "Grok " and the "· " the reader keys on
+// are the measured ones and the only thing under test is the suffix.
+const (
+	// A token that is not a mode at all: the reader used to report
+	// mode:3 files.
+	grokBorderNotAMode = "  │ ❯                                                            │\n" +
+		"  ╰───────────────────────────────── Grok 4.6 (high) · 3 files ─╯\n" +
+		"\n" +
+		"  Shift+Tab:mode  │  Ctrl+.:shortcuts"
+
+	// The mode AND a token after it. LastIndex takes the last separator,
+	// so the reader used to report mode:12k tokens — a suffix that is not
+	// the mode, on a pane whose mode is auto and is on the screen.
+	grokBorderModeThenToken = "  │ ❯                                                            │\n" +
+		"  ╰──────────────────── Grok 4.6 (high) · auto · 12k tokens ─╯\n" +
+		"\n" +
+		"  Shift+Tab:mode  │  Ctrl+.:shortcuts"
+
+	// A WIDER pane: the same suffix, more padding before the corner. The
+	// captured corpus carries exactly one dash there, which is the only
+	// reason TrimSuffix("─╯") ever looked right — this one used to report
+	// mode:auto ────.
+	grokBorderWidePad = "  │ ❯                                                            │\n" +
+		"  ╰──────────────────────────────── Grok 4.6 (high) · auto ─────╯\n" +
+		"\n" +
+		"  Shift+Tab:mode  │  Ctrl+.:shortcuts"
+
+	// A separator with nothing after it. The sharpest row: the reader used
+	// to return Mode "" in the NAMED state, whose Tag() is "mode:" — the
+	// blank the three-valued field exists to replace.
+	grokBorderEmptySuffix = "  │ ❯                                                            │\n" +
+		"  ╰──────────────────────────────────── Grok 4.6 (high) ·  ─╯\n" +
+		"\n" +
+		"  Shift+Tab:mode  │  Ctrl+.:shortcuts"
+
+	// A near-miss on a table entry: the word is there and the suffix is
+	// not the word. Containment would pass this; equality is the contract.
+	grokBorderNearMiss = "  │ ❯                                                            │\n" +
+		"  ╰───────────────────────────── Grok 4.6 (high) · auto mode on ─╯\n" +
+		"\n" +
+		"  Shift+Tab:mode  │  Ctrl+.:shortcuts"
+)
+
+// The reader's vocabulary is CLOSED, which is the asymmetry this pins: the
+// other reader in the same registry (claudePaneMode) answers an unrecognised
+// footer with PaneModeCovered, and grok's used to hand back whatever came
+// after the last "· " as a NAMED mode. The unsafe direction is the one the
+// field exists to rule out — a surface that says "auto" for a pane it cannot
+// read is worse than one that says "can't tell" — so a suffix outside the two
+// measured words is ?unnamed, and only the padding case (a wider pane, same
+// word) still reads.
+func TestQAGrokBorderSuffixOutsideTheTwoWordsIsNotAMode(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		name, pane, wantTag string
+	}{
+		{"a token that is not a mode", grokBorderNotAMode, "mode:?unnamed"},
+		{"mode then another token", grokBorderModeThenToken, "mode:?unnamed"},
+		{"separator with nothing after it", grokBorderEmptySuffix, "mode:?unnamed"},
+		{"a near-miss on a table word", grokBorderNearMiss, "mode:?unnamed"},
+		// A wider pane is the one case that must still READ: the suffix is
+		// the measured word and the extra dashes are the pane's width.
+		{"the same word on a wider pane", grokBorderWidePad, "mode:auto"},
+	} {
+		got := ReadPaneMode(builtinPaneModeAdapter("grok"), c.pane)
+		if tag := got.Tag(); tag != c.wantTag {
+			t.Errorf("%s: Tag() = %q; want %q (Mode %q, State %q)", c.name, tag, c.wantTag, got.Mode, got.State)
+		}
+	}
+	// Stated separately because it is the failure the tag comparison would
+	// still let through if PaneModeNamed ever rendered a blank Mode as
+	// something other than "mode:": no reading outside the table may come
+	// back NAMED at all, whatever it renders as.
+	for _, c := range []struct{ name, pane string }{
+		{"not a mode", grokBorderNotAMode},
+		{"mode then token", grokBorderModeThenToken},
+		{"empty suffix", grokBorderEmptySuffix},
+		{"near miss", grokBorderNearMiss},
+	} {
+		m := ReadPaneMode(builtinPaneModeAdapter("grok"), c.pane)
+		if m.State == PaneModeNamed {
+			t.Errorf("%s: state NAMED with Mode %q — an unmeasured suffix was reported as a mode the pane named", c.name, m.Mode)
+		}
+		if strings.TrimSpace(m.Tag()) == "" || m.Tag() == "mode:" {
+			t.Errorf("%s: Tag() = %q — a mode tag with no mode in it", c.name, m.Tag())
+		}
+		if !strings.Contains(m.Line(), " — ") {
+			t.Errorf("%s: Line() = %q — the unknown owes the operator a sentence", c.name, m.Line())
+		}
+	}
+}
+
+// The table is the whole vocabulary, and it is TWO entries: the corpus above
+// measured two of grok's six modes on the border, so a third entry is a claim
+// nobody captured and a shrink to one is a mode going dark. Stated against
+// the shipped table rather than the reader so it names what changed.
+func TestQAGrokBorderTableIsTheTwoMeasuredWords(t *testing.T) {
+	t.Parallel()
+	want := map[string]string{"auto": "auto", "always-approve": "always-approve"}
+	if len(grokBorderModes) != len(want) {
+		t.Fatalf("grokBorderModes has %d entries; the corpus measured %d — a new border word needs a capture beside it", len(grokBorderModes), len(want))
+	}
+	for _, m := range grokBorderModes {
+		mode, ok := want[m.border]
+		if !ok {
+			t.Errorf("border word %q is not one of the two measured on grok 1.0.5's composer border", m.border)
+			continue
+		}
+		if m.mode != mode {
+			t.Errorf("border %q maps to mode %q; want %q", m.border, m.mode, mode)
+		}
+		delete(want, m.border)
+	}
+	for border := range want {
+		t.Errorf("the border word %q is measured and no longer in the table — that mode now reads as an unknown", border)
+	}
+	// Every entry has to survive a round trip through the reader on a real
+	// border, or the table is a list nothing consults.
+	for _, c := range []struct{ pane, want string }{
+		{grokPaneAuto, "auto"},
+		{grokPaneBypass, "always-approve"},
+	} {
+		if got, ok := paneMode("grok", c.pane); !ok || got != c.want {
+			t.Errorf("captured pane for %q read as %q,%v — the table and the reader have come apart", c.want, got, ok)
+		}
 	}
 }
 

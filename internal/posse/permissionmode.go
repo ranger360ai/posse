@@ -44,7 +44,10 @@ import (
 //   - grok names two of six on the composer border (auto, and always-approve
 //     for bypassPermissions). default, acceptEdits, dontAsk, plan and a pane
 //     still on the startup splash all render NO suffix, which is
-//     PaneModeUnnameable — four modes and an unknown, never "default".
+//     PaneModeUnnameable — four modes and an unknown, never "default". Those
+//     two words are a TABLE for the same reason claude's spellings are: the
+//     border suffix is not a mode field, so a suffix that is not one of them
+//     is the same unknown and not a mode grok named.
 //   - codex renders NOTHING, on any screen: `-a never` and `-a on-request`
 //     differ only in the echoed argv. Its column is PaneModeNever — a
 //     permanent "—", not an unknown somebody could close with more work.
@@ -125,7 +128,7 @@ const (
 const (
 	paneModeCoveredWhy = "no mode footer on screen — a modal dialog replaces it, and the launch command in the scrollback is a claim about the launch, not a reading"
 
-	paneModeUnnameableWhy = "grok names only auto and always-approve on the composer border — default, acceptEdits, dontAsk, plan and a pane still on the startup splash all render nothing, so this is four modes and an unknown, never \"default\""
+	paneModeUnnameableWhy = "grok names only auto and always-approve on the composer border — default, acceptEdits, dontAsk, plan and a pane still on the startup splash all render nothing, and a border suffix outside those two words is grok saying something that is not a mode, so this is four modes and an unknown, never \"default\""
 
 	// Generic on purpose: `none` is a reader, and a second CLI measured to
 	// render nothing declares the same one. The measurement behind a
@@ -165,7 +168,7 @@ var paneModeReaders = map[string]PaneModeReader{
 	},
 	PaneModeGrokBorder: {
 		Read: grokPaneMode, ReadsPane: true, Absence: paneModeUnnameableWhy,
-		Contract: "the composer border's suffix: it names two of six modes, so absence is UNNAMEABLE — four modes and a pane still on the splash, never \"default\"",
+		Contract: "the composer border's suffix: it names two of six modes and the suffix is matched against those two words, so absence is UNNAMEABLE — four modes, a pane still on the splash, and any suffix that is not one of the two, never \"default\"",
 	},
 	PaneModeNone: {
 		Read: neverPaneMode, ReadsPane: false, Absence: paneModeNeverWhy,
@@ -266,6 +269,19 @@ func claudePaneMode(tail []string) PaneMode {
 	return PaneMode{State: PaneModeCovered, Why: paneModeCoveredWhy}
 }
 
+// grokBorderModes is grok's composer-border vocabulary, and it is CLOSED for
+// the same reason claudeFooterModes is: what follows the last "· " on that
+// border is not a mode FIELD, it is whatever grok chose to draw after the
+// model name. Two of the six modes are drawn there and nothing else on that
+// border was ever measured to be a mode (grok 1.0.5), so a suffix outside
+// this table is an unknown and not a reading — the direction the whole
+// three-valued field exists to hold, because a surface that says "auto" for
+// a pane it cannot read is worse than one that says "can't tell".
+var grokBorderModes = []struct{ border, mode string }{
+	{"auto", "auto"},
+	{GrokBorderAlwaysApprove, GrokBorderAlwaysApprove},
+}
+
 func grokPaneMode(tail []string) PaneMode {
 	// The startup splash gets no special case, and that is measured rather
 	// than assumed: a pane still showing the New worktree / Resume session
@@ -276,21 +292,38 @@ func grokPaneMode(tail []string) PaneMode {
 		if !strings.Contains(ln, "╰") || !strings.Contains(ln, "Grok ") {
 			continue
 		}
-		border := strings.TrimSuffix(strings.TrimSpace(ln), "─╯")
+		// TrimRight over the whole box-drawing run, not TrimSuffix of one
+		// "─╯": that run is PADDING whose length is the pane width, and the
+		// captured corpus happens to carry exactly one dash before the
+		// corner. Stripping one left a wider pane reading "auto ────",
+		// which the table below would answer safely — as an unknown — but
+		// needlessly, because the mode is right there on the screen.
+		border := strings.TrimRight(strings.TrimSpace(ln), "─╯ ")
 		i := strings.LastIndex(border, "· ")
 		if i < 0 {
 			break
 		}
-		mode := strings.TrimSpace(border[i+len("· "):])
-		m := PaneMode{State: PaneModeNamed, Mode: mode}
-		if mode == GrokBorderAlwaysApprove {
-			// The same string the operator's ~/.grok/config.toml `[ui]
-			// permission_mode` produces with no flag at all. The MODE is
-			// known; which layer set it is not, and ADR 0035 §3 is the
-			// reason anyone is reading this field.
-			m.Why = "the mode is bypassPermissions, but the border cannot say whether the launch flag or the operator's ~/.grok/config.toml set it — both render this word"
+		suffix := strings.TrimSpace(border[i+len("· "):])
+		for _, m := range grokBorderModes {
+			if suffix != m.border {
+				continue
+			}
+			p := PaneMode{State: PaneModeNamed, Mode: m.mode}
+			if m.mode == GrokBorderAlwaysApprove {
+				// The same string the operator's ~/.grok/config.toml `[ui]
+				// permission_mode` produces with no flag at all. The MODE is
+				// known; which layer set it is not, and ADR 0035 §3 is the
+				// reason anyone is reading this field.
+				p.Why = "the mode is bypassPermissions, but the border cannot say whether the launch flag or the operator's ~/.grok/config.toml set it — both render this word"
+			}
+			return p
 		}
-		return m
+		// A suffix this table does not carry. The LAST field is the only
+		// position a mode was ever measured in, so a token there that is not
+		// one of the two words is grok saying something else — a file count,
+		// a token counter, an empty pad. Reporting it would put an unmeasured
+		// string in front of the operator as if the pane had named it.
+		break
 	}
 	return PaneMode{State: PaneModeUnnameable, Why: paneModeUnnameableWhy}
 }
