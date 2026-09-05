@@ -229,8 +229,8 @@ func TestQAPaneModeNoneRendersDashAndSpendsNoPaneRead(t *testing.T) {
 	}
 }
 
-// The registry is what the grid row renders from (ADR 0057 D3, the next
-// bead), so every entry owes the row something to say: a reader, the sentence
+// The registry is what the grid row renders from (ADR 0057 D3, shipped
+// ranger-base-2p2cy), so every entry owes the row something to say: a reader, the sentence
 // an absence carries, and the one-line contract. An entry with a blank field
 // is a row that ships as scenery.
 //

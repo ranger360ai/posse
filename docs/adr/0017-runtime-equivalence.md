@@ -10,7 +10,7 @@ the counted-ness pair retired by the D4 cost seam; §4 gains
 amended 2026-08-30: §4's "not declarable" list is retired — all four
 shipped, the last two here (ranger-base-ncxa); §1's pin test exists
 (ranger-base-ncxa); §1's grid gained the five non-dispatch dimension rows
-(ranger-base-bcpa) · amended 2026-09-05: §4 gains `pane_mode:`, a registry key over the pane-mode readers, and §3's codex name-keyed branch retires through it (ADR 0057, ranger-base-re4kb)*
+(ranger-base-bcpa) · amended 2026-09-05: §4 gains `pane_mode:`, a registry key over the pane-mode readers, and §3's codex name-keyed branch retires through it (ADR 0057, ranger-base-re4kb) · amended 2026-09-05 (ranger-base-kbhlw: §1's row count corrected — `pane_mode` became the sixth row with ranger-base-2p2cy and the "five" sentence had not moved; the number is now dated, and the rendered set is the record)*
 
 > The operator, on the four-area parity breakdown: "make sure richard knows
 > to add areas to consider when making sure runtimes are equivalent. we may
@@ -77,8 +77,13 @@ prose lists of "areas" are projections and carry no authority. Concretely:
   runtime's own egress hosts, the container credential, the repo→box
   project-config channel and the sandbox/gate-shell pair were facts the
   code knew and no screen said, which is the "missing a row" bug this
-  section names. Five rows now carry them, in the same `stageRow` shape
-  with the same `declaredBy` provenance and §2's vocabulary throughout: a
+  section names. One row per dimension carries them — six at the
+  2026-09-05 amendment: bcpa's five plus `pane_mode` (ADR 0057 D3,
+  ranger-base-2p2cy), which renders from the pane-mode reader registry
+  rather than from a struct field; the count is a dated snapshot and the
+  rendered set in `runtimecheck.go` is the record — in the same `stageRow`
+  shape with the same `declaredBy` provenance and §2's vocabulary
+  throughout: a
   measured-to-differ dimension reads as a DECLARED DIFFERENCE (codex's
   `self_sandbox`; a `gate_shell: false` runtime), an unmeasured one as
   UNDECLARED / UNDECIDED, and the two are never spelled the same way.

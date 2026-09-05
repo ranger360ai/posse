@@ -10,10 +10,13 @@ item 5 folded into t4f1's engine arm, UNRUN; two L4 residuals named) ·
 amended 2026-09-05 (ranger-base-n3ywd: decision 4 gains the two L4
 twins those residuals asked for — `:ro` FILE binds of the identity files
 whose source the launcher owns, the lock siblings deliberately unbound;
-verification item 6) · lands with ranger-base-t4f1 (decision 4's common
-dir) and its successors ranger-base-672zt → ranger-base-p9h9d →
-ranger-base-017dx (decision 4's file binds and the engine arm) · owner:
-architect ·
+verification item 6) · amended 2026-09-05 (ranger-base-kbhlw: decision
+4's status paragraph flipped from in flight to shipped — ranger-base-t4f1
+had landed before the n3ywd amendment was committed and the paragraph
+still said until it lands) · decision 4's common dir shipped with
+ranger-base-t4f1 (2026-09-05) · lands with its successors
+ranger-base-672zt → ranger-base-p9h9d → ranger-base-017dx (decision 4's
+file binds and the engine arm) · owner: architect ·
 decides ADR 0023 non-goal 3 (flz7 arm a) · extends ADR 0014 §3's
 trailing-deny slot · from ranger-base-7w8g0, on ranger-base-j5s0's
 measured table*
@@ -140,11 +143,16 @@ run is no session's to write.** Enumerated, at the artifact level, in
    see the residual below. `cage: shims` has no file boundary and stays
    stated as such (ADR 0002).
 
-   Lands with ranger-base-t4f1, in flight at this amendment: until it
-   lands, `cage.go` mounts the common dir read-write whole with the gap
-   stated in its comment — which is the shipped state this item's
-   original first sentence described. The bead id is the citation, not a
-   session sha (ADR 0051).
+   Shipped with ranger-base-t4f1, landed 2026-09-05 (the bead id is the
+   citation, not a session sha, ADR 0051): `cage.go` mounts the common
+   dir `RO: true` and overlays exactly `worktrees/<own>`, `objects` and
+   `logs` (`sessionCommonDirWrites`). Before it landed, `cage.go` mounted
+   the common dir read-write whole with the gap stated in its comment —
+   the state this item's original first sentence described. This
+   paragraph called that state current for a further amendment after
+   t4f1 had landed (ranger-base-kbhlw): a "lands with" sentence is a
+   status claim, and whoever next amends a section that carries one
+   checks `git log --grep <bead>` on main before re-committing it.
 
    **The two L4 twins the common dir does not supply** (2026-09-05,
    ranger-base-n3ywd, from the residuals ranger-base-huhnw named). One
