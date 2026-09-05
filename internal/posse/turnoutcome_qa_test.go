@@ -180,12 +180,27 @@ func TestQABlindAndUntrustedBothLandOnTheSettleLine(t *testing.T) {
 		t.Errorf("the clauses must join into one parenthesis:\n%s", out)
 	}
 
-	// grok is `record: trusted` and equally blind: it gets the blindness and
-	// NOT the reassurance, because a trusted runtime that stopped closing its
-	// beads is the record-skip signal, not a footnote (ADR 0013 §4).
+	// The other half: `record: trusted` does not buy a reader. A trusted
+	// runtime with no turn_outcome: gets the blindness and NOT the
+	// reassurance, because a trusted runtime that stopped closing its beads
+	// is the record-skip signal, not a footnote (ADR 0013 §4).
+	//
+	// A template runtime rather than a built-in, and that is the arm's whole
+	// robustness: grok used to be the fixture for this — trusted AND blind —
+	// and stopped being one the day it got a reader (ranger-base-fc8go), so
+	// the pin was measuring a coincidence of the built-in table rather than
+	// the independence of two declarations. Written this way it survives
+	// codex getting a reader too.
 	b2, fake2 := newTestBackend(t)
 	d2 := newTestDispatcher(t, b2)
-	runtimePersona(t, b2.App, "ranger", "[go]", "grok")
+	if err := os.MkdirAll(b2.App.RuntimesDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "command: trustedblind {file}\nrecord: trusted\nrecord_why: a dispatched session of it was measured closing its bead\n"
+	if err := os.WriteFile(filepath.Join(b2.App.RuntimesDir(), "trustedblind.yaml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runtimePersona(t, b2.App, "ranger", "[go]", "trustedblind")
 	qaRepo(t, b2.App,
 		`[{"id":"a-1","title":"t","labels":["go"]}]`,
 		`[{"id":"a-1","title":"t","status":"in_progress","assignee":"ranger"}]`)
@@ -194,11 +209,40 @@ func TestQABlindAndUntrustedBothLandOnTheSettleLine(t *testing.T) {
 		t.Fatal(err)
 	}
 	out2 := dispatcherOut(d2)
-	if !strings.Contains(out2, "posse reads no turn outcome on grok") {
+	if !strings.Contains(out2, "posse reads no turn outcome on trustedblind") {
 		t.Errorf("a trusted runtime is still blind and must say so:\n%s", out2)
 	}
 	if strings.Contains(out2, "record: untrusted") {
-		t.Errorf("grok is record: trusted — no degrade clause belongs on its line:\n%s", out2)
+		t.Errorf("trustedblind is record: trusted — no degrade clause belongs on its line:\n%s", out2)
+	}
+}
+
+// grok is the runtime that used to carry both facts the test above splits —
+// `record: trusted` and turn-outcome blind — and since ranger-base-fc8go it
+// carries neither: its settle line is the plain disagreement, with no clause
+// about anything posse cannot see. The arm exists because the blindness
+// clause going quiet on a runtime is exactly what nobody notices.
+func TestQAGrokSettleCarriesNoBlindnessClause(t *testing.T) {
+	t.Parallel()
+	b, fake := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+	runtimePersona(t, b.App, "ranger", "[go]", "grok")
+	qaRepo(t, b.App,
+		`[{"id":"a-1","title":"t","labels":["go"]}]`,
+		`[{"id":"a-1","title":"t","status":"in_progress","assignee":"ranger"}]`)
+	idleClaude(t, fake)
+	if _, err := d.Run("", "", 0); err != nil {
+		t.Fatal(err)
+	}
+	out := dispatcherOut(d)
+	if !strings.Contains(out, "◑ a-1") {
+		t.Fatalf("a settle-without-close must still be reported:\n%s", out)
+	}
+	if strings.Contains(out, "posse reads no turn outcome on grok") {
+		t.Errorf("grok declares a reader now — the blindness clause is a lie:\n%s", out)
+	}
+	if strings.Contains(out, "record: untrusted") {
+		t.Errorf("grok is record: trusted — no degrade clause belongs on its line:\n%s", out)
 	}
 }
 
