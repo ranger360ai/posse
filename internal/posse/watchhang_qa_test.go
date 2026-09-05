@@ -852,6 +852,7 @@ func TestQAWatchStreamWritesGoThroughTheDispatcher(t *testing.T) {
 		{"watch.go", "ReportPosseBinary(d.Out)", "which binary this loop is, said once"},
 		{"watch.go", "fmt.Fprintln(d.Out, lag.Line())", "the launcher-lag ABSTENTION, said once in the header; the number itself goes through d.println in the pass"},
 		{"watch.go", `d.App.ReportHookWall(d.Out, "watch")`, "L3 hook wall, swept once"},
+		{"watch.go", "d.App.ReportAnchorState(d.Out)", "the promote-anchor state, read once in the header"},
 		{"watch.go", "d.App.PlanUsageStaleAfter(d.errw())", "the stale-after TYPO line, said once"},
 		{"watch.go", `"warning: cannot record the watch loop at %s`, "stampWatchPid, called from the header at Watch's head"},
 		{"watch.go", `"warning: cannot open the watch log %s`, "teeWatchLog, called from the header at Watch's head"},

@@ -5615,6 +5615,18 @@ one-deployment procedure). What is worth knowing here rather than there:
   The hook is at the top of `planLaunch`, so it is one place and not nine.
   **No manifest = nothing was promoted here = nothing to check**, which is what
   keeps every pre-0015 home and every test home launching.
+- **And absence is now SAID, once per watch loop** (ranger-base-xevp7,
+  `internal/posse/anchorstate.go`). The line above is why: a missing
+  `promoted.json` verifies clean by design, so an anchor deleted by accident
+  — a cleanup script, a botched restore — was invisible on every surface,
+  forever. The `--watch` preamble now prints one read-only line beside the
+  hook-wall sweep: `constitution: promoted <sha> <date>` / `seeded <date>` /
+  `never promoted — no promoted.json`. It refuses nothing, degrades nothing
+  and never fires on absence, and it claims nothing against a session that
+  means it — one that re-stamps the manifest leaves a home that reads
+  `promoted` here (ADR 0015 §3's tier-conditioned claim, ranger-base-zio33).
+  What it buys is an ACCIDENTAL deletion visible at the operator's next
+  touch point instead of never.
 - **Measured, since ADR 0015 marked it ASSUMED and it sits on the refusal
   path**: 7ms for 121 files / ~1.2MB, worst of 20 runs — several times the live
   constitution's size (`TestVerifyPromotedCostIsNegligible`, which fails above

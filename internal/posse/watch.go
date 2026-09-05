@@ -296,6 +296,16 @@ func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string,
 	// moved. Read-only, like the launch probe it reuses; findings name the
 	// repo and the command, and this loop dispatches either way.
 	d.App.ReportHookWall(d.Out, "watch")
+	// The home's anchor state, read once, right here (ADR 0015 §3,
+	// ranger-base-xevp7). Same reasoning as the hook wall above — once per
+	// loop, operator-facing, read-only — and the same shape: this loop
+	// dispatches identically whatever it prints. An ABSENT promoted.json is
+	// not a mismatch and never will be (the (nil, nil) branch is what keeps
+	// pre-0015 homes and every RHQ_HOME rig launching), which is exactly
+	// why it needs a line: before this, a deleted anchor was invisible on
+	// every surface forever. anchorstate.go's doc says what it does not
+	// buy — nothing against a session that re-stamps.
+	d.App.ReportAnchorState(d.Out)
 	// `plan_usage_stale_after:`, read once for its TYPO line and nothing
 	// else (ranger-base-lpoui). The per-pass read below discards that
 	// writer: a malformed threshold must be visible, and a loop that

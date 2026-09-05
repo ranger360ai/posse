@@ -127,6 +127,27 @@ not make it for you.
 
 ### Added
 
+**The watch preamble now names the config home's promote-anchor state, once
+per loop: `constitution: promoted <sha> <date>`, `constitution: seeded
+<date>`, or `constitution: never promoted — no promoted.json`.**
+
+`promoted.json` is what the launch verify checks the home against, and an
+ABSENT one is by design not a mismatch — every home that predates the
+manifest and every `RHQ_HOME` test rig must keep launching. The consequence
+was that a manifest deleted by accident (a cleanup script, a botched restore,
+an `rm -rf` one directory up) was invisible on every surface, forever:
+nothing said the anchor had gone, and every launch went on verifying clean
+against nothing.
+
+This is one read-only line, printed beside the hook-wall sweep at the top of
+the log a `--watch` loop writes, and it changes no launch behaviour — it
+refuses nothing, degrades nothing, and absence still launches exactly as it
+did. It also claims nothing against a session that means it: one that
+re-stamps the manifest with its own hashes leaves a home that reads
+`promoted` here, which is why ADR 0015 §3 calls the manifest a fence against
+accident and drift rather than a wall. What it buys is that an accidental
+deletion is visible the next time you read the log instead of never.
+
 **A dispatch pass now RETIRES a session worktree it can prove is finished
 with, instead of leaving it standing forever. `retire_tree_after:` (default
 `1h`) is the dial and `off` restores the old behaviour.**

@@ -253,7 +253,7 @@ the same way twice:
   (ranger-base-zio33's one mechanism): a read-only **anchor-state
   line** on the operator surfaces that already sweep launch health at
   the watch preamble (beside `ReportHookWall`) — `promoted <sha>
-  <date>` / `seeded by init <date>` / `never promoted — no
+  <date>` / `seeded <date>` / `never promoted — no
   promoted.json` — so an *accidental* deletion (cleanup script,
   botched restore) is visible at the operator's next touch point
   instead of never. It changes no launch behavior, refuses nothing,
@@ -749,9 +749,15 @@ ADR blocks the parallel beads already running (dk5, w1b, g7lt).
    after `rm $RHQ_HOME/promoted.json`, `constitution: never promoted —
    no promoted.json` — and the launch behavior of all three states is
    unchanged (absence still launches; item 3's mismatch still
-   DEGRADEs/refuses). *(Unverified until ranger-base-xevp7 is built;
-   the C/D silences themselves are MEASURED — ranger-base-bejb repro
-   at 12ce5be.)*
+   DEGRADEs/refuses). *(Built 2026-09-05, ranger-base-xevp7:
+   internal/posse/anchorstate.go, called once from the watch preamble
+   beside `ReportHookWall`. Pinned in
+   internal/posse/anchorstate_qa_test.go — the bytes of each state,
+   exactly one such line on the preamble, and both halves of the
+   "changes nothing" clause: absence verifies OK while the line says
+   `never promoted`, and a tampered home still fails VerifyPromoted
+   while the line says `promoted`. The C/D silences themselves are
+   MEASURED — ranger-base-bejb repro at 12ce5be.)*
 
 ## Measured versus assumed
 
