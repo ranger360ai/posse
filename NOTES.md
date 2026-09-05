@@ -1620,7 +1620,7 @@ override hook is a stub returning undefined, so only the root-owned OS path
 (`/Library/Application Support/ClaudeCode/managed-settings.json` on macOS,
 `/etc/claude-code/` elsewhere) feeds the policy tier.
 
-Three traps worth keeping:
+Four traps worth keeping:
 
 - **A second `--settings` REPLACES the first.** It is not an additional
   source. So the pin merges into the one payload the launch already carries
@@ -1638,6 +1638,18 @@ Three traps worth keeping:
   `CLAUDE_CONFIG_DIR`, whatever the directory resolves to, so a pin written
   against it measures the flag's presence rather than the directory. Only
   `loggedIn` says what it means.
+- **A test that sandboxes `HOME` has not sandboxed anything that reads the
+  config dir.** `ClaudeConfigDirIn` answers `$CLAUDE_CONFIG_DIR` first and
+  only falls to `$HOME/.claude` when it is unset, and every posse-dispatched
+  seat exports it — so a child launched with `append(os.Environ(), "HOME="+…)`
+  reads the OPERATOR's tree on exactly the box where the suite runs, and
+  nowhere else. It cost the cost pins 540x: measured one variable apart, the
+  same `posse cost` run took 0.06s and found 0 rows without the inherited
+  value and 33s and 29 live rows with it, and a mutant printed the operator's
+  real per-bead attribution into test output (ranger-base-t7hgi). Any test
+  sandbox that fences `HOME` for a config-dir reader must name
+  `CLAUDE_CONFIG_DIR` beside it; `cmd/posse/costplan_test.go`'s `planEnvAt`
+  is the shape, pinned with a fixture ledger and a control arm that finds it.
 
 The live pin is `internal/posse/credentialdirpin_live_test.go`
 (`RHQ_LIVE_CLAUDE=1`), and its first arm is a control: it asserts the

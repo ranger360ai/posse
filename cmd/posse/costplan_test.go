@@ -96,13 +96,100 @@ func planEnv(home string) []string {
 // HOME is the sandbox too, not just RHQ_HOME: `posse cost`'s transcript
 // scan reads $HOME/.claude/projects, and a test that let it reach the
 // operator's own would be measuring a machine instead of a build.
+//
+// And HOME alone does not hold it. The scan roots at ClaudeConfigDirIn
+// (trust.go), which answers $CLAUDE_CONFIG_DIR FIRST and only falls to
+// $HOME/.claude when that is unset — and every posse-dispatched seat
+// exports it, so on the box where this suite actually runs, os.Environ()
+// carried the operator's own ~/.claude straight past the sandbox HOME.
+// Measured, one variable apart, before this row existed: 0 live rows in
+// 0.06s without it, 29 live rows in 33s with it, and a mutant that dropped
+// the footer printed 43 rows of the operator's real attribution into test
+// output. The 540x is also the apparatus slowness ranger-base-nmab1's
+// bracket was written to survive (ranger-base-t7hgi, from -838su).
+// Named, not emptied: ClaudeConfigDirIn treats empty as unset and would
+// land on the sandbox HOME anyway, but the claude runtime's own `??`
+// treats empty as the empty string, and a row that only works because
+// posse and the runtime disagree is a row that reads as a mistake.
 func planEnvAt(home, url string) []string {
 	return append(os.Environ(),
 		"HOME="+filepath.Join(home, "h"),
+		"CLAUDE_CONFIG_DIR="+filepath.Join(home, "h", ".claude"),
 		"RHQ_HOME="+home,
 		"RHQ_HERDR_BIN="+filepath.Join(home, "herdr-must-not-run"),
 		"RHQ_PLAN_USAGE_URL="+url,
 	)
+}
+
+// The CLAUDE_CONFIG_DIR row above is the whole of the sandbox on the box
+// this suite actually runs on, and nothing that USES planEnvAt reds when it
+// is deleted — every test here keeps passing, just slowly and against the
+// operator's real ledger. So it is pinned here, directly, against a fixture
+// ledger instead of the operator's.
+//
+// The env this test's own process carries names a config dir with one
+// planted transcript in it, exactly as a dispatched seat's does. Two arms
+// one variable apart:
+//
+//	RIGHT  planEnv(home)                          -> the canary must not print
+//	WRONG  planEnv(home) + CLAUDE_CONFIG_DIR=leak -> the canary MUST print
+//
+// The wrong arm is not decoration: without it a fixture the scanner quietly
+// ignores — a record shape it does not parse, a canary spelled two ways —
+// would make the right arm green for the wrong reason, and this pin would
+// assert nothing on any box. With it, deleting the row from planEnvAt reds
+// the right arm and leaves the wrong one green (ranger-base-t7hgi).
+func TestCostSandboxHoldsAgainstAnInheritedClaudeConfigDir(t *testing.T) {
+	const canary = "leak-canary-t7hgi"
+	bin := buildRhq(t)
+	home := t.TempDir()
+	leak := plantTranscript(t, canary)
+
+	// What a posse-dispatched seat exports. planEnvAt appends after
+	// os.Environ(), and exec keeps the LAST spelling of a name, so the
+	// sandbox row is what the child must see.
+	t.Setenv("CLAUDE_CONFIG_DIR", leak)
+
+	stdout, stderr, code := runPosse(t, bin, planEnv(home), "cost")
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %q", code, stderr)
+	}
+	if strings.Contains(stdout+stderr, canary) {
+		t.Errorf("the scan escaped the sandbox through CLAUDE_CONFIG_DIR and read %s:\n%s", leak, stdout)
+	}
+
+	// The control: the same binary, the same fixture, the sandbox row
+	// overridden. A green right arm means something only because this one
+	// finds the canary.
+	stdout, stderr, code = runPosse(t, bin, append(planEnv(home), "CLAUDE_CONFIG_DIR="+leak), "cost")
+	if code != 0 {
+		t.Fatalf("control arm: exit %d, stderr %q", code, stderr)
+	}
+	if !strings.Contains(stdout, canary) {
+		t.Fatalf("the control arm found nothing, so the arm above measured nothing: the fixture at %s is not one the scan reads\n%s", leak, stdout)
+	}
+}
+
+// plantTranscript writes a config dir holding one transcript the cost scan
+// segments: the work-prompt line that opens a bead segment (cost.go's
+// workPromptRe) and one assistant record with usage, which is what makes
+// the segment survive the len(s.Msgs) > 0 filter and reach the report.
+func plantTranscript(t *testing.T, bead string) string {
+	t.Helper()
+	dir := t.TempDir()
+	proj := filepath.Join(dir, "projects", "p")
+	if err := os.MkdirAll(proj, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	lines := []string{
+		`{"type":"user","timestamp":"` + now + `","message":{"content":"Work beads issue ` + bead + `: fixture"}}`,
+		`{"type":"assistant","timestamp":"` + now + `","message":{"id":"m1","model":"claude-opus-5","usage":{"input_tokens":10,"output_tokens":20}}}`,
+	}
+	if err := os.WriteFile(filepath.Join(proj, "s.jsonl"), []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
 }
 
 func runPosse(t *testing.T, bin string, env []string, args ...string) (stdout, stderr string, code int) {
