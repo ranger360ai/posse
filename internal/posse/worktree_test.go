@@ -10,7 +10,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -2016,6 +2018,66 @@ func TestListingAndSweepAgreeOnWhatOneTreeHolds(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// The listing PRESCRIBES a command, and until now nothing ran it: the arms
+// above assert the sentence CONTAINS `branch -f <branch>`, which a
+// prescription naming the wrong directory satisfies just as well. That one
+// is not hypothetical — `git -C <repo> branch -f <branch> HEAD` typed at the
+// main checkout instead of the tree moves the branch to the BASE's tip and
+// throws away the very commits the line exists to rescue, and it reads
+// correctly in the listing.
+//
+// So this arm takes the command out of the printed sentence the way an
+// operator does — copy, paste, run — and then asks the two questions the
+// string match cannot: did the branch end up at the WORK, and does the
+// listing stop asking for the rescue once it has been done.
+// (ranger-base-cakl7, verifying ranger-base-d8o6)
+func TestTheOffBranchPrescriptionIsRunnableAndRescuesTheWork(t *testing.T) {
+	t.Parallel()
+	a := wtApp(t)
+	repo := wtRepo(t)
+	commitIn(t, repo, "adr.md", "status: proposed\n", "seed the adr")
+	tr, err := a.EnsureSessionTree(repo, "s-1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A caged session's shape: detached on purpose, its commits on no ref.
+	mustGit(t, repo, "config", detachedKey(tr.Branch), "1")
+	mustGit(t, tr.Path, "checkout", "-q", "--detach")
+	commitIn(t, tr.Path, "adr.md", "status: accepted\n", "s: the caged work")
+	work := mustGit(t, tr.Path, "rev-parse", "HEAD")
+
+	var out strings.Builder
+	if err := ListSessionTrees(&out, []string{repo}); err != nil {
+		t.Fatal(err)
+	}
+	listing := out.String()
+	m := regexp.MustCompile("`(git -C [^`]+)`").FindStringSubmatch(listing)
+	if m == nil {
+		t.Fatalf("the listing prescribes no command to run:\n%s", listing)
+	}
+	// Split the way a shell would. The fixture's paths carry no spaces, and
+	// a session tree's name never does either (SessionForBead).
+	argv := strings.Fields(m[1])
+	if b, err := exec.Command(argv[0], argv[1:]...).CombinedOutput(); err != nil {
+		t.Fatalf("the prescription the listing printed does not run: %v\n%s\nline: %s", err, b, m[1])
+	}
+
+	if got := mustGit(t, repo, "rev-parse", "refs/heads/"+tr.Branch); got != work {
+		t.Errorf("after the prescription %s is at %s, want the work at %s — the line ran and rescued nothing",
+			tr.Branch, got, work)
+	}
+	var after strings.Builder
+	if err := ListSessionTrees(&after, []string{repo}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(after.String(), "detached HEAD") {
+		t.Errorf("the listing still asks for a rescue that has been done:\n%s", after.String())
+	}
+	if !strings.Contains(after.String(), "1 commit(s) not on main") {
+		t.Errorf("the work is on the branch and unlanded, and the listing owes that count:\n%s", after.String())
 	}
 }
 
