@@ -65,7 +65,7 @@ func TestQAParityAccountRefusalIsNamedOnEveryRuntime(t *testing.T) {
 	}{
 		{runtime: "claude", readable: true},
 		{runtime: "codex"},
-		{runtime: "grok"},
+		{runtime: "grok", readable: true}, // grok-session-store, ranger-base-fc8go
 		{runtime: "mycli", template: true, readable: true},
 	}
 	for _, c := range cases {
@@ -310,12 +310,15 @@ func TestQATurnOutcomeDeclarationIsRegistryKeyed(t *testing.T) {
 }
 
 // The built-in table, which is where the fleet's answer actually lives: claude
-// reads its own transcript, codex and grok declare no reader (both reachable
-// in principle — ranger-base-xaev — neither built).
+// reads its own transcript and grok its own session store (ranger-base-fc8go,
+// over the artifact docs/adr/0013-turn-outcome-refusal-probe.md captured).
+// codex declares none — reachable in principle (ranger-base-xaev), but its
+// refusal artifact has never been captured, and ADR 0013 §1's promotion rule
+// is that a reader waits for the capture rather than guessing the shape.
 func TestQABuiltinTurnOutcomeDeclarations(t *testing.T) {
 	t.Parallel()
 	a := checkApp(t)
-	want := map[string]bool{"claude": true, "codex": false, "grok": false}
+	want := map[string]bool{"claude": true, "codex": false, "grok": true}
 	for name, readable := range want {
 		rt, err := a.LoadRuntime(name)
 		if err != nil {
@@ -324,6 +327,16 @@ func TestQABuiltinTurnOutcomeDeclarations(t *testing.T) {
 		if rt.ReadsTurnOutcome() != readable {
 			t.Errorf("%s reads turn outcome = %v, want %v (adapter %q)", name, rt.ReadsTurnOutcome(), readable, rt.TurnOutcomeAdapter)
 		}
+	}
+	// The two readers are not one reader wearing two names: grok's refusal is
+	// not in a transcript at all, so a built-in pointed at the wrong key would
+	// read nothing and say nothing while looking exactly like this.
+	grok, err := a.LoadRuntime("grok")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if grok.TurnOutcomeAdapter != TurnOutcomeGrokSessionStore {
+		t.Errorf("grok declares turn_outcome: %q, want %q", grok.TurnOutcomeAdapter, TurnOutcomeGrokSessionStore)
 	}
 }
 

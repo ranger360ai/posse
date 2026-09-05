@@ -968,8 +968,10 @@ command: <cli> --some-unattended-flag --rules="$(cat {file})"
 #                              # turn did — the fact that tells an exhausted
 #                              # account apart from an agent that settled
 #                              # without closing its bead. The value names a
-#                              # reader posse ships (today: claude-transcript,
-#                              # the ~/.claude/projects/*.jsonl scanner); a
+#                              # reader posse ships (claude-transcript, the
+#                              # ~/.claude/projects/*.jsonl scanner, and
+#                              # grok-session-store, the
+#                              # $GROK_HOME/sessions/*/*/updates.jsonl one); a
 #                              # name nothing implements REFUSES at load.
 #                              # Left out, dispatch says so on every
 #                              # settle-without-close line for this runtime.

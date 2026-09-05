@@ -85,7 +85,7 @@ This contract is what **dispatch** requires of that same process.
 | **promptable** | the work prompt is the first user turn, *without* posse answering a dialog | runtime `prompt: argv` (preferred) or `prompt: typed` + `startup_wait:` | **refuse this launch**, loudly; see §2 |
 | **work** | herdr `working` then a settled state | herdr detection (already) | wait ladder as today (NOTES §6–7); a timeout is a check-in, never an unclaim |
 | **record** | bead `closed`, or a comment plus an ASK/question that takes it out of `bd ready` | runtime `record: trusted\|untrusted` (§4) | settle-without-record is **incomplete**, never ✓; unattended `--resume` re-prompts; see §4 |
-| **settle** | herdr `idle`/`done`/`blocked` *Seen()* — a matched rule, not the idle-fallback — plus, where readable, the runtime's own record of what the first turn did | pane half: herdr (already); turn half: runtime `turn_outcome:`, a registry key naming the reader (today: `claude-transcript`) | pane half: existing ignorance path, claim kept. Turn half: **turn-blind** — an exhausted account and a settle-without-close are the same line; the per-bead blindness clause names the missing fact, and the per-pass account-degraded report (§5) is the roll-up |
+| **settle** | herdr `idle`/`done`/`blocked` *Seen()* — a matched rule, not the idle-fallback — plus, where readable, the runtime's own record of what the first turn did | pane half: herdr (already); turn half: runtime `turn_outcome:`, a registry key naming the reader (today: `claude-transcript`, `grok-session-store`) | pane half: existing ignorance path, claim kept. Turn half: **turn-blind** — an exhausted account and a settle-without-close are the same line; the per-bead blindness clause names the missing fact, and the per-pass account-degraded report (§5) is the roll-up |
 | **account** | dollars in `posse cost` — a cost-adapter reading that *prices* (`CostPriced()`), or an explicit uncounted cap | adapter registry (ADR 0012 D4; registering IS the declaration — no `cost_adapter:` field, a second hand-kept declaration drifted, ranger-base-0lg6) or config `uncounted_cap_<runtime>:` | **account-degraded**, two ways — UNCOUNTED (nothing reads it) or UNPRICED (read, never priced): loud every pass; dispatchable; the cap is the brake (§5) |
 
 `posse runtime check <name>` prints this grid for a runtime. Unknown is
@@ -614,7 +614,10 @@ row).
 - `runtime.go` / yaml: `prompt: argv|typed`, `startup_wait:`,
   `record: trusted|untrusted`, `native_rules:`, existing `model_<tier>:`;
   since 2026-08-28 also `turn_outcome: <registry key>` (claude
-  `claude-transcript`, every other runtime none — ranger-base-02zr).
+  `claude-transcript` — ranger-base-02zr; grok `grok-session-store` since
+  2026-09-05, promoted on the captured artifact rather than a guessed
+  shape — ranger-base-e123's probe, then ranger-base-fc8go; codex none,
+  its refusal artifact still uncaptured).
   Built-in defaults after the probe (it held, 2026-08-25): claude
   `typed` (works; argv is an allowed later unify), grok/codex `argv`
   with no `startup_wait:`; claude+grok `record: trusted`, codex

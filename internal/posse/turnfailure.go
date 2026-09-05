@@ -24,10 +24,11 @@ import (
 // the first one may clear a failure marker.
 type TurnOutcomeReader func(dir, bead string, since time.Time) (message string, observed bool)
 
-// TurnOutcomeClaudeTranscript is the one reader that exists: claude's own
-// JSONL transcript under ~/.claude/projects. A runtime whose CLI writes
-// that same shape declares `turn_outcome: claude-transcript` and is read by
-// it; anything else needs a reader here first (ADR 0012 D4's adapter seam).
+// TurnOutcomeClaudeTranscript reads claude's own JSONL transcript under
+// ~/.claude/projects. A runtime whose CLI writes that same shape declares
+// `turn_outcome: claude-transcript` and is read by it; anything else needs a
+// reader here first (ADR 0012 D4's adapter seam). grok's store is the second
+// one built — TurnOutcomeGrokSessionStore, turnfailure_grok.go.
 const TurnOutcomeClaudeTranscript = "claude-transcript"
 
 // turnOutcomeReaders maps a runtime's declared turn_outcome: adapter to the
@@ -35,12 +36,19 @@ const TurnOutcomeClaudeTranscript = "claude-transcript"
 // not a key here is refused at load, so a declaration can never promise a
 // reading nothing performs.
 //
-// codex writes ~/.codex/sessions/*.jsonl and grok writes
-// $GROK_HOME/sessions/<cwd>/<id>/ (MEASURED, ranger-base-xaev), so both are
-// reachable in principle and neither has a reader yet — which is a declared
-// blindness on those runtimes, printed on the settle line, not a silence.
+// grok's store is read since ranger-base-fc8go: its refusal artifact was
+// captured first and pinned as a fixture, which is the order ADR 0013 §1's
+// promotion rule sets (docs/adr/0013-turn-outcome-refusal-probe.md).
+//
+// codex writes ~/.codex/sessions/*.jsonl (MEASURED, ranger-base-xaev) and is
+// reachable in principle, but its refusal artifact has NOT been captured —
+// its account was alive when the probe ran and the probe was told not to
+// spend to force one — so it has no reader yet, and a reader built over a
+// guessed shape is exactly what the promotion rule refuses. That is a
+// declared blindness on codex, printed on the settle line, not a silence.
 var turnOutcomeReaders = map[string]TurnOutcomeReader{
 	TurnOutcomeClaudeTranscript: FindClaudeTurnOutcome,
+	TurnOutcomeGrokSessionStore: FindGrokTurnOutcome,
 }
 
 // TurnOutcomeAdapters is every registered adapter name, sorted — what a
@@ -55,9 +63,9 @@ func TurnOutcomeAdapters() []string {
 }
 
 // TurnOutcomeReaderFor is the reader a runtime's declaration resolves to,
-// or nil when it declares none. nil is the honest answer for every runtime
-// but claude today: posse cannot tell an exhausted account from an ordinary
-// settle there, and saying so is this seam's whole point (ranger-base-02zr).
+// or nil when it declares none. nil is the honest answer for codex today:
+// posse cannot tell an exhausted account from an ordinary settle there, and
+// saying so is this seam's whole point (ranger-base-02zr).
 func TurnOutcomeReaderFor(rt *Runtime) TurnOutcomeReader {
 	if rt == nil {
 		return nil

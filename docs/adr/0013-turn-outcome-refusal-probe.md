@@ -119,6 +119,32 @@ equivalently `events.jsonl`'s last `turn_ended.outcome`), with
 bead follows this probe: ranger-base-<see e123's comments for the id>,
 `-a dinesh -l code`.
 
+### Follow-up: what the reader keys on, and one thing above that it does not
+
+`ranger-base-fc8go` built that reader (`internal/posse/turnfailure_grok.go`,
+`turn_outcome: grok-session-store`) and censused all 192 `turn_completed`
+records on this box before choosing which of the three discriminators to
+carry. Two corrections to the two-session reading above, both from that
+census (2026-09-05):
+
+- **`stop_reason` has a third value.** `end_turn` 180×, `error` 7×,
+  **`cancelled` 5×** — a turn that ran and was stopped (usage present, no
+  `agent_result`). It is not a refusal and the reader does not report it as
+  one; keying on "anything but `end_turn`" would have.
+- **"a refused turn never carries `usage`" is false.** One of the seven
+  errors carries a full `usage` object — a turn 190,817 tokens and six model
+  calls in when the account went out from under it. Discriminator 1's
+  usage-absence half is a coincidence of the two sessions this probe read,
+  and a reader built on it would have called that refusal a healthy turn.
+
+So the reader keys on `stop_reason:"error"` **plus a non-empty
+`agent_result`**, and on nothing else: discriminator 3's `retry_state` row is
+real (7/7) but says the same thing one record earlier. The `agent_result`
+string is surfaced verbatim rather than pattern-matched for "402" — grok's
+`stop_reason` is a purpose-built field, so unlike claude's synthetic
+assistant message it does not have to prove it is a limit before being
+believed.
+
 ## codex — not captured; stays trigger-shaped
 
 codex's account was alive on 2026-08-28 (`ranger-base-unzn`: `codex exec

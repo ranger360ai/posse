@@ -3178,6 +3178,26 @@ type pendingBead struct {
 	unseen   bool
 	result   chan promptResult
 	prompted time.Time
+	// launched is when fire() started this bead's launch — BEFORE
+	// launchSession, where the prompt of an argv runtime is delivered at
+	// exec. It is the floor a turn_outcome: reader is given, and prompted
+	// is not, because on `prompt: argv` the two are not the same instant
+	// and only one of them precedes the turn: the CLI has the prompt from
+	// its first millisecond, while prompted is stamped after launchSession
+	// has waited for herdr to SEE an agent in the pane and after the
+	// effective-tier preflight. A grok account that refuses answers in
+	// under a second, so its whole session store record — prompt and
+	// turn_completed alike — is written before prompted exists, and a
+	// reader floored at prompted would have read every one of them as
+	// "nothing observed" (ranger-base-fc8go).
+	//
+	// On the typed path this only widens the window from the prompt back to
+	// the launch, which cannot admit somebody else's turn: nothing this
+	// dispatch could be confused with happens in a session between fire()
+	// starting and fire() prompting it. prompted keeps every other job it
+	// has — the wait math and the seat ledger both mean "when the work
+	// started", and that is still the prompt.
+	launched time.Time
 }
 
 type promptResult struct {
@@ -3204,6 +3224,8 @@ type promptResult struct {
 // ranger-base-deaz).
 func (d *Dispatcher) fire(is RepoIssue, persona, session, runtime, tier, tierWhy string, overflowed bool, held *LaunchLock) (*pendingBead, error) {
 	ag, _ := d.App.LoadAgent(persona)
+	// Stamped before the launch, not after it: see pendingBead.launched.
+	launched := time.Now()
 	// The work prompt, assembled lazily: on the argv path launchSession
 	// needs it BEFORE the session exists, and on the typed path it is built
 	// after the launch so it can name the tier the session really got. The
@@ -3244,7 +3266,7 @@ func (d *Dispatcher) fire(is RepoIssue, persona, session, runtime, tier, tierWhy
 	d.printf("· %-14s → %s  (%s, %s via %s)%s\n", is.ID, session, how, tier, tierWhy, over)
 	p := &pendingBead{is: is, persona: persona, session: session, target: l.target, runtime: runtime,
 		resumed: l.resumed, delivered: l.delivered, unseen: l.unseen,
-		result: make(chan promptResult, 1), prompted: time.Now()}
+		result: make(chan promptResult, 1), prompted: time.Now(), launched: launched}
 	switch {
 	case l.unseen:
 		// Nothing to wait on: a settle-wait started over herdr's idle guess
@@ -3417,7 +3439,7 @@ wait:
 	message, observed := "", false
 	if showErr != nil || after.Status != "closed" {
 		if find != nil {
-			message, observed = find(p.is.Dir, p.is.ID, p.prompted)
+			message, observed = find(p.is.Dir, p.is.ID, p.launched)
 		}
 		if observed {
 			if err := d.HB.MarkTurnFailure(p.session, message); err != nil {

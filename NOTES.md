@@ -1870,7 +1870,7 @@ runtime's own record says whether a turn actually ran.
 | `startup_wait:` | duration, default 45s | how long a launch may take to reach a promptable screen. Measured per runtime — 45s is a *claude* number |
 | `record:` (+ `record_why:`) | `untrusted` (default) / `trusted` | whether a **dispatched** session of this runtime has been MEASURED to close its bead |
 | `native_rules:` | file names | the rulebooks this CLI discovers by itself, ahead of anything posse types |
-| `turn_outcome:` | a reader name (`claude-transcript`), default none | whether posse can read what this runtime's own first turn DID — the fact that separates an exhausted account from an agent that worked and skipped the bead |
+| `turn_outcome:` | a reader name (`claude-transcript`, `grok-session-store`), default none | whether posse can read what this runtime's own first turn DID — the fact that separates an exhausted account from an agent that worked and skipped the bead |
 
 `posse runtime check <name>` prints the grid: each stage's observable, who
 declared it, and what a missing one costs — always a named degrade or a
@@ -1887,8 +1887,8 @@ trused` silently reading as untrusted is exactly the silence this contract
 removes.
 
 `turn_outcome:` is a **registry key, not prose**: the value names a reader
-that exists in `internal/posse/turnfailure.go` (today there is exactly one,
-`claude-transcript`), and a value no reader implements refuses at load for
+that exists in `internal/posse/turnfailure.go` (today `claude-transcript`
+and `grok-session-store`), and a value no reader implements refuses at load for
 the same reason `record: trused` does — a declaration that promises a
 reading nothing performs is worse than no declaration.
 
@@ -2101,10 +2101,21 @@ second is a **fact posse does not have**. Neither is a verdict — the two
 causes are still one `posse peek` apart, and a harness that guessed here
 would be guessing exactly where it just admitted it cannot see. The
 per-pass half of the same honesty is the account-degraded report (ADR 0013
-§5); this is its per-bead half. codex writes `~/.codex/sessions/*.jsonl`
-and grok writes `$GROK_HOME/sessions/<cwd>/<id>/` (`ranger-base-xaev`), so
-both are reachable in principle — building those readers is a decision, not
-an oversight. (`internal/posse/turnoutcome_qa_test.go`.)
+§5); this is its per-bead half.
+
+grok's reader was built once the artifact behind it was captured
+(`ranger-base-e123`'s probe, then `ranger-base-fc8go`): grok does NOT write
+its refusal into a transcript — a refused turn leaves `chat_history.jsonl`
+silent — so `turn_outcome: grok-session-store` reads the typed record in
+`$GROK_HOME/sessions/<cwd>/<id>/updates.jsonl` instead
+(`internal/posse/turnfailure_grok.go`). codex writes
+`~/.codex/sessions/*.jsonl` (`ranger-base-xaev`) and is reachable the same
+way, but its refusal artifact has never been captured — its account was
+alive when the probe ran, and forcing one means spending until a quota
+trips — so it declares none, and the order matters: a reader written over a
+shape nobody measured is worse than the blindness it replaces, which is why
+codex's line above is still the honest one. (`internal/posse/turnoutcome_qa_test.go`,
+`internal/posse/turnoutcomegrok_qa_test.go`.)
 
 ### The reap guard: dirty tree + open bead is not killed (ADR 0013 §4)
 

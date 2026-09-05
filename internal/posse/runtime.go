@@ -1462,7 +1462,13 @@ var builtinRuntimes = []Runtime{
 		// grok 1.0.5); the other four and the startup splash render nothing,
 		// which is ?unnamed and never "default".
 		PaneModeAdapter: PaneModeGrokBorder,
-		NativeRules:     grokNativeRules, Interstitials: GrokInterstitials, PIDVoid: GrokPIDVoid,
+		// turn_outcome: NOT the transcript — a refused turn leaves grok's
+		// chat_history.jsonl silent, and the failure is typed JSON in the
+		// session store beside it (turnfailure_grok.go). Promoted on the
+		// captured artifact, never a guessed one: ADR 0013 §1's rule, and
+		// docs/adr/0013-turn-outcome-refusal-probe.md is the capture.
+		TurnOutcomeAdapter: TurnOutcomeGrokSessionStore,
+		NativeRules:        grokNativeRules, Interstitials: GrokInterstitials, PIDVoid: GrokPIDVoid,
 		Command: `grok {model} {skills} ` + GrokFleetFlags + ` --rules="$(cat {file})" {allow} {deny}`},
 }
 

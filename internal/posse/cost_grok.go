@@ -42,7 +42,6 @@ import (
 	"encoding/json"
 	"io"
 	"io/fs"
-	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -124,11 +123,7 @@ func (grokCost) Transcripts(project string) ([]string, []error) {
 // does not decode is returned raw — a filter is better served by the literal
 // text than by an empty string that matches nothing.
 func grokSessionDir(path string) string {
-	enc := filepath.Base(filepath.Dir(filepath.Dir(path)))
-	if dec, err := url.PathUnescape(enc); err == nil {
-		return dec
-	}
-	return enc
+	return grokCwd(filepath.Base(filepath.Dir(filepath.Dir(path))))
 }
 
 // Decode segments one grok session by the dispatcher's work prompts and sums
