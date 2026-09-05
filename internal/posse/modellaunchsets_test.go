@@ -324,6 +324,7 @@ func firstArgIdent(c *ast.CallExpr) string {
 // their values. One variable, two readers — the probe cannot be reading one
 // account's mint while the launch exports another's.
 func TestPlanLaunchHandsOneEnvSetListToBothReaders(t *testing.T) {
+	t.Parallel() // reads source, touches no environment
 	fn := launchFunc(t, "herdrback.go", "planLaunch")
 
 	made := callsTo(fn, "LaunchEnvSets")
@@ -379,6 +380,7 @@ func TestPlanLaunchHandsOneEnvSetListToBothReaders(t *testing.T) {
 // resolving one of its own. Three lines, and the hop a fake endpoint cannot
 // see, so it is asked here.
 func TestTierPreflightFromHandsItsListToTheReading(t *testing.T) {
+	t.Parallel() // reads source, touches no environment
 	fn := launchFunc(t, "modelavail.go", "TierPreflightFrom")
 	if len(fn.Type.Params.List) == 0 || len(fn.Type.Params.List[0].Names) != 1 {
 		t.Fatal("TierPreflightFrom's first parameter is not one named list")
@@ -402,6 +404,7 @@ func TestTierPreflightFromHandsItsListToTheReading(t *testing.T) {
 // empty set. Both arms are of THIS file's own fixtures — a call whose first
 // argument is a bare name, and one whose first argument is a fresh call.
 func TestTheSourcePinsCanComeOutTheOtherWay(t *testing.T) {
+	t.Parallel() // reads source, touches no environment
 	fn := launchFunc(t, "modelavail.go", "ReadCatalog")
 	made := callsTo(fn, "ReadCatalogFrom")
 	if len(made) != 1 {
