@@ -39,17 +39,25 @@ package posse
 //	                       which is what the absence pin below measures.
 //
 // MUTATION-CHECKED, per pin and per alternative, because a green pin over a
-// wall that never had the hole measures nothing. Three mutants through
-// `go test -overlay` against gates.go, run 2026-09-04; each was killed by the
-// pin it belongs to and by NO other, which is what says the pins measure three
-// different things and not one:
+// wall that never had the hole measures nothing. Four mutants through
+// `go test -overlay` against gates.go and visibility.go, run 2026-09-04; each
+// was killed by the pin it belongs to and by NO other, which is what says the
+// pins measure four different things and not one:
 //
-//	keptModeNote returns "" always     (the PRE-FIX arm) — the two presence
+//	keptModeNote returns "" always     (the PRE-b21e0 arm) — the two presence
 //	                                   pins RED, the absence pin GREEN.
 //	the `[ "${2:-}" != "message" ]`    — the absence pin RED on its verbatim
 //	guard removed from messageArm        arm alone, both presence pins GREEN.
-//	the `= scissors` test replaced      — the scissors pin RED, everything
-//	by `false`                           else GREEN.
+//	the `= scissors` test replaced      — the cut-line pin RED, everything
+//	by `false`                           else GREEN, INCLUDING the scissors
+//	                                     subtest below: that subtest is about
+//	                                     the remedy, and branch selection is
+//	                                     the cut-line pin's subject.
+//	MessageScissorsNote's tail put      (the PRE-vcouf note) — the scissors
+//	back to "delete it in the editor      subtest RED on that clause and on
+//	before you save"                      the reachable half it replaced,
+//	                                      everything else GREEN, which is
+//	                                      how the clause survived sx2dq.
 //
 // The absence pin is the one this change could break rather than the one it
 // fixes: it is green pre-fix by construction, and its whole job is the second
@@ -180,6 +188,90 @@ func TestQAMessageRemedyNamesTheCleanupModeThatKeptGitsTemplate(t *testing.T) {
 			}
 		})
 	}
+
+	// SCISSORS TAKES THE OTHER BRANCH, AND CARRIED THE CLAUSE SX2DQ REMOVED
+	// NEXT DOOR (ranger-base-vcouf). keptModeNote is one if/else: the two
+	// modes above print MessageKeptTemplateNote, `scissors` prints
+	// MessageScissorsNote instead, and nothing above reads that string — so
+	// the "delete it in the editor before you save" clause survived in the
+	// branch sx2dq did not touch, for exactly the reason sx2dq measured. The
+	// editor is unreachable in BOTH branches: the arm renders into
+	// prepare-commit-msg, git runs that BEFORE it launches an editor, and the
+	// non-zero exit ends the commit.
+	//
+	// THE FIXTURE IS NOT THE ONE ABOVE. Under this mode git's status block —
+	// the untracked filename the two arms above are refused over — is BELOW
+	// the cut line and is neither read nor kept (ranger-base-xfgcn), so it
+	// refuses nothing here. A commit.template body is the shortest reachable
+	// spelling of "a line the writer did not type" that git puts ABOVE that
+	// cut and keeps.
+	//
+	// RUN AGAINST THE PRE-FIX NOTE 2026-09-04, RED on the editor clause.
+	t.Run("scissors", func(t *testing.T) {
+		w := newVisWall(t)
+		env := qaVerbatimRepo(t, w, w.pub, "scissors")
+		username := w.literal(t, "username")
+
+		tpl := filepath.Join(t.TempDir(), "template")
+		write(t, tpl, "refs nobody\n")
+		if out, err := w.git(w.pub, nil, "config", "commit.template", tpl); err != nil {
+			t.Fatalf("git config commit.template: %v %s", err, out)
+		}
+
+		// CONTROL 1: the same editor commit, same config, same template
+		// file WITHOUT the class, LANDS — so the refusal below is the
+		// class and not a wall refusing everything in this repo.
+		w.stage(t, w.pub, "internal/posse/ctl.go", "package posse\n")
+		if out, err := w.git(w.pub, env, "commit", "--", "internal/posse/ctl.go"); err != nil {
+			t.Fatalf("fixture premise: a clean editor commit under commit.cleanup=scissors must land: %v\n%s", err, out)
+		}
+
+		write(t, tpl, "refs "+username+"\n")
+		w.stage(t, w.pub, "internal/posse/probe.go", "package posse\n")
+		out, err := w.git(w.pub, env, "commit", "--", "internal/posse/probe.go")
+		if err == nil {
+			t.Fatalf("fixture premise: a commit.template body sits ABOVE git's cut line and lands under "+
+				"commit.cleanup=scissors, so it must refuse this commit — there is no remedy to measure "+
+				"if nothing was refused:\n%s", out)
+		}
+		if !strings.Contains(qaFlat(out), "an operator identity literal in the commit MESSAGE") {
+			t.Fatalf("fixture premise: if this commit is refused at all it must be the MESSAGE arm that "+
+				"spoke, since the remedy under test is that arm's:\n%s", out)
+		}
+
+		for _, want := range []string{
+			`git's cleanup mode here is "scissors"`,
+			"config commit.cleanup",
+			"take the class out of",
+			"leave commit.cleanup at its default",
+			"rewrite the commit message",
+		} {
+			if !strings.Contains(qaFlat(out), qaFlat(want)) {
+				t.Errorf("under scissors the refusal must carry %q — the writer is refused BEFORE the "+
+					"editor opens, over a line git wrote and they cannot rewrite "+
+					"(ranger-base-vcouf):\n%s", want, out)
+			}
+		}
+
+		// AND NOT AN EDITOR, the same assertion the two arms above carry
+		// (ranger-base-sx2dq), in the branch that kept the clause.
+		if strings.Contains(qaFlat(out), "in the editor") {
+			t.Errorf("the refusal offers something to do \"in the editor\", but this hook runs BEFORE "+
+				"git launches one and its non-zero exit ended the commit — there is no editor session "+
+				"for the writer to do it in (ranger-base-vcouf):\n%s", out)
+		}
+
+		// AND THE REMEDY IS REACHABLE, measured rather than read: take the
+		// class out of what git puts above the cut, and require the same
+		// commit to land under the same mode with the same editor, one
+		// call after it was refused.
+		write(t, tpl, "refs nobody\n")
+		if got, err := w.git(w.pub, env, "commit", "--", "internal/posse/probe.go"); err != nil {
+			t.Errorf("the refusal says taking the class out of what git puts above its cut line clears "+
+				"it, and under commit.cleanup=scissors it did not: the same commit was refused again "+
+				"with the classed template body gone (ranger-base-vcouf):\n%s", got)
+		}
+	})
 }
 
 // SCISSORS PUTS GIT'S BLOCK BELOW THE CUT LINE, AND THE READ STOPS THERE

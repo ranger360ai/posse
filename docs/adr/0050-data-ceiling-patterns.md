@@ -190,7 +190,18 @@ so no editor session exists in which to delete anything. MEASURED with a
 once, the refused commit zero times, under all three kept modes. The
 reachable half is the one INSTALL.md carried before b21e0 — clear the class
 out of the repo — and the pin now takes that action and requires the same
-commit to land, rather than asserting the sentence is present.)* The
+commit to land, rather than asserting the sentence is present.)*
+*(Completed 2026-09-04, ranger-base-vcouf from ranger-base-49r7t: that
+correction reached the `verbatim`/`whitespace` note only. `scissors` takes
+the other branch of the same `if`/`else` and its note still ended "delete it
+in the editor before you save", because no pin read that string — the
+sentence stated the mechanism that makes it impossible in its own first
+clause. Both branches now name the reachable pair, narrowed here to what git
+puts ABOVE the cut: the `commit.template` body, the path in a merge's
+conflict list — or the default `commit.cleanup`, which strips the `#` lines
+among them and not a template body that leads with none. The same pin gained
+a `scissors` subtest that takes the action and requires the commit to
+land.)* The
 exclusion stands as stated: a
 message typed in the editor does not exist yet when the hook runs. What the
 editor path does scan is whatever was already in the file — a

@@ -591,15 +591,38 @@ the commit object as it stands, untracked filenames and all (measured).`
 // under commit.verbose, where the same untruncated read reached the diff git
 // appends. The cut line is matched in one place now, and this note says what
 // the writer is left with.
+//
+// AND IT NAMES NO EDITOR EITHER (ranger-base-vcouf, from ranger-base-49r7t).
+// This note ended with "delete it in the editor before you save" until here —
+// the same clause ranger-base-sx2dq removed from MessageKeptTemplateNote, one
+// if/else branch away in keptModeNote, for the same measured reason and with
+// the same first clause of this very sentence saying why it cannot work: the
+// arm renders into prepare-commit-msg, git runs that BEFORE it launches the
+// editor, and the non-zero exit ends the commit. sx2dq measured it with a
+// GIT_EDITOR that appends to a marker — the refused commit invokes the editor
+// zero times, under all three kept modes — and did not reach this branch
+// because no pin read this string. There is one now.
+//
+// THE REACHABLE HALF is the pair, narrowed to what a writer standing here can
+// touch. What is above the cut under this mode is what git put in the file
+// before any editor ran, so clearing it is clearing the SOURCE: the
+// commit.template body, the path in a merge's conflict list. The
+// commit.cleanup half is kept and hedged rather than dropped — the default
+// mode strips '#' lines, which is the conflict list and is NOT a template
+// body that leads with none, so the note claims only the lines git really
+// takes.
 const MessageScissorsNote = `under that mode git strips no comment line out of the part it keeps, so a
 '#' line ABOVE git's cut line — a commit.template body, a merge's
 "# Conflicts:" list — is message here and is scanned as message. This read
 stops at that cut line the way git's own cleanup does, so git's status block
 below it is neither scanned nor kept, and what tripped this is in the part
 that reaches the commit object as it stands. This hook runs BEFORE the editor
-opens: if what tripped it is a line git wrote rather than your own text,
-delete it in the editor before you save, or leave commit.cleanup at its
-default, where git strips comment lines itself.`
+opens and its exit ended this commit, so if what tripped it is a line git
+wrote rather than your own text, there is no editor session in which to delete
+it. Two things do clear it: take the class out of what git puts above that cut
+line — the commit.template body, the path git listed as conflicted — or leave
+commit.cleanup at its default, where git strips the '#' lines among them
+itself.`
 
 // opsClassRE is what a class name may be. It is rendered into a shell word
 // and into a hook comment, and it is what a human reads in the refusal, so
