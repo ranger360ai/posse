@@ -836,10 +836,13 @@ func (p Preflight) Fell() bool { return p.Line != "" && !p.Unknown }
 // persona may be "" (a session with no PID) — then only the tier keys of
 // the map apply.
 //
-// It is called once per LAUNCH, on the pair the launch has already resolved
-// (herdrback.go planLaunch), and never per prompt: a live session's model
-// was decided when it started, and re-deciding it under a running CLI would
-// be a claim posse cannot make good on.
+// It is called once per LAUNCH, on the pair the launch has already resolved,
+// and never per prompt: a live session's model was decided when it started,
+// and re-deciding it under a running CLI would be a claim posse cannot make
+// good on. The launch itself calls TierPreflightFrom, which is this check
+// over a reading taken with the launch's own credential (ADR 0039 D3d as
+// amended); this one is the form for a caller with no launch to name sets
+// from, and it reads on the persona-less list.
 func (a *App) TierPreflight(persona, runtime, tier string, errw io.Writer) Preflight {
 	return a.TierPreflightOn(a.ReadCatalog(errw), persona, runtime, tier)
 }

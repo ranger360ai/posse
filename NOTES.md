@@ -3030,7 +3030,8 @@ persona resolving `tier: strong` would have gone on launching while the
 CLI quietly served something else, with `posse cost` filing the spend
 under whatever tier the substitute belongs to and no line anywhere saying
 why. So `planLaunch` now checks, once per launch, on the pair it has just
-resolved: `App.TierPreflight` (modelavail.go), before the parity check, so
+resolved: `App.TierPreflightFrom` (modelavail.go — `TierPreflight` is the
+same check for a caller that names no env sets), before the parity check, so
 what the wall and a PID's `tier_floor:` rule on is the pair that would
 really launch. Unavailable prints one line — `richard: tier strong wants
 claude-fable-5 — unavailable, falling back to claude-opus-5` — writes
