@@ -1,5 +1,11 @@
 # ADR 0020 — Multi-seat lanes: a lane is a label set, a seat is a persona, selection is availability-first at dispatch time
 
+*Status: superseded 2026-09-05 by ADR 0011 · ADR simplification, operator ruling 2026-09-05.*
+
+The surviving decision is in [0011 — current contract](0011-dispatch-model.md), Decision §§4–5 and Lineage. This page keeps its number and dated evidence; the body below is historical, not current policy.
+
+## Historical record (superseded in full)
+
 *Status: accepted 2026-08-27 · owner: richard · amends ADR 0011 (the
 routing rule and the pass's caps); the ADR 0006 §3 wording change for
 the batched verify gate is tracked separately (ranger-base-bh7q) ·

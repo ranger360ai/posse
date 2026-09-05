@@ -1,7 +1,7 @@
 # ADR 0011 — The dispatch model: bd is the queue; the pass gets a lock, a safe prune, and a run record
 
 *Status: accepted 2026-08-20 · amended 2026-08-23 (§1 third holder;
-§2 identity arm — restored 2026-08-26, see §2) · owner: architect*
+§2 identity arm — restored 2026-08-26, see §2) · amended 2026-09-05 (0020/0028 folded; current selection and bounded lifecycle) · owner: architect*
 
 > Restated from the private archive of the instance this harness was
 > developed in. The incidents this ADR reasons from happened in that
@@ -9,7 +9,7 @@
 > meta-sweep race…) rather than by tracker id, and persona names are
 > restated as roles.
 
-## Context
+## Context (dated diagnosis, 2026-08-20)
 
 Three passes over dispatch, in the operator's order:
 
@@ -137,12 +137,46 @@ other's prompts). Wherever dispatch needs a run fact, it reads the record
 it wrote instead of inferring from a name pattern or a snapshot; the
 holder join becomes a lookup.
 
-**Explicitly kept:** the pass shape (burst, fire-then-gather, serial
-launches), the busy-key rule, judge-by-bead, the wait ladder as landed,
-`--watch` backoff. Events-instead-of-polling stays open and orthogonal —
-it changes *when* dispatch looks, not *what it trusts*. The
-coordinator's one-pass operating rule stands until §1 lands, then
-retires.
+**4. Availability-first lanes and serial seats** (folded from 0020).
+A lane is the set of personas whose labels intersect the bead's; no lane
+registry exists. A recognized explicit assignee is a lane of one and never
+falls through. Label matches sort by `route_order:` ascending, then persona
+name; the configured default persona is the last routing fallback. The
+coordinator is excluded on every route (0033). Under the launcher lock,
+every fresh launcher, including cockpit `d`, takes the first eligible seat:
+not occupied by this Run, not working/blocked elsewhere in the repo, and
+not the bead's crew holder. All busy means wait with the lane and reasons
+named. `--persona` narrows the eligible set.
+
+A holder is resumed, never reseated: the assignee and live run record head
+the lookup. Crew, foreign-holder and prompt-grace refusals remain bead-level
+refusals; they do not invite a second seat. A persona remains one serial
+fleet seat per repo, because its memory and identity have one writer.
+The explicit operator resume exception recorded in 0020 is unchanged.
+Assignment for ordinary work happens at launch; verify-after is unassigned
+unless the operator sets its pin. Batching and acceptance belong to 0006.
+Epoch width is bounded by bead cap, budget at measured cost per bead, and
+free seats with ready work; adding a seat does not increase spending authority.
+
+**5. Current pass lifecycle.** The rolling, bounded-pass algorithm is
+specified here by the 0028 fold. It supersedes the historical synchronous
+burst/gather description in Context. Claim-first ordering, judge-by-bead,
+serial launch operations and the wait ladder remain. Socket delivery is
+owned by 0016 and never determines the truth of a claim or a settle.
+
+## Lineage
+
+| Was | Here |
+|---|---|
+| 0020 §§1–4 selection, assignment and serial identity | §4; `route_order` records the current built tiebreak |
+| 0020 §5 width and §6 verify fan-in | §4 and §5 epoch lifecycle; 0006 owns batching |
+
+Moving these rules removes zero runtime files, keys, states, actors or flags.
+Doing nothing preserves duplicate authority. Round-robin adds a cursor;
+least-backlog substitutes a proxy for live availability; filing-time rotation
+reads availability hours early; per-persona fan-out makes memory multi-writer.
+These alternatives remain rejected. Their added maintenance price is ASSUMED;
+the incident evidence is retained in the superseded source.
 
 ## Consequences
 
@@ -237,7 +271,7 @@ retires.
   incidents at a steady rate. The fix is three small beads, not a
   rewrite.
 
-## Appendix A — the prior art, checked (2026-08-21)
+## Appendix A — historical prior-art review (2026-08-21; implementation snapshots are not current status)
 
 The operator's nagging feeling was right: every mechanism above has a
 fifty-year-old name and a standard answer. This appendix names each one
