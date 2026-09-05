@@ -725,8 +725,8 @@ func (a *App) TierPreflightOn(cat *ModelCatalog, persona, runtime, tier string) 
 		// the ruling, paid once per launch until the probe comes back.
 		if cat.retained() {
 			p.Unknown = true
-			p.Line = fmt.Sprintf("%s: tier %s wants %s — not in %s%s; availability UNKNOWN, launching as asked",
-				preflightWho(persona), tier, p.Wanted, catalogRead(cat.age()), cat.probeTail())
+			p.Line = fmt.Sprintf("%s — not in %s%s; availability UNKNOWN, launching as asked",
+				preflightWants(persona, tier, p.Wanted), catalogRead(cat.age()), cat.probeTail())
 		}
 		return p
 	}
@@ -776,8 +776,23 @@ func (a *App) TierPreflightOn(cat *ModelCatalog, persona, runtime, tier string) 
 	// reading inside its lease now (D3c), which is the operator's own
 	// freshness number, and the reading that would have needed dating no
 	// longer reaches a verdict at all — it prints the UNKNOWN line above.
-	p.Line = fmt.Sprintf("%s: tier %s wants %s — unavailable, %s", preflightWho(persona), tier, p.Wanted, strings.Join(clauses, ", "))
+	p.Line = fmt.Sprintf("%s — unavailable, %s", preflightWants(persona, tier, p.Wanted), strings.Join(clauses, ", "))
 	return p
+}
+
+// preflightWants is the clause every availability line opens with: WHO the
+// line is about and WHAT the pair it names asks for. It is a function and
+// not three literals because a carried mark is checked against it a launch
+// later (CarriedMark) — a check spelled out by hand would go on passing
+// while the sentence it is checking drifted away from it.
+func preflightWants(persona, tier, model string) string {
+	if model == "" {
+		// Reachable only from CarriedMark, asking about a PID whose own
+		// runtime maps no model for its tier: the producers above return
+		// before rendering a line when Wanted is empty.
+		return fmt.Sprintf("%s: tier %s wants the runtime's own default model", preflightWho(persona), tier)
+	}
+	return fmt.Sprintf("%s: tier %s wants %s", preflightWho(persona), tier, model)
 }
 
 // preflightWho names the launch a line is about: a persona, or the session
@@ -787,6 +802,64 @@ func preflightWho(persona string) string {
 		return "session"
 	}
 	return persona
+}
+
+// CarriedMark is what an availability mark a session is ALREADY wearing
+// should say at its next launch (ranger-base-cplx).
+//
+// ranger-base-twaq made the mark ride `posse relaunch`, because the fact it
+// states — this session is not running the pair its PID names — survives a
+// refresh, and blanking it would drop the ⤵️fallback tag, the receipt's
+// FALLBACK: line and dispatch's effectiveTier answer all at once. What rode
+// with the fact was the SENTENCE, and that sentence names the tier and the
+// model the PID asked for AT THE FALL. Edit `tier:` to a THIRD value —
+// neither what fell nor what is running — and both clauses stop describing
+// this PID while the fact stays true: the one surface an operator reads to
+// decide whether to act says "tier strong wants claude-fable-5-1" about a
+// PID that asks fast.
+//
+// So the mark is carried verbatim only while it still opens with what this
+// PID asks TODAY, and is otherwise re-derived from today's PID and the pair
+// this launch really runs. It is never emptied here. Dropping it would take
+// the two halves that are still RIGHT down with the stale explanation, and
+// the third-tier board is exactly where they are load-bearing: a session on
+// claude-opus-5 whose PID says fast is one dispatch would otherwise tell it
+// is thinking at fast. The one case where the mark is dropped is the pair
+// no longer differing from the PID's own at all, and that is twaq's own
+// condition, upstream of this call (herdrback.go planLaunch).
+//
+// runtime/tier are the pair the launch will really open on, which on this
+// path is the pair the session already runs.
+func (a *App) CarriedMark(ag *AgentFile, persona, mark, runtime, tier string) string {
+	if mark == "" {
+		return ""
+	}
+	own, ownTier := a.ResolveRuntime("", ag), a.ResolveTier("", ag)
+	ownRT, err := a.LoadRuntime(own)
+	if err != nil {
+		// The PID names a runtime that will not load. Nothing here can say
+		// what it asks for, and that is a reason to render no new sentence —
+		// not a reason to un-say the old fact. Carried as it was, which is
+		// what every launch before this did.
+		return mark
+	}
+	wants := ownRT.Model(ownTier)
+	// The separator both producers put after the clause is part of the
+	// check: without it a model id that is a PREFIX of the one the mark
+	// names reads as the same ask, and a runtime overlay rolling
+	// `model_strong:` from claude-fable-5-1 back to claude-fable-5 would
+	// carry a mark naming the id nothing asks for any more. It is also what
+	// makes the check notice if either line above stops opening this way.
+	if strings.HasPrefix(mark, preflightWants(persona, ownTier, wants)+" — ") {
+		return mark
+	}
+	got := ""
+	if rt, err := a.LoadRuntime(runtime); err == nil {
+		got = rt.Model(tier)
+	}
+	// hopDesc for the tail, so a hopped session reads "… on codex" here
+	// exactly as it did in the line it fell with.
+	return fmt.Sprintf("%s — this session is running %s from an earlier fall", preflightWants(persona, ownTier, wants), hopDesc(own, runtime, tier, got))
 }
 
 // PreflightReport is the same question `posse gates` asks out loud: for

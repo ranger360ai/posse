@@ -1905,7 +1905,15 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 			// running has made the substitute the asked-for pair, and the
 			// old line ("tier strong wants ...") would be a lie: it is
 			// dropped rather than carried.
-			fallback = o.Fallback
+			//
+			// That condition is an EQUALITY test, and the fact it rules on
+			// is the only thing it rules on: an operator who edits `tier:`
+			// to a THIRD value leaves the pair differing, so the mark rides
+			// — with a sentence naming the tier and model the PID asked for
+			// at the FALL, neither of which it asks for now
+			// (ranger-base-cplx). CarriedMark keeps the fact and re-derives
+			// the sentence when it has stopped describing this PID.
+			fallback = a.CarriedMark(ag, o.Agent, o.Fallback, runtime, tier)
 		}
 		// ADR 0013 §2 layer 2 (ranger-base-a9y9, escaped as ranger-base-9r33):
 		// a first-run dialog whose DEFAULT ACTION MUTATES THE MACHINE is a

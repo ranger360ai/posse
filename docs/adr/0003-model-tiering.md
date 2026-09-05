@@ -7,7 +7,9 @@ the mechanism, ranger-base-lzx writes it down) · amended 2026-08-28
 (§2: the mark survives a relaunch — ranger-base-twaq) · amended
 2026-08-29 (§1: the grok column — rangerhq-jp6, ruled in
 ranger-base-tg7c) · amended 2026-09-01 (§1: the claude `strong` cell
-reads `fable-5-1` — ADR 0039 D1, ranger-base-per37)*
+reads `fable-5-1` — ADR 0039 D1, ranger-base-per37) · amended
+2026-09-04 (§2: a carried mark that has stopped describing its PID is
+re-derived, not carried — ranger-base-cplx)*
 
 > Restated from the private archive of the instance this harness was
 > developed in; incident citations reference that instance's history.
@@ -312,6 +314,24 @@ words:
    asked-for pair, and the mark is dropped. Nothing here moves the
    pair: a session degraded during an outage stays on the substitute
    until it is created afresh, which is §3's trade, not this rule's.
+
+   *(Amended 2026-09-04, ranger-base-cplx.)* What is carried is a
+   SENTENCE, and it names the tier and the model the PID asked for at
+   the fall. The condition above rules on the FACT and only the fact,
+   so an operator who edits `tier:` to a **third** value — neither
+   what fell nor what is running — leaves the pair differing and the
+   old sentence rides: "tier strong wants claude-fable-5-1" on a PID
+   that asks `fast`, on the one surface an operator reads to decide
+   whether to act. So the line is carried verbatim only while it still
+   opens with what that PID asks **today** (its tier and the model its
+   runtime maps under it — a `model_<tier>:` bump moves it too), and
+   is otherwise **re-derived** from today's PID and the pair the
+   session really runs: "architect: tier fast wants claude-sonnet-5 —
+   this session is running claude-opus-5 from an earlier fall". It is
+   not dropped: the fact is still true, and dropping it would take the
+   tag, the receipt line and `effectiveTier` down with the stale
+   explanation. Dropped remains what it was — the pair no longer
+   differing at all.
 3. **The preflight never refuses.** "A degraded model is worse than
    nothing" is the operator's judgement, recorded in advance as
    `tier_floor:` (and as §3's no-`--allow-degraded` at `fast`). Both
