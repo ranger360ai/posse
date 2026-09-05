@@ -10,7 +10,7 @@ the counted-ness pair retired by the D4 cost seam; §4 gains
 amended 2026-08-30: §4's "not declarable" list is retired — all four
 shipped, the last two here (ranger-base-ncxa); §1's pin test exists
 (ranger-base-ncxa); §1's grid gained the five non-dispatch dimension rows
-(ranger-base-bcpa)*
+(ranger-base-bcpa) · amended 2026-09-05: §4 gains `pane_mode:`, a registry key over the pane-mode readers, and §3's codex name-keyed branch retires through it (ADR 0057, ranger-base-re4kb)*
 
 > The operator, on the four-area parity breakdown: "make sure richard knows
 > to add areas to consider when making sure runtimes are equivalent. we may
@@ -182,7 +182,8 @@ production per-runtime, not the grep.
 (since this snapshot, also `state_dir:`, `env_required:`, `turn_outcome:`
 — added 2026-08-28, ranger-base-02zr — and `skills_cwd:`,
 `self_sandbox:`, `project_config:`/`project_config_keys:`, `unattended:`,
-the four below). `runtimeYamlKeys()` is the whole surface and the list to
+the four below — and `pane_mode:`, a registry key over the pane-mode readers,
+ADR 0057, 2026-09-05). `runtimeYamlKeys()` is the whole surface and the list to
 grep; this sentence is a projection of it.
 
 **Was not declarable; all of it now is** (each was a Go field a built-in
