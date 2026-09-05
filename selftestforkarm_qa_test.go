@@ -162,32 +162,35 @@ func TestQATheSelfTestsDiskArmsDoNotContradictEachOtherWhenAForkFails(t *testing
 
 var (
 	sfRegionStart = regexp.MustCompile(`^[a-zA-Z_]*[sS]elf_?[tT]est[a-zA-Z_]*\(\)\s*\{`)
-	sfMatcher     = regexp.MustCompile(`(^|[|&;(]|\$\(|` + "`" + `|\b(?:if|elif|while|until)\s+|!\s+)\s*(grep|sed|awk|head|tail|cut|tr|sort|uniq|wc|cat|jq|paste|xargs)\b`)
-	sfHeredoc     = regexp.MustCompile(`<<-?[ \t]*(['"]?)([A-Za-z_][A-Za-z0-9_]*)['"]?`)
-	sfArith       = regexp.MustCompile(`\$?\(\([^()]*\)\)`)
-	sfAssertHelp  = regexp.MustCompile(`\b(bad|fail|note|die|say)\b[ \t]+["'$]`)
+	// Three spellings the first version of this was blind to, all found by
+	// hand while sweeping the thirteen (ranger-base-s8b4g) and all measured
+	// to add no hit to the tree as it stands — they are here for the NEXT
+	// one:
+	//
+	//	LC_ALL=C grep -qF …   an env assignment before the tool (its value may
+	//	                      not carry a quote: `X="${X:-cat cut grep}"` is a
+	//	                      list of tool NAMES, not a call, and cleanroom.sh
+	//	                      has one). This was the
+	//	                      whole assertion helper of verify-govern-honesty.
+	//	/usr/bin/grep -q …    an absolute path. It survives a PATH shim, which
+	//	                      is presumably why it was written; it does not
+	//	                      survive a signal or a failed fork, which is what
+	//	                      this invariant is about.
+	//	tail=${rest#…}        a VARIABLE named after a tool, which `\b` read as
+	//	                      the tool. A false positive is not harmless: it
+	//	                      teaches the next reader to route around the scan.
+	sfMatcher    = regexp.MustCompile(`(^|[|&;(]|\$\(|` + "`" + `|\b(?:if|elif|while|until)\s+|!\s+)\s*(?:[A-Za-z_][A-Za-z0-9_]*=[^\s"']*\s+)*(?:/[^\s]*/)?(grep|sed|awk|head|tail|cut|tr|sort|uniq|wc|cat|jq|paste|xargs)(?:[^A-Za-z0-9_=]|$)`)
+	sfHeredoc    = regexp.MustCompile(`<<-?[ \t]*(['"]?)([A-Za-z_][A-Za-z0-9_]*)['"]?`)
+	sfArith      = regexp.MustCompile(`\$?\(\([^()]*\)\)`)
+	sfAssertHelp = regexp.MustCompile(`\b(bad|fail|note|die|say)\b[ \t]+["'$]`)
 )
 
 // sfUnswept — scripts whose assertion arms still decide through an exec'd
-// matcher. This is a LEDGER of outstanding work, not a definition of the
-// shape: a NEW violation in any script that is not on this list reds without
-// anybody editing anything, which is the property a site allowlist could not
-// have. Sweeping a file means deleting its row.
-var sfUnswept = map[string]string{
-	"verify-bd-dep-safety.sh":  "ranger-base-s8b4g",
-	"verify-bd-pin.sh":         "ranger-base-s8b4g",
-	"verify-codex-pin.sh":      "ranger-base-s8b4g",
-	"verify-detection.sh":      "ranger-base-s8b4g",
-	"verify-ghost-composer.sh": "ranger-base-s8b4g",
-	"verify-govern-honesty.sh": "ranger-base-s8b4g",
-	"verify-grok-pin.sh":       "ranger-base-s8b4g",
-	"verify-hook-freshness.sh": "ranger-base-s8b4g",
-	"verify-id-recycle.sh":     "ranger-base-s8b4g",
-	"verify-orphan-report.sh":  "ranger-base-s8b4g",
-	"verify-pid-deny-set.sh":   "ranger-base-s8b4g",
-	"verify-prune-guard.sh":    "ranger-base-s8b4g",
-	"verify-self-close.sh":     "ranger-base-s8b4g",
-}
+// matcher. EMPTY since ranger-base-s8b4g swept the last thirteen: the shape
+// is now enforced everywhere in scripts/, so a new violation anywhere reds
+// this test without anybody editing anything. Do not add a row to it; the
+// fix is the one the failure message spells.
+var sfUnswept = map[string]string{}
 
 type sfHit struct {
 	file, text string
@@ -317,11 +320,26 @@ func sfScanLines(file string, lines []string, wholeFile bool) ([]sfHit, *sfHit) 
 			continue
 		}
 		tool := l[loc[4]:loc[5]]
+		// The message extent is bounded by the END OF THE TOOL NAME, loc[5],
+		// and not by loc[1], the end of the whole match. The two were the same
+		// index when ranger-base-u2etb wrote these arms — sfMatcher closed on
+		// a zero-width `\b` — and ranger-base-s8b4g replaced that with a
+		// trailing `(?:[^A-Za-z0-9_=]|$)`, so loc[1] now eats one byte PAST
+		// the tool and a `;`, `|` or `&` landing in it would end the message
+		// role one match early. MEASURED: swapping loc[5] back to loc[1] here
+		// changes no classification in scripts/ and reds nothing, and the
+		// shape looks unreachable — sfAssertHelp needs a quote or `$` right
+		// after the helper, and sfMatcher needs one of `|&;($` or an `if`/
+		// `while` keyword right before the tool, so any depth-0 separator that
+		// could occupy that byte has already ended the message earlier in the
+		// walk. This is the index that means what the arm says it means, kept
+		// because the next widening of sfMatcher may make the gap reachable,
+		// not because it fixes a live misread.
 		role := "verdict"
 		switch {
-		case carried && sfMessageReaches(l, 0, loc[1]):
+		case carried && sfMessageReaches(l, 0, loc[5]):
 			role = "message"
-		case startsMessage != nil && startsMessage[0] < loc[1] && sfMessageReaches(l, startsMessage[0], loc[1]):
+		case startsMessage != nil && startsMessage[0] < loc[5] && sfMessageReaches(l, startsMessage[0], loc[5]):
 			role = "message"
 		case tool == "cat" && (strings.Contains(l[loc[5]:], ">") || strings.Contains(l, "<<")):
 			role = "fixture"
@@ -362,12 +380,21 @@ func TestQANoAssertionArmDecidesThroughAForkedMatcher(t *testing.T) {
 	// THE FLOOR, and it is the positive witness this whole test rests on: a
 	// regexp that stopped matching, or a region finder that stopped finding
 	// self-test bodies, would leave `hits` empty and this test green over a
-	// scan that reads nothing at all. There were 123 occurrences across 19
-	// files when this was re-measured (2026-09-05, ranger-base-u2etb; the
-	// 126 written here before is not a count this tree produces at 3851edc
-	// or at HEAD, and the two scanners agree on 123 hit for hit).
-	if len(hits) < 80 {
-		t.Fatalf("the scan found only %d matcher occurrences across scripts/ — it was 123 when last measured, so the shape or the region finder has gone blind and a clean result here means nothing", len(hits))
+	// scan that reads nothing at all. Re-measured 2026-09-05 with the scanner
+	// as it stands here — ranger-base-u2etb's region finder AND
+	// ranger-base-s8b4g's widened sfMatcher, which is neither of the two
+	// counts either bead wrote alone (u2etb read 123 pre-sweep with the old
+	// `\b`-terminated matcher; the six extra this one sees are the
+	// env-prefixed and absolute-path spellings it was blind to). Over the
+	// tree immediately before the sweep it is 129 across 19 files — 88
+	// verdict, 27 fixture, 14 message. The sweep of the thirteen verify-*.sh
+	// scripts took out all 88 verdicts and nothing else, leaving 41 across 14
+	// files: 27 fixture and 14 message, both roles the invariant allows and
+	// neither of which a sweep removes. The floor is set below that count and
+	// not at it: the number moves whenever a rig script gains a `cat`
+	// heredoc, and a floor that tracked it exactly would red on ordinary work.
+	if len(hits) < 30 {
+		t.Fatalf("the scan found only %d matcher occurrences across scripts/ — it was 41 after ranger-base-s8b4g's sweep, so the shape or the region finder has gone blind and a clean result here means nothing", len(hits))
 	}
 	var roles = map[string]int{}
 	for _, h := range hits {
@@ -435,6 +462,8 @@ func TestQATheForkedMatcherScanSeparatesTheThreeRoles(t *testing.T) {
 		{"verdict", `out=$(cat "$tmp/out")`},
 		{"verdict", `	! grep -q 'not a positive integer' "$tmp/m14.log" 2>/dev/null; then`},
 		{"verdict", `cachedcount() { find "$T/cache" -name '*.test' | wc -l | tr -d ' '; }`},
+		{"verdict", `has() { printf '%s' "$1" | LC_ALL=C grep -qF -- "$2"; }`},
+		{"verdict", `if /usr/bin/grep -q '^gen: [0-9][0-9]*$' "$meta"; then`},
 		// Messages — the fork runs after the verdict is decided.
 		{"message", `*) bad "budget not read: $(printf '%s' "$out" | grep 'package times')" ;;`},
 		{"message", `bad "$arm14" "the holder never acquired: $(tr '\n' '|' <"$tmp/m18.log")"`},
@@ -463,6 +492,8 @@ func TestQATheForkedMatcherScanSeparatesTheThreeRoles(t *testing.T) {
 		`argv_seen=$(<"$tmp/argv")`,
 		`suspects=$(signal_suspects 505 <<<"$table")`,
 		`sr_has() { case $1 in *"$2"*) return 0 ;; esac; return 1; }`,
+		`tail=${rest#"${rest%%[![:space:]]*}"}`,
+		`cat=$(printf '%s' "$x")`,
 	} {
 		if got, _ := sfScanLines("probe.sh", []string{l}, true); len(got) != 0 {
 			t.Errorf("the scan flags a FIXED line as %q — the invariant it demands cannot be satisfied: %s", got[0].role, l)
