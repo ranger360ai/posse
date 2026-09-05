@@ -13,10 +13,17 @@ whose source the launcher owns, the lock siblings deliberately unbound;
 verification item 6) · amended 2026-09-05 (ranger-base-kbhlw: decision
 4's status paragraph flipped from in flight to shipped — ranger-base-t4f1
 had landed before the n3ywd amendment was committed and the paragraph
-still said until it lands) · decision 4's common dir shipped with
-ranger-base-t4f1 (2026-09-05) · lands with its successors
-ranger-base-672zt → ranger-base-p9h9d → ranger-base-017dx (decision 4's
-file binds and the engine arm) · owner: architect ·
+still said until it lands) · amended 2026-09-05 (ranger-base-w5xu7: the
+status line and the L4 Consequences bullet flipped for ranger-base-672zt,
+which had landed; the bead that filed it also named p9h9d as landed, and
+`git log --all --grep` found no commit — a seat tree is not main, so it
+is written as in flight, third time this shape) · decision 4 ships in
+four beads — ranger-base-t4f1 (the `:ro` common dir), ranger-base-672zt
+(4a, the main-checkout file binds), ranger-base-p9h9d (4b, the identity
+chain), ranger-base-017dx (arm B4, the engine, off-box) — of which t4f1
+and 672zt are on main at this amendment (2026-09-05) and p9h9d and 017dx
+are not; `git log --grep <bead>` on main is the record of which have
+landed, this sentence is a dated snapshot · owner: architect ·
 decides ADR 0023 non-goal 3 (flz7 arm a) · extends ADR 0014 §3's
 trailing-deny slot · from ranger-base-7w8g0, on ranger-base-j5s0's
 measured table*
@@ -240,7 +247,15 @@ run is no session's to write.** Enumerated, at the artifact level, in
    grant, so a PID extra overlapping it loses (deny-wins, ADR 0001). A
    future legitimate in-cage config writer is a code change with this
    ADR reopened, not a PID knob. `posse gates` prints each entry as an
-   `x` line, so the wall stays readable.
+   `x` line, so the wall stays readable. At L4 (ranger-base-672zt, a
+   stated divergence from its bead's placement) the same guarantee is
+   delivered by pass ORDER, not by sitting below: an extra naming the
+   same destination as a decision 4 bind (`writable: [.git/hooks]`) is
+   answered by `cageOverlay` editing the mount's mode, so whichever pass
+   runs second decides, and the identity binds run after the path-scoped
+   overlays for that reason alone (NOTES, "Two things the renderer had to
+   be built around"). Move that order and this item's claim is false at
+   L4 while every L2 pin stays green.
 
 No change to `sessionHooksDirs`, `recordBead`, or L1.
 
@@ -318,11 +333,14 @@ No change to `sessionHooksDirs`, `recordBead`, or L1.
   common dir, narrower than L2. The main-checkout shape and the identity
   chain get `:ro` file binds (decision 4a/4b, ranger-base-672zt and
   p9h9d), so the rendered set at L4 names every path L2's deny block
-  names EXCEPT the three lock siblings, which have no mount twin. Until
-  those two beads land and arm B4 has run somewhere with an engine,
+  names EXCEPT the three lock siblings, which have no mount twin. 4a
+  landed 2026-09-05 (ranger-base-672zt on main, ranger-base-w5xu7
+  checked); 4b (ranger-base-p9h9d) had not at that check. Until p9h9d
+  lands and arm B4 (ranger-base-017dx) has run somewhere with an engine,
   nobody may cite this ADR as "L4 is closed"; after them, the honest
   sentence is "L4 is closed except at the lock siblings, where the
-  refusal lands one step later and leaves nothing behind".
+  refusal lands one step later and leaves nothing behind" — and whoever
+  writes that sentence runs `git log --grep` for both ids on main first.
 - An L4 file bind is a bind of a source the launcher OWNS: it exists
   before launch, or `PrepareSessionHead` makes it. The deny direction of
   `cageOverlay` never binds an absent file, because the engine would make
@@ -393,7 +411,9 @@ three shapes carry the real control arm.
    engine half of this item is ASSUMED from that foundation.
 6. L4 file binds (2026-09-05, ranger-base-n3ywd). Two halves again. The
    RENDERED set, MEASURED at the renderer in both PID shapes
-   (cageoverlay_test.go, ranger-base-672zt and p9h9d): main checkout —
+   (cageoverlay_test.go; the main-checkout pins on main with
+   ranger-base-672zt, the worktree pins on main when ranger-base-p9h9d
+   lands — 2026-09-05 snapshot, ranger-base-w5xu7): main checkout —
    one `:ro` mount on `.git/config` and one on `.git/hooks`, the `.git`
    carve-out still read-write beneath them; worktree — `:ro` mounts on
    `gitdir`, `commondir`, `config.worktree` under a read-write
