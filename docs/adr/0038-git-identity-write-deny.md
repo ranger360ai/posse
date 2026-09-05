@@ -7,7 +7,13 @@ decision 1's "no stray lock" clause RETRACTED as measured false; the
 builds — a `:ro` common dir with three read-write overlays and a detached
 HEAD, in place of two `:ro` file binds that were never built; verification
 item 5 folded into t4f1's engine arm, UNRUN; two L4 residuals named) ·
-lands with ranger-base-t4f1 (decision 4 only) · owner: architect ·
+amended 2026-09-05 (ranger-base-n3ywd: decision 4 gains the two L4
+twins those residuals asked for — `:ro` FILE binds of the identity files
+whose source the launcher owns, the lock siblings deliberately unbound;
+verification item 6) · lands with ranger-base-t4f1 (decision 4's common
+dir) and its successors ranger-base-672zt → ranger-base-p9h9d →
+ranger-base-017dx (decision 4's file binds and the engine arm) · owner:
+architect ·
 decides ADR 0023 non-goal 3 (flz7 arm a) · extends ADR 0014 §3's
 trailing-deny slot · from ranger-base-7w8g0, on ranger-base-j5s0's
 measured table*
@@ -140,20 +146,87 @@ run is no session's to write.** Enumerated, at the artifact level, in
    original first sentence described. The bead id is the citation, not a
    session sha (ADR 0051).
 
-   **Two L4 residuals this item does not cover, named so they are not read
-   as closed** (design bead ranger-base-n3ywd, from ranger-base-huhnw):
-   the **main-checkout shape** at L4 has no twin — `.git` is
-   inside a read-write repo mount, or is the read-write `.git` carve-out
-   over a `:ro` one (ADR 0014 §4), so `.git/config` and `.git/hooks` are
-   writable there, and the Context's persistent redirect stands open for
-   the operator's daily git; the `:ro`-file-binds-after-the-mount shape
-   this item originally prescribed is the natural fit there, sources
-   exist. And **decision 2's identity chain has no L4 twin**:
-   `worktrees/<own>` is one of the three read-write overlays and holds
-   `gitdir`, `commondir` and `config.worktree`, while the `<worktree>/.git`
-   pointer file is on the repo mount — so a caged worktree session can
-   redirect `commondir` at a writable fake for exactly the launcher's
-   land-time git, which is the walk-around decision 2 closes at L2.
+   **The two L4 twins the common dir does not supply** (2026-09-05,
+   ranger-base-n3ywd, from the residuals ranger-base-huhnw named). One
+   mechanism for both, and it is the one this item originally prescribed
+   in the wrong place: a **`:ro` FILE bind, placed by `cageOverlay`'s deny
+   direction over whatever read-write mount covers the file** — the
+   engine sorts binds by destination depth, so the file bind wins over the
+   directory it sits in (MEASURED for directories, 7/7,
+   `0014-path-scoped-writes.probe.sh`; ASSUMED for a file source until
+   arm B4, item 6). Two rules decide which files, and they are the
+   whole design:
+
+   *(a) Bind only what the launcher owns and exists.* A `-v` bind whose
+   source is absent is not refused by the engine: it **creates the source
+   on the host, as a directory** (NOTES, probe 7 — the property the
+   directory overlays rely on). For a file that is the wrong artifact in
+   the operator's git dir: a `config.lock` directory makes the operator's
+   every `git config` fail "could not lock config file: File exists", and a
+   `config.worktree` directory makes every git command in that tree fatal
+   ("unknown error occurred while reading the configuration files") —
+   both MEASURED 2026-09-05, git 2.50.1. So the deny direction takes a
+   Stat for FILE sources, the one place it does, and **no `.lock` sibling
+   is ever bound**: decisions 1 and 2's lock entries have no L4 twin. What
+   that costs is wording, not containment: the refusal lands at the
+   rename(2) onto the mountpoint instead of at lock creation, git says
+   "could not write config file" and removes its own lock (MEASURED at L2,
+   xwepd), and nothing of the attempted config reaches `config`. A stray
+   lock left by hand is a nuisance any session under a read-write `.git`
+   could already leave, and is not a code-execution route.
+
+   *(b) Same readers as L2.* The paths come from `sessionGitConfigFiles`,
+   `sessionHooksDirs` and `sessionWorktreeIdentityFiles` (seatbelt.go),
+   minus their lock siblings — asked of git through `gitPath`, never
+   joined — because a wall that reads the PID or the repo differently from
+   the wall beside it is the classification error ADR 0014 exists to
+   prevent (ranger-base-4ks).
+
+   **4a. The main-checkout shape** (ranger-base-672zt): `.git/config` gets
+   a `:ro` file bind and `.git/hooks` a `:ro` directory overlay — the
+   hooks half ranger-base-3c3/h15 named and cage.go:356 deferred — over
+   the read-write repo mount, or over the read-write `.git` carve-out on a
+   `:ro` repo (ADR 0014 §4). What a caged main-checkout session
+   legitimately writes in `.git` (index, `HEAD`, `ORIG_HEAD`, its refs and
+   their locks, `logs`, `objects`, `COMMIT_EDITMSG`, `packed-refs`) is
+   untouched. Cost MEASURED zero in this exact shape at L2 (j5s0's table;
+   item 3's session-life pins), and L4 adds no writer. The store of record
+   behind a redirect needs nothing here: at L4 only its `.beads` is
+   mounted, its `.git` is invisible, and the deny direction of
+   `cageOverlay` mounts nothing where nothing covers the path — invisible
+   is stronger than `:ro`. In the worktree shape the same call resolves to
+   `<common>/config` and `<common>/hooks`, finds them under the `:ro`
+   common mount, and `cageOverlay`'s same-mode rule appends **no bind** —
+   so t4f1's "no mount on `config`/`hooks`" pin stays true and the
+   mechanism is shape-agnostic by construction, not by a branch.
+
+   **4b. Decision 2's identity chain** (ranger-base-p9h9d): `:ro` file
+   binds of the `<worktree>/.git` pointer file and of `gitdir`,
+   `commondir` and `config.worktree` in `worktrees/<own>`, over t4f1's
+   read-write overlay of that directory. Why these four: after a whole
+   session's life `worktrees/<own>` holds `COMMIT_EDITMSG`, `commondir`,
+   `gitdir`, `HEAD`, `index`, `logs`, `ORIG_HEAD`, `refs` (MEASURED), and
+   only the pointer, `commondir` and `config.worktree` select which
+   config and hooks the launcher's unsandboxed land-time git reads —
+   a pointer rewritten at a fake git dir carrying its own `commondir`
+   redirects `--git-path hooks` at a planted `core.hooksPath` (MEASURED)
+   — while `gitdir` is what `git worktree prune` trusts, so a session
+   that rewrites it can have the launcher's prune delete its own git dir.
+   `config.worktree` is the one source the launcher has to **make**:
+   posse never sets `extensions.worktreeConfig`, no live worktree carries
+   the file, and with the extension off git never reads it (MEASURED —
+   a planted `core.hooksPath` in it changed nothing; `git config
+   --worktree` itself refuses without the extension). So the extension in
+   the `:ro` common `config` is what keeps the file inert, and the bind is
+   for the repo where the operator turned the extension on. Rather than
+   condition the wall on a config key, `PrepareSessionHead` creates an
+   EMPTY `config.worktree` beside its `logs/` mkdir before every caged
+   launch and the bind is unconditional; an empty file carries no keys
+   either way. The pointer file lands a bind only on a read-write repo —
+   on a `:ro` one it is already inside the boundary and the same-mode
+   rule mounts nothing. Cost MEASURED zero: L2's identity pin already
+   shows all five files byte-, inode- and mtime-identical across a
+   session's life and the land-time rebase.
 
 5. **The deny is `writable:`-proof, deliberately.** It sits below every
    grant, so a PID extra overlapping it loses (deny-wins, ADR 0001). A
@@ -188,6 +261,34 @@ No change to `sessionHooksDirs`, `recordBead`, or L1.
   on `config`/`hooks`/`packed-refs`/`refs`, because a mount of its own
   there is the shape a future widening would take. The binds would fail
   the pin and buy nothing.
+- **Pre-create the lock siblings so they can be bound** (2026-09-05).
+  The move that gives `config.worktree` a source, applied to
+  `config.lock`. Dead by git's lock protocol: a pre-existing lock fails
+  the operator's every `git config` "File exists" (MEASURED), which is the
+  denial of service the sibling entry exists to avoid, and rename(2)
+  cannot replace a bind mountpoint — the same reason 6q5e rejected
+  binding `refs/heads/<branch>.lock`. So the L4 twin of a lock entry is
+  no entry, said out loud.
+- **Bind `config.worktree` only when `extensions.worktreeConfig` is on,
+  and skip the create** (2026-09-05). Fewer files touched, and a wall
+  conditional on a key read at render time: turn the extension on in the
+  `:ro` common config from the host between render and launch (the
+  operator's own git, a tool, a later posse) and the chain reopens with
+  `posse gates` still printing the bind. A wall that disappears with a
+  config key is the wall probe 7 was written against. One empty file per
+  session in a directory posse already owns and prunes is the cheaper
+  side.
+- **Check the chain at land time instead of binding it** — the launcher
+  reads the pointer, `commondir` and `gitdir` back against what it wrote
+  at `worktree add` and refuses to run git in a tree whose chain moved
+  (2026-09-05). Engine-independent and unsandboxed, so it cannot be fooled
+  from inside. But it is a WITNESS, and this ADR's Consequences already
+  say what this tier is: containment; ADR 0023 owns the witness. It also
+  protects only the launcher's git — the pointer redirect is equally an
+  escape for the operator's next `git -C <tree>` — and it lands after the
+  session has already written the redirect it then has to explain. Not
+  rejected as wrong, rejected as the other lane's: if 0023's identity
+  check grows the chain, it should, and nothing here conflicts.
 - **Wait for t4f1 to land before amending** (2026-09-05). The record
   would keep prescribing a mechanism the operator retired on 09-01, to
   whoever reads it for the next cut; ADR 0040's `lands with: <bead>`
@@ -206,9 +307,20 @@ No change to `sessionHooksDirs`, `recordBead`, or L1.
 - `renameSeal` picks up the new paths' ancestors automatically — `.git`
   in a main checkout already gets a seal from the hooks deny.
 - L4 (2026-09-05): containment for the *worktree* shape is the `:ro`
-  common dir, narrower than L2. The main-checkout shape at L4 and the
-  identity chain at L4 are open residuals, named in decision 4 and filed;
-  nobody may cite this ADR as "L4 is closed".
+  common dir, narrower than L2. The main-checkout shape and the identity
+  chain get `:ro` file binds (decision 4a/4b, ranger-base-672zt and
+  p9h9d), so the rendered set at L4 names every path L2's deny block
+  names EXCEPT the three lock siblings, which have no mount twin. Until
+  those two beads land and arm B4 has run somewhere with an engine,
+  nobody may cite this ADR as "L4 is closed"; after them, the honest
+  sentence is "L4 is closed except at the lock siblings, where the
+  refusal lands one step later and leaves nothing behind".
+- An L4 file bind is a bind of a source the launcher OWNS: it exists
+  before launch, or `PrepareSessionHead` makes it. The deny direction of
+  `cageOverlay` never binds an absent file, because the engine would make
+  it a directory on the host (decision 4a) — the one asymmetry between a
+  file rule and a directory rule at this tier, and the reason the lock
+  siblings stop at L2.
 
 ## Verification (runnable; every refusal pin gets a control arm that
 shows the same write landing with the deny removed — the rig must be
@@ -271,3 +383,32 @@ three shapes carry the real control arm.
    is MEASURED in `0014-path-scoped-writes.probe.sh`; what B adds is that
    composition on real git plumbing at these paths, and until it runs the
    engine half of this item is ASSUMED from that foundation.
+6. L4 file binds (2026-09-05, ranger-base-n3ywd). Two halves again. The
+   RENDERED set, MEASURED at the renderer in both PID shapes
+   (cageoverlay_test.go, ranger-base-672zt and p9h9d): main checkout —
+   one `:ro` mount on `.git/config` and one on `.git/hooks`, the `.git`
+   carve-out still read-write beneath them; worktree — `:ro` mounts on
+   `gitdir`, `commondir`, `config.worktree` under a read-write
+   `worktrees/<own>`, the pointer file bound only on a read-write repo,
+   and STILL no mount of either mode on `<common>/config` or `hooks`
+   (t4f1's pin, unchanged); every shape — no mount whose destination
+   ends in `.lock`, derived from the L2 readers so a widened list fails
+   the pin (two-way, not a literal list); rendering creates nothing on
+   the host, and the reach probe still finds the store writable. The
+   launcher half: after `PrepareSessionHead`, `config.worktree` exists,
+   is empty, and add/commit/status/rev-parse in the tree succeed with
+   the extension off AND on. Every refusal pin gets a wrong arm that
+   goes red. The ENGINE composition is arm B4 of
+   `0014-l4-worktree-narrowing.probe.sh` Part B (ranger-base-017dx):
+   inside the cage, append to a `:ro`-bound `config` → EROFS; `git config
+   core.hooksPath` → refused with "could not write config file", the
+   file byte-identical, no stray `config.lock` after; `mv` onto it and
+   `rm` of it → EBUSY; `commondir` likewise — each against the control
+   with the two file binds removed, where every one lands. And the
+   negative the design rests on, measured on the engine and not only on
+   host git: a file bind with an ABSENT source, recording what the engine
+   creates on the host and that git in that tree then fails. UNRUN on
+   this box (ranger-base-6mz7); venue as item 5's. Until it runs, "a
+   file bind lands over the directory overlay containing it" is ASSUMED
+   from the directory measurement, and it is the one claim here whose
+   failure would change the design rather than the wording.
