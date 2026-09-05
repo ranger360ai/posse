@@ -138,6 +138,10 @@ func TestOverlayRefusesMechanismKeys(t *testing.T) {
 		// value is wrong — it is refused for being mechanism, which is the
 		// whole distinction D2 draws.
 		"turn_outcome": "turn_outcome: " + TurnOutcomeClaudeTranscript + "\n",
+		// Same sharp arm one screen over: a REGISTERED pane reader, and the
+		// one claude already declares — so the refusal is about the KEY
+		// being mechanism, not about the value being wrong (ADR 0057 D2).
+		"pane_mode": "pane_mode: " + PaneModeClaudeFooter + "\n",
 	}
 	// Two legacy messages other readers already quote; the rest are checked
 	// by shape below.

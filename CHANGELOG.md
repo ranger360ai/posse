@@ -42,6 +42,30 @@ departing overlay files, and writes nothing.
 
 ### Added
 
+**Your own CLI can now declare which reader parses its screen for a
+permission mode: `pane_mode: claude-footer | grok-border | none`.**
+
+The pane readers above shipped keyed on the runtime's NAME, so a fourth
+runtime listed every session as `mode:?` — "nobody has measured what its pane
+says" — forever, and the only way out was editing Go. `pane_mode:` is a
+registry key on the runtime profile, the same shape `turn_outcome:` wears: a
+CLI that paints a claude-shaped footer declares `claude-footer` and is read
+today, with no code change.
+
+`none` is a DECLARATION, not an omission, and that is the point of having it:
+a CLI you have MEASURED to render no mode on any screen gets codex's permanent
+`mode:—` and costs no pane read per session, while a CLI nobody has measured
+still gets the loud `mode:?`. A `pane_mode:` no reader implements refuses at
+load and names the three that are registered, rather than promising a reading
+nothing performs.
+
+A new screen vocabulary still needs a reader plus the captures it was measured
+against — the same price `turn_outcome:` charges. And because which reader
+parses a CLI's screen is code measured against that CLI's captures rather than
+a fact about your box, `pane_mode:` is a MECHANISM key: declaring it in a
+built-in's `runtimes/<name>.yaml` overlay refuses the load (ADR 0021 D2). A
+claude release that rewords its footer is fixed at the corpus.
+
 **`posse list` and `posse gates <persona>` now say which permission mode each
 session's PANE is in — and say plainly when they cannot tell.**
 

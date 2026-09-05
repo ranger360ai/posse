@@ -203,7 +203,7 @@ func TestQAPaneModeReadsOnlyTheLiveScreenTail(t *testing.T) {
 	if !strings.Contains(quoted, "bypass permissions on") || !strings.Contains(quoted, "manual mode on") {
 		t.Fatal("the composed fixture no longer carries both footers — recompose it from the corpus")
 	}
-	m := ReadPaneMode("claude", quoted)
+	m := ReadPaneMode(builtinPaneModeAdapter("claude"), quoted)
 	if m.State != PaneModeNamed || m.Mode != "manual" {
 		t.Errorf("ReadPaneMode = %+v; want the LIVE footer (manual). A quoted footer above the tail is not a reading", m)
 	}
@@ -245,10 +245,10 @@ func TestQAPaneModeUnknownsAreFourDistinctTokens(t *testing.T) {
 		what string
 		m    PaneMode
 	}{
-		{"named", ReadPaneMode("claude", claudePaneAuto)},
-		{"covered", ReadPaneMode("claude", claudePaneDialog)},
-		{"unnameable", ReadPaneMode("grok", grokPaneNoSuffix)},
-		{"never", ReadPaneMode("codex", codexPaneNever)},
+		{"named", ReadPaneMode(builtinPaneModeAdapter("claude"), claudePaneAuto)},
+		{"covered", ReadPaneMode(builtinPaneModeAdapter("claude"), claudePaneDialog)},
+		{"unnameable", ReadPaneMode(builtinPaneModeAdapter("grok"), grokPaneNoSuffix)},
+		{"never", ReadPaneMode(builtinPaneModeAdapter("codex"), codexPaneNever)},
 		{"unread", PaneMode{}},
 	} {
 		tag := c.m.Tag()
@@ -339,7 +339,7 @@ func TestQAADR0035PaneModeSurfaceClaimIsBuilt(t *testing.T) {
 	}
 	// Built, asked of shipped code: the reader is in permissionmode.go, not
 	// in this package's test corpus.
-	if m := ReadPaneMode("grok", grokPaneAuto); m.State != PaneModeNamed || m.Mode != "auto" {
+	if m := ReadPaneMode(builtinPaneModeAdapter("grok"), grokPaneAuto); m.State != PaneModeNamed || m.Mode != "auto" {
 		t.Fatalf("ADR 0035 §3 says the composer border is read and surfaced; ReadPaneMode(grok) returns %+v.\n"+
 			"Either build it or reword the ADR — the clause is the fleet's only control on a flag-lost grok session.", m)
 	}

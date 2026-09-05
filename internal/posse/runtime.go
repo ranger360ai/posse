@@ -455,6 +455,27 @@ type Runtime struct {
 	// declaration on this struct could only drift, and did (0lg6). Ask
 	// CostRead/CostPriced/CostReading below.
 	TurnOutcomeAdapter string
+	// PaneModeAdapter names the reader behind what this runtime's PANE says
+	// about the permission mode a session is in — declarable as `pane_mode:`,
+	// in the registry-key shape of ADR 0017 §4 and verbatim the one
+	// TurnOutcomeAdapter above wears (ADR 0057 D1).
+	//
+	// "" = no reader, and that is the loud default: every session on this
+	// runtime lists as `mode:?` with a why saying nobody has measured what
+	// its pane renders. `none` is the OPPOSITE of that — a CLI measured to
+	// render no mode on any screen, whose column is a permanent `—` and whose
+	// listing costs no pane read at all. The two are different facts and the
+	// surfaces spell them differently, which is why `none` is a declaration
+	// and not an omission (permissionmode.go).
+	//
+	// Keyed on the READER, never on the runtime's name: the codex branch and
+	// the name-keyed reader map this replaced were an ADR 0017 §3 shadow
+	// predicate, and a fourth CLI painting a claude-shaped footer can now be
+	// read by declaring one line of yaml. Which reader parses a CLI's screen
+	// is code measured against that CLI's captures rather than a fact about
+	// this box, so it is also a MECHANISM key under ADR 0021 D2: a built-in's
+	// overlay may not move it.
+	PaneModeAdapter string
 }
 
 // PromptMode is how dispatch delivers the work prompt here. The zero value
@@ -1277,7 +1298,11 @@ var builtinRuntimes = []Runtime{
 		// message, so a pass can tell an exhausted account from a settle.
 		// The only runtime with a reader today (ranger-base-02zr).
 		TurnOutcomeAdapter: TurnOutcomeClaudeTranscript,
-		Command:            `claude {model} ` + ClaudeFleetFlags + ` --append-system-prompt "$(cat {file})" --add-dir {memory} {settings} {skills} {allow} {deny}`},
+		// pane_mode: the footer names all six modes (MEASURED on claude
+		// 2.1.251, permissionmodepane_qa_test.go), and a modal dialog
+		// replaces it — which is the ?covered state, not a mode.
+		PaneModeAdapter: PaneModeClaudeFooter,
+		Command:         `claude {model} ` + ClaudeFleetFlags + ` --append-system-prompt "$(cat {file})" --add-dir {memory} {settings} {skills} {allow} {deny}`},
 	{Name: "codex", Builtin: true, Realize: realizeCodex, Skills: skillsCwd, SkillsCwd: true, Models: codexModels, ModelFlag: "-c model=%s", SelfSandbox: true, ProjectConfig: []string{CodexProjectConfig}, Unattended: "-a never",
 		Egress: []string{"chatgpt.com", "ab.chatgpt.com"}, StateDirs: []string{"~/.codex"},
 		// record: untrusted — MEASURED the other way: 3/3 dispatched codex
@@ -1285,7 +1310,14 @@ var builtinRuntimes = []Runtime{
 		// comment, one of them on a dirty shared checkout (ranger-base-0fb).
 		// Dispatch still launches; gather never ✓s a settle-without-close.
 		Prompt: PromptArgv, Record: RecordUntrusted,
-		NativeRules: codexNativeRules, Interstitials: CodexInterstitials,
+		// pane_mode: none — MEASURED on codex-cli 0.150.1, the footer is
+		// `<model> <effort> · <cwd>` under `-a never` and `-a on-request`
+		// alike and the policy is reachable in-pane only by typing /status.
+		// Typing into a session is not a read, so this is a permanent `—`
+		// rather than an unknown more work could close, and a listing spends
+		// no herdr call per codex session to re-learn it.
+		PaneModeAdapter: PaneModeNone,
+		NativeRules:     codexNativeRules, Interstitials: CodexInterstitials,
 		Command: `codex {model} {skills} {deny} -a never ` + CodexFleetFlags + ` -c developer_instructions="$(cat {file})"`},
 	{Name: "grok", Builtin: true, Realize: realizeGrok, Skills: skillsCwd, SkillsCwd: true, Models: grokModels, ModelFlag: "-m %s", Unattended: GrokFleetFlags,
 		Egress: []string{"cli-chat-proxy.grok.com", "grok.com"}, StateDirs: []string{"~/.grok"},
@@ -1299,7 +1331,11 @@ var builtinRuntimes = []Runtime{
 		// start exceeding 45s on a clean screen (ranger-base-3j8) was a
 		// problem about reaching a composer; argv needs no composer.
 		Prompt: PromptArgv, Record: RecordTrusted, RecordWhy: "the qa lane closed a dispatched bead on 2026-08-24 (ADR 0013 §4)",
-		NativeRules: grokNativeRules, Interstitials: GrokInterstitials, PIDVoid: GrokPIDVoid,
+		// pane_mode: the composer border names two of six modes (MEASURED on
+		// grok 1.0.5); the other four and the startup splash render nothing,
+		// which is ?unnamed and never "default".
+		PaneModeAdapter: PaneModeGrokBorder,
+		NativeRules:     grokNativeRules, Interstitials: GrokInterstitials, PIDVoid: GrokPIDVoid,
 		Command: `grok {model} {skills} ` + GrokFleetFlags + ` --rules="$(cat {file})" {allow} {deny}`},
 }
 
@@ -1525,6 +1561,20 @@ func (a *App) LoadRuntime(name string) (*Runtime, error) {
 		}
 		rt.TurnOutcomeAdapter = v
 	}
+	// pane_mode: which registered reader parses this runtime's pane for the
+	// mode a session is actually in. Same shape, same reason and the same two
+	// arms as turn_outcome: above — absent is the loud default (`mode:?` with
+	// a why naming this runtime), and a name no reader implements refuses at
+	// load rather than promising a reading nothing performs. `none` is a
+	// registered reader, so declaring a measured blindness goes through this
+	// arm like any other (ADR 0057 D1).
+	if v := YamlGet(p, "pane_mode"); v != "" {
+		if _, ok := PaneModeReaderFor(v); !ok {
+			return nil, Die("runtime %s: %s has pane_mode: %q — no reader by that name (have: %s; ADR 0057 D1)",
+				name, AbbrevHome(p), v, strings.Join(PaneModeAdapters(), ", "))
+		}
+		rt.PaneModeAdapter = v
+	}
 	// native_rules: the rulebook files this CLI loads on its own. Posse
 	// never writes them; declaring them is how `runtime check` can name the
 	// other voice in the session.
@@ -1636,6 +1686,13 @@ var builtinMechanismKeys = []struct{ key, why string }{
 	// a reading of this box; the built-in's is the one measured against its
 	// transcript, and a wrong one misreads a settle in silence.
 	{"turn_outcome", "which registered reader parses this CLI's own first turn is code measured against its transcript, not an instance fact"},
+	// Same split one screen over: which reader parses this CLI's SCREEN is
+	// code measured against its captures. A claude release that rewords its
+	// footer is fixed at the corpus the reader is checked against, not by an
+	// overlay nobody measured — and an overlay declaring `none` here would
+	// turn a read column into a permanent "—" with no measurement behind it
+	// (ADR 0057 D2).
+	{"pane_mode", "which registered reader parses this CLI's screen for its permission mode is code measured against that CLI's captures, not an instance fact"},
 }
 
 // builtinOverlayKeyList renders the overlay set for a refusal message and

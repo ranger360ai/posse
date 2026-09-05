@@ -186,8 +186,26 @@ const (
 // have to say WHICH unknown they are showing. The corpus pins the split
 // below; these two return values are what its per-runtime cases need.
 func paneMode(runtime, pane string) (mode string, ok bool) {
-	m := ReadPaneMode(runtime, pane)
+	m := ReadPaneMode(builtinPaneModeAdapter(runtime), pane)
 	return m.Mode, m.State == PaneModeNamed
+}
+
+// builtinPaneModeAdapter is the runtime's OWN `pane_mode:` declaration, read
+// out of builtinRuntimes — not a second table keyed on the name here (ADR
+// 0057 D1 retired that shape in production, and a copy of it in the corpus
+// would be the same defect one file over).
+//
+// It also makes the DECLARATION load-bearing on these cases: flip codex to a
+// scraper or drop claude's key and the per-runtime pins below go red, which
+// is the right blast radius for a runtime saying its screen is read by
+// something other than what was measured against these captures.
+func builtinPaneModeAdapter(runtime string) string {
+	for _, rt := range builtinRuntimes {
+		if rt.Name == runtime {
+			return rt.PaneModeAdapter
+		}
+	}
+	return ""
 }
 
 // ─── what the corpus pins ───────────────────────────────────────────────────

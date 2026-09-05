@@ -1148,20 +1148,53 @@ func (b *HerdrBackend) listSessions() ([]HerdrSession, []string, error) {
 // it is the ONLY writer of HerdrSession.PermissionMode: the meta records what
 // the launch asked for, which is the claim this field exists to check.
 //
-// A runtime whose pane cannot answer costs no herdr call — codex was measured
-// once and renders nothing on any screen, so paying a read per codex session
-// would buy a constant.
+// WHICH reader parses a pane is the runtime's own declaration — `pane_mode:`,
+// resolved through LoadRuntime, never a map keyed on the runtime's name (ADR
+// 0057 D1, ADR 0017 §3). A runtime declaring `none` was MEASURED to render no
+// mode on any screen and costs no herdr call: paying a read per session there
+// would buy a constant. A runtime declaring nothing is the loud default, and
+// a runtime this box cannot load at all is one more why-carrying unread — a
+// listing never renders this column blank.
+//
+// The declaration is resolved once per distinct runtime NAME per listing: it
+// is a property of the runtime and a board holds many sessions on few
+// runtimes, so a yaml read per session would be a read per row of the same
+// file. Failures are cached too, or an unloadable runtime costs one refused
+// read per session it launched.
 func (b *HerdrBackend) fillPaneModes(out []HerdrSession) {
 	if !b.PaneModes {
 		return
 	}
+	type declared struct {
+		adapter string
+		loaded  bool
+	}
+	seen := map[string]declared{}
+	resolve := func(runtime string) declared {
+		if d, ok := seen[runtime]; ok {
+			return d
+		}
+		d := declared{}
+		if rt, err := b.App.LoadRuntime(runtime); err == nil {
+			d = declared{adapter: rt.PaneModeAdapter, loaded: true}
+		}
+		seen[runtime] = d
+		return d
+	}
 	for i := range out {
 		s := &out[i]
-		switch {
-		case s.Runtime == "":
+		if s.Runtime == "" {
 			s.PermissionMode = PaneMode{Why: "this session records no runtime — posse did not launch it, so nothing says what its pane would render"}
-		case !PaneModeReadable(s.Runtime):
-			s.PermissionMode = ReadPaneMode(s.Runtime, "") // a fact about the runtime; no read needed
+			continue
+		}
+		d := resolve(s.Runtime)
+		switch {
+		case !d.loaded:
+			s.PermissionMode = PaneMode{Why: fmt.Sprintf("runtime %q does not load on this box, so nothing says which reader its pane would answer to", s.Runtime)}
+		case d.adapter == "":
+			s.PermissionMode = PaneModeUndeclared(s.Runtime)
+		case !PaneModeReadable(d.adapter):
+			s.PermissionMode = ReadPaneMode(d.adapter, "") // a declared constant; no read needed
 		case s.PaneID == "":
 			s.PermissionMode = PaneMode{Why: "this session records no pane, so there is no screen to read"}
 		default:
@@ -1170,7 +1203,7 @@ func (b *HerdrBackend) fillPaneModes(out []HerdrSession) {
 				s.PermissionMode = PaneMode{Why: fmt.Sprintf("pane read failed: %v", err)}
 				continue
 			}
-			s.PermissionMode = ReadPaneMode(s.Runtime, text)
+			s.PermissionMode = ReadPaneMode(d.adapter, text)
 		}
 	}
 }

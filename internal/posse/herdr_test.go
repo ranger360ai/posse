@@ -1359,6 +1359,19 @@ func fakeHerdr(args []string) int {
 		}
 		return fakeOK(`{"type":"pane_run"}`)
 	case "pane read": // plain text, never an envelope — like the real CLI
+		// pane-read-log records every read this fake served, one pane id per
+		// line. It is how a test can pin that a listing spent NO pane read —
+		// `pane_mode: none` is a declared constant, and paying a herdr call
+		// per session to re-learn it is the cost the declaration removes
+		// (ADR 0057 D1). An absent log is zero reads, which is what the
+		// assertion wants to be able to say.
+		if len(args) > 2 {
+			if f, err := os.OpenFile(filepath.Join(fakeDir(), "pane-read-log"),
+				os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644); err == nil {
+				fmt.Fprintln(f, args[2])
+				f.Close()
+			}
+		}
 		// pane-text/<pane id, ':' → '_'> is what THAT pane is showing, for
 		// the tests that read a screen rather than a JSON field (the
 		// permission-mode surface, ranger-base-vwgt). Per pane rather than

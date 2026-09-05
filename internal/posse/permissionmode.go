@@ -3,6 +3,7 @@ package posse
 import (
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 )
 
@@ -100,26 +101,120 @@ var claudeFooterModes = []struct{ footer, mode string }{
 	{"don't ask on", "dontAsk"},
 }
 
-// paneModeReaders is the set of runtimes whose pane can be read for a mode at
-// all. codex is deliberately absent rather than mapped to a reader that
-// always fails: "no reader" and "measured to render nothing" are different
-// facts, and only the second is a permanent "—" (see ReadPaneMode).
-var paneModeReaders = map[string]func(tail []string) PaneMode{
-	"claude": claudePaneMode,
-	"grok":   grokPaneMode,
+// The registered pane readers — the legal values of a runtime's `pane_mode:`
+// key and the keys of paneModeReaders below (ADR 0057 D1). A runtime declares
+// WHICH READER parses its screen, never its own name: two CLIs that paint the
+// same footer share one reader, and a CLI measured to paint nothing declares
+// that as a reading of its own.
+//
+// PaneModeNone is a declaration and not an absence, which is the distinction
+// the whole three-valued field turns on. It is the ADAPTER whose answer is
+// the PaneModeNever STATE; a runtime that declares nothing at all is
+// PaneModeUnread instead (PaneModeUndeclared).
+const (
+	PaneModeClaudeFooter = "claude-footer"
+	PaneModeGrokBorder   = "grok-border"
+	PaneModeNone         = "none"
+)
+
+// The Why every not-named reading carries, one per reader. Named constants
+// rather than literals at the return sites because the registry entry and
+// the reader that produces it must be the same sentence: the entry is what
+// `posse runtime check` renders the dimension's row from (ADR 0057 D3), and
+// a row describing an absence the reader does not actually report is scenery.
+const (
+	paneModeCoveredWhy = "no mode footer on screen — a modal dialog replaces it, and the launch command in the scrollback is a claim about the launch, not a reading"
+
+	paneModeUnnameableWhy = "grok names only auto and always-approve on the composer border — default, acceptEdits, dontAsk, plan and a pane still on the startup splash all render nothing, so this is four modes and an unknown, never \"default\""
+
+	// Generic on purpose: `none` is a reader, and a second CLI measured to
+	// render nothing declares the same one. The measurement behind a
+	// particular runtime's `none` stays where the declaration is — the
+	// built-in's own comment, and the grid row's note (ADR 0057 D3).
+	paneModeNeverWhy = "this runtime renders no permission mode on any screen — measured, so the column is a permanent \"—\" rather than an unknown more work could close"
+)
+
+// PaneModeReader is one entry of that registry, and it is the whole
+// declaration: what parses a pane of this shape, whether a listing should
+// spend a herdr call on one at all, what an absent mode MEANS here, and the
+// one line the runtime grid renders the dimension's row from.
+type PaneModeReader struct {
+	// Read turns the pane tail into a reading. A reader with ReadsPane
+	// false is handed nil — its answer is the measurement, not a scrape.
+	Read func(tail []string) PaneMode
+	// ReadsPane is whether reading a pane here can say anything. false is
+	// `none`: paying a herdr call per session to re-learn a constant buys
+	// nothing, so fillPaneModes skips the read entirely.
+	ReadsPane bool
+	// Absence is the Why a not-named reading carries — the sentence a
+	// surface prints instead of a mode, so it can say WHICH unknown it is
+	// showing.
+	Absence string
+	// Contract is what this reader reads, in one line, for the grid row.
+	Contract string
 }
 
-// PaneModeReadable reports whether reading this runtime's pane can say
-// anything about its permission mode. It is what keeps a listing from
-// spending a herdr call per codex session to learn what was measured once.
-func PaneModeReadable(runtime string) bool {
-	_, ok := paneModeReaders[runtime]
-	return ok
+// paneModeReaders is the registry. The map is the whole set of legal
+// `pane_mode:` values: a name that is not a key here is refused at load
+// (runtime.go), so a declaration can never promise a reading nothing
+// performs — the same contract turn_outcome: carries (turnfailure.go).
+var paneModeReaders = map[string]PaneModeReader{
+	PaneModeClaudeFooter: {
+		Read: claudePaneMode, ReadsPane: true, Absence: paneModeCoveredWhy,
+		Contract: "the footer, in the last three non-empty lines: it names all six modes and three of them without the word \"mode\", and a modal dialog REPLACES it, so absence is COVERED and clears on the next read",
+	},
+	PaneModeGrokBorder: {
+		Read: grokPaneMode, ReadsPane: true, Absence: paneModeUnnameableWhy,
+		Contract: "the composer border's suffix: it names two of six modes, so absence is UNNAMEABLE — four modes and a pane still on the splash, never \"default\"",
+	},
+	PaneModeNone: {
+		Read: neverPaneMode, ReadsPane: false, Absence: paneModeNeverWhy,
+		Contract: "no pane read at all: this CLI was measured to render no mode on any screen, so absence is NEVER — a permanent \"—\", and a listing spends no herdr call per session",
+	},
 }
 
-// ReadPaneMode reads a permission mode out of rendered pane text. Every
-// not-named answer carries its own Why, because the surfaces that render this
-// have to say WHICH kind of unknown they are showing.
+// PaneModeAdapters is every registered reader name, sorted — what a refused
+// declaration lists so the operator can see what is on offer.
+func PaneModeAdapters() []string {
+	names := make([]string, 0, len(paneModeReaders))
+	for name := range paneModeReaders {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// PaneModeReaderFor is the reader a `pane_mode:` value resolves to. ok=false
+// is an unregistered name, which LoadRuntime refuses — so every caller
+// downstream of a loaded runtime holds either a registered reader or the
+// empty declaration.
+func PaneModeReaderFor(adapter string) (PaneModeReader, bool) {
+	r, ok := paneModeReaders[adapter]
+	return r, ok
+}
+
+// PaneModeReadable reports whether a listing should spend a pane read on
+// this ADAPTER. It is what keeps a listing from paying a herdr call per
+// codex session to learn what was measured once — and it asks the
+// declaration, never the runtime's name (ADR 0017 §3).
+func PaneModeReadable(adapter string) bool {
+	r, ok := paneModeReaders[adapter]
+	return ok && r.ReadsPane
+}
+
+// PaneModeUndeclared is the loud default: a runtime that declares no
+// `pane_mode:` at all. It is not a mode, not a blank and not `none` — the
+// difference between "nobody has measured what this CLI's pane says" and
+// "somebody measured it and it says nothing" is the whole reason `none` is a
+// declaration.
+func PaneModeUndeclared(runtime string) PaneMode {
+	return PaneMode{Why: fmt.Sprintf("posse has no pane reader for runtime %q — nobody has measured what its pane says", runtime)}
+}
+
+// ReadPaneMode reads a permission mode out of rendered pane text, with the
+// reader the runtime DECLARED (its `pane_mode:` adapter). Every not-named
+// answer carries its own Why, because the surfaces that render this have to
+// say WHICH kind of unknown they are showing.
 //
 // Only the last three non-empty lines are considered, because the scrollback
 // above them holds the launch command line — the argv this whole exercise is
@@ -127,18 +222,17 @@ func PaneModeReadable(runtime string) bool {
 // 2026-08-29, exiting a `--permission-mode bypassPermissions` claude with
 // /exit and relaunching it manual in the same pane left exactly one footer on
 // screen, the live one.
-func ReadPaneMode(runtime, pane string) PaneMode {
-	if runtime == "codex" {
-		// Measured on codex-cli 0.150.1: the footer is `<model> <effort> ·
-		// <cwd>` under `-a never` and `-a on-request` alike, and the policy
-		// is reachable in-pane only by typing /status. Typing into a session
-		// is not a read, so this never becomes an unknown that more work
-		// closes.
-		return PaneMode{State: PaneModeNever, Why: "codex renders no approval policy on any screen — it is reachable in-pane only by typing /status, and typing into a session is not a read"}
-	}
-	read, ok := paneModeReaders[runtime]
+func ReadPaneMode(adapter, pane string) PaneMode {
+	r, ok := paneModeReaders[adapter]
 	if !ok {
-		return PaneMode{Why: fmt.Sprintf("posse has no pane reader for runtime %q — nobody has measured what its pane says", runtime)}
+		// Unreachable from a loaded runtime — LoadRuntime refuses an
+		// unregistered pane_mode:, and an undeclared one is answered by
+		// PaneModeUndeclared with the runtime's name in it. A caller that
+		// hands this a name anyway gets an unknown, never a mode.
+		return PaneMode{Why: fmt.Sprintf("posse has no pane reader named %q — the registered readers are %s", adapter, strings.Join(PaneModeAdapters(), ", "))}
+	}
+	if !r.ReadsPane {
+		return r.Read(nil)
 	}
 	var tail []string
 	for _, ln := range strings.Split(pane, "\n") {
@@ -149,7 +243,16 @@ func ReadPaneMode(runtime, pane string) PaneMode {
 	if len(tail) > 3 {
 		tail = tail[len(tail)-3:]
 	}
-	return read(tail)
+	return r.Read(tail)
+}
+
+// neverPaneMode is the `none` reader. It takes no pane because there is
+// nothing on any screen to take: codex 0.150.1 renders the same footer under
+// `-a never` and `-a on-request`, and the policy is reachable in-pane only by
+// typing /status — typing into a session is not a read, so this never becomes
+// an unknown that more work closes.
+func neverPaneMode([]string) PaneMode {
+	return PaneMode{State: PaneModeNever, Why: paneModeNeverWhy}
 }
 
 func claudePaneMode(tail []string) PaneMode {
@@ -160,7 +263,7 @@ func claudePaneMode(tail []string) PaneMode {
 			}
 		}
 	}
-	return PaneMode{State: PaneModeCovered, Why: "no mode footer on screen — a modal dialog replaces it, and the launch command in the scrollback is a claim about the launch, not a reading"}
+	return PaneMode{State: PaneModeCovered, Why: paneModeCoveredWhy}
 }
 
 func grokPaneMode(tail []string) PaneMode {
@@ -189,7 +292,7 @@ func grokPaneMode(tail []string) PaneMode {
 		}
 		return m
 	}
-	return PaneMode{State: PaneModeUnnameable, Why: "grok names only auto and always-approve on the composer border — default, acceptEdits, dontAsk, plan and a pane still on the startup splash all render nothing, so this is four modes and an unknown, never \"default\""}
+	return PaneMode{State: PaneModeUnnameable, Why: paneModeUnnameableWhy}
 }
 
 // GrokBorderAlwaysApprove is grok's border word for bypassPermissions, and

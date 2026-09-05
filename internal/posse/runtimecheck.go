@@ -214,7 +214,7 @@ func (a *App) RuntimeCheck(rt *Runtime, h Herdr, w io.Writer) bool {
 	} else {
 		fmt.Fprintf(w, "\n  onboarding a runtime is filling this grid: runtimes/%s.yaml takes command:, prompt:,\n", rt.Name)
 	}
-	fmt.Fprintln(w, "  startup_wait:, record: (+ record_why:), turn_outcome:, native_rules:,")
+	fmt.Fprintln(w, "  startup_wait:, record: (+ record_why:), turn_outcome:, pane_mode:, native_rules:,")
 	fmt.Fprintln(w, "  rules_precedence: (+ rules_precedence_why:),")
 	fmt.Fprintln(w, "  model_flag:/model_<tier>:, skills_flag: OR skills_cwd:, self_sandbox:, unattended:,")
 	fmt.Fprintln(w, "  project_config: (+ project_config_keys:), egress:, cage_cred:, gate_shell:,")

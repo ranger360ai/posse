@@ -91,6 +91,7 @@ var runtimeFieldAudit = map[string]runtimeFieldNote{
 	"StateDirs":          {fcConsumed, []string{"herdrback.go", "reachability.go", "seatbelt.go"}, []string{"stateDirs"}, "the LAUNCHING runtime's declaration: the launch paths and the reach probe spell rt.StateDirs, seatbelt.go receives it as the stateDirs argument and adds it to the L2 writable set. It is now the ONLY runtime state a launch grants — the built-in union beside it was every runtime's auth store, writable by every persona (ranger-base-9fl) — and without it the CLI re-runs its first-run flow every launch"},
 	"EnvRequired":        {fcConsumed, []string{"runtimepreflight.go"}, nil, "checked by NAME at launch preflight; a missing one refuses"},
 	"TurnOutcomeAdapter": {fcConsumed, []string{"turnfailure.go"}, nil, "which reader sees what this CLI's own first turn did — an exhausted account vs an agent that skipped its bead"},
+	"PaneModeAdapter":    {fcConsumed, []string{"herdrback.go", "permissionmode.go"}, nil, "which reader parses this CLI's screen for the permission mode a session is actually in — and whether a listing spends a pane read at all: `none` is a MEASURED permanent \u2014, undeclared is `mode:?` (ADR 0057 D1)"},
 }
 
 func TestEveryRuntimeFieldIsClassified(t *testing.T) {
