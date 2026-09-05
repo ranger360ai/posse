@@ -41,13 +41,14 @@ package posse
 //
 // 17i's premise for rule 1 was "a test server always is loopback; an exfil
 // destination never is". The second half is false when the adversary is a
-// LOCAL process, and on this machine it is: SeatbeltProfile is `(allow
-// default)` + `(deny file-write*)` with no network restriction, and
-// `Bash(posse:*)` is granted crew-wide — so an env var and a socket are all
-// it takes to be a caller-chosen destination that is also loopback
-// (verified live against a synthetic token, ranger-base-7nlw). Reaching a
-// local listener is a seam. Being CREDENTIALED and being BELIEVED are not,
-// so those two are their own rules now:
+// LOCAL process, and the software's own posture permits one: the rendered
+// seatbelt profile restricts file writes, not network egress (seatbelt.go),
+// and wherever the harness's own command is allowlisted for a session, an
+// env var and a socket are all it takes to be a caller-chosen destination
+// that is also loopback (verified live against a synthetic token,
+// ranger-base-7nlw). Reaching a local listener is a seam. Being
+// CREDENTIALED and being BELIEVED are not, so those two are their own
+// rules now:
 //
 //  4. The account's credential goes only to the compiled-in endpoint,
 //     byte for byte — credentialedURL below, never a host test. A loopback

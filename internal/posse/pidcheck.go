@@ -111,7 +111,7 @@ func metricKey(id string) string {
 // An unbalanced one is the signature of an inline list split on a comma
 // *inside* a rule (`allow: [Bash(git commit -m a,b)]` parses as
 // `Bash(git commit -m a` + `b)`), which is the only thing wrong with
-// inline form — the crew's `[Bash(posse:*), Bash(git push:*)]` is fine.
+// inline form — a crew's `[Bash(posse:*), Bash(git push:*)]` is fine.
 func balancedParens(rule string) bool {
 	depth := 0
 	for _, r := range rule {
