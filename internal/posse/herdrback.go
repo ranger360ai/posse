@@ -2421,68 +2421,16 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 	}
 
 	// The other half of the seatbelt's credential read-deny (ADR 0019 D2
-	// item 3, ranger-base-x5f6p). That deny names the file the runtime's
-	// own resolution points at — CLAUDE_SECURESTORAGE_CONFIG_DIR, then
-	// CLAUDE_CONFIG_DIR, then `~/.claude` (credentialDir) — read out of the
-	// LAUNCHER's environment, because the profile is rendered in THIS
-	// process. Env sets are not in that environment: they are overlaid on
-	// the child a hundred lines below, long after the profile is written.
-	// So a set exporting either name moves the runtime's credential write
-	// to a directory the wall never heard of, and every other layer
-	// reports a healthy launch.
-	//
-	// The session does NOT inherit this process's environment, and an
-	// earlier draft of this comment said it did (ranger-base-r68d8). The
-	// session is a herdr workspace: CreateWorkspace hands the pane only
-	// the vars named explicitly, the pane is a child of the herdr DAEMON,
-	// and the runtime is typed into that pane's LOGIN shell — so what it
-	// reads is the daemon's environment plus whatever the login rc
-	// exports, the same three-way split ADR 0013 already records for PATH.
-	// Nothing makes these two names an exception: an `export
-	// CLAUDE_SECURESTORAGE_CONFIG_DIR=…` in a login rc reaches the runtime
-	// and never reaches this process, and the launcher's own
-	// `CLAUDE_CONFIG_DIR=… posse new` reaches this process and not the
-	// pane.
-	//
-	// What holds the wall and the write together is therefore not
-	// inheritance but the PIN (credentialDirPin, ADR 0019 D2 store 3,
-	// ranger-base-rq83c): the launch line carries both names in its
-	// `--settings` payload, resolved HERE, and the runtime applies each
-	// settings scope's env block OVER process.env in the order user,
-	// project, local, flag, policy — so the flag-scope payload lands after
-	// the pane's environment as surely as it lands after a settings file
-	// the persona wrote. MEASURED on claude 2.1.259; a launcher that
-	// merely EXPORTED the directory into the child would have lost to
-	// both. credentialpanesplit_qa_test.go pins that coupling from the
-	// rendered line, with the unpinned pane as its control.
-	//
-	// Refused rather than patched. Adding the set's directory to the deny
-	// would mean resolving the env sets before the profile is rendered,
-	// which reorders every refusal between here and there; refusing is
-	// additive, fail-closed, and it costs nothing measured — 0 env files
-	// carried either name when this was written. It is also the right
-	// shape after the pin rather than a leftover before it: an env set's
-	// variable is a scope the settings payload already outranks, so an
-	// APPEND there would be a wall that loses. The remedy is in the
-	// message and it is a real one: exported where the launcher can see
-	// it, the variable moves the deny and the pin together, and the pin is
-	// what moves the write.
-	//
-	// Only where the wall exists. A shims-tier session has no file-read
-	// deny for a variable to walk past, and a caged one renders its own
-	// profile inside, so refusing either would be a wall over nothing.
-	//
-	// NAMES only. An env set naming the directory the launcher already
-	// resolved would change nothing and is refused anyway, and that is the
-	// deliberate half: telling those two cases apart means reading the
-	// set's VALUE on the launch path, and an env set's values are the one
-	// thing this path is careful never to learn (credentialDirVarsIn
-	// returns the name it looked for, never the key's value). A refusal an
-	// operator clears in one line is the cheaper mistake.
-	if seatbeltWallRendered(cage, rt) {
-		if names := credentialDirVarsIn(vars); len(names) > 0 {
-			return nil, Die("env set exports %s, and the seatbelt's credential read-deny for this launch was already rendered from the launcher's own environment — the session would write its credential to a directory the sandbox never walled (ADR 0019 D2, ranger-base-x5f6p). Export it in the launching shell instead, where the deny follows it, or drop it from the env set", strings.Join(names, " and "))
-		}
+	// item 3, ranger-base-x5f6p): the profile was rendered from the
+	// LAUNCHER's environment a hundred lines above, and the env sets are
+	// overlaid on the child below, so a set exporting either config-dir
+	// name would move the runtime's credential write past a wall already
+	// written. Asked HERE because this is the first line at which `vars`
+	// exists, and asked through the shared helper because RelaunchAgent
+	// renders a persona line too and must refuse the same state
+	// (ranger-base-179hy). The whole argument lives on the helper.
+	if err := credentialDirEnvSetRefusal(cage, rt, vars); err != nil {
+		return nil, err
 	}
 
 	// env_required (ADR 0012 D4): the runtime declared variable NAMES a
@@ -2918,7 +2866,12 @@ func (b *HerdrBackend) RelaunchAgent(name string, grace time.Duration) (bool, er
 			return false, Die("%s: the rendered %s line does not carry --model %s — refusing to retype the canary session %s on its tier's own model (ADR 0053 D1)", m.Agent, rt.Name, m.Model, m.Name)
 		}
 	}
-	if m.Cage == CageSeatbelt && AvailableCages[CageSeatbelt] && !rt.SelfSandbox {
+	// The same question planLaunch asks, through the same function
+	// (ranger-base-179hy). Spelled inline here until it was found drifted
+	// from the predicate e241b14 extracted for exactly these two sites: the
+	// copy had no `rt != nil` arm, and — worse — nothing tied it to the
+	// refusal the answer is FOR, twenty lines below.
+	if seatbeltWallRendered(m.Cage, rt) {
 		prof, err := b.App.RenderSeatbelt(ag, m.Dir, rt.StateDirs...)
 		if err != nil {
 			return false, err
@@ -2948,6 +2901,19 @@ func (b *HerdrBackend) RelaunchAgent(name string, grace time.Duration) (bool, er
 			return false, err
 		}
 		vars = append(vars, vs...)
+	}
+
+	// The credential-dir refusal planLaunch makes, on the one other path
+	// that renders a persona line (ranger-base-179hy). Reachable for the
+	// same reason the mint check below is: the sets are re-read BY NAME, so
+	// a CLAUDE_CONFIG_DIR (or CLAUDE_SECURESTORAGE_CONFIG_DIR) exported into
+	// one after the session opened arrives here — and the profile above was
+	// re-rendered from the LAUNCHER's environment, which never saw it. This
+	// is the UNATTENDED path (dispatch.launchSession), so it is the one
+	// where nobody is present to read the refusal that never came and the
+	// revived runtime just writes its credential outside the wall.
+	if err := credentialDirEnvSetRefusal(m.Cage, rt, vars); err != nil {
+		return false, err
 	}
 	cmd := inner
 	if m.Cage == CageContainer && b.App.ContainerAvailable() {

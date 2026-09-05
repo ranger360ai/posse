@@ -426,12 +426,23 @@ func TestQASeatbeltWallRenderedIsTheTierAndNotTheName(t *testing.T) {
 // set's directory to the deny, which is the fix the ordering had made
 // expensive.
 //
-// It also pins the two ENDS of that gap: seatbeltWallRendered is asked once
-// where the profile is written and once again after the env sets exist. Drop
-// the second call — the guard around credentialDirVarsIn — and the scan
-// still compiles, still runs on every launch, and refuses nothing that
-// matters; that is the mutation this arm exists to catch.
-func TestQATheSeatbeltProfileIsRenderedBeforeTheEnvSetsAreResolved(t *testing.T) {
+// Per RENDERER, not per file (ranger-base-179hy). The pin this replaces took
+// first(RenderSeatbelt) / first(EnvSetVars) / first(credentialDirVarsIn)
+// over the whole of herdrback.go, so it read the three lines of planLaunch
+// and stayed green while RelaunchAgent — the second path that renders a
+// persona line, and the UNATTENDED one — rendered a profile, re-read the env
+// sets by name, and refused nothing. A whole launch path was invisible to
+// it. So: find every function that renders a seatbelt profile, and make each
+// one carry the whole sequence.
+//
+// The mutation each arm is for, in order: move the env-set loop above the
+// render and the refusal is asking about a wall that could have seen them;
+// drop the refusal (the ranger-base-179hy defect itself) and the sets are
+// resolved and never scanned; spell the wall predicate inline at the render
+// and it can drift from the one the refusal asks — which is the drift
+// e241b14 extracted seatbeltWallRendered to end, and which
+// TestQANoLaunchPathSpellsTheSeatbeltWallPredicateItself finishes.
+func TestQAEveryLaunchPathThatRendersASeatbeltRefusesACredentialDirEnvSet(t *testing.T) {
 	t.Parallel()
 	const src = "herdrback.go"
 	fset := token.NewFileSet()
@@ -439,46 +450,168 @@ func TestQATheSeatbeltProfileIsRenderedBeforeTheEnvSetsAreResolved(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	lines := map[string][]int{}
-	ast.Inspect(f, func(n ast.Node) bool {
-		call, ok := n.(*ast.CallExpr)
-		if !ok {
+	renderers := 0
+	for _, d := range f.Decls {
+		fn, ok := d.(*ast.FuncDecl)
+		if !ok || fn.Body == nil {
+			continue
+		}
+		lines := map[string][]int{}
+		ast.Inspect(fn.Body, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			name := ""
+			switch g := call.Fun.(type) {
+			case *ast.SelectorExpr:
+				name = g.Sel.Name
+			case *ast.Ident:
+				name = g.Name
+			}
+			if name != "" {
+				lines[name] = append(lines[name], fset.Position(call.Pos()).Line)
+			}
 			return true
+		})
+		if len(lines["RenderSeatbelt"]) == 0 {
+			continue
 		}
-		name := ""
-		switch fn := call.Fun.(type) {
-		case *ast.SelectorExpr:
-			name = fn.Sel.Name
-		case *ast.Ident:
-			name = fn.Name
+		renderers++
+		who := fn.Name.Name
+		at := func(name string) (int, bool) {
+			if len(lines[name]) == 0 {
+				return 0, false
+			}
+			return lines[name][0], true
 		}
-		if name != "" {
-			lines[name] = append(lines[name], fset.Position(call.Pos()).Line)
+		last := func(name string) int { return lines[name][len(lines[name])-1] }
+		render, _ := at("RenderSeatbelt")
+
+		guard, ok := at("seatbeltWallRendered")
+		if !ok || guard > render {
+			t.Errorf("%s.%s renders a seatbelt profile at line %d without asking seatbeltWallRendered first (asked at %v) — the render is one of that predicate's two call sites, and a site that spells the question itself is free to drift from the one the refusal below asks", src, who, render, lines["seatbeltWallRendered"])
+			continue
 		}
-		return true
-	})
-	first := func(name string) int {
-		t.Helper()
-		if len(lines[name]) == 0 {
-			t.Fatalf("%s calls %s nowhere — this pin is watching a launch path that has moved, so its ordering claim measures nothing", src, name)
+		envs, ok := at("EnvSetVars")
+		if !ok {
+			t.Errorf("%s.%s renders a seatbelt profile at line %d and resolves no env sets — this pin is watching a launch path that has moved, so its ordering claim measures nothing", src, who, render)
+			continue
 		}
-		return lines[name][0]
+		if envs <= render {
+			t.Errorf("%s.%s resolves env sets at line %d, at or before the seatbelt render at line %d — the credential read-deny CAN see the session's env sets now, so the launch should add their directory to the deny rather than refusing (ranger-base-x5f6p)", src, who, envs, render)
+		}
+		scan, ok := at("credentialDirEnvSetRefusal")
+		if !ok {
+			t.Errorf("%s.%s renders a seatbelt profile (line %d) and resolves env sets (line %d) but never calls credentialDirEnvSetRefusal — an env set exporting CLAUDE_CONFIG_DIR or CLAUDE_SECURESTORAGE_CONFIG_DIR moves this session's credential write past a wall already rendered, and nothing here says so (ranger-base-179hy)", src, who, render, envs)
+			continue
+		}
+		if scan <= last("EnvSetVars") {
+			t.Errorf("%s.%s refuses at line %d, before the last env set is resolved at line %d — the scan then reads a short list and the sets after it pass unexamined", src, who, scan, last("EnvSetVars"))
+		}
 	}
-	last := func(name string) int {
-		t.Helper()
-		return lines[name][len(lines[name])-1]
+	if renderers < 2 {
+		t.Fatalf("%s has %d functions that render a seatbelt profile; there are two — planLaunch and RelaunchAgent — and a pin that finds fewer is watching a path that has moved out of this file (ranger-base-179hy)", src, renderers)
 	}
-	render, envs, scan := first("RenderSeatbelt"), first("EnvSetVars"), first("credentialDirVarsIn")
-	if render >= envs {
-		t.Errorf("%s resolves env sets at line %d, at or before the seatbelt render at line %d — the credential read-deny CAN see the session's env sets now, so the launch should add their directory to the deny rather than refusing (ranger-base-x5f6p)", src, envs, render)
+}
+
+// The other half, and the one that keeps the pin above honest: the wall
+// predicate is spelled ONCE, in the file that owns it. e241b14 extracted
+// seatbeltWallRendered so the render site and the question about the render
+// could not drift apart, and RelaunchAgent kept its inline copy for two
+// months — a copy that had lost the `rt != nil` arm and was tied to no
+// refusal at all (ranger-base-179hy).
+//
+// seatbelt.go is the exemption because it is where the answer lives: line
+// ~51 fills AvailableCages, and seatbeltWallRendered itself is the
+// predicate. Anywhere else the literal is a second spelling by definition.
+func TestQANoLaunchPathSpellsTheSeatbeltWallPredicateItself(t *testing.T) {
+	t.Parallel()
+	ents, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if scan <= envs {
-		t.Errorf("%s scans for the config-dir variables at line %d, before the env sets are resolved at line %d — the scan then reads an empty list and every env set passes", src, scan, envs)
+	const owner, lit = "seatbelt.go", "AvailableCages[CageSeatbelt]"
+	sawOwner := false
+	for _, e := range ents {
+		n := e.Name()
+		if e.IsDir() || !strings.HasSuffix(n, ".go") || strings.HasSuffix(n, "_test.go") {
+			continue
+		}
+		src, err := os.ReadFile(n)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(src), lit) {
+			continue
+		}
+		if n == owner {
+			sawOwner = true
+			continue
+		}
+		t.Errorf("%s spells %s itself — that is the seatbelt-wall question, and seatbeltWallRendered is the one place it is answered (ranger-base-179hy, e241b14). A copy is free to drift from the spelling the credential refusal asks, and both directions are silent: a refusal for a session with no wall, or no refusal for one that has it", n, lit)
 	}
-	if guard := first("seatbeltWallRendered"); guard > render {
-		t.Errorf("%s asks seatbeltWallRendered first at line %d, after the render at line %d — the render is meant to be one of its call sites", src, guard, render)
+	if !sawOwner {
+		t.Fatalf("no %s in this package names %s — the predicate this pin exempts has moved, so the sweep is measuring an absence that means nothing", owner, lit)
 	}
-	if guard := last("seatbeltWallRendered"); guard <= envs || guard > scan {
-		t.Errorf("%s does not ask seatbeltWallRendered between the env sets (line %d) and the config-dir scan (line %d) — last asked at line %d. Unguarded, the scan refuses launches that have no seatbelt wall for an env set to move past; guarded by something else, it stops answering for the wall this launch rendered", src, envs, scan, guard)
+}
+
+// The hoisted pair itself (ranger-base-179hy): the guard and the scan
+// together, which is the unit both launch paths now call. The arms are the
+// product of the two questions — is there a wall, does a set name a
+// config dir — because the defect this replaces was a caller that had the
+// first and not the second.
+//
+// Serial for the reason TestQASeatbeltWallRenderedIsTheTierAndNotTheName is:
+// it reads AvailableCages, a package var another test is free to write.
+func TestQACredentialDirEnvSetRefusalIsTheGuardAndTheScanTogether(t *testing.T) {
+	if !AvailableCages[CageSeatbelt] {
+		t.Skip("NOTHING MEASURED: no sandbox-exec on this host, so every arm below is nil for a reason that is not the scan")
+	}
+	plain := &Runtime{Name: "claude"}
+	self := &Runtime{Name: "selfcaged", SelfSandbox: true}
+	moves := []EnvVar{{Key: "FOO", Value: "bar"}, {Key: "CLAUDE_CONFIG_DIR", Value: "/elsewhere"}}
+	clean := []EnvVar{{Key: "FOO", Value: "bar"}}
+	both := []EnvVar{{Key: "CLAUDE_SECURESTORAGE_CONFIG_DIR", Value: "/a"}, {Key: "CLAUDE_CONFIG_DIR", Value: "/b"}}
+	for _, tc := range []struct {
+		name    string
+		cage    string
+		rt      *Runtime
+		vars    []EnvVar
+		refused []string // the variable names the message must carry, nil = no refusal
+	}{
+		{"a wall and a set that moves the write past it", CageSeatbelt, plain, moves, []string{"CLAUDE_CONFIG_DIR"}},
+		{"a wall and both names: the message says both", CageSeatbelt, plain, both, []string{"CLAUDE_SECURESTORAGE_CONFIG_DIR", "CLAUDE_CONFIG_DIR"}},
+		{"a wall and an ordinary set", CageSeatbelt, plain, clean, nil},
+		{"a wall and no env sets at all", CageSeatbelt, plain, nil, nil},
+		{"the shims tier: no file-read wall for the variable to walk past", CageShims, plain, moves, nil},
+		{"the container tier: the cage renders its own profile inside", CageContainer, plain, moves, nil},
+		{"a self-sandboxing runtime: posse renders no profile to move past", CageSeatbelt, self, moves, nil},
+		{"no runtime at all", CageSeatbelt, nil, moves, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := credentialDirEnvSetRefusal(tc.cage, tc.rt, tc.vars)
+			if len(tc.refused) == 0 {
+				if err != nil {
+					t.Fatalf("credentialDirEnvSetRefusal = %v, want nil — a refusal here is a wall over nothing", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("credentialDirEnvSetRefusal = nil, want a refusal naming %v", tc.refused)
+			}
+			for _, want := range tc.refused {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("the refusal never names %s:\n%v", want, err)
+				}
+			}
+			// NAMES only, never the value: the refusal is made ON a launch
+			// path that must not learn what an env set holds.
+			for _, v := range tc.vars {
+				if v.Value != "" && strings.Contains(err.Error(), v.Value) {
+					t.Errorf("the refusal carries %q — that is an env set's VALUE, and no launch path reads one (credentialDirVarsIn returns names):\n%v", v.Value, err)
+				}
+			}
+		})
 	}
 }
