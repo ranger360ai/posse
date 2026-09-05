@@ -2,7 +2,9 @@
 
 *Status: accepted 2026-09-04 · owner: architect · amends ADR 0012 D3-C (a
 fourth reader of the redirect: bd itself, through the env) · bead
-ranger-base-yijws, discovered from ranger-base-9lrzx*
+ranger-base-yijws, discovered from ranger-base-9lrzx · amended 2026-09-04
+(Consequences: a second loud refusal, the mixed-prefix store in no-db mode,
+and why its remedy has two halves; ranger-base-jl8q2)*
 
 ## Context
 
@@ -121,6 +123,34 @@ environment, the no-db create from the worktree lands in the MAIN store and
   refusal that names the variable is preferred to a launch-time copy of
   bd's prefix list. The day an instance keeps a repo under `/opt`, the fix
   is a config key the instance declares, not a law of the binary.
+- A store of record whose rows carry more than one prefix, with no
+  `issue-prefix` in its `config.yaml`, makes every NO-DB `bd` in the
+  session refuse on its refusal line: "Error initializing --no-db mode:
+  failed to detect prefix: issues have mixed prefixes, please set
+  issue-prefix in .beads/config.yaml" (`detectPrefix`, nodb.go). This
+  shop's store of record is one: it carries rows under this instance's `ranger-base-`
+  and under a second instance's prefix, and its `issue-prefix` line is commented out
+  (MEASURED 2026-09-04, bd 0.50.3, ranger-base-43ux4 and jl8q2). The
+  refusal is the store's prefix spread reached THROUGH the variable:
+  before D1 the same call from a session worktree read the worktree's own
+  `.beads`, exited 0 with zero rows and left an empty `issues.jsonl`
+  there, the silent fork; after D1 it exits 1. Loud beats silent, and the
+  tier that inherits it is the one D1 was built for, since the container
+  tier's inner `bd` is always `--no-db`. Latent today: a seatbelt seat's
+  `bd` is the rendered gate shim, which carries no `--no-db`, and the
+  container tier does not run on this box. The remedy is an instance
+  fact, and it has two halves, because bd locates `config.yaml` by walking
+  up from the CWD and never from `BEADS_DIR` (config.go `Initialize`):
+  `issue-prefix: "ranger-base"` in the queue's own `config.yaml` fixes a
+  `bd` run from the queue checkout and NOT one run from a session
+  worktree, whose checked-out `.beads` holds only the redirect (both
+  MEASURED). What reaches a worktree is `BD_ISSUE_PREFIX` in the env or a
+  `config.yaml` beside the redirect (both MEASURED, exit 0). Posse sets
+  neither: the value is the store's prefix, which posse would have to
+  read out of the store, and D3 already refused that reader. The queue
+  line is the operator's call, routed as a question bead; the launch-env
+  half is filed the day a tier that passes `--no-db` runs against a
+  mixed-prefix store, against the observed refusal and not before.
 - The variable is an environment fact and shares that class's exits: a
   runtime `settings.json` env of the same name outranks the launch env
   (measured elsewhere, settings-env-outranks-launcher-env; none exists
@@ -156,6 +186,16 @@ environment, the no-db create from the worktree lands in the MAIN store and
 - **A per-call `bd` shim that injects the variable.** Same value in a
   second place, and a shim reaches only PATH lookups; the env reaches every
   `bd` a script forks, and the cage already has one wrapper.
+- **Commit a `config.yaml` carrying `issue-prefix` into posse's own
+  `.beads`, beside the redirect** (the worktree half of the mixed-prefix
+  remedy, for free). It is where the CWD walk-up finds it, and it works
+  (MEASURED), but posse is public and the file rides every clone: every
+  no-db `bd` in every checkout of posse would mint one instance's prefix.
+  Same shape as posse reading the prefix out of the store, one file over.
+- **Unify the store's prefix** (rename the 412 rows under the second prefix). They are
+  a second instance's ids; the rename verbs are denied to every persona
+  PID; and ranger-base-my66u found the cross-prefix ingest recipe itself
+  refuses on 0.50.3.
 - **The clever one: make posse the resolver** (a `posse beads where` every
   wrapper consults). A second resolver for a question bd already answers
   from one env var, with the seatbelt and cage still on the first.
@@ -201,6 +241,30 @@ allows anything under the resolved `os.TempDir()` before it consults
 even though `/private` is on the list (read in bd 0.49.1's
 `internal/beads/context.go`; measured on 0.50.3 for `where` and `create`).
 The escape holds only while bd and the test agree on `$TMPDIR`.
+
+MEASURED 2026-09-04 for the mixed-prefix amendment (ranger-base-jl8q2),
+bd 0.50.3 from a seatbelt seat, every call `--no-daemon --no-db list
+--limit 1`: against the live queue with `BEADS_DIR` set, exit 1 and the
+refusal text above. Then in a copy of the queue's `issues.jsonl` and
+`config.yaml` under `$HOME` (1630 rows under `ranger-base-`, 412 under the second prefix),
+six arms: the copy as shipped refuses (exit 1); `issue-prefix:
+"ranger-base"` set in the copy's `config.yaml`, run from the copy's own
+checkout, lists (exit 0); the same fixed copy reached through `BEADS_DIR`
+from a directory whose `.beads` holds only a redirect still refuses (exit
+1, the line is not read); from that directory `BD_ISSUE_PREFIX=ranger-base`
+lists, and so does a `config.yaml` beside the redirect (exit 0 each); and
+the pre-D1 shape, no `BEADS_DIR` at all, exits 0 with zero rows and writes
+an empty `issues.jsonl` beside the redirect. The rig's database-class arm
+answered empty and says nothing: a bare-jsonl copy is the broken rig
+shape on 0.50.3, and that class was measured live by ranger-base-e3ima.
+Read in bd 0.49.1's source and measured on 0.50.3: `detectPrefix` takes
+`issue-prefix` from config, else a common prefix, else refuses on a mix;
+`config.Initialize` walks up from the CWD for `config.yaml` and binds
+`BD_*` env over it; `issue-prefix` in `config.yaml` is inert on the
+database class (ranger-base-v0v6l), so the queue line costs that class
+nothing. ranger-base-43ux4's matching `worktree.go` sentence was in a
+sibling seat tree, not on main, at this amendment's HEAD; this record
+cites the bead, not the sentence.
 
 ASSUMED: the CGO-less fallback door; no instance store under an unsafe
 prefix; the container tier's in-situ behaviour (unrunnable on this
