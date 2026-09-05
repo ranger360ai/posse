@@ -1,5 +1,11 @@
 # ADR 0017 — Runtime equivalence: the abstraction is the checklist
 
+*Status: superseded 2026-09-05 by ADR 0013 · ADR simplification, operator ruling 2026-09-05.*
+
+The surviving decision is in [0013 — current contract](0013-runtime-dispatch-contract.md), Decision §7 and the existing §§1–6 grid. This page keeps its number and dated evidence; the body below is historical, not current policy.
+
+## Historical record (superseded in full)
+
 *Status: accepted 2026-08-26 · owner: architect · relates 0002 (launch/cage),
 0007 (skills), 0012 D4 (engine seam), 0013 (dispatch contract; §5's account
 promises are wired by this ADR's beads) · source bead ranger-base-il14 ·

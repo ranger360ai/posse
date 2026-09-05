@@ -352,15 +352,14 @@ slowness belongs. The bench is pass-local like the rest of the busy
 map: the next pass starts at zero, so a machine-load fluke costs at
 most the tail of one pass.
 
-### 3. Plan guard — declare which meter the runtime spends
+### 3. Plan guard — the meter gates the beads that spend it
 
-The runtime declares `plan_meter:`. A bead is on-meter when its runtime's
-declaration matches the guarded meter; an unknown membership remains
-conservatively on-meter. The sole guard truth table is
-[ADR 0010 §5](0010-plan-guard-overflow.md): sighted thresholds, blind
-tolerance, ledger arming/readability and last-reading headroom. Off-meter
-work remains eligible for its own independent brakes. This section defines
-membership, not a second park/degrade or overflow policy.
+The sole guard truth table is [ADR 0010 §5](0010-plan-guard-overflow.md).
+Membership remains `OnGuardedMeter`: the default/guarded runtime and unknown
+template runtimes are on-meter; other known built-ins spend their own pools.
+This is the current code predicate, not a new YAML declaration. Off-meter
+work remains eligible under its independent brakes. Threshold, blindness,
+ledger and headroom policy is not restated here.
 
 ### 4. Record — the bead is the store of record; the runtime is not
 
@@ -668,6 +667,56 @@ asked — and "must say so when the first turn is a limit" is now
 realized: with a reader the ⛔ line names the refusing runtime, without
 one the per-bead turn-blind clause says posse cannot tell (§1 settle
 row).
+
+### 7. Equivalence: the implementation supplies the checklist (from 0017)
+
+The six-stage grid above plus every dimension expressed by `Runtime` is the
+single checklist rendered by `posse runtime check`. Do not author another
+normative inventory or freeze its row count. `TestEveryRuntimeFieldIsClassified`
+classifies each field as consumed, display-by-design, or internal, and names
+its production consumer. A source mention proves neither reachability nor
+behavior; consumer tests and measured observables provide that evidence.
+Render skills, egress, credential, project-config, sandbox/gate-shell,
+rulebook and observation dimensions with their provenance and limitations.
+
+Per dimension use PARITY (measured against the exercised baseline), DECLARED
+DIFFERENCE (designed or measured difference with its reason), or UNKNOWN
+(unmeasured, rendered loudly as UNDECLARED/UNMAPPED). A missing comparative
+measurement is not a new launch refusal; the explicit safety and dispatch
+shortfalls in §§1–6 and 0002 still apply. Never render a declared difference
+as an unexplained failure or unknown as measured parity.
+
+Runtime behavior implementing a declared dimension consumes the declaration,
+not a competing name-keyed predicate. CLI-owned state readers and seeds can
+name the CLI. **Narrow exception approved 2026-09-05:** 0057 removes the
+pane-mode declaration registry; the concrete built-in readers may identify
+the runtime they parse while preserving their current observations. It is
+an observation seam, not permission to bypass turn-outcome, cost or safety
+declarations. The removal remains deferred implementation.
+
+`runtimeYamlKeys()` and its rendered onboarding footer own the available
+key set. Present-but-invalid values refuse; absent facts stay honest and
+loud. Existing registry keys name implemented readers and refuse unknown
+members; an enum plus `_why` records a measured fact (such as record trust
+or `rules_precedence: pid|native`), without claiming a parser can verify
+its evidence. `rules_precedence` defaults to unmeasured. A declaration
+cannot grant native enforcement credit. Realizers, cost decoders,
+interstitial probes and herdr detection remain code/manifests; no string
+may pretend to supply absent code. One skill surface only; keyed project
+config requires a path and nonempty keys, and malformed keyed JSON fails
+closed. An unattended flag must be safe to append as a flag, not a positional
+prompt or shell program.
+
+MEASURED historical failures in 0017: inert startup patience, hidden
+counted-ness and name-keyed turn-outcome reads. ASSUMED: maintaining a
+separate prose checklist has value; therefore it is removed. The fold
+removes no checks, runtime files, keys, states, actors or flags.
+
+## Lineage
+
+| Was | Here |
+|---|---|
+| 0017 §§1–2 derived checklist and verdicts; §3 shadow predicates; §§4–5 declarability and precedence | §7, using the existing §§1–6 grid; dated census and superseded sequencing stay in 0017 |
 
 ## Consequences
 

@@ -205,7 +205,7 @@ the vendor's number.
 
 **5. Remote guard: complete per-bead decision table** (folded from 0018).
 The pass runs; only beads spending the guarded meter take its verdict.
-Runtime meter membership is the declaration in 0013; unknown membership
+Runtime meter membership is `OnGuardedMeter` (0013 §3); unknown membership
 is treated as on-meter. Rows are evaluated in order. Other launch brakes
 always remain in force.
 
