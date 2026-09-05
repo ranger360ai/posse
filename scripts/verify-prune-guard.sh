@@ -82,28 +82,114 @@ check() { # check <label> <condition-result> <detail>
   else printf '  FAIL %s — %s\n' "$1" "$3"; fail=1; fi
 }
 
+# Every arm below is decided by bash, not by a forked matcher
+# (ranger-base-s8b4g, ranger-base-7hx87). A `grep`/`awk` that is signalled,
+# that cannot be exec'd under load, or that takes EPIPE returns non-zero over
+# text that carries the line, and every arm here reads non-zero as "the guard
+# did not fire" — a FAIL against a binary that is correct. The absolute
+# `/usr/bin/grep` the gen: arms used is the same defect: an absolute path
+# survives a PATH shim, not a signal or a failed fork.
+#
+# has_text <text> <literal> — `grep -qF` over $out or $listing.
+has_text() { case $1 in *"$2"*) return 0 ;; esac; return 1; }
+
+# line_eq <file> <line> — `grep -q "^<line>$"`.
+line_eq() {
+  local l
+  [ -r "$1" ] || return 1
+  while IFS= read -r l || [ -n "$l" ]; do
+    [ "$l" = "$2" ] && return 0
+  done <"$1"
+  return 1
+}
+
+# line_starts <file> <prefix> — `grep -q "^<prefix>"`.
+line_starts() {
+  local l
+  [ -r "$1" ] || return 1
+  while IFS= read -r l || [ -n "$l" ]; do
+    case $l in "$2"*) return 0 ;; esac
+  done <"$1"
+  return 1
+}
+
+# meta_field <file> <key> — the value after `<key>: ` on the first line that
+# starts with `<key>:`, non-zero when there is no such line.
+meta_field() {
+  local l
+  [ -r "$1" ] || return 1
+  while IFS= read -r l || [ -n "$l" ]; do
+    case $l in
+    "$2:"*)
+      l=${l#"$2:"}
+      printf '%s' "${l# }"
+      return 0
+      ;;
+    esac
+  done <"$1"
+  return 1
+}
+
+# digits <s> — non-empty and all digits.
+digits() { case ${1:-} in '' | *[!0-9]*) return 1 ;; esac; return 0; }
+
+# after_marker <text> <line-prefix> — every line after the FIRST line that
+# starts with <line-prefix>, which is `awk '/^<prefix>/{on=1;next} on'`.
+after_marker() {
+  local l on=0 buf=
+  while IFS= read -r l || [ -n "$l" ]; do
+    if [ "$on" = 1 ]; then
+      buf=$buf$l$'\n'
+      continue
+    fi
+    case $l in "$2"*) on=1 ;; esac
+  done <<<"$1"
+  printf '%s' "${buf%$'\n'}"
+}
+
+# listed <listing> <label> — a line carrying ` <label>` followed by a space or
+# the end of the line, which is `grep -q " <label>\( \|$\)"`.
+listed() {
+  local l
+  while IFS= read -r l || [ -n "$l" ]; do
+    case $l in
+    *" $2 "* | *" $2") return 0 ;;
+    esac
+  done <<<"$1"
+  return 1
+}
+
 [ -f "$metas/ghost-socketless.yaml" ]; check "socket-less meta kept (abb2716)" $? "PRUNED — this binary predates abb2716"
 [ -f "$metas/ghost-foreign.yaml" ];    check "foreign-socket meta kept (9ac4a16)" $? "PRUNED — the different-socket arm is not firing"
-printf '%s\n' "$out" | grep -q '2 session meta file(s) kept, not listed'
+has_text "$out" '2 session meta file(s) kept, not listed'
 check "both refusals reported on stderr" $? "expected a '2 ... kept, not listed' warning"
-listing=$(printf '%s\n' "$out" | awk '/^HERDR SESSIONS/{on=1;next} on')
-printf '%s\n' "$listing" | grep -q " $label\( \|$\)"
+listing=$(after_marker "$out" "HERDR SESSIONS")
+listed "$listing" "$label"
 check "live-workspace meta listed" $? "$label missing from the listing itself"
-grep -q "^socket: $sock\$" "$metas/$label.yaml"
+line_eq "$metas/$label.yaml" "socket: $sock"
 check "socket: backfilled onto the live meta (abb2716)" $? "no backfill — the meta would stay unprunable forever"
 # ranger-base-fjj: ServerGen is dev:ino:mtime (three fields). The two-field
-# regex '^gen: N:N$' is a false FAIL against a correct stamp — it is the
+# shape '^gen: N:N$' is a false FAIL against a correct stamp — it is the
 # pre-fjj token, and matching it would sign off on the linux inode-reuse hole.
-if /usr/bin/grep -q '^gen: [0-9][0-9]*:[0-9][0-9]*:[0-9][0-9]*$' "$metas/$label.yaml"; then
-  check "gen: backfilled onto the live meta (rangerhq-yt1p / ranger-base-fjj)" 0
-elif /usr/bin/grep -q '^gen: [0-9][0-9]*:[0-9][0-9]*$' "$metas/$label.yaml"; then
-  check "gen: backfilled onto the live meta (rangerhq-yt1p / ranger-base-fjj)" 1 "two-field gen: (dev:ino) — ranger-base-fjj requires bind time as a third field"
-elif /usr/bin/grep -q '^gen:' "$metas/$label.yaml"; then
-  check "gen: backfilled onto the live meta (rangerhq-yt1p / ranger-base-fjj)" 1 "gen: present but not N:N:N — $(/usr/bin/grep '^gen:' "$metas/$label.yaml")"
+gen_label="gen: backfilled onto the live meta (rangerhq-yt1p / ranger-base-fjj)"
+if gen=$(meta_field "$metas/$label.yaml" gen); then
+  gen_a=${gen%%:*}
+  gen_r=${gen#*:}
+  gen_b=${gen_r%%:*}
+  gen_c=${gen_r#*:}
+  if [ "$gen_r" != "$gen" ] && [ "$gen_c" != "$gen_r" ] &&
+    digits "$gen_a" && digits "$gen_b" && digits "$gen_c"; then
+    check "$gen_label" 0
+  elif [ "$gen_r" != "$gen" ] && [ "$gen_c" = "$gen_r" ] &&
+    digits "$gen_a" && digits "$gen_b"; then
+    check "$gen_label" 1 "two-field gen: (dev:ino) — ranger-base-fjj requires bind time as a third field"
+  else
+    check "$gen_label" 1 "gen: present but not N:N:N — gen: $gen"
+  fi
 else
-  check "gen: backfilled onto the live meta (rangerhq-yt1p / ranger-base-fjj)" 1 "no generation stamped — the next restart cannot tell a rename from a re-issued id"
+  check "$gen_label" 1 "no generation stamped — the next restart cannot tell a rename from a re-issued id"
 fi
-grep -q "^launched: $old\$" "$metas/$label.yaml"
+line_eq "$metas/$label.yaml" "launched: $old"
 check "backfill preserved launched:" $? "the rewrite dropped fields it should have kept"
 
 # rangerhq-yt1p: the same live workspace, claimed by a meta whose name is not
@@ -111,12 +197,12 @@ check "backfill preserved launched:" $? "the rewrite dropped fields it should ha
 # session does not appear — a listing there would address a stranger's pane.
 [ -f "$metas/ghost-stranger.yaml" ]
 check "stranger-id meta kept (rangerhq-yt1p)" $? "PRUNED — a live workspace's id is not a licence to delete another meta"
-printf '%s\n' "$listing" | grep -q 'ghost-stranger'
+has_text "$listing" ghost-stranger
 if [ $? = 0 ]; then check "stranger-id meta not listed (rangerhq-yt1p)" 1 "listed under a workspace labelled '$label' — a prompt would land in somebody else's pane"; else check "stranger-id meta not listed (rangerhq-yt1p)" 0; fi
-printf '%s\n' "$out" | grep -q 'another workspace holds the id they recorded'
+has_text "$out" 'another workspace holds the id they recorded'
 check "the re-issued id is reported with its repair" $? "no warning naming the identity mismatch"
 if [ -f "$metas/ghost-socketless.yaml" ]; then
-  ! grep -q '^socket:' "$metas/ghost-socketless.yaml"
+  ! line_starts "$metas/ghost-socketless.yaml" "socket:"
   check "no socket guessed for an absent workspace" $? "stamped a socket it had no proof of"
 else
   printf '  SKIP %s\n' "no socket guessed for an absent workspace (meta was pruned)"
