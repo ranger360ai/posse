@@ -1401,6 +1401,31 @@ func landed(o MergeOutcome, t *SessionTree) MergeOutcome {
 		o.Merged, o.Reason = true, ""
 		return o
 	}
+	// Ahead by sha is not ahead by work HERE TOO (ranger-base-d8o6). The two
+	// sentences below are about work that would be LOST, and neither is true
+	// of work the base already holds under another sha: a tree whose commits
+	// were picked onto the base keeps its own shas, so `reaches` says no over
+	// a branch there is nothing left to land from. MergeSessionWork asks
+	// equivalentOnBase of this same tip twice before it rebases — this is the
+	// path that runs INSTEAD of those, when the branch itself never moved
+	// (o.Commits == 0) or is already gone, and it was the one surface still
+	// answering by ancestry alone. Measured: a detached tree whose work was
+	// cherry-picked onto main was reported "unreferenced and a retire would
+	// lose it" while the listing beside it said "nothing unlanded (… as an
+	// equivalent patch on main)" — d8o6's disagreement with the sides
+	// swapped, found by the pin that asserts the two agree.
+	//
+	// `len(eq) > 0` and not measuredOnBase, the same threshold the two
+	// sites above use: this decides what to REPORT, and reporting an
+	// equivalence with its evidence named (Unmeasured, EquivalentNote) is
+	// what those print. What may DESTROY on the strength of it is
+	// RemoveSessionTree, which asks the stricter question for itself
+	// (ranger-base-as19, ranger-base-x8jp) and still refuses here.
+	if eq := equivalentOnBase(t.Repo, t.Base, head); len(eq) > 0 {
+		o.Equivalent, o.Unmeasured = equivNotes(eq), unmeasuredNote(eq, t.Base)
+		o.Merged, o.Reason = true, ""
+		return o
+	}
 	o.Merged = false
 	// Report the honest count: the branch's own is 0 in exactly the case
 	// this guard exists for, and "0 commit(s) did NOT reach main" reads as
@@ -2335,23 +2360,43 @@ func unaccountedFor(t *SessionTree, force bool) string {
 // is true of a strand and of an already-re-landed duplicate alike
 // (ranger-base-atxe). Which bead the work belongs to is the difference, and
 // it is one git config read away.
+//
+// IT ASKS THE TREE'S TIP, NOT THE BRANCH'S (ranger-base-d8o6). Every other
+// surface that decides anything about this tree asks workHead — landed()
+// says why in its own words, "the branch is not always where the work sits"
+// — and the listing asked `<base>..<branch>` alone. That is zero over a
+// worktree whose HEAD is DETACHED, which is not an accident and not rare: a
+// caged session is launched detached on purpose, because on a detached HEAD
+// a commit writes no ref and that is what buys the `:ro` common dir
+// (PrepareSessionHead, ranger-base-t4f1). So the listing printed "nothing
+// unlanded" — its one phrase for a tree that is safe to retire — over the
+// whole of such a session's work, while MergeSessionWork on the same tree
+// answered that the work "is on neither" and named the `branch -f` that
+// rescues it. Two answers from one binary about one tree, the operator-facing
+// one wrong, which is this bead's other half (ranger-base-dybv is the same
+// blindness fixed at the merge, and this is the listing beside it). Asking
+// workHead changes nothing for a tree whose HEAD is on its branch — the two
+// tips are the same commit — so the fix is the detached case and only it.
 func treeState(t *SessionTree) string {
 	var parts []string
+	head, hasWork := workHead(t)
 	if t.Base == "" {
 		parts = append(parts, "repo HEAD is detached — cannot say what is unmerged")
-	} else if n, err := git(t.Repo, "rev-list", "--count", t.Base+".."+t.Branch); err == nil && n != "0" {
+	} else if n, err := git(t.Repo, "rev-list", "--count", t.Base+".."+head); hasWork && err == nil && n != "0" {
 		// Ahead by sha is not ahead by work (ranger-base-hk02): the count
 		// alone reads the same for a strand and for a branch RemoveSessionTree
 		// is about to delete on the next pass. equivalentOnBase is the same
 		// question RemoveSessionTree asks before it deletes, and
 		// MergeSessionWork before it reports — the listing wants that answer
 		// too, not just the sha count.
-		eq := equivalentOnBase(t.Repo, t.Base, t.Branch)
+		eq := equivalentOnBase(t.Repo, t.Base, head)
 		switch {
 		case measuredOnBase(eq):
 			// Every commit is a measured patch-id match on the base: the
 			// branch is the last copy of nothing, the same fact that lets
-			// RemoveSessionTree delete it unattended.
+			// RemoveSessionTree delete it unattended. No off-branch clause
+			// below this arm, and it would be false if there were: the base
+			// holds these patches whatever ref does or does not name them.
 			parts = append(parts, fmt.Sprintf("nothing unlanded (%s)", strings.Join(equivNotes(eq), "; ")))
 		case len(eq) > 0:
 			// No measurement of content: the -x trailer, or an identity match
@@ -2359,12 +2404,14 @@ func treeState(t *SessionTree) string {
 			// RemoveSessionTree still refuses to delete here — the listing
 			// should not read as settled either.
 			parts = append(parts, fmt.Sprintf("%s commit(s) not on %s by sha, %s — compare before retiring", n, t.Base, unmeasuredClause(eq, t.Base)))
+			parts = appendOffBranch(parts, t, head)
 		default:
 			who := "no record says which bead"
 			if t.Bead != "" {
 				who = "for " + t.Bead
 			}
 			parts = append(parts, n+" commit(s) not on "+t.Base+", "+who)
+			parts = appendOffBranch(parts, t, head)
 		}
 	}
 	if d := dirtyPaths(t.Path); len(d) > 0 {
@@ -2374,4 +2421,34 @@ func treeState(t *SessionTree) string {
 		return "nothing unlanded"
 	}
 	return strings.Join(parts, ", ")
+}
+
+// appendOffBranch adds the second half of the count treeState just printed:
+// WHERE that work is, when it is not on the session branch. The count alone
+// sends an operator to `posse worktrees --land`, and landing moves the
+// BRANCH — over a detached tree that lands nothing and says so, and a retire
+// afterwards takes the commits with it.
+//
+// It is landed()'s sentence compressed to a listing's width, keeping the
+// `branch -f` it prescribes: the two surfaces are reporting the same fact
+// and the cure is the same one, and a listing that names the problem without
+// it is a line the operator has to take to a second tool.
+//
+// ONE sentence where landed() has two, because its second cannot happen
+// here. That one answers a tree NO branch reaches, and this listing never
+// holds such a tree: SessionTreesIn emits a tree only with a `posse/` branch
+// that EXISTS — it says so where it recovers the name of a detached one, and
+// names a branchless detached tree as its own stated residual, invisible
+// here entirely. An arm for it would be a sentence no fixture built through
+// ListSessionTrees could reach.
+//
+// Reached only from the arms where something is genuinely unlanded. A
+// measured equivalence is on the base whatever ref does or does not name it,
+// so there is nothing there for a missing ref to lose.
+func appendOffBranch(parts []string, t *SessionTree, head string) []string {
+	if reaches(t.Repo, t.Branch, head) {
+		return parts
+	}
+	return append(parts, fmt.Sprintf("on the tree's detached HEAD (%s) and not on %s, so landing the branch would not carry it — `git -C %s branch -f %s HEAD` first",
+		abbrevSHA(head), t.Branch, AbbrevHome(t.Path), t.Branch))
 }

@@ -6099,6 +6099,20 @@ branch. `posse worktrees` names the bead beside the count for the same
 reason, so the judgement is available before the command is typed:
 `docs/notes.d/ranger-base-atxe.md`.
 
+**Both surfaces ask the TREE's tip, not the branch's, and both ask patch
+equivalence** (ranger-base-d8o6). A container-tier session works on a
+detached HEAD by design, so its commits are on no branch and
+`<base>..<branch>` counts zero over the whole of its work — `posse worktrees`
+read that as "nothing unlanded", its one phrase for a tree that is safe to
+retire, while the merge on the same tree said the work was on neither the
+base nor the branch. The listing now asks `workHead` like every other surface
+here, and prints the `git branch -f` that puts the work back when it is off
+the branch. The merge had the mirror of it: on the path taken when the branch
+never moved it answered by ancestry alone, so a detached tree already picked
+onto the base was called unreferenced. Both answer in the same three words
+now — settled, recorded but not measured, or unlanded — and the pin asserts
+they AGREE about one tree rather than checking each sentence apart.
+
 Crew sessions (`posse new`, recipes) keep the operator's checkout: a session
 the operator opened to talk to is theirs (ADR 0008). A dir that is not a git
 repo, or a repo on a detached HEAD with no session branch yet, warns and falls

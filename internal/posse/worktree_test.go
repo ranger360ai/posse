@@ -1791,6 +1791,234 @@ func TestListSessionTreesWillNotCallAHalfLandedOrSquashedBranchLanded(t *testing
 	})
 }
 
+// ranger-base-d8o6: ONE TREE, ONE ANSWER. The two surfaces that say what a
+// session tree holds — the listing an operator reads (`posse worktrees`,
+// treeState) and the sweep that acts (MergeSessionWork, whose sentence both
+// landClosedTrees and LandSessionTrees print) — used to ask different
+// questions of the same tree and print contradicting answers about it, with
+// the operator-facing one wrong. ranger-base-hk02 closed the first half: the
+// listing counted shas where the sweep measured patch equivalence, so an
+// already-re-landed duplicate read as work at risk forever.
+//
+// The half this pins is the other direction and the dangerous one: the
+// listing asked `<base>..<branch>`, which is ZERO over a worktree whose HEAD
+// is detached — the shape a caged launch creates ON PURPOSE
+// (PrepareSessionHead, ranger-base-t4f1) — so it printed "nothing unlanded",
+// its one phrase for a tree that is safe to retire, over the whole of that
+// session's committed work, while MergeSessionWork on the same tree said the
+// work is on neither the base nor the branch (ranger-base-dybv).
+//
+// So the assertion is the AGREEMENT itself and not two hand-written
+// sentences: `heldWork` is derived from each surface in the vocabulary that
+// surface actually publishes, and the arms compare them. Two sentences
+// asserted separately is what let the disagreement live — each side's own
+// pins were green while they contradicted each other in the field.
+//
+// The listing is read BEFORE the sweep in every arm, because the sweep ACTS:
+// it lands the strand and splices the caged tree, and a listing read after
+// would be describing a tree the assertion just changed.
+//
+// FOUR ARMS, and each is a control on the others. A listing that always said
+// "nothing unlanded" passes the duplicate and fails the strand; one that
+// never did passes the strand and fails the duplicate; and the two detached
+// arms are what the sha count cannot see at all — with the launch stamp (the
+// caged session, where the sweep splices the work back and lands it) and
+// without it (where the sweep refuses and names the `branch -f` that rescues
+// it, which the listing now names too).
+func TestListingAndSweepAgreeOnWhatOneTreeHolds(t *testing.T) {
+	t.Parallel()
+	// THE VERDICT, read the way an operator reads it: off the sentence each
+	// command prints. Both surfaces already publish the same three-word
+	// vocabulary and they are asked for it here in the same words —
+	// EquivalentNote's "nothing here is unlanded" is treeState's "nothing
+	// unlanded", and its "before retiring the tree" is treeState's "compare
+	// before retiring" — which is what makes an agreement assertion possible
+	// at all rather than two hand-written expectations that can drift apart
+	// while both stay green.
+	//
+	// Three and not two, because the middle one is the whole of
+	// ranger-base-dmzk7: an equivalence whose evidence is a decision or an
+	// identity match is neither settled nor a strand, and collapsing it onto
+	// either neighbour is how a surface starts overstating what it knows.
+	verdict := func(printed string) string {
+		switch {
+		case strings.Contains(printed, "before retiring"):
+			return "recorded, not measured"
+		case strings.Contains(printed, "nothing unlanded"),
+			strings.Contains(printed, "nothing here is unlanded"),
+			strings.Contains(printed, "had nothing to land"):
+			return "settled"
+		}
+		return "unlanded work"
+	}
+	// The sweep is the REAL command and not a reproduction of its printer
+	// switch: `posse worktrees --land` is what an operator runs beside the
+	// listing, and a copy of its switch here would keep agreeing with a
+	// listing after the real one had stopped. It carries the same three
+	// answers through one more surface than MergeSessionWork alone —
+	// unaccountedFor's refusal, which a tree with no bead record gets
+	// instead of a merge, and which says them in the same words.
+	land := func(t *testing.T, a *App, repo string) string {
+		t.Helper()
+		var out strings.Builder
+		if err := LandSessionTrees(&out, a, []string{repo}, false); err != nil {
+			t.Fatal(err)
+		}
+		return out.String()
+	}
+
+	cases := []struct {
+		name string
+		// setUp leaves the fixture in the state an operator would list.
+		setUp func(t *testing.T, repo string, tr *SessionTree)
+		// want is the verdict BOTH surfaces owe about it.
+		want string
+		// says is what the listing must spell out beyond the verdict, and
+		// unsays what it must not: the off-branch clause is a claim about
+		// WHERE the work sits, and printing it over a tree whose HEAD is on
+		// its own branch sends the operator to run `branch -f` for nothing.
+		says   []string
+		unsays []string
+	}{{
+		name: "an already-landed duplicate is settled on both",
+		setUp: func(t *testing.T, repo string, tr *SessionTree) {
+			commitIn(t, tr.Path, "adr.md", "status: accepted\n", "s: the fix")
+			sha := mustGit(t, tr.Path, "rev-parse", "HEAD")
+			// The base moves first: a pick onto an unmoved base rebuilds the
+			// identical commit object and the base reaches it by SHA, which
+			// measures nothing here (ranger-base-g2xf's fixture).
+			commitIn(t, repo, "moved.txt", "meanwhile\n", "main moved on")
+			mustGit(t, repo, "cherry-pick", "-x", sha)
+		},
+		want:   "settled",
+		says:   []string{"equivalent patch on main"},
+		unsays: []string{"detached HEAD"},
+	}, {
+		name: "a real strand is unlanded on both",
+		setUp: func(t *testing.T, repo string, tr *SessionTree) {
+			commitIn(t, tr.Path, "adr.md", "status: accepted\n", "s: the fix")
+		},
+		want:   "unlanded work",
+		says:   []string{"1 commit(s) not on main"},
+		unsays: []string{"detached HEAD"},
+	}, {
+		// The middle verdict, and the arm that pins landed()'s threshold at
+		// `len(eq) > 0` rather than measuredOnBase: the branch never moved,
+		// so the equivalence question is asked from landed() and nowhere
+		// else, and the evidence is a human's `-x` trailer. Refusing here
+		// would print "a retire would lose it" over work the operator's own
+		// record says they landed; calling it settled would assert a
+		// measurement nobody took. Both surfaces owe the third answer.
+		name: "a hand-resolved pick is recorded but not measured on both",
+		setUp: func(t *testing.T, repo string, tr *SessionTree) {
+			mustGit(t, tr.Path, "checkout", "-q", "--detach")
+			commitIn(t, tr.Path, "adr.md", "status: accepted\n", "s: the fix")
+			sha := mustGit(t, tr.Path, "rev-parse", "HEAD")
+			commitIn(t, repo, "moved.txt", "meanwhile\n", "main moved on")
+			// The trailer without the patch: what a pick whose conflict a
+			// human resolved leaves behind.
+			commitIn(t, repo, "adr.md", "status: accepted (amended)\n",
+				"s: the fix\n\n(cherry picked from commit "+sha+")")
+		},
+		want: "recorded, not measured",
+		says: []string{"recorded as landed in", "compare before retiring"},
+	}, {
+		// The one arm where the two facts pull opposite ways, and the reason
+		// the off-branch clause hangs off the UNLANDED arms only: the work is
+		// on no branch, and it is also on the base by measurement. Nothing
+		// here can be lost by a ref, so saying `branch -f` first would send
+		// the operator to rescue what the base already holds.
+		//
+		// It is also the arm that found landed() still answering by ancestry
+		// alone: the branch never moved, so MergeSessionWork returns through
+		// landed() without reaching either of the two equivalence questions
+		// it asks later, and landed() reported the work "unreferenced" while
+		// the listing beside it called the same tree settled.
+		name: "a detached tree whose work is already on the base is settled anyway",
+		setUp: func(t *testing.T, repo string, tr *SessionTree) {
+			mustGit(t, tr.Path, "checkout", "-q", "--detach")
+			commitIn(t, tr.Path, "adr.md", "status: accepted\n", "s: the fix, off its branch")
+			sha := mustGit(t, tr.Path, "rev-parse", "HEAD")
+			commitIn(t, repo, "moved.txt", "meanwhile\n", "main moved on")
+			mustGit(t, repo, "cherry-pick", "-x", sha)
+		},
+		want:   "settled",
+		says:   []string{"equivalent patch on main"},
+		unsays: []string{"detached HEAD"},
+	}, {
+		name: "a caged session's detached work is unlanded on both",
+		setUp: func(t *testing.T, repo string, tr *SessionTree) {
+			// What PrepareSessionHead does at the container tier, and the
+			// record it leaves so the merge knows to splice.
+			mustGit(t, repo, "config", detachedKey(tr.Branch), "1")
+			mustGit(t, tr.Path, "checkout", "-q", "--detach")
+			commitIn(t, tr.Path, "adr.md", "status: accepted\n", "s: the caged work")
+		},
+		want: "unlanded work",
+		says: []string{"detached HEAD", "branch -f " + SessionBranch("s-1")},
+	}, {
+		name: "a detached tree nothing will splice is unlanded on both",
+		setUp: func(t *testing.T, repo string, tr *SessionTree) {
+			// No stamp: MergeSessionWork does not splice, and landed()
+			// refuses with the sentence this listing now shares.
+			mustGit(t, tr.Path, "checkout", "-q", "--detach")
+			commitIn(t, tr.Path, "adr.md", "status: accepted\n", "s: off its own branch")
+		},
+		want: "unlanded work",
+		says: []string{"detached HEAD", "branch -f " + SessionBranch("s-1")},
+	}}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			a := wtApp(t)
+			repo := wtRepo(t)
+			commitIn(t, repo, "adr.md", "status: proposed\n", "seed the adr")
+			tr, err := a.EnsureSessionTree(repo, "s-1", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			c.setUp(t, repo, tr)
+
+			// The listing is read BEFORE the sweep in every arm, because the
+			// sweep ACTS: it lands the strand and splices the caged tree, and
+			// a listing read after would describe a tree the assertion just
+			// changed.
+			var out strings.Builder
+			if err := ListSessionTrees(&out, []string{repo}); err != nil {
+				t.Fatal(err)
+			}
+			listing := out.String()
+			sweep := land(t, a, repo)
+
+			if got := verdict(listing); got != c.want {
+				t.Errorf("the listing's verdict is %q, want %q:\n%s", got, c.want, listing)
+			}
+			if got := verdict(sweep); got != c.want {
+				t.Errorf("the sweep's verdict is %q, want %q:\n%s", got, c.want, sweep)
+			}
+			// The agreement itself, stated once. Redundant with the two
+			// above while both hold, and the one that survives a future
+			// change that moves BOTH surfaces off this fixture's verdict
+			// together — which would still be one binary with one answer.
+			if verdict(listing) != verdict(sweep) {
+				t.Errorf("one binary, two answers about one tree — listing %q says %q, sweep %q says %q",
+					strings.TrimSpace(listing), verdict(listing), sweep, verdict(sweep))
+			}
+			for _, want := range c.says {
+				if !strings.Contains(listing, want) {
+					t.Errorf("the listing does not say %q:\n%s", want, listing)
+				}
+			}
+			for _, unwant := range c.unsays {
+				if strings.Contains(listing, unwant) {
+					t.Errorf("the listing should not say %q:\n%s", unwant, listing)
+				}
+			}
+		})
+	}
+}
+
 // ─── the detached head a caged session works on (ranger-base-t4f1) ──────────
 
 // The whole round trip, and the one arm that says the mechanism is worth

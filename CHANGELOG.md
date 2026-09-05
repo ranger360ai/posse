@@ -472,6 +472,34 @@ nothing.
 
 ### Fixed
 
+**`posse worktrees` called a caged session's committed work "nothing
+unlanded", and the sweep called an already-landed one unreferenced — the two
+commands disagreed about the same tree, each in the direction that costs.**
+
+*Affected: `posse worktrees`, `posse worktrees --land` and the launcher's
+landing sweep, for any session worktree whose HEAD is not on its own branch —
+which is every container-tier session, by design.* The listing asked git a
+pure ancestry question about the BRANCH (`<base>..<branch>`), and a caged
+session is launched on a detached HEAD on purpose, because a commit that
+writes no ref is what buys the read-only git mount. So the branch never
+moved, the count was zero, and the listing printed "nothing unlanded" — its
+one phrase for a tree that is safe to retire — over the whole of that
+session's work, while the merge on the same tree said the work was on neither
+the base nor the branch. The listing now asks the tree's own tip, the same
+one every other surface here already asks, and when the work is off the
+branch it says so and prints the `git branch -f` that puts it back.
+
+The same disagreement ran the other way at the merge. Its report answered by
+ancestry alone on the path taken when the branch itself never moved, so a
+detached tree whose commits were cherry-picked onto the base was called
+"unreferenced and a retire would lose it" over work the base was holding. It
+now asks patch equivalence there too, and reports it with its evidence named
+— a measurement, or a human's `-x` trailer, which are not the same claim and
+are not printed as one.
+
+Nothing changes for a tree whose HEAD is on its branch: the two tips are the
+same commit, so the sentence is the one it always was.
+
 **The shop check stopped sending the coordinator to clear a prompt that had
 already been sent, and `--resume` stopped parking a bead behind one.**
 
