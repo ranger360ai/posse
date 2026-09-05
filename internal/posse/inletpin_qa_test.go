@@ -41,9 +41,11 @@ func TestQAInletPinCarriesEveryMeasuredNameAtItsMeasuredValue(t *testing.T) {
 		"NODE_OPTIONS":          " ",
 
 		// Exec: what git runs.
-		"GIT_SSH_COMMAND":   "ssh",
-		"GIT_EXTERNAL_DIFF": "",
-		"GIT_PAGER":         "",
+		"GIT_SSH_COMMAND":       "ssh",
+		"GIT_EXTERNAL_DIFF":     "",
+		"GIT_PAGER":             "",
+		"GIT_CONFIG_SYSTEM":     "/dev/null",
+		"GIT_CONFIG_PARAMETERS": "",
 
 		// Transport: where the bearer goes and who may terminate its TLS.
 		"ANTHROPIC_BASE_URL":           "https://api.anthropic.com",
@@ -67,6 +69,7 @@ func TestQAInletPinCarriesEveryMeasuredNameAtItsMeasuredValue(t *testing.T) {
 		"ENV":                          "same, for sh",
 		"NODE_OPTIONS":                 "a single space: non-empty, and parses to no options",
 		"GIT_SSH_COMMAND":              `git's own default. "" is not "no command", it is the command "" — ` + "`error: cannot run :`" + ` on every ssh remote`,
+		"GIT_CONFIG_SYSTEM":            "a config file with nothing in it. Neutral on Apple git 2.50.1 by a byte-identical `git config --list --show-origin`: its bundled CommandLineTools gitconfig is read by a path this variable does not govern, so osxkeychain survives",
 		"NODE_EXTRA_CA_CERTS":          "a cert file with no certs in it; the variable is additive, so adding nothing is neutral",
 		"NODE_TLS_REJECT_UNAUTHORIZED": `"1" is verify-on, measured against a self-signed server; "0" is the value that completes an MITM`,
 		"ANTHROPIC_BASE_URL":           "the bundle resolves ANTHROPIC_BASE_URL || CLAUDE_CODE_API_BASE_URL || this. A non-empty value in the FIRST name short-circuits the chain and closes the second one too",

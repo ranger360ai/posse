@@ -60,6 +60,57 @@ import "os"
 // the crew's own bd argv gate and herdr's state reporter along with an
 // attacker's hook. That half needs a per-field pin or an operator ruling,
 // and is filed separately rather than half-done here.
+//
+// ALSO NOT COVERED, and these two are inlets that FIRE: GIT_CONFIG_COUNT
+// with its GIT_CONFIG_KEY_n/VALUE_n indices, and GIT_CONFIG_GLOBAL. Both
+// were named in ranger-base-rflee's fix spec as part of "GIT_CONFIG_*" and
+// both were left out of the table silently, which is the defect
+// ranger-base-44or9 is about — under this file's own contract a name that is
+// not here is not covered, and a reader has to be able to SEE that. They are
+// still not pinned, but now for a measured reason each (2026-09-05, git
+// 2.50.1 Apple Git-155):
+//
+//   - GIT_CONFIG_COUNT has no pinnable value at all. `0` closes the inlet —
+//     and closes posse's OWN L3 hooks redirect with it, because ADR 0052 D2
+//     aims every session's git at its rendered hooks dir through exactly
+//     this mechanism (gitConfigHooksPathVars, appended to the pane env at
+//     herdrback.go). A settings `env` block is assigned OVER process.env, so
+//     a pinned `0` would zero the count the pane set and leave KEY_0/VALUE_0
+//     stranded: measured, the redirected post-checkout fires with the pane
+//     vars alone and goes quiet the moment `0` is laid over them. That is
+//     the bd argv gate and the employer's managed hooks, off, fleet-wide.
+//     Any value ≥ 1 is worse — it names indices the session never received
+//     and git dies `missing config key GIT_CONFIG_KEY_0`, rc 128, on every
+//     command (the ranger-base-buvq4 outage, recorded in hooksredirect.go).
+//   - GIT_CONFIG_GLOBAL has no neutral spelling, empty or not. Both
+//     /dev/null and "" close the inlet by replacing ~/.gitconfig wholesale,
+//     and this box's ~/.gitconfig is where user.name and user.email live. It
+//     does not fail loudly: git falls back to a gecos-and-hostname ident and
+//     commits at rc 0, measured — the author line came out as the account's
+//     gecos name at `<login>@<hostname>.local`, not as the configured
+//     address, with no warning on either stream. A pin whose cost is every
+//     crew commit silently misattributed is not a pin. Worse, it would
+//     switch off a guardrail: DeriveIdentityLiterals (visibility.go) walks
+//     `git config --get-all user.email` for every scope to build the wall
+//     that keeps the box's addresses out of a public repo, and under a
+//     /dev/null global that command exits 1 with no output — the renderer's
+//     own "nothing to say" branch — so the wall would come out with no
+//     e-mail literal in it, silently. Measured both arms in this repo.
+//     ORDERS.md already had the same effect from the other end: a
+//     hook-freshness reference rendered under that variable loses three
+//     `posse_check 'email'` literals and reads every repo as STALE. The
+//     only neutral value is the path git already resolves to, which is
+//     per-box, and the shipped drop-in is a constant this table is held
+//     equal to — so there is nothing to write in it.
+//
+// So the GIT_CONFIG_* family is NARROWED here, not closed: an attacker who
+// can set a lower-scope `env` block still has GIT_CONFIG_COUNT and
+// GIT_CONFIG_GLOBAL. Closing either costs something the operator has to
+// accept, so it is filed for them as ranger-base-37y0z rather than decided
+// here. TestQATheInletPinCoversTheGitConfigFamilyOrSaysWhyNot holds this
+// paragraph against the live behaviour: it fails if either name stops being
+// disclosed, and it fails if either gap closes and the prose stops being
+// true.
 
 // inletPin is the transport/exec half of what a launch pins. Each row's
 // value is the one measured to leave this box's behaviour exactly where it
@@ -117,6 +168,37 @@ import "os"
 //	                                Pinned anyway — "" still printed the log
 //	                                — but as defence in depth for a
 //	                                TTY-wrapped call, not as a measured fix.
+//	GIT_CONFIG_SYSTEM=/dev/null     attack pointed it at a config naming
+//	                                core.hooksPath; the attacker's
+//	                                post-checkout FIRED under the three git
+//	                                rows above, /dev/null quiet. Neutral
+//	                                here by a byte-identical `git config
+//	                                --list --show-origin`, because Apple git
+//	                                2.50.1 reads its own bundled
+//	                                /Library/Developer/CommandLineTools/…/
+//	                                gitconfig by a path this variable does
+//	                                not govern — so osxkeychain and
+//	                                init.defaultBranch survive the pin. Off
+//	                                darwin it WOULD suppress /etc/gitconfig,
+//	                                which is not measured; same standing as
+//	                                LD_PRELOAD, and the reason it is said
+//	                                here rather than left to a reader.
+//	GIT_CONFIG_PARAMETERS=""        the family member nobody named — not
+//	                                rflee's fix spec, not the verify bead —
+//	                                and it is the same inlet: an attacker's
+//	                                `'core.hooksPath'='<dir>'` FIRED the hook
+//	                                under all three git rows above, "" quiet
+//	                                and the config listing byte-identical to
+//	                                unset. No non-empty neutral exists: " "
+//	                                is `error: bogus format in
+//	                                GIT_CONFIG_PARAMETERS`, rc 128, on EVERY
+//	                                git command. So this row is
+//	                                flag-scope-effective and expected to be a
+//	                                no-op in the policy file. It does not
+//	                                cost `git -c` anything: git sets this
+//	                                name itself for its own subprograms, over
+//	                                whatever it inherited (measured, alias
+//	                                included).
 //	ANTHROPIC_BASE_URL=…anthropic.com   read from the bundle, which resolves
 //	                                the endpoint as `ANTHROPIC_BASE_URL ||
 //	                                CLAUDE_CODE_API_BASE_URL || "https://
@@ -153,10 +235,15 @@ func inletPin() []EnvVar {
 		{Key: "LD_PRELOAD", Value: ""},
 		{Key: "NODE_OPTIONS", Value: " "},
 
-		// Exec inlets git opens whenever a session runs git.
+		// Exec inlets git opens whenever a session runs git. Two more
+		// of the GIT_CONFIG_* family are inlets and are NOT here; the
+		// ALSO NOT COVERED paragraph above carries the measurement
+		// that keeps each of them out.
 		{Key: "GIT_SSH_COMMAND", Value: "ssh"},
 		{Key: "GIT_EXTERNAL_DIFF", Value: ""},
 		{Key: "GIT_PAGER", Value: ""},
+		{Key: "GIT_CONFIG_SYSTEM", Value: os.DevNull},
+		{Key: "GIT_CONFIG_PARAMETERS", Value: ""},
 
 		// Transport: where the bearer goes, and who is trusted to
 		// terminate the TLS it goes over.

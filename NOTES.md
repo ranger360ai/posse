@@ -150,7 +150,15 @@ for the same reason and into the same flag, and `ranger-base-i7cy4` spent
 **274 B** more the same day for the nine command-string FIELDS that ride
 beside `env` in that object rather than inside it
 (`internal/posse/fieldpin.go`) — the same flag again, because it is the
-only flag there is. Every crew line was already
+only flag there is. `ranger-base-44or9` spent **60 B** more on the same day
+and into the same object, taking `env` to twenty-five keys and the rendered
+payload from 1006 B to 1066 B (measured, not estimated): two more git rows,
+`GIT_CONFIG_SYSTEM` and `GIT_CONFIG_PARAMETERS`. It is worth knowing what
+that 60 B did NOT buy — two further names of the same family are inlets that
+still reach, disclosed in `inletpin.go` rather than pinned, because pinning
+either would cost a working fleet more than the inlet costs (the reasoning is
+there, and the residue is the operator's call on `ranger-base-37y0z`).
+Every crew line was already
 spilling, so no launch changed behaviour — but a *fixture* did:
 `TestDispatchRelaunchesDeadAgent`'s minimal line had still fit, and reading
 it out of `calls.log` alone measured its length rather than its content.

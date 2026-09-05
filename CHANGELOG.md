@@ -125,6 +125,21 @@ drop-in for it ships here as
 same table. Installing it is a root-owned change to your box and posse does
 not make it for you.
 
+Two more git rows landed after the table did, and two names the table's own
+fix spec listed are now written down as *not* covered rather than left out
+silently. `GIT_CONFIG_SYSTEM=/dev/null` and `GIT_CONFIG_PARAMETERS=""` are
+pinned: both hand git an arbitrary `core.hooksPath` past every other git row,
+measured, and both have a neutral spelling. `GIT_CONFIG_COUNT` and
+`GIT_CONFIG_GLOBAL` do the same thing and are **not** pinned, because
+measurement said the cure is worse — a `GIT_CONFIG_COUNT=0` pin would switch
+off posse's own git hooks redirect (the bd argv gate and your managed hooks
+travel on that exact mechanism), and any `GIT_CONFIG_GLOBAL` value that
+closes the inlet also replaces `~/.gitconfig`, after which git commits under
+a hostname-derived identity at exit 0 rather than failing. Both are named in
+`internal/posse/inletpin.go` under `ALSO NOT COVERED`, with the measurement,
+so the file's claim that "a name that is not here is not covered" is
+something a reader can now check. The family is narrowed, not closed.
+
 ### Added
 
 **`posse status` and every `dispatch --watch` pass now name a second bd
