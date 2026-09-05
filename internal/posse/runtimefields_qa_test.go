@@ -70,7 +70,7 @@ var runtimeFieldAudit = map[string]runtimeFieldNote{
 	"NoGateShell":        {fcConsumed, []string{"gates.go", "parity.go"}, nil, "leaves SHELL/GROK_SHELL alone, and costs the L1 verdict for it"},
 	"Skills":             {fcConsumed, []string{"agents.go", "parity.go"}, nil, "what {skills} renders to, and whether a skills: PID can launch here at all"},
 	"SkillsCwd":          {fcConsumed, []string{"skills.go", "parity.go"}, nil, "materializes <cwd>/.agents/skills/<name>; the links are the binding"},
-	"SelfSandbox":        {fcConsumed, []string{"herdrback.go", "parity.go"}, nil, "do not seatbelt-wrap — macOS refuses to nest — and degrade cage: seatbelt honestly"},
+	"SelfSandbox":        {fcConsumed, []string{"seatbelt.go", "parity.go"}, nil, "do not seatbelt-wrap — macOS refuses to nest — and degrade cage: seatbelt honestly"},
 	"ProjectConfig":      {fcConsumed, []string{"parity.go"}, nil, "the session-dir files ProjectConfigTrust guards: a repo→box channel no PID sits in front of"},
 	"ProjectConfigKeys":  {fcConsumed, []string{"parity.go"}, nil, "narrows that check to top-level JSON keys; empty keeps the whole-file predicate"},
 	"Unattended":         {fcConsumed, []string{"runtime.go", "agents.go"}, nil, "EnsureUnattended puts the flag back on a line a hand-written command: rendered without it"},
@@ -213,9 +213,12 @@ func TestOnboardingFooterNamesEveryDeclarableKey(t *testing.T) {
 // refuses to nest seatbelts and the launch dies with `sandbox_apply:
 // Operation not permitted`.
 //
-// The wrap is `cage == CageSeatbelt && AvailableCages[CageSeatbelt] &&
-// !rt.SelfSandbox` on both rendering paths (herdrback.go). This drives the
-// first through planLaunch and reads the rendered line, with an identical
+// The wrap is seatbeltWallRendered (seatbelt.go) — `cage == CageSeatbelt &&
+// AvailableCages[CageSeatbelt] && rt != nil && !rt.SelfSandbox` — asked by
+// both rendering paths in herdrback.go and by nothing else, which is why
+// the audit row above names seatbelt.go and not the launcher
+// (ranger-base-179hy). This drives the first through planLaunch and reads
+// the rendered line, with an identical
 // yaml runtime lacking the key as the control — without that arm a green
 // here would only prove seatbelt was unavailable in the fixture.
 func TestSelfSandboxSkipsTheSeatbeltWrapAtLaunch(t *testing.T) {
