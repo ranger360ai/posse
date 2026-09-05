@@ -160,6 +160,15 @@ func TestSubmittedEchoNeedsTruncationBeforeItAcceptsAPrefix(t *testing.T) {
 		{"a different line", "ok back", "ok goign to bed", false, false},
 		{"a prefix of it, preview NOT cut", "close the bead", long, false, false},
 		{"a prefix of it, preview cut", "close the bead", long, true, true},
+		// PREFIX-SHAPED and not containment (ranger-base-zkn29, verifying
+		// this bead): a truncated preview is the START of the composer, so
+		// only a prefix can be an echo. Without this row `strings.Contains`
+		// in place of `strings.HasPrefix` passes the whole table — measured
+		// by `go test -overlay` — and that mutant retires a line the
+		// operator really is holding, whenever it happens to occur INSIDE
+		// the last submit. It is the retiring direction, which is the one
+		// this bead exists to keep honest.
+		{"a substring of it that is not a prefix, preview cut", "the suite is green", long, true, false},
 		{"longer than the row it starts with", long, "close the bead", true, false},
 		{"an empty box", "", "how we doing?", false, false},
 		{"a store with nothing in it", "how we doing?", "", false, false},
