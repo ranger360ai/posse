@@ -1,5 +1,18 @@
 # ADR 0046 — The constitution directory is `posse/`, not `rhq/`
 
+*Status: premise dead / retired 2026-09-05 · ADR simplification, operator ruling 2026-09-05.*
+
+The one-time rename has executed. `ConstitutionSourceDir` is `posse`, the
+source resolver uses that directory, and the live persona directory resolves
+through it. The current directory and promotion contract belongs solely to
+[ADR 0015](0015-constitution-promotion.md). Do not replay the cutover below.
+
+This retirement removes zero running files, keys, states, actors or flags.
+It does not authorize deleting compatibility paths without a consumer census,
+renaming existing ADRs or changing the retained `RHQ_*` environment names.
+
+## Historical procedure and evidence (superseded in full)
+
 *Status: accepted 2026-09-02 (ranger-base-woox9, operator ruling of
 2026-09-02 that the rhq leftovers are swept, env var names excepted) ·
 unbuilt: ranger-base-woox9's code, runbook and cutover beads (ids in the

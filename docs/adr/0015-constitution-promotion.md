@@ -30,7 +30,7 @@ WHAT SET that posse walked, and the launch verify leads with the
 promoted-set drift rather than a file — an older posse on PATH refused
 every dispatched launch for ~90 minutes naming a file that was present
 and hash-matched (ranger-base-39jnl) · informs
-0002 §3, 0012 D3-C, 0014 §3, 0025 · amended 2026-09-02: the constitution directory in the instance repo is `posse/`, not `rhq/` — every `rhq/<p>` spelling below reads `posse/<p>` once the cutover lands (ADR 0046, ranger-base-woox9; unbuilt until its cutover bead closes)*
+0002 §3, 0012 D3-C, 0014 §3, 0025 · amended 2026-09-02: the constitution directory in the instance repo is `posse/`, not `rhq/` — the cutover is complete and every historical `rhq/<p>` spelling below now means `posse/<p>` (ADR 0046 retired 2026-09-05; current source constant verified)*
 
 > The operator asked for the constitution to be clearly separated from
 > project work. The instance tree currently holds three kinds of thing
@@ -59,7 +59,7 @@ denying the write is prose for most of the fleet.
 
 The instance tree also mixes three write policies in one repo:
 
-1. **Constitution** — `posse/agents` (`rhq/agents` until ADR 0046 lands), `config.yaml`, `recipes/`,
+1. **Constitution** — `posse/agents`, `config.yaml`, `recipes/`,
    `skills/`. Rare, deliberate, should be attributable. *(As first
    written this list included `envs/` — wrongly: the same repo's
    `.gitignore` line 3 forbids env values from ever being committed,
@@ -401,7 +401,7 @@ the same way twice:
   `prepare-commit-msg` slot; mechanism record in
   `constitutionGuardBody`, `internal/rhq/gates.go`). When
   `RHQ_PERSONA` is set — the same marker promote's own refusal reads —
-  a commit whose to-be-committed set touches `posse/<p>` (`rhq/<p>` until ADR 0046 lands) for each §1
+  a commit whose to-be-committed set touches `posse/<p>` for each §1
   promoted-set entry plus `posse/envs` (in the constitution repo), or
   `.claude/settings.json` / `.claude/settings.local.json` (in every
   hooked repo — not this ADR's promoted set, but the same class by
@@ -793,3 +793,5 @@ ADR blocks the parallel beads already running (dk5, w1b, g7lt).
 | a shims session silences the launch verify by deleting `promoted.json` or re-stamping it with its tampered file's sha256, no output on any surface; a truncated manifest is loud | **MEASURED** 2026-08-28 (ranger-base-bejb repro at 12ce5be, cases A–D) |
 | 10 of the 11 live PIDs declare no `cage:` and run at shims; only hoover declares `cage: seatbelt` | **MEASURED** 2026-08-28 (ranger-base-bejb, `~/.config/rhq/agents`) |
 | every same-uid location for a second anchor is session-writable at shims | by definition of the tier (ADR 0002 §3: shims applies no sandbox, so file access is the uid's); the exceptions are the out-of-uid shapes Alternatives rejects |
+
+| 0046 completed rename | This ADR owns the current `posse/` directory contract; 0046 retains the retired cutover evidence |
