@@ -624,6 +624,34 @@ first turn … no work ran` — claude's shape, and six of grok's seven. Nothing
 else about the stop changes: the bead is still stopped, the session still
 marked `🛑turn-failed`, and changing tiers is still yours to decide.
 
+**And on claude it said nothing at all: six dispatched beads whose account
+ran out mid-turn were reported as ordinary settles.**
+
+*Affected: every `claude` dispatch whose allotment runs out after the session
+has started answering.* The reader that finds claude's refusal stopped at the
+first assistant record after the bead prompt — right for a refusal that
+arrives *instead of* a first answer, blind to one that arrives after it. A
+turn refused twenty calls in therefore read as healthy: the pass printed a
+settle-without-close, and a turn-failure marker a previous pass had set was
+cleared by it.
+
+That was filed as a wait-for-it — no captured transcript was thought to hold
+one. Censusing all 1755 claude transcripts on this box found eleven: of the
+13 allotment refusals inside a dispatch turn, only 2 are the first answer,
+and those 2 are the records the reader was built from. The other 11 span six
+dispatched beads, the deepest 33 model calls and 24,740 output tokens into
+the turn.
+
+The reader reads the whole turn now — closed by the next work prompt or by
+end of file, and not by the tool_result records a turn's own tool calls put
+in the user channel, which is the boundary it was mistaking for the end. A
+claude refusal with work behind it prints the same `refused the turn
+mid-flight … the turn had already run (27 model calls, 18417 output tokens)`
+line grok's does, counted off the transcript's own `usage` objects deduped by
+message id. A refusal that really is the first answer still prints the flat
+`no work ran`, and a turn that was never refused still reports no work — that
+is `posse cost`'s question, off the same records.
+
 **Dispatch read no turn outcome on any session that got its own worktree —
 which is every dispatched claude session on a box with per-session trees.**
 

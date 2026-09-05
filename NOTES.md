@@ -2139,10 +2139,26 @@ nothing behind it, which is claude's shape and 6 of grok's 7. Absence of
 `usage` is read as "nothing ran" because grok writes one for every turn that
 served anything (186/186 on this box, all nonzero in every field, censused
 2026-09-05); a reader that cannot tell must say so, since the line reads a
-zero as a claim and not as ignorance. The claude mirror is open and
-capture-shaped: a refusal landing *after* a first answer is invisible to
-`FindClaudeTurnOutcome`, which stops at the first assistant record
-(`ranger-base-4ldma`).
+zero as a claim and not as ignorance. The claude mirror was filed as open and
+capture-shaped — a refusal landing *after* a first answer being invisible to
+`FindClaudeTurnOutcome`, which stopped at the first assistant record — and it
+turned out not to need a capture at all (`ranger-base-4ldma`). Censusing all
+1755 claude transcripts on this box on 2026-09-05 found the artifact already
+on disk, eleven times over: of the 13 allotment refusals inside a dispatch
+turn, **11 land after real work** and only 2 are the first answer. Six
+dispatched beads — `vtyst` (33 model calls, 24,740 output tokens before the
+refusal), `frqmn` (27 / 18,417), `felmj` (27 / 20,230), `oujxl` (25 /
+11,415), `2dzsm` (17 / 28,070), `pwtix` (15 / 6,250) — each settled with the
+reader reporting a healthy turn, so each printed an ordinary
+settle-without-close and cleared any marker a previous pass had set. The two
+first-answer refusals are the records the reader was built from, which is how
+their shape became the rule. It reads the whole turn now: the turn is closed
+by the next work prompt or by end of file, never by the tool_result records
+its own tool calls put in the user channel, and claude's work fields are the
+transcript's `usage` objects deduped by message id — one model call arrives
+as several records repeating one growing usage object, so summing the records
+would report three calls where one ran
+(`internal/posse/turnoutcomeclaude_qa_test.go`).
 
 ### The reap guard: dirty tree + open bead is not killed (ADR 0013 §4)
 

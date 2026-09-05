@@ -76,7 +76,7 @@ type Dispatcher struct {
 	Spend func(since time.Time) *CostReport
 	// TurnOutcome reads the runtime-owned outcome of one settled turn. nil =
 	// scan Claude transcripts; tests inject a hermetic answer. The bool says
-	// an outcome was observed; an empty message is a healthy first answer.
+	// an outcome was observed; an empty message is a turn that answered.
 	TurnOutcome func(dir, bead string, since time.Time) (TurnOutcome, bool)
 	// Progress reports a launch's in-flight lines to a caller whose Out
 	// cannot carry them: the cockpit builds its Dispatcher with

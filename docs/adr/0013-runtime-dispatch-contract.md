@@ -127,18 +127,39 @@ behind it prints `refused the turn mid-flight … the turn had already run (6
 model calls, 5571 output tokens), so work may exist: posse peek <session> and
 check the worktree`. A reader that cannot tell must say so in its docstring:
 the line reads "no work" as *nothing ran*, which is a claim, and claude and
-grok are each able to make it (claude by construction, grok off a `usage`
-object present on all 186 turns this box has that served anything). Reader
+grok are each able to make it off a measurement — grok off a `usage` object
+present on all 186 turns this box has that served anything, claude off the
+`usage` objects on the assistant records ahead of the refusal in the same
+turn. Reader
 promotion
 follows `record:`'s pattern — after a measured artifact, not on
 plausibility. codex (`~/.codex/sessions/*.jsonl`) and grok
 (`$GROK_HOME/sessions/<cwd>/<id>/`) are reachable in principle (xaev),
 but nobody has captured what either store records on an account refusal;
 capturing that artifact is ranger-base-e123, and a reader bead follows
-it iff the artifact discriminates. Known open edge: claude cannot see a
-refusal that lands *after* a first answer — the reader stops at the first
-assistant record and reads that turn as healthy, clearing a marker
-(ranger-base-4ldma, capture-when-it-happens like codex's half).
+it iff the artifact discriminates.
+
+The edge this section listed as open on claude — a refusal landing
+*after* a first answer, invisible to a reader that stopped at the first
+assistant record — is closed, and closing it retires "claude by
+construction" from the paragraph above (ranger-base-4ldma). It was filed
+capture-when-it-happens, like codex's half, on the reading that no
+transcript here held one. That reading was never measured, and it was
+wrong: censused over all 1755 claude transcripts on this box 2026-09-05,
+**11 of the 13 allotment refusals inside a dispatch turn land after real
+work** — `vtyst` 33 model calls / 24,740 output tokens, `frqmn` 27 /
+18,417, `felmj` 27 / 20,230, `oujxl` 25 / 11,415, `2dzsm` 17 / 28,070,
+`pwtix` 15 / 6,250 — against 2 that are the first answer. The 2 are the
+records the reader was built from, which is how one shape got mistaken
+for the rule. Six dispatched beads settled with the reader calling the
+turn healthy, so each printed an ordinary settle-without-close and
+cleared whatever marker a previous pass had set. The promotion rule was
+satisfied all along; only the census was missing, and it cost nothing to
+run. The reader reads the whole turn now, closed by the next work prompt
+or end of file and not by the first tool_result, and claude's work
+fields come off the same `usage` objects `posse cost` prices — deduped
+by message id, because one model call is written as several records
+carrying one growing usage object.
 
 No new template placeholder. `{prompt}` is rejected: an unrendered token
 is a literal argv (ADR 0001/0002 lesson). Dispatch that has a prompt file

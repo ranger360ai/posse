@@ -49,12 +49,16 @@ type TurnOutcome struct {
 // relaunch lands on top of work that may exist — a worktree with edits, a
 // bead with comments.
 //
-// False carries a claim, so a reader owes it one: BOTH registered readers can
-// make it, for different reasons — claude by construction (see
-// FindClaudeTurnOutcome), grok off the `usage` object its store writes on
-// every turn that ran anything (186/186, censused 2026-09-05). A third
-// adapter that cannot tell must say so in its own docstring, because the
-// settle line reads a zero here as "nothing ran".
+// False carries a claim, so a reader owes it one, and BOTH registered readers
+// now owe it off a measurement rather than off a shape: grok reads the `usage`
+// object its store writes on every turn that ran anything (186/186, censused
+// 2026-09-05), claude sums the `usage` objects on the assistant records ahead
+// of the refusal in the same turn. Claude's used to be "by construction" —
+// the reader stopped at the first answer, so a refusal it reported could have
+// nothing behind it — and that construction was the ranger-base-4ldma defect,
+// not a licence: 11 of this box's 13 in-turn refusals land after real work.
+// A third adapter that cannot tell must say so in its own docstring, because
+// the settle line reads a zero here as "nothing ran".
 func (o TurnOutcome) Worked() bool { return o.ModelCalls > 0 || o.OutputTokens > 0 }
 
 // TurnOutcomeReader reads the runtime-owned outcome of one settled turn: what
@@ -120,21 +124,38 @@ func TurnOutcomeReaderFor(rt *Runtime) TurnOutcomeReader {
 	return turnOutcomeReaders[rt.TurnOutcomeAdapter]
 }
 
-// FindClaudeTurnOutcome finds the first assistant outcome for this dispatch prompt.
+// FindClaudeTurnOutcome finds the outcome of this dispatch prompt's turn.
 // It scans only the Claude project directory for cwd, only files touched by
-// this turn, and only an assistant record after the matching bead prompt.
+// this turn, and only assistant records after the matching bead prompt.
 // User-authored bead text can quote the provider message without becoming a
-// false positive. observed distinguishes a healthy first answer (no message,
+// false positive. observed distinguishes a turn that answered (no message,
 // true) from a transcript that is not readable yet (no message, false).
 //
-// The outcome's work fields stay zero, and here that is a MEASURED zero and
-// not an unreported one: this reader reports a refusal only when the FIRST
-// assistant record after the bead prompt is the synthetic one, so no tool
-// call, no edit and no bead comment can have happened ahead of it — claude's
-// arm of the settle line keeps the flat "no work ran" and is right to
-// (ranger-base-qcu4c). What claude cannot see is the mirror of that: a
-// refusal landing AFTER a first answer reads here as an outcome with no
-// message and observed=true — a healthy turn — ranger-base-4ldma.
+// It reads the WHOLE turn, not its first answer. Reading only the first was
+// the reader's one blind spot and it was not a rare one: claude's allotment
+// can run out in the middle of a turn, and the synthetic refusal then lands
+// after real work. MEASURED over all 1755 claude transcripts on this box
+// 2026-09-05 — of the 13 allotment refusals that fall inside a dispatch
+// turn, 2 are the first answer (ranger-base-l9y, ranger-base-6ne, the two
+// this reader was built from) and 11 are not, across 6 dispatched beads:
+//
+//	ranger-base-vtyst  33 model calls, 24740 output tokens before the refusal
+//	ranger-base-frqmn  27 / 18417        ranger-base-felmj  27 / 20230
+//	ranger-base-oujxl  25 / 11415        ranger-base-2dzsm  17 / 28070
+//	ranger-base-pwtix  15 /  6250
+//
+// Each of those settled with the reader reporting a healthy turn, so the
+// settle line printed an ordinary settle-without-close and a previous pass's
+// turn-failure marker was cleared by it (ranger-base-4ldma). The artifact
+// ADR 0013 §1's promotion rule asks for was already on disk here; nothing
+// had to be spent to force one.
+//
+// The work fields are what the transcript's own usage objects say ran ahead
+// of the refusal, deduped by message id and summed — the same rule
+// ScanTranscript prices by, so "model calls" means one thing across this
+// package. They stay zero on the two first-answer refusals because there is
+// nothing before them, which is the flat "no work ran" arm still being right
+// where it was right (ranger-base-qcu4c).
 //
 // cwd is the working directory the SESSION ran in, which on every worktree
 // dispatch is the session's own tree and not the repo the bead lives in —
@@ -233,6 +254,18 @@ func claudeTranscripts(cwd string) []string {
 	return out
 }
 
+// scanClaudeTurnOutcome reads one transcript for this bead's turn.
+//
+// A turn is opened by the work prompt and closed only by the NEXT work
+// prompt or by end of file. Every other user record inside it — a
+// tool_result, a system reminder, a queued interjection — is the turn
+// CONTINUING, and the previous reader's treating any user record as a turn
+// boundary is why it never looked past the first answer.
+//
+// The first refusal in the turn wins. A later record cannot un-refuse it,
+// and of the two ways to be wrong here — calling a refused turn healthy, or
+// calling a recovered one refused — only the first one clears a marker and
+// sends the operator away from a worktree with work in it.
 func scanClaudeTurnOutcome(path, bead string, since time.Time) (out TurnOutcome, observed bool) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -240,7 +273,13 @@ func scanClaudeTurnOutcome(path, bead string, since time.Time) (out TurnOutcome,
 	}
 	defer f.Close()
 
-	inTurn := false
+	inTurn, answered := false, false
+	// message id -> the largest output_tokens that id reported. Claude writes
+	// one model call as several records (thinking, text, tool_use), each
+	// carrying the SAME growing usage object, so summing the records would
+	// count one call many times over. Max-per-id then summed is what
+	// ScanTranscript does for money and what Segment.Turns() counts.
+	work := map[string]int{}
 	r := bufio.NewReaderSize(f, 1<<20)
 	for {
 		line, readErr := r.ReadBytes('\n')
@@ -249,28 +288,51 @@ func scanClaudeTurnOutcome(path, bead string, since time.Time) (out TurnOutcome,
 				Type      string `json:"type"`
 				Timestamp string `json:"timestamp"`
 				Message   struct {
+					ID      string          `json:"id"`
 					Model   string          `json:"model"`
 					Content json.RawMessage `json:"content"`
+					Usage   *struct {
+						Out int `json:"output_tokens"`
+					} `json:"usage"`
 				} `json:"message"`
 			}
 			if json.Unmarshal(line, &d) == nil {
 				ts, _ := time.Parse(time.RFC3339Nano, d.Timestamp)
 				switch d.Type {
 				case "user":
-					m := workPromptRe.FindStringSubmatch(userText(d.Message.Content))
-					inTurn = m != nil && m[1] == bead && !ts.Before(since)
-				case "assistant":
-					if inTurn && !ts.Before(since) {
-						text := assistantText(d.Message.Content)
-						if d.Message.Model == "<synthetic>" && claudeAllotmentLimit(text) {
-							// Work fields left zero on purpose: this record IS
-							// the first answer, so there is nothing before it.
-							return TurnOutcome{Message: strings.Join(strings.Fields(text), " ")}, true
+					if m := workPromptRe.FindStringSubmatch(userText(d.Message.Content)); m != nil {
+						inTurn = m[1] == bead && !ts.Before(since)
+						if inTurn {
+							// A re-prompt of this same bead opens a new turn:
+							// what the last one spent is not this one's.
+							answered, work = false, map[string]int{}
 						}
-						// The first assistant answer was not an allotment refusal:
-						// this is positive evidence that a prior failure marker can
-						// be cleared. Anything later belongs to work that started.
-						return TurnOutcome{}, true
+					}
+				case "assistant":
+					if !inTurn || ts.Before(since) {
+						break
+					}
+					text := assistantText(d.Message.Content)
+					if d.Message.Model == syntheticModel {
+						if claudeAllotmentLimit(text) {
+							return TurnOutcome{
+								Message:      strings.Join(strings.Fields(text), " "),
+								ModelCalls:   len(work),
+								OutputTokens: sumWork(work),
+							}, true
+						}
+						// Claude Code's other locally-generated notices
+						// (163 records on this box, 19 of them limits) are
+						// not the model answering and not a model call:
+						// they neither clear a marker nor count as work.
+						break
+					}
+					// A real answer: positive evidence that a prior failure
+					// marker can be cleared, and one model call's worth of
+					// work if the refusal is still ahead of it.
+					answered = true
+					if d.Message.Usage != nil && d.Message.ID != "" {
+						work[d.Message.ID] = max(work[d.Message.ID], d.Message.Usage.Out)
 					}
 				}
 			}
@@ -279,10 +341,25 @@ func scanClaudeTurnOutcome(path, bead string, since time.Time) (out TurnOutcome,
 			break
 		}
 		if readErr != nil {
+			// A half-read turn cannot say a refusal is absent, only that it
+			// did not reach one.
 			return TurnOutcome{}, false
 		}
 	}
-	return TurnOutcome{}, false
+	return TurnOutcome{}, answered
+}
+
+// syntheticModel is the model field Claude Code stamps on a record it wrote
+// itself rather than one a model returned — the channel the allotment refusal
+// arrives on.
+const syntheticModel = "<synthetic>"
+
+func sumWork(work map[string]int) int {
+	total := 0
+	for _, out := range work {
+		total += out
+	}
+	return total
 }
 
 func assistantText(raw json.RawMessage) string {

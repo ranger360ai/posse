@@ -174,6 +174,78 @@ stays open until an ordinary fleet dispatch pass hits one; when it does,
 `FindClaudeTurnOutcome`'s codex analogue would read) is the store to
 capture from.
 
+## claude — MEASURED after the fact, and the census was the whole cost
+
+Added 2026-09-05 for `ranger-base-4ldma`. claude's refusal artifact was
+never in doubt — the reader has read it since the beginning — but *where
+in the turn it lands* was, and the bead that filed the gap declared it
+capture-shaped on the reading that no transcript on this box held a
+refusal after a first answer. That reading was an assumption, not a
+measurement, and running the measurement cost nothing: the artifacts
+were already on disk.
+
+Censused over every claude transcript under `~/.claude/projects`
+(**1755 files**), keying a refusal the way the reader does — a record
+with `"model":"<synthetic>"` whose text matches `claudeAllotmentLimit` —
+and locating it relative to the `Work beads issue <id>` prompt that
+opened the turn:
+
+| where the refusal lands | count |
+|---|---|
+| first answer of a dispatch turn | 2 |
+| **after real work in a dispatch turn** | **11** |
+| outside any dispatch turn (interactive) | 6 |
+
+The 11 span six dispatched beads, with the work ahead of the refusal
+counted the way `ScanTranscript` counts it — assistant records deduped
+by `message.id`, `output_tokens` taken as the max each id reported:
+
+| bead | model calls | output tokens |
+|---|---|---|
+| `ranger-base-vtyst` | 33 | 24,740 |
+| `ranger-base-frqmn` | 27 | 18,417 |
+| `ranger-base-felmj` | 27 | 20,230 |
+| `ranger-base-oujxl` | 25 | 11,415 |
+| `ranger-base-2dzsm` | 17 | 28,070 |
+| `ranger-base-pwtix` | 15 | 6,250 |
+
+The 2 first-answer refusals are `ranger-base-l9y` and `ranger-base-6ne`
+— the records `FindClaudeTurnOutcome` was originally written against. A reader built from the only two
+examples anyone had looked at generalised their shape into its contract,
+and the contract then said the other eleven could not exist.
+
+**The refusal record, verbatim in shape** (paths, ids and cwd elided —
+this repo is public):
+
+```json
+{"type":"assistant","timestamp":"2026-09-03T18:35:27.923Z",
+ "requestId":"req_…","isApiErrorMessage":true,"apiErrorStatus":429,
+ "error":"rate_limit",
+ "message":{"id":"…","model":"<synthetic>","stop_reason":"stop_sequence",
+   "usage":{"input_tokens":0,"output_tokens":0,
+            "cache_creation_input_tokens":0,"cache_read_input_tokens":0},
+   "content":[{"type":"text",
+     "text":"You've reached your Fable limit. Run /usage-credits to continue or switch models with /model."}]}}
+```
+
+Two things a reader must not take from it. The synthetic record's own
+`usage` is all zeros, so it can never contribute work — the work is what
+sits *ahead* of it. And `isApiErrorMessage`/`apiErrorStatus` are richer
+discriminators than the prose, but they are not what is keyed on: the
+same synthetic channel carries claude's other local notices (163
+synthetic records on this box, 19 of them limits), and `<synthetic>` plus
+the limit prose is the pair already pinned. Widening to
+`isApiErrorMessage` would be a second reading of the same fact and a
+second way to be wrong about it — the argument `turnfailure_grok.go`
+makes against reading `retry_state` beside `stop_reason`.
+
+**Where the turn ends.** The reader's real defect was its turn boundary,
+not its refusal match. It treated *any* user record as the end of the
+turn, and a turn's own tool calls put `tool_result` records in the user
+channel — so from the first tool call onward the reader was out of the
+turn and could not have seen a refusal even if it had kept scanning.
+A turn is closed by the next `Work beads issue` prompt or by end of file.
+
 ## No-spend accounting
 
 One real turn was spent: the control probe above
@@ -183,3 +255,10 @@ know what "served" looks like in the same store on the same day, rather
 than trusting a two-day-old assumption. The refusal artifact itself cost
 nothing: it was already on disk from a prior probe, read only. No codex
 turn was spent by this bead.
+
+`ranger-base-4ldma`'s claude census (above) spent nothing at all: 1755
+transcripts already on disk, read only. It is worth saying plainly, because
+that bead was filed *not to be worked* on the belief that measuring it meant
+burning an allotment to force a refusal. It did not. The promotion rule asks
+for a captured artifact before a reader; it does not ask anyone to cause one,
+and it is not a licence to skip looking for the ones already there.
