@@ -9,6 +9,7 @@ package posse
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -304,24 +305,167 @@ func TestPersonaFailureStillBenchesTheSlot(t *testing.T) {
 }
 
 // deadPersonaSession creates the persona session for repo as an earlier
-// pass would have, then makes it look like the agent died long ago: the
-// workspace is alive, herdr sees no agent, and the last launch is old.
-func deadPersonaSession(t *testing.T, b *HerdrBackend, fake, persona, repo, bead string) string {
+// pass would have, then makes it look like the agent died `age` ago: the
+// workspace is alive, herdr sees no agent, and the launch record reads that
+// old.
+//
+// The age is a PARAMETER, and age 0 writes no stamp at all, because of
+// ranger-base-5i4c. It used to age every session by a fixed hour, and the
+// two grace tests then flipped it back to `time.Now()` with their own
+// unchecked readMeta/writeMeta pair. That flip is the whole fixture: the
+// record is the store of record RelaunchAgent and settledForReap measure
+// their graces against, so a flip that does not land does not weaken the
+// fixture, it INVERTS it into TestDispatchRelaunchesDeadAgent's — a session
+// launched an hour ago, which the pass then correctly relaunches, reported
+// by the caller as "want no relaunch inside the grace window, got n=1".
+// Measured: with the record left at -1h and nothing else changed, the pass
+// prints `relaunching ranger in <session>`, returns n=1 and types a second
+// `pane run` — byte for byte the two lines this bead was filed with, seen in
+// a full-package run and never reproducible alone (the flip lands every time
+// on a quiet box).
+//
+// So the young fixture no longer travels through the old one. startPlanned
+// already stamps `launched: <now>` on a persona create and CHECKS that
+// write, so age 0 is the record CreateSession itself wrote and there is no
+// second write to fail.
+//
+// The read-back below is for the callers that do age it: the record has to
+// be shown to say what the caller asked for BEFORE the pass reads it, so a
+// stamp that did not land fails as a fixture and never as a verdict.
+func deadPersonaSession(t *testing.T, b *HerdrBackend, fake, persona, repo, bead string, age time.Duration) string {
 	t.Helper()
 	name := SessionForBead(persona, repo, bead)
 	if err := b.CreateSession(NewSessionOpts{Name: name, Dir: repo, Agent: persona}); err != nil {
 		t.Fatal(err)
 	}
+	if age > 0 {
+		m, ok := b.readMeta(name)
+		if !ok {
+			t.Fatal("no meta after CreateSession")
+		}
+		m.Launched = time.Now().Add(-age)
+		if err := b.writeMeta(m); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := launchAgeIs(b, name, age); err != nil {
+		t.Fatalf("fixture: %v", err)
+	}
+	os.Remove(filepath.Join(fake, "agents.json")) // no agent anywhere
+	return name
+}
+
+// launchStampSlack is how much later than the fixture asked for a record may
+// read and still be the fixture. The create, the stamp and this read-back are
+// filesystem round trips on a box that runs the whole fleet's suites at once,
+// so it cannot be zero; and it is derived from the grace the callers measure
+// against rather than hand-picked, because the one thing it must not be is
+// LARGER than that grace. A slack over RelaunchGrace would let a record the
+// pass is going to relaunch into walk past this guard and fail at the
+// verdict, which is the failure this whole change exists to stop.
+const launchStampSlack = DefaultRelaunchGrace / 3
+
+// launchAgeIs reads the launch record back and says whether it reports the
+// age the fixture asked for. It is a function rather than four lines inside
+// deadPersonaSession so that the discriminator itself can be pinned
+// (TestQADeadPersonaSessionRefusesARecordThatDidNotTakeTheStamp): a guard
+// nobody has watched fail is a guard nobody has measured.
+func launchAgeIs(b *HerdrBackend, name string, want time.Duration) error {
 	m, ok := b.readMeta(name)
 	if !ok {
-		t.Fatal("no meta after CreateSession")
+		return fmt.Errorf("no launch record for %s to read the stamp back from", name)
+	}
+	if m.Launched.IsZero() {
+		return fmt.Errorf("%s carries no launched: stamp, so every grace reads it as infinitely old", name)
+	}
+	if got := time.Since(m.Launched); got > want+launchStampSlack {
+		return fmt.Errorf("%s reads as launched %s ago, not %s — the stamp did not land, and the pass would relaunch into it", name, got.Round(time.Second), want)
+	}
+	return nil
+}
+
+// ranger-base-5i4c: the fixture guard, shown failing.
+//
+// A guard that has only ever returned nil is a guard nobody has measured, so
+// the wrong arms here are the two ACTUAL corruptions: a record still reading
+// an hour old after the caller asked for a session launched this instant, and
+// a record carrying no stamp at all. What the pass then DOES with the first
+// of those is not asserted here, because it is already a test of its own —
+// TestDispatchRelaunchesDeadAgent, whose fixture that is. That the two
+// fixtures are one write apart is exactly why the drift has to be caught
+// here and not at the verdict.
+func TestQADeadPersonaSessionRefusesARecordThatDidNotTakeTheStamp(t *testing.T) {
+	t.Parallel()
+	b, fake := newTestBackend(t)
+	writePersona(t, b.App, "ranger", "[go]")
+	repo := qaRepo(t, b.App, `[{"id":"a-1","title":"t","labels":["go"]}]`, "")
+
+	// Right arm: what CreateSession itself wrote is a session launched now,
+	// with no second write to fail. This is what the two grace tests run on.
+	session := deadPersonaSession(t, b, fake, "ranger", repo, "a-1", 0)
+	if err := launchAgeIs(b, session, 0); err != nil {
+		t.Fatalf("a session posse just created must read as launched now: %v", err)
+	}
+	// Asked a second time of the number the pass itself uses, so the arm
+	// says "inside the relaunch grace" and not merely "inside this file's
+	// slack" — the two are the same reading only while the slack stays
+	// under the grace, which is what launchStampSlack is derived from.
+	if !insideGrace(b, session, DefaultRelaunchGrace) {
+		t.Errorf("a fresh create must be inside the %s relaunch grace RelaunchAgent asks about", DefaultRelaunchGrace)
+	}
+
+	// Wrong arm 1: the stamp did not land, so the record still says an hour.
+	// This is byte-for-byte the state the flake ran the verdict on.
+	m, ok := b.readMeta(session)
+	if !ok {
+		t.Fatal("no meta to age")
 	}
 	m.Launched = time.Now().Add(-time.Hour)
 	if err := b.writeMeta(m); err != nil {
 		t.Fatal(err)
 	}
-	os.Remove(filepath.Join(fake, "agents.json")) // no agent anywhere
-	return name
+	err := launchAgeIs(b, session, 0)
+	if err == nil {
+		t.Fatal("a record reading an hour old was accepted as a session launched now — the flake's fixture would pass through again")
+	}
+	if !strings.Contains(err.Error(), "the stamp did not land") {
+		t.Errorf("the refusal must name the fixture, not the verdict: %v", err)
+	}
+
+	// Wrong arm 2: no stamp at all. parseLaunched reads an absent or
+	// unparseable `launched:` as the zero time — "old enough for anything" —
+	// so an empty record is the same inversion with none of the tells.
+	m.Launched = time.Time{}
+	if err := b.writeMeta(m); err != nil {
+		t.Fatal(err)
+	}
+	err = launchAgeIs(b, session, 0)
+	if err == nil {
+		t.Fatal("a record carrying no launched: stamp was accepted; every grace reads it as infinitely old")
+	}
+	// Named as the missing stamp it is. The drift arm above would refuse it
+	// too — time.Since(the zero time) is two millennia — but it would refuse
+	// it in the words "reads as launched 17765h ago", which sends a reader
+	// looking for a clock rather than for the empty field that is actually
+	// there.
+	if !strings.Contains(err.Error(), "carries no launched: stamp") {
+		t.Errorf("an absent stamp must be named as one, not reported as clock drift: %v", err)
+	}
+
+	// And the aged fixture its own caller asks for still passes.
+	m.Launched = time.Now().Add(-time.Hour)
+	if err := b.writeMeta(m); err != nil {
+		t.Fatal(err)
+	}
+	if err := launchAgeIs(b, session, time.Hour); err != nil {
+		t.Errorf("the hour-old fixture must be accepted when an hour is what was asked: %v", err)
+	}
+}
+
+// insideGrace answers the question RelaunchAgent asks of the same record.
+func insideGrace(b *HerdrBackend, name string, grace time.Duration) bool {
+	m, ok := b.readMeta(name)
+	return ok && time.Since(m.Launched) < grace
 }
 
 // rangerhq-vk2: a live session whose agent died gets the persona command
@@ -336,7 +480,7 @@ func TestDispatchRelaunchesDeadAgent(t *testing.T) {
 	repo := qaRepo(t, b.App,
 		`[{"id":"a-1","title":"t","labels":["go"]}]`,
 		`[{"id":"a-1","title":"t","status":"closed","assignee":"ranger"}]`)
-	session := deadPersonaSession(t, b, fake, "ranger", repo, "a-1")
+	session := deadPersonaSession(t, b, fake, "ranger", repo, "a-1", time.Hour)
 	os.WriteFile(filepath.Join(fake, "pane-run-starts-agent"), nil, 0o644)
 
 	n, err := d.Run("", "", 0)
@@ -370,10 +514,7 @@ func TestDispatchNoRelaunchWithinGrace(t *testing.T) {
 	d.StartupWait = 200 * time.Millisecond
 	writePersona(t, b.App, "ranger", "[go]")
 	repo := qaRepo(t, b.App, `[{"id":"a-1","title":"t","labels":["go"]}]`, "")
-	session := deadPersonaSession(t, b, fake, "ranger", repo, "a-1")
-	m, _ := b.readMeta(session)
-	m.Launched = time.Now()
-	b.writeMeta(m)
+	deadPersonaSession(t, b, fake, "ranger", repo, "a-1", 0)
 	os.WriteFile(filepath.Join(fake, "pane-run-starts-agent"), nil, 0o644)
 
 	n, _ := d.Run("", "", 0)
@@ -400,10 +541,7 @@ func TestDispatchRelaunchGraceOutlivesStartupWait(t *testing.T) {
 	d.StartupWait = 200 * time.Millisecond
 	writePersona(t, b.App, "ranger", "[go]")
 	repo := qaRepo(t, b.App, `[{"id":"a-1","title":"t","labels":["go"]}]`, "")
-	session := deadPersonaSession(t, b, fake, "ranger", repo, "a-1")
-	m, _ := b.readMeta(session)
-	m.Launched = time.Now()
-	b.writeMeta(m)
+	deadPersonaSession(t, b, fake, "ranger", repo, "a-1", 0)
 	os.WriteFile(filepath.Join(fake, "pane-run-starts-agent"), nil, 0o644)
 
 	time.Sleep(300 * time.Millisecond) // > StartupWait, << RelaunchGrace
