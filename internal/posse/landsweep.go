@@ -113,7 +113,7 @@ func (d *Dispatcher) landClosedTrees(dirFilter string) {
 		}
 	}()
 	for _, t := range trees {
-		if n, ok := unlandedCount(t); ok && n == 0 {
+		if nothingToLand(t) {
 			continue // its work is already on the base: nothing to say
 		}
 		id := t.Bead
@@ -192,16 +192,76 @@ func (d *Dispatcher) landClosedTrees(dirFilter string) {
 	}
 }
 
-// unlandedCount is how many commits the branch has that its base does not,
+// nothingToLand is the sweep's skip test: true only when this tree holds
+// nothing the base does not, on EITHER of the two tips a session's work can
+// sit on, which is the one state with nothing to land and nothing to say.
+//
+// IT ASKS BOTH TIPS (ranger-base-vavx2), for removalTips' reason
+// (ranger-base-v2rj7): `<base>..<branch>` is ZERO over a worktree whose HEAD
+// is DETACHED, because a commit made there writes no ref and the branch is
+// still where it was cut — and that is what a container-tier session is
+// launched on ON PURPOSE, since a ref-less commit is what buys the `:ro`
+// common dir (PrepareSessionHead, ranger-base-t4f1). So the whole of such a
+// session's work read here as "already on the base", and the tree was skipped
+// before the bead was read, before MergeSessionWork was called, and before
+// any line was printed — over exactly the population this sweep exists for, a
+// close nobody watched. MEASURED 2026-09-05: a stamped detached tree with one
+// commit on it and a CLOSED bead drew the empty string out of this pass and
+// left main not reaching the commit.
+//
+// The head is not asked INSTEAD, which would be a trade and not a fix: a
+// branch holding a commit its own worktree walked away from is landable work
+// the head does not reach, and MergeSessionWork lands the branch for it.
+// Skipping is what has to be unanimous, so any tip with something ahead of
+// the base sends this tree on to be read, merged and reported.
+//
+// Every unanswerable question fails to the same side the count always did: a
+// detached REPO (no base) or a tip git would not count is not "nothing to
+// land", so it goes on to ask the bead and lets MergeSessionWork say in words
+// why it cannot happen (ranger-base-gs9j).
+func nothingToLand(t *SessionTree) bool {
+	if t.Base == "" {
+		return false
+	}
+	branchSHA := ""
+	if branchExists(t.Repo, t.Branch) {
+		branchSHA, _ = git(t.Repo, "rev-parse", "refs/heads/"+t.Branch)
+		if n, ok := unlandedCount(t); !ok || n > 0 {
+			return false
+		}
+	}
+	// `head != branchSHA` and not "is the HEAD detached", removalTips'
+	// threshold: what matters is whether the branch tip above already
+	// accounted for this commit, and where the two are the same commit it
+	// did — so this arm is the detached case and only it, a no-op over a tree
+	// whose HEAD is on its own branch.
+	if head, ok := workHead(t); ok && head != branchSHA {
+		if n, ok := unlandedAhead(t, head); !ok || n > 0 {
+			return false
+		}
+	}
+	return true
+}
+
+// unlandedCount is how many commits the BRANCH has that its base does not,
 // and whether the question could be answered at all. false is a detached
 // repo or a branch git would not count — neither of which is "nothing to
 // land", so both go on to ask the bead and let MergeSessionWork say in words
 // why it cannot happen.
-func unlandedCount(t *SessionTree) (int, bool) {
+//
+// The branch tip and nothing else, because its other caller asks about the
+// branch and says so in the words it prints: unaccountedFor (worktree.go)
+// hands the operator `git log <base>..<branch>` to read and `--land --force`
+// to run, and neither sentence is true of a commit that is on no branch at
+// all. What the SWEEP asks is nothingToLand, above.
+func unlandedCount(t *SessionTree) (int, bool) { return unlandedAhead(t, t.Branch) }
+
+// unlandedAhead is that count asked of one named tip.
+func unlandedAhead(t *SessionTree, tip string) (int, bool) {
 	if t.Base == "" {
 		return 0, false
 	}
-	out, err := git(t.Repo, "rev-list", "--count", t.Base+".."+t.Branch)
+	out, err := git(t.Repo, "rev-list", "--count", t.Base+".."+tip)
 	if err != nil {
 		return 0, false
 	}

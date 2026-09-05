@@ -2201,9 +2201,10 @@ somebody's decision, not a measurement). Every unanswerable question fails
 closed. It is stricter than the kill that follows needs to be: a crew-arm
 session's bead is closed, so the kill would land the branch itself, but a reap
 that lands is a reap that decides. Deferring costs one pass —
-`landClosedTrees` lands it at the head of the next, except over a DETACHED
-tree, which that sweep skips in silence for the same reason these two
-guards did (ranger-base-vavx2, open) — and the refusal prints
+`landClosedTrees` lands it at the head of the next, a DETACHED tree included
+(ranger-base-vavx2: that sweep asked `<base>..<branch>` alone too, and skipped
+such a tree in silence before its bead was read — `nothingToLand` asks both
+tips now) — and the refusal prints
 `◑ <session> idle <d> over <why> and NOT reaped: <what it holds>` **every
 pass**, because the silence is what read as a broken reaper and cost the
 hand-reaps in the first place (ranger-base-kftx).
