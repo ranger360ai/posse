@@ -528,7 +528,7 @@ func TestQAEveryLaunchPathThatRendersASeatbeltRefusesACredentialDirEnvSet(t *tes
 		}
 	}
 	if paths < 2 {
-		t.Fatalf("this package has %d functions that both render a seatbelt profile and resolve the session's env sets; there are two — planLaunch and RelaunchAgent — and a pin that finds fewer is watching a path that has left the package, or one that no longer resolves its env sets by name and so is checked by nothing above (ranger-base-179hy, ranger-base-qg6q5)", paths)
+		t.Fatalf("%d function(s) in this package both render a seatbelt profile and resolve the session's env sets; there are two — planLaunch and RelaunchAgent — and a pin that finds fewer than two is watching a path that has left the package, or one that no longer resolves its env sets by name and so is checked by nothing above (ranger-base-179hy, ranger-base-qg6q5)", paths)
 	}
 }
 
