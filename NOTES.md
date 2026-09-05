@@ -3041,12 +3041,27 @@ tier it is actually thinking at. `posse cost` needed no change and that is
 the point: `TierForModel` reads the model out of the transcript, so the
 spend was always counted honestly — what was missing was anyone knowing.
 
-The probe is `GET api.anthropic.com/v1/models` with the same credential
-the plan guard reads, zero tokens, shared through
+The probe is `GET api.anthropic.com/v1/models`, zero tokens, shared through
 `$RHQ_HOME/state/model-catalog.json` behind `model_probe_ttl:` (default
 1h) exactly as `plan-usage.json` is — a successful reading is reused for
 the TTL, and rate-limit cooldowns are shared across processes. Other failed
-attempts remain UNKNOWN and may be retried by the next launch. Verified live
+attempts remain UNKNOWN and may be retried by the next launch.
+
+WHICH CREDENTIAL it presents changed twice on 2026-09-05 and the sentence
+above used to answer "the same one the plan guard reads". It now PREFERS the
+session mint of the env sets the launch being judged realizes — read out of
+`envs/*.env` under the home by the ADR 0019 seam, selected by that launch's
+own set list and taking the last assignment of the name across it (ADR 0039
+D3d as amended, ranger-base-q3n4e) — because the meter credential rots in
+hours and had left this probe failing since 2026-08-31. The plan guard's
+credential is the FALLBACK, for the two ways the preference does not answer:
+none of the named sets carries the variable (no request is spent), or the
+endpoint refuses the one that did (exactly one more read per catalog read,
+never a loop). A read no launch asked for — `posse runtimes`, `posse gates` —
+uses the persona-less list, which is config `default_env` and nothing else; a
+persona that names no env set gets no session credential rather than the
+cockpit's, because an env set is an explicit choice and never a silent
+default (rangerhq-f2b). Verified live
 2026-08-23: the OAuth credential is
 accepted there (the route exists and answers 401 unauthenticated;
 `/api/oauth/models`, the shape the plan guard's endpoint would suggest, is
