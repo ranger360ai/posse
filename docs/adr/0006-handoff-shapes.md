@@ -47,7 +47,7 @@ fix`, `not a bug`, including the existing plural forms) only when a
 successful git query finds no commit naming it; a failed query cannot exempt.
 
 **4. Acceptance is explicit.** Replace `closerDoneWhen` label/type-to-intent
-selection and the unmatched whole-PID-table fallback. Each verification
+selection. Do not replace it with an unmatched whole-PID-table fallback. Each verification
 section points at the closed bead's own description/acceptance as its
 checklist, alongside closer, close reason, close time and labels. The
 verifier reads that source directly; do not add an acceptance-heading parser
@@ -94,3 +94,8 @@ existing export is the exit hatch. No runtime edit accompanies this decision.
 
 [Historical rulings, measurement windows and alternatives](history/0006-handoff-shapes-before-2026-09-05.md)
 are retained separately.
+
+Execution census 2026-09-05: this baseline has `closerDoneWhen` and
+`IntentDoneWhen` matching; no unmatched whole-PID-table fallback was found
+in verify construction. The removal task deletes the observed inference,
+not a hypothetical extra branch. The SIMPLIFY verdict remains applicable.
