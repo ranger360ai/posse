@@ -41,11 +41,50 @@ command -v brew  >/dev/null || { echo "verify-codex-pin: brew not on PATH"; exit
 [ -r "$pin" ] || { echo "verify-codex-pin: missing $pin"; exit 2; }
 [ -r "$cfg" ] || { echo "verify-codex-pin: missing $cfg"; exit 2; }
 
-# Same extractor as verify-grok-pin.sh, and it is anchored at ^ for the same
-# reason: every explanatory line in both the pin file and the operator's
-# config starts with '#', so a commented example of a key can never be read
-# as the key. POSIX BRE only — BSD sed has no \|.
-val() { sed -n "s/^$1 *= *\"\{0,1\}\([^\"#]*\)\"\{0,1\}.*/\1/p" "$2" | head -1 | tr -d ' '; }
+# Every extractor below decides an arm, so none of them forks a matcher
+# (ranger-base-s8b4g, ranger-base-7hx87): a `sed`/`awk`/`tr`/`head`/`sort`
+# that is signalled, that cannot be exec'd under load, or that takes EPIPE
+# returns nothing, and nothing here is indistinguishable from "the key is not
+# in the file" or "the tool answered nothing" — which reads as offline,
+# prints "pin intact" and exits 0. The fork that IS the measurement stays;
+# only the readers of its output changed.
+#
+# val <key> <file> — the value on the first line of <file> that starts with
+# <key>, optional spaces, `=`, optional spaces and an optional opening quote,
+# cut at the first `"` or `#` and with every space removed. That is exactly
+# what `sed -n | head -1 | tr -d ' '` did, anchored at ^ for the same reason:
+# every explanatory line in the pin file and in the operator's config starts
+# with '#', so a commented example of a key can never be read as the key.
+val() {
+  local line rest v
+  [ -r "$2" ] || return 0
+  while IFS= read -r line || [ -n "$line" ]; do
+    rest=${line#"$1"}
+    [ "$rest" = "$line" ] && continue
+    while [ "${rest# }" != "$rest" ]; do rest=${rest# }; done
+    case $rest in '='*) ;; *) continue ;; esac
+    rest=${rest#=}
+    while [ "${rest# }" != "$rest" ]; do rest=${rest# }; done
+    rest=${rest#\"}
+    v=${rest%%[\"#]*}
+    printf '%s' "${v// /}"
+    return 0
+  done <"$2"
+}
+
+# field2 <text> — the second whitespace-separated field of the FIRST line,
+# replacing `| awk '{print $2}'`. Deliberately stricter than the awk it
+# replaces, which printed field 2 of EVERY line: the version answer is one
+# line, and a second line is a surprise the row should show rather than
+# silently concatenate.
+field2() {
+  local s=${1%%$'\n'*} rest
+  s=${s#"${s%%[![:space:]]*}"}
+  rest=${s#*[[:space:]]}
+  [ "$rest" = "$s" ] && return 0
+  rest=${rest#"${rest%%[![:space:]]*}"}
+  printf '%s' "${rest%%[[:space:]]*}"
+}
 
 want_ver=$(val posse_pinned_version "$pin")
 want_cask=$(val formula "$pin")
@@ -57,11 +96,19 @@ want_room=$(val caskroom_dir "$pin")
 # installable by npm, bun, pnpm and a standalone installer, each its own
 # update channel, and any of them linked ahead of the cask leaves the pin
 # asserting a binary nothing runs.
-live_ver=$(codex --version 2>/dev/null | awk '{print $2}')
+live_ver=$(field2 "$(codex --version 2>/dev/null)")
 cfg_cfuos=$(val check_for_update_on_startup "$cfg")
 
 pinned=unpinned
-brew list --pinned 2>/dev/null | grep -qx "$want_cask" && pinned=pinned
+# `grep -qx` without the fork (ranger-base-s8b4g): a dying grep would report
+# the cask unpinned — a FAIL row against a box where the pin is holding.
+pinned_list=$(brew list --pinned 2>/dev/null)
+while IFS= read -r line || [ -n "$line" ]; do
+  if [ "$line" = "$want_cask" ]; then
+    pinned=pinned
+    break
+  fi
+done <<<"$pinned_list"
 
 chk_row() { # label want got
   if [ "$2" = "$3" ]; then printf '  %-30s %-12s ok\n' "$1" "$3"
@@ -111,7 +158,21 @@ fi
 outd=$(brew outdated --cask --verbose 2>/dev/null); brc=$?
 upstream=""
 if [ "$brc" -le 1 ]; then
-  upstream=$(printf '%s\n' "$outd" | sed -n "s/^$want_cask (.*) != \([^ ]*\).*/\1/p" | head -1)
+  # The version after the LAST `) != ` on the first line naming the cask,
+  # which is what the greedy BRE this replaces captured. Read with `case` and
+  # `${...}`: a `sed` that never ran would leave $upstream empty, and the
+  # line below then quietly substitutes the pin itself and reports "nothing
+  # to re-audit" (ranger-base-s8b4g).
+  upstream=
+  while IFS= read -r line || [ -n "$line" ]; do
+    case $line in
+    "$want_cask ("*") != "*)
+      rest=${line##*") != "}
+      upstream=${rest%% *}
+      break
+      ;;
+    esac
+  done <<<"$outd"
   [ -n "$upstream" ] || upstream=$want_ver
   printf '  %-30s %-12s read\n' "tap version" "$upstream"
 else
@@ -119,7 +180,31 @@ else
   fail=$((fail + 1))
 fi
 
-ver_gt() { [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -t. -k1,1n -k2,2n -k3,3n | tail -1)" = "$1" ]; }
+# ver_gt <a> <b> — true when <a> sorts after <b>, replacing
+# `sort -t. -k1,1n -k2,2n -k3,3n | tail -1`. Three dotted fields compared as
+# numbers, each read the way `sort -n` reads one (leading digits; missing or
+# non-numeric is 0), and the whole string as the last resort where all three
+# tie — which is `sort`'s own last-resort comparison, and the only reason
+# `ver_gt 1.0.0 1.0` is true. Measured against the pipeline it replaces over
+# 12 pairs (ranger-base-s8b4g).
+ver_gt() {
+  local a=$1 b=$2 i ax bx
+  [ "$a" = "$b" ] && return 1
+  for i in 1 2 3; do
+    ax=${a%%.*}
+    bx=${b%%.*}
+    ax=${ax%%[!0-9]*}
+    bx=${bx%%[!0-9]*}
+    [ -n "$ax" ] || ax=0
+    [ -n "$bx" ] || bx=0
+    [ "$ax" -gt "$bx" ] && return 0
+    [ "$ax" -lt "$bx" ] && return 1
+    case $a in *.*) a=${a#*.} ;; *) a= ;; esac
+    case $b in *.*) b=${b#*.} ;; *) b= ;; esac
+  done
+  [[ $1 > $2 ]] && return 0
+  return 1
+}
 
 echo
 echo "ACCEPTED RISK (ranger-base-poj5): codex has no required_maximum_version"

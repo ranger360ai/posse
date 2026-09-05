@@ -31,12 +31,55 @@ command -v grok >/dev/null || { echo "verify-grok-pin: grok not on PATH"; exit 2
 [ -r "$pin" ] || { echo "verify-grok-pin: missing $pin"; exit 2; }
 [ -r "$cfg" ] || { echo "verify-grok-pin: missing $cfg"; exit 2; }
 
-val() { sed -n "s/^$1 *= *\"\{0,1\}\([^\"#]*\)\"\{0,1\}.*/\1/p" "$2" | head -1 | tr -d ' '; }
+# Every extractor below decides an arm, so none of them forks a matcher
+# (ranger-base-s8b4g, ranger-base-7hx87): a `sed`/`awk`/`tr`/`head`/`sort`
+# that is signalled, that cannot be exec'd under load, or that takes EPIPE
+# returns nothing, and nothing here is indistinguishable from "the key is not
+# in the file" or "the tool answered nothing" — which reads as offline,
+# prints "pin intact" and exits 0. The fork that IS the measurement stays;
+# only the readers of its output changed.
+#
+# val <key> <file> — the value on the first line of <file> that starts with
+# <key>, optional spaces, `=`, optional spaces and an optional opening quote,
+# cut at the first `"` or `#` and with every space removed. That is exactly
+# what `sed -n | head -1 | tr -d ' '` did, anchored at ^ for the same reason:
+# every explanatory line in the pin file and in the operator's config starts
+# with '#', so a commented example of a key can never be read as the key.
+val() {
+  local line rest v
+  [ -r "$2" ] || return 0
+  while IFS= read -r line || [ -n "$line" ]; do
+    rest=${line#"$1"}
+    [ "$rest" = "$line" ] && continue
+    while [ "${rest# }" != "$rest" ]; do rest=${rest# }; done
+    case $rest in '='*) ;; *) continue ;; esac
+    rest=${rest#=}
+    while [ "${rest# }" != "$rest" ]; do rest=${rest# }; done
+    rest=${rest#\"}
+    v=${rest%%[\"#]*}
+    printf '%s' "${v// /}"
+    return 0
+  done <"$2"
+}
+
+# field2 <text> — the second whitespace-separated field of the FIRST line,
+# replacing `| awk '{print $2}'`. Deliberately stricter than the awk it
+# replaces, which printed field 2 of EVERY line: the version answer is one
+# line, and a second line is a surprise the row should show rather than
+# silently concatenate.
+field2() {
+  local s=${1%%$'\n'*} rest
+  s=${s#"${s%%[![:space:]]*}"}
+  rest=${s#*[[:space:]]}
+  [ "$rest" = "$s" ] && return 0
+  rest=${rest#"${rest%%[![:space:]]*}"}
+  printf '%s' "${rest%%[[:space:]]*}"
+}
 
 want_ver=$(val posse_pinned_version "$pin")
 want_max=$(val maximum_version "$pin")
 want_req=$(val required_maximum_version "$pin")
-live_ver=$(grok --version 2>/dev/null | awk '{print $2}')
+live_ver=$(field2 "$(grok --version 2>/dev/null)")
 cfg_auto=$(val auto_update "$cfg")
 cfg_max=$(val maximum_version "$cfg")
 cfg_req=$(val required_maximum_version "$cfg")
@@ -70,9 +113,50 @@ cfg_req=$(val required_maximum_version "$cfg")
 # shape (`"true"`, `null`, `1.9`, `""`) yields NOTHING rather than an empty
 # match that would both look like an answer and hide any later line.
 # POSIX BRE only, no alternation: BSD sed has no `\|`.
-jsplit() { printf '%s' "$1" | tr ',{}[]' '\n\n\n\n\n'; }
-jstr() { jsplit "$2" | sed -n "s/^[[:space:]]*\"$1\"[[:space:]]*:[[:space:]]*\"\([^\"][^\"]*\)\".*/\1/p" | head -1; }
-jword() { jsplit "$2" | sed -n "s/^[[:space:]]*\"$1\"[[:space:]]*:[[:space:]]*\([a-z][a-z]*\).*/\1/p" | head -1; }
+# jsplit is a `${...//}` over a bracket class rather than `| tr`, and the two
+# extractors walk the split lines with `case` and `${...}` instead of
+# `sed | head -1`. Every rule the BREs encoded is kept: anchored at the start
+# of the line, the FIRST answering line wins, and a capture that would be
+# empty is no answer at all.
+JSPLIT=
+jsplit() { JSPLIT=${1//[],\{\}[]/$'\n'}; }
+jstr() {
+  local line rest v
+  jsplit "$2"
+  while IFS= read -r line || [ -n "$line" ]; do
+    rest=${line#"${line%%[![:space:]]*}"}
+    case $rest in "\"$1\""*) ;; *) continue ;; esac
+    rest=${rest#"\"$1\""}
+    rest=${rest#"${rest%%[![:space:]]*}"}
+    case $rest in :*) ;; *) continue ;; esac
+    rest=${rest#:}
+    rest=${rest#"${rest%%[![:space:]]*}"}
+    case $rest in '"'*) ;; *) continue ;; esac
+    rest=${rest#\"}
+    case $rest in *\"*) ;; *) continue ;; esac
+    v=${rest%%\"*}
+    [ -n "$v" ] || continue
+    printf '%s' "$v"
+    return 0
+  done <<<"$JSPLIT"
+}
+jword() {
+  local line rest v
+  jsplit "$2"
+  while IFS= read -r line || [ -n "$line" ]; do
+    rest=${line#"${line%%[![:space:]]*}"}
+    case $rest in "\"$1\""*) ;; *) continue ;; esac
+    rest=${rest#"\"$1\""}
+    rest=${rest#"${rest%%[![:space:]]*}"}
+    case $rest in :*) ;; *) continue ;; esac
+    rest=${rest#:}
+    rest=${rest#"${rest%%[![:space:]]*}"}
+    case $rest in [a-z]*) ;; *) continue ;; esac
+    v=${rest%%[!a-z]*}
+    printf '%s' "$v"
+    return 0
+  done <<<"$JSPLIT"
+}
 
 chk=$(grok update --check --json 2>/dev/null)
 live_auto=$(jword autoUpdate "$chk")
@@ -116,7 +200,31 @@ else
   printf '  %-28s %-10s (offline? `grok update --check --json` returned nothing)\n' "grok update: latestVersion" "—"
 fi
 
-ver_gt() { [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -t. -k1,1n -k2,2n -k3,3n | tail -1)" = "$1" ]; }
+# ver_gt <a> <b> — true when <a> sorts after <b>, replacing
+# `sort -t. -k1,1n -k2,2n -k3,3n | tail -1`. Three dotted fields compared as
+# numbers, each read the way `sort -n` reads one (leading digits; missing or
+# non-numeric is 0), and the whole string as the last resort where all three
+# tie — which is `sort`'s own last-resort comparison, and the only reason
+# `ver_gt 1.0.0 1.0` is true. Measured against the pipeline it replaces over
+# 12 pairs (ranger-base-s8b4g).
+ver_gt() {
+  local a=$1 b=$2 i ax bx
+  [ "$a" = "$b" ] && return 1
+  for i in 1 2 3; do
+    ax=${a%%.*}
+    bx=${b%%.*}
+    ax=${ax%%[!0-9]*}
+    bx=${bx%%[!0-9]*}
+    [ -n "$ax" ] || ax=0
+    [ -n "$bx" ] || bx=0
+    [ "$ax" -gt "$bx" ] && return 0
+    [ "$ax" -lt "$bx" ] && return 1
+    case $a in *.*) a=${a#*.} ;; *) a= ;; esac
+    case $b in *.*) b=${b#*.} ;; *) b= ;; esac
+  done
+  [[ $1 > $2 ]] && return 0
+  return 1
+}
 
 echo
 if [ -n "$upstream" ] && ver_gt "$upstream" "$want_ver"; then

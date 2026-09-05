@@ -61,7 +61,34 @@ command -v docker >/dev/null 2>&1 || die "docker not found on PATH"
 # retry and do not hang waiting for a daemon that will not appear.
 docker info >/dev/null 2>&1 || die "docker daemon unavailable — Docker is abandoned on this box (operator ruling, ranger-base-6mz7); this planted control is parked until an off-laptop cleanroom exists, not runnable here"
 
-go_minor=$(sed -n 's/^go \([0-9][0-9]*\.[0-9][0-9]*\).*$/\1/p' "$REPO_ROOT/go.mod" | head -1)
+# The go directive read with bash's own, not `sed | head` (ranger-base-s8b4g):
+# a matcher that is signalled or cannot be exec'd under load leaves $go_minor
+# empty, and the `die` below then blames go.mod for the fork. First `go
+# <major>.<minor>` line wins, as `head -1` had it, and anything after the
+# minor (a patch, a toolchain suffix) is dropped the way the ERE dropped it.
+go_minor=
+while IFS= read -r line || [ -n "$line" ]; do
+  case $line in
+  'go '[0-9]*.[0-9]*)
+    rest=${line#go }
+    rest=${rest%%[![:digit:].]*}
+    case $rest in
+    *.*)
+      go_major=${rest%%.*}
+      rest=${rest#*.}
+      go_min=${rest%%.*}
+      case $go_major$go_min in
+      '' | *[![:digit:]]*) ;;
+      *)
+        go_minor=$go_major.$go_min
+        break
+        ;;
+      esac
+      ;;
+    esac
+    ;;
+  esac
+done <"$REPO_ROOT/go.mod"
 [ -n "$go_minor" ] || die "could not read the go directive from go.mod"
 IMAGE="${IMAGE:-golang:$go_minor}"
 

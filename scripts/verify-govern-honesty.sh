@@ -38,6 +38,9 @@
 # is the only row that can move the verdict; `autostart_dry_run: true` is
 # the seatbelt on the rig that is supposed to be isolated (rangerhq-v83).
 set -uo pipefail
+# extglob: the SGR strip in cockpit_frame is a `${...//}` pattern, not a
+# `sed` fork (ranger-base-s8b4g).
+shopt -s extglob
 
 POSSE=${1:-}
 if [ -z "$POSSE" ]; then
@@ -121,9 +124,10 @@ start_loop() {
 	unset_herdr
 	(cd "$WORK" && env RHQ_HOME="$HOMEDIR" HERDR_SOCKET_PATH="$SESS_SOCK" "$POSSE" dispatch --watch 5m > "$RIG/watch.log" 2>&1) &
 	LOOP_PID=$!
-	local n=0
+	local n=0 ws=
 	while [ "$n" -lt 100 ]; do
-		p dispatch --watch-status 2>/dev/null | grep -q 'watch-loop: running' && return 0
+		ws=$(p dispatch --watch-status 2>/dev/null)
+		case $ws in *'watch-loop: running'*) return 0 ;; esac
 		n=$((n + 1))
 		sleep 0.1
 	done
@@ -139,9 +143,10 @@ kill_loop() {
 	kill -9 "$LOOP_PID" >/dev/null 2>&1 || true
 	wait "$LOOP_PID" 2>/dev/null || true
 	LOOP_PID=
-	local n=0
+	local n=0 ws=
 	while [ "$n" -lt 100 ]; do
-		p dispatch --watch-status 2>/dev/null | grep -q 'watch-loop: none' && return 0
+		ws=$(p dispatch --watch-status 2>/dev/null)
+		case $ws in *'watch-loop: none'*) return 0 ;; esac
 		n=$((n + 1))
 		sleep 0.1
 	done
@@ -161,13 +166,14 @@ status_run() {
 # unknown-as-clear mistake the surface exists to end.
 COCKPIT_OUT=
 cockpit_frame() {
-	local out=$RIG/cockpit.$1.txt n=0
+	local out=$RIG/cockpit.$1.txt n=0 frame=
 	: > "$out"
 	unset_herdr
 	(cd "$WORK" && env RHQ_HOME="$HOMEDIR" HERDR_SOCKET_PATH="$SESS_SOCK" "$POSSE" cockpit > "$out" 2>&1) &
 	local cp=$!
 	while [ "$n" -lt 200 ]; do
-		if LC_ALL=C grep -q 'gov [a-zA-Z0-9]' "$out" 2>/dev/null; then break; fi
+		frame=$(<"$out")
+		case $frame in *'gov '[a-zA-Z0-9]*) break ;; esac
 		n=$((n + 1))
 		sleep 0.1
 	done
@@ -175,10 +181,39 @@ cockpit_frame() {
 	sleep 0.3
 	kill -9 "$cp" >/dev/null 2>&1 || true
 	wait "$cp" 2>/dev/null || true
-	COCKPIT_OUT=$(LC_ALL=C sed 's/\x1b\[[0-9;]*[a-zA-Z]//g' "$out" | tail -40)
+	COCKPIT_OUT=$(<"$out")
+	COCKPIT_OUT=${COCKPIT_OUT//$'\e'\[*([0-9;])[a-zA-Z]/}
+	last_lines 40 "$COCKPIT_OUT"
+	COCKPIT_OUT=$LAST_LINES
 }
 
-has() { printf '%s' "$1" | LC_ALL=C grep -qF -- "$2"; }
+# The three helpers below decide arms, so none of them may fork a matcher
+# (ranger-base-s8b4g, ranger-base-7hx87): a `grep`/`sed`/`tail` that is
+# signalled, that cannot be exec'd under load, or that takes EPIPE reports the
+# property false when the apparatus is what failed. Bash's own `case` and
+# `${...}` cannot fail that way.
+#
+# has <text> <literal> — `grep -qF` without the fork. The pattern is quoted,
+# so a `*` or `[` in <literal> is a byte like any other, as -F had it.
+has() { case $1 in *"$2"*) return 0 ;; esac; return 1; }
+
+# last_lines <n> <text> — the last <n> lines of <text> in $LAST_LINES, holding
+# a ring of at most <n> in a string rather than an array: bash 3.2 (what
+# /usr/bin/env bash is on this box) errors on an empty array expansion under
+# `set -u`.
+LAST_LINES=
+last_lines() {
+	local line buf= n=0
+	while IFS= read -r line || [ -n "$line" ]; do
+		buf=$buf$line$'\n'
+		n=$((n + 1))
+		if [ "$n" -gt "$1" ]; then
+			buf=${buf#*$'\n'}
+			n=$1
+		fi
+	done <<<"$2"
+	LAST_LINES=${buf%$'\n'}
+}
 
 cleanup() {
 	kill_loop >/dev/null 2>&1 || true

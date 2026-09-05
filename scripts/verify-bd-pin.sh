@@ -53,7 +53,61 @@ leaked=
 command -v bd >/dev/null || { echo "verify-bd-pin: bd not on PATH"; exit 2; }
 [ -r "$pin" ] || { echo "verify-bd-pin: missing $pin"; exit 2; }
 
-val() { sed -n "s/^$1 *= *\"\{0,1\}\([^\"#]*\)\"\{0,1\}.*/\1/p" "$2" | head -1 | tr -d ' '; }
+# Nothing below decides an arm through a forked matcher (ranger-base-s8b4g,
+# ranger-base-7hx87). A `sed`/`grep`/`awk`/`head` that is signalled, that
+# cannot be exec'd under load, or that takes EPIPE answers nothing, and here
+# nothing is indistinguishable from "the pin file has no such key", "bd
+# printed no version" and "no bd daemon is running" — the last of which is
+# this script's whole subject. The forks that ARE the measurement (`bd
+# version`, `ps`, `lsof`, `stat`, `date`) stay; their readers are bash's own.
+#
+# val <key> <file> — the value on the first line of <file> that starts with
+# <key>, optional spaces, `=`, optional spaces and an optional opening quote,
+# cut at the first `"` or `#`, with every space removed. Exactly what
+# `sed -n | head -1 | tr -d ' '` did, anchored at ^ so that a commented
+# example of a key is never read as the key.
+val() {
+	local line rest v
+	[ -r "$2" ] || return 0
+	while IFS= read -r line || [ -n "$line" ]; do
+		rest=${line#"$1"}
+		[ "$rest" = "$line" ] && continue
+		while [ "${rest# }" != "$rest" ]; do rest=${rest# }; done
+		case $rest in '='*) ;; *) continue ;; esac
+		rest=${rest#=}
+		while [ "${rest# }" != "$rest" ]; do rest=${rest# }; done
+		rest=${rest#\"}
+		v=${rest%%[\"#]*}
+		printf '%s' "${v// /}"
+		return 0
+	done <"$2"
+}
+
+# first_semver <text> — the first whitespace-separated word that is exactly
+# <digits>.<digits>.<digits>, replacing `tr ' ' '\n' | grep -m1 -E`. A word
+# with a fourth component, an empty component or any other character is not
+# one, as the anchored ERE had it.
+first_semver() {
+	local rest=$1 w a b c
+	while [ -n "$rest" ]; do
+		rest=${rest#"${rest%%[![:space:]]*}"}
+		[ -n "$rest" ] || return 0
+		w=${rest%%[[:space:]]*}
+		rest=${rest#"$w"}
+		case $w in
+		*[!0-9.]* | *.*.*.*) continue ;;
+		*.*.*) ;;
+		*) continue ;;
+		esac
+		a=${w%%.*}
+		c=${w#*.}
+		b=${c%%.*}
+		c=${c#*.}
+		[ -n "$a" ] && [ -n "$b" ] && [ -n "$c" ] || continue
+		printf '%s' "$w"
+		return 0
+	done
+}
 
 want_ver=$(val posse_pinned_version "$pin")
 want_bin=$(val pinned_binary "$pin")
@@ -66,7 +120,7 @@ case $want_bin in "~"/*) want_bin=$HOME${want_bin#\~} ;; esac
 # accepted by 0.49.x and 0.50.x and rejected by an unpinned 1.x on PATH — fall
 # back, and let the version row fail.
 live_ver=$(bd --no-daemon version 2>/dev/null || bd version 2>/dev/null)
-live_ver=$(printf '%s' "$live_ver" | tr ' ' '\n' | grep -m1 -E '^[0-9]+\.[0-9]+\.[0-9]+$')
+live_ver=$(first_semver "$live_ver")
 live_bin=$(command -v bd)
 
 chk_row() { # label want got
@@ -79,14 +133,37 @@ chk_row() { # label want got
 # would need reproducing here and drift the day gates move. rangerhq-9ha
 # is the fixed half of that header, present regardless of persona.
 is_gate_shim() {
-	head -2 "$1" 2>/dev/null | grep -q 'posse gate for .*rangerhq-9ha'
+	# `head -2 | grep -q` without either fork: a matcher that never ran would
+	# read as "not a gate shim" and send the row into the plain path
+	# comparison below, which then FAILs a box the gate is holding
+	# (ranger-base-s8b4g).
+	local line n=0
+	[ -r "$1" ] || return 1
+	while IFS= read -r line || [ -n "$line" ]; do
+		case $line in *'posse gate for '*rangerhq-9ha*) return 0 ;; esac
+		n=$((n + 1))
+		[ "$n" -ge 2 ] && break
+	done <"$1"
+	return 1
 }
 
 # What the shim actually execs, read out of its OWN last line — the target
 # renderShim froze in at render time — never re-derived from today's PATH,
 # which can drift out from under a shim nobody re-rendered since.
 shim_target() {
-	sed -n "s/^exec '\\(.*\\)' \"\\\$@\"\$/\\1/p" "$1" | head -1
+	# The BRE this replaces was greedy, so the LAST `' "$@"` on the line ended
+	# the capture; `%` strips the shortest suffix, which is the same one.
+	local line rest
+	[ -r "$1" ] || return 0
+	while IFS= read -r line || [ -n "$line" ]; do
+		case $line in
+		"exec '"*"' \"\$@\"")
+			rest=${line#exec \'}
+			printf '%s' "${rest%\' \"\$@\"}"
+			return 0
+			;;
+		esac
+	done <"$1"
 }
 
 echo "bd version pin — $pin"
@@ -168,8 +245,13 @@ esac
 # out, so a probe that comes back wrong on some third stat lands in "age
 # unverified" — the honest arm — instead of `ok`.
 epoch() { # stdin -> epoch seconds, empty unless it is all digits
-	local v
-	v=$(cat)
+	# `read -d ''` slurps stdin the way `$(cat)` did, without the fork: a
+	# `cat` that could not be exec'd under load would empty every epoch this
+	# script reads and turn both the STALE arm and the "age unverified" arm
+	# into an answer about the box (ranger-base-s8b4g).
+	local v=
+	IFS= read -r -d '' v
+	while [ "${v%$'\n'}" != "$v" ]; do v=${v%$'\n'}; done
 	case $v in '' | *[!0-9]*) return 0 ;; esac
 	printf '%s' "$v"
 }
@@ -182,7 +264,10 @@ bin_mtime=$(file_mtime "$want_bin")
 
 proc_start() { # pid -> epoch seconds, empty when unparseable
 	local ls
-	ls=$(ps -wwo lstart= -p "$1" 2>/dev/null | sed 's/[[:space:]]*$//')
+	ls=$(ps -wwo lstart= -p "$1" 2>/dev/null)
+	# The trailing-whitespace trim is `${...}`, not `| sed`: a dead sed here
+	# empties $ls, and an empty $ls is this function's "no such process".
+	ls=${ls%"${ls##*[![:space:]]}"}
 	[ -n "$ls" ] || return 0
 	{
 		date -j -f '%a %b %e %H:%M:%S %Y' "$ls" +%s 2>/dev/null ||
@@ -197,7 +282,16 @@ proc_cwd() { # pid -> working directory, empty when unreadable
 	# `-Fn` is lsof's machine-readable form: one `n<path>` line, no columns
 	# to lose a path with a space in it to.
 	if command -v lsof >/dev/null 2>&1; then
-		lsof -p "$1" -a -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -1
+		local out line
+		out=$(lsof -p "$1" -a -d cwd -Fn 2>/dev/null)
+		while IFS= read -r line || [ -n "$line" ]; do
+			case $line in
+			n*)
+				printf '%s\n' "${line#n}"
+				return 0
+				;;
+			esac
+		done <<<"$out"
 	elif [ -r "/proc/$1/cwd" ]; then
 		readlink "/proc/$1/cwd" 2>/dev/null
 	fi
@@ -244,9 +338,26 @@ age() { # epoch -> "12d21h"
 }
 
 # argv[0] basename `bd` with argv[1] `daemon` — not a substring match, so this
-# script's own command line and any grep for it are not daemons.
-pids=$(ps -Awwo pid=,args= 2>/dev/null |
-	awk '{ c = $2; sub(/.*\//, "", c); if (c == "bd" && $3 == "daemon") print $1 }')
+# script's own command line and any grep for it are not daemons. The fields
+# are cut with `${...}` rather than piped through awk: a matcher that cannot
+# be exec'd under load answers "no daemons", which is exactly the false
+# all-clear this script exists to end (ranger-base-s8b4g).
+ps_table=$(ps -Awwo pid=,args= 2>/dev/null)
+pids=
+while IFS= read -r line || [ -n "$line" ]; do
+	line=${line#"${line%%[![:space:]]*}"}
+	[ -n "$line" ] || continue
+	pid=${line%%[[:space:]]*}
+	rest=${line#"$pid"}
+	rest=${rest#"${rest%%[![:space:]]*}"}
+	cmd=${rest%%[[:space:]]*}
+	rest=${rest#"$cmd"}
+	rest=${rest#"${rest%%[![:space:]]*}"}
+	arg1=${rest%%[[:space:]]*}
+	if [ "${cmd##*/}" = bd ] && [ "$arg1" = daemon ]; then
+		pids="${pids:+$pids }$pid"
+	fi
+done <<<"$ps_table"
 
 echo
 echo "live bd daemons — the layer the 08-16 rollback never checked"
@@ -254,7 +365,8 @@ if [ -z "$pids" ]; then
 	echo "  none running"
 else
 	for pid in $pids; do
-		path=$(ps -wwo comm= -p "$pid" 2>/dev/null | sed 's/[[:space:]]*$//')
+		path=$(ps -wwo comm= -p "$pid" 2>/dev/null)
+		path=${path%"${path##*[![:space:]]}"}
 		start=$(proc_start "$pid")
 		when=${start:+$(age "$start")}
 		# The cwd is read HERE, ahead of the binary layer, because a relative
