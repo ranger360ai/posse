@@ -69,7 +69,7 @@ func codexHome() string { return codexHomeIn(os.Getenv("HOME")) }
 // reads as "never ran the CLI", i.e. $0 spent with no error and no
 // uncounted line (ranger-base-z65xu).
 //
-// The "" arm above is the probes'. The adapters cannot reach it: they take
+// The "" arm below is the probes'. The adapters cannot reach it: they take
 // their home from os.UserHomeDir() and return its error before calling
 // here, so "no home at all" is an uncounted line there rather than a
 // relative ".grok/sessions" to walk (ranger-base-58b5 × ranger-base-z65xu).
