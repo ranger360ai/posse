@@ -347,6 +347,9 @@ func seatbeltWallRendered(cage string, rt *Runtime) bool {
 // dir it meant to open (ranger-base-cpyb). Ask the App: it resolved the
 // home this process is actually running against.
 func (a *App) SeatbeltWritable(ag *AgentFile, cwd, gatesDir string, stateDirs ...string) []string {
+	// No home is not an error here, it is the arm above: with nothing to
+	// resolve against, each sibling names nothing rather than something in
+	// the session's cwd.
 	home, _ := os.UserHomeDir()
 	deniesFiles := deniesFileWrite(ag.Deny)
 	var out []string
@@ -939,12 +942,55 @@ func (a *App) SeatbeltCarveOut(ag *AgentFile, cwd, gatesDir string, writable []s
 // would otherwise be walked straight past. Denying a path that is not
 // there costs nothing: the read is ENOENT either way.
 //
+// The two SIBLING runtimes are resolved the same way, and were not for as
+// long as the claude half was (ranger-base-x5cbz, one runtime over from
+// x5f6p): `~/.codex/auth.json` and `~/.grok/auth.json` were ExpandTilde
+// literals while `$CODEX_HOME` / `$GROK_HOME` move those CLIs' homes, so on
+// a box exporting either one the wall named a file the runtime no longer
+// uses and missed the one it does. posse holds exactly one rule per sibling
+// CLI for that — codexHomeIn / grokHomeIn (interstitial.go), which every
+// other reader of those stores already asks (the cost adapters, the plan
+// hint, the turn-outcome reader) — and this function was the third holder of
+// the hardcoded spelling ranger-base-z65xu's sweep did not reach.
+//
+// BOTH spellings are denied per sibling, home-shaped and resolved, for the
+// reason credentialFileCandidates gives for keeping claude's home
+// unconditionally: whatever the CLI wrote before the variable moved it is
+// still sitting in the home (ADR 0019 D2's recurring unowned byproduct), and
+// a deny over an absent path costs nothing — the read is ENOENT either way.
+// own() is keyed to the declared state_dir literal, as it always was, and
+// spares BOTH spellings for the owning runtime: a runtime denied its own
+// credential cannot authenticate itself wherever that credential now lives.
+//
+// The dedupe is INSIDE this function and not left to the caller's. With no
+// variable set the two spellings per sibling are the same path, and while
+// SeatbeltCarveOut does dedupe c.DenyRead, this function's OUTPUT is what
+// the table pins compare with reflect.DeepEqual — an un-deduped pair would
+// red them on the arm nothing moved at all.
+//
+// The no-home arm is guarded by the same `add` closure credentialFileCandidates
+// uses, and for the same two shapes: codexHomeIn("") is "", whose
+// filepath.Join with the file name is the RELATIVE path `auth.json`, and
+// ExpandTilde with no HOME hands back its `~/…` literal. Both are made
+// absolute against the SESSION's cwd by the deny loop, so either one
+// unguarded is a wall over an ordinary file in the working directory rather
+// than over a credential.
+//
 // RESIDUAL, stated rather than closed here because it is not this
 // function's to close: these are read from the LAUNCHER's environment, and
 // the launcher overlays the session's env sets on the child after this
 // profile is rendered. The launch refuses when an env set carries either
 // name — credentialDirVarsIn, herdrback.go — which is the wall for that
 // hole; what this function cannot see, it does not pretend to.
+//
+// The sibling half reads CODEX_HOME / GROK_HOME from that same launcher
+// environment, and deliberately gets NO env-set refusal beside
+// credentialDirVarsIn's: the file this wall covers is written by ANOTHER
+// runtime in the operator's environment, so a persona env set cannot move
+// where the operator's codex or grok already wrote. The one arm where it
+// could — a codex- or grok-launched session under the seatbelt on a box
+// exporting its own home variable — is the arm own() spares anyway
+// (ranger-base-b52r3's residual, stated there in full).
 func credentialReadDenyLiterals(goos string, stateDirs []string) []string {
 	own := func(dir string) bool {
 		for _, d := range stateDirs {
@@ -955,15 +1001,34 @@ func credentialReadDenyLiterals(goos string, stateDirs []string) []string {
 		return false
 	}
 	var out []string
+	add := func(p string) {
+		if p == "" || strings.HasPrefix(p, "~") {
+			return // no home to expand against; naming `~/…` to a sandbox is naming a file in the cwd
+		}
+		for _, q := range out {
+			if q == p {
+				return
+			}
+		}
+		out = append(out, p)
+	}
 	if goos == "darwin" {
-		out = append(out, credentialFileCandidates()...)
+		for _, p := range credentialFileCandidates() {
+			add(p)
+		}
 	}
-	if !own("~/.codex") {
-		out = append(out, ExpandTilde("~/.codex/auth.json"))
+	home, _ := os.UserHomeDir()
+	sibling := func(stateDir, file string, homeIn func(string) string) {
+		if own(stateDir) {
+			return
+		}
+		add(ExpandTilde(stateDir + "/" + file))
+		if h := homeIn(home); h != "" {
+			add(filepath.Join(h, file))
+		}
 	}
-	if !own("~/.grok") {
-		out = append(out, ExpandTilde("~/.grok/auth.json"))
-	}
+	sibling("~/.codex", "auth.json", codexHomeIn)
+	sibling("~/.grok", "auth.json", grokHomeIn)
 	return out
 }
 

@@ -1,10 +1,10 @@
 package posse
 
-// Pin for ranger-base-x5cbz: the seatbelt's credential read-deny names
+// Pin for ranger-base-x5cbz: the seatbelt's credential read-deny named
 // `~/.codex/auth.json` and `~/.grok/auth.json` as HOME-shaped literals, but
 // `$CODEX_HOME` / `$GROK_HOME` move those CLIs' homes — so on a box that
-// exports either one the wall is over a file that is not there and the file
-// the runtime actually reads is not walled.
+// exports either one the wall was over a file that is not there and the file
+// the runtime actually reads was not walled.
 //
 // This is ranger-base-x5f6p's defect ("a wall over a path the runtime does
 // not use") on the two runtimes x5f6p's fix did not cover. x5f6p made the
@@ -21,11 +21,16 @@ package posse
 // FOUND verifying ranger-base-r68d8 at ranger-base-zkunj. Not an escape from
 // that close, whose subject is the claude names: this is the same class one
 // function over, and it is filed on its own.
+//
+// FIXED and UN-SKIPPED at ranger-base-3p8hx (spec on ranger-base-b52r3):
+// credentialReadDenyLiterals now asks codexHomeIn / grokHomeIn and denies
+// BOTH spellings per sibling. This file was parked here written and shown
+// able to fail — both rows RED on the moved arm with both CONTROLs green at
+// 48a3bf3 — because the fix was production code belonging to another lane.
 
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -41,8 +46,6 @@ import (
 // and the resolver agree and the wall is correct. A row whose moved arm
 // equals its control has measured nothing and says so rather than passing.
 func TestQATheCredentialReadDenyFollowsTheCliHomeVarsTheRestOfPosseReads(t *testing.T) {
-	t.Skip("ranger-base-x5cbz (found verifying ranger-base-r68d8 at ranger-base-zkunj): credentialReadDenyLiterals (internal/posse/seatbelt.go) names ~/.codex/auth.json and ~/.grok/auth.json as HOME-shaped literals, so CODEX_HOME / GROK_HOME move the file the runtime reads out from under the deny. PARKED because the fix is production code and belongs to the lane that takes x5cbz: un-skip with it. Shown able to fail (both rows, both CONTROLs intact) and able to pass (go test -overlay of the 6-line candidate fix on the bead) on 2026-09-05.")
-
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -79,10 +82,16 @@ func TestQATheCredentialReadDenyFollowsTheCliHomeVarsTheRestOfPosseReads(t *test
 				t.Errorf("the read-deny %v does not name %s, the file the runtime reads once %s moves its home — a caged session reads that credential, and the wall is over a path that is not there (the ranger-base-x5f6p defect, one runtime over). posse's own rule for this home is %s (interstitial.go); credentialReadDenyLiterals (seatbelt.go) does not ask it",
 					deny, authFile, tc.envVar, tc.envVar)
 			}
-			for _, d := range deny {
-				if strings.HasSuffix(d, "auth.json") && d != authFile && underDir(home, d) {
-					t.Logf("and it still names %s, which %s moved the runtime off", d, tc.envVar)
-				}
+			// Decision 1 (ranger-base-b52r3): the HOME spelling stays
+			// denied while the variable names another. Whatever the CLI
+			// wrote before the move is still sitting there — ADR 0019 D2's
+			// recurring unowned byproduct — and a deny over a path that is
+			// not there costs nothing, the read being ENOENT either way.
+			// This was a t.Logf while the file was parked; it is the
+			// assertion that stops a "follow the resolver" fix from
+			// dropping the half it replaces.
+			if !walls(deny, atHome) {
+				t.Errorf("the read-deny %v no longer names %s once %s moves the home — the file the CLI wrote BEFORE the move is still sitting there (ADR 0019 D2), and following the resolver must ADD a spelling rather than swap one for another", deny, atHome, tc.envVar)
 			}
 		})
 	}
@@ -96,4 +105,51 @@ func mapAbs(ps []string) []string {
 		out = append(out, absResolve(p))
 	}
 	return out
+}
+
+// Decision 3 (ranger-base-b52r3): the NO-HOME arm names nothing rather than
+// naming something in the session's working directory.
+//
+// Two shapes reach that, and following the resolver added the second:
+// ExpandTilde with no HOME hands its `~/…` literal straight back, and
+// codexHomeIn("") is "", whose filepath.Join with the file name is the
+// RELATIVE path `auth.json`. The deny loop absResolve's whatever it is
+// handed, so either one lands under the session's cwd — a wall over an
+// ordinary file the session may legitimately need, and no wall at all over a
+// credential. The same `add` closure credentialFileCandidates uses closes
+// both; this is the pin that says so.
+//
+// Reachable only where the environment is scrubbed (`env -i posse …`, a unit
+// file with no HOME), which is ExpandTilde's own note. Nothing posse ships
+// invokes posse that way — the arm is here because the cost of being wrong
+// is a wall in the wrong place, not because the box is expected to hit it.
+func TestQACredentialReadDenyNamesNothingUnderTheCwdWithNoHome(t *testing.T) {
+	unsetenvForTest(t, "HOME")
+	unsetenvForTest(t, "CODEX_HOME")
+	unsetenvForTest(t, "GROK_HOME")
+	unsetenvForTest(t, "CLAUDE_SECURESTORAGE_CONFIG_DIR")
+	unsetenvForTest(t, "CLAUDE_CONFIG_DIR")
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range credentialReadDenyLiterals("darwin", nil) {
+		if !filepath.IsAbs(p) {
+			t.Errorf("with no HOME the deny names the RELATIVE path %q — the call site absResolve's it, so the wall lands on a file in whatever directory the session runs in", p)
+			continue
+		}
+		if underDir(cwd, absResolve(p)) {
+			t.Errorf("with no HOME the deny names %s, inside the session's own working directory %s — a credential wall must never land there", p, cwd)
+		}
+	}
+
+	// And the arm that keeps this from passing vacuously: with no home but a
+	// variable that names one, there IS a store to wall, and it is walled.
+	moved := t.TempDir()
+	t.Setenv("CODEX_HOME", moved)
+	want := absResolve(filepath.Join(moved, "auth.json"))
+	if deny := mapAbs(credentialReadDenyLiterals("darwin", nil)); !walls(deny, want) {
+		t.Errorf("CONTROL: with $CODEX_HOME=%s and no HOME the deny %v does not name %s — the guard above has stopped naming the file it should, not just the one it should not", moved, deny, want)
+	}
 }

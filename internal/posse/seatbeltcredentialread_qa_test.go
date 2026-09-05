@@ -48,6 +48,13 @@ func TestCredentialReadDenyLiteralsIsRuntimeAwareAndGOOSShaped(t *testing.T) {
 	// (credentialdenymove_qa_test.go).
 	unsetenvForTest(t, "CLAUDE_SECURESTORAGE_CONFIG_DIR")
 	unsetenvForTest(t, "CLAUDE_CONFIG_DIR")
+	// ranger-base-x5cbz: and the same for the two siblings, which now
+	// follow codexHomeIn / grokHomeIn. Either variable set on the box
+	// running the suite moves that half of the answer off the home
+	// spelling this table states, and the moved arms are their own pin
+	// (credentialdenyclihome_qa_test.go).
+	unsetenvForTest(t, "CODEX_HOME")
+	unsetenvForTest(t, "GROK_HOME")
 
 	for _, tc := range []struct {
 		name      string

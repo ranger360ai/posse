@@ -52,6 +52,12 @@ const cdmUnset = "\x00unset"
 func cdmEnv(t *testing.T, home, sec, cfg string) {
 	t.Helper()
 	t.Setenv("HOME", home)
+	// The sibling half of the deny follows CODEX_HOME / GROK_HOME since
+	// ranger-base-x5cbz, so the codex and grok expectations below are the
+	// HOME spelling only while neither is set — the operator's own box must
+	// not leak into them any more than the two claude names do.
+	unsetenvForTest(t, "CODEX_HOME")
+	unsetenvForTest(t, "GROK_HOME")
 	for k, v := range map[string]string{
 		"CLAUDE_SECURESTORAGE_CONFIG_DIR": sec,
 		"CLAUDE_CONFIG_DIR":               cfg,
