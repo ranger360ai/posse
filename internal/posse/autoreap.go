@@ -542,16 +542,59 @@ func (d *Dispatcher) reapWhy(s HerdrSession, class reapClass, pol reapPolicy) (s
 		return "", false
 	}
 	if class != reapFleetClosed {
-		grace := pol.crew
+		// The KEY and not just the number: a keep the operator disagrees
+		// with is a line in config.yaml, and a sentence that names hours
+		// without naming which dial spells them cannot be acted on.
+		grace, key := pol.crew, "reap_crew_after"
 		if class == reapUnpointed {
-			grace = pol.unpointed
+			grace, key = pol.unpointed, "reap_unpointed_after"
 		}
 		m, ok := d.HB.readMeta(s.Name)
 		if !ok {
 			return "", false // no record is no age, and no age is not old enough
 		}
 		idle, dated := residueIdle(m)
-		if !dated || idle < grace {
+		// Both of these used to be one silent `return "", false`, and that
+		// silence is ranger-base-ktiik. A crew-marked per-bead session over a
+		// CLOSED bead is held here for the whole of `reap_crew_after` —
+		// four hours by default — and nothing anywhere said so, which from
+		// outside is indistinguishable from a reaper that does not run.
+		//
+		// MEASURED 2026-09-05 on this instance: three sessions
+		// (ranger-base-1se2l, ranger-base-dr0fu, ranger-base-rflee) sat
+		// `done` over a closed bead for 2-5 passes each, not one line was
+		// printed about any of them on any pass, and all three were killed by
+		// hand. Their records went with those kills, but the sweep can be run
+		// backwards over what survives and only one path fits: each carried
+		// dispatch's own Dial F name and its `bead:` pointer (the log's
+		// "creating session" line), herdr called each settled and the store
+		// called each bead closed, no meta was withheld from any listing (no
+		// "kept, not listed" line all day), each was last prompted at launch
+		// an hour or more before the sweeps that skipped it, and the box sets
+		// neither reap dial, so `reap_crew_after` was the default 4h and the
+		// pulse carve-out names another persona. Every OTHER decline in this
+		// function is then either impossible or already printed — the
+		// unreadable store (ranger-base-fytno) and the held tree (below) both
+		// speak — which leaves exactly this: all three wore a CREW mark, and
+		// the crew grace held them silently. The bead read the silence as the
+		// sweep keying its candidates on the BEAD id rather than the session.
+		// It does not, and TestAutoReapTakesBothSessionsOfATwiceClaimedBead
+		// is that measurement.
+		//
+		// So they say themselves, on the same rule and in the same shape as
+		// the held line below them (kftx): every keep that is a standing
+		// condition is said on every pass it holds. A grace keep is the one
+		// thing here that stops being true by itself, so the line carries
+		// what is LEFT of it — the reading that makes it self-terminating
+		// rather than noise — and names the one command that ends it now.
+		if !dated {
+			d.printf("◑ %s NOT reaped over %s: nothing in its record says when it was last touched, so it can never be old enough for the `%s` grace — `posse kill %s` takes it now\n",
+				s.Name, why, key, s.Name)
+			return "", false
+		}
+		if idle < grace {
+			d.printf("◑ %s idle %s over %s and NOT reaped: %s left of the `%s` grace — `posse kill %s` takes it now\n",
+				s.Name, idle.Round(time.Minute), why, (grace - idle).Round(time.Minute), key, s.Name)
 			return "", false
 		}
 		if held := residueHolds(m); held != "" {
