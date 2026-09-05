@@ -66,6 +66,21 @@ a fact about your box, `pane_mode:` is a MECHANISM key: declaring it in a
 built-in's `runtimes/<name>.yaml` overlay refuses the load (ADR 0021 D2). A
 claude release that rewords its footer is fixed at the corpus.
 
+**`posse runtime check <name>` grows a `pane_mode` row, so the dimension is on
+the onboarding checklist instead of in a listing after the first launch.**
+
+The row is rendered from the reader registry rather than spelled per runtime:
+a CLI that declares a reader gets that reader's own contract and what an
+absent mode means under it (claude's footer is COVERED by a dialog, grok's
+border leaves four modes UNNAMEABLE), `none` reads as a DECLARED DIFFERENCE
+and a permanent `mode:—` rather than a failure, and a runtime that declares
+nothing reads as UNDECLARED with the remedy — which registered reader to
+declare if you measured one, and what a screen vocabulary none of them parses
+costs. The `missing →` half names the price of the blindness: without a
+reader, `posse list` and `posse gates <persona>` cannot tell a session that
+lost its `--permission-mode` at launch from one that kept it. A fourth reader
+registered in `permissionmode.go` reaches this screen with no change here.
+
 **`posse list` and `posse gates <persona>` now say which permission mode each
 session's PANE is in — and say plainly when they cannot tell.**
 

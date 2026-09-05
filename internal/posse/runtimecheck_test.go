@@ -533,7 +533,7 @@ func gridRow(t *testing.T, out, label string) string {
 
 // dimensionRows is the order they are drawn in, and the list every test
 // below walks: a row that stops being drawn must red something.
-var dimensionRows = []string{"skills", "egress", "cage_cred", "project_cfg", "sandbox"}
+var dimensionRows = []string{"skills", "egress", "cage_cred", "project_cfg", "sandbox", "pane_mode"}
 
 // Drawn as ROWS — not as a sentence inside somebody else's row — on a
 // template-only yaml and on all three built-ins, after the six stages.
@@ -583,7 +583,7 @@ func TestGridDrawsTheDeclaredDimensionRows(t *testing.T) {
 }
 
 // A bare template-only yaml — the runtime this command exists for — prints a
-// LOUD line on every one of the five. ADR 0017 §2's vocabulary is the thing
+// LOUD line on every one of them. ADR 0017 §2's vocabulary is the thing
 // under test as much as the values: an absence must read as UNDECLARED /
 // UNDECIDED / none, and DECLARED DIFFERENCE may not appear anywhere, because
 // nothing here was measured to differ.
@@ -1065,6 +1065,180 @@ func TestVersionNumberAndCompare(t *testing.T) {
 		got, ok := versionCmp(tc.a, tc.b)
 		if got != tc.want || ok != tc.ok {
 			t.Errorf("versionCmp(%q, %q) = %d, %v; want %d, %v", tc.a, tc.b, got, ok, tc.want, tc.ok)
+		}
+	}
+}
+
+// ─── ADR 0057 D3: the pane_mode row ──────────────────────────────────────
+//
+// What a session's PANE says about the permission mode it is in was three
+// measured values in Go and no row on the checklist, so an onboarder met the
+// dimension in `posse list` after launch — ADR 0017 §1's missing-row bug.
+//
+// Every assertion here is scoped to the RENDERED row (gridRow), for the
+// reason the neighbouring dimension tests name: the grid is a page of prose
+// in which almost every word appears somewhere.
+
+// One case per state of the declaration, and ADR 0017 §2's at-a-glance rule
+// in BOTH directions: a measured difference (`none`) and an unmeasured
+// dimension (no key at all) may never be spelled the same way, so each case
+// says what must be absent as well as what must be present.
+func TestPaneModeRowSaysWhichReaderAndWhatAbsenceMeans(t *testing.T) {
+	t.Parallel()
+	a := checkApp(t)
+	h := Herdr{Bin: "no-such-herdr-binary"}
+
+	row := func(rt *Runtime) string {
+		t.Helper()
+		var b bytes.Buffer
+		a.RuntimeCheck(rt, h, &b)
+		return gridRow(t, b.String(), "pane_mode")
+	}
+	builtin := func(name string) *Runtime {
+		t.Helper()
+		rt, err := a.LoadRuntime(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return rt
+	}
+
+	for _, c := range []struct {
+		name     string
+		rt       *Runtime
+		want     []string
+		unwanted []string
+	}{
+		// A reader that reads a pane: the adapter NAME (so the operator can
+		// see which registry entry to read) and what an absent mode means
+		// under it — the sentence `posse list` prints instead of a mode.
+		{"claude", builtin("claude"),
+			[]string{PaneModeClaudeFooter + " — reads", "absence is COVERED", "a modal dialog replaces it", "built-in default"},
+			[]string{"UNDECLARED", "DECLARED DIFFERENCE", "mode:?covered is fine"}},
+		{"grok", builtin("grok"),
+			[]string{PaneModeGrokBorder + " — reads", "absence is UNNAMEABLE", "never \"default\"", "built-in default"},
+			[]string{"UNDECLARED", "DECLARED DIFFERENCE"}},
+		// `none` is the measured arm: a DECLARED DIFFERENCE and a permanent
+		// column, never a failure and never an unknown (ADR 0035 §3's
+		// sentence becoming a row). The /status detail is the note's.
+		{"codex", builtin("codex"),
+			[]string{PaneModeNone + " — a DECLARED DIFFERENCE, not a failure", "permanent `mode:—`", "posse never types into a session"},
+			[]string{"UNDECLARED"}},
+		// And the runtime this command exists for: no key at all is the loud
+		// default, spelled as the listing's own `mode:?` and carrying the
+		// remedy — which reader to declare if measured, and what a screen
+		// vocabulary nobody has parsed costs.
+		{"undeclared", writeRuntime(t, a, "mycli", "command: mycli --sys {file}\n"),
+			[]string{"UNDECLARED", "`mode:?`", "neither a mode nor the measured `mode:—`",
+				"pane_mode: " + strings.Join(PaneModeAdapters(), "|"),
+				"permissionmode.go", "permissionmodepane_qa_test.go",
+				"pane_mode: unset in runtimes/mycli.yaml"},
+			[]string{"DECLARED DIFFERENCE"}},
+	} {
+		got := row(c.rt)
+		for _, w := range c.want {
+			if !strings.Contains(got, w) {
+				t.Errorf("%s: the pane_mode row must say %q:\n%s", c.name, w, got)
+			}
+		}
+		for _, u := range c.unwanted {
+			if strings.Contains(got, u) {
+				t.Errorf("%s: the pane_mode row must NOT say %q — that is another state's reading:\n%s", c.name, u, got)
+			}
+		}
+		// Whichever arm it took, the missing-→ half names what the blindness
+		// costs, and it is ADR 0035 §3's compensating control: a flag-lost
+		// session and one that kept its mode read the same.
+		for _, w := range []string{"missing → ", "posse list", "posse gates <persona>", "--permission-mode"} {
+			if !strings.Contains(got, w) {
+				t.Errorf("%s: the pane_mode row's missing-→ must say what the blindness costs (%q):\n%s", c.name, w, got)
+			}
+		}
+	}
+}
+
+// RENDERED from the registry, not spelled per runtime — the property that
+// makes a fourth reader reach this screen the day it is registered, and the
+// one a hand-written three-way switch on the built-in names would pass every
+// test above while failing.
+//
+// Derived vs listed, both ways: every registered reader's own Contract must
+// appear verbatim in the row of a yaml runtime that declares it, and the row
+// must credit the yaml. A runtime declaring `none` here is also the arm that
+// catches a branch keyed on the name `codex` rather than on the declaration
+// (ADR 0017 §3) — this one is named panecli and is not a built-in at all.
+func TestPaneModeRowIsRenderedFromTheReaderRegistry(t *testing.T) {
+	t.Parallel()
+	if len(PaneModeAdapters()) == 0 {
+		t.Fatal("no pane readers are registered — this test would assert nothing")
+	}
+	for _, adapter := range PaneModeAdapters() {
+		a := checkApp(t)
+		name := "panecli" + strings.ReplaceAll(adapter, "-", "")
+		rt := writeRuntime(t, a, name, "command: "+name+" --sys {file}\npane_mode: "+adapter+"\n")
+		var b bytes.Buffer
+		a.RuntimeCheck(rt, Herdr{Bin: "no-such-herdr-binary"}, &b)
+		row := gridRow(t, b.String(), "pane_mode")
+
+		rd, ok := PaneModeReaderFor(adapter)
+		if !ok {
+			t.Fatalf("PaneModeAdapters names %q, which PaneModeReaderFor does not resolve", adapter)
+		}
+		if !strings.Contains(row, adapter) {
+			t.Errorf("%s: the row never names the declared reader:\n%s", adapter, row)
+		}
+		if !strings.Contains(row, rd.Contract) {
+			t.Errorf("%s: the row does not render the registry's own contract line, so it is spelled somewhere else and can drift from the reader that performs it:\nwant %q\ngot  %s", adapter, rd.Contract, row)
+		}
+		if !strings.Contains(row, "runtimes/"+name+".yaml (pane_mode:)") {
+			t.Errorf("%s: the row does not credit the yaml that declared it — a declaration read off a runtime that is not built in is the whole point of the key:\n%s", adapter, row)
+		}
+		if strings.Contains(row, "UNDECLARED") {
+			t.Errorf("%s: a runtime that DID declare a reader reads as UNDECLARED:\n%s", adapter, row)
+		}
+		// A reader that takes no pane is the measured arm on any runtime,
+		// not on a named one; a reader that takes one renders its absence
+		// sentence, which is what a listing prints in place of a mode.
+		if rd.ReadsPane {
+			if !strings.Contains(row, rd.Absence) {
+				t.Errorf("%s: the row never says what an absent mode means under this reader (%q):\n%s", adapter, rd.Absence, row)
+			}
+			if strings.Contains(row, "DECLARED DIFFERENCE") {
+				t.Errorf("%s: a reader that READS a pane is not a declared difference:\n%s", adapter, row)
+			}
+		} else if !strings.Contains(row, "DECLARED DIFFERENCE") {
+			t.Errorf("%s: a reader measured to read nothing must render as a DECLARED DIFFERENCE, not a failure (ADR 0035 §3, ADR 0017 §2):\n%s", adapter, row)
+		}
+	}
+}
+
+// ADR 0035 §4's vocabulary guard, on the row that names modes: a mode is a
+// default disposition, and a claude session in auto mode was measured
+// blocking on its own classifier the morning the rule was written. No
+// surface may render one as a promise about blocking.
+func TestPaneModeRowKeepsTheModeVocabulary(t *testing.T) {
+	t.Parallel()
+	a := checkApp(t)
+	h := Herdr{Bin: "no-such-herdr-binary"}
+	runtimes := []*Runtime{writeRuntime(t, a, "mycli", "command: mycli --sys {file}\n")}
+	for _, n := range []string{"claude", "codex", "grok"} {
+		rt, err := a.LoadRuntime(n)
+		if err != nil {
+			t.Fatal(err)
+		}
+		runtimes = append(runtimes, rt)
+	}
+	for _, rt := range runtimes {
+		var b bytes.Buffer
+		a.RuntimeCheck(rt, h, &b)
+		row := gridRow(t, b.String(), "pane_mode")
+		for _, bad := range []string{"will not block", "won't block", "never blocks", "does not block"} {
+			if strings.Contains(strings.ToLower(row), bad) {
+				t.Errorf("%s: the pane_mode row renders a mode as a non-blocking promise (%q) — ADR 0035 §4:\n%s", rt.Name, bad, row)
+			}
+		}
+		if !strings.Contains(row, "default DISPOSITION and never a promise about blocking") {
+			t.Errorf("%s: the pane_mode row drops ADR 0035 §4's own sentence, which is what keeps the mode column and the blocked state separate facts:\n%s", rt.Name, row)
 		}
 	}
 }
