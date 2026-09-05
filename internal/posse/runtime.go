@@ -266,14 +266,16 @@ type Runtime struct {
 	Unattended string
 	// FleetSettings renders the settings payload {settings} carries — the
 	// one flag whose VALUE posse computes at launch rather than spelling in
-	// the template, because it holds the credential-dir pin and that is a
-	// property of the box, not of the line (credentialDirPin,
-	// ranger-base-rq83c). Built-in only, and nil for every runtime but
+	// the template, because it holds the environment pin and that is a
+	// property of the box, not of the line — the credential dirs
+	// (credentialDirPin, ranger-base-rq83c) and the transport/exec inlets
+	// (inletPin, ranger-base-rflee). Built-in only, and nil for every runtime but
 	// claude: no other CLI has a measured settings surface, and {settings}
 	// renders to nothing where it is nil.
 	FleetSettings func() string
-	// SettingsPin is the SMALLER payload — the credential-dir pin alone —
-	// that EnsureSettingsPin appends to a rendered line carrying no
+	// SettingsPin is the SMALLER payload — the environment pin alone, with
+	// none of the fleet policy around it — that
+	// EnsureSettingsPin appends to a rendered line carrying no
 	// settings flag of its own. Deliberately not FleetSettings: a template
 	// posse did not write is owed the security guarantee, not posse's
 	// unattended policy, and the mode half of that policy already reaches
@@ -642,8 +644,9 @@ func (rt *Runtime) FleetSettingsText() string {
 // pin — a launch guarantee for the same reason the unattended mode is, and
 // reaching the same template posse did not write. The pin is what stops a
 // persona-writable ~/.claude/settings.json from moving where this session's
-// runtime reads and writes its credential (credentialDirPin,
-// ranger-base-rq83c).
+// runtime reads and writes its credential, and from handing that session's
+// children something to execute or a place to send its traffic
+// (credentialDirPin, ranger-base-rq83c; inletPin, ranger-base-rflee).
 //
 // Appended only when the line names no `--settings` at all, and only when
 // it starts this runtime's CLI — EnsureUnattended's two conditions, plus
