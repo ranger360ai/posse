@@ -1,5 +1,11 @@
 # ADR 0042 — An L1 deny may stand in front of the binary a runtime authenticates itself with: a crew runtime authenticates with posse's mint, and the shim is what keeps the operator's store single-writer
 
+*Status: superseded 2026-09-05 by ADR 0019 · ADR simplification, operator ruling 2026-09-05.*
+
+The surviving decision is in [0019 — current contract](0019-credential-architecture.md), D1 and Session mint before runtime; enforcement points to 0002. This page keeps its number and dated evidence; the body below is historical, not current policy.
+
+## Historical record (superseded in full)
+
 *Status: accepted 2026-09-02 · owner: architect · from ranger-base-eje6d
 (handoff of ranger-base-eupf, which measured the collision and shipped
 the launch warning) · amends 0002 §3 (the L1 row: the typed-line prepend

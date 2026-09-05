@@ -151,6 +151,32 @@ a harness credential *resides* is the instance page's D1:
 a store this seam will read when a resident arrives, never a second
 acquisition path.
 
+### Session mint before runtime (folded from 0042)
+
+A crew runtime authenticates with the scoped session mint, never the
+operator's rotating pair. Where `CredGateCollision` says the PID shims
+`Runtime.CredBin`, require the runtime's `CageCredential` mint in the env
+set **before session creation**. A missing mint refuses and cannot be
+waived as degraded; a present mint needs no collision warning. This adds
+no precondition to an operator launch with no matching deny.
+
+The rendered shim must exit a runtime **read-failure** code, outside its
+null/fallback set {0, 36, 44}; the shipped exit is 1. Null would reopen the
+plaintext fallback and competing rotation. Nested CLIs receive the same
+mint explicitly without stripping gate PATH or creating an unsuppressed
+extra environment alias. Refusal logs identify session activity: runtime
+credential reads are not evidence that the model intended the command.
+Do not split a second log by a caller identity the shim cannot prove.
+
+The SHELL-only typed-line alternative remains unbuilt, for an actual engine
+with no env credential path; its non-shell execs escape the wrapper. No
+current caller justifies it. Dropping the deny, carving out a service name,
+testing parent-process identity or returning a null code reopens the store.
+MEASURED in 0042: the runtime holds the mint while reads refuse, and the
+rendered exit set is pinned. ASSUMED: some failed writes relocate a token;
+the decision prevents reaching that path rather than claiming it was seen.
+[0002](0002-runtimes-and-gates.md) owns enforcement and its cooperative limit.
+
 **2. The meter reads the store of record, per platform.** One provider
 ("runtime store"), platform adapters chosen by `runtime.GOOS` — no
 build tags, so `make test-linux` compiles and tests every branch:
@@ -742,6 +768,12 @@ design puts more weight on files. What is actually traded:
   file-read deny (ranger-base-hw18) — both in the compensation list by
   design, because a store nobody owns needs controls nobody has to
   remember to run.
+
+## Lineage
+
+| Was | Here |
+|---|---|
+| 0042 D1–D6 scoped mint, launch precondition, shim exit, log interpretation, nested CLI, named hatch | D1 and Session mint before runtime; enforcement stays in 0002 |
 
 ## Consequences
 
