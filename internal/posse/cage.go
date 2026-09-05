@@ -354,7 +354,9 @@ func (a *App) CageHome(persona string) string {
 // read-write for the same reason, and what that exposes beyond L2's
 // narrowed grant (`refs/heads` whole, so a caged persona can move a ref)
 // is stated in NOTES rather than hidden. `.git/hooks` back to `:ro` over
-// it is ranger-base-3c3 / h15, named by ADR 0014 §4 as not this bead.
+// it — ranger-base-3c3 / h15, deferred here by ADR 0014 §4 — is
+// cageGitIdentityBinds below, with the `config` half without which
+// freezing the slot is not a wall.
 //
 // **The path-scoped overlays** (ADR 0014 §4) are the last pass, in
 // cagePathScopedOverlays: a `deny: [Edit(docs/adr/**)]` becomes a `:ro`
@@ -472,7 +474,86 @@ func (a *App) CageMounts(ag *AgentFile, e *Engine, dir, session string) []CageMo
 		Why: "this session's refusals spool — folded into gates/" + ag.Name + "/refusals.log by the host, never mounted itself (ADR 0025 §4)",
 	})
 	ms = append(ms, a.CageSocketMounts(ag)...)
-	return cagePathScopedOverlays(ms, ag, dir)
+	// LAST, after the path-scoped pass rather than before it, and that is
+	// the one place this deviates from the shape ranger-base-672zt spelled.
+	// ADR 0038 decision 5 says the deny is `writable:`-proof; at L2 that is
+	// delivered by ORDER (the trailing deny block is below every grant and
+	// SBPL takes the last match). Here a `writable: [.git/hooks]` extra
+	// resolves to the same destination as the `:ro` bind, and cageOverlay
+	// answers a same-destination overlay by EDITING the mount's mode — so
+	// whichever pass runs second decides. Running before the extras made
+	// the wall a PID knob could open; running after makes deny win, which
+	// is what both ADRs say it must do. Nothing else about the placement
+	// changes: the engine sorts binds by destination depth, not list order.
+	return cageGitIdentityBinds(cagePathScopedOverlays(ms, ag, dir), dir)
+}
+
+// cageGitIdentityBinds is ADR 0038 decision 4a at L4 (ranger-base-672zt):
+// the `config` a later git reads for this session's repo, and the `hooks`
+// directory it dispatches from, both `:ro` over whatever read-write mount
+// covers them.
+//
+// Why both and not just hooks: ADR 0023 non-goal 3 called the hooks deny
+// alone UNSOUND and left it open, because `core.hooksPath` MOVES the slot
+// — plant it in a writable `config` and the frozen directory is simply not
+// the one git dispatches from any more. And hooksPath is only the nearest
+// spelling; `core.fsmonitor`, a `filter.*.clean` and an alias are each a
+// command a LATER, UNSANDBOXED git runs: the operator's daily git in the
+// checkout, the next launch's L3 probe, or the launcher's own
+// `git -C <worktree> rebase` at land time (worktree.go). ADR 0038 decision
+// 1 closed that at L2; this is the twin one tier up.
+//
+// One mechanism, four shapes, no branch on any of them:
+//
+//   - read-write repo (a main checkout): `<dir>/.git/config` gets a `:ro`
+//     FILE bind and `<dir>/.git/hooks` a `:ro` directory overlay, both
+//     appended over the repo mount and deeper than it.
+//   - `:ro` repo: the same two, over the read-write `.git` carve-out
+//     (ADR 0014 §4) that would otherwise leave them writable.
+//   - a linked worktree (post ranger-base-t4f1): both resolve into the
+//     `:ro` common dir, cageOverlay's same-mode rule appends NOTHING, and
+//     t4f1's "no mount on `<common>/config` or `<common>/hooks`" holds
+//     unchanged. Shape-agnostic by construction, not by a conditional.
+//   - the store of record behind a `.beads/redirect`: at L4 only its
+//     `.beads` is mounted, so nothing covers its `.git` and the deny
+//     direction mounts nothing where nothing covers the path. INVISIBLE is
+//     a stronger wall than `:ro`, not a weaker one.
+//
+// The paths are asked of git through the readers L2's profile uses
+// (sessionGitConfigFiles, sessionHooksDirs — seatbelt.go, `gitPath`), never
+// joined onto a git dir: in a linked worktree the config git reads is the
+// COMMON one and a derived path would have said otherwise. A wall that
+// reads the repo differently from the wall beside it is the classification
+// error ADR 0014 exists to prevent (ranger-base-4ks).
+//
+// **No `.lock` sibling is ever bound**, and that is a measurement rather
+// than an omission. L2 denies `config.lock` so the refusal lands at lock
+// creation; a bind cannot copy it, because a `-v` bind of an ABSENT source
+// is not refused by the engine — it creates the source on the host as a
+// DIRECTORY (NOTES probe 7, the property the directory overlays rely on) —
+// and a `config.lock` directory makes the operator's every `git config`
+// fail "could not lock config file: File exists" (MEASURED 2026-09-05, git
+// 2.50.1, ranger-base-n3ywd). What that costs is WORDING, not containment:
+// the refusal moves to the rename(2) onto the mountpoint, git says "could
+// not write config file", removes its own lock, and nothing of the
+// attempted config reaches `config` (MEASURED at L2, ranger-base-xwepd).
+// Accepted by ADR 0038 decision 4; do not chase the L2 wording here.
+//
+// ASSUMED, and stated because it is not measured yet: that a `:ro` FILE
+// bind refuses open-for-write, rename and unlink the way a `:ro` DIRECTORY
+// bind does (7/7, docs/adr/0014-path-scoped-writes.probe.sh). The engine
+// arm that measures the file case runs off this box, on ranger-base-017dx.
+func cageGitIdentityBinds(ms []CageMount, dir string) []CageMount {
+	for _, p := range sessionGitConfigFiles(dir) {
+		if strings.HasSuffix(p, ".lock") {
+			continue // the sibling entry, never bound — see above
+		}
+		ms = cageOverlayFile(ms, p, "the git config every later git reads for this repo, READ-ONLY — `core.hooksPath` moves the hooks slot, and `core.fsmonitor`, a `filter.*.clean` and an alias are each a command an UNSANDBOXED git would run (ADR 0038 decision 1 at L2, decision 4a here; ranger-base-672zt)")
+	}
+	for _, h := range sessionHooksDirs(dir) {
+		ms = cageOverlay(ms, h, true, "the directory git dispatches hooks from, READ-ONLY — L3's wall at the mount layer, and it is a wall only because the `config` key that moves the slot is frozen beside it (ranger-base-3c3/h15, ADR 0038 decision 4a)")
+	}
+	return ms
 }
 
 // sessionCommonDirWrites is sessionGitGrants (seatbelt.go) in the shape a
@@ -620,6 +701,37 @@ func cageCovering(ms []CageMount, src string) (int, CageMount) {
 		}
 	}
 	return best, over
+}
+
+// cageOverlayFile is cageOverlay's DENY direction for a source that is a
+// FILE rather than a directory (ADR 0038 decision 4's `:ro` file binds),
+// and the added Stat is the whole difference between the two entry points.
+//
+// cageOverlay's deny direction deliberately does NOT Stat, and the comment
+// above says why: a denied subtree that does not exist yet still gets its
+// `:ro` overlay, because the rule is about a PATH and `mkdir docs/adr` is
+// what a persona does next. For a file source that same behaviour is
+// destructive rather than thorough — what the engine creates for an absent
+// source is a DIRECTORY, and a `config.lock` directory makes the operator's
+// every `git config` fail "could not lock config file: File exists" while a
+// `config.worktree` directory makes every git command in that tree fatal
+// (both MEASURED 2026-09-05, git 2.50.1, ranger-base-n3ywd). So here
+// absence SKIPS.
+//
+// The guard is existence, not regular-file-ness: a source that is there is
+// bound whatever kind it is, because the engine binds what it finds and the
+// deny holds either way, and refusing a shape git does not have would be a
+// silent hole rather than a narrower wall. An absent path has no kind at
+// all, which is why only the caller can say which direction it wanted and
+// why this is a second entry point rather than a Stat inside cageOverlay.
+func cageOverlayFile(ms []CageMount, p, why string) []CageMount {
+	if p == "" {
+		return ms
+	}
+	if _, err := os.Stat(absResolve(p)); err != nil {
+		return ms
+	}
+	return cageOverlay(ms, p, true, why)
 }
 
 // isExistingDir is the guard on every read-write overlay: a bind of a source

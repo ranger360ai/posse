@@ -4012,6 +4012,17 @@ inversion of ADR 0001. `cage.go` therefore **drops** such an extra rather
 than trying to out-order it. Same rule, opposite mechanics, and it is why
 `posse agent check`'s warning about the pair is now true at both tiers.
 
+There is a *second* pair with a different answer, added with ADR 0038
+decision 4a (ranger-base-672zt): an extra naming the **same destination** as
+a deny the code places — `writable: [.git/hooks]` against the `:ro` bind of
+the hooks dir. Dropping cannot deliver it, because the extra is not inside
+the deny, it *is* the deny's path, and `cageOverlay` answers a
+same-destination overlay by EDITING the existing mount's mode (two binds on
+one destination is an engine error). So whichever pass runs second wins, and
+`cageGitIdentityBinds` runs **after** `cagePathScopedOverlays` for that
+reason alone. Order delivers deny-wins for this pair and cannot for the
+other one; both mechanics are load-bearing and neither generalizes.
+
 **An overlay must be spelled the way the mount it lands on is spelled.**
 This one is silent and was caught by mutating the code under the pins, not
 by reading it. A session dispatched through a symlinked parent (`/tmp/x` on

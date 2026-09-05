@@ -31,6 +31,54 @@ func overlayRepo(t *testing.T) string {
 	return absResolve(dir)
 }
 
+// gitRun is one git command in a fixture, with the gates dir off PATH so a
+// hook shim in the operator's own environment cannot decide what a fixture
+// repo looks like.
+func gitRun(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	c := exec.Command("git", args...)
+	c.Dir, c.Env = dir, append(os.Environ(), "PATH="+PathOutsideGates(""))
+	if b, err := c.CombinedOutput(); err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, b)
+	}
+}
+
+// gitRepoFixture is a real repo — real because `git rev-parse --git-path`
+// is what names the files these mounts are about, and it answers nothing
+// for the `mkdir .git` stand-in overlayRepo uses. `.beads` is there so the
+// `:ro` shape's store carve-out has a source to bind.
+func gitRepoFixture(t *testing.T) string {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("needs git")
+	}
+	// Resolved before git sees it: mounts are same-path in and out, and a
+	// fixture mixing /tmp with its /private/tmp real path would be testing
+	// the symlink rather than the mount.
+	dir := absResolve(t.TempDir())
+	gitRun(t, dir, "init", "-b", "main")
+	gitRun(t, dir, "config", "user.email", "t@example.com")
+	gitRun(t, dir, "config", "user.name", "t")
+	if err := os.MkdirAll(filepath.Join(dir, ".beads"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(dir, "f"), []byte("x\n"), 0o644)
+	gitRun(t, dir, "add", "f")
+	gitRun(t, dir, "commit", "-m", "one")
+	return dir
+}
+
+// gitWorktreeFixture is that repo plus one linked worktree, and returns the
+// WORKTREE — the shape whose `.git` is a file and whose config, hooks and
+// refs all live in a common dir somewhere else on the host.
+func gitWorktreeFixture(t *testing.T) string {
+	t.Helper()
+	main := gitRepoFixture(t)
+	wt := filepath.Join(absResolve(t.TempDir()), "wt")
+	gitRun(t, main, "worktree", "add", wt)
+	return wt
+}
+
 // mountAt is the mount whose destination is p, and whether there is one.
 // Destination rather than source because that is what the container sees
 // and what the engine deduplicates on; compared RESOLVED on both sides so
@@ -414,31 +462,17 @@ func TestRedirectedBeadStoreCrossesTheBoundaryReadWrite(t *testing.T) {
 // bind over a `:ro` parent is measured in
 // docs/adr/0014-path-scoped-writes.probe.sh (7/7, ranger-base-yu5), and this
 // bead's own arms are in docs/adr/0014-l4-worktree-narrowing.probe.sh.
+//
+// It is ALSO the degeneracy pin for ADR 0038 decision 4a
+// (ranger-base-672zt): cageGitIdentityBinds asks git for `config` and
+// `hooks` in every shape, and in this one the answers land inside the `:ro`
+// common mount, where cageOverlay's same-mode rule appends nothing. The
+// `<common>/config` and `<common>/hooks` rows below are what says so — with
+// that rule removed they go red, which is how the mechanism is known to be
+// shape-agnostic by construction rather than by a conditional nobody wrote.
 func TestWorktreeGitCommonDirIsTheGitCarveOut(t *testing.T) {
 	t.Parallel()
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("needs git")
-	}
-	main := t.TempDir()
-	run := func(dir string, args ...string) {
-		t.Helper()
-		c := exec.Command("git", args...)
-		c.Dir, c.Env = dir, append(os.Environ(), "PATH="+PathOutsideGates(""))
-		if b, err := c.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, b)
-		}
-	}
-	run(main, "init", "-b", "main")
-	run(main, "config", "user.email", "t@example.com")
-	run(main, "config", "user.name", "t")
-	os.WriteFile(filepath.Join(main, "f"), []byte("x\n"), 0o644)
-	run(main, "add", "f")
-	run(main, "commit", "-m", "one")
-	// Resolved before git sees it: mounts are same-path in and out, and a
-	// fixture mixing /tmp with its /private/tmp real path would be testing
-	// the symlink rather than the carve-out.
-	wt := filepath.Join(absResolve(t.TempDir()), "wt")
-	run(main, "worktree", "add", wt)
+	wt := gitWorktreeFixture(t)
 
 	a := cageApp(t)
 	e, _ := a.LoadEngine("fake")
@@ -540,5 +574,245 @@ func TestOverlayIsSpelledTheWayTheRepoMountIs(t *testing.T) {
 	w, ok := mountAt(a.CageMounts(ag2, e, link, "s1"), filepath.Join(link, "docs/adr"))
 	if !ok || w.RO || w.Dst != filepath.Join(link, "docs/adr") {
 		t.Errorf("a writable: extra lands inside the repo mount too: %+v", w)
+	}
+}
+
+// mountCount is how many binds land on one destination. Zero and two are
+// different bugs from one: zero is a rule with no wall, two is a launch the
+// engine refuses ("Duplicate mount point").
+func mountCount(ms []CageMount, p string) int {
+	n := 0
+	for _, m := range ms {
+		if absResolve(m.Dst) == absResolve(p) {
+			n++
+		}
+	}
+	return n
+}
+
+// ADR 0038 decision 4a at L4 (ranger-base-672zt): the `config` every later
+// git reads for this repo and the `hooks` directory it dispatches from,
+// `:ro` over whatever read-write mount covers them — cageGitIdentityBinds.
+//
+// The hooks half is the wall ranger-base-3c3/h15 named and ADR 0014 §4
+// deferred. It is a wall only WITH the config half: `core.hooksPath` moves
+// the slot, so freezing the directory while leaving the key that selects it
+// writable enforces nothing (ADR 0023 non-goal 3, closed at L2 by ADR 0038
+// decision 1).
+//
+// Both writable shapes are here because they reach the same two files by
+// different routes — the repo mount on a read-write repo, the `.git`
+// carve-out on a `:ro` one — and one mechanism has to answer both.
+//
+// This is the MOUNT LIST. That the engine honours a `:ro` bind of a FILE
+// over a read-write parent the way it honours one of a directory (MEASURED
+// 7/7, docs/adr/0014-path-scoped-writes.probe.sh) is ASSUMED here and
+// measured off this box on ranger-base-017dx.
+func TestGitIdentityFilesAreReadOnlyInBothWritableShapes(t *testing.T) {
+	t.Parallel()
+	a := cageApp(t)
+	e, _ := a.LoadEngine("fake")
+	dir := gitRepoFixture(t)
+	cfg, err := gitPath(dir, "config")
+	if err != nil {
+		t.Fatal(err)
+	}
+	hooks, err := hooksDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A main checkout keeps both inside its own `.git`; if that stops being
+	// true the rest of this test is measuring something else.
+	if want := filepath.Join(dir, ".git", "config"); cfg != want {
+		t.Fatalf("git names the config %s, want %s", cfg, want)
+	}
+
+	// (1) The read-write repo — a main checkout, the shape decision 4a is
+	// named for. No deny anywhere in the PID: this wall is not a PID knob.
+	rw := a.CageMounts(cageAgent(t, a, "cage: container\n"), e, dir, "s1")
+	wantMode(t, rw, dir, false, "rw repo")
+	wantMode(t, rw, cfg, true, "rw repo config")
+	wantMode(t, rw, hooks, true, "rw repo hooks")
+	for _, p := range []string{cfg, hooks} {
+		if n := mountCount(rw, p); n != 1 {
+			t.Errorf("%s must be bound exactly once, got %d:\n%s", p, n, showMounts(rw))
+		}
+	}
+	// The mount flag is the wall, not the struct field: parity claims a
+	// `:ro` bind, so the rendered argv is the assertion.
+	argv := e.RenderArgv(CageRender{Image: "img", Workdir: dir, Mounts: rw, Inner: []string{"x"}})
+	if !argvHas(argv, "-v", cfg+":"+cfg+":ro") || !argvHas(argv, "-v", hooks+":"+hooks+":ro") {
+		t.Errorf("the file bind and the hooks overlay are mount flags, not claims: %q", argv)
+	}
+	// And nothing else in `.git` was taken: the index, HEAD, refs, objects
+	// and their locks are what a caged session legitimately writes, and a
+	// wall bigger than the gate is a different gate (ADR 0014 §2).
+	wantNoMount(t, rw, filepath.Join(dir, ".git"), "rw repo .git itself")
+	for _, p := range []string{"index", "HEAD", "refs", "objects", "packed-refs", "logs"} {
+		wantNoMount(t, rw, filepath.Join(dir, ".git", p), "rw repo .git/"+p)
+	}
+
+	// (2) The `:ro` repo, where the read-write `.git` carve-out (ADR 0014
+	// §4) is what would otherwise leave both writable. The carve-out itself
+	// must survive — this narrows it, it does not withdraw it.
+	ro := a.CageMounts(cageAgent(t, a, "cage: container\ndeny: [Edit, Write]\n"), e, dir, "s1")
+	wantMode(t, ro, dir, true, ":ro repo")
+	wantMode(t, ro, filepath.Join(dir, ".git"), false, ":ro repo .git carve-out")
+	wantMode(t, ro, filepath.Join(dir, ".beads"), false, ":ro repo store carve-out")
+	wantMode(t, ro, cfg, true, ":ro repo config")
+	wantMode(t, ro, hooks, true, ":ro repo hooks")
+
+	// (5) The reachability row still passes: the store of record is under a
+	// read-write bind in the set this launch would render. A wall placed
+	// deeper than `.beads` must not have moved what covers it.
+	for _, front := range []string{"cage: container\n", "cage: container\ndeny: [Edit, Write]\n"} {
+		if why := a.containerReachRow(cageAgent(t, a, front), dir, beadsHome(dir)); why != "" {
+			t.Errorf("the store must stay writable under %q: %s", front, why)
+		}
+	}
+}
+
+// The `.lock` siblings L2 denies get NO twin here, two-way and derived from
+// the same reader so a widened list cannot slip past: every entry
+// sessionGitConfigFiles names is either bound `:ro` or is a lock and bound
+// not at all.
+//
+// A bind of an ABSENT source is not refused by the engine — it creates the
+// source on the host, as a DIRECTORY (NOTES probe 7) — and a `config.lock`
+// DIRECTORY makes the operator's every `git config` fail "could not lock
+// config file: File exists" (MEASURED 2026-09-05, git 2.50.1,
+// ranger-base-n3ywd). So the filter is a wall against wrecking the
+// operator's repo, not a tidiness rule.
+//
+// The fixture PLANTS a `config.lock`, which is what makes this pin able to
+// fail: with the file absent the Stat guard alone would drop the bind and a
+// removed filter would look green. A stray lock is a real state — an
+// interrupted `git config` leaves one — so the fixture is not a contrivance
+// either.
+func TestNoGitLockSiblingIsEverBound(t *testing.T) {
+	t.Parallel()
+	a := cageApp(t)
+	e, _ := a.LoadEngine("fake")
+	dir := gitRepoFixture(t)
+	if err := os.WriteFile(filepath.Join(dir, ".git", "config.lock"), []byte("[x]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	files := sessionGitConfigFiles(dir)
+	locks := 0
+	for _, front := range []string{"cage: container\n", "cage: container\ndeny: [Edit, Write]\n"} {
+		ms := a.CageMounts(cageAgent(t, a, front), e, dir, "s1")
+		for _, p := range files {
+			if strings.HasSuffix(p, ".lock") {
+				locks++
+				wantNoMount(t, ms, p, "lock sibling ("+front+")")
+				continue
+			}
+			wantMode(t, ms, p, true, "config entry "+p+" ("+front+")")
+		}
+		// The same claim without the list, so a reader that stopped naming
+		// locks at all cannot make this pin vacuous.
+		for _, m := range ms {
+			if strings.HasSuffix(m.Dst, ".lock") {
+				t.Errorf("no mount may end in .lock, got %+v", m)
+			}
+		}
+	}
+	if locks == 0 {
+		t.Fatalf("the reader named no lock sibling, so this pinned nothing: %v", files)
+	}
+}
+
+// The Stat the deny direction takes for a FILE source, and the reason it is
+// a second entry point: an absent source would be CREATED by the engine as
+// a directory, in the operator's own git dir. With `config` off the disk the
+// bind is dropped; `hooks` is untouched in the same list, which is what
+// shows the drop is a Stat on the source rather than the whole pass failing.
+func TestAbsentGitConfigIsNotBound(t *testing.T) {
+	t.Parallel()
+	a := cageApp(t)
+	e, _ := a.LoadEngine("fake")
+	dir := gitRepoFixture(t)
+	cfg, err := gitPath(dir, "config")
+	if err != nil {
+		t.Fatal(err)
+	}
+	hooks, err := hooksDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(cfg); err != nil {
+		t.Fatal(err)
+	}
+	ms := a.CageMounts(cageAgent(t, a, "cage: container\n"), e, dir, "s1")
+	wantNoMount(t, ms, cfg, "config with no source on disk")
+	wantMode(t, ms, hooks, true, "hooks, in the same pass")
+	if _, err := os.Stat(cfg); err == nil {
+		t.Errorf("rendering the mount list must not create anything on the host")
+	}
+}
+
+// The store of record behind a `.beads/redirect` is the fourth shape, and
+// the deny direction's answer to it is to mount NOTHING: at L4 only the
+// store's `.beads` crosses the boundary, so nothing covers its `.git`, and
+// a path the cage cannot see at all is a stronger wall than one it can see
+// read-only. Binding it `:ro` to look thorough would hand over read access
+// the boundary had refused.
+func TestRedirectStoreGitIdentityIsUnmountedNotReadOnly(t *testing.T) {
+	t.Parallel()
+	a := cageApp(t)
+	e, _ := a.LoadEngine("fake")
+	dir := gitRepoFixture(t)
+	store := gitRepoFixture(t)
+	target := filepath.Join(store, ".beads")
+	if err := os.WriteFile(filepath.Join(dir, ".beads", "redirect"), []byte(target+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// The reader really does name the store's files — otherwise this pins
+	// the reader's silence rather than the mount list's.
+	named := false
+	for _, p := range append(sessionGitConfigFiles(dir), sessionHooksDirs(dir)...) {
+		if underDir(store, p) {
+			named = true
+		}
+	}
+	if !named {
+		t.Fatalf("the L2 readers name nothing in the store: %v / %v", sessionGitConfigFiles(dir), sessionHooksDirs(dir))
+	}
+	for _, front := range []string{"cage: container\n", "cage: container\ndeny: [Edit, Write]\n"} {
+		ms := a.CageMounts(cageAgent(t, a, front), e, dir, "s1")
+		wantMode(t, ms, target, false, "redirect target ("+front+")")
+		for _, p := range []string{".git", ".git/config", ".git/hooks"} {
+			wantNoMount(t, ms, filepath.Join(store, p), "the store's "+p+" ("+front+")")
+		}
+	}
+}
+
+// deny-wins at the tier where ORDER is the only thing that delivers it
+// (ADR 0038 decision 5, ADR 0001). A `writable:` extra naming the same
+// destination as one of these binds does not add a second mount — cageOverlay
+// answers a same-destination overlay by EDITING the mode — so whichever pass
+// runs last decides, and cageGitIdentityBinds runs after the path-scoped
+// pass for exactly this reason. Both spellings: the extra AT the bind, and
+// the extra CONTAINING it.
+func TestWritableExtraCannotOpenTheGitIdentityBinds(t *testing.T) {
+	t.Parallel()
+	a := cageApp(t)
+	e, _ := a.LoadEngine("fake")
+	dir := gitRepoFixture(t)
+	cfg, err := gitPath(dir, "config")
+	if err != nil {
+		t.Fatal(err)
+	}
+	hooks, err := hooksDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, extra := range []string{hooks, filepath.Join(dir, ".git")} {
+		ms := a.CageMounts(cageAgent(t, a, "cage: container\ndeny: [Edit, Write]\nwritable: ["+extra+"]\n"), e, dir, "s1")
+		wantMode(t, ms, cfg, true, "config under writable: "+extra)
+		wantMode(t, ms, hooks, true, "hooks under writable: "+extra)
+		if n := mountCount(ms, hooks); n != 1 {
+			t.Errorf("writable: %s must edit the bind, not add one, got %d:\n%s", extra, n, showMounts(ms))
+		}
 	}
 }
