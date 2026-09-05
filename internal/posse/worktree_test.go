@@ -1861,6 +1861,84 @@ func TestCagedWorktreeSessionCommitsDetachedAndTheCloseSplicesItBack(t *testing.
 	}
 }
 
+// The launcher's OTHER create, beside `logs/` (ADR 0038 decision 4b,
+// ranger-base-p9h9d): `config.worktree`, which the container tier's `:ro`
+// file bind of the identity chain needs a SOURCE for and which no live
+// worktree carries — posse never sets `extensions.worktreeConfig` and
+// `git worktree add` writes no such file. Absent, cageOverlayFile's Stat
+// drops the bind (the arm is TestAbsentWorktreeConfigIsNeitherBoundNorCreated
+// in cageoverlay_test.go) and the path stays creatable by the session under
+// the read-write `worktrees/<own>` overlay — in the repo where the operator
+// DID turn the extension on, that is the wall gone. The alternative was to
+// key the wall on a config key instead of making the file; a wall
+// conditional on a setting is a wall that reads a different repo from the
+// one beside it.
+//
+// The create has to be INERT as well as present, or the launcher has
+// changed what git reads in the operator's tree in order to build itself a
+// mountpoint. Measured both ways rather than asserted, because "empty" is
+// only inert if git agrees: with the extension off git never reads the
+// file, with it on an empty one carries no keys, and the hooks slot is
+// still the common dir's in both.
+func TestACagedLaunchMakesTheWorktreeConfigItsBindNeeds(t *testing.T) {
+	t.Parallel()
+	a := wtApp(t)
+	repo := wtRepo(t)
+	tr, err := a.EnsureSessionTree(repo, "s-1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	own := LinkedGitDirs(tr.Path)
+	if len(own) != 2 {
+		t.Fatalf("a linked worktree has two git dirs, got %v", own)
+	}
+	cw := filepath.Join(own[0], "config.worktree")
+	// The premise, so a git that started writing the file itself turns this
+	// pin into a no-op loudly rather than quietly.
+	if _, err := os.Stat(cw); err == nil {
+		t.Fatalf("`git worktree add` already wrote %s, so the create this pins measures nothing", cw)
+	}
+
+	if err := PrepareSessionHead(tr, true, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	st, err := os.Stat(cw)
+	if err != nil {
+		t.Fatalf("a caged launch must make %s — without it the :ro bind is dropped for want of a source: %v", cw, err)
+	}
+	if st.Size() != 0 {
+		t.Errorf("the file the launcher makes carries no keys, got %d bytes", st.Size())
+	}
+
+	// Inert in both directions, in the tree itself.
+	for _, ext := range []string{"off", "on"} {
+		if ext == "on" {
+			mustGit(t, repo, "config", "extensions.worktreeConfig", "true")
+		}
+		mustGit(t, tr.Path, "status", "--short")
+		mustGit(t, tr.Path, "rev-parse", "HEAD")
+		if h := mustGit(t, tr.Path, "rev-parse", "--git-path", "hooks"); !underDir(own[1], h) {
+			t.Errorf("extensions.worktreeConfig %s: the hooks slot moved out of the common dir to %s", ext, h)
+		}
+	}
+	commitIn(t, tr.Path, "fix.txt", "the work\n", "s-1: the fix")
+
+	// And a second launch does not TRUNCATE what is there. An operator who
+	// turned the extension on and set a key in this file would lose it, and
+	// posse deleting the operator's own per-worktree config is a worse bug
+	// than the one the create closes.
+	body := "[core]\n\tsparseCheckout = false\n"
+	if err := os.WriteFile(cw, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := PrepareSessionHead(tr, true, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := os.ReadFile(cw); err != nil || string(got) != body {
+		t.Errorf("the relaunch rewrote the operator's %s: %q (%v)", cw, got, err)
+	}
+}
+
 // The splice runs for a session posse detached ON PURPOSE and for no other,
 // which is what keeps the ranger-base-dybv guard catching the accidental
 // case. Same fixture, same detached HEAD, one bit different — and the two

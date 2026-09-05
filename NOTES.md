@@ -4111,6 +4111,23 @@ Three consequences worth keeping:
   It is kept for the in-cage operation that does update one, and the launcher
   `mkdir -p`s it so the rendered mount set does not depend on whether this repo
   has ever written one.
+- The launcher makes a second source for the same reason, and this one does
+  not exist at all until it does: `worktrees/<own>/config.worktree` (ADR 0038
+  decision 4b, ranger-base-p9h9d). The identity chain that selects WHICH
+  config and hooks a later git reads gets `:ro` file binds over the
+  read-write `worktrees/<own>` overlay — the pointer, `gitdir`, `commondir`
+  and that file — but posse never sets `extensions.worktreeConfig`, so `git
+  worktree add` writes no `config.worktree` and the deny direction's Stat
+  (`cageOverlayFile`) would drop the bind for want of a source. It cannot
+  simply bind the absent path: a `-v` of an absent source becomes a host
+  DIRECTORY, and a `config.worktree` directory makes every git command in
+  that tree fatal (MEASURED, git 2.50.1). **A wall keyed on a config key
+  would read a different repo from the wall beside it**, so
+  `PrepareSessionHead` creates the file EMPTY instead and the bind is
+  unconditional. An empty one is inert in both directions, measured: with
+  the extension off git never reads it, with it on there are no keys to
+  read. Never truncated on a relaunch — that would be posse deleting the
+  operator's own per-worktree config.
 
 This **subsumes ADR 0038 decision 4** for worktrees (folded as
 ranger-base-mugt2, operator-confirmed 2026-09-01): that asked for `:ro` file

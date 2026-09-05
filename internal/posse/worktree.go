@@ -660,6 +660,35 @@ func PrepareSessionHead(t *SessionTree, caged bool, warn io.Writer) error {
 	if err := os.MkdirAll(filepath.Join(dirs[1], "logs"), 0o755); err != nil {
 		return Die("session worktree: %s has no logs/ and one could not be made (%v) — the caged session would reach a :ro reflog for every shared-ref update it makes", AbbrevHome(dirs[1]), err)
 	}
+	// `config.worktree` is the one file in ADR 0038 decision 4b's `:ro`
+	// bind set that does not exist yet: posse never sets
+	// `extensions.worktreeConfig`, so no live worktree carries one, and the
+	// deny direction's Stat (cageOverlayFile, cage.go) DROPS a bind whose
+	// source is absent — which would leave the path creatable by the
+	// session, under the read-write `worktrees/<own>` overlay, for the
+	// repo where the operator did turn the extension on. Not the Stat's
+	// fault and not fixable there: a `-v` bind of an absent source is not
+	// refused by the engine, it creates the source as a DIRECTORY, and a
+	// `config.worktree` directory makes every git command in the tree
+	// fatal ("unknown error occurred while reading the configuration
+	// files", MEASURED 2026-09-05, git 2.50.1, ranger-base-n3ywd). So the
+	// launcher makes the source, like `logs/` above, and the wall is
+	// unconditional instead of keyed on a config key the session cannot
+	// reach anyway.
+	//
+	// An EMPTY file is inert in both directions (MEASURED): with the
+	// extension off git never reads it, and with it on there are no keys
+	// to read. Never truncating an existing one — that would be posse
+	// deleting the operator's own per-worktree config.
+	if cw := filepath.Join(dirs[0], "config.worktree"); !fileExists(cw) {
+		f, err := os.OpenFile(cw, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+		if err != nil {
+			return Die("session worktree: %s could not be made (%v) — the caged session's :ro bind of it would be dropped for want of a source, leaving the file that selects this tree's extra config writable inside the cage", AbbrevHome(cw), err)
+		}
+		if err := f.Close(); err != nil {
+			return Die("session worktree: %s was made but not closed (%v)", AbbrevHome(cw), err)
+		}
+	}
 	if _, ok := treeDetachedHead(t.Path); ok {
 		// A relaunch into a tree this launcher already detached. Move the
 		// branch up to the work FIRST — a kill between two caged sessions

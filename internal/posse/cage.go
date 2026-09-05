@@ -488,10 +488,12 @@ func (a *App) CageMounts(ag *AgentFile, e *Engine, dir, session string) []CageMo
 	return cageGitIdentityBinds(cagePathScopedOverlays(ms, ag, dir), dir)
 }
 
-// cageGitIdentityBinds is ADR 0038 decision 4a at L4 (ranger-base-672zt):
-// the `config` a later git reads for this session's repo, and the `hooks`
-// directory it dispatches from, both `:ro` over whatever read-write mount
-// covers them.
+// cageGitIdentityBinds is ADR 0038 decision 4 at L4 — 4a
+// (ranger-base-672zt): the `config` a later git reads for this session's
+// repo, and the `hooks` directory it dispatches from; 4b
+// (ranger-base-p9h9d): in a linked worktree, the chain that selects WHICH
+// config and hooks that git reads at all. All of them `:ro` over whatever
+// read-write mount covers them.
 //
 // Why both and not just hooks: ADR 0023 non-goal 3 called the hooks deny
 // alone UNSOUND and left it open, because `core.hooksPath` MOVES the slot
@@ -519,9 +521,42 @@ func (a *App) CageMounts(ag *AgentFile, e *Engine, dir, session string) []CageMo
 //     direction mounts nothing where nothing covers the path. INVISIBLE is
 //     a stronger wall than `:ro`, not a weaker one.
 //
+// **Freezing `config` is worth what the chain pointing at it is worth**
+// (decision 4b, ranger-base-p9h9d), which in a linked worktree is a
+// separate set of files in a separate mount. `<worktree>/.git` is a
+// one-line pointer at the per-worktree git dir, and `gitdir`, `commondir`
+// and `config.worktree` inside that dir say where the tree is, which common
+// dir it belongs to and what extra config applies — so a session that
+// rewrites the pointer at a git dir of its own, carrying its own
+// `commondir`, walks around the `:ro` `<common>/config` above and gets
+// `rev-parse --git-path hooks` answering at a planted `core.hooksPath`
+// (MEASURED, ranger-base-n3ywd). And `gitdir` is what `git worktree prune`
+// trusts, so rewriting it makes the launcher's own prune delete the
+// session's git dir. The reachable reader is not hypothetical: worktree.go
+// runs `git -C <worktree> rebase` at land time, UNSANDBOXED, in the tree
+// the session just had.
+//
+// Those four take the same `:ro` file bind, and land in the two places
+// t4f1's narrowing leaves read-write: the pointer sits on the repo mount
+// (so on a `:ro` repo the same-mode rule mounts nothing — it is already
+// inside the boundary), and the other three sit under the read-write
+// `worktrees/<own>` overlay. Nothing else in `worktrees/<own>` is taken:
+// after a whole session's life it holds `COMMIT_EDITMSG`, `commondir`,
+// `gitdir`, `HEAD`, `index`, `logs`, `ORIG_HEAD` and `refs` (MEASURED), and
+// the rest of that set is what a detached-HEAD commit writes.
+//
+// `config.worktree` is the one source the launcher has to MAKE: no live
+// worktree carries the file, and the Stat below would drop the bind for a
+// path that is absent at launch and creatable by the session inside it. So
+// `PrepareSessionHead` creates it empty before a caged launch (worktree.go)
+// and the bind here is unconditional rather than keyed on
+// `extensions.worktreeConfig` — with the extension off git never reads the
+// file, and an empty one carries no keys either way (both MEASURED).
+//
 // The paths are asked of git through the readers L2's profile uses
-// (sessionGitConfigFiles, sessionHooksDirs — seatbelt.go, `gitPath`), never
-// joined onto a git dir: in a linked worktree the config git reads is the
+// (sessionGitConfigFiles, sessionWorktreeIdentityFiles, sessionHooksDirs —
+// seatbelt.go, `gitPath`), never joined onto a git dir: in a linked
+// worktree the config git reads is the
 // COMMON one and a derived path would have said otherwise. A wall that
 // reads the repo differently from the wall beside it is the classification
 // error ADR 0014 exists to prevent (ranger-base-4ks).
@@ -532,8 +567,11 @@ func (a *App) CageMounts(ag *AgentFile, e *Engine, dir, session string) []CageMo
 // is not refused by the engine — it creates the source on the host as a
 // DIRECTORY (NOTES probe 7, the property the directory overlays rely on) —
 // and a `config.lock` directory makes the operator's every `git config`
-// fail "could not lock config file: File exists" (MEASURED 2026-09-05, git
-// 2.50.1, ranger-base-n3ywd). What that costs is WORDING, not containment:
+// fail "could not lock config file: File exists", while a
+// `config.worktree.lock` one does the same to `git config --worktree`
+// (MEASURED 2026-09-05, git 2.50.1, ranger-base-n3ywd). Both lock entries
+// are dropped by the one filter, which is why the two readers go through
+// one loop. What that costs is WORDING, not containment:
 // the refusal moves to the rename(2) onto the mountpoint, git says "could
 // not write config file", removes its own lock, and nothing of the
 // attempted config reaches `config` (MEASURED at L2, ranger-base-xwepd).
@@ -544,14 +582,25 @@ func (a *App) CageMounts(ag *AgentFile, e *Engine, dir, session string) []CageMo
 // bind does (7/7, docs/adr/0014-path-scoped-writes.probe.sh). The engine
 // arm that measures the file case runs off this box, on ranger-base-017dx.
 func cageGitIdentityBinds(ms []CageMount, dir string) []CageMount {
-	for _, p := range sessionGitConfigFiles(dir) {
+	ms = cageIdentityFileBinds(ms, sessionGitConfigFiles(dir), "the git config every later git reads for this repo, READ-ONLY — `core.hooksPath` moves the hooks slot, and `core.fsmonitor`, a `filter.*.clean` and an alias are each a command an UNSANDBOXED git would run (ADR 0038 decision 1 at L2, decision 4a here; ranger-base-672zt)")
+	ms = cageIdentityFileBinds(ms, sessionWorktreeIdentityFiles(dir), "one of the files that select WHICH config and hooks a later git reads for this worktree, READ-ONLY — a rewritten pointer or `commondir` names a git dir of the session's own and walks around the frozen config above, and `gitdir` is what the launcher's `git worktree prune` trusts (ADR 0038 decision 2 at L2, decision 4b here; ranger-base-p9h9d)")
+	for _, h := range sessionHooksDirs(dir) {
+		ms = cageOverlay(ms, h, true, "the directory git dispatches hooks from, READ-ONLY — L3's wall at the mount layer, and it is a wall only because the `config` key that moves the slot is frozen beside it (ranger-base-3c3/h15, ADR 0038 decision 4a)")
+	}
+	return ms
+}
+
+// cageIdentityFileBinds is the `.lock` filter and the file bind, in the one
+// place both readers of ADR 0038 decision 4 pass through. Two loops with a
+// `strings.HasSuffix` each is two places for the rule to be dropped from,
+// and the rule is a wall against wrecking the OPERATOR's repo — see the
+// lock paragraph above.
+func cageIdentityFileBinds(ms []CageMount, paths []string, why string) []CageMount {
+	for _, p := range paths {
 		if strings.HasSuffix(p, ".lock") {
 			continue // the sibling entry, never bound — see above
 		}
-		ms = cageOverlayFile(ms, p, "the git config every later git reads for this repo, READ-ONLY — `core.hooksPath` moves the hooks slot, and `core.fsmonitor`, a `filter.*.clean` and an alias are each a command an UNSANDBOXED git would run (ADR 0038 decision 1 at L2, decision 4a here; ranger-base-672zt)")
-	}
-	for _, h := range sessionHooksDirs(dir) {
-		ms = cageOverlay(ms, h, true, "the directory git dispatches hooks from, READ-ONLY — L3's wall at the mount layer, and it is a wall only because the `config` key that moves the slot is frozen beside it (ranger-base-3c3/h15, ADR 0038 decision 4a)")
+		ms = cageOverlayFile(ms, p, why)
 	}
 	return ms
 }

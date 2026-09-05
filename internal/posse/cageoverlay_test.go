@@ -511,9 +511,15 @@ func TestWorktreeGitCommonDirIsTheGitCarveOut(t *testing.T) {
 		// reason the grant is `worktrees/<own>` and not `worktrees`.
 		wantNoMount(t, ms, filepath.Join(common, "worktrees"), "worktrees/ itself")
 		wantNoMount(t, ms, filepath.Join(common, "worktrees", "someone-else"), "another session's per-worktree dir")
-		// And `<wt>/.git` is a file, so nothing tried to overlay it — a bind
-		// of a non-directory is the grant this must not invent.
-		wantNoMount(t, ms, filepath.Join(wt, ".git"), "the worktree's .git pointer file")
+		// And `<wt>/.git` is a file, so the read-write `.git` carve-out
+		// invented no bind of a non-directory here. What DOES land on it is
+		// ADR 0038 decision 4b's `:ro` file bind, and only on the read-write
+		// front — the two arms of that are in
+		// TestWorktreePointerAndIdentityChainAreReadOnly. The claim this
+		// test owns is that no shape makes the pointer WRITABLE.
+		if m, ok := mountAt(ms, filepath.Join(wt, ".git")); ok && !m.RO {
+			t.Errorf("the worktree's .git pointer file is mounted read-write (%s): %+v", front, m)
+		}
 	}
 	wantMode(t, a.CageMounts(cageAgent(t, a, "cage: container\ndeny: [Edit, Write]\n"), e, wt, "s1"), wt, true, "worktree repo")
 
@@ -814,5 +820,187 @@ func TestWritableExtraCannotOpenTheGitIdentityBinds(t *testing.T) {
 		if n := mountCount(ms, hooks); n != 1 {
 			t.Errorf("writable: %s must edit the bind, not add one, got %d:\n%s", extra, n, showMounts(ms))
 		}
+	}
+}
+
+// ADR 0038 decision 4b at L4 (ranger-base-p9h9d): decision 2's identity
+// chain — the `<worktree>/.git` pointer file and `gitdir`, `commondir` and
+// `config.worktree` in `worktrees/<own>` — `:ro` over the read-write mounts
+// t4f1's narrowing leaves them under.
+//
+// 4a froze `<common>/config`; this is what makes that freeze worth
+// anything. A session that rewrites the pointer at a git dir of its own,
+// carrying its own `commondir`, gets a DIFFERENT config and hooks dir out
+// of the launcher's unsandboxed land-time `git -C <worktree> rebase`
+// (MEASURED, ranger-base-n3ywd: `rev-parse --git-path hooks` answered at
+// the fake's `core.hooksPath`), and a rewritten `gitdir` makes the
+// launcher's own `git worktree prune` delete the session's git dir.
+//
+// The two mounts they land on are different, which is why both are here:
+// the pointer sits on the REPO mount and the other three under the
+// read-write `worktrees/<own>` overlay. So the pointer is bound only on the
+// read-write front — on the `:ro` one it is already inside the boundary and
+// cageOverlay's same-mode rule appends nothing, which is the row
+// TestWorktreeGitCommonDirIsTheGitCarveOut has carried since t4f1.
+//
+// This is the MOUNT LIST; that the engine honours a `:ro` FILE bind over a
+// read-write parent is ASSUMED (7/7 for directories,
+// docs/adr/0014-path-scoped-writes.probe.sh) and measured off this box on
+// ranger-base-017dx.
+func TestWorktreePointerAndIdentityChainAreReadOnly(t *testing.T) {
+	t.Parallel()
+	a := cageApp(t)
+	e, _ := a.LoadEngine("fake")
+	wt := gitWorktreeFixture(t)
+	own := LinkedGitDirs(wt)
+	if len(own) != 2 {
+		t.Fatalf("a linked worktree has two git dirs, got %v", own)
+	}
+	// The launcher's two creates (PrepareSessionHead), because a mount list
+	// is read off the tree: `logs/` for the read-write overlay's Stat guard,
+	// `config.worktree` for the file bind's. The arm that measures what
+	// happens without the second is TestAbsentWorktreeConfigIsNeitherBoundNorCreated.
+	if err := os.MkdirAll(filepath.Join(own[1], "logs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cw := filepath.Join(own[0], "config.worktree")
+	if err := os.WriteFile(cw, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// A checkout of this repo carries no `.beads` (it is untracked in the
+	// fixture), and the `:ro` shape's store carve-out needs a source.
+	if err := os.MkdirAll(filepath.Join(wt, ".beads"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	pointer := filepath.Join(wt, ".git")
+	chain := []string{filepath.Join(own[0], "gitdir"), filepath.Join(own[0], "commondir"), cw}
+
+	for _, front := range []string{"cage: container\n", "cage: container\ndeny: [Edit, Write]\n"} {
+		ms := a.CageMounts(cageAgent(t, a, front), e, wt, "s1")
+		// The overlay these binds sit on is still read-write: this narrows
+		// `worktrees/<own>`, it does not withdraw it. Without this row a
+		// wall that took the whole per-worktree dir `:ro` — and with it the
+		// index and HEAD every commit in the cage writes — would look green.
+		wantMode(t, ms, own[0], false, "the session's own per-worktree git dir ("+front+")")
+		for _, p := range chain {
+			wantMode(t, ms, p, true, "identity chain "+filepath.Base(p)+" ("+front+")")
+			if n := mountCount(ms, p); n != 1 {
+				t.Errorf("%s must be bound exactly once (%s), got %d:\n%s", p, front, n, showMounts(ms))
+			}
+		}
+		// Everything else `worktrees/<own>` holds after a session's life is
+		// what a detached-HEAD commit writes, and is untouched — a wall
+		// bigger than the gate is a different gate (ADR 0014 §2).
+		for _, n := range []string{"HEAD", "index", "ORIG_HEAD", "COMMIT_EDITMSG", "logs", "refs"} {
+			wantNoMount(t, ms, filepath.Join(own[0], n), "worktrees/<own>/"+n+" ("+front+")")
+		}
+		// The pointer, whose covering mount is the repo and whose answer is
+		// therefore the front's.
+		if strings.Contains(front, "deny") {
+			wantMode(t, ms, wt, true, ":ro repo ("+front+")")
+			wantNoMount(t, ms, pointer, "the pointer under a :ro repo — already inside the boundary ("+front+")")
+		} else {
+			wantMode(t, ms, wt, false, "rw repo ("+front+")")
+			wantMode(t, ms, pointer, true, "the pointer over a rw repo ("+front+")")
+		}
+		// The mount FLAG is the wall, not the struct field.
+		argv := e.RenderArgv(CageRender{Image: "img", Workdir: wt, Mounts: ms, Inner: []string{"x"}})
+		for _, p := range chain {
+			if !argvHas(argv, "-v", p+":"+p+":ro") {
+				t.Errorf("%s is a mount flag, not a claim (%s): %q", p, front, argv)
+			}
+		}
+		// The reachability row still passes: a bind placed deeper than
+		// `.beads` must not have moved what covers the store of record.
+		if why := a.containerReachRow(cageAgent(t, a, front), wt, beadsHome(wt)); why != "" {
+			t.Errorf("the store must stay writable under %q: %s", front, why)
+		}
+	}
+}
+
+// The `.lock` sibling of `config.worktree` gets no twin either, two-way and
+// derived from sessionWorktreeIdentityFiles so a widened reader cannot slip
+// past. Same measurement as the config file's own lock
+// (TestNoGitLockSiblingIsEverBound): a bind of an ABSENT source is not
+// refused by the engine, it CREATES the source as a directory, and a
+// `config.worktree.lock` directory makes the operator's
+// `git config --worktree` fail "could not lock" (MEASURED 2026-09-05, git
+// 2.50.1, ranger-base-n3ywd).
+//
+// The fixture PLANTS the lock, which is what makes the pin able to fail:
+// with the file absent cageOverlayFile's Stat alone drops the bind and a
+// removed filter looks green.
+func TestNoWorktreeLockSiblingIsEverBound(t *testing.T) {
+	t.Parallel()
+	a := cageApp(t)
+	e, _ := a.LoadEngine("fake")
+	wt := gitWorktreeFixture(t)
+	own := LinkedGitDirs(wt)
+	if len(own) != 2 {
+		t.Fatalf("a linked worktree has two git dirs, got %v", own)
+	}
+	if err := os.WriteFile(filepath.Join(own[0], "config.worktree"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(own[0], "config.worktree.lock"), []byte("[core]\n\thooksPath = /tmp/theirs\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	files := sessionWorktreeIdentityFiles(wt)
+	locks := 0
+	for _, front := range []string{"cage: container\n", "cage: container\ndeny: [Edit, Write]\n"} {
+		ms := a.CageMounts(cageAgent(t, a, front), e, wt, "s1")
+		for _, p := range files {
+			if strings.HasSuffix(p, ".lock") {
+				locks++
+				wantNoMount(t, ms, p, "lock sibling ("+front+")")
+			}
+		}
+		// The same claim without the list, so a reader that stopped naming
+		// locks at all cannot make this pin vacuous.
+		for _, m := range ms {
+			if strings.HasSuffix(m.Dst, ".lock") {
+				t.Errorf("no mount may end in .lock, got %+v", m)
+			}
+		}
+	}
+	if locks == 0 {
+		t.Fatalf("the reader named no lock sibling, so this pinned nothing: %v", files)
+	}
+}
+
+// `config.worktree` absent is the state EVERY live worktree is in — posse
+// never sets `extensions.worktreeConfig` and `git worktree add` writes no
+// such file — so the renderer's answer to it is load-bearing rather than
+// hypothetical. Two claims: it mounts nothing for the missing source, and
+// it creates NOTHING on the host, which is the whole reason the deny
+// direction takes a Stat for file sources (a `-v` of an absent source
+// becomes a host DIRECTORY, and a `config.worktree` directory makes every
+// git command in the tree fatal — MEASURED, ranger-base-n3ywd).
+//
+// The siblings in the same pass are still bound, which is what shows the
+// drop is a Stat on one source rather than the whole pass falling over.
+// Making the file is the LAUNCHER's job, and that half is pinned in
+// worktree_test.go (TestACagedLaunchMakesTheWorktreeConfigItsBindNeeds).
+func TestAbsentWorktreeConfigIsNeitherBoundNorCreated(t *testing.T) {
+	t.Parallel()
+	a := cageApp(t)
+	e, _ := a.LoadEngine("fake")
+	wt := gitWorktreeFixture(t)
+	own := LinkedGitDirs(wt)
+	if len(own) != 2 {
+		t.Fatalf("a linked worktree has two git dirs, got %v", own)
+	}
+	cw := filepath.Join(own[0], "config.worktree")
+	if _, err := os.Stat(cw); err == nil {
+		t.Fatalf("the fixture already carries %s, so this measures nothing", cw)
+	}
+	for _, front := range []string{"cage: container\n", "cage: container\ndeny: [Edit, Write]\n"} {
+		ms := a.CageMounts(cageAgent(t, a, front), e, wt, "s1")
+		wantNoMount(t, ms, cw, "config.worktree with no source on disk ("+front+")")
+		wantMode(t, ms, filepath.Join(own[0], "gitdir"), true, "gitdir, in the same pass ("+front+")")
+		wantMode(t, ms, filepath.Join(own[0], "commondir"), true, "commondir, in the same pass ("+front+")")
+	}
+	if _, err := os.Stat(cw); err == nil {
+		t.Errorf("rendering the mount list created %s on the host", cw)
 	}
 }
