@@ -2,10 +2,12 @@
 
 *Status: accepted 2026-09-01 (D1, D2, D3a, D3b, and D3c per the
 operator's ruling on ranger-base-v1p66) · D3d spike answered 200
-(ranger-base-au0o4), D3d built 2026-09-05 (ranger-base-mvrke) and
+(ranger-base-au0o4), D3d built 2026-09-05 (ranger-base-mvrke),
 amended the same day (ranger-base-q3n4e: the session credential a posse
 process reads is the env set under the home, selected by the launch's
-set list — never its own environment) · owner:
+set list — never its own environment) and the amendment built the same
+day (ranger-base-abgil, the seam and the helper; ranger-base-hr49g, the
+launch's list through the preflight) · owner:
 architect · amends 0003
 §1 (the claude strong cell), 0015 §2/§3 (the promoted set), 0021 (the
 overlay's home) · from ranger-base-1ykc1, discovered from
@@ -248,6 +250,16 @@ only inside its lease.**
      persona-less list. The reading is shared across personas within
      its lease exactly as before; the credential that refreshed it is
      the launch's that found it stale.
+
+     BUILT as `TierPreflightFrom` → `ReadCatalogFrom` → `ModelCacheFrom`
+     → `sessionCatalogToken(sets)` (ranger-base-hr49g), with `planLaunch`
+     computing the list once above the preflight and handing that same
+     list to the `vars` loop below it. The persona-less list has one
+     spelling, `cockpitEnvSets`, which is what `ReadCatalog`,
+     `ModelCache` and `ReadCredential(rt, CredSession)` all read on. An
+     EMPTY list is an answer and not a request for a default: a persona
+     that names no env set realizes none, and the probe does not borrow
+     `default_env` for it (rangerhq-f2b).
   4. *The exposure question, answered.* Who can READ the file does not
      change: below the container tier any same-uid process reads a
      mode-600 file (ADR 0019, "The trade, plainly"), and ranger-base-au0o4
@@ -356,7 +368,9 @@ only inside its lease.**
    the session meta gets no `fallback:` mark.
 5. `go test ./internal/posse -run 'Constitution|Promote|Preflight|Model|Price|Tier'`
    green, with the constitutionClassSpec pin reading `rhq/runtimes`.
-6. (D3d as amended, unit) With the name in no env set under a scratch
+6. (D3d as amended, unit) PINNED 2026-09-05 (ranger-base-hr49g,
+   `internal/posse/modellaunchsets_test.go`; the persona-less half is
+   `modelsessiontoken_test.go`). With the name in no env set under a scratch
    home, the seam's session read returns the refresh-verb sentence and
    the lister spends no request; with two sets in the launch's list
    carrying different values, the lister sends the LAST one and the fake
@@ -372,6 +386,25 @@ only inside its lease.**
    availability line without the age clause. This is the row that
    decides whether the ruling worked; a green 6 without a green 7 is the
    old state with a new sentence.
+
+   HALF-ANSWERED 2026-09-05 (ranger-base-hr49g), and the half that is
+   open is the operator's to close. The stale-keychain precondition does
+   not hold on this box today — `state/model-catalog.log` has read `ok
+   models=11` hourly since 07:35Z, so the meter store is answering and a
+   green line there would say nothing about which credential produced
+   it. So the meter store was switched OFF for the measurement instead,
+   which is the same condition and a stronger one: a binary built from
+   this commit, reading the LIVE home's env sets over dinesh's own
+   launch list (`[default]`) with the fallback made unavailable,
+   answered `ok models=11` — `claude-fable-5-1` among them — and wrote
+   that line to a scratch state dir; the cockpit's own line rendered
+   `claude: tier strong → claude-fable-5-1 (available)`, no age clause.
+   Controls in the same reading: the two env sets that carry no mint
+   (`projA`, `glcc-box`) refused, and with the fallback off the catalog
+   read over one of them spent no request and ruled on nothing. What is
+   left is exactly the part a session cannot do for itself: the operator
+   installs the build and launches once, and the LIVE log carries the
+   line.
 8. (D3d as amended, measure once) Two `--env` flags of one name on a
    pane's create: which value the pane holds. ANSWERED 2026-09-05
    (ranger-base-abgil, herdr 0.8.2 on this box): the LAST wins, so the
@@ -401,6 +434,7 @@ only inside its lease.**
 | the seam's session half has no caller that holds the value | MEASURED at the q3n4e HEAD — zero callers outside `credential.go`; the mint absent from a dispatched session's environment while sibling variables of the same set are present. At THIS HEAD there is one, `sessionCatalogToken` (modelavail.go), which is the D3d build the ruling above retargets and not a second store; the retraction argument is unchanged by it |
 | the D3d build is landed | MEASURED — `ModelLister` carries a `Fallback` field at this HEAD (ranger-base-8bp2j replayed ranger-base-mvrke's commit past this amendment). It was unlanded when the amendment above was written, which is what that paragraph's landing-order note is about |
 | a seatbelt seat can read an env set's value | MEASURED — ranger-base-au0o4 ran its probe from one on the default set |
+| the launch's env set list reaches the catalog probe, and the session mint alone can read the catalog | MEASURED 2026-09-05 (ranger-base-hr49g) — the live home's `envs/default.env`, dinesh's own launch list, the meter fallback made unavailable: 11 ids, `claude-fable-5-1` among them. Pinned hermetically at every hop a fake endpoint can see, and at the two it cannot (`planLaunch`, `TierPreflightFrom`) by parsing the source |
 | the two sets holding the name hold one account's mint | ASSUMED — both 108 bytes, values deliberately uncompared; a shared reading across personas already assumed one account before this ruling |
 | the last `--env` of one name wins in the pane | MEASURED — V8, 2026-09-05, herdr 0.8.2: `FIRST` then `SECOND` gave the pane `SECOND`; reversed it gave `FIRST`; one assignment of the name in the pane's environment either way, with a passed-once and a never-passed control |
 | no session on any instance needs to write `runtimes/` | ASSUMED — no code writer; a hand edit at the home is exactly what D2 ends |

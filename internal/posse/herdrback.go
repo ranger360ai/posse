@@ -2020,6 +2020,27 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 		if err := ag.EnsureMemoryDir(); err != nil {
 			return nil, err
 		}
+	}
+
+	// Env sets: explicit ones (--env-file, recipe env_files) always; the
+	// persona's own `envs:` list on top for persona sessions; config
+	// default_env only for a session without a persona. The rule itself
+	// lives in LaunchEnvSets (envs.go) because the ADR 0019 seam selects
+	// the same sets by the same rule when it reads the session credential
+	// this launch is about to export (ADR 0039 D3d as amended) — two copies
+	// would drift silently.
+	//
+	// Computed HERE, at the first line where both inputs are final, because
+	// the availability preflight a few lines down is handed this same list:
+	// the catalog it reads is read with the mint of the sets THIS launch
+	// realizes (ADR 0039 D3d as amended, item 3), and the `vars` loop far
+	// below exports the values out of those same sets. NAMES only — the
+	// values are read where they are used, by `vars` for the launch and by
+	// the seam at the moment of the probe.
+	envs := a.LaunchEnvSets(o.Envs, ag)
+
+	if o.Agent != "" {
+		var err error
 		// Runtime: CLI/recipe override > PID runtime: > config default >
 		// claude. The PID's own command: applies only on its own runtime.
 		own := a.ResolveRuntime("", ag)
@@ -2062,7 +2083,7 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 		if o.Model != "" {
 			b.warn("posse: %s\n", ExactModelLine(o.Name, runtime, tier, o.Model))
 		} else {
-			pf = a.TierPreflight(o.Agent, runtime, tier, b.warnWriter())
+			pf = a.TierPreflightFrom(envs, o.Agent, runtime, tier, b.warnWriter())
 		}
 		if pf.Line != "" {
 			// Printed whether or not anything fell: an UNKNOWN verdict over
@@ -2394,14 +2415,9 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 		cmd = EnsureUnattendedLine(cmd)
 	}
 
-	// Env sets: explicit ones (--env-file, recipe env_files) always; the
-	// persona's own `envs:` list on top for persona sessions; config
-	// default_env only for a session without a persona. The rule itself
-	// lives in LaunchEnvSets (envs.go) because the ADR 0019 seam selects
-	// the same sets by the same rule when it reads the session credential
-	// this launch is about to export (ADR 0039 D3d as amended) — two copies
-	// would drift silently.
-	envs := a.LaunchEnvSets(o.Envs, ag)
+	// The values, at last: `envs` was computed above the preflight (which
+	// reads the catalog with the credential these same sets carry), and
+	// this is the first line that needs what is IN them.
 	var vars []EnvVar
 	for _, n := range envs {
 		vs, err := a.EnvSetVars(n)

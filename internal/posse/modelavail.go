@@ -369,23 +369,52 @@ type ModelCache struct {
 // probe 401ing since 2026-08-31 (ranger-base-wkai3).
 //
 // It ACQUIRES nothing (ADR 0019 D1): the value comes back through the seam,
-// out of the env set the launch already realized into this process's
-// environment. The runtime is loaded rather than assumed so that an
-// overlay's `cage_cred:` names the variable here exactly as it does at the
-// launch (ADR 0021). Absence — no variable decided, or none in this
-// environment — comes back as the error it is, and ModelLister.Fallback
-// answers it with the meter store.
-func (a *App) sessionCatalogToken() func() (string, CredMeta, error) {
+// out of the env set FILES under the home. The runtime is loaded rather than
+// assumed so that an overlay's `cage_cred:` names the variable here exactly
+// as it does at the launch (ADR 0021). Absence — no variable decided, or
+// none of the named sets carrying it — comes back as the error it is, and
+// ModelLister.Fallback answers it with the meter store.
+//
+// sets are the env set NAMES this read's launch realizes, in launch order,
+// as LaunchEnvSets computes them (ADR 0039 D3d as amended, ranger-base-q3n4e
+// item 3): the preferred credential is the mint of the sets THIS launch is
+// about to export, and the value is the last assignment of the name across
+// them. A caller that is not a launch passes cockpitEnvSets() — the same
+// list `ReadCredential(rt, CredSession)` reads on — and an EMPTY list is an
+// answer rather than a request for a default: a persona that names no env
+// set realizes none, and the probe must not quietly borrow the cockpit's
+// `default_env` mint for it (rangerhq-f2b).
+//
+// The list is resolved by the CALLER and read HERE, once per catalog read
+// rather than once per launch: names are cheap to carry, and the values are
+// read at the moment of the probe (ADR 0039's rejected alternative q3n4e c).
+func (a *App) sessionCatalogToken(sets []string) func() (string, CredMeta, error) {
 	return func() (string, CredMeta, error) {
 		rt, err := a.LoadRuntime(modelCatalogRuntime)
 		if err != nil {
 			return "", CredMeta{}, err
 		}
-		return a.ReadCredential(rt, CredSession)
+		return a.ReadSessionCredentialFrom(rt, sets)
 	}
 }
 
-func (a *App) ModelCache() *ModelCache {
+// ModelCache is the cache for a read no launch asked for: the probe's
+// preferred credential is the mint of the persona-less list, which is what
+// `ReadCredential(rt, CredSession)` answers and what the cockpit's own reads
+// want. ModelCacheFrom is the launch's form.
+func (a *App) ModelCache() *ModelCache { return a.ModelCacheFrom(a.cockpitEnvSets()) }
+
+// ModelCacheFrom is ModelCache for a caller that knows which env sets its
+// launch realizes (ADR 0039 D3d as amended): the probe prefers the mint of
+// THOSE sets, so the credential the catalog is read with is the one the
+// launch about to be judged by it will hand the session — and it rots on the
+// sessions' clock rather than on the meter store's, which is what has left
+// this probe 401ing since 2026-08-31 (ranger-base-wkai3).
+//
+// sets is the list LaunchEnvSets computed, in launch order. Empty is "this
+// launch realizes no env set", not "use the default" — see
+// sessionCatalogToken.
+func (a *App) ModelCacheFrom(sets []string) *ModelCache {
 	l := a.ModelLister
 	if l == nil {
 		l = NewModelLister()
@@ -397,7 +426,7 @@ func (a *App) ModelCache() *ModelCache {
 		// point — and the meter store it already chose becomes the
 		// fallback, so neither half of D3d's preference is spelled twice.
 		l.Fallback = l.Token
-		l.Token = a.sessionCatalogToken()
+		l.Token = a.sessionCatalogToken(sets)
 	}
 	return &ModelCache{
 		Path: filepath.Join(a.StateDir, "model-catalog.json"),
@@ -815,6 +844,19 @@ func (a *App) TierPreflight(persona, runtime, tier string, errw io.Writer) Prefl
 	return a.TierPreflightOn(a.ReadCatalog(errw), persona, runtime, tier)
 }
 
+// TierPreflightFrom is the LAUNCH's form, and the one planLaunch calls: the
+// same check, over a reading taken with the credential this launch is about
+// to hand the session (ADR 0039 D3d as amended, item 3). sets is the launch's
+// env set list — LaunchEnvSets(o.Envs, ag), computed once above the preflight
+// and handed to `vars` further down, so the sets the probe reads and the sets
+// the launch exports cannot be two different lists.
+//
+// It hands the sets down rather than the values: the reading happens once
+// per lease and the seam reads the files at the moment of the probe.
+func (a *App) TierPreflightFrom(sets []string, persona, runtime, tier string, errw io.Writer) Preflight {
+	return a.TierPreflightOn(a.ReadCatalogFrom(sets, errw), persona, runtime, tier)
+}
+
 // TierPreflightOn is the same check over a catalog reading the caller
 // already holds — the seam a report that rules on many pairs needs, so one
 // reading answers all of them (ModelCatalog).
@@ -1079,11 +1121,19 @@ func hopDesc(fromRT, toRT, toTier, model string) string {
 //
 // Lazy on purpose: a report over runtimes that are none of them on this
 // API (or with the preflight off) must ask nobody, and the branch that
-// decides that is per runtime, downstream of here.
+// decides that is per runtime, downstream of here. The env set NAMES below
+// are the one thing settled at construction, and they ask nobody either —
+// a config key and a stat, no credential and no endpoint.
 type ModelCatalog struct {
 	a     *App
 	fresh bool // --probe: maxAge 0, "fresh only"
 	errw  io.Writer
+	// sets is the env set list the credential behind this reading is read
+	// from (ADR 0039 D3d as amended): the launch's own for a launch, the
+	// persona-less one for every other caller. ALWAYS resolved by the
+	// constructor — an empty list here means "this launch realizes no env
+	// set", and there is no third state that means "work it out later".
+	sets []string
 
 	once  sync.Once
 	set   map[string]bool
@@ -1095,7 +1145,16 @@ type ModelCatalog struct {
 // ReadCatalog is the ordinary reading: whatever the shared snapshot holds
 // inside `model_probe_ttl`, else a request.
 func (a *App) ReadCatalog(errw io.Writer) *ModelCatalog {
-	return &ModelCatalog{a: a, errw: errw}
+	return a.ReadCatalogFrom(a.cockpitEnvSets(), errw)
+}
+
+// ReadCatalogFrom is the same reading for a caller that names the env sets
+// its launch realizes, so the probe behind it prefers the mint of THOSE sets
+// (ADR 0039 D3d as amended). The reading itself is unchanged and still
+// shared across personas within its lease: what the sets decide is which
+// credential the launch that finds it stale refreshes it with.
+func (a *App) ReadCatalogFrom(sets []string, errw io.Writer) *ModelCatalog {
+	return &ModelCatalog{a: a, errw: errw, sets: sets}
 }
 
 // ProbeCatalog is `posse runtimes --probe`: read it NOW. maxAge 0 is
@@ -1103,8 +1162,17 @@ func (a *App) ReadCatalog(errw io.Writer) *ModelCatalog {
 // checks the RetryAt cooldown before asking, so a forced read cannot
 // become the rangerhq-tdy8 storm (ADR 0039 D3b).
 func (a *App) ProbeCatalog(errw io.Writer) *ModelCatalog {
-	return &ModelCatalog{a: a, errw: errw, fresh: true}
+	c := a.ReadCatalog(errw)
+	c.fresh = true
+	return c
 }
+
+// cache is the reading's own probe: the ModelCache built with THIS reading's
+// env set list. One line, and its own method rather than a line inside load,
+// because it is the joint where D3d's list stops being carried and starts
+// being read — the one thing a test can hold that load() would otherwise
+// build and drop inside a sync.Once.
+func (c *ModelCatalog) cache() *ModelCache { return c.a.ModelCacheFrom(c.sets) }
 
 func (c *ModelCatalog) load() {
 	c.once.Do(func() {
@@ -1113,7 +1181,7 @@ func (c *ModelCatalog) load() {
 		if c.fresh {
 			maxAge = 0
 		}
-		mc := c.a.ModelCache()
+		mc := c.cache()
 		mc.Errw = c.errw
 		ids, ok, r := mc.ModelsRead(maxAge, c.lease)
 		c.ok, c.read = ok, r

@@ -86,8 +86,16 @@ func (b *bearerLog) presented() []string {
 	var out []string
 	for _, got := range b.bearers {
 		switch got {
-		case "Bearer " + fakeSessionMint:
+		// The launch-listed mints (modellaunchsets_test.go) are session
+		// credentials too — which SET one came out of is a byte-equality
+		// question the arms that care ask directly, and answering it here
+		// would put two names on one kind. The cockpit's is its own name
+		// because presenting it to a launch's read is a wrong-LIST bug and
+		// not a session-versus-meter one.
+		case "Bearer " + fakeSessionMint, "Bearer " + fakeSetAMint, "Bearer " + fakeSetBMint:
 			out = append(out, "session")
+		case "Bearer " + fakeCockpitMint:
+			out = append(out, "cockpit")
 		case "Bearer " + fakeMeterMint:
 			out = append(out, "meter")
 		case "":
@@ -117,6 +125,12 @@ func sessionCredApp(t *testing.T) *App {
 	return &App{Home: home, StateDir: home + "/state",
 		EnvsDir: filepath.Join(home, "envs"), ConfigPath: filepath.Join(home, "config.yaml")}
 }
+
+// cockpitList is the persona-less env set list — the one a caller that is
+// not a launch reads on, and the one `ReadCredential(rt, CredSession)`
+// answers. The pins in this half drive the probe over it; the launch's own
+// list is the subject of the half at the bottom of this file.
+func cockpitList(a *App) []string { return a.cockpitEnvSets() }
 
 // haveSessionMint puts the mint where the launch would: in an env set under
 // the home, named as this persona-less home's `default_env` so the seam's
@@ -151,7 +165,7 @@ func TestCatalogProbePresentsTheSessionCredential(t *testing.T) {
 	haveSessionMint(t, a, rt)
 
 	srv := newBearerLog(t, "claude-fable-5-1", "claude-opus-5")
-	l := &ModelLister{URL: srv.URL, Token: a.sessionCatalogToken(), Fallback: fixedToken(fakeMeterMint), HTTP: srv.Client()}
+	l := &ModelLister{URL: srv.URL, Token: a.sessionCatalogToken(cockpitList(a)), Fallback: fixedToken(fakeMeterMint), HTTP: srv.Client()}
 	ids, err := l.List()
 	if err != nil {
 		t.Fatal(err)
@@ -177,7 +191,7 @@ func TestCatalogProbeSendsTheEnvSetValueItself(t *testing.T) {
 	haveSessionMint(t, a, rt)
 
 	srv := newBearerLog(t, "claude-fable-5-1")
-	l := &ModelLister{URL: srv.URL, Token: a.sessionCatalogToken(), Fallback: fixedToken(fakeMeterMint), HTTP: srv.Client()}
+	l := &ModelLister{URL: srv.URL, Token: a.sessionCatalogToken(cockpitList(a)), Fallback: fixedToken(fakeMeterMint), HTTP: srv.Client()}
 	if _, err := l.List(); err != nil {
 		t.Fatal(err)
 	}
@@ -206,7 +220,7 @@ func TestNoSessionCredentialReadsTheMeterStore(t *testing.T) {
 	noSessionMint(t, a, rt)
 
 	srv := newBearerLog(t, "claude-fable-5-1")
-	l := &ModelLister{URL: srv.URL, Token: a.sessionCatalogToken(), Fallback: fixedToken(fakeMeterMint), HTTP: srv.Client()}
+	l := &ModelLister{URL: srv.URL, Token: a.sessionCatalogToken(cockpitList(a)), Fallback: fixedToken(fakeMeterMint), HTTP: srv.Client()}
 	ids, err := l.List()
 	if err != nil {
 		t.Fatal(err)
@@ -231,7 +245,7 @@ func TestNoFallbackKeepsTheCredentialErrorAndAsksNobody(t *testing.T) {
 	noSessionMint(t, a, rt)
 
 	srv := newBearerLog(t, "claude-fable-5-1")
-	l := &ModelLister{URL: srv.URL, Token: a.sessionCatalogToken(), HTTP: srv.Client()}
+	l := &ModelLister{URL: srv.URL, Token: a.sessionCatalogToken(cockpitList(a)), HTTP: srv.Client()}
 	if _, err := l.List(); err == nil {
 		t.Fatal("a lister with no fallback answered without a credential")
 	}
@@ -254,7 +268,7 @@ func TestRefusedSessionCredentialFallsThroughToTheMeterStoreOnce(t *testing.T) {
 
 	srv := newBearerLog(t, "claude-fable-5-1")
 	srv.refuse = 1
-	l := &ModelLister{URL: srv.URL, Token: a.sessionCatalogToken(), Fallback: fixedToken(fakeMeterMint), HTTP: srv.Client()}
+	l := &ModelLister{URL: srv.URL, Token: a.sessionCatalogToken(cockpitList(a)), Fallback: fixedToken(fakeMeterMint), HTTP: srv.Client()}
 	ids, err := l.List()
 	if err != nil {
 		t.Fatal(err)
@@ -280,7 +294,7 @@ func TestBothCredentialsRefusedStopsAtTwoRequests(t *testing.T) {
 
 	srv := newBearerLog(t, "claude-fable-5-1")
 	srv.refuse = 9
-	l := &ModelLister{URL: srv.URL, Token: a.sessionCatalogToken(), Fallback: fixedToken(fakeMeterMint), HTTP: srv.Client()}
+	l := &ModelLister{URL: srv.URL, Token: a.sessionCatalogToken(cockpitList(a)), Fallback: fixedToken(fakeMeterMint), HTTP: srv.Client()}
 	if _, err := l.List(); err == nil {
 		t.Fatal("two refused credentials answered as a catalog")
 	} else if !strings.Contains(err.Error(), "401") {
@@ -305,7 +319,7 @@ func TestRefusedFallbackIsNotPresentedTwice(t *testing.T) {
 
 	srv := newBearerLog(t, "claude-fable-5-1")
 	srv.refuse = 9
-	l := &ModelLister{URL: srv.URL, Token: a.sessionCatalogToken(), Fallback: fixedToken(fakeMeterMint), HTTP: srv.Client()}
+	l := &ModelLister{URL: srv.URL, Token: a.sessionCatalogToken(cockpitList(a)), Fallback: fixedToken(fakeMeterMint), HTTP: srv.Client()}
 	if _, err := l.List(); err == nil {
 		t.Fatal("a refused credential answered as a catalog")
 	}
@@ -326,7 +340,7 @@ func TestForbiddenSessionCredentialAlsoFallsThrough(t *testing.T) {
 
 	srv := newBearerLog(t, "claude-fable-5-1")
 	srv.refuse, srv.code = 1, http.StatusForbidden
-	l := &ModelLister{URL: srv.URL, Token: a.sessionCatalogToken(), Fallback: fixedToken(fakeMeterMint), HTTP: srv.Client()}
+	l := &ModelLister{URL: srv.URL, Token: a.sessionCatalogToken(cockpitList(a)), Fallback: fixedToken(fakeMeterMint), HTTP: srv.Client()}
 	if _, err := l.List(); err != nil {
 		t.Fatal(err)
 	}
@@ -348,7 +362,7 @@ func TestServerErrorDoesNotSpendTheSecondCredential(t *testing.T) {
 
 	srv := newBearerLog(t, "claude-fable-5-1")
 	srv.refuse, srv.code = 1, http.StatusInternalServerError
-	l := &ModelLister{URL: srv.URL, Token: a.sessionCatalogToken(), Fallback: fixedToken(fakeMeterMint), HTTP: srv.Client()}
+	l := &ModelLister{URL: srv.URL, Token: a.sessionCatalogToken(cockpitList(a)), Fallback: fixedToken(fakeMeterMint), HTTP: srv.Client()}
 	if _, err := l.List(); err == nil {
 		t.Fatal("a 500 answered as a catalog")
 	}
@@ -381,6 +395,17 @@ func credSource(f func() (string, CredMeta, error)) string {
 // here is about which acquisition path each field got.
 func TestModelCacheWiresSessionFirstAndTheMeterStoreBehindIt(t *testing.T) {
 	a := sessionCredApp(t)
+	// The mint goes in FIRST: since ranger-base-hr49g the env set NAMES a
+	// read will look in are resolved where the cache is built (there is no
+	// third state meaning "work the list out later"), and only the values
+	// are read at the moment of the probe. A home whose `default_env` is
+	// named after the cache exists is a fixture no launch has.
+	rt, err := a.LoadRuntime(modelCatalogRuntime)
+	if err != nil {
+		t.Fatal(err)
+	}
+	haveSessionMint(t, a, rt)
+
 	l := a.ModelCache().Lister
 	if l.Token == nil || l.Fallback == nil {
 		t.Fatal("the App path did not wire both credentials")
@@ -394,11 +419,6 @@ func TestModelCacheWiresSessionFirstAndTheMeterStoreBehindIt(t *testing.T) {
 	}
 	// And the preference really is the session half — the same seam the
 	// pins above drove, asked through the field a launch will use.
-	rt, err := a.LoadRuntime(modelCatalogRuntime)
-	if err != nil {
-		t.Fatal(err)
-	}
-	haveSessionMint(t, a, rt)
 	tok, _, err := l.Token()
 	if err != nil {
 		t.Fatal(err)
@@ -418,7 +438,7 @@ func TestCredSourceTellsTheTwoCredentialsApart(t *testing.T) {
 	if got := credSource(NewModelLister().Token); got != meter {
 		t.Errorf("the bare constructor's credential = %s, want the meter store's reader %s", got, meter)
 	}
-	if credSource(a.sessionCatalogToken()) == meter {
+	if credSource(a.sessionCatalogToken(cockpitList(a))) == meter {
 		t.Error("credSource cannot tell the session reader from the meter one")
 	}
 }

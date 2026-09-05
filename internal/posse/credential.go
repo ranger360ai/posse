@@ -179,7 +179,7 @@ func (a *App) ReadCredential(rt *Runtime, p CredPurpose) (string, CredMeta, erro
 		// The persona-less list — the cockpit's (`posse runtimes`, `posse
 		// gates`) and every caller that is not a launch. A caller that IS
 		// one names its sets: ReadSessionCredentialFrom.
-		return a.readSessionCredential(rt, a.LaunchEnvSets(nil, nil))
+		return a.readSessionCredential(rt, a.cockpitEnvSets())
 	case CredMeter:
 		return readMeterCredential(rt.Name)
 	}

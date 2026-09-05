@@ -250,3 +250,15 @@ func (a *App) LaunchEnvSets(explicit []string, ag *AgentFile) []string {
 	}
 	return dedupeStrings(envs)
 }
+
+// cockpitEnvSets is LaunchEnvSets for a caller that is not a launch: the
+// cockpit's own reads (`posse runtimes`, `posse gates`), the ADR 0019 seam's
+// `ReadCredential(rt, CredSession)`, and the catalog probe when no launch
+// named its sets. No explicit sets and no persona, so the answer is config
+// `default_env` and nothing else — the one rule rangerhq-f2b leaves for a
+// caller that has no persona to have chosen for it.
+//
+// It exists so that "the persona-less list" has ONE spelling. Four surfaces
+// ask for it and a fifth (the launch) asks for its own; the day the rule
+// gains a term, a grep for this name is the whole list of what changes.
+func (a *App) cockpitEnvSets() []string { return a.LaunchEnvSets(nil, nil) }
