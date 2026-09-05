@@ -55,11 +55,27 @@ func (a *App) QueueRepo() string {
 // pass needs to tell "not configured" from "configured and it did nothing",
 // because the second one is a close whose record did not reach git.
 type QueueCommit struct {
-	Repo    string   // the queue repo the store resolved into
-	Store   string   // the .beads directory itself
-	Paths   []string // what was committed, relative to Store
-	SHA     string   // the commit, "" when none was made
-	Skipped string   // why not, "" when one was
+	Repo  string   // the queue repo the store resolved into
+	Store string   // the .beads directory itself
+	Paths []string // what was committed, relative to Store
+	// Dropped names paths that are in the store and are NOT in Paths:
+	// they had no index entry and `git add` refused to give them one.
+	// A commit can succeed with a non-empty Dropped — that is the whole
+	// point of dropping them — so it is reported alongside SHA rather
+	// than instead of it.
+	Dropped []string
+	SHA     string // the commit, "" when none was made
+	Skipped string // why not, "" when one was
+}
+
+// droppedNote is what a pass says about a file that was in the store and did
+// not make the commit. Empty for every ordinary close, which is why it is a
+// suffix rather than a line.
+func (c QueueCommit) droppedNote() string {
+	if len(c.Dropped) == 0 {
+		return ""
+	}
+	return " — without " + strings.Join(c.Dropped, " ") + ", which git would not stage"
 }
 
 // CommitQueueJSONL flushes the database to its JSONL projection and commits
@@ -131,13 +147,73 @@ func (a *App) CommitQueueJSONL(bd Bd, dir, msg string) (QueueCommit, error) {
 		return c, err
 	}
 
+	// On disk is not the same question as committable. A pathspec matches
+	// only a path git already has an index entry for, and `deleted.jsonl`
+	// is written by bd the first time a bead is deleted — which can be long
+	// after the cutover script's one `git add -A .beads`. Naming an
+	// untracked path does not merely skip it: it exits 1 with "pathspec
+	// ... did not match any file(s) known to git" and leaves HEAD where it
+	// was, so the TRACKED projection beside it does not land either
+	// (measured, git 2.50.1 and 2.39.3 — ranger-base-d7ja). Every close
+	// after that reports its projection commit as a launcher failure and
+	// the loss census stops seeing ids, until a hand stages the new file.
+	//
+	// So a path with no index entry gets one first: `git add -- <the new
+	// paths>`, scoped and never bare, which is the route rangerhq-4pbt
+	// measured and AGENTS.md prescribes. It does not reintroduce
+	// ranger-base-nor — a path-limited commit still takes the WORKING TREE
+	// version of everything it names, so a daemon rewrite landing between
+	// this add and the commit below is committed rather than lost
+	// (measured: add, rewrite both files, commit — the commit holds the
+	// rewrite).
+	//
+	// New paths ONLY. An add over a tracked path would overwrite an index
+	// entry another hand staged, and the commit does not need one: the
+	// entry it already has is what makes the pathspec match.
+	//
+	// It also has to be before the has-anything-changed question below,
+	// not after: an untracked file is invisible to `git diff HEAD`, so a
+	// close whose only movement is a first deletion would otherwise skip
+	// as "already matches its last commit" and the ledger would never
+	// reach git at all.
+	var found []string
 	for _, name := range queueJSONLPaths {
 		if _, err := os.Stat(filepath.Join(store, name)); err == nil {
+			found = append(found, name)
+		}
+	}
+	if len(found) > 0 {
+		known, err := git(store, append([]string{"ls-files", "-z", "--"}, found...)...)
+		if err != nil {
+			return c, err
+		}
+		tracked := map[string]bool{}
+		for _, p := range strings.Split(known, "\x00") {
+			if p != "" {
+				tracked[p] = true
+			}
+		}
+		for _, name := range found {
+			// An add git refuses — the file is ignored, which is what
+			// bd's own `.beads/.gitignore` and the fork protection in
+			// `.git/info/exclude` do to files in this directory — drops
+			// that one path. Failing here instead would be the same
+			// defect one step earlier: one uncommittable file taking the
+			// projection, and the close's whole record, down with it.
+			if !tracked[name] {
+				if _, err := git(store, "add", "--", name); err != nil {
+					c.Dropped = append(c.Dropped, name)
+					continue
+				}
+			}
 			c.Paths = append(c.Paths, name)
 		}
 	}
 	if len(c.Paths) == 0 {
 		c.Skipped = "no issues.jsonl in " + AbbrevHome(store)
+		if len(c.Dropped) > 0 {
+			c.Skipped = AbbrevHome(store) + " holds only " + strings.Join(c.Dropped, " ") + ", which git would not stage"
+		}
 		return c, nil
 	}
 

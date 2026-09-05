@@ -529,3 +529,167 @@ func TestQueueCommitAsksTheQuestionTheCommitWillAsk(t *testing.T) {
 		t.Errorf("the staged entry did not survive the skip: %q", staged)
 	}
 }
+
+// ranger-base-d7ja. `deleted.jsonl` is written by bd the first time a bead
+// is deleted, which can be long after the cutover script's one
+// `git add -A .beads` — so from that moment the launcher names a path git
+// has no index entry for. A pathspec matches nothing then, and git does not
+// skip it: `git commit -m x -- issues.jsonl deleted.jsonl` exits 1 and
+// leaves HEAD alone, so the TRACKED projection beside it does not land
+// either and every close after that reports a launcher failure.
+func TestQueueCommitLandsTheProjectionWhenTheLedgerIsNotTrackedYet(t *testing.T) {
+	repo := qRepo(t)
+	store := filepath.Join(repo, ".beads")
+	a := qApp(t, repo)
+	closeBead(t, store, `{"id":"q-1","title":"closed"}`)
+	// The fixture: on disk, and never added by any hand.
+	write(t, filepath.Join(store, beadsDeleted), `{"id":"q-0","reason":"dupe"}`+"\n")
+	if ls := mustGit(t, repo, "ls-files", "--", ".beads/"+beadsDeleted); ls != "" {
+		t.Fatalf("fixture: the ledger is already tracked, which is not the case under test: %q", ls)
+	}
+
+	c, err := a.CommitQueueJSONL(NewBd(), qWork(t, store), "beads: q-1 closed by developer")
+	if err != nil {
+		t.Fatalf("an untracked ledger beside the projection is not a failure: %v", err)
+	}
+	if c.SHA == "" {
+		t.Fatalf("nothing was committed: %+v", c)
+	}
+	files := mustGit(t, repo, "show", "--name-only", "--format=", "HEAD")
+	if !strings.Contains(files, ".beads/"+beadsJSONL) {
+		t.Errorf("the projection did not reach the commit:\n%s", files)
+	}
+	// …and the ledger came with it rather than being left behind: it is
+	// half the store of record, and the next close would face the same
+	// untracked path otherwise.
+	if !strings.Contains(files, ".beads/"+beadsDeleted) {
+		t.Errorf("the ledger was not staged into the commit:\n%s", files)
+	}
+	if len(c.Dropped) != 0 {
+		t.Errorf("a path git could take was dropped: %+v", c)
+	}
+}
+
+// The add has to happen BEFORE the has-anything-changed question, not
+// after. An untracked file is invisible to `git diff HEAD`, so a close
+// whose only movement is a first deletion reads as "already matches its
+// last commit" — and the ledger never reaches git at all, which is the
+// same lost record by a quieter route.
+func TestQueueCommitCommitsAFirstDeletionWithNoProjectionChange(t *testing.T) {
+	repo := qRepo(t)
+	store := filepath.Join(repo, ".beads")
+	a := qApp(t, repo)
+	// No closeBead: issues.jsonl is byte-identical to its last commit.
+	write(t, filepath.Join(store, beadsDeleted), `{"id":"q-0","reason":"dupe"}`+"\n")
+	if d := mustGit(t, repo, "diff", "HEAD", "--name-only"); d != "" {
+		t.Fatalf("fixture: the tree already differs from HEAD: %q", d)
+	}
+
+	c, err := a.CommitQueueJSONL(NewBd(), qWork(t, store), "beads: q-0 deleted by developer")
+	if err != nil {
+		t.Fatalf("CommitQueueJSONL: %v", err)
+	}
+	if c.SHA == "" {
+		t.Fatalf("the deletion ledger never reached git: %+v", c)
+	}
+	files := mustGit(t, repo, "show", "--name-only", "--format=", "HEAD")
+	if strings.TrimSpace(files) != ".beads/"+beadsDeleted {
+		t.Errorf("the commit must hold the ledger and nothing else:\n%s", files)
+	}
+}
+
+// The other half of "only paths git can commit": a path git will not stage
+// at all. bd's own `.beads/.gitignore` and the fork protection it writes
+// into `.git/info/exclude` both put files in this directory beyond `git
+// add`, and an add that exits 1 there must not take the projection down
+// with it — that is the same defect one step earlier.
+func TestQueueCommitDropsAPathGitWillNotStage(t *testing.T) {
+	repo := qRepo(t)
+	store := filepath.Join(repo, ".beads")
+	a := qApp(t, repo)
+	closeBead(t, store, `{"id":"q-1","title":"closed"}`)
+	write(t, filepath.Join(store, ".gitignore"), beadsDeleted+"\n")
+	write(t, filepath.Join(store, beadsDeleted), `{"id":"q-0","reason":"dupe"}`+"\n")
+
+	c, err := a.CommitQueueJSONL(NewBd(), qWork(t, store), "beads: q-1 closed by developer")
+	if err != nil {
+		t.Fatalf("one unstageable file must not fail the close: %v", err)
+	}
+	if c.SHA == "" {
+		t.Fatalf("the projection did not commit: %+v", c)
+	}
+	files := mustGit(t, repo, "show", "--name-only", "--format=", "HEAD")
+	if strings.TrimSpace(files) != ".beads/"+beadsJSONL {
+		t.Errorf("the commit must hold the projection and nothing else:\n%s", files)
+	}
+	// …and the pass is told what did not make it, or a file silently
+	// missing from the store of record's history is the launcher's word
+	// against nobody's.
+	if strings.Join(c.Dropped, " ") != beadsDeleted {
+		t.Errorf("the drop was not reported: %+v", c)
+	}
+	if note := c.droppedNote(); !strings.Contains(note, beadsDeleted) {
+		t.Errorf("the pass line does not name the dropped path: %q", note)
+	}
+}
+
+// …and when the ONLY thing in the store is a file git will not stage, the
+// skip says so rather than claiming there is no projection there.
+func TestQueueCommitSaysWhichPathGitWouldNotStage(t *testing.T) {
+	repo := qRepo(t)
+	store := filepath.Join(repo, ".beads")
+	a := qApp(t, repo)
+	if err := os.Remove(filepath.Join(store, beadsJSONL)); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(store, ".gitignore"), beadsDeleted+"\n")
+	write(t, filepath.Join(store, beadsDeleted), `{"id":"q-0","reason":"dupe"}`+"\n")
+
+	c, err := a.CommitQueueJSONL(NewBd(), qWork(t, store), "beads: q-0 deleted by developer")
+	if err != nil {
+		t.Fatalf("CommitQueueJSONL: %v", err)
+	}
+	if c.SHA != "" {
+		t.Fatalf("it committed a path git refused to stage: %+v", c)
+	}
+	if !strings.Contains(c.Skipped, beadsDeleted) {
+		t.Errorf("the skip must name the path git would not take, got %q", c.Skipped)
+	}
+}
+
+// …and the pass says it, which is where the operator reads it. A file that
+// is in the store of record and not in its history is a fact nobody else
+// will ever report: bd does not know the launcher dropped it, and the loss
+// census (beadloss.go) reads the history, so it sees an absence it cannot
+// distinguish from a file that was never written.
+func TestDispatchPassNamesAQueuePathItCouldNotStage(t *testing.T) {
+	t.Parallel()
+	b, fake := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+	writePersona(t, b.App, "ranger", "[go]")
+
+	queue := qRepo(t)
+	store := filepath.Join(queue, ".beads")
+	repo := t.TempDir()
+	write(t, filepath.Join(repo, ".beads", beadsRedirect), store+"\n")
+	os.WriteFile(filepath.Join(repo, "fake-ready.json"),
+		[]byte(`[{"id":"a-1","title":"t","labels":["go"]}]`), 0o644)
+	os.WriteFile(filepath.Join(repo, "fake-show.json"),
+		[]byte(`[{"id":"a-1","title":"t","status":"closed","assignee":"ranger"}]`), 0o644)
+	os.WriteFile(b.App.ConfigPath, []byte("beads:\n  - "+repo+"\nqueue_repo: "+queue+"\n"), 0o644)
+	os.WriteFile(filepath.Join(fake, "pane-run-starts-agent"), nil, 0o644)
+	closeBead(t, store, `{"id":"a-1","title":"t","status":"closed"}`)
+	write(t, filepath.Join(store, ".gitignore"), beadsDeleted+"\n")
+	write(t, filepath.Join(store, beadsDeleted), `{"id":"a-0","reason":"dupe"}`+"\n")
+
+	if _, err := d.Run("", "", 0); err != nil {
+		t.Fatal(err)
+	}
+	out := dispatcherOut(d)
+	if !strings.Contains(out, "committed in") {
+		t.Fatalf("one unstageable file failed the whole close:\n%s", out)
+	}
+	if !strings.Contains(out, beadsDeleted) {
+		t.Errorf("the pass did not name the path it left out of the commit:\n%s", out)
+	}
+}

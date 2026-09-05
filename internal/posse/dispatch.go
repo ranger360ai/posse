@@ -4912,7 +4912,7 @@ func (d *Dispatcher) commitQueue(is RepoIssue, persona string) {
 	case err != nil:
 		d.printf("⚠ %-14s the queue jsonl did NOT commit in %s: %v\n", is.ID, AbbrevHome(c.Repo), err)
 	case c.SHA != "":
-		d.printf("⎘ %-14s %s committed in %s (%s)\n", is.ID, strings.Join(c.Paths, " "), AbbrevHome(c.Repo), c.SHA)
+		d.printf("⎘ %-14s %s committed in %s (%s)%s\n", is.ID, strings.Join(c.Paths, " "), AbbrevHome(c.Repo), c.SHA, c.droppedNote())
 	default:
 		d.printf("◑ %-14s no queue commit: %s\n", is.ID, c.Skipped)
 	}
