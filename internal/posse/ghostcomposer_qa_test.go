@@ -4,14 +4,31 @@ package posse
 // SUBMITTED is echoing it, not holding it.
 //
 // ranger-base-wr624 took that reading out of the pulse's delivery path and
-// left the two callers that still act on it — dispatch's --resume skip and
-// govern's G2 row — with one instruction: either a discriminator with a
-// FAILING WRONG ARM, or a written measurement showing those two cannot see
-// the phantom. The measurement said they can (govern carried
+// left the callers that still act on it with one instruction: either a
+// discriminator with a FAILING WRONG ARM, or a written measurement showing
+// they cannot see the phantom.
+//
+// THE MEASUREMENT SAID THEY CAN: govern carried
 // `settled-unsent:ranger-base-176sd` into the coordinator's pulse prompt at
-// 2026-09-05T03:17:06Z), so this is the discriminator, and the arms below
-// are laid out in pairs on purpose: every arm that stops acting has a twin,
-// one field different, that still acts exactly as it did before this bead.
+// 2026-09-05T03:17:06Z. So this is the discriminator, and the arms below are
+// laid out in pairs on purpose: every arm that stops acting has a twin, one
+// field different, that still acts exactly as it did before this bead.
+//
+// THREE CALLERS DECIDE ON THE READING, and wr624's close named two
+// (ranger-base-eaq7n, from ranger-base-f34bo). The census is `grep -rEn
+// 'sessionHolding\(|PaneHolding\(' --include='*.go' internal/posse/ | grep
+// -v _test.go`, run 2026-09-05 — `-E` because the alternation is the point
+// and a BRE `|` is a literal pipe. Past panework.go's own four lines, which
+// are the definition and its internal calls, it names dispatch.go:2796 (the
+// --resume skip), govern.go:599 (the G2 row) and dispatch.go:3465, the
+// settle judgement. The third one was missing from that census and its cost
+// is the heaviest of the three: a settled bead unjudged and a seat
+// unrefilled, where the other two park a re-prompt and nag the coordinator.
+// The fix is at the READING, in PaneHolding, so all three came right
+// together and the escape is the census, not the delivery — what was owed
+// was an arm saying the third one did. cmd/posse/main.go:327 and
+// panework.go's ConfirmSubmitted read the hold and decide nothing, and are
+// correctly out of scope.
 //
 // The mechanism and its measurement are in sentline.go.
 
@@ -239,6 +256,70 @@ func TestQAResumeStillWaitsOnABoxTheStoreDoesNotKnow(t *testing.T) {
 	}
 	if !strings.Contains(out, "UNSENT") || !strings.Contains(out, "commit and close the bead") {
 		t.Fatalf("the pass did not show the operator the prompt that never landed:\n%s", out)
+	}
+}
+
+// settleGhostPass is settleWaitingPass with the store armed: ONE pass over a
+// bead whose holder settled without closing, which is the third decider
+// (dispatch.go:3465) rather than the --resume skip two passes reach. It hands
+// back the output and the repo, so a caller can ask both what was printed and
+// what was written to bd.
+func settleGhostPass(t *testing.T, box string, submitted []string) (string, string) {
+	t.Helper()
+	b, fake := newTestBackend(t)
+	d, _ := settleDispatcher(t, b)
+	writePersona(t, b.App, "ranger", "[go]")
+	repo := settleRepo(t)
+	planConfig(t, b.App, repo, "")
+	idleClaude(t, fake)
+	agentPerLaunch(t, fake)
+	armScreen(t, fake, idleFooter, box)
+	armPaneSession(t, fake, probeSession)
+	armSubmitted(t, b, probeSession, submitted...)
+	if _, err := d.Run("", "", 0); err != nil {
+		t.Fatal(err)
+	}
+	return dispatcherOut(d), repo
+}
+
+// THE BEAD, third decider. A holder that settled with its box echoing the
+// line it last submitted IS judged this pass — the bead is looked at, the
+// settle-open is counted and the seat can be refilled. This is the arm the
+// census that named two callers left unmeasured, and its cost is the largest
+// of the three: the other two park a re-prompt and nag the coordinator, this
+// one holds a settled bead unjudged and a seat unrefilled for as long as the
+// phantom is on screen, which is a reading that cannot go false on its own.
+func TestQASettleJudgesAHolderWhoseBoxEchoesItsLastSubmit(t *testing.T) {
+	t.Parallel()
+	out, repo := settleGhostPass(t, unsentBox, []string{"an older line", unsentText})
+	if strings.Contains(out, "waiting, not judged this pass") {
+		t.Fatalf("a settled bead went unjudged behind a box echoing the line it already sent:\n%s", out)
+	}
+	if !strings.Contains(out, `settled "idle" but issue is "in_progress"`) {
+		t.Fatalf("the pass did not reach the settle-without-close it is about:\n%s", out)
+	}
+	if cs := readComments(t, repo); len(cs) != 1 {
+		t.Fatalf("the pass recorded %d settle-opens, want 1: %v", len(cs), cs)
+	}
+}
+
+// THE WRONG ARM, third decider: the same box, the same single pass, one field
+// different — claude's log says the last thing submitted in this pane was
+// something else — and the bead is still not judged. Without it, "the settle
+// was counted" is also what a pass that never read a composer prints, and
+// TestQASettleWithAnUnsentPromptInTheBoxIsNotASettleOpen (settlewaiting_qa_
+// test.go) is that pass with no store armed at all.
+func TestQASettleStillWaitsOnABoxTheStoreDoesNotKnow(t *testing.T) {
+	t.Parallel()
+	out, repo := settleGhostPass(t, unsentBox, []string{"ok goign to bed"})
+	if !strings.Contains(out, "waiting, not judged this pass") {
+		t.Fatalf("a settle was judged over a prompt nobody has sent:\n%s", out)
+	}
+	if !strings.Contains(out, "UNSENT") || !strings.Contains(out, "commit and close the bead") {
+		t.Fatalf("the pass did not show the operator the prompt that never landed:\n%s", out)
+	}
+	if cs := readComments(t, repo); len(cs) != 0 {
+		t.Fatalf("the pass counted %d settle-open(s) against a prompt that never landed: %v", len(cs), cs)
 	}
 }
 

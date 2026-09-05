@@ -27,6 +27,7 @@ import (
 	"go/token"
 	"go/types"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -58,11 +59,12 @@ func TestQAHintBudgetClearsTheAdapterRetry(t *testing.T) {
 // out in it, so its deadline is the instrument, not patience, and spending
 // hintWait on it would make the test a minute long and measure nothing new.
 // The exemption is by name and the name is checked below — `stormWindow`
-// must be declared under a second, so nobody can grow it back into the
+// must be declared under a second WHEREVER package posse binds it, because
+// that is the scope the name resolves in, so nobody can grow it back into the
 // patience budget this guard exists to forbid.
 func TestQAHintWaitsUseTheNamedBudget(t *testing.T) {
 	t.Parallel()
-	src, err := os.ReadFile("herdrevents_test.go")
+	src, err := os.ReadFile(herdrEventsFile)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,11 +120,82 @@ func TestQAHintWaitsUseTheNamedBudget(t *testing.T) {
 	// Keeping a pattern in step with a name by hand is two rules that have to
 	// agree; reading the value bound to the identifier is one rule, and it is
 	// the exemption's own.
+	//
+	// THE WHOLE PACKAGE and not this one file (ranger-base-eaq7n, escaped
+	// from ranger-base-zt61m via ranger-base-f34bo): the parse read
+	// herdrevents_test.go alone, and the exemption keys on an identifier,
+	// which Go resolves at PACKAGE scope. A `const stormWindow = 1 *
+	// time.Hour` in any sibling file of package posse is what the waits above
+	// then spend, and it was exempt and unmeasured — measured green at
+	// 65bcaad by putting exactly that in a sibling test file, against a
+	// wrong arm (`longStorm`, the same hour under another name) that failed
+	// as it should. It fails CLOSED only when the binding leaves the package
+	// ENTIRELY, because then nothing compiles.
+	//
+	// So the name is reserved PACKAGE-WIDE, which is deliberately wider than
+	// the exemption: a `stormWindow` local to some other test file is not
+	// what herdrevents_test.go's waits resolve to, and it is fenced anyway.
+	// The alternative is resolving each wait to its own binding — go/types
+	// over the whole test package to hold one identifier — and the cheaper
+	// rule is one sentence a reader can hold: in package posse this name
+	// means a window a test counts in, and it is under a second. A binding
+	// that means something else takes another name.
 	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "herdrevents_test.go", src, 0)
+	clause, err := parser.ParseFile(fset, herdrEventsFile, src, parser.PackageClauseOnly)
 	if err != nil {
-		t.Fatalf("parse herdrevents_test.go: %v", err)
+		t.Fatalf("parse %s: %v", herdrEventsFile, err)
 	}
+	pkgName := clause.Name.Name
+	ents, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	decls, read := 0, 0
+	for _, e := range ents {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") {
+			continue
+		}
+		file, err := parser.ParseFile(fset, e.Name(), nil, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", e.Name(), err)
+		}
+		// A file in the external test package (`posse_test`) is a different
+		// scope and its bindings are not what these waits resolve to. There
+		// are none today; fencing them would be a red nobody could act on.
+		if file.Name.Name != pkgName {
+			continue
+		}
+		read++
+		decls += fenceStormWindow(t, fset, file)
+	}
+	// The sibling of the `found < 12` guard above: a census whose file list
+	// came out empty is green for the same reason a scanner with no subject
+	// is, and this one takes its list from a directory read rather than a
+	// literal. The floor is a FLOOR and not a count: package posse is 500
+	// files on 2026-09-05, so this only fires on a fence that has stopped
+	// walking the package — a cwd that is not the package dir, a filter that
+	// stopped matching — and never on ordinary growth or a deletion.
+	if read < 100 {
+		t.Errorf("the fence read only %d file(s) of package %s; it is meant to hold the "+
+			"whole package and has lost its subject", read, pkgName)
+	}
+	if decls == 0 {
+		t.Fatalf("stormWindow is exempted from the named budget but no file of package %s declares it", pkgName)
+	}
+}
+
+// herdrEventsFile is the file the exemption scan above reads. The FENCE below
+// reads the whole package (ranger-base-eaq7n); this name is the scan's
+// subject, not the fence's.
+const herdrEventsFile = "herdrevents_test.go"
+
+// fenceStormWindow holds every binding of the exempt name in one file under a
+// second, and reports how many it found. Every shape Go can bind a name in is
+// answered, and the ones whose value is chosen somewhere this fence does not
+// read are errors rather than skips — the exemption admits the NAME however
+// it is bound, so an unreadable binding is a wait this guard cannot price.
+func fenceStormWindow(t *testing.T, fset *token.FileSet, file *ast.File) int {
+	t.Helper()
 	decls := 0
 	ast.Inspect(file, func(n ast.Node) bool {
 		switch d := n.(type) {
@@ -177,15 +250,17 @@ func TestQAHintWaitsUseTheNamedBudget(t *testing.T) {
 		}
 		return true
 	})
-	if decls == 0 {
-		t.Fatal("stormWindow is exempted from the named budget but herdrevents_test.go does not declare it")
-	}
+	return decls
 }
 
 // stormWindowAt names a line of the file under census, the way the sibling QA
-// tests in this package do.
+// tests in this package do. The file comes off the position and is not a
+// literal: the census is the whole package now, so a message naming
+// herdrevents_test.go would send a reader to the wrong file
+// (ranger-base-eaq7n).
 func stormWindowAt(fset *token.FileSet, p token.Pos) string {
-	return fmt.Sprintf("herdrevents_test.go:%d", fset.Position(p).Line)
+	pos := fset.Position(p)
+	return fmt.Sprintf("%s:%d", filepath.Base(pos.Filename), pos.Line)
 }
 
 // stormWindowUnderASecond holds one binding of the exempt name under a second.

@@ -290,9 +290,26 @@ const EnvWorkspace = "HERDR_WORKSPACE_ID"
 // An unnameable or unrecorded server is NOT self, deliberately — SocketID's
 // own asymmetry, applied one layer up: nothing is proven ours, so nothing is
 // refused. The cost is that a meta written before `socket:` existed keeps
-// the old timeout; the alternative is refusing a relaunch on a comparison
-// this pass could not make, and a refusal nobody can argue with had better
-// be one this pass can prove.
+// the OLD BEHAVIOUR ON BOTH ARMS of the refusal this answers
+// (relaunch.go:125), and the two halves are not priced alike
+// (ranger-base-eaq7n, from ranger-base-f34bo; the paragraph said "the old
+// timeout" until afad67d had already made that the smaller half):
+//
+//   - the landing arm keeps the old timeout — the wait runs to its bound and
+//     then offers a longer one, which is words, not loss;
+//   - `--no-land` keeps a way through to closeRecorded, and that is a LOSS:
+//     the caller dies inside the close call, the session is destroyed, its
+//     name is freed and nothing is left running to recreate it
+//     (scripts/verify-self-close.sh measured exactly that).
+//
+// The trade stands anyway: the alternative is refusing a relaunch on a
+// comparison this pass could not make, and a refusal nobody can argue with
+// had better be one this pass can prove. The population is also empty — every
+// live meta under ~/.config/posse/state/herdr carries `socket:` (measured
+// 2026-09-05, 7 of 7) — so this is what the branch would cost, not what it
+// has cost. What makes it a trade rather than a hole is that a meta only
+// lands here by being older than `socket:`; anything written since names its
+// server and is answered on the comparison.
 //
 // No generation fence (ServerGen), and that is the narrow window this
 // accepts: herdr's allocator is max(live id)+1 recomputed at every server
