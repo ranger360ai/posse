@@ -47,9 +47,47 @@ find_db() {
 	local dir=.beads
 	# One redirect hop, the same as bd 0.49.1 allows (measured: chains are not).
 	if [ -f "$dir/redirect" ]; then
-		dir=$(tr -d '[:space:]' <"$dir/redirect")
+		dir=$(<"$dir/redirect")
+		dir=${dir//[[:space:]]/}
 	fi
 	printf '%s\n' "$dir/beads.db"
+}
+
+# Nothing below decides through a forked matcher (ranger-base-s8b4g,
+# ranger-base-7hx87). A `grep`/`sed`/`tr` that is signalled, that cannot be
+# exec'd under load, or that takes EPIPE answers nothing — and nothing here
+# reads as "no symmetric pair in this db", which is exactly the all-clear
+# --gate exists to withhold. sqlite3 is the measurement and still forks.
+#
+# nonempty_lines <text> — `grep -c .`, counting only lines with a character
+# on them, so the empty string counts 0 rather than 1.
+nonempty_lines() {
+	local line n=0
+	while IFS= read -r line || [ -n "$line" ]; do
+		[ -n "$line" ] && n=$((n + 1))
+	done <<<"$1"
+	printf '%s' "$n"
+}
+
+# indented <text> — `printf '%s\n' "$text" | sed 's/^/  /'`, including its
+# treatment of the empty string as one (indented) empty line. Where the
+# pipeline it replaces read a command's output directly, the caller guards on
+# emptiness instead, because a command that printed nothing gave sed no line
+# to indent.
+indented() {
+	local line
+	while IFS= read -r line || [ -n "$line" ]; do
+		printf '  %s\n' "$line"
+	done <<<"$1"
+}
+
+# has_line <text> <literal> — `grep -Fx`: a whole line equal to <literal>.
+has_line() {
+	local line
+	while IFS= read -r line || [ -n "$line" ]; do
+		[ "$line" = "$2" ] && return 0
+	done <<<"$1"
+	return 1
 }
 
 DB=$(find_db)
@@ -106,10 +144,10 @@ SELECT n FROM unsafe ORDER BY n"
 
 if [ "$GATE" = 1 ]; then
 	cyc=$(q "$CYCLE_NODES_SQL ORDER BY 1")
-	n=$(printf '%s\n' "$cyc" | grep -c . || true)
+	n=$(nonempty_lines "$cyc")
 	if [ "$n" -gt 0 ]; then
 		echo "UNSAFE: $n node(s) sit in a symmetric dependency pair in $DB." >&2
-		printf '%s\n' "$cyc" | sed 's/^/  /' >&2
+		indented "$cyc" >&2
 		echo "  Each pair is a 2-cycle that makes bd 0.49.1's cycle check diverge," >&2
 		echo "  so 'bd dep add' / 'bd create --deps' onto anything upstream of one" >&2
 		echo "  never returns. Prune: scripts/prune-bd-relates-to.sh --apply" >&2
@@ -121,7 +159,8 @@ if [ "$GATE" = 1 ]; then
 fi
 
 if [ -n "$TARGET" ]; then
-	hit=$(q "$UNSAFE_SQL" | grep -Fx -- "$TARGET" || true)
+	hit=
+	if has_line "$(q "$UNSAFE_SQL")" "$TARGET"; then hit=$TARGET; fi
 	if [ -n "$hit" ]; then
 		echo "UNSAFE: $TARGET is a bd 0.49.1 dep-add landmine."
 		echo "  A 2-cycle is reachable from it, so 'bd dep add <x> $TARGET' and"
@@ -137,11 +176,12 @@ pairs=$(q "SELECT count(*) FROM ($CYCLE_NODES_SQL)")
 echo "db: $DB"
 echo
 echo "nodes in a symmetric (2-cycle) dependency pair: $pairs"
-q "$CYCLE_NODES_SQL ORDER BY 1" | sed 's/^/  /'
+cyc_all=$(q "$CYCLE_NODES_SQL ORDER BY 1")
+[ -z "$cyc_all" ] || indented "$cyc_all"
 echo
 unsafe=$(q "$UNSAFE_SQL")
-echo "unsafe as a 'dep add' / '--deps' TARGET: $(printf '%s\n' "$unsafe" | grep -c . || true)"
-printf '%s\n' "$unsafe" | sed 's/^/  /'
+echo "unsafe as a 'dep add' / '--deps' TARGET: $(nonempty_lines "$unsafe")"
+indented "$unsafe"
 echo
 echo "Never dep-add onto one of those. Comment the provenance instead."
 echo "The list grows on its own: an ordinary bead landing upstream of a pair"
