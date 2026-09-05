@@ -376,6 +376,57 @@ func cwCount(t *testing.T, verb string) int {
 	return n
 }
 
+// cwOnlyRepo is the one repo `beads:` names — cwRepo configured it — so a
+// test that files through several episodes can reach the listing cwHold
+// rewrites without carrying the path around.
+func cwOnlyRepo(t *testing.T, a *App) string {
+	t.Helper()
+	dirs := a.BeadsDirs()
+	if len(dirs) != 1 {
+		t.Fatalf("config names %d beads repos, want 1", len(dirs))
+	}
+	return dirs[0]
+}
+
+// cwHold puts a bead in the state a DISPATCHED SEAT leaves it in — status
+// in_progress, assigned — by rewriting the listing the dedupe reads. The
+// fake's own claim state (fakeBdApplyState) rides `ready` and `show`, not
+// `list --label-any`, and this mechanism only ever reads the listing; a
+// fixture that claimed through `bd update` would leave the row ci-watch
+// actually sees untouched and pin nothing.
+//
+// It is the whole fixture for ADR 0013 §4's exception having an EDGE: an
+// unclaimed bead is closed by the harness and a claimed one is not, and only
+// a test that can produce a claimed row can tell those apart.
+func cwHold(t *testing.T, repo, id, assignee string) {
+	t.Helper()
+	path := filepath.Join(repo, "fake-list-labeled.json")
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("cwHold: %v", err)
+	}
+	var list []map[string]any
+	if err := json.Unmarshal(body, &list); err != nil {
+		t.Fatalf("cwHold: %v\n%s", err, body)
+	}
+	hit := false
+	for _, is := range list {
+		if s, _ := is["id"].(string); s == id {
+			is["status"], is["assignee"], hit = "in_progress", assignee, true
+		}
+	}
+	if !hit {
+		t.Fatalf("cwHold: %s is not in the labeled listing:\n%s", id, body)
+	}
+	nb, err := json.Marshal(list)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, nb, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // cwSay is what ci-watch itself said, with the launcher lock's own waiting
 // notice dropped: that line belongs to a lock this package's parallel suite
 // shares, not to the mechanism under test.
@@ -441,9 +492,12 @@ func TestCIWatchPassSpeaksOnlyWhenItActs(t *testing.T) {
 	}
 }
 
-// Green again: the bead is told which run cleared the gate, it is NOT closed
-// (ADR 0013 §4), and nothing is said about it twice.
-func TestCIWatchSaysOnItsOwnBeadWhenTheGateIsGreenAgain(t *testing.T) {
+// Green again on a bead NO SESSION EVER CLAIMED: the bead is told which run
+// cleared the gate and then CLOSED — ADR 0013 §4's one exception, ruled on
+// ranger-base-8fr2j. The comment comes first and is therefore the close
+// comment, which is what the ruling's DONE WHEN asks for: a closed bead with
+// the clearing run on it.
+func TestCIWatchClosesTheBeadNoSessionEverClaimed(t *testing.T) {
 	t.Parallel()
 	b, _ := newTestBackend(t)
 	a := b.App
@@ -459,35 +513,158 @@ func TestCIWatchSaysOnItsOwnBeadWhenTheGateIsGreenAgain(t *testing.T) {
 	if n != 1 {
 		t.Fatalf("close pass acted %d, want 1 (stderr %s)", n, errs)
 	}
-	if !strings.Contains(out, "said on q-1") {
-		t.Errorf("said %q", out)
+	if !strings.Contains(out, "q-1") || !strings.Contains(out, "CLOSED") {
+		t.Errorf("said %q, want the line to name the bead and the close", out)
 	}
-	// ADR 0013 §4: the harness never closes a bead. The green half is a
-	// comment naming the run that cleared the gate, and the persona holding
-	// it closes it — TestNoBdCloseVerbReachableFromDispatch enforces the
-	// reachability rule that says so, and this is its local half.
-	if cwCount(t, "close") != 0 {
-		t.Errorf("ci-watch closed a bead: %v", cwBdCalls(t))
+	if got := cwCount(t, "close"); got != 1 {
+		t.Errorf("%d closes over a bead nobody claimed, want 1: %v", got, cwBdCalls(t))
 	}
+	// The close comment carries the run that cleared the gate — the whole
+	// of what the ruling asks a closed ci-red bead to say.
 	body, _ := os.ReadFile(filepath.Join(repo, "fake-comments.json"))
-	if !strings.Contains(string(body), "0c0607b0") || !strings.Contains(string(body), ciClearedPrefix) {
-		t.Errorf("the clearing comment does not name the run that cleared it: %s", body)
+	for _, want := range []string{ciClearedPrefix, "0c0607b0", "https://x/9", "ranger-base-8fr2j"} {
+		if !strings.Contains(string(body), want) {
+			t.Errorf("the close comment is missing %q: %s", want, body)
+		}
 	}
-	// A second green pass says nothing: the bead already carries the
-	// clearing comment.
+	// And the close really left the store: a second green pass has no bead
+	// to walk, and a NEW red is a NEW bead rather than a comment on a
+	// closed one.
 	if n, out, _ := cwRun(t, a, bd); n != 0 || cwSay(out) != "" {
 		t.Errorf("a second green pass acted %d and said %q", n, cwSay(out))
 	}
-	// A red after that green is a NEW episode and gets its own bead, even
-	// though the cleared one is STILL OPEN — the bead outlives its episode
-	// because the harness cannot close it, so the dedupe has to step over
-	// it or the crew never hears about the second red.
+	a.CIRead = func(CIQuery) CIState { return redState(1) }
+	if n, _, _ := cwRun(t, a, bd); n != 1 {
+		t.Errorf("a red following the closed episode filed %d beads, want 1", n)
+	}
+	if got := cwCount(t, "create"); got != 2 {
+		t.Errorf("%d creates over two episodes, want 2", got)
+	}
+}
+
+// THE EDGE, and the arm the exception lives or dies on: the same red-then-
+// green episode over a bead a SEAT HOLDS leaves it OPEN with the comment.
+//
+// ADR 0013 §4's exception is a bead the harness filed that no session ever
+// claimed; a bead somebody is working is somebody's record, and closing it
+// out from under them is the "harness closes the bead on the agent's behalf"
+// case the section rejects in as many words. Flip the guard in ciHolder and
+// this goes red; the live tree's other half is
+// TestNoBdCloseVerbReachableFromDispatch's arm-2 register.
+func TestCIWatchDoesNotCloseTheBeadASeatHolds(t *testing.T) {
+	t.Parallel()
+	b, _ := newTestBackend(t)
+	a := b.App
+	repo := cwRepo(t, a)
+	a.CIRead = func(CIQuery) CIState { return redState(4) }
+	bd := testBd(t)
+	if n, _, e := cwRun(t, a, bd); n != 1 {
+		t.Fatalf("file: %d (%s)", n, e)
+	}
+	cwHold(t, repo, "q-1", "devops")
+
+	a.CIRead = func(CIQuery) CIState { return greenState() }
+	n, out, errs := cwRun(t, a, bd)
+	if n != 1 {
+		t.Fatalf("clear pass acted %d, want 1 (stderr %s)", n, errs)
+	}
+	if cwCount(t, "close") != 0 {
+		t.Fatalf("ci-watch closed a bead a seat holds: %v", cwBdCalls(t))
+	}
+	if !strings.Contains(out, "said on q-1") || !strings.Contains(out, "devops") {
+		t.Errorf("said %q, want the line to name who it left the close to", out)
+	}
+	body, _ := os.ReadFile(filepath.Join(repo, "fake-comments.json"))
+	for _, want := range []string{ciClearedPrefix, "0c0607b0", "CLOSE IT", "devops is assigned it (in_progress)"} {
+		if !strings.Contains(string(body), want) {
+			t.Errorf("the clearing comment is missing %q: %s", want, body)
+		}
+	}
+	// The bead outlives its episode, so the rest of the shipped contract
+	// still has to hold over it: a second green pass says nothing…
+	if n, out, _ := cwRun(t, a, bd); n != 0 || cwSay(out) != "" {
+		t.Errorf("a second green pass acted %d and said %q", n, cwSay(out))
+	}
+	// …and a red after that green is a NEW episode with its own bead, even
+	// though the cleared one is STILL OPEN — ciAlreadyCleared is what steps
+	// the dedupe over it, and without that the crew never hears the second
+	// red.
 	a.CIRead = func(CIQuery) CIState { return redState(1) }
 	if n, _, _ := cwRun(t, a, bd); n != 1 {
 		t.Errorf("a red following a green filed %d beads, want 1", n)
 	}
 	if got := cwCount(t, "create"); got != 2 {
 		t.Errorf("%d creates over two episodes, want 2", got)
+	}
+}
+
+// The same episode over an in_progress bead with NOBODY ASSIGNED, which is
+// the arm that makes the STATUS half of the guard load-bearing end to end:
+// flip `open.Status != "open"` and the fixture above still fails on the
+// assignee, so this is the one that goes red on the status guard alone.
+//
+// The row is not hypothetical — an in_progress bead nobody is assigned is a
+// shape this store produces (orphanedclaimnarrow_qa_test.go names it) — and
+// the reading is the same either way: a status that is not `open` means a
+// claim happened, and what happened to the assignee afterwards is not this
+// guard's business.
+func TestCIWatchDoesNotCloseAnInProgressBeadNobodyIsAssigned(t *testing.T) {
+	t.Parallel()
+	b, _ := newTestBackend(t)
+	a := b.App
+	repo := cwRepo(t, a)
+	a.CIRead = func(CIQuery) CIState { return redState(4) }
+	bd := testBd(t)
+	if n, _, e := cwRun(t, a, bd); n != 1 {
+		t.Fatalf("file: %d (%s)", n, e)
+	}
+	cwHold(t, repo, "q-1", "")
+
+	a.CIRead = func(CIQuery) CIState { return greenState() }
+	if n, out, errs := cwRun(t, a, bd); n != 1 || !strings.Contains(out, "in_progress") {
+		t.Fatalf("clear pass acted %d and said %q (%s), want the line to name the status it stopped on", n, out, errs)
+	}
+	if cwCount(t, "close") != 0 {
+		t.Errorf("ci-watch closed an in_progress bead: %v", cwBdCalls(t))
+	}
+	body, _ := os.ReadFile(filepath.Join(repo, "fake-comments.json"))
+	if !strings.Contains(string(body), "CLOSE IT") {
+		t.Errorf("the clearing comment does not ask the seat to close it: %s", body)
+	}
+}
+
+// ciHolder's four corners, because the end-to-end pins above drive two of
+// them and a guard is only as narrow as its edges. The claim (ranger-base-
+// 8fr2j) is "status still open, never in_progress", and the row carries two
+// fields that answer it: Bd.Claim sets BOTH, so either one alone is enough
+// to say a bead is somebody's.
+//
+// The unassigned in_progress row is the corner that kills the mutant of the
+// STATUS test on its own, and the assigned open row kills the mutant of the
+// ASSIGNEE test on its own — without both, one guard could be deleted and
+// every other arm here would stay green.
+func TestCIHolderIsReadOffTheBead(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name   string
+		is     BdIssue
+		closes bool
+	}{
+		{"open and unassigned: nobody was ever dispatched onto it", BdIssue{Status: "open"}, true},
+		{"in_progress and assigned: a seat holds it", BdIssue{Status: "in_progress", Assignee: "devops"}, false},
+		{"in_progress with nobody assigned: a claim happened", BdIssue{Status: "in_progress"}, false},
+		{"open but assigned: the operator routed it to somebody", BdIssue{Status: "open", Assignee: "developer"}, false},
+		{"blocked: not a status this exception knows", BdIssue{Status: "blocked"}, false},
+		{"deferred: an answer somebody already gave", BdIssue{Status: "deferred"}, false},
+		{"a status bd does not have today: errs toward the seat", BdIssue{Status: "parked"}, false},
+	} {
+		held := ciHolder(tc.is)
+		if (held == "") != tc.closes {
+			t.Errorf("%s: ciHolder(%+v) = %q, want closable=%v", tc.name, tc.is, held, tc.closes)
+		}
+		if !tc.closes && !strings.Contains(held, tc.is.Status) && !strings.Contains(held, tc.is.Assignee) {
+			t.Errorf("%s: the reason %q names neither the status nor the holder, so the bead and stdout cannot say why the close was left to a seat", tc.name, held)
+		}
 	}
 }
 
@@ -1009,16 +1186,23 @@ func TestCIWatchGreenPassDoesNotWalkEveryClearedBead(t *testing.T) {
 	a := b.App
 	cwRepo(t, a)
 	bd := testBd(t)
-	// Three episodes, each cleared and none closed.
+	// Three episodes, each cleared and none closed — which since
+	// ranger-base-4gy4i means each one CLAIMED before its gate went green:
+	// the harness closes the bead nobody claimed, so the pile this walk is
+	// about is the pile of beads seats hold.
 	for i := 0; i < 3; i++ {
 		a.CIRead = func(CIQuery) CIState { return redState(1) }
 		if n, _, e := cwRun(t, a, bd); n != 1 {
 			t.Fatalf("episode %d file: %d (%s)", i, n, e)
 		}
+		cwHold(t, cwOnlyRepo(t, a), "q-"+strconv.Itoa(i+1), "devops")
 		a.CIRead = func(CIQuery) CIState { return greenState() }
 		if n, _, e := cwRun(t, a, bd); n != 1 {
 			t.Fatalf("episode %d clear: %d (%s)", i, n, e)
 		}
+	}
+	if got := cwCount(t, "close"); got != 0 {
+		t.Fatalf("%d closes over three beads seats hold, want 0", got)
 	}
 	if got := cwCount(t, "create"); got != 3 {
 		t.Fatalf("%d beads over three episodes, want 3", got)

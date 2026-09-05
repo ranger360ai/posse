@@ -71,14 +71,17 @@ eight comments and not 191. When the next verdict-bearing run on the branch
 is a success, the bead is told which run cleared the gate — including when
 the fix landed under some other bead entirely.
 
-**It does not close the bead**, and that is ADR 0013 §4 rather than an
-omission: the harness never closes on a persona's behalf, and the tree
-enforces it by reachability. So a self-healing red leaves a bead carrying a
-"the gate is green, close this" comment for whoever picks it up — six of the
-seven episodes measured above would have been that. Whether §4 should admit a
-narrow exception for a bead the harness itself filed about a condition is
-asked rather than assumed. A cleared bead does not suppress the next red: the
-dedupe reads that comment back and steps over it.
+**It closes that bead only if nobody ever claimed it** — status still `open`,
+no assignee. That is the one exception ADR 0013 §4 admits, ruled by the
+operator rather than assumed here: a bead nothing was ever dispatched onto
+grades nobody's record, which is the harm the section names. Six of the seven
+episodes measured above self-healed, and each of those would otherwise have
+been a dispatched session that reads one comment and closes — about six a
+week. The moment a seat claims the bead the close is the seat's again: the
+green half is then the comment it always was, naming the run that cleared the
+gate and saying to close it, and the harness leaves it alone. A cleared bead
+somebody holds does not suppress the next red either — the dedupe reads that
+comment back and steps over it.
 
 It abstains wherever it cannot read, and never renders as green. A repo that
 has **no gate** — not a git checkout, no such workflow file, no `github.com`

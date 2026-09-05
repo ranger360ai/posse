@@ -14,7 +14,9 @@ package posse
 //      reads here as its role (ADR 0012 D2): this is not "the harness closes
 //      the bead." The bead is the store of record and the harness is not its
 //      writer, so no close verb of the Bd API is reachable from the dispatch
-//      path.
+//      path except through a caller a REGISTER names (one row since
+//      2026-09-05: ci-watch closing the bead it filed that no session ever
+//      claimed, ADR 0013 §4's one ruled exception — ranger-base-8fr2j).
 //
 // A grep is a measurement of one afternoon. Each of these is the same
 // measurement wired to the build, so the day somebody adds the sixth site
@@ -847,16 +849,26 @@ func TestShadowPredicateCensusCatchesEachShape(t *testing.T) {
 //
 // The claim, in three arms:
 //
-//  1. the close verbs of the Bd API are called from exactly one place in the
-//     tree, and it is the operator's `posse done` in cmd/posse/main.go;
+//  1. every call to a close verb of the Bd API is in the caller register —
+//     the operator's `posse done` in cmd/posse/main.go, and ci-watch's
+//     green half;
 //  2. no function reachable from the dispatch path contains one of those
-//     calls;
+//     calls, and no close verb is reachable from it, except through a
+//     caller ARM 2'S OWN register names;
 //  3. no code outside beads.go builds a bd argv with a close verb in it —
 //     the escape hatch around the Bd API entirely.
 //
 // Arm 2's positive control is what makes it evidence: the same graph, from
 // the same roots, DOES reach `Bd.Claim` and `Bd.Comment`. A traversal that
 // reached no Bd verb at all would report the same green over any code.
+//
+// ARM 2 HAS A REGISTER SINCE 2026-09-05 and it is the same shape arm 1's is:
+// a file, a function and a sentence saying why that caller is not the
+// agent's-behalf case §4 rejects. The exception is the operator's ruling on
+// ranger-base-8fr2j, not this file's reading — and the verb half of the arm
+// cuts the registered caller's close edge before it asks its question, so
+// "a close verb is reachable" keeps meaning "by a route nobody wrote a
+// sentence for" rather than going quiet the day the first row landed.
 
 // arGraph is a name-keyed call graph over the parsed tree. Method calls whose
 // receiver the source names as a `Bd` resolve to `Bd.<method>`; every other
@@ -1079,6 +1091,61 @@ func arIsBdExpr(e ast.Expr, local, fields, funcs, methods map[string]bool) bool 
 	return false
 }
 
+// arReachCut is reach with ONE kind of edge removed: the edge from a
+// registered caller (arCloseReachAllowed) to a close verb. Everything else
+// is followed, including every other edge out of that same caller.
+//
+// It is what keeps arm 2's verb assertion meaning what it meant before the
+// register existed. Plain reachability answers "is a close verb reachable
+// from the dispatch path", and once ONE pardoned caller is on that path the
+// answer is yes forever — so the assertion would go quiet over a second,
+// unregistered closer added next door. With the pardoned edges cut, a
+// reachable close verb again means "reachable by a route nobody wrote a
+// sentence for", which is the claim §4 actually makes.
+//
+// A ROW THAT NAMES THE WRONG FILE CUTS NOTHING: the caller is matched by
+// node key AND by the file the node was parsed from, so a stale row cannot
+// silently pardon a same-named function somewhere else.
+func (g *arGraph) reachCut(roots []string, cut map[string]bool, verbs []string) map[string]bool {
+	isVerb := map[string]bool{}
+	for _, v := range verbs {
+		isVerb[v] = true
+	}
+	seen := map[string]bool{}
+	var walk func(string)
+	walk = func(k string) {
+		if seen[k] {
+			return
+		}
+		seen[k] = true
+		for next := range g.edges[k] {
+			if cut[k] && isVerb[next] {
+				continue
+			}
+			walk(next)
+		}
+	}
+	for _, r := range roots {
+		walk(r)
+	}
+	return seen
+}
+
+// arCutKeys is the set of function keys a register pardons, resolved against
+// the tree that was parsed: a row whose file does not hold a declaration of
+// that name pardons nothing, and arm 2's stale half is what says so out loud.
+func arCutKeys(g *arGraph, allow []arCloseCallerAllow) map[string]bool {
+	cut := map[string]bool{}
+	for _, a := range allow {
+		for _, nd := range g.nodes[a.fn] {
+			if strings.HasSuffix(nd.rel, a.file) {
+				cut[a.fn] = true
+			}
+		}
+	}
+	return cut
+}
+
 // arReach is the transitive closure from roots.
 func (g *arGraph) reach(roots []string) map[string]bool {
 	seen := map[string]bool{}
@@ -1249,11 +1316,36 @@ func arRawBdClose(fset *token.FileSet, files []arFile) []string {
 // somebody writes the sentence.
 type arCloseCallerAllow struct{ file, fn, why string }
 
-// The register, measured 2026-09-01. One row.
+// The register, measured 2026-09-01, re-measured 2026-09-04. Two rows.
 var arCloseCallerAllowed = []arCloseCallerAllow{
 	{
 		file: "posse/main.go", fn: "main",
 		why: "`posse done <id> [--as <persona>]` — the operator verb, in the command switch a human types at. It sits ABOVE the dispatch path, not on it: no Dispatcher method reaches main, which is what arm 2 measures.",
+	},
+	{
+		file: "posse/ciwatch.go", fn: "App.ciClear",
+		why: "ci-watch's green half (ranger-base-4gy4i). It IS on the dispatch path, which is arm 2's question and not this arm's — arCloseReachAllowed carries the sentence about why §4 admits it. Here it is simply the second caller in the tree, and it is written down.",
+	},
+}
+
+// arCloseReachAllowed is ARM 2's register, and it is the same type and the
+// same grader as arm 1's over a different question: arm 1 asks who calls a
+// close verb anywhere in the tree, this asks who calls one from a function
+// the DISPATCH PATH REACHES. §4's prohibition is a reachability claim, so
+// the exception to it needs a reachability register; a row here is a
+// sentence saying why this caller is not the "harness closes the bead on the
+// agent's behalf" case the section rejects.
+//
+// The register, measured 2026-09-04. One row.
+//
+// Adding a second is the point of the shape: a harness close that nobody
+// wrote a sentence for does not compile green, and a row that stops matching
+// a real call site is as loud as an unregistered one — otherwise this decays
+// into a permanent pardon for a call that moved.
+var arCloseReachAllowed = []arCloseCallerAllow{
+	{
+		file: "posse/ciwatch.go", fn: "App.ciClear",
+		why: "ci-watch closing the bead IT FILED that NO SESSION EVER CLAIMED — status still `open`, no assignee (ciwatch.go, ciHolder). OPERATOR RULING ranger-base-8fr2j, 2026-09-05: this is the one exception ADR 0013 §4 admits, and it is not the agent's-behalf case the section rejects, because there is no agent. §4's harm is a record graded by the thing that writes it — settle-without-close made unobservable — and a bead nothing was ever dispatched onto grades nobody: no session's settle is measured by it, no persona's close count moves. The guard is read off the bead rather than remembered, and every other shape (in_progress, assigned, blocked, deferred) keeps the shipped behaviour: a comment saying CLOSE IT, and the close left to the seat. Measured cost this removes: 7 red episodes in 6.6 days on ci.yml's own history, 6 of them self-healed — ~6 dispatched sessions a week spent closing beads nobody worked (ranger-base-x9e34).",
 	},
 }
 
@@ -1332,16 +1424,40 @@ func TestNoBdCloseVerbReachableFromDispatch(t *testing.T) {
 			t.Fatalf("the dispatch traversal does not reach %s. A pass that neither claims nor comments is not this harness — the graph is broken, and its silence about the close verb is the graph's, not the code's.", want)
 		}
 	}
+	// The verb half, with the registered callers' close edges cut: a close
+	// verb still reachable is one reachable by a route nobody wrote a
+	// sentence for.
+	cut := arCutKeys(g, arCloseReachAllowed)
+	if len(cut) != len(arCloseReachAllowed) {
+		t.Errorf("arCloseReachAllowed has %d row(s) and %d of them resolved to a function in the file they name — a row that resolves to nothing pardons nothing, and the assertions below are then measuring a register that is not there", len(arCloseReachAllowed), len(cut))
+	}
+	unpardoned := g.reachCut(roots, cut, verbs)
 	for _, v := range verbs {
-		if seen[v] {
-			t.Errorf("%s is reachable from the dispatch path. ADR 0013 §4: the bead is the store of record and the runtime is not — a pass that can close a bead makes settle-without-close unobservable, and the record grade it hands each runtime is then a grade of itself.", v)
+		if unpardoned[v] {
+			t.Errorf("%s is reachable from the dispatch path by a route no arCloseReachAllowed row names. ADR 0013 §4: the bead is the store of record and the runtime is not — a pass that can close a bead makes settle-without-close unobservable, and the record grade it hands each runtime is then a grade of itself. The one ruled exception (ranger-base-8fr2j) is a bead the HARNESS filed that NO SESSION EVER CLAIMED; if this route is another one, it needs the row that says whose record it does not grade.", v)
 		}
 	}
-	// And the site itself must not sit in a reachable function.
+	// And the sites that sit in a reachable function, graded against arm 2's
+	// own register — the same grader as arm 1, over the reachable subset.
+	var onPath []arCallSite
 	for _, s := range sites {
 		if seen[s.in] {
-			t.Errorf("%s sits in %s, which the dispatch path reaches", s.where, s.in)
+			onPath = append(onPath, s)
 		}
+	}
+	t.Logf("Bd close call sites the dispatch path reaches: %v", onPath)
+	reachUnreg, reachStale := arCloseCallerGrade(onPath, arCloseReachAllowed)
+	for _, s := range reachUnreg {
+		t.Errorf("%s sits in %s, which the dispatch path reaches, and is not in arCloseReachAllowed.\n"+
+			"ADR 0013 §4 rejects the harness closing a bead on the agent's behalf; its one\n"+
+			"exception (ranger-base-8fr2j) is a bead the harness itself filed that no session\n"+
+			"ever claimed. If this caller is that case, add the row saying so — who filed the\n"+
+			"bead, how the caller knows nobody claimed it, and whose record it therefore does\n"+
+			"not grade.", s.where, s.in)
+	}
+	for _, i := range reachStale {
+		a := arCloseReachAllowed[i]
+		t.Errorf("arCloseReachAllowed row %s %q matched no reachable call site. Either the caller left the dispatch path — in which case the exception is over and the row goes with it — or it moved and the row must be repointed; a register pardoning a call nobody can find is how this pin goes quiet.", a.file, a.fn)
 	}
 
 	// Arm 3 — the escape hatch.
@@ -1416,12 +1532,41 @@ func main() {
 `,
 }
 
-// arDispatchGrade runs every arm of pin 3 over a tree.
+// arDispatchGrade runs every arm of pin 3 over a tree. The graph and its
+// roots ride along so the register arms below can re-ask arm 2's question
+// with a register of their own — a register that pardons nothing is the only
+// way to show that the live one pardons something.
 type arDispatchResult struct {
 	verbs []string
 	sites []arCallSite
 	seen  map[string]bool
 	raw   []string
+	g     *arGraph
+	roots []string
+}
+
+// onPath is the call sites arm 2 grades: the ones in a function the dispatch
+// path reaches.
+func (r arDispatchResult) onPath() []arCallSite {
+	var out []arCallSite
+	for _, s := range r.sites {
+		if r.seen[s.in] {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// pardoned is arm 2's verb half under an arbitrary register: whether a close
+// verb is still reachable once that register's callers' close edges are cut.
+func (r arDispatchResult) pardoned(allow []arCloseCallerAllow) bool {
+	left := r.g.reachCut(r.roots, arCutKeys(r.g, allow), r.verbs)
+	for _, v := range r.verbs {
+		if left[v] {
+			return false
+		}
+	}
+	return true
 }
 
 func arDispatchGrade(t *testing.T, root string) arDispatchResult {
@@ -1429,11 +1574,14 @@ func arDispatchGrade(t *testing.T, root string) arDispatchResult {
 	fset, files := arParse(t, root, arRoots)
 	g := arBuildGraph(files)
 	verbs := arCloseVerbs(g)
+	roots := arDispatchRoots(g)
 	return arDispatchResult{
 		verbs: verbs,
 		sites: arCallSites(fset, files, g, verbs),
-		seen:  g.reach(arDispatchRoots(g)),
+		seen:  g.reach(roots),
 		raw:   arRawBdClose(fset, files),
+		g:     g,
+		roots: roots,
 	}
 }
 
@@ -1511,6 +1659,59 @@ func nudge(b Bd, dir, id, actor string) { _, _ = b.run(dir, bdArgs(actor, "close
 `))
 		if len(got.raw) != 1 {
 			t.Errorf("planted a bd close argv outside beads.go and arm 3 reported %v — the escape hatch around arms 1 and 2 is unwatched", got.raw)
+		}
+	})
+
+	// ─── arm 2's register, both ways ─────────────────────────────────────
+	//
+	// The live green above says "the one reachable closer is the one row
+	// names it". These say the register is what made that green: the same
+	// planted closer, graded against four registers, is pardoned by exactly
+	// the one that names it in the file it is in.
+	t.Run("arm 2's register pardons the caller it names", func(t *testing.T) {
+		got := arDispatchGrade(t, plant("internal/posse/settleopen.go", `package posse
+
+func (d *Dispatcher) autoClose(dir string) error { return d.Bd.Close(dir, "x-1", "harness") }
+`))
+		if len(got.onPath()) != 1 {
+			t.Fatalf("the planted closer sits in %v on the dispatch path, want exactly one site — the arms below would then grade nothing", got.onPath())
+		}
+		row := []arCloseCallerAllow{{file: "posse/settleopen.go", fn: "Dispatcher.autoClose", why: "planted"}}
+
+		// Pardoned: no unregistered site, no stale row, no reachable verb.
+		if un, stale := arCloseCallerGrade(got.onPath(), row); len(un) != 0 || len(stale) != 0 {
+			t.Errorf("a row over the reachable closer graded unregistered=%v stale=%v, want both empty — arm 2's register cannot pardon anything, so the live green means only that nothing closes at all", un, stale)
+		}
+		if !got.pardoned(row) {
+			t.Errorf("the close verb is still reachable with the registered caller's close edge cut — the cut does not reach the edge it names, so the live arm is green for a reason the register did not buy")
+		}
+
+		// Unpardoned: the empty register is the shipped rule, and it must
+		// still be loud.
+		if un, _ := arCloseCallerGrade(got.onPath(), nil); len(un) != 1 {
+			t.Errorf("with no register the planted closer graded %v unregistered, want 1 — arm 2 pardons by default and grades nobody", un)
+		}
+		if got.pardoned(nil) {
+			t.Errorf("with no register the close verb read as unreachable from the dispatch path — the verb half is blind, and every unregistered closer would ride in behind the live row")
+		}
+
+		// A row naming the right function in the WRONG file pardons
+		// nothing: this is the register decaying into a name match, which
+		// is how one pardoned closer would cover a same-named one next door.
+		wrongFile := []arCloseCallerAllow{{file: "posse/reap.go", fn: "Dispatcher.autoClose", why: "planted, wrong file"}}
+		if got.pardoned(wrongFile) {
+			t.Errorf("a row naming %s in a file that does not declare it still cut the close edge — the register pardons by name alone", wrongFile[0].fn)
+		}
+		if un, stale := arCloseCallerGrade(got.onPath(), wrongFile); len(un) != 1 || len(stale) != 1 {
+			t.Errorf("a wrong-file row graded unregistered=%v stale=%v, want one of each", un, stale)
+		}
+
+		// And a row over a caller that is not there at all is stale, arm
+		// 1's rule: a register that outlives its site is a dated snapshot
+		// wearing a test's clothes.
+		gone := []arCloseCallerAllow{{file: "posse/gone.go", fn: "Dispatcher.retired", why: "planted, retired"}}
+		if _, stale := arCloseCallerGrade(got.onPath(), gone); len(stale) != 1 {
+			t.Errorf("a row over a caller that does not exist graded stale=%v, want one", stale)
 		}
 	})
 

@@ -151,7 +151,7 @@ indistinguishable from green, which is the failure this whole file is about.
 Both arms are pinned; either alone passes over a mechanism that is uniformly
 silent or uniformly loud.
 
-## What did not ship: the close
+## What did not ship then, and shipped under ranger-base-4gy4i
 
 `ranger-base-x9e34`'s DONE WHEN asks for a bead **closed** when main is green
 again. ADR 0013 §4 rejects "harness closes the bead on the agent's behalf" in
@@ -182,6 +182,20 @@ is graded by a bead nobody claimed, which is the harm §4 names — is asked in
 need. It is deliberately NOT a blocker on this bead: the filing half is the
 whole of "nothing tells the crew", and it shipped.
 
+**RULED (Dave, 2026-09-05, on `ranger-base-8fr2j`): candidate (b).** ADR 0013
+§4 admits one narrow exception — the harness may close a bead **it filed**
+that **no session ever claimed** (status still `open`, no assignee). Built
+under `ranger-base-4gy4i`: `ciHolder` is the predicate, read off the bead
+rather than remembered; the clearing comment is written FIRST and is
+therefore the close comment, so a closed ci-red bead names the run that
+answered it and a close that fails leaves exactly the state described above.
+A bead a seat holds keeps every word of this section: the comment, the CLOSE
+IT, and the close left to the seat. `absencerules_qa_test.go` grew arm 2's
+own register — one row, `App.ciClear`, the same shape arm 1 has — and the
+verb half of that arm now cuts the registered caller's close edge before it
+asks, so a second, unregistered closer is still red. The measured saving is
+the six self-healed episodes above: ~6 dispatched sessions a week.
+
 ## Verification
 
 - **Live, against the real gate.** `ReadCI` against `ranger360ai/posse` on
@@ -192,9 +206,10 @@ whole of "nothing tells the crew", and it shipped.
   (`RHQ_LIVE_BD=1`): a throwaway `bd init` store and a real `gh`-shaped child
   serving a runs file the test rewrites. Green → nothing; red → one bead;
   four more red passes → still one bead and nothing said; streak 1→3 → one
-  comment, and a second pass at the same streak → none; green → the clearing
-  comment, and the bead NOT closed; a persona's `bd close` → the dedupe steps
-  over it; a second red → its own new bead. It has been red for a real
+  comment, and a second pass at the same streak → none; green over a bead a
+  seat holds → the clearing comment and NO close; a second red → its own new
+  bead; green over a bead nobody claimed → the clearing comment and the
+  harness's own close, after which the dedupe steps over it. It has been red for a real
   product defect once — `ciOpenBead` trusting bd's query to drop closed rows
   — which is what makes its green mean anything.
 - **The full suite, twice.** The first run is what found both of the design

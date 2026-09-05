@@ -341,6 +341,17 @@ the runtime does not write the store.
   so a skip is retried, not parked behind a busy key. This is not
   "monica closes the bead."
 
+**One exception (RULED by the operator 2026-09-05, ranger-base-8fr2j;
+built under ranger-base-4gy4i).** The harness may close a bead **it
+filed** that **no session ever claimed** — status still `open`, no
+assignee — because a bead nothing was ever dispatched onto grades
+nobody's record, which is the harm this section names; a bead a seat
+holds stays the seat's, and the close stays the persona's everywhere
+else. The only caller is ci-watch's green half (`ciwatch.go`,
+`ciHolder`), and it is registered by name in the arm-2 register of
+`absencerules_qa_test.go` so that a second one has to be written down
+before it compiles green.
+
 **Reachability (added 2026-08-27, ranger-base-hxhb).** The record
 stage has two inputs, not one. `record:` grades the runtime's
 *willingness* to write the store; the **cage** decides its
@@ -671,7 +682,9 @@ row).
 - **Harness closes the bead on the agent's behalf.** Hides the defect
   and puts a human (or a heuristic) in the loop dispatch exists to
   replace. Resume-until-record is the harness's job; `bd close` is the
-  persona's.
+  persona's. (Narrowed 2026-09-05 by the §4 exception above: a bead the
+  harness filed that no session ever claimed is on no agent's behalf,
+  and closing it hides no defect — ranger-base-8fr2j.)
 - **Silence `AGENTS.md` by writing a session copy.** The session cwd
   *is* the repo. That file is the operator's. A competing rulebook is
   declared and probed, not overwritten.

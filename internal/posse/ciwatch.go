@@ -85,32 +85,48 @@ package posse
 // than kept in this process, because a launcher restart is the ordinary case
 // here: the incident outlived several.
 //
-// IT DOES NOT CLOSE THE BEAD, and that is not an omission. ADR 0013 §4
-// rejects "harness closes the bead on the agent's behalf" in as many words —
-// "resume-until-record is the harness's job; `bd close` is the persona's" —
-// and absencerules_qa_test.go's TestNoBdCloseVerbReachableFromDispatch
-// enforces it by reachability: no Bd close verb may be reachable from a
-// Dispatcher method at all, with no register to add a row to. The first cut
-// of this file closed on green and that pin caught it.
+// IT CLOSES ONE BEAD AND ONLY ONE: the bead IT FILED that NO SESSION EVER
+// CLAIMED. That is the single exception ADR 0013 §4 admits, and it is a
+// RULING (ranger-base-8fr2j, 2026-09-05) rather than this file's reading of
+// the section. §4 rejects "harness closes the bead on the agent's behalf" in
+// as many words — "resume-until-record is the harness's job; `bd close` is
+// the persona's" — and the harm it names is a record graded by the thing
+// that writes it. A bead nobody was ever dispatched onto grades nobody, so
+// closing it hides no defect and replaces no human in a loop: there is no
+// agent here whose behalf this could be on.
 //
-// So the green half is a COMMENT naming the run that cleared the gate, and
-// the persona holding the bead closes it — which is a minute's work with the
-// comment in front of them, and is what §4 says the close is FOR. The cost
-// is real and named on the bead (ranger-base-x9e34): a self-healing red
-// leaves a bead somebody has to close. Whether §4 admits a narrow exception
-// for a bead the HARNESS ITSELF filed about a CONDITION — nobody's record is
-// graded by it while it is unclaimed — is the operator's ruling and not this
-// file's. It is asked in ranger-base-8fr2j, with the three candidate rulings
-// and what each would need, rather than assumed here.
+// The predicate is ciHolder, and it is read off the bead rather than
+// remembered: status still `open` AND no assignee. Anything else — a seat
+// holding it in_progress, a bead the operator routed by assignee, a blocked
+// or deferred one — is somebody's, and stays somebody's; the green half for
+// those is the comment that shipped first (ranger-base-x9e34) saying CLOSE
+// IT and why the harness did not. The guard errs toward NOT closing on every
+// shape it does not recognise, which is the direction that costs a minute
+// rather than a record.
 //
-// A cleared bead must not suppress the NEXT red, so ciAlreadyCleared reads
-// that comment back and the dedupe steps over it. One bead per episode still
-// holds; what changes is that an episode's bead outlives its episode.
+// The one shape the row cannot show is a bead that WAS claimed and was put
+// back (Bd.Unclaim: status open, assignee cleared). That is rangerhq-81d's
+// case — dispatch claimed on a persona's behalf and the prompt never reached
+// the agent — so no session ever worked it either, and the observable and
+// the ruling agree there rather than merely coinciding.
 //
-// A READING AND TWO WRITES, and no more: it files and it comments. It never
-// reruns a workflow, never pushes, never closes, never touches the gate
-// itself. Whoever fixes CI is a dispatched seat with a bead, which is the
-// point.
+// absencerules_qa_test.go's TestNoBdCloseVerbReachableFromDispatch is what
+// makes this narrow rather than merely stated: the first cut of this file
+// closed on green and that pin caught it, when there was no register to add
+// a row to. There is one now — arm 1's caller register and arm 2's
+// reachability register, one row each, naming ciClear and why it is not the
+// agent's-behalf case. A second harness close has to be written down before
+// it compiles green.
+//
+// A cleared bead that ci-watch did NOT close must not suppress the NEXT red,
+// so ciAlreadyCleared reads that comment back and the dedupe steps over it.
+// One bead per episode still holds; what changes for a held bead is that it
+// outlives its episode.
+//
+// A READING AND THREE WRITES, and no more: it files, it comments, and it
+// closes the bead nobody claimed. It never reruns a workflow, never pushes,
+// never touches the gate itself, and never closes a bead a seat holds.
+// Whoever fixes CI is a dispatched seat with a bead, which is the point.
 
 import (
 	"context"
@@ -167,9 +183,12 @@ const (
 
 	// ciClearedPrefix opens the comment ci-watch writes when the gate goes
 	// green, and is read back by ciAlreadyCleared. It carries the whole of
-	// the green half's state: the bead stays OPEN (ADR 0013 §4, the file
-	// header), so without this the cleared bead would go on matching the
-	// dedupe and the NEXT red would never be filed.
+	// the green half's state for a bead the harness may NOT close — one a
+	// seat holds (ciHolder) stays open, so without this the cleared bead
+	// would go on matching the dedupe and the NEXT red would never be filed.
+	// On the bead it does close, the same comment is the close comment: it
+	// is written first and names the run that cleared the gate, so a closed
+	// ci-red bead says which run answered it.
 	ciClearedPrefix = "ci-red cleared: "
 
 	// ciStreakPrefix is the machine-readable half of the streak, written
@@ -473,7 +492,7 @@ func (s CIState) Description() string {
 	fmt.Fprintf(&b, "  %s %s  %s  %s\n\n", since, s.Since.Short(), s.Since.Created.UTC().Format(time.RFC3339), s.Since.URL)
 	fmt.Fprintf(&b, "Reproduce:\n\n  gh run list --repo %s --workflow=%s --branch %s --limit %d --json conclusion,status,createdAt,headSha,url\n  gh run view %s --repo %s --log-failed\n\n",
 		s.Slug, s.Workflow, s.Branch, ciScanLimit, s.Latest.Short(), s.Slug)
-	b.WriteString("DONE WHEN: " + s.Workflow + " is green on " + s.Branch + " again. Filed by the dispatch pass (ci-watch, ranger-base-x9e34), which will COMMENT here naming the run that clears the gate — including where the fix lands under some other bead — but will not close this: ADR 0013 §4 makes the close the persona's. So if you find that comment already here, the work is done and closing this bead is the whole of what is left.\n")
+	b.WriteString("DONE WHEN: " + s.Workflow + " is green on " + s.Branch + " again. Filed by the dispatch pass (ci-watch, ranger-base-x9e34), which will COMMENT here naming the run that clears the gate — including where the fix lands under some other bead. If NOBODY HAS CLAIMED this bead by then it closes it too, which is the one exception ADR 0013 §4 admits (ranger-base-8fr2j): nobody's record is graded by a bead nobody was dispatched onto. Once you claim it the close is yours again, and finding that comment already here means the work is done and closing this bead is the whole of what is left.\n")
 	return b.String()
 }
 
@@ -509,9 +528,17 @@ func (s CIState) RedLine(id string) string {
 	return fmt.Sprintf("ci red · %s %s on %s · %s · filed %s", s.Slug, s.Workflow, s.Branch, s.streakLine(), id)
 }
 
-func (s CIState) GreenLine(id string) string {
-	return fmt.Sprintf("ci green · %s %s on %s · %s at %s · said on %s, which is now somebody's to close (ADR 0013 §4)",
-		s.Slug, s.Workflow, s.Branch, s.Latest.Short(), s.Latest.Created.UTC().Format(time.RFC3339), id)
+// GreenLine's two shapes are the two outcomes of one pass, and the line says
+// which one happened: held is ciHolder's answer, so an empty one means the
+// harness closed the bead itself under §4's exception and a non-empty one
+// names who it left it to.
+func (s CIState) GreenLine(id, held string) string {
+	what := "said on " + id + " and CLOSED it — no session ever claimed it (ADR 0013 §4's one exception, ranger-base-8fr2j)"
+	if held != "" {
+		what = "said on " + id + ", which is now somebody's to close (ADR 0013 §4: " + held + ")"
+	}
+	return fmt.Sprintf("ci green · %s %s on %s · %s at %s · %s",
+		s.Slug, s.Workflow, s.Branch, s.Latest.Short(), s.Latest.Created.UTC().Format(time.RFC3339), what)
 }
 
 // ciAbstained keys the once-per-process abstention notice. A reading that
@@ -556,10 +583,12 @@ func (a *App) ciWorkflow() string {
 // CIWatch is the whole mechanism, once per dispatch pass: read the gate in
 // every configured repo, file one bead where it is red and has none, and
 // COMMENT on the one it filed where it is green again — naming the run that
-// cleared the gate. It does not close that bead and must not: ADR 0013 §4
-// makes the close the persona's, this file's header says why at length, and
-// absencerules_qa_test.go's TestNoBdCloseVerbReachableFromDispatch enforces
-// it by reachability.
+// cleared the gate — and closing it where NO SESSION EVER CLAIMED it, which
+// is the one exception ADR 0013 §4 admits (ranger-base-8fr2j). A bead a seat
+// holds keeps the close the persona's; this file's header says why at
+// length, and absencerules_qa_test.go's
+// TestNoBdCloseVerbReachableFromDispatch holds the register that keeps
+// ciClear the only Bd close verb the dispatch path reaches.
 //
 // The PASS and not `posse ready`, which is the other place verify-after runs
 // from. Two reasons, and they are the same two that keep this out of `posse
@@ -706,12 +735,14 @@ func ciAlreadyCleared(cs []BdComment) bool {
 // instance watching two repos does not let one repo's red suppress the
 // other's.
 //
-// A SET and not one bead, and newest first, because ci-watch cannot close
-// (ADR 0013 §4, the file header): a cleared bead sits in this listing until
-// a persona closes it, so a second episode legitimately has two beads here
-// and a seventh has seven. The current episode's is the newest, and
-// ciActOnGate walks from there to the first one that has not been told its
-// gate cleared. Picking the OLDEST — which the first cut did, to leave a
+// A SET and not one bead, and newest first, because a cleared bead can
+// OUTLIVE its episode: ci-watch closes only the one nobody claimed (ciHolder,
+// ADR 0013 §4's exception), so a bead a seat holds sits in this listing until
+// that seat closes it, and a second episode legitimately has two beads here.
+// The claimed ones are the case this walk exists for — before the exception
+// it was every one of them, which is the same walk over a bigger set. The
+// current episode's bead is the newest, and ciActOnGate walks from there to
+// the first one that has not been told its gate cleared. Picking the OLDEST — which the first cut did, to leave a
 // double-file visible — is the same bug this whole mechanism exists to
 // prevent, one layer in: the oldest is always the CLEARED one, so every
 // pass after the second episode began would have filed another bead.
@@ -765,23 +796,76 @@ func (a *App) ciFile(bd Bd, dir string, st CIState, out, errw io.Writer) int {
 	return 1
 }
 
-// ciClear says on the bead that the gate is green again, naming the run that
-// cleared it. It does NOT close it: ADR 0013 §4 makes the close the
-// persona's, and TestNoBdCloseVerbReachableFromDispatch enforces that no Bd
-// close verb is reachable from a Dispatcher method at all (the file header).
+// ciHolder is ADR 0013 §4's exception, in one predicate read off the bead:
+// the empty string when NO SESSION EVER CLAIMED this bead and the harness may
+// close it itself, otherwise the reason it may not, in words that go on the
+// bead and on stdout.
 //
-// So the comment has to do the whole job the close would have done for the
-// reader: say the condition is over, say which run says so, and say that
-// there is nothing left to build. It is written for the seat that opens this
-// bead next and needs one minute rather than one session.
+// The ruling (ranger-base-8fr2j, 2026-09-05) names the state exactly —
+// "status still open, never in_progress" — and the row carries two fields
+// that answer it: a claim sets BOTH status and assignee (Bd.Claim), so a
+// bead that is `open` with no assignee is one nothing was ever dispatched
+// onto. An assignee on an `open` bead is the operator's own routing, which
+// is somebody's decision about who this belongs to and not the harness's to
+// overrule; every other status is a seat's.
+//
+// Errs toward NOT closing, always: an unrecognised status is somebody's, and
+// the cost of that mistake is the minute the shipped comment already asks
+// for. The opposite mistake closes a bead out from under a seat mid-fix.
+func ciHolder(open BdIssue) string {
+	if open.Assignee != "" {
+		return open.Assignee + " is assigned it (" + open.Status + ")"
+	}
+	if open.Status != "open" {
+		return "its status is " + open.Status + ", so a session claimed it"
+	}
+	return ""
+}
+
+// ciClear says on the bead that the gate is green again, naming the run that
+// cleared it — and then CLOSES it if ciHolder says nobody ever claimed it
+// (ADR 0013 §4's one exception, ruled on ranger-base-8fr2j; the file header
+// carries the argument, and TestNoBdCloseVerbReachableFromDispatch holds the
+// register that keeps this the only such caller).
+//
+// THE COMMENT COMES FIRST, and on both arms, which is the whole of what
+// makes a failed close honest. bd's close is a child process that can fail
+// on a locked store, and the order here decides what the bead says when it
+// does: comment-then-close leaves a bead that is OPEN and carries the run
+// that cleared it, which is exactly the state the shipped mechanism left
+// behind and which any seat can finish in a minute. Close-then-comment would
+// leave a closed bead with no record of what answered it — the one thing the
+// bead's own DONE WHEN asks for — so the comment says "if you are reading
+// this on an open bead, the close did not take" rather than asserting an
+// outcome that has not happened yet.
+//
+// On the arm it may not close, the comment has to do the whole job the close
+// would have done for the reader: say the condition is over, say which run
+// says so, say that there is nothing left to build, and say why the harness
+// left the close to them.
 func (a *App) ciClear(bd Bd, dir string, st CIState, open BdIssue, out, errw io.Writer) int {
-	note := fmt.Sprintf("%s%s is green again on %s — %s at %s, %s.\n\nNothing is left to build under this bead: ci-watch filed it when the gate went red and the gate is no longer red. CLOSE IT. The harness does not, on purpose (ADR 0013 §4: the bead is the store of record and `bd close` is the persona's). If you were mid-fix, your own commits naming this bead are the record and this comment does not contradict them.",
-		ciClearedPrefix, st.Workflow, st.Branch, st.Latest.Short(), st.Latest.Created.UTC().Format(time.RFC3339), st.Latest.URL)
+	held := ciHolder(open)
+	why := "No session ever claimed this bead — status open, unassigned — so ci-watch closes it itself: that is the one exception ADR 0013 §4 admits (ruled on ranger-base-8fr2j, built under ranger-base-4gy4i), because a bead nobody was dispatched onto grades nobody's record. If you are reading this on an OPEN bead, the close did not take and closing it is the whole of what is left."
+	if held != "" {
+		why = "CLOSE IT. The harness does not: " + held + ", and a bead a seat holds stays the seat's (ADR 0013 §4: the bead is the store of record and `bd close` is the persona's; its one exception is a bead the harness filed that no session ever claimed, which this is not). If you were mid-fix, your own commits naming this bead are the record and this comment does not contradict them."
+	}
+	note := fmt.Sprintf("%s%s is green again on %s — %s at %s, %s.\n\nNothing is left to build under this bead: ci-watch filed it when the gate went red and the gate is no longer red. %s",
+		ciClearedPrefix, st.Workflow, st.Branch, st.Latest.Short(), st.Latest.Created.UTC().Format(time.RFC3339), st.Latest.URL, why)
 	if err := bd.Comment(dir, open.ID, note, VerifyActor); err != nil {
 		fmt.Fprintf(errw, "ci-watch: %s: clear comment: %v\n", open.ID, err)
 		return 0
 	}
-	fmt.Fprintln(out, st.GreenLine(open.ID))
+	if held == "" {
+		if err := bd.Close(dir, open.ID, VerifyActor); err != nil {
+			// The comment stands, so the bead is in the state the shipped
+			// mechanism left it in and a seat can finish it. Said out loud
+			// because a close that silently did not happen is how six
+			// beads a week come back.
+			fmt.Fprintf(errw, "ci-watch: %s: close: %v — the clearing comment stands and the bead is a seat's to close\n", open.ID, err)
+			held = "the harness's own close failed"
+		}
+	}
+	fmt.Fprintln(out, st.GreenLine(open.ID, held))
 	return 1
 }
 

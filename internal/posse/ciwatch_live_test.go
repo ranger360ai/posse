@@ -15,8 +15,15 @@ package posse
 //     `bd list --label-any ci-red` — the dedupe is one query and a store
 //     that answered it differently would file per pass;
 //   - a bead a PERSONA closed really does leave that query, which is what
-//     stops ci-watch adopting an answered bead forever (ci-watch itself does
-//     not close: ADR 0013 §4, ciwatch.go's header);
+//     stops ci-watch adopting an answered bead forever — and so does one
+//     ci-watch closed ITSELF, which it does for a bead no session ever
+//     claimed (ADR 0013 §4's one exception, ranger-base-8fr2j; ciwatch.go's
+//     header). Both closes are asked of the real store here, because the
+//     whole saving depends on the row leaving the dedupe's query;
+//   - a real `bd update --claim` really does put the status and assignee
+//     that ciHolder reads onto the row `bd list --label-any` answers with —
+//     the fake's claim state and the real store's are two different things,
+//     and the guard reads the listing;
 //   - a comment ci-watch wrote on an earlier pass really does come back out
 //     of `bd comments` — the drumbeat's cadence and the whole green half's
 //     state are read back out of that one query;
@@ -190,7 +197,22 @@ func TestLiveCIWatchFiresOnceAndClears(t *testing.T) {
 		t.Errorf("a pass at the SAME streak commented again: %d comments", len(cs))
 	}
 
-	// ── green again: said on the bead, and NOT closed ────────────────────
+	// ── a SEAT CLAIMS it, through real bd's own claim ────────────────────
+	// ADR 0013 §4's exception (ranger-base-8fr2j) is "no session ever
+	// claimed it", and `--claim` is what a dispatched session does to this
+	// bead. Against real bd rather than a rewritten listing: the fake's
+	// claim state and the real store's are two different things, and this
+	// arm exists to say that the row ci-watch reads back out of
+	// `bd list --label-any` really does carry the status and assignee the
+	// guard reads.
+	if out, err := sh("--actor", "devops", "update", id, "--claim"); err != nil {
+		t.Fatalf("bd update %s --claim: %v %s", id, err, out)
+	}
+	if is := openCiRed(); len(is) != 1 || ciHolder(is[0]) == "" {
+		t.Fatalf("after a real claim the listing answers %v and ciHolder reads it as unheld — the guard is reading a field the store does not fill", is)
+	}
+
+	// ── green again over a bead a seat holds: said, and NOT closed ───────
 	setGate(ciRunJSON("eeeeeeee", "completed", "success", at.Add(2*time.Hour)))
 	n, out, errs = pass()
 	if n != 1 {
@@ -204,7 +226,7 @@ func TestLiveCIWatchFiresOnceAndClears(t *testing.T) {
 		t.Fatal(err)
 	}
 	if shown.Status == "closed" {
-		t.Fatalf("ci-watch CLOSED %s — ADR 0013 §4 makes that the persona's", id)
+		t.Fatalf("ci-watch CLOSED %s, which devops holds — ADR 0013 §4 makes that the persona's, and the exception is a bead nobody claimed", id)
 	}
 	if cs, _ := bd.Comments(repo, id); !ciAlreadyCleared(cs) {
 		t.Fatalf("real bd does not answer with the clearing comment, so the next red would file over it")
@@ -244,6 +266,48 @@ func TestLiveCIWatchFiresOnceAndClears(t *testing.T) {
 	second := ciOpenAdopted(t, bd, repo)
 	if second == nil || second.ID == id {
 		t.Fatalf("the second episode did not get its own bead (adopted %v, first=%s)", second, id)
+	}
+
+	// ── and THIS one nobody claims, so the harness closes it itself ──────
+	// The exception, end to end against real bd: the same green pass that
+	// only commented above both comments and closes here, and the ONLY
+	// difference between the two beads is that a session claimed one of
+	// them. What real bd is asked here that no fake can answer: that
+	// `bd close --json` under VerifyActor takes on a bead the harness
+	// filed, and that the row then leaves the dedupe's own query — the
+	// whole saving depends on both.
+	setGate(ciRunJSON("99999999", "completed", "success", at.Add(4*time.Hour)))
+	n, out, errs = pass()
+	if n != 1 {
+		t.Fatalf("the green gate over an unclaimed bead acted %d, want 1 (out %q err %q)", n, out, errs)
+	}
+	if !strings.Contains(out, "CLOSED") || !strings.Contains(out, second.ID) {
+		t.Errorf("the clearing pass said %q, want it to name the bead it closed", out)
+	}
+	shown, err = bd.Show(repo, second.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if shown.Status != "closed" {
+		t.Fatalf("%s is %q after the green pass — ADR 0013 §4's exception (ranger-base-8fr2j) closes a bead no session ever claimed, and real bd did not take the close", second.ID, shown.Status)
+	}
+	cs, cerr := bd.Comments(repo, second.ID)
+	if cerr != nil {
+		t.Fatal(cerr)
+	}
+	if !ciAlreadyCleared(cs) {
+		t.Errorf("the closed bead does not carry the clearing comment — a closed ci-red bead has to name the run that answered it, which is what the ruling's DONE WHEN asks for")
+	}
+	if !strings.Contains(strings.Join(func() (out []string) {
+		for _, c := range cs {
+			out = append(out, c.Text)
+		}
+		return
+	}(), "\n"), "99999999") {
+		t.Errorf("the close comment does not name the clearing run: %v", cs)
+	}
+	if is := openCiRed(); len(is) != 0 {
+		t.Fatalf("the harness's own close left %d bead(s) in the dedupe's query — the next red would never be filed", len(is))
 	}
 }
 

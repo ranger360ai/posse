@@ -2390,7 +2390,9 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 	// never across its `gh` child — a green pass must not park the fire
 	// loop for the 2.8-4.2s that reading costs. It is read-only over the
 	// network, it never reruns a workflow, it never touches the gate, and
-	// it never CLOSES the bead it files (ADR 0013 §4, ciwatch.go).
+	// the only bead it ever closes is one it filed that no session
+	// claimed — ADR 0013 §4's one exception, ruled on ranger-base-8fr2j
+	// (ciwatch.go, ciHolder).
 	if !d.DryRun {
 		dirs := d.App.BeadsDirs()
 		if dirFilter != "" {
