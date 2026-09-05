@@ -144,3 +144,113 @@ func instancePathLiterals(lits []IdentityLiteral) []string {
 	}
 	return out
 }
+
+// ranger-base-xc2s4: the FIFTH reader of the same path, and the one ABOVE
+// every reader ranger-base-fvfve guarded. seedBeadsRedirect (worktree.go)
+// reads the MAIN checkout's <repo>/.beads/redirect to resolve the chain
+// before writing the worktree's own, and it read it with no type check.
+// seedTree calls it from (*App).EnsureSessionTree, which HerdrBackend runs
+// "before anything else reads `dir`" — before planLaunch, so before both
+// InstallCommitGuardHook and CheckParityIn. One mkfifo in a checkout wedged
+// every dispatched launch into it, with nothing printed and no deadline
+// above: os.ReadFile on a FIFO with no writer never returns.
+//
+// Controls first and in the same rig, as above, and the regular-redirect
+// control asserts the VALUE it seeds — a guard that answered "no redirect"
+// for every redirect would fork the work graph quietly and pass a test that
+// only checked for a return.
+func TestAFifoAtTheBeadsRedirectMustNotWedgeTheSeed(t *testing.T) {
+	t.Parallel()
+	seeded := func(t *testing.T, tree string) string {
+		t.Helper()
+		b, err := os.ReadFile(filepath.Join(tree, beadsDirName, beadsRedirect))
+		if err != nil {
+			t.Fatalf("seeded redirect at %s: %v", tree, err)
+		}
+		return strings.TrimSpace(string(b))
+	}
+
+	// CONTROL 1: a .beads with no redirect — the seed points at the main
+	// checkout's own .beads, and it returns.
+	bare := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(bare, beadsDirName), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	tBare := &SessionTree{Repo: bare, Path: t.TempDir()}
+	if !returnsWithin(t, 15*time.Second, func() { _ = seedBeadsRedirect(tBare) }) {
+		t.Fatalf("CONTROL: seedBeadsRedirect blocked with no redirect planted — the rig, not the code")
+	}
+	if got, want := seeded(t, tBare.Path), filepath.Join(bare, beadsDirName); got != want {
+		t.Errorf("CONTROL: seed with no redirect wrote %s, want %s", got, want)
+	}
+
+	// CONTROL 2: an ordinary regular redirect — the chain is resolved and the
+	// TARGET is what gets seeded, absolute, resolved against the repo root.
+	reg := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(reg, beadsDirName), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(reg, beadsDirName, beadsRedirect), []byte("../instance/.beads\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tReg := &SessionTree{Repo: reg, Path: t.TempDir()}
+	if !returnsWithin(t, 15*time.Second, func() { _ = seedBeadsRedirect(tReg) }) {
+		t.Fatalf("CONTROL: seedBeadsRedirect blocked on a regular redirect — the rig, not the code")
+	}
+	if got, want := seeded(t, tReg.Path), filepath.Join(filepath.Dir(reg), "instance", beadsDirName); got != want {
+		t.Errorf("CONTROL: seed over a regular redirect wrote %s, want the redirect target %s", got, want)
+	}
+
+	// THE DEFECT: a named pipe there.
+	fifo := t.TempDir()
+	plantRedirectFifo(t, fifo)
+	tFifo := &SessionTree{Repo: fifo, Path: t.TempDir()}
+	if !returnsWithin(t, 15*time.Second, func() { _ = seedBeadsRedirect(tFifo) }) {
+		t.Fatalf("seedBeadsRedirect blocked forever on a 0644 FIFO at .beads/redirect")
+	}
+	if got, want := seeded(t, tFifo.Path), filepath.Join(fifo, beadsDirName); got != want {
+		t.Errorf("seed over a FIFO redirect wrote %s, want the local %s — a special file is not a redirect posse wrote", got, want)
+	}
+}
+
+// The symptom the bead is named for, through the call the dispatched launch
+// actually makes: (*App).EnsureSessionTree, which reaches seedBeadsRedirect
+// through seedTree on BOTH its branches — so a relaunch into an existing
+// tree re-runs the read and wedges too. Real git repos, control first.
+func TestEnsureSessionTreeMustNotWedgeOnAFifoRedirect(t *testing.T) {
+	t.Parallel()
+	// CONTROL: the same call over the same fixture shape with no pipe.
+	a := wtApp(t)
+	clean := wtRepo(t)
+	if err := os.MkdirAll(filepath.Join(clean, beadsDirName), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var tr *SessionTree
+	var err error
+	if !returnsWithin(t, 60*time.Second, func() { tr, err = a.EnsureSessionTree(clean, "s-clean", nil) }) {
+		t.Fatalf("CONTROL: EnsureSessionTree blocked over a repo with no redirect — the rig, not the code")
+	}
+	if err != nil || tr == nil {
+		t.Fatalf("CONTROL: EnsureSessionTree over a clean repo: tree=%v err=%v", tr, err)
+	}
+
+	// THE ARM: a 0644 named pipe at <repo>/.beads/redirect.
+	a2 := wtApp(t)
+	wedged := wtRepo(t)
+	plantRedirectFifo(t, wedged)
+	var tr2 *SessionTree
+	if !returnsWithin(t, 60*time.Second, func() { tr2, _ = a2.EnsureSessionTree(wedged, "s-wedged", nil) }) {
+		t.Fatalf("EnsureSessionTree blocked forever on a 0644 FIFO at %s — the launcher still wedges",
+			filepath.Join(wedged, beadsDirName, beadsRedirect))
+	}
+	if tr2 == nil {
+		t.Fatal("EnsureSessionTree returned no tree over the FIFO repo")
+	}
+	b, rerr := os.ReadFile(filepath.Join(tr2.Path, beadsDirName, beadsRedirect))
+	if rerr != nil {
+		t.Fatalf("seeded redirect in %s: %v", tr2.Path, rerr)
+	}
+	if got, want := strings.TrimSpace(string(b)), filepath.Join(wedged, beadsDirName); got != want {
+		t.Errorf("the session tree's redirect is %s, want the local %s", got, want)
+	}
+}

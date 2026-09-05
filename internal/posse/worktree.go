@@ -877,12 +877,27 @@ func seedBeadsRedirect(t *SessionTree) error {
 		return nil // no beads in this repo: nothing to keep unforked
 	}
 	target := src
-	if b, err := os.ReadFile(filepath.Join(src, "redirect")); err == nil {
-		if p := strings.TrimSpace(string(b)); p != "" {
-			if !filepath.IsAbs(p) {
-				p = filepath.Join(t.Repo, p)
+	// isRegularFile (gates.go) before the open, the same guard the launch
+	// path's other readers of this file carry (ranger-base-gs9r,
+	// ranger-base-92n5p, ranger-base-fvfve): os.ReadFile on a FIFO with no
+	// writer never returns, and this read is ABOVE all of theirs — seedTree
+	// runs from EnsureSessionTree, which HerdrBackend calls before anything
+	// else reads `dir`, so before planLaunch and before both
+	// InstallCommitGuardHook and CheckParityIn. One mkfifo in a checkout
+	// wedged every dispatched launch into it with nothing printed and no
+	// deadline anywhere above (ranger-base-xc2s4). A special file is never a
+	// redirect posse wrote and cannot be one, so it gets the answer every
+	// other unreadable redirect already gets here: target stays src, reached
+	// without the open.
+	redirect := filepath.Join(src, "redirect")
+	if isRegularFile(redirect) {
+		if b, err := os.ReadFile(redirect); err == nil {
+			if p := strings.TrimSpace(string(b)); p != "" {
+				if !filepath.IsAbs(p) {
+					p = filepath.Join(t.Repo, p)
+				}
+				target = filepath.Clean(p)
 			}
-			target = filepath.Clean(p)
 		}
 	}
 	dst := filepath.Join(t.Path, ".beads")
