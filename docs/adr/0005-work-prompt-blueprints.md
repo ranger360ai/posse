@@ -95,7 +95,7 @@ behaviour, the ladder says which rung comes first:
 |---|---|---|---|
 | **NOTE** | a decision or finding worth keeping | `bd comments add <id> …` | continue |
 | **ASSUME** | a gap you can bridge without changing the deliverable's shape | comment `ASSUMED: <x> — <why>`; do the rest in full | continue |
-| **SPIKE** | the gap is knowledge, not permission — you are about to invent a mechanism or coin a name for one, this is the third attempt at one invariant, the choice is expensive to reverse, or the design rests on a number nobody measured | check the skills you carry first; on a shelf miss `bd create "spike: <question>" -t task -l <runner's lane>` with **no** `--deps`, `bd dep add <id> <sid>` so deciding waits on reading, `bd comments add <sid> "discovered-from: <id>"` for the provenance; comment `SPIKE: <question> → <sid>` | continue with whatever the answer can't change; else **stop** |
+| **SPIKE** | a load-bearing knowledge gap; triggers and evidence in [ADR 0026](0026-research-spikes.md) | read the bound references, then research within this task when bounded; create and block on a separate spike only for a distinct dependency or deliverable, using ADR 0026’s queue mechanics; record findings | continue work the answer cannot change; defer dependent decisions until answered |
 | **ASK** | a gap only the operator can fill and the bead is useless if you guess | `bd create "<question>" -t task -l question -a <operator>` (config `operator:`; unassigned if unset), `bd dep add <id> <qid>` so the bead leaves `bd ready` until answered; comment `BLOCKED: <need> → <qid>` | **stop** |
 | **HANDOFF** | part of the work belongs to another lane | `bd create … -l <their label> --deps discovered-from:<id>`, carrying its class — `-t feature` / `-t bug` / `-l debt` (ADR 0006 §1, amended 2026-09-02 from ranger-base-zbd51; SPIKE and ASK inherit this bead's class and the ladder renders the flag); comment it. No `-a` unless the work needs that person — ADR 0006 §1 lists the five cases, and the first line of the description says which *(amended 2026-09-01, ranger-base-tpc41; the rung read `-a <persona>` before, and `EscalationLadder` followed — landed 37c1a5e (ranger-base-uzw11))* | continue with your part; if nothing is left, close yours |
 | **REFUSE** | a hard risk line (money · publishing · deployed systems · visibility) or a gate you can't realize | comment `REFUSED: <line> — <what would be needed>`; if a decision would unblock it, ASK with `-l risk` | **stop** |
@@ -114,34 +114,7 @@ filed), and to fall back to a comment, which is the provenance that
 survives. ASK is untouched: its `bd dep add <id> <qid>` targets the
 question bead it just created, which has no outgoing edges.
 
-SPIKE files **no** `discovered-from` edge, and the caveat says why
-(ranger-base-rs8j, amending this section 2026-08-30). bd's cycle check spans
-*every* dependency type, not only `blocks`: a spike carrying
-`discovered-from:<id>` makes the `bd dep add <id> <sid>` on the same rung
-close a cycle, deterministically and in either order (measured against real
-bd on a copy of the queue db; the same pair at the harness's own settle-open
-escalation is ranger-base-23oo).
-
-What bd *does* about that cycle is a property of the store and not of the bd
-version, so neither this rung nor its caveat may reason from a refusal
-(ranger-base-lpz0o, amending this section 2026-09-01; measured with one bd
-0.50.3 binary against two stores). A SQLite `beads.db` — the operator's
-queue, and every repo an older bd inited — refuses the add: `cannot add
-dependency: would create a cycle (<id> → <sid> → ... → <id>)`, exit 1. A
-store `bd init` writes today — `.beads/config.yaml` carrying `no-db: true`,
-JSONL only, no `beads.db` at all — **accepts** it, and then answers
-`bd ready` with `<id>` while `bd blocked` also lists it. Loud or silent, the
-block does not take. The harness stopped relying on either answer at the same
-bead: `Bd.Ready` is now `bd ready` *minus* `bd blocked`, so a bead the store
-itself calls stuck is never dispatched however the edge got there. The block is
-what this rung is *for* — without it the deciding bead never leaves `bd
-ready` and the next pass dispatches it again with the spike unanswered — so
-the edge goes and the provenance becomes a comment on the spike, where
-nothing can refuse it. That also moves the check: HANDOFF confirms the edge
-it filed (`bd dep list <new-id>`), SPIKE confirms the *block* (`bd dep list
-<id>` names `<sid>`), because reading the spike back shows a
-`discovered-from` edge that looks right even in the shape that never
-blocked anything.
+A separately filed SPIKE uses [ADR 0026](0026-research-spikes.md) for its block, provenance comment and confirmation. That ADR owns the cycle evidence and research-splitting decision; this ladder does not independently require a new bead.
 
 Check-after, not preflight, for three reasons: safety is a property of the
 graph at create time, which is minutes to hours after this text renders and
@@ -161,16 +134,7 @@ the bead is ready again. `bd comments` prefixes (`ASSUMED:`, `SPIKE:`,
 `BLOCKED:`, `REFUSED:`) are the greppable trail the `blocked-honestly`
 metric counts.
 
-SPIKE sits between ASSUME and ASK because the gap it names is knowledge,
-not permission: no one has to be asked for it, so it belongs below the
-rungs that spend the operator's attention. It is the mechanism of the
-research-spike practice (ADR 0026; archive bead rangerhq-dfz8) — the
-ladder is the one text
-every persona reads on every bead, so the trigger travels with the work
-instead of depending on someone remembering to pull the cord; PID prose
-is reinforcement, not the mechanism. Its `bd dep add` is the same one ASK
-uses, and buys the same thing: `bd ready` itself enforces read-before-
-decide, so no new dispatch state exists for spikes either.
+SPIKE sits between ASSUME and ASK because its gap is knowledge, not permission. Its research and optional handoff contract lives in [ADR 0026](0026-research-spikes.md). The 2026-09-05 ruling changes the rendered rung; implementation is deferred on that ADR’s code task.
 
 **3. Persona hook: `## Work prompt` in the PID body.** Optional section,
 appended verbatim to every work prompt for that persona — the standing
