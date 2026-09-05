@@ -6899,3 +6899,79 @@ there against a fake docker, on any store and any host.
 
 The release workflow is still the last gate, not the first one: run this before
 you push, because on a tag is the worst place to learn that Linux disagrees.
+
+### The two runners are an ENVIRONMENT split, and it reaches the pins (ranger-base-tiidc)
+
+`ci.yml` runs `make test` on ubuntu-latest and macos-latest, and ten
+consecutive pushes to main were red there for three reasons that had nothing
+to do with the commits carrying them. All three are one shape: a pin that
+stood in for something the ENVIRONMENT supplies — a make, a git, a shell — and
+was right about the one this box has. Worth knowing before writing the next
+one.
+
+**GNU make 4.x prints `make[1]: Entering directory` on STDOUT, 3.81 does not.**
+`TestQATheGofmtDoorReportsRealDrift` and `TestQATheTreeWideDoorsReportRealDrift`
+capture `make -n <door>` and hand the result to `sh -c`, which is what keeps
+them from carrying a second copy of the recipe. `make test` exports MAKELEVEL,
+every `make` the suite spawns therefore believes it is a sub-make, and 4.x
+turns on `--print-directory` there — so the captured "recipe" came back wrapped
+in two lines of make's own chatter and the shell ran them: `sh: 1: make[1]::
+not found`, `sh: 8:`, and a door that had found no drift at all failed its
+clean arm. ubuntu-latest carries 4.x; macOS ships 3.81, which is why this was
+red on exactly one runner. Reproduced on this box against a GNU make 4.4.1
+bottle with `MAKELEVEL=1` — byte for byte, including the line numbers. The fix
+is `--no-print-directory` on the command line (`makeExpandFlag`), which beats
+an inherited `MAKEFLAGS=w` as well and which 3.81 accepts; `assertRecipeIsOnlyRecipe`
+makes its absence a named failure instead of a garbled shell.
+
+**The runners moved to git 2.55.0, and `git commit` grew three options.**
+`-U`/`--unified` and `--inter-hunk-context` (the context width of the `-v`
+diff) do not exist on this box's Apple Git-155 / 2.50.1. They take a value as a
+separate word, so `qualifierSpoilers["git commit"].ValueOpts` has to carry
+them or the L1 wall reads the value as an option and refuses a safe
+path-limited commit — which is what `TestQAValueOptsAreGitsRequiredValueOptions`
+said, on both runners, in the words of the fix.
+
+That makes the table the UNION of two gits, and two pins then name a spelling
+the local git cannot be asked about. `qaCommitOptsSince` is that fact on the
+pin side: option → the version that has it, exempting it from the "this git
+never showed us that spelling" arms and from nothing else, and only after
+making git call the option unknown (`git commit -h` hides some it still
+parses — `--ahead-behind` on 2.50.1).
+
+**Do not ask `qaGitResolves` whether this git has an option.** It reports that
+a prefix resolved, never WHAT it resolved to. On 2.50.1 `--u` and `--un`
+resolve cleanly — to `--untracked-files`, which is a different option in
+neither list — so a `len(got) == 0` test reads them as abbreviations of
+`--unified` and demands wall arms for them, which is the hole the pin exists to
+prevent, rendered by the pin itself. Ask `qaCommitOptions` (git's own `-h`
+list) instead.
+
+**A path an operator PASTES is a shell's input, not argv.**
+`TestTheOffBranchPrescriptionIsRunnableAndRescuesTheWork` takes the `git -C
+<tree> branch -f <branch> HEAD` out of `posse worktrees`' listing and runs it,
+which is the arm that catches a prescription naming the wrong directory. It
+ran it with `exec.Command`, splitting the words itself — a shell in every
+respect but the one that mattered. The listing `AbbrevHome`s the path, so on
+any box whose worktree root is under `$HOME` the line reads `git -C
+~/worktrees/…` and only a shell turns that `~` back into a directory: ubuntu
+red with `fatal: cannot change to '~/worktrees/…'`, macOS green, same commit.
+macOS was the accident — the test binary's temp `$HOME` is `/var/folders/…`
+and the tree path resolves to `/private/var/folders/…`, so `AbbrevHome` finds
+no prefix and prints the absolute path — and ubuntu was reproducing the real
+operator's shape. Reproduced here by resolving the temp `$HOME` in TestMain,
+which reds it on macOS too. It runs through `sh -c` now.
+
+**Measure their version, do not infer it.** `brew fetch git make` DOWNLOADS
+the bottles and does not install, link, or touch PATH, so `/usr/bin/git` stays
+what it was; untar into a scratch dir and put a shim in front. Two things make
+an extracted bottle actually usable and both fail silently otherwise: `DYLD_*`
+must be exported INSIDE the shim script (macOS strips it entering any
+SIP-protected binary, `/bin/sh` included), and a bottle outside its prefix
+finds none of its own data files, so git needs `GIT_TEMPLATE_DIR` or every
+`git init` makes a repo with no `hooks/`. Both root causes here were then
+reproduced on this box, and each fix has a mutant that reds without it.
+
+And the `toolchain identity` step in ci.yml prints `git --version` and
+`make --version` on both runners now, for the same reason it prints awk's:
+the next userland split should be a log line rather than an expedition.

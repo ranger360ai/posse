@@ -40,6 +40,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -224,7 +225,7 @@ func TestQATheGofmtDoorReachesEveryGoFile(t *testing.T) {
 // not mistaken for one that detects.
 func TestQATheGofmtDoorReportsRealDrift(t *testing.T) {
 	t.Parallel()
-	out, err := exec.Command("make", "-n", "fmt-check").Output()
+	out, err := exec.Command("make", makeExpandFlag, "-n", "fmt-check").Output()
 	if err != nil {
 		t.Fatalf("make -n fmt-check: %v", err)
 	}
@@ -232,6 +233,7 @@ func TestQATheGofmtDoorReportsRealDrift(t *testing.T) {
 	if recipe == "" {
 		t.Fatal("`make -n fmt-check` expands to nothing")
 	}
+	assertRecipeIsOnlyRecipe(t, "fmt-check", recipe)
 	// `$(` alone would match the shell's own command substitution, which
 	// this recipe uses; the make variables are named.
 	for _, v := range []string{"$(GOFMT)", "$(FMT_ROOTS)"} {
@@ -289,3 +291,41 @@ func TestQATheGofmtDoorReportsRealDrift(t *testing.T) {
 		t.Errorf("the door does not name the fix, and the fix is the whole reason a seat can act on it in one line:\n%s", got)
 	}
 }
+
+// makeExpandFlag is why `make -n <door>` is never spelled bare here.
+//
+// These arms capture make's STDOUT and hand it to `sh -c`, and GNU make
+// writes `make[N]: Entering directory '<dir>'` / `Leaving` to that same
+// stdout whenever it believes it is a SUB-make — which it does whenever
+// MAKELEVEL is set in its environment. `make test` sets it, so under the
+// suite's own door the recipe came back wrapped in two lines that are not
+// recipe, and the shell ran them: `sh: 1: make[1]:: not found`, `sh: 8:`,
+// and a door that had found no drift at all failed the clean arm. It is
+// GNU make 4.x only (measured 2026-09-05 against a 4.4.1 bottle on this
+// box: MAKELEVEL=1 reproduces it exactly, byte for byte with ci.yml's
+// ubuntu runner), and macOS ships 3.81, which is why this was red on one
+// runner and green on the other on every push from the day it landed
+// (ranger-base-tiidc).
+//
+// `--no-print-directory` is the fix rather than scrubbing MAKELEVEL because
+// it is a COMMAND-LINE flag: it also beats a `-w` arriving through an
+// inherited MAKEFLAGS, and 3.81 accepts it (both measured).
+const makeExpandFlag = "--no-print-directory"
+
+// assertRecipeIsOnlyRecipe fails if make put anything of its own in what we
+// are about to run as a shell script. The flag above is what keeps it out;
+// this is the arm that makes its absence a named failure rather than a
+// door that mysteriously reports drift that is not there.
+func assertRecipeIsOnlyRecipe(t *testing.T, target, recipe string) {
+	t.Helper()
+	for _, line := range strings.Split(recipe, "\n") {
+		if makeChatter.MatchString(line) {
+			t.Fatalf("`make -n %s` returned make's own directory chatter, not just the recipe — `sh -c` would run it as a command (%s):\n%s",
+				target, makeExpandFlag, recipe)
+		}
+	}
+}
+
+// `make[1]: Entering directory …`, and `gmake[1]:` where the binary is
+// named gmake.
+var makeChatter = regexp.MustCompile(`^[a-z]*make\[[0-9]+\]:`)

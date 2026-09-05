@@ -397,10 +397,24 @@ var qualifierSpoilers = map[string]spoiler{
 		// the rest of their own token and never the next word, and pairing
 		// them would shift the scan past a real `-i`. The `--no-` spellings
 		// are absent for the same reason: `--no-message` takes no value.
+		//
+		// The last three are the UNION over the two gits in play, not a
+		// property of one of them: `git commit` grew `-U/--unified` and
+		// `--inter-hunk-context` (the context width of the `-v` diff) after
+		// 2.50.1, and all three answer "requires a value" on git 2.55.0 —
+		// the version both ci.yml runners now carry (measured 2026-09-05
+		// from the bottle, ranger-base-tiidc). Carrying them is safe on the
+		// older git in the direction that matters: 2.50.1 does not have the
+		// option at all, so the pairing can only shift the scan inside a
+		// command git itself refuses with `unknown switch` before any index
+		// is touched. Leaving them out is NOT safe on the newer one — the
+		// value is read as an option and a path-limited commit is refused.
+		// qaCommitOptsSince carries the same fact on the pin side.
 		ValueOpts: []string{"-c", "-C", "-F", "-m", "-t",
 			"--author", "--cleanup", "--date", "--file", "--fixup", "--message",
 			"--pathspec-from-file", "--reedit-message", "--reuse-message",
-			"--squash", "--template", "--trailer"},
+			"--squash", "--template", "--trailer",
+			"-U", "--unified", "--inter-hunk-context"},
 		// Measured, git 2.50.1, one prefix at a time against the real git
 		// (qaGitResolves): `--inc` resolves to `--include`, `--patc` to
 		// `--patch`, `--int` to `--interactive`. `--in`/`--i` are ambiguous
@@ -417,6 +431,15 @@ var qualifierSpoilers = map[string]spoiler{
 			"--pathspec-from-file": "--pathspec-fr", "--reedit-message": "--ree",
 			"--reuse-message": "--reu", "--squash": "--sq", "--template": "--te",
 			"--trailer": "--tr",
+			// Measured on git 2.55.0, the only git that has these:
+			// `--uni` resolves (`--un`/`--u` are ambiguous with
+			// `--untracked-files`), and `--inter-` resolves — every prefix
+			// up to and including `--inter` is ambiguous with
+			// `--interactive`, which is why `--interactive`'s own `--int`
+			// is now SHORTER than that git's boundary and stays: an
+			// over-short minimum renders arms git refuses itself
+			// (ranger-base-90y3c, TestQASpoilerLongMinIsGitsBoundary).
+			"--unified": "--uni", "--inter-hunk-context": "--inter-",
 		},
 		Why: "-i/--include commits the shared index ON TOP of the named paths\n" +
 			"  (rangerhq-ojnw); -p/--patch/--interactive commit it INSTEAD of them,\n" +

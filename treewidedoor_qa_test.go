@@ -899,7 +899,7 @@ func twdSeedTree(t *testing.T) string {
 // here is a second copy of the command to drift from it.
 func twdExpand(t *testing.T, target string) string {
 	t.Helper()
-	out, err := exec.Command("make", "-n", target).Output()
+	out, err := exec.Command("make", makeExpandFlag, "-n", target).Output()
 	if err != nil {
 		t.Fatalf("make -n %s: %v", target, err)
 	}
@@ -910,6 +910,7 @@ func twdExpand(t *testing.T, target string) string {
 	if strings.Contains(recipe, "$(") {
 		t.Fatalf("the expanded recipe still holds a make variable — this arm would be measuring the wrong text:\n%s", recipe)
 	}
+	assertRecipeIsOnlyRecipe(t, target, recipe)
 	return recipe
 }
 

@@ -429,6 +429,83 @@ func TestQA2f5rBlessedFormTakesWorkingTree(t *testing.T) {
 	}
 }
 
+// qaCommitOptsSince names the `git commit` options qualifierSpoilers
+// carries that a git OLDER than the one beside them does not have at all,
+// with the version that does. Two gits are in play at once — this box runs
+// one and ci.yml's two runners run the other — and the table is the UNION
+// of them, so a pin that measures against the local git has options it
+// cannot reach. An entry here exempts that option from the two arms whose
+// subject is "the table names a spelling this git never showed us", and
+// from nothing else: wherever the local git DOES have the option, every arm
+// runs against it unchanged, and the exemption arm still makes git say the
+// option is unknown before it takes the exemption. A typo in the table is
+// what those arms exist for, so an entry is a MEASUREMENT with a version on
+// it, not a way to quiet one (ranger-base-tiidc, measured 2026-09-05
+// against a git 2.55.0 bottle on this box and against Apple Git-155).
+var qaCommitOptsSince = map[string]string{
+	"-U":                   "2.55.0",
+	"--unified":            "2.55.0",
+	"--inter-hunk-context": "2.55.0",
+}
+
+// qaOptIsAbsentHere reports whether opt is one of those, AND makes this git
+// say so: `git commit <opt>` must answer "unknown", so an option the help
+// text merely omits — `git commit -h` hides some it still parses, measured
+// `--ahead-behind` on 2.50.1 — is not waved through as version drift.
+func qaOptIsAbsentHere(t *testing.T, git func(env []string, args ...string) (string, error), opt string) bool {
+	t.Helper()
+	absent, parsed, ver := qaOptAbsence(git, qaCommitOptsSince, opt)
+	if parsed != "" {
+		t.Errorf("%s is exempted as a git %s option, but the git on this box does not call it unknown (%q) — it parses it, so the exemption hides a real measurement", opt, ver, parsed)
+	}
+	return absent
+}
+
+// qaOptAbsence is that decision without a *testing.T, so the arm can be
+// driven against a fixture and its answer READ rather than only failed on
+// (TestQAVersionDriftExemptionRefusesAnOptionThisGitParses). It returns
+// whether opt is exempt here, git's own answer when git parses it anyway
+// (empty otherwise), and the version the table names.
+func qaOptAbsence(git func(env []string, args ...string) (string, error), since map[string]string, opt string) (absent bool, parsed, ver string) {
+	ver, ok := since[opt]
+	if !ok {
+		return false, "", ""
+	}
+	// --dry-run so nothing writes, opt LAST and no `--` after it: a value
+	// option given a `--` swallows it and reaches "nothing to commit",
+	// which reads exactly like an option git never parsed.
+	out, _ := git([]string{"GIT_EDITOR=true"}, "commit", "--dry-run", "-m", "x", opt)
+	if strings.Contains(out, "unknown option") || strings.Contains(out, "unknown switch") {
+		return true, "", ver
+	}
+	return false, strings.TrimSpace(out), ver
+}
+
+// The exemption is a record of a version this box cannot reach, not a mute
+// button, and the arm that keeps it one is "make git call the option
+// unknown". That arm has to be shown able to FIRE, or an entry in
+// qaCommitOptsSince would silence a live measurement — and its two callers
+// only reach it for an option `git commit -h` did not list, so no arm above
+// ever exercises it. `--message` is the witness: every git in play parses
+// it, which is exactly the case the exemption must refuse.
+func TestQAVersionDriftExemptionRefusesAnOptionThisGitParses(t *testing.T) {
+	t.Parallel()
+	_, git, _ := qaCommitRepo(t)
+	const opt = "--message"
+	absent, parsed, ver := qaOptAbsence(git, map[string]string{opt: "9.9.9"}, opt)
+	if absent {
+		t.Errorf("the exemption accepted %s, which this git parses — a qaCommitOptsSince entry could then mute a real measurement instead of recording a version this box cannot reach", opt)
+	}
+	// The premise, so a fixture that stopped being an option git parses
+	// dies loudly instead of passing this test by accident.
+	if !strings.Contains(parsed, "requires a value") {
+		t.Errorf("`git commit --dry-run -m x %s` answered %q on this git, not \"requires a value\" — the fixture no longer names an option git parses, so the arm above was not exercised", opt, parsed)
+	}
+	if ver != "9.9.9" {
+		t.Errorf("the fixture version came back %q — qaOptAbsence is not reading the table it was handed", ver)
+	}
+}
+
 // The table's LongMin is a MEASUREMENT, and a measurement rots. Every long
 // spoiler must carry one, it must be a real prefix of its option, and the
 // arms the shim renders from it must COVER every abbreviation the git on
@@ -459,12 +536,28 @@ func TestQA2f5rBlessedFormTakesWorkingTree(t *testing.T) {
 // scan and refuses a safe commit. Both are the table having gone stale.
 func TestQASpoilerLongMinIsGitsBoundary(t *testing.T) {
 	t.Parallel()
+	_, git, _ := qaCommitRepo(t)
+	here := qaCommitOptions(t, git)
 	for key, sp := range qualifierSpoilers {
 		if !strings.HasPrefix(key, "git ") {
 			continue // another command's parser, another set of rules
 		}
 		for _, o := range append(append([]string{}, sp.Opts...), sp.ValueOpts...) {
 			if !strings.HasPrefix(o, "--") {
+				continue
+			}
+			// An option THIS git does not have has no abbreviations to
+			// cover, and qaGitResolves cannot be asked instead: it reports
+			// that a prefix resolved, never WHAT it resolved to. On git
+			// 2.50.1 `--u` and `--un` resolve cleanly — to
+			// `--untracked-files`, which is not this option and is in
+			// neither list — so an emptiness test here would read them as
+			// abbreviations of `--unified` and demand arms for them, which
+			// is the HOLE this pin exists to prevent, rendered by the pin
+			// itself (measured, ranger-base-tiidc).
+			if !contains(here, o) && qaOptIsAbsentHere(t, git, o) {
+				t.Logf("%q long option %s: this git does not have it (git %s does) — its boundary is unmeasurable here, not stale",
+					key, o, qaCommitOptsSince[o])
 				continue
 			}
 			min, ok := sp.LongMin[o]
@@ -944,6 +1037,20 @@ func TestQACommitWallL1OptionValueIsNotAnOption(t *testing.T) {
 		{"commit", "--m", "-i msg", "--", "a.go"},
 		{"commit", "--trailer", "-i", "--", "a.go"},
 		{"commit", "--squash", "-i", "--", "a.go"},
+		// The three git 2.55 added, in the same forms: without them in
+		// ValueOpts these are the false positive the table's comment
+		// names — a path-limited commit refused, one respelling away from
+		// working, on the git both ci.yml runners now carry. The value is
+		// really git's and not an option: measured on 2.55,
+		// `git commit -m x -U -i -- b.txt` answers "switch `U' expects an
+		// integer value", leaves the other persona's staged a.txt staged
+		// and HEAD where it was — so letting it past the wall lets nothing
+		// past git (ranger-base-tiidc).
+		{"commit", "-U", "-i", "--", "a.go"},
+		{"commit", "--unified", "-i", "--", "a.go"},
+		{"commit", "--uni", "-i", "--", "a.go"},
+		{"commit", "--inter-hunk-context", "-i", "--", "a.go"},
+		{"commit", "--inter-", "-i", "--", "a.go"},
 	} {
 		if out, code := run(argv...); code != 0 || !strings.HasPrefix(out, "real git ") {
 			t.Errorf("git %s carries no -i/-p option — only a value spelled like one — and must pass: %d %s", strings.Join(argv, " "), code, out)
@@ -963,6 +1070,11 @@ func TestQACommitWallL1OptionValueIsNotAnOption(t *testing.T) {
 		{"commit", "--gpg-sign", "-i", "--", "a.go"},
 		{"commit", "--untracked-files", "-i", "--", "a.go"},
 		{"commit", "-im", "x", "--", "a.go"},
+		{"commit", "-U", "3", "-i", "--", "a.go"},
+		{"commit", "--unified", "3", "-i", "--", "a.go"},
+		{"commit", "--uni", "3", "-i", "--", "a.go"},
+		{"commit", "--inter-hunk-context", "3", "-i", "--", "a.go"},
+		{"commit", "--inter-", "3", "-i", "--", "a.go"},
 	} {
 		if out, code := run(argv...); code != 1 || !strings.Contains(out, "refused by posse gate") {
 			t.Errorf("git %s carries a real spoiler and must still be refused: %d %s", strings.Join(argv, " "), code, out)
@@ -1031,8 +1143,13 @@ func TestQAValueOptsAreGitsRequiredValueOptions(t *testing.T) {
 	// this git names at all: a spelling `git commit -h` does not list is
 	// never probed above, so the HOLE check would pass over it in silence.
 	for _, o := range sp.ValueOpts {
-		if !contains(opts, o) {
-			t.Errorf("ValueOpts names %s and `git commit -h` does not, so no arm of this pin ever probed it: measure it or drop it", o)
+		if contains(opts, o) {
+			continue
 		}
+		if qaOptIsAbsentHere(t, git, o) {
+			t.Logf("ValueOpts names %s and this git does not have it — git %s does, and the table is the union of both. Unprobed here, not drift", o, qaCommitOptsSince[o])
+			continue
+		}
+		t.Errorf("ValueOpts names %s and `git commit -h` does not, so no arm of this pin ever probed it: measure it or drop it", o)
 	}
 }

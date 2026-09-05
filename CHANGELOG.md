@@ -590,6 +590,19 @@ only wants the verdict does not have to risk the write to get it — the
 freshness script is the first such caller, and one classification is better
 than a second spelling of its three legs per caller.
 
+**On git 2.55 the commit wall refused a safe, path-limited commit that carried
+`-U`, `--unified` or `--inter-hunk-context`.**
+
+*Affected: any box running git 2.55.0 or later, where `git commit` grew those
+three options for the `-v` diff's context width.* They take their value as a
+separate WORD, and the wall's scan did not know that, so it read the value as
+an option and refused the commit — `git commit -U 3 -m x -- file.go` came back
+`refused by posse gate` with no way through but to respell it. The table is
+measured against git itself, and it is now the union of the two gits in play
+rather than only the older one; a commit carrying a real `-i`/`-p`/
+`--interactive` after the pair is still refused, which is what the option
+exists to keep true. Nothing else about the wall moved.
+
 **`posse cost` reported $0 of claude spend, silently, on a box that sets
 `CLAUDE_CONFIG_DIR`.**
 
