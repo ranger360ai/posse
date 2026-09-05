@@ -7,6 +7,7 @@ package posse
 // The dispatch-level and cross-process claims live in worktree_qa_test.go.
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -1788,4 +1789,275 @@ func TestListSessionTreesWillNotCallAHalfLandedOrSquashedBranchLanded(t *testing
 			t.Errorf("a squash matches no per-commit patch-id and must not read as settled:\n%s", got)
 		}
 	})
+}
+
+// ─── the detached head a caged session works on (ranger-base-t4f1) ──────────
+
+// The whole round trip, and the one arm that says the mechanism is worth
+// having: a caged launch detaches, the persona commits with NO ref write at
+// all (which is what lets the container tier mount the git common dir `:ro`),
+// and the close splices the work back onto the branch and lands it.
+//
+// The ref-write claim is measured here rather than asserted, from the branch
+// ref itself: after the commit the branch is still exactly where it was cut,
+// so nothing under `<common>/refs` was touched to make that commit — the fact
+// sessionCommonDirWrites rests on.
+func TestCagedWorktreeSessionCommitsDetachedAndTheCloseSplicesItBack(t *testing.T) {
+	t.Parallel()
+	a := wtApp(t)
+	repo := wtRepo(t)
+	tr, err := a.EnsureSessionTree(repo, "s-1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cutAt := mustGit(t, repo, "rev-parse", "refs/heads/"+tr.Branch)
+	// `logs/` TAKEN AWAY first, or the assertion below measures the fixture:
+	// wtRepo commits before the worktree is cut, so git has already written a
+	// reflog there and the launcher's mkdir would be a no-op that a REMOVED
+	// mkdir passes just as well (measured — the mutant survived until this
+	// line was added).
+	own := LinkedGitDirs(tr.Path)
+	if len(own) != 2 {
+		t.Fatalf("a linked worktree has two git dirs, got %v", own)
+	}
+	if err := os.RemoveAll(filepath.Join(own[1], "logs")); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := PrepareSessionHead(tr, true, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if b, err := git(tr.Path, "symbolic-ref", "--quiet", "HEAD"); err == nil && b != "" {
+		t.Fatalf("a caged session must launch on a detached HEAD, got %s", b)
+	}
+	if !launchedDetached(tr.Repo, tr.Branch) {
+		t.Fatal("the detach was not recorded, so the close would read it as the accidental case")
+	}
+	// The launcher's mkdir: a read-write overlay of an absent source is
+	// dropped by cageOverlay, and the reflog write of the first commit would
+	// then be refused on the `:ro` common dir.
+	if st, err := os.Stat(filepath.Join(own[1], "logs")); err != nil || !st.IsDir() {
+		t.Fatalf("the launcher must make <common>/logs before a caged launch: %v", err)
+	}
+
+	commitIn(t, tr.Path, "fix.txt", "the work\n", "s-1: the fix")
+	head := mustGit(t, tr.Path, "rev-parse", "HEAD")
+	if now := mustGit(t, repo, "rev-parse", "refs/heads/"+tr.Branch); now != cutAt {
+		t.Fatalf("a detached commit moved %s (%s → %s) — the narrowed mount grants no ref write, so this shape would not commit inside the cage", tr.Branch, cutAt[:12], now[:12])
+	}
+
+	o, err := MergeSessionWork(tr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !o.Merged || o.Commits != 1 {
+		t.Fatalf("the splice did not put the work where the merge could take it: %+v", o)
+	}
+	if body, err := os.ReadFile(filepath.Join(repo, "fix.txt")); err != nil || string(body) != "the work\n" {
+		t.Errorf("a caged session's committed work is not on the repo's branch: %v", err)
+	}
+	if now := mustGit(t, repo, "rev-parse", "refs/heads/"+tr.Branch); now != head {
+		t.Errorf("the splice did not move %s onto the tree's HEAD: %s vs %s", tr.Branch, now[:12], head[:12])
+	}
+}
+
+// The splice runs for a session posse detached ON PURPOSE and for no other,
+// which is what keeps the ranger-base-dybv guard catching the accidental
+// case. Same fixture, same detached HEAD, one bit different — and the two
+// arms have to disagree, or the guard has been silenced for every session.
+func TestOnlyARecordedDetachSplices(t *testing.T) {
+	t.Parallel()
+	for _, recorded := range []bool{true, false} {
+		t.Run(fmt.Sprintf("recorded=%v", recorded), func(t *testing.T) {
+			a := wtApp(t)
+			repo := wtRepo(t)
+			tr, err := a.EnsureSessionTree(repo, "s-1", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			mustGit(t, tr.Path, "checkout", "-q", "--detach")
+			if recorded {
+				if err := recordDetached(tr.Repo, tr.Branch, true); err != nil {
+					t.Fatal(err)
+				}
+			}
+			commitIn(t, tr.Path, "fix.txt", "the work\n", "s-1: the fix")
+
+			o, err := MergeSessionWork(tr)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if recorded {
+				if !o.Merged {
+					t.Fatalf("a designed detach must be spliced and landed: %+v", o)
+				}
+				return
+			}
+			if o.Merged {
+				t.Fatalf("an ACCIDENTAL detach was landed — the dybv guard is gone: %+v", o)
+			}
+			if !strings.Contains(o.Reason, "the tree's HEAD is off its own branch") {
+				t.Errorf("the accidental case must still be reported in its own words: %q", o.Reason)
+			}
+		})
+	}
+}
+
+// The tier is a property of the LAUNCH and the tree outlives it. A PID that
+// drops `cage: container`, or a `--cage seatbelt` relaunch, must not inherit
+// a detached HEAD forever — that would take the dybv guard's sensitivity with
+// it for the life of the branch.
+func TestAnUncagedLaunchPutsADetachedTreeBackOnItsBranch(t *testing.T) {
+	t.Parallel()
+	a := wtApp(t)
+	repo := wtRepo(t)
+	tr, err := a.EnsureSessionTree(repo, "s-1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := PrepareSessionHead(tr, true, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	commitIn(t, tr.Path, "fix.txt", "the work\n", "s-1: the fix")
+	head := mustGit(t, tr.Path, "rev-parse", "HEAD")
+
+	if err := PrepareSessionHead(tr, false, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := git(tr.Path, "symbolic-ref", "--short", "--quiet", "HEAD"); b != tr.Branch {
+		t.Fatalf("an uncaged launch must put the tree back on %s, HEAD is on %q", tr.Branch, b)
+	}
+	if now := mustGit(t, repo, "rev-parse", "refs/heads/"+tr.Branch); now != head {
+		t.Errorf("the re-attach lost the detached commits: %s vs %s", now[:12], head[:12])
+	}
+	if launchedDetached(tr.Repo, tr.Branch) {
+		t.Error("the record still says detached, so a later close would splice for a session posse never detached")
+	}
+	// And the guard is live again on this branch: an accidental detach from
+	// here is reported, not landed.
+	mustGit(t, tr.Path, "checkout", "-q", "--detach")
+	commitIn(t, tr.Path, "again.txt", "more\n", "s-1: more")
+	o, err := MergeSessionWork(tr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if o.Merged {
+		t.Errorf("the dybv guard did not come back with the branch: %+v", o)
+	}
+}
+
+// A second caged launch into the same tree moves the branch up to the work
+// FIRST. Between two caged sessions a kill can retire the tree, and commits
+// of the first that no ref names are exactly what such a retire destroys.
+func TestARelaunchIntoADetachedTreeSplicesBeforeItRuns(t *testing.T) {
+	t.Parallel()
+	a := wtApp(t)
+	repo := wtRepo(t)
+	tr, err := a.EnsureSessionTree(repo, "s-1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := PrepareSessionHead(tr, true, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	commitIn(t, tr.Path, "fix.txt", "the work\n", "s-1: the fix")
+	head := mustGit(t, tr.Path, "rev-parse", "HEAD")
+
+	if err := PrepareSessionHead(tr, true, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if now := mustGit(t, repo, "rev-parse", "refs/heads/"+tr.Branch); now != head {
+		t.Errorf("the relaunch left the first session's commit on no branch: %s vs %s", now[:12], head[:12])
+	}
+	if b, err := git(tr.Path, "symbolic-ref", "--quiet", "HEAD"); err == nil && b != "" {
+		t.Errorf("the relaunch re-attached a caged session's tree to %s", b)
+	}
+}
+
+// `branch -f` is a ref write with no ancestry check, so a branch tip the
+// tree's HEAD does not reach is work this would DELETE. Nothing in posse's
+// own paths can produce that pair — the branch of a detached tree moves only
+// through the splice — so the refusal is about what posse does not control:
+// an operator's own `branch -f`, or a stale record on a reused branch.
+func TestTheSpliceRefusesToRewindABranch(t *testing.T) {
+	t.Parallel()
+	a := wtApp(t)
+	repo := wtRepo(t)
+	tr, err := a.EnsureSessionTree(repo, "s-1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := PrepareSessionHead(tr, true, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	commitIn(t, tr.Path, "fix.txt", "the persona's work\n", "s-1: the fix")
+	head := mustGit(t, tr.Path, "rev-parse", "HEAD")
+	// The branch taken somewhere the tree's HEAD does not reach. git allows
+	// it precisely BECAUSE the tree is detached — a branch a worktree has
+	// checked out is refused, and a detached tree has none, which is the
+	// hole this refusal stands in.
+	commitIn(t, repo, "elsewhere.txt", "somebody else\n", "main: elsewhere")
+	mustGit(t, repo, "branch", "-f", tr.Branch, "main")
+	moved := mustGit(t, repo, "rev-parse", "refs/heads/"+tr.Branch)
+	if moved == head {
+		t.Fatalf("the fixture did not move the branch off the tree's HEAD (%s)", moved[:12])
+	}
+
+	if err := spliceDetachedWork(tr); err == nil {
+		t.Fatal("the splice overwrote a branch the tree's HEAD does not reach")
+	}
+	if now := mustGit(t, repo, "rev-parse", "refs/heads/"+tr.Branch); now != moved {
+		t.Errorf("the refused splice moved the branch anyway: %s vs %s", now[:12], moved[:12])
+	}
+}
+
+// A DETACHED tree is one of ours. `worktree list --porcelain` prints
+// `detached` where it would have printed `branch refs/heads/…`, so keying on
+// that line alone dropped every container-tier session out of the landing
+// sweep, `posse worktrees` and the merge — over exactly the sessions whose
+// work is in the tree and not on the branch.
+func TestTheSweepSeesADetachedSessionTree(t *testing.T) {
+	t.Parallel()
+	a := wtApp(t)
+	repo := wtRepo(t)
+	tr, err := a.EnsureSessionTree(repo, "s-1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := PrepareSessionHead(tr, true, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	commitIn(t, tr.Path, "fix.txt", "the work\n", "s-1: the fix")
+
+	trees, err := SessionTreesIn([]string{repo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, got := range trees {
+		if resolveExisting(got.Path) == resolveExisting(tr.Path) {
+			found = true
+			if got.Branch != tr.Branch {
+				t.Errorf("the sweep named the wrong branch for a detached tree: %q, want %q", got.Branch, tr.Branch)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("a detached session tree is invisible to the sweep that exists to find stranded work: %+v", trees)
+	}
+	// The main checkout is in that listing too and must never be claimed as
+	// a session tree, whatever its HEAD is doing. The branch it would be
+	// claimed UNDER has to exist for this arm to measure anything — without
+	// it branchExists refuses on its own and the guard is untested.
+	mustGit(t, repo, "branch", SessionBranch(filepath.Base(repo)), "main")
+	mustGit(t, repo, "checkout", "-q", "--detach")
+	trees, err = SessionTreesIn([]string{repo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, got := range trees {
+		if resolveExisting(got.Path) == resolveExisting(repo) {
+			t.Errorf("the main checkout was claimed as a session tree: %+v", got)
+		}
+	}
 }

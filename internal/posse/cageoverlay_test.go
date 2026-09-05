@@ -395,12 +395,25 @@ func TestRedirectedBeadStoreCrossesTheBoundaryReadWrite(t *testing.T) {
 	}
 }
 
-// The `.git` carve-out in the shape a worktree has it. `<dir>/.git` there is
-// a FILE on the repo mount, so the overlay that answers an ordinary repo
-// answers nothing: the index, HEAD and objects are all in the common dir,
-// which is a mount of its own and used to take the repo's mode. A `:ro`
-// common dir is a session that cannot `git status` — extra rather than the
-// gate, which is the same reason ADR 0014 §4 gives for carving out `.beads`.
+// The `.git` carve-out in the shape a worktree has it, NARROWED
+// (ranger-base-t4f1, closing ranger-base-6q5e). `<dir>/.git` there is a FILE
+// on the repo mount, so the overlay that answers an ordinary repo answers
+// nothing: the index, HEAD and objects are all in the common dir, which is a
+// mount of its own.
+//
+// Mounted whole read-write — which is what ranger-base-yu5 shipped — a caged
+// persona could move `refs/heads/main`, rewrite `packed-refs`, move
+// `core.hooksPath` in `config` (dodging the hooks-:ro overlay of
+// ranger-base-3c3/h15 rather than being stopped by it) and edit another
+// session's `worktrees/<name>`. So it is `:ro`, with read-write overlays of
+// the three regions a DETACHED-HEAD commit actually writes — the same set
+// sessionGitGrants names at L2 minus the ref pair, because the launcher
+// detaches HEAD (PrepareSessionHead) and splices at close instead.
+//
+// This test measures the MOUNT LIST. That the engine honours a read-write
+// bind over a `:ro` parent is measured in
+// docs/adr/0014-path-scoped-writes.probe.sh (7/7, ranger-base-yu5), and this
+// bead's own arms are in docs/adr/0014-l4-worktree-narrowing.probe.sh.
 func TestWorktreeGitCommonDirIsTheGitCarveOut(t *testing.T) {
 	t.Parallel()
 	if _, err := exec.LookPath("git"); err != nil {
@@ -434,12 +447,51 @@ func TestWorktreeGitCommonDirIsTheGitCarveOut(t *testing.T) {
 		t.Fatal(err)
 	}
 	common := filepath.Dir(hooks)
+	own := LinkedGitDirs(wt)
+	if len(own) != 2 {
+		t.Fatalf("a linked worktree has two git dirs, got %v", own)
+	}
+	// `logs/` is made by the launcher (PrepareSessionHead) because a
+	// read-write overlay of an absent source is dropped by cageOverlay's Stat
+	// guard. Made here for the same reason; the arm that measures the drop is
+	// at the bottom of this test.
+	if err := os.MkdirAll(filepath.Join(common, "logs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, front := range []string{"cage: container\ndeny: [Edit, Write]\n", "cage: container\n"} {
+		ms := a.CageMounts(cageAgent(t, a, front), e, wt, "s1")
+		wantMode(t, ms, common, true, "worktree git common dir ("+front+")")
+		wantMode(t, ms, own[0], false, "the session's own per-worktree git dir")
+		wantMode(t, ms, filepath.Join(common, "objects"), false, "objects")
+		wantMode(t, ms, filepath.Join(common, "logs"), false, "logs")
+		// The four the narrowing exists for: each is inside the `:ro` common
+		// mount and under NO overlay, so the deepest bind covering it is the
+		// read-only one. A mount of its own here — in either mode — would be
+		// the bug, so the assertion is that nothing lands on them at all.
+		for _, p := range []string{"config", "hooks", "packed-refs", "refs"} {
+			wantNoMount(t, ms, filepath.Join(common, p), "<common>/"+p+" stays under the :ro mount ("+front+")")
+		}
+		// Another session's tree, which is the sibling of the one overlay
+		// that IS granted — the case depth-ordering makes possible and the
+		// reason the grant is `worktrees/<own>` and not `worktrees`.
+		wantNoMount(t, ms, filepath.Join(common, "worktrees"), "worktrees/ itself")
+		wantNoMount(t, ms, filepath.Join(common, "worktrees", "someone-else"), "another session's per-worktree dir")
+		// And `<wt>/.git` is a file, so nothing tried to overlay it — a bind
+		// of a non-directory is the grant this must not invent.
+		wantNoMount(t, ms, filepath.Join(wt, ".git"), "the worktree's .git pointer file")
+	}
+	wantMode(t, a.CageMounts(cageAgent(t, a, "cage: container\ndeny: [Edit, Write]\n"), e, wt, "s1"), wt, true, "worktree repo")
+
+	// The wall removed: with no `logs/` on disk the read-write overlay is
+	// DROPPED (cageOverlay's Stat guard), which is what the launcher's
+	// mkdir exists to prevent — and it is the arm that proves the three
+	// overlays above are read off the tree rather than spelled from a list.
+	if err := os.RemoveAll(filepath.Join(common, "logs")); err != nil {
+		t.Fatal(err)
+	}
 	ms := a.CageMounts(cageAgent(t, a, "cage: container\ndeny: [Edit, Write]\n"), e, wt, "s1")
-	wantMode(t, ms, wt, true, "worktree repo")
-	wantMode(t, ms, common, false, "worktree git common dir")
-	// And `<wt>/.git` is a file, so nothing tried to overlay it — a bind of
-	// a non-directory is the grant this must not invent.
-	wantNoMount(t, ms, filepath.Join(wt, ".git"), "the worktree's .git pointer file")
+	wantNoMount(t, ms, filepath.Join(common, "logs"), "logs with no source on disk")
 }
 
 // The overlay is spelled the way the mount it lands on is spelled, not the

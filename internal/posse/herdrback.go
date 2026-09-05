@@ -1899,12 +1899,14 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 	// (rangerhq-09o2). Doing this first is what makes that true by
 	// construction rather than by nine remembered call sites.
 	repo, branch := "", ""
+	var tree *SessionTree
 	if o.Worktree {
 		t, err := a.EnsureSessionTree(dir, o.Name, b.warnWriter())
 		if err != nil {
 			return nil, err
 		}
 		if t != nil {
+			tree = t
 			dir, repo, branch = t.Path, t.Repo, t.Branch
 			// The branch's own copy of `bead:` (worktree.go beadKey): the
 			// meta below carries the same pointer and is removed by every
@@ -2514,6 +2516,20 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 		}
 		if len(ag.Deny) > 0 {
 			vars = append(vars, EnvVar{"RHQ_TOOLS_DENY", strings.Join(ag.Deny, "\n")})
+		}
+	}
+
+	// Which HEAD this session's tree works on, decided from the tier and
+	// nowhere else (ranger-base-t4f1). A caged worktree session commits on a
+	// DETACHED head — that is what lets the container tier's common-dir mount
+	// grant no ref write at all — and the launcher splices the work back onto
+	// the branch at close. An uncaged launch into a tree posse detached puts
+	// it back on its branch here. Asked after `caged` is resolved, because
+	// the PID's demand and what this host can actually provide are different
+	// answers and only the second decides what the session gets.
+	if tree != nil {
+		if err := PrepareSessionHead(tree, caged, b.warnWriter()); err != nil {
+			return nil, err
 		}
 	}
 

@@ -404,19 +404,52 @@ func (a *App) CageMounts(ag *AgentFile, e *Engine, dir, session string) []CageMo
 	// mounted too. Same path in and out, so the pointer file resolves inside
 	// to the thing it names outside.
 	//
-	// READ-WRITE whatever the repo's mode: this is the `.git` carve-out of
-	// ADR 0014 §4 in the shape a worktree has it. A worktree's index, HEAD
-	// and objects are all in there, so a `:ro` common dir is a session that
-	// cannot even `git status` without an error, which is extra rather than
-	// the gate. It is wider than L2's grant, which names `worktrees/<own>`,
-	// `objects`, `logs` and the session's own ref (ranger-base-m2wf): a bind
-	// mount's source must EXIST, and `refs/heads/<branch>.lock` is created
-	// by git at commit time, so the narrowed set is not a mount list. Stated,
-	// not hidden — a caged worktree persona can move any ref in the repo it
-	// was dispatched into, which is the same directory-granularity gap ADR
-	// 0002 accepts for codex/grok `--add-dir` at L2.
+	// **`:ro`, with read-write overlays of the three regions a commit really
+	// writes** (ranger-base-t4f1, closing ranger-base-6q5e). This is the
+	// `.git` carve-out of ADR 0014 §4 in the shape a worktree has it, and it
+	// is narrower than L2's own grant rather than wider. Mounted whole
+	// read-write — which is what shipped with ranger-base-yu5 — a caged
+	// persona could `git update-ref refs/heads/main` (not a push, so the L1
+	// shim never sees it and L3's pre-push never fires), rewrite
+	// `packed-refs`, move `core.hooksPath` in `config` (which DODGES the
+	// hooks-:ro overlay of ranger-base-3c3/h15 — moving the slot beats
+	// freezing it), and edit another session's `worktrees/<name>/`. At the
+	// one tier whose whole job is containing a prompt-injected persona.
+	//
+	// L2 narrows the same grant to `worktrees/<own>`, `objects`, `logs` and
+	// the session's OWN `refs/heads/<branch>` (+`.lock`) — sessionGitGrants,
+	// ranger-base-m2wf. The ref half of that set is not a mount list: a bind
+	// mount's source must EXIST and git creates the `.lock` at commit time,
+	// and a pre-created `.lock` fails every commit ("File exists") while a
+	// bind mountpoint cannot be replaced by the rename(2) that commits a ref
+	// update (assessed on ranger-base-6q5e; lock-then-rename fights
+	// file-granular binds by construction). The other three ARE expressible,
+	// and what makes them enough is the DETACHED HEAD the launcher puts a
+	// caged worktree session on (PrepareSessionHead, worktree.go): with no
+	// branch under HEAD a commit writes only the per-worktree dir, `objects`
+	// and `logs` — measured at L2, seatbeltworktreegit_qa_test.go's
+	// TestQADetachedWorktreeGetsNoRefGrant and the sessionGitGrants comment —
+	// and the launcher splices the work back onto the branch at close
+	// (MergeSessionWork). So the result grants no ref write AT ALL, and for
+	// worktrees it also closes the `config`/`core.hooksPath` dodge, since
+	// `config` and `hooks` are both left under the `:ro` mount.
+	//
+	// Depth-ordered overlays are what carries it, MEASURED 7/7 on this
+	// engine in `docs/adr/0014-path-scoped-writes.probe.sh` (ranger-base-yu5,
+	// Docker 29.0.1 / VirtioFS): a bind of a directory lands over a bind of
+	// its parent in both directions, and the engine sorts by destination
+	// depth rather than list order.
+	//
+	// Residual, stated not hidden: `objects` (content injection — inert
+	// until a ref names it, and naming goes through the splice and the
+	// launcher's ff), `logs` (the reflog), and the session's own worktree
+	// dir. Same class L2 accepts.
 	if common := gitCommonDirOutside(dir); common != "" {
-		ms = append(ms, CageMount{Src: common, Dst: common, Why: "the worktree's git common dir — .git here is a file pointing at it, L3's hooks live there, and it is the `.git` carve-out for a worktree (ADR 0014 §4)"})
+		ms = append(ms, CageMount{Src: common, Dst: common, RO: true, Why: "the worktree's git common dir, READ-ONLY — L3's hooks and the repo's refs and config live there, and only the three regions a detached-HEAD commit writes are overlaid back (ranger-base-t4f1, ADR 0014 §4)"})
+		for _, p := range sessionCommonDirWrites(dir, common) {
+			ms = cageOverlay(ms, p, false,
+				"read-write over the :ro common dir — one of the three regions a DETACHED-HEAD commit in this worktree writes (sessionGitGrants at L2, ranger-base-m2wf; ranger-base-t4f1 at L4)")
+		}
 	}
 	if len(ag.Skills) > 0 {
 		ms = append(ms, CageMount{Src: ag.SkillsStateDir, Dst: ag.SkillsStateDir, RO: true, Why: "bound skills (ADR 0007)"})
@@ -440,6 +473,52 @@ func (a *App) CageMounts(ag *AgentFile, e *Engine, dir, session string) []CageMo
 	})
 	ms = append(ms, a.CageSocketMounts(ag)...)
 	return cagePathScopedOverlays(ms, ag, dir)
+}
+
+// sessionCommonDirWrites is sessionGitGrants (seatbelt.go) in the shape a
+// mount list can say: the three regions inside a worktree's git common dir
+// that a DETACHED-HEAD commit in this tree writes — its own
+// `worktrees/<name>` dir (index, HEAD, its locks), `objects`, and `logs`.
+// Everything else there — `config`, `hooks`, `packed-refs`, `refs`, other
+// sessions' `worktrees/<name>` — is left under the `:ro` common mount.
+//
+// The ref pair L2 also grants is deliberately absent, and that is the whole
+// narrowing: at L2 the session commits ON its branch and needs
+// `refs/heads/<branch>` plus the `.lock` git renames onto it; here the
+// launcher detaches HEAD instead and splices the work back at close, so
+// there is no ref for the cage to write and none to grant.
+//
+// `own` comes from LinkedGitDirs so it cannot disagree with the common dir
+// the caller already resolved — the two are one `git rev-parse`. A shape
+// that answers neither (nothing here can: a common dir outside the tree IS a
+// linked worktree) grants nothing extra rather than falling back to the
+// whole dir: a mount list that cannot name the narrow set must not quietly
+// widen to the one this bead removed.
+//
+// `logs` is in the set because L2's is — a wall that reads the same fact
+// differently from the wall next to it is the classification error ADR 0014
+// exists to prevent — and NOT because a detached commit needs it. That is
+// measured (2026-09-05, git 2.50.1, arms A5/A5b of
+// docs/adr/0014-l4-worktree-narrowing.probe.sh): in a linked worktree HEAD's
+// reflog is per-worktree (`worktrees/<own>/logs/HEAD`, inside the first
+// overlay), and `<common>/logs/refs/heads/<branch>` appears only when a
+// commit moves a SHARED ref — which is exactly what detaching removes. What
+// the overlay buys is the git operation inside the cage that DOES update a
+// shared ref (a fetch, a note): with `logs` `:ro` that is a fatal rather than
+// a skipped reflog.
+//
+// It may not exist — a repo that has never updated a shared ref has no
+// `logs/` — and a read-write overlay of an absent source is dropped by
+// cageOverlay's Stat guard. The launcher makes it before launch
+// (PrepareSessionHead), so the rendered set does not depend on whether this
+// repo happens to have written one; this stays Stat-honest rather than
+// asserting it.
+func sessionCommonDirWrites(dir, common string) []string {
+	out := []string{}
+	if dirs := LinkedGitDirs(dir); len(dirs) == 2 {
+		out = append(out, dirs[0])
+	}
+	return append(out, filepath.Join(common, "objects"), filepath.Join(common, "logs"))
 }
 
 // cageOverlay places one path at mode ro over whatever already covers it,

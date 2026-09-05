@@ -481,6 +481,202 @@ func baseOf(repo, branch, fallback string) string {
 	return fallback
 }
 
+// ─── the detached head a caged session works on (ranger-base-t4f1) ──────────
+
+// detachedKey names where a session branch records that its tree was launched
+// on a DETACHED HEAD. Kept in git config on the branch, beside baseKey and
+// beadKey and for their reason: the landing sweep has to answer this about a
+// tree whose session meta a kill already removed, and `git branch -d` takes
+// the record with the branch so a retired tree leaves nothing behind.
+//
+// It exists because the SPLICE below and the ranger-base-dybv guard read the
+// same fact — a worktree HEAD that is off its own branch — and mean opposite
+// things by it. Designed-detached is the container tier working as built and
+// its work is put back on the branch; accidental is the failure dybv measured
+// twice in the field, where a close reported success over commits no ref
+// reaches. Without a record the splice would silence the guard for every
+// session, which is the one thing it must not do.
+func detachedKey(branch string) string { return "branch." + branch + ".posseDetached" }
+
+// recordDetached writes (or clears) that record. Written at every launch into
+// the tree rather than only the first, because the tier is a property of the
+// LAUNCH: the same tree is relaunched at another cage tier when the PID
+// changes, and a record that only ever went on would keep splicing for a
+// session posse never detached.
+func recordDetached(repo, branch string, on bool) error {
+	if branch == "" {
+		return nil
+	}
+	if !on {
+		// `--unset` on a key that is not there exits 5. Nothing to clear is
+		// not a failure to clear.
+		if _, err := git(repo, "config", "--get", detachedKey(branch)); err != nil {
+			return nil
+		}
+		_, err := git(repo, "config", "--unset", detachedKey(branch))
+		return err
+	}
+	_, err := git(repo, "config", detachedKey(branch), "1")
+	return err
+}
+
+// launchedDetached answers whether posse put this session's tree on a
+// detached HEAD. False for every branch cut before this landed and every tree
+// made by hand — which is the safe default in both directions: no splice, and
+// the dybv guard still reports an off-branch HEAD.
+func launchedDetached(repo, branch string) bool {
+	out, err := git(repo, "config", "--get", detachedKey(branch))
+	return err == nil && strings.TrimSpace(out) == "1"
+}
+
+// treeDetachedHead is the tree's own HEAD sha when that tree exists and its
+// HEAD is on no branch, ("", false) otherwise. Asked of the TREE and not of
+// workHead, which deliberately falls back to the branch ref for a retired
+// tree — here the fallback would read a tree that is gone as a detached one
+// and splice a branch onto itself.
+func treeDetachedHead(path string) (string, bool) {
+	sha, err := git(path, "rev-parse", "HEAD")
+	if err != nil || sha == "" {
+		return "", false
+	}
+	if b, err := git(path, "symbolic-ref", "--quiet", "HEAD"); err == nil && b != "" {
+		return "", false
+	}
+	return sha, true
+}
+
+// spliceDetachedWork puts a detached tree's commits back on its session
+// branch — the exact command landed() prescribes to a human
+// (`git -C <tree> branch -f <branch> HEAD`), run by the launcher for the
+// sessions it detached on purpose.
+//
+// FAST-FORWARD ONLY, and that is not politeness: `branch -f` is a ref write
+// with no ancestry check, so a branch tip the tree's HEAD does not reach is
+// work this would DELETE. It cannot happen through posse's own paths — the
+// branch of a detached tree moves only through this function — so the refusal
+// is about the case nothing here controls (an operator's `branch -f`, a
+// stale record on a reused branch), and it leaves the dybv guard to report
+// the disagreement in the words it already has.
+//
+// A no-op on every shape that is not a designed detach: a tree that is gone,
+// a HEAD on a branch, a branch already at HEAD.
+func spliceDetachedWork(t *SessionTree) error {
+	head, ok := treeDetachedHead(t.Path)
+	if !ok {
+		return nil
+	}
+	if tip := refSHA(t.Repo, "refs/heads/"+t.Branch); tip != "" {
+		if tip == head {
+			return nil
+		}
+		if !reaches(t.Repo, head, tip) {
+			return Die("%s is at %s, which does not reach %s's tip %s — `branch -f` there would delete work, so the splice is refused",
+				AbbrevHome(t.Path), abbrevSHA(head), t.Branch, abbrevSHA(tip))
+		}
+	}
+	_, err := git(t.Path, "branch", "-f", t.Branch, "HEAD")
+	return err
+}
+
+// PrepareSessionHead decides, at every launch into a session worktree,
+// whether HEAD sits ON the session branch or off it — because at the
+// container tier the answer is what the git grant is made of
+// (ranger-base-t4f1, closing ranger-base-6q5e).
+//
+// A caged session's common-dir mount is `:ro` with read-write overlays of
+// `worktrees/<own>`, `objects` and `logs` and NOTHING under `refs`
+// (sessionCommonDirWrites, cage.go): the ref half of L2's grant is not a
+// mount list, since a bind mount's source must exist and git creates
+// `refs/heads/<branch>.lock` at commit time. On a detached HEAD there is no
+// ref to write — a commit moves the per-worktree HEAD and lands its objects
+// and reflog, all three inside the overlays, measured at L2 in
+// seatbeltworktreegit_qa_test.go — so detaching is what buys the narrowing
+// rather than costing the session its commit.
+//
+// Both directions, deliberately. The tier is a property of the launch and the
+// tree outlives it: a PID that drops `cage: container`, or a `--cage seatbelt`
+// relaunch, would otherwise inherit a detached HEAD forever and take the dybv
+// guard's sensitivity with it. So an uncaged launch into a tree posse
+// detached splices the work back and checks the branch out again.
+//
+// Errors REFUSE the launch, and the asymmetry is the point: a caged session
+// whose HEAD could not be detached, or whose `logs/` could not be made,
+// cannot commit at all inside the cage it is about to enter, and a persona
+// discovering that at its first commit is worse than a launch that does not
+// happen. The re-attach direction only warns — the work is already on the
+// branch by then and the session runs fine off a detached HEAD.
+//
+// It runs where planLaunch resolves the tier, which on the relaunch path is
+// the preflight — outside the launcher lock, and before the old session is
+// killed (relaunch.go). That is the same position EnsureSessionTree already
+// occupies, and the same reason makes it safe: everything written here is
+// this session's own — its tree's HEAD, its own branch's ref and its own
+// branch's config — never a store another launcher shares.
+//
+// The one case worth naming: a relaunch re-enters the plan with the tier the
+// meta RECORDED (RecreateOpts passes m.Cage), so it normally finds the tree
+// already in the state it wants and does nothing but move the branch up to
+// the work. It can differ only when the PID's `cage:` was raised between two
+// launches of one session name, and then the detach lands while the old
+// session is still alive in that tree — a session this pass is about to kill,
+// whose commits the splice keeps either way. Not free, and small enough to
+// state rather than restructure the launch around.
+func PrepareSessionHead(t *SessionTree, caged bool, warn io.Writer) error {
+	if t == nil || t.Path == "" || t.Branch == "" {
+		return nil
+	}
+	if !caged {
+		if !launchedDetached(t.Repo, t.Branch) {
+			return nil
+		}
+		if err := spliceDetachedWork(t); err != nil {
+			fmt.Fprintf(warnw(warn), "posse: %s keeps a detached HEAD — %v\n", AbbrevHome(t.Path), err)
+			return nil
+		}
+		if _, ok := treeDetachedHead(t.Path); ok {
+			if _, err := git(t.Path, "checkout", t.Branch); err != nil {
+				fmt.Fprintf(warnw(warn), "posse: %s stays on a detached HEAD (%v) — its work is on %s and lands from there\n", AbbrevHome(t.Path), err, t.Branch)
+				return nil
+			}
+		}
+		if err := recordDetached(t.Repo, t.Branch, false); err != nil {
+			fmt.Fprintf(warnw(warn), "posse: %s is back on %s but the record did not clear (%v)\n", AbbrevHome(t.Path), t.Branch, err)
+		}
+		return nil
+	}
+	// `logs/` is one of the three overlays and a read-write bind of a source
+	// that does not exist is DROPPED by cageOverlay's Stat guard, which would
+	// leave `<common>/logs` `:ro` inside the cage. NOT because the session's
+	// commit needs it — measured, and it does not: a detached commit's reflog
+	// is the per-worktree `worktrees/<own>/logs/HEAD` (probe arms A5/A5b,
+	// docs/adr/0014-l4-worktree-narrowing.probe.sh). What the mkdir buys is a
+	// rendered mount set that does not depend on whether this repo has ever
+	// updated a shared ref, and a cage where a git operation that does update
+	// one gets its reflog rather than a fatal.
+	dirs := LinkedGitDirs(t.Path)
+	if len(dirs) != 2 {
+		return Die("%s is not a linked worktree (git names no common dir), so the container tier's narrowed git grant cannot be built for it", AbbrevHome(t.Path))
+	}
+	if err := os.MkdirAll(filepath.Join(dirs[1], "logs"), 0o755); err != nil {
+		return Die("session worktree: %s has no logs/ and one could not be made (%v) — the caged session would reach a :ro reflog for every shared-ref update it makes", AbbrevHome(dirs[1]), err)
+	}
+	if _, ok := treeDetachedHead(t.Path); ok {
+		// A relaunch into a tree this launcher already detached. Move the
+		// branch up to the work FIRST — a kill between two caged sessions
+		// would otherwise leave the commits of the first on no ref — and
+		// leave HEAD where it is.
+		if err := spliceDetachedWork(t); err != nil {
+			fmt.Fprintf(warnw(warn), "posse: %s\n", err)
+		}
+	} else if _, err := git(t.Path, "checkout", "--detach"); err != nil {
+		return Die("session worktree: %s could not be detached (%v) — a caged session commits on a detached HEAD and nothing else in this tier's git grant can write a ref", AbbrevHome(t.Path), err)
+	}
+	if err := recordDetached(t.Repo, t.Branch, true); err != nil {
+		return Die("session worktree: %s was detached but the record did not stick (%v) — the close would read the tree's HEAD as an accidental detach and refuse to land it", AbbrevHome(t.Path), err)
+	}
+	return nil
+}
+
 // ─── creating a session's tree ───────────────────────────────────────────────
 
 // PlanSessionTree answers WHERE a session's tree would be, without making
@@ -795,6 +991,29 @@ func (o MergeOutcome) Blocked() bool {
 // serializes everything else for.
 func MergeSessionWork(t *SessionTree) (MergeOutcome, error) {
 	o := MergeOutcome{Branch: t.Branch, Base: t.Base}
+	// THE SPLICE (ranger-base-t4f1), before every guard below it. A session
+	// launched at the container tier works on a DETACHED HEAD, because that
+	// is what lets its git grant name no ref at all (PrepareSessionHead), so
+	// its commits are in the TREE and the branch is still where it was cut.
+	// That is the shape ranger-base-dybv measured a false Merged over and
+	// ranger-base-g2xf a false strand report over, and every guard from here
+	// down — branchExists, the rev-list count, constitutionOnBranch, landed
+	// — reads it as the anomaly it is for every OTHER session. Putting the
+	// work back on the branch first is what keeps those guards catching the
+	// ACCIDENTAL case: it runs only for a session posse recorded as detached
+	// on purpose, and it is fast-forward only.
+	//
+	// Under the launcher lock like the rest of this function, and before
+	// `t.Base == ""`: a repo whose own HEAD is detached has nowhere to land
+	// today, and the work still belongs on its branch for the pass that can.
+	//
+	// A refused splice is not reported here: what refuses it is a branch tip
+	// the tree's HEAD does not reach, which is exactly the disagreement
+	// landed() already names in words that send the operator to read it. A
+	// second sentence would be the same finding twice.
+	if launchedDetached(t.Repo, t.Branch) {
+		_ = spliceDetachedWork(t)
+	}
 	if t.Base == "" {
 		o.Reason = fmt.Sprintf("%s has a detached HEAD — there is no branch for %s to land on", AbbrevHome(t.Repo), t.Branch)
 		return o, nil
@@ -1862,6 +2081,25 @@ func mainCheckoutsOf(dirs []string) []string {
 // GIT, not the meta dir, on purpose: a kill that could not land its work
 // removes the session's meta and leaves the tree standing, so the one record
 // that survives every path is the one git keeps.
+//
+// A DETACHED tree is one of ours too (ranger-base-t4f1). `worktree list
+// --porcelain` prints `detached` where it would have printed `branch
+// refs/heads/…`, so keying on that line alone dropped every container-tier
+// session's tree out of the landing sweep, `posse worktrees` and the merge
+// — over exactly the sessions whose work is in the tree and not on the
+// branch. The name is recoverable without it: a session tree's directory IS
+// its session name (SessionTreePath), and the branch is derivable from the
+// name alone (SessionBranch), which is the property that already lets a kill
+// find the branch with nothing but the meta.
+//
+// Confirmed against the repo rather than assumed from the path, so a
+// stranger's worktree that happens to sit at `…/posse-something` is not
+// claimed as a session. The residual, stated: a detached tree whose branch
+// somebody deleted is invisible here — git refuses `branch -D` for a branch a
+// worktree has CHECKED OUT, and a detached tree has none, so that guard is
+// gone with it. It is the shape landed() reports when the sweep does reach it
+// ("no branch here reaches it"), and there is nothing in the porcelain that
+// separates such a tree from any other detached worktree.
 func SessionTreesIn(dirs []string) ([]*SessionTree, error) {
 	var out []*SessionTree
 	for _, repo := range mainCheckoutsOf(dirs) {
@@ -1872,6 +2110,15 @@ func SessionTreesIn(dirs []string) ([]*SessionTree, error) {
 		}
 		path, branch := "", ""
 		flush := func() {
+			if path != "" && branch == "" && resolveExisting(path) != resolveExisting(repo) {
+				// Never the main checkout itself: it appears in this listing
+				// too, and a detached one would otherwise be claimed as a
+				// session tree whenever `posse/<repo basename>` happens to be
+				// a branch.
+				if b := SessionBranch(filepath.Base(path)); branchExists(repo, b) {
+					branch = b
+				}
+			}
 			if path != "" && strings.HasPrefix(branch, "posse/") {
 				// Each tree's own base: they need not agree, and after an
 				// operator branch switch none of them is today's HEAD.

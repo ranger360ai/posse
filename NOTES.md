@@ -3897,7 +3897,10 @@ HOME and this session's refusals spool stay writable — the canonical log
 itself is never mounted (ADR 0025 §4). A **worktree** gets its git
 common dir mounted alongside, because `.git` there is a *file* pointing at
 the main repo's `.git` and L3's hooks live in it — a hook the container
-cannot see is a `git push` this tier lost.
+cannot see is a `git push` this tier lost. That mount is `:ro` with
+read-write overlays of `worktrees/<own>`, `objects` and `logs`, and the
+session works on a detached HEAD so it needs no ref write at all
+(ranger-base-t4f1; the section below).
 
 **`sockets:`** is the PID's opt-in to a host socket (`herdr` is the only
 name; an unknown one refuses the launch and `posse agent check` flags it).
@@ -4028,25 +4031,100 @@ grants a write-denying PID `cwd/.git` for index refresh and git's own locks,
 and a tier that took it away would be enforcing more than the gate. In an
 ordinary repo that is a directory inside the repo mount and an overlay says
 it. In a **worktree** `.git` is a FILE and the index, HEAD and objects all
-live in the common dir, which is a mount of its own and used to take the
-repo's mode; it is read-write now.
+live in the common dir, which is a mount of its own.
 
-That is **wider than L2**, and stated rather than hidden: L2 narrows the
-common-dir grant to `worktrees/<own>`, `objects`, `logs` and the session's
-own ref (ranger-base-m2wf) plus that ref's parent directory for CREATION
-only (ranger-base-uuze — the branch carries a slash, so git must `mkdir
-refs/heads/posse`, and `git gc` prunes it as soon as a pack empties it),
-and a bind mount cannot express that set — its source must EXIST, and
-`refs/heads/<branch>.lock` is created by git at commit time. So a caged
-worktree persona can move any ref in the repo it was dispatched into. It
-is the same directory-granularity gap ADR 0002 already accepts for
-codex/grok `--add-dir` at L2. `.git/hooks` back to `:ro` over it is
-ranger-base-3c3 / h15.
+### The worktree common dir is `:ro`, and narrower than L2 (ranger-base-t4f1)
 
-Every commit under that narrowing also prints `error: Unable to create
+ranger-base-yu5 shipped that common dir read-write WHOLE, which was **wider
+than L2** and said so here. ranger-base-6q5e assessed what the width bought
+an adversary at the one tier whose job is containing one: `refs/heads/main`
+(an `update-ref` is not a push, so L1's shim never sees it, L3's pre-push
+never fires, and the launcher's own ff fires no hook either), `packed-refs`
+wholesale, `config` — where a planted `core.hooksPath` **dodges** the
+hooks-`:ro` overlay of ranger-base-3c3/h15 rather than being stopped by it,
+because moving the slot beats freezing it — and other sessions'
+`worktrees/<name>`, their HEAD and index included.
+
+What ships now is **narrower than L2 rather than wider**: the common dir
+`:ro`, with read-write overlays of `worktrees/<own>`, `objects` and `logs`,
+and **no ref write at all**. L2's grant is those three plus the session's own
+`refs/heads/<branch>` and the `.lock` git renames onto it (ranger-base-m2wf),
+plus that ref's parent directory for CREATION only (ranger-base-uuze — the
+branch carries a slash, so git must `mkdir refs/heads/posse`, and `git gc`
+prunes it as soon as a pack empties it). The ref half is not expressible as a
+mount list and no amount of care makes it one: a bind mount's source must
+EXIST, git creates the `.lock` at commit time, a pre-created `.lock` fails
+every commit with "File exists", and the `rename(2)` that commits a ref update
+cannot replace a bind mountpoint. Lock-then-rename and file-granular binds
+fight by construction.
+
+**So the session is launched on a DETACHED HEAD instead** (`PrepareSessionHead`
+in worktree.go, called from `planLaunch` once the tier is resolved), and the
+launcher splices the work back with `git -C <tree> branch -f <branch> HEAD`
+at close — the exact command `landed()` has always printed for humans, run
+under the launcher lock before `MergeSessionWork`'s guards. Detaching is what
+buys the narrowing, and it is measured rather than reasoned: under exactly
+those three writable regions the same commit lands detached and **fails on the
+branch**, at `cannot lock ref 'HEAD': Unable to create
+refs/heads/posse/s-1.lock` (2026-09-05, git 2.50.1, arm A4 of
+`docs/adr/0014-l4-worktree-narrowing.probe.sh`).
+
+Three consequences worth keeping:
+
+- The splice runs only for a session posse RECORDED as detached
+  (`branch.<b>.posseDetached`, git config on the branch beside `posseBase` and
+  `posseBead`, so it survives a kill that removes the meta). Without that
+  record it would silence the ranger-base-dybv guard — an off-branch HEAD is
+  designed here and an anomaly everywhere else, and only the record tells them
+  apart. It is fast-forward only: `branch -f` has no ancestry check, and a
+  branch tip the tree's HEAD does not reach is work it would delete.
+- `worktree list --porcelain` prints `detached` where it would have printed
+  `branch refs/heads/…`, so the landing sweep, `posse worktrees` and the merge
+  stopped seeing these trees entirely — over exactly the sessions whose work
+  is in the tree and not on the branch. `SessionTreesIn` now recovers the name
+  from the tree's directory (`SessionTreePath` makes it the session name,
+  `SessionBranch` makes the branch from that) and confirms it against the
+  repo. Residual, stated: a detached tree whose branch somebody deleted is
+  invisible there — git refuses `branch -D` for a branch a worktree has
+  CHECKED OUT, and a detached tree has none.
+- `<common>/logs` is in the set because L2's is, not because a detached commit
+  needs it. Measured (arms A5/A5b): a linked worktree's HEAD reflog is
+  per-worktree (`worktrees/<own>/logs/HEAD`), and `<common>/logs/refs/heads/…`
+  appears only when a commit moves a SHARED ref — the thing detaching removes.
+  It is kept for the in-cage operation that does update one, and the launcher
+  `mkdir -p`s it so the rendered mount set does not depend on whether this repo
+  has ever written one.
+
+This **subsumes ADR 0038 decision 4** for worktrees (folded as
+ranger-base-mugt2, operator-confirmed 2026-09-01): that asked for `:ro` file
+binds of `<common>/config` and `<common>/hooks` over a read-write common
+mount, and both paths are now inside the `:ro` mount and under none of the
+three overlays. The ADR's own prose still describes the read-write-whole
+mechanism and is stale; amending it is architecture's, filed as a handoff.
+`.git/hooks` in an ORDINARY repo is still ranger-base-3c3 / h15.
+
+Residual after the narrowing, stated: `objects` (content injection — inert
+until a ref names it, and naming goes through the splice and the launcher's
+ff), `logs` (the reflog), and the session's own worktree dir. Same class L2
+accepts.
+
+Measurement: the mount SET is pinned in Go
+(`TestWorktreeGitCommonDirIsTheGitCarveOut`, cageoverlay_test.go, with the
+`logs`-absent arm that shows the Stat guard dropping an overlay), and the
+detach/splice round trip in worktree_test.go — fourteen mutants, all killed.
+`docs/adr/0014-l4-worktree-narrowing.probe.sh` carries the rest in two parts:
+Part A is MEASURED here (uid permissions, not the L4 wall, but it is the half
+that is about git rather than about the engine), Part B is the bind-mount arms
+and is **UNRUN** — Docker was abandoned on this box on 2026-08-30
+(ranger-base-6mz7). Part B's foundation is measured: the seven probes above.
+
+Every commit under a narrowed common dir — L2's `sessionGitGrants` and now
+L4's mount set alike — also prints `error: Unable to create
 '<common>/packed-refs.lock': Operation not permitted` on stderr and still
-succeeds — git takes that lock speculatively on every ref update and falls
-back cleanly when refused. DECLARED rather than fixed (ranger-base-msex):
+succeeds; git takes that lock speculatively on every ref update and falls
+back cleanly when refused. Measured again at L4 on 2026-09-05 (arm A3), where
+`gc --auto` after such a commit also exits 0 and leaves HEAD intact. DECLARED
+rather than fixed (ranger-base-msex):
 the tempting createOnly grant was measured and is worse than the noise —
 create-only buys the create but not git's own cleanup unlink, so the lock
 file is stranded in the shared common dir, which then hard-fails the
