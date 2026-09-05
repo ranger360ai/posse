@@ -603,7 +603,7 @@ design: no dollars, no error, and no "uncounted" line to say the number was
 not measured. `posse cost` printed a zero, the governance shop check read
 that same zero as headroom, and a dispatch settle read every turn as
 unobserved, because `FindClaudeTurnOutcome` uses the same locator. This is
-the collapse the previous release fixed for grok and codex; it was still open
+the collapse this release already fixed for grok and codex; it was still open
 on the one runtime that ends in real money.
 
 The walk is rooted at `$CLAUDE_CONFIG_DIR/projects` now, `~/.claude`'s when
