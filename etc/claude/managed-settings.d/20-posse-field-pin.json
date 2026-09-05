@@ -1,0 +1,20 @@
+{
+  "apiKeyHelper": "",
+  "awsAuthRefresh": "",
+  "awsCredentialExport": "",
+  "fileSuggestion": {
+    "command": "",
+    "type": "command"
+  },
+  "gcpAuthRefresh": "",
+  "otelHeadersHelper": "",
+  "proxyAuthHelper": "",
+  "statusLine": {
+    "command": "",
+    "type": "command"
+  },
+  "subagentStatusLine": {
+    "command": "",
+    "type": "command"
+  }
+}

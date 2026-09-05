@@ -91,7 +91,9 @@ const DefaultAgentCommand = `claude ` + ClaudeFleetFlags + ` --append-system-pro
 // above, plus the env pin this launch cannot express any other way
 // (settingsPin) — the credential dirs (credentialDirPin,
 // ranger-base-rq83c) and the transport/exec inlets (inletPin,
-// ranger-base-rflee), in that order.
+// ranger-base-rflee), in that order — plus the command-string FIELDS an env
+// pin structurally cannot reach (fieldPin, ranger-base-i7cy4), which sit
+// beside `env` rather than in it because they are top-level settings keys.
 //
 // The inlet half is why this function no longer renders the const alone on
 // a box with no home directory: the credential-dir rows need a home to name
@@ -129,6 +131,9 @@ func ClaudeFleetSettingsJSON() string {
 		return ClaudeFleetSettings
 	}
 	m["env"] = b
+	if !applyFieldPin(m) {
+		return ClaudeFleetSettings
+	}
 	out, err := json.Marshal(m)
 	if err != nil {
 		return ClaudeFleetSettings

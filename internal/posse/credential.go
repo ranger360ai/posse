@@ -1539,8 +1539,9 @@ func credentialDirPin() []EnvVar {
 //
 // It reads settingsPin, not credentialDirPin: since ranger-base-rflee the
 // pin is the credential dirs AND the transport/exec inlets (inletpin.go),
-// and a hand-written `command:` deserves the same guarantee for both. The
-// name is the one the runtime field and its pins already use.
+// and since ranger-base-i7cy4 the command-string fields beside them
+// (fieldpin.go). A hand-written `command:` deserves the same guarantee for
+// all three. The name is the one the runtime field and its pins already use.
 func credentialDirPinJSON() string {
 	pin := settingsPin()
 	if len(pin) == 0 {
@@ -1550,7 +1551,11 @@ func credentialDirPinJSON() string {
 	for _, v := range pin {
 		env[v.Key] = v.Value
 	}
-	b, err := json.Marshal(map[string]any{"env": env})
+	out := map[string]any{"env": env}
+	for _, f := range fieldPin() {
+		out[f.Key] = f.Value
+	}
+	b, err := json.Marshal(out)
 	if err != nil {
 		return "{}"
 	}

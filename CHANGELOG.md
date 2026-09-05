@@ -42,6 +42,47 @@ departing overlay files, and writes nothing.
 
 ### Security
 
+**The launch also pins the settings FIELDS whose value is a command, which
+an `env` pin cannot reach at all.**
+
+*Affected: every build before this one.*
+
+A settings file carries more than an `env` block. Nine of its top-level
+fields hold a command string the runtime runs on its own account —
+`apiKeyHelper`, `proxyAuthHelper`, `awsAuthRefresh`, `awsCredentialExport`,
+`gcpAuthRefresh`, `otelHeadersHelper`, `statusLine`, `subagentStatusLine`,
+`fileSuggestion` — and setting an environment variable does not touch one of
+them. They now travel pinned in the same `--settings` payload as the env
+rows, and the drop-in for the root-owned policy tier ships as
+`etc/claude/managed-settings.d/20-posse-field-pin.json`. The table, and the
+three-arm measurement behind it, are in `internal/posse/fieldpin.go`.
+
+**What you may need to do.** Nothing, unless you set one of those fields
+yourself, in which case the pin now wins over it for posse-launched sessions
+and the row is the place to change it. Two names in the runtime's own list
+are deliberately *not* pinned and the file says why for each: `processWrapper`
+resolves by a rule that skips an empty string, so the only value that closes
+it is a real launcher that then gets executed — an operator's call, not a
+default; and `policyHelpers` is already refused unless it arrives from an
+OS-admin source.
+
+**The pin is all-or-nothing, and that is new information about the pin that
+shipped before this one.** A single wrong-typed row makes the runtime
+discard the whole `--settings` payload in silence — the credential dirs and
+every env row with it, with nothing printed. A live check
+(`RHQ_LIVE_CLAUDE=1 go test ./internal/posse -run TestLiveClaudeFieldPin`)
+now grades the real rendered payload against the real reader, so a row that
+stops being accepted is a red rather than a pin that quietly stopped
+existing.
+
+**Hooks are not covered here, and cannot be.** A higher settings scope
+cannot refuse a hook a lower one planted: hook lists CONCATENATE rather than
+replace (measured against a live user scope). The lever that works is
+policy-tier only, and it takes any hook you rely on down with the attacker's
+unless the same change re-declares it at that tier — so it ships as a
+template, `etc/claude/21-posse-hooks-lockdown.json.in`, and not as something
+posse turns on for you.
+
 **The launch now pins the environment variables that decide what a session
 EXECUTES and where its traffic goes — not just the two that decide where it
 keeps its credential.**
