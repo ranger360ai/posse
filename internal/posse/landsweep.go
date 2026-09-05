@@ -367,11 +367,14 @@ func nothingToLand(t *SessionTree) bool {
 // land", so both go on to ask the bead and let MergeSessionWork say in words
 // why it cannot happen.
 //
-// The branch tip and nothing else, because its other caller asks about the
-// branch and says so in the words it prints: unaccountedFor (worktree.go)
-// hands the operator `git log <base>..<branch>` to read and `--land --force`
-// to run, and neither sentence is true of a commit that is on no branch at
-// all. What the SWEEP asks is nothingToLand, above.
+// The branch tip and nothing else, because that is one of the two questions
+// its callers ask and they compose the other themselves: the SWEEP asks
+// nothingToLand above, and unaccountedFor (worktree.go) asks this first —
+// its sentences are the branch's, `git log <base>..<branch>` to read and
+// `--land --force` to run — and then asks unlandedAhead of the tree's HEAD
+// when the branch has nothing, rewriting the sentence for the tip it found
+// (ranger-base-qihvt). Neither caller may take this count for the whole
+// answer: it is ZERO over a detached tree holding a session's entire work.
 func unlandedCount(t *SessionTree) (int, bool) { return unlandedAhead(t, t.Branch) }
 
 // unlandedAhead is that count asked of one named tip.

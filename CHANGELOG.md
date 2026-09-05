@@ -505,6 +505,31 @@ nothing.
 
 ### Fixed
 
+**`posse worktrees --land` took a caged session's work onto your branch with
+nothing accounting for it.**
+
+*Affected: any tree a container-tier session worked in — those are launched on
+a detached HEAD on purpose — whose branch names no bead.* `--land` reads the
+branch's bead record before it merges anything and reports rather than lands a
+tree no record accounts for (ADR 0006). It decided "is there anything to land
+here" from `<base>..<branch>`, and that count is **zero** over a worktree whose
+HEAD is detached: the commits are in the tree and the branch is still where it
+was cut. So the gate saw nothing to guard and opened, and the merge behind it
+splices a designed detach's work back onto the branch before it counts — the
+whole of such a session's work went onto the operator's branch, silently, in
+exactly the case ADR 0006's rule exists for. Measured on 2026-09-05: a stamped
+detached tree, one commit, no bead record, `⤴ 1 commit(s) onto main`.
+
+The gate now asks the tip the work is actually on, and the refusal says where
+that is: `posse/<session> holds 1 commit(s) not on main (on the tree's
+detached HEAD 2447e16b73eb, not on the branch — a land splices them onto it
+first) and no record says which bead — NOT landed`, with a `git log` you can
+run against that tree rather than one that prints nothing. `--force` still
+lands it, and a tree whose branch names its bead still lands untouched. An
+*accidental* detach is unchanged — no splice can move that work and no land
+can take it, so it keeps the merge's own sentence and the `git branch -f`
+cure in it.
+
 **A dispatch pass told you "no work ran" about a turn that had been running
 for a minute and a half.**
 

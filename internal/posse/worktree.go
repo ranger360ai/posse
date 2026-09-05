@@ -2491,7 +2491,40 @@ func LandSessionTrees(w io.Writer, a *App, dirs []string, force bool) error {
 // unreadable count) lands nothing either — MergeSessionWork says why in
 // words, which is more use than this refusal would be.
 //
-// The GATE asks the record and the SENTENCE says what the branch holds, and
+// SOMETHING TO LAND IS ASKED OF THE TIP THIS PASS WOULD ACTUALLY TAKE
+// (ranger-base-qihvt). `<base>..<branch>` is ZERO over a worktree whose HEAD
+// is DETACHED, because a commit made there writes no ref and the branch is
+// still where it was cut — and that is what a container-tier session is
+// launched on ON PURPOSE, since a ref-less commit is what buys the `:ro`
+// common dir (PrepareSessionHead, ranger-base-t4f1). That zero opened this
+// gate, and the merge behind it SPLICES a designed detach's work back onto
+// the branch before it counts anything (spliceDetachedWork) — so the whole of
+// such a session's work went onto the operator's branch with no record
+// accounting for it, ADR 0006's rule waived silently by asking a tip the work
+// is not on. MEASURED 2026-09-05: a stamped detached tree, one commit, no
+// bead record, this gate "" and `⤴ 1 commit(s) onto main` under it.
+//
+// BOTH tips and not the head instead, nothingToLand's reason
+// (ranger-base-vavx2): a branch holding a commit its own worktree walked away
+// from is landable work the head does not reach, and a splice this gate
+// cannot see refused leaves MergeSessionWork counting the branch anyway. The
+// branch is asked FIRST because the sentences here are the branch's — `git
+// log <base>..<branch>` is true of a commit on the branch and of nothing
+// else — and the head is asked only when the branch has nothing.
+//
+// The head arm is asked of a tree posse detached ON PURPOSE and no other,
+// which is the whole of what this gate can lose. An ACCIDENTAL detach gets no
+// splice, so a land takes nothing from it and there is nothing here to refuse;
+// landed() answers that tree in a sentence carrying the `git branch -f` cure,
+// and a refusal here would only displace it with a worse one.
+//
+// The SENTENCE names the tip as well, or it sends the operator to read a log
+// that is empty (ranger-base-3nn9c: the gate and the sentence are two
+// questions). What changes for a designed detach is WHERE the commits are to
+// be read, not the cure — `--land --force` is still it, because posse runs
+// the `branch -f` itself, which is how this work became landable at all.
+//
+// The GATE asks the record and the SENTENCE says what the tree holds, and
 // they are two questions (ranger-base-3nn9c). The refusal used to answer the
 // first and then assert the second from a sha count alone — "holds N
 // commit(s) not on main … NOT landed" — over a branch the listing beside it
@@ -2508,30 +2541,58 @@ func unaccountedFor(t *SessionTree, force bool) string {
 	if force || t.Bead != "" {
 		return ""
 	}
+	tip, where := t.Branch, ""
+	look := fmt.Sprintf("git log %s..%s", t.Base, t.Branch)
 	n, ok := unlandedCount(t)
 	if !ok || n == 0 {
-		return ""
+		head, detached := splicedTip(t)
+		if !detached {
+			return ""
+		}
+		if n, ok = unlandedAhead(t, head); !ok || n == 0 {
+			return ""
+		}
+		tip = head
+		where = fmt.Sprintf(" (on the tree's detached HEAD %s, not on the branch — a land splices them onto it first)", abbrevSHA(head))
+		look = fmt.Sprintf("git -C %s log %s..HEAD", AbbrevHome(t.Path), t.Base)
 	}
-	eq := equivalentOnBase(t.Repo, t.Base, t.Branch)
+	eq := equivalentOnBase(t.Repo, t.Base, tip)
 	switch {
 	case measuredOnBase(eq):
 		// Every commit is a measured patch-id match on the base: nothing is
 		// being lost, which is the only thing this gate protects. Refused
 		// still — the record is what it asked and the record is silent — but
 		// there is nothing here to land and nothing --force could add.
-		return fmt.Sprintf("%s holds %d commit(s) not on %s by sha and no record says which bead — but every one of them is already on %s as an equivalent patch (%s), so nothing here is unlanded and a human can retire the tree",
-			t.Branch, n, t.Base, t.Base, strings.Join(equivNotes(eq), "; "))
+		return fmt.Sprintf("%s holds %d commit(s) not on %s by sha%s and no record says which bead — but every one of them is already on %s as an equivalent patch (%s), so nothing here is unlanded and a human can retire the tree",
+			t.Branch, n, t.Base, where, t.Base, strings.Join(equivNotes(eq), "; "))
 	case len(eq) > 0:
 		// No measurement of content: somebody's decision that this landed
 		// (the -x trailer), or an identity match on a replay. Neither says
 		// what the resolution kept. Not landed and not settled either — the
 		// same answer RemoveSessionTree gives before it declines to delete
 		// this shape, and the clause names which of the two it has.
-		return fmt.Sprintf("%s holds %d commit(s) not on %s by sha and no record says which bead — %s; compare (`git log %s..%s`) before retiring the tree",
-			t.Branch, n, t.Base, unmeasuredClause(eq, t.Base), t.Base, t.Branch)
+		return fmt.Sprintf("%s holds %d commit(s) not on %s by sha%s and no record says which bead — %s; compare (`%s`) before retiring the tree",
+			t.Branch, n, t.Base, where, unmeasuredClause(eq, t.Base), look)
 	}
-	return fmt.Sprintf("%s holds %d commit(s) not on %s and no record says which bead — NOT landed; look at it (`git log %s..%s`) and `posse worktrees --land --force` when you want it",
-		t.Branch, n, t.Base, t.Base, t.Branch)
+	return fmt.Sprintf("%s holds %d commit(s) not on %s%s and no record says which bead — NOT landed; look at it (`%s`) and `posse worktrees --land --force` when you want it",
+		t.Branch, n, t.Base, where, look)
+}
+
+// splicedTip is the tip MergeSessionWork would count for this tree that its
+// BRANCH is not already at: the HEAD of a tree posse detached ON PURPOSE,
+// which the merge splices back onto the branch before it counts anything
+// (spliceDetachedWork, THE SPLICE). ("", false) for every other shape — a
+// tree whose HEAD is on its own branch, a tree that is gone, and an
+// ACCIDENTAL detach, whose work no splice will move and no land can take.
+//
+// No guard here for a head the branch has already reached: the only caller
+// asks this after the BRANCH's own count came back zero or unreadable, and a
+// head the branch is at counts the same as the branch did.
+func splicedTip(t *SessionTree) (string, bool) {
+	if !launchedDetached(t.Repo, t.Branch) {
+		return "", false
+	}
+	return treeDetachedHead(t.Path)
 }
 
 // treeState is the one phrase that says whether anything would be lost by

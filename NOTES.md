@@ -6209,7 +6209,18 @@ byte-identical to something on main that no patch-id and no `-x` trailer
 connects to it — and merging it blind replays stale work onto the operator's
 branch. `posse worktrees` names the bead beside the count for the same
 reason, so the judgement is available before the command is typed:
-`docs/notes.d/ranger-base-atxe.md`.
+`docs/notes.d/ranger-base-atxe.md`. **"Holding commits its base does not
+have" is asked of the tip the work is on, not of the branch**
+(ranger-base-qihvt): `<base>..<branch>` is zero over a detached tree, so the
+gate saw nothing to guard over the whole of a caged session's work while the
+merge behind it spliced that work onto the branch and landed it — ADR 0006's
+rule waived by asking the wrong tip, the same blindness ranger-base-vavx2
+fixed in the sweep's copy of the question. The branch is asked first, because
+the refusal's `git log <base>..<branch>` is true only of a commit on the
+branch; when the branch has nothing the tree's HEAD is asked, and the refusal
+names that HEAD and hands you a `git log` in the tree. An *accidental* detach
+is left alone: no splice moves that work, no land can take it, and the merge
+already answers it in a sentence carrying the `git branch -f` cure.
 
 **Both surfaces ask the TREE's tip, not the branch's, and both ask patch
 equivalence** (ranger-base-d8o6). A container-tier session works on a
