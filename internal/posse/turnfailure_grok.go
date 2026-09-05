@@ -21,9 +21,9 @@ package posse
 //
 // # What this keys on, and what it deliberately does not
 //
-// `stop_reason` plus `agent_result`, and nothing else. The probe listed
-// three discriminators; the other two are not load-bearing here and one of
-// them is measurably wrong:
+// `stop_reason` plus `agent_result`, and nothing else, for WHETHER the turn
+// was refused. The probe listed three discriminators; the other two are not
+// load-bearing for that question and one of them is measurably wrong:
 //
 //   - "a served turn always carries `usage`; a refused one never does" is
 //     FALSE off the two-session sample. Censused over this machine's whole
@@ -31,6 +31,18 @@ package posse
 //     is `end_turn` 180×, `error` 7×, `cancelled` 5×, and one of the seven
 //     errors DOES carry a `usage` object. A reader keyed on usage-absence
 //     would have called that refusal a healthy turn.
+//
+//     That object is not read as *whether* this turn was refused — it is read
+//     as HOW MUCH of it had already run when the refusal landed
+//     (ranger-base-qcu4c), which is a different question and the one the
+//     settle line was answering wrongly. The same census is what licenses
+//     reading its absence as "nothing ran": all 186 usage objects on this box
+//     are nonzero in every field (min modelCalls 1, min outputTokens 25), so
+//     grok writes one for every turn that served anything and none for a turn
+//     it refused before serving. Nonzero rather than merely present is what
+//     TurnOutcome.Worked() keys on, so `usage:{}` — a shape this box has
+//     never written — reads as nothing ran rather than as work to go looking
+//     for.
 //   - the preceding `retry_state`/`type:"failed"` update is real (7/7 of the
 //     errors have one) but redundant: it says the same thing about the same
 //     turn, one record earlier, and reading two records to learn one fact
@@ -39,8 +51,8 @@ package posse
 // `cancelled` is the third value the two-arm probe never saw, and it is not a
 // refusal: all 5 carry a `usage` object and none carries an `agent_result` —
 // a turn that ran and was stopped, not an account that would not serve one.
-// It reads as ("", true), the same as `end_turn`: an outcome WAS read, and it
-// was not a refusal.
+// It reads as an outcome with no message and observed=true, the same as
+// `end_turn`: an outcome WAS read, and it was not a refusal.
 //
 // The refusal message is NOT narrowed to a payment/quota phrase the way
 // claudeAllotmentLimit narrows claude's. It does not need to be and must not
@@ -77,11 +89,13 @@ const TurnOutcomeGrokSessionStore = "grok-session-store"
 // a provider error cannot become a false positive any more than it can in
 // claude's reader.
 //
-// observed distinguishes a first turn that settled normally ("", true) from a
-// store this pass could not read an outcome out of ("", false) — the third
-// state turnOutcomeClause prints, and the only honest answer when grok's
-// store says a turn errored but carries no message with it.
-func FindGrokTurnOutcome(dir, bead string, since time.Time) (message string, observed bool) {
+// observed distinguishes a first turn that settled normally (no message,
+// true) from a store this pass could not read an outcome out of (no message,
+// false) — the third state turnOutcomeClause prints, and the only honest
+// answer when grok's store says a turn errored but carries no message with
+// it. A refusal also carries how much of the turn had already run when it
+// landed (TurnOutcome, ranger-base-qcu4c).
+func FindGrokTurnOutcome(dir, bead string, since time.Time) (out TurnOutcome, observed bool) {
 	// No window is not every window. claude's reader is bounded by the
 	// project directory whatever `since` says; this one is bounded by
 	// `since` alone once the cwd stops filtering, so a zero floor would let
@@ -89,14 +103,14 @@ func FindGrokTurnOutcome(dir, bead string, since time.Time) (message string, obs
 	// never passes one — pendingBead.launched is stamped before the launch —
 	// and if something ever does, "cannot tell" is the right answer.
 	if since.IsZero() {
-		return "", false
+		return TurnOutcome{}, false
 	}
 	for _, path := range grokUpdateFiles(dir, since) {
-		if message, observed := scanGrokTurnOutcome(path, bead, since); observed {
-			return message, observed
+		if out, observed := scanGrokTurnOutcome(path, bead, since); observed {
+			return out, observed
 		}
 	}
-	return "", false
+	return TurnOutcome{}, false
 }
 
 // grokUpdateFiles is every updates.jsonl a turn started at `since` could have
@@ -116,9 +130,9 @@ func FindGrokTurnOutcome(dir, bead string, since time.Time) (message string, obs
 // work prompt plus `since` is what actually identifies the turn; the cwd is
 // a good guess about where to look first and no more than that.
 //
-// A root that will not open is no candidates, which is ("", false) — "cannot
-// read" and "read a healthy turn" stay different facts (ADR 0018 §3) because
-// only the second one is a message-less `observed`.
+// A root that will not open is no candidates, which is observed=false —
+// "cannot read" and "read a healthy turn" stay different facts (ADR 0018 §3)
+// because only the second one is a message-less `observed`.
 func grokUpdateFiles(dir string, since time.Time) []string {
 	root := filepath.Join(grokHome(), "sessions")
 	cwds, err := os.ReadDir(root)
@@ -188,10 +202,10 @@ func grokCwd(enc string) string {
 // timestamp order — a refused turn's `retry_state` lands ahead of the
 // user_message_chunk whose own stamp is earlier — which is why this reads
 // position and not the clock.
-func scanGrokTurnOutcome(path, bead string, since time.Time) (message string, observed bool) {
+func scanGrokTurnOutcome(path, bead string, since time.Time) (out TurnOutcome, observed bool) {
 	f, err := os.Open(path)
 	if err != nil {
-		return "", false
+		return TurnOutcome{}, false
 	}
 	defer f.Close()
 
@@ -210,6 +224,13 @@ func scanGrokTurnOutcome(path, bead string, since time.Time) (message string, ob
 						Content       struct {
 							Text string `json:"text"`
 						} `json:"content"`
+						// Not the whole object — the two fields that say
+						// whether the model was reached before the account
+						// went out from under the turn.
+						Usage struct {
+							OutputTokens int `json:"outputTokens"`
+							ModelCalls   int `json:"modelCalls"`
+						} `json:"usage"`
 					} `json:"update"`
 					Meta struct {
 						AgentTimestampMs int64 `json:"agentTimestampMs"`
@@ -238,17 +259,24 @@ func scanGrokTurnOutcome(path, bead string, since time.Time) (message string, ob
 						// turn with that is not its error path: an outcome was
 						// read and it was not a refusal, which is the positive
 						// evidence a stale failure marker may be cleared on.
-						return "", true
+						return TurnOutcome{}, true
 					}
 					if up.AgentResult == "" {
-						// The error path with nothing to quote. Reporting ""
-						// here would say "healthy turn" about a turn grok
-						// itself called an error, so this is the not-readable
-						// rung instead: the settle line tells the operator to
-						// peek rather than guessing either way.
-						return "", false
+						// The error path with nothing to quote. Reporting no
+						// message here would say "healthy turn" about a turn
+						// grok itself called an error, so this is the
+						// not-readable rung instead: the settle line tells the
+						// operator to peek rather than guessing either way.
+						return TurnOutcome{}, false
 					}
-					return strings.Join(strings.Fields(up.AgentResult), " "), true
+					return TurnOutcome{
+						Message: strings.Join(strings.Fields(up.AgentResult), " "),
+						// Zero unless this refusal carried a usage object —
+						// which 1 of the 7 on this box did, from a turn six
+						// model calls deep when the 402 landed.
+						ModelCalls:   up.Usage.ModelCalls,
+						OutputTokens: up.Usage.OutputTokens,
+					}, true
 				}
 			}
 		}
@@ -256,10 +284,10 @@ func scanGrokTurnOutcome(path, bead string, since time.Time) (message string, ob
 			break
 		}
 		if readErr != nil {
-			return "", false
+			return TurnOutcome{}, false
 		}
 	}
-	return "", false
+	return TurnOutcome{}, false
 }
 
 // grokUpdateTime is when grok recorded an update, and — the half that

@@ -82,12 +82,12 @@ func TestQAParityAccountRefusalIsNamedOnEveryRuntime(t *testing.T) {
 			idleClaude(t, fake)
 
 			asked := 0
-			d.TurnOutcome = func(dir, bead string, since time.Time) (string, bool) {
+			d.TurnOutcome = func(dir, bead string, since time.Time) (TurnOutcome, bool) {
 				asked++
 				if dir != repo || bead != "a-1" || since.IsZero() {
 					t.Fatalf("turn outcome lookup = %q %q %v", dir, bead, since)
 				}
-				return qaAllotmentRefusal, true
+				return TurnOutcome{Message: qaAllotmentRefusal}, true
 			}
 
 			if _, err := d.Run("", "", 0); err != nil {
@@ -142,6 +142,87 @@ func TestQAParityAccountRefusalIsNamedOnEveryRuntime(t *testing.T) {
 			}
 			if m, _ := b.readMeta(session); m.TurnFailure != "" {
 				t.Errorf("a blind runtime marked a turn failure it never observed: %+v", m)
+			}
+		})
+	}
+}
+
+// The bead ranger-base-qcu4c was filed on: "no work ran" is a claim about the
+// turn, not a synonym for "refused", and a turn can be refused after it has
+// been running for a minute and a half. Driven through production Run so the
+// pin is on the LINE an operator reads, not on the reader that feeds it.
+//
+// The fixture is the box's own counterexample: 1 of the 7 refusals in this
+// machine's grok history carries a full usage object — 6 model calls, 5,571
+// output tokens, 85.6s of API time — from a session that may well have edited
+// files and commented on the bead before the account went out from under it.
+// The old line told its operator nothing happened and to relaunch.
+func TestQARefusalAfterWorkDoesNotClaimNoWorkRan(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name    string
+		outcome TurnOutcome
+		// what the line must say, and what it must not
+		want    []string
+		notWant []string
+	}{{
+		// The claude shape and 6 of grok's 7: the account refused before it
+		// served anything, so the flat claim is true and stays.
+		name:    "refused before serving",
+		outcome: TurnOutcome{Message: qaAllotmentRefusal},
+		want:    []string{"refused the first turn", "no work ran", "relaunch "},
+		notWant: []string{"mid-flight", "check the worktree"},
+	}, {
+		name:    "refused mid-flight",
+		outcome: TurnOutcome{Message: qaAllotmentRefusal, ModelCalls: 6, OutputTokens: 5571},
+		// The numbers are on the line because "work may exist" without them
+		// is a hedge an operator cannot act on: six model calls is a session
+		// to go and look at, and the phrasing must survive somebody deciding
+		// the line reads better without them.
+		want:    []string{"refused the turn mid-flight", "6 model calls", "5571 output tokens", "posse peek ", "check the worktree"},
+		notWant: []string{"no work ran", "refused the first turn"},
+	}, {
+		// One call, one token: singular, and still work. The arm exists
+		// because a plural-only line is the kind of thing that reads fine
+		// until the day it prints "1 model calls".
+		name:    "refused after a single call",
+		outcome: TurnOutcome{Message: qaAllotmentRefusal, ModelCalls: 1, OutputTokens: 1},
+		want:    []string{"refused the turn mid-flight", "(1 model call, 1 output token)"},
+		notWant: []string{"no work ran", "1 model calls", "1 output tokens"},
+	}}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			b, fake := newTestBackend(t)
+			d := newTestDispatcher(t, b)
+			writePersona(t, b.App, "ranger", "[go]")
+			repo := qaRepo(t, b.App,
+				`[{"id":"a-1","title":"t","labels":["go"]}]`,
+				`[{"id":"a-1","title":"t","status":"in_progress","assignee":"ranger"}]`)
+			idleClaude(t, fake)
+			d.TurnOutcome = func(string, string, time.Time) (TurnOutcome, bool) { return c.outcome, true }
+
+			if _, err := d.Run("", "", 0); err != nil {
+				t.Fatal(err)
+			}
+			out := dispatcherOut(d)
+			for _, want := range append([]string{"⛔ a-1", qaAllotmentRefusal}, c.want...) {
+				if !strings.Contains(out, want) {
+					t.Errorf("the refusal line must carry %q:\n%s", want, out)
+				}
+			}
+			for _, no := range c.notWant {
+				if strings.Contains(out, no) {
+					t.Errorf("the refusal line must not carry %q:\n%s", no, out)
+				}
+			}
+			// Both arms are refusals: the bead still stops and the session is
+			// still marked, whatever the line says about how far it got.
+			if strings.Contains(out, "\u25d1 a-1") {
+				t.Errorf("a refused turn was printed as an ordinary settle:\n%s", out)
+			}
+			session := SessionForBead("ranger", repo, "a-1")
+			if m, ok := b.readMeta(session); !ok || m.TurnFailure != qaAllotmentRefusal {
+				t.Errorf("turn failure not recorded in session meta: %+v", m)
 			}
 		})
 	}
@@ -257,7 +338,7 @@ func TestQAReadableRuntimeSettleCarriesNoBlindnessClause(t *testing.T) {
 		`[{"id":"a-1","title":"t","labels":["go"]}]`,
 		`[{"id":"a-1","title":"t","status":"in_progress","assignee":"ranger"}]`)
 	idleClaude(t, fake)
-	d.TurnOutcome = func(string, string, time.Time) (string, bool) { return "", true }
+	d.TurnOutcome = func(string, string, time.Time) (TurnOutcome, bool) { return TurnOutcome{}, true }
 
 	if _, err := d.Run("", "", 0); err != nil {
 		t.Fatal(err)
@@ -285,9 +366,9 @@ func TestQAUnobservedTurnOutcomeSettleLineIsNamed(t *testing.T) {
 		`[{"id":"a-1","title":"t","status":"in_progress","assignee":"ranger"}]`)
 	idleClaude(t, fake)
 	asked := 0
-	d.TurnOutcome = func(string, string, time.Time) (string, bool) {
+	d.TurnOutcome = func(string, string, time.Time) (TurnOutcome, bool) {
 		asked++
-		return "", false
+		return TurnOutcome{}, false
 	}
 
 	if _, err := d.Run("", "", 0); err != nil {

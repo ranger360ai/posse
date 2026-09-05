@@ -157,8 +157,16 @@ func TestScanClaudeTurnOutcomeReadsOnlyTheSyntheticAssistantOutcome(t *testing.T
 			`{"type":"user","timestamp":"2026-08-24T12:27:42.112Z","message":{"content":"Work beads issue ranger-base-6ne: do the work"}}`,
 			`{"type":"assistant","timestamp":"2026-08-24T12:27:42.680Z","message":{"model":"<synthetic>","content":[{"type":"text","text":`+fmt.Sprintf("%q", limit)+`}]}}`,
 		)
-		if got, ok := scanClaudeTurnOutcome(p, "ranger-base-6ne", since); !ok || got != limit {
-			t.Fatalf("failure = %q, %v", got, ok)
+		got, ok := scanClaudeTurnOutcome(p, "ranger-base-6ne", since)
+		if !ok || got.Message != limit {
+			t.Fatalf("failure = %+v, %v", got, ok)
+		}
+		// claude's refusal IS the first answer, so nothing ran ahead of it and
+		// the settle line's "no work ran" is true here by construction
+		// (ranger-base-qcu4c). A reader that started reporting work on this
+		// arm would be reporting it out of nowhere.
+		if got.Worked() {
+			t.Errorf("a synthetic first-answer refusal cannot have work behind it: %+v", got)
 		}
 	})
 
@@ -167,15 +175,15 @@ func TestScanClaudeTurnOutcomeReadsOnlyTheSyntheticAssistantOutcome(t *testing.T
 			`{"type":"user","timestamp":"2026-08-24T12:27:42.112Z","message":{"content":`+fmt.Sprintf("%q", "Work beads issue ranger-base-1cc: production said "+limit)+`}}`,
 			`{"type":"assistant","timestamp":"2026-08-24T12:27:43Z","message":{"model":"claude-fable-5","content":[{"type":"text","text":"I will investigate."}]}}`,
 		)
-		if got, observed := scanClaudeTurnOutcome(p, "ranger-base-1cc", since); !observed || got != "" {
-			t.Fatalf("healthy assistant outcome = %q, observed %v", got, observed)
+		if got, observed := scanClaudeTurnOutcome(p, "ranger-base-1cc", since); !observed || got.Message != "" {
+			t.Fatalf("healthy assistant outcome = %+v, observed %v", got, observed)
 		}
 	})
 
 	t.Run("wrong bead", func(t *testing.T) {
 		p := filepath.Join(dir, "limit.jsonl")
 		if got, ok := scanClaudeTurnOutcome(p, "ranger-base-other", since); ok {
-			t.Fatalf("another bead's failure leaked across dispatches: %q", got)
+			t.Fatalf("another bead's failure leaked across dispatches: %+v", got)
 		}
 	})
 
@@ -191,8 +199,8 @@ func TestScanClaudeTurnOutcomeReadsOnlyTheSyntheticAssistantOutcome(t *testing.T
 			`{"type":"user","timestamp":"2026-08-24T12:27:42.112Z","message":{"content":"Work beads issue ranger-base-6ne: do the work"}}`,
 			`{"type":"assistant","timestamp":"2026-08-24T12:27:42.680Z","message":{"model":"<synthetic>","content":[{"type":"text","text":`+fmt.Sprintf("%q", limit)+`}]}}`,
 		)
-		if got, observed := FindClaudeTurnOutcome(projectDir, "ranger-base-6ne", since); !observed || got != limit {
-			t.Fatalf("project outcome = %q, observed %v", got, observed)
+		if got, observed := FindClaudeTurnOutcome(projectDir, "ranger-base-6ne", since); !observed || got.Message != limit {
+			t.Fatalf("project outcome = %+v, observed %v", got, observed)
 		}
 	})
 }

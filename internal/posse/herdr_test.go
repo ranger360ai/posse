@@ -2392,7 +2392,7 @@ func newTestDispatcher(t *testing.T, b *HerdrBackend) *Dispatcher {
 	d.StartupWait = 2 * time.Second
 	d.StatusGrace = 50 * time.Millisecond
 	d.Poll = 10 * time.Millisecond
-	d.TurnOutcome = func(string, string, time.Time) (string, bool) { return "", false }
+	d.TurnOutcome = func(string, string, time.Time) (TurnOutcome, bool) { return TurnOutcome{}, false }
 	// Hermetic by construction, like RHQ_FAKE_HERDR: Watch's settle-event
 	// subscription is the one herdr read that DIALS a socket, and the socket
 	// it resolves without this is the operator's live server (ADR 0016 §3 —

@@ -505,6 +505,28 @@ nothing.
 
 ### Fixed
 
+**A dispatch pass told you "no work ran" about a turn that had been running
+for a minute and a half.**
+
+*Affected: any runtime whose account refuses a turn it has already started —
+grok today, since it is the runtime whose store records that.* The ⛔ line a
+provider refusal prints was written for claude, where the refusal IS the whole
+turn: a synthetic message in place of a first answer, with nothing before it.
+An account does not only refuse before it serves. One of the seven refusals in
+this box's grok history landed six model calls and 190,817 tokens into a turn
+that had been going for ninety seconds — a session that may well have edited
+files and commented on its bead — and the line said nothing happened and to
+relaunch somewhere else.
+
+The line has two arms now, and the runtime's own record decides which one
+prints. A refusal with work behind it reads `refused the turn mid-flight …
+the turn had already run (6 model calls, 5571 output tokens), so work may
+exist: posse peek <session> and check the worktree before relaunching at
+another tier`. A refusal with nothing behind it keeps the flat `refused the
+first turn … no work ran` — claude's shape, and six of grok's seven. Nothing
+else about the stop changes: the bead is still stopped, the session still
+marked `🛑turn-failed`, and changing tiers is still yours to decide.
+
 **`posse runtime check` and `posse runtime probe` refused a CLI they could
 not see, on a PATH that does not decide whether a launch can see it.**
 

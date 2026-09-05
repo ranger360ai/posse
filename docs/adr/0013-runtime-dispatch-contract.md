@@ -111,15 +111,34 @@ refused, and a runtime declaring no reader is **turn-blind**: its
 settle-without-close line says posse reads no turn outcome there — an
 exhausted account settles exactly like this, `posse peek` before reading
 it as work. A test-injected reader is the *reader*, never the
-permission: blindness stays the declaration's to say. Reader promotion
+permission: blindness stays the declaration's to say.
+
+The ⛔ line has **two arms**, because a refusal is not always a refusal to
+*start* (ranger-base-qcu4c). "no work ran" was written for claude, whose
+synthetic refusal IS the whole turn — the reader only reports one when it is
+the first assistant record after the bead prompt, so nothing can have happened
+ahead of it. It is a false claim on grok: 1 of the 7 refusals in this box's
+history landed six model calls and 190,817 tokens into a turn that had been
+running for a minute and a half, and the session on the other side of that
+line may have edited files and commented on the bead. So the runtime's own
+record says which arm prints — grok's `usage` object, read for *how much of
+the turn ran* and never for whether it was refused — and a refusal with work
+behind it prints `refused the turn mid-flight … the turn had already run (6
+model calls, 5571 output tokens), so work may exist: posse peek <session> and
+check the worktree`. A reader that cannot tell must say so in its docstring:
+the line reads "no work" as *nothing ran*, which is a claim, and claude and
+grok are each able to make it (claude by construction, grok off a `usage`
+object present on all 186 turns this box has that served anything). Reader
+promotion
 follows `record:`'s pattern — after a measured artifact, not on
 plausibility. codex (`~/.codex/sessions/*.jsonl`) and grok
 (`$GROK_HOME/sessions/<cwd>/<id>/`) are reachable in principle (xaev),
 but nobody has captured what either store records on an account refusal;
 capturing that artifact is ranger-base-e123, and a reader bead follows
-it iff the artifact discriminates. Known open edge: a declared reader
-returning observed=false (transcript not readable yet) still renders
-like a healthy settle — ranger-base-1mei.
+it iff the artifact discriminates. Known open edge: claude cannot see a
+refusal that lands *after* a first answer — the reader stops at the first
+assistant record and reads that turn as healthy, clearing a marker
+(ranger-base-4ldma, capture-when-it-happens like codex's half).
 
 No new template placeholder. `{prompt}` is rejected: an unrendered token
 is a literal argv (ADR 0001/0002 lesson). Dispatch that has a prompt file

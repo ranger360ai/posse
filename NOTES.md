@@ -2117,6 +2117,33 @@ shape nobody measured is worse than the blindness it replaces, which is why
 codex's line above is still the honest one. (`internal/posse/turnoutcome_qa_test.go`,
 `internal/posse/turnoutcomegrok_qa_test.go`.)
 
+Reading grok's record is also what made the ⛔ line's `no work ran` a lie
+worth fixing (`ranger-base-qcu4c`). That phrase was written for claude,
+where the refusal IS the whole turn — a synthetic message in place of a
+first answer, nothing before it. On grok it is not always true: 1 of the 7
+refusals in this box's history carries a full `usage` object, six model
+calls and 190,817 tokens into a turn that had been running for ninety
+seconds when the account went out from under it, and that session may well
+have edited files and commented on the bead. The line has two arms now, and
+which one prints is the runtime's own record's to say:
+
+```
+⛔ a-1   grok refused the turn mid-flight: API error (status 402 Payment
+         Required): … — the turn had already run (6 model calls, 5571 output
+         tokens), so work may exist: posse peek ranger-posse-a-1 and check
+         the worktree before relaunching at another tier
+```
+
+The flat `refused the first turn … no work ran` stays for a refusal with
+nothing behind it, which is claude's shape and 6 of grok's 7. Absence of
+`usage` is read as "nothing ran" because grok writes one for every turn that
+served anything (186/186 on this box, all nonzero in every field, censused
+2026-09-05); a reader that cannot tell must say so, since the line reads a
+zero as a claim and not as ignorance. The claude mirror is open and
+capture-shaped: a refusal landing *after* a first answer is invisible to
+`FindClaudeTurnOutcome`, which stops at the first assistant record
+(`ranger-base-4ldma`).
+
 ### The reap guard: dirty tree + open bead is not killed (ADR 0013 §4)
 
 `posse kill <name>` — and the kill inside `posse relaunch` — **refuses** a
@@ -3044,8 +3071,11 @@ its Fable allotment was exhausted, then settled `idle` without doing work;
 the model can remain in `/v1/models` throughout that condition. Dispatch now
 checks the matching Claude transcript after a turn settles. That exact
 provider refusal writes `turn_failure:` into the session meta, prints a loud
-"no work ran" line, marks `posse list` with `🛑turn-failed`, and renders the
-cockpit row red as `failed` instead of healthy `idle`. It does not guess a
+⛔ line, marks `posse list` with `🛑turn-failed`, and renders the
+cockpit row red as `failed` instead of healthy `idle`. That line says "no
+work ran" only where the runtime's own record says so — on a refusal that
+landed mid-turn it names what had already run and sends the operator to the
+worktree first (`ranger-base-qcu4c`, §"The other half of that line"). It does not guess a
 fallback or replay the prompt: changing tiers remains an operator decision,
 and the claimed bead stays attached to the failed session until that
 decision is made. A later dispatched turn whose first assistant answer is

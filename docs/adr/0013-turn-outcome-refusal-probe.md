@@ -138,12 +138,27 @@ census (2026-09-05):
   and a reader built on it would have called that refusal a healthy turn.
 
 So the reader keys on `stop_reason:"error"` **plus a non-empty
-`agent_result`**, and on nothing else: discriminator 3's `retry_state` row is
+`agent_result`** for *whether* the turn was refused, and on nothing
+else: discriminator 3's `retry_state` row is
 real (7/7) but says the same thing one record earlier. The `agent_result`
 string is surfaced verbatim rather than pattern-matched for "402" — grok's
 `stop_reason` is a purpose-built field, so unlike claude's synthetic
 assistant message it does not have to prove it is a limit before being
 believed.
+
+`usage` came back for a second question, which is the one it can actually
+answer (`ranger-base-qcu4c`): not whether the turn was refused, but **how much
+of it had already run** when the refusal landed. The settle line said "no work
+ran" on every refusal — true for claude, whose synthetic refusal is the whole
+turn, and false for the one grok refusal above, six model calls and ninety
+seconds deep. The reader now carries `modelCalls`/`outputTokens` off that
+object beside the message, and the line's mid-flight arm sends the operator to
+the worktree instead of telling them nothing happened. Reading its **absence**
+as "nothing ran" is licensed by the same census: all 186 usage objects on this
+box are nonzero in every field (min `modelCalls` 1, min `outputTokens` 25), so
+grok writes one for every turn that served anything. Nonzero and not merely
+present is what the work fields key on, so a `usage:{}` — a shape nothing here
+has written — reads as nothing ran rather than as work to go looking for.
 
 ## codex — not captured; stays trigger-shaped
 

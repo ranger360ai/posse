@@ -70,6 +70,10 @@ const (
 	// to quote. Not measured, and the reader treats it as unreadable rather
 	// than as health for exactly that reason.
 	qaGrokTailErrorNoResult = `"stop_reason":"error"`
+	// Also unmeasured: a refusal carrying a usage object that accounts for
+	// nothing. It exists to pin that the work fields key on what the object
+	// SAYS and not on whether it is there.
+	qaGrokTailRefusedEmptyUsage = `"stop_reason":"error","agent_result":"` + qaGrokRefusal + `","usage":{"inputTokens":0,"outputTokens":0,"totalTokens":0,"modelCalls":0,"apiDurationMs":0,"numTurns":0}`
 )
 
 // qaGrokWorkPrompt is the dispatcher's own first line, in the shape a real
@@ -131,22 +135,46 @@ func TestQAGrokTurnOutcomeReadsEveryMeasuredStopReason(t *testing.T) {
 		tail     string
 		message  string
 		observed bool
+		// What the same record says about how much of the turn had already
+		// run when it ended (ranger-base-qcu4c). Checked on every row, not
+		// only the refusals, because a reader that reported work off the
+		// wrong record would show up here first.
+		worked       bool
+		modelCalls   int
+		outputTokens int
 	}{
-		{"refused", qaGrokTailRefused, qaGrokRefusal, true},
+		{name: "refused", tail: qaGrokTailRefused, message: qaGrokRefusal, observed: true},
 		// The row that kills a usage-absence reader. The probe listed "a
 		// served turn always carries usage, a refused one never does" as a
 		// discriminator; it is wrong, and a reader that believed it would
 		// call this exhausted account a healthy turn.
-		{"refused with usage", qaGrokTailRefusedWithUsage, qaGrokRefusal, true},
-		{"served", qaGrokTailServed, "", true},
-		// Cancelled is not a refusal: a turn ran. ("", true) is the positive
-		// evidence a stale failure marker may be cleared on — and it must not
-		// be ("", false), which would say the store was unreadable when it was
-		// read perfectly well.
-		{"cancelled", qaGrokTailCancelled, "", true},
-		// Error with nothing to quote: NOT ("", true). Reporting health about
+		//
+		// It is also the row this bead exists for: the account went out from
+		// under a turn six model calls and 5,571 output tokens in, so the
+		// settle line's "no work ran" is a false claim about a session that
+		// may have edited files and commented on the bead.
+		{name: "refused with usage", tail: qaGrokTailRefusedWithUsage, message: qaGrokRefusal, observed: true,
+			worked: true, modelCalls: 6, outputTokens: 5571},
+		// A turn that was not refused reports no work on ANY reader, and that
+		// is the contract rather than a gap: the work fields answer "is there
+		// work behind this refusal", nothing asks them when there is no
+		// refusal, and what a served turn spent is already `posse cost`'s to
+		// read (cost_grok.go) off the same record.
+		{name: "served", tail: qaGrokTailServed, observed: true},
+		// Cancelled is not a refusal: a turn ran. (no message, true) is the
+		// positive evidence a stale failure marker may be cleared on — and it
+		// must not be (no message, false), which would say the store was
+		// unreadable when it was read perfectly well.
+		{name: "cancelled", tail: qaGrokTailCancelled, observed: true},
+		// Error with nothing to quote: NOT observed. Reporting health about
 		// a turn grok itself called an error is the one wrong answer here.
-		{"error with no agent_result", qaGrokTailErrorNoResult, "", false},
+		{name: "error with no agent_result", tail: qaGrokTailErrorNoResult},
+		// A refusal whose usage object is there but empty — a shape this box
+		// has never written (all 186 of its usage objects are nonzero in
+		// every field, censused 2026-09-05). Presence is not work, so this
+		// keeps the flat line rather than sending an operator to look through
+		// a worktree for edits that were never made.
+		{name: "refused with an empty usage object", tail: qaGrokTailRefusedEmptyUsage, message: qaGrokRefusal, observed: true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -156,9 +184,20 @@ func TestQAGrokTurnOutcomeReadsEveryMeasuredStopReason(t *testing.T) {
 			qaGrokSession(t, home, dir, "01a04a2d-8c8b-7811-a6da-edf99f567e7b", since.Add(time.Second),
 				qaGrokTurn("01a04a2d-8c8b-7811-a6da-edf99f567e7b", "a-1", since.Add(time.Second), c.tail)...)
 
-			msg, observed := FindGrokTurnOutcome(dir, "a-1", since)
-			if msg != c.message || observed != c.observed {
-				t.Errorf("FindGrokTurnOutcome = %q %v, want %q %v", msg, observed, c.message, c.observed)
+			out, observed := FindGrokTurnOutcome(dir, "a-1", since)
+			if out.Message != c.message || observed != c.observed {
+				t.Errorf("FindGrokTurnOutcome = %+v %v, want message %q observed %v", out, observed, c.message, c.observed)
+			}
+			// Whether the turn had already RUN when it was refused
+			// (ranger-base-qcu4c) — read off the same record, and the one
+			// arm that carries a real usage object is what makes the settle
+			// line's "no work ran" a false claim.
+			if out.Worked() != c.worked {
+				t.Errorf("TurnOutcome.Worked() = %v, want %v (%+v)", out.Worked(), c.worked, out)
+			}
+			if c.worked && (out.ModelCalls != c.modelCalls || out.OutputTokens != c.outputTokens) {
+				t.Errorf("work = %d calls / %d output tokens, want %d / %d",
+					out.ModelCalls, out.OutputTokens, c.modelCalls, c.outputTokens)
 			}
 		})
 	}
@@ -193,8 +232,8 @@ func TestQAGrokTurnOutcomeIgnoresTurnsThatAreNotThisDispatch(t *testing.T) {
 			qaGrokSession(t, home, dir, id, since.Add(c.fileAt),
 				qaGrokTurn(id, c.bead, since.Add(c.promptAt), qaGrokTailRefused)...)
 
-			if msg, observed := FindGrokTurnOutcome(dir, "a-1", since); msg != "" || observed {
-				t.Errorf("FindGrokTurnOutcome = %q %v, want %q false", msg, observed, "")
+			if out, observed := FindGrokTurnOutcome(dir, "a-1", since); out.Message != "" || observed {
+				t.Errorf("FindGrokTurnOutcome = %+v %v, want no message and false", out, observed)
 			}
 		})
 	}
@@ -221,8 +260,8 @@ func TestQAGrokTurnOutcomeStalenessGuardKeepsWhatTheRecordGateKeeps(t *testing.T
 			qaGrokSession(t, home, dir, id, since.Add(skew),
 				qaGrokTurn(id, "a-1", since, qaGrokTailRefused)...)
 
-			if msg, observed := FindGrokTurnOutcome(dir, "a-1", since); msg != qaGrokRefusal || !observed {
-				t.Errorf("a refusal stamped at the window's edge was dropped: %q %v", msg, observed)
+			if out, observed := FindGrokTurnOutcome(dir, "a-1", since); out.Message != qaGrokRefusal || !observed {
+				t.Errorf("a refusal stamped at the window's edge was dropped: %+v %v", out, observed)
 			}
 		})
 	}
@@ -246,14 +285,14 @@ func TestQAGrokTurnOutcomeReadsARecordWithNoMillisecondStamp(t *testing.T) {
 		fmt.Sprintf(qaGrokUserRecNoMeta, id, since.Unix(), ms, string(text)),
 		fmt.Sprintf(qaGrokDoneRec, id, since.Unix(), ms+250, qaGrokTailRefused))
 
-	if msg, observed := FindGrokTurnOutcome(dir, "a-1", since); msg != qaGrokRefusal || !observed {
-		t.Errorf("a refusal whose prompt carries only a whole-second stamp was dropped: %q %v", msg, observed)
+	if out, observed := FindGrokTurnOutcome(dir, "a-1", since); out.Message != qaGrokRefusal || !observed {
+		t.Errorf("a refusal whose prompt carries only a whole-second stamp was dropped: %+v %v", out, observed)
 	}
 }
 
-// The settle line is one line — `⛔ <bead> grok refused the first turn: <msg>`
-// — so the message is folded to one, the same fold FindClaudeTurnOutcome does
-// to claude's synthetic prose. NOT measured: all 7 of this box's agent_result
+// The settle line is one line — `⛔ <bead> grok refused the first turn: <msg>`,
+// or its mid-flight arm — so the message is folded to one, the same fold
+// FindClaudeTurnOutcome does to claude's synthetic prose. NOT measured: all 7 of this box's agent_result
 // strings are single-line API errors, and the value below is synthetic and
 // says so. The fold is insurance against the day a provider quotes a body,
 // and this arm is what keeps it from being dropped as decorative.
@@ -266,12 +305,12 @@ func TestQAGrokTurnOutcomeFoldsAMultiLineProviderMessage(t *testing.T) {
 		qaGrokTurn(id, "a-1", since.Add(time.Second),
 			`"stop_reason":"error","agent_result":"API error (status 500):\n  upstream said\n\n  no\n"`)...)
 
-	msg, observed := FindGrokTurnOutcome(dir, "a-1", since)
+	out, observed := FindGrokTurnOutcome(dir, "a-1", since)
 	if !observed {
-		t.Fatalf("multi-line agent_result was not read: %q %v", msg, observed)
+		t.Fatalf("multi-line agent_result was not read: %+v %v", out, observed)
 	}
-	if want := "API error (status 500): upstream said no"; msg != want {
-		t.Errorf("message = %q, want %q", msg, want)
+	if want := "API error (status 500): upstream said no"; out.Message != want {
+		t.Errorf("message = %q, want %q", out.Message, want)
 	}
 }
 
@@ -290,9 +329,9 @@ func TestQAGrokTurnOutcomeReadsASessionRunInTheWorktreeNotTheRepo(t *testing.T) 
 	qaGrokSession(t, home, worktree, id, since.Add(time.Second),
 		qaGrokTurn(id, "a-1", since.Add(time.Second), qaGrokTailRefused)...)
 
-	msg, observed := FindGrokTurnOutcome(repo, "a-1", since)
-	if msg != qaGrokRefusal || !observed {
-		t.Errorf("a refusal recorded in the session's worktree cwd was not read: %q %v", msg, observed)
+	out, observed := FindGrokTurnOutcome(repo, "a-1", since)
+	if out.Message != qaGrokRefusal || !observed {
+		t.Errorf("a refusal recorded in the session's worktree cwd was not read: %+v %v", out, observed)
 	}
 }
 
@@ -316,14 +355,14 @@ func TestQAGrokTurnOutcomePrefersTheSessionRunInThisDir(t *testing.T) {
 	qaGrokSession(t, home, dir, "01a0000b-0000-7000-8000-00000000000b", since.Add(time.Second),
 		qaGrokTurn("01a0000b-0000-7000-8000-00000000000b", "a-1", since.Add(time.Second), qaGrokTailRefused)...)
 
-	if msg, _ := FindGrokTurnOutcome(dir, "a-1", since); msg != qaGrokRefusal {
-		t.Errorf("the session run in this dir must answer first, got %q", msg)
+	if out, _ := FindGrokTurnOutcome(dir, "a-1", since); out.Message != qaGrokRefusal {
+		t.Errorf("the session run in this dir must answer first, got %q", out.Message)
 	}
 	// The control: name a dir neither session ran in and the same store
 	// answers with the stranger. Without it "prefers" could be read off a
 	// store that only ever had one usable candidate.
-	if msg, _ := FindGrokTurnOutcome(filepath.Join(base, "nowhere"), "a-1", since); msg != strangerMsg {
-		t.Errorf("with nothing in this dir the reader must widen, got %q", msg)
+	if out, _ := FindGrokTurnOutcome(filepath.Join(base, "nowhere"), "a-1", since); out.Message != strangerMsg {
+		t.Errorf("with nothing in this dir the reader must widen, got %q", out.Message)
 	}
 }
 
@@ -333,15 +372,15 @@ func TestQAGrokTurnOutcomePrefersTheSessionRunInThisDir(t *testing.T) {
 func TestQAGrokTurnOutcomeUnreadableStoreIsNotHealth(t *testing.T) {
 	home := qaGrokHome(t)
 	dir := t.TempDir()
-	if msg, observed := FindGrokTurnOutcome(dir, "a-1", time.Now().Add(-time.Minute)); msg != "" || observed {
-		t.Errorf("an empty store = %q %v, want %q false", msg, observed, "")
+	if out, observed := FindGrokTurnOutcome(dir, "a-1", time.Now().Add(-time.Minute)); out.Message != "" || observed {
+		t.Errorf("an empty store = %+v %v, want no message and false", out, observed)
 	}
 	// A sessions root replaced by a file: unreadable, not empty.
 	if err := os.WriteFile(filepath.Join(home, "sessions"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if msg, observed := FindGrokTurnOutcome(dir, "a-1", time.Now().Add(-time.Minute)); msg != "" || observed {
-		t.Errorf("an unreadable store = %q %v, want %q false", msg, observed, "")
+	if out, observed := FindGrokTurnOutcome(dir, "a-1", time.Now().Add(-time.Minute)); out.Message != "" || observed {
+		t.Errorf("an unreadable store = %+v %v, want no message and false", out, observed)
 	}
 }
 
@@ -358,11 +397,11 @@ func TestQAGrokTurnOutcomeRefusesAZeroWindow(t *testing.T) {
 
 	// The control: with a window that reaches back to it, the same fixture
 	// reads — so the arm below is the floor talking and not an empty store.
-	if msg, _ := FindGrokTurnOutcome(dir, "a-1", long.Add(-time.Minute)); msg != qaGrokRefusal {
-		t.Fatalf("the fixture is not readable at all: %q", msg)
+	if out, _ := FindGrokTurnOutcome(dir, "a-1", long.Add(-time.Minute)); out.Message != qaGrokRefusal {
+		t.Fatalf("the fixture is not readable at all: %+v", out)
 	}
-	if msg, observed := FindGrokTurnOutcome(dir, "a-1", time.Time{}); msg != "" || observed {
-		t.Errorf("a zero floor = %q %v, want %q false", msg, observed, "")
+	if out, observed := FindGrokTurnOutcome(dir, "a-1", time.Time{}); out.Message != "" || observed {
+		t.Errorf("a zero floor = %+v %v, want no message and false", out, observed)
 	}
 }
 

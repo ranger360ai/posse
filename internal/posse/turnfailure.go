@@ -17,12 +17,51 @@ import (
 	"time"
 )
 
-// TurnOutcomeReader reads the runtime-owned outcome of one settled turn:
-// the message a refusal carried (empty = the turn was answered normally)
-// and whether an outcome was READ AT ALL. The two are separate because
-// "nothing to report" and "nothing readable" are different facts, and only
-// the first one may clear a failure marker.
-type TurnOutcomeReader func(dir, bead string, since time.Time) (message string, observed bool)
+// TurnOutcome is what a runtime's own store says one settled turn did: the
+// message a refusal carried (empty = the turn was answered normally), and how
+// much of that turn had already RUN when the refusal landed.
+//
+// The second half is why this is a struct and not a string
+// (ranger-base-qcu4c). An account does not only refuse before it serves: one
+// of the seven refusals in this box's grok history landed 190,817 tokens and
+// six model calls into a turn that had been running for a minute and a half,
+// and a session that far in may well have edited files and commented on the
+// bead. "no work ran" is exactly wrong about that turn, and the runtime's own
+// record is the only thing that can tell the two apart.
+type TurnOutcome struct {
+	// Message is the refusal the runtime recorded, folded to one line.
+	Message string
+	// ModelCalls and OutputTokens are what the runtime's record says this
+	// turn spent BEFORE the refusal — the units an operator decides in, not
+	// the store's whole usage object, because the question the settle line
+	// asks is only "is there work on the other side of this".
+	//
+	// They are read only beside a Message, and stay zero on an outcome that
+	// carries none: nothing asks what a turn that was never refused spent,
+	// and what it spent is already `posse cost`'s to read off the same
+	// record. A reader filling them in on a healthy turn would be answering
+	// a question this type is not the one to answer.
+	ModelCalls   int
+	OutputTokens int
+}
+
+// Worked reports that this turn had already run when it was refused, so a
+// relaunch lands on top of work that may exist — a worktree with edits, a
+// bead with comments.
+//
+// False carries a claim, so a reader owes it one: BOTH registered readers can
+// make it, for different reasons — claude by construction (see
+// FindClaudeTurnOutcome), grok off the `usage` object its store writes on
+// every turn that ran anything (186/186, censused 2026-09-05). A third
+// adapter that cannot tell must say so in its own docstring, because the
+// settle line reads a zero here as "nothing ran".
+func (o TurnOutcome) Worked() bool { return o.ModelCalls > 0 || o.OutputTokens > 0 }
+
+// TurnOutcomeReader reads the runtime-owned outcome of one settled turn: what
+// the turn did (TurnOutcome) and whether an outcome was READ AT ALL. The two
+// are separate because "nothing to report" and "nothing readable" are
+// different facts, and only the first one may clear a failure marker.
+type TurnOutcomeReader func(dir, bead string, since time.Time) (out TurnOutcome, observed bool)
 
 // TurnOutcomeClaudeTranscript reads claude's own JSONL transcript under
 // ~/.claude/projects. A runtime whose CLI writes that same shape declares
@@ -77,26 +116,35 @@ func TurnOutcomeReaderFor(rt *Runtime) TurnOutcomeReader {
 // It scans only the Claude project directory for dir, only files touched by
 // this turn, and only an assistant record after the matching bead prompt.
 // User-authored bead text can quote the provider message without becoming a
-// false positive. observed distinguishes a healthy first answer ("", true)
-// from a transcript that is not readable yet ("", false).
-func FindClaudeTurnOutcome(dir, bead string, since time.Time) (message string, observed bool) {
+// false positive. observed distinguishes a healthy first answer (no message,
+// true) from a transcript that is not readable yet (no message, false).
+//
+// The outcome's work fields stay zero, and here that is a MEASURED zero and
+// not an unreported one: this reader reports a refusal only when the FIRST
+// assistant record after the bead prompt is the synthetic one, so no tool
+// call, no edit and no bead comment can have happened ahead of it — claude's
+// arm of the settle line keeps the flat "no work ran" and is right to
+// (ranger-base-qcu4c). What claude cannot see is the mirror of that: a
+// refusal landing AFTER a first answer reads here as an outcome with no
+// message and observed=true — a healthy turn — ranger-base-4ldma.
+func FindClaudeTurnOutcome(dir, bead string, since time.Time) (out TurnOutcome, observed bool) {
 	project := strings.ReplaceAll(filepath.ToSlash(filepath.Clean(dir)), "/", "-")
 	for _, path := range TranscriptFiles(project) {
 		st, err := os.Stat(path)
 		if err != nil || st.ModTime().Before(since.Add(-time.Second)) {
 			continue
 		}
-		if message, observed := scanClaudeTurnOutcome(path, bead, since); observed {
-			return message, observed
+		if out, observed := scanClaudeTurnOutcome(path, bead, since); observed {
+			return out, observed
 		}
 	}
-	return "", false
+	return TurnOutcome{}, false
 }
 
-func scanClaudeTurnOutcome(path, bead string, since time.Time) (message string, observed bool) {
+func scanClaudeTurnOutcome(path, bead string, since time.Time) (out TurnOutcome, observed bool) {
 	f, err := os.Open(path)
 	if err != nil {
-		return "", false
+		return TurnOutcome{}, false
 	}
 	defer f.Close()
 
@@ -123,12 +171,14 @@ func scanClaudeTurnOutcome(path, bead string, since time.Time) (message string, 
 					if inTurn && !ts.Before(since) {
 						text := assistantText(d.Message.Content)
 						if d.Message.Model == "<synthetic>" && claudeAllotmentLimit(text) {
-							return strings.Join(strings.Fields(text), " "), true
+							// Work fields left zero on purpose: this record IS
+							// the first answer, so there is nothing before it.
+							return TurnOutcome{Message: strings.Join(strings.Fields(text), " ")}, true
 						}
 						// The first assistant answer was not an allotment refusal:
 						// this is positive evidence that a prior failure marker can
 						// be cleared. Anything later belongs to work that started.
-						return "", true
+						return TurnOutcome{}, true
 					}
 				}
 			}
@@ -137,10 +187,10 @@ func scanClaudeTurnOutcome(path, bead string, since time.Time) (message string, 
 			break
 		}
 		if readErr != nil {
-			return "", false
+			return TurnOutcome{}, false
 		}
 	}
-	return "", false
+	return TurnOutcome{}, false
 }
 
 func assistantText(raw json.RawMessage) string {

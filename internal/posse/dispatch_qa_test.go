@@ -653,11 +653,11 @@ func TestDispatchMarksAProviderRefusalAsTurnFailure(t *testing.T) {
 		`[{"id":"a-1","title":"t","status":"in_progress","assignee":"ranger"}]`)
 	idleClaude(t, fake)
 	const refusal = "You've reached your Fable 5 limit. Run /usage-credits to continue or switch models with /model."
-	d.TurnOutcome = func(dir, bead string, since time.Time) (string, bool) {
+	d.TurnOutcome = func(dir, bead string, since time.Time) (TurnOutcome, bool) {
 		if dir != repo || bead != "a-1" || since.IsZero() {
 			t.Fatalf("turn failure lookup = %q %q %v", dir, bead, since)
 		}
-		return refusal, true
+		return TurnOutcome{Message: refusal}, true
 	}
 
 	n, err := d.Run("", "", 0)
@@ -689,7 +689,7 @@ func TestDispatchMarksAProviderRefusalAsTurnFailure(t *testing.T) {
 	// session's lifetime: after the allotment resets, a healthy first answer
 	// on --resume clears it.
 	d.Resume = true
-	d.TurnOutcome = func(string, string, time.Time) (string, bool) { return "", true }
+	d.TurnOutcome = func(string, string, time.Time) (TurnOutcome, bool) { return TurnOutcome{}, true }
 	if _, err := d.Run("", "", 0); err != nil {
 		t.Fatal(err)
 	}

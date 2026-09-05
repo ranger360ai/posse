@@ -77,7 +77,7 @@ type Dispatcher struct {
 	// TurnOutcome reads the runtime-owned outcome of one settled turn. nil =
 	// scan Claude transcripts; tests inject a hermetic answer. The bool says
 	// an outcome was observed; an empty message is a healthy first answer.
-	TurnOutcome func(dir, bead string, since time.Time) (string, bool)
+	TurnOutcome func(dir, bead string, since time.Time) (TurnOutcome, bool)
 	// Progress reports a launch's in-flight lines to a caller whose Out
 	// cannot carry them: the cockpit builds its Dispatcher with
 	// Out=io.Discard, because its screen is a TUI and a stray line would
@@ -3436,22 +3436,37 @@ wait:
 	// = blind, and observed=false on a non-nil reader = looked and found
 	// nothing (ranger-base-1mei); both are the settle line's to say below.
 	find := d.turnOutcomeReader(p.runtime)
-	message, observed := "", false
+	outcome, observed := TurnOutcome{}, false
 	if showErr != nil || after.Status != "closed" {
 		if find != nil {
-			message, observed = find(p.is.Dir, p.is.ID, p.launched)
+			outcome, observed = find(p.is.Dir, p.is.ID, p.launched)
 		}
 		if observed {
-			if err := d.HB.MarkTurnFailure(p.session, message); err != nil {
+			if err := d.HB.MarkTurnFailure(p.session, outcome.Message); err != nil {
 				d.eprintf("posse: %s turn outcome could not be recorded in session meta (%v)\n", p.session, err)
 			}
-			if message != "" {
+			if outcome.Message != "" {
 				// Named by the RUNTIME whose account refused, not by the
 				// provider claude happens to be: the same line is what a
 				// codex or grok refusal prints the day one of them has a
 				// reader.
+				//
+				// Two arms, because a refusal is not always a refusal to
+				// START (ranger-base-qcu4c). "no work ran" was written for
+				// claude, where the synthetic refusal IS the whole turn, and
+				// it is a false claim about the grok refusal this box has on
+				// disk: six model calls and ninety seconds in when the
+				// account went out from under it, with a worktree and a bead
+				// on the other side of the line telling the operator nothing
+				// happened. Which arm prints is the runtime's own record's to
+				// say (TurnOutcome.Worked), never this function's guess.
+				if work := turnWork(outcome); work != "" {
+					d.printf("⛔ %-14s %s refused the turn mid-flight: %s — the turn had already run (%s), so work may exist: posse peek %s and check the worktree before relaunching at another tier\n",
+						p.is.ID, runtimeName(p.runtime), outcome.Message, work, p.session)
+					return false, nil
+				}
 				d.printf("⛔ %-14s %s refused the first turn: %s — no work ran; relaunch %s at another tier\n",
-					p.is.ID, runtimeName(p.runtime), message, p.session)
+					p.is.ID, runtimeName(p.runtime), outcome.Message, p.session)
 				return false, nil
 			}
 		}
@@ -3570,6 +3585,32 @@ func turnOutcomeClause(find TurnOutcomeReader, runtime, session string, observed
 		return fmt.Sprintf("posse looked for a turn outcome on %s and found none this pass — an account that refused the turn can settle exactly like this, so posse peek %s before reading it as a healthy first turn", runtimeName(runtime), session)
 	}
 	return ""
+}
+
+// turnWork is how much of a refused turn had already run, in the units the
+// operator decides in — empty when the runtime's own record says nothing ran,
+// which is the only condition under which the refusal line may claim it.
+//
+// Rendered here rather than in the reader on purpose: which of grok's usage
+// fields exist is the reader's business, and how a settle line reads is this
+// file's. Both fields are printed when both are there because they answer
+// different halves of "is there work on the other side of this" — calls is
+// how many times the model was reached, tokens is how much came back.
+func turnWork(o TurnOutcome) string {
+	// One decision, not two: Worked() is the predicate the readers document
+	// themselves against, so the line asks it rather than re-deriving "did
+	// anything run" out of the same two fields a second time.
+	if !o.Worked() {
+		return ""
+	}
+	var parts []string
+	if o.ModelCalls > 0 {
+		parts = append(parts, fmt.Sprintf("%d model %s", o.ModelCalls, plural(o.ModelCalls, "call", "calls")))
+	}
+	if o.OutputTokens > 0 {
+		parts = append(parts, fmt.Sprintf("%d output %s", o.OutputTokens, plural(o.OutputTokens, "token", "tokens")))
+	}
+	return strings.Join(parts, ", ")
 }
 
 // runtimeName is what a line calls this runtime. Empty means the launch
