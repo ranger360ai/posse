@@ -463,13 +463,38 @@ func TestQAClaudeMidTurnRefusalReachesTheSettleLine(t *testing.T) {
 	if err := os.MkdirAll(transcripts, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	claudeTurn(t, transcripts, "session.jsonl",
+	planted := claudeTurn(t, transcripts, "session.jsonl",
 		claudePrompt(1, "a-1"),
 		claudeAnswer(2, "msg_a", 120, "Reading the bead first."),
 		claudeToolResult(3),
 		claudeAnswer(4, "msg_b", 340, "Now the suite."),
 		claudeSynthetic(5, qaAllotmentRefusal),
 	)
+
+	// The transcript has to be planted BEFORE d.Run — there is no seam to
+	// write it from inside the launch — and that inverts the one ordering
+	// production always has: claude writes its transcript DURING the turn, so
+	// the file's mtime is always after the p.launched that
+	// FindClaudeTurnOutcome is floored on (dispatch.go stamps launched before
+	// launchSession execs the CLI, so nothing claude writes for this turn can
+	// precede it). The reader's staleness gate skips a transcript last
+	// written more than a second before that floor (turnfailure.go), so a
+	// file whose mtime is fixed at plant time leaves this test betting that
+	// d.Run reaches the launch within one second of REAL time. Alone it does,
+	// in ~1s; inside the loaded package binary it does not, and this test was
+	// red in two of two full-package runs on 2026-09-05 while green in
+	// isolation — with `time.Sleep(2*time.Second)` here reproducing the suite
+	// failure byte for byte (ranger-base-dg1bm).
+	//
+	// So stamp the mtime where production puts it, after the launch, instead
+	// of racing the launch to it. The hour is not a bigger bet on elapsed
+	// time, it is the opposite: the gate's question is only whether the file
+	// was touched before the floor, and this answers it the same way however
+	// long the box takes to get there.
+	written := time.Now().Add(time.Hour)
+	if err := os.Chtimes(planted, written, written); err != nil {
+		t.Fatal(err)
+	}
 
 	// FindClaudeTurnOutcome itself answers here. newTestDispatcher stubs the
 	// reader so no test reaches the operator's live ~/.claude; clearing it is
