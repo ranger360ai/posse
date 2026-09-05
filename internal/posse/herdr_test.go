@@ -1361,6 +1361,29 @@ func fakeHerdr(args []string) int {
 	case "pane read": // plain text, never an envelope — like the real CLI
 		fmt.Print("prompt$ echo hi\nhi\nprompt$\n\n\n\n")
 		return 0
+	case "pane get":
+		// The runtime's own session id for the pane (ranger-base-2hvtv).
+		// Absent by default — herdr answers this only for a pane it has
+		// identified an agent in, and every reading built on it has to
+		// survive not getting one.
+		//
+		//	pane-session   the claude session uuid to report
+		//	pane-agent     the agent kind, for the non-claude arm (default claude)
+		if len(args) < 3 {
+			return fakeErr("bad_request", "fake herdr: pane get needs a pane id")
+		}
+		b, err := os.ReadFile(filepath.Join(fakeDir(), "pane-session"))
+		if err != nil {
+			return fakeErr("not_found", "fake herdr: no agent session on that pane")
+		}
+		agent := "claude"
+		if k, err := os.ReadFile(filepath.Join(fakeDir(), "pane-agent")); err == nil {
+			agent = strings.TrimSpace(string(k))
+		}
+		return fakeOK(fmt.Sprintf(
+			`{"type":"pane_info","pane":{"pane_id":%q,"agent":%q,`+
+				`"agent_session":{"agent":%q,"kind":"id","source":"herdr:%s","value":%q}}}`,
+			args[2], agent, agent, agent, strings.TrimSpace(string(b))))
 	case "agent list":
 		agents := "[]"
 		if b, err := os.ReadFile(filepath.Join(fakeDir(), "agents.json")); err == nil {

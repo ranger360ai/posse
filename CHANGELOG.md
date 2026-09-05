@@ -397,6 +397,35 @@ nothing.
 
 ### Fixed
 
+**The shop check stopped sending the coordinator to clear a prompt that had
+already been sent, and `--resume` stopped parking a bead behind one.**
+
+*Affected: `posse status` / the cockpit's G2 row, and `posse dispatch
+--resume`, for any claude session whose composer previews text.* Both read
+claude's prompt box off `herdr agent explain` and called any text there "a
+prompt sitting UNSENT in its box". That is a matcher over a screen region
+that can hold a line nobody is about to send, and a matcher like that cannot
+go false on its own: the same reading took the pulse arm off for about ten
+hours on 2026-09-04 (~586 skipped ticks on lines the operator had already
+sent), and the G2 row carried a `settled-unsent:` condition into the
+coordinator's prompt with nothing anybody could clear.
+
+The reading is now checked against the store that owns the fact — claude's
+own submitted-prompt log — scoped to that pane's claude session. A box
+previewing the line the pane LAST SUBMITTED is echoing it, not holding it:
+`--resume` re-prompts, and the G2 row is the plain `settled:` one and says in
+its detail which reading changed its shape. A box previewing anything else is
+still a hold, still skipped, still `settled-unsent:` — including both boxes
+on the live fleet when this was measured. Every failure on the way answers
+"not an echo": no log, an unreadable one, a pane herdr will not name a claude
+session for, rows in a shape posse does not know. Nothing changes for codex,
+grok or any other runtime, which never had the reading.
+
+One thing this cannot see, said out loud: an operator who retypes the line
+this pane most recently submitted, and leaves it unsent, is read as an echo.
+Only the LAST row is compared, so what gets typed over in that case is a
+duplicate of what was just sent.
+
 **A session could not relaunch itself: it waited the whole landing timeout to
 be told to try again later, and the flag that skipped the wait would have
 destroyed it.**

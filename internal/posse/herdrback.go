@@ -43,6 +43,15 @@ type HerdrBackend struct {
 	// Bd is the beads runner the reap guard reads the store of record with
 	// (ADR 0013 §4). Zero value = the ambient binary, resolved on use.
 	Bd Bd
+	// ClaudeHistory is claude's submitted-prompt log — the store of record
+	// for whether a composer is holding a prompt or echoing one already
+	// sent (sentline.go, ranger-base-2hvtv). Same discipline as
+	// ClaudeConfig above and for the same reason: NewHerdrBackend fills it
+	// with the operator's real one, a backend built without it reads NO
+	// store, and the empty case is a no-op rather than a fallback — a test
+	// must never read the operator's own prompt history, and a reading
+	// nobody named is worse than the reading this bead started from.
+	ClaudeHistory string
 }
 
 func (b *HerdrBackend) warn(format string, args ...any) {
@@ -136,7 +145,8 @@ type NewSessionOpts struct {
 }
 
 func NewHerdrBackend(a *App) *HerdrBackend {
-	return &HerdrBackend{App: a, H: NewHerdr(), ClaudeConfig: ClaudeConfigFile(), Bd: NewBd()}
+	return &HerdrBackend{App: a, H: NewHerdr(), ClaudeConfig: ClaudeConfigFile(),
+		ClaudeHistory: claudeHistoryPath(), Bd: NewBd()}
 }
 
 // ─── meta files ──────────────────────────────────────────────────────────────

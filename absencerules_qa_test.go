@@ -627,6 +627,10 @@ var arShadowAllowed = []arShadowAllow{
 		why: "display: the tag is suppressed for the default runtime at the default tier so a pane title reads clean. Nothing branches on the result.",
 	},
 	{
+		file: "posse/herdr.go", fn: "Herdr.PaneAgentSession", shape: "branch",
+		why: "CLI-own state, and the narrowest kind: `agent_session` is the RUNTIME's id for its own conversation, and the only caller reads claude's own submit log with it (sentline.go, ranger-base-2hvtv). There is no dimension behind it — a codex or grok pane has no such log to join to, so the arm returns an error and every reader falls back to the behaviour it had before that bead. The day another runtime keeps one, this stops being a branch and becomes a Runtime field.",
+	},
+	{
 		file: "posse/cage.go", fn: "", shape: "table",
 		why: "cageCredential, the built-ins' side map §3's CageCred row already names (\"built-ins via a side map\"). The declaration is CageCred:; this is the built-in's value for it.",
 	},
