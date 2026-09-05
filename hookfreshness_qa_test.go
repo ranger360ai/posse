@@ -1058,3 +1058,92 @@ func hfShim(t *testing.T, r *hfRig, body string) string {
 	}
 	return dir
 }
+
+// hfVerdict is everything from the script's first `verify-hook-freshness:`
+// line to the end of the stream — the block a reader who pipes the run through
+// `tail` is left holding. Findings are printed beside the repo that produced
+// them, ABOVE this block, so what the block says about them is the whole of
+// what a truncated read receives.
+func hfVerdict(t *testing.T, out string) string {
+	t.Helper()
+	i := strings.Index(out, "verify-hook-freshness: ")
+	if i < 0 {
+		t.Fatalf("no verdict line in:\n%s", out)
+	}
+	return out[i:]
+}
+
+// ranger-base-swg17. The bead this arm comes from was filed off a real read of
+// this script that lost a finding: `make verify-hook-freshness 2>&1 | tail -25`
+// over a 30-line run on the live box dropped the FIRST repo's whole block, its
+// FINDING line with it, and the trailer still said "findings above" — about
+// findings that were no longer above anything. One repo was named in the bead
+// and the other, stale by 630 lines and the one repo on that box no session
+// create can ever re-render, was not.
+//
+// So the property is not "a finding is printed" — the arms above hold that —
+// it is that the CLOSING VERDICT names every finding on its own. Anchored on
+// the verdict block rather than on `tail -n` with a number in it: a line count
+// would pass the day the prescription grows a line, which is the same drift
+// that made the finding disappear in the first place.
+func TestQAHookFreshnessVerdictRestatesFindingsARunAboveItWouldLose(t *testing.T) {
+	r := hfNewRig(t, map[string]string{"priv": "private", "pub": "public"})
+	body := hfRead(t, r.hook("priv"))
+	const erba = "'git diff HEAD -- <paths>'"
+	if !strings.Contains(body, erba) {
+		t.Fatalf("rig never built: the current render does not carry %s", erba)
+	}
+	hfWrite(t, r.hook("priv"), strings.Replace(body, erba, "'git diff'", 1))
+	out, code := r.run(t)
+	if code != 1 {
+		t.Fatalf("a stale body must be a finding (exit 1), got %d:\n%s", code, out)
+	}
+	verdict := hfVerdict(t, out)
+	if !strings.Contains(verdict, "prepare-commit-msg is STALE") {
+		t.Errorf("the verdict must restate the finding, not point at it:\n%s", verdict)
+	}
+	// By repo, because a box with two findings in two repos is exactly the
+	// read that went wrong: naming one of them is what the bead did. The
+	// script abbreviates $HOME, and the rig's HOME is the parent of every
+	// repo it made, so this is the repo's own printed name.
+	if !strings.Contains(verdict, "~/priv: prepare-commit-msg is STALE") {
+		t.Errorf("the restated finding must name its repo:\n%s", verdict)
+	}
+	// And the prescription still follows it — the verdict is the finding AND
+	// what to type, or a truncated read is complete and useless.
+	if !strings.Contains(verdict, "posse gates install-hooks <repo>") {
+		t.Errorf("the verdict must keep the prescription:\n%s", verdict)
+	}
+}
+
+// The same property where the finding is the only thing the run produced: a
+// repo classified BEFORE the reference render leaves `measured` at 0, so both
+// "nothing measured" verdicts used to be reachable with a finding in hand.
+// This fixture is the exit-0 one, which is the worse half — a managed box
+// (nothing of posse's installed to go stale, legitimately clean) plus one repo
+// that escaped the managed path and has no hooks directory at all. That
+// printed `FINDING ... no hooks dir` and then `nothing to re-render`, exit 0:
+// a pass over a finding, and a green `make verify-hook-freshness`.
+func TestQAHookFreshnessDoesNotPassAManagedBoxCarryingAFinding(t *testing.T) {
+	r := hfNewRig(t, map[string]string{"managed": "private", "escaped": "public"})
+	r.manage(t)
+	// Relative core.hooksPath: resolved against the worktree, so not absolute,
+	// not outside the repo, and not managed — the way a repo opts back out.
+	r.escape(t, "escaped")
+	if err := os.RemoveAll(filepath.Join(r.repos["escaped"], ".git", "hooks")); err != nil {
+		t.Fatal(err)
+	}
+	out, code := r.run(t)
+	if code != 1 {
+		t.Fatalf("a finding is never a pass, got exit %d:\n%s", code, out)
+	}
+	if !strings.Contains(out, "no hooks dir") {
+		t.Fatalf("rig never built: the escaped repo produced no finding:\n%s", out)
+	}
+	if strings.Contains(out, "nothing to re-render") {
+		t.Errorf("a box with a finding has something to re-render:\n%s", out)
+	}
+	if !strings.Contains(hfVerdict(t, out), "no hooks dir") {
+		t.Errorf("the verdict must restate it here too:\n%s", out)
+	}
+}

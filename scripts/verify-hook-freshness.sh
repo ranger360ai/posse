@@ -275,7 +275,28 @@ member() { # <hooks> <slot> <marker>
 measured=0
 managed=0
 findings=0
-finding() { findings=$((findings + 1)); echo "  FINDING  $*"; }
+# Each finding is printed where it is found — beside the repo block that gives
+# it its context — AND kept, because the closing verdict restates every one of
+# them. "findings above" is not a verdict a truncating reader can act on, and
+# this output is read through a pipe far more often than it is read whole.
+# MEASURED 2026-09-05: `make verify-hook-freshness 2>&1 | tail -25` over a
+# 30-line run dropped the first repo's whole block, its FINDING line included,
+# and left the trailer saying "findings above" about findings that were no
+# longer above anything. The bead filed off that read (ranger-base-swg17) named
+# one repo and missed the other, which is the failure the control exists to
+# prevent, one layer up. So the last lines of the stream carry the whole
+# verdict, and a finding is worth saying twice.
+finding_lines=""
+finding() {
+  findings=$((findings + 1))
+  # Held as newline-separated text, not an array: bash 3.2 is what
+  # /usr/bin/env bash is on this box, and `"${arr[@]}"` on an empty array is
+  # an unbound-variable crash there under `set -u` — the same 3.2 trap the
+  # mapfile note above this loop names.
+  finding_lines="$finding_lines  FINDING  $*
+"
+  echo "  FINDING  $*"
+}
 
 for e in "${entries[@]}"; do
   repo=${e%%$'\t'*}; want=${e#*$'\t'}
@@ -411,7 +432,24 @@ say ""
 if [ "$managed" -gt 0 ]; then
   echo "verify-hook-freshness: $managed repo(s) dispatch from a managed hooks path — posse writes nothing there, and the L3 wall is realized by the session hooks dir rendered at each launch (ADR 0052)"
 fi
-if [ "$measured" -eq 0 ]; then
+# The verdict, restated so it stands alone at the end of the stream — see
+# finding() for what a truncating reader lost when it did not. Printed before
+# the exit branches below, because a finding is a finding whether the box also
+# measured nothing (exit 2) or not.
+if [ "$findings" -ne 0 ]; then
+  echo "verify-hook-freshness: $findings finding(s), restated here so a truncated read still carries them:"
+  printf '%s' "$finding_lines"
+  echo ""
+fi
+# Neither "nothing measured" verdict is reachable with a finding in hand, and
+# both used to be. A repo classified before the reference render — managed, or
+# present and git but with no hooks dir git could name — leaves `measured` at
+# 0, so a box of those plus ONE such finding printed the finding and then said
+# either "nothing to re-render" at exit 0 or "0 of N configured repos were
+# present and git" at exit 2 — the first a pass over a finding, the second a
+# sentence that is not true of a repo that was present, was git, and was read.
+# A finding is a finding: both branches now belong to the findings exit below.
+if [ "$measured" -eq 0 ] && [ "$findings" -eq 0 ]; then
   if [ "$managed" -gt 0 ]; then
     echo "verify-hook-freshness: no repo carries a posse-installed hook that could be stale — nothing to re-render"
     exit 0
@@ -421,8 +459,6 @@ if [ "$measured" -eq 0 ]; then
 fi
 if [ "$findings" -ne 0 ]; then
   cat <<'EOF'
-verify-hook-freshness: findings above
-
 Each stale or missing slot is fixed by re-rendering it from this binary:
 
   posse gates install-hooks <repo>      # add --chain if a foreign shim holds a slot

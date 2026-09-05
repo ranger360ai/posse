@@ -738,6 +738,31 @@ only wants the verdict does not have to risk the write to get it — the
 freshness script is the first such caller, and one classification is better
 than a second spelling of its three legs per caller.
 
+**`make verify-hook-freshness` said "findings above" and left it there, so a
+run read through a pipe could report a clean-looking tail while a whole repo's
+finding scrolled off the top.**
+
+*Affected: anyone reading the check through `| tail`, `| head`, a CI log
+excerpt or a chat paste — which is most reads of it.* The findings are printed
+beside the repo that produced them and the closing verdict only pointed back at
+them. Measured on a live box: a 30-line run through `tail -25` dropped the
+first repo's entire block, its `FINDING` line with it, and the trailer still
+said "findings above" about findings that were no longer above anything. The
+bead filed off that read named one stale repo and missed the other — which was
+630 lines behind the binary and the one repo on that box no session create can
+ever re-render, i.e. the exact case the control exists to catch.
+
+The verdict now restates every finding, by repo, immediately above the
+prescription, so the end of the stream carries the whole answer. A finding is
+printed twice on a full read, which is the intended trade.
+
+Two "nothing measured" verdicts were also reachable with a finding in hand,
+because a repo classified before the reference render never increments the
+measured count: a box of managed repos plus one repo that escaped the managed
+path and had no hooks directory printed its finding and then exited **0**,
+`nothing to re-render` — a pass over a finding. Both branches now belong to the
+findings exit.
+
 **On git 2.55 the commit wall refused a safe, path-limited commit that carried
 `-U`, `--unified` or `--inter-hunk-context`.**
 
