@@ -768,7 +768,7 @@ Graduation to a built-in earns measured native capabilities, not exemption
 from this checklist. An API endpoint alone is not a runtime: prefer an
 authorized existing CLI pointed at it, then an authorized third-party CLI.
 A bespoke wrapper belongs in a separate product repository; an agent loop
-inside posse is rejected. Venue/data placement belongs to 0012.
+inside posse is rejected. Venue/data placement belongs solely to [0012, Venue restrictions](0012-harness-instance-boundary.md); 0037 is its historical source.
 
 MEASURED: 0032 retains the dated probe-path decoy and command-path evidence;
 current runtimeprobe.go carries both paths. No live probe is run by this

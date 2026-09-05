@@ -1,5 +1,11 @@
 # ADR 0037 — Venue-restricted runtime: dimensions are public, facts are private
 
+*Status: superseded 2026-09-05 by ADR 0012 · ADR simplification, operator ruling 2026-09-05.*
+
+The surviving decision is in [0012 — current contract](0012-harness-instance-boundary.md), Venue restrictions and Lineage. This page keeps its number and dated evidence; the body below is historical, not current policy.
+
+## Historical record (superseded in full)
+
 *Status: accepted 2026-08-29 · owner: architect · builds on 0012 (instance
 boundary), 0017 (equivalence grid), 0032 (engine onboarding, probe) ·
 source bead ranger-base-pj9f (venue ruled on ranger-base-uwp)*

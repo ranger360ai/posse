@@ -250,6 +250,32 @@ seeding for third-party CLIs (the cage is optional for a work install;
 document, don't generalize yet), and per-runtime egress allowlists (ADR
 0002's table, still design-only).
 
+## Venue restrictions (folded from 0037)
+
+A dimension is public harness material; a deployment fact stays in its
+authorized private instance. Publish key schemas, probe mechanics and
+anonymous mechanism fixes. Keep vendor identity, command strings, model
+ids, dialog text, pane captures, filled runtime declarations, fixtures and
+probe records in the authorized venue, even if someone offers to scrub them.
+An authoring instance that is not authorized to run the engine must not
+register its runtime profile; a private runbook may carry a skeleton for
+use only at the authorized instance. Capability is not venue permission.
+
+The authorized instance owns its measured grid and probe record. No record
+transport is required: only a permitted generalized bug or coarse verdict
+can return, under the same audience boundary. Its work waits for the venue
+and an installed release containing required mechanisms. [0013 §9](0013-runtime-dispatch-contract.md)
+owns onboarding mechanics. Rejected: testing in a forbidden venue, a filled
+public example, or a second record store across the boundary. This fold
+removes no code, state, key, actor or flag; transport value is ASSUMED with
+no consumer. Dated venue evidence remains in 0037.
+
+## Lineage
+
+| Was | Here |
+|---|---|
+| 0037 §§1–3 dimension/fact split, anchored evidence, venue sequencing | Venue restrictions; runtime checklist belongs to 0013 |
+
 ## Decision 5 — what the public project ships
 
 - **README that is not development notes** (product voice, install,
