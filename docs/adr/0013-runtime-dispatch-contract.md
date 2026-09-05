@@ -23,7 +23,14 @@ turn, and a runtime declaring none wears a per-bead blindness clause
 §5's predicate ratified as `Runtime.CostPriced()` — do the runtime's
 DOLLARS reach `posse cost` — not "is there an adapter"; read-but-unpriced
 (codex) keeps the brake and the degrade's reason clause branches; §1
-account row updated (ranger-base-0lg6, ratified in ranger-base-mykq)*
+account row updated (ranger-base-0lg6, ratified in ranger-base-mykq) ·
+amended 2026-09-05: §4/Claims gain the BEHAVIOURAL half of the
+precedence probe, measured 2026-09-01 — a contradicting native
+`AGENTS.md` lost to the PID on codex 0.150.1 and grok 1.0.5 (one billed
+turn each, operator exception ranger-base-ff9pz), so
+`rules_precedence: pid` on both built-ins and the §4 revisit trigger
+did not fire; claude stays UNMEASURED (ranger-base-6rcv, verified
+ranger-base-kl58b, landed ranger-base-60p4b)*
 
 > ADR 0002 answered "can a persona *launch* safely on any runtime." ADR
 > 0012 D4 answered "can a third engine be *added* without patching the
@@ -487,8 +494,25 @@ and is not observable from any local artifact. So the structure
 position — though codex's own harness text endorses `AGENTS.md` as an
 authority twice) and leaves it structurally unmeasurable on grok,
 whose shipped docs declare later-in-context wins on conflict. The
-revisit trigger below did not fire. Structure is not behavior: the
-billed half is parked on the operator money question ranger-base-6rcv.
+revisit trigger below did not fire.
+
+**Behavior (MEASURED 2026-09-01, ranger-base-6rcv; same trace doc,
+"Behavioural measurement 2026-09-01"; codex 0.150.1, grok 1.0.5, one
+billed turn each under the operator's one-time exception
+ranger-base-ff9pz).** Structure is not behavior, and the billed half
+that was parked on the operator money question has now been spent. A
+fixture `AGENTS.md` contradicting the PID on all three rules (case,
+token, one forbidden word) lost on BOTH runtimes: grok emitted the
+PID's own token, and codex broke all three AGENTS rules while obeying
+the PID's — a two-signal read, since codex named neither token.
+`ranger-base-kl58b` then showed, at no spend, that both rulebooks were
+in each runtime's rendered prompt, so this is a precedence measurement
+and not an artifact of a rulebook that never loaded. So
+`rules_precedence: pid` on the codex and grok built-ins, with that
+measurement as the why; **claude stays UNMEASURED** — no claude turn
+was authorized, and the other two runtimes' answer is not evidence
+about a third. The revisit trigger below did not fire on this half
+either, which is the half that could have fired it.
 
 One hazard from the same probe: grok's `--system-prompt-override`
 silently discards `--rules` — the entire PID channel — while leaving
@@ -552,7 +576,13 @@ own `runtimes/<name>.yaml` `command:` if they insist on dispatch-only.
 Zero new posse surface either way. Revisit trigger: if the precedence
 probe ever measures codex's native `AGENTS.md` overriding the PID
 guardrails line, suppression returns as a mitigation applied to a
-measurement — not as a default.
+measurement — not as a default. **It did not fire** (2026-09-05,
+ranger-base-60p4b, closing out both halves of the probe): the
+structural half measured placement that supports PID-wins on codex and
+says nothing on grok, and the behavioural half — the one that could
+have fired it — measured the PID winning outright on both. The trigger
+stands as written for a later runtime or a later version; nothing about
+it is retired, and nothing about it is now owed.
 
 ### 5. Account — no dollar meter is a degrade, not a zero
 
@@ -850,7 +880,8 @@ row).
   reads UNKNOWN — which refuses nothing — when it cannot.
 
 - **The xaev placement probe, 2026-08-28** (codex 0.147.0, grok 1.0.5,
-  no billed turn; trace `0013-rules-precedence-probe.md`): codex PID =
+  no billed turn; trace `0013-rules-precedence-probe.md`, whose last
+  section carries the 6rcv behavioural half that followed it): codex PID =
   `developer` role at index 0, prepended to codex's own developer
   message; native rulebooks = one `user` message (home doc,
   `--- project-doc ---`, project doc) immediately before the argv
@@ -910,12 +941,17 @@ row).
 **ASSUMED** (still, after both probes)
 
 - Whether any native rulebook outranks the PID channel in live model
-  behavior. The structural half is now measured (xaev): placement
-  supports PID-wins on codex and is unmeasurable locally on grok. The
-  behavioral half needs a billed turn and is parked on the operator
-  money question ranger-base-6rcv; until it is measured, the PID-wins
-  prompt line is the reconciliation and codex stays
-  `record: untrusted`.
+  behavior. The structural half was measured 2026-08-28 (xaev):
+  placement supports PID-wins on codex and is unmeasurable locally on
+  grok. (**RESOLVED for codex and grok 2026-09-01**, ranger-base-6rcv:
+  the billed half was authorized and spent, one turn each, and the PID
+  won on both against a directly contradicting `AGENTS.md` —
+  `rules_precedence: pid` on both built-ins, trace in
+  `0013-rules-precedence-probe.md`. It stays ASSUMED on **claude**,
+  which was not authorized a turn: the PID-wins prompt line remains its
+  only reconciliation. codex stays `record: untrusted` on its own
+  measurement — 3/3 settle-without-close, ranger-base-0fb — which this
+  result does not touch.)
 - Cost-adapter internals for grok/codex exist behind 0012 D4 and are
   not designed here; `uncounted_cap_` is the brake until they do.
   (Resolved 2026-08-29: both exist — grok's carries provider-reported

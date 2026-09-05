@@ -396,8 +396,13 @@ type Runtime struct {
 	// onboarder and the record-trust decision, never a code branch — ADR
 	// 0013 §4 already decided declare-don't-suppress, and a runtime
 	// measuring "native" stays record: untrusted by the existing rule.
-	// ranger-base-xaev's structural probe fills the first non-zero values;
-	// all three built-ins ship UNMEASURED until it lands.
+	//
+	// The first non-zero values came from a BEHAVIOURAL measurement, not
+	// from placement: ranger-base-xaev's structural probe left all three
+	// built-ins UNMEASURED on purpose (placement is why-string material —
+	// the value is a claim about which instruction the model FOLLOWS), and
+	// ranger-base-6rcv's billed turn on 2026-09-01 answered it for codex
+	// and grok. claude was not authorized a turn and stays UNMEASURED.
 	RulesPrecedence string
 	// RulesPrecedenceWhy is the measurement behind a non-zero
 	// RulesPrecedence — a probe bead id and date, so a reader can tell a
@@ -1423,6 +1428,12 @@ var builtinRuntimes = []Runtime{
 		Prompt: PromptTyped, Record: RecordTrusted, RecordWhy: "dispatched sessions close their beads; the baseline the contract was written from",
 		FleetSettings: ClaudeFleetSettingsJSON, SettingsPin: credentialDirPinJSON,
 		NativeRules: claudeNativeRules,
+		// rules_precedence: UNMEASURED, deliberately. ranger-base-6rcv's
+		// billed measurement was authorized for codex and grok only (no
+		// claude turn), so the grid keeps saying so out loud rather than
+		// borrowing their answer. The one claude datapoint on the books is
+		// an incidental live collision (rangerhq-cmfj, ADR 0013 Claims),
+		// which is a report, not a measurement under a controlled fixture.
 		// turn_outcome: the same transcript, read for a different fact —
 		// claude writes an allotment refusal as a synthetic assistant
 		// message, so a pass can tell an exhausted account from a settle.
@@ -1448,7 +1459,16 @@ var builtinRuntimes = []Runtime{
 		// no herdr call per codex session to re-learn it.
 		PaneModeAdapter: PaneModeNone,
 		NativeRules:     codexNativeRules, Interstitials: CodexInterstitials,
-		Command: `codex {model} {skills} {deny} -a never ` + CodexFleetFlags + ` -c developer_instructions="$(cat {file})"`},
+		// rules_precedence: pid — MEASURED behaviourally on 2026-09-01
+		// (ranger-base-6rcv, one billed turn under the operator's
+		// authorization ff9pz), not inferred from xaev's placement matrix.
+		// Codex's own reply named neither token, so the verdict is a
+		// two-signal read of the other rules; the trace spells it out
+		// (docs/adr/0013-rules-precedence-probe.md, "Behavioural
+		// measurement 2026-09-01").
+		RulesPrecedence:    RulesPrecedencePID,
+		RulesPrecedenceWhy: "measured 2026-09-01 (ranger-base-6rcv): against a fixture AGENTS.md demanding lowercase, the word 'prepared' and its own token, codex 0.150.1 replied 'READY.' — all three AGENTS rules broken, the PID's obeyed; both rulebooks were in the rendered prompt (ranger-base-kl58b)",
+		Command:            `codex {model} {skills} {deny} -a never ` + CodexFleetFlags + ` -c developer_instructions="$(cat {file})"`},
 	{Name: "grok", Builtin: true, Realize: realizeGrok, Skills: skillsCwd, SkillsCwd: true, Models: grokModels, ModelFlag: "-m %s", Unattended: GrokFleetFlags,
 		Egress: []string{"cli-chat-proxy.grok.com", "grok.com"}, StateDirs: []string{"~/.grok"},
 		// record: trusted — the qa lane on grok closed a bead properly on
@@ -1472,7 +1492,15 @@ var builtinRuntimes = []Runtime{
 		// docs/adr/0013-turn-outcome-refusal-probe.md is the capture.
 		TurnOutcomeAdapter: TurnOutcomeGrokSessionStore,
 		NativeRules:        grokNativeRules, Interstitials: GrokInterstitials, PIDVoid: GrokPIDVoid,
-		Command: `grok {model} {skills} ` + GrokFleetFlags + ` --rules="$(cat {file})" {allow} {deny}`},
+		// rules_precedence: pid — MEASURED behaviourally on 2026-09-01
+		// (ranger-base-6rcv), the half xaev's structural probe could not
+		// reach at all on this runtime: `agents_md_files` lands where
+		// grok's own harness decides, so only a turn could answer it.
+		// Grok's reply emitted the PID's own token, so it is
+		// self-evidencing.
+		RulesPrecedence:    RulesPrecedencePID,
+		RulesPrecedenceWhy: "measured 2026-09-01 (ranger-base-6rcv): against the same fixture AGENTS.md, grok 1.0.5 replied 'READY / PID-WINS' — the PID's own token, all three AGENTS rules broken; both rulebooks were in the rendered prompt (ranger-base-kl58b)",
+		Command:            `grok {model} {skills} ` + GrokFleetFlags + ` --rules="$(cat {file})" {allow} {deny}`},
 }
 
 // RuntimesDir holds template-only runtimes: RHQ_HOME/runtimes/<name>.yaml.

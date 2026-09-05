@@ -149,14 +149,19 @@ func TestBuiltinContractDeclarations(t *testing.T) {
 	a := checkApp(t)
 	for _, c := range []struct {
 		name, prompt, record string
+		// precedence is the ADR 0017 §5 value: "" is UNMEASURED and loud.
+		// codex and grok carry ranger-base-6rcv's behavioural measurement
+		// (2026-09-01, one billed turn each); claude was not authorized a
+		// turn, so its cell stays empty — see the loop body.
+		precedence string
 		// read/priced are the account stage's two facts since
 		// ranger-base-0lg6, and they come apart on codex: its rollout
 		// scanner counts turns and tokens and prices none of them.
 		read, priced bool
 	}{
-		{"claude", PromptTyped, RecordTrusted, true, true},
-		{"codex", PromptArgv, RecordUntrusted, true, false},
-		{"grok", PromptArgv, RecordTrusted, true, true},
+		{"claude", PromptTyped, RecordTrusted, "", true, true},
+		{"codex", PromptArgv, RecordUntrusted, RulesPrecedencePID, true, false},
+		{"grok", PromptArgv, RecordTrusted, RulesPrecedencePID, true, true},
 	} {
 		rt, err := a.LoadRuntime(c.name)
 		if err != nil {
@@ -184,18 +189,38 @@ func TestBuiltinContractDeclarations(t *testing.T) {
 			t.Errorf("%s declares no native rulebooks; all three CLIs have them", c.name)
 		}
 		// ADR 0017 §5: NativeRules only says what a runtime READS; who WINS
-		// on a collision with the PID is ranger-base-xaev's probe, not yet
-		// run. Every built-in ships UNMEASURED until it lands.
-		if rt.RulesPrecedence != "" {
-			t.Errorf("%s: rules_precedence must ship UNMEASURED (zero value) until ranger-base-xaev lands, got %q", c.name, rt.RulesPrecedence)
+		// on a collision with the PID is a MEASUREMENT, and only a billed
+		// turn can make it — ranger-base-xaev's structural probe left all
+		// three UNMEASURED on purpose, and ranger-base-6rcv's two turns
+		// (2026-09-01) filled codex and grok. claude is the one that stays
+		// empty, because no turn was authorized on it, and this cell is
+		// what stops the other two answers being quietly generalized to it.
+		if rt.RulesPrecedence != c.precedence {
+			t.Errorf("%s: rules_precedence %q want %q — a value here is a behavioural measurement, never an inference from another runtime's", c.name, rt.RulesPrecedence, c.precedence)
+		}
+		// A non-zero value with no why is a guess wearing a measurement's
+		// clothes; the why must name the bead that spent the turn.
+		if c.precedence != "" && !strings.Contains(rt.RulesPrecedenceWhy, "ranger-base-6rcv") {
+			t.Errorf("%s: rules_precedence: %s must name its measurement bead in rules_precedence_why:, got %q", c.name, c.precedence, rt.RulesPrecedenceWhy)
 		}
 		var b bytes.Buffer
 		a.RuntimeCheck(rt, Herdr{Bin: "no-such-herdr-binary"}, &b)
 		// wrapGrid may fold the line at gridWidth, so compare on collapsed
 		// whitespace rather than the literal (possibly wrapped) substring.
 		flat := strings.Join(strings.Fields(b.String()), " ")
-		if !strings.Contains(flat, "precedence UNMEASURED — the PID-wins prompt line is the only reconciliation (ADR 0013 §4)") {
-			t.Errorf("%s: the grid must print precedence UNMEASURED loudly:\n%s", c.name, b.String())
+		unmeasured := "precedence UNMEASURED — the PID-wins prompt line is the only reconciliation (ADR 0013 §4)"
+		if c.precedence == "" {
+			if !strings.Contains(flat, unmeasured) {
+				t.Errorf("%s: the grid must print precedence UNMEASURED loudly:\n%s", c.name, b.String())
+			}
+		} else {
+			want := "precedence: " + c.precedence + " — " + strings.Join(strings.Fields(rt.RulesPrecedenceWhy), " ")
+			if !strings.Contains(flat, want) {
+				t.Errorf("%s: the grid must print the measured precedence with its why:\nwant %s\n%s", c.name, want, b.String())
+			}
+			if strings.Contains(flat, unmeasured) {
+				t.Errorf("%s: the grid still prints UNMEASURED beside a measured precedence:\n%s", c.name, b.String())
+			}
 		}
 	}
 	// ADR 0013 §2: argv delivery was ASSUMED until ranger-base-cl7 probed

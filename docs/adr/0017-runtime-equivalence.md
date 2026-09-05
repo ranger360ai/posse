@@ -285,7 +285,14 @@ measured-fact declaration in the `record:`/`record_why:` pattern —
 `rules_precedence: pid|native` + `rules_precedence_why:`, zero value
 UNMEASURED and loud in the grid. Display-by-design: its consumer is the
 onboarder and the trust decision (§0013 ties `record: trusted` to it), not
-a code branch. ranger-base-xaev's measurement fills the first values.
+a code branch. Filled 2026-09-01: `pid` on codex and grok, from
+ranger-base-6rcv's behavioural measurement (one billed turn each, a
+contradicting fixture `AGENTS.md` lost on both) — NOT from
+ranger-base-xaev's structural probe, which deliberately filled nothing
+because placement is why-string material and the value is a claim about
+which instruction the model follows. claude stays UNMEASURED: no claude
+turn was authorized, and the field exists precisely so one runtime's
+answer is not worn by another.
 
 ### 6. Sequencing — value first, no gold-plating
 
