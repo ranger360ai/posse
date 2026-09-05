@@ -1,5 +1,11 @@
 # ADR 0009 — The gate shell: L1 survives a runtime that re-execs a login shell
 
+*Status: superseded 2026-09-05 by ADR 0002 · ADR simplification, operator ruling 2026-09-05.*
+
+The surviving decision is in [0002 — current contract](0002-runtimes-and-gates.md), Decision §3, L1 gate shell, and Lineage. This page keeps its number and dated evidence; the body below is historical, not current policy.
+
+## Historical record (superseded in full)
+
 *Status: accepted 2026-08-18 · owner: architect · amends ADR 0002 §3–4 ·
 amended 2026-08-18 (§1 guard form, §4 rc files), 2026-08-27 (§1 REAL
 must resolve outside every gates dir — ranger-base-f0ay; §1 the guard
