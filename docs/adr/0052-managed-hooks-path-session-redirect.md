@@ -4,6 +4,10 @@
 ("foreign is degraded") · from ranger-base-yt6m0 (M2 criterion 8, the
 operator's finding on the cold install, ranger-base-26cd)*
 
+## Authority
+
+[ADR 0002 §3](0002-runtimes-and-gates.md) is the sole definition of L3 realization (identity and own-render behavior) and §4 defines enforcement class. This record owns only managed-path classification, session redirection and complete forwarding. Its proof obligations below apply that contract.
+
 ## Context
 
 A managed box sets `core.hooksPath` to an absolute, root-owned directory
@@ -118,7 +122,7 @@ doing so leaves the employer's hook running (M3). Nothing a persona or
 posse does weakens the employer's control — that is the property, and it
 is the reason env was chosen over the repo-local override below.
 
-**5. ADR 0023 §3 is amended:** foreign identity degrades, named — except a
+**5. Apply ADR 0002 §3:** foreign identity degrades, named — except a
 MANAGED path, which is not foreign but unwritable, and is realized by this
 redirect, named on the launch line either way. The bd shim needs no
 answer: `bd hooks install` fails on the same box the same way, bd 0.50.3

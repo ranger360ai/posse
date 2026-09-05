@@ -164,6 +164,7 @@ requires the same parity checks. Refusal history remains host-owned.
 |---|---|
 | 0002 §§1–5 and project-config/escape amendments | §§1–5 above; dated detail in the historical snapshot |
 | 0009 §§1–4, including REAL resolution, PATH position, rc and credential distinctions | §3 L1; credentials in 0019; executable probe path unchanged |
+| 0023 §§1–4 identity, own-render probe and foreign classification | §3 L3; 0052 supplies the managed realization under this same proof |
 
 [Historical evidence and prior alternatives](history/0002-runtimes-and-gates-before-2026-09-05.md)
 are retained separately and are not a second active contract.

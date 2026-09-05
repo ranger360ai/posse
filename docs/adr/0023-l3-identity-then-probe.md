@@ -1,5 +1,11 @@
 # ADR 0023 — The L3 probe certifies only bytes it wrote: identity at the dispatch path, behavior of our own render
 
+*Status: superseded 2026-09-05 by ADR 0002 · ADR simplification, operator ruling 2026-09-05.*
+
+The surviving decision is in [0002 — current contract](0002-runtimes-and-gates.md), Decision §3, L3 identity and behavior, and Lineage. This page keeps its number and dated evidence; the body below is historical, not current policy.
+
+## Historical record (superseded in full)
+
 *Status: accepted 2026-08-27 · owner: architect · amends ADR 0002 §3's
 probe doctrine ("behavior, not the ownership marker, is what parity
 counts") · from ranger-base-vqvl (escape B of ranger-base-flz7)*
