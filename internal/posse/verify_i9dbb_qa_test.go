@@ -144,13 +144,16 @@ func TestQAADR0040Row0036DoesNotCallTheBackupVerbUnbuilt(t *testing.T) {
 // comment being precise about WHY, and the pin is the reader that notices
 // when it stops being wrong.
 //
-// Parked on the open bead. Un-skip when rangerhq-vr6j lands.
+// Was parked on the open bead; rangerhq-vr6j landed and the skip is lifted.
+// All three sites now name the token semantics: gates.go's three-way table,
+// claudeDenyMatch's twin of it in gates_test.go (which had always
+// IMPLEMENTED token matching — `c == p || strings.HasPrefix(c, p+" ")` — and
+// only described it wrong), and NOTES.md.
 //
-// Shown able to fail: with the skip lifted this FAILS today at 13db95e, on
-// all three sites.
+// Shown able to fail: it FAILED on all three sites at 13db95e with the skip
+// lifted, and it fails again the moment any of them says the retired phrase.
 func TestQAL0ModelDoesNotCallThePrefixFormALiteralStringPrefix(t *testing.T) {
 	t.Parallel()
-	t.Skip("rangerhq-vr6j (carries closed ranger-base-g8e): gates.go's three-way model, its twin in gates_test.go and NOTES.md all still call the `:*` form a literal prefix of the command string — claude 2.1.241 matches on tokens")
 
 	// Assembled from pieces so this file is not itself a hit for the phrase
 	// it forbids, the way coxnDeadFraming is.

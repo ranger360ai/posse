@@ -707,11 +707,14 @@ func quoteEach(rules []string) []string {
 }
 
 // claude: rule syntax, variadic flags, deny wins. allow: is the PID's list
-// verbatim; deny: goes through L0Spellings first, because claude's prefix
-// match is literal and `git -C <repo> push` does not start with `git push`
-// — the polite refusal was missing on exactly the spellings the L1 shim
-// has to catch (rangerhq-3mc). Realized still names the PID's own rules:
-// the extra spellings are how this runtime says them, not new gates.
+// verbatim; deny: goes through L0Spellings first, because claude reads a
+// whole-verb rule as EXACT (`Bash(bd)` never reaches `bd show x`) and has
+// no negation at all. Realized still names the PID's own rules: the extra
+// spellings are how this runtime says them, not new gates. It used to add
+// option-blind spellings for a subcommand rule too — `git -C <repo> push`
+// matches neither the string nor the token prefix `git push` — and those
+// are gone, false positives and all (rangerhq-ky3, rangerhq-vr6j; the
+// L0Spellings block says why no narrower spelling exists).
 func realizeClaude(allow, deny []string, _ string, _ ...string) Realized {
 	var r Realized
 	if len(allow) > 0 {
@@ -751,6 +754,13 @@ func realizeClaude(allow, deny []string, _ string, _ ...string) Realized {
 // refuses every one of those spellings. The whole-verb half would be a
 // no-op besides: a plain `Bash(<cmd>)` is already a prefix on grok, not
 // claude's exact match. TestGrokDialectIsWhyGrokIsNotWidened models it.
+//
+// The pair itself is retired now (rangerhq-vr6j), and the answer here does
+// not change with it. What L0Spellings still emits is claude's on its own
+// terms: a negative rule reaches claude as one EXACT spelling,
+// `Bash(git commit)`, which is what keeps it off the qualified form — and
+// that same text is a PREFIX on grok, where it would refuse the very
+// `git commit -- <path>` the PID allows.
 func realizeGrok(allow, deny []string, _ string, _ ...string) Realized {
 	var r Realized
 	var a, d []string

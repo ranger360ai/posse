@@ -274,7 +274,7 @@ func TestCheckAgentCoordinatorParity(t *testing.T) {
 	for _, allow := range []string{
 		"[Bash]",                    // the broadest grant a PID can carry
 		"[Bash(*)]",                 // every Bash command by wildcard
-		"[Bash(git * push)]",        // a spelling L0Spellings itself generates
+		"[Bash(git * push)]",        // the shape L0Spellings generated until rangerhq-vr6j
 		"[Bash(git -C /repo push)]", // push behind a global option taking a value
 	} {
 		md := "---\nname: drifter\ndescription: t\nallow: " + allow + "\n---\nYou are drifter, the role of the crew.\n"

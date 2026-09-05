@@ -256,9 +256,13 @@ func TestLiveFenceReaderIsReachableAndNamesBothDirections(t *testing.T) {
 			t.Errorf("the report must contain %q; got:\n%s", want, out)
 		}
 	}
-	// The negative rule that made a literal comparison useless: `Bash(git
-	// push:*)` renders as itself plus an option-blind twin, and a reader that
-	// does not fold the twin reports it as a rule the PID dropped.
+	// The decoration that made a literal comparison useless: `Bash(git
+	// push:*)` used to render as itself plus an option-blind twin, and a
+	// reader that does not fold the twin reports it as a rule the PID
+	// dropped. The renderer stopped emitting that twin (rangerhq-ky3,
+	// rangerhq-vr6j) and the fold still has to hold: this fixture is a
+	// captured argv, and every session launched before the change is still
+	// carrying one until it relaunches.
 	if strings.Contains(out, "Bash(git -* push *)") {
 		t.Errorf("the option-blind twin was reported as drift:\n%s", out)
 	}

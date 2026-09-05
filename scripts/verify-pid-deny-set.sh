@@ -253,14 +253,20 @@ check_home() {
 # argv spelling rendered from it compare equal.
 #
 # This exists because the argv is not a copy of the list. L0Spellings
-# (internal/posse/gates.go) widens each rule on its way to claude: it adds an
-# option-blind twin (`Bash(x -* verb sub *)`) so a global option placed before
-# the verb cannot walk past the rule, and it rewrites a NEGATIVE rule entirely
-# - claude's dialect has no negation, so `Bash(git commit unless --)` is
-# rendered as the bare `Bash(git commit)` plus its twin. A literal comparison
-# therefore reports the negative rule missing from every session that is
-# perfectly current: MEASURED, it did, on all eleven live sessions before this
-# function existed.
+# (internal/posse/gates.go) widens each rule on its way to claude: it used to
+# add an option-blind twin (`Bash(x -* verb sub *)`) so a global option placed
+# before the verb could not walk past the rule, and it rewrites a NEGATIVE rule
+# entirely - claude's dialect has no negation, so `Bash(git commit unless --)`
+# is rendered as the bare `Bash(git commit)`. A literal comparison therefore
+# reports the negative rule missing from every session that is perfectly
+# current: MEASURED, it did, on all eleven live sessions before this function
+# existed.
+#
+# The twin is RETIRED (rangerhq-ky3 dropped `Bash(x -* verb sub)`, rangerhq-vr6j
+# the ` *` half: `-*` is `-` and then anything, so both refused argv that is not
+# the verb at all). Erasing it stays, and is not dead code: argv is not
+# rewritable, so every session launched before that change is still carrying a
+# twin until it relaunches, which is exactly the population this reader reads.
 #
 # The reduction: drop the tool wrapper, drop a negation tail, drop the `-*` and
 # trailing `*` tokens the widening adds, and drop a rule's trailing `:*`, which

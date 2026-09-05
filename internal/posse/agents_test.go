@@ -69,11 +69,12 @@ deny:
 ---
 `)
 	cmd := ag.RenderCommand()
-	// deny: carries the option-blind spellings claude needs to refuse the
-	// same argv the shim does (L0Spellings, rangerhq-3mc); allow: does not —
-	// widening an allow list would grant more than the PID says.
+	// deny: goes through L0Spellings, which for a subcommand rule now emits
+	// the PID's own rule and nothing else — the option-blind pair it used to
+	// carry is gone (rangerhq-ky3, rangerhq-vr6j). allow: is never widened
+	// at all: that would grant more than the PID says.
 	want := "--allowedTools 'Bash(bd:*)' 'Bash(git commit: msg with spaces)' " +
-		"--disallowedTools 'Bash(git push:*)' 'Bash(git -* push *)'"
+		"--disallowedTools 'Bash(git push:*)'"
 	if !strings.HasSuffix(cmd, want) {
 		t.Errorf("bad tool rendering:\n got %q\nwant suffix %q", cmd, want)
 	}

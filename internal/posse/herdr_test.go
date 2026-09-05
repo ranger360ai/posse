@@ -2266,13 +2266,14 @@ func TestPersonaToolEnv(t *testing.T) {
 	log := calls(t, fake)
 	for _, want := range []string{
 		"--env RHQ_TOOLS_ALLOW=Bash(bd:*)\nEdit",
-		// The env carries the PID's own rules; only the typed line is widened
-		// into claude's option-blind spellings (L0Spellings, rangerhq-3mc) —
-		// the L3 pre-push hook reads RHQ_TOOLS_DENY and must keep seeing the
-		// rule as the PID wrote it.
+		// The env carries the PID's own rules; the typed line goes through
+		// L0Spellings (which for this rule now emits it unchanged — the
+		// option-blind pair is gone, rangerhq-ky3/rangerhq-vr6j). The L3
+		// pre-push hook reads RHQ_TOOLS_DENY and must keep seeing the rule as
+		// the PID wrote it either way.
 		"--env RHQ_TOOLS_DENY=Bash(git push:*)",
 		"GATES claude --allowedTools 'Bash(bd:*)' 'Edit' " +
-			"--disallowedTools 'Bash(git push:*)' 'Bash(git -* push *)'",
+			"--disallowedTools 'Bash(git push:*)'",
 	} {
 		if !strings.Contains(log, want) {
 			t.Errorf("calls.log missing %q:\n%s", want, log)
