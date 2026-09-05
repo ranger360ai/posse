@@ -66,6 +66,7 @@ var shippedExampleDigests = map[string][]string{
 		"36d66cdf6f9c321d2bd937588be4f0e3aaf6cde13a3bcd42f9e1f04083a228a2", // ranger-base-tpc41 2026-09-01 hand to the lane: template line drops -a, Hand-to rows name lanes (ADR 0006 §1)
 		"972f47ace883d32087a6124eea6a38bc6b46ec95780ea920deb83d9ca9489b6d", // 0211551f35cc 2026-09-02 ADR 0006: class rows and every example PID's handoff line name the class (ranger-base-zbd51)
 		"340b490394cec6fb25ac3b147038e13aa41b7a71b42aa2a42de8838198b4d66e", // b0eae4d88f99 2026-09-03 pkill/killall enforced in every shipped PID: deny Bash(pkill:*) and Bash(killall:*) (ranger-base-jjx19)
+		"12a5ee283db360212a1f713abe456e77e41734a4b885ea9dbc479a38b8066dae", // ranger-base-29eei 2026-09-05 the verify section quotes the whole `## Intents` table when no done-when row matches (ADR 0006 §3, amended 2026-09-01)
 	},
 	"agents/business-manager.md": {
 		"dac2a2a52ab880671783c6bf5a2a4559144abcf3e57ff5b6567144434367adbe", // 5668b76
@@ -145,6 +146,7 @@ var shippedExampleDigests = map[string][]string{
 		"c6cac35b3fb132bd937b0863aca7e5f3425531082c26a9dbea5da27de815f8c3", // ranger-base-tpc41 2026-09-01 hand to the lane: template line drops -a, Hand-to rows name lanes (ADR 0006 §1)
 		"f2244629eb2525137525895e057eae31b34388fd1a34df974cf64b18cdffcac6", // 0211551f35cc 2026-09-02 ADR 0006: class rows and every example PID's handoff line name the class (ranger-base-zbd51)
 		"7ba7ee4b6fe50d3555076eb7175b5492b9ee090944141ae00895f14c556292f0", // b0eae4d88f99 2026-09-03 pkill/killall enforced in every shipped PID: deny Bash(pkill:*) and Bash(killall:*) (ranger-base-jjx19)
+		"cbf923c6dabf1f30b43f50d085eed350e6a72814392633f683da4a35d81ec446", // ranger-base-29eei 2026-09-05 the verify section quotes the whole `## Intents` table when no done-when row matches (ADR 0006 §3, amended 2026-09-01)
 	},
 	// agents/ranger.md is a RETIRED name: rangerhq-o7y4 renamed the example to
 	// agents/ops.md (ADR 0012 D2 — persona names become roles). The entries stay

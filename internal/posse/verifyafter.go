@@ -26,7 +26,10 @@ package posse
 // (ranger-base-5fyg: "15 duplicates closed" is a fix, not a rejection).
 //
 // with the closer, the close reason, the commits `git log --grep <id>` finds,
-// and the closer PID's "done when" row for the bead's intent — then comment
+// and the closer PID's "done when" row where one matches — otherwise that
+// PID's whole `## Intents` table, marked unmatched (ADR 0006 §3, amended
+// 2026-09-01: a bead carries no intent, so the row is a word match, and bd's
+// default type `task` names none) — then comment
 // `verify filed: <qid>` on the closed bead. A closer who filed the verify
 // bead first is seen (the qa dependent) and not duplicated.
 //
@@ -834,6 +837,18 @@ func (a *App) verifySection(dir string, is BdIssue, closer string) string {
 	}
 	if intent, done := a.closerDoneWhen(closer, is); done != "" {
 		fmt.Fprintf(&b, "- done when (%s · %s): %s\n", verifyOneLine(closer), verifyOneLine(intent), verifyOneLine(done))
+	} else if rows := a.closerIntentRows(closer); len(rows) > 0 {
+		// No match, but the closer's table exists: quote the whole thing
+		// rather than nothing, so §2's promise — the verifier's checklist
+		// without opening the PID — holds for a close whose type names no
+		// intent too (ADR 0006 §3, amended 2026-09-01; `task` is bd's
+		// default type and 0 of 27 task closes on 2026-09-01 carried the
+		// row against 21 of 21 bug closes). It interprets nothing: the
+		// table is quoted in table order, not chosen from.
+		fmt.Fprintf(&b, "- done when (%s · unmatched; every intent):\n", verifyOneLine(closer))
+		for _, r := range rows {
+			fmt.Fprintf(&b, "    %s: %s\n", verifyOneLine(r.Intent), verifyOneLine(r.DoneWhen))
+		}
 	}
 	if lines, _ := gitCommitsFor(dir, is.ID); len(lines) > 0 {
 		fmt.Fprintf(&b, "- commits naming %s (git log --grep; a commit may merely CITE the bead):\n", is.ID)
@@ -890,6 +905,29 @@ func (a *App) closerDoneWhen(closer string, is BdIssue) (intent, doneWhen string
 		cands = append(append([]string{}, is.Labels...), is.IssueType)
 	}
 	return ag.IntentDoneWhen(cands)
+}
+
+// closerIntentRows is the other half of best effort: the whole `## Intents`
+// table of a closer who is a persona on this box, for the section to quote
+// when closerDoneWhen matched nothing. Same two silences as closerDoneWhen —
+// a closer who is not a persona here, and a PID whose table is missing or
+// empty, are both zero rows, and zero rows is no line at all.
+//
+// The rows are rendered INDENTED, and that is load-bearing, not cosmetic:
+// verifySourceID matches verifyMarkerPrefix at the start of a line with no
+// trimming, so a line beginning with spaces can never be read as a per-close
+// marker however a PID's cells are written. Keep the indent. Cells and slugs
+// still pass through verifyOneLine like every other field, so one cell can
+// never become two lines either.
+func (a *App) closerIntentRows(closer string) []IntentRow {
+	if closer == "" {
+		return nil
+	}
+	ag, err := a.LoadAgent(closer)
+	if err != nil {
+		return nil
+	}
+	return ag.IntentRows()
 }
 
 // gitCommitsFor is the commit trail the ADR asks for, and the structured

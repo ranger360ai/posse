@@ -629,14 +629,21 @@ func (a *App) DeleteAgent(name string) error {
 
 // ─── the Intents table ───────────────────────────────────────────────────────
 
-// IntentDoneWhen returns the `## Intents` row whose intent slug matches one
-// of a bead's labels: the slug and its "done when" cell. That cell is the
-// one sentence a reviewer checks a closed bead against (ADR 0001), which is
-// exactly what a verify bead needs to carry (ADR 0006 §2).
+// IntentRow is one data row of a PID's `## Intents` table: the intent slug
+// and its "done when" cell, which is the one sentence a reviewer checks a
+// closed bead against (ADR 0001).
+type IntentRow struct{ Intent, DoneWhen string }
+
+// IntentRows returns every data row of the `## Intents` table, in table
+// order — header and separator dropped, nothing matched or chosen. It is the
+// one place that decides what counts as a row, so the row IntentDoneWhen
+// picks and the whole table the verify section quotes when nothing matches
+// (ADR 0006 §3, amended 2026-09-01) can never disagree about that.
 //
-// Best effort by design: the table is prose in a markdown file, so no match
-// (and a table that isn't a table) is an absent line, never an error.
-func (ag *AgentFile) IntentDoneWhen(labels []string) (intent, doneWhen string) {
+// Best effort by design: the table is prose in a markdown file, so a section
+// that is missing, or is not a table, is zero rows and never an error.
+func (ag *AgentFile) IntentRows() []IntentRow {
+	var rows []IntentRow
 	for _, row := range markdownRows(BodySection(ag.Body, "## Intents")) {
 		if len(row) < 3 {
 			continue
@@ -645,9 +652,22 @@ func (ag *AgentFile) IntentDoneWhen(labels []string) (intent, doneWhen string) {
 		if slug == "intent" || strings.Trim(slug, "-: ") == "" {
 			continue // header, or the |---|---| separator
 		}
+		rows = append(rows, IntentRow{Intent: slug, DoneWhen: strings.TrimSpace(row[2])})
+	}
+	return rows
+}
+
+// IntentDoneWhen returns the `## Intents` row whose intent slug matches one
+// of a bead's labels: the slug and its "done when" cell. That cell is
+// exactly what a verify bead needs to carry (ADR 0006 §2).
+//
+// Best effort by design: no match is an absent line, never an error. The
+// caller that wants the whole table in that case asks for IntentRows.
+func (ag *AgentFile) IntentDoneWhen(labels []string) (intent, doneWhen string) {
+	for _, row := range ag.IntentRows() {
 		for _, l := range labels {
-			if intentMatchesLabel(slug, l) {
-				return slug, strings.TrimSpace(row[2])
+			if intentMatchesLabel(row.Intent, l) {
+				return row.Intent, row.DoneWhen
 			}
 		}
 	}

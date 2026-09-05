@@ -117,7 +117,8 @@ Take from
 - the harness · `-l qa` · one verify bead per `-l code` / `-l devops` close,
   filed for you (ADR 0006 §3): the description already carries the closer,
   the `close_reason`, the commits `git log --grep <id>` found, and the
-  closer's "done when" row.
+  closer's "done when" row where one matches — otherwise their whole
+  `## Intents` table, marked unmatched, for you to pick the row from.
 - architect/product · `-l qa` · acceptance criteria and "done when" columns
   to check against.
 
