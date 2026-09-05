@@ -97,6 +97,68 @@ explain() {
     herdr agent explain "$@"
 }
 
+# The four readers below decide arms, so none of them forks a matcher
+# (ranger-base-s8b4g, ranger-base-7hx87): an `awk`/`sed` that is signalled,
+# that cannot be exec'd under load, or that takes EPIPE returns nothing, and
+# an empty $got here is a FAIL row against a detection manifest that is in
+# fact correct — while an empty $fork below silently skips the drift note.
+# `herdr agent explain` and `herdr --version` are the measurement and still
+# fork.
+#
+# colon_field <text> <prefix> — the text between the first `: ` and the next
+# `: ` on the first line starting with <prefix>, i.e.
+# `awk -F': ' '/^<prefix>/{print $2; exit}'`.
+colon_field() {
+  local line rest
+  while IFS= read -r line || [ -n "$line" ]; do
+    case $line in "$2"*) ;; *) continue ;; esac
+    rest=${line#*': '}
+    [ "$rest" = "$line" ] && return 0
+    printf '%s' "${rest%%': '*}"
+    return 0
+  done <<<"$1"
+}
+
+# space_field2 <text> <prefix> — the second whitespace-separated field of the
+# first line starting with <prefix>, i.e. `awk '/^<prefix>/{print $2; exit}'`.
+space_field2() {
+  local line rest
+  while IFS= read -r line || [ -n "$line" ]; do
+    case $line in "$2"*) ;; *) continue ;; esac
+    line=${line#"${line%%[![:space:]]*}"}
+    rest=${line#*[[:space:]]}
+    [ "$rest" = "$line" ] && return 0
+    rest=${rest#"${rest%%[![:space:]]*}"}
+    printf '%s' "${rest%%[[:space:]]*}"
+    return 0
+  done <<<"$1"
+}
+
+# last_field <text> — the last whitespace-separated field of the FIRST line,
+# replacing `| awk '{print $NF}'`. Stricter than the awk on the one point
+# where they can differ: a second line of version output is shown by the row
+# that reads it rather than concatenated into the answer.
+last_field() {
+  local s=${1%%$'\n'*}
+  s=${s%"${s##*[![:space:]]}"}
+  printf '%s' "${s##*[[:space:]]}"
+}
+
+# toml_comment_val <file> <prefix> — what sits between the first `"` after
+# <prefix> and the LAST `"` on the first line of <file> starting with
+# <prefix>, which is what the greedy BRE captured. The FIRST such line wins;
+# the sed printed every one, and a second one would be a duplicate key.
+toml_comment_val() {
+  local line rest
+  [ -r "$1" ] || return 0
+  while IFS= read -r line || [ -n "$line" ]; do
+    case $line in "$2"'"'*'"'*) ;; *) continue ;; esac
+    rest=${line#"$2"'"'}
+    printf '%s' "${rest%'"'*}"
+    return 0
+  done <"$1"
+}
+
 printf '%-8s %-38s %-8s %-8s %s\n' AGENT FIXTURE EXPECT ACTUAL RULE
 for agent in "${agents[@]}"; do
   for f in "$root/testdata/$agent"/*.txt; do
@@ -111,10 +173,10 @@ for agent in "${agents[@]}"; do
       continue
     fi
     out=$(explain --file "$f" --agent "$agent" 2>&1)
-    got=$(printf '%s\n' "$out" | awk -F': ' '/^state/{print $2; exit}')
-    rule=$(printf '%s\n' "$out" | awk -F': ' '/^rule/{print $2; exit}')
+    got=$(colon_field "$out" state)
+    rule=$(colon_field "$out" rule)
     rule_id=${rule%% *}
-    src=$(printf '%s\n' "$out" | awk '/^manifest: /{print $2; exit}')
+    src=$(space_field2 "$out" "manifest: ")
     why=
     if [ "$got" != "$want" ]; then
       why=state
@@ -154,12 +216,12 @@ done
 # version, not the nearest source. grok's override is forked from the BUNDLED
 # manifest, which is invisible once our override shadows it — so the binary's
 # own version is what we watch for drift there.
-herdr_now=$(herdr --version 2>/dev/null | awk '{print $NF}')
+herdr_now=$(last_field "$(herdr --version 2>/dev/null)")
 for agent in "${agents[@]}"; do
   toml="$root/$agent.toml"
   [ -e "$toml" ] || continue  # testdata-only agent (ranger-base-j66o) — already failed above, nothing to install-check
-  fork=$(sed -n 's/^# posse_forked_from = "\(.*\)".*/\1/p' "$toml")
-  bundled_from=$(sed -n 's/^# posse_bundled_from_herdr = "\(.*\)".*/\1/p' "$toml")
+  fork=$(toml_comment_val "$toml" '# posse_forked_from = ')
+  bundled_from=$(toml_comment_val "$toml" '# posse_bundled_from_herdr = ')
   installed=${XDG_CONFIG_HOME:-$HOME/.config}/herdr/agent-detection/$agent.toml
   if [ ! -e "$installed" ]; then
     printf '\n%s install: not installed — run `make install-detection`\n' "$agent"

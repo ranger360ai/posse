@@ -134,29 +134,47 @@ config="$home/config.yaml"
 # /usr/bin/env is 3.2, where mapfile does not exist and `set -u` then turns
 # its absence into an unbound-variable crash that exits 1 — a "findings"
 # code for a script that measured nothing.
+#
+# And parsed by bash rather than by the awk that used to stand here
+# (ranger-base-s8b4g, ranger-base-7hx87): an awk that is signalled, that
+# cannot be exec'd under load, or that takes EPIPE yields no entries at all,
+# and the guard below then says "no beads_visibility: entries in $config"
+# about a config that is full of them. Every rule the awk encoded is kept,
+# and the comment above says what each is for.
 entries=()
-while IFS= read -r line; do
-  [ -n "$line" ] && entries+=("$line")
-done < <(awk '
-  /^beads_visibility:/ { in_block = 1; next }
-  in_block && /^[^[:space:]#]/ { in_block = 0 }
-  in_block {
-    line = $0
-    trimmed = line
-    sub(/^[ \t]+/, "", trimmed)
-    if (trimmed == "" || trimmed == line || substr(trimmed, 1, 1) == "#") next
-    i = index(trimmed, ":")
-    if (i <= 1) next
-    key = substr(trimmed, 1, i - 1)
-    val = substr(trimmed, i + 1)
-    sub(/[[:blank:]]#.*$/, "", val)
-    gsub(/^[[:space:]]+|[[:space:]]+$/, "", val)
-    if (length(val) >= 2 && substr(val, 1, 1) == "\"" && substr(val, length(val), 1) == "\"") {
-      val = substr(val, 2, length(val) - 2)
-    }
-    printf "%s\t%s\n", key, val
-  }
-' "$config")
+hf_in_block=0
+while IFS= read -r line || [ -n "$line" ]; do
+  case $line in
+  'beads_visibility:'*)
+    hf_in_block=1
+    continue
+    ;;
+  esac
+  [ "$hf_in_block" -eq 1 ] || continue
+  case $line in
+  [![:space:]#]*)
+    hf_in_block=0
+    continue
+    ;;
+  esac
+  trimmed=$line
+  while [ "${trimmed# }" != "$trimmed" ] || [ "${trimmed#	}" != "$trimmed" ]; do
+    trimmed=${trimmed# }
+    trimmed=${trimmed#	}
+  done
+  [ -n "$trimmed" ] || continue
+  [ "$trimmed" != "$line" ] || continue
+  case $trimmed in '#'*) continue ;; esac
+  key=${trimmed%%:*}
+  [ "$key" != "$trimmed" ] || continue
+  [ -n "$key" ] || continue
+  val=${trimmed#*:}
+  case $val in *[' 	']'#'*) val=${val%%[' 	']'#'*} ;; esac
+  val=${val#"${val%%[![:space:]]*}"}
+  val=${val%"${val##*[![:space:]]}"}
+  case $val in '"'*'"') val=${val#\"}; val=${val%\"} ;; esac
+  entries+=("$key	$val")
+done <"$config"
 
 [ "${#entries[@]}" -gt 0 ] ||
   { echo "verify-hook-freshness: no beads_visibility: entries in $config — nothing measured"; exit 2; }
@@ -169,16 +187,81 @@ tmp=$(mktemp -d) || { echo "verify-hook-freshness: mktemp failed — nothing mea
 # ignores them, so a stray costs nothing but tidiness.
 stray_idx=""
 trap 'rm -rf "$tmp"; [ -n "$stray_idx" ] && rm -f "$stray_idx"' EXIT
-
 # The one line normalized away for the identity compare, and asserted
 # separately by name. It is the stamp and ONLY the stamp: every other per-repo
 # variation is in the reference already, because the reference is rendered for
-# the repo. Normalizing a line here is giving up on it — whatever this sed
-# covers, no compare can see again — so the list stays at the one line whose
-# separate assertion (against config, not against the render) is stronger than
-# what identity could say about it.
-norm() { sed "s/^posse_beads_visibility='.*'\$/posse_beads_visibility='NORMALIZED'/" "$1" | shasum -a 256 | cut -d' ' -f1; }
-plain() { shasum -a 256 "$1" | cut -d' ' -f1; }
+# the repo. Normalizing a line here is giving up on it — whatever this covers,
+# no compare can see again — so the list stays at the one line whose separate
+# assertion (against config, not against the render) is stronger than what
+# identity could say about it.
+# The stamp line is normalized in bash and the hash read with `${...}`, not
+# `sed | shasum | cut` (ranger-base-s8b4g): a sed or cut that never ran would
+# make every hash differ from every other and report every hook in the fleet
+# STALE — a finding about the matcher, printed as a finding about the box.
+# `shasum` stays: hashing IS the measurement.
+norm() {
+  local line body= h
+  while IFS= read -r line || [ -n "$line" ]; do
+    case $line in
+    "posse_beads_visibility='"*"'") line="posse_beads_visibility='NORMALIZED'" ;;
+    esac
+    body=$body$line$'\n'
+  done <"$1"
+  h=$(printf '%s' "$body" | shasum -a 256)
+  printf '%s' "${h%% *}"
+}
+plain() {
+  local h
+  h=$(shasum -a 256 "$1")
+  printf '%s' "${h%% *}"
+}
+
+# file_has <file> <literal> — `grep -qF`, and line_starts <file> <prefix> —
+# `grep -q '^prefix'`, both without the fork. A dead grep here reports a
+# posse-rendered hook as not posse's, which is a finding.
+file_has() {
+  local c
+  [ -r "$1" ] || return 1
+  c=$(<"$1")
+  case $c in *"$2"*) return 0 ;; esac
+  return 1
+}
+line_starts() {
+  local line
+  [ -r "$1" ] || return 1
+  while IFS= read -r line || [ -n "$line" ]; do
+    case $line in "$2"*) return 0 ;; esac
+  done <"$1"
+  return 1
+}
+
+# indented <text> — every line behind a four-space gutter, bash's own rather
+# than `| sed 's/^/    /'`. This one runs on the way to an exit that is
+# already decided, so a dead sed could not flip it — but it would blank the
+# only record of why the reference render failed.
+indented() {
+  local line
+  while IFS= read -r line || [ -n "$line" ]; do
+    printf '    %s\n' "$line"
+  done <<<"$1"
+}
+
+# stamp_of <file> — the value inside `posse_beads_visibility='...'`, the
+# greedy capture the BRE made (the LAST quote on the line closes it) on the
+# FIRST line that carries it.
+stamp_of() {
+  local line rest
+  [ -r "$1" ] || return 0
+  while IFS= read -r line || [ -n "$line" ]; do
+    case $line in
+    "posse_beads_visibility='"*"'")
+      rest=${line#posse_beads_visibility=\'}
+      printf '%s' "${rest%\'}"
+      return 0
+      ;;
+    esac
+  done <"$1"
+}
 
 # refhooks is set per repo by need_ref, one fresh empty directory each: a
 # render that writes nothing then leaves nothing to compare against, instead of
@@ -236,7 +319,7 @@ need_ref() { # <repo> <short>
   local ref_out
   if ! ref_out=$(ref_env "$POSSE" gates install-hooks "$repo" 2>&1); then
     echo "verify-hook-freshness: reference render for $short failed — nothing measured"
-    echo "$ref_out" | sed 's/^/    /'
+    indented "$ref_out"
     exit 2
   fi
   local ref_commit="$refhooks/prepare-commit-msg"
@@ -251,7 +334,7 @@ need_ref() { # <repo> <short>
   # per-repo replacement cannot be "public": the render for a private repo is
   # stamped private and should be. What is still true of every posse render is
   # that the stamp line is IN it, so that is what is asked.
-  grep -q "^posse_beads_visibility='" "$ref_commit" ||
+  line_starts "$ref_commit" "posse_beads_visibility='" ||
     { echo "verify-hook-freshness: reference render for $short carries no visibility stamp — it is not a posse render, nothing measured"; exit 2; }
   ref_commit_sha=$(norm "$ref_commit")
   ref_prepush_sha=$(plain "$ref_prepush")
@@ -262,11 +345,11 @@ need_ref() { # <repo> <short>
 # foreign shim got there first. Anything else is not ours to judge.
 member() { # <hooks> <slot> <marker>
   local hooks=$1 slot=$2 marker=$3
-  if [ -f "$hooks/$slot" ] && grep -qF -- "$marker" "$hooks/$slot"; then
+  if [ -f "$hooks/$slot" ] && file_has "$hooks/$slot" "$marker"; then
     echo "$hooks/$slot"; return 0
   fi
-  if [ -f "$hooks/posse-$slot" ] && grep -qF -- "$marker" "$hooks/posse-$slot" &&
-     [ -f "$hooks/$slot" ] && grep -q '^exec "\$d/' "$hooks/$slot"; then
+  if [ -f "$hooks/posse-$slot" ] && file_has "$hooks/posse-$slot" "$marker" &&
+     [ -f "$hooks/$slot" ] && line_starts "$hooks/$slot" 'exec "$d/'; then
     echo "$hooks/posse-$slot"; return 0
   fi
   return 1
@@ -348,7 +431,7 @@ for e in "${entries[@]}"; do
       finding "$short: prepare-commit-msg is STALE — it does not match this binary's render"
       say "             $m"
     fi
-    got=$(sed -n "s/^posse_beads_visibility='\(.*\)'\$/\1/p" "$m" | head -1)
+    got=$(stamp_of "$m")
     if [ "$got" = "$want" ]; then
       say "    stamped  $got"
     else
