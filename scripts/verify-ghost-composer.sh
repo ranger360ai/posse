@@ -93,6 +93,31 @@ check() { # check <name> <cond> <detail>
 }
 note() { echo "      $1"; }
 
+# first_line <text>, last_lines <n> <text> and has_text <text> <literal> —
+# `head -1`, `tail -12` and `grep -qF` without the fork (ranger-base-s8b4g,
+# ranger-base-7hx87). The one that decides an arm is has_text: a `grep` that
+# is signalled or cannot be exec'd under load would report the marker absent
+# from a composer that is holding it, which is this script's whole subject.
+# The other two only shape a record, and are here because a blank record of a
+# failure that happens under load is how the 2026-09-02 sighting stayed
+# inconclusive.
+first_line() { printf '%s' "${1%%$'\n'*}"; }
+
+has_text() { case $1 in *"$2"*) return 0 ;; esac; return 1; }
+
+last_lines() {
+	local line buf= n=0
+	while IFS= read -r line || [ -n "$line" ]; do
+		buf=$buf$line$'\n'
+		n=$((n + 1))
+		if [ "$n" -gt "$1" ]; then
+			buf=${buf#*$'\n'}
+			n=$1
+		fi
+	done <<<"$2"
+	printf '%s' "${buf%$'\n'}"
+}
+
 py() { python3 -c "$1"; }
 json_create_pane() { py 'import json,sys; print(json.load(sys.stdin)["result"]["root_pane"]["pane_id"])'; }
 json_status_sock() { py 'import json,sys; d=json.load(sys.stdin); print(d.get("server",{}).get("socket") or "")'; }
@@ -155,8 +180,8 @@ print("sgr=%s text=%r" % (",".join(sgr) if sgr else "<none>", text))
 '
 }
 
-echo "verify-ghost-composer: $HERDR ($("$HERDR" --version 2>/dev/null | head -1))"
-echo "  claude  : $CLAUDE ($("$CLAUDE" --version 2>/dev/null | head -1))"
+echo "verify-ghost-composer: $HERDR ($(first_line "$("$HERDR" --version 2>/dev/null)"))"
+echo "  claude  : $CLAUDE ($(first_line "$("$CLAUDE" --version 2>/dev/null)"))"
 echo "  session : $SESSION"
 echo "  socket  : $SESS_SOCK"
 echo "  home    : $HHOME"
@@ -238,7 +263,7 @@ while [ "$n" -lt 120 ]; do
 	sleep 0.5
 done
 note "setup choosers dismissed: $nudges"
-check "claude-reached-a-live-composer" "$ready" "$(h pane read "$pane" --source detection 2>&1 | tail -12)"
+check "claude-reached-a-live-composer" "$ready" "$(last_lines 12 "$(h pane read "$pane" --source detection 2>&1)")"
 [ "$ready" = 1 ] || exit 1
 
 # ------------------------------------------------------------------ empty --
@@ -256,7 +281,7 @@ h agent explain "$pane" --json >"$OUT/typed.json" 2>&1 || true
 typed_sgr=$(composer_sgr "$OUT/typed.ansi")
 note "typed : $typed_sgr"
 check "typed-text-reaches-the-composer" \
-	"$(printf '%s' "$typed_sgr" | grep -qF "$MARKER" && echo 1 || echo 0)" \
+	"$(has_text "$typed_sgr" "$MARKER" && echo 1 || echo 0)" \
 	"send-text did not land: $typed_sgr"
 
 # ------------------------------------------------------------------ ghost --

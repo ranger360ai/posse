@@ -90,6 +90,22 @@ sock_ino() {
 	stat -c '%i' "$1" 2>/dev/null || stat -f '%i' "$1"
 }
 
+# first_line <text> and file_has <file> <literal> — `head -1` and `grep -q`
+# without either fork (ranger-base-s8b4g, ranger-base-7hx87). A matcher that
+# is signalled, that cannot be exec'd under load, or that takes EPIPE answers
+# nothing, and here that turns "the workspace is gone, as it should be" into
+# a FAIL and empties the pid this script compares across a restart. The forks
+# that ARE the measurement — herdr, lsof, stat — stay.
+first_line() { printf '%s' "${1%%$'\n'*}"; }
+
+file_has() {
+	local c
+	[ -r "$1" ] || return 1
+	c=$(<"$1")
+	case $c in *"$2"*) return 0 ;; esac
+	return 1
+}
+
 create() {
 	h workspace create --cwd "$CWD" --label "$1" --no-focus | json_create_id
 }
@@ -142,7 +158,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "verify-id-recycle: $HERDR ($("$HERDR" --version 2>/dev/null | head -1))"
+echo "verify-id-recycle: $HERDR ($(first_line "$("$HERDR" --version 2>/dev/null)"))"
 echo "  session : $SESSION"
 echo "  socket  : $SESS_SOCK"
 echo "  scratch : $CWD"
@@ -155,7 +171,7 @@ fleet_ids_before=$(
 	unset_herdr
 	HERDR_SOCKET_PATH="$FLEET_SOCK" "$HERDR" workspace list | json_ids
 )
-fleet_pid_before=$(lsof -t "$FLEET_SOCK" 2>/dev/null | head -1 || true)
+fleet_pid_before=$(first_line "$(lsof -t "$FLEET_SOCK" 2>/dev/null || true)")
 fleet_ino_before=$(sock_ino "$FLEET_SOCK")
 echo "  fleet   : pid=$fleet_pid_before ino=$fleet_ino_before ids=[$fleet_ids_before]"
 echo
@@ -183,10 +199,10 @@ h workspace close w4 >/dev/null
 if h workspace get w3 >/dev/null 2>"$CWD/get-w3.err"; then
 	check "w3-not-found-after-close" 0 "get succeeded"
 else
-	if grep -q workspace_not_found "$CWD/get-w3.err"; then
+	if file_has "$CWD/get-w3.err" workspace_not_found; then
 		check "w3-not-found-after-close" 1 ""
 	else
-		check "w3-not-found-after-close" 0 "$(cat "$CWD/get-w3.err")"
+		check "w3-not-found-after-close" 0 "$(<"$CWD/get-w3.err")"
 	fi
 fi
 w5=$(create a5); w6=$(create a6)
@@ -272,7 +288,7 @@ fleet_ids_after=$(
 	unset_herdr
 	HERDR_SOCKET_PATH="$FLEET_SOCK" "$HERDR" workspace list | json_ids
 )
-fleet_pid_after=$(lsof -t "$FLEET_SOCK" 2>/dev/null | head -1 || true)
+fleet_pid_after=$(first_line "$(lsof -t "$FLEET_SOCK" 2>/dev/null || true)")
 fleet_ino_after=$(sock_ino "$FLEET_SOCK")
 check "fleet-pid-untouched" "$([ "$fleet_pid_before" = "$fleet_pid_after" ] && echo 1 || echo 0)" "before=$fleet_pid_before after=$fleet_pid_after"
 check "fleet-socket-inode-untouched" "$([ "$fleet_ino_before" = "$fleet_ino_after" ] && echo 1 || echo 0)" "before=$fleet_ino_before after=$fleet_ino_after"
