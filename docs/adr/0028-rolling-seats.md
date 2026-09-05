@@ -1,5 +1,11 @@
 # ADR 0028 — Rolling seats: event-driven refill, the pass becomes an epoch
 
+*Status: superseded 2026-09-05 by ADR 0011 · ADR simplification, operator ruling 2026-09-05.*
+
+The surviving decision is in [0011 — current contract](0011-dispatch-model.md), Decision §5 and Lineage. This page keeps its number and dated evidence; the body below is historical, not current policy.
+
+## Historical record (superseded in full)
+
 *Status: accepted 2026-08-27 (spike + decision on ranger-base-cpo9, crew
 session with the operator) · owner: richard · amends 0011 (kept-list) and
 0020 §5 · implements 0016 · supersedes the design ask on ranger-base-l8u7 ·

@@ -158,11 +158,50 @@ unless the operator sets its pin. Batching and acceptance belong to 0006.
 Epoch width is bounded by bead cap, budget at measured cost per bead, and
 free seats with ready work; adding a seat does not increase spending authority.
 
-**5. Current pass lifecycle.** The rolling, bounded-pass algorithm is
-specified here by the 0028 fold. It supersedes the historical synchronous
-burst/gather description in Context. Claim-first ordering, judge-by-bead,
-serial launch operations and the wait ladder remain. Socket delivery is
-owned by 0016 and never determines the truth of a claim or a settle.
+**5. Rolling seats with bounded passes** (folded from 0028). The watch loop
+owns in-flight waits, their fan-in, occupied seats and per-slot failure
+counts across passes. A pass gathers for the loop's base interval; it
+judges completed legs once and carries outstanding legs to the next pass.
+It does not wait for the entire in-flight set to drain. A one-shot run
+retains its wait behavior. The bounded return lets the watch run plan,
+epoch, merge-back, hook, backup and other periodic duties; the watchdog
+names an over-budget pass once. The interval is an existing clock, not a
+new timeout declaring work dead.
+
+Each observed settle is judged against the bead; merge-back/queue writes
+and the complete fresh fire path run under the launcher lock. Refill
+offers ready work to **every** eligible free seat, under the operator's
+filters. Both bounded passes and settles drive progress; missing an event
+can cost latency, never ownership. 0016 owns the decision to remove hints
+and keep this reconciliation clock. The reap sweep runs at settles, run
+start and epilogue, so it cannot become a process-start-only duty.
+
+Occupancy holds only seats this Run actually fired into, until settle or
+positive liveness reconciliation at every fire pass/refill releases them.
+An unreadable session list keeps holds; dry-run fake launches are not
+reconciled. Other observations (busy elsewhere, prompt grace, a benched
+CLI) expire with the fire pass and are read fresh on the next offer.
+Claims are never released because a wait timed out.
+
+`dispatch_epoch:` (default 1h) denominates `budget_pass:` and
+`-n`/`autostart_max_beads`; the persisted epoch record preserves spend and
+attempts across a restart. An attempt reached a runtime, even if it failed.
+A constitution verification refusal before session creation, claim and
+prompt consumes no attempt and stops the fire pass. Plan, load, tier,
+uncounted-work and spending brakes retain their existing per-bead/launch
+boundaries. All automatic refills originate in the watch process: ending
+it stops new automatic invitations. Agents do not acquire a self-launch path.
+
+MEASURED in 0028's dated evidence: the gather barrier held seats behind a
+75-minute worker; narrowed refill starved other seats for seven hours;
+an unbounded pass delayed periodic duties for over two hours. Retaining
+these fixes removes zero runtime mechanisms. ASSUMED: removing optional
+hint latency remains acceptable; 0016's deferred measurement decides that
+implementation risk. The rejected alternatives remain an agent-invoked
+next-work ritual (duplicate delivery and a lost central throttle), one
+poller per persona (more concurrent owners), and a shorter gather ceiling
+with the same barrier. The standard disciplines are single writer,
+durable claims and deduplication; a timeout is not proof of failure.
 
 ## Lineage
 
@@ -170,6 +209,7 @@ owned by 0016 and never determines the truth of a claim or a settle.
 |---|---|
 | 0020 §§1–4 selection, assignment and serial identity | §4; `route_order` records the current built tiebreak |
 | 0020 §5 width and §6 verify fan-in | §4 and §5 epoch lifecycle; 0006 owns batching |
+| 0028 §§1–4 refill, epoch, occupancy, one throttle; §5 observables | §5; dated incident and rejected-option evidence remain in 0028 |
 
 Moving these rules removes zero runtime files, keys, states, actors or flags.
 Doing nothing preserves duplicate authority. Round-robin adds a cursor;
