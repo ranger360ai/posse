@@ -479,21 +479,21 @@ func TestQAEveryLaunchPathThatRendersASeatbeltRefusesACredentialDirEnvSet(t *tes
 		}
 		renderers++
 		who := fn.Name.Name
-		at := func(name string) (int, bool) {
+		callAt := func(name string) (int, bool) {
 			if len(lines[name]) == 0 {
 				return 0, false
 			}
 			return lines[name][0], true
 		}
 		last := func(name string) int { return lines[name][len(lines[name])-1] }
-		render, _ := at("RenderSeatbelt")
+		render, _ := callAt("RenderSeatbelt")
 
-		guard, ok := at("seatbeltWallRendered")
+		guard, ok := callAt("seatbeltWallRendered")
 		if !ok || guard > render {
 			t.Errorf("%s.%s renders a seatbelt profile at line %d without asking seatbeltWallRendered first (asked at %v) — the render is one of that predicate's two call sites, and a site that spells the question itself is free to drift from the one the refusal below asks", src, who, render, lines["seatbeltWallRendered"])
 			continue
 		}
-		envs, ok := at("EnvSetVars")
+		envs, ok := callAt("EnvSetVars")
 		if !ok {
 			t.Errorf("%s.%s renders a seatbelt profile at line %d and resolves no env sets — this pin is watching a launch path that has moved, so its ordering claim measures nothing", src, who, render)
 			continue
@@ -501,7 +501,7 @@ func TestQAEveryLaunchPathThatRendersASeatbeltRefusesACredentialDirEnvSet(t *tes
 		if envs <= render {
 			t.Errorf("%s.%s resolves env sets at line %d, at or before the seatbelt render at line %d — the credential read-deny CAN see the session's env sets now, so the launch should add their directory to the deny rather than refusing (ranger-base-x5f6p)", src, who, envs, render)
 		}
-		scan, ok := at("credentialDirEnvSetRefusal")
+		scan, ok := callAt("credentialDirEnvSetRefusal")
 		if !ok {
 			t.Errorf("%s.%s renders a seatbelt profile (line %d) and resolves env sets (line %d) but never calls credentialDirEnvSetRefusal — an env set exporting CLAUDE_CONFIG_DIR or CLAUDE_SECURESTORAGE_CONFIG_DIR moves this session's credential write past a wall already rendered, and nothing here says so (ranger-base-179hy)", src, who, render, envs)
 			continue
