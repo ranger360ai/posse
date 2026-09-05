@@ -1147,3 +1147,47 @@ func TestQAHookFreshnessDoesNotPassAManagedBoxCarryingAFinding(t *testing.T) {
 		t.Errorf("the verdict must restate it here too:\n%s", out)
 	}
 }
+
+// ranger-base-6kr1c, verifying ranger-base-swg17's close. The arm above holds
+// that the verdict restates A finding; it cannot hold that it restates EVERY
+// one, because its rig produces exactly one. MEASURED under mutation: with
+// `finding_lines` assigning instead of appending — so the verdict names only
+// the LAST finding — all 24 arms in this file stayed green.
+//
+// That is the bead's own defect wearing a smaller hat. swg17 was filed off a
+// read that carried one repo's finding and dropped the other's, and a verdict
+// that restates one of two findings loses exactly what the trailer lost. So
+// the fixture is TWO stale repos, and both names have to be in the block.
+func TestQAHookFreshnessVerdictRestatesEveryFindingAndNotJustOne(t *testing.T) {
+	r := hfNewRig(t, map[string]string{"alpha": "private", "omega": "public"})
+	const erba = "'git diff HEAD -- <paths>'"
+	for _, name := range []string{"alpha", "omega"} {
+		body := hfRead(t, r.hook(name))
+		if !strings.Contains(body, erba) {
+			t.Fatalf("rig never built: %s's render does not carry %s", name, erba)
+		}
+		hfWrite(t, r.hook(name), strings.Replace(body, erba, "'git diff'", 1))
+	}
+	out, code := r.run(t)
+	if code != 1 {
+		t.Fatalf("two stale bodies are two findings (exit 1), got %d:\n%s", code, out)
+	}
+	// The rig must be shown to have produced both, or the verdict assertion
+	// below could pass over a run that only ever found one.
+	for _, name := range []string{"alpha", "omega"} {
+		if !strings.Contains(out, "  FINDING  ~/"+name+": prepare-commit-msg is STALE") {
+			t.Fatalf("rig never built: %s produced no finding:\n%s", name, out)
+		}
+	}
+	verdict := hfVerdict(t, out)
+	for _, name := range []string{"alpha", "omega"} {
+		if !strings.Contains(verdict, "~/"+name+": prepare-commit-msg is STALE") {
+			t.Errorf("the verdict restates some findings but not ~/%s — which is the read swg17 was filed off:\n%s", name, verdict)
+		}
+	}
+	// And it says how many, so a reader who sees one name knows whether one
+	// is all there was.
+	if !strings.Contains(verdict, "verify-hook-freshness: 2 finding(s)") {
+		t.Errorf("the verdict must count the findings it restates:\n%s", verdict)
+	}
+}
