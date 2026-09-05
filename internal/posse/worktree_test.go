@@ -2058,10 +2058,23 @@ func TestTheOffBranchPrescriptionIsRunnableAndRescuesTheWork(t *testing.T) {
 	if m == nil {
 		t.Fatalf("the listing prescribes no command to run:\n%s", listing)
 	}
-	// Split the way a shell would. The fixture's paths carry no spaces, and
-	// a session tree's name never does either (SessionForBead).
-	argv := strings.Fields(m[1])
-	if b, err := exec.Command(argv[0], argv[1:]...).CombinedOutput(); err != nil {
+	// Through a SHELL, because that is where an operator pastes it and
+	// because the line is written for one: the path is AbbrevHome'd, so on
+	// any box whose worktree root is under $HOME — which is every real one
+	// — the prescription reads `git -C ~/worktrees/...` and only a shell
+	// turns that `~` back into a directory. This arm used to split the
+	// words itself and exec git directly, which is a shell in every respect
+	// but the one that mattered: it reds on ci.yml's ubuntu runner with
+	// `fatal: cannot change to '~/worktrees/…'` and passes on macOS, where
+	// the binary's temp $HOME (`/var/folders/…`) does not textually prefix
+	// the RESOLVED tree path (`/private/var/folders/…`) so nothing is
+	// abbreviated and the literal path runs. Same code, same commit, two
+	// verdicts — and the runner that failed is the one reproducing the
+	// operator's shape (ranger-base-tiidc).
+	//
+	// The fixture's paths carry no spaces and a session tree's name never
+	// does either (SessionForBead), so the shell's own splitting is safe.
+	if b, err := exec.Command("sh", "-c", m[1]).CombinedOutput(); err != nil {
 		t.Fatalf("the prescription the listing printed does not run: %v\n%s\nline: %s", err, b, m[1])
 	}
 

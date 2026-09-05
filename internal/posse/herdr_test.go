@@ -112,6 +112,18 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "posse test: temp HOME: %v\n", err)
 		os.Exit(1)
 	}
+	// Resolved, because AbbrevHome is a string prefix test and macOS hands
+	// out a temp dir behind a symlink: MkdirTemp returns /var/folders/…,
+	// every path a test derives from a real tree resolves to
+	// /private/var/folders/…, and the prefix never matches. Every pin whose
+	// subject is an AbbrevHome-d string then measures an absolute path where
+	// the operator sees ~/…, on macOS only — ubuntu-latest, where /tmp is
+	// not a link, is the sole reader of the real spelling, and it found one
+	// the hard way (ranger-base-tiidc). Resolve once here, before anything
+	// reads $HOME, so both platforms measure the same shape.
+	if resolved, rerr := filepath.EvalSymlinks(home); rerr == nil {
+		home = resolved
+	}
 	os.Setenv("HOME", home)
 	os.Setenv("RHQ_FAKE_HERDR", "1")
 	os.Setenv(EnvPersona, "")

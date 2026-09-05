@@ -179,6 +179,50 @@ func TestAbbrevHome(t *testing.T) {
 	}
 }
 
+// ranger-base-eku36: the package's $HOME is a tempdir, and on macOS
+// os.MkdirTemp hands back /var/folders/… — a symlink to
+// /private/var/folders/…. AbbrevHome is a string-PREFIX test, so a path a
+// test derives from a real tree (git and filepath.EvalSymlinks both hand
+// back the resolved spelling) failed that prefix and printed absolute
+// where the operator sees ~/…. 328 production call sites in 54 files render
+// a path through AbbrevHome, so on macOS every pin reading one of those
+// messages was measuring a shape no operator ever sees; ubuntu-latest,
+// where the temp dir is not behind a link, was the sole reader of the real
+// spelling and found one the hard way (ranger-base-tiidc, a ~-carrying
+// prescription handed to exec.Command). TestMain resolves the temp home,
+// and this is the pin that says so: drop the EvalSymlinks call there and
+// both halves below go red.
+func TestTheTestHomeIsResolvedSoAbbrevHomeCanSeeUnderIt(t *testing.T) {
+	t.Parallel()
+	home := os.Getenv("HOME")
+	resolved, err := filepath.EvalSymlinks(home)
+	if err != nil {
+		t.Fatalf("EvalSymlinks(%q): %v", home, err)
+	}
+	if resolved != home {
+		t.Errorf("the test $HOME is unresolved: %q resolves to %q, so AbbrevHome finds no prefix in any real path under it", home, resolved)
+	}
+	// The property itself and not only its cause: a directory made under
+	// the home, spelled the way the filesystem spells it back, abbreviates.
+	base, err := os.MkdirTemp(home, "abbrev-probe-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(base) })
+	dir := filepath.Join(base, "worktrees", "sess")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	real, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "~/" + filepath.Base(base) + "/worktrees/sess"
+	if got := AbbrevHome(real); got != want {
+		t.Errorf("AbbrevHome(%q) = %q, want %q — an operator-facing path the suite reads as absolute", real, got, want)
+	}
+}
+
 // ranger-base-a3t1: with $HOME unset both helpers used to INVENT a home at
 // the filesystem root — AbbrevHome("/etc/x") returned "~/etc/x" because
 // HasPrefix(p, ""+"/") is true for every absolute path, and
