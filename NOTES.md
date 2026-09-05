@@ -3094,19 +3094,26 @@ accounting: the analyst's `bead-cost.py` method in Go. Every runtime with a
 dispatcher's "Work beads issue <id>" prompts; three ship, and a runtime with
 no adapter is reported as *uncounted*, never $0.
 
-- **claude** — `~/.claude/projects/*/*.jsonl`. Assistant records are deduped
-  by message id (streamed chunks repeat it — max per usage field) and priced
+- **claude** — `~/.claude/projects/*/*.jsonl`, and only there: unlike the two
+  below, this walk does not follow `CLAUDE_CONFIG_DIR` yet
+  (`ranger-base-yqdov`). Assistant records are deduped by message id
+  (streamed chunks repeat it — max per usage field) and priced
   at list rates per MTok for the model each record names (fable 10/50, opus
   5/25, sonnet 3/15, haiku 1/5; cache write 1.25× input for 5m TTL and 2× for
   1h when the breakdown is present, else 1.25× flat as the script did; cache
   read 0.1×). An id matching no family is **unpriced, not guessed**: the
   report says the total is a floor rather than putting an invented number in
   the same column as real money.
-- **grok** — `~/.grok/sessions/<url-encoded cwd>/<uuid>/updates.jsonl`. grok
-  reports its own dollars (`costUsdTicks`, nano-dollars) per turn, so there is
-  no rate card to keep current; the `modelUsage` breakdown restates the same
+- **grok** — `$GROK_HOME/sessions/<url-encoded cwd>/<uuid>/updates.jsonl`,
+  `~/.grok` when the override is unset — the same home the version probe and
+  the turn-outcome reader resolve, because a walk rooted at `~/.grok`
+  regardless (which this was until `ranger-base-z65xu`) lands on an absent
+  root under an override, and an absent root is *never ran grok*: $0 with no
+  error and no uncounted line. grok reports its own dollars (`costUsdTicks`,
+  nano-dollars) per turn, so there is no rate card to keep current; the `modelUsage` breakdown restates the same
   spend and is deliberately not read (reading both is exactly 2×).
-- **codex** — `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`, decoded from the
+- **codex** — `$CODEX_HOME/sessions/YYYY/MM/DD/rollout-*.jsonl` (`~/.codex`
+  unset, same rule and same fix as grok's above), decoded from the
   `token_count` events' **cumulative** `total_token_usage` by charging each
   segment the delta since the previous snapshot. Not by summing
   `last_token_usage`: codex re-emits a token_count with an identical snapshot

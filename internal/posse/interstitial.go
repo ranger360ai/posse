@@ -53,22 +53,40 @@ import (
 // go1.26.5 darwin/arm64, `env -i`: UserHomeDir="" err="$HOME is not
 // defined" — on unix it IS $HOME, so a fallback to it reads the same
 // nothing.
-func grokHome() string {
+func grokHome() string  { return grokHomeIn(os.Getenv("HOME")) }
+func codexHome() string { return codexHomeIn(os.Getenv("HOME")) }
+
+// grokHomeIn / codexHomeIn take the home rather than reading one, for
+// ClaudeConfigDirIn's reason: each caller keeps its own spelling of it —
+// the probes' `$HOME` above (the path printed has to be the path read) and
+// the cost adapters' `os.UserHomeDir()`, which has an error to report when
+// there is none rather than a relative path to walk.
+//
+// They exist as one rule per CLI because posse used to hold two answers:
+// this one, and a hardcoded `~/.grok` / `~/.codex` in the cost adapters, so
+// an operator's GROK_HOME moved the turn-outcome reader and the version
+// probe and left `posse cost` walking an absent root — which ADR 0018 §3
+// reads as "never ran the CLI", i.e. $0 spent with no error and no
+// uncounted line (ranger-base-z65xu).
+//
+// The "" arm above is the probes'. The adapters cannot reach it: they take
+// their home from os.UserHomeDir() and return its error before calling
+// here, so "no home at all" is an uncounted line there rather than a
+// relative ".grok/sessions" to walk (ranger-base-58b5 × ranger-base-z65xu).
+func grokHomeIn(home string) string {
 	if v := os.Getenv("GROK_HOME"); v != "" {
 		return v
 	}
-	home := os.Getenv("HOME")
 	if home == "" {
 		return ""
 	}
 	return filepath.Join(home, ".grok")
 }
 
-func codexHome() string {
+func codexHomeIn(home string) string {
 	if v := os.Getenv("CODEX_HOME"); v != "" {
 		return v
 	}
-	home := os.Getenv("HOME")
 	if home == "" {
 		return ""
 	}

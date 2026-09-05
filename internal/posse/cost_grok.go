@@ -67,7 +67,7 @@ func (grokCost) Runtime() string { return "grok" }
 // builtin declared no adapter and every pass called this spend unreadable
 // while `posse cost` was already totalling it.
 func (grokCost) Reads() string {
-	return "session scanner (~/.grok/sessions/*/*/updates.jsonl, provider-reported dollars, ADR 0012 D4)"
+	return "session scanner (~/.grok/sessions/*/*/updates.jsonl, or $GROK_HOME's, provider-reported dollars, ADR 0012 D4)"
 }
 func (grokCost) Prices() bool { return true }
 
@@ -75,8 +75,17 @@ func (grokCost) Prices() bool { return true }
 // is no rate card to consult and none to let go stale.
 func (grokCost) PriceFor(string) (Price, bool) { return Price{}, false }
 
-// Transcripts lists ~/.grok/sessions/*/*/updates.jsonl, filtered by project
-// against each session's decoded working directory.
+// Transcripts lists <grok home>/sessions/*/*/updates.jsonl, filtered by
+// project against each session's decoded working directory.
+//
+// The home is grokHomeIn's, so $GROK_HOME moves this walk exactly as it
+// moves the CLI's own store and posse's other two readers of it (the
+// interstitial probe and FindGrokTurnOutcome). Rooting it at ~/.grok
+// regardless — which this did until ranger-base-z65xu — put the walk on an
+// absent root under an override, and an absent root is "never ran grok"
+// below: $0 of spend, no error, no uncounted line, which is the
+// no-spend-vs-cannot-tell collapse the rest of this function exists to
+// prevent.
 //
 // As with the Claude locator, a missing root IS no records — a machine that
 // has never run grok has nothing to count — while anything else (a
@@ -95,7 +104,7 @@ func (grokCost) Transcripts(project string) ([]string, []error) {
 	if err != nil {
 		return nil, []error{err}
 	}
-	root := filepath.Join(home, ".grok", "sessions")
+	root := filepath.Join(grokHomeIn(home), "sessions")
 	var out []string
 	var errs []error
 	filepath.WalkDir(root, func(p string, e fs.DirEntry, err error) error {

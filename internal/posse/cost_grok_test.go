@@ -60,7 +60,14 @@ func grokUser(text string) string {
 
 func writeGrokSession(t *testing.T, home, cwd string, body string) string {
 	t.Helper()
-	dir := filepath.Join(home, ".grok", "sessions", url.PathEscape(cwd), "01a0-session")
+	return writeGrokSessionIn(t, filepath.Join(home, ".grok"), cwd, body)
+}
+
+// writeGrokSessionIn writes the same store under an explicit grok HOME, for
+// the arm that moves it with $GROK_HOME.
+func writeGrokSessionIn(t *testing.T, grokHome, cwd string, body string) string {
+	t.Helper()
+	dir := filepath.Join(grokHome, "sessions", url.PathEscape(cwd), "01a0-session")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -188,6 +195,36 @@ func TestGrokUnreadableSessionDirIsAReadFailure(t *testing.T) {
 	}
 	if len(files) != 1 {
 		t.Fatalf("the readable session is still the floor: %v", files)
+	}
+}
+
+// $GROK_HOME moves grok's store, and posse's two other readers of it — the
+// interstitial version probe and FindGrokTurnOutcome — follow it. This walk
+// stayed at ~/.grok until ranger-base-z65xu, so under an override it walked
+// a root that does not exist, and an absent root is "never ran grok" by
+// design (the pin below): $0 of grok spend, no error and no uncounted line,
+// which is the no-spend-vs-cannot-tell collapse this seam exists to prevent.
+//
+// The wrong arm is real here: $HOME holds no .grok at all, so a walk that
+// ignores the override finds nothing and reports no error.
+func TestGrokTranscriptsFollowGrokHome(t *testing.T) {
+	t.Setenv("HOME", t.TempDir()) // no ~/.grok: the pre-fix walk sees an empty box
+	moved := filepath.Join(t.TempDir(), "grok-elsewhere")
+	t.Setenv("GROK_HOME", moved)
+	t.Setenv("CODEX_HOME", filepath.Join(t.TempDir(), "never-run")) // ScanCosts reads every provider
+	p := writeGrokSessionIn(t, moved, "/Users/x/src/posse",
+		grokUser("Work beads issue rangerhq-vojc (title)")+grokTurn("p1", 1_000_000_000, 1000, 100, 50))
+
+	files, errs := grokCost{}.Transcripts("")
+	if len(errs) != 0 {
+		t.Fatalf("errs: %v", errs)
+	}
+	if len(files) != 1 || files[0] != p {
+		t.Fatalf("a store under $GROK_HOME must be listed: %v (want [%s])", files, p)
+	}
+	// Counted, not merely located: the dollars have to reach the report.
+	if got := ScanCosts("", time.Time{}).ByBead()["rangerhq-vojc"]; got < 0.9999 || got > 1.0001 {
+		t.Errorf("spend under $GROK_HOME = %v, want 1.00 (0 is the silent $0 this bead fixes)", got)
 	}
 }
 

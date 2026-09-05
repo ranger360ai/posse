@@ -497,6 +497,23 @@ outside a pane; the probe row is what answers it, and `posse runtime check`'s
 clean line no longer says a runtime "is installed" when what it measured was
 posse's own PATH.
 
+**`posse cost` reported $0 of grok (or codex) spend on a box where
+`$GROK_HOME` / `$CODEX_HOME` moves the CLI's home — no error, no uncounted
+line.**
+
+*Affected: `posse cost`, the cockpit's spend readings and every report built
+on them, on any box that sets either variable. Nothing in posse sets them, so
+this bit an operator who moved a CLI home by hand.* The two cost adapters
+rooted their walk at `~/.grok` / `~/.codex` while posse's other readers of
+the same stores — the interstitial version probe and grok's turn-outcome
+reader — already honoured the overrides, so the same binary disagreed with
+itself about where a CLI keeps its records. A walk on an absent root is "this
+machine never ran the CLI" by design (ADR 0018 §3), which is exactly what a
+walk on the WRONG root looks like: the spend read as zero rather than as
+unreadable. Both adapters now resolve the home the way every other reader
+does, and each carries a pin that a store under the override is listed and
+counted.
+
 **`posse worktrees` called a caged session's committed work "nothing
 unlanded", and the sweep called an already-landed one unreferenced — the two
 commands disagreed about the same tree, each in the direction that costs.**

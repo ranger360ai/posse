@@ -120,7 +120,14 @@ func codexLine(ts, typ string, payload map[string]any) string {
 
 func writeCodexRollout(t *testing.T, home string, lines ...string) string {
 	t.Helper()
-	dir := filepath.Join(home, ".codex", "sessions", "2026", "08", "26")
+	return writeCodexRolloutIn(t, filepath.Join(home, ".codex"), lines...)
+}
+
+// writeCodexRolloutIn writes the same rollout under an explicit codex HOME,
+// for the arm that moves it with $CODEX_HOME.
+func writeCodexRolloutIn(t *testing.T, codexHome string, lines ...string) string {
+	t.Helper()
+	dir := filepath.Join(codexHome, "sessions", "2026", "08", "26")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -423,6 +430,49 @@ func TestCodexTranscriptsLocator(t *testing.T) {
 	files, errs = codexCost{}.Transcripts("")
 	if len(files) != 1 || len(errs) != 0 {
 		t.Errorf("unfiltered listing: %v %v", files, errs)
+	}
+}
+
+// $CODEX_HOME moves codex's store, and posse's interstitial version probe
+// follows it. This walk stayed at ~/.codex until ranger-base-z65xu, so under
+// an override it walked a root that does not exist, and an absent root is
+// "never ran codex" by design (the first arm of the locator pin above): no
+// turns, no tokens, no error and no uncounted line — "nothing was spent"
+// wearing "cannot tell"'s clothes (ADR 0018 §3).
+//
+// The wrong arm is real here: $HOME holds no .codex at all, so a walk that
+// ignores the override finds nothing and reports no error.
+func TestCodexTranscriptsFollowCodexHome(t *testing.T) {
+	t.Setenv("HOME", t.TempDir()) // no ~/.codex: the pre-fix walk sees an empty box
+	moved := filepath.Join(t.TempDir(), "codex-elsewhere")
+	t.Setenv("CODEX_HOME", moved)
+	t.Setenv("GROK_HOME", filepath.Join(t.TempDir(), "never-run")) // ScanCosts reads every provider
+	p := writeCodexRolloutIn(t, moved,
+		codexMeta("/Users/d/src/posse"),
+		codexUser("2026-08-26T12:16:19Z", "Work beads issue rangerhq-cdx1 (title)"),
+		codexCount("2026-08-26T12:16:25Z", codexUsage(1000, 0, 0, 100, 0), nil))
+
+	files, errs := codexCost{}.Transcripts("")
+	if len(errs) != 0 {
+		t.Fatalf("errs: %v", errs)
+	}
+	if len(files) != 1 || files[0] != p {
+		t.Fatalf("a rollout under $CODEX_HOME must be listed: %v (want [%s])", files, p)
+	}
+	// Counted, not merely located. codex is read-but-UNPRICED, so what must
+	// arrive is the turn and its tokens, never a dollar.
+	rep := ScanCosts("", time.Time{})
+	var seg *Segment
+	for _, s := range rep.Beads {
+		if s.Bead == "rangerhq-cdx1" {
+			seg = s
+		}
+	}
+	if seg == nil {
+		t.Fatal("the segment under $CODEX_HOME never reached the report (the silent no-spend this bead fixes)")
+	}
+	if u := seg.Sum(); seg.Turns() != 1 || u.In+u.Out != 1100 {
+		t.Errorf("turns/tokens = %d/%d, want 1/1100", seg.Turns(), u.In+u.Out)
 	}
 }
 

@@ -77,7 +77,7 @@ func (codexCost) Runtime() string { return "codex" }
 // keeps ADR 0013 §5's brake, because the thing that brake stands in for —
 // no dollar meter on this pool — is exactly still the case.
 func (codexCost) Reads() string {
-	return "rollout scanner (~/.codex/sessions/**/rollout-*.jsonl, tokens only, ADR 0012 D4)"
+	return "rollout scanner (~/.codex/sessions/**/rollout-*.jsonl, or $CODEX_HOME's, tokens only, ADR 0012 D4)"
 }
 func (codexCost) Prices() bool { return false }
 
@@ -124,8 +124,14 @@ func (t codexTokens) since(prev codexTokens) codexTokens {
 	return d
 }
 
-// Transcripts lists ~/.codex/sessions/**/rollout-*.jsonl, filtered by project
-// against each session's recorded working directory.
+// Transcripts lists <codex home>/sessions/**/rollout-*.jsonl, filtered by
+// project against each session's recorded working directory.
+//
+// The home is codexHomeIn's, so $CODEX_HOME moves this walk exactly as it
+// moves the CLI's own store and posse's interstitial probe of it. Rooting
+// it at ~/.codex regardless — which this did until ranger-base-z65xu — put
+// the walk on an absent root under an override, and an absent root is
+// "never ran codex" below: no turns, no error, no uncounted line.
 //
 // A missing root IS no records — a machine that has never run codex has
 // nothing to count — while anything else (a permission, a broken mount, a
@@ -139,7 +145,7 @@ func (codexCost) Transcripts(project string) ([]string, []error) {
 	if err != nil {
 		return nil, []error{err}
 	}
-	root := filepath.Join(home, ".codex", "sessions")
+	root := filepath.Join(codexHomeIn(home), "sessions")
 	var out []string
 	var errs []error
 	filepath.WalkDir(root, func(p string, e fs.DirEntry, err error) error {
