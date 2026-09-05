@@ -94,9 +94,16 @@ package posse
 //     0.50.3. The doors:
 //       1. `no-db: true` in the resolved store's `config.yaml`;
 //       2. `--no-db` on the command line — **posse opens this one itself**,
-//          on every caged session (CageBdFlags, cageinner.go), so at the
-//          container tier the fork is the shipped configuration on EVERY
-//          store class, not a store-class accident;
+//          at the CONTAINER tier and only there (CageBdFlags, written onto
+//          the inner PATH by renderCageBd, whose one non-test call site is
+//          the container inner render in cageinner.go), so at that tier the
+//          fork is the shipped configuration on EVERY store class, not a
+//          store-class accident. NOT "every caged session", which this
+//          bullet used to say and the clause after it already contradicted:
+//          a `cage: seatbelt` seat's `bd` is the rendered gate shim, which
+//          carries no `--no-db` at all — measured from inside a seatbelt
+//          seat, `grep -c no-db $RHQ_GATES_DIR/bin/bd` -> 0
+//          (ranger-base-43ux4);
 //       3. `BD_NO_DB=true` in the environment (measured: it flips a plain
 //          `bd create` with nothing in `config.yaml` to see);
 //       4. a bd built without CGO falling back with a note on stdout — which
@@ -108,12 +115,28 @@ package posse
 //     THE FIX IS THE LAUNCH ENV, not this file (ADR 0055 D1): every session
 //     posse launches carries `BEADS_DIR=beadsHome(dir)` (planLaunch,
 //     herdrback.go), forwarded into the container by name (CageEnvNames).
-//     Measured: with it set, the no-db create from the worktree lands in the
-//     MAIN store and the worktree's `bd list` reads it — on the `no-db:
-//     true` store and on the `--no-db` invocation over a database-class
-//     store alike. What this file still cannot do is fix it for a bd run
-//     with `BEADS_DIR` shed (`env -u`, `env -i`): the resolution is bd's,
-//     and seedBeadsRedirect is already naming the right directory.
+//     Measured on a SINGLE-PREFIX scratch store: with it set, the no-db
+//     create from the worktree lands in the MAIN store and the worktree's
+//     `bd list` reads it — on the `no-db: true` store and on the `--no-db`
+//     invocation over a database-class store alike. The store class is not
+//     the only thing that decides this, and the store this shop runs on is
+//     the counter-example: pointing `BEADS_DIR` at a store whose issues
+//     carry more than one prefix, with `issue-prefix` unset in its
+//     `config.yaml`, makes a `--no-db` bd REFUSE to start rather than fork
+//     — "failed to detect prefix: issues have mixed prefixes" on stderr,
+//     exit 1, no rows (measured 2026-09-04, bd 0.50.3, against this
+//     instance's own store of record, whose rows carry two different id
+//     prefixes with neither declared). Read the printed line and not `$?`
+//     through a pipe: piped to `head` it looks like exit 0. That is a loud
+//     failure and not a silent fork, so it is the better of the two, but it
+//     is a second refusal mode ADR 0055's Consequences do not enumerate, and
+//     its remedy is the instance's: `issue-prefix` in the store's
+//     `config.yaml`. Both halves are routed to the architecture lane as
+//     ranger-base-jl8q2. Latent here — every PID on this box is
+//     `cage: seatbelt`, whose bd carries no `--no-db` (door 2 above).
+//     What this file still cannot do is fix it for a bd run with
+//     `BEADS_DIR` shed (`env -u`, `env -i`): the resolution is bd's, and
+//     seedBeadsRedirect is already naming the right directory.
 //
 //   - `git merge --ff-only <branch>` in the main checkout succeeds with
 //     unrelated uncommitted changes present, and refuses rather than

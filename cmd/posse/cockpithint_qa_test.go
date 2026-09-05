@@ -150,3 +150,38 @@ func TestCockpitHintKeepsTheBeadScanFloor(t *testing.T) {
 		t.Fatal("nothing forced a scan mid-flight, so none may start inside the fresh floor")
 	}
 }
+
+// The other end of a coupling that shipped with only one end read
+// (ranger-base-43ux4, escaped from ranger-base-0b0qg finding 3).
+//
+// internal/posse's TestQAHerdrRedialFloorStaysUnderItsSweep bounds
+// herdrRedialFloor above by ADR 0016 §1's sweep — "the cockpit's two-second
+// completeness tick" — and spells that bound as a literal, because the tick
+// is cmd/posse's and the pin is internal/posse's. That literal is a hand-copy
+// of the constant below, and until this pin nothing in the tree read the
+// SHIPPED tick: lower cockpit.go to a one-second tick and the ceiling pin
+// stays GREEN over a floor that now equals the sweep, which is the state its
+// own failure message forbids. Measured before this pin existed.
+//
+// So this is the N-1 edge, not a second copy of the claim: the ceiling pin
+// owns "floor < 2s", this one owns "2s is still what ships". Both loops
+// carry the tick and both are read here, because a sweep that covers the
+// delayed pane in one mode and not the other is the same hole one mode over.
+//
+// If the tick moves on purpose, this pin and the ceiling pin's literal move
+// together — that is the coupling, and it is meant to be felt.
+func TestCockpitCompletenessTickIsTheSweepTheRedialFloorIsBoundedBy(t *testing.T) {
+	b, err := os.ReadFile("cockpit.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(b)
+	const tick = "time.NewTicker(2 * time.Second)"
+	for _, header := range []string{"func runCockpit(", "func (c *cockpit) displayOnly()"} {
+		if !strings.Contains(loopBody(t, src, header), tick) {
+			t.Errorf("%s no longer declares %s — ADR 0016 §1 bounds herdrRedialFloor above by this sweep, "+
+				"and internal/posse's TestQAHerdrRedialFloorStaysUnderItsSweep spells that bound as a literal 2s. "+
+				"Move both, or the floor outlives the timer that covers it with nothing red to say so", header, tick)
+		}
+	}
+}

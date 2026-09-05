@@ -1334,14 +1334,14 @@ $ cat >> AGENTS.md <<'EOF'
   `BEADS_DIR=<the store of record for the directory you were launched into>`
   — the same `.beads` the seatbelt grants you, the cage mounts read-write,
   and `.beads/redirect` names. It is there because bd does not always find
-  that store on its own: in no-db mode — which every CAGED session's `bd` is,
-  and which any store can be — bd resolves `$BEADS_DIR` else `$cwd/.beads`
-  and reads no redirect at all, so without it a bead you file from a session
-  worktree lands in that worktree's own `issues.jsonl`, invisibly, while
-  `bd where` still names the main store. Leave it alone. If you genuinely
-  need ANOTHER repo's graph for one call, shed it for that call —
-  `env -u BEADS_DIR bd <...>` — rather than exporting a new value, which
-  would silently move every later bd in the session.
+  that store on its own: in no-db mode — which a CONTAINER session's `bd`
+  always is, and which any store can be — bd resolves `$BEADS_DIR` else
+  `$cwd/.beads` and reads no redirect at all, so without it a bead you file
+  from a session worktree lands in that worktree's own `issues.jsonl`,
+  invisibly, while `bd where` still names the main store. Leave it alone. If
+  you genuinely need ANOTHER repo's graph for one call, shed it for that
+  call — `env -u BEADS_DIR bd <...>` — rather than exporting a new value,
+  which would silently move every later bd in the session.
 - **Never push, and never merge to `main` yourself. The operator pushes and
   the launcher merges.** Every persona's PID denies `Bash(git push:*)` and
   this repo's `pre-push` gate refuses it, so a push is a refused turn, not a

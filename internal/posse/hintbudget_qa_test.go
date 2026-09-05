@@ -94,20 +94,30 @@ func TestQAHintWaitsUseTheNamedBudget(t *testing.T) {
 	// stretch of churn to count dials in; a patience budget wearing the name
 	// would be the exact defect this file was written for, so it has to
 	// declare itself and it has to be short.
-	decl := regexp.MustCompile(`stormWindow\s*=\s*(\d+)\s*\*\s*time\.(Millisecond|Second|Minute)`).FindStringSubmatch(string(src))
-	if decl == nil {
-		t.Fatal("stormWindow is exempted from the named budget but herdrevents_test.go does not declare it")
-	}
-	n, _ := strconv.Atoi(decl[1])
+	//
+	// FindAll and not FindString (ranger-base-43ux4, escaped from
+	// ranger-base-0b0qg): the exemption above admits EVERY wait spelled
+	// `stormWindow` anywhere in the file, so a fence that measures only the
+	// first declaration leaves the second one exempt and unmeasured — a
+	// thirty-second wait wearing the exempt name, green. The fence has to
+	// cover the same set the exemption opens.
 	unit := map[string]time.Duration{
 		"Millisecond": time.Millisecond, "Second": time.Second, "Minute": time.Minute,
-	}[decl[2]]
-	// `>=` and not `>`: the doc comment above and this message both say
-	// "under a second" / "a second or longer", and an exemption fence that
-	// admits the first value it forbids is not a fence (ranger-base-0b0qg).
-	if got := time.Duration(n) * unit; got >= time.Second {
-		t.Errorf("stormWindow is %s: the exemption is for a window a test COUNTS in, "+
-			"and anything a second or longer is patience wearing its name — spend hintWait", got)
+	}
+	decls := regexp.MustCompile(`stormWindow\s*=\s*(\d+)\s*\*\s*time\.(Millisecond|Second|Minute)`).FindAllStringSubmatch(string(src), -1)
+	if decls == nil {
+		t.Fatal("stormWindow is exempted from the named budget but herdrevents_test.go does not declare it")
+	}
+	for _, decl := range decls {
+		n, _ := strconv.Atoi(decl[1])
+		// `>=` and not `>`: the doc comment above and this message both say
+		// "under a second" / "a second or longer", and an exemption fence that
+		// admits the first value it forbids is not a fence (ranger-base-0b0qg).
+		if got := time.Duration(n) * unit[decl[2]]; got >= time.Second {
+			t.Errorf("stormWindow is declared %s (%s): the exemption is for a window a test COUNTS in, "+
+				"and anything a second or longer is patience wearing its name — spend hintWait",
+				got, strings.TrimSpace(decl[0]))
+		}
 	}
 }
 
@@ -126,7 +136,12 @@ func TestQAHintWaitsUseTheNamedBudget(t *testing.T) {
 // two-second completeness tick (cmd/posse/cockpit.go, `time.NewTicker(2 *
 // time.Second)`), "so the floor never outlives the timer that covers it". A
 // literal here and not a reference: the tick is cmd/posse's, this is
-// internal/posse, and the sibling check spells its bound the same way.
+// internal/posse, and the sibling check spells its bound the same way. The
+// other end of the copy is read by cmd/posse's
+// TestCockpitCompletenessTickIsTheSweepTheRedialFloorIsBoundedBy — without
+// it the tick could drop to a second and this pin would stay green over a
+// floor that equals the sweep, which is exactly what its message forbids
+// (ranger-base-43ux4).
 //
 // `>=` because a floor equal to the sweep does not sit under it — the two land
 // in the same instant and which goes first is scheduling, which is the
