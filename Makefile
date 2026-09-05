@@ -42,7 +42,7 @@ FMT_ROOTS := cmd internal *.go
 BUILD_STAMP := $(shell $(GOBIN) run ./cmd/buildstamp)
 LDFLAGS     := -X github.com/ranger360ai/posse/internal/posse.Build=$(BUILD_STAMP)
 
-.PHONY: build release install deploy test test-reuse fmt-check crew-check selector-check seed-check history-check doc-check identity-check ops-check tree-check verify-test-times verify-suite-lock verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-govern-honesty verify-grok-pin verify-codex-pin verify-credential-paths verify-hook-freshness verify-bd-pin verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
+.PHONY: build release install deploy test test-reuse fmt-check crew-check selector-check seed-check history-check doc-check identity-check ops-check tree-check verify-test-times verify-suite-lock verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-self-close verify-govern-honesty verify-grok-pin verify-codex-pin verify-credential-paths verify-hook-freshness verify-bd-pin verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
 
 build:
 	$(GOBIN) build -ldflags '$(LDFLAGS)' -o bin/posse-go ./cmd/posse
@@ -484,6 +484,14 @@ verify-prune-guard:
 # aimed at. Allocator is max(live)+1 recomputed at every process start.
 verify-id-recycle:
 	scripts/verify-id-recycle.sh
+
+# Does a process survive closing the workspace its own pane is in?
+# (ranger-base-hslbb, the question `posse relaunch --no-land` turns on when it
+# is typed inside the session it names.) Scratch HOME plus a scratch
+# --session, so it runs from inside a caged seat and the fleet is never
+# addressed. Prints SELF=/DETACHED=/SETSID=; measured died/died/survived.
+verify-self-close:
+	scripts/verify-self-close.sh
 
 # The governance surface's honesty when the loop it monitors is dead
 # (rangerhq-mgvx, on rangerhq-81y0's surface). Scratch --session herdr and a
