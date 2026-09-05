@@ -54,9 +54,17 @@ cooldown controls requests, not trust. Expired data is UNKNOWN with age and
 failure reason. `model_preflight` remains the observer's off switch;
 `posse runtimes` and its existing `--probe` expose advisory availability,
 with forced reads still respecting cooldown. Never hand-edit catalog state.
-Credential acquisition stays in 0019; 0039 D3d was a conditional experiment,
-not authorization to change credential priority. Overlay promotion belongs
-only to 0015 §§2–3.
+Credential acquisition stays in 0019 D1. The catalog read presents the
+session mint of the env sets the launch names — read from the set files
+under the home, last assignment winning, never the process environment —
+and the meter store is the fallback: nothing to read spends no request,
+a 401/403 spends one more read and never a loop (0039 D3d: spike 200
+ranger-base-au0o4, built ranger-base-mvrke, ruled ranger-base-q3n4e and
+built through the preflight ranger-base-hr49g, all 2026-09-05; the ruling's
+text, its rejected arms and V6–V8 stay on the superseded 0039 page). The
+cockpit's persona-less reads keep the persona-less list; an empty list is
+an answer, not a request for `default_env`. Overlay promotion belongs only
+to 0015 §§2–3.
 
 ## Consequences and alternatives
 
@@ -82,7 +90,8 @@ implements fallback until its deferred removal lands.
 | 0003 §§1–4, Dials A–G | §§1–2 and §4, unchanged tier/budget intent |
 | 0003 availability amendment and Dial H | §3, remove automatic substitution |
 | 0039 D1 and D3a–c | §§1 and 5, built-in follow-through and advisory lease |
-| 0039 D2 / D3d | 0015 promotion / 0019 credential owner, referenced directly |
+| 0039 D2 | 0015 §§2–3 promotion, referenced directly |
+| 0039 D3d, built and ruled 2026-09-05 | §5 catalog credential; acquisition mechanics in 0019 D1; ruling text and V6–V8 on the 0039 page |
 
 [Dated model measurements and prior alternatives](history/0003-model-tiering-before-2026-09-05.md)
 are history, not current model recommendations.

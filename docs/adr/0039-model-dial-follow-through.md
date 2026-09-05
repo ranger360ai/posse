@@ -2,7 +2,7 @@
 
 *Status: superseded 2026-09-05 by ADR 0003 · ADR simplification, operator ruling 2026-09-05.*
 
-The surviving decision is in [0003 — current contract](0003-model-tiering.md), Catalog and model-dial follow-through; promotion points directly to 0015 §§2–3. This page keeps its number and dated evidence; the body below is historical, not current policy.
+The surviving decision is in [0003 — current contract](0003-model-tiering.md), Catalog and model-dial follow-through; promotion points directly to 0015 §§2–3; the D3d ruling of the same day (ranger-base-q3n4e, built ranger-base-hr49g: the catalog read presents the mint of the sets the launch names, meter store as fallback) is carried in 0003 §5 and its full text, rejected arms and V6–V8 stay below. This page keeps its number and dated evidence; the body below is historical except as 0003 cites it.
 
 ## Historical record (superseded in full)
 

@@ -696,7 +696,11 @@ key set. Present-but-invalid values refuse; absent facts stay honest and
 loud. Existing registry keys name implemented readers and refuse unknown
 members; an enum plus `_why` records a measured fact (such as record trust
 or `rules_precedence: pid|native`), without claiming a parser can verify
-its evidence. `rules_precedence` defaults to unmeasured. A declaration
+its evidence. `rules_precedence` defaults to unmeasured; filled 2026-09-01
+with `pid` on the codex and grok built-ins from the behavioural half in §4
+(ranger-base-6rcv, one billed turn each), claude still unmeasured because
+no claude turn was authorized and one runtime's answer is not worn by
+another. A declaration
 cannot grant native enforcement credit. Realizers, cost decoders,
 interstitial probes and herdr detection remain code/manifests; no string
 may pretend to supply absent code. One skill surface only; keyed project
