@@ -2258,6 +2258,59 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 	// against it instead of RHQ_HOME.
 	vars = append(vars, EnvVar{EnvLaunchHome, a.Home})
 
+	// BEADS_DIR (ADR 0055 D1-D2): the store of record rides the session
+	// env, so the one-graph clause of rangerhq-09o2 stops depending on
+	// which mode bd happens to be in. bd in NO-DB mode resolves $BEADS_DIR
+	// else $cwd/.beads on both the read and the write-back (cmd/bd/nodb.go,
+	// main.go's PersistentPostRun) and never calls FindBeadsDir — so it
+	// consults neither the `.beads/redirect` posse seeds nor the worktree's
+	// main repo, and a bead filed from a session worktree lands in that
+	// worktree's own issues.jsonl while `bd where` names the main store.
+	// The fork is invisible to a read, because the worktree's checked-out
+	// jsonl carries the main rows by construction; only a write tells them
+	// apart (measured 2026-09-04 on bd 0.50.3 — worktree.go's WHAT WAS
+	// MEASURED block, no-db bullet). No-db has four doors and posse opens
+	// one of them itself: the container tier's inner bd is always `--no-db`
+	// (CageBdFlags, cageinner.go), so at that tier the fork is the shipped
+	// configuration on EVERY store class.
+	//
+	// beadsHome(dir) is the answer three other consumers of this same `dir`
+	// already take (ADR 0012 D3-C): the seatbelt writable set
+	// (RenderSeatbelt → seatbelt.go), the cage mount (CageMounts) and the
+	// codex launch line. One resolver, four consumers — bd's own resolution
+	// is now the fourth, so the grant, the mount, the launch line and the
+	// store bd writes to cannot disagree.
+	//
+	// EVERY session, persona or crew, on every runtime: which store this
+	// directory belongs to is a fact about the directory, not about the
+	// persona, which is why this sits outside the `ag != nil` block below
+	// rather than beside BD_ACTOR inside it. CageEnvNames names it too, so
+	// the container tier forwards it — by name, from the pane's own env,
+	// which is also what carries it through a relaunch, where `vars` holds
+	// the env sets and nothing else.
+	//
+	// Set ONLY where the resolved directory exists — the same decline
+	// seedBeadsRedirect makes for a repo with no `.beads` (worktree.go):
+	// there is nothing to keep unforked, and where bd creates a store on
+	// its first write is bd's business, in the directory bd chooses.
+	//
+	// No store-class detector, no `--no-db` argv grep, no refusal (D3): the
+	// fix is mode-independent, so a detector would only add a reader of
+	// bd's configuration to posse — a copy of its own isNoDbModeConfigured,
+	// covering one door of four, going stale on its own schedule.
+	//
+	// Appended after the env sets for the reason RHQ_HOME is: the store
+	// this launch resolved is authoritative over anything a set happened to
+	// carry. A persona that genuinely needs ANOTHER repo's graph sheds it
+	// for that one call — `env -u BEADS_DIR bd …` (AGENTS.md). A store
+	// under one of bd's unsafe prefixes would make every bd call in the
+	// session refuse loudly by name ("BEADS_DIR points to unsafe
+	// location"); that refusal is preferred to a launch-time copy of bd's
+	// prefix list (ADR 0055 Consequences).
+	if home := beadsHome(dir); isDirPath(home) {
+		vars = append(vars, EnvVar{"BEADS_DIR", home})
+	}
+
 	if ag != nil {
 		// The persona's durable identity rides the environment: BD_ACTOR
 		// makes every bd call inside the session attribute to the persona

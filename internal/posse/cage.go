@@ -648,9 +648,19 @@ var cageEnvName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 // on the repo mount reads); the session's env sets ride in because that is
 // what the PID's `envs:` promised the persona — including the operator's
 // container credential (rangerhq-kiz).
+//
+// BEADS_DIR is here for a reason particular to this tier (ADR 0055 D1): the
+// inner bd wrapper is always `--no-db` (CageBdFlags), and a no-db bd
+// resolves $BEADS_DIR else $cwd/.beads and reads no redirect at all — so
+// without this name crossing the boundary, a caged persona's claim, comment
+// and close land in the session worktree's own issues.jsonl and never reach
+// the store the mount was carved out for. The value is the same
+// beadsHome(dir) CageMounts already mounts read-write, which is what makes
+// the pair work: the mount makes the store writable, the name tells bd it
+// is the store.
 func CageEnvNames(vars []EnvVar) []string {
 	names := []string{
-		"RHQ_HOME", "POSSE_HOME", EnvLaunchHome, "BD_ACTOR", EnvPersona, "RHQ_PERSONA_DIR", "POSSE_PERSONA_DIR",
+		"RHQ_HOME", "POSSE_HOME", EnvLaunchHome, "BD_ACTOR", "BEADS_DIR", EnvPersona, "RHQ_PERSONA_DIR", "POSSE_PERSONA_DIR",
 		"RHQ_RUNTIME", "RHQ_TIER",
 		"RHQ_CAGE", "RHQ_GATES_DIR", "RHQ_SKILLS_DIR", "RHQ_SKILLS",
 		"RHQ_TOOLS_ALLOW", "RHQ_TOOLS_DENY",

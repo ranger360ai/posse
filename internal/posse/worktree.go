@@ -43,7 +43,9 @@ package posse
 //     resolves a linked worktree to the MAIN checkout's `.beads` by itself,
 //     and while the main checkout has one it does not read the worktree's
 //     `redirect` at all — a redirect pointing at a different LIVE database is
-//     ignored and bd goes on reading the main graph. Measured in all three
+//     ignored and bd goes on reading the main graph. IN DATABASE MODE: that
+//     resolution is FindBeadsDir's, and the no-db bullet below is the path
+//     that never calls it. Measured in all three
 //     shapes: worktree with a checked-out `.beads`, worktree with none, and
 //     a main checkout holding a jsonl but no database yet, where the "fresh
 //     clone" database is built in the MAIN checkout. bd falls back to the
@@ -72,18 +74,46 @@ package posse
 //     is re-measured on bd 0.50.3 and holds there — for a SQLite-backed
 //     store, which is what `bd init` built on 0.49.1 and what the operator's
 //     queue is.
-//     They do NOT hold for a no-db (JSONL-only) store, which is what
-//     0.50.3's default `--backend dolt` silently falls back to when bd is
-//     built without CGO: there bd reads the worktree's `redirect` for the
-//     RESOLUTION (`bd where` answers the main checkout's `.beads` and names
-//     the redirect that took it there) and then reads and writes the
-//     worktree's own `issues.jsonl` anyway, so a bead filed from the
-//     worktree never reaches the main graph. The fork is invisible from a
-//     read, because the worktree's checked-out jsonl carries the main rows
-//     by construction; only a write tells them apart.
-//     TestLiveWorktreeNoDbStoreForksTheGraph pins it. posse cannot fix that
-//     from here — it is bd's resolution, and seedBeadsRedirect is already
-//     naming the right directory.
+//     They do NOT hold for a no-db (JSONL-only) store: there bd reads the
+//     worktree's `redirect` for the RESOLUTION (`bd where` answers the main
+//     checkout's `.beads` and names the redirect that took it there) and
+//     then reads and writes the worktree's own `issues.jsonl` anyway, so a
+//     bead filed from the worktree never reaches the main graph. The fork is
+//     invisible from a read, because the worktree's checked-out jsonl
+//     carries the main rows by construction; only a write tells them apart.
+//     TestLiveWorktreeNoDbStoreForksTheGraph pins it.
+//
+//   - NO-DB IS NOT A VERSION, IT IS A MODE, AND IT HAS FOUR DOORS
+//     (2026-09-04, bd 0.50.3, ADR 0055). The mechanism is in bd's source,
+//     not in a release: `cmd/bd/nodb.go` (read) and `main.go`'s
+//     `PersistentPostRun` (write-back) resolve `$BEADS_DIR`, else
+//     `$cwd/.beads`, and never call `FindBeadsDir` — so neither the redirect
+//     nor the worktree's main repo is consulted, and `$cwd` is the CWD, not
+//     the repo root (a no-db `bd` from a subdirectory says "no .beads
+//     directory found"). Read in 0.49.1's source; behaviour measured on
+//     0.50.3. The doors:
+//       1. `no-db: true` in the resolved store's `config.yaml`;
+//       2. `--no-db` on the command line — **posse opens this one itself**,
+//          on every caged session (CageBdFlags, cageinner.go), so at the
+//          container tier the fork is the shipped configuration on EVERY
+//          store class, not a store-class accident;
+//       3. `BD_NO_DB=true` in the environment (measured: it flips a plain
+//          `bd create` with nothing in `config.yaml` to see);
+//       4. a bd built without CGO falling back with a note on stdout — which
+//          is what 0.50.3's default `--backend dolt` does here (ASSUMED as a
+//          door; the other three are measured).
+//     A store that merely lacks a database is NOT a door: 0.50.3 builds a
+//     SQLite `beads.db` over a bare jsonl on the first plain read, so "jsonl
+//     only" is a transient state.
+//     THE FIX IS THE LAUNCH ENV, not this file (ADR 0055 D1): every session
+//     posse launches carries `BEADS_DIR=beadsHome(dir)` (planLaunch,
+//     herdrback.go), forwarded into the container by name (CageEnvNames).
+//     Measured: with it set, the no-db create from the worktree lands in the
+//     MAIN store and the worktree's `bd list` reads it — on the `no-db:
+//     true` store and on the `--no-db` invocation over a database-class
+//     store alike. What this file still cannot do is fix it for a bd run
+//     with `BEADS_DIR` shed (`env -u`, `env -i`): the resolution is bd's,
+//     and seedBeadsRedirect is already naming the right directory.
 //
 //   - `git merge --ff-only <branch>` in the main checkout succeeds with
 //     unrelated uncommitted changes present, and refuses rather than

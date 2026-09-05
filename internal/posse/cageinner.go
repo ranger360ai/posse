@@ -194,6 +194,19 @@ func (a *App) PrepareGatesWrap(persona string, deny []string, noGateShell bool, 
 // it disables the daemon and auto-sync, which leaves SQLite — the half that
 // does not work here. Two flags that were measured beat one that reads
 // better.
+//
+// WHAT `--no-db` COSTS, AND WHAT PAYS IT (ADR 0055, measured 2026-09-04 on
+// bd 0.50.3). A no-db bd resolves `$BEADS_DIR` else `$cwd/.beads` on both
+// the read and the write-back and never calls FindBeadsDir — no redirect,
+// no worktree-to-main-checkout resolution. So this flag makes the fork
+// worktree.go describes the SHIPPED configuration at this tier, on every
+// store class and not just the no-db ones: without help, a caged persona's
+// create/comment/close from a session worktree appends to that worktree's
+// own issues.jsonl, `bd where` names the main store anyway, and no read
+// tells them apart. `BEADS_DIR` is what closes it — set to beadsHome(dir)
+// on every launch (planLaunch) and forwarded by name into the container
+// (CageEnvNames), pointing bd at the same directory CageMounts already
+// binds read-write for it.
 var CageBdFlags = []string{"--no-db", "--no-daemon"}
 
 // renderCageBd puts that bd on the same PATH the inner gates own — the shim
