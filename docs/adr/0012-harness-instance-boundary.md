@@ -207,7 +207,16 @@ two code tracks plus the two provider seams:
   that pin should widen is open, and tracked in the private queue),
   `env_required:` (checked at launch), declarable startup-screen
   dismissals, and `posse runtime check <name>`: exe on PATH, herdr manifest
-  present, plus a manifest-authoring doc.
+  present, plus a manifest-authoring doc. "exe on PATH" is amended
+  2026-09-05 by ranger-base-8vys9: the lookup runs in the POSSE process, and
+  the pane a launch opens is a child of the herdr daemon and resolves in the
+  daemon's environment, so the two answer different questions and herdr
+  publishes no route to the one that decides a launch. That gap therefore
+  REPORTS and never refuses. It names the PATH it looked on and sends the
+  reader to `posse runtime probe` (ADR 0032 §1), which opens a real pane and
+  measures the CLI the session actually launches — the only reading here that
+  asks the PATH a launch resolves in. An empty `command:` still blocks: it is
+  not a PATH question.
 - **plan windows seam** — `PlanUsage` becomes `[]Window{Name, Pct}`;
   budget.go is label-agnostic arithmetic; the shipped usage-endpoint and
   credential-read adapter is one implementation; no adapter ⇒ guard

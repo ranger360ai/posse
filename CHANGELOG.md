@@ -472,6 +472,31 @@ nothing.
 
 ### Fixed
 
+**`posse runtime check` and `posse runtime probe` refused a CLI they could
+not see, on a PATH that does not decide whether a launch can see it.**
+
+*Affected: the `exe` preflight gap, on any box where posse's own PATH and the
+herdr daemon's differ — herdr started from a login shell and posse run from a
+gated session, a stripped PATH, `~/.local/bin`, nvm, asdf.* The check ran
+`exec.LookPath` in the posse process, but the pane a launch opens is a child
+of the long-running herdr daemon and resolves in the daemon's environment. So
+a CLI the daemon has and posse does not was refused with "is not on PATH — a
+launch opens a pane that prints command not found", which is exactly what
+would not have happened: the pane launches it fine. The refusal also blocked
+`posse runtime probe`, the one command that opens a real pane and measures
+the CLI the session actually launches — the only thing that could have said
+which of the two was true — so a runtime in that shape could not be
+onboarded at all.
+
+The gap now reports and does not refuse, and its line says which PATH was
+looked on and names `posse runtime probe <name>` as the thing that measures
+the session's own answer. An empty `command:` still blocks — no PATH anywhere
+makes an absent argv0 launchable. The reverse divergence (posse resolves the
+CLI, the daemon does not) is a real dead pane that nothing cheap can see from
+outside a pane; the probe row is what answers it, and `posse runtime check`'s
+clean line no longer says a runtime "is installed" when what it measured was
+posse's own PATH.
+
 **`posse worktrees` called a caged session's committed work "nothing
 unlanded", and the sweep called an already-landed one unreferenced — the two
 commands disagreed about the same tree, each in the direction that costs.**

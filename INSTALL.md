@@ -1144,6 +1144,16 @@ Three rows are worth acting on before you dispatch anything:
 - **probe** says `ASSUMED` on a profile nobody has measured. That is the
   next step, and it is the only one that changes what a launch *does*.
 
+The preflight below the grid may also print a ⚠️ `exe` gap — *"… is not on
+posse's own PATH here"*. Read it as what it says: posse cannot see your CLI
+**from where posse is running**, which is not where a launch resolves it.
+The pane is a child of the herdr daemon and inherits *that* daemon's `PATH`,
+so a CLI you installed from a login shell is often perfectly launchable
+while a posse run from a gated session or a stripped `PATH` cannot find it.
+The gap refuses nothing for that reason; `posse runtime probe <profile>`
+settles it: it opens a real pane and measures the CLI the session actually
+launches.
+
 ### Probe the wall — a template profile's `Bash(...)` denies do not count yet
 
 posse renders an L1 shim and a gate shell for every runtime, but whether

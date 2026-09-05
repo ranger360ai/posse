@@ -13,9 +13,11 @@ package posse
 //     and every launch a dead pane because AWS_REGION was not in the
 //     session's env. It was expressible only as "put it in the PID's envs:
 //     list and remember why".
-//   - exe on PATH: the launch line's argv0. A miss here is a pane that
-//     prints "command not found" and sits at a shell, which herdr reads as
-//     a shell, not as a failure.
+//   - exe on PATH: the launch line's argv0. A miss on BOTH PATHs is a pane
+//     that prints "command not found" and sits at a shell, which herdr
+//     reads as a shell, not as a failure — and this process can only ask
+//     one of the two, so the gap reports and never refuses
+//     (ranger-base-8vys9; the switch below says why).
 //   - herdr detection: the single hardest third-party blocker. A runtime
 //     herdr cannot name from argv0 is `agent_not_found` — every state is a
 //     guess, and dispatch cannot address the session at all.
@@ -108,14 +110,46 @@ func (a *App) RuntimeGaps(rt *Runtime, h Herdr) []RuntimeGap {
 		gaps = append(gaps, RuntimeGap{Name: name, Line: line, Blocking: blocking})
 	}
 
-	// exe — the launch line's argv0, resolved the way a shell would.
+	// exe — the launch line's argv0, resolved on POSSE's own PATH, which is
+	// not the PATH that decides a launch. The pane a launch opens is a child
+	// of the long-running herdr DAEMON and inherits ITS environment:
+	// MEASURED 2026-09-05 with a scratch herdr — a copy of a CLI planted only
+	// on the server's PATH is what the pane resolves and RUNS, and one
+	// planted only on the client's is absent from the pane's PATH entirely
+	// (ranger-base-385x). Nothing in herdr 0.8.2's control surface hands
+	// that environment over — `herdr status`, `status server` and `api
+	// snapshot` print versions, sockets and live panes, and `pane
+	// process-info` names a running pane's argv rather than a PATH (all four
+	// read 2026-09-05) — so the only way to ask the PATH that decides a
+	// launch is from inside a pane. `posse runtime probe` is the one command
+	// here that opens one: its four observables are taken on the CLI the
+	// session itself launched, and ranger-base-385x is what makes the record
+	// name that binary rather than this process's answer.
+	//
+	// So a miss here is EVIDENCE, and it does not block (ranger-base-8vys9).
+	// A CLI the daemon has and posse does not — herdr started from a login
+	// shell, posse run from a gated session or a stripped PATH — launches
+	// perfectly well, and blocking on it refused `posse runtime probe` too:
+	// the one command that could measure which of the two shapes this is was
+	// refused by the check that could not tell them apart, so a runtime in
+	// that shape could not be onboarded at all. What is left is the line,
+	// and the line says which PATH was looked on — a gap that names the
+	// wrong one costs more than no gap.
+	//
+	// The reverse — posse resolves it, the daemon does not — is a real dead
+	// pane that reads as no gap here, and nothing cheap sees it either. The
+	// probe gap below is what answers it: an unprobed runtime is told to
+	// probe, and the probe measures the session's own answer.
+	//
+	// An empty `command:` is a different fact and still blocks: no PATH
+	// anywhere makes an absent argv0 launchable.
 	exe := rt.Exe()
 	switch {
 	case exe == "":
 		add("exe", "command: renders no executable at all — there is nothing to launch", true)
 	default:
 		if _, err := exec.LookPath(exe); err != nil {
-			add("exe", fmt.Sprintf("%q is not on PATH — a launch opens a pane that prints \"command not found\" and sits at a shell, which herdr reads as a shell rather than as a failure", exe), true)
+			add("exe", fmt.Sprintf("%q is not on posse's own PATH here — which is NOT the PATH a launch resolves in: the pane is a child of the herdr daemon and inherits its environment, so a CLI only the daemon can see launches fine, and only if NEITHER has it does the pane print \"command not found\" and sit at a shell, which herdr reads as a shell rather than as a failure. `posse runtime probe %s` opens a real pane and measures the CLI the session actually launches, which is the only reading here that asks the PATH a launch resolves in", exe, rt.Name), false)
 		}
 	}
 

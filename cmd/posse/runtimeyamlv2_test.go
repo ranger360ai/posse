@@ -84,7 +84,14 @@ func TestRuntimesListsAYamlV2Profile(t *testing.T) {
 		"project_config: (+ project_config_keys:)",
 		// The preflight, each gap by name (ADR 0012 D4).
 		"preflight — ",
-		"✗ exe:",
+		// ⚠️ and not ✗ since ranger-base-8vys9: the exe lookup runs in the
+		// POSSE process and the pane a launch opens resolves in the herdr
+		// daemon's environment, so a miss here reports and never refuses —
+		// and the line has to say which of the two PATHs it looked on. The
+		// exit is still 1, on the yaml gap below.
+		"⚠️ exe:",
+		"is not on posse's own PATH here",
+		"herdr daemon",
 		"✗ yaml:",
 		"skils_flag",
 	} {

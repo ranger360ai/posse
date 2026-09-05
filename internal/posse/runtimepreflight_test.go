@@ -243,7 +243,14 @@ skils_flag: --oops
 	if by["detection"].Blocking {
 		t.Error("a herdr that cannot be asked yields UNKNOWN — non-blocking — not a wrong 'no'")
 	}
-	for _, name := range []string{"exe", "yaml", "env_required"} {
+	// exe is NOT in that list: it is asked on posse's own PATH, which is not
+	// the one a launch resolves in, so it reports and never refuses
+	// (ranger-base-8vys9 —
+	// TestExeGapSaysWhichPATHItLookedOnAndDoesNotRefuse).
+	if by["exe"].Blocking {
+		t.Errorf("the exe gap answers about posse's PATH, not the pane's — it cannot refuse on it: %q", by["exe"].Line)
+	}
+	for _, name := range []string{"yaml", "env_required"} {
 		if !by[name].Blocking {
 			t.Errorf("%s is a blocking gap: a launch on it cannot work", name)
 		}
@@ -336,5 +343,87 @@ func TestLaunchRefusesWhenEnvRequiredIsMissing(t *testing.T) {
 	t.Setenv("POSSE_TR8K_LAUNCH", "us-east-1")
 	if _, err := b.planLaunch(NewSessionOpts{Name: "s2", Dir: t.TempDir(), Agent: "ranger"}); err != nil {
 		t.Fatalf("a supplied env_required must not refuse: %v", err)
+	}
+}
+
+// The exe gap answers a question posse cannot ask from here. exec.LookPath
+// runs in the POSSE process; the pane a launch opens is a child of the herdr
+// DAEMON and resolves in the daemon's environment — measured 2026-09-05 with
+// a scratch herdr, where a CLI planted only on the server's PATH is what the
+// pane resolves and RUNS and one planted only on the client's is absent from
+// the pane's PATH entirely (ranger-base-385x). herdr publishes no route to
+// that environment, so this surface cannot close the gap; what it can do is
+// stop refusing on the wrong PATH and say which one it looked on.
+//
+// Two facts, and the second is the one that cost: a CLI the daemon has and
+// posse does not launches fine, and while the gap BLOCKED it also refused
+// `posse runtime probe` — the one command that types the lookup into a pane
+// and could have measured which of the two shapes a box is in. A runtime in
+// that shape could not be onboarded at all.
+func TestExeGapSaysWhichPATHItLookedOnAndDoesNotRefuse(t *testing.T) {
+	t.Parallel()
+	a := checkApp(t)
+	rt := writeRuntime(t, a, "fake", "command: posse-8vys9-no-such-exe {file}\n")
+	gaps := a.RuntimeGaps(rt, Herdr{Bin: "no-such-herdr-binary"})
+	var exe *RuntimeGap
+	for i := range gaps {
+		if gaps[i].Name == "exe" {
+			exe = &gaps[i]
+		}
+	}
+	if exe == nil {
+		t.Fatalf("a CLI posse cannot resolve is still worth a line: %+v", gaps)
+	}
+	if exe.Blocking {
+		t.Error("posse's own PATH is not the one that decides a launch — a miss on it cannot refuse one")
+	}
+	// Which PATH was looked on, and which one decides: a gap naming the
+	// wrong PATH is worse than no gap, because the operator acts on it.
+	for _, want := range []string{"posse's own PATH", "herdr daemon"} {
+		if !strings.Contains(exe.Line, want) {
+			t.Errorf("the line must name both PATHs — missing %q: %q", want, exe.Line)
+		}
+	}
+	// And the route to the answer it cannot give, named with the runtime so
+	// it can be pasted.
+	if !strings.Contains(exe.Line, "posse runtime probe fake") {
+		t.Errorf("the line must name the command that measures the session's own answer: %q", exe.Line)
+	}
+
+	// The consequence, at the predicate that used to refuse: RuntimeProbe
+	// dies on the first BLOCKING gap (runtimeprobe.go, "there is nothing to
+	// measure past one"), so a runtime whose only defect is an exe posse
+	// cannot see must leave that loop with nothing to fire on. This is what
+	// makes 385x's ProbeExeUnresolved record reachable.
+	for _, g := range gaps {
+		if g.Blocking {
+			t.Errorf("nothing here blocks a probe of a runtime posse merely cannot see: %s: %s", g.Name, g.Line)
+		}
+	}
+	// …and the same thing at `posse runtime check`'s verdict, which is its
+	// exit status.
+	var b strings.Builder
+	if !a.RuntimeCheck(rt, Herdr{Bin: "no-such-herdr-binary"}, &b) {
+		t.Errorf("a runtime posse cannot resolve but the daemon may is a named degrade, not a refusal:\n%s", b.String())
+	}
+	if !strings.Contains(b.String(), "nothing blocking") {
+		t.Errorf("the verdict line must say so out loud:\n%s", b.String())
+	}
+
+	// An empty command: is a different fact and still refuses: no PATH
+	// anywhere makes an absent argv0 launchable, so this one is not about
+	// which PATH was asked.
+	empty := &Runtime{Name: "empty"}
+	var found bool
+	for _, g := range a.RuntimeGaps(empty, Herdr{Bin: "no-such-herdr-binary"}) {
+		if g.Name == "exe" {
+			found = true
+			if !g.Blocking {
+				t.Errorf("a command: that renders no executable blocks whatever any PATH holds: %q", g.Line)
+			}
+		}
+	}
+	if !found {
+		t.Error("a command: that renders no executable is still an exe gap")
 	}
 }

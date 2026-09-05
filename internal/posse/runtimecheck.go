@@ -270,7 +270,14 @@ func (a *App) writePreflight(rt *Runtime, h Herdr, w io.Writer) bool {
 	gaps := a.RuntimeGaps(rt, h)
 	if len(gaps) == 0 {
 		fmt.Fprintln(w)
-		fmt.Fprintf(w, "  preflight ✓ clean — %s is installed, herdr can name it, and every key in the profile arrives\n", rt.Name)
+		// "on posse's own PATH" and not "installed": the lookup behind this
+		// line is exec.LookPath in THIS process, and the pane a launch opens
+		// resolves in the herdr daemon's environment instead
+		// (ranger-base-8vys9). A clean preflight here is consistent with a
+		// pane that prints "command not found" — the probe row above is the
+		// surface that measures the session's own answer, and says ASSUMED
+		// until it has.
+		fmt.Fprintf(w, "  preflight ✓ clean — %s is on posse's own PATH, herdr can name it, and every key in the profile arrives\n", rt.Name)
 		return true
 	}
 	clean := true
