@@ -273,11 +273,11 @@ func TestQueueCutoverWritesNoSelfRedirectWhenTheQueueIsNamedSloppily(t *testing.
 	}
 }
 
-// The same compare, in the runbook's Rollback block — which is the OTHER
-// direction of the same walk: after a cutover it finds every tree pointed at
-// the queue and sends it home. That loop compared bytes too, and this pin runs
-// the runbook's own text (qcRollbackBlock) rather than asserting over its
-// wording, which is how the two pins above it in queuecutover_qa_test.go work.
+// The same compare, in the rollback block — which is the OTHER direction of
+// the same walk: after a cutover it finds every tree pointed at the queue and
+// sends it home. That loop compared bytes too, and this pin runs the block the
+// script prints (qcRollbackBlock) rather than asserting over its wording, which
+// is how the two pins above it in queuecutover_qa_test.go work.
 //
 // Three planted trees, and they discriminate in both directions: the
 // byte-exact one must come home (so a green is the loop RUNNING, not the loop
@@ -314,7 +314,7 @@ func TestQueueRollbackSendsHomeATreeSpelledAHandsWay(t *testing.T) {
 	stranger := plant("straggler-stranger", third)
 	qcSameDir(t, qcRedirectRaw(t, sloppy), sloppy, queueStore)
 
-	out := qcRollbackRun(t, qcRollbackBlock(t), f)
+	out := qcRollbackRun(t, qcRollbackBlock(t, f), f)
 
 	if got := qcRedirect(t, exact); got != home {
 		t.Fatalf("the rollback's walk did not move a BYTE-EXACT straggler (%q, want %q), "+

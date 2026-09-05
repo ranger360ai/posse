@@ -48,30 +48,45 @@ func qcScript(t *testing.T) string {
 	return p
 }
 
-// qcRunbook is the same for docs/runbooks/queue-cutover.md — the window step
-// the script is only half of. Two of the pins below are about its text: the
-// operator reads it under time pressure with the fleet quiesced, which is
-// the worst moment for a step to be missing. ADR 0024 D4 moved the runbook
-// out of posse into the instance tree (ranger-base-99ps), so it no longer
-// ships in this checkout; it reads the operator's own ~/src/ranger-base,
-// same default scripts/queue-cutover.sh's CONSTITUTION uses, and skips on
-// any box that has no such tree (CI, a fresh clone, another operator).
-func qcRunbook(t *testing.T) string {
+// qcRollbackRecipe is the rollback half of the window step, printed by the
+// script under test with the FIXTURE's paths already substituted.
+//
+// It used to be read out of docs/runbooks/queue-cutover.md. ADR 0024 D4
+// moved that runbook into the instance tree (ranger-base-99ps), which left
+// the pins below reading $CONSTITUTION's copy by absolute path and
+// t.Skipping when it was not there — so six of them ran on one box and never
+// on this project's own gate (measured on ranger-base-l1vej: 5 top-level
+// skips and 2 tests reporting PASS on a control arm while their real arms
+// skipped). ranger-base-sssr had already ruled that out: "A permanent silent
+// skip is neither" of the two acceptable outcomes.
+//
+// So the block moved to where the pins are instead of the pins moving to
+// where the block is: `queue-cutover.sh --print-rollback` emits it, the same
+// way the script's abort trap already emits the four partial UNDOs that
+// queuecutover_undo_qa_test.go runs. The runbook keeps the prose — when to
+// roll back, what the window costs, which incident taught which line — and
+// cites the command for the executable half. Nothing here reads a path
+// outside this checkout any more, so there is nothing left to skip on.
+func qcRollbackRecipe(t *testing.T, f qcFixture) string {
 	t.Helper()
-	// The OPERATOR's home, not the binary's: this reads a tree that lives
-	// outside the checkout, and after ADR 0047 D1 $HOME is a temp directory
-	// with nothing in it — which would turn this into a skip on every box
-	// rather than only on the ones with no instance tree.
-	home := operatorHome
-	if home == "" {
-		t.Skip("no home dir")
-	}
-	p := filepath.Join(home, "src", "ranger-base", "docs", "runbooks", "queue-cutover.md")
-	b, err := os.ReadFile(p)
+	cmd := exec.Command("sh", qcScript(t), "--print-rollback",
+		"--constitution", f.constitution, "--queue", f.queue,
+		"--worktrees", f.worktrees, "--only-redirect", f.posse,
+		"--scan", filepath.Dir(f.constitution))
+	out, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Skipf("instance tree runbook not present: %v", err)
+		t.Fatalf("queue-cutover.sh --print-rollback: %v\n%s", err, out)
 	}
-	return string(b)
+	// The fence that matters on a box where the live paths EXIST: a printer
+	// that ignored a flag would emit the operator's own tree and these pins
+	// would run a real rollback against it. qcRollbackRun's `~/` guard cannot
+	// see that — the script substitutes absolute paths, not `~`.
+	for _, want := range []string{f.constitution, f.queue, f.worktrees, f.posse} {
+		if !strings.Contains(string(out), want) {
+			t.Fatalf("the printed rollback does not name the fixture's %s — it is about some other tree:\n%s", want, out)
+		}
+	}
+	return string(out)
 }
 
 // qcConstitution is a constitution repo in miniature: a root `.gitignore`
@@ -593,7 +608,7 @@ func TestQueueCutoverDoesNotVersionWhatTheConstitutionIgnores(t *testing.T) {
 	}
 }
 
-// ranger-base-g1js, the other half: the runbook's rollback moved the store
+// ranger-base-g1js, the other half: the rollback block moved the store
 // home with `mv ~/src/ranger-queue/.beads/* ...`, and that glob does not
 // match dotfiles. Rehearsed on lpz4: `.beads/.gitignore` stayed behind — the
 // only thing ignoring the database — and the constitution repo came back
@@ -601,7 +616,7 @@ func TestQueueCutoverDoesNotVersionWhatTheConstitutionIgnores(t *testing.T) {
 // committing 10MB of binary database into the repo ADR 0015 exists to keep
 // clean, with the tracked `.gitignore` showing as deleted beside it.
 //
-// These pins RUN the runbook's own block rather than reading it. A prose
+// These pins RUN the block rather than reading it. A prose
 // assertion over a recipe goes green the moment the recipe is reworded, and
 // this block had three independent ways to be wrong (the glob, a bare `rm`
 // that errors when no redirect was ever written, and a `git checkout` that
@@ -609,43 +624,38 @@ func TestQueueCutoverDoesNotVersionWhatTheConstitutionIgnores(t *testing.T) {
 // block as it read BEFORE the fix through the same rig: without one, a
 // rollback that moved nothing would satisfy every assertion here.
 
-// qcRollbackBlock is the first fenced shell block under the runbook's
-// "## Rollback" — the thing the operator pastes.
-func qcRollbackBlock(t *testing.T) string { return qcRollbackFence(t, 0) }
+// qcRollbackBlock is the first of the two blocks the printer emits — the
+// thing the operator pastes.
+func qcRollbackBlock(t *testing.T, f qcFixture) string { return qcRollbackPart(t, f, 0) }
 
 // qcRollbackCheck is the second — the verification the operator reads to
 // decide the rollback worked. It is a block the pins RUN for the same reason
 // the one above is: it is the only instrument in the window, and its failure
 // mode is silence (ranger-base-4lks, reached again by ranger-base-jg26e).
-func qcRollbackCheck(t *testing.T) string { return qcRollbackFence(t, 1) }
+func qcRollbackCheck(t *testing.T, f qcFixture) string { return qcRollbackPart(t, f, 1) }
 
-// qcRollbackFence returns the nth fenced shell block under "## Rollback".
-func qcRollbackFence(t *testing.T, n int) string {
+// qcRollbackMarker opens each of the printer's two blocks. A comment line, so
+// the operator can paste the whole output and the pins can still split it.
+const qcRollbackMarker = "# --- rollback"
+
+// qcRollbackPart returns the nth block of the printed recipe.
+func qcRollbackPart(t *testing.T, f qcFixture, n int) string {
 	t.Helper()
-	body := qcRunbook(t)
-	i := strings.Index(body, "## Rollback")
-	if i < 0 {
-		t.Fatal("the runbook has no rollback section")
+	// The first chunk still carries its own marker (nothing precedes it) and
+	// every later one carries the marker line's tail, so both cases are the
+	// same edit: drop through the first newline.
+	var parts []string
+	for _, chunk := range strings.Split(qcRollbackRecipe(t, f), "\n"+qcRollbackMarker) {
+		i := strings.Index(chunk, "\n")
+		if i < 0 {
+			t.Fatalf("a printed rollback block is a marker line and nothing else:\n%s", chunk)
+		}
+		parts = append(parts, chunk[i+1:])
 	}
-	rest := body[i:]
-	const fence = "```sh\n"
-	for ; n >= 0; n-- {
-		open := strings.Index(rest, fence)
-		if open < 0 {
-			t.Fatal("the rollback section has no shell block to run")
-		}
-		rest = rest[open+len(fence):]
-		end := strings.Index(rest, "```")
-		if end < 0 {
-			t.Fatal("the rollback section's shell block is unterminated")
-		}
-		if n == 0 {
-			return rest[:end]
-		}
-		rest = rest[end:]
+	if len(parts) <= n {
+		t.Fatalf("the printed rollback has %d block(s), fewer than the pins read", len(parts))
 	}
-	t.Fatal("the rollback section has fewer shell blocks than the pins read")
-	return ""
+	return parts[n]
 }
 
 // qcRollbackBefore is that block as it read before this bead (posse 43f0ec5),
@@ -663,12 +673,17 @@ done
 cd ~/src/ranger-base && bd migrate --update-repo-id && bd daemon start
 `
 
-// qcRollbackRun points a rollback block's four live paths at the fixture and
-// hands it to `sh` the way the operator's terminal does — no `set -e`,
-// because a pasted block does not stop at the first error either, which is
-// exactly why a `rm` that fails has to be caught by reading its output.
-// `bd` is stubbed: the block's three bd calls are the operator's and denied
-// to personas (runbook, "Who runs it"). Every mv, rm and git in it is real.
+// qcRollbackRun hands a rollback block to `sh` the way the operator's
+// terminal does — no `set -e`, because a pasted block does not stop at the
+// first error either, which is exactly why a `rm` that fails has to be caught
+// by reading its output. `bd` is stubbed: the block's three bd calls are the
+// operator's and denied to personas (runbook, "Who runs it"). Every mv, rm
+// and git in it is real.
+//
+// The substitution below is now only for qcRollbackBefore, the frozen control:
+// the LIVE block arrives from `--print-rollback` with the fixture's paths
+// already in it. It is left in place as a fence rather than deleted — a block
+// that still names a live path after it must not reach `sh`.
 func qcRollbackRun(t *testing.T, block string, f qcFixture) string {
 	t.Helper()
 	for _, sub := range [][2]string{
@@ -743,11 +758,9 @@ func qcRolledBack(t *testing.T) qcFixture {
 // dotfiles" but "is the database ignored again when the block has run".
 func TestQueueRollbackCarriesTheStoresDotfilesHome(t *testing.T) {
 	t.Parallel()
-	block := qcRollbackBlock(t)
-
 	t.Run("the store comes home whole", func(t *testing.T) {
 		f := qcRolledBack(t)
-		out := qcRollbackRun(t, block, f)
+		out := qcRollbackRun(t, qcRollbackBlock(t, f), f)
 
 		for _, name := range []string{".gitignore", ".local_version", beadsJSONL} {
 			if _, err := os.Stat(filepath.Join(f.constitution, ".beads", name)); err != nil {
@@ -805,7 +818,7 @@ func TestQueueRollbackRunsCleanWhenNoRedirectWasEverWritten(t *testing.T) {
 		if err := os.Remove(filepath.Join(f.constitution, ".beads", beadsRedirect)); err != nil {
 			t.Fatalf("the fixture still has a redirect, so this measures nothing: %v", err)
 		}
-		out := qcRollbackRun(t, qcRollbackBlock(t), f)
+		out := qcRollbackRun(t, qcRollbackBlock(t, f), f)
 		if strings.Contains(out, missing) {
 			t.Errorf("the rollback errors on a redirect an aborted cutover never wrote:\n%s", out)
 		}
@@ -838,7 +851,7 @@ func TestQueueRollbackRestoresTheIgnoreThatHidesTheDatabase(t *testing.T) {
 		t.Fatal("the half-rollback did not leave the ignore file behind, so this measures nothing")
 	}
 
-	out := qcRollbackRun(t, qcRollbackBlock(t), f)
+	out := qcRollbackRun(t, qcRollbackBlock(t, f), f)
 	if _, err := os.Stat(filepath.Join(f.constitution, ".beads", ".gitignore")); err != nil {
 		t.Errorf("re-running the rollback never restores .beads/.gitignore, so the database stays unignored: %v\n%s", err, out)
 	}
@@ -886,7 +899,7 @@ func TestQueueRollbackBringsHomeTheTreesTheListForgets(t *testing.T) {
 		filepath.Join(f.queue, ".beads"))
 	t.Cleanup(func() { os.RemoveAll(forgotten) })
 
-	out := qcRollbackRun(t, qcRollbackBlock(t), f)
+	out := qcRollbackRun(t, qcRollbackBlock(t, f), f)
 
 	if got := qcRedirect(t, forgotten); got != store {
 		t.Errorf("the rollback left a tree pointed at the deleted queue: %q, want %q\n%s", got, store, out)
@@ -1185,7 +1198,7 @@ func TestQueueRollbackVerificationFiresOnARollbackThatWorked(t *testing.T) {
 	// ignore the good path reports a rollback that worked as a broken one.
 	const exportState = "9ae9377c9f59b1fc.json"
 	write(t, filepath.Join(f.queue, ".beads", "export-state", exportState), "{}\n")
-	out := qcRollbackRun(t, qcRollbackBlock(t), f)
+	out := qcRollbackRun(t, qcRollbackBlock(t, f), f)
 
 	// The rollback itself must have worked, or this arm is measuring a
 	// broken rig rather than a false alarm.
@@ -1239,20 +1252,20 @@ func TestQueueRollbackIsWrittenForAStateStepEightRemoves(t *testing.T) {
 	t.Parallel()
 	t.Run("step 8 is the last commit", func(t *testing.T) {
 		f := qcSteppedEight(t, 0)
-		qcAssertRolledBackToTracking(t, f, qcRollbackRun(t, qcRollbackBlock(t), f))
+		qcAssertRolledBackToTracking(t, f, qcRollbackRun(t, qcRollbackBlock(t, f), f))
 	})
 
 	// The bead: the same state, reached the way the live window reached it.
 	t.Run("unrelated commits landed on top of step 8", func(t *testing.T) {
 		f := qcSteppedEight(t, 2)
-		out := qcRollbackRun(t, qcRollbackBlock(t), f)
+		out := qcRollbackRun(t, qcRollbackBlock(t, f), f)
 		qcAssertRolledBackToTracking(t, f, out)
 		if body := readFile(t, filepath.Join(f.constitution, qcLaterFile)); !strings.Contains(body, qcLaterLast) {
 			t.Errorf("the rollback undid an unrelated commit instead of step 8's: %s is %q, not %q\n%s",
 				qcLaterFile, body, qcLaterLast, out)
 		}
 		// And the operator's instrument says so out loud.
-		if check := qcRollbackRun(t, qcRollbackCheck(t), f); !strings.Contains(check, qcCheckRan) {
+		if check := qcRollbackRun(t, qcRollbackCheck(t, f), f); !strings.Contains(check, qcCheckRan) {
 			t.Errorf("the verification step does not certify a rollback that worked:\n%s\n%s", check, out)
 		}
 	})
@@ -1270,14 +1283,14 @@ func TestQueueRollbackIsWrittenForAStateStepEightRemoves(t *testing.T) {
 			"beads: the queue moves to its own repo, and a stray file (ADR 0015 §4)",
 			"--", ".beads", ".gitignore", qcLaterFile)
 
-		out := qcRollbackRun(t, qcRollbackBlock(t), f)
+		out := qcRollbackRun(t, qcRollbackBlock(t, f), f)
 		if !strings.Contains(out, "ROLLBACK STOPPED") {
 			t.Errorf("the rollback reverted a commit that also holds %s instead of stopping:\n%s", qcLaterFile, out)
 		}
 		if _, err := os.Stat(filepath.Join(f.constitution, qcLaterFile)); err != nil {
 			t.Errorf("%s went with the revert after all: %v\n%s", qcLaterFile, err, out)
 		}
-		if check := qcRollbackRun(t, qcRollbackCheck(t), f); strings.Contains(check, qcCheckRan) {
+		if check := qcRollbackRun(t, qcRollbackCheck(t, f), f); strings.Contains(check, qcCheckRan) {
 			t.Errorf("a rollback that stopped still certifies itself:\n%s\n%s", check, out)
 		}
 	})
@@ -1287,7 +1300,7 @@ func TestQueueRollbackIsWrittenForAStateStepEightRemoves(t *testing.T) {
 	// that reads clean, or the two arms above measure nothing.
 	t.Run("the control: reverting HEAD undoes the wrong commit and still reads clean", func(t *testing.T) {
 		f := qcSteppedEight(t, 2)
-		out := qcRollbackRun(t, qcRollbackHeadRevert(t), f)
+		out := qcRollbackRun(t, qcRollbackHeadRevert(t, f), f)
 		if body := readFile(t, filepath.Join(f.constitution, qcLaterFile)); strings.Contains(body, qcLaterLast) {
 			t.Errorf("the rig cannot see the wrong commit being reverted, so the arms above prove nothing: %s is %q\n%s",
 				qcLaterFile, body, out)
@@ -1295,7 +1308,7 @@ func TestQueueRollbackIsWrittenForAStateStepEightRemoves(t *testing.T) {
 		if status := mustGit(t, f.constitution, "status", "--porcelain", "--", ".beads", ".gitignore"); strings.TrimSpace(status) != "" {
 			t.Errorf("the rig cannot see a store that came home untracked and ignored:\nstatus:\n%s\n%s", status, out)
 		}
-		if check := qcRollbackRun(t, qcRollbackCheck(t), f); strings.Contains(check, qcCheckRan) {
+		if check := qcRollbackRun(t, qcRollbackCheck(t, f), f); strings.Contains(check, qcCheckRan) {
 			t.Errorf("the verification step certifies a rollback that never restored tracking — "+
 				"an empty status still reads as a checked one:\n%s\n%s", check, out)
 		}
@@ -1385,9 +1398,9 @@ func qcAssertRolledBackToTracking(t *testing.T, f qcFixture, out string) {
 // nothing else changed. A mutation of the one line under test is a sharper
 // control than a frozen copy of the whole block: everything around it stays
 // current, so the arms above cannot pass because the rig drifted.
-func qcRollbackHeadRevert(t *testing.T) string {
+func qcRollbackHeadRevert(t *testing.T, f qcFixture) string {
 	t.Helper()
-	block := qcRollbackBlock(t)
+	block := qcRollbackBlock(t, f)
 	i := strings.Index(block, "\nelse\n")
 	if i < 0 {
 		t.Fatal("the rollback block no longer branches on whether step 8 has run — the control cannot be built")

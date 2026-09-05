@@ -63,6 +63,13 @@
 #                            [--redirect DIR]... [--worktrees DIR]
 #                            [--scan DIR] [--scan-depth N] [--no-scan]
 #                            [--dry-run] [--force-daemon]
+#   scripts/queue-cutover.sh --print-rollback [same path flags]
+#
+# --print-rollback PRINTS the block that undoes a COMPLETED cutover, with
+# this run's paths already substituted, and does nothing else. It is spelled
+# with the verb so nobody types it expecting the rollback to happen: the
+# daemon calls in it are the operator's, and a rollback is a thing a person
+# decides to do. See "the rollback, printed rather than run", below.
 #
 # Defaults are the live paths, so the window step is one line with no
 # arguments. Every path is overridable, which is what makes it rehearsable
@@ -87,6 +94,7 @@ SCAN=${SCAN:-}
 SCAN_DEPTH=${SCAN_DEPTH:-3}
 DRYRUN=0
 FORCE_DAEMON=0
+PRINT_ROLLBACK=0
 
 while [ $# -gt 0 ]; do
   case $1 in
@@ -101,6 +109,7 @@ $2"; shift 2 ;;
     --no-scan)      SCAN=''; SCAN_SET=1; shift ;;
     --dry-run)      DRYRUN=1; shift ;;
     --force-daemon) FORCE_DAEMON=1; shift ;;
+    --print-rollback) PRINT_ROLLBACK=1; shift ;;
     # Every comment line of the header, not a line range: the range this
     # used to carry (2,40) already cut the usage block's last line, and the
     # next edit to the header would have cut more.
@@ -118,6 +127,148 @@ die() { printf 'queue-cutover: %s\n' "$*" >&2; exit 1; }
 SRC_BEADS=$CONSTITUTION/.beads
 DST_BEADS=$QUEUE/.beads
 RUNBOOK=$CONSTITUTION/docs/runbooks/queue-cutover.md
+
+# ─── the rollback, printed rather than run ───────────────────────────────────
+# The window's OTHER half. Everything above undoes a cutover that ABORTED
+# partway; this undoes one that COMPLETED — the store is in the queue repo,
+# every redirect names it, and the operator wants none of it after all.
+#
+# It lives here, in the script, and not in the runbook's prose, for the same
+# reason the four UNDO blocks above do: the pins can only run what is in this
+# tree. Read as prose in the instance tree it was executable text no gate
+# could reach — six pins that RUN it skipped on every box but the author's,
+# CI included, and a permanent silent skip over the recovery path is worse
+# than no pin at all (ranger-base-sssr, measured on ranger-base-l1vej).
+#
+# PRINTED, never run: the three bd calls in it are the operator's (this
+# script stops and starts no daemon — see WHAT IT NEVER DOES), and a rollback
+# is a thing a person decides to do. Paths are substituted from this run's
+# own variables, so a rehearsal on a copy prints the copy's paths and the
+# live invocation prints the live ones.
+print_rollback() {
+  cat <<EOF
+# --- rollback: paste this block, then the check below it ---
+bd daemons stop '$QUEUE' && bd daemons list   # verify, per step 1
+cd '$CONSTITUTION'
+# Which side of step 8 is this on? The constitution's .beads untracking is
+# STAGED if you caught it before step 8 and COMMITTED if step 8 ran. Undo the
+# right one, and do it BEFORE the store goes home — otherwise the incoming
+# files land untracked and collide with what a revert recreates
+# (ranger-base-4lks).
+if git cat-file -e HEAD:.beads/.gitignore >/dev/null 2>&1; then
+  # Staged: the root ignore AND the one that hides beads.db are both in HEAD.
+  git reset -q HEAD -- .beads .gitignore && git checkout -- .gitignore .beads/.gitignore
+else
+  # Committed: HEAD has no .beads/.gitignore for checkout to restore — it
+  # would say "did not match any file(s) known to git" and restore NEITHER
+  # ignore — so undo the commit itself. FIND that commit; do not assume it is
+  # HEAD. Unrelated commits land on top of it (157 of them in the live
+  # window, none touching the store), and reverting one of those undoes
+  # somebody's work and leaves .beads/ in the root ignore, after which the
+  # check below prints nothing and reads as clean (ranger-base-jg26e). This
+  # arm only runs when HEAD has no .beads/.gitignore, so the last commit to
+  # touch that path is the one that removed it, however far back it is.
+  cut=\$(git rev-list -1 HEAD -- .beads/.gitignore)
+  stray=
+  [ -n "\$cut" ] && stray=\$(git show --format= --name-only "\$cut" |
+    grep -Ev '^\.gitignore\$|^\.beads/|^\$')
+  if [ -z "\$cut" ]; then
+    echo "ROLLBACK STOPPED: no commit in this history touches .beads/.gitignore, so" >&2
+    echo "step 8's commit cannot be identified. Restore .beads by hand — until it is" >&2
+    echo "tracked again the check below stays silent, which is not the same as clean." >&2
+  elif [ -n "\$stray" ]; then
+    echo "ROLLBACK STOPPED: \$cut is the last commit to touch .beads/.gitignore but it" >&2
+    echo "also touches files outside the store, which reverting would undo:" >&2
+    echo "\$stray" >&2
+  elif ! git revert --no-edit "\$cut"; then
+    git revert --abort 2>/dev/null
+    echo "ROLLBACK STOPPED: reverting \$cut did not apply — something has touched" >&2
+    echo ".beads or .gitignore since. The revert was aborted; nothing changed." >&2
+  fi
+fi
+# The store goes home — DOTFILES INCLUDED. A * glob alone leaves .gitignore
+# and .local_version behind, and the constitution comes back with a 10MB
+# beads.db untracked AND unignored, one "git add -A" from being committed
+# (ranger-base-g1js). Same loop the UNDOs above print.
+for f in '$DST_BEADS'/* '$DST_BEADS'/.[!.]*; do
+  [ -e "\$f" ] && mv -f "\$f" '$SRC_BEADS/'
+done
+rm -f '$SRC_BEADS/redirect'   # -f: an abort in stage "move" never wrote one
+# bd leaves runtime files the store's own .beads/.gitignore does not cover
+# (bd.sock.startlock and daemon-error, ranger-base-4lks; .migration-hint-ts,
+# which 0.50.3 added, ranger-base-0dylx; .jsonl.lock, which bd takes around
+# the JSONL export and leaves behind empty, ranger-base-puqvd). Without this
+# the check below reports a rollback that WORKED as one that did not. They
+# are ignored rather than excluded from the move on purpose: each is
+# per-machine generated state, the class bd already ignores as
+# .local_version, and a growing exclusion list is exactly how
+# .beads/.gitignore got left behind in the first place (ranger-base-g1js).
+# export-state/ is deliberately not in this list — the constitution's ROOT
+# .gitignore covers it, from a commit that pre-dates the one both arms above
+# undo (ranger-base-6dygg). After a bd upgrade, re-run that census rather
+# than waiting for the next incident.
+for pat in bd.sock.startlock daemon-error .migration-hint-ts .jsonl.lock; do
+  grep -qxF "\$pat" '$SRC_BEADS/.gitignore' 2>/dev/null ||
+    printf '%s\n' "\$pat" >> '$SRC_BEADS/.gitignore'
+done
+# Put every redirect back — INCLUDING the ones no list here names. Anything
+# still pointed at the queue's .beads after the store has gone home is a
+# dangling redirect, the two-hop trap in reverse (ranger-base-l9aa).
+EOF
+  printf '%s\n' "$REDIRECTS" | sed '/^$/d' | while IFS= read -r r; do
+    printf "printf '%%s\\\\n' '%s' > '%s/.beads/redirect'\n" "$SRC_BEADS" "$r"
+  done
+  cat <<EOF
+for w in '$WORKTREES'/*/*; do
+  [ -d "\$w/.beads" ] && printf '%s\n' '$SRC_BEADS' > "\$w/.beads/redirect"
+done
+EOF
+  # The discovery walk only when there is a root to walk: --no-scan means
+  # the operator said not to, and an empty find root would walk the cwd.
+  if [ -n "$SCAN" ]; then
+    cat <<EOF
+find '$SCAN' -maxdepth $SCAN_DEPTH -type d -name .beads | while read -r b; do
+  # "x && y" as the last statement makes the loop exit 1 on a non-match, and
+  # under set -e that kills the rest of a rollback. Measured; use continue.
+  # Resolve rather than compare bytes: bd follows a trailing slash, stray
+  # blanks, a CRLF ending, a doubled or dotted separator, a relative path and
+  # a symlink to the same store, and a redirect written by a hand is spelled
+  # a hand's way (ranger-base-4myz). -ef is device+inode — the same directory
+  # whatever it is called.
+  cur=\$(head -n 1 "\$b/redirect" 2>/dev/null | tr -d '\r\v\f' | sed 's/^[[:blank:]]*//; s/[[:blank:]]*\$//')
+  case \$cur in ''|/*) ;; *) cur=\${b%/.beads}/\$cur ;; esac
+  [ -n "\$cur" ] && [ -d "\$cur" ] && [ "\$cur" -ef '$DST_BEADS' ] || continue
+  printf '%s\n' '$SRC_BEADS' > "\$b/redirect"
+done
+EOF
+  fi
+  cat <<EOF
+cd '$CONSTITUTION' && bd migrate --update-repo-id && bd daemon start
+# --- rollback check: an empty status is not a checked one ---
+# Only " M .beads/issues.jsonl" and " M .beads/deleted.jsonl" (the window's
+# drift, which is real work and stays), plus " M .beads/.gitignore" the first
+# time the block above appends its four patterns. A "??" line, or
+# " D .beads/.gitignore", means the store did not come home whole — commit
+# nothing until it does. And if the "rollback check:" line is MISSING, the
+# block above errored before reaching this one: an empty status is not the
+# same thing as a checked one (ranger-base-4lks). That is why ls-files
+# --error-unmatch gates the echo rather than a bare echo — the state this is
+# blindest to is .beads/ still sitting in the root ignore, where every file
+# just brought home is invisible to status and the silence is total. Tracking
+# is the one fact that cannot be silent (ranger-base-jg26e).
+git -C '$CONSTITUTION' status --porcelain -- .beads .gitignore
+git -C '$CONSTITUTION' ls-files --error-unmatch -- .beads/.gitignore >/dev/null &&
+  echo 'rollback check: ran clean if nothing printed above this line'
+EOF
+}
+
+# `if`, not `[ … ] && …`: an AND-OR list whose test fails is exempt from
+# `set -e` by the letter of the rule and reads like a live tripwire anyway —
+# the same shape the printed block above warns about in its own `find` loop.
+if [ "$PRINT_ROLLBACK" = 1 ]; then
+  print_rollback
+  exit 0
+fi
 
 # ─── does this redirect name that directory? ─────────────────────────────────
 # The fan-out's job is to find every tree bd can still RESOLVE through the
@@ -248,7 +399,8 @@ EOF
       return 0
       ;;
   esac
-  printf 'queue-cutover: full rollback: %s, "Rollback".\n' "$RUNBOOK" >&2
+  printf 'queue-cutover: full rollback: %s --print-rollback  (why: %s, "Rollback")\n' \
+    "$0" "$RUNBOOK" >&2
 }
 trap on_exit EXIT
 trap 'exit 130' INT

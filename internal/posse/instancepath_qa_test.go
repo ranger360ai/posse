@@ -107,16 +107,18 @@ func instancePathDisposition() map[string]string {
 		// default here is a default that does nothing.
 		"scripts/queue-cutover.sh": "the cutover script's own overridable defaults",
 
-		// The pins for that script and its runbook. ADR 0024 D4 moved the
-		// runbook OUT of this tree (commit 92e67bd, triaged on
-		// ranger-base-yheoa), so `qcRunbook` reads the operator's own copy by
-		// path and skips on any box without one — and `qcRollbackBefore` is that
-		// runbook's rollback block quoted VERBATIM as it read at posse 43f0ec5,
-		// the control that proves the rig can see the defect. Its live paths are
-		// also the substitution keys `qcRollbackRun` rewrites onto the fixture,
-		// so they have to match the text the operator actually has. De-instanced,
-		// the quote stops being a quote and the substitution stops matching.
-		"internal/posse/queuecutover_qa_test.go": "verbatim doc-echo of a runbook that lives in the instance tree",
+		// The pins for that script. ADR 0024 D4 moved the runbook OUT of this
+		// tree (commit 92e67bd, triaged on ranger-base-yheoa), and reading it
+		// there by path is what these pins stopped doing on ranger-base-l1vej —
+		// the rollback block they RUN is now printed by the script itself
+		// (`--print-rollback`) and nothing here reaches outside the checkout.
+		// What is left is `qcRollbackBefore`: that block quoted VERBATIM as it
+		// read at posse 43f0ec5, the control that proves the rig can see the
+		// defect. Its live paths are also the substitution keys `qcRollbackRun`
+		// rewrites onto the fixture, so they have to match the text the operator
+		// actually had. De-instanced, the quote stops being a quote and the
+		// substitution stops matching.
+		"internal/posse/queuecutover_qa_test.go": "verbatim historic quote of the block the script now prints",
 	}
 }
 
