@@ -6068,7 +6068,7 @@ What a dispatched session gets:
 | session worktree | `<worktrees root>/<repo>/<session>` — its own tree, index, HEAD |
 | session branch | `posse/<session>`, cut from the repo's own branch |
 | merge-back | the launcher fast-forwards it onto that branch when the bead closes, under the ADR 0011 §1 launcher lock |
-| retirement | `posse kill` lands the branch then removes tree and branch — and REFUSES while either holds work |
+| retirement | `posse kill` lands the branch then removes tree and branch — and REFUSES while either holds work. Since ADR 0058 the landing sweep also retires a tree whose bead is closed, whose work is measured on the base, whose session herdr proves gone, and whose git dir has not been written inside `retire_tree_after:` (1h) — the four facts read fresh under the launcher lock; `posse worktrees --retire` runs the same predicate on demand |
 
 The kill takes the launcher lock **without waiting**: the cockpit's `k` runs
 it on the TUI's single select loop, and blocking there behind a firing pass
@@ -6078,7 +6078,15 @@ closed, the tree and branch are kept, and the line says
 under one blocking lock and **never removes a tree**: it reads git, so it
 cannot tell a dead session's tree from one a persona is working in this
 second, and removing the second is the exact damage this feature exists to
-prevent.
+prevent. That sentence was read for two weeks as "trees are permanent", and
+MEASURED 2026-09-05 it had made them so: 70 trees standing, 8 with a live
+session, 38 dead and fully landed (36 of them by plain fast-forward — the
+kill path is the only remover and a workspace herdr lost never reaches it).
+ADR 0058 gives the retire to the one site that holds more than git — the
+landing sweep reads the bead fresh, asks herdr, and holds the lock — under
+the safe-reclamation rule (proof of death at reclaim time plus a grace over
+tree writes); `--land` itself stays exactly this paragraph, and
+`--retire` beside it is the human's run of the same predicate.
 
 It also **reads the branch record before it merges**. A tree holding commits
 its base does not have, whose branch names no bead
