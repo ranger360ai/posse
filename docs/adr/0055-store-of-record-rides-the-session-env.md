@@ -130,8 +130,8 @@ environment, the no-db create from the worktree lands in the MAIN store and
   issue-prefix in .beads/config.yaml" (`detectPrefix`, nodb.go). This
   shop's store of record is one: it carries rows under this instance's
   `ranger-base-` and under a second instance's prefix, and its
-  `issue-prefix` line is commented out (MEASURED 2026-09-04, bd 0.50.3, ranger-base-43ux4 and jl8q2). The
-  refusal is the store's prefix spread reached THROUGH the variable:
+  `issue-prefix` line is commented out (MEASURED 2026-09-04, bd 0.50.3,
+  ranger-base-43ux4 and jl8q2). The refusal is the store's prefix spread reached THROUGH the variable:
   before D1 the same call from a session worktree read the worktree's own
   `.beads`, exited 0 with zero rows and left an empty `issues.jsonl`
   there, the silent fork; after D1 it exits 1. Loud beats silent, and the
@@ -193,8 +193,8 @@ environment, the no-db create from the worktree lands in the MAIN store and
   no-db `bd` in every checkout of posse would mint one instance's prefix.
   Same shape as posse reading the prefix out of the store, one file over.
 - **Unify the store's prefix** (rename the 412 rows under the second
-  prefix). They are a second instance's ids; the rename verbs are denied to every persona
-  PID; and ranger-base-my66u found the cross-prefix ingest recipe itself
+  prefix). They are a second instance's ids; the rename verbs are denied
+  to every persona PID; and ranger-base-my66u found the cross-prefix ingest recipe itself
   refuses on 0.50.3.
 - **The clever one: make posse the resolver** (a `posse beads where` every
   wrapper consults). A second resolver for a question bd already answers
@@ -247,8 +247,8 @@ bd 0.50.3 from a seatbelt seat, every call `--no-daemon --no-db list
 --limit 1`: against the live queue with `BEADS_DIR` set, exit 1 and the
 refusal text above. Then in a copy of the queue's `issues.jsonl` and
 `config.yaml` under `$HOME` (1630 rows under `ranger-base-`, 412 under the
-second prefix), six arms: the copy as shipped refuses (exit 1); `issue-prefix:
-"ranger-base"` set in the copy's `config.yaml`, run from the copy's own
+second prefix), six arms: the copy as shipped refuses (exit 1);
+`issue-prefix: "ranger-base"` set in the copy's `config.yaml`, run from the copy's own
 checkout, lists (exit 0); the same fixed copy reached through `BEADS_DIR`
 from a directory whose `.beads` holds only a redirect still refuses (exit
 1, the line is not read); from that directory `BD_ISSUE_PREFIX=ranger-base`
