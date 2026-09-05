@@ -119,6 +119,6 @@ func TestQAFoldDoesNotDetectATruncationBackToItsOwnCursor(t *testing.T) {
 		t.Errorf("setup: what was folded before the truncation must still be there:\n%s", log)
 	}
 	if strings.Contains(log, "tampered") {
-		t.Errorf("FIXED: a truncation back to the cursor is now detected. Delete this pin and assert the new behaviour — ADR 0025 §4's residual is now true as written:\n%s", log)
+		t.Errorf("FIXED: a truncation back to the cursor is now detected. The docs move with the code before this pin goes: ADR 0025 §4 bullet 2 and its residual paragraph (docs/adr/0025-enforcement-class.md), and NOTES.md's cage posture paragraph, all say this shape folds as nothing new and leaves no mark. Rewrite those, then delete this pin and assert the new behaviour:\n%s", log)
 	}
 }

@@ -482,8 +482,12 @@ echo "combined=$(/usr/bin/git -c core.hooksPath=/tmp push origin main 2>&1 | gre
 
 	// The next fold is where the truncation becomes visible: the spool is
 	// now shorter than the cursor's own offset, so this is TAMPER, not "no
-	// new lines" — the erasure attempt becomes evidence (ADR 0025 §4
-	// verification 2).
+	// new lines". It is visible ONLY because this QA folded once before the
+	// truncate, which left a cursor ABOVE the truncated size — detection
+	// compares the folded prefix and nothing past it, so a spool cut back to
+	// its cursor, to any length above it, or before any fold at all folds as
+	// nothing new and leaves no mark (ADR 0025 §4 Verification 2 as amended,
+	// ranger-base-j3r6z).
 	if err := a.FoldRefusalsSpool("p", session); err != nil {
 		t.Fatalf("fold after truncate: %v", err)
 	}

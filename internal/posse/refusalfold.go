@@ -25,14 +25,24 @@ package posse
 // lines twice, never a gap, because a fold only ever advances past bytes it
 // just hashed and wrote.
 //
-// Truncation is caught by SIZE (spool shorter than the cursor's offset) and
-// a same-size rewrite by HASH (the ADR's own worked case: a spool truncated
-// and refilled to the same size folds as tampered because the hash of the
-// bytes up to the old offset no longer matches, even though the offset
-// comparison alone would have missed it). Either shape appends a tamper
-// line to the canonical log naming the session and re-folds the whole spool
-// from zero — the erasure attempt becomes evidence instead of a gap, which
-// is the property ADR 0025 §4 is written around.
+// Detection reaches the FOLDED PREFIX and nothing past it. SIZE (spool
+// shorter than the cursor's offset) and HASH (a same-size rewrite: the
+// ADR's own worked case, where a spool truncated and refilled to the same
+// size folds as tampered because the hash of bytes[0:offset] no longer
+// matches, though the offset comparison alone would have missed it) both
+// compare only bytes the canonical log already holds. Either shape appends
+// a tamper line to the canonical log naming the session and re-folds the
+// whole spool from zero. A spool cut back to exactly the cursor, to any
+// length above it, or before its first fold ever ran (no cursor, so no
+// comparison at all) folds as "no new lines": the un-folded refusals are
+// gone with no tamper line and no marker — the residual ADR 0025 §4 states
+// as amended (measured, ranger-base-j3r6z; pinned green by
+// TestQAFoldDoesNotDetectATruncationBackToItsOwnCursor in
+// refusalfold_qa_test.go, which goes red the day detection grows). The
+// guarantee is not that an erasure leaves evidence but that the canonical
+// log can only GROW from inside a cage — held by the mount that is not
+// there — and that everything already folded is beyond the reach of the
+// process it records.
 import (
 	"bytes"
 	"crypto/sha256"
