@@ -579,6 +579,7 @@ special is mounted).
 | Was | Here |
 |---|---|
 | 0021 promotion amendment and 0039 D2 | §§2–3: `runtimes/` is promoted, removed when absent from the source commit, manifested, and fenced from persona ratification |
+| 0046 completed rename | This ADR owns the current `posse/` directory contract; 0046 retains the retired cutover evidence |
 
 ## Sequencing
 
@@ -793,5 +794,3 @@ ADR blocks the parallel beads already running (dk5, w1b, g7lt).
 | a shims session silences the launch verify by deleting `promoted.json` or re-stamping it with its tampered file's sha256, no output on any surface; a truncated manifest is loud | **MEASURED** 2026-08-28 (ranger-base-bejb repro at 12ce5be, cases A–D) |
 | 10 of the 11 live PIDs declare no `cage:` and run at shims; only hoover declares `cage: seatbelt` | **MEASURED** 2026-08-28 (ranger-base-bejb, `~/.config/rhq/agents`) |
 | every same-uid location for a second anchor is session-writable at shims | by definition of the tier (ADR 0002 §3: shims applies no sandbox, so file access is the uid's); the exceptions are the out-of-uid shapes Alternatives rejects |
-
-| 0046 completed rename | This ADR owns the current `posse/` directory contract; 0046 retains the retired cutover evidence |
