@@ -357,6 +357,18 @@ const (
 		"  ╰───────────────────────────── Grok 4.6 (high) · auto mode on ─╯\n" +
 		"\n" +
 		"  Shift+Tab:mode  │  Ctrl+.:shortcuts"
+
+	// The near-miss from the OTHER side, and it is the row the contract was
+	// missing: a suffix that ENDS with a table word without being one.
+	// grokBorderNearMiss ("auto mode on") rules out containment and prefix
+	// matching; nothing ruled out a suffix match, so `suffix != m.border`
+	// could be relaxed to `!strings.HasSuffix(suffix, m.border)` with every
+	// pin still green — and that reader reports mode:auto for this border,
+	// which is the confident wrong reading the whole table exists to stop.
+	grokBorderTrailingNearMiss = "  │ ❯                                                            │\n" +
+		"  ╰──────────────────────────────── Grok 4.6 (high) · not auto ─╯\n" +
+		"\n" +
+		"  Shift+Tab:mode  │  Ctrl+.:shortcuts"
 )
 
 // The reader's vocabulary is CLOSED, which is the asymmetry this pins: the
@@ -376,6 +388,7 @@ func TestQAGrokBorderSuffixOutsideTheTwoWordsIsNotAMode(t *testing.T) {
 		{"mode then another token", grokBorderModeThenToken, "mode:?unnamed"},
 		{"separator with nothing after it", grokBorderEmptySuffix, "mode:?unnamed"},
 		{"a near-miss on a table word", grokBorderNearMiss, "mode:?unnamed"},
+		{"a near-miss ENDING in a table word", grokBorderTrailingNearMiss, "mode:?unnamed"},
 		// A wider pane is the one case that must still READ: the suffix is
 		// the measured word and the extra dashes are the pane's width.
 		{"the same word on a wider pane", grokBorderWidePad, "mode:auto"},
@@ -394,6 +407,7 @@ func TestQAGrokBorderSuffixOutsideTheTwoWordsIsNotAMode(t *testing.T) {
 		{"mode then token", grokBorderModeThenToken},
 		{"empty suffix", grokBorderEmptySuffix},
 		{"near miss", grokBorderNearMiss},
+		{"trailing near miss", grokBorderTrailingNearMiss},
 	} {
 		m := ReadPaneMode(builtinPaneModeAdapter("grok"), c.pane)
 		if m.State == PaneModeNamed {
