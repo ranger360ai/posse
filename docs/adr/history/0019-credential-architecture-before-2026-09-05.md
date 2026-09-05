@@ -168,7 +168,7 @@ testing parent-process identity or returning a null code reopens the store.
 MEASURED in 0042: the runtime holds the mint while reads refuse, and the
 rendered exit set is pinned. ASSUMED: some failed writes relocate a token;
 the decision prevents reaching that path rather than claiming it was seen.
-[0002](0002-runtimes-and-gates.md) owns enforcement and its cooperative limit.
+[0002](../0002-runtimes-and-gates.md) owns enforcement and its cooperative limit.
 
 **2. The meter reads the store of record, per platform.** One provider
 ("runtime store"), platform adapters chosen by `runtime.GOOS` — no
