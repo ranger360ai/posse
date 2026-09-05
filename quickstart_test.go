@@ -917,6 +917,137 @@ func TestInstallMdStep2BrewRouteNamesTheTapAndTheSilentFailure(t *testing.T) {
 	}
 }
 
+// ranger-base-k247: §2's three commands are two on any Homebrew below 5.1.15,
+// where `brew trust` does not exist — brew.rb raises UsageError, prints its
+// generic help wall and dies `Error: Invalid usage: Unknown command: brew
+// trust` on step 2 of 3. The page explained why the trust line exists, what it
+// grants, and what happens if you SKIP it, but not the case where the command
+// is not there, and an "Invalid usage" mid-recipe reads as the recipe being
+// wrong. Measured against Homebrew's own history: Library/Homebrew/cmd/trust.rb
+// arrives in 5fbcad25e9 (2026-05-30), 5.1.15 is the first tag containing it,
+// and 5.1.14 carries no trust file at all — so below it there is nothing to
+// grant and the reader must be told to carry on to the install line.
+func TestInstallMdStep2CoversABrewWithNoTrustCommand(t *testing.T) {
+	contents, err := os.ReadFile("INSTALL.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	step2, err := installMdSection(string(contents), "## 2.", "## 3.")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := coversTheMissingTrustCommand(step2); err != nil {
+		t.Errorf("INSTALL.md §2: %v", err)
+	}
+}
+
+// The pin above is only as strong as what it rejects: each of these is a
+// §2 that still mentions the error and still leaves the reader stuck.
+func TestMissingTrustCommandPinRejectsTheHistoricalGaps(t *testing.T) {
+	contents, err := os.ReadFile("INSTALL.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	step2, err := installMdSection(string(contents), "## 2.", "## 3.")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := coversTheMissingTrustCommand(step2); err != nil {
+		t.Fatalf("shipped §2 must pass before its mutants are judged: %v", err)
+	}
+
+	para, err := paragraphContaining(step2, trustUnknownCommandErr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		name string
+		text string
+	}{
+		{
+			name: "the paragraph the bead was filed against (no coverage at all)",
+			text: strings.Replace(step2, para, "", 1),
+		},
+		{
+			name: "names the error but not which Homebrew (nothing to check yours against)",
+			text: strings.Replace(step2, para, strings.ReplaceAll(para, trustFirstShipsIn, "a recent release"), 1),
+		},
+		{
+			name: "names the error and the version but never says to carry on",
+			text: strings.Replace(step2, para, strings.ReplaceAll(para, trustUnknownCommandGo, "stop here"), 1),
+		},
+		{
+			name: "describes the failure without quoting the error the reader can grep",
+			text: strings.Replace(step2, para, strings.ReplaceAll(para, trustUnknownCommandErr, "an unknown-command error"), 1),
+		},
+		{
+			name: "answers the error above the command that produces it",
+			text: para + "\n\n" + strings.Replace(step2, para, "", 1),
+		},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := coversTheMissingTrustCommand(tt.text); err == nil {
+				t.Fatal("historical gap passed the pin")
+			}
+		})
+	}
+}
+
+const (
+	// The exact string a below-5.1.15 deployer can grep for, from
+	// brew.rb's `raise UsageError, "Unknown command: brew #{cmd}"`.
+	trustUnknownCommandErr = "Unknown command: brew trust"
+	trustFirstShipsIn      = "5.1.15"
+	trustUnknownCommandGo  = "continue to the install line"
+)
+
+// coversTheMissingTrustCommand reports whether a section tells a reader whose
+// brew has no `trust` command what they are looking at and what to do next:
+// the error verbatim, the version it disappears below, and the instruction to
+// keep going — all in one paragraph, and after the trust line that produced it.
+func coversTheMissingTrustCommand(section string) error {
+	para, err := paragraphContaining(section, trustUnknownCommandErr)
+	if err != nil {
+		return err
+	}
+	for _, want := range []string{trustFirstShipsIn, trustUnknownCommandGo} {
+		if !strings.Contains(para, want) {
+			return fmt.Errorf("the %q paragraph does not carry %q", trustUnknownCommandErr, want)
+		}
+	}
+	trustAt := strings.Index(section, brewTrustCmd)
+	if trustAt < 0 {
+		return fmt.Errorf("missing the trust line %q", brewTrustCmd)
+	}
+	if strings.Index(section, para) < trustAt {
+		return fmt.Errorf("the %q paragraph precedes the trust line that produces it", trustUnknownCommandErr)
+	}
+	return nil
+}
+
+// paragraphContaining returns the blank-line-delimited block of text holding
+// marker. Prose is pinned per paragraph so a sentence cannot satisfy a pin
+// with a fact stated three screens away.
+func paragraphContaining(text, marker string) (string, error) {
+	for _, para := range strings.Split(text, "\n\n") {
+		if strings.Contains(para, marker) {
+			return para, nil
+		}
+	}
+	return "", fmt.Errorf("no paragraph mentions %q", marker)
+}
+
+// installMdSection slices INSTALL.md between two headings.
+func installMdSection(text, from, to string) (string, error) {
+	start := strings.Index(text, from)
+	end := strings.Index(text, to)
+	if start < 0 || end < 0 || end <= start {
+		return "", fmt.Errorf("INSTALL.md missing %s / %s headings", from, to)
+	}
+	return text[start:end], nil
+}
+
 // ranger-base-n5i: INSTALL.md §1 pinned bd (0.49.1 at the time) and named herdr, but typed
 // no install command for either — so its own Verify died command-not-found on
 // a clean machine, and the runbook's "do not continue" rule stopped the

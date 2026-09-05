@@ -198,6 +198,15 @@ tap *is* refused. Run the trust line regardless: it is a no-op when it is
 not needed, and when it is needed it is the difference between installing
 and staring at an error.
 
+If brew answers `Error: Invalid usage: Unknown command: brew trust`, under a
+wall of unrelated `brew` help, **your Homebrew is older than 5.1.15** — that is
+the first release carrying tap trust at all (`Library/Homebrew/cmd/trust.rb`,
+added 2026-05-30), so on your brew there is no tap-trust mechanism and nothing
+to grant: `brew tap` plus `brew install` is the whole route. Run `brew update`
+if you want the current brew, and **continue to the install line either way**;
+a brew that old is also below the 6.0.14 in the version-scan paragraph further
+down, which is about the install line and states its own fix.
+
 If brew answers `Error: Failure while executing tap` or `Repository not
 found`, **the tap is not published yet** — it exists only once a release has
 been cut, and the error never says so. Nothing on your machine is broken and
