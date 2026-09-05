@@ -370,6 +370,18 @@ const launchStampSlack = DefaultRelaunchGrace / 3
 // deadPersonaSession so that the discriminator itself can be pinned
 // (TestQADeadPersonaSessionRefusesARecordThatDidNotTakeTheStamp): a guard
 // nobody has watched fail is a guard nobody has measured.
+//
+// BOTH SIDES, and the second one was added verifying this bead's close
+// (ranger-base-xk9ag). The guard shipped one-sided — it refused a record
+// reading OLDER than asked and accepted one reading YOUNGER — which leaves
+// the bead's own defect standing in the other direction and in this same
+// helper: with `age` an hour, a stamp that does not take reads as a session
+// launched now, walks past the guard, and lands as
+// TestDispatchRelaunchesDeadAgent's verdict ("want relaunch + dispatch, got
+// n=0"). Measured: with `m.Launched = time.Now()` in place of
+// `time.Now().Add(-age)` under `go test -overlay`, the one-sided guard let
+// exactly that through. A fixture that cannot be built must say so as a
+// fixture whichever way it drifted.
 func launchAgeIs(b *HerdrBackend, name string, want time.Duration) error {
 	m, ok := b.readMeta(name)
 	if !ok {
@@ -378,8 +390,18 @@ func launchAgeIs(b *HerdrBackend, name string, want time.Duration) error {
 	if m.Launched.IsZero() {
 		return fmt.Errorf("%s carries no launched: stamp, so every grace reads it as infinitely old", name)
 	}
-	if got := time.Since(m.Launched); got > want+launchStampSlack {
+	got := time.Since(m.Launched)
+	if got > want+launchStampSlack {
 		return fmt.Errorf("%s reads as launched %s ago, not %s — the stamp did not land, and the pass would relaunch into it", name, got.Round(time.Second), want)
+	}
+	// The young side has no slack to give: the read-back can only ever be
+	// LATER than the stamp, so a record younger than the age asked for is
+	// never the clock and always the write. Rounding is the one thing to
+	// allow for, and launchStampSlack is not needed for it — a record the
+	// caller asked to be an hour old that reads as seconds old is the
+	// inversion, not a rounding.
+	if want > 0 && got < want-launchStampSlack {
+		return fmt.Errorf("%s reads as launched %s ago, not %s — the stamp did not age, and the pass would decline to relaunch into it", name, got.Round(time.Second), want)
 	}
 	return nil
 }
@@ -387,13 +409,15 @@ func launchAgeIs(b *HerdrBackend, name string, want time.Duration) error {
 // ranger-base-5i4c: the fixture guard, shown failing.
 //
 // A guard that has only ever returned nil is a guard nobody has measured, so
-// the wrong arms here are the two ACTUAL corruptions: a record still reading
-// an hour old after the caller asked for a session launched this instant, and
-// a record carrying no stamp at all. What the pass then DOES with the first
-// of those is not asserted here, because it is already a test of its own —
+// the wrong arms here are the ACTUAL corruptions: a record still reading an
+// hour old after the caller asked for a session launched this instant, a
+// record carrying no stamp at all, and — added in ranger-base-xk9ag, which
+// found the guard one-sided — a record reading as launched NOW where an hour
+// was asked for. What the pass then DOES with the first of those is not
+// asserted here, because it is already a test of its own —
 // TestDispatchRelaunchesDeadAgent, whose fixture that is. That the two
-// fixtures are one write apart is exactly why the drift has to be caught
-// here and not at the verdict.
+// fixtures are one write apart, in EITHER direction, is exactly why the drift
+// has to be caught here and not at the verdict.
 func TestQADeadPersonaSessionRefusesARecordThatDidNotTakeTheStamp(t *testing.T) {
 	t.Parallel()
 	b, fake := newTestBackend(t)
@@ -459,6 +483,25 @@ func TestQADeadPersonaSessionRefusesARecordThatDidNotTakeTheStamp(t *testing.T) 
 	}
 	if err := launchAgeIs(b, session, time.Hour); err != nil {
 		t.Errorf("the hour-old fixture must be accepted when an hour is what was asked: %v", err)
+	}
+
+	// Wrong arm 3, the OTHER direction (ranger-base-xk9ag, verifying this
+	// bead's close). The aged stamp does not take, so a record the caller
+	// asked to be an hour old reads as a session launched now — which is
+	// TestDispatchRelaunchesDeadAgent's fixture inverted into the two grace
+	// tests' one, the same one write, the other way round. Left unguarded it
+	// is reported as "want relaunch + dispatch, got n=0", a verdict about the
+	// relaunch path, which is the class of lie this bead was filed about.
+	m.Launched = time.Now()
+	if err := b.writeMeta(m); err != nil {
+		t.Fatal(err)
+	}
+	err = launchAgeIs(b, session, time.Hour)
+	if err == nil {
+		t.Fatal("a record reading as launched NOW was accepted as an hour-old fixture — a stamp that does not age still reaches the verdict")
+	}
+	if !strings.Contains(err.Error(), "the stamp did not age") {
+		t.Errorf("the refusal must name the fixture, and name which way it drifted: %v", err)
 	}
 }
 
