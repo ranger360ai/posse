@@ -2,7 +2,11 @@
 
 *Status: accepted 2026-09-01 · owner: architect · extends ADR 0006 §3
 (closed means it is on main) and the settle-open shape (ranger-base-9hm)
-· from ranger-base-k77sk, on ranger-base-fyzqf's measured table*
+· from ranger-base-k77sk, on ranger-base-fyzqf's measured table ·
+amended 2026-09-05: §3's first arm is git's linked-worktree answer, not
+a path under the worktree root — the root is config the gate cannot read,
+and a fence keyed on it fails silent (ranger-base-nz23f, measured under
+ranger-base-3xgc7)*
 
 > ranger-base-yeg1 closed on 2026-08-30 naming four deliverables. Not one
 > was committed: the branch's reflog is a single "Created from main". The
@@ -87,14 +91,30 @@ scratch file and must not guess (§4 below).
 
 **3. A cooperative pre-close refusal in the session.** The bd argv gate
 (scripts/bd-argv-gate.py) refuses `bd close` when the call's cwd is
-inside a posse session worktree (`git rev-parse --show-toplevel` under
-the worktree root and the checked-out branch under `posse/`) whose
-`git status --porcelain` is non-empty. The refusal lists the paths and
-both resolutions. It never fires in the shared checkout — there the dirt
-belongs to other writers (ADR 0022) — and it is **cooperative** class
-(ADR 0025): `git checkout -- .` walks around it, and that is an explicit
-act by the one actor who knows whether the paths are work. §1–2 are the
-realized belt behind it, operator-side, under the launcher lock.
+inside a posse session worktree whose `git status --porcelain` is
+non-empty. A session worktree is two arms, both from git and both
+required: the tree is a **linked** worktree (`git rev-parse --git-dir`
+differs from `--git-common-dir`; in a main checkout they are one path,
+MEASURED 2026-09-05: `.git`/`.git` in ~/src/posse, the two absolute
+paths in a session tree) and the checked-out branch is under `posse/`
+(`symbolic-ref --short HEAD`; a detached HEAD has none and is silent).
+*Amended 2026-09-05 (ranger-base-nz23f): as accepted, the first arm
+read "`--show-toplevel` under the worktree root". The root is config
+(`worktrees:` in config.yaml, WorktreeRoot in worktree.go), and a gate
+that hardcoded the default would go quietly silent for every configured
+root — a false-negative class nobody sees, in a fence whose whole value
+is being seen. What the root arm was FOR is "a session tree, not the
+shared checkout", and linked-vs-main answers that for any root. The
+trade accepted: a hand-made linked worktree on a `posse/` branch,
+wherever it lives, now gets the refusal too. That is a visible false
+positive with a one-line walk-around, against an invisible false
+negative; a cooperative fence takes the visible one.* The refusal lists
+the paths and both resolutions. It never fires in the shared checkout —
+there the dirt belongs to other writers (ADR 0022) — and it is
+**cooperative** class (ADR 0025): `git checkout -- .` walks around it,
+and that is an explicit act by the one actor who knows whether the paths
+are work. §1–2 are the realized belt behind it, operator-side, under the
+launcher lock.
 
 **4. Two things the launcher does not do.** It does not reopen the bead
 (the close is the persona's write in the store of record; a harness
@@ -154,6 +174,19 @@ alone.
   bd hooks are L1-denied crew-wide and would fire in the shared checkout
   on other writers' dirt; interception has no seam — posse observes the
   close, it does not mediate it. The realized layer is §1–2.
+- **Keep §3's root test by reading the root** (priced at the 2026-09-05
+  amendment). From config: the gate is a PreToolUse hook that must answer
+  in milliseconds and carries no YAML reader; shelling to `posse` for it
+  puts a second binary, its config resolution and its failure modes in
+  front of every `bd close`, to reproduce an answer git already gives.
+  From a launcher-exported tree path: MEASURED 2026-09-05, the seat env
+  carries no such variable (POSSE_PERSONA_DIR is the only POSSE_ export
+  in herdrback.go/runtimeprobe.go), so this is a new launcher-to-gate
+  contract; and it would be exact only for the dispatched seat, silent
+  for the crew seat, which is the same shape the branch arm already
+  gives for free. Both buy back one false positive — the hand-made
+  linked tree on a `posse/` branch — that costs its owner a `git
+  checkout -- .`.
 
 ## Verification
 
@@ -175,4 +208,9 @@ alone.
 4. §3 probe (probe the gate directly, as bdargvgate_qa_test.go does):
    `bd close x` with cwd a dirty session worktree → deny JSON naming the
    path; cwd the shared checkout, dirty → silence; cwd a clean session
-   worktree → silence.
+   worktree → silence. And the amended arm's own row (ranger-base-3xgc7):
+   cwd a dirty MAIN checkout whose branch is under `posse/` → silence,
+   the only row that kills the linked arm without the branch arm
+   catching it. Mutation: drop the git-dir/common-dir comparison → that
+   row denies, red; drop the `posse/` prefix → a dirty linked tree on
+   `feature/…` denies, red.
