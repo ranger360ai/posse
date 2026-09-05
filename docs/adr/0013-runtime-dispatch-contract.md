@@ -354,7 +354,7 @@ most the tail of one pass.
 
 ### 3. Plan guard — the meter gates the beads that spend it
 
-The sole guard truth table is [ADR 0010 §5](0010-plan-guard-overflow.md).
+The sole guard truth table is [ADR 0010 guard decision](0010-plan-guard-overflow.md).
 Membership remains `OnGuardedMeter`: the default/guarded runtime and unknown
 template runtimes are on-meter; other known built-ins spend their own pools.
 This is the current code predicate, not a new YAML declaration. Off-meter
@@ -601,7 +601,7 @@ price it:
 
 - every pass names how many launches it sent there;
 - config `uncounted_cap_<runtime>:` (beads / rolling 7 days, same shape
-  as ADR 0010's overflow cap) is the brake; **unset = unlimited and
+  as the historical overflow count) is the brake; **unset = unlimited and
   loud**, the budget_* dormancy pattern;
 - registering an adapter that *prices* (0012 D4) is how a runtime
   *leaves* this column; registering one that only reads is not — keying
@@ -620,7 +620,7 @@ No autonomous spending: the cap is a count of beads posse itself
 launched, not a bill.
 
 *(2026-09-02, ranger-base-ws09)* The ledger's WRITABILITY is half of the
-cap's reading, the rule ADR 0010 §3 already took for `overflow.log`
+cap's reading, first recorded for the historical `overflow.log`
 (ranger-base-2y96). `uncounted.log` asked only whether it could be READ,
 so a readable-but-unwritable one counted every pass at whatever it
 already said — cap 1 over an empty `0444` ledger admitted one launch per
@@ -644,7 +644,7 @@ map a tier **does not wear it**:
   `<runtime>/strong`;
 - PID `tier: strong` on an unmapped runtime is a `posse agent check` /
   `runtime check` warning, not a quality guarantee;
-- dispatch's own overflow still never moves `strong` (ADR 0010 §2b);
+- automatic overflow removal is decided solely by ADR 0010; availability-driven substitution removal by ADR 0003;
 - an explicit `--runtime` the operator typed is their decision and
   launches.
 
@@ -656,10 +656,7 @@ declared runtime rather than on whichever built-in happened to be blank,
 which is how a rule about the map stops being tested the day somebody
 fills that map in.
 
-Availability preflight is per cost/plan adapter — as shipped, the
-predicate is the runtime's `egress:` naming the catalog host
-(`anthropicAPI`, `modelavail.go`; ranger-base-lzx), not the adapter
-table. No catalog → no preflight. Dead-on-arrival (allotment message, one assistant turn, idle)
+Availability is advisory under [ADR 0003](0003-model-tiering.md); its catalog lease and approved substitution removal are not separately defined here. The currently running `egress:`/catalog-host selection is transition code, pending that removal task. Dead-on-arrival (allotment message, one assistant turn, idle)
 is a **turn outcome**, not a catalog miss (ranger-base-1cc shipped the
 detection half; ranger-base-02zr keyed it on `turn_outcome:` instead of
 the runtime's name). A runtime without that probe launches what it was
@@ -854,7 +851,7 @@ rule-to-flag compilers, and an inference client inside dispatch.
   than a vocabulary split.
 - **Per-pool budget model** (ADR 0010 already rejected). Still no
   meters to feed it. `uncounted_cap_` is the substitute in beads, same
-  as overflow's cap, dormant when unset.
+  as the historical overflow count, dormant when unset.
 - **`{prompt}` in the closed placeholder set.** Unrendered, it is a
   literal argument to the CLI. Append-on-dispatch does not touch PID
   `command:` templates.
