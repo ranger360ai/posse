@@ -76,11 +76,17 @@ package posse
 // — is a finding about bd in DATABASE mode. None of them holds when bd is in
 // no-db mode, and no-db is a MODE rather than a class: `no-db: true` in the
 // store's config.yaml is one door, `--no-db` on the command line is another,
-// and posse opens that one itself on every caged session (CageBdFlags,
-// cageinner.go), over whatever class the store happens to be. So at the
-// container tier the fork is the shipped configuration, not an accident of
-// how somebody's `bd init` went. TestLiveWorktreeNoDbStoreForksTheGraph runs
-// both doors.
+// and posse opens that one itself at the CONTAINER tier and only there
+// (CageBdFlags, written onto the inner PATH by renderCageBd, whose one
+// non-test call site is the container inner render in cageinner.go), over
+// whatever class the store happens to be. So at that tier the fork is the
+// shipped configuration, not an accident of how somebody's `bd init` went.
+// NOT "every caged session", which this paragraph used to say
+// (ranger-base-zt61m, escaped from ranger-base-43ux4 into the very file that
+// is the live pin for the claim): a `cage: seatbelt` seat's `bd` is the
+// rendered gate shim, which carries no `--no-db` at all — measured from
+// inside a seatbelt seat, `grep -c no-db $RHQ_GATES_DIR/bin/bd` -> 0.
+// TestLiveWorktreeNoDbStoreForksTheGraph runs both doors.
 //
 // What closes it is the launch ENVIRONMENT and not this file: every session
 // posse launches carries `BEADS_DIR=beadsHome(dir)` (planLaunch,
@@ -141,8 +147,25 @@ func liveBd(t *testing.T) func(dir string, args ...string) (string, error) {
 // ADR 0055 D5 onward the environment is the subject: `BEADS_DIR` is the whole
 // difference between an arm where the graph forks and an arm where it does
 // not, so a runner that cannot vary it cannot ask the question. Appended
-// LAST, so it beats whatever `os.Environ` carried in — the same precedence
-// planLaunch gives it over the env sets (herdrback.go).
+// LAST, so it beats whatever the inherited set carried in — the same
+// precedence planLaunch gives it over the env sets (herdrback.go).
+//
+// And SHED from the inherited set rather than merely overridden by the arms
+// that want it (ranger-base-zt61m, escaped from ranger-base-e3ima): an arm
+// that hands in `env == nil` is a SHED arm — cell A of each door below is
+// named "no BEADS_DIR" and is the arm that has to be able to fail for cell B
+// to say anything — and appending to a bare `os.Environ()` made it "whatever
+// this session already had" instead. That is not a hypothetical inheritance:
+// ADR 0055 D1 is the decision that EVERY posse-launched session carries the
+// variable, so the sessions these pins run in are exactly the ones that have
+// it. Measured 2026-09-04 at 63d44db, before this line: with `BEADS_DIR` set
+// to a scratch store, both doors of TestLiveWorktreeNoDbStoreForksTheGraph
+// went red, and not only in cell A — the fixture's own plain `bd` calls
+// diverted too, so its seed row "in the main checkout" was written into the
+// scratch store and the failure named `git commit ... nothing to commit`
+// rather than the environment. It fails CLOSED either way, which is why this
+// is debt and not a bug; a red that names the wrong cause is still a red an
+// operator spends the evening on.
 //
 // The value handed in is always `beadsHome(<the session tree>)`, never a path
 // typed at the call site: that is what planLaunch computes, and a literal
@@ -170,7 +193,7 @@ func liveBdEnv(t *testing.T) func(env []string, dir string, args ...string) (str
 	return func(env []string, dir string, args ...string) (string, error) {
 		cmd := exec.Command("bd", append([]string{"--no-daemon"}, args...)...)
 		cmd.Dir = dir
-		cmd.Env = append(append(os.Environ(), "PATH="+PathOutsideGates("")), env...)
+		cmd.Env = append(append(shedBeadsDir(os.Environ()), "PATH="+PathOutsideGates("")), env...)
 		out, err := cmd.CombinedOutput()
 		return string(out), err
 	}
@@ -553,11 +576,13 @@ func misdirect(t *testing.T, tree, target string) {
 // NO-DB IS A MODE, NOT A CLASS, which is why this pin has two doors and not
 // one. `no-db: true` in the store's config.yaml is the door the bead was
 // filed about; `--no-db` on the command line is the door POSSE OPENS ITSELF,
-// on every caged session (CageBdFlags, cageinner.go), over whatever class the
-// store happens to be — so at the container tier the fork is the shipped
-// configuration and not a store-class accident. Both doors are driven below
-// over their own fixture: the first over a `bd init --no-db` store, the
-// second over the SQLite store every other pin in this file uses.
+// at the CONTAINER tier and only there (CageBdFlags, cageinner.go; a
+// `cage: seatbelt` seat's `bd` is the rendered gate shim and carries no
+// `--no-db` — ranger-base-zt61m), over whatever class the store happens to
+// be — so at that tier the fork is the shipped configuration and not a
+// store-class accident. Both doors are driven below over their own fixture:
+// the first over a `bd init --no-db` store, the second over the SQLite store
+// every other pin in this file uses.
 //
 // And two arms per door, which is the point of the pin rather than a
 // courtesy. The first arm is the fork, and it is what makes the second one
@@ -577,10 +602,12 @@ func misdirect(t *testing.T, tree, target string) {
 //
 // So what posse fixed is the LAUNCH, not this: bd's resolution is unchanged,
 // and a `bd` run with the variable shed (`env -u BEADS_DIR`, `env -i`) forks
-// exactly as the first arm of each door does. If the first arm ever goes
-// red, bd has started honouring the redirect in no-db mode too — that is bd
-// fixing it, and this header and worktree.go's note should then say the mode
-// no longer matters.
+// exactly as the first arm of each door does — that first arm IS a shed arm,
+// and liveBdEnv drops `BEADS_DIR` from the inherited environment to make it
+// one whatever the session running this test carries (ranger-base-zt61m).
+// If the first arm ever goes red, bd has started honouring the redirect in
+// no-db mode too — that is bd fixing it, and this header and worktree.go's
+// note should then say the mode no longer matters.
 func TestLiveWorktreeNoDbStoreForksTheGraph(t *testing.T) {
 	t.Parallel()
 	for _, door := range []struct {
@@ -638,8 +665,10 @@ func TestLiveWorktreeNoDbStoreForksTheGraph(t *testing.T) {
 			mainJSONL := filepath.Join(repo, ".beads", "issues.jsonl")
 			treeJSONL := filepath.Join(tr.Path, ".beads", "issues.jsonl")
 
-			// ── cell A: no BEADS_DIR. The write forks, and this is the arm
-			// that has to be able to fail for cell B to say anything.
+			// ── cell A: no BEADS_DIR — the SHED arm, and liveBdEnv is what
+			// sheds it (a bare os.Environ() would hand this arm the very
+			// variable it is named for). The write forks, and this is the
+			// arm that has to be able to fail for cell B to say anything.
 			if out, err := through(nil, tr.Path, "create", "forked from the worktree", "-t", "task"); err != nil {
 				t.Fatalf("bd create in the worktree: %v %s", err, out)
 			}
@@ -679,6 +708,21 @@ func TestLiveWorktreeNoDbStoreForksTheGraph(t *testing.T) {
 			}
 		})
 	}
+}
+
+// shedBeadsDir drops `BEADS_DIR` from an inherited environment. It is the one
+// variable every pin in this file is about, so the arms that do not name it
+// have to be arms where it is ABSENT rather than arms where it was not
+// mentioned — see liveBdEnv above for what that cost when it was missing.
+func shedBeadsDir(env []string) []string {
+	out := make([]string, 0, len(env)+2)
+	for _, kv := range env {
+		if strings.HasPrefix(kv, "BEADS_DIR=") {
+			continue
+		}
+		out = append(out, kv)
+	}
+	return out
 }
 
 // readFileString is the jsonl half of the cells above: a missing file is a

@@ -21,6 +21,11 @@ package posse
 // the budget has to clear it several times over.
 
 import (
+	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"go/types"
 	"os"
 	"regexp"
 	"strconv"
@@ -101,24 +106,178 @@ func TestQAHintWaitsUseTheNamedBudget(t *testing.T) {
 	// first declaration leaves the second one exempt and unmeasured — a
 	// thirty-second wait wearing the exempt name, green. The fence has to
 	// cover the same set the exemption opens.
-	unit := map[string]time.Duration{
-		"Millisecond": time.Millisecond, "Second": time.Second, "Minute": time.Minute,
+	//
+	// PARSED and not matched (ranger-base-zt61m, escaped from
+	// ranger-base-43ux4): FindAll reached every declaration written in ONE
+	// spelling — `stormWindow = <int> * time.(Millisecond|Second|Minute)` —
+	// while the exemption keys on the NAME. Three ordinary Go spellings sat
+	// outside that pattern and inside the exemption, each measured green at
+	// 63d44db: `stormWindow := 30 * time.Second` (the idiomatic spelling for
+	// a duration local, and the one the pattern cannot reach at all), `const
+	// stormWindow = 1 * time.Hour`, `const stormWindow = time.Minute`.
+	// Keeping a pattern in step with a name by hand is two rules that have to
+	// agree; reading the value bound to the identifier is one rule, and it is
+	// the exemption's own.
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "herdrevents_test.go", src, 0)
+	if err != nil {
+		t.Fatalf("parse herdrevents_test.go: %v", err)
 	}
-	decls := regexp.MustCompile(`stormWindow\s*=\s*(\d+)\s*\*\s*time\.(Millisecond|Second|Minute)`).FindAllStringSubmatch(string(src), -1)
-	if decls == nil {
+	decls := 0
+	ast.Inspect(file, func(n ast.Node) bool {
+		switch d := n.(type) {
+		case *ast.ValueSpec: // `const stormWindow = ...`, `var stormWindow = ...`
+			for i, name := range d.Names {
+				if name.Name != "stormWindow" {
+					continue
+				}
+				decls++
+				if i >= len(d.Values) {
+					t.Errorf("%s: stormWindow is declared with no value of its own (an iota or a grouped spec), "+
+						"which this fence cannot read — the exemption admits the name however it is bound",
+						stormWindowAt(fset, name.Pos()))
+					continue
+				}
+				stormWindowUnderASecond(t, fset, d.Values[i])
+			}
+		case *ast.AssignStmt: // `stormWindow := ...`, `stormWindow = ...`
+			for i, lhs := range d.Lhs {
+				id, ok := lhs.(*ast.Ident)
+				if !ok || id.Name != "stormWindow" {
+					continue
+				}
+				decls++
+				if len(d.Rhs) != len(d.Lhs) {
+					t.Errorf("%s: stormWindow is bound by a multi-value assignment, which this fence cannot read — "+
+						"the exemption admits the name however it is bound", stormWindowAt(fset, id.Pos()))
+					continue
+				}
+				stormWindowUnderASecond(t, fset, d.Rhs[i])
+			}
+		case *ast.Field: // a parameter, a result or a struct field
+			for _, name := range d.Names {
+				if name.Name != "stormWindow" {
+					continue
+				}
+				decls++
+				t.Errorf("%s: stormWindow is bound as a parameter or a field, whose value is chosen "+
+					"somewhere this fence does not read — the exemption above admits the NAME, so a "+
+					"caller could spend a minute through it and nothing here would say so. Take a "+
+					"`time.Duration` under another name, or declare the window as a constant",
+					stormWindowAt(fset, name.Pos()))
+			}
+		case *ast.RangeStmt: // `for stormWindow := range ...`
+			for _, key := range []ast.Expr{d.Key, d.Value} {
+				if id, ok := key.(*ast.Ident); ok && id.Name == "stormWindow" {
+					decls++
+					t.Errorf("%s: stormWindow is bound by a range, whose value this fence cannot read — "+
+						"the exemption admits the name however it is bound", stormWindowAt(fset, id.Pos()))
+				}
+			}
+		}
+		return true
+	})
+	if decls == 0 {
 		t.Fatal("stormWindow is exempted from the named budget but herdrevents_test.go does not declare it")
 	}
-	for _, decl := range decls {
-		n, _ := strconv.Atoi(decl[1])
-		// `>=` and not `>`: the doc comment above and this message both say
-		// "under a second" / "a second or longer", and an exemption fence that
-		// admits the first value it forbids is not a fence (ranger-base-0b0qg).
-		if got := time.Duration(n) * unit[decl[2]]; got >= time.Second {
-			t.Errorf("stormWindow is declared %s (%s): the exemption is for a window a test COUNTS in, "+
-				"and anything a second or longer is patience wearing its name — spend hintWait",
-				got, strings.TrimSpace(decl[0]))
+}
+
+// stormWindowAt names a line of the file under census, the way the sibling QA
+// tests in this package do.
+func stormWindowAt(fset *token.FileSet, p token.Pos) string {
+	return fmt.Sprintf("herdrevents_test.go:%d", fset.Position(p).Line)
+}
+
+// stormWindowUnderASecond holds one binding of the exempt name under a second.
+// It fails CLOSED on an expression it cannot read: the exemption admits the
+// name whatever it is bound to, so a value this fence cannot evaluate is a
+// failure here and not a skip — reading the unreadable as zero is the widening
+// the parse replaced the pattern for.
+func stormWindowUnderASecond(t *testing.T, fset *token.FileSet, expr ast.Expr) {
+	t.Helper()
+	got, ok := constDuration(expr)
+	if !ok {
+		t.Errorf("%s: stormWindow is bound to `%s`, which this fence cannot read as a duration constant — "+
+			"spell it as one (an integer, a `time.<Unit>`, or a product of those) or take the name out of "+
+			"the exemption above", stormWindowAt(fset, expr.Pos()), types.ExprString(expr))
+		return
+	}
+	// `>=` and not `>`: the doc comment above and this message both say
+	// "under a second" / "a second or longer", and an exemption fence that
+	// admits the first value it forbids is not a fence (ranger-base-0b0qg).
+	if got >= time.Second {
+		t.Errorf("%s: stormWindow is declared %s (`%s`): the exemption is for a window a test COUNTS in, "+
+			"and anything a second or longer is patience wearing its name — spend hintWait",
+			stormWindowAt(fset, expr.Pos()), got, types.ExprString(expr))
+	}
+}
+
+// timeDurationUnits is every unit `time` names, and not only the three
+// herdrevents_test.go happens to use today: the fence covers the set the
+// exemption opens, and the exemption opens the name.
+var timeDurationUnits = map[string]time.Duration{
+	"Nanosecond":  time.Nanosecond,
+	"Microsecond": time.Microsecond,
+	"Millisecond": time.Millisecond,
+	"Second":      time.Second,
+	"Minute":      time.Minute,
+	"Hour":        time.Hour,
+}
+
+// constDuration evaluates the shapes a duration constant is written in: an
+// integer literal, a `time.<Unit>`, `time.Duration(x)`, parentheses, and
+// arithmetic over those. Anything else — an identifier from elsewhere in the
+// file, a function call — answers false, and the caller reports it.
+func constDuration(expr ast.Expr) (time.Duration, bool) {
+	switch e := expr.(type) {
+	case *ast.ParenExpr:
+		return constDuration(e.X)
+	case *ast.BasicLit:
+		if e.Kind != token.INT {
+			return 0, false
+		}
+		n, err := strconv.ParseInt(e.Value, 0, 64)
+		if err != nil {
+			return 0, false
+		}
+		return time.Duration(n), true
+	case *ast.SelectorExpr: // `time.Second`
+		pkg, ok := e.X.(*ast.Ident)
+		if !ok || pkg.Name != "time" {
+			return 0, false
+		}
+		d, ok := timeDurationUnits[e.Sel.Name]
+		return d, ok
+	case *ast.CallExpr: // `time.Duration(x)`
+		sel, ok := e.Fun.(*ast.SelectorExpr)
+		if !ok || len(e.Args) != 1 {
+			return 0, false
+		}
+		if pkg, ok := sel.X.(*ast.Ident); !ok || pkg.Name != "time" || sel.Sel.Name != "Duration" {
+			return 0, false
+		}
+		return constDuration(e.Args[0])
+	case *ast.BinaryExpr:
+		x, okx := constDuration(e.X)
+		y, oky := constDuration(e.Y)
+		if !okx || !oky {
+			return 0, false
+		}
+		switch e.Op {
+		case token.MUL:
+			return x * y, true
+		case token.ADD:
+			return x + y, true
+		case token.SUB:
+			return x - y, true
+		case token.QUO:
+			if y == 0 {
+				return 0, false
+			}
+			return x / y, true
 		}
 	}
+	return 0, false
 }
 
 // The redial floor's ceiling, the herdrHintRetry check above in the shape it
