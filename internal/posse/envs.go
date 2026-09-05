@@ -212,3 +212,41 @@ func (a *App) DeleteEnvSet(name string) error {
 	}
 	return os.Remove(f)
 }
+
+// LaunchEnvSets is the env set NAMES a launch realizes, in launch order:
+// the explicit ones (`--env-file`, recipe `env_files`) always, then the
+// persona's own `envs:` on top, and config `default_env` only for a
+// persona-less caller that named none — an env set is readable by the agent
+// in a session (and by every tool it runs), so what an autonomous persona
+// receives must be an explicit choice and never a silent default
+// (rangerhq-f2b).
+//
+// Hoisted out of planLaunch (which is still one of its two callers) because
+// the ADR 0019 seam's session half now reads those same files, and the
+// probe's credential is only "the mint this launch is about to hand the
+// session" (ADR 0039 D3d as amended) if both sides select the sets by ONE
+// rule. Two copies of this block would drift the day `default_env` or the
+// dedupe changes, and the drift would be silent: the probe would read a
+// different account's mint than the launch exports and nothing would say so.
+//
+// NAMES only. The values are read where they are used — by the launch for
+// `vars`, by the seam at the moment of the probe (ADR 0039's rejected
+// alternative q3n4e c: hoisting the names costs nothing, hoisting the values
+// reads every set on every launch to feed a read that happens once a lease).
+//
+// A nil *App has no home to find a `default_env` under and answers with the
+// explicit list alone, for the same reason the seam takes a nil receiver:
+// "no home" is an answer here, not a panic.
+func (a *App) LaunchEnvSets(explicit []string, ag *AgentFile) []string {
+	envs := append([]string(nil), explicit...)
+	if ag != nil {
+		envs = append(envs, ag.Envs...)
+	} else if len(envs) == 0 && a != nil {
+		if defenv := a.CfgGet("default_env", ""); defenv != "" {
+			if _, err := os.Stat(filepath.Join(a.EnvsDir, defenv+".env")); err == nil {
+				envs = []string{defenv}
+			}
+		}
+	}
+	return dedupeStrings(envs)
+}

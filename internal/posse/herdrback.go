@@ -2395,22 +2395,13 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 	}
 
 	// Env sets: explicit ones (--env-file, recipe env_files) always; the
-	// persona's own `envs:` list on top for persona sessions. Config
-	// default_env is applied only to sessions without a persona — an env
-	// set is readable by the agent in that session (and by every tool it
-	// runs), so what an autonomous persona receives must be an explicit
-	// choice, never a silent default (rangerhq-f2b).
-	envs := append([]string(nil), o.Envs...)
-	if ag != nil {
-		envs = append(envs, ag.Envs...)
-	} else if len(envs) == 0 {
-		if defenv := a.CfgGet("default_env", ""); defenv != "" {
-			if _, err := os.Stat(filepath.Join(a.EnvsDir, defenv+".env")); err == nil {
-				envs = []string{defenv}
-			}
-		}
-	}
-	envs = dedupeStrings(envs)
+	// persona's own `envs:` list on top for persona sessions; config
+	// default_env only for a session without a persona. The rule itself
+	// lives in LaunchEnvSets (envs.go) because the ADR 0019 seam selects
+	// the same sets by the same rule when it reads the session credential
+	// this launch is about to export (ADR 0039 D3d as amended) — two copies
+	// would drift silently.
+	envs := a.LaunchEnvSets(o.Envs, ag)
 	var vars []EnvVar
 	for _, n := range envs {
 		vs, err := a.EnvSetVars(n)

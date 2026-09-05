@@ -211,17 +211,19 @@ func (a *App) CredReport(o RefreshOpts) []CredRow {
 	return rows
 }
 
-// sessionRows reports the session credential from the ENV SETS ON DISK, not
-// from this process's environment. The seam's session read looks at the
-// environment because that is where a launched session's credential is; the
-// operator's shell has none, and the question they are asking is about the
-// files (credential.go's readSessionCredential names this file as the place
-// that answers the on-disk half).
+// sessionRows reports the session credential from the ENV SETS ON DISK,
+// which since 2026-09-05 is the only place ANY posse surface reads it from:
+// the seam's process-environment arm was retracted (ADR 0039 D3d as
+// amended, ranger-base-q3n4e), so this report and credential.go's
+// readSessionCredential now open the same files. They differ in WHICH: the
+// seam reads the sets one launch names, in order, and answers with one
+// value; the report reads them all and answers with every row.
 //
 // One row per env set that holds it, because two sets holding the same
-// variable is a fact worth seeing rather than a tie to break silently — the
-// PID's `envs:` order decides which one a launch gets, and posse's report is
-// not the place to guess at that.
+// variable is a fact worth seeing rather than a tie to break silently. The
+// launch list's order decides which one a launch gets — the report is still
+// not the place to guess at that, because it is not the surface that knows
+// whose launch is being asked about.
 func (a *App) sessionRows(rt *Runtime, now time.Time) []CredRow {
 	key := CageCredential(rt)
 	if key == "" {

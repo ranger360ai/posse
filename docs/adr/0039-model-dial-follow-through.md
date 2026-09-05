@@ -373,10 +373,15 @@ only inside its lease.**
    decides whether the ruling worked; a green 6 without a green 7 is the
    old state with a new sentence.
 8. (D3d as amended, measure once) Two `--env` flags of one name on a
-   pane's create: which value the pane holds. The ruling ASSUMES the
-   last, as posse's own `readStamps` does within a file; the code bead
-   records the answer and, if it is the first, the helper's rule flips
-   with it.
+   pane's create: which value the pane holds. ANSWERED 2026-09-05
+   (ranger-base-abgil, herdr 0.8.2 on this box): the LAST wins, so the
+   ruling's assumption holds and the helper's rule does not flip. Two arms,
+   because one arm of a positional claim measures nothing: `--env D=FIRST
+   --env D=SECOND` gave the pane `SECOND`, and the same pair reversed gave
+   it `FIRST`. The dump carried exactly one assignment of the name each
+   time, never both. Controls in the same reading: a name passed ONCE was
+   present, and a name never passed was absent — so the reading can report
+   an absence and a "present" one is not an artifact of how it was read.
 
 ## Measured versus assumed
 
@@ -397,5 +402,5 @@ only inside its lease.**
 | the D3d build is landed | MEASURED — `ModelLister` carries a `Fallback` field at this HEAD (ranger-base-8bp2j replayed ranger-base-mvrke's commit past this amendment). It was unlanded when the amendment above was written, which is what that paragraph's landing-order note is about |
 | a seatbelt seat can read an env set's value | MEASURED — ranger-base-au0o4 ran its probe from one on the default set |
 | the two sets holding the name hold one account's mint | ASSUMED — both 108 bytes, values deliberately uncompared; a shared reading across personas already assumed one account before this ruling |
-| the last `--env` of one name wins in the pane | ASSUMED — posse's own in-file rule (`readStamps`); V8 measures the pane's |
+| the last `--env` of one name wins in the pane | MEASURED — V8, 2026-09-05, herdr 0.8.2: `FIRST` then `SECOND` gave the pane `SECOND`; reversed it gave `FIRST`; one assignment of the name in the pane's environment either way, with a passed-once and a never-passed control |
 | no session on any instance needs to write `runtimes/` | ASSUMED — no code writer; a hand edit at the home is exactly what D2 ends |

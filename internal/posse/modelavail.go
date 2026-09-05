@@ -183,8 +183,10 @@ func (r *ModelLister) List() ([]string, error) {
 	tok, _, err := r.Token()
 	// ABSENCE, the first of the two ways the preferred credential does not
 	// answer: no variable is decided for this runtime (*NoSource), or the
-	// one that is decided is not in this process's environment. Nothing has
-	// been asked of the endpoint yet, so this fallback costs no request.
+	// one that is decided is carried by none of the env sets this read
+	// names (ADR 0039 D3d as amended — the files under the home, never this
+	// process's environment). Nothing has been asked of the endpoint yet,
+	// so this fallback costs no request.
 	fellBack := false
 	if r.Fallback != nil && (err != nil || tok == "") {
 		tok, _, err = r.Fallback()

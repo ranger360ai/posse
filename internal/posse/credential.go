@@ -158,24 +158,28 @@ func NoSourceReason(err error) *NoSource {
 // (ADR 0019 D1); a vault, when it is priced (ranger-base-epz8), is a third
 // answer to this call and not a second migration.
 //
-// It hangs off *App for one reason: the session half's expiry lives in the
-// env sets under the posse home, and a seam that cannot find the home
-// returns a permanently zero ExpiresAt for half the credentials it serves
-// (ADR 0019 V5's round-trip, left open by ranger-base-h207 and closed by
-// ranger-base-k6ha). The meter half needs no home and keeps its own
-// home-free entry points below.
+// It hangs off *App because the session half IS the home: its store is the
+// env sets under it and so is the expiry stamp beside each value (ADR 0019
+// V5's round-trip, left open by ranger-base-h207 and closed by
+// ranger-base-k6ha; the store itself became the home's when ADR 0039 D3d was
+// amended). The meter half needs no home and keeps its own home-free entry
+// points below.
 //
-// A nil *App is a legal receiver here — the stamp lookup answers "cannot
-// tell" without a home rather than panicking, because "no expiry known" is
-// already a first-class answer and a seam is not the place to acquire a new
-// way to crash.
+// A nil *App is a legal receiver here — a seam is not the place to acquire a
+// new way to crash. What it answers is the refusal, not a value: a caller
+// with no home has no session store to open, and saying so is the honest
+// form of "cannot tell" now that the store is a directory rather than an
+// environment that every process has.
 func (a *App) ReadCredential(rt *Runtime, p CredPurpose) (string, CredMeta, error) {
 	if rt == nil {
 		return "", CredMeta{}, Die("credential read: no runtime named")
 	}
 	switch p {
 	case CredSession:
-		return a.readSessionCredential(rt)
+		// The persona-less list — the cockpit's (`posse runtimes`, `posse
+		// gates`) and every caller that is not a launch. A caller that IS
+		// one names its sets: ReadSessionCredentialFrom.
+		return a.readSessionCredential(rt, a.LaunchEnvSets(nil, nil))
 	case CredMeter:
 		return readMeterCredential(rt.Name)
 	}
@@ -222,15 +226,47 @@ func MeterUnavailable(rt string) error {
 
 // ─── the session credential: an operator's mint, in an env set ───────────────
 
-// readSessionCredential wraps the env-set lookup that already exists
-// (CageCredential, ADR 0002 §4 / rangerhq-kiz) — behaviour unchanged, one
-// caller more. The value comes from THIS process's environment, which is
-// where the launch realized the PID's `envs:`.
+// ReadSessionCredentialFrom is the seam's session half for a caller that
+// knows which env sets its launch realizes — `TierPreflight` handing the
+// catalog probe the mint THIS launch is about to export (ADR 0039 D3d as
+// amended, ranger-base-q3n4e). `ReadCredential(rt, CredSession)` is the same
+// read with the persona-less list, and both land on one reader below.
+//
+// sets are set NAMES in launch order, as LaunchEnvSets computes them.
+func (a *App) ReadSessionCredentialFrom(rt *Runtime, sets []string) (string, CredMeta, error) {
+	if rt == nil {
+		return "", CredMeta{}, Die("credential read: no runtime named")
+	}
+	return a.readSessionCredential(rt, sets)
+}
+
+// readSessionCredential reads the operator's mint out of the env set FILES
+// under the home — the store of record ADR 0019 D1 already names — and
+// never out of this process's environment.
+//
+// The environment arm was retracted 2026-09-05 (ADR 0039 D3d as amended, on
+// ranger-base-q3n4e), and retracted rather than kept beside the file. It
+// read true and answered nothing: the only process that ever holds this
+// value in its environment is a launched RUNTIME, which scrubs it from its
+// children, and every posse surface that asks the question — `sessionRows`,
+// `ExpiringCredentials`, `sessionExpiry`, and now the catalog probe — is a
+// posse process. MEASURED on this instance: the mint sits in two env sets
+// under the home, a dispatched session carries sibling variables of the same
+// set, and the mint itself is absent from `os.Environ` entirely. An arm no
+// caller can satisfy is not a second store.
+//
+// WHICH set: the caller's, in launch order, and the value is the LAST
+// assignment of the name across that list. That is the rule `readStamps`
+// already ascribes to a launch WITHIN one file ("the last one is the value a
+// launch ends up exporting"), extended across the files one launch reads in
+// order — so the seam answers with the value the launch's own `vars` loop
+// would end up exporting, which is the whole point of preferring it.
 //
 // The expiry comes from the `# expires=` stamp `posse refresh` wrote beside
-// the variable in the env set the launch read it out of (ADR 0019 V5). No
-// stamp is the zero time, which is "cannot tell" and warns nothing.
-func (a *App) readSessionCredential(rt *Runtime) (string, CredMeta, error) {
+// the variable (ADR 0019 V5), matched on the VALUE by sessionExpiry — the
+// same source as before, unchanged. No stamp is the zero time, which is
+// "cannot tell" and warns nothing.
+func (a *App) readSessionCredential(rt *Runtime, sets []string) (string, CredMeta, error) {
 	name := CageCredential(rt)
 	if name == "" {
 		return "", CredMeta{}, &NoSource{
@@ -239,11 +275,63 @@ func (a *App) readSessionCredential(rt *Runtime) (string, CredMeta, error) {
 			Arm:   "codex and grok keep plain auth.json files and rangerhq-kiz left their container shape open; decide it (cage_cred: names one for a template-only runtime)",
 		}
 	}
-	v := os.Getenv(name)
+	v, set := a.lastEnvAssignment(name, sets)
 	if v == "" {
-		return "", CredMeta{}, Die("%s names this runtime's session credential and it is not in this process's environment — mint it once with `claude setup-token`, put it in an env set (mode 600, never in the repo), and name that set in the PID's envs:", name)
+		return "", CredMeta{}, Die("%s names this runtime's session credential and it is in %s — mint it once with `claude setup-token`, put it in an env set (mode 600, never in the repo), and name that set in the PID's envs:", name, noSetPhrase(sets))
 	}
-	return v, CredMeta{Source: "env set variable " + name, ExpiresAt: a.sessionExpiry(name, v)}, nil
+	return v, CredMeta{Source: "env set " + set + " variable " + name, ExpiresAt: a.sessionExpiry(name, v)}, nil
+}
+
+// noSetPhrase names the sets that were looked in, because "it is not there"
+// is only actionable if the operator can tell which files posse opened —
+// the same launch list, in the same order. Names only: an env set name is
+// prose the operator wrote, and no value goes near this sentence.
+func noSetPhrase(sets []string) string {
+	if len(sets) == 0 {
+		return "no env set (this read names none)"
+	}
+	return "none of the env sets this read names (" + strings.Join(sets, ", ") + ")"
+}
+
+// lastEnvAssignment is the one read underneath both entry points: walk the
+// launch's sets in order, keep the last assignment of key seen, and report
+// which set it came out of. One loop covers both halves of the rule — later
+// assignment within a file, later set across the list — because
+// parseEnvLines keeps a file's assignments in file order.
+//
+// A set that is missing, unreadable, or names a path rather than a file stem
+// is SKIPPED, not fatal: the launch itself refuses those (EnvSetVars returns
+// the error and planLaunch stops), and a probe is not the surface that
+// should be the first to say so. The read goes through envFilePath for the
+// containment guard it carries — a name is a file stem, and where it
+// resolves must be under EnvsDir (ADR 0019 D1's one-hand rule).
+//
+// It does NOT go through EnvSetVars: that tightens the store's modes and
+// writes a line to stderr for each path it fixes, which is right on a launch
+// and wrong on a read that happens behind a catalog probe.
+//
+// A nil *App, or one with no home, has nothing to open and says so by
+// finding nothing — the seam's degenerate caller answers, it does not panic.
+func (a *App) lastEnvAssignment(key string, sets []string) (value, set string) {
+	if a == nil || a.EnvsDir == "" {
+		return "", ""
+	}
+	for _, n := range sets {
+		f, err := a.envFilePath(n)
+		if err != nil {
+			continue
+		}
+		b, err := os.ReadFile(f)
+		if err != nil {
+			continue
+		}
+		for _, v := range parseEnvLines(string(b)) {
+			if v.Key == key {
+				value, set = v.Value, n
+			}
+		}
+	}
+	return value, set
 }
 
 // sessionExpiry finds the stamp that is true of THIS value.

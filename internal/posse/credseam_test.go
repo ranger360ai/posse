@@ -639,26 +639,65 @@ func TestMeterUnavailableAnswersFromThisMachinesStore(t *testing.T) {
 	}
 }
 
-// The session half wraps the env-set lookup that was already there
-// (rangerhq-kiz): the PID names an env set, the set carries the operator's
-// own scoped mint, and the seam reads the value the launch put in this
-// process's environment. Behaviour unchanged — one caller more.
-func TestSessionCredentialWrapsTheEnvSetLookup(t *testing.T) {
+// ─── the session half reads the FILES, and only the files ───────────────────
+
+// envArmPoison is what the retracted arm would have returned. Every pin
+// below puts it in the TEST PROCESS's own environment under the credential's
+// real name, so a seam that read `os.Getenv` would pass its happy path with
+// the wrong bytes rather than failing to find any — which is the failure the
+// retraction is about (ADR 0039 D3d as amended, ranger-base-q3n4e). It is a
+// fake and is never printed.
+const envArmPoison = "sk-ant-oat01-FROM-THE-PROCESS-ENVIRONMENT-NEVER-RETURN-THIS"
+
+// sessionSet writes one env set carrying key=value, creating envs/ if the
+// fixture App has not. Unstamped: the stamp half is credexpiry_test.go's.
+func sessionSet(t *testing.T, a *App, set, key, value string) {
+	t.Helper()
+	if err := os.MkdirAll(a.EnvsDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(a.EnvsDir, set+".env"),
+		[]byte(key+"="+value+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// namedDefaultEnv makes set the home's `default_env`, which is the only way
+// a PERSONA-LESS caller's list reaches any set at all (rangerhq-f2b) — and
+// `ReadCredential(rt, CredSession)` is exactly that caller.
+func namedDefaultEnv(t *testing.T, a *App, set string) {
+	t.Helper()
+	if err := os.WriteFile(a.ConfigPath, []byte("default_env: "+set+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// The session half reads the env set FILES under the home — the store of
+// record ADR 0019 D1 names — selected by the caller's launch list, and never
+// this process's environment. `ReadCredential` is the persona-less list;
+// `ReadSessionCredentialFrom` is a launch naming its own.
+func TestSessionCredentialReadsTheEnvSetFiles(t *testing.T) {
 	a := cageApp(t)
 	claude, err := a.LoadRuntime("claude")
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-SESSION-MINT")
+	key := CageCredential(claude)
+	t.Setenv(key, envArmPoison)
+
+	const mint = "sk-ant-oat01-SESSION-MINT"
+	sessionSet(t, a, "default", key, mint)
+	namedDefaultEnv(t, a, "default")
+
 	tok, meta, err := a.ReadCredential(claude, CredSession)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if tok != "sk-ant-oat01-SESSION-MINT" {
-		t.Errorf("token: %q", tok)
+	if tok != mint {
+		t.Errorf("the seam returns the file's value, never the environment's")
 	}
-	if !strings.Contains(meta.Source, "CLAUDE_CODE_OAUTH_TOKEN") {
-		t.Errorf("the source names the variable the operator put it in: %q", meta.Source)
+	if !strings.Contains(meta.Source, key) || !strings.Contains(meta.Source, "default") {
+		t.Errorf("the source names the set and the variable it came out of: %q", meta.Source)
 	}
 	// No `# expires=` stamp beside this value, so the expiry is unknown —
 	// and unknown is reported as unknown, never as freshness (ADR 0019 D5).
@@ -668,10 +707,14 @@ func TestSessionCredentialWrapsTheEnvSetLookup(t *testing.T) {
 		t.Errorf("an unstamped mint has no expiry to report: %v", meta.ExpiresAt)
 	}
 
-	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "")
-	if _, _, err := a.ReadCredential(claude, CredSession); err == nil ||
-		!strings.Contains(err.Error(), "claude setup-token") {
-		t.Errorf("a missing mint says how the operator mints one: %v", err)
+	// The same read with the launch's own list, which is the entry point
+	// TierPreflight uses. One reader underneath, so the answer is the same.
+	tok2, meta2, err := a.ReadSessionCredentialFrom(claude, []string{"default"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tok2 != tok || meta2.Source != meta.Source {
+		t.Errorf("the two entry points are one reader: %q vs %q", meta2.Source, meta.Source)
 	}
 
 	// codex/grok: undecided at this tier, which is absence and not an
@@ -687,6 +730,70 @@ func TestSessionCredentialWrapsTheEnvSetLookup(t *testing.T) {
 	}
 	if !strings.Contains(ns.Arm, "cage_cred:") {
 		t.Errorf("the witness must name what would decide it: %+v", ns)
+	}
+}
+
+// The three properties the retraction is worth having (ADR 0019 V5 addition,
+// ADR 0039 V6): the environment is not a fallback, the LAST set in the
+// launch's list wins, and a set the launch does not name is not read.
+//
+// The variable is in the test process's environment for all three, holding a
+// value that must never come back. Without that the first case would pass
+// against a seam that still read `os.Getenv` and merely found nothing.
+func TestSessionCredentialIgnoresTheProcessEnvironment(t *testing.T) {
+	a := cageApp(t)
+	claude, err := a.LoadRuntime("claude")
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := CageCredential(claude)
+	t.Setenv(key, envArmPoison)
+
+	// (a) The name is in no set the launch names. The environment has it;
+	// the answer is still the refresh-verb sentence, and the sentence names
+	// the sets that were opened so the operator knows where to put it.
+	sessionSet(t, a, "unnamed", key, "sk-ant-oat01-IN-A-SET-NOBODY-NAMED")
+	tok, _, err := a.ReadSessionCredentialFrom(claude, nil)
+	if err == nil {
+		t.Fatalf("a name in no named set is absent, whatever the environment holds")
+	}
+	if tok != "" {
+		t.Errorf("a failed read returns no value")
+	}
+	if !strings.Contains(err.Error(), "claude setup-token") {
+		t.Errorf("the refusal still says how the operator mints one: %v", err)
+	}
+	if strings.Contains(err.Error(), envArmPoison) {
+		t.Fatalf("the refusal quoted a credential")
+	}
+
+	// (c) …and naming a DIFFERENT set does not reach it either: `unnamed`
+	// carries the name and is not in the list, so it is not read.
+	sessionSet(t, a, "empty", "SOMETHING_ELSE", "x")
+	if _, _, err := a.ReadSessionCredentialFrom(claude, []string{"empty"}); err == nil {
+		t.Errorf("a set that is not in the list must not be read even though it carries the name")
+	}
+
+	// (b) Two sets in the list carrying the name: the LAST assignment in
+	// launch order wins — the rule readStamps already applies within one
+	// file, extended across the files one launch reads in order.
+	const first, last = "sk-ant-oat01-FIRST-SET", "sk-ant-oat01-LAST-SET"
+	sessionSet(t, a, "base", key, first)
+	sessionSet(t, a, "over", key, last)
+	tok, meta, err := a.ReadSessionCredentialFrom(claude, []string{"base", "over"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tok != last {
+		t.Errorf("the last set in launch order wins")
+	}
+	if !strings.Contains(meta.Source, "over") {
+		t.Errorf("the source names the set that actually answered: %q", meta.Source)
+	}
+	// The order is the LIST's, not the alphabet's or the directory's:
+	// reversed, the other one wins.
+	if tok, _, err := a.ReadSessionCredentialFrom(claude, []string{"over", "base"}); err != nil || tok != first {
+		t.Errorf("reversing the launch list reverses the winner: %v", err)
 	}
 }
 

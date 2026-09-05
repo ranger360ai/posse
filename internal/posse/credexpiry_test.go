@@ -57,14 +57,17 @@ func TestSessionStampRoundTripsThroughTheSeam(t *testing.T) {
 	}
 	const mint = "sk-ant-oat01-THE-MINT-THIS-SESSION-IS-HOLDING"
 	stampedSet(t, a, "container", key, mint, day(20))
-	t.Setenv(key, mint)
+	namedDefaultEnv(t, a, "container")
+	// The retracted arm, present and holding something else: nothing below
+	// may come from it (ADR 0039 D3d as amended).
+	t.Setenv(key, envArmPoison)
 
 	tok, meta, err := a.ReadCredential(claude, CredSession)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if tok != mint {
-		t.Errorf("the seam still returns the value the launch injected: %q", tok)
+		t.Errorf("the seam returns the value the set the launch names carries")
 	}
 	if got := meta.ExpiresAt.Format(stampDate); got != day(20) {
 		t.Errorf("stamp did not round-trip through the seam: %q want %q", got, day(20))
@@ -74,21 +77,20 @@ func TestSessionStampRoundTripsThroughTheSeam(t *testing.T) {
 	// holding some other mint under the same name is stamped about its own
 	// credential, and lending its date to this one would be a wrong date
 	// reported confidently — strictly worse than "cannot tell", which is
-	// already an honest answer posse is allowed to give.
-	if err := os.Remove(a.EnvsDir + "/container.env"); err != nil {
-		t.Fatal(err)
-	}
+	// already an honest answer posse is allowed to give. Its date is the
+	// SOONER of the two, so a match on the name alone would take it.
 	stampedSet(t, a, "other", key, "sk-ant-oat01-SOMEBODY-ELSES-MINT", day(3))
 	_, meta, err = a.ReadCredential(claude, CredSession)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !meta.ExpiresAt.IsZero() {
-		t.Errorf("a stamp beside another value became this credential's date: %v", meta.ExpiresAt)
+	if got := meta.ExpiresAt.Format(stampDate); got != day(20) {
+		t.Errorf("a stamp beside another value became this credential's date: %q", got)
 	}
 
 	// And an unstamped set that DOES hold this value is "cannot tell": the
-	// zero time, not a guess, not today, not the minted date plus a year.
+	// zero time, not a guess, not today, not the minted date plus a year —
+	// even with the other set's dated mint still sitting beside it.
 	stampedSet(t, a, "container", key, mint, "")
 	_, meta, err = a.ReadCredential(claude, CredSession)
 	if err != nil {
@@ -100,23 +102,40 @@ func TestSessionStampRoundTripsThroughTheSeam(t *testing.T) {
 }
 
 // A nil *App is the seam's degenerate caller (a reader constructed without a
-// home). It must answer, not panic: "cannot tell" is a first-class answer
-// and acquiring a new way to crash inside the credential seam is not a
-// trade this design makes.
-func TestSeamWithNoHomeAnswersCannotTell(t *testing.T) {
+// home). It must ANSWER, not panic — acquiring a new way to crash inside the
+// credential seam is not a trade this design makes.
+//
+// What it answers changed when the environment arm was retracted (ADR 0039
+// D3d as amended): the session store IS the files under the home, so a
+// caller with no home has no store to open and the honest answer is the
+// refusal, not a value. It says so in the sentence that names the sets it
+// opened — none — and it invents no date. The environment holding the name
+// does not make it an answer; that is the whole retraction.
+func TestSeamWithNoHomeRefusesRatherThanPanicking(t *testing.T) {
 	a := refreshApp(t)
 	claude, err := a.LoadRuntime("claude")
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv(CageCredential(claude), "sk-ant-oat01-NO-HOME-TO-LOOK-IN")
+	t.Setenv(CageCredential(claude), envArmPoison)
 	var none *App
-	_, meta, err := none.ReadCredential(claude, CredSession)
-	if err != nil {
-		t.Fatal(err)
+	tok, meta, err := none.ReadCredential(claude, CredSession)
+	if err == nil {
+		t.Fatalf("a seam with no home has no session store to read")
+	}
+	if tok != "" {
+		t.Errorf("a seam with no home returned a value")
 	}
 	if !meta.ExpiresAt.IsZero() {
 		t.Errorf("a seam with no home invented a date: %v", meta.ExpiresAt)
+	}
+	if !strings.Contains(err.Error(), "claude setup-token") {
+		t.Errorf("the refusal still says how the operator mints one: %v", err)
+	}
+	// The nil receiver reaches the set list too, which is the other half of
+	// the same panic question.
+	if got := none.LaunchEnvSets(nil, nil); len(got) != 0 {
+		t.Errorf("a nil App has no home to find a default_env under: %v", got)
 	}
 }
 

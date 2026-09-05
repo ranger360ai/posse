@@ -4,11 +4,17 @@ package posse
 //
 // Everything here is hermetic in the two ways this package's tests already
 // are: the endpoint is an httptest server the lister is handed, and the
-// session credential is a value set in the test's own environment — which
-// is where a launched session reads its own from, so the seam under test is
-// the real one and not a stand-in for it. The meter half is a fake token
-// func; a test that read the operator's keychain would be a different kind
-// of test and this file has none.
+// session credential is an env set FILE under a scratch home — the store of
+// record ADR 0019 D1 names and the one the seam reads (ADR 0039 D3d as
+// amended, ranger-base-q3n4e retracted the process-environment arm). So the
+// seam under test is the real one and not a stand-in for it. The meter half
+// is a fake token func; a test that read the operator's keychain would be a
+// different kind of test and this file has none.
+//
+// Every arm below ALSO puts a value in the test process's environment under
+// the credential's real name — one that must never be presented. Without it
+// the absence arms would pass against a seam that still read `os.Getenv` and
+// merely found nothing there.
 //
 // No assertion below prints a credential. They compare, and on failure they
 // name which credential was expected — session or meter — because a test
@@ -18,6 +24,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"reflect"
 	"runtime"
 	"strings"
@@ -102,24 +109,46 @@ func fixedToken(tok string) func() (string, CredMeta, error) {
 
 // sessionCredApp is an App whose home holds no runtimes overlay, so
 // LoadRuntime("claude") is the built-in and CageCredential names the
-// variable the launch names.
+// variable the launch names. It has an envs/ because that is now where the
+// session half looks.
 func sessionCredApp(t *testing.T) *App {
 	t.Helper()
 	home := t.TempDir()
-	return &App{Home: home, StateDir: home + "/state"}
+	return &App{Home: home, StateDir: home + "/state",
+		EnvsDir: filepath.Join(home, "envs"), ConfigPath: filepath.Join(home, "config.yaml")}
 }
 
-// The preference itself: with the variable the launch will hand the session
-// present in this process's environment, that is the credential the catalog
-// endpoint sees — not the meter store's, which is sitting right there
-// answering.
+// haveSessionMint puts the mint where the launch would: in an env set under
+// the home, named as this persona-less home's `default_env` so the seam's
+// persona-less list reaches it. The environment gets the poison value.
+func haveSessionMint(t *testing.T, a *App, rt *Runtime) {
+	t.Helper()
+	t.Setenv(CageCredential(rt), envArmPoison)
+	sessionSet(t, a, "default", CageCredential(rt), fakeSessionMint)
+	namedDefaultEnv(t, a, "default")
+}
+
+// noSessionMint is the absence arm: no set under this home carries the name,
+// which is the only way the session credential is absent now — and the
+// environment holds a value anyway, which must change nothing.
+func noSessionMint(t *testing.T, a *App, rt *Runtime) {
+	t.Helper()
+	t.Setenv(CageCredential(rt), envArmPoison)
+	sessionSet(t, a, "default", "SOMETHING_ELSE", "x")
+	namedDefaultEnv(t, a, "default")
+}
+
+// The preference itself: with the mint in the env set this launch names,
+// that is the credential the catalog endpoint sees — not the meter store's,
+// which is sitting right there answering, and not the process environment's,
+// which is holding a different value the whole time.
 func TestCatalogProbePresentsTheSessionCredential(t *testing.T) {
 	a := sessionCredApp(t)
 	rt, err := a.LoadRuntime("claude")
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv(CageCredential(rt), fakeSessionMint)
+	haveSessionMint(t, a, rt)
 
 	srv := newBearerLog(t, "claude-fable-5-1", "claude-opus-5")
 	l := &ModelLister{URL: srv.URL, Token: a.sessionCatalogToken(), Fallback: fixedToken(fakeMeterMint), HTTP: srv.Client()}
@@ -136,7 +165,7 @@ func TestCatalogProbePresentsTheSessionCredential(t *testing.T) {
 }
 
 // And it is the VALUE, not merely the shape: the bearer the endpoint reads
-// is byte-for-byte the mint that was in the environment. Asserted inside the
+// is byte-for-byte the mint the env set carries. Asserted inside the
 // handler's own record and reported as a bool, so neither arm of this test
 // can put a credential in a test log.
 func TestCatalogProbeSendsTheEnvSetValueItself(t *testing.T) {
@@ -145,7 +174,7 @@ func TestCatalogProbeSendsTheEnvSetValueItself(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv(CageCredential(rt), fakeSessionMint)
+	haveSessionMint(t, a, rt)
 
 	srv := newBearerLog(t, "claude-fable-5-1")
 	l := &ModelLister{URL: srv.URL, Token: a.sessionCatalogToken(), Fallback: fixedToken(fakeMeterMint), HTTP: srv.Client()}
@@ -162,18 +191,19 @@ func TestCatalogProbeSendsTheEnvSetValueItself(t *testing.T) {
 	}
 }
 
-// Absence, the first of the two ways the preference does not answer: the
-// variable is in the environment as an empty value, which readSessionCredential
-// reports as "not in this process's environment". The meter store answers
-// instead, and the endpoint is asked exactly once — nothing was asked before
-// the fallback, so it costs no request.
+// Absence, the first of the two ways the preference does not answer: no env
+// set this launch names carries the variable, which is what
+// readSessionCredential now reports as absence — the environment carrying it
+// is not an answer. The meter store answers instead, and the endpoint is
+// asked exactly once: nothing was asked before the fallback, so it costs no
+// request.
 func TestNoSessionCredentialReadsTheMeterStore(t *testing.T) {
 	a := sessionCredApp(t)
 	rt, err := a.LoadRuntime("claude")
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv(CageCredential(rt), "")
+	noSessionMint(t, a, rt)
 
 	srv := newBearerLog(t, "claude-fable-5-1")
 	l := &ModelLister{URL: srv.URL, Token: a.sessionCatalogToken(), Fallback: fixedToken(fakeMeterMint), HTTP: srv.Client()}
@@ -198,7 +228,7 @@ func TestNoFallbackKeepsTheCredentialErrorAndAsksNobody(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv(CageCredential(rt), "")
+	noSessionMint(t, a, rt)
 
 	srv := newBearerLog(t, "claude-fable-5-1")
 	l := &ModelLister{URL: srv.URL, Token: a.sessionCatalogToken(), HTTP: srv.Client()}
@@ -220,7 +250,7 @@ func TestRefusedSessionCredentialFallsThroughToTheMeterStoreOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv(CageCredential(rt), fakeSessionMint)
+	haveSessionMint(t, a, rt)
 
 	srv := newBearerLog(t, "claude-fable-5-1")
 	srv.refuse = 1
@@ -246,7 +276,7 @@ func TestBothCredentialsRefusedStopsAtTwoRequests(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv(CageCredential(rt), fakeSessionMint)
+	haveSessionMint(t, a, rt)
 
 	srv := newBearerLog(t, "claude-fable-5-1")
 	srv.refuse = 9
@@ -271,7 +301,7 @@ func TestRefusedFallbackIsNotPresentedTwice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv(CageCredential(rt), "")
+	noSessionMint(t, a, rt)
 
 	srv := newBearerLog(t, "claude-fable-5-1")
 	srv.refuse = 9
@@ -292,7 +322,7 @@ func TestForbiddenSessionCredentialAlsoFallsThrough(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv(CageCredential(rt), fakeSessionMint)
+	haveSessionMint(t, a, rt)
 
 	srv := newBearerLog(t, "claude-fable-5-1")
 	srv.refuse, srv.code = 1, http.StatusForbidden
@@ -314,7 +344,7 @@ func TestServerErrorDoesNotSpendTheSecondCredential(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv(CageCredential(rt), fakeSessionMint)
+	haveSessionMint(t, a, rt)
 
 	srv := newBearerLog(t, "claude-fable-5-1")
 	srv.refuse, srv.code = 1, http.StatusInternalServerError
@@ -368,7 +398,7 @@ func TestModelCacheWiresSessionFirstAndTheMeterStoreBehindIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv(CageCredential(rt), fakeSessionMint)
+	haveSessionMint(t, a, rt)
 	tok, _, err := l.Token()
 	if err != nil {
 		t.Fatal(err)
