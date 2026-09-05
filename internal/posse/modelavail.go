@@ -101,6 +101,14 @@ const (
 	// data rather than a hardcoded runtime name, so a template-only runtime
 	// on the same API is covered too.
 	ModelListHost = "api.anthropic.com"
+	// modelCatalogRuntime is the runtime whose credential this catalog is
+	// read with — the one NewModelLister has always named in its
+	// MeterToken call, said once now that the session half names it too
+	// (ADR 0039 D3d). It is not the runtime being PROBED: which runtimes
+	// this reading answers for is decided by `egress:` naming ModelListHost
+	// above, and a template-only runtime on the same API is covered by that
+	// without being named here.
+	modelCatalogRuntime = "claude"
 	// ModelProbeTTLDefault is how long one reading of the catalog is
 	// shared. An account's model access changes on the scale of a
 	// subscription change, not of a dispatch pass, so an hour is generous
@@ -133,13 +141,25 @@ const (
 type ModelLister struct {
 	URL   string
 	Token func() (string, CredMeta, error)
-	HTTP  *http.Client
+	// Fallback is the second credential this lister may present, and it is
+	// the whole of ADR 0039 D3d's "meter store as fallback". Token is the
+	// PREFERENCE — on the App path, the session mint the launch is about to
+	// hand the session — and there are exactly two ways it does not answer:
+	// there is none to read, or the endpoint refuses the one there was.
+	// Both are answered here, once each, because the alternative is a token
+	// func that has to know it is being retried.
+	//
+	// nil is one credential and one attempt: the bare constructor below,
+	// and every lister a test injects a Token into, behave exactly as they
+	// did before D3d.
+	Fallback func() (string, CredMeta, error)
+	HTTP     *http.Client
 }
 
 func NewModelLister() *ModelLister {
 	return &ModelLister{
 		URL:   ModelListURL,
-		Token: MeterToken("claude"),
+		Token: MeterToken(modelCatalogRuntime),
 		HTTP:  pinnedClient(modelProbeTimeout, "model list endpoint"),
 	}
 }
@@ -161,6 +181,15 @@ func (r *ModelLister) List() ([]string, error) {
 	// built in this file), so naming the store would add a word no sentence
 	// here renders.
 	tok, _, err := r.Token()
+	// ABSENCE, the first of the two ways the preferred credential does not
+	// answer: no variable is decided for this runtime (*NoSource), or the
+	// one that is decided is not in this process's environment. Nothing has
+	// been asked of the endpoint yet, so this fallback costs no request.
+	fellBack := false
+	if r.Fallback != nil && (err != nil || tok == "") {
+		tok, _, err = r.Fallback()
+		fellBack = true
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -168,6 +197,32 @@ func (r *ModelLister) List() ([]string, error) {
 	if cl == nil {
 		cl = &http.Client{Timeout: modelProbeTimeout}
 	}
+	ids, err := r.read(cl, tok)
+	// REFUSAL, the second way: the credential was there, it was presented,
+	// and the endpoint said "not you". One more read with the other
+	// credential, and exactly one — a probe that keeps re-presenting
+	// credentials to a refusing endpoint is how a fleet extends a 429
+	// (rangerhq-tdy8), and above this ModelCache decides whether the read
+	// happens at all, so the bound that matters is per READ and not per
+	// launch. Never asked when the fallback is what was already presented:
+	// that is the same request twice, which is the traffic this bounds.
+	var refused *modelCredRefusal
+	if r.Fallback != nil && !fellBack && errors.As(err, &refused) {
+		// A fallback that cannot be read leaves the endpoint's refusal as
+		// the answer, which is the one the operator acts on: the store
+		// posse could not reach is not why the catalog is unknown.
+		if alt, _, ferr := r.Fallback(); ferr == nil {
+			ids, err = r.read(cl, alt)
+		}
+	}
+	return ids, err
+}
+
+// read walks the catalog's pages with ONE credential. It is separate from
+// List because a refused credential is read again with the other one, and a
+// retry that resumed mid-pagination would join the two halves of two
+// different reads into one answer.
+func (r *ModelLister) read(cl *http.Client, tok string) ([]string, error) {
 	var ids []string
 	url := r.URL + "?limit=100"
 	// Bounded: the catalog is dozens of entries, so three pages is already
@@ -190,6 +245,27 @@ func (r *ModelLister) List() ([]string, error) {
 	}
 	return ids, nil
 }
+
+// modelCredRefusal is this endpoint refusing the credential that was
+// PRESENTED — 401, or 403 — as a TYPE rather than a sentence to match on,
+// which is the rule *AuthFailure and *RateLimit each got a type to keep.
+//
+// It adds no words: it wraps the generic line this file has always returned
+// and renders identically, because the operator sentences a credential
+// class earns are the usage guard's, whose Error() names that endpoint and
+// that operator's next move. This file still builds no *AuthFailure. What
+// the type is for is one decision inside List — present the other
+// credential, once — and that decision must not be reachable by grepping a
+// status code back out of prose.
+//
+// Both statuses, because they are one class here: 401 is a stale token and
+// 403 is one that was never entitled (ADR 0019 D2), and for a probe holding
+// a second credential the move is the same either way. Only the 401 arm is
+// MEASURED against this endpoint (ranger-base-au0o4, a bogus bearer).
+type modelCredRefusal struct{ err error }
+
+func (e *modelCredRefusal) Error() string { return e.err.Error() }
+func (e *modelCredRefusal) Unwrap() error { return e.err }
 
 // modelPage is one response of the catalog's cursor pagination.
 type modelPage struct {
@@ -236,6 +312,9 @@ func (r *ModelLister) getPage(cl *http.Client, url, tok string) (modelPage, erro
 	if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusServiceUnavailable {
 		return page, &RateLimit{Status: resp.Status, RetryAfter: retryAfter(resp.Header.Get("Retry-After"), time.Now())}
 	}
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return page, &modelCredRefusal{err: Die("model list endpoint returned %s", resp.Status)}
+	}
 	if resp.StatusCode != http.StatusOK {
 		return page, Die("model list endpoint returned %s", resp.Status)
 	}
@@ -271,10 +350,52 @@ type ModelCache struct {
 	Errw io.Writer
 }
 
+// sessionCatalogToken is the catalog probe's PREFERRED credential: the
+// session mint this launch is about to hand the session (ADR 0039 D3d).
+//
+// MEASURED 2026-09-02 (ranger-base-au0o4): `/v1/models` answers 200 to that
+// mint — eleven ids, the newest among them — while a bogus bearer gets 401
+// and the same real token moved onto `x-api-key` gets 401, so the 200 is
+// the credential's and not the endpoint's good mood. The usage endpoint's
+// refusal of a minted token (planusage.go, 403) is a fact about that
+// endpoint and says nothing about this one; D3d was written conditional on
+// exactly this measurement.
+//
+// What it buys: the probe asks "can this account run the id" of exactly the
+// credential that will run it, and it rots on the same clock the sessions
+// do rather than on the meter store's, which rots in hours and has left the
+// probe 401ing since 2026-08-31 (ranger-base-wkai3).
+//
+// It ACQUIRES nothing (ADR 0019 D1): the value comes back through the seam,
+// out of the env set the launch already realized into this process's
+// environment. The runtime is loaded rather than assumed so that an
+// overlay's `cage_cred:` names the variable here exactly as it does at the
+// launch (ADR 0021). Absence — no variable decided, or none in this
+// environment — comes back as the error it is, and ModelLister.Fallback
+// answers it with the meter store.
+func (a *App) sessionCatalogToken() func() (string, CredMeta, error) {
+	return func() (string, CredMeta, error) {
+		rt, err := a.LoadRuntime(modelCatalogRuntime)
+		if err != nil {
+			return "", CredMeta{}, err
+		}
+		return a.ReadCredential(rt, CredSession)
+	}
+}
+
 func (a *App) ModelCache() *ModelCache {
 	l := a.ModelLister
 	if l == nil {
 		l = NewModelLister()
+		// The App path is the only one that CAN prefer the session
+		// credential: the seam's session half hangs off *App (ADR 0019),
+		// and a bare NewModelLister has no home to read an env set out of.
+		// So the bare constructor stays on the meter store — every test
+		// that injects a Token is untouched, which is the seam's whole
+		// point — and the meter store it already chose becomes the
+		// fallback, so neither half of D3d's preference is spelled twice.
+		l.Fallback = l.Token
+		l.Token = a.sessionCatalogToken()
 	}
 	return &ModelCache{
 		Path: filepath.Join(a.StateDir, "model-catalog.json"),

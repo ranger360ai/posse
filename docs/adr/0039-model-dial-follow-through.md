@@ -2,9 +2,10 @@
 
 *Status: accepted 2026-09-01 (D1, D2, D3a, D3b, and D3c per the
 operator's ruling on ranger-base-v1p66) · D3d spike answered 200
-(ranger-base-au0o4) and D3d amended 2026-09-05 (ranger-base-q3n4e: the
-session credential a posse process reads is the env set under the home,
-selected by the launch's set list — never its own environment) · owner:
+(ranger-base-au0o4), D3d built 2026-09-05 (ranger-base-mvrke) and
+amended the same day (ranger-base-q3n4e: the session credential a posse
+process reads is the env set under the home, selected by the launch's
+set list — never its own environment) · owner:
 architect · amends 0003
 §1 (the claude strong cell), 0015 §2/§3 (the promoted set), 0021 (the
 overlay's home) · from ranger-base-1ykc1, discovered from
@@ -177,6 +178,21 @@ only inside its lease.**
   same pinned host the session egresses to (credpin.go). If it answers
   401/403: D3d is dead and the credential question stays wkai3's.
 
+  *Built 2026-09-05 (ranger-base-mvrke), on the spike's 200.*
+  `ModelLister` carries two named credentials instead of one: `Token` is
+  the preference and `Fallback` is what answers when the preference does
+  not. There are exactly two ways it does not and `List` answers each
+  once — nothing to read, which spends no request, and a credential the
+  endpoint refuses (401 or 403), which spends one more read of the
+  catalog and never a loop. The fall-through is skipped when the fallback
+  is already what was presented, so the arm this probe has been failing
+  on does not double its traffic. `App.ModelCache` wires the session half
+  through the ADR 0019 seam and leaves the bare constructor on the meter
+  store, so every test that injects a `Token` is untouched; `ModelCache`
+  still decides whether a read happens at all, so the bound that matters
+  is per READ and not per launch. Pinned in
+  internal/posse/modelsessiontoken_test.go.
+
   *Amended 2026-09-05 (ranger-base-q3n4e, from ranger-base-mvrke).* The
   spike answered 200 (ranger-base-au0o4, 2026-09-02: eleven ids, the
   strong id among them, three control arms 401), and the build that
@@ -199,8 +215,10 @@ only inside its lease.**
      home's `EnvsDir` — the store of record D1 of that ADR already names
      ("posse-owned, store of record is the home") — and never the
      process environment. The environment arm is retracted, not kept
-     beside the file: at this HEAD the seam's session purpose has zero
-     callers outside `credential.go` (grep), every posse surface that
+     beside the file: when this was written the seam's session purpose
+     had zero callers outside `credential.go` (grep) and it has exactly
+     one now — `sessionCatalogToken`, the probe this amendment is about,
+     landed with ranger-base-8bp2j — every posse surface that
      asks about the session credential already reads the files
      (`sessionRows`, `ExpiringCredentials`, `sessionExpiry`), and the
      one process that ever holds the value in its environment is the
@@ -244,11 +262,14 @@ only inside its lease.**
      hostage; the exit hatch from the whole decision is the fallback arm
      that runs today.
 
-  Landing order (MEASURED at this HEAD): the D3d build named above is in
-  gwart's session tree, not on main — `posse/gwart-posse-ranger-base-mvrke`
-  is an ancestor of main and no ref carries a `Fallback` field on
-  `ModelLister` — so the beads this amendment cuts wait on
-  ranger-base-mvrke landing, never on the sentence that says it is built.
+  Landing order: when this amendment was written the D3d build named
+  above was in gwart's session tree and on no ref main could see, so the
+  beads it cuts waited on ranger-base-mvrke landing rather than on the
+  sentence saying it is built. It landed with ranger-base-8bp2j, whose
+  whole subject was this file: the merge-back was refused on the ADR and
+  never on the code, `internal/posse/modelavail.go` being untouched
+  between the two. That wait is over; the ruling's own beads are not
+  built by it.
 
 ## Alternatives rejected
 
@@ -372,8 +393,8 @@ only inside its lease.**
 | what the claude CLI does with `--model <id the account cannot run>` | ASSUMED unmeasured — D3c's whole cost; one launch with a made-up id answers it (laurie's checklist) |
 | `/v1/models` accepts a minted session token | MEASURED — ranger-base-au0o4 2026-09-02, 200 with eleven ids and three 401 control arms; one reading, three days before the q3n4e ruling |
 | the mint's `/v1/models` bucket is not the starved one ranger-base-hs0dl found on the usage endpoint | ASSUMED — hs0dl measured a different endpoint; V7 is the live measure, and a 429 is UNKNOWN under D3c, never a refusal |
-| the seam's session half has no caller that holds the value | MEASURED — zero callers outside `credential.go` at this HEAD; the mint absent from a dispatched session's environment while sibling variables of the same set are present (q3n4e) |
-| the D3d build is unlanded at this HEAD | MEASURED — gwart's session branch is an ancestor of main; no ref carries a `Fallback` field on `ModelLister` |
+| the seam's session half has no caller that holds the value | MEASURED at the q3n4e HEAD — zero callers outside `credential.go`; the mint absent from a dispatched session's environment while sibling variables of the same set are present. At THIS HEAD there is one, `sessionCatalogToken` (modelavail.go), which is the D3d build the ruling above retargets and not a second store; the retraction argument is unchanged by it |
+| the D3d build is landed | MEASURED — `ModelLister` carries a `Fallback` field at this HEAD (ranger-base-8bp2j replayed ranger-base-mvrke's commit past this amendment). It was unlanded when the amendment above was written, which is what that paragraph's landing-order note is about |
 | a seatbelt seat can read an env set's value | MEASURED — ranger-base-au0o4 ran its probe from one on the default set |
 | the two sets holding the name hold one account's mint | ASSUMED — both 108 bytes, values deliberately uncompared; a shared reading across personas already assumed one account before this ruling |
 | the last `--env` of one name wins in the pane | ASSUMED — posse's own in-file rule (`readStamps`); V8 measures the pane's |
