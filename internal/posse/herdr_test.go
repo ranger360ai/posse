@@ -47,7 +47,12 @@ func TestMain(m *testing.M) {
 	// would only pin a string the shell and the binary agreed on separately.
 	// Everything else the hook calls (new, kill) stays scripted.
 	if os.Getenv("RHQ_FAKE_POSSE") == "1" {
-		line, err := WatchStatus(NewApp())
+		a, aerr := NewApp()
+		if aerr != nil {
+			fmt.Fprintf(os.Stderr, "posse: %v\n", aerr)
+			os.Exit(1)
+		}
+		line, err := WatchStatus(a)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "posse: %v\n", err)
 			os.Exit(1)

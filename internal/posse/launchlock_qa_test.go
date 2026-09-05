@@ -81,7 +81,11 @@ func TestLaunchLockChildHolder(t *testing.T) {
 	if home == "" {
 		t.Skip("child of TestLaunchLockHoldsAcrossProcesses")
 	}
-	l, err := lockLaunches(NewApp(), os.Stderr)
+	a, err := NewApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	l, err := lockLaunches(a, os.Stderr)
 	if err != nil {
 		t.Fatal(err)
 	}

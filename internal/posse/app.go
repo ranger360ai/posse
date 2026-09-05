@@ -104,9 +104,15 @@ type App struct {
 
 var legacyHomeNotices sync.Map
 
-func NewApp() *App { return newApp(os.Stderr) }
+// NewApp is the App every command runs on, rooted at the home the
+// environment names — and it REFUSES rather than root one at a home it had
+// to invent. It returns an error for the reason WorktreeRoot does: an
+// unresolvable home is a config error, and a caller that has to handle it
+// cannot forget to (ranger-base-58b5, ruled by the operator on
+// ranger-base-5flf8).
+func NewApp() (*App, error) { return newApp(os.Stderr) }
 
-func newApp(stderr io.Writer) *App {
+func newApp(stderr io.Writer) (*App, error) {
 	// RHQ_HOME wins when both are set (ranger-base-mlc Q2 ruling): an
 	// operator's own exported RHQ_HOME, or an installed hook/shim that has
 	// not been re-rendered since the both-names window opened, must not be
@@ -117,7 +123,33 @@ func newApp(stderr io.Writer) *App {
 		home = os.Getenv("POSSE_HOME")
 	}
 	if home == "" {
-		configDir := filepath.Join(os.Getenv("HOME"), ".config")
+		// The refusal, and it is the LAST of the three names rather than a
+		// check at the top: a caller that says where posse's home is has
+		// already answered this, and only the fallback needs a home to hang
+		// itself off.
+		//
+		// filepath.Join DROPS an empty element, so with no $HOME
+		// Join(os.Getenv("HOME"), ".config") is ".config" — RELATIVE, and
+		// resolved against whatever cwd the process happens to have.
+		// MEASURED on the real binary (ranger-base-a3t1's session, again
+		// 2026-09-05): posse read its config out of <scratch>/.config/posse
+		// and would have written its state there, a config nobody installed
+		// in a directory nobody named. Not a home invented at the
+		// filesystem root, which is a3t1's class, but one RE-ROOTED at the
+		// cwd, which is where a repo keeps its own dotfiles.
+		//
+		// And there is no third source to degrade to. MEASURED, go1.26.5
+		// darwin/arm64, a binary under `env -i`: os.UserHomeDir() answers
+		// ("", "$HOME is not defined") — on unix it IS $HOME. The only
+		// other source is the passwd database via os/user, which posse
+		// reads nowhere and which would be inventing a home from somewhere
+		// the operator did not name — what a3t1 ruled out for
+		// AbbrevHome/ExpandTilde and what WorktreeRoot already refuses over.
+		hd := os.Getenv("HOME")
+		if hd == "" {
+			return nil, Die("$HOME is unset and neither RHQ_HOME nor POSSE_HOME names posse's home — posse will not resolve one against the process's working directory, which is what the fallback to ~/.config/posse does when there is no home to join it onto: it becomes ./.config/posse, a config nobody installed and a state directory nobody named. Set RHQ_HOME to say where posse's home is, or run with a HOME in the environment")
+		}
+		configDir := filepath.Join(hd, ".config")
 		preferred := filepath.Join(configDir, "posse")
 		legacy := filepath.Join(configDir, "rhq")
 		home = preferred
@@ -128,7 +160,7 @@ func newApp(stderr io.Writer) *App {
 			}
 		}
 	}
-	return NewAppAt(home)
+	return NewAppAt(home), nil
 }
 
 // NewAppAt is an App rooted at an explicit home, with every path in the

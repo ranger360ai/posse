@@ -626,7 +626,10 @@ func TestInitSeedsAManifestMarkedSeeded(t *testing.T) {
 // it fails if the assumption stops holding.
 func TestVerifyPromotedCostIsNegligible(t *testing.T) {
 	t.Setenv("RHQ_HOME", filepath.Join(t.TempDir(), "home"))
-	a := NewApp()
+	a, err := NewApp()
+	if err != nil {
+		t.Fatal(err)
+	}
 	body := strings.Repeat("prose that a persona identity document is made of.\n", 200) // ~10KB
 	write := func(rel string) {
 		p := filepath.Join(a.Home, filepath.FromSlash(rel))

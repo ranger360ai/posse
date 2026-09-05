@@ -160,7 +160,11 @@ func TestCockpitGovCheckScansThroughItsOwnMemory(t *testing.T) {
 	}
 
 	t.Setenv("RHQ_HOME", filepath.Join(home, "posse"))
-	c := newCockpit(posse.NewApp(), nil, io.Discard)
+	a, err := posse.NewApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := newCockpit(a, nil, io.Discard)
 	if c.costScan == nil || c.govScan == nil {
 		t.Fatal("a cockpit must be built with both scanners")
 	}

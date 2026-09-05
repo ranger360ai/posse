@@ -201,7 +201,10 @@ func TestQAHomeCutoverRehearsal(t *testing.T) {
 	gitIn("commit", "-qm", "the constitution")
 
 	t.Setenv("RHQ_HOME", home)
-	a := NewApp()
+	a, err := NewApp()
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// Step 1's precondition, as the runbook now words it: persona memory is
 	// dirty (it is written at every session end) and must not block.

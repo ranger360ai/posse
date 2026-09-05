@@ -74,7 +74,10 @@ func TestNewAppHomeSelection(t *testing.T) {
 			}
 
 			var stderr strings.Builder
-			a := newApp(&stderr)
+			a, err := newApp(&stderr)
+			if err != nil {
+				t.Fatal(err)
+			}
 			want := map[string]string{
 				"preferred": preferred,
 				"legacy":    legacy,
@@ -88,7 +91,9 @@ func TestNewAppHomeSelection(t *testing.T) {
 				if !strings.Contains(gotNotice, preferred) || !strings.Contains(gotNotice, legacy) {
 					t.Fatalf("legacy notice %q must name preferred %s and legacy %s", gotNotice, preferred, legacy)
 				}
-				newApp(&stderr)
+				if _, err := newApp(&stderr); err != nil {
+					t.Fatal(err)
+				}
 				if stderr.String() != gotNotice {
 					t.Errorf("legacy notice repeated: %q", stderr.String())
 				}
@@ -111,7 +116,10 @@ func TestNewAppHomeSelectionEdges(t *testing.T) {
 			t.Fatal(err)
 		}
 		var stderr strings.Builder
-		a := newApp(&stderr)
+		a, err := newApp(&stderr)
+		if err != nil {
+			t.Fatal(err)
+		}
 		want := filepath.Join(root, ".config", "posse")
 		if a.Home != want {
 			t.Fatalf("home = %s, want preferred %s", a.Home, want)
@@ -136,7 +144,10 @@ func TestNewAppHomeSelectionEdges(t *testing.T) {
 			t.Fatal(err)
 		}
 		var stderr strings.Builder
-		a := newApp(&stderr)
+		a, err := newApp(&stderr)
+		if err != nil {
+			t.Fatal(err)
+		}
 		if a.Home != legacy {
 			t.Fatalf("home = %s, want legacy %s", a.Home, legacy)
 		}

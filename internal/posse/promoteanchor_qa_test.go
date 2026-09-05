@@ -33,7 +33,10 @@ func TestQASeededManifestNeverBlessesWhatItCouldNotHash(t *testing.T) {
 	home := filepath.Join(t.TempDir(), "home")
 	outside := t.TempDir()
 	t.Setenv("RHQ_HOME", home)
-	a := NewApp()
+	a, err := NewApp()
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if err := os.MkdirAll(a.AgentsDir, 0o755); err != nil {
 		t.Fatal(err)

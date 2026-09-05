@@ -110,7 +110,14 @@ func main() {
 		}
 		return
 	}
-	a := posse.NewApp()
+	// The home refusal is here and not deeper because it must reach every
+	// subcommand, and because the two entry points that legitimately run in
+	// a scrubbed environment (IsCageLaunch, IsCageReap) have already
+	// returned above — neither reads config (ranger-base-58b5).
+	a, err := posse.NewApp()
+	if err != nil {
+		die(err)
+	}
 	hb := posse.NewHerdrBackend(a)
 	args := os.Args[1:]
 	cmd := "help"
