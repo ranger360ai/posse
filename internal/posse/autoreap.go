@@ -410,24 +410,29 @@ type reapPolicy struct {
 
 func (d *Dispatcher) reapPolicy(when reapWhen) reapPolicy {
 	return reapPolicy{
-		// errWriter and not the bare d.errw(): reapAfter prints the config
+		// errWriter and not the bare d.errw(): graceAfter prints the config
 		// typo line through whatever it is handed, and this sweep runs beside
 		// a rolling Run's gathers (autoReapPass's doc). Handing it the raw
 		// writer is the same bare write as an fmt.Fprintf, one call deep.
-		crew:      d.App.reapAfter("reap_crew_after", DefaultCrewReapAfter, d.errWriter()),
-		unpointed: d.App.reapAfter("reap_unpointed_after", DefaultUnpointedReapAfter, d.errWriter()),
+		crew:      d.App.graceAfter("reap_crew_after", DefaultCrewReapAfter, d.errWriter()),
+		unpointed: d.App.graceAfter("reap_unpointed_after", DefaultUnpointedReapAfter, d.errWriter()),
 		pulse:     pulsePersona(d.App),
 		when:      when,
 	}
 }
 
-// reapAfter is one grace from config. `off`/`never`/`0` disables that arm —
+// graceAfter is one grace from config. `off`/`never`/`0` disables that arm —
 // spelled rather than numeric, because a grace of literally zero on a
 // destructive sweep is nobody's intent and reading it as one would turn a
 // typo into a kill. An unreadable value is named and the default stands, on
 // verifyBatchAge's rule: this bound is the only thing between a live
 // conversation and a closed workspace.
-func (a *App) reapAfter(key string, def time.Duration, errw io.Writer) time.Duration {
+//
+// It serves three keys and not two since ADR 0058 (`retire_tree_after:`),
+// which is why the sentence it prints names the KEY and no longer says
+// "reap": a typo in the retire grace is not a reap's business, and the
+// operator has to be able to find the line they mistyped.
+func (a *App) graceAfter(key string, def time.Duration, errw io.Writer) time.Duration {
 	raw := strings.TrimSpace(YamlGet(a.ConfigPath, key))
 	switch raw {
 	case "":
@@ -437,7 +442,7 @@ func (a *App) reapAfter(key string, def time.Duration, errw io.Writer) time.Dura
 	}
 	d, err := time.ParseDuration(raw)
 	if err != nil || d <= 0 {
-		fmt.Fprintf(errw, "reap: config %s: %q is not a positive duration (4h, 90m) or `off` — using %s\n", key, raw, def)
+		fmt.Fprintf(errw, "posse: config %s: %q is not a positive duration (4h, 90m) or `off` — using %s\n", key, raw, def)
 		return def
 	}
 	return d
@@ -631,42 +636,18 @@ func residueIdle(m *HerdrMeta) (time.Duration, bool) {
 // at the head of the very next one, and the sweep after that finds nothing
 // held and takes the session.
 func residueHolds(m *HerdrMeta) string {
-	if dirty := dirtyPaths(m.Dir); len(dirty) > 0 {
-		return fmt.Sprintf("%s has uncommitted work (%s)", AbbrevHome(m.Dir), dirtyList(dirty))
-	}
 	t := SessionTreeOf(m)
 	if t == nil {
-		// A shared checkout has no branch of its own, so the clean tree
-		// above is the whole question.
+		// A SHARED checkout: no branch of its own, so a clean tree is the
+		// whole question, and m.Dir is the only path there is to ask about.
+		if dirty := dirtyPaths(m.Dir); len(dirty) > 0 {
+			return fmt.Sprintf("%s has uncommitted work (%s)", AbbrevHome(m.Dir), dirtyList(dirty))
+		}
 		return ""
 	}
-	tips := removalTips(t)
-	if len(tips) == 0 {
-		// Retired already — `posse worktrees --land` or a kill that landed
-		// took the branch, and neither a branch nor a tree HEAD is the last
-		// copy of nothing.
-		return ""
-	}
-	// A repo with no base cannot be asked at all — the same unanswerable
-	// question RemoveSessionTree refuses over, and it is one fact about the
-	// tree rather than one per tip.
-	if t.Base == "" {
-		return fmt.Sprintf("what %s holds beyond %s cannot be counted", tips[0].subject, orDetached(t.Base))
-	}
-	for _, tip := range tips {
-		n, err := git(t.Repo, "rev-list", "--count", t.Base+".."+tip.ref)
-		if err != nil {
-			return fmt.Sprintf("what %s holds beyond %s cannot be counted", tip.subject, orDetached(t.Base))
-		}
-		if n == "0" {
-			continue
-		}
-		if eq := equivalentOnBase(t.Repo, t.Base, tip.ref); measuredOnBase(eq) {
-			if lost, err := contentNotOnBase(t.Repo, t.Base, tip.ref); err == nil && len(lost) == 0 {
-				continue
-			}
-		}
-		return fmt.Sprintf("%s holds %s commit(s) %s does not", tip.subject, n, orDetached(t.Base))
-	}
-	return ""
+	// Everything else is one question about one TREE, and it is asked in
+	// one place (treeHolds) because ADR 0058's retire is now a third caller
+	// of it. SessionTreeOf carries m.Dir through as the tree's own path, so
+	// the dirty read treeHolds makes is the read this used to make itself.
+	return treeHolds(t)
 }

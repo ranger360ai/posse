@@ -59,8 +59,11 @@ func TestPassLandsABeadClosedAfterItsPassStoppedWatching(t *testing.T) {
 	if !strings.Contains(out, "a-1") || !strings.Contains(out, "1 commit(s) fast-forwarded") || !strings.Contains(out, "closed after its pass") {
 		t.Errorf("the pass did not say what it landed:\n%s", out)
 	}
-	// The tree and the branch are left exactly where they were: this sweep
-	// lands work, it does not retire anything (that is `posse kill`'s).
+	// The tree and the branch are still standing, and since ADR 0058 that
+	// is fact 4 and not a rule: this pass just committed in the tree, so
+	// the retire's grace keeps it (silently — retiresweep_qa_test.go is
+	// where the retire itself is pinned). What the sweep still never does
+	// on this pass is remove a tree it has only this second landed.
 	if _, err := os.Stat(tr.Path); err != nil {
 		t.Errorf("the sweep removed a session tree: %v", err)
 	}

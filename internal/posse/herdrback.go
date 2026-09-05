@@ -1423,6 +1423,79 @@ func (b *HerdrBackend) prunable(m *HerdrMeta, gen string) (dead bool, why string
 	return b.idEvidence(m, gen)
 }
 
+// sessionGone says whether THIS herdr server can prove the session named
+// here is gone, and when it cannot, why not. It coins no liveness rule: it
+// is the question ADR 0011 §2's prune already answers before it destroys a
+// session's record, asked about a session NAME rather than about a meta —
+// because ADR 0058's retire destroys that session's worktree on the same
+// evidence, and a second liveness rule written beside this one is how the
+// two ends of a reclaim drift apart (rangerhq-jeu2 is that bug, inside this
+// file).
+//
+// Every reading that is not proof of death KEEPS the session alive for the
+// caller: a herdr that did not answer, an empty board, a meta written
+// against another socket or carrying no record at all, a workspace that
+// answers — ours OR a stranger's on a recycled id. Silence is never death.
+//
+// The one place it goes past the prune is a name with NO META, which is most
+// of the population this exists for: a kill removes the meta and leaves the
+// tree standing (rangerhq-09o2), so the trees that strand are exactly the
+// ones with no record left to ask about. There is no workspace id to query,
+// so the evidence is this server's own listing — no row carries the name,
+// and the board is not empty. ADR 0058 records that as an ASSUMPTION and
+// names what would break it (a second posse home sharing one worktree root),
+// because the prune's own (d) rests on the same premise: this box's herdr is
+// the one that would know.
+func (b *HerdrBackend) sessionGone(name string) (dead bool, why string) {
+	if name == "" {
+		return false, "it has no session name to ask about"
+	}
+	wss, err := b.H.Workspaces()
+	if err != nil {
+		return false, fmt.Sprintf("herdr did not answer for the workspace list (%v), and silence is not evidence", err)
+	}
+	sock, gen := SocketID(), ServerGen()
+	// The prune's own belt, and for the same reason: an empty listing looks
+	// exactly like "everything died" and is also what a server that just
+	// came up looks like (rangerhq-snd). Asked before the meta, because it
+	// is a fact about the SERVER and holds whether or not a meta survives.
+	if why := emptyBoard(sock, len(wss)); why != "" {
+		return false, why
+	}
+	m, ok := b.readMeta(name)
+	if !ok {
+		for _, ws := range wss {
+			// labelWearsName and not WorkspaceLabel, deliberately over-
+			// inclusive: its doc warns that the bare-name arm can read
+			// another instance's untagged namesake as ours, and here that
+			// costs a standing directory, where the harm it warns about
+			// (ranger-base-rcwx) was a create and a relaunch being blocked.
+			// Any row wearing this name, however spelled, keeps the tree.
+			if b.App.labelWearsName(ws.Label, name) {
+				return false, fmt.Sprintf("workspace %s is listed under this name with no meta of its own", ws.WorkspaceID)
+			}
+		}
+		return true, ""
+	}
+	if m.Unreadable {
+		// listSessions' own reading of these bytes: not a session already
+		// gone, but a name this pass cannot answer for (ranger-base-82e40).
+		return false, "its meta carries no readable record, and unreadable is not gone"
+	}
+	for _, ws := range wss {
+		if ws.WorkspaceID == m.Workspace {
+			if stranger := b.notOurWorkspace(m, ws, gen); stranger != "" {
+				return false, stranger
+			}
+			return false, fmt.Sprintf("workspace %s is alive", m.Workspace)
+		}
+	}
+	if why := cannotAnswerFor(m, sock); why != "" {
+		return false, why
+	}
+	return b.prunable(m, gen)
+}
+
 // reclaim is the unlink itself: the only line in posse that destroys a
 // session's record on inference rather than on the operator's word.
 //

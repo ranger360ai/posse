@@ -42,6 +42,39 @@ departing overlay files, and writes nothing.
 
 ### Added
 
+**A dispatch pass now RETIRES a session worktree it can prove is finished
+with, instead of leaving it standing forever. `retire_tree_after:` (default
+`1h`) is the dial and `off` restores the old behaviour.**
+
+The tree of a dispatched bead was only ever removed inside `posse kill`, and a
+kill only runs while herdr still lists the session's workspace — so a herdr
+restart, a pane closed by hand, a crash, or a kill that lost the launcher-lock
+race left the tree standing with nothing in posse that would ever take it.
+Measured on one box before the change: 70 session trees, 8 with a live
+session, 38 dead, clean, closed and fully landed, 712M of disk, and 51 of the
+89 lines of `posse worktrees` saying "nothing unlanded".
+
+The landing sweep now takes those, and only those. All four facts are read
+fresh, at the moment of the retire, with the launcher lock held and the last
+two read again inside it: the bead reads **closed** in the store of record;
+`posse kill`'s own refusal is silent, which means the tree is clean and every
+commit is measured onto the base by patch-id AND byte-for-byte; herdr proves
+the session gone on the same evidence the meta prune already required; and
+nothing has written to the tree's git dir inside `retire_tree_after:`. Every
+question that cannot be answered keeps the tree — a herdr that will not
+answer, an empty board, a meta written against another server. It prints one
+`⌫ <bead> <branch> retired: …` line per tree, `--dry-run` says "would retire"
+and removes nothing, and a tree kept for anything but the grace says which
+fact kept it, on every pass it is true — unless the same pass already
+reported that tree in a landing line, which names the same work and the way
+out, and is not worth saying twice.
+
+Never retired unattended, at any age: an open bead's tree, a dirty tree, a
+tree no bead record accounts for, and any commit whose landing is somebody's
+decision (a `-x` trailer, a hand-resolved replay) rather than a measurement.
+Those keep printing what they printed before, and `posse worktrees` is still
+where you decide them by hand.
+
 **Your own CLI can now declare which reader parses its screen for a
 permission mode: `pane_mode: claude-footer | grok-border | none`.**
 

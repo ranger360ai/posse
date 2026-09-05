@@ -188,6 +188,13 @@ type SessionTree struct {
 // or a merge find the branch with nothing but the meta.
 func SessionBranch(session string) string { return "posse/" + session }
 
+// SessionOfBranch is that inverse, and it is one line rather than a parse:
+// the prefix is the whole of what SessionBranch adds, and a session name may
+// hold anything a workspace label may. A branch that is not a session
+// branch comes back unchanged, which is the only honest answer — no caller
+// here has one.
+func SessionOfBranch(branch string) string { return strings.TrimPrefix(branch, "posse/") }
+
 // DefaultWorktreeRoot is where session worktrees live when config does not
 // say. Not under RHQ_HOME: that is `~/.config/...`, which the runtimes'
 // own classifiers treat as configuration and refuse to let a persona write
@@ -1563,7 +1570,18 @@ func workHeadTime(t *SessionTree) (time.Time, bool) {
 	// Asked of the REPO and not the tree: a retired worktree is exactly the
 	// state workHead's second arm covers, and the object store both share
 	// outlives it.
-	out, err := git(t.Repo, "show", "-s", "--format=%cI", sha)
+	return commitTime(t.Repo, sha)
+}
+
+// commitTime is one commit's COMMITTER date — the one a replay updates,
+// where the author date survives a rebase, a cherry-pick and an amend — as
+// (zero, false) whenever git will not say. Its two readers ask for opposite
+// reasons and both need the committer's: the merge-back dedupe asks whether
+// a branch is the same branch a verdict was recorded about (workHeadTime),
+// and ADR 0058's grace asks when this tip was last WRITTEN, which a replay
+// is.
+func commitTime(repo, ref string) (time.Time, bool) {
+	out, err := git(repo, "show", "-s", "--format=%cI", ref)
 	if err != nil {
 		return time.Time{}, false
 	}
@@ -2197,6 +2215,60 @@ func heldByTip(t *SessionTree, tip removalTip) (redundant bool, err error) {
 	}
 }
 
+// treeHolds is what removing this session tree would take that nothing else
+// holds — "" when a removal takes nothing at all. It is RemoveSessionTree's
+// unforced refusal above asked as a QUESTION rather than performed as an
+// act, over the same two records and the same tips, and it fails closed on
+// every question it cannot answer.
+//
+// Its wording is the reap's and not the refusal's: three callers now ask it
+// (the reap before it kills, residueHolds; ADR 0058's retire before the
+// landing sweep removes anything; and `posse worktrees --retire`), and all
+// three are printing one clause inside a longer sentence, where
+// RemoveSessionTree is writing the whole refusal a human acts on. What must
+// not drift is the ANSWER, and TestRetireGuardsSeeADetachedTreesWork holds
+// the two to it over one fixture per shape.
+//
+// The tips are removalTips' — the branch, and the tree's own HEAD when that
+// is a different commit (ranger-base-v2rj7). `<base>..<branch>` is ZERO over
+// a detached worktree, which is how a container-tier session is launched on
+// purpose, so asking the branch alone answered "nothing held" over the whole
+// of such a session's committed work.
+func treeHolds(t *SessionTree) string {
+	if dirty := dirtyPaths(t.Path); len(dirty) > 0 {
+		return fmt.Sprintf("%s has uncommitted work (%s)", AbbrevHome(t.Path), dirtyList(dirty))
+	}
+	tips := removalTips(t)
+	if len(tips) == 0 {
+		// Retired already — `posse worktrees --land` or a kill that landed
+		// took the branch, and neither a branch nor a tree HEAD is the last
+		// copy of nothing.
+		return ""
+	}
+	// A repo with no base cannot be asked at all — the same unanswerable
+	// question RemoveSessionTree refuses over, and it is one fact about the
+	// tree rather than one per tip.
+	if t.Base == "" {
+		return fmt.Sprintf("what %s holds beyond %s cannot be counted", tips[0].subject, orDetached(t.Base))
+	}
+	for _, tip := range tips {
+		n, err := git(t.Repo, "rev-list", "--count", t.Base+".."+tip.ref)
+		if err != nil {
+			return fmt.Sprintf("what %s holds beyond %s cannot be counted", tip.subject, orDetached(t.Base))
+		}
+		if n == "0" {
+			continue
+		}
+		if eq := equivalentOnBase(t.Repo, t.Base, tip.ref); measuredOnBase(eq) {
+			if lost, err := contentNotOnBase(t.Repo, t.Base, tip.ref); err == nil && len(lost) == 0 {
+				continue
+			}
+		}
+		return fmt.Sprintf("%s holds %s commit(s) %s does not", tip.subject, n, orDetached(t.Base))
+	}
+	return ""
+}
+
 // warnw is the io.Writer fallback these helpers share: nil means stderr, the
 // same contract HerdrBackend.Warn has.
 func warnw(w io.Writer) io.Writer {
@@ -2314,10 +2386,24 @@ func ListSessionTrees(w io.Writer, dirs []string) error {
 // lost that race leaves a merged-nothing tree with its meta already gone
 // (rangerhq-09o2).
 //
-// It MERGES and never removes, and that restraint is the point: this reads
-// git, so it cannot tell a tree whose session ended from one a persona is
-// working in right now, and removing the second would destroy live work. A
-// tree it leaves reading "nothing unlanded" is one a human can retire.
+// It MERGES and never removes, and that restraint is still the point HERE:
+// this reads git and nothing else, so it cannot tell a tree whose session
+// ended from one a persona is working in right now, and removing the second
+// would destroy live work.
+//
+// What changed under it is who else may remove one (ADR 0058). The sentence
+// this paragraph used to end with — "a tree it leaves reading `nothing
+// unlanded` is one a human can retire" — was read for two weeks as a design
+// intent and MEASURED 2026-09-05 to have made the trees permanent: 70
+// standing, 38 of them dead, clean, closed and fully landed, and no human
+// had ever run the command it was pointing at. The retire went to the one
+// site that holds more than git — the landing sweep, which reads the bead
+// fresh, asks herdr, and takes the launcher lock (landsweep.go, retire.go).
+// A tree this command leaves reading "nothing unlanded" is one the next pass
+// takes when its session is provably gone and nobody has written to it since;
+// `posse worktrees --retire` is the human's run of that same predicate. This
+// function is unchanged by any of it, and `--force` here still stands down
+// the branch-record gate and nothing else.
 //
 // The whole sweep runs under one launcher lock (ADR 0011 §1), taken blocking
 // — this is a command a person ran and waiting is the honest thing for it to

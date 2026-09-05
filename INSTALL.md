@@ -2093,6 +2093,18 @@ is never swept at any age, and neither is your `pulse_persona:`. You can still
 reap by hand — `posse kill`, or `x` in the cockpit. Either way they cost
 nothing and do not block the next pass.
 
+The session's **worktree** is swept on the same terms, by the landing sweep at
+the head of each pass (`retire_tree_after:`, default `1h`; `off` or `never`
+keeps every tree forever). A tree is retired only when its bead reads closed,
+the tree is clean, every commit on it is measured onto your branch — the same
+refusal `posse kill` makes, so nothing that is the last copy of anything is
+ever removed — herdr proves the session gone, and nobody has written to the
+tree inside that grace. The pass prints `⌫ <bead> <branch> retired: …` for
+each, and names the fact that kept each of the others — except where the same
+pass has already reported that tree's unlanded work, which names the same
+thing and the way out. A `git status` in a tree resets its grace, so a tree
+you are looking at is not taken while you are in it.
+
 A reap is also when a persona's memory is made durable. Personas append what
 they learn to `$POSSE_PERSONA_DIR/ORDERS.md` and cannot commit it themselves, so
 `posse kill` does — path-limited to that one persona's directory, scanned for

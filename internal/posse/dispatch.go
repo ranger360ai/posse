@@ -495,7 +495,7 @@ func (d *Dispatcher) quietErrWriter() io.Writer { return dispatcherErrw{d} }
 // because these writers ARE the pass (see LastWrite).
 //
 // The callers, every one of them a config-diagnostic line their callee
-// prints through whatever writer it is given: reapPolicy → App.reapAfter
+// prints through whatever writer it is given: reapPolicy → App.graceAfter
 // (ranger-base-hpppv), and grokPoolGuard → grokMeterInputs, uncountedFor →
 // App.UncountedCap, rollEpoch → App.DispatchEpoch (ranger-base-9jojv).
 type dispatcherStampErrw struct{ d *Dispatcher }
