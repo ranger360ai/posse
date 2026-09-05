@@ -1,5 +1,11 @@
 # ADR 0039 — Model dial follow-through: the built-in tracks the dial, `runtimes/` joins the promoted set, the catalog says its age and rules only inside its lease
 
+*Status: superseded 2026-09-05 by ADR 0003 · ADR simplification, operator ruling 2026-09-05.*
+
+The surviving decision is in [0003 — current contract](0003-model-tiering.md), Catalog and model-dial follow-through; promotion points directly to 0015 §§2–3. This page keeps its number and dated evidence; the body below is historical, not current policy.
+
+## Historical record (superseded in full)
+
 *Status: accepted 2026-09-01 (D1, D2, D3a, D3b, and D3c per the
 operator's ruling on ranger-base-v1p66) · D3d spike answered 200
 (ranger-base-au0o4), D3d built 2026-09-05 (ranger-base-mvrke),

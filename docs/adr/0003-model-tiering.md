@@ -222,6 +222,41 @@ attribution.
 `--tier` on `posse new`; the cockpit shows tier + running cost so the
 interactive spend stays visible, never gated.
 
+## Catalog and model-dial follow-through (folded from 0039)
+
+An operator changes the model dial in a runtime overlay; the next release
+updates the built-in mapping and exact price row. Promotion belongs solely
+to [0015 §§2–3](0015-constitution-promotion.md); do not mirror or hand-edit
+the home. Current built-in values live in runtime.go and cost.go, not in
+a perpetual model-price snapshot in this ADR.
+
+An availability reading is authoritative only while
+`now - at < model_probe_ttl`. A failed refresh does not renew that lease;
+cooldown controls re-asking, never trust. Expired retained readings are
+UNKNOWN with their age and probe outcome, and launch uses the requested
+mapping. `posse runtimes` displays availability for mapped tiers;
+`--probe` requests fresh data but honors cooldown. Do not edit cache state
+to make a model available. The approved 0003 simplification will make even
+fresh readings advisory for model substitution; the lease and honest age
+survive that deletion.
+
+0039 D3d's session-mint catalog experiment was conditional research, not
+an accepted credential-source change. Catalog credentials continue through
+0019's current provider seam; no token priority switch follows from this
+fold. MEASURED in 0039: unpromoted overlays and a stale catalog controlling
+a model bump. ASSUMED recovery value of automatic fallback is a separate
+0003 measurement. Rejected: another stale-grace key, cooldown renewing
+trust, hand-edited caches, and an unverified change of credential source.
+This fold removes zero runtime mechanisms.
+
+## Lineage
+
+| Was | Here |
+|---|---|
+| 0039 D1 built-in follows model dial, D3a–c catalog age/probe/lease | Catalog and model-dial follow-through; selection simplified in this ADR |
+| 0039 D2 runtime overlay promotion | 0015 §§2–3, referenced directly here |
+| 0039 D3d conditional token experiment | No credential-source change; 0019 remains the owner |
+
 ## Consequences
 
 - `runtime.go`: tier→model maps + `{model}` in built-in templates;
