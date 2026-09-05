@@ -768,6 +768,25 @@ $ posse gates <persona>
 `--allow-degraded`; dispatch never degrades on its own. Reading this
 *before* your first dispatch saves you a confusing refusal later.
 
+Below the table is the one line here that is **not** a property of the PID:
+the permission mode each of this persona's live sessions is actually in,
+read off its pane rather than off the line posse typed (ADR 0035 §3). The
+same token rides every persona row of `posse list`, and the unknowns are not
+interchangeable:
+
+| token | means |
+|---|---|
+| `mode:auto`, `mode:plan`, … | the pane names this mode right now |
+| `mode:always-approve` (grok) | bypassPermissions — but the border cannot say whether the flag or `~/.grok/config.toml` set it |
+| `mode:?covered` (claude) | a modal dialog has replaced the mode footer; the pane proves nothing until it is cleared |
+| `mode:?unnamed` (grok) | one of the four modes grok's border cannot name, or a pane still on the startup splash |
+| `mode:—` (codex) | codex renders no approval policy on any screen; nothing further will fill this |
+| `mode:?` | the pane could not be read at all (the row says which) |
+
+A mode is a default disposition, not a promise not to block (ADR 0035 §4):
+a session in `auto` can still stop on a classifier confirmation, so read the
+`working`/`blocked` state as the separate fact it is.
+
 The table walks the runtime *catalog*, so a persona whose own `runtime:`
 resolves to nothing — no built-in, and no `runtimes/<name>.yaml` yet — has
 no row in it. That case is called out above the table (`⚠️  runtime:

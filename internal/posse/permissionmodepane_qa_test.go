@@ -1,8 +1,9 @@
 package posse
 
 // What a pane actually SAYS about its permission mode, per runtime
-// (ranger-base-0emp). rhq list / rhq gates report nothing about a session's
-// mode today, and the ask behind that gap is "read the pane, not the argv":
+// (ranger-base-0emp). `posse list` and `posse gates <persona>` report this
+// mode because of it, and the ask behind the gap they used to have is "read
+// the pane, not the argv":
 // a session relaunched by hand, or launched by a drifted template, carries
 // whatever mode it ended up in, and its command line is a claim about the
 // launch rather than a fact about the process.
@@ -12,10 +13,11 @@ package posse
 // captured on claude 2.1.251, codex-cli 0.150.1 and grok 1.0.5 against a
 // SCRATCH herdr server (the livesplash_test.go recipe: `herdr --session
 // qa0emp server`, one workspace per arm, no prompt ever submitted, so no
-// model turn and no spend). paneMode below is the reference reader those
-// captures support — the one a HerdrSession.PermissionMode field would have
-// to be built on. It lives in a test because posse has no such field yet;
-// whoever adds one should lift it, not re-derive it.
+// model turn and no spend). The reader these captures support SHIPPED with
+// ranger-base-vwgt — permissionmode.go's ReadPaneMode, behind
+// HerdrSession.PermissionMode — and paneMode below is now a two-value handle
+// on it, so this corpus and its mutations bear on the code the fleet runs
+// rather than on a copy of it.
 //
 // The measured contract, three runtimes, and it is not the same contract:
 //
@@ -166,78 +168,26 @@ const (
 		"                                                     [stable]"
 )
 
-// ─── the reference reader ───────────────────────────────────────────────────
+// ─── the reader under test ──────────────────────────────────────────────────
 
-// claudeFooterModes maps the FOOTER wording to the --permission-mode
-// spelling. Three of the six do not contain the word "mode"; that is the
-// whole reason this is a table and not a regexp.
-var claudeFooterModes = []struct{ footer, mode string }{
-	{"auto mode on", "auto"},
-	{"manual mode on", "manual"},
-	{"plan mode on", "plan"},
-	{"accept edits on", "acceptEdits"},
-	{"bypass permissions on", "bypassPermissions"},
-	{"don't ask on", "dontAsk"},
-}
-
-// paneMode reads a permission mode out of rendered pane text. ok=false means
-// the pane does not prove a mode — a dialog is covering the footer, the
-// runtime never renders one, or (grok) the mode is one of the several that
-// render as nothing. It is never a licence to assume the launch flag held.
+// paneMode is the corpus's handle on the SHIPPED reader. It used to be the
+// reader itself, living here because posse had no field to put it on; the
+// field landed with ranger-base-vwgt (HerdrSession.PermissionMode) and the
+// reader moved to permissionmode.go with it, table and tail window intact.
 //
-// Only the last three non-empty lines are considered, because the scrollback
-// above them holds the launch command line — the argv this whole exercise is
-// about not trusting. It does NOT hold an earlier session's footer: measured
-// on 2026-08-29, exiting a `--permission-mode bypassPermissions` claude with
-// /exit and relaunching it manual in the same pane left exactly one footer on
-// screen, the live one. The window is a guard against the command line and
-// against chat text quoting a footer, and no fixture here pins it.
+// It delegates rather than duplicates, deliberately: two readers of one
+// corpus go green apart, and every mutation this file was checked against —
+// dropping the three non-"mode" spellings, guessing auto when no footer
+// matches, reading codex's scrollback argv, calling grok's missing suffix
+// "default" — has to kill the code that actually runs on the fleet.
+//
+// ok=false is "the pane does not prove a mode", which the shipped reader
+// splits three ways (covered / unnameable / never) for the surfaces that
+// have to say WHICH unknown they are showing. The corpus pins the split
+// below; these two return values are what its per-runtime cases need.
 func paneMode(runtime, pane string) (mode string, ok bool) {
-	var tail []string
-	for _, ln := range strings.Split(pane, "\n") {
-		if strings.TrimSpace(ln) != "" {
-			tail = append(tail, ln)
-		}
-	}
-	if len(tail) > 3 {
-		tail = tail[len(tail)-3:]
-	}
-	switch runtime {
-	case "claude":
-		for _, ln := range tail {
-			for _, m := range claudeFooterModes {
-				if strings.Contains(ln, m.footer) {
-					return m.mode, true
-				}
-			}
-		}
-		return "", false
-	case "grok":
-		// The startup splash gets no special case, and that is measured
-		// rather than assumed: a pane still showing the New worktree /
-		// Resume session menu draws its composer border WITHOUT a suffix
-		// even when the launch said --permission-mode auto, so the rule
-		// below already returns "cannot tell" for it. A splash guard here
-		// would be unreachable code at best and, on a splash that did
-		// render a suffix, would throw away a true reading.
-		for _, ln := range tail {
-			if !strings.Contains(ln, "╰") || !strings.Contains(ln, "Grok ") {
-				continue
-			}
-			border := strings.TrimSuffix(strings.TrimSpace(ln), "─╯")
-			i := strings.LastIndex(border, "· ")
-			if i < 0 {
-				return "", false // default / acceptEdits / dontAsk / plan
-			}
-			return strings.TrimSpace(border[i+len("· "):]), true
-		}
-		return "", false
-	case "codex":
-		// Measured: codex 0.150.1 puts no approval policy on screen at all.
-		// Reading the scrollback's `-a never` would be reading the argv.
-		return "", false
-	}
-	return "", false
+	m := ReadPaneMode(runtime, pane)
+	return m.Mode, m.State == PaneModeNamed
 }
 
 // ─── what the corpus pins ───────────────────────────────────────────────────

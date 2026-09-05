@@ -341,7 +341,7 @@ QA_SELECTOR_PINS := TestHerdrSelectorsAreNamedByADR0016
 QA_TOOL_PINS     := TestTreeIsGofmtClean
 QA_SEED_PINS     := TestSeedSurfaceNameCountIsZero|TestSeedConfigLiveKeysAreRead
 QA_HISTORY_PINS  := TestPublicationRootCommitOmitsExcludedPaths|TestPublicationRootCommitADRsCarryProvenance|TestPublicationHistoryNeverCarriesTheSeedScript|TestShippedExampleTableCoversEveryVersionInGitHistory
-QA_DOC_PINS      := TestQANoCodeStringCallsTheDarwinCredentialsFileAStaleLeftover|TestQACageCredDocDoesNotCallTheOnDiskCredentialStale|TestQAADR0036StatusLineDoesNotCarryTheRetractedUnbuiltStamp
+QA_DOC_PINS      := TestQANoCodeStringCallsTheDarwinCredentialsFileAStaleLeftover|TestQACageCredDocDoesNotCallTheOnDiskCredentialStale|TestQAADR0036StatusLineDoesNotCarryTheRetractedUnbuiltStamp|TestQAADR0035PaneModeSurfaceClaimIsBuilt
 QA_IDENTITY_PINS := TestQAIdentityLiteralsNeverAppearInATrackedPath|TestIdentityLiteralsNeverAppearInTheHarnessRepoUndispositioned
 QA_OPS_PINS      := TestQAEveryOpsHitInTrackedMarkdownIsRuled|TestQAOpsShapeTableCanStillSayNo|TestInstancePathFormNeverAppearsInTrackedContentUndispositioned|TestQAInstancePathCensusCanStillSayNo
 
@@ -386,9 +386,12 @@ history-check:
 	$(GOBIN) test ./internal/posse -timeout 15m -count=1 -run '^($(QA_HISTORY_PINS))$$'
 
 # The prose pins over shipped code and docs: a retired ADR 0019 framing that
-# can walk back in with the next comment somebody writes, and ADR 0036's
-# status-line row. Type it when you touch a doc comment in internal/posse or
-# a row in docs/adr/.
+# can walk back in with the next comment somebody writes, ADR 0036's
+# status-line row, and ADR 0035 §3's claim that a session's pane mode is read
+# and surfaced — which is coupled to the shipped reader rather than asserted,
+# so it is green whether the clause stands or is reworded (ranger-base-vwgt).
+# Type it when you touch a doc comment in internal/posse or a row in
+# docs/adr/.
 doc-check:
 	$(GOBIN) test ./internal/posse -timeout 15m -count=1 -run '^($(QA_DOC_PINS))$$'
 

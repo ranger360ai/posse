@@ -52,6 +52,14 @@ type HerdrBackend struct {
 	// must never read the operator's own prompt history, and a reading
 	// nobody named is worse than the reading this bead started from.
 	ClaudeHistory string
+	// PaneModes makes Sessions() read each session's pane for the permission
+	// mode it is actually in (permissionmode.go). Off by default because it
+	// costs one herdr call per readable session and Sessions() is also the
+	// cockpit's per-tick refresh; the surfaces that RENDER the mode — `posse
+	// list` and `posse gates <persona>` — turn it on. Off, the field stays
+	// PaneModeUnread, which every renderer shows as an unknown rather than as
+	// a blank.
+	PaneModes bool
 }
 
 func (b *HerdrBackend) warn(format string, args ...any) {
@@ -888,6 +896,13 @@ type HerdrSession struct {
 	Status      string // herdr agent state; "" when no agent detected
 	Focused     bool
 	Foreign     bool // exists in herdr but wasn't created by posse
+	// PermissionMode is the mode this session's PANE is showing — read off
+	// the live screen tail, never from the launch template, the meta or the
+	// command line in the pane's own scrollback (permissionmode.go, ADR 0035
+	// §3). It is three-valued per runtime and its zero value is
+	// PaneModeUnread, which is not a mode and not "fine": only a listing that
+	// asked for the read (HerdrBackend.PaneModes) carries a reading.
+	PermissionMode PaneMode
 }
 
 // Sessions merges herdr's live workspace list with the meta files. Meta
@@ -1123,8 +1138,41 @@ func (b *HerdrBackend) listSessions() ([]HerdrSession, []string, error) {
 		b.warn("posse: %d session(s) closed without a replacement, recipe kept: %s — rebuild with `posse relaunch <name>`, or delete %s to discard\n",
 			len(recipes), strings.Join(recipes, ", "), b.metaDir())
 	}
+	b.fillPaneModes(out)
 	sortHerdrSessions(out)
 	return out, withheld, nil
+}
+
+// fillPaneModes reads each session's pane for the permission mode it is in.
+// It runs only when the caller asked for it (see HerdrBackend.PaneModes) and
+// it is the ONLY writer of HerdrSession.PermissionMode: the meta records what
+// the launch asked for, which is the claim this field exists to check.
+//
+// A runtime whose pane cannot answer costs no herdr call — codex was measured
+// once and renders nothing on any screen, so paying a read per codex session
+// would buy a constant.
+func (b *HerdrBackend) fillPaneModes(out []HerdrSession) {
+	if !b.PaneModes {
+		return
+	}
+	for i := range out {
+		s := &out[i]
+		switch {
+		case s.Runtime == "":
+			s.PermissionMode = PaneMode{Why: "this session records no runtime — posse did not launch it, so nothing says what its pane would render"}
+		case !PaneModeReadable(s.Runtime):
+			s.PermissionMode = ReadPaneMode(s.Runtime, "") // a fact about the runtime; no read needed
+		case s.PaneID == "":
+			s.PermissionMode = PaneMode{Why: "this session records no pane, so there is no screen to read"}
+		default:
+			text, err := b.H.PaneRead(s.PaneID, paneModeReadLines)
+			if err != nil {
+				s.PermissionMode = PaneMode{Why: fmt.Sprintf("pane read failed: %v", err)}
+				continue
+			}
+			s.PermissionMode = ReadPaneMode(s.Runtime, text)
+		}
+	}
 }
 
 // PruneGrace is how long a meta is immune to the inferential prune: a
@@ -3354,6 +3402,13 @@ func (b *HerdrBackend) AgentTarget(name string) (string, error) {
 // ─── CLI bodies ──────────────────────────────────────────────────────────────
 
 func (b *HerdrBackend) CmdList(w interface{ Write([]byte) (int, error) }) error {
+	// This listing RENDERS the permission mode, so it pays for the pane reads
+	// (permissionmode.go, ADR 0035 §3). It is set here rather than by the
+	// caller because a `posse list` that silently printed `mode:?` for every
+	// row would be the blank this column exists to replace.
+	was := b.PaneModes
+	b.PaneModes = true
+	defer func() { b.PaneModes = was }()
 	sessions, err := b.Sessions()
 	if err != nil {
 		return err
@@ -3387,6 +3442,13 @@ func (b *HerdrBackend) CmdList(w interface{ Write([]byte) (int, error) }) error 
 			if s.TurnFailure != "" {
 				line += "  " + TurnFailureTag
 			}
+			// What the PANE says the session's permission mode is — the
+			// compensating control ADR 0035 §3 names, and never a blank: the
+			// three unknowns are three different facts and each renders as
+			// its own token (PaneMode.Tag). ADR 0035 §4 governs the wording:
+			// this names the mode and nothing else, and the status column to
+			// its left stays the separate fact about whether it is blocked.
+			line += "  " + s.PermissionMode.Tag()
 		}
 		if s.Crew {
 			line += "  " + CrewTag

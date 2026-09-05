@@ -635,6 +635,14 @@ var arShadowAllowed = []arShadowAllow{
 		why: "cageCredential, the built-ins' side map §3's CageCred row already names (\"built-ins via a side map\"). The declaration is CageCred:; this is the built-in's value for it.",
 	},
 	{
+		file: "posse/permissionmode.go", fn: "", shape: "table",
+		why: "paneModeReaders: what a CLI PAINTS on its own screen is that CLI's own state, and the entries are its screen vocabulary — claude's six footer spellings, grok's composer border. The map selects a SCRAPER, never a posse behaviour: every arm returns a reading or an abstention, and no launch, gate, dispatch or cage decision reads the result (ranger-base-vwgt). Same class and same boundary as Herdr.PaneAgentSession above. ADJACENT, NOT RULED: whether \"what this runtime's pane says about its mode\" earns a DECLARED row on the runtime grid — so a new runtime could declare its own — is ADR 0017 §1's question and architecture's to answer, not this pin's.",
+	},
+	{
+		file: "posse/permissionmode.go", fn: "ReadPaneMode", shape: "branch",
+		why: "codex's arm of the same reader, and it is a MEASURED absence rather than a missing entry: codex 0.150.1 renders no approval policy on any screen, so the arm returns a permanent \"—\" and spends no pane read. Left as a named branch instead of an absent map key because \"nobody wrote a reader\" and \"there is nothing on the screen to read\" are different answers, and the surfaces render them differently (ranger-base-vwgt).",
+	},
+	{
 		file: "posse/refresh.go", fn: "", shape: "table",
 		why: "runtimeMint: `claude setup-token` is claude's own mint command. ADJACENT, NOT RULED — §3's register update does not name it. Listed so a third table is loud; if it needs a verdict that is the operator's, not this pin's.",
 	},

@@ -1359,6 +1359,21 @@ func fakeHerdr(args []string) int {
 		}
 		return fakeOK(`{"type":"pane_run"}`)
 	case "pane read": // plain text, never an envelope — like the real CLI
+		// pane-text/<pane id, ':' → '_'> is what THAT pane is showing, for
+		// the tests that read a screen rather than a JSON field (the
+		// permission-mode surface, ranger-base-vwgt). Per pane rather than
+		// one file for the board: a listing that reads three panes has to be
+		// able to get three different answers, which is the whole shape of
+		// the three-valued field.
+		if len(args) > 2 {
+			if b, err := os.ReadFile(filepath.Join(fakeDir(), "pane-text", strings.ReplaceAll(args[2], ":", "_"))); err == nil {
+				fmt.Print(string(b))
+				return 0
+			}
+		}
+		if _, err := os.Stat(filepath.Join(fakeDir(), "pane-read-error")); err == nil {
+			return fakeErr("pane_not_found", "fake herdr: pane read refused")
+		}
 		fmt.Print("prompt$ echo hi\nhi\nprompt$\n\n\n\n")
 		return 0
 	case "pane get":

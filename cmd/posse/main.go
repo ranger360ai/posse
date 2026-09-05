@@ -1453,6 +1453,14 @@ func main() {
 				}
 			}
 		}
+		// The one thing above this line that is NOT a property of the PID:
+		// what mode this persona's live sessions are actually in, read off
+		// their panes (ADR 0035 §3 — grok's second mode layer is this
+		// report, not a config file). It is per SESSION because that is
+		// what a mode is; a persona with none running is told so rather
+		// than shown a blank.
+		fmt.Fprintln(out, "permission mode on the pane — read from the live screen, never from the launch line (ADR 0035 §3):")
+		hb.SessionModeReport(out, ag.Name)
 		fmt.Fprintf(out, "%s\n", posse.AbbrevHome(gatesDir))
 		fmt.Fprintf(out, "  gate shell %s (typed as SHELL/GROK_SHELL — ADR 0009)\n", posse.AbbrevHome(gateShell))
 		if posse.ResolveCage("", ag) == posse.CageSeatbelt && posse.AvailableCages[posse.CageSeatbelt] {

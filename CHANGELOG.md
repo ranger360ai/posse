@@ -42,6 +42,42 @@ departing overlay files, and writes nothing.
 
 ### Added
 
+**`posse list` and `posse gates <persona>` now say which permission mode each
+session's PANE is in — and say plainly when they cannot tell.**
+
+A launch line is a claim about the launch, not a fact about the process. A
+hand relaunch, a drifted template, or an argv path that dropped a token all
+leave a session in a mode nobody typed, and nothing surfaced that: sessions
+have sat blocked on approval dialogs for hours because the flag posse types
+was the only thing anyone could read. Every persona row of `posse list` now
+carries a `mode:` token read off the live screen tail, and `posse gates
+<persona>` reports the same per live session with the reason attached.
+
+The three runtimes do not offer the same contract, so the field is
+three-valued per runtime rather than "a mode or a blank" (measured on claude
+2.1.251, codex-cli 0.150.1 and grok 1.0.5):
+
+- **claude** names all six modes in its footer — three of them without the
+  word "mode" (`accept edits on`, `bypass permissions on`, `don't ask on`),
+  which is why the reader matches names and not a pattern. A modal dialog
+  REPLACES the footer, so a pane sitting on one reads `mode:?covered`: it
+  proves nothing about its own mode, and that is the state worth seeing.
+- **grok** names two of six on the composer border (`auto`,
+  `always-approve`). The other four, and a pane still on the startup splash,
+  render nothing at all and read `mode:?unnamed` — four modes and an unknown,
+  never "default". `always-approve` is also what `~/.grok/config.toml`
+  produces with no flag, so the report says the mode and not which layer set
+  it.
+- **codex** renders no approval policy on any screen. Its column is a
+  permanent `mode:—`, costs no pane read, and is deliberately not the same
+  token as an unknown somebody could close with more work.
+
+Nothing types into a pane to obtain this, and nothing reads the launch
+command sitting in the pane's own scrollback. A mode is a default
+disposition, not a promise not to block (ADR 0035 §4): the `mode:` token and
+the `working`/`blocked` state stay separate facts. This is the compensating
+control ADR 0035 §3 names for grok, which gets no second mode layer.
+
 **A dispatch pass now files a bead when CI is red on `main`, and says on
 that bead when `main` is green again (`ci_workflow:`, on by default where
 there is a GitHub gate to read).**
