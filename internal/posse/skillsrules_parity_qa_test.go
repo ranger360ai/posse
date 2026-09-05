@@ -50,6 +50,7 @@ package posse
 import (
 	"bytes"
 	"encoding/json"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -285,6 +286,167 @@ func TestQARenderedTreeIsUniversalAgentSkills(t *testing.T) {
 	sort.Strings(top)
 	if strings.Join(top, ",") != ".claude-plugin,skills" {
 		t.Errorf("a non-claude reader sees exactly one foreign entry: %v", top)
+	}
+}
+
+// §2b — THE READER, not the layout. §2 above asserts that
+// <root>/<name>/SKILL.md resolves, and that assertion was green on the day
+// grok installed this very tree and listed Skills (0): os.Stat follows a
+// symlink, so a pin written with the Go stdlib's defaults measures a
+// dereferencing reader whatever the tree holds (ranger-base-65rc). What has
+// to hold is stronger and is what a plugin loader that does not follow a
+// link out of its root actually does — walk the tree, refuse every symlink,
+// and still find every bound skill whole.
+//
+// The fixture is the shape ADR 0007 §1 licenses and the operator's own
+// registry uses: the registry entry is ITSELF a symlink to where the skill
+// lives, and inside it a reference file that is a symlink too. Both are
+// links this render has to resolve rather than reproduce — and both are the
+// control, since a rig whose fixture had no link to lose could not tell a
+// copy from the symlinks it replaced.
+func TestQARenderedTreeNeedsNoSymlinkFollowed(t *testing.T) {
+	t.Parallel()
+	home := t.TempDir()
+	a := &App{Home: home, StateDir: filepath.Join(home, "state")}
+	if err := os.MkdirAll(a.SkillsDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// qm-alpha lives elsewhere and is reached through a symlinked registry
+	// entry; it carries a nested dir, a script whose execute bit is part of
+	// the skill (ADR 0007: skills that ship scripts run inside the cage like
+	// anything else), and a reference file that is itself a link.
+	elsewhere := t.TempDir()
+	alpha := qmSkill(t, elsewhere, "qm-alpha", "TOKALPHA")
+	if err := os.Symlink(alpha, a.SkillPath("qm-alpha")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(alpha, "references"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(t.TempDir(), "leases.md")
+	if err := os.WriteFile(outside, []byte("REFBODY\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(alpha, "references", "leases.md")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(alpha, "run.sh"), []byte("#!/bin/sh\necho hi\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	qmSkill(t, a.SkillsDir(), "qm-beta", "TOKBETA")
+	qmSkill(t, a.SkillsDir(), "qm-unbound", "TOKUNBOUND")
+
+	dir, err := a.RenderClaudeSkills("prober", []string{"qm-alpha", "qm-beta"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The reader: a walk that refuses to leave the tree through a link, the
+	// way grok's plugin loader was measured to behave. It reads nothing
+	// through os.Stat — every decision is made on the entry's own type.
+	var links []string
+	files := map[string]string{}
+	modes := map[string]fs.FileMode{}
+	if err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, rerr := filepath.Rel(dir, p)
+		if rerr != nil {
+			return rerr
+		}
+		switch {
+		case d.Type()&fs.ModeSymlink != 0:
+			links = append(links, rel)
+		case d.Type().IsRegular():
+			b, rerr := os.ReadFile(p)
+			if rerr != nil {
+				return rerr
+			}
+			fi, rerr := d.Info()
+			if rerr != nil {
+				return rerr
+			}
+			files[filepath.ToSlash(rel)] = string(b)
+			modes[filepath.ToSlash(rel)] = fi.Mode().Perm()
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(links) > 0 {
+		t.Errorf("a reader that does not dereference finds nothing behind these: %v", links)
+	}
+
+	// Every bound skill, whole: the body token the fixture hides in the
+	// SKILL.md, the nested reference that was a link out of the tree, and
+	// the script's execute bit.
+	for name, want := range map[string]string{
+		"skills/qm-alpha/SKILL.md": "TOKALPHA",
+		"skills/qm-beta/SKILL.md":  "TOKBETA",
+	} {
+		if !strings.Contains(files[name], want) {
+			t.Errorf("%s must carry the skill body (%s): %q", name, want, files[name])
+		}
+	}
+	if got := files["skills/qm-alpha/references/leases.md"]; got != "REFBODY\n" {
+		t.Errorf("a reference file behind a symlink must be copied through: %q", got)
+	}
+	if m := modes["skills/qm-alpha/run.sh"]; m&0o111 == 0 {
+		t.Errorf("a skill's script must keep its execute bit: %s", m)
+	}
+	// The registry is not touched: the flag tree is a render, and
+	// RHQ_HOME/skills/<name> is still the operator's own entry, still a
+	// symlink to where the skill actually lives (ADR 0007 §1).
+	if fi, err := os.Lstat(a.SkillPath("qm-alpha")); err != nil || fi.Mode()&fs.ModeSymlink == 0 {
+		t.Errorf("the registry entry must stay as the operator wrote it: %v %v", fi, err)
+	}
+	// And nothing but the skill came with it: the registry holds a third
+	// skill the PID never named.
+	if _, err := os.Lstat(filepath.Join(dir, "skills", "qm-unbound")); err == nil {
+		t.Error("the copy must be of the bound names, not of the registry")
+	}
+}
+
+// §2c — a skill dir that cannot be copied refuses the launch rather than
+// binding half of one. The shape reachable through the operator's own
+// registry is a link that points back up its own tree, which a copy that
+// followed it would never finish. ADR 0007 §3 spends its refusal on a
+// persona that launches believing it has a skill it does not, and half a
+// skill is that persona.
+func TestQAUncopyableSkillRefusesTheLaunch(t *testing.T) {
+	t.Parallel()
+	home := t.TempDir()
+	a := &App{Home: home, StateDir: filepath.Join(home, "state")}
+	if err := os.MkdirAll(a.SkillsDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	loop := qmSkill(t, a.SkillsDir(), "qm-loop", "TOKLOOP")
+	if err := os.Symlink(loop, filepath.Join(loop, "self")); err != nil {
+		t.Fatal(err)
+	}
+	_, err := a.RenderClaudeSkills("prober", []string{"qm-loop"})
+	if err == nil || !strings.Contains(err.Error(), "finite tree") {
+		t.Errorf("a self-referencing skill must refuse: %v", err)
+	}
+
+	// A dangling link INSIDE a skill is the one shape that does not refuse:
+	// under the symlinks this render replaced it reached the session as an
+	// entry resolving to nothing, and it still does. The skill itself must
+	// still arrive.
+	qmSkill(t, a.SkillsDir(), "qm-gap", "TOKGAP")
+	if err := os.Symlink(filepath.Join(t.TempDir(), "gone"), filepath.Join(a.SkillPath("qm-gap"), "missing.md")); err != nil {
+		t.Fatal(err)
+	}
+	dir, err := a.RenderClaudeSkills("prober", []string{"qm-gap"})
+	if err != nil {
+		t.Fatalf("a dangling entry inside a skill must not refuse: %v", err)
+	}
+	if b, err := os.ReadFile(filepath.Join(dir, "skills", "qm-gap", "SKILL.md")); err != nil || !strings.Contains(string(b), "TOKGAP") {
+		t.Errorf("the skill must still arrive whole: %v %q", err, b)
+	}
+	if _, err := os.Lstat(filepath.Join(dir, "skills", "qm-gap", "missing.md")); err == nil {
+		t.Error("an entry that resolves to nothing must not be reproduced")
 	}
 }
 
@@ -631,12 +793,45 @@ func TestQALiveSkillDiscoveryPerRuntime(t *testing.T) {
 		}
 		// The bead's question: does a NON-claude CLI read the
 		// claude-plugin-shaped tree correctly, or only coincidentally?
-		// grok reads claude plugins and will say so itself.
+		// grok reads claude plugins and will say so itself — and it is the
+		// only non-claude CLI on this box that does, which is exactly what
+		// makes it the instrument for the reader question claude cannot be
+		// asked (it dereferences).
+		//
+		// validate is NOT the pin and never was: the tree validated,
+		// installed, and surfaced ZERO skills, because every skill under it
+		// was a symlink out of the plugin root and grok's loader does not
+		// follow one (ranger-base-65rc). So the probe goes all the way to
+		// `inspect`, which is the first command that answers what the
+		// PERSONA would have. HOME is redirected: `plugin install` writes a
+		// registry, and never into the operator's own ~/.grok.
 		if _, err := exec.LookPath("grok"); err == nil {
-			out, err := exec.Command("grok", "plugin", "validate", dir).CombinedOutput()
-			t.Logf("grok plugin validate: err=%v\n%s", err, out)
-			if err != nil {
+			grokHome := t.TempDir()
+			grok := func(arg ...string) (string, error) {
+				cmd := exec.Command("grok", arg...)
+				cmd.Env = append(os.Environ(), "HOME="+grokHome)
+				cmd.Dir = grokHome
+				out, err := cmd.CombinedOutput()
+				t.Logf("grok %s: err=%v\n%s", strings.Join(arg, " "), err, out)
+				return string(out), err
+			}
+			if out, err := grok("plugin", "validate", dir); err != nil {
 				t.Errorf("a non-claude CLI must be able to read the rendered tree: %v\n%s", err, out)
+			}
+			if out, err := grok("plugin", "install", dir, "--trust"); err != nil {
+				t.Errorf("grok plugin install: %v\n%s", err, out)
+			}
+			out, err := grok("inspect")
+			if err != nil {
+				t.Errorf("grok inspect: %v\n%s", err, out)
+			}
+			for _, n := range bound {
+				if !strings.Contains(out, n) {
+					t.Errorf("grok installed the tree and does not see %s — the binding is realized and the persona has nothing:\n%s", n, out)
+				}
+			}
+			if strings.Contains(out, "qm-unbound") {
+				t.Errorf("grok sees a skill the PID never bound:\n%s", out)
 			}
 		}
 	})

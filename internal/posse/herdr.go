@@ -587,6 +587,42 @@ func (h Herdr) PaneRead(paneID string, lines int) (string, error) {
 	return text, nil
 }
 
+// PaneAgentSession is the RUNTIME's own id for the conversation in this
+// pane — `agent_session.value` off `pane get`, which for claude is the
+// session uuid its transcript and its submit log are keyed on (measured
+// 2026-09-05: the coordinator's pane reports f4987ef2-… and every row that
+// pane submitted carries that sessionId, ranger-base-2hvtv).
+//
+// It is the join posse had no other way to make: `agent explain` names the
+// agent KIND and never the session, and the pane's own name is posse's, not
+// the runtime's. Only claude's shape is answered — the store this feeds is
+// claude's — and a pane with no agent, no session, or a session of another
+// kind is an error rather than an empty string, so a caller cannot mistake
+// "herdr would not say" for "there is no session".
+func (h Herdr) PaneAgentSession(paneID string) (string, error) {
+	res, err := h.Run("pane", "get", paneID)
+	if err != nil {
+		return "", err
+	}
+	var payload struct {
+		Pane struct {
+			Agent        string `json:"agent"`
+			AgentSession struct {
+				Kind  string `json:"kind"`
+				Value string `json:"value"`
+			} `json:"agent_session"`
+		} `json:"pane"`
+	}
+	if err := json.Unmarshal(res, &payload); err != nil {
+		return "", Die("herdr pane get %s: bad response", paneID)
+	}
+	p := payload.Pane
+	if p.Agent != "claude" || p.AgentSession.Kind != "id" || p.AgentSession.Value == "" {
+		return "", Die("herdr pane get %s: no claude session id on that pane", paneID)
+	}
+	return p.AgentSession.Value, nil
+}
+
 // AgentPrompt submits text to an agent (unique name or hosting pane id).
 // wait=true blocks until the first settled idle|done|blocked state.
 func (h Herdr) AgentPrompt(target, text string, wait bool, timeoutMS int) (json.RawMessage, error) {

@@ -2230,23 +2230,36 @@ per-user-per-runtime accident of "whatever this machine installed into
 this CLI". A name resolves to `RHQ_HOME/skills/<name>/SKILL.md` or it is
 unknown; that directory *is* the registry (real Agent-Skills dirs or
 symlinks to `~/.claude/skills/x`, a plugin's `skills/x`, a repo — posse
-copies nothing and indexes nothing, so `posse skills` is `ls` and `posse
-agent check` is `stat`).
+indexes nothing and copies nothing INTO it, so `posse skills` is `ls` and
+`posse agent check` is `stat`).
 
 At launch the binding is materialized fresh, exactly as the gates are, in
 one of two shapes — which one is a property of the *runtime*, not of the
 PID:
 
 - **A flag at a rendered tree (claude).** `RHQ_HOME/state/skills/<persona>/claude/`
-  gets `.claude-plugin/plugin.json` plus `skills/<name>` symlinks to the
-  originals, and `{skills}` renders `--plugin-dir <that dir>`
-  (session-only, additive, verified: `claude --plugin-dir <tree> plugin
-  details posse-<persona>` lists the bound skills). `--add-dir` is CLAUDE.md
-  dirs and does **not** load skills. A `runtimes/<name>.yaml` opts into the
-  same shape with `skills_flag:` (a printf form, as `model_flag:` —
-  `--foo` renders separated, `--foo=%s` glued) and is handed the same
-  dir — the layout inside it is the universal Agent-Skills shape and the
-  plugin.json is inert to anything that does not read it.
+  gets `.claude-plugin/plugin.json` plus `skills/<name>` — a real directory
+  of files, COPIED out of the registry at every launch — and `{skills}`
+  renders `--plugin-dir <that dir>` (session-only, additive, verified:
+  `claude --plugin-dir <tree> plugin details posse-<persona>` lists the
+  bound skills). `--add-dir` is CLAUDE.md dirs and does **not** load skills.
+  A `runtimes/<name>.yaml` opts into the same shape with `skills_flag:` (a
+  printf form, as `model_flag:` — `--foo` renders separated, `--foo=%s`
+  glued) and is handed the same dir — the layout inside it is the universal
+  Agent-Skills shape and the plugin.json is inert to anything that does not
+  read it.
+  **Copied, not symlinked, and that is the whole of what a second runtime
+  needs from this shape** (ranger-base-65rc). The entries used to be
+  symlinks into `RHQ_HOME/skills`, which made the "universal layout" promise
+  a claim about the READER: grok 1.0.5 validated the tree, installed it, and
+  reported `Skills (0)` — a `skills_flag:` runtime whose loader behaves that
+  way launches clean, with `skills:` in Realized and the persona holding
+  nothing, which is exactly the failure ADR 0007 §3 spends a refusal on,
+  arriving through the accepted path. The same tree with real files reports
+  both. claude dereferences, so the one CLI the surface had been exercised
+  on was the one that hides it. The copy keeps each file's mode (a skill may
+  ship a script), refuses a skill dir that links back into itself, and costs
+  one directory copy per launch, beside the gates render.
 - **No flag, symlinks in the session dir (codex, grok).** Both CLIs
   discover skills from their *working directory*, so the launch links
   `<session dir>/.agents/skills/<name>` → `RHQ_HOME/skills/<name>` and

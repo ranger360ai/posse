@@ -663,9 +663,11 @@ func TestDeclaredDimensionsAreReadAndCredited(t *testing.T) {
 	}{
 		{"skills",
 			// The flag AND what the tree it points at is made of: a runtime
-			// that installs the same tree and follows no symlink surfaces
-			// zero skills while every screen says "flag" (ranger-base-65rc).
-			[]string{"flag — --skills=", "SYMLINK into RHQ_HOME/skills", "runtimes/fullcli.yaml (skills_flag:)"},
+			// that installed the same tree and followed no symlink surfaced
+			// zero skills while every screen said "flag" (ranger-base-65rc),
+			// so the row has to say what a reader finds there without
+			// dereferencing anything.
+			[]string{"flag — --skills=", "real DIRECTORY OF FILES, copied out of RHQ_HOME/skills", "runtimes/fullcli.yaml (skills_flag:)"},
 			[]string{"NO SURFACE", "cwd-discovery"}},
 		{"egress",
 			[]string{"api.fullcli.example auth.fullcli.example", "runtimes/fullcli.yaml (egress:)"},
@@ -740,7 +742,7 @@ func TestBuiltinDimensionRowsSpeakTheVerdictVocabulary(t *testing.T) {
 	}
 	// claude: the flag surface, spelled as the flag the CLI reads.
 	claude := gridRow(t, grid("claude"), "skills")
-	for _, w := range []string{"flag — --plugin-dir ", "SYMLINK into RHQ_HOME/skills"} {
+	for _, w := range []string{"flag — --plugin-dir ", "real DIRECTORY OF FILES, copied out of RHQ_HOME/skills"} {
 		if !strings.Contains(claude, w) {
 			t.Errorf("claude's skills row must carry %q:\n%s", w, claude)
 		}

@@ -604,6 +604,22 @@ func (in GovInputs) beadConditions(now time.Time, sessions []HerdrSession, add f
 			sub, why := in.ladderSubtype(dir, is.ID)
 			if hold.Typed != "" {
 				sub, why = "-unsent", " — "+hold.Why()
+			} else if hold.Sent != "" {
+				// ranger-base-2hvtv. The box HAS text and this row is
+				// deliberately not the -unsent one: claude's own submit log
+				// says that line was already sent in this pane's session, so
+				// nobody has to clear anything. Said out loud rather than
+				// silently dropped, because "the row changed shape" is how a
+				// reader finds out the reading is now discriminating — and
+				// the day claude stops logging submits, this clause simply
+				// goes quiet and the -unsent row comes back.
+				echo := "box echoes the line it last submitted (" +
+					strconv.Quote(ellipsis(hold.Sent, 60)) + ")"
+				if why == "" {
+					why = " — " + echo
+				} else {
+					why += ", " + echo
+				}
 			}
 			add("G2", GovLane, "settled"+sub+":"+is.ID,
 				fmt.Sprintf("%s held by %s, %s settled %q%s", is.ID, is.Assignee, s.Name, s.Status, why))

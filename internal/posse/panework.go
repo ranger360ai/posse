@@ -65,9 +65,13 @@ package posse
 //
 // PREVIEWS ARE TRUNCATED at 243 characters (measured: a 4949-byte
 // whole_recent region previews at 243 chars). The footer measures 73-99
-// bytes, so it arrives whole; a long typed prompt does not, which is why
-// nothing here compares a composer against the text posse sent — the
-// question asked is only whether the box is EMPTY.
+// bytes, so it arrives whole; a long typed prompt does not, so the question
+// asked HERE is only whether the box is EMPTY. Whether the text in a
+// non-empty box is a prompt somebody is about to send, or the line the pane
+// last submitted showing through, is a second question and a different
+// store: sentline.go and ranger-base-2hvtv. Truncation is why that
+// comparison is prefix-shaped, and ComposerTruncated below is how it knows
+// per reading rather than assuming.
 //
 // BOTH REGIONS ARE CLAUDE'S. Of the twenty detection manifests herdr ships
 // (2026-09-02), `prompt_box_body` appears in claude.toml alone, and the task
@@ -137,8 +141,14 @@ type PaneHold struct {
 	// ("1 shell, 1 monitor"). "" = none visible.
 	Work string
 	// Typed is the text sitting in the prompt box. "" = the box is empty,
-	// or no composer was on screen to read.
+	// no composer was on screen to read, or the box is echoing a line this
+	// pane has already submitted (Sent below).
 	Typed string
+	// Sent is the line the box is echoing back: text claude's own submit
+	// log says was already sent in this pane's session, so it is NOT a
+	// hold and Typed is empty beside it. "" = no echo was found, which is
+	// also what an unreadable store answers (sentline.go).
+	Sent string
 }
 
 // Waiting reports whether this pane's idle is a wait rather than a settle.
@@ -178,6 +188,20 @@ func (d AgentDetection) regionPreview(region string) string {
 		}
 	}
 	return ""
+}
+
+// ComposerTruncated reports whether herdr cut the composer preview down —
+// the 243-character cap the note above measures, asked per reading rather
+// than assumed, because `agent explain` reports the region's real byte count
+// beside the preview it cut. A region with no rule reading it answers false:
+// there is no preview, so nothing was truncated.
+func (d AgentDetection) ComposerTruncated() bool {
+	for _, r := range d.EvaluatedRules {
+		if r.Region == composerRegion && r.Evidence.RegionPreview != "" {
+			return r.Evidence.RegionBytes > len(r.Evidence.RegionPreview)
+		}
+	}
+	return false
 }
 
 // BackgroundWork returns claude's footer summary of the background tasks it
@@ -245,7 +269,27 @@ func (b *HerdrBackend) PaneHolding(target string) PaneHold {
 	if err != nil {
 		return PaneHold{}
 	}
-	return det.Hold()
+	hold := det.Hold()
+	if hold.Typed == "" {
+		return hold
+	}
+	// ranger-base-2hvtv. A box previewing the line this pane LAST SUBMITTED
+	// is echoing it, not holding it — claude's own submit log says which
+	// (sentline.go, and the measurement behind it). Asked only when there is
+	// text to ask about, so an empty composer still costs one `explain` and
+	// nothing else, and answered "no" by every failure on the way: a pane
+	// herdr will not name a claude session for, a store that will not open,
+	// a session with no row in it.
+	sess, err := b.H.PaneAgentSession(target)
+	if err != nil {
+		return hold
+	}
+	sent, ok := lastSubmitted(b.ClaudeHistory, sess)
+	if !ok || !submittedEcho(hold.Typed, sent, det.ComposerTruncated()) {
+		return hold
+	}
+	hold.Sent, hold.Typed = sent, ""
+	return hold
 }
 
 // sessionHolding is PaneHolding by session name, for the callers that have
