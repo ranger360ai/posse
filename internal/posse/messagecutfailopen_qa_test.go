@@ -132,42 +132,52 @@ func TestQAMessageArmCutIsNotForgedFromAPlainTypedMessage(t *testing.T) {
 
 // ARM 3, the licence's edge. The writer pastes the staged diff itself —
 // byte for byte, as `-v` would have written it — below a forged marker in
-// an `-F` message. CONTROL: that lands, and the object carries the diff (git
-// keeps the bytes; the arm took off the scan only what the index already
-// holds). VERDICT: the same paste with one classed line after it is refused,
-// because that line is not a line of the staged diff and so is message.
+// an `-F` message. The diff carries the class on a CONTEXT line (a file
+// already holding it, edited three lines away; `-U0` never shows that line,
+// the `-v` diff's three lines of context do), so that the CONTROL can fail:
+// the exact paste LANDS, with the diff in the object — git keeps the bytes;
+// the arm took off the scan only what the index already holds, the bounded
+// fail-open messageArm states — and a reference that came back empty would
+// refuse it. VERDICT: the same paste with one classed line after it is
+// refused, because that line is not a line of the staged diff and so is
+// message.
 func TestQAMessageArmCutTakesOnlyTheStagedDiffOffTheScan(t *testing.T) {
 	w := qaCeilingWall(t, "")
 
 	qaVerboseWallIsAwake(t, w, w.persona, "internal/posse/awake.go")
-	// A HEAD to diff against: the reference below is taken the way the hook
-	// takes it, against HEAD, and this repo has no commit yet.
-	w.plant(t, w.priv, "internal/posse/seed.go", "package posse\n")
+
+	const rel = "internal/posse/legacy.go"
+	// HISTORY: a file already carrying the class, planted past the hook.
+	w.plant(t, w.priv, rel, "package posse\n\n// "+qaCeilingHit+"\n\nvar A = 1\n")
 
 	const marker = "wire it\n# ------------------------ >8 ------------------------\n"
-	w.stage(t, w.priv, "internal/posse/probe.go", "package posse\n")
-	ref, err := w.git(w.priv, nil, "diff", "--cached", "--no-color", "--no-ext-diff", "--no-relative", "HEAD")
-	if err != nil || !strings.Contains(ref, "diff --git a/internal/posse/probe.go b/internal/posse/probe.go") {
-		t.Fatalf("fixture premise: the staged diff must be the probe's (%v):\n%s", err, ref)
+	stagedDiff := func(body string) string {
+		t.Helper()
+		w.stage(t, w.priv, rel, body)
+		zero, err := w.git(w.priv, nil, "diff", "--cached", "-U0", "--", rel)
+		if err != nil || strings.Contains(zero, qaCeilingHit) {
+			t.Fatalf("fixture premise: `-U0` must NOT carry the class, or the ADDED-line arm is what refuses (%v):\n%s", err, zero)
+		}
+		ref, err := w.git(w.priv, nil, "diff", "--cached", "--no-color", "--no-ext-diff", "--no-relative", "HEAD")
+		if err != nil || !strings.Contains(ref, " // "+qaCeilingHit) {
+			t.Fatalf("fixture premise: the staged diff must carry the class on a CONTEXT line (%v):\n%s", err, ref)
+		}
+		return ref
 	}
+
 	exact := filepath.Join(t.TempDir(), "exact")
-	write(t, exact, marker+ref)
-	out, err := w.git(w.priv, w.persona, "commit", "-F", exact, "--", "internal/posse/probe.go")
+	write(t, exact, marker+stagedDiff("package posse\n\n// "+qaCeilingHit+"\n\nvar A = 2\n"))
+	out, err := w.git(w.priv, w.persona, "commit", "-F", exact, "--", rel)
 	if err != nil {
 		t.Fatalf("control: the staged diff pasted exactly below a forged marker must LAND — nothing below "+
 			"the cut is outside the index — or the licence is not the diff: %v\n%s", err, out)
 	}
-	if landed, e := w.git(w.priv, nil, "log", "-1", "--format=%B"); e != nil || !strings.Contains(landed, "+++ b/internal/posse/probe.go") {
+	if landed, e := w.git(w.priv, nil, "log", "-1", "--format=%B"); e != nil || !strings.Contains(landed, "+++ b/"+rel) {
 		t.Fatalf("control premise: git must KEEP the pasted diff in the object (%v):\n%s", e, landed)
 	}
 
-	w.stage(t, w.priv, "internal/posse/probe2.go", "package posse\n")
-	ref, err = w.git(w.priv, nil, "diff", "--cached", "--no-color", "--no-ext-diff", "--no-relative", "HEAD")
-	if err != nil || !strings.Contains(ref, "probe2.go") || strings.Contains(ref, qaCeilingHit) {
-		t.Fatalf("fixture premise: the second staged diff must be probe2's and carry no class (%v):\n%s", err, ref)
-	}
 	plus := filepath.Join(t.TempDir(), "plus")
-	write(t, plus, marker+ref+qaCeilingHit+"\n")
-	out, err = w.git(w.priv, w.persona, "commit", "-F", plus, "--", "internal/posse/probe2.go")
+	write(t, plus, marker+stagedDiff("package posse\n\n// "+qaCeilingHit+"\n\nvar A = 3\n")+qaCeilingHit+"\n")
+	out, err = w.git(w.priv, w.persona, "commit", "-F", plus, "--", rel)
 	qaForgedCutRefused(t, w, out, err, "the staged diff pasted below a forged marker, plus one classed line")
 }
