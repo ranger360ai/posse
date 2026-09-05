@@ -900,42 +900,91 @@ func seedBeadsRedirect(t *SessionTree) error {
 			}
 		}
 	}
+	// os.MkdirAll Stats each component, so this still FOLLOWS a symlink at
+	// <tree>/.beads itself and seeds into whatever directory it points at. That
+	// is the residual of the write below, one component up, measured against
+	// this fix and filed as ranger-base-42au9 (P3, security) rather than folded
+	// in: the basename is fixed at "redirect" and the content at the repo's own
+	// .beads path, so it creates or clobbers a file NAMED redirect and reaches
+	// none of the classes ranger-base-d14e1 did. Cited here so the next reader
+	// of this line knows it was looked at and bounded, not missed.
 	dst := filepath.Join(t.Path, ".beads")
 	if err := os.MkdirAll(dst, 0o755); err != nil {
 		return Die("session worktree beads redirect: %v", err)
 	}
-	// And the same guard on the WRITE, which is of the same class and was
-	// cleared as "the WRITE, not a read" by the census above (ranger-base-lwfhe,
-	// escaping ranger-base-xc2s4). os.WriteFile opens O_WRONLY|O_CREATE|O_TRUNC,
-	// and open(2) for write on a FIFO with no reader blocks exactly as open for
-	// read on one with no writer does — so xc2s4's own EXPECTED, "the launch
-	// proceeds", was still false one statement further down. The reachable shape
-	// is the RELAUNCH: seeding is idempotent and re-run into an existing tree on
-	// purpose, and this destination is the SESSION's own worktree, so the
-	// precondition is WEAKER than the read arm's — that one needs write access to
-	// the main checkout, which git denies a named pipe, while every caged session
-	// can write its own tree by construction. One mkfifo there wedged every later
-	// dispatched launch into that tree, with nothing printed and no deadline.
+	// And the WRITE, which is of the same class and was cleared as "the WRITE,
+	// not a read" by the census above (ranger-base-lwfhe, escaping
+	// ranger-base-xc2s4). It gets a stronger answer than the read's, because it
+	// has a stronger problem: this destination is the SESSION's own worktree,
+	// which every caged session can write by construction, and the writer is the
+	// LAUNCHER, outside the cage. So the session chooses the file at that path
+	// and an uncaged process writes to it — the file's TYPE (a FIFO: os.WriteFile
+	// opens O_WRONLY|O_CREATE|O_TRUNC, and open(2) for write on a pipe with no
+	// reader blocks exactly as open for read on one with no writer does, so one
+	// mkfifo wedged every later dispatched launch into that tree with nothing
+	// printed and no deadline above, ranger-base-lwfhe) and, through a symlink,
+	// its PATH (a guard that Stats answers true for a symlink to a regular file
+	// and the write goes THROUGH it, out of the tree and into any file the
+	// launcher's uid can write — ranger-base-d14e1, P1, measured as a clobber of
+	// the constitution/gate class ADR 0002 §3 walls off from persona writes, and
+	// a dangling one CREATES a file out there).
 	//
-	// The answer is NOT the read's ("ignore it and carry on") and not ADR 0002
-	// §3's refusal either: this path is not a foreign hook in the operator's
-	// checkout but posse's own render, in a directory posse created three lines
-	// up, that only posse writes and only posse reads (beadsHome). A special file
-	// there is never something posse wrote, so it is nothing to preserve — and a
-	// refusal would let a session wedge its own relaunches for good, which is the
-	// bug with a message. Remove it and write the real redirect. A directory here
-	// still falls through to the WriteFile error, which returns rather than hangs.
+	// Both fall to one primitive, and it is not a check: NEVER OPEN THE
+	// DESTINATION — the security lane's ruling on ranger-base-d14e1, carried out
+	// here under ranger-base-aojiu. Write the bytes to a sibling temp (a fresh
+	// inode, O_CREATE|O_EXCL, inside dst so the rename stays within one
+	// filesystem) and rename it over the name. rename(2) replaces the
+	// destination's last component without following it and without opening it:
+	// a symlink is REPLACED and the file it pointed at is untouched, a FIFO is
+	// replaced without the open that blocked, a directory errors (file exists)
+	// so Die returns rather than hanging. All three MEASURED, 2026-09-05.
 	//
-	// This guard is os.Stat, so it FOLLOWS a symlink: a symlink here pointing at
-	// a regular file answers true and the write goes THROUGH it, out of the tree.
-	// That is not this bead's wedge but a write escape, measured and filed as
-	// ranger-base-d14e1 (P1, security) rather than folded in — the fix is an
-	// lstat census across isRegularFile's five call sites, not a line here.
+	// It closes a fourth shape of the same class for free, which is the sign
+	// the primitive is right rather than merely sufficient: a session that
+	// chmods its own redirect 0444 killed every
+	// later relaunch into that tree with "permission denied" on both earlier
+	// revisions, because the write opened the file; a rename needs write on the
+	// DIRECTORY, not on the file it replaces. An lstat guard would have closed
+	// the symlink arm and left a check-then-write window a session's leftover
+	// background process can race; a rename has no window. O_NOFOLLOW is the
+	// wrong primitive here for the same reason the guard was — it refuses the
+	// symlink (ELOOP, measured) and still OPENS a FIFO.
+	//
+	// isRegularFile is deliberately left on os.Stat at all five of its call
+	// sites, the read above included — the security lane's census on
+	// ranger-base-d14e1. They are READ guards asking "is what I would open
+	// regular", where following the link is the point: os.Stat catches a symlink
+	// to a FIFO and os.Lstat would not, and refuseNonRegularHook documents that a
+	// symlinked hook installs by design. This write was the only site of its
+	// class under the session tree (line 691 is O_EXCL; seedWorktreeLinks is
+	// Lstat+Symlink).
+	//
+	// Rename-over-a-temp is already how this package replaces a file it must not
+	// leave half-written: replaceMeta (herdrback.go), plancache.go ×2,
+	// modelavail.go, trust.go, refresh.go. As there, a crash between create and
+	// rename leaves litter rather than a wrong file; the temp is dot-prefixed so
+	// nothing reading this directory for a redirect can mistake one for it.
 	seeded := filepath.Join(dst, "redirect")
-	if !isRegularFile(seeded) {
-		_ = os.Remove(seeded)
+	f, err := os.CreateTemp(dst, ".redirect-*")
+	if err != nil {
+		return Die("session worktree beads redirect: %v", err)
 	}
-	if err := os.WriteFile(seeded, []byte(target+"\n"), 0o644); err != nil {
+	tmp := f.Name()
+	defer os.Remove(tmp) // no-op once the rename has taken it
+	if _, err := f.WriteString(target + "\n"); err != nil {
+		f.Close()
+		return Die("session worktree beads redirect: %v", err)
+	}
+	// CreateTemp opens at 0600; the seeded redirect has been 0644 since this
+	// function first wrote one, and beadsHome reads it on the launch path.
+	if err := f.Chmod(0o644); err != nil {
+		f.Close()
+		return Die("session worktree beads redirect: %v", err)
+	}
+	if err := f.Close(); err != nil {
+		return Die("session worktree beads redirect: %v", err)
+	}
+	if err := os.Rename(tmp, seeded); err != nil {
 		return Die("session worktree beads redirect: %v", err)
 	}
 	return nil
