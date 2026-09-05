@@ -2082,10 +2082,10 @@ sessions (herdr workspaces):
                                  plane (one bounded turn to write lessons down
                                  and commit), kill, recreate from the same
                                  persona/dir/envs
-      --no-land                skip the landing turn (dead or wedged sessions, and the
-                               one way through for a session relaunching ITSELF: it
-                               cannot wait for its own turn to settle, so the landing
-                               path refuses that outright)
+      --no-land                skip the landing turn (dead or wedged sessions). NOT a way
+                               for a session to refresh itself: a relaunch typed inside
+                               the session it names is refused on both arms, because the
+                               kill would end the process that must do the recreate
       --timeout <interval>     bound on the landing turn (default 10m)
       --force                  refresh even while its bead is open and its tree dirty
   posse kill <name>              land the plane (one bounded turn to write lessons

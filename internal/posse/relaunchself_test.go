@@ -1,8 +1,13 @@
 package posse
 
-// A session cannot relaunch ITSELF: the landing turn waits for the target's
-// agent to go idle, and when the caller is the target it is working
-// precisely because it is running the command that waits (ranger-base-521).
+// A session cannot relaunch ITSELF, on either arm (ranger-base-521). The
+// landing turn waits for the target's agent to go idle, and when the caller
+// is the target it is working precisely because it is running the command
+// that waits. --no-land skips the wait and reaches the kill, which ends the
+// processes in the workspace's panes — the caller included, measured inside
+// the close call (scripts/verify-self-close.sh, ranger-base-hslbb /
+// ranger-base-176sd) — so it would destroy the session between the kill and
+// the recreate.
 //
 // The discriminator is the workspace id herdr injects into every pane it
 // opens, read against the session meta's own — see CallerRunsInside. These
@@ -65,26 +70,66 @@ func TestRelaunchRefusesFromInsideTheSessionItself(t *testing.T) {
 	}
 }
 
-// The refusal is the LANDING TURN's, so --no-land still goes through — the
-// way out for a session that has landed itself by hand — and says which
-// pane the kill is about to take.
-func TestRelaunchFromInsideItselfWithNoLandProceedsAndNamesThePane(t *testing.T) {
+// The arm that must never be a way through. --no-land skips the landing turn
+// and reaches the kill, and the kill takes the caller with the workspace, so
+// the refusal covers it too — a relaunch that cannot reach its own recreate
+// destroys the session it was asked to refresh.
+func TestRelaunchFromInsideItselfIsRefusedWithNoLandToo(t *testing.T) {
 	b, fake := newTestBackend(t)
 	agentPerLaunch(t, fake)
 	devSession(t, b, "s1")
 	m := selfEnv(t, b, "s1")
 
 	var out strings.Builder
-	if err := b.RelaunchSession(&out, RelaunchOpts{Name: "s1", NoLand: true}); err != nil {
-		t.Fatalf("--no-land must still relaunch: %v\n%s", err, out.String())
+	err := b.RelaunchSession(&out, RelaunchOpts{Name: "s1", NoLand: true})
+	if err == nil {
+		t.Fatalf("--no-land from inside the session must be refused:\n%s", out.String())
 	}
-	for _, want := range []string{"inside its own workspace", m.Workspace, "killed s1", "ready: posse attach s1"} {
-		if !strings.Contains(out.String(), want) {
-			t.Errorf("output missing %q:\n%s", want, out.String())
+	for _, want := range []string{"cannot relaunch itself", m.Workspace, "--no-land skips the wait"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("refusal missing %q:\n%v", want, err)
 		}
 	}
-	if log := calls(t, fake); !strings.Contains(log, "workspace close "+m.Workspace) {
-		t.Errorf("--no-land still kills the recorded workspace:\n%s", log)
+	// And it is refused with the session still standing: the kill is the
+	// step that would end the caller, so nothing may reach it.
+	if log := calls(t, fake); strings.Contains(log, "workspace close") {
+		t.Errorf("nothing may be closed by a refused self-relaunch:\n%s", log)
+	}
+	if after, ok := b.readMeta("s1"); !ok || after.Workspace != m.Workspace {
+		t.Errorf("the session must be left exactly as it stands, got %+v", after)
+	}
+}
+
+// The refusal is one refusal, but each arm has to say what happens on ITS
+// side: a reader who typed --no-land is not told about a wait, and a reader
+// who did not is not left thinking the flag is the way out.
+func TestSelfRelaunchRefusalNamesBothHalves(t *testing.T) {
+	b, fake := newTestBackend(t)
+	agentPerLaunch(t, fake)
+	devSession(t, b, "s1")
+	selfEnv(t, b, "s1")
+
+	for _, tc := range []struct {
+		name string
+		o    RelaunchOpts
+	}{
+		{"landing", RelaunchOpts{Name: "s1"}},
+		{"--no-land", RelaunchOpts{Name: "s1", NoLand: true}},
+	} {
+		var out strings.Builder
+		err := b.RelaunchSession(&out, tc.o)
+		if err == nil {
+			t.Fatalf("%s: expected a refusal", tc.name)
+		}
+		for _, want := range []string{
+			"no --timeout ever settles",
+			"ends the processes in that workspace's panes",
+			"relaunch it from another session",
+		} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("%s: refusal missing %q:\n%v", tc.name, want, err)
+			}
+		}
 	}
 }
 

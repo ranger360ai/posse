@@ -398,23 +398,35 @@ nothing.
 ### Fixed
 
 **A session could not relaunch itself: it waited the whole landing timeout to
-be told to try again later.**
+be told to try again later, and the flag that skipped the wait would have
+destroyed it.**
 
 *Affected: `posse relaunch <name>` typed inside the session it names — the
-coordinator's own refresh, which is where the accumulated context, and the
-cost, is.* The landing turn waits for the target's agent to go idle before it
-closes the workspace, and a session running that command is working precisely
-because it is running it. The wait could only end at the bound, and the
-message then offered a longer `--timeout`, which buys the same words later.
+long-lived coordinating session's own refresh, which is where the accumulated
+context, and the cost, is.* The landing turn waits for the target's agent to
+go idle before the workspace closes, and a session running that command is
+working precisely because it is running it: the wait could only end at the
+bound, and the message then offered a longer `--timeout`, which buys the same
+words later. `--no-land` skipped the wait and reached the kill, which is
+worse. A process does not outlive closing the workspace its own pane is in —
+it ends inside the close call, and `nohup` does not save it, because what goes
+down is the pane's process group — so the session would have been destroyed
+and its name freed with nothing left running to make the replacement.
 
-`posse relaunch` now recognises the case — the pane's own workspace id against
-the session record's, on the same herdr server — and says so in zero seconds,
-before it plans or waits, naming the two ways through: run it from another
-session, or land the session by hand and pass `--no-land`. `--no-land` from
-inside the session is *not* refused; it prints which pane the kill is about to
-close. Nothing else changes: a relaunch typed anywhere else is untouched, and
-a session record too old to name its herdr server keeps the old behaviour
-rather than being refused on a comparison that cannot be made.
+`posse relaunch` now recognises the case — the caller pane's own workspace id
+against the session record's, on the same herdr server — and refuses **both**
+arms in zero seconds, before it plans or waits, saying what each half would
+do and naming the way through: run it from another session, or from a shell
+outside it. Nothing else changes. A relaunch typed anywhere else is untouched,
+`--no-land` is unaffected everywhere but this one case, and a session record
+too old to name its herdr server keeps the old behaviour rather than being
+refused on a comparison that cannot be made.
+
+The measurement is `scripts/verify-self-close.sh` (`make verify-self-close`),
+which also records that a child calling `setsid(2)` first *does* survive
+closing its own workspace — so a self-refresh is buildable, and is not built
+here: a new session leader cannot inherit the launcher lock that makes the
+kill and the recreate one step or neither.
 
 ### Fixed
 

@@ -46,16 +46,21 @@ turns — then a prompt telling the agent to append its lessons to
 guardrails permit. A session that never settles inside the bound is **not**
 killed; the operator is told to wait or pass `--no-land`. No agent, or an
 agent blocked on its own dialog, is a note and the refresh continues. **A
-session cannot land itself**, and since ranger-base-521 that is said rather
-than waited out: a relaunch typed inside the session it names is the one
-wait that can only end at the bound — the agent it waits for is running the
-command — so it is refused in zero seconds, before the plan, naming the two
-ways through (another session, or `--no-land` once the session has landed
-itself by hand). The caller is recognised by its own pane's workspace id
-against the record's, on the same herdr server; `--no-land` from inside
-still goes through, and says which pane the kill is about to close. A persona line is re-rendered
-from the PID at every launch (never replayed), so a plain session's `--cmd`
-is the one thing the meta has to carry itself (`cmd:`).
+session cannot refresh itself, on either arm** (ranger-base-521). The
+caller is recognised by its own pane's workspace id against the record's,
+on the same herdr server, so it is told in zero seconds rather than waited
+out. Both halves fail, differently: the landing turn waits for an agent
+that is running the command, so no `--timeout` settles; and `--no-land`
+reaches the kill, which ends the processes in the workspace's panes — the
+caller included, INSIDE the close call (`scripts/verify-self-close.sh`,
+ranger-base-hslbb) — so the session would be destroyed and its name freed
+between `closeRecorded` and `recreateSession`, with nothing left running to
+build the replacement. A child that calls `setsid(2)` first does survive
+that close, so a working self-refresh is buildable; it is not built,
+because a new session leader cannot inherit the launcher lock that makes
+the kill and the recreate one step or neither. A persona line is
+re-rendered from the PID at every launch (never replayed), so a plain
+session's `--cmd` is the one thing the meta has to carry itself (`cmd:`).
 
 The kill is irreversible and the meta it deletes is the only record of what
 to recreate, so refresh **secures the replacement before destroying the

@@ -27,7 +27,7 @@ const DefaultLandTimeout = 10 * time.Minute
 
 type RelaunchOpts struct {
 	Name    string
-	NoLand  bool          // skip the landing turn (a dead or wedged session, or one relaunching itself)
+	NoLand  bool          // skip the landing turn (a dead or wedged session)
 	Timeout time.Duration // bound on the landing turn (0 → DefaultLandTimeout)
 	// Force stands the ADR 0013 §4 reap guard down: refresh a session that
 	// still holds an open bead over an uncommitted tree. The operator has
@@ -86,32 +86,48 @@ func (b *HerdrBackend) RelaunchSession(w io.Writer, o RelaunchOpts) error {
 		timeout = DefaultLandTimeout
 	}
 
-	// A session cannot relaunch ITSELF (ranger-base-521), and the refusal is
-	// here rather than at the landing turn it is about. landThePlane waits
-	// for the target's agent to reach idle/done/blocked; when the caller IS
-	// the target, that agent is running this command, so the wait can only
-	// end at the bound. Every --timeout the old message offered bought a
-	// longer wait before the same words. This is the same event named in
-	// zero seconds, before the plan, because nothing about it is a question
-	// about the recreate.
+	// A session cannot relaunch ITSELF (ranger-base-521), on either arm, and
+	// this is the whole refusal rather than a wait that ends one way.
 	//
-	// --no-land is NOT refused. It is the way through for a session that has
-	// landed itself by hand — write the standing orders, commit, record the
-	// beads — and it is what the operator reaches for today. What it gets
-	// here is the one fact it is missing, said before anything is destroyed:
-	// the workspace this command is running in is the workspace the kill
-	// closes. Whether the recreate on the far side of that kill outlives the
-	// pane it was typed in is NOT measured (no herdr server can be started
-	// from a caged seat), so this line says what is certain and claims
-	// nothing about what is not.
+	// The landing turn cannot settle. landThePlane waits for the target's
+	// agent to reach idle/done/blocked, and when the caller IS the target
+	// that agent is running this command, so the wait can only end at the
+	// bound — every --timeout the old message offered bought a longer wait
+	// before the same words.
+	//
+	// --no-land skips that wait and reaches the kill, which is worse, and
+	// this is measured rather than argued: a process does NOT outlive
+	// closing the workspace its own pane is in. It ends INSIDE the close
+	// call — its own rc is never written — and `nohup … &` does not save it,
+	// because what goes down is the pane's process group
+	// (scripts/verify-self-close.sh, ranger-base-hslbb; the defect it names
+	// is ranger-base-176sd). closeRecorded is that close, so the self case
+	// dies between the kill and the recreate: workspace gone, name free,
+	// nothing left running to build the replacement, and the recipe on disk
+	// naming a workspace the next listing prunes. That is rangerhq-v52t's
+	// loss reached from inside, and the shape this file's whole ordering
+	// exists to prevent — so it is refused where every other unrecoverable
+	// step is refused, before anything is spent.
+	//
+	// Nothing is taken away by refusing it. The operator's `--no-land` is
+	// typed in the operator's own shell, which is not this case; what is
+	// closed is a path that could not complete. The way through for a
+	// session that wants its own refresh is to ask for one from outside,
+	// which is what the message says.
+	//
+	// A session leader (setsid(2)) DOES survive the close, measured on the
+	// same rig — so a self relaunch is buildable and is deliberately not
+	// built here: a new session leader is a new process, and it cannot
+	// inherit the launcher lock this one holds (an open file description),
+	// which is the critical section that makes the kill and the recreate one
+	// step or neither. That is a design question with a lock in it, not a
+	// branch (ranger-base-176sd records both shapes).
 	if CallerRunsInside(m) {
-		if !o.NoLand {
-			return Die("%s cannot relaunch itself: this command is running inside %s's own workspace (%s), and the landing turn waits for that session's agent to go idle — it is working precisely because it is running this command, so no --timeout ever settles\n"+
-				"  relaunch it from another session, or from a shell outside it:\n    posse relaunch %s\n"+
-				"  or land it by hand first (standing orders written, work committed, beads recorded) and skip the turn:\n    posse relaunch %s --no-land",
-				o.Name, o.Name, m.Workspace, o.Name, o.Name)
-		}
-		fmt.Fprintf(w, "note: %s is being relaunched from inside its own workspace (%s) — the kill closes the pane this command is running in\n", o.Name, m.Workspace)
+		return Die("%s cannot relaunch itself: this command is running inside %s's own workspace (%s), and neither half of a refresh survives that.\n"+
+			"  the landing turn waits for that session's agent to go idle, and it is working precisely because it is running this command — no --timeout ever settles.\n"+
+			"  --no-land skips the wait and reaches the kill, which ends the processes in that workspace's panes, this one included (measured: scripts/verify-self-close.sh) — the session would be destroyed and its name freed with nothing left running to recreate it.\n"+
+			"  relaunch it from another session, or from a shell outside it:\n    posse relaunch %s",
+			o.Name, o.Name, m.Workspace, o.Name)
 	}
 
 	if m.Dir == "" {
