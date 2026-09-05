@@ -5400,9 +5400,9 @@ func identityMatch(path, render string) bool {
 // exact operation it gates with exit 1; marker text and refusal output are
 // not evidence. Hook output is discarded and RHQ_GATES_DIR is blank so a
 // launch probe never forges a refusal-log entry. $1/$2 are private temp
-// files carrying OUR OWN render (execOwnRenders) — never the file at the
-// dispatch path — so this exec never runs bytes a session did not just
-// write (ADR 0023 Decision 2).
+// files carrying OUR OWN render (execOwnRenders), 0700 inside a 0700
+// directory — never the file at the dispatch path — so this exec never runs
+// bytes a session did not just write (ADR 0023 Decision 2).
 const l3HookProbeScript = `
 unset GIT_INDEX_FILE RHQ_VISIBILITY_OVERRIDE
 posse_push_bad=0
@@ -5421,35 +5421,44 @@ if [ "$posse_status" -ne 1 ]; then posse_commit_bad=2; fi
 exit $((posse_push_bad + posse_commit_bad))
 `
 
-// execOwnRenders writes render to a private temp file per slot and execs
-// THAT under l3HookProbeScript — never the file at the dispatch path. This
-// half of the probe catches a renderer regression (a broken /bin/sh, a bad
-// render) rather than anything about what is planted at the dispatch path;
-// identity (l3Identity) is what says whether the dispatch path is ours.
+// execOwnRenders writes one render per slot into a private 0700 directory
+// (probeScratchDir) and execs THOSE under l3HookProbeScript — never the file
+// at the dispatch path. This half of the probe catches a renderer regression
+// (a broken /bin/sh, a bad render) rather than anything about what is planted
+// at the dispatch path; identity (l3Identity) is what says whether the
+// dispatch path is ours.
+//
+// The slot files are named for their slots rather than randomly: the random
+// part is the directory, and inside a 0700 directory there is no name to
+// enumerate.
 func execOwnRenders(dir string, wantPrePush bool, commitRender string) (prePushOK, commitOK bool) {
+	scratch, err := probeScratchDir()
+	if err != nil {
+		return false, false
+	}
+	defer os.RemoveAll(scratch)
+
 	var pushTemp string
 	if wantPrePush {
-		f, err := writeTempRender(PrePushHook)
+		f, err := writeTempRender(scratch, "pre-push", PrePushHook)
 		if err != nil {
 			return false, false
 		}
-		defer os.Remove(f)
 		pushTemp = f
 	}
-	commitTemp, err := writeTempRender(commitRender)
+	commitTemp, err := writeTempRender(scratch, "prepare-commit-msg", commitRender)
 	if err != nil {
 		return false, false
 	}
-	defer os.Remove(commitTemp)
 
-	msg, err := os.CreateTemp("", "posse-prepare-commit-msg-probe-")
-	if err != nil {
+	// The message file the commit render is handed. Not exec'd, and inside
+	// the same 0700 directory for the same reason.
+	msgPath := filepath.Join(scratch, "commit-msg")
+	if err := os.WriteFile(msgPath, nil, 0o600); err != nil {
 		return false, false
 	}
-	msg.Close()
-	defer os.Remove(msg.Name())
 
-	cmd := exec.Command("sh", "-c", l3HookProbeScript, "posse-hook-probe", pushTemp, commitTemp, msg.Name())
+	cmd := exec.Command("sh", "-c", l3HookProbeScript, "posse-hook-probe", pushTemp, commitTemp, msgPath)
 	// The probe runs in the MAIN checkout, not in dir, since per-session
 	// worktrees (rangerhq-09o2). The shared-index arm deliberately stands
 	// down in a linked worktree — that tree's index is private and there is
@@ -5477,19 +5486,45 @@ func execOwnRenders(dir string, wantPrePush bool, commitRender string) (prePushO
 	return !wantPrePush || code&1 == 0, code&2 == 0
 }
 
-func writeTempRender(body string) (string, error) {
-	f, err := os.CreateTemp("", "posse-l3-render-")
+// probeScratchDir is the private directory execOwnRenders builds this
+// launch's renders in, mode 0700, removed by its caller's RemoveAll.
+//
+// It exists because of WHERE the exec happens: the launcher runs these bytes
+// in its own UNSANDBOXED context at every launch, and $TMPDIR is writable by
+// every caged session on this box at the same uid (ADR 0002's seatbelt
+// writable set). A render written straight into $TMPDIR under a name a
+// session can enumerate, at 0755, leaves a thin version of the escalation ADR
+// 0023's Context set out to remove. Nothing about the probe needs either
+// property: the launcher execs the file as its own uid, so 0700 is enough,
+// and inside a 0700 directory the name cannot be enumerated at all. Decision
+// 2 then holds by construction rather than by the width of a window
+// (ranger-base-t5vh).
+func probeScratchDir() (string, error) {
+	d, err := os.MkdirTemp("", "posse-l3-probe-")
 	if err != nil {
 		return "", err
 	}
-	name := f.Name()
-	if _, err := f.WriteString(body); err != nil {
-		f.Close()
-		os.Remove(name)
+	// MkdirTemp asks for 0700, but umask can only narrow what it gets. The
+	// chmod makes the mode exact rather than whatever the launching shell
+	// left, which is what the pin asserts.
+	if err := os.Chmod(d, 0o700); err != nil {
+		os.RemoveAll(d)
 		return "", err
 	}
-	f.Close()
-	if err := os.Chmod(name, 0o755); err != nil {
+	return d, nil
+}
+
+// writeTempRender writes one render into the probe's private directory at
+// mode 0700 — readable, writable and executable by the launcher's uid, which
+// is the only uid that touches it, and by nothing else. NOT 0755: see
+// probeScratchDir.
+func writeTempRender(dir, slot, body string) (string, error) {
+	name := filepath.Join(dir, slot)
+	if err := os.WriteFile(name, []byte(body), 0o700); err != nil {
+		return "", err
+	}
+	// WriteFile's perm is also umask-narrowed, and only on create.
+	if err := os.Chmod(name, 0o700); err != nil {
 		os.Remove(name)
 		return "", err
 	}
