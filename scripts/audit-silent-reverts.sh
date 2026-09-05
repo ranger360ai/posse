@@ -781,7 +781,7 @@ patch_id() {
 
 # The reason on the allow line(s) naming this sha, with the sha and the optional
 # patch-id token stripped. THE COST OF MAKING THE TOKEN OPTIONAL is that a
-# reason may not begin with 40 hex — the fourteen lines in the file today all
+# reason may not begin with 40 hex — the triage lines in the file today all
 # begin "Benign", "THE INCIDENT" or "The REPAIR", and the allow file's header
 # states the rule under ranger-base-ltari, which owns that file. sub() rebuilds
 # $0's fields, so the second sub sees whatever followed the sha.

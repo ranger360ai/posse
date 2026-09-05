@@ -102,8 +102,48 @@ func TestQAHintWaitsUseTheNamedBudget(t *testing.T) {
 	unit := map[string]time.Duration{
 		"Millisecond": time.Millisecond, "Second": time.Second, "Minute": time.Minute,
 	}[decl[2]]
-	if got := time.Duration(n) * unit; got > time.Second {
+	// `>=` and not `>`: the doc comment above and this message both say
+	// "under a second" / "a second or longer", and an exemption fence that
+	// admits the first value it forbids is not a fence (ranger-base-0b0qg).
+	if got := time.Duration(n) * unit; got >= time.Second {
 		t.Errorf("stormWindow is %s: the exemption is for a window a test COUNTS in, "+
 			"and anything a second or longer is patience wearing its name — spend hintWait", got)
+	}
+}
+
+// The redial floor's ceiling, the herdrHintRetry check above in the shape it
+// already uses: a constant in herdrevents.go whose bound ADR 0016 states as a
+// number gets that bound pinned here, because nothing else reads the SHIPPED
+// value — both of ranger-base-7hjy4's new pins take the floor as a parameter,
+// so the constant itself shipped unmeasured (ranger-base-0b0qg, from
+// ranger-base-8ouj8). Measured before this pin existed: the constant at 3s and
+// at 10s ran `go test ./internal/posse -run "Herdr|Hint|Budget|Watch"` green
+// both times.
+//
+// The bound is the ADR's and not a fresh number: §1 prices the floor's cost as
+// "a pane that appears and settles inside the wait is missed by the stream and
+// swept by the timer", and bounds it above by that sweep — the cockpit's
+// two-second completeness tick (cmd/posse/cockpit.go, `time.NewTicker(2 *
+// time.Second)`), "so the floor never outlives the timer that covers it". A
+// literal here and not a reference: the tick is cmd/posse's, this is
+// internal/posse, and the sibling check spells its bound the same way.
+//
+// `>=` because a floor equal to the sweep does not sit under it — the two land
+// in the same instant and which goes first is scheduling, which is the
+// stormWindow fence's defect one guard up.
+//
+// This is the CEILING only. §1's lower edge is the dial's own cost ("anything
+// under ~33 ms would be decorative"), stated as an approximation rather than a
+// bound, and one second's place inside the band is ASSUMED by the ADR in as
+// many words — so a bead that moves the floor within the band moves it without
+// touching this test, and only a floor that outlives its sweep reds.
+func TestQAHerdrRedialFloorStaysUnderItsSweep(t *testing.T) {
+	t.Parallel()
+	const cockpitCompletenessTick = 2 * time.Second
+	if herdrRedialFloor >= cockpitCompletenessTick {
+		t.Errorf("herdrRedialFloor is %s and the cockpit's completeness tick is %s: "+
+			"ADR 0016 §1 bounds the floor above by the sweep that covers the pane it "+
+			"delays, and a floor at or past that tick outlives it — move the tick with "+
+			"it, or bring the measurement the ADR asks for", herdrRedialFloor, cockpitCompletenessTick)
 	}
 }
