@@ -1,7 +1,10 @@
 # ADR 0039 — Model dial follow-through: the built-in tracks the dial, `runtimes/` joins the promoted set, the catalog says its age and rules only inside its lease
 
 *Status: accepted 2026-09-01 (D1, D2, D3a, D3b, and D3c per the
-operator's ruling on ranger-base-v1p66) · D3d awaits a spike · owner:
+operator's ruling on ranger-base-v1p66) · D3d spike answered 200
+(ranger-base-au0o4) and D3d amended 2026-09-05 (ranger-base-q3n4e: the
+session credential a posse process reads is the env set under the home,
+selected by the launch's set list — never its own environment) · owner:
 architect · amends 0003
 §1 (the claude strong cell), 0015 §2/§3 (the promoted set), 0021 (the
 overlay's home) · from ranger-base-1ykc1, discovered from
@@ -174,8 +177,108 @@ only inside its lease.**
   same pinned host the session egresses to (credpin.go). If it answers
   401/403: D3d is dead and the credential question stays wkai3's.
 
+  *Amended 2026-09-05 (ranger-base-q3n4e, from ranger-base-mvrke).* The
+  spike answered 200 (ranger-base-au0o4, 2026-09-02: eleven ids, the
+  strong id among them, three control arms 401), and the build that
+  followed it is right and inert: "read from the PID's env set as the
+  launch already does" was realized as the seam's session half, which is
+  `os.Getenv` of the name `CageCredential(rt)` gives — a read of THIS
+  process's environment. That sentence is true of a launched runtime and
+  of no posse process, and the probe runs in a posse process. MEASURED on
+  this instance (q3n4e): the mint is in two env sets under the home;
+  sibling variables from the same set reach a dispatched session; the
+  mint does not — absent from `os.Environ`, not empty — and no shell rc
+  exports it, so the launcher's environment has none either. So the
+  probe fell through to the meter store on every read, the store D3d
+  exists to stop depending on.
+
+  **Ruled: the store is the env set under the home; the launch names
+  which.**
+
+  1. *Where.* ADR 0019's session half reads the env set FILES under the
+     home's `EnvsDir` — the store of record D1 of that ADR already names
+     ("posse-owned, store of record is the home") — and never the
+     process environment. The environment arm is retracted, not kept
+     beside the file: at this HEAD the seam's session purpose has zero
+     callers outside `credential.go` (grep), every posse surface that
+     asks about the session credential already reads the files
+     (`sessionRows`, `ExpiringCredentials`, `sessionExpiry`), and the
+     one process that ever holds the value in its environment is the
+     runtime, which scrubs it from its children. An arm no caller can
+     satisfy is not a second store; it is a sentence that reads true and
+     answers nothing.
+  2. *Which set.* The caller names the sets, in launch order — the list
+     `planLaunch` already computes (explicit `--env-file` and recipe
+     sets, then the PID's `envs:`, else config `default_env` for a
+     persona-less caller, rangerhq-f2b), hoisted into one helper that
+     both the launch and the preflight call. Set NAMES are in hand at
+     the preflight (`ag` and `o.Envs` are loaded a hundred lines above
+     it); only the VALUES were resolved after it, and the seam reads
+     those itself at the moment of the probe. The value is the LAST
+     assignment of the name across that list in order — the rule
+     `readStamps` already ascribes to a launch within one file, extended
+     across files. `Read(runtime, session)` keeps its signature and
+     reads the persona-less list; a second entry point takes the
+     launch's list. One reader underneath, no new acquisition path, no
+     new host: credpin stays on the endpoint's host.
+  3. *The probe.* `TierPreflight` hands the launch's sets to the catalog
+     read, so the lister's preferred credential is the mint of the sets
+     THIS launch will realize, and the meter store stays the fallback
+     the D3d build already wired (nothing to read: no request spent;
+     401/403: one extra read, never per launch). The cockpit callers
+     (`posse runtimes`, `posse gates`) have no persona and get the
+     persona-less list. The reading is shared across personas within
+     its lease exactly as before; the credential that refreshed it is
+     the launch's that found it stale.
+  4. *The exposure question, answered.* Who can READ the file does not
+     change: below the container tier any same-uid process reads a
+     mode-600 file (ADR 0019, "The trade, plainly"), and ranger-base-au0o4
+     MEASURED a seatbelt session reading the default set's value to
+     run its probe. What changes is which process PRESENTS it: posse's
+     launcher, to the pinned host the session itself egresses to. The
+     value is never logged — `ModelLister`'s errors are generic and the
+     fake endpoint asserts the header's value without printing it.
+  5. *Cost.* One env-set read per catalog refresh, which happens once
+     per lease, not per launch; the launch reads the same files again
+     for `vars`, a second read of a small file. Nothing new is held
+     hostage; the exit hatch from the whole decision is the fallback arm
+     that runs today.
+
+  Landing order (MEASURED at this HEAD): the D3d build named above is in
+  gwart's session tree, not on main — `posse/gwart-posse-ranger-base-mvrke`
+  is an ancestor of main and no ref carries a `Fallback` field on
+  `ModelLister` — so the beads this amendment cuts wait on
+  ranger-base-mvrke landing, never on the sentence that says it is built.
+
 ## Alternatives rejected
 
+- **(q3n4e a) Export the mint in the launcher's environment.** Zero code
+  and it makes the old D3d sentence true. Rejected: "the launcher" is the
+  operator's cockpit shell and the dispatch loop, so the export reaches
+  every process the operator runs and is readable off any of them with a
+  process walk; an env set is an explicit per-persona choice and never a
+  silent default (rangerhq-f2b), and this makes it the box's default;
+  and the seatbelt profile is rendered from that environment (ADR 0019
+  D2), which is the wrong place to widen. Unpriced against nothing: it
+  also leaves the seam reading an arm no posse process holds.
+- **(q3n4e c, pure) Plumb the launch's resolved `vars` above the
+  preflight.** Faithful to "the credential the launch is about to hand
+  this session" and the same hoist as the ruling — but it reads every
+  set's VALUES on every launch to feed a probe that asks once per lease.
+  Names cost nothing to hoist; values are read where they are used.
+  Kept as the selection rule, dropped as the mechanism.
+- **(q3n4e d) Retract D3d.** Leaves the probe on the meter store's clock
+  — MEASURED 8h from the operator's last interactive run (ranger-base-
+  9jjhc), unreadable from every seat — so the one-write bump this ADR
+  exists for stays three writes on most mornings. D3a/D3c bound the
+  harm; they do not deliver the goal.
+- **First set in sorted order that holds the name.** No plumbing at
+  all. Rejected: sorted order puts the container set before the default
+  one, and `sessionRows` already refuses to break that tie by guessing;
+  a probe must not guess where the report will not.
+- **A config key naming the probe's set.** A fact belonging to no lever
+  posse holds (ADR 0019's own rejection of the same shape): it drifts the
+  day the PID's `envs:` changes, silently.
 - **Document `runtimes/` as deliberately unpromoted.** A rebuilt home
   launches the trailing built-in with the grid saying "built-in
   default" and nobody told; a launch-read fact with no manifest entry
@@ -232,6 +335,27 @@ only inside its lease.**
    the session meta gets no `fallback:` mark.
 5. `go test ./internal/posse -run 'Constitution|Promote|Preflight|Model|Price|Tier'`
    green, with the constitutionClassSpec pin reading `rhq/runtimes`.
+6. (D3d as amended, unit) With the name in no env set under a scratch
+   home, the seam's session read returns the refresh-verb sentence and
+   the lister spends no request; with two sets in the launch's list
+   carrying different values, the lister sends the LAST one and the fake
+   endpoint asserts the bearer equals it without printing it; with the
+   session read refused by the endpoint (401), the meter store is read
+   exactly once for that catalog read. The process environment carrying
+   the name changes none of these — pinned with the variable set in the
+   test process to a third value that must never be sent.
+7. (D3d as amended, operator) With the keychain token stale (the meter's
+   401 of ranger-base-wkai3) and the mint in the PID's named set,
+   `model-catalog.log` on this home shows `ok models=N` after the next
+   launch and `posse runtimes --probe` from the cockpit prints the
+   availability line without the age clause. This is the row that
+   decides whether the ruling worked; a green 6 without a green 7 is the
+   old state with a new sentence.
+8. (D3d as amended, measure once) Two `--env` flags of one name on a
+   pane's create: which value the pane holds. The ruling ASSUMES the
+   last, as posse's own `readStamps` does within a file; the code bead
+   records the answer and, if it is the first, the helper's rule flips
+   with it.
 
 ## Measured versus assumed
 
@@ -246,5 +370,11 @@ only inside its lease.**
 | this home's manifest names no `runtimes/` entry and promote does not run the verify | MEASURED — `promoted.json` (sha a27973f); VerifyPromoted callers are herdrback.go:1351 and init.go:356 |
 | `Models(0)` honours a live cooldown before asking | MEASURED — the `RetryAt` branch precedes the ask |
 | what the claude CLI does with `--model <id the account cannot run>` | ASSUMED unmeasured — D3c's whole cost; one launch with a made-up id answers it (laurie's checklist) |
-| `/v1/models` accepts a minted session token | UNMEASURED — the spike; D3d is conditional on it |
+| `/v1/models` accepts a minted session token | MEASURED — ranger-base-au0o4 2026-09-02, 200 with eleven ids and three 401 control arms; one reading, three days before the q3n4e ruling |
+| the mint's `/v1/models` bucket is not the starved one ranger-base-hs0dl found on the usage endpoint | ASSUMED — hs0dl measured a different endpoint; V7 is the live measure, and a 429 is UNKNOWN under D3c, never a refusal |
+| the seam's session half has no caller that holds the value | MEASURED — zero callers outside `credential.go` at this HEAD; the mint absent from a dispatched session's environment while sibling variables of the same set are present (q3n4e) |
+| the D3d build is unlanded at this HEAD | MEASURED — gwart's session branch is an ancestor of main; no ref carries a `Fallback` field on `ModelLister` |
+| a seatbelt seat can read an env set's value | MEASURED — ranger-base-au0o4 ran its probe from one on the default set |
+| the two sets holding the name hold one account's mint | ASSUMED — both 108 bytes, values deliberately uncompared; a shared reading across personas already assumed one account before this ruling |
+| the last `--env` of one name wins in the pane | ASSUMED — posse's own in-file rule (`readStamps`); V8 measures the pane's |
 | no session on any instance needs to write `runtimes/` | ASSUMED — no code writer; a hand edit at the home is exactly what D2 ends |

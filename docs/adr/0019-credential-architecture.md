@@ -56,7 +56,10 @@ and option B is dead on that measurement; ranger-base-wkai3 closed the
 same day on the operator's ruling "not B"; ranger-base-jefo0 closed on
 option 0, do nothing. The gating clauses are past tense now, at D4's B
 and §1b bullets and at V17. No decision moved: D4 §1b stays parked,
-priced-not-built, which is what the operator's own close says.*
+priced-not-built, which is what the operator's own close says. Amended 2026-09-05 (ranger-base-q3n4e,
+from ranger-base-mvrke): the session half's store is the env set under
+the home, never the reading process's environment — D1 below and ADR
+0039 D3d say the same thing about where that value is read.*
 
 ## Context
 
@@ -124,7 +127,15 @@ one seam:
 
 Two purposes today: `session` (what an authenticated caged session
 needs injected — env-set lookup, `CageCredential` unchanged in
-behaviour) and `meter` (what posse presents to the provider's usage and
+behaviour; *amended 2026-09-05, ranger-base-q3n4e:* the seam READS it
+from the env set files under the home, the store of record this
+paragraph names, selected by the launch's set list in launch order with
+the last assignment winning — never from the reading process's own
+environment. The environment arm the first build carried was written
+for a caller that cannot exist: a posse process is never the launched
+runtime, and the runtime scrubs the mint from its children (MEASURED
+by elimination, ranger-base-q3n4e). ADR 0039 D3d as amended carries the
+ruling, the selection rule and the exposure answer) and `meter` (what posse presents to the provider's usage and
 models endpoints — replaces both `KeychainToken` callers). Since ADR 0042 the `session`
 purpose is every crew runtime's credential at every tier, not the cage's
 alone: a crew runtime holds the mint and never the operator's rotating
@@ -977,7 +988,12 @@ design puts more weight on files. What is actually traded:
   persona session; crew PIDs carry the deny line.
 - V5 (unit): refresh writes 600 under 700; stamps round-trip through
   the seam's `ExpiresAt`; `posse envs` output still never contains a
-  value.
+  value. *Added 2026-09-05 (ranger-base-q3n4e):* the seam's session
+  read answers from the env set files under a scratch home with the
+  variable set in the test process to a value that must never be
+  returned — the environment is not a store — and with the name in no
+  set it returns the refresh-verb sentence, not the environment's value.
+  ADR 0039 V6–V8 carry the probe-side rows.
 - V6 (unit, amended 2026-08-28 ranger-base-swqk): a session mint's
   `# expires=` inside 14 days appears in the header and once per pass
   on stderr; expired renders distinctly; zero renders as "cannot tell"
