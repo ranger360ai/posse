@@ -2,7 +2,10 @@
 
 *Status: accepted 2026-08-22 · bead ranger-base-ucv · richard · builds on
 ADR 0002 (gates), 0009 (gate shell), 0012 D4 (runtime contract) ·
-re-landed 2026-08-28 under a free number, bead ranger-base-gtxw*
+re-landed 2026-08-28 under a free number, bead ranger-base-gtxw ·
+amended 2026-09-05 (§1 rule 1 and verification 1: the record's CLI path
+is the one the SESSION resolved, and drift is compared like for like;
+ranger-base-385x)*
 
 > Restated from the private archive of the instance this harness was
 > developed in, where it was accepted 2026-08-22 as its ADR 0017. The
@@ -99,6 +102,29 @@ marks, never waivable at tier fast. A probe record —
 observables seen — flips the claim to realized. `posse runtime check`
 compares the recorded version against the installed exe and calls for a
 re-probe on drift (the ADR 0002 verification-7 discipline, mechanized).
+
+*(amended 2026-09-05, ranger-base-385x: "CLI path" is **two** paths,
+because there are two PATHs. The probe's pane is a child of the herdr
+daemon and resolves the CLI in that daemon's environment; posse's own
+process resolves in the launcher's. Until this amendment the record
+wrote the launcher's answer over four observables measured on the
+session's — measured: a decoy planted in front of the posse process's
+PATH alone produced `passed: true`, `version: "decoy 9.9.9"`, and a
+`cli_path` naming a two-line shell script that cannot launch anything,
+with the drift check then comparing that decoy against itself and
+reporting current. So `cli_path` is now what the SESSION resolved,
+read by typing `command -v` into the probe's own pane under the launch
+line's own PATH prefix, before the launch line and before a model turn
+is spent; a pane that will not answer gets no record at all, because a
+record that cannot name its binary is the state this rule exists to
+prevent. `launcher_cli_path` is posse's own answer, kept because it is
+the only side `runtime check` can cheaply re-read: the drift comparison
+is launcher against launcher, and where the two disagreed at probe time
+the surface says version drift on the measured binary cannot be checked
+from outside a pane and asks for a re-probe after any upgrade, rather
+than reporting a drift it did not measure or a currency it did not
+check. A record carrying no `launcher_cli_path` was written before this
+and is never current.)
 
 **Rule 2 — the probe checks observables, not intentions.** `posse runtime
 probe <name>` launches the CLI headless with a scratch PID carrying a
@@ -228,6 +254,17 @@ whether running our own binary is in policy at all.
    `/bin/zsh -l` for its commands (silent case b): parity shows the
    `Bash(…)` deny as Degraded/assumed; `posse runtime probe` **fails**
    naming observable 1; the launch refuses without a waiver.
+   *(amended 2026-09-05, ranger-base-385x: observables 1 and 2 fail
+   TOGETHER here and the checklist item is met when they do — one
+   demotion causes both, since a shim that path_helper put behind
+   /usr/bin never runs and so never writes a refusal to log. What must
+   still HOLD is 3 and 4, which is how "the demotion was measured" is
+   told apart from "the probe failed for some other reason". The live
+   arm carries this: `RHQ_LIVE_PROBE_FAKE` in
+   internal/posse/runtimeprobe_live_test.go, whose shim is reached by
+   absolute path through the profile's own `command:` and re-execs the
+   login shell itself — through PATH and through `$SHELL` it reached
+   nothing, and the arm passed while accusing the probe.)*
 2. codex redeclared as a template profile: probe passes all four
    observables, parity flips to realized, `posse list` shows the session
    clean — the M1 criterion-3 flow end to end.

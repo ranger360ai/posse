@@ -51,8 +51,9 @@ func writeProbe(t *testing.T, a *App, pass bool) {
 		obs[0] = ProbeObservable{1, "shim-precedence", false, "command -v uname → /usr/bin/uname"}
 	}
 	rec := &ProbeRecord{
-		Runtime: "bob", CLIPath: "/usr/local/bin/bob", Version: "bob 1.2.3",
-		Date: time.Now().UTC(), PosseVersion: Version, Canary: "uname", Observables: obs,
+		Runtime: "bob", CLIPath: "/usr/local/bin/bob", LauncherPath: "/usr/local/bin/bob",
+		Version: "bob 1.2.3",
+		Date:    time.Now().UTC(), PosseVersion: Version, Canary: "uname", Observables: obs,
 	}
 	if err := a.WriteProbeRecord(rec); err != nil {
 		t.Fatal(err)

@@ -500,6 +500,49 @@ are not printed as one.
 Nothing changes for a tree whose HEAD is on its branch: the two tips are the
 same commit, so the sentence is the one it always was.
 
+**`posse runtime probe` read which binary it had measured off the wrong
+PATH, so a passing record could certify a CLI nobody probed.**
+
+*Affected: `state/runtimes/<name>/probe.json` and everything that reads it
+— `posse runtime check`, and the `Bash(…)` parity claim on a template-only
+runtime. Records written by an older posse go back to `ASSUMED` until you
+re-probe once.*
+
+The probe has two PATHs. Its pane is created by the herdr daemon and
+inherits that daemon's environment, so the session resolves the CLI there;
+`cli_path` and `version` were resolved in the posse process's own PATH
+instead, and nothing reconciled the two. Measured, with a decoy named for
+the CLI planted in front of posse's PATH alone: the record came back
+`passed: true`, `version: "decoy 9.9.9"`, and a `cli_path` naming a
+two-line shell script that cannot launch anything — over four observables
+taken on the real CLI in the pane. The drift check then compared that decoy
+against itself and reported *current*. Nothing needs planting in the field:
+any box whose posse runs with a PATH the herdr daemon does not have
+(`~/.local/bin`, nvm, asdf, a gated session) diverges the same way.
+
+`cli_path` is now what the **session** resolved, read by typing `command -v`
+into the probe's own pane under the launch line's own PATH prefix — before
+the launch line, and before a model turn is spent. A pane that will not
+answer gets no record at all: the probe refuses rather than name a binary it
+did not measure. posse's own answer is kept beside it as
+`launcher_cli_path`, because that is the only side `posse runtime check` can
+cheaply re-read, so the drift comparison is launcher against launcher. Where
+the two named different files at probe time, the check says version drift on
+the measured binary *cannot be checked from outside a pane* and asks for a
+re-probe after any upgrade, rather than reporting a currency it did not
+check.
+
+The probe's own wrong arm was inert for the same reason, and that is the
+half that matters for trusting the claim: the opt-in live test that must
+FAIL on a CLI whose children resolve in a login shell's demoted PATH
+installed its shim by mutating the test process's PATH, which the pane never
+sees, so it passed all four observables every time — and then blamed the
+production probe. It now reaches the pane by absolute path, re-execs the
+login shell itself, and checks a witness that its shim actually ran before
+it judges anything.
+
+### Fixed
+
 **The shop check stopped sending the coordinator to clear a prompt that had
 already been sent, and `--resume` stopped parking a bead behind one.**
 

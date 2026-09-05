@@ -154,6 +154,49 @@ None of this is asserted from memory: `internal/posse/panelinelive_test.go`
 (`RHQ_LIVE_PANE_LINE=1`, against a scratch herdr server, no API turn) is the
 live pin both sides of the cliff and the spill are measured from.
 
+### A pane's environment is the herdr DAEMON's, not the launcher's (ranger-base-385x)
+
+The other half of "a launch is a command typed into a pane's shell": that
+shell is a child of the **long-running herdr server**, so it carries the
+server's environment and not the environment of whatever posse process typed
+the line. `CreateWorkspace` passes an explicit `[]EnvVar` — `RHQ_HOME`,
+`RHQ_PERSONA`, `RHQ_GATES_DIR`, … — and that list carries **no `PATH`**;
+`GatePrefix` is `PATH=<gates bin>:"$PATH" …`, and that `$PATH` expands
+*inside the pane*. So the launcher's own PATH gets no vote on which binary a
+session runs.
+
+Measured 2026-09-05 with a scratch herdr (a named session under a scratch
+`HOME`, the two fences `scripts/verify-self-close.sh` uses): a copy of a CLI
+planted only on the **server's** PATH is what the pane resolves and runs; a
+copy planted only on the client's is absent from the pane's PATH entirely.
+Costs no model turn — `workspace create`, then `pane run` of
+`sh -c 'echo "$PATH" > f'`.
+
+Two consequences, and neither is theoretical — both were live defects:
+
+- **Anything posse resolves in its own process is answering a different
+  question.** `posse runtime probe` filled the record's `cli_path` and
+  `version` that way while its four observables were measured on the CLI in
+  the pane, so a decoy in front of posse's PATH alone produced a *passing*
+  record naming a script that cannot launch anything. Fixed by asking the
+  pane: the probe types `command -v` into it, under the launch line's own
+  PATH prefix, before the launch line. The same reading still sits in the
+  launch preflight's blocking `exe` gap (`RuntimeGaps`,
+  `internal/posse/runtimepreflight.go`), where it can refuse a launch that
+  would have worked — filed as ranger-base-8vys9.
+- **A test cannot sabotage what a pane runs by mutating its own PATH.**
+  `runtimeprobe_live_test.go`'s `RHQ_LIVE_PROBE_FAKE` arm did exactly that,
+  so the pane launched the real CLI and the arm that must FAIL passed all
+  four observables — and then printed a red accusing the production probe.
+  To reach a pane, the sabotage has to be somewhere the daemon's PATH already
+  leads, or be named by absolute path in what gets typed (which is what that
+  arm does now).
+
+The general rule both of those pay for: before believing any pane rig, ask
+what the pane's environment actually is and measure it; and when a live arm
+is meant to fail, give it a witness that its sabotage took effect before it
+is allowed to pass judgement on the thing under test.
+
 ## Dispatch primitives
 
 - `posse prompt <name> "<text>" [--wait] [--timeout ms] [--now]` — submit work

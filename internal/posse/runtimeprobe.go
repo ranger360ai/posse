@@ -81,6 +81,20 @@ type ProbeObservable struct {
 // ProbeRecord is state/runtimes/<name>/probe.json: what was measured, on
 // which binary, at which version, when.
 //
+// CLIPath and LauncherPath are two answers to "which binary", and the
+// record carries both because they are two different questions. The probe's
+// pane is a child of the long-running herdr DAEMON and inherits its
+// environment, so the binary the session resolves is decided by the
+// daemon's PATH; everything posse resolves in its own process is decided by
+// the launcher's. On any box where those differ — ~/.local/bin, nvm, asdf, a
+// gated session — they name different files, and until ranger-base-385x the
+// record wrote the LAUNCHER's answer over four observables measured on the
+// session's: a passing record naming a binary nobody probed, with the drift
+// check then comparing that binary against itself and reporting current.
+// So cli_path is the session's answer, read from inside the pane before the
+// launch line is typed, and launcher_cli_path is posse's, kept because it is
+// the only side `posse runtime check` can cheaply re-read.
+//
 // Version is the load-bearing field after the pass itself. A probe measures
 // the CLI that was installed the day it ran; `posse runtime check` compares
 // it against the exe on PATH now and calls for a re-probe on drift, which is
@@ -89,14 +103,30 @@ type ProbeObservable struct {
 // but drift on it is UNCHECKABLE, and every surface says so rather than
 // quietly treating an unknown version as unchanged.
 type ProbeRecord struct {
-	Runtime      string            `json:"runtime"`
-	CLIPath      string            `json:"cli_path"`
+	Runtime string `json:"runtime"`
+	// CLIPath is the binary the SESSION resolved — `command -v` typed into
+	// the probe's own pane, under the same PATH prefix as the launch line.
+	// It is the subject of every observable in this record.
+	CLIPath string `json:"cli_path"`
+	// LauncherPath is what posse's own PATH resolved rt.Exe() to at probe
+	// time, or ProbeExeUnresolved when it resolved nothing. Written by
+	// every probe since ranger-base-385x and by none before it, which is
+	// what makes its ABSENCE readable: a passing record without it has a
+	// cli_path that came from the launcher's side and may name a binary the
+	// probe never ran, so ProbeState refuses to call it current.
+	LauncherPath string            `json:"launcher_cli_path"`
 	Version      string            `json:"version"`
 	Date         time.Time         `json:"date"`
 	PosseVersion string            `json:"posse_version"`
 	Canary       string            `json:"canary"`
 	Observables  []ProbeObservable `json:"observables"`
 }
+
+// ProbeExeUnresolved is what launcher_cli_path says when posse's own PATH
+// has no such exe. A sentinel and not "": the field is written by every
+// probe that knows the difference between the two PATHs, so an empty one
+// has to keep meaning "written by one that did not".
+const ProbeExeUnresolved = "(none on posse's own PATH)"
 
 // ProbeObservableCount is how many observables a complete record carries.
 // A record with fewer is not a pass however green its rows are: it was
@@ -233,11 +263,45 @@ func (a *App) probeStateWith(rt *Runtime, resolve func(string) string, version f
 		return ProbeStatus{Record: rec, Why: why + " — fix the runtime, then re-run `" + probeCmd + "`"}
 	}
 
+	// A record that cannot say which binary it measured is not one this may
+	// call current, and there are two shapes of that. A record written
+	// before ranger-base-385x carries no launcher_cli_path at all: its
+	// cli_path is the LAUNCHER's answer, so its four observables belong to
+	// a binary it cannot name. And a cli_path of "" is a record whose pane
+	// never answered — which the probe refuses to write, so this is the
+	// belt to that braces.
+	if rec.LauncherPath == "" || rec.CLIPath == "" {
+		return ProbeStatus{Record: rec, Why: "the record does not name the binary the SESSION resolved — it was written before posse read that from the probe's own pane (ranger-base-385x), so its observables belong to a binary the record cannot name; re-run `" + probeCmd + "`"}
+	}
+
+	// Like for like. The reader here resolves on POSSE's PATH, so its
+	// answer is about launcher_cli_path and is compared against that;
+	// comparing it against cli_path would report permanent drift on exactly
+	// the boxes where the two PATHs differ — the divergence the record
+	// exists to record, not a change in it.
 	path := resolve(rt.Exe())
-	if path != "" && rec.CLIPath != "" && path != rec.CLIPath {
+	was := rec.LauncherPath
+	if was == ProbeExeUnresolved {
+		was = ""
+	}
+	if path != "" && was != "" && path != was {
 		return ProbeStatus{Record: rec, Drift: true, Why: fmt.Sprintf(
 			"the probe measured %s and %s now resolves to %s — a different binary was measured; re-run `%s`",
-			AbbrevHome(rec.CLIPath), rt.Exe(), AbbrevHome(path), probeCmd)}
+			AbbrevHome(was), rt.Exe(), AbbrevHome(path), probeCmd)}
+	}
+	if rec.LauncherPath != rec.CLIPath {
+		// The two sides named different files at probe time. The record
+		// still counts — a live measurement happened, on cli_path — but the
+		// version reader below can only reach the launcher's binary, and a
+		// version compare across two different files is not a drift check.
+		// Loud, not fatal, for the reasons the UNKNOWN branch below is.
+		here := AbbrevHome(path)
+		if path == "" {
+			here = "nothing"
+		}
+		return ProbeStatus{Record: rec, Current: true, Why: fmt.Sprintf(
+			"probed %s on %s (%s), which is what the SESSION resolves %s to — posse here resolves it to %s instead, so version drift on the measured binary cannot be checked from outside a pane; re-probe after any upgrade",
+			rec.Date.Format("2006-01-02"), AbbrevHome(rec.CLIPath), rec.Version, rt.Exe(), here)}
 	}
 	if rec.Version == "" {
 		// Loud, not fatal: a live measurement DID happen, so the claim
@@ -302,7 +366,16 @@ func ProbeCLIVersion(exe string) string {
 }
 
 func readCLIVersion(exe string) string {
-	path := resolveOutside(exe, "")
+	return readCLIVersionAt(resolveOutside(exe, ""))
+}
+
+// readCLIVersionAt is the same read against a path that is already decided.
+// The probe's own version read goes through here and never through the name:
+// the binary whose version the record states is the one the SESSION
+// resolved, and re-resolving its name on posse's PATH is how the record came
+// to state a version it never read from the binary it measured
+// (ranger-base-385x).
+func readCLIVersionAt(path string) string {
 	if path == "" {
 		return ""
 	}
@@ -545,6 +618,20 @@ func (a *App) RuntimeProbe(rt *Runtime, h Herdr, o ProbeOpts) (*ProbeRecord, err
 	if f := rt.PIDVoided(inner); f != "" {
 		return nil, Die("the rendered %s line names %s, which makes %s discard the PID — the probe would measure a session carrying no deny at all (ranger-base-64qx)", rt.Name, f, rt.Name)
 	}
+	// The word the pane's shell will resolve and run. It answers to the
+	// same NAME the drift check re-resolves later (rt.Exe()) — by
+	// construction, not by check: the probe's scratch PID carries no
+	// `command:` of its own, so RenderCommandFor renders the runtime's own
+	// template and Exe() is the basename of that template's first word.
+	// Pinned where it can be read rather than guarded where it cannot fire
+	// (TestProbeLaunchExeAnswersTheNameTheDriftCheckReResolves). A template
+	// that fronts its CLI with `env FOO=1 …` names `env` on BOTH sides and
+	// so stays self-consistent; it also fails observable 4, which is where
+	// that template is told about, exactly as Exe() intends.
+	launchExe := probeLaunchExe(inner)
+	if launchExe == "" {
+		return nil, Die("the rendered %s line is empty — there is no binary to measure; fix `command:` in the runtime profile", rt.Name)
+	}
 	cmd, gatesDir, _, err := a.WrapWithGates(persona, rt, ag.Deny, inner)
 	if err != nil {
 		return nil, err
@@ -577,6 +664,11 @@ func (a *App) RuntimeProbe(rt *Runtime, h Herdr, o ProbeOpts) (*ProbeRecord, err
 	} else {
 		defer h.CloseWorkspace(wsID)
 	}
+	sessionExe, err := probeSessionExe(h, rootPane, binDir, launchExe, filepath.Join(dir, "cli.txt"), ProbeSessionExeWait)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Fprintf(out, "  the session resolves %s to %s\n", launchExe, AbbrevHome(sessionExe))
 	line, err := a.PaneLine(persona, cmd)
 	if err != nil {
 		return nil, err
@@ -624,8 +716,10 @@ func (a *App) RuntimeProbe(rt *Runtime, h Herdr, o ProbeOpts) (*ProbeRecord, err
 	r.Refusals = readFrom(logPath, logAt)
 
 	rec := &ProbeRecord{
-		Runtime: rt.Name, CLIPath: canaryExe(rt), Version: ProbeCLIVersion(rt.Exe()),
-		Date: time.Now().UTC(), PosseVersion: Version, Canary: canary,
+		Runtime: rt.Name, CLIPath: sessionExe, LauncherPath: probeLauncherPath(rt),
+		Version:      readCLIVersionAt(sessionExe),
+		Date:         time.Now().UTC(),
+		PosseVersion: Version, Canary: canary,
 		Observables: evalProbe(r),
 	}
 	if !rec.Passed() && pane != "" {
@@ -641,10 +735,108 @@ func (a *App) RuntimeProbe(rt *Runtime, h Herdr, o ProbeOpts) (*ProbeRecord, err
 	return rec, nil
 }
 
-// canaryExe is the runtime's own binary as resolved outside the gates — the
-// exe the record says was measured. Named for the record's cli_path field,
-// not for the canary: the canary is the deny, the CLI is the subject.
-func canaryExe(rt *Runtime) string { return resolveOutside(rt.Exe(), "") }
+// probeLauncherPath is the runtime's own binary as resolved outside the
+// gates on POSSE's PATH — the record's launcher_cli_path. It was canaryExe
+// and it filled cli_path; this side never had a vote on which binary the
+// pane launched, and that is the whole of ranger-base-385x.
+//
+// The absence is SPELLED rather than left empty. launcher_cli_path is
+// written by every probe that knows the two PATHs apart, so an empty one has
+// to keep meaning "written by one that did not" — and "posse's own PATH has
+// no such exe" is a different fact that must not borrow that spelling.
+//
+// Unreachable today and deliberately kept: RuntimeGaps refuses the probe
+// with a BLOCKING `exe` gap when exec.LookPath cannot find the CLI in
+// posse's process (runtimepreflight.go:117), which is itself the wrong PATH
+// to be asking — a CLI that only the herdr daemon can see cannot be launched
+// or probed at all, filed as ranger-base-8vys9. The day that gap stops
+// blocking, this is what keeps the record readable.
+func probeLauncherPath(rt *Runtime) string {
+	if p := resolveOutside(rt.Exe(), ""); p != "" {
+		return p
+	}
+	return ProbeExeUnresolved
+}
+
+// probeLaunchExe is the first word of the rendered launch line — the one the
+// pane's shell resolves and execs. Fields and not a parse: a template that
+// fronts its CLI with `env FOO=1 …` names `env` here, exactly as Exe() does
+// and for the same reason, and a first word carrying its own quotes fails
+// the lookup below rather than being unquoted by guesswork.
+func probeLaunchExe(inner string) string {
+	f := strings.Fields(inner)
+	if len(f) == 0 {
+		return ""
+	}
+	return f[0]
+}
+
+// ProbeSessionExeWait is how long the pane gets to answer which binary it
+// will launch. It is one builtin in a shell that is already up, so this is
+// generous by an order of magnitude; it is bounded because the alternative
+// to an answer is a record that names a binary nobody measured. Passed in
+// rather than read, so the refusal has a test that does not wait for it.
+const ProbeSessionExeWait = 30 * time.Second
+
+// probeSessionExe asks the PANE which binary it is about to launch, and is
+// the record's only source for cli_path.
+//
+// It has to be the pane that answers. The pane is a child of the herdr
+// daemon and inherits ITS environment, so a lookup in the posse process
+// answers a different question — and answered it wrongly for every record
+// written before ranger-base-385x: four observables measured on the CLI in
+// the pane, written into a record naming whatever posse's own PATH resolved,
+// which on a box with ~/.local/bin, nvm, asdf or a gated session is a
+// different file. MEASURED, twice: a scratch workspace whose server has one
+// PATH and whose client has another resolves and RUNS the server's copy, and
+// this line names the same one the launch line then runs (2026-09-05, herdr
+// 0.8.2, ranger-base-385x).
+//
+// Typed with the same PATH prefix as the launch line, because that prefix is
+// what decides the lookup — an assignment in front of a simple command is in
+// effect for the command's own resolution, `command -v` included (measured
+// in sh, bash and zsh) — so a gates shim shadowing the CLI would be what the
+// session ran, and the record should say so. SHELL/GROK_SHELL are dropped:
+// `command -v` is the pane shell's own builtin and re-execs nothing.
+//
+// Written through a `.part` and renamed, because `>` creates the file before
+// the builtin writes to it and a read that won the race would report "the
+// shell resolved nothing" for a shell that had not answered yet.
+//
+// The answer is waited for, not assumed. A pane that will not answer is one
+// the probe cannot write an honest record about, so it refuses HERE — before
+// the prompt, which is the half that costs a model turn.
+func probeSessionExe(h Herdr, pane, binDir, exe, file string, wait time.Duration) (string, error) {
+	if pane == "" {
+		return "", Die("the probe workspace has no root pane — nothing can be asked which binary it would launch")
+	}
+	part := file + ".part"
+	line := GatePrefix(binDir, "") + "command -v " + shQuote(exe) + " > " + shQuote(part) + " 2>&1; mv " + shQuote(part) + " " + shQuote(file)
+	if len(line) > PaneLineMax {
+		return "", Die("the lookup line is %d bytes, over the %d a pane takes (rangerhq-ybec) — it cannot be spilled to a script, because the launch line's own spill would overwrite it", len(line), PaneLineMax)
+	}
+	if err := h.PaneRun(pane, line); err != nil {
+		return "", err
+	}
+	deadline := time.Now().Add(wait)
+	for {
+		b, err := os.ReadFile(file)
+		if err == nil {
+			got := strings.TrimSpace(string(b))
+			switch {
+			case got == "":
+				return "", Die("the probe session's own shell resolves %s to nothing — the pane inherits the herdr daemon's PATH, not posse's, and the CLI is not on it. Start herdr from an environment that has it, or point the runtime's `command:` at an absolute path", exe)
+			case !filepath.IsAbs(got):
+				return "", Die("the probe session's shell answered %q for %s, which is not a path to a binary (an alias or a shell function shadows it there) — the probe will not record a binary it cannot name", got, exe)
+			}
+			return got, nil
+		}
+		if !time.Now().Before(deadline) {
+			return "", Die("the probe session did not say which binary it resolves %s to within %s — the pane never ran the lookup, so nothing here knows which binary the observables would have been measured on", exe, wait)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
 
 // awaitProbeAgent waits for herdr to see an agent in the probe's workspace
 // and returns its pane and kind. A CLI that never appears is the failure

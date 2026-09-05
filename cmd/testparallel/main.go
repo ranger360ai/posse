@@ -299,6 +299,13 @@ func main() {
 		// this is the only thing left holding them serial.
 		"TestTryLockLaunchesDoesNotWait":       "asserts flock acquisition",
 		"TestTryLockLaunchesNamesWhichFailure": "asserts flock acquisition",
+		// The opt-in live probe: it creates a real herdr workspace, types a
+		// launch line into its pane and spends a model turn in it. One pane
+		// and one CLI at a time is the whole shape of the measurement, and
+		// it was only ever "eligible" here because ranger-base-385x took
+		// away the t.Setenv that used to hold it out (the shim it installs
+		// now reaches the pane by absolute path, not through PATH).
+		"TestLiveRuntimeProbe": "drives a real herdr pane and one model turn",
 		// Drives a REAL backupLoop goroutine and times it: its treatment arm
 		// asserts the second archive lands in under the 60s interval, and its
 		// absence arm waits 3x that measured time. Both readings are wall

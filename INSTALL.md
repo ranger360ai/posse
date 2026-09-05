@@ -1184,6 +1184,13 @@ you need to look; `--timeout 6m` buys a slow CLI more room. The result lands
 in `$RHQ_HOME/state/runtimes/<profile>/probe.json` — the CLI path, its
 version string, the date, and every observable.
 
+`cli_path` there is the binary the **session** resolved, asked of the
+probe's own pane. It is not always the one *your shell* resolves: the
+pane is a child of the herdr daemon and inherits that daemon's `PATH`, so
+a CLI you reach through `~/.local/bin`, nvm, asdf or a gated session can
+be a different file in the two places. The record keeps posse's own
+answer beside it as `launcher_cli_path` — see the drift note below.
+
 A failure is a result, not a crash: the record is written either way, the
 command exits 1, and the pane's last 40 lines are printed so you can see
 what your CLI actually did. Re-read it any time with `posse runtime check
@@ -1194,6 +1201,14 @@ measured; `posse runtime check` compares it against what is installed now
 and puts the claim back to `ASSUMED` on drift. If your CLI prints no version
 at all, the record says so and the drift check is *not running* — put a
 re-probe on your own upgrade checklist.
+
+Same for the two paths above. When `cli_path` and `launcher_cli_path`
+name different files, `posse runtime check` says version drift *cannot be
+checked from outside a pane* and asks you to re-probe after any upgrade:
+the only binary it can reach from here is not the one that was measured,
+and comparing their version strings would be a check it is not doing. A
+record written by a posse older than this carries no `launcher_cli_path`
+and is never current — re-probe once and it will be.
 
 One thing no probe can see, so answer it yourself: **what does this CLI read
 from the session directory unconditionally?** If the answer is a path,
