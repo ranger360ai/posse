@@ -352,25 +352,15 @@ slowness belongs. The bench is pass-local like the rest of the busy
 map: the next pass starts at zero, so a machine-load fluke costs at
 most the tail of one pass.
 
-### 3. Plan guard — the meter gates the beads that spend it
+### 3. Plan guard — declare which meter the runtime spends
 
-Amends ADR 0010 §1 and §5. The pass **always runs**. The reading is
-still taken (shared snapshot, same TTL). The skip moves per bead:
-
-```
-off the guarded meter                    → launch, even if the guard is blind
-on-meter and blind                       → skip this bead (park; never overflow)
-on-meter and over threshold              → ADR 0010 ladder (overflow / skip)
-```
-
-A grok-only drain is no longer parked by an unreadable Anthropic
-credential. On-meter beads still fail closed when unattended and blind.
-Overflow remains a judgement *on a reading*; §5's "blind never overflows"
-stands. A pass whose every bead skipped is a quiet pass; `--watch`
-backs off on that, not on a whole-pass skip at the top of `Run`.
-
-The `plan_guard_blind_max: 0` escape (ranger-base-ri4) is unnecessary
-once this lands and must not be the way off-meter work is kept alive.
+The runtime declares `plan_meter:`. A bead is on-meter when its runtime's
+declaration matches the guarded meter; an unknown membership remains
+conservatively on-meter. The sole guard truth table is
+[ADR 0010 §5](0010-plan-guard-overflow.md): sighted thresholds, blind
+tolerance, ledger arming/readability and last-reading headroom. Off-meter
+work remains eligible for its own independent brakes. This section defines
+membership, not a second park/degrade or overflow policy.
 
 ### 4. Record — the bead is the store of record; the runtime is not
 

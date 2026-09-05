@@ -1,5 +1,11 @@
 # ADR 0018 — Blind meter, armed ledger: the last brake parks, a backed brake degrades
 
+*Status: superseded 2026-09-05 by ADR 0010 · ADR simplification, operator ruling 2026-09-05.*
+
+The surviving decision is in [0010 — current contract](0010-plan-guard-overflow.md), Decision §5 (complete ordered table) and Lineage. This page keeps its number and dated evidence; the body below is historical, not current policy.
+
+## Historical record (superseded in full)
+
 *Status: accepted 2026-08-26 · owner: architect · amends ADR 0013 §3
 (blind row) and ADR 0003 §4 (Dial E gains a duty) · ranger-base-kld4 ·
 scope note 2026-08-29 (ranger-base-qs0z): this ADR's blind state and

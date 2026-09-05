@@ -3,7 +3,7 @@
 *Status: accepted 2026-08-18 · owner: architect · amended 2026-08-24
 (ADR 0013: the skip is per-bead, including when blind) · amended
 2026-08-29 (ranger-base-qs0z: a local meter arrived — §3 arming, §4 loop
-closer, §6 local-meter shape)*
+closer, §6 local-meter shape) · amended 2026-09-05 (0018 folded; §5 is the complete guard table)*
 
 > Restated from the private archive of the instance this harness was
 > developed in; incident citations reference that instance's history.
@@ -203,38 +203,56 @@ The open-loop price is repealed only where a meter exists, and only to
 that meter's precision — the reading is an estimate and a floor, never
 the vendor's number.
 
-**5. A blind guard skips; it never overflows.** *(Amendment,
-2026-08-20.)* The guard has a second way to stop a pass: `--watch` plus
-no successful meter reading for `plan_guard_blind_max:` (10m default).
-That skip is **not** an over-threshold trip, so §1's per-bead ladder
-does not run and nothing is moved to the overflow runtime, cap or no
-cap. The reason is the same one that makes §1 a *per-bead* decision at
-all: every rung above is a judgement made **on a reading** — which
-window, how far over, which beads are on that meter. Blind, there is no
-reading to judge on, so "the guarded window is hot, use the other pool"
-is a guess, and a guess that spends a weekly bucket with no intra-week
-reset (§3) is exactly the failure this ADR was written to avoid. The
-blind skip is a *park*: nothing claimed, nothing spent on any pool, and
-the first good reading resumes normal service including overflow.
-Ledger consequence: a blind pass writes nothing to `overflow.log`.
+**5. Remote guard: complete per-bead decision table** (folded from 0018).
+The pass runs; only beads spending the guarded meter take its verdict.
+Runtime meter membership is the declaration in 0013; unknown membership
+is treated as on-meter. Rows are evaluated in order. Other launch brakes
+always remain in force.
 
-*(Amended 2026-08-24, ADR 0013 §3.)* §1 already moved a *threshold trip*
-per bead, so an off-meter launch is not skipped because somebody else's
-window is hot. The **blind** skip in this section was still a whole-pass
-stop, and that is the other way a pass dies: an unreadable on-meter
-credential parked an off-meter drain (ranger-base-ri4). The rule is now
-the same grain as §1, for both stops:
+| Condition | Guard outcome |
+|---|---|
+| Bead off the guarded meter, or guard disabled | No refusal from this guard |
+| Valid reading over an operator threshold | Threshold trip; currently §§1–3 overflow/park, pending the approved overflow removal |
+| Valid reading at or below thresholds | Continue, subject to Dial E and other brakes |
+| No reading; attended, or `blind_max: 0`, or not past `plan_guard_blind_max` | Continue with the existing diagnostic/tolerance; never infer overflow from blindness |
+| Unattended blindness past the limit, no `budget_pass` or `budget_day` cap armed | Park on-meter work |
+| Same, caps armed, last successful reading strictly over an operator threshold | Park; name threshold, window, percentage and reading age |
+| Same, caps armed, last reading at or above `BudgetStepDownPct` (80%) | Park; a spending cap cannot bound a plan window |
+| Same, caps armed, last reading below both boundaries **or no successful reading ever**, ledger unreadable | Park; cannot-read is not an empty ledger |
+| Same, caps armed, last reading below both boundaries **or no successful reading ever**, ledger readable | Degraded and loud on each pass; continue only within Dial E's step-down/stop brakes |
 
-```
-off the guarded meter                 → launch, even if the guard is blind
-on-meter and blind                    → skip this bead (park; never overflow)
-on-meter and over threshold           → §1 ladder (overflow / skip)
-```
+Arming is checked first, then the last reading, then the ledger scan.
+Thresholds precede the braking-band test and use adapter window order.
+The reading is evidence about the past: never extrapolate it, age it into
+headroom, or erase a refusal on a timer. A 429 retains the reading; a
+cooldown-only cache is no reading. A fresh successful reading restores the
+sighted policy. No-reading-ever with a readable armed ledger deliberately
+degrades: parking that shape caused the measured zero-dispatch outage.
+Failure classes affect diagnostics/cooldown, never park-versus-degrade.
+The degraded line reports blind duration, error and actual ledger state;
+the parked line and cockpit name the brake that really holds.
 
-The pass always runs. A pass whose every bead skipped is a quiet pass
-and `--watch` backs off on that. `plan_guard_blind_max: 0` is not the
-way to keep off-meter work alive. Overflow remains a judgement on a
-reading; "blind never overflows" stands.
+MEASURED in 0018: a credential-shape outage caused an hour of zero dispatch
+with no fallback brake; later, nineteen blind hours with a last reading
+already at 89% let the weekly window reach 96% despite an armed spending
+ledger (ranger-base-c3vqe). Therefore ledger arming alone is insufficient.
+ASSUMED residue: a reading below the braking band can still exhaust a plan
+window during a long blind period; dollars and window percentage are
+different quantities. No new estimate or policy fork is introduced.
+The local-file meter shape remains §6, never the remote blind clock.
+
+## Lineage
+
+| Was | Here |
+|---|---|
+| 0018 §§1–4, including the headroom amendment and ledger-read refusal | §5 complete table; dated incidents and alternatives retained in 0018 |
+| 0013 §3 per-bead guard table | §5; 0013 retains only runtime membership and the pointer |
+
+The fold removes zero runtime mechanisms. Retaining the old slogan would
+allow a blind brake to run on a last reading that already said stop.
+Rejected: unconditional degrade, diagnosis-string policy, time-expired
+headroom, guessed dollar-to-window conversion, or parking no-reading-ever
+despite the independently armed readable ledger.
 
 **6. A local meter is armed or off; it is never blind.** *(Added
 2026-08-29, ranger-base-qs0z — the shape rangerhq-myso set, written down
