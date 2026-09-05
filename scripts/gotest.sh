@@ -294,9 +294,27 @@ self_test() {
 	# NO cached binary has to print its own FAIL, or a mutant that guts run()
 	# entirely takes the whole self-test down silently and reads as a
 	# survivor (it did, the first time this was mutation-checked).
-	cachedinode() { find "${SELFTEST_TMP}/cache" -name '*.test' 2>/dev/null |
-		while read -r p; do stat_inode "$p"; done 2>/dev/null | head -1 || true; }
-	cachedcount() { find "${SELFTEST_TMP}/cache" -name '*.test' 2>/dev/null | wc -l | tr -d ' '; }
+	# `find` stays — asking the filesystem IS the measurement — but nothing
+	# downstream of it forks (ranger-base-t07yx). These two helpers decide
+	# every reuse arm in this file, and they used to end in `| head -1` and
+	# `| wc -l | tr -d ' '`: a `head`, `wc` or `tr` that is signalled or
+	# cannot be exec'd under load returned an empty count, and the arms then
+	# reported the wrapper as having cached nothing. Counting and taking the
+	# first line are things bash does without leaving the process.
+	cachedinode() {
+		local p
+		while IFS= read -r p; do
+			stat_inode "$p"
+			return 0
+		done < <(find "${SELFTEST_TMP}/cache" -name '*.test' 2>/dev/null)
+		return 0
+	}
+	cachedcount() {
+		local p c=0
+		while IFS= read -r p; do c=$((c + 1)); done \
+			< <(find "${SELFTEST_TMP}/cache" -name '*.test' 2>/dev/null)
+		printf '%s' "$c"
+	}
 	SELFTEST_TMP=$(mktemp -d)
 	trap 'rm -rf "${SELFTEST_TMP:-}"' EXIT
 	local tmp=$SELFTEST_TMP
@@ -369,11 +387,14 @@ self_test() {
 	else
 		fail "control: a changed test file rebuilds" "cache did not grow"
 	fi
-	if printf '%s' "$out" | grep -q 'TestBeta'; then
-		say "control: the new test actually ran"
-	else
-		fail "control: the new test actually ran" "TestBeta not in output"
-	fi
+	# `case`, not `printf | grep -q` (ranger-base-t07yx). MEASURED: with a
+	# `grep` on PATH whose body is `kill -TERM $$` this was the ONLY arm of
+	# the whole self-test that fell over, over an $out that plainly carried
+	# TestBeta — so it read as a real regression in the wrapper's caching.
+	case $out in
+	*TestBeta*) say "control: the new test actually ran" ;;
+	*) fail "control: the new test actually ran" "TestBeta not in output" ;;
+	esac
 
 	# ARM 3: a failing test is reported as a failure. A wrapper that
 	# swallows the child's exit status turns every red into a green, which

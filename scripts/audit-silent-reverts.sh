@@ -437,6 +437,50 @@ plant_oneclaim() {
 PLANTED_ONECLAIM=5
 
 self_test() {
+  # NOTHING BELOW DECIDES AN ARM THROUGH AN EXEC'D MATCHER (ranger-base-t07yx).
+  # Every arm here used to read the detector's output back with `grep -q`,
+  # `grep -c` or `awk`, under this file's `set -uo pipefail`. ranger-base-7hx87
+  # measured the three ways that reports the property false when the apparatus
+  # is what failed: the matcher signalled (143/137), the matcher not exec'd
+  # (127 — a fork failure under load prints only to stderr), and, past the
+  # 64 KB pipe buffer, the matcher matching early while printf takes the EPIPE
+  # (141). All three make a planted revert read as undetected, which is this
+  # script's own false-negative — the exact failure it exists to catch.
+  #
+  # So the detector runs (its awks ARE the measurement, and so is git), and
+  # bash reads the answer back.
+
+  # sr_has <text> <literal> — is the literal anywhere in the text?
+  sr_has() { case $1 in *"$2"*) return 0 ;; esac; return 1; }
+  # sr_count <text> <literal> — how many lines carry it?
+  sr_count() {
+    local line c=0
+    while IFS= read -r line || [ -n "$line" ]; do
+      case $line in *"$2"*) c=$((c + 1)) ;; esac
+    done <<<"$1"
+    printf '%s' "$c"
+  }
+  # sr_field2 <text> <line-prefix> <tab|space> — field 2 of the first line
+  # starting with <line-prefix>, or nothing. Replaces awk's `{print $2+0}`;
+  # the numeric coercion awk did for free is the callers' `case` below.
+  sr_field2() {
+    local line rest sep=$'\t'
+    [ "$3" = space ] && sep=' '
+    while IFS= read -r line || [ -n "$line" ]; do
+      case $line in
+        "$2"*)
+          rest=${line#*"$sep"}
+          [ "$rest" = "$line" ] && return 1
+          printf '%s' "${rest%%"$sep"*}"
+          return 0
+          ;;
+      esac
+    done <<<"$1"
+    return 1
+  }
+  # sr_num <name> — force $name to a non-negative integer, as awk's +0 did.
+  sr_num() { case ${!1} in '' | *[!0-9]*) eval "$1=0" ;; esac; }
+
   # Prove the detector fires on the real mechanism — BOTH halves — before
   # trusting a clean run against main, and prove it stays quiet on a move.
   #
@@ -464,10 +508,10 @@ self_test() {
         echo "self-test: $shape rig did not reproduce the mechanism"; return 2; }
   done
   for shape in modify addonly move numeric renameedit delplusadd reland; do
-    out=$( cd "$(cat "$d/$shape")" && scan HEAD )
-    n=$(printf '%s\n' "$out" | grep -c 'path(s) went backwards')
-    scanned=$(printf '%s\n' "$out" | awk -F'\t' '/^SCANNED/{print $2+0}')
-    [ -n "$scanned" ] || scanned=0
+    out=$( cd "$(<"$d/$shape")" && scan HEAD )
+    n=$(sr_count "$out" 'path(s) went backwards')
+    scanned=$(sr_field2 "$out" SCANNED tab)
+    sr_num scanned
     if [ "$scanned" -ne "$PLANTED" ]; then
       echo "self-test FAIL: $shape rig scanned $scanned commits, want $PLANTED — the fixture was never built"
       rc=1; continue
@@ -499,17 +543,30 @@ self_test() {
       numeric)
         # Three assertions, because the fix has two independent layers and an
         # arm that only checks the outcome is green when EITHER survives.
-        fdir=$(cat "$d/numeric")
+        fdir=$(<"$d/numeric")
         # (i) the outcome: on this history, as production runs it, nothing moved
         #     backwards. Red today without both layers, on gawk.
         if [ "$n" -eq 0 ]; then echo "self-test PASS: a <digit>e<digits> blob id is not a silent revert (over $scanned planted commits)"
         else echo "self-test FAIL: a <digit>e<digits> blob id read as a silent revert"; rc=1; fi
         # (ii) layer one: raw_log hands states_awk full 40-hex ids. Dropping
         #      --no-abbrev reds this and nothing else.
-        nonhex=$( cd "$fdir" && raw_log HEAD |
-                  awk '/^:/ && $4 !~ /^[0-9a-f]{40}$/ {n++} END {print n+0}' )
-        if [ "${nonhex:-1}" -eq 0 ]; then echo "self-test PASS: raw_log emits full 40-hex blob ids"
-        else echo "self-test FAIL: raw_log emitted ${nonhex:-?} abbreviated blob id(s)"; rc=1; fi
+        # raw_log forks — it is the thing under test. The FIELD TEST does not.
+        nonhex=0 rawrows=0
+        while IFS= read -r line || [ -n "$line" ]; do
+          case $line in ':'*) ;; *) continue ;; esac
+          read -r -a rf <<<"$line"
+          rawrows=$((rawrows + 1))
+          case ${rf[3]:-} in
+            *[!0-9a-f]* | '') nonhex=$((nonhex + 1)) ;;
+            *) [ ${#rf[3]} -eq 40 ] || nonhex=$((nonhex + 1)) ;;
+          esac
+        done < <( cd "$fdir" && raw_log HEAD )
+        # The positive witness the old `${nonhex:-1}` guard stood for: a
+        # raw_log that emitted no `:` rows at all must not read as "all ids
+        # were full-length".
+        if [ "$rawrows" -eq 0 ]; then echo "self-test FAIL: raw_log emitted no diff rows — the 40-hex arm measured nothing"; rc=1
+        elif [ "$nonhex" -eq 0 ]; then echo "self-test PASS: raw_log emits full 40-hex blob ids"
+        else echo "self-test FAIL: raw_log emitted $nonhex abbreviated blob id(s)"; rc=1; fi
         # (iii) layer two: states_awk compares states as STRINGS, pinned on a
         #       SYNTHETIC stream rather than on the fixture's real ids. That is
         #       deliberate: the +inf collision only happens on an awk that takes
@@ -523,9 +580,11 @@ self_test() {
         #       that layer actually has. states_awk is split out of scan() so it
         #       can be fed a stream raw_log would never emit.
         an=$( numeric_stream 00001e2 | states_awk )
-        if [ "$(printf '%s\n' "$an" | awk -F'\t' '/^SCANNED/{print $2+0}')" != "3" ]; then
+        synth=$(sr_field2 "$an" SCANNED tab)
+        sr_num synth
+        if [ "$synth" != "3" ]; then
           echo "self-test FAIL: the synthetic strnum stream did not parse — nothing was measured"; rc=1
-        elif printf '%s\n' "$an" | grep -q 'path(s) went backwards'; then
+        elif sr_has "$an" 'path(s) went backwards'; then
           echo "self-test FAIL: states_awk coerced two distinct blob ids to one number"; rc=1
         else
           echo "self-test PASS: states_awk compares ids as strings, not numbers"
@@ -533,7 +592,7 @@ self_test() {
         # (iii-control) the same rig with a genuine repeat MUST fire, or the
         # assertion above is an absence nobody proved could be a presence.
         an=$( numeric_stream 0000100 | states_awk )
-        if printf '%s\n' "$an" | grep -q 'path(s) went backwards'; then
+        if sr_has "$an" 'path(s) went backwards'; then
           echo "self-test PASS: the strnum rig does fire on a real repeat"
         else
           echo "self-test FAIL: the strnum rig cannot detect anything — arm (iii) proves nothing"; rc=1
@@ -558,9 +617,9 @@ self_test() {
   for shape in twin inert mismatch oneclaim; do
     want=$PLANTED
     [ "$shape" = oneclaim ] && want=$PLANTED_ONECLAIM
-    out=$( cd "$(cat "$d/$shape")" && audit HEAD ); arc=$?
-    scanned=$(printf '%s\n' "$out" | awk '/^scanned [0-9]+ commits/ {print $2+0}')
-    [ -n "$scanned" ] || scanned=0
+    out=$( cd "$(<"$d/$shape")" && audit HEAD ); arc=$?
+    scanned=$(sr_field2 "$out" 'scanned ' space)
+    sr_num scanned
     if [ "$scanned" -ne "$want" ]; then
       echo "self-test FAIL: $shape rig scanned $scanned commits, want $want — the fixture was never built"
       rc=1; continue
@@ -568,7 +627,7 @@ self_test() {
     case "$shape" in
       twin)
         # D2's positive half: the line's sha did not land, its token did.
-        if [ "$arc" -eq 0 ] && printf '%s\n' "$out" | grep -q 'triaged (patch-id twin of deadbee):'; then
+        if [ "$arc" -eq 0 ] && sr_has "$out" 'triaged (patch-id twin of deadbee):'; then
           echo "self-test PASS: a line whose sha did not land triages its patch-id twin"
         else
           echo "self-test FAIL: the patch-id twin arm did not triage the landed twin (exit $arc)"; rc=1
@@ -576,19 +635,20 @@ self_test() {
         # D1's other half, and it has nowhere else to be measured: the triage
         # print strips the token, so a reason never starts with 40 hex. Without
         # the strip this line reads "… — 77e50340…8 the launcher rebased …".
-        if printf '%s\n' "$out" | grep -q 'twin of deadbee): [0-9a-f]* — the launcher rebased'; then
+        twin_re='twin of deadbee\): [0-9a-f]* — the launcher rebased'
+        if [[ $out =~ $twin_re ]]; then
           echo "self-test PASS: the triage print strips the patch-id token"
         else
           echo "self-test FAIL: the triage print did not strip the patch-id token"; rc=1
         fi ;;
       inert)
-        if [ "$arc" -eq 1 ] && printf '%s\n' "$out" | grep -q 'UNTRIAGED:'; then
+        if [ "$arc" -eq 1 ] && sr_has "$out" 'UNTRIAGED:'; then
           echo "self-test PASS: the token on an ANCESTOR's line is inert"
         else
           echo "self-test FAIL: an ancestor's token triaged another commit's diff (exit $arc)"; rc=1
         fi ;;
       mismatch)
-        if [ "$arc" -eq 1 ] && printf '%s\n' "$out" | grep -q 'UNTRIAGED:'; then
+        if [ "$arc" -eq 1 ] && sr_has "$out" 'UNTRIAGED:'; then
           echo "self-test PASS: a token that is not this commit's patch-id triages nothing"
         else
           echo "self-test FAIL: the twin arm fired on a patch-id that does not match (exit $arc)"; rc=1
@@ -596,17 +656,21 @@ self_test() {
         # D4: the hint prints the line to paste, and the patch-id in it is the
         # one git computes from the recipe the ADR names — asked here, of git,
         # rather than of this script's own patch_id.
-        fdir=$(cat "$d/mismatch")
-        an=$( cd "$fdir" && git diff-tree -p HEAD | git patch-id --stable | awk 'NR==1 {print $1}' )
-        if [ -n "$an" ] && printf '%s\n' "$out" | grep -q " $an <reason>"; then
+        fdir=$(<"$d/mismatch")
+        # git's own two-command recipe stays — it IS the measurement. Taking
+        # the first word of its first line is bash's.
+        an=$( cd "$fdir" && git diff-tree -p HEAD | git patch-id --stable )
+        an=${an%%$'\n'*}
+        an=${an%% *}
+        if [ -n "$an" ] && sr_has "$out" " $an <reason>"; then
           echo "self-test PASS: the UNTRIAGED hint carries the commit's real patch-id"
         else
           echo "self-test FAIL: the UNTRIAGED hint did not carry the commit's patch-id"; rc=1
         fi ;;
       oneclaim)
-        n=$(printf '%s\n' "$out" | grep -c 'UNTRIAGED:')
-        an=$( cd "$(cat "$d/oneclaim")" && git rev-parse --short=7 HEAD )
-        if [ "$n" -eq 1 ] && printf '%s\n' "$out" | grep -q "UNTRIAGED: $an"; then
+        n=$(sr_count "$out" 'UNTRIAGED:')
+        an=$( cd "$(<"$d/oneclaim")" && git rev-parse --short=7 HEAD )
+        if [ "$n" -eq 1 ] && sr_has "$out" "UNTRIAGED: $an"; then
           echo "self-test PASS: one patch-id claims one commit; the second twin stays UNTRIAGED"
         else
           echo "self-test FAIL: one token left $n commit(s) untriaged, want exactly the second twin"; rc=1

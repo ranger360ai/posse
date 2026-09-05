@@ -492,7 +492,7 @@ _suite_lock_selftest() {
 	# records at the same spot: the EXIT trap runs in global scope, where a
 	# function-local name is unset and the `${tmp:?}` guard aborts on the
 	# way out — after the arms have already reported.
-	local fail=0
+	local fail=0 waiting_re= m3_log=
 	tmp=$(mktemp -d "${TMPDIR:-/tmp}/posse-suite-lock.XXXXXX") || return 1
 	trap 'rm -rf "${tmp:?}"' EXIT
 
@@ -557,10 +557,20 @@ ORPHANER
 	ok() { printf 'ok    %s\n' "$1"; }
 	bad() { printf 'FAIL  %s: %s\n' "$1" "$2"; fail=1; }
 
-	# wait_file <path> <seconds> — did it appear in time?
+	# NOTHING THIS SELF-TEST DECIDES WITH MAY BE PARSED BY AN EXEC'D MATCHER
+	# (ranger-base-t07yx). `make test` gates on verify-suite-lock, so a `sed`,
+	# `awk`, `grep` or `head` that is signalled, that cannot be exec'd under
+	# load, or that takes EPIPE past the 64 KB pipe buffer would red the suite
+	# before a package runs, with a message about lock slots. ranger-base-7hx87
+	# measured all three mechanisms on the sibling script. So the helpers below
+	# read their files with bash's own redirection and `${...}`: no pipe, no
+	# exec, nothing between the bytes and the verdict. The forks that ARE the
+	# measurement — the holder processes, `suite_lock_status`, `lsof` — stay.
+
+	# wait_file <path> <seconds> — did it appear in time? Whole seconds, which
+	# is what all eighteen call sites pass; bash arithmetic, not awk's.
 	wait_file() {
-		local n=0 lim
-		lim=$(awk "BEGIN{print int($2/0.1)}")
+		local n=0 lim=$(( $2 * 10 ))
 		while [ "$n" -lt "$lim" ]; do
 			[ -e "$1" ] && return 0
 			sleep 0.1
@@ -568,7 +578,35 @@ ORPHANER
 		done
 		return 1
 	}
-	slot_of() { sed -n 's/^slot://p' "$1" 2>/dev/null | head -1; }
+	# marker_field <file> <key> — prints the first `<key>:<value>` line's
+	# value, nothing when there is none. The command substitution at the ~30
+	# call sites stays; what is gone from inside it is the exec and the pipe.
+	marker_field() {
+		local line
+		[ -r "$1" ] || return 1
+		while IFS= read -r line || [ -n "$line" ]; do
+			case $line in
+			"$2":*)
+				printf '%s\n' "${line#"$2":}"
+				return 0
+				;;
+			esac
+		done <"$1"
+		return 1
+	}
+	slot_of() { marker_field "$1" slot; }
+	# log_has <file> <literal> — does the file contain the literal anywhere?
+	# `grep -q <pat> <file>` is the same defect as a piped grep and reads even
+	# more innocently: a signalled or un-exec'd grep answers "no such line" for
+	# a log that plainly carries it, and the arm calls the lock broken. Five
+	# arms below used to ask that way (ranger-base-t07yx).
+	log_has() {
+		local c
+		[ -r "$1" ] || return 1
+		c=$(<"$1")
+		case $c in *"$2"*) return 0 ;; esac
+		return 1
+	}
 
 	local h1 h2 h3
 	touch "$tmp/hold1" "$tmp/hold2" "$tmp/hold3"
@@ -601,7 +639,9 @@ ORPHANER
 
 	# ARM 3: and the waiting run SAYS whose lock it is waiting on, by
 	# worktree. A queue nobody can read is a hang.
-	if grep -q 'waiting for suite lock held by .*/' "$tmp/m3.log" 2>/dev/null; then
+	waiting_re='waiting for suite lock held by .*/'
+	m3_log=$([ -r "$tmp/m3.log" ] && printf '%s' "$(<"$tmp/m3.log")")
+	if [[ $m3_log =~ $waiting_re ]]; then
 		ok 'queue: the waiting line names the holding worktree'
 	else
 		bad 'queue: the waiting line names the holding worktree' \
@@ -669,7 +709,7 @@ ORPHANER
 	POSSE_SUITE_LOCK_HELD=1 "$tmp/holder.sh" "$SUITE_LOCK_LIB" "$tmp/m8" "$tmp/hold8" go test -timeout 25m ./... &
 	rm -f "$tmp/hold8"
 	if wait_file "$tmp/m8" 5 && [ "$(slot_of "$tmp/m8")" = none ] &&
-		grep -q 'already inside suite slot' "$tmp/m8.log" 2>/dev/null; then
+		log_has "$tmp/m8.log" 'already inside suite slot'; then
 		ok 'nested: a run inside a held slot takes no second slot'
 	else
 		bad 'nested: a run inside a held slot takes no second slot' \
@@ -682,7 +722,7 @@ ORPHANER
 	POSSE_SUITE_LOCK=0 "$tmp/holder.sh" "$SUITE_LOCK_LIB" "$tmp/m9" "$tmp/hold9" go test -timeout 25m ./... &
 	rm -f "$tmp/hold9"
 	if wait_file "$tmp/m9" 5 && [ "$(slot_of "$tmp/m9")" = none ] &&
-		grep -q 'unserialized' "$tmp/m9.log" 2>/dev/null; then
+		log_has "$tmp/m9.log" unserialized; then
 		ok 'opt-out: POSSE_SUITE_LOCK=0 runs unserialized and says so'
 	else
 		bad 'opt-out: POSSE_SUITE_LOCK=0 runs unserialized and says so' \
@@ -737,8 +777,8 @@ STRICT
 	( POSSE_SUITE_LOCK_POLL=0.2 bash "$tmp/strict.sh" "$SUITE_LOCK_LIB" >"$tmp/strict.out" 2>&1; echo $? >"$tmp/strict.rc" ) &
 	sleep 1
 	rm -f "$tmp/hold12"
-	if wait_file "$tmp/strict.rc" 15 && [ "$(cat "$tmp/strict.rc")" = 0 ] &&
-		grep -q 'reached the end' "$tmp/strict.out"; then
+	if wait_file "$tmp/strict.rc" 15 && [ "$(<"$tmp/strict.rc")" = 0 ] &&
+		log_has "$tmp/strict.out" 'reached the end'; then
 		ok 'set -e: a queued acquire does not kill the wrapper'
 	else
 		bad 'set -e: a queued acquire does not kill the wrapper' \
@@ -769,7 +809,7 @@ STRICT
 		POSSE_SUITE_SLOTS=$n "$tmp/holder.sh" "$SUITE_LOCK_LIB" "$tmp/m14" "$tmp/hold14" go test -timeout 25m ./... &
 		hp=$!
 		if ! wait_file "$tmp/m14" 8 || [ "$(slot_of "$tmp/m14")" = none ] ||
-			! grep -q 'not a positive integer' "$tmp/m14.log" 2>/dev/null; then
+			! log_has "$tmp/m14.log" 'not a positive integer'; then
 			rc12=1
 			bad 'slots: a bad POSSE_SUITE_SLOTS runs on the default and says so' \
 				"POSSE_SUITE_SLOTS=$n gave slot '$(slot_of "$tmp/m14")' after 8s, log: $(tr '\n' '|' <"$tmp/m14.log" 2>/dev/null)"
@@ -839,7 +879,7 @@ STRICT
 	# provable: with two slots a second suite takes the other one and the
 	# arm measures nothing.
 	local od=$tmp/orphan-locks arm14='orphan: a dead wrapper leaves the slot held by its child, and says so'
-	local opid ochild before after queued=0 drained=0 named=0 h18 h19 n
+	local opid ochild before after queued=0 drained=0 named=0 h18 h19 n held_re=
 	mkdir -p "$od"
 	orphan_status() { ( export POSSE_SUITE_LOCK_DIR="$od" POSSE_SUITE_SLOTS=1; suite_lock_status ); }
 	touch "$tmp/hold18"
@@ -850,7 +890,7 @@ STRICT
 		bad "$arm14" "the orphaning holder never acquired: $(tr '\n' '|' <"$tmp/m18.log" 2>/dev/null)"
 		kill "$h18" 2>/dev/null
 	else
-		opid=$(sed -n 's/^pid://p' "$tmp/m18" | head -1)
+		opid=$(marker_field "$tmp/m18" pid)
 		# The control, and it must be taken BEFORE the kill: a --status
 		# that printed the GONE line over every held slot would satisfy
 		# the other half of this arm exactly as well as a working one.
@@ -891,21 +931,22 @@ STRICT
 		# quietly skipped assertion is how a pin stops measuring.
 		named=1
 		if command -v lsof >/dev/null 2>&1; then
-			ochild=$(sed -n 's/^child://p' "$tmp/m18" | head -1)
+			ochild=$(marker_field "$tmp/m18" child)
 			# Whole-pid, without \b: BSD grep and GNU grep do not
 			# agree on it, and 5933 must not match 59330. Every entry
 			# in the list is "<pid> <comm>", after ": " or ", ".
-			printf '%s' "$after" | grep -qE "still holding it: (.*, )?$ochild " || named=0
+			held_re="still holding it: (.*, )?$ochild "
+			[[ $after =~ $held_re ]] || named=0
 		else
 			printf 'note  %s: no lsof on this box, so the survivor is not named\n' "$arm14"
 		fi
 
 		if [ "$queued" = 1 ] && [ "$drained" = 1 ] && [ "$named" = 1 ] &&
-			printf '%s' "$before" | grep -q 'slot 1: HELD' &&
-			! printf '%s' "$before" | grep -q 'GONE' &&
-			printf '%s' "$after" | grep -q 'slot 1: HELD' &&
-			printf '%s' "$after" | grep -q "pid $opid" &&
-			printf '%s' "$after" | grep -q 'that pid is GONE'; then
+			[[ $before == *'slot 1: HELD'* ]] &&
+			[[ $before != *GONE* ]] &&
+			[[ $after == *'slot 1: HELD'* ]] &&
+			[[ $after == *"pid $opid"* ]] &&
+			[[ $after == *'that pid is GONE'* ]]; then
 			ok "$arm14"
 		else
 			bad "$arm14" \

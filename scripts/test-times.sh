@@ -640,14 +640,14 @@ STUB
   printf -- '--- FAIL: TestWatchPidRoundTrip (0.00s)\n    testing.go:1426: TempDir: mkdir /var/folders/dy/x/T/TestWatchPidRoundTrip2288449404: no space left on device\n--- FAIL: TestDispatchMergeBack (0.00s)\n    testing.go:1426: TempDir: mkdir /var/folders/dy/x/T/TestDispatchMergeBack118: no space left on device\nFAIL\tgithub.com/ranger360ai/posse/internal/rhq\t12.3s\nFAIL\n' > "$tmp/enospc.log"
   printf -- '/opt/homebrew/Cellar/go/1.26.5/libexec/src/bytes/iter.go:8:2: package iter is not in std\nFAIL\tgithub.com/ranger360ai/posse/internal/rhq [setup failed]\nFAIL\n' > "$tmp/stdbreak.log"
 
-  local out rc
+  local out rc argv_seen=
   run_arm() { # <fixture> <rc> [extra args to the fake command]
     local fixture=$1 code=$2; shift 2
     STUB_OUT="$tmp/$fixture" STUB_RC="$code" STUB_ARGV="$tmp/argv" \
     STUB_SIGNAL="${STUB_SIGNAL:-}" \
       "$0" "$tmp/bin/faketest" test "$@" ./... > "$tmp/out" 2>&1
     rc=$?
-    out=$(cat "$tmp/out")
+    out=$(<"$tmp/out")
   }
   ok()  { printf '  ok    %s\n' "$*"; }
   bad() { printf '  FAIL  %s\n' "$*"; fail=1; }
@@ -692,11 +692,26 @@ STUB
   # anything invisible in the text (an encoding artefact, a truncation) has to
   # be in the record the next time this fails. Forks, but only on the way to a
   # failure that has already been decided.
+  # indented <text> — every line of <text> behind the block's gutter. bash's
+  # own, not `| sed 's/^/…/'` (ranger-base-t07yx): this runs on the way to a
+  # failure that has already been decided, so a dying sed could not flip a
+  # verdict — but it could blank the ONE record the next reader has of a
+  # failure that only happens under load, which is exactly how the 2026-09-02
+  # sighting stayed inconclusive.
+  indented() {
+    local line
+    while IFS= read -r line || [ -n "$line" ]; do
+      printf '        | %s\n' "$line"
+    done <<<"$1"
+  }
   dump_out() {
+    local bytes
     printf '        --- $out verbatim (%s bytes) ---\n' "${#out}"
-    printf '%s\n' "$out" | sed 's/^/        | /'
+    indented "$out"
     printf '        --- $out as bytes ---\n'
-    printf '%s' "$out" | od -c 2>/dev/null | sed 's/^/        | /'
+    # od is the diagnostic itself, not a matcher, and it stays.
+    bytes=$(printf '%s' "$out" | od -c 2>/dev/null)
+    indented "$bytes"
     printf '        --- end ---\n'
   }
 
@@ -797,17 +812,25 @@ STUB
   # H: the command is run with the arguments it was given, untouched. This
   # script must not add, drop or reorder a flag — the Makefile recipe is what
   # suitetimeout_qa_test.go reads, so what runs has to be what that pin sees.
-  if [ "$(tr '\n' ' ' < "$tmp/argv")" = "test -timeout 25m ./... " ]; then
+  # `$(<file)` and a bash substitution, not `$(tr … < file)` (ranger-base-t07yx):
+  # a `tr` that is signalled or cannot be exec'd made this arm report the argv
+  # as REWRITTEN — measured, with a dying `tr` on PATH it printed
+  # "FAIL argv was rewritten: " over an argv file that was perfectly correct.
+  # $(<…) drops the trailing newline, so the wanted string loses its trailing
+  # space too.
+  argv_seen=$(<"$tmp/argv")
+  argv_seen=${argv_seen//$'\n'/ }
+  if [ "$argv_seen" = "test -timeout 25m ./..." ]; then
     ok 'the command is passed through unchanged'
   else
-    bad "argv was rewritten: $(tr '\n' ' ' < "$tmp/argv")"
+    bad "argv was rewritten: $argv_seen"
   fi
 
 
   # I: the DISK line is printed BEFORE the packages, on every run, and carries
   # a number df actually produced rather than a placeholder.
   run_arm clean.log 0 -timeout 25m
-  local disk_ok=0 mb= rest=
+  local disk_ok=0 mb= rest= want_mnt= got_mnt= df_out= df_row=
   if line_after 'test-times: DISK: '; then
     mb=${seen%% *}
     rest=${seen#* }
@@ -827,12 +850,47 @@ STUB
   # under a running suite, while its free bytes do — a tolerance on the number
   # would be exactly the box-mood red this script exists to avoid. That the
   # number is a number and that it is compared to the floor are arms I and J.
-  want_mnt=$(df -kP "${TMPDIR:-/tmp}" 2>/dev/null | awk 'NR==2 && NF>=2 { print $NF }')
-  got_mnt=$(printf '%s' "$out" | sed -n 's/.*DISK: [0-9]* MB free on \(.*\) — .*/\1/p' | head -1)
-  if [ -n "$want_mnt" ] && [ "$got_mnt" = "$want_mnt" ]; then
+  #
+  # NEITHER SIDE OF THIS COMPARISON MAY BE PARSED BY A FORK (ranger-base-t07yx).
+  # This arm used to read the mount point out of $out with
+  # `printf | sed -n | head -1`, one line below the two conditions 0b5c1c4 had
+  # just de-forked for exactly this reason, and it was measured failing in the
+  # same way: with a `sed` on PATH whose body is `kill -TERM $$`, ONE run of
+  # this self-test printed the arm above as ok and this one as "the line names
+  # ''". The apparatus had failed and the arm called the script wrong.
+  #
+  # The rule the whole file now follows: RUN the thing under test — df here,
+  # since asking the box is the measurement — but decide with bash's own
+  # `${...}`, so nothing between the bytes and the verdict can be signalled or
+  # fail to exec.
+  #
+  # Parsing df here in bash rather than with mount_of()'s awk also makes this a
+  # genuinely independent reading. The old line used awk with the same NR==2
+  # && NF>=2 { print $NF } expression the product code uses, so an awk that
+  # agreed with itself was most of what this arm proved.
+  want_mnt=
+  df_out=$(df -kP "${TMPDIR:-/tmp}" 2>/dev/null)
+  df_row=${df_out#*$'\n'}      # drop the header line
+  if [ "$df_row" != "$df_out" ]; then
+    df_row=${df_row%%$'\n'*}   # …and keep only the first filesystem
+    want_mnt=${df_row##* }      # -P guarantees the mount point is last
+  fi
+  got_mnt=
+  if line_after 'test-times: DISK: '; then
+    rest=${seen#*' MB free on '}
+    [ "$rest" != "$seen" ] && got_mnt=${rest%%' — '*}
+  fi
+  if [ -z "$want_mnt" ]; then
+    # Said as an apparatus failure, not as a property failure, because that
+    # distinction is the entire point of this block: df produced no table, so
+    # this arm did not test the DISK line at all.
+    bad 'disk: df printed no table for $TMPDIR — THIS ARM DID NOT RUN; nothing was learned about the DISK line'
+    dump_out
+  elif [ "$got_mnt" = "$want_mnt" ]; then
     ok "disk: the line names the filesystem df attributes \$TMPDIR to ($want_mnt)"
   else
     bad "disk: the line names '$got_mnt'; df says \$TMPDIR is on '$want_mnt'"
+    dump_out
   fi
 
   # J: the floor. BOTH arms, because "no warning" is also what a floor that is
@@ -1019,7 +1077,12 @@ STUB
   503 /bin/zsh -c PATH=/Users/x/.config/posse/state/gates/dinesh/bin; eval 'kill 83782 83846'
   504 bash scripts/test-times.sh /opt/homebrew/bin/go test -timeout 25m ./...
   505 /bin/zsh -c eval 'make test; kill -0 505'"
-  suspects=$(printf '%s\n' "$table" | signal_suspects 505)
+  # A here-string, not `printf | …` (ranger-base-t07yx): the pipeline forked a
+  # printf only to hand over a string this shell already holds, and a printf
+  # that cannot be forked under load would empty $suspects and make all three
+  # arms below report the digest as naming nobody. signal_suspects itself is
+  # the thing under test, so ITS forks stay.
+  suspects=$(signal_suspects 505 <<<"$table")
   case $suspects in
     *'seat jian-yang'*) ok 'suspects: the pkill line is selected and its seat named' ;;
     *) bad 'suspects: the pkill line did not name jian-yang' ;;
@@ -1034,7 +1097,7 @@ STUB
   esac
   # `ps` catches this digest's own grep in its own pipeline, and a suspect
   # section that names itself on every event teaches the reader to skip it.
-  case $(printf '%s\n  506 grep -E pkill|kill -|kill [0-9]\n' "$table" | signal_suspects 505) in
+  case $(signal_suspects 505 <<<"$table"$'\n''  506 grep -E pkill|kill -|kill [0-9]') in
     *'506'*) bad 'suspects: the digest lists its own grep as a sender' ;;
     *) ok 'suspects: does not name its own grep' ;;
   esac

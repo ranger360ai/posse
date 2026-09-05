@@ -284,17 +284,24 @@ cmd_hook_deps() {
   echo "cleanroom: commands the generated hooks call, on $DISTRO ($IMAGE)"
   echo "cleanroom: source of the list — the RENDERED hooks, pinned by TestHookDepsNamesEveryCommandTheRenderedHooksCall"
   echo
-  local out
+  local out NL=$'\n'
   out=$(as_tester "for c in $HOOK_DEPS; do
            if command -v \"\$c\" >/dev/null 2>&1; then printf '  ok      %s\n' \"\$c\";
            else printf '  MISSING %s\n' \"\$c\"; fi; done") || die "hook-deps: probe failed in $NAME"
   printf '%s\n' "$out"
   echo
-  if printf '%s\n' "$out" | grep -q '^  MISSING '; then
+  # `case`, not `printf | grep -q` (ranger-base-t07yx): $out here is the one
+  # in this file big enough to pass the 64 KB pipe buffer, so a grep matching
+  # early while printf takes the EPIPE is live as well as the signal and
+  # fork-failure arms. Any of the three reports every command as PRESENT on a
+  # distro that is missing one — the exact finding this probe exists to make.
+  case $out in
+  *"$NL"'  MISSING '* | '  MISSING '*)
     printf 'cleanroom: %s is MISSING a command the hooks call — this is a FINDING, not a setup step.\n' "$DISTRO" >&2
     echo "cleanroom: do NOT install it here. File it (see ranger-base-rmgz for the shape)." >&2
     return 1
-  fi
+    ;;
+  esac
   echo "cleanroom: every command the hooks call is present on $DISTRO"
 }
 
@@ -347,9 +354,9 @@ cmd_verify() {
   check 'no ~/go at all yet'                  '[ ! -e "$HOME/go" ]'
   echo
   echo "the toolchain and the public path:"
-  check 'go on PATH via /usr/local/go/bin'    'command -v go | grep -q "^/usr/local/go/bin/go$"'
+  check 'go on PATH via /usr/local/go/bin'    'case "$(command -v go)" in /usr/local/go/bin/go) ;; *) exit 1 ;; esac'
   check 'go >= 1.26'                          'go version'
-  check 'GOPROXY is the public default'       'go env GOPROXY | grep -q "^https://proxy.golang.org"'
+  check 'GOPROXY is the public default'       'case "$(go env GOPROXY)" in https://proxy.golang.org*) ;; *) exit 1 ;; esac'
   check 'egress to proxy.golang.org'          'curl -fsS -o /dev/null https://proxy.golang.org/github.com/ranger360ai/posse/@v/list'
   check 'egress to github.com'                'curl -fsS -o /dev/null https://github.com/ranger360ai/posse'
   check 'running as an unprivileged user'     '[ "$(id -un)" = tester ] && [ "$(id -u)" = 1000 ]'
