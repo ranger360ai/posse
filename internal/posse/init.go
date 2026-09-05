@@ -538,34 +538,51 @@ func (a *App) retireExamplePIDs(w io.Writer, src fs.FS) error {
 			kept = append(kept, name+".md (this home is promoted — retire it in the constitution repo, then `posse promote`)")
 			continue
 		}
-		// The shelf slot must still be the example copyIfMissing wrote
-		// above; if the operator edited the shelf, theirs wins and nothing
-		// moves onto it. A name this seed no longer ships has no slot to
-		// compare against — copyIfMissing writes nothing for it — so there
-		// the shelf must be free, or hold bytes posse shipped under that
-		// name. Either way the file the operator wrote is never overwritten.
+		// The shelf slot must hold bytes posse shipped under this name: if
+		// the operator edited the shelf, theirs wins and nothing moves onto
+		// it. That is the same question as the live file's above and it has
+		// the same two answers, which is the whole of ranger-base-788w —
+		// judged against the running binary's embed alone, a slot holding an
+		// EARLIER release's example reads as operator-edited. Every home
+		// whose shelf an earlier posse wrote holds exactly that slot,
+		// because copyIfMissing returns the moment the destination exists
+		// and so never rewrites an occupied one; the version-skew confusion
+		// ranger-base-8ehw took out of the live-file test was still sitting
+		// one line down, blocking the retirement on the very homes 8ehw was
+		// filed to rescue. The digest table (exampledigests.go) answers it
+		// for the shelf the same way and needs nothing in the home to do it.
+		// A name this seed no longer ships has no slot to compare against —
+		// copyIfMissing writes nothing for it — so there the shelf may
+		// simply be free.
 		shelf := filepath.Join(a.ExampleAgentsDir(), name+".md")
 		b, shelfErr := os.ReadFile(shelf)
 		switch {
-		case wantErr == nil:
-			// This seed ships the name, so the slot must be the example
-			// copyIfMissing laid down a few lines up.
-			if shelfErr != nil || string(b) != string(want) {
-				kept = append(kept, name+".md (the shelf copy differs — not overwriting it)")
+		case shelfErr != nil:
+			// A name this seed ships had that slot written by copyIfMissing
+			// a few lines up, so failing to read it back is a fault in the
+			// home rather than an empty slot to move onto.
+			if wantErr == nil {
+				kept = append(kept, name+".md (the shelf copy is unreadable — not overwriting it)")
 				continue
 			}
-		case shelfErr == nil && !isShippedExample(rel, b):
-			// A name this seed no longer ships: nothing wrote that slot on
-			// this run, so it moves only over bytes posse shipped under the
-			// same name — an earlier release's copy of the same example.
+		case !isShippedExample(rel, b):
 			kept = append(kept, name+".md (the shelf copy differs — not overwriting it)")
 			continue
 		}
 		// Rename, not remove. When the live file is an older release's
-		// example its bytes exist nowhere else in the home, and the shelf
-		// slot it replaces is the one thing here init can always lay down
-		// again. Whatever leaves agents/ is still readable, under the name
-		// init just printed.
+		// example its bytes exist nowhere else in the home. What the slot
+		// held is posse's own prose — the gate above just proved it — so
+		// overwriting it costs some release's copy of a file posse still
+		// has, while removing the live file would cost the home the only
+		// copy it has of anything. The slot then keeps what was retired,
+		// for good: copyIfMissing returns the moment the destination
+		// exists, so no later init rewrites an occupied slot, and
+		// `RHQ_HOME=<scratch> posse init` is how to read what this seed
+		// would have put there. Deliberate, and the opposite of what this
+		// comment used to claim — "the one thing here init can always lay
+		// down again" was the shelf slot, which is the one thing it never
+		// lays down twice (ranger-base-xxar). Whatever leaves agents/ is
+		// still readable, under the name init just printed.
 		if err := os.Rename(live, shelf); err != nil {
 			return err
 		}
