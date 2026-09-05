@@ -611,6 +611,38 @@ nothing.
 
 ### Fixed
 
+**The L3 hook staleness check called freshly installed hooks STALE — three of
+four repos, minutes after installing them.**
+
+*Affected: any box where two configured repos differ in what ADR 0024 D2 check
+3 derives from them — a `.beads/redirect` in one and not the other, or a
+repo-local `user.email` anywhere.* `make verify-hook-freshness` compared every
+repo's hook against ONE reference render, taken into a throwaway repo, with a
+single line normalized away on both sides (the visibility stamp). But the
+render legitimately varies with the repo it is for: a `.beads/redirect` adds
+the `instance-path` and `instance-path-abs` identity literals, and
+`user.email` is read from every scope, so a repo-local address adds a literal
+the box's other repos do not carry. Whichever side of such a branch the
+throwaway repo landed on, every repo on the other side reported
+`prepare-commit-msg is STALE` forever — on this box, three of four, immediately
+after a hand-typed `posse gates install-hooks` into all four. The wall itself
+was fine; the control was crying wolf, which for a detective control is the
+same as being off.
+
+The reference is now rendered **per repo**, against the repo being measured,
+under the same `core.hooksPath` redirect the managed-box fix introduced — so
+every variation the renderer derives from a repo is already in that repo's
+reference, and the script does not have to know what any of them are. Nothing
+is written into your repos: the render lands in the script's own tmpdir, and
+that is pinned by running it and hashing every file under the repo before and
+after.
+
+It also reads stricter in the direction that matters. A hook whose repo's
+identity moved AFTER it was rendered — you set a repo-local contribution
+address, say — no longer matches its reference, and that is correct: the
+literal the wall would have used to catch that address leaking is not in the
+hook. Re-render it with `posse gates install-hooks <repo>`.
+
 **A `CLAUDE_CONFIG_DIR` that names anywhere but `~/.claude` made every
 dispatched claude turn read as unobserved.**
 

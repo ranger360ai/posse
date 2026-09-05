@@ -32,6 +32,9 @@ package posse_test
 // can read — or judge — the operator's live checkouts.
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -89,7 +92,12 @@ type hfRig struct {
 	extraEnv []string
 }
 
-func hfNewRig(t *testing.T, vis map[string]string) *hfRig {
+// prep runs against each repo after `git init` and BEFORE its hooks are
+// rendered — the only window in which a fixture can give a repo the property
+// the render reads (a .beads/redirect, a repo-local user.email) and still have
+// the installed hook be the render for that property. Variadic so every arm
+// that needs no such property is unchanged.
+func hfNewRig(t *testing.T, vis map[string]string, prep ...func(t *testing.T, name, path string)) *hfRig {
 	t.Helper()
 	r := &hfRig{bin: hfBuild(t), git: hfGit(t), home: t.TempDir(), repos: map[string]string{}}
 	r.rhqHome = filepath.Join(r.home, ".config", "posse")
@@ -111,6 +119,11 @@ func hfNewRig(t *testing.T, vis map[string]string) *hfRig {
 	}
 	if err := os.WriteFile(filepath.Join(r.rhqHome, "config.yaml"), []byte(b.String()), 0o644); err != nil {
 		t.Fatal(err)
+	}
+	for name, p := range r.repos {
+		for _, fn := range prep {
+			fn(t, name, p)
+		}
 	}
 	for name, p := range r.repos {
 		cmd := exec.Command(r.bin, "gates", "install-hooks", p)
@@ -364,7 +377,23 @@ func TestQAHookFreshnessCatchesAHookThatRefusesTheSafeFormToo(t *testing.T) {
 // through the defect and none of them could have caught it. This one commits
 // a class member first.
 func TestQAHookFreshnessDoesNotCallTheSafeFormRefusedOverAClassPathInHEAD(t *testing.T) {
-	r := hfNewRig(t, map[string]string{"priv": "private"})
+	// The identity BEFORE the render, not after (ranger-base-x5olh). A
+	// repo-local user.email is one of check 3's literal sources, so setting
+	// one after the hook is written leaves a hook that really is behind its
+	// repo — and since the reference is rendered for the repo, the control
+	// now says so. That is the right verdict and the wrong fixture: this arm
+	// is about the safe form over a class path in HEAD, so it gives the repo
+	// its committer identity first and stays a fresh box.
+	r := hfNewRig(t, map[string]string{"priv": "private"},
+		func(t *testing.T, _, path string) {
+			t.Helper()
+			for _, kv := range [][2]string{{"user.email", "t@t"}, {"user.name", "t"}} {
+				out, err := exec.Command(hfGit(t), "-C", path, "config", kv[0], kv[1]).CombinedOutput()
+				if err != nil {
+					t.Fatalf("git config %s: %v %s", kv[0], err, out)
+				}
+			}
+		})
 	repo := r.repos["priv"]
 	dir := filepath.Join(repo, ".claude")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -377,8 +406,6 @@ func TestQAHookFreshnessDoesNotCallTheSafeFormRefusedOverAClassPathInHEAD(t *tes
 		t.Fatal(err)
 	}
 	for _, args := range [][]string{
-		{"-C", repo, "config", "user.email", "t@t"},
-		{"-C", repo, "config", "user.name", "t"},
 		{"-C", repo, "add", "--", ".claude/settings.json"},
 		{"-C", repo, "-c", "core.hooksPath=/dev/null", "commit", "-qm", "class member", "--", ".claude/settings.json"},
 	} {
@@ -550,7 +577,19 @@ func TestQAHookFreshnessIsReadOnlyAndWired(t *testing.T) {
 	src := string(b)
 	// It must never repair what it finds — a hook rewrite in someone else's
 	// shared checkout is a change the operator types.
-	for _, banned := range []string{"install-hooks \"$repo\"", "install-hooks \"$m\"", "cp \"$ref"} {
+	//
+	// `install-hooks "$repo"` was on this list and is not any more
+	// (ranger-base-x5olh): the reference is rendered FOR the repo now, under
+	// the core.hooksPath redirect, which is the only way it can carry that
+	// repo's own identity literals. So the verb IS here and the ban became a
+	// ban on the mechanism. What made it safe was never the absence of the
+	// string, it is where the render lands — a fact a grep cannot see and a
+	// run can, so it is pinned by
+	// TestQAHookFreshnessWritesNothingIntoTheRepoItMeasures instead. These two
+	// stay banned because neither has a landing place that could redeem it:
+	// a render over the slot being judged, and a copy of the reference into
+	// place.
+	for _, banned := range []string{"install-hooks \"$m\"", "cp \"$ref"} {
 		if strings.Contains(src, banned) {
 			t.Errorf("the control must not repair what it finds: %q", banned)
 		}
@@ -784,6 +823,218 @@ func TestQAHookFreshnessDoesNotSkipEveryRepoOnABinaryWithoutTheQuery(t *testing.
 	if strings.Contains(out, "dispatch from a managed hooks path") {
 		t.Errorf("`no such agent` was read as a managed verdict:\n%s", out)
 	}
+}
+
+// ─── the reference is per repo (ranger-base-x5olh) ───────────────────────────
+//
+// THE DEFECT. The reference was ONE render, into a throwaway repo, for the
+// whole box. But check 3's identity literals (ADR 0024 D2) are derived from
+// the repo the hook is for, so the render legitimately differs between two
+// repos on the same box — and the identity compare normalized exactly one line
+// away, the visibility stamp. Whichever side of such a branch the throwaway
+// repo landed on, every repo on the other side read STALE forever. MEASURED
+// 2026-09-01, minutes after the operator hand-typed `install-hooks` into all
+// four configured repos: three of the four reported
+// "prepare-commit-msg is STALE", the three carrying a `.beads/redirect`. The
+// control's own header says a control that cries wolf in the constitution repo
+// is the one place it must not, and it was crying wolf in three.
+//
+// Two arms, because there are two live sources and neither implies the other —
+// a fix that normalized the redirect lines away would leave the second one
+// firing, at the exact moment the operator sets up the flow-in checkout ADR
+// yqstz describes:
+//
+//   - a .beads/redirect adds `posse_check 'instance-path'` and
+//     `'instance-path-abs'`, at all three call sites.
+//   - `git config --get-all user.email` reads EVERY scope, so a repo-local
+//     contribution address adds a literal the box's other repos do not carry
+//     (ranger-base-yqstz is the setup that requires it).
+//
+// Both arms plant the property BEFORE the hooks are rendered, so the installed
+// hook is genuinely fresh and the only thing that could call it stale is the
+// reference. Both assert the fixture actually differs from its sibling first:
+// an arm where the plant did not reach the render would be green about
+// nothing.
+
+// hfBeadsRedirect is a prep that gives one named repo a .beads/redirect, the
+// way an instance's own checkouts point at the beads repo.
+func hfBeadsRedirect(who, target string) func(*testing.T, string, string) {
+	return func(t *testing.T, name, path string) {
+		t.Helper()
+		if name != who {
+			return
+		}
+		if err := os.MkdirAll(filepath.Join(path, ".beads"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(path, ".beads", "redirect"), []byte(target+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestQAHookFreshnessDoesNotCryWolfOverARedirectLiteral(t *testing.T) {
+	r := hfNewRig(t, map[string]string{"redir": "private", "plain": "public"},
+		hfBeadsRedirect("redir", "/nowhere/instance/.beads"))
+
+	// The fixture's premise: the two renders DIFFER, and differ in exactly
+	// the class this arm is about. Without this the arm passes on a box where
+	// nothing derives the literal, which is the box the defect hid on.
+	got, other := hfRead(t, r.hook("redir")), hfRead(t, r.hook("plain"))
+	if !strings.Contains(got, "posse_check 'instance-path'") {
+		t.Fatalf("rig never built: the redirect repo's render carries no instance-path literal")
+	}
+	if strings.Contains(other, "posse_check 'instance-path'") {
+		t.Fatalf("rig never built: the repo with no .beads/redirect carries one anyway — nothing here varies")
+	}
+
+	out, code := r.run(t)
+	if code != 0 {
+		t.Fatalf("two freshly rendered repos that differ only in their own identity literals must both be fresh; got exit %d:\n%s", code, out)
+	}
+	if strings.Contains(out, "is STALE") {
+		t.Errorf("a per-repo identity literal was read as staleness:\n%s", out)
+	}
+	if !strings.Contains(out, "2 repo(s) match this binary's render") {
+		t.Errorf("both repos must be measured, not one:\n%s", out)
+	}
+}
+
+func TestQAHookFreshnessDoesNotCryWolfOverARepoLocalEmail(t *testing.T) {
+	const addr = "contrib@example.org"
+	r := hfNewRig(t, map[string]string{"local": "private", "plain": "public"},
+		func(t *testing.T, name, path string) {
+			t.Helper()
+			if name != "local" {
+				return
+			}
+			cmd := exec.Command(hfGit(t), "-C", path, "config", "user.email", addr)
+			if out, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("git config user.email: %v %s", err, out)
+			}
+		})
+
+	// The literal renders as an escaped ERE, so the fixture looks for the
+	// shape the renderer writes rather than the address as typed.
+	const literal = `posse_check 'email' 'contrib@example\.org'`
+	got, other := hfRead(t, r.hook("local")), hfRead(t, r.hook("plain"))
+	if !strings.Contains(got, literal) {
+		t.Fatalf("rig never built: the repo-local address did not reach the render")
+	}
+	if strings.Contains(other, literal) {
+		t.Fatalf("rig never built: a repo with no local address carries it anyway — nothing here varies")
+	}
+
+	out, code := r.run(t)
+	if code != 0 {
+		t.Fatalf("a repo-local contribution address is not staleness; got exit %d:\n%s", code, out)
+	}
+	if strings.Contains(out, "is STALE") {
+		t.Errorf("a per-repo email literal was read as staleness:\n%s", out)
+	}
+}
+
+// AND THE OTHER DIRECTION. A per-repo reference that only ever made findings
+// go away would be a normalization with extra steps — the same surrender the
+// stamp's sed is, spelled as a render. It is not: because the reference
+// carries the repo's identity as it is NOW, a repo whose identity moved AFTER
+// its hook was written is caught, and that hook really is behind its repo. The
+// literal check 3 would have walled the new address with is not in it, which
+// is the ranger-base-yqstz leak the class exists to close. Nothing on the box
+// asks this question today (measured 2026-09-05: no configured repo carries a
+// repo-local user.email), which is exactly why it needs a pin.
+func TestQAHookFreshnessCatchesAnIdentityThatMovedAfterTheRender(t *testing.T) {
+	r := hfNewRig(t, map[string]string{"priv": "private"})
+	before := hfRead(t, r.hook("priv"))
+	out, err := exec.Command(hfGit(t), "-C", r.repos["priv"], "config", "user.email", "later@example.org").CombinedOutput()
+	if err != nil {
+		t.Fatalf("git config user.email: %v %s", err, out)
+	}
+	// The hook is untouched — the plant is in the repo, not in the file, and
+	// an arm that had rewritten the hook would be the STALE arm again.
+	if hfRead(t, r.hook("priv")) != before {
+		t.Fatal("rig never built: the plant changed the hook itself")
+	}
+
+	got, code := r.run(t)
+	if code != 1 {
+		t.Fatalf("a hook that predates the repo's identity is stale; want exit 1, got %d:\n%s", code, got)
+	}
+	if !strings.Contains(got, "prepare-commit-msg is STALE") {
+		t.Errorf("the drift must be named as staleness:\n%s", got)
+	}
+}
+
+// The reference render is now `posse gates install-hooks` aimed at the
+// OPERATOR'S repo, and the one thing standing between that and a hook rewrite
+// in someone else's checkout is the core.hooksPath redirect it is taken under.
+// That is a property of where bytes land, which the source-string ban this
+// replaced could not see, so it is measured: every file under the repo is
+// hashed before and after a full run, .git included.
+//
+// The fixture is the repo shape that makes the render derive something —
+// a .beads/redirect — because a render that derived nothing could be landing
+// anywhere and this arm would not know.
+func TestQAHookFreshnessWritesNothingIntoTheRepoItMeasures(t *testing.T) {
+	r := hfNewRig(t, map[string]string{"redir": "private"},
+		hfBeadsRedirect("redir", "/nowhere/instance/.beads"))
+	repo := r.repos["redir"]
+
+	before := hfSnapshot(t, repo)
+	if len(before) == 0 {
+		t.Fatal("rig never built: nothing under the repo to compare")
+	}
+	out, code := r.run(t)
+	if code != 0 {
+		t.Fatalf("a fresh repo must exit 0, got %d:\n%s", code, out)
+	}
+	after := hfSnapshot(t, repo)
+
+	for p, sum := range after {
+		if was, ok := before[p]; !ok {
+			t.Errorf("the control created %s in the repo it measures", p)
+		} else if was != sum {
+			t.Errorf("the control rewrote %s in the repo it measures", p)
+		}
+	}
+	for p := range before {
+		if _, ok := after[p]; !ok {
+			t.Errorf("the control removed %s from the repo it measures", p)
+		}
+	}
+}
+
+// hfSnapshot hashes every regular file under dir, keyed by its path relative
+// to dir. Symlinks and directories are recorded by name alone — the claim is
+// about content the control could have written, and following a link would
+// take the snapshot outside the repo.
+func hfSnapshot(t *testing.T, dir string) map[string]string {
+	t.Helper()
+	out := map[string]string{}
+	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(dir, p)
+		if err != nil {
+			return err
+		}
+		if !d.Type().IsRegular() {
+			out[rel] = "<" + d.Type().String() + ">"
+			return nil
+		}
+		b, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		sum := sha256.Sum256(b)
+		out[rel] = hex.EncodeToString(sum[:])
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
 }
 
 // hfShim writes a `git` on the front of PATH whose body is the given shell,
