@@ -1455,12 +1455,17 @@ func credentialDirPin() []EnvVar {
 	}
 }
 
-// credentialDirPinJSON is that pin as a settings payload on its own — what
-// a launch line carrying no settings flag of its own gets appended
+// credentialDirPinJSON is the whole settings pin as a payload on its own —
+// what a launch line carrying no settings flag of its own gets appended
 // (EnsureSettingsPin). `{}` when there is no pin to make, which is a flag
 // the CLI accepts and a line that changes nothing.
+//
+// It reads settingsPin, not credentialDirPin: since ranger-base-rflee the
+// pin is the credential dirs AND the transport/exec inlets (inletpin.go),
+// and a hand-written `command:` deserves the same guarantee for both. The
+// name is the one the runtime field and its pins already use.
 func credentialDirPinJSON() string {
-	pin := credentialDirPin()
+	pin := settingsPin()
 	if len(pin) == 0 {
 		return "{}"
 	}

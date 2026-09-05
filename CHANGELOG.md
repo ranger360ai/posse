@@ -40,6 +40,50 @@ leaves, loudly, rather than quietly staying in force. `posse promote
 --dry-run` shows the whole ratification diff, including the arriving and
 departing overlay files, and writes nothing.
 
+### Security
+
+**The launch now pins the environment variables that decide what a session
+EXECUTES and where its traffic goes — not just the two that decide where it
+keeps its credential.**
+
+*Affected: every build before this one, on the same terms as the
+credential-dir pin that shipped just before it.*
+
+A settings file's `env` block is applied over the process environment at
+startup and is inherited by every child a session runs, so any variable a
+lower settings scope names reaches the tools. The credential-dir pin
+(`ranger-base-rq83c`) closed the two names that moved a credential store.
+They were not the only two: the same channel carries the names that hand a
+shell, the dynamic linker, git or node something to run (`BASH_ENV`,
+`DYLD_INSERT_LIBRARIES`, `GIT_SSH_COMMAND`, `NODE_OPTIONS`, …), and the ones
+that decide which endpoint a session talks to and whose certificate it
+trusts (`HTTPS_PROXY` and its lowercase twin, `NODE_EXTRA_CA_CERTS`,
+`NODE_TLS_REJECT_UNAUTHORIZED`, `ANTHROPIC_BASE_URL`, …).
+
+All of them are now pinned in the same `--settings` payload, at the same
+scope and for the same reason: it is the one scope a launch can name that a
+settings file cannot override. The values are not uniform and not guesses —
+each is the spelling measured to deny the inlet while leaving the box's
+existing behaviour exactly where it was, because the obvious choice is
+wrong for several of them. `GIT_SSH_COMMAND=""` is not "no ssh command", it
+is the command `""`, and it breaks every ssh remote; `DYLD_INSERT_LIBRARIES`
+pointed at `/dev/null` aborts every child process it touches. The table and
+the measurement behind each row are in `internal/posse/inletpin.go`.
+
+**What you may need to do.** Nothing, if you set none of those variables
+deliberately — on the box this was measured on, none was set anywhere, so
+the pin overrides nothing. If you *do* rely on one of them for your fleet (a
+corporate proxy, a custom CA, a non-default endpoint), the pin now wins over
+it for posse-launched sessions and you will want to change its row rather
+than set the variable outside.
+
+`--settings` reaches only sessions posse launches. The scope that also
+covers a claude you start yourself is the root-owned policy tier, and the
+drop-in for it ships here as
+`etc/claude/managed-settings.d/10-posse-inlet-pin.json`, pinned against the
+same table. Installing it is a root-owned change to your box and posse does
+not make it for you.
+
 ### Added
 
 **A dispatch pass now RETIRES a session worktree it can prove is finished

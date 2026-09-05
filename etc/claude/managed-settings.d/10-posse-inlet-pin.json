@@ -1,0 +1,25 @@
+{
+  "env": {
+    "ALL_PROXY": "",
+    "ANTHROPIC_BASE_URL": "https://api.anthropic.com",
+    "BASH_ENV": "/dev/null",
+    "CLAUDE_CODE_API_BASE_URL": "",
+    "CLAUDE_CODE_CERT_STORE": "",
+    "CLAUDE_CODE_CLIENT_CERT": "",
+    "CLAUDE_CODE_CLIENT_KEY": "",
+    "DYLD_INSERT_LIBRARIES": "",
+    "ENV": "/dev/null",
+    "GIT_EXTERNAL_DIFF": "",
+    "GIT_PAGER": "",
+    "GIT_SSH_COMMAND": "ssh",
+    "HTTPS_PROXY": "",
+    "HTTP_PROXY": "",
+    "LD_PRELOAD": "",
+    "NODE_EXTRA_CA_CERTS": "/dev/null",
+    "NODE_OPTIONS": " ",
+    "NODE_TLS_REJECT_UNAUTHORIZED": "1",
+    "all_proxy": "",
+    "http_proxy": "",
+    "https_proxy": ""
+  }
+}

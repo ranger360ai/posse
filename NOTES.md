@@ -143,7 +143,17 @@ existing doubling) pushed every crew PID's line over 1023 B, and
 spent ~110 B more on 2026-09-03 — the credential-dir pin, which travels
 inside the same `--settings` payload because a second one would replace
 the first rather than add to it — against slack that was already gone, so
-it changes which side of the cliff nobody is on. A populated
+it changes which side of the cliff nobody is on. `ranger-base-rflee` spent
+~600 B more on 2026-09-05, widening that same payload from two keys to
+twenty-three (the transport/exec inlet pin, `internal/posse/inletpin.go`)
+for the same reason and into the same flag. Every crew line was already
+spilling, so no launch changed behaviour — but a *fixture* did:
+`TestDispatchRelaunchesDeadAgent`'s minimal line had still fit, and reading
+it out of `calls.log` alone measured its length rather than its content.
+That is the trap `launchLog` exists for, and rq83c walked six fixtures into
+it at a fifth of the size; the helper now collapses the gate prefix in
+spilled bodies too, so an assertion cannot tell which side of the cliff it
+landed on. A populated
 `state/launch/` is not a healthy-fleet signal; it is this fallback working
 as designed — a line that outgrew the
 limit gets sourced from a script instead of typed. The container tier's

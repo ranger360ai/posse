@@ -116,15 +116,32 @@ func TestQACredentialDirPinIsWhatThisEnvironmentAlreadyResolvesTo(t *testing.T) 
 	}
 }
 
-// No home is no pin: there is no path to name, and a launch is worth more
-// than a pin rendered against a directory that does not exist.
+// No home is no CREDENTIAL-DIR pin: there is no path to name, and a launch
+// is worth more than a pin rendered against a directory that does not
+// exist.
+//
+// The inlet rows are the other half and they do NOT drop out here
+// (ranger-base-rflee): none of them names a path this box has to have, so a
+// box with no home still gets its exec and transport pin. That asymmetry is
+// the point of the assertion below — before rflee this payload was the
+// const alone.
 func TestQACredentialDirPinIsAbsentWithNoHome(t *testing.T) {
 	t.Setenv("HOME", "")
 	if pin := credentialDirPin(); pin != nil {
 		t.Errorf("credentialDirPin = %v with no home, want none", pin)
 	}
-	if got := ClaudeFleetSettingsJSON(); got != ClaudeFleetSettings {
-		t.Errorf("ClaudeFleetSettingsJSON = %q with no home, want the const alone (%q)", got, ClaudeFleetSettings)
+	for _, v := range settingsPin() {
+		for _, name := range credentialDirVars {
+			if v.Key == name {
+				t.Errorf("settingsPin carries %s with no home — there is no directory to name", name)
+			}
+		}
+	}
+	if got := ClaudeFleetSettingsJSON(); got == ClaudeFleetSettings {
+		t.Errorf("ClaudeFleetSettingsJSON = the const alone with no home — the inlet pin does not depend on a home directory and must survive here")
+	}
+	if !strings.Contains(ClaudeFleetSettingsJSON(), "BASH_ENV") {
+		t.Errorf("ClaudeFleetSettingsJSON with no home does not carry the inlet pin:\n%s", ClaudeFleetSettingsJSON())
 	}
 }
 

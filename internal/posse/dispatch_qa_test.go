@@ -538,8 +538,15 @@ func TestDispatchRelaunchesDeadAgent(t *testing.T) {
 	if strings.Count(c, "workspace create") != 1 {
 		t.Errorf("relaunch must reuse the workspace, not create one:\n%s", c)
 	}
-	if strings.Count(c, "pane run") != 2 || !strings.Contains(c, "GATES claude") {
-		t.Errorf("want the persona command re-typed into the original pane:\n%s", c)
+	// The pane-run COUNT is a fact about calls.log; what is ON the relaunched
+	// line is read through launchLog, because a line over PaneLineMax is
+	// spilled to state/launch/<session>.sh and the pane types `. <script>`.
+	// Which of the two places it lands in is a fact about the line's LENGTH,
+	// not about the relaunch — this fixture crossed that cliff when
+	// ranger-base-rflee widened the settings pin, exactly as six others did
+	// under rq83c's smaller one.
+	if strings.Count(c, "pane run") != 2 || !strings.Contains(launchLog(t, b.App, fake), "GATES claude") {
+		t.Errorf("want the persona command re-typed into the original pane:\n%s", launchLog(t, b.App, fake))
 	}
 	m, _ := b.readMeta(session)
 	if time.Since(m.Launched) > time.Minute {

@@ -1996,7 +1996,12 @@ func launchLog(t *testing.T, a *App, fake string) string {
 		}
 		out += "\n--- " + p + " ---\n" + string(body)
 	}
-	return out
+	// Collapsed over the WHOLE thing, not just calls.log: a spilled script
+	// carries the same gate prefix the typed line does, so a helper that
+	// normalized only one of the two places would still make an assertion
+	// depend on which one the line landed in — the exact dependency this
+	// helper exists to remove.
+	return gatePrefixRe.ReplaceAllString(out, "GATES ")
 }
 
 // promptWindow is one held `agent prompt`: the interval it was in flight,

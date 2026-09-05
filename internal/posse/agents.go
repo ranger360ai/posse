@@ -88,8 +88,15 @@ const ClaudeFleetSettings = `{"permissions":{"defaultMode":"auto"},"skillOverrid
 const DefaultAgentCommand = `claude ` + ClaudeFleetFlags + ` --append-system-prompt "$(cat {file})" --add-dir {memory} {settings} {skills} {allow} {deny}`
 
 // ClaudeFleetSettingsJSON is what {settings} carries: ClaudeFleetSettings
-// above, plus the credential-dir env pin this launch cannot express any
-// other way (credentialDirPin, ranger-base-rq83c).
+// above, plus the env pin this launch cannot express any other way
+// (settingsPin) — the credential dirs (credentialDirPin,
+// ranger-base-rq83c) and the transport/exec inlets (inletPin,
+// ranger-base-rflee), in that order.
+//
+// The inlet half is why this function no longer renders the const alone on
+// a box with no home directory: the credential-dir rows need a home to name
+// and the inlet rows do not, so the launch keeps its exec and transport pin
+// even where it cannot name a credential store.
 //
 // The pin has to travel INSIDE this payload rather than beside it. A second
 // `--settings` on the line does not add a source: measured on claude
@@ -105,7 +112,7 @@ const DefaultAgentCommand = `claude ` + ClaudeFleetFlags + ` --append-system-pro
 // launch still carries its permission mode, and the pin's absence is what
 // TestQAClaudeFleetSettingsJSONCarriesTheCredentialDirPin refuses.
 func ClaudeFleetSettingsJSON() string {
-	pin := credentialDirPin()
+	pin := settingsPin()
 	if len(pin) == 0 {
 		return ClaudeFleetSettings
 	}
