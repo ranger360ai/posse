@@ -27,7 +27,7 @@ const DefaultLandTimeout = 10 * time.Minute
 
 type RelaunchOpts struct {
 	Name    string
-	NoLand  bool          // skip the landing turn (a dead or wedged session)
+	NoLand  bool          // skip the landing turn (a dead or wedged session, or one relaunching itself)
 	Timeout time.Duration // bound on the landing turn (0 → DefaultLandTimeout)
 	// Force stands the ADR 0013 §4 reap guard down: refresh a session that
 	// still holds an open bead over an uncommitted tree. The operator has
@@ -84,6 +84,34 @@ func (b *HerdrBackend) RelaunchSession(w io.Writer, o RelaunchOpts) error {
 	timeout := o.Timeout
 	if timeout <= 0 {
 		timeout = DefaultLandTimeout
+	}
+
+	// A session cannot relaunch ITSELF (ranger-base-521), and the refusal is
+	// here rather than at the landing turn it is about. landThePlane waits
+	// for the target's agent to reach idle/done/blocked; when the caller IS
+	// the target, that agent is running this command, so the wait can only
+	// end at the bound. Every --timeout the old message offered bought a
+	// longer wait before the same words. This is the same event named in
+	// zero seconds, before the plan, because nothing about it is a question
+	// about the recreate.
+	//
+	// --no-land is NOT refused. It is the way through for a session that has
+	// landed itself by hand — write the standing orders, commit, record the
+	// beads — and it is what the operator reaches for today. What it gets
+	// here is the one fact it is missing, said before anything is destroyed:
+	// the workspace this command is running in is the workspace the kill
+	// closes. Whether the recreate on the far side of that kill outlives the
+	// pane it was typed in is NOT measured (no herdr server can be started
+	// from a caged seat), so this line says what is certain and claims
+	// nothing about what is not.
+	if CallerRunsInside(m) {
+		if !o.NoLand {
+			return Die("%s cannot relaunch itself: this command is running inside %s's own workspace (%s), and the landing turn waits for that session's agent to go idle — it is working precisely because it is running this command, so no --timeout ever settles\n"+
+				"  relaunch it from another session, or from a shell outside it:\n    posse relaunch %s\n"+
+				"  or land it by hand first (standing orders written, work committed, beads recorded) and skip the turn:\n    posse relaunch %s --no-land",
+				o.Name, o.Name, m.Workspace, o.Name, o.Name)
+		}
+		fmt.Fprintf(w, "note: %s is being relaunched from inside its own workspace (%s) — the kill closes the pane this command is running in\n", o.Name, m.Workspace)
 	}
 
 	if m.Dir == "" {

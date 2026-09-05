@@ -37,15 +37,23 @@ rewrite. Meta files whose workspace has died are pruned on read; workspaces
 created directly in herdr still show up in listings, marked `(herdr)`.
 
 That meta is also the session's *recipe*, which is what makes refresh a
-one-liner: `posse relaunch <name>` (rangerhq-dxq) lands the plane, closes the
-workspace, and recreates it from the same persona, dir, env sets, runtime,
-tier, cage and degraded-consent. Landing is one bounded turn (`--timeout`,
-default 10m): settle first — herdr's prompt does not track turns — then a
-prompt telling the agent to append its lessons to `ORDERS.md`, commit, file
-what's unfinished, and push only what its own guardrails permit. A session
-that never settles inside the bound is **not** killed; the operator is told
-to wait or pass `--no-land`. No agent, or an agent blocked on its own
-dialog, is a note and the refresh continues. A persona line is re-rendered
+one-liner: `posse relaunch <name>` (rangerhq-dxq) lands the plane, closes
+the workspace, and recreates it from the same persona, dir, env sets,
+runtime, tier, cage and degraded-consent. Landing is one bounded turn
+(`--timeout`, default 10m): settle first — herdr's prompt does not track
+turns — then a prompt telling the agent to append its lessons to
+`ORDERS.md`, commit, file what's unfinished, and push only what its own
+guardrails permit. A session that never settles inside the bound is **not**
+killed; the operator is told to wait or pass `--no-land`. No agent, or an
+agent blocked on its own dialog, is a note and the refresh continues. **A
+session cannot land itself**, and since ranger-base-521 that is said rather
+than waited out: a relaunch typed inside the session it names is the one
+wait that can only end at the bound — the agent it waits for is running the
+command — so it is refused in zero seconds, before the plan, naming the two
+ways through (another session, or `--no-land` once the session has landed
+itself by hand). The caller is recognised by its own pane's workspace id
+against the record's, on the same herdr server; `--no-land` from inside
+still goes through, and says which pane the kill is about to close. A persona line is re-rendered
 from the PID at every launch (never replayed), so a plain session's `--cmd`
 is the one thing the meta has to carry itself (`cmd:`).
 

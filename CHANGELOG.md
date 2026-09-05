@@ -397,6 +397,27 @@ nothing.
 
 ### Fixed
 
+**A session could not relaunch itself: it waited the whole landing timeout to
+be told to try again later.**
+
+*Affected: `posse relaunch <name>` typed inside the session it names — the
+coordinator's own refresh, which is where the accumulated context, and the
+cost, is.* The landing turn waits for the target's agent to go idle before it
+closes the workspace, and a session running that command is working precisely
+because it is running it. The wait could only end at the bound, and the
+message then offered a longer `--timeout`, which buys the same words later.
+
+`posse relaunch` now recognises the case — the pane's own workspace id against
+the session record's, on the same herdr server — and says so in zero seconds,
+before it plans or waits, naming the two ways through: run it from another
+session, or land the session by hand and pass `--no-land`. `--no-land` from
+inside the session is *not* refused; it prints which pane the kill is about to
+close. Nothing else changes: a relaunch typed anywhere else is untouched, and
+a session record too old to name its herdr server keeps the old behaviour
+rather than being refused on a comparison that cannot be made.
+
+### Fixed
+
 **`posse gates <persona>` printed a wall of green for a persona that could
 not launch at all, and exited 0.**
 

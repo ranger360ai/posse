@@ -2082,7 +2082,10 @@ sessions (herdr workspaces):
                                  plane (one bounded turn to write lessons down
                                  and commit), kill, recreate from the same
                                  persona/dir/envs
-      --no-land                skip the landing turn (dead or wedged sessions)
+      --no-land                skip the landing turn (dead or wedged sessions, and the
+                               one way through for a session relaunching ITSELF: it
+                               cannot wait for its own turn to settle, so the landing
+                               path refuses that outright)
       --timeout <interval>     bound on the landing turn (default 10m)
       --force                  refresh even while its bead is open and its tree dirty
   posse kill <name>              land the plane (one bounded turn to write lessons

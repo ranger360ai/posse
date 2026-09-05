@@ -249,6 +249,61 @@ func SocketID() string {
 	return filepath.Join(home, ".config", "herdr", "herdr.sock")
 }
 
+// EnvWorkspace is the workspace id herdr injects into the env of every pane
+// it opens (measured 2026-09-04 in a dispatched pane: HERDR_WORKSPACE_ID sits
+// beside HERDR_PANE_ID, HERDR_TAB_ID and HERDR_SOCKET_PATH, and its value is
+// the same string that session meta records as `workspace:`).
+//
+// It is the one env name that tells posse WHICH SESSION it was run from, and
+// that is why the self case is not read off EnvPersona. That says only which
+// persona, and one persona can be sitting in more than one session at a time
+// — a conversation the operator marked crew and a dispatched seat per repo —
+// so a name check would refuse a relaunch typed in a sibling of the target.
+const EnvWorkspace = "HERDR_WORKSPACE_ID"
+
+// CallerRunsInside answers whether THIS posse process is running inside the
+// session `m` describes: the caller's pane belongs to that session's
+// workspace, on that session's herdr server.
+//
+// It exists because a session cannot land ITSELF (ranger-base-521). The
+// landing turn waits for the target's agent to go idle, and when the caller
+// is the target that never happens — it is working precisely because it is
+// running the command that waits. The old answer was a full timeout and then
+// generic advice; this is the question that answer was missing.
+//
+// BOTH halves are required and neither is enough alone. A workspace id is
+// unique per server and nothing else, so an id from another herdr server
+// (a named session, a scratch server) names a different workspace with the
+// same string. And the socket alone says only that two processes talk to one
+// server, which every session on the box does.
+//
+// An unnameable or unrecorded server is NOT self, deliberately — SocketID's
+// own asymmetry, applied one layer up: nothing is proven ours, so nothing is
+// refused. The cost is that a meta written before `socket:` existed keeps
+// the old timeout; the alternative is refusing a relaunch on a comparison
+// this pass could not make, and a refusal nobody can argue with had better
+// be one this pass can prove.
+//
+// No generation fence (ServerGen), and that is the narrow window this
+// accepts: herdr's allocator is max(live id)+1 recomputed at every server
+// process start, so a DEAD id can be reissued to a stranger
+// (scripts/verify-id-recycle.sh). The caller's own id cannot be — it is live
+// by construction, this process is sitting in it — so the only way to a
+// wrong yes is a target whose workspace is already dead and whose id this
+// caller now wears. A fence would cost more than it buys: a live handoff
+// moves the generation without closing a single workspace, so requiring
+// m.Gen == ServerGen() would stop detecting the self case after every herdr
+// update, which is exactly when a long session is being refreshed.
+func CallerRunsInside(m *HerdrMeta) bool {
+	if m == nil || m.Workspace == "" || m.Socket == "" {
+		return false
+	}
+	if os.Getenv(EnvWorkspace) != m.Workspace {
+		return false
+	}
+	return SocketID() == m.Socket
+}
+
 // ServerGen names the herdr server *generation* posse is talking to: the
 // device, inode and bind time of its api socket file. herdr recreates that
 // file on both a restart and a live handoff, and those are exactly the
