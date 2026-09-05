@@ -68,8 +68,11 @@ func (o TurnOutcome) Worked() bool { return o.ModelCalls > 0 || o.OutputTokens >
 // session's tree (Dispatcher.sessionCwd, ranger-base-f09bw).
 type TurnOutcomeReader func(cwd, bead string, since time.Time) (out TurnOutcome, observed bool)
 
-// TurnOutcomeClaudeTranscript reads claude's own JSONL transcript under
-// ~/.claude/projects. A runtime whose CLI writes that same shape declares
+// TurnOutcomeClaudeTranscript reads claude's own JSONL transcript under the
+// config dir's projects/ — `$CLAUDE_CONFIG_DIR`'s, else `~/.claude`'s, the
+// locator being TranscriptFiles' (ranger-base-yqdov), so an operator who
+// moves the config home does not silently make every turn unobserved.
+// A runtime whose CLI writes that same shape declares
 // `turn_outcome: claude-transcript` and is read by it; anything else needs a
 // reader here first (ADR 0012 D4's adapter seam). grok's store is the second
 // one built — TurnOutcomeGrokSessionStore, turnfailure_grok.go.

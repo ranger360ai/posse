@@ -431,3 +431,40 @@ func TestPlanHintSegmentIsEmptyWhereCodexNeverRan(t *testing.T) {
 		t.Errorf("no reading must draw nothing, got %q", got)
 	}
 }
+
+// $CODEX_HOME moves codex's store, and posse's two other readers of it —
+// the cost adapter and the interstitial version probe — follow it. This
+// walk stayed at ~/.codex until ranger-base-yqdov, so under an override it
+// read a root that does not exist, and this type has exactly one answer for
+// that: nil, which every caller reads as "no rollout on this machine ever
+// wrote a reading" and turns into cap-only. Milder than the cost adapter's
+// version of the same defect (a hint informs and never gates, ADR 0034 D1)
+// and never a false dollar, but it is the same disagreement inside one
+// binary and it silently drops a reading the operator has.
+//
+// The wrong arm is real here: $HOME holds no .codex at all, so a walk that
+// ignores the override finds nothing and returns nil.
+func TestReadCodexPlanHintFollowsCodexHome(t *testing.T) {
+	t.Setenv("HOME", t.TempDir()) // no ~/.codex: the pre-fix walk sees an empty box
+	moved := filepath.Join(t.TempDir(), "codex-elsewhere")
+	t.Setenv("CODEX_HOME", moved)
+	dir := filepath.Join(moved, "sessions", "2026", "08", "05")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := joinLines([]string{
+		codexMeta("/w"),
+		codexRateLimitsLine("2026-08-05T10:00:01.000Z", janJunRateLimits(12, 34, "plus")),
+	})
+	if err := os.WriteFile(filepath.Join(dir, "rollout-2026-08-05T10-00-00-a.jsonl"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	hint := ReadCodexPlanHint()
+	if hint == nil {
+		t.Fatal("a reading under $CODEX_HOME must be found (nil is the silent cap-only this bead fixes)")
+	}
+	if len(hint.Windows) != 2 || hint.Windows[0].UsedPercent != 12 || hint.Windows[1].UsedPercent != 34 {
+		t.Errorf("windows: %+v", hint.Windows)
+	}
+}

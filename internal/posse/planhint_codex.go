@@ -5,7 +5,7 @@ package posse
 // or use to REFUSE overflow — never a second gate.
 //
 // Every codex `token_count` event in
-// `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` carries
+// `<codex home>/sessions/YYYY/MM/DD/rollout-*.jsonl` carries
 // `payload.rate_limits`: per-window `used_percent`, `window_minutes`,
 // `resets_at`, plus a `credits` block that says whether an exhausted pool
 // starts billing. The same reading `planusage_anthropic.go` fetches for
@@ -97,11 +97,21 @@ type PlanHint struct {
 	SpendControlReached bool
 }
 
-// ReadCodexPlanHint scans `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` —
-// newest date directory first, newest file first within a day — for the
+// ReadCodexPlanHint scans `<codex home>/sessions/YYYY/MM/DD/rollout-*.jsonl`
+// — newest date directory first, newest file first within a day — for the
 // newest `token_count` event that carries a usable `rate_limits` reading,
 // and returns it as a *PlanHint. Nil when no rollout on this machine ever
 // wrote one.
+//
+// The home is codexHomeIn's, so $CODEX_HOME moves this walk exactly as it
+// moves the CLI's own store and posse's other readers of it (the cost
+// adapter and the interstitial probe). Rooting it at ~/.codex regardless —
+// which this did until ranger-base-yqdov — read an absent directory under
+// an override, which is indistinguishable here from "no rollout on this
+// machine ever wrote a reading". Milder than the cost adapter's version of
+// the same defect by this type's own doctrine (a hint informs and never
+// gates, ADR 0034 D1, and cap-only is the honest fallback), but the same
+// disagreement inside one binary.
 //
 // No error return: a hint informs and never gates (ADR 0034 D1), so a
 // read failure — a missing home directory, an unreadable file, a rollout
@@ -115,7 +125,7 @@ func ReadCodexPlanHint() *PlanHint {
 	if err != nil {
 		return nil
 	}
-	root := filepath.Join(home, ".codex", "sessions")
+	root := filepath.Join(codexHomeIn(home), "sessions")
 	for _, f := range codexRolloutsNewestFirst(root) {
 		if hint := newestPlanHintIn(f); hint != nil {
 			return hint

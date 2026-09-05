@@ -339,3 +339,62 @@ func TestCostReportPrintNamesUnreadableTranscripts(t *testing.T) {
 		t.Errorf("only the first error is printed:\n%s", got)
 	}
 }
+
+// $CLAUDE_CONFIG_DIR moves claude's store, and posse's three other readers
+// of it — trust.go's config file, sentline.go's history.jsonl and
+// credential.go's credentials file — follow it. This walk stayed at
+// ~/.claude until ranger-base-yqdov, so under an override it walked a root
+// that does not exist, and an absent root is "never ran the CLI" by design
+// (TestScanCostsMissingRootIsNoRecords below): $0 of claude spend, no error
+// and no uncounted line — the ADR 0018 §3 collapse ranger-base-z65xu fixed
+// for grok and codex, here on the one runtime that carries dollars.
+//
+// The wrong arm is real here: $HOME holds no .claude at all, so a walk that
+// ignores the override finds nothing and reports no error.
+func TestClaudeTranscriptsFollowClaudeConfigDir(t *testing.T) {
+	t.Setenv("HOME", t.TempDir()) // no ~/.claude: the pre-fix walk sees an empty box
+	moved := filepath.Join(t.TempDir(), "claude-elsewhere")
+	t.Setenv("CLAUDE_CONFIG_DIR", moved)
+	dir := filepath.Join(moved, "projects", "-Users-x-src-posse")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	p := writeTranscript(t, dir, "s.jsonl",
+		`{"type":"user","timestamp":"2026-09-05T09:00:00Z","message":{"content":"Work beads issue rangerhq-ccd1 (title)"}}`,
+		asst("m1", "claude-opus-5", "2026-09-05T09:00:01Z", 0, 0, 0, 40_000))
+
+	files, errs := claudeCost{}.Transcripts("")
+	if len(errs) != 0 {
+		t.Fatalf("errs: %v", errs)
+	}
+	if len(files) != 1 || files[0] != p {
+		t.Fatalf("a transcript under $CLAUDE_CONFIG_DIR must be listed: %v (want [%s])", files, p)
+	}
+	// Counted, not merely located: the dollars have to reach the report,
+	// because $0 wearing "nothing was spent"'s clothes is the whole defect.
+	if got := ScanCosts("", time.Time{}).ByBead()["rangerhq-ccd1"]; got < 0.9999 || got > 1.0001 {
+		t.Errorf("spend under $CLAUDE_CONFIG_DIR = %v, want 1.00 (0 is the silent $0 this bead fixes)", got)
+	}
+}
+
+// An EMPTY $CLAUDE_CONFIG_DIR is not a config dir: the walk falls back to
+// the home's .claude rather than rooting at a relative "projects" under
+// whatever cwd the process launched in. Same rule ClaudeConfigDirIn holds
+// for every other reader of the variable, and the same divergence from the
+// runtime's own `??` that its doc comment records.
+func TestClaudeTranscriptsEmptyConfigDirFallsBackToHome(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	dir := filepath.Join(home, ".claude", "projects", "p1")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	p := writeTranscript(t, dir, "s.jsonl",
+		`{"type":"user","timestamp":"2026-09-05T09:00:00Z","message":{"content":"Work beads issue rangerhq-ccd2 (title)"}}`)
+
+	files, errs := claudeCost{}.Transcripts("")
+	if len(errs) != 0 || len(files) != 1 || files[0] != p {
+		t.Fatalf("empty override must fall back to <home>/.claude: %v %v (want [%s])", files, errs, p)
+	}
+}

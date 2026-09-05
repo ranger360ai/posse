@@ -115,6 +115,21 @@ func TestMain(m *testing.M) {
 	os.Setenv("HOME", home)
 	os.Setenv("RHQ_FAKE_HERDR", "1")
 	os.Setenv(EnvPersona, "")
+	// The three CLI home overrides, cleared for the same reason HOME is
+	// replaced: every locator that honours one reads the OPERATOR's live
+	// store when the variable survives into the test binary, and the temp
+	// HOME above no longer fences it off. This box exports
+	// CLAUDE_CONFIG_DIR from a managed-settings file on every launch, so
+	// once transcriptFiles started following it (ranger-base-yqdov) the
+	// package's cost tests would have walked ~/.claude/projects — 1300+
+	// real project dirs — instead of their own tempdirs. Cleared and not
+	// unset: all three resolvers treat empty as unset and fall back to the
+	// home, which is the tempdir. A test that means to move one sets it
+	// back with t.Setenv, exactly as the $CODEX_HOME/$GROK_HOME cost tests
+	// already do.
+	os.Setenv("CLAUDE_CONFIG_DIR", "")
+	os.Setenv("CODEX_HOME", "")
+	os.Setenv("GROK_HOME", "")
 	code := m.Run()
 	os.RemoveAll(home)
 	os.Exit(code)

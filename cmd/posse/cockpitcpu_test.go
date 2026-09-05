@@ -149,6 +149,12 @@ func TestCockpitCostWindowIsStableAcrossTicks(t *testing.T) {
 func TestCockpitGovCheckScansThroughItsOwnMemory(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	// This package has no TestMain to fence the CLI home overrides, and
+	// this box exports CLAUDE_CONFIG_DIR from a managed-settings file: the
+	// transcript walk follows it (ranger-base-yqdov), so without this the
+	// scan reads the operator's live ~/.claude/projects and Remembered()
+	// counts their transcripts instead of the one below.
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
 	dir := filepath.Join(home, ".claude", "projects", "p1")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)

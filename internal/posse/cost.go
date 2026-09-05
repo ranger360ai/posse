@@ -415,9 +415,10 @@ func userText(raw json.RawMessage) string {
 	return ""
 }
 
-// TranscriptFiles lists Claude Code transcripts under ~/.claude/projects,
-// optionally filtered by a project-path substring. The quiet form, for
-// callers that only ever display what they found.
+// TranscriptFiles lists Claude Code transcripts under the config dir's
+// projects/ ($CLAUDE_CONFIG_DIR's, else ~/.claude's), optionally filtered
+// by a project-path substring. The quiet form, for callers that only ever
+// display what they found.
 func TranscriptFiles(project string) []string {
 	files, _ := transcriptFiles(project)
 	return files
@@ -434,6 +435,39 @@ func TranscriptFiles(project string) []string {
 // broken mount, a directory replaced by a file — is a read failure and says
 // so.
 //
+// The root is ClaudeConfigDirIn's, so $CLAUDE_CONFIG_DIR moves this walk
+// exactly as it moves the CLI's own store and posse's other readers of it
+// (trust.go's config file, sentline.go's history.jsonl, credential.go's
+// credentials file). Rooting it at ~/.claude regardless — which this did
+// until ranger-base-yqdov — put the walk on an absent root under an
+// override, and an absent root is "never ran the CLI" below: $0 of claude
+// spend, no error and no uncounted line, on the one runtime that actually
+// carries dollars (the ADR 0018 §3 collapse ranger-base-z65xu fixed for
+// grok and codex).
+//
+// MEASURED, 2.1.261 darwin-arm64, the same two ways trust.go measured the
+// config dir itself. The shipped bundle's own source joins "projects" onto
+// the config home in three independent spellings — `function
+// Sc(){return S(be(),"projects")}`, `function Pl(){return
+// o(be(),"projects")}` and an inline
+// `D(P.CLAUDE_CONFIG_DIR??D(et(),".claude"),"projects")` — where `be()` is
+// the same `CLAUDE_CONFIG_DIR ?? homedir()/.claude` ClaudeConfigDirIn
+// reads. And live: a headless run with $HOME moved to a scratch directory
+// and the config dir left where it was wrote its transcript under the
+// CONFIG DIR's projects/, not the moved home's, so the store follows the
+// config dir and not $HOME. (The converse arm — the config dir moved to a
+// novel path — is not reachable on this box: a managed-settings file at
+// /Library/Application Support/ClaudeCode/managed-settings.json pins
+// CLAUDE_CONFIG_DIR for every launch, and CLAUDE_CODE_MANAGED_SETTINGS_PATH
+// did not displace it.)
+//
+// The home is still resolved first and its absence is still a read failure,
+// even though a set override would not need one: that keeps this adapter
+// identical to grok's and codex's on the no-home arm (ranger-base-58b5),
+// and it errs toward "cannot tell" rather than toward a number. A launch
+// with no $HOME at all is the only case it costs, and that box has larger
+// problems than an unread ledger.
+//
 // It walks with os.ReadDir rather than filepath.Glob because Glob discards
 // every I/O error by design (path/filepath/match.go glob(): "ignore I/O
 // error"). Guarding it with one os.Stat on the root caught only the arm
@@ -447,7 +481,7 @@ func transcriptFiles(project string) ([]string, []error) {
 	if err != nil {
 		return nil, []error{err}
 	}
-	root := filepath.Join(home, ".claude", "projects")
+	root := filepath.Join(ClaudeConfigDirIn(home), "projects")
 	projects, err := os.ReadDir(root)
 	if err != nil {
 		if os.IsNotExist(err) {

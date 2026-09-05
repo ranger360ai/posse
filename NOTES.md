@@ -3132,9 +3132,17 @@ accounting: the analyst's `bead-cost.py` method in Go. Every runtime with a
 dispatcher's "Work beads issue <id>" prompts; three ship, and a runtime with
 no adapter is reported as *uncounted*, never $0.
 
-- **claude** — `~/.claude/projects/*/*.jsonl`, and only there: unlike the two
-  below, this walk does not follow `CLAUDE_CONFIG_DIR` yet
-  (`ranger-base-yqdov`). Assistant records are deduped by message id
+- **claude** — `$CLAUDE_CONFIG_DIR/projects/*/*.jsonl`, `~/.claude`'s when the
+  override is unset — the same config dir the trust file, `history.jsonl` and
+  the credentials file resolve, because a walk rooted at `~/.claude`
+  regardless (which this was until `ranger-base-yqdov`) lands on an absent
+  root under an override, and an absent root is *never ran the CLI*: $0 with
+  no error and no uncounted line, on the one runtime that carries dollars.
+  Measured on 2.1.261 before the walk moved — the shipped bundle joins
+  `projects` onto its config home in three places, and a headless run with
+  `$HOME` moved wrote its transcript under the config dir, not the moved
+  home. `FindClaudeTurnOutcome` reads the same locator, so it followed the
+  override in the same commit. Assistant records are deduped by message id
   (streamed chunks repeat it — max per usage field) and priced
   at list rates per MTok for the model each record names (fable 10/50, opus
   5/25, sonnet 3/15, haiku 1/5; cache write 1.25× input for 5m TTL and 2× for

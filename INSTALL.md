@@ -969,7 +969,8 @@ command: <cli> --some-unattended-flag --rules="$(cat {file})"
 #                              # account apart from an agent that settled
 #                              # without closing its bead. The value names a
 #                              # reader posse ships (claude-transcript, the
-#                              # ~/.claude/projects/*.jsonl scanner, and
+#                              # ~/.claude/projects/*.jsonl scanner — or
+#                              # $CLAUDE_CONFIG_DIR's — and
 #                              # grok-session-store, the
 #                              # $GROK_HOME/sessions/*/*/updates.jsonl one); a
 #                              # name nothing implements REFUSES at load.

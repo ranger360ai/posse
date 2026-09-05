@@ -546,6 +546,37 @@ only wants the verdict does not have to risk the write to get it — the
 freshness script is the first such caller, and one classification is better
 than a second spelling of its three legs per caller.
 
+**`posse cost` reported $0 of claude spend, silently, on a box that sets
+`CLAUDE_CONFIG_DIR`.**
+
+*Affected: anyone who moved claude's config home — including every box whose
+managed-settings file names it.* The transcript walk was rooted at
+`~/.claude/projects` and nowhere else, while every other reader posse has of
+that CLI — the trust file, `history.jsonl`, the credentials file — already
+followed the override. Under a moved config home the walk landed on a
+directory that does not exist, and an absent root is *never ran the CLI* by
+design: no dollars, no error, and no "uncounted" line to say the number was
+not measured. `posse cost` printed a zero, the governance shop check read
+that same zero as headroom, and a dispatch settle read every turn as
+unobserved, because `FindClaudeTurnOutcome` uses the same locator. This is
+the collapse the previous release fixed for grok and codex; it was still open
+on the one runtime that ends in real money.
+
+The walk is rooted at `$CLAUDE_CONFIG_DIR/projects` now, `~/.claude`'s when
+the variable is unset or empty — the same rule everything else in posse
+reads. Where the CLI keeps that store was measured rather than assumed
+before the walk moved: on 2.1.261 the shipped bundle joins `projects` onto
+its config home in three independent places, and a headless run with `$HOME`
+pointed at a scratch directory wrote its transcript under the config dir, not
+the moved home.
+
+Codex's plan hint (`internal/posse/planhint_codex.go`) had the same shape and
+is fixed with it: it rooted at `~/.codex/sessions` and ignored `$CODEX_HOME`,
+so under an override the newest rate-limit reading on the box read as "codex
+never wrote one" and the guard fell back to cap-only. Milder by that type's
+own doctrine — a hint informs and never gates — but the same disagreement
+inside one binary.
+
 **`posse worktrees --land` took a caged session's work onto your branch with
 nothing accounting for it.**
 
