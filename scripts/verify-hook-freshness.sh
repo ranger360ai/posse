@@ -38,6 +38,35 @@
 # the operator's, and a hook rewrite in a shared checkout is a change someone
 # should type. A finding prints the exact command that fixes it.
 #
+# A MANAGED BOX (ADR 0052, ranger-base-1se2l). An employer's box points every
+# git on it at one absolute, root-owned hooks directory by a global
+# `core.hooksPath`. Two things follow, and this script got both wrong:
+#
+#   - The reference render is an `install-hooks` into a throwaway repo, and
+#     that repo inherits the global too — so the render is classified managed,
+#     writes nothing, and prints no `visibility guard: public` line. The script
+#     then exited 2 for the WHOLE box. It is taken with a redirect env in force
+#     now (git's own GIT_CONFIG_COUNT/KEY/VALUE form, appended to any count the
+#     operator's environment already carries), aiming core.hooksPath at a
+#     scratch directory this script owns. That is the same mechanism ADR 0052
+#     D2 realizes the wall with, and M1 is the measurement it rests on: the env
+#     form outranks the global value. The render is byte-identical to one
+#     written into a repo's own `.git/hooks` — MEASURED 2026-09-05, both slots.
+#     It is taken lazily, because a fully managed box needs no reference at all.
+#
+#   - A configured repo on such a box dispatches from the managed directory,
+#     so whatever sits in its `.git/hooks` is a file git never runs. Measuring
+#     it is worse than useless in both directions: a leftover posse hook there
+#     reads as FRESH — a green about a wall that is not armed — and the
+#     employer's slots read as foreign, which is a finding prescribing
+#     `posse gates install-hooks`, the one write ADR 0052 says not to attempt.
+#     So the repo is classified first and skipped, the way SweepHookWall does
+#     it, and by the same code: `posse gates managed-hooks` is the binary's own
+#     verdict, not a second implementation of its three legs in shell. Nothing
+#     of posse's is installed on a managed repo to go stale — the session hooks
+#     dir is rendered fresh at every launch — so a box that is entirely managed
+#     is CLEAN, not unmeasured.
+#
 # Exit 0 clean · 1 findings · 2 nothing measured.
 set -uo pipefail
 
@@ -112,32 +141,72 @@ tmp=$(mktemp -d) || { echo "verify-hook-freshness: mktemp failed — nothing mea
 stray_idx=""
 trap 'rm -rf "$tmp"; [ -n "$stray_idx" ] && rm -f "$stray_idx"' EXIT
 
-# The reference render. A throwaway repo is unmarked in config, and unmarked is
-# public (fail closed) — assert that rather than assume it, so a change to the
-# default cannot silently turn every private repo into a finding.
-git init -q "$tmp/ref" 2>/dev/null || { echo "verify-hook-freshness: git init failed — nothing measured"; exit 2; }
-if ! ref_out=$("$POSSE" gates install-hooks "$tmp/ref" 2>&1); then
-  echo "verify-hook-freshness: reference render failed — nothing measured"
-  echo "$ref_out" | sed 's/^/    /'
-  exit 2
-fi
-case "$ref_out" in
-  *"visibility guard: public"*) ;;
-  *) echo "verify-hook-freshness: reference render is not public — nothing measured"
-     echo "$ref_out" | sed 's/^/    /'; exit 2 ;;
-esac
-ref_commit="$tmp/ref/.git/hooks/prepare-commit-msg"
-ref_prepush="$tmp/ref/.git/hooks/pre-push"
-[ -r "$ref_commit" ] && [ -r "$ref_prepush" ] ||
-  { echo "verify-hook-freshness: reference render produced no hooks — nothing measured"; exit 2; }
-
 # The one line the render varies per repo. Normalized away for the identity
 # compare and asserted separately by name.
 norm() { sed "s/^posse_beads_visibility='.*'\$/posse_beads_visibility='NORMALIZED'/" "$1" | shasum -a 256 | cut -d' ' -f1; }
 plain() { shasum -a 256 "$1" | cut -d' ' -f1; }
 
-ref_commit_sha=$(norm "$ref_commit")
-ref_prepush_sha=$(plain "$ref_prepush")
+# ref_env runs one command with core.hooksPath aimed at the scratch directory
+# below, in git's config-in-env form — the same form ADR 0052 D2's session env
+# carries, and the one M1 measured as outranking a global value. Appended after
+# whatever count the operator's environment already holds, never clobbering it:
+# a GIT_CONFIG_COUNT we overwrote would drop their entries silently. A count
+# that is not a number is not one we can append to, and git will not read it
+# either, so we start our own and say nothing about theirs.
+refhooks="$tmp/refhooks"
+ref_env() {
+  local n=${GIT_CONFIG_COUNT:-0}
+  case "$n" in ''|*[!0-9]*) n=0 ;; esac
+  env "GIT_CONFIG_COUNT=$((n + 1))" \
+      "GIT_CONFIG_KEY_$n=core.hooksPath" \
+      "GIT_CONFIG_VALUE_$n=$refhooks" \
+      "$@"
+}
+
+# The reference render, taken once and only if some repo actually needs it.
+# A throwaway repo is unmarked in config, and unmarked is public (fail closed)
+# — assert that rather than assume it, so a change to the default cannot
+# silently turn every private repo into a finding.
+ref_ready=0
+ref_commit_sha=""
+ref_prepush_sha=""
+need_ref() {
+  [ "$ref_ready" -eq 1 ] && return 0
+  mkdir -p "$refhooks" 2>/dev/null ||
+    { echo "verify-hook-freshness: cannot create $refhooks — nothing measured"; exit 2; }
+  git init -q "$tmp/ref" 2>/dev/null ||
+    { echo "verify-hook-freshness: git init failed — nothing measured"; exit 2; }
+  # The redirect has to be shown to have taken. Without this the render could
+  # land in the managed directory's shadow — or fail to land at all — and the
+  # identity compare below would be against whatever was read from somewhere
+  # else. Asked of git rather than assumed, and of the same lookup posse's
+  # hooksDir asks (`--git-path hooks`), so this is the dispatch path and not a
+  # path derived from one.
+  local dispatch
+  dispatch=$(ref_env git -C "$tmp/ref" rev-parse --git-path hooks 2>/dev/null)
+  if [ "$dispatch" != "$refhooks" ]; then
+    echo "verify-hook-freshness: the reference repo dispatches hooks from '${dispatch:-<git could not say>}', not $refhooks — the redirect did not take, nothing measured"
+    exit 2
+  fi
+  local ref_out
+  if ! ref_out=$(ref_env "$POSSE" gates install-hooks "$tmp/ref" 2>&1); then
+    echo "verify-hook-freshness: reference render failed — nothing measured"
+    echo "$ref_out" | sed 's/^/    /'
+    exit 2
+  fi
+  case "$ref_out" in
+    *"visibility guard: public"*) ;;
+    *) echo "verify-hook-freshness: reference render is not public — nothing measured"
+       echo "$ref_out" | sed 's/^/    /'; exit 2 ;;
+  esac
+  local ref_commit="$refhooks/prepare-commit-msg"
+  local ref_prepush="$refhooks/pre-push"
+  [ -r "$ref_commit" ] && [ -r "$ref_prepush" ] ||
+    { echo "verify-hook-freshness: reference render produced no hooks — nothing measured"; exit 2; }
+  ref_commit_sha=$(norm "$ref_commit")
+  ref_prepush_sha=$(plain "$ref_prepush")
+  ref_ready=1
+}
 
 # The posse-owned member of a slot: the slot itself when it carries our marker,
 # else posse-<slot> behind the chain dispatcher install-hooks writes when a
@@ -155,6 +224,7 @@ member() { # <hooks> <slot> <marker>
 }
 
 measured=0
+managed=0
 findings=0
 finding() { findings=$((findings + 1)); echo "  FINDING  $*"; }
 
@@ -171,7 +241,31 @@ for e in "${entries[@]}"; do
   hooks=$(git -C "$repo" rev-parse --git-path hooks 2>/dev/null) || {
     say "    not a git repo — nothing to check"; continue; }
   case "$hooks" in /*) ;; *) hooks="$repo/$hooks" ;; esac
+  # ADR 0052 D1, asked before anything here is read — the same order
+  # SweepHookWall asks it in, and for the same reason: on a managed hooks path
+  # the two slots are the employer's, whatever is left in the repo's own
+  # `.git/hooks` is a file git never runs, and neither one is a fact about
+  # posse's wall. The verdict comes out of the binary rather than out of three
+  # legs re-spelled here, and the line it prints is the line every other posse
+  # caller prints about the same directory.
+  #
+  # BOTH the exit code and the line, because a skip is the one wrong answer
+  # that is silent: a binary predating the query verb reads `managed-hooks` as
+  # a persona name, and what it exits with then is that path's business, not a
+  # verdict about any hooks directory. MEASURED 2026-09-05 on the installed
+  # binary: `posse: no such agent: managed-hooks`, exit 1 — which would fall
+  # through to today's behaviour anyway. Asking for the verdict's own line
+  # keeps that true if the exit code ever moves, so an old posse under a new
+  # script measures every repo the old way instead of skipping the whole box.
+  if mline=$("$POSSE" gates managed-hooks "$repo" 2>/dev/null) &&
+     [ "${mline#L3: managed hooks path }" != "$mline" ]; then
+    say "    managed  $mline"
+    say "             nothing of posse's is installed here to go stale — the session hooks dir is rendered at every launch"
+    managed=$((managed + 1))
+    continue
+  fi
   [ -d "$hooks" ] || { finding "$short: no hooks dir at $hooks"; continue; }
+  need_ref
   measured=$((measured + 1))
 
   # -- prepare-commit-msg: identity, stamp, both behavior arms --------------
@@ -261,7 +355,18 @@ for e in "${entries[@]}"; do
 done
 
 say ""
+# A managed repo is a measurement, not a gap: posse installs nothing there, so
+# there is nothing there to have gone stale. Said out loud rather than counted
+# silently — it is exactly the thing a reader would otherwise go looking for a
+# missing verdict about (the wording ReportHookWall uses for the same fact).
+if [ "$managed" -gt 0 ]; then
+  echo "verify-hook-freshness: $managed repo(s) dispatch from a managed hooks path — posse writes nothing there, and the L3 wall is realized by the session hooks dir rendered at each launch (ADR 0052)"
+fi
 if [ "$measured" -eq 0 ]; then
+  if [ "$managed" -gt 0 ]; then
+    echo "verify-hook-freshness: no repo carries a posse-installed hook that could be stale — nothing to re-render"
+    exit 0
+  fi
   echo "verify-hook-freshness: 0 of ${#entries[@]} configured repos were present and git — nothing measured, not a pass"
   exit 2
 fi

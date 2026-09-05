@@ -505,6 +505,47 @@ nothing.
 
 ### Fixed
 
+**The L3 hook staleness check measured nothing at all on an
+employer-managed box.**
+
+*Affected: any box whose git dispatches hooks from a directory posse may not
+write — a global, absolute `core.hooksPath` (ADR 0052).* `make
+verify-hook-freshness` exited **2**, `reference render is not public —
+nothing measured`, for the whole box. Its reference is deliberately not a
+checked-in string: it is a real `posse gates install-hooks` render into a
+throwaway repo, so the control cannot drift from the renderer. That
+throwaway repo inherited the managed `core.hooksPath` too, so since ADR 0052
+the render was correctly classified managed, wrote no hooks and printed no
+visibility line — and with nothing to compare against, the detective control
+for stale hooks was dead on exactly the box ADR 0052 is about. It failed
+safe (it never reported a false finding), and it reported nothing at all.
+
+The reference is now taken with the same config-in-env redirect a session
+gets — `GIT_CONFIG_COUNT`/`KEY_n`/`VALUE_n` naming `core.hooksPath`,
+appended after any count your environment already carries — aimed at a
+scratch directory the script owns, and the script asks git to confirm the
+redirect took before it measures anything. The render is byte-identical to
+one written into a repo's own `.git/hooks`.
+
+Each configured repo is also classified before it is read, the way the
+`promote` and `dispatch --watch` sweeps already do it. A managed repo is
+skipped by name and the box is reported **clean**, not unmeasured: nothing
+of posse's is installed there to go stale, because the wall is the session
+hooks dir rendered fresh at every launch. That is the correction in both
+directions — a leftover posse hook in such a repo's own `.git/hooks` is a
+file git never runs, and reporting it `fresh` was a pass about a wall that
+is not armed, while the employer's own slots read as a finding prescribing
+`posse gates install-hooks`, the one write ADR 0052 says not to attempt. A
+repo that keeps a hooks path of its own on such a box is still measured, and
+a stale hook there is still a finding.
+
+`posse gates managed-hooks [dir]` is new and read-only: the same
+classification `install-hooks` asks itself before its first write, exit 0
+managed and 1 not, writing nothing either way. It exists so a caller that
+only wants the verdict does not have to risk the write to get it — the
+freshness script is the first such caller, and one classification is better
+than a second spelling of its three legs per caller.
+
 **`posse worktrees --land` took a caged session's work onto your branch with
 nothing accounting for it.**
 

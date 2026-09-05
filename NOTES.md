@@ -2904,8 +2904,16 @@ env; managed hooks <dir> run after ours`); meta records `hooks_mode:
 redirect`. Env-borne, so the same class as the rest of L3: survives an
 absolute-path git, shed by `env -i`, which leaves the employer's hooks
 running alone — nothing a persona or posse does weakens the employer's
-control. Recipe and the two residuals: INSTALL.md §9, "A managed hooks
-path".
+control. The staleness sweep and `scripts/verify-hook-freshness.sh` classify
+each configured repo before reading it and skip a managed one by name: the
+box is CLEAN, not unmeasured, because nothing of posse's is installed there
+to go stale. The script's reference render — a real `install-hooks` into a
+throwaway repo — is taken with that same config-in-env redirect aimed at a
+scratch dir of its own, and refuses to measure unless git confirms the
+redirect took; without it the throwaway repo inherits the managed global and
+the whole control goes dark (ranger-base-1se2l). `posse gates managed-hooks
+[dir]` is the read-only form of the classification, exit 0 managed / 1 not.
+Recipe and the two residuals: INSTALL.md §9, "A managed hooks path".
 
 **Tiers (ADR 0003 §1–2).** A tier is a name — `strong` / `standard` /
 `fast` — mapped to a model per runtime in the built-in table: claude

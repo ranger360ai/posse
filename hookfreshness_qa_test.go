@@ -35,6 +35,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -78,6 +79,14 @@ func hfGit(t *testing.T) string {
 type hfRig struct {
 	bin, git, home, rhqHome string
 	repos                   map[string]string // name -> path
+	// gitconfig is a GIT_CONFIG_GLOBAL naming a managed core.hooksPath, set
+	// by manage() and empty on an ordinary box. Every arm below that is not
+	// about a managed box leaves it empty and is unaffected.
+	gitconfig string
+	// shimDir goes on the FRONT of the script's PATH when set, so a wrapper
+	// stands where `git` is looked up. extraEnv is appended last.
+	shimDir  string
+	extraEnv []string
 }
 
 func hfNewRig(t *testing.T, vis map[string]string) *hfRig {
@@ -126,6 +135,80 @@ func (r *hfRig) hook(name string) string {
 	return filepath.Join(r.repos[name], ".git", "hooks", "prepare-commit-msg")
 }
 
+// manage turns the rig into the managed box of ADR 0052: one absolute hooks
+// directory outside every repo, holding an employer hook, unwritable by this
+// uid, named by a global core.hooksPath. Called AFTER hfNewRig, so each repo
+// keeps the posse hooks already rendered into its own .git/hooks — which is
+// the whole point: on this box those are files git never runs, and a control
+// that reads them is reading a wall that is not armed.
+func (r *hfRig) manage(t *testing.T) string {
+	t.Helper()
+	if os.Geteuid() == 0 {
+		t.Skip("running as root: a mode bit is not a wall for uid 0, so this fixture cannot be built")
+	}
+	managed := filepath.Join(r.home, "managed-hooks")
+	if err := os.MkdirAll(managed, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// The employer's own hook, so the fixture is the shape the ADR describes
+	// rather than an empty directory.
+	if err := os.WriteFile(filepath.Join(managed, "pre-commit"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(managed, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	// Before t.TempDir's own cleanup, which cannot unlink through a
+	// read-only directory (LIFO: registered later, runs first).
+	t.Cleanup(func() { os.Chmod(managed, 0o755) })
+	// Measured, not assumed. If this uid can write here after all, the
+	// classification under test never fires and every arm below would be
+	// green about a fixture that is not a managed box.
+	probe := filepath.Join(managed, ".hf-fixture-probe")
+	if err := os.WriteFile(probe, []byte("x"), 0o600); err == nil {
+		os.Remove(probe)
+		t.Skipf("%s is writable at mode 0555 — no managed path to classify here", managed)
+	}
+	r.gitconfig = filepath.Join(r.home, "gitconfig-managed")
+	if err := os.WriteFile(r.gitconfig, []byte("[core]\n\thooksPath = "+managed+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// The fixture must prove it aimed git somewhere: a global that did not
+	// take would leave every repo unmanaged and the managed arms asserting
+	// nothing.
+	cmd := exec.Command(r.git, "-C", r.repos[anyName(r)], "rev-parse", "--git-path", "hooks")
+	cmd.Env = append(os.Environ(), "HOME="+r.home, "GIT_CONFIG_GLOBAL="+r.gitconfig)
+	out, err := cmd.Output()
+	if err != nil || strings.TrimSpace(string(out)) != managed {
+		t.Fatalf("rig never built: git dispatches from %q, want %s (%v)", strings.TrimSpace(string(out)), managed, err)
+	}
+	return managed
+}
+
+// anyName is a stable pick from the rig's repos for the fixture's own
+// self-check — map order is random, and a self-check that reads a different
+// repo each run is a flake waiting to be blamed on the code.
+func anyName(r *hfRig) string {
+	names := make([]string, 0, len(r.repos))
+	for n := range r.repos {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return names[0]
+}
+
+// escape gives one repo a hooks path of its own, the way a repo on a managed
+// box opts back out: a RELATIVE core.hooksPath is resolved against the
+// worktree, so it is not absolute, not outside the repo, and not managed.
+// This is the repo the reference render is needed for.
+func (r *hfRig) escape(t *testing.T, name string) {
+	t.Helper()
+	cmd := exec.Command(r.git, "-C", r.repos[name], "config", "core.hooksPath", ".git/hooks")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git config core.hooksPath: %v %s", err, out)
+	}
+}
+
 func (r *hfRig) run(t *testing.T) (string, int) {
 	t.Helper()
 	abs, err := filepath.Abs(hfScript)
@@ -133,12 +216,20 @@ func (r *hfRig) run(t *testing.T) (string, int) {
 		t.Fatal(err)
 	}
 	cmd := exec.Command(abs)
+	path := filepath.Dir(r.git) + ":/usr/bin:/bin"
+	if r.shimDir != "" {
+		path = r.shimDir + ":" + path
+	}
 	cmd.Env = []string{
 		"HOME=" + r.home,
 		"RHQ_HOME=" + r.rhqHome,
 		"POSSE=" + r.bin,
-		"PATH=" + filepath.Dir(r.git) + ":/usr/bin:/bin",
+		"PATH=" + path,
 	}
+	if r.gitconfig != "" {
+		cmd.Env = append(cmd.Env, "GIT_CONFIG_GLOBAL="+r.gitconfig)
+	}
+	cmd.Env = append(cmd.Env, r.extraEnv...)
 	out, err := cmd.CombinedOutput()
 	code := 0
 	if ee, ok := err.(*exec.ExitError); ok {
@@ -474,4 +565,245 @@ func TestQAHookFreshnessIsReadOnlyAndWired(t *testing.T) {
 	if !strings.Contains(string(mk), "verify-hook-freshness") {
 		t.Error("no verify-hook-freshness target in the Makefile")
 	}
+}
+
+// ─── the managed box (ranger-base-1se2l, ADR 0052) ───────────────────────────
+//
+// THE DEFECT. On an employer's box a global core.hooksPath aims every git at
+// one absolute, root-owned directory. The reference render is an
+// `install-hooks` into a throwaway repo — which inherits that global, is
+// classified managed (ADR 0052 D1), writes no hooks and prints no
+// `visibility guard: public` line. So the script exited 2,
+// `reference render is not public — nothing measured`, for the WHOLE box:
+// the detective control for stale L3 hooks was dead on exactly the box ADR
+// 0052 is about. MEASURED 2026-09-02 on this host, both binaries.
+//
+// Two arms, because the fix is two things and either one alone leaves a hole:
+//
+//   - a fully managed box is CLEAN, not unmeasured. Nothing of posse's is
+//     installed there to go stale; the wall is the session hooks dir rendered
+//     at each launch. The leftover copy in the repo's own .git/hooks is a file
+//     git never runs, and reporting it `fresh` would be a green about a wall
+//     that is not armed — so the arm asserts that word is absent too.
+//   - a MIXED box still catches staleness. This is the arm that dies if the
+//     reference render ever goes back to inheriting the global: without a
+//     reference there is nothing to compare a hook to, and a stale one on the
+//     repo that escaped the managed path sails past.
+
+// A box where every configured repo dispatches from the managed directory.
+// Exit 0 and say so — and say nothing about the dead copies in .git/hooks.
+func TestQAHookFreshnessOnAFullyManagedBoxIsCleanNotUnmeasured(t *testing.T) {
+	r := hfNewRig(t, map[string]string{"priv": "private"})
+	managed := r.manage(t)
+	out, code := r.run(t)
+	if code != 0 {
+		t.Fatalf("a managed box has no posse hook that can be stale, so it is clean; got exit %d:\n%s", code, out)
+	}
+	if strings.Contains(out, "nothing measured") {
+		t.Errorf("the control reported itself dead on the box ADR 0052 is about:\n%s", out)
+	}
+	// The line abbreviates $HOME, as every posse line does; derived from the
+	// fixture rather than spelled, so the pin names this run's directory.
+	abbrev := "~" + strings.TrimPrefix(managed, r.home)
+	for _, want := range []string{
+		"managed hooks path " + abbrev,
+		"1 repo(s) dispatch from a managed hooks path",
+		"no repo carries a posse-installed hook that could be stale",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in:\n%s", want, out)
+		}
+	}
+	// The leftover .git/hooks copy is not a wall here — git dispatches from
+	// the managed dir — so it must not be reported as one. This is the false
+	// GREEN the classification prevents, and it is a different failure from
+	// the false finding below.
+	if strings.Contains(out, "fresh    prepare-commit-msg") {
+		t.Errorf("a hook git never runs was reported fresh — that is a pass about an unarmed wall:\n%s", out)
+	}
+	// And not the false FINDING either: the employer's slots are foreign to
+	// posse, and a finding here would prescribe `posse gates install-hooks`,
+	// the one write ADR 0052 says not to attempt.
+	if strings.Contains(out, "FINDING") {
+		t.Errorf("the employer's own hooks were reported as posse's wall gone missing:\n%s", out)
+	}
+	// INSTALL.md §9 shows this verdict to an operator who has to decide
+	// whether their managed box is covered. Pinned against what the script
+	// just PRINTED rather than against a line copied into the test, so a
+	// reworded verdict reds here instead of leaving the recipe quietly
+	// describing output nobody emits any more (the two lines that carry no
+	// path — the managed line itself names a directory this fixture invents).
+	doc, err := os.ReadFile("INSTALL.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "verify-hook-freshness: ") {
+			continue
+		}
+		if !strings.Contains(string(doc), line) {
+			t.Errorf("INSTALL.md does not show the verdict the script prints:\n  %s", line)
+		}
+	}
+}
+
+// THE ARM THE FIX IS FOR. One repo on the managed box keeps a hooks path of
+// its own, and its hook is behind the binary. The reference render — taken
+// with the redirect env in force — is the only thing that can see that, so
+// this arm is red for any regression that lets the throwaway repo inherit the
+// managed global again.
+func TestQAHookFreshnessStillCatchesAStaleHookOnAManagedBox(t *testing.T) {
+	r := hfNewRig(t, map[string]string{"priv": "private", "pub": "public"})
+	r.manage(t)
+	r.escape(t, "pub")
+
+	// The same drift the control was built for: a body carrying our marker,
+	// still refusing, whose refusal prescribes the bare two-dot `git diff`.
+	body := hfRead(t, r.hook("pub"))
+	stale := strings.Replace(body, "git diff HEAD -- <paths>", "git diff", 1)
+	if stale == body {
+		t.Fatal("rig never built: the render no longer carries the erba paragraph to stale")
+	}
+	hfWrite(t, r.hook("pub"), stale)
+
+	out, code := r.run(t)
+	if code != 1 {
+		t.Fatalf("a stale hook on the repo that escaped the managed path is a finding; got exit %d:\n%s", code, out)
+	}
+	if !strings.Contains(out, "prepare-commit-msg is STALE") {
+		t.Errorf("the stale hook was not named:\n%s", out)
+	}
+	// Both halves in one pass: the managed repo skipped, the escaping one
+	// measured. A fix that only classified repos would report the managed
+	// one and still measure nothing here.
+	if !strings.Contains(out, "1 repo(s) dispatch from a managed hooks path") {
+		t.Errorf("the managed repo was not classified:\n%s", out)
+	}
+	if strings.Contains(out, "nothing measured") {
+		t.Errorf("the reference render did not escape the managed global:\n%s", out)
+	}
+}
+
+// The reference render must come from a directory this script owns, and be
+// SHOWN to. The reach here is env-borne, and ADR 0052 M3 measured that an
+// env-borne redirect is SHED with the environment: a git older than the
+// config-in-env form (< 2.31), or any wrapper standing where git is looked up
+// that does not pass the environment on, leaves the render landing in the
+// managed directory's shadow — and the identity compare would then be against
+// whatever was read from somewhere else. So the script asks git where it will
+// dispatch, by the same `--git-path hooks` lookup posse's own hooksDir asks,
+// and refuses to measure when the answer is not its own directory.
+//
+// The fixture is a shim on the front of PATH that scrubs GIT_CONFIG_* and
+// execs the real git — a stand-in for every one of those, and the shape of an
+// L1 gate shim, which is a thing that really does stand there on this box.
+func TestQAHookFreshnessRefusesToMeasureWhenTheRedirectDoesNotTake(t *testing.T) {
+	// MIXED, deliberately: on a fully managed box every repo is skipped and
+	// the reference render is never needed, so nothing would be asserted.
+	r := hfNewRig(t, map[string]string{"priv": "private", "pub": "public"})
+	r.manage(t)
+	r.escape(t, "pub")
+	r.shimDir = hfShim(t, r, "env -u GIT_CONFIG_COUNT -u GIT_CONFIG_KEY_0 -u GIT_CONFIG_VALUE_0 -u GIT_CONFIG_KEY_1 -u GIT_CONFIG_VALUE_1 "+r.git+" \"$@\"")
+
+	out, code := r.run(t)
+	if code != 2 {
+		t.Fatalf("a reference render that did not escape the managed path measured nothing; want exit 2, got %d:\n%s", code, out)
+	}
+	if !strings.Contains(out, "the redirect did not take, nothing measured") {
+		t.Errorf("the script measured against a render it could not place:\n%s", out)
+	}
+	// Fail-safe, not fail-quiet: it says where git WOULD have dispatched, so
+	// the reader can see it was the managed directory.
+	if !strings.Contains(out, "dispatches hooks from") {
+		t.Errorf("the refusal did not name the path it got:\n%s", out)
+	}
+}
+
+// The operator's own GIT_CONFIG_COUNT is appended to, never clobbered: git
+// reads exactly COUNT entries at indices 0..COUNT-1, so a count we overwrote
+// would drop every entry they set. Observed rather than grepped — a shim logs
+// the GIT_CONFIG_* it was handed.
+func TestQAHookFreshnessAppendsItsRedirectToTheOperatorsConfigCount(t *testing.T) {
+	r := hfNewRig(t, map[string]string{"pub": "public"})
+	log := filepath.Join(r.home, "git-config-env.log")
+	r.shimDir = hfShim(t, r, "env | grep '^GIT_CONFIG_' >> "+log+"\nexec "+r.git+" \"$@\"")
+	// One entry already in the environment, at index 0. Harmless in itself
+	// (it is the value git would use anyway) and it is the INDEX that is
+	// under test.
+	r.extraEnv = []string{
+		"GIT_CONFIG_COUNT=1",
+		"GIT_CONFIG_KEY_0=core.abbrev",
+		"GIT_CONFIG_VALUE_0=12",
+	}
+
+	out, code := r.run(t)
+	if code != 0 {
+		t.Fatalf("an operator config entry must not break the render; got exit %d:\n%s", code, out)
+	}
+	got := hfRead(t, log)
+	for _, want := range []string{
+		"GIT_CONFIG_COUNT=2",              // theirs plus ours
+		"GIT_CONFIG_KEY_0=core.abbrev",    // theirs, kept
+		"GIT_CONFIG_KEY_1=core.hooksPath", // ours, appended after it
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the redirect did not append to the operator's count: missing %q in:\n%s", want, got)
+		}
+	}
+}
+
+// A skip is the one wrong answer that is silent: it reports no finding about
+// a repo it never read. So the classification is trusted only when the binary
+// answers with the verdict's OWN line — a posse predating the query verb reads
+// `managed-hooks` as a persona name, and whatever that path exits with is not
+// a statement about any hooks directory. Here it exits 0, the worst case, and
+// the box must still be measured exactly as it was before.
+func TestQAHookFreshnessDoesNotSkipEveryRepoOnABinaryWithoutTheQuery(t *testing.T) {
+	r := hfNewRig(t, map[string]string{"pub": "public"})
+	// Everything forwards to the real binary except the query, which answers
+	// the way a persona lookup that found nothing does.
+	old := filepath.Join(r.home, "posse-old")
+	body := "#!/bin/sh\n" +
+		"if [ \"$1\" = gates ] && [ \"$2\" = managed-hooks ]; then\n" +
+		"  echo \"posse: no such agent: managed-hooks\"; exit 0\n" +
+		"fi\n" +
+		"exec " + r.bin + " \"$@\"\n"
+	if err := os.WriteFile(old, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	r.bin = old
+
+	out, code := r.run(t)
+	if code != 0 {
+		t.Fatalf("an old binary must leave the control measuring as it did before; got exit %d:\n%s", code, out)
+	}
+	if !strings.Contains(out, "1 repo(s) match this binary's render") {
+		t.Errorf("the repo was skipped rather than measured:\n%s", out)
+	}
+	if strings.Contains(out, "dispatch from a managed hooks path") {
+		t.Errorf("`no such agent` was read as a managed verdict:\n%s", out)
+	}
+}
+
+// hfShim writes a `git` on the front of PATH whose body is the given shell,
+// and proves it is the one that gets found — a shim nothing resolves to is a
+// fixture that plants nothing, and every arm using it would be green for the
+// wrong reason.
+func hfShim(t *testing.T, r *hfRig, body string) string {
+	t.Helper()
+	dir := filepath.Join(r.home, "shim")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "git"), []byte("#!/bin/sh\n"+body+"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("/bin/sh", "-c", "command -v git")
+	cmd.Env = []string{"PATH=" + dir + ":" + filepath.Dir(r.git) + ":/usr/bin:/bin"}
+	out, err := cmd.Output()
+	if err != nil || strings.TrimSpace(string(out)) != filepath.Join(dir, "git") {
+		t.Fatalf("shim never took: git resolves to %q (%v)", strings.TrimSpace(string(out)), err)
+	}
+	return dir
 }

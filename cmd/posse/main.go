@@ -1299,7 +1299,7 @@ func main() {
 	case "gates":
 		// Inspect a persona's L1 gates (shims rendered from its deny: and
 		// the refusals log — state, not memory), or install the L3 hook.
-		args = need(args, 1, "posse gates <persona> | posse gates install-hooks [dir] [--chain] | posse gates adr-census [files...] | posse gates wrap <persona> -- <cmd>")
+		args = need(args, 1, "posse gates <persona> | posse gates install-hooks [dir] [--chain] | posse gates managed-hooks [dir] | posse gates adr-census [files...] | posse gates wrap <persona> -- <cmd>")
 		// The inner command of a container launch (ADR 0002 §3,
 		// rangerhq-6so): rendered onto the engine's line by the host and run
 		// by the image's own Linux posse, never typed by hand. It renders
@@ -1330,6 +1330,36 @@ func main() {
 			if refused {
 				os.Exit(1)
 			}
+			return
+		}
+		// ADR 0052 D1's classification, asked and answered without writing
+		// anything — the read-only half of install-hooks' first act. It exists
+		// because a caller that is not the installer needs the same verdict:
+		// `scripts/verify-hook-freshness.sh` has to skip a managed repo rather
+		// than measure the dead copy in its `.git/hooks` (ranger-base-1se2l),
+		// and the three legs of managedHooksDir are not a thing a shell script
+		// should carry a second implementation of.
+		//
+		// Exit code IS the answer, so a script can branch on it without
+		// parsing: 0 managed, 1 not. Both arms print, because a human typing
+		// this wants the verdict in words either way.
+		if args[0] == "managed-hooks" {
+			dir := "."
+			if len(args) > 1 {
+				dir = posse.ExpandTilde(args[1])
+			}
+			// Named absolutely in the report: the default is "." and
+			// "not managed: .'s own hook dispatch path" tells a reader
+			// nothing about which repo answered.
+			if abs, aerr := filepath.Abs(dir); aerr == nil {
+				dir = abs
+			}
+			line, managed := posse.ManagedHooksPath(dir)
+			if !managed {
+				fmt.Fprintf(out, "not managed: posse's wall belongs at %s's own hook dispatch path\n", posse.AbbrevHome(dir))
+				os.Exit(1)
+			}
+			fmt.Fprintln(out, line)
 			return
 		}
 		if args[0] == "install-hooks" {
@@ -2338,6 +2368,12 @@ catalog:
                                     bd's shim moves to bd-<slot>, ours goes to posse-<slot>, and the
                                     real slot gets the process-and-status dispatcher (INSTALL.md §9).
                                     A hook that is neither ours nor bd's is still refused.
+  posse gates managed-hooks [dir]
+                                 ADR 0052 D1's classification, read-only: is this repo's hook
+                                 dispatch path one posse must not write in (absolute, outside the
+                                 repo, and unwritable by this uid)? Exit 0 managed — printing the
+                                 line every posse caller prints about it — exit 1 not. Nothing is
+                                 written or probed beyond one create-and-remove in the directory.
   posse gates adr-census [files...]
                                  ADR 0051's census: the prepare-commit-msg hook's own sha-stamp
                                  predicate over every line of every docs/adr record (default

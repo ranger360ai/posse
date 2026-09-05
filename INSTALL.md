@@ -1913,6 +1913,51 @@ Two residuals, both bounded by one session:
 - A slot the managed tool adds mid-session has no dispatcher until the next
   launch, which forwards it; the probe's completeness arm names it then.
 
+**Freshness on a managed box.** The staleness sweep above has nothing to
+measure here, and says so rather than going quiet. Nothing of posse's is
+installed in a managed repo, so nothing there can fall behind the binary —
+the session hooks dir is rendered fresh at every launch. Both the `promote`
+and `dispatch --watch` sweeps and `make verify-hook-freshness` classify each
+configured repo first and skip a managed one by name:
+
+```
+  ~/src/<your-work-repo>  (config says: private)
+    managed  L3: managed hooks path /opt/<scanner>/hooks (owner 0, mode 0555) — posse's wall is not installed there; realized by session redirect (ADR 0052)
+             nothing of posse's is installed here to go stale — the session hooks dir is rendered at every launch
+
+verify-hook-freshness: 1 repo(s) dispatch from a managed hooks path — posse writes nothing there, and the L3 wall is realized by the session hooks dir rendered at each launch (ADR 0052)
+verify-hook-freshness: no repo carries a posse-installed hook that could be stale — nothing to re-render
+```
+
+**Verify:** exit **0**, and no `nothing measured` line. That is the whole
+box reporting clean, not the control reporting itself dead — which is what
+it did before ranger-base-1se2l: its reference render is a real
+`install-hooks` into a throwaway repo, that repo inherited the global
+`core.hooksPath` too, and the render it compares against was therefore never
+written. It is taken with the same config-in-env redirect a session gets
+now, aimed at a scratch directory of its own, and the script refuses to
+measure if git does not confirm the redirect took.
+
+Skipping a managed repo is not a blind spot; measuring it would be. Whatever
+sits in such a repo's own `.git/hooks` is a file git never runs, so reading
+it wrong in either direction: a leftover posse hook there would report
+`fresh` — a pass about a wall that is not armed — and the employer's slots
+would report as a finding prescribing `posse gates install-hooks`, the one
+write this whole section exists to not attempt.
+
+You can ask for the classification alone, without any write, on any repo:
+
+```sh
+$ posse gates managed-hooks ~/src/<your-work-repo>
+L3: managed hooks path /opt/<scanner>/hooks (owner 0, mode 0555) — posse's wall is not installed there; realized by session redirect (ADR 0052)
+```
+
+**Verify:** exit **0** when it is managed, exit **1** and `not managed:
+posse's wall belongs at …` when it is not. It is the same verdict, from the
+same code, that `install-hooks` asks itself before its first write — which
+is the point: one classification, not a second spelling of the three legs
+per caller.
+
 Health check, then wire it into the instance:
 
 ```sh

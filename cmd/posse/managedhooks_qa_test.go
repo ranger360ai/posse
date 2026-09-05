@@ -106,6 +106,26 @@ func mhSnapshot(t *testing.T, dir string) string {
 	return b.String()
 }
 
+// mhEntries is mhSnapshot without the directory's own mode and mtime: what is
+// IN the directory, which is the half a caller that legitimately creates and
+// removes a probe file leaves untouched.
+func mhEntries(t *testing.T, dir string) string {
+	t.Helper()
+	var b strings.Builder
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range ents {
+		fi, err := e.Info()
+		if err != nil {
+			t.Fatal(err)
+		}
+		fmt.Fprintf(&b, "%s %d %v %d\n", e.Name(), fi.Size(), fi.Mode(), fi.ModTime().UnixNano())
+	}
+	return b.String()
+}
+
 func TestQAInstallHooksOnAManagedPathWritesNothingAndSaysWhy(t *testing.T) {
 	t.Parallel()
 	if os.Geteuid() == 0 {
@@ -177,5 +197,108 @@ func TestQAInstallHooksOnAWritableForeignPathStillInstalls(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(foreign, slot)); err != nil {
 			t.Errorf("%s was not installed where git dispatches: %v", slot, err)
 		}
+	}
+}
+
+// ─── the read-only half: `posse gates managed-hooks` (ranger-base-1se2l) ─────
+//
+// WHY THE VERB EXISTS. install-hooks asks the classification as its first act
+// and then writes; a caller that only wants the verdict has no way to ask
+// without risking the write. scripts/verify-hook-freshness.sh is that caller:
+// on a managed box it must SKIP a repo rather than measure the dead copy in
+// its .git/hooks, and the three legs of managedHooksDir are not something a
+// shell script should carry a second implementation of.
+//
+// The exit code is the answer, so both arms are asserted over one fixture
+// differing in one bit — the same mode flip the classification itself is
+// pinned on above. Without the writable arm, "exit 0 means managed" would be
+// a claim about a command that might exit 0 everywhere.
+
+func mhQuery(t *testing.T, bin, home, gitconfig, dir string) (string, int) {
+	t.Helper()
+	cmd := exec.Command(bin, "gates", "managed-hooks", dir)
+	cmd.Env = append(os.Environ(),
+		"HOME="+home,
+		"RHQ_HOME="+home,
+		"GIT_CONFIG_GLOBAL="+gitconfig,
+	)
+	out, err := cmd.CombinedOutput()
+	code := 0
+	if ee, ok := err.(*exec.ExitError); ok {
+		code = ee.ExitCode()
+	} else if err != nil {
+		t.Fatalf("gates managed-hooks: %v %s", err, out)
+	}
+	return string(out), code
+}
+
+func TestQAManagedHooksQueryAnswersWithoutWritingAnything(t *testing.T) {
+	t.Parallel()
+	if os.Geteuid() == 0 {
+		t.Skip("running as root: a mode bit is not a wall for uid 0")
+	}
+	bin := buildRhq(t)
+	home, repo, managed, gitconfig := mhFixture(t)
+	if err := os.Chmod(managed, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(managed, 0o755) })
+	probe := filepath.Join(managed, ".mh-query-probe")
+	if err := os.WriteFile(probe, []byte("x"), 0o600); err == nil {
+		os.Remove(probe)
+		t.Skipf("%s is writable at mode 0555 — no managed path to classify", managed)
+	}
+	before := mhSnapshot(t, managed)
+
+	out, code := mhQuery(t, bin, home, gitconfig, repo)
+	if code != 0 {
+		t.Fatalf("a managed path answers 0; got %d:\n%s", code, out)
+	}
+	// The same line every other posse caller prints about this directory —
+	// a second wording would be a second classification to keep in step.
+	want := "L3: managed hooks path " + managed
+	if !strings.Contains(out, want) {
+		t.Errorf("query did not print the managed line: want %q, got:\n%s", want, out)
+	}
+	// It is a QUERY. Nothing in the employer's directory moves — not a slot,
+	// not the directory's own mtime. (managedHooksDir's own write probe is a
+	// create that is REFUSED here, so it leaves no trace.)
+	if after := mhSnapshot(t, managed); after != before {
+		t.Errorf("the query touched the managed directory:\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+}
+
+// The control arm, and the only thing that makes exit 0 mean anything: the
+// same directory, same command, write bit ON. Not managed — and the verb
+// still writes nothing, which is what separates it from install-hooks.
+func TestQAManagedHooksQuerySaysNoOnAWritablePathAndStillInstallsNothing(t *testing.T) {
+	t.Parallel()
+	bin := buildRhq(t)
+	home, repo, managed, gitconfig := mhFixture(t)
+	beforeEntries := mhEntries(t, managed)
+
+	out, code := mhQuery(t, bin, home, gitconfig, repo)
+	if code != 1 {
+		t.Fatalf("a writable hooks path is not managed and answers 1; got %d:\n%s", code, out)
+	}
+	if strings.Contains(out, "managed hooks path") {
+		t.Errorf("a writable path was called managed:\n%s", out)
+	}
+	if !strings.Contains(out, "not managed") {
+		t.Errorf("the query said nothing to a human who typed it:\n%s", out)
+	}
+	// The difference from install-hooks, asserted rather than assumed: this
+	// arm WOULD have installed both slots, and did not.
+	//
+	// The CONTENTS, not the directory's own mtime — which moved, and is
+	// meant to. On a writable path the classification's third leg is a real
+	// create-and-remove (managedHooksDir: "measured, by ONE create probe of a
+	// dot-file that is removed on success"), and a create that succeeds moves
+	// the mtime of the directory it succeeded in. Nothing is LEFT there, and
+	// that is the claim. The managed arm above keeps the whole snapshot,
+	// because there the create is refused and nothing moves at all — which is
+	// the arm the employer's directory is the subject of.
+	if after := mhEntries(t, managed); after != beforeEntries {
+		t.Errorf("the query installed into a writable hooks path:\nbefore:\n%s\nafter:\n%s", beforeEntries, after)
 	}
 }
