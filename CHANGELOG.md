@@ -549,6 +549,31 @@ nothing.
 
 ### Fixed
 
+**A `CLAUDE_CONFIG_DIR` that names anywhere but `~/.claude` made every
+dispatched claude turn read as unobserved.**
+
+*Affected: any box whose `CLAUDE_CONFIG_DIR` points somewhere other than the
+home's own `.claude` — set by the operator, by a managed-settings file, or by
+the launch pin.* posse has two readers of claude's transcript store, and only
+one of them followed the override. `posse cost`'s walk was moved onto
+`CLAUDE_CONFIG_DIR` earlier in this cycle; the turn-outcome reader — the one
+that decides whether a dispatched session actually answered — kept joining
+`<home>/.claude/projects` directly, so under an override it looked at a root
+the CLI never writes and found nothing, with no error to show for it. The
+settle line printed "looked for a turn outcome and found none this pass" on
+every pass, and both halves of what that reading is for went with it: a turn
+the runtime actually refused was never reported as a refusal, and a previous
+pass's turn-failure marker was never cleared for a session that had since
+recovered — the marker is only ever written under an observed outcome, and
+clearing it is that same write carrying an empty message.
+
+Both readers now ask the same resolver for their root. They stay separate
+functions, because they differ in the MATCH and not in the root: the cost
+walk substring-matches project directories for `posse cost --project`, while
+the turn-outcome reader must name one session's own project directory
+exactly, or a session rooted under a worktree answers with a stranger's
+transcript.
+
 **The L3 hook staleness check measured nothing at all on an
 employer-managed box.**
 

@@ -1,9 +1,13 @@
 package posse
 
-// A PARKED pin for ranger-base-r2s9l finding 2, filed from the verify bead
-// ranger-base-onx3x. ranger-base-rflee's FIX spec named four git exec
-// inlets — "GIT_SSH_COMMAND / GIT_EXTERNAL_DIFF / GIT_PAGER / GIT_CONFIG_*"
-// — and the landed table pins three. GIT_CONFIG_* appears nowhere in
+// A PARKED pin for ranger-base-44or9, filed from the verify bead
+// ranger-base-onx3x as finding 2 of the bundle ranger-base-r2s9l and handed
+// to the devops lane there (ADR 0006 §1) — r2s9l fixed only its own code
+// half, so the id this skip names is the one that is still open.
+//
+// ranger-base-rflee's FIX spec named four git exec inlets —
+// "GIT_SSH_COMMAND / GIT_EXTERNAL_DIFF / GIT_PAGER / GIT_CONFIG_*" — and
+// the landed table pins three. GIT_CONFIG_* appears nowhere in
 // inletpin.go: not as a row, and not in its "NOT COVERED HERE,
 // deliberately" paragraph, which names only the command-string FIELDS. That
 // silence is what makes this a finding rather than a scope call, because the
@@ -45,7 +49,7 @@ var gitConfigInlets = map[string]string{
 
 func TestQATheInletPinClosesTheGitConfigFamily(t *testing.T) {
 	t.Parallel()
-	t.Skip("ranger-base-r2s9l: inletPin() pins three of the four git exec inlets ranger-base-rflee named — GIT_CONFIG_* is in neither the table nor its disclosed-gaps paragraph, and core.hooksPath/core.fsmonitor reach past the pinned names")
+	t.Skip("ranger-base-44or9: inletPin() pins three of the four git exec inlets ranger-base-rflee named — GIT_CONFIG_* is in neither the table nor its disclosed-gaps paragraph, and core.hooksPath/core.fsmonitor reach past the pinned names")
 
 	pinned := map[string]string{}
 	for _, v := range inletPin() {

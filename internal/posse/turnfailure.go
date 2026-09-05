@@ -73,9 +73,16 @@ func (o TurnOutcome) Worked() bool { return o.ModelCalls > 0 || o.OutputTokens >
 type TurnOutcomeReader func(cwd, bead string, since time.Time) (out TurnOutcome, observed bool)
 
 // TurnOutcomeClaudeTranscript reads claude's own JSONL transcript under the
-// config dir's projects/ — `$CLAUDE_CONFIG_DIR`'s, else `~/.claude`'s, the
-// locator being TranscriptFiles' (ranger-base-yqdov), so an operator who
-// moves the config home does not silently make every turn unobserved.
+// config dir's projects/ — `$CLAUDE_CONFIG_DIR`'s, else `~/.claude`'s, so an
+// operator who moves the config home does not silently make every turn
+// unobserved (ranger-base-yqdov). The locator is claudeTranscripts, NOT
+// TranscriptFiles: it asks ClaudeConfigDirIn for that root, the same
+// question TranscriptFiles asks, and then names one project directory
+// exactly where TranscriptFiles substring-matches for `posse cost
+// --project` (ranger-base-f09bw). Saying "TranscriptFiles'" here was true of
+// neither locator's code and hid a root that followed no override at all
+// (ranger-base-r2s9l).
+//
 // A runtime whose CLI writes that same shape declares
 // `turn_outcome: claude-transcript` and is read by it; anything else needs a
 // reader here first (ADR 0012 D4's adapter seam). grok's store is the second
@@ -227,6 +234,22 @@ func claudeProjectDir(cwd string) string {
 // --project` narrowing — and wrong for a locator that must name one
 // session's own store.
 //
+// The root is ClaudeConfigDirIn's, the same rule cost.go's transcriptFiles
+// reads, so an operator's `CLAUDE_CONFIG_DIR` moves this locator exactly as
+// it moves the store the CLI writes. Being a SEPARATE locator from
+// TranscriptFiles is about the MATCH — one project directory named exactly,
+// not a substring narrowing — and never was about the ROOT: joining
+// `<home>/.claude` here regardless, which this did until ranger-base-r2s9l,
+// left posse with two readers of one store disagreeing inside one binary
+// under an override, which is the second of the two readers
+// ranger-base-yqdov's bead named as its cost ("FindClaudeTurnOutcome goes
+// through the same TranscriptFiles, so under an override every dispatched
+// turn also read as unobserved") and the half that fix missed. What it cost
+// was silent: an absent root is no candidates below, so every
+// dispatched turn read as unobserved — printed as "looked for a turn outcome
+// and found none this pass" — and a previous pass's turn-failure marker was
+// never cleared.
+//
 // A root or a project directory that will not open is no candidates, which
 // the caller reports as (no outcome, false): "cannot read" and "read a
 // healthy turn" stay different facts (ADR 0018 §3).
@@ -238,7 +261,7 @@ func claudeTranscripts(cwd string) []string {
 	if err != nil {
 		return nil
 	}
-	dir := filepath.Join(home, ".claude", "projects", claudeProjectDir(cwd))
+	dir := filepath.Join(ClaudeConfigDirIn(home), "projects", claudeProjectDir(cwd))
 	ents, err := os.ReadDir(dir)
 	if err != nil {
 		return nil

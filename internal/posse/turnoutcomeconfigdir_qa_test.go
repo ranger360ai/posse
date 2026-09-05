@@ -1,13 +1,7 @@
 package posse
 
-// A PARKED pin for ranger-base-r2s9l finding 1, filed from the verify bead
-// ranger-base-onx3x. It is skipped, not deleted, because the defect is real
-// and latent rather than firing today: the launch pins CLAUDE_CONFIG_DIR to
-// the home's own .claude and the operator's managed-settings.json pins it to
-// the same, so the hardcoded join in claudeTranscripts coincides with the
-// resolver on this box. It stops coinciding the moment either pin names a
-// different directory, which is precisely what ranger-base-yqdov's bead is
-// about an operator being free to do.
+// The regression pin for ranger-base-r2s9l finding 1, filed PARKED from the
+// verify bead ranger-base-onx3x and unparked here by the fix.
 //
 // WHAT IT PINS. ranger-base-yqdov named TWO readers of claude's transcript
 // store as its cost: "Two readers, not one: FindClaudeTurnOutcome goes
@@ -15,15 +9,22 @@ package posse
 // turn also read as unobserved." cost.go's transcriptFiles was fixed
 // (ClaudeConfigDirIn, cost.go:484) and is pinned by
 // TestClaudeTranscriptsFollowClaudeConfigDir. The turn-outcome half was not:
-// claudeTranscripts (turnfailure.go) joins home/.claude/projects directly
-// and turnfailure.go names ClaudeConfigDirIn nowhere.
+// claudeTranscripts (turnfailure.go) joined home/.claude/projects directly
+// and turnfailure.go named ClaudeConfigDirIn nowhere.
 //
 // The locator is a SEPARATE one on purpose (ranger-base-f09bw: it must name
 // one session's own store exactly, where TranscriptFiles substring-matches
-// for `posse cost --project`), so the fix is for claudeTranscripts to ask
-// ClaudeConfigDirIn for its root, not for it to call TranscriptFiles.
+// for `posse cost --project`), so the fix is claudeTranscripts asking
+// ClaudeConfigDirIn for its ROOT — not claudeTranscripts calling
+// TranscriptFiles, which would take the substring match with it.
 //
-// Unpark by deleting the t.Skip line.
+// It did not fire on this box the day it was found — the launch pins
+// CLAUDE_CONFIG_DIR to the home's own .claude (credentialdirpin) and the
+// operator's managed-settings.json pins it to the same, so the hardcoded
+// join coincided with the resolver — which is what this pin is for: it
+// costs the moment either pin names a different directory, which is
+// precisely what ranger-base-yqdov's bead is about an operator being free
+// to do.
 
 import (
 	"os"
@@ -33,7 +34,6 @@ import (
 )
 
 func TestQATurnOutcomeLocatorFollowsClaudeConfigDir(t *testing.T) {
-	t.Skip("ranger-base-r2s9l: turnfailure.go's claudeTranscripts joins home/.claude/projects directly, so the turn-outcome half of ranger-base-yqdov's two readers still ignores $CLAUDE_CONFIG_DIR")
 
 	since := time.Now().Add(-time.Minute)
 	at := since.Add(time.Second).UTC().Format(time.RFC3339Nano)
