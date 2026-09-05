@@ -739,12 +739,51 @@ under a built-in realizer (unmeasured launch), another override config block,
 or invisible environment overrides. A stale explicit override pins a value
 intentionally; its per-key provenance is the way to find it. No new mechanism.
 
+### 9. Onboard an engine by measuring this contract (from 0032)
+
+A template runtime's shell denies are assumed/degraded until a recorded
+live `posse runtime probe` establishes the ordinary command path. Apply
+0002's default refusal, explicit marked waiver and no-fast-waiver rules;
+`probed: true` in YAML is never evidence. The record names the CLI the
+**session** resolved, its version/date and observed results, plus the
+launcher's separate path. No session binary answer means no passing record.
+Compare launcher-path drift against the recorded launcher path, not the
+pane's path. If they differed at probe time, say that outside-pane checks
+cannot establish currency of the measured binary; re-probe after upgrades.
+Records predating the separate launcher path are not current.
+
+The four probe observations are: session command lookup reaches the canary
+shim; direct, child-shell and script/Makefile invocations refuse and log;
+the turn finishes without human approval; herdr identifies the runtime and
+observes genuine idle rather than an idle fallback. Ask separately what
+the engine reads from cwd without permission and declare its project-config
+surface. Launcher-only PATH lookup is informational, not a launch veto;
+an empty command remains invalid.
+
+YAML declares facts, limitations and surfaces; native realizer credit and
+new shell grammar need measured code. A validated declared unattended flag
+may be appended by the current loader; the probe establishes its behavior.
+Do not carry 0032's older claim that the flag is necessarily command-only.
+Graduation to a built-in earns measured native capabilities, not exemption
+from this checklist. An API endpoint alone is not a runtime: prefer an
+authorized existing CLI pointed at it, then an authorized third-party CLI.
+A bespoke wrapper belongs in a separate product repository; an agent loop
+inside posse is rejected. Venue/data placement belongs to 0012.
+
+MEASURED: 0032 retains the dated probe-path decoy and command-path evidence;
+current runtimeprobe.go carries both paths. No live probe is run by this
+fold. ASSUMED price of a second checklist: ongoing drift; consolidation
+removes no runtime key, check, state, actor or flag. Rejected: self-certified
+probe flags, perpetual template degradation with no probe remedy, generic
+rule-to-flag compilers, and an inference client inside dispatch.
+
 ## Lineage
 
 | Was | Here |
 |---|---|
 | 0017 §§1–2 derived checklist and verdicts; §3 shadow predicates; §§4–5 declarability and precedence | §7, using the existing §§1–6 grid; dated census and superseded sequencing stay in 0017 |
 | 0021 decisions 1–5 per-key overlays and source provenance | §8; promotion policy belongs to 0015 §§2–3 |
+| 0032 §§1–3 probe, code boundary and API-only ranking | §9 applied to the existing grid; dated engine evidence remains in 0032 |
 
 ## Consequences
 

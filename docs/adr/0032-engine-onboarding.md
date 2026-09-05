@@ -1,5 +1,11 @@
 # ADR 0032 — Engine onboarding: what a work-authorized engine actually requires
 
+*Status: superseded 2026-09-05 by ADR 0013 · ADR simplification, operator ruling 2026-09-05.*
+
+The surviving decision is in [0013 — current contract](0013-runtime-dispatch-contract.md), Decision §9 and the existing runtime grid. This page keeps its number and dated evidence; the body below is historical, not current policy.
+
+## Historical record (superseded in full)
+
 *Status: accepted 2026-08-22 · bead ranger-base-ucv · richard · builds on
 ADR 0002 (gates), 0009 (gate shell), 0012 D4 (runtime contract) ·
 re-landed 2026-08-28 under a free number, bead ranger-base-gtxw ·
