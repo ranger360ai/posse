@@ -866,6 +866,133 @@ func codexWritableRoot(p string) string {
 	return resolveExisting(p)
 }
 
+// symlinkComponent returns the DEEPEST component of p that is a symlink, or
+// "" when none of them is — the question codex asks of every writable root
+// before it applies its sandbox, answered the way its own refusal answers it
+// (the message names the COMPONENT, not the root).
+//
+// Deepest and not outermost, because that is the one codex names — measured
+// 2026-09-05 on codex-cli 0.150.1 over three roots, l1 being a symlink to a
+// real dir:
+//
+//	l1/sub  (sub a real dir)     → symlink component …/l1
+//	l1/l2   (l2 a symlink)       → symlink component …/l1/l2
+//	l1/d    (d dangling)         → symlink component …/l1/d
+//
+// A root posse RENDERS can only ever carry one: everything above the first
+// component EvalSymlinks fails on is replaced by its real path, and nothing
+// below it exists to be a link. The order is what a line posse did not
+// render — a PID's own command: — is owed, and matching codex's own message
+// is what makes the two reports name the same file.
+//
+// Lstat, never EvalSymlinks: the components this exists to catch are
+// exactly the ones EvalSymlinks cannot resolve. A component that does not
+// exist is not a symlink and does not end the walk — codex refuses on the
+// link whether or not anything below it exists (measured, refusedWritableRoot
+// below).
+//
+// A relative path is not judged: the roots posse renders are absolute, and
+// a relative one would be resolved against THIS process's directory, which
+// is not the session's — a wrong answer is worse here than no answer.
+func symlinkComponent(p string) string {
+	if p == "" || !filepath.IsAbs(p) {
+		return ""
+	}
+	var parts []string
+	for cur := filepath.Clean(p); ; {
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			break
+		}
+		parts = append(parts, cur)
+		cur = parent
+	}
+	// parts is deepest-first already, so the first hit is the component
+	// codex's own message names.
+	for _, c := range parts {
+		if st, err := os.Lstat(c); err == nil && st.Mode()&os.ModeSymlink != 0 {
+			return c
+		}
+	}
+	return ""
+}
+
+// refusedWritableRoot names the first writable root on a rendered
+// self-sandboxing launch line that the runtime will refuse outright, and
+// the component that makes it refuse. Two empty strings is a line whose
+// roots are all acceptable.
+//
+// This is codexWritableRoot's RESIDUAL, and the whole of ranger-base-k62e.
+// resolveExisting resolves the longest EXISTING prefix and re-joins the
+// rest, so a component EvalSymlinks cannot resolve — a DANGLING link, a
+// loop, a parent that cannot be read — is walked past and re-joined
+// verbatim, and the rendered root still carries the symlink component codex
+// refuses. The fallback itself is right: dropping the root is
+// ranger-base-0fb's silent cage, and the code comment above says so. What
+// it leaves behind is a line nobody may launch in silence.
+//
+// MEASURED 2026-09-05, codex-cli 0.150.1, over a dangling link (d/dangle ->
+// d/nope, which is not there):
+//
+//	writable_roots=["…/dangle"]              Error: writable root …/dangle contains
+//	writable_roots=["…/dangle/sub"]          symlink component …/dangle; symlinked
+//	                                         writable roots are not supported
+//	writable_roots=["…/real", "…/dangle"]    the same error, exit 1
+//
+// so a dangling root is refused exactly like the resolvable symlink
+// ranger-base-c02a measured, final component or not — and ONE bad root
+// refuses the whole set, before any sandbox is applied. The session that
+// would open runs no command at all: not a weaker session, a dead one,
+// which is why the launch sites treat this like PIDVoided (a refusal) and
+// not like a degrade.
+//
+// Asked of the LINE and not of the roots handed to Realize, for the reason
+// ADR 0053 D1's {model} check is: what reaches the line is not what was
+// passed in. `-s read-only` renders no roots at all (rangerhq-5oi), and a
+// PID's own command: renders whatever it was written to render.
+func refusedWritableRoot(cmd string) (root, component string) {
+	toks := shellTokens(cmd)
+	for i := 0; i+1 < len(toks); i++ {
+		if toks[i] != "--add-dir" {
+			continue
+		}
+		if c := symlinkComponent(toks[i+1]); c != "" {
+			return toks[i+1], c
+		}
+	}
+	return "", ""
+}
+
+// writableRootRefusal is that check at a launch site: nil unless this
+// runtime cages itself with the roots on its own line and one of them is a
+// root it will refuse.
+//
+// Gated on SelfSandbox because the refusal is a property of the CLI, not of
+// the flag — claude takes --add-dir too and does not care what the path is
+// made of — and SelfSandbox is already the discriminator this codebase uses
+// for "the roots on this line ARE this session's write wall"
+// (applyRecordReach, reachability.go).
+//
+// A refusal and not a warning, and this is shape (b) of ranger-base-k62e's
+// three: the launch that would happen can run nothing, and the report codex
+// makes arrives at COMMAND-RUN time inside a session no one reads — which is
+// how ranger-base-c02a cost five dispatched sessions and a P1. A warning
+// would land in the dispatch log, one layer closer than the session, and
+// still open a dead pane herdr calls working and then idle.
+func writableRootRefusal(agent string, rt *Runtime, cmd string) error {
+	if rt == nil || !rt.SelfSandbox {
+		return nil
+	}
+	root, comp := refusedWritableRoot(cmd)
+	if root == "" {
+		return nil
+	}
+	return Die("%s: the rendered %s launch line names writable root %s, whose component %s is a SYMLINK — %s refuses a writable root with a symlink component BEFORE it applies its sandbox, so the session would open, read its prompt, and then fail every single command it runs (measured on codex-cli 0.150.1; ranger-base-k62e, and ranger-base-c02a is what that silence cost last time)\n"+
+		"  posse resolves every root it can and renders the rest as typed on purpose (dropping one is the silent cage of ranger-base-0fb), so this component is one nothing could resolve — a dangling link or a loop\n"+
+		"  make %s resolve — restore what it points at, or repoint it — and this launch renders the real path by itself",
+		agent, rt.Name, AbbrevHome(root), AbbrevHome(comp), rt.Name, AbbrevHome(comp))
+}
+
 // claude: --plugin-dir points a session at one rendered plugin dir, whose
 // skills/ the CLI loads on top of the global ones — session-only, additive,
 // and repeatable (posse binds one dir per persona, so once). Verified

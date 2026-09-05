@@ -2235,6 +2235,16 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 					o.Agent, rt.Name, o.Model)
 			}
 		}
+		// ranger-base-k62e, and the same shape as the refusal below it: a
+		// self-sandboxing runtime whose line names a root it will refuse
+		// opens a session that can run NO command — codex validates its
+		// writable roots before it applies the sandbox, and one bad root
+		// refuses the whole set. Asked here because here is where the line
+		// exists; refused rather than warned because the alternative is the
+		// silence ranger-base-c02a cost a P1 for.
+		if err := writableRootRefusal(o.Agent, rt, cmd); err != nil {
+			return nil, err
+		}
 		if f := rt.PIDVoided(cmd); f != "" {
 			return nil, Die("%s: the rendered %s launch line names %s, which makes %s discard the PID this line delivers — the session would open carrying every native rulebook and no persona at all (measured, ranger-base-64qx; docs/adr/0013-rules-precedence-probe.md)\n"+
 				"  drop %s from this PID's command:, or fold the PID into the override text yourself — that replaces the runtime's own system prompt, which is a decision, not a default",
@@ -2778,6 +2788,15 @@ func (b *HerdrBackend) RelaunchAgent(name string, grace time.Duration) (bool, er
 	// for wearing a record that says otherwise (ADR 0053 D4). "" on every
 	// ordinary session renders what it always did.
 	inner := ag.RenderCommandForModel(rt, b.App.ResolveRuntime("", ag), tier, m.Model, launchWritableRoots(m.Dir)...)
+	// The launch's root refusal on the one other path that renders a
+	// persona line (ranger-base-k62e). Reachable for the reason PIDVoided is
+	// — the roots are re-resolved from the box as it is NOW, so a link that
+	// went dangling while the session ran arrives here — and this path
+	// retypes into a LIVE pane, where the alternative is a revived session
+	// in which every command fails.
+	if err := writableRootRefusal(m.Agent, rt, inner); err != nil {
+		return false, err
+	}
 	// Same refusal as planLaunch's, on the one other path that renders a
 	// persona line (ranger-base-64qx). It is reachable even though the
 	// create was refused: a PID edited after its session opened is

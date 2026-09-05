@@ -2395,7 +2395,13 @@ Everything in codex's template above is a fix, not decoration:
   with a symlink *component*, and refuses it when a command runs rather than
   at launch, so a symlinked `personas/` dir made every dispatched codex
   session come up and then fail every tool call, silently — measured on
-  codex-cli 0.150.1, `docs/notes.d/ranger-base-c02a.md`.
+  codex-cli 0.150.1, `docs/notes.d/ranger-base-c02a.md`. **Every root but the
+  one that cannot be resolved**: a DANGLING link (or a loop) is walked past
+  and re-joined verbatim, so the rendered root keeps its symlink component —
+  and the launch refuses on it rather than opening a session in which no
+  command can run, because codex validates its roots before it applies the
+  sandbox and one bad root refuses the whole set (`writableRootRefusal`,
+  `docs/notes.d/ranger-base-k62e.md`).
 - **`allow_login_shell=false` is a wall flag, not a nicety.** Codex
   otherwise runs each shell command through a login shell that re-sources
   the operator's rc files, and that re-prepends the login PATH *ahead* of

@@ -452,3 +452,279 @@ func TestLaunchWritableRootsGrantsTheStoreGitDirsOnlyWhenTheStoreMovedOut(t *tes
 		t.Errorf("the worktree's own .git FILE is never a root, redirect or not: %v", moved)
 	}
 }
+
+// ─── the residual (ranger-base-k62e) ─────────────────────────────────────────
+
+// codexWritableRoot resolves the longest EXISTING prefix and re-joins the
+// rest, so a component EvalSymlinks cannot resolve — a DANGLING link, a loop
+// — is walked past and re-joined verbatim, and the rendered root still
+// carries the symlink component codex refuses. Rendering it is the right
+// CONTENT decision (dropping it is ranger-base-0fb's silent cage, pinned by
+// TestCodexRendersAWritableRootThatDoesNotExistYet just above); this is the
+// VOLUME the bead is about, so both halves are pinned here: the root still
+// renders, AND the line is now readable as one codex will refuse.
+//
+// MEASURED 2026-09-05, codex-cli 0.150.1: a dangling root is refused exactly
+// like the resolvable symlink ranger-base-c02a measured, as the final
+// component or not, and one bad root refuses the WHOLE set (exit 1) before
+// any sandbox is applied.
+func TestCodexRefusesADanglingSymlinkWritableRoot(t *testing.T) {
+	t.Parallel()
+	d := t.TempDir()
+	dangling := filepath.Join(d, "dangle")
+	if err := os.Symlink(filepath.Join(d, "gone"), dangling); err != nil {
+		t.Fatal(err)
+	}
+	// The fixture is the shape the bug needs: a symlink that EXISTS as a link
+	// and resolves to nothing. Without this witness both arms below could
+	// pass over a path that was never a symlink at all.
+	if st, err := os.Lstat(dangling); err != nil || st.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("fixture: %s must be a symlink: %v", dangling, err)
+	}
+	if _, err := os.Stat(dangling); err == nil {
+		t.Fatalf("fixture: %s must dangle", dangling)
+	}
+
+	// What the line carries is the root AFTER codexWritableRoot, and on
+	// macOS that is not the spelling above: t.TempDir() is itself behind
+	// /var -> /private/var, which resolves. The dangling link is what
+	// survives it, and that survival is the bug.
+	rendered := codexWritableRoot(dangling)
+	if st, err := os.Lstat(rendered); err != nil || st.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("fixture: the rendered root %s must still BE the symlink, or there is no residual to pin: %v", rendered, err)
+	}
+
+	// Half one: the root still renders, unresolved and undropped.
+	line := realizeCodex(nil, nil, "", dangling).Deny
+	if !strings.Contains(line, "--add-dir "+shellQuote(rendered)) {
+		t.Fatalf("the fallback must render the root as typed, never drop it: %s", line)
+	}
+	// Half two: and the line is readable as one codex refuses, naming the
+	// component codex's own error names.
+	root, comp := refusedWritableRoot(line)
+	if root != rendered || comp != rendered {
+		t.Errorf("refusedWritableRoot(%s) = %q, %q; want %q, %q", line, root, comp, rendered, rendered)
+	}
+
+	// A root UNDER the dangling link: codex names the link, not the root
+	// (measured, both arms of the same run).
+	under := codexWritableRoot(filepath.Join(dangling, "sub"))
+	root, comp = refusedWritableRoot(realizeCodex(nil, nil, "", under).Deny)
+	if root != under || comp != rendered {
+		t.Errorf("a root under a dangling link: got %q, %q; want %q, %q", root, comp, under, rendered)
+	}
+
+	// A LOOP is the same class and not a hypothetical variant: EvalSymlinks
+	// fails, Lstat says symlink, resolveExisting walks past it.
+	a, b := filepath.Join(d, "a"), filepath.Join(d, "b")
+	if err := os.Symlink(b, a); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(a, b); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := filepath.EvalSymlinks(a); err == nil {
+		t.Fatalf("fixture: %s must not resolve", a)
+	}
+	loop := codexWritableRoot(a)
+	if root, comp = refusedWritableRoot(realizeCodex(nil, nil, "", a).Deny); root != loop || comp != loop {
+		t.Errorf("a symlink loop: got %q, %q; want %q, %q", root, comp, loop, loop)
+	}
+
+	// TWO symlink components, which only a line posse did not render can
+	// carry (a rendered root has exactly one — everything above the failing
+	// link is replaced by its real path, and nothing below it exists). codex
+	// names the DEEPEST, measured 2026-09-05 on codex-cli 0.150.1 over
+	// l1/sub -> …/l1, l1/l2 -> …/l1/l2 and l1/d -> …/l1/d, so this names the
+	// same file codex will.
+	l1 := filepath.Join(d, "l1")
+	if err := os.Symlink(d, l1); err != nil {
+		t.Fatal(err)
+	}
+	deep := filepath.Join(l1, "dangle")
+	for _, c := range []string{l1, deep} {
+		if st, err := os.Lstat(c); err != nil || st.Mode()&os.ModeSymlink == 0 {
+			t.Fatalf("fixture: %s must be a symlink, or the two-component arm is a one-component arm: %v", c, err)
+		}
+	}
+	if root, comp = refusedWritableRoot("codex -s workspace-write --add-dir " + shellQuote(deep)); root != deep || comp != deep {
+		t.Errorf("two symlink components: got %q, %q; want %q, %q (codex names the deepest)", root, comp, deep, deep)
+	}
+}
+
+// The control, and it is c02a's own shape: a root whose symlink RESOLVES is
+// rendered real by codexWritableRoot, so there is nothing left on the line
+// to refuse. Without this arm the check above passes just as well when it
+// refuses every codex launch on the box — which is the failure mode of a
+// refusal, and the one that would cost more than the bug.
+func TestCodexAcceptsTheRootsItResolves(t *testing.T) {
+	t.Parallel()
+	real := t.TempDir()
+	developer := filepath.Join(real, "personas", "developer")
+	if err := os.MkdirAll(developer, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(t.TempDir(), "personas")
+	if err := os.Symlink(filepath.Join(real, "personas"), link); err != nil {
+		t.Fatal(err)
+	}
+	symlinked := filepath.Join(link, "developer")
+	if st, err := os.Lstat(link); err != nil || st.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("fixture: %s must be a symlink, or this control controls nothing: %v", link, err)
+	}
+
+	// The memory dir through the link, a writable: root through it, and the
+	// resolved path itself — the three shapes realizeCodex renders.
+	for _, line := range []string{
+		realizeCodex(nil, nil, symlinked).Deny,
+		realizeCodex(nil, nil, "", symlinked).Deny,
+		realizeCodex(nil, nil, "", developer).Deny,
+	} {
+		if root, comp := refusedWritableRoot(line); root != "" {
+			t.Errorf("a resolvable root must not be refused: %s named %q (component %q)", line, root, comp)
+		}
+	}
+
+	// A root that does not exist AT ALL is not refused either: nothing on it
+	// is a symlink, and codex is given it for the same reason posse renders
+	// it — the launch materializes it later (the memory dir, a store's git
+	// dirs).
+	if root, _ := refusedWritableRoot(realizeCodex(nil, nil, "", "/no-such-root-ranger-base-k62e/.beads").Deny); root != "" {
+		t.Errorf("an unborn root has no symlink component to refuse, got %q", root)
+	}
+	// And -s read-only carries no roots at all, so there is nothing to judge.
+	if root, _ := refusedWritableRoot(realizeCodex(nil, []string{"Edit", "Write"}, symlinked).Deny); root != "" {
+		t.Errorf("read-only names no writable root, got %q", root)
+	}
+}
+
+// The refusal is the RUNTIME's, not the flag's: claude takes --add-dir too
+// and does not care what the path is made of, so a claude line over the same
+// root must launch. Drop the SelfSandbox gate and this is the test that
+// notices — the alternative is refusing every claude session on a box with
+// one dangling link anywhere near its memory dir.
+func TestOnlyASelfSandboxingRuntimeRefusesASymlinkedRoot(t *testing.T) {
+	t.Parallel()
+	d := t.TempDir()
+	dangling := filepath.Join(d, "dangle")
+	if err := os.Symlink(filepath.Join(d, "gone"), dangling); err != nil {
+		t.Fatal(err)
+	}
+	line := "codex -s workspace-write --add-dir " + shellQuote(dangling)
+	codex := &Runtime{Name: "codex", SelfSandbox: true}
+	err := writableRootRefusal("ranger", codex, line)
+	if err == nil {
+		t.Fatal("a self-sandboxing runtime must refuse a root it cannot use")
+	}
+	// The message has to carry the two paths an operator needs to act, and
+	// the component is the one to repair.
+	for _, want := range []string{AbbrevHome(dangling), "ranger", "codex"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal must name %q: %v", want, err)
+		}
+	}
+	if e := writableRootRefusal("ranger", &Runtime{Name: "claude"}, line); e != nil {
+		t.Errorf("claude does not refuse a symlinked --add-dir; refusing its launch is a bug, not a wall: %v", e)
+	}
+	if e := writableRootRefusal("ranger", nil, line); e != nil {
+		t.Errorf("no runtime, no refusal: %v", e)
+	}
+}
+
+// The LINE, in the shape dispatch really launches it — the lesson the four
+// pins above this section were written under (ranger-base-0fb): a check that
+// only ever sees realizeCodex's return value is green over a launch site
+// that hands it a different root.
+//
+// The reachable shape, and it is not the memory dir: EnsureMemoryDir runs
+// first and MkdirAll REFUSES a dangling component (measured 2026-09-05 —
+// `mkdir …: file exists`, both for a dangling parent and a dangling final
+// component), so that route is already loud, if obscurely. The store's git
+// dirs are not materialized by anything: beadsGitDirs names <store>/.git
+// unconditionally and LinkedGitDirs passes git's own answers through, so a
+// link that dangles there rides onto the line untouched — which is what this
+// fixture is.
+func TestCodexLaunchRefusesAWritableRootCodexWouldRefuse(t *testing.T) {
+	t.Parallel()
+	b, fake := newTestBackend(t)
+	if err := os.MkdirAll(b.App.AgentsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	pid := "---\nname: ranger\ndescription: test\nruntime: codex\n---\nYou are ranger.\n"
+	if err := os.WriteFile(filepath.Join(b.App.AgentsDir, "ranger.md"), []byte(pid), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	store := t.TempDir()
+	target := filepath.Join(store, beadsDirName)
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	gitDir := filepath.Join(store, ".git")
+	if err := os.Symlink(filepath.Join(store, "moved-away"), gitDir); err != nil {
+		t.Fatal(err)
+	}
+	work := wtRepo(t)
+	if err := os.MkdirAll(filepath.Join(work, beadsDirName), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	blRedirect(t, work, target)
+
+	// The fixture really puts a dangling link on the line: the redirect
+	// reaches the store, and the store's git dir — which `bd sync`'s commit
+	// locks, so launchWritableRoots names it — is a symlink to nothing.
+	if h := beadsHome(work); h != target {
+		t.Fatalf("the redirect does not reach the store: beadsHome = %q, want %q", h, target)
+	}
+	if !containsString(launchWritableRoots(work), gitDir) {
+		t.Fatalf("%s is not among the launch's writable roots %v — the arms below would measure nothing", gitDir, launchWritableRoots(work))
+	}
+	if st, err := os.Lstat(gitDir); err != nil || st.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("fixture: %s must be a symlink: %v", gitDir, err)
+	}
+
+	// Arm 1: the ordinary launch. It never opens — and the message names
+	// the root and the component, which is the whole difference from
+	// ranger-base-c02a, where codex named them at command-run time inside a
+	// session nobody reads.
+	err := b.CreateSession(NewSessionOpts{Name: "crew", Agent: "ranger", Dir: work, Worktree: true})
+	if err == nil {
+		t.Fatal("a codex launch whose line names a root codex refuses must not happen: every command in that session fails")
+	}
+	if !strings.Contains(err.Error(), AbbrevHome(gitDir)) {
+		t.Errorf("the refusal must name the root: %v", err)
+	}
+	if !strings.Contains(err.Error(), "unreachable along with everything else") {
+		t.Errorf("the reachability row is what refuses an ordinary launch, and it must say the store is unreachable: %v", err)
+	}
+
+	// Arm 2: --allow-degraded waives the reachability row — every other gate
+	// it waives is a wall posse could not realize, and this one is a session
+	// that runs nothing. So the refusal has to hold past the waiver, which
+	// is why it is a launch refusal (PIDVoided's shape) and not a row.
+	err = b.CreateSession(NewSessionOpts{Name: "crew2", Agent: "ranger", Dir: work, Worktree: true, AllowDegraded: true})
+	if err == nil {
+		t.Fatal("--allow-degraded must not buy a session in which no command can run")
+	}
+	if !strings.Contains(err.Error(), "fail every single command it runs") {
+		t.Errorf("past the waiver the launch refusal is what must speak: %v", err)
+	}
+
+	// The control, same fixture with the link repaired: the root resolves,
+	// the launch happens, and the line names the REAL git dir. Without it
+	// both arms above pass just as well over a check that refuses every
+	// codex launch there is.
+	realGit := filepath.Join(store, "moved-away")
+	if err := os.MkdirAll(realGit, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mustCreate(t, b, NewSessionOpts{Name: "crew3", Agent: "ranger", Dir: work, Worktree: true})
+	body, _ := os.ReadFile(b.App.LaunchScript("crew3"))
+	log := calls(t, fake) + "\n" + string(body)
+	if !strings.Contains(log, "-s workspace-write") {
+		t.Fatalf("not a codex sandbox line, so the assertion below means nothing:\n%s", log)
+	}
+	if !strings.Contains(log, "--add-dir "+shellQuote(codexWritableRoot(gitDir))) {
+		t.Errorf("the repaired root must ride resolved (%s):\n%s", codexWritableRoot(gitDir), log)
+	}
+}

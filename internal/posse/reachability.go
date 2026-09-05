@@ -250,6 +250,20 @@ func (a *App) renderedLaunchLine(ag *AgentFile, rt *Runtime, tier, dir string) s
 // Membership, not order — the flag is a list and a later entry never
 // cancels an earlier one, which is why this arm needs no probe.
 func codexReachRow(cmd, dir string, targets []string) string {
+	// Before membership, validity: a root the runtime REFUSES makes every
+	// answer below moot, because codex validates its writable roots before
+	// it applies a sandbox and one bad root refuses the whole set — the
+	// session writes the store of record in the sense that it writes
+	// nothing at all (ranger-base-k62e, measured on codex-cli 0.150.1).
+	// Without this the row reads the refused root as an ordinary grant,
+	// covers the target with it, and prints "reachable" over a line that
+	// runs no command: the false pass this bead's whole class is about. The
+	// launch itself refuses on the same fact (writableRootRefusal);
+	// this is what `posse gates` says when nobody is launching.
+	if root, comp := refusedWritableRoot(cmd); root != "" {
+		return fmt.Sprintf("the rendered launch line names writable root %s, whose component %s is a SYMLINK — a self-sandboxing runtime refuses a writable root with a symlink component before it applies its sandbox, so the session runs no command at all and %s is unreachable along with everything else (ranger-base-k62e; ranger-base-c02a is the same refusal arriving at command-run time, silently). Make %s resolve and the root renders real by itself",
+			AbbrevHome(root), AbbrevHome(comp), AbbrevHome(targets[0]), AbbrevHome(comp))
+	}
 	toks := shellTokens(cmd)
 	for i := 0; i+1 < len(toks); i++ {
 		if toks[i] == "-s" && toks[i+1] == "read-only" {
