@@ -1,6 +1,6 @@
 # ADR 0008 — Crew sessions: dispatch never commandeers a session the operator is talking to
 
-*Status: accepted 2026-08-18 · owner: architect*
+*Status: accepted 2026-08-18 · amended 2026-09-05 (0030 folded) · owner: architect*
 
 > Restated from the private archive of the instance this harness was
 > developed in; incident citations reference that instance's history.
@@ -73,8 +73,7 @@ both read, in the pass exactly as it already did in `LaunchBead`. What is
 still uncovered is what §1 already accepts: the operator who types straight
 into a pane stamps no record, and presses `o`.
 
-*Amended 2026-08-28 (ADR 0030, ranger-base-vn3o; lands with
-ranger-base-um9a):* **an orphaned claim defers to its assignee's crew
+*Folded 2026-09-05 from ADR 0030 (ranger-base-vn3o / ranger-base-um9a):* **an orphaned claim defers to its assignee's crew
 session.** The typed route stamps no record, so an in_progress bead no
 live session holds under any name is ambiguous — a crashed run to
 recover, or the operator's hand-work to leave alone. At that recovery
@@ -141,6 +140,18 @@ read mode today") — same policy surface, different rule; file a bead if
 wanted. Detecting keystrokes in a pane. Per-persona "always crew" —
 a PID that should never be dispatched simply has no `labels:` and is
 never assigned; that already works.
+
+## Lineage
+
+| Was | Here |
+|---|---|
+| 0030 §§1–3 orphaned-claim tie-break and claim-before-hand-work | §2; incident and alternatives remain in the superseded 0030 |
+
+The tie-break is conservative: a crash recovery can wait for an operator's
+conversation, but no timer or stale worktree evidence can authorize a twin.
+MEASURED: the typed-route incident and its repro are recorded in 0030.
+ASSUMED: the visible recovery delay is cheaper than duplicate work. This
+fold removes zero runtime mechanisms, keys, stores, actors or flags.
 
 ## Consequences
 

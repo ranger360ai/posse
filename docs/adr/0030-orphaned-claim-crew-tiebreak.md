@@ -1,5 +1,11 @@
 # ADR 0030 — Orphaned claims: a bead nobody visibly runs defers to its assignee's crew session
 
+*Status: superseded 2026-09-05 by ADR 0008 · ADR simplification, operator ruling 2026-09-05.*
+
+The surviving decision is in [0008 — current contract](0008-crew-sessions.md), Decision §2 and Lineage. This page keeps its number and dated evidence; the body below is historical, not current policy.
+
+## Historical record (superseded in full)
+
 *Status: accepted 2026-08-28 · owner: architect · ranger-base-vn3o,
 discovered from ranger-base-adb7 · implementation: ranger-base-um9a*
 
