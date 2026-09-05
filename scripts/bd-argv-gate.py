@@ -639,20 +639,25 @@ def session_worktree(cwd):
 
     Two arms, and both must hold.
 
-    LINKED, not "under the worktree root". ADR 0041 §3 spells the first arm as
-    the toplevel being under the session worktree root, and the root is where
-    that spelling stops being checkable from here: it is config (`worktrees:`
-    in posse's config.yaml, WorktreeRoot in worktree.go), so a gate that
-    hardcoded `$HOME/.posse/worktrees` would go quietly silent for anyone who
-    configured a root — a fence with a false-negative class nobody would ever
-    see. What the root arm is FOR is "this is a session tree and not the
-    shared checkout", and git answers that exactly and for any root: a linked
-    worktree's git dir is `<repo>/.git/worktrees/<name>` while its common dir
-    is `<repo>/.git`, and in a main checkout the two are the same path
-    (MEASURED 2026-09-05: `.git`/`.git` in ~/src/posse, the two absolute paths
-    in ~/.posse/worktrees/posse/<session>). So the shared checkout is out by
-    construction, which is §3's actual requirement — there the dirt belongs to
-    other writers (ADR 0022) — and the reading survives a configured root.
+    LINKED, which is what ADR 0041 §3 asks for as amended 2026-09-05
+    (ranger-base-nz23f). As ACCEPTED it read "`--show-toplevel` under the
+    worktree root", and the root is where that spelling stopped being
+    checkable from here: it is config (`worktrees:` in posse's config.yaml,
+    WorktreeRoot in worktree.go), so a gate that hardcoded
+    `$HOME/.posse/worktrees` would go quietly silent for anyone who configured
+    a root — a false-negative class nobody sees, in a fence whose whole value
+    is being seen. What the root arm was FOR is "this is a session tree and
+    not the shared checkout", and git answers that exactly and for any root: a
+    linked worktree's git dir is `<repo>/.git/worktrees/<name>` while its
+    common dir is `<repo>/.git`, and in a main checkout the two are the same
+    path (MEASURED 2026-09-05: `.git`/`.git` in ~/src/posse, the two absolute
+    paths in ~/.posse/worktrees/posse/<session>). So the shared checkout is
+    out by construction — there the dirt belongs to other writers (ADR 0022)
+    — and the reading survives a configured root. The trade §3 now states: a
+    hand-made linked worktree on a `posse/` branch, wherever it lives, gets
+    the refusal too. That is a visible false positive with a one-line
+    walk-around against an invisible false negative, and a cooperative fence
+    takes the visible one.
 
     POSSE/, the second arm, is what makes it a POSSE session tree rather than
     any linked worktree someone made: SessionBranch (worktree.go) is
