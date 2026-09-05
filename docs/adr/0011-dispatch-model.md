@@ -63,7 +63,7 @@ is missing is three small disciplines, not a new substrate:
 
 **1. One launcher at a time per RHQ_HOME — a kernel lock, not a
 pidfile.** `flock(2)` on `state/dispatch-launch.lock`, taken by `Run` for
-the fire loop (gather runs unlocked — it only reads and judges) and by
+the fire loop and by
 `LaunchBead` for its whole body. Blocking, with one line naming the
 holder pid while waiting. Why flock and never a second pidfile: the
 pidfile incidents are what a pidfile costs — liveness inferred from a
@@ -128,14 +128,17 @@ gate: `scripts/verify-prune-guard.sh`. This amendment was written
 restatement; restored 2026-08-26 from the closing record, mechanisms
 re-verified against this tree.)*
 
-**3. The session meta is the run record.** Dial F already made
-session ≈ bead-run; the meta file is the record dispatch wrote and then
-declines to trust. Promote it: add `bead:` (the bead the session was
-created for) and `prompted:` (persisted, so PromptGrace holds across
-processes — today the cockpit's `d` and a running pass cannot see each
-other's prompts). Wherever dispatch needs a run fact, it reads the record
-it wrote instead of inferring from a name pattern or a snapshot; the
-holder join becomes a lookup.
+**3. The session meta is the run record.** `bead:` identifies the run's
+bead and persisted `prompted:` supports cross-process prompt grace. The
+prompt reading uses the later of the file and process map; holder lookup
+also checks liveness through `Sessions()`. Read run facts from this record,
+not from session-name patterns. Preserve the holder/resume, foreign-claim,
+done-agent and no-agent exceptions documented in the dated build record below.
+
+Gather waits outside the launch lock; its settle-driven queue/merge writes
+and fresh fire path acquire it as §5 specifies. Watch holds its separate
+`state/dispatch-watch.lock` for its lifetime; a second watch refuses. Lock
+availability and log health are distinct observations (ADR 0029).
 
 **4. Availability-first lanes and serial seats** (folded from 0020).
 A lane is the set of personas whose labels intersect the bead's; no lane
@@ -218,7 +221,9 @@ reads availability hours early; per-persona fan-out makes memory multi-writer.
 These alternatives remain rejected. Their added maintenance price is ASSUMED;
 the incident evidence is retained in the superseded source.
 
-## Consequences
+## Dated implementation record (2026-08-20 through 2026-08-27)
+
+Sequencing and future tense below describe the original build; current lifecycle is §§1–5 above.
 
 - Implementation, dependency-ordered, one session each: **the safe
   prune** (§2, fix directions chosen above) → **launch lock** (§1) →
