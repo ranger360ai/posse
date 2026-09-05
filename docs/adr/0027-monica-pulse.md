@@ -35,8 +35,13 @@ delivery state through its existing single-watch discipline in
 
 Target `pulse_persona`, else config `coordinator`. If both are empty, sense
 and display but deliver nowhere; do not invent a missing crew member. Deliver
-only to a live idle agent: working, blocked, missing-agent or missing-session
-targets are skips. Never spawn a session. Only a successful prompt advances
+only to a live idle or done agent: working, blocked, missing-agent or
+missing-session targets are skips. Keep `AwaitPromptable` after the listing
+prefilter and reapply idle/done to a positive detection. Preserve its existing
+never-answered diagnostic concession. Composer text is reported, not a pulse
+veto: the 2026-09-04 ghost-text incident removed that veto. This exception
+does not change dispatched-holder resume or governance composer checks.
+Never spawn a session. Only a successful prompt advances
 delivery state; skipped or failed attempts remain eligible on the next tick.
 An unreadable delivery record or a crash after delivery can cause a repeat;
 this is best-effort deduplication, not exactly-once delivery.
