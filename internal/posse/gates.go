@@ -3820,27 +3820,90 @@ refused with the stricter remedy — there is no private db to re-file it in.`)
 // the read is the whole file again — the fail-CLOSED side, exactly where
 // this arm was before — and the verbose pins go red saying so.
 //
-// AND IT IS GUARDED, because that line's presence is not by itself git's
-// truncation. Two things license the cut and nothing else: commit.cleanup is
-// `scissors`, read from the config this arm has already asked for, or a
-// `diff --` line below the cut, which is the diff only a verbose commit
-// appends. MEASURED, git 2.50.1, and this is the fail-open the guard exists
-// for: a commit.template body carrying the marker line is NOT truncated by
-// git under any other mode — the text below it landed in the object — so
-// cutting there unguarded would take exactly that text off the scan.
+// AND IT IS LICENSED, because that line's presence is not by itself git's
+// truncation: a commit.template body carrying the marker is NOT truncated
+// under any other mode — the text below it landed in the object (MEASURED,
+// git 2.50.1) — so cutting there unguarded takes exactly that text off the
+// scan. The first licence is `commit.cleanup=scissors`, read from the
+// config this arm has already asked for, and it stands. The second WAS a
+// `diff --` line below the marker, "which only a verbose commit appends" —
+// and that was a writer-typed shape (ranger-base-d94zl, found verifying
+// xfgcn's close): nothing asked who wrote the file, a `diff --` line is four
+// characters, and git keeps every byte below a marker it did not write. So
+// `git commit -F msg -- path` with the marker at column one, one `diff --`
+// line and a classed line under it landed the class in the object, read by
+// nothing — the crew's own commit form, no config, no intent beyond typing
+// the marker. Measured on the ceiling; check 3 renders through this same
+// function and was open the same way.
 //
-// RESIDUALS, stated. Fail-CLOSED, so the same side this arm has always erred
-// on: a core.commentChar of '-' or '+' hides git's own cut line from the
-// match (neither is one of commit.c's ten `auto` candidates), and where that
-// happens a staged path whose NAME carries the marker can match instead — on
-// the `diff --git` header naming it — which cuts INSIDE the appended diff and
-// so reads more than git keeps, not less; with git's own line matched it is
-// first and that header is never reached. `--cleanup=scissors` as a FLAG is
-// invisible here like every other, so git's block is read under it as it was
-// before. Fail-OPEN, narrow and deliberate: a file git did not
-// write — a commit.template body, MERGE_MSG — carrying BOTH the marker line
-// at column one AND a `diff --` line below it, under neither verbose nor
-// scissors, is cut where git would not cut it.
+// WHAT ONLY GIT CAN BE ASKED is the commit itself, not the file
+// (ranger-base-gyrnp). Everything git writes below its cut line is two
+// comment lines and the STAGED DIFF, and the staged diff is bytes the index
+// already holds — the sibling arm's subject where they are additions, and a
+// tree object's where they are context or removals. So the block below the
+// marker is read MINUS the lines of `git diff --cached`, and whatever is
+// left is message: under `-v` that is git's two comment lines, which the
+// mode's read then strips or keeps exactly as it does the block above; from
+// a writer it is every line they typed that the index does not carry, and a
+// class there is refused as it was before the cut existed. Nothing here
+// asks who wrote the file, because the file cannot say. A writer who pastes
+// the staged diff itself under a forged marker has put nothing below it
+// that is not in the index already; a writer who adds one line to that
+// paste has put that line back on the scan.
+//
+// THE REFERENCE IS RENDERED THE WAY `-v` RENDERS IT, measured line-for-line
+// against what git wrote into "$1" (git 2.50.1, inside the hook): `git diff
+// --cached --no-color --no-ext-diff --no-relative <base>`, where <base> is
+// $posse_base — HEAD, or the empty tree in a repo with no commit — except
+// under `--amend`, where git diffs the index against HEAD^1 and so does this
+// ("$2" is `commit` and "$3" is `HEAD` there; `-c <sha>` is `commit` with
+// another "$3" and diffs against HEAD, measured). Only what `-v` itself
+// pins is pinned: `-v` writes no color and runs no external diff (measured:
+// diff.external set, and the block git wrote never called it), so those two
+// are forced off; everything else — diff.context, diff.noprefix,
+// diff.mnemonicPrefix, textconv (measured: `-v` honours it), rename
+// detection — is read from the same config by both sides, because a pinned
+// prefix would MISMATCH a writer whose config git itself honoured. No -U0
+// and no --text: the sibling arm's shape is a different diff.
+//
+// AND EVERY WAY THE TWO CAN DISAGREE LANDS ON THE FAIL-CLOSED SIDE, which
+// the guard's own defect showed to be the direction that must not be got
+// wrong: a line git wrote that the reference does not carry is left on the
+// scan, never taken off it. An empty reference — nothing staged, a base
+// that does not resolve, `git diff` failing — matches nothing (measured,
+// BSD and GNU grep both), so the whole block below the marker is read.
+// status.renames set apart from diff.renames, `-vv` (git appends the
+// UNSTAGED diff too, under i/ w/ prefixes, and the cached one under c/ i/),
+// `-c HEAD` (read as an amend, diffed by git against HEAD), a root commit
+// amended under `-v` (git diffs against the empty tree; HEAD^1 does not
+// resolve and the arm falls back to that same tree): each leaves lines on
+// the scan that git will throw away, which is the over-refusal xfgcn
+// removed returning for that config and no other.
+//
+// THE SET DIFFERENCE IS grep's, because the hooks may call only what
+// scripts/cleanroom.sh HOOK_DEPS names on every distro (no awk, no comm, no
+// diff): the reference is the pattern list on stdin (-F, -x: whole lines,
+// literally), "$1" is the subject, and the line numbers -n prints are what
+// confine the subtraction to the block BELOW the cut — the writer's own
+// lines above it are never subtracted, whatever they coincide with. The
+// loop over those numbers runs inside the capture, so nothing is assigned
+// on the right of a pipeline (the rangerhq-kk6e lesson, at the top of this
+// hook).
+//
+// RESIDUALS, stated. Fail-CLOSED: `-v` as a FLAG on `-F`/`-m` — git
+// truncates at a marker the writer typed (measured) and appends no diff,
+// so the arm reads what git throws away; a core.commentChar of '-' or '+'
+// hides git's cut line from the match (neither is one of commit.c's ten
+// `auto` candidates); `--cleanup=scissors` as a flag is invisible like every
+// other; a marker forged ABOVE git's own under `-v` — git truncates at the
+// first (measured, wt_status_locate_end takes the first) and the lines
+// between the two are read here, because none of them is a line of the
+// staged diff; and the drift cases above. Fail-OPEN, and bounded: a line
+// below a forged marker that IS a line of the staged diff is not scanned
+// even where git keeps it — a context or removed line carrying a class,
+// which is content already in a tree object of this repo, the same bound
+// `--amend --no-edit` states above; an ADDED line there is the sibling
+// arm's subject and is refused by it.
 func messageArm(ind, head string, sources []visScanSource) string {
 	i1, i2, i3 := ind+"  ", ind+"    ", ind+"      "
 	var body strings.Builder
@@ -3861,9 +3924,17 @@ func messageArm(ind, head string, sources []visScanSource) string {
 ` + i1 + `posse_clean=$(git config --get commit.cleanup 2>/dev/null) || posse_clean=''
 ` + i1 + `posse_kept=''
 ` + i1 + `posse_cut=$(grep -nE '^[^ +@\-][^ ]* ------------------------ >8 ------------------------$' "$1" 2>/dev/null | sed -n '1p' | cut -d: -f1)
-` + i1 + `if [ -n "$posse_cut" ] && [ "$posse_clean" != scissors ] &&
-` + i2 + `! sed -n "$((posse_cut + 1)),\$p" "$1" 2>/dev/null | grep -q '^diff --'; then
-` + i2 + `posse_cut=''
+` + i1 + `posse_rest=''
+` + i1 + `if [ -n "$posse_cut" ] && [ "$posse_clean" != scissors ]; then
+` + i2 + `posse_vbase=$posse_base
+` + i2 + `if [ "${2:-}" = commit ] && [ "${3:-}" = HEAD ]; then
+` + i3 + `posse_vbase=$(git rev-parse --verify -q 'HEAD^1' 2>/dev/null) || posse_vbase=$(git hash-object -t tree /dev/null 2>/dev/null)
+` + i2 + `fi
+` + i2 + `posse_rest=$(git diff --cached --no-color --no-ext-diff --no-relative "$posse_vbase" 2>/dev/null |
+` + i3 + `grep -anvxFf - "$1" 2>/dev/null |
+` + i3 + `while IFS= read -r posse_l; do
+` + i3 + `  if [ "${posse_l%%:*}" -gt "$posse_cut" ]; then printf '%s\n' "${posse_l#*:}"; fi
+` + i3 + `done)
 ` + i1 + `fi
 ` + i1 + `case "$posse_clean" in
 ` + i1 + `  strip) posse_clean=strip ;;
@@ -3873,7 +3944,7 @@ func messageArm(ind, head string, sources []visScanSource) string {
 ` + i1 + `  *) if [ "${2:-}" = "message" ]; then posse_clean=whole; else posse_clean=strip; fi ;;
 ` + i1 + `esac
 ` + i1 + `if [ -n "$posse_cut" ]; then
-` + i2 + `posse_msg=$(head -n "$((posse_cut - 1))" "$1" 2>/dev/null)
+` + i2 + `posse_msg=$(head -n "$((posse_cut - 1))" "$1" 2>/dev/null; printf '%s\n' "$posse_rest")
 ` + i1 + `else
 ` + i2 + `posse_msg=$(cat "$1" 2>/dev/null)
 ` + i1 + `fi

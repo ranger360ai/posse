@@ -201,7 +201,33 @@ puts ABOVE the cut: the `commit.template` body, the path in a merge's
 conflict list — or the default `commit.cleanup`, which strips the `#` lines
 among them and not a template body that leads with none. The same pin gained
 a `scissors` subtest that takes the action and requires the commit to
-land.)* The
+land.)* *(Amended 2026-09-04, ranger-base-gyrnp from ranger-base-d94zl:
+the second licence xfgcn named — "a `diff --` line stands below it" — was
+writer-typed. Nothing asked who wrote the file, so an ordinary `git commit
+-F msg -- path` carrying the marker at column one, one `diff --` line and a
+classed line under it was cut there; git keeps every byte below a marker it
+did not write, and the class landed in the object read by nothing. Check 3
+renders through the same function and was open the same way. Measured both
+ways at 4710e88: with the cut disabled both shapes were refused, with it
+both landed. The cut is now licensed on what only git can be asked, the
+commit itself. Under `scissors` it is unconditional, as before; under every
+other mode the block below the marker is read MINUS the lines of the staged
+diff — `git diff --cached`, rendered the way `-v` renders it, against
+HEAD^1 under `--amend` — and whatever is left is message, read under the
+mode's own rule. Under `-v` that is git's two comment lines; from a writer
+it is every line the index does not hold. Every way the reference and git's
+own diff can disagree (an empty reference, `-vv`, `status.renames`, a root
+commit amended) leaves lines ON the scan, never takes them off it. So the
+residual sentence above now reads: fail-closed — `--cleanup=scissors` and
+`-v` as flags, a `core.commentChar` of `-` or `+`, a marker forged above
+git's own under `-v`, and the drift cases; fail-open and bounded — a line
+below a forged marker that is itself a line of the staged diff is not
+scanned even where git keeps it, which is a context or removed line and so
+content already in a tree object of this repo, the same bound the
+`--amend --no-edit` residual carries. The two pins that shipped green
+asserting the hole are inverted, and a third takes the licence's edge: the
+staged diff pasted exactly lands, the paste plus one classed line is
+refused.)* The
 exclusion stands as stated: a
 message typed in the editor does not exist yet when the hook runs. What the
 editor path does scan is whatever was already in the file — a
