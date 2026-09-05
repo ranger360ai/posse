@@ -123,7 +123,10 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "verify-self-close: $HERDR ($("$HERDR" --version 2>/dev/null | head -1))"
+# `head -1` without the fork, defined here because the banner below is the
+# first thing this script prints (ranger-base-s8b4g).
+first_line() { printf '%s' "${1%%$'\n'*}"; }
+echo "verify-self-close: $HERDR ($(first_line "$("$HERDR" --version 2>/dev/null)"))"
 echo "  session : $SESSION"
 echo "  socket  : $SESS_SOCK"
 echo "  home    : $HHOME"
@@ -169,7 +172,60 @@ EOF
 }
 
 marker() { [ -e "$OUT/$1" ] && echo 1 || echo 0; }
-rcline() { grep -c "rc=" "$OUT/$1" 2>/dev/null | head -1 || true; }
+
+# The three readers below decide arms, so none of them forks a matcher
+# (ranger-base-s8b4g, ranger-base-7hx87). A `grep`/`head` that is signalled,
+# that cannot be exec'd under load, or that takes EPIPE answers nothing, and
+# every arm here reads nothing as the failure it is looking for: the close
+# never returned, the label is gone, the recreate did not land. That would
+# print VERDICT ... DIED over a herdr that survived. The forks that ARE the
+# measurement — herdr, and the python3 that reads its JSON — stay.
+#
+# rcline <file> — how many lines carry `rc=`, i.e. `grep -c "rc="`. Zero when
+# the file is not there, which is what the old `2>/dev/null | head -1 || true`
+# amounted to at the `-ge 1` test below.
+rcline() {
+	local line n=0
+	[ -r "$OUT/$1" ] || { printf '0'; return 0; }
+	while IFS= read -r line || [ -n "$line" ]; do
+		case $line in *rc=*) n=$((n + 1)) ;; esac
+	done <"$OUT/$1"
+	printf '%s' "$n"
+}
+
+# head_chars <n> <file> — `head -c <n>`, in characters rather than bytes.
+# It only shapes a detail line, and is here because the arm it feeds is the
+# one whose failure a reader has to be able to explain.
+head_chars() {
+	local c
+	[ -r "$2" ] || return 0
+	c=$(<"$2")
+	printf '%s' "${c:0:$1}"
+}
+
+# has_word <text> <word> — `grep -qw`: an occurrence flanked, on both sides,
+# by something that is not a word character (or by the end of the line).
+has_word() {
+	local line rest pre l r
+	while IFS= read -r line || [ -n "$line" ]; do
+		rest=$line
+		while :; do
+			case $rest in *"$2"*) ;; *) break ;; esac
+			pre=${rest%%"$2"*}
+			rest=${rest#*"$2"}
+			l=${pre: -1}
+			r=${rest:0:1}
+			case $l in
+			[A-Za-z0-9_]) continue ;;
+			esac
+			case $r in
+			[A-Za-z0-9_]) continue ;;
+			esac
+			return 0
+		done
+	done <<<"$1"
+	return 1
+}
 
 # ---------------------------------------------------------------- control --
 # The SAME script, from a pane, closing a workspace that is NOT its own.
@@ -185,10 +241,10 @@ sleep 4
 
 check "control-pane-ran" "$(marker ctl.1)" "marker 1 missing: the pane never ran the script"
 check "control-outlives-closing-another-workspace" "$(marker ctl.2)" "marker 2 missing in the CONTROL: the rig is broken, not the self case"
-check "control-close-returned" "$([ "$(rcline ctl.close.out)" -ge 1 ] && echo 1 || echo 0)" "$(head -c 200 "$OUT/ctl.close.out" 2>/dev/null)"
+	check "control-close-returned" "$([ "$(rcline ctl.close.out)" -ge 1 ] && echo 1 || echo 0)" "$(head_chars 200 "$OUT/ctl.close.out")"
 after_ctl=$(h workspace list | json_labels)
-check "control-victim-is-gone" "$(echo "$after_ctl" | grep -qw victim && echo 0 || echo 1)" "labels=[$after_ctl]"
-check "control-recreate-landed" "$(echo "$after_ctl" | grep -qw ctlrecreated && echo 1 || echo 0)" "labels=[$after_ctl]"
+check "control-victim-is-gone" "$(has_word "$after_ctl" victim && echo 0 || echo 1)" "labels=[$after_ctl]"
+check "control-recreate-landed" "$(has_word "$after_ctl" ctlrecreated && echo 1 || echo 0)" "labels=[$after_ctl]"
 
 # ------------------------------------------------------------------- self --
 # The measurement. A pane closes its OWN workspace and then tries to create
@@ -202,10 +258,10 @@ sleep 4
 
 check "self-pane-ran" "$(marker self.1)" "marker 1 missing: the pane never ran the script, so nothing below is measured"
 after_self=$(h workspace list | json_labels)
-check "self-close-actually-happened" "$(echo "$after_self" | grep -qw selfpane && echo 0 || echo 1)" "labels=[$after_self] (selfpane still listed: the close was a no-op and the arm measures nothing)"
+check "self-close-actually-happened" "$(has_word "$after_self" selfpane && echo 0 || echo 1)" "labels=[$after_self] (selfpane still listed: the close was a no-op and the arm measures nothing)"
 
 self_survived=$(marker self.2)
-self_landed=$(echo "$after_self" | grep -qw selfrecreated && echo 1 || echo 0)
+self_landed=$(has_word "$after_self" selfrecreated && echo 1 || echo 0)
 note "self marker 2 : $self_survived    recreate landed: $self_landed"
 note "self close.out: $(head -c 200 "$OUT/self.close.out" 2>/dev/null | tr '\n' ' ')"
 note "self create.out: $(head -c 200 "$OUT/self.create.out" 2>/dev/null | tr '\n' ' ')"
@@ -235,7 +291,7 @@ h pane run "$det_pane" sh "$HHOME/arm-det-outer.sh" >/dev/null
 sleep 5
 after_det=$(h workspace list | json_labels)
 det_survived=$(marker det.2)
-det_landed=$(echo "$after_det" | grep -qw detrecreated && echo 1 || echo 0)
+det_landed=$(has_word "$after_det" detrecreated && echo 1 || echo 0)
 note "detached arm  : outer=$(marker det.0) inner-started=$(marker det.1) marker2=$det_survived recreate=$det_landed"
 note "detached close: $(head -c 200 "$OUT/det.close.out" 2>/dev/null | tr '\n' ' ')"
 note "detached labels: [$after_det]  (detpane absent = its close DID reach the server)"
@@ -266,7 +322,7 @@ h pane run "$sid_pane" sh "$HHOME/arm-sid-outer.sh" >/dev/null
 sleep 6
 after_sid=$(h workspace list | json_labels)
 sid_survived=$(marker sid.2)
-sid_landed=$(echo "$after_sid" | grep -qw sidrecreated && echo 1 || echo 0)
+sid_landed=$(has_word "$after_sid" sidrecreated && echo 1 || echo 0)
 note "setsid arm    : outer=$(marker sid.0) inner-started=$(marker sid.1) marker2=$sid_survived recreate=$sid_landed"
 note "setsid close  : $(head -c 200 "$OUT/sid.close.out" 2>/dev/null | tr '\n' ' ')"
 note "setsid labels : [$after_sid]"
