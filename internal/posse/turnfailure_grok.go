@@ -95,7 +95,7 @@ const TurnOutcomeGrokSessionStore = "grok-session-store"
 // answer when grok's store says a turn errored but carries no message with
 // it. A refusal also carries how much of the turn had already run when it
 // landed (TurnOutcome, ranger-base-qcu4c).
-func FindGrokTurnOutcome(dir, bead string, since time.Time) (out TurnOutcome, observed bool) {
+func FindGrokTurnOutcome(cwd, bead string, since time.Time) (out TurnOutcome, observed bool) {
 	// No window is not every window. claude's reader is bounded by the
 	// project directory whatever `since` says; this one is bounded by
 	// `since` alone once the cwd stops filtering, so a zero floor would let
@@ -105,7 +105,7 @@ func FindGrokTurnOutcome(dir, bead string, since time.Time) (out TurnOutcome, ob
 	if since.IsZero() {
 		return TurnOutcome{}, false
 	}
-	for _, path := range grokUpdateFiles(dir, since) {
+	for _, path := range grokUpdateFiles(cwd, since) {
 		if out, observed := scanGrokTurnOutcome(path, bead, since); observed {
 			return out, observed
 		}
@@ -114,32 +114,35 @@ func FindGrokTurnOutcome(dir, bead string, since time.Time) (out TurnOutcome, ob
 }
 
 // grokUpdateFiles is every updates.jsonl a turn started at `since` could have
-// been written to, freshest-relevant first: the sessions grok ran in `dir`
+// been written to, freshest-relevant first: the sessions grok ran in `cwd`
 // before the sessions it ran anywhere else.
 //
-// `dir` ORDERS the candidates; it does not filter them, and that is measured
+// `cwd` ORDERS the candidates; it does not filter them, and that is measured
 // rather than cautious. grok keys its store on the CLI's real working
 // directory, and a dispatched session's working directory is its WORKTREE
-// (planLaunch: `Worktree: true` on both dispatch launch sites, so `dir`
-// becomes the session tree's path) while the `dir` this reader is handed is
-// the repo the bead lives in. On this box today those are
-// ~/.posse/worktrees/<repo>/<session> and ~/src/<repo> — no substring of each
-// other — so a cwd-equality filter would have made this reader answer
-// "nothing readable" for every worktree dispatch there is, which is a
-// declaration that promises a reading nothing performs. The bead id in the
-// work prompt plus `since` is what actually identifies the turn; the cwd is
+// (planLaunch: `Worktree: true` on both dispatch launch sites, so the tree's
+// path becomes the cwd). When this reader was written the caller handed it
+// the repo the bead lives in instead — ~/src/<repo> against
+// ~/.posse/worktrees/<repo>/<session>, no substring of each other — so a
+// cwd-equality filter would have answered "nothing readable" for every
+// worktree dispatch there is, which is a declaration that promises a reading
+// nothing performs. That caller is fixed (Dispatcher.sessionCwd,
+// ranger-base-f09bw) and the own/rest split below now does what it says, but
+// the split stays a preference: the directory NAME is a percent-encoding of
+// the cwd that this code reads and does not write, and the bead id in the
+// work prompt plus `since` is what actually identifies the turn. The cwd is
 // a good guess about where to look first and no more than that.
 //
 // A root that will not open is no candidates, which is observed=false —
 // "cannot read" and "read a healthy turn" stay different facts (ADR 0018 §3)
 // because only the second one is a message-less `observed`.
-func grokUpdateFiles(dir string, since time.Time) []string {
+func grokUpdateFiles(cwd string, since time.Time) []string {
 	root := filepath.Join(grokHome(), "sessions")
 	cwds, err := os.ReadDir(root)
 	if err != nil {
 		return nil
 	}
-	want := filepath.Clean(dir)
+	want := filepath.Clean(cwd)
 	var own, rest []string
 	for _, c := range cwds {
 		if !c.IsDir() {

@@ -3439,7 +3439,7 @@ wait:
 	outcome, observed := TurnOutcome{}, false
 	if showErr != nil || after.Status != "closed" {
 		if find != nil {
-			outcome, observed = find(p.is.Dir, p.is.ID, p.launched)
+			outcome, observed = find(d.sessionCwd(p), p.is.ID, p.launched)
 		}
 		if observed {
 			if err := d.HB.MarkTurnFailure(p.session, outcome.Message); err != nil {
@@ -3513,6 +3513,34 @@ wait:
 		d.noteSettleOpen(p, settled, after.Status)
 	}
 	return false, nil
+}
+
+// sessionCwd is the working directory this session's CLI actually runs in —
+// what a turn_outcome: reader has to be handed, because both readers built
+// so far are looking for a per-session store the runtime keyed on its own
+// cwd. On a worktree launch that is the session's TREE and not p.is.Dir, the
+// repo the bead lives in: planLaunch takes `Worktree: true` on both dispatch
+// launch sites, so EnsureSessionTree's path becomes the CLI's cwd.
+//
+// This is one half of ranger-base-f09bw — the other is the project directory
+// NAME the reader then derives from it (claudeProjectDir, turnfailure.go), and
+// both had to be wrong for the blindness to be total. MEASURED on this box
+// the day the bead was filed: 1301 of the 1354 project directories under ~/.claude/projects are
+// worktree paths and every one carries a dispatch transcript, so handing the
+// reader the repo made it answer "nothing readable" for every worktree
+// dispatch there is — loudly (turnOutcomeClause's "looked and found none"),
+// but blind on the one runtime posse can actually read.
+//
+// The RECORD and not a derivation: `dir:` in the session meta is the path
+// startPlanned handed CreateWorkspace, so it is what the cwd IS, where
+// PlanSessionTree only says where a tree would go. A session whose meta
+// cannot be read falls back to the repo — which is the shared-checkout
+// launch's own cwd, and what every launch passed before there were trees.
+func (d *Dispatcher) sessionCwd(p *pendingBead) string {
+	if m, ok := d.HB.readMeta(p.session); ok && m.Dir != "" {
+		return m.Dir
+	}
+	return p.is.Dir
 }
 
 // turnOutcomeReader is how this pass reads the turn outcome of a session on

@@ -81,11 +81,12 @@ func TestQAParityAccountRefusalIsNamedOnEveryRuntime(t *testing.T) {
 				`[{"id":"a-1","title":"t","status":"in_progress","assignee":"ranger"}]`)
 			idleClaude(t, fake)
 
-			asked := 0
-			d.TurnOutcome = func(dir, bead string, since time.Time) (TurnOutcome, bool) {
+			asked, askedCwd := 0, ""
+			d.TurnOutcome = func(cwd, bead string, since time.Time) (TurnOutcome, bool) {
 				asked++
-				if dir != repo || bead != "a-1" || since.IsZero() {
-					t.Fatalf("turn outcome lookup = %q %q %v", dir, bead, since)
+				askedCwd = cwd
+				if bead != "a-1" || since.IsZero() {
+					t.Fatalf("turn outcome lookup = %q %q %v", cwd, bead, since)
 				}
 				return TurnOutcome{Message: qaAllotmentRefusal}, true
 			}
@@ -112,8 +113,19 @@ func TestQAParityAccountRefusalIsNamedOnEveryRuntime(t *testing.T) {
 				}
 				// The session carries it too, so `posse list` does not show a
 				// dead account as a healthy session.
-				if m, ok := b.readMeta(session); !ok || m.TurnFailure != qaAllotmentRefusal {
-					t.Errorf("turn failure not recorded in session meta: %+v", m)
+				m, ok := b.readMeta(session)
+				if !ok || m.TurnFailure != qaAllotmentRefusal {
+					t.Fatalf("turn failure not recorded in session meta: %+v", m)
+				}
+				// WHICH directory the reader was asked about is the session's
+				// own cwd and not the repo (ranger-base-f09bw). It reads as
+				// the repo here only because qaRepo is not a git repo, so
+				// this launch made no tree — asserting the repo literal would
+				// pin that coincidence, and did until this bead. The pin that
+				// drives a real tree through Run is
+				// TestQAWorktreeDispatchAsksAboutTheSessionsTreeNotTheRepo.
+				if askedCwd != m.Dir {
+					t.Errorf("the reader was asked about %q, want the session's own cwd %q", askedCwd, m.Dir)
 				}
 				return
 			}

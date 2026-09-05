@@ -61,7 +61,12 @@ func (o TurnOutcome) Worked() bool { return o.ModelCalls > 0 || o.OutputTokens >
 // the turn did (TurnOutcome) and whether an outcome was READ AT ALL. The two
 // are separate because "nothing to report" and "nothing readable" are
 // different facts, and only the first one may clear a failure marker.
-type TurnOutcomeReader func(dir, bead string, since time.Time) (out TurnOutcome, observed bool)
+//
+// cwd is where the session's CLI actually ran, not where the bead lives:
+// both readers built so far are looking for a per-session store a runtime
+// keyed on its own working directory, and on a worktree dispatch that is the
+// session's tree (Dispatcher.sessionCwd, ranger-base-f09bw).
+type TurnOutcomeReader func(cwd, bead string, since time.Time) (out TurnOutcome, observed bool)
 
 // TurnOutcomeClaudeTranscript reads claude's own JSONL transcript under
 // ~/.claude/projects. A runtime whose CLI writes that same shape declares
@@ -113,7 +118,7 @@ func TurnOutcomeReaderFor(rt *Runtime) TurnOutcomeReader {
 }
 
 // FindClaudeTurnOutcome finds the first assistant outcome for this dispatch prompt.
-// It scans only the Claude project directory for dir, only files touched by
+// It scans only the Claude project directory for cwd, only files touched by
 // this turn, and only an assistant record after the matching bead prompt.
 // User-authored bead text can quote the provider message without becoming a
 // false positive. observed distinguishes a healthy first answer (no message,
@@ -127,9 +132,14 @@ func TurnOutcomeReaderFor(rt *Runtime) TurnOutcomeReader {
 // (ranger-base-qcu4c). What claude cannot see is the mirror of that: a
 // refusal landing AFTER a first answer reads here as an outcome with no
 // message and observed=true — a healthy turn — ranger-base-4ldma.
-func FindClaudeTurnOutcome(dir, bead string, since time.Time) (out TurnOutcome, observed bool) {
-	project := strings.ReplaceAll(filepath.ToSlash(filepath.Clean(dir)), "/", "-")
-	for _, path := range TranscriptFiles(project) {
+//
+// cwd is the working directory the SESSION ran in, which on every worktree
+// dispatch is the session's own tree and not the repo the bead lives in —
+// claude keys ~/.claude/projects on the CLI's real cwd, and handing this the
+// repo made it answer "nothing readable" for all of them (ranger-base-f09bw;
+// the caller is Dispatcher.sessionCwd).
+func FindClaudeTurnOutcome(cwd, bead string, since time.Time) (out TurnOutcome, observed bool) {
+	for _, path := range claudeTranscripts(cwd) {
 		st, err := os.Stat(path)
 		if err != nil || st.ModTime().Before(since.Add(-time.Second)) {
 			continue
@@ -139,6 +149,85 @@ func FindClaudeTurnOutcome(dir, bead string, since time.Time) (out TurnOutcome, 
 		}
 	}
 	return TurnOutcome{}, false
+}
+
+// claudeProjectDir is the ~/.claude/projects directory claude keys a session
+// on: the CLI's working directory with every character that is not a letter
+// or a digit replaced by "-".
+//
+// MEASURED, not assumed (2026-09-05, ranger-base-f09bw). Every project
+// directory on this box that carries a transcript was paired with the `cwd`
+// its own first record names — 1349 pairs — and this rule reproduces all
+// 1349 byte for byte. Replacing only "/", which is what this used to do,
+// reproduces 43 of them: the corpus's non-alphanumerics are "/" (8121x),
+// "." (1305x) and one " ", so every path under a dot directory missed, and
+// ~/.posse/worktrees/... — where every dispatched session lives — is one.
+// "_" appears in no cwd here and is folded by the same rule, because the
+// rule is claude's own and not a list of the characters this box happened to
+// exercise.
+//
+// If claude ever changes the encoding this goes blind LOUDLY rather than
+// wrong: no directory matches, the reader returns (no outcome, false), and
+// the settle line prints turnOutcomeClause's "looked and found none this
+// pass".
+func claudeProjectDir(cwd string) string {
+	cleaned := filepath.ToSlash(filepath.Clean(cwd))
+	var b strings.Builder
+	b.Grow(len(cleaned))
+	for _, r := range cleaned {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			continue
+		}
+		b.WriteByte('-')
+	}
+	return b.String()
+}
+
+// claudeTranscripts is every transcript claude wrote for a session whose
+// working directory was cwd: the .jsonl files in that ONE project directory,
+// named exactly.
+//
+// Exactly, and not the substring match the cost locator uses, because a
+// session rooted UNDER the tree mangles to a name that CONTAINS the tree's
+// own — `/private/tmp/claude-501/<mangled tree>-<uuid>/scratchpad/...` is the
+// shape claude hands every session, and on this box 6 worktree project names
+// are a substring of 11 such directories (MEASURED 2026-09-05). What that
+// costs is not an ordering race — the tree's own name sorts first, "U" before
+// "p" — it is the rung below: on a pass where this session's own transcript
+// is not readable YET, which is the (no outcome, false) this reader exists to
+// keep distinct from a healthy turn, a substring match answers with the
+// stranger instead, and a stranger's synthetic refusal stops the bead as
+// "claude refused the first turn" about a turn nothing read. TranscriptFiles'
+// substring filter is right for what it is — an operator's `posse cost
+// --project` narrowing — and wrong for a locator that must name one
+// session's own store.
+//
+// A root or a project directory that will not open is no candidates, which
+// the caller reports as (no outcome, false): "cannot read" and "read a
+// healthy turn" stay different facts (ADR 0018 §3).
+func claudeTranscripts(cwd string) []string {
+	if cwd == "" {
+		return nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+	dir := filepath.Join(home, ".claude", "projects", claudeProjectDir(cwd))
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, e := range ents {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".jsonl") {
+			continue
+		}
+		out = append(out, filepath.Join(dir, e.Name()))
+	}
+	sort.Strings(out)
+	return out
 }
 
 func scanClaudeTurnOutcome(path, bead string, since time.Time) (out TurnOutcome, observed bool) {

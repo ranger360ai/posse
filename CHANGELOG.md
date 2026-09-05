@@ -552,6 +552,32 @@ first turn … no work ran` — claude's shape, and six of grok's seven. Nothing
 else about the stop changes: the bead is still stopped, the session still
 marked `🛑turn-failed`, and changing tiers is still yours to decide.
 
+**Dispatch read no turn outcome on any session that got its own worktree —
+which is every dispatched claude session on a box with per-session trees.**
+
+*Affected: the `claude-transcript` turn-outcome reader, so every
+settle-without-close on a worktree dispatch. An account that refused the first
+turn printed the "looked for a turn outcome and found none this pass" clause
+instead of stopping the bead with the provider's own message.* The reader was
+handed the repo the bead lives in, while claude keys `~/.claude/projects` on
+the CLI's real working directory — the session's TREE — and it then derived
+that project directory's name by replacing slashes only, so even the tree's
+own path spelled `-Users-you-.posse-...` for a store claude wrote to
+`-Users-you--posse-...`. Both halves had to be wrong for the blindness to be
+total, and both were: on the box this was measured, 1301 of 1354 project
+directories were worktree paths, every one carrying a dispatch transcript, and
+none of them was reachable.
+
+The pass now hands the reader the session's own working directory as the
+session meta records it (a launch that fell back to the shared checkout is
+unchanged — that path always worked), and the project directory is named by
+the encoding claude actually writes: every character that is not a letter or a
+digit becomes `-`, verified against all 1349 project directories on that box
+that carry a transcript. It is also named exactly rather than matched as a
+substring, so a session rooted under the tree — the scratchpad claude hands
+every session — can no longer answer the settle for it. A future change to
+that encoding goes blind loudly, on the same clause, rather than wrong.
+
 **`posse runtime check` and `posse runtime probe` refused a CLI they could
 not see, on a PATH that does not decide whether a launch can see it.**
 
