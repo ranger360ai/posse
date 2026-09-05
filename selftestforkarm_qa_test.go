@@ -145,11 +145,26 @@ func TestQATheSelfTestsDiskArmsDoNotContradictEachOtherWhenAForkFails(t *testing
 //
 // Heredoc BODIES are skipped: they are data the script writes out, not its own
 // assertion path.
+//
+// Both of those roles are bounded, because ranger-base-u2etb measured three
+// ways they were not (all three green over a planted violation at 3851edc):
+//
+//	A MESSAGE ends where the helper's command does. `bad "x"; if printf …
+//	| grep -q foo` is a verdict with a helper in front of it, not a message,
+//	and so is the same shape on a `bad … \` continuation line. The extent is
+//	decided by sfMessageReaches, which walks quoting and `$( … )` nesting.
+//	A HEREDOC that never closes is not a heredoc. `<<EOF` in a comment, or
+//	`$((1<<shift))`, used to open a body that swallowed every remaining line
+//	of the file with the pin still green — one planted line took the scan
+//	from 123 occurrences to 118, nowhere near the floor. Those two spellings
+//	are blinded, and because no enumeration of them is ever complete, a
+//	heredoc still open at EOF is itself reported as a failure.
 
 var (
 	sfRegionStart = regexp.MustCompile(`^[a-zA-Z_]*[sS]elf_?[tT]est[a-zA-Z_]*\(\)\s*\{`)
 	sfMatcher     = regexp.MustCompile(`(^|[|&;(]|\$\(|` + "`" + `|\b(?:if|elif|while|until)\s+|!\s+)\s*(grep|sed|awk|head|tail|cut|tr|sort|uniq|wc|cat|jq|paste|xargs)\b`)
 	sfHeredoc     = regexp.MustCompile(`<<-?[ \t]*(['"]?)([A-Za-z_][A-Za-z0-9_]*)['"]?`)
+	sfArith       = regexp.MustCompile(`\$?\(\([^()]*\)\)`)
 	sfAssertHelp  = regexp.MustCompile(`\b(bad|fail|note|die|say)\b[ \t]+["'$]`)
 )
 
@@ -177,14 +192,76 @@ var sfUnswept = map[string]string{
 type sfHit struct {
 	file, text string
 	line       int
-	role       string // "verdict" (a violation), "message", "fixture"
+	role       string // "verdict" (a violation), "message", "fixture", "heredoc"
+}
+
+// sfMessageReaches reports whether a matcher whose match ends at `to` is still
+// inside the argument list of the helper call that starts at `from`. A message
+// role is earned only while the helper's own command is still being written:
+// an unquoted, top-level `;`, `|` or `&` ends it, and a matcher past that
+// decides a verdict of its own. Separators nested inside a `$( … )` or inside
+// a quoted string end nothing — that nesting is the shape every legitimate
+// message fork in the tree already has.
+//
+// Before ranger-base-u2etb the role test was `startsMessage[0] < loc[1]`
+// alone, so `bad "checking"; if printf … | grep -q foo; then` read as a
+// message for all five helpers, and the same hole was inherited by every
+// `bad … \` continuation line.
+func sfMessageReaches(l string, from, to int) bool {
+	if to > len(l) {
+		to = len(l)
+	}
+	depth := 0
+	quote := byte(0)
+	var stack []byte // quote context to restore when a `$( … )` closes
+	for i := from; i < to; i++ {
+		c := l[i]
+		switch {
+		case quote == '\'':
+			if c == '\'' {
+				quote = 0
+			}
+		case c == '\\':
+			i++ // escapes one byte, in `"` and unquoted alike
+		case quote == '"':
+			switch {
+			case c == '"':
+				quote = 0
+			case c == '$' && i+1 < to && l[i+1] == '(':
+				stack, quote, depth = append(stack, quote), 0, depth+1
+				i++
+			}
+		case c == '\'' || c == '"':
+			quote = c
+		case c == '$' && i+1 < to && l[i+1] == '(':
+			stack, quote, depth = append(stack, quote), 0, depth+1
+			i++
+		case c == '(':
+			stack, depth = append(stack, quote), depth+1
+		case c == ')':
+			if depth > 0 {
+				depth--
+				quote, stack = stack[len(stack)-1], stack[:len(stack)-1]
+			}
+		case depth == 0 && (c == ';' || c == '|' || c == '&'):
+			return false
+		}
+	}
+	return true
 }
 
 // sfScanLines classifies every matcher occurrence on an assertion path.
 // Exported as a function over lines so the controls below can drive it with
 // synthetic input and prove it separates the three roles.
-func sfScanLines(file string, lines []string, wholeFile bool) []sfHit {
+//
+// It answers, second, the heredoc opener it was still holding at EOF. A
+// heredoc that never closes is not a heredoc — it is a line the scan misread,
+// and it silently swallowed every line after it. The caller must red on that
+// rather than report the clean tail it produces, because no enumeration of
+// phantom spellings is ever complete (ranger-base-u2etb).
+func sfScanLines(file string, lines []string, wholeFile bool) ([]sfHit, *sfHit) {
 	var hits []sfHit
+	var opener *sfHit
 	in := wholeFile
 	heredoc := ""
 	inMessage := false
@@ -192,16 +269,25 @@ func sfScanLines(file string, lines []string, wholeFile bool) []sfHit {
 		// A heredoc body is data the script writes, not its assertion path.
 		if heredoc != "" {
 			if strings.TrimSpace(raw) == heredoc {
-				heredoc = ""
+				heredoc, opener = "", nil
 			}
 			continue
 		}
 		l := strings.TrimLeft(raw, " \t")
-		// `<<<` is a here-STRING and opens no body; blind the heredoc match
-		// to it rather than trying to express "not <<<" in a Go regexp.
-		probe := strings.ReplaceAll(raw, "<<<", "\x00\x00\x00")
+		// A comment carries no assertion AND opens no heredoc. This test
+		// runs BEFORE the opener probe: a comment that mentions `<<EOF`
+		// used to open a body that never closed, and the rest of the file
+		// went unscanned with the pin green (ranger-base-u2etb 1a).
+		if strings.HasPrefix(l, "#") {
+			continue
+		}
+		// `<<<` is a here-STRING and opens no body, and `$((1<<shift))` is
+		// a left shift by a variable; blind both rather than trying to
+		// express "not those" in a Go regexp.
+		probe := sfArith.ReplaceAllString(strings.ReplaceAll(raw, "<<<", "\x00\x00\x00"), "")
 		if m := sfHeredoc.FindStringSubmatch(probe); m != nil {
 			heredoc = m[2]
+			opener = &sfHit{file: file, line: i + 1, text: l, role: "heredoc"}
 		}
 		if !wholeFile {
 			if !in {
@@ -214,9 +300,6 @@ func sfScanLines(file string, lines []string, wholeFile bool) []sfHit {
 				in = false
 				continue
 			}
-		}
-		if strings.HasPrefix(l, "#") {
-			continue
 		}
 		// A `bad …` / `fail …` call continued with a trailing backslash keeps
 		// its message role on the next line — suite-lock.sh writes most of
@@ -236,14 +319,16 @@ func sfScanLines(file string, lines []string, wholeFile bool) []sfHit {
 		tool := l[loc[4]:loc[5]]
 		role := "verdict"
 		switch {
-		case carried || (startsMessage != nil && startsMessage[0] < loc[1]):
+		case carried && sfMessageReaches(l, 0, loc[1]):
+			role = "message"
+		case startsMessage != nil && startsMessage[0] < loc[1] && sfMessageReaches(l, startsMessage[0], loc[1]):
 			role = "message"
 		case tool == "cat" && (strings.Contains(l[loc[5]:], ">") || strings.Contains(l, "<<")):
 			role = "fixture"
 		}
 		hits = append(hits, sfHit{file: file, line: i + 1, text: l, role: role})
 	}
-	return hits
+	return hits, opener
 }
 
 func sfScanScripts(t *testing.T) []sfHit {
@@ -262,9 +347,11 @@ func sfScanScripts(t *testing.T) []sfHit {
 		// A verify-*.sh is assertions from top to bottom; cleanroom.sh is a
 		// preflight prober with the same shape and no --self-test to scope to.
 		whole := strings.HasPrefix(base, "verify-") || base == "cleanroom.sh"
-		for _, h := range sfScanLines(base, strings.Split(string(b), "\n"), whole) {
-			all = append(all, h)
+		hits, open := sfScanLines(base, strings.Split(string(b), "\n"), whole)
+		if open != nil {
+			t.Errorf("scripts/%s:%d opens a heredoc that never closes, so the scan skipped every line after it and a clean result below is not evidence — either the line is not a redirection and the opener probe must be blinded to it, or the script is malformed:\n  %s", base, open.line, open.text)
 		}
+		all = append(all, hits...)
 	}
 	return all
 }
@@ -275,10 +362,12 @@ func TestQANoAssertionArmDecidesThroughAForkedMatcher(t *testing.T) {
 	// THE FLOOR, and it is the positive witness this whole test rests on: a
 	// regexp that stopped matching, or a region finder that stopped finding
 	// self-test bodies, would leave `hits` empty and this test green over a
-	// scan that reads nothing at all. There were 126 occurrences across 19
-	// files when this was measured (2026-09-05).
+	// scan that reads nothing at all. There were 123 occurrences across 19
+	// files when this was re-measured (2026-09-05, ranger-base-u2etb; the
+	// 126 written here before is not a count this tree produces at 3851edc
+	// or at HEAD, and the two scanners agree on 123 hit for hit).
 	if len(hits) < 80 {
-		t.Fatalf("the scan found only %d matcher occurrences across scripts/ — it was 126 when written, so the shape or the region finder has gone blind and a clean result here means nothing", len(hits))
+		t.Fatalf("the scan found only %d matcher occurrences across scripts/ — it was 123 when last measured, so the shape or the region finder has gone blind and a clean result here means nothing", len(hits))
 	}
 	var roles = map[string]int{}
 	for _, h := range hits {
@@ -355,7 +444,7 @@ func TestQATheForkedMatcherScanSeparatesTheThreeRoles(t *testing.T) {
 		{"fixture", `	cat >>"$pkg/a_test.go" <<-'EOF'`},
 	}
 	for _, c := range cases {
-		got := sfScanLines("probe.sh", []string{c.line}, true)
+		got, _ := sfScanLines("probe.sh", []string{c.line}, true)
 		if len(got) != 1 {
 			t.Errorf("classifier saw %d hits, want 1, on: %s", len(got), c.line)
 			continue
@@ -375,7 +464,7 @@ func TestQATheForkedMatcherScanSeparatesTheThreeRoles(t *testing.T) {
 		`suspects=$(signal_suspects 505 <<<"$table")`,
 		`sr_has() { case $1 in *"$2"*) return 0 ;; esac; return 1; }`,
 	} {
-		if got := sfScanLines("probe.sh", []string{l}, true); len(got) != 0 {
+		if got, _ := sfScanLines("probe.sh", []string{l}, true); len(got) != 0 {
 			t.Errorf("the scan flags a FIXED line as %q — the invariant it demands cannot be satisfied: %s", got[0].role, l)
 		}
 	}
@@ -384,12 +473,83 @@ func TestQATheForkedMatcherScanSeparatesTheThreeRoles(t *testing.T) {
 	// not: `<<<` opens no body, so blinding on it would swallow the rest of
 	// the file and turn every later violation invisible.
 	body := []string{`cat >"$t/rig.sh" <<'RIG'`, `  grep -q x "$f" || exit 1`, `RIG`, `if grep -q 'y' "$out"; then`}
-	got := sfScanLines("probe.sh", body, true)
+	got, _ := sfScanLines("probe.sh", body, true)
 	if len(got) != 2 || got[0].role != "fixture" || got[1].role != "verdict" || got[1].line != 4 {
 		t.Errorf("heredoc handling is wrong: %+v — want the opener as fixture and line 4 as a verdict, with the body skipped", got)
 	}
 	hs := []string{`suspects=$(signal_suspects 505 <<<"$table")`, `if grep -q 'y' "$out"; then`}
-	if got := sfScanLines("probe.sh", hs, true); len(got) != 1 || got[0].line != 2 {
+	if got, _ := sfScanLines("probe.sh", hs, true); len(got) != 1 || got[0].line != 2 {
 		t.Errorf("a here-string was read as opening a heredoc body, so everything after it goes unscanned: %+v", got)
+	}
+}
+
+// The three blind spots ranger-base-u2etb measured, each shown GREEN over a
+// planted violation in scripts/test-times.sh before the fix. They share one
+// failure mode — the scan reports a clean file it never finished reading, or
+// never finished classifying — which the 80-floor cannot see, because dropping
+// five lines out of 123 occurrences is not a floor breach.
+func TestQATheForkedMatcherScanSeesPastAPhantomHeredocAndAnEarlierMessage(t *testing.T) {
+	// 1a. PHANTOM HEREDOC. `<<WORD` in a comment and `$((1<<n))` are not
+	// redirections; before the fix either one opened a body that never
+	// closed and the violation on the next line was invisible.
+	for _, phantom := range []string{
+		"# the rig is written with a <<EOF body",
+		"  sh=$((1<<shift))",
+		"  n=$(( 1 << shift ))",
+	} {
+		lines := []string{phantom, `if printf '%s' "$out" | grep -q x; then`}
+		got, open := sfScanLines("probe.sh", lines, true)
+		if open != nil {
+			t.Errorf("%q was read as opening a heredoc body: %+v", phantom, *open)
+		}
+		if len(got) != 1 || got[0].role != "verdict" || got[0].line != 2 {
+			t.Errorf("a violation after %q is invisible to the scan: %+v", phantom, got)
+		}
+	}
+
+	// …and the backstop, which is what makes the two spellings above
+	// examples rather than the definition: a heredoc left open at EOF is
+	// reported, so the NEXT unenumerated phantom reds instead of silently
+	// swallowing the tail of a file.
+	if _, open := sfScanLines("probe.sh", []string{`cat >"$t/rig.sh" <<'RIG'`, `  grep -q x "$f" || exit 1`}, true); open == nil {
+		t.Errorf("an unterminated heredoc is not reported, so a misread opener still swallows the rest of a file in silence")
+	}
+	if _, open := sfScanLines("probe.sh", []string{`cat >"$t/rig.sh" <<'RIG'`, `  grep -q x "$f" || exit 1`, `RIG`}, true); open != nil {
+		t.Errorf("a heredoc that DOES close is reported as unterminated (%+v) — every rig script in the tree would red", *open)
+	}
+
+	// 1b. A message helper EARLIER on the line does not excuse a matcher the
+	// shell has already separated from it. Measured for all five helpers.
+	for _, h := range []string{"bad", "fail", "note", "die", "say"} {
+		l := h + ` "checking"; if printf '%s' "$out" | grep -q foo; then :; fi`
+		got, _ := sfScanLines("probe.sh", []string{l}, true)
+		if len(got) != 1 || got[0].role != "verdict" {
+			t.Errorf("`%s …;` earlier on the line makes a real verdict fork read as %+v", h, got)
+		}
+	}
+
+	// 1c. The same hole on a `\` continuation line: the carried message role
+	// reaches exactly as far as the helper's own command does.
+	cont := []string{`bad "$arm" \`, `  "detail"; if printf '%s' "$out" | grep -q foo; then :; fi`}
+	if got, _ := sfScanLines("probe.sh", cont, true); len(got) != 1 || got[0].role != "verdict" {
+		t.Errorf("a verdict fork past the end of a carried message reads as %+v", got)
+	}
+
+	// The carry must still WORK: suite-lock.sh writes most of its failure
+	// detail on a continuation line, and those forks are messages. Without
+	// this the fix above would turn a dozen honest lines into violations.
+	carry := []string{`bad "$arm14" \`, `  "the holder never acquired: $(tr '\n' '|' <"$tmp/m18.log")"`}
+	if got, _ := sfScanLines("probe.sh", carry, true); len(got) != 1 || got[0].role != "message" {
+		t.Errorf("a real continued message now reads as %+v — the 1c fix broke suite-lock.sh's failure detail", got)
+	}
+	// And the separators that are NOT separators: nested inside `$( … )` or
+	// inside the quoted message itself.
+	for _, l := range []string{
+		`bad "budget not read: $(printf '%s' "$out" | grep 'package times')"`,
+		`bad "queued=$q; alive: $(printf '%s' "$before" | tr '\n' '|'); dead: none"`,
+	} {
+		if got, _ := sfScanLines("probe.sh", []string{l}, true); len(got) != 1 || got[0].role != "message" {
+			t.Errorf("a nested separator ended the message role early, so an allowed fork reads as %+v: %s", got, l)
+		}
 	}
 }

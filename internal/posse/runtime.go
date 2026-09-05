@@ -1467,7 +1467,7 @@ var builtinRuntimes = []Runtime{
 		// (docs/adr/0013-rules-precedence-probe.md, "Behavioural
 		// measurement 2026-09-01").
 		RulesPrecedence:    RulesPrecedencePID,
-		RulesPrecedenceWhy: "measured 2026-09-01 (ranger-base-6rcv): against a fixture AGENTS.md demanding lowercase, the word 'prepared' and its own token, codex 0.150.1 replied 'READY.' — all three AGENTS rules broken, the PID's obeyed; both rulebooks were in the rendered prompt (ranger-base-kl58b)",
+		RulesPrecedenceWhy: "measured 2026-09-01 (ranger-base-6rcv): against a fixture AGENTS.md demanding lowercase, the word 'prepared' and its own token, codex 0.150.1 replied 'READY.' — all three AGENTS rules broken, the PID's two decidable rules obeyed and neither token emitted; both rulebooks were in the rendered prompt (ranger-base-kl58b)",
 		Command:            `codex {model} {skills} {deny} -a never ` + CodexFleetFlags + ` -c developer_instructions="$(cat {file})"`},
 	{Name: "grok", Builtin: true, Realize: realizeGrok, Skills: skillsCwd, SkillsCwd: true, Models: grokModels, ModelFlag: "-m %s", Unattended: GrokFleetFlags,
 		Egress: []string{"cli-chat-proxy.grok.com", "grok.com"}, StateDirs: []string{"~/.grok"},
