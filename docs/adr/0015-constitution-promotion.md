@@ -105,10 +105,7 @@ path the binary already prefers (**MEASURED**, `app.go`) — is created
 as a *real directory*, not a symlink. `agents/`, `config.yaml`,
 `recipes/`, `runtimes/`, `skills/` under it — the **promoted set** — are
 written **only** by `posse promote` (`envs/` is deliberately not in this
-set; §7). *(`runtimes/` added 2026-09-01, ADR 0039 D2: it is read at
-every launch and is the only thing that makes a tier's model the current
-one, written by no code path and holding no secret — the same terms as
-`config.yaml`.)* The `~/.config/rhq` symlink dies with the rhq
+set; §7). Runtime overlays are governed here on the same promotion terms as config: versioned constitution source, promoted home copy, manifest verification. Their merge and validation semantics live in [0013 §8](0013-runtime-dispatch-contract.md); 0021/0039 are lineage, not additional promotion authorities. The `~/.config/rhq` symlink dies with the rhq
 retirement; its replacement is the first promote. This is the "one
 path move" the ride-together ruling requires. `App` paths do not
 change shape — `AgentsDir` is still `home/agents`; what changes is
@@ -576,6 +573,12 @@ verification standard outside posse (ranger-base-3c3 is the live
 case); Q6 — whether a posse-development session needs the live
 constitution at all (with §2 it reads testdata by default; nothing
 special is mounted).
+
+## Lineage
+
+| Was | Here |
+|---|---|
+| 0021 promotion amendment and 0039 D2 | §§2–3: `runtimes/` is promoted, removed when absent from the source commit, manifested, and fenced from persona ratification |
 
 ## Sequencing
 

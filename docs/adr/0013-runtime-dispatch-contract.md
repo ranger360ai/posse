@@ -712,11 +712,39 @@ counted-ness and name-keyed turn-outcome reads. ASSUMED: maintaining a
 separate prose checklist has value; therefore it is removed. The fold
 removes no checks, runtime files, keys, states, actors or flags.
 
+### 8. Built-in runtime overlays (from 0021)
+
+`runtimes/<name>.yaml` overlays a built-in per declared key; missing keys
+retain the built-in values and lists replace rather than merge. Validation
+is identical to the corresponding template declaration. A file present
+with bad values refuses instead of silently falling back. `rt.Path` and
+`declaredBy` identify the source per key; list an overlaid built-in once.
+`record: trusted` requires `record_why` and the measured promotion in §4.
+
+The maintained partition is `builtinOverlayKeys` versus
+`builtinMechanismKeys` in runtime.go, checked against `runtimeYamlKeys()`.
+Measured instance facts (tier model ids, waits, record and rules precedence,
+state directory and required environment, among those keys) may overlay;
+launch mechanisms may not. In particular `command:` and `skills_flag:`
+refuse, as do the other mechanism keys in that partition. Model keys
+overlay per tier. Do not copy the old 0021 whitelist and lose later keys.
+The 0057 pane-key deletion must update that partition with the reader removal.
+
+[0015 §§2–3](0015-constitution-promotion.md) alone owns the overlay's
+promotion: edit the versioned constitution, promote to the home, verify the
+manifest at launch. A hand-edited home copy is not the supported write path.
+No runtime or cage-engine selection precedence changes in this fold.
+Rejected: closed built-ins (instance forks), whole-template replacement
+under a built-in realizer (unmeasured launch), another override config block,
+or invisible environment overrides. A stale explicit override pins a value
+intentionally; its per-key provenance is the way to find it. No new mechanism.
+
 ## Lineage
 
 | Was | Here |
 |---|---|
 | 0017 §§1–2 derived checklist and verdicts; §3 shadow predicates; §§4–5 declarability and precedence | §7, using the existing §§1–6 grid; dated census and superseded sequencing stay in 0017 |
+| 0021 decisions 1–5 per-key overlays and source provenance | §8; promotion policy belongs to 0015 §§2–3 |
 
 ## Consequences
 

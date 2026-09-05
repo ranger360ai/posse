@@ -1,5 +1,11 @@
 # ADR 0021 — Built-in runtimes take a per-key overlay from runtimes/<name>.yaml
 
+*Status: superseded 2026-09-05 by ADR 0013 · ADR simplification, operator ruling 2026-09-05.*
+
+The surviving decision is in [0013 — current contract](0013-runtime-dispatch-contract.md), Decision §8; promotion is referenced directly to 0015 §§2–3. This page keeps its number and dated evidence; the body below is historical, not current policy.
+
+## Historical record (superseded in full)
+
 *Status: accepted 2026-08-27 · owner: architect · amended 2026-09-01:
 `runtimes/` joins the promoted set — the overlay still lives at the home
 and is still the operator's own config root, but it gets there by `posse
