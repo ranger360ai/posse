@@ -140,7 +140,7 @@ func NewModelLister() *ModelLister {
 	return &ModelLister{
 		URL:   ModelListURL,
 		Token: MeterToken("claude"),
-		HTTP:  pinnedClient(modelProbeTimeout, "model list endpoint", ModelListHost),
+		HTTP:  pinnedClient(modelProbeTimeout, "model list endpoint"),
 	}
 }
 
@@ -227,9 +227,10 @@ func (r *ModelLister) getPage(cl *http.Client, url, tok string) (modelPage, erro
 	}
 	defer resp.Body.Close()
 	// A redirect a client without our CheckRedirect followed: the answer
-	// came from a host we do not credential, so it is not an answer — and
-	// an error here is what keeps it out of ModelCache.store.
-	if err := pinnedResponse("model list endpoint", resp, ModelListHost); err != nil {
+	// came from a host we did not ask, so it is not an answer — and an
+	// error here is what keeps it out of ModelCache.store, which has no
+	// MayShare gate behind it (credpin.go rule 3, ranger-base-07ep).
+	if err := pinnedResponse("model list endpoint", resp, askedHost(r.URL)); err != nil {
 		return page, err
 	}
 	if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusServiceUnavailable {

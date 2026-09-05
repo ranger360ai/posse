@@ -13,6 +13,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -225,7 +226,7 @@ func TestARedirectedUsageResponseIsRefused(t *testing.T) {
 func TestThePinnedClientWillNotFollowARedirectOffTheHost(t *testing.T) {
 	t.Parallel()
 	rt := newRedirectTransport("listener.example", "{}")
-	cl := pinnedClient(time.Second, "model list endpoint", ModelListHost)
+	cl := pinnedClient(time.Second, "model list endpoint")
 	cl.Transport = rt.client.Transport
 
 	l := &ModelLister{URL: "http://127.0.0.1:9/v1/models", Token: func() (string, CredMeta, error) { return fakeToken, CredMeta{}, nil }, HTTP: cl}
@@ -484,5 +485,206 @@ func TestAUserinfoSpellingOfTheEndpointIsStillAnOverride(t *testing.T) {
 	}
 	if _, err := os.ReadFile(c.Path); err == nil {
 		t.Error("a userinfo spelling of the endpoint published to the instance's snapshot")
+	}
+}
+
+// ─── ranger-base-07ep: belt 3 is the host that was ASKED ─────────────────────
+//
+// Rules 2 and 3 used to share reachHost — "the compiled-in host OR this
+// machine" — which is the right SET for where a reader may be POINTED and
+// the wrong one for which host may ANSWER. Under it a 302 from
+// api.anthropic.com to a listener on 127.0.0.1 was both followed and
+// believed, and neither sink behind belt 3 would have caught it: the reader
+// that followed the redirect IS the compiled-in one, so rule 5's store gate
+// is open, and ModelCache.store has no store gate at all.
+//
+// The precondition is control of the network path or of the upstream (a
+// trusted CA, DNS + TLS interception, a compromised endpoint, an operator's
+// proxy) rather than the env var and socket dr6u closed, which is what makes
+// this hardening rather than exploit-now — and no reason at all to leave a
+// belt that says "the answer came from where I asked" not doing that.
+//
+// Every transport below redirects to a LOOPBACK authority. That is the
+// point: loopback is exactly the host the old rule waved through, so a
+// listener.example target would pass these tests against the bug.
+
+// The pinned client does not dial the redirect at all, and nothing reaches
+// the catalog on disk. rt.asked is the assertion that carries it: the second
+// host was never asked, which is what "refused before dialing" means from
+// the listener's side.
+func TestTheEndpointMayNotRedirectTheCatalogToThisMachine(t *testing.T) {
+	t.Parallel()
+	a := preflightApp(t)
+	rt := newRedirectTransport("127.0.0.1:9", `{"data":[{"id":"probe-model"}],"has_more":false}`)
+	cl := pinnedClient(time.Second, "model list endpoint")
+	cl.Transport = rt.client.Transport
+	a.ModelLister = &ModelLister{
+		URL:   ModelListURL, // the compiled-in endpoint, not an override
+		Token: func() (string, CredMeta, error) { return fakeToken, CredMeta{}, nil },
+		HTTP:  cl,
+	}
+
+	if ids, ok := a.ModelCache().Models(time.Hour); ok {
+		t.Fatalf("a catalog redirected to this machine was believed: %v", ids)
+	}
+	if rt.asked {
+		t.Error("the loopback redirect target was dialed — the pinned client must refuse first")
+	}
+	b, err := os.ReadFile(filepath.Join(a.StateDir, "model-catalog.json"))
+	if err == nil && strings.Contains(string(b), "probe-model") {
+		t.Errorf("the redirected answer was cached: %s", b)
+	}
+	log, _ := os.ReadFile(filepath.Join(a.StateDir, "model-catalog.log"))
+	if !strings.Contains(string(log), "127.0.0.1") || !strings.Contains(string(log), "refused") {
+		t.Errorf("the refusal must be diagnosable in the probe log:\n%s", log)
+	}
+	if strings.Contains(string(log), fakeToken) {
+		t.Errorf("the probe log contains the credential: %s", log)
+	}
+}
+
+// And the second line holds on its own. An injected client without our
+// CheckRedirect follows the 302 and gets its 200, so rt.asked is TRUE here
+// on purpose: this arm is about the answer that came back, and belt 3 is
+// the only thing between it and model-catalog.json.
+func TestACatalogAnsweredByThisMachineIsNotAnAnswer(t *testing.T) {
+	t.Parallel()
+	a := preflightApp(t)
+	rt := newRedirectTransport("127.0.0.1:9", `{"data":[{"id":"probe-model"}],"has_more":false}`)
+	a.ModelLister = &ModelLister{
+		URL:   ModelListURL,
+		Token: func() (string, CredMeta, error) { return fakeToken, CredMeta{}, nil },
+		HTTP:  rt.client,
+	}
+
+	if ids, ok := a.ModelCache().Models(time.Hour); ok {
+		t.Fatalf("a catalog redirected to this machine was believed: %v", ids)
+	}
+	if !rt.asked {
+		t.Fatal("setup: the loopback target was never asked, so belt 3 is not what refused")
+	}
+	b, err := os.ReadFile(filepath.Join(a.StateDir, "model-catalog.json"))
+	if err == nil && strings.Contains(string(b), "probe-model") {
+		t.Errorf("the redirected answer was cached: %s", b)
+	}
+}
+
+// The plan sink, and the arm that shows belt 3 is not redundant with rule
+// 5: this reader is the compiled-in one, so MayShare() is true and the
+// store gate is standing wide open. `$StateDir/plan-usage.json` is read by
+// every posse process on the instance for the TTL (rangerhq-tdy8), and 0%
+// disarms the plan guard for all of them.
+func TestAUsageAnswerFromThisMachineNeverBecomesTheFleetsFact(t *testing.T) {
+	t.Parallel()
+	rt := newRedirectTransport("127.0.0.1:9", `{"five_hour":{"utilization":0},"seven_day":{"utilization":0}}`)
+	r := &AnthropicPlanReader{
+		URL:    PlanUsageURL,
+		Shared: true, // the compiled-in reader: rule 5 does not stand here
+		Token:  func() (string, CredMeta, error) { return fakeToken, CredMeta{}, nil },
+		HTTP:   rt.client,
+	}
+	if !r.MayShare() {
+		t.Fatal("setup: this arm is only interesting while the store gate is open")
+	}
+	dir := t.TempDir()
+	c := &PlanCache{
+		Path:   filepath.Join(dir, "plan-usage.json"),
+		Log:    filepath.Join(dir, "plan-usage.log"),
+		Caller: "cost",
+		Reader: r,
+	}
+	seed := `{"at":"` + time.Now().UTC().Format(time.RFC3339Nano) + `","windows":[{"name":"5h","pct":42},{"name":"7d","pct":61}]}`
+	if err := os.WriteFile(c.Path, []byte(seed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, err := c.Read(0)
+	var pin *PinRefusal
+	if !errors.As(err, &pin) {
+		t.Fatalf("Read error = %v, want a *PinRefusal", err)
+	}
+	if !pin.Redirect || !strings.Contains(err.Error(), "127.0.0.1") {
+		t.Errorf("the refusal must say a redirect took it elsewhere: %q", err)
+	}
+	got, _ := os.ReadFile(c.Path)
+	if !strings.Contains(string(got), `"pct":42`) || strings.Contains(string(got), `"pct":0`) {
+		t.Errorf("a redirected answer overwrote the fleet's reading: %s", got)
+	}
+}
+
+// The rule is symmetric, and the symmetry is what makes it "the host you
+// asked" rather than a second spelling of "the compiled-in host": a
+// loopback override may not be answered by api.anthropic.com either.
+// Nobody is attacked by this direction — it is here because a rule with one
+// arm is a coincidence.
+func TestALoopbackOverrideMayNotBeAnsweredByTheEndpoint(t *testing.T) {
+	t.Parallel()
+	rt := newRedirectTransport(PlanUsageHost, `{"five_hour":{"utilization":1}}`)
+	r := &AnthropicPlanReader{
+		URL:   "http://127.0.0.1:9/usage",
+		Token: refusingToken(t), // an override is uncredentialed (rule 4)
+		HTTP:  rt.client,
+	}
+	_, err := r.Read()
+	var pin *PinRefusal
+	if !errors.As(err, &pin) || !pin.Redirect {
+		t.Fatalf("Read error = %v, want a redirect *PinRefusal", err)
+	}
+	if !strings.Contains(err.Error(), PlanUsageHost) {
+		t.Errorf("the refusal must name the host that answered: %q", err)
+	}
+}
+
+// The control, so this is not read as "refuse every redirect": a path-only
+// redirect on the SAME host is the endpoint moving its own URL, and it is
+// still followed. Over a real socket, because a fake transport cannot tell
+// a redirect that was followed from one that was answered where it stood.
+func TestAPathOnlyRedirectOnTheSameHostIsStillFollowed(t *testing.T) {
+	t.Parallel()
+	var paths []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		if r.URL.Path != "/v2/models" {
+			http.Redirect(w, r, "/v2/models", http.StatusFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"data":[{"id":"probe-model"}],"has_more":false}`))
+	}))
+	defer srv.Close()
+
+	l := &ModelLister{
+		URL:   srv.URL + "/v1/models",
+		Token: func() (string, CredMeta, error) { return fakeToken, CredMeta{}, nil },
+		HTTP:  pinnedClient(5*time.Second, "model list endpoint"),
+	}
+	ids, err := l.List()
+	if err != nil {
+		t.Fatalf("a same-host redirect must still be followed: %v", err)
+	}
+	if len(ids) != 1 || ids[0] != "probe-model" {
+		t.Errorf("List = %v, want the catalog behind the redirect", ids)
+	}
+	if len(paths) != 2 {
+		t.Errorf("the server saw %v, want the redirect and the answer", paths)
+	}
+}
+
+// A want nobody could name is not a want everybody satisfies. An
+// unparseable configured URL yields an empty asked host, and belt 3 refuses
+// on it rather than waving it through — the direction a belt is allowed to
+// be wrong in.
+func TestAnAnswerIsRefusedWhenTheAskedHostIsUnknown(t *testing.T) {
+	t.Parallel()
+	if got := askedHost("://not a url"); got != "" {
+		t.Errorf("askedHost(garbage) = %q, want empty", got)
+	}
+	u, err := url.Parse("https://" + ModelListHost + "/v1/models")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp := &http.Response{Request: &http.Request{URL: u}}
+	if err := pinnedResponse("model list endpoint", resp, ""); err == nil {
+		t.Error("an empty asked host accepted an answer — belt 3 must fail closed")
 	}
 }

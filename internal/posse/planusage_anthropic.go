@@ -143,7 +143,7 @@ func NewAnthropicPlanReader() *AnthropicPlanReader {
 	r := &AnthropicPlanReader{
 		URL:   PlanUsageURL,
 		Token: MeterToken("claude"),
-		HTTP:  pinnedClient(10*time.Second, "usage endpoint", PlanUsageHost),
+		HTTP:  pinnedClient(10*time.Second, "usage endpoint"),
 	}
 	if raw := os.Getenv("RHQ_PLAN_USAGE_URL"); raw != "" {
 		if u, err := loopbackOverride("RHQ_PLAN_USAGE_URL", raw); err != nil {
@@ -231,8 +231,10 @@ func (r *AnthropicPlanReader) Read() (PlanUsage, error) {
 	}
 	defer resp.Body.Close()
 	// A redirect a client without our CheckRedirect followed: the answer
-	// came from a host we do not credential, so it is not an answer.
-	if err := pinnedResponse("usage endpoint", resp, PlanUsageHost); err != nil {
+	// came from a host we did not ask, so it is not an answer — and this
+	// reader IS the compiled-in one, so without it a 302 to a listener
+	// would have been the fleet's fact (credpin.go rule 3, ranger-base-07ep).
+	if err := pinnedResponse("usage endpoint", resp, askedHost(r.URL)); err != nil {
 		return nil, err
 	}
 	if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusServiceUnavailable {

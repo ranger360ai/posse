@@ -182,7 +182,7 @@ func TestPinnedClientRefusesARedirectBeforeDialingIt(t *testing.T) {
 	l := &ModelLister{
 		URL:   w.URL + "/v1/models",
 		Token: func() (string, CredMeta, error) { return fakeToken, CredMeta{}, nil },
-		HTTP:  pinnedClient(30*time.Second, "model list endpoint", ModelListHost),
+		HTTP:  pinnedClient(30*time.Second, "model list endpoint"),
 	}
 	start := time.Now()
 	_, err := l.List()
@@ -208,7 +208,7 @@ func TestPinnedClientRefusesARedirectBeforeDialingIt(t *testing.T) {
 }
 
 // WHAT THIS FILE CLAIMS, AND WHAT IT STILL DOES NOT (ranger-base-8rff's
-// verdict, closed by ranger-base-dr6u).
+// verdict, closed by ranger-base-dr6u and ranger-base-07ep).
 //
 // It used to end here saying the loopback half was a narrowed hole rather
 // than a closed one: loopback is honoured by NAME because a test server is
@@ -218,9 +218,22 @@ func TestPinnedClientRefusesARedirectBeforeDialingIt(t *testing.T) {
 // for one, and the answer an override gives is not written to the snapshot
 // the rest of the fleet reads (credpin.go rules 4 and 5).
 //
-// What is still not claimed: belt 3 accepts an answer from loopback when
-// the request went to the compiled-in host, so a redirect from a
-// compromised or intercepted upstream to a local listener would still be
-// decoded and — because that reader IS the compiled-in one — cached. That
-// needs control of the network or of api.anthropic.com, not an env var, so
-// it is a separate finding rather than part of this one.
+// The paragraph below it named the second gap: belt 3 accepted an answer
+// from loopback when the request had gone to the compiled-in host, so a
+// redirect from a compromised or intercepted upstream to a local listener
+// was decoded and — because that reader IS the compiled-in one, and because
+// ModelCache.store has no share gate at all — cached. That is inverted too
+// (ranger-base-07ep). Rule 3 no longer asks reachHost's "compiled-in OR
+// this machine"; it asks whether the host that answered is the host this
+// reader ASKED, so a redirect must stay on its own host in both directions.
+// The pins are in credpin_test.go under that bead's heading, with a mutant
+// restoring the old rule reddening exactly the three arms that name it, and
+// a path-only same-host redirect still followed as the control.
+//
+// What is still not claimed, and is deliberate rather than pending: the
+// unit of rule 3 is the HOSTNAME, so one loopback listener redirecting to
+// another loopback listener is not refused by it. Reaching that needs the
+// reader already pointed at a listener the caller chose, which is rules 4
+// and 5's ground — no credential goes there and its answer is not the
+// fleet's fact. Comparing host:port instead would refuse a plain
+// `https://host` → `https://host:443` as an outage in front of a launch.
