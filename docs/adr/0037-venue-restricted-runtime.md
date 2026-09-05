@@ -128,7 +128,7 @@ problem.
 - `runtimeYamlKeys()` (internal/rhq/runtimeyaml.go:103) lacks
   `unattended:` and `project_config_keys:` — the ncxa remainder, per
   laurie's 2026-08-29 measurement on that bead.
-- Live RHQ_HOME is `~/.config/posse`; `~/src/ranger-base/rhq` is a
+- Live RHQ_HOME is `~/.config/posse`; `$CONSTITUTION/rhq` is a
   tracked copy that personas sweep into it — the basis for §1's
   corollary.
 

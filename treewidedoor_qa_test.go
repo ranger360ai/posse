@@ -652,9 +652,23 @@ func TestQAEveryTreeWidePinHasADoor(t *testing.T) {
 	wantOps := []string{
 		"TestQAEveryOpsHitInTrackedMarkdownIsRuled",
 		"TestQAOpsShapeTableCanStillSayNo",
+		// The instance path-form census and its control, taught here rather
+		// than moved in quietly (ranger-base-l9ii). Same door because it is
+		// the same question — ADR 0024 D1 ops residue in the public tree —
+		// asked of every tracked FILE rather than of tracked markdown: this
+		// deployment's constitution checkout written as a live path
+		// (`~/src/…`, `$HOME/src/…`), dispositioned per file. And it belongs
+		// in a named membership for the same reason the four above do: it
+		// reads the tree through `git ls-files`, so in the `git archive`
+		// scratch tree arm 3 works in it finds no checkout and skips, and
+		// arm 3 cannot plant drift for it there. Its door is shown able to
+		// fail by its own control instead, which drives the matcher on
+		// planted lines.
+		"TestInstancePathFormNeverAppearsInTrackedContentUndispositioned",
+		"TestQAInstancePathCensusCanStillSayNo",
 	}
 	if got := twdVar(t, src, "QA_OPS_PINS"); !twdSameSet(got, wantOps) {
-		t.Errorf("$(QA_OPS_PINS) = %v, want exactly %v — the ops-residue census over every tracked markdown file and the control that says its shape table can still say no. The census reads the tree with git, so arm 3 cannot plant drift for it in a copied tree; a new entry needs its own arm.", got, wantOps)
+		t.Errorf("$(QA_OPS_PINS) = %v, want exactly %v — the ops-residue census over every tracked markdown file, the instance path-form census over every tracked file, and the control beside each that says it can still say no. Both censuses read the tree with git, so arm 3 cannot plant drift for them in a copied tree; a new entry needs its own arm.", got, wantOps)
 	}
 
 	names, funcs := twdTreeWideTests(t)

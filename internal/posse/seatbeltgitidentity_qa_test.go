@@ -106,8 +106,8 @@ func giNewFixture(t *testing.T) giFixture {
 		mustGit(t, r, "add", "README")
 		mustGit(t, r, "commit", "-q", "-m", "seed")
 	}
-	// The store of record, reached by a redirect the way ~/src/posse
-	// reaches ~/src/ranger-base/.beads.
+	// The store of record, reached by a redirect the way a work repo
+	// reaches the shared store's .beads.
 	sbMkdir(t, filepath.Join(store, beadsDirName))
 	sbMkdir(t, filepath.Join(work, beadsDirName))
 	sbWrite(t, filepath.Join(work, beadsDirName, beadsRedirect), filepath.Join(store, beadsDirName)+"\n")

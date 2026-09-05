@@ -46,7 +46,7 @@ home the operator actually has. Two things needed it:
     live `~/.posse` — and it checks that by comparing `$HOME` against the real
     one. The guarantee moved from the helper to `TestMain`; the pin still
     measures it, by running `EnsureSessionTree` for real.
-  - `qcRunbook` reads `~/src/ranger-base/docs/runbooks/queue-cutover.md`, a
+  - `qcRunbook` reads `$CONSTITUTION/docs/runbooks/queue-cutover.md`, a
     tree that lives outside the checkout, and skips when it is absent. On a
     temp `$HOME` that skip fires on every box — a green suite measuring
     nothing. It reads `operatorHome` now.

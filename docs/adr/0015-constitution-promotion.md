@@ -716,7 +716,7 @@ ADR blocks the parallel beads already running (dk5, w1b, g7lt).
    repo and no push. *(Unverified until the cutover rehearsal, §4.)*
 7. Envs after the window (§7): `~/.config/posse/envs` is 0700, each
    `.env` 0600, and `posse` lists the same four set names the old home
-   had; `~/src/ranger-base/rhq/envs/` holds no `.env` files;
+   had; `$CONSTITUTION/rhq/envs/` holds no `.env` files;
    `home/envs` appears in **no** entry of the manifest; corrupting an
    env file does *not* trip the launch verify (it is out of scope by
    design); with `default_env:` naming a missing set, promote prints

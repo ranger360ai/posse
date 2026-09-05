@@ -3467,8 +3467,8 @@ Three different things get called "permissions"; keep them apart
   bd calls that go over the daemon socket keep working, which is what
   makes the failure quiet. Same resolver `beadsHome` gives the census and
   codex's `--add-dir` (ranger-base-0fb). Verified on this host under the
-  rendered profile: `touch` in `~/src/ranger-base/.beads` and `.git`
-  succeeds, `touch ~/src/ranger-base/x` → Operation not permitted, and
+  rendered profile: `touch` in `$CONSTITUTION/.beads` and `.git`
+  succeeds, `touch $CONSTITUTION/x` → Operation not permitted, and
   `bd export -o` — the command that failed on the db file — exits 0.
   Path-scoped denies (`Edit(docs/adr/**)`) are **ADR 0014**: a
   subtree file-write deny, realized by a trailing SBPL `subpath` deny
@@ -4433,6 +4433,53 @@ owner's content out of a public repo is the routing rule plus repo
 visibility; a confidential name nobody thought to add is exactly the case a
 pattern list cannot see.
 
+**The private repo's NAME is not a class; its PATH FORM is** (ruled
+ranger-base-nhvr, operator ranger-base-292z, implemented ranger-base-l9ii).
+The retired seed preflight's check 4 carried a prose arm — *the private
+repo's name may not appear in public text* — that nothing has enforced since
+the seed script was retired, and it is now retired as a rule rather than
+revived. Three grounds, all of them the security reviewer's own: the bare
+name grants no capability (the rangerhq-yv11 ruling, unchanged); it is
+irrecoverably public and load-bearing here — every bead marker, every commit
+subject and `HISTORY.md` carry it, 1679 inert markers at the sweep — and
+yv11's forward-closed clause ("new public text cites public ids") is
+acknowledged dead, because no public tracker was ever stood up and the
+marker convention is live practice, not legacy. A check keyed on the bare
+name would be measuring 1679 legitimate markers to find a handful of real
+hits, which is the wrong instrument.
+
+What stays binding, unweakened, on every commit into this repo is the
+content classes above — no cost/plan/spend figures, no credential values or
+topology, no operator identity, accounts or habits, and no live
+deployment-posture assertions. **Instance particulars are the class; the
+name never was.** And a live checkout path *is* a particular: `~/src/<the
+instance repo>` is this deployment's topology, not any deployer's. So:
+
+- **New doc, comment and script text names the instance's trees by
+  variable, not by this box's path** — `$CONSTITUTION` for the constitution
+  repo and `$QUEUE` for the shared queue, the spelling
+  `scripts/queue-cutover.sh` already uses for its own overridable defaults;
+  `examples/config.yaml` writes the same idea as a placeholder
+  (`constitution: ~/src/<your instance repo>/posse`) and either is fine.
+  This is the restrictive default made standing by the operator's ruling on
+  ranger-base-292z, which called the cutover runbooks product docs: keep
+  them public, de-instance the paths, accept the already-burned history,
+  no purge. Two days later ADR 0024 D4 moved those three runbooks to the
+  instance tree anyway, as one-deployment procedures (commit 92e67bd,
+  triaged on ranger-base-yheoa) — so what the ruling's de-instance half
+  covers here is everything ELSE the sweep found, and its restrictive
+  default is what stands for new text.
+- **The standing check is `make ops-check`**
+  (`TestInstancePathFormNeverAppearsInTrackedContentUndispositioned`,
+  `internal/posse/instancepath_qa_test.go`): the live path form in any
+  tracked file, dispositioned per path with a reason, and red for anything
+  past that set. It is a census and not a one-shot sweep on purpose — the
+  class regenerated 58→60 occurrences in a single day while nhvr was open,
+  so a sweep with nothing holding it is a measurement with a shelf life.
+- The absolute spelling (`/Users/<you>/src/…`) is *not* this check's — it
+  carries the box's username, so it is check 3's identity literal and is
+  held by `make identity-check`, tree-wide, with its own dispositioned set.
+
 ## beads (bd) substrate: pinned at 0.50.3, 0.51+ is a migration (rangerhq-f49)
 
 **What is running, 2026-09-01.** `bd` **0.50.3**, SQLite, no daemon. Bumped
@@ -5127,7 +5174,7 @@ Where they landed:**
 
 1. **APPLIED 2026-08-27, by the operator, projection committed at `f9894bf`.**
    The runbook was `scripts/prune-bd-relates-to.sh` (read the plan) →
-   `--apply` from `~/src/ranger-base` → `bd sync --flush-only` → commit
+   `--apply` from `$CONSTITUTION` → `bd sync --flush-only` → commit
    `.beads/issues.jsonl`, without which an import can put the rows back.
    The classifier denies `--apply` from a persona session — it is a deletion
    on live state — so this is the operator's own shell, by design, and the

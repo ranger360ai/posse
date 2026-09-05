@@ -265,7 +265,7 @@ func TestQAHookFreshnessCatchesAHookThatRefusesTheSafeFormToo(t *testing.T) {
 // constitution arm, which reads exactly that, the fabricated safe form was
 // refused for touching the whole class. Measured on the live box
 // 2026-08-29: `a path-limited commit is refused too — the safe form has no
-// way through` in ~/src/ranger-base and ~/src/posse, the two configured
+// way through` in the constitution repo and ~/src/posse, the two configured
 // repos that carry class paths, and in neither of the two that do not.
 //
 // The rig's other repos have no commits, where an empty index is what git

@@ -8,7 +8,7 @@ package posse
 // create (which refreshes the COMMON hooks dir of the repo it was cut from,
 // and no other) and a typed `posse gates install-hooks` re-render one. So the
 // wall exists where sessions launch and goes stale everywhere else — and
-// ~/src/ranger-base, which HOLDS the constitution, holds no session. Its
+// the constitution repo, which HOLDS the promoted set, holds no session. Its
 // prepare-commit-msg waved a promoted-class commit through hours after
 // ranger-base-ak3e shipped the arm that refuses exactly that. probeL3Hooks
 // already asks the right question (ADR 0023: identity at the dispatch path,

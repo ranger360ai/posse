@@ -13,7 +13,7 @@ the repo not the home, and two numbers were wrong.*
 
 ## Context
 
-The instance repo `~/src/ranger-base` holds the promoted set under one
+The instance repo (`$CONSTITUTION` below) holds the promoted set under one
 directory: `rhq/agents`, `rhq/config.yaml`, `rhq/recipes`, `rhq/runtimes`,
 `rhq/skills`, plus the never-promoted `rhq/personas` (memory, ADR 0015 §5),
 `rhq/envs` (secrets, §7) and `rhq/state` (a machine-local relic, last
@@ -29,7 +29,7 @@ What actually reads the name — MEASURED at HEAD 6eafbaa unless marked:
 | reader | where | what it does with `rhq` |
 |---|---|---|
 | `ConstitutionSourceDir = "rhq"` | `promote.go:89` | the ONE constant; `ConstitutionRepoPaths`, `ConstitutionRepoMarker` (`rhq/agents`), the hook's constitution arm (`gates.go` constitutionGuardBody), the launcher's land belt (`ConstitutionClassIn`) and the land refusal (`worktree.go:884`) all derive from it |
-| the installed `prepare-commit-msg` in `~/src/ranger-base/.git/hooks` | rendered from the binary | tests for the marker on disk OR in the base tree; a copy stays as rendered until `posse gates install-hooks` re-renders it |
+| the installed `prepare-commit-msg` in `$CONSTITUTION/.git/hooks` | rendered from the binary | tests for the marker on disk OR in the base tree; a copy stays as rendered until `posse gates install-hooks` re-renders it |
 | `promoted.json` | `source: …/ranger-base/rhq` | read ONLY by `resolvePromoteSource`, which prefers it over config `constitution:`; the manifest's file keys are constitution-relative (`agents/dinesh.md`), so the launch verify (`VerifyPromoted`) never sees the directory name |
 | `config.yaml` `constitution:` | the home | fallback source for a bare `posse promote`, behind the manifest's own record |
 | `~/.config/posse/personas` | ONE symlink → `…/ranger-base/rhq/personas` | `RHQ_PERSONA_DIR` is `$RHQ_HOME/personas/<p>` through it; the seatbelt resolves it at every render (`seatbelt.go:1061`, into `state/gates/<p>/seatbelt.sb`) |
@@ -45,7 +45,7 @@ refusal at all. What it does do is listed under Decision, item 3.
 
 ## Decision
 
-1. **The directory is `posse/`.** `~/src/ranger-base/posse/<p>` promotes
+1. **The directory is `posse/`.** `$CONSTITUTION/posse/<p>` promotes
    to `~/.config/posse/<p>`: the same name and layout on both sides of the
    copy, so the manifest's key `agents/dinesh.md` reads the same whichever
    tree you are standing in. It is the name of the tool whose layout the
@@ -77,7 +77,7 @@ refusal at all. What it does do is listed under Decision, item 3.
       commit here would be refused by the old hook and is not wanted.
       `rhq/.DS_Store` is untracked and not ignored on this box, so it is
       removed before the `add -A`, not committed;
-   3. `posse gates install-hooks ~/src/ranger-base` — the wall is closed
+   3. `posse gates install-hooks $CONSTITUTION` — the wall is closed
       again the moment this writes. **The window opens at the `mv`, not at
       the commit** — MEASURED: with the directory moved and nothing yet
       committed, a persona commit of `posse/config.yaml` landed at exit 0,
@@ -90,7 +90,7 @@ refusal at all. What it does do is listed under Decision, item 3.
       carry a rendered wall too and re-render the same way; only
       ranger-base has members in the class, and step 6's hook-wall report
       names any that were missed;
-   4. `ln -sfn ~/src/ranger-base/posse/personas ~/.config/posse/personas`
+   4. `ln -sfn $CONSTITUTION/posse/personas ~/.config/posse/personas`
       — from the instant of step 2 until this line every launch would find
       no `ORDERS.md` and the seatbelt's personas grant would resolve
       nowhere;
@@ -101,7 +101,7 @@ refusal at all. What it does do is listed under Decision, item 3.
       is byte-for-byte the constitution's, and the promote overwrites it.
       MEASURED: edited only at the home, the key reverted to the old path
       the moment step 6 ran;
-   6. `posse promote ~/src/ranger-base/posse` — the argument is
+   6. `posse promote $CONSTITUTION/posse` — the argument is
       mandatory this once: a bare promote reads the manifest's old
       `source` and dies "constitution not found" (loud, harmless, and the
       reason no code change is needed there). The manifest now records the

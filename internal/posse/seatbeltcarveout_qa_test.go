@@ -4,7 +4,7 @@ package posse
 // constitution was STRUCTURAL — the allow block simply never named the home
 // (ADR 0015 §2, pinned in seatbeltconstitution_qa_test.go) — and that
 // argument holds only while the constitution is outside every grant. It is
-// not: `~/.config/rhq` is a symlink into `~/src/ranger-base/rhq`, and a
+// not: `~/.config/rhq` is a symlink into the constitution repo's `rhq`, and a
 // session dispatched into THAT repo is granted cwd whole. Measured twice on
 // the live shape (ranger-base-6ne by writing a PID; ranger-base-0djg by
 // rendering a probe home and executing under it): agents/, config.yaml,
@@ -61,8 +61,8 @@ func sbNewFixture(t *testing.T) sbFixture {
 	gates := sbMkdir(t, a.GatesDir("developer"))
 	sbWrite(t, filepath.Join(sbMkdir(t, filepath.Join(gates, "bin")), "git"), "#!/bin/sh\n")
 	sbWrite(t, filepath.Join(sbMkdir(t, filepath.Join(a.GatesDir("devops"), "bin")), "security"), "#!/bin/sh\n")
-	// The store of record, reached by a redirect the way ~/src/posse
-	// reaches ~/src/ranger-base/.beads.
+	// The store of record, reached by a redirect the way a work repo
+	// reaches the shared store's .beads.
 	sbMkdir(t, filepath.Join(store, beadsDirName))
 	sbMkdir(t, filepath.Join(repo, beadsDirName))
 	sbWrite(t, filepath.Join(repo, beadsDirName, beadsRedirect), filepath.Join(store, beadsDirName)+"\n")

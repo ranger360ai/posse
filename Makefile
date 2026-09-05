@@ -343,7 +343,7 @@ QA_SEED_PINS     := TestSeedSurfaceNameCountIsZero|TestSeedConfigLiveKeysAreRead
 QA_HISTORY_PINS  := TestPublicationRootCommitOmitsExcludedPaths|TestPublicationRootCommitADRsCarryProvenance|TestPublicationHistoryNeverCarriesTheSeedScript|TestShippedExampleTableCoversEveryVersionInGitHistory
 QA_DOC_PINS      := TestQANoCodeStringCallsTheDarwinCredentialsFileAStaleLeftover|TestQACageCredDocDoesNotCallTheOnDiskCredentialStale|TestQAADR0036StatusLineDoesNotCarryTheRetractedUnbuiltStamp
 QA_IDENTITY_PINS := TestQAIdentityLiteralsNeverAppearInATrackedPath|TestIdentityLiteralsNeverAppearInTheHarnessRepoUndispositioned
-QA_OPS_PINS      := TestQAEveryOpsHitInTrackedMarkdownIsRuled|TestQAOpsShapeTableCanStillSayNo
+QA_OPS_PINS      := TestQAEveryOpsHitInTrackedMarkdownIsRuled|TestQAOpsShapeTableCanStillSayNo|TestInstancePathFormNeverAppearsInTrackedContentUndispositioned|TestQAInstancePathCensusCanStillSayNo
 
 # The crew-name trio, one door between them because they are one question —
 # does the shipped tree name this instance's crew (ADR 0012 App.A 5) — asked
@@ -409,9 +409,12 @@ doc-check:
 identity-check:
 	$(GOBIN) test ./internal/posse -timeout 15m -count=1 -run '^($(QA_IDENTITY_PINS))$$'
 
-# The ops residue census over every tracked markdown file, and the control
-# that says the shape table can still say no. ~2s. Type it when you write or
-# edit a .md anywhere in the tree.
+# The ops residue census over every tracked markdown file, the instance
+# path-form census over every tracked FILE (ranger-base-l9ii: this
+# deployment's constitution checkout written as a live path, dispositioned
+# per file), and the control beside each that says it can still say no. ~2s.
+# Type it when you write or edit a .md anywhere in the tree, and when you
+# write a path into a doc, a comment or a script.
 ops-check:
 	$(GOBIN) test ./internal/posse -timeout 15m -count=1 -run '^($(QA_OPS_PINS))$$'
 

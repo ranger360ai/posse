@@ -211,7 +211,7 @@ for e in "${entries[@]}"; do
     # constitution arm, which reads exactly that, the fabricated safe form is
     # refused for touching the whole class. MEASURED 2026-08-29: this reported
     # "a path-limited commit is refused too — the safe form has no way through"
-    # in ~/src/ranger-base and ~/src/posse, the two repos that carry class
+    # in the constitution repo and ~/src/posse, the two repos that carry class
     # paths (rhq/agents/** and .claude/settings.json), and nowhere else. A
     # control that cries wolf in the constitution repo is the one place it
     # must not.

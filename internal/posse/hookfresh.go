@@ -20,7 +20,7 @@ import (
 // probeL3Hooks already asks the identity∧behavior question of ADR 0023, but it
 // asks it only of the repo a session is launching into. That is the wall
 // existing exactly where sessions launch, which is the hole this sweep closes:
-// ~/src/ranger-base holds the constitution and holds no session, and its
+// the constitution repo holds the promoted set and holds no session, and its
 // prepare-commit-msg waved a promoted-class commit through hours after the
 // constitution arm shipped because that copy predated it.
 //

@@ -328,7 +328,7 @@ func TestDispatchPassSaysNothingAboutTheQueueBeforeTheCutover(t *testing.T) {
 func TestSeatbeltGrantFollowsTheStoreOutOfTheConstitutionRepo(t *testing.T) {
 	t.Setenv("TMPDIR", "") // the blanket temp grant would cover the fixtures
 
-	constitution := qRepo(t) // stands in for ~/src/ranger-base after the move
+	constitution := qRepo(t) // stands in for the constitution repo after the move
 	queue := qRepo(t)
 	store := filepath.Join(queue, ".beads")
 	work := qWork(t, store) // a project checkout, redirecting to the queue

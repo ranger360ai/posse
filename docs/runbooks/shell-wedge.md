@@ -1,7 +1,7 @@
 # Runbook — a session's Bash tool is wedged
 
 *ranger-base-urnj, cut from the 2026-08-27 fleet-freeze RCA (ranger-base-ernt,
-private tree: `~/src/ranger-base/docs/rca/2026-08-27-fleet-freeze.md`).
+private tree: `$CONSTITUTION/docs/rca/2026-08-27-fleet-freeze.md`).
 Fix: ranger-base-f0ay (ADR 0009 §1). Standing detection: ranger-base-urnj
 (`internal/posse/gateaudit.go`, run every dispatch pass). Load guard:
 ranger-base-innx (`internal/posse/loadguard.go`).*
