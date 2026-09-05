@@ -8,7 +8,7 @@ package posse
 //	--allow-stale — and the store posse tells the CAGE about is the one bd
 //	actually opens.
 //
-//	RHQ_LIVE_BD=1 go test ./internal/rhq -run TestLiveWorktree -v
+//	RHQ_LIVE_BD=1 go test ./internal/posse -run TestLiveWorktree -v
 //
 // Env-gated and skipped by default, like the other live pins: it shells out
 // to the operator's bd, which has a version, a daemon and a cache, and none
@@ -69,6 +69,31 @@ package posse
 // is both the class these findings were measured on and the class posse
 // actually runs against.
 //
+// WHICH CLAIMS ARE DATABASE-MODE ONLY, AND WHAT CLOSES THE REST (measured
+// 2026-09-04, bd 0.50.3 — ranger-base-e3ima, ADR 0055). Read the paragraph
+// above as scoped: every "one graph" finding in this file — the worktree
+// resolution, the redirect precedence, the AGREEMENT arm, the staleness trap
+// — is a finding about bd in DATABASE mode. None of them holds when bd is in
+// no-db mode, and no-db is a MODE rather than a class: `no-db: true` in the
+// store's config.yaml is one door, `--no-db` on the command line is another,
+// and posse opens that one itself on every caged session (CageBdFlags,
+// cageinner.go), over whatever class the store happens to be. So at the
+// container tier the fork is the shipped configuration, not an accident of
+// how somebody's `bd init` went. TestLiveWorktreeNoDbStoreForksTheGraph runs
+// both doors.
+//
+// What closes it is the launch ENVIRONMENT and not this file: every session
+// posse launches carries `BEADS_DIR=beadsHome(dir)` (planLaunch,
+// herdrback.go; ADR 0055 D1), and with it the no-db create from the worktree
+// lands in the MAIN store and the worktree's `bd list` reads it back — on
+// both doors, which is the second arm of each cell there. The variable is
+// shown not to move the database class in TestLiveWorktreeSharesOneGraph,
+// whose "filed from the worktree" arm runs once more under it: same rows,
+// same database, no staleness warning, no database of the worktree's own.
+// What no pin here can fix is a `bd` run with the variable shed (`env -u
+// BEADS_DIR`, `env -i`) — the resolution is bd's, and seedBeadsRedirect is
+// already naming the right directory.
+//
 // Also measured 2026-08-25, and still true: the worktree's own checked-out
 // issues.jsonl, materialized with a fresh mtime, raises no staleness warning
 // however far forward its mtime is moved — bd checks the jsonl beside the
@@ -106,19 +131,74 @@ import (
 // cleanup instead.)
 func liveBd(t *testing.T) func(dir string, args ...string) (string, error) {
 	t.Helper()
+	run := liveBdEnv(t)
+	return func(dir string, args ...string) (string, error) {
+		return run(nil, dir, args...)
+	}
+}
+
+// liveBdEnv is liveBd with extra environment for the one call, because from
+// ADR 0055 D5 onward the environment is the subject: `BEADS_DIR` is the whole
+// difference between an arm where the graph forks and an arm where it does
+// not, so a runner that cannot vary it cannot ask the question. Appended
+// LAST, so it beats whatever `os.Environ` carried in — the same precedence
+// planLaunch gives it over the env sets (herdrback.go).
+//
+// The value handed in is always `beadsHome(<the session tree>)`, never a path
+// typed at the call site: that is what planLaunch computes, and a literal
+// would pin the fixture's own arithmetic instead of the resolver's (D5 item
+// 3).
+//
+// One trap worth naming, since every store here lives in a t.TempDir: bd
+// refuses a `BEADS_DIR` under its unsafe prefixes, and `/private` — what
+// macOS resolves a temp dir through — is one of them. It does not fire here
+// because `isPathInSafeBoundary` allows anything under the resolved
+// `os.TempDir()` first (read in bd 0.49.1's internal/beads/context.go;
+// measured on 0.50.3: a `BEADS_DIR` under /var/folders is accepted by `where`
+// and by `create`). bd reads its OWN os.TempDir, so the escape holds only
+// while t.TempDir and bd agree on $TMPDIR — a GOTMPDIR that moves t.TempDir
+// out from under $TMPDIR would land these arms on "BEADS_DIR points to unsafe
+// location", which is the fixture talking and not the claim.
+func liveBdEnv(t *testing.T) func(env []string, dir string, args ...string) (string, error) {
+	t.Helper()
 	if os.Getenv("RHQ_LIVE_BD") == "" {
 		t.Skip("set RHQ_LIVE_BD=1 (shells out to the real bd)")
 	}
 	if _, err := exec.LookPath("bd"); err != nil {
 		t.Skip("no bd on PATH")
 	}
-	return func(dir string, args ...string) (string, error) {
+	return func(env []string, dir string, args ...string) (string, error) {
 		cmd := exec.Command("bd", append([]string{"--no-daemon"}, args...)...)
 		cmd.Dir = dir
-		cmd.Env = append(os.Environ(), "PATH="+PathOutsideGates(""))
+		cmd.Env = append(append(os.Environ(), "PATH="+PathOutsideGates("")), env...)
 		out, err := cmd.CombinedOutput()
 		return string(out), err
 	}
+}
+
+// beadsDirEnv is the launch's own answer for a session tree, in the form bd
+// reads it. Fatals rather than returning a wrong one: an arm whose BEADS_DIR
+// names the worktree's own `.beads` IS the fork, and would pass the "the row
+// is in the worktree jsonl" half of every cell below while proving nothing.
+//
+// The guard is not theoretical, and a mutant is what said so (2026-09-04,
+// ranger-base-e3ima): with `BEADS_DIR` pointed at the worktree's own `.beads`
+// the DATABASE-class arm still passes, because bd's redirect detection runs
+// against a pre-set `BEADS_DIR` too (bd-wayc3, ADR 0055 Consequences) and the
+// redirect posse seeded there hands it back to the main store. Only the no-db
+// cells go red, because no-db mode reads no redirect at all. So a wrong value
+// here is caught by half the pins in this file and not the other half — which
+// is exactly the shape a guard is for.
+func beadsDirEnv(t *testing.T, tree, mainRepo string) []string {
+	t.Helper()
+	home := beadsHome(tree)
+	if !isDirPath(home) {
+		t.Fatalf("beadsHome(%s) answers %q, which is not a directory — planLaunch would set no BEADS_DIR at all and this arm has nothing to measure", tree, home)
+	}
+	if got, want := resolveExisting(home), resolveExisting(filepath.Join(mainRepo, ".beads")); got != want {
+		t.Fatalf("beadsHome(%s) answers %q, not the main checkout's %q — the env below would carry the fork rather than the fix", tree, got, want)
+	}
+	return []string{"BEADS_DIR=" + home}
 }
 
 // stopLeakedDaemons is the backstop, because `--no-daemon` on OUR calls does
@@ -230,6 +310,13 @@ func resolvedBeads(t *testing.T, bd func(string, ...string) (string, error), dir
 	return resolveExisting(w.Path)
 }
 
+// beadsDirWhere is resolvedBeads through a runner carrying environment — the
+// same question, asked of the bd the persona actually runs.
+func beadsDirWhere(t *testing.T, bdEnv func([]string, string, ...string) (string, error), env []string, dir string) string {
+	t.Helper()
+	return resolvedBeads(t, func(d string, args ...string) (string, error) { return bdEnv(env, d, args...) }, dir)
+}
+
 // settleMainCheckout is the control, and it is load-bearing: bd's own
 // pre-commit hook rewrites the main jsonl during the fixture's commit, so the
 // MAIN checkout can be mid-import at this moment. If it is, that is a fact
@@ -249,7 +336,8 @@ func settleMainCheckout(t *testing.T, bd func(string, ...string) (string, error)
 
 func TestLiveWorktreeSharesOneGraph(t *testing.T) {
 	t.Parallel()
-	bd := liveBd(t)
+	bdEnv := liveBdEnv(t)
+	bd := func(dir string, args ...string) (string, error) { return bdEnv(nil, dir, args...) }
 	a := wtApp(t)
 	repo := liveBeadsRepo(t, bd, "in the main checkout")
 
@@ -285,6 +373,52 @@ func TestLiveWorktreeSharesOneGraph(t *testing.T) {
 	}
 	if out, err := bd(repo, "list"); err != nil || !strings.Contains(out, "from the worktree") {
 		t.Errorf("a bead filed in the worktree is not in the main database: %v\n%s", err, out)
+	}
+
+	// The same write once more, this time with the launch's own BEADS_DIR in
+	// the environment (ADR 0055 D1, D5 item 2). Every claim above is a claim
+	// about the DATABASE class, which is the class that already worked and
+	// the class the operator's queue is; D1 sets the variable on every
+	// session regardless of class, so what has to be shown here is that it
+	// moves NOTHING — same rows, same database, no staleness warning, no
+	// database of the worktree's own. bd reaches the same directory through
+	// its BEADS_DIR branch instead of its worktree branch, and ADR 0055 has
+	// this arm marked ASSUMED until this pin turns it.
+	//
+	// The value comes from beadsHome, not from a path spelled out here, so
+	// what this measures is planLaunch's resolver (D5 item 3).
+	env := beadsDirEnv(t, tr.Path, repo)
+	if out, err := bdEnv(env, tr.Path, "create", "filed under BEADS_DIR", "-t", "task"); err != nil {
+		t.Fatalf("bd create in the worktree under %v: %v %s", env, err, out)
+	}
+	// Read from the MAIN checkout, plain: the row has to be in the database
+	// the operator reads, not merely in whatever the variable pointed at.
+	if out, err := bd(repo, "list"); err != nil || !strings.Contains(out, "filed under BEADS_DIR") {
+		t.Errorf("BEADS_DIR moved the write off the main database on the class that already worked: %v\n%s", err, out)
+	}
+	// Same database, by bd's own answer, and the same rows read back.
+	if got, want := resolveExisting(beadsDirWhere(t, bdEnv, env, tr.Path)), resolveExisting(filepath.Join(repo, ".beads")); got != want {
+		t.Errorf("under BEADS_DIR bd resolves %q, not the main checkout's %q", got, want)
+	}
+	out, err = bdEnv(env, tr.Path, "list")
+	if err != nil {
+		t.Fatalf("bd list in the worktree under %v: %v %s", env, err, out)
+	}
+	// Three DISJOINT titles: "from the worktree" is not a prefix of the
+	// BEADS_DIR row's title, so this loop cannot report the plain row as
+	// present because the new one is (contains-hides-a-repeat).
+	for _, want := range []string{"in the main checkout", "from the worktree", "filed under BEADS_DIR"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the worktree does not see %q under BEADS_DIR — the variable moved the rows:\n%s", want, out)
+		}
+	}
+	for _, bad := range []string{"out of sync", "--import-only", "allow-stale", "Fresh clone"} {
+		if strings.Contains(out, bad) {
+			t.Errorf("bd said %q in the worktree under BEADS_DIR — the variable bought a staleness warning the plain arm does not have:\n%s", bad, out)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(tr.Path, ".beads", "beads.db")); err == nil {
+		t.Error("the worktree built a database of its own under BEADS_DIR — the variable forked the class it was meant to leave alone")
 	}
 
 	// AGREEMENT, and this is the arm that fails when seedBeadsRedirect does
@@ -401,59 +535,160 @@ func misdirect(t *testing.T, tree, target string) {
 	}
 }
 
-// The store class the findings above do NOT hold for (measured 2026-09-04,
-// bd 0.50.3 — ranger-base-9lrzx).
+// The store class the findings above do NOT hold for, and the one line of
+// environment that closes it (measured 2026-09-04, bd 0.50.3 —
+// ranger-base-9lrzx for the fork, ranger-base-e3ima for the four cells here).
 //
-// With a no-db (JSONL-only) main checkout, bd resolves the session worktree
-// to the main checkout's `.beads` — `bd where` says so and names posse's
-// redirect as what took it there — and then reads and writes the worktree's
-// OWN `.beads/issues.jsonl` anyway. A bead filed from the worktree is in the
-// worktree's jsonl and never reaches the main one: the graph forks, while
-// the resolution the cage's grant is built from stays perfectly correct.
-// (The read half hides it: the worktree's checked-out jsonl carries the main
+// With bd in NO-DB mode, bd resolves the session worktree to the main
+// checkout's `.beads` — `bd where` says so and names posse's redirect as what
+// took it there — and then reads and writes the worktree's OWN
+// `.beads/issues.jsonl` anyway. A bead filed from the worktree is in the
+// worktree's jsonl and never reaches the main one: the graph forks, while the
+// resolution the cage's grant is built from stays perfectly correct. (The
+// read half hides it: the worktree's checked-out jsonl carries the main
 // checkout's rows by construction, so "the worktree sees the main rows" is
-// true there for a reason that has nothing to do with one graph. Only a
-// write tells the two apart, which is why this pin writes.)
+// true there for a reason that has nothing to do with one graph. Only a write
+// tells the two apart, which is why every cell here writes.)
 //
-// Pinned rather than fixed, because posse cannot fix it: it is bd's own
-// resolution, and the operator's queue is SQLite, where it does not happen.
-// If this goes red, bd has started honouring the redirect in no-db mode too
-// — that is bd fixing it, and the header above and worktree.go's note should
-// then say the class no longer matters.
+// NO-DB IS A MODE, NOT A CLASS, which is why this pin has two doors and not
+// one. `no-db: true` in the store's config.yaml is the door the bead was
+// filed about; `--no-db` on the command line is the door POSSE OPENS ITSELF,
+// on every caged session (CageBdFlags, cageinner.go), over whatever class the
+// store happens to be — so at the container tier the fork is the shipped
+// configuration and not a store-class accident. Both doors are driven below
+// over their own fixture: the first over a `bd init --no-db` store, the
+// second over the SQLite store every other pin in this file uses.
+//
+// And two arms per door, which is the point of the pin rather than a
+// courtesy. The first arm is the fork, and it is what makes the second one
+// mean something: without it, "the row reached the main store" is satisfied
+// by a bd that was never in no-db mode, by a worktree that was never linked,
+// and by a fixture that never wrote. The second arm is ADR 0055 D1 —
+// `BEADS_DIR=beadsHome(<the session tree>)`, the value planLaunch puts in
+// every session's environment, and with it the same create lands in the MAIN
+// store and the worktree's own `bd list` reads it back.
+//
+// MUTATION-CHECKED (rig-must-be-shown-able-to-fail): five mutants, each red
+// at the assertion named for it — drop BEADS_DIR from cell B; point it at the
+// worktree; hand cell A the variable; drop the door's `--no-db`; and, for
+// TestLiveWorktreeSharesOneGraph's own BEADS_DIR arm, point it at a third
+// store. The table is re-run and quoted on ranger-base-e3ima rather than
+// carried here, where nothing re-measures it.
+//
+// So what posse fixed is the LAUNCH, not this: bd's resolution is unchanged,
+// and a `bd` run with the variable shed (`env -u BEADS_DIR`, `env -i`) forks
+// exactly as the first arm of each door does. If the first arm ever goes
+// red, bd has started honouring the redirect in no-db mode too — that is bd
+// fixing it, and this header and worktree.go's note should then say the mode
+// no longer matters.
 func TestLiveWorktreeNoDbStoreForksTheGraph(t *testing.T) {
 	t.Parallel()
-	bd := liveBd(t)
-	a := wtApp(t)
-	repo := liveBeadsRepoOfClass(t, bd, "in the main checkout", "no-db")
-	settleMainCheckout(t, bd, repo)
+	for _, door := range []struct {
+		name  string
+		class string   // what liveBeadsRepoOfClass must BUILD, checked there
+		flags []string // what puts the session's own calls in no-db mode
+	}{
+		// Door 1 (ADR 0055 Context): `no-db: true` in the resolved store.
+		{"no-db in the store config", "no-db", nil},
+		// Door 2, and posse opens it: the cage wrapper's flag, over a
+		// database-class store. Measured at the bd level only — the
+		// container tier cannot run on this box, so this stands in for it.
+		{"flag over a database store", "sqlite", []string{"--no-db"}},
+	} {
+		t.Run(door.name, func(t *testing.T) {
+			t.Parallel()
+			bdEnv := liveBdEnv(t)
+			// bd, plain: the fixture's own calls and the RESOLUTION arm.
+			// The door's flags are what the SESSION runs with, and the
+			// resolution is the same either way — asking `bd where` through
+			// the flag would only measure the flag's own answer.
+			bd := func(dir string, args ...string) (string, error) { return bdEnv(nil, dir, args...) }
+			// door is what a caged session's bd looks like: the flags in
+			// front of the verb, nothing in the environment yet.
+			through := func(env []string, dir string, args ...string) (string, error) {
+				return bdEnv(env, dir, append(append([]string{}, door.flags...), args...)...)
+			}
 
-	tr, err := a.EnsureSessionTree(repo, "s-1", nil)
+			a := wtApp(t)
+			repo := liveBeadsRepoOfClass(t, bd, "in the main checkout", door.class)
+			settleMainCheckout(t, bd, repo)
+
+			tr, err := a.EnsureSessionTree(repo, "s-1", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { stopLeakedDaemons(t, tr.Path) })
+
+			// The resolution is right, and posse's redirect is what did it.
+			if got, want := resolvedBeads(t, bd, tr.Path), resolveExisting(filepath.Join(repo, ".beads")); got != want {
+				t.Fatalf("bd does not resolve the worktree to the main checkout in this shape either: resolved %q, want %q", got, want)
+			}
+			if got := resolveExisting(readRedirect(t, tr.Path)); got != resolveExisting(filepath.Join(repo, ".beads")) {
+				t.Fatalf("posse seeded %q, not the main checkout's `.beads` — this pin is measuring the wrong plant", got)
+			}
+
+			// The jsonl is where the claim lives, on BOTH doors, and it
+			// is the honest reading rather than a convenience: a no-db bd
+			// writes the store's `issues.jsonl` and nothing else. On door 2
+			// the main store also has a `beads.db`, and the routed row is
+			// NOT in it until something imports — so "lands in the main
+			// store" means the directory posse resolved, which is the whole
+			// claim ADR 0055 D1 makes. Asserting on the database instead
+			// would be asserting on bd's import schedule.
+			mainJSONL := filepath.Join(repo, ".beads", "issues.jsonl")
+			treeJSONL := filepath.Join(tr.Path, ".beads", "issues.jsonl")
+
+			// ── cell A: no BEADS_DIR. The write forks, and this is the arm
+			// that has to be able to fail for cell B to say anything.
+			if out, err := through(nil, tr.Path, "create", "forked from the worktree", "-t", "task"); err != nil {
+				t.Fatalf("bd create in the worktree: %v %s", err, out)
+			}
+			if got := readFileString(t, mainJSONL); strings.Contains(got, "forked from the worktree") {
+				t.Errorf("bd now honours the redirect in no-db mode: the graph no longer forks, so this file's header and worktree.go's note are out of date:\n%s", got)
+			}
+			if got := readFileString(t, treeJSONL); !strings.Contains(got, "forked from the worktree") {
+				t.Errorf("the row is in neither jsonl, so the fork is somewhere this pin does not describe:\n%s", got)
+			}
+
+			// ── cell B: the same create, with the launch's own BEADS_DIR.
+			// beadsDirEnv fatals unless the value is the main store, so a
+			// pass here cannot come from an env that named the worktree.
+			env := beadsDirEnv(t, tr.Path, repo)
+			if out, err := through(env, tr.Path, "create", "routed from the worktree", "-t", "task"); err != nil {
+				t.Fatalf("bd create in the worktree under %v: %v %s", env, err, out)
+			}
+			if got := readFileString(t, mainJSONL); !strings.Contains(got, "routed from the worktree") {
+				t.Errorf("%s did not route the write to the main store — ADR 0055 D1 does not close the fork on this bd:\n%s", strings.Join(env, " "), got)
+			}
+			if got := readFileString(t, treeJSONL); strings.Contains(got, "routed from the worktree") {
+				t.Errorf("the write landed in the worktree's own jsonl as well — BEADS_DIR moved the read but not the write-back:\n%s", got)
+			}
+			// Read it back the way the persona would: same door, same env.
+			out, err := through(env, tr.Path, "list")
+			if err != nil {
+				t.Fatalf("bd list in the worktree under %v: %v %s", env, err, out)
+			}
+			if !strings.Contains(out, "routed from the worktree") || !strings.Contains(out, "in the main checkout") {
+				t.Errorf("the worktree does not read back the one graph under BEADS_DIR — the main checkout's row, or its own, is missing:\n%s", out)
+			}
+			// And the fork stays forked: BEADS_DIR is not a repair verb.
+			// This is what says cell A's row was real and not a fixture
+			// artefact that cell B quietly swept up.
+			if strings.Contains(out, "forked from the worktree") {
+				t.Errorf("the row cell A stranded in the worktree jsonl came back under BEADS_DIR — then cell A never measured a fork:\n%s", out)
+			}
+		})
+	}
+}
+
+// readFileString is the jsonl half of the cells above: a missing file is a
+// failure of the fixture, not a row that is absent, and the two must not read
+// alike.
+func readFileString(t *testing.T, path string) string {
+	t.Helper()
+	b, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("reading %s: %v", path, err)
 	}
-	t.Cleanup(func() { stopLeakedDaemons(t, tr.Path) })
-
-	// The resolution is right, and posse's redirect is what did it.
-	if got, want := resolvedBeads(t, bd, tr.Path), resolveExisting(filepath.Join(repo, ".beads")); got != want {
-		t.Fatalf("bd does not resolve the worktree to the main checkout on a no-db store either: resolved %q, want %q", got, want)
-	}
-	if got := resolveExisting(readRedirect(t, tr.Path)); got != resolveExisting(filepath.Join(repo, ".beads")) {
-		t.Fatalf("posse seeded %q, not the main checkout's `.beads` — this pin is measuring the wrong plant", got)
-	}
-
-	// The write is not.
-	if out, err := bd(tr.Path, "create", "from the worktree", "-t", "task"); err != nil {
-		t.Fatalf("bd create in the worktree: %v %s", err, out)
-	}
-	out, err := bd(repo, "list")
-	if err != nil {
-		t.Fatalf("bd list in the main checkout: %v %s", err, out)
-	}
-	if strings.Contains(out, "from the worktree") {
-		t.Errorf("bd now honours the redirect on a no-db store: the graph no longer forks, so this file's header and worktree.go's note are out of date:\n%s", out)
-	}
-	b, err := os.ReadFile(filepath.Join(tr.Path, ".beads", "issues.jsonl"))
-	if err != nil || !strings.Contains(string(b), "from the worktree") {
-		t.Errorf("the row is in neither jsonl, so the fork is somewhere this pin does not describe: %v\n%s", err, b)
-	}
+	return string(b)
 }

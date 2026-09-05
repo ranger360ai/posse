@@ -175,7 +175,33 @@ over a bare jsonl building `beads.db`. Read in bd 0.49.1's source:
 MEASURED by ranger-base-9lrzx/yijws (dinesh): the database class holds
 every one-graph finding on 0.50.3 (the operator's queue is that class).
 
+MEASURED by ranger-base-e3ima (dinesh), which is D5's live half and turns
+one of the assumptions below: `worktreelive_test.go` under `RHQ_LIVE_BD=1`
+against real linked worktrees, bd 0.50.3, every call `--no-daemon`. All
+four cells of D5 item 1 pass — both no-db doors (`no-db: true` in the
+store, and `--no-db` over a database-class store), each with the fork arm
+and the `BEADS_DIR` arm — and each arm is shown able to fail by mutation
+(drop the variable; point it at the worktree; give the fork arm the
+variable; drop the `--no-db` flag). The database-class arm re-run under
+`BEADS_DIR` (D5 item 2) passes: same rows, same directory by `bd where`,
+no staleness warning, no database of the worktree's own. The value in
+every arm is `beadsHome(<the session tree>)`, the resolver planLaunch
+calls, not a path spelled out in the test (D5 item 3).
+
+Also measured there, and it is why the test guards its own env value: with
+`BEADS_DIR` pointed at the WORKTREE's `.beads`, the database-class arm
+still lands in the main store — bd's redirect detection runs against a
+pre-set `BEADS_DIR` (bd-wayc3, above) and posse's seeded redirect hands it
+back. Only the no-db cells catch a wrong value, because no-db mode reads no
+redirect at all.
+
+And the boundary check does not bite a temp store: `isPathInSafeBoundary`
+allows anything under the resolved `os.TempDir()` before it consults
+`unsafePrefixes`, so a `BEADS_DIR` under macOS's `/var/folders` is accepted
+even though `/private` is on the list (read in bd 0.49.1's
+`internal/beads/context.go`; measured on 0.50.3 for `where` and `create`).
+The escape holds only while bd and the test agree on `$TMPDIR`.
+
 ASSUMED: the CGO-less fallback door; no instance store under an unsafe
-prefix; the database-class arm unchanged under `BEADS_DIR` (D5's re-run pin
-turns it); the container tier's in-situ behaviour (unrunnable on this
+prefix; the container tier's in-situ behaviour (unrunnable on this
 box; the bd-level arm stands in).
