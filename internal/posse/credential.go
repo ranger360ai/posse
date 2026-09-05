@@ -918,8 +918,8 @@ func credentialDirNamed() (dir string, named bool, err error) {
 func credentialFileCandidates() []string {
 	var out []string
 	add := func(p string) {
-		if p == "" || strings.HasPrefix(p, "~") {
-			return // no home to expand against; naming `~/…` to a sandbox is naming a file in the cwd
+		if !credentialDenyable(p) {
+			return
 		}
 		for _, q := range out {
 			if q == p {

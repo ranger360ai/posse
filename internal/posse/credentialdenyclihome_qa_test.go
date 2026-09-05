@@ -110,19 +110,25 @@ func mapAbs(ps []string) []string {
 // Decision 3 (ranger-base-b52r3): the NO-HOME arm names nothing rather than
 // naming something in the session's working directory.
 //
-// Two shapes reach that, and following the resolver added the second:
-// ExpandTilde with no HOME hands its `~/…` literal straight back, and
+// THREE shapes reach that, and each was found one rung after the last:
+// ExpandTilde with no HOME hands its `~/…` literal straight back;
 // codexHomeIn("") is "", whose filepath.Join with the file name is the
-// RELATIVE path `auth.json`. The deny loop absResolve's whatever it is
-// handed, so either one lands under the session's cwd — a wall over an
-// ordinary file the session may legitimately need, and no wall at all over a
-// credential. The same `add` closure credentialFileCandidates uses closes
-// both; this is the pin that says so.
+// RELATIVE path `auth.json`; and codexHomeIn returns $CODEX_HOME VERBATIM,
+// so a relative value in that variable is `mycodex/auth.json`. The deny loop
+// absResolve's whatever it is handed, so any of the three lands under the
+// session's cwd — a wall over an ordinary file the session may legitimately
+// need, and no wall at all over a credential. One predicate closes all
+// three, credentialDenyable, and it is the `add` credentialFileCandidates
+// uses too; this is the pin that says so.
 //
-// Reachable only where the environment is scrubbed (`env -i posse …`, a unit
-// file with no HOME), which is ExpandTilde's own note. Nothing posse ships
-// invokes posse that way — the arm is here because the cost of being wrong
-// is a wall in the wrong place, not because the box is expected to hit it.
+// The first two are reachable only where the environment is scrubbed
+// (`env -i posse …`, a unit file with no HOME), which is ExpandTilde's own
+// note — the arm is here because the cost of being wrong is a wall in the
+// wrong place, not because the box is expected to hit it. The third needs no
+// scrubbed environment at all, only a box that exports a relative
+// $CODEX_HOME, which is why it gets its own arm below rather than riding on
+// the empty-HOME one (ranger-base-o05yg; the guard that used to stand here
+// asked whether the home was EMPTY, which a relative one is not).
 func TestQACredentialReadDenyNamesNothingUnderTheCwdWithNoHome(t *testing.T) {
 	unsetenvForTest(t, "HOME")
 	unsetenvForTest(t, "CODEX_HOME")
@@ -134,20 +140,40 @@ func TestQACredentialReadDenyNamesNothingUnderTheCwdWithNoHome(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, p := range credentialReadDenyLiterals("darwin", nil) {
-		if !filepath.IsAbs(p) {
-			t.Errorf("with no HOME the deny names the RELATIVE path %q — the call site absResolve's it, so the wall lands on a file in whatever directory the session runs in", p)
-			continue
-		}
-		if underDir(cwd, absResolve(p)) {
-			t.Errorf("with no HOME the deny names %s, inside the session's own working directory %s — a credential wall must never land there", p, cwd)
+	nothingUnderCwd := func(when string) {
+		t.Helper()
+		for _, p := range credentialReadDenyLiterals("darwin", nil) {
+			if !filepath.IsAbs(p) {
+				t.Errorf("%s the deny names the RELATIVE path %q — the call site absResolve's it, so the wall lands on a file in whatever directory the session runs in", when, p)
+				continue
+			}
+			if underDir(cwd, absResolve(p)) {
+				t.Errorf("%s the deny names %s, inside the session's own working directory %s — a credential wall must never land there", when, p, cwd)
+			}
 		}
 	}
+	nothingUnderCwd("with no HOME")
+
+	// The same hazard through the VARIABLE rather than through the empty
+	// home, which is the rung the empty-home arm above cannot reach: a
+	// relative $CODEX_HOME is not empty, so every guard that asks whether
+	// there is a home to name answers yes and hands filepath.Join a
+	// relative one (ranger-base-o05yg — measured before the fix as the
+	// literal "mycodex/auth.json", resolving inside this very directory).
+	// Both variables, because grokHomeIn is the same function.
+	t.Setenv("CODEX_HOME", "mycodex")
+	t.Setenv("GROK_HOME", "mygrok")
+	nothingUnderCwd("with a RELATIVE $CODEX_HOME and $GROK_HOME")
 
 	// And the arm that keeps this from passing vacuously: with no home but a
 	// variable that names one, there IS a store to wall, and it is walled.
+	// It runs last on purpose — it puts both variables back to ABSOLUTE
+	// values, which is the direction that must still be denied, so the arm
+	// above cannot be satisfied by a predicate that simply stopped naming
+	// what the variables point at.
 	moved := t.TempDir()
 	t.Setenv("CODEX_HOME", moved)
+	t.Setenv("GROK_HOME", t.TempDir())
 	want := absResolve(filepath.Join(moved, "auth.json"))
 	if deny := mapAbs(credentialReadDenyLiterals("darwin", nil)); !walls(deny, want) {
 		t.Errorf("CONTROL: with $CODEX_HOME=%s and no HOME the deny %v does not name %s — the guard above has stopped naming the file it should, not just the one it should not", moved, deny, want)

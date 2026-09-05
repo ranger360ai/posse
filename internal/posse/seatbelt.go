@@ -1002,8 +1002,8 @@ func credentialReadDenyLiterals(goos string, stateDirs []string) []string {
 	}
 	var out []string
 	add := func(p string) {
-		if p == "" || strings.HasPrefix(p, "~") {
-			return // no home to expand against; naming `~/…` to a sandbox is naming a file in the cwd
+		if !credentialDenyable(p) {
+			return
 		}
 		for _, q := range out {
 			if q == p {
@@ -1023,14 +1023,43 @@ func credentialReadDenyLiterals(goos string, stateDirs []string) []string {
 			return
 		}
 		add(ExpandTilde(stateDir + "/" + file))
-		if h := homeIn(home); h != "" {
-			add(filepath.Join(h, file))
-		}
+		// No second guard on homeIn's answer: Join("", file) is the
+		// relative `auth.json` and Join("mycodex", file) is
+		// "mycodex/auth.json", and add refuses both for the one reason it
+		// refuses either — neither is absolute (ranger-base-o05yg).
+		add(filepath.Join(homeIn(home), file))
 	}
 	sibling("~/.codex", "auth.json", codexHomeIn)
 	sibling("~/.grok", "auth.json", grokHomeIn)
 	return out
 }
+
+// credentialDenyable reports whether p can be named to the sandbox as a
+// credential wall, which is one question and not three: is it ABSOLUTE. The
+// deny loop absResolve's whatever it is handed, so anything else lands the
+// wall under the session's working directory — a wall over an ordinary file
+// the session may legitimately need, and no wall at all over a credential
+// (ranger-base-b52r3 decision 3).
+//
+// Several routes reach that and one predicate closes all of them, which is
+// why it is a predicate and not a guard at each: "" is no candidate at all;
+// `~/…` is ExpandTilde handing its literal back because there is no HOME to
+// expand against (ExpandTilde's own note, app.go); a RELATIVE $CODEX_HOME or
+// $GROK_HOME is codexHomeIn returning the variable verbatim
+// (interstitial.go) for filepath.Join to hang the file name off; and the
+// same relative value in CLAUDE_CONFIG_DIR reaches credentialFileCandidates,
+// which shares this predicate for that reason.
+//
+// The first two were closed by spelling, each at its own site. The third
+// reached the same place through the variable and was invisible to both,
+// because the guard it walked past asked whether there was a home to name
+// (`h != ""`) and a relative home is not empty (ranger-base-o05yg, measured
+// before the fix: CODEX_HOME=mycodex denied "mycodex/auth.json", resolving
+// inside the session's own directory).
+//
+// It stays a wall over an ABSOLUTE $CODEX_HOME — that is the arm the control
+// in TestQACredentialReadDenyNamesNothingUnderTheCwdWithNoHome keeps honest.
+func credentialDenyable(p string) bool { return filepath.IsAbs(p) }
 
 // sessionHooksDirs names where git dispatches hooks for the repos a session
 // can write: cwd's, and the store of record's when a redirect puts it in
