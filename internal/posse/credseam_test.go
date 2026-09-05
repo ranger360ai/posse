@@ -797,6 +797,112 @@ func TestSessionCredentialIgnoresTheProcessEnvironment(t *testing.T) {
 	}
 }
 
+// The seam's read goes through envFilePath "for the containment guard it
+// carries" — a claim about code that, until this arm, only its own comment
+// made. Drop the call for a bare `filepath.Join(a.EnvsDir, n+".env")` and
+// every name below resolves to a file OUTSIDE the store and is read, whose
+// bytes then leave the box in an Authorization header (ranger-base-d7oyh,
+// escaped from ranger-base-abgil).
+//
+// Three escapes, one control, and the control is in every list and IS read —
+// so no arm can pass by finding nothing. The escape is LAST in each list,
+// because the last assignment in launch order wins: a guard that has stopped
+// guarding takes the answer, and the arm goes red holding the outside value
+// rather than quietly agreeing with the guarded one.
+//
+// The escapes are SKIPPED, not fatal, which is what lastEnvAssignment
+// documents: the launch is the surface that refuses a bad name (EnvSetVars
+// returns the error and planLaunch stops), and a read behind a catalog probe
+// is not the first place to say so.
+func TestSessionCredentialReadsNothingOutsideTheEnvStore(t *testing.T) {
+	a := cageApp(t)
+	claude, err := a.LoadRuntime("claude")
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := CageCredential(claude)
+	t.Setenv(key, envArmPoison)
+
+	const inside = "sk-ant-oat01-INSIDE-THE-ENV-STORE"
+	sessionSet(t, a, "control", key, inside) // also creates envs/
+
+	// Every escape points at a REAL file holding a credential-shaped value
+	// under the same variable, so an unguarded read finds bytes and a green
+	// arm is the guard rather than a missing fixture.
+	const outside = "sk-ant-oat01-OUTSIDE-THE-ENV-STORE-NEVER-READ"
+	plant := func(p string) string {
+		t.Helper()
+		if err := os.WriteFile(p, []byte(key+"="+outside+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	// (a) The name is a path: `../x` joins to a file one level above envs/,
+	// which is where the harness store lives on a real home.
+	plant(filepath.Join(a.Home, "x.env"))
+	// (b) The name is a stem and envs/leak.env is a SYMLINK out of the
+	// store — contained by spelling, gone by resolution (ranger-base-a7e4).
+	if err := os.Symlink(plant(filepath.Join(a.Home, "leaked.env")),
+		filepath.Join(a.EnvsDir, "leak.env")); err != nil {
+		t.Fatal(err)
+	}
+	// (c) The name is a stem and envs/hard.env is a second name for a file
+	// outside the store — contained by path AND by resolution, gone by
+	// inode (ranger-base-9hfgb).
+	if err := os.Link(plant(filepath.Join(a.Home, "linked.env")),
+		filepath.Join(a.EnvsDir, "hard.env")); err != nil {
+		t.Fatal(err)
+	}
+
+	escapes := []struct{ arm, set string }{
+		{"a name that is a path", "../x"},
+		{"a name whose file symlinks out of the store", "leak"},
+		{"a name hard-linked to a file outside the store", "hard"},
+	}
+	for _, e := range escapes {
+		tok, meta, err := a.ReadSessionCredentialFrom(claude, []string{"control", e.set})
+		if err != nil {
+			t.Fatalf("%s: an unreadable set is skipped, not fatal: %v", e.arm, err)
+		}
+		if tok == outside {
+			t.Errorf("%s: the seam read a file outside the env store", e.arm)
+		}
+		if tok != inside {
+			t.Errorf("%s: the control set in the same list must still answer", e.arm)
+		}
+		if !strings.Contains(meta.Source, "control") || strings.Contains(meta.Source, e.set) {
+			t.Errorf("%s: the source names the set inside the store: %q", e.arm, meta.Source)
+		}
+	}
+
+	// All three in one list, escapes last, which is the launch shape: one
+	// dead guard is enough to lose the answer.
+	all := []string{"control"}
+	for _, e := range escapes {
+		all = append(all, e.set)
+	}
+	tok, meta, err := a.ReadSessionCredentialFrom(claude, all)
+	if err != nil {
+		t.Fatalf("the list still answers from the set that is inside the store: %v", err)
+	}
+	if tok != inside || !strings.Contains(meta.Source, "control") {
+		t.Errorf("a list of escapes behind a contained set answers from the contained set: %q", meta.Source)
+	}
+
+	// The control on the refusals themselves: the names ARE refused by the
+	// resolver, so the arms above measure a guard and not three sets that
+	// happen to be missing.
+	for _, e := range escapes {
+		if _, err := a.envFilePath(e.set); err == nil {
+			t.Errorf("%s: envFilePath(%q) resolved", e.arm, e.set)
+		}
+	}
+	// …and the control name resolves, so the refusals are about these names.
+	if _, err := a.envFilePath("control"); err != nil {
+		t.Errorf("fixture: envFilePath(control): %v", err)
+	}
+}
+
 // Nothing the seam returns quotes a credential — the rule this code was
 // collected under, restated across both stores and every failure class.
 func TestNoSeamErrorEverCarriesTheCredential(t *testing.T) {
