@@ -1,190 +1,62 @@
-# ADR 0049 — The queue's sanctioned remote is an instance fact: `queue_remote:` names it, and `posse backup` refuses every other
+# ADR 0049 — Local backup does not validate a source remote
 
-*Status: accepted 2026-09-02 (ranger-base-8e31g, from ranger-base-3i035) ·
-owner: architect · amends ADR 0036 §3 · builds in the code beads named on
-8e31g · number: 0043–0045 stay pre-named by ADR 0040 §2; per 0040 §3.1 this
-file takes the next number no bead has claimed.*
-
-## Context
-
-ADR 0036 §3 as built (`internal/posse/backup.go`, bead ranger-base-a0ln0)
-refuses to back up a queue repo that has ANY git remote, and the refusal
-names the operator's 2c ruling. That ruling (ranger-base-xhsb, 2026-08-29)
-was an answer about one repo on one box: the personal instance's own
-queue repo never grows a remote. The binary ships it as a law of
-every instance. **MEASURED:** the source check is `git remote` non-empty →
-`Die`, with no input but the repo's state; the refusal's own text cites
-"ADR 0015 §4", and 0015 §4 states no such rule (grep: 0015's only `remote`
-is a rejected-alternative line about manifests). The rule's record is
-xhsb and 0036's Context.
-
-Three days later the operator ruled the opposite for the work instance
-(ranger-base-w9jv (d), 2026-09-02): its bead/constitution repo lives on an
-employer-approved internal remote. Whether the operator's words also
-included "plus `posse backup` on-box" is recorded once (3i035's
-description) and absent twice (w9jv's close reason, 26cd) — noted here
-because the design must not depend on it, and it does not: the form below
-is opt-in per instance. Meanwhile hoover's posture (private tree,
-`docs/runbooks/work-instance-visibility.md` §4) holds an interim rule —
-every `backup_*` key unset on the work box — which this record keeps
-valid.
-
-The deployer angle is the sharper one: posse is public, every `git clone`
-mints an `origin`, and a verb that refuses any repo with a remote is a
-verb most deployers cannot run at all. One instance's policy is riding in
-the binary as everyone's.
+*Status: accepted 2026-09-05 · ADR simplification, operator ruling 2026-09-05 · source-remote precondition removed from the decision; implementation deferred.*
 
 ## Decision
 
-**D1 — one key, beside the one it qualifies.** `queue_remote:` in
-`$RHQ_HOME/config.yaml`, flat like `queue_repo:`. Its value is the remote's
-URL exactly as `git remote get-url <name>` prints it. Unset, empty, `~` or
-`null` is the 2c posture unchanged: any remote on the queue refuses, with
-today's words, the cite corrected (xhsb, not 0015 §4), and the key named as
-the sanctioned way out.
+Remove `queue_remote` and the source-remote validation from local backups.
+A source queue may have no remote, one or multiple remotes, or differing
+fetch/push URLs without preventing a recovery copy. Do not read those URLs
+to authorize a backup or replace exact matching with another allowlist.
 
-**D2 — set, it sanctions one place.** With the key set, the queue repo may
-hold exactly one remote, whose fetch URL and push URL both equal the
-declared string, and then the source check passes. Everything else still
-refuses, and the refusal prints what was declared and what was found: a
-second remote of any name, a fetch URL that differs, a push URL that points
-elsewhere (`git remote get-url --push` answers the push URL and falls back
-to the fetch URL when none is set — **MEASURED** 2026-09-02, git 2.50.1).
-*(Amended 2026-09-04, ranger-base-m6szh: and a remote carrying a SECOND
-url. `get-url` lists only the first by default — git-remote(1) — while
-`remote.<name>.url` uses "the first for fetching, and all for pushing"
-— git-config(1) — so a remote whose first url was the declared one and
-whose second was anywhere else printed the declared URL on both single
-reads and passed, and every operator push landed at both. The check reads
-`--all` on both sides and requires each to be the declared URL and nothing
-else; the refusal prints every URL found. **MEASURED** 2026-09-03/04, git
-2.50.1.)*
+[ADR 0036](0036-posse-backup.md) retains the local-target prohibition, disk
+floor, single-flight, read-safe staging, verified publication, retention and
+schedule. Backup itself makes no network transfer. Removing an incidental
+source-config alarm does not permit a remote destination or a queue push.
+Instance ownership and publication policy remain under
+[ADR 0015](0015-constitution-promotion.md) and the separate visibility/data-ceiling rules.
 
-A queue with NO remote passes under either posture: the key sanctions, it
-does not require.
+Archive construction stays the same: the queue bundle contains history/refs,
+not `.git/config`; `queue/` has no remote stanza. Promoted `home/config.yaml`
+is copied as source content even if an old unused `queue_remote` remains
+there. No migration deletes an operator's config or rewrites its remotes.
+Drop the backup-status posture line instead of suggesting that an ignored
+key still sanctions or refuses anything. Arming and freshness remain governed
+by backup keys, never this obsolete one.
 
-**D3 — what the key is not.** Not a backup key: it is not in `backupKeys`,
-arms no freshness reading, starts no clock — an instance that declares its
-remote and no `backup_*` key has not asked for backups, and installing
-posse still arms nothing (0036 §6). Not an override on the verb:
-`BackupOpts` stays `Dir, Now, Out`, so `TestBackupHasNoOverride` stays
-green, and the ticker needs no new argument because the fact is config the
-verb reads. Not a name: `origin` is what clone mints everywhere; the ruling
-names a place, so the key holds the place.
+## Deferred deletion and acceptance
 
-**D4 — the queue half of the archive stays remote-free on every
-instance.** The archive's `queue/` holds the bundle, the staged db and the
-jsonl projections (**MEASURED**, `stageBackup`): the bundle carries objects
-and refs, not config, and the queue's `.git` is never walked, so no
-`.git/config` and no remote stanza enters. The manifest does not record
-the remote. The cut drill's arm 4 ("restored tree has no remote") is
-therefore true by construction, and the restore 0036 §3 describes — `git
-clone queue.bundle` minting an origin that names the bundle, which the
-restorer removes — is unchanged. The one member that DOES carry the URL is
-`home/config.yaml`, because `config.yaml` is a promoted path
-(`PromotedPaths`, **MEASURED**) and the declaration lives there: that is
-the operator's own line, already in the archive before this record, and a
-restore that brings it back brings the sanction back with it, which is the
-right order. The pin is the split: no byte of the declared URL under
-`queue/`, and under `home/` only in `config.yaml`.
+Delete `QueueRemote`, `checkQueueRemote`, its URL-list formatting if unused,
+`BackupRemoteLine`, the call in `RunBackup`, and status/config/help references.
+Concrete surfaces are `internal/posse/backup.go`, `cmd/posse/main.go` and
+associated tests/examples. Price: roughly 2–4 source files plus text/tests;
+one key and remote-acceptability branches; no new store, actor or flag.
+Update rejection tests into successful local-backup cases while keeping all
+target-refusal and archive-scope checks. No machinery changes in this session.
 
-**D5 — "cannot push" becomes "never pushes", and here is what carries
-it.** With a remote present the structural guarantee in `queuejsonl.go`
-("the queue repo is created with no remote at all") is per-instance. What
-holds on every instance: the binary invokes no `git push` (**MEASURED**:
-grep over `internal/posse` finds `push` only in the gate's deny tables and
-their tests); every shipped PID denies `git push` (pinned crew-wide,
-`TestExampleAgentsArePIDs`); and the bd verbs that push — `bd sync
---full`, `bd daemon` — are denied on all nine shipped PIDs (**MEASURED**
-9/9 in `examples/agents`, ADR 0015 §3's u9ud amendment; observed, not
-pinned — the pin is a line in the code bead). The push is the operator's,
-typed by hand, and ADR 0036's "the launcher cannot push the queue" reads
-"the harness never pushes it" from here on. The comment in
-`queuejsonl.go` says so once the code bead lands.
+First done-when row: **number of source-remote refusals that prevented an
+unintended transfer; distinguish these from refusals that only delayed a
+backup.** Record the searched window, events and evidence for any prevented
+transfer. The earlier source-policy mismatch is measured; prevented network
+harm is ASSUMED, and no such count was established by the review.
 
-**D6 — one surface line.** `posse backup status` prints the posture:
-`remote · none declared (config queue_remote: unset) — any remote refuses`
-or `remote · <url> (config queue_remote:) — the operator pushes; posse
-never does`. The watch loop's per-tick "scheduled archive failed" line
-already carries a refusal's reason (0036 §4, level-triggered), so an
-armed instance whose remote is undeclared reads stale AND says why on
-every tick — the right reading, not a defect: the operator asked for
-backups and is getting none.
+What breaks if wrong: the harness stops incidentally alerting on an
+unexpected source remote. A different process could still push there;
+backup's former check did not fence that process. Recovery copies must stay
+available when source configuration is wrong. Verify no network calls or
+target override were introduced and that all source-remote variants still
+produce a verified local archive.
 
-**D7 — the work instance's line is the operator's, off this tree.** The
-posture's interim rule stays valid until the operator sets the key. Setting
-`queue_remote:` to the URL recorded on 26cd, and a `backup_interval:` beside
-it, is an install step on that box, recorded there and nowhere public.
+## Lineage and rejected alternatives
 
-## Alternatives rejected
+| Record | Disposition |
+|---|---|
+| 0049, 2026-09-02 and multi-URL amendment | Per-instance source allowlist archived, pending removal |
+| Operator ruling 2026-09-05 | Local backup no longer gates on source remote configuration |
 
-- **Keep the refusal; a remote-hosted instance is remote-backed only** (the
-  bead's option 2). The remote holds the jsonl and history as of the
-  operator's last hand push; the sqlite db and whatever the constitution
-  home holds outside git are never in it (**ASSUMED** the db is untracked
-  in the work queue as it is here). It leaves the deployer defect in
-  place, and it hard-codes a ruling the operator has already reversed for
-  one instance.
-- **A boolean `queue_remote_allowed:`.** Sanctions ANY remote, including
-  the personal GitHub f85 forbids on the work box. The ruling named a
-  place; a boolean cannot.
-- **Match by remote name.** Clone mints `origin` on every box; a name
-  sanctions a shape, not a place.
-- **Match by host, or normalise URL spellings** (`git@h:o/r.git` vs
-  `ssh://git@h/o/r.git`, trailing `.git`). Cheaper to type, and a
-  normaliser is a spelling table that loses to the next spelling. Exact
-  string, both strings printed on refusal, the fix is a paste from `git
-  remote get-url`. **ASSUMED** this costs one paste per instance, ever.
-- **A flag on the verb.** Pinned out already (`TestBackupHasNoOverride`),
-  and the ticker could not pass it — a per-invocation sanction of a
-  standing fact is the plist nobody installed, wearing a flag.
-- **Read the sanction from the private posture doc.** A public binary
-  reading a private tree fails for every deployer but one (0036 §2's
-  argument, verbatim).
-- **Drop the source refusal.** Loses the one place the harness notices a
-  personal queue growing a remote by accident (`bd daemon --auto-push`,
-  `bd sync --full`), which is the failure 2c exists for.
-- **Record the remote in the archive manifest.** Puts the URL into every
-  archive for provenance nobody asked for, and breaks D4.
+Reject a boolean sanction, normalized-URL matcher or command override: each
+keeps an admission check unrelated to the local copy's effects. Instance
+remote policy still belongs to the instance; this page neither sets it nor
+arms backup on any box.
 
-## Consequences
-
-- No config change on the personal instance, and no behaviour change: an
-  absent key is today's path, so every existing pin stays green
-  (`TestBackupRefusesAQueueRepoWithARemote`,
-  `TestBackupLoopSurvivesARefusal`, `TestBackupHasNoOverride`).
-- The refusal's text changes: cite corrected, key named. Pins that match
-  on `remote` keep matching.
-- ADR 0036 §3 and its sub-ruling table row carry a dated pointer here.
-- hoover's posture §4 replaces its interim rule with the key once the code
-  lands (bead cut to hoover, dep on the code bead).
-
-## Verification observables
-
-Each is one pin in `internal/posse`; the mutation named is the one that
-must red it.
-
-1. Key unset, remote present → refused, and the line names `queue_remote:`
-   (existing pin, wording widened). Mutation: drop the key from the line.
-2. Key = U, one remote with fetch and push both U → archive written.
-   Mutation: compare against the remote NAME.
-3. Key = U, fetch URL V ≠ U → refused, line contains both U and V.
-   Mutation: flip the equality.
-4. Key = U, remote U plus a second remote → refused. Mutation: check only
-   the first remote.
-5. Key = U, fetch U and push V → refused. Mutation: read only the fetch
-   URL.
-6. Key = U, no remote → accepted (the key sanctions, it does not require).
-   Mutation: require the remote.
-7. Config holding only `queue_remote:` → `BackupConfigured()` false and
-   `posse backup status` says nothing is armed. Mutation: add the key to
-   `backupKeys`.
-8. `BackupOpts` fields still exactly `Dir, Now, Out` (existing pin).
-9. An archive taken under posture 2, every member read back: no byte of
-   U under `queue/`, and under `home/` only in `config.yaml` (D4).
-   Mutation: write the remote into the manifest.
-11. Every PID in `examples/agents` denies `bd sync --full` and `bd daemon`
-    (D5), asserted beside the `git push` assertion in
-    `TestExampleAgentsArePIDs`. Mutation: drop one deny from one file.
-10. The `status` line renders both postures (D6), pinned in
-    `cmd/posse/backupsurface_qa_test.go` beside the schedule line.
+[Prior allowlist and measurements](history/0049-queue-remote-is-an-instance-fact-before-2026-09-05.md).
