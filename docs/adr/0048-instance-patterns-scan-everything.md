@@ -1,5 +1,11 @@
 # ADR 0048 — Instance-defined visibility patterns scan every staged file and added path; the pre-publication name is one of them
 
+*Status: superseded 2026-09-05 by ADR 0024 · ADR simplification, operator ruling 2026-09-05.*
+
+The surviving decision is in [0024 — current contract](0024-work-product-routing.md), Scan coverage, Decision 2 and Lineage. This page keeps its number and dated evidence; the body below is historical, not current policy.
+
+## Historical record (superseded in full)
+
 *Status: accepted 2026-09-02 (ranger-base-9ubk6, from ranger-base-n8shu) ·
 owner: architect · extends ADR 0024 D2 · builds in ranger-base-uzgkz
 (code) and ranger-base-856sv (the operator's one config line) · number: 0043–0045

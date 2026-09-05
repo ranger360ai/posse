@@ -63,6 +63,34 @@ The default and its asymmetry, verbatim from the beads rule: **when in
 doubt, instance.** A private artifact can be restated public later; the
 reverse is a history purge.
 
+## Scan coverage (folded from 0048)
+
+`beads_visibility_patterns:` is instance vocabulary. Apply its entries with
+check 3 to added bytes/lines of **every** staged file, every added path and
+the commit message under the cleanup semantics below, only in public-stamped
+repos. Use the staged diff with `--text`; NUL, extension and attributes do
+not grant exemptions. Renamed destinations count as added paths. The
+shipped `OpsPatterns` remain check 2's markdown-only content scan, with
+the same byte-safe diff reader; do not scan their own source as instance
+vocabulary. The existing operator override and class-only refusal/log
+remain. A pre-publication name belongs in instance config, never a public
+pattern literal derived by guesswork from another repo's basename.
+
+The post-landing seed-name pin remains a backstop for absent config and
+overrides; it names the commit-time arm. Docs-only commits are included.
+MEASURED: seven earlier recurrences (ranger-base-9ubk6) and the one-NUL
+bypass (ranger-base-h137b). Rejected: another reword, a code-file allowlist,
+a binary exemption, a whole-blob second scanner, or running the full-tree
+test from the hook. No mechanism is removed by this fold. [0050](0050-data-ceiling-patterns.md)
+continues to own the **all-repository** data ceiling; these keys and scopes
+are deliberately distinct.
+
+## Lineage
+
+| Was | Here |
+|---|---|
+| 0048 D1–D4 instance vocabulary, complete staged scope, message and seed pin | Scan coverage and Decision 2; 0050 remains an independent ceiling |
+
 ## Decision 2 — the wall: three checks in the existing commit hook
 
 The enforcement point is the `prepare-commit-msg` hook the harness
