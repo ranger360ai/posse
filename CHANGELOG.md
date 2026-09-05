@@ -127,6 +127,35 @@ not make it for you.
 
 ### Added
 
+**`posse status` and every `dispatch --watch` pass now name a second bd
+store sitting beside a redirect: `second store: ~/src/<repo>/.beads holds
+beads.db, issues.jsonl beside a redirect to ~/src/<instance>/.beads — bd
+follows the redirect today and this store answers the day it is lost; delete
+it (ADR 0012 D3)`.**
+
+ADR 0012 D3 bought ONE store of record: the database lives in the instance
+repo and the working copy's `.beads/` holds a redirect to it — a second
+mount point, not a second store. The September 2026 adherence audit found
+the rejected shape sitting in the public checkout anyway: a `beads.db` three
+weeks old beside the redirect, its shared-memory file touched that morning.
+Nothing was wrong that day, because bd resolves the redirect first — and
+nothing anywhere would have said so on the day the redirect file was lost,
+when a three-week-old graph would have answered every `bd ready` at exit 0.
+A wrong graph that exits 0 is the whole failure: the loop dispatches, the
+beads it names are stale, and every surface reads as a working shop.
+
+Both surfaces print the same bytes, so one grep finds them. A redirect bd
+will NOT follow — an absent target, an empty file — takes the other
+sentence, because there bd is already reading the local store and deleting
+it would leave bd with no graph at all.
+
+**It reports.** It refuses nothing, deletes nothing, and does not move
+`posse status`'s exit code: D3's exit hatch is one `rm` an operator types,
+and posse deleting a database nobody asked it to delete is a worse incident
+than the stale graph this prevents. A repo whose `.beads/` holds its own
+database and no redirect is every ordinary bd repo and says nothing; the
+watch loop says a standing finding once rather than on every pass.
+
 **The watch preamble now names the config home's promote-anchor state, once
 per loop: `constitution: promoted <sha> <date>`, `constitution: seeded
 <date>`, or `constitution: never promoted — no promoted.json`.**

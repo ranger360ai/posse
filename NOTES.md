@@ -6406,6 +6406,26 @@ What was measured, before and during the build:
   arithmetic to get wrong, and it resolves the main checkout's OWN redirect
   first so a chain is never built (this repo's `.beads` is itself a redirect
   to ranger-base's database).
+- **A store sitting BESIDE that redirect is now named on two surfaces**
+  (ranger-base-dj3k2, `internal/posse/secondstore.go`; ADR 0012 D3, the
+  September 2026 adherence audit's finding 6). D3 bought one store of record
+  and rejected "a gitignored *local* `.beads/` inside the public tree" by
+  name; the audit found one anyway — a `beads.db` from 2026-08-24 beside the
+  redirect, its `-shm` file touched that morning. Nothing was wrong that
+  day, because `beadsHome` and bd both resolve the redirect first. The day
+  the redirect file is lost, that store answers `bd ready` at exit 0 with a
+  three-week-old graph, and a wrong graph that exits 0 is the whole failure:
+  the loop dispatches, the beads are stale, every surface reads as a working
+  shop. `posse status` and each `dispatch --watch` pass now print the same
+  line naming the path, what is in it and the fix. **It reports** — no
+  refusal, no delete, no exit code: the remedy is one `rm` the operator
+  types, and posse deleting a database nobody asked it to delete is worse
+  than what it prevents. A `.beads/` holding its own database and no
+  redirect is every ordinary bd repo and says nothing; a redirect bd will
+  NOT follow takes the other sentence, because there bd is already reading
+  the local store. `beadsRedirectHop` (beadloss.go) is the one reader both
+  the census and this guard project from, so they cannot disagree about
+  which directory bd is in.
 - **The staleness trap does not fire through a correct redirect.** A worktree
   checkout does materialize a tracked `.beads/issues.jsonl` with a fresh
   mtime, but bd compares the mtime of the jsonl beside the database it

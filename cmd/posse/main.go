@@ -933,6 +933,20 @@ func main() {
 		if line := a.PlanQuietLine("status", time.Now()); line != "" {
 			fmt.Fprintf(out, "%s\n", line)
 		}
+		// A second bd store sitting beside a redirect in a configured
+		// `beads:` tree (ADR 0012 D3, secondstore.go, ranger-base-dj3k2).
+		// The same bytes the watch pass preamble prints, so one grep finds
+		// both.
+		//
+		// A reading, not a condition, on the launcher-lag line's rule
+		// above: it does not join the governance set below and does not
+		// move this command's exit code. D3's exit hatch is two config
+		// lines and one `rm` an operator types, and posse deleting a
+		// database nobody asked it to delete would be a worse incident
+		// than the stale graph this names. Silent on a clean sweep, like
+		// the backup and plan lines above: one store of record is the
+		// designed state and a line about it every time is furniture.
+		a.ReportSecondStores(out)
 		posse.GovReport(out, set, failed)
 		if len(set) > 0 || len(failed) > 0 {
 			os.Exit(1)

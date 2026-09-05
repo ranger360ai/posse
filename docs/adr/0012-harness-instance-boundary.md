@@ -155,6 +155,23 @@ parking instance telemetry one `.gitignore` mistake from the exact leak
 this ADR exists to end); and both repos in `beads:` (one bead, two
 `Dir`s, dispatchable twice — structural, not fixable by discipline).
 
+**That rejection is now REPORTED, not enforced** (added 2026-09-05,
+ranger-base-dj3k2, from the September 2026 adherence audit's finding 6:
+the public checkout held a `beads.db` from 2026-08-24 beside its
+redirect, and no code anywhere named the pair). The rejected shape is
+invisible while the redirect resolves — bd reads the target, and every
+surface is correct — and answers `bd ready` at exit 0 with a weeks-old
+graph the day the redirect file is lost. So `posse status` and every
+`dispatch --watch` pass sweep each configured `beads:` directory and
+print one line per finding, naming the path, what is in it and the fix
+(`internal/posse/secondstore.go`). It is a **report**: no refusal, no
+delete, no exit code — the exit hatch above is two config lines and one
+`rm` an operator types, and posse deleting a database nobody asked it to
+delete is a worse incident than the stale graph it prevents. A `.beads/`
+with its own database and no redirect is every ordinary bd repo and is
+silent; a redirect bd will not follow takes a different sentence,
+because there bd is already reading the local store.
+
 ## Decision 4 — the runtime contract
 
 A work-authorized engine must be addable **without patching the

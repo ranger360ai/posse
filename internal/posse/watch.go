@@ -287,6 +287,9 @@ func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string,
 		fmt.Fprintln(d.Out, lag.Line())
 	}
 	var lagSaid lagDrumbeat
+	// What the second-store sweep last said, so a standing finding is said
+	// once and a NEW one is still said (secondstore.go, ADR 0012 D3).
+	var secondStoreSaid string
 	// The L3 wall across every repo config declares, swept once, here
 	// (ranger-base-ixv4). Once and not per pass on purpose: the hook bodies
 	// are compiled into the binary, so the answer can only change when the
@@ -398,6 +401,36 @@ func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string,
 		// above, said once.
 		if st := d.App.PlanStaleness("watch", d.now(), io.Discard); st.Stale {
 			d.println(st.Line())
+		}
+		// A second bd store sitting beside a redirect in a configured
+		// `beads:` tree (ADR 0012 D3, secondstore.go). The same bytes
+		// `posse status` prints, so one grep finds both.
+		//
+		// In the PASS and not the header above, for the launcher-lag line's
+		// reason one block down: this answer moves without the binary
+		// moving, which is the whole defect — a store appears the moment
+		// any bd runs in a tree whose redirect has gone, and a reading
+		// taken once at loop start would say "clean" for the ten hours
+		// after. Files only, so it costs no request and cannot be why a
+		// pass is slow.
+		//
+		// Said once per finding rather than once per pass, on the rule the
+		// lag line's `lagWhySaid` keeps two blocks down: the state does not
+		// change on its own, and a loop that reprints the same complaint
+		// every pass for a week is how a visible line becomes an invisible
+		// one. A store that appears, or a redirect that stops resolving
+		// under one, changes the text and is said again; the operator
+		// deleting it resets the memory, silently, because an all-clear
+		// nobody asked for is the furniture this shop keeps refusing.
+		if lines := SecondStoreLines(d.App.SweepSecondStores()); len(lines) > 0 {
+			if said := strings.Join(lines, "\n"); said != secondStoreSaid {
+				secondStoreSaid = said
+				for _, ln := range lines {
+					d.println(ln)
+				}
+			}
+		} else {
+			secondStoreSaid = ""
 		}
 		// Whether the binary running this pass is behind the repo it was
 		// built from (ranger-base-z3hx6). In the pass and not the preamble

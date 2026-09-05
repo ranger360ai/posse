@@ -396,10 +396,39 @@ func gitBead(home string, args ...string) ([]byte, error) {
 // census of store was computed and then thrown away on the ListAll error.
 // One hop also means a redirect cycle cannot loop here at all.
 func beadsHome(dir string) string {
+	home, target, _ := beadsRedirectHop(dir)
+	if target != "" {
+		return target
+	}
+	return home
+}
+
+// beadsRedirectHop is that one hop with the REASON kept, and it is the only
+// reader of a redirect file in this package: beadsHome is a projection of it,
+// and so is the second-store sweep (secondstore.go), so the census and the
+// guard can never disagree about which directory bd is reading — the same
+// rule beadsHome's comment above states for reader, writer and git.
+//
+// home is always <dir>/.beads. target is the directory bd will read INSTEAD,
+// and "" when bd reads home itself; why then says which fallback that was,
+// and is "" only when there is no redirect file there at all. So the three
+// states a caller can be in are: no redirect (target and why both ""), a
+// redirect bd follows (target set), and a redirect bd will not follow (why
+// set) — which beadsHome collapses to two because it only needs the
+// directory, and which the second-store sweep must keep apart because they
+// take different sentences.
+func beadsRedirectHop(dir string) (home, target, why string) {
 	if dir == "" {
 		dir = "."
 	}
-	home := filepath.Join(dir, beadsDirName)
+	home = filepath.Join(dir, beadsDirName)
+	redirect := filepath.Join(home, beadsRedirect)
+	// Lstat first, and never a read: absence is the overwhelmingly common
+	// case and it is not a fallback anyone should be told about — a repo
+	// with no redirect has not failed to follow one.
+	if _, err := os.Lstat(redirect); err != nil {
+		return home, "", ""
+	}
 	// isRegularFile (gates.go) before the open, the same guard the launch
 	// path's other readers carry (ranger-base-gs9r, ranger-base-92n5p,
 	// ranger-base-fvfve): os.ReadFile on a FIFO with no writer never returns,
@@ -408,18 +437,17 @@ func beadsHome(dir string) string {
 	// special file is never a redirect bd wrote and cannot be one, so it gets
 	// the answer every other unreadable redirect already gets: the local
 	// .beads, reached without the open.
-	redirect := filepath.Join(home, beadsRedirect)
 	if !isRegularFile(redirect) {
-		return home
+		return home, "", "the redirect file is not a regular file"
 	}
 	b, err := os.ReadFile(redirect)
 	if err != nil {
-		return home
+		return home, "", fmt.Sprintf("the redirect file cannot be read: %v", err)
 	}
 	// firstLine (cagelauncher.go): bd writes one path and nothing else.
-	target := strings.TrimSpace(firstLine(string(b)))
+	target = strings.TrimSpace(firstLine(string(b)))
 	if target == "" {
-		return home
+		return home, "", "the redirect file names no path"
 	}
 	if !filepath.IsAbs(target) {
 		// bd writes the relative form against the repo root, not against
@@ -427,9 +455,9 @@ func beadsHome(dir string) string {
 		target = filepath.Join(filepath.Dir(home), target)
 	}
 	if st, err := os.Stat(target); err != nil || !st.IsDir() {
-		return home
+		return home, "", "it names " + AbbrevHome(target) + ", which is not a directory"
 	}
-	return target
+	return home, target, ""
 }
 
 // ReadDeletionLedger returns the accounted-for deletions, ALL of them, keyed
