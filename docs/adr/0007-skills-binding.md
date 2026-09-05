@@ -48,18 +48,45 @@ skills: [dataviz, code-review]
 ```
 
 A name resolves to `RHQ_HOME/skills/<name>/SKILL.md` or it is unknown.
-posse copies nothing and indexes nothing: `posse skills list` is
-`ls`, `posse agent check` is `stat`.
+posse indexes nothing and copies nothing INTO this dir: `posse skills list`
+is `ls`, `posse agent check` is `stat`. (What a launch renders OUT of it is
+§2's question, and one of the two shapes there does copy.)
 
 **2. Launch materializes per runtime through a skills realizer**, next
 to the tool realizer, and a new template placeholder **`{skills}`**:
 
 | runtime | materialization | `{skills}` renders |
 |---|---|---|
-| claude | `RHQ_HOME/state/skills/<persona>/claude/` rendered fresh at launch (like gates): `.claude-plugin/plugin.json` `{"name":"posse-<persona>","description":"skills bound by posse"}` and `skills/<name>` → symlink to `RHQ_HOME/skills/<name>` | `--plugin-dir <that dir>` |
+| claude | `RHQ_HOME/state/skills/<persona>/claude/` rendered fresh at launch (like gates): `.claude-plugin/plugin.json` `{"name":"posse-<persona>","description":"skills bound by posse"}` and `skills/<name>` — a real directory of files, COPIED from `RHQ_HOME/skills/<name>` (amended 2026-09-05, below) | `--plugin-dir <that dir>` |
 | codex | `<session dir>/.agents/skills/<name>` → symlink to `RHQ_HOME/skills/<name>`, excluded via `.git/info/exclude` (verified, rangerhq-1qd) | nothing — there is no flag |
 | grok | the same `.agents/skills/<name>` symlinks (verified, rangerhq-1qd) | nothing — there is no flag |
 | `runtimes/*.yaml` | optional `skills_flag:` (`--foo %s` given the rendered dir); absent → unrealizable | |
+
+*Amended 2026-09-05 (ranger-base-65rc): the flag tree binds each skill by
+COPYING it in, not by symlinking to it. The symlink made this row's promise —
+"what sits inside it is the universal Agent-Skills layout" — a claim about the
+reader rather than about the tree, because a CLI that does not follow a link
+out of a plugin root finds a `skills/` dir with nothing in it. Measured on
+grok 1.0.5, the one non-claude CLI available that reads the claude plugin
+shape: `plugin validate` passed, `plugin install --trust` installed one
+plugin, and `inspect` reported `Skills (0)`; the same tree copied with
+`cp -RL` reported both skills. claude dereferences, so the surface had been
+exercised on exactly the CLI that hides the defect — and a `skills_flag:`
+runtime whose loader behaves like grok's launched CLEAN, with the binding in
+Realized and the persona holding nothing, which is §3's refusal arriving
+through the accepted path. The copy is a launch cost paid where the gates
+render is (a skill dir is kilobytes), it keeps each file's mode so a skill
+that ships a script still runs it, and it closes the same hole in the
+container tier, which mounts this tree and not `RHQ_HOME/skills`. The cwd
+shape below is unchanged and stays symlinked, deliberately: that dir belongs
+to the operator's repo (see the rejected alternative), both CLIs were measured
+following links out of it, and the never-clobber rule tells posse's entry from
+the operator's by reading a link's target. Pinned hermetically by
+`TestQARenderedTreeNeedsNoSymlinkFollowed` — a walk that refuses every symlink
+and must still find each bound skill whole — and live by
+`TestQALiveSkillDiscoveryPerRuntime`, which installs the rendered tree into a
+redirected HOME and asks `grok inspect` what the persona would have had; both
+in `internal/posse/skillsrules_parity_qa_test.go`.*
 
 **Verified 2026-08-18 (rangerhq-1qd), codex-cli 0.147.0 and grok 1.0.5.**
 The `-c` / `--agent` candidates are both dead ends; the cwd fallback is not

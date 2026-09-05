@@ -121,19 +121,31 @@ func TestRenderClaudeSkills(t *testing.T) {
 	if man.Name != "posse-developer" || man.Description != "skills bound by posse" {
 		t.Errorf("plugin.json: %+v", man)
 	}
-	// Each name is a symlink to RHQ_HOME/skills/<name>, so the SKILL.md the
-	// session loads is the one the operator installed — nothing was copied.
+	// Each name is a real directory holding a copy of the installed
+	// SKILL.md — not a symlink to RHQ_HOME/skills/<name>, which is what a
+	// CLI that does not dereference read as an empty skills/ dir
+	// (ranger-base-65rc; the reader-side pin is
+	// TestQARenderedTreeNeedsNoSymlinkFollowed).
 	for _, n := range []string{"dataviz", "code-review"} {
-		link := filepath.Join(dir, "skills", n)
-		target, err := os.Readlink(link)
+		entry := filepath.Join(dir, "skills", n)
+		fi, err := os.Lstat(entry)
 		if err != nil {
-			t.Fatalf("%s is not a symlink: %v", n, err)
+			t.Fatalf("%s: %v", n, err)
 		}
-		if target != a.SkillPath(n) {
-			t.Errorf("%s → %s, want %s", n, target, a.SkillPath(n))
+		if !fi.IsDir() {
+			t.Errorf("%s is %s, want a real directory", n, fi.Mode())
 		}
-		if _, err := os.Stat(filepath.Join(link, "SKILL.md")); err != nil {
+		got, err := os.ReadFile(filepath.Join(entry, "SKILL.md"))
+		if err != nil {
 			t.Errorf("%s/SKILL.md not reachable through the tree: %v", n, err)
+			continue
+		}
+		want, err := os.ReadFile(filepath.Join(a.SkillPath(n), "SKILL.md"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != string(want) {
+			t.Errorf("%s/SKILL.md is not the installed one:\n%s", n, got)
 		}
 	}
 

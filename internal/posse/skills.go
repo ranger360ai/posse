@@ -1,20 +1,24 @@
 package posse
 
 // Skills binding (ADR 0007): the PID names skills, the launch materializes
-// them for the chosen runtime. posse copies nothing and indexes nothing —
-// RHQ_HOME/skills/<name>/SKILL.md *is* the registry, `posse skills` is `ls`
-// and `posse agent check` is `stat`. The dir holds real Agent-Skills dirs or
-// symlinks to wherever they already live (~/.claude/skills/x, a plugin's
-// skills/x, a repo); posse does not care which.
+// them for the chosen runtime. posse indexes nothing and copies nothing INTO
+// the registry — RHQ_HOME/skills/<name>/SKILL.md *is* the registry, `posse
+// skills` is `ls` and `posse agent check` is `stat`. The dir holds real
+// Agent-Skills dirs or symlinks to wherever they already live
+// (~/.claude/skills/x, a plugin's skills/x, a repo); posse does not care
+// which. What a launch renders OUT of it is a different question, answered
+// per surface below.
 //
 // Two shapes materialize, one per *kind* of surface (rangerhq-1qd):
 //
 //   - a flag pointing at a rendered tree — claude's plugin shape, a dir
-//     carrying .claude-plugin/plugin.json and skills/<name> symlinks, typed
-//     as `--plugin-dir` (`--add-dir` is CLAUDE.md dirs and does not load
+//     carrying .claude-plugin/plugin.json and skills/<name>, typed as
+//     `--plugin-dir` (`--add-dir` is CLAUDE.md dirs and does not load
 //     skills). A template-only runtime with `skills_flag:` is handed the
 //     same dir: what sits inside it is the universal Agent-Skills layout and
-//     the plugin.json is inert to anything that does not read it.
+//     the plugin.json is inert to anything that does not read it. Each
+//     skill is a real DIRECTORY OF FILES there, copied at launch — the one
+//     place posse copies a skill, and why is in RenderClaudeSkills.
 //   - no flag at all — codex and grok discover skills from the session's
 //     *working directory*, so the launch symlinks them into
 //     `<cwd>/.agents/skills/<name>` and `{skills}` renders nothing. That is
@@ -26,6 +30,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -127,6 +132,30 @@ type pluginManifest struct {
 // one failure mode worth spending a refusal on is a persona that launches
 // believing it has a skill it does not. `posse agent check` catches it before
 // the launch does.
+//
+// Each skill is COPIED in, as real directories and files. It used to be one
+// symlink per name into RHQ_HOME/skills, and that made the layout a claim
+// about the reader rather than about the tree: ADR 0007 §2 hands this same
+// dir to any `skills_flag:` runtime on the promise that "what sits inside it
+// is the universal Agent-Skills layout", and a CLI that does not follow a
+// symlink out of a plugin root finds a skills/ dir with nothing in it.
+// MEASURED 2026-08-29 on grok 1.0.5 — the only non-claude CLI on the box
+// that reads the claude plugin shape, which is what makes it the right
+// instrument: `plugin validate` passed, `plugin install --trust` reported
+// one plugin installed, and `inspect` listed Skills (0). The SAME tree
+// copied with `cp -RL` listed both. claude happens to dereference, so the
+// surface was exercised on exactly the one CLI that hides the defect
+// (ranger-base-65rc). Two consequences beyond the flag runtime it was filed
+// for: the container tier mounts THIS dir and not RHQ_HOME/skills
+// (cage.go), so the links dangled inside a cage on every runtime; and a
+// copy cannot be resolved into a path the launch never granted.
+//
+// The cost is a copy per launch, beside the gates render and paid once per
+// session — the live registry is 40K over 8 files. RenderAgentsSkills does
+// NOT copy and must not: that dir belongs to the operator's repo (ADR 0007
+// rejects copying there), codex and grok were both measured following links
+// out of it, and the never-clobber rule reads a link's target to tell
+// posse's own entry from the operator's.
 func (a *App) RenderClaudeSkills(persona string, names []string) (string, error) {
 	dir := filepath.Join(a.StateDir, "skills", persona, "claude")
 	if err := os.RemoveAll(dir); err != nil {
@@ -155,11 +184,98 @@ func (a *App) RenderClaudeSkills(persona string, names []string) (string, error)
 		return "", err
 	}
 	for i, n := range names {
-		if err := os.Symlink(paths[i], filepath.Join(skills, n)); err != nil {
+		if err := copySkillTree(n, paths[i], filepath.Join(skills, n), nil); err != nil {
 			return "", err
 		}
 	}
 	return dir, nil
+}
+
+// copySkillTree copies one skill dir into the rendered tree as real files.
+// src is RHQ_HOME/skills/<name>, which is itself usually a symlink to
+// wherever the skill already lives (ADR 0007 §1 — "real dirs or symlinks to
+// ~/.claude/skills/x, a plugin's skills/x, a repo; posse does not care
+// which"), so every step dereferences: the whole point is a tree with no
+// link left in it for a reader to fail to follow. chain carries the
+// RESOLVED directories on the way down.
+//
+// Three shapes and only three. A directory recurses, a regular file is
+// copied with its mode, and anything else — a socket, a fifo, a device node
+// — is skipped: it is not part of an Agent-Skills dir, and copying one
+// would block or fill a disk. A symlink is none of these, because it has
+// already been resolved by the time the switch reads it.
+//
+// A component that is GONE is skipped rather than refused, and "gone" is the
+// same two errnos danglingSkillLink spends its comment on: ENOENT, and
+// ENOTDIR for a path whose parent is an ordinary file. Under the symlinks
+// this replaces, a dangling link inside a skill reached the session as an
+// entry that resolves to nothing; skipping it hands the reader the same
+// nothing, and refusing the launch over it would be a NEW refusal this
+// change never measured a need for. Every other error — EACCES on a dir
+// this uid cannot traverse, ELOOP — is about the path and not about the
+// target, so it refuses: the file may be sitting right there, and a skill
+// silently missing half its body is the failure ADR 0007 §3 exists to stop.
+func copySkillTree(name, src, dst string, chain []string) error {
+	real, err := filepath.EvalSymlinks(src)
+	if err != nil {
+		return err
+	}
+	for _, seen := range chain {
+		if seen == real {
+			return Die("skills: %s: %s resolves to %s, which is already on the way down — a bound skill has to be a finite tree",
+				name, AbbrevHome(src), AbbrevHome(real))
+		}
+	}
+	ents, err := os.ReadDir(real)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dst, 0o755); err != nil {
+		return err
+	}
+	for _, e := range ents {
+		s, d := filepath.Join(real, e.Name()), filepath.Join(dst, e.Name())
+		fi, err := os.Stat(s)
+		switch {
+		case errors.Is(err, fs.ErrNotExist), errors.Is(err, syscall.ENOTDIR):
+			continue
+		case err != nil:
+			return err
+		case fi.IsDir():
+			if err := copySkillTree(name, s, d, append(chain, real)); err != nil {
+				return err
+			}
+		case fi.Mode().IsRegular():
+			if err := copySkillFile(s, d, fi.Mode().Perm()); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// copySkillFile copies one file, keeping its permission bits. The mode is
+// not decoration: a skill may ship a script and ADR 0007 says those "run
+// inside the cage like anything else", so a copy that dropped the execute
+// bit would bind a skill whose own tooling no longer runs. Directories are
+// posse's own 0755 instead, so a re-render can always remove what the last
+// launch wrote — the tree is rewritten from scratch at every launch and a
+// 0500 dir copied from the registry would outlive the skill.
+func copySkillFile(src, dst string, mode fs.FileMode) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		return err
+	}
+	return out.Close()
 }
 
 // AgentsSkillsPath is the per-session skill surface codex and grok share,

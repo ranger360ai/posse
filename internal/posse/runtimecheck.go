@@ -574,7 +574,7 @@ func (a *App) skillsRow(rt *Runtime) stageRow {
 		r.note = append(r.note, "the dir belongs to the REPO, not to the persona: posse adds its own links, refuses to overwrite an entry it did not write, and sweeps a link whose target has left RHQ_HOME/skills. It is hidden from `git status` through .git/info/exclude, which hides it from git and not from the CLI (measured rangerhq-1qd).")
 	default:
 		r.value = "flag — " + flag + ", pointed at the tree posse renders per persona (session-only, additive)"
-		r.note = append(r.note, "that tree binds each skill as a SYMLINK into RHQ_HOME/skills, and whether this CLI FOLLOWS one is the thing to measure next: grok validates and installs the very same tree and surfaces ZERO skills, where a `cp -RL` copy of it surfaces every one (ranger-base-65rc). A row that said `flag` and stopped is how that reaches a fourth runtime.")
+		r.note = append(r.note, "that tree binds each skill as a real DIRECTORY OF FILES, copied out of RHQ_HOME/skills at every launch, so this CLI does not have to follow a symlink out of a plugin root to read one — it used to bind them as symlinks, and grok validated the very same tree, installed it, and surfaced ZERO skills while this row said `flag` (measured both ways on grok 1.0.5, ranger-base-65rc). What is still worth measuring on a fourth runtime is the ID it files the tree under: the dir's basename is the literal `claude` (ADR 0017 §3 notes and accepts the leak) and grok names the installed plugin `claude-<hash>` from it, not from the plugin.json's `posse-<persona>`.")
 	}
 	return r
 }

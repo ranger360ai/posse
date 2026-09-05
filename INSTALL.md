@@ -860,9 +860,16 @@ command: <cli> --some-unattended-flag --rules="$(cat {file})"
 # model_standard: <model-id>
 # model_fast: <model-id>
 # skills_flag: --plugin-dir    # this CLI's skill-surface flag (printf form as
-#                              # above). A runtime has ONE skill surface —
-#                              # declaring this and skills_cwd: together
-#                              # refuses.
+#                              # above). It is pointed at a dir posse renders
+#                              # per persona and per launch: a
+#                              # .claude-plugin/plugin.json (inert to anything
+#                              # that does not read it) beside skills/<name>,
+#                              # each a real directory of FILES — nothing in
+#                              # there is a symlink your CLI has to follow out
+#                              # of the plugin root (ranger-base-65rc measured
+#                              # a loader that does not, seeing zero skills).
+#                              # A runtime has ONE skill surface — declaring
+#                              # this and skills_cwd: together refuses.
 # skills_cwd: true             # ...or this CLI discovers skills from its
 #                              # WORKING DIRECTORY instead of from a flag (the
 #                              # codex/grok shape). The launch materializes
