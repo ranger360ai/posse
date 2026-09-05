@@ -110,39 +110,80 @@ FORBIDDEN=(
 # are live in the fleet: the shipped examples write a block sequence, the crew
 # PIDs were written as a flow sequence on one line. A rule containing a comma
 # would split wrong in the flow arm; none of the required ones does, and
-# Bash(git commit unless --) is the closest call - no comma, and the awk below
-# keeps it whole. Only the frontmatter is read: the body of a PID discusses its
+# Bash(git commit unless --) is the closest call - no comma, and the reader
+# below keeps it whole. Only the frontmatter is read: the body of a PID discusses its
 # own deny rules in prose, and prose is not a fence. That is guarded twice, by
 # the fm filter and by the exit at the closing ---, and the two are redundant:
 # MEASURED, removing either one alone leaves the self-test green and only
 # removing both turns the gap arm red. Redundant, not unpinned - do not read
 # the surviving single mutants as a hole.
+# The reader is bash's own, not the awk that used to stand here
+# (ranger-base-s8b4g, ranger-base-7hx87): an awk that is signalled, that
+# cannot be exec'd under load, or that takes EPIPE returns NO rules, and no
+# rules is exactly how a PID with no fence at all reads — this script would
+# then report every persona in the fleet missing every required deny. Every
+# rule the awk encoded is kept, including which arms come first.
 deny_rules() {
-  awk '
-    /^---[[:space:]]*$/ { fm++; if (fm == 2) exit; next }
-    fm != 1 { next }
-    /^deny:[[:space:]]*\[/ {
-      line = $0
-      sub(/^deny:[[:space:]]*\[/, "", line)
-      sub(/\][[:space:]]*$/, "", line)
-      n = split(line, parts, /,[[:space:]]*/)
-      for (i = 1; i <= n; i++) {
-        gsub(/^[[:space:]]+|[[:space:]]+$/, "", parts[i])
-        if (parts[i] != "") print parts[i]
-      }
-      next
-    }
-    /^deny:[[:space:]]*$/ { block = 1; next }
-    block && /^[[:space:]]+#/ { next }
-    block && /^[[:space:]]+-[[:space:]]/ {
-      rule = $0
-      sub(/^[[:space:]]+-[[:space:]]+/, "", rule)
-      sub(/[[:space:]]+$/, "", rule)
-      print rule
-      next
-    }
-    block { block = 0 }
-  ' "$1"
+  local line rest part fm=0 block=0 trimmed
+  while IFS= read -r line || [ -n "$line" ]; do
+    rest=${line#---}
+    if [ "$rest" != "$line" ]; then
+      case $rest in
+      *[![:space:]]*) ;;
+      *)
+        fm=$((fm + 1))
+        [ "$fm" = 2 ] && return 0
+        continue
+        ;;
+      esac
+    fi
+    [ "$fm" = 1 ] || continue
+    case $line in
+    'deny:'*)
+      rest=${line#deny:}
+      rest=${rest#"${rest%%[![:space:]]*}"}
+      case $rest in
+      '['*)
+        # The flow sequence, one line: strip the brackets and split on
+        # `,[[:space:]]*`, trimming each part and dropping the empty ones.
+        rest=${rest#[}
+        rest=${rest%"${rest##*[![:space:]]}"}
+        rest=${rest%]}
+        while :; do
+          part=${rest%%,*}
+          part=${part#"${part%%[![:space:]]*}"}
+          part=${part%"${part##*[![:space:]]}"}
+          [ -n "$part" ] && printf '%s\n' "$part"
+          [ "${rest#*,}" = "$rest" ] && break
+          rest=${rest#*,}
+        done
+        continue
+        ;;
+      '')
+        block=1
+        continue
+        ;;
+      esac
+      ;;
+    esac
+    [ "$block" = 1 ] || continue
+    trimmed=${line#"${line%%[![:space:]]*}"}
+    if [ "$trimmed" = "$line" ]; then
+      block=0
+      continue
+    fi
+    case $trimmed in
+    '#'*) continue ;;
+    '-'[[:space:]]*)
+      rest=${trimmed#-}
+      rest=${rest#"${rest%%[![:space:]]*}"}
+      rest=${rest%"${rest##*[![:space:]]}"}
+      printf '%s\n' "$rest"
+      continue
+      ;;
+    esac
+    block=0
+  done <"$1"
 }
 
 verbose=0
@@ -312,8 +353,46 @@ norm_rule() {
 # region holds that is neither is not a rule this reader knows, and it is left
 # out rather than guessed at.
 argv_rules() {
-  printf '%s\n' "$1" | grep -o '[A-Za-z_][A-Za-z0-9_]*([^)]*)'
-  printf '%s\n' "$1" | tr ' ' '\n' | grep -E -x 'Edit|Write'
+  # `grep -o` and `tr | grep -E -x` without either fork (ranger-base-s8b4g):
+  # a matcher that never ran reads a rendered launch line as carrying NO
+  # rules, and every comparison below then reports the fence missing from a
+  # session that is in fact fenced.
+  local rest=$1 pre after inner name tmp c w
+  rest=$1
+  while [ -n "$rest" ]; do
+    pre=${rest%%'('*}
+    [ "$pre" = "$rest" ] && break
+    after=${rest#*'('}
+    case $after in *')'*) ;; *) break ;; esac
+    inner=${after%%')'*}
+    rest=${after#*')'}
+    name=
+    tmp=$pre
+    while [ -n "$tmp" ]; do
+      c=${tmp: -1}
+      case $c in
+      [A-Za-z0-9_]) name=$c$name ;;
+      *) break ;;
+      esac
+      tmp=${tmp%?}
+    done
+    # Leftmost match: a run starting with a digit is entered at its first
+    # letter or underscore, as the ERE's first character class had it.
+    while [ -n "$name" ]; do
+      case $name in
+      [A-Za-z_]*) break ;;
+      *) name=${name#?} ;;
+      esac
+    done
+    [ -n "$name" ] && printf '%s(%s)\n' "$name" "$inner"
+  done
+  rest=$1
+  while :; do
+    w=${rest%% *}
+    case $w in Edit | Write) printf '%s\n' "$w" ;; esac
+    [ "$w" = "$rest" ] && break
+    rest=${rest#* }
+  done
 }
 
 # The sets are delimited strings because macOS ships bash 3.2, which has no
@@ -327,7 +406,7 @@ sethas() {
 
 check_live() {
   local home=$1 fixture=${2:-} agents
-  local src line pid args persona pidfile region r n
+  local src line pid args persona pr pw pidfile region r n
   local sessions=0 measured=0 unmeasured=0 bad=0 comparisons=0
   agents="$home/agents"
   if [ -n "$fixture" ]; then
@@ -335,7 +414,7 @@ check_live() {
       echo "nothing measured: $fixture is unreadable" >&2
       return 2
     fi
-    src=$(cat "$fixture")
+    src=$(<"$fixture")
   else
     src=$(ps -Ao pid=,args= 2>/dev/null)
   fi
@@ -352,8 +431,21 @@ check_live() {
     # posse's persona launch, on every runtime: the PID rides on the line.
     case "$args" in *--append-system-prompt*) ;; *) continue ;; esac
     sessions=$((sessions + 1))
-    persona=$(printf '%s' "$args" | grep -o 'name: [A-Za-z0-9_-][A-Za-z0-9_-]*' | head -1)
-    persona=${persona#name: }
+    # The first `name: <word>` in the launch line, read with `${...}` rather
+    # than `grep -o | head -1` (ranger-base-s8b4g): an empty $persona sends
+    # the session into the UNMEASURED arm below, which says a live persona
+    # carries a system prompt no PID answers for.
+    persona=
+    pr=$args
+    while :; do
+      [ "${pr#*'name: '}" = "$pr" ] && break
+      pr=${pr#*'name: '}
+      pw=${pr%%[!A-Za-z0-9_-]*}
+      if [ -n "$pw" ]; then
+        persona=$pw
+        break
+      fi
+    done
     pidfile="$agents/$persona.md"
     if [ -z "$persona" ] || [ ! -r "$pidfile" ]; then
       echo "UNMEASURED  pid $pid carries a system prompt no PID under $agents answers for (read '${persona:-?}')"
@@ -476,23 +568,44 @@ check_live() {
 settings_deny() {
   # permissions.deny, one rule per line. Reads the FIRST "deny" array in the
   # file, one-line or block; a rule containing a `]` or an escaped quote would
-  # be misread and none does.
-  awk '
-    {
-      if (!indeny) {
-        if (match($0, /"deny"[[:space:]]*:[[:space:]]*\[/) == 0) next
-        indeny = 1
-        $0 = substr($0, RSTART + RLENGTH)
-      }
-      line = $0
-      if ((j = index(line, "]")) > 0) { line = substr(line, 1, j - 1); done = 1 }
-      while (match(line, /"[^"]*"/)) {
-        print substr(line, RSTART + 1, RLENGTH - 2)
-        line = substr(line, RSTART + RLENGTH)
-      }
-      if (done) exit
-    }
-  ' "$1"
+  # be misread and none does. Read with `case` and `${...}` rather than awk
+  # (ranger-base-s8b4g): a dead matcher answers "this settings file denies
+  # nothing", which is a finding against a file that carries the whole set.
+  local line seg rest aft inner indeny=0 last=0
+  while IFS= read -r line || [ -n "$line" ]; do
+    seg=$line
+    if [ "$indeny" = 0 ]; then
+      rest=$seg
+      while :; do
+        [ "${rest#*'"deny"'}" = "$rest" ] && break
+        rest=${rest#*'"deny"'}
+        aft=${rest#"${rest%%[![:space:]]*}"}
+        case $aft in ':'*) ;; *) continue ;; esac
+        aft=${aft#:}
+        aft=${aft#"${aft%%[![:space:]]*}"}
+        case $aft in '['*) ;; *) continue ;; esac
+        seg=${aft#[}
+        indeny=1
+        break
+      done
+      [ "$indeny" = 1 ] || continue
+    fi
+    case $seg in
+    *']'*)
+      seg=${seg%%']'*}
+      last=1
+      ;;
+    esac
+    while :; do
+      [ "${seg#*\"}" = "$seg" ] && break
+      seg=${seg#*\"}
+      [ "${seg#*\"}" = "$seg" ] && break
+      inner=${seg%%\"*}
+      printf '%s\n' "$inner"
+      seg=${seg#*\"}
+    done
+    [ "$last" = 1 ] && return 0
+  done <"$1"
 }
 
 check_settings() {
@@ -563,6 +676,36 @@ check_settings() {
 # narrowed hook alternative, one list-shape arm, and two homes with nothing in
 # them that must exit 2 rather than 0.
 self_test() {
+# The two fixture writers below are a loop and `${...}` rather than
+# `| grep -vxF` and `| sed '$ s/,$//'` (ranger-base-s8b4g). A matcher that
+# never ran writes a fixture that is not the one the arm describes — a
+# REQUIRED list with every row dropped, or a settings file with a trailing
+# comma no reader can parse — and the self-test then reports, as a defect in
+# the code under test, something that belongs to its own rig.
+#
+# required_but <rule> — `  - <rule>` for every REQUIRED rule except <rule>.
+required_but() {
+  local r
+  for r in "${REQUIRED[@]}"; do
+    [ "$r" = "$1" ] || printf -- '  - %s\n' "$r"
+  done
+}
+
+# json_rows <drop-last-comma> <rule>... — each rule as `    "<rule>",`, with
+# the comma left off the final row when the first argument is 1.
+json_rows() {
+  local last=$1 r n i=0
+  shift
+  n=$#
+  for r in "$@"; do
+    i=$((i + 1))
+    if [ "$last" = 1 ] && [ "$i" = "$n" ]; then
+      printf '    "%s"\n' "$r"
+    else
+      printf '    "%s",\n' "$r"
+    fi
+  done
+}
   local d rc=0 out r full_block full_flow alt slug alts=0
   d=$(mktemp -d) || return 2
   mkdir -p "$d/block/agents" "$d/flow/agents" "$d/gap/agents" "$d/empty/agents" \
@@ -600,7 +743,7 @@ self_test() {
     echo '---'
     echo 'name: plural-only'
     echo 'deny:'
-    printf -- '  - %s\n' "${REQUIRED[@]}" | grep -vxF -- '  - Bash(bd daemon:*)'
+    required_but 'Bash(bd daemon:*)'
     echo '---'
     echo 'Daemon lifecycle belongs to the operator. This PID is fenced by'
     echo 'deny:'
@@ -671,7 +814,7 @@ self_test() {
       echo '---'
       echo "name: $slug"
       echo 'deny:'
-      printf -- '  - %s\n' "${REQUIRED[@]}" | grep -vxF -- "  - $alt"
+      required_but "$alt"
       echo '---'
       echo body
     } > "$d/$slug/agents/a.md"
@@ -870,7 +1013,7 @@ self_test() {
 
   {
     echo '{ "permissions": { "allow": ["Read"], "deny": ['
-    printf '    "%s",\n' "${REQUIRED[@]}" | sed '$ s/,$//'
+    json_rows 1 "${REQUIRED[@]}"
     echo '  ] } }'
   } > "$d/clean/.claude/settings.json"
   out=$(check_settings "$d/clean"); r=$?
@@ -885,7 +1028,7 @@ self_test() {
   {
     echo '{ "permissions": { "deny": ['
     printf '    "%s",\n' "${REQUIRED[@]}"
-    printf '    "%s",\n' "${FORBIDDEN[@]}" | sed '$ s/,$//'
+    json_rows 1 "${FORBIDDEN[@]}"
     echo '  ] } }'
   } > "$d/broad/.claude/settings.json"
   out=$(check_settings "$d/broad"); r=$?
