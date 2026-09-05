@@ -49,6 +49,26 @@ func runGate(t *testing.T, env []string, command string) gateResult {
 	return runGateRaw(t, env, string(payload))
 }
 
+// runGateAt is runGate with the payload field the close arm reads: the
+// directory the call is being made FROM. Separate rather than a widened
+// runGate because every other pin in this file is about a command line alone,
+// and a cwd on those payloads would be a fixture nothing reads
+// (ranger-base-3xgc7, ADR 0041 §3).
+func runGateAt(t *testing.T, env []string, command, cwd string) gateResult {
+	t.Helper()
+	payload, err := json.Marshal(map[string]any{
+		"session_id":      "qa",
+		"hook_event_name": "PreToolUse",
+		"cwd":             cwd,
+		"tool_name":       "Bash",
+		"tool_input":      map[string]any{"command": command},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return runGateRaw(t, env, string(payload))
+}
+
 func runGateRaw(t *testing.T, env []string, payload string) gateResult {
 	t.Helper()
 	cmd := exec.Command("sh", "scripts/bd-argv-gate.sh")
@@ -1141,6 +1161,294 @@ func TestQABdArgvGateEveryFallbackArmDecidesSomething(t *testing.T) {
 				t.Errorf("arm %s's mutant also stopped refusing %s's row (%q, code=%d) — the edit "+
 					"broke the script rather than disabling one arm", a.name, other.name, other.payload, r.code)
 			}
+		}
+	}
+}
+
+// ─── ADR 0041 §3: the cooperative pre-close refusal (ranger-base-3xgc7) ──────
+//
+// One arm of this gate is not about the verb at all. `close` is on the
+// allow-list and stays there; what the close arm asks is WHERE the call is
+// being made from. ranger-base-yeg1 closed naming four deliverables and not
+// one of them was committed — the branch's reflog is a single "Created from
+// main" — and a day later a pin file carried three claims copied out of that
+// close comment, all false at HEAD. Only commits leave a session tree, so a
+// close typed over uncommitted paths claims work nothing carries.
+//
+// It is COOPERATIVE class (ADR 0025): held in-process, on the runtime's
+// ordinary path and nothing stronger. `git checkout -- .` walks around it,
+// and that is an explicit act by the one actor who knows whether the paths
+// are work. The realized belt is ADR 0041 §1–2 (closeddirty.go), operator-
+// side and under the launcher lock. So what this pins is the refusal, not an
+// enforcement claim — and the class is asserted in the refusal's own text,
+// because a reader who thinks a cooperative fence is a wall is the failure
+// ADR 0025 was written about.
+//
+// THE FOUR ROWS ARE ADR 0041's Verification 4, plus the one it implies.
+// A dirty session tree denies and names the path; a dirty SHARED checkout is
+// silent (there the dirt is other writers, ADR 0022); a clean session tree is
+// silent. The fourth is the one the second cannot cover: a dirty LINKED
+// worktree on a branch that is not `posse/` is not a posse session tree, and
+// only that row tells the branch arm apart from the linked arm.
+//
+// AND THE CONTROLS RIDE ALONG. A gate that refused every line would pass a
+// table of expected refusals, so `bd list` from the dirty tree must stay
+// silent and `bd daemon stop` must still be refused BY THE VERB FENCE —
+// which is also where the two tails are told apart: the verb fence points at
+// the allow-list, and pointing a dirty close there would be advice about the
+// wrong thing entirely (`close` is on it).
+func TestQABdArgvGateRefusesACloseFromADirtySessionTree(t *testing.T) {
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("no python3")
+	}
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git")
+	}
+	fx := newCloseGateTrees(t)
+
+	for _, row := range []struct {
+		name    string
+		command string
+		cwd     string
+		want    string // "" = the gate must stay out of the way
+	}{
+		{"a dirty session tree refuses the close", "bd close x", fx.dirty, fx.dirtFile},
+		{"a dirty shared checkout is silent", "bd close x", fx.shared, ""},
+		{"a clean session tree is silent", "bd close x", fx.clean, ""},
+		{"a dirty worktree off a non-posse branch is silent", "bd close x", fx.foreign, ""},
+		{"a dirty MAIN checkout on a posse/ branch is silent", "bd close x", fx.onPosse, ""},
+		{"control: a read verb from the dirty tree is silent", "bd list", fx.dirty, ""},
+		{"control: the verb fence still fires there", "bd daemon stop", fx.dirty, "allow-list"},
+	} {
+		got := denied(t, runGateAt(t, nil, row.command, row.cwd))
+		if row.want == "" {
+			if got != "" {
+				t.Errorf("%s: want silence, got a refusal: %s", row.name, got)
+			}
+			continue
+		}
+		if !strings.Contains(got, row.want) {
+			t.Errorf("%s: refusal must name %q, got: %s", row.name, row.want, got)
+		}
+	}
+
+	// The dirty close's refusal has to be readable and correctly labelled:
+	// the paths, both resolutions, and the class. A refusal that says only
+	// "refused" is the undiagnosable message ranger-base-uxuy filed.
+	reason := denied(t, runGateAt(t, nil, "bd close x", fx.dirty))
+	for _, want := range []string{
+		// The path — and note WHICH path: dirt.txt is UNTRACKED. The
+		// launcher's own dirty set counts untracked files (a stray
+		// calls.log was one of the four closes ADR 0041 measured), so a
+		// close arm that read only tracked changes would be silent on a
+		// quarter of the class. This row is what says it does not.
+		fx.dirtFile,
+		"COMMIT",      // resolution one
+		"DISCARD",     // resolution two
+		"COOPERATIVE", // ADR 0025's class, said out loud
+		"ADR 0041",    // where the realized belt is
+	} {
+		if !strings.Contains(reason, want) {
+			t.Errorf("the dirty-close refusal must carry %q: %s", want, reason)
+		}
+	}
+	// And NOT the verb fence's tail: `close` is on the allow-list, so
+	// "file it — the allow-list is …" would send the closer to edit a file
+	// that has nothing to do with why this call stopped.
+	if strings.Contains(reason, "allow-list") {
+		t.Errorf("the dirty-close refusal carries the VERB fence's tail, which points at the "+
+			"allow-list `close` is already on: %s", reason)
+	}
+
+	// A payload with no cwd at all — a runtime that stops sending the field —
+	// must leave the gate exactly as it was before ADR 0041 §3.
+	if got := denied(t, runGate(t, nil, "bd close x")); got != "" {
+		t.Errorf("with no cwd on the payload the close arm must not run, got: %s", got)
+	}
+}
+
+// closeGateTrees is the fixture the rows above are read against: two main
+// checkouts and three linked worktrees, built so that every discriminator the
+// close arm uses has a pair of trees differing in exactly that one thing —
+// which is what a mutant can be aimed at. Without the second main checkout
+// (`onPosse`) the linked arm has no row of its own, because `shared` differs
+// from a session tree in the branch as well.
+type closeGateTrees struct {
+	shared   string // the main checkout, DIRTY — the ADR 0022 row
+	dirty    string // a linked worktree on posse/…, dirty
+	clean    string // a linked worktree on posse/…, clean
+	foreign  string // a linked worktree on feature/…, dirty
+	onPosse  string // a MAIN checkout whose own branch is posse/…, dirty
+	dirtFile string // the path the dirty trees hold, as status prints it
+}
+
+func newCloseGateTrees(t *testing.T) closeGateTrees {
+	t.Helper()
+	root := t.TempDir()
+	shared := filepath.Join(root, "repo")
+	if err := os.MkdirAll(shared, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// -c on every call, never `git config`: a global user.email, hooksPath or
+	// gpgsign on the box the suite runs on must not decide whether this
+	// fixture builds (the hooksPath class is why hookfreshness_qa_test.go
+	// reads git's own answer instead of deriving one).
+	git := func(dir string, args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{
+			"-c", "user.email=probe@example.invalid", "-c", "user.name=probe",
+			"-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main",
+			"-c", "core.hooksPath=" + filepath.Join(root, "no-hooks"),
+			"-C", dir,
+		}, args...)...)
+		if b, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git -C %s %v: %v\n%s", dir, args, err, b)
+		}
+	}
+	git(shared, "init", "-q", ".")
+	if err := os.WriteFile(filepath.Join(shared, "kept.txt"), []byte("committed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git(shared, "add", "--", "kept.txt")
+	git(shared, "commit", "-qm", "fixture", "--", "kept.txt")
+
+	const dirt = "dirt.txt"
+	fx := closeGateTrees{shared: shared, dirtFile: dirt}
+	for _, w := range []struct {
+		field  *string
+		dir    string
+		branch string
+		dirty  bool
+	}{
+		{&fx.dirty, "wt-dirty", "posse/probe-dirty", true},
+		{&fx.clean, "wt-clean", "posse/probe-clean", false},
+		{&fx.foreign, "wt-foreign", "feature/probe", true},
+	} {
+		path := filepath.Join(root, w.dir)
+		git(shared, "worktree", "add", "-q", "-b", w.branch, path)
+		if w.dirty {
+			if err := os.WriteFile(filepath.Join(path, dirt), []byte("not committed\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		*w.field = path
+	}
+	// The shared checkout is dirty too, and it is dirty in the same way — so
+	// its silence is a statement about WHERE the call came from and not about
+	// there being nothing to find.
+	if err := os.WriteFile(filepath.Join(shared, dirt), []byte("other writers'\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// A MAIN checkout that happens to sit on a posse/ branch, dirty. Odd but
+	// real — a branch survives its worktree — and it is the only tree that
+	// differs from the dirty session tree in the LINKED discriminator alone.
+	// Without it the linked arm has no row of its own: `shared` above is on
+	// `main`, so killing the linked arm there is caught by the branch arm and
+	// the mutation reads as silent for the wrong reason (MEASURED here — this
+	// pin's first cut passed that mutant).
+	onPosse := filepath.Join(root, "repo-on-posse")
+	if err := os.MkdirAll(onPosse, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	git(onPosse, "init", "-q", ".")
+	if err := os.WriteFile(filepath.Join(onPosse, "kept.txt"), []byte("committed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git(onPosse, "add", "--", "kept.txt")
+	git(onPosse, "commit", "-qm", "fixture", "--", "kept.txt")
+	git(onPosse, "branch", "-M", "posse/probe-shared")
+	if err := os.WriteFile(filepath.Join(onPosse, dirt), []byte("other writers'\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fx.onPosse = onPosse
+	return fx
+}
+
+// TestQABdArgvGateCloseArmDiscriminatesPerArm mutation-checks the close arm
+// one discriminator at a time, which is the only way to know the four rows
+// above are reading four different things rather than one.
+//
+// The seam is BD_ARGV_GATE_PY, the wrapper's own override — the same one the
+// fail-closed pins use — so the mutant is a COPY and the shipped script is
+// never edited. Each mutant kills exactly one arm and is required to do two
+// things: flip the row that arm owns, and leave the dirty-session row still
+// refusing. Without the second half a mutant that simply broke the script
+// would "pass" every arm at once (the mutation-harness rule this file's
+// fallback pin already follows).
+//
+// Each anchor is asserted to appear exactly once in the shipped script before
+// it is replaced: an anchor that has been rewritten out matches nothing, and
+// a mutation that changed nothing is a green that measured nothing.
+func TestQABdArgvGateCloseArmDiscriminatesPerArm(t *testing.T) {
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("no python3")
+	}
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git")
+	}
+	shipped, err := os.ReadFile(filepath.Join("scripts", "bd-argv-gate.py"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fx := newCloseGateTrees(t)
+	dir := t.TempDir()
+
+	// The control first: the same copy, run through the same override, must
+	// reproduce the shipped verdicts. A mutant reading taken against a broken
+	// harness says nothing about the mutation.
+	control := filepath.Join(dir, "control.py")
+	if err := os.WriteFile(control, shipped, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	controlEnv := []string{"BD_ARGV_GATE_PY=" + control}
+	if got := denied(t, runGateAt(t, controlEnv, "bd close x", fx.dirty)); !strings.Contains(got, fx.dirtFile) {
+		t.Fatalf("control: the unmutated copy must refuse the dirty session tree naming %q, got: %s", fx.dirtFile, got)
+	}
+
+	for _, m := range []struct {
+		name   string
+		anchor string
+		dead   string
+		flips  string // the tree whose row this arm owns; silent -> refused
+	}{
+		{
+			name:   "the posse/ branch arm",
+			anchor: `if not branch.startswith("posse/"):`,
+			dead:   `if False:`,
+			flips:  fx.foreign,
+		},
+		{
+			name:   "the porcelain arm",
+			anchor: "    if not paths:",
+			dead:   "    if paths is None:",
+			flips:  fx.clean,
+		},
+		{
+			name:   "the linked-worktree arm",
+			anchor: "if gitdir.strip() == common.strip():",
+			dead:   "if False:",
+			flips:  fx.onPosse,
+		},
+	} {
+		if n := strings.Count(string(shipped), m.anchor); n != 1 {
+			t.Fatalf("%s: its anchor %q appears %d times in the shipped script, want 1 — "+
+				"the arm was rewritten and this mutation is aimed at nothing", m.name, m.anchor, n)
+		}
+		mutant := filepath.Join(dir, "mutant.py")
+		if err := os.WriteFile(mutant, []byte(strings.Replace(string(shipped), m.anchor, m.dead, 1)), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		env := []string{"BD_ARGV_GATE_PY=" + mutant}
+		if got := denied(t, runGateAt(t, env, "bd close x", m.flips)); got == "" {
+			t.Errorf("%s: with it dead, %s is still silent — no row discriminates this arm, "+
+				"so deleting it would go unnoticed", m.name, m.flips)
+		}
+		// The edit disabled ONE arm and did not break the script: the row the
+		// whole feature exists for still refuses.
+		if got := denied(t, runGateAt(t, env, "bd close x", fx.dirty)); !strings.Contains(got, fx.dirtFile) {
+			t.Errorf("%s: its mutant also stopped refusing the dirty session tree (%s) — the edit "+
+				"broke the script rather than disabling one arm", m.name, got)
 		}
 	}
 }

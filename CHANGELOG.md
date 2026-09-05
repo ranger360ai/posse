@@ -142,6 +142,37 @@ something a reader can now check. The family is narrowed, not closed.
 
 ### Added
 
+**The bd argv gate now refuses `bd close` typed in a session worktree that
+still holds uncommitted paths, and names them.**
+
+*Affected: boxes running posse's dispatch with the gate installed as a
+PreToolUse hook. Needs `posse promote` after `make install`, like every other
+change to `scripts/bd-argv-gate.{sh,py}` — the gate that fences your box is
+your installed copy, and `make verify-gate-freshness` says when it is behind.*
+
+Only commits leave a session worktree: the launcher fast-forwards
+`posse/<session>` onto the repo's branch when the bead closes, and whatever is
+uncommitted stays in a tree that is retired. A close typed over dirt therefore
+claims work nothing carries. One bead closed naming four deliverables whose
+branch reflog was a single "Created from main", and a day later a pin file
+carried three of those claims, all false at HEAD.
+
+The refusal lists the paths and both ways out — commit them under the bead id,
+or discard them — and it fires only where the dirt can be the closer's own: in
+a linked worktree on a `posse/` branch. Your shared checkout is silent however
+dirty it is, because there the uncommitted files belong to whoever else is
+writing in it. So is a clean session tree, a detached HEAD, and any tree git
+declines to answer about; git runs at all only on a line whose verb resolved to
+`close`, so no other command pays for this.
+
+**It is cooperative, and it says so in its own refusal** (ADR 0025): a
+PreToolUse hook holds the runtime's ordinary path and nothing stronger, and
+`git checkout -- .` walks around it — which is the point, since only the
+persona in that tree knows whether the paths are work. The belt behind it is
+operator-side and already shipped: a close that leaves dirt gets `closed dirty
+[…]` written under its own close comment on the bead, and a P1 filed back at
+the closer.
+
 **`posse status` and every `dispatch --watch` pass now name a second bd
 store sitting beside a redirect: `second store: ~/src/<repo>/.beads holds
 beads.db, issues.jsonl beside a redirect to ~/src/<instance>/.beads — bd

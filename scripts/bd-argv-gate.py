@@ -44,12 +44,28 @@ and the L2 cage.
 What it also does not do is read prose as commands. A heredoc body is data —
 the only questions asked of one are whether something on the line executes it
 and whether an unquoted body carries a substitution (ranger-base-uxuy).
+
+ONE ARM IS NOT ABOUT THE VERB AT ALL (ADR 0041 §3, ranger-base-3xgc7). `close`
+is on the allow-list and stays there; what the close arm asks is where the call
+is being made FROM. A close typed in a session worktree that still holds
+uncommitted paths claims work that will never leave the tree — only commits do,
+and posse fast-forwards the session branch when the bead closes — so `bd close`
+from a dirty session worktree is refused with the paths and the two ways out.
+It is **cooperative** class (ADR 0025): held in-process, on the runtime's
+ordinary path and nothing stronger. `git checkout -- .` walks around it, and
+that is an explicit act by the one actor who knows whether the paths are work.
+The realized belt behind it is ADR 0041 §1–2, operator-side and under the
+launcher lock: a close that leaves dirt gets `closed dirty [` written on the
+bead and a P1 filed back at the closer. The fast path is kept — git runs only
+on a line whose verb resolved to `close`, and never in the shared checkout,
+where the dirt belongs to other writers (ADR 0022).
 """
 
 import json
 import os
 import re
 import shlex
+import subprocess
 import sys
 
 # ── Policy ───────────────────────────────────────────────────────────────
@@ -162,6 +178,35 @@ BD_WORD = re.compile(r"(^|[^A-Za-z0-9_.\-])bd([^A-Za-z0-9_\-]|$)")
 STRIP_QUOTING = {ord(c): None for c in "\\'\""}
 
 GATE = "bd-argv-gate"
+
+# What every refusal says after its own sentence. Two tails, because the two
+# fences answer different questions and a reader acts on the answer: the verb
+# fence's tail points at the allow-list, which is the right next step for a
+# refused verb and is nonsense for a close — `close` IS on the allow-list, and
+# nothing about the allow-list is what stopped this one.
+VERB_TAIL = ("The bracket says what was matched and where — a fence on the "
+             "RESOLVED verb, which no reordering of bd's global flags moves. "
+             "If this verb is legitimate work, file it — the allow-list is "
+             "scripts/bd-argv-gate.py in posse and the operator owns the edit.")
+
+DIRTY_TAIL = ("This gate is COOPERATIVE class (ADR 0025): it holds the "
+              "runtime's ordinary path and nothing stronger — `git checkout "
+              "-- .` walks around it, and that is an explicit act by the one "
+              "actor who knows whether these paths are work. The realized "
+              "belt is ADR 0041 §1–2, operator-side: a close that leaves them "
+              "writes `closed dirty [` under its own close comment on the "
+              "bead and files a P1 back at the closer.")
+
+# How many paths a refusal spells before it says "and N more". Same bound and
+# same wording as the launcher's dirtyList (reapguard.go): the exact count is
+# already in the sentence, and a 300-path refusal scrolls its own point away.
+DIRTY_MAX = 5
+
+# git is given a budget well inside the hook's own (settings.json runs this
+# with timeout 10). A git that will not answer in five seconds must not cost
+# the fleet every `bd close`, so the close arm stays SILENT on any failure —
+# see close_refusal.
+GIT_TIMEOUT = 5
 
 
 def mentions_bd(command):
@@ -573,8 +618,126 @@ def shell_consumers_on_line(segs):
     return found
 
 
-def verdict(command):
-    """Return None to stay out of the way, or a refusal reason.
+def git_out(cwd, *args):
+    """git's stdout in cwd, or None when git did not answer.
+
+    None is every failure — not on PATH, not a repo, killed by the timeout,
+    non-zero for any reason — because the ONE caller treats them all the same
+    way (silence), and a close arm that told them apart would only be inviting
+    someone to act on the difference.
+    """
+    try:
+        p = subprocess.run(("git", "-C", cwd) + args, capture_output=True,
+                           text=True, timeout=GIT_TIMEOUT)
+    except Exception:
+        return None
+    return p.stdout if p.returncode == 0 else None
+
+
+def session_worktree(cwd):
+    """(toplevel, branch) when cwd is inside a posse SESSION worktree, else None.
+
+    Two arms, and both must hold.
+
+    LINKED, not "under the worktree root". ADR 0041 §3 spells the first arm as
+    the toplevel being under the session worktree root, and the root is where
+    that spelling stops being checkable from here: it is config (`worktrees:`
+    in posse's config.yaml, WorktreeRoot in worktree.go), so a gate that
+    hardcoded `$HOME/.posse/worktrees` would go quietly silent for anyone who
+    configured a root — a fence with a false-negative class nobody would ever
+    see. What the root arm is FOR is "this is a session tree and not the
+    shared checkout", and git answers that exactly and for any root: a linked
+    worktree's git dir is `<repo>/.git/worktrees/<name>` while its common dir
+    is `<repo>/.git`, and in a main checkout the two are the same path
+    (MEASURED 2026-09-05: `.git`/`.git` in ~/src/posse, the two absolute paths
+    in ~/.posse/worktrees/posse/<session>). So the shared checkout is out by
+    construction, which is §3's actual requirement — there the dirt belongs to
+    other writers (ADR 0022) — and the reading survives a configured root.
+
+    POSSE/, the second arm, is what makes it a POSSE session tree rather than
+    any linked worktree someone made: SessionBranch (worktree.go) is
+    "posse/" + session, and a session tree checks that branch out. A detached
+    HEAD has no branch and is silent here; symbolic-ref says so by failing.
+    """
+    top = git_out(cwd, "rev-parse", "--show-toplevel")
+    gitdir = git_out(cwd, "rev-parse", "--git-dir")
+    common = git_out(cwd, "rev-parse", "--git-common-dir")
+    if top is None or gitdir is None or common is None:
+        return None
+    if gitdir.strip() == common.strip():
+        return None                     # a main checkout — the shared one
+    branch = git_out(cwd, "symbolic-ref", "--quiet", "--short", "HEAD")
+    if branch is None:
+        return None                     # detached, or no HEAD to read
+    branch = branch.strip()
+    if not branch.startswith("posse/"):
+        return None
+    return top.strip(), branch
+
+
+def dirty_paths(cwd):
+    """The uncommitted paths of the tree at cwd, read as the launcher reads them.
+
+    Deliberately the same three lines as worktree.go's dirtyPaths — `status
+    --porcelain`, drop anything shorter than the four bytes a real record
+    needs, take from column 3 — so the set this refusal names and the set the
+    launcher would write on the bead an hour later are the same set. Untracked
+    files are in it because they are in the launcher's (a stray `calls.log`
+    was one of the four measured closes), and renames arrive as `old -> new`
+    the same way there.
+    """
+    out = git_out(cwd, "status", "--porcelain")
+    if out is None:
+        return None
+    return [ln[3:].strip() for ln in out.split("\n") if len(ln) >= 4]
+
+
+def dirty_list(paths):
+    """The bounded path list a refusal prints — reapguard.go's dirtyList."""
+    if len(paths) <= DIRTY_MAX:
+        return " ".join(paths)
+    return "%s and %d more" % (" ".join(paths[:DIRTY_MAX]), len(paths) - DIRTY_MAX)
+
+
+def close_refusal(cwd):
+    """ADR 0041 §3: the refusal for `bd close` from a dirty session tree, or None.
+
+    Reached only from the `close` arm of verdict(), which is the whole of the
+    fast path this keeps: no git runs for any other line, and none at all when
+    the harness handed us no cwd.
+
+    SILENT on everything it cannot answer. git missing, git slow, cwd gone,
+    not a repo, a status that will not print — every one of them returns None
+    rather than a refusal, because this layer is cooperative and its realized
+    belt (§1–2) reads the same tree afterwards under the launcher lock. A
+    fence that guesses here would refuse closes for reasons that have nothing
+    to do with the tree.
+    """
+    tree = session_worktree(cwd)
+    if tree is None:
+        return None
+    top, branch = tree
+    paths = dirty_paths(top)
+    if not paths:
+        return None
+    return ("`bd close` from a session worktree that still holds %d "
+            "uncommitted path(s) — %s in %s. Only COMMITS leave that tree: "
+            "posse fast-forwards %s onto the repo's branch when the bead "
+            "closes, and whatever is uncommitted stays in a tree that is "
+            "retired, so a close now claims work nothing carries. Two ways "
+            "on, and only you can say which: COMMIT them under the bead id "
+            "(`git commit -m '...' -- <paths>`), or DISCARD them (`git "
+            "checkout -- <paths>`, `git clean`) if they were never to ship"
+            % (len(paths), dirty_list(paths), top, branch), DIRTY_TAIL)
+
+
+def verdict(command, cwd=None):
+    """Return None to stay out of the way, or a (reason, tail) refusal.
+
+    `cwd` is the payload's own — the directory the call is being made from,
+    which only the close arm reads (close_refusal). Default None so every
+    caller that asks about a command alone, this file's own sweep
+    (verify-bd-argv-gate.sh) included, gets exactly the verdict it always got.
 
     Every refusal names WHAT was matched and WHERE (ranger-base-uxuy): the
     filed false positive was undiagnosable from its message, which said only
@@ -591,8 +754,13 @@ def verdict(command):
 
     for index, (segment, unterminated, heredocs) in enumerate(segs, 1):
         def at(reason, matched, text=None):
+            # The single funnel every verb-fence refusal returns through, so
+            # the tail is chosen once. The close arm below returns its own
+            # pair — it is not a fence on the verb and must not point the
+            # reader at the allow-list (see VERB_TAIL/DIRTY_TAIL).
             return "%s [matched the %s of segment %d of %d: %s]" % (
-                reason, matched, index, total, elide(segment if text is None else text))
+                reason, matched, index, total,
+                elide(segment if text is None else text)), VERB_TAIL
 
         toks = tokens(segment)
         # A quoted `sh -c "bd daemon stop"` is ONE token whose basename is not
@@ -687,6 +855,14 @@ def verdict(command):
                    if t in sub["opts"] or t.split("=", 1)[0] in sub["opts"]]
             if bad:
                 return at("`bd %s %s` is refused" % (verb, bad[0]), "resolved verb")
+        # ADR 0041 §3. LAST, and behind the resolved verb: this is the only
+        # arm that costs a process, and putting it here is what keeps the fast
+        # path — `go test`, `bd list`, `bd show` and every other line in the
+        # fleet reach `return None` below without git ever starting.
+        if verb == "close" and cwd:
+            refusal = close_refusal(cwd)
+            if refusal is not None:
+                return refusal
     return None
 
 
@@ -699,6 +875,17 @@ def main():
         if payload.get("tool_name") not in (None, "Bash"):
             return 0
         command = payload["tool_input"]["command"]
+        # The directory the call is made FROM, which claude puts on every hook
+        # payload beside session_id and transcript_path (MEASURED 2026-09-05
+        # out of the 2.1.261 bundle: the PreToolUse input is
+        # `{...Sa(session, Q(), …), hook_event_name:"PreToolUse", tool_name,
+        # tool_input, tool_use_id}` and Sa spells its second argument `cwd`).
+        # Absent or not a string is not a failure — the close arm simply does
+        # not run, which is the pre-ADR-0041 behaviour and the right default
+        # for a runtime that stops sending it.
+        cwd = payload.get("cwd")
+        if not isinstance(cwd, str) or not cwd:
+            cwd = None
     except Exception:
         # Cannot read the call. Fail closed only where bd is in play, so a
         # broken harness contract does not wedge every Bash call on the box.
@@ -714,7 +901,7 @@ def main():
             return 2
         return 0
     try:
-        reason = verdict(command)
+        refusal = verdict(command, cwd)
     except Exception as exc:            # a parser bug must not be an opening
         # `command` is decoded here, but a concatenated spelling still hides
         # from a bare word match (ranger-base-hthx), so ask both ways.
@@ -722,17 +909,15 @@ def main():
             sys.stderr.write("%s: parser error (%s); refusing (fail closed)\n" % (GATE, exc))
             return 2
         return 0
-    if reason is None:
+    if refusal is None:
         return 0                        # silence: the normal rules still apply
+    reason, tail = refusal
     json.dump({"hookSpecificOutput": {
         "hookEventName": "PreToolUse",
         "permissionDecision": "deny",
-        "permissionDecisionReason":
-            "%s: %s. The bracket says what was matched and where — a fence "
-            "on the RESOLVED verb, which no reordering of bd's global flags "
-            "moves. If this verb is legitimate work, file it — the allow-list "
-            "is scripts/bd-argv-gate.py in posse and the operator owns the "
-            "edit." % (GATE, reason),
+        # `reason` never carries its own final stop, so the period is here
+        # and the two tails read the same way after either fence.
+        "permissionDecisionReason": "%s: %s. %s" % (GATE, reason, tail),
     }}, sys.stdout)
     sys.stdout.write("\n")
     return 0
