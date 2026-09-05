@@ -59,4 +59,4 @@ keeps an admission check unrelated to the local copy's effects. Instance
 remote policy still belongs to the instance; this page neither sets it nor
 arms backup on any box.
 
-[Prior allowlist and measurements](history/0049-queue-remote-is-an-instance-fact-before-2026-09-05.md).
+Prior allowlist and measurements: the page as it stood before this simplification is in git history, `git show c86a6b8:docs/adr/0049-queue-remote-is-an-instance-fact.md` (the dated copies were dropped by operator ruling 2026-09-05; git history is the record).

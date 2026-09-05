@@ -54,4 +54,4 @@ is not needed for the existing display.
 | 0034 D1–D3 | Concrete age-bearing display hint |
 | ranger-base-ay3dr, ranger-base-ntvtx | Display retained; guard/threshold clauses dropped |
 
-[Prior design and dated claims](history/0034-codex-plan-hint-before-2026-09-05.md).
+Prior design and dated claims: the page as it stood before this simplification is in git history, `git show c86a6b8:docs/adr/0034-codex-plan-hint.md` (the dated copies were dropped by operator ruling 2026-09-05; git history is the record).

@@ -89,4 +89,4 @@ observation scopes prevents a fresh shell from inventing missing history.
 | 0029 and its G4/G6/G7/carry-over amendments | One computed view with explicit observation scopes |
 | Operator ruling 2026-09-05 | Existing conditions retained without closed-nine fiction |
 
-[Prior tables and evidence](history/0029-governance-surface-before-2026-09-05.md).
+Prior tables and evidence: the page as it stood before this simplification is in git history, `git show c86a6b8:docs/adr/0029-governance-surface.md` (the dated copies were dropped by operator ruling 2026-09-05; git history is the record).

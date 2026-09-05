@@ -115,7 +115,7 @@ hatch, and runtime-owned state stays with its owner.
 
 ## Evidence, consequences and alternatives
 
-MEASURED, dated in the snapshot: release-binary composite/file behavior,
+MEASURED, dated in the pre-simplification page (git history, below): release-binary composite/file behavior,
 config-directory/item resolution, scoped-mint sessions behind the shim,
 rendered read-failure exit and settings pin. **Unverified:** a real token
 from the credentials file returning 200 at the usage endpoint. The old V1b
@@ -143,6 +143,6 @@ this simplification preserves it.
 |---|---|
 | 0019 D1–D6 and accepted amendments | Decisions 1–6 above |
 | 0042 D1–D6 | Decision 3; gate policy directly in 0002 |
-| Reversed premises, parked designs and V1–V17 evidence | Historical snapshot, with their original dates and execution limits |
+| Reversed premises, parked designs and V1–V17 evidence | Pre-simplification page in git history (below), with their original dates and execution limits |
 
-[Dated evidence and earlier alternatives](history/0019-credential-architecture-before-2026-09-05.md).
+Dated evidence and earlier alternatives: the page as it stood before this simplification is in git history, `git show c86a6b8:docs/adr/0019-credential-architecture.md` (the dated copies were dropped by operator ruling 2026-09-05; git history is the record).

@@ -98,5 +98,5 @@ changed by this documentation execution.
 | 0018 §§1–4 and headroom amendment; old 0013 §3 | §5 ordered guard table; 0013 points here |
 | 0010 §6 local meter shape | §2 |
 
-[Historical overflow design and guard evidence](history/0010-plan-guard-overflow-before-2026-09-05.md)
+Historical overflow design and guard evidence: the page as it stood before this simplification is in git history, `git show c86a6b8:docs/adr/0010-plan-guard-overflow.md` (the dated copies were dropped by operator ruling 2026-09-05; git history is the record).
 remain dated history.

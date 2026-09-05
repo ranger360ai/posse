@@ -61,4 +61,4 @@ about future ones.
 | 0035, 2026-08-29 | No foreign-home mode writer; mode is not a liveness guarantee |
 | Operator ruling 2026-09-05 | Reverses ay3dr/6tj5r's approved but unbuilt redundant Codex spelling |
 
-[Prior proposal and measurements](history/0035-mode-second-layer-typed-line-only-before-2026-09-05.md).
+Prior proposal and measurements: the page as it stood before this simplification is in git history, `git show c86a6b8:docs/adr/0035-mode-second-layer-typed-line-only.md` (the dated copies were dropped by operator ruling 2026-09-05; git history is the record).

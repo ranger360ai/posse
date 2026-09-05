@@ -126,8 +126,8 @@ would disclose private facts; shortening its migration history does not.
 | Was | Here |
 |---|---|
 | 0012 original boundary, flow-in, distribution and continuity | Decisions 1–6 |
-| 0012 executed extraction and queue cutover | Historical snapshot below; not replayable instructions |
+| 0012 executed extraction and queue cutover | Pre-simplification page in git history (below); not replayable instructions |
 | 0037 §§1–3 | Venue restrictions |
 | Later constitution source / explicit store environment amendments | 0015 / 0055, directly referenced above |
 
-[Executed migration and dated evidence](history/0012-harness-instance-boundary-before-2026-09-05.md).
+Executed migration and dated evidence: the page as it stood before this simplification is in git history, `git show c86a6b8:docs/adr/0012-harness-instance-boundary.md` (the dated copies were dropped by operator ruling 2026-09-05; git history is the record).

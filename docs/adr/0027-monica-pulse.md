@@ -90,4 +90,4 @@ backoff policy is justified by this simplification.
 | 0029 | Sole condition-computation authority |
 | Operator ruling 2026-09-05 | Fixed repeat interval and delivery-only persistence |
 
-[Prior pulse design and evidence](history/0027-monica-pulse-before-2026-09-05.md).
+Prior pulse design and evidence: the page as it stood before this simplification is in git history, `git show c86a6b8:docs/adr/0027-monica-pulse.md` (the dated copies were dropped by operator ruling 2026-09-05; git history is the record).

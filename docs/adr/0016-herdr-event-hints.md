@@ -106,4 +106,4 @@ Those safeguards stay in the current implementation until its removal.
 | 0011, including former 0028 | Sole authority for rolling bounded reconciliation |
 | Operator ruling 2026-09-05 | Approves removal; measurement belongs to deferred code acceptance |
 
-[Prior decision and measurements](history/0016-herdr-event-hints-before-2026-09-05.md).
+Prior decision and measurements: the page as it stood before this simplification is in git history, `git show c86a6b8:docs/adr/0016-herdr-event-hints.md` (the dated copies were dropped by operator ruling 2026-09-05; git history is the record).

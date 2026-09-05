@@ -112,4 +112,4 @@ trade; this rewrite does not revive the rejected remote destination.
 | 0049 | Sole source-remote decision, implementation deferred |
 | Operator ruling 2026-09-05 | Retains backup; archives superseded ceremony |
 
-[Prior design, rejected plan and measurements](history/0036-posse-backup-before-2026-09-05.md).
+Prior design, rejected plan and measurements: the page as it stood before this simplification is in git history, `git show c86a6b8:docs/adr/0036-posse-backup.md` (the dated copies were dropped by operator ruling 2026-09-05; git history is the record).

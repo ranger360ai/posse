@@ -87,4 +87,4 @@ that a spike cost half an implementation task is not a universal threshold.
 | 0026, 2026-08-27/30 | Triggers, sourcing and acyclic separate-spike mechanics |
 | Operator ruling 2026-09-05 | Bounded research may stay in its existing task |
 
-[Prior practice](history/0026-research-spikes-before-2026-09-05.md).
+Prior practice: the page as it stood before this simplification is in git history, `git show c86a6b8:docs/adr/0026-research-spikes.md` (the dated copies were dropped by operator ruling 2026-09-05; git history is the record).

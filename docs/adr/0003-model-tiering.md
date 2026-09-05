@@ -93,5 +93,5 @@ implements fallback until its deferred removal lands.
 | 0039 D2 | 0015 §§2–3 promotion, referenced directly |
 | 0039 D3d, built and ruled 2026-09-05 | §5 catalog credential; acquisition mechanics in 0019 D1; ruling text and V6–V8 on the 0039 page |
 
-[Dated model measurements and prior alternatives](history/0003-model-tiering-before-2026-09-05.md)
+Dated model measurements and prior alternatives: the page as it stood before this simplification is in git history, `git show c86a6b8:docs/adr/0003-model-tiering.md` (the dated copies were dropped by operator ruling 2026-09-05; git history is the record).
 are history, not current model recommendations.

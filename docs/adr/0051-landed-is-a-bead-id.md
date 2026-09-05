@@ -85,4 +85,4 @@ and failure modes are the removal under this ruling.
 | 0006 | Sole verification/landing contract |
 | Operator ruling 2026-09-05 | Removes editorial SHA admission from commits |
 
-[Prior gate design and stale-to-landed evidence](history/0051-landed-is-a-bead-id-before-2026-09-05.md).
+Prior gate design and stale-to-landed evidence: the page as it stood before this simplification is in git history, `git show c86a6b8:docs/adr/0051-landed-is-a-bead-id.md` (the dated copies were dropped by operator ruling 2026-09-05; git history is the record).

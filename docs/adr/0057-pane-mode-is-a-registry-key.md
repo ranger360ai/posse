@@ -77,4 +77,4 @@ claimed fourth-runtime borrow case remains ASSUMED; the 2026-08-29 captures
 remain dated evidence, not fresh vendor verification. Removing the reader
 itself would lose a useful observation and is not authorized by this decision.
 
-[Prior registry design and dated claims](history/0057-pane-mode-is-a-registry-key-before-2026-09-05.md).
+Prior registry design and dated claims: the page as it stood before this simplification is in git history, `git show c86a6b8:docs/adr/0057-pane-mode-is-a-registry-key.md` (the dated copies were dropped by operator ruling 2026-09-05; git history is the record).

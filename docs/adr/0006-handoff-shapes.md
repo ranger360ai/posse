@@ -92,7 +92,7 @@ one bug per finding (amplification); branch-record absence as proof of
 landing; verify as a close gate. bd remains the only work store and its
 existing export is the exit hatch. No runtime edit accompanies this decision.
 
-[Historical rulings, measurement windows and alternatives](history/0006-handoff-shapes-before-2026-09-05.md)
+Historical rulings, measurement windows and alternatives: the page as it stood before this simplification is in git history, `git show c86a6b8:docs/adr/0006-handoff-shapes.md` (the dated copies were dropped by operator ruling 2026-09-05; git history is the record).
 are retained separately.
 
 Execution census 2026-09-05: this baseline has `closerDoneWhen` and

@@ -197,10 +197,10 @@ requires the same parity checks. Refusal history remains host-owned.
 
 | Was | Here |
 |---|---|
-| 0002 §§1–5 and project-config/escape amendments | §§1–5 above; dated detail in the historical snapshot |
+| 0002 §§1–5 and project-config/escape amendments | §§1–5 above; dated detail in the pre-simplification page (git history, below) |
 | 0009 §§1–4, including REAL resolution, PATH position, rc and credential distinctions | §3 L1; credentials in 0019; executable probe path unchanged |
 | 0023 §§1–4 identity, own-render probe and foreign classification | §3 L3; 0052 supplies the managed realization under this same proof |
 | 0025 §§1–4 classes, push-effect qualification, host-owned refusal fold; verification limits | §4 and Refusal trail; dated probe outcomes remain in 0025 |
 
-[Historical evidence and prior alternatives](history/0002-runtimes-and-gates-before-2026-09-05.md)
+Historical evidence and prior alternatives: the page as it stood before this simplification is in git history, `git show c86a6b8:docs/adr/0002-runtimes-and-gates.md` (the dated copies were dropped by operator ruling 2026-09-05; git history is the record).
 are retained separately and are not a second active contract.
