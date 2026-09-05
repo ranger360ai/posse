@@ -272,6 +272,83 @@ func TestVerifyCatchesAMissingMember(t *testing.T) {
 	}
 }
 
+// The gate's RED path. The three arms above all call VerifyBackup by hand
+// over a copy of an already-published archive, so they say the verify can go
+// red — not that RunBackup's own call to it is load-bearing. Delete the three
+// gate lines from RunBackup and every one of them stays green.
+//
+// ADR 0036 arm 8's doctrine is "a drill that cannot go red measures nothing",
+// and the 2026-09-01 sub-ruling folded that drill INTO this gate, so this is
+// the folded drill's red arm (ranger-base-31p1b, found verifying
+// ranger-base-x3de).
+//
+// afterStage is the seam: it rewrites one staged member with same-size,
+// different bytes after the manifest has hashed it and before the tar reads
+// those same files back. Same size matters — a size change is caught by
+// writeBackupArchive's own "changed size while it was being archived" arm,
+// which is a different branch and would leave this one unmeasured.
+func TestARunThatFailsItsOwnVerifyPublishesNothing(t *testing.T) {
+	a, _ := backupRig(t)
+	dir := a.BackupDir()
+
+	staged := false
+	_, err := a.RunBackup(BackupOpts{
+		Out: io.Discard,
+		Now: func() time.Time { return backupAt },
+		afterStage: func(stage string) {
+			staged = true
+			member := filepath.Join(stage, "home", "agents", "dev.md")
+			body, rerr := os.ReadFile(member)
+			if rerr != nil || len(body) == 0 {
+				t.Fatalf("staged %s: %v (%d bytes) — the seam has nothing to corrupt", member, rerr, len(body))
+			}
+			body[0] ^= 0x01
+			if werr := os.WriteFile(member, body, 0o600); werr != nil {
+				t.Fatal(werr)
+			}
+		},
+	})
+	if !staged {
+		t.Fatal("the seam never ran, so the run refused before it staged anything and nothing below is about the verify")
+	}
+
+	// The run returns a refusal, and it says what happened: the archive was
+	// written, it did not verify, and it was therefore not published.
+	// Not fatal: the three observables are separate claims, and a run that
+	// returned nil here is exactly the run whose store must still be checked.
+	if err == nil || !strings.Contains(err.Error(), "was not published") {
+		t.Errorf("a run whose own archive fails verify returned %v, want the refusal that says it was not published", err)
+	}
+	// Nothing survives it. Read the whole directory rather than stat the two
+	// names this run would have used: an archive published under any name,
+	// and a .part or a staging tree left behind, are the same defect.
+	ents, rerr := os.ReadDir(dir)
+	if rerr != nil {
+		t.Fatal(rerr)
+	}
+	for _, e := range ents {
+		if e.Name() == ".lock" {
+			continue // the single-flight lock, which outlives every run
+		}
+		t.Errorf("a run that failed its own verify left %s in %s", e.Name(), AbbrevHome(dir))
+	}
+	if names, lerr := listBackups(dir); lerr != nil || len(names) != 0 {
+		t.Fatalf("listBackups = %v (err %v) after a failed verify, want none", names, lerr)
+	}
+
+	// The control, on the same rig and the same clock: with the seam gone the
+	// run publishes and the archive verifies. So the red above is the byte
+	// this test changed and not a rig that could never have produced a
+	// backup at all.
+	res := mustBackup(t, a, backupAt)
+	if _, verr := VerifyBackup(res.Archive); verr != nil {
+		t.Fatalf("the control run does not verify: %v", verr)
+	}
+	if names, lerr := listBackups(dir); lerr != nil || len(names) != 1 {
+		t.Fatalf("listBackups = %v (err %v) after the control run, want exactly one", names, lerr)
+	}
+}
+
 // Second: a run in flight is not a backup. The `.part` and the staging
 // directory carry no verdict, so listBackups must not count either — and a
 // finished run leaves neither behind.

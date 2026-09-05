@@ -422,6 +422,17 @@ type BackupOpts struct {
 	Dir string
 	Out io.Writer
 	Now func() time.Time
+
+	// afterStage is the seam the publish gate's red arm needs, and it is
+	// unexported because it is not an option: no caller outside this package
+	// can reach it, and TestBackupHasNoOverride pins that no file outside a
+	// _test.go sets it. It runs with the staging directory AFTER the
+	// manifest has been derived from it and BEFORE the archive is written
+	// from those same files, which is the only point where a real run can be
+	// made to produce an archive that fails its own verify. It cannot lift a
+	// refusal: every refusal RunBackup makes has already run by the time
+	// staging begins.
+	afterStage func(stage string)
 }
 
 // BackupResult is what one run wrote.
@@ -557,6 +568,9 @@ func (a *App) RunBackup(o BackupOpts) (BackupResult, error) {
 	man, err := a.stageBackup(out, stage, queue, store, at)
 	if err != nil {
 		return res, err
+	}
+	if o.afterStage != nil {
+		o.afterStage(stage)
 	}
 
 	name := backupName(dir, at)

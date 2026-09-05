@@ -16,6 +16,8 @@ package posse
 // machine is going to have mounted when the suite runs.
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"runtime"
 	"sort"
@@ -144,8 +146,43 @@ func TestBackupHasNoOverride(t *testing.T) {
 		got = append(got, rt.Field(i).Name)
 	}
 	sort.Strings(got)
-	if want := "Dir,Now,Out"; strings.Join(got, ",") != want {
+	// The list is a whitelist, not a count: a field added to lift the
+	// refusal reds here whether it is exported or not. afterStage is on it
+	// because it was reviewed onto it (ranger-base-31p1b) — it is unexported,
+	// so no caller outside this package can set it at all, and it runs only
+	// after every refusal has already run. The census below is the other half
+	// of that claim: nothing outside a test sets it.
+	if want := "Dir,Now,Out,afterStage"; strings.Join(got, ",") != want {
 		t.Errorf("BackupOpts fields = %v, want exactly %s — a new option on the one struct that reaches the refusal is a way around it, and there is no way around it (ADR 0036 §3, the 2026-09-01 sub-ruling)", got, want)
+	}
+	// "nil in production", measured rather than asserted: backup.go declares
+	// the field and reads it, and no other non-test file in this package
+	// mentions it. A production caller that set it would be a door into a
+	// half-built archive, which is the one thing the gate exists to stop.
+	paths, gerr := filepath.Glob("*.go")
+	if gerr != nil || len(paths) == 0 {
+		t.Fatalf("no .go files in this package: %v", gerr)
+	}
+	mentions := 0
+	for _, path := range paths {
+		if strings.HasSuffix(path, "_test.go") {
+			continue
+		}
+		b, rerr := os.ReadFile(path)
+		if rerr != nil {
+			t.Fatal(rerr)
+		}
+		n := strings.Count(string(b), "afterStage")
+		mentions += n
+		if n > 0 && path != "backup.go" {
+			t.Errorf("%s names afterStage — the seam is declared and read in backup.go and set only from a test", path)
+		}
+	}
+	// The control: the census DID read backup.go's declaration and its one
+	// call site, so a zero above would be a broken glob rather than a clean
+	// package.
+	if mentions < 2 {
+		t.Errorf("the census found afterStage %d time(s) in the non-test files, want at least the declaration and the call in backup.go — it is reading the wrong tree or the seam moved", mentions)
 	}
 	// Dir is the field a caller CAN set, so the refusal has to run on it —
 	// not only on the configured default. A run pointed at a remote target
