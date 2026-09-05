@@ -28,7 +28,7 @@ import (
 // i9dbbRead reads a repo file by path parts, relative to the repo root.
 func i9dbbRead(t *testing.T, parts ...string) string {
 	t.Helper()
-	p := filepath.Join(append([]string{qspRepoRoot(t)}, parts...)...)
+	p := filepath.Join(append([]string{qibRepoRoot(t)}, parts...)...)
 	b, err := os.ReadFile(p)
 	if err != nil {
 		t.Fatalf("the guard must read the file it judges: %v", err)
@@ -86,7 +86,7 @@ func TestQAADR0036StatusLineDoesNotCarryTheRetractedUnbuiltStamp(t *testing.T) {
 	// And the reason, measured rather than asserted from the ADR's own
 	// prose: the verb is in the tree. If this ever goes false the stamp is
 	// no longer a falsehood and this whole guard should be revisited.
-	if _, err := os.Stat(filepath.Join(qspRepoRoot(t), "internal", "posse", "backup.go")); err != nil {
+	if _, err := os.Stat(filepath.Join(qibRepoRoot(t), "internal", "posse", "backup.go")); err != nil {
 		t.Errorf("backup.go is gone — the premise of this guard (a0ln0 built the verb) no longer holds: %v", err)
 	}
 	if main := i9dbbRead(t, "cmd", "posse", "main.go"); !strings.Contains(main, `case "backup":`) {

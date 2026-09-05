@@ -26,10 +26,7 @@ import (
 
 func seedConfigPath(t *testing.T) string {
 	t.Helper()
-	p, err := filepath.Abs(filepath.Join("..", "..", "examples", "config.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	p := filepath.Join(qibRepoRoot(t), "examples", "config.yaml")
 	if _, err := os.Stat(p); err != nil {
 		t.Fatalf("no seed config at %s: %v", p, err)
 	}
@@ -175,14 +172,15 @@ func TestSeedConfigDeclaresOnlyTheLiveKeys(t *testing.T) {
 // asserting it has one would satisfy a scan that included them.
 func TestSeedConfigLiveKeysAreRead(t *testing.T) {
 	t.Parallel()
-	root, err := filepath.Abs(filepath.Join("..", ".."))
-	if err != nil {
-		t.Fatal(err)
-	}
+	// qibRepoRoot, not a hand-rolled `..`/`..` ascent: this walk starts at
+	// the repo root, which puts the test in the tree-wide class the door
+	// census derives, and that census can only see tests that reach the
+	// root through the one helper (ranger-base-sx2dq).
+	root := qibRepoRoot(t)
 
 	var src strings.Builder
 	scanned := 0
-	err = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}

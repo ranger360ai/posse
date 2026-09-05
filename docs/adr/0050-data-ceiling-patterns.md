@@ -154,7 +154,7 @@ editor opens, and the layer that can tell that apart is the `commit-msg` hook
 below. *(Amended 2026-09-04, ranger-base-b21e0: the REMEDY was the half of
 that cost the writer actually reads, and it did not need the second layer.
 Where the mode is one of the three, the refusal now names it and says what
-clears it — delete git's block in the editor, or leave `commit.cleanup` at
+clears it — clear the class out of the repo, or leave `commit.cleanup` at
 its default — and says which way the mode cuts: `verbatim` and `whitespace`
 LAND that block in the object, `scissors` truncates it below its cut line, so
 under `scissors` the read is over-refusal and the refusal says so rather than
@@ -180,7 +180,18 @@ its own text off the scan, which git does NOT truncate (measured, git
 now neither scanned nor kept and the refusal's note says what is ABOVE the
 cut instead. Residuals, all fail-closed: `--cleanup=scissors` as a flag, a
 `core.commentChar` of `-` or `+`, and a staged path whose name carries the
-marker.)* The exclusion stands as stated: a
+marker.)* *(Corrected 2026-09-04, ranger-base-sx2dq from
+ranger-base-md7ui: as b21e0 first landed it, that remedy read
+"delete git's block in the editor before you save", which is this same
+complaint one turn later — this arm renders into `prepare-commit-msg`, git
+runs it BEFORE launching the editor, and the non-zero exit ends the commit,
+so no editor session exists in which to delete anything. MEASURED with a
+`GIT_EDITOR` that appends to a marker: a landing commit invokes the editor
+once, the refused commit zero times, under all three kept modes. The
+reachable half is the one INSTALL.md carried before b21e0 — clear the class
+out of the repo — and the pin now takes that action and requires the same
+commit to land, rather than asserting the sentence is present.)* The
+exclusion stands as stated: a
 message typed in the editor does not exist yet when the hook runs. What the
 editor path does scan is whatever was already in the file — a
 `commit.template` body, `MERGE_MSG` — which lands in the object like any

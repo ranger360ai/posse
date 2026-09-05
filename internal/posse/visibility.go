@@ -525,13 +525,26 @@ re-run posse gates install-hooks.`
 // message" names a rewrite that has not happened yet (ranger-base-h3s6q
 // finding 2, narrowed to the writers whose config keeps comments).
 //
-// WHAT IT SAYS is therefore what actually clears it, and the two things are
-// different in kind: delete git's block in the editor (this commit), or leave
-// commit.cleanup at its default (every commit after it, and the mode is one
-// line in ~/.gitconfig that needs no intent to acquire). It does NOT assert
-// the hit IS in git's block — the hook has the file and not the writer's
-// hands — so it says "if", and a writer whose hit really is in their own
-// typed text reads one paragraph they did not need.
+// WHAT IT SAYS is therefore what actually clears it FROM WHERE THE WRITER
+// STANDS, and the two things are different in kind: take the class out of the
+// repo (this commit), or leave commit.cleanup at its default (every commit
+// after it, and the mode is one line in ~/.gitconfig that needs no intent to
+// acquire). It does NOT assert the hit IS in git's block — the hook has the
+// file and not the writer's hands — so it says "if", and a writer whose hit
+// really is in their own typed text reads one paragraph they did not need.
+//
+// AND IT NAMES NO EDITOR (ranger-base-sx2dq, from ranger-base-md7ui). The
+// first shape of this note offered "delete git's block in the editor before
+// you save", which is the same defect it was written to fix, one turn later:
+// this arm renders into prepare-commit-msg and nothing else, git runs
+// prepare-commit-msg BEFORE it launches the editor, and a non-zero exit ends
+// the commit — so there is no editor session in which to delete anything.
+// MEASURED with a GIT_EDITOR that appends to a marker: a landing commit
+// invokes the editor once, the refused commit invokes it zero times, under
+// all three kept modes. The reachable half of the pair is the one INSTALL.md
+// carried before ranger-base-b21e0 — clear the class out of the repo — and
+// it is measured by the same control: with no class-carrying untracked file
+// present, that editor commit lands under the same config.
 //
 // WHAT IT DOES NOT SAY HERE is whether that block reaches the object, because
 // the three modes do not agree and the difference is the whole of the next
@@ -543,9 +556,12 @@ template is message here and is scanned as message: the "On branch" line,
 the staged, unstaged and UNTRACKED lists, a merge's conflict list. This hook
 runs BEFORE the editor opens, so it cannot tell a line you typed from a line
 git wrote — if what tripped this is in git's block rather than in your own
-text, no rewrite of your text clears it. Two things do: delete git's block in
-the editor before you save, or leave commit.cleanup at its default, where git
-strips that block itself and it never reaches the object.`
+text, no rewrite of your text clears it — and this commit ended here, before
+your editor opened, so there is no editor session in which to delete that
+block either. Two things do clear it: take the class out of the repo — the
+untracked path, the branch name, the file git listed as conflicted — or leave
+commit.cleanup at its default, where git strips that block itself and it
+never reaches the object.`
 
 // MessageKeptLandsNote is what "verbatim" and "whitespace" add: the block is
 // not merely scanned, it LANDS. MEASURED at the shell, git 2.50.1: an editor

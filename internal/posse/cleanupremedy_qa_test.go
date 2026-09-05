@@ -14,7 +14,7 @@ package posse
 // config keeps comments.
 //
 // THE FIX IS THE BEAD'S SHAPE (1) AND NOT (2): the refusal now says which mode
-// is live and what actually clears it — delete git's block in the editor, or
+// is live and what actually clears it — take the class out of the repo, or
 // leave commit.cleanup at its default. It does not need the commit-msg hook ADR
 // 0050 D5 and ADR 0024 D2 name as the missing second layer, and it does not
 // pretend to be one: the note says "if", because the hook has the file and not
@@ -125,7 +125,7 @@ func TestQAMessageRemedyNamesTheCleanupModeThatKeptGitsTemplate(t *testing.T) {
 			for _, want := range []string{
 				`git's cleanup mode here is "` + mode + `"`,
 				"config commit.cleanup",
-				"delete git's block in the editor",
+				"take the class out of the repo",
 				"leave commit.cleanup at its default",
 				"rewrite the commit message",
 				"not a false alarm",
@@ -136,11 +136,47 @@ func TestQAMessageRemedyNamesTheCleanupModeThatKeptGitsTemplate(t *testing.T) {
 						"it (ranger-base-b21e0):\n%s", want, mode, out)
 				}
 			}
+			// AND NOT AN EDITOR (ranger-base-sx2dq). Every remedy this
+			// refusal offers has to be doable by the writer reading it,
+			// and this writer has no editor: the arm renders into
+			// prepare-commit-msg, git runs that BEFORE it launches the
+			// editor, and the non-zero exit ended the commit. The first
+			// shape of the note said "delete git's block in the editor
+			// before you save", and an earlier version of this pin
+			// asserted that clause was PRESENT — which held the one
+			// unreachable remedy in place and would have redded the suite
+			// for a seat who corrected it. This is that assertion turned
+			// around, so the clause cannot come back green.
+			if strings.Contains(qaFlat(out), "in the editor") {
+				t.Errorf("the refusal offers something to do \"in the editor\", but this hook runs BEFORE "+
+					"git launches one and its non-zero exit ended the commit — there is no editor session "+
+					"for the writer to do it in (ranger-base-sx2dq):\n%s", out)
+			}
+
 			// Not the scissors clause: nothing is below a cut line here,
 			// and this refusal is the honest kind, not over-refusal.
 			if strings.Contains(qaFlat(out), "BELOW the cut line") || strings.Contains(out, "over-refuses") {
 				t.Errorf("commit.cleanup=%s has no cut line and truncates nothing, so the refusal must not "+
 					"describe one:\n%s", mode, out)
+			}
+
+			// AND THE REMEDY IS REACHABLE, measured rather than read. A
+			// remedy pinned as a STRING is pinned as prose: the clause
+			// this replaced was present in the refusal for a whole close
+			// and named an action the writer could not take. So do what
+			// the refusal says — take the class out of the repo — and
+			// require the same commit to land, under the same mode, with
+			// the same editor, one call after it was refused.
+			env := qaVerbatimRepo(t, w, w.pub, mode)
+			if err := os.Remove(filepath.Join(w.pub, w.literal(t, "username")+"-notes.txt")); err != nil {
+				t.Fatal(err)
+			}
+			w.stage(t, w.pub, "internal/posse/probe.go", "package posse\n")
+			if got, err := w.git(w.pub, env, "commit", "--", "internal/posse/probe.go"); err != nil {
+				t.Errorf("the refusal says taking the class out of the repo clears it, and under "+
+					"commit.cleanup=%s it did not: the same commit was refused again with the classed "+
+					"untracked file gone. A remedy the writer cannot take is what ranger-base-sx2dq was "+
+					"filed for:\n%s", mode, got)
 			}
 		})
 	}

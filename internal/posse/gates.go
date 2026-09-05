@@ -3631,7 +3631,7 @@ refused with the stricter remedy — there is no private db to re-file it in.`)
 // cost above). The verdict was already true; the REMEDY was not, because
 // "rewrite the commit message" names a rewrite that has not happened yet when
 // this hook runs before the editor opens. So the refusal now names the live
-// mode and what actually clears it — delete git's block in the editor, or
+// mode and what actually clears it — take the class out of the repo, or
 // leave commit.cleanup at its default — and says which side of the line the
 // mode puts the writer on: verbatim and whitespace LAND the block
 // (MessageKeptLandsNote), scissors puts it below a cut line this read now

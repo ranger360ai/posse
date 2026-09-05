@@ -4369,9 +4369,12 @@ are read whole, because there git's cleanup keeps a `#` line
 the block IS a subject (ranger-base-6y3z2 — keying on the source argument let
 a branch name and an untracked path land in a public commit object
 unscanned). On that path the refusal names the mode and what clears it —
-delete git's block in the editor, or leave `commit.cleanup` at its default —
+clear the class out of the repo, or leave `commit.cleanup` at its default —
 because the writer is refused before they have typed anything
-(ranger-base-b21e0); `verbatim` and `whitespace` land that block, `scissors`
+(ranger-base-b21e0; the remedy first shipped as "delete git's block in the
+editor", which is the same defect one turn later — the hook exits non-zero
+before git launches an editor, so there is no editor session to do it in, and
+ranger-base-sx2dq corrected it and pinned the remedy by TAKING it); `verbatim` and `whitespace` land that block, `scissors`
 truncates it below its cut line and the refusal says which. `install-hooks` prints the
 ceiling line for private-stamped repos too.
 

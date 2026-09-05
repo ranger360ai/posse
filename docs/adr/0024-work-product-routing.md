@@ -157,10 +157,18 @@ install and at every persona launch).
    Under those three modes the writer is refused before the editor opens,
    possibly over a line git wrote, and "rewrite the commit message" named a
    rewrite that had not happened. The refusal now names the live mode and
-   what clears it — delete git's block in the editor, or leave
+   what clears it — clear the class out of the repo, or leave
    `commit.cleanup` at its default — and stays silent where `$2` is
    `message`, since git appends no template there and the old remedy is
    doable as written. See ADR 0050 D2 for the `scissors` half.*
+
+   *Corrected 2026-09-04 (ranger-base-sx2dq, from ranger-base-md7ui): that
+   remedy first read "delete git's block in the editor before you save",
+   which the writer being refused cannot do — `prepare-commit-msg` runs
+   BEFORE git launches the editor and its non-zero exit ends the commit, so
+   there is no editor session. Measured: the refused commit invokes
+   `GIT_EDITOR` zero times under all three kept modes, the landing control
+   once. See ADR 0050 D2.*
 
    *Amended 2026-09-04 (ranger-base-cdxpf, from ranger-base-o3g6a): a
    FOURTH derived source — this box's CREW NAMES, over the ADDED staged

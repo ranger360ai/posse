@@ -39,7 +39,7 @@ var coxnAmendedWording = "recurring unowned byproduct"
 // the way past.
 func coxnGoSources(t *testing.T) map[string]string {
 	t.Helper()
-	root := qspRepoRoot(t)
+	root := qibRepoRoot(t)
 	out := map[string]string{}
 	err := filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -113,7 +113,7 @@ func TestQANoCodeStringCallsTheDarwinCredentialsFileAStaleLeftover(t *testing.T)
 // SPECIFIC doc and its absence anywhere else proves nothing.
 func TestQACageCredDocDoesNotCallTheOnDiskCredentialStale(t *testing.T) {
 	t.Parallel()
-	b, err := os.ReadFile(filepath.Join(qspRepoRoot(t), "internal", "posse", "runtime.go"))
+	b, err := os.ReadFile(filepath.Join(qibRepoRoot(t), "internal", "posse", "runtime.go"))
 	if err != nil {
 		t.Fatal(err)
 	}

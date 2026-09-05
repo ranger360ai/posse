@@ -18,6 +18,20 @@ package posse
 //	TestTestCorpusHidesNoCrewNameBehindAnEscape   make crew-check
 //	TestHerdrSelectorsAreNamedByADR0016           make selector-check ~0.5s
 //
+// and eight more the first census could not see, doored under
+// ranger-base-sx2dq (see arm 2):
+//
+//	TestSeedSurfaceNameCountIsZero                make seed-check    ~0.2s
+//	TestSeedConfigLiveKeysAreRead                 make seed-check
+//	TestPublicationRootCommitOmitsExcludedPaths   make history-check ~0.5s
+//	TestPublicationRootCommitADRsCarryProvenance  make history-check
+//	TestPublicationHistoryNeverCarriesTheSeedScript make history-check
+//	TestQANoCodeStringCallsTheDarwinCredentialsFileAStaleLeftover
+//	                                              make doc-check     ~0.1s
+//	TestQACageCredDocDoesNotCallTheOnDiskCredentialStale   make doc-check
+//	TestQAADR0036StatusLineDoesNotCarryTheRetractedUnbuiltStamp
+//	                                              make doc-check
+//
 // and `make tree-check` is all of them, which is the command a seat types
 // after a filtered run.
 //
@@ -35,11 +49,20 @@ package posse
 //     reaches all three doors, and each door reads only (no `-w`, no `./...`,
 //     and `-count=1`, because a door that answers from cache can lie).
 //  2. the doors are WIDE ENOUGH, two-way and mechanically: the class is
-//     derived by parsing internal/posse/*_test.go for the tests that call
-//     qibRepoRoot — the same rule the bead censused with — and every member
-//     must be named by a Makefile door variable, and every name in those
-//     variables must be a member. A tree-wide pin added tomorrow reds this
-//     until it is given a door, which is the whole deliverable.
+//     derived by parsing internal/posse/*_test.go, and every member must be
+//     named by a Makefile door variable, and every name in those variables
+//     must be a member. A tree-wide pin added tomorrow reds this until it is
+//     given a door, which is the whole deliverable.
+//
+//     THAT PROMISE WAS FALSE AS FIRST SHIPPED (ranger-base-sx2dq). The
+//     derivation keyed on one identifier, qibRepoRoot, and the tree carried
+//     a byte-identical twin of it (qspRepoRoot) plus a hand-rolled
+//     `filepath.Abs("../..")`: three tree-wide pins were spelled outside the
+//     class, got no door, and this arm said nothing. The twin is folded, the
+//     hand-rolled climb goes through the helper, the derivation also follows
+//     a test into a helper that WALKS from the root, and
+//     TestQAOneRepoRootHelperInTheTestPackage below is what keeps a third
+//     copy from re-opening the same hole. Five members became thirteen.
 //  3. the doors can FAIL: `make -n`'s own expansion of each, run for real
 //     against a scratch copy of the tree carrying the real drift — a crew
 //     name in a shipped file, and an ADR page that stopped naming a selector
@@ -47,12 +70,15 @@ package posse
 //     mistaken for one that detects.
 
 import (
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -60,7 +86,14 @@ import (
 // The Makefile variables that hold the class. One per door, plus the pin
 // whose door is a tool rather than a filter — the union is what arm 2
 // measures against the tree.
-var twdPinVars = []string{"QA_CREW_PINS", "QA_SELECTOR_PINS", "QA_TOOL_PINS"}
+var twdPinVars = []string{"QA_CREW_PINS", "QA_SELECTOR_PINS", "QA_TOOL_PINS", "QA_SEED_PINS", "QA_HISTORY_PINS", "QA_DOC_PINS"}
+
+// twdRootHelper is the ONE repo-root helper internal/posse's tests may use.
+// It is a single identifier on purpose — the class below is derived from it,
+// so a second spelling is a member of the class that the derivation cannot
+// see. That is not hypothetical: the tree carried qspRepoRoot, byte-for-byte
+// identical, and three tree-wide pins hid behind it (ranger-base-sx2dq).
+const twdRootHelper = "qibRepoRoot"
 
 // twdVar returns the `|`-separated test names a Makefile variable holds.
 func twdVar(t *testing.T, makefile, name string) []string {
@@ -83,6 +116,23 @@ func twdVar(t *testing.T, makefile, name string) []string {
 	}
 	t.Fatalf("the Makefile defines no %s — a door variable the pin below reads is gone, so the class has no recorded membership", name)
 	return nil
+}
+
+// twdSameSet reports whether two name lists hold the same names, order aside.
+func twdSameSet(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	g := append([]string(nil), got...)
+	w := append([]string(nil), want...)
+	sort.Strings(g)
+	sort.Strings(w)
+	for i := range g {
+		if g[i] != w[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // twdPrereqs returns the prerequisites of a target, from its `target:` line.
@@ -109,7 +159,7 @@ func TestQAMakeTestOpensTheTreeWideDoors(t *testing.T) {
 	// The umbrella reaches every door. It carries no recipe of its own, so
 	// `make -n tree-check` prints exactly what a seat would have to type.
 	tree := strings.Join(twdPrereqs(t, src, "tree-check"), " ")
-	for _, door := range []string{"fmt-check", "crew-check", "selector-check"} {
+	for _, door := range []string{"fmt-check", "crew-check", "selector-check", "seed-check", "history-check", "doc-check"} {
 		if !strings.Contains(tree, door) {
 			t.Errorf("`make tree-check` no longer reaches `%s`, so one tree-wide pin is back to being ~950s away: %q", door, tree)
 		}
@@ -159,19 +209,153 @@ func TestQAMakeTestOpensTheTreeWideDoors(t *testing.T) {
 	}
 }
 
-// twdTreeWideTests parses internal/posse/*_test.go and returns the tests whose
-// subject is the TREE: the ones that call qibRepoRoot in their own body. That
-// helper resolves the repo root off runtime.Caller, so calling it is what
-// makes a test read files outside its package — the same rule the bead
-// censused the class with (`grep -rn 'qibRepoRoot(t)'`), asked of the ast so
-// a call spelled across a line break still counts.
-func twdTreeWideTests(t *testing.T) (names []string, funcs int) {
+// twdJoinsTwoDotDots reports whether an argument list ENDS in two ".."
+// literals — `filepath.Join(dir, "..", "..")`, the climb from internal/posse
+// to the repo root written out by hand.
+//
+// It must be the end of the list, and that is the whole distinction between
+// this class and its neighbours: `filepath.Join("..", "..", "examples",
+// "agents")` climbs to the root and then goes back DOWN into one directory,
+// so a walk from it reads examples/agents and reds only when that directory
+// changes. Nine tests do that, none of them tree-wide.
+func twdJoinsTwoDotDots(args []ast.Expr) bool {
+	if len(args) < 2 {
+		return false
+	}
+	for _, a := range args[len(args)-2:] {
+		lit, ok := a.(*ast.BasicLit)
+		if !ok || lit.Kind != token.STRING {
+			return false
+		}
+		if v, err := strconv.Unquote(lit.Value); err != nil || v != ".." {
+			return false
+		}
+	}
+	return true
+}
+
+// twdWalkers are the calls that turn a repo root into a reading of the whole
+// tree. A function that computes the root AND makes one of these is walking
+// from the root, and every file in the tree is then its subject.
+var twdWalkers = map[string]bool{"WalkDir": true, "Walk": true, "ReadDir": true, "Glob": true}
+
+// twdFunc is one function declared in internal/posse/*_test.go: who it calls,
+// and whether its own body reaches outside the package.
+type twdFunc struct {
+	name  string
+	where string
+	test  bool
+	calls map[string]bool
+	// root: the body calls qibRepoRoot, the package's ONE repo-root helper.
+	root bool
+	// rootedWalk: the body computes the root AND walks from it, so anything
+	// added anywhere in the tree can red whoever calls it.
+	rootedWalk bool
+	// walk: the body calls one of twdWalkers.
+	walk bool
+	// ascent: the body spells the climb from internal/posse to the repo
+	// root by hand — `"..", ".."` joined, or a `"../.."` literal.
+	ascent bool
+	// caller: the body asks runtime.Caller where its own source lives,
+	// which is how qibRepoRoot finds the root without depending on cwd.
+	caller bool
+	// handRolledTreeWalk: the body walks a directory whose path IS the repo
+	// root reached by a hand-rolled climb — not one reached through
+	// qibRepoRoot, and not a subdirectory of it.
+	handRolledTreeWalk bool
+}
+
+// twdRootExprs finds, inside one function body, every expression that
+// evaluates to the repo root reached by hand: a bare `"../.."`, a
+// `filepath.Join(..., "..", "..")`, those wrapped in Abs/Clean/EvalSymlinks,
+// and the identifiers assigned from any of them. It returns a predicate over
+// expressions.
+//
+// This is a small dataflow rather than "the body mentions `..` and walks
+// something" on purpose, and the difference is nine tests: detectionRig
+// climbs to the root and then ReadDirs `<root>/etc/herdr/agent-detection`,
+// which reds when that one directory changes. Only a walk rooted AT the root
+// is tree-wide.
+func twdRootExprs(body *ast.BlockStmt) func(ast.Expr) bool {
+	roots := map[string]bool{}
+	var isRoot func(ast.Expr) bool
+	isRoot = func(e ast.Expr) bool {
+		switch v := e.(type) {
+		case *ast.Ident:
+			return roots[v.Name]
+		case *ast.BasicLit:
+			if v.Kind != token.STRING {
+				return false
+			}
+			s, err := strconv.Unquote(v.Value)
+			if err != nil {
+				return false
+			}
+			return filepath.ToSlash(s) == "../.." || filepath.ToSlash(s) == "../../"
+		case *ast.CallExpr:
+			sel, ok := v.Fun.(*ast.SelectorExpr)
+			if !ok {
+				return false
+			}
+			x, ok := sel.X.(*ast.Ident)
+			if !ok || x.Name != "filepath" {
+				return false
+			}
+			switch sel.Sel.Name {
+			case "Join":
+				return twdJoinsTwoDotDots(v.Args)
+			case "Abs", "Clean", "EvalSymlinks", "ToSlash":
+				return len(v.Args) == 1 && isRoot(v.Args[0])
+			}
+		}
+		return false
+	}
+	// Two passes, so `root := ...` before the walk and after both bind.
+	for i := 0; i < 2; i++ {
+		ast.Inspect(body, func(n ast.Node) bool {
+			var lhs, rhs []ast.Expr
+			switch st := n.(type) {
+			case *ast.AssignStmt:
+				lhs, rhs = st.Lhs, st.Rhs
+			case *ast.ValueSpec:
+				for _, id := range st.Names {
+					lhs = append(lhs, id)
+				}
+				rhs = st.Values
+			default:
+				return true
+			}
+			// `x := expr` and `x, err := expr` both bind x.
+			if len(rhs) != 1 || len(lhs) == 0 {
+				if len(lhs) != len(rhs) {
+					return true
+				}
+				for i, l := range lhs {
+					if id, ok := l.(*ast.Ident); ok && isRoot(rhs[i]) {
+						roots[id.Name] = true
+					}
+				}
+				return true
+			}
+			if id, ok := lhs[0].(*ast.Ident); ok && isRoot(rhs[0]) {
+				roots[id.Name] = true
+			}
+			return true
+		})
+	}
+	return isRoot
+}
+
+// twdParse reads every function declared in internal/posse/*_test.go.
+func twdParse(t *testing.T) (map[string]*twdFunc, int) {
 	t.Helper()
 	paths, err := filepath.Glob(filepath.Join("internal", "posse", "*_test.go"))
 	if err != nil || len(paths) == 0 {
 		t.Fatalf("no test files found under internal/posse: %v", err)
 	}
 	fset := token.NewFileSet()
+	out := map[string]*twdFunc{}
+	tests := 0
 	for _, path := range paths {
 		file, err := parser.ParseFile(fset, path, nil, 0)
 		if err != nil {
@@ -179,23 +363,131 @@ func twdTreeWideTests(t *testing.T) (names []string, funcs int) {
 		}
 		for _, decl := range file.Decls {
 			fn, ok := decl.(*ast.FuncDecl)
-			if !ok || fn.Recv != nil || fn.Body == nil || !strings.HasPrefix(fn.Name.Name, "Test") {
+			if !ok || fn.Recv != nil || fn.Body == nil {
 				continue
 			}
-			funcs++
+			f := &twdFunc{
+				name:  fn.Name.Name,
+				where: fmt.Sprintf("%s:%d", path, fset.Position(fn.Pos()).Line),
+				test:  strings.HasPrefix(fn.Name.Name, "Test"),
+				calls: map[string]bool{},
+			}
+			if f.test {
+				tests++
+			}
 			ast.Inspect(fn.Body, func(n ast.Node) bool {
+				if lit, ok := n.(*ast.BasicLit); ok && lit.Kind == token.STRING {
+					if v, err := strconv.Unquote(lit.Value); err == nil {
+						switch filepath.ToSlash(v) {
+						case "../..", "../../":
+							f.ascent = true
+						}
+					}
+				}
 				call, ok := n.(*ast.CallExpr)
 				if !ok {
 					return true
 				}
-				if id, ok := call.Fun.(*ast.Ident); ok && id.Name == "qibRepoRoot" {
-					names = append(names, fn.Name.Name)
-					return false
+				if twdJoinsTwoDotDots(call.Args) {
+					f.ascent = true
+				}
+				switch fun := call.Fun.(type) {
+				case *ast.Ident:
+					f.calls[fun.Name] = true
+					if fun.Name == twdRootHelper {
+						f.root = true
+					}
+				case *ast.SelectorExpr:
+					if twdWalkers[fun.Sel.Name] {
+						f.walk = true
+					}
+					if x, ok := fun.X.(*ast.Ident); ok && x.Name == "runtime" && fun.Sel.Name == "Caller" {
+						f.caller = true
+					}
 				}
 				return true
 			})
+			f.rootedWalk = f.root && f.walk
+			if !f.root {
+				isRoot := twdRootExprs(fn.Body)
+				ast.Inspect(fn.Body, func(n ast.Node) bool {
+					call, ok := n.(*ast.CallExpr)
+					if !ok || len(call.Args) == 0 {
+						return true
+					}
+					sel, ok := call.Fun.(*ast.SelectorExpr)
+					if !ok || !twdWalkers[sel.Sel.Name] {
+						return true
+					}
+					if isRoot(call.Args[0]) {
+						f.handRolledTreeWalk = true
+					}
+					return true
+				})
+			}
+			out[f.name] = f
 		}
 	}
+	return out, tests
+}
+
+// twdTreeWideTests returns the tests whose subject is the TREE. Two rules,
+// unioned, and the union is deliberate — ranger-base-sx2dq is what a single
+// rule cost:
+//
+//   - DIRECT: the test's own body calls qibRepoRoot, so it reads outside its
+//     package. This was the whole rule, and it is kept because it is what
+//     the five original members are doored on.
+//   - WALK-REACHING: the test reaches, through this package's own test
+//     helpers, a function that computes the repo root and WALKS from it.
+//     TestQANoCodeStringCallsTheDarwinCredentialsFileAStaleLeftover names no
+//     root of its own — it calls coxnGoSources, which walks every shipped
+//     .go file — and any file added anywhere can red it. The direct rule
+//     never saw it.
+//
+// The reach is only propagated from a ROOTED WALK, not from any function
+// that touches the root: qspSeedScript looks up one path at the root and its
+// callers red only when that script changes, which is not this class.
+//
+// What keeps a third spelling from slipping past both rules is not a rule
+// here at all — it is TestQAOneRepoRootHelperInTheTestPackage below, which
+// holds internal/posse to ONE repo-root helper. That is the pin
+// ranger-base-sx2dq was filed for: the tree carried a byte-identical twin of
+// qibRepoRoot (qspRepoRoot) and a hand-rolled `..`/`..` ascent, and pins
+// spelled either way were outside the class and got no door, silently.
+func twdTreeWideTests(t *testing.T) (names []string, funcs int) {
+	t.Helper()
+	all, funcs := twdParse(t)
+
+	// Seed the reach with the rooted walkers, then close it over callers.
+	reaches := map[string]bool{}
+	for name, f := range all {
+		if f.rootedWalk {
+			reaches[name] = true
+		}
+	}
+	for changed := true; changed; {
+		changed = false
+		for name, f := range all {
+			if reaches[name] {
+				continue
+			}
+			for callee := range f.calls {
+				if reaches[callee] {
+					reaches[name] = true
+					changed = true
+					break
+				}
+			}
+		}
+	}
+
+	for name, f := range all {
+		if f.test && (f.root || reaches[name]) {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
 	return names, funcs
 }
 
@@ -232,6 +524,23 @@ func TestQAEveryTreeWidePinHasADoor(t *testing.T) {
 		t.Errorf("$(QA_TOOL_PINS) = %v, want exactly [TestTreeIsGofmtClean] — that variable records the pins whose door is a TOOL rather than a `-run` filter, which is a claim nothing here can verify. A new entry needs its own arm; a pin moved here to quiet this test has no door at all.", tool)
 	}
 
+	// QA_HISTORY_PINS is the second membership this arm cannot check by
+	// wiring, for a different reason than QA_TOOL_PINS: its three pins read
+	// `git log` in THIS repo, so arm 3 cannot plant drift for them in a
+	// copied tree (a `git archive` scratch tree has no .git, and reds them
+	// in every arm including the control). They are doored and run clean;
+	// what is NOT proven for them is that their door can fail. So the
+	// membership is named here, and a fourth pin moved into this variable to
+	// dodge arm 3's drift plant fails until this arm is taught why.
+	wantHistory := []string{
+		"TestPublicationRootCommitOmitsExcludedPaths",
+		"TestPublicationRootCommitADRsCarryProvenance",
+		"TestPublicationHistoryNeverCarriesTheSeedScript",
+	}
+	if got := twdVar(t, src, "QA_HISTORY_PINS"); !twdSameSet(got, wantHistory) {
+		t.Errorf("$(QA_HISTORY_PINS) = %v, want exactly %v — that variable records the tree-wide pins whose subject is this repo's git HISTORY, which is the one thing a copied tree does not have, so arm 3 runs them clean and plants no drift. A new entry needs its own arm; a pin moved here is a pin whose door nothing has shown can fail.", got, wantHistory)
+	}
+
 	names, funcs := twdTreeWideTests(t)
 	// A pin over a derived set is satisfied by deriving nothing: say how
 	// many test functions were actually parsed, and fail a walk that found
@@ -239,8 +548,20 @@ func TestQAEveryTreeWidePinHasADoor(t *testing.T) {
 	if funcs < 300 {
 		t.Fatalf("only %d test functions parsed under internal/posse — the walk this arm derives the class from found nothing", funcs)
 	}
-	if len(names) < 5 {
-		t.Fatalf("only %d tree-wide tests found (5 on 2026-09-04) — qibRepoRoot has been renamed or wrapped, and this arm is now deriving a class that is missing members", len(names))
+	// Two floors, because the two rules fail apart. The union's floor
+	// catches a derivation that collapsed; it is NOT what catches a member
+	// going invisible one at a time — the old floor here was len < 5, which
+	// fired only when qibRepoRoot was renamed and never when a pin was
+	// simply spelled with the twin helper (ranger-base-sx2dq). That is
+	// TestQAOneRepoRootHelperInTheTestPackage's job, below.
+	if len(names) < 10 {
+		t.Fatalf("only %d tree-wide tests found (13 on 2026-09-04) — %s has been renamed or wrapped, and this arm is now deriving a class that is missing members: %v", len(names), twdRootHelper, names)
+	}
+	// And the walk-reaching rule specifically: it is the half that catches a
+	// pin reading the tree through a helper, and a rule that silently stops
+	// matching leaves the union looking healthy on the direct half alone.
+	if reach := twdWalkReachingTests(t); len(reach) < 1 {
+		t.Errorf("no test reaches a rooted walk through a helper (at least TestQANoCodeStringCallsTheDarwinCredentialsFileAStaleLeftover did on 2026-09-04) — half the class rule is matching nothing")
 	}
 	t.Logf("parsed %d test functions under internal/posse, %d of them tree-wide", funcs, len(names))
 
@@ -255,6 +576,97 @@ func TestQAEveryTreeWidePinHasADoor(t *testing.T) {
 		if !found[name] {
 			t.Errorf("$(%s) names %s, which is not a tree-wide test in internal/posse — the door's `-run` filter matches nothing there and passes in silence", v, name)
 		}
+	}
+}
+
+// twdWalkReachingTests is the walk-reaching half of the class on its own:
+// tests that are members ONLY because they reach a rooted walk through a
+// helper, with no qibRepoRoot call of their own.
+func twdWalkReachingTests(t *testing.T) []string {
+	t.Helper()
+	all, _ := twdParse(t)
+	reaches := map[string]bool{}
+	for name, f := range all {
+		if f.rootedWalk {
+			reaches[name] = true
+		}
+	}
+	for changed := true; changed; {
+		changed = false
+		for name, f := range all {
+			if reaches[name] {
+				continue
+			}
+			for callee := range f.calls {
+				if reaches[callee] {
+					reaches[name] = true
+					changed = true
+					break
+				}
+			}
+		}
+	}
+	var out []string
+	for name, f := range all {
+		if f.test && reaches[name] && !f.root {
+			out = append(out, name)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// The pin ranger-base-sx2dq was filed for. The class above is DERIVED, and a
+// derivation is only as wide as the thing it keys on: internal/posse carried
+// two byte-identical repo-root helpers, qibRepoRoot and qspRepoRoot, and a
+// pin spelled with the second one was outside the class, got no door, and
+// nothing said so. Folding the twin made the rule true again; this is what
+// keeps a third copy from arriving and quietly undoing it.
+//
+// Two shapes, both measured against the tree rather than imagined:
+//
+//   - a TWIN HELPER: a function that asks runtime.Caller where it lives and
+//     climbs two levels, which is qibRepoRoot's body written again under
+//     another name. Whether or not it walks, its callers are invisible.
+//   - a HIDDEN WALKER: a function that walks a tree AND spells the climb to
+//     the repo root by hand (`filepath.Abs("../..")`,
+//     `filepath.Join(dir, "..", "..")`). TestSeedConfigLiveKeysAreRead was
+//     exactly this: a WalkDir over every non-test .go file in the repo,
+//     reached by no helper at all, so no identifier match could ever find
+//     it.
+//
+// Reading ONE file at the repo root is not either shape and is not fenced —
+// ~48 test files do it, they red only when that one file changes, and that
+// is not this class.
+func TestQAOneRepoRootHelperInTheTestPackage(t *testing.T) {
+	t.Parallel()
+	all, funcs := twdParse(t)
+	if funcs < 300 {
+		t.Fatalf("only %d test functions parsed under internal/posse — the walk this pin reads is finding nothing", funcs)
+	}
+	if _, ok := all[twdRootHelper]; !ok {
+		t.Fatalf("internal/posse's tests no longer declare %s — the class in this file is derived from it, so every derived arm above is now deriving nothing", twdRootHelper)
+	}
+
+	var twins, hidden []string
+	for name, f := range all {
+		if name == twdRootHelper || f.root {
+			continue
+		}
+		if f.caller && f.ascent {
+			twins = append(twins, f.where+" "+name)
+		}
+		if f.handRolledTreeWalk {
+			hidden = append(hidden, f.where+" "+name)
+		}
+	}
+	sort.Strings(twins)
+	sort.Strings(hidden)
+	for _, w := range twins {
+		t.Errorf("%s asks runtime.Caller and climbs two levels — that is a second %s under another name, and every pin spelled with it is outside the tree-wide class this file derives, so it gets no door and nothing says so. Call %s instead. (ranger-base-sx2dq: the tree carried exactly this, byte for byte.)", w, twdRootHelper, twdRootHelper)
+	}
+	for _, h := range hidden {
+		t.Errorf("%s walks a tree from a hand-rolled climb to the repo root — a tree-wide pin no identifier match can reach, which is how TestSeedConfigLiveKeysAreRead went undoored. Take the root from %s.", h, twdRootHelper)
 	}
 }
 
@@ -357,6 +769,8 @@ func TestQATheTreeWideDoorsReportRealDrift(t *testing.T) {
 	t.Parallel()
 	crew := twdExpand(t, "crew-check")
 	selector := twdExpand(t, "selector-check")
+	seed := twdExpand(t, "seed-check")
+	doc := twdExpand(t, "doc-check")
 	dir := twdSeedTree(t)
 
 	run := func(recipe string) (string, error) {
@@ -368,13 +782,29 @@ func TestQATheTreeWideDoorsReportRealDrift(t *testing.T) {
 
 	// The clean arm first, both doors: a door that always fails detects
 	// nothing, and a filter that matches nothing passes in silence.
-	for _, door := range []struct{ name, recipe string }{{"crew-check", crew}, {"selector-check", selector}} {
+	for _, door := range []struct{ name, recipe string }{{"crew-check", crew}, {"selector-check", selector}, {"seed-check", seed}, {"doc-check", doc}} {
 		got, err := run(door.recipe)
 		if err != nil {
 			t.Fatalf("`make %s` failed on a clean copy of this tree — it reports drift that is not there:\n%s", door.name, got)
 		}
 		if strings.Contains(got, "no tests to run") {
 			t.Fatalf("`make %s`'s filter matched no test at all, so its green says nothing:\n%s", door.name, got)
+		}
+	}
+
+	// history-check is the one door this arm cannot copy: its three pins read
+	// `git log` in THIS repo, and the scratch tree has no .git — all three
+	// red there in every arm including the control, so a copied run would
+	// measure the copy and not the door. Run it where it lives instead. It
+	// only reads (`git log`, `git rev-list`), and this proves the two halves
+	// a filter can get wrong: the recipe runs, and it names real tests.
+	{
+		out, err := exec.Command("sh", "-c", twdExpand(t, "history-check")).CombinedOutput()
+		if err != nil {
+			t.Errorf("`make history-check` failed in this repo — the door reports drift that is not there:\n%s", out)
+		}
+		if strings.Contains(string(out), "no tests to run") {
+			t.Errorf("`make history-check`'s filter matched no test at all, so its green says nothing:\n%s", out)
 		}
 	}
 
@@ -423,5 +853,52 @@ func TestQATheTreeWideDoorsReportRealDrift(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("`make selector-check` failed without naming %q:\n%s", want, got)
 		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, adr), page, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// The seed door's drift: the retired harness name on the published
+	// surface. Assembled for the same reason the crew probe is — this file
+	// is inside the walk that reads it.
+	stale := "ranger" + "hq"
+	seedProbe := filepath.Join("internal", "twd_seed_drift_probe.txt")
+	if err := os.WriteFile(filepath.Join(dir, seedProbe), []byte("harness: "+stale+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err = run(seed)
+	if err == nil {
+		t.Fatalf("`make seed-check` passed a tree carrying the retired harness name on the seed surface — the door reads nothing, or its members all SKIPPED, which is the same green:\n%s", got)
+	}
+	for _, want := range []string{filepath.ToSlash(seedProbe), "TestSeedSurfaceNameCountIsZero"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("`make seed-check` failed without naming %q, so it says the surface is dirty and not where:\n%s", want, got)
+		}
+	}
+	if err := os.Remove(filepath.Join(dir, seedProbe)); err != nil {
+		t.Fatal(err)
+	}
+
+	// The doc door's drift: the ADR 0019 framing that was retired, back in a
+	// shipped .go file — the exact way it walked in before, as a comment
+	// nobody's test looks at. Assembled, so this file is not itself a hit
+	// when a wider scanner than coxnGoSources is pointed at the tree.
+	dead := "stale " + "leftover"
+	docProbe := filepath.Join("internal", "twd_doc_drift_probe.go")
+	body := "package internal\n\n// the on-disk credential file is a " + dead + " of a keychain login\n"
+	if err := os.WriteFile(filepath.Join(dir, docProbe), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err = run(doc)
+	if err == nil {
+		t.Fatalf("`make doc-check` passed a shipped source carrying the framing ADR 0019's amendment retired — the door reads nothing:\n%s", got)
+	}
+	for _, want := range []string{filepath.ToSlash(docProbe), dead, "TestQANoCodeStringCallsTheDarwinCredentialsFileAStaleLeftover"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("`make doc-check` failed without naming %q:\n%s", want, got)
+		}
+	}
+	if err := os.Remove(filepath.Join(dir, docProbe)); err != nil {
+		t.Fatal(err)
 	}
 }

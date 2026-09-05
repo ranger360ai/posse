@@ -12,8 +12,14 @@ package posse
 //     against a throwaway $OLD: untracked/dirty/excluded do not cross,
 //     the refusals hold, and each preflight exception is per occurrence.
 //
-// Self-contained (own helpers) so the next edit to a neighbour cannot
-// carry the pin away.
+// Self-contained (own helpers) so the next edit to a neighbour cannot carry
+// the pin away — with ONE exception, the repo-root helper. This file used to
+// carry qspRepoRoot, byte-for-byte identical to instancebound_qa_test.go's
+// qibRepoRoot, and the tree-wide door census (treewidedoor_qa_test.go) keys
+// on that identifier: a pin spelled with the twin was outside the derived
+// class and got no door, silently (ranger-base-sx2dq). There is now one
+// repo-root helper in this package's tests, qibRepoRoot, and
+// TestQAOneRepoRootHelperInTheTestPackage keeps a third copy from arriving.
 
 import (
 	"bytes"
@@ -22,24 +28,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strconv"
 	"strings"
 	"testing"
 )
-
-func qspRepoRoot(t *testing.T) string {
-	t.Helper()
-	_, file, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("runtime.Caller")
-	}
-	root := filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
-	if _, err := os.Stat(filepath.Join(root, "go.mod")); err != nil {
-		t.Fatalf("repo root %s has no go.mod: %v", root, err)
-	}
-	return root
-}
 
 func qspGit(t *testing.T, dir string, args ...string) string {
 	t.Helper()
@@ -56,7 +48,7 @@ func qspGit(t *testing.T, dir string, args ...string) string {
 
 func qspSeedScript(t *testing.T) string {
 	t.Helper()
-	p := filepath.Join(qspRepoRoot(t), "docs", "runbooks", "0012-seed-publication.sh")
+	p := filepath.Join(qibRepoRoot(t), "docs", "runbooks", "0012-seed-publication.sh")
 	if _, err := os.Stat(p); err != nil {
 		return ""
 	}
@@ -156,7 +148,7 @@ func TestPublicationRootCommitOmitsExcludedPaths(t *testing.T) {
 	if qspSeedScript(t) != "" {
 		t.Skip("private archive: the root commit is not a publication seed")
 	}
-	root := qspRepoRoot(t)
+	root := qibRepoRoot(t)
 	sha := qspGit(t, root, "rev-list", "--max-parents=0", "HEAD")
 	if strings.Contains(sha, "\n") {
 		t.Fatalf("expected one root commit, got:\n%s", sha)
@@ -194,7 +186,7 @@ func TestPublicationRootCommitADRsCarryProvenance(t *testing.T) {
 	if qspSeedScript(t) != "" {
 		t.Skip("private archive: the root commit is not a publication seed")
 	}
-	root := qspRepoRoot(t)
+	root := qibRepoRoot(t)
 	sha := qspGit(t, root, "rev-list", "--max-parents=0", "HEAD")
 	listing := qspGit(t, root, "ls-tree", "-r", "--name-only", sha)
 	const header = "Restated from the private archive"
@@ -223,7 +215,7 @@ func TestPublicationHistoryNeverCarriesTheSeedScript(t *testing.T) {
 	if qspSeedScript(t) != "" {
 		t.Skip("private archive: the seed script lives here on purpose")
 	}
-	root := qspRepoRoot(t)
+	root := qibRepoRoot(t)
 	log := qspGit(t, root, "log", "--all", "--oneline", "--", "docs/runbooks/0012-seed-publication.sh")
 	if log != "" {
 		t.Fatalf("seed script is in history (it names the crew in its own patterns):\n%s", log)
@@ -612,7 +604,7 @@ func TestSeedSurfaceNameCountIsZero(t *testing.T) {
 	token := regexp.MustCompile(needle + `(-[0-9a-z]+)?`)
 	marker := regexp.MustCompile(`^` + needle + `-[0-9a-z]+$`)
 
-	root := qspRepoRoot(t)
+	root := qibRepoRoot(t)
 	var hits []string
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {

@@ -1535,8 +1535,12 @@ If you set `commit.cleanup` to `verbatim`, `whitespace`
 or `scissors`, git strips no `#` line out of that file, so the arm reads it
 whole and the block CAN refuse you — including over an untracked
 file's name you never staged, before your editor opens. **The refusal names
-the mode and what clears it** (ranger-base-b21e0): delete git's block in the
-editor, or leave `commit.cleanup` at its default. Which of the three you set
+the mode and what clears it** (ranger-base-b21e0, corrected by
+ranger-base-sx2dq): clear the class out of the repo, or leave
+`commit.cleanup` at its default. Both are things you can do from where the
+refusal leaves you — the hook exits non-zero BEFORE git launches your editor,
+so the commit is already over and there is no editor session in which to
+delete git's block by hand. Which of the three you set
 decides whether the refusal is true or generous, and the difference is
 measured: under `verbatim` and `whitespace` git's block LANDS in the commit
 object as it stands, so the wall is doing its job; under `scissors` git puts
