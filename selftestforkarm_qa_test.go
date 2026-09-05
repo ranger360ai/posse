@@ -584,3 +584,41 @@ func TestQATheForkedMatcherScanSeesPastAPhantomHeredocAndAnEarlierMessage(t *tes
 		}
 	}
 }
+
+// A PARKED pin, found verifying the close that added the arms above
+// (ranger-base-9ufqk over ranger-base-u2etb). That fix answers the heredoc
+// sfScanLines is still holding at EOF, and the close reads that backstop as
+// what "catches the shapes nobody listed". It catches only a phantom that
+// never CLOSES.
+//
+// A `<<WORD` inside a quoted string on a non-comment line is neither a
+// comment — so the comment-first test does not reach it — nor an arithmetic
+// expansion — so sfArith does not blind it. It opens a body, and if any later
+// line of the same file is exactly WORD the body closes: the opener goes back
+// to nil, the EOF backstop never fires, and every line between is skipped with
+// the scan green. The word collision is the ordinary case, not the exotic one:
+// 43 heredocs across scripts/ today, 33 of them terminated by a line reading
+// EOF, in 16 different files.
+//
+// Not live — there are 0 quoted `<<WORD` occurrences in scripts/ at b306647 —
+// but the guard the scan IS for audit-silent-reverts.sh, whose own --self-test
+// cannot run from a gated seat, is the reason a latent hole here is worth a
+// row. Delete the Skip when the opener probe stops reading a `<<` inside an
+// odd number of quotes as a redirection.
+func TestQATheForkedMatcherScanSeesPastAPhantomHeredocThatCloses(t *testing.T) {
+	t.Skip("ranger-base-5hv8z: a quoted `<<EOF` whose word is terminated later in the same file closes the phantom body, so the unterminated-at-EOF backstop never fires and the lines between go unscanned")
+
+	viol := `if printf '%s' "$out" | grep -q x; then`
+	// The control first, and it is the reason a green below would mean
+	// anything: the same line alone is a verdict violation, so a pass cannot
+	// come from a matcher or a region finder that stopped working.
+	if got, open := sfScanLines("probe.sh", []string{viol}, true); len(got) != 1 || got[0].role != "verdict" || open != nil {
+		t.Fatalf("control: the bare line must read as a verdict violation: %+v open=%v", got, open)
+	}
+	// …and the same line with a phantom above it that CLOSES.
+	lines := []string{`  echo "the rig writes a <<EOF body"`, viol, `EOF`}
+	got, open := sfScanLines("probe.sh", lines, true)
+	if len(got) != 1 || got[0].role != "verdict" || got[0].line != 2 {
+		t.Errorf("a phantom heredoc that finds its terminator swallowed the violation between them and the scan reported nothing: %+v open=%v", got, open)
+	}
+}
