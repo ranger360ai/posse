@@ -1,5 +1,11 @@
 # ADR 0025 — Enforcement class: "realized" stops meaning two things, and the refusals trail gets one writer
 
+*Status: superseded 2026-09-05 by ADR 0002 · ADR simplification, operator ruling 2026-09-05.*
+
+The surviving decision is in [0002 — current contract](0002-runtimes-and-gates.md), Decision §4, enforcement classes and Refusal trail, and Lineage. This page keeps its number and dated evidence; the body below is historical, not current policy.
+
+## Historical record (superseded in full)
+
 *Status: accepted 2026-08-27 · owner: richard · amends ADR 0002 §3/§4
 (bead ranger-base-6uq6, measured in rangerhq-pafo) · amended 2026-09-01:
 §4's second bullet, its residual and Verification 2/3 corrected — a spool

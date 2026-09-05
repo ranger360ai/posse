@@ -111,9 +111,44 @@ rules each need their actual realization; native tool flags do not imply a
 kernel boundary. Equivalent runtime self-sandbox posture may be a declared
 difference under 0013 rather than a fictitious loss of protection.
 
-Every realized gate is `enforced` or `cooperative`; non-gate rows have an
-empty class. Class is descriptive and changes no launch verdict. Detailed
-classification and refusal ownership are folded here from 0025.
+Every realized gate carries a class; `posse gates`, rendered parity and
+session metadata must preserve that distinction wherever they report
+realization. The metadata obligation is retained from 0025; this fold does
+not assert that an unobserved metadata field has shipped.
+
+| Class | Meaning |
+|---|---|
+| `enforced` | Outside the process: L2, L4 mounts/network/proxy and an actually active runtime OS sandbox |
+| `cooperative` | Ordinary execution path: L1 shims, gate shell and L3 hooks at every tier |
+| empty | A realized row that is not an adversarial gate, such as model, skill or metering information |
+
+Class changes no verdict and requires no waiver. Absolute-path commands,
+environment removal and hook redirects expose different cooperative holes.
+At L4 a push's **effect** is blocked only when the configured read-only
+mount or network boundary actually stops its destination; the launcher
+does not know enough to certify every remote. Print this as a qualified
+note, never upgrade the verb gate's class.
+
+### Refusal trail: one host-owned canonical record
+
+Never mount the canonical refusal log into the cage. Inner shims append
+to a per-session writable spool; existing host pass/reap, close and relaunch
+paths fold it into the canonical log. A host-only cursor stores the byte
+offset and hash of the folded prefix. Append new lines with the session id,
+then advance the cursor; unchanged repeat folds add nothing. A size below
+the cursor or changed folded prefix adds a tamper line and refolds from
+zero as suspect. This is deduplication during ordinary retry, not a
+transactional exactly-once promise across a crash between append and cursor.
+
+Truncating unconsumed bytes, truncating exactly to the cursor, or erasing
+before the first fold can lose lines without detection. Only already-folded
+history is beyond the cage's reach; the canonical log cannot be shortened
+from inside. At shims tier the filesystem is still cooperative. No new
+daemon is needed. MEASURED: the prefix/truncation cases in 0025's hermetic
+evidence. UNVERIFIED: its full live-container wiring probe; this docs run
+does not turn skipped container tests into measurements. Rejected: a live
+tail daemon or wider socket capability to close a window the current
+threat model does not require closing (extra actor/capability cost ASSUMED).
 
 ### Project configuration is a launch input
 
@@ -165,6 +200,7 @@ requires the same parity checks. Refusal history remains host-owned.
 | 0002 §§1–5 and project-config/escape amendments | §§1–5 above; dated detail in the historical snapshot |
 | 0009 §§1–4, including REAL resolution, PATH position, rc and credential distinctions | §3 L1; credentials in 0019; executable probe path unchanged |
 | 0023 §§1–4 identity, own-render probe and foreign classification | §3 L3; 0052 supplies the managed realization under this same proof |
+| 0025 §§1–4 classes, push-effect qualification, host-owned refusal fold; verification limits | §4 and Refusal trail; dated probe outcomes remain in 0025 |
 
 [Historical evidence and prior alternatives](history/0002-runtimes-and-gates-before-2026-09-05.md)
 are retained separately and are not a second active contract.
