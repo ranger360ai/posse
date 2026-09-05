@@ -2141,16 +2141,36 @@ sites: its bead is closed, and a closed bead is never dispatched again.
 
 **"A tree holding nothing" is `RemoveSessionTree`'s refusal asked as a
 question** (`residueHolds`): no uncommitted paths in the session's cwd, and —
-for a worktree session whose branch still exists — no commits the base does
-not hold, measured by patch-id AND by content (ranger-base-as19/x8jp; git's
-`-x` trailer is somebody's decision, not a measurement). Every unanswerable
-question fails closed. It is stricter than the kill that follows needs to be:
-a crew-arm session's bead is closed, so the kill would land the branch itself,
-but a reap that lands is a reap that decides. Deferring costs one pass —
-`landClosedTrees` lands it at the head of the next — and the refusal prints
+for a worktree session — no commits the base does not hold, measured by
+patch-id AND by content (ranger-base-as19/x8jp; git's `-x` trailer is
+somebody's decision, not a measurement). Every unanswerable question fails
+closed. It is stricter than the kill that follows needs to be: a crew-arm
+session's bead is closed, so the kill would land the branch itself, but a reap
+that lands is a reap that decides. Deferring costs one pass —
+`landClosedTrees` lands it at the head of the next, except over a DETACHED
+tree, which that sweep skips in silence for the same reason these two
+guards did (ranger-base-vavx2, open) — and the refusal prints
 `◑ <session> idle <d> over <why> and NOT reaped: <what it holds>` **every
 pass**, because the silence is what read as a broken reaper and cost the
 hand-reaps in the first place (ranger-base-kftx).
+
+**Asked of BOTH of a tree's tips** (`removalTips`, ranger-base-v2rj7): the
+branch, which is what `branch -D` deletes, and the tree's own HEAD, which
+is what `worktree remove` drops. On a **detached** HEAD those are different
+commits — a commit made there writes no ref at all, which is exactly why a
+container-tier session is launched detached (`PrepareSessionHead`,
+ranger-base-t4f1) — so `<base>..<branch>` is ZERO over a tree holding a whole
+session's work. Both guards asked only that, and MEASURED 2026-09-05 before
+the fix: `RemoveSessionTree(t, false)` over a stamped, clean, detached tree
+with one commit on it returned nil, removed the worktree, deleted the branch
+and left the commit referenced by nothing. Not a live loss the day it was
+found — the settle path runs `MergeSessionWork` first and that splices — but
+a guard that holds on its caller's evidence is not a guard, and ADR 0058 makes
+the sweep a second caller. The same wrong question is fixed at the listing and
+the merge report in ranger-base-d8o6 (`treeState`, `landed`). Asking the head
+is a no-op for a tree whose HEAD is on its own branch, so this is the detached
+case and only it; the branch is still asked in its own right, because a branch
+holding a commit its worktree walked away from is `branch -D`'s to lose.
 
 The two graces are policy dials, not measurements of anything: nothing posse
 records says how long a conversation's gaps are (typing in a pane leaves no

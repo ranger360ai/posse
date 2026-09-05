@@ -613,6 +613,15 @@ func residueIdle(m *HerdrMeta) (time.Duration, bool) {
 //     decision, not a measurement), AND the base holding the branch's bytes
 //     for every path it touched (ranger-base-x8jp — patch-id normalises
 //     whitespace, so "holds this patch" was never "holds this content").
+//   - the TREE'S OWN HEAD, when that is a different commit from the branch
+//     (ranger-base-v2rj7). It asked the branch alone, and `<base>..<branch>`
+//     is zero over a detached worktree — the shape a container-tier session
+//     is launched on ON PURPOSE (PrepareSessionHead, ranger-base-t4f1) — so
+//     it answered "" over the whole of such a session's committed work and
+//     the reap did not defer over work it believed was not there. It is
+//     removalTips that says which tips those are, so this question and
+//     RemoveSessionTree's act cannot drift apart: the doc line above is
+//     only true while they ask the same thing.
 //
 // This is stricter than the kill that follows it needs to be, on purpose. A
 // reapCrewClosed session's bead is closed, so KillSessionAndLand would land
@@ -631,23 +640,33 @@ func residueHolds(m *HerdrMeta) string {
 		// above is the whole question.
 		return ""
 	}
-	if !branchExists(t.Repo, t.Branch) {
+	tips := removalTips(t)
+	if len(tips) == 0 {
 		// Retired already — `posse worktrees --land` or a kill that landed
-		// took the branch, and a branch that does not exist is the last copy
-		// of nothing.
+		// took the branch, and neither a branch nor a tree HEAD is the last
+		// copy of nothing.
 		return ""
 	}
-	n, ok := unlandedCount(t)
-	if !ok {
-		return fmt.Sprintf("what %s holds beyond %s cannot be counted", t.Branch, orDetached(t.Base))
+	// A repo with no base cannot be asked at all — the same unanswerable
+	// question RemoveSessionTree refuses over, and it is one fact about the
+	// tree rather than one per tip.
+	if t.Base == "" {
+		return fmt.Sprintf("what %s holds beyond %s cannot be counted", tips[0].subject, orDetached(t.Base))
 	}
-	if n == 0 {
-		return ""
-	}
-	if eq := equivalentOnBase(t.Repo, t.Base, t.Branch); measuredOnBase(eq) {
-		if lost, err := contentNotOnBase(t.Repo, t.Base, t.Branch); err == nil && len(lost) == 0 {
-			return ""
+	for _, tip := range tips {
+		n, err := git(t.Repo, "rev-list", "--count", t.Base+".."+tip.ref)
+		if err != nil {
+			return fmt.Sprintf("what %s holds beyond %s cannot be counted", tip.subject, orDetached(t.Base))
 		}
+		if n == "0" {
+			continue
+		}
+		if eq := equivalentOnBase(t.Repo, t.Base, tip.ref); measuredOnBase(eq) {
+			if lost, err := contentNotOnBase(t.Repo, t.Base, tip.ref); err == nil && len(lost) == 0 {
+				continue
+			}
+		}
+		return fmt.Sprintf("%s holds %s commit(s) %s does not", tip.subject, n, orDetached(t.Base))
 	}
-	return fmt.Sprintf("%s holds %d commit(s) %s does not", t.Branch, n, orDetached(t.Base))
+	return ""
 }

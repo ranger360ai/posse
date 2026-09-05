@@ -2028,6 +2028,21 @@ func dirtyPaths(path string) []string {
 // bytes for every path the branch touched (contentNotOnBase). (The sha guard
 // is not the only by-sha check in this path: `branch -d` refuses an unmerged
 // branch too.)
+//
+// AND IT IS ASKED OF BOTH TIPS, not of the branch alone (ranger-base-v2rj7).
+// `<base>..<branch>` is ZERO over a worktree whose HEAD is DETACHED — the
+// shape a container-tier session is launched on ON PURPOSE, because on a
+// detached HEAD a commit writes no ref and that is what buys the `:ro`
+// common dir (PrepareSessionHead, ranger-base-t4f1) — so this refusal, the
+// one that exists to say no while anything would be lost, read a whole
+// session's committed work as nothing held. MEASURED 2026-09-05, before the
+// fix: a stamped detached tree with one commit on it, clean, was removed by
+// RemoveSessionTree(t, false) — worktree gone, branch deleted, the commit
+// left referenced by nothing. It was not a live loss only because its one
+// caller runs MergeSessionWork first and that splices; a guard that holds
+// on somebody else's evidence is not a guard. removalTips says why both
+// tips and not just the head: `branch -D` below takes the branch whatever
+// the tree's HEAD reaches.
 func RemoveSessionTree(t *SessionTree, force bool) error {
 	// The branch is provably redundant: its every commit's work is on the
 	// base under another sha, measured. Nothing here is the last copy.
@@ -2036,43 +2051,22 @@ func RemoveSessionTree(t *SessionTree, force bool) error {
 		if d := dirtyPaths(t.Path); len(d) > 0 {
 			return Die("%s has uncommitted changes (%s) — not removed", AbbrevHome(t.Path), strings.Join(d, " "))
 		}
-		if branchExists(t.Repo, t.Branch) {
+		for _, tip := range removalTips(t) {
 			// No base is not "nothing is ahead" — it is "the question
 			// cannot be asked", and the safe answer to an unanswerable
 			// question about destroying work is no.
 			if t.Base == "" {
-				return Die("%s still exists and %s has a detached HEAD, so what is unmerged cannot be known — not removed", t.Branch, AbbrevHome(t.Repo))
+				return Die("%s still exists and %s has a detached HEAD, so what is unmerged cannot be known — not removed", tip.subject, AbbrevHome(t.Repo))
 			}
-			n, err := git(t.Repo, "rev-list", "--count", t.Base+".."+t.Branch)
+			r, err := heldByTip(t, tip)
 			if err != nil {
 				return err
 			}
-			if n != "0" {
-				eq := equivalentOnBase(t.Repo, t.Base, t.Branch)
-				switch {
-				case measuredOnBase(eq):
-					// Patch-id said the base holds these patches. It did
-					// NOT say the base holds these bytes — it normalises
-					// whitespace — and it is the bytes that are about to be
-					// deleted (ranger-base-x8jp).
-					lost, err := contentNotOnBase(t.Repo, t.Base, t.Branch)
-					if err != nil {
-						return err
-					}
-					if len(lost) > 0 {
-						return Die("%s is ahead of %s by %s commit(s) git calls equivalent by patch-id (%s), but patch-id normalises whitespace and %s does not hold this branch's bytes for %s — so the branch is still the last copy of that content and is not removed here; read `git -C %s diff %s %s -- %s`, then `git -C %s worktree remove %s && git -C %s branch -D %s`",
-							t.Branch, t.Base, n, strings.Join(equivNotes(eq), ", "), t.Base, strings.Join(lost, " "),
-							AbbrevHome(t.Repo), t.Base, t.Branch, strings.Join(lost, " "),
-							AbbrevHome(t.Repo), AbbrevHome(t.Path), AbbrevHome(t.Repo), t.Branch)
-					}
-					redundant = true
-				case len(eq) > 0:
-					only := unmeasured(eq)
-					return Die("%s is ahead of %s by %s commit(s), %d of which have no record of landing beyond %s (%s) — that is somebody's decision or an identity match, not a measurement of what the landing kept, so this branch is still the last copy of those patches and is not removed here; compare them, then `git -C %s worktree remove %s && git -C %s branch -D %s`",
-						t.Branch, t.Base, n, len(only), unmeasuredEvidence(eq), strings.Join(only, ", "), AbbrevHome(t.Repo), AbbrevHome(t.Path), AbbrevHome(t.Repo), t.Branch)
-				default:
-					return Die("%s has %s commit(s) not on %s — not removed", t.Branch, n, t.Base)
-				}
+			// Only the BRANCH's own redundancy licenses `branch -D` below:
+			// that is the ref this deletes, and a measured tip is a
+			// statement about the commits that tip reaches and no others.
+			if r && tip.isBranch {
+				redundant = true
 			}
 		}
 	}
@@ -2099,6 +2093,108 @@ func RemoveSessionTree(t *SessionTree, force bool) error {
 		}
 	}
 	return nil
+}
+
+// removalTip is one commit a retire would drop the last reference to, and
+// the words a refusal about it has to be written in: what to call it, what
+// to ask git about, and how the operator keeps it if they want it.
+//
+// There are two of them and not one because a session tree has two tips
+// (ranger-base-v2rj7). The BRANCH is what `branch -D` deletes. The tree's
+// own HEAD is what `worktree remove` drops — and on a detached HEAD those
+// are different commits, because a commit made there writes NO ref at all,
+// which is exactly why a container-tier session is launched detached
+// (PrepareSessionHead, ranger-base-t4f1).
+type removalTip struct {
+	subject  string // what the refusal calls it
+	ref      string // what git is asked about: a branch name, or a sha
+	tail     string // the clause that says how to keep this one
+	isBranch bool   // the session branch itself, the ref `branch -D` takes
+}
+
+// removalTips is every tip RemoveSessionTree must ask about before it
+// destroys anything, in the order a refusal should reach them: the branch,
+// then the tree's own HEAD when that is a DIFFERENT commit.
+//
+// Both, and not one. Asking the branch alone is what this bead exists for:
+// `<base>..<branch>` is zero over a detached tree, so a whole session's
+// committed work read as nothing held. Asking the head alone would be a
+// trade, not a fix — a branch that holds a commit its worktree's HEAD does
+// not reach (a rebase the tree walked away from, a splice that half ran) is
+// guarded today and must stay guarded, and `branch -D` below takes that ref
+// whatever the head says.
+//
+// Empty is a session with neither a branch nor a head, which is nothing to
+// lose: workHead's own ("", false).
+func removalTips(t *SessionTree) []removalTip {
+	var tips []removalTip
+	branchSHA := ""
+	if branchExists(t.Repo, t.Branch) {
+		branchSHA, _ = git(t.Repo, "rev-parse", "refs/heads/"+t.Branch)
+		tips = append(tips, removalTip{
+			subject:  t.Branch,
+			ref:      t.Branch,
+			isBranch: true,
+			tail: fmt.Sprintf("`git -C %s worktree remove %s && git -C %s branch -D %s`",
+				AbbrevHome(t.Repo), AbbrevHome(t.Path), AbbrevHome(t.Repo), t.Branch),
+		})
+	}
+	// `head != branchSHA` and not "is the HEAD detached": what matters is
+	// whether the branch tip above already accounted for this commit, and
+	// when the two are the same commit it did — so this arm is the detached
+	// case and only it, the same no-op treeState's fix is over a tree whose
+	// HEAD is on its own branch.
+	if head, ok := workHead(t); ok && head != branchSHA {
+		tips = append(tips, removalTip{
+			subject: fmt.Sprintf("%s in %s", abbrevSHA(head), AbbrevHome(t.Path)),
+			ref:     head,
+			// landed()'s cure, in landed()'s words: this work is off the
+			// session branch, so landing the branch would not carry it and
+			// a retire afterwards takes it. Naming the branch at it is what
+			// puts it back where the next pass can land it.
+			tail: fmt.Sprintf("the tree's HEAD is off %s, so landing the branch would not carry it — `git -C %s branch -f %s HEAD` names it first",
+				t.Branch, AbbrevHome(t.Path), t.Branch),
+		})
+	}
+	return tips
+}
+
+// heldByTip is RemoveSessionTree's refusal asked of ONE tip: nil when this
+// tip is the last copy of nothing, and the refusal itself when it is not.
+// redundant is the licence to force the ref away — every commit measured by
+// patch-id AND the base holding the bytes — and it is only ever true of a
+// tip nothing would lose.
+func heldByTip(t *SessionTree, tip removalTip) (redundant bool, err error) {
+	n, err := git(t.Repo, "rev-list", "--count", t.Base+".."+tip.ref)
+	if err != nil {
+		return false, err
+	}
+	if n == "0" {
+		return false, nil
+	}
+	eq := equivalentOnBase(t.Repo, t.Base, tip.ref)
+	switch {
+	case measuredOnBase(eq):
+		// Patch-id said the base holds these patches. It did NOT say the
+		// base holds these bytes — it normalises whitespace — and it is the
+		// bytes that are about to be deleted (ranger-base-x8jp).
+		lost, err := contentNotOnBase(t.Repo, t.Base, tip.ref)
+		if err != nil {
+			return false, err
+		}
+		if len(lost) > 0 {
+			return false, Die("%s is ahead of %s by %s commit(s) git calls equivalent by patch-id (%s), but patch-id normalises whitespace and %s does not hold its bytes for %s — so it is still the last copy of that content and is not removed here; read `git -C %s diff %s %s -- %s`, then %s",
+				tip.subject, t.Base, n, strings.Join(equivNotes(eq), ", "), t.Base, strings.Join(lost, " "),
+				AbbrevHome(t.Repo), t.Base, tip.ref, strings.Join(lost, " "), tip.tail)
+		}
+		return true, nil
+	case len(eq) > 0:
+		only := unmeasured(eq)
+		return false, Die("%s is ahead of %s by %s commit(s), %d of which have no record of landing beyond %s (%s) — that is somebody's decision or an identity match, not a measurement of what the landing kept, so it is still the last copy of those patches and is not removed here; compare them, then %s",
+			tip.subject, t.Base, n, len(only), unmeasuredEvidence(eq), strings.Join(only, ", "), tip.tail)
+	default:
+		return false, Die("%s has %s commit(s) not on %s — not removed; %s", tip.subject, n, t.Base, tip.tail)
+	}
 }
 
 // warnw is the io.Writer fallback these helpers share: nil means stderr, the
