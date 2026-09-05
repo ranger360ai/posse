@@ -430,6 +430,34 @@ kill and the recreate one step or neither.
 
 ### Fixed
 
+**The pulse arm switched itself off for ten hours a day, skipping on an
+"unsent prompt" in a box that was empty.**
+
+*Affected: every install with `pulse:` armed. Measured 2026-09-04: three
+episodes in one day, ~586 consecutive skipped shop checks, ~10 of the day's
+hours with no pulse at all while 108 commits stacked behind it.*
+
+The pulse would not type a shop check after somebody's unsent prompt, since
+the two texts go in as one garbled message. It read the box off herdr's
+composer region — and for the coordinator's own pane that region kept
+previewing the operator's last **sent** line, answered hours earlier, over a
+box `posse peek` showed empty. The skip line quoted that line back every
+tick. Nothing could make the reading go false: the persona cannot clear a
+box that is already clear, and only a new operator message replaced the
+phantom, so the arm stayed off until the operator happened to type again.
+
+The pulse no longer gates on that reading. It still makes it, and prints one
+line naming what the box previewed before delivering, so a genuinely garbled
+turn stays explicable from the watch log — and a herdr that starts clearing
+the composer on submit shows up as that line going quiet. What this costs is
+one re-typed line on the rare tick that lands while the operator is actually
+mid-keystroke. Everything else is unchanged: a screen herdr can see is
+working still refuses the pulse, and `posse prompt`'s warning, its submit
+read-back, dispatch's `--resume` skip and the shop check's G2 row all still
+read the composer and still act on it — those are about a dispatched
+holder's pane, where the reading has not been measured wrong and failing
+towards not acting is the safe direction.
+
 **`posse gates <persona>` printed a wall of green for a persona that could
 not launch at all, and exited 0.**
 

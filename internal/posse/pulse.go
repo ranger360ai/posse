@@ -355,13 +355,41 @@ func (d *Dispatcher) deliverPulse(cfg PulseConfig, state *PulseState) {
 		d.quietf("pulse: skipped (%s — herdr's listing said %q)\n", det.State, status)
 		return
 	}
-	// ranger-base-htafy, off the detection already in hand: a composer with
-	// text in it is a prompt somebody sent that never submitted, and a
-	// shop check typed after it makes one garbled message out of two. The
-	// tick comes round again; the stale text is the operator's to clear.
-	if hold := det.Hold(); hold.Typed != "" {
-		d.quietf("pulse: skipped (%s has %s)\n", name, hold.Why())
-		return
+	// ranger-base-htafy put a gate here and ranger-base-wr624 took it out.
+	// It read the composer off the detection already in hand and SKIPPED on
+	// text, because a composer with text in it is a prompt somebody sent
+	// that never submitted, and a shop check typed after it makes one
+	// garbled message out of two.
+	//
+	// MEASURED 2026-09-04, three episodes in one day: ~586 consecutive
+	// skips naming text the operator had already SENT and the persona had
+	// already answered, against a box `posse peek` showed EMPTY. herdr's
+	// composer state for that pane still carried the last sent line after
+	// the send, so every tick read the same phantom and the pulse arm was
+	// off for ~10 of the day's hours while 108 commits stacked behind it.
+	//
+	// A screen-state matcher over a region that can hold ghost text cannot
+	// clear itself: nothing the pulse or the persona can do makes the
+	// reading go false — only a NEW operator message replaces the phantom,
+	// which is the opposite of the condition the gate was written for. And
+	// this pane is the harness's own arm; the operator types in it only to
+	// talk to the persona the pulse is addressing. So the reading no longer
+	// decides. What it was avoiding is one re-typed line on the rare tick
+	// that lands mid-keystroke; what it charged was a day of pushes.
+	//
+	// It still REPORTS, so a garbled turn is explicable after the fact from
+	// the watch log, and so that a herdr which starts clearing the composer
+	// on submit is visible here as the line simply going quiet.
+	//
+	// Narrow on purpose. The same reading still gates dispatch's --resume
+	// re-prompt and govern's G2 row (panework.go's other callers), which
+	// are about a DISPATCHED holder's pane and fail towards not acting.
+	// Neither has been shown to see the phantom, and widening a narrowing
+	// nobody measured is how the first one got written; ranger-base-2hvtv
+	// carries the discriminator and the two unmeasured questions.
+	if typed := det.Composer(); typed != "" {
+		d.quietf("pulse: %s box previews %q — prompting anyway; that reading has been ghost text (ranger-base-wr624)\n",
+			name, ellipsis(typed, 60))
 	}
 
 	text := pulsePromptText(state.Conditions)

@@ -15,7 +15,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
 // armScreen makes every `agent explain` in a test carry the two screen
@@ -249,40 +248,24 @@ func TestQAConfirmSubmittedReportsAPromptThatNeverLeftTheBox(t *testing.T) {
 
 // ─── the pulse's own prompt ──────────────────────────────────────────────────
 
-// A shop check typed after somebody's unsent prompt makes one garbled
-// message out of two — the third strand of the incident, from the detection
-// the pulse's readiness gate has already paid for. The tick comes round
-// again; the stale text is the operator's to clear.
-func TestQAPulseDoesNotTypeAfterAnUnsentPrompt(t *testing.T) {
-	t.Parallel()
-	b, fake := newTestBackend(t)
-	personaSession(t, b, fake, "coordinator-work", "coordinator", "idle", false)
-	pulseFastRuntime(t, b, "coordinator-work", "400ms")
-	unpushedRepo(t, b)
-	armScreen(t, fake, idleFooter, unsentBox)
-
-	clock := time.Now()
-	d := deliveryDispatcher(t, b, &clock)
-	cfg := PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute, RenagMax: 4 * time.Hour}
-	d.pulseOnce(cfg)
-
-	if log := calls(t, fake); strings.Contains(log, "agent prompt") {
-		t.Errorf("a shop check was typed on top of an unsent prompt:\n%s", log)
-	}
-	if out := dispatcherOut(d); !strings.Contains(out, "UNSENT") {
-		t.Errorf("the skip does not say what is in the box:\n%s", out)
-	}
-
-	// The control: with an empty box the same tick prompts, as it always has.
-	b2, fake2 := newTestBackend(t)
-	personaSession(t, b2, fake2, "coordinator-work", "coordinator", "idle", false)
-	pulseFastRuntime(t, b2, "coordinator-work", "400ms")
-	unpushedRepo(t, b2)
-	armScreen(t, fake2, idleFooter, emptyBox)
-	clock2 := time.Now()
-	d2 := deliveryDispatcher(t, b2, &clock2)
-	d2.pulseOnce(cfg)
-	if log := calls(t, fake2); !strings.Contains(log, "agent prompt") {
-		t.Errorf("the control tick delivered no shop check at all:\n%s", log)
-	}
-}
+// RETRACTED by ranger-base-wr624, and named here rather than deleted so the
+// reversal is greppable from the pin it reverses.
+//
+// TestQAPulseDoesNotTypeAfterAnUnsentPrompt stood here. It pinned the third
+// strand of ranger-base-htafy: a shop check typed after somebody's unsent
+// prompt makes one garbled message out of two, so the pulse skipped on any
+// text in the box and left the stale text for the operator to clear.
+//
+// The premise was that the text is real and that clearing it is somebody's
+// to do. Measured 2026-09-04, neither held for this pane: herdr's composer
+// region previewed a line the operator had already SENT and the persona had
+// already ANSWERED, over a box `posse peek` showed empty, so nothing could
+// clear it but a new operator message — and the pulse arm was off for ~10
+// hours across ~586 consecutive skips while 108 commits stacked.
+//
+// The gate is gone from the delivery path only. The reading it was built on
+// is still made, still reported, and still decides for dispatch's --resume
+// skip and govern's G2 row; TestQATextInABoxIsStillAHoldForTheDispatchReaders
+// is what holds that line. The delivery behaviour now lives in
+// pulseghostbox_qa_test.go, whose wrong arm is the working screen that is
+// still refused with the same text in the box.
