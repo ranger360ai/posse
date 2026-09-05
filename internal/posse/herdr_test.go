@@ -2316,7 +2316,11 @@ func TestPersonaLaunch(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(memdir, "ORDERS.md")); err != nil {
 		t.Error("persona memory dir not materialized at launch")
 	}
-	log := calls(t, fake)
+	// launchLog, not calls: the --env rows ride the `workspace create` call and
+	// are always in calls.log, but --add-dir is on the TYPED line, and since
+	// ranger-base-rflee widened the --settings pin that line is over
+	// PaneLineMax and lands in state/launch/<session>.sh instead.
+	log := launchLog(t, b.App, fake)
 	for _, want := range []string{
 		"--env BD_ACTOR=ranger",
 		"--env RHQ_PERSONA=ranger",
@@ -2339,7 +2343,9 @@ func TestPersonaToolEnv(t *testing.T) {
 
 	mustCreate(t, b, NewSessionOpts{Name: "crew", Agent: "ranger"})
 
-	log := calls(t, fake)
+	// launchLog: the --allowedTools/--disallowedTools spelling below is on the
+	// typed line, which spills past PaneLineMax (ranger-base-rflee).
+	log := launchLog(t, b.App, fake)
 	for _, want := range []string{
 		"--env RHQ_TOOLS_ALLOW=Bash(bd:*)\nEdit",
 		// The env carries the PID's own rules; the typed line goes through
@@ -2835,7 +2841,7 @@ func TestPersonaLaunchRuntime(t *testing.T) {
 		t.Errorf("degraded launch must be announced: %q", warn.String())
 	}
 	mustCreate(t, b, NewSessionOpts{Name: "h2", Agent: "security", Runtime: "codex"})
-	log := calls(t, fake)
+	log := launchLog(t, b.App, fake)
 	if !strings.Contains(log, "--env RHQ_RUNTIME=claude") || !strings.Contains(log, "--env RHQ_RUNTIME=codex") {
 		t.Errorf("RHQ_RUNTIME missing:\n%s", log)
 	}
@@ -2873,7 +2879,7 @@ func TestPersonaLaunchRuntime(t *testing.T) {
 	// --tier overrides the PID's default and renders the model; the
 	// listing tag shows runtime/tier when either is not the default.
 	mustCreate(t, b, NewSessionOpts{Name: "h4", Agent: "dev", Tier: "fast"})
-	if got := calls(t, fake); !strings.Contains(got, "GATES claude --model 'claude-sonnet-5'") || !strings.Contains(got, "--env RHQ_TIER=fast") {
+	if got := launchLog(t, b.App, fake); !strings.Contains(got, "GATES claude --model 'claude-sonnet-5'") || !strings.Contains(got, "--env RHQ_TIER=fast") {
 		t.Errorf("--tier fast:\n%s", got)
 	}
 	m4, _ := b.readMeta("h4")

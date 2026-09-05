@@ -1728,7 +1728,9 @@ func TestDispatchTierReachesSession(t *testing.T) {
 	if !strings.Contains(out, "(prompted, fast via tier_by_label doc)") {
 		t.Errorf("pass output must show the tier:\n%s", out)
 	}
-	c := calls(t, fake)
+	// launchLog: --env is on `workspace create`, the --model flag is on the
+	// typed line, which spills past PaneLineMax (ranger-base-rflee).
+	c := launchLog(t, b.App, fake)
 	if !strings.Contains(c, "--env RHQ_TIER=fast") || !strings.Contains(c, "GATES claude --model 'claude-sonnet-5'") {
 		t.Errorf("tier must reach env and model flag:\n%s", c)
 	}
