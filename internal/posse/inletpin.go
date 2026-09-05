@@ -116,13 +116,25 @@ import "os"
 // value is the one measured to leave this box's behaviour exactly where it
 // already is while denying the inlet — the same rule credentialDirPin
 // follows ("the value this environment already resolves to"), applied to
-// readers that are not claude: bash, sh, dyld, git and node.
+// the readers a session execs — bash, sh, dyld, git and node — and to
+// claude itself, which reads the NODE_* and transport names too.
 //
 // The measurements, one line per row, all by execution on 2026-09-05
 // (darwin 25.4.0, bash 3.2.57, git 2.50.1, node v25.2.1, claude 2.1.261).
 // Each is a three-arm probe — unset, attack, pin — because a pin whose
 // attack arm never fired has measured nothing (ranger-base: "probe needs a
 // failing wrong arm"):
+//
+// READ THE READER OFF EACH ROW BEFORE TRUSTING IT. Neutrality is per
+// reader, and the NODE_* rows have TWO that matter and they disagree:
+// homebrew node v25.2.1, and the node-compatible runtime inside claude
+// itself, which on 2.1.261 is a Bun 1.4.1 compiled binary (`strings` on the
+// executable names bun-v1.4.1; there is no node in it at all).
+// NODE_EXTRA_CA_CERTS is the row where they diverged — node forgiving what
+// bun does not — and shipping the node-only measurement took the operator's
+// client off the endpoint for every session on the box (ranger-base-xxdn4).
+// Where a row below is about reaching the API, the arm that counts is the
+// real claude binary and nothing else.
 //
 //	BASH_ENV=/dev/null              attack sourced a marker script into
 //	                                `bash -c :`; /dev/null quiet, bash still
@@ -145,11 +157,48 @@ import "os"
 //	                                still runs. A single space is non-empty
 //	                                (so it reaches the policy tier) and
 //	                                parses to no options.
-//	NODE_EXTRA_CA_CERTS=/dev/null   a bogus path makes node say "Ignoring
-//	                                extra certs … load failed", which is how
-//	                                the key was shown to reach; /dev/null is
-//	                                silent and adds no CA. The variable is
-//	                                additive, so adding nothing is neutral.
+//	NODE_EXTRA_CA_CERTS=""          THE ROW THAT BROKE THE OPERATOR'S CLIENT,
+//	                                and the reason this table now names its
+//	                                reader per row. /dev/null was measured
+//	                                neutral against node v25.2.1, which warns
+//	                                ("Ignoring extra certs … load failed")
+//	                                and carries on with its built-in roots.
+//	                                claude 2.1.261 is NOT node: it is a Bun
+//	                                1.4.1 compiled binary, and its HTTPS
+//	                                agent warns the same and then dies —
+//	                                every request fails with
+//	                                `FailedToOpenSocket`, which is the
+//	                                "having trouble reaching api" the
+//	                                operator saw (ranger-base-xxdn4).
+//	                                Measured 2026-09-05 against the real
+//	                                binary, --bare + a junk API key, where a
+//	                                healthy transport answers 401 and a
+//	                                broken one answers FailedToOpenSocket:
+//	                                  /dev/null            BREAKS
+//	                                  an empty regular file BREAKS
+//	                                  a MISSING path        401 (healthy)
+//	                                  ""                    401 (healthy)
+//	                                  /etc/ssl/cert.pem     401 (healthy)
+//	                                So the trigger is not the path being
+//	                                bogus, it is the file READING and
+//	                                yielding zero PEM blocks: the CA list
+//	                                becomes empty and the agent is left with
+//	                                no trust anchors at all. A missing path
+//	                                skips the load and keeps them.
+//	                                Pinned "" — flag-scope-effective and
+//	                                expected to be a no-op at the policy
+//	                                tier, on the same standing as the
+//	                                proxies. A non-empty neutral DOES exist
+//	                                (a path that does not exist, which
+//	                                reaches the policy tier and adds no CA)
+//	                                and is NOT taken: it rests on that path
+//	                                staying absent, and it prints two
+//	                                "Ignoring extra certs" warning lines at
+//	                                every claude start. Pointing the row at a
+//	                                real bundle reaches too, but appends a
+//	                                root set rather than adding nothing, so
+//	                                it widens trust instead of pinning it.
+//	                                Both are the operator's to overrule.
 //	NODE_TLS_REJECT_UNAUTHORIZED=1  against a self-signed TLS server on
 //	                                loopback: unset REJECTED, "0" ACCEPTED
 //	                                (this is the row that completes an MITM),
@@ -255,7 +304,7 @@ func inletPin() []EnvVar {
 		{Key: "https_proxy", Value: ""},
 		{Key: "http_proxy", Value: ""},
 		{Key: "all_proxy", Value: ""},
-		{Key: "NODE_EXTRA_CA_CERTS", Value: os.DevNull},
+		{Key: "NODE_EXTRA_CA_CERTS", Value: ""},
 		{Key: "NODE_TLS_REJECT_UNAUTHORIZED", Value: "1"},
 		{Key: "CLAUDE_CODE_CERT_STORE", Value: ""},
 		{Key: "CLAUDE_CODE_CLIENT_CERT", Value: ""},
