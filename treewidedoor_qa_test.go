@@ -32,8 +32,20 @@ package posse
 //	TestQAADR0036StatusLineDoesNotCarryTheRetractedUnbuiltStamp
 //	                                              make doc-check
 //
-// and `make tree-check` is all of them, which is the command a seat types
-// after a filtered run.
+// and five more that took their root from `git rev-parse --show-toplevel`,
+// doored under ranger-base-xndgk (FINDING 5 of the ranger-base-xtgvp verify):
+//
+//	TestQAIdentityLiteralsNeverAppearInATrackedPath make identity-check ~0.5s
+//	TestIdentityLiteralsNeverAppearInTheHarnessRepoUndispositioned
+//	                                              make identity-check
+//	TestQAEveryOpsHitInTrackedMarkdownIsRuled     make ops-check       ~2s
+//	TestQAOpsShapeTableCanStillSayNo              make ops-check
+//	TestShippedExampleTableCoversEveryVersionInGitHistory
+//	                                              make history-check   ~3s
+//
+// and `make tree-check` is all of them — 21-41s on this box over four runs at
+// eighteen pins and seven doors — which is the command a seat types after a
+// filtered run.
 //
 // WHY THE DOOR RUNS THE PIN. fmt-check re-runs the TOOL, because gofmt is a
 // tool and `gofmt -l` cannot disagree with `go/format`. These four are Go:
@@ -63,6 +75,18 @@ package posse
 //     a test into a helper that WALKS from the root, and
 //     TestQAOneRepoRootHelperInTheTestPackage below is what keeps a third
 //     copy from re-opening the same hole. Five members became thirteen.
+//
+//     AND WAS STILL FALSE (ranger-base-xndgk FINDING 5). Both rules key on
+//     GO's filesystem calls, and five pins took their root from `git
+//     rev-parse --show-toplevel` — stdout from a subprocess, which neither
+//     rule can see. One of them censuses every tracked PATH in the
+//     repository, one `git grep`s every tracked FILE, one scans every
+//     tracked markdown file, one reads the history of every shipped
+//     example. All five now take the root from the one helper, that
+//     spelling is fenced in TestQAOneRepoRootHelperInTheTestPackage, and
+//     thirteen members became eighteen. The lesson the third rule is NOT:
+//     the class was never bounded by how a test spells its root, so the
+//     thing that bounds it is the single helper, not another rule.
 //  3. the doors can FAIL: `make -n`'s own expansion of each, run for real
 //     against a scratch copy of the tree carrying the real drift — a crew
 //     name in a shipped file, and an ADR page that stopped naming a selector
@@ -86,7 +110,7 @@ import (
 // The Makefile variables that hold the class. One per door, plus the pin
 // whose door is a tool rather than a filter — the union is what arm 2
 // measures against the tree.
-var twdPinVars = []string{"QA_CREW_PINS", "QA_SELECTOR_PINS", "QA_TOOL_PINS", "QA_SEED_PINS", "QA_HISTORY_PINS", "QA_DOC_PINS"}
+var twdPinVars = []string{"QA_CREW_PINS", "QA_SELECTOR_PINS", "QA_TOOL_PINS", "QA_SEED_PINS", "QA_HISTORY_PINS", "QA_DOC_PINS", "QA_IDENTITY_PINS", "QA_OPS_PINS"}
 
 // twdRootHelper is the ONE repo-root helper internal/posse's tests may use.
 // It is a single identifier on purpose — the class below is derived from it,
@@ -159,7 +183,7 @@ func TestQAMakeTestOpensTheTreeWideDoors(t *testing.T) {
 	// The umbrella reaches every door. It carries no recipe of its own, so
 	// `make -n tree-check` prints exactly what a seat would have to type.
 	tree := strings.Join(twdPrereqs(t, src, "tree-check"), " ")
-	for _, door := range []string{"fmt-check", "crew-check", "selector-check", "seed-check", "history-check", "doc-check"} {
+	for _, door := range []string{"fmt-check", "crew-check", "selector-check", "seed-check", "history-check", "doc-check", "identity-check", "ops-check"} {
 		if !strings.Contains(tree, door) {
 			t.Errorf("`make tree-check` no longer reaches `%s`, so one tree-wide pin is back to being ~950s away: %q", door, tree)
 		}
@@ -172,7 +196,8 @@ func TestQAMakeTestOpensTheTreeWideDoors(t *testing.T) {
 	}
 
 	if phony := strings.Join(twdPrereqs(t, src, ".PHONY"), " "); !strings.Contains(phony, "tree-check") ||
-		!strings.Contains(phony, "crew-check") || !strings.Contains(phony, "selector-check") {
+		!strings.Contains(phony, "crew-check") || !strings.Contains(phony, "selector-check") ||
+		!strings.Contains(phony, "identity-check") || !strings.Contains(phony, "ops-check") {
 		t.Errorf(".PHONY does not name the new doors — a file of that name in the tree would silence one: %q", phony)
 	}
 
@@ -263,6 +288,57 @@ type twdFunc struct {
 	// root reached by a hand-rolled climb — not one reached through
 	// qibRepoRoot, and not a subdirectory of it.
 	handRolledTreeWalk bool
+	// shellRoot: the body asks GIT for this repo's root —
+	// `exec.Command("git", "rev-parse", "--show-toplevel").Output()` — and
+	// keeps the answer. A third spelling of the root, invisible to every
+	// rule above, which is how five tree-wide pins sat undoored
+	// (ranger-base-xndgk FINDING 5).
+	shellRoot bool
+}
+
+// twdAsksGitForTheRoot reports whether a call is
+// `exec.Command("git", ..., "--show-toplevel", ...).Output()` (or
+// CombinedOutput) — git asked for this repo's root with the answer KEPT.
+//
+// The value being kept is the whole distinction. Four calls in
+// silentrevert_qa_test.go ask git the same question and throw the answer
+// away, as a probe for "is there a checkout here at all" — as does
+// qibSkipUnlessCheckout, which asks --git-dir. A probe is not a second way
+// to compute the root, and it is not fenced.
+//
+// RESIDUAL, said out loud: this matches the exec.Command spelling, which is
+// what all four offending call sites wrote and what the next one would
+// write. A root taken from the package's own git(dir, ...) helper with dir
+// spelled "." is not matched. Nothing here can enumerate every way to name
+// this repo — what bounds the class is that there is ONE helper, and the pin
+// below fences the three spellings that have actually appeared: a twin
+// helper, a hand-rolled climb, and this.
+func twdAsksGitForTheRoot(call *ast.CallExpr) bool {
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || (sel.Sel.Name != "Output" && sel.Sel.Name != "CombinedOutput") {
+		return false
+	}
+	inner, ok := sel.X.(*ast.CallExpr)
+	if !ok {
+		return false
+	}
+	fn, ok := inner.Fun.(*ast.SelectorExpr)
+	if !ok || (fn.Sel.Name != "Command" && fn.Sel.Name != "CommandContext") {
+		return false
+	}
+	if x, ok := fn.X.(*ast.Ident); !ok || x.Name != "exec" {
+		return false
+	}
+	for _, a := range inner.Args {
+		lit, ok := a.(*ast.BasicLit)
+		if !ok || lit.Kind != token.STRING {
+			continue
+		}
+		if v, err := strconv.Unquote(lit.Value); err == nil && v == "--show-toplevel" {
+			return true
+		}
+	}
+	return false
 }
 
 // twdRootExprs finds, inside one function body, every expression that
@@ -390,6 +466,9 @@ func twdParse(t *testing.T) (map[string]*twdFunc, int) {
 				}
 				if twdJoinsTwoDotDots(call.Args) {
 					f.ascent = true
+				}
+				if twdAsksGitForTheRoot(call) {
+					f.shellRoot = true
 				}
 				switch fun := call.Fun.(type) {
 				case *ast.Ident:
@@ -536,9 +615,46 @@ func TestQAEveryTreeWidePinHasADoor(t *testing.T) {
 		"TestPublicationRootCommitOmitsExcludedPaths",
 		"TestPublicationRootCommitADRsCarryProvenance",
 		"TestPublicationHistoryNeverCarriesTheSeedScript",
+		// The fourth, taught here rather than moved in quietly
+		// (ranger-base-xndgk FINDING 5): it reads THIS repo's `git rev-list`
+		// and `git show` for every version of every shipped example, which
+		// is the same reason as the three above — a copied tree has no
+		// history to plant drift in. It was undoored because its root came
+		// from `git rev-parse --show-toplevel`, a spelling neither class
+		// rule could see.
+		"TestShippedExampleTableCoversEveryVersionInGitHistory",
 	}
 	if got := twdVar(t, src, "QA_HISTORY_PINS"); !twdSameSet(got, wantHistory) {
 		t.Errorf("$(QA_HISTORY_PINS) = %v, want exactly %v — that variable records the tree-wide pins whose subject is this repo's git HISTORY, which is the one thing a copied tree does not have, so arm 3 runs them clean and plants no drift. A new entry needs its own arm; a pin moved here is a pin whose door nothing has shown can fail.", got, wantHistory)
+	}
+
+	// The same membership-by-name treatment for the two doors
+	// ranger-base-xndgk FINDING 5 added, and for the same reason as
+	// QA_HISTORY_PINS rather than a new one: all four pins READ THE TREE
+	// THROUGH GIT — `git ls-files`, `git grep` — so in a copied tree they
+	// find no checkout and skip, and arm 3 cannot plant drift for them
+	// there. Their membership is therefore named here, so neither variable
+	// can become the quiet place to park a pin whose door nothing has shown
+	// can fail.
+	//
+	// These four were the finding: every one of them took its root from
+	// `git rev-parse --show-toplevel`, which is stdout from a subprocess and
+	// invisible to both class rules, so none of them was in any door
+	// variable at all. TestQAIdentityLiteralsNeverAppearInATrackedPath
+	// censuses EVERY TRACKED PATH in the repository.
+	wantIdentity := []string{
+		"TestQAIdentityLiteralsNeverAppearInATrackedPath",
+		"TestIdentityLiteralsNeverAppearInTheHarnessRepoUndispositioned",
+	}
+	if got := twdVar(t, src, "QA_IDENTITY_PINS"); !twdSameSet(got, wantIdentity) {
+		t.Errorf("$(QA_IDENTITY_PINS) = %v, want exactly %v — this box's identity literals asked of the tree twice, once of tracked PATHS and once of tracked CONTENT. Both read the tree with git, so arm 3 cannot plant drift for them in a copied tree; a new entry needs its own arm.", got, wantIdentity)
+	}
+	wantOps := []string{
+		"TestQAEveryOpsHitInTrackedMarkdownIsRuled",
+		"TestQAOpsShapeTableCanStillSayNo",
+	}
+	if got := twdVar(t, src, "QA_OPS_PINS"); !twdSameSet(got, wantOps) {
+		t.Errorf("$(QA_OPS_PINS) = %v, want exactly %v — the ops-residue census over every tracked markdown file and the control that says its shape table can still say no. The census reads the tree with git, so arm 3 cannot plant drift for it in a copied tree; a new entry needs its own arm.", got, wantOps)
 	}
 
 	names, funcs := twdTreeWideTests(t)
@@ -554,8 +670,8 @@ func TestQAEveryTreeWidePinHasADoor(t *testing.T) {
 	// fired only when qibRepoRoot was renamed and never when a pin was
 	// simply spelled with the twin helper (ranger-base-sx2dq). That is
 	// TestQAOneRepoRootHelperInTheTestPackage's job, below.
-	if len(names) < 10 {
-		t.Fatalf("only %d tree-wide tests found (13 on 2026-09-04) — %s has been renamed or wrapped, and this arm is now deriving a class that is missing members: %v", len(names), twdRootHelper, names)
+	if len(names) < 14 {
+		t.Fatalf("only %d tree-wide tests found (18 on 2026-09-04) — %s has been renamed or wrapped, and this arm is now deriving a class that is missing members: %v", len(names), twdRootHelper, names)
 	}
 	// And the walk-reaching rule specifically: it is the half that catches a
 	// pin reading the tree through a helper, and a rule that silently stops
@@ -634,6 +750,14 @@ func twdWalkReachingTests(t *testing.T) []string {
 //     exactly this: a WalkDir over every non-test .go file in the repo,
 //     reached by no helper at all, so no identifier match could ever find
 //     it.
+//   - a SHELLED ROOT: a body that asks git — `exec.Command("git",
+//     "rev-parse", "--show-toplevel").Output()` — and keeps the answer.
+//     ranger-base-xndgk FINDING 5: FOUR tree-wide pins were spelled this
+//     way, one of them a census of EVERY TRACKED PATH in the repository, and
+//     none of them was in any door variable. Both rules above key on Go's
+//     own filesystem calls, so neither could ever have seen a root that
+//     arrives as the stdout of a subprocess. A probe that throws the answer
+//     away is not this shape and is not fenced.
 //
 // Reading ONE file at the repo root is not either shape and is not fenced —
 // ~48 test files do it, they red only when that one file changes, and that
@@ -667,6 +791,17 @@ func TestQAOneRepoRootHelperInTheTestPackage(t *testing.T) {
 	}
 	for _, h := range hidden {
 		t.Errorf("%s walks a tree from a hand-rolled climb to the repo root — a tree-wide pin no identifier match can reach, which is how TestSeedConfigLiveKeysAreRead went undoored. Take the root from %s.", h, twdRootHelper)
+	}
+
+	var shelled []string
+	for name, f := range all {
+		if f.shellRoot {
+			shelled = append(shelled, f.where+" "+name)
+		}
+	}
+	sort.Strings(shelled)
+	for _, sh := range shelled {
+		t.Errorf("%s asks git for this repo's root and keeps the answer — `exec.Command(\"git\", \"rev-parse\", \"--show-toplevel\").Output()` is a root no rule in this file can see, so a pin spelled with it is outside the tree-wide class and gets no door. Take the root from %s and, if the reading needs a checkout, skip with qibSkipUnlessCheckout. (ranger-base-xndgk FINDING 5: four pins were spelled this way, one of them a census of every tracked path in the repository.)", sh, twdRootHelper)
 	}
 }
 

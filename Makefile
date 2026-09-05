@@ -42,7 +42,7 @@ FMT_ROOTS := cmd internal *.go
 BUILD_STAMP := $(shell $(GOBIN) run ./cmd/buildstamp)
 LDFLAGS     := -X github.com/ranger360ai/posse/internal/posse.Build=$(BUILD_STAMP)
 
-.PHONY: build release install deploy test test-reuse fmt-check crew-check selector-check seed-check history-check doc-check tree-check verify-test-times verify-suite-lock verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-govern-honesty verify-grok-pin verify-codex-pin verify-credential-paths verify-hook-freshness verify-bd-pin verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
+.PHONY: build release install deploy test test-reuse fmt-check crew-check selector-check seed-check history-check doc-check identity-check ops-check tree-check verify-test-times verify-suite-lock verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-govern-honesty verify-grok-pin verify-codex-pin verify-credential-paths verify-hook-freshness verify-bd-pin verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
 
 build:
 	$(GOBIN) build -ldflags '$(LDFLAGS)' -o bin/posse-go ./cmd/posse
@@ -306,9 +306,13 @@ fmt-check:
 # drifts NARROWER than the pin while both look green, which is worse than no
 # door. So the door runs the pin itself. MEASURED 2026-09-04: the package's
 # test binary compiles in ~11s cold, the thirteen tests run in ~4s, and
-# `make tree-check` is 13-16s warm (it was 5.1s at four pins; the eight
+# `make tree-check` was 13-16s warm (it was 5.1s at four pins; the eight
 # ranger-base-sx2dq added cost ~9s, nearly all of it `go test` starting five
-# times rather than two) — against the ~950s of running internal/posse whole.
+# times rather than two). RE-MEASURED 2026-09-04 at eighteen pins and seven
+# doors (ranger-base-xndgk): 21-41s warm over four runs, of which the five new
+# pins are ~4s
+# of tests and the two new `go test` starts most of the rest — against the
+# ~950s of running internal/posse whole.
 #
 # `-count=1` because a door that can answer from cache is a door that can lie:
 # the drift these pins are about arrives as a new file in a walked directory,
@@ -320,12 +324,13 @@ fmt-check:
 # default. These two run ~7s of tests, so the number is a formality here —
 # but a door exempted from the rule is the next entry point nobody notices.
 #
-# One variable per door. Two of them name pins the union check cannot verify
-# by wiring, and both are pinned by name in treewidedoor_qa_test.go's arm 2 so
-# they cannot become a parking spot: QA_TOOL_PINS is the pin whose door is a
-# TOOL rather than a filter, and QA_HISTORY_PINS is the three whose subject is
-# this repo's git history, which a copied tree does not have — so the drift
-# arm runs them clean here instead of planting drift in a scratch copy.
+# One variable per door. Four of them name pins the union check cannot verify
+# by wiring, and all four are pinned by name in treewidedoor_qa_test.go's arm
+# 2 so they cannot become a parking spot: QA_TOOL_PINS is the pin whose door
+# is a TOOL rather than a filter, and QA_HISTORY_PINS, QA_IDENTITY_PINS and
+# QA_OPS_PINS read THIS repo with git — its history, its tracked paths, its
+# tracked content — which a copied tree does not have, so the drift arm runs
+# them clean here instead of planting drift in a scratch copy.
 #
 # The rest is mechanical: treewidedoor_qa_test.go derives the class from a
 # walk of internal/posse — the tests that read the repo root, and the tests
@@ -335,8 +340,10 @@ QA_CREW_PINS     := TestShippedTreeNamesRolesNotThisCrew|TestShippedStringsNameR
 QA_SELECTOR_PINS := TestHerdrSelectorsAreNamedByADR0016
 QA_TOOL_PINS     := TestTreeIsGofmtClean
 QA_SEED_PINS     := TestSeedSurfaceNameCountIsZero|TestSeedConfigLiveKeysAreRead
-QA_HISTORY_PINS  := TestPublicationRootCommitOmitsExcludedPaths|TestPublicationRootCommitADRsCarryProvenance|TestPublicationHistoryNeverCarriesTheSeedScript
+QA_HISTORY_PINS  := TestPublicationRootCommitOmitsExcludedPaths|TestPublicationRootCommitADRsCarryProvenance|TestPublicationHistoryNeverCarriesTheSeedScript|TestShippedExampleTableCoversEveryVersionInGitHistory
 QA_DOC_PINS      := TestQANoCodeStringCallsTheDarwinCredentialsFileAStaleLeftover|TestQACageCredDocDoesNotCallTheOnDiskCredentialStale|TestQAADR0036StatusLineDoesNotCarryTheRetractedUnbuiltStamp
+QA_IDENTITY_PINS := TestQAIdentityLiteralsNeverAppearInATrackedPath|TestIdentityLiteralsNeverAppearInTheHarnessRepoUndispositioned
+QA_OPS_PINS      := TestQAEveryOpsHitInTrackedMarkdownIsRuled|TestQAOpsShapeTableCanStillSayNo
 
 # The crew-name trio, one door between them because they are one question —
 # does the shipped tree name this instance's crew (ADR 0012 App.A 5) — asked
@@ -385,12 +392,35 @@ history-check:
 doc-check:
 	$(GOBIN) test ./internal/posse -timeout 15m -count=1 -run '^($(QA_DOC_PINS))$$'
 
-# The whole class, one command: every tree-wide pin in internal/posse — 13-16s
-# warm. No recipe of its own — the doors are its prerequisites, so `make -n
+# The two doors ranger-base-xndgk FINDING 5 added, for four of the five pins
+# it found undoored (the fifth went to history-check above). The census that
+# derives this class keyed on Go's own filesystem calls — a body that calls
+# qibRepoRoot, or that reaches a helper which WalkDirs from it — and those
+# five took their root from `git rev-parse --show-toplevel` instead, which is
+# stdout from a subprocess and invisible to both rules. One of them censuses
+# EVERY TRACKED PATH in the repository. They now take the root from the one
+# helper and are fenced there (treewidedoor_qa_test.go's
+# TestQAOneRepoRootHelperInTheTestPackage).
+#
+# This box's identity literals, asked of the tree two ways: never in a
+# tracked PATH, never in tracked CONTENT past the dispositioned three. ~0.5s.
+# Type it when you add a file whose name or body could carry a box's
+# username, git email or instance path.
+identity-check:
+	$(GOBIN) test ./internal/posse -timeout 15m -count=1 -run '^($(QA_IDENTITY_PINS))$$'
+
+# The ops residue census over every tracked markdown file, and the control
+# that says the shape table can still say no. ~2s. Type it when you write or
+# edit a .md anywhere in the tree.
+ops-check:
+	$(GOBIN) test ./internal/posse -timeout 15m -count=1 -run '^($(QA_OPS_PINS))$$'
+
+# The whole class, one command: every tree-wide pin in internal/posse — 21-41s
+# over four runs at eighteen pins. No recipe of its own — the doors are its prerequisites, so `make -n
 # tree-check` prints exactly what a seat would otherwise have to type. It is a
 # prerequisite of `make test` for rulbl's reason: a full run fails on it in
 # seconds instead of at ~950.
-tree-check: fmt-check crew-check selector-check seed-check history-check doc-check
+tree-check: fmt-check crew-check selector-check seed-check history-check doc-check identity-check ops-check
 
 # Register the cockpit plugin with the running herdr (local dev link).
 # The manifest runs ./bin/posse relative to the plugin root; that is a symlink

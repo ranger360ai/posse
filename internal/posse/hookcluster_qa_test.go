@@ -566,14 +566,15 @@ func TestQAIdentityPathArmMatchesANonASCIILiteralRaw(t *testing.T) {
 // should never need to be one: a path is renameable.
 func TestQAIdentityLiteralsNeverAppearInATrackedPath(t *testing.T) {
 	t.Parallel()
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("no git")
-	}
-	top, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
-	if err != nil {
-		t.Skip("not inside a git checkout")
-	}
-	repo := strings.TrimSpace(string(top))
+	// The root comes from qibRepoRoot and not from `git rev-parse
+	// --show-toplevel` (ranger-base-xndgk FINDING 5). This pin's subject is
+	// EVERY TRACKED PATH in the repository — any file added anywhere can red
+	// it, which is the tree-wide class's own definition — and that class is
+	// derived from calls to that one helper. Spelled with git it was outside
+	// the class, in no Makefile door, and reachable only by a `-run` filter
+	// that happened to name it.
+	repo := qibRepoRoot(t)
+	qibSkipUnlessCheckout(t, repo)
 	identity, err := DeriveIdentityLiterals(hookRepo(repo))
 	if err != nil {
 		t.Fatal(err)

@@ -55,14 +55,14 @@ file as the operator's and keeps it (ranger-base-rgx0, ranger-base-8ehw).`,
 // a vendored build) — the table is still the thing that ships.
 func TestShippedExampleTableCoversEveryVersionInGitHistory(t *testing.T) {
 	t.Parallel()
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("no git on PATH")
-	}
-	root, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
-	if err != nil {
-		t.Skip("not a git checkout")
-	}
-	dir := strings.TrimSpace(string(root))
+	// qibRepoRoot, not `git rev-parse --show-toplevel` (ranger-base-xndgk
+	// FINDING 5): this pin reads THIS repo's history for every version of
+	// every shipped example, so a release that adds one reds it and no seat's
+	// `-run` filter names it. The tree-wide class in treewidedoor_qa_test.go
+	// is derived from the one root helper, and a root spelled with git is a
+	// member that derivation cannot see.
+	dir := qibRepoRoot(t)
+	qibSkipUnlessCheckout(t, dir)
 	for _, n := range exampleAgentNames(posse.Seed) {
 		rel := path.Join("agents", n+".md")
 		gitPath := path.Join("examples", rel)

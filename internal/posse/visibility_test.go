@@ -1213,14 +1213,13 @@ func TestIdentityLiteralGuardHook(t *testing.T) {
 // that set is a hit nobody has judged, which is worth failing loud over.
 func TestIdentityLiteralsNeverAppearInTheHarnessRepoUndispositioned(t *testing.T) {
 	t.Parallel()
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("no git")
-	}
-	out, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
-	if err != nil {
-		t.Skip("not inside a git checkout")
-	}
-	repo := strings.TrimSpace(string(out))
+	// qibRepoRoot, not `git rev-parse --show-toplevel` (ranger-base-xndgk
+	// FINDING 5): this pin `git grep`s every tracked file in the repository,
+	// so any file added anywhere can red it — the tree-wide class — and that
+	// class is derived from calls to the one root helper. Spelled with git it
+	// had no Makefile door.
+	repo := qibRepoRoot(t)
+	qibSkipUnlessCheckout(t, repo)
 	identity, err := DeriveIdentityLiterals(hookRepo(repo))
 	if err != nil {
 		t.Fatal(err)

@@ -628,17 +628,21 @@ func detachTreeHead(t *testing.T, tr *SessionTree) {
 	commitIn(t, tr.Path, "detached.txt", "off the branch\n", "s-1: off the branch")
 }
 
-func TestMergeBlockedReasonsNeverPromiseTheBranch(t *testing.T) {
-	t.Parallel()
-	// One case per o.Reason spelling the merge path can hand
-	// noteMergeBlocked. `arm` is the per-case POSITIVE CONTROL: a substring
-	// only that sentence carries, so a fixture that fell through to some
-	// other refusal reds here instead of passing the claim check for an arm
-	// nobody drove. That is the failure the pin above had.
-	cases := []struct {
-		name, arm string
-		reason    func(*testing.T) string
-	}{
+// mergeBlockedCases is one case per o.Reason spelling the merge path can hand
+// noteMergeBlocked. `arm` is the per-case POSITIVE CONTROL: a substring only
+// that sentence carries, so a fixture that fell through to some other refusal
+// reds instead of passing the claim check for an arm nobody drove. That is
+// the failure the pin below had.
+//
+// Hoisted out of the test (ranger-base-xndgk FINDING 2) because a hand-written
+// table with no floor is the ranger-base-ik44f shape one domain over: the
+// file's own header promises the claim is asserted "over every o.Reason
+// spelling in the merge path", and nothing kept "every" true — a thirteenth
+// refusal added tomorrow got no case and nothing said so. The census that
+// keeps it true is TestQAEveryMergeRefusalSentenceHasACase
+// (mergereasonfloor_qa_test.go), and it reads this table.
+func mergeBlockedCases() []mergeBlockedCase {
+	return []mergeBlockedCase{
 		{
 			// worktree.go: the base is not a branch at all.
 			name: "the tree has no base branch to land on",
@@ -813,6 +817,11 @@ func TestMergeBlockedReasonsNeverPromiseTheBranch(t *testing.T) {
 			},
 		},
 	}
+}
+
+func TestMergeBlockedReasonsNeverPromiseTheBranch(t *testing.T) {
+	t.Parallel()
+	cases := mergeBlockedCases()
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()

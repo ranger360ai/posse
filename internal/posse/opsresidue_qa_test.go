@@ -339,21 +339,18 @@ func scanOpsHits(t *testing.T, root string) ([]opsHit, int) {
 	return hits, files
 }
 
-func repoRootForOpsScan(t *testing.T) string {
-	t.Helper()
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("no git")
-	}
-	out, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
-	if err != nil {
-		t.Skip("not inside a git checkout")
-	}
-	return strings.TrimSpace(string(out))
-}
-
+// The root is qibRepoRoot's and the checkout probe throws its own answer
+// away (ranger-base-xndgk FINDING 5). It used to be `git rev-parse
+// --show-toplevel` here, and it is spelled in each test rather than behind a
+// helper for a mechanical reason: the tree-wide class in
+// treewidedoor_qa_test.go keys on a TEST BODY calling that one helper, so a
+// root reached through a wrapper is a member the derivation cannot see. The
+// scan below censuses every tracked markdown file in the repository — any
+// .md added anywhere can red it — and it had no Makefile door.
 func TestQAEveryOpsHitInTrackedMarkdownIsRuled(t *testing.T) {
 	t.Parallel()
-	root := repoRootForOpsScan(t)
+	root := qibRepoRoot(t)
+	qibSkipUnlessCheckout(t, root)
 	allow, red := opsShapeTable(t, exampleConfigValues(t, root))
 
 	hits, files := scanOpsHits(t, root)
@@ -385,7 +382,8 @@ func TestQAEveryOpsHitInTrackedMarkdownIsRuled(t *testing.T) {
 // be green, and require the same disposition function to say so.
 func TestQAOpsShapeTableCanStillSayNo(t *testing.T) {
 	t.Parallel()
-	root := repoRootForOpsScan(t)
+	root := qibRepoRoot(t)
+	qibSkipUnlessCheckout(t, root)
 	cfg := exampleConfigValues(t, root)
 	allow, red := opsShapeTable(t, cfg)
 

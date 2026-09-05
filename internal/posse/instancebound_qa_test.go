@@ -50,6 +50,7 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -70,6 +71,27 @@ func qibRepoRoot(t *testing.T) string {
 		t.Fatalf("repo root %s has no go.mod: %v", root, err)
 	}
 	return root
+}
+
+// qibSkipUnlessCheckout skips when root is not a git checkout — a release
+// tarball, a vendored build, or the `git archive` scratch tree the house
+// mutation rig runs in, none of which has a .git for a pin to ask about.
+//
+// It exists so a pin that READS the tree with git can still take its root
+// from qibRepoRoot (ranger-base-xndgk FINDING 5): the tree-wide class in
+// treewidedoor_qa_test.go is derived from that one helper, and a pin that
+// spelled its root `git rev-parse --show-toplevel` instead was outside the
+// class, got no door, and nothing said so. The probe here asks whether there
+// is a checkout and THROWS THE ANSWER AWAY — it is not a second way to
+// compute the root, which is the thing that must stay singular.
+func qibSkipUnlessCheckout(t *testing.T, root string) {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git on PATH")
+	}
+	if err := exec.Command("git", "-C", root, "rev-parse", "--git-dir").Run(); err != nil {
+		t.Skipf("not inside a git checkout: %s", root)
+	}
 }
 
 // qibShippedRoots are the trees a deployer receives. Three of them are the

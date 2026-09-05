@@ -105,3 +105,49 @@ func TestQAGatesBuiltinRuntimeStaysGreen(t *testing.T) {
 		t.Errorf("a built-in runtime must not be reported unresolvable:\n%s", out)
 	}
 }
+
+// FINDING 1 of ranger-base-xndgk (verifying this bead's own close). The exit
+// is at the END of the case rather than the top for a reason the code states
+// out loud — "the gates dir, the gate shell, the shims and the refusals log
+// are true whatever the runtime is, so the report still prints in full" — and
+// nothing held it. The arm above asserts only that the runtime is NAMED and
+// the status is non-zero, and both are true of a report that stops two lines
+// in: moving the `os.Exit(1)` up to immediately after the "cannot launch"
+// line leaves all three pins in this file green over three lines of output.
+//
+// So the claim is asserted as what it is, an ORDERING: every section of the
+// report that does not depend on the runtime must still be there, and must
+// be BELOW the warning. Below and not merely present, because "present" is
+// satisfied by a report that prints the tail and then discovers the runtime.
+func TestQAGatesUnresolvableRuntimeStillPrintsTheWholeReport(t *testing.T) {
+	bin := buildRhq(t)
+	out, code := gatesQARun(t, bin, gatesQAHome(t, "codex-local"))
+	if code == 0 {
+		t.Fatalf("fixture: this arm is the unresolvable-runtime one and must exit non-zero:\n%s", out)
+	}
+	cut := strings.Index(out, "cannot launch")
+	if cut < 0 {
+		t.Fatalf("fixture: the report never says the persona cannot launch, so there is no exit point to measure the tail against:\n%s", out)
+	}
+	// One row per runtime in the CATALOG, then the four runtime-independent
+	// sections. Each is a line an operator reads off `posse gates` and none
+	// of them is a fact about the persona's own runtime.
+	for _, section := range []struct{ want, why string }{
+		{"claude @ ", "the parity table's built-in rows"},
+		{"codex @ ", "the parity table's built-in rows"},
+		{"grok @ ", "the parity table's built-in rows"},
+		{"/state/gates/builder", "the gates dir"},
+		{"gate shell ", "the gate shell (ADR 0009)"},
+		{"no shell-verb denies", "the shims line"},
+		{"refusals.log", "the refusals log"},
+	} {
+		i := strings.Index(out, section.want)
+		if i < 0 {
+			t.Errorf("%s (%q) is missing from the report — a persona whose runtime does not resolve still has a gates dir, a gate shell, shims and a refusals log, and `posse gates` exits AFTER printing them:\n%s", section.why, section.want, out)
+			continue
+		}
+		if i < cut {
+			t.Errorf("%s (%q) prints ABOVE the runtime warning — the warning is reported where the runtime is read and exited on at the end of the case, so every section below it is below it:\n%s", section.why, section.want, out)
+		}
+	}
+}
