@@ -17,6 +17,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ranger360ai/posse/internal/posse"
 )
 
 func TestParseCostFlags(t *testing.T) {
@@ -167,37 +169,95 @@ func TestCostPlanFailsLoudWhenTheReadingIsUnavailable(t *testing.T) {
 	}
 }
 
+// agedSeed is how old the seeded reading is at the instant it is written:
+// mid-"3m" bucket, so a run that finishes inside 30s renders exactly one
+// answer and the bracket in runAgedPlan has exactly one member.
+const agedSeed = 3*time.Minute + 30*time.Second
+
+// costFooterNote is what the full report bolts on, and the only thing it
+// is allowed to bolt on.
+const costFooterNote = " (the plan's own rate limits — the real budget; dollars above are API-equivalent)"
+
+// runAgedPlan seeds the shared snapshot agedSeed old, runs the binary once,
+// and returns its stdout together with every age the reading honestly had
+// while that process was alive.
+//
+// The seed happens HERE, per run, rather than once for the whole test: the
+// binary's clock starts moving at the write, so bracketing one launch is
+// the tightest honest statement the test can make about what age that
+// launch could have printed.
+func runAgedPlan(t *testing.T, bin, home string, args ...string) (string, []string) {
+	t.Helper()
+	at := time.Now().Add(-agedSeed)
+	seedPlan(t, home, map[string]any{
+		"at":      at.UTC().Format(time.RFC3339Nano),
+		"windows": []map[string]any{{"name": "5h", "pct": 42}, {"name": "7d", "pct": 61}},
+	})
+	stdout, stderr, code := runPosse(t, bin, planEnv(home), args...)
+	if code != 0 {
+		t.Fatalf("posse %s: exit %d, stderr %q", strings.Join(args, " "), code, stderr)
+	}
+	// BlindFor is minute-resolution below an hour, so the ages this run
+	// could have printed are one per whole minute the bracket spans: from
+	// agedSeed (the reading's age when the process was launched) to its age
+	// once the process had certainly exited.
+	var ages []string
+	for m := int(agedSeed.Minutes()); m <= int(time.Since(at).Minutes()); m++ {
+		ages = append(ages, posse.BlindFor(time.Duration(m)*time.Minute))
+	}
+	return stdout, ages
+}
+
+// oneRendering holds one surface's line to the shared template: the same
+// bytes for the same reading, plus whatever that surface bolts on.
+func oneRendering(t *testing.T, what, got string, ages []string, note string) {
+	t.Helper()
+	var want []string
+	for _, age := range ages {
+		w := fmt.Sprintf("plan windows: 5h 42%% · 7d 61%%, read %s ago%s", age, note)
+		if got == w {
+			return
+		}
+		want = append(want, fmt.Sprintf("%q", w))
+	}
+	t.Errorf("%s is not the one rendering:\n got  %q\n want %s", what, got, strings.Join(want, "\n      or "))
+}
+
 // The footer of the full report and `--plan` are one rendering with one
 // parenthetical bolted on (PlanCache.Line, rangerhq-p3z) — a persona greps
-// the same bytes either way. Pinned by running both commands over one
-// snapshot and comparing them: two renderings that drift apart is the
-// failure this consolidation exists to make impossible, and until this test
-// the footer could be deleted outright with the suite still green.
+// the same bytes either way. Pinned by running both commands over an aged
+// snapshot and holding each of them to ONE template: two renderings that
+// drift apart is the failure this consolidation exists to make impossible,
+// and until this test the footer could be deleted outright with the suite
+// still green.
+//
+// The age is the one part of that template the test cannot state outright,
+// and it is why this pin used to red the suite under load
+// (ranger-base-nmab1). The two commands are two processes with two clocks;
+// the old fixture seeded the reading 30s from a bucket edge and compared
+// the two outputs to each other, which holds only while the apparatus runs
+// faster than 30s — and one measured pair of runs took 48s on a loaded box,
+// rendering "3m" and then "4m". A wider margin buys minutes and loses them
+// again as the suite grows (2.4x in four days, ranger-base-pj87l), so this
+// brackets instead of guessing: each run gets its own fresh seed, and every
+// age BlindFor could honestly have printed between that seed and the
+// process exiting is an accepted answer. An unloaded box offers one; a
+// loaded one offers two, and both are true of the same code. Everything
+// else stays exact — a different age format, a fabricated number, a missing
+// age, a footer that grew its own copy of any of it, all still fail, and so
+// does a missing footer. The age's own formatting is pinned against a
+// frozen clock in internal/posse (TestPlanCacheLineSaysHowOldTheReadingIs);
+// what is left for the binary to prove is that both surfaces print it.
 func TestCostPlanAndTheCostFooterAreOneRendering(t *testing.T) {
 	bin := buildRhq(t)
 	home := t.TempDir()
+
 	// Aged, not fresh: the age suffix is part of the rendering, and a
-	// footer that grew its own copy of it is exactly the drift. 3m30s sits
-	// in the middle of the "3m" bucket, so the two runs below cannot
-	// straddle its edge.
-	seedPlan(t, home, map[string]any{
-		"at":      time.Now().UTC().Add(-3*time.Minute - 30*time.Second).Format(time.RFC3339Nano),
-		"windows": []map[string]any{{"name": "5h", "pct": 42}, {"name": "7d", "pct": 61}},
-	})
+	// footer that grew its own copy of it is exactly the drift.
+	plan, ages := runAgedPlan(t, bin, home, "cost", "--plan")
+	oneRendering(t, "cost --plan", strings.TrimSuffix(plan, "\n"), ages, "")
 
-	plan, stderr, code := runPosse(t, bin, planEnv(home), "cost", "--plan")
-	if code != 0 {
-		t.Fatalf("cost --plan: exit %d, stderr %q", code, stderr)
-	}
-	plan = strings.TrimSuffix(plan, "\n")
-	if !strings.HasSuffix(plan, ", read 3m ago") {
-		t.Fatalf("the aged reading must carry its age, got %q", plan)
-	}
-
-	full, stderr, code := runPosse(t, bin, planEnv(home), "cost")
-	if code != 0 {
-		t.Fatalf("cost: exit %d, stderr %q", code, stderr)
-	}
+	full, ages := runAgedPlan(t, bin, home, "cost")
 	var footer string
 	for _, l := range strings.Split(full, "\n") {
 		if strings.HasPrefix(l, "plan windows: ") {
@@ -208,9 +268,7 @@ func TestCostPlanAndTheCostFooterAreOneRendering(t *testing.T) {
 	if footer == "" {
 		t.Fatalf("the full report still ends with the reading; got:\n%s", full)
 	}
-	if want := plan + " (the plan's own rate limits — the real budget; dollars above are API-equivalent)"; footer != want {
-		t.Errorf("the two renderings drifted:\n footer %q\n --plan %q", footer, want)
-	}
+	oneRendering(t, "the cost footer", footer, ages, costFooterNote)
 }
 
 // The request path, once, through the built binary: no snapshot, a listener

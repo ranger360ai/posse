@@ -6882,6 +6882,26 @@ the hook under test ever ran — one assertion failed, and the one that
 `TestMain` now sets PATH to `PathOutsideGates("")` for the whole test
 binary; a test that wants a shim on PATH renders one and prepends it.
 
+**A pin that names a clock-derived token cannot hold it with a margin**
+(ranger-base-nmab1). `cmd/posse`'s `TestCostPlanAndTheCostFooterAreOneRendering`
+seeded a plan reading 3m30s old — "3m30s sits in the middle of the '3m' bucket,
+so the two runs below cannot straddle its edge" — and then compared two
+`runPosse` launches of the BUILT binary to each other. That is a 30-second
+margin against an apparatus nothing bounds the runtime of: on 2026-09-05 the
+pair took 48.18s on a box running two other seats' suites, `--plan` rendered
+`read 3m ago`, the footer rendered `read 4m ago`, and `make test` was red for
+every seat with nothing wrong in the rendering it was pinning. A wider constant
+is not the fix — the wall grew 2.4x in four days (ranger-base-pj87l) and would
+eat it again. Two shapes work. Freeze the clock IN PROCESS, which is what
+`PlanCache.Now` is for and where the age's exact bytes are in fact already
+pinned (`TestPlanCacheLineSaysHowOldTheReadingIs`). Or, when the subject really
+is the built binary, BRACKET the run: seed immediately before the launch and
+accept every value the formatter could honestly have produced between that seed
+and the process exiting — `runAgedPlan` in `cmd/posse/costplan_test.go`, which
+has one accepted answer on an idle box and two on a loaded one, with every other
+byte of both renderings still exact. Four single-launch fixtures of the same
+shape are still in the tree, filed as ranger-base-boafa.
+
 ### The suite on Linux — `make test-linux`
 
 The suite ran on darwin and only on darwin until 2026-08-24, and two defects
