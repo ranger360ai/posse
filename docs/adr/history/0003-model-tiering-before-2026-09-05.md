@@ -230,7 +230,7 @@ interactive spend stays visible, never gated.
 
 An operator changes the model dial in a runtime overlay; the next release
 updates the built-in mapping and exact price row. Promotion belongs solely
-to [0015 §§2–3](0015-constitution-promotion.md); do not mirror or hand-edit
+to [0015 §§2–3](../0015-constitution-promotion.md); do not mirror or hand-edit
 the home. Current built-in values live in runtime.go and cost.go, not in
 a perpetual model-price snapshot in this ADR.
 
