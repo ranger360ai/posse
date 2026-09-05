@@ -276,17 +276,56 @@ func runtimeEnvRequired(path string) ([]string, error) {
 	var out []string
 	for _, v := range runtimeScalarOrList(path, "env_required") {
 		if strings.ContainsAny(v, "=$ \t") {
-			return nil, fmt.Errorf("env_required: %q — names only, never values (posse never reads what these hold)", v)
+			return nil, fmt.Errorf("env_required: %q — names only, never values (posse never reads what these hold, and this refusal is elided at the first character that is not part of a name)", elideEnvValue(v))
 		}
 		for i, r := range v {
-			ok := r == '_' || (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || (i > 0 && r >= '0' && r <= '9')
-			if !ok {
-				return nil, fmt.Errorf("env_required: %q — not an environment variable name", v)
+			if !envNameRune(i, r) {
+				return nil, fmt.Errorf("env_required: %q — not an environment variable name (elided at the first character that is not one)", elideEnvValue(v))
 			}
 		}
 		out = append(out, v)
 	}
 	return out, nil
+}
+
+// envNameRune is the character rule for an environment variable NAME, and
+// it is one function because two readers need the same answer: the
+// validator above, which refuses an entry, and elideEnvValue, which decides
+// how much of a refused entry is safe to print. Two spellings of this rule
+// would drift, and the direction that drifts is the one that prints.
+func envNameRune(i int, r rune) bool {
+	return r == '_' || (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || (i > 0 && r >= '0' && r <= '9')
+}
+
+// elideEnvValue is what a refusal prints in place of the entry. The
+// guarantee above — posse never reads, prints or forwards a value — was
+// broken by the sentence that makes it: the refusal echoed the whole entry,
+// so `AWS_SECRET_ACCESS_KEY=wJalr…` arrived complete in `posse runtime
+// check` output, which is output meant to be pasted into a bead, and beads
+// sync to a store repo (ranger-base-60lj).
+//
+// What survives is the leading run of name characters plus the first
+// character that is not one — the operator has to see WHICH entry and which
+// separator made it a value — and "..." for everything after it, which is
+// the part that may be a secret. No arm is exempt: `=`, `$`, a space and a
+// stray `-` all cut the same way, because `=` is not the only spelling a
+// value arrives in and a rule with an exception leaks on the day the
+// exception was wrong. An entry with nothing after the offending character
+// (`FOO=`) is printed whole, because nothing was elided.
+func elideEnvValue(v string) string {
+	for i := 0; i < len(v); i++ {
+		// Byte-indexed on purpose: any non-ASCII byte fails envNameRune at
+		// its first byte, so this cuts in the same place the rune-indexed
+		// validator refuses, and never mid-name.
+		if envNameRune(i, rune(v[i])) {
+			continue
+		}
+		if i+1 < len(v) {
+			return v[:i+1] + "..."
+		}
+		return v
+	}
+	return v
 }
 
 // declaredInterstitials reads the interstitial_<slug>: family.

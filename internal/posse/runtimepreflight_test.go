@@ -90,6 +90,43 @@ func TestEnvRequiredTakesNamesNeverValues(t *testing.T) {
 	}
 }
 
+// ...and the refusal does not print what it refused. The surface it prints
+// on is `posse runtime check`, which is output meant to be pasted into a
+// bead, and beads sync to a store repo — so a refusal that echoes
+// `AWS_SECRET_ACCESS_KEY=wJalr…` whole makes the visibility hop the key
+// exists to prevent, in the sentence promising it never happens
+// (ranger-base-60lj). Both arms are pinned, and both directions: the value
+// is absent AND the elided entry is present, because a refusal that says
+// nothing at all costs the operator the line they have to edit.
+func TestEnvRequiredRefusalElidesTheValue(t *testing.T) {
+	t.Parallel()
+	a := checkApp(t)
+	const secret = "wJalrXUtnFEMI0EXAMPLEKEY"
+	for _, c := range []struct{ entry, want string }{
+		{"AWS_SECRET_ACCESS_KEY=" + secret, `"AWS_SECRET_ACCESS_KEY=..."`}, // the = arm
+		{"AWS_SECRET_ACCESS_KEY " + secret, `"AWS_SECRET_ACCESS_KEY ..."`}, // whitespace
+		{"$" + secret, `"$..."`}, // a reference
+		{"AWS_SECRET_ACCESS_KEY:" + secret, `"AWS_SECRET_ACCESS_KEY:..."`}, // the bad-character arm
+		{"AWS_SECRET_ACCESS_KEY-" + secret, `"AWS_SECRET_ACCESS_KEY-..."`}, // same arm, another separator
+		{"AWS_REGION=", `"AWS_REGION="`},                                   // nothing follows: nothing elided
+	} {
+		if err := os.WriteFile(filepath.Join(a.RuntimesDir(), "leaky.yaml"),
+			[]byte("command: c {file}\nenv_required: ["+c.entry+"]\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		_, err := a.LoadRuntime("leaky")
+		if err == nil {
+			t.Errorf("env_required: %q must refuse", c.entry)
+			continue
+		}
+		if msg := err.Error(); strings.Contains(msg, secret) {
+			t.Errorf("env_required: %q — the refusal printed the value it exists to keep out of print: %s", c.entry, msg)
+		} else if !strings.Contains(msg, c.want) {
+			t.Errorf("env_required: %q — want the entry elided as %s, got: %s", c.entry, c.want, msg)
+		}
+	}
+}
+
 // The launch preflight's arithmetic, without a launch: what the session
 // receives wins, the launcher's own environment counts, and present-but-
 // empty is missing (an empty AWS_REGION is the same dead pane).
