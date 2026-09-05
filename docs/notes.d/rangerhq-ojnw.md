@@ -52,7 +52,10 @@ until ranger-base-l1at — see `docs/notes.d/ranger-base-l1at.md`.
 
 **One false positive accepted, on the bead's own terms.** `git commit -mi --
 b.txt` (message `i`) is now refused, as is any value that happens to be
-spelled `-…i…`. The bead states the trade and it is the right one: a false
+spelled `-…i…`. (**Closed since, by ranger-base-v3cu** — the scan pairs the
+value-taking options now, so `-mi` and `-m '-i am a message'` go through;
+what is left of the class is a value option behind a boolean in the same
+cluster, `-qmi`. See `docs/notes.d/ranger-base-v3cu.md`.) The bead states the trade and it is the right one: a false
 positive has a way through and the refusal prints it; a false negative is
 the wall not being there. The proxy's *other* false positive is untouched —
 `git commit -m x --pathspec-from-file=list` IS path-limited (measured:

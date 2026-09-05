@@ -333,17 +333,48 @@ func verbKey(cmd string, r shimRule) string {
 // word is a path, and a file named `-i` is a file. Short options are
 // single-letter and match inside a cluster — `git commit -im x -- b.txt`
 // sweeps exactly as `-i` does (measured, git 2.39.3), and so do `-pm x`,
-// `-qp` and `-sp` (measured, git 2.50.1, ranger-base-myai). That costs the
-// one false positive of the same class as above: `-mi`/`-mp` is the message
-// "i"/"p", and it is refused. The safe form is one space away.
+// `-qp` and `-sp` (measured, git 2.50.1, ranger-base-myai).
+//
+// What that cluster pattern must NOT reach is an option's VALUE, which is
+// what ValueOpts is for (ranger-base-v3cu).
 type spoiler struct {
 	Opts []string // `-x` (single letter, matches in a cluster) or `--long`
+	// ValueOpts are the subcommand's own options that take their value as a
+	// SEPARATE word, so the scan consumes them in pairs instead of reading
+	// the value as an option — the same pairing renderFlagIn does with
+	// verbValueOpts, one level in. Without it `git commit -m '-i am a
+	// message' -- a.txt` is refused: the message matches the `-*i*` cluster
+	// arm before the scan reaches `--`, and that commit is path-limited,
+	// carries no -i, and does not sweep (**MEASURED**, git 2.50.1 —
+	// ranger-base-v3cu, the bug this field closes).
+	//
+	// Membership is a MEASUREMENT and the direction of error is not
+	// symmetric. An option listed here that does NOT eat the next word is a
+	// HOLE: `git commit -u -i -- f` would shift past a real `--include`.
+	// One that is missing costs a false positive — a refusal one respelling
+	// away. TestQAValueOptsAreGitsRequiredValueOptions asks git itself,
+	// per option, which is which.
+	//
+	// A long option here needs a LongMin like a spoiler does, for the same
+	// reason and with the opposite consequence: an abbreviation with no arm
+	// is a false positive, not a hole.
+	//
+	// It pairs the separate-word form only. A GLUED value (`-mi`,
+	// `-m'fix typo'`) is not a pair — git takes the rest of the token — and
+	// renderSpoiled skips those tokens singly, which covers the value
+	// option written FIRST in its token. A value option behind a boolean in
+	// the same cluster (`-qmfix typo`) still reads as a cluster and is
+	// refused: a glob cannot say "no earlier letter in this token also took
+	// a value", and that residual fails closed with the safe form one space
+	// away.
+	ValueOpts []string
 	// LongMin is the shortest abbreviation git resolves to a long option in
-	// Opts, keyed by that option. git's parse-options accepts any
-	// UNAMBIGUOUS PREFIX, so `--inc` IS `--include` and an arm spelling the
-	// option in full misses every abbreviation on the way to it
-	// (ranger-base-l1at). Every long option in Opts needs an entry; without
-	// one only the literal is refused and the abbreviations walk past.
+	// Opts or ValueOpts, keyed by that option. git's parse-options accepts
+	// any UNAMBIGUOUS PREFIX, so `--inc` IS `--include` and an arm spelling
+	// the option in full misses every abbreviation on the way to it
+	// (ranger-base-l1at). Every long option in either list needs an entry;
+	// without one, a spoiler's abbreviations walk past the wall and a value
+	// option's abbreviations take their value back into the scan.
 	LongMin map[string]string
 	Why     string // completes "…, and without <opts> — <why>"
 }
@@ -357,13 +388,36 @@ var qualifierSpoilers = map[string]spoiler{
 		// TestQASpoilerTableCoversEveryCommitOption keeps it from going
 		// stale under a git that grows one more (ranger-base-myai).
 		Opts: []string{"-i", "--include", "-p", "--patch", "--interactive"},
+		// Every `git commit` option that takes its value as a SEPARATE
+		// word, and only those: measured one option at a time against the
+		// real git (`git commit --dry-run <opt>` answers "requires a
+		// value" for exactly these), git 2.50.1 / Apple Git-155,
+		// ranger-base-v3cu. `-S/--gpg-sign` and `-u/--untracked-files` are
+		// deliberately ABSENT — their argument is OPTIONAL, so they take
+		// the rest of their own token and never the next word, and pairing
+		// them would shift the scan past a real `-i`. The `--no-` spellings
+		// are absent for the same reason: `--no-message` takes no value.
+		ValueOpts: []string{"-c", "-C", "-F", "-m", "-t",
+			"--author", "--cleanup", "--date", "--file", "--fixup", "--message",
+			"--pathspec-from-file", "--reedit-message", "--reuse-message",
+			"--squash", "--template", "--trailer"},
 		// Measured, git 2.50.1, one prefix at a time against the real git
 		// (qaGitResolves): `--inc` resolves to `--include`, `--patc` to
 		// `--patch`, `--int` to `--interactive`. `--in`/`--i` are ambiguous
 		// between the first and the last, and `--pat` is ambiguous with
 		// `--pathspec-from-file`, so git rejects those itself and the wall
-		// does not have to.
-		LongMin: map[string]string{"--include": "--inc", "--patch": "--patc", "--interactive": "--int"},
+		// does not have to. The value options' minima were measured the
+		// same way, on the same git, and are read the same way: shorter
+		// than these, git calls ambiguous and refuses itself, so the wall
+		// never sees them (ranger-base-v3cu).
+		LongMin: map[string]string{
+			"--include": "--inc", "--patch": "--patc", "--interactive": "--int",
+			"--author": "--au", "--cleanup": "--c", "--date": "--da",
+			"--file": "--fil", "--fixup": "--fix", "--message": "--m",
+			"--pathspec-from-file": "--pathspec-fr", "--reedit-message": "--ree",
+			"--reuse-message": "--reu", "--squash": "--sq", "--template": "--te",
+			"--trailer": "--tr",
+		},
 		Why: "-i/--include commits the shared index ON TOP of the named paths\n" +
 			"  (rangerhq-ojnw); -p/--patch/--interactive commit it INSTEAD of them,\n" +
 			"  because a fleet Bash call has no TTY and the selector at EOF picks\n" +
@@ -525,6 +579,21 @@ func renderFlagIn(name string, valueOpts []string, opt string) string {
 // passed in a variable, because a glob pattern reaching `case` through an
 // unquoted expansion is also a pathname expansion, and one of these
 // patterns would happily match a file in the caller's cwd.
+//
+// Arm order is the whole design, and every line of it is load-bearing:
+//
+//  1. `--` first: past it every word is a path, and a file named `-i` is a
+//     file.
+//  2. the spoilers, so a spelling that is BOTH a spoiler and something else
+//     is refused before any arm can skip it.
+//  3. the value options in their separate-word form, paired — before the
+//     `--*` skip, so a LONG option's value is consumed rather than left for
+//     the cluster arm to read (ranger-base-v3cu).
+//  4. `--*`, so `--signoff` is not read as a cluster carrying `-i`.
+//  5. the value options' GLUED form, skipped singly: git takes the rest of
+//     `-mi` as the message, so the token holds no option after the first.
+//  6. the cluster arms, last, because everything above has already claimed
+//     the tokens they would misread.
 func renderSpoiled(name string, sp spoiler) string {
 	var longs, shorts []string
 	for _, o := range sp.Opts {
@@ -534,19 +603,45 @@ func renderSpoiled(name string, sp spoiler) string {
 		}
 		shorts = append(shorts, strings.TrimPrefix(o, "-"))
 	}
+	// The separate-word arms: every long value option's abbreviation ladder,
+	// then the short ones exactly as written. `-m` is an arm, `-m*` is not —
+	// a glued value is not a pair and must not shift twice.
+	var pairs, vShorts []string
+	for _, o := range sp.ValueOpts {
+		if strings.HasPrefix(o, "--") {
+			pairs = append(pairs, longArms(o, sp.LongMin[o])...)
+			continue
+		}
+		vShorts = append(vShorts, o)
+	}
+	pairs = append(pairs, vShorts...)
+
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s() {\n  while [ $# -gt 0 ]; do\n    case \"$1\" in\n", name)
 	b.WriteString("      --) return 1 ;;\n") // past here every word is a path
 	for _, l := range longs {
 		fmt.Fprintf(&b, "      %s) return 0 ;;\n", strings.Join(longArms(l, sp.LongMin[l]), "|"))
 	}
-	if len(shorts) > 0 {
+	if len(pairs) > 0 {
+		// The value is the next word, whatever it is spelled like. A value
+		// option with nothing after it is not a pair and not a spoiler
+		// either: git rejects it before the shim's opinion matters.
+		fmt.Fprintf(&b, "      %s)\n        [ $# -ge 2 ] || return 1\n        shift 2\n        continue ;;\n", strings.Join(pairs, "|"))
+	}
+	if len(shorts) > 0 || len(vShorts) > 0 {
 		// Long options are done above: without this arm `--signoff` would
 		// match the cluster pattern for `-i` and be refused.
 		b.WriteString("      --*) ;;\n")
-		for _, s := range shorts {
-			fmt.Fprintf(&b, "      -*%s*) return 0 ;;\n", s)
+	}
+	if len(vShorts) > 0 {
+		glued := make([]string, 0, len(vShorts))
+		for _, o := range vShorts {
+			glued = append(glued, o+"*")
 		}
+		fmt.Fprintf(&b, "      %s) ;;\n", strings.Join(glued, "|"))
+	}
+	for _, s := range shorts {
+		fmt.Fprintf(&b, "      -*%s*) return 0 ;;\n", s)
 	}
 	b.WriteString("    esac\n    shift\n  done\n  return 1\n}\n")
 	return b.String()

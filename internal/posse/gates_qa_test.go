@@ -152,9 +152,14 @@ func TestQACommitWallRefusalLeavesSharedTreeIntact(t *testing.T) {
 // The bundled spelling is the fifth form and it is not theoretical:
 // `git commit -im x -- b.txt` sweeps exactly as `-i` does (measured, git
 // 2.39.3, in TestQACommitWallIncludeFormSweepsAndIsRefused's premise arm).
-// The other side of that is one accepted false positive: `-mi` is the
-// message "i" and is refused too. A false positive has a way through; a
-// false negative is the wall not being there.
+// The other side of that WAS an accepted false positive: `-mi` is the
+// message "i" and was refused too. ranger-base-v3cu closed it — the scan
+// pairs the value-taking options now (spoiler.ValueOpts) — and what is
+// left of the class is one token shape further out: a value option behind
+// a boolean in the SAME cluster (`-qmi`), where a glob cannot tell the
+// message from the option. That still refuses, and refusing is the side to
+// be wrong on: a false positive has a way through; a false negative is the
+// wall not being there.
 func TestQACommitWallL1IncludeForm(t *testing.T) {
 	if _, err := exec.LookPath("sh"); err != nil {
 		t.Skip("no sh")
@@ -197,6 +202,10 @@ func TestQACommitWallL1IncludeForm(t *testing.T) {
 	for _, argv := range [][]string{
 		{"commit", "-m", "x", "--", "a.go"},
 		{"commit", "-m", "x", "--", "-i"},
+		// An option's VALUE spelled like an option is not an option
+		// (ranger-base-v3cu); TestQACommitWallL1OptionValueIsNotAnOption
+		// carries the rest of that class and its premise.
+		{"commit", "-m", "-i am a message", "--", "a.go"},
 		{"commit", "--signoff", "-m", "x", "--", "a.go"},
 		{"commit", "--fixup=HEAD", "--", "a.go"},
 		{"commit", "--amend", "--no-edit", "--", "a.go"},
@@ -442,28 +451,34 @@ func TestQA2f5rBlessedFormTakesWorkingTree(t *testing.T) {
 // matches, so an over-short LongMin adds arms for spellings git itself
 // refuses as ambiguous — it costs case lines and refuses nothing git would
 // have run. So it is reported, with both numbers, rather than failed on.
+//
+// ValueOpts is walked with Opts (ranger-base-v3cu). The measurement is the
+// same one — every abbreviation git resolves needs an arm — and only the
+// consequence differs: an uncovered spoiler abbreviation walks past the
+// wall, while an uncovered VALUE abbreviation takes its value back into the
+// scan and refuses a safe commit. Both are the table having gone stale.
 func TestQASpoilerLongMinIsGitsBoundary(t *testing.T) {
 	t.Parallel()
 	for key, sp := range qualifierSpoilers {
 		if !strings.HasPrefix(key, "git ") {
 			continue // another command's parser, another set of rules
 		}
-		for _, o := range sp.Opts {
+		for _, o := range append(append([]string{}, sp.Opts...), sp.ValueOpts...) {
 			if !strings.HasPrefix(o, "--") {
 				continue
 			}
 			min, ok := sp.LongMin[o]
 			if !ok {
-				t.Errorf("%q spoiler %s has no LongMin: its abbreviations walk past the wall (ranger-base-l1at)", key, o)
+				t.Errorf("%q long option %s has no LongMin: its abbreviations reach the shim unmatched (ranger-base-l1at, ranger-base-v3cu)", key, o)
 				continue
 			}
 			if min == "" || !strings.HasPrefix(o, min) {
-				t.Errorf("%q spoiler %s: LongMin %q is not a prefix of it, so longArms renders the literal alone and every abbreviation walks past", key, o, min)
+				t.Errorf("%q long option %s: LongMin %q is not a prefix of it, so longArms renders the literal alone and every abbreviation is unmatched", key, o, min)
 				continue
 			}
 			got := qaGitResolves(t, o)
 			if len(got) == 0 {
-				t.Errorf("%q spoiler %s: this git resolves NO prefix of it, not even the full spelling — the probe is not measuring git's parser", key, o)
+				t.Errorf("%q long option %s: this git resolves NO prefix of it, not even the full spelling — the probe is not measuring git's parser", key, o)
 				continue
 			}
 			// The wall property, and the only one that is a property: every
@@ -474,11 +489,11 @@ func TestQASpoilerLongMinIsGitsBoundary(t *testing.T) {
 			}
 			for _, g := range got {
 				if !arms[g] {
-					t.Errorf("%q spoiler %s: git resolves %s and the rendered arms %v do not cover it — LongMin %q is a hole", key, o, g, longArms(o, min), min)
+					t.Errorf("%q long option %s: git resolves %s and the rendered arms %v do not cover it — LongMin %q is stale", key, o, g, longArms(o, min), min)
 				}
 			}
 			if len(got[0]) > len(min) {
-				t.Logf("%q spoiler %s: LongMin is %s, this git's shortest is %s — covered, with %d arm(s) of slack (git version drift, not a hole)",
+				t.Logf("%q long option %s: LongMin is %s, this git's shortest is %s — covered, with %d arm(s) of slack (git version drift, not a hole)",
 					key, o, min, got[0], len(got[0])-len(min))
 			}
 		}
@@ -865,6 +880,159 @@ func TestQACommitWallL1RefusesEveryPrefixGitResolves(t *testing.T) {
 	} {
 		if out, code := run(argv...); code != 0 {
 			t.Errorf("`git %s` is not a spoiler and must still pass: %d %s", strings.Join(argv, " "), code, out)
+		}
+	}
+}
+
+// ranger-base-v3cu — the spoiler scan read an option's VALUE as an option.
+// `git commit -m '-i am a message' -- a.txt` is path-limited, carries no
+// -i, and does not sweep, and the `-*i*` cluster arm matched the MESSAGE
+// before the scan reached `--`. It failed CLOSED, so this is a refusal of a
+// safe form rather than a way through — and a wall that refuses the one
+// form it permits is a wall nobody can work behind.
+//
+// Half one is the premise, unguarded, against the real git: the argv the
+// shim now lets through must really be safe. If git ever starts reading
+// that word as an option, this half reds first and the allow row below is
+// not quietly widening the wall.
+//
+// Half two is the wall: the same argv passes the rendered shim, and the
+// forms that DO sweep are still refused — the control, without which
+// "everything passes" would satisfy every line above.
+func TestQACommitWallL1OptionValueIsNotAnOption(t *testing.T) {
+	// No t.Parallel: qaRenderCommitShim uses t.Setenv to put the stub git
+	// on PATH, and the two are mutually exclusive.
+
+	// Half one. b.txt is my own edit; a.txt is another persona's staged work.
+	_, git, write := qaCommitRepo(t)
+	write("a.txt", "THEIRS")
+	if out, err := git(nil, "add", "--", "a.txt"); err != nil {
+		t.Fatalf("stage a.txt: %v %s", err, out)
+	}
+	write("b.txt", "MINE")
+	if out, err := git(nil, "commit", "-m", "-i am a message", "--", "b.txt"); err != nil {
+		t.Fatalf("premise: `git commit -m '-i am a message' -- b.txt` must land: %v %s", err, out)
+	}
+	if msg, _ := git(nil, "log", "-1", "--format=%s"); strings.TrimSpace(msg) != "-i am a message" {
+		t.Fatalf("premise: git must read that word as the -m VALUE, got subject %q", strings.TrimSpace(msg))
+	}
+	if took, _ := git(nil, "show", "--name-only", "--format=", "HEAD"); strings.TrimSpace(took) != "b.txt" {
+		t.Fatalf("premise: it must commit ONLY the named path, got %q", strings.Fields(took))
+	}
+	if staged, _ := git(nil, "diff", "--cached", "--name-only"); strings.TrimSpace(staged) != "a.txt" {
+		t.Fatalf("premise: the other persona's staged entry must survive, got %q", strings.Fields(staged))
+	}
+
+	// Half two.
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("no sh")
+	}
+	run := qaRenderCommitShim(t)
+	// The bead's row first, then the rest of the class: a value that is
+	// spelled like an option, in every form git actually pairs — short
+	// separate-word, short GLUED (git takes the rest of the token, so
+	// `-mi` is the message "i"), long separate-word, and a long
+	// ABBREVIATION, which is a separate-word pair just the same.
+	for _, argv := range [][]string{
+		{"commit", "-m", "-i am a message", "--", "a.go"},
+		{"commit", "-mi", "--", "a.go"},
+		{"commit", "-mfix the include", "--", "a.go"},
+		{"commit", "-F", "-i-file", "--", "a.go"},
+		{"commit", "-t", "-i", "--", "a.go"},
+		{"commit", "-C", "-i", "--", "a.go"},
+		{"commit", "--message", "-i msg", "--", "a.go"},
+		{"commit", "--m", "-i msg", "--", "a.go"},
+		{"commit", "--trailer", "-i", "--", "a.go"},
+		{"commit", "--squash", "-i", "--", "a.go"},
+	} {
+		if out, code := run(argv...); code != 0 || !strings.HasPrefix(out, "real git ") {
+			t.Errorf("git %s carries no -i/-p option — only a value spelled like one — and must pass: %d %s", strings.Join(argv, " "), code, out)
+		}
+	}
+	// The control. Pairing must not shift past a REAL option: the value
+	// options are consumed with their value and the scan goes on, and the
+	// two options whose argument is OPTIONAL (-S, -u) take the rest of
+	// their own token and never the next word, so they must not pair at all.
+	for _, argv := range [][]string{
+		{"commit", "-m", "x", "-i", "--", "a.go"},
+		{"commit", "-m", "x", "--inc", "--", "a.go"},
+		{"commit", "--message", "x", "-p", "--", "a.go"},
+		{"commit", "--trailer", "x", "-i", "--", "a.go"},
+		{"commit", "-u", "-i", "--", "a.go"},
+		{"commit", "-S", "-i", "--", "a.go"},
+		{"commit", "--gpg-sign", "-i", "--", "a.go"},
+		{"commit", "--untracked-files", "-i", "--", "a.go"},
+		{"commit", "-im", "x", "--", "a.go"},
+	} {
+		if out, code := run(argv...); code != 1 || !strings.Contains(out, "refused by posse gate") {
+			t.Errorf("git %s carries a real spoiler and must still be refused: %d %s", strings.Join(argv, " "), code, out)
+		}
+	}
+}
+
+// ValueOpts is a MEASUREMENT of git's own parser and the two directions of
+// error are not the same size, so this asks git rather than trusting the
+// table (ranger-base-v3cu):
+//
+//   - an option listed that does NOT eat the next word is a HOLE — the scan
+//     shifts past whatever follows, and `git commit -u -i -- f` sweeps with
+//     the wall silent.
+//   - an option MISSING costs a false positive: its value is read as an
+//     option and a safe commit is refused, one respelling away from working.
+//
+// Both are reported. The premise — that the parse found the options at all
+// — is checked first, so a `git commit -h` this cannot read fails loudly
+// instead of passing vacuously.
+func TestQAValueOptsAreGitsRequiredValueOptions(t *testing.T) {
+	t.Parallel()
+	const key = "git commit"
+	sp, ok := qualifierSpoilers[key]
+	if !ok {
+		t.Fatalf("qualifierSpoilers has no %q — this pin measures nothing", key)
+	}
+	_, git, _ := qaCommitRepo(t)
+	opts := qaCommitOptions(t, git)
+	if len(opts) < 40 {
+		t.Fatalf("parsed only %d options out of `git commit -h`: %v", len(opts), opts)
+	}
+	for _, want := range []string{"-m", "--message", "-F", "-u", "-S", "-i"} {
+		if !contains(opts, want) {
+			t.Fatalf("parse missed %s, so it cannot be trusted to classify the rest: %v", want, opts)
+		}
+	}
+
+	declared := map[string]bool{}
+	for _, o := range sp.ValueOpts {
+		declared[o] = true
+	}
+	// git's own answer: an option whose argument is REQUIRED says so when
+	// it is given none, and that is exactly the set that consumes the next
+	// word. An OPTIONAL argument (-S, -u) is silent here and must stay out.
+	found := 0
+	for _, opt := range opts {
+		// --dry-run so a spelling that parses cannot write; parse-options
+		// runs first, so the value error still wins when both apply.
+		out, _ := git([]string{"GIT_EDITOR=true"}, "commit", "--dry-run", opt)
+		takesValue := strings.Contains(out, "requires a value")
+		if takesValue {
+			found++
+		}
+		if takesValue && !declared[opt] {
+			t.Errorf("git says %s requires a value, so its value is the NEXT WORD and the scan reads it as an option: add %s to qualifierSpoilers[%q].ValueOpts", opt, opt, key)
+		}
+		if !takesValue && declared[opt] {
+			t.Errorf("%s is declared in ValueOpts but git does not take a separate value for it (%q): pairing it shifts the scan past a real spoiler — that is a HOLE, not a false positive", opt, strings.TrimSpace(out))
+		}
+	}
+	if found < 10 {
+		t.Fatalf("only %d of `git commit`'s options answered \"requires a value\" — the probe is not reaching git's parser", found)
+	}
+	// …and nothing in the table escaped the loop by not being an option
+	// this git names at all: a spelling `git commit -h` does not list is
+	// never probed above, so the HOLE check would pass over it in silence.
+	for _, o := range sp.ValueOpts {
+		if !contains(opts, o) {
+			t.Errorf("ValueOpts names %s and `git commit -h` does not, so no arm of this pin ever probed it: measure it or drop it", o)
 		}
 	}
 }
