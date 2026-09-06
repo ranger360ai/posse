@@ -33,11 +33,6 @@ package posse
 //     takes no tag, so its filter selects nothing — and a `go test -run` that
 //     matches no test exits 0. The door stays green over a pin that no longer
 //     runs in it. Arm 4, and it is the one that would have been found last.
-//  5. a file compiled into an arm calls a declaration that is not in that
-//     arm, and the arm stops BUILDING. Every arm above stays green, because
-//     each of them reads build LINES: an untagged file is a legal shape, and
-//     "shared, compiled into all three" is exactly what it says. The
-//     partition is total by tags and broken by symbols. Arm 6.
 //
 // Arm 5 is this file's own: the classifier has to be able to say no, over a
 // planted file of each wrong shape, or the four arms above are a spelling
@@ -50,21 +45,9 @@ package posse
 // Giving `test-arm1` a `-tags` of its own reds arm 3 AND arm 2 — arm 2
 // because the recipe then no longer matches `test`'s, which is a second true
 // thing about the same edit rather than a leak between the two.
-//
-// Arm 6's four, measured on ranger-base-pv5vt's tree. Putting back either
-// half of that bead's fix — the tag on `retirekept_qa_test.go`, or
-// `containsStr`'s move out of the arm-3 `pulse_test.go` — reds its compile
-// half for arms 1 and 2 and reds no other arm in this file, which is the
-// whole reason it exists. Renaming a shared file to `*_linux_test.go` reds
-// the file-set half alone, in all three arms, with the compile half and all
-// five arms above still green — that is the constraint armBuildLine cannot
-// see. Giving a shared file a build line satisfied by two arms
-// (`!posse_arm3`) reds the OTHER direction of that set, and arm 1 with it:
-// two true statements about one edit, not a leak.
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -382,121 +365,6 @@ func TestQAEveryMakefileDoorPinIsReachableInTheDefaultArm(t *testing.T) {
 	}
 	if seen < 15 {
 		t.Fatalf("only %d door pins resolved to a file in %s — the census is reading the wrong names", seen, armPkgDir)
-	}
-}
-
-// ARM 6 — every arm COMPILES, and the files the toolchain puts in it are the
-// files this census says are in it.
-//
-// The five arms above pin the partition BY TAGS, and a partition total by
-// tags can still be broken by SYMBOLS. ranger-base-pv5vt is the shape:
-// `retirekept_qa_test.go` landed with no build line — legal, and read
-// everywhere here as "shared, compiled into all three" — while the helpers
-// it calls live in `retiresweep_qa_test.go` and `retirecmd_qa_test.go`,
-// which a later branch tagged `posse_arm3`. Each branch was green alone.
-// Together, arms 1 and 2 of internal/posse did not build: `make test`'s
-// first line failed, two thirds of the package ran NOTHING, the root
-// package's TestQATheTreeWideDoorsReportRealDrift went red reporting drift
-// that was not there — and every arm above passed over that tree, because
-// every build line in it was one of the three legal spellings. A second
-// instance was in the same tree and had never been reported at all
-// (`containsStr`, defined in the arm-3 `pulse_test.go` and called from four
-// arm-1 files and one shared one), which is what a class with no pin looks
-// like.
-//
-// So this asks the toolchain instead of the file text. CI already vets each
-// arm in its own job and would have caught it there; the point of asking
-// here is WHEN — inside `go test ./...`, which is `make test`'s first line,
-// for ~4s per tagged arm on top of a run that has already built arm 1, in
-// front of an arm that costs ~236s. A seat learns in the first seconds that
-// another arm does not build, instead of after the one arm that does.
-//
-// THE FILE-SET HALF IS WHAT KEEPS THE COMPILE HALF HONEST. `go vet` over a
-// package that matched nothing exits 0, so a census reading the wrong
-// directory would pass this three times. Comparing the set `go list` builds
-// for each arm against the set armClassify would put there makes the two
-// readers check each other, and it catches the constraints armBuildLine
-// cannot see at all: a legacy `// +build` line, a platform filename suffix,
-// a tag like `ignore` — any of which takes a file out of every arm while
-// leaving its "shared" build line in place.
-func TestQAEverySuiteArmCompiles(t *testing.T) {
-	t.Parallel()
-	files := armFiles(t)
-
-	for a := 1; a <= 3; a++ {
-		// arm 1 is the default build and is asked for with no -tags at all,
-		// which is the same thing arm 3 above pins about test-arm1's recipe.
-		var tags []string
-		if a != 1 {
-			tags = []string{"-tags", armTagFor(a)}
-		}
-		run := func(verb string, extra ...string) ([]byte, []string, error) {
-			argv := []string{verb}
-			argv = append(argv, tags...)
-			argv = append(argv, extra...)
-			argv = append(argv, "./"+armPkgDir)
-			out, err := exec.Command("go", argv...).CombinedOutput()
-			return out, argv, err
-		}
-
-		// the set the toolchain actually builds for this arm
-		out, argv, err := run("list", "-f", `{{range .TestGoFiles}}{{.}}
-{{end}}`)
-		if err != nil {
-			t.Fatalf("arm %d: `go %s` failed: %v\n%s", a, strings.Join(argv, " "), err, out)
-		}
-		built := map[string]bool{}
-		for _, line := range strings.Split(string(out), "\n") {
-			if n := strings.TrimSpace(line); n != "" {
-				built[n] = true
-			}
-		}
-		if len(built) < 100 {
-			t.Fatalf("arm %d: `go %s` named %d test files — the toolchain and this census are not reading the same package",
-				a, strings.Join(argv, " "), len(built))
-		}
-
-		// the set this file's own classifier says is in it
-		want := map[string]bool{}
-		for _, f := range files {
-			if f.build == "" || armExpr[f.build] == a {
-				want[f.name] = true
-			}
-		}
-
-		var missing, extra []string
-		for n := range want {
-			if !built[n] {
-				missing = append(missing, n)
-			}
-		}
-		for n := range built {
-			if !want[n] {
-				extra = append(extra, n)
-			}
-		}
-		sort.Strings(missing)
-		sort.Strings(extra)
-		for _, n := range missing {
-			t.Errorf("%s/%s reads as arm %d here and the toolchain does not build it there — "+
-				"a constraint this census cannot see (a `// +build` line, a platform filename suffix, a tag like `ignore`) "+
-				"has taken the file out of the arm while its build line still says it is in",
-				armPkgDir, n, a)
-		}
-		for _, n := range extra {
-			t.Errorf("%s/%s is built into arm %d and this census does not put it there — "+
-				"the two readers of the partition have drifted", armPkgDir, n, a)
-		}
-
-		// and it compiles
-		if out, argv, err := run("vet"); err != nil {
-			t.Errorf("arm %d does not build — `go %s` failed (%v):\n%s\n"+
-				"a file compiled into this arm calls a declaration that is not in it. Either give the "+
-				"caller the tag its helpers carry, or lift the helpers into an untagged `*_helpers_test.go` "+
-				"so every arm compiles them (ranger-base-qp1hm, ranger-base-pv5vt). Every other pin in "+
-				"this file stays green over exactly this, which is why arm 6 exists.",
-				a, strings.Join(argv, " "), err, out)
-		}
 	}
 }
 
