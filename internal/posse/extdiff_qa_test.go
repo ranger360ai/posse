@@ -227,7 +227,13 @@ func TestQANoProductGitDiffReaderIsBare(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	seen := 0
+	// The liveness check, and deliberately not a COUNT of readers: a floor
+	// of "at least N" set to today's N reds the day somebody legitimately
+	// converts one to memoryDiff, and a floor below N grades nothing. What
+	// must be true is that the scan reached the file whose reader is the
+	// known-good one — if memoryland.go's own `"diff"` never turns up, the
+	// census is looking somewhere else and every green below is empty.
+	reachedTheKnownGoodReader := false
 	for _, e := range entries {
 		name := e.Name()
 		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
@@ -251,7 +257,9 @@ func TestQANoProductGitDiffReaderIsBare(t *testing.T) {
 			if !ok || lit.Kind != token.STRING || lit.Value != `"diff"` {
 				return true
 			}
-			seen++
+			if name == "memoryland.go" {
+				reachedTheKnownGoodReader = true
+			}
 			var stmt ast.Node
 			for i := len(stack) - 1; i >= 0; i-- {
 				if s, ok := stack[i].(ast.Stmt); ok {
@@ -281,9 +289,7 @@ func TestQANoProductGitDiffReaderIsBare(t *testing.T) {
 			return true
 		})
 	}
-	// The census must have found something to grade, or it grades nothing:
-	// memoryDiff itself plus the four --name-only readers are the floor.
-	if seen < 5 {
-		t.Errorf("the census found only %d `git diff` argv literals in this package — it is looking in the wrong place", seen)
+	if !reachedTheKnownGoodReader {
+		t.Error("the census never reached memoryland.go's own `git diff` argv — it is reading the wrong directory, and every arm above passed on an empty scan")
 	}
 }

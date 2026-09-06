@@ -183,6 +183,34 @@ measures it, so the note cannot go stale.
 
 ### Fixed
 
+**A cage image built from a dirty checkout could read CURRENT against a
+different dirty checkout, and `posse promote` could not show you the diff it
+was asking you to ratify — both whenever an external diff driver is
+configured, which every inlet-pinned session is.**
+
+*Affected: `posse cage`'s staleness verdict and the live pin's skip line, and
+the ratification diff `posse promote` (and `--dry-run`) prints. No action
+needed on upgrade.*
+
+`git diff` runs an external program when one is named — by `diff.external` in
+any gitconfig, by a `diff=<driver>` attribute, or by the `GIT_EXTERNAL_DIFF`
+environment variable, which posse's own inlet pin sets to the empty string.
+Git does not read set-but-empty as unset: it tries to exec `""` and the diff
+dies. Two readers had never been given `--no-ext-diff`.
+
+The quiet one was the cage staleness fingerprint. It hashed `git diff HEAD`
+and dropped the error, so under a driver *nothing* from the tracked half
+reached the hash and every dirty tree fingerprinted the same — a stale image
+read as current, with nothing printed to say so. It now states the diff
+format like the credential scan does, and a fingerprint that could not read
+its input is no longer a fingerprint: the version comes back empty and the
+comparison says `unclear`, which claims nothing either way.
+
+The loud one was `posse promote`. Its ratification diff — the only preview of
+what a constitution promote is about to put in force — printed `could not be
+read … ratify by hand before trusting this promote`, every time, in every
+pinned session. It reads now.
+
 **Four shipped sentences that spell the promoted set out for an operator now
 read it instead of repeating it, so `runtimes/` is in all four.**
 
