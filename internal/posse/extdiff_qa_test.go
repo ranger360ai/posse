@@ -433,6 +433,13 @@ func f(r string) { g(r, memoryDiff("HEAD", "--")...) }
 // exempted by their own sentence, and the exemption is checked live below,
 // so a rewritten paragraph cannot leave a dead one behind.
 //
+// A CODE SPAN IS NOT A LINE. It may open on one line and close on the next,
+// and in these two docs it routinely does, so the span is joined before it is
+// graded — see gitDiffSpans and extDiffJoinWrapped, and ARM 8 for the join's
+// own rules. Without that, rewrapping a prescription un-pinned it silently
+// (ranger-base-3ersc); with it, the same rewrap is graded and the same red
+// names the same argv.
+//
 // THE POPULATION IS THE TWO HOOK RENDERS AND THE TWO OPERATING DOCS, and the
 // rest of the tree was swept by hand once (ranger-base-l1ix2, at this
 // commit) rather than pinned: README.md, INSTALL.md and the ADRs spell
@@ -612,19 +619,80 @@ type extDiffSpan struct {
 // gitDiffSpans returns every `git diff` command spelled out in text. In
 // markdown only CODE SPANS are read (see ARM 6's SCOPE note); in shell text
 // everything is, since it is all code.
+//
+// A WRAPPED SPAN IS ONE SPAN. These docs wrap INSIDE a backtick span as a
+// matter of course — AGENTS.md:22, :31 and :46 each carry a git command whose
+// span opens on one line and closes on the next — so a scan that reads a line
+// at a time grades a prescription only while it happens to fit. That is not a
+// theory: rewrapping NOTES.md's `.beads/issues.jsonl` prescription across the
+// break and dropping `--no-ext-diff` from it left ARMs 4, 6, 7 and 8 ALL GREEN
+// (ranger-base-3ersc, verifying ranger-base-l1ix2, which had to rewrap that
+// very line to keep the longer command on one line). NOTES.md is where it
+// bites and neither liveness guard reaches it: the three exempted measurement
+// spans satisfy ARM 6's `seen[name] == 0` on their own, and ARM 7's floor of 3
+// is met by what is left. So the continuation is joined before anything is
+// graded, and joined NARROWLY — only when the still-open span has already
+// begun a `git diff`, so no other wrapped command in either doc is touched.
 func gitDiffSpans(text string, markdown bool) []extDiffSpan {
 	var out []extDiffSpan
 	fenced := false
-	for _, line := range strings.Split(text, "\n") {
+	lines := strings.Split(text, "\n")
+	for i := 0; i < len(lines); i++ {
+		line := lines[i]
 		if markdown && strings.HasPrefix(strings.TrimSpace(line), "```") {
 			fenced = !fenced
 			continue
+		}
+		if markdown && !fenced {
+			if joined, used := extDiffJoinWrapped(lines, i); used > 0 {
+				line = joined
+				i += used
+			}
 		}
 		for _, seg := range gitDiffSegments(line, markdown && !fenced) {
 			out = append(out, extDiffSpan{argv: seg.argv, sentence: line, prescribed: seg.quoted})
 		}
 	}
 	return out
+}
+
+// extDiffJoinWrapped answers what lines[i] reads as once the inline code span
+// it leaves OPEN is closed by the lines under it, and how many of those it
+// took. It returns used == 0 — and the caller keeps the raw line — unless all
+// three hold, because an unclosed backtick that is not a wrapped prescription
+// must go on being read exactly as it was:
+//
+//   - the line's backtick count is odd, so a span is open at the end of it;
+//   - that open span has already begun a `git diff`, which is the only command
+//     this file grades. A wrapped `git commit -F - -- <paths>` (AGENTS.md:22)
+//     is left alone;
+//   - the span CLOSES within extDiffWrapLines continuations, stopping at a
+//     blank line or a fence, neither of which an inline span may cross.
+//
+// The continuation is trimmed and joined with one space, which is how the
+// rendered markdown reads it.
+const extDiffWrapLines = 3
+
+func extDiffJoinWrapped(lines []string, i int) (string, int) {
+	line := lines[i]
+	if strings.Count(line, "`")%2 == 0 {
+		return "", 0
+	}
+	if open := line[strings.LastIndex(line, "`"):]; !strings.Contains(open, "git diff") {
+		return "", 0
+	}
+	joined := line
+	for n := 1; n <= extDiffWrapLines && i+n < len(lines); n++ {
+		next := lines[i+n]
+		if strings.TrimSpace(next) == "" || strings.HasPrefix(strings.TrimSpace(next), "```") {
+			return "", 0
+		}
+		joined += " " + strings.TrimSpace(next)
+		if strings.Count(joined, "`")%2 == 0 {
+			return joined, n
+		}
+	}
+	return "", 0
 }
 
 type gitDiffSegment struct {
@@ -731,12 +799,20 @@ func extDiffStripFlag(argv []string, flag string) []string {
 // type, and ARM 7 would then try to run a shell variable.
 func TestQAGitDiffSpanExtractorReadsCodeAndNotProse(t *testing.T) {
 	t.Parallel()
+	// The narrowing case below is written against the live exemption table,
+	// so a reworded phrase reds here rather than leaving a fixture that
+	// tests nothing.
+	const exemptPhrase = "Making one half of git fail"
+	if _, ok := extDiffDocExempt[exemptPhrase]; !ok {
+		t.Fatalf("fixture stale: %q is no longer a key of extDiffDocExempt — re-anchor the narrowing case on a live phrase", exemptPhrase)
+	}
 	for _, c := range []struct {
 		name       string
 		text       string
 		markdown   bool
 		wantArgv   []string
 		prescribed []bool
+		wantExempt []bool // nil means none of them
 	}{
 		{name: "markdown prose mention is not a prescription", markdown: true,
 			text:     "a bare git diff HEAD is blind to a staged edit, and so is git diff\n",
@@ -768,6 +844,42 @@ func TestQAGitDiffSpanExtractorReadsCodeAndNotProse(t *testing.T) {
 			text:       "  echo \"  'git diff --no-ext-diff HEAD' or 'git diff --no-ext-diff --cached'\"\n",
 			wantArgv:   []string{"git diff --no-ext-diff HEAD", "git diff --no-ext-diff --cached"},
 			prescribed: []bool{true, true}},
+		// THE JOIN, six cases. It has no live case in the tree either — the
+		// two docs keep every `git diff` span on one line today, which is
+		// precisely why rewrapping one was invisible.
+		{name: "a span wrapped across the line break is ONE span", markdown: true,
+			text:       "Check with `git diff --no-ext-diff HEAD --\n  <paths>`, which compares the tree\n",
+			wantArgv:   []string{"git diff --no-ext-diff HEAD -- <paths>"},
+			prescribed: []bool{true}},
+		{name: "a bare one wrapped the same way is still read, and still bare", markdown: true,
+			text:       "Check with `git diff HEAD --\n  <paths>`, which compares the tree\n",
+			wantArgv:   []string{"git diff HEAD -- <paths>"},
+			prescribed: []bool{true}},
+		{name: "a wrapped span of ANOTHER command is left alone, and a real one beside it still reads", markdown: true,
+			text:       "- Close the bead (`git commit -F - --\n  <paths>`). Then `git diff --no-ext-diff HEAD -- x` after.\n",
+			wantArgv:   []string{"git diff --no-ext-diff HEAD -- x"},
+			prescribed: []bool{true}},
+		{name: "the join stops at a blank line, which an inline span cannot cross", markdown: true,
+			text:     "Check with `git diff HEAD --\n\n  <paths>`, which compares the tree\n",
+			wantArgv: nil},
+		{name: "the join stops at a fence", markdown: true,
+			text:     "Check with `git diff HEAD --\n```\n<paths>\n```\n",
+			wantArgv: nil},
+		{name: "a span that never closes is left exactly as it was", markdown: true,
+			text:     "Check with `git diff HEAD --\n  a\n  b\n  c\n  d`\n",
+			wantArgv: nil},
+		// WHY THE JOIN IS NARROW, and the one thing that measures it. A span
+		// carries the line it sits on as its SENTENCE, and the sentence is
+		// what the exemption is keyed on. Join every unclosed span and a
+		// graded prescription inherits the sentence of the line above it —
+		// here, an exempted one — and goes silently unread. Joining only a
+		// span that has already begun a `git diff` keeps that line's own
+		// sentence its own.
+		{name: "a wrapped span of ANOTHER command does not lend its sentence to a real one", markdown: true,
+			text:       exemptPhrase + " needs (`git status --porcelain --\n  <p>`). Then `git diff HEAD -- x` here.\n",
+			wantArgv:   []string{"git diff HEAD -- x"},
+			prescribed: []bool{true},
+			wantExempt: []bool{false}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
@@ -781,6 +893,13 @@ func TestQAGitDiffSpanExtractorReadsCodeAndNotProse(t *testing.T) {
 				}
 				if got[i].prescribed != c.prescribed[i] {
 					t.Errorf("span %d (%q) prescribed = %v, want %v — prescribed is what ARM 7 tries to RUN", i, got[i].argv, got[i].prescribed, c.prescribed[i])
+				}
+				wantExempt := false
+				if c.wantExempt != nil {
+					wantExempt = c.wantExempt[i]
+				}
+				if exempt := extDiffExempt(got[i].sentence); exempt != wantExempt {
+					t.Errorf("span %d (%q) exempt = %v, want %v — the sentence it carried was %q, and an exemption it inherits is a span nobody grades", i, got[i].argv, exempt, wantExempt, got[i].sentence)
 				}
 			}
 		})
