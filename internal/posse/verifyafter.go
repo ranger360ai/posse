@@ -26,12 +26,10 @@ package posse
 // (ranger-base-5fyg: "15 duplicates closed" is a fix, not a rejection).
 //
 // with the closer, the close reason, the commits `git log --grep <id>` finds,
-// and the closer PID's "done when" row where one matches — otherwise that
-// PID's whole `## Intents` table, marked unmatched (ADR 0006 §3, amended
-// 2026-09-01: a bead carries no intent, so the row is a word match, and bd's
-// default type `task` names none) — then comment
-// `verify filed: <qid>` on the closed bead. A closer who filed the verify
-// bead first is seen (the qa dependent) and not duplicated.
+// and a pointer at the closed bead's OWN description as the checklist (ADR
+// 0006 §4, simplified 2026-09-05: acceptance is explicit, never inferred) —
+// then comment `verify filed: <qid>` on the closed bead. A closer who filed
+// the verify bead first is seen (the qa dependent) and not duplicated.
 //
 // Config `verify_batch: N` makes that one bead per N closes rather than one
 // per close (N=1, the default, is the rule exactly as written above). The
@@ -835,21 +833,7 @@ func (a *App) verifySection(dir string, is BdIssue, closer string) string {
 	if len(is.Labels) > 0 {
 		fmt.Fprintf(&b, "- labels: %s\n", verifyOneLine(strings.Join(is.Labels, ", ")))
 	}
-	if intent, done := a.closerDoneWhen(closer, is); done != "" {
-		fmt.Fprintf(&b, "- done when (%s · %s): %s\n", verifyOneLine(closer), verifyOneLine(intent), verifyOneLine(done))
-	} else if rows := a.closerIntentRows(closer); len(rows) > 0 {
-		// No match, but the closer's table exists: quote the whole thing
-		// rather than nothing, so §2's promise — the verifier's checklist
-		// without opening the PID — holds for a close whose type names no
-		// intent too (ADR 0006 §3, amended 2026-09-01; `task` is bd's
-		// default type and 0 of 27 task closes on 2026-09-01 carried the
-		// row against 21 of 21 bug closes). It interprets nothing: the
-		// table is quoted in table order, not chosen from.
-		fmt.Fprintf(&b, "- done when (%s · unmatched; every intent):\n", verifyOneLine(closer))
-		for _, r := range rows {
-			fmt.Fprintf(&b, "    %s: %s\n", verifyOneLine(r.Intent), verifyOneLine(r.DoneWhen))
-		}
-	}
+	b.WriteString(verifyAcceptanceLine(is))
 	if lines, _ := gitCommitsFor(dir, is.ID); len(lines) > 0 {
 		fmt.Fprintf(&b, "- commits naming %s (git log --grep; a commit may merely CITE the bead):\n", is.ID)
 		for _, l := range lines {
@@ -880,54 +864,53 @@ var verifyLineBreaks = strings.NewReplacer("\r\n", " ", "\r", " ", "\n", " ")
 
 func verifyOneLine(s string) string { return strings.TrimSpace(verifyLineBreaks.Replace(s)) }
 
-// closerDoneWhen is best effort in both directions: the closer may not be a
-// persona on this box, and its PID may have no intent matching the bead.
+// verifyAcceptanceLine is the section's checklist line, and ADR 0006 §4
+// (simplified 2026-09-05) makes it a POINTER rather than a criterion: the
+// closed bead's own description is the acceptance, the verifier reads it
+// from the bead, and where the bead states none the section says so and
+// names the limit instead of supplying one.
 //
-// The match candidates are the bead's labels PLUS its bd issue type
-// (`bug`, `feature`, ...). Labels alone are structurally unreachable for
-// most closes: a persona's `verify_labels` default is its own catch-all
-// routing label (`code`, `devops`, ...), which by design names no specific
-// intent, and a production close rarely carries a second, more specific
-// label alongside it (ranger-base-wogo — 0/30 live verify beads carried
-// this row). The issue type is set on every bead and is exactly the kind
-// of word `intentMatchesLabel` already expects (`bug` -> `fix-bugs`), so it
-// recovers the match without inventing a label vocabulary.
-func (a *App) closerDoneWhen(closer string, is BdIssue) (intent, doneWhen string) {
-	if closer == "" {
-		return "", ""
-	}
-	ag, err := a.LoadAgent(closer)
-	if err != nil {
-		return "", ""
-	}
-	cands := is.Labels
-	if is.IssueType != "" {
-		cands = append(append([]string{}, is.Labels...), is.IssueType)
-	}
-	return ag.IntentDoneWhen(cands)
-}
-
-// closerIntentRows is the other half of best effort: the whole `## Intents`
-// table of a closer who is a persona on this box, for the section to quote
-// when closerDoneWhen matched nothing. Same two silences as closerDoneWhen —
-// a closer who is not a persona here, and a PID whose table is missing or
-// empty, are both zero rows, and zero rows is no line at all.
+// It replaces the row this file used to mine out of the CLOSER's PID: its
+// `## Intents` "done when" cell, picked by word-matching the bead's labels
+// and issue type, with that PID's whole table quoted when nothing matched.
+// (The deleted helpers are named in ADR 0006 §4 and in git history; this
+// package may not spell them again — acceptanceexplicit_qa_test.go.)
 //
-// The rows are rendered INDENTED, and that is load-bearing, not cosmetic:
-// verifySourceID matches verifyMarkerPrefix at the start of a line with no
-// trimming, so a line beginning with spaces can never be read as a per-close
-// marker however a PID's cells are written. Keep the indent. Cells and slugs
-// still pass through verifyOneLine like every other field, so one cell can
-// never become two lines either.
-func (a *App) closerIntentRows(closer string) []IntentRow {
-	if closer == "" {
-		return nil
+// MEASURED 2026-09-06 over one shop's whole queue (2229 beads, 2100 closed,
+// 1048 of them carrying a `verify_labels:` label, closed 2026-08-12 ..
+// 2026-09-06):
+//
+//	203 verify beads filed by this rule over that window carried the row
+//	ZERO times, and no close of one cites it. (The reader was shown able
+//	to see it: a section rendered by this file for a matched close
+//	contains the line it counted.)
+//
+//	Re-run against the matcher as it stood, 379 of the 1048 closes would have
+//	earned a row — and those 379 rows are TWO distinct sentences, 359 of
+//	them the identical "root cause named in the commit, regression test
+//	added, suite green". The cell is a property of the CLOSER's PID and
+//	the bead's TYPE, never of the task, so it cannot carry a criterion
+//	this bead's acceptance does not already own: of those 379 sources,
+//	279 descriptions already say "test", 153 "cause", 140 "suite"/"green".
+//
+// So the row supplied no criterion absent from the task's own acceptance —
+// it supplied one of two constants — and it cost the one injection surface
+// this file most cares about: operator-written PID prose interpolated into
+// a description whose per-close markers are found BY LINE. Nothing but the
+// bead's own id reaches this line now.
+func verifyAcceptanceLine(is BdIssue) string {
+	id := verifyOneLine(is.ID)
+	if strings.TrimSpace(is.Description) == "" {
+		// The ADR's "say it is missing": an absent description states no
+		// completion criteria at all, and the verifier is told to REPORT
+		// that rather than fall back on what a bead of this shape usually
+		// means. This is a presence check on the bead's own field, not an
+		// acceptance parser — §4 forbids adding one.
+		return "- acceptance: MISSING — " + id + " carries no description, so it states no completion criteria." +
+			" Verify what the commits and comments below actually show, and record that gap as this verification's limit; do not supply criteria of your own.\n"
 	}
-	ag, err := a.LoadAgent(closer)
-	if err != nil {
-		return nil
-	}
-	return ag.IntentRows()
+	return "- acceptance: the closed bead's own description is this section's checklist — read it there (`bd show " + id + "`)." +
+		" If it states no completion criteria, say so as this verification's limit rather than inventing them.\n"
 }
 
 // gitCommitsFor is the commit trail the ADR asks for, and the structured

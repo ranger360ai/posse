@@ -1,6 +1,6 @@
 # ADR 0006 — Handoffs carry explicit acceptance; verification stays batched
 
-*Status: accepted; simplified 2026-09-05 by operator ruling · inferred-intent removal pending deferred implementation · owner: architect.*
+*Status: accepted; simplified 2026-09-05 by operator ruling · inferred-intent removal landed 2026-09-06 (ranger-base-0ezn7) · owner: architect.*
 
 ## Context
 
@@ -46,9 +46,10 @@ whole-word rejected close (`invalid`, `duplicate`/`dup`, `wontfix`/`won't
 fix`, `not a bug`, including the existing plural forms) only when a
 successful git query finds no commit naming it; a failed query cannot exempt.
 
-**4. Acceptance is explicit.** Replace `closerDoneWhen` label/type-to-intent
-selection. Do not replace it with an unmatched whole-PID-table fallback. Each verification
-section points at the closed bead's own description/acceptance as its
+**4. Acceptance is explicit.** `closerDoneWhen` label/type-to-intent
+selection is REPLACED (landed 2026-09-06, ranger-base-0ezn7), and not by an
+unmatched whole-PID-table fallback. Each verification section points at the
+closed bead's own description/acceptance as its
 checklist, alongside closer, close reason, close time and labels. The
 verifier reads that source directly; do not add an acceptance-heading parser
 or second task field merely to avoid a bead read. When acceptance is absent,
@@ -79,12 +80,33 @@ the original close. Verification never holds a build close hostage.
 
 MEASURED in the dated evidence: one-to-one verification amplified arrivals
 beyond service; batching corrected the filing rate without dropping coverage.
-ASSUMED price: 1–3 source files plus tests; remove intent-inference branches
-and their PID lookup, no queue store, actor, config key or flag removed.
-First done-when on the deferred code bead: measure how often inferred intent
-supplied a useful criterion absent from the task's explicit acceptance,
-with sampled closes and outcomes. If wrong, underspecified tasks lose
-automatic completion text; they must expose that gap to the verifier.
+ASSUMED price, and PAID as assumed: two source files plus tests
+(`verifyafter.go`, `agents.go` — plus the shipped-example digest table any
+example-PID edit requires); the intent-inference branches and their PID
+lookup are gone, and no queue store, actor, config key or flag was removed.
+
+MEASURED 2026-09-06 (ranger-base-0ezn7), answering the first done-when row —
+how often inferred intent supplied a useful criterion absent from the task's
+explicit acceptance. Window and coverage: the operator's whole queue, every
+bead in the store, 2229 beads of which 2100 closed, 1048 of them carrying a
+`verify_labels:` label, closed 2026-08-12 .. 2026-09-06.
+
+- OUTCOME: the 203 verify beads this rule filed in that window carried the
+  inferred row ZERO times, and no close of one cites it. The reader was shown
+  able to see the line it counted, on a section rendered by the shipping code.
+- COUNTERFACTUAL, the matcher as it stood on the day it was deleted: 379 of
+  the 1048 closes would have earned a row — and those 379 rows are TWO
+  distinct sentences, 359 of them one sentence. The cell is a property of the
+  CLOSER's PID and the bead's TYPE, never of the task, so it cannot carry a
+  criterion the task's own acceptance does not own: of those 379 sources, 279
+  descriptions already say "test", 153 "cause", 140 "suite"/"green".
+
+So the incremental value of guessed intent is not small, it is structural:
+two constants. What it cost was real — operator-written PID prose
+interpolated into a description whose per-close dedupe markers are found BY
+LINE. Underspecified tasks now lose automatic completion text, as predicted,
+and expose that gap: the section says the acceptance is missing and tells the
+verifier to record it as the verification's limit.
 
 Rejected: doing nothing (guessed policy); removing batching (known queue
 failure); a label-to-intent map or graph inference (another vocabulary);
@@ -99,3 +121,12 @@ Execution census 2026-09-05: this baseline has `closerDoneWhen` and
 `IntentDoneWhen` matching; no unmatched whole-PID-table fallback was found
 in verify construction. The removal task deletes the observed inference,
 not a hypothetical extra branch. The SIMPLIFY verdict remains applicable.
+
+Executed 2026-09-06 (ranger-base-0ezn7): `closerDoneWhen` and
+`closerIntentRows` are gone from `verifyafter.go`, and with their callers
+went `IntentDoneWhen`, `intentMatchesLabel`, `IntentRow`, `IntentRows` and
+`markdownRows` in `agents.go` — the caller census showed nothing else read
+them. The PID's `## Intents` table itself is untouched: `pidcheck` still
+requires its header and the frontmatter `intents:` list is unchanged; it is
+only the HARNESS that stopped mining it. The section now carries one
+acceptance line, which interpolates nothing but the closed bead's own id.

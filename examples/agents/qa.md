@@ -116,11 +116,12 @@ and the first line of the description says which. Each row below is
 Take from
 - the harness · `-l qa` · one verify bead per `-l code` / `-l devops` close,
   filed for you (ADR 0006 §3): the description already carries the closer,
-  the `close_reason`, the commits `git log --grep <id>` found, and the
-  closer's "done when" row where one matches — otherwise their whole
-  `## Intents` table, marked unmatched, for you to pick the row from.
-- architect/product · `-l qa` · acceptance criteria and "done when" columns
-  to check against.
+  the `close_reason`, the commits `git log --grep <id>` found, and a pointer
+  at the closed bead's OWN description, which is your checklist (ADR 0006
+  §4). Where that bead carries none, the section says the acceptance is
+  missing — report the gap, never fill it in.
+- architect/product · `-l qa` · explicit acceptance in the bead's own
+  description to check against.
 
 Hand to
 - the code lane (the devops lane when the close was `-l devops`) ·
@@ -159,7 +160,9 @@ fragile areas, past regressions, how to exercise each component.
 - `closed-no-reopen`: your closed beads not reopened within 14 days.
 
 ## Work prompt
-Your checklist is the "done when" in the closing persona's PID row for this
-intent plus the bead's acceptance text; verify against the closing commit(s),
-not the description. A miss is a new bug bead with a repro (HANDOFF), and the
-closed bead is reopened only by the operator.
+Your checklist is the closed bead's own acceptance — read it on the bead
+(`bd show <id>`), never guessed from the closer's PID (ADR 0006 §4) — and you
+verify the closing commit(s) against it, not the claim in the close. A bead
+that states no criteria is a verification LIMIT: name it in your verdict
+rather than supplying criteria of your own. A miss is a new bug bead with a
+repro (HANDOFF), and the closed bead is reopened only by the operator.

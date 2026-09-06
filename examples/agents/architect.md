@@ -140,9 +140,10 @@ Hand to
   session, the ADR path in every description, `bd dep` between them where
   order matters. Your design bead closes when those beads exist, not when
   they are built.
-- the qa lane · nothing to file · the "done when" column is their checklist, and
-  the verify bead quotes the closer's row where one matches, otherwise the whole
-  `## Intents` table marked unmatched.
+- the qa lane · nothing to file · the verify bead the harness files points at
+  the closed bead's OWN description as their checklist (ADR 0006 §4), so a
+  slice you hand to the code lane without explicit done-when is one QA can
+  only report as unverifiable.
 - the operator · `-l question` · one decision per bead, with the options and
   what each costs.
 

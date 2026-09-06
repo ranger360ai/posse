@@ -246,6 +246,42 @@ image with an identity baked into system scope, it is one address short. The
 row says so, and `TestQATheGitConfigSystemPinDropsASystemScopeIdentityLiteral`
 measures it, so the note cannot go stale.
 
+### Changed
+
+**A verify bead's checklist is now the closed bead's own acceptance, read off
+that bead — the harness no longer guesses one from the closing persona's PID.**
+
+*Affected: the description `verify_labels:` closes are filed with. No config
+key, queue guarantee or default changed, and nothing to do on upgrade.*
+
+The section used to carry a `done when` line mined out of the CLOSER's
+`## Intents` table: the row whose intent slug word-matched one of the bead's
+labels or its issue type, and where nothing matched, that persona's whole
+table quoted and marked unmatched. In its place is one line pointing at the
+closed bead's own description as the checklist — and where the bead has no
+description, an `acceptance: MISSING` line telling the verifier to record
+that as the verification's limit instead of inventing completion criteria.
+
+Why, measured over one shop's whole queue on 2026-09-06 (2229 beads, 2100
+closed, 1048 of them carrying a verify label, closed across 25 days): of the
+203 verify beads the rule actually filed in that window, the inferred row
+appeared in ZERO, and no close of one cites it. Re-run against the matcher as
+it stood, 379 of the 1048 closes would have earned a row — and those 379 rows
+are TWO distinct sentences between them, 359 of them identical. The cell is a
+property of the closing persona's PID and the bead's type, never of the task,
+so it could not carry a criterion the task's own acceptance did not already
+own; of those 379 source beads, 279 descriptions already said "test".
+
+It also removes an injection surface: operator-written PID prose no longer
+reaches a description whose per-close dedupe markers are found by line. The
+new line interpolates nothing but the closed bead's own id. The PID
+`## Intents` table itself is unchanged and still required — `posse agent
+check` lints its header — it is only the harness that stopped reading it.
+
+If your verify beads were thin because the tasks behind them were thin, they
+now say so out loud rather than filling the gap with a generic sentence. That
+is the intended trade (ADR 0006 §4).
+
 ### Fixed
 
 **A cage image built from a dirty checkout could read CURRENT against a

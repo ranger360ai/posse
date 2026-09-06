@@ -1107,9 +1107,19 @@ discovered-from:<id>`, and `verify filed: <qid>` goes back as a comment on
 the close (or one bead per N closes — `verify_batch:`, below). The verify
 bead's description is what makes it workable: the closer, the
 `close_reason`, the commits `git log --grep <id>` finds in that repo, whether
-the session branches cut FOR that bead reached their base, and the closer PID's `## Intents` "done when" row for the bead's
-labels (`IntentDoneWhen` — a label matches an intent slug word, plural or
-not, so `bug` finds `fix-bugs`; no match is an absent line).
+the session branches cut FOR that bead reached their base, and a pointer at
+the closed bead's OWN description as the checklist. Acceptance is explicit
+(ADR 0006 §4, simplified 2026-09-05): the verifier reads it off the bead, and
+a close with no description gets an `acceptance: MISSING` line that tells them
+to record the gap as this verification's limit. Nothing is inferred from the
+closer's PID. What that replaced was a `## Intents` "done when" row picked by
+word-matching the bead's labels and issue type, and the reason it went is
+measured: across the whole queue on 2026-09-06 (2229 beads, 1048 closes
+carrying a verify label, 2026-08-12 .. 2026-09-06) the 203 verify beads the
+rule actually filed carried the row ZERO times, and re-run against the last
+matcher, the 379 closes that would have earned one earn TWO distinct
+sentences between them — the cell is a property of the closer and the bead's
+type, never of the task (ranger-base-0ezn7).
 
   The landing block is beside the trail, never instead of it, because the
   trail cannot answer the question it looks like it answers
@@ -1135,7 +1145,7 @@ not, so `bug` finds `fix-bugs`; no match is an absent line).
 - **Config `verify_batch: N`** (default 1 — the 1:1 gate, unchanged) files
   ONE verify bead per N closes: title `verify N closes: <ids>`, one
   description section per close (the same closer / `close_reason` / commits /
-  "done when" block the 1:1 bead carries), a `discovered-from` edge per
+  acceptance-pointer block the 1:1 bead carries), a `discovered-from` edge per
   close, `verify filed: <qid>` commented back on all N, and the priority of
   the batch's most urgent close. Coverage is unchanged — the same work is
   verified, in one session instead of N. What is divided is the FILING
