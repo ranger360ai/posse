@@ -81,9 +81,10 @@ func (c QueueCommit) droppedNote() string {
 // CommitQueueJSONL flushes the database to its JSONL projection and commits
 // that projection in the queue repo. It NEVER pushes: nothing here runs
 // `git push`. On the instance scripts/queue-cutover.sh cut, the queue repo
-// is created with no remote at all — but that is per-instance since ADR
-// 0049 D5 (config `queue_remote:` sanctions one). What holds on every
-// instance is that the harness never pushes: the binary invokes no `git
+// is created with no remote at all, and an instance may carry one — backup
+// stopped reading the queue's remotes at ADR 0049 (ranger-base-gjbdl) and
+// nothing else here ever did. What holds on every instance, with a remote
+// or without, is that the harness never pushes: the binary invokes no `git
 // push` anywhere, every shipped PID denies it (TestExampleAgentsArePIDs),
 // and the push is the operator's, typed by hand. That is the guarantee.
 //

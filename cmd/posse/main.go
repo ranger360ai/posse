@@ -999,11 +999,6 @@ func main() {
 			// was ever supposed to write one, and "no schedule" is an
 			// answer, not an omission.
 			fmt.Fprintf(out, "%s\n", a.BackupScheduleLine())
-			// The remote posture (ADR 0049 D6): what this instance
-			// declared as its queue's sanctioned remote, or that any
-			// remote refuses. Config only — the run-time check says
-			// what it FOUND, on every tick it refuses.
-			fmt.Fprintf(out, "%s\n", a.BackupRemoteLine())
 			if !f.Armed {
 				fmt.Fprintf(out, "  no backup key in %s and no archive on box — nothing is armed\n", posse.AbbrevHome(a.ConfigPath))
 			}
@@ -2511,14 +2506,6 @@ governance:
                                  has verified
                                config backup_min_free_mb: (384) refuse rather
                                  than fill the disk
-                               config queue_remote: (unset) the ONE git remote
-                                 the queue repo may carry, as "git remote
-                                 get-url" prints it: a queue whose only
-                                 remote's fetch and push URLs both equal it is
-                                 backed up; any other remote refuses, naming
-                                 declared vs found. Unset, any remote refuses.
-                                 A queue with no remote passes either way. Not
-                                 a backup key: it arms nothing (ADR 0049)
   posse pause "<why>"            stop dispatching until told otherwise. Writes
                                  state/pause.yaml (by:, at:, why: — the why is
                                  mandatory and is what every declining pass

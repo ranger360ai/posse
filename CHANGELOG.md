@@ -570,10 +570,10 @@ the model that did the work rather than by the tier that was asked for.
 **`posse backup` — one command that archives the work graph and the
 constitution, on this box, and refuses to write anywhere else.**
 
-The queue repo is the store of record for the whole work graph and it never
-grows a git remote, which makes one disk the whole graph and its journal.
-Until now the answer to that was whatever each deployment arranged for
-itself. It is a verb now.
+The queue repo is the store of record for the whole work graph, and on a box
+where it has no off-box copy that makes one disk the whole graph and its
+journal. Until now the answer to that was whatever each deployment arranged
+for itself. It is a verb now.
 
 `posse backup` writes one archive holding the queue repo's history as a
 `git bundle --all`, its beads database staged through SQLite's online backup
@@ -588,25 +588,17 @@ posse binary.
 scp-style `host:path`, a UNC path, or any directory on a volume the kernel
 does not report as local is refused — and so is a volume whose locality
 cannot be read at all, because a refusal that fails open is not a refusal.
-There is no flag that lifts it. The same rule runs on the source: a queue
-repo that has grown a git remote is refused rather than copied.
+There is no flag that lifts it.
 
-**The source rule is yours to set, per instance: `queue_remote:`.** Every
-`git clone` mints an `origin`, so a verb that refuses any queue with a
-remote is a verb most deployments cannot run — and an instance whose queue
-lives on a sanctioned internal remote is refused on its own box. Set
-`queue_remote:` in config.yaml to the URL exactly as `git remote get-url`
-prints it, and a queue whose only remote's fetch and push URLs both equal
-that string is backed up; a second remote, a different URL, or a push URL
-that points elsewhere still refuses, printing what you declared beside what
-it found. A queue with no remote passes either way: the key sanctions, it
-does not require. Leave it unset and today's rule stands, with the refusal
-now naming the key as the way out. It is not a backup key — declaring your
-remote arms no schedule and starts no clock — and the archive is unchanged:
-the queue half carries no remote on any instance, and the declaration rides
-only in `home/config.yaml`, where a restore brings the sanction back with the
-line that made it. `posse backup status` prints which posture you are in
-(ADR 0049).
+**The rule is on the destination only.** Your queue repo's own git remotes —
+none, one, several, or one that fetches and pushes to different places — are
+not read and cannot stop a backup: every `git clone` mints an `origin`, and
+refusing to make a local recovery copy because the source's config was
+surprising costs you the copy and prevents no transfer. Backup itself makes
+no network call and runs no `git push`, and it never fenced any other process
+from pushing either. The archive is unchanged by this: the queue half is a
+bundle of history and refs, so no remote stanza and no `.git/config` ride
+along (ADR 0049).
 
 Every archive is read back and checked against the manifest it carries
 BEFORE it is given its name, so an archive that is there is one that

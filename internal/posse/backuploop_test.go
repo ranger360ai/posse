@@ -319,9 +319,15 @@ func TestBackupLoopSurvivesARefusal(t *testing.T) {
 	d, a, _ := backupLoopRig(t, "1h")
 	cfg, _ := LoadBackupConfig(a)
 	say := dispatcherErr(t, d)
-	// The source refusal (ADR 0036 §3, the 2c ruling): a queue repo that
-	// grew a remote is refused before anything is read from it.
-	mustGit(t, a.QueueRepo(), "remote", "add", "origin", "https://example.invalid/q.git")
+	// The store refusal (ADR 0036 §3): a queue repo with no beads store
+	// under it is refused before anything is staged. It is the vehicle
+	// because it is the refusal a real 03:15 tick is likeliest to meet —
+	// a store mid-move — and because it heals by putting the directory
+	// back, which is what arm 2 needs.
+	store := beadsHome(a.QueueRepo())
+	if err := os.Rename(store, store+".away"); err != nil {
+		t.Fatal(err)
+	}
 	d.backupTick(cfg)
 	if got := archives(t, a); len(got) != 0 {
 		t.Fatalf("a refused run published %v", got)
@@ -329,7 +335,9 @@ func TestBackupLoopSurvivesARefusal(t *testing.T) {
 	if !strings.Contains(say.String(), "scheduled archive failed") {
 		t.Errorf("a refused scheduled run must say so, got:\n%s", say.String())
 	}
-	mustGit(t, a.QueueRepo(), "remote", "remove", "origin")
+	if err := os.Rename(store+".away", store); err != nil {
+		t.Fatal(err)
+	}
 	d.backupTick(cfg)
 	if got := archives(t, a); len(got) != 1 {
 		t.Fatalf("the tick after the refusal cleared wrote %v, want one archive", got)

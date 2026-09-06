@@ -1,6 +1,6 @@
 # ADR 0049 — Local backup does not validate a source remote
 
-*Status: accepted 2026-09-05 · ADR simplification, operator ruling 2026-09-05 · source-remote precondition removed from the decision; implementation deferred.*
+*Status: accepted 2026-09-05 · ADR simplification, operator ruling 2026-09-05 · source-remote precondition removed from the decision; removed from the code by ranger-base-gjbdl.*
 
 ## Decision
 
@@ -24,7 +24,7 @@ Drop the backup-status posture line instead of suggesting that an ignored
 key still sanctions or refuses anything. Arming and freshness remain governed
 by backup keys, never this obsolete one.
 
-## Deferred deletion and acceptance
+## The deletion, and its acceptance
 
 Delete `QueueRemote`, `checkQueueRemote`, its URL-list formatting if unused,
 `BackupRemoteLine`, the call in `RunBackup`, and status/config/help references.
@@ -32,7 +32,9 @@ Concrete surfaces are `internal/posse/backup.go`, `cmd/posse/main.go` and
 associated tests/examples. Price: roughly 2–4 source files plus text/tests;
 one key and remote-acceptability branches; no new store, actor or flag.
 Update rejection tests into successful local-backup cases while keeping all
-target-refusal and archive-scope checks. No machinery changes in this session.
+target-refusal and archive-scope checks. No machinery changes in the session
+that wrote this page; ranger-base-gjbdl carried them out, and the first
+done-when row's measurement is on that bead.
 
 First done-when row: **number of source-remote refusals that prevented an
 unintended transfer; distinguish these from refusals that only delayed a

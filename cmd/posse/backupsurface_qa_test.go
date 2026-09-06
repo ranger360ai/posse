@@ -99,34 +99,41 @@ func TestBackupStatusExitsForOnBoxStalenessOnly(t *testing.T) {
 	}
 }
 
-// ADR 0049 D6 (observable 10, build bead ranger-base-ymgbo): `posse backup
-// status` prints the remote posture on one line, in both postures, beside
-// the schedule line. The URL is an example host; the declared row is also
-// observable 7's surface half — `queue_remote:` alone arms nothing, so the
-// same instance still says so.
-func TestBackupStatusPrintsTheRemotePosture(t *testing.T) {
+// The remote posture line is GONE from `posse backup status` (ADR 0049 as
+// the operator's 2026-09-05 ruling simplifies it, ranger-base-gjbdl). It
+// used to print what the instance declared as its queue's sanctioned
+// remote; with nothing reading `queue_remote:` any more, a line about it
+// would tell an operator that a key still sanctions or refuses something,
+// which is the one thing the simplification says not to do.
+//
+// Both postures are run because the line had two spellings and either one
+// coming back is the red. The instance still SAYS things — the freshness
+// line, the schedule line, the unarmed line — asserted here so that "the
+// remote line is absent" is a finding about that line and not about a
+// status verb that printed nothing at all.
+func TestBackupStatusPrintsNoRemotePosture(t *testing.T) {
 	bin := buildRhq(t)
 	const u = "https://example.invalid/org/queue.git"
-	for _, c := range []struct {
-		name, cfg, want, absent string
-	}{
-		{"unset key: any remote refuses", "runtime: claude\n",
-			"  remote · none declared (config queue_remote: unset) — any remote refuses\n", "(config queue_remote:) —"},
-		{"declared key: the operator pushes", "runtime: claude\nqueue_remote: " + u + "\n",
-			"  remote · " + u + " (config queue_remote:) — the operator pushes; posse never does\n", "none declared"},
+	for _, c := range []struct{ name, cfg string }{
+		{"no key at all", "runtime: claude\n"},
+		{"the obsolete key, still in config", "runtime: claude\nqueue_remote: " + u + "\n"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			code, out := runBackupPosse(t, bin, backupHome(t, c.cfg), "backup", "status")
-			if code != 0 || !strings.Contains(out, c.want) {
-				t.Errorf("exit %d, output %q; want exit 0 containing %q", code, out, c.want)
+			if code != 0 {
+				t.Errorf("exit %d, output %q; want exit 0", code, out)
 			}
-			if strings.Contains(out, c.absent) {
-				t.Errorf("output %q carries the other posture's wording %q", out, c.absent)
+			for _, absent := range []string{"queue_remote", "remote · ", u} {
+				if strings.Contains(out, absent) {
+					t.Errorf("output %q still carries the remote posture %q", out, absent)
+				}
 			}
-			// Neither posture is armed: the key is not a backup key
-			// (ADR 0049 D3), so the unarmed line survives beside it.
-			if !strings.Contains(out, "nothing is armed") {
-				t.Errorf("output %q; want the instance to say nothing is armed", out)
+			// The control: the verb did report, so the absences above are
+			// about the deleted line and not about a silent status.
+			for _, want := range []string{"backup ·", "nothing is armed"} {
+				if !strings.Contains(out, want) {
+					t.Errorf("output %q; want it to carry %q", out, want)
+				}
 			}
 		})
 	}

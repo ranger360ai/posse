@@ -43,12 +43,22 @@ package posse
 //
 // What did NOT change, and is enforced below: no remote TARGET (ADR 0036 §3,
 // the operator's 2c ruling), the disk floor, single-flight,
-// publish-by-rename, and prune-never-before-a-verified-newer. The SOURCE
-// half of the no-remote rule — a queue repo that grew a remote is refused
-// before anything is read from it — is per-instance since ADR 0049
-// (2026-09-02, bead ranger-base-ymgbo): config `queue_remote:` names the
-// one remote an instance sanctions, and checkQueueRemote below refuses every
-// other. Unset, the 2c posture holds unchanged.
+// publish-by-rename, and prune-never-before-a-verified-newer.
+//
+// **The SOURCE half is gone** (ADR 0049 as the operator's 2026-09-05 ruling
+// simplifies it, bead ranger-base-gjbdl). A queue repo that carries a git
+// remote — none, one, several, or one whose fetch and push URLs differ — is
+// backed up like any other. The check that read those URLs and refused was
+// an admission test on the source's CONFIG, and a local copy's effects do
+// not depend on it: this verb makes no network call, invokes no `git push`,
+// and copies to a volume the kernel calls local or refuses. It never fenced
+// another process from pushing to that remote either, so removing it takes
+// away an incidental alarm and no egress boundary. Refusing to make a
+// recovery copy because the source's config was surprising cost the backup,
+// not the transfer — MEASURED: zero prevented transfers, one instance
+// (the work box, ranger-base-8e31g) whose employer-approved queue remote
+// meant it could not archive at all. `queue_remote:` is retired: an
+// instance may still carry the key and nothing reads it.
 //
 // **One store for freshness.** §6 gives on-box freshness exactly one owner:
 // the archive files themselves. This build makes that literal — an archive
@@ -194,9 +204,7 @@ func (a *App) BackupMinFree(errw io.Writer) uint64 {
 // that has never written one of them, and has no archive on disk, reports
 // nothing at all: installing a posse that knows how to back up must not
 // start telling an operator their backups are late (the same inertness rule
-// `queue_repo:` keeps — ADR 0015 §4). `queue_remote:` is NOT one of them
-// (ADR 0049 D3): it sanctions a remote, it does not ask for backups, so an
-// instance that declares its remote and no backup_* key stays unarmed.
+// `queue_repo:` keeps — ADR 0015 §4).
 var backupKeys = []string{"backup_dir", "backup_interval", "backup_max_age", "backup_keep", "backup_min_free_mb"}
 
 // BackupConfigured reports whether the operator has written any backup key.
@@ -210,100 +218,6 @@ func (a *App) BackupConfigured() bool {
 		}
 	}
 	return false
-}
-
-// ─── the sanctioned remote (ADR 0049) ────────────────────────────────────────
-
-// QueueRemote is config `queue_remote:` (ADR 0049 D1): the URL of the one
-// git remote this instance's queue repo may carry, spelled exactly as `git
-// remote get-url <name>` prints it. Unset, empty, `~` or `null` is "" — the
-// 2c posture, under which any remote on the queue refuses. It is an
-// instance fact and nothing more: not a backup key (see backupKeys), not a
-// flag on the verb (BackupOpts is unchanged), and not a remote NAME —
-// `origin` is what every clone mints, so a name would sanction a shape
-// where the ruling sanctioned a place.
-func (a *App) QueueRemote() string { return strings.TrimSpace(a.CfgGet("queue_remote", "")) }
-
-// checkQueueRemote is the SOURCE half of "no remote" (ADR 0036 §3 as ADR
-// 0049 D1/D2 amend it). A queue with no remote passes under either posture:
-// the key sanctions, it does not require. With declared == "" any remote
-// refuses, with the way out named. With the key set the queue may hold
-// exactly one remote, of any name, whose fetch URL and push URL both equal
-// declared — `git remote get-url --push` answers the push URL and falls
-// back to the fetch URL when none is set (MEASURED 2026-09-02, git 2.50.1),
-// so a repo with only a fetch URL passes on that URL alone, and one whose
-// pushurl points elsewhere is caught. Every refusal prints what was
-// declared beside what was found: the fix is a paste from `git remote
-// get-url`, never a spelling table (0049's rejected alternatives).
-//
-// The rule's record is the operator's 2c ruling (ranger-base-xhsb) and ADR
-// 0036's Context — not ADR 0015 §4, which the refusal used to cite and
-// which states no such rule (0049 Context, MEASURED).
-func checkQueueRemote(queue, declared string) error {
-	remotes, err := git(queue, "remote")
-	if err != nil {
-		// The caller has already proved queue is a repository; a `git
-		// remote` that fails here is a git that cannot list, and the
-		// bundle step will name it. Not a remote, not a refusal.
-		return nil
-	}
-	names := strings.Fields(remotes)
-	if len(names) == 0 {
-		return nil
-	}
-	if declared == "" {
-		return Die("%s has git remote(s) %s — the queue repo never grows a remote (the operator's 2c ruling, ranger-base-xhsb; ADR 0036 Context, per-instance since ADR 0049); remove it before backing up, or declare the one remote this instance sanctions as config queue_remote: <url>",
-			AbbrevHome(queue), strings.Join(names, ", "))
-	}
-	if len(names) > 1 {
-		return Die("%s has %d git remotes (%s) and config queue_remote: sanctions exactly one — declared %s; remove the others before backing up (ADR 0049 D2)",
-			AbbrevHome(queue), len(names), strings.Join(names, ", "), declared)
-	}
-	name := names[0]
-	// --all on BOTH sides, because a remote may carry more than one url.
-	// git-remote(1) of get-url: "By default, only the first URL is listed",
-	// and git-config(1) of remote.<name>.url: "the first is used for
-	// fetching, and all are used for pushing (assuming no
-	// remote.<name>.pushurl is defined)". So a remote whose FIRST url is the
-	// sanctioned one and whose second is anywhere else printed declared on
-	// both single reads, passed, and every operator push landed at both — an
-	// off-box copy nobody sanctioned, which is the thing D2 exists to refuse
-	// (ranger-base-m6szh, escaped from ranger-base-ymgbo; MEASURED, git
-	// 2.50.1). A second push url was already caught; a second fetch url was
-	// not. Each side must now be exactly the declared URL and nothing else,
-	// and multi-line output fails that comparison on its own.
-	fetch, err := git(queue, "remote", "get-url", "--all", name)
-	if err != nil {
-		return err
-	}
-	push, err := git(queue, "remote", "get-url", "--all", "--push", name)
-	if err != nil {
-		return err
-	}
-	if fetch != declared || push != declared {
-		return Die("%s remote %s is not the sanctioned one — declared %s (config queue_remote:), found fetch %s and push %s; the value is the URL exactly as `git remote get-url` prints it, and a remote carrying a second URL is refused because every push lands at both (ADR 0049 D2)",
-			AbbrevHome(queue), name, declared, urlList(fetch), urlList(push))
-	}
-	return nil
-}
-
-// urlList renders what `git remote get-url --all` printed for one refusal
-// that a human reads: every URL found, comma-separated, on the refusal's own
-// line. The count is the finding — one line saying "found fetch A" while a
-// second URL sat below it is how the second URL stayed invisible.
-func urlList(out string) string {
-	return strings.Join(strings.Split(out, "\n"), ", ")
-}
-
-// BackupRemoteLine is the posture, one line, for `posse backup status`
-// (ADR 0049 D6). It reads config and nothing else — no git — because the
-// status verb reports what the instance DECLARED, and the refusal at run
-// time reports what it found.
-func (a *App) BackupRemoteLine() string {
-	if u := a.QueueRemote(); u != "" {
-		return fmt.Sprintf("  remote · %s (config queue_remote:) — the operator pushes; posse never does", u)
-	}
-	return "  remote · none declared (config queue_remote: unset) — any remote refuses"
 }
 
 // ─── the refusal (ADR 0036 §3, as the sub-ruling narrowed it) ────────────────
@@ -511,13 +425,6 @@ func (a *App) RunBackup(o BackupOpts) (BackupResult, error) {
 	}
 	if _, err := git(queue, "rev-parse", "--git-dir"); err != nil {
 		return res, Die("%s is not a git repository — queue_repo: must name a checkout (ADR 0015 §4)", AbbrevHome(queue))
-	}
-	// The 2c ruling, enforced rather than obeyed (ADR 0036 §3), as ADR 0049
-	// makes it per-instance: a queue repo that has grown a remote is a store
-	// of record with an off-box copy — refused unless it is exactly the one
-	// this instance declared as `queue_remote:`.
-	if err := checkQueueRemote(queue, a.QueueRemote()); err != nil {
-		return res, err
 	}
 	for _, tool := range []string{"git", "sqlite3"} {
 		if _, err := exec.LookPath(tool); err != nil {

@@ -340,11 +340,11 @@ func TestExampleAgentsArePIDs(t *testing.T) {
 		}
 		// The bd verbs that push the queue — `bd sync --full` and `bd
 		// daemon` — are denied on every shipped PID (ADR 0015 §3's u9ud
-		// amendment). ADR 0049 D5 rests on it: with a queue remote
-		// declared, "cannot push" becomes "never pushes", and the three
-		// legs are the binary (no git push), the PIDs' git push deny
-		// (above), and these two. Observed 9/9 on 2026-09-02; this is the
-		// pin (observable 11, ranger-base-an4x3). Exact spellings, since a
+		// amendment). It is what makes "cannot push" into "never pushes"
+		// on an instance whose queue carries a remote, and the three legs
+		// are the binary (no git push), the PIDs' git push deny (above),
+		// and these two. Observed 9/9 on 2026-09-02; this is the pin
+		// (ranger-base-an4x3). Exact spellings, since a
 		// deny is matched as a rule: `Bash(bd sync:*)` would also cover the
 		// verb but is not what the PIDs carry, and a widened rule here
 		// would grade a wall nobody rendered.
@@ -356,7 +356,7 @@ func TestExampleAgentsArePIDs(t *testing.T) {
 				}
 			}
 			if !found {
-				t.Errorf("%s: deny must include %s — the bd verb that pushes the queue (ADR 0049 D5, ADR 0015 §3)", name, want)
+				t.Errorf("%s: deny must include %s — the bd verb that pushes the queue (ADR 0015 §3)", name, want)
 			}
 		}
 		body := ag.Body

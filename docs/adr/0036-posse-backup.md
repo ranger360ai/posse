@@ -34,7 +34,8 @@ drill or as proof of a no-db store's recovery path.
 Refuse a remote target, including remote filesystem mounts or an unreadable
 locality determination. There is no target override. Local-source remote
 configuration is a different question owned solely by
-[ADR 0049](0049-queue-remote-is-an-instance-fact.md); its removal is approved but deferred.
+[ADR 0049](0049-queue-remote-is-an-instance-fact.md), which removed it: the
+source queue's own remotes are not read and never prevent a recovery copy.
 Backing up never pushes, fetches or transmits a queue, and source policy
 does not become permission to transport its archive.
 
@@ -109,7 +110,7 @@ trade; this rewrite does not revive the rejected remote destination.
 | Record | Surviving decision |
 |---|---|
 | 0036 sub-ruling and schedule/future-clock amendments | Built local archive and its one freshness model |
-| 0049 | Sole source-remote decision, implementation deferred |
+| 0049 | Sole source-remote decision; the precondition is removed |
 | Operator ruling 2026-09-05 | Retains backup; archives superseded ceremony |
 
 Prior design, rejected plan and measurements: the page as it stood before this simplification is in git history, `git show c86a6b8:docs/adr/0036-posse-backup.md` (the dated copies were dropped by operator ruling 2026-09-05; git history is the record).

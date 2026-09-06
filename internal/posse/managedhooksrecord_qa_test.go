@@ -1,93 +1,19 @@
 package posse
 
+// QA pins for the managed-hooks RECORD (ranger-base-m6szh, escaped from
+// ranger-base-buvq4). This file was internal/posse/queueremote_qa_test.go
+// until ranger-base-gjbdl: it carried m6szh's two findings, and the first
+// of them — checkQueueRemote reading only the first URL of the sanctioned
+// remote — went out with the source-remote check itself when ADR 0049 was
+// simplified. The pin went with the code it held; the second finding, which
+// was never about backup at all, stayed and gave the file its name.
+
 import (
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
-
-// FIXED (ranger-base-m6szh; parked by ranger-base-vtyst verifying
-// ranger-base-ymgbo). ADR 0049 D2 says the queue may hold exactly one remote
-// whose fetch URL and push URL both equal the declared string.
-// checkQueueRemote read `git remote get-url` and `get-url --push`, and
-// git-remote(1) says of get-url: "By default, only the first URL is listed."
-// A remote may carry MORE than one url — `git remote set-url --add` — and
-// git-config(1) on remote.<name>.url: "the first is used for fetching, and
-// all are used for pushing (assuming no remote.<name>.pushurl is defined)".
-// So a remote whose first url was the sanctioned one and whose second was
-// anywhere else printed the sanctioned URL on both reads, passed the check,
-// and every operator push landed at both. The check now reads --all on both
-// sides. The first arm (a second PUSH url) was already refused and is the
-// control: it holds the fix to the escape it names.
-//
-// The THIRD arm is the fetch side's own (ranger-base-hp327, verifying this
-// bead's close). MEASURED: with only the two arms above, reverting the fetch
-// read alone — `get-url --all name` back to `get-url name`, the push read
-// left fixed — leaves this pin and every other Queue*/Backup* test in the
-// package green, because arm 2's second url is also a second PUSH url and
-// the push side catches it. A pushurl pins the push side back to declared
-// and separates them: `--all` on FETCH is then the only read that sees the
-// second url. It is refused because D2 sanctions ONE url on each side and
-// not because that url is reachable today — deleting the pushurl
-// (`set-url --delete --push`) re-arms pushing to both, silently, with no
-// further edit to the url list.
-//
-// The FOURTH arm is the push read's own, and it is the sharpest instance of
-// the escape ymgbo let through: a pushurl list of TWO, the declared one
-// first. `get-url --push` prints only that first line, so the pre-fix check
-// passed while every operator push landed at both — the same defect arm 2
-// names, with no fetch-side signal at all to catch it. MEASURED here: arms
-// 1-3 all stay green when the PUSH read alone is reverted to `get-url
-// --push name`. Each read now has an arm no other arm covers
-// (ranger-base-hp327).
-func TestQAQueueRemoteRefusesASecondURLOnTheSanctionedRemote(t *testing.T) {
-	t.Parallel()
-	declared := "https://example.invalid/queue.git"
-	elsewhere := "https://example.invalid/elsewhere.git"
-	for _, arm := range []struct {
-		what     string
-		add      [][]string
-		fetchAll int // lines `get-url --all` prints
-		pushAll  int // lines `get-url --all --push` prints: a pushurl REPLACES the url list for pushing
-	}{
-		{"a second push url", [][]string{
-			{"remote", "set-url", "--add", "--push", "origin", elsewhere},
-		}, 1, 1}, // control: refused today
-		{"a second fetch url", [][]string{
-			{"remote", "set-url", "--add", "origin", elsewhere},
-		}, 2, 2}, // the finding
-		{"a second fetch url behind a pushurl", [][]string{
-			{"remote", "set-url", "--add", "origin", elsewhere},
-			{"remote", "set-url", "--add", "--push", "origin", declared},
-		}, 2, 1}, // the fetch read's own arm: only `--all` on FETCH sees this one
-		{"a second push url beside the declared one", [][]string{
-			{"remote", "set-url", "--add", "--push", "origin", declared},
-			{"remote", "set-url", "--add", "--push", "origin", elsewhere},
-		}, 1, 2}, // the push read's own arm, and the sharpest instance of the escape
-	} {
-		queue := t.TempDir()
-		mustGit(t, queue, "init", "-q", ".")
-		mustGit(t, queue, "remote", "add", "origin", declared)
-		for _, cmd := range arm.add {
-			mustGit(t, queue, cmd...)
-		}
-		// Both sides staged, not assumed: an arm that separates the two
-		// reads is only separating them while git still prints what it
-		// printed at 2.50.1.
-		fetch, _ := git(queue, "remote", "get-url", "--all", "origin")
-		if n := strings.Count(fetch, "\n") + 1; n != arm.fetchAll {
-			t.Fatalf("%s: fixture wants %d fetch URL(s) on origin, got %d: %q", arm.what, arm.fetchAll, n, fetch)
-		}
-		all, _ := git(queue, "remote", "get-url", "--all", "--push", "origin")
-		if n := strings.Count(all, "\n") + 1; n != arm.pushAll {
-			t.Fatalf("%s: fixture wants %d push URL(s) on origin, got %d: %q", arm.what, arm.pushAll, n, all)
-		}
-		if err := checkQueueRemote(queue, declared); err == nil {
-			t.Errorf("%s: a remote carrying a URL the operator never sanctioned passed as the sanctioned one (ADR 0049 D2)", arm.what)
-		}
-	}
-}
 
 // FIXED (ranger-base-m6szh; parked by ranger-base-vtyst verifying
 // ranger-base-buvq4). The launch refused a managed hooks path carrying \n or
