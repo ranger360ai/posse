@@ -237,12 +237,13 @@ func codexUpdateSilence(installed func() string) Silence {
 	p := filepath.Join(h, "version.json")
 	b, err := os.ReadFile(p)
 	if err != nil {
-		// UNKNOWN, and this is the one probe where the difference is
-		// load-bearing: it is the only DANGER entry, so a reading of "no"
-		// here refuses launches (DangerUnsilenced). codex writes this file
-		// itself when it first checks for a release, so its absence is a
-		// box that has not been told anything yet, not a box carrying a
-		// menu — and posse does not wall a launch on what it did not read.
+		// UNKNOWN, and this is a probe where the difference is load-bearing:
+		// this is a DANGER entry (one of two, alongside codexSigninProbe's,
+		// ranger-base-d1r4x), so a reading of "no" here refuses launches
+		// (DangerUnsilenced). codex writes this file itself when it first
+		// checks for a release, so its absence is a box that has not been
+		// told anything yet, not a box carrying a menu — and posse does not
+		// wall a launch on what it did not read.
 		return Silence{Unknown: true, Why: "unreadable " + AbbrevHome(p) + " — cannot tell whether the update menu is silenced"}
 	}
 	var v struct {
@@ -287,6 +288,45 @@ func codexUpdateSilence(installed func() string) Silence {
 		return Silence{Why: "dismissed_version unset in " + AbbrevHome(p) + " (installed " + inst + ", latest " + v.Latest + ") — the menu draws on next launch"}
 	}
 	return Silence{Why: "dismissed_version " + v.Dismissed + " but latest_version " + v.Latest + " and codex " + inst + " is installed — the menu is back"}
+}
+
+// codexSigninProbe: does this box's codex have a credential to start with,
+// or does it land on the sign-in menu instead — the bare-digit "1. Sign in
+// with ChatGPT" / "3. Provide your own API key" screen, discarded rather than
+// buffered, no Enter needed to activate either option (ranger-base-n6s2u)?
+//
+// ADR 0019 bounds every probe here to presence, mtime and path — never a
+// value — and this one is the tightest case of that rule: the file IS the
+// credential, so this must never open it for content, only ask whether it
+// is there.
+//
+//   - auth.json present under codexHome() -> Silenced. Its value could still
+//     be an expired token, which draws the same menu — a presence probe
+//     cannot see that without reading it, so a stale credential is a gap
+//     this entry does not close.
+//   - no auth.json, but an API-key environment variable is set -> UNKNOWN,
+//     never "silenced" and never "not silenced". codex takes a key from the
+//     environment as well as from the file, so a box with neither auth.json
+//     nor the variable is the only one this probe can call unauthenticated;
+//     one with the variable set may start fine, and confirming that costs a
+//     live codex turn this probe does not spend (ranger-base-9r33: refuse on
+//     a reading, never on ignorance).
+//   - no home at all -> noHomeSilence, the same "nothing to read" the other
+//     two probes answer.
+//   - otherwise -> not silenced, naming the path read.
+func codexSigninProbe() Silence {
+	h := codexHome()
+	if h == "" {
+		return noHomeSilence("CODEX_HOME", "cannot tell whether the sign-in screen is silenced")
+	}
+	p := filepath.Join(h, "auth.json")
+	if st, err := os.Stat(p); err == nil {
+		return Silence{Silenced: true, Why: AbbrevHome(p) + " is present (mtime " + st.ModTime().Format("2006-01-02") + ") — codex has a credential to start with"}
+	}
+	if os.Getenv("OPENAI_API_KEY") != "" {
+		return Silence{Unknown: true, Why: "no " + AbbrevHome(p) + ", but OPENAI_API_KEY is set in the environment — codex can start from that, and this probe does not run codex to confirm it"}
+	}
+	return Silence{Why: "no " + AbbrevHome(p) + " and no OPENAI_API_KEY in the environment — codex has nothing to authenticate with"}
 }
 
 // dismissedOrUnset keeps the two numbers this probe prints from rendering as
@@ -400,6 +440,13 @@ var CodexInterstitials = []Interstitial{{
 	Silence: "already applied — the fleet pin sets check_for_update_on_startup = false and the menu is never drawn again. `make verify-codex-pin` asserts it, together with the `brew pin --cask codex` that makes \"1. Update now\" fail instead of upgrade. Without the pin there are two silences and both expire: the OPERATOR picking \"3. Skip until next version\" (arrow DOWN twice, verify the caret moved, THEN Enter), which lasts exactly one release, and the box simply BEING at the latest release, since codex has nothing newer to offer than what is running — which lasts until the next one ships (ranger-base-cohw).",
 	Danger:  "the default-selected option is \"1. Update now\", which runs `brew upgrade --cask codex` — a pinned tool rolled forward with no decision, through a Homebrew this box has broken before (rangerhq-y5on). The cask pin makes that command exit 1 rather than upgrade, so the danger is what the screen ATTEMPTS, which is why it stays declared: the pin is a second thing that has to hold, not a reason to stop reading this one.",
 	Probe:   codexUpdateProbe,
+}, {
+	Screen:  `"1. Sign in with ChatGPT  2. Sign in with Device Code  3. Provide your own API key", default-selected on option 1. herdr reads both this menu and the API-key field behind option 3 blocked (signin_menu / signin_api_key, etc/herdr/agent-detection/codex.toml — before those rules it fell through to idle with no rule matched, ranger-base-n6s2u), so a launch fails by name instead of waiting it out. Neither screen buffers: a bare digit with no Enter activates an option, and Enter on the API-key field stores whatever was typed as a credential.`,
+	Where:   "~/.codex/auth.json (ADR 0019: presence, mtime, path — never the value)",
+	Key:     "auth.json presence, else OPENAI_API_KEY in the environment",
+	Silence: "the OPERATOR signs in, in their own codex session — posse never types into either screen. An OPENAI_API_KEY in the environment may also let codex start with no auth.json at all; this probe cannot confirm that without a live codex turn, so it reads unknown rather than silenced.",
+	Danger:  "the default-selected option is \"1. Sign in with ChatGPT\", and a BARE DIGIT with no Enter activates it: a dispatched prompt carrying a \"1\" opens a browser OAuth flow that binds the operator's account to this box, and a \"3\" opens the API-key field where Enter stores whatever was typed as a credential. Default action mutates identity, which is crew guardrail 1 (money/identity) as well as ADR 0013 §2's own test.",
+	Probe:   codexSigninProbe,
 }}
 
 // ClaudeInterstitials — the trust modal measured on claude 2.1.241

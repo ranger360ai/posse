@@ -95,6 +95,13 @@ func writeCodexVersion(t *testing.T, body string) {
 	if err := os.WriteFile(filepath.Join(home, "version.json"), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// This fixture is the update-menu entry's alone: plant a credential so
+	// the sign-in entry (ranger-base-d1r4x) reads silenced and does not
+	// confound what these tests measure — the same isolation rule
+	// stubCodexInstalled states for the installed-version reader.
+	if err := os.WriteFile(filepath.Join(home, "auth.json"), []byte(`{}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // The other half of ADR 0013 §2's launch rule, and the half the dispatch
@@ -168,7 +175,17 @@ func TestQADangerousInterstitialRefusesABeadLaunchAndWarnsAnInteractiveOne(t *te
 // rule, which codexupdatemenu_qa_test.go holds from both sides.
 func TestQAUnreadableCodexVersionIsUnknownAndRefusesNothing(t *testing.T) {
 	b, _ := newTestBackend(t)
-	t.Setenv("CODEX_HOME", filepath.Join(t.TempDir(), "never-run"))
+	home := filepath.Join(t.TempDir(), "never-run")
+	t.Setenv("CODEX_HOME", home)
+	// Isolate the update-menu entry's own unknown reading: this box has a
+	// credential, so the sign-in entry (ranger-base-d1r4x) reads silenced
+	// and cannot be the reason DangerLine comes back empty or not.
+	if err := os.MkdirAll(home, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, "auth.json"), []byte(`{}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	rt, err := b.App.LoadRuntime("codex")
 	if err != nil {

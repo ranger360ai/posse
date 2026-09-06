@@ -344,6 +344,47 @@ func TestInterstitialProbesReadRealShapes(t *testing.T) {
 	}
 }
 
+// ranger-base-d1r4x: the pre-launch half of ranger-base-n6s2u's sign-in
+// screen — presence, mtime and path only (ADR 0019), and never the file's
+// content. Four readings, and the middle two are the ones a probe most
+// easily gets backwards: an env var the CLI itself would honor must read
+// unknown, never silenced (this probe cannot confirm it starts codex without
+// a live turn) and never not-silenced (refusing there walls a box that
+// starts fine, ranger-base-9r33).
+func TestCodexSigninProbeReadsCredentialPresence(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	codexHomeDir := filepath.Join(home, ".codex")
+	t.Setenv("CODEX_HOME", codexHomeDir)
+	os.MkdirAll(codexHomeDir, 0o755)
+
+	if sil := codexSigninProbe(); sil.Silenced || sil.Unknown || !strings.Contains(sil.Why, "no OPENAI_API_KEY") {
+		t.Errorf("no auth.json and no env var must read not-silenced: %+v", sil)
+	}
+
+	t.Setenv("OPENAI_API_KEY", "sk-proj-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
+	if sil := codexSigninProbe(); !sil.Unknown || sil.Silenced {
+		t.Errorf("an env-var key must read unknown, never silenced and never not-silenced: %+v", sil)
+	}
+	os.Unsetenv("OPENAI_API_KEY")
+
+	auth := filepath.Join(codexHomeDir, "auth.json")
+	os.WriteFile(auth, []byte(`{"tokens":{}}`), 0o644)
+	sil := codexSigninProbe()
+	if !sil.Silenced || sil.Unknown {
+		t.Errorf("a present auth.json must read silenced: %+v", sil)
+	}
+	if strings.Contains(sil.Why, "tokens") {
+		t.Errorf("the probe read the file's VALUE, which ADR 0019 forbids: %+v", sil)
+	}
+
+	os.Unsetenv("CODEX_HOME")
+	os.Unsetenv("HOME")
+	if sil := codexSigninProbe(); !sil.Unknown || sil.Silenced {
+		t.Errorf("no home at all must read unknown, not not-silenced: %+v", sil)
+	}
+}
+
 // rangerhq-y7jr: --no-auto-update is real (hidden from --help, accepted) but
 // per-session. Putting it on GrokFleetFlags would leave the operator's
 // interactive grok and the shared leader unpinned. The config pin covers

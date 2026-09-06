@@ -286,12 +286,13 @@ server:
   `never settled idle (status "blocked")` instead of typing into the menu.
 
 The working/blocked session guard also stops reading the pane as a free one.
-What is *not* here is the pre-launch refuse: `CodexInterstitials`
-(`internal/posse/interstitial.go`) declares the update menu and not this
-screen, so `posse runtime check` still reports nothing about a box whose codex
-cannot authenticate. That entry — with a credential-presence probe, ADR 0019
-presence-only — is filed as its own bead. The answer either way is an operator
-signing that box's codex in; a persona files it and stops.
+The pre-launch refuse is also declared now (`CodexInterstitials`,
+`internal/posse/interstitial.go`, ranger-base-d1r4x): a probe over
+`codexHome()` reads whether codex's own credential file is present (ADR
+0019 — presence only, never the value), which lets `posse runtime check
+codex` say a box's codex cannot authenticate *before* it is dispatched onto
+the sign-in menu, rather than only after. The answer either way is an
+operator signing that box's codex in; a persona files it and stops.
 
 **Keyed on the numbered options, never the footer.** `Press enter to continue`
 is `update_menu`'s footer too, and no upstream rule matches it — a reword must
