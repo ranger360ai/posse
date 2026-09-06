@@ -49,6 +49,24 @@ func setAgentStatus(t *testing.T, fake, id, status string) {
 	os.WriteFile(filepath.Join(fake, "agents.json"), []byte(agents), 0o644)
 }
 
+// agentState is one row of the fake herdr's agent listing, for the fixtures
+// that need more than one live agent at a time.
+type agentState struct{ id, status string }
+
+// setAgentStatuses is setAgentStatus for SEVERAL workspaces: the listing is
+// one file, so a fixture with two live sessions must write both rows at
+// once or the one it leaves out reads as a session with no agent.
+func setAgentStatuses(t *testing.T, fake string, states ...agentState) {
+	t.Helper()
+	rows := make([]string, 0, len(states))
+	for _, s := range states {
+		rows = append(rows, fmt.Sprintf(`{"agent":"claude","agent_status":%q,"pane_id":%q,"workspace_id":%q}`,
+			s.status, s.id+":p1", s.id))
+	}
+	agents := "[" + strings.Join(rows, ",") + "]"
+	os.WriteFile(filepath.Join(fake, "agents.json"), []byte(agents), 0o644)
+}
+
 // unpushedRepo is TestShopCheckUnpushedCommits's fixture, factored out and
 // wired into config's beads: (pulseOnce reads condition (b) through
 // d.App.BeadsDirs(), unlike ShopCheck's own tests which pass the dir
@@ -356,5 +374,67 @@ func TestPulseTargetEmptyPersonaMatchesNothing(t *testing.T) {
 	}
 	if name, pane, _, found := pulseTarget(sessions, "qa"); !found || name != "qa-work" || pane != "w1:p1" {
 		t.Errorf("named persona must still match: %q %q %v", name, pane, found)
+	}
+}
+
+// A condition set that GROWS inside the renag window is a NEW fingerprint,
+// so it is due at once. This is deliverPulse's `changed` arm, and it was the
+// one arm of that rule no test reached: every other new-fingerprint test
+// starts from an EMPTY delivery record, where PromptedAt is zero and the
+// IsZero arm answers first, so deleting `changed ||` left all 91 tests in
+// this package that can reach pulseOnce green (ranger-base-r9bdn, found by
+// mutation-sweeping ranger-base-bv2nq).
+//
+// Here a delivery has just happened, so the other two arms both say NOT due
+// — the record has a timestamp, and it is one minute old against a 30m
+// interval. Only `changed` can prompt. Without it the second condition
+// waits up to one full renag interval, and the fingerprint on disk stays
+// stale meanwhile, which is the suppression ADR 0027 §3 rules out by name.
+func TestPulseGrownSetPromptsInsideRenagWindow(t *testing.T) {
+	t.Parallel()
+	b, fake := newTestBackend(t)
+	cid := personaSession(t, b, fake, "coordinator-work", "coordinator", "idle", false)
+	did := personaSession(t, b, fake, "developer-work", "developer", "idle", false)
+	pane := cid + ":p1"
+	unpushedRepo(t, b)
+	// personaSession writes the listing per session, so the second call
+	// dropped the first's row: put both back, both idle.
+	setAgentStatuses(t, fake, agentState{cid, "idle"}, agentState{did, "idle"})
+
+	clock := time.Now()
+	d := deliveryDispatcher(t, b, &clock)
+	cfg := PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute}
+
+	d.pulseOnce(cfg) // set A: the unpushed repo alone
+	if n := strings.Count(calls(t, fake), "agent prompt "+pane); n != 1 {
+		t.Fatalf("setup: want exactly one prompt for the first set, got %d", n)
+	}
+	first := ReadPulseState(PulsePath(b.App))
+	if strings.Contains(first.PromptedFingerprint, "blocked:") {
+		t.Fatalf("setup: the first set must not already carry a blocked condition: %q", first.PromptedFingerprint)
+	}
+
+	// The developer blocks one minute in — deep inside the 30m window.
+	setAgentStatuses(t, fake, agentState{cid, "idle"}, agentState{did, "blocked"})
+	clock = clock.Add(time.Minute)
+	d.pulseOnce(cfg)
+
+	log := calls(t, fake)
+	if n := strings.Count(log, "agent prompt "+pane); n != 2 {
+		t.Fatalf("a set that grew inside the renag window must prompt at once, got %d prompts:\n%s", n, log)
+	}
+	if !strings.Contains(log, "blocked:developer-work") {
+		t.Errorf("the second prompt must name the condition that arrived:\n%s", log)
+	}
+
+	state := ReadPulseState(PulsePath(b.App))
+	if !strings.Contains(state.PromptedFingerprint, "blocked:developer-work") {
+		t.Errorf("the delivery record must carry the NEW fingerprint, got %q", state.PromptedFingerprint)
+	}
+	// The record is written to the second, so this is "moved to the second
+	// tick", not an instant equality: what it pins is that the renag clock
+	// restarted on this delivery rather than still running from the first.
+	if !state.PromptedAt.After(first.PromptedAt) {
+		t.Errorf("PromptedAt = %v, want it advanced past the first delivery (%v)", state.PromptedAt, first.PromptedAt)
 	}
 }
