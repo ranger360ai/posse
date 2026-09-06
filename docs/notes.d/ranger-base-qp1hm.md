@@ -354,27 +354,49 @@ Option 2, three arms, sized by the model in §4.
 
 #### What this box could and could not measure
 
-`make test` is green end to end. The per-arm walls it reports here are **not**
-evidence about the 300s line and must not be quoted as if they were: the
-weight-balanced cut ran 383.9s / 411.6s / 475.6s on 2026-09-06 with the
-1-minute loadavg between 15 and 40, in an order that puts the *lightest* arm
-last and slowest. The same box swung a fixed 427-test arm from 168s to 296s
-inside one hour (§1). Arm 1 also runs inside `./...`, sharing the machine with
-the root package and `cmd/posse`, where arms 2 and 3 each get it to
-themselves. Nothing in that spread separates the arms from the hour.
+All three arms are green — `make test` exit 0 over the weight-balanced cut,
+and on the shipped cut arm 1 `ok 647.490s`, arm 2 `ok 277.696s`, arm 3
+`ok 287.821s`, with `test-times` reporting **0 packages over the 300s line**
+for arms 2 and 3 on this box.
 
-**The 300s claim is CI's to settle**, and the first CI run on this branch is
-the measurement. What this box does establish is that the partition is total,
-that all three arms compile and pass, and that `make test` still means
-everything.
+**The per-arm walls are not evidence about the 300s line**, and the cleanest
+proof of that is arm 1 measured against itself. Same commit, same command,
+same machine, fifteen minutes apart:
+
+| arm | wall | conditions |
+|---|---|---|
+| 1 | 647.5s | inside `./...`, sharing the box with the root package (595.5s) and `cmd/posse` (379.4s) |
+| 1 | 397.5s | alone, 1-min loadavg 23 |
+| 1 | **304s** | alone, loadavg 25 |
+| 1 | **604s** | alone, loadavg 52 |
+| 2 | 277.7s | through `make`, holding a suite slot |
+| 3 | 287.8s | through `make`, holding a suite slot |
+
+Arm 1 against itself spans 2x. Nothing in the spread between the arms
+survives that. **The 300s claim is CI's to settle**, and the first CI run on
+this branch is the measurement. What this box does establish is that the
+partition is total, that all three arms compile and pass, and that `make test`
+still means everything.
+
+Two box conditions to recognise rather than debug, because both were met
+here and neither is a diff:
+
+- **A `[build failed]` naming a missing `~/Library/Caches/go-build` object is
+  the cache being reclaimed under the run.** One arm died at the link step
+  with `cannot open file …/go-build/5f/…-d`; free space on this box went from
+  17.5 GB to 28 GB across the same window, so something reclaimed ~10 GB
+  mid-link. The arm passed on a re-run with nothing changed.
+- **A hand-typed arm 1 is not queued and a hand-typed arm 2 is.** Arm 1 is the
+  default build, so `go test ./internal/posse` is a named package and the
+  suite lock lets it through by design; `-tags posse_arm2 ./internal/posse`
+  takes a slot. Two arm walls taken that way are not comparable — take both
+  with `POSSE_SUITE_LOCK=0` or both through `make`.
 
 And one cost to name rather than discover: a seat's `make test` runs the arms
-in SEQUENCE, so its total wall goes up — three binaries do not do less work
+in SEQUENCE, so its total wall goes up. Three binaries do not do less work
 than one, and each arm has fewer tests to overlap across the same eight cores.
 The win is CI's three parallel jobs and three separate clocks, not a faster
-seat. A seat in a hurry can run `make test-arm2` and `make test-arm3`
-concurrently with `make test-arm1`; the suite lock will hold it to two at a
-time, which is the point of the lock.
+seat.
 
 ### 7. Reproducing the numbers
 

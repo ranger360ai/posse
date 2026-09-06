@@ -219,6 +219,17 @@ suite_lock_wanted() {
 		# its own word in `-tags posse_arm2` and part of the word in
 		# `-tags=posse_arm2`, so both spellings are read, the same trap
 		# suite_lock_wanted already documents for `-run`.
+		#
+		# THE ASYMMETRY IS DELIBERATE and worth knowing before it confuses a
+		# measurement, as it confused one on the day this landed. Arm 1 is
+		# the DEFAULT build, so a bare `go test ./internal/posse` is also a
+		# full arm and is NOT queued by this — it is a named package, which
+		# the rule above deliberately lets through because that is the run a
+		# person does while thinking. `make test`/`make test-arm1` reach arm 1
+		# through `./...` and are queued like any full tree. So a hand-typed
+		# arm 1 races the box while a hand-typed arm 2 waits for a slot, and
+		# two arm walls taken that way are not comparable. Take both with
+		# POSSE_SUITE_LOCK=0, or both through make.
 		posse_arm* | -tags=posse_arm* | --tags=posse_arm*) tree=1 ;;
 		esac
 	done
