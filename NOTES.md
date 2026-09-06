@@ -2981,7 +2981,7 @@ Recipe and the two residuals: INSTALL.md §9, "A managed hooks path".
 
 **Tiers (ADR 0003 §1–2).** A tier is a name — `strong` / `standard` /
 `fast` — mapped to a model per runtime in the built-in table: claude
-`claude-fable-5` / `claude-opus-5` / `claude-sonnet-5`; codex
+`claude-fable-5-1` / `claude-opus-5` / `claude-sonnet-5`; codex
 `gpt-5.6-sol` / `gpt-5.6-sol` / `gpt-5.6-luna`; grok `grok-4.6` /
 `grok-4.6` / `grok-4.5` (`fast` falls back to `standard` when only that is
 mapped). Codex
@@ -3047,6 +3047,15 @@ so, and the parity rule is what makes it honest when one does. Sessions carry `R
 show `🎭name@runtime/tier` when either differs from claude/strong. Dial
 A in `examples/agents`: architect/security/product `strong`, the rest
 `standard`.
+The claude ids above are a restatement of `claudeModels`, and the
+fallback line quoted below is a quotation of what the preflight prints:
+`internal/posse/notestier_qa_test.go` holds both against the code, in
+BOTH directions, after three days in which this paragraph named a
+superseded strong id that ADR 0003 had already flipped. ADR 0003 §1 no
+longer names an id at all — "the current built-in model ids and exact
+price rows live in runtime.go/cost.go" — so this paragraph is now the
+ONLY prose in the tree restating that table, and a pin is the only thing
+that can keep it true (ranger-base-1kvfr).
 
 **Tier availability preflight (rangerhq-oay).** A tier is a name and the
 launch turns it into a model id — but until this landed, nothing asked
@@ -3060,7 +3069,7 @@ resolved: `App.TierPreflightFrom` (modelavail.go — `TierPreflight` is the
 same check for a caller that names no env sets), before the parity check, so
 what the wall and a PID's `tier_floor:` rule on is the pair that would
 really launch. Unavailable prints one line — `richard: tier strong wants
-claude-fable-5 — unavailable, falling back to claude-opus-5` — writes
+claude-fable-5-1 — unavailable, falling back to claude-opus-5` — writes
 `fallback:` into the session meta (so `posse list` and the cockpit wear
 `⤵️fallback` beside a `@runtime/tier` tag that now names the substitute),
 and dispatch reads that meta back so the work prompt tells the persona the
