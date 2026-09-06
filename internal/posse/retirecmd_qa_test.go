@@ -31,6 +31,14 @@ package posse
 // (RetireAsk: a report may read it once, an act reads it per tree). Two
 // files that could disagree is a fixture defect and not a feature, so
 // izFixture writes both from one status and the pins never set them apart.
+//
+// WITH ONE DELIBERATE EXCEPTION, added by ranger-base-9ycqa finding 5.
+// Every arm agreeing meant nothing measured WHICH verb either surface read:
+// swapping `--retire`'s per-tree r.fresh for the cached r.reported — the
+// natural optimisation, 1.5s against 41s over ADR 0058's 70-tree census, and
+// exactly what the read-cost note in RetireAsk prices — left the suite
+// green. izSplitFixture is the one fixture that sets the two files apart on
+// purpose, and it is used by exactly one test.
 
 import (
 	"io"
@@ -458,5 +466,192 @@ func TestTheLandRefusalNoLongerPromisesAHumanOverAnEquivalentTree(t *testing.T) 
 		if !strings.Contains(got, want) {
 			t.Errorf("the refusal dropped %q — ADR 0006's sentence is the part D3 keeps:\n%s", want, got)
 		}
+	}
+}
+
+// ranger-base-9ycqa finding 4: ADR 0058 D3's own acceptance is that
+// `--retire` walks the board "under one BLOCKING launcher lock", and nothing
+// measured the lock. Deleting lockLaunches and its `defer lock.Release()`
+// from RetireSessionTrees left the whole internal/posse suite green
+// (-overlay, mutant ok 217.9s against a 240.6s control). Without it,
+// `--retire` destroys trees while a launcher is creating a session in one:
+// the ADR 0011 §1 reclaim race the lock exists for.
+//
+// ONE ARM COVERS BOTH COMMANDS because both were unmeasured. `--land` takes
+// the same lock for the same reason and its `defer` was equally free to go.
+//
+// The wait is measured by the lock's OWN waiting line and not by a clock. A
+// command that never took the lock runs straight to completion, so `done`
+// wins the race below and the arm reds at once rather than after a timeout —
+// which is also why the two channels are selected on together instead of
+// polling for the line alone.
+func TestTheBoardWideCommandsWaitForTheLauncherLock(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		name string
+		// run is built on the test goroutine and called on another, so
+		// nothing inside it touches t.
+		run func(d *Dispatcher, repo string, ask *RetireAsk, w io.Writer) error
+		// did is what the command must have done once the lock is free —
+		// the other half of the pin, because a command that returned an
+		// error while blocked would otherwise read as "it waited".
+		did string
+	}{{
+		name: "posse worktrees --retire",
+		run: func(d *Dispatcher, repo string, ask *RetireAsk, w io.Writer) error {
+			return RetireSessionTrees(w, d.App, ask, []string{repo})
+		},
+		did: "retired:",
+	}, {
+		name: "posse worktrees --land",
+		run: func(d *Dispatcher, repo string, ask *RetireAsk, w io.Writer) error {
+			return LandSessionTrees(w, d.App, []string{repo}, false)
+		},
+		did: "",
+	}} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			d, repo, tr := izBuild(t, izArm{})
+			ask := izAsk(t, d)
+
+			held, err := lockLaunches(d.App, io.Discard)
+			if err != nil {
+				t.Fatal(err)
+			}
+			released := false
+			release := func() {
+				if !released {
+					released = true
+					held.Release()
+				}
+			}
+			defer release()
+
+			buf := &syncBuf{}
+			done := make(chan error, 1)
+			go func() { done <- c.run(d, repo, ask, buf) }()
+
+			// Either it says it is waiting for the lock, or it finished
+			// without one. There is no third outcome, and a deadline here
+			// is only the safety net.
+			deadline := time.After(90 * time.Second)
+			for waiting := false; !waiting; {
+				select {
+				case err := <-done:
+					t.Fatalf("%s walked the board WITHOUT the launcher lock (it returned %v while the lock was held) — ADR 0011 §1's reclaim race is open:\n%s",
+						c.name, err, buf.String())
+				case <-deadline:
+					t.Fatalf("%s neither waited for the lock nor finished:\n%s", c.name, buf.String())
+				case <-time.After(2 * time.Millisecond):
+					waiting = strings.Contains(buf.String(), "launcher lock held by")
+				}
+			}
+			// It is blocked, and the destructive half has not run: the
+			// waiting line is printed BEFORE flock, so the tree standing
+			// here is what says the wait is real and not just announced.
+			if _, err := os.Stat(tr.Path); err != nil {
+				t.Errorf("%s destroyed a tree while it was waiting for the lock: %v", c.name, err)
+			}
+
+			release()
+			select {
+			case err := <-done:
+				if err != nil {
+					t.Fatalf("%s: %v\n%s", c.name, err, buf.String())
+				}
+			case <-time.After(90 * time.Second):
+				t.Fatalf("%s never finished after the lock was released:\n%s", c.name, buf.String())
+			}
+			if !strings.Contains(buf.String(), tr.Branch) {
+				t.Errorf("%s said nothing about the tree it was waiting to act on:\n%s", c.name, buf.String())
+			}
+			if c.did != "" && !strings.Contains(buf.String(), c.did) {
+				t.Errorf("%s waited for the lock and then did not %q:\n%s", c.name, c.did, buf.String())
+			}
+		})
+	}
+}
+
+// izSplitFixture is izFixture with the two bd reads told DIFFERENT things:
+// `bd show` says showStatus and `bd list --all` says listStatus. It is the
+// deliberate exception to this file's fixture rule (see the header) and
+// nothing but the test below may use it — an arm that disagreed by accident
+// would be measuring the fake, not the rule.
+func izSplitFixture(t *testing.T, showStatus, listStatus string) (*Dispatcher, string, *SessionTree) {
+	t.Helper()
+	d, repo, tr := izFixture(t, showStatus, "")
+	write(t, filepath.Join(repo, "fake-list.json"), `[{"id":"a-1","title":"t","status":"`+listStatus+`"}]`)
+	n27xvQuiet(t, tr)
+	return d, repo, tr
+}
+
+// ADR 0011's reclaim rule, as ADR 0058 D3 splits it between the two
+// surfaces: the LISTING is a report and may read the store once per repo
+// (`reported`), the ACT reads fact 1 fresh per tree at the instant it acts
+// on that tree (`fresh`), because nothing destroys work on a status somebody
+// read earlier.
+//
+// This is the only place the rule is measurable. Everywhere else in this
+// file the two reads are told the same thing on purpose, so `--retire`
+// reading the cached listing instead of `bd show` — the optimisation RetireAsk's
+// own cost note argues for and declines — left the suite green
+// (ranger-base-9ycqa finding 5).
+//
+// The two arms run in both directions, which is what makes them a pin and
+// not a preference: arm 1 is a bead CLOSED since the listing was taken, and
+// the act must take the tree the report calls kept; arm 2 is a bead REOPENED
+// since, and the act must keep the tree the report calls retirable. A
+// surface reading the other's verb reds one arm; a surface reading a
+// constant reds both.
+func TestTheActReadsBdShowWhileTheListingReadsBdList(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		name       string
+		show, list string
+		retires    bool
+		says       string // --retire, which reads `bd show`
+		listSays   string // `posse worktrees`, which reads `bd list --all`
+	}{{
+		name: "a bead closed since the listing was taken is retired anyway",
+		show: "closed", list: "in_progress",
+		retires:  true,
+		says:     "retired:",
+		listSays: "kept: its bead is in_progress",
+	}, {
+		// The direction that costs work if it is wrong: the listing is
+		// stale in the OTHER direction and an act that trusted it would
+		// destroy a live seat's tree.
+		name: "a bead reopened since the listing was taken is kept anyway",
+		show: "in_progress", list: "closed",
+		retires:  false,
+		says:     "kept: its bead is in_progress",
+		listSays: "retirable — the next pass takes it",
+	}} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+
+			// The ACT, over its own fixture, because arm 1 destroys it.
+			d, repo, tr := izSplitFixture(t, c.show, c.list)
+			out := izRetire(t, d, repo)
+			if !strings.Contains(out, c.says) {
+				t.Errorf("--retire read `bd list` (%s) where it owes `bd show` (%s); it does not say %q:\n%s",
+					c.list, c.show, c.says, out)
+			}
+			if _, err := os.Stat(tr.Path); c.retires != os.IsNotExist(err) {
+				t.Errorf("--retire acted on the LISTING's status %q instead of `bd show`'s %q (tree gone = %v, want %v)\n%s",
+					c.list, c.show, os.IsNotExist(err), c.retires, out)
+			}
+
+			// The LISTING, over a second one built the same way.
+			d2, repo2, tr2 := izSplitFixture(t, c.show, c.list)
+			list := izList(t, d2, repo2)
+			if !strings.Contains(list, c.listSays) {
+				t.Errorf("the listing read `bd show` (%s) where a report may read `bd list` once (%s); it does not say %q:\n%s",
+					c.show, c.list, c.listSays, list)
+			}
+			if _, err := os.Stat(tr2.Path); err != nil {
+				t.Errorf("`posse worktrees` removed a tree: %v\n%s", err, list)
+			}
+		})
 	}
 }
