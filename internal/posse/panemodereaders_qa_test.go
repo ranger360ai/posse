@@ -165,8 +165,12 @@ func TestQAUnmeasuredRuntimeIsLoudNotNoneAndNotRead(t *testing.T) {
 //     `pane_mode:` by spelling, which is what the bead asks of an obsolete
 //     declaration — the operator hears that the line is dead from posse
 //     rather than from a column that quietly stopped being read.
+//
+// SERIAL, and that is the third arm's price: reading the diagnostic means
+// swapping the package-level runtimeNoticeWriter, which a parallel test
+// cannot do without stealing another test's notices. TestOverlayWarnsUnknown-
+// Keys is serial for the same reason and the same variable.
 func TestQAThePaneModeYamlKeyIsRetiredInertAndNamed(t *testing.T) {
-	t.Parallel()
 	b, fake := newTestBackend(t)
 	// Armed BEFORE anything loads the file: the notice is said once per
 	// (path, key set), so a listing that loaded the runtime first would eat
