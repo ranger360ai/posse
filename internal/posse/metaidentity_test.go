@@ -20,8 +20,10 @@ package posse
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -148,16 +150,150 @@ func TestGenTokenSeparatesAGenerationThatRecycledTheInode(t *testing.T) {
 	}
 }
 
-// rangerhq-u4f7: ranger-base-fjj changed the token to three fields and left
-// the promote gate asserting two. The success path must be N:N:N.
-func TestVerifyPruneGuardScriptPinsThreeFieldGen(t *testing.T) {
-	t.Parallel()
+// pruneGuardScript returns scripts/verify-prune-guard.sh.
+func pruneGuardScript(t *testing.T) string {
+	t.Helper()
 	b, err := os.ReadFile(filepath.Join("..", "..", "scripts", "verify-prune-guard.sh"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(b), `^gen: [0-9][0-9]*:[0-9][0-9]*:[0-9][0-9]*$`) {
-		t.Error("verify-prune-guard.sh no longer asserts the three-field gen: token (ranger-base-fjj); a two-field $ regex is a false FAIL")
+	return string(b)
+}
+
+// pruneGuardFunc returns the text of the script's own `<name>()` — the block
+// form (`meta_field() {` … a `}` in column 0) and the one-line form
+// (`digits() { … }`) both. Nothing is copied: the arm below runs the bytes the
+// script ships, so a rewrite of the helper is a rewrite of what is pinned. A
+// helper that is gone or renamed fails here rather than leaving the arm
+// unrunnable and the pin measuring nothing.
+func pruneGuardFunc(t *testing.T, script, name string) string {
+	t.Helper()
+	head := name + "() {"
+	lines := strings.Split(script, "\n")
+	for i, ln := range lines {
+		if ln != head && !strings.HasPrefix(ln, head+" ") {
+			continue
+		}
+		if ln != head && strings.HasSuffix(ln, "}") {
+			return ln
+		}
+		for j := i + 1; j < len(lines); j++ {
+			if lines[j] == "}" {
+				return strings.Join(lines[i:j+1], "\n")
+			}
+		}
+		t.Fatalf("verify-prune-guard.sh: %s() is never closed by a `}` in column 0", name)
+	}
+	t.Fatalf("verify-prune-guard.sh no longer defines %s() — re-aim this pin at whatever decides the gen: arm now", name)
+	return ""
+}
+
+// pruneGuardGenArm returns the script's top-level gen: arm: the `gen_label=`
+// line through the `fi` that closes its outer `if`, both in column 0 (the
+// nested `fi` is indented). Extraction failing is a FAIL, not a skip — a pin
+// that cannot find its subject has stopped measuring it.
+func pruneGuardGenArm(t *testing.T, script string) string {
+	t.Helper()
+	lines := strings.Split(script, "\n")
+	for i, ln := range lines {
+		if !strings.HasPrefix(ln, "gen_label=") {
+			continue
+		}
+		for j := i + 1; j < len(lines); j++ {
+			if lines[j] == "fi" {
+				return strings.Join(lines[i:j+1], "\n")
+			}
+		}
+		t.Fatal("verify-prune-guard.sh: the gen: arm is never closed by an `fi` in column 0")
+	}
+	t.Fatal("verify-prune-guard.sh no longer has a top-level `gen_label=` arm — re-aim this pin at whatever checks gen: now")
+	return ""
+}
+
+// pruneGuardGenVerdict plants one meta carrying genLine (no gen: line at all
+// when it is empty) and runs the script's OWN gen: arm over it, with the
+// script's own meta_field and digits. check() is the harness's, and only so
+// that the arm's verdict is machine-readable — the script's prints and sets
+// fail=. Returns the verdict (0 accept, 1 reject) and the detail it printed.
+func pruneGuardGenVerdict(t *testing.T, genLine string) (int, string) {
+	t.Helper()
+	dir := t.TempDir()
+	meta := "name: probe\nworkspace: w1\npane: w1:p1\nemoji: G\nagent: developer\nruntime: claude\n" +
+		"launched: 2026-01-01T00:00:00Z\nsocket: /tmp/probe/herdr.sock\n"
+	if genLine != "" {
+		meta += genLine + "\n"
+	}
+	if err := os.WriteFile(filepath.Join(dir, "probe.yaml"), []byte(meta), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	script := pruneGuardScript(t)
+	harness := strings.Join([]string{
+		"set -uo pipefail",
+		pruneGuardFunc(t, script, "meta_field"),
+		pruneGuardFunc(t, script, "digits"),
+		`check() { printf 'VERDICT %s %s\n' "$2" "${3:-}"; }`,
+		"metas=" + shellQuote(dir),
+		"label=probe",
+		pruneGuardGenArm(t, script),
+	}, "\n")
+
+	cmd := exec.Command("bash", "-c", harness)
+	b, err := cmd.CombinedOutput()
+	out := string(b)
+	for _, ln := range strings.Split(out, "\n") {
+		rest, ok := strings.CutPrefix(ln, "VERDICT ")
+		if !ok {
+			continue
+		}
+		code, detail, _ := strings.Cut(rest, " ")
+		n, convErr := strconv.Atoi(code)
+		if convErr != nil {
+			t.Fatalf("the gen: arm reported a verdict that is not a number: %q", ln)
+		}
+		return n, detail
+	}
+	t.Fatalf("the gen: arm reached no check() over %q (bash: %v)\n%s", genLine, err, out)
+	return 0, ""
+}
+
+// rangerhq-u4f7: ranger-base-fjj made the token three fields and left the
+// promote gate asserting two, which is a false FAIL against a correct stamp.
+// This pin used to assert the gate's grep LITERAL; dcbbee8c rewrote those arms
+// in bash parameter expansion (ranger-base-s8b4g), the literal went with the
+// grep, and the pin failed a script that was right (ranger-base-mg7si). What
+// u4f7 asked for is not a spelling: the gate must accept what genToken emits
+// and reject the pre-fjj two-field shape. So the script's own arm is the thing
+// under test, run over both — and over the edges that separate them.
+func TestVerifyPruneGuardScriptPinsThreeFieldGen(t *testing.T) {
+	t.Parallel()
+	// The linux recycled-inode stamp of ranger-base-fjj, straight from the
+	// producer: a gate that rejects this is the false FAIL, whatever it greps.
+	live := genToken("66:587500", time.Unix(1787577362, 616440001))
+
+	for _, tc := range []struct {
+		name   string
+		gen    string // the meta's gen: line, "" for a meta carrying none
+		want   int    // the arm's verdict: 0 accepted, 1 FAILed the promote gate
+		detail string // a fragment of the detail it must report when it FAILs
+	}{
+		{"what genToken emits", "gen: " + live, 0, ""},
+		{"the pre-fjj two-field token", "gen: 66:587500", 1, "two-field"},
+		{"no gen: stamped at all", "", 1, "no generation stamped"},
+		{"one field", "gen: 66", 1, "not N:N:N"},
+		{"a third field that is empty", "gen: 66:587500:", 1, "not N:N:N"},
+		{"a field that is not digits", "gen: 66:ino:1787577362", 1, "not N:N:N"},
+		{"a fourth field", "gen: " + live + ":1", 1, "not N:N:N"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, detail := pruneGuardGenVerdict(t, tc.gen)
+			if got != tc.want {
+				t.Fatalf("verify-prune-guard's gen: arm returned %d for %q, want %d (detail %q)", got, tc.gen, tc.want, detail)
+			}
+			if tc.detail != "" && !strings.Contains(detail, tc.detail) {
+				t.Errorf("the gen: arm rejected %q without saying why: detail %q does not carry %q", tc.gen, detail, tc.detail)
+			}
+		})
 	}
 }
 

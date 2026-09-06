@@ -1394,6 +1394,20 @@ and every write lands in the scratch home; that is the one safe direction (scrat
 before `make install`; with no `RHQ=` it tests whatever PATH resolves, which
 is the fleet's binary. A pre-abb2716 binary fails it on the socket-less arm.
 
+The script needs a live herdr, so the suite cannot run the whole of it — but
+one arm is checked on every box. `TestVerifyPruneGuardScriptPinsThreeFieldGen`
+extracts the script's *own* `gen:` arm (its top-level `gen_label=` through the
+`fi` in column 0) along with its own `meta_field` and `digits`, stubs `check`
+so the verdict is machine-readable, and runs it over a planted meta: it must
+accept what `genToken` emits and reject the pre-fjj two-field `dev:ino` shape,
+a field that is empty or not digits, a fourth field, and a meta carrying no
+`gen:` at all. That pin used to assert the arm's *grep literal* instead —
+dcbbee8c rewrote the arms in bash parameter expansion, the literal went with
+the grep, and a correct script left `go test ./internal/posse` red for
+every seat until ranger-base-mg7si. A pin on a script asserts what the script
+decides, not how it spells it; and when the extraction cannot find its
+subject it FAILs, because a pin that has lost its subject measures nothing.
+
 ## The cockpit is a herdr plugin
 
 `plugin/herdr-plugin.toml` declares a popup pane running `posse cockpit` — a
