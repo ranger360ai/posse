@@ -342,17 +342,7 @@ func TestQATheGitConfigSystemPinDropsASystemScopeIdentityLiteral(t *testing.T) {
 	// environment, so the arms move the real thing and cannot be parallel.
 
 	// ── the disclosure, on the ROW ───────────────────────────────────────
-	src, err := os.ReadFile("inletpin.go")
-	if err != nil {
-		t.Fatalf("cannot read the table to check its own disclosure: %v", err)
-	}
-	const rowHead, nextRow = "GIT_CONFIG_SYSTEM=" + os.DevNull, `GIT_CONFIG_PARAMETERS=""`
-	i := strings.Index(string(src), rowHead)
-	j := strings.Index(string(src), nextRow)
-	if i < 0 || j <= i {
-		t.Fatalf("inletpin.go has no %q row followed by the %q row — the region this test reads is gone, so it is measuring nothing; re-anchor it before trusting a green", rowHead, nextRow)
-	}
-	row := string(src)[i:j]
+	row := gitConfigSystemRowRegion(t)
 	for _, want := range []string{"DeriveIdentityLiterals", "user.email"} {
 		if !strings.Contains(row, want) {
 			t.Errorf("the GIT_CONFIG_SYSTEM row does not name %q. Suppressing a config scope takes an e-mail out of the ADR 0024 D2 check 3 wall with no error — the file writes that cost out in full for GIT_CONFIG_GLOBAL, and a reader of the row that LANDED has to be able to see it too (ranger-base-nn161)", want)
@@ -363,13 +353,8 @@ func TestQATheGitConfigSystemPinDropsASystemScopeIdentityLiteral(t *testing.T) {
 	if !strings.Contains(row, "/etc/gitconfig") {
 		t.Errorf("the GIT_CONFIG_SYSTEM row does not name /etc/gitconfig. That is the file this pin empties — here as much as anywhere else — and a reader cannot go check a file the row will not name")
 	}
-	// The framing the row shipped with, and the reason ranger-base-sv8x4
-	// exists: it read the suppression as something that happens away from
-	// darwin. It happens here too; there is simply no such file on this box.
-	if m := offDarwinFraming.FindString(flattenProse(row)); m != "" {
-		t.Errorf("the GIT_CONFIG_SYSTEM row scopes its suppression away from darwin (%q). git's system scope on darwin IS /etc/gitconfig — the fourth arm of TestQATheGitConfigSystemPinDropsASystemScopeIdentityLiteral runs the command that says so — so the row empties it here as well, and what is zero on this box is a missing file", m)
-	}
-	mustNotScopeTheCostToAPlatform(t, "the GIT_CONFIG_SYSTEM row in inletpin.go", row)
+	// The framings are not checked here: they are checked over EVERY region
+	// that discloses this cost, at the end of this test.
 
 	// ── the behaviour, three arms ────────────────────────────────────────
 	//
@@ -433,12 +418,80 @@ func TestQATheGitConfigSystemPinDropsASystemScopeIdentityLiteral(t *testing.T) {
 	//
 	// Both texts now name /etc/gitconfig for THIS platform, which is the
 	// correction on ranger-base-sv8x4. Neither of them gets to assert it.
-	if got, ok := gitSystemScopePath(t); ok && !strings.HasSuffix(got, "/etc/gitconfig") {
+	if got, ok := gitSystemScopePath(t); ok && !systemScopePathIsTheOneBothTextsClaim(got) {
 		t.Errorf("git names %q as its system scope, not /etc/gitconfig. The row in inletpin.go and the changelog paragraph both say /etc/gitconfig is the file this pin empties on this platform — re-measure and rewrite both", got)
 	}
 
 	// ── the same disclosure, in the artifact the operator reads ──────────
 	changelogGitConfigSystemParagraph(t)
+
+	// ── and the framings, over every region that discloses the cost ──────
+	//
+	// One loop over one slice, because ranger-base-txsed finding 1 was an
+	// asymmetry between two call sites: the off-platform rule was applied to
+	// the row and never to the paragraph, so the paragraph could be reverted
+	// to the shipped defect's own topic sentence and stay green — in the
+	// artifact the defect shipped in, and the one an operator reads.
+	for _, r := range gitConfigSystemProseRegions(t) {
+		mustNotMisScopeTheCost(t, r.where, r.text)
+	}
+}
+
+// proseRegion is one artifact's account of what GIT_CONFIG_SYSTEM=/dev/null
+// costs: the row a maintainer reads, and the changelog paragraph an operator
+// reads before installing the root-owned drop-in.
+type proseRegion struct{ where, text string }
+
+// gitConfigSystemProseRegions returns every such account. The rules are run
+// by a loop over this slice, so a region reachable here is held to all of
+// them and one that drops out of it reds
+// TestQABothCostDisclosuresAreHeldToTheRules rather than going quietly
+// unread — which is the shape of ranger-base-txsed finding 1.
+func gitConfigSystemProseRegions(t *testing.T) []proseRegion {
+	t.Helper()
+	return []proseRegion{
+		{"the GIT_CONFIG_SYSTEM row in inletpin.go", gitConfigSystemRowRegion(t)},
+		{"the GIT_CONFIG_SYSTEM cost paragraph in " + changelogPath, gitConfigSystemChangelogParagraph(t)},
+	}
+}
+
+// gitConfigSystemRowRegion is the row's own text, from its head to the next
+// row's.
+func gitConfigSystemRowRegion(t *testing.T) string {
+	t.Helper()
+	src, err := os.ReadFile("inletpin.go")
+	if err != nil {
+		t.Fatalf("cannot read the table to check its own disclosure: %v", err)
+	}
+	const rowHead, nextRow = "GIT_CONFIG_SYSTEM=" + os.DevNull, `GIT_CONFIG_PARAMETERS=""`
+	i := strings.Index(string(src), rowHead)
+	j := strings.Index(string(src), nextRow)
+	if i < 0 || j <= i {
+		t.Fatalf("inletpin.go has no %q row followed by the %q row — the region this test reads is gone, so it is measuring nothing; re-anchor it before trusting a green", rowHead, nextRow)
+	}
+	return string(src)[i:j]
+}
+
+// TestQABothCostDisclosuresAreHeldToTheRules holds the SLICE. Nothing else
+// can: a region that quietly stops being returned takes its rules with it and
+// every one of them passes, which is exactly how the changelog paragraph came
+// to be unheld while the row was held (ranger-base-txsed finding 1). An
+// extractor that returns "" fails the same way, so the text is checked too.
+func TestQABothCostDisclosuresAreHeldToTheRules(t *testing.T) {
+	t.Parallel()
+	got := gitConfigSystemProseRegions(t)
+	want := []string{"inletpin.go", changelogPath}
+	if len(got) != len(want) {
+		t.Fatalf("%d regions disclose what GIT_CONFIG_SYSTEM=%s costs, want %d (%v). Every rule in costMisScopingRules runs once per region; a region that leaves this slice is unheld prose again", len(got), os.DevNull, len(want), want)
+	}
+	for i, w := range want {
+		if !strings.Contains(got[i].where, w) {
+			t.Errorf("region %d is %q, want the one in %s", i, got[i].where, w)
+		}
+		if !strings.Contains(got[i].text, "/etc/gitconfig") {
+			t.Errorf("the region read for %s does not contain /etc/gitconfig, so it is either empty or mis-anchored — and a rule handed an empty region passes:\n%q", got[i].where, got[i].text)
+		}
+	}
 }
 
 // flattenProse makes a wrapped region one line before a phrase is looked for
@@ -542,24 +595,8 @@ func TestQAGitSystemScopePathParsesTheShapesGitActuallyPrints(t *testing.T) {
 // ban on one spelling is a ban on nothing.
 func changelogGitConfigSystemParagraph(t *testing.T) {
 	t.Helper()
-	const path = "../../CHANGELOG.md"
-	const anchor = "TestQATheGitConfigSystemPinDropsASystemScopeIdentityLiteral"
-	b, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("cannot read the operator-facing half of this clause: %v", err)
-	}
-	text := string(b)
-
-	i := strings.Index(text, anchor)
-	if i < 0 {
-		t.Fatalf("%s does not cite %s. The paragraph disclosing what GIT_CONFIG_SYSTEM=%s costs is anchored here BY that citation — without it this reader measures nothing and the paragraph is unheld prose again, which is exactly how it came to be wrong (ranger-base-sv8x4)", path, anchor, os.DevNull)
-	}
-	start := strings.LastIndex(text[:i], "\n\n") + 2
-	end := len(text)
-	if j := strings.Index(text[i:], "\n\n"); j >= 0 {
-		end = i + j
-	}
-	para := text[start:end]
+	const path = changelogPath
+	para := gitConfigSystemChangelogParagraph(t)
 
 	// Positive anchors: the file an operator has to go look at, and the
 	// scope this row empties.
@@ -572,35 +609,251 @@ func changelogGitConfigSystemParagraph(t *testing.T) {
 	if !changelogScopesTheZeroToABox.MatchString(para) {
 		t.Errorf("the GIT_CONFIG_SYSTEM cost paragraph in %s no longer scopes its zero to a BOX. That is the correction on ranger-base-sv8x4: the cost is zero where system scope holds no user.email, which is a fact about the box and not about the platform — inletpin.go's row says it that way, and these two must not disagree again.\nparagraph:\n%s", path, para)
 	}
-	mustNotScopeTheCostToAPlatform(t, "the GIT_CONFIG_SYSTEM cost paragraph in "+path, para)
 }
 
-// The framings this clause shipped with, both wrong the same way: they make
-// the pin's cost a property of the PLATFORM, when git's system scope on
-// darwin is /etc/gitconfig exactly as it is anywhere else and what is zero on
-// this box is a missing file. Case-folded and stem-matched, so an inflection
-// ("costs you nothing on a Mac") is caught by the rule the shipped spelling
-// is.
+const changelogPath = "../../CHANGELOG.md"
+
+// gitConfigSystemChangelogParagraph is the paragraph, found by its citation
+// of this test — so a rewrite that drops the citation is red rather than
+// silently unpinned.
+func gitConfigSystemChangelogParagraph(t *testing.T) string {
+	t.Helper()
+	const anchor = "TestQATheGitConfigSystemPinDropsASystemScopeIdentityLiteral"
+	b, err := os.ReadFile(changelogPath)
+	if err != nil {
+		t.Fatalf("cannot read the operator-facing half of this clause: %v", err)
+	}
+	text := string(b)
+
+	i := strings.Index(text, anchor)
+	if i < 0 {
+		t.Fatalf("%s does not cite %s. The paragraph disclosing what GIT_CONFIG_SYSTEM=%s costs is anchored here BY that citation — without it this reader measures nothing and the paragraph is unheld prose again, which is exactly how it came to be wrong (ranger-base-sv8x4)", changelogPath, anchor, os.DevNull)
+	}
+	start := strings.LastIndex(text[:i], "\n\n") + 2
+	end := len(text)
+	if j := strings.Index(text[i:], "\n\n"); j >= 0 {
+		end = i + j
+	}
+	return text[start:end]
+}
+
+// The framings this clause shipped with, and the ones measured able to come
+// back. All of them make the pin's cost a property of the PLATFORM, when
+// git's system scope on darwin is /etc/gitconfig exactly as it is anywhere
+// else and what is zero on this box is a missing file. Case-folded and
+// stem-matched, so an inflection ("costs you nothing on a Mac") is caught by
+// the rule the shipped spelling is.
 //
-// LIMIT, stated rather than implied: these catch the SHAPE that shipped, not
-// every possible mis-scoping of it. What holds the underlying fact is the
-// fourth arm above, which asks git rather than a reader.
+// The off-platform vocabulary is spelled twice over on purpose
+// (ranger-base-txsed finding 1): the row is written for a maintainer and says
+// "darwin", the changelog paragraph is written for an operator and says
+// "macOS", so a rule spelled for one token cannot hold the other artifact —
+// and the paragraph is the artifact the defect actually shipped in.
+//
+// LIMIT, stated rather than implied: these catch the SHAPES that shipped and
+// the shapes a mutation pass watched land green, not every possible
+// mis-scoping. What holds the underlying fact is the fourth arm above, which
+// asks git rather than a reader.
 var (
-	offDarwinFraming             = regexp.MustCompile(`(?i)\b(off|outside|away from|anywhere but|other than|not on|non)[- ]darwin`)
-	platformName                 = regexp.MustCompile(`(?i)\b(mac|macs|macos|os x|darwin|apple)\b`)
-	costIsFree                   = regexp.MustCompile(`(?i)(costs? (you )?nothing|no cost|zero cost|cost is zero|costs? zero|harmless)`)
+	offPlatformFraming = regexp.MustCompile(`(?i)\b(off|outside|away from|anywhere but|other than|not on|non)[- ](a )?(darwin|mac ?os|macs?|apple)\b`)
+	platformName       = regexp.MustCompile(`(?i)\b(mac|macs|macos|os x|darwin|apple)\b`)
+	// "free" is in the ban because "free" is the word the failure messages
+	// and this file's own doc comment use to name what is banned, and it was
+	// not in the list (ranger-base-txsed finding 3).
+	costIsFree = regexp.MustCompile(`(?i)(costs? (you )?nothing|no cost|zero cost|cost is zero|costs? zero|pay(s|ing)? nothing|nothing to worry about|harmless|\bfree\b)`)
+	// The PREMISE half of the retracted sentence, which needs no conclusion
+	// beside it to be false: ranger-base-sv8x4's own description said it is
+	// "the 'and there is no /etc/gitconfig' half, generalised from this box
+	// to the platform, that carries the claim" (ranger-base-txsed finding 2).
+	deniesEtcGitconfig = regexp.MustCompile(`(?i)(\bno\b[^.]{0,40}/etc/gitconfig|/etc/gitconfig[^.]{0,40}(does ?not|doesn'?t|never) exists?)`)
+	// The same framing as offPlatformFraming, named from the other side:
+	// "On Linux it WOULD suppress /etc/gitconfig". The suppression is not
+	// conditional on anything, so the hypothetical is wrong whichever
+	// platform it names, and this rule needs no platform token at all.
+	suppressionIsAHypothetical   = regexp.MustCompile(`(?i)\bwould\b[^.]{0,30}\b(suppress|empty|empties)\b`)
 	changelogScopesTheZeroToABox = regexp.MustCompile(`(?i)(property of the box|of the box rather than|this box|a box with no)`)
 )
 
-// mustNotScopeTheCostToAPlatform fails on a sentence telling a reader that a
-// platform is what makes GIT_CONFIG_SYSTEM=/dev/null free. Both artifacts the
-// close landed are held to it: the row a maintainer reads, and the changelog
-// paragraph an operator reads before installing the root-owned drop-in.
-func mustNotScopeTheCostToAPlatform(t *testing.T, where, region string) {
+// costMisScopingRules is every rule BOTH artifacts are held to. It is a table
+// rather than a run of checks at the call sites because ranger-base-txsed
+// finding 1 was exactly a call-site asymmetry: the off-platform rule was
+// applied to the row in inletpin.go and never to the changelog paragraph, so
+// the paragraph could be reverted to the shipped defect's own topic sentence
+// and the suite stayed green. A rule added here reaches both regions or
+// neither.
+var costMisScopingRules = []struct {
+	name string
+	// find is handed the region already flattened by flattenProse and
+	// returns the offending text, or "" when the region is clean.
+	find func(prose string) string
+	why  string
+}{
+	{
+		name: "scopes the suppression away from this platform",
+		find: func(prose string) string { return offPlatformFraming.FindString(prose) },
+		why:  "git's system scope on darwin IS /etc/gitconfig — the fourth arm of TestQATheGitConfigSystemPinDropsASystemScopeIdentityLiteral runs the command that says so — so this pin empties it here as well, and what is zero on this box is a missing file (ranger-base-sv8x4)",
+	},
+	{
+		name: "tells a reader that a PLATFORM is what makes this free",
+		find: sentenceCarryingBoth(platformName, costIsFree),
+		why:  "It is not. git's system scope on darwin is /etc/gitconfig, the same path as anywhere else, and this pin empties it here too — what is zero on this box is a missing file. Scope the sentence to a box whose system scope holds no user.email (ranger-base-sv8x4)",
+	},
+	{
+		name: "denies /etc/gitconfig exists on a PLATFORM",
+		find: sentenceCarryingBoth(platformName, deniesEtcGitconfig),
+		why:  "That is the premise half of the retracted claim and the half that carried it. Whether /etc/gitconfig exists is a fact about ONE BOX: Apple git reads that path like every other git, and a Mac someone has put an identity on has one. Say 'this box' rather than the platform (ranger-base-txsed finding 2)",
+	},
+	{
+		name: "frames the suppression as a hypothetical",
+		find: func(prose string) string { return suppressionIsAHypothetical.FindString(prose) },
+		why:  "The suppression is not conditional and does not happen somewhere else: this pin empties system scope on every platform, this one included. Write what it does, indicatively (ranger-base-txsed, carried with findings 1-3)",
+	},
+}
+
+// sentenceCarryingBoth builds a rule that fires only where ONE sentence
+// carries both halves. Sentence-scoped rather than region-scoped on purpose:
+// the corrected paragraph legitimately says "the cost is zero" in one
+// sentence and "on a Mac" in another, and a region-wide conjunction would ban
+// the text that is right.
+func sentenceCarryingBoth(a, b *regexp.Regexp) func(string) string {
+	return func(prose string) string {
+		for _, sentence := range strings.Split(prose, ". ") {
+			if a.MatchString(sentence) && b.MatchString(sentence) {
+				return strings.TrimSpace(sentence)
+			}
+		}
+		return ""
+	}
+}
+
+// mustNotMisScopeTheCost holds one prose region to the whole rule table. Both
+// artifacts the close landed run it: the row a maintainer reads, and the
+// changelog paragraph an operator reads before installing the root-owned
+// drop-in.
+func mustNotMisScopeTheCost(t *testing.T, where, region string) {
 	t.Helper()
-	for _, sentence := range strings.Split(flattenProse(region), ". ") {
-		if platformName.MatchString(sentence) && costIsFree.MatchString(sentence) {
-			t.Errorf("%s tells a reader that a PLATFORM is what makes this free:\n\t%q\nIt is not. git's system scope on darwin is /etc/gitconfig, the same path as anywhere else, and this pin empties it here too — what is zero on this box is a missing file. Scope the sentence to a box whose system scope holds no user.email (ranger-base-sv8x4)", where, strings.TrimSpace(sentence))
+	prose := flattenProse(region)
+	for _, r := range costMisScopingRules {
+		if m := r.find(prose); m != "" {
+			t.Errorf("%s %s:\n\t%q\n%s", where, r.name, m, r.why)
+		}
+	}
+}
+
+// TestQATheCostMisScopingRulesFireOnTheClaimsTheyName runs the rule table
+// against the sentences it exists to stop, and against sentences of the text
+// that ships today which it must not stop.
+//
+// WHY IT EXISTS. Every other run of these rules is against a corpus that is
+// green, and a rule that has never fired cannot be told from a rule that does
+// not work. ranger-base-txsed measured four of the offending fixtures below
+// landing in the shipped artifacts with the suite green. The offending
+// fixtures are quoted from the record rather than invented: H1 is the
+// sentence commit 1852b006 deleted, and D1/D3/D4/D5/E2/E3 are mutants
+// ranger-base-txsed applied to the shipped files and watched pass. D2 and E1
+// are its wrong-arm controls — the two spellings that already failed — and
+// they must keep failing.
+func TestQATheCostMisScopingRulesFireOnTheClaimsTheyName(t *testing.T) {
+	t.Parallel()
+
+	fired := func(region string) []string {
+		var names []string
+		prose := flattenProse(region)
+		for _, r := range costMisScopingRules {
+			if r.find(prose) != "" {
+				names = append(names, r.name)
+			}
+		}
+		return names
+	}
+
+	cases := []struct {
+		name, region, wantRule string
+	}{
+		// Offending: each of these was green in a shipped artifact.
+		{"H1, the topic sentence 1852b006 deleted", "One cost of the row that IS pinned, if you run posse anywhere but macOS.", "scopes the suppression away from this platform"},
+		{"E1, the wrong-arm control, wrapped", "// Off\n// darwin it WOULD suppress /etc/gitconfig, which is not measured.", "scopes the suppression away from this platform"},
+		{"E2, the same framing from the other side", "On\nLinux it WOULD suppress /etc/gitconfig, which is not measured.", "frames the suppression as a hypothetical"},
+		{"D1, the word the ban is named after", "In practice it is free on a Mac.", "tells a reader that a PLATFORM is what makes this free"},
+		{"D3, the same claim as a payment", "In practice you pay nothing on a Mac.", "tells a reader that a PLATFORM is what makes this free"},
+		{"D4, the same claim as reassurance", "On a Mac there is nothing to worry about here.", "tells a reader that a PLATFORM is what makes this free"},
+		{"D2, the wrong-arm control", "In practice it costs nothing on a Mac.", "tells a reader that a PLATFORM is what makes this free"},
+		{"E4, the row's spelling", "// On a Mac it is free.", "tells a reader that a PLATFORM is what makes this free"},
+		{"D5, the premise half alone", "There is no /etc/gitconfig on macOS.", "denies /etc/gitconfig exists on a PLATFORM"},
+		{"D6, the premise half after a box-scoped sentence", "So this box pays nothing. There is no /etc/gitconfig on macOS.", "denies /etc/gitconfig exists on a PLATFORM"},
+		{"the premise half, path first", "On macOS /etc/gitconfig does not exist.", "denies /etc/gitconfig exists on a PLATFORM"},
+
+		// Clean: sentences of the text that ships at HEAD. A rule that
+		// fails these is a rule that bans the correction.
+		{"the corrected topic sentence", "One cost of the row that IS pinned, and it is not a Linux-only cost.", ""},
+		{"the zero, scoped to a box", "So the cost is zero on a box with no `user.email` in system scope, and that is a property of the box rather than of the platform: the box this was measured on has no `/etc/gitconfig` at all.", ""},
+		{"what Apple git reads", "`/etc/gitconfig` is what Apple git reads as system scope too: run `git config --system --list` and git names the file it wanted.", ""},
+		{"the bundled config, which is a different file", "What survives the pin on a Mac is a *different* file — Apple git's own bundled config under `/Library/Developer/CommandLineTools`, which this variable does not govern — and that file is not the scope this row empties.", ""},
+		{"the boxes that pay", "Any box that does — a Linux box, a CI image, a Mac someone put an identity on — is one address short.", ""},
+		{"a legitimate hypothetical about an identity", "An identity in that file would be dropped from the wall, with no error.", ""},
+		{"the row's own indicative sentence", "// so the row empties it on darwin exactly as\n// it does elsewhere.", ""},
+	}
+
+	covered := map[string]bool{}
+	for _, c := range cases {
+		got := fired(c.region)
+		if c.wantRule == "" {
+			if len(got) != 0 {
+				t.Errorf("%s: the text that SHIPS is banned by %v — this rule set would fail the corrected artifact:\n\t%q", c.name, got, c.region)
+			}
+			continue
+		}
+		covered[c.wantRule] = true
+		var hit bool
+		for _, n := range got {
+			if n == c.wantRule {
+				hit = true
+			}
+		}
+		if !hit {
+			t.Errorf("%s: no rule %q fired (fired: %v). This sentence went into a shipped artifact and the suite stayed green; the rule that is supposed to stop it is not stopping it:\n\t%q", c.name, c.wantRule, got, c.region)
+		}
+	}
+	for _, r := range costMisScopingRules {
+		if !covered[r.name] {
+			t.Errorf("rule %q has no fixture in this test that fires it, so nothing here can tell it from a rule that never matches anything. Add the sentence it exists to stop", r.name)
+		}
+	}
+}
+
+// systemScopePathIsTheOneBothTextsClaim answers the claim the row and the
+// changelog paragraph both make: that git's system scope is "/etc/gitconfig,
+// the same path as anywhere else". That is an EQUALITY, and the fourth arm
+// shipped asserting it with strings.HasSuffix — which /opt/homebrew/etc/
+// gitconfig and /usr/local/etc/gitconfig both satisfy, and those are exactly
+// the paths that falsify the sentence (ranger-base-txsed finding 4). Latent
+// on this box, where `type -a git` finds only the posse gate shim and
+// /usr/bin/git; live on any box with a brew or MacPorts git first on PATH.
+func systemScopePathIsTheOneBothTextsClaim(path string) bool {
+	return path == "/etc/gitconfig"
+}
+
+// TestQATheSystemScopePathClaimIsAnEquality runs the fourth arm's two shipped
+// pieces — the parser and the predicate — over the outputs of a git whose
+// system scope is NOT the path both texts name. Nothing on this box produces
+// them, which is why they are fixtures: without this, the predicate is
+// exercised only against the one value that makes every spelling of it pass.
+func TestQATheSystemScopePathClaimIsAnEquality(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		name, out string
+		want      bool
+	}{
+		{"this box, and every box the sentence is true on", "fatal: unable to read config file '/etc/gitconfig': No such file or directory\n", true},
+		{"a git installed by homebrew on apple silicon", "fatal: unable to read config file '/opt/homebrew/etc/gitconfig': No such file or directory\n", false},
+		{"a git installed by homebrew on intel, or MacPorts", "file:/usr/local/etc/gitconfig\tuser.email=x@example.invalid\n", false},
+	} {
+		got, ok := parseGitSystemScopePath(c.out)
+		if !ok {
+			t.Fatalf("%s: parseGitSystemScopePath read no path out of %q, so this case is measuring the parser and not the claim", c.name, c.out)
+		}
+		if is := systemScopePathIsTheOneBothTextsClaim(got); is != c.want {
+			t.Errorf("%s: systemScopePathIsTheOneBothTextsClaim(%q) = %v, want %v. Both texts say the system scope this pin empties is /etc/gitconfig, the same path as anywhere else — a check that accepts %q accepts a box where that sentence is false", c.name, got, is, c.want, got)
 		}
 	}
 }
