@@ -11,6 +11,16 @@ adds `-timeout 25m`, and it is load-bearing: `internal/posse` is a long serial
 package that has been measured at and past `go test`'s default 10m per-package
 ceiling, so on a busy machine the bare command times out and reports a panic
 that names no test — a red belonging to the box, wearing your diff's clothes.
+
+`make test` is also **three runs, not one**. `internal/posse`'s tests carry a
+build tag and are compiled as three separate binaries — `test-arm1` (which is
+also `./...` and the tree's own gates), `test-arm2`, `test-arm3` — because half
+that package's wall clock was a stream of tests that cannot take `t.Parallel`
+and that only more than one binary can divide. A bare `go test ./...` builds
+arm 1 and says `ok` over the two thirds it never compiled, so it is not the
+suite even when it is green. To run one test that arm 1 does not carry, name
+its arm: `go test -tags posse_arm2 -run TestFoo ./internal/posse`. If a `-run`
+comes back `ok` having named no test, that is what happened.
 The target also runs the suite through `scripts/test-times.sh`, which prints
 each package's seconds and, before any of them start, how much disk the run
 has. Take that `DISK:` line seriously: out of space, `go test` reports ENOSPC

@@ -42,7 +42,7 @@ FMT_ROOTS := cmd internal *.go
 BUILD_STAMP := $(shell $(GOBIN) run ./cmd/buildstamp)
 LDFLAGS     := -X github.com/ranger360ai/posse/internal/posse.Build=$(BUILD_STAMP)
 
-.PHONY: build release install deploy test test-reuse fmt-check crew-check seed-check history-check doc-check identity-check ops-check tree-check verify-test-times verify-suite-lock verify-silent-reverts verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-self-close verify-govern-honesty verify-grok-pin verify-codex-pin verify-credential-paths verify-hook-freshness verify-bd-pin verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk verify-box verify-box-self-test prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
+.PHONY: build release install deploy test test-arm1 test-arm2 test-arm3 test-reuse fmt-check crew-check seed-check history-check doc-check identity-check ops-check tree-check verify-test-times verify-suite-lock verify-silent-reverts verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-self-close verify-govern-honesty verify-grok-pin verify-codex-pin verify-credential-paths verify-hook-freshness verify-bd-pin verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk verify-box verify-box-self-test prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
 
 build:
 	$(GOBIN) build -ldflags '$(LDFLAGS)' -o bin/posse-go ./cmd/posse
@@ -179,10 +179,74 @@ release-notes:
 # memory: each suite was 2-3x its solo time and the 1-minute loadavg was 899
 # against the fleet load guard's ceiling of 60 — so the shop stopped hiring at
 # the moment five seats were about to free. A `-run` filter or a named package
-# is NOT queued. `make verify-suite-lock` (~17s) pins the slots.
+# is NOT queued — but an ARM is (see below), because an arm is a full suite.
+# `make verify-suite-lock` (~17s) pins the slots.
+#
+# AND IT IS THREE RUNS, NOT ONE (ranger-base-qp1hm). internal/posse tested as
+# one binary and one clock: 640.9s on CI, 42% of the budget and 2.1x over
+# test-times' own 300s line, and 1091.8s in a seat. Half of that wall is a
+# stream no flag can widen — the 747 tests that cannot take t.Parallel sum to
+# 537.6s, and Go runs those one at a time — so `-parallel` was measured and
+# is not the lever: over the same 427-test slice, raising it from 4 to 24 cut
+# 168s to 126s while the box's own load swung the identical arm from 168s to
+# 296s. The only thing that divides a serial stream is more than one binary.
+#
+# So the package's tests carry a build tag and run as three:
+#
+#   arm 1   //go:build !posse_arm2 && !posse_arm3     the default build
+#   arm 2   //go:build posse_arm2
+#   arm 3   //go:build posse_arm3
+#
+# 1377 / 1337 / 1213 tests, ~1705s of measured weight each, projected ~239s
+# apiece on CI. Arm 1 is the DEFAULT so a bare `go test ./internal/posse`
+# still runs an arm rather than nothing, and so the `-run` doors below — which
+# take no tag — keep finding their pins. Files with no tag at all are the
+# shared helper set: 46 files every arm compiles, whose own 529 tests
+# therefore run in all three. docs/notes.d/ranger-base-qp1hm.md prices the two
+# splits this is NOT (sub-package: 101 of 112 product files are one SCC;
+# moving the QA pins to their own package: 1% of the runtime at any export
+# budget) and carries the file lists.
+#
+# `armtags_qa_test.go` pins the partition: every test-bearing file carries
+# exactly one arm tag or none, the three spellings are these three, and each
+# arm is run by a target here.
+#
+# `make test` is still the whole thing and still the house command — it is the
+# three arms in sequence, so a seat that types it gets exactly what it got
+# before. The per-arm targets exist for CI, which runs them as three JOBS and
+# is where the wall clock is actually bought back. The tree's own gates and
+# the silent-revert audit hang off arm 1 alone: they are the TREE's questions,
+# not the arm's, and asking them three times of one commit is three answers to
+# one question.
+# `test` KEEPS ITS OWN RECIPE and the per-arm targets repeat a line of it,
+# rather than `test` becoming an aggregate of the three. That was the first
+# shape and it reds five pins, all of them right: four read this literal
+# `test:` prerequisite line for the gate they cite (boxcheck_qa_test.go,
+# gofmtdoor_qa_test.go, suitelock_qa_test.go, treewidedoor_qa_test.go) and two
+# read this RECIPE for the wrapper and the timeout it must carry
+# (suitedisk_qa_test.go, suitetimeout_qa_test.go). An aggregate `test:` has no
+# recipe, so six true statements would start reading as false and the fix
+# would be to teach six readers to follow a prerequisite — six chances to
+# follow it wrong. The price paid instead is four duplicated lines, and
+# armtags_qa_test.go pins that every `test-armN` recipe line appears verbatim
+# here and that `test-arm1` carries the same gates.
 test: fmt-check verify-test-times verify-parallel verify-suite-lock verify-silent-reverts tree-check
 	scripts/test-times.sh $(GOBIN) test -timeout 25m ./...
+	scripts/test-times.sh $(GOBIN) test -timeout 25m -tags posse_arm2 ./internal/posse
+	scripts/test-times.sh $(GOBIN) test -timeout 25m -tags posse_arm3 ./internal/posse
 	@scripts/audit-silent-reverts.sh --quiet
+
+# One arm each, for CI, which runs them as three jobs. A seat wanting the
+# whole thing types `make test`.
+test-arm1: fmt-check verify-test-times verify-parallel verify-suite-lock verify-silent-reverts tree-check
+	scripts/test-times.sh $(GOBIN) test -timeout 25m ./...
+	@scripts/audit-silent-reverts.sh --quiet
+
+test-arm2:
+	scripts/test-times.sh $(GOBIN) test -timeout 25m -tags posse_arm2 ./internal/posse
+
+test-arm3:
+	scripts/test-times.sh $(GOBIN) test -timeout 25m -tags posse_arm3 ./internal/posse
 
 # The other half of the ceiling story, and the half ranger-base-pj87l asked
 # for: the wall grew 2.4x in four days with test-times.sh warning correctly on
@@ -205,12 +269,16 @@ verify-parallel:
 verify-test-times:
 	@scripts/test-times.sh --self-test
 
-# Prove the box-wide suite queue still queues (ranger-base-uvzjk). Fourteen
+# Prove the box-wide suite queue still queues (ranger-base-uvzjk). Fifteen
 # arms, each driving REAL concurrent processes against a scratch lock dir,
 # because the only thing worth knowing about a lock is what a SECOND process
 # sees: two full suites run at once and a third waits; the waiting line names
 # the worktree it is waiting on; a `-run` filter and a single package are not
-# queued at all; a freed slot is taken by the waiter; the slot of a `kill -9`
+# queued at all, but a TAGGED SUITE ARM of that same single package is
+# (ranger-base-qp1hm — internal/posse's suite is three tagged binaries now,
+# two of which name one package, and without that arm a `make test` took one
+# slot and ran the other two behind the guard's back); a freed slot is taken
+# by the waiter; the slot of a `kill -9`
 # run is reclaimed with no reaper (which is why it is an flock and not a
 # pidfile); an explicit release frees a slot before its process exits; a
 # wrapper under `set -e` survives being queued; a bad POSSE_SUITE_SLOTS runs
@@ -274,8 +342,15 @@ test-reuse:
 verify-gotest:
 	@scripts/gotest.sh --self-test
 
+# Once per arm, not once (ranger-base-qp1hm). `go vet ./...` builds the
+# DEFAULT build of every package, so with the suite split by build tag it sees
+# arm 1 and nothing else — the day this landed that would have been two thirds
+# of internal/posse's test tree silently unvetted. The tagged runs name the
+# one package that has arms; every other package is covered by the first line.
 vet:
 	$(GOBIN) vet ./...
+	$(GOBIN) vet -tags posse_arm2 ./internal/posse
+	$(GOBIN) vet -tags posse_arm3 ./internal/posse
 
 # The same gate, on Linux, from a mac (ranger-base-dbe). The suite had only
 # ever been run on darwin, and two defects lived in that gap — ranger-base-fjj

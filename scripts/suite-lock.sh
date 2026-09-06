@@ -210,6 +210,16 @@ suite_lock_wanted() {
 	for a in "$@"; do
 		case $a in
 		all | ... | */...) tree=1 ;;
+		# An ARM is a full suite (ranger-base-qp1hm). internal/posse's tests
+		# now run as three tagged binaries, and two of them name ONE package,
+		# so the `*/...` rule above would wave them through — a `make test`
+		# would take one slot and then run two more unqueued suites behind
+		# the guard's back, which is the five-concurrent-suites incident this
+		# lock exists for, rebuilt out of one seat. The value of `-tags` is
+		# its own word in `-tags posse_arm2` and part of the word in
+		# `-tags=posse_arm2`, so both spellings are read, the same trap
+		# suite_lock_wanted already documents for `-run`.
+		posse_arm* | -tags=posse_arm* | --tags=posse_arm*) tree=1 ;;
 		esac
 	done
 	[ "$tree" = 1 ]
@@ -671,6 +681,30 @@ ORPHANER
 			"marker '$(slot_of "$tmp/m5")' after 5s with both slots held"
 	fi
 	rm -f "$tmp/hold5"
+
+	# ARM 5b: but a tagged ARM of that same single package IS queued
+	# (ranger-base-qp1hm). This is arm 5's control, and it has to be here
+	# rather than inferred from it: internal/posse's suite is three tagged
+	# binaries now, two of which name one package, so the rule arm 5 pins
+	# would have let `make test` take one slot and run its other two arms
+	# unqueued — the incident this lock exists for, rebuilt out of a single
+	# seat. Queued means the marker does NOT appear while both slots are
+	# held, which is the same evidence arm 2 reads.
+	# An unqueued run writes its marker at once and says `none`, so reading
+	# the SLOT is no test at all — both answers pass. What separates the two
+	# is whether the marker appears: queued, it does not.
+	touch "$tmp/hold5b"
+	"$tmp/holder.sh" "$SUITE_LOCK_LIB" "$tmp/m5b" "$tmp/hold5b" go test -timeout 25m -tags posse_arm2 ./internal/posse &
+	h5b=$!
+	if wait_file "$tmp/m5b" 5; then
+		bad 'queue: a tagged suite arm takes a slot' \
+			"marker '$(slot_of "$tmp/m5b")' after 5s with both slots held — the arm ran unqueued"
+	else
+		ok 'queue: a tagged suite arm takes a slot'
+	fi
+	rm -f "$tmp/hold5b"
+	kill "$h5b" 2>/dev/null
+	wait "$h5b" 2>/dev/null
 
 	# ARM 6: the queue drains. A holder finishes, and the waiter that arm 2
 	# left queued takes the freed slot — which is also the proof that arm

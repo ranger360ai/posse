@@ -190,6 +190,21 @@ bd sync               # Sync with git
   often type the bare form strip the gates dir out of `PATH` first. It is a
   rule you keep, and the only one of these whose cost lands entirely on
   other people.
+  **And since ranger-base-qp1hm a bare `go test ./...` is no longer even the
+  whole suite.** internal/posse's tests are three binaries now, split by
+  build tag because half its wall was a serial stream no `-parallel` value
+  can widen (747 tests that cannot take `t.Parallel`, 537.6s inside a 1091.8s
+  run). `go test ./...` builds arm 1 — 1377 of the package's 2869 tests — and
+  says `ok` over the two thirds it did not compile. `make test` is the three:
+  `make test-arm1` (which is also `./...`, the gates and the silent-revert
+  audit), `make test-arm2`, `make test-arm3`. Each arm takes a suite slot, so
+  a `make test` queues three times and cannot run three suites at once behind
+  the guard's back. A focused run of one test still needs no tag *if that
+  test is in arm 1 or shared*; if `-run` comes back `ok` with no test named,
+  the test is in another arm — `go test -tags posse_arm2 -run … ./internal/posse`.
+  `armtags_qa_test.go` (repo root) keeps the partition total and keeps every
+  `-run` door's pin in arm 1; docs/notes.d/ranger-base-qp1hm.md has the
+  measurement and the file lists.
 - **A `-run` filter cannot reach a tree-wide pin — run `make fmt-check` by
   hand** (ranger-base-rulbl). `TestTreeIsGofmtClean` lives in internal/posse,
   a ~950s package past the 600s a seat can spend in one foreground call, so

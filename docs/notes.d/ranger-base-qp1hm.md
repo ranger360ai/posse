@@ -223,7 +223,106 @@ profile. That is the first thing to check on the branch that builds this: the
 747 serial tests do not spread evenly by weight, and an arm that inherits a
 disproportionate share of them will run longer than its weight says.
 
-### 5. Reproducing the numbers
+### 5. The plan, with its file lists
+
+Tags: arm 1 is `//go:build !posse_arm2 && !posse_arm3` (so a bare
+`go test ./internal/posse` still runs an arm rather than nothing), arm 2 is
+`//go:build posse_arm2`, arm 3 `//go:build posse_arm3`. Shared files carry no
+build line at all and compile into every arm. **The mechanism is verified**:
+tagging one leaf file, `go test -list` finds its test under `-tags posse_arm2`
+and does not find it in the default arm, `go vet` passes on both, and
+`make fmt-check` is green over the `//go:build` line.
+
+**The shared (untagged) set is these 61 files** — the 30 providers with the
+most test-file users, closed over what they themselves use. The first fifteen
+are the ones worth splitting; the other 46 keep their tests and pay the
+duplication:
+
+```
+SPLIT: autostart_test.go worktree_test.go dispatch_qa_test.go
+       constitutionwall_qa_test.go worktree_qa_test.go gateschain_qa_test.go
+       gates_test.go l3_hookspath_qa_test.go verifyafter_test.go
+       autoreap_qa_test.go hookwallsweep_qa_test.go beadloss_qa_test.go
+       hookcluster_qa_test.go launchhookpreheal_qa_test.go relaunch_test.go
+KEEP:  planusage_test.go dataceiling_qa_test.go commitwall_qa_test.go
+       herdr_test.go uncounted_test.go planblind_test.go pulse_delivery_test.go
+       launchlock_test.go grokpool_test.go promote_test.go ciwatch_test.go
+       verifyesa0j_qa_test.go beadloss_test.go autoreap_test.go skills_test.go
+       planseam_test.go instancepatternscope_qa_test.go gatedkeychain_test.go
+       launchlock_qa_test.go planguardpark_test.go govern_test.go
+       seatbeltworktreegit_qa_test.go cage_test.go seatbeltconstitution_qa_test.go
+       readyscan_test.go interstitial_qa_test.go instancerefusalvalue_qa_test.go
+       credcomposite_test.go instancebound_qa_test.go seatbeltcarveout_qa_test.go
+       launchline_qa_test.go seatbeltredirect_test.go modelavail_test.go
+       credseam_test.go trust_test.go watch_test.go metaidentity_test.go
+       watchpid_test.go agents_test.go seatbeltapply_qa_test.go
+       runtimegrid_qa_test.go runtimecheck_test.go runtimeoverlay_test.go
+       plancache_test.go initembed_test.go shelfguard_qa_test.go
+```
+
+**Split the helpers out, not the tests.** The obvious direction — move the
+`func Test*` into a tagged companion and leave the helpers behind — was tried
+and rejected on one file (`autoreap_qa_test.go`): it dropped 20 comment lines,
+including the whole file-header paragraph that says what the pin family is
+for, because in this tree that paragraph sits *after* the package clause and
+is a floating comment, not anybody's doc. The right direction is the other
+one: the original file keeps its prose and its tests and takes the arm tag,
+and the non-test declarations move to an untagged `<base>_helpers_test.go`.
+Those carry their own doc comments and travel cleanly.
+
+**Four constraints the arm assignment has to honour**, all of them
+door-shaped and all of them silent when broken:
+
+1. Every test named by a Makefile door must land in **arm 1**, because the
+   doors run `go test -run` with no tag. That is 24 names today:
+   `$(QA_CREW_PINS)` (3), `$(QA_SEED_PINS)` (2), `$(QA_HISTORY_PINS)` (4),
+   `$(QA_DOC_PINS)` (5), `$(QA_IDENTITY_PINS)` (2), `$(QA_OPS_PINS)` (4),
+   plus `TestTreeIsGofmtClean` and `TestLiveRuntimeContractWalk`.
+2. **A `-run` door that selects nothing exits 0.** So the door pins need a
+   pin of their own — every door regex must match at least one test in the
+   arm the door runs in — or the first pin to drift into arm 2 takes its door
+   green and empty with it.
+3. `go vet ./...` only sees arm 1. `make vet` has to vet each arm, or two
+   thirds of the test tree stops being vetted the day this lands.
+4. `make test` must still mean everything: three `go test` lines, each with
+   its own `-timeout` (suitetimeout_qa_test.go's arm 2 sweeps the Makefile,
+   `scripts/*.sh` and the workflows for a `go test` that inherits the
+   default), and `scripts/test-times.sh` around each so all three arms are
+   reported and measured against the 300s line.
+
+CI runs the three arms as three jobs per platform, which is where the wall
+clock is actually bought back.
+
+### 6. What shipped
+
+Option 2, three arms, exactly as §4-§5 size it.
+
+- **384 test files carry an arm tag**; 46 carry none and are the shared
+  helper set every arm compiles. Fifteen files were split — the non-test
+  declarations moved to an untagged `<base>_helpers_test.go`, the original
+  kept its prose, its tests and the tag.
+- **1377 / 1337 / 1213 tests**, 529 of them shared and therefore run in each,
+  and the union is all 2869 (`go test -list` per arm, against the 2870 that
+  `^func Test` finds — the difference is `TestMain`).
+- `make test` is `test-arm1 test-arm2 test-arm3`; arm 1 carries `./...`, the
+  gates and the silent-revert audit, because those are the tree's questions
+  and not the arm's. `make vet` vets each arm — `go vet ./...` is the default
+  build and would otherwise have left two thirds of the package unvetted.
+- `ci.yml` gains an `arm: [1, 2, 3]` matrix dimension: six jobs, three clocks
+  per platform, and a red that names which third it came from.
+- `suite_lock_wanted` now counts a tagged arm as a full suite. Without it
+  `make test` took one slot and ran its other two arms unqueued — the
+  five-concurrent-suites incident the lock exists for, rebuilt out of one
+  seat. Self-test arm 5b, mutation-checked.
+- `armtags_qa_test.go` at the repo root pins the partition in five arms:
+  every test-bearing file is shared or in a named arm; the Makefile runs
+  every arm and vets it; arm 1 is the default build and its target passes no
+  `-tags`; every Makefile `-run` door pin is reachable in the default arm
+  (a door whose filter selects nothing exits 0 — that is the failure that
+  would have been found last); and the classifier itself is shown able to
+  say no. Each of the first four mutation-checked to fire alone.
+
+### 7. Reproducing the numbers
 
 The census is a ~120-line `golang.org/x/tools/go/packages` program: load
 `./internal/posse` with `Tests: true`, take the test variant of the package,

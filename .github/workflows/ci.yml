@@ -77,6 +77,10 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
+        # internal/posse's tests are three tagged binaries (ranger-base-qp1hm);
+        # one job each, so the package's clock is three clocks and a red names
+        # which third it came from. Six jobs, still free on a public repo.
+        arm: [1, 2, 3]
     runs-on: ${{ matrix.os }}
     steps:
       # Full history: `make test` ends in scripts/audit-silent-reverts.sh,
@@ -121,11 +125,38 @@ jobs:
           git --version
           make --version | head -1
 
-      - name: vet
+      # Each job vets its OWN arm, which between the three of them is what
+      # `make vet` does in one seat. `go vet ./...` only ever builds the
+      # DEFAULT build, so on its own it would leave two thirds of
+      # internal/posse's test tree unvetted (ranger-base-qp1hm); running all
+      # three arms in all six jobs would instead compile the package eighteen
+      # times to learn the same thing three times.
+      - name: vet (arm 1 — every package, default build)
+        if: matrix.arm == 1
         run: go vet ./...
+      - name: vet (arm ${{ matrix.arm }})
+        if: matrix.arm != 1
+        run: go vet -tags posse_arm${{ matrix.arm }} ./internal/posse
 
       # The repo's own gate, not a lighter one. `make test` is `go test ./...`
       # plus the silent-revert audit — the detector for the failure class a
       # green suite does not report (rangerhq-8rtf).
-      - name: test
-        run: make test
+      #
+      # THE THREE ARMS RUN AS THREE JOBS, not three lines of one (part of
+      # ranger-base-qp1hm, and the half of it that buys CI's wall clock back).
+      # `make test` runs all three in sequence, which is what a seat wants and
+      # what keeps the target meaning "everything"; here the point is the
+      # opposite — internal/posse was 640.9s as one binary, 42% of the budget
+      # and 2.1x over test-times' 300s line, and three arms of ~239s on three
+      # runners are three clocks that clear it and three reds that each name
+      # their own third of the package. The gates and the audit are arm 1's,
+      # because they are the tree's and not the arm's: `make test` carries
+      # fmt-check, tree-check, the three verify-* self-tests and the
+      # silent-revert audit, and running them three times over one commit
+      # would be three answers to one question.
+      - name: test (arm 1 + gates + audit)
+        if: matrix.arm == 1
+        run: make test-arm1
+      - name: test (arm ${{ matrix.arm }})
+        if: matrix.arm != 1
+        run: make test-arm${{ matrix.arm }}
