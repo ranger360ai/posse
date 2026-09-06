@@ -59,6 +59,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -410,6 +411,64 @@ func TestQABoxCheckCensusCoversEveryVerifyScript(t *testing.T) {
 	}
 }
 
+// mkPrereqs reads a `target:` line out of the Makefile and returns the line
+// whole, plus its prerequisites as TOKENS. Two edits that a substring test on
+// the line reads as naming a target, and this does not (ranger-base-hna69):
+// a rename to a strict superstring — `verify-parallel` to `verify-parallelx` —
+// leaves the old name's bytes on the line, and make treats everything from a
+// `#` as a comment, so a name after one is on the line and is not a
+// prerequisite. Either takes the check off `make test` with the pin green.
+func mkPrereqs(t *testing.T, makefile, target string) (line string, deps []string) {
+	t.Helper()
+	for _, l := range strings.Split(makefile, "\n") {
+		if !strings.HasPrefix(l, target+":") || strings.HasPrefix(l, target+":=") {
+			continue
+		}
+		rest := strings.TrimPrefix(l, target+":")
+		if i := strings.Index(rest, "#"); i >= 0 {
+			rest = rest[:i]
+		}
+		return l, strings.Fields(rest)
+	}
+	t.Fatalf("the Makefile has no `%s` target", target)
+	return "", nil
+}
+
+// mkRuns is membership in that token list. Named, because the whole finding is
+// that this reads identically to `strings.Contains(line, name)` at a call site
+// and answers a different question.
+func mkRuns(deps []string, name string) bool { return slices.Contains(deps, name) }
+
+// The tokeniser itself, on the lines a substring test got wrong. Without this
+// the only thing measuring the `#` stop and the superstring arm is a Makefile
+// mutant, and the suite never runs one.
+func TestQAMakefilePrereqsAreTokensNotBytes(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{"plain line", "test: fmt-check verify-parallel tree-check\n", []string{"fmt-check", "verify-parallel", "tree-check"}},
+		{"commented tail", "test: fmt-check verify-test-times # verify-parallel tree-check\n", []string{"fmt-check", "verify-test-times"}},
+		{"comment against a name", "test: fmt-check# verify-parallel\n", []string{"fmt-check"}},
+		{"an assignment is not the target", "test:=x\ntest: fmt-check\n", []string{"fmt-check"}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			_, got := mkPrereqs(t, c.src, "test")
+			if !slices.Equal(got, c.want) {
+				t.Errorf("mkPrereqs(%q) = %q, want %q", c.src, got, c.want)
+			}
+		})
+	}
+	if mkRuns([]string{"verify-parallelx"}, "verify-parallel") {
+		t.Error("mkRuns says the `test:` line names verify-parallel when it names verify-parallelx — that is the substring test this replaced")
+	}
+	if !mkRuns([]string{"verify-parallel"}, "verify-parallel") {
+		t.Error("mkRuns cannot find a name that is there — every arm above would pass on nothing")
+	}
+}
+
 // An exclusion that claims `make test` runs the check is checked against the
 // `test:` prerequisite line (ranger-base-bbl6r finding 2). Four rows say it
 // today. If the prerequisite goes, the check runs NOWHERE and the exclusion
@@ -417,6 +476,10 @@ func TestQABoxCheckCensusCoversEveryVerifyScript(t *testing.T) {
 // one level in. Two memberships of that line were already pinned, each by the
 // test that cares (fmt-check in gofmtdoor_qa_test.go, verify-suite-lock in
 // suitelock_qa_test.go); this generalises the rule to whoever claims it next.
+//
+// It asks mkPrereqs, not the line's bytes: reading the line as bytes let the
+// same silence back in one spelling over, and took three of these four rows
+// dark in a single edit (ranger-base-hna69).
 func TestQABoxCheckExclusionsThatCiteMakeTestAreTrue(t *testing.T) {
 	_, excluded, _ := bcCensus(t)
 
@@ -424,16 +487,7 @@ func TestQABoxCheckExclusionsThatCiteMakeTestAreTrue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var deps string
-	for _, line := range strings.Split(string(mk), "\n") {
-		if strings.HasPrefix(line, "test:") {
-			deps = line
-			break
-		}
-	}
-	if deps == "" {
-		t.Fatal("the Makefile has no `test` target")
-	}
+	deps, prereqs := mkPrereqs(t, string(mk), "test")
 
 	claimed := 0
 	for tgt, reason := range excluded {
@@ -441,7 +495,7 @@ func TestQABoxCheckExclusionsThatCiteMakeTestAreTrue(t *testing.T) {
 			continue
 		}
 		claimed++
-		if !strings.Contains(deps, tgt) {
+		if !mkRuns(prereqs, tgt) {
 			t.Errorf("%s excludes %s on the grounds that `make test` runs it — %q — and the `test:` line does not name it: %q.\n"+
 				"Either put it back on that line, or stop citing it: an exclusion nothing runs is a check on no clock at all.", bcScript, tgt, reason, deps)
 		}

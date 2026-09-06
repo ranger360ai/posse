@@ -113,17 +113,10 @@ func TestQAMakeTestOpensTheGofmtDoor(t *testing.T) {
 		t.Errorf("$(GOFMT) is no longer resolved out of the toolchain's GOROOT, so `make fmt-check` can answer for a different Go than the pin it stands in for: %q", gofmtVar)
 	}
 
-	var deps string
-	for _, line := range strings.Split(src, "\n") {
-		if strings.HasPrefix(line, "test:") {
-			deps = line
-			break
-		}
-	}
-	if deps == "" {
-		t.Fatal("the Makefile has no `test` target")
-	}
-	if !strings.Contains(deps, "fmt-check") {
+	// Membership in the prerequisite TOKENS, not the line's bytes: see
+	// mkPrereqs (ranger-base-hna69).
+	deps, prereqs := mkPrereqs(t, src, "test")
+	if !mkRuns(prereqs, "fmt-check") {
 		t.Errorf("`make test` no longer depends on fmt-check, so the only thing that reports a gofmt drift is again ~950s away: %q", deps)
 	}
 }

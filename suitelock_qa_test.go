@@ -117,18 +117,10 @@ func TestQAMakeTestRunsTheSuiteLockSelfTest(t *testing.T) {
 	}
 
 	// And `make test` still depends on it, or arm 2 is the only thing
-	// keeping the queue alive on this box.
-	var deps string
-	for _, line := range strings.Split(src, "\n") {
-		if strings.HasPrefix(line, "test:") {
-			deps = line
-			break
-		}
-	}
-	if deps == "" {
-		t.Fatal("the Makefile has no `test` target")
-	}
-	if !strings.Contains(deps, "verify-suite-lock") {
+	// keeping the queue alive on this box. Membership in the prerequisite
+	// TOKENS, not the line's bytes: see mkPrereqs (ranger-base-hna69).
+	deps, prereqs := mkPrereqs(t, src, "test")
+	if !mkRuns(prereqs, "verify-suite-lock") {
 		t.Errorf("`make test` no longer depends on verify-suite-lock: %q", deps)
 	}
 }
