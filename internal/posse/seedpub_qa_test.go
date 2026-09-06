@@ -27,7 +27,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -601,10 +603,40 @@ func TestSeedSurfaceNameCountIsZero(t *testing.T) {
 		t.Skip("private archive: the surface this counts is $NEW's, not $OLD's")
 	}
 	needle := "ranger" + "hq"
+
+	hits := qspSurfaceHits(t, qibRepoRoot(t), needle)
+	if len(hits) > 0 {
+		t.Fatalf("%d real %s token(s) on the seed surface (7xpn AC7 is 0; markers of the form %s-<id> stay).\n"+
+			"The wall arm is an instance pattern under config %s: (ADR 0048); this pin is the post-landing backstop —\n"+
+			"a red here means the commit-time refusal did not fire (unstamped box, typed override, or a re-render nobody ran), not that this line needs an eighth rewording.\n  %s",
+			len(hits), needle, needle, OpsPatternsConfigKey, strings.Join(hits, "\n  "))
+	}
+}
+
+// qspSurfaceHits returns "<rel>:<line>: <text>" for every real occurrence of
+// needle under root — the seed surface. Markers of the form <needle>-<id> are
+// bead ids, not the name, and do not count.
+//
+// IT SKIPS WHAT GIT SKIPS (qspGitIgnored). The surface is what a publication
+// carries, and git-ignored build output is not on it: `make build` writes the
+// gitignored bin/posse-go, whose string table holds the token, so before this
+// the walk read a 13MB Mach-O and reported a binary offset as a source line —
+// `make build && make test` was red for everyone, and the failure text below
+// sent that reader after a commit-time wall that was working
+// (ranger-base-n0v6o). The sibling arm in
+// TestPublicationRootCommitOmitsExcludedPaths already keeps bin/ off the
+// surface; the two arms of this file now agree about it.
+//
+// Extracted from TestSeedSurfaceNameCountIsZero so the skip has a pin of its
+// own against a fixture repo (TestSeedSurfaceScanSkipsGitIgnoredPaths): the
+// live tree's ignored paths are build output that may or may not exist when
+// the suite runs, so the live pin cannot witness the skip either way.
+func qspSurfaceHits(t *testing.T, root, needle string) []string {
+	t.Helper()
 	token := regexp.MustCompile(needle + `(-[0-9a-z]+)?`)
 	marker := regexp.MustCompile(`^` + needle + `-[0-9a-z]+$`)
+	ignored := qspGitIgnored(t, root)
 
-	root := qibRepoRoot(t)
 	var hits []string
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -616,12 +648,12 @@ func TestSeedSurfaceNameCountIsZero(t *testing.T) {
 		}
 		if d.IsDir() {
 			base := d.Name()
-			if base == ".git" || base == ".beads" {
+			if base == ".git" || base == ".beads" || ignored[rel] {
 				return fs.SkipDir
 			}
 			return nil
 		}
-		if !d.Type().IsRegular() {
+		if !d.Type().IsRegular() || ignored[rel] {
 			return nil
 		}
 		body, rerr := os.ReadFile(path)
@@ -641,10 +673,132 @@ func TestSeedSurfaceNameCountIsZero(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(hits) > 0 {
-		t.Fatalf("%d real %s token(s) on the seed surface (7xpn AC7 is 0; markers of the form %s-<id> stay).\n"+
-			"The wall arm is an instance pattern under config %s: (ADR 0048); this pin is the post-landing backstop —\n"+
-			"a red here means the commit-time refusal did not fire (unstamped box, typed override, or a re-render nobody ran), not that this line needs an eighth rewording.\n  %s",
-			len(hits), needle, needle, OpsPatternsConfigKey, strings.Join(hits, "\n  "))
+	return hits
+}
+
+// qspGitIgnored is the set of repo-relative paths git ignores under root,
+// wholly-ignored directories collapsed to one entry (no trailing slash) so a
+// walk can SkipDir on them. One `git ls-files`, not one `git check-ignore` per
+// path.
+//
+// Empty when root is not the TOP of a checkout — a release tarball, or the
+// `git archive` scratch tree the house mutation rig runs in. Empty is the
+// right answer there rather than a skip: an export carries tracked files only,
+// so nothing under it is ignored and the walk loses no coverage. The at-the-top
+// check is what makes that honest — a scratch tree unpacked INSIDE some other
+// checkout would otherwise answer with that repo's ignore list, keyed to a
+// different root.
+func qspGitIgnored(t *testing.T, root string) map[string]bool {
+	t.Helper()
+	ignored := map[string]bool{}
+	if _, err := exec.LookPath("git"); err != nil {
+		return ignored
+	}
+	// --show-prefix, NOT --show-toplevel: git's answer here is "" at the top
+	// of a checkout and the subdirectory path below it, so this asks whether
+	// root sits at the top and keeps nothing but the yes/no. A second
+	// spelling of this repo's root is the thing that must not exist in this
+	// package — there is one helper, qibRepoRoot, and a pin spelled with a
+	// root from git stdout is outside the tree-wide class and gets no door
+	// (TestQAOneRepoRootHelperInTheTestPackage, ranger-base-xndgk FINDING 5;
+	// it red on exactly that here before this line read the way it does).
+	prefix, err := exec.Command("git", "-C", root, "rev-parse", "--show-prefix").Output()
+	if err != nil || strings.TrimSpace(string(prefix)) != "" {
+		return ignored
+	}
+	// -z so a path with a quote, a backslash or a newline arrives whole:
+	// git C-quotes those in its default output and core.quotePath=false does
+	// not turn that off.
+	out, err := exec.Command("git", "-C", root, "ls-files", "-z",
+		"--others", "--ignored", "--exclude-standard", "--directory").Output()
+	if err != nil {
+		return ignored
+	}
+	for _, p := range strings.Split(string(out), "\x00") {
+		if p == "" {
+			continue
+		}
+		ignored[filepath.Clean(p)] = true
+	}
+	return ignored
+}
+
+// The pin on the skip itself, against a fixture repo. Two-way on purpose: the
+// non-ignored file must still be a hit, or a scanner that had stopped reading
+// anything at all would pass this and take the live pin down with it.
+func TestSeedSurfaceScanSkipsGitIgnoredPaths(t *testing.T) {
+	t.Parallel()
+	needle := "ranger" + "hq"
+	root := t.TempDir()
+	qspGit(t, root, "init")
+
+	write := func(rel, body string) {
+		t.Helper()
+		p := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Both shapes git reports: a wholly-ignored DIRECTORY, which ls-files
+	// collapses to one entry, and a single ignored FILE inside a directory
+	// that is otherwise on the surface. They are skipped by different lines
+	// in the walk, so a fixture carrying only the first leaves the second
+	// unpinned.
+	write(".gitignore", "bin/\nnotes/local.md\n")
+	write("bin/posse-go", "string table: "+needle+"\n")
+	write("notes/local.md", "scratch naming "+needle+"\n")
+	write("kept.md", "a doc naming "+needle+"\n")
+	write("notes/kept.md", "a note naming "+needle+"\n")
+
+	var got []string
+	for _, h := range qspSurfaceHits(t, root, needle) {
+		got = append(got, h[:strings.Index(h, ":")])
+	}
+	sort.Strings(got)
+	want := []string{"kept.md", filepath.Join("notes", "kept.md")}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("seed surface is %v, want %v\n"+
+			"  extra = git-ignored paths on the surface (the defect); missing = the scan stopped reading",
+			got, want)
+	}
+}
+
+// The other half of qspGitIgnored: a tree that is NOT the top of a checkout
+// takes no ignore list at all. An export unpacked inside some other repo —
+// the `git archive` scratch tree the house mutation rig runs in, when it
+// lands under a checkout rather than in /tmp — would otherwise be scanned
+// against that repo's rules, and those rules were written about ITS paths.
+// The failure is a false SKIP, not a false hit: below, the parent ignores
+// notes/, and without the check the export's notes/kept.md silently leaves
+// the surface. Empty is right there because an export carries tracked files
+// only, so nothing under it is ignored.
+func TestSeedSurfaceScanTakesNoIgnoreListFromAForeignRepo(t *testing.T) {
+	t.Parallel()
+	needle := "ranger" + "hq"
+	parent := t.TempDir()
+	qspGit(t, parent, "init")
+	if err := os.WriteFile(filepath.Join(parent, ".gitignore"), []byte("notes/\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join(parent, "export")
+	if err := os.MkdirAll(filepath.Join(root, "notes"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "notes", "kept.md"), []byte("a note naming "+needle+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var got []string
+	for _, h := range qspSurfaceHits(t, root, needle) {
+		got = append(got, h[:strings.Index(h, ":")])
+	}
+	want := []string{filepath.Join("notes", "kept.md")}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("seed surface under a non-toplevel root is %v, want %v\n"+
+			"  missing = the enclosing repo's ignore rules were applied to a tree they were not written about",
+			got, want)
 	}
 }

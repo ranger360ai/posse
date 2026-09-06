@@ -7161,3 +7161,29 @@ which read a pin caught. Measured on git 2.50.1 / darwin 25.4.0:
 The fixture helper witnesses both directions — the call it means to break, and
 the call that must still work — because a plant that broke both would leave
 the arm measuring the other reader.
+
+**A tree-walking pin must skip what git skips.** `TestSeedSurfaceNameCountIsZero`
+walked the repo root skipping only `.git` and `.beads`, so `make build` — which
+writes the gitignored `bin/posse-go` — put a 13MB Mach-O on the "seed surface"
+and the pin found the banned token in its string table. `make build && make
+test` was red for everyone, the printed "line" was a binary offset, and the
+failure text sent that reader after a commit-time wall that was working. Two
+arms of the same file had disagreed about it since both were written:
+`TestPublicationRootCommitOmitsExcludedPaths` already excludes `bin/` from the
+surface it checks. The scan takes its ignore set from one `git ls-files -z
+--others --ignored --exclude-standard --directory` — one call, not one `git
+check-ignore` per path — and git reports BOTH shapes, a wholly-ignored
+directory collapsed to one entry and a single ignored file inside a directory
+that is otherwise on the surface. They are skipped by different lines in the
+walk, so a fixture carrying only the first leaves the second unpinned (measured:
+that mutant survived).
+
+**And it takes no ignore set at all unless the root is that checkout's
+toplevel.** An export unpacked INSIDE some other repo — the `git archive`
+scratch tree the house mutation rig runs in, when it lands under a checkout
+rather than in /tmp — would otherwise be scanned against rules written about
+that repo's paths, and the failure is a false SKIP, not a false hit: the parent
+ignoring `notes/` silently takes the export's `notes/` off the surface. Empty is
+the right answer for a tarball or a scratch tree because an export carries
+tracked files only, so nothing under it is ignored and the walk loses no
+coverage. (ranger-base-n0v6o)
