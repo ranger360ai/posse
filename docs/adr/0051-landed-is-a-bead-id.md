@@ -57,9 +57,9 @@ no installed hook is changed during documentation execution.
 and the three hook-only constants `AdrPathspec`, `AdrShaRule` and
 `AdrShaWayThrough`. `sort` left `scripts/cleanroom.sh`'s `HOOK_DEPS`, which is
 derived from the rendered hooks and no longer has a caller for it. The ten
-commit-path cells in `adrshastamp_qa_test.go` went with the arm; that file is
-now `adrcensusrepo_qa_test.go`, the audit's fixture, and the removal has its
-own pins in `adrcitationgate_qa_test.go`. **Retained, and now single-caller:**
+commit-path cells that measured it went with the arm; the file that held them
+was renamed to `adrcensusrepo_qa_test.go`, which keeps only the audit's
+fixture, and the removal has its own pins in `adrcitationgate_qa_test.go`. **Retained, and now single-caller:**
 `adrShaPredicate`, `AdrCensusScript`, `AdrCensusDefault`, `RunAdrCensus` and
 every census pin in `adrcensus_qa_test.go`, unchanged — what the audit says
 did not change, only who has to walk into it. `diffReaderShape` was left
