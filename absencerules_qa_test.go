@@ -2,7 +2,8 @@ package posse
 
 // QA pins for ranger-base-q8dhm — three ADR rules of pure ABSENCE that the
 // September 2026 adherence audit (docs/notes.d/adr-adherence-2026-09.md,
-// finding 13) measured true by grep and that no test held:
+// finding 13) measured true by grep and that no test held, plus a fourth
+// added by ranger-base-yi2f8 for the same reason one file over:
 //
 //   1. ADR 0019 D1 — "Nothing else in posse may acquire a credential except
 //      through this seam." One acquirer, internal/posse/credential.go.
@@ -35,6 +36,10 @@ package posse
 //     found three instances; the consumer-driven parity fixture found the
 //     fourth." A map keyed on the name, a switch, a lookup table — all
 //     invisible here. This pin holds the REGISTER, not the rule.
+//   - pin 4 sees identifiers, over the same parsed tree with comments
+//     dropped. A consumer reached through an untyped intermediary — a string
+//     handed on, a struct copied whole and read elsewhere — is invisible to
+//     it, exactly as for pin 1.
 //   - pin 3 resolves a call's receiver only where the source says what it is
 //     (a `Bd`-typed receiver, parameter, variable or struct field). Elsewhere
 //     it OVER-approximates reachability — every method call reaches every
@@ -595,10 +600,16 @@ func arShadowScan(fset *token.FileSet, files []arFile, names []string) []arShado
 // shape, and why the branch is that CLI's own state rather than a dimension.
 type arShadowAllow struct{ file, fn, shape, why string }
 
-// The register, measured 2026-09-01 against HEAD. The five branch rows are
-// the ones ADR 0017 §3's register update leaves standing ("cage.go seeding,
-// credential paths, trust.go's claude dialog") plus the two the same section
-// classifies as identity and display.
+// The register, measured 2026-09-01 against HEAD and widened once since. The
+// five original branch rows are the ones ADR 0017 §3's register update leaves
+// standing ("cage.go seeding, credential paths, trust.go's claude dialog")
+// plus the two the same section classifies as identity and display.
+//
+// The sixth branch row is a different KIND of row and says so: it is not
+// CLI-own-state, it is a narrow exception granted to one dimension by name in
+// ADR 0013 §7 (2026-09-05) and executed by ranger-base-yi2f8. Its price is
+// paid by a second pin that holds the reading display-only; read its why
+// before treating it as a shape anything else may borrow.
 //
 // The two TABLE rows are an adjacent shape this census can see and §3 does
 // not rule on in those words. cage.go's side map is named by §3's own
@@ -629,6 +640,10 @@ var arShadowAllowed = []arShadowAllow{
 	{
 		file: "posse/herdr.go", fn: "Herdr.PaneAgentSession", shape: "branch",
 		why: "CLI-own state, and the narrowest kind: `agent_session` is the RUNTIME's id for its own conversation, and the only caller reads claude's own submit log with it (sentline.go, ranger-base-2hvtv). There is no dimension behind it — a codex or grok pane has no such log to join to, so the arm returns an error and every reader falls back to the behaviour it had before that bead. The day another runtime keeps one, this stops being a branch and becomes a Runtime field.",
+	},
+	{
+		file: "posse/permissionmode.go", fn: "paneReaderFor", shape: "branch",
+		why: "the NAMED NARROW EXCEPTION, and the only row here that is one: ADR 0013 §7, approved 2026-09-05 and executed 2026-09-06 (ranger-base-yi2f8) — \"0057 removes the pane-mode declaration registry; the concrete built-in readers may identify the runtime they parse while preserving their current observations. It is an observation seam, not permission to bypass turn-outcome, cost or safety declarations.\" What earns it is DISPLAY-ONLY-ness, and that is not taken on trust: pin 4 below (TestPaneModeReadingDecidesNothing) censuses the non-test source and reds if any file outside permissionmode.go and herdrback.go names the reading, or if the backend reads it as anything but a rendered token. The declaration it replaced (`pane_mode:`) was measured first — ZERO external declarations existed in its one-day life, on this box or in either repo's history — so the seam bought a fourth CLI nobody has and cost a runtime yaml load per listing. A SECOND observation wanting this shape is a decision, not a precedent: the exception is granted to this one dimension by name.",
 	},
 	{
 		file: "posse/cage.go", fn: "", shape: "table",
@@ -1731,4 +1746,146 @@ func (b Bd) Finish(dir, id, actor string) error {
 			t.Errorf("a second Bd method writing --status closed read as verbs %v — the verb set is derived so a close by another spelling joins it, and it did not", got.verbs)
 		}
 	})
+}
+
+// ---------------------------------------------------------------------------
+// Pin 4 — ADR 0013 §7: the pane-mode reading decides nothing.
+// ---------------------------------------------------------------------------
+//
+// The price of the one NAMED NARROW EXCEPTION in the register above. ADR 0057
+// lets the concrete pane readers key on the runtime's name, and ADR 0013 §7
+// grants that on a stated condition: "It is an observation seam, not
+// permission to bypass turn-outcome, cost or safety declarations." A DISPLAY
+// observation is what earns the exception, so display-only is what has to be
+// checkable — otherwise the grant is prose and the branch is a shadow
+// predicate wearing a citation.
+//
+// The rule: only the file that produces the reading and the file that writes
+// it onto a session may name these symbols at all, and inside the backend the
+// only READ is the token a listing prints. A launch, guard, dispatch or
+// preflight path that starts consulting a pane's mode reds here the day it is
+// written — which is also the day the exception above would need re-deciding.
+//
+// Same census shape and the same stated blindness as pins 1–3: it sees
+// identifiers spelled in Go source, over the parsed non-test tree with
+// comments dropped. A consumer that took the value through an untyped
+// intermediary — a string handed on, a whole struct copied and read
+// elsewhere — is invisible to it. It holds the register, not the rule.
+
+// arPaneOwners is the two files allowed to name the reading, and why each is
+// allowed to. A third owner is a decision about ADR 0013 §7, not a detail.
+var arPaneOwners = map[string]string{
+	"internal/posse/permissionmode.go": "the readers themselves, the states they return, and `posse gates <persona>`'s per-session report",
+	"internal/posse/herdrback.go":      "the listing backend: the only WRITER of HerdrSession.PermissionMode, and the row that renders one token from it",
+}
+
+// arPaneSymbol reports whether an identifier names the pane-mode reading.
+func arPaneSymbol(name string) bool {
+	return strings.HasPrefix(name, "PaneMode") || strings.HasPrefix(name, "paneMode") ||
+		strings.HasPrefix(name, "paneReader") || name == "ReadPaneMode" || name == "PermissionMode"
+}
+
+func TestPaneModeReadingDecidesNothing(t *testing.T) {
+	fset, files := arParse(t, ".", arRoots)
+	if len(files) < arFileFloor {
+		t.Fatalf("parsed only %d non-test .go files under %v — the walk measured nothing, so an absence here is not evidence", len(files), arRoots)
+	}
+	named := 0
+	for _, af := range files {
+		af := af
+		_, owned := arPaneOwners[af.rel]
+		ast.Inspect(af.file, func(n ast.Node) bool {
+			id, ok := n.(*ast.Ident)
+			if !ok || !arPaneSymbol(id.Name) {
+				return true
+			}
+			named++
+			if !owned {
+				t.Errorf("%s names the pane-mode reading (%s), and only %v may.\n"+
+					"ADR 0013 §7 grants the name-keyed reader selection its narrow exception BECAUSE this is a display\n"+
+					"observation. A launch, guard, dispatch or preflight path that branches on what a pane's footer says\n"+
+					"makes it a shadow predicate after all (ADR 0017 §3) — declare the dimension instead. If this really\n"+
+					"is a third display surface, add it to arPaneOwners saying what it renders.",
+					arLine(fset, af.rel, id.Pos()), id.Name, arPaneOwnerNames())
+			}
+			return true
+		})
+	}
+	// A pin over a derived set is satisfied by deriving nothing: the two
+	// owners together spell these symbols dozens of times, so a census that
+	// matched a handful is a census whose matcher stopped working.
+	if named < 20 {
+		t.Fatalf("the census matched only %d pane-mode identifiers across %d files — the symbols were renamed and this pin is now guarding nothing", named, len(files))
+	}
+	// The backend half: it WRITES the field, and the one thing it may do
+	// with the value is render it. Reads are collected first because an
+	// assignment's left-hand side is the same selector shape as a read.
+	arPaneBackendReadsAreRendersOnly(t, fset, files)
+}
+
+func arPaneOwnerNames() []string {
+	out := make([]string, 0, len(arPaneOwners))
+	for f := range arPaneOwners {
+		out = append(out, f)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// arPaneBackendReadsAreRendersOnly holds the listing backend to rendering:
+// every `x.PermissionMode` that is not an assignment target must be the
+// receiver of the token/sentence renderer. ADR 0035 §4 is the reason — a mode
+// is a default DISPOSITION, never a promise a session cannot block — and a
+// backend that compared one, or passed one on, would be the first branch.
+func arPaneBackendReadsAreRendersOnly(t *testing.T, fset *token.FileSet, files []arFile) {
+	const backend = "internal/posse/herdrback.go"
+	var af *arFile
+	for i := range files {
+		if files[i].rel == backend {
+			af = &files[i]
+		}
+	}
+	if af == nil {
+		t.Fatalf("%s is not in the walk — the file moved and this arm is checking nothing", backend)
+	}
+	written, rendered := map[token.Pos]bool{}, map[token.Pos]bool{}
+	ast.Inspect(af.file, func(n ast.Node) bool {
+		switch x := n.(type) {
+		case *ast.AssignStmt:
+			for _, lhs := range x.Lhs {
+				if sel, ok := lhs.(*ast.SelectorExpr); ok && sel.Sel.Name == "PermissionMode" {
+					written[sel.Pos()] = true
+				}
+			}
+		case *ast.SelectorExpr:
+			// x.PermissionMode.Tag() — the outer selector's receiver is the
+			// inner one, which is the read being rendered.
+			if x.Sel.Name != "Tag" && x.Sel.Name != "Line" {
+				return true
+			}
+			if inner, ok := x.X.(*ast.SelectorExpr); ok && inner.Sel.Name == "PermissionMode" {
+				rendered[inner.Pos()] = true
+			}
+		}
+		return true
+	})
+	seen := 0
+	ast.Inspect(af.file, func(n ast.Node) bool {
+		sel, ok := n.(*ast.SelectorExpr)
+		if !ok || sel.Sel.Name != "PermissionMode" {
+			return true
+		}
+		seen++
+		if written[sel.Pos()] || rendered[sel.Pos()] {
+			return true
+		}
+		t.Errorf("%s reads the pane mode as something other than a rendered token.\n"+
+			"ADR 0035 §4: a mode is a default DISPOSITION, never a promise a session cannot block. The listing\n"+
+			"prints it; nothing may decide on it, and a value passed on is a decision waiting to be made\n"+
+			"somewhere this census cannot see.", arLine(fset, af.rel, sel.Pos()))
+		return true
+	})
+	if seen < 5 || len(written) == 0 || len(rendered) == 0 {
+		t.Errorf("the backend arm saw %d PermissionMode selectors, %d written and %d rendered — it must see both halves, or a green here is a matcher that stopped matching", seen, len(written), len(rendered))
+	}
 }

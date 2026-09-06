@@ -685,11 +685,17 @@ as an unexplained failure or unknown as measured parity.
 
 Runtime behavior implementing a declared dimension consumes the declaration,
 not a competing name-keyed predicate. CLI-owned state readers and seeds can
-name the CLI. **Narrow exception approved 2026-09-05:** 0057 removes the
-pane-mode declaration registry; the concrete built-in readers may identify
-the runtime they parse while preserving their current observations. It is
-an observation seam, not permission to bypass turn-outcome, cost or safety
-declarations. The removal remains deferred implementation.
+name the CLI. **Narrow exception approved 2026-09-05, executed 2026-09-06
+(ranger-base-yi2f8):** 0057 removes the pane-mode declaration registry; the
+concrete built-in readers may identify the runtime they parse while
+preserving their current observations. It is an observation seam, not
+permission to bypass turn-outcome, cost or safety declarations. Both halves
+are held by pins rather than by this paragraph: the exception is one row in
+the abstraction audit's register (absencerules_qa_test.go), so a second
+name-keyed site is still loud, and `TestPaneModeReadingDecidesNothing` in the
+same file reds if the reading is named outside the reader and the listing
+backend, or read there as anything but a rendered token. The removal was priced before it was
+taken: zero working external `pane_mode:` declarations ever existed.
 
 `runtimeYamlKeys()` and its rendered onboarding footer own the available
 key set. Present-but-invalid values refuse; absent facts stay honest and
@@ -729,7 +735,9 @@ state directory and required environment, among those keys) may overlay;
 launch mechanisms may not. In particular `command:` and `skills_flag:`
 refuse, as do the other mechanism keys in that partition. Model keys
 overlay per tier. Do not copy the old 0021 whitelist and lose later keys.
-The 0057 pane-key deletion must update that partition with the reader removal.
+The 0057 pane-key deletion updated that partition on 2026-09-06: `pane_mode`
+left `builtinMechanismKeys` with the key itself, so an overlay carrying it
+no longer refuses — it warns as an unknown key and selects nothing.
 
 [0015 §§2–3](0015-constitution-promotion.md) alone owns the overlay's
 promotion: edit the versioned constitution, promote to the home, verify the

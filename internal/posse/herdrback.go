@@ -1148,62 +1148,42 @@ func (b *HerdrBackend) listSessions() ([]HerdrSession, []string, error) {
 // it is the ONLY writer of HerdrSession.PermissionMode: the meta records what
 // the launch asked for, which is the claim this field exists to check.
 //
-// WHICH reader parses a pane is the runtime's own declaration — `pane_mode:`,
-// resolved through LoadRuntime, never a map keyed on the runtime's name (ADR
-// 0057 D1, ADR 0017 §3). A runtime declaring `none` was MEASURED to render no
-// mode on any screen and costs no herdr call: paying a read per session there
-// would buy a constant. A runtime declaring nothing is the loud default, and
-// a runtime this box cannot load at all is one more why-carrying unread — a
-// listing never renders this column blank.
+// WHICH reader parses a pane is posse's own measurement of that CLI's screen,
+// reached through the runtime's name (permissionmode.go, paneReaderFor). That
+// is ADR 0057's narrow exception to ADR 0017 §3 and nothing wider: it selects
+// a DISPLAY OBSERVATION and no launch, guard or dispatch decision reads it.
+// The `pane_mode:` declaration this replaced had zero external declarations in
+// its one-day life (measured, ranger-base-yi2f8), and loading a runtime yaml
+// per listing to learn which of three readers to call was the whole cost of
+// the seam — this function no longer opens one at all.
 //
-// The declaration is resolved once per distinct runtime NAME per listing: it
-// is a property of the runtime and a board holds many sessions on few
-// runtimes, so a yaml read per session would be a read per row of the same
-// file. Failures are cached too, or an unloadable runtime costs one refused
-// read per session it launched.
+// A runtime measured to render nothing (codex) and a runtime nobody has
+// measured are both answered without a herdr call, and they are answered
+// DIFFERENTLY: `mode:—` is a measurement, `mode:?` with a why naming the
+// runtime is not. A listing never renders this column blank.
 func (b *HerdrBackend) fillPaneModes(out []HerdrSession) {
 	if !b.PaneModes {
 		return
 	}
-	type declared struct {
-		adapter string
-		loaded  bool
-	}
-	seen := map[string]declared{}
-	resolve := func(runtime string) declared {
-		if d, ok := seen[runtime]; ok {
-			return d
-		}
-		d := declared{}
-		if rt, err := b.App.LoadRuntime(runtime); err == nil {
-			d = declared{adapter: rt.PaneModeAdapter, loaded: true}
-		}
-		seen[runtime] = d
-		return d
-	}
 	for i := range out {
 		s := &out[i]
-		if s.Runtime == "" {
-			s.PermissionMode = PaneMode{Why: "this session records no runtime — posse did not launch it, so nothing says what its pane would render"}
-			continue
-		}
-		d := resolve(s.Runtime)
 		switch {
-		case !d.loaded:
-			s.PermissionMode = PaneMode{Why: fmt.Sprintf("runtime %q does not load on this box, so nothing says which reader its pane would answer to", s.Runtime)}
-		case d.adapter == "":
-			s.PermissionMode = PaneModeUndeclared(s.Runtime)
-		case !PaneModeReadable(d.adapter):
-			s.PermissionMode = ReadPaneMode(d.adapter, "") // a declared constant; no read needed
+		case s.Runtime == "":
+			s.PermissionMode = PaneMode{Why: "this session records no runtime — posse did not launch it, so nothing says what its pane would render"}
+		case !PaneModeReadsPane(s.Runtime):
+			// codex's measured NEVER, or an unmeasured CLI's loud unread:
+			// both are correct answers to no pane at all, which is what
+			// makes skipping the read free rather than lossy.
+			s.PermissionMode = ReadPaneMode(s.Runtime, "")
 		case s.PaneID == "":
 			s.PermissionMode = PaneMode{Why: "this session records no pane, so there is no screen to read"}
 		default:
 			text, err := b.H.PaneRead(s.PaneID, paneModeReadLines)
 			if err != nil {
 				s.PermissionMode = PaneMode{Why: fmt.Sprintf("pane read failed: %v", err)}
-				continue
+				break
 			}
-			s.PermissionMode = ReadPaneMode(d.adapter, text)
+			s.PermissionMode = ReadPaneMode(s.Runtime, text)
 		}
 	}
 }

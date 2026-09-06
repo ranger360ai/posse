@@ -16,7 +16,7 @@ the counted-ness pair retired by the D4 cost seam; §4 gains
 amended 2026-08-30: §4's "not declarable" list is retired — all four
 shipped, the last two here (ranger-base-ncxa); §1's pin test exists
 (ranger-base-ncxa); §1's grid gained the five non-dispatch dimension rows
-(ranger-base-bcpa) · amended 2026-09-05: §4 gains `pane_mode:`, a registry key over the pane-mode readers, and §3's codex name-keyed branch retires through it (ADR 0057, ranger-base-re4kb) · amended 2026-09-05 (ranger-base-kbhlw: §1's row count corrected — `pane_mode` became the sixth row with ranger-base-2p2cy and the "five" sentence had not moved; the number is now dated, and the rendered set is the record)*
+(ranger-base-bcpa) · amended 2026-09-05: §4 gains `pane_mode:`, a registry key over the pane-mode readers, and §3's codex name-keyed branch retires through it (ADR 0057, ranger-base-re4kb) · amended 2026-09-05 (ranger-base-kbhlw: §1's row count corrected — `pane_mode` became the sixth row with ranger-base-2p2cy and the "five" sentence had not moved; the number is now dated, and the rendered set is the record) · amended 2026-09-06: BOTH of those are retired by ADR 0057's simplification (ranger-base-yi2f8) — `pane_mode:` leaves §4 and its checklist row leaves §1, and §3 gains its first NAMED NARROW EXCEPTION instead: the concrete pane readers may key on the runtime's name, granted to that one display dimension by ADR 0013 §7 and held display-only by a census pin. The measurement that priced it: zero external `pane_mode:` declarations ever existed*
 
 > The operator, on the four-area parity breakdown: "make sure richard knows
 > to add areas to consider when making sure runtimes are equivalent. we may
@@ -83,11 +83,13 @@ prose lists of "areas" are projections and carry no authority. Concretely:
   runtime's own egress hosts, the container credential, the repo→box
   project-config channel and the sandbox/gate-shell pair were facts the
   code knew and no screen said, which is the "missing a row" bug this
-  section names. One row per dimension carries them — six at the
-  2026-09-05 amendment: bcpa's five plus `pane_mode` (ADR 0057 D3,
-  ranger-base-2p2cy), which renders from the pane-mode reader registry
-  rather than from a struct field; the count is a dated snapshot and the
-  rendered set in `runtimecheck.go` is the record — in the same `stageRow`
+  section names. One row per dimension carries them — bcpa's five, which is
+  again the whole set at the 2026-09-06 amendment: `pane_mode` was a sixth
+  row from ranger-base-2p2cy until ADR 0057's simplification removed the
+  declaration it rendered (ranger-base-yi2f8), and a dimension with no
+  declaration has no row to print provenance for. The count is a dated
+  snapshot and the rendered set in `runtimecheck.go` is the record — in the
+  same `stageRow`
   shape with the same `declaredBy` provenance and §2's vocabulary
   throughout: a
   measured-to-differ dimension reads as a DECLARED DIFFERENCE (codex's
@@ -185,6 +187,24 @@ found three instances; the consumer-driven parity fixture found the
 fourth. The living copy of this register is a fixture that drives
 production per-runtime, not the grep.
 
+**Named narrow exception (2026-09-06, ranger-base-yi2f8).** ADR 0057's
+simplification removes the `pane_mode:` declaration and lets the concrete
+pane readers key on the runtime's name (`paneReaderFor`,
+permissionmode.go), approved in advance as ADR 0013 §7's narrow exception.
+This is not the CLI-own-state class and is not a precedent: it is granted
+to one DISPLAY dimension by name, on two conditions this ADR states so a
+later reader can check them. First, the reading decides nothing —
+`TestPaneModeReadingDecidesNothing` (absencerules_qa_test.go, beside the
+register itself) censuses the non-test source and reds if any file outside
+the reader and the listing backend names it, or if the backend reads it as
+anything but a rendered token; a launch, guard
+or dispatch branch on a pane's mode makes it a shadow predicate after all.
+Second, the declaration it replaced was PRICED before it was removed:
+zero working external `pane_mode:` declarations ever existed, on the
+operator's box or in either repo's history, in the key's one-day life. A
+second dimension wanting this shape is a new decision, not this row
+extended — and the standing register above still holds every other site.
+
 ### 4. Declarability — what Bob can and cannot put in the grid
 
 `runtimes/<name>.yaml` today takes: `command:`, `model_<tier>:`,
@@ -193,9 +213,11 @@ production per-runtime, not the grep.
 (since this snapshot, also `state_dir:`, `env_required:`, `turn_outcome:`
 — added 2026-08-28, ranger-base-02zr — and `skills_cwd:`,
 `self_sandbox:`, `project_config:`/`project_config_keys:`, `unattended:`,
-the four below — and `pane_mode:`, a registry key over the pane-mode readers,
-ADR 0057, 2026-09-05). `runtimeYamlKeys()` is the whole surface and the list to
-grep; this sentence is a projection of it.
+the four below. `pane_mode:` was here from 2026-09-05 to 2026-09-06 and is
+not any more — ADR 0057's simplification removed the key, measured against
+zero external declarations; a yaml still carrying it warns as an unknown key
+and selects nothing, ranger-base-yi2f8). `runtimeYamlKeys()` is the whole
+surface and the list to grep; this sentence is a projection of it.
 
 **Was not declarable; all of it now is** (each was a Go field a built-in
 set that a yaml runtime could not — the grid had holes exactly where Bob

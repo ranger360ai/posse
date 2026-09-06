@@ -137,7 +137,6 @@ func runtimeYamlKeys() []string {
 		"unattended",
 		"cage_cred", "egress", "gate_shell",
 		"prompt", "startup_wait", "record", "record_why", "native_rules", "turn_outcome",
-		"pane_mode",
 		"rules_precedence", "rules_precedence_why",
 		"state_dir", "env_required",
 	}

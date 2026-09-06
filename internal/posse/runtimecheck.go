@@ -189,7 +189,6 @@ func (a *App) RuntimeCheck(rt *Runtime, h Herdr, w io.Writer) bool {
 		cageCredRow(rt),
 		projectConfigRow(rt),
 		sandboxRow(rt),
-		paneModeRow(rt),
 	} {
 		r.write(w)
 	}
@@ -215,7 +214,7 @@ func (a *App) RuntimeCheck(rt *Runtime, h Herdr, w io.Writer) bool {
 	} else {
 		fmt.Fprintf(w, "\n  onboarding a runtime is filling this grid: runtimes/%s.yaml takes command:, prompt:,\n", rt.Name)
 	}
-	fmt.Fprintln(w, "  startup_wait:, record: (+ record_why:), turn_outcome:, pane_mode:, native_rules:,")
+	fmt.Fprintln(w, "  startup_wait:, record: (+ record_why:), turn_outcome:, native_rules:,")
 	fmt.Fprintln(w, "  rules_precedence: (+ rules_precedence_why:),")
 	fmt.Fprintln(w, "  model_flag:/model_<tier>:, skills_flag: OR skills_cwd:, self_sandbox:, unattended:,")
 	fmt.Fprintln(w, "  project_config: (+ project_config_keys:), egress:, cage_cred:, gate_shell:,")
@@ -692,49 +691,5 @@ func sandboxRow(rt *Runtime) stageRow {
 		r.note = append(r.note, "gate_shell: on — the launch points SHELL/GROK_SHELL at the gate shell, which is what keeps L1 alive on a CLI that re-execs a LOGIN shell per command: on macOS that hands PATH to path_helper, /usr/bin lands ahead of the gates dir and the shim never runs (measured on grok 1.0.5, rangerhq-vjl).")
 	}
 	r.note = append(r.note, "declared by: "+rt.declaredBy("gate_shell"))
-	return r
-}
-
-// paneModeRow is what a session's own PANE says about the permission mode it
-// is actually in — the reading ADR 0035 §3's compensating control is made of,
-// and the dimension a fourth runtime could not declare at all until ADR 0057
-// made it a registry key.
-//
-// Rendered from the REGISTRY ENTRY (permissionmode.go), never spelled per
-// runtime: a reader's contract, what an absent mode means under it, and the
-// listing token it produces all live beside the code that performs the
-// reading, so a fourth reader reaches this screen the day it is registered
-// and a `pane_mode:` a yaml declares is read here with no Go change at all.
-//
-// Three arms, and every one of them branches on the DECLARATION rather than
-// on the runtime's name — the shape ADR 0017 §3 forbids, and the shape this
-// dimension wore until ranger-base-x3hs1 retired the name-keyed map: a reader
-// that reads a pane, the `none` reader whose answer IS the measurement, and no
-// declaration at all.
-func paneModeRow(rt *Runtime) stageRow {
-	unread, never := PaneModeUndeclared(rt.Name).Tag(), PaneMode{State: PaneModeNever}.Tag()
-	r := stageRow{
-		stage: "pane_mode",
-		by:    rt.declaredBy("pane_mode"),
-		missing: "the ADR 0035 §3 compensating control goes BLIND: every session on this runtime lists as `" + unread +
-			"`, so a session that lost its --permission-mode at launch and one that kept it read exactly the same on `posse list` and `posse gates <persona>` — and nothing else on the box tells the two apart",
-	}
-	rd, ok := PaneModeReaderFor(rt.PaneModeAdapter)
-	switch {
-	case !ok:
-		r.value = "UNDECLARED — nobody has measured what this CLI's screen says about the mode a session is in, so every session here lists as `" + unread +
-			"`, which is neither a mode nor the measured `" + never + "`"
-		r.note = append(r.note, "the remedy, once you have MEASURED one of the registered readers against this CLI's screen: pane_mode: "+strings.Join(PaneModeAdapters(), "|")+
-			" — a CLI that paints a claude-shaped footer is read the day the key is declared, changing no Go. A screen vocabulary none of them parses is a new reader in permissionmode.go plus its corpus in permissionmodepane_qa_test.go, which is the same price turn_outcome: charges for a transcript nobody has parsed (ADR 0012 D4's reader seam).")
-	case !rd.ReadsPane:
-		r.value = rt.PaneModeAdapter + " — a DECLARED DIFFERENCE, not a failure (ADR 0017 §2): " + rd.Contract
-		r.note = append(r.note, "so the column here is a permanent `"+never+"` — a measurement, not an unknown more work could close. A policy the CLI will show for TYPING (codex's /status) is not a reading either: posse never types into a session (ADR 0013 §2), and a listing spends no herdr call to re-learn a constant.")
-	default:
-		r.value = rt.PaneModeAdapter + " — reads " + rd.Contract
-		r.note = append(r.note, "an absent mode on that screen: "+rd.Absence)
-	}
-	// ADR 0035 §4, on every arm: a mode is a default DISPOSITION, and the
-	// measurement behind the rule is the one that makes it worth printing.
-	r.note = append(r.note, "a named mode is a default DISPOSITION and never a promise about blocking (ADR 0035 §4) — a claude session in auto mode was measured stopping on its own classifier. What this row names is what the pane can SAY; whether a session is blocked is a separate fact on a separate line.")
 	return r
 }

@@ -3,7 +3,6 @@ package posse
 import (
 	"fmt"
 	"io"
-	"sort"
 	"strings"
 )
 
@@ -104,120 +103,118 @@ var claudeFooterModes = []struct{ footer, mode string }{
 	{"don't ask on", "dontAsk"},
 }
 
-// The registered pane readers — the legal values of a runtime's `pane_mode:`
-// key and the keys of paneModeReaders below (ADR 0057 D1). A runtime declares
-// WHICH READER parses its screen, never its own name: two CLIs that paint the
-// same footer share one reader, and a CLI measured to paint nothing declares
-// that as a reading of its own.
-//
-// PaneModeNone is a declaration and not an absence, which is the distinction
-// the whole three-valued field turns on. It is the ADAPTER whose answer is
-// the PaneModeNever STATE; a runtime that declares nothing at all is
-// PaneModeUnread instead (PaneModeUndeclared).
-const (
-	PaneModeClaudeFooter = "claude-footer"
-	PaneModeGrokBorder   = "grok-border"
-	PaneModeNone         = "none"
-)
-
-// The Why every not-named reading carries, one per reader. Named constants
-// rather than literals at the return sites because the registry entry and
-// the reader that produces it must be the same sentence: the entry is what
-// `posse runtime check` renders the dimension's row from (ADR 0057 D3), and
-// a row describing an absence the reader does not actually report is scenery.
+// The Why every not-named reading carries, one per observation. Named
+// constants rather than literals at the return sites because the same
+// sentence is what a surface prints instead of a mode and what this file's
+// own prose promises the reader reports — a doc describing an absence the
+// code does not actually return is scenery, and the pins below read the
+// constant back out of the reader.
 const (
 	paneModeCoveredWhy = "no mode footer on screen — a modal dialog replaces it, and the launch command in the scrollback is a claim about the launch, not a reading"
 
 	paneModeUnnameableWhy = "grok names only auto and always-approve on the composer border — default, acceptEdits, dontAsk, plan and a pane still on the startup splash all render nothing, and a border suffix outside those two words is grok saying something that is not a mode, so this is four modes and an unknown, never \"default\""
 
-	// Generic on purpose: `none` is a reader, and a second CLI measured to
-	// render nothing declares the same one. The measurement behind a
-	// particular runtime's `none` stays where the declaration is — the
-	// built-in's own comment, and the grid row's note (ADR 0057 D3).
+	// Generic on purpose even with one CLI behind it: what it states is the
+	// STATE's meaning, and a second CLI measured to render nothing would
+	// report the same sentence. The measurement behind a particular
+	// runtime's NEVER stays at its arm in paneReaderFor.
 	paneModeNeverWhy = "this runtime renders no permission mode on any screen — measured, so the column is a permanent \"—\" rather than an unknown more work could close"
 )
 
-// PaneModeReader is one entry of that registry, and it is the whole
-// declaration: what parses a pane of this shape, whether a listing should
-// spend a herdr call on one at all, what an absent mode MEANS here, and the
-// one line the runtime grid renders the dimension's row from.
-type PaneModeReader struct {
-	// Read turns the pane tail into a reading. A reader with ReadsPane
-	// false is handed nil — its answer is the measurement, not a scrape.
-	Read func(tail []string) PaneMode
-	// ReadsPane is whether reading a pane here can say anything. false is
-	// `none`: paying a herdr call per session to re-learn a constant buys
-	// nothing, so fillPaneModes skips the read entirely.
-	ReadsPane bool
-	// Absence is the Why a not-named reading carries — the sentence a
-	// surface prints instead of a mode, so it can say WHICH unknown it is
-	// showing.
-	Absence string
-	// Contract is what this reader reads, in one line, for the grid row.
-	Contract string
+// paneReader is what posse has MEASURED one CLI's screen to be able to say:
+// the parser for it, or the constant answer where reading a screen cannot
+// say anything at all.
+type paneReader struct {
+	// read parses the pane tail. nil is "no screen read here" — either the
+	// CLI was measured to render nothing (see measured), or posse has never
+	// measured this CLI at all (see known).
+	read func(tail []string) PaneMode
+	// measured is the answer when read is nil and known is true: a reading
+	// that cost no herdr call because the screen was measured once and the
+	// answer is a constant.
+	measured PaneMode
+	// known is whether posse has measured this CLI's screen at all. false is
+	// the loud default, answered by PaneModeUndeclared with the runtime's
+	// name in it — never a mode, never a blank and never NEVER.
+	known bool
 }
 
-// paneModeReaders is the registry. The map is the whole set of legal
-// `pane_mode:` values: a name that is not a key here is refused at load
-// (runtime.go), so a declaration can never promise a reading nothing
-// performs — the same contract turn_outcome: carries (turnfailure.go).
-var paneModeReaders = map[string]PaneModeReader{
-	PaneModeClaudeFooter: {
-		Read: claudePaneMode, ReadsPane: true, Absence: paneModeCoveredWhy,
-		Contract: "the footer, in the last three non-empty lines: it names all six modes and three of them without the word \"mode\", and a modal dialog REPLACES it, so absence is COVERED and clears on the next read",
-	},
-	PaneModeGrokBorder: {
-		Read: grokPaneMode, ReadsPane: true, Absence: paneModeUnnameableWhy,
-		Contract: "the composer border's suffix: it names two of six modes and the suffix is matched against those two words, so absence is UNNAMEABLE — four modes, a pane still on the splash, and any suffix that is not one of the two, never \"default\"",
-	},
-	PaneModeNone: {
-		Read: neverPaneMode, ReadsPane: false, Absence: paneModeNeverWhy,
-		Contract: "no pane read at all: this CLI was measured to render no mode on any screen, so absence is NEVER — a permanent \"—\", and a listing spends no herdr call per session",
-	},
-}
-
-// PaneModeAdapters is every registered reader name, sorted — what a refused
-// declaration lists so the operator can see what is on offer.
-func PaneModeAdapters() []string {
-	names := make([]string, 0, len(paneModeReaders))
-	for name := range paneModeReaders {
-		names = append(names, name)
+// paneReaderFor is the ONE site in posse where a runtime's NAME selects a
+// behaviour, and ADR 0057 makes it a NAMED NARROW EXCEPTION to ADR 0017 §3's
+// shadow-predicate rule rather than a violation of it: "0057 removes the
+// pane-mode declaration registry; the concrete built-in readers may identify
+// the runtime they parse while preserving their current observations. It is
+// an observation seam, not permission to bypass turn-outcome, cost or safety
+// declarations" (ADR 0013 §7). The exception is registered in the abstraction
+// audit by name (absencerules_qa_test.go, arShadowAllowed) so a SECOND
+// name-keyed site anywhere is still loud, and its price is paid one pin
+// over: TestPaneModeReadingDecidesNothing holds the reading display-only,
+// which is the condition §7 grants the exception on.
+//
+// What it replaced, and why the seam went: `pane_mode:` was a declarable
+// registry key over these same three answers — a runtime yaml naming which
+// reader parsed its screen. It shipped 2026-09-05 and was measured on
+// 2026-09-06 (ranger-base-yi2f8): ZERO external declarations existed, on this
+// box or in either repo's history, so the seam's whole value was a fourth CLI
+// nobody has. Which reader parses a CLI's screen is code measured against
+// that CLI's captures either way — the corpus in
+// permissionmodepane_qa_test.go is what changes when a release rewords a
+// footer, not a yaml — so the declaration bought a level of indirection over
+// a fact only Go could establish.
+//
+// What it did NOT take with it: the `none` ADAPTER is gone, the
+// PaneModeNever STATE is not. Codex's arm below is the same measurement it
+// always was, reached by one fewer hop; the five states stay five.
+//
+// A CLI posse has not measured falls through to the loud default. Onboarding
+// a different screen is a concrete reader here plus its capture corpus —
+// deliberately not a substring language, a second registry, or a silent
+// unknown-to-none fallback (ADR 0057).
+func paneReaderFor(runtime string) paneReader {
+	switch runtime {
+	case "claude":
+		// MEASURED on claude 2.1.251: the footer names all six modes, three
+		// of them without the word "mode", and a modal dialog REPLACES it —
+		// which is COVERED, a state that clears on the next read.
+		return paneReader{read: claudePaneMode, known: true}
+	case "grok":
+		// MEASURED on grok 1.0.5: the composer border names two of six
+		// modes; the other four and the startup splash render no suffix,
+		// which is UNNAMEABLE and never "default".
+		return paneReader{read: grokPaneMode, known: true}
+	case "codex":
+		// MEASURED on codex-cli 0.150.1: the footer is `<model> <effort> ·
+		// <cwd>` under `-a never` and `-a on-request` alike, and the policy
+		// is reachable in-pane only by TYPING /status. Typing into a session
+		// is not a read (ADR 0013 §2), so this is a permanent `—` rather
+		// than an unknown more work could close — and a listing spends no
+		// herdr call per codex session to re-learn a constant.
+		return paneReader{measured: PaneMode{State: PaneModeNever, Why: paneModeNeverWhy}, known: true}
 	}
-	sort.Strings(names)
-	return names
+	return paneReader{}
 }
 
-// PaneModeReaderFor is the reader a `pane_mode:` value resolves to. ok=false
-// is an unregistered name, which LoadRuntime refuses — so every caller
-// downstream of a loaded runtime holds either a registered reader or the
-// empty declaration.
-func PaneModeReaderFor(adapter string) (PaneModeReader, bool) {
-	r, ok := paneModeReaders[adapter]
-	return r, ok
-}
-
-// PaneModeReadable reports whether a listing should spend a pane read on
-// this ADAPTER. It is what keeps a listing from paying a herdr call per
-// codex session to learn what was measured once — and it asks the
-// declaration, never the runtime's name (ADR 0017 §3).
-func PaneModeReadable(adapter string) bool {
-	r, ok := paneModeReaders[adapter]
-	return ok && r.ReadsPane
-}
-
-// PaneModeUndeclared is the loud default: a runtime that declares no
-// `pane_mode:` at all. It is not a mode, not a blank and not `none` — the
-// difference between "nobody has measured what this CLI's pane says" and
-// "somebody measured it and it says nothing" is the whole reason `none` is a
-// declaration.
+// PaneModeUndeclared is the loud default: a runtime whose screen nobody has
+// measured. It is not a mode, not a blank and not NEVER — the difference
+// between "nobody has measured what this CLI's pane says" and "somebody
+// measured it and it says nothing" is the whole reason the field is
+// three-valued per runtime, and collapsing them is the defect it exists to
+// remove.
 func PaneModeUndeclared(runtime string) PaneMode {
 	return PaneMode{Why: fmt.Sprintf("posse has no pane reader for runtime %q — nobody has measured what its pane says", runtime)}
 }
 
-// ReadPaneMode reads a permission mode out of rendered pane text, with the
-// reader the runtime DECLARED (its `pane_mode:` adapter). Every not-named
-// answer carries its own Why, because the surfaces that render this have to
-// say WHICH kind of unknown they are showing.
+// PaneModeReadsPane reports whether a listing should spend a herdr pane read
+// on a session of this runtime. False is codex (the answer is a measured
+// constant) and every unmeasured CLI (there is nothing to parse the screen
+// with) — in both cases ReadPaneMode answers correctly when handed no pane
+// at all, which is what makes the skipped call free.
+func PaneModeReadsPane(runtime string) bool { return paneReaderFor(runtime).read != nil }
+
+// ReadPaneMode reads a permission mode out of rendered pane text with the
+// reader posse MEASURED for that runtime. Every not-named answer carries its
+// own Why, because the surfaces that render this have to say WHICH kind of
+// unknown they are showing.
 //
 // Only the last three non-empty lines are considered, because the scrollback
 // above them holds the launch command line — the argv this whole exercise is
@@ -225,17 +222,13 @@ func PaneModeUndeclared(runtime string) PaneMode {
 // 2026-08-29, exiting a `--permission-mode bypassPermissions` claude with
 // /exit and relaunching it manual in the same pane left exactly one footer on
 // screen, the live one.
-func ReadPaneMode(adapter, pane string) PaneMode {
-	r, ok := paneModeReaders[adapter]
-	if !ok {
-		// Unreachable from a loaded runtime — LoadRuntime refuses an
-		// unregistered pane_mode:, and an undeclared one is answered by
-		// PaneModeUndeclared with the runtime's name in it. A caller that
-		// hands this a name anyway gets an unknown, never a mode.
-		return PaneMode{Why: fmt.Sprintf("posse has no pane reader named %q — the registered readers are %s", adapter, strings.Join(PaneModeAdapters(), ", "))}
-	}
-	if !r.ReadsPane {
-		return r.Read(nil)
+func ReadPaneMode(runtime, pane string) PaneMode {
+	r := paneReaderFor(runtime)
+	switch {
+	case !r.known:
+		return PaneModeUndeclared(runtime)
+	case r.read == nil:
+		return r.measured
 	}
 	var tail []string
 	for _, ln := range strings.Split(pane, "\n") {
@@ -246,16 +239,7 @@ func ReadPaneMode(adapter, pane string) PaneMode {
 	if len(tail) > 3 {
 		tail = tail[len(tail)-3:]
 	}
-	return r.Read(tail)
-}
-
-// neverPaneMode is the `none` reader. It takes no pane because there is
-// nothing on any screen to take: codex 0.150.1 renders the same footer under
-// `-a never` and `-a on-request`, and the policy is reachable in-pane only by
-// typing /status — typing into a session is not a read, so this never becomes
-// an unknown that more work closes.
-func neverPaneMode([]string) PaneMode {
-	return PaneMode{State: PaneModeNever, Why: paneModeNeverWhy}
+	return r.read(tail)
 }
 
 func claudePaneMode(tail []string) PaneMode {

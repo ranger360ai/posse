@@ -1,6 +1,6 @@
 # ADR 0057 — Concrete pane-mode observations without a declaration registry
 
-*Status: accepted 2026-09-05 · ADR simplification, operator ruling 2026-09-05 · pane_mode registry removal approved; implementation deferred.*
+*Status: accepted 2026-09-05 · ADR simplification, operator ruling 2026-09-05 · pane_mode registry removal approved · EXECUTED 2026-09-06 (ranger-base-yi2f8): the declaration seam is gone, the concrete readers stay, and the first acceptance row measured ZERO working external declarations.*
 
 ## Decision
 
@@ -46,9 +46,17 @@ and field/overlay/onboarding tests with the same scope.
 Files: `internal/posse/runtime.go`, `runtimeyaml.go`, `runtimecheck.go`,
 `permissionmode.go`, `herdrback.go`, with tests. Price: roughly 4–6 source
 files; one YAML key, one runtime field and registry/none-adapter state; zero
-stores, background actors or operator flags. The current implementation still
-has these until the deferred task lands. Stale external keys must be named
+stores, background actors or operator flags. Stale external keys must be named
 through normal unknown-key diagnostics, not silently certify a reader.
+
+**Executed 2026-09-06 (ranger-base-yi2f8), against the five source files
+priced above.** `paneReaderFor` in `permissionmode.go` is the reader
+selection and the abstraction audit carries it as one named row
+(`absencerules_qa_test.go`); `fillPaneModes` opens no runtime yaml at all now.
+A yaml still carrying `pane_mode:` loads clean, warns as an unknown key and
+selects nothing — in a built-in's overlay too, where the key's ADR 0021 D2
+refusal went with the key. ADR 0013 §7 and ADR 0017 §3/§4/§1 carry the
+matching amendments.
 
 First done-when row: **count of working pane-mode adapters supplied through
 instance declarations that cannot use the built-in readers.** State census
@@ -56,6 +64,17 @@ scope and distinguish a real working external declaration from the review's
 hypothetical fourth CLI. Zero leaves hypothetical extension value; a real
 dependent declaration needs its compatibility consequence reported before
 accepting removal. The measurement is on the code task, not a docs blocker.
+
+**Measured 2026-09-06: ZERO.** Census scope, stated: every `runtimes/`
+declaration directory on the operator's box (three exist; one holds a single
+file, one is its git-tracked twin, one is state and not declarations), the
+posse repo's entire yaml surface, and the git history of both repos. No
+`pane_mode:` declaration has ever existed in any of them. The one instance
+runtime file is an ADR 0021 overlay on the built-in claude declaring only a
+model id, and it was structurally barred from carrying the key. The key's
+whole life was one day (landed 098afd2d, 2026-09-05). The review's fourth-CLI
+borrow case stays hypothetical, so there is no compatibility consequence to
+report and no external declaration loses reader selection.
 
 Other acceptance preserves each row above, distinct visible unknowns, no
 Codex pane call, no screen-mode-based launch decision, and the narrowness of

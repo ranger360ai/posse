@@ -424,45 +424,6 @@ decision (a `-x` trailer, a hand-resolved replay) rather than a measurement.
 Those keep printing what they printed before, and `posse worktrees` is still
 where you decide them by hand.
 
-**Your own CLI can now declare which reader parses its screen for a
-permission mode: `pane_mode: claude-footer | grok-border | none`.**
-
-The pane readers above shipped keyed on the runtime's NAME, so a fourth
-runtime listed every session as `mode:?` — "nobody has measured what its pane
-says" — forever, and the only way out was editing Go. `pane_mode:` is a
-registry key on the runtime profile, the same shape `turn_outcome:` wears: a
-CLI that paints a claude-shaped footer declares `claude-footer` and is read
-today, with no code change.
-
-`none` is a DECLARATION, not an omission, and that is the point of having it:
-a CLI you have MEASURED to render no mode on any screen gets codex's permanent
-`mode:—` and costs no pane read per session, while a CLI nobody has measured
-still gets the loud `mode:?`. A `pane_mode:` no reader implements refuses at
-load and names the three that are registered, rather than promising a reading
-nothing performs.
-
-A new screen vocabulary still needs a reader plus the captures it was measured
-against — the same price `turn_outcome:` charges. And because which reader
-parses a CLI's screen is code measured against that CLI's captures rather than
-a fact about your box, `pane_mode:` is a MECHANISM key: declaring it in a
-built-in's `runtimes/<name>.yaml` overlay refuses the load (ADR 0021 D2). A
-claude release that rewords its footer is fixed at the corpus.
-
-**`posse runtime check <name>` grows a `pane_mode` row, so the dimension is on
-the onboarding checklist instead of in a listing after the first launch.**
-
-The row is rendered from the reader registry rather than spelled per runtime:
-a CLI that declares a reader gets that reader's own contract and what an
-absent mode means under it (claude's footer is COVERED by a dialog, grok's
-border leaves four modes UNNAMEABLE), `none` reads as a DECLARED DIFFERENCE
-and a permanent `mode:—` rather than a failure, and a runtime that declares
-nothing reads as UNDECLARED with the remedy — which registered reader to
-declare if you measured one, and what a screen vocabulary none of them parses
-costs. The `missing →` half names the price of the blindness: without a
-reader, `posse list` and `posse gates <persona>` cannot tell a session that
-lost its `--permission-mode` at launch from one that kept it. A fourth reader
-registered in `permissionmode.go` reaches this screen with no change here.
-
 **`posse list` and `posse gates <persona>` now say which permission mode each
 session's PANE is in — and say plainly when they cannot tell.**
 
@@ -498,6 +459,14 @@ command sitting in the pane's own scrollback. A mode is a default
 disposition, not a promise not to block (ADR 0035 §4): the `mode:` token and
 the `working`/`blocked` state stay separate facts. This is the compensating
 control ADR 0035 §3 names for grok, which gets no second mode layer.
+
+Which reader parses which screen is measured in Go against that CLI's own
+captures — there is no yaml key for it, deliberately (ADR 0057). A CLI posse
+has not measured lists as `mode:?` with its own name in the reason, never as
+a mode and never as codex's measured `mode:—`; onboarding a different screen
+is a reader in `permissionmode.go` plus the captures it was measured against.
+A `pane_mode:` line in a runtime profile is not read — it warns as an unknown
+key, like any other declaration nothing consumes.
 
 **A dispatch pass now files a bead when CI is red on `main`, and says on
 that bead when `main` is green again (`ci_workflow:`, on by default where
