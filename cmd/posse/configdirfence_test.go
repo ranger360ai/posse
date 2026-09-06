@@ -104,8 +104,17 @@ func TestClaudeConfigDirIsFenced(t *testing.T) {
 	if !strings.Contains(out, fence) {
 		t.Errorf("the trust probe never names the fenced config dir %s — the resolution landed somewhere else:\n%s", fence, out)
 	}
+	// The PHRASES are asserted against the unwrapped output, because they are
+	// several words long and the same wrap that leaves a path intact splits
+	// them. wrapGrid (runtimecheck.go) wraps at a fixed 78 columns — not the
+	// terminal's width, so this is deterministic — but the row it wraps carries
+	// the session dir, so where the break lands moves with the length of the
+	// checkout path. That is what born-red meant here: the phrase survived
+	// whole in the dispatched seat's worktree and broke after "trusted" in the
+	// bare checkout (ranger-base-ikkfn). Collapsing whitespace TIGHTENS this
+	// arm — a leaked row whose phrase happened to wrap used to read as absence.
 	for _, live := range []string{"is already trusted in", "is already set in"} {
-		if strings.Contains(out, live) {
+		if strings.Contains(flatten(out), live) {
 			t.Errorf("the probe read live operator state (%q) through the fence:\n%s", live, out)
 		}
 	}
@@ -133,8 +142,15 @@ func TestClaudeConfigDirIsFenced(t *testing.T) {
 		t.Fatalf("posse runtime check claude (planted): exit %d\n%s", code, out)
 	}
 	for _, want := range []string{"is already trusted in", "is already set in", planted} {
-		if !strings.Contains(out, want) {
+		if !strings.Contains(flatten(out), want) {
 			t.Errorf("with a planted config dir the probe never printed %q — this verb no longer reads the config dir, so the arm above proves nothing:\n%s", want, out)
 		}
 	}
 }
+
+// flatten undoes the grid's wrapping for phrase matching: wrapGrid never
+// breaks a word, it only inserts a newline and an indent BETWEEN words, so
+// collapsing every run of whitespace to one space restores the string the
+// producer built. Paths stay matchable through it (they are one word), and a
+// phrase stops being invisible because of where its row happened to break.
+func flatten(s string) string { return strings.Join(strings.Fields(s), " ") }
