@@ -42,9 +42,36 @@ package posse
 //	TestShippedExampleTableCoversEveryVersionInGitHistory
 //	                                              make history-check   ~3s
 //
-// and `make tree-check` is all of them — 21-41s on this box over four runs at
-// seventeen pins and six doors — which is the command a seat types after a
-// filtered run.
+// and three more that arrived afterwards, each doored by the bead that wrote
+// it and given its own membership row in arm 2:
+//
+//	TestQAADR0035PaneModeSurfaceClaimIsBuilt      make doc-check
+//	                                              (ranger-base-vwgt)
+//	TestInstancePathFormNeverAppearsInTrackedContentUndispositioned
+//	                                              make ops-check
+//	TestQAInstancePathCensusCanStillSayNo         make ops-check
+//	                                              (both ranger-base-l9ii)
+//
+// and `make tree-check` is all of them — 40-46s on this box over three runs
+// at twenty pins and seven doors — which is the command a seat types after a
+// filtered run. (It was 21-41s over four runs at the older, smaller class;
+// re-measured under ranger-base-4jogv, because the same sentence that had the
+// wrong count was also pricing a class three pins smaller than the one that
+// runs. The seconds are NOT pinned — an elapsed-seconds red belongs to the
+// box, per the `test` target's own note — but they are measured, not carried.)
+//
+// THAT SENTENCE IS THE ONLY LIVE COUNT IN THIS FILE, and arm 4 holds it to
+// the Makefile, both numerals and the enumeration above it. It read seventeen
+// and six until ranger-base-4jogv, and arm 4 is why it is not quoted here:
+// the rule allows exactly ONE live count claim in this comment, so a second
+// sentence saying a number — even a historical one — reds it. The DOOR number
+// entered wrong at d189b623, which wrote "seven doors" over an enumeration of
+// eight and was then faithfully decremented by one when the selector door
+// went; the PIN number drifted on its own, because the three tests listed
+// directly above were added to a door variable by beads that had no reason to
+// read this comment. A seat prices `make tree-check` from this sentence, in
+// the one file whose whole subject is "the doors are wide enough", so nothing
+// but a derivation may say how many there are.
 //
 // WHY THE DOOR RUNS THE PIN. fmt-check re-runs the TOOL, because gofmt is a
 // tool and `gofmt -l` cannot disagree with `go/format`. These four are Go:
@@ -54,10 +81,10 @@ package posse
 // is worse than no door at all. So each door is a `-run` filter naming the
 // pin, and the only thing left to hold is that the filters name ALL of them.
 //
-// Three arms, rulbl's three:
+// Four arms — rulbl's three, and a fourth that holds the sentence above:
 //
 //  1. the doors are wired — `make test` depends on tree-check, tree-check
-//     reaches all three doors, and each door reads only (no `-w`, no `./...`,
+//     reaches every door, and each door reads only (no `-w`, no `./...`,
 //     and `-count=1`, because a door that answers from cache can lie).
 //  2. the doors are WIDE ENOUGH, two-way and mechanically: the class is
 //     derived by parsing internal/posse/*_test.go, and every member must be
@@ -83,14 +110,21 @@ package posse
 //     tracked markdown file, one reads the history of every shipped
 //     example. All five now take the root from the one helper, that
 //     spelling is fenced in TestQAOneRepoRootHelperInTheTestPackage, and
-//     thirteen members became eighteen (seventeen since ADR 0016's socket
-//     hints and their selector pin were removed). The lesson the third rule is NOT:
+//     thirteen members became eighteen. It has moved both ways since — ADR
+//     0016's socket hints and their selector pin went, three later pins
+//     arrived — and this line deliberately stops counting there: the live
+//     number is the one in the `make tree-check` sentence above, which arm 4
+//     derives from the Makefile. The lesson the third rule is NOT:
 //     the class was never bounded by how a test spells its root, so the
 //     thing that bounds it is the single helper, not another rule.
 //  3. the doors can FAIL: `make -n`'s own expansion of each, run for real
 //     against a scratch copy of the tree carrying the real drift — a crew
 //     name in a shipped file. Clean arm first, so a door that always fails is
 //     not mistaken for one that detects.
+//  4. the head comment's COUNT is the Makefile's — both numerals derived,
+//     and every name in a door variable named up there, so the enumeration
+//     the count rests on cannot go short while the count stays green
+//     (ranger-base-4jogv).
 
 import (
 	"fmt"
@@ -100,6 +134,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -1019,4 +1054,148 @@ func TestQATheTreeWideDoorsReportRealDrift(t *testing.T) {
 	if err := os.Remove(filepath.Join(dir, docProbe)); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// twdSpelled spells a non-negative integer the way this file's head comment
+// does. The comment is prose and says "twenty pins", not "20 pins", so the
+// pin below has to compare against a WORD; the alternative — rewriting the
+// sentence in digits so a test can read it — would let the test choose how
+// the file reads, which is backwards.
+func twdSpelled(n int) string {
+	ones := []string{"zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+		"eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen"}
+	tens := []string{"", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"}
+	switch {
+	case n < 0 || n > 99:
+		return strconv.Itoa(n) // out of the prose range; the pin will name the mismatch
+	case n < 20:
+		return ones[n]
+	case n%10 == 0:
+		return tens[n/10]
+	default:
+		return tens[n/10] + "-" + ones[n%10]
+	}
+}
+
+// twdHead returns this file's own head comment as flowed prose — `//` markers
+// stripped, lines joined with a space. Flowed, not per-line, because the
+// claim it holds WRAPS (today "... over three runs" then "at twenty pins and
+// seven doors", and the break moves whenever the sentence is rewrapped), and
+// a per-line scan is blind to exactly that.
+func twdHead(t *testing.T) string {
+	t.Helper()
+	b, err := os.ReadFile("treewidedoor_qa_test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []string
+	for _, line := range strings.Split(string(b), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "package posse" || line == "" {
+			continue
+		}
+		if !strings.HasPrefix(line, "//") {
+			break // the head comment is over; `import (` is the first line here
+		}
+		out = append(out, strings.TrimSpace(strings.TrimPrefix(line, "//")))
+	}
+	if len(out) == 0 {
+		t.Fatal("this file has no head comment — the sentence arm 4 holds is gone, and with it the number a seat prices `make tree-check` from")
+	}
+	return strings.Join(out, " ")
+}
+
+// twdCountClaim matches the ONE sentence in the head comment that says how
+// big the class is. Deliberately narrow: the comment is full of correctly
+// frozen history ("five pins took their root from ...", "five members became
+// thirteen"), and a rule that read those as live claims would red on prose
+// that is true.
+var twdCountClaim = regexp.MustCompile(`([a-z]+(?:-[a-z]+)?) pins and ([a-z]+(?:-[a-z]+)?) doors`)
+
+// Arm 4: the head comment's count is the Makefile's count (ranger-base-4jogv).
+//
+// WHY THIS IS A PIN AND NOT A ONE-TIME CORRECTION. Both numerals were wrong
+// at main, and they went wrong by two different routes, neither of which any
+// existing arm can see:
+//
+//   - the DOORS number entered wrong (d189b623 wrote "seven doors" over an
+//     enumeration of eight) and was then faithfully decremented to six when
+//     the selector door and its pin were removed — a correct edit applied to
+//     a wrong number stays wrong;
+//   - the PINS number drifted with no edit at all, because a bead that adds
+//     a name to $(QA_DOC_PINS) has no reason to read this file's prose.
+//
+// Arm 2 is two-way and mechanical, so no pin is undoored and no door is
+// empty — the MECHANISM was never wrong. What was wrong is the sentence a
+// seat reads to decide whether `make tree-check` is worth typing, in the one
+// file whose entire subject is "the doors are wide enough". So the count is
+// derived here, and the enumeration it rests on is held one-way: every name
+// in a door variable must be named up there. One-way on purpose — the head
+// also names tests that are NOT members (TestQAOneRepoRootHelperInTheTestPackage
+// is the fence, not a pin), and a two-way rule would red on those.
+func TestQATheHeadCommentsPinAndDoorCountsAreTheMakefiles(t *testing.T) {
+	t.Parallel()
+	b, err := os.ReadFile("Makefile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(b)
+
+	// The pins, deduped across door variables: arm 2 already fails a name
+	// carried by two doors, so counting the union rather than the sum keeps
+	// this arm from reporting a second, derived symptom of that one bug.
+	seen := map[string]bool{}
+	var pins []string
+	for _, v := range twdPinVars {
+		for _, name := range twdVar(t, src, v) {
+			if seen[name] {
+				continue
+			}
+			seen[name] = true
+			pins = append(pins, name)
+		}
+	}
+	doors := twdPrereqs(t, src, "tree-check")
+
+	head := twdHead(t)
+
+	// One live claim, and it is the derived one. Two matches means a second
+	// sentence started counting and the two can now disagree; zero means the
+	// claim moved out from under the pin that guards it.
+	claims := twdCountClaim.FindAllStringSubmatch(head, -1)
+	if len(claims) != 1 {
+		t.Fatalf("the head comment carries %d `<n> pins and <n> doors` claims, want exactly 1 — the count of this class is said in one place on purpose, because two places drift apart and the reader cannot tell which is stale: %v", len(claims), claims)
+	}
+	gotPins, gotDoors := claims[0][1], claims[0][2]
+	wantPins, wantDoors := twdSpelled(len(pins)), twdSpelled(len(doors))
+	if gotPins != wantPins || gotDoors != wantDoors {
+		t.Errorf("the head comment says %q pins and %q doors; the Makefile has %s (%d) and %s (%d).\n"+
+			"  door variables: %v\n"+
+			"  tree-check prerequisites: %v\n"+
+			"A seat prices `make tree-check` from that sentence. Fix the sentence, not this test — and if a pin or a door really did come or go, the enumeration above the sentence needs the same edit.",
+			gotPins, gotDoors, wantPins, len(pins), wantDoors, len(doors), twdPinVars, doors)
+	}
+
+	// And the enumeration the count rests on. Without this, the count stays
+	// green while the list under it goes short — which is how the pins
+	// number drifted in the first place: three tests were doored by beads
+	// that never touched this comment.
+	for _, name := range pins {
+		if !strings.Contains(head, name) {
+			t.Errorf("$(%s) door variable names %s, and this file's head comment does not — the enumeration the count sentence rests on is short by at least one, so the next reader counts a smaller class than `make tree-check` runs", twdVarOf(t, src, name), name)
+		}
+	}
+}
+
+// twdVarOf names the door variable that carries a test, for the message above.
+func twdVarOf(t *testing.T, makefile, name string) string {
+	t.Helper()
+	for _, v := range twdPinVars {
+		for _, n := range twdVar(t, makefile, v) {
+			if n == name {
+				return v
+			}
+		}
+	}
+	return "unknown"
 }
