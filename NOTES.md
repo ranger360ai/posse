@@ -1643,6 +1643,32 @@ Four traps worth keeping:
   `CLAUDE_CONFIG_DIR` beside it; `cmd/posse/costplan_test.go`'s `planEnvAt`
   is the shape, pinned with a fixture ledger and a control arm that finds it.
 
+  **And the fence belongs to the test BINARY, not to the sandbox.** Every
+  verb resolves the config dir before it runs one — `posse --help` does,
+  through `NewHerdrBackend` → `ClaudeConfigFile` → `ClaudeConfigDirIn` — so
+  the population is not "tests that fence `HOME`", it is every child this
+  suite launches. MEASURED with a probe inside `ClaudeConfigDirIn` over a
+  full `go test ./cmd/posse`: 155 resolutions, **126** to the operator's live
+  `~/.claude`, from 48 tests across 15 files; the 29 that landed in a sandbox
+  were `planEnvAt`'s. With the fence: 161 resolutions, **0**, every one of
+  them under the test tempdir (same probe, `EXIT=0`, 274.8s, 2026-09-06), and
+  the same subset run both ways one variable apart says it is the fence and
+  not the day — `-run TestBackup` resolves 9 times either way, 0 on the
+  operator's dir with the row and 9 without it.
+
+  Nothing read operator data on those 126 — those verbs
+  compute a path and stat two files — but the reader was one verb away:
+  `posse runtime check claude` reads `~/.claude/.claude.json` through the
+  same resolution and prints a different row for a trusted directory than for
+  an unreadable one. So `cmd/posse/configdirfence_test.go`'s `TestMain`
+  points `CLAUDE_CONFIG_DIR` at an empty temp dir for the whole test binary,
+  which is one row instead of 18 and is inherited by a site added tomorrow;
+  a test that WANTS the leak overrides it with `t.Setenv`, as costplan's
+  wrong arm does. `TestClaudeConfigDirIsFenced` is the pin, two arms one
+  variable apart on that verb — the fence, and a planted config dir it must
+  report as trusted — because a right arm alone goes green when the reader
+  dies (ranger-base-scts5, from -jxuiy).
+
 The live pin is `internal/posse/credentialdirpin_live_test.go`
 (`RHQ_LIVE_CLAUDE=1`), and its first arm is a control: it asserts the
 redirect still HAPPENS without the pin, so the test cannot go green on a rig

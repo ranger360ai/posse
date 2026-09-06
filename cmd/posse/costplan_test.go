@@ -127,6 +127,13 @@ func planEnvAt(home, url string) []string {
 // operator's real ledger. So it is pinned here, directly, against a fixture
 // ledger instead of the operator's.
 //
+// "Every test here" is THREE files, not this one: planEnvAt is called from
+// costplan_test.go (through planEnv), planquiet_qa_test.go and
+// planmeterspend_qa_test.go — `grep -rn "planEnvAt(" cmd/` is the census.
+// The row is inside planEnvAt, so one row still covers all three; the count
+// is written down because the close that added the row put it at two and
+// the miss is the kind that decides a scope ruling (ranger-base-jxuiy).
+//
 // The env this test's own process carries names a config dir with one
 // planted transcript in it, exactly as a dispatched seat's does. Two arms
 // one variable apart:
