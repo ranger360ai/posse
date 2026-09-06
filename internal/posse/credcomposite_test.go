@@ -30,9 +30,31 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
+)
+
+// namesTheFallThrough and namesARefresh are the must-NOT halves of the arms
+// below, and they are regexps rather than the whole words they replaced
+// ("fallback", "refresh") for the reason ranger-base-g6k5b names on a
+// different vocabulary: a banned WORD is walked out from under by a one-word
+// respelling of the same meaning, so the pin comes back green on exactly the
+// sentence it exists to catch. "the token came from the file it falls back
+// to" contains no "fallback"; "Refreshing it will not help" contains no
+// lowercase "refresh".
+//
+// The family, not the stem. A bare "fall" is not enough here — "fell back"
+// and "fell through" contain no "fall" — and it is not needed either:
+// MEASURED on this tree, none of the four strings these guard (the keychain
+// item's Source, the keychain 401, the sourceless 401, the 403) contains
+// "fall" in any case, so the width these buy costs no false positive. The
+// present-clause arms are untouched: they assert what the fallback 401 must
+// SAY, and a wider must-NOT next to them cannot make them read differently.
+var (
+	namesTheFallThrough = regexp.MustCompile(`(?i)(fall(s|ing|en)?|fell)[ \-]?(back|through)`)
+	namesARefresh       = regexp.MustCompile(`(?i)refresh`)
 )
 
 // The two envelopes, and they are deliberately not each other: a row that
@@ -107,7 +129,7 @@ func TestDarwinCompositeReadsTheFileOnExitFortyFourAndOnNothingElse(t *testing.T
 			if tok != keychainOnlyToken {
 				t.Errorf("token = %q, want the keychain item's — the file was read", redact(tok))
 			}
-			if !strings.Contains(meta.Source, "keychain item") || strings.Contains(meta.Source, "fallback") {
+			if !strings.Contains(meta.Source, "keychain item") || namesTheFallThrough.MatchString(meta.Source) {
 				t.Errorf("Source = %q, want the keychain item's own name", meta.Source)
 			}
 			// The witness with teeth: the planted file's expiry is three
@@ -204,8 +226,8 @@ func unreadableWithTheACLFix(t *testing.T, tok string, meta CredMeta, err error)
 	if !strings.Contains(cu.Store, "keychain item") {
 		t.Errorf("Store = %q, want the keychain item's own name", cu.Store)
 	}
-	if strings.Contains(err.Error(), "fallback") {
-		t.Errorf("a failure that never reached the file must not name it: %q", err)
+	if namesTheFallThrough.MatchString(err.Error()) {
+		t.Errorf("a failure that never reached the file must not name it, in any spelling: %q", err)
 	}
 	if tok != "" {
 		t.Errorf("a failed read yields no token, got %q", redact(tok))
@@ -361,7 +383,7 @@ func TestAuthFailureOnAFallbackTokenNamesTheStoreAndBothCauses(t *testing.T) {
 	// store: without this arm the sentence could be unconditional and every
 	// assertion above would still pass.
 	for _, other := range []*AuthFailure{keychain, plain} {
-		if strings.Contains(other.Error(), "fallback") || strings.Contains(other.Error(), "make install") {
+		if namesTheFallThrough.MatchString(other.Error()) || strings.Contains(other.Error(), "make install") {
 			t.Errorf("a 401 on a token that did NOT fall through must carry no fallback clause: %q", other)
 		}
 	}
@@ -373,9 +395,11 @@ func TestAuthFailureOnAFallbackTokenNamesTheStoreAndBothCauses(t *testing.T) {
 		}
 	}
 	// A 403 is not this: a credential that was never entitled is not
-	// entitled from either store, and "refresh" must not appear.
+	// entitled from either store, so nothing about a refresh may appear and
+	// nothing about the fall-through may either — in any spelling of
+	// either, which is the half ranger-base-dopyl widened.
 	f403 := &AuthFailure{Status: "403 Forbidden", Code: http.StatusForbidden, Source: credentialsFileFallback}
-	if strings.Contains(f403.Error(), "refresh") || strings.Contains(f403.Error(), "fallback") {
+	if namesARefresh.MatchString(f403.Error()) || namesTheFallThrough.MatchString(f403.Error()) {
 		t.Errorf("403 keeps its own sentence whatever store answered: %q", f403)
 	}
 }
