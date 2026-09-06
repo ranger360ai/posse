@@ -1,6 +1,6 @@
 # codex agent-detection override — posse (rangerhq-7ia)
 #
-# Fork of herdr's remote manifest codex 2026.08.09.1, with three additions.
+# Fork of herdr's remote manifest codex 2026.08.09.1, with five additions.
 # Upstream reads codex's "Hooks need review" dialog (and every other codex
 # modal whose footer says "esc to go back") as *idle*: no rule matches and
 # detection falls through to default_known_agent_idle_fallback. A prompt sent
@@ -17,6 +17,11 @@
 #   update_menu         — the "Update available!" release menu (rangerhq-9py0),
 #                         footed "Press enter to continue" — a footer no other
 #                         rule here matches, so it fell through to idle too
+#   signin_menu         — the startup SIGN-IN menu a codex with no credentials
+#                         draws (ranger-base-n6s2u), same "Press enter to
+#                         continue" footer, same fallthrough to idle
+#   signin_api_key      — the API-key field that menu's option 3 opens, found
+#                         in the same pass and idle for the same reason
 #
 # Install:  make install-detection      Verify: scripts/verify-detection.sh
 # Retire this file when herdr ships a remote codex manifest that reports
@@ -24,7 +29,7 @@
 id = "codex"
 # posse_forked_from = "2026.08.09.1"   <- read by scripts/verify-detection.sh
 # herdr requires a dotted-numeric version; the trailing .10x marks this as ours.
-version = "2026.08.09.102"
+version = "2026.08.09.103"
 min_engine_version = 3
 updated_at = "2026-08-09T00:00:00Z"
 
@@ -105,6 +110,78 @@ visible_blocker = true
 all = [
   { contains = ["Update available!"] },
   { regex = ['(?m)^\s*\S?\s*1\.\s+Update now\b'] },
+]
+
+[[rules]]
+# posse (ranger-base-n6s2u): codex's startup SIGN-IN menu — what a codex whose
+# credentials are missing or expired draws instead of a composer. Same
+# fallthrough as update_menu and hooks_review: nothing upstream matches it, its
+# footer is the "Press enter to continue" no other rule here reads, and
+# `agent explain` answered `idle` / rule `none` /
+# default_known_agent_idle_fallback. Not a 0.153.4 regression — nobody had ever
+# captured the screen. MEASURED on codex-cli 0.153.4, a fresh empty CODEX_HOME,
+# tmux panes at 120/80/60/40 columns.
+#
+# `blocked` is EARNED here, the rangerhq-1xsj distinction, three ways:
+#   - text sent to the untouched menu is DISCARDED. `zzmeasurezz` typed at it
+#     echoed nowhere, and the API-key field below (the only text-taking surface
+#     this flow reaches) then came up holding its placeholder, not that text.
+#     The same send-keys into that field DOES echo — the control that says this
+#     reading is a measurement and not a blind rig.
+#   - there is no composer beneath. Esc does not undraw the menu, and the SAME
+#     launch with credentials present reaches "Ask Codex to do anything" at
+#     once. grok's startup_splash buffers into a live composer; this screen has
+#     nothing to buffer into.
+#   - a BARE DIGIT activates an option, no Enter needed: "3" jumped straight to
+#     the API-key field. So a dispatched prompt carrying a "1" would start the
+#     ChatGPT browser sign-in flow and a "2" a device-code request.
+#
+# DO NOT teach anything to answer this screen. Signing in is identity and money
+# (crew guardrail 1), and an unauthenticated seat is a launch REFUSE that names
+# the reason — ADR 0013 §2 — not a screen to type through.
+#
+# Keyed on two of the numbered options, never the footer: "Press enter to
+# continue" is update_menu's footer too, so a reword must not be able to return
+# this screen to idle (hooks_review is keyed that way for the same reason).
+#
+# region 24 rather than the siblings' 20, and it is measured: the menu sits
+# under a 15-line ASCII logo, which puts "1. Sign in with ChatGPT" at non-empty
+# line 19 and "2. Sign in with Device Code" at 21 on a 120-column pane. At 60
+# columns the prose wraps and option 2 lands at 23 — the deepest seen, and what
+# the 24 is for; testdata/codex/blocked-signin-narrow.txt is that pane. At 40
+# columns codex drops the logo and the whole screen is 15 lines.
+id = "signin_menu"
+state = "blocked"
+priority = 930
+region = "top_non_empty_lines(24)"
+visible_blocker = true
+all = [
+  { regex = ['(?m)^\s*\S?\s*1\.\s+Sign in with ChatGPT\b'] },
+  { regex = ['(?m)^\s*\S?\s*2\.\s+Sign in with Device Code\b'] },
+]
+
+[[rules]]
+# posse (ranger-base-n6s2u): the API-key entry screen behind the sign-in menu's
+# "3. Provide your own API key". Found in the same pass, `idle` / rule `none`
+# for the same reason: it is one text field footed "Press enter to save" and
+# "Press esc to go back" on two separate lines, so live_strong_blocker's
+# single-line "press enter to confirm or esc to go back" does not reach it.
+#
+# For a dispatched prompt this screen is worse than its parent. The field TAKES
+# typed text (that is the control arm cited above), and Enter would store
+# whatever was typed into auth.json as a credential. Nothing may type here.
+#
+# Keyed on the screen's own heading plus the field's own words — both inside
+# the first 20 non-empty lines at every width measured (17 and 18 at 120 and 80
+# columns, 3 and 5 at 40, where the logo is dropped).
+id = "signin_api_key"
+state = "blocked"
+priority = 920
+region = "top_non_empty_lines(20)"
+visible_blocker = true
+all = [
+  { contains = ["Use your own OpenAI API key"] },
+  { contains = ["Paste or type your API key"] },
 ]
 
 [[rules]]

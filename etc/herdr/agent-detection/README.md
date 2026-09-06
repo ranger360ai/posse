@@ -187,7 +187,7 @@ OSC title is blank while the menu is up, so `osc_title_idle` does not fire
 either. Its default-selected option is `1. Update now`, which runs a package
 upgrade of the operator's pinned tooling.
 
-Our override forks upstream `2026.08.09.1` and adds exactly three things — see
+Our override forks upstream `2026.08.09.1` and adds exactly five things — see
 the diff against `~/.local/state/herdr/agent-detection/remote/codex.toml`:
 
 - **`hooks_review`** (priority 960) matches the dialog's own text in the top
@@ -202,6 +202,11 @@ the diff against `~/.local/state/herdr/agent-detection/remote/codex.toml`:
   **discarded**, where grok's `startup_splash` buffers it into the composer
   beneath (rangerhq-1xsj). Nothing may answer this screen — see
   `Interstitial.Danger` in `internal/posse/interstitial.go`.
+- **`signin_menu`** (priority 930) and **`signin_api_key`** (920) name the two
+  screens a codex with no usable credentials draws instead of a composer
+  (ranger-base-n6s2u). Same fallthrough, same `Press enter to continue`
+  footer; the measurement that earns `blocked`, the region depth and what a
+  dispatched seat does about it are in "The sign-in screens" below.
 
 This does not change the fleet's posture. `posse`'s codex template still passes
 `--disable hooks` (`internal/posse.CodexFleetFlags`) because the cage is ours, not
@@ -226,15 +231,92 @@ not) and the idle composer.
 rule: deleting the rule from `codex.toml` turns that fixture from
 `blocked`/`trust_directory` into `idle`/`none`.
 
-**The sixth screen has no rule.** A codex whose credentials are missing or
+**The sixth screen had no rule.** A codex whose credentials are missing or
 expired draws a **sign-in** menu at startup — `1. Sign in with ChatGPT` /
 `2. Sign in with Device Code` / `3. Provide your own API key`, footed
 `Press enter to continue`, with no composer beneath it — and `herdr agent
-explain` reads it **`idle`, rule `none`**. It is the same fallthrough as the
-two screens this override was written for, and it is not a 0.153.4 regression:
-nobody had captured that screen before. Filed separately; it needs the
-rangerhq-1xsj discard-vs-buffer measurement before a rule is written, because
-`blocked` has to be earned, not assumed.
+explain` read it **`idle`, rule `none`**. It was the same fallthrough as the
+two screens this override was written for, and it was not a 0.153.4
+regression: nobody had captured that screen before. It was filed separately
+and closed by the next section, which is where the rangerhq-1xsj
+discard-vs-buffer measurement it was waiting on lives — `blocked` has to be
+earned, not assumed.
+
+### The sign-in screens (ranger-base-n6s2u, 2026-09-06)
+
+Two rules, `signin_menu` (priority 930) and `signin_api_key` (920), and three
+fixtures. Both screens belong to one flow: a codex with no usable credentials
+never reaches a composer at all, it lands on the sign-in menu, and the menu's
+`3. Provide your own API key` opens an API-key field. Before these rules both
+read `idle` / rule `none` / `default_known_agent_idle_fallback`.
+
+**`blocked` is measured, three ways.** codex-cli 0.153.4, a fresh empty
+`CODEX_HOME`, tmux panes at 120 / 80 / 60 / 40 columns, no Enter ever sent:
+
+| probe | result |
+|---|---|
+| type text at the untouched menu | **discarded** — no echo anywhere, and the API-key field reached afterwards came up holding its placeholder, not the text |
+| the same `send-keys` into that field | echoes at once — the control that says the row above is a measurement, not a blind rig |
+| press Esc at the menu | nothing; the menu stays. Esc out of the API-key field returns *to* the menu |
+| the same launch with credentials present | reaches `Ask Codex to do anything` immediately — so there is no composer under the menu, there is a menu instead of one |
+| press a bare digit | **activates that option, with no Enter** — `3` jumped straight to the API-key field |
+
+So this is not grok's `startup_splash`, which buffers a prompt into the live
+composer beneath and is therefore honestly `idle` (rangerhq-1xsj). There is
+nothing beneath. And the last row is the sharp end: a dispatched prompt
+carrying a `1` would start the ChatGPT browser sign-in flow, a `2` a
+device-code request, and in the API-key field Enter would store the prompt
+text as a credential, in the file the screen itself names.
+
+**What a dispatched seat should do: refuse, by name.** Nothing may answer
+these screens — signing in is identity and money (crew guardrail 1), and ADR
+0013 §2 makes an interstitial whose default action mutates the machine a
+launch refuse rather than something to type through. Both ladders in
+`internal/posse/dispatch.go` already do the right thing once the state is
+right — read there, not run, since a live dispatch rig needs a scratch herdr
+server:
+
+- **argv, which is codex's path today.** `awaitDelivered` returns the moment
+  detection is *seen* rather than burning the whole startup wait on a guess
+  and printing "herdr never recognized a screen there"; `gather`'s wait then
+  comes back `blocked` and the pass prints `⛔ <bead> blocked in <session> —
+  intervene (posse attach <session>)`, claim kept, nothing pressed.
+- **typed.** `awaitSettled` asks for `idle|done|blocked` and hands a blocker
+  straight back for the caller to refuse by name, which is `awaitAgent` dying
+  `never settled idle (status "blocked")` instead of typing into the menu.
+
+The working/blocked session guard also stops reading the pane as a free one.
+What is *not* here is the pre-launch refuse: `CodexInterstitials`
+(`internal/posse/interstitial.go`) declares the update menu and not this
+screen, so `posse runtime check` still reports nothing about a box whose codex
+cannot authenticate. That entry — with a credential-presence probe, ADR 0019
+presence-only — is filed as its own bead. The answer either way is an operator
+signing that box's codex in; a persona files it and stops.
+
+**Keyed on the numbered options, never the footer.** `Press enter to continue`
+is `update_menu`'s footer too, and no upstream rule matches it — a reword must
+not be able to return this screen to `idle`, which is why `hooks_review` is
+keyed on its own text as well. `signin_api_key` is keyed on its heading plus
+the field's own words; its `Press enter to save` / `Press esc to go back`
+footer is two lines, so `live_strong_blocker`'s single-line
+`press enter to confirm or esc to go back` never reached it.
+
+**`region = "top_non_empty_lines(24)"`, not the siblings' 20**, and the number
+is measured rather than picked: codex draws this menu under a 15-line ASCII
+logo, so `2. Sign in with Device Code` is the 21st non-empty line on a
+120-column pane and the 23rd on a 60-column one, where the prose above it
+wraps. `testdata/codex/blocked-signin-narrow.txt` is that 60-column pane and
+is committed for exactly this — at region 22 it fails while the wide capture
+still passes. At 40 columns codex drops the logo and the whole screen is 15
+lines. `internal/posse/codexsignin_qa_test.go` mutates the region at that
+edge, cuts each `all` clause with a positive witness, and holds the inversion
+every rule here needs: delete `signin_menu` (or `signin_api_key`) and its
+fixtures go `blocked` → `idle`/`none`.
+
+**Not captured, deliberately:** the device-code screen behind option 2. It
+requests a real device code from OpenAI, and no reading is worth a network
+round trip nobody asked for. It is the one screen of this flow with no rule
+and no fixture.
 
 ## Working on this
 

@@ -312,8 +312,9 @@ EOF
      CODEX_HOME whose version.json is due a menu — the unrelated-key arm is
      what separates "this key works" from "any key works".
   4. Interstitial detection (etc/herdr/agent-detection/codex.toml and its
-     testdata: update_menu, model_picker, hooks_review, idle_composer).
-     \`make verify-detection\` against the new build's screens.
+     testdata: update_menu, model_picker, hooks_review, trust_directory,
+     signin_menu, signin_api_key, idle_composer). \`make verify-detection\`
+     against the new build's screens.
 
   Runbook: docs/notes.d/ranger-base-poj5.md.
 EOF
