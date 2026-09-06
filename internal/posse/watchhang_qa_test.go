@@ -80,7 +80,15 @@ func hangingBin(t *testing.T, sleep time.Duration) (bin, pidFile string) {
 	pidFile = filepath.Join(dir, "pid")
 	script := fmt.Sprintf("#!/bin/sh\necho $$ > %q\n[ \"$1\" = --warm ] && exit 0\nexec sleep %.3f\n",
 		pidFile, sleep.Seconds())
-	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+	// WriteExecutable, not os.WriteFile: this script is exec'd on the very
+	// next line, in a package where hundreds of parallel tests fork. A fork
+	// landing inside os.WriteFile's open..close window inherits the write
+	// descriptor, and Linux answers an execve of a file that has a writer
+	// with ETXTBSY. That errno arrives at the --warm run below, where it
+	// becomes the t.Fatalf and the test measures nothing: red ubuntu-latest
+	// in ci.yml runs 33981805618 and 33931756147, both of them this helper
+	// (execwrite.go, ranger-base-d26ak, ranger-base-8b44r).
+	if err := WriteExecutable(bin, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := exec.Command(bin, "--warm").Run(); err != nil {
@@ -549,7 +557,11 @@ func hangingBinWith(t *testing.T, body string) (bin, pidFile string) {
 	bin = filepath.Join(dir, "hang")
 	pidFile = filepath.Join(dir, "pid")
 	script := fmt.Sprintf("#!/bin/sh\necho $$ > %q\n[ \"$1\" = --warm ] && exit 0\n%s\n", pidFile, body)
-	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+	// Same window, same reason as hangingBin above: written here, exec'd on
+	// the next line. Red ubuntu-latest in ci.yml run 33987120321, where this
+	// helper's --warm run was the only failing test in the whole run
+	// (execwrite.go, ranger-base-d26ak, ranger-base-8b44r).
+	if err := WriteExecutable(bin, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := exec.Command(bin, "--warm").Run(); err != nil {
