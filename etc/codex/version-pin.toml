@@ -9,29 +9,45 @@
 # WHY THIS FILE IS SHAPED UNLIKE etc/grok/version-pin.toml. grok's pin is two
 # config keys — a soft ceiling the updater obeys and a hard one the binary
 # refuses to start above. codex has neither, and that is measured, not read
-# off documentation. On the 0.150.1 binary (229 MB Mach-O; `strings` emits
-# NOTHING on it, and `grep -c` needs LC_ALL=C or it dies on the first invalid
-# byte, so both readings below are `LC_ALL=C grep -ac`):
+# off documentation. RE-MEASURED on the 0.153.4 binary (ranger-base-femsg,
+# 2026-09-06; 210 MB Mach-O arm64). `grep -c` still needs LC_ALL=C or it dies
+# on the first invalid byte, so every reading below is `LC_ALL=C grep -ac`:
 #
 #   required_maximum_version     0
 #   maximum_version              0
 #   minimum_version              0
 #   auto_update                  0
-#   model_reasoning_effort      27   <- positive control: the grep DOES reach
+#   model_reasoning_effort      28   <- positive control: the grep DOES reach
 #                                       codex's config-key strings
+#
+# and the four keys this file's contract rests on are all present in the same
+# read: check_for_update_on_startup 15, allow_login_shell 16,
+# developer_instructions 56, trust_level 19.
 #
 # Never read a zero without the control. So `required_maximum_version` is a
 # grok/xAI mechanism; there is no codex equivalent to set, and no version of
 # this file can give codex a hard ceiling. That is a result, not an omission:
 # ACCEPTED RISK, ranger-base-poj5 — a codex binary that ends up above the pin
 # by any route still STARTS. Everything below refuses to MOVE it; nothing
-# refuses to RUN it.
+# refuses to RUN it. Re-measured at 0.153.4 and still true.
+#
+# ONE THING THAT DID CHANGE between 0.150.1 and 0.153.4, recorded so the
+# recipe is not read as a rule about codex: `strings` emitted NOTHING on the
+# 0.150.1 binary and emits 124,257 lines on 0.153.4. A `strings`-based sweep
+# would have reported all five keys as zero on 0.150.1 — control included —
+# and would happen to work here. The control is what separates the two, not
+# the tool; keep it whichever tool you reach for.
 #
 # LIFTING THE PIN is an operator action, gated on re-running the list that
 # `scripts/verify-codex-pin.sh` prints when upstream moves. Runbook:
 # docs/notes.d/ranger-base-poj5.md.
 
-posse_pinned_version = "0.150.1"   # `codex --version` at the time of the pin
+# MOVED 0.150.1 -> 0.153.4 on 2026-09-06 (ranger-base-femsg), on the operator's
+# ruling B on ranger-base-ydwn1, after the four re-audit items this file's
+# checker prints were re-run against 0.153.4 and passed. The box had already
+# been upgraded past 0.150.1 (cask install 2026-09-05 11:13:50) with the cask
+# unpinned; `brew pin --cask codex` was applied 2026-09-06 and stays applied.
+posse_pinned_version = "0.153.4"   # `codex --version` reports `codex-cli 0.153.4`
 
 # The binary the pin lives in. codex is a Homebrew CASK: the artifact is a
 # `binary` stanza symlinking /opt/homebrew/bin/codex at the Caskroom tree, so
@@ -56,13 +72,25 @@ pinned_binary = "/opt/homebrew/bin/codex"
 #   after the pin    `brew outdated --cask`          -> "codex (0.150.1) !=
 #                                                        0.151.0 [pinned at 0.150.1]"
 #
+# RE-MEASURED 2026-09-06 on Homebrew 6.0.22 (ranger-base-ydwn1), because the
+# numbers above are 6.0.20's and the pin had to be re-applied after the box was
+# upgraded past 0.150.1 with the cask unpinned. Both arms still hold:
+# unpinned -> "Would upgrade 1 requested outdated package"; pinned -> "Error:
+# Not upgrading 1 pinned package", rc=1. It could NOT be measured on codex
+# itself — installed == tap == 0.153.4 means there is no upgrade to refuse — so
+# it was measured on a stand-in outdated cask, which was unpinned again in the
+# same command chain. `brew list --pinned` names codex today.
+#
 # That rc=1 is why the pin covers the in-TUI update too: codex's own update
 # action on a brew install IS `brew upgrade --cask codex` — codex says so
 # itself, `codex doctor --json`, .checks["updates.status"].details["update
-# action"] — so "1. Update now" now fails loudly instead of rolling the fleet
-# forward. `brew pin` has a documented hole for casks that declare
+# action"], and it still reads exactly that on 0.153.4 (ranger-base-femsg),
+# which the update menu also prints verbatim: "1. Update now (runs `brew
+# upgrade --cask codex`)". So "1. Update now" fails loudly instead of rolling
+# the fleet forward. `brew pin` has a documented hole for casks that declare
 # `auto_updates true` (they can update themselves outside Homebrew); the codex
-# cask declares no such stanza, which is what makes the pin load-bearing here.
+# cask declares no such stanza at 0.153.4 either, which is what makes the pin
+# load-bearing here.
 formula = "codex"
 pin_state = "pinned"
 
@@ -74,7 +102,9 @@ pin_state = "pinned"
 # `dismissed_version`, which silences exactly one release.
 #
 # Measured in a four-arm tmux rig against a CODEX_HOME whose version.json says
-# dismissed 0.149.1 / latest 0.151.0 (i.e. the menu is due):
+# the menu is due. RE-RUN 2026-09-06 against codex 0.153.4 (ranger-base-femsg,
+# version.json dismissed 0.149.1 / latest 0.199.0, one fresh CODEX_HOME per
+# arm); the 0.150.1 run it reproduces used latest 0.151.0. Same four answers:
 #
 #   key absent                             -> menu draws
 #   check_for_update_on_startup = true     -> menu draws
@@ -83,6 +113,14 @@ pin_state = "pinned"
 #
 # The bogus-key arm is there because "any extra key suppresses it" and "this
 # key suppresses it" are different claims and only one of them is true.
+#
+# The key also still exists UNDER THIS NAME at 0.153.4, which the rig alone
+# cannot show — a renamed key and a working one both give "no menu", because a
+# key codex does not recognise is ignored in silence. Read off codex's own
+# config schema instead: `codex --strict-config exec` rejects an unrecognised
+# field by name, and it accepts this one. The wrong arm is a bogus key, which
+# it rejects: "unknown configuration field `bogus_key_xyz`".
+#
 # Lives in ~/.codex/config.toml as a TOP-LEVEL key: appended after a [table]
 # header it becomes that table's key and does nothing, silently.
 path = "~/.codex/config.toml"
@@ -91,20 +129,35 @@ check_for_update_on_startup = false
 [rollback]
 # grok keeps every build it has ever run in ~/.grok/downloads/, so rolling
 # back is `grok update --version <old>`. A Homebrew cask keeps ONE: the
-# Caskroom holds only the installed version, homebrew-cask carries no version
-# history, and the 0.150.1 tarball is not in Homebrew's download cache (the
-# cache is keyed on the URL of the CURRENT cask, which is 0.151.0's).
-# `brew cleanup` after any upgrade takes the only copy on the box.
+# Caskroom holds only the installed version and homebrew-cask carries no
+# version history. `brew cleanup` after any upgrade takes the only copy on the
+# box — which is exactly what happened to 0.150.1 between the pin landing and
+# ranger-base-k4lza finding the box three minor versions past it.
 #
 # So the rollback target is asserted, not assumed: verify-codex-pin.sh fails
-# if the Caskroom directory for the pinned version stops existing. Off-box,
-# upstream still serves the artifact — measured 2026-08-30, HTTP 200,
-# 113348973 bytes — and the checksum below is homebrew-cask's own for the
-# arm64 macOS build at the tap head this box installed from
-# (b8931574c9d5ad2049056a4daaae6454d6a65d34).
+# if the Caskroom directory for the pinned version stops existing.
+#
+# This row is stronger than 0.150.1's ever was — measured three ways on
+# 2026-09-06 (ranger-base-femsg), and they agree:
+#
+#   Caskroom/codex/0.153.4          on disk (cask installed 2026-09-05 11:13:50)
+#   Homebrew's download cache       codex-package-aarch64-apple-darwin.tar.gz,
+#                                   111554884 bytes, sha256 35438da1... — equal
+#                                   to the cask's own declared sha256, computed
+#                                   from the bytes on this box, not read off it
+#   the URL below                   HTTP 200, content-length 111554884 — the
+#                                   same byte count as the on-disk copy
+#
+# Unlike 0.150.1, the tarball IS in Homebrew's download cache: the cache is
+# keyed on the CURRENT cask's URL, and the current cask is this version's.
+# That copy is what the next `brew cleanup` takes, so it is a convenience, not
+# the guarantee; the URL is.
 #
 # FETCH IT BEFORE LIFTING THE PIN, not after: the moment an upgrade lands,
-# the on-box copy is what `brew cleanup` deletes and this URL is all there is.
-caskroom_dir = "Caskroom/codex/0.150.1"
-url = "https://github.com/openai/codex/releases/download/rust-v0.150.1/codex-package-aarch64-apple-darwin.tar.gz"
-sha256 = "3ecaec1e7dd7873fac5e505533618a92a7e3bf12de7869b6130c0e3cc7faf677"
+# the on-box copies are what `brew cleanup` deletes and this URL is all there
+# is. (The 0.150.1 artifact was NOT fetched before this pin moved — the
+# operator ruled B on ranger-base-ydwn1 with no hold on A, so 0.150.1 now
+# exists only at its own upstream URL, recorded in that bead.)
+caskroom_dir = "Caskroom/codex/0.153.4"
+url = "https://github.com/openai/codex/releases/download/rust-v0.153.4/codex-package-aarch64-apple-darwin.tar.gz"
+sha256 = "35438da1fbf7a6db7ddb3bcec84448fa6015ba188461472a97d9d1da7d9c4353"

@@ -45,7 +45,7 @@ If you install `grok`, pin it: the fleet runs **1.0.5** and grok
 self-updates by default (`etc/grok/version-pin.toml`, `make
 verify-grok-pin`). An upgrade is a security re-audit, not a version bump.
 
-`codex` is pinned too, at **0.150.1**, but by a different mechanism, because
+`codex` is pinned too, at **0.153.4**, but by a different mechanism, because
 codex has no version-ceiling config key at all: the lever is
 `brew pin --cask codex` plus `check_for_update_on_startup = false`
 (`etc/codex/version-pin.toml`, `make verify-codex-pin`). Both refuse to *move*

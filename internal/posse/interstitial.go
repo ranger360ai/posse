@@ -389,7 +389,10 @@ var GrokInterstitials = []Interstitial{{
 
 // CodexInterstitials — measured on codex-cli 0.147.0 (ranger-base-3j8,
 // rangerhq-9py0); the durable silence and the cask pin re-measured on
-// 0.150.1 (ranger-base-poj5).
+// 0.150.1 (ranger-base-poj5) and again on 0.153.4 when the fleet pin moved
+// (ranger-base-femsg): the four-arm rig gives the same four answers, the
+// menu still names `brew upgrade --cask codex` in its own option text, and
+// `codex doctor --json` still reports that as the update action.
 var CodexInterstitials = []Interstitial{{
 	Screen:  `"Update available! → 1. Update now  2. Skip  3. Skip until next version", footed "Press enter to continue". herdr reads it blocked (update_menu, etc/herdr/agent-detection/codex.toml — before that rule it fell through to idle with no rule matched), so a launch fails by name instead of waiting it out. Text sent to the untouched menu is discarded, not buffered: nothing typed there reaches a composer.`,
 	Where:   "~/.codex/config.toml (declared in etc/codex/version-pin.toml), else ~/.codex/version.json",

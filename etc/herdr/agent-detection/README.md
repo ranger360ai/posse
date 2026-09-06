@@ -208,6 +208,34 @@ This does not change the fleet's posture. `posse`'s codex template still passes
 the runtime's plugins'. The override is what protects **operator-started** codex
 panes, which get no such flag.
 
+### Re-audited against codex 0.153.4 (ranger-base-femsg, 2026-09-06)
+
+`make verify-detection` replays *recorded* fixtures: it proves the rules still
+parse and still decide, never that a new build still draws the screens they
+were cut from. The fixtures above were captured on 0.147.0. When the fleet pin
+moved to 0.153.4 each screen was re-captured live — one fresh `CODEX_HOME` per
+arm, `tmux capture-pane`, then `herdr agent explain --file` with this
+checkout's manifests staged into a throwaway `XDG_CONFIG_HOME`, exactly what
+`verify-detection.sh` does — and all five resolved to the same rules:
+`update_menu`, `trust_directory`, `hooks_review`, `live_strong_blocker` (the
+`/model` picker, whose model list has changed entirely and whose footer has
+not) and the idle composer.
+
+`trust_directory` had no fixture at all, so its live 0.153.4 capture is now
+`testdata/codex/blocked-trust-directory.txt` (path elided). It measures the
+rule: deleting the rule from `codex.toml` turns that fixture from
+`blocked`/`trust_directory` into `idle`/`none`.
+
+**The sixth screen has no rule.** A codex whose credentials are missing or
+expired draws a **sign-in** menu at startup — `1. Sign in with ChatGPT` /
+`2. Sign in with Device Code` / `3. Provide your own API key`, footed
+`Press enter to continue`, with no composer beneath it — and `herdr agent
+explain` reads it **`idle`, rule `none`**. It is the same fallthrough as the
+two screens this override was written for, and it is not a 0.153.4 regression:
+nobody had captured that screen before. Filed separately; it needs the
+rangerhq-1xsj discard-vs-buffer measurement before a rule is written, because
+`blocked` has to be earned, not assumed.
+
 ## Working on this
 
 ```sh

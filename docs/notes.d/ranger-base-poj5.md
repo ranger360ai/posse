@@ -1,6 +1,7 @@
-# codex substrate: pinned at 0.150.1 by the cask, and there is no hard ceiling
+# codex substrate: pinned at 0.153.4 by the cask, and there is no hard ceiling
 
-*ranger-base-poj5 · devops · 2026-08-30 · a NOTES.md fragment (ADR 0022 §2)*
+*ranger-base-poj5 · devops · 2026-08-30, pin moved 0.150.1 -> 0.153.4 2026-09-06
+(ranger-base-femsg) · a NOTES.md fragment (ADR 0022 §2)*
 
 The operator's instruction on rangerhq-iy3y was: *"when you land the gate,
 `required_maximum_version` starts at 0.150.1 — the walked version."* That is
@@ -9,7 +10,7 @@ what was measured to establish that, and what lifting the pin costs.
 
 ## codex carries no version-ceiling key at all
 
-Measured on the installed 0.150.1 binary — a 229 MB Mach-O on which `strings`
+Measured first on the installed 0.150.1 binary — a 229 MB Mach-O on which `strings`
 emits **nothing**, and on which `grep -c` dies with *"Illegal byte sequence"*
 unless `LC_ALL=C` is set. Both traps return a zero that looks like an answer,
 so the recipe carries a positive control:
@@ -35,6 +36,16 @@ model_reasoning_effort      27   <- the control: the read DOES reach codex's
 four as zero *including* the control — that was `strings` returning nothing on
 this binary, and it would have "confirmed" the same conclusion for the wrong
 reason.
+
+Re-run on 0.153.4 (2026-09-06, ranger-base-femsg) when the pin moved: the same
+four zeros, control **28**, and the four keys the dispatch contract rests on
+all present in the same read — `check_for_update_on_startup` 15,
+`allow_login_shell` 16, `developer_instructions` 56, `trust_level` 19. One
+thing did change, and it is about the *tool*, not about codex: `strings` emits
+nothing on 0.150.1 and **124,257 lines** on 0.153.4 (a 210 MB Mach-O). A
+`strings`-based sweep would have been silently blind on the older binary and
+would happen to work on this one. Keep the control whichever tool you reach
+for; it, not the tool, is what separates the two runs.
 
 So `required_maximum_version` is a grok/xAI mechanism. There is nothing to set
 on codex that refuses to *start*, and no version of
@@ -115,6 +126,56 @@ if `Caskroom/codex/0.150.1` stops existing. Off-box, upstream still serves the
 artifact (measured 2026-08-30: HTTP 200, 113348973 bytes); the URL and
 homebrew-cask's own sha256 are in `etc/codex/version-pin.toml`, `[rollback]`.
 
+## The pin moved to 0.153.4 (2026-09-06, ranger-base-femsg)
+
+Not lifted on schedule — **overtaken**. `brew pin --cask codex` was not
+applied when this note was written, and on 2026-09-05 at 11:13:50 the cask
+upgraded the box to 0.153.4 against a declaration still saying 0.150.1
+(ranger-base-k4lza). Worse, the checker did not say so: its tap row read
+`brew outdated`, which is silent about a cask that is not *behind* the tap —
+see the last section. The operator was given the two honest options on
+ranger-base-ydwn1 and ruled **B**: re-audit 0.153.4 and move the pin. 0.150.1
+was **not** fetched first, so it now exists only at its own upstream URL,
+recorded in ranger-base-ydwn1 and in this file's git history.
+
+Everything in the runbook below was re-run against 0.153.4 before the
+declaration moved. Each has a failing arm, because a re-audit whose every
+reading is "fine" has not been shown able to say anything else:
+
+| item | reading at 0.153.4 | the arm that fails |
+|---|---|---|
+| `-a never` | accepted | `-a nevr` → *invalid value … [possible values: on-request, never]* |
+| `--disable hooks` | `hooks` flips `stable true` → `false`, and the "Hooks need review" modal stops drawing over an untrusted `hooks.json` | `--disable bogus_feature_xyz` → *Unknown feature flag*; and the same launch **without** `--disable` draws the modal |
+| `-c allow_login_shell=false` | recognised by the config schema | `bogus_key_xyz` → *unknown configuration field* |
+| `projects.<path>.trust_level="trusted"` | recognised, and the launch reaches the composer with no trust dialog | `trust_lvl` → *unknown configuration field*; `"bogusvalue"` → *unknown variant, expected `trusted` or `untrusted`*; and the same launch without the flag draws the dialog |
+| `-c developer_instructions=…` | the text appears in `codex debug prompt-input` | `developer_instructionsXX` → the text appears nowhere |
+| `check_for_update_on_startup` | four-arm rig reproduces exactly (below), and the schema accepts the name | the bogus-key arm still draws the menu; a bogus field is rejected by name |
+| interstitial detection | five live 0.153.4 screens, each matched by its rule | see below — one screen matched **nothing** |
+| rollback artifact | `Caskroom/codex/0.153.4` on disk; the cached tarball's sha256 computed on this box **equals** the cask's declared `35438da1…`; the URL serves HTTP 200 at the same 111,554,884 bytes | — |
+
+The carrier for the schema readings is `codex --strict-config exec`. Pick it
+deliberately: `--strict-config` is a **global** flag that most subcommands
+*refuse* (`Error: --strict-config is not supported for codex mcp`), and under
+zsh an unquoted `$var` holding `"mcp list"` stays one word, so a loop can hand
+codex an unknown subcommand, watch config loading fail first, and read that as
+the subcommand supporting the flag. It does not. Quote the arguments and check
+the bogus arm is rejected by the *same invocation* you are about to trust.
+
+**One finding, and it is not about 0.153.4.** The five screens above are
+`update_menu`, `trust_directory`, `hooks_review`, the `/model` picker and the
+idle composer; all five still resolve the way the fixtures say. The sixth, the
+**sign-in screen** a codex with no usable credentials draws at startup, is a
+modal footed *"Press enter to continue"* with no composer beneath it — and
+`herdr agent explain` reads it **`idle`, rule `none`**: no rule matches and
+detection falls through to `default_known_agent_idle_fallback`. That is the
+exact class this override exists to close. It is not a 0.153.4 regression —
+nobody had ever captured that screen — and it is filed separately.
+
+**The security read of 0.150.1 → 0.153.4** (eight releases, 2026-08-29 to
+2026-09-04) is on ranger-base-femsg. Nothing in it weakens a lever here;
+`--disable hooks` was re-measured behaviourally because two of the changes
+(#41435, #42110) move bundled cleanup hooks toward being built-ins.
+
 ## Runbook: lifting the pin
 
 Lifting is the operator's. `make verify-codex-pin` prints this list whenever
@@ -128,17 +189,27 @@ moving is not a failure, it is the gate reporting that a re-audit is due.
    `--disable hooks`, `-c allow_login_shell=false`, the `projects` trust
    grant, and `-c developer_instructions="$(cat …)"` — which is how the work
    prompt is delivered at all. `posse runtime check codex`.
-3. **Re-run the four-arm rig** against the new build.
-   `check_for_update_on_startup` exists at 0.150.1; a rename retires the
-   affordance kill silently, and the "no menu" reading would then be a build
-   that simply had not checked yet.
-4. **Re-run `make verify-detection`** against the new build's screens
-   (`etc/herdr/agent-detection/codex.toml` and its testdata: `update_menu`,
-   `model_picker`, `hooks_review`, `idle_composer`).
+3. **Re-run the four-arm rig** against the new build, *and read the key off
+   codex's own config schema*. A rename retires the affordance kill silently,
+   and the rig alone cannot catch it: a renamed key and a working one both
+   give "no menu", because a key codex does not recognise is ignored without
+   a word. `codex --strict-config exec` rejects an unrecognised field by
+   name — that is the reader, with a bogus key as its wrong arm.
+4. **Re-run `make verify-detection`, and then go past it.** That target
+   replays *recorded* fixtures against the tree's manifest — it says the rules
+   still parse and still decide, not that the new build still draws those
+   screens. Capture the new build's screens and run each through
+   `herdr agent explain --file <capture> --agent codex` with the checkout's
+   manifests staged into a throwaway `XDG_CONFIG_HOME` (what
+   `scripts/verify-detection.sh` does), then refresh the fixtures in
+   `etc/herdr/agent-detection/testdata/codex/` if the shapes moved.
 5. Then, in one change: `brew unpin --cask codex`, upgrade, `brew pin --cask
    codex` again, and raise `posse_pinned_version`, `caskroom_dir`, `url` and
    `sha256` in `etc/codex/version-pin.toml`. `make verify-codex-pin` is the
-   check that the new state is the declared one.
+   check that the new state is the declared one — and `cpPinnedVer` in
+   `codexpin_qa_test.go` moves with it, together with `cpPastVer`, which has
+   to stay **above** the pin or every "UPSTREAM MOVED" arm in that file turns
+   into a silent no-op instead of a failure.
 
 ## Rolling back
 

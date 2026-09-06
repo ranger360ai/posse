@@ -2,7 +2,7 @@ package posse
 
 // QA pins for ranger-base-poj5.
 //
-// Claim: codex is pinned at 0.150.1 by the Homebrew cask plus
+// Claim: codex is pinned at 0.153.4 by the Homebrew cask plus
 // check_for_update_on_startup, declared in etc/codex/version-pin.toml and
 // asserted by scripts/verify-codex-pin.sh, which also prints the re-audit
 // list when the tap moves past the pin and still exits 0 (the pin is
@@ -11,7 +11,8 @@ package posse
 // The shape differs from grokpin_qa_test.go because the mechanism does.
 // codex has NO version-ceiling config key — required_maximum_version,
 // maximum_version, minimum_version and auto_update each appear zero times in
-// the 0.150.1 binary against a positive control — so there is no hard bound
+// the binary against a positive control (measured on 0.150.1, re-measured on
+// 0.153.4 when the pin moved: control 27 -> 28, the four keys still 0) — so there is no hard bound
 // to assert and the declaration says so out loud instead of quietly omitting
 // it. TestQACodexPinDeclaresNoHardCeiling is that pin: the day someone
 // "completes" the file by copying grok's keys into it, this fails.
@@ -28,7 +29,18 @@ import (
 	"testing"
 )
 
-const cpPinnedVer = "0.150.1"
+// The declared pin. Moving it means moving etc/codex/version-pin.toml with
+// it — TestQACodexPinDeclarationAndMakefile asserts the file names this exact
+// version in two places — and that is the point: the constant is the one
+// place the two are joined.
+const cpPinnedVer = "0.153.4"
+
+// A tap version ABOVE the pin, for the arms that exercise the re-audit block.
+// It has to sort above cpPinnedVer or those arms measure nothing: the gate is
+// ver_gt(tap, pin), so a stale literal left below a raised pin turns every
+// "UPSTREAM MOVED" assertion into a silent no-op rather than a failure. It is
+// a stub value in a hermetic box, not a version anyone has run.
+const cpPastVer = "0.199.0"
 
 // cpBox is one stubbed machine: a Homebrew prefix with a Caskroom, a codex
 // on PATH that resolves into it, and a ~/.codex/config.toml.
@@ -242,8 +254,9 @@ func TestQACodexPinDeclarationAndMakefile(t *testing.T) {
 }
 
 // The declaration must not grow a hard ceiling it cannot have. codex carries
-// no such config key — measured on the 0.150.1 binary against a positive
-// control — so a required_maximum_version here would be a pin that refuses
+// no such config key — measured on the 0.150.1 binary and again on 0.153.4,
+// each against a positive control — so a required_maximum_version here would
+// be a pin that refuses
 // nothing while reading, to anyone scanning the file, exactly like grok's
 // braces. The accepted risk is stated instead, in both the file and every run
 // of the script.
@@ -296,12 +309,12 @@ func TestQACodexPinHappyBox(t *testing.T) {
 // script's job is to say what must be re-audited before the operator lifts it.
 func TestQACodexPinUpstreamMovedStillPasses(t *testing.T) {
 	b := cpNewBox(t)
-	b.brew(t, "pinned", cpPinnedVer, "0.151.0", 0)
+	b.brew(t, "pinned", cpPinnedVer, cpPastVer, 0)
 	out, code := b.run(t)
 	if code != 0 {
 		t.Fatalf("upstream moving is not a failure: exit %d\n%s", code, out)
 	}
-	if !strings.Contains(out, "UPSTREAM MOVED: the codex cask is 0.151.0") {
+	if !strings.Contains(out, "UPSTREAM MOVED: the codex cask is "+cpPastVer) {
 		t.Errorf("missing the re-audit block:\n%s", out)
 	}
 	for _, want := range []string{
@@ -346,7 +359,7 @@ func cpRow(out, label string) string {
 // operator needed it. The version row failing is not a substitute: it says
 // the box moved, not what it must be re-audited against.
 func TestQACodexPinTapReadWhenTheBoxIsAlreadyPastThePin(t *testing.T) {
-	const past = "0.153.4"
+	const past = cpPastVer
 	b := cpNewBox(t)
 	b.installCodex(t, past, true)
 	if err := os.RemoveAll(filepath.Join(b.prefix, "Caskroom", "codex", cpPinnedVer)); err != nil {
@@ -375,7 +388,10 @@ func TestQACodexPinTapReadWhenTheBoxIsAlreadyPastThePin(t *testing.T) {
 // unsuppressed it on a box that had ALREADY moved, where "the pin is holding
 // — nothing has changed on this machine" is false and "the moment 0.153.4
 // lands, brew cleanup deletes the only 0.150.1 copy" is an instruction about
-// a thing that has already happened. Two rows above say so: the version row
+// a thing that has already happened. Those two versions are quoted from the
+// run of 2026-09-06, when the declaration still said 0.150.1; the pin has
+// since moved to 0.153.4 (ranger-base-femsg) and the arms below read the
+// declared version out of cpPinnedVer, not out of that sentence. Two rows above say so: the version row
 // FAILS and the rollback target reads GONE.
 //
 // The two arms are each other's control. The same tap read, the same gate,
@@ -383,7 +399,7 @@ func TestQACodexPinTapReadWhenTheBoxIsAlreadyPastThePin(t *testing.T) {
 // went back to printing one paragraph for both boxes reds one of them
 // whichever paragraph it chose.
 func TestQACodexPinReAuditTextSaysWhetherTheBoxItselfHasMoved(t *testing.T) {
-	const past = "0.153.4"
+	const past = cpPastVer
 
 	t.Run("the box is still at the pin", func(t *testing.T) {
 		b := cpNewBox(t)
@@ -460,10 +476,11 @@ func TestQACodexPinReAuditTextSaysWhetherTheBoxItselfHasMoved(t *testing.T) {
 	})
 
 	// The other half of item 1: the box moved but `brew cleanup` has not run
-	// yet, so the last 0.150.1 copy is still on disk and saying it is gone
-	// would send the operator to re-fetch something they are standing on.
+	// yet, so the last copy of the PINNED version is still on disk and saying
+	// it is gone would send the operator to re-fetch something they are
+	// standing on.
 	t.Run("the box has already moved and the rollback target survives", func(t *testing.T) {
-		b := cpNewBox(t) // leaves Caskroom/codex/0.150.1 in place
+		b := cpNewBox(t) // leaves Caskroom/codex/<cpPinnedVer> in place
 		b.installCodex(t, past, true)
 		b.brew(t, "unpinned", past, past, 0)
 		out, code := b.run(t)
