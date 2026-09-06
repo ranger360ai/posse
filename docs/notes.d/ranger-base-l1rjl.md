@@ -70,6 +70,15 @@ equivalentOnBase(repo, "main", "posse/gwart-posse-ranger-base-ve1g5")
 git cherry -v main posse/gwart-posse-ranger-base-ve1g5   → "+"
 ```
 
+The in-force binary agrees, which is `docs/notes.d/ranger-base-8nsc6.md`'s
+reading order done rather than assumed — `posse worktrees` names the count and
+no pairing at all, where a paired branch prints the arm that paired it:
+
+```
+posse/gwart-posse-ranger-base-ve1g5
+  ~/.posse/worktrees/… → main  ·  1 commit(s) not on main, for ranger-base-ve1g5
+```
+
 - **Not re-filed.** `c3ab9188` (`ranger-base-j8qmj`) reads closed blocks in the
   dedupe, and `git merge-base --is-ancestor c3ab9188 12dd7b9` is true, so the
   arm is in the in-force binary (`posse 0.4.0+12dd7b9`). The branch tip's
