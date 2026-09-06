@@ -42,7 +42,7 @@ FMT_ROOTS := cmd internal *.go
 BUILD_STAMP := $(shell $(GOBIN) run ./cmd/buildstamp)
 LDFLAGS     := -X github.com/ranger360ai/posse/internal/posse.Build=$(BUILD_STAMP)
 
-.PHONY: build release install deploy test test-reuse fmt-check crew-check selector-check seed-check history-check doc-check identity-check ops-check tree-check verify-test-times verify-suite-lock verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-self-close verify-govern-honesty verify-grok-pin verify-codex-pin verify-credential-paths verify-hook-freshness verify-bd-pin verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
+.PHONY: build release install deploy test test-reuse fmt-check crew-check selector-check seed-check history-check doc-check identity-check ops-check tree-check verify-test-times verify-suite-lock verify-silent-reverts verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-self-close verify-govern-honesty verify-grok-pin verify-codex-pin verify-credential-paths verify-hook-freshness verify-bd-pin verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
 
 build:
 	$(GOBIN) build -ldflags '$(LDFLAGS)' -o bin/posse-go ./cmd/posse
@@ -180,7 +180,7 @@ release-notes:
 # against the fleet load guard's ceiling of 60 — so the shop stopped hiring at
 # the moment five seats were about to free. A `-run` filter or a named package
 # is NOT queued. `make verify-suite-lock` (~17s) pins the slots.
-test: fmt-check verify-test-times verify-parallel verify-suite-lock tree-check
+test: fmt-check verify-test-times verify-parallel verify-suite-lock verify-silent-reverts tree-check
 	scripts/test-times.sh $(GOBIN) test -timeout 25m ./...
 	@scripts/audit-silent-reverts.sh --quiet
 
@@ -220,6 +220,35 @@ verify-test-times:
 # (ranger-base-2fgu4). ~17s, no go build, no suite.
 verify-suite-lock:
 	@scripts/suite-lock.sh --self-test
+
+# The silent-revert detector proving it can still fire, BEFORE the run that
+# ends in `--quiet` trusts its silence over every commit on the branch (1392
+# on 2026-09-05). 17 arms, ~9s, no go build, no suite — throwaway mktemp repos.
+#
+# WHY IT IS HERE AND NOT ONLY IN THE SUITE (ranger-base-lbftm). The arms were
+# already run once per `go test ./...`, by
+# internal/posse.TestSilentRevertSelfTestStillFires — but only because that
+# package's TestMain sets `PATH=PathOutsideGates("")` (herdr_test.go), for an
+# unrelated reason: rangerhq-8sd, a persona's git shim answering the pre-push
+# hook. So the one execution these arms got depended on a PATH scrub made for
+# another purpose, and by hand — `make audit-silent-reverts`, or the script
+# from any persona seat — the self-test exited 2 at the first plant, because
+# its fixtures committed with a bare `git commit` and every crew PID carries
+# `deny: Bash(git commit unless --)`. Nobody could run the detector's proof in
+# the environment they were debugging it in.
+#
+# Both halves are fixed now: the fixtures are path-limited, so this target runs
+# them WITH the seat's gate on PATH, and the suite keeps running them without
+# it. Two environments, same 17 arms, and neither is load-bearing alone.
+#
+# A prerequisite rather than a recipe line, for tree-check's reason: a full
+# run fails on it in seconds instead of at ~950, and CI inherits it from
+# `make test` on both runners without a workflow edit — which is where the
+# platform splits this file already documents (ubuntu's strnum-coercing awk,
+# the runners' git 2.55.0 against the 2.50.1 the rename-similarity arms were
+# calibrated on) meet these arms under a make gate rather than a Go test.
+verify-silent-reverts:
+	@scripts/audit-silent-reverts.sh --self-test
 
 # The suite through the reusing wrapper (ranger-base-nw9zg). NOT a faster
 # `make test` and not a replacement for it: measured on 40 invocations against
@@ -675,10 +704,12 @@ prune-bd-relates-to:
 # the change landed from the private index was an ADD, the stale index undoes it
 # by DELETING, and that half used to score clean). Triaged commits live in
 # scripts/silent-reverts.allow; anything untriaged exits 1.
-# Run `scripts/audit-silent-reverts.sh --self-test` to prove the detector still
-# fires — it plants the real mechanism (a private GIT_INDEX_FILE commit followed
-# by a shared-index commit) in a throwaway repo, in BOTH its shapes, and asserts
-# the flag; it also plants a plain move and asserts silence.
+# The detector proving it still fires is `make verify-silent-reverts`, a
+# prerequisite of `make test` since ranger-base-lbftm — it plants the real
+# mechanism (a private GIT_INDEX_FILE commit followed by a stale-index commit)
+# in a throwaway repo, in BOTH its shapes, and asserts the flag; it also plants
+# a plain move, a rename that edits and a numeric-shaped blob id and asserts
+# silence. This target is the SCAN, run by hand against a rev-range.
 audit-silent-reverts:
 	scripts/audit-silent-reverts.sh
 

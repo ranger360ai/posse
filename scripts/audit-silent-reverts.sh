@@ -3,7 +3,9 @@
 # older version — a revert nobody labelled a revert (rangerhq-8rtf).
 #
 # Usage: scripts/audit-silent-reverts.sh [rev-range]     (default: HEAD)
-#        scripts/audit-silent-reverts.sh --self-test     (prove the detector works)
+#        scripts/audit-silent-reverts.sh --self-test     (prove the detector works;
+#                                                         `make verify-silent-reverts`,
+#                                                         a prerequisite of `make test`)
 #        scripts/audit-silent-reverts.sh --quiet         (summary only unless it fails)
 #
 # WHY THIS EXISTS. rangerhq-8rtf: ef8d35f (a landed P1 fix) was undone by
@@ -177,40 +179,93 @@ ALLOW=scripts/silent-reverts.allow
 
 # --- self-test fixtures -----------------------------------------------------
 # Each plants one shape in a throwaway repo and leaves cwd inside it.
+#
+# EVERY COMMIT BELOW IS PATH-LIMITED (`git commit … -- <paths>`), and every
+# `git add` names its paths. Not style: every crew PID carries
+# `deny: Bash(git commit unless --)`, realized as a PATH shim that reads argv
+# and never the tree, so an unqualified commit is refused in a throwaway
+# mktemp repo exactly as it is in the shared checkout. Before ranger-base-lbftm
+# these fixtures used the bare spelling, so from any persona seat plant_repo's
+# first commit was refused, every plant returned 2, and the whole self-test
+# exited 2 at "modify rig did not reproduce the mechanism".
+#
+# The arms were not decorative even then, but their one execution was a
+# coincidence: internal/posse.TestSilentRevertSelfTestStillFires runs this
+# file, and that package's TestMain sets PATH=PathOutsideGates("") for an
+# unrelated reason (rangerhq-8sd), so the suite alone saw a git the gate never
+# touched. Narrow that scrub and every seat's `make test` reds at once while CI
+# stays green. A detector's proof should not turn on somebody else's PATH.
+#
+# The path-limited form is not a weaker operation. Measured 2026-09-05 on
+# git 2.50.1: a deletion (`git rm` then `commit -- <path>`) records D, a
+# `git mv` pair records R100, and the rename-that-edits pair records the same
+# R065 the old `git add -A` spelling produced — the shapes this file's controls
+# exist for survive verbatim. The one thing it cannot do on its own is a NEW
+# file, which has no index entry for a pathspec to match (rangerhq-4pbt); hence
+# the scoped `git add --` before each such commit.
+#
+# The two STALE-INDEX plants are the exception worth reading. There the commit
+# under test IS "commit the whole stale index", which has no path-limited
+# spelling at all: a pathspec commit builds from HEAD plus the worktree and
+# never consults the index. So those two plants reach the same TREE from the
+# worktree side and then prove it is the same tree, by recording
+# `git write-tree` of the stale index first and asserting equality afterwards.
+# `git write-tree` writes an object and moves no ref, so the commit that lands
+# is the one the unqualified spelling would have made, and the fixture says so
+# rather than asking to be believed.
 
 plant_repo() {
   local r; r=$(mktemp -d)/r; mkdir -p "$r"; cd "$r" || return 2
   git init -q .; git config user.email t@t; git config user.name t
   printf 'v1\n' > fix.go; printf 'o\n' > other.txt
-  env -u RHQ_PERSONA git add -A; env -u RHQ_PERSONA git commit -qm base
+  env -u RHQ_PERSONA git add -- fix.go other.txt
+  env -u RHQ_PERSONA git commit -qm base -- fix.go other.txt
 }
 
 # MODIFY half — rangerhq-8rtf verbatim: the fix edits an existing file.
 plant_modify() {
+  local stale
   plant_repo || return 2
   printf 'v2-THE-FIX\n' > fix.go
   ( export GIT_INDEX_FILE="$(mktemp -d)/index"
     env -u RHQ_PERSONA git read-tree HEAD
     env -u RHQ_PERSONA git add -- fix.go
-    env -u RHQ_PERSONA git commit -qm "the fix" )
+    env -u RHQ_PERSONA git commit -qm "the fix" -- fix.go )
   printf 'synced\n' > other.txt
-  env -u RHQ_PERSONA git add other.txt
-  env -u RHQ_PERSONA git commit -qm "bd sync: batch"   # reverts fix.go, silently
+  env -u RHQ_PERSONA git add -- other.txt
+  # The main index is now the stale one the mechanism turns on: it holds
+  # fix.go at v1, because it never saw the private-index commit. Record the
+  # tree it would commit BEFORE committing, since a path-limited commit
+  # rewrites the index entries for the paths it names.
+  stale=$(env -u RHQ_PERSONA git write-tree)
+  printf 'v1\n' > fix.go                # the worktree half of the same rollback
+  env -u RHQ_PERSONA git commit -qm "bd sync: batch" -- fix.go other.txt
+  # …and the landed tree IS that tree: the commit the detector reads is the one
+  # the unqualified `git commit` would have made, not a lookalike.
+  [ "$stale" = "$(git rev-parse "HEAD^{tree}")" ] || return 2
   [ "$(git show HEAD:fix.go)" = "v1" ] || return 2
 }
 
 # ADD-ONLY half — rangerhq-ypn1: the fix is a NEW file, so the stale index
 # DELETES it rather than rolling it back.
 plant_addonly() {
+  local stale
   plant_repo || return 2
   printf 'package x // the regression pin\n' > newpin_test.go
   ( export GIT_INDEX_FILE="$(mktemp -d)/index"
     env -u RHQ_PERSONA git read-tree HEAD
     env -u RHQ_PERSONA git add -- newpin_test.go
-    env -u RHQ_PERSONA git commit -qm "the fix: add newpin_test.go" )
+    env -u RHQ_PERSONA git commit -qm "the fix: add newpin_test.go" -- newpin_test.go )
   printf 'synced\n' > other.txt
-  env -u RHQ_PERSONA git add other.txt
-  env -u RHQ_PERSONA git commit -qm "bd sync: batch"   # deletes the pin, silently
+  env -u RHQ_PERSONA git add -- other.txt
+  # As in plant_modify: the main index never saw newpin_test.go, so the tree it
+  # would commit simply does not contain it. That absence is the mechanism.
+  stale=$(env -u RHQ_PERSONA git write-tree)
+  rm -f newpin_test.go                  # the worktree half of the same deletion
+  # newpin_test.go is in HEAD but in neither the index nor the worktree; the
+  # pathspec still matches it and the commit records D (measured 2026-09-05).
+  env -u RHQ_PERSONA git commit -qm "bd sync: batch" -- newpin_test.go other.txt
+  [ "$stale" = "$(git rev-parse "HEAD^{tree}")" ] || return 2
   git ls-tree --name-only HEAD | grep -q newpin_test.go && return 2
   return 0
 }
@@ -220,9 +275,11 @@ plant_addonly() {
 plant_move() {
   plant_repo || return 2
   printf 'body\n' > moved.go
-  env -u RHQ_PERSONA git add -A; env -u RHQ_PERSONA git commit -qm "add moved.go"
+  env -u RHQ_PERSONA git add -- moved.go
+  env -u RHQ_PERSONA git commit -qm "add moved.go" -- moved.go
   git mv moved.go elsewhere.go
-  env -u RHQ_PERSONA git commit -qm "move it"
+  # Both halves of the rename are named, and git still scores the pair R100.
+  env -u RHQ_PERSONA git commit -qm "move it" -- moved.go elsewhere.go
 }
 
 # RENAME-THAT-EDITS control — ranger-base-en75. The move exception used to be
@@ -236,14 +293,18 @@ plant_renameedit() {
   plant_repo || return 2
   local i
   for i in $(seq 1 20); do echo "original line $i of the moved file"; done > mod.go
-  env -u RHQ_PERSONA git add -A; env -u RHQ_PERSONA git commit -qm "add mod.go"
+  env -u RHQ_PERSONA git add -- mod.go
+  env -u RHQ_PERSONA git commit -qm "add mod.go" -- mod.go
   git mv mod.go moved.go
   for i in $(seq 1 20); do
     if [ "$i" -le 5 ]; then echo "EDITED line $i after the move, quite different text here"
     else echo "original line $i of the moved file"; fi
   done > moved.go
-  env -u RHQ_PERSONA git add -A
-  env -u RHQ_PERSONA git commit -qm "move it and edit it"
+  # Naming both halves reproduces the same R065 the bare `git add -A` spelling
+  # did (measured 2026-09-05, git 2.50.1) — the inexactness this arm needs is a
+  # property of the pair git scores, not of how the tree was assembled. The
+  # witness below re-measures it every run rather than trusting that sentence.
+  env -u RHQ_PERSONA git commit -qm "move it and edit it" -- mod.go moved.go
   # Fixture witness. This arm asserts an ABSENCE, so it has to show that the
   # hazard is present (ranger-base-z4vx): the top commit must hold exactly one
   # rename, and that rename must be INEXACT. An R100 here would be excused by
@@ -263,12 +324,12 @@ plant_renameedit() {
 plant_delplusadd() {
   plant_repo || return 2
   printf 'package x // the regression pin\n' > newpin_test.go
-  env -u RHQ_PERSONA git add -A
-  env -u RHQ_PERSONA git commit -qm "the fix: add newpin_test.go"
+  env -u RHQ_PERSONA git add -- newpin_test.go
+  env -u RHQ_PERSONA git commit -qm "the fix: add newpin_test.go" -- newpin_test.go
   env -u RHQ_PERSONA git rm -q newpin_test.go
   printf 'title: notes\nthese bytes have nothing whatever in common with a go\npin; they exist to be an add in the same commit as a\ndeletion, and to sit far below any similarity threshold\nthis tool would ever choose.\n' > unrelated.md
-  env -u RHQ_PERSONA git add -A
-  env -u RHQ_PERSONA git commit -qm "bd sync: batch"
+  env -u RHQ_PERSONA git add -- unrelated.md
+  env -u RHQ_PERSONA git commit -qm "bd sync: batch" -- newpin_test.go unrelated.md
   # Fixture witness, and the chosen threshold's own control: the top commit must
   # be exactly one deletion and one addition that git did NOT pair. If some
   # future threshold ever pairs these two, the rig stops being the shape it
@@ -290,9 +351,9 @@ plant_delplusadd() {
 plant_reland() {
   plant_repo || return 2
   git mv fix.go stale.go
-  env -u RHQ_PERSONA git commit -qm "move the fix out of the way"
+  env -u RHQ_PERSONA git commit -qm "move the fix out of the way" -- fix.go stale.go
   git mv stale.go fix.go
-  env -u RHQ_PERSONA git commit -qm "bd sync: batch"
+  env -u RHQ_PERSONA git commit -qm "bd sync: batch" -- stale.go fix.go
   [ "$(git show HEAD:fix.go)" = "v1" ] || return 2
 }
 
@@ -308,12 +369,12 @@ plant_numeric() {
   local r; r=$(mktemp -d)/r; mkdir -p "$r"; cd "$r" || return 2
   git init -q .; git config user.email t@t; git config user.name t
   printf 'numeric-shaped blob 1059\n' > n.txt; printf 'o\n' > other.txt
-  env -u RHQ_PERSONA git add -A
-  env -u RHQ_PERSONA git commit -qm "add n.txt"            # state 1: 7e15992…
+  env -u RHQ_PERSONA git add -- n.txt other.txt
+  env -u RHQ_PERSONA git commit -qm "add n.txt" -- n.txt other.txt      # state 1: 7e15992…
   printf 'plain\n' > n.txt
-  env -u RHQ_PERSONA git commit -qam "edit n.txt"          # state 2
+  env -u RHQ_PERSONA git commit -qm "edit n.txt" -- n.txt               # state 2
   printf 'numeric-shaped blob 1259\n' > n.txt
-  env -u RHQ_PERSONA git commit -qam "edit n.txt again"    # state 3: 5e00413…
+  env -u RHQ_PERSONA git commit -qm "edit n.txt again" -- n.txt         # state 3: 5e00413…
   # Fixture witness: the hazard has to actually BE here, or this arm is a
   # negative control that measured nothing (ranger-base-z4vx). Exactly two of
   # the three abbreviated destination ids must read as scientific notation.
@@ -415,13 +476,13 @@ plant_mismatch() {
 plant_oneclaim() {
   plant_repo || return 2
   printf 'v2-THE-FIX\n' > fix.go
-  env -u RHQ_PERSONA git commit -qam "the fix"
+  env -u RHQ_PERSONA git commit -qm "the fix" -- fix.go
   printf 'v1\n' > fix.go
-  env -u RHQ_PERSONA git commit -qam "revert the fix"      # flagged; patch-id P
+  env -u RHQ_PERSONA git commit -qm "revert the fix" -- fix.go    # flagged; patch-id P
   printf 'v2-THE-FIX\n' > fix.go
-  env -u RHQ_PERSONA git commit -qam "re-land the fix"     # flagged; 1cc432e's shape
+  env -u RHQ_PERSONA git commit -qm "re-land the fix" -- fix.go   # flagged; 1cc432e's shape
   printf 'v1\n' > fix.go
-  env -u RHQ_PERSONA git commit -qam "revert it again"     # flagged; patch-id P again
+  env -u RHQ_PERSONA git commit -qm "revert it again" -- fix.go   # flagged; patch-id P again
   plant_allow \
     "deadbee $(patch_id HEAD~2) the launcher rebased the FIRST revert — one claim, not two" \
     "$(git rev-parse --short=7 HEAD~1) the re-land between the twins — fixture plumbing, not a twin"
