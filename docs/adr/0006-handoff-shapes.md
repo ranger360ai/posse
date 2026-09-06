@@ -115,12 +115,19 @@ landing; verify as a close gate. bd remains the only work store and its
 existing export is the exit hatch. No runtime edit accompanies this decision.
 
 Historical rulings, measurement windows and alternatives: the page as it stood before this simplification is in git history, `git show c86a6b8:docs/adr/0006-handoff-shapes.md` (the dated copies were dropped by operator ruling 2026-09-05; git history is the record).
-are retained separately.
 
-Execution census 2026-09-05: this baseline has `closerDoneWhen` and
-`IntentDoneWhen` matching; no unmatched whole-PID-table fallback was found
-in verify construction. The removal task deletes the observed inference,
-not a hypothetical extra branch. The SIMPLIFY verdict remains applicable.
+Execution census 2026-09-05, at `bfb64fd4` (16:47): that baseline had
+`closerDoneWhen` and `IntentDoneWhen` matching, and no unmatched
+whole-PID-table fallback in verify construction, so the removal task was
+scoped to the observed inference and told not to invent an extra branch.
+Amended: `c5edac14` (17:44, ranger-base-29eei) ADDED exactly that fallback —
+`closerIntentRows`, called from `verifySection` — 57 minutes after the census
+and before `b96a1080`, the page the executor was given. The census therefore
+described no baseline the executor ever saw. §4 governs regardless: an
+unmatched whole-PID-table fallback is a guessed PID row, so ranger-base-0ezn7
+deleted it with the inference (below) rather than preserving it, and that
+divergence from its own task text is recorded here. The SIMPLIFY verdict is
+unchanged.
 
 Executed 2026-09-06 (ranger-base-0ezn7): `closerDoneWhen` and
 `closerIntentRows` are gone from `verifyafter.go`, and with their callers
