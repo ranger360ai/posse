@@ -1476,12 +1476,14 @@ func (p seatPass) clause() string {
 // morning.
 //
 // So a reading lives for the fire pass that took it (`pass`, made fresh by
-// every fireLoop call) and the Run's own fires live in `run` (deleted at that
-// seat's settle, in Run's gather loop). Every "for the rest of this pass"
-// line in the loop below means the pass again, and the live read that decides
-// occupancy is taken again the next time the seat is offered work.
+// every fireLoop call) and the Run's own fires live in `run` (deleted at the
+// settle of the bead that holds it, never a settle merely judged for the
+// seat's name — ranger-base-25cit, ADR 0011 §5 — in Run's gather loop). Every
+// "for the rest of this pass" line in the loop below means the pass again,
+// and the live read that decides occupancy is taken again the next time the
+// seat is offered work.
 type seatMap struct {
-	run  map[string]string // seats THIS Run fired into → the bead; released at settle
+	run  map[string]string // seats THIS Run fired into → the bead; released at that bead's settle (ranger-base-25cit, ADR 0011 §5)
 	pass map[string]bool   // what this fire pass read about a seat; expires with it
 }
 
@@ -2458,8 +2460,10 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 	// would make the read-only command have a lasting effect. It still runs
 	// under the same room, so what it reports is what a real pass would do.
 	// ADR 0028 §3: the busy map re-denominates from per-pass to live seat
-	// occupancy — one bead per persona per repo at a time, released at that
-	// seat's settle. This Run's fireLoop and every refire it makes (below)
+	// occupancy — one bead per persona per repo at a time, released at the
+	// settle of the bead holding it, never a settle merely judged for the
+	// seat's name (ranger-base-25cit, ADR 0011 §5). This Run's fireLoop and
+	// every refire it makes (below)
 	// share the one instance, so a seat this Run fires into stays busy for
 	// every later refire this same Run makes, and is released the instant
 	// gather() judges its bead. A one-shot Run never refires (d.Refill is

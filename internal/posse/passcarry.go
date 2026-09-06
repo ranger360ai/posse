@@ -39,8 +39,10 @@ package posse
 // anything.
 //
 // WHAT MUST HAVE THE SAME LIFETIME AS THE SET. The busy map (ADR 0028 §3) is
-// the seats this Run fired into, released at the settle that judges them; a
-// carried leg's seat is still occupied, so the map is carried with it, and so
+// the seats this Run fired into, released at the settle of the bead that
+// holds them, never a settle merely judged for the seat's name
+// (ranger-base-25cit, ADR 0011 §5); a carried leg's seat is still occupied,
+// so the map is carried with it, and so
 // is the per-slot session-failure count that ADR 0013 §2's ceiling is
 // denominated in. They were the Run's locals when the Run was the loop; they
 // are the LOOP's now, and a one-shot Run (no Refill, no window, gathers to
