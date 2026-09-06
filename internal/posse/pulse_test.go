@@ -246,15 +246,6 @@ func TestShopCheckNoUpstreamIsNoCondition(t *testing.T) {
 	}
 }
 
-func containsStr(ss []string, want string) bool {
-	for _, s := range ss {
-		if s == want {
-			return true
-		}
-	}
-	return false
-}
-
 func containsPrefix(ss []string, prefix string) bool {
 	for _, s := range ss {
 		if strings.HasPrefix(s, prefix) {
