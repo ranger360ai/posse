@@ -66,7 +66,8 @@ rewrite — you propose the minimal diff.
 | review-changes | fleet | findings ranked by severity, each with a failure scenario — or an explicit "no findings" |
 
 ## How you work
-- `bd show <id>`, then `git diff`/`git show` the change; read around it.
+- `bd show <id>`, then `git diff --no-ext-diff`/`git show` the change; read
+  around it.
 - One finding, one concrete failure scenario. Rank by severity.
 - Say "no findings" when there are none — that is a valid verdict.
 

@@ -37,11 +37,14 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ranger360ai/posse"
 )
 
 // extDiffCmd is a driver git can find no program for. Either failure shape
@@ -440,15 +443,31 @@ func f(r string) { g(r, memoryDiff("HEAD", "--")...) }
 // (ranger-base-3ersc); with it, the same rewrap is graded and the same red
 // names the same argv.
 //
-// THE POPULATION IS THE TWO HOOK RENDERS AND THE TWO OPERATING DOCS, and the
-// rest of the tree was swept by hand once (ranger-base-l1ix2, at this
-// commit) rather than pinned: README.md, INSTALL.md and the ADRs spell
+// THE POPULATION IS THE TWO HOOK RENDERS, THE TWO OPERATING DOCS AND EVERY
+// SEED PID, and the rest of the tree was swept by hand once
+// (ranger-base-l1ix2, at this commit) rather than pinned: README.md,
+// INSTALL.md and the ADRs spell
 // `git diff` only to DESCRIBE what a product reader does — promote's
 // ratification diff, the hook's own --name-only reader — and those readers
 // are what ARMs 1-4 hold. docs/notes.d/ is out too, deliberately: those
 // fragments are frozen per-bead records (they still name `internal/rhq/`
 // paths that no longer exist), and a record quoting the command as it was
 // then is accurate.
+//
+// THE SEED PIDs ARE IN THE POPULATION because they are shipped instructions,
+// not descriptions: `examples/agents/reviewer.md` told a reviewer to run a
+// bare `git diff` over exactly the change they were sent to read, and that is
+// the same prescription AGENTS.md:42 was. That hand-sweep did not name
+// examples/ and so did not reach it (ranger-base-3ersc FINDING 1), which is
+// the SECOND time a rule reached RHQ_HOME/agents/ and not the seed — the
+// first was the L1 commit wall (ranger-base-09b7). So the population is
+// DERIVED from the seed rather than enumerated: a PID added tomorrow is
+// graded without anyone remembering this file.
+//
+// And read from posse.Seed, the EMBED, for the reason commitwallseed_qa_test
+// gives: `//go:embed all:examples` is what a release binary carries and what
+// `posse init` lays down in a fresh instance, so the embed is the artifact
+// the gap was in. In this checkout it is the same bytes as ../../examples.
 func TestQAPrescribedGitDiffChecksStateTheirFormat(t *testing.T) {
 	t.Parallel()
 	seen := map[string]int{}
@@ -468,9 +487,14 @@ func TestQAPrescribedGitDiffChecksStateTheirFormat(t *testing.T) {
 	// day somebody legitimately rewords a paragraph. What must be true is
 	// that the extractor reached each surface that HAS a `git diff` in it —
 	// an extractor reading nothing grades nothing, and every green above is
-	// an empty scan. (The pre-push render carries none, which is why it is
-	// not in this list and why the list is named rather than derived.)
-	for _, name := range []string{"the prepare-commit-msg hook render", "AGENTS.md", "NOTES.md"} {
+	// an empty scan. (The pre-push render carries none, and eight of the
+	// nine seed PIDs carry none, which is why this list is named rather than
+	// derived from the population.) reviewer.md is here so that the fix to
+	// its line is HELD: deleting the prescription, or rewording the file
+	// until the extractor no longer finds it, is a red naming the file
+	// rather than one fewer span in a total nobody counts — which is how
+	// ranger-base-3ersc FINDING 2 escaped in NOTES.md.
+	for _, name := range []string{"the prepare-commit-msg hook render", "AGENTS.md", "NOTES.md", "examples/agents/reviewer.md"} {
 		if seen[name] == 0 {
 			t.Errorf("the census found no `git diff` at all in %s — it is reading the wrong text, and the pass above measured nothing", name)
 		}
@@ -522,14 +546,14 @@ func TestQAPrescribedGitDiffChecksRunUnderADiffDriver(t *testing.T) {
 	}
 	plantExtDiff(t, repo)
 
-	seen := 0
+	ran := map[string]int{}
 	for _, s := range extDiffSurfaces(t) {
 		for _, span := range gitDiffSpans(s.text, s.markdown) {
 			if !span.prescribed || !extDiffImmuneSpan(span.argv) {
 				continue
 			}
 			argv := extDiffRunnable(span.argv, "f")
-			seen++
+			ran[s.name]++
 			out, err := run(argv...)
 			if err != nil {
 				t.Errorf("%s prescribes `%s`; it does not run in a seat with a diff driver: %v\n%s", s.name, span.argv, err, out)
@@ -550,9 +574,18 @@ func TestQAPrescribedGitDiffChecksRunUnderADiffDriver(t *testing.T) {
 			}
 		}
 	}
-	// A run over zero prescriptions is a green earned by finding nothing.
-	if seen < 3 {
-		t.Errorf("only %d prescribed check(s) were found across the hook render, AGENTS.md and NOTES.md — ranger-base-l1ix2 fixed three; the extractor is reading the wrong thing", seen)
+	// A run over zero prescriptions is a green earned by finding nothing —
+	// and a FLOOR does not say that, which is the lesson of
+	// ranger-base-3ersc FINDING 2 read a second time. This arm ran 7
+	// prescriptions the day the floor was 3, so four of them could vanish
+	// without a word. What must be true is the same thing ARM 6 asserts:
+	// each surface that PRESCRIBES one had one RUN. A prescription that
+	// stops being found is then a red naming its file, not a smaller number
+	// in a total nobody reads.
+	for _, name := range []string{"the prepare-commit-msg hook render", "AGENTS.md", "NOTES.md", "examples/agents/reviewer.md"} {
+		if ran[name] == 0 {
+			t.Errorf("no prescribed check was RUN from %s — either it prescribes none any more or the extractor stopped finding them, and every green above was earned somewhere else", name)
+		}
 	}
 }
 
@@ -584,15 +617,49 @@ type extDiffSurface struct {
 }
 
 // extDiffSurfaces is the population: the two hook bodies posse installs, as
-// RENDERED, and the two docs that prescribe the same check in prose.
+// RENDERED, the two docs that prescribe the same check in prose, and every
+// PID the seed ships.
 func extDiffSurfaces(t *testing.T) []extDiffSurface {
 	t.Helper()
-	return []extDiffSurface{
+	out := []extDiffSurface{
 		{name: "the prepare-commit-msg hook render", text: CommitGuardHook(VisibilityPublic, OpsPatternSet{})},
 		{name: "the pre-push hook render", text: PrePushHook},
 		{name: "AGENTS.md", text: extDiffReadDoc(t, "../../AGENTS.md"), markdown: true},
 		{name: "NOTES.md", text: extDiffReadDoc(t, "../../NOTES.md"), markdown: true},
 	}
+	return append(out, extDiffSeedSurfaces(t)...)
+}
+
+// extDiffSeedSurfaces is every example PID, read from the embed. The name is
+// the path an operator sees in the repo, so a red says which file to open.
+//
+// The corpus floor is not decoration: fs.ReadDir on a subtree that moved
+// returns nothing and no error, and a census over zero surfaces is a green
+// earned by reading nothing — the failure mode this whole file exists to
+// refuse. Nine is what the seed ships today (commitwallseed_qa_test.go asks
+// the same question of the same corpus).
+func extDiffSeedSurfaces(t *testing.T) []extDiffSurface {
+	t.Helper()
+	names := exampleAgentNames(posse.Seed)
+	if len(names) < 9 {
+		t.Fatalf("the seed ships %d example PIDs (%v) — a census over a corpus this small is measuring nothing", len(names), names)
+	}
+	var out []extDiffSurface
+	for _, n := range names {
+		// A slash path, which is what an fs.FS takes; path.Join is not
+		// imported here because extDiffReadDoc's own parameter is named
+		// `path` and shadowing the package in one function while using it
+		// in another reads badly.
+		rel := "agents/" + n + ".md"
+		b, err := fs.ReadFile(posse.Seed, rel)
+		if err != nil {
+			// Not a skip: the embed is compiled into this binary, so a
+			// read that fails is a broken build, not a missing checkout.
+			t.Fatalf("read %s from the embed: %v", rel, err)
+		}
+		out = append(out, extDiffSurface{name: "examples/" + rel, text: string(b), markdown: true})
+	}
+	return out
 }
 
 func extDiffReadDoc(t *testing.T, path string) string {
@@ -630,9 +697,11 @@ type extDiffSpan struct {
 // very line to keep the longer command on one line). NOTES.md is where it
 // bites and neither liveness guard reaches it: the three exempted measurement
 // spans satisfy ARM 6's `seen[name] == 0` on their own, and ARM 7's floor of 3
-// is met by what is left. So the continuation is joined before anything is
-// graded, and joined NARROWLY — only when the still-open span has already
-// begun a `git diff`, so no other wrapped command in either doc is touched.
+// AS IT THEN WAS is met by what is left — that floor is gone now, replaced by
+// the same per-surface question ARM 6 asks. So the continuation is joined
+// before anything is graded, and joined NARROWLY — only when the still-open
+// span has already begun a `git diff`, so no other wrapped command in either
+// doc is touched.
 func gitDiffSpans(text string, markdown bool) []extDiffSpan {
 	var out []extDiffSpan
 	fenced := false

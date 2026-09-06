@@ -174,6 +174,7 @@ var shippedExampleDigests = map[string][]string{
 		"5e543fcc549b4d8a7ac9c1466ae3db2c72b4051dfe26a3a1085c6772cd6a10fe", // ranger-base-tpc41 2026-09-01 hand to the lane: template line drops -a, Hand-to rows name lanes (ADR 0006 §1)
 		"c0a592eeae9bed4d36c70b5700db749963eaaf1f97e6304665388fc4d7fba296", // 0211551f35cc 2026-09-02 ADR 0006: class rows and every example PID's handoff line name the class (ranger-base-zbd51)
 		"aea5df56b529e08f057062e31a8bf35f703e1180375ff561202f5f49160830f2", // b0eae4d88f99 2026-09-03 pkill/killall enforced in every shipped PID: deny Bash(pkill:*) and Bash(killall:*) (ranger-base-jjx19)
+		"a1ad3158b83b45466e0d348a4123b942cb0716b19dda82ffe526e7a2dd1877a1", // ranger-base-kox69 2026-09-06 the reviewer's own `git diff` prescription states its format (--no-ext-diff)
 	},
 	"agents/security.md": {
 		"d3d07f404ab3099e93525374c8ae94dbfb12f21ef20434d3777a295c050ad8be", // 5668b76

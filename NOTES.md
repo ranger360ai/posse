@@ -7162,6 +7162,47 @@ The fixture helper witnesses both directions — the call it means to break, and
 the call that must still work — because a plant that broke both would leave
 the arm measuring the other reader.
 
+**A "shipped surfaces" population must be DERIVED from the embed, and it has
+been missed twice by a hand-written list** (ranger-base-kox69, verifying
+ranger-base-3ersc). `embed.go:17` is `//go:embed all:examples`, so everything
+under `examples/` is inside every release binary and `posse init` lays it down
+in a fresh instance. That makes a seed PID *more* shipped than AGENTS.md, not
+less — AGENTS.md is a file in this repository, the seed is what a deployer
+gets — and it is exactly the surface a sweep forgets, because the PIDs a
+persona reads all day live in `RHQ_HOME/agents/`:
+
+- ranger-base-09b7: the L1 commit wall stood on the crew's own files and on no
+  PID anyone created from what the binary ships.
+- ranger-base-l1ix2 hardened a broken command everywhere it was PRESCRIBED,
+  listed the hand-sweep as "README.md, INSTALL.md and the ADRs … docs/notes.d/
+  is out too", and closed with "that is the whole rest of the tree".
+  `examples/agents/reviewer.md:69` still told a reviewer to run the broken
+  form, on exactly the change they were sent to read.
+
+So build the population with `exampleAgentNames(posse.Seed)` and
+`fs.ReadFile`, not a literal list: a PID added tomorrow is then graded with
+nobody remembering the test file. Read the EMBED rather than `../../examples`
+— in a checkout they are the same bytes, and the embed is the artifact both
+gaps were in. Put a corpus floor on it, because `fs.ReadDir` over a subtree
+that moved returns nothing AND no error, so a census over zero surfaces is
+green. `extdiff_qa_test.go`'s `extDiffSeedSurfaces` and
+`commitwallseed_qa_test.go` are the two worked examples.
+
+Editing a seed PID is two edits, never one: `exampledigests.go`'s contract is
+APPEND the new sha256 for that path and never replace one, or a home holding
+the old bytes stops being a home posse recognises its own file in.
+`TestEveryEmbeddedExamplePIDIsInTheShippedTable` reds and prints the line.
+
+**A count FLOOR is not a liveness check — measure how slack yours is.**
+`extdiff_qa_test.go`'s ARM 7 ran seven prescriptions against a floor of three,
+so four of them could stop being found without a word. Ask the question
+per NAMED surface instead (`ran[name] == 0`), so a prescription that
+disappears reds by file rather than shrinking a total nobody reads. That is
+ranger-base-3ersc FINDING 2 one level up: there, three exempt spans satisfied
+`seen[name] == 0` on their own while every real NOTES.md prescription could
+vanish. Before writing any floor, count the real population once with a
+throwaway `t.Logf` census; a floor set below what is there measures nothing.
+
 **A tree-walking pin must skip what git skips.** `TestSeedSurfaceNameCountIsZero`
 walked the repo root skipping only `.git` and `.beads`, so `make build` — which
 writes the gitignored `bin/posse-go` — put a 13MB Mach-O on the "seed surface"
