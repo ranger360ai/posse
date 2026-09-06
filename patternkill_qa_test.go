@@ -37,19 +37,32 @@ package posse
 // every arm ok, two `…/q/posse-B version` processes left behind on ppid 1 and
 // both refusals in the log. After the fix: same arms, no orphans, no refusal.
 //
-// WHAT IS PINNED HERE, and why it is two tests. The first is the sweep: no
-// shipped shell script may name `pkill` or `killall` outside a quote or a
-// comment. A sweep that finds nothing proves nothing on its own, so its
-// detector is graded first against a fixture table that carries the exact
-// pre-fix lines it has to flag and the real corpus lines it must not.
+// WHAT IS PINNED HERE, and why it is three subjects. Each is a reader plus
+// the control arm that grades it, because a reader that answers "nothing
+// wrong" to everything is how this defect got four months of green arms in
+// the first place — so five tests for three claims.
 //
-// The second is the mechanism, executed rather than read, because the sweep
+// The first is the SWEEP: no shipped shell script may name `pkill` or
+// `killall` outside a quote or a comment. A sweep that finds nothing proves
+// nothing on its own, so its detector is graded first against a fixture table
+// that carries the exact pre-fix lines it has to flag and the real corpus
+// lines it must not.
+//
+// The second is the MECHANISM, executed rather than read, because the sweep
 // only says the verb is gone — not that what replaced it reaps anything. It
 // runs both reaper shapes against a live fixture with a REFUSING pkill at the
 // head of PATH, the shim's own shape, and reads the kernel: the old shape has
 // to leave its grandchild alive (without that arm the new one is measuring
 // the absence of a defect that could never have happened here), and the new
 // one has to leave nothing.
+//
+// The third is the SHAPE OF THE SHIPPED SCRIPTS, added by ranger-base-8v29w
+// and written up where it stands, below the second. The second runs a REPLICA
+// of the reaper, so between them the first two left the two scripts' own fix
+// pinned by the absence of one word: `set -m` and `exec` could both come back
+// out of verify-govern-honesty.sh with all three of the tests that existed
+// staying green and the watch loop outliving its reaper again. MEASURED, and
+// that mutant now reds.
 //
 // Both fixtures end their own processes by the pid they recorded when they
 // started them, and a reader tempted to replace that with a tidier census
@@ -65,6 +78,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -331,5 +345,385 @@ fi
 	if newAlive {
 		t.Errorf("the group reaper left pid %d alive with pkill refused — the fix for "+
 			"ranger-base-q8hbz does not reap, and the arms after it are unmeasured", newPID)
+	}
+}
+
+// ─── the shipped scripts' own shape, read rather than replicated ─────────────
+//
+// TestTheGroupReaperEndsWhatThePatternKillCouldNot above runs a REPLICA of the
+// reaper shape, not either script, so what the two shipped scripts actually do
+// was pinned only by the absence of the word `pkill` — and the sweep is blind
+// to every other half of the fix. MEASURED (ranger-base-8v29w, the verify of
+// ranger-base-q8hbz): drop the `set -m` and the `exec` out of
+// verify-govern-honesty.sh's start_loop, reintroducing NO pkill so the sweep
+// still passes, and all three tests above stay green while the watch loop
+// outlives its reaper exactly as it did pre-fix.
+//
+// So this arm reads the scripts. Three rules, each of them a half of the fix
+// q8hbz landed, and each stated as what the shipped file must show:
+//
+//	A  a background launch whose pid is CAPTURED (`x=$!`) runs under `set -m`,
+//	   so the pid it hands out is also a process-GROUP id, and `kill -SIG --
+//	   "-$pid"` reaches the work rather than the wrapper around it.
+//	D  a launch that is a SINGLE-COMMAND subshell `( … ) &` execs that command,
+//	   so the group leader pid IS the binary under test — which makes both the
+//	   `|| kill -SIG "$pid"` fallback and every `kill -0 "$pid"` speak about
+//	   that binary rather than about a wrapper that may already be gone.
+//	   run_bounded in macos-install-probe.sh is exempt from D and honestly so:
+//	   its subshell carries a second command (`echo $? >"$p.rc"`) that must
+//	   outlive the first, so it cannot exec.
+//
+//	   WHY BOTH, measured on this box rather than argued: the two halves reap
+//	   by different routes and either one alone is enough in this shape. With
+//	   `set -m` and no `exec`, the group kill reaps the grandchild (the
+//	   wrapper is the group leader and the work is in its group). With `exec`
+//	   and no `set -m`, the group kill finds no group and the pid-only
+//	   fallback takes the work, because the pid IS the work. With NEITHER the
+//	   grandchild survives — which is the pre-fix shape, and why the mutant
+//	   ranger-base-8v29w measured had to drop both to restore q8hbz. The rules
+//	   are separate because the two scripts' reasons for each are separate,
+//	   and because a fix that keeps only one half is one edit from keeping
+//	   neither.
+//	B  a kill carrying an explicit terminating signal tries the GROUP first —
+//	   `kill -SIG -- "-$pid"` — whatever it falls to afterwards on the same
+//	   line. `kill -0` is a liveness probe and is not a kill; a signal-less
+//	   `kill "$pid"` is exempt, because the dozen of those on
+//	   macos-install-probe.sh's early-return paths are courtesy TERMs whose
+//	   backstop is cleanup's `reap`, which IS a group kill and is checked by
+//	   this rule.
+//
+// A launch that captures no `$!` is exempt from A and D, and exactly one of
+// the five in these two files is: verify-govern-honesty.sh's scratch herdr
+// server, whose pid is never taken because it is ended by `herdr session
+// stop` and by nothing else.
+//
+// This is a static read, and it says so: it does not run either script, and
+// it is not a substitute for doing so. A seat cannot in any case — REPORTED
+// on ranger-base-8v29w and not re-measured here: a QA seat's scratch herdr
+// will not start under the seatbelt cage ("Error: Os { code: 1, kind:
+// PermissionDenied }"), so verify-govern-honesty.sh exits 2 at "scratch herdr
+// did not come up" before its first arm. What the static read buys is the
+// half a live run would not give either: the shape is asserted on every suite
+// run, on any box, in under a fifth of a second, including the boxes and the
+// runs where neither script is executed at all.
+
+// pkShellCode answers one line of shell with its comment tail removed, and a
+// mask saying which of the returned runes were inside a quoted string. The
+// quoting rules are pkUnquotedKills's, for the reasons written there: this
+// tree's shell carries pkill lines, kill lines and `&` inside strings and
+// comments that are not the thing being looked for.
+func pkShellCode(line string) (string, []bool) {
+	var out []rune
+	var mask []bool
+	var single, double bool
+	r := []rune(line)
+	for i := 0; i < len(r); i++ {
+		c := r[i]
+		switch {
+		case single:
+			out, mask = append(out, c), append(mask, true)
+			if c == '\'' {
+				single = false
+			}
+			continue
+		case double:
+			out, mask = append(out, c), append(mask, true)
+			if c == '\\' && i+1 < len(r) {
+				i++
+				out, mask = append(out, r[i]), append(mask, true)
+			} else if c == '"' {
+				double = false
+			}
+			continue
+		case c == '\'':
+			single = true
+		case c == '"':
+			double = true
+		case c == '\\' && i+1 < len(r):
+			out, mask = append(out, c), append(mask, false)
+			i++
+			c = r[i]
+		case c == '#' && (i == 0 || r[i-1] == ' ' || r[i-1] == '\t'):
+			return string(out), mask // the rest of the line is a comment
+		}
+		out, mask = append(out, c), append(mask, false)
+	}
+	return string(out), mask
+}
+
+// pkHasUnquoted answers whether b appears outside a quoted string in a line
+// already run through pkShellCode.
+func pkHasUnquoted(code string, mask []bool, b rune) bool {
+	for i, c := range []rune(code) {
+		if c == b && i < len(mask) && !mask[i] {
+			return true
+		}
+	}
+	return false
+}
+
+var (
+	// pkGroupKill matches the group-first reaper anywhere in a line: an
+	// explicit signal, then the `--` that keeps the negative pid off the
+	// option table (ADR-less but load-bearing: without it `-9` and `-$pid`
+	// are both read as options), then a `-$…` target.
+	pkGroupKill = regexp.MustCompile(`kill\s+-[A-Za-z0-9]+\s+--\s+"?-\$`)
+	// pkGroupKillHere is the same shape ANCHORED, and the rule uses this one:
+	// the group form has to be the FIRST killing verb on the line, not merely
+	// present somewhere on it. `kill -9 "$a" || kill -9 -- "-$b"` reaps $a by
+	// pid and carries a group kill for a different job, and an unanchored
+	// read calls that clean.
+	pkGroupKillHere = regexp.MustCompile(`^kill\s+-[A-Za-z0-9]+\s+--\s+"?-\$`)
+	// pkSignalKill matches any kill carrying an explicit signal, group form
+	// or not. `-0` is excluded by the rule below, not here, so the count of
+	// what was examined stays visible to the caller.
+	pkSignalKill = regexp.MustCompile(`(^|[^-\w])kill\s+-([A-Za-z0-9]+)\b`)
+	// pkExec answers the `exec` that makes a subshell's group leader the
+	// binary itself rather than a wrapper around it.
+	pkExec = regexp.MustCompile(`(^|[^-\w])exec\s`)
+)
+
+// pkAudit reads one script and answers its complaints, how many background
+// launches it saw and how many explicit-signal kills it examined. The two
+// counts are the positive witness: a parse that recognized nothing produces no
+// complaints either, which reads exactly like a clean script.
+func pkAudit(name, text string) (complaints []string, launches, kills int) {
+	lines := strings.Split(text, "\n")
+	code := make([]string, len(lines))
+	mask := make([][]bool, len(lines))
+	for i, l := range lines {
+		code[i], mask[i] = pkShellCode(l)
+	}
+	stmt := func(i int) bool { return strings.TrimSpace(code[i]) != "" }
+	// prev/next answer the nearest statement line either way, stepping over
+	// blank lines and the comment blocks these scripts are mostly made of.
+	prev := func(i int) int {
+		for j := i - 1; j >= 0; j-- {
+			if stmt(j) {
+				return j
+			}
+		}
+		return -1
+	}
+	next := func(i int) int {
+		for j := i + 1; j < len(lines); j++ {
+			if stmt(j) {
+				return j
+			}
+		}
+		return -1
+	}
+
+	for i := range lines {
+		c := strings.TrimSpace(code[i])
+		at := fmt.Sprintf("%s:%d", name, i+1)
+
+		// ── the launch rules. A background launch is a line whose last
+		// unquoted rune is a lone `&`; `&&` at the end of a line is a
+		// continuation and `>&2` is a redirection.
+		if strings.HasSuffix(c, "&") && !strings.HasSuffix(c, "&&") && !strings.HasSuffix(c, ">&") {
+			if idx := strings.LastIndex(code[i], "&"); idx >= 0 && !mask[i][len([]rune(code[i][:idx]))] {
+				launches++
+				n := next(i)
+				captured := n >= 0 && strings.Contains(code[n], "$!")
+				if captured {
+					if p := prev(i); p < 0 || strings.TrimSpace(code[p]) != "set -m" {
+						complaints = append(complaints, at+": a background launch whose pid is captured "+
+							"is not under `set -m`, so that pid is not a process-group id and "+
+							"`kill -SIG -- \"-$pid\"` reaps the wrapper only (ranger-base-q8hbz): "+strings.TrimSpace(lines[i]))
+					}
+					if strings.HasPrefix(c, "(") &&
+						!pkHasUnquoted(code[i], mask[i], ';') &&
+						!pkExec.MatchString(code[i]) {
+						complaints = append(complaints, at+": a single-command subshell launch does not `exec`, "+
+							"so the group leader is a wrapper and `kill -0` speaks about the wrong "+
+							"process (ranger-base-q8hbz): "+strings.TrimSpace(lines[i]))
+					}
+				}
+			}
+		}
+
+		// ── the reaper rule, read at the FIRST killing verb on the line.
+		for _, loc := range pkSignalKill.FindAllStringSubmatchIndex(code[i], -1) {
+			if code[i][loc[4]:loc[5]] == "0" { // `kill -0` lists, it does not kill
+				continue
+			}
+			verb := loc[3] // past the (^|[^-\w]) guard: the `kill` itself
+			if mask[i][len([]rune(code[i][:verb]))] {
+				continue // inside a string: an echo about a kill is not one
+			}
+			kills++
+			if !pkGroupKillHere.MatchString(code[i][verb:]) {
+				complaints = append(complaints, at+": a kill with an explicit signal does not try the "+
+					"process GROUP first (`kill -SIG -- \"-$pid\"`), so a job whose work is a CHILD "+
+					"of the pid outlives its reaper (ranger-base-q8hbz): "+strings.TrimSpace(lines[i]))
+			}
+			break // one complaint per line, whatever it chains to
+		}
+	}
+	return complaints, launches, kills
+}
+
+// TestThePkAuditFlagsTheShapesItIsFor is pkAudit's control arm, and it is the
+// same demand TestThePatternKillDetectorFlagsTheLinesItIsFor makes of the
+// sweep: a reader that answers "no complaint" to everything is a green light,
+// not a measurement. The must-flag text is the PRE-FIX shape of
+// verify-govern-honesty.sh's start_loop and kill_loop, spelled the way the
+// finding that filed this arm measured it.
+func TestThePkAuditFlagsTheShapesItIsFor(t *testing.T) {
+	// One complaint per rule, each one the real defect.
+	for _, c := range []struct {
+		name string
+		want string
+		text string
+	}{{
+		name: "no set -m",
+		want: "not under `set -m`",
+		text: "start_loop() {\n\t(cd \"$W\" && exec env \"$P\" dispatch --watch 5m >\"$L\" 2>&1) &\n\tLOOP_PID=$!\n}\n",
+	}, {
+		name: "no exec",
+		want: "does not `exec`",
+		text: "start_loop() {\n\tset -m\n\t(cd \"$W\" && env \"$P\" dispatch --watch 5m >\"$L\" 2>&1) &\n\tLOOP_PID=$!\n\tset +m\n}\n",
+	}, {
+		name: "the pre-fix pid-only reaper",
+		want: "does not try the process GROUP first",
+		text: "kill_loop() {\n\tkill -9 \"$pid\" >/dev/null 2>&1 || true\n}\n",
+	}, {
+		name: "the pre-fix cockpit reaper",
+		want: "does not try the process GROUP first",
+		text: "\tkill -INT \"$cp\" >/dev/null 2>&1 || true\n",
+	}, {
+		// The case only the ANCHORED read catches: a group kill is present
+		// on the line, and it is for a different job than the pid-only kill
+		// that runs first. An unanchored `does this line contain a group
+		// form` call this clean, which is why the rule is anchored at the
+		// first killing verb.
+		name: "a pid-only kill chained before a group kill",
+		want: "does not try the process GROUP first",
+		text: "\tkill -9 \"$a\" 2>/dev/null || kill -9 -- \"-$b\" 2>/dev/null\n",
+	}} {
+		got, _, _ := pkAudit("fixture.sh", c.text)
+		if len(got) == 0 {
+			t.Errorf("%s: pkAudit flagged nothing, so a clean sweep of the real scripts measures nothing:\n%s", c.name, c.text)
+			continue
+		}
+		if !strings.Contains(strings.Join(got, "\n"), c.want) {
+			t.Errorf("%s: pkAudit complained, but not about %q:\n\t%s", c.name, c.want, strings.Join(got, "\n\t"))
+		}
+	}
+
+	// And the must-pass text: every exemption this reader grants, spelled as
+	// the shipped line that needs it. A reader this noisy gets waived.
+	for _, c := range []struct {
+		name string
+		text string
+	}{{
+		name: "the fixed start_loop",
+		text: "\tset -m\n\t(cd \"$W\" && exec env \"$P\" dispatch --watch 5m >\"$L\" 2>&1) &\n\tLOOP_PID=$!\n\tset +m\n",
+	}, {
+		name: "the group-first reaper and its fallback",
+		text: "\tkill -9 -- \"-$pid\" >/dev/null 2>&1 || kill -9 \"$pid\" >/dev/null 2>&1 || true\n",
+	}, {
+		name: "kill -0 is a liveness probe",
+		text: "\tkill -0 \"$1\" 2>/dev/null && return 0\n",
+	}, {
+		name: "a signal-less courtesy TERM whose backstop is cleanup",
+		text: "\t\tkill \"$server\" 2>/dev/null\n",
+	}, {
+		name: "a launch whose pid is never taken",
+		text: "unset_herdr\nenv RHQ_HOME=\"$H\" \"$HERDR\" --session \"$S\" server >/dev/null 2>&1 &\nwait_server || exit 2\n",
+	}, {
+		name: "a subshell that must outlive its command cannot exec",
+		text: "\tset -m\n\t( RHQ_HOME=$R/never \"$p\" version >\"$p.out\" 2>\"$p.err\"; echo $? >\"$p.rc\" ) &\n\tlocal child=$!\n\tset +m\n",
+	}, {
+		name: "a kill named in a comment or an echo",
+		text: "# what stood here was `kill -9 $LOOP_PID`, which took the wrapper\n\techo \"the loop ($pid) survived kill -9 — the reaper failed\"\n",
+	}, {
+		name: "&& at the end of a line is a continuation",
+		text: "\t( cd \"$t\" && git init -q . &&\n\t\tgit add F ) >\"$log\" 2>&1\n",
+	}} {
+		if got, _, _ := pkAudit("fixture.sh", c.text); len(got) != 0 {
+			t.Errorf("%s: pkAudit complained about a line that is correct as it stands:\n\t%s", c.name, strings.Join(got, "\n\t"))
+		}
+	}
+}
+
+// TestTheReapingScriptsKeepTheirGroupShape reads what posse ships. It is the
+// half TestTheGroupReaperEndsWhatThePatternKillCouldNot cannot reach: that arm
+// proves the SHAPE reaps, this one proves the two scripts still have it.
+func TestTheReapingScriptsKeepTheirGroupShape(t *testing.T) {
+	// Named rather than globbed. Every script that launches a job it later
+	// reaps by pid is one of these two, and that is asserted below rather
+	// than assumed: a third one appearing is a change this pin should be
+	// told about, in a failure that names it.
+	want := []string{"scripts/verify-govern-honesty.sh", "scripts/macos-install-probe.sh"}
+	var totalLaunches, totalKills int
+	for _, rel := range want {
+		b, err := os.ReadFile(filepath.FromSlash(rel))
+		if err != nil {
+			t.Fatalf("read %s: %v — this pin needs the shipped script, and a missing one "+
+				"is not a clean result", rel, err)
+		}
+		complaints, launches, kills := pkAudit(rel, string(b))
+		totalLaunches += launches
+		totalKills += kills
+		if len(complaints) > 0 {
+			t.Errorf("%s no longer carries the shape ranger-base-q8hbz landed:\n\t%s",
+				rel, strings.Join(complaints, "\n\t"))
+		}
+	}
+	// The floor is the positive witness, and it is the census at the time of
+	// writing: five background launches (two in verify-govern-honesty.sh's
+	// start_loop and cockpit_frame, its scratch herdr server, and
+	// macos-install-probe.sh's run_bounded and loopback http.server) and four
+	// explicit-signal kills (kill_loop, cockpit_frame's INT and its -9, and
+	// macos-install-probe.sh's reap). A parse that quietly stops recognizing
+	// them reads exactly like two clean scripts.
+	if totalLaunches < 5 || totalKills < 4 {
+		t.Fatalf("the reader found %d background launches and %d explicit-signal kills in %v — "+
+			"it is not recognizing them, so a clean result measures nothing", totalLaunches, totalKills, want)
+	}
+
+	// And the two named files are the whole class, asserted by the property
+	// that defines it rather than by a memory of the tree: a script that
+	// reaps a process GROUP is a script with a job whose work is a CHILD of
+	// the pid it holds, which is what this reader is for. A third one
+	// appearing is a change this pin must be told about, in a failure that
+	// names it.
+	//
+	// THE LIMIT, said out loud: this does NOT find a new script that grows
+	// the pre-fix shape from scratch — a wrapper launch reaped by pid alone
+	// looks, statically, exactly like scripts/suite-lock.sh's arms, where the
+	// captured pid IS the work, every job is `wait`ed, and `kill -9 "$h2"` is
+	// the measurement itself (release is process death, ranger-base-2fgu4).
+	// Telling those apart needs a dataflow read of shell that is not worth
+	// building for it. What covers the new script is
+	// TestNoShippedShellScriptCallsAPatternKill above, which catches the
+	// spelling the defect actually arrives in.
+	out, err := exec.Command("git", "ls-files", "-z").Output()
+	if err != nil {
+		t.Fatalf("git ls-files: %v", err)
+	}
+	named := map[string]bool{want[0]: true, want[1]: true}
+	var strays []string
+	for _, rel := range strings.Split(strings.TrimSuffix(string(out), "\x00"), "\x00") {
+		if rel == "" || !strings.HasSuffix(rel, ".sh") || named[rel] {
+			continue
+		}
+		b, err := os.ReadFile(filepath.FromSlash(rel))
+		if err != nil {
+			t.Fatalf("read %s: %v", rel, err)
+		}
+		for i, line := range strings.Split(string(b), "\n") {
+			c, _ := pkShellCode(line)
+			if pkGroupKill.MatchString(c) {
+				strays = append(strays, fmt.Sprintf("%s:%d: %s", rel, i+1, strings.TrimSpace(line)))
+			}
+		}
+	}
+	if len(strays) > 0 {
+		t.Errorf("a shipped script outside %v reaps a process group, so it holds a job whose work is a "+
+			"CHILD of its pid and it has a launch shape this pin does not read — add it to `want` above:\n\t%s",
+			want, strings.Join(strays, "\n\t"))
 	}
 }

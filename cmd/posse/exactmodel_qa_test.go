@@ -14,9 +14,66 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
+
+// namesTheRemovedSubstitution answers any spelling of the mechanism ADR 0003
+// §3 removed. It is this package's copy of the family
+// internal/posse/exactmodel_qa_test.go spells for the warn line — two
+// packages, so two vars, and they must stay identical: the same rewording
+// that walks out from under one walks out from under the other, which is why
+// ranger-base-g6k5b's fix and ranger-base-8v29w's finding each landed on both
+// surfaces at once. The reasoning is written out at the internal copy;
+// TestTheTwoSubstitutionFamiliesAreOneFamily below is why "must stay
+// identical" is a pin here rather than a hope.
+var namesTheRemovedSubstitution = regexp.MustCompile(`(?i)(substitut|fall|\bfell\b)`)
+
+// substitutionFamilyLiteral answers the regexp literal one file gives
+// namesTheRemovedSubstitution, or "" if that file does not spell one.
+func substitutionFamilyLiteral(t *testing.T, path string) string {
+	t.Helper()
+	b, err := os.ReadFile(filepath.FromSlash(path))
+	if err != nil {
+		t.Fatalf("read %s: %v — this pin needs both copies, and a missing one is not a match", path, err)
+	}
+	const decl = "var namesTheRemovedSubstitution = regexp.MustCompile(`"
+	i := strings.Index(string(b), decl)
+	if i < 0 {
+		return ""
+	}
+	rest := string(b)[i+len(decl):]
+	j := strings.IndexByte(rest, '`')
+	if j < 0 {
+		return ""
+	}
+	return rest[:j]
+}
+
+// TestTheTwoSubstitutionFamiliesAreOneFamily is the guard on the sentence
+// above. Two operator-visible surfaces carry the same must-NOT vocabulary and
+// they are in different packages, so the ban is spelled twice — and a ban
+// spelled twice is a ban that gets widened once. That is not hypothetical
+// here: it is the exact shape of ranger-base-8v29w's first finding, where one
+// respelling walked out from under BOTH copies and each had to be widened in
+// the same commit, and of ranger-base-g6k5b's fix before it.
+//
+// It compares the literals rather than the compiled regexps because that is
+// what a reader diffs and what a reviewer waives: two patterns that match the
+// same strings today but are written differently are already drifting.
+func TestTheTwoSubstitutionFamiliesAreOneFamily(t *testing.T) {
+	here := substitutionFamilyLiteral(t, "exactmodel_qa_test.go")
+	there := substitutionFamilyLiteral(t, "../../internal/posse/exactmodel_qa_test.go")
+	if here == "" || there == "" {
+		t.Fatalf("the family literal was not found in both copies (cmd %q, internal %q) — "+
+			"this pin is reading for a declaration that has been renamed, so its silence measures nothing", here, there)
+	}
+	if here != there {
+		t.Errorf("the two copies of the removed-substitution family have drifted, so a respelling "+
+			"caught on one operator surface is missed on the other (ranger-base-8v29w):\n\tcmd/posse      %s\n\tinternal/posse %s", here, there)
+	}
+}
 
 func TestNewModelFlagRefusals(t *testing.T) {
 	bin := buildRhq(t)
@@ -136,13 +193,16 @@ func modelHelpBlock(t *testing.T, out string) string {
 //
 // Both halves, for that reason: what the block must say, and the vocabulary
 // of the removed walk, which must not come back into this block by any
-// rewording. The banned entries are STEMS, matched against a lower-cased
-// block: a list of whole inflected forms is evaded by any one-word respelling
-// of the same meaning ("falls back" does not contain "fall back";
+// rewording. That vocabulary is namesTheRemovedSubstitution, a FAMILY and not
+// a list of forms: a list of whole inflected forms is evaded by any one-word
+// respelling of the same meaning ("falls back" does not contain "fall back";
 // "substituting" contains neither "substitute" nor "substitution"), which
-// left this half green on a reworded help line (ranger-base-g6k5b). Grade it
-// by rewording, never by putting the retired sentence back. The stems do not
-// themselves answer a sweep for the retired phrases.
+// left this half green on a reworded help line (ranger-base-g6k5b) — and the
+// stems that answered THAT were themselves evaded by the irregular past,
+// which contains no "fall" (ranger-base-8v29w; " — an ordinary launch fell
+// back, this one does not — " appended to this very entry MEASURED green).
+// Grade it by rewording, never by putting the retired sentence back. The
+// family does not itself answer a sweep for the retired phrases.
 func TestModelHelpNamesTheVerdictNotTheRemovedSubstitution(t *testing.T) {
 	block := modelHelpBlock(t, helpText(t))
 	for _, want := range []string{"--agent", "--runtime", "--tier", "tier availability verdict"} {
@@ -150,9 +210,7 @@ func TestModelHelpNamesTheVerdictNotTheRemovedSubstitution(t *testing.T) {
 			t.Errorf("the --model help does not name %q:\n%s", want, block)
 		}
 	}
-	for _, gone := range []string{"substitut", "fall"} {
-		if strings.Contains(strings.ToLower(block), gone) {
-			t.Errorf("the --model help still names the removed automatic substitution (%q):\n%s", gone, block)
-		}
+	if m := namesTheRemovedSubstitution.FindString(block); m != "" {
+		t.Errorf("the --model help still names the removed automatic substitution (%q):\n%s", m, block)
 	}
 }

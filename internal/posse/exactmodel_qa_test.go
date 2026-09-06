@@ -24,6 +24,30 @@ import (
 	"time"
 )
 
+// namesTheRemovedSubstitution answers any spelling of the mechanism ADR 0003
+// §3 removed (ranger-base-hv2zr), and it is the must-NOT half of the two pins
+// that guard the operator-visible sentences — the canary's warn line here and
+// the `--model` help entry in cmd/posse.
+//
+// A regexp, and not the stem list {"substitut", "fall"} it replaces, because
+// a stem is not a family. A whole-form list was evaded by an inflection
+// ("falls back" contains no "fall back"), which is what ranger-base-g6k5b was
+// filed for; the stems that answered THAT are evaded one respelling further
+// out by the irregular past, which contains no "fall" at all — "so nothing
+// fell back to the catalog" and "so nothing fell through to the catalog" were
+// MEASURED green on both surfaces after g6k5b's fix (ranger-base-8v29w, from
+// the verify ranger-base-2ldvg). It is the same widening ranger-base-dopyl
+// made on a different vocabulary fourteen minutes later, and for the same
+// reason: credcomposite_test.go's namesTheFallThrough spells the family there.
+//
+// "fell" is whole-word because a bare "fel" takes "fellow" and "fella"; the
+// two stems stand exactly as they did, so this is strictly WIDER than what it
+// replaces and can red nothing the old list let pass. Case-insensitive here
+// rather than by lower-casing the haystack, so the failure can quote the form
+// it actually found. Grade it by rewording, never by putting the retired
+// sentence back.
+var namesTheRemovedSubstitution = regexp.MustCompile(`(?i)(substitut|fall|\bfell\b)`)
+
 // astraID is the operator's first canary (ADR 0053 D5). Spelled here once so
 // a pin that stops naming it is visible as a diff rather than as a rename.
 const astraID = "gpt-6-astra"
@@ -207,13 +231,16 @@ func TestExactModelRendersTheCodexLine(t *testing.T) {
 // see this class, because the old sentence said a right-looking thing too —
 // a contrast clause is the one shape that can invert without a byte changing
 // in it, which is exactly how this survived the removal's own sweep. The
-// banned entries are STEMS, matched against a lower-cased haystack: a list of
-// whole inflected forms is evaded by any one-word respelling of the same
-// meaning ("falls back" does not contain "fall back"; "substituting" contains
-// neither "substitute" nor "substitution"), which left this half green on
-// three such mutants (ranger-base-g6k5b). Grade it by rewording, never by
-// putting the retired sentence back. The stems do not themselves answer a
-// sweep for the retired phrases.
+// banned vocabulary is namesTheRemovedSubstitution, a FAMILY and not a list
+// of forms: a list of whole inflected forms is evaded by any one-word
+// respelling of the same meaning ("falls back" does not contain "fall back";
+// "substituting" contains neither "substitute" nor "substitution"), which
+// left this half green on three such mutants (ranger-base-g6k5b) — and the
+// STEMS that answered THAT were themselves evaded by the irregular past,
+// which contains no "fall" at all (ranger-base-8v29w, where "so nothing fell
+// back to the catalog" MEASURED green on this pin). Grade it by rewording,
+// never by putting the retired sentence back. The family does not itself
+// answer a sweep for the retired phrases.
 func TestExactModelSkipsTierVerdict(t *testing.T) {
 	t.Parallel()
 	b, fake := newTestBackend(t)
@@ -259,16 +286,12 @@ func TestExactModelSkipsTierVerdict(t *testing.T) {
 	if !strings.Contains(warn.String(), "EXACT model claude-6-astra") || !strings.Contains(warn.String(), "tier availability verdict is skipped") {
 		t.Errorf("the canary launch did not say it was skipping the tier verdict: %q", warn.String())
 	}
-	// And it does not describe the removed mechanism. These stems are the
-	// reason this pin has a second half: each of them makes the clause read
-	// as "an ordinary launch WOULD substitute", which stopped being true at
-	// ADR 0003 §3 without anything here changing. Stems, not words, so that
-	// an inflection ("falls back", "substituting") cannot walk out from under
-	// the ban; lower-cased, so neither can a capital at a sentence head.
-	for _, gone := range []string{"substitut", "fall"} {
-		if strings.Contains(strings.ToLower(warn.String()), gone) {
-			t.Errorf("the canary line names the removed automatic substitution (%q): %q", gone, warn.String())
-		}
+	// And it does not describe the removed mechanism. That vocabulary is the
+	// reason this pin has a second half: any of it makes the clause read as
+	// "an ordinary launch WOULD substitute", which stopped being true at
+	// ADR 0003 §3 without anything here changing.
+	if m := namesTheRemovedSubstitution.FindString(warn.String()); m != "" {
+		t.Errorf("the canary line names the removed automatic substitution (%q): %q", m, warn.String())
 	}
 	// And it does NOT print a verdict about a model nobody launched — the
 	// control above proved that same fixture reaches one.

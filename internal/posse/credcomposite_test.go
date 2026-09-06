@@ -57,6 +57,37 @@ var (
 	namesARefresh       = regexp.MustCompile(`(?i)refresh`)
 )
 
+// namesAnotherClassesMove is the never-list of the 44-and-no-file row below:
+// the operator moves that belong to a DIFFERENT credential class, in the
+// words that would send a reader at the wrong half of the system.
+//
+// It is the fifth must-NOT ban in this file, and it was the last one whose
+// entries were VOCABULARY — {"credential stale", "once to refresh", "not
+// entitled"} under a case-sensitive strings.Contains — when ranger-base-dopyl
+// widened the other four. (The three that stay `strings.Contains` after this
+// are fixture VALUES, not vocabulary: fallbackOnlyToken, keychainOnlyToken
+// and fakeToken. A value has no respelling; naming one is the whole defect.)
+// It is widened here for dopyl's own reason, measured on this row rather than
+// argued from it (ranger-base-8v29w, the verify of that close):
+// keychainFallbackFix carrying " — the credential is stale, so run claude
+// once so it refreshes" is BOTH retired moves in one sentence, and none of
+// the three whole forms fired. Each entry was one word from green.
+//
+// The refresh half is namesARefresh itself, not a copy: it is the same family
+// guarding the same vocabulary in the 403 arm below, and two spellings of one
+// ban drift apart. The other two are stems rather than families because their
+// families have no irregular member — "stale" carries "staleness", "entitl"
+// carries "entitled" and "entitlement" — which is the distinction
+// ranger-base-8v29w's other finding turned on ("fall" does not carry "fell").
+// MEASURED, as the unmutated control of that finding: none of the strings
+// this guards contains "stale" or "entitl" in any case, so the width costs no
+// false positive here.
+var namesAnotherClassesMove = []*regexp.Regexp{
+	regexp.MustCompile(`(?i)stale`),  // the 401's move, not this row's
+	namesARefresh,                    // likewise
+	regexp.MustCompile(`(?i)entitl`), // the 403's
+}
+
 // The two envelopes, and they are deliberately not each other: a row that
 // cannot tell which store answered has pinned nothing.
 const (
@@ -292,10 +323,11 @@ func TestDarwinCompositeExitFortyFourWithNoFileIsBlindAndNamesBothCauses(t *test
 		}
 	}
 	// The classes this is NOT, in the words that would send an operator at
-	// the wrong half of the system (the 2026-08-24 reading).
-	for _, never := range []string{"credential stale", "once to refresh", "not entitled"} {
-		if strings.Contains(err.Error(), never) {
-			t.Errorf("the sentence must not carry another class's move %q: %q", never, err)
+	// the wrong half of the system (the 2026-08-24 reading) — in any spelling
+	// of each, which is the half ranger-base-8v29w widened.
+	for _, never := range namesAnotherClassesMove {
+		if m := never.FindString(err.Error()); m != "" {
+			t.Errorf("the sentence must not carry another class's move %q: %q", m, err)
 		}
 	}
 	// And no value, ever.
