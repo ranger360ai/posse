@@ -10,14 +10,15 @@ real test package (`packages.Load` with `Tests: true`), not by grep — an
 identifier census by name alone over-counts badly, because locals shadow
 package-level names (`line`, `write`, `err`, `out`, `cfg`, `at`) in dozens of
 files. The tools are throwaway; the numbers are reproducible from the recipe
-in §5.
+in §7.
 
 ### 1. The subject
 
-`internal/posse` at 6f94a99c: **112 product files, 430 test files, 2870
-top-level tests**, one flat `package posse`. 2122 of the 2870 tests carry
-`t.Parallel()`; 748 do not. CI run 34035314208 puts the package at **640.9s**,
-42% of the 1500s budget and over `SLOW_PACKAGE_SECONDS` (300) by 2.1x.
+`internal/posse` at 6f94a99c: **112 product files, 430 test files, 2869
+top-level tests**, one flat `package posse` (a `^func Test` sweep finds 2870;
+the extra is `TestMain`). 2122 of the 2869 carry `t.Parallel()`; 747 do not.
+CI run 34035314208 puts the package at **640.9s**, 42% of the 1500s budget and
+over `SLOW_PACKAGE_SECONDS` (300) by 2.1x.
 
 One full `-json` run on this box, 2026-09-06, `go test -json -count=1
 -timeout 60m ./internal/posse` at 6f94a99c, 1-minute loadavg between 26 and
@@ -53,6 +54,24 @@ alternative to a split and it cannot touch that half: it can only compress the
 stream alone is ~316s there — over the 300s line **before a single parallel
 test runs**. The only thing that divides a serial stream is more than one
 binary, which is what the bead asked for and why no flag substitutes for it.
+
+Measured rather than argued, because "raise `-parallel`" is the cheap answer
+somebody will propose again. One `go test -c` binary, run from the package
+directory over the same 427-test slice (`-test.run '^Test[CDL]'`, 751s of
+weight), the values interleaved so a drift in box load could not pass for the
+effect:
+
+| `-test.parallel` | wall | 1-min loadavg |
+|---|---|---|
+| 4 | 168s | 67 |
+| 24 | 126s | 135 |
+| 24 | 138s | 197 |
+| 4 | **296s** | 164 |
+| 8 | 166s | 151 |
+| 8 | 193s | 166 |
+
+Six-fold more parallelism buys about 25%. The box's own load moves the
+identical arm by 76%. Neither number is the 2.1x the 300s line needs.
 
 Summed elapsed is not CPU time — a `t.Parallel` test's Elapsed includes the
 time it spent waiting — so treat it as the weight to bin-pack by, not as a
@@ -188,40 +207,48 @@ only one of the three that reaches the line, and it is not small.
 #### How big the shared set is, and how few files really have to be split
 
 Untag the top 30 providers and close over what *they* use, and the untagged
-set does not snowball: **61 files, 897 tests, 1607s of weight**. Every one of
-those 61 is compiled into every arm, so any test still living in one runs
-once per arm.
+set does not snowball: **61 files, 897 tests**. Every one of those 61 is
+compiled into every arm, so any test still living in one runs once per arm.
+Splitting a shared file (helpers stay untagged, its tests move to the tagged
+original) buys that weight back, and the weight is in a handful of them.
 
-That is the whole cost, and it is not paid evenly — the weight is in a
-handful of them. Splitting a shared file (helpers stay untagged, its tests
-move to a tagged companion) buys back its weight, and the heaviest ten buy
-back 1183s of the 1607s:
+#### Bin-pack on the predicted wall, not on the weight
 
-| shared files split | shared weight still duplicated | 3 arms | 4 arms |
+The first cut balanced raw weight and put all three arms at 1705s each, which
+*looked* even and was not: **arm 1 drew 325s of the 537.6s of serial weight**,
+60% of it, because the door pins that have to live in arm 1 are the tree-wide
+ones and tree-wide pins are exactly the tests that cannot take `t.Parallel`.
+Weight is the wrong unit — a second of serial test costs the wall far more
+than a second of parallel test, because only the serial ones cannot overlap.
+
+Fit the two coefficients against CI's own reading. CI ran the whole 4563s of
+weight in 640.9s, so it is 640.9/1091.8 = 0.587x this box per unit of weight;
+that puts the serial stream at 537.6 × 0.587 = 316s there and leaves 325s for
+everything else:
+
+```
+predicted CI seconds = 0.587 × serial_weight  +  0.0808 × parallel_weight
+```
+
+A second of serial weight costs **7.3x** what a second of parallel weight
+costs, and by construction the whole package comes back as 640.9s. Under that
+model the weight-balanced cut was arm 1 **302s**, arm 2 262s, arm 3 221s —
+arm 1 sitting on the line it was supposed to clear, while the table said all
+three were identical. Bin-packing the same components on predicted seconds
+instead, and splitting five more shared files (the five whose duplicated cost
+is highest — `dataceiling_qa_test.go`, `planblind_test.go`,
+`launchlock_test.go`, `grokpool_test.go`, `instancepatternscope_qa_test.go`),
+gives three arms of **235.9s each**: 21% under the line, evenly.
+
+| shared files split | shared cost duplicated per arm | 3 arms | 4 arms |
 |---|---|---|---|
-| 0 | 1607s | ~364s CI | ~329s CI |
-| 5 | 824s | ~291s CI | ~247s CI |
-| **10** | **424s** | **~253s CI** | ~205s CI |
-| 15 | 276s | ~239s CI | ~189s CI |
-| 61 (all) | 0s | ~214s CI | ~160s CI |
+| 15 | 71.9s | 261.6s | 214.1s |
+| **20** | **33.4s** | **235.9s** | 185.3s |
+| 61 (all) | 0s | 213.6s | 160.2s |
 
-**Ten splits and three arms clears the line**; fifteen clears it with room.
-The other ~46 shared files keep their tests and pay the duplication, which is
-cheaper than splitting them. The ten are `autostart_test.go` (246s),
-`worktree_test.go` (150s), `dispatch_qa_test.go` (129s),
-`constitutionwall_qa_test.go` (129s), `worktree_qa_test.go` (128s),
-`gateschain_qa_test.go` (121s), `gates_test.go` (106s),
-`l3_hookspath_qa_test.go` (94s), `verifyafter_test.go` (41s),
-`autoreap_qa_test.go` (38s).
-
-So the shape is: **~10-15 file splits, a build-tag line on the ~369 remaining
-test-bearing files, three Makefile arms, three CI jobs, and one pin that the
-partition is total.**
-
-The CI projection assumes each arm keeps the whole package's parallelism
-profile. That is the first thing to check on the branch that builds this: the
-747 serial tests do not spread evenly by weight, and an arm that inherits a
-disproportionate share of them will run longer than its weight says.
+Three arms clears it, so three is what shipped. If CI ever disagrees, a
+fourth arm is one tag, one Makefile target and one matrix entry, and the
+table above says what it buys.
 
 ### 5. The plan, with its file lists
 
@@ -233,31 +260,34 @@ tagging one leaf file, `go test -list` finds its test under `-tags posse_arm2`
 and does not find it in the default arm, `go vet` passes on both, and
 `make fmt-check` is green over the `//go:build` line.
 
-**The shared (untagged) set is these 61 files** — the 30 providers with the
-most test-file users, closed over what they themselves use. The first fifteen
-are the ones worth splitting; the other 46 keep their tests and pay the
-duplication:
+**The shared set starts as 61 files** — the 30 providers with the most
+test-file users, closed over what they themselves use. Twenty are split, so
+their helpers stay untagged and their tests take an arm; the other 41 keep
+their tests and pay the duplication:
 
 ```
-SPLIT: autostart_test.go worktree_test.go dispatch_qa_test.go
-       constitutionwall_qa_test.go worktree_qa_test.go gateschain_qa_test.go
-       gates_test.go l3_hookspath_qa_test.go verifyafter_test.go
-       autoreap_qa_test.go hookwallsweep_qa_test.go beadloss_qa_test.go
-       hookcluster_qa_test.go launchhookpreheal_qa_test.go relaunch_test.go
-KEEP:  planusage_test.go dataceiling_qa_test.go commitwall_qa_test.go
-       herdr_test.go uncounted_test.go planblind_test.go pulse_delivery_test.go
-       launchlock_test.go grokpool_test.go promote_test.go ciwatch_test.go
-       verifyesa0j_qa_test.go beadloss_test.go autoreap_test.go skills_test.go
-       planseam_test.go instancepatternscope_qa_test.go gatedkeychain_test.go
-       launchlock_qa_test.go planguardpark_test.go govern_test.go
-       seatbeltworktreegit_qa_test.go cage_test.go seatbeltconstitution_qa_test.go
-       readyscan_test.go interstitial_qa_test.go instancerefusalvalue_qa_test.go
-       credcomposite_test.go instancebound_qa_test.go seatbeltcarveout_qa_test.go
-       launchline_qa_test.go seatbeltredirect_test.go modelavail_test.go
-       credseam_test.go trust_test.go watch_test.go metaidentity_test.go
-       watchpid_test.go agents_test.go seatbeltapply_qa_test.go
-       runtimegrid_qa_test.go runtimecheck_test.go runtimeoverlay_test.go
-       plancache_test.go initembed_test.go shelfguard_qa_test.go
+SPLIT: autoreap_qa_test.go autostart_test.go beadloss_qa_test.go
+       constitutionwall_qa_test.go dataceiling_qa_test.go dispatch_qa_test.go
+       gates_test.go gateschain_qa_test.go grokpool_test.go
+       hookcluster_qa_test.go hookwallsweep_qa_test.go
+       instancepatternscope_qa_test.go l3_hookspath_qa_test.go
+       launchhookpreheal_qa_test.go launchlock_test.go planblind_test.go
+       relaunch_test.go verifyafter_test.go worktree_qa_test.go
+       worktree_test.go
+SHARED: agents_test.go autoreap_test.go beadloss_test.go cage_test.go
+        ciwatch_test.go commitwall_qa_test.go credcomposite_test.go
+        credseam_test.go gatedkeychain_test.go govern_test.go herdr_test.go
+        initembed_test.go instancebound_qa_test.go
+        instancerefusalvalue_qa_test.go interstitial_qa_test.go
+        launchline_qa_test.go launchlock_qa_test.go metaidentity_test.go
+        modelavail_test.go plancache_test.go planguardpark_test.go
+        planseam_test.go planusage_test.go promote_test.go
+        pulse_delivery_test.go readyscan_test.go runtimecheck_test.go
+        runtimegrid_qa_test.go runtimeoverlay_test.go seatbeltapply_qa_test.go
+        seatbeltcarveout_qa_test.go seatbeltconstitution_qa_test.go
+        seatbeltredirect_test.go seatbeltworktreegit_qa_test.go
+        shelfguard_qa_test.go skills_test.go trust_test.go uncounted_test.go
+        verifyesa0j_qa_test.go watch_test.go watchpid_test.go
 ```
 
 **Split the helpers out, not the tests.** The obvious direction — move the
@@ -295,32 +325,56 @@ clock is actually bought back.
 
 ### 6. What shipped
 
-Option 2, three arms, exactly as §4-§5 size it.
+Option 2, three arms, sized by the model in §4.
 
-- **384 test files carry an arm tag**; 46 carry none and are the shared
-  helper set every arm compiles. Fifteen files were split — the non-test
+- **389 test files carry an arm tag**; 41 carry none and are the shared
+  helper set every arm compiles. Twenty files were split — the non-test
   declarations moved to an untagged `<base>_helpers_test.go`, the original
   kept its prose, its tests and the tag.
-- **1377 / 1337 / 1213 tests**, 529 of them shared and therefore run in each,
-  and the union is all 2869 (`go test -list` per arm, against the 2870 that
-  `^func Test` finds — the difference is `TestMain`).
-- `make test` is `test-arm1 test-arm2 test-arm3`; arm 1 carries `./...`, the
-  gates and the silent-revert audit, because those are the tree's questions
-  and not the arm's. `make vet` vets each arm — `go vet ./...` is the default
-  build and would otherwise have left two thirds of the package unvetted.
+- **1276 / 1291 / 1234 tests**, 466 of them shared and therefore run in each,
+  and the union is all 2869 (`go test -list` per arm). **235.9s an arm
+  projected on CI**, evenly, against the 300s line.
+- `make test` keeps its own recipe and gains two lines; `make test-arm1/2/3`
+  exist for CI. `make vet` vets each arm — `go vet ./...` is the default build
+  and would otherwise have left two thirds of the package unvetted.
 - `ci.yml` gains an `arm: [1, 2, 3]` matrix dimension: six jobs, three clocks
-  per platform, and a red that names which third it came from.
+  per platform, and a red that names which third it came from. Each job vets
+  its own arm rather than all three.
 - `suite_lock_wanted` now counts a tagged arm as a full suite. Without it
   `make test` took one slot and ran its other two arms unqueued — the
   five-concurrent-suites incident the lock exists for, rebuilt out of one
   seat. Self-test arm 5b, mutation-checked.
 - `armtags_qa_test.go` at the repo root pins the partition in five arms:
-  every test-bearing file is shared or in a named arm; the Makefile runs
-  every arm and vets it; arm 1 is the default build and its target passes no
-  `-tags`; every Makefile `-run` door pin is reachable in the default arm
-  (a door whose filter selects nothing exits 0 — that is the failure that
-  would have been found last); and the classifier itself is shown able to
-  say no. Each of the first four mutation-checked to fire alone.
+  every test-bearing file is shared or in a named arm; `make test` runs every
+  arm and every per-arm target repeats one of its lines verbatim; arm 1 is
+  the default build and its target passes no `-tags`; every Makefile `-run`
+  door pin is reachable in the default arm (a door whose filter selects
+  nothing exits 0 — that is the failure that would have been found last); and
+  the classifier itself is shown able to say no. Mutation-checked.
+
+#### What this box could and could not measure
+
+`make test` is green end to end. The per-arm walls it reports here are **not**
+evidence about the 300s line and must not be quoted as if they were: the
+weight-balanced cut ran 383.9s / 411.6s / 475.6s on 2026-09-06 with the
+1-minute loadavg between 15 and 40, in an order that puts the *lightest* arm
+last and slowest. The same box swung a fixed 427-test arm from 168s to 296s
+inside one hour (§1). Arm 1 also runs inside `./...`, sharing the machine with
+the root package and `cmd/posse`, where arms 2 and 3 each get it to
+themselves. Nothing in that spread separates the arms from the hour.
+
+**The 300s claim is CI's to settle**, and the first CI run on this branch is
+the measurement. What this box does establish is that the partition is total,
+that all three arms compile and pass, and that `make test` still means
+everything.
+
+And one cost to name rather than discover: a seat's `make test` runs the arms
+in SEQUENCE, so its total wall goes up — three binaries do not do less work
+than one, and each arm has fewer tests to overlap across the same eight cores.
+The win is CI's three parallel jobs and three separate clocks, not a faster
+seat. A seat in a hurry can run `make test-arm2` and `make test-arm3`
+concurrently with `make test-arm1`; the suite lock will hold it to two at a
+time, which is the point of the lock.
 
 ### 7. Reproducing the numbers
 
