@@ -196,6 +196,19 @@ func TestExactModelRendersTheCodexLine(t *testing.T) {
 // substitution (ranger-base-hv2zr), so what the fixture now produces is the
 // loud line and nothing else — which is still the thing D3 asks the canary
 // to skip, and still a fixture that has to be shown to bite.
+//
+// The rendered clause moved with it, under ranger-base-lh6h5: D3 as amended
+// 2026-09-06 (ranger-base-4pee8) says the canary asks the PROVIDER rather
+// than the catalog, where the old clause said it skipped a "substitution",
+// which after the removal named nothing in the binary and told the operator
+// that an ordinary launch still had one. What ranger-base-nxf11 adds is the
+// SECOND half of the arm below: the words that must NOT come back, not only
+// the words that must be there. A one-way "says the right thing" pin cannot
+// see this class, because the old sentence said a right-looking thing too —
+// a contrast clause is the one shape that can invert without a byte changing
+// in it, which is exactly how this survived the removal's own sweep. The
+// banned list is single words, so the list does not itself answer a sweep
+// for the retired phrases.
 func TestExactModelSkipsTierVerdict(t *testing.T) {
 	t.Parallel()
 	b, fake := newTestBackend(t)
@@ -235,10 +248,20 @@ func TestExactModelSkipsTierVerdict(t *testing.T) {
 	if !strings.Contains(log, "--model 'claude-6-astra'") {
 		t.Errorf("the canary line does not name the exact model:\n%s", log)
 	}
-	// The line the operator reads instead of a preflight verdict: it says
-	// what is being asked, and of whom.
-	if !strings.Contains(warn.String(), "EXACT model claude-6-astra") || !strings.Contains(warn.String(), "verdict is skipped") {
+	// The line the operator reads instead of a preflight verdict: it names
+	// the id being asked about and says the tier's verdict is what is
+	// skipped.
+	if !strings.Contains(warn.String(), "EXACT model claude-6-astra") || !strings.Contains(warn.String(), "tier availability verdict is skipped") {
 		t.Errorf("the canary launch did not say it was skipping the tier verdict: %q", warn.String())
+	}
+	// And it does not describe the removed mechanism. These words are the
+	// reason this pin has a second half: each of them makes the clause read
+	// as "an ordinary launch WOULD substitute", which stopped being true at
+	// ADR 0003 §3 without anything here changing.
+	for _, gone := range []string{"substitution", "substitute", "fall back", "fallback"} {
+		if strings.Contains(warn.String(), gone) {
+			t.Errorf("the canary line names the removed automatic substitution (%q): %q", gone, warn.String())
+		}
 	}
 	// And it does NOT print a verdict about a model nobody launched — the
 	// control above proved that same fixture reaches one.

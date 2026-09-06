@@ -3151,11 +3151,20 @@ func (d *Dispatcher) fire(is RepoIssue, persona, session, runtime, tier, tierWhy
 	// The work prompt, assembled lazily: on the argv path launchSession
 	// needs it BEFORE the session exists, and on the typed path it is built
 	// after the launch so it can name the tier the session really got. The
-	// two do not disagree in practice — a runtime with no model map has
-	// nothing for the availability preflight to fall back FROM, and argv is
-	// declared today only on grok and codex, where `{model}` renders empty
-	// (ADR 0013 §6). If that ever changes, this is the seam where an argv
-	// prompt would start naming a tier the launch did not get.
+	// two do not disagree in practice, and since ADR 0003 §3 removed
+	// automatic substitution (ranger-base-hv2zr) the reason is a different
+	// one: the argv branch is taken only where the session does NOT exist
+	// yet (launchSession asks it under `resolveErr != nil`), dispatch passes
+	// that create an explicit pair (BeadTier never returns empty, and
+	// ResolveTier/ResolveRuntime hand an explicit value straight back), and
+	// nothing between there and the meta write moves it — so the pair the
+	// prompt named is the pair the session opened on. A session that already
+	// exists on another pair reaches prompt() on the typed path below, after
+	// effectiveTier has re-pointed `runtime`/`tier` at what it really runs.
+	// If the argv branch ever moves above that guard, this is the seam where
+	// an argv prompt would start naming a tier the launch did not get — and
+	// it matters more than it did, because effectiveTier now answers for ANY
+	// pair difference, not only for a meta wearing a fallback mark.
 	prompt := func() string {
 		return workPrompt(is, d.App.promptContext(d.Bd, is, runtime, tier, session, ag))
 	}

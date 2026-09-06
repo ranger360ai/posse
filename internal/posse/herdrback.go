@@ -2045,11 +2045,14 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 		// ADR 0013 §2 layer 2 (ranger-base-a9y9, escaped as ranger-base-9r33):
 		// a first-run dialog whose DEFAULT ACTION MUTATES THE MACHINE is a
 		// launch REFUSE until the operator's own config silences it. Asked
-		// HERE because this is the first line at which `rt` is the runtime
-		// the session will really open on — the availability preflight above
-		// may have moved it — and because it is above every render below, so
-		// a refused launch cuts no worktree, writes no gates and seeds no
-		// trust.
+		// HERE for one reason since ADR 0003 §3, where it used to have two:
+		// it is above every render below, so a refused launch cuts no
+		// worktree, writes no gates and seeds no trust. The second reason
+		// was that the availability preflight above could still have moved
+		// `rt`, making this the first line where it named the runtime the
+		// session would really open on. Nothing moves it now (see the note
+		// on that call), so `rt` has been that runtime since it was loaded,
+		// and this position buys only the ordering.
 		//
 		// The dispatched/interactive split is ADR 0015 §3's, twelve lines up,
 		// and here it is not merely the same shape: the operator's remedy for

@@ -92,3 +92,62 @@ func runRhq(t *testing.T, bin string, env []string, args ...string) (string, int
 	}
 	return string(out), code
 }
+
+// modelHelpBlock is the usage catalog's `--model <id>` entry: its own line
+// and every continuation indented under it, up to the next flag.
+func modelHelpBlock(t *testing.T, out string) string {
+	t.Helper()
+	// A flag line is the catalog's own six-space indent; its continuations
+	// are indented far past that, and one of them opens with `--runtime`, so
+	// a trimmed prefix test would end the block at its second line.
+	var b strings.Builder
+	in := false
+	for _, ln := range strings.Split(out, "\n") {
+		if strings.HasPrefix(ln, "      --") {
+			if in {
+				break
+			}
+			in = strings.HasPrefix(ln, "      --model <id>")
+		}
+		if in {
+			b.WriteString(ln + "\n")
+		}
+	}
+	if b.Len() == 0 {
+		t.Fatal("the usage catalog no longer has a `--model <id>` entry — this pin is reading nothing")
+	}
+	return b.String()
+}
+
+// ranger-base-nxf11, finding 1: the operator-visible half of the same defect
+// TestExactModelSkipsTierVerdict pins on the shipped line.
+//
+// The retired sentence told the operator that `--model` skipped a
+// substitution the tier availability step used to perform, so a provider
+// refusal was the answer rather than a quiet one. (It is not quoted word
+// for word on purpose — that would put the scrubbed bytes back into the
+// tree the scrub is about, and `git show` on this pin's own commit is where
+// a reader gets them.) Every word of it stayed true-looking after ADR 0003
+// §3 removed the mechanism (ranger-base-hv2zr), and became a lie by
+// contrast: a clause selling the ABSENCE of a mechanism tells the reader
+// the mechanism is there for everyone else. Nothing in the tree substitutes
+// now, so the sentence promised an ordinary launch a quiet landing it does
+// not have.
+//
+// Both halves, for that reason: what the block must say, and the vocabulary
+// of the removed walk, which must not come back into this block by any
+// rewording. The banned list is single words, so the list itself does not
+// answer a sweep for the retired phrases.
+func TestModelHelpNamesTheVerdictNotTheRemovedSubstitution(t *testing.T) {
+	block := modelHelpBlock(t, helpText(t))
+	for _, want := range []string{"--agent", "--runtime", "--tier", "tier availability verdict"} {
+		if !strings.Contains(block, want) {
+			t.Errorf("the --model help does not name %q:\n%s", want, block)
+		}
+	}
+	for _, gone := range []string{"substitution", "substitute", "fall back", "fallback"} {
+		if strings.Contains(block, gone) {
+			t.Errorf("the --model help still names the removed automatic substitution (%q):\n%s", gone, block)
+		}
+	}
+}
