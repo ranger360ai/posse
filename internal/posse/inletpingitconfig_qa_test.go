@@ -36,6 +36,7 @@ package posse
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -437,12 +438,17 @@ func TestQATheGitConfigSystemPinDropsASystemScopeIdentityLiteral(t *testing.T) {
 	// since a path only the maintainer's row accounts for still sends the
 	// operator to the wrong file — that asymmetry is ranger-base-txsed
 	// finding 1, one artifact further in.
+	//
+	// The decision is regionsNotAccountingFor, shared with
+	// TestQAEveryRegionAccountsForEveryMeasuredSystemScopePath and graded by
+	// a fixture of its own; this arm supplies only the path, and what holds
+	// it to supplying THAT path is TestQATheFourthArmAsksGitForThePath, which
+	// reads this region's source. A fixture on the decision cannot do that
+	// job: it stays green when the call site goes back to a literal, which is
+	// ranger-base-hegxj finding 1 of 2.
 	if got, ok := gitSystemScopePath(t); ok {
-		for _, r := range gitConfigSystemProseRegions(t) {
-			named := systemScopePathsNamed(flattenProse(r.text))
-			if !slices.Contains(named, got) {
-				t.Errorf("git on this box names %q as its system scope, and %s does not account for it — it names %v. That is the file this pin empties HERE, so a reader of that text goes and checks the wrong one: re-measure with `git config --system --list --show-origin` and name this path there too.\nIf the path IS in the text, check it is not split across a line break: these regions are read flattened and a wrapped path is a different string", got, r.where, named)
-			}
+		for _, miss := range regionsNotAccountingFor(gitConfigSystemProseRegions(t), got) {
+			t.Errorf("git on this box names %q as its system scope, and %s. That is the file this pin empties HERE, so a reader of that text goes and checks the wrong one: re-measure with `git config --system --list --show-origin` and name this path there too.\nIf the path IS in the text, check it is not split across a line break: these regions are read flattened and a wrapped path is a different string", got, miss)
 		}
 	}
 
@@ -469,14 +475,13 @@ type proseRegion struct{ where, text string }
 // gitConfigSystemProseRegions returns every such account. The rules are run
 // by a loop over this slice, so a region reachable here is held to all of
 // them and one that drops out of it reds
-// TestQABothCostDisclosuresAreHeldToTheRules rather than going quietly
+// TestQAEveryCostDisclosureIsHeldToTheRules rather than going quietly
 // unread — which is the shape of ranger-base-txsed finding 1.
 func gitConfigSystemProseRegions(t *testing.T) []proseRegion {
 	t.Helper()
-	return []proseRegion{
+	return append([]proseRegion{
 		{"the GIT_CONFIG_SYSTEM row in inletpin.go", gitConfigSystemRowRegion(t)},
-		{"the GIT_CONFIG_SYSTEM cost paragraph in " + changelogPath, gitConfigSystemChangelogParagraph(t)},
-	}
+	}, gitConfigSystemChangelogParagraphs(t)...)
 }
 
 // gitConfigSystemRowRegion is the row's own text, from its head to the next
@@ -496,24 +501,36 @@ func gitConfigSystemRowRegion(t *testing.T) string {
 	return string(src)[i:j]
 }
 
-// TestQABothCostDisclosuresAreHeldToTheRules holds the SLICE. Nothing else
+// TestQAEveryCostDisclosureIsHeldToTheRules holds the SLICE. Nothing else
 // can: a region that quietly stops being returned takes its rules with it and
 // every one of them passes, which is exactly how the changelog paragraph came
 // to be unheld while the row was held (ranger-base-txsed finding 1). An
 // extractor that returns "" fails the same way, so the text is checked too.
-func TestQABothCostDisclosuresAreHeldToTheRules(t *testing.T) {
+//
+// The count is no longer pinned at two, because the changelog side is now
+// every paragraph that cites the test rather than the first one
+// (ranger-base-hegxj). What the pin has to keep is the force of the old one:
+// BOTH artifacts are represented, so neither can drop out. The row is index
+// 0 by construction and at least one changelog paragraph follows it — zero of
+// them is a Fatalf inside the resolver, which is the case that used to be
+// caught here by the length.
+func TestQAEveryCostDisclosureIsHeldToTheRules(t *testing.T) {
 	t.Parallel()
 	got := gitConfigSystemProseRegions(t)
-	want := []string{"inletpin.go", changelogPath}
-	if len(got) != len(want) {
-		t.Fatalf("%d regions disclose what GIT_CONFIG_SYSTEM=%s costs, want %d (%v). Every rule in costMisScopingRules runs once per region; a region that leaves this slice is unheld prose again", len(got), os.DevNull, len(want), want)
+	if len(got) < 2 {
+		t.Fatalf("%d region(s) disclose what GIT_CONFIG_SYSTEM=%s costs, want the row in inletpin.go and at least one paragraph in %s. Every rule in costMisScopingRules runs once per region; a region that leaves this slice is unheld prose again", len(got), os.DevNull, changelogPath)
 	}
-	for i, w := range want {
-		if !strings.Contains(got[i].where, w) {
-			t.Errorf("region %d is %q, want the one in %s", i, got[i].where, w)
+	if !strings.Contains(got[0].where, "inletpin.go") {
+		t.Errorf("region 0 is %q, want the GIT_CONFIG_SYSTEM row in inletpin.go — it is the one region that is not a changelog paragraph, and if it is not here the maintainer-facing half is unheld", got[0].where)
+	}
+	for i, r := range got[1:] {
+		if !strings.Contains(r.where, changelogPath) {
+			t.Errorf("region %d is %q, want a paragraph in %s — the operator-facing half is every paragraph that cites %s and nothing else", i+1, r.where, changelogPath, changelogAnchor)
 		}
-		if !strings.Contains(got[i].text, "/etc/gitconfig") {
-			t.Errorf("the region read for %s does not contain /etc/gitconfig, so it is either empty or mis-anchored — and a rule handed an empty region passes:\n%q", got[i].where, got[i].text)
+	}
+	for _, r := range got {
+		if !strings.Contains(r.text, "/etc/gitconfig") {
+			t.Errorf("the region read for %s does not contain /etc/gitconfig, so it is either empty or mis-anchored — and a rule handed an empty region passes:\n%q", r.where, r.text)
 		}
 	}
 }
@@ -619,46 +636,90 @@ func TestQAGitSystemScopePathParsesTheShapesGitActuallyPrints(t *testing.T) {
 // ban on one spelling is a ban on nothing.
 func changelogGitConfigSystemParagraph(t *testing.T) {
 	t.Helper()
-	const path = changelogPath
-	para := gitConfigSystemChangelogParagraph(t)
-
-	// Positive anchors: the file an operator has to go look at, and the
-	// scope this row empties.
-	for _, want := range []string{"/etc/gitconfig", "system scope"} {
-		if !strings.Contains(para, want) {
-			t.Errorf("the GIT_CONFIG_SYSTEM cost paragraph in %s does not name %q. The whole cost is that an identity in that file leaves the ADR 0024 D2 check 3 wall with no error, and an operator cannot check a file the paragraph will not name.\nparagraph:\n%s", path, want, para)
+	for _, r := range gitConfigSystemChangelogParagraphs(t) {
+		para := r.text
+		// Positive anchors: the file an operator has to go look at, and the
+		// scope this row empties.
+		for _, want := range []string{"/etc/gitconfig", "system scope"} {
+			if !strings.Contains(para, want) {
+				t.Errorf("%s does not name %q. The whole cost is that an identity in that file leaves the ADR 0024 D2 check 3 wall with no error, and an operator cannot check a file the paragraph will not name.\nIf this paragraph is not disclosing that cost, it must not cite %s: the citation is what puts a paragraph under these rules.\nparagraph:\n%s", r.where, want, changelogAnchor, para)
+			}
 		}
-	}
-	// And the scoping the row already carried: a box, not a platform.
-	if !changelogScopesTheZeroToABox.MatchString(para) {
-		t.Errorf("the GIT_CONFIG_SYSTEM cost paragraph in %s no longer scopes its zero to a BOX. That is the correction on ranger-base-sv8x4: the cost is zero where system scope holds no user.email, which is a fact about the box and not about the platform — inletpin.go's row says it that way, and these two must not disagree again.\nparagraph:\n%s", path, para)
+		// And the scoping the row already carried: a box, not a platform.
+		if !changelogScopesTheZeroToABox.MatchString(para) {
+			t.Errorf("%s does not scope its zero to a BOX. That is the correction on ranger-base-sv8x4: the cost is zero where system scope holds no user.email, which is a fact about the box and not about the platform — inletpin.go's row says it that way, and these two must not disagree again.\nparagraph:\n%s", r.where, para)
+		}
 	}
 }
 
 const changelogPath = "../../CHANGELOG.md"
 
-// gitConfigSystemChangelogParagraph is the paragraph, found by its citation
-// of this test — so a rewrite that drops the citation is red rather than
-// silently unpinned.
-func gitConfigSystemChangelogParagraph(t *testing.T) string {
+// changelogAnchor is the citation that marks a changelog paragraph as an
+// account of what GIT_CONFIG_SYSTEM=/dev/null costs.
+const changelogAnchor = "TestQATheGitConfigSystemPinDropsASystemScopeIdentityLiteral"
+
+// gitConfigSystemChangelogParagraphs is EVERY paragraph in the changelog that
+// cites this test, in file order — so a rewrite that drops the citation is
+// red rather than silently unpinned, and a paragraph that ADDS one is held
+// rather than allowed to stand in for the one that was there.
+//
+// THE DEFECT IT FIXES (ranger-base-hegxj finding 2 of 2, escaped from
+// ranger-base-sv8x4 which wrote the anchor and ranger-base-txsed which moved
+// it here). This resolver took strings.Index: the FIRST citation. CHANGELOG.md
+// line 3 says "Notable changes, newest first", so a later entry lands ABOVE
+// the pinned paragraph and takes the anchor, and every check downstream then
+// grades the newcomer. The three positive anchors in
+// changelogGitConfigSystemParagraph are all satisfied by a paragraph that
+// merely writes ABOUT this pin, so the real paragraph goes unread and can be
+// reverted to the defect commit 1852b006 shipped with the suite green.
+// Measured on 2026-09-06 in three arms: the two reverts alone RED, a
+// plausible newest-first entry naming both measured paths alone GREEN, that
+// entry plus both reverts GREEN at rc 0 — the escape.
+//
+// Resolving them all rather than pinning the count at one is a CONTRACT as
+// much as a fix, and it is the direction that keeps working when the entry
+// ranger-base-zz08i produces gets written: cite this test from a changelog
+// paragraph and that paragraph is held to the same rules as the one below it.
+// A passing mention that is not itself disclosing this cost must not carry
+// the citation.
+//
+// LIMIT, stated rather than implied: what is held is whichever paragraphs
+// cite the test. MOVING the citation out of the real paragraph and into
+// another one re-aims the pin and stays green — the Fatalf below only
+// catches the citation disappearing from the file altogether. That is the
+// anchoring scheme's own boundary, not a hole this reader opened.
+func gitConfigSystemChangelogParagraphs(t *testing.T) []proseRegion {
 	t.Helper()
-	const anchor = "TestQATheGitConfigSystemPinDropsASystemScopeIdentityLiteral"
 	b, err := os.ReadFile(changelogPath)
 	if err != nil {
 		t.Fatalf("cannot read the operator-facing half of this clause: %v", err)
 	}
 	text := string(b)
 
-	i := strings.Index(text, anchor)
-	if i < 0 {
-		t.Fatalf("%s does not cite %s. The paragraph disclosing what GIT_CONFIG_SYSTEM=%s costs is anchored here BY that citation — without it this reader measures nothing and the paragraph is unheld prose again, which is exactly how it came to be wrong (ranger-base-sv8x4)", changelogPath, anchor, os.DevNull)
+	var out []proseRegion
+	for off := 0; off < len(text); {
+		k := strings.Index(text[off:], changelogAnchor)
+		if k < 0 {
+			break
+		}
+		i := off + k
+		start := strings.LastIndex(text[:i], "\n\n") + 2
+		end := len(text)
+		if j := strings.Index(text[i:], "\n\n"); j >= 0 {
+			end = i + j
+		}
+		out = append(out, proseRegion{
+			where: fmt.Sprintf("the GIT_CONFIG_SYSTEM cost paragraph at %s:%d", changelogPath, 1+strings.Count(text[:start], "\n")),
+			text:  text[start:end],
+		})
+		// Past the end of this paragraph, so a second citation INSIDE it is
+		// the same region and not a second one.
+		off = end
 	}
-	start := strings.LastIndex(text[:i], "\n\n") + 2
-	end := len(text)
-	if j := strings.Index(text[i:], "\n\n"); j >= 0 {
-		end = i + j
+	if len(out) == 0 {
+		t.Fatalf("%s does not cite %s. The paragraph disclosing what GIT_CONFIG_SYSTEM=%s costs is anchored here BY that citation — without it this reader measures nothing and the paragraph is unheld prose again, which is exactly how it came to be wrong (ranger-base-sv8x4)", changelogPath, changelogAnchor, os.DevNull)
 	}
-	return text[start:end]
+	return out
 }
 
 // The framings this clause shipped with, and the ones measured able to come
@@ -885,6 +946,110 @@ func systemScopePathsNamed(prose string) []string {
 	return gitconfigPathToken.FindAllString(prose, -1)
 }
 
+// regionsNotAccountingFor is the fourth arm's whole decision, in one place:
+// the regions and a path git named for system scope in, one complaint per
+// region that does not account for that path out, nil when every region does.
+// The arm runs it against the git on THIS box's PATH and
+// TestQAEveryRegionAccountsForEveryMeasuredSystemScopePath runs it against
+// the two paths the fleet is known to produce, so the containment rule cannot
+// be right in one caller and wrong in the other.
+func regionsNotAccountingFor(regions []proseRegion, path string) []string {
+	var missing []string
+	for _, r := range regions {
+		named := systemScopePathsNamed(flattenProse(r.text))
+		if !slices.Contains(named, path) {
+			missing = append(missing, fmt.Sprintf("%s does not account for it — it names %v", r.where, named))
+		}
+	}
+	return missing
+}
+
+// TestQARegionsNotAccountingForNamesEveryRegionThatMissesThePath grades that
+// decision directly, including the containment case gitconfigPathToken
+// exists for: a region naming only /opt/homebrew/etc/gitconfig does NOT
+// account for /etc/gitconfig, even though one is a substring of the other.
+// The third case is the one the arm exists for and the measured table cannot
+// reach — a path on neither list, which is what a MacPorts or a nix git names.
+func TestQARegionsNotAccountingForNamesEveryRegionThatMissesThePath(t *testing.T) {
+	t.Parallel()
+	const bare, brewed = "/etc/gitconfig", "/opt/homebrew/etc/gitconfig"
+	row := proseRegion{"the row", "// a distro git reads " + bare}
+	para := proseRegion{"the paragraph", "a brew git reads " + brewed}
+	both := proseRegion{"a region naming both", bare + " and " + brewed}
+	for _, c := range []struct {
+		name, path string
+		regions    []proseRegion
+		want       int
+	}{
+		{"a path only the row names", bare, []proseRegion{row, para}, 1},
+		{"a path only the paragraph names", brewed, []proseRegion{row, para}, 1},
+		{"the prefixed path does not account for the bare one", bare, []proseRegion{para}, 1},
+		{"a path on neither list, which only the arm can produce", "/opt/local/etc/gitconfig", []proseRegion{row, para}, 2},
+		{"a region that names both is clean for both", bare, []proseRegion{both}, 0},
+		{"and for the other one", brewed, []proseRegion{both}, 0},
+	} {
+		if got := regionsNotAccountingFor(c.regions, c.path); len(got) != c.want {
+			t.Errorf("%s: regionsNotAccountingFor(_, %q) returned %d complaint(s), want %d: %v", c.name, c.path, len(got), c.want, got)
+		}
+	}
+}
+
+// TestQATheFourthArmAsksGitForThePath holds the fourth arm's CALL SITE, by
+// reading this file's own source.
+//
+// WHY A SOURCE PIN AND NOT A FIXTURE. Everything else that grades the arm's
+// decision is reachable without the arm:
+// TestQARegionsNotAccountingForNamesEveryRegionThatMissesThePath calls it
+// with fixtures, and TestQAEveryRegionAccountsForEveryMeasuredSystemScopePath
+// calls it with the two paths the fleet is known to produce. So the arm's
+// body could go back to the literal it shipped as — the pre-fix expression
+// at 34aa4686^:436, ok && !strings.HasSuffix(got, "/etc/gitconfig") — and
+// every one of them stayed green, measured 2026-09-06 at rc 0. It is silent
+// here because the git on this box names that same path; it is not silent on
+// a box whose git names a THIRD one, which is the only thing the arm adds
+// over the measured table and the whole reason it asks git at all
+// (ranger-base-hegxj finding 1 of 2, escaped from ranger-base-txsed).
+//
+// The ban is on a system-scope path LITERAL in the arm's code, because a
+// literal is the defect: the answer is the running git's build-time
+// sysconfdir and no path written here can be it. Comment lines are stripped
+// first — a path CITED in the prose above the arm is a citation, not a
+// decision.
+func TestQATheFourthArmAsksGitForThePath(t *testing.T) {
+	t.Parallel()
+	const (
+		file = "inletpingitconfig_qa_test.go"
+		head = "// ── the PATH, a fourth arm "
+		next = "// ── the same disclosure, in the artifact the operator reads "
+	)
+	b, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatalf("cannot read this test file to hold the fourth arm's call site: %v", err)
+	}
+	src := string(b)
+	i, j := strings.Index(src, head), strings.Index(src, next)
+	if i < 0 || j <= i {
+		t.Fatalf("%s has no fourth-arm region between %q and %q — this pin is reading nothing, so it is passing for free; re-anchor it before trusting a green", file, head, next)
+	}
+	var code strings.Builder
+	for _, line := range strings.Split(src[i:j], "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "//") {
+			continue
+		}
+		code.WriteString(line)
+		code.WriteByte('\n')
+	}
+	arm := code.String()
+	for _, want := range []string{"gitSystemScopePath(t)", "regionsNotAccountingFor("} {
+		if !strings.Contains(arm, want) {
+			t.Errorf("the fourth arm no longer calls %s. It is the arm that asks the git on THIS box which file the pin empties and holds both texts to that answer; without the call it is holding them to something a reader wrote down.\narm:\n%s", want, arm)
+		}
+	}
+	if p := gitconfigPathToken.FindString(arm); p != "" {
+		t.Errorf("the fourth arm's code names %s. The system-scope path is the running git's build-time sysconfdir, so a literal here is the equality ranger-base-33r36 measured false and the revert ranger-base-hegxj measured surviving — ask git and hand the answer to regionsNotAccountingFor.\narm:\n%s", p, arm)
+	}
+}
+
 // TestQASystemScopePathsNamedReadsWholePaths holds the scanner against the
 // shapes both regions actually spell — a bare path, a path with a prefix, a
 // backticked path in the changelog's markdown, and the one the row's 42-column
@@ -908,7 +1073,7 @@ func TestQASystemScopePathsNamedReadsWholePaths(t *testing.T) {
 	}
 }
 
-// TestQABothRegionsAccountForEveryMeasuredSystemScopePath is the half of the
+// TestQAEveryRegionAccountsForEveryMeasuredSystemScopePath is the half of the
 // fourth arm this box cannot run. That arm asks the git on THIS PATH, so it
 // only ever holds the texts against one of the two answers the fleet
 // produces; the other one is what redded ci.yml on 2026-09-06, and no green
@@ -918,18 +1083,16 @@ func TestQASystemScopePathsNamedReadsWholePaths(t *testing.T) {
 // scratch keg, which names its build-time sysconfdir wherever it is
 // unpacked — and which is the git first on PATH on macos-latest
 // (ranger-base-33r36).
-func TestQABothRegionsAccountForEveryMeasuredSystemScopePath(t *testing.T) {
+func TestQAEveryRegionAccountsForEveryMeasuredSystemScopePath(t *testing.T) {
 	t.Parallel()
 	measured := []struct{ path, where string }{
 		{"/etc/gitconfig", "/usr/bin/git on this box, and ubuntu-latest"},
 		{"/opt/homebrew/etc/gitconfig", "the Homebrew git first on PATH on macos-latest — the path that redded ci.yml"},
 	}
-	for _, r := range gitConfigSystemProseRegions(t) {
-		named := systemScopePathsNamed(flattenProse(r.text))
-		for _, m := range measured {
-			if !slices.Contains(named, m.path) {
-				t.Errorf("%s does not account for %s (%s) — it names %v. A reader on that box is sent to a file their git does not read", r.where, m.path, m.where, named)
-			}
+	regions := gitConfigSystemProseRegions(t)
+	for _, m := range measured {
+		for _, miss := range regionsNotAccountingFor(regions, m.path) {
+			t.Errorf("for %s (%s): %s. A reader on that box is sent to a file their git does not read", m.path, m.where, miss)
 		}
 	}
 }
