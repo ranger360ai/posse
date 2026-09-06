@@ -1,6 +1,6 @@
 # ADR 0051 — Stable citations and an on-demand SHA audit
 
-*Status: accepted 2026-09-05 · ADR simplification, operator ruling 2026-09-05 · commit-time SHA policing removed from the decision; implementation deferred.*
+*Status: accepted 2026-09-05 · ADR simplification, operator ruling 2026-09-05 · commit-time SHA policing removed from the decision; **built 2026-09-06** (ranger-base-bp0yj).*
 
 ## Decision
 
@@ -51,6 +51,19 @@ equivalent-patch branches leave the commit path. No key, store, background
 actor or new flag. Audit code is retained, so this is not a promise to delete
 every SHA helper. Hook rendering/install follows its normal later promotion;
 no installed hook is changed during documentation execution.
+
+**What was actually removed** (ranger-base-bp0yj, `git log --grep`). From
+`internal/posse/gates.go`: `adrShaGuardBody`, its call in `CommitGuardHook`,
+and the three hook-only constants `AdrPathspec`, `AdrShaRule` and
+`AdrShaWayThrough`. `sort` left `scripts/cleanroom.sh`'s `HOOK_DEPS`, which is
+derived from the rendered hooks and no longer has a caller for it. The ten
+commit-path cells in `adrshastamp_qa_test.go` went with the arm; that file is
+now `adrcensusrepo_qa_test.go`, the audit's fixture, and the removal has its
+own pins in `adrcitationgate_qa_test.go`. **Retained, and now single-caller:**
+`adrShaPredicate`, `AdrCensusScript`, `AdrCensusDefault`, `RunAdrCensus` and
+every census pin in `adrcensus_qa_test.go`, unchanged — what the audit says
+did not change, only who has to walk into it. `diffReaderShape` was left
+alone: it is the shared reader of the visibility and data-ceiling arms.
 
 First done-when row: **number of commit refusals in the last 30 days that
 prevented a materially misleading landing claim which ordinary review would

@@ -1538,33 +1538,41 @@ somewhere outside the class for you to apply. It is the shim tier, so `env -i`
 scrubs the marker; the launcher will not land a session branch touching those
 paths either, and that half runs in your process, not the session's.
 
-And a fourth: the **ADR sha-stamp guard** (ADR 0051 D4/D5). A commit that
-adds a line under `docs/adr/` naming a sha which resolves in this clone but
-is not an ancestor of the branch your MAIN checkout has checked out is
-refused, and the refusal prints the token. The reason is measured: the
-launcher lands a session tree with `merge --ff-only` and rebases first when
-the branch has moved, which mints a new sha — 48 of 134 landings — so a
-"landed `c067486`" written by a persona names an object on no ref about a
-third of the time. Cite the bead id instead (`git log --grep <id>` survives
-the rebase); a sha goes in only after `git merge-base --is-ancestor <sha>
-<branch>` has said yes. Unkeyed, like the visibility and shared-index arms —
-your own commits are measured too, and pass, because they never go through
-the launcher and so never re-sha. A token that resolves to nothing here is
-prose and is left alone; when your main checkout's HEAD is *detached* the arm
-has no base to measure against, judges nothing, and says so on stderr rather
-than guessing a branch name.
+There is **no fourth wall for ADR citations**, and that is a decision rather
+than an omission (ADR 0051, operator ruling 2026-09-05). One briefly existed:
+a commit adding a line under `docs/adr/` naming a sha that resolved in the
+clone but was not an ancestor of your main checkout's branch was refused. It
+was removed before release. A citation helps someone find work; it does not
+prove the work landed, and buying that editorial verdict cost an object
+lookup, an ancestry classification and a patch-id comparison on every commit
+that touched an ADR. Committing an ADR now invokes none of it — a stale sha,
+a sha your own session tree just minted, a sha whose object this clone does
+not have, all commit without a word.
 
-There is no override env, and there is one exemption instead: a record whose
-SUBJECT is a stale sha — a census, an incident writeup, ADR 0051's own table
-of the twelve — carries the landed twin in the same file, and the arm admits
-the pair (D5: same patch-id, an ancestor of the base branch). That is a way
-through nothing minted in a session tree can take, because a sha has no twin
-on the base branch until the launcher has landed it. To check a record before
-you commit it, the same predicate — the hook's own text, rendered from the
-same place — runs over whole files: `posse gates adr-census
-docs/adr/<file>.md` (every record under `docs/adr/` when given no file),
-which prints how many tokens it judged, how many it admitted by twin, and
-how many it refused, and exits 1 on any refusal.
+The reason a sha is a poor citation is unchanged and measured: the launcher
+lands a session tree with `merge --ff-only` and rebases first when the branch
+has moved, which mints a new sha — 48 of 134 landings — so a "landed
+`c067486`" written by a persona names an object on no ref about a third of the
+time. Cite the bead id; `git log --grep <id>` survives the rebase. What the
+tooling gives you is an **audit you ask for**:
+
+```
+posse gates adr-census [files...]
+```
+
+the same predicate over whole files (every record under `docs/adr/` when
+given no file). It prints an `ADMITTED` line for each stale sha sitting beside
+its landed patch-id twin in the same record — the shape a census or an
+incident writeup already has — and a `REFUSE` line, with the file and line
+number, for a sha that resolves here, is not on the base branch, and has no
+twin in the record. The summary says how many distinct tokens it *judged*,
+and that count is the point: a token that resolves to nothing here is
+**unjudged**, not clean, so a census over a pruned object store reads `judged
+0` rather than reading like a pass. With your main checkout's HEAD *detached*
+it has no base to measure against, judges nothing, and says so on stderr. It
+exits 1 on any refusal, so it drops into a review script; nothing runs it for
+you. And a clean census is not a landing claim either — that is ADR 0006's
+block, not this one's.
 
 If this instance holds someone else's data — a work laptop, a client
 engagement — read NOTES.md, *"When an instance holds someone else's data"*

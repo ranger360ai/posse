@@ -265,6 +265,12 @@ cmd_status() {
 # longer calls it (the MERGE_MSG comparison is now POSIX shell — command
 # substitution, not diffutils), so it is no longer a dependency to probe for.
 #
+# `sort` dropped when ADR 0051's commit-time citation arm was removed
+# (ranger-base-bp0yj): it deduplicated that arm's token list and no other
+# rendered hook calls it. The predicate still calls it, but it now renders
+# only into `posse gates adr-census` — a command an operator types, not a
+# hook the clean room probes for.
+#
 # The list names what the hooks resolve THROUGH PATH, and nothing else.
 #  - `git` is absent on purpose: git is what runs the hooks.
 #  - Shell builtins are absent too, `printf` and `echo` included. `command -v`
@@ -276,7 +282,7 @@ cmd_status() {
 #    finds (ranger-base-l97n), which `command -v date` answers faithfully.
 #  - `dirname` is the chain dispatcher's, not the two walls' — the third
 #    generated hook, written when another tool already owns the slot.
-HOOK_DEPS="${HOOK_DEPS:-cat cut date dirname grep head sed sort tr}"
+HOOK_DEPS="${HOOK_DEPS:-cat cut date dirname grep head sed tr}"
 
 cmd_hook_deps() {
   need_docker

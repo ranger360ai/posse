@@ -1324,14 +1324,15 @@ func main() {
 			return
 		}
 		if args[0] == "adr-census" {
-			// ADR 0051 D3's verify: the prepare-commit-msg hook's own
-			// sha-stamp predicate, rendered from the same Go function, run
-			// over every line of every docs/adr record instead of a commit's
-			// added lines (D4: one predicate, two line sources;
-			// ranger-base-gyrko). Exit 1 is the census's own verdict — at
-			// least one REFUSE line — and the summary line has already said
-			// how many it judged, so a 0 over a pruned object store reads as
-			// "judged 0" rather than as clean.
+			// ADR 0051's audit, and the ONLY place that ADR is enforced:
+			// the commit-time arm that once shared this predicate was
+			// removed by operator ruling 2026-09-05 (ranger-base-bp0yj), so
+			// this is something an operator or a reviewer asks for rather
+			// than a wall a commit walks into. Exit 1 is the census's own
+			// verdict — at least one REFUSE line — and the summary line has
+			// already said how many it judged, so a 0 over a pruned object
+			// store reads as "judged 0" rather than as clean. A clean census
+			// is not a landing claim either; that is ADR 0006's block.
 			refused, err := posse.RunAdrCensus(".", args[1:], out, os.Stderr)
 			if err != nil {
 				die(err)
@@ -2384,12 +2385,13 @@ catalog:
                                  line every posse caller prints about it — exit 1 not. Nothing is
                                  written or probed beyond one create-and-remove in the directory.
   posse gates adr-census [files...]
-                                 ADR 0051's census: the prepare-commit-msg hook's own sha-stamp
-                                 predicate over every line of every docs/adr record (default
-                                 docs/adr/*.md at the repo root). Prints ADMITTED/REFUSE per file
-                                 and one summary — judged N distinct tokens: A ancestors, T admitted
-                                 by twin, R refused — exit 1 when R>0; judges nothing, and says so,
-                                 when the main checkout is detached.
+                                 ADR 0051's on-demand audit — nothing runs it for you — over every
+                                 line of every docs/adr record (default docs/adr/*.md at the repo
+                                 root). Prints ADMITTED/REFUSE per file and one summary — judged N
+                                 distinct tokens: A ancestors, T admitted by twin, R refused —
+                                 exit 1 when R>0; judges nothing, and says so, when the main
+                                 checkout is detached. Findings are review inputs: unjudged is not
+                                 clean, and clean is not a landing claim.
   posse cage [<persona>]         L4: the container engine, its image, and what a
                                  caged launch of that persona would mount and forward
   posse cage build [dir] [--runtimes "<npm pkgs>"]

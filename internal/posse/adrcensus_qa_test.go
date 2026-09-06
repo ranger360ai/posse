@@ -1,11 +1,15 @@
 package posse
 
-// `posse gates adr-census` (ADR 0051 D3's verify, D4's "one predicate, two
-// line sources", ranger-base-gyrko): the prepare-commit-msg hook's own
-// sha-stamp predicate, rendered from the same Go function, run over every
-// line of every docs/adr record. These pins measure the census the way
-// adrshastamp_qa_test.go measures the hook — through the rendered shell and
-// real git, over the same fixture repo — and every pass cell sits beside a
+// `posse gates adr-census` (ranger-base-gyrko): ADR 0051's predicate run
+// over every line of every docs/adr record. Since the 2026-09-05
+// simplification it is the ONLY reader of that predicate and the only place
+// ADR 0051 is enforced — the commit-time arm that shared the text was
+// removed (ranger-base-bp0yj; that its absence is real is
+// adrcitationgate_qa_test.go's job, and these pins are unchanged by it,
+// because what the audit says did not change).
+//
+// These pins measure the audit through the rendered shell and real git over
+// the fixture in adrcensusrepo_qa_test.go, and every pass cell sits beside a
 // refuse cell that differs by one token or one file, so the mode is proved
 // live in the fixture that proves it quiet.
 //
@@ -201,11 +205,13 @@ func TestQAAdrCensusJudgesNothingWhenTheBaseIsDetached(t *testing.T) {
 	}
 }
 
-// ONE TEXT. The census and the hook must carry adrShaPredicate byte for
-// byte — a copy edited in one place is the drift the mode exists to make
-// impossible, and TestQAAdrShaStampAgreesWithTheCensus would only catch it
-// where a fixture happens to reach the edited line.
-func TestQAAdrCensusAndTheHookRenderTheSamePredicate(t *testing.T) {
+// ONE TEXT, ONE READER. adrShaPredicate is rendered verbatim into the census
+// and into nothing else. Both halves are asserted: a census that stopped
+// carrying it is a census that judges nothing, and a SECOND renderer is how
+// this rule got a prose copy of itself the first time (ranger-base-gyrko's
+// retired scripts/adr-sha-census.sh) and a commit-time copy the second
+// (ranger-base-bp0yj's removed hook arm).
+func TestQAAdrCensusIsTheOnlyRendererOfThePredicate(t *testing.T) {
 	t.Parallel()
 	pred := adrShaPredicate()
 	if !strings.Contains(pred, "posse_adr_judge() {") || !strings.Contains(pred, "posse_adr_judged \"$posse_adr_f\"") || !strings.Contains(pred, "posse_adr_record \"$posse_adr_f\"") {
@@ -214,10 +220,10 @@ func TestQAAdrCensusAndTheHookRenderTheSamePredicate(t *testing.T) {
 	if !strings.Contains(AdrCensusScript(), pred) {
 		t.Errorf("posse gates adr-census must render adrShaPredicate verbatim")
 	}
-	if !strings.Contains(CommitGuardHook(VisibilityPublic, OpsPatternSet{}), pred) {
-		t.Errorf("the prepare-commit-msg hook must render adrShaPredicate verbatim")
+	if strings.Contains(CommitGuardHook(VisibilityPublic, OpsPatternSet{}), pred) {
+		t.Errorf("the prepare-commit-msg hook renders the ADR predicate again — ADR 0051's check is on demand, not at the wall (ranger-base-bp0yj)")
 	}
-	// The two modes differ in their line sources and nowhere else.
+	// The census reads every line of the file as both sources.
 	for _, want := range []string{"posse_adr_judged() {\n  cat \"$1\"\n}", "posse_adr_record() {\n  cat \"$1\"\n}"} {
 		if !strings.Contains(AdrCensusScript(), want) {
 			t.Errorf("the census reads every line of the file as both sources: want %q", want)

@@ -497,31 +497,39 @@ A reading, never a control: it prints, it warns, it decides nothing, and it
 does not move `posse status`'s exit code. Installing over a binary that is
 dispatching a live fleet stays the operator's move.
 
-**The commit hook now refuses a sha in `docs/adr/` that is not on your main
-checkout's branch, and prints the token.**
+**`posse gates adr-census [files...]` audits the sha citations in your ADRs,
+when you ask it to.**
 
 A record that says "landed `c067486`" can only ever name the writer's own
-session tree, and the launcher rebases a third of those trees before it
-lands them — 48 of 134 landings measured — which mints a new sha. Twelve of
-the thirty-two resolving shas in this repo's own `docs/adr` were ancestors
-of nothing by the time anyone looked. The `prepare-commit-msg` hook gains a
-fourth wall: every 7–40 hex token on a line a commit ADDS under `docs/adr/`
-that resolves here and is not an ancestor of the branch your main checkout
-has checked out is a refusal naming that token. Cite the bead id instead —
-`git log --grep <id>` survives the rebase. Tokens that resolve to nothing
-here are prose and are passed; with a detached main checkout the arm has no
-base, judges nothing, and says so rather than guessing a branch.
+session tree, and the launcher rebases a third of those trees before it lands
+them — 48 of 134 landings measured — which mints a new sha. Twelve of the
+thirty-two resolving shas in this repo's own `docs/adr` were ancestors of
+nothing by the time anyone looked. The new mode reads every 7–40 hex token in
+every record under `docs/adr/` (or the files you name) and classifies it
+against the branch your MAIN checkout has checked out: an ancestor is fine, a
+non-ancestor sitting beside its landed patch-id twin in the same record is
+`ADMITTED` — the shape a census or an incident writeup already has — and a
+non-ancestor with no twin is a `REFUSE` line naming the file, the line and the
+token. Exit 1 on any refusal, so it drops into a review script.
 
-No override env. The one exemption is a record whose subject IS the stale
-sha — a census, an incident writeup — which carries the landed twin in the
-same file; the arm admits a pair with the same patch-id when one half is on
-the base branch (ADR 0051 D5), and a sha minted in a session tree has no such
-twin until the launcher lands it. `posse gates adr-census [files...]` is
-the same predicate — the hook's own text, rendered from one place so the
-two cannot drift — over whole files, for checking a record before committing
-it; it replaces `scripts/adr-sha-census.sh`, which was a second copy of the
-rule. Needs `posse gates install-hooks` (or the next session launch) to reach
-a repo already hooked.
+The count in the summary is the part to read: it says how many distinct tokens
+it **judged**. A token that resolves to nothing in your clone is *unjudged*,
+not clean, so a run over a pruned object store prints `judged 0` instead of
+reading like a pass, and with your main checkout's HEAD detached it has no
+base at all, judges nothing, and says so on stderr. A clean census is not a
+landing claim; that is a separate question and this does not answer it. Cite
+the bead id — `git log --grep <id>` survives the rebase. It replaces
+`scripts/adr-sha-census.sh`, which was a second copy of the rule.
+
+Nothing runs it for you. An earlier draft of this release put the same
+predicate in the `prepare-commit-msg` hook as a fourth wall that refused the
+commit; operator ruling 2026-09-05 removed it before release. A citation
+helps someone find work and does not prove it landed, so an editorial verdict
+was being bought at the price of an object lookup, an ancestry classification
+and a patch-id comparison on every commit touching an ADR. Committing an ADR
+invokes none of that. If you hooked a repo from a build between 2026-09-03 and
+this release, `posse gates install-hooks` (or the next session launch) rewrites
+that hook without the arm.
 
 **A blind plan meter now says how OLD the reading it is still ruling on
 is — loudly, in `posse status`, in every `--watch` pass, and in the
