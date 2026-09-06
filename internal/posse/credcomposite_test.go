@@ -71,18 +71,81 @@ import (
 // carries, with `(?i)` for the case the old form also lacked. MEASURED as the
 // unmutated control below: none of the strings this guards names an install
 // in any case, so the width costs no false positive here.
+//
+// namesTheSilentKeychain and namesTheRepairMove are the fallback clause's
+// other two pieces, and they are here because ranger-base-65tzm measured that
+// nothing guarded them. The clause has FOUR pieces and the arm below banned
+// TWO of them, so two thirds of it could be pasted verbatim onto a keychain
+// 401 and a plain 401 with the arm still green — an operator sent to repair a
+// keychain and `/login` over a 401 that came from the keychain's own token,
+// which is the exact misdirection ADR 0019 D2 V9 added the clause to prevent.
+// MEASURED there, on a go test -overlay of planusage.go giving the non-
+// fallback 401s the clause minus its install cause: ok 0.487s, and every
+// Auth|401|Cred|Usage|Plan|Stale|Composite|Keychain test in the package under
+// the same mutant ok 64.349s. Cause (a) alone and the remedy alone were both
+// green on their own too.
+//
+// MEASURED AGAIN at this fix, the same overlay, one clause piece at a time on
+// the non-fallback 401s, reading WHICH ban the failure names:
+//
+//	unmutated control                                  -> ok
+//	that repro (the clause minus its install cause)    -> RED: cause (a), the remedy
+//	cause (a) alone                                    -> RED: cause (a), alone
+//	the remedy alone                                   -> RED: cause (a), the remedy
+//	the remedy off "keychain" ("Unlock it and grant
+//	  access, then `/login` in claude")                -> RED: the remedy, alone
+//	cause (b) off "keychain" ("this binary's ACL was
+//	  dropped by `make install`")                      -> RED: the ACL move, alone
+//	the store name alone                               -> RED: the fall-through, alone
+//	the whole clause verbatim                          -> RED: all four
+//
+// so every one of the four bans has a respelling only it catches, and none of
+// them is decorative. WRONG ARM, so this is not a misaimed probe: that same
+// repro run against the PRE-FIX version of this file — `git show HEAD:` of it,
+// overlaid alongside — is GREEN. The ban pair added here is what changed it.
+//
+// The standing synonym edge is re-measured and still open, as it was: cause
+// (a) respelled off this vocabulary entirely ("so the login item did not
+// answer: either it is gone and claude is living on that file") is GREEN.
+// That is a different word, not a respelling, and no vocabulary ban reaches
+// it.
+//
+// And the reason a finished census did not see it, which is the part worth
+// keeping: the count at THE CENSUS below counts `strings.Contains` CALL
+// SITES, and a clause piece with no ban at all has no call site to count. A
+// census of the bans answers "which of these is too narrow" — never "which
+// piece of the shipped sentence has no ban".
+//
+// namesTheSilentKeychain is cause (a): the keychain item did not answer,
+// either it is gone or claude is living on the fallback file. The family is
+// the noun the cause is about, in its spellings. namesTheRepairMove is the
+// remedy the clause ends with — "Repair the keychain (unlock it, grant
+// access), then `/login` in claude" — and it is the operator MOVES rather
+// than the noun, so a remedy respelled off "keychain" ("Unlock it and grant
+// access, then `/login` in claude") is still caught. The two overlap on the
+// shipped bytes and that is not a defect: each has a respelling only it
+// catches, and each is mutated below.
+//
+// MEASURED as the unmutated control, which this arm's own must-NOT loop is:
+// neither string these guard carries "keychain", "unlock", "grant access",
+// "repair" or "/login" in any case. Printed at ranger-base-65tzm, the
+// keychain 401 and the plain 401 are both exactly "usage endpoint returned
+// 401 Unauthorized: credential stale — run `claude` once to refresh", so the
+// width costs no false positive here.
 var (
-	namesTheFallThrough = regexp.MustCompile(`(?i)(fall(s|ing|en)?|fell)[ \-]?(back|through)`)
-	namesARefresh       = regexp.MustCompile(`(?i)refresh`)
-	namesTheACLMove     = regexp.MustCompile(`(?i)install`)
+	namesTheFallThrough    = regexp.MustCompile(`(?i)(fall(s|ing|en)?|fell)[ \-]?(back|through)`)
+	namesARefresh          = regexp.MustCompile(`(?i)refresh`)
+	namesTheACLMove        = regexp.MustCompile(`(?i)install`)
+	namesTheSilentKeychain = regexp.MustCompile(`(?i)key[ \-]?chain`)
+	namesTheRepairMove     = regexp.MustCompile(`(?i)(/login|\bunlock(s|ing|ed)?\b|grant(s|ing|ed)? access|\brepair(s|ing|ed)?\b)`)
 )
 
 // namesAnotherClassesMove is the never-list of the 44-and-no-file row below:
 // the operator moves that belong to a DIFFERENT credential class, in the
 // words that would send a reader at the wrong half of the system.
 //
-// It is the fifth must-NOT ban in this file, and when ranger-base-dopyl
-// widened the other four its entries were still VOCABULARY — {"credential
+// It was the fifth must-NOT ban in this file when ranger-base-dopyl widened
+// the other four, and its entries were still VOCABULARY — {"credential
 // stale", "once to refresh", "not entitled"} under a case-sensitive
 // strings.Contains.
 //
@@ -121,6 +184,14 @@ var (
 // `grep -n strings.Contains` on this file minus the `!` ones — one command,
 // so run it rather than trusting this sentence, which is the mistake it is
 // here to record.
+//
+// AND THE LIMIT OF THIS CENSUS, which ranger-base-65tzm paid for: counting
+// call sites answers "which of the bans that exist is too narrow", and never
+// "which piece of the shipped sentence has no ban at all". A piece with no
+// ban has no call site, so it cannot appear in any count of them, and the
+// census stays correct and finished on its own terms while the guard is two
+// thirds of a guard. The question this count cannot ask is asked at
+// namesTheSilentKeychain instead, against the shipped clause piece by piece.
 var namesAnotherClassesMove = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)stale`),  // the 401's move, not this row's
 	namesARefresh,                    // likewise
@@ -453,9 +524,27 @@ func TestAuthFailureOnAFallbackTokenNamesTheStoreAndBothCauses(t *testing.T) {
 	// The clause is true of exactly one store, so it appears for exactly one
 	// store: without this arm the sentence could be unconditional and every
 	// assertion above would still pass.
+	//
+	// "The clause" is every PIECE of it, one ban each, and the ban is NAMED
+	// in the failure — ranger-base-65tzm measured this arm banning two of the
+	// four, which left cause (a) and the remedy free to appear on the wrong
+	// store. A ban per piece is also what keeps the piece list honest: a
+	// fifth piece added to the shipped sentence arrives here with nothing to
+	// pair it with.
 	for _, other := range []*AuthFailure{keychain, plain} {
-		if namesTheFallThrough.MatchString(other.Error()) || namesTheACLMove.MatchString(other.Error()) {
-			t.Errorf("a 401 on a token that did NOT fall through must carry no fallback clause: %q", other)
+		for _, ban := range []struct {
+			piece string
+			re    *regexp.Regexp
+		}{
+			{"the store it fell through from", namesTheFallThrough},
+			{"cause (a), the keychain item that did not answer", namesTheSilentKeychain},
+			{"cause (b), the ACL move", namesTheACLMove},
+			{"the remedy", namesTheRepairMove},
+		} {
+			if ban.re.MatchString(other.Error()) {
+				t.Errorf("a 401 on a token that did NOT fall through must carry no piece of the "+
+					"fallback clause, and this one names %s (%s): %q", ban.piece, ban.re, other)
+			}
 		}
 	}
 	// The class is the same class, and that is the point: the sentence is

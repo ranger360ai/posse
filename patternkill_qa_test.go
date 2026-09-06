@@ -472,6 +472,87 @@ func pkHasUnquoted(code string, mask []bool, b rune) bool {
 	return false
 }
 
+// pkWrapperLeader answers whether a background launch's group LEADER is a
+// wrapper around the work rather than the work itself — the subject of rule D
+// below, which cares about the shape bash forks and not about how that shape
+// is spelled.
+//
+// MEASURED on this box (bash 3.2.57, ranger-base-65tzm), `set -m`, reading
+// `pgrep -P "$!"` half a second after each launch:
+//
+//	( cd W && exec sleep 9 ) &      pid 39774, no children   (the work IS the leader)
+//	( cd W && sleep 9 ) &           pid 40108, child 40110   (wrapper leader)
+//	cd W && sleep 9 &               pid 40467, child 40469   (wrapper leader)
+//	false || sleep 9 &              pid 40666, child 40669   (wrapper leader)
+//	{ cd W && sleep 9; } &          pid 40830, child 40832   (wrapper leader)
+//	{ sleep 9; } &                  pid 41018, child 41020   (wrapper leader)
+//	cd W && exec sleep 9 &          pid 41699, no children
+//	{ cd W && exec sleep 9; } &     pid 41862, no children
+//
+// so a subshell, a `{ …; }` group, an AND-list and an OR-list are four
+// spellings of ONE shape, and `exec` is what collapses any of them. Rule D was anchored on the
+// literal `(` prefix until ranger-base-65tzm, which is why dropping the
+// parentheses off start_loop's launch — a respelling, not a change — took it
+// out of the rule with no trace: `launches++` still fired, the pid was still
+// captured, so the floor and the exempt pin both stayed satisfied and every
+// reader of the script stayed green.
+func pkWrapperLeader(code string, mask []bool) bool {
+	if c := strings.TrimSpace(code); strings.HasPrefix(c, "(") || strings.HasPrefix(c, "{") {
+		return true
+	}
+	// An AND/OR list: bash forks one subshell for the whole list, so the
+	// last command in it is a CHILD of the pid `$!` hands out.
+	r := []rune(code)
+	for i := 0; i+1 < len(r) && i+1 < len(mask); i++ {
+		if mask[i] || mask[i+1] {
+			continue
+		}
+		if (r[i] == '&' && r[i+1] == '&') || (r[i] == '|' && r[i+1] == '|') {
+			return true
+		}
+	}
+	return false
+}
+
+// pkExtraStatement answers whether a launch carries an unquoted `;` that
+// SEPARATES two commands. That is rule D's one waiver — a subshell with work
+// after its command cannot `exec`, which is what
+// `( "$p" version >"$p.out"; echo $? >"$p.rc" ) &` needs — and the `;` a
+// `{ …; }` group requires before its closing brace is not that. Reading the
+// bare character would waive every brace group ever written, which would make
+// the `{` arm of pkWrapperLeader decorative.
+func pkExtraStatement(code string, mask []bool) bool {
+	r := []rune(code)
+	end := len(r)
+	if end > len(mask) {
+		end = len(mask)
+	}
+	trim := func() {
+		for end > 0 && (r[end-1] == ' ' || r[end-1] == '\t') {
+			end--
+		}
+	}
+	drop := func(c rune) bool {
+		trim()
+		if end > 0 && r[end-1] == c && !mask[end-1] {
+			end--
+			return true
+		}
+		return false
+	}
+	if drop('&') { // the launch's own `&`
+		if drop('}') || drop(')') { // the group or subshell closer…
+			drop(';') // …and, for a brace group, the `;` bash demands before it
+		}
+	}
+	for i := 0; i < end; i++ {
+		if r[i] == ';' && !mask[i] {
+			return true
+		}
+	}
+	return false
+}
+
 var (
 	// pkGroupKill matches the group-first reaper anywhere in a line: an
 	// explicit signal, then the `--` that keeps the negative pid off the
@@ -564,7 +645,6 @@ func pkAudit(name, text string) (complaints []string, launches, kills int, exemp
 	}
 
 	for i := range lines {
-		c := strings.TrimSpace(code[i])
 		at := fmt.Sprintf("%s:%d", name, i+1)
 
 		// ── the launch rules.
@@ -578,10 +658,11 @@ func pkAudit(name, text string) (complaints []string, launches, kills int, exemp
 						"is not under `set -m`, so that pid is not a process-group id and "+
 						"`kill -SIG -- \"-$pid\"` reaps the wrapper only (ranger-base-q8hbz): "+strings.TrimSpace(lines[i]))
 				}
-				if strings.HasPrefix(c, "(") &&
-					!pkHasUnquoted(code[i], mask[i], ';') &&
+				if pkWrapperLeader(code[i], mask[i]) &&
+					!pkExtraStatement(code[i], mask[i]) &&
 					!pkExec.MatchString(code[i]) {
-					complaints = append(complaints, at+": a single-command subshell launch does not `exec`, "+
+					complaints = append(complaints, at+": a background launch with a wrapper leader "+
+						"— a subshell, a `{ …; }` group or an AND/OR list — does not `exec`, "+
 						"so the group leader is a wrapper and `kill -0` speaks about the wrong "+
 						"process (ranger-base-q8hbz): "+strings.TrimSpace(lines[i]))
 				}
@@ -649,6 +730,27 @@ func TestThePkAuditFlagsTheShapesItIsFor(t *testing.T) {
 		want: "not under `set -m`",
 		text: "start_loop() {\n\t:\n\t(cd \"$W\" && env \"$P\" dispatch --watch 5m >\"$L\" 2>&1) &\n\tprintf 'launched\\n' >&2\n\tLOOP_PID=$!\n}\n",
 	}, {
+		// The escape ranger-base-65tzm measured, and the three spellings
+		// rule D was blind to until it did. Each carries `set -m` and a
+		// capture, so rule D is the only rule that can speak about it: the
+		// launch is recognized, `launches++` fires, the pid is handed out —
+		// and before the widening every one of these was silently clean.
+		name: "a paren-free AND-list launch",
+		want: "does not `exec`",
+		text: "start_loop() {\n\tset -m\n\tcd \"$W\" && env \"$P\" dispatch --watch 5m >\"$L\" 2>&1 &\n\tLOOP_PID=$!\n\tset +m\n}\n",
+	}, {
+		name: "an OR-list launch",
+		want: "does not `exec`",
+		text: "start_loop() {\n\tset -m\n\tcd \"$W\" || fail_hard &\n\tLOOP_PID=$!\n\tset +m\n}\n",
+	}, {
+		// Spelled WITHOUT an AND-list, so this is the case only the `{`
+		// arm catches: with a `&&` on it the line is flagged either way and
+		// the brace arm goes unmeasured. `{ sleep 9; } &` leaves a child of
+		// its own — the measurement is at pkWrapperLeader.
+		name: "a `{ …; }` group launch",
+		want: "does not `exec`",
+		text: "start_loop() {\n\tset -m\n\t{ env \"$P\" dispatch --watch 5m >\"$L\" 2>&1; } &\n\tLOOP_PID=$!\n\tset +m\n}\n",
+	}, {
 		// The case only the ANCHORED read catches: a group kill is present
 		// on the line, and it is for a different job than the pid-only kill
 		// that runs first. An unanchored `does this line contain a group
@@ -699,6 +801,31 @@ func TestThePkAuditFlagsTheShapesItIsFor(t *testing.T) {
 	}, {
 		name: "a kill named in a comment or an echo",
 		text: "# what stood here was `kill -9 $LOOP_PID`, which took the wrapper\n\techo \"the loop ($pid) survived kill -9 — the reaper failed\"\n",
+	}, {
+		// The three widened spellings done RIGHT. One `exec` collapses the
+		// wrapper in an AND-list and in a brace group exactly as it does in
+		// a subshell — measured at pkWrapperLeader — so the widened rule
+		// has to go quiet for all three, or it is a rule nobody can satisfy.
+		name: "a paren-free AND-list launch that execs",
+		text: "\tset -m\n\tcd \"$W\" && exec env \"$P\" dispatch --watch 5m >\"$L\" 2>&1 &\n\tLOOP_PID=$!\n\tset +m\n",
+	}, {
+		name: "a `{ …; }` group launch that execs",
+		text: "\tset -m\n\t{ cd \"$W\" && exec env \"$P\" dispatch --watch 5m >\"$L\" 2>&1; } &\n\tLOOP_PID=$!\n\tset +m\n",
+	}, {
+		// The waiver in its brace spelling, and the case only
+		// pkExtraStatement's terminator read catches: a group with work
+		// AFTER its command cannot exec either, and the `;` that says so is
+		// the one BETWEEN the two commands — never the one bash demands
+		// before the closing brace, which every brace group has.
+		name: "a group that must outlive its command cannot exec",
+		text: "\tset -m\n\t{ \"$p\" version >\"$p.out\" 2>\"$p.err\"; echo $? >\"$p.rc\"; } &\n\tlocal child=$!\n\tset +m\n",
+	}, {
+		// The mask, which is what keeps the AND/OR arms reading bash's own
+		// operators rather than any `&&` that lands on the line. A simple
+		// command is exec'd by bash directly: there is no wrapper here to
+		// collapse.
+		name: "an `&&` inside a quoted string is not an AND-list",
+		text: "\tset -m\n\tgrep -c 'a && b' \"$f\" >\"$log\" 2>&1 &\n\tLOOP_PID=$!\n\tset +m\n",
 	}, {
 		name: "&& at the end of a line is a continuation",
 		text: "\t( cd \"$t\" && git init -q . &&\n\t\tgit add F ) >\"$log\" 2>&1\n",
