@@ -79,8 +79,11 @@ preconditions live in [0019](0019-credential-architecture.md).
 
 Install only owned bytes or the prescribed chain; never overwrite a foreign
 hook. The shared-checkout pathspec requirement (0022), constitution fence
-(0015), public visibility (0024), data ceiling (0050), and citation policy
-(0051) retain their separate decisions. `prepare-commit-msg` survives git's
+(0015), public visibility (0024) and data ceiling (0050) retain their
+separate decisions. Citation policy (0051) is not among the walls in this
+slot: its commit-time arm was removed by operator ruling 2026-09-05
+(ranger-base-bp0yj), and what it retains is an on-demand `posse gates
+adr-census`, never a refusal here. `prepare-commit-msg` survives git's
 `--no-verify`; `pre-push` does not. The shared-index arm reads tree shape,
 not persona identity; actor-specific arms carry identity in the environment.
 Linked-worktree exemptions in a hook do not waive a PID's argv deny.

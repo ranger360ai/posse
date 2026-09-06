@@ -272,9 +272,16 @@ routing" once the code bead lands.
   its sibling, with the one-sentence distinction: visibility says where
   content may go, the ceiling says whether it may exist here at all.
 - The hook's head comment counts four walls in the slot, not three.
-- *Amended 2026-09-03:* the ceiling block counts three arms; the hook still
-  counts five walls. Docs that enumerated the ceiling's subjects as "check
-  3's two arms" say three.
+- *Amended 2026-09-03:* the ceiling block counts three arms; the hook counted
+  five walls at that stamp. Docs that enumerated the ceiling's subjects as
+  "check 3's two arms" say three.
+- *Amended 2026-09-05:* four walls again — the fifth was ADR 0051's
+  commit-time citation arm, removed by operator ruling (ranger-base-bp0yj),
+  leaving the ceiling, the beads visibility guard, the constitution-path
+  guard and the shared-index guard. Read the count off the hook's own head
+  comment, which `dataceiling_qa_test.go` asserts against the rendered hook;
+  the bullet above is a dated stamp and this page is prose, which is why this
+  is the copy that drifted (ranger-base-2bijx).
 
 ## Alternatives rejected
 
