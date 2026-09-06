@@ -2355,8 +2355,30 @@ func treeHolds(t *SessionTree) string {
 			continue
 		}
 		if eq := equivalentOnBase(t.Repo, t.Base, tip.ref); measuredOnBase(eq) {
-			if lost, err := contentNotOnBase(t.Repo, t.Base, tip.ref); err == nil && len(lost) == 0 {
+			lost, err := contentNotOnBase(t.Repo, t.Base, tip.ref)
+			switch {
+			case err != nil:
+				// Unreadable is a keep, and it keeps for the reason below:
+				// what this tip holds could not be established.
+			case len(lost) == 0:
 				continue
+			default:
+				// THE ONE ARM THAT NEEDED ITS OWN SENTENCE (ADR 0058 D3).
+				// Patch-id said the base holds these patches; it did not say
+				// the base holds these BYTES, because it normalises
+				// whitespace (ranger-base-x8jp), and heldByTip above writes
+				// a whole paragraph about exactly that. This function used
+				// to flatten it to the generic count below — the same words
+				// a plain strand gets — which was survivable while the only
+				// reader was a reap line, and stopped being so when D3 put
+				// this sentence in the LISTING one line under treeState's
+				// "nothing unlanded (… as an equivalent patch on main)".
+				// Two answers about one tree from one pass, and the operator
+				// with no way to tell which of them was the careful one.
+				// MEASURED 2026-09-06 on this box: three trees on the board
+				// read exactly that way.
+				return fmt.Sprintf("%s's %s commit(s) are on %s as equivalent patches, but patch-id normalises whitespace and %s does not hold their bytes for %s",
+					tip.subject, n, orDetached(t.Base), orDetached(t.Base), strings.Join(lost, " "))
 			}
 		}
 		return fmt.Sprintf("%s holds %s commit(s) %s does not", tip.subject, n, orDetached(t.Base))
@@ -2459,8 +2481,28 @@ func SessionTreesIn(dirs []string) ([]*SessionTree, error) {
 	return out, nil
 }
 
-// ListSessionTrees prints every session worktree and what each still holds.
-func ListSessionTrees(w io.Writer, dirs []string) error {
+// ListSessionTrees prints every session worktree, what each still holds,
+// and what is going to happen to it.
+//
+// THE LAST LINE OF EACH ENTRY IS ADR 0058 D3, and it replaces a promise.
+// This listing used to end at treeState — "nothing unlanded", its one phrase
+// for a tree that is safe to retire — and leave the acting to a sentence
+// addressed to "a human". MEASURED 2026-09-05: 38 of the 70 trees standing
+// in ~/src/posse were dead, clean, closed and fully landed, and no human had
+// ever run the command that sentence was pointing at. So it now says which
+// of the four facts is holding this tree and which pass will take it, in the
+// predicate's own words (RetireAsk.clause, retire.go) — the same words the
+// sweep and `--retire` print, because a listing that answers the question
+// with a lookalike is how two surfaces drift.
+//
+// THE TWO QUESTIONS STAY TWO LINES, because they are two questions.
+// treeState answers what would be LOST by removing this tree, which is a
+// fact about git alone; the clause answers whether anything WILL remove it,
+// which needs the store of record, herdr and the dial. They agree on the
+// common tree and they are not the same answer — a tree with nothing
+// unlanded is kept by a live session, and a tree holding work is kept by
+// fact 2 whatever herdr says.
+func ListSessionTrees(w io.Writer, dirs []string, r *RetireAsk) error {
 	trees, err := SessionTreesIn(dirs)
 	if err != nil {
 		return err
@@ -2470,7 +2512,8 @@ func ListSessionTrees(w io.Writer, dirs []string) error {
 		return nil
 	}
 	for _, t := range trees {
-		fmt.Fprintf(w, "%s\n  %s → %s  ·  %s\n", t.Branch, AbbrevHome(t.Path), orDetached(t.Base), treeState(t))
+		fmt.Fprintf(w, "%s\n  %s → %s  ·  %s\n  %s\n",
+			t.Branch, AbbrevHome(t.Path), orDetached(t.Base), treeState(t), r.clause(t))
 	}
 	return nil
 }
@@ -2658,8 +2701,18 @@ func unaccountedFor(t *SessionTree, force bool) string {
 		// being lost, which is the only thing this gate protects. Refused
 		// still — the record is what it asked and the record is silent — but
 		// there is nothing here to land and nothing --force could add.
-		return fmt.Sprintf("%s holds %d commit(s) not on %s by sha%s and no record says which bead — but every one of them is already on %s as an equivalent patch (%s), so nothing here is unlanded and a human can retire the tree",
-			t.Branch, n, t.Base, where, t.Base, strings.Join(equivNotes(eq), "; "))
+		//
+		// AND IT SAYS WHO RETIRES IT, which used to be "a human can retire
+		// the tree" (ADR 0058 D3). That clause was the whole of posse's
+		// instruction to anybody about these trees and it was addressed to
+		// nobody: MEASURED 2026-09-05, 38 dead landed trees standing and
+		// not one of them ever taken. It is not replaced by "the next pass
+		// takes it" either, because this arm is a tree NO RECORD ACCOUNTS
+		// FOR — the one population fact 1 keeps forever (ADR 0006, D4). So
+		// the ADR 0006 sentence stands unchanged and the tail now says what
+		// follows from it.
+		return fmt.Sprintf("%s holds %d commit(s) not on %s by sha%s and no record says which bead — but every one of them is already on %s as an equivalent patch (%s), so nothing here is unlanded; %s",
+			t.Branch, n, t.Base, where, t.Base, strings.Join(equivNotes(eq), "; "), noRecordKeeps)
 	case len(eq) > 0:
 		// No measurement of content: somebody's decision that this landed
 		// (the -x trailer), or an identity match on a replay. Neither says

@@ -576,6 +576,23 @@ decision (a `-x` trailer, a hand-resolved replay) rather than a measurement.
 Those keep printing what they printed before, and `posse worktrees` is still
 where you decide them by hand.
 
+**`posse worktrees --retire` runs that same predicate on demand, and the
+listing stops telling you a human can retire the tree.** `--retire` walks
+every tree under one blocking launcher lock — `--land`'s shape — and prints
+one line each: `⌫ … retired: <why it was safe>`, or `◑ … kept: <the fact that
+failed>`. It says the two keeps the unattended sweep swallows (a tree inside
+its grace, the dial turned off), because a pass keeps those quiet to stay
+readable and a person who just asked is owed an answer about every tree.
+**It takes no `--force`**: `posse worktrees --retire --force` is refused as
+an unknown flag rather than accepted and quietly ignored, because `--force`
+stands down the one refusal that exists to say no while something would be
+lost, and it stays the two-command hand recipe that refusal prints. The plain
+listing now carries the verdict without acting on it — `retirable — the next
+pass takes it`, `kept: <the fact>`, or ADR 0006's sentence for a tree no bead
+record accounts for. The sentence it replaces, `a human can retire the tree`,
+was printed for two weeks at nobody: measured on one box, 38 trees it was
+true of and not one of them ever taken.
+
 **`posse list` and `posse gates <persona>` now say which permission mode each
 session's PANE is in — and say plainly when they cannot tell.**
 

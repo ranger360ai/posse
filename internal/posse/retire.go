@@ -52,6 +52,7 @@ package posse
 
 import (
 	"fmt"
+	"io"
 	"io/fs"
 	"path/filepath"
 	"strings"
@@ -226,4 +227,199 @@ func lastTreeWrite(t *SessionTree) (time.Time, bool) {
 		}
 	}
 	return newest, true
+}
+
+// RetireAsk is what a surface OUTSIDE the landing sweep needs in order to
+// ask D1 about a tree: the store of record, herdr, and the dial. The sweep
+// carries all three on its Dispatcher already; `posse worktrees` and
+// `posse worktrees --retire` carry none of them, and ADR 0058 D3's whole
+// point is that both ask the SAME predicate rather than a cheaper lookalike
+// written to agree with it.
+//
+// It is a value and not a package global because the two surfaces read the
+// store DIFFERENTLY on purpose, and the difference is the ADR's own rule:
+//
+//   - the LISTING is a report, and may read the store once (`reported`);
+//   - `--retire` is an ACT, and reads fact 1 per tree at the instant it acts
+//     on that tree (`fresh`), because ADR 0011's reclaim rule is that
+//     nothing destroys work on a status somebody read earlier.
+//
+// One command's, and not shared: `reported` fills its cache lazily, so a
+// RetireAsk handed to two goroutines would race. Both callers walk one tree
+// at a time and neither has a reason not to.
+type RetireAsk struct {
+	bd    Bd
+	hb    *HerdrBackend
+	grace time.Duration
+
+	// listed is one `bd list --all` per repo, and it is the LISTING's
+	// answer only. MEASURED 2026-09-06 on this box against the fleet's own
+	// store (~1300 issues, `bd --no-daemon`): `bd show` 0.59s, `bd list
+	// --all --json --limit 0` 1.5s for the whole store. Over the 70 trees
+	// of ADR 0058's census the per-tree read would cost `posse worktrees`
+	// 41 seconds and this one 1.5 — and a listing nobody waits for is a
+	// listing nobody runs, which is how the sentence this record is
+	// replacing came to be read by no one.
+	listed map[string]beadStatuses
+}
+
+// beadStatuses is one repo's answer, including the case where there was
+// none: an unreadable store is not "no such bead", and the two must not
+// render as the same keep.
+type beadStatuses struct {
+	byID map[string]string
+	err  error
+}
+
+// NewRetireAsk reads the dial once and holds it, the way the sweep reads it
+// once per pass: `retire_tree_after:` is policy, and a command that read it
+// per tree could answer two trees in one run under two different rules.
+func NewRetireAsk(a *App, bd Bd, hb *HerdrBackend, errw io.Writer) *RetireAsk {
+	return &RetireAsk{
+		bd:    bd,
+		hb:    hb,
+		grace: a.graceAfter("retire_tree_after", DefaultRetireTreeAfter, errw),
+	}
+}
+
+// fresh is fact 1 read at the instant the caller is about to act on THIS
+// tree — one `bd show`, uncached, the same read the sweep makes.
+func (r *RetireAsk) fresh(t *SessionTree) (string, error) {
+	is, err := r.bd.Show(t.Repo, t.Bead)
+	if err != nil {
+		return "", err
+	}
+	return is.Status, nil
+}
+
+// reported is fact 1 for a surface that only REPORTS: one listing per repo,
+// held for the run. A bead the listing does not carry reads as the empty
+// status, which statusWord renders "unrecorded" and fact 1 keeps — the same
+// direction every unanswerable question here fails in.
+func (r *RetireAsk) reported(t *SessionTree) (string, error) {
+	if r.listed == nil {
+		r.listed = map[string]beadStatuses{}
+	}
+	got, ok := r.listed[t.Repo]
+	if !ok {
+		got = beadStatuses{byID: map[string]string{}}
+		var all []BdIssue
+		if all, got.err = r.bd.ListAll(t.Repo); got.err == nil {
+			for _, is := range all {
+				got.byID[is.ID] = is.Status
+			}
+		}
+		r.listed[t.Repo] = got
+	}
+	return got.byID[t.Bead], got.err
+}
+
+// noRecordKeeps is ADR 0006's rule as ADR 0058 D4 restates it for a tree no
+// bead record accounts for, and it is the sentence D3 leaves UNCHANGED: no
+// record, no act. Such a tree is not this predicate's population at all, so
+// the listing says that rather than running the four facts over it and
+// reporting whichever one happens to refuse first.
+const noRecordKeeps = "no record says which bead, so nothing unattended may retire it (ADR 0006) — retiring it stays a human's"
+
+// clause is ADR 0058 D3's half of the listing: what will happen to this
+// tree. It replaces "a human can retire the tree", which was true of nobody
+// — MEASURED 2026-09-05, 38 dead landed trees standing and no human had ever
+// run the command that sentence was pointing at.
+//
+// Three shapes and they are the ADR's: a tree the predicate passes says the
+// next pass takes it; one it fails names the fact that failed, in the
+// predicate's own words so that the listing and the sweep cannot drift; and
+// a tree no record accounts for gets ADR 0006's sentence instead.
+//
+// A nil ask is a caller with no store to put the question to, which is the
+// same unanswerable-question shape as the rest of this file and fails the
+// same way: the tree is kept and the listing says why.
+func (r *RetireAsk) clause(t *SessionTree) string {
+	if r == nil {
+		return "kept: nothing here can ask whether it is retirable"
+	}
+	if t.Bead == "" {
+		return "kept: " + noRecordKeeps
+	}
+	status, err := r.reported(t)
+	if err != nil {
+		return fmt.Sprintf("kept: bd could not say whether %s is closed (%v)", t.Bead, err)
+	}
+	if v := retirable(t, status, r.hb, r.grace); !v.retire {
+		return "kept: " + v.why
+	}
+	return "retirable — the next pass takes it"
+}
+
+// RetireSessionTrees is ADR 0058 D3: the operator's run of the sweep's own
+// predicate, in `--land`'s shape — every tree, one blocking launcher lock
+// for the whole run, one line per tree.
+//
+// It takes NO --force, and cmd/posse refuses `--retire --force` as an
+// unknown flag rather than accepting and ignoring it. force is
+// RemoveSessionTree's existing override, it stands down the one refusal
+// that exists to say no while something would be lost, and it stays the
+// two-command hand recipe those refusals print. A flag that skips that
+// guard over every tree on the board in one keystroke is the one thing this
+// record is not adding.
+//
+// THE PREDICATE IS ASKED ONCE HERE, and that is not the sweep's two
+// readings weakened — it is the same rule met differently. The sweep reads
+// facts 2 and 3 cheaply outside the lock so the common tree costs no lock at
+// all, and then again inside it, because evidence read before the lock is a
+// fact about the instant it was read. This command takes the lock BEFORE it
+// reads anything (lockLaunches below, blocking — a person ran it and waiting
+// is the honest thing for it to do), so its single reading is already the
+// one taken with the lock held.
+//
+// EVERY KEEP PRINTS, including every keep an unattended pass says nothing
+// about: a tree inside its grace, the dial turned off, an open bead's seat
+// the sweep skips before the predicate is asked, and a tree ADR 0006 leaves
+// alone. `quiet` is a property of a PASS's noise — 36 trees inside their
+// grace on every pass forever is how a board stops being read — and this is
+// a command a human just ran and is reading the output of. A tree it says
+// nothing about is a tree they have to ask about twice.
+func RetireSessionTrees(w io.Writer, a *App, r *RetireAsk, dirs []string) error {
+	trees, err := SessionTreesIn(dirs)
+	if err != nil {
+		return err
+	}
+	if len(trees) == 0 {
+		fmt.Fprintln(w, "no session worktrees")
+		return nil
+	}
+	lock, err := lockLaunches(a, w)
+	if err != nil {
+		return err
+	}
+	defer lock.Release()
+	for _, t := range trees {
+		id := t.Bead
+		if id == "" {
+			// ADR 0006, unchanged: no record accounts for this tree, so
+			// nothing here may act on it — and `--force` is not the answer
+			// because there is no `--force` (see the header).
+			fmt.Fprintf(w, "◑ %-14s %s kept: %s\n", "(no bead)", t.Branch, noRecordKeeps)
+			continue
+		}
+		status, err := r.fresh(t)
+		if err != nil {
+			fmt.Fprintf(w, "◑ %-14s %s kept: bd could not say whether it is closed (%v)\n", id, t.Branch, err)
+			continue
+		}
+		v := retirable(t, status, r.hb, r.grace)
+		if !v.retire {
+			fmt.Fprintf(w, "◑ %-14s %s kept: %s\n", id, t.Branch, v.why)
+			continue
+		}
+		if err := RemoveSessionTree(t, false); err != nil {
+			// The predicate said yes and the destroy still refused, which is
+			// the disagreement worth printing loudly: RemoveSessionTree is
+			// fact 2's own author and its answer is the one that governs.
+			fmt.Fprintf(w, "⚠ %-14s %s not retired: %v\n", id, t.Branch, err)
+			continue
+		}
+		fmt.Fprintf(w, "⌫ %-14s %s retired: %s\n", id, t.Branch, v.why)
+	}
+	return nil
 }

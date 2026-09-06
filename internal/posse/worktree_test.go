@@ -1173,7 +1173,7 @@ func TestListSessionTreesNamesWhatHasNotLanded(t *testing.T) {
 	write(t, filepath.Join(tr.Path, "scratch.txt"), "uncommitted\n")
 
 	var out strings.Builder
-	if err := ListSessionTrees(&out, []string{repo}); err != nil {
+	if err := ListSessionTrees(&out, []string{repo}, nil); err != nil {
 		t.Fatal(err)
 	}
 	got := out.String()
@@ -1188,7 +1188,7 @@ func TestListSessionTreesNamesWhatHasNotLanded(t *testing.T) {
 	}
 	os.Remove(filepath.Join(tr.Path, "scratch.txt"))
 	out.Reset()
-	if err := ListSessionTrees(&out, []string{repo}); err != nil {
+	if err := ListSessionTrees(&out, []string{repo}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "nothing unlanded") {
@@ -1401,7 +1401,7 @@ func TestListSessionTreesNamesWhichBeadTheUnlandedWorkIsFor(t *testing.T) {
 	commitIn(t, tr.Path, "fix.txt", "the work\n", "s-1: the fix")
 
 	var out strings.Builder
-	if err := ListSessionTrees(&out, []string{repo}); err != nil {
+	if err := ListSessionTrees(&out, []string{repo}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "1 commit(s) not on main, no record says which bead") {
@@ -1412,7 +1412,7 @@ func TestListSessionTreesNamesWhichBeadTheUnlandedWorkIsFor(t *testing.T) {
 		t.Fatal(err)
 	}
 	out.Reset()
-	if err := ListSessionTrees(&out, []string{repo}); err != nil {
+	if err := ListSessionTrees(&out, []string{repo}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "1 commit(s) not on main, for a-1") {
@@ -1704,7 +1704,7 @@ func TestListSessionTreesTellsACherryPickedBranchFromAStrand(t *testing.T) {
 			c.land(t, repo, sha)
 
 			var out strings.Builder
-			if err := ListSessionTrees(&out, []string{repo}); err != nil {
+			if err := ListSessionTrees(&out, []string{repo}, nil); err != nil {
 				t.Fatal(err)
 			}
 			got := out.String()
@@ -1739,7 +1739,7 @@ func TestListSessionTreesWillNotCallAHalfLandedOrSquashedBranchLanded(t *testing
 	listing := func(t *testing.T, repo string) string {
 		t.Helper()
 		var out strings.Builder
-		if err := ListSessionTrees(&out, []string{repo}); err != nil {
+		if err := ListSessionTrees(&out, []string{repo}, nil); err != nil {
 			t.Fatal(err)
 		}
 		return out.String()
@@ -1987,7 +1987,7 @@ func TestListingAndSweepAgreeOnWhatOneTreeHolds(t *testing.T) {
 			// a listing read after would describe a tree the assertion just
 			// changed.
 			var out strings.Builder
-			if err := ListSessionTrees(&out, []string{repo}); err != nil {
+			if err := ListSessionTrees(&out, []string{repo}, nil); err != nil {
 				t.Fatal(err)
 			}
 			listing := out.String()
@@ -2050,7 +2050,7 @@ func TestTheOffBranchPrescriptionIsRunnableAndRescuesTheWork(t *testing.T) {
 	work := mustGit(t, tr.Path, "rev-parse", "HEAD")
 
 	var out strings.Builder
-	if err := ListSessionTrees(&out, []string{repo}); err != nil {
+	if err := ListSessionTrees(&out, []string{repo}, nil); err != nil {
 		t.Fatal(err)
 	}
 	listing := out.String()
@@ -2083,7 +2083,7 @@ func TestTheOffBranchPrescriptionIsRunnableAndRescuesTheWork(t *testing.T) {
 			tr.Branch, got, work)
 	}
 	var after strings.Builder
-	if err := ListSessionTrees(&after, []string{repo}); err != nil {
+	if err := ListSessionTrees(&after, []string{repo}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(after.String(), "detached HEAD") {

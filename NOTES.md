@@ -6364,8 +6364,27 @@ the safe-reclamation rule (proof of death at reclaim time plus a grace over
 tree writes); `--land` itself stays exactly this paragraph, and
 `--retire` beside it is the human's run of the same predicate.
 
-It also **reads the branch record before it merges**. A tree holding commits
-its base does not have, whose branch names no bead
+`posse worktrees --retire` runs those four facts over every tree under one
+blocking launcher lock and prints one line per tree — `⌫ … retired: <why it
+was safe>` or `◑ … kept: <the fact that failed>`, including the two keeps the
+unattended sweep is silent about (a tree inside its grace, and the dial
+turned off): a pass keeps those quiet because 36 of them per pass forever is
+how a board stops being read, and a person who just asked is owed an answer
+about every tree. **It takes no `--force`**, and `posse worktrees --retire
+--force` is refused as an unknown flag rather than accepted and ignored —
+`--force` stands down the one refusal that exists to say no while something
+would be lost, and it stays the two-command hand recipe that refusal prints,
+typed at one tree by somebody who has just read why.
+
+The plain listing says the same verdict without acting: a third line per tree
+that reads `retirable — the next pass takes it`, or `kept: <the fact>`, or —
+for a tree no bead record accounts for — ADR 0006's sentence, because that
+tree is not the predicate's population at all and no pass will ever take it.
+It replaces `a human can retire the tree`, which every one of these surfaces
+used to end with and which nobody had ever acted on.
+
+`--land` also **reads the branch record before it merges**. A tree holding
+commits its base does not have, whose branch names no bead
 (`branch.<branch>.posseBead`), is reported and skipped; `--land --force`
 lands it anyway. From git alone that tree is indistinguishable from one whose
 work already landed under another bead id — measured in the field, one commit

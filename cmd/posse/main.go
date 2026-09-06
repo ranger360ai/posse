@@ -137,7 +137,7 @@ func main() {
 		// kill that could not land its work keeps the tree, and a session
 		// meta that was pruned takes the only posse-side record of it with
 		// it. git still knows, so this asks git.
-		dir, land, force := "", false, false
+		dir, land, retire, force := "", false, false, false
 		rest := args
 		for len(rest) > 0 {
 			switch {
@@ -145,19 +145,40 @@ func main() {
 				dir, rest = rest[1], rest[2:]
 			case rest[0] == "--land":
 				land, rest = true, rest[1:]
+			case rest[0] == "--retire":
+				retire, rest = true, rest[1:]
 			case rest[0] == "--force":
 				force, rest = true, rest[1:]
 			default:
-				die(posse.Die("posse worktrees [--dir <repo>] [--land [--force]]"))
+				die(posse.Die(worktreesUsage))
 			}
+		}
+		// ADR 0058 D3: `--retire` never takes `--force`, and it is refused
+		// as an UNKNOWN flag rather than accepted and ignored — the same
+		// line an unrecognized flag gets, because under this grammar that is
+		// what it is. force is RemoveSessionTree's existing override; it
+		// stands down the one refusal that exists to say no while something
+		// would be lost, and it stays the two-command hand recipe those
+		// refusals print. `--land --retire` goes the same way: they are two
+		// commands, and the usage line says so.
+		if retire && (force || land) {
+			die(posse.Die(worktreesUsage))
 		}
 		dirs := a.BeadsDirs()
 		if dir != "" {
 			dirs = []string{posse.ExpandTilde(dir)}
 		}
-		fn := posse.ListSessionTrees
-		if land {
+		// Built for BOTH read paths, because the listing answers ADR 0058
+		// D3's question too and must answer it with the same predicate the
+		// retire runs (retire.go). It reads the store differently for each —
+		// once for the report, per tree for the act — and says why.
+		ask := posse.NewRetireAsk(a, posse.NewBd(), hb, os.Stderr)
+		fn := func(w io.Writer, dirs []string) error { return posse.ListSessionTrees(w, dirs, ask) }
+		switch {
+		case land:
 			fn = func(w io.Writer, dirs []string) error { return posse.LandSessionTrees(w, a, dirs, force) }
+		case retire:
+			fn = func(w io.Writer, dirs []string) error { return posse.RetireSessionTrees(w, a, ask, dirs) }
 		}
 		if err := fn(out, dirs); err != nil {
 			die(err)
@@ -1909,6 +1930,13 @@ func main() {
 	}
 }
 
+// worktreesUsage is the grammar `posse worktrees` accepts, and the line an
+// unknown flag gets. `--land [--force]` and `--retire` are alternatives, not
+// a set: `--force` belongs to the land and ADR 0058 D3 gives the retire none
+// (RetireSessionTrees says why), so every spelling that pairs them is an
+// unknown flag and gets this.
+const worktreesUsage = "posse worktrees [--dir <repo>] [--land [--force] | --retire]"
+
 func needBd() posse.Bd {
 	bd := posse.NewBd()
 	if !bd.Available() {
@@ -2160,16 +2188,25 @@ sessions (herdr workspaces):
                                committed, and the worktree still lands — this flag
                                only declines to spend a turn
       --timeout <interval>     bound on the landing turn (default 10m)
-  posse worktrees [--dir <repo>] [--land [--force]]
+  posse worktrees [--dir <repo>] [--land [--force] | --retire]
                                  session worktrees, which bead each one's unlanded
-                                 work belongs to, and what has not landed yet;
-                                 --land merges every branch that will land (it
-                                 never removes a tree — it cannot tell a dead
-                                 session's from a live one's)
+                                 work belongs to, what has not landed yet, and
+                                 whether anything will retire it; --land merges
+                                 every branch that will land (it never removes a
+                                 tree — it cannot tell a dead session's from a
+                                 live one's)
       --force                  land a tree holding work no bead record accounts
                                for — refused without it, because from git alone
                                that is indistinguishable from work already
                                landed under another bead id
+      --retire                 run the landing sweep's own retire predicate now
+                               (ADR 0058): a tree whose bead is closed, whose
+                               work is measured on the base, whose session herdr
+                               proves gone and which nobody has written to inside
+                               retire_tree_after: (1h) is removed with its
+                               branch. One line per tree, and it takes no
+                               --force — overriding a refusal stays the hand
+                               recipe the refusal prints
   posse crew <name> [--off]      mark a session as yours (👤) so dispatch leaves it
                                  alone, or --off to give it back to the fleet
                                  (ADR 0008; posse new and recipes are crew already,

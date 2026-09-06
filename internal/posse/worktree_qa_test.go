@@ -578,7 +578,7 @@ func TestKillKeepsATreeItCannotLand(t *testing.T) {
 	}
 	// And it is findable afterwards, with the session's meta gone.
 	var out strings.Builder
-	if err := ListSessionTrees(&out, []string{repo}); err != nil {
+	if err := ListSessionTrees(&out, []string{repo}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), m.Branch) || !strings.Contains(out.String(), "not on main") {
@@ -1059,7 +1059,7 @@ func TestQADetachedLegacyBranchPromptNamesTheBase(t *testing.T) {
 	// pass lines and the merge-back bead need a Dispatcher; `posse
 	// worktrees` is the one a person reads with nothing else running.
 	var ls strings.Builder
-	if err := ListSessionTrees(&ls, []string{repo}); err != nil {
+	if err := ListSessionTrees(&ls, []string{repo}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(ls.String(), tr.Branch) || !strings.Contains(ls.String(), said) {

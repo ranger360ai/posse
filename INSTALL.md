@@ -2159,6 +2159,17 @@ pass has already reported that tree's unlanded work, which names the same
 thing and the way out. A `git status` in a tree resets its grace, so a tree
 you are looking at is not taken while you are in it.
 
+`posse worktrees --retire` runs that same predicate whenever you want it,
+over every tree, under one blocking launcher lock, one line per tree — and
+unlike the pass it says the keeps a pass stays quiet about (a tree inside its
+grace, or the dial turned off), because you asked. It takes no `--force`:
+`--retire --force` is refused as an unknown flag, and overriding a refusal
+stays the two-command `git worktree remove` / `git branch -D` recipe the
+refusal itself prints at you, one tree at a time. Plain `posse worktrees`
+tells you the same verdict without acting on it — `retirable — the next pass
+takes it`, or which fact is keeping the tree, or, for a tree no bead record
+accounts for, that nothing will ever take it unattended and it is yours.
+
 A reap is also when a persona's memory is made durable. Personas append what
 they learn to `$POSSE_PERSONA_DIR/ORDERS.md` and cannot commit it themselves, so
 `posse kill` does — path-limited to that one persona's directory, scanned for
