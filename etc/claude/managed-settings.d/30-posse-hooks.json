@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "'@HOME@/.config/posse/gate/bd-argv-gate.sh'",
+            "command": "p=\"$HOME/.config/posse/gate/bd-argv-gate.sh\"; [ -x \"$p\" ] || { echo \"30-posse-hooks: no bd argv gate at $p; refusing (fail closed)\" >&2; exit 2; }; exec \"$p\"",
             "timeout": 10
           }
         ]
@@ -19,7 +19,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash '@HOME@/.claude/hooks/herdr-agent-state.sh' session",
+            "command": "p=\"$HOME/.claude/hooks/herdr-agent-state.sh\"; [ -r \"$p\" ] || exit 0; exec bash \"$p\" session",
             "timeout": 10
           }
         ]

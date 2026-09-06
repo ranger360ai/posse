@@ -71,6 +71,52 @@ what the last tick observed, it no longer answers that — the watch log's own
 
 ### Security
 
+**The hooks lockdown ships as a policy drop-in you install,
+`etc/claude/managed-settings.d/30-posse-hooks.json` — and it is the one
+change in this family that is not safe to make halfway.**
+
+*Affected: nobody automatically. posse installs nothing here; this is a file
+you hand to `install` as root, or do not.*
+
+The file does two things in one change, because either alone is worse than
+neither. It sets `allowManagedHooksOnly`, which is the only setting anywhere
+that makes the runtime refuse a hook a persona planted in a settings file it
+can write. And it re-declares the two hooks this crew actually runs — the
+bd argv gate on `PreToolUse`/Bash and herdr's state reporter on
+`SessionStart` — at the policy tier, where a persona cannot reach them.
+That second half is not tidiness. The runtime's resolver does not FILTER
+hooks when the flag is set, it REPLACES the set with the policy tier's own
+(claude 2.1.263), so the flag on its own does not harden a box, it disarms
+it: the gate stops refusing and nothing prints.
+
+**What changed since the note in the entry below.** That note said this could
+only ship as a template with a placeholder, because the two hook paths had to
+be absolute and a public repo cannot carry one box's home directory. It can
+now be an ordinary drop-in beside the other two, on a measurement that note's
+bead could not make without starting a session: **a hook command is
+shell-expanded**, so `$HOME` carries both paths. The template
+(`21-posse-hooks-lockdown.json.in`) is removed — two installable answers to
+one question is one too many, and the drop-in is the better of them.
+
+**The gate arm deliberately fails CLOSED, which `$HOME` makes necessary.** A
+`PreToolUse` hook that exits non-zero-but-not-2 is fail-OPEN by Claude Code's
+own contract, and posse runs sessions under a scratch HOME where
+`$HOME/.config/posse/gate/` does not exist. A bare `exec` there would exit
+127 and wave every Bash call through — the lockdown removing the fence it
+re-declares, silently, for exactly the seats the fence exists for. The
+shipped string tests for the gate and exits 2 instead. The `SessionStart` arm
+is the opposite on purpose (exit 0 when absent): it blocks nothing by failing
+and would otherwise print on every session start on the box.
+
+**What you may need to do.** Nothing, unless you install it. If you do: any
+hook you add to `~/.claude/settings.json` afterwards is inert until it is
+added to the root-owned file too, plugin hooks stop unless the plugin is
+managed, and `statusLine` becomes policy-only. That cost is permanent and it
+is the point. Verify by running the gate, not by looking at the file — a bad
+install is silent and the wrong way round. Fully reversible: delete the file,
+restart the session.
+
+
 **The launch also pins the settings FIELDS whose value is a command, which
 an `env` pin cannot reach at all.**
 
@@ -108,9 +154,8 @@ existing.
 cannot refuse a hook a lower one planted: hook lists CONCATENATE rather than
 replace (measured against a live user scope). The lever that works is
 policy-tier only, and it takes any hook you rely on down with the attacker's
-unless the same change re-declares it at that tier — so it ships as a
-template, `etc/claude/21-posse-hooks-lockdown.json.in`, and not as something
-posse turns on for you.
+unless the same change re-declares it at that tier — so it ships as the
+drop-in below, and not as something posse turns on for you.
 
 **The launch now pins the environment variables that decide what a session
 EXECUTES and where its traffic goes — not just the two that decide where it

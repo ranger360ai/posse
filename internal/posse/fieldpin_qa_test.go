@@ -210,59 +210,11 @@ func TestQAThePolicyDropInMatchesTheFieldPin(t *testing.T) {
 	}
 }
 
-// The hooks half. A per-field pin cannot refuse a planted hook — arrays
-// CONCATENATE (measured; see fieldpin.go) — so the only lever is the
-// policy-tier one, and it is worse than useless applied alone: it takes the
-// crew's own bd argv gate and herdr's state reporter down with the
-// attacker's hook unless they are re-declared at the same tier in the same
-// change. This refuses a lockdown that forgets that.
-func TestQATheHooksLockdownRedeclaresTheCrewsOwnHooks(t *testing.T) {
-	t.Parallel()
-	const path = "../../etc/claude/21-posse-hooks-lockdown.json.in"
-	b, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("the hooks-lockdown template is missing: %v", err)
-	}
-	// A template, not an installable file: it is deliberately NOT in
-	// managed-settings.d and deliberately not valid JSON until @HOME@ is
-	// rendered, so a glob-install of that directory cannot pick it up with
-	// a placeholder still in it.
-	if !strings.Contains(string(b), "@HOME@") {
-		t.Errorf("%s no longer carries the @HOME@ placeholder — if it has been resolved to one box's paths it belongs on that box, not in a public repo", path)
-	}
-	var got struct {
-		AllowManagedHooksOnly bool `json:"allowManagedHooksOnly"`
-		Hooks                 map[string][]struct {
-			Matcher string `json:"matcher"`
-			Hooks   []struct {
-				Type    string `json:"type"`
-				Command string `json:"command"`
-			} `json:"hooks"`
-		} `json:"hooks"`
-	}
-	if err := json.Unmarshal([]byte(strings.ReplaceAll(string(b), "@HOME@", "/HOME")), &got); err != nil {
-		t.Fatalf("%s does not render to valid JSON: %v", path, err)
-	}
-	if !got.AllowManagedHooksOnly {
-		t.Errorf("%s does not set allowManagedHooksOnly — without it the file adds hooks instead of replacing the persona-writable ones, which is the whole point", path)
-	}
-	// The two the operator's user scope carries today. Named by the SCRIPT
-	// they run, not by the whole command line, so a change to quoting or a
-	// timeout is not a red.
-	for event, want := range map[string]string{
-		"PreToolUse":   "bd-argv-gate.sh",
-		"SessionStart": "herdr-agent-state.sh",
-	} {
-		found := false
-		for _, m := range got.Hooks[event] {
-			for _, h := range m.Hooks {
-				if strings.Contains(h.Command, want) {
-					found = true
-				}
-			}
-		}
-		if !found {
-			t.Errorf("%s locks hooks to the policy tier and does not re-declare %s on %s — installing it would stand that hook down everywhere", path, want, event)
-		}
-	}
-}
+// The hooks half moved out of this file with the template it graded.
+// `etc/claude/21-posse-hooks-lockdown.json.in` is gone and its successor is
+// an ordinary drop-in beside the other two, `30-posse-hooks.json`; the pins
+// are in policyhooks_qa_test.go, which grades the shipped command STRINGS by
+// running them and not just the file's shape. What retired the template is a
+// measurement its own bead could not make: a hook command is shell-expanded,
+// so `$HOME` carries the two paths and neither a placeholder nor one box's
+// home directory has to ship (ranger-base-bm9cd).

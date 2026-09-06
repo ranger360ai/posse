@@ -47,10 +47,23 @@ import "encoding/json"
 //
 // AND hooks, which is not a field but is the other half of the same bead:
 // a higher scope CANNOT refuse a planted hook, because arrays CONCATENATE
-// rather than replace (measured — see fieldpin_qa_test.go). The lever that
-// works is policy-tier only (`allowManagedHooksOnly`) and is filed with the
-// drop-in install, because it requires the crew's own two hooks to be
-// re-declared at a scope a persona cannot write, in the same change.
+// rather than replace. The lever that works is policy-tier only
+// (`allowManagedHooksOnly`) and ships as a drop-in the operator installs,
+// because it requires the crew's own two hooks to be re-declared at a scope
+// a persona cannot write, in the same change. The pins and the resolver it
+// turns on are in policyhooks_qa_test.go.
+//
+// AND "policy-tier only" is literal, which is worth writing here because the
+// obvious cheap proof does not exist (measured 2026-09-06, claude 2.1.263,
+// fresh headless sessions). `--settings` carrying `allowManagedHooksOnly` is
+// INERT: the payload is accepted (a canary row in the same payload reaches
+// the merge), and the arm is indistinguishable from the arm with no flag at
+// all - a planted hook still fires, the gate still refuses. The resolver
+// reads the POLICY source by name, and the managed directory is a hardcoded
+// path with no environment override, so there is no scratch policy tier and
+// no flag that stands in for one. A seat can measure everything about this
+// change EXCEPT the flag itself; that arm belongs to the operator's
+// post-install check, which is why the install ask carries one.
 //
 // THE MEASUREMENTS, all by execution against the real claude 2.1.261 on
 // 2026-09-05, each three-arm (control / attack / pin) because a pin whose
