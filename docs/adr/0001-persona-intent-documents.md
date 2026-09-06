@@ -2,7 +2,12 @@
 
 *Status: accepted 2026-08-15 · amended 2026-08-18 · amended 2026-08-29
 (Consequences: the scaffold's `deny:` seeds the commit wall —
-ranger-base-w1ny) · owner: architect*
+ranger-base-w1ny) · amended 2026-09-06 (the frontmatter schema table and
+the transcribed worked example are struck for pointers at
+`internal/posse/agents.go` and `examples/agents/architect.md` — they
+named 8 of the parser's 19 keys; the shipped Consequences bullets are
+struck; `## Intents` mode is recorded as governing nothing since ADR 0006
+§4 — ranger-base-mppjc) · owner: architect*
 
 > Restated from the private archive of the instance this harness was
 > developed in; incident citations reference that instance's history.
@@ -61,16 +66,33 @@ except `name`; every list is a flat-YAML list (block form preferred —
 permission rules can contain commas; inline form is accepted, and only
 an item showing a bad split — unbalanced parentheses — is warned about).
 
-| key | form | read by | meaning |
-|---|---|---|---|
-| `name` | scalar | launcher, dispatch | beads assignee = durable identity (unchanged) |
-| `description` | scalar | cockpit | one line, shown in listings (unchanged) |
-| `command` | scalar | launcher | template; `{file}` `{memory}` **`{allow}` `{deny}`** |
-| `labels` | list | dispatch | bead labels this persona picks up (unchanged) |
-| `intents` | list | humans, ADR 0005/0006, metrics | slugs of the intents this persona serves, matching the operator's intent vocabulary (e.g. `design`, `review-design`, `spec-beads`) |
-| `allow` | list | launcher | permission rules **added** to the repo-global allowlist |
-| `deny` | list | launcher | permission rules **removed** regardless of any allowlist |
-| `metrics` | list | scorecard | ids of the metrics (below) this persona is judged by |
+**The key schema is the parser's, not this page's** (amended 2026-09-06,
+ranger-base-mppjc). The live list is the commented block at the top of
+`internal/posse/agents.go`, beside `LoadAgent` which reads it; `posse
+agent new` scaffolds the commonly authored subset of it with one-line
+hints (not every key — `cage:`, `writable:`, `egress:`, `sockets:`,
+`envs:` and `trust_project_config:` are authored when wanted). This ADR
+decides only the four keys it introduced — `intents:`, `allow:`, `deny:`,
+`metrics:` — and their semantics are below. Every other key is governed by the ADR
+that decides its mechanism, checked 2026-09-06: `runtime:`, `cage:`,
+`writable:`, `egress:`, `sockets:` and `trust_project_config:` by
+[ADR 0002](0002-runtimes-and-gates.md) §5 (with `writable:`'s path
+matrix in [ADR 0014](0014-path-scoped-writes.md) §5); `tier:` and
+`tier_floor:` by [ADR 0003](0003-model-tiering.md) (Dials A–D);
+`skills:` by [ADR 0007](0007-skills-binding.md) §1; `route_order:` by
+[ADR 0011](0011-dispatch-model.md) §4; and `envs:` names env sets, whose
+launch-order selection is [ADR 0039](0039-model-dial-follow-through.md)
+D3d and whose store of record is [ADR 0019](0019-credential-architecture.md)
+§1.
+
+The table this section used to carry is struck rather than updated,
+because a second copy of a parser's key list drifts and this one had:
+MEASURED 2026-09-06 over `LoadAgent`, `CheckAgent` and `SkillDescription`,
+the parser reads **19** frontmatter keys and the table named **8**; the
+eleven listed above were live and unnamed here. (Eleven, not the twelve the
+proposing bead listed: `overflow:` is a *config* key whose removal message
+lives in `planusage.go`, and was never a PID key.) A pointer cannot drift;
+if the count is wanted again, it is `git grep -oE 'yaml(Get|List)Lines\(front, "[a-z_]+"' internal/posse`.
 
 `allow`/`deny` items use the Claude Code permission-rule syntax verbatim
 (`Edit`, `Bash(bd:*)`, `Bash(git push:*)`, `WebFetch`) — one syntax, the
@@ -116,13 +138,27 @@ drafted as `## Role`; the signed-off instance PIDs said it better, and
 by this contract's own rule — the PIDs are the contract; the document
 and code follow them — the heading is `## Who you are`, with no alias.)
 
-`## Intents` is the heart. Each row is one intent from the operator's
-inventory with the **mode** it runs in and a one-line **done when** —
-the sentence a reviewer (QA, the operator) can check the closed bead
-against. `mode` lives per intent, not per persona, because the same
-persona works fleet for one intent and crew for another. Dispatch does
-not read mode today; when it does, `advisory` is the first thing it will
-gate (advisory personas never commit).
+`## Intents` is the heart, and it is heart-for-the-reader only. Each row
+is one intent from the operator's inventory with the **mode** it runs in
+and a one-line **done when** — the sentence a reviewer (QA, the operator)
+can check the closed bead against. `mode` lives per intent, not per
+persona, because the same persona works fleet for one intent and crew for
+another.
+
+**The mode column governs nothing, and neither does the rest of the
+table** (amended 2026-09-06, ranger-base-mppjc). The original text said
+"dispatch does not read mode *today*"; that `today` has been retired in
+the other direction. [ADR 0006](0006-handoff-shapes.md) §4 ruled that a
+guessed PID row may not stand in for a bead's own acceptance, and
+ranger-base-0ezn7 deleted the last harness reader of this table —
+`IntentDoneWhen`, `intentMatchesLabel`, `IntentRow`, `IntentRows` — on
+2026-09-06. What is left is `pidcheck`, which requires the `## Intents`
+*heading* and never parses a row. So no code reads `crew`/`fleet`/
+`advisory`, an `advisory` persona is not gated from committing by
+anything but its own `deny:` rules, and a wrong row here misleads a human
+and nothing else. Write it for the reviewer; do not write it expecting
+enforcement, and do not add a reader without an ADR that says why the
+table beats the bead's own words.
 
 `## Guardrails` always restates the four hard risk lines (money ·
 publishing under the operator's name · deployed systems · visibility) —
@@ -178,49 +214,34 @@ recipes.
 
 ## Worked example
 
-`examples/agents/architect.md` in this repo is the reference PID
-(generic; an operator's own PIDs live instance-side). Its frontmatter:
+`examples/agents/architect.md` in this repo is the reference PID (generic;
+an operator's own PIDs live instance-side). **Read it there** — the
+transcription this section used to carry is struck for the same reason as
+the schema table (amended 2026-09-06, ranger-base-mppjc): it was a second
+copy of a file the suite already pins byte-for-byte through the
+shipped-example digest, so only the copy nobody tested could drift, and it
+had — the quoted `command:` line is the escape hatch a PID no longer
+writes, since ADR 0002 made `runtime:` the way to choose a launch profile
+and this ADR's own body says so two sections up.
 
-```yaml
----
-name: architect
-description: software architect — designs before the crew builds
-command: claude --append-system-prompt "$(cat {file})" --add-dir {memory} {allow} {deny}
-labels: [architecture, design, adr]
-intents:
-  - design
-  - review-design
-  - cut-implementation-beads
-allow:
-  - Bash(bd:*)
-  - Bash(git log:*)
-  - Bash(git show:*)
-deny:
-  - Bash(git push:*)
-  - Bash(git push --force:*)
-metrics:
-  - designs-implemented-unchanged
-  - closed-no-reopen
----
-```
-
-Note what the file does *not* have: no per-project paths, no secrets, no
-mention of the operator's projects — those bind at launch through env
-sets, `--add-dir {memory}`, and the bead itself.
+What the example is here to teach is what the file does *not* have: no
+per-project paths, no secrets, no mention of the operator's projects —
+those bind at launch through env sets, the memory dir the runtime's
+template renders, and the bead itself.
 
 ## Consequences
 
-- **Today**: `intents`, `allow`, `deny`, `metrics` are inert-but-safe on
-  the current binary; `{allow}`/`{deny}` in `command:` need the launcher
-  bead first. Authoring can start immediately — write the lists now, add
-  the placeholders to `command:` when the launcher lands (or leave
-  `command:` out and inherit the default).
-- **Launcher** grows ~30 lines: parse three lists, render two placeholders,
-  export two env vars. Tests in `agents_test.go`. `DefaultAgentCommand`
-  gains `--add-dir {memory} {allow} {deny}`: the memory dir is always
-  materialized anyway, and the placeholders render empty for legacy
-  files, so no existing agent changes behaviour beyond seeing its own
-  memory dir.
+*(The three bullets this list opened with — "today these keys are
+inert-but-safe", "the launcher grows ~30 lines", "authoring can start
+before the launcher lands" — are struck as of 2026-09-06,
+ranger-base-mppjc. All of it shipped: `LoadAgent` reads every key,
+`{allow}`/`{deny}` render through each runtime's own realizer rather than
+a claude-shaped `command:`, and `RHQ_TOOLS_ALLOW`/`RHQ_TOOLS_DENY` are
+exported. A consequence written in the future tense stops being a
+consequence and becomes a false claim about the binary; the shipped shape
+is `internal/posse/agents.go` and `agents_test.go`. What follows is the
+part still live as consequence rather than history.)*
+
 - **`posse agent new`** scaffolds the PID shape (frontmatter keys present
   and empty, headings present with one-line hints), so a new persona
   starts as a PID rather than a job title. One deliberate exception

@@ -1,6 +1,14 @@
 # ADR 0007 — Skills binding: the PID declares, launch materializes per runtime
 
-*Status: accepted 2026-08-18 · owner: architect*
+*Status: accepted 2026-08-18 · owner: architect · verified 2026-08-18
+(rangerhq-1qd, codex-cli 0.147.0 and grok 1.0.5: the `-c` and `--agent`
+candidates are dead ends; `<cwd>/.agents/skills/` is the only surface
+either CLI has, and it is the same one — §2) · amended 2026-08-28
+(rangerhq-3zr: a bound `SKILL.md` with no `description:` binds to nothing
+on codex and is a finding — §2) · amended 2026-09-05 (ranger-base-65rc:
+the claude plugin tree COPIES each skill in rather than symlinking to it
+— §2) · amended 2026-09-06 (Context: the two superseded runtime rows
+collapse into their verified answers — ranger-base-mppjc)*
 
 > Restated from the private archive of the instance this harness was
 > developed in; incident citations reference that instance's history.
@@ -21,11 +29,16 @@ Facts checked on this machine (2026-08-18):
 | runtime | skill artifact | global location | per-session surface |
 |---|---|---|---|
 | claude | `<name>/SKILL.md` dir | `~/.claude/skills/`, project `.claude/skills/`, plugins' `skills/` | **`--plugin-dir <dir>`** (repeatable, session-only; a dir with `.claude-plugin/plugin.json` + `skills/`). `--add-dir` is *CLAUDE.md dirs* — it does not load skills |
-| codex | `<name>/SKILL.md` dir | `~/.codex/skills/` (10 present) | none verified: candidates `-c` config key for skill dirs, or cwd `.agents/skills/` |
-| grok | `<name>/SKILL.md` dir | `~/.grok/skills/` (8 present) | none verified: candidate `--agent <definition file>` |
+| codex | `<name>/SKILL.md` dir | `~/.codex/skills/` (10 present) | **`<cwd>/.agents/skills/`, and no flag** — the `-c` candidate is a real config table with no root field, verified 2026-08-18 (§2) |
+| grok | `<name>/SKILL.md` dir | `~/.grok/skills/` (8 present) | **the same `<cwd>/.agents/skills/`, and no flag** — the `--agent` candidate carries no skill-path field, verified 2026-08-18 (§2) |
 
-*(The codex and grok rows are answered by the verification note under §2 —
-both read `<cwd>/.agents/skills/`, neither takes a flag.)*
+*(Amended 2026-09-06, ranger-base-mppjc: the two rows above read
+"none verified: candidates …" until this date, and were then followed by a
+line saying §2 had answered them — a table of open questions with the
+answers one hop away, which is how a reader ends up citing the candidate.
+The rows now carry the verified answer; §2 keeps the evidence, the CLI
+versions and what was tried. The claude row was verified the same day and
+never said otherwise.)*
 
 The artifact is the same everywhere — the Agent Skills `SKILL.md`
 directory — so the binding can be one dir of skills and per-runtime

@@ -5,7 +5,10 @@
 block it exists for as a cycle against that edge, ranger-base-rs8j) ·
 amended 2026-09-01 (§2: the HANDOFF rung files `-l <their label>` with
 no `-a` — hand to the lane, ADR 0006 §1; the rendered ladder follows
-when its code bead lands, ranger-base-tpc41)*
+when its code bead lands, ranger-base-tpc41) · amended 2026-09-06
+(§1: delivery is ADR 0013 §2's argv-first prompt file, not `AgentPrompt`
+alone, and the skeleton carries the own-worktree block `workPrompt`
+renders from `ctx.Tree` — ranger-base-mppjc)*
 
 > Restated from the private archive of the instance this harness was
 > developed in; incident citations reference that instance's history.
@@ -48,8 +51,15 @@ Runtime and tier are known at launch: the prompt can say them.
 ## Decision
 
 **1. The work prompt is assembled, not templated: skeleton + context +
-ladder + persona hook.** Runtime-agnostic (it's text through
-`AgentPrompt`), ≤ ~40 lines, and made of *references* (ids, paths), not
+ladder + persona hook.** Runtime-agnostic — it is text, and *how* it
+reaches the session belongs to [ADR 0013](0013-runtime-dispatch-contract.md)
+§2, not to this page (amended 2026-09-06, ranger-base-mppjc): a
+`prompt: argv` runtime has it written to a per-bead file under
+`$RHQ_HOME/state/` and appended to the already-rendered launch line as
+`"$(cat <file>)"`, delivered before the session exists; only a
+`prompt: typed` runtime, and a resume into a live session, still types it
+through `AgentPrompt`. This page decides what the text says; delivery is
+argv-first there. ≤ ~40 lines, and made of *references* (ids, paths), not
 content — the persona reads what it needs; the prompt stays cheap to
 cache (ADR 0003: cache-reads dominate a bead's cost).
 
@@ -58,6 +68,8 @@ Work beads issue <id> (title, quoted as data: "…"). Run `bd show <id>` first.
                                                              # skeleton (unchanged)
 Context                                                      # assembled from bd show --json
 - repo: <dir>  ·  runtime/tier: <runtime>/<tier>  ·  labels: a, b
+- your own worktree: <path>  ·  branch <b>   (dispatch into its own tree only; ADR 0022)
+  Nobody else has this tree, this index or this HEAD … only commits move.
 - from: <parent id> "<title>"            (discovered-from / design bead)
 - unblocked by: <id> "<title>"           (deps that closed — the work you build on)
 - design: docs/adr/0002-….md             (docs/adr paths found in this bead's and its parents' text)
@@ -70,6 +82,24 @@ Provenance: only HANDOFF files `--deps discovered-from:` …      # fixed text, 
 Done: `bd comments add <id> <what you did, paths, ids>` then `bd close <id>`.
 <persona hook: the PID's `## Work prompt` section, verbatim>  # §3
 ```
+
+The `your own worktree:` entry is the one *block* in `Context` rather than
+a single line (amended 2026-09-06, ranger-base-mppjc; rendered by
+`workPrompt` from `ctx.Tree`, and only for a session dispatched into its
+own tree). It is a block because three things have to arrive together or
+the seat acts on half of them: the tree, index and HEAD are the seat's
+alone, so [ADR 0022](0022-shared-file-single-writer.md)'s
+one-writer-per-file convention is not what constrains it there; **only
+commits move**, because the launcher fast-forwards the session branch
+onto the repo's when the bead closes and retires the tree, so uncommitted
+work is lost; and the seat still never pushes and never merges — that is
+the launcher's. A shared-checkout session gets no block and keeps the
+path-limited convention.
+
+The block says nothing about the L1 commit wall, and does not license the
+bare form: a PID's seeded `Bash(git commit unless --)` deny (ADR 0001) is
+unconditional and walls it in every tree, own or shared. "Commit
+normally" there means *not narrowed by another writer*, not *unwalled*.
 
 `Context` lines render only when non-empty — with one exception. The
 `guardrails:` line is fixed text, not assembled context, and renders
@@ -84,8 +114,10 @@ the persona pushed into the gate anyway (rangerhq-gmnm). Its placement inside `C
 not drift — ratified against two reshapes in Alternatives rejected
 (ranger-base-tcaj). Otherwise a bead
 with no parents and no ADRs gets four lines — three assembled, plus that
-one. Comments are *not* inlined (the persona reads them); the prompt says
-"comments carry decisions — read them" when the bead has any.
+one (five entries in a session dispatched into its own tree, where the
+worktree block is a fourth assembled one). Comments are *not* inlined
+(the persona reads them); the prompt says "comments carry decisions —
+read them" when the bead has any.
 
 **2. The escalation ladder — six rungs, one per honest state.** Fixed
 text in every work prompt; the PID's `## Blocked` stays the terminal

@@ -1,7 +1,9 @@
 # ADR 0024 — work product vs the public tree: the routing rule, and a prose wall at commit
 
 *Status: accepted 2026-08-27 (operator ratified; the D4 ceilings blessed
-as shipped example defaults) · owner: architect ·
+— as a published SUGGESTION, not a shipped default: see D4) · D4
+migration executed and recorded 2026-09-06 (ranger-base-mppjc) ·
+owner: architect ·
 extends ADR 0012 D2 and the beads visibility guard (rangerhq-hrz) · amended
 2026-09-04 (D2 check 3: a FOURTH derived source, the crew names, over the
 ADDED staged PATHS alone — ADR 0012 D2 / App.A 5 at commit time,
@@ -290,10 +292,22 @@ DIRECTION, AGENTS with the D1 content classes:
 - **Identity class, one site:** a NOTES line naming the operator's local
   brew tap (carries the username). **Scrub.**
 - **Ceilings, one judgment:** ADR 0018 states two dollar ceilings as
-  accepted design bounds. Either **bless** them as shipped example
-  defaults (converts what-is-set-HERE into public vocabulary; they are
-  already published) or scrub to placeholders. Recommended: bless.
-  Operator's call, on the ratification bead.
+  accepted design bounds. Either **bless** them (converts
+  what-is-set-HERE into public vocabulary; they are already published) or
+  scrub to placeholders. Recommended: bless. Operator's call, on the
+  ratification bead. **BLESSED** on ranger-base-axft — and the word used
+  for it, "shipped example defaults", is wrong and is corrected here
+  (2026-09-06, ranger-base-mppjc). MEASURED that day: `budget_pass:` and
+  `budget_day:` have no default anywhere in the code — `BudgetCaps` reads
+  config and nothing else, and unset is Dial E *dormant* (`posse cost`
+  says so in as many words). In `examples/config.yaml`, the file `posse
+  init` copies verbatim into `$RHQ_HOME`, both lines are **commented
+  out** and labelled "suggested". So what was blessed is a published
+  suggestion carrying the operator's two numbers — enough to give ADR
+  0018's worked example a public anchor rather than a placeholder, which
+  was the point — and no shop is shipped those ceilings armed. Saying
+  "shipped default" of a commented line claims the opposite of what a
+  fresh `posse init` does.
 - **Genre class, three files:** `docs/runbooks/home-cutover.md`,
   `retirement-window.md`, `queue-cutover.md` are one-deployment
   procedures naming instance paths throughout — move to the instance
@@ -305,6 +319,17 @@ DIRECTION, AGENTS with the D1 content classes:
   clean-repo constraint (ADR 0012) rules out a purge, and the exposure
   is spend figures and a username, not credentials. Accepting that is
   recorded instance-side, not here.
+
+**D4 is executed** (recorded 2026-09-06, ranger-base-mppjc; the list above
+is kept as the audit it was, not as pending work). RE-CHECKED that day
+against the standing tree: the cost class is gone from `NOTES.md` (no
+`$N.NN` figure survives the sweep) and from ADR 0020; the identity class
+is gone (the brew-tap lines name the formula, no username); the three
+one-deployment runbooks are absent from `docs/runbooks/`, which keeps
+`release.md` and the later general ones; the credential class was zero
+hits then and the shape table below is what holds it there; the ceilings
+were blessed, with the correction above. The standing bar is not this
+list — it is the 2026-09-02 amendment's shape table and its pin.
 
 **Amendment 2026-09-02 (ranger-base-imiif → ranger-base-lm22v): the bar
 over the residue.** The migration above scrubbed the sites it named; what it
@@ -318,8 +343,9 @@ about. Each is now dispositioned by a ruled SHAPE, in a pin that fails
 naming path, line, class and matched text
 (`internal/posse/opsresidue_qa_test.go`). The two dollar ceilings blessed on
 ranger-base-axft got their public anchor in the same landing: they are
-restated in `examples/config.yaml` as suggested example values, so the ADR
-0018 worked example quotes a shipped default rather than what is set here.
+restated in `examples/config.yaml` as suggested example values — commented
+out, since arming Dial E is the reader's choice — so the ADR 0018 worked
+example quotes a published suggestion rather than what is set here.
 
 So the D2 check-2 bar over the standing tree is **zero hits OUTSIDE the shape
 table, never zero**: ranger-base-99ps's DONE WHEN said zero and was
