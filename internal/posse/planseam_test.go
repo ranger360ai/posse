@@ -203,6 +203,21 @@ func TestPlanGuardReservedKeysAreNotWindows(t *testing.T) {
 					t.Errorf("want %q on stderr, got: %q", want, errb.String())
 				}
 			}
+			// ONCE per pass, per key, and counted rather than Contains'd
+			// (ranger-base-zgg9r, verifying ranger-base-6xx37). "one stderr
+			// line per pass" is the promise the ADR 0010 page, the CHANGELOG
+			// upgrading note and examples/config.yaml all make to an operator
+			// who left a removed key set, and it is what keeps the line from
+			// becoming the noise the operator learns to skip. A Contains
+			// assertion reads identically whether the pass said it once or
+			// six times, so a second caller handed a real errw — today every
+			// other PlanGuardThresholds caller passes io.Discard — would land
+			// silently (ranger-base-av446's lesson, on the same shape).
+			for _, key := range []string{"plan_guard_overflow:", "plan_guard_overflow_cap:"} {
+				if got := strings.Count(errb.String(), key); got != 1 {
+					t.Errorf("%s must be named exactly once in a pass, got %d:\n%s", key, got, errb.String())
+				}
+			}
 		})
 	}
 }
