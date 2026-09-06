@@ -29,8 +29,8 @@ scratch repo under `$HOME` with real linked worktrees):
 - The same with the worktree carrying no redirect at all: bd's worktree
   resolution still answers the main `.beads`, and the write still lands in
   the worktree's checked-out `.beads/issues.jsonl`.
-- The mechanism is in bd's source, not in a version: `cmd/bd/nodb.go`
-  (read side) and `main.go`'s `PersistentPostRun` (write-back) resolve
+- The mechanism is in bd's source, not in a version: `bd cmd/bd/nodb.go`
+  (read side) and `bd main.go`'s `PersistentPostRun` (write-back) resolve
   `$BEADS_DIR`, else `$cwd/.beads`, and never call `FindBeadsDir`, so
   neither the redirect nor the worktree's main repo is consulted. Read in
   0.49.1's source; behaviour measured on 0.50.3. `$cwd`, not the repo root:
@@ -140,10 +140,11 @@ environment, the no-db create from the worktree lands in the MAIN store and
   which carries no `--no-db`, and the container tier does not run on this
   box. The remedy is an instance fact, and it has two halves, because bd
   locates `config.yaml` by walking up from the CWD and never from
-  `BEADS_DIR` (config.go `Initialize`): `issue-prefix: "ranger-base"` in the
-  queue's own `config.yaml` fixes a `bd` run from the queue checkout and NOT
-  one run from a session worktree, whose checked-out `.beads` holds only the
-  redirect (both MEASURED). What reaches a worktree is `BD_ISSUE_PREFIX` in
+  `BEADS_DIR` (bd `config.go`, `Initialize`): `issue-prefix: "ranger-base"`
+  in the queue's own `config.yaml` fixes a `bd` run from the queue checkout
+  and NOT one run from a session worktree, whose checked-out `.beads` holds
+  only the redirect (both MEASURED). What reaches a worktree is
+  `BD_ISSUE_PREFIX` in
   the env or a `config.yaml` beside the redirect (both MEASURED, exit 0).
   Posse sets neither: the value is the store's prefix, which posse would
   have to read out of the store, and D3 already refused that reader. The
@@ -237,9 +238,9 @@ redirect at all.
 And the boundary check does not bite a temp store: `isPathInSafeBoundary`
 allows anything under the resolved `os.TempDir()` before it consults
 `unsafePrefixes`, so a `BEADS_DIR` under macOS's `/var/folders` is accepted
-even though `/private` is on the list (read in bd 0.49.1's
-`internal/beads/context.go`; measured on 0.50.3 for `where` and `create`).
-The escape holds only while bd and the test agree on `$TMPDIR`.
+even though `/private` is on the list (read in 0.49.1's source,
+bd `internal/beads/context.go`; measured on 0.50.3 for `where` and
+`create`). The escape holds only while bd and the test agree on `$TMPDIR`.
 
 MEASURED 2026-09-04 for the mixed-prefix amendment (ranger-base-jl8q2), bd
 0.50.3 from a seatbelt seat, every call `--no-daemon --no-db list --limit

@@ -42,10 +42,12 @@ condition computation. No socket is required for completeness or delivery.
 
 ## The removal, as landed
 
-`internal/posse/herdrevents.go`, the `Dispatcher.Hints` seam and watch's
-subscription/refresh branches, and the cockpit's hint channel, floor, dirty
-and pending bits, pane-set poke and report line are gone (ranger-base-4dxpo),
-with their tests and the `selector-check` tree door. `SocketID()` stays — it
+The source file is gone, and its bytes are at
+`git show 39ce664:internal/posse/herdrevents.go` (the commit before the
+removal). It, the `Dispatcher.Hints` seam and watch's subscription/refresh
+branches, and the cockpit's hint channel, floor, dirty and pending bits,
+pane-set poke and report line are gone (ranger-base-4dxpo), with their tests
+and the `selector-check` tree door. `SocketID()` stays — it
 is the shared resolver, and the fake-CLI reads still spell a socket. The one
 non-event caller of the deleted file's vocabulary, dispatch's `--resume`
 holder check, reads `settledStatus` in `govern.go`, which was already the

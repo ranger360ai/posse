@@ -1,6 +1,6 @@
 # ADR 0051 — Stable citations and an on-demand SHA audit
 
-*Status: accepted 2026-09-05 · ADR simplification, operator ruling 2026-09-05 · commit-time SHA policing removed from the decision; **built 2026-09-06** (ranger-base-bp0yj).*
+*Status: accepted 2026-09-05 · ADR simplification, operator ruling 2026-09-05 · commit-time SHA policing removed from the decision; **built 2026-09-06** (ranger-base-bp0yj). · amended 2026-09-06 (ranger-base-tq0gx): the source-file citation convention below, pinned by `adrtestcitation_qa_test.go`.*
 
 ## Decision
 
@@ -35,6 +35,39 @@ All executable, write-scope, visibility and data-ceiling commit boundaries
 remain. [ADR 0054](0054-silent-revert-triage-survives-the-rebase.md) uses patch-ID evidence for a separate
 operational silent-revert detector and is unchanged. Removing this editorial
 gate does not authorize deleting patch-ID logic by searching for its name.
+
+## Naming a source file
+
+A record that names a source file is making a checkable claim, and there are
+three of them. **Live**: a bare `runtime.go` claims the file is somewhere in
+this tree; a prefixed `internal/posse/runtime.go` claims it is at that path.
+**Historical**: a file as it stood at a commit — which is how a deliberately
+deleted file is cited — is spelled `git show <sha>:<path>`, on ONE line. The
+shape is self-evidently dated and nothing looks the object up: a clone may
+lack the blob, and the paragraphs above already rule that a missing object is
+unjudged rather than a finding. A wrapped `git show` is not a citation, it is
+two lines. **Another repo's**: the repo name goes immediately before the
+path — `bd cmd/bd/nodb.go`, the spelling 0037 and 0046 already use for
+`ranger-base` paths. It declares scope, not that the path resolves over
+there, and this tree cannot judge it either way.
+
+Declare once per base name per record, in full. A later BARE mention of that
+name in the same record is a backreference to the declaration and needs no
+repeat. A PREFIXED mention never is: it is a fresh claim about a path, and it
+resolves or carries its own declaration. The radius is the record, not the
+paragraph, for the reason ADR 0016's removal note shows: the declaration
+and the price line that mentions it again are ten lines apart.
+
+Records write a pair of files as `cost.go/cockpit.go`, so a `/`-separated
+segment that itself ends in `.go` is a file and not a directory. A token with
+no base name is prose, not a citation (`cage*.go`, "prove it with a `.go`
+file"), and so is a bare suffix (`_test.go`), because Go's own build ignores
+a file whose name begins with `_` or `.` and no record cites one as live
+code. A run carrying `//` is a URL, whose last component may itself be a Go
+file — a link into a repository browser — and is not a citation of this
+tree. `adrtestcitation_qa_test.go` reads every
+`docs/adr/*.md` under these rules and refuses anything left over; its name
+records where it started, at `_test.go` citations alone.
 
 ## Deferred deletion and acceptance
 
