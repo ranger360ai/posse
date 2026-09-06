@@ -220,7 +220,20 @@ func SourceBuildStamp(src string) string {
 	// untracked files included, and the Makefile asks the same question the
 	// same way. A dirty ident never proves two trees are identical — it
 	// only stops a dirty build from claiming to be the commit it sits on.
-	if st, err := git(src, "status", "--porcelain"); err == nil && st != "" {
+	st, err := git(src, "status", "--porcelain")
+	if err != nil {
+		// The same swallow one function down, in the other direction and
+		// with the same consequence (ranger-base-2asm5). `err == nil &&`
+		// made an UNREADABLE status mean "clean": a dirty tree whose
+		// status could not be read fell past this statement and stamped
+		// as shortSha(HEAD) alone — byte-identical to a genuinely clean
+		// build of the same commit, so cageAge read CURRENT and a stale
+		// image passed for this source. A status that could not be read
+		// is not a clean tree; it is the UNCLEAR verdict, the same ""
+		// the dirty half below returns for the same reason.
+		return ""
+	}
+	if st != "" {
 		id := dirtyIdent(src)
 		if id == "" {
 			// The tree is dirty and what makes it dirty could not be
