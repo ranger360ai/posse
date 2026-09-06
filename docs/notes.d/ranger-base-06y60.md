@@ -63,11 +63,20 @@ Mutation-checked on the way in, and each mutant reds only its own arms:
 
 | mutant | reds |
 |---|---|
-| `--verbatim` dropped from `patchIDsVerbatim` | the re-indent and trailing-whitespace arms, and nothing else |
+| `--verbatim` dropped from `patchIDsVerbatim` | the re-indent and trailing-whitespace arms, **and the git-floor arm** — three tests |
 | the twin arm removed from `baseHoldsBytes` | the two arms that retire on it (the clean pick past the hunk's context, and the same under later base edits) |
 | a missing id read as "nothing to compare, carry on" | the merge arm |
 | an error from `verbatimUnpaired` read as held | the git-floor arm |
 | the twin lookup written as a set instead of a count | the add/revert/add arm |
+
+That third red is not a surprise once it is written down, and this table
+said "and nothing else" until ranger-base-bbl6r re-measured it: the git-floor
+arm (`TestVerbatimTwinKeepsTheTreeOnAGitTooOldForTheFlag`) works by putting a
+PATH shim in front of git that REJECTS `--verbatim`, and a shim cannot reject
+a flag the code has stopped passing — so the tree it exists to keep gets
+retired instead, at verbatimtwin_test.go:393. A record that undercounts a
+mutant's reds is the sentence a later reader trusts when re-aiming it, and
+they would go looking for a leak that is not there.
 
 The count is the one rule here that is not the ADR's. One id can belong to
 two commits ahead — add X, take X back, add X again — and a base holding ONE

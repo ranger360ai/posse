@@ -2986,11 +2986,34 @@ func treeState(t *SessionTree) string {
 		eq := equivalentOnBase(t.Repo, t.Base, head)
 		switch {
 		case measuredOnBase(eq):
-			// Every commit is a measured patch-id match on the base: the
-			// branch is the last copy of nothing, the same fact that lets
-			// RemoveSessionTree delete it unattended. No off-branch clause
-			// below this arm, and it would be false if there were: the base
-			// holds these patches whatever ref does or does not name them.
+			// Every commit is a measured patch-id match on the base. This
+			// comment used to go on "…the same fact that lets
+			// RemoveSessionTree delete it unattended", and that has not been
+			// the fact since ADR 0058's 2026-09-06 amendment landed
+			// (ranger-base-06y60): the ACT needs the base to hold the BYTES
+			// as well, measured by the blob walk or by a whitespace-exact
+			// twin, because patch-id normalises whitespace. 06y60 amended the
+			// two sibling comments that said only the blob licenses and left
+			// this one, which made the stronger claim (ranger-base-bbl6r
+			// finding 5).
+			//
+			// So this line prints "nothing unlanded" over a tree
+			// RemoveSessionTree then REFUSES, and does today: a hand landing
+			// that only re-indented is patch-id equivalent while the branch
+			// still holds the last copy of those exact bytes. What keeps the
+			// entry honest is the SECOND line and not this one — ADR 0058 D3,
+			// RetireAsk.clause reaching treeHolds, which says the base has no
+			// whitespace-exact twin and does not hold the bytes for the paths
+			// it names. Both directions are pinned in verbatimtwin_test.go, so
+			// the day the two lines stop disagreeing in that shape, or the
+			// second one stops carrying the careful sentence, something says
+			// so. Narrowing what THIS line prints is a change to the
+			// operator's screen and belongs to whoever revisits D3, not to a
+			// comment fix.
+			//
+			// No off-branch clause below this arm, and it would be false if
+			// there were: the base holds these patches whatever ref does or
+			// does not name them.
 			parts = append(parts, fmt.Sprintf("nothing unlanded (%s)", strings.Join(equivNotes(eq), "; ")))
 		case len(eq) > 0:
 			// No measurement of content: the -x trailer, or an identity match

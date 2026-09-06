@@ -290,8 +290,14 @@ asked by `heldByTip` and `treeHolds` both; the eight arms are pinned in
 internal/posse/verbatimtwin_test.go, plus a ninth for the git floor — a
 PATH shim rejecting `--verbatim` keeps the one tree that otherwise
 retires. Mutation-checked on the way in: dropping `--verbatim` reds the
-re-indent and trailing-whitespace arms and nothing else; removing the
-twin arm reds the two that retire on it; reading a merge's missing id as
+re-indent and trailing-whitespace arms AND the git-floor arm — three
+tests, not two, and necessarily so: that arm's PATH shim rejects
+`--verbatim`, and a shim cannot reject a flag the code no longer
+passes. (This record said "and nothing else" until ranger-base-bbl6r
+re-measured it under `go test -overlay` on 2026-09-06; the pin set is
+STRONGER than the sentence, which is the direction that sends a later
+reader hunting a leak that is not there.) Removing the twin arm reds
+the two that retire on it; reading a merge's missing id as
 "nothing to compare" reds the merge arm; failing OPEN on the flag's
 absence reds the git-floor arm; writing the twin lookup as a set rather
 than a count reds the add/revert/add arm. That last rule is not this

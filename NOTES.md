@@ -6995,6 +6995,30 @@ exclusions are load-bearing rather than housekeeping:
   `1` whenever a session is mid-bead behind a PID edit — correct, and a
   nuisance generator on a clock.
 
+**And the census is over `scripts/` too** (ranger-base-bbl6r, which is this
+section's own defect in the one shape its guard could not see). Both lists
+above are keyed on a **Makefile target name**, so a check shipped as
+`scripts/verify-*.sh` with *no target at all* was in neither list, named by
+nothing, with a green board over it. Two were in the tree the day this landed —
+`verify-ghost-composer.sh` and `verify-orphan-report.sh` — and the close that
+wrote the census counted 21 `verify-*` *targets* and never enumerated
+`scripts/`, so neither had ever been classified. Neither is schedulable today
+(one needs an uncaged seat, one needs a container), so nothing was
+unrun-and-needed; the gap was the guard's. A third table, `UNTARGETED`, now
+carries every `verify-*` script that is no target's recipe with the reason it
+cannot have one, and the QA test globs the directory against it both ways.
+
+Three tables of *sentences* are checked rather than read, for the same reason:
+
+- an exclusion that says `make test` runs it is checked against the `test:`
+  prerequisite line. Drop the prerequisite and the check runs **nowhere** while
+  the table still says CI has it.
+- a roster **command** is checked against that target's own recipe. A recipe
+  that gains or loses a flag would otherwise drift in silence; only a *renamed*
+  script is loud today, because the runner's `[ ! -x ]` arm makes that an ERROR.
+- every row's reason or command must be non-empty, so a row cannot satisfy the
+  census by existing.
+
 **It remediates nothing, and that is pinned.** Every rostered script is
 read-only by its own contract; the aggregate kills no process, deletes no file
 and fixes nothing. A finding prints the line for a person to type. This is

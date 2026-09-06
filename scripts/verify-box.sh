@@ -35,6 +35,28 @@
 # for was a control nobody noticed was unrun, and a roster that can go quietly
 # out of date reproduces it one level up.
 #
+# AND THE CENSUS IS OVER SCRIPTS TOO, not over Makefile targets alone
+# (ranger-base-bbl6r finding 1, escaped ranger-base-51z8j). Both lists above
+# are keyed on a TARGET NAME, so the one shape this control could not see was
+# the shape it exists for: a check shipped as scripts/verify-*.sh with no
+# target at all is in neither list, is named by nothing, and has a green board
+# over it. Two were in the tree on the day this was written and neither had
+# ever been classified. So UNTARGETED below is the third list -- every
+# scripts/verify-*.sh that is no target's recipe, with the reason -- and
+# boxcheck_qa_test.go fails on a script in neither the Makefile nor that list.
+#
+# THREE MORE THINGS THE CENSUS NOW CHECKS RATHER THAN TAKES ON TRUST, because
+# a table of sentences nothing measures is the same silence one level further
+# in (ranger-base-bbl6r findings 2 and 3):
+#   - an EXCLUDED reason that says `make test` runs it is checked against the
+#     `test:` prerequisite line. Drop the prerequisite and the check runs
+#     NOWHERE while this table still says CI has it.
+#   - a ROSTER command is checked against that target's own recipe. A recipe
+#     that gains or loses a flag would otherwise drift in silence, and the
+#     failure is running the wrong invocation under the target's name.
+#   - every reason and command is non-empty, so a row cannot satisfy the
+#     census by existing.
+#
 # READ-ONLY, EVERY ARM. Each script below is read-only by its own contract and
 # is run with no arguments that change that. Nothing here kills a process
 # (`Bash(pkill:*)` and `Bash(killall:*)` are denied fleet-wide and the reaper
@@ -69,7 +91,7 @@ case "${1:-}" in
   --self-test) selftest=1 ;;
   --quiet) quiet=1 ;;
   --self-test-run) ;;   # internal; see the re-exec note at the foot
-  --census) ;;          # the two lists, for boxcheck_qa_test.go
+  --census) ;;          # the three lists, for boxcheck_qa_test.go
   "") ;;
   *) echo "usage: $self [--quiet|--self-test]" >&2; exit 2 ;;
 esac
@@ -138,15 +160,43 @@ verify-box-self-test	the arms of the aggregate itself; a tree check, and putting
 EXCLUDED_EOF
 )
 
-# `--census` prints the two lists in one machine-readable form so the QA test
-# reads what the script actually holds rather than re-parsing it. Both are read
-# out of the same tables the runner uses; there is no third copy to drift.
+# ------------------------------------------------------- the untargeted scripts
+#
+# Every scripts/verify-*.sh that is NO target's recipe, with the reason it has
+# no target. boxcheck_qa_test.go globs the directory and fails on a script that
+# is neither named in a Makefile recipe nor listed here, so a check cannot
+# arrive in scripts/ and be invoked by nothing in silence -- which is exactly
+# what had happened to both rows below.
+#
+# The bar for a row here is that the script CANNOT be run by a target on this
+# box, not that nobody got round to adding one. Anything a person could type
+# `make` for gets a target instead.
+#
+# script<TAB>reason
+UNTARGETED=$(cat <<'UNTARGETED_EOF'
+verify-ghost-composer.sh	needs an UNCAGED shell: it drives a real claude in a scratch herdr pane, and from a `cage: seatbelt` seat claude never reaches a composer at all -- the header of that script says so and keeps the negative as the finding. Event-triggered, and the bead it was written for (ranger-base-2hvtv) was answered another way in the end (internal/posse/sentline.go). A target here would offer a `make` line that cannot work from the seat most likely to type it
+verify-orphan-report.sh	runs in a throwaway CPU-limited container and MUST NOT run on this box: it plants busy loops on purpose, and the standing operator rule -- after sixteen leaked ones froze the fleet for 2.5 hours -- is that a persona generates no load here (ranger-base-teau). It also waits out the real orphan age floor, so it takes minutes. A make target for it would be a target whose only correct use is somewhere this Makefile does not run
+UNTARGETED_EOF
+)
+
+# `--census` prints the three lists in one machine-readable form so the QA test
+# reads what the script actually holds rather than re-parsing it. All three are
+# read out of the same tables the runner uses; there is no fourth copy to drift.
+#
+# THE SECOND FIELD IS THE ROW'S OWN SECOND FIELD -- a roster row's COMMAND, an
+# exclusion's or an untargeted script's REASON. It used to be dropped here, and
+# a census that prints only names can only ever check names: that is what left
+# "already a prerequisite of make test, so CI runs it" and the hand-written
+# invocations measured by nothing (ranger-base-bbl6r findings 2 and 3).
 if [ "${1:-}" = "--census" ]; then
-  printf '%s\n' "$ROSTER" | while IFS=$'\t' read -r t _; do
-    [ -n "$t" ] && echo "roster	$t"
+  printf '%s\n' "$ROSTER" | while IFS=$'\t' read -r t rest; do
+    [ -n "$t" ] && printf 'roster\t%s\t%s\n' "$t" "$rest"
   done
-  printf '%s\n' "$EXCLUDED" | while IFS=$'\t' read -r t _; do
-    [ -n "$t" ] && echo "excluded	$t"
+  printf '%s\n' "$EXCLUDED" | while IFS=$'\t' read -r t rest; do
+    [ -n "$t" ] && printf 'excluded\t%s\t%s\n' "$t" "$rest"
+  done
+  printf '%s\n' "$UNTARGETED" | while IFS=$'\t' read -r t rest; do
+    [ -n "$t" ] && printf 'untargeted\t%s\t%s\n' "$t" "$rest"
   done
   exit 0
 fi

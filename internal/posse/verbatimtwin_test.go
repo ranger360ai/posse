@@ -33,6 +33,14 @@ import (
 // must go red (they retire a branch holding the last copy of its bytes);
 // mutate the twin arm away entirely and arms 1 and 6 must go red (they are
 // kept on every pass again). Measured both ways on the way in.
+//
+// THAT FIRST MUTANT REDS A THIRD TEST, and the count is written here because
+// the two records that carried it said "and nothing else" and were believed
+// (ranger-base-bbl6r finding 4; re-measured 2026-09-06 under `go test
+// -overlay`, control green in 14.3s). TestVerbatimTwinKeepsTheTreeOnAGitToo
+// OldForTheFlag goes red too, necessarily: its PATH shim works by REJECTING
+// `--verbatim`, and a shim cannot reject a flag the code no longer passes, so
+// the tree that arm exists to keep is retired instead. Three reds, not two.
 func TestRemoveSessionTreeRetiresOnAWhitespaceExactTwin(t *testing.T) {
 	t.Parallel()
 
@@ -200,6 +208,23 @@ func TestRemoveSessionTreeRetiresOnAWhitespaceExactTwin(t *testing.T) {
 			// one answer by contract (baseHoldsBytes is one function for
 			// exactly that reason).
 			held := treeHolds(tr)
+
+			// AND THE LISTING'S FIRST LINE IS NOT THAT ANSWER
+			// (ranger-base-bbl6r finding 5). treeState keys on measuredOnBase
+			// alone, which is weaker than what licenses the act: over the two
+			// arms below that are patch-id equivalent and KEPT, it prints
+			// "nothing unlanded" about a tree RemoveSessionTree refuses. That
+			// divergence is real and it is what ADR 0058 D3 saves — the entry's
+			// SECOND line is the careful sentence, RetireAsk.clause reaching
+			// treeHolds. Pinned both ways here: the phrase must track
+			// measuredOnBase exactly (a one-way check would pass on a
+			// treeState that stopped saying anything), and where the two lines
+			// disagree the second one must carry the refusal's own words.
+			state := treeState(tr)
+			if c.measured != strings.Contains(state, "nothing unlanded") {
+				t.Errorf("treeState = %q, and measuredOnBase=%v is the whole of what that phrase keys on", state, c.measured)
+			}
+
 			err = RemoveSessionTree(tr, false)
 
 			if (err != nil) != (c.kept != "") {
@@ -214,6 +239,22 @@ func TestRemoveSessionTreeRetiresOnAWhitespaceExactTwin(t *testing.T) {
 				}
 				if c.measured && !strings.Contains(err.Error(), abbrevSHA(branchTip)) {
 					t.Errorf("the refusal must name the commit the base has no exact twin for (%s), got: %v", abbrevSHA(branchTip), err)
+				}
+				if c.measured {
+					// The listing says "nothing unlanded" here (asserted
+					// above) while the act refuses. The line under it is the
+					// whole of what stops that reading as settled, so it has
+					// to be there and to say what is missing.
+					if !strings.Contains(held, c.kept) {
+						t.Errorf("the listing reads %q over a tree the act refuses, and its second line must carry %q: treeHolds = %q", state, c.kept, held)
+					}
+					// And the retire predicate must still REACH treeHolds —
+					// the clause the listing prints is its answer, not a
+					// lookalike written beside it. A nil herdr cannot make it
+					// past this read while treeHolds has something to say.
+					if got := retireHeldOrAlive(tr, nil); got != held {
+						t.Errorf("the retire predicate no longer prints treeHolds: it says %q where treeHolds says %q", got, held)
+					}
 				}
 				if _, serr := os.Stat(tr.Path); serr != nil {
 					t.Errorf("the refused tree was removed anyway: %v", serr)
