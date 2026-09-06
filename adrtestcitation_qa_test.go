@@ -61,6 +61,18 @@ package posse_test
 // and the tokenizer those rules need, because `cost.go/cockpit.go` is how the
 // records actually write a pair of files.
 //
+// THE CORPUS is every record in docs/adr, and docs/adr holds two file classes
+// (ranger-base-bvich). Alongside the *.md decisions sit the *.probe.sh
+// executable supplements — four today — which a record hands its reproduction
+// to and which cite source files in their comments and their echoed prose
+// exactly the way the record does. Reading only the *.md left that class
+// unpinned, and the class is not hypothetical: the launcher citation in
+// 0002-container-tier.probe.sh carried `internal/rhq/cagelauncher.go` on main
+// for the same four days as the nine non-test citations above, in the same
+// directory, and only ranger-base-3ni7p's human sweep found it. A shell
+// comment is prose like any other, so every rule above applies to a
+// supplement unchanged.
+//
 // THE FILE NAME RECORDS WHERE IT STARTED and is deliberately not renamed:
 // docs/notes.d/adr-adherence-2026-09.md is a dated note that names it, and
 // renaming a file a dated note names is the stale-name problem ADR 0051 is
@@ -219,6 +231,16 @@ func adrIsWordByte(b byte) bool {
 	return b == '_' || b == '-'
 }
 
+// adrIsRecord reports whether a docs/adr entry is part of the corpus. Both
+// file classes in that directory are records: the *.md decisions and the
+// *.probe.sh supplements they hand their reproduction to. A supplement cites
+// source files exactly the way the record does; the arm that says the
+// executable half is actually being read is
+// TestADRCitationCorpusReadsTheExecutableSupplements.
+func adrIsRecord(name string) bool {
+	return strings.HasSuffix(name, ".md") || strings.HasSuffix(name, ".probe.sh")
+}
+
 func adrCitations(t *testing.T) []adrCite {
 	t.Helper()
 	ents, err := os.ReadDir(filepath.Join("docs", "adr"))
@@ -227,7 +249,7 @@ func adrCitations(t *testing.T) []adrCite {
 	}
 	var out []adrCite
 	for _, e := range ents {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
+		if e.IsDir() || !adrIsRecord(e.Name()) {
 			continue
 		}
 		b, err := os.ReadFile(filepath.Join("docs", "adr", e.Name()))
@@ -462,6 +484,61 @@ func TestADRCitationDeclarationsExemptOnlyWhatTheyDeclare(t *testing.T) {
 	}
 }
 
+// The executable half of docs/adr, floored separately because widening the
+// corpus to it is the whole of ranger-base-bvich and a count that quietly
+// returns to zero is how it would be lost again. Three of the four
+// supplements carry Go citations today — 0002-container-tier,
+// 0014-l4-worktree-narrowing and 0014-path-scoped-writes; 0009-gate-shell
+// names none and is not floored, because a supplement is not required to
+// cite anything.
+func TestADRCitationCorpusReadsTheExecutableSupplements(t *testing.T) {
+	cites := adrCitations(t)
+
+	from := map[string]int{}
+	for _, c := range cites {
+		if strings.HasSuffix(c.adr, ".probe.sh") {
+			from[c.adr]++
+		}
+	}
+	// Floor, not a coupling (measured 2026-09-06: 5 citations across 3
+	// supplements). At zero the *.md-only corpus is back and this arm is
+	// the only thing that says so.
+	if len(from) < 3 {
+		t.Fatalf("the corpus carries citations from %d executable supplements (%v); docs/adr/*.probe.sh is being skipped and the class that rotted is unpinned again", len(from), from)
+	}
+
+	// The named regression, asserted at its own path. This citation stood
+	// as `internal/rhq/cagelauncher.go` until 2026-09-06; the point of the
+	// widening is that the NEXT rename of that directory reds here instead
+	// of waiting for a sweep.
+	const (
+		adr  = "0002-container-tier.probe.sh"
+		want = "internal/posse/cagelauncher.go"
+	)
+	found := false
+	for _, c := range cites {
+		if c.adr == adr && c.text == want {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("%s no longer contributes %s to the corpus; either the supplement stopped naming the launcher or it is no longer being read", adr, want)
+	}
+
+	// And the supplements are held to the rule, not merely collected: a
+	// stale directory in one is refused exactly as it is in a record.
+	idx := adrGoFileIndex(t)
+	stale := adrCite{adr: adr, line: 148, text: "internal/rhq/cagelauncher.go"}
+	live := adrCite{adr: adr, line: 148, text: want}
+	if got := adrUnresolved(idx, []adrCite{stale}); len(got) != 1 {
+		t.Fatalf("the supplement's own stale spelling resolved; reading the file buys nothing if the rule does not apply to it")
+	}
+	if got := adrUnresolved(idx, []adrCite{live}); len(got) != 0 {
+		t.Fatalf("the supplement's live citation was reported missing")
+	}
+}
+
 // The tokenizer, over the exact lines the records actually carry. Five of the
 // thirteen leftovers ranger-base-tq0gx measured were the old regex reading
 // through a separator, and one real citation sits at the end of a sentence.
@@ -555,7 +632,11 @@ func TestADR0051CarriesTheSourceFileCitationConvention(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read ADR 0051: %v", err)
 	}
-	body := string(b)
+	// The record is prose at ~76 columns and a phrase that outlives an
+	// edit can still move across a line break, so the body is read with
+	// its whitespace collapsed. A wrap is not a drift; a deleted sentence
+	// still is, and still reds here.
+	body := strings.Join(strings.Fields(string(b)), " ")
 	for _, want := range []string{
 		"## Naming a source file",
 		"`git show <sha>:<path>`, on ONE line",
@@ -563,6 +644,11 @@ func TestADR0051CarriesTheSourceFileCitationConvention(t *testing.T) {
 		"Declare once per base name per record",
 		"A PREFIXED mention never is",
 		"`adrtestcitation_qa_test.go`",
+		// The corpus itself (ranger-base-bvich). adrIsRecord takes two
+		// file classes and the record has to be the one that says so,
+		// or this file is reading a directory on its own authority.
+		"reads every record in `docs/adr`",
+		"the `*.md` decisions and the `*.probe.sh` supplements",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("ADR 0051 no longer says %q; the record and its only reader have drifted apart", want)

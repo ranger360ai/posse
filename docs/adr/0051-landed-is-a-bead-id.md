@@ -1,6 +1,6 @@
 # ADR 0051 — Stable citations and an on-demand SHA audit
 
-*Status: accepted 2026-09-05 · ADR simplification, operator ruling 2026-09-05 · commit-time SHA policing removed from the decision; **built 2026-09-06** (ranger-base-bp0yj). · amended 2026-09-06 (ranger-base-tq0gx): the source-file citation convention below, pinned by `adrtestcitation_qa_test.go`.*
+*Status: accepted 2026-09-05 · ADR simplification, operator ruling 2026-09-05 · commit-time SHA policing removed from the decision; **built 2026-09-06** (ranger-base-bp0yj). · amended 2026-09-06 (ranger-base-tq0gx): the source-file citation convention below, pinned by `adrtestcitation_qa_test.go`; amended 2026-09-06 (ranger-base-bvich): the corpus is both file classes in `docs/adr`, not the `*.md` alone.*
 
 ## Decision
 
@@ -65,9 +65,12 @@ file"), and so is a bare suffix (`_test.go`), because Go's own build ignores
 a file whose name begins with `_` or `.` and no record cites one as live
 code. A run carrying `//` is a URL, whose last component may itself be a Go
 file — a link into a repository browser — and is not a citation of this
-tree. `adrtestcitation_qa_test.go` reads every
-`docs/adr/*.md` under these rules and refuses anything left over; its name
-records where it started, at `_test.go` citations alone.
+tree. `adrtestcitation_qa_test.go` reads every record in `docs/adr` under
+these rules and refuses anything left over, and `docs/adr` holds two file
+classes: the `*.md` decisions and the `*.probe.sh` supplements a record hands
+its reproduction to, whose comments and echoed prose name source files the
+same way and are held to the same rule. Its name records where it started, at
+`_test.go` citations alone.
 
 ## Deferred deletion and acceptance
 
