@@ -152,7 +152,12 @@ chk_row "config check_for_update"  "$want_cfuos"  "$cfg_cfuos"
 # Caskroom directory that is present but is NOT what codex runs from is a
 # rollback target for a binary nobody uses, so both halves are one row each.
 room="$(brew --prefix 2>/dev/null)/$want_room"
+# Named rather than re-tested: the UPSTREAM MOVED block below tells an
+# operator whether the rollback artifact is still fetchable, and asking the
+# disk a second time could answer differently from the row above it.
+room_state=gone
 if [ -d "$room" ]; then
+  room_state=present
   # Both sides get resolved before they are compared. `readlink -f` follows
   # the cask's symlink to a REAL path, so an unresolved prefix on the other
   # side fails a box that is in fact correct — /var vs /private/var is enough,
@@ -239,9 +244,24 @@ echo "equivalent. Everything above refuses to MOVE the binary; nothing refuses"
 echo "to RUN one that got past the pin by another route."
 
 echo
+# The tap moving and the BOX moving are two different questions, and the
+# paragraph under this heading is true of only one of them. Read from the
+# tap alone, this block used to tell every box "the pin is holding — nothing
+# has changed on this machine" and to hurry it into fetching a rollback
+# artifact before $upstream "lands" — on a box where $upstream had already
+# landed, the rows above said so twice, and `brew cleanup` had already taken
+# the rollback target. ranger-base-k4lza unsuppressed this block correctly
+# and left the prose underneath it unread (ranger-base-9ycqa finding 1).
+#
+# So the gate stays the tap's and the TEXT branches on live_ver: the pin
+# holds only where the binary is still $want_ver. Everything from item 2 on
+# is the re-audit list, which is the same work either way.
 if [ -n "$upstream" ] && ver_gt "$upstream" "$want_ver"; then
   cat <<EOF
 UPSTREAM MOVED: the codex cask is $upstream; the fleet is pinned at $want_ver.
+EOF
+  if [ "$live_ver" = "$want_ver" ]; then
+    cat <<EOF
 
 The pin is holding — nothing has changed on this machine. Lifting it is the
 operator's call, and each item below was verified against $want_ver only:
@@ -250,6 +270,37 @@ operator's call, and each item below was verified against $want_ver only:
      $upstream lands, \`brew cleanup\` deletes the only $want_ver copy on this
      box and homebrew-cask carries no version history. The URL and sha256 are
      in $pin, [rollback].
+EOF
+  else
+    cat <<EOF
+
+THE PIN IS NOT HOLDING: this box runs ${live_ver:-an unreadable codex}, not $want_ver.
+
+The failing rows above are that measurement, and this is no longer a question
+of whether to LIFT the pin: the box is already past it. The choice now is to
+roll back to $want_ver, or to re-audit what is installed and move the pin.
+Items 2-4 are that re-audit, and none of it has been done for any version
+but $want_ver.
+
+EOF
+    if [ "$room_state" = present ]; then
+      cat <<EOF
+  1. THE ROLLBACK ARTIFACT IS STILL HERE, and it is the last copy. $want_ver
+     is on disk and the next \`brew cleanup\` takes it, so copy it off the box
+     now if a rollback is on the table. The URL and sha256 in $pin,
+     [rollback], are the only other way back.
+     $room
+EOF
+    else
+      cat <<EOF
+  1. THE ROLLBACK ARTIFACT IS ALREADY GONE. \`brew cleanup\` has taken the
+     only $want_ver copy on this box and homebrew-cask carries no version
+     history, so a rollback means re-fetching it and verifying that sha
+     before it is run. The URL and sha256 are in $pin, [rollback].
+EOF
+    fi
+  fi
+  cat <<EOF
   2. The dispatch contract (ADR 0013 §1, NOTES.md "Personas"). Every flag on
      the codex launch line is version-verified, not contractual: \`-a never\`,
      \`--disable hooks\`, \`-c allow_login_shell=false\`, the \`projects\`

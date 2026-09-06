@@ -369,6 +369,119 @@ func TestQACodexPinTapReadWhenTheBoxIsAlreadyPastThePin(t *testing.T) {
 	}
 }
 
+// The prose the arm above prints but does not read (ranger-base-9ycqa
+// finding 1). The block was written for a box the tap had moved AHEAD of,
+// and the gate that reaches it asks only about the tap; ranger-base-k4lza
+// unsuppressed it on a box that had ALREADY moved, where "the pin is holding
+// — nothing has changed on this machine" is false and "the moment 0.153.4
+// lands, brew cleanup deletes the only 0.150.1 copy" is an instruction about
+// a thing that has already happened. Two rows above say so: the version row
+// FAILS and the rollback target reads GONE.
+//
+// The two arms are each other's control. The same tap read, the same gate,
+// and the only difference is which version the box RUNS — so a block that
+// went back to printing one paragraph for both boxes reds one of them
+// whichever paragraph it chose.
+func TestQACodexPinReAuditTextSaysWhetherTheBoxItselfHasMoved(t *testing.T) {
+	const past = "0.153.4"
+
+	t.Run("the box is still at the pin", func(t *testing.T) {
+		b := cpNewBox(t)
+		b.brew(t, "pinned", cpPinnedVer, past, 0) // only the TAP moved
+		out, code := b.run(t)
+		if code != 0 {
+			t.Fatalf("exit %d, want 0 — a tap above a holding pin is not a failure\n%s", code, out)
+		}
+		for _, want := range []string{
+			"UPSTREAM MOVED: the codex cask is " + past,
+			"The pin is holding",
+			"FETCH THE ROLLBACK ARTIFACT FIRST",
+			// Read as ONE line: the sentence wraps after "The moment", and
+			// a Contains over the pair spans a newline and never matches
+			// — which is a vacuous assertion in the positive arm and a
+			// vacuous refusal in the negative one below.
+			past + " lands, `brew cleanup` deletes the only " + cpPinnedVer + " copy",
+		} {
+			if !strings.Contains(out, want) {
+				t.Errorf("a box still at %s must be told %q:\n%s", cpPinnedVer, want, out)
+			}
+		}
+		if strings.Contains(out, "THE PIN IS NOT HOLDING") {
+			t.Errorf("a box whose binary is still %s was told the pin is not holding:\n%s", cpPinnedVer, out)
+		}
+	})
+
+	// The box of the finding: installed == tap == 0.153.4 and `brew cleanup`
+	// has taken the rollback target. Every sentence asserted here was
+	// printed, wrong, by the run of 2026-09-06.
+	t.Run("the box has already moved and the rollback target is gone", func(t *testing.T) {
+		b := cpNewBox(t)
+		b.installCodex(t, past, true)
+		if err := os.RemoveAll(filepath.Join(b.prefix, "Caskroom", "codex", cpPinnedVer)); err != nil {
+			t.Fatal(err)
+		}
+		b.brew(t, "unpinned", past, past, 0)
+		out, code := b.run(t)
+		if code != 1 {
+			t.Fatalf("exit %d, want 1\n%s", code, out)
+		}
+		for _, no := range []string{
+			"The pin is holding",
+			"FETCH THE ROLLBACK ARTIFACT FIRST",
+			past + " lands, `brew cleanup` deletes the only " + cpPinnedVer + " copy",
+			"nothing has changed on this machine",
+		} {
+			if strings.Contains(out, no) {
+				t.Errorf("a box already running %s was told %q:\n%s", past, no, out)
+			}
+		}
+		for _, want := range []string{
+			"THE PIN IS NOT HOLDING",
+			"THE PIN IS NOT HOLDING: this box runs " + past,
+			"roll back to " + cpPinnedVer + ", or to re-audit what is installed",
+			"THE ROLLBACK ARTIFACT IS ALREADY GONE",
+		} {
+			if !strings.Contains(out, want) {
+				t.Errorf("a box already running %s must be told %q:\n%s", past, want, out)
+			}
+		}
+		if strings.Contains(out, "THE ROLLBACK ARTIFACT IS STILL HERE") {
+			t.Errorf("a cleaned-away rollback target was reported as still fetchable:\n%s", out)
+		}
+		// Items 2-4 are the re-audit and they are the same work on either
+		// box. A branch that dropped them on this arm would leave the
+		// operator with a verdict and no list.
+		for _, want := range []string{"2. The dispatch contract", "3. The startup-update key",
+			"4. Interstitial detection", "Runbook: docs/notes.d/ranger-base-poj5.md"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("the re-audit list lost %q on the moved-box arm:\n%s", want, out)
+			}
+		}
+	})
+
+	// The other half of item 1: the box moved but `brew cleanup` has not run
+	// yet, so the last 0.150.1 copy is still on disk and saying it is gone
+	// would send the operator to re-fetch something they are standing on.
+	t.Run("the box has already moved and the rollback target survives", func(t *testing.T) {
+		b := cpNewBox(t) // leaves Caskroom/codex/0.150.1 in place
+		b.installCodex(t, past, true)
+		b.brew(t, "unpinned", past, past, 0)
+		out, code := b.run(t)
+		if code != 1 {
+			t.Fatalf("exit %d, want 1\n%s", code, out)
+		}
+		if !strings.Contains(out, "THE ROLLBACK ARTIFACT IS STILL HERE") {
+			t.Errorf("a rollback target still on disk was not offered:\n%s", out)
+		}
+		if strings.Contains(out, "THE ROLLBACK ARTIFACT IS ALREADY GONE") {
+			t.Errorf("a rollback target still on disk was called gone:\n%s", out)
+		}
+		if strings.Contains(out, "The pin is holding") {
+			t.Errorf("a box already running %s was told the pin is holding:\n%s", past, out)
+		}
+	})
+}
+
 // The other half of removing the fallback: with nothing to fall back TO, both
 // ways of not getting an answer have to fail the row. A non-zero brew is the
 // arm in the table below; this is the one that exits 0 and answers a header
