@@ -40,6 +40,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -295,10 +296,13 @@ func gitConfigProbeGlobal(t *testing.T, hooks string) string {
 // ranger-base-44or9 on ranger-base-53y2k). The close above disclosed that
 // GIT_CONFIG_SYSTEM=/dev/null "WOULD suppress /etc/gitconfig off darwin" and
 // stopped there. (That off-darwin framing was itself wrong, and is corrected
-// in the row now, on ranger-base-sv8x4: /etc/gitconfig is git's system scope
-// on darwin too — the fourth arm below runs the command that says so — so
-// the row empties it here as well, and what is zero on this box is a MISSING
-// FILE rather than a platform.) Two paragraphs up, the same file spells that
+// in the row now, on ranger-base-sv8x4: the row empties system scope on
+// darwin too — the fourth arm below runs the command that says so — and what
+// is zero on this box is a MISSING FILE rather than a platform. What the
+// correction ITSELF got wrong is one step further in, and cost a red CI on
+// 2026-09-06: it named /etc/gitconfig as the system scope "anywhere else"
+// too, when the path is the running git's own build-time sysconfdir — see
+// the fourth arm, ranger-base-33r36.) Two paragraphs up, the same file spells that
 // exact cost out
 // in full as its whole reason for refusing GIT_CONFIG_GLOBAL: emptying a
 // scope takes an e-mail literal out of the visibility wall, silently. The
@@ -321,7 +325,12 @@ func gitConfigProbeGlobal(t *testing.T, hooks string) string {
 //     the sentence the two artifacts now agree on names it. The three arms
 //     above show the literal being dropped from whatever this variable
 //     points at; they say nothing about which file it points at when nobody
-//     sets it, which is the half that was got wrong. Ask git.
+//     sets it, which is the half that was got wrong. Ask git. And ask it of
+//     BOTH regions (ranger-base-33r36): the answer is a property of the git
+//     binary — its build-time sysconfdir — not one path, so what the arm can
+//     hold is that the path git names here is a path the texts ACCOUNT FOR.
+//     The equality it shipped as was false on the first box with a Homebrew
+//     git first on PATH, which is CI's macos runner.
 //   - the SAME DISCLOSURE IN THE CHANGELOG, also ranger-base-sv8x4. The row
 //     is what a maintainer reads; the changelog paragraph is what the
 //     OPERATOR reads before installing the root-owned drop-in, and it was
@@ -331,10 +340,10 @@ func gitConfigProbeGlobal(t *testing.T, hooks string) string {
 //     tell a macOS reader the pin was free. Same argument the close made for
 //     anchoring its own clause, one artifact further out.
 //
-// Not live on this box and not a bug: system scope here is empty, there is no
-// /etc/gitconfig, and the full config listing is byte-identical under the pin
-// (that is 44or9's measurement, reproduced). It needs a box whose user.email
-// lives in system scope, and the fleet is not darwin by contract — the
+// Not live on this box and not a bug: system scope here is empty, this box
+// has no /etc/gitconfig, and the full config listing is byte-identical under
+// the pin (that is 44or9's measurement, reproduced). It needs a box whose
+// user.email lives in system scope, and the fleet is not darwin by contract — the
 // LD_PRELOAD row two rows up says so. Whether such a box wants the row at all
 // is the operator's, on ranger-base-zz08i.
 func TestQATheGitConfigSystemPinDropsASystemScopeIdentityLiteral(t *testing.T) {
@@ -348,10 +357,13 @@ func TestQATheGitConfigSystemPinDropsASystemScopeIdentityLiteral(t *testing.T) {
 			t.Errorf("the GIT_CONFIG_SYSTEM row does not name %q. Suppressing a config scope takes an e-mail out of the ADR 0024 D2 check 3 wall with no error — the file writes that cost out in full for GIT_CONFIG_GLOBAL, and a reader of the row that LANDED has to be able to see it too (ranger-base-nn161)", want)
 		}
 	}
-	// The row is a reader's only account of WHICH file this empties, and the
-	// answer is the same wherever git runs (ranger-base-sv8x4).
+	// The row is a reader's only account of WHICH file this empties
+	// (ranger-base-sv8x4). Which file that is depends on the git binary, so
+	// the account is a set of paths and a command, not one path — but
+	// /etc/gitconfig is in every version of it, being what /usr/bin/git here
+	// and every distro git read.
 	if !strings.Contains(row, "/etc/gitconfig") {
-		t.Errorf("the GIT_CONFIG_SYSTEM row does not name /etc/gitconfig. That is the file this pin empties — here as much as anywhere else — and a reader cannot go check a file the row will not name")
+		t.Errorf("the GIT_CONFIG_SYSTEM row does not name /etc/gitconfig. That is the file this pin empties for /usr/bin/git and for a distro git, and a reader cannot go check a file the row will not name")
 	}
 	// The framings are not checked here: they are checked over EVERY region
 	// that discloses this cost, at the end of this test.
@@ -416,10 +428,22 @@ func TestQATheGitConfigSystemPinDropsASystemScopeIdentityLiteral(t *testing.T) {
 
 	// ── the PATH, a fourth arm ───────────────────────────────────────────
 	//
-	// Both texts now name /etc/gitconfig for THIS platform, which is the
-	// correction on ranger-base-sv8x4. Neither of them gets to assert it.
-	if got, ok := gitSystemScopePath(t); ok && !systemScopePathIsTheOneBothTextsClaim(got) {
-		t.Errorf("git names %q as its system scope, not /etc/gitconfig. The row in inletpin.go and the changelog paragraph both say /etc/gitconfig is the file this pin empties on this platform — re-measure and rewrite both", got)
+	// Both texts describe WHICH file this empties, and neither of them gets
+	// to assert it: git does. What they may not do is name one path as the
+	// answer, because the answer is the running git's own build-time
+	// sysconfdir — the equality this arm shipped as was measured false the
+	// first time the suite met a Homebrew git (ranger-base-33r36). So the
+	// arm holds the account against the git on PATH, over BOTH regions,
+	// since a path only the maintainer's row accounts for still sends the
+	// operator to the wrong file — that asymmetry is ranger-base-txsed
+	// finding 1, one artifact further in.
+	if got, ok := gitSystemScopePath(t); ok {
+		for _, r := range gitConfigSystemProseRegions(t) {
+			named := systemScopePathsNamed(flattenProse(r.text))
+			if !slices.Contains(named, got) {
+				t.Errorf("git on this box names %q as its system scope, and %s does not account for it — it names %v. That is the file this pin empties HERE, so a reader of that text goes and checks the wrong one: re-measure with `git config --system --list --show-origin` and name this path there too.\nIf the path IS in the text, check it is not split across a line break: these regions are read flattened and a wrapped path is a different string", got, r.where, named)
+			}
+		}
 	}
 
 	// ── the same disclosure, in the artifact the operator reads ──────────
@@ -530,7 +554,7 @@ func gitSystemScopePath(t *testing.T) (string, bool) {
 	out, _ := c.CombinedOutput() // rc 128 when the file is absent, and that output IS the answer
 	path, ok := parseGitSystemScopePath(string(out))
 	if !ok {
-		t.Errorf("git named no system-scope path, so this arm is not holding the claim that /etc/gitconfig is the file the pin empties on this platform. The one benign cause is a system config that EXISTS and is EMPTY, which prints neither an origin nor the fatal — re-measure by hand before reading this as noise.\ngit said: %q", out)
+		t.Errorf("git named no system-scope path, so this arm is not holding either text's account of WHICH file the pin empties here. The one benign cause is a system config that EXISTS and is EMPTY, which prints neither an origin nor the fatal — re-measure by hand before reading this as noise.\ngit said: %q", out)
 		return "", false
 	}
 	t.Logf("system scope, named by git: %s", path)
@@ -672,6 +696,15 @@ var (
 	// platform it names, and this rule needs no platform token at all.
 	suppressionIsAHypothetical   = regexp.MustCompile(`(?i)\bwould\b[^.]{0,30}\b(suppress|empty|empties)\b`)
 	changelogScopesTheZeroToABox = regexp.MustCompile(`(?i)(property of the box|of the box rather than|this box|a box with no)`)
+	// The claim the CORRECTION itself shipped with, and the one ci.yml
+	// measured false on 2026-09-06 (ranger-base-33r36). Fixing the platform
+	// scoping left a universality one rung in: both texts went on to name
+	// /etc/gitconfig as THE system scope, "the same path as anywhere else".
+	// It is not — it is the running git's build-time sysconfdir, and the
+	// first box the suite met with a Homebrew git first on PATH said so.
+	// Spellings are the three that were written, plus the generalisation
+	// they share; the LIMIT below applies to this rule as much as the rest.
+	pathIsUniversal = regexp.MustCompile(`(?i)(the same path as (anywhere|everywhere) else|here as much as anywhere else|the same path wherever git runs|the same (path|file) (on|for) every)`)
 )
 
 // costMisScopingRules is every rule BOTH artifacts are held to. It is a table
@@ -691,12 +724,12 @@ var costMisScopingRules = []struct {
 	{
 		name: "scopes the suppression away from this platform",
 		find: func(prose string) string { return offPlatformFraming.FindString(prose) },
-		why:  "git's system scope on darwin IS /etc/gitconfig — the fourth arm of TestQATheGitConfigSystemPinDropsASystemScopeIdentityLiteral runs the command that says so — so this pin empties it here as well, and what is zero on this box is a missing file (ranger-base-sv8x4)",
+		why:  "The pin empties system scope on darwin exactly as it does elsewhere — the fourth arm of TestQATheGitConfigSystemPinDropsASystemScopeIdentityLiteral runs the command that names the file, /etc/gitconfig for the git this box runs — and what is zero on this box is a missing file (ranger-base-sv8x4)",
 	},
 	{
 		name: "tells a reader that a PLATFORM is what makes this free",
 		find: sentenceCarryingBoth(platformName, costIsFree),
-		why:  "It is not. git's system scope on darwin is /etc/gitconfig, the same path as anywhere else, and this pin empties it here too — what is zero on this box is a missing file. Scope the sentence to a box whose system scope holds no user.email (ranger-base-sv8x4)",
+		why:  "It is not. git on darwin has a system scope like any other git — /etc/gitconfig for the one this box runs — and this pin empties it here too; what is zero on this box is a missing file. Scope the sentence to a box whose system scope holds no user.email (ranger-base-sv8x4)",
 	},
 	{
 		name: "denies /etc/gitconfig exists on a PLATFORM",
@@ -707,6 +740,11 @@ var costMisScopingRules = []struct {
 		name: "frames the suppression as a hypothetical",
 		find: func(prose string) string { return suppressionIsAHypothetical.FindString(prose) },
 		why:  "The suppression is not conditional and does not happen somewhere else: this pin empties system scope on every platform, this one included. Write what it does, indicatively (ranger-base-txsed, carried with findings 1-3)",
+	},
+	{
+		name: "names one path as system scope everywhere",
+		find: func(prose string) string { return pathIsUniversal.FindString(prose) },
+		why:  "The suppression is universal; the PATH is not. git reads its own build-time sysconfdir, so /usr/bin/git and a distro git read /etc/gitconfig while a Homebrew git on apple silicon reads /opt/homebrew/etc/gitconfig — which is CI's macos runner, and this sentence is what redded ci.yml on 2026-09-06. Name the mechanism and the command, and let the fourth arm hold the paths (ranger-base-33r36)",
 	},
 }
 
@@ -782,12 +820,18 @@ func TestQATheCostMisScopingRulesFireOnTheClaimsTheyName(t *testing.T) {
 		{"D5, the premise half alone", "There is no /etc/gitconfig on macOS.", "denies /etc/gitconfig exists on a PLATFORM"},
 		{"D6, the premise half after a box-scoped sentence", "So this box pays nothing. There is no /etc/gitconfig on macOS.", "denies /etc/gitconfig exists on a PLATFORM"},
 		{"the premise half, path first", "On macOS /etc/gitconfig does not exist.", "denies /etc/gitconfig exists on a PLATFORM"},
+		// The correction's OWN claim, quoted from the two artifacts it
+		// shipped in. Both were green here and red on CI's macos runner.
+		{"U1, the row's spelling", "// git's system scope HERE is /etc/gitconfig, the\n// same path as anywhere else.", "names one path as system scope everywhere"},
+		{"U2, this file's own former comment", "The row is a reader's only account of WHICH file this empties, and it is the same path wherever git runs.", "names one path as system scope everywhere"},
+		{"U3, the fourth arm's former failure message", "/etc/gitconfig is the file this pin empties — here as much as anywhere else.", "names one path as system scope everywhere"},
 
 		// Clean: sentences of the text that ships at HEAD. A rule that
 		// fails these is a rule that bans the correction.
 		{"the corrected topic sentence", "One cost of the row that IS pinned, and it is not a Linux-only cost.", ""},
 		{"the zero, scoped to a box", "So the cost is zero on a box with no `user.email` in system scope, and that is a property of the box rather than of the platform: the box this was measured on has no `/etc/gitconfig` at all.", ""},
-		{"what Apple git reads", "`/etc/gitconfig` is what Apple git reads as system scope too: run `git config --system --list` and git names the file it wanted.", ""},
+		{"which file it is, as it ships now", "Which file system scope IS depends on the git binary rather than on one path: git reads its own build-time sysconfdir, so `/usr/bin/git` and a distro git both read `/etc/gitconfig`, while a Homebrew git on apple silicon reads `/opt/homebrew/etc/gitconfig` — which is the git first on PATH on this repo's CI runner.", ""},
+		{"and the command that settles it", "Run `git config --system --list --show-origin`; git names the file it wanted, and that answer beats the paths in this paragraph.", ""},
 		{"the bundled config, which is a different file", "What survives the pin on a Mac is a *different* file — Apple git's own bundled config under `/Library/Developer/CommandLineTools`, which this variable does not govern — and that file is not the scope this row empties.", ""},
 		{"the boxes that pay", "Any box that does — a Linux box, a CI image, a Mac someone put an identity on — is one address short.", ""},
 		{"a legitimate hypothetical about an identity", "An identity in that file would be dropped from the wall, with no error.", ""},
@@ -821,39 +865,71 @@ func TestQATheCostMisScopingRulesFireOnTheClaimsTheyName(t *testing.T) {
 	}
 }
 
-// systemScopePathIsTheOneBothTextsClaim answers the claim the row and the
-// changelog paragraph both make: that git's system scope is "/etc/gitconfig,
-// the same path as anywhere else". That is an EQUALITY, and the fourth arm
-// shipped asserting it with strings.HasSuffix — which /opt/homebrew/etc/
-// gitconfig and /usr/local/etc/gitconfig both satisfy, and those are exactly
-// the paths that falsify the sentence (ranger-base-txsed finding 4). Latent
-// on this box, where `type -a git` finds only the posse gate shim and
-// /usr/bin/git; live on any box with a brew or MacPorts git first on PATH.
-func systemScopePathIsTheOneBothTextsClaim(path string) bool {
-	return path == "/etc/gitconfig"
+// gitconfigPathToken matches one absolute path ending in `gitconfig`, whole.
+// Whole is the point: `/etc/gitconfig` is a SUBSTRING of
+// `/opt/homebrew/etc/gitconfig`, so a strings.Contains account would read a
+// text that names only the Homebrew path as accounting for the other one —
+// the same containment hole, one artifact out, that made the fourth arm's
+// original strings.HasSuffix pass on a box it was false on
+// (ranger-base-txsed finding 4). A leftmost-longest match starts at the
+// leading slash and takes the whole path, so the bare path is NOT reported
+// for a text that only names the prefixed one.
+var gitconfigPathToken = regexp.MustCompile(`/(?:[A-Za-z0-9_.+-]+/)*gitconfig\b`)
+
+// systemScopePathsNamed is the set of system-scope paths a region accounts
+// for. It runs over flattenProse output, so a path the hard wrap split across
+// two lines is not in the set — which the fourth arm's failure message says
+// out loud, because a wrapped path and a missing path are the same string
+// here and only one of them is a real defect.
+func systemScopePathsNamed(prose string) []string {
+	return gitconfigPathToken.FindAllString(prose, -1)
 }
 
-// TestQATheSystemScopePathClaimIsAnEquality runs the fourth arm's two shipped
-// pieces — the parser and the predicate — over the outputs of a git whose
-// system scope is NOT the path both texts name. Nothing on this box produces
-// them, which is why they are fixtures: without this, the predicate is
-// exercised only against the one value that makes every spelling of it pass.
-func TestQATheSystemScopePathClaimIsAnEquality(t *testing.T) {
+// TestQASystemScopePathsNamedReadsWholePaths holds the scanner against the
+// shapes both regions actually spell — a bare path, a path with a prefix, a
+// backticked path in the changelog's markdown, and the one the row's 42-column
+// wrap breaks. Without the second case the scanner is a Contains check and the
+// arm above is back to accepting a text that names a different file.
+func TestQASystemScopePathsNamedReadsWholePaths(t *testing.T) {
 	t.Parallel()
 	for _, c := range []struct {
-		name, out string
-		want      bool
+		name, prose string
+		want        []string
 	}{
-		{"this box, and every box the sentence is true on", "fatal: unable to read config file '/etc/gitconfig': No such file or directory\n", true},
-		{"a git installed by homebrew on apple silicon", "fatal: unable to read config file '/opt/homebrew/etc/gitconfig': No such file or directory\n", false},
-		{"a git installed by homebrew on intel, or MacPorts", "file:/usr/local/etc/gitconfig\tuser.email=x@example.invalid\n", false},
+		{"the two spellings the texts name", "/usr/bin/git reads /etc/gitconfig, a brew git reads /opt/homebrew/etc/gitconfig", []string{"/etc/gitconfig", "/opt/homebrew/etc/gitconfig"}},
+		{"a prefixed path does not account for the bare one", "a brew git reads /opt/homebrew/etc/gitconfig", []string{"/opt/homebrew/etc/gitconfig"}},
+		{"backticked, as the changelog spells it", "a `user.email` that lives in `/etc/gitconfig` is dropped", []string{"/etc/gitconfig"}},
+		{"a path the wrap split is not a path", "Apple git's own bundled /Library/Developer/CommandLineTools/…/ gitconfig", nil},
 	} {
-		got, ok := parseGitSystemScopePath(c.out)
-		if !ok {
-			t.Fatalf("%s: parseGitSystemScopePath read no path out of %q, so this case is measuring the parser and not the claim", c.name, c.out)
+		got := systemScopePathsNamed(c.prose)
+		if !slices.Equal(got, c.want) {
+			t.Errorf("%s: systemScopePathsNamed(%q) = %v, want %v", c.name, c.prose, got, c.want)
 		}
-		if is := systemScopePathIsTheOneBothTextsClaim(got); is != c.want {
-			t.Errorf("%s: systemScopePathIsTheOneBothTextsClaim(%q) = %v, want %v. Both texts say the system scope this pin empties is /etc/gitconfig, the same path as anywhere else — a check that accepts %q accepts a box where that sentence is false", c.name, got, is, c.want, got)
+	}
+}
+
+// TestQABothRegionsAccountForEveryMeasuredSystemScopePath is the half of the
+// fourth arm this box cannot run. That arm asks the git on THIS PATH, so it
+// only ever holds the texts against one of the two answers the fleet
+// produces; the other one is what redded ci.yml on 2026-09-06, and no green
+// here would have said so. Both paths below were measured, not assumed:
+// /etc/gitconfig from /usr/bin/git and from ubuntu-latest,
+// /opt/homebrew/etc/gitconfig from the git 2.55.0 bottle poured into a
+// scratch keg, which names its build-time sysconfdir wherever it is
+// unpacked — and which is the git first on PATH on macos-latest
+// (ranger-base-33r36).
+func TestQABothRegionsAccountForEveryMeasuredSystemScopePath(t *testing.T) {
+	t.Parallel()
+	measured := []struct{ path, where string }{
+		{"/etc/gitconfig", "/usr/bin/git on this box, and ubuntu-latest"},
+		{"/opt/homebrew/etc/gitconfig", "the Homebrew git first on PATH on macos-latest — the path that redded ci.yml"},
+	}
+	for _, r := range gitConfigSystemProseRegions(t) {
+		named := systemScopePathsNamed(flattenProse(r.text))
+		for _, m := range measured {
+			if !slices.Contains(named, m.path) {
+				t.Errorf("%s does not account for %s (%s) — it names %v. A reader on that box is sent to a file their git does not read", r.where, m.path, m.where, named)
+			}
 		}
 	}
 }

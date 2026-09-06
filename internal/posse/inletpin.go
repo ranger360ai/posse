@@ -283,15 +283,26 @@ import "os"
 //	                                init.defaultBranch survive the pin. That
 //	                                bundled file is NOT system scope, though,
 //	                                and the suppression this row performs is
-//	                                not conditional on the platform: git's
-//	                                system scope HERE is /etc/gitconfig, the
-//	                                same path as anywhere else — `git config
-//	                                --system --list` names the file it wanted
-//	                                — so the row empties it on darwin exactly
-//	                                as it does elsewhere. What is zero here is
-//	                                a MISSING FILE, a fact about this box
-//	                                rather than about the platform
-//	                                (ranger-base-sv8x4).
+//	                                not conditional on the platform: the row
+//	                                empties system scope on darwin exactly as
+//	                                it does elsewhere. WHICH FILE that is, is
+//	                                a property of the git BINARY and not of
+//	                                one path. git reads its own build-time
+//	                                sysconfdir, so /usr/bin/git here and a
+//	                                distro git both read /etc/gitconfig,
+//	                                while a Homebrew git on apple silicon
+//	                                reads
+//	                                /opt/homebrew/etc/gitconfig
+//	                                — that second one is CI's macos runner,
+//	                                and asserting the first as universal is
+//	                                what redded ci.yml (measured 2026-09-06
+//	                                against the git 2.55.0 bottle,
+//	                                ranger-base-33r36). `git config --system
+//	                                --list --show-origin` names the file YOUR
+//	                                git wanted, and that answer beats this
+//	                                row. What is zero here is a MISSING FILE,
+//	                                a fact about this box rather than about
+//	                                the platform (ranger-base-sv8x4).
 //	                                AND READ THAT SUPPRESSION AGAINST THE
 //	                                GIT_CONFIG_GLOBAL PARAGRAPH ABOVE: it
 //	                                reaches the same guardrail, one scope

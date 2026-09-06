@@ -344,9 +344,14 @@ One cost of the row that IS pinned, and it is not a Linux-only cost.
 session runs, and the visibility wall that keeps your addresses out of a
 public repo is built by walking `git config --get-all user.email` across
 every scope — so a `user.email` that lives in `/etc/gitconfig` is dropped
-from that wall, with no error. `/etc/gitconfig` is what Apple git reads as
-system scope too: run `git config --system --list` and git names the file it
-wanted. What survives the pin on a Mac is a *different* file — Apple git's
+from that wall, with no error. Which file system scope IS depends on the git
+binary rather than on one path: git reads its own build-time sysconfdir, so
+`/usr/bin/git` and a distro git both read `/etc/gitconfig`, while a Homebrew
+git on apple silicon reads `/opt/homebrew/etc/gitconfig` — which is the git
+first on PATH on this repo's CI runner. Run
+`git config --system --list --show-origin`; git names the file it wanted,
+and that answer beats the paths in this paragraph.
+What survives the pin on a Mac is a *different* file — Apple git's
 own bundled config under `/Library/Developer/CommandLineTools`, which this
 variable does not govern, which is why `osxkeychain` and `init.defaultBranch`
 are byte-identical either way — and that file is not the scope this row
