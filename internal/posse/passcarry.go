@@ -299,7 +299,46 @@ func (d *Dispatcher) judge(g gathered, personaFilter, dirFilter string, max int,
 		return judged, working
 	}
 	seat := SessionFor(g.persona, g.is.Dir)
-	delete(busy, seat)
+	// A hold is released by the BEAD that holds it, never by the seat's name
+	// (ranger-base-25cit). The settle and the fire pass are two different
+	// moments: gather runs in a goroutine per leg and drops its result in a
+	// channel, and nothing drains that channel until the main loop reaches
+	// judgeLanded — so between the settle and this line the ordinary fire
+	// pass can, and does, put a NEW bead on the same seat. Deleting by name
+	// then retires a hold belonging to a launch minutes younger than the
+	// settle that retired it, and the refill immediately below hires into a
+	// seat that is working.
+	//
+	// MEASURED 2026-09-06 (state/dispatch-watch.log, pass 271, watch pid
+	// 94728): ranger-base-6z06r settled at 14:50:18 and its session was
+	// reaped; the fire pass then fired ranger-base-hr5j4 into laurie-posse at
+	// 14:53:18 and correctly refused the next QA bead — "ranger-base-jaqx2 qa
+	// lane busy: holden, laurie" (log 13476-13480; the same-pass seat count
+	// was never the defect, and is pinned separately). Twelve lines later
+	// this delete dropped hr5j4's hold on 6z06r's settle, "↻ refill for
+	// settled seat laurie-posse (ranger-base-6z06r settled)" re-offered the
+	// queue, and ranger-base-jaqx2 took "seat 2/2: laurie" while hr5j4 was
+	// still working in it (13492-13496). The QA lane ran 3/2 for the length
+	// of a verify, and the seat-cadence ticker said so on the same pass:
+	// "previous settle not observed (last event is ranger-base-hr5j4's
+	// launch) — no honest window" (13525).
+	//
+	// The opposite error — a hold that outlives its session — is already
+	// covered from the other side: reconcileSeats releases a hold whose seat
+	// has no live session at the head of every fire pass and every refill, on
+	// evidence and never on absence. So refusing to release here strands
+	// nothing; it makes the release wait for a reading that names the seat
+	// empty, which is the fail-closed direction this file takes everywhere
+	// else — two agents in one worktree is the expensive error, a seat held
+	// one pass longer is not.
+	//
+	// A seat this Run never fired into holds "" and takes the release arm
+	// unchanged: the delete is a no-op and the refill below is as it was.
+	if held := busy[seat]; held != "" && held != g.is.ID {
+		d.printf("↻ %s stays held by %s: %s settled, but its seat was taken again before this settle was judged — no seat freed here (ADR 0028 §3)\n", seat, held, g.is.ID)
+	} else {
+		delete(busy, seat)
+	}
 	// The refill runs the fire path for every free seat, not only for the one
 	// that just settled (ranger-base-t8tq). ADR 0028 §1 as accepted said
 	// "re-runs the fire path for the freed seat", on "the level-triggered tick
