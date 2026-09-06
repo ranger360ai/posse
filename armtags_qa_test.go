@@ -444,6 +444,13 @@ func TestQAArmClassifierRefusesTheWrongShapes(t *testing.T) {
 // behind `posse_arm3`, reds the same two. Neither mutant moves any of arms
 // 1-5, which is the finding: a build line can be legal and the arm still not
 // exist.
+//
+// And the control that proves the `-tags` is live rather than three spellings
+// of one build: an undefined identifier appended to an arm-2-only file
+// (accountstage_qa_test.go) reds test-arm2 alone, and the same line appended
+// to an arm-3-only file (pulse_test.go) reds test-arm3 alone. Without it the
+// two mutants above are equally explained by a pin that compiles arm 1 three
+// times.
 
 // armGoTool is the `go` this arm shells out to: the one on PATH, else the one
 // beside the GOROOT the running binary was built against. A pin that skipped
@@ -454,7 +461,8 @@ func armGoTool(t *testing.T) string {
 	if p, err := exec.LookPath("go"); err == nil {
 		return p
 	}
-	if p := filepath.Join(runtime.GOROOT(), "bin", "go"); p != "" {
+	if root := runtime.GOROOT(); root != "" {
+		p := filepath.Join(root, "bin", "go")
 		if _, err := os.Stat(p); err == nil {
 			return p
 		}
