@@ -153,7 +153,7 @@ the same way twice:
   below.)*
 - **Mechanism** *(added 2026-08-27, ranger-base-znma)*: promote does
   not read the constitution working tree's bytes at all.
-  `promotedAtCommit` (`internal/rhq/promote.go`) reads the blobs at
+  `promotedAtCommit` (`internal/posse/promote.go`) reads the blobs at
   the recorded SHA — `git ls-tree -r -z` for the oids and modes, one
   `git cat-file --batch` for the bytes — and the manifest's sha256 is
   taken over those bytes. *This*, not the clean gate, keeps the
@@ -282,7 +282,7 @@ the same way twice:
   either — deny beats allow (ADR 0001), so the catch-all swallows every
   allow and kills `bd show`/`bd ready`/`bd close` fleet-wide. What
   fixes it is the mechanism this section already leans on: the L1
-  PATH shim (`internal/rhq/gates.go`, the same `posse_verb_match`
+  PATH shim (`internal/posse/gates.go`, the same `posse_verb_match`
   machinery the `promote` rule above renders through) skips leading
   global options before matching the verb, and it already carried
   entries for `git` and `posse`. It now carries one for `bd`
@@ -365,7 +365,7 @@ the same way twice:
   deny set, puts the gates dir **first** on `PATH` in a scratch repo
   carrying beads' hook shims, and requires a path-limited commit and a
   branch checkout to land. That PATH ordering is the whole point —
-  every renderer test in `internal/rhq` drops the gates dir from the
+  every renderer test in `internal/posse` drops the gates dir from the
   child's `PATH`, which is why none of them could see this.
 
   **Known residual, stated rather than assumed away.** The L1 shim
@@ -399,7 +399,7 @@ the same way twice:
 
   *Third — the commit wall's constitution-path arm* (ADR 0002 §3, the
   `prepare-commit-msg` slot; mechanism record in
-  `constitutionGuardBody`, `internal/rhq/gates.go`). When
+  `constitutionGuardBody`, `internal/posse/gates.go`). When
   `RHQ_PERSONA` is set — the same marker promote's own refusal reads —
   a commit whose to-be-committed set touches `posse/<p>` for each §1
   promoted-set entry plus `posse/envs` (in the constitution repo), or
@@ -432,7 +432,7 @@ the same way twice:
   hole in the promoted constitution; the L3 arm now holds on its own.
 
   *Fourth — the launcher's land-path belt*
-  (`MergeSessionWork`, `internal/rhq/worktree.go`). The launcher
+  (`MergeSessionWork`, `internal/posse/worktree.go`). The launcher
   refuses to fast-forward a session branch whose merge-base..HEAD
   diff touches the same class (one class, two readers:
   `ConstitutionClassIn`, so belt and wall cannot drift apart). It runs
@@ -557,8 +557,9 @@ live env files exist only because the symlink makes the constitution
 repo *be* the home. After §2 nothing carries them. The window gains an
 explicit carry step — copy with modes preserved, verify, then delete
 the originals from the constitution working tree so live tokens stop
-sitting in a repo sessions get dispatched into
-(`docs/runbooks/home-cutover.md`).
+sitting in a repo sessions get dispatched into (the home-cutover
+runbook, moved to the instance tree by ADR 0024 D4 as a
+one-deployment procedure).
 
 What is priced away: "the promoted set is the constitution" was
 exactly true and now has one named exclusion beside §5's, and the
@@ -587,9 +588,9 @@ Rides with ranger-base-3rv9, per the operator's ruling. The
 retirement step "retire the `~/.config/rhq` symlink" becomes "first
 `posse promote` creates `~/.config/posse`", and the same window moves
 the queue. One window, two moves, zero moves later. The home half of
-the window includes the §7 env carry (`docs/runbooks/home-cutover.md`)
-— it is a step in the runbook *before* the window opens, not a
-discovery inside it. Nothing in this
+the window includes the §7 env carry (the home-cutover runbook, moved
+to the instance tree by ADR 0024 D4) — it is a step in the runbook
+*before* the window opens, not a discovery inside it. Nothing in this
 ADR blocks the parallel beads already running (dk5, w1b, g7lt).
 
 ## Alternatives rejected
@@ -787,7 +788,7 @@ ADR blocks the parallel beads already running (dk5, w1b, g7lt).
 | verification item 5 (cwd elsewhere: constitution refused, own memory allowed, another's refused) under the built §3 profile | **MEASURED** 2026-08-27, twice (cpyb close under sandbox-exec; 0djg fresh probe home) · pinned in `seatbeltconstitution_qa_test.go` (7 tests: 5 from cpyb, 2 from eb8f716) |
 | a seatbelt PID not denying Edit/Write, cwd covering the home, holds the constitution writable; the `posse gates` verdict is consulted by nothing on the launch path | **MEASURED** 2026-08-27 (ranger-base-h15, laurie's probe; sole caller of ConstitutionGrants is `cmd/posse/main.go:960`) |
 | `update-index --skip-worktree` (and `--assume-unchanged`) defeats the §3 clean gate: status reports the promoted path clean while its working-tree bytes differ from the blob | **MEASURED** 2026-08-27 (ranger-base-znma repro) |
-| promote reads blobs at the SHA (`promotedAtCommit`: `ls-tree -r -z` + one `cat-file --batch`, which applies no smudge, no eol, no export-subst); the manifest sha256 is over those bytes | **MEASURED** 2026-08-27 (`internal/rhq/promote.go`, znma fix; runbook `docs/runbooks/home-cutover.md` agrees) |
+| promote reads blobs at the SHA (`promotedAtCommit`: `ls-tree -r -z` + one `cat-file --batch`, which applies no smudge, no eol, no export-subst); the manifest sha256 is over those bytes | **MEASURED** 2026-08-27 (`internal/posse/promote.go`, znma fix; the home-cutover runbook — moved to the instance tree by ADR 0024 D4 — agrees) |
 | the promoted SET is still decided by a working-tree `os.Stat` (`promotePathspecs`); a sparse-checkout shrinks the set under a full SHA with the manifest born matching | **MEASURED** 2026-08-27 (ranger-base-echz hermetic repro → ranger-base-70ry, P1 in progress) |
 | pre-ak3e, a persona session could commit the entire promoted set with nothing refusing (9dfbbd4: all eleven crew PIDs) | **MEASURED** 2026-08-29 (ranger-base-7pq0, verified at HEAD) |
 | the commit wall's constitution arm refuses each class member persona-marked, passes the identical commit unmarked and a persona commit off the class; the land belt refuses per class member, mutation-checked | **MEASURED** 2026-08-29 (ranger-base-ak3e pins: `internal/posse/constitutionwall_qa_test.go`, `internal/posse/constitutionland_qa_test.go`) |

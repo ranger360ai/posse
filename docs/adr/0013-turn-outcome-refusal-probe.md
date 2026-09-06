@@ -1,7 +1,7 @@
 # ADR 0013 §1 / turn_outcome: in-store refusal artifact probe
 
 Measured for `ranger-base-e123`. This is a trace, not fleet code — the
-promotion rule (ADR 0013 §1, `internal/rhq/turnfailure.go`'s header) is
+promotion rule (ADR 0013 §1, `internal/posse/turnfailure.go`'s header) is
 that a `turn_outcome:` reader joins the registry only after the refusal
 artifact in that runtime's *own* session store is captured and pinned as
 a fixture; a reader built over a guessed shape is the

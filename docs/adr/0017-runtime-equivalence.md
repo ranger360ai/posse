@@ -32,7 +32,7 @@ shipped, the last two here (ranger-base-ncxa); §1's pin test exists
 
 The four areas (lifecycle / guards / dispatching / session management) were
 derived from a sentence, not from the code. The code already carries the
-real list twice: `internal/rhq/runtime.go`'s `Runtime` struct — 23 declared
+real list twice: `internal/posse/runtime.go`'s `Runtime` struct — 23 declared
 fields, each a dimension on which two runtimes can differ — and ADR 0013's
 six-stage grid. The four areas cover some of that and silently drop skills
 surfaces, native rulebooks, egress, cage credentials, project-config trust,

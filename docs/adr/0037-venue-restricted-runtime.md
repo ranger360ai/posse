@@ -127,11 +127,11 @@ problem.
 **MEASURED** (this worktree, 2026-08-29)
 
 - `posse runtime probe` and its record/parity machinery are landed
-  (internal/rhq/runtimeprobe.go; ADR 0032) — the probe half needs no
+  (internal/posse/runtimeprobe.go; ADR 0032) — the probe half needs no
   new harness code.
 - "IBM" appears in this repo only as the Plex Mono font (www/index.html);
   "bob" only as a placeholder runtime name in tests and ADR 0017.
-- `runtimeYamlKeys()` (internal/rhq/runtimeyaml.go:103) lacks
+- `runtimeYamlKeys()` (internal/posse/runtimeyaml.go:103) lacks
   `unattended:` and `project_config_keys:` — the ncxa remainder, per
   laurie's 2026-08-29 measurement on that bead.
 - Live RHQ_HOME is `~/.config/posse`; `$CONSTITUTION/rhq` is a

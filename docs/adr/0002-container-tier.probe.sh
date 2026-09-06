@@ -145,7 +145,7 @@ docker logs posse-probe-proxy 2>&1 | tail -3
 # already works: an OSC title printed inside a container reaches pane state.
 # `exec -a` below is the probe's stand-in for what rangerhq-1k1 then built:
 # state/cages/<persona>/bin/<runtime> → posse, which execs the engine with
-# argv[0] reset (internal/rhq/cagelauncher.go).
+# argv[0] reset (internal/posse/cagelauncher.go).
 if [ -n "$PANE" ]; then
   echo "== 3. detection: bare docker run vs argv0 launcher (pane $PANE) =="
   herdr pane run "$PANE" "docker run --rm -it $IMG claude" >/dev/null; sleep 10

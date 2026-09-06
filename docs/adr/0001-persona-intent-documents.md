@@ -39,7 +39,7 @@ Constraints, all inherited and kept:
 
 - **Plain files.** A PID must remain something a persona command can
   `cat`. No sidecar files required, no build step, no JSON.
-- **Flat-YAML subset** (`internal/rhq/yamlflat.go`): top-level scalars,
+- **Flat-YAML subset** (`internal/posse/yamlflat.go`): top-level scalars,
   inline/block lists, one-level maps, `#` comments, double quotes
   stripped. No nesting, no multiline scalars.
 - **`{file}` / `{memory}` rendering** and the launch precedence
