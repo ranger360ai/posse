@@ -11,19 +11,19 @@ package posse
 // same-pass count worked, on the shipped binary and at HEAD, and the log
 // records it working eight lines before the over-cap —
 //
-//	· ranger-base-hr5j4 label:qa (seat 2/2: laurie; holden busy)
-//	· ranger-base-hr5j4 creating session laurie-posse-ranger-base-hr5j4
-//	– ranger-base-jaqx2 qa lane busy: holden, laurie — waits for a later pass
-//	↻ refill for settled seat laurie-posse (ranger-base-6z06r settled)
-//	· ranger-base-jaqx2 label:qa (seat 2/2: laurie; holden busy)
-//	· ranger-base-jaqx2 creating session laurie-posse-ranger-base-jaqx2
+//	· ranger-base-hr5j4 label:qa (seat 2/2: <b>; <a> busy)
+//	· ranger-base-hr5j4 creating session <b>-posse-ranger-base-hr5j4
+//	– ranger-base-jaqx2 qa lane busy: <a>, <b> — waits for a later pass
+//	↻ refill for settled seat <b>-posse (ranger-base-6z06r settled)
+//	· ranger-base-jaqx2 label:qa (seat 2/2: <b>; <a> busy)
+//	· ranger-base-jaqx2 creating session <b>-posse-ranger-base-jaqx2
 //
 // — jaqx2 was refused the seat by the fire pass and then handed it by the
 // refill twelve lines later. What freed it was ranger-base-6z06r's settle:
 // 6z06r had settled at 14:50:18, its result sat in the results channel while
 // the fire pass put hr5j4 on the seat at 14:53:18, and `judge` then deleted
 // the hold under the seat's name — retiring a launch three minutes younger
-// than the settle that retired it. The QA lane ran 3/2 for the length of a
+// than the settle that retired it. The two-seat lane ran 3/2 for the length of a
 // verify.
 //
 // Two pins, and neither is the other's control:
@@ -52,7 +52,7 @@ func TestQASamePassSecondOfferSeesTheFirstLaunch(t *testing.T) {
 	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
-	writePersona(t, b.App, "laurie", "[qa]")
+	writePersona(t, b.App, "verifier", "[qa]")
 	qaRepo(t, b.App,
 		`[{"id":"a-1","title":"t","labels":["qa"]},{"id":"a-2","title":"u","labels":["qa"]}]`,
 		`[{"id":"a-1","status":"closed"},{"id":"a-2","status":"closed"}]`)
@@ -72,7 +72,7 @@ func TestQASamePassSecondOfferSeesTheFirstLaunch(t *testing.T) {
 		t.Fatalf("the first bead must launch, or nothing here is measured:\n%s", out)
 	}
 	// A lane of one prints ADR 0020 §2's single-seat form, not the lane form.
-	if !strings.Contains(out, "– a-2            qa lane busy: laurie") {
+	if !strings.Contains(out, "– a-2            qa lane busy: verifier") {
 		t.Errorf("the second bead must be refused by the launch this pass just made:\n%s", out)
 	}
 }
@@ -107,17 +107,17 @@ func TestQASettleFreesOnlyItsOwnSeatHold(t *testing.T) {
 			t.Parallel()
 			b, _ := newTestBackend(t)
 			d := newTestDispatcher(t, b)
-			writePersona(t, b.App, "laurie", "[qa]")
+			writePersona(t, b.App, "verifier", "[qa]")
 			// Nothing ready: the refill under the release returns before it
 			// offers anything, so what this test reads is the release and
 			// not a launch decision taken behind it.
 			repo := qaRepo(t, b.App, `[]`, `[{"id":"a-1","status":"closed"}]`)
 			d.Refill = true
 
-			seat := SessionFor("laurie", repo)
+			seat := SessionFor("verifier", repo)
 			busy := map[string]string{seat: tc.held}
 			is := RepoIssue{BdIssue: BdIssue{ID: "a-1", Title: "t", Labels: []string{"qa"}}, Dir: repo}
-			g := gathered{p: &pendingBead{is: is, persona: "laurie"}, is: is, persona: "laurie"}
+			g := gathered{p: &pendingBead{is: is, persona: "verifier"}, is: is, persona: "verifier"}
 
 			d.judge(g, "", "", 0, busy, map[string]int{})
 
@@ -126,7 +126,7 @@ func TestQASettleFreesOnlyItsOwnSeatHold(t *testing.T) {
 			case tc.freed && ok:
 				t.Errorf("a settle must free the seat its OWN bead holds, still %q:\n%s", held, out)
 			case !tc.freed && held != tc.held:
-				t.Errorf("the seat holds %s and a-1's settle says nothing about it; got %q — this is the QA lane running 3/2 (ranger-base-25cit):\n%s", tc.held, held, out)
+				t.Errorf("the seat holds %s and a-1's settle says nothing about it; got %q — this is the lane running over its seat cap (ranger-base-25cit):\n%s", tc.held, held, out)
 			}
 			if tc.wantOut != "" && !strings.Contains(out, tc.wantOut) {
 				t.Errorf("a settle that frees no seat must say so, want %q:\n%s", tc.wantOut, out)

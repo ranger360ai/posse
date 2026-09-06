@@ -310,18 +310,27 @@ func (d *Dispatcher) judge(g gathered, personaFilter, dirFilter string, max int,
 	// seat that is working.
 	//
 	// MEASURED 2026-09-06 (state/dispatch-watch.log, pass 271, watch pid
-	// 94728): ranger-base-6z06r settled at 14:50:18 and its session was
-	// reaped; the fire pass then fired ranger-base-hr5j4 into laurie-posse at
-	// 14:53:18 and correctly refused the next QA bead — "ranger-base-jaqx2 qa
-	// lane busy: holden, laurie" (log 13476-13480; the same-pass seat count
-	// was never the defect, and is pinned separately). Twelve lines later
-	// this delete dropped hr5j4's hold on 6z06r's settle, "↻ refill for
-	// settled seat laurie-posse (ranger-base-6z06r settled)" re-offered the
-	// queue, and ranger-base-jaqx2 took "seat 2/2: laurie" while hr5j4 was
-	// still working in it (13492-13496). The QA lane ran 3/2 for the length
-	// of a verify, and the seat-cadence ticker said so on the same pass:
+	// 94728), on a verify lane of two seats. ranger-base-6z06r settled at
+	// 14:50:18 and its session was reaped; the fire pass then fired
+	// ranger-base-hr5j4 into that lane's second seat at 14:53:18 and
+	// correctly refused the next bead in the same lane — "ranger-base-jaqx2
+	// qa lane busy: …" (log 13476-13480; the same-pass seat count was never
+	// the defect, and is pinned separately). Twelve lines later this delete
+	// dropped hr5j4's hold on 6z06r's settle, "↻ refill for settled seat
+	// <that seat> (ranger-base-6z06r settled)" re-offered the queue, and
+	// ranger-base-jaqx2 took "seat 2/2" on it while hr5j4 was still working
+	// there (13492-13496). A two-seat lane ran 3/2 for the length of a
+	// verify, and the seat-cadence ticker said so on the same pass:
 	// "previous settle not observed (last event is ranger-base-hr5j4's
 	// launch) — no honest window" (13525).
+	//
+	// Two more that afternoon are the same fingerprint with a slower fuse —
+	// a one-seat lane at 15:18 and a three-seat lane at 16:30, each read off
+	// its own refill summaries: the seat named "(busy: <bead>)" in one
+	// summary and "(working: <session>)" in the next, with a "refill for
+	// settled seat" line for that seat in between. There the dropped hold
+	// cost nothing until the agent went idle mid-bead behind its own suite
+	// run; the seat then had no hold left to refuse with and was hired into.
 	//
 	// The opposite error — a hold that outlives its session — is already
 	// covered from the other side: reconcileSeats releases a hold whose seat
