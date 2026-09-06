@@ -86,6 +86,33 @@ field2() {
   printf '%s' "${rest%%[[:space:]]*}"
 }
 
+# lastver <text> — the LAST whitespace-separated token of the first line
+# that starts with a digit, and nothing at all if the line carries no such
+# token. This reads the tap version out of `brew info --cask`, whose header
+# comes in three shapes, all measured on Homebrew 6.0.22:
+#
+#   installed == tap     ==> codex (Codex): 0.153.4
+#   installed <  tap     ==> tigervnc (TigerVNC): 1.15.0 → 1.16.2
+#   auto_updates cask    ==> thaw (Thaw): 1.2.0 → 2.0.1 (auto_updates)
+#
+# The TAP version is the last one on the line in all three, so reading it as
+# "last digit-initial token" is blind both to how the arrow is encoded and to
+# any trailing parenthesised flag. A header with no version-shaped token
+# (a `version :latest` cask) yields nothing and the caller fails the row.
+# The split is written out rather than `for tok in $s`, whose word splitting
+# also globs.
+lastver() {
+  local s=${1%%$'\n'*} tok out=
+  while [ -n "$s" ]; do
+    s=${s#"${s%%[![:space:]]*}"}
+    [ -n "$s" ] || break
+    tok=${s%%[[:space:]]*}
+    s=${s#"$tok"}
+    case $tok in [0-9]*) out=$tok ;; esac
+  done
+  printf '%s' "$out"
+}
+
 want_ver=$(val posse_pinned_version "$pin")
 want_cask=$(val formula "$pin")
 want_pin=$(val pin_state "$pin")
@@ -148,35 +175,35 @@ else
   printf '  %-30s %-12s (rollback target gone; nothing to resolve into)\n' "codex resolves into the pin" "—"
 fi
 
-# Upstream. `brew outdated --cask --verbose` with no package named exits 0
-# whether or not anything is outdated (measured, Homebrew 6.0.20 — the
-# per-package form exits 1 when that package IS outdated, which is why this
-# reads the unqualified listing and greps). An empty listing is a legitimate
-# answer, so "brew answered" is distinguished from "brew failed" by the exit
-# status, not by the output being empty: a failed brew must not read as
-# "nothing to re-audit" and quietly switch the gate off.
-outd=$(brew outdated --cask --verbose 2>/dev/null); brc=$?
+# Upstream, read from the TAP and not from what happens to be installed.
+# This used to read `brew outdated --cask --verbose`, which is SILENT about a
+# cask whose installed version is not BEHIND the tap — including the case this
+# row exists to catch. On the box of ranger-base-k4lza the cask had already
+# been upgraded past the pin, so installed == tap == 0.153.4, `brew outdated`
+# named no codex, and the old `[ -n "$upstream" ] || upstream=$want_ver`
+# fallback substituted the pin itself: the run printed "tap version 0.150.1"
+# and "== the pin; nothing to re-audit" over a tap three minor versions past
+# it, and suppressed the whole re-audit list. Same shape as the forked
+# matchers of ranger-base-s8b4g — a reader that answered nothing was
+# indistinguishable from "nothing to re-audit" — with a fallback in place of
+# the fork.
+#
+# `brew info --cask` names the tap version whatever is installed, so there is
+# nothing left to fall back TO, and both ways of not getting an answer fail
+# the row: a non-zero brew, and a header with no version in it. Unlike the
+# per-package `brew outdated --cask codex` form (which exits 1 when that cask
+# IS outdated), `brew info --cask codex` exits 0 on success and 1 on an
+# unknown cask, so this one requires 0.
+info=$(brew info --cask "$want_cask" 2>/dev/null); brc=$?
 upstream=""
-if [ "$brc" -le 1 ]; then
-  # The version after the LAST `) != ` on the first line naming the cask,
-  # which is what the greedy BRE this replaces captured. Read with `case` and
-  # `${...}`: a `sed` that never ran would leave $upstream empty, and the
-  # line below then quietly substitutes the pin itself and reports "nothing
-  # to re-audit" (ranger-base-s8b4g).
-  upstream=
-  while IFS= read -r line || [ -n "$line" ]; do
-    case $line in
-    "$want_cask ("*") != "*)
-      rest=${line##*") != "}
-      upstream=${rest%% *}
-      break
-      ;;
-    esac
-  done <<<"$outd"
-  [ -n "$upstream" ] || upstream=$want_ver
+[ "$brc" -eq 0 ] && upstream=$(lastver "$info")
+if [ -n "$upstream" ]; then
   printf '  %-30s %-12s read\n' "tap version" "$upstream"
+elif [ "$brc" -ne 0 ]; then
+  printf '  %-30s %-12s <-- FAIL (brew info --cask %s exited %s)\n' "tap version" "?" "$want_cask" "$brc"
+  fail=$((fail + 1))
 else
-  printf '  %-30s %-12s <-- FAIL (brew outdated exited %s)\n' "tap version" "?" "$brc"
+  printf '  %-30s %-12s <-- FAIL (no version in: %s)\n' "tap version" "?" "${info%%$'\n'*}"
   fail=$((fail + 1))
 fi
 

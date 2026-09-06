@@ -72,7 +72,7 @@ func cpNewBox(t *testing.T) *cpBox {
 	t.Helper()
 	b := &cpBox{root: cpRoot(t), prefix: t.TempDir(), bin: t.TempDir(), codexHom: t.TempDir()}
 	b.installCodex(t, cpPinnedVer, true)
-	b.brew(t, "pinned", cpPinnedVer, 0)
+	b.brew(t, "pinned", cpPinnedVer, cpPinnedVer, 0)
 	b.config(t, "check_for_update_on_startup = false\n")
 	return b
 }
@@ -107,24 +107,46 @@ func (b *cpBox) installCodex(t *testing.T, ver string, linked bool) {
 }
 
 // brew stubs the three subcommands the script asks: --prefix, list --pinned,
-// and outdated. outdatedRC is its own knob because a brew that FAILED must
-// not read as "nothing is outdated" — that would switch the re-audit gate off
-// in silence, which is the failure ranger-base-phxj found in the grok twin.
-func (b *cpBox) brew(t *testing.T, pinState, tap string, outdatedRC int) {
+// and info --cask. infoRC is its own knob because a brew that FAILED must not
+// read as "nothing to re-audit" — that would switch the re-audit gate off in
+// silence, which is the failure ranger-base-phxj found in the grok twin.
+//
+// `installed` is a parameter and not cpPinnedVer because the two versions
+// coming apart is the whole subject of ranger-base-k4lza. The header shape
+// changes with them, measured on Homebrew 6.0.22:
+//
+//	installed == tap    ==> codex (Codex): 0.153.4
+//	installed <  tap    ==> codex (Codex): 0.150.1 → 0.151.0
+//
+// The read this stubs used to be `brew outdated`, which prints NOTHING in
+// the first shape whatever the tap is — so a box already upgraded past the
+// pin got the pin's own version echoed back as the tap. A stub that always
+// spoke the second shape could not have shown that, which is why this one
+// renders whichever shape the pair calls for. It draws the arrow whenever the
+// two differ, where real brew draws it only when installed is BEHIND; no arm
+// here sets installed above the tap, so that shape is unmeasured either way.
+func (b *cpBox) brew(t *testing.T, pinState, installed, tap string, infoRC int) {
+	t.Helper()
+	header := "==> codex (Codex): " + tap
+	if installed != tap {
+		header = "==> codex (Codex): " + installed + " \u2192 " + tap
+	}
+	b.brewRaw(t, pinState, header, infoRC)
+}
+
+// brewRaw is brew with the info header written out, for the arms where the
+// header is the thing under test rather than the version pair in it.
+func (b *cpBox) brewRaw(t *testing.T, pinState, header string, infoRC int) {
 	t.Helper()
 	pinned := ""
 	if pinState == "pinned" {
 		pinned = "codex"
 	}
-	line := ""
-	if tap != cpPinnedVer {
-		line = "codex (" + cpPinnedVer + ") != " + tap + " [pinned at " + cpPinnedVer + "]"
-	}
 	body := "#!/bin/bash\n" +
 		"case \"$1\" in\n" +
 		"  --prefix) echo '" + b.prefix + "'; exit 0 ;;\n" +
 		"  list) echo '" + pinned + "'; exit 0 ;;\n" +
-		"  outdated) [ -n '" + line + "' ] && echo '" + line + "'; exit " + strconv.Itoa(outdatedRC) + " ;;\n" +
+		"  info) echo '" + header + "'; echo 'https://github.com/openai/codex'; exit " + strconv.Itoa(infoRC) + " ;;\n" +
 		"esac\nexit 99\n"
 	if err := os.WriteFile(filepath.Join(b.bin, "brew"), []byte(body), 0o755); err != nil {
 		t.Fatal(err)
@@ -274,7 +296,7 @@ func TestQACodexPinHappyBox(t *testing.T) {
 // script's job is to say what must be re-audited before the operator lifts it.
 func TestQACodexPinUpstreamMovedStillPasses(t *testing.T) {
 	b := cpNewBox(t)
-	b.brew(t, "pinned", "0.151.0", 0)
+	b.brew(t, "pinned", cpPinnedVer, "0.151.0", 0)
 	out, code := b.run(t)
 	if code != 0 {
 		t.Fatalf("upstream moving is not a failure: exit %d\n%s", code, out)
@@ -291,6 +313,78 @@ func TestQACodexPinUpstreamMovedStillPasses(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("re-audit list lost %q:\n%s", want, out)
 		}
+	}
+}
+
+// cpRow: the VALUE column of the row labelled `label` — the first field after
+// the label, not the rest of the line, which also carries the row's status
+// word (`ok` / `read`) and any `<-- FAIL (...)` tail. An assertion can then
+// name the number the row reported rather than only whether it said FAIL.
+func cpRow(out, label string) string {
+	for _, line := range strings.Split(out, "\n") {
+		i := strings.Index(line, label)
+		if i < 0 {
+			continue
+		}
+		f := strings.Fields(line[i+len(label):])
+		if len(f) == 0 {
+			return ""
+		}
+		return f[0]
+	}
+	return ""
+}
+
+// The box of ranger-base-k4lza, and the reason the tap row stopped being read
+// out of `brew outdated`: the cask was upgraded past the pin with nothing
+// pinning it, so the INSTALLED version caught up to the tap and both sat
+// three minor versions above the declaration. `brew outdated` says nothing
+// about a cask that is not behind, so the old read got an empty answer and
+// its `|| upstream=$want_ver` fallback filled in the pin itself — the run
+// printed the pin's own version as the tap and "== the pin; nothing to
+// re-audit", suppressing the entire re-audit list at exactly the moment the
+// operator needed it. The version row failing is not a substitute: it says
+// the box moved, not what it must be re-audited against.
+func TestQACodexPinTapReadWhenTheBoxIsAlreadyPastThePin(t *testing.T) {
+	const past = "0.153.4"
+	b := cpNewBox(t)
+	b.installCodex(t, past, true)
+	if err := os.RemoveAll(filepath.Join(b.prefix, "Caskroom", "codex", cpPinnedVer)); err != nil {
+		t.Fatal(err)
+	}
+	b.brew(t, "unpinned", past, past, 0) // installed == tap, both above the pin
+
+	out, code := b.run(t)
+	if code != 1 {
+		t.Fatalf("exit %d, want 1\n%s", code, out)
+	}
+	if got := cpRow(out, "tap version"); got != past {
+		t.Errorf("tap version row = %q, want %q — brew was not asked for the tap\n%s", got, past, out)
+	}
+	if !strings.Contains(out, "UPSTREAM MOVED: the codex cask is "+past) {
+		t.Errorf("a tap %s above the pin must print the re-audit list:\n%s", past, out)
+	}
+	if strings.Contains(out, "nothing to re-audit") {
+		t.Errorf("the run called a tap %s past the pin %q settled:\n%s", past, cpPinnedVer, out)
+	}
+}
+
+// The other half of removing the fallback: with nothing to fall back TO, both
+// ways of not getting an answer have to fail the row. A non-zero brew is the
+// arm in the table below; this is the one that exits 0 and answers a header
+// with no version in it, which no fallback now rescues into a green "read".
+func TestQACodexPinUnreadableTapFailsTheRow(t *testing.T) {
+	b := cpNewBox(t)
+	b.brewRaw(t, "pinned", "==> codex (Codex): latest", 0)
+	out, code := b.run(t)
+	if code != 1 {
+		t.Fatalf("exit %d, want 1\n%s", code, out)
+	}
+	if !cpRowFailed(out, "tap version") {
+		t.Errorf("a header with no version must fail the tap row:\n%s", out)
+	}
+	if strings.Contains(out, "UPSTREAM MOVED") || strings.Contains(out, "nothing to re-audit") {
+		t.Errorf("an unread tap must claim nothing about upstream:\n%s", out)
 	}
 }
 
@@ -313,7 +407,7 @@ func TestQACodexPinEachRowFailsAlone(t *testing.T) {
 			b.installCodex(t, "0.151.0", true)
 		}, "codex --version", []string{"codex resolves into the pin"}},
 		{"cask unpinned", func(t *testing.T, b *cpBox) {
-			b.brew(t, "unpinned", cpPinnedVer, 0)
+			b.brew(t, "unpinned", cpPinnedVer, cpPinnedVer, 0)
 		}, "brew cask pin", nil},
 		{"startup check back on", func(t *testing.T, b *cpBox) {
 			b.config(t, "check_for_update_on_startup = true\n")
@@ -334,7 +428,7 @@ func TestQACodexPinEachRowFailsAlone(t *testing.T) {
 			b.installCodex(t, cpPinnedVer, false)
 		}, "codex resolves into the pin", nil},
 		{"brew could not answer", func(t *testing.T, b *cpBox) {
-			b.brew(t, "pinned", cpPinnedVer, 2)
+			b.brew(t, "pinned", cpPinnedVer, cpPinnedVer, 2)
 		}, "tap version", nil},
 	}
 	for _, tc := range cases {

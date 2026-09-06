@@ -151,3 +151,41 @@ There is no `brew install codex@<version>`. The supported route back is the
 tarball named in `[rollback]`: verify its sha256, unpack it, and put its
 `bin/codex` where the cask's symlink points. That is why step 1 above is step
 one.
+
+## The tap row reads `brew info`, not `brew outdated` (ranger-base-k4lza)
+
+One sentence above — "`make verify-codex-pin` prints this list whenever the
+tap is ahead of the pin" — was not true in the case that matters most, and
+the mechanism is worth stating next to the runbook that relies on it.
+
+The tap row used to read `brew outdated --cask --verbose`, which is silent
+about a cask whose installed version is not *behind* the tap. An upgrade past
+the pin makes installed *equal* the tap, so exactly when the pin has already
+been lost, `brew outdated` names nothing — and the row's
+`|| upstream=$want_ver` fallback then filled in the pin's own version. The run
+printed the pin as the tap and `== the pin; nothing to re-audit`, suppressing
+the whole re-audit list at the moment it was due. Same shape as the forked
+matchers of ranger-base-s8b4g: a reader that answered nothing was
+indistinguishable from "nothing to re-audit", with a fallback in place of the
+fork.
+
+The row now reads `brew info --cask`, which names the tap version whatever is
+installed, and there is nothing left to fall back to: a non-zero brew and a
+header with no version in it both fail the row. The header is parsed as its
+last digit-initial token, which is the tap version in all three shapes brew
+writes (`: 0.153.4`, `: 1.15.0 → 1.16.2`, and either with a trailing
+`(auto_updates)`). Pinned by `TestQACodexPinTapReadWhenTheBoxIsAlreadyPastThePin`
+and `TestQACodexPinUnreadableTapFailsTheRow`.
+
+Two limits of the other rows, while they are being written down:
+
+- `brew pin` pins whatever is *installed*. The `brew cask pin` row asserts
+  that the cask is pinned, not which version it holds; the `codex --version`
+  row is what carries a mismatch, so read the two together.
+- The `config check_for_update` row reads
+  `${CODEX_HOME:-$HOME/.codex}/config.toml`, so it measures whichever home
+  the *runner* has. Run from a seat with its own home it reports that seat,
+  not the box.
+
+The state of this box under all of the above, and which version the fleet
+should pin, are in the beads: ranger-base-k4lza and ranger-base-ydwn1.
