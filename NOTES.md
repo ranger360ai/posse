@@ -404,10 +404,12 @@ of the harness core:
    non-empty; every such string %q-fenced); then the fixed **escalation ladder** — NOTE / ASSUME /
    SPIKE / ASK / HANDOFF / REFUSE with exact bd commands, ASK beads `-l
    question -a <config operator:>` (unassigned when unset) plus `bd dep
-   add` so the bead leaves `bd ready` until answered; SPIKE files a
-   `spike:` bead in the runner's lane — with no `--deps`, see below — and
-   dep-blocks this one the same way, because its gap is knowledge, not
-   permission; `Done:` line; then
+   add` so the bead leaves `bd ready` until answered; SPIKE researches a
+   bounded gap **in the deciding bead** and files a `spike:` bead in the
+   runner's lane — with no `--deps`, see below — dep-blocking this one the
+   same way, only for a distinct dependency or deliverable and never as
+   proof that research happened (ADR 0026 as amended by the operator ruling
+   of 2026-09-05, ranger-base-k5fnr); `Done:` line; then
    the PID's `## Work prompt` section verbatim (optional; `posse agent
    check` warns when absent). Beads labelled `question` are for the
    operator: dispatch and the cockpit never route them, they cost no `-n`
@@ -5346,7 +5348,17 @@ renders, and because reading the graph back also catches a create that failed
 for some other reason. ADR 0005 §2 has the reasoning; `verifyafter.go` is the
 harness applying the same rule to itself.
 
-Since ranger-base-rs8j (2026-08-30) the SPIKE rung files **no**
+Since ranger-base-k5fnr (2026-09-05) the SPIKE rung only files a separate
+bead at all for a distinct dependency or deliverable — another lane's work, an
+experiment needing its own venue, findings needing their own handoff — and a
+bounded gap is researched in the deciding bead instead, with the findings
+committed. The mandate it replaced was priced first:
+`docs/notes.d/ranger-base-k5fnr.md` counts four separate spikes in the eleven
+days the mandatory rung shipped, against 1,470 beads created, all four with a
+distinct dependency or deliverable and only two carrying the block the rung
+exists for. What follows is the mechanics for the spike that does get filed.
+
+Since ranger-base-rs8j (2026-08-30) that bead is filed with **no**
 `discovered-from` edge at all, and that is a different bd defect from the one
 above rather than the same one. bd's cycle check spans *every* dependency
 type, so a spike carrying `discovered-from:<deciding>` makes the

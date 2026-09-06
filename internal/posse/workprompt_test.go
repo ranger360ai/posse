@@ -320,9 +320,17 @@ func TestEscalationLadderSpikeFilesNoProvenanceEdge(t *testing.T) {
 		t.Errorf("SPIKE must carry the provenance as a comment on the spike:\n%s", spike)
 	}
 	// A persona that is told to drop the flag with no reason drops the
-	// reason too, and the next editor puts it back.
-	if !strings.Contains(spike, "bd refuses the `dep add`") {
+	// reason too, and the next editor puts it back. The reason is the LOST
+	// BLOCK, not a refusal: the rung said "bd refuses the `dep add`" until
+	// ranger-base-k5fnr, which is a claim only the SQLite store makes
+	// (ranger-base-lpz0o) and the escape ranger-base-ytsp9 filed against it.
+	// The store split stays on the Provenance line, which is where a persona
+	// reading a zero exit as the stop has to be caught.
+	if !strings.Contains(spike, "no `--deps`, because the block below is the point") {
 		t.Errorf("SPIKE must say why there is no --deps:\n%s", spike)
+	}
+	if strings.Contains(spike, "bd refuses the `dep add`") {
+		t.Errorf("SPIKE must not re-assert the refusal as universal (ranger-base-ytsp9):\n%s", spike)
 	}
 
 	// Controls, both directions. HANDOFF is the rung that legitimately files
@@ -342,6 +350,91 @@ func TestEscalationLadderSpikeFilesNoProvenanceEdge(t *testing.T) {
 	o := EscalationLadder("other-9", "opuser")
 	if !strings.Contains(o, "`bd comments add <sid> \"discovered-from: other-9\"`") || !strings.Contains(o, "`bd dep add other-9 <sid>`") {
 		t.Errorf("SPIKE must interpolate the bead id:\n%s", o)
+	}
+}
+
+// ranger-base-k5fnr: the SPIKE rung stopped MANDATING a second bead (ADR 0026
+// as amended by the operator ruling of 2026-09-05). The rung's only rendered
+// answer to a shelf miss used to be "file a spike and block this bead on it",
+// which made the bead the receipt that research had happened; it now says
+// research in the deciding bead when the question is bounded, and file a
+// separate spike only for a distinct dependency or deliverable.
+//
+// The census that priced the mandate is in docs/notes.d/ranger-base-k5fnr.md:
+// four separate spikes in the eleven days the mandatory rung shipped, against
+// 1,470 beads created, all four with a distinct dependency or deliverable and
+// none a pure research receipt.
+//
+// What this pins is the pair of claims that can rot in opposite directions —
+// a later editor deleting the in-task half puts the mandate back, and one
+// deleting the sourcing half turns "research here" into "guess here". The
+// trigger clauses are pinned too: they are ADR 0026's, not this ruling's, and
+// removing the multiplication must not take them with it.
+func TestEscalationLadderSpikeResearchesInTheDecidingBead(t *testing.T) {
+	t.Parallel()
+	spike := ""
+	for _, ln := range strings.Split(EscalationLadder("b-1", ""), "\n") {
+		if strings.HasPrefix(ln, "- SPIKE — ") {
+			spike = ln
+		}
+	}
+	if spike == "" {
+		t.Fatalf("ladder lost the SPIKE rung:\n%s", EscalationLadder("b-1", ""))
+	}
+
+	// The removal, as the two things the rung must now say.
+	for _, want := range []string{
+		"research it in THIS bead when the question is bounded", // the default path
+		"never as proof that research happened",                 // the mandate, named and refused
+	} {
+		if !strings.Contains(spike, want) {
+			t.Errorf("SPIKE must let bounded research stay in the deciding bead, missing %q:\n%s", want, spike)
+		}
+	}
+
+	// When a separate bead IS right, and what it owes. Without the condition
+	// the rung reads as "never file one", which is the opposite over-correction.
+	for _, want := range []string{
+		"distinct dependency or deliverable",
+		"an experiment needing its own venue",
+		"time box (normally one session), question and stopping condition",
+	} {
+		if !strings.Contains(spike, want) {
+			t.Errorf("SPIKE must keep the separate-spike case, missing %q:\n%s", want, spike)
+		}
+	}
+
+	// The controls: ADR 0026's research contract is NOT what was removed.
+	// Each of these survives the ruling and a rung that drops one is a
+	// different, worse change than the one this bead made.
+	for _, want := range []string{
+		"invent a mechanism or coin a name for one", // trigger 1
+		"third attempt at one invariant",            // trigger 2
+		"expensive to reverse",                      // trigger 3
+		"a number nobody measured",                  // trigger 4
+		"Read the skills and references you carry",  // research before invention
+		"committed ADR section or notes artifact",   // findings outlive the transcript
+		"MEASURED or ASSUMED",                       // and are labelled
+		"their date and environment",                // and dated
+	} {
+		if !strings.Contains(spike, want) {
+			t.Errorf("SPIKE must keep ADR 0026's research contract, missing %q:\n%s", want, spike)
+		}
+	}
+
+	// Both markers, because both outcomes have to be findable in the bead's
+	// comments: the answer that stayed here, and the bead that carries it.
+	if !strings.Contains(spike, "`SPIKE: <question> → <finding>`") || !strings.Contains(spike, "`SPIKE: <question> → <sid>`") {
+		t.Errorf("SPIKE must mark both outcomes in the comments:\n%s", spike)
+	}
+
+	// The block, when there is a separate bead, must still be CONFIRMED —
+	// the mandate went, the half of it that actually worked did not.
+	if !strings.Contains(spike, "`bd dep list b-1` to confirm the block landed") {
+		t.Errorf("SPIKE must confirm the block it files:\n%s", spike)
+	}
+	if o := EscalationLadder("other-9", ""); !strings.Contains(o, "`bd dep list other-9` to confirm the block landed") {
+		t.Errorf("the confirmation must name the bead it was rendered for:\n%s", o)
 	}
 }
 

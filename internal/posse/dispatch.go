@@ -2026,16 +2026,34 @@ func (a *App) promptContext(bd Bd, is RepoIssue, runtime, tier, session string, 
 // persona reads on every bead, so the trigger travels with the work rather
 // than depending on a persona remembering to pull the cord.
 //
-// SPIKE files its bead with NO `--deps discovered-from:`, and that absence
-// is the whole of ranger-base-rs8j. A spike carrying `discovered-from:<id>`
+// What the rung no longer does is MANDATE a second bead (ADR 0026 as amended
+// by the operator ruling of 2026-09-05, ranger-base-k5fnr). Until then the
+// rung's only rendered answer to a shelf miss was "file a spike and block
+// this bead on it", which made a separate bead the receipt that research had
+// happened. The census that priced the mandate is in
+// docs/notes.d/ranger-base-k5fnr.md: in the eleven days the mandatory rung
+// shipped (b2d3bd2f, 2026-08-27 → 2026-09-06) FOUR separate spikes were filed
+// against 1,470 beads created, all four supplied a distinct dependency or
+// deliverable, none was a pure research receipt — and only two of the four
+// carried the block the rung exists for. So the mandate bought no separately
+// tracked artifact that the trigger would not have produced anyway, and the
+// rung now says research in the deciding bead when the question is bounded
+// and file a separate spike only for a distinct dependency or deliverable.
+// The trigger, the sourcing rules and the committed-findings requirement are
+// untouched: what was removed is the multiplication, not the research.
+//
+// When SPIKE does file a separate bead it files it with NO `--deps
+// discovered-from:`, and that absence is the whole of ranger-base-rs8j. A spike carrying `discovered-from:<id>`
 // makes the `bd dep add <id> <sid>` on the same line close a cycle, and bd
 // will not carry both edges between one pair whichever lands first
 // (measured both orders 2026-08-30; the sibling site is
 // ranger-base-23oo/settleopen.go).
 //
-// What bd does about that depends on the store rather than on its version,
-// so the rung says the outcome and not the mechanism (ranger-base-lpz0o,
-// measured 2026-09-01 on one 0.50.3 binary): a SQLite beads.db refuses the
+// What bd does about that depends on the store rather than on its version, so
+// the rung says only the outcome — the block is lost — and the trailing
+// `Provenance:` line carries the two shapes (ranger-base-lpz0o, measured
+// 2026-09-01 on one 0.50.3 binary; the rung said "bd refuses" as if it were
+// universal until ranger-base-k5fnr rewrote it, which is ranger-base-ytsp9): a SQLite beads.db refuses the
 // add — "cannot add dependency: would create a cycle (<id> → <sid> → ... →
 // <id>)", exit 1 — and a store `bd init` writes today (`no-db: true`, JSONL
 // only) accepts it and then answers `bd ready` with <id> anyway. Either way
@@ -2087,11 +2105,11 @@ func EscalationLadder(id, operator string) string {
 	return "Escalation (pick the lowest rung that is honest)\n" +
 		"- NOTE — a decision or finding worth keeping: `bd comments add " + id + " <note>`; continue.\n" +
 		"- ASSUME — a gap you can bridge without changing the deliverable's shape: comment `ASSUMED: <x> — <why>`; do the rest in full; continue.\n" +
-		"- SPIKE — the gap is knowledge, not permission: you are about to invent a mechanism or coin a name for one, this is the third attempt at one invariant, the choice is expensive to reverse, or the design rests on a number nobody measured. Check the skills you carry first; if they do not cover it, `bd create \"spike: <question>\" -t task -l <runner's lane>` — no `--deps`, bd refuses the `dep add` below against a spike that carries one — then `bd dep add " + id + " <sid>` so deciding waits on reading, and `bd comments add <sid> \"discovered-from: " + id + "\"` for the provenance; comment `SPIKE: <question> → <sid>`; continue with whatever the answer cannot change, else stop.\n" +
+		"- SPIKE — the gap is knowledge, not permission: you are about to invent a mechanism or coin a name for one, this is the third attempt at one invariant, the choice is expensive to reverse, or the design rests on a number nobody measured. Read the skills and references you carry first; if they do not answer it, research it in THIS bead when the question is bounded — findings on the bead and in a committed ADR section or notes artifact, numbers labelled MEASURED or ASSUMED with their date and environment — and comment `SPIKE: <question> → <finding>`. A separate bead is for a distinct dependency or deliverable — work another lane must do, an experiment needing its own venue, findings that need their own handoff — never as proof that research happened: `bd create \"spike: <question>\" -t task -l <runner's lane>` — no `--deps`, because the block below is the point and a spike that already reaches " + id + " loses it — carrying its time box (normally one session), question and stopping condition; then `bd dep add " + id + " <sid>` so deciding waits on reading, `bd comments add <sid> \"discovered-from: " + id + "\"` for the provenance, and `bd dep list " + id + "` to confirm the block landed; comment `SPIKE: <question> → <sid>`; continue with whatever the answer cannot change, else stop.\n" +
 		"- ASK — a gap only the operator can fill and the bead is useless if you guess: `bd create \"<question>\" -t task -l question" + ask + "`, then `bd dep add " + id + " <qid>` so this bead leaves bd ready until answered; comment `BLOCKED: <need> → <qid>`; stop.\n" +
 		"- HANDOFF — part of the work belongs to another lane: `bd create \"<title>\" -l <their label> --deps discovered-from:" + id + "`; no `-a` unless the work needs that person (ADR 0006 §1 lists the five cases) and the first line of the description says which; comment it; continue with your part, and if nothing is left, close yours.\n" +
 		"- REFUSE — a hard risk line (money · publishing · deployed systems · visibility) or a gate you cannot realize: comment `REFUSED: <line> — <what would be needed>`; if a decision would unblock it, ASK with `-l risk`; stop.\n" +
-		"Provenance: only HANDOFF files `--deps discovered-from:`, and it is two writes, not one — bd can commit the bead and lose the edge (30s timeout, exit 1, no id printed). After a HANDOFF create, confirm it with `bd dep list <new-id>`; if no id was printed find the bead by title in `bd list`, and never re-run a create that failed. If the edge is missing, `bd comments add <new-id> \"discovered-from: " + id + "\"` and note it on " + id + " — the comment is the provenance that survives. SPIKE never files that edge, deliberately: bd will not carry a `discovered-from` edge and a block between the same pair, so a spike carrying one makes `bd dep add " + id + " <sid>` a cycle in either order — refused outright by some stores and silently accepted by others, which leaves " + id + " in `bd ready` and dispatched anyway, so never read a zero exit as the stop. Check `bd dep list " + id + "` names <sid> (reading <sid> back shows the wrong edge and looks fine), and let the comment carry the provenance.\n"
+		"Provenance: only HANDOFF files `--deps discovered-from:`, and it is two writes, not one — bd can commit the bead and lose the edge (30s timeout, exit 1, no id printed). After a HANDOFF create, confirm it with `bd dep list <new-id>`; if no id was printed find the bead by title in `bd list`, and never re-run a create that failed. If the edge is missing, `bd comments add <new-id> \"discovered-from: " + id + "\"` and note it on " + id + " — the comment is the provenance that survives. When SPIKE files a separate spike it files no edge either, deliberately: bd will not carry a `discovered-from` edge and a block between the same pair, so a spike carrying one makes `bd dep add " + id + " <sid>` a cycle in either order — refused outright by some stores and silently accepted by others, which leaves " + id + " in `bd ready` and dispatched anyway, so never read a zero exit as the stop. Check `bd dep list " + id + "` names <sid> (reading <sid> back shows the wrong edge and looks fine), and let the comment carry the provenance.\n"
 }
 
 func fenceRefs(refs []BdRef) string {

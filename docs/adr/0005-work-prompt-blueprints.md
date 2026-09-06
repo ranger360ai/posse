@@ -134,7 +134,7 @@ the bead is ready again. `bd comments` prefixes (`ASSUMED:`, `SPIKE:`,
 `BLOCKED:`, `REFUSED:`) are the greppable trail the `blocked-honestly`
 metric counts.
 
-SPIKE sits between ASSUME and ASK because its gap is knowledge, not permission. Its research and optional handoff contract lives in [ADR 0026](0026-research-spikes.md). The 2026-09-05 ruling changes the rendered rung; implementation is deferred on that ADR’s code task.
+SPIKE sits between ASSUME and ASK because its gap is knowledge, not permission. Its research and optional handoff contract lives in [ADR 0026](0026-research-spikes.md). The 2026-09-05 ruling is implemented in the rendered rung as of ranger-base-k5fnr: a bounded gap is researched in the deciding bead, and a separate `spike:` bead is filed only for a distinct dependency or deliverable. The census that priced the mandate it replaced is `docs/notes.d/ranger-base-k5fnr.md`.
 
 **3. Persona hook: `## Work prompt` in the PID body.** Optional section,
 appended verbatim to every work prompt for that persona — the standing
