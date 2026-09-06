@@ -136,8 +136,13 @@ func modelHelpBlock(t *testing.T, out string) string {
 //
 // Both halves, for that reason: what the block must say, and the vocabulary
 // of the removed walk, which must not come back into this block by any
-// rewording. The banned list is single words, so the list itself does not
-// answer a sweep for the retired phrases.
+// rewording. The banned entries are STEMS, matched against a lower-cased
+// block: a list of whole inflected forms is evaded by any one-word respelling
+// of the same meaning ("falls back" does not contain "fall back";
+// "substituting" contains neither "substitute" nor "substitution"), which
+// left this half green on a reworded help line (ranger-base-g6k5b). Grade it
+// by rewording, never by putting the retired sentence back. The stems do not
+// themselves answer a sweep for the retired phrases.
 func TestModelHelpNamesTheVerdictNotTheRemovedSubstitution(t *testing.T) {
 	block := modelHelpBlock(t, helpText(t))
 	for _, want := range []string{"--agent", "--runtime", "--tier", "tier availability verdict"} {
@@ -145,8 +150,8 @@ func TestModelHelpNamesTheVerdictNotTheRemovedSubstitution(t *testing.T) {
 			t.Errorf("the --model help does not name %q:\n%s", want, block)
 		}
 	}
-	for _, gone := range []string{"substitution", "substitute", "fall back", "fallback"} {
-		if strings.Contains(block, gone) {
+	for _, gone := range []string{"substitut", "fall"} {
+		if strings.Contains(strings.ToLower(block), gone) {
 			t.Errorf("the --model help still names the removed automatic substitution (%q):\n%s", gone, block)
 		}
 	}

@@ -207,8 +207,13 @@ func TestExactModelRendersTheCodexLine(t *testing.T) {
 // see this class, because the old sentence said a right-looking thing too —
 // a contrast clause is the one shape that can invert without a byte changing
 // in it, which is exactly how this survived the removal's own sweep. The
-// banned list is single words, so the list does not itself answer a sweep
-// for the retired phrases.
+// banned entries are STEMS, matched against a lower-cased haystack: a list of
+// whole inflected forms is evaded by any one-word respelling of the same
+// meaning ("falls back" does not contain "fall back"; "substituting" contains
+// neither "substitute" nor "substitution"), which left this half green on
+// three such mutants (ranger-base-g6k5b). Grade it by rewording, never by
+// putting the retired sentence back. The stems do not themselves answer a
+// sweep for the retired phrases.
 func TestExactModelSkipsTierVerdict(t *testing.T) {
 	t.Parallel()
 	b, fake := newTestBackend(t)
@@ -254,12 +259,14 @@ func TestExactModelSkipsTierVerdict(t *testing.T) {
 	if !strings.Contains(warn.String(), "EXACT model claude-6-astra") || !strings.Contains(warn.String(), "tier availability verdict is skipped") {
 		t.Errorf("the canary launch did not say it was skipping the tier verdict: %q", warn.String())
 	}
-	// And it does not describe the removed mechanism. These words are the
+	// And it does not describe the removed mechanism. These stems are the
 	// reason this pin has a second half: each of them makes the clause read
 	// as "an ordinary launch WOULD substitute", which stopped being true at
-	// ADR 0003 §3 without anything here changing.
-	for _, gone := range []string{"substitution", "substitute", "fall back", "fallback"} {
-		if strings.Contains(warn.String(), gone) {
+	// ADR 0003 §3 without anything here changing. Stems, not words, so that
+	// an inflection ("falls back", "substituting") cannot walk out from under
+	// the ban; lower-cased, so neither can a capital at a sentence head.
+	for _, gone := range []string{"substitut", "fall"} {
+		if strings.Contains(strings.ToLower(warn.String()), gone) {
 			t.Errorf("the canary line names the removed automatic substitution (%q): %q", gone, warn.String())
 		}
 	}
