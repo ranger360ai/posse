@@ -288,3 +288,113 @@ func gitConfigProbeGlobal(t *testing.T, hooks string) string {
 	}
 	return p
 }
+
+// TestQATheGitConfigSystemPinDropsASystemScopeIdentityLiteral is the cost of
+// the row that IS pinned, for ranger-base-nn161 (found verifying
+// ranger-base-44or9 on ranger-base-53y2k). The close above disclosed that
+// GIT_CONFIG_SYSTEM=/dev/null "WOULD suppress /etc/gitconfig off darwin" and
+// stopped there. Two paragraphs up, the same file spells that exact cost out
+// in full as its whole reason for refusing GIT_CONFIG_GLOBAL: emptying a
+// scope takes an e-mail literal out of the visibility wall, silently. The
+// asymmetry was the finding — a reader of the row that LANDED could not see a
+// cost the file writes out for the row it rejected, in a file whose contract
+// is that its coverage is readable.
+//
+// So this holds both ends of that clause, because prose nobody can watch fail
+// is how the first omission survived a close:
+//
+//   - the DISCLOSURE, anchored INSIDE the GIT_CONFIG_SYSTEM row and not
+//     merely somewhere in the file. Anchoring is the whole point: the file
+//     already named DeriveIdentityLiterals in the GIT_CONFIG_GLOBAL
+//     paragraph while the row said nothing, which is exactly the state this
+//     test has to call red.
+//   - the BEHAVIOUR, by execution, three arms. It fails if git ever stops
+//     dropping the literal — at which point the clause above is a paragraph
+//     that lies, the same standing the two disclosed gaps are held to.
+//
+// Not live on this box and not a bug: system scope here is empty, there is no
+// /etc/gitconfig, and the full config listing is byte-identical under the pin
+// (that is 44or9's measurement, reproduced). It needs a box whose user.email
+// lives in system scope, and the fleet is not darwin by contract — the
+// LD_PRELOAD row two rows up says so. Whether such a box wants the row at all
+// is the operator's, on ranger-base-zz08i.
+func TestQATheGitConfigSystemPinDropsASystemScopeIdentityLiteral(t *testing.T) {
+	// t.Setenv: DeriveIdentityLiterals shells out with this process's own
+	// environment, so the arms move the real thing and cannot be parallel.
+
+	// ── the disclosure, on the ROW ───────────────────────────────────────
+	src, err := os.ReadFile("inletpin.go")
+	if err != nil {
+		t.Fatalf("cannot read the table to check its own disclosure: %v", err)
+	}
+	const rowHead, nextRow = "GIT_CONFIG_SYSTEM=" + os.DevNull, `GIT_CONFIG_PARAMETERS=""`
+	i := strings.Index(string(src), rowHead)
+	j := strings.Index(string(src), nextRow)
+	if i < 0 || j <= i {
+		t.Fatalf("inletpin.go has no %q row followed by the %q row — the region this test reads is gone, so it is measuring nothing; re-anchor it before trusting a green", rowHead, nextRow)
+	}
+	row := string(src)[i:j]
+	for _, want := range []string{"DeriveIdentityLiterals", "user.email"} {
+		if !strings.Contains(row, want) {
+			t.Errorf("the GIT_CONFIG_SYSTEM row does not name %q. Suppressing a config scope takes an e-mail out of the ADR 0024 D2 check 3 wall with no error — the file writes that cost out in full for GIT_CONFIG_GLOBAL, and a reader of the row that LANDED has to be able to see it too (ranger-base-nn161)", want)
+		}
+	}
+
+	// ── the behaviour, three arms ────────────────────────────────────────
+	//
+	// Every GIT_CONFIG_* name off first: a posse-launched seat carries the
+	// L3 hooks redirect in its own env (ADR 0052 D2), and an ambient
+	// GIT_CONFIG_GLOBAL or _SYSTEM would sit underneath every arm.
+	for _, e := range os.Environ() {
+		if k, _, ok := strings.Cut(e, "="); ok && strings.HasPrefix(k, "GIT_CONFIG") {
+			unsetenvForTest(t, k)
+		}
+	}
+	// Global scope closed so the SYSTEM arm is the only scope that moves.
+	// This is the variable the table refuses to pin, used here as a fixture
+	// and never as a pin — its cost is exactly what is being demonstrated.
+	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
+
+	repo := gitConfigProbeRepo(t)
+	const addr = "systemscope@example.invalid"
+	sys := filepath.Join(t.TempDir(), "system.gitconfig")
+	if err := os.WriteFile(sys, []byte("[user]\n\temail = "+addr+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	walled := func(t *testing.T, arm, value string) bool {
+		t.Helper()
+		if value == "" {
+			unsetenvForTest(t, "GIT_CONFIG_SYSTEM")
+		} else {
+			t.Setenv("GIT_CONFIG_SYSTEM", value)
+		}
+		lits, err := DeriveIdentityLiterals(repo)
+		if err != nil {
+			t.Fatalf("%s: DeriveIdentityLiterals: %v", arm, err)
+		}
+		var found bool
+		for _, l := range lits {
+			if l.Class == "email" && l.Value == addr {
+				found = true
+			}
+		}
+		t.Logf("arm %-42s %d literals, %s walled: %v", arm, len(lits), addr, found)
+		return found
+	}
+
+	// Unset: the fixture is not on this box, so it can only arrive through
+	// the variable. Without this arm the attack arm below proves nothing.
+	if walled(t, "GIT_CONFIG_SYSTEM unset", "") {
+		t.Fatalf("CONTROL FAILED: %s is already in the wall with GIT_CONFIG_SYSTEM unset, so neither arm below is measuring this variable", addr)
+	}
+	// The failing wrong arm: system scope DOES reach the wall. A pin whose
+	// attack arm never fired has measured nothing.
+	if !walled(t, "GIT_CONFIG_SYSTEM at a config with user.email", sys) {
+		t.Fatalf("CONTROL FAILED: a user.email in system scope did not reach DeriveIdentityLiterals at all, so the pinned arm below cannot show it being dropped — `git config --get-all` may have stopped walking every scope, which is a bigger finding than this test")
+	}
+	// The landed pin. Silently: no error, one fewer literal.
+	if walled(t, "GIT_CONFIG_SYSTEM="+os.DevNull+" (the landed pin)", os.DevNull) {
+		t.Errorf("GIT_CONFIG_SYSTEM=%s no longer empties system scope for DeriveIdentityLiterals. Good news, but the GIT_CONFIG_SYSTEM row in inletpin.go now says it does — re-measure and rewrite the clause", os.DevNull)
+	}
+}

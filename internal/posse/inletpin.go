@@ -232,6 +232,32 @@ import "os"
 //	                                which is not measured; same standing as
 //	                                LD_PRELOAD, and the reason it is said
 //	                                here rather than left to a reader.
+//	                                AND READ THAT SUPPRESSION AGAINST THE
+//	                                GIT_CONFIG_GLOBAL PARAGRAPH ABOVE: it
+//	                                reaches the same guardrail, one scope
+//	                                instead of every scope.
+//	                                DeriveIdentityLiterals (visibility.go)
+//	                                walks `git config --get-all user.email`
+//	                                across all of them to build the wall
+//	                                that keeps this box's addresses out of a
+//	                                public repo, and a scope this row
+//	                                emptied contributes nothing through the
+//	                                renderer's own "nothing to say" branch —
+//	                                no error, one fewer e-mail literal, and
+//	                                that is a WALL rendered short, not a
+//	                                log line. Measured 2026-09-05, scratch
+//	                                repo with global scope closed so only
+//	                                the system arm moves: unset, that
+//	                                address is not in the wall; this
+//	                                variable at a config holding it, it IS;
+//	                                /dev/null, gone again, rc 0. Zero on
+//	                                THIS box — system scope is empty and
+//	                                there is no /etc/gitconfig — so the row
+//	                                stays pinned; on a box whose user.email
+//	                                lives in system scope it is the identity
+//	                                half of the wall, one address short,
+//	                                and that is the operator's call on
+//	                                ranger-base-zz08i (ranger-base-nn161).
 //	GIT_CONFIG_PARAMETERS=""        the family member nobody named — not
 //	                                rflee's fix spec, not the verify bead —
 //	                                and it is the same inlet: an attacker's

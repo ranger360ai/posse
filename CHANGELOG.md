@@ -140,6 +140,18 @@ a hostname-derived identity at exit 0 rather than failing. Both are named in
 so the file's claim that "a name that is not here is not covered" is
 something a reader can now check. The family is narrowed, not closed.
 
+One cost of the row that IS pinned, if you run posse anywhere but macOS.
+`GIT_CONFIG_SYSTEM=/dev/null` empties system scope for every git command a
+session runs, and the visibility wall that keeps your addresses out of a
+public repo is built by walking `git config --get-all user.email` across
+every scope — so a `user.email` that lives in `/etc/gitconfig` is dropped
+from that wall, with no error. On macOS this costs nothing (Apple git reads
+its bundled config by a path this variable does not govern, and there is no
+`/etc/gitconfig`), which is why the row stays pinned; on a Linux box or a CI
+image with an identity baked into system scope, it is one address short. The
+row says so, and `TestQATheGitConfigSystemPinDropsASystemScopeIdentityLiteral`
+measures it, so the note cannot go stale.
+
 ### Fixed
 
 **Four shipped sentences that spell the promoted set out for an operator now
