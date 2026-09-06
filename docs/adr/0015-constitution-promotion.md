@@ -8,7 +8,7 @@ ranger-base-o943) · amended 2026-08-27: verification item 5 verified
 live, marker dropped, cwd-elsewhere boundary clause added
 (ranger-base-4v1d) · amended 2026-08-27: §3's invariant re-attributed —
 the commit read, not the clean gate, keeps bytes == SHA
-(ranger-base-znma via ranger-base-70ci; the set half is open in
+(ranger-base-znma via ranger-base-70ci; the set half landed in
 ranger-base-70ry) · execution rides with the rhq
 retirement (ranger-base-3rv9, operator-ruled 2026-08-25) · amended
 2026-08-29: §3's fence widens to bd's destructive/egress verbs
@@ -30,7 +30,10 @@ WHAT SET that posse walked, and the launch verify leads with the
 promoted-set drift rather than a file — an older posse on PATH refused
 every dispatched launch for ~90 minutes naming a file that was present
 and hash-matched (ranger-base-39jnl) · informs
-0002 §3, 0012 D3-C, 0014 §3, 0025 · amended 2026-09-02: the constitution directory in the instance repo is `posse/`, not `rhq/` — the cutover is complete and every historical `rhq/<p>` spelling below now means `posse/<p>` (ADR 0046 retired 2026-09-05; current source constant verified)*
+0002 §3, 0012 D3-C, 0014 §3, 0025 · amended 2026-09-02: the constitution directory in the instance repo is `posse/`, not `rhq/` — the cutover is complete and every historical `rhq/<p>` spelling below now means `posse/<p>` (ADR 0046 retired 2026-09-05; current source constant verified) · amended
+2026-09-06: §3's invariant claims the promoted SET as well as the bytes —
+ranger-base-70ry landed 2026-08-27 in b348799c and the record had gone on
+calling that half open (ranger-base-rowut)*
 
 > The operator asked for the constitution to be clearly separated from
 > project work. The instance tree currently holds three kinds of thing
@@ -164,15 +167,18 @@ the same way twice:
   committed exec bit; git records no other — and `git archive` is
   explicitly *not* the tool, because export-subst and eol filters
   would rewrite bytes the manifest attests to. **Scope, said
-  plainly** (ranger-base-echz): this makes the promoted *bytes* equal
-  the bytes at the SHA; it does not yet make the promoted *set* equal
-  the set at the SHA. `promotePathspecs` still stats the working tree
-  to decide which promoted paths to read, so a promote can record a
-  full SHA over a strict subset of it — one `git sparse-checkout` in
-  the constitution repo takes ratified prose out of force under a SHA
-  that still carries it, manifest born matching. That half is
-  ranger-base-70ry; until it lands, §3's invariant claims per-file
-  bytes, not set completeness.
+  plainly** (ranger-base-echz, completed by ranger-base-70ry): the
+  invariant covers the promoted *bytes* and the promoted *set*, and
+  the commit decides both. The set half was the later half:
+  `promotePathspecs` used to `os.Stat` each promoted path under the
+  working tree and drop the ones the tree did not have, so a promote
+  could record a full SHA over a strict subset of it — one
+  `git sparse-checkout` in the constitution repo took ratified prose
+  out of force under a SHA that still carried it, manifest born
+  matching. That is ranger-base-70ry, landed 2026-08-27 in b348799c:
+  the stat is gone, the pathspecs are always the whole promoted set,
+  and the “nothing to promote” refusal moved to `promotedAtCommit`,
+  which asks the commit.
 - **Manifest**: promote records `{source repo path, git SHA, sha256
   per promoted file}` under the home *beside* the promoted copy (not
   under `state/`, which stays session-writable). It prints
@@ -789,7 +795,7 @@ ADR blocks the parallel beads already running (dk5, w1b, g7lt).
 | a seatbelt PID not denying Edit/Write, cwd covering the home, holds the constitution writable; the `posse gates` verdict is consulted by nothing on the launch path | **MEASURED** 2026-08-27 (ranger-base-h15, laurie's probe; sole caller of ConstitutionGrants is `cmd/posse/main.go:960`) |
 | `update-index --skip-worktree` (and `--assume-unchanged`) defeats the §3 clean gate: status reports the promoted path clean while its working-tree bytes differ from the blob | **MEASURED** 2026-08-27 (ranger-base-znma repro) |
 | promote reads blobs at the SHA (`promotedAtCommit`: `ls-tree -r -z` + one `cat-file --batch`, which applies no smudge, no eol, no export-subst); the manifest sha256 is over those bytes | **MEASURED** 2026-08-27 (`internal/posse/promote.go`, znma fix; the home-cutover runbook — moved to the instance tree by ADR 0024 D4 — agrees) |
-| the promoted SET is still decided by a working-tree `os.Stat` (`promotePathspecs`); a sparse-checkout shrinks the set under a full SHA with the manifest born matching | **MEASURED** 2026-08-27 (ranger-base-echz hermetic repro → ranger-base-70ry, P1 in progress) |
+| the promoted SET was decided by a working-tree `os.Stat` (`promotePathspecs`); a sparse-checkout shrank the set under a full SHA with the manifest born matching | **MEASURED** 2026-08-27 (ranger-base-echz hermetic repro → ranger-base-70ry) · FIXED 2026-08-27 in b348799c; the commit decides the set, pinned in `promotegate_qa_test.go` |
 | pre-ak3e, a persona session could commit the entire promoted set with nothing refusing (9dfbbd4: all eleven crew PIDs) | **MEASURED** 2026-08-29 (ranger-base-7pq0, verified at HEAD) |
 | the commit wall's constitution arm refuses each class member persona-marked, passes the identical commit unmarked and a persona commit off the class; the land belt refuses per class member, mutation-checked | **MEASURED** 2026-08-29 (ranger-base-ak3e pins: `internal/posse/constitutionwall_qa_test.go`, `internal/posse/constitutionland_qa_test.go`) |
 | a shims session silences the launch verify by deleting `promoted.json` or re-stamping it with its tampered file's sha256, no output on any surface; a truncated manifest is loud | **MEASURED** 2026-08-28 (ranger-base-bejb repro at 12ce5be, cases A–D) |
