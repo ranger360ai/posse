@@ -73,7 +73,7 @@ func TestRuntimesCarriesTheAvailabilityVerdictPerMappedTier(t *testing.T) {
 	got := runtimesOut(t, bin, home)
 	for _, want := range []string{
 		// persona "" — the catalog is the ACCOUNT's, not a PID's.
-		"session: tier strong wants claude-fable-5-1 — unavailable, falling back to claude-opus-5",
+		"session: tier strong wants claude-fable-5-1 — unavailable on this account; launching as asked, and only an explicit --runtime/--tier/--model or a PID change moves it",
 		"claude: tier standard → claude-opus-5 (available)",
 		"claude: tier fast → claude-sonnet-5 (available)",
 	} {
@@ -134,10 +134,13 @@ func TestRuntimesProbeHonoursALiveCooldownAndDatesTheReading(t *testing.T) {
 	// The control, and the reason the lease is the operator's number and not
 	// the caller's: the same forced read over a reading INSIDE
 	// model_probe_ttl still rules, so `posse runtimes --probe` goes on
-	// printing the bytes a launch would print.
+	// printing the bytes a launch would print. "Rules" is the whole of what
+	// a verdict does since ADR 0003 §3 (ranger-base-hv2zr) — it decides
+	// which of the two sentences is printed, and no longer decides which
+	// model runs.
 	fresh := t.TempDir()
 	seedRuntimeCatalog(t, fresh, 30*time.Minute, time.Now().Add(10*time.Minute), "claude-opus-5", "claude-sonnet-5")
-	if got := runtimesOut(t, bin, fresh, "--probe"); !strings.Contains(got, "session: tier strong wants claude-fable-5-1 — unavailable, falling back to claude-opus-5") {
+	if got := runtimesOut(t, bin, fresh, "--probe"); !strings.Contains(got, "session: tier strong wants claude-fable-5-1 — unavailable on this account; launching as asked, and only an explicit --runtime/--tier/--model or a PID change moves it") {
 		t.Errorf("a cooled-down reading inside its lease must still rule:\n%s", got)
 	}
 }
