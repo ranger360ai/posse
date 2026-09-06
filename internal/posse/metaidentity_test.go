@@ -283,6 +283,19 @@ func TestVerifyPruneGuardScriptPinsThreeFieldGen(t *testing.T) {
 		{"a third field that is empty", "gen: 66:587500:", 1, "not N:N:N"},
 		{"a field that is not digits", "gen: 66:ino:1787577362", 1, "not N:N:N"},
 		{"a fourth field", "gen: " + live + ":1", 1, "not N:N:N"},
+		// ranger-base-qhl96: the arm calls digits() five times — three in
+		// the accept condition and two in the two-field branch — and the
+		// row above puts its non-digit in the SECOND field only, so two of
+		// the five were pinned by nothing. Measured: dropping `digits
+		// "$gen_a"` from the accept condition made the gate ACCEPT
+		// `gen: notadevice:587500:1787577362` and this test still passed.
+		// u4f7/fjj asked for three ALL-digit fields, not for two of them.
+		{"a non-digit device field", "gen: dev:587500:1787577362", 1, "not N:N:N"},
+		// And the same hole on the other branch, which is why this row
+		// asserts the DETAIL: dropping the two-field branch's own digits()
+		// calls still REJECTS this token, just under the wrong message —
+		// "two-field gen: (dev:ino)" for something that is not a gen at all.
+		{"a two-field token that is not digits either", "gen: dev:ino", 1, "not N:N:N"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
