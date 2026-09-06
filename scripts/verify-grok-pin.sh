@@ -227,13 +227,73 @@ ver_gt() {
 }
 
 echo
+# The tap moving and the BOX moving are two different questions, and the
+# paragraph under this heading is true of only one of them. Gated on
+# `$upstream` alone, this block said "the pin is holding — nothing has changed
+# on this machine" about a box it had never asked. On codex that sentence
+# printed, wrong, over two FAILING rows on 2026-09-06 (ranger-base-9ycqa
+# finding 1, fixed under ranger-base-xd78m); here it was latent — the pin was
+# whole, so the block was unreachable — and this is that twin,
+# ranger-base-fed4n. The gate stays the tap's — a move upstream is what makes
+# the re-audit list worth printing — and the TEXT branches on live_ver.
+#
+# grok's mechanism is not codex's and the remedy is not copied from it. codex
+# has no version ceiling, so a box past the pin runs happily and the question
+# is only which build is being trusted. grok declares two ceilings, and above
+# the hard one it refuses to START (rangerhq-iy3y, and etc/grok/version-pin.toml
+# names the cost: every dispatched pane and the operator's own grok stop at
+# once). So a moved grok box has two shapes worth telling apart, and the second
+# is a fleet outage the operator is standing in right now. The ceiling that
+# actually gates startup is the one in the operator's CONFIG, so that is what
+# is read here — its row above says whether it matches the declaration.
+# There is no rollback-artifact arm either: `brew cleanup` has no grok
+# equivalent and ~/.grok/downloads/ keeps one binary per version (NOTES.md
+# "grok substrate" — do not prune it), which is why verify-codex-pin.sh asserts
+# a Caskroom directory and this script has nothing to assert. The rollback
+# itself is not restated here: NOTES.md carries it beside the lift, and one
+# copy of a command that must be right is enough.
 if [ -n "$upstream" ] && ver_gt "$upstream" "$want_ver"; then
   cat <<EOF
 UPSTREAM MOVED: grok stable is $upstream; the fleet is pinned at $want_ver.
+EOF
+  if [ "$live_ver" = "$want_ver" ]; then
+    cat <<EOF
 
 The pin is holding — nothing has changed on this machine. Lifting it is the
 operator's call and is gated on a security re-audit of the NEW build, because
 each item below was verified against $want_ver only and none of it is contractual:
+EOF
+  else
+    cat <<EOF
+
+THE PIN IS NOT HOLDING: this box runs ${live_ver:-an unreadable grok}, not $want_ver.
+
+The failing version row above is that measurement, and this is no longer a
+question of whether to LIFT the pin — the box is already off it. The choice is
+to put $want_ver back, or to re-audit what is installed and move the pin
+deliberately. Putting it back is local and needs no re-fetch: grok keeps the
+old binaries in ~/.grok/downloads/, one file per version, so there is no single
+artifact to have lost and no sha to re-verify. The rollback line sits beside
+the lift runbook cited at the end of this list, under the same heading.
+EOF
+    if [ -n "$live_ver" ] && [ -n "$cfg_req" ] && ver_gt "$live_ver" "$cfg_req"; then
+      cat <<EOF
+
+AND THE FLEET IS STOPPED RIGHT NOW: $live_ver is above the hard ceiling this
+box declares (config required_maximum_version = $cfg_req), and grok refuses to
+START above it — not just to update. Every dispatched grok pane and the
+operator's own interactive grok is failing to launch until $want_ver is back
+(~2 minutes, rangerhq-iy3y). That is the pin working as designed: the
+loud stop it was chosen over a silent run of an un-re-audited build.
+EOF
+    fi
+    cat <<EOF
+
+Each item below was verified against $want_ver only and none of it is
+contractual, so none of it describes what this box is running:
+EOF
+  fi
+  cat <<EOF
 
   1. Coding-data consent (rangerhq-sz7u, security). In 1.0.5 the consent-record
      RPC x.ai/consent/record has NO server handler, so even an accidental

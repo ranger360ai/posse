@@ -279,6 +279,157 @@ func TestQAGrokPinScriptPrintsReauditWhenUpstreamMoves(t *testing.T) {
 	}
 }
 
+// gpStubGrokNoVersion: a grok that is on PATH and answers `update --check`
+// but whose `--version` says nothing — the only shape that leaves live_ver
+// empty, and the one arm below that cannot name a version.
+func gpStubGrokNoVersion(t *testing.T, binDir, checkJSON string) {
+	t.Helper()
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "#!/bin/bash\n" +
+		"if [ \"$1\" = \"--version\" ]; then exit 1; fi\n" +
+		"if [ \"$1\" = \"update\" ]; then\ncat <<'JSON'\n" + checkJSON + "\nJSON\nexit 0\nfi\n" +
+		"echo \"stub grok: $*\" >&2; exit 99\n"
+	if err := os.WriteFile(filepath.Join(binDir, "grok"), []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// The prose the arm above prints but never read (ranger-base-fed4n, the grok
+// twin of ranger-base-9ycqa finding 1). UPSTREAM MOVED is gated on the TAP
+// alone, and the paragraph under it said "The pin is holding — nothing has
+// changed on this machine" about a box it had not asked. live_ver was
+// computed and read by exactly one thing, the version row.
+//
+// The four arms are each other's controls, and each pair differs in one
+// thing only. 1 vs 2: the same tap, the same config, only the version the
+// box RUNS — so a block that goes back to printing one paragraph for both
+// reds one of them whichever paragraph it keeps. 2 vs 3: the same moved box,
+// only its direction relative to the ceiling. 3 vs 4: whether `--version`
+// answers at all.
+//
+// The ceiling arm is grok's and not codex's, which is why the remedy was not
+// copied over: codex has no version ceiling, so a box past its pin runs. grok
+// refuses to START above required_maximum_version (rangerhq-iy3y), so a box
+// past THAT is a fleet-wide outage the operator is standing in while they
+// read the paragraph — and a box that moved DOWNWARD is not, which is what
+// arm 3 holds the arm to.
+func TestQAGrokPinReAuditTextSaysWhetherTheBoxItselfHasMoved(t *testing.T) {
+	const past = "1.1.0"
+	const moved = `{"currentVersion":"1.0.5","latestVersion":"1.1.0","updateAvailable":true,"autoUpdate":false,"error":null}`
+
+	// The re-audit list is the same work on every box: a branch that dropped
+	// it on a moved box would leave the operator with a verdict and no list.
+	reaudit := []string{
+		"1. Coding-data consent (rangerhq-sz7u, security)",
+		"x.ai/consent/record",
+		"2. Permission-mode precedence (rangerhq-vjl, ranger-base-ejd, security)",
+		"3. The rule dialect and launcher contract",
+		"4. The startup-splash detection override",
+		"make verify-detection",
+		"Runbook to lift the pin",
+	}
+
+	t.Run("the box is still at the pin", func(t *testing.T) {
+		root := gpRoot(t)
+		bin := t.TempDir()
+		gpStubGrok(t, bin, "1.0.5", moved) // only the TAP moved
+		out, code := gpRun(t, root, gpCfg(t, gpGoodCfg), bin)
+		if code != 0 {
+			t.Fatalf("exit %d, want 0 — a tap above a holding pin is not a failure\n%s", code, out)
+		}
+		for _, want := range append([]string{
+			"UPSTREAM MOVED: grok stable is " + past,
+			"The pin is holding",
+			"nothing has changed on this machine",
+		}, reaudit...) {
+			if !strings.Contains(out, want) {
+				t.Errorf("a box still at 1.0.5 must be told %q:\n%s", want, out)
+			}
+		}
+		for _, no := range []string{"THE PIN IS NOT HOLDING", "AND THE FLEET IS STOPPED RIGHT NOW"} {
+			if strings.Contains(out, no) {
+				t.Errorf("a box whose binary is still 1.0.5 was told %q:\n%s", no, out)
+			}
+		}
+	})
+
+	// The loud shape the two ceilings exist to produce: the binary got past
+	// the pin by some route the config cannot refuse, and every dispatched
+	// pane is failing to start while this prints.
+	t.Run("the box has moved past the hard ceiling", func(t *testing.T) {
+		root := gpRoot(t)
+		bin := t.TempDir()
+		gpStubGrok(t, bin, past, moved)
+		out, code := gpRun(t, root, gpCfg(t, gpGoodCfg), bin)
+		if code != 1 {
+			t.Fatalf("exit %d, want 1\n%s", code, out)
+		}
+		for _, no := range []string{"The pin is holding", "nothing has changed on this machine"} {
+			if strings.Contains(out, no) {
+				t.Errorf("a box already running %s was told %q:\n%s", past, no, out)
+			}
+		}
+		for _, want := range append([]string{
+			"THE PIN IS NOT HOLDING: this box runs " + past + ", not 1.0.5.",
+			"old binaries in ~/.grok/downloads/, one file per version",
+			"AND THE FLEET IS STOPPED RIGHT NOW: " + past + " is above the hard ceiling",
+			"config required_maximum_version = 1.0.5",
+		}, reaudit...) {
+			if !strings.Contains(out, want) {
+				t.Errorf("a box already running %s must be told %q:\n%s", past, want, out)
+			}
+		}
+	})
+
+	// The other direction, and the control on the ceiling arm: a box BELOW
+	// the pin is off it too — the version row FAILs and the pin is not
+	// holding — but grok starts, so telling this operator the fleet is
+	// stopped would send them after an outage that is not happening.
+	t.Run("the box has moved but is under the hard ceiling", func(t *testing.T) {
+		root := gpRoot(t)
+		bin := t.TempDir()
+		gpStubGrok(t, bin, "1.0.4", moved)
+		out, code := gpRun(t, root, gpCfg(t, gpGoodCfg), bin)
+		if code != 1 {
+			t.Fatalf("exit %d, want 1\n%s", code, out)
+		}
+		if !strings.Contains(out, "THE PIN IS NOT HOLDING: this box runs 1.0.4, not 1.0.5.") {
+			t.Errorf("a box running 1.0.4 must be told the pin is not holding:\n%s", out)
+		}
+		if strings.Contains(out, "The pin is holding") {
+			t.Errorf("a box running 1.0.4 was told the pin is holding:\n%s", out)
+		}
+		if strings.Contains(out, "AND THE FLEET IS STOPPED RIGHT NOW") {
+			t.Errorf("a box UNDER the hard ceiling was told the fleet is stopped:\n%s", out)
+		}
+	})
+
+	// live_ver empty. The paragraph still has to say the pin is not holding,
+	// and it must not name a version it does not have — `${live_ver:-...}` is
+	// the only reason the sentence reads at all here. No ceiling claim
+	// either: nothing was compared to it.
+	t.Run("the binary answers no version at all", func(t *testing.T) {
+		root := gpRoot(t)
+		bin := t.TempDir()
+		gpStubGrokNoVersion(t, bin, moved)
+		out, code := gpRun(t, root, gpCfg(t, gpGoodCfg), bin)
+		if code != 1 {
+			t.Fatalf("exit %d, want 1\n%s", code, out)
+		}
+		if !strings.Contains(out, "THE PIN IS NOT HOLDING: this box runs an unreadable grok, not 1.0.5.") {
+			t.Errorf("an unreadable binary must be named as one, not left blank:\n%s", out)
+		}
+		if strings.Contains(out, "The pin is holding") {
+			t.Errorf("a box with an unreadable grok was told the pin is holding:\n%s", out)
+		}
+		if strings.Contains(out, "AND THE FLEET IS STOPPED RIGHT NOW") {
+			t.Errorf("no version was read, so nothing was compared to the ceiling:\n%s", out)
+		}
+	})
+}
+
 func TestQAGrokPinScriptMissingGrokOrConfigExits2(t *testing.T) {
 	root := gpRoot(t)
 	out, code := gpRun(t, root, gpCfg(t, gpGoodCfg), "")
