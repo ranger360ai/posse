@@ -33,6 +33,7 @@ package posse
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -220,9 +221,6 @@ func TestQAPromoteRatificationDiffIgnoresAnExternalDiffDriver(t *testing.T) {
 // carries --no-ext-diff, pinned separately.
 func TestQANoProductGitDiffReaderIsBare(t *testing.T) {
 	t.Parallel()
-	// The formats that need no flag, plus the flag itself.
-	immune := []string{"--no-ext-diff", "--name-only", "--name-status", "--numstat"}
-
 	entries, err := os.ReadDir(".")
 	if err != nil {
 		t.Fatal(err)
@@ -244,52 +242,162 @@ func TestQANoProductGitDiffReaderIsBare(t *testing.T) {
 		if err != nil {
 			t.Fatalf("parse %s: %v", name, err)
 		}
-		// Walk with a stack so each "diff" literal can name the smallest
-		// statement it sits in — one argv list, however it is wrapped.
-		var stack []ast.Node
-		ast.Inspect(file, func(n ast.Node) bool {
-			if n == nil {
-				stack = stack[:len(stack)-1]
-				return false
+		bare, saw := bareDiffReaders(fset, file)
+		if saw && name == "memoryland.go" {
+			reachedTheKnownGoodReader = true
+		}
+		for _, b := range bare {
+			t.Error(b)
+		}
+	}
+	if !reachedTheKnownGoodReader {
+		t.Error("the census never reached memoryland.go's own `git diff` argv — it is reading the wrong directory, and every arm above passed on an empty scan")
+	}
+}
+
+// extDiffImmune is the formats an external diff driver cannot reach, plus
+// the flag itself. One list for the census and for the pin below, so the
+// thing measured and the thing described cannot drift.
+var extDiffImmune = []string{"--no-ext-diff", "--name-only", "--name-status", "--numstat"}
+
+// bareDiffReaders is ARM 4's census, extracted so a fixture can run the
+// reader ITSELF rather than a second copy of its rules. It returns one
+// message per `git diff` argv in file that neither states --no-ext-diff nor
+// asks for a format a driver cannot reach, and whether the walk saw any
+// `"diff"` literal at all — the caller's liveness check.
+//
+// SCOPE is the whole judgement, and it is what this function exists to get
+// right. A literal is exempted only by an immune flag inside the SMALLEST
+// node that bounds ONE argv list around it: the innermost enclosing
+// statement, or — at package scope, where there is no statement — the
+// innermost *ast.ValueSpec, which is `var x = []string{…}`'s one name and
+// its value, the declaration-level twin of an assignment.
+//
+// Deliberately NOT the file, which is what this arm's first form fell back
+// to for want of a statement. Grading a package-scope argv against every
+// string in its file exempts a bare reader the moment any OTHER reader in
+// the same file asks for --name-only, silently. Measured while verifying
+// this bead's close (ranger-base-9m1gm): the identical
+// `var a = []string{"diff", "HEAD", "--"}` was REPORTED when alone in a
+// file and EXEMPTED once an unrelated `--name-only` reader was added
+// beside it. TestQABareDiffCensusScopesToOneArgv holds both halves.
+//
+// A literal with no bounding scope at all is REPORTED rather than exempted:
+// an argv this census cannot classify must not be the one it stays quiet
+// about. Same direction as the fix this file pins — failing to read is not
+// a narrower answer, it is a wrong one.
+func bareDiffReaders(fset *token.FileSet, file *ast.File) (findings []string, sawDiffLiteral bool) {
+	var stack []ast.Node
+	ast.Inspect(file, func(n ast.Node) bool {
+		if n == nil {
+			stack = stack[:len(stack)-1]
+			return false
+		}
+		stack = append(stack, n)
+		lit, ok := n.(*ast.BasicLit)
+		if !ok || lit.Kind != token.STRING || lit.Value != `"diff"` {
+			return true
+		}
+		sawDiffLiteral = true
+		var scope ast.Node
+		for i := len(stack) - 1; i >= 0; i-- {
+			if v, ok := stack[i].(*ast.ValueSpec); ok {
+				scope = v
+				break
 			}
-			stack = append(stack, n)
-			lit, ok := n.(*ast.BasicLit)
-			if !ok || lit.Kind != token.STRING || lit.Value != `"diff"` {
-				return true
+			if st, ok := stack[i].(ast.Stmt); ok {
+				scope = st
+				break
 			}
-			if name == "memoryland.go" {
-				reachedTheKnownGoodReader = true
-			}
-			var stmt ast.Node
-			for i := len(stack) - 1; i >= 0; i-- {
-				if s, ok := stack[i].(ast.Stmt); ok {
-					stmt = s
-					break
-				}
-			}
-			if stmt == nil {
-				stmt = file
-			}
-			var lits []string
-			ast.Inspect(stmt, func(m ast.Node) bool {
+		}
+		var lits []string
+		if scope != nil {
+			ast.Inspect(scope, func(m ast.Node) bool {
 				if b, ok := m.(*ast.BasicLit); ok && b.Kind == token.STRING {
 					lits = append(lits, strings.Trim(b.Value, `"`))
 				}
 				return true
 			})
-			for _, f := range immune {
+			for _, f := range extDiffImmune {
 				for _, l := range lits {
 					if l == f {
 						return true
 					}
 				}
 			}
-			t.Errorf("%s: bare `git diff` reader — an external diff driver replaces its output. Route it through memoryDiff (memoryland.go) or ask for one of %v.\n  argv here: %v",
-				fset.Position(lit.Pos()), immune, lits)
-			return true
+		}
+		findings = append(findings, fmt.Sprintf("%s: bare `git diff` reader — an external diff driver replaces its output. Route it through memoryDiff (memoryland.go) or ask for one of %v.\n  argv here: %v",
+			fset.Position(lit.Pos()), extDiffImmune, lits))
+		return true
+	})
+	return findings, sawDiffLiteral
+}
+
+// ARM 5, the census's own scope rule — the pin ARM 4 did not have, added
+// while verifying this bead's close (ranger-base-9m1gm). ARM 4 is the only
+// thing standing between this package and the NEXT bare reader, so what it
+// exempts has to be measured and not assumed. Every case here is source the
+// census is run over directly, so it grades the shipped reader.
+//
+// Case "package var beside an unrelated immune reader" is the escape: the
+// argv it must report is byte-identical to the one in the case above it,
+// and the file-scope fallback passed it.
+func TestQABareDiffCensusScopesToOneArgv(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		name string
+		src  string
+		want int
+	}{
+		{"package var, bare, alone in its file", `package p
+var a = []string{"diff", "HEAD", "--"}
+`, 1},
+		{"package var, bare, beside an unrelated immune reader", `package p
+var a = []string{"diff", "HEAD", "--"}
+var b = []string{"diff", "--name-only", "HEAD"}
+`, 1},
+		{"package var, immune in its own spec", `package p
+var a = []string{"diff", "--no-ext-diff", "HEAD", "--"}
+`, 0},
+		{"two specs of ONE var block, one bare", `package p
+var (
+	a = []string{"diff", "--name-only", "HEAD"}
+	b = []string{"diff", "HEAD", "--"}
+)
+`, 1},
+		{"in a function, bare", `package p
+func f(r string) { g(r, "diff", "HEAD", "--") }
+`, 1},
+		{"in a function, immune", `package p
+func f(r string) { g(r, "diff", "--no-ext-diff", "HEAD", "--") }
+`, 0},
+		{"in a function, bare, beside an immune sibling statement", `package p
+func f(r string) {
+	g(r, "diff", "HEAD", "--")
+	g(r, "diff", "--numstat", "HEAD")
+}
+`, 1},
+		{"assembled through memoryDiff, no literal at all", `package p
+func f(r string) { g(r, memoryDiff("HEAD", "--")...) }
+`, 0},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			fset := token.NewFileSet()
+			file, err := parser.ParseFile(fset, "fixture.go", c.src, 0)
+			if err != nil {
+				t.Fatalf("parse: %v", err)
+			}
+			got, saw := bareDiffReaders(fset, file)
+			if len(got) != c.want {
+				t.Errorf("census reported %d bare readers, want %d:\n%s\n--- source ---\n%s",
+					len(got), c.want, strings.Join(got, "\n"), c.src)
+			}
+			// Liveness, per case: a census that saw no `"diff"` at all would
+			// report 0 for every want-0 case without reading anything.
+			if !saw && strings.Contains(c.src, `"diff"`) {
+				t.Error("the census saw no `\"diff\"` literal in source that carries one")
+			}
 		})
-	}
-	if !reachedTheKnownGoodReader {
-		t.Error("the census never reached memoryland.go's own `git diff` argv — it is reading the wrong directory, and every arm above passed on an empty scan")
 	}
 }

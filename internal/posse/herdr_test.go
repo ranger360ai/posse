@@ -156,7 +156,7 @@ func TestMain(m *testing.M) {
 	// construction. It does NOT hide the two PRODUCT sites this bead fixed:
 	// their pins plant `diff.external` in the fixture repo's own config,
 	// which is git's other spelling of the same setting and is not env at
-	// all (cagestaleextdiff_qa_test.go, promoteextdiff_qa_test.go).
+	// all (extdiff_qa_test.go, ARMs 1-3).
 	os.Unsetenv("GIT_EXTERNAL_DIFF")
 	code := m.Run()
 	os.RemoveAll(home)
