@@ -526,7 +526,12 @@ func TestQADataCeilingRendersAboveTheGateUnderEveryStamp(t *testing.T) {
 		if strings.Count(hook, "posse_check '"+qaCeilingClass+"' '"+qaCeilingERE+"' "+opsClassOnlyArg) != 3 {
 			t.Errorf("%s: the ceiling must render class-only at all three arms", vis)
 		}
-		if !strings.Contains(hook, "─── the data ceiling (ADR 0050)") || !strings.Contains(hook, "Five walls") {
+		// The head comment's COUNT is the assertion, not the word "Five":
+		// it went to four when ADR 0051's citation arm was removed
+		// (ranger-base-bp0yj), and a count that is not held against the
+		// walls actually rendered is a number that drifts silently — which
+		// is the whole reason this cell reads it at all.
+		if !strings.Contains(hook, "─── the data ceiling (ADR 0050)") || !strings.Contains(hook, "Four walls") {
 			t.Errorf("%s: the block's banner and the head comment's count must name the ceiling", vis)
 		}
 	}
