@@ -124,10 +124,11 @@ substrates do the hard parts:
 
 ```
 bd ready
-  → route bead to a persona (by label/type)
-  → find-or-create workspace · agent start <persona> (env set injected)
+  → route bead to a persona (by label/type), then to a free seat in its lane
+  → create the bead's own workspace <persona>-<repo>-<bead> · agent start
+    <persona> (env set injected) · await the agent settling idle
   → bd update --claim · agent prompt "work bd-xxxx" --wait --until done|blocked
-  → done:    bd close → next bead
+  → done:    bd close → the seat refills with the next ready bead
   → blocked: herdr sidebar flags it → the operator intervenes from the grid
 ```
 

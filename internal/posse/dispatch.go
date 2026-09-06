@@ -11,23 +11,31 @@ package posse
 //       frontmatter, else config default_persona — never config
 //       `coordinator:`, who is not a lane (ADR 0033); unroutable beads are
 //       reported and skipped
-//     → find-or-create session <persona>-<repobase> in the bead's repo
-//       (persona command + env sets + BD_ACTOR injected by CreateSession);
+//     → find-or-create the bead's OWN session in the bead's repo —
+//       <persona>-<repobase>-<beadid> (SessionForBead, Dial F/ADR 0003), so
+//       context never accumulates across beads; the seat and busy key stay
+//       the repo slot <persona>-<repobase> (SessionFor). The persona
+//       command, its env sets and BD_ACTOR are injected by CreateSession;
 //       a session whose agent has died gets the persona command re-typed
 //       into its surviving shell instead of a 45s detection timeout
 //     → await the agent: detected, then settled idle — detection alone
 //       races the CLI's startup and the prompt gets eaten
 //     → atomic claim as the persona (bd update --claim, loses races safely)
 //     → prompt "work <id>" --wait in a goroutine and move on to the next
-//       bead: a pass fires every routable bead first, then gathers the
-//       settles in launch order — one long bead no longer stalls the pass
-//       (rangerhq-tqr). A prompt that fails (stalled, agent_not_ready,
-//       agent_blocked) unclaims the bead; a --wait timeout never does — it
-//       asks herdr what the agent is doing, keeps the claim and waits
-//       again while it is still working (rangerhq-1z0), and keeps it too
-//       when herdr cannot say: a wait running out is not evidence the
-//       prompt failed to land, and one blink of detection must not free a
-//       bead somebody is working (rangerhq-khc)
+//       bead: a pass fires every routable bead it has a free seat for,
+//       then gathers the settles — one long bead no longer stalls the pass
+//       (rangerhq-tqr). The Run is long-lived and the PASS is bounded (ADR
+//       0011 §5, folded from 0028 §1): the gather runs for the loop's base
+//       interval, judges the legs that settled and carries the rest into
+//       the next pass, and each judged settle refills that seat through the
+//       fire path under the launcher lock, so the pass returns in time for
+//       the loop's other periodic duties. A prompt that fails (stalled,
+//       agent_not_ready, agent_blocked) unclaims the bead; a --wait timeout
+//       never does — it asks herdr what the agent is doing, keeps the claim
+//       and waits again while it is still working (rangerhq-1z0), and keeps
+//       it too when herdr cannot say: a wait running out is not evidence
+//       the prompt failed to land, and one blink of detection must not free
+//       a bead somebody is working (rangerhq-khc)
 //     → closed by the persona → ✓ · blocked → flagged for a human
 //       (herdr's sidebar already shows it) · settled-but-open → review
 //     → end of pass: the auto-reap sweep (autoreap.go, rangerhq-us8) kills
@@ -39,9 +47,11 @@ package posse
 //       (ranger-base-f6lk): a crew mark on a session DISPATCH made, and a
 //       per-bead-named session carrying no bead pointer at all
 //
-// One bead per session per pass; personas busy (working/blocked) are
-// skipped. Sessions are launched serially (create → await → claim →
-// prompt) — only the wait for the work runs in parallel.
+// One bead per seat — the (persona, repo) slot — at a time; personas busy
+// (working/blocked) elsewhere in the repo are skipped, and a seat this Run
+// fired into stays held until its bead settles. Launches are still serial
+// (create → await → claim → prompt, one at a time) — only the waits
+// run in parallel, one gather goroutine per pending bead.
 //
 // Serially within a pass, and serially across processes: the fire loop and
 // all of LaunchBead run under the RHQ_HOME's launcher flock (ADR 0011 §1,

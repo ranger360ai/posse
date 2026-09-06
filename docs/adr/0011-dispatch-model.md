@@ -1,7 +1,7 @@
 # ADR 0011 — The dispatch model: bd is the queue; the pass gets a lock, a safe prune, and a run record
 
 *Status: accepted 2026-08-20 · amended 2026-08-23 (§1 third holder;
-§2 identity arm — restored 2026-08-26, see §2) · amended 2026-09-05 (0020/0028 folded; current selection and bounded lifecycle) · owner: architect*
+§2 identity arm — restored 2026-08-26, see §2) · amended 2026-09-05 (0020/0028 folded; current selection and bounded lifecycle) · corrected 2026-09-06 (§4 `route_order` is a PID key; §5 the epoch's two restart bounds and 0028 §5's observable as a median claim; App. A's closed residual — ranger-base-yv9uo) · owner: architect*
 
 > Restated from the private archive of the instance this harness was
 > developed in. The incidents this ADR reasons from happened in that
@@ -143,9 +143,10 @@ availability and log health are distinct observations (ADR 0029).
 **4. Availability-first lanes and serial seats** (folded from 0020).
 A lane is the set of personas whose labels intersect the bead's; no lane
 registry exists. A recognized explicit assignee is a lane of one and never
-falls through. Label matches sort by `route_order:` ascending, then persona
-name; the configured default persona is the last routing fallback. The
-coordinator is excluded on every route (0033). Under the launcher lock,
+falls through. Label matches sort by `route_order:` ascending — a PID
+frontmatter key, lower first, default 50 — then persona name; the
+configured default persona is the last routing fallback. The coordinator
+is excluded on every route (0033). Under the launcher lock,
 every fresh launcher, including cockpit `d`, takes the first eligible seat:
 not occupied by this Run, not working/blocked elsewhere in the repo, and
 not the bead's crew holder. All busy means wait with the lane and reasons
@@ -187,8 +188,17 @@ CLI) expire with the fire pass and are read fresh on the next offer.
 Claims are never released because a wait timed out.
 
 `dispatch_epoch:` (default 1h) denominates `budget_pass:` and
-`-n`/`autostart_max_beads`; the persisted epoch record preserves spend and
-attempts across a restart. An attempt reached a runtime, even if it failed.
+`-n`/`autostart_max_beads`. The epoch is wall-clock aligned, so a restart
+mid-epoch recomputes the same window rather than opening a fresh one. Its two
+bounds are restart-proof to different degrees, and the record says which:
+spend survives a restart because it is not stored at all — it is re-derived
+from the transcripts against the recomputed epoch start (one fact, one store)
+— while the launch-attempt count has no such external store, lives on the
+Dispatcher, and a supervised restart restores the full `-n` ration. The brake
+that bounds money is per epoch; the brake that bounds blast radius is per
+process. Making attempts durable would add the one-more-small-store this
+record warns about, for a bound spend authority already covers. An
+attempt reached a runtime, even if it failed.
 A constitution verification refusal before session creation, claim and
 prompt consumes no attempt and stops the fire pass. Plan, load, tier,
 uncounted-work and spending brakes retain their existing per-bead/launch
@@ -203,7 +213,15 @@ optional hint latency stayed acceptable is now MEASURED: 0016's done-when
 row was taken on ranger-base-4dxpo over a 15h31m loop block at a fixed 3m
 cadence — 0 hint-driven wakes in 142 passes, and p95 2m6s (max 2m48s, n=41)
 from a seat becoming ready to its next dispatch wherever ready work
-existed, all inside one interval. The rejected alternatives remain an agent-invoked
+existed, all inside one interval. 0028 §5's first observable — idle-to-next
+per seat, target "~seconds" — is met at the MEDIAN and not at the tail: the
+2026-09 adherence audit (docs/notes.d/adr-adherence-2026-09.md) read the live
+watch log as treatment-arm medians of seconds to a few minutes against maxima
+of tens of minutes to hours, with about half the windows per Run closed by a
+refill. Read that observable as a median claim, not a ceiling. Its report is
+emitted once per pass, after the gather (seatidle.go), so what bounds the
+reporting latency is the loop's interval, not the Run's lifetime. The
+rejected alternatives remain an agent-invoked
 next-work ritual (duplicate delivery and a lost central throttle), one
 poller per persona (more concurrent owners), and a shorter gather ceiling
 with the same barrier. The standard disciplines are single writer,
@@ -406,10 +424,14 @@ already holding it spares rather than deadlocks). `CreateSession` takes
 the same lock around `mustNotOrphan` and its `writeMeta`, which finally
 puts `posse new` under §1 — mustNotOrphan's own doc named the unlocked
 create as the hole it could not close. Relaunch's two meta-destroying
-steps (`clearDeadMeta`, `keepRecipe`) are the same shape and are still
-outside the lock: bead filed. On ordering, the
-reviewed alternative — write the meta before the workspace exists —
-inverts badly: a meta naming no workspace is unprunable by construction
+steps (`clearDeadMeta`, `keepRecipe`) were the same shape and were the
+residual this entry filed a bead for; both now take the lock too
+(`underLaunchLock` in `relaunch.go`, each re-asking its own proof inside —
+clearDeadMeta reclaim's pattern, keepRecipe `mustNotOrphan`), so §2's
+by-construction fix covers relaunch's paths as well as the prune's unlink and
+the create (rangerhq-9jk1/w4h5, recorded 2026-09-06 on
+ranger-base-qoh87). On ordering, the reviewed alternative — write the
+meta before the workspace exists — inverts badly: a meta naming no workspace is unprunable by construction
 here; the current order (workspace → meta → command) plus grace is
 right. Second asterisk, closed — **measured false**: herdr's allocator
 is `max(live id)+1`, recomputed from the live set at every server
