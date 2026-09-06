@@ -1452,3 +1452,114 @@ func TestQABdArgvGateCloseArmDiscriminatesPerArm(t *testing.T) {
 		}
 	}
 }
+
+// TWO PARKED PINS, found verifying the close that added the close arm above
+// (ranger-base-fdco0 over ranger-base-3xgc7, both findings filed as
+// ranger-base-0rfce). Everything that close claimed reproduced at tree ROOTS;
+// these are the two shapes it did not measure. Both are written to fail on
+// their assertion and not on their control, so unparking one says what it is
+// for; delete the Skip to see it.
+
+// ADR 0041 §3 says the close arm never fires in the shared checkout, and
+// Verification 4's amended row spells the case: a dirty MAIN checkout whose
+// branch is under posse/ must be silent. It is — from the checkout's ROOT.
+//
+// session_worktree compares git's two answers as STRINGS, and git does not
+// print them in one format. From a subdirectory of a main checkout
+// `--git-dir` is ABSOLUTE while `--git-common-dir` is RELATIVE (MEASURED
+// 2026-09-05, git 2.50.1: `/path/repo/.git` and `../.git`), so the two differ
+// and the linked arm reads every subdirectory of every main checkout as a
+// linked worktree. With the posse/ arm satisfied too, the gate then refuses a
+// close typed in a main checkout and tells its author that posse will
+// fast-forward a tree the launcher will never touch.
+//
+// Not live: the shared checkout is on `main`, so the branch arm carries it
+// today. The row escaped because newCloseGateTrees probes every tree at its
+// root, which is the one cwd shape where the two formats agree — so the
+// onPosse tree, built precisely to give the linked arm a mutant of its own,
+// measures that arm only where it cannot be wrong.
+//
+// Delete the Skip when session_worktree stops comparing two formats — either
+// `rev-parse --path-format=absolute --git-dir --git-common-dir` (one format
+// from any cwd, git 2.31+) or os.path.realpath on both answers.
+func TestQABdArgvGateCloseArmIsSilentBelowAMainCheckout(t *testing.T) {
+	t.Skip("ranger-base-0rfce: --git-common-dir prints `../.git` from a subdirectory of a main checkout while --git-dir prints an absolute path, so the linked arm's string compare reads any subdirectory of a main checkout as a session worktree")
+
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("no python3")
+	}
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git")
+	}
+	fx := newCloseGateTrees(t)
+	sub := func(tree string) string {
+		t.Helper()
+		p := filepath.Join(tree, "sub")
+		// An EMPTY directory is not a porcelain record, so making it does not
+		// move either tree's dirty set: the controls below still read the
+		// same trees the rows above do.
+		if err := os.MkdirAll(p, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+
+	// Control one: a SUBDIRECTORY is not what turns the arm off. The dirty
+	// session tree still refuses from below its root, naming the same path.
+	if got := denied(t, runGateAt(t, nil, "bd close x", sub(fx.dirty))); !strings.Contains(got, fx.dirtFile) {
+		t.Fatalf("control: the dirty session tree must still refuse from its own subdirectory naming %q, got: %s", fx.dirtFile, got)
+	}
+	// Control two: the row as the ADR spells it, at the root, which passes.
+	if got := denied(t, runGateAt(t, nil, "bd close x", fx.onPosse)); got != "" {
+		t.Fatalf("control: a dirty MAIN checkout on a posse/ branch must be silent at its root, got: %s", got)
+	}
+	// The assertion: the same checkout, one directory down.
+	if got := denied(t, runGateAt(t, nil, "bd close x", sub(fx.onPosse))); got != "" {
+		t.Errorf("a dirty MAIN checkout on a posse/ branch refuses the close from a subdirectory — "+
+			"the linked arm read `--git-dir` against `--git-common-dir` in two different formats, so the "+
+			"shared checkout is inside the fence ADR 0041 §3 says it is outside: %s", got)
+	}
+}
+
+// A bd call inside a shell compound command is invisible to the WHOLE gate —
+// the close arm and the verb fence alike. segments() splits the line on its
+// semicolons, so the middle segment opens with the reserved word `then` (or
+// `do`), command_word vouches for that word as the command, it is not bd, and
+// the segment is dropped without a question asked of it.
+//
+// This one PREDATES the close arm and only gets inherited by it: the denied
+// verb escapes the same way, which is the second row below and the reason
+// this pin is not about ADR 0041 at all. Grouping is fine — `{ bd close x; }`
+// is refused — so what the parser loses is the reserved words, not the
+// structure. Delete the Skip when command_word stops resolving `then`/`do`/
+// `else` as a command word.
+func TestQABdArgvGateReadsBdInsideACompoundCommand(t *testing.T) {
+	t.Skip("ranger-base-0rfce: `if true; then bd …; fi` splits into a segment whose command word is the reserved word `then`, so every bd call inside a compound command escapes both the verb fence and the close arm")
+
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("no python3")
+	}
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git")
+	}
+	fx := newCloseGateTrees(t)
+
+	// The controls first, and they are what makes a silence below mean
+	// something: both lines are refused when they are typed bare, so a gate
+	// that had simply stopped refusing anything could not pass this test.
+	if got := denied(t, runGateAt(t, nil, "bd close x", fx.dirty)); !strings.Contains(got, fx.dirtFile) {
+		t.Fatalf("control: the bare close from the dirty session tree must be refused naming %q, got: %s", fx.dirtFile, got)
+	}
+	if got := denied(t, runGate(t, nil, "bd daemon stop")); got == "" {
+		t.Fatal("control: the bare denied verb must be refused by the verb fence")
+	}
+
+	if got := denied(t, runGateAt(t, nil, "if true; then bd close x; fi", fx.dirty)); got == "" {
+		t.Error("a close wrapped in `if …; then …; fi` from the dirty session tree is waved through — " +
+			"the segment's command word resolved to the reserved word `then`, so the close arm was never asked")
+	}
+	if got := denied(t, runGate(t, nil, "if true; then bd daemon stop; fi")); got == "" {
+		t.Error("the denied verb wrapped in `if …; then …; fi` is waved through — the same blind spot, " +
+			"one layer up, which is what says this is the parser and not ADR 0041 §3's arm")
+	}
+}
