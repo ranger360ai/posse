@@ -468,6 +468,29 @@ func TestADRCitationDeclarationsExemptOnlyWhatTheyDeclare(t *testing.T) {
 		t.Fatalf("a declaration in a record exempted a DIFFERENT base name in it; the backreference radius is the record, not the name")
 	}
 
+	// ESCAPE 3: the radius is one RECORD, not the corpus. Every arm above
+	// keeps both cites in the SAME record, so a guard widened from
+	// declared[c.adr][name] to "any record declared this name" — the natural
+	// simplification, and the shape a reader who forgot the per-record half
+	// would write — leaves the whole root package green (ranger-base-9ycqa
+	// finding 2). ADR 0051 says "Declare once per base name per record", and
+	// the cost of losing it is that one `git show` of overflow.go in 0010
+	// exempts a bare, unresolvable overflow.go in all fifty other records.
+	elsewhere := adrCite{adr: "0010-plan-guard-overflow.md", line: 150, text: "internal/posse/herdrevents.go", decl: "historical"}
+	acrossRecords := adrCite{adr: adr, line: 55, text: "herdrevents.go"}
+	if got := adrUnresolved(idx, []adrCite{elsewhere, acrossRecords}); len(got) != 1 {
+		t.Fatalf("a declaration in %s exempted a bare mention in %s; the backreference radius is the corpus, not the record, got %v",
+			elsewhere.adr, acrossRecords.adr, got)
+	}
+	// And its control, one field apart: the SAME pair inside one record is
+	// the backreference the rule allows, so the arm above failed on the
+	// record boundary and not on the name.
+	sameRecord := elsewhere
+	sameRecord.adr = adr
+	if got := adrUnresolved(idx, []adrCite{sameRecord, acrossRecords}); len(got) != 0 {
+		t.Fatalf("the same declaration and bare mention inside one record were refused: %v", got)
+	}
+
 	// ESCAPE 2: a prefixed mention never backreferences. It is a fresh
 	// claim about a path and must resolve or declare itself.
 	prefixed := adrCite{adr: adr, line: 60, text: "internal/rhq/herdrevents.go"}
@@ -658,8 +681,71 @@ func TestADR0051CarriesTheSourceFileCitationConvention(t *testing.T) {
 	// exempts nothing — so a repo added here without the record saying so
 	// is a rule with no home.
 	for _, repo := range adrForeignRepos {
-		if !strings.Contains(body, "`"+repo+" ") && !strings.Contains(body, "`"+repo+"`") {
-			t.Errorf("adrForeignRepos carries %q and ADR 0051 does not name it", repo)
+		if !adrForeignRepoDeclared(body, repo) {
+			t.Errorf("adrForeignRepos carries %q and ADR 0051's \"Another repo's\" sentence does not name it", repo)
+		}
+	}
+}
+
+// adrForeignRepoDeclared: does ADR 0051 name this repo WHERE it declares what
+// a foreign repo is? The check this replaces asked whether the word appeared
+// in a code span anywhere in the record, which is satisfied by prose about
+// something else entirely (ranger-base-9ycqa finding 3): 0051:24 carries the
+// span `posse gates adr-census` about the census command, so adding "posse"
+// to adrForeignRepos — the likeliest third entry anyone would ever add, and
+// the one that would silently exempt every path in this repo — passed green.
+//
+// The record's own structure is the radius. "Another repo's" opens the
+// paragraph that defines the convention, and that paragraph is where a third
+// repo has to be argued for, which is the close's stated safety property: a
+// deliberate edit in BOTH places.
+func adrForeignRepoDeclared(body, repo string) bool {
+	const opens = "**Another repo's**"
+	i := strings.Index(body, opens)
+	if i < 0 {
+		return false // the sentence itself is gone; every repo fails, loudly
+	}
+	para := body[i:]
+	if j := strings.Index(para, "\n\n"); j >= 0 {
+		para = para[:j]
+	}
+	return strings.Contains(para, "`"+repo+" ") || strings.Contains(para, "`"+repo+"`")
+}
+
+// The narrowing, shown able to fail — and shown to still pass what it must.
+// Without the second arm a predicate that refused everything would satisfy
+// the first, and the record would be unmaintainable in the other direction.
+func TestADR0051ForeignRepoCheckReadsTheForeignPathSentence(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join("docs", "adr", "0051-landed-is-a-bead-id.md"))
+	if err != nil {
+		t.Fatalf("read ADR 0051: %v", err)
+	}
+	body := string(b)
+
+	// The escape, by name. `posse` IS in the record, in a code span, and it
+	// says nothing about foreign paths.
+	if !strings.Contains(body, "`posse gates adr-census`") {
+		t.Fatalf("0051 no longer carries the span this arm is built on; the escape it measures may have moved")
+	}
+	if adrForeignRepoDeclared(body, "posse") {
+		t.Error("`posse` counted as a declared foreign repo; the check is still reading the whole record, and this tree's own paths would be exempt")
+	}
+	if adrForeignRepoDeclared(body, "zzrepo") {
+		t.Error("a name the record does not carry at all read as declared")
+	}
+	// Both live entries pass, and they pass in the two spellings the
+	// sentence actually uses: `bd cmd/bd/nodb.go` and `ranger-base`.
+	for _, repo := range adrForeignRepos {
+		if !adrForeignRepoDeclared(body, repo) {
+			t.Errorf("%q is declared in the foreign-path sentence and read as undeclared", repo)
+		}
+	}
+	// The sentence going away is not a pass. Nothing else in the record
+	// declares the convention, so a body without it must fail every entry.
+	gutted := strings.Replace(body, "**Another repo's**", "**Another repository is**", 1)
+	for _, repo := range adrForeignRepos {
+		if adrForeignRepoDeclared(gutted, repo) {
+			t.Errorf("%q still read as declared with the foreign-path sentence gone", repo)
 		}
 	}
 }
