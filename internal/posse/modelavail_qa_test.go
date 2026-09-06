@@ -523,3 +523,60 @@ func TestQAALeaseBoundaryIsExclusiveSoAReadingAtItsLeaseNoLongerRules(t *testing
 		})
 	}
 }
+
+// ─── the pass output (done-when 2's "display") ───────────────────────────────
+
+// The one surface effectiveTier feeds that the board above does not reach:
+// what a dispatch PASS prints, and what tier the work prompt is built at.
+// The board calls effectiveTier directly; this runs the pass.
+//
+// It matters because the `!` line and the tierWhy token are the operator's
+// only notice that a bead is being worked at a tier it did not resolve. Both
+// changed with the mark's removal (ranger-base-hv2zr): the line used to be
+// the preflight's fallback sentence verbatim and the token used to be
+// "fallback", neither of which describes anything now.
+func TestQAAOffPairSessionIsNamedInThePassOutputAndPromptedAtWhatItRuns(t *testing.T) {
+	t.Parallel()
+	b, fake := newTestBackend(t)
+	qaPID(t, b, "ranger", TierStandard, "labels: [go]\n")
+	repo := qaRepo(t, b.App,
+		`[{"id":"a-1","title":"t","labels":["go"]}]`,
+		`[{"id":"a-1","status":"open"}]`)
+	agentPerLaunch(t, fake)
+
+	// The session this bead's pass will reach for, already open at a tier
+	// the PID does not name — the operator's own explicit choice, which is
+	// what ADR 0003 §3 leaves as the only way to be off-pair.
+	name := SessionForBead("ranger", repo, "a-1")
+	if err := b.CreateSession(NewSessionOpts{Name: name, Agent: "ranger", Tier: TierFast, Dir: repo}); err != nil {
+		t.Fatalf("pre-create: %v", err)
+	}
+	if m, ok := b.readMeta(name); !ok || m.Tier != TierFast {
+		t.Fatalf("board not set up: the session must be open at fast: %+v", m)
+	}
+
+	d := newTestDispatcher(t, b)
+	if n, _ := d.Run("", "", 0); n != 1 {
+		t.Fatalf("dispatch failed:\n%s", dispatcherOut(d))
+	}
+	out := dispatcherOut(d)
+	if !strings.Contains(out, "opened on claude/fast, not the claude/standard this bead resolves") {
+		t.Errorf("the pass does not name both pairs:\n%s", out)
+	}
+	// The token beside the existing "via PID" / "via tier_by_label" ones. A
+	// pass that printed "standard via PID" here would be telling the
+	// operator the bead is being thought about at a tier nothing is running.
+	if !strings.Contains(out, "fast via the session") {
+		t.Errorf("the pass reports the resolved tier, not the running one:\n%s", out)
+	}
+	// And the work prompt itself, which is the reason any of this is
+	// printed: promptContext names the pair the persona is thinking at, and
+	// the whole `!` line above exists so that sentence is not a lie.
+	sent := calls(t, fake)
+	if !strings.Contains(sent, "runtime/tier: claude/"+TierFast) {
+		t.Errorf("the work prompt does not name the pair the session runs:\n%s", sent)
+	}
+	if strings.Contains(sent, "runtime/tier: claude/"+TierStandard) {
+		t.Errorf("the work prompt names the tier the bead resolved, not the one running:\n%s", sent)
+	}
+}
