@@ -49,10 +49,18 @@ package posse
 // `test`'s; moving `TestTreeIsGofmtClean` into arm 2 reds arm 4 alone.
 // Giving `test-arm1` a `-tags` of its own reds arm 3 AND arm 2 — arm 2
 // because the recipe then no longer matches `test`'s, which is a second true
-// thing about the same edit rather than a leak between the two. Arm 6's own
-// mutants are in ranger-base-pv5vt: putting either half of that bead's fix
-// back reds arm 6 alone, and adding `//go:build ignore` to a shared file
-// reds its file-set half with the compile half still green.
+// thing about the same edit rather than a leak between the two.
+//
+// Arm 6's four, measured on ranger-base-pv5vt's tree. Putting back either
+// half of that bead's fix — the tag on `retirekept_qa_test.go`, or
+// `containsStr`'s move out of the arm-3 `pulse_test.go` — reds its compile
+// half for arms 1 and 2 and reds no other arm in this file, which is the
+// whole reason it exists. Renaming a shared file to `*_linux_test.go` reds
+// the file-set half alone, in all three arms, with the compile half and all
+// five arms above still green — that is the constraint armBuildLine cannot
+// see. Giving a shared file a build line satisfied by two arms
+// (`!posse_arm3`) reds the OTHER direction of that set, and arm 1 with it:
+// two true statements about one edit, not a leak.
 
 import (
 	"os"
