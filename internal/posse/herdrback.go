@@ -89,9 +89,9 @@ type NewSessionOpts struct {
 	// renders, and everything else — PID, gates, skills, cage, env sets,
 	// reasoning effort — is the ordinary persona launch. Accepted only with
 	// Agent, an explicitly typed Runtime and an explicitly typed Tier
-	// (CheckExactModel), and it makes the launch skip tier availability
-	// substitution, because asking the provider whether this id is
-	// available is the whole point of the session (D3).
+	// (CheckExactModel), and it makes the launch print the exact-model line
+	// where an ordinary launch prints the tier availability verdict, because
+	// asking the PROVIDER about THIS id is the point of the session (D3).
 	//
 	// "" for every other launch, and dispatch never sets it: a pass-wide
 	// model experiment is a different risk boundary (D5).
@@ -2027,9 +2027,9 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 		// ADR 0053 D3 is the one exception, and it is above the call rather
 		// than inside it: an exact-model launch is not running the tier's
 		// model, so a verdict about the tier's model would describe a launch
-		// nobody made. The line printed instead says what is being asked and
-		// that nothing will substitute — which the rest of the shop now says
-		// too, but this one says it about the exact id.
+		// nobody made. The line printed instead says what is being asked
+		// and of whom: the provider, about the exact id, rather than the
+		// catalog about the tier's.
 		if o.Model != "" {
 			b.warn("posse: %s\n", ExactModelLine(o.Name, runtime, tier, o.Model))
 		} else if line := a.TierPreflightFrom(envs, o.Agent, runtime, tier, b.warnWriter()).Line; line != "" {

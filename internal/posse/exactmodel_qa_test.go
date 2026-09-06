@@ -6,7 +6,7 @@ package posse
 // record, the listing, the relaunch, the recovery command, and an ordinary
 // launch left byte-for-byte alone.
 //
-// The load-bearing arm is TestExactModelSkipsTierSubstitution: everything
+// The load-bearing arm is TestExactModelSkipsTierVerdict: everything
 // else here would still pass if posse quietly launched the tier's own model
 // under a `model:` record, which is precisely the failure D3 names. It is
 // written as two arms over ONE fixture — the same missing model, one launch
@@ -184,7 +184,7 @@ func TestExactModelRendersTheCodexLine(t *testing.T) {
 	}
 }
 
-// ─── D3: no substitution ─────────────────────────────────────────────────────
+// ─── D3: no tier verdict ─────────────────────────────────────────────────────
 
 // Two arms over one fixture. The control arm proves the fixture really does
 // reach the availability verdict; the canary arm proves --model is what
@@ -196,7 +196,7 @@ func TestExactModelRendersTheCodexLine(t *testing.T) {
 // substitution (ranger-base-hv2zr), so what the fixture now produces is the
 // loud line and nothing else — which is still the thing D3 asks the canary
 // to skip, and still a fixture that has to be shown to bite.
-func TestExactModelSkipsTierSubstitution(t *testing.T) {
+func TestExactModelSkipsTierVerdict(t *testing.T) {
 	t.Parallel()
 	b, fake := newTestBackend(t)
 	var warn strings.Builder
@@ -236,9 +236,9 @@ func TestExactModelSkipsTierSubstitution(t *testing.T) {
 		t.Errorf("the canary line does not name the exact model:\n%s", log)
 	}
 	// The line the operator reads instead of a preflight verdict: it says
-	// what is being asked and that nothing will substitute.
-	if !strings.Contains(warn.String(), "EXACT model claude-6-astra") || !strings.Contains(warn.String(), "substitution is skipped") {
-		t.Errorf("the canary launch did not say it was skipping substitution: %q", warn.String())
+	// what is being asked, and of whom.
+	if !strings.Contains(warn.String(), "EXACT model claude-6-astra") || !strings.Contains(warn.String(), "verdict is skipped") {
+		t.Errorf("the canary launch did not say it was skipping the tier verdict: %q", warn.String())
 	}
 	// And it does NOT print a verdict about a model nobody launched — the
 	// control above proved that same fixture reaches one.

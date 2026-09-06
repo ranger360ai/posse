@@ -90,13 +90,13 @@ func ModelTag(model string) string {
 
 // ExactModelLine is what a canary launch says on stderr. It is printed
 // instead of the availability preflight's line (ADR 0053 D3): the preflight
-// asks whether the account can run the TIER's model, and this launch is not
-// running the tier's model — printing a verdict about a model nobody
-// launched would be the substitution this decision exists to prevent, said
-// in words.
+// reads the CATALOG for the TIER's model, and this launch is not running the
+// tier's model — a verdict about a model nobody launched would describe a
+// launch nobody made. The canary asks the provider instead, and the
+// provider's answer is the whole result.
 func ExactModelLine(name, runtime, tier, model string) string {
 	return strings.Join([]string{
 		name + " launches on " + runtime + " @ " + tier + " with the EXACT model " + model,
-		"tier availability substitution is skipped (ADR 0053 D3) — a provider refusal is the canary's answer, not a reason to fall back",
+		"the tier availability verdict is skipped (ADR 0053 D3) — the provider is asked, not the catalog, and its refusal is the canary's answer",
 	}, " — ")
 }

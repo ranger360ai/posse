@@ -2125,8 +2125,9 @@ sessions (herdr workspaces):
       --runtime <claude|codex|grok|name>   launch profile for the persona (over its PID runtime:)
       --tier <strong|standard|fast>        model tier for the persona (over its PID tier:)
       --model <id>                         EXACT model for this session only (ADR 0053) — needs --agent,
-                                           --runtime and --tier; skips tier availability substitution, so a
-                                           provider refusal is the answer rather than a quiet fallback
+                                           --runtime and --tier; prints the exact-model line instead of the
+                                           tier availability verdict, so the provider is asked and its refusal
+                                           is the answer
       --allow-degraded                     launch even if the wall cannot realize every PID gate here (marked)
       --cage <shims|seatbelt|container>    wall tier (over the PID cage:); seatbelt = sandbox-exec file gate
   posse attach <name>            focus its workspace in herdr (alias: focus)
