@@ -42,7 +42,7 @@ FMT_ROOTS := cmd internal *.go
 BUILD_STAMP := $(shell $(GOBIN) run ./cmd/buildstamp)
 LDFLAGS     := -X github.com/ranger360ai/posse/internal/posse.Build=$(BUILD_STAMP)
 
-.PHONY: build release install deploy test test-reuse fmt-check crew-check seed-check history-check doc-check identity-check ops-check tree-check verify-test-times verify-suite-lock verify-silent-reverts verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-self-close verify-govern-honesty verify-grok-pin verify-codex-pin verify-credential-paths verify-hook-freshness verify-bd-pin verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
+.PHONY: build release install deploy test test-reuse fmt-check crew-check seed-check history-check doc-check identity-check ops-check tree-check verify-test-times verify-suite-lock verify-silent-reverts verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-self-close verify-govern-honesty verify-grok-pin verify-codex-pin verify-credential-paths verify-hook-freshness verify-bd-pin verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk verify-box verify-box-self-test prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
 
 build:
 	$(GOBIN) build -ldflags '$(LDFLAGS)' -o bin/posse-go ./cmd/posse
@@ -530,6 +530,60 @@ verify-self-close:
 # alive, surface clear) is what makes the rest a probe.
 verify-govern-honesty:
 	scripts/verify-govern-honesty.sh $(POSSE)
+
+# ------------------------------------------------------- live-box detective
+#
+# SEVEN of the targets below assert THIS MACHINE rather than this checkout,
+# and until ranger-base-51z8j nothing ran any of them. Not all of them do:
+# verify-bd-argv-gate reads the gate SOURCE in this tree, and verify-pid-deny-
+# set defaults to HOME_DIR=examples, i.e. this repo's own seed PIDs. Both are
+# tree checks standing in live-box company, and scripts/verify-box.sh says so
+# in its EXCLUDED table rather than leaving a reader to guess. Measured
+# 2026-09-06, before verify-box and verify-box-self-test existed: of the 21
+# verify-* targets there were then, four are prerequisites of `test` above
+# and so run in CI, two more have their SCRIPT run by a target a person types
+# (verify-gate-freshness.sh --warn at the end of `install`,
+# verify-detection.sh --check-install at the end of `install-detection`), and
+# the remaining fifteen executed only when a person typed them. No aggregate
+# target listed one as a prerequisite, no workflow named one, no LaunchAgent
+# ran one. That is how the codex cask moved on 2026-09-05 and nobody learned
+# for a day (ranger-base-k4lza): the only thing that would have said so was a
+# command nobody ran, and the QA tests that DO execute these scripts run them
+# against scratch HOME and stub PATH fixtures, so they pin the logic and never
+# ask this box anything.
+#
+# `verify-box` is the aggregate that was missing. It runs the live-box checks,
+# does NOT stop at the first red, and separates the three verdicts each of
+# those scripts already defines: 0 ok, 1 finding, 2 nothing measured. The last
+# is why this is not a `for` loop over `&&` — a runner with no codex answers 2
+# correctly, and an aggregate that scores that green is the same silence one
+# level up. All-2 exits 2 and says NOTHING MEASURED.
+#
+# IT IS THE BODY OF A CONTROL AND NOT ITS SCHEDULE, and CI cannot be its home:
+# a GitHub runner has none of these things installed and would answer 2 to all
+# of them. An on-box schedule is a launchd install and where a finding
+# SURFACES is one decision for all of them, so both are the operator's and
+# both are asked on ranger-base-51z8j. Until one is answered this is still a
+# command a person types — what it fixes today is that it is ONE command.
+#
+# The roster and the reasoned exclusions both live in the script, and
+# boxcheck_qa_test.go fails on a verify-* target that is in neither: a roster
+# that can fall behind the Makefile in silence is the defect this target
+# exists for, one level up. 43s measured here, read-only, no go build, no
+# suite, and it takes no lock so it neither queues behind nor blocks one.
+verify-box:
+	scripts/verify-box.sh
+
+# Prove the aggregate can still fail (ranger-base-51z8j). Ten arms against
+# scratch roster entries with known exit statuses, each with a control that
+# must come out the other way: a red in the MIDDLE does not eat the checks
+# after it, all-2 is NOTHING MEASURED rather than a pass, a pass elsewhere
+# does not launder a finding, an unexpected status is ERROR rather than a
+# verdict, and a missing or non-executable script is ERROR rather than
+# silence. It re-execs verify-box.sh with a substituted roster, so the arms
+# drive the same runner the box run does. ~1s, no suite.
+verify-box-self-test:
+	@scripts/verify-box.sh --self-test
 
 # The grok version pin (rangerhq-y7jr). grok ships `[cli] auto_update = true`
 # and a leader process that downloads a new binary and relaunches itself
