@@ -373,7 +373,9 @@ func AuthFailureReason(err error) *AuthFailure {
 
 // PlanFailure is which of ADR 0019 D2's four credential-failure classes a
 // failed plan read is, in the few words a surface with no room for the whole
-// sentence can print (bead rangerhq-pwpx).
+// sentence can print (bead rangerhq-pwpx) — plus the two classes that are
+// here to say a failure is NOT one of those four (PlanFailGated,
+// PlanFailNotRun).
 //
 // The sentences stay on the errors, where they already are — this is only
 // their SHORT NAME, and it is derived from the error's TYPE. No surface may
@@ -402,6 +404,13 @@ const (
 	// listed here so a header can say it is NOT a credential outage — the
 	// reading that got `plan_guard_blind_max: 0` set for hours.
 	PlanFailGated PlanFailure = "our own gate, not the credential"
+	// PlanFailNotRun: the store's read never produced an exit status — the
+	// binary was missing, unexecutable, or the fork/exec failed. Listed for
+	// exactly the reason PlanFailGated is, and it is no more a fifth
+	// CREDENTIAL class than that one: the store was never asked, so the
+	// header must not say the credential is the thing that is wrong
+	// (ranger-base-h8u0l).
+	PlanFailNotRun PlanFailure = "the read did not run, not the credential"
 )
 
 // PlanFailureOf names err's class, or "" for a failure that is not one.
@@ -417,6 +426,13 @@ func PlanFailureOf(err error) PlanFailure {
 	var g *GateRefusal
 	if errors.As(err, &g) {
 		return PlanFailGated
+	}
+	// And the read that never ran, for the same reason and before the same
+	// neighbour: it is the other class whose whole point is not being
+	// mistaken for the outage below it.
+	var nr *CredReadNotRun
+	if errors.As(err, &nr) {
+		return PlanFailNotRun
 	}
 	var cu *CredUnreadable
 	if errors.As(err, &cu) {

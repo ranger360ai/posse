@@ -21,6 +21,7 @@ package posse
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -277,6 +278,14 @@ func TestQAPlanFailTokenReadsTheTypeNotTheProse(t *testing.T) {
 		// status to quote, and the class still has to be named the same way
 		// the 429 was (rangerhq-pwpx).
 		{"the cooldown a 429 bought", &planCooldownErr{Left: time.Minute}, "429"},
+		// The read that never ran gets its own token and not the outage
+		// class's: a streak reader counting failures hours later must be
+		// able to say the reads never happened (ranger-base-h8u0l).
+		{"a read that never ran", &CredReadNotRun{
+			Store: `keychain item "Claude Code-credentials"`,
+			Cmd:   "security",
+			Err:   errors.New("fork/exec /usr/bin/security: no such file or directory"),
+		}, "not-run"},
 		{"nil", nil, ""},
 		{"a dead socket", Die("usage endpoint unreachable"), ""},
 		{"prose that says 401", Die("usage endpoint returned 401 Unauthorized"), ""},

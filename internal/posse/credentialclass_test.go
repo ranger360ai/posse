@@ -230,6 +230,15 @@ func TestPlanFailureOfLeavesNonCredentialFailuresAlone(t *testing.T) {
 		}(), ""},
 		{"no credential source at all", &NoSource{Runtime: "claude", Purpose: CredMeter, GOOS: "linux"}, ""},
 		{"our own gate", &GateRefusal{Cmd: "security", Rule: "Bash(security:*)"}, PlanFailGated},
+		// And the read that never ran: also not a credential condition,
+		// because the store was never asked (ranger-base-h8u0l). The
+		// production shape of this row — and its distinctness from the
+		// unreadable class on both surfaces — is crednotrun_qa_test.go.
+		{"a read that never ran", &CredReadNotRun{
+			Store: `keychain item "Claude Code-credentials"`,
+			Cmd:   "security",
+			Err:   errors.New("fork/exec /usr/bin/security: no such file or directory"),
+		}, PlanFailNotRun},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := PlanFailureOf(tc.err); got != tc.class {

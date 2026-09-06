@@ -36,7 +36,8 @@ does not create a second acquisition path or imply it holds credentials.
 | Case | Provider behavior |
 |---|---|
 | Darwin meter | Absolute system credential-binary read of the derived item; fall back to `CredentialsFile()` **only on item-not-found exit 44** |
-| Darwin exit 36, empty successful output or another read failure | `CredUnreadable`; never silently read a stale fallback because this binary lost its ACL |
+| Darwin exit 36, empty successful output or another read failure **that returned an exit status** | `CredUnreadable`; never silently read a stale fallback because this binary lost its ACL |
+| A read that **never ran** — binary absent, not executable, or the fork/exec failed | `CredReadNotRun`: no exit status came back, so nothing was learned about the store; names the store and the binary, carries **no** ACL fix, and does not fall through (amended 2026-09-06, ranger-base-h8u0l: this row was inside "another read failure" above, so a `security` that could not be executed rendered the 2026-08-24 ACL sentence byte for byte — a cause that cannot be the cause, because an ACL is checked by a binary that RAN. Reproduced on darwin and caught in CI on the ubuntu leg of run 34050764993. The distinction is made on the error's TYPE, not its text: a failure to exec writes no stderr, so there is nothing to parse) |
 | Darwin item missing and no fallback | `CredUnreadable`, names the attempted stores and possible ACL/absence cause; not structural NoSource |
 | Non-Darwin meter | Read the runtime's credentials file through the same envelope parser and config-directory resolver |
 | No adapter or structurally absent platform source | `NoSource`: off with witness and remedy; no blind clock |

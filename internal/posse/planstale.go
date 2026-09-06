@@ -334,6 +334,12 @@ func PlanFailToken(err error) string {
 	switch PlanFailureOf(err) {
 	case PlanFailGated:
 		return "gated"
+	case PlanFailNotRun:
+		// Not "unreadable" and not a sub-case of it: a failure streak read
+		// back out of the log hours later must be able to say the reads
+		// never happened, which is a different morning's work from a store
+		// that answered and answered badly (ranger-base-h8u0l).
+		return "not-run"
 	case PlanFailUnreadable:
 		return "unreadable"
 	case PlanFailStale:

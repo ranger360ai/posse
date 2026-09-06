@@ -450,6 +450,17 @@ func (s runtimeStore) failRead(err error) error {
 	if errors.As(err, &g) {
 		return err
 	}
+	// A READ THAT NEVER RAN is the second thing that gets neither, and for
+	// the same reason: no exit status came back, so the store said nothing
+	// and this is not its outage. It gets the store's NAME (an operator
+	// still has to know which read it was) and NOT the store's Fix — the
+	// keychain's fix is "your ACL may have been dropped by `make install`",
+	// which on a binary that never executed is the 2026-08-24 misdiagnosis
+	// with the cause moved one layer down (ranger-base-h8u0l).
+	var nr *execNotRun
+	if errors.As(err, &nr) {
+		return &CredReadNotRun{Store: s.Name, Cmd: nr.cmd, Err: err}
+	}
 	return &CredUnreadable{Store: s.Name, Fix: s.Fix, Err: err}
 }
 
@@ -513,6 +524,48 @@ func (e *CredUnreadable) Error() string {
 }
 
 func (e *CredUnreadable) Unwrap() error { return e.Err }
+
+// CredReadNotRun is the fourth state the read has: it did not happen. The
+// store's binary was not there, was not executable, or the fork/exec failed
+// — no exit status came back, so nothing at all was learned about the store
+// and this is a fact about THIS BOX, not about the credential.
+//
+// It is a distinct type because the alternative was measured and is the
+// 2026-08-24 misdiagnosis returning by a second route (ranger-base-h8u0l,
+// reproduced 2026-09-06): a `security` that could not be executed was read
+// for an exit code it never produced, that read answered -1, -1 is not 44 so
+// nothing fell through, and the operator got the ACL sentence verbatim —
+// keychain item "…" unreadable, this binary's keychain ACL may have been
+// dropped by `make install`. That sentence is the one that got
+// plan_guard_blind_max: 0 set for hours, and on this path it names a cause
+// that cannot be the cause: an ACL is checked by a binary that RAN.
+//
+// It escaped to CI before it was named — ranger-base-wrdz4, run
+// 34050764993, the ubuntu leg — where the shim
+// TestQAPlanUsageLogNamesTheGateRefusal plants did not execute and the log
+// took the ACL sentence, class token and all. That pin caught it. Nothing
+// SAID it, which is what this type is for.
+//
+// Err is the exec failure verbatim. It names the binary's path and never
+// its argv (os/exec's own messages carry neither the command's output nor
+// its arguments), so this file's standing rule survives it.
+type CredReadNotRun struct {
+	// Store is the store as an operator would name it — the same string
+	// CredUnreadable carries, because "which read" is the same question.
+	Store string
+	// Cmd is the binary posse tried to run, by the base name a deny rule
+	// and a `which` are both spelled with.
+	Cmd string
+	// Err is why it did not run.
+	Err error
+}
+
+func (e *CredReadNotRun) Error() string {
+	return fmt.Sprintf("%s was not read: %s did not run (%v) — no exit status came back, so nothing was learned about the store; that is a fault on this box and not a credential condition — check the binary is present and executable, and under load it is a transient fork/exec failure the next read answers",
+		e.Store, e.Cmd, e.Err)
+}
+
+func (e *CredReadNotRun) Unwrap() error { return e.Err }
 
 // CredUnreadableReason is AuthFailureReason's sibling for this class: the
 // *CredUnreadable inside err, or nil.
@@ -729,16 +782,22 @@ func keychainItemNotFound(err error) bool {
 	return errors.As(err, &ke) && ke.code == errSecItemNotFound
 }
 
-// execExitCode is a failed command's exit status, or -1 for a failure that
-// is not one. A `security` that could not be executed at all did not answer
-// 44 and must not be read as though it had.
-func execExitCode(err error) int {
-	var ee *exec.ExitError
-	if errors.As(err, &ee) {
-		return ee.ExitCode()
-	}
-	return -1
+// execNotRun is a read that produced no exit status at all: the binary was
+// not there, was not executable, or the fork/exec failed on this box. It is
+// the internal marker; failRead is where it becomes the class an operator
+// reads, for the same reason keychainExit is (the store's NAME is derived
+// once, and this error has to carry it).
+//
+// It exists because `security` failing to RUN was, until 2026-09-06, told
+// as `CredUnreadable` — the 2026-08-24 ACL sentence byte for byte, on a
+// read that never asked the keychain anything (ranger-base-h8u0l).
+type execNotRun struct {
+	cmd string
+	err error
 }
+
+func (e *execNotRun) Error() string { return e.err.Error() }
+func (e *execNotRun) Unwrap() error { return e.err }
 
 // keychainStore is the darwin adapter: the runtime's own composite store,
 // mirrored (ADR 0019 D2 as amended 2026-09-01, ranger-base-v3qi4). Errors
@@ -773,7 +832,20 @@ func keychainStoreAt(bin string) runtimeStore {
 				if g := gateRefusal(filepath.Base(bin), err); g != nil {
 					return nil, g
 				}
-				return nil, &keychainExit{item: item, code: execExitCode(err)}
+				// Then the read that never happened. An *exec.ExitError is
+				// the ONLY error here that means the binary ran and the
+				// system answered; everything else — no such file, not
+				// executable, ETXTBSY or any other transient fork/exec
+				// failure under load — is this process failing to ask, and
+				// says nothing whatever about the keychain. Asking the TYPE
+				// is the whole of the distinction: a failure to exec writes
+				// no stderr, so there is no text to read it off (the note
+				// on ranger-base-h8u0l).
+				var ee *exec.ExitError
+				if !errors.As(err, &ee) {
+					return nil, &execNotRun{cmd: filepath.Base(bin), err: err}
+				}
+				return nil, &keychainExit{item: item, code: ee.ExitCode()}
 			}
 			return out, nil
 		},
