@@ -37,7 +37,7 @@ package posse
 // exactly the moment before the seat's next launch. So the settle timestamp
 // evaporates precisely when the next launch would want to subtract it. The
 // ledger is the seat-scoped, reap-surviving half, on the same append-only
-// shape as `overflow.log` and `uncounted.log` (overflow.go): O_APPEND from
+// shape as `uncounted.log` (ledger.go): O_APPEND from
 // several launchers, one short line per event, never rotated by posse.
 
 import (

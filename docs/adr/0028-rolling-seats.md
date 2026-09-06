@@ -132,8 +132,11 @@ was spent on thirty refusals that reached nothing — the fleet then sat out
 the hour with the operator's fix already in place.
 
 **§3 — Brakes stay exactly where they are.** Plan verdict per-bead, load
-guard per-launch, step-down/tier/uncounted per-bead, overflow's rolling-7d
-ledger, verify-after's watermark, and the reap predicate are all untouched.
+guard per-launch, step-down/tier/uncounted per-bead, the uncounted ledger's
+rolling 7d, verify-after's watermark, and the reap predicate are all
+untouched. (The overflow ledger this line also named was removed with its
+mechanism by ADR 0010 §1, ranger-base-6xx37; nothing about the cadences
+here moved with it.)
 The two remaining migrations: the busy map's denominator changes from
 per-pass to live seat occupancy — one bead per persona per repo *at a time*,
 released at that seat's settle — which is 0020 §4's actual intent with the

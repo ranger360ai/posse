@@ -2,7 +2,7 @@ package posse
 
 // The codex plan hint (ADR 0034 D1): the newest `rate_limits` reading codex
 // itself already wrote to disk, typed as a fact the guard may only DISPLAY
-// or use to REFUSE overflow — never a second gate.
+// — never a gate.
 //
 // Every codex `token_count` event in
 // `<codex home>/sessions/YYYY/MM/DD/rollout-*.jsonl` carries
@@ -22,9 +22,9 @@ package posse
 // codex on another device drains the pool without this file moving. A
 // local-only argument ("any turn here refreshes it") is true and
 // insufficient, so this type never starts a blind clock and never parks a
-// pass. Nil is "no reading" and callers that want to gate on it (the
-// overflow ladder, ADR 0034 D4) may only ever use it to REFUSE, never to
-// license.
+// pass. Nil is "no reading", and no caller gates on it at all: ADR 0034's
+// D4 — the one decision that would have — is withdrawn, and every
+// launch/brake decision belongs to ADR 0010.
 //
 // Windows are named by DURATION, never by slot (ADR 0034 D2): measured on
 // this box, the primary window was the rolling 5h session window
@@ -91,9 +91,9 @@ type PlanHint struct {
 	Windows []HintWindow
 	At      time.Time
 	Credits PlanHintCredits
-	// SpendControlReached mirrors the reading's own field: true licenses
-	// nothing, and ADR 0034 D4 makes it one of the two hardcoded floors
-	// that refuse overflow outright.
+	// SpendControlReached mirrors the reading's own field: display only.
+	// It licenses nothing and refuses nothing — ADR 0034 D4, the decision
+	// that would have made it a floor, is withdrawn.
 	SpendControlReached bool
 }
 

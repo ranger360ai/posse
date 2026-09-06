@@ -19,7 +19,6 @@ package posse
 //   skills: [dataviz]           # skills bound to this persona (ADR 0007)
 //   sockets: [herdr]            # container: host sockets the cage mounts (ADR 0002 §3)
 //   trust_project_config: true  # let the runtime read the session dir's own config
-//   overflow: false             # never move this lane to the plan guard's second pool (ADR 0010)
 //   ---
 //   You are the operations copilot of the crew.
 //
@@ -174,15 +173,6 @@ type AgentFile struct {
 	// channels live before any turn. A launch whose runtime-specific file or
 	// keyed JSON predicate hits degrades unless this is set (ADR 0002).
 	TrustProjectConfig bool
-	// NoOverflow is `overflow: false` on the PID: this lane is never moved
-	// to the plan guard's overflow runtime (ADR 0010 §2c), whatever the
-	// parity check says. The opt-out exists because parity cannot see
-	// everything a pool differs in — a lane that drives through repo shell
-	// scripts stalls on a target whose unattended mode refuses to run an
-	// unknown local script, and no gate matrix can express that. Absent =
-	// eligible: the default is the one that costs nothing to be wrong about
-	// (a bad move is one skipped bead, not a lost gate).
-	NoOverflow bool
 	// RouteOrder is `route_order:` — where this PID sits among the personas
 	// whose labels match a bead. Lower goes first; absent is
 	// RouteOrderDefault, so a lane can be promoted or demoted without
@@ -262,7 +252,6 @@ func (a *App) LoadAgent(name string) (*AgentFile, error) {
 		ag.RouteOrder = n
 	}
 	ag.TrustProjectConfig = yamlGetLines(front, "trust_project_config") == "true"
-	ag.NoOverflow = yamlGetLines(front, "overflow") == "false"
 	if n := yamlGetLines(front, "name"); n != "" {
 		ag.Name = n
 	}

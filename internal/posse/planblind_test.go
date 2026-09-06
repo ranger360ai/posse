@@ -148,11 +148,11 @@ func TestBlindExplicitOffMeterRuntimeRuns(t *testing.T) {
 	}
 }
 
-// Both blind arms of ADR 0013 §3 share one pass: blind parks the claude bead,
-// the grok bead launches on its own runtime, and configured overflow is not
-// consulted without a reading. The threshold arm remains pinned in the
-// overflow tests.
-func TestBlindGuardDecidesPerBeadAndNeverOverflows(t *testing.T) {
+// Both blind arms of ADR 0013 §3 share one pass: blind parks the claude
+// bead and the grok bead launches on its own runtime. The threshold arm is
+// the same shape and is pinned in planguardpark_test.go — since ADR 0010 §1
+// a trip and a blind read differ only in the line they print.
+func TestBlindGuardDecidesPerBead(t *testing.T) {
 	b, fake := newTestBackend(t)
 	ps := newPlanServer(t, 12, 40)
 	d, _ := planDispatcher(t, b, ps)
@@ -165,7 +165,7 @@ func TestBlindGuardDecidesPerBeadAndNeverOverflows(t *testing.T) {
 	repo := planRepo(t,
 		`[{"id":"a-1","title":"metered","labels":["metered"]},{"id":"b-1","title":"off meter","labels":["offmeter"]}]`,
 		`[{"id":"b-1","title":"off meter","status":"closed"}]`)
-	planConfig(t, b.App, repo, guardOn+"\nplan_guard_overflow: codex\nplan_guard_overflow_cap: 5")
+	planConfig(t, b.App, repo, guardOn)
 	agentPerLaunch(t, fake)
 
 	clock := blindT.Add(12 * time.Minute)
@@ -184,11 +184,10 @@ func TestBlindGuardDecidesPerBeadAndNeverOverflows(t *testing.T) {
 	if got := delivered(t, b.App, fake); !strings.Contains(got, "runtime/tier: grok/") {
 		t.Errorf("the grok bead must launch in the same pass:\n%s", got)
 	}
-	if strings.Contains(out, "← overflow") {
-		t.Errorf("blind never overflows:\n%s", out)
-	}
-	if _, err := os.Stat(d.App.OverflowLogPath()); !os.IsNotExist(err) {
-		t.Errorf("blind writes no overflow ledger (%v)", err)
+	// The parked bead is parked, not rerouted: nothing was created for it
+	// anywhere, on any pool.
+	if strings.Contains(out, "a-1") && strings.Contains(beadLine(t, out, "a-1"), "creating session") {
+		t.Errorf("a parked bead creates no session:\n%s", out)
 	}
 	if got := strings.Count(bdCalls(t, fake), "--claim"); got != 1 {
 		t.Errorf("only the off-meter bead may be claimed, got %d claims:\n%s", got, bdCalls(t, fake))

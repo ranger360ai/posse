@@ -242,7 +242,7 @@ func TestSelfSandboxSkipsTheSeatbeltWrapAtLaunch(t *testing.T) {
 	}
 
 	// The host's own sandbox-exec probe must not decide this: pin the cage
-	// available, as parity_test.go and overflow_test.go do.
+	// available, as parity_test.go and planguardpark_test.go do.
 	had := AvailableCages[CageSeatbelt]
 	AvailableCages[CageSeatbelt] = true
 	defer func() {

@@ -38,6 +38,30 @@ type Window struct {
 	Pct  float64 `json:"pct"`
 }
 
+// GuardedRuntime is the runtime whose plan windows the guard reads. It is
+// the default runtime by construction: the meter, the credential and the
+// endpoint in this file all belong to that one provider.
+const GuardedRuntime = DefaultRuntime
+
+// OnGuardedMeter reports whether a launch on this runtime spends the meter
+// the plan guard read (ADR 0013 §3). The other built-ins are their own
+// pools and do not, which is why a tripped or blind guard parks on-meter
+// work and leaves theirs alone. A template-only `runtimes/<name>.yaml` is
+// UNKNOWN, and unknown is gated: "this runtime is free" is the expensive
+// guess to get wrong, and the operator who knows better has `runtime:` on
+// the PID.
+func OnGuardedMeter(name string) bool {
+	if name == "" || name == GuardedRuntime {
+		return true
+	}
+	for i := range builtinRuntimes {
+		if builtinRuntimes[i].Name == name {
+			return false
+		}
+	}
+	return true
+}
+
 // PlanUsage is one reading of a plan's rate windows, in the order the
 // adapter reports them. That order is meaning, not presentation: the guard
 // trips on the FIRST window over its threshold, so an adapter lists the
@@ -444,9 +468,19 @@ func retryAfter(v string, now time.Time) time.Duration {
 // loud is the intended failure: the alternative is a setting silently read
 // as a threshold for a window nobody has.
 var planGuardReserved = map[string]bool{
-	"blind_max":    true,
-	"overflow":     true,
-	"overflow_cap": true,
+	"blind_max": true,
+}
+
+// planGuardRemoved are `plan_guard_` keys this harness USED to read and no
+// longer does. They are listed for the same reason planGuardReserved exists
+// — so a stale one is never read as a threshold for a window nobody has —
+// and they are said out loud rather than ignored, because the operator who
+// set one believes they have a brake they no longer have, which is the
+// failure this file is written against. The value is what the line tells
+// them instead.
+var planGuardRemoved = map[string]string{
+	"overflow":     "automatic overflow to a second pool was removed (ADR 0010 §1): a sighted threshold trip now parks on-meter beads, off-meter beads keep launching, and an operator who wants paid continuity chooses the runtime explicitly",
+	"overflow_cap": "the overflow bead cap went with the mechanism it braked (ADR 0010 §1); $StateDir/overflow.log is no longer read or written and is left in place as history",
 }
 
 // PlanGuardThresholds reads config `plan_guard_<window>:` (percent), keyed
@@ -458,11 +492,19 @@ var planGuardReserved = map[string]bool{
 // of them is real. Matching them against the windows an adapter actually
 // reports is dispatch.planGuard's job, and a threshold that matches nothing
 // gets said out loud there for the same reason a malformed one does here.
+//
+// A key this harness has REMOVED is named on errw too (planGuardRemoved),
+// on the same terms as a malformed one and for a sharper reason: it was a
+// brake once, and silence would leave the operator believing in it.
 func (a *App) PlanGuardThresholds(errw io.Writer) map[string]float64 {
 	var th map[string]float64
 	for _, key := range YamlKeysWithPrefix(a.ConfigPath, "plan_guard_") {
 		name := strings.TrimPrefix(key, "plan_guard_")
 		if name == "" || planGuardReserved[name] {
+			continue
+		}
+		if why, gone := planGuardRemoved[name]; gone {
+			fmt.Fprintf(errw, "plan guard: config %s: is no longer read — %s\n", key, why)
 			continue
 		}
 		v := a.planPercent(key, errw)

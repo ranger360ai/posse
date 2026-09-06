@@ -705,8 +705,7 @@ watching them is the operator's interactive headroom — a fleet that eats the
   name, the refusal is still told from an outage instead of repeating
   08-24.
 - **Above either threshold** the pass still runs. Each bead whose resolved
-  runtime is on the guarded meter faces the ADR 0010 ladder (overflow when
-  configured and eligible, otherwise park) with a line naming the window and
+  runtime is on the guarded meter parks, with a line naming the window and
   number — `plan 5h at 78% > 70% — skipped`. A bead on a different built-in
   runtime launches ungated. 5h is checked first (tighter window, the one the
   operator feels); strictly above, so exactly at the threshold still runs. A
@@ -880,76 +879,43 @@ watching them is the operator's interactive headroom — a fleet that eats the
   (it already carried `Quiet`), and `PlanStaleness` reads the cache it
   builds instead of asking again. Nothing about the rule above changed —
   only how many times it is asked.
-- **Overflow: a second pool instead of a skipped pass** (ADR 0010). The
-  guard's meter belongs to *one* provider, so the whole-pass skip had two
-  costs: a lane whose runtime is not on that meter was skipped because
-  somebody else's window was hot, and a pass that could have run at equal
-  posture on a second pool ran nothing. `plan_guard_overflow: <runtime>`
-  (unset = no pool move; on-meter beads park) makes a **tripped** guard decide
-  per bead, at launch:
+- **A tripped guard parks the work that would spend the meter it read, and
+  nothing else** (ADR 0010 §1, ADR 0013 §3). The guard's meter belongs to
+  *one* provider, so a whole-pass skip had two costs: a lane whose runtime is
+  not on that meter was skipped because somebody else's window was hot, and a
+  pass that could still have run some of its work ran nothing. So the pass
+  runs and the verdict is per bead, at launch:
   - **resolved runtime not on the guarded meter** — the built-in runtimes
-    that are their own pools — **launch as today, ungated**. A template-only
+    that are their own pools — **launch, ungated**. A template-only
     `runtimes/<name>.yaml` is *unknown*, and unknown is gated: "this runtime
     is free" is the expensive guess to get wrong.
-  - **eligible and the cap has room → launch on the overflow runtime.**
-    Eligible means all three of: `CheckParityIn(pid, overflow, cage, tier,
-    dir)` has **zero** `Degraded` entries — *clean* on the target, not "as
-    degraded as the guarded runtime", because this move is dispatch's own
-    choice and dispatch never holds `--allow-degraded` (the rule Dial E
-    already uses for `fast`); the resolved tier is **not `strong`** (the tier
-    table maps `strong` to "runtime default" on the overflow targets, which
-    is not the model the tier meant — judged work never moves); and the PID
-    has not said **`overflow: false`**, the opt-out for what a parity matrix
-    cannot see (a lane that drives through repo shell scripts stalls on a
-    target whose unattended mode refuses to run an unknown local script).
-  - **otherwise → the guard's line, per bead** rather than per pass, naming
-    which rung refused it.
-  Only sessions **this pass creates** move; a session that already exists
-  keeps the runtime it was created with, and so does a pass given an explicit
-  `--runtime` (ADR 0002's precedence — the operator decided). Dial E is
-  untouched: it still resolves the tier, and on a moved bead its step-down is
-  judged against the pool the bead is actually going to.
-- **The move needs an armed brake on the target pool, and there are two**
-  (ADR 0010 §3, amended 2026-08-29). `plan_guard_overflow_cap: N` — max
-  beads sent to the overflow runtime in any **rolling 7 days** — **or** the
-  target's own pool meter fully armed, which today means grok's
-  (`grok_guard_week:` + `grok_pool_reset:` + `grok_pool_usd_per_point:`, all
-  three; a half-armed meter is off and arms nothing). Either arms the move;
-  both set, both apply, and no warning is printed for it — an operator who
-  set both meant both. **Neither** is overflow **off**: the pass is skipped
-  as before and one stderr line names both ways to arm it, every pass. The
-  cap is beads and not dollars because a pool with no meter has no spend
-  posse can see, and rolling and not calendar because the pool's reset day is
-  the provider's secret and a rolling window upper-bounds every calendar week
-  without knowing it. A weekly pool with no intra-week reset is exactly the
-  shape a per-pass trigger over-drains — which is also why the meter alone
-  suffices where it exists: every overflow launch spends that pool from this
-  box, so the meter sees all of the drain overflow itself causes.
-  - **Ledger** `$StateDir/overflow.log`, append-only, one line per overflow
-    launch: `RFC3339 runtime bead persona`. Read **once per pass**, only on a
-    trip and only where the cap is one of the armed brakes — with the meter
-    alone holding the pool there is no number to compare a count against;
-    counted **per runtime**, so changing the overflow target does not charge
-    the new pool for the old one's week. Written **after** the
-    launch, not after the decision — a bead that never reached its agent
-    spent nothing, and it is written on every move whether a cap is set or
-    not (it feeds the metric, and a cap set later). Unreadable or
-    unappendable → the **cap** is off for that pass: where the target's own
-    meter is armed the move survives on it, and where it is not, overflow is
-    off (a skipped pass heals itself; an uncounted week does not).
-  - Cap reached → the bead's line names it: `plan 5h at 78% > 70%, overflow
-    grok: 20/20 in 7d — skipped`. The trip header names whichever brake armed
-    the move, so a meter-armed pass with no cap reports no bead count rather
-    than a cap of zero. `--dry-run` shows a move as
-    `[grok ← overflow]`, and so does the prompted line of a real launch.
-- **A blind guard parks only the meter it guards; it never overflows** (ADR
-  0010 §5, ADR 0013 §3). The blind state is not an over-threshold trip, so the
-  overflow ladder does not run, cap or no cap: every rung is a judgement made
-  *on a reading*, and blind there is none. Per bead: off the guarded meter →
-  launch; on-meter and blind → park without claiming; on-meter and over a
-  threshold → the normal overflow/skip ladder. The first good reading resumes
-  on-meter service including overflow. Blindness writes nothing to
-  `overflow.log`, including when off-meter work launches through it.
+  - **on the guarded meter → park**, on the guard's own line, per bead rather
+    than per pass. Nothing is claimed.
+  The runtime a launch actually gets is read from the session where one
+  already exists, and `--runtime` pins the pass (ADR 0002's precedence), so
+  the meter question is asked about the pool the launch would really spend.
+  Dial E is untouched: it still resolves the tier, judged against that same
+  pool.
+- **No provider is chosen automatically** (ADR 0010 §1, executed
+  ranger-base-6xx37). Until 2026-09-06 a tripped guard could MOVE an eligible
+  bead onto a second pool named by `plan_guard_overflow:`, braked by
+  `plan_guard_overflow_cap:` or the target's own meter and ledgered in
+  `$StateDir/overflow.log`. That mechanism is gone: the two config keys, the
+  PID `overflow: false` opt-out, the parity/tier eligibility ladder and the
+  rolling ledger are all removed, and old `overflow.log` files are left in
+  place unread. Where paid work should continue past a trip, an operator says
+  so explicitly — `runtime:` on the PID, or `--runtime` on the pass — and a
+  config still setting either removed key gets one stderr line per pass
+  saying it is no longer read, rather than having it taken for a threshold on
+  a window named "overflow". What did NOT go with it: the §5 guard table
+  below, the local pool meters, Dial E's caps, and `uncounted.log`, whose
+  ledger shape and helpers moved to `ledger.go` because ADR 0013 §5 still
+  reads them.
+- **A blind guard parks the meter it guards and nothing else** (ADR 0010 §5,
+  ADR 0013 §3), the same shape as a trip and differing only in the line it
+  prints. Per bead: off the guarded meter → launch; on-meter and blind →
+  park without claiming; on-meter and over a threshold → park on the trip.
+  The first good reading resumes on-meter service.
 - **Display** `posse cost` ends with the current reading and the cockpit
   header carries `5h 42% · 7d 61%` (refreshed every 2 min, off the event
   loop). `posse cost --plan` is that one line on its own, without the
@@ -1039,7 +1005,7 @@ then stops dispatch on API-equivalent spend.
   and calling that a fault would park a fresh instance on its first blind
   pass. Sighted passes name a read failure on stderr once per pass and run
   on the floor they could read; a **degraded** pass parks instead, because
-  there its cap was the only thing counting. Same rule the overflow ledger
+  there its cap was the only thing counting. Same rule `uncounted.log`
   already keeps.
 - **And the listing is a walk, not a glob** (ranger-base-e06g). The first
   cut of the above guarded `filepath.Glob` with one `os.Stat` on the root —
@@ -3320,15 +3286,18 @@ resets_at}`, and `credits {has_credits, unlimited, balance}` plus
 endpoint, on disk, no network and no keychain. rangerhq-0va item 4 asked for
 it in the cockpit header beside Claude's; **ADR 0034** decided the shape, and
 it is not a second guard: the plan-window seam stays singular and codex enters
-as a typed `PlanHint` that can refuse an overflow but never park a pass,
+as a typed `PlanHint` that is DISPLAY only — D4, the decision that would
+have let it refuse anything, is withdrawn, and every launch/brake decision
+belongs to ADR 0010 —
 because the reading is a snapshot outside its store of record whose staleness
 is unbounded in the dangerous direction — the pool is account-wide, the
 rollouts are box-local, so codex on another device drains it without this
 file moving. Windows are named by duration (`codex_5h`, `codex_7d`), never by
 slot: primary was the 5h window Jan–Jun 2026 and the weekly one in Aug, so a
 slot-named threshold changes meaning under you — and `plan_type` moves too
-(team → plus). Implementation is ranger-base-xb5f (the reader), -ormb
-(display, always with the reading's age) and -3o10 (the overflow advisory).
+(team → plus). Implementation is ranger-base-xb5f (the reader) and -ormb
+(display, always with the reading's age); -3o10, the overflow advisory, went
+with D4 and with the mechanism it advised.
 
 The metric `cost-per-closed-bead` has a scorecard answerer for
 h2c — `posse cost` by bead id against closes — so a PID that declares it

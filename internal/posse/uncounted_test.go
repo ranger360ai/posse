@@ -1,7 +1,7 @@
 package posse
 
 // Hermetic tests for the account stage's degrade and brake (ADR 0013 §5,
-// ranger-base-9mz). Same substrate as the overflow tests — fake herdr, fake
+// ranger-base-9mz). Same substrate as the plan-guard tests — fake herdr, fake
 // bd, the test binary re-execing as both — and no plan guard and no budget
 // caps, so the only thing deciding anything here is the account stage.
 //
@@ -255,9 +255,8 @@ func TestUncountedCapBitesInsideOnePass(t *testing.T) {
 }
 
 // A typo is not a cap. It is named once on stderr and the runtime stays
-// unlimited and loud — the rule budget_pass: and plan_guard_overflow_cap:
-// already keep, because a cap that silently stopped capping looks exactly
-// like one nobody set.
+// unlimited and loud — the rule budget_pass: already keeps, because a cap
+// that silently stopped capping looks exactly like one nobody set.
 func TestUncountedCapMalformedIsUnlimitedAndNamed(t *testing.T) {
 	t.Parallel()
 	for _, raw := range []string{"lots", "0", "-3"} {
@@ -282,8 +281,8 @@ func TestUncountedCapMalformedIsUnlimitedAndNamed(t *testing.T) {
 }
 
 // An armed cap over a ledger nobody can read is the unarmed case wearing the
-// armed case's clothes. The same rule the overflow ledger and Dial E keep:
-// an unreadable ledger is not a licence to spend.
+// armed case's clothes. The same rule Dial E keeps: an unreadable ledger is
+// not a licence to spend.
 func TestUncountedCapUnreadableLedgerSkips(t *testing.T) {
 	t.Parallel()
 	f := oneCodexBead(t, "uncounted_cap_codex: 5\n")
@@ -387,7 +386,7 @@ func TestUncountedUnsetCapLaunchesAndNamesTheShortfall(t *testing.T) {
 	}
 }
 
-// overflowUnlogged's twin. The probe cannot see a write that fails for a
+// ranger-base-ws09. The probe cannot see a write that fails for a
 // reason an open does not — a full disk is the obvious one — so when the
 // append itself fails the pass treats the ledger as unwritable from that
 // moment: the rest of the pass parks on this runtime rather than spending a
@@ -446,19 +445,18 @@ func TestUncountedDryRunReportsWithoutSpending(t *testing.T) {
 	}
 }
 
-// An ADR 0010 overflow move onto an account-degraded pool is on BOTH
-// ledgers: the overflow log answers "what did the plan guard move", this one
-// answers "what went somewhere posse cannot price". Neither number answers
-// the other's question, and the cap that applies is the pool the bead LANDS
-// on.
+// The account ledger keys on the runtime a launch actually GOES to, and it
+// is written for a launch the plan guard let through as readily as for one
+// on an untripped pass: a lane off the guarded meter launches through a
+// trip (ADR 0013 §3), and codex is uncounted, so the pass reports it and
+// ledgers it.
 //
-// The target is codex, not grok: since ranger-base-0lg6 an overflow move
-// onto grok lands on a COUNTED pool and this ledger correctly stays empty
-// (TestOverflowOntoACountedPoolIsNotUncountedSpend below).
-func TestUncountedCountsAnOverflowMove(t *testing.T) {
+// codex, not grok: since ranger-base-0lg6 grok lands on a COUNTED pool and
+// this ledger correctly stays empty (TestQACountedPoolLaunchIsNotDegradedSpend).
+func TestUncountedCountsALaunchThroughATrippedGuard(t *testing.T) {
 	t.Parallel()
-	f := overflowPass(t, "plan_guard_overflow: codex\nplan_guard_overflow_cap: 5\n",
-		overflowPID, `["go","tier:standard"]`)
+	pid := "---\nname: ranger\ndescription: test\nlabels: [go]\nruntime: codex\n---\nYou are ranger.\n"
+	f := trippedPass(t, "", pid, `["go","tier:standard"]`)
 
 	n, err := f.d.Run("", "", 0)
 	if err != nil {
@@ -466,13 +464,10 @@ func TestUncountedCountsAnOverflowMove(t *testing.T) {
 	}
 	out := dispatcherOut(f.d)
 	if n != 1 {
-		t.Fatalf("the eligible bead must still move, got n=%d:\n%s", n, out)
+		t.Fatalf("a lane off the guarded meter must launch through the trip, got n=%d:\n%s", n, out)
 	}
 	if !strings.Contains(out, "account-degraded codex: sent 1 bead(s) this pass") {
-		t.Errorf("a bead moved onto an uncounted pool is still uncounted spend:\n%s", out)
-	}
-	if got := len(f.ledger(t)); got != 1 {
-		t.Errorf("overflow ledger: want 1 line, got %d", got)
+		t.Errorf("a launch onto an uncounted pool is uncounted spend:\n%s", out)
 	}
 	b, err := os.ReadFile(f.b.App.UncountedLogPath())
 	if err != nil {
@@ -483,7 +478,7 @@ func TestUncountedCountsAnOverflowMove(t *testing.T) {
 	}
 }
 
-// ── the dead key on a counted runtime (ADR 0010 §3, ranger-base-2eeb) ───────
+// ── the dead key on a counted runtime (ADR 0013 §5, ranger-base-2eeb) ───────
 //
 // grok left the account-degraded column (ranger-base-0lg6): its adapter
 // prices what it reads, so uncountedFor returns nil for it before the cap
@@ -544,7 +539,7 @@ func TestCountedCapKeyIsNamedDeadOncePerPass(t *testing.T) {
 		`config uncounted_cap_grok: "1" does not apply`,
 		"prices grok's spend",
 		"the brake on grok is budget_pass:/budget_day: over those dollars",
-		"(ADR 0010 §3)",
+		"(ADR 0013 §5)",
 	} {
 		if !strings.Contains(errs, want) {
 			t.Errorf("the line must carry %q:\n%s", want, errs)

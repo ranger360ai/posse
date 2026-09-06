@@ -435,26 +435,27 @@ func TestGrokPoolUnreadableTranscriptIsNamedNotFatal(t *testing.T) {
 	}
 }
 
-// ADR 0010's ladder ends where this meter begins. A tripped plan guard would
-// step this bead over to grok — and grok's own week is gone, so it is skipped
-// there instead, by the pool guard and not by the bead cap. Without this the
-// overflow becomes a way to drain the one pool whose exhaustion lasts days.
-func TestGrokPoolStopsAnOverflowMoveOntoADrainedPool(t *testing.T) {
+// The two brakes are independent, and a bead that the PLAN guard let through
+// still faces its own pool's (ADR 0010 §1, done-when 2). The plan guard is
+// tripped and this lane is off its meter, so nothing about the plan window
+// touches it — and grok's own week is gone, so it is skipped there instead,
+// by the pool guard. Removing automatic overflow removed a way ONTO this
+// pool; it removed nothing that holds it.
+func TestGrokPoolBrakesAnOffMeterLaneThroughATrippedPlanGuard(t *testing.T) {
 	f := grokPoolPassFull(t,
-		"plan_guard_5h: 70\nplan_guard_overflow: grok\nplan_guard_overflow_cap: 5\n"+
-			"grok_guard_week: 70\n"+grokPoolCfg,
-		"", `["go","tier:standard"]`)
+		"plan_guard_5h: 70\ngrok_guard_week: 70\n"+grokPoolCfg,
+		"runtime: grok\n", `["go","tier:standard"]`)
 	f.d.Plan = newPlanServer(t, 78, 40).reader()
 	f.spend(t, "s1", 40) // 80% of the week
 
 	n, out := f.run(t)
 	if n != 0 {
-		t.Fatalf("a drained grok pool must refuse the overflow move, got n=%d:\n%s", n, out)
+		t.Fatalf("a drained grok pool must refuse the bead, got n=%d:\n%s", n, out)
 	}
 	if !strings.Contains(out, "grok pool: estimated 80% of the weekly pool used > grok_guard_week: 70% — skipped") {
-		t.Errorf("the pool guard, not the bead cap, is what says no:\n%s", out)
+		t.Errorf("the pool guard is what says no, not the plan guard:\n%s", out)
 	}
-	if b, err := os.ReadFile(f.b.App.OverflowLogPath()); err == nil {
-		t.Errorf("a bead that never launched writes no overflow ledger line: %q", b)
+	if strings.Contains(beadLine(t, out, "a-1"), "plan 5h") {
+		t.Errorf("the plan guard's reading says nothing about a lane off its meter:\n%s", out)
 	}
 }

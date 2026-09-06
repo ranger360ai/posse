@@ -488,8 +488,8 @@ func (a *App) CheckParityIn(ag *AgentFile, rt *Runtime, cage, tier, dir string) 
 // checkParityIn is CheckParityIn with ADR 0052 D3's redirect in hand: the
 // launcher has just rendered the session hooks dir git will dispatch from,
 // and only the launcher knows it, so it is threaded here rather than
-// re-derived. Every other caller — `posse gates` in a cwd, the overflow
-// preflight — has no session and passes nil, which is the probe reading
+// re-derived. Every other caller — `posse gates` in a cwd, the preflight
+// — has no session and passes nil, which is the probe reading
 // git's own dispatch path exactly as it always has.
 func (a *App) checkParityIn(ag *AgentFile, rt *Runtime, cage, tier, dir string, red *l3Redirect) Parity {
 	p := a.CheckParity(ag, rt, cage, tier)

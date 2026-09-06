@@ -97,6 +97,7 @@ var shippedExampleDigests = map[string][]string{
 		"170484e9f4c102f68baf2d14d0ae1a2e96566e6245cc4b3df08910716893856a", // ranger-base-tpc41 2026-09-01 hand to the lane: template line drops -a, Hand-to rows name lanes (ADR 0006 §1)
 		"2c494b3d510ac662f4112081b30a492b1be7b5c690ecd6aacac812216e761ff5", // 0211551f35cc 2026-09-02 ADR 0006: class rows and every example PID's handoff line name the class (ranger-base-zbd51)
 		"93381d4e63794b65f3fd63bfee8a11d41b6a649947faed1f2002c15c14fc0a39", // b0eae4d88f99 2026-09-03 pkill/killall enforced in every shipped PID: deny Bash(pkill:*) and Bash(killall:*) (ranger-base-jjx19)
+		"afa67f5fdeb0bdd864c79a1704ac1f3bf30b94bfd34c121669a55cab639d11a7", // ranger-base-6xx37 2026-09-06 drop `overflow: false` — the PID opt-out went with automatic overflow (ADR 0010 §1)
 	},
 	"agents/devops.md": {
 		"a5882633fdf059352d0dfc1dc13386bd7488ff0f4fff56464730e439ff7b9d6c", // 5668b76

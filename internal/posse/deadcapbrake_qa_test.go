@@ -47,7 +47,7 @@ func TestQADeadCapOnAPricedNonPoolRuntimeNamesTheWalletBrake(t *testing.T) {
 		`config uncounted_cap_claude: "1" does not apply`,
 		"prices claude's spend",
 		"the brake on claude is budget_pass:/budget_day: over those dollars",
-		"(ADR 0010 §3)",
+		"(ADR 0013 §5)",
 	} {
 		if !strings.Contains(errs, want) {
 			t.Errorf("the line must carry %q:\n%s", want, errs)

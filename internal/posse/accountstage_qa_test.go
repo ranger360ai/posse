@@ -208,7 +208,7 @@ func TestQAUnpricedKeepsTheBrakeAndPricedLosesIt(t *testing.T) {
 			// a counted runtime must not stop a launch, and since
 			// ranger-base-2eeb it must not go quiet either: the pass's own
 			// output stays clean of the key (this is not an outcome of the
-			// pass) and stderr carries ADR 0010 §3's dead-key line instead.
+			// pass) and stderr carries the dead-key line instead.
 			// Both halves, because either alone is a state the amendment
 			// refuses — a silent dead key, or a brake that came back.
 			if !c.degraded && strings.Contains(out, "uncounted_cap_"+c.runtime) {
@@ -216,7 +216,7 @@ func TestQAUnpricedKeepsTheBrakeAndPricedLosesIt(t *testing.T) {
 			}
 			deadKey := strings.Contains(f.errb.String(), "config uncounted_cap_"+c.runtime+": \"1\" does not apply")
 			if deadKey == c.degraded {
-				t.Errorf("dead-key line = %v, want %v (ADR 0010 §3):\n%s", deadKey, !c.degraded, f.errb.String())
+				t.Errorf("dead-key line = %v, want %v (ADR 0013 §5):\n%s", deadKey, !c.degraded, f.errb.String())
 			}
 			// The sentence the bug printed, from the pass's side.
 			if strings.Contains(out, "no cost adapter reads "+c.runtime) {
@@ -226,13 +226,16 @@ func TestQAUnpricedKeepsTheBrakeAndPricedLosesIt(t *testing.T) {
 	}
 }
 
-// An ADR 0010 overflow move onto a COUNTED pool is not account-degraded
-// spend: `posse cost` has the dollars, so the bead-count stand-in must not
-// be written. The mirror of TestUncountedCountsAnOverflowMove.
-func TestQAOverflowOntoACountedPoolIsNotDegradedSpend(t *testing.T) {
+// A launch on a COUNTED pool is not account-degraded spend: `posse cost`
+// has the dollars, so the bead-count stand-in must not be written. The
+// mirror of TestUncountedLedgersALaunchOnAnUncountedPool. Judged through a
+// tripped plan guard, because a lane off the guarded meter launching
+// through a trip is the one path that puts a bead on a second pool now that
+// nothing moves it there (ADR 0010 §1).
+func TestQACountedPoolLaunchIsNotDegradedSpend(t *testing.T) {
 	t.Parallel()
-	f := overflowPass(t, "plan_guard_overflow: grok\nplan_guard_overflow_cap: 5\n",
-		overflowPID, `["go","tier:standard"]`)
+	pid := "---\nname: ranger\ndescription: test\nlabels: [go]\nruntime: grok\n---\nYou are ranger.\n"
+	f := trippedPass(t, "", pid, `["go","tier:standard"]`)
 
 	n, err := f.d.Run("", "", 0)
 	if err != nil {
@@ -240,16 +243,12 @@ func TestQAOverflowOntoACountedPoolIsNotDegradedSpend(t *testing.T) {
 	}
 	out := dispatcherOut(f.d)
 	if n != 1 {
-		t.Fatalf("the eligible bead must still move, got n=%d:\n%s", n, out)
+		t.Fatalf("a lane off the guarded meter must launch through the trip, got n=%d:\n%s", n, out)
 	}
 	if strings.Contains(out, "account-degraded") {
-		t.Errorf("grok is counted; a move onto it is not an account degrade:\n%s", out)
+		t.Errorf("grok is counted; a launch on it is not an account degrade:\n%s", out)
 	}
 	if _, err := os.Stat(f.b.App.UncountedLogPath()); !os.IsNotExist(err) {
 		t.Errorf("nothing may be ledgered for a counted pool (%v)", err)
-	}
-	// The overflow ledger, which answers a different question, still has it.
-	if got := len(f.ledger(t)); got != 1 {
-		t.Errorf("overflow ledger: want 1 line, got %d", got)
 	}
 }

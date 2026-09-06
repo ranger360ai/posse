@@ -2273,7 +2273,13 @@ dispatch (beads):
                                config plan_guard_<window>: (percent, one key
                                  per rate window the provider adapter reports;
                                  a name it does not report is named on stderr)
-                                 skip a pass above the plan's rate windows;
+                                 park the beads that would spend the plan's
+                                 rate windows above this percentage; beads
+                                 whose own runtime is not on that meter launch
+                                 ungated (ADR 0013 §3), and no bead's runtime
+                                 is changed to keep paid work going — that
+                                 choice is the operator's, on the PID or
+                                 --runtime (ADR 0010 §1).
                                  unset = off, unreadable = no-op — except under
                                  --watch, where plan_guard_blind_max: (10m,
                                  0 = never) ends quiet tolerance once the last
@@ -2283,17 +2289,6 @@ dispatch (beads):
                                  armed brake fails closed — and runs loudly
                                  under those caps when they are set, until one
                                  reading succeeds
-                               config plan_guard_overflow:/_cap: (ADR 0010)
-                                 a tripped guard runs the pass and sends the
-                                 beads that can move to this runtime instead —
-                                 parity-clean there, not strong, PID not
-                                 overflow: false — capped at N beads per
-                                 rolling 7d ($StateDir/overflow.log); the cap
-                                 is required, and a blind guard never
-                                 overflows. The target must be a SECOND pool:
-                                 the guarded runtime itself is overflow off.
-                                 Beads whose own runtime is not on the guarded
-                                 meter launch ungated
                                config budget_pass:/budget_day: (API-equiv $)
                                  ADR 0003 Dial E: at 80% of a window a standard
                                  session steps down to fast (parity permitting,

@@ -65,17 +65,13 @@ func accountDegrade(rt *Runtime) string {
 	return "no cost adapter reads " + rt.Name + ", so none of this spend is in `posse cost`"
 }
 
-// UncountedWindow is the rolling window the cap counts over — the same seven
-// days, and the same unit (beads, not dollars), as ADR 0010's overflow cap,
-// for the same reason: the pool has no meter posse can read, so the count of
-// what dispatch itself sent there is the only honest number in reach.
-// Rolling rather than calendar because a weekly pool's reset day is the
-// provider's secret.
-const UncountedWindow = OverflowWindow
+// UncountedWindow is the rolling window the cap counts over: the shared
+// ledger window (ledger.go), seven days of beads rather than dollars,
+// because the pool this cap stands over has no meter posse can read.
+const UncountedWindow = LedgerWindow
 
 // UncountedLogPath is the ledger: `$StateDir/uncounted.log`, append-only,
-// one line per launch on an uncounted runtime — whether that launch was the
-// persona's own runtime or a bead ADR 0010 moved there.
+// one line per launch on an uncounted runtime.
 func (a *App) UncountedLogPath() string { return filepath.Join(a.StateDir, "uncounted.log") }
 
 // AppendUncounted records one launch on an uncounted runtime.
@@ -84,8 +80,7 @@ func (a *App) AppendUncounted(e LedgerEntry) error {
 }
 
 // UncountedAppendable is the other half of the cap's reading: whether the
-// line a launch would owe can be written at all. Same rule as
-// OverflowAppendable, and for the same reason (ranger-base-2y96) — a count
+// line a launch would owe can be written at all (ranger-base-2y96) — a count
 // off a file nothing can be added to stays at whatever it already says, so a
 // cap of 1 over an empty unwritable ledger admits one launch per pass
 // forever and records none of them.
@@ -105,8 +100,8 @@ func (a *App) UncountedCount(runtime string, now time.Time) (int, error) {
 // cap". Unset is 0, which means unlimited.
 //
 // A value that is not a positive whole number of beads is named on errw and
-// treated as unset, the rule `budget_pass:` and `plan_guard_overflow_cap:`
-// already keep: a typo must be visible, because a cap that silently stopped
+// treated as unset, the rule `budget_pass:` already keeps: a typo must be
+// visible, because a cap that silently stopped
 // capping is indistinguishable from one nobody set, and this is the only
 // brake on a channel with no meter behind it.
 func (a *App) UncountedCap(runtime string, errw io.Writer) (int, string) {
@@ -188,7 +183,7 @@ func (d *Dispatcher) uncountedFor(name string) *uncountedPool {
 	}
 	// The count first, then the appendability, so a ledger that is both
 	// corrupt and unwritable is named by the fault an operator has to fix
-	// first — readOverflowCount's order, for its reason.
+	// first.
 	//
 	// Only with a cap set: the brake is the only thing that acts on this,
 	// an unlimited runtime is loud by the report and not by the ledger, and
@@ -202,12 +197,17 @@ func (d *Dispatcher) uncountedFor(name string) *uncountedPool {
 	return p
 }
 
-// countedCapDead is ADR 0010 §3's third amendment rule: a set
-// `uncounted_cap_<runtime>:` on a runtime whose dollars DO reach `posse
-// cost` is named once per pass as not applying, pointing at the brake that
-// does. It does not keep the cap alive — ADR 0013 §5's law stands, a runtime
-// leaves this column by having its dollars priced and nothing else — it
-// makes the key's death audible.
+// countedCapDead: a set `uncounted_cap_<runtime>:` on a runtime whose
+// dollars DO reach `posse cost` is named once per pass as not applying,
+// pointing at the brake that does. It does not keep the cap alive — ADR
+// 0013 §5's law stands, a runtime leaves this column by having its dollars
+// priced and nothing else — it makes the key's death audible.
+//
+// The rule was ratified as ADR 0010 §3's third amendment (ranger-base-2eeb),
+// and the 2026-09-05 simplification folded that section away with the
+// mechanism it belonged to. The key it is about is ADR 0013 §5's, so §5 is
+// where the rule now lives in full and where this citation points
+// (ranger-base-ubqcw).
 //
 // The failure this closes is the one the header is written against, arriving
 // by the other door: not a cap that stopped capping because its value was a
@@ -223,7 +223,7 @@ func (d *Dispatcher) countedCapDead(rt *Runtime) {
 	if raw == "" {
 		return
 	}
-	d.eprintf("account: config uncounted_cap_%s: %q does not apply — the %s adapter prices %s's spend, so its dollars are in `posse cost` and the account brake is off; %s (ADR 0010 §3)\n",
+	d.eprintf("account: config uncounted_cap_%s: %q does not apply — the %s adapter prices %s's spend, so its dollars are in `posse cost` and the account brake is off; %s (ADR 0013 §5)\n",
 		rt.Name, raw, rt.CostReading(), rt.Name, d.countedBrake(rt))
 }
 
@@ -250,9 +250,8 @@ func (d *Dispatcher) countedBrake(rt *Runtime) string {
 
 // uncountedSkip is the brake: the line this bead gets instead of a launch,
 // plus the refill tally's grouping key for that line — "" for both to
-// launch. Called with the runtime the launch is actually going to, so an
-// ADR 0010 overflow move onto an uncounted pool is capped by the pool it
-// lands on and not by the one it came from.
+// launch. Called with the runtime the launch is actually going to, which
+// since ADR 0002's precedence is not always the persona's own.
 //
 // The kind is named after the runtime and the cap it hit, not the shared
 // "runtime cap" grokPoolSkip counts under: inside a refill only the kind
@@ -267,8 +266,8 @@ func (d *Dispatcher) uncountedSkip(name string) (line, kind string) {
 	if p == nil || p.Cap == 0 {
 		return "", ""
 	}
-	// The rule the overflow ledger and Dial E both already keep: an
-	// unreadable ledger is not a licence to spend. An armed cap over a
+	// The rule Dial E already keeps: an unreadable ledger is not a
+	// licence to spend. An armed cap over a
 	// ledger nobody can count is the unarmed case wearing the armed case's
 	// clothes, and this pool has no second meter to fall back to.
 	if p.Unreadable != nil {
@@ -313,7 +312,7 @@ func (d *Dispatcher) noteUncounted(is RepoIssue, persona, runtime string) {
 		return
 	}
 	if err := d.App.AppendUncounted(LedgerEntry{At: d.now(), Runtime: runtime, Bead: is.ID, Persona: persona}); err != nil {
-		// overflowUnlogged's twin (ranger-base-ws09). p.Used already carries
+		// ranger-base-ws09. p.Used already carries
 		// this launch for the rest of the pass, so the cap still bites here;
 		// what was missing is that the file is short by one for good and
 		// nothing said so past this one line on stderr. Two things now do:

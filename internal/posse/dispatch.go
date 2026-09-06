@@ -262,27 +262,19 @@ type Dispatcher struct {
 
 	// Plan-guard state (ADR 0010 §1/§5, amended by ADR 0013 §3). planTrip is
 	// this pass's over-threshold reason without its verdict ("plan <window> at
-	// 78% > 70%"); planBlind is the unreadable-meter reason. Both are carried to
-	// the per-bead runtime decision: off-meter work launches through either,
-	// while on-meter work faces the overflow ladder on a trip and parks on a
-	// blind read. overflow is the pass's resolved config, overflowUsed the
-	// rolling-window ledger count plus what this pass has already sent.
+	// 78% > 70%"); planBlind is the unreadable-meter reason. Both are carried
+	// to the per-bead runtime decision, and they mean the same thing to it:
+	// off-meter work launches through either, on-meter work parks. Neither
+	// moves a bead to another pool — ADR 0010 §1 removed that, and the
+	// runtime a paid continuation would run on is the operator's choice to
+	// make explicitly.
 	//
 	// ADR 0018 §1 narrows planBlind to the case where the blind meter is the
 	// LAST armed brake: with Dial E armed a blind pass degrades instead, and
 	// planBlind stays empty so on-meter beads face the ledger like any other
 	// pass.
-	planTrip     string
-	planBlind    string
-	overflow     Overflow
-	overflowUsed int
-	// overflowUnlogged is how many of THIS pass's overflow launches never
-	// reached the ledger (ranger-base-af98). The count is re-read under the
-	// launcher lock, and an append that failed makes the file under-count by
-	// exactly this many, permanently — so re-reading must not hand those
-	// beads' room back. It is not a fix for the unwritable ledger itself
-	// (ranger-base-2y96), only the arithmetic that keeps the re-read honest.
-	overflowUnlogged int
+	planTrip  string
+	planBlind string
 
 	// guardTrippedSince is the governance surface's G4 streak clock: when
 	// the plan guard first tripped in the current unbroken run of tripped
@@ -551,10 +543,6 @@ func (d *Dispatcher) planGuard() {
 		d.planMeter()
 		return
 	}
-	// ADR 0010: the second pool's config is read once per pass, and only
-	// where the guard is armed at all — an unarmed guard reads nothing and
-	// says nothing about anything, including this.
-	d.overflow = d.App.PlanGuardOverflow(d.errw())
 	now := d.now()
 	// Seeded here for a hand-run pass, at loop start for --watch: either
 	// way the clock never counts from the epoch.
@@ -828,42 +816,13 @@ func (d *Dispatcher) unmatchedThresholds(th map[string]float64, u PlanUsage) {
 	}
 }
 
-// overThreshold is the fork ADR 0010 §1 adds to a tripped guard. With no
-// overflow runtime configured — the default — on-meter beads park on this
-// reason. With one, they face the per-bead ladder (overflowFor): the overflow
-// pool if eligible and its armed brakes have room, and this same reason as
-// their skip line otherwise. Off-meter beads launch in both cases.
-//
-// The ledger is read here once per pass, only on a threshold trip, and only
-// where the cap is one of the armed brakes: armed on the target's own meter
-// alone (§3 as amended), the rolling count is a metric with nothing to be
-// compared against, and the header says which brake is holding the pool
-// instead. Either way this line is the ARMING NOTICE — announced once,
-// before any bead is judged — and not a brake's verdict.
-func (d *Dispatcher) overThreshold(reason string) {
-	d.planTrip = reason
-	if !d.overflow.On() {
-		return
-	}
-	if !d.overflow.Capped() {
-		d.printf("%s — overflow %s, armed by %s's own pool meter (no bead cap set); eligible beads step over\n",
-			reason, d.overflow.Runtime, d.overflow.Runtime)
-		return
-	}
-	n, ok := d.readOverflowCount()
-	if !ok {
-		// The ledger fault line has already said what survived it. If the
-		// target's meter is still holding the pool the pass still steps
-		// over, and a pass that says it tripped owes the operator that.
-		if d.overflow.On() {
-			d.printf("%s — overflow %s, armed by %s's own pool meter; eligible beads step over\n",
-				reason, d.overflow.Runtime, d.overflow.Runtime)
-		}
-		return
-	}
-	d.overflowUsed = n
-	d.printf("%s — overflow %s, %d/%d in 7d; eligible beads step over\n", reason, d.overflow.Runtime, n, d.overflow.Cap)
-}
+// overThreshold carries a tripped guard's reason to the per-bead decision
+// (ADR 0010 §1). The pass runs: on-meter beads park on this reason and
+// off-meter beads launch, because the reading says nothing about a pool it
+// did not read (ADR 0013 §3). Nothing is moved to another pool and no
+// provider is chosen here — the runtime that would continue paid work is
+// the operator's explicit choice, on the PID or `--runtime`.
+func (d *Dispatcher) overThreshold(reason string) { d.planTrip = reason }
 
 // blindGuard is the guard with no reading to make a decision on.
 //
@@ -963,8 +922,8 @@ func (d *Dispatcher) blindFork(blind time.Duration, err error) {
 	st := d.passBudget()
 	// §3: an armed cap over an unreadable ledger is a brake that counts
 	// nothing, which is the unarmed case wearing the armed case's clothes.
-	// Park exactly as if Dial E were unset — the same rule the overflow
-	// ledger already keeps: an unreadable ledger is not a licence to spend.
+	// Park exactly as if Dial E were unset — the rule every ledger here
+	// keeps: an unreadable ledger is not a licence to spend.
 	if st.Unreadable != nil {
 		park(fmt.Sprintf(", ledger unreadable (%v)", st.Unreadable))
 		return
@@ -2230,10 +2189,9 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 	// anyway: a new pass gets a fresh reading, epoch or no epoch.
 	d.rollEpoch(time.Now())
 	d.budgetStopped, d.budgetWarned, d.budgetUnread = nil, false, false
-	// ADR 0010: the guard's trip, the overflow config and the ledger count
-	// are one pass's reading — a new pass takes them fresh or not at all.
-	d.planTrip, d.planBlind, d.overflow, d.overflowUsed = "", "", Overflow{}, 0
-	d.overflowUnlogged = 0
+	// ADR 0010: the guard's verdict is one pass's reading — a new pass takes
+	// it fresh or not at all.
+	d.planTrip, d.planBlind = "", ""
 	// ADR 0013 §5: the account stage's caps, counts and per-pass tallies are
 	// this pass's too — a --watch loop must not report last pass's launches
 	// or brake on a ledger count it took an hour ago.
@@ -2621,14 +2579,6 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 			return 0, nil, 0, err
 		}
 		defer lock.Release()
-		// The cap is a check-then-act against a file every launcher on this
-		// StateDir shares, so the count it checks belongs on THIS side of the
-		// lock (ranger-base-af98). overThreshold's reading is the pass's
-		// report, taken when the guard tripped; between that line and this
-		// one another launcher may have held the lock and spent the week —
-		// and a pass that waited on the lock is exactly the pass whose
-		// reading went stale while it waited.
-		d.refreshOverflowUsed()
 	}
 
 	// Before anything is offered a seat: this Run's holds are only occupancy
@@ -2884,57 +2834,38 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 		// ADR 0010 §1/§5 and ADR 0013 §3, before the tier is stepped and
 		// before anything is claimed: the plan guard applies at the grain of
 		// this bead, now that its runtime is known. Off-meter work launches
-		// through a trip or blind read. On-meter work faces the overflow
-		// ladder on a trip and parks without overflowing when blind.
-		launchRT, moved := d.sessionRuntime(ag), false
+		// through a trip or a blind read; on-meter work parks on either,
+		// with the guard's own reason as its line. A trip and a blind read
+		// differ in what they say, never in what they do — §1 removed the
+		// automatic move to a second pool that used to fork them.
+		launchRT := d.sessionRuntime(ag)
 		if d.planTrip != "" || d.planBlind != "" {
-			// Only sessions this pass CREATES move. A session that already
-			// exists keeps the runtime it was created with — read it back
-			// rather than assume, since an earlier pass in this same trip may
-			// itself have created it on the overflow pool.
-			pin := ""
-			if s, err := d.HB.Resolve(session); err == nil {
-				if s.Runtime != "" {
-					launchRT = s.Runtime
-				}
-				pin = fmt.Sprintf("%s already runs on %s (only sessions this pass creates move)", session, launchRT)
-			} else if d.Runtime != "" {
-				// ADR 0002's precedence: a --runtime the operator gave this
-				// pass is their decision about where these sessions run, and
-				// the overflow move is dispatch's own — it never overrides one.
-				pin = fmt.Sprintf("--runtime %s pins this pass", launchRT)
+			// A session that already EXISTS keeps the runtime it was created
+			// with, so that is the runtime this launch would spend — read it
+			// back rather than assume the PID's, or the meter question gets
+			// asked about a pool this bead is not going to.
+			if s, err := d.HB.Resolve(session); err == nil && s.Runtime != "" {
+				launchRT = s.Runtime
 			}
-			if d.planBlind != "" {
-				if OnGuardedMeter(launchRT) {
-					d.skipf(skipPlanGuard, "– %-14s %s — skipped\n", is.ID, d.planBlind)
-					continue
+			if OnGuardedMeter(launchRT) {
+				why := d.planBlind
+				if why == "" {
+					why = d.planTrip
 				}
-			} else {
-				dec := d.overflowFor(is, persona, ag, launchRT, tier, pin)
-				if dec.Skip != "" {
-					d.skipf(dec.kind(), "– %-14s %s\n", is.ID, dec.Skip)
-					continue
-				}
-				launchRT, moved = dec.Runtime, dec.Moved
+				d.skipf(skipPlanGuard, "– %-14s %s — skipped\n", is.ID, why)
+				continue
 			}
 		}
 		// ADR 0013 §5, once the runtime this launch is actually going to is
-		// settled — including an overflow move onto a second pool, which is
-		// capped by the pool it lands on. A runtime no cost adapter reads
-		// has no meter to judge against, so the count of beads posse itself
-		// sent there stands in for one; with no cap set this never skips
-		// anything and the pass's account line is the whole obligation.
+		// settled. A runtime no cost adapter reads has no meter to judge
+		// against, so the count of beads posse itself sent there stands in
+		// for one; with no cap set this never skips anything and the pass's
+		// account line is the whole obligation.
 		//
 		// The pool meter comes first (rangerhq-myso): where a runtime has a
 		// reading, the reading is what the operator wants named, and the
 		// bead cap below is the stand-in for the ABSENCE of one. Both skip;
 		// only one of them says how much of the pool is left.
-		//
-		// A bead the overflow MOVED had this pool read in overflowFor, ahead
-		// of its own cap (ADR 0010 §3, ranger-base-v62hj); the call here is
-		// for lanes routed to the metered runtime statically — rung 1's
-		// off-meter launches, and every pass with no trip at all — and is a
-		// memoised no-op on the moved ones.
 		if skip := d.grokPoolSkip(launchRT); skip != "" {
 			d.skipf(skipRuntimeCap, "– %-14s %s\n", is.ID, skip)
 			continue
@@ -2944,9 +2875,9 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 			continue
 		}
 		if st.StepDown() {
-			// Dial E is untouched by the overflow: it still resolves the
-			// tier, and on a moved bead its step-down is judged against the
-			// pool the bead is actually going to.
+			// Judged against the pool the bead is actually going to, which
+			// is not always the persona's own (ADR 0002's `--runtime`, and a
+			// session that already exists).
 			tier, tierWhy = d.stepDown(ag, launchRT, tier, tierWhy, st)
 		}
 		// ADR 0003 §3 before anything is claimed or launched: a tier below
@@ -2958,11 +2889,7 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 			continue
 		}
 		if d.DryRun {
-			over := ""
-			if moved {
-				over = fmt.Sprintf(" [%s ← overflow]", launchRT)
-			}
-			d.printf("· %-14s → %s (%s) in session %s [%s via %s]%s\n", is.ID, persona, why, session, tier, tierWhy, over)
+			d.printf("· %-14s → %s (%s) in session %s [%s via %s]\n", is.ID, persona, why, session, tier, tierWhy)
 			// Booked in memory only (noteUncounted writes no ledger under
 			// --dry-run): a dry pass over a reached cap then shows the same
 			// skips the real one would, and its account line says "would".
@@ -2983,7 +2910,7 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 			d.printf("· %-14s %s\n", is.ID, why)
 		}
 		attempts++
-		p, err := d.fire(is, persona, session, launchRT, tier, tierWhy, moved, lock)
+		p, err := d.fire(is, persona, session, launchRT, tier, tierWhy, lock)
 		if err != nil {
 			d.printf("✗ %-14s %v\n", is.ID, err)
 			// Three outcomes, not two (ADR 0013 §2 — the busy-key split).
@@ -3058,23 +2985,9 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 			}
 			continue
 		}
-		// The ledger is written after the launch, not after the decision: a
-		// bead that never reached its agent spent nothing, and the cap is a
-		// count of what was actually sent (ADR 0010 §3).
-		if moved {
-			d.overflowUsed++
-			if err := d.App.AppendOverflow(LedgerEntry{At: d.now(), Runtime: launchRT, Bead: is.ID, Persona: persona}); err != nil {
-				// The file is short by one for good, so every later re-read
-				// of it is too: carry the difference rather than hand this
-				// bead's room back at the next refresh (ranger-base-af98).
-				d.overflowUnlogged++
-				d.eprintf("plan guard: overflow ledger not written for %s (%v) — the 7d count will be short by one\n", is.ID, err)
-			}
-		}
-		// The account ledger, on the same rule and for a different question:
-		// the overflow log says which beads the plan guard MOVED, this one
-		// says which went somewhere nothing meters. A bead that is both is
-		// on both — neither number answers the other's question.
+		// The account ledger is written after the launch, not after the
+		// decision: a bead that never reached its agent spent nothing, and
+		// the cap is a count of what was actually sent (ADR 0013 §5).
 		d.noteUncounted(is, persona, launchRT)
 		// ADR 0028 §5 observable 1, on the same rule as both ledgers above:
 		// written after the launch, never after the decision. The instant
@@ -3117,7 +3030,7 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 //
 // Only Run's own gather loop calls this, and only when d.Refill is set
 // (Watch's long-lived Run — ADR 0028 §4: no other launch path exists). It
-// does not reset any of the pass-denominated readings (planTrip, overflow,
+// does not reset any of the pass-denominated readings (planTrip,
 // uncounted, stranded, budgetStopped) — those stay whatever the owning
 // Run's own head last set them to, refreshed on the next full pass, exactly
 // as ADR 0028 §2's "only four things are pass-denominated" says the rest of
@@ -3227,13 +3140,10 @@ type promptResult struct {
 
 // fire launches the session, claims the bead, and submits the prompt with
 // --wait in a goroutine; it returns as soon as herdr has the prompt.
-// overflowed says the plan guard moved this bead to a second pool (ADR
-// 0010) — passed rather than inferred from the runtime, because a session
-// found on the overflow pool is not a move THIS pass made.
 //
 // held is fireLoop's launcher lock, carried down to the create (ADR 0011 §1,
 // ranger-base-deaz).
-func (d *Dispatcher) fire(is RepoIssue, persona, session, runtime, tier, tierWhy string, overflowed bool, held *LaunchLock) (*pendingBead, error) {
+func (d *Dispatcher) fire(is RepoIssue, persona, session, runtime, tier, tierWhy string, held *LaunchLock) (*pendingBead, error) {
 	ag, _ := d.App.LoadAgent(persona)
 	// Stamped before the launch, not after it: see pendingBead.launched.
 	launched := time.Now()
@@ -3262,19 +3172,11 @@ func (d *Dispatcher) fire(is RepoIssue, persona, session, runtime, tier, tierWhy
 		d.printf("! %-14s %s\n", is.ID, fell)
 		runtime, tier, tierWhy = rt, tr, "fallback"
 	}
-	// The overflow marker, and only when there is one: a launch on the
-	// persona's own runtime reads exactly as it always did, and a bead the
-	// plan guard moved says so on the line it was prompted on — the same
-	// marker --dry-run shows.
-	over := ""
-	if overflowed {
-		over = fmt.Sprintf(" [%s ← overflow]", runtime)
-	}
 	how := "prompted"
 	if l.delivered {
 		how = "prompt on the launch line"
 	}
-	d.printf("· %-14s → %s  (%s, %s via %s)%s\n", is.ID, session, how, tier, tierWhy, over)
+	d.printf("· %-14s → %s  (%s, %s via %s)\n", is.ID, session, how, tier, tierWhy)
 	p := &pendingBead{is: is, persona: persona, session: session, target: l.target, runtime: runtime,
 		resumed: l.resumed, delivered: l.delivered, unseen: l.unseen,
 		result: make(chan promptResult, 1), prompted: time.Now(), launched: launched}
@@ -3769,9 +3671,9 @@ func (d *Dispatcher) runtimeWait(runtime string) time.Duration {
 // the bead's own labels are what chose the tier. A runtime that will not
 // load is the launch's error to report, not this check's.
 //
-// runtime is the runtime THIS launch gets, which since ADR 0010 is not
-// always the persona's own: an overflow launch is checked against the pool
-// it is actually going to.
+// runtime is the runtime THIS launch gets, which is not always the
+// persona's own: a live session keeps the runtime it was created with, and
+// `--runtime` pins the pass.
 func (d *Dispatcher) tierRefusal(ag *AgentFile, runtime, tier string) error {
 	rt, err := d.App.LoadRuntime(runtime)
 	if err != nil {
@@ -4162,11 +4064,10 @@ func (d *Dispatcher) launchTag(runtime, tier string) string {
 // launchSession is the shared front half of both dispatch flavors:
 // find-or-create the persona session, wait for its agent, claim the bead.
 // Returns the promptable target pane.
-// runtime is the launch profile this session is created for — the persona's
-// own resolved runtime normally, the overflow pool's when the plan guard
-// moved this bead (ADR 0010). It is passed explicitly rather than resolved
-// here so that everything downstream of the decision — the meta, the prompt
-// header, the parity check — names the runtime the session actually got.
+// runtime is the launch profile this session is created for. It is passed
+// explicitly rather than resolved here so that everything downstream of the
+// decision — the meta, the prompt header, the parity check — names the
+// runtime the session actually got.
 //
 // byHand is the launch's provenance, forwarded to NewSessionOpts so the load
 // guard can tell the two callers apart (ranger-base-jfe5z): false from Run's

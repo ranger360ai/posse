@@ -165,21 +165,45 @@ func TestPlanGuardNamesAThresholdWithNoWindow(t *testing.T) {
 }
 
 // The non-window `plan_guard_` settings are not thresholds and must never be
-// read as one — a guard armed by `plan_guard_overflow:` alone would fetch a
-// reading nobody asked for.
+// read as one — a guard armed by a key that is not a window would fetch a
+// reading nobody asked for. Both kinds: the reserved key that is still read
+// (`blind_max`, silent), and the two the ADR 0010 §1 simplification REMOVED,
+// which arm nothing either but say so, because a brake the operator still
+// believes in must not disappear quietly.
 func TestPlanGuardReservedKeysAreNotWindows(t *testing.T) {
 	t.Parallel()
-	f := &fakePlanReader{windows: fakeWindows(99, 99)}
-	d, errb, _ := seamRig(t, f, "plan_guard_blind_max: 10m\nplan_guard_overflow: grok\nplan_guard_overflow_cap: 5")
+	for _, tc := range []struct {
+		name, cfg string
+		says      []string
+	}{
+		{name: "reserved and silent", cfg: "plan_guard_blind_max: 10m"},
+		{name: "removed and named",
+			cfg:  "plan_guard_blind_max: 10m\nplan_guard_overflow: grok\nplan_guard_overflow_cap: 5",
+			says: []string{"plan_guard_overflow:", "plan_guard_overflow_cap:", "is no longer read"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			f := &fakePlanReader{windows: fakeWindows(99, 99)}
+			d, errb, _ := seamRig(t, f, tc.cfg)
 
-	if n, err := d.Run("", "", 0); err != nil || n != 1 {
-		t.Fatalf("no threshold set means no guard: %d %v\n%s", n, err, dispatcherOut(d))
-	}
-	if f.reads != 0 {
-		t.Errorf("an unarmed guard must not read a meter, got %d reads", f.reads)
-	}
-	if errb.Len() != 0 {
-		t.Errorf("an unarmed guard says nothing: %q", errb.String())
+			if n, err := d.Run("", "", 0); err != nil || n != 1 {
+				t.Fatalf("no threshold set means no guard: %d %v\n%s", n, err, dispatcherOut(d))
+			}
+			if f.reads != 0 {
+				t.Errorf("an unarmed guard must not read a meter, got %d reads", f.reads)
+			}
+			if len(tc.says) == 0 {
+				if errb.Len() != 0 {
+					t.Errorf("an unarmed guard says nothing: %q", errb.String())
+				}
+				return
+			}
+			for _, want := range tc.says {
+				if !strings.Contains(errb.String(), want) {
+					t.Errorf("want %q on stderr, got: %q", want, errb.String())
+				}
+			}
+		})
 	}
 }
 

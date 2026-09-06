@@ -53,7 +53,6 @@ func TestSeedConfigArmsNothing(t *testing.T) {
 		// change how much gets verified per bead without anyone deciding to.
 		"verify_batch", "verify_batch_age",
 		"plan_guard_5h", "plan_guard_7d", "plan_guard_blind_max",
-		"plan_guard_overflow", "plan_guard_overflow_cap",
 		"budget_pass", "budget_day",
 		// dispatch_epoch: denominates both of the caps above and
 		// autostart_max_beads: below (ADR 0028 §2). A seed that shipped it

@@ -90,7 +90,7 @@ func TestQAVerifyE2UnwritableStateDirRefusesThePass(t *testing.T) {
 }
 
 // E3: unreadable AND unwritable at once must be named unreadable — the fault
-// an operator fixes first (readOverflowCount's order, the closer's second claim).
+// an operator fixes first (uncountedFor's order, the closer's second claim).
 func TestQAVerifyE3UnreadableBeatsUnwritable(t *testing.T) {
 	t.Parallel()
 	f := oneCodexBead(t, "uncounted_cap_codex: 1\n")

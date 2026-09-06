@@ -21,7 +21,7 @@ package posse
 // a human and one bead that is not dispatched again.
 //
 // WHERE THE COUNT LIVES, and why it is not a new file in $StateDir. The
-// bead proposed a resume ledger beside `overflow.log`; ADR 0011's whole
+// bead proposed a resume ledger beside `uncounted.log`; ADR 0011's whole
 // diagnosis argues against one. Its incident class is "dispatch infers
 // cross-store facts from single-store snapshots", and the fact being
 // counted here — did this bead settle open before, with the bead saying

@@ -2066,8 +2066,8 @@ func EnsureUnattendedLine(cmd string) string {
 // a quality guarantee on a runtime where {model} renders empty and the CLI
 // picks whatever it likes; `mycli/default` says exactly that much and no
 // more. Nothing about resolution moves: dispatch still resolves the tier it
-// resolved before, overflow still never trades `strong` (ADR 0010 §2b), and
-// an explicit --runtime the operator typed still launches.
+// resolved before, and an explicit --runtime the operator typed still
+// launches.
 //
 // All THREE built-ins map every tier since rangerhq-jp6 gave grok its map,
 // so the rule now bites only on a declared runtime that sets no

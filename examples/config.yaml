@@ -477,39 +477,16 @@ default_emoji: ⚙️
 # is ruling on anything. Default 2h; **0 = never say it**.
 # plan_usage_stale_after: 2h # 2h, 90m, bare seconds, or 0 to disable
 #
-# Overflow (ADR 0010) — instead of skipping the whole pass when the guard
-# trips, run it and send the beads that can move to a SECOND pool at equal
-# posture and tier. Unset = the whole-pass skip above, unchanged. A bead
-# moves only if the target's parity check is clean for its PID (no
-# --allow-degraded here, ever — this is dispatch's own choice), its tier is
-# not `strong` (judged work never moves), and the PID has not said
-# `overflow: false`. A bead whose own runtime is not on the guarded meter is
-# launched ungated, tripped guard or not. Only sessions this pass creates
-# move; a found session and an explicit --runtime keep what they have.
-# The target must be a SECOND pool: naming the runtime the guard meters
-# (claude) is overflow off with a stderr line — spending the hot meter through
-# the ladder built to spare it is the guard cancelling itself.
-# The move needs an ARMED BRAKE on the target pool, and there are two:
-# `plan_guard_overflow_cap:` below, or the target's OWN pool meter fully
-# armed — today only grok has one (`grok_guard_week:` + `grok_pool_reset:` +
-# `grok_pool_usd_per_point:`, all three). Either arms it; both set, both
-# apply and no warning — belt and braces is a posture, not a smell; neither
-# is overflow off, one stderr line per pass naming both ways to arm it. A
-# HALF-armed meter is off and arms nothing (a meter over local files is
-# armed or off, never blind), and the off line says which input is missing.
-# The cap counts beads sent to that runtime in a ROLLING 7 days, ledgered
-# append-only in $RHQ_HOME/state/overflow.log — it stands in for a meter the
-# pool does not have, so where the pool HAS one the cap is optional rather
-# than required. Start a cap in single digits for a calibration week and
-# raise it only on the pool provider's own usage display. The ledger is
-# written on every move either way: it feeds the metric, and a cap set
-# later. An unreadable or unappendable ledger takes the CAP off for that
-# pass — where the target's meter is armed the move survives on it, and
-# where it is not, overflow is off and on-meter beads park.
-# A BLIND guard never overflows: no reading, no judgement.
-# plan_guard_overflow: codex      # runtime name; unset = skip the pass
-# plan_guard_overflow_cap: 5      # beads per rolling 7d; optional where the
-#                                 # target pool has an armed meter of its own
+# A tripped guard (ADR 0010 §1) does not skip the whole pass and does not
+# move anything: it PARKS the beads that would spend the meter it read, and
+# beads whose own runtime is not on that meter launch ungated (ADR 0013 §3).
+# Nothing here chooses a provider — an operator who wants paid work to
+# continue past a trip says so explicitly, with `runtime:` on the PID or
+# `--runtime` on the pass. `plan_guard_overflow:` and
+# `plan_guard_overflow_cap:` were the automatic version of that choice; both
+# are gone, and a config that still sets one gets a stderr line per pass
+# saying so. $RHQ_HOME/state/overflow.log is no longer read or written and
+# is left in place as history.
 
 # ─── the dispatch epoch (ADR 0028 §2) ────────────────────────────────────────
 # The accounting window the two caps below and `autostart_max_beads:` are
@@ -607,9 +584,9 @@ default_emoji: ⚙️
 # ledgers each launch, append-only, in $RHQ_HOME/state/uncounted.log.
 #
 # `uncounted_cap_<runtime>:` is the brake: beads posse itself launched onto
-# that runtime per ROLLING 7 days, the same shape and unit as
-# `plan_guard_overflow_cap:` above and for the same reason — the pool has no
-# meter posse can read, so a count of what dispatch sent stands in for one.
+# that runtime per ROLLING 7 days — beads rather than dollars because the
+# pool has no meter posse can read, so a count of what dispatch sent stands
+# in for one.
 # It is NOT a bill and posse invents no price table; the spend numbers are
 # yours. Past the cap, further beads bound for that runtime are skipped with
 # one line each until the window rolls; the count includes the current pass,
@@ -655,14 +632,8 @@ default_emoji: ⚙️
 #
 # Over the threshold, a bead bound for grok gets one line instead of a launch
 # — per BEAD, on the runtime the launch is actually going to, so a drained
-# grok pool never parks a claude lane and a bead `plan_guard_overflow:` moved
-# onto grok is judged by grok's pool. At the threshold exactly it still runs.
-#
-# Armed, these three keys are also a brake on the OVERFLOW move itself: with
-# `plan_guard_overflow: grok` they arm it with no `plan_guard_overflow_cap:`
-# set at all (ADR 0010 §3). Every overflow launch spends this pool from this
-# box, so this meter sees all of the drain the move itself causes — which the
-# bead cap, a count standing in for a meter, never could.
+# grok pool never parks a claude lane and a lane pinned to grok is judged by
+# grok's pool. At the threshold exactly it still runs.
 #
 # grok_pool_usd_per_point: is YOUR calibration and posse ships no value for
 # it: derive it by reading xAI's own Settings -> Usage display across a

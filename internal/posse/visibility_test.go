@@ -81,7 +81,6 @@ func TestScanOps(t *testing.T) {
 		// The harness's own public vocabulary: the KEY is documentation,
 		// the key with a live value is the instance's.
 		{"Config budget_pass: / budget_day: (API-equivalent dollars)", ""},
-		{"dispatch: plan-guard overflow — plan_guard_overflow:/plan_guard_overflow_cap:", ""},
 		{"config model_preflight: / model_probe_ttl: are documented in examples/config.yaml", ""},
 		{"the plan-usage adapter reads the token from the macOS keychain", ""},
 		{"env sets, personas and skills are config under ~/.config/rhq/", ""},

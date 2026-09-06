@@ -7,10 +7,10 @@ package posse
 // that provider's own usage endpoint. xAI publishes no such endpoint: pool
 // utilisation is shown on a settings page, to a human, and every design that
 // wanted a weekly grok cap was told — correctly — that it was designing
-// against a meter that does not exist. ADR 0010 §3 wrote the consequence
-// down: `plan_guard_overflow_cap:` counts BEADS because "the overflow pool
-// has no meter the harness can read", and ADR 0010 §4 named a provider-side
-// usage endpoint as the loop closer.
+// against a meter that does not exist. ADR 0013 §5 wrote the consequence
+// down: `uncounted_cap_` counts BEADS because "the pool has no meter the
+// harness can read", and ADR 0010's pre-simplification §4 named a
+// provider-side usage endpoint as the loop closer.
 //
 // It closes a different way. grok writes its own cost per turn to disk
 // (cost_grok.go), so dollars spent on this pool since its weekly reset are
@@ -46,7 +46,7 @@ package posse
 //     answering; this reads local files, so there is no transient outage to
 //     wait out and no clock to run. A guard armed with no reset or no
 //     conversion factor is OFF and says so once a pass — the
-//     `plan_guard_overflow` half-configured rule — and never parks a bead on
+//     half-configured-brake rule — and never parks a bead on
 //     a condition no retry will change.
 //
 // # Where it applies
@@ -55,9 +55,10 @@ package posse
 // account stage (ADR 0013 §3/§5): a meter gates only the work that can spend
 // it. Skipping a whole pass because grok is drained would park claude lanes
 // on somebody else's pool — the exact defect ADR 0010 §1 moved the plan
-// guard's verdict per-bead to fix. A bead ADR 0010 MOVED to grok faces this
-// guard too, for the reason the account cap is charged to the pool a bead
-// lands on and not the one it came from.
+// guard's verdict per-bead to fix. Which lane lands here is the operator's
+// choice (`runtime:` on the PID, or `--runtime`), never dispatch's: §1
+// removed the automatic move onto a second pool, so nothing arrives at this
+// guard that was not sent.
 
 import (
 	"fmt"
@@ -310,13 +311,13 @@ type grokPoolState struct {
 	Read      bool
 	// Off is why an armed guard is not running — a missing reset, a missing
 	// factor, no adapter. Guard OFF, said once a pass, nothing parked: the
-	// half-configured `plan_guard_overflow` rule, and for its reason. A
+	// half-configured-brake rule, and for its reason. A
 	// brake the operator believes in and does not have must be loud.
 	Off string
 }
 
 // grokMeterInputs resolves the meter's three config inputs in one place, and
-// that place is the ONE definition of ARMED (ADR 0010 §6: a local meter is
+// that place is the ONE definition of ARMED (ADR 0010 §2: a local meter is
 // armed or off, never blind). Armed means all three present and parsing:
 // `grok_guard_week:` for the threshold, `grok_pool_reset:` and
 // `grok_pool_usd_per_point:` for the reading it is compared against.
@@ -325,10 +326,9 @@ type grokPoolState struct {
 // half-configured meter — fully armed, and not asked for at all
 // (`grok_guard_week:` unset, which is the default and silent).
 //
-// Two callers must never disagree about this: grokPoolGuard, which takes the
-// reading, and PoolMeterArming, on which ADR 0010 §3 arms an overflow move
-// with no bead cap. A meter that armed the move and then declined to read
-// would be a brake with no instrument.
+// ADR 0010 §2: a local-file meter is armed when its inputs parse, otherwise
+// off and loud — it never borrows the remote guard's blind clock, and it is
+// never half-armed.
 func (a *App) grokMeterInputs(errw io.Writer) (th float64, reset WeeklyReset, factor float64, armed bool, off string) {
 	th = a.GrokGuardWeek(errw)
 	if th == 0 {
@@ -346,31 +346,6 @@ func (a *App) grokMeterInputs(errw io.Writer) (th float64, reset WeeklyReset, fa
 	default:
 		return th, reset, factor, false, "grok_pool_usd_per_point: is unset or unusable"
 	}
-}
-
-// PoolMeterArming answers the ARMING question ADR 0010 §3 (amended
-// 2026-08-29) added: is this runtime's own pool meter fully armed, and if a
-// threshold is set but it is not, which input is missing.
-//
-// It is an arming test and never a reading — no transcript is scanned here.
-// That is the §3 wording ("the check keys on the meter's arming, not a
-// reading") and it is also what keeps the reading where grokPoolGuard puts
-// it: taken lazily, for a bead that is a candidate for the pool.
-//
-// Keyed on the one runtime that HAS a meter rather than a registry: ADR
-// 0010's tripwire says a registry of one is a name with no second member,
-// and waits for a second local meter.
-//
-// Silent by construction: the config diagnostics belong to the pass's own
-// pool guard, which prints each of them once, and to the overflow-off line,
-// which names what a half-armed meter is missing. Saying it here as well
-// would double every one of them.
-func (a *App) PoolMeterArming(runtime string) (armed bool, off string) {
-	if runtime != GrokPoolRuntime {
-		return false, ""
-	}
-	_, _, _, armed, off = a.grokMeterInputs(io.Discard)
-	return armed, off
 }
 
 // grokPoolGuard is the pass's memoized reading, taken lazily on the first
@@ -409,7 +384,7 @@ func (d *Dispatcher) grokPoolGuard() *grokPoolState {
 
 // grokPoolSkip is the brake: the line this bead gets instead of a launch, or
 // "" to launch. Called with the runtime the launch is actually going to, so a
-// bead ADR 0010 moved onto grok is judged by grok's pool.
+// lane pinned to grok is judged by grok's pool.
 //
 // Strictly above the threshold, matching planGuard: at the threshold exactly
 // the bead still runs.

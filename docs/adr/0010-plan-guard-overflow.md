@@ -1,6 +1,10 @@
 # ADR 0010 — Park guarded work; keep off-meter work eligible
 
-*Status: accepted; simplified 2026-09-05 by operator ruling · automatic-overflow removal pending deferred implementation · owner: architect.*
+*Status: accepted; simplified 2026-09-05 by operator ruling · §1's removal
+executed 2026-09-06 in ranger-base-6xx37, built in that bead's seat tree and
+not on main at this stamp — `git log --grep ranger-base-6xx37` on main is the
+record of whether it landed, this sentence is a dated snapshot (ADR 0038
+shape, ranger-base-w5xu7) · owner: architect.*
 
 ## Context
 
@@ -73,22 +77,59 @@ The local-file meter shape is §2, never the remote blind clock.
 
 ## Consequences and alternatives
 
-ASSUMED removal price: 4–7 source files plus tests/docs; two config keys,
-one PID opt-out, overflow history and provider-choice state removed; no new
-actor or flag. The **overflow** ledger is expendable historical telemetry;
-Dial E's spending ledger remains the independent brake in §5. First
-done-when on the deferred removal: census supported instances for configured
-overflow and actual overflow launches, stating coverage and observation
-window. Do not call one instance's absence a product-wide measurement.
-If wrong, automatic paid continuity is lost for an instance that relies on it.
+MEASURED removal price (ranger-base-6xx37): 33 files, +890 / −2552. Ten
+source files plus the CLI help; two config keys, one PID opt-out and
+`$StateDir/overflow.log` removed; no new actor or flag. Against the ASSUMED
+4–7 source files, so the ASSUMPTION was low — the mechanism reached further
+into dispatch and the record than the estimate allowed for, and the extra
+files are one-line citation and comment repairs rather than logic. Two
+things were RETAINED rather than deleted, both because a surviving brake
+consumes them: `OnGuardedMeter` (the §5 table's membership test, ADR 0013
+§3) moves to `planusage.go`, and the ledger shape and its three helpers move
+to `ledger.go`, where `uncounted.log` — ADR 0013 §5's independent brake — is
+their one remaining reader. `PoolMeterArming` is deleted: it existed to
+answer this ADR's pre-simplification §3 arming question and had no other
+caller. Old `overflow.log` files are left in place, unread and unwritten.
+
+MEASURED census for the first done-when, 2026-09-06, ONE instance
+(`~/.config/posse`) plus every other `config.yaml` reachable on that box (7
+files). Configured overflow: ZERO — no `plan_guard_overflow:` or
+`plan_guard_overflow_cap:` is set anywhere, and the shipped seed has always
+carried both commented out. Actual overflow launches: ZERO — no
+`overflow.log` exists anywhere on the box, and the first move would have
+created one; across 154,329 lines of dispatch output in six logs (2026-08-25
+→ 2026-09-06) the string "overflow" appears zero times, marker included.
+COVERAGE, stated because the absence of a key is not the absence of a user:
+the 13 threshold trips in that record are all from 2026-08-25 and all print
+the pre-ladder whole-pass skip, so they are not observations of an armed
+overflow decision; in the window where the ladder existed (the two --watch
+logs, 2026-08-30 15:16 → 2026-09-06 02:11) the guard never tripped a
+threshold at all — 94 blind lines, 9 rate-limit, 8 reading-restored, 0 trips
+— so the ladder had no opportunity to run and this instance's zero is
+consistent with both "nobody uses it" and "nobody could have". posse has
+been published since 2026-08-23 with both keys documented in
+`examples/config.yaml` and sends no telemetry, so how many other instances
+set them is UNKNOWN and unmeasurable from here. This is one instance's
+non-use, not a product-wide obsolescence finding, and the operator ruling to
+remove was taken knowing that.
+
+The **overflow** ledger is expendable historical telemetry; Dial E's
+spending ledger remains the independent brake in §5.
+If wrong, automatic paid continuity is lost for an instance that relies on
+it: that instance's on-meter beads park on a trip instead of moving, and the
+fix is an explicit `runtime:` on the PID or `--runtime` on the pass. A
+config that still sets either removed key gets one stderr line per pass
+naming it, rather than having it read as a threshold for a window named
+"overflow".
 
 Rejected: doing nothing (unpriced automatic continuity); another per-pool
 registry or no-cap target (more state or uncontrolled drain); deleting the
 blind protection together with overflow (different ledger); timing out
 headroom or estimating plan percentage from dollars (false authority).
-The accepted smaller behavior is pending code; current overflow continues
-until its deferred task lands. Existing local meter configuration is not
-changed by this documentation execution.
+Existing local meter configuration is not changed by this removal, and
+neither are Dial E's caps, the uncounted ledger and its writability rules,
+tier safety or rolling dispatch: §5's table, §2's meters and §3's bounded
+pass are byte-for-byte the behaviour that shipped before it.
 
 ## Lineage
 
@@ -98,5 +139,12 @@ changed by this documentation execution.
 | 0018 §§1–4 and headroom amendment; old 0013 §3 | §5 ordered guard table; 0013 points here |
 | 0010 §6 local meter shape | §2 |
 
-Historical overflow design and guard evidence: the page as it stood before this simplification is in git history, `git show c86a6b8:docs/adr/0010-plan-guard-overflow.md` (the dated copies were dropped by operator ruling 2026-09-05; git history is the record).
-remain dated history.
+Code citing a section number this page no longer has was repointed by that
+same removal: old §6 (local meter armed-or-off) is §2, old §3's `uncounted_cap_`
+consequence is ADR 0013 §5's, and the dead-key rule for a cap on a runtime
+whose dollars ARE priced (ranger-base-2eeb) was ratified as old §3's third
+amendment and now cites ADR 0013 §5, which owns the key and carries the rule's
+own text since ranger-base-ubqcw — filed from this bead's execution and landed
+before it.
+
+Historical overflow design and guard evidence: the page as it stood before this simplification is in git history, `git show c86a6b8:docs/adr/0010-plan-guard-overflow.md` (the dated copies were dropped by operator ruling 2026-09-05; git history is the record). The removed mechanism's own code is `git show 495d2a6:internal/posse/overflow.go`.

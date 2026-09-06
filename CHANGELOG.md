@@ -69,6 +69,35 @@ as the condition stands; and if you were reading `state/pulse.yaml` to see
 what the last tick observed, it no longer answers that — the watch log's own
 `pulse:` line carries the same keys, dated by its pass header.
 
+**Automatic paid overflow is removed: a tripped plan guard parks the work
+that would spend the meter it read, and chooses no provider (ADR 0010 §1).**
+
+`plan_guard_overflow:` and `plan_guard_overflow_cap:` are gone, and so are
+the PID `overflow: false` opt-out, the parity/tier eligibility ladder behind
+the move, and `$StateDir/overflow.log`. What a threshold trip does now is
+what it did for every bead the move never took: beads whose runtime spends
+the guarded meter park with the trip's own line, and beads on any other pool
+launch ungated (ADR 0013 §3). A blind guard behaves the same way and always
+did.
+
+**What you may need to do.** Nothing, unless you had set one of the two
+keys. If you did, dispatch prints one stderr line per pass naming it as no
+longer read — not silence, and not a "that is not a percent" typo line,
+because a brake you still believe in must not disappear quietly. Delete the
+key when you next edit the file. Where you want paid work to continue past a
+trip, name the runtime yourself: `runtime:` on the PID, or `--runtime` on
+the pass; that choice was always honoured and still is. A `overflow: false`
+line left in a PID is inert — it only ever refused a move, so nothing is
+lost by it going unread. An existing `overflow.log` is left exactly where it
+is: nothing reads or writes it any more, and it is your record of what the
+mechanism did while it ran.
+
+Everything the removal was measured against is untouched: the guard's
+complete per-bead decision table including the blind/headroom rules, the
+local pool meters (`grok_guard_week:` and friends), `budget_pass:` /
+`budget_day:`, `uncounted_cap_<runtime>:` with its ledger and writability
+checks, tier safety, and rolling dispatch.
+
 **The herdr event subscription is gone; polling and bounded reconciliation
 own readiness on their own (ADR 0016).**
 

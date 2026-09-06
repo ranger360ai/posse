@@ -12,7 +12,6 @@ tier: standard
 # scoped rule — the developer could not write code.
 cage: seatbelt
 labels: [code, feature, bug]
-overflow: false         # never moved to the plan guard's second pool (ADR 0010 §2c): this lane drives the repo's own scripts and test targets, and an overflow runtime's unattended mode may refuse to run them — a parity check cannot see that, so the PID says it
 intents:
   - build-features
   - fix-bugs
