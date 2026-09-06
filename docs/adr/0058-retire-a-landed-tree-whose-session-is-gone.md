@@ -157,9 +157,11 @@ prints today.
 - The `≡` line becomes a one-pass event; the listing shrinks to live
   trees, the unmeasured 13 (with their "compare" sentence), the four
   unrecorded, and ADR 0041's dirty three. *(Amended 2026-09-06: true of
-  the `≡` line only once fact 2 carries the whitespace-exact twin below;
-  until that lands the `≡` tree is kept on every pass, correctly, for
-  bytes it is not the last copy of.)*
+  the `≡` line only once fact 2 carries the whitespace-exact twin below.
+  That landed the same day — `baseHoldsBytes` in internal/posse/worktree.go,
+  ranger-base-06y60 — so the sentence stands as written; before it, the
+  `≡` tree was kept on every pass, correctly, for bytes it is not the last
+  copy of.)*
 - Two code comments and one NOTES.md sentence stop being true and are
   amended with the build (landsweep.go header, `LandSessionTrees`,
   NOTES.md's `--land` paragraph and lifecycle table row — the NOTES row is
@@ -281,3 +283,17 @@ often enough for the twin to take the row in the common case — one tree,
 one landing, measured; the next `≡` tree measures the rule. Verification
 adds to laurie's list: the eight scratch arms above as pins, with the
 re-indent and trailing-whitespace arms as the wrong arms that must KEEP.
+
+*Built 2026-09-06 in ranger-base-06y60: `baseHoldsBytes` (with
+`verbatimUnpaired` and `patchIDsVerbatim`) in internal/posse/worktree.go,
+asked by `heldByTip` and `treeHolds` both; the eight arms are pinned in
+internal/posse/verbatimtwin_test.go, plus a ninth for the git floor — a
+PATH shim rejecting `--verbatim` keeps the one tree that otherwise
+retires. Mutation-checked on the way in: dropping `--verbatim` reds the
+re-indent and trailing-whitespace arms and nothing else; removing the
+twin arm reds the two that retire on it; reading a merge's missing id as
+"nothing to compare" reds the merge arm; failing OPEN on the flag's
+absence reds the git-floor arm; writing the twin lookup as a set rather
+than a count reds the add/revert/add arm. That last rule is not this
+record's — a base holding ONE copy of an id that two commits ahead share
+holds one of them, so a twin is consumed by the commit it pairs.*

@@ -1961,6 +1961,14 @@ func unmeasuredNote(eqs []equiv, base string) string {
 // Strictly narrower than the guard it joins: every commit must still be
 // patch-id equivalent first. Nothing this adds can license a deletion the
 // old code refused.
+//
+// And its "no" is no longer the last word. A non-empty answer here is a
+// question for the second instrument rather than a refusal on its own —
+// baseHoldsBytes asks the whitespace-exact twin over the same bound, and
+// EITHER licenses. This walk stays the first one asked because it is the
+// cheap common answer and because the refusal's per-path `git diff` pointer
+// is its; what it stopped being is the only one (ADR 0058, amendment
+// 2026-09-06).
 func contentNotOnBase(repo, base, tip string) ([]string, error) {
 	touched, err := gitPathsZ(repo, "diff", "--name-only", "--no-renames", "-z", base+"..."+tip)
 	if err != nil || len(touched) == 0 {
@@ -1984,6 +1992,192 @@ func contentNotOnBase(repo, base, tip string) ([]string, error) {
 		}
 	}
 	return lost, nil
+}
+
+// baseHoldsBytes is ADR 0058 D1 fact 2's second half asked WHOLE, and it is
+// one function because two callers ask it (heldByTip, treeHolds) and their
+// answers about one tree must be the same answer —
+// TestRetireGuardsSeeADetachedTreesWork holds them to it.
+//
+// "The base holds the branch's bytes" is measured two ways and EITHER
+// licenses (ADR 0058, amendment 2026-09-06):
+//
+//   - for every path the branch touched, the branch's BLOB was on the base
+//     somewhere in `tip..base` (contentNotOnBase). The cheap common answer,
+//     asked first, and the one that carries the refusal's per-path pointer;
+//   - or every commit ahead has a whitespace-EXACT patch-id twin among the
+//     base's own commits in the same bound (`git patch-id --verbatim`).
+//
+// The second exists because the first was empty over the shape this record
+// was filed about. A tree reaches the equivalence row because its landing
+// was not a fast-forward, and a landing that is not a fast-forward writes a
+// NEW blob for every file the base moved in the meantime. For an
+// append-heavy file (CHANGELOG.md, NOTES.md) the base has ALWAYS moved it,
+// so the branch's blob is on the base nowhere, on any commit, and the tree
+// is kept on every pass forever — for bytes the base holds line for line.
+// MEASURED 2026-09-06 in ~/src/posse: the olwk tree's commit and its landing
+// 7ff3e4da share a --verbatim id while the blob walk loses CHANGELOG.md and
+// INSTALL.md.
+//
+// The twin is not the loose measurement the patch-id name suggests. Plain
+// `git patch-id` NORMALISES WHITESPACE, which is the hole ranger-base-x8jp
+// opened this second layer over; `--verbatim` is git's own flag for not
+// doing that, and it hashes CONTEXT lines too, so a twin is the same hunks
+// against the same neighbours, byte for byte. Lines the branch never touched
+// are not its to lose — the rule contentNotOnBase already states for paths.
+//
+// Both arms FAIL CLOSED. A commit the range form prints no id for is a merge
+// (or an empty commit) and is unmeasured, not paired. A git that rejects
+// `--verbatim` (it is 2.39+, and it cannot be combined with `--stable`) is
+// an error, and both callers read an error as a keep.
+//
+// held is the licence; lost and unpaired are the refusal's words and are
+// only meaningful when held is false: the paths whose bytes the base does
+// not hold, and the earliest commit ahead the base has no exact twin for.
+//
+// Cost: the twin arm walks the whole of `tip..base` and is paid ONLY by a
+// tree that already passed patch-id and failed the blob walk — 970 ids over
+// olwk's 987-commit range in 5.5s wall, measured the same day.
+func baseHoldsBytes(repo, base, tip string) (held bool, lost []string, unpaired string, err error) {
+	lost, err = contentNotOnBase(repo, base, tip)
+	if err != nil {
+		return false, nil, "", err
+	}
+	if len(lost) == 0 {
+		return true, nil, "", nil
+	}
+	unpaired, err = verbatimUnpaired(repo, base, tip)
+	if err != nil {
+		return false, nil, "", err
+	}
+	if unpaired == "" {
+		return true, nil, "", nil
+	}
+	return false, lost, unpaired, nil
+}
+
+// verbatimUnpaired names the earliest commit in base..tip that the base has
+// no whitespace-exact patch-id twin for, and "" when every one of them has
+// one. Earliest and not latest because a refusal names ONE commit and the
+// first divergence is the one a human goes looking at.
+//
+// The ahead side is asked first and alone: a commit with no id at all is
+// unmeasured, and saying so costs nothing while the twin lookup over the
+// base is the expensive half. `rev-list` supplies the commits rather than
+// the id stream, because the id stream is exactly what cannot see the merge
+// it printed nothing for.
+func verbatimUnpaired(repo, base, tip string) (string, error) {
+	out, err := git(repo, "rev-list", base+".."+tip)
+	if err != nil {
+		return "", err
+	}
+	ahead := strings.Fields(out)
+	if len(ahead) == 0 {
+		return "", nil
+	}
+	// rev-list prints newest first; a sentence about the first divergence
+	// wants the other order.
+	for i, j := 0, len(ahead)-1; i < j; i, j = i+1, j-1 {
+		ahead[i], ahead[j] = ahead[j], ahead[i]
+	}
+	ids, err := patchIDsVerbatim(repo, base+".."+tip)
+	if err != nil {
+		return "", err
+	}
+	for _, sha := range ahead {
+		if ids[sha] == "" {
+			return abbrevSHA(sha) + " (a merge or an empty commit — `git log -p` prints no patch for it, so there is nothing to compare)", nil
+		}
+	}
+	onBase, err := patchIDsVerbatim(repo, tip+".."+base)
+	if err != nil {
+		return "", err
+	}
+	// COUNTED, not a set. Two commits ahead can carry one id — an add, a
+	// revert and the same add again is the ordinary way — and a base holding
+	// ONE of them holds one of them. A set would pair both against it and
+	// license deleting the second, which is the whole failure mode this
+	// function exists to refuse; a twin is consumed by the commit it pairs.
+	twins := map[string]int{}
+	for _, id := range onBase {
+		twins[id]++
+	}
+	for _, sha := range ahead {
+		if twins[ids[sha]] == 0 {
+			return abbrevSHA(sha), nil
+		}
+		twins[ids[sha]]--
+	}
+	return "", nil
+}
+
+// patchIDsVerbatim is `git log -p --no-ext-diff --no-renames <range> | git
+// patch-id --verbatim` — one process pair for the whole range rather than
+// one per commit — read back as commit sha to patch id.
+//
+// A real pipe and not a buffer: the diff of a thousand-commit range is tens
+// of megabytes, and the two fds are handed to the children directly so the
+// shell's own semantics hold. When patch-id dies on the first line — an
+// older git rejecting `--verbatim` — `git log` takes a broken pipe and dies
+// too, so patch-id's failure is the one reported: git log's would be the
+// same error with the cause filed off.
+//
+// A commit the stream carries no patch for gets no entry at all, and that
+// absence is the caller's fail-closed case, not a lookup miss to shrug at.
+func patchIDsVerbatim(repo, rng string) (map[string]string, error) {
+	pr, pw, err := os.Pipe()
+	if err != nil {
+		return nil, Die("git patch-id --verbatim: %v", err)
+	}
+	defer pr.Close()
+	defer pw.Close()
+
+	logCmd := exec.Command("git", "-C", repo, "log", "-p", "--no-ext-diff", "--no-renames", rng)
+	idCmd := exec.Command("git", "-C", repo, "patch-id", "--verbatim")
+	var logErr, idErr, out strings.Builder
+	logCmd.Stdout, logCmd.Stderr = pw, &logErr
+	idCmd.Stdin, idCmd.Stdout, idCmd.Stderr = pr, &out, &idErr
+
+	if err := idCmd.Start(); err != nil {
+		return nil, Die("git patch-id --verbatim: %v", err)
+	}
+	pr.Close()
+	if err := logCmd.Start(); err != nil {
+		pw.Close()
+		_ = idCmd.Wait()
+		return nil, Die("git log -p %s: %v", rng, err)
+	}
+	// The parent's write end has to go or `git patch-id` never reads EOF.
+	pw.Close()
+	logWait := logCmd.Wait()
+	idWait := idCmd.Wait()
+	if idWait != nil {
+		return nil, Die("git patch-id --verbatim: %s", gitErrText(idErr.String(), idWait))
+	}
+	if logWait != nil {
+		return nil, Die("git log -p %s: %s", rng, gitErrText(logErr.String(), logWait))
+	}
+
+	ids := map[string]string{}
+	for _, ln := range strings.Split(out.String(), "\n") {
+		// "<patch id> SP <commit id>", one line per commit that had a patch.
+		f := strings.Fields(ln)
+		if len(f) != 2 {
+			continue
+		}
+		ids[f[1]] = f[0]
+	}
+	return ids, nil
+}
+
+// gitErrText prefers what git said on stderr to what exec says about the
+// exit status: "unknown option `verbatim'" is the sentence that tells the
+// operator their git is too old, and "exit status 129" is not.
+func gitErrText(stderr string, err error) string {
+	if msg := strings.TrimSpace(stderr); msg != "" {
+		return msg
+	}
+	return err.Error()
 }
 
 // blobInRange answers whether any commit in the range holds oid at path. The
@@ -2137,10 +2331,16 @@ func dirtyPaths(path string) []string {
 // weaker statement than it reads as: `git patch-id` normalises whitespace,
 // so a resolution that only re-indented is "equivalent" while the bytes
 // differ (ranger-base-x8jp). What licenses `branch -D` is both halves — every
-// commit measured by patch-id, AND the base's tree holding the branch's
-// bytes for every path the branch touched (contentNotOnBase). (The sha guard
-// is not the only by-sha check in this path: `branch -d` refuses an unmerged
-// branch too.)
+// commit measured by patch-id, AND the base holding the branch's BYTES —
+// which is itself two measurements, either of which licenses: the base's
+// history holding the branch's blob for every path it touched
+// (contentNotOnBase), or every commit ahead having a whitespace-exact
+// patch-id twin among the base's own commits (`git patch-id --verbatim`).
+// Asked as one question, in baseHoldsBytes, whose doc says why the second
+// exists — the blob walk alone covered NONE of the class this guard's
+// unattended caller was written for (ADR 0058's 2026-09-06 amendment). (The
+// sha guard is not the only by-sha check in this path: `branch -d` refuses
+// an unmerged branch too.)
 //
 // AND IT IS ASKED OF BOTH TIPS, not of the branch alone (ranger-base-v2rj7).
 // `<base>..<branch>` is ZERO over a worktree whose HEAD is DETACHED — the
@@ -2290,14 +2490,17 @@ func heldByTip(t *SessionTree, tip removalTip) (redundant bool, err error) {
 	case measuredOnBase(eq):
 		// Patch-id said the base holds these patches. It did NOT say the
 		// base holds these bytes — it normalises whitespace — and it is the
-		// bytes that are about to be deleted (ranger-base-x8jp).
-		lost, err := contentNotOnBase(t.Repo, t.Base, tip.ref)
+		// bytes that are about to be deleted (ranger-base-x8jp). Two
+		// instruments answer that and either licenses (baseHoldsBytes, ADR
+		// 0058's 2026-09-06 amendment); the refusal names both halves it
+		// does not have.
+		held, lost, unpaired, err := baseHoldsBytes(t.Repo, t.Base, tip.ref)
 		if err != nil {
 			return false, err
 		}
-		if len(lost) > 0 {
-			return false, Die("%s is ahead of %s by %s commit(s) git calls equivalent by patch-id (%s), but patch-id normalises whitespace and %s does not hold its bytes for %s — so it is still the last copy of that content and is not removed here; read `git -C %s diff %s %s -- %s`, then %s",
-				tip.subject, t.Base, n, strings.Join(equivNotes(eq), ", "), t.Base, strings.Join(lost, " "),
+		if !held {
+			return false, Die("%s is ahead of %s by %s commit(s) git calls equivalent by patch-id (%s), but patch-id normalises whitespace, %s has no whitespace-exact twin on %s and %s does not hold its bytes for %s — so it is still the last copy of that content and is not removed here; read `git -C %s diff %s %s -- %s`, then %s",
+				tip.subject, t.Base, n, strings.Join(equivNotes(eq), ", "), unpaired, t.Base, t.Base, strings.Join(lost, " "),
 				AbbrevHome(t.Repo), t.Base, tip.ref, strings.Join(lost, " "), tip.tail)
 		}
 		return true, nil
@@ -2355,12 +2558,12 @@ func treeHolds(t *SessionTree) string {
 			continue
 		}
 		if eq := equivalentOnBase(t.Repo, t.Base, tip.ref); measuredOnBase(eq) {
-			lost, err := contentNotOnBase(t.Repo, t.Base, tip.ref)
+			held, lost, unpaired, err := baseHoldsBytes(t.Repo, t.Base, tip.ref)
 			switch {
 			case err != nil:
 				// Unreadable is a keep, and it keeps for the reason below:
 				// what this tip holds could not be established.
-			case len(lost) == 0:
+			case held:
 				continue
 			default:
 				// THE ONE ARM THAT NEEDED ITS OWN SENTENCE (ADR 0058 D3).
@@ -2377,8 +2580,8 @@ func treeHolds(t *SessionTree) string {
 				// with no way to tell which of them was the careful one.
 				// MEASURED 2026-09-06 on this box: three trees on the board
 				// read exactly that way.
-				return fmt.Sprintf("%s's %s commit(s) are on %s as equivalent patches, but patch-id normalises whitespace and %s does not hold their bytes for %s",
-					tip.subject, n, orDetached(t.Base), orDetached(t.Base), strings.Join(lost, " "))
+				return fmt.Sprintf("%s's %s commit(s) are on %s as equivalent patches, but patch-id normalises whitespace, %s has no whitespace-exact twin there and %s does not hold their bytes for %s",
+					tip.subject, n, orDetached(t.Base), unpaired, orDetached(t.Base), strings.Join(lost, " "))
 			}
 		}
 		return fmt.Sprintf("%s holds %s commit(s) %s does not", tip.subject, n, orDetached(t.Base))
