@@ -2859,8 +2859,17 @@ fi
     echo "shared index BEFORE this hook could refuse, so the change is sitting there"
     echo "now. It starts bounded — git revert only begins from an index matching"
     echo "HEAD — so these paths are the revert's, plus anything you staged after it:"
-    echo "  finish it:  git commit -F - -- $posse_staged"
-    echo "  or undo it: git restore --source=HEAD --staged --worktree -- $posse_staged"
+    # ranger-base-23mvz: printf, not echo. The reader emits the raw path
+    # bytes (ranger-base-qg0k8) and echo would undo that work on the way out:
+    # macOS /bin/sh is bash 3.2 with xpg_echo on when invoked as sh, and a
+    # Linux /bin/sh is usually dash, both of which EXPAND backslash escapes
+    # in echo's operand. A path holding \n, \t, \r, \\ or \c reached the
+    # persona mangled, or (\n, \c) broke the printed line in two, and git
+    # validates pathspecs all-or-nothing so the correctly-spelled paths on
+    # the same line died with it. Same reason the constitution arm prints
+    # $posse_cls_hit with printf.
+    printf '%s\n' "  finish it:  git commit -F - -- $posse_staged"
+    printf '%s\n' "  or undo it: git restore --source=HEAD --staged --worktree -- $posse_staged"
     echo "  next time:  git revert --no-commit <sha>, then the path-limited commit."
     echo "Never 'git reset --hard' here: this tree is shared, and it is not yours."
   elif [ -e "$posse_gitdir/REVERT_HEAD" ]; then
@@ -2872,7 +2881,8 @@ fi
     echo "A revert is in progress (REVERT_HEAD) and its change is already staged in"
     echo "the shared index — along with anything else that is staged there, which is"
     echo "why this form is refused and not exempted: a pathspec works here."
-    echo "  staged now: $posse_staged"
+    # printf for the same reason as the arm above (ranger-base-23mvz).
+    printf '%s\n' "  staged now: $posse_staged"
     echo "  finish it:  git commit -F - -- <the paths that are yours>"
     echo "That commit ends the revert on its own — no 'git revert --continue' after"
     echo "it, and REVERT_HEAD, MERGE_MSG and AUTO_MERGE go with it (measured)."

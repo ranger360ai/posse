@@ -132,21 +132,43 @@ func TestQAGuardRefusalNamesQuotedPathsUsably(t *testing.T) {
 //
 // Fixed by reading `--name-only -z`, whose output is the raw path bytes for
 // every byte class, with no quotePath override.
+//
+// ranger-base-23mvz: that fix was the READER's half. The refusal printed the
+// list with `echo`, which expands backslash escapes in its operand on both
+// shells this hook runs under, so the WRITER re-broke five of the spellings
+// the reader had just got right. Fixed with `printf '%s\n'`, and those five
+// spellings are folded into the fixture below — the pin that held the hole
+// while it was open is gone with it.
 func TestQAGuardRefusalNamesEveryPathGitQuotes(t *testing.T) {
 	t.Parallel()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
-	// One path per byte class git treats differently. The three the earlier
-	// fix missed are the middle three; `two.md` is plain and is there to show
-	// the whole line dies, not just the awkward paths, and the command
-	// substitution is there to show the single-quoting still keeps it inert.
+	// One path per byte class either half of this got wrong: the space and
+	// the non-ASCII byte the 58to fix covered, the quote/backslash/control
+	// bytes qg0k8's reader added, and the backslash-escape spellings
+	// 23mvz's writer added. `two.md` is plain and is there to show the whole
+	// line dies, not just the awkward paths, and the command substitution is
+	// there to show the single-quoting still keeps it inert.
 	paths := []string{
-		"my file.md",        // a space: bare in --name-only, splits a pathspec in two
-		"café.md",           // non-ASCII: the only class core.quotePath governs
-		"it's.md",           // an embedded single quote: the escape the wrapper does
-		"q\"uote.md",        // a double quote: C-quoted whatever quotePath says
-		"back\\slash.md",    // a backslash: likewise
+		"my file.md",     // a space: bare in --name-only, splits a pathspec in two
+		"café.md",        // non-ASCII: the only class core.quotePath governs
+		"it's.md",        // an embedded single quote: the escape the wrapper does
+		"q\"uote.md",     // a double quote: C-quoted whatever quotePath says
+		"back\\slash.md", // a backslash: likewise
+		// ranger-base-23mvz: the five backslash spellings the WRITER
+		// mangled after the reader had them right, folded in from the pin
+		// that held this hole. echo expands these on the shells that run
+		// this hook (bash 3.2 with xpg_echo as sh, dash by spec): \n and \c
+		// broke the printed line in two, \t and \r arrived as the control
+		// byte, and \\ collapsed to one. `back\slash.md` above is the
+		// control that always worked — \s is not one of echo's escapes, and
+		// it was the only spelling the qg0k8 pin ever used.
+		`back\nslash.md`,
+		`back\tslash.md`,
+		`back\rslash.md`,
+		`back\\slash.md`,
+		`back\cslash.md`,
 		"tab\there.md",      // a control byte: likewise
 		"$(touch PWNED).md", // command substitution planted in a filename
 		"two.md",            // plain
@@ -382,89 +404,22 @@ func TestQAGuardRefusalNamesBothSidesOfAStagedRename(t *testing.T) {
 	}
 }
 
-// LIVE DEFECT, pinned GREEN: filed as its own bead from ranger-base-2d4f4,
-// the verify of ranger-base-qg0k8's close.
-//
-// qg0k8 fixed the READER and not the WRITER. posse_qcached now reads
-// `--name-only -z` and emits the raw path bytes for every byte class, POSIX
-// single-quoted — measured correct in isolation. The refusal then prints
-// that list with `echo "  finish it:  git commit -F - -- $posse_staged"`
-// (gates.go, the MERGE_MSG revert arm and the REVERT_HEAD arm), and echo
-// EXPANDS BACKSLASH ESCAPES in its operand on the shells that run this hook:
-// macOS /bin/sh is bash 3.2 with xpg_echo on when invoked as sh, and a Linux
-// /bin/sh is usually dash, whose echo does the same by spec. So a path
-// holding a backslash followed by one of echo's escape letters is corrupted
-// on its way to the persona's eyes, after the reader got it right.
-//
-// MEASURED, git 2.50.1, darwin 25.4.0, one file per arm plus plain.md:
-//
-//	back\nslash.md   the printed line BREAKS IN TWO mid-quote → sh exits 2
-//	                 ("unexpected EOF while looking for matching `'")
-//	back\tslash.md   printed as 'back<TAB>slash.md' → pathspec did not match
-//	back\rslash.md   printed as 'back<CR>slash.md'  → pathspec did not match
-//	back\\slash.md   printed as 'back\slash.md'     → pathspec did not match
-//	back\cslash.md   \c stops that echo where it stands, so `finish it:`,
-//	                 `or undo it:` and `next time:` run together on ONE
-//	                 broken line → sh exits 2
-//	back\slash.md    correct — \s is not one of echo's escapes, and it is the
-//	                 only backslash spelling the close's own pin uses
-//
-// Every failing arm leaves the whole line dead: git validates pathspecs
-// all-or-nothing, so plain.md is not restored or committed either, and the
-// persona keeps a dirty SHARED index and two commands that do not work,
-// directly above the sentence telling them not to reach for a hard reset.
-// That is qg0k8's own symptom, unchanged, over a byte class its title names.
-//
-// The fix is `printf '%s\n'`, which is what the constitution arm and the
-// identity arm in the same file already use for their path lists — measured:
-// with the three echo lines turned into printf, this pin goes red on its
-// FIXED: message and TestQAGuardRefusalNamesEveryPathGitQuotes stays green.
-//
-// This asserts the hole, deliberately. When the refusal learns to print a
-// path verbatim, THIS TEST GOES RED — delete it and fold these arms into the
-// pin above.
-func TestQAGuardRefusalManglesABackslashEscapeInAPath(t *testing.T) {
+// ranger-base-23mvz: the third line the same defect owned. The REVERT_HEAD
+// arm does not PRESCRIBE a command — it reports what is staged — so it has no
+// pasted-line assertion above it, and nothing else in the suite reads it. It
+// interpolated posse_qcached through echo all the same, so a path holding a
+// backslash escape was mangled or truncated the arm's output mid-list, and
+// the persona then chose "the paths that are yours" from a list that does not
+// spell them. Pinned separately because a display line regresses silently:
+// with the fix reverted to echo this goes red, with it in place it names the
+// path byte for byte.
+func TestQAGuardRevertHeadArmNamesAPathWithABackslashEscape(t *testing.T) {
 	t.Parallel()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
-	// \s is deliberately absent: it is the one spelling that works, and it
-	// is the control below.
-	for _, name := range []string{`back\nslash.md`, `back\tslash.md`, `back\rslash.md`, `back\\slash.md`} {
-		t.Run(name, func(t *testing.T) {
-			undo, finish, cleanAfterUndo := revertRefusalOver(t, name)
-			want := "'" + name + "'"
-			if strings.Contains(undo, want) && strings.Contains(finish, want) {
-				t.Errorf("FIXED: the refusal now prints %s verbatim. Delete this pin and add this byte class to TestQAGuardRefusalNamesEveryPathGitQuotes:\n  undo:   %s\n  finish: %s", want, undo, finish)
-			}
-			if cleanAfterUndo {
-				t.Errorf("FIXED: the undo the refusal names now leaves the tree clean over %s. Delete this pin:\n  undo: %s", name, undo)
-			}
-		})
-	}
-	// THE CONTROL, and the evidence the close's pin never reached the class:
-	// the one backslash spelling echo leaves alone still round-trips. Without
-	// this arm a refusal that printed nothing at all would pass every arm
-	// above.
-	t.Run(`back\slash.md (control: works)`, func(t *testing.T) {
-		undo, finish, cleanAfterUndo := revertRefusalOver(t, `back\slash.md`)
-		want := `'back\slash.md'`
-		if !strings.Contains(undo, want) || !strings.Contains(finish, want) {
-			t.Errorf("control: the refusal must name %s\n  undo:   %s\n  finish: %s", want, undo, finish)
-		}
-		if !cleanAfterUndo {
-			t.Errorf("control: the undo must leave the tree clean over %s\n  undo: %s", want, undo)
-		}
-	})
-}
+	const name = `back\nslash.md`
 
-// revertRefusalOver seeds one repo holding `name` and plain.md, installs the
-// commit guard, takes the refusal from a clean revert, and returns its two
-// prescribed lines AS PRINTED (one printed line each — a path that breaks
-// the line in two is exactly what this measures) plus whether running the
-// undo left the tree clean.
-func revertRefusalOver(t *testing.T, name string) (undo, finish string, cleanAfterUndo bool) {
-	t.Helper()
 	repo := t.TempDir()
 	env := []string{"PATH=" + PathOutsideGates(""), "HOME=" + repo, "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t",
 		"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t"}
@@ -474,50 +429,48 @@ func revertRefusalOver(t *testing.T, name string) (undo, finish string, cleanAft
 		out, err := cmd.CombinedOutput()
 		return string(out), err
 	}
-	paths := []string{name, "plain.md"}
-	git(nil, "init", "-q", "-b", "main")
-	for _, n := range paths {
-		if err := os.WriteFile(filepath.Join(repo, n), []byte("x"), 0o644); err != nil {
-			t.Skipf("this filesystem will not hold %q: %v", n, err)
+	write := func(body string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(repo, name), []byte(body), 0o644); err != nil {
+			t.Skipf("this filesystem will not hold %q: %v", name, err)
 		}
 	}
-	if out, err := git(nil, append([]string{"add", "--"}, paths...)...); err != nil {
+
+	git(nil, "init", "-q", "-b", "main")
+	write("one\n")
+	if out, err := git(nil, "add", "--", name); err != nil {
 		t.Fatalf("seed add: %v\n%s", err, out)
 	}
-	if out, err := git(nil, append([]string{"commit", "-qm", "seed", "--"}, paths...)...); err != nil {
+	if out, err := git(nil, "commit", "-qm", "seed", "--", name); err != nil {
 		t.Fatalf("seed commit: %v\n%s", err, out)
 	}
-	git(nil, "commit", "--allow-empty", "-qm", "base")
+	write("two\n")
+	if out, err := git(nil, "commit", "-qm", "second", "--", name); err != nil {
+		t.Fatalf("second: %v\n%s", err, out)
+	}
 	if _, err := installCommitGuard(repo); err != nil {
 		t.Fatal(err)
 	}
 	persona := []string{"RHQ_PERSONA=qa", "RHQ_GATES_DIR=" + t.TempDir()}
-	out, err := git(persona, "revert", "--no-edit", "HEAD~1")
-	if err == nil {
-		t.Fatalf("a clean revert is refused: %s", out)
+
+	// --no-commit stages the revert and writes REVERT_HEAD without reaching
+	// this hook; the unqualified commit after it is what the arm answers.
+	if out, err := git(persona, "revert", "--no-commit", "HEAD"); err != nil {
+		t.Fatalf("git revert --no-commit: %v\n%s", err, out)
 	}
-	// Split on printed LINES, not with a regex over the whole message: a
-	// path carrying a \n splits the prescribed line, and reading it any
-	// other way would hide the defect this measures.
+	out, err := git(persona, "commit", "-m", "sweep")
+	if err == nil || !strings.Contains(out, "A revert is in progress (REVERT_HEAD)") {
+		t.Fatalf("the REVERT_HEAD arm must answer an unqualified commit: %v\n%s", err, out)
+	}
+	// Read the printed LINE, not the whole message: a mangled path that
+	// carries the list onto another line is exactly what this measures.
+	staged := ""
 	for _, ln := range strings.Split(out, "\n") {
-		if i := strings.Index(ln, "finish it:  "); i >= 0 {
-			finish = strings.TrimSpace(ln[i+len("finish it:  "):])
-		}
-		if i := strings.Index(ln, "or undo it: "); i >= 0 {
-			undo = strings.TrimSpace(ln[i+len("or undo it: "):])
+		if i := strings.Index(ln, "staged now: "); i >= 0 {
+			staged = strings.TrimSpace(ln[i+len("staged now: "):])
 		}
 	}
-	if undo == "" || finish == "" {
-		t.Fatalf("the refusal must print both prescribed lines:\n%s", out)
+	if want := "'" + name + "'"; staged != want {
+		t.Errorf("the arm must name the staged path verbatim and alone\n  want: %s\n  got:  %s\nfull refusal:\n%s", want, staged, out)
 	}
-	if _, err := exec.LookPath("sh"); err != nil {
-		t.Skip("no sh")
-	}
-	cmd := exec.Command("sh", "-c", "cd \"$1\" && "+undo, "sh", repo)
-	cmd.Env = append(append([]string(nil), env...), persona...)
-	shOut, shErr := cmd.CombinedOutput()
-	st, _ := git(nil, "status", "--porcelain")
-	cleanAfterUndo = shErr == nil && strings.TrimSpace(st) == ""
-	t.Logf("undo=%q\n  sh err=%v tree-after=%q\n%s", undo, shErr, strings.TrimSpace(st), shOut)
-	return undo, finish, cleanAfterUndo
 }
