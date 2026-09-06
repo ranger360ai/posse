@@ -485,10 +485,12 @@ type planRead struct {
 	// on screen is to keep the reading beside it from being read as now.
 	quiet string
 	// class is WHICH failure a blind read was, in the few words the header
-	// has room for (ADR 0019 D2's four classes, bead rangerhq-pwpx). Empty
-	// is every failure that is not a credential condition — a dead socket, a
-	// 500, a body of the wrong shape — and the header says "blind" alone,
-	// because blind alone is what those are.
+	// has room for (ADR 0019 D2's four classes, bead rangerhq-pwpx) — plus
+	// the two that are named here precisely to say the failure is NOT one of
+	// those four: posse's own gate refusing posse's own read, and a read that
+	// never ran at all (ranger-base-h8u0l). Empty is every failure with no
+	// class — a dead socket, a 500, a body of the wrong shape — and the
+	// header says "blind" alone, because blind alone is what those are.
 	class  string
 	ledger bool // budget_pass:/budget_day: configured — ADR 0018's fork, and what blindness COSTS
 	// noHeadroom is set when the meter's last reading refuses to license the
