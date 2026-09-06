@@ -1,6 +1,6 @@
 package posse
 
-// ranger-base-xw51s, found by holden verifying four closes under
+// ranger-base-xw51s, found while verifying four closes under
 // ranger-base-3k8pb.
 //
 // THE CLASS. `git diff` is not one format: an external diff driver replaces
