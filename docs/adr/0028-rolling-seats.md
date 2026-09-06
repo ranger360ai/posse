@@ -173,6 +173,23 @@ not an empty herd, and `--dry-run`, which holds seats it never launched into,
 is not reconciled at all. This narrows the map to what §3 already says it
 holds; it widens nothing.
 
+*(clarified 2026-09-06, ranger-base-kal4c)* "That seat's settle" above means
+the settle of **the bead holding the seat**, never a settle judged for the
+seat's name. The strict reading is the one §5's fourth observable requires —
+never two live beads per (persona, repo) — but the sentence admitted the loose
+one and the implementation took it: `judge` deleted `busy[seat]` by name on
+whichever settle it judged next. A settle and the fire pass are different
+moments (each leg waits in its own goroutine, and its result sits in a channel
+until the loop's next gather), so a stale settle was routinely judged after
+the pass had already put a new bead on the seat, and the refill hired into a
+working seat. MEASURED 2026-09-06 (dispatch-watch.log, watch pid 94728):
+three over-caps in two hours — a one-seat lane at 2/1, a two-seat lane at
+3/2, a three-seat lane at 4/3. Fixed and pinned under ranger-base-25cit: a
+hold is released only by the settle of the bead it names, and any other
+settle leaves it held and says so. A wording clarification, not a design
+change; the live statement is 0011 §5, and this note exists because the code
+cites this section by number.
+
 **§4 — One throttle, preserved.** All refills originate in the one watch
 process. Killing it stops the shop inviting work; no agent-initiated launch
 path exists. This property is load-bearing for the operator and is a

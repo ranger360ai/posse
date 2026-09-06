@@ -1,7 +1,7 @@
 # ADR 0011 — The dispatch model: bd is the queue; the pass gets a lock, a safe prune, and a run record
 
 *Status: accepted 2026-08-20 · amended 2026-08-23 (§1 third holder;
-§2 identity arm — restored 2026-08-26, see §2) · amended 2026-09-05 (0020/0028 folded; current selection and bounded lifecycle) · corrected 2026-09-06 (§4 `route_order` is a PID key; §5 the epoch's two restart bounds and 0028 §5's observable as a median claim; App. A's closed residual — ranger-base-yv9uo) · owner: architect*
+§2 identity arm — restored 2026-08-26, see §2) · amended 2026-09-05 (0020/0028 folded; current selection and bounded lifecycle) · corrected 2026-09-06 (§4 `route_order` is a PID key; §5 the epoch's two restart bounds and 0028 §5's observable as a median claim; App. A's closed residual — ranger-base-yv9uo) · amended 2026-09-06 (§5 a seat hold is released by the settle of the bead holding it, never by a settle judged for the seat's name — ranger-base-kal4c) · owner: architect*
 
 > Restated from the private archive of the instance this harness was
 > developed in. The incidents this ADR reasons from happened in that
@@ -180,12 +180,26 @@ can cost latency, never ownership. 0016 owns the decision to remove hints
 and keep this reconciliation clock. The reap sweep runs at settles, run
 start and epilogue, so it cannot become a process-start-only duty.
 
-Occupancy holds only seats this Run actually fired into, until settle or
-positive liveness reconciliation at every fire pass/refill releases them.
-An unreadable session list keeps holds; dry-run fake launches are not
-reconciled. Other observations (busy elsewhere, prompt grace, a benched
-CLI) expire with the fire pass and are read fresh on the next offer.
-Claims are never released because a wait timed out.
+Occupancy holds only seats this Run actually fired into. A hold names the
+bead it was fired for, and it is released by the judging of **that bead's**
+settle — never by a settle judged for the seat's name. The two are different
+moments: a leg settles in its own goroutine and its result waits in a channel
+until the loop's next gather, and the ordinary fire pass can put a new bead on
+the same seat in between; a release keyed on the seat then retires a hold
+minutes younger than the settle retiring it, and the refill hires into a
+working seat. MEASURED 2026-09-06 (ranger-base-25cit, dispatch-watch.log):
+three over-caps in two hours — a one-seat lane at 2/1, a two-seat lane at 3/2,
+a three-seat lane at 4/3. A settle judged for a bead that no longer holds the
+seat releases nothing, and says so in the log. The other release is positive
+liveness reconciliation at every fire pass/refill: a hold whose seat has no
+live session is released on evidence, so refusing the by-name release strands
+nothing. An unreadable session list keeps holds; dry-run fake launches are not
+reconciled. 0028 §5's fourth observable — never two live beads per (persona,
+repo) — is the tiebreak for every reading of this paragraph: where a release
+rule and that observable disagree, the seat stays held. Other observations
+(busy elsewhere, prompt grace, a benched CLI) expire with the fire pass and
+are read fresh on the next offer. Claims are never released because a wait
+timed out.
 
 `dispatch_epoch:` (default 1h) denominates `budget_pass:` and
 `-n`/`autostart_max_beads`. The epoch is wall-clock aligned, so a restart
