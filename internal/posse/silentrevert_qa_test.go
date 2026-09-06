@@ -124,6 +124,20 @@ func srAudit(t *testing.T, script, dir string, args ...string) (string, int) {
 // `scripts/audit-silent-reverts.sh --quiet` in `make test` proves only that the
 // script ran; this proves the detector still flags the rangerhq-8rtf mechanism
 // when it is planted in front of it.
+//
+// It asserts BOTH a name list and an arm floor, because they fail differently
+// and neither covers the other (ranger-base-am5q1). rc is set only on an
+// explicit FAIL, so an arm that stops being EMITTED leaves rc 0 — the old
+// assertion here (rc 0 plus the substring "self-test PASS" anywhere) survived
+// deleting 16 of the 17 arms. The names below are the four the census found
+// pinned by NOTHING: the other thirteen are named in
+// TestSilentRevertSelfTestHasTheStrnumArm, ...HasTheRenameArms and
+// ...HasThePatchIdArms, and a name pin is what catches a RENAMED arm. The
+// floor is what catches a DELETED one, including arms added after this line
+// was written that nobody thought to name — the same drift
+// TestPIDDenySetSelfTestPasses guards with the same shape. It is a floor and
+// not an equality so that adding an arm is not itself a red; raise it when you
+// add one.
 func TestSilentRevertSelfTestStillFires(t *testing.T) {
 	t.Parallel()
 	script := srScript(t)
@@ -133,6 +147,19 @@ func TestSilentRevertSelfTestStillFires(t *testing.T) {
 	out, code := srAudit(t, script, ".", "--self-test")
 	if code != 0 || !strings.Contains(out, "self-test PASS") {
 		t.Fatalf("detector self-test did not fire: exit %d\n%s", code, out)
+	}
+	for _, want := range []string{
+		"self-test PASS: detector flags the modify half of the rangerhq-8rtf mechanism",
+		"self-test PASS: detector flags the addonly half of the rangerhq-8rtf mechanism",
+		"self-test PASS: a plain move is not flagged",
+		"self-test PASS: detector flags the rangerhq-8rtf mechanism",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("self-test no longer reports %q:\n%s", want, out)
+		}
+	}
+	if n := strings.Count(out, "self-test PASS: "); n < 17 {
+		t.Fatalf("self-test reported only %d passing arms, want >= 17:\n%s", n, out)
 	}
 }
 
