@@ -221,7 +221,11 @@ func TestNoShippedShellScriptCallsAPatternKill(t *testing.T) {
 	}
 	// The floor is the positive witness: a glob that matched nothing would
 	// leave hits empty and this test green over a sweep of no files at all.
-	if scanned < 12 {
+	// 38 tracked .sh files plus the Makefile at the time of writing. A floor
+	// this close to the census also catches the sweep silently NARROWING —
+	// a suffix test or a path filter that quietly stops seeing most of the
+	// tree, which reads exactly like a clean result.
+	if scanned < 30 {
 		t.Fatalf("only %d shell files swept in the whole tracked tree — the sweep is not "+
 			"finding them, so a clean result measures nothing", scanned)
 	}
