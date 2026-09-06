@@ -228,3 +228,70 @@ func TestWriteExecutableWritesUnderTheForkLock(t *testing.T) {
 	}
 	waitForkLockFree(t, "ForkLock outlived WriteExecutable")
 }
+
+// The pin above parks WriteExecutable in open(2), which is the only place a
+// FIFO can park it, so all it can ever see is whether the lock was held AT
+// THE OPEN. The invariant is open..close: a wrapper that took the lock across
+// the open and dropped it before the write and the close would leave the
+// write descriptor alive — and inheritable by a fork — for the whole of the
+// write, which is the defect reinstated, and every arm in this file would
+// still be green. MEASURED (ranger-base-7y623, go test -overlay): that mutant
+// survives all four of them, exit 0.
+//
+// This one parks it PAST the open. A FIFO's open(2) returns as soon as a
+// reader arrives and write(2) then blocks once the pipe buffer fills, so a
+// body larger than any pipe buffer stops WriteExecutable inside the write
+// with the descriptor open. That is where the lock has to still be held.
+func TestWriteExecutableHoldsTheLockPastTheOpen(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "fifo")
+	if err := syscall.Mkfifo(p, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	waitForkLockFree(t, "the rig proves nothing")
+
+	body := make([]byte, 4<<20) // past any pipe buffer on either platform
+	for i := range body {
+		body[i] = 'x'
+	}
+	done := make(chan error, 1)
+	go func() { done <- WriteExecutable(p, body, 0o755) }()
+
+	// Opening the read end lets open(2) return; the write then fills the
+	// pipe buffer and parks there.
+	f, err := os.Open(p)
+	if err != nil {
+		// Nothing else can release a write parked in open(2), and it is
+		// holding ForkLock: every later fork in this binary would queue
+		// behind it, so say which failure this was before that happens.
+		t.Fatalf("the FIFO read end would not open (%v) — the parked write still holds ForkLock", err)
+	}
+	// Deferred, not inline: t.Fatal runs defers, so every exit from here on
+	// still drains the writer. The pin above releases inline and a failure
+	// on that path would hang the package instead of reporting.
+	defer func() {
+		if _, err := io.Copy(io.Discard, f); err != nil {
+			t.Errorf("draining the FIFO: %v", err)
+		}
+		if err := f.Close(); err != nil {
+			t.Errorf("closing the FIFO: %v", err)
+		}
+		if err := <-done; err != nil {
+			t.Errorf("the write itself failed: %v", err)
+		}
+		waitForkLockFree(t, "ForkLock outlived WriteExecutable")
+	}()
+
+	// One byte read is the witness that the write really started, so a
+	// "held" reading below cannot be the open's.
+	if _, err := io.ReadFull(f, make([]byte, 1)); err != nil {
+		t.Fatalf("the write never reached the pipe: %v", err)
+	}
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); {
+		if forkLockHeld() {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Error("ForkLock was free while WriteExecutable was inside write(2) with the descriptor open: a fork landing there inherits it, and an execve of the written file answers ETXTBSY while it does (golang/go#22315, ranger-base-d26ak)")
+}
