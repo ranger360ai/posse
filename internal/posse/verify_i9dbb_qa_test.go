@@ -10,12 +10,16 @@ package posse
 // pointer runs both ways on all four. In the TREE it holds only where
 // something reads the folded half, and for three of the four nothing did.
 //
-// Each pin below is that reader. Two are parked on the OPEN bead that owes
+// Each pin below is that reader. Two were parked on the OPEN bead that owed
 // the fix, never on the closed one (ranger-base-6889's park, re-pointed under
 // ranger-base-z84xi, is why: a park naming a closed id reads as an
-// instruction to un-skip, and un-skipping reds the suite). One is live,
-// because the thing it guards is a falsehood a sweep is currently instructed
-// to write, not a fix somebody owes.
+// instruction to un-skip, and un-skipping reds the suite); both of those
+// beads landed and both skips are lifted. As of ranger-base-mqoid
+// (2026-09-06) NONE of the pins here is parked — a third park was retired
+// with its subject when the ADR simplification deleted ADR 0040 §1, and the
+// arm that replaced it guards the same falsehood one record over. What the
+// two status-line arms have in common is that each guards a falsehood a
+// sweep is still instructed to write, rather than a fix somebody owes.
 
 import (
 	"fmt"
@@ -94,33 +98,70 @@ func TestQAADR0036StatusLineDoesNotCarryTheRetractedUnbuiltStamp(t *testing.T) {
 	}
 }
 
-// The other half of ranger-base-9guhz: ADR 0040's disposition row for 0036
-// reads "nothing live: no `backup` symbol, no age dependency, no config key;
-// no build bead found". All four clauses are false as of 2026-09-01, and the
-// row is mqoid's to correct (0040 §1 row 0036).
+// The other half of ranger-base-9guhz was ADR 0040's disposition row for
+// 0036 — "nothing live: no `backup` symbol, no age dependency, no config
+// key; no build bead found", four clauses all false. That row is GONE: the
+// ADR simplification (operator ruling 2026-09-05, 8f95e4d5) replaced 0040
+// §1's per-record disposition table with a policy-home table, and 0040's
+// own Lineage row retires §§1–2. The pin parked here for it is retired with
+// its subject rather than left skipped on a closed bead: there is no row to
+// read, so the only verdict it could reach is the t.Fatal that says so.
+// Retired under ranger-base-mqoid, which owed the fix.
 //
-// Parked, because unlike the stamp above this is a fix somebody owes rather
-// than a falsehood about to be written. Un-skip when ranger-base-mqoid lands.
+// What is NOT retired is the CLASS the 0036 arm above guards, because the
+// same ruling input is still standing for a second record. ranger-base-mqoid
+// carries "0038's status gains '· unbuilt: ranger-base-vqyxl,
+// ranger-base-mugt2'" from the ay3dr ruling, and both beads are CLOSED and
+// built — measured 2026-09-06: vqyxl's L2 config write-deny is
+// `sessionGitConfigFiles` in seatbelt.go with the hook slots denied beside
+// it, and mugt2's L4 twin is the `:ro` common-dir mount in cage.go. Writing
+// that stamp is the same falsehood 9guhz retracted for 0036, one record
+// over, and nothing read it. This arm is that reader.
 //
-// Shown able to fail: with the skip lifted this FAILS today at 13db95e.
-func TestQAADR0040Row0036DoesNotCallTheBackupVerbUnbuilt(t *testing.T) {
+// Shown able to fail: writing either spelling into 0038's status reds it,
+// and restoring greens it (mutation-checked both ways, 2026-09-06).
+//
+// No Makefile door, deliberately, and NOT an oversight to correct: this arm
+// reads three named files and walks nothing, so treewidedoor_qa_test.go's
+// class does not hold it (that class keys on a test body reaching
+// qibRepoRoot itself — which is why the 0036 arm above, whose backup.go
+// os.Stat does, is in $(QA_DOC_PINS) and this one is not). Verified by
+// execution 2026-09-06: TestQAEveryTreeWidePinHasADoor is green with this
+// arm undoored, and reds when the 0036 arm is taken out of its door, so the
+// census does reach this file and does not ask for a door here.
+func TestQAADR0038StatusLineDoesNotCarryTheRetractedUnbuiltStamp(t *testing.T) {
 	t.Parallel()
-	t.Skip("ranger-base-mqoid (carries closed ranger-base-9guhz): ADR 0040's 0036 row still says no backup symbol, no config key and no build bead — four clauses, all false since 2026-09-01")
-	doc := i9dbbRead(t, "docs", "adr", "0040-adr-consolidation.md")
-	var row string
-	for _, line := range strings.Split(doc, "\n") {
-		if strings.HasPrefix(line, "| 0036 ") {
-			row = line
-			break
+	adr := i9dbbRead(t, "docs", "adr", "0038-git-identity-write-deny.md")
+
+	// Positive witness first, on the record's identity and on there being a
+	// status line at all — "the stamp is absent" is equally true of a read
+	// that landed on the wrong file.
+	if !strings.HasPrefix(adr, "# ADR 0038") {
+		t.Fatalf("this guard is not reading ADR 0038 — first line %q", strings.SplitN(adr, "\n", 2)[0])
+	}
+	if !strings.Contains(adr, "*Status:") {
+		t.Fatal("ADR 0038 has no status line — this guard has nothing to judge")
+	}
+
+	// The pairing, not the word: 0038 legitimately discusses beads that have
+	// not landed (p9h9d, 017dx) in its status, and says so deliberately.
+	for _, dead := range []string{
+		"unbuilt: ranger-base-vqyxl",
+		"unbuilt: `ranger-base-vqyxl`",
+		"unbuilt: ranger-base-mugt2",
+		"unbuilt: `ranger-base-mugt2`",
+	} {
+		if strings.Contains(adr, dead) {
+			t.Errorf("0038's status carries %q — both beads are closed and built (sessionGitConfigFiles at L2, the :ro common-dir mount at L4). The ay3dr ruling input that asks for this stamp is retracted by fact, the way ranger-base-9guhz retracted 0036's", dead)
 		}
 	}
-	if row == "" {
-		t.Fatal("ADR 0040 §1 no longer has a row for 0036 — this guard is not reading what it thinks it is")
+
+	// The reason, measured rather than taken from the ADR's own prose.
+	if sb := i9dbbRead(t, "internal", "posse", "seatbelt.go"); !strings.Contains(sb, "func sessionGitConfigFiles(") {
+		t.Error("seatbelt.go no longer defines sessionGitConfigFiles — the premise of this guard (vqyxl built the L2 deny) no longer holds")
 	}
-	for _, dead := range []string{"no build bead found", "no config key", "no `backup` symbol"} {
-		if strings.Contains(row, dead) {
-			t.Errorf("ADR 0040's 0036 row still says %q:\n  %s", dead, row)
-		}
+	if cg := i9dbbRead(t, "internal", "posse", "cage.go"); !strings.Contains(cg, "the worktree's git common dir, READ-ONLY") {
+		t.Error("cage.go no longer mounts the common dir :ro — the premise of this guard (mugt2 built the L4 twin) no longer holds")
 	}
 }
 

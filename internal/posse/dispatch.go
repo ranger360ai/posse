@@ -4434,8 +4434,8 @@ func (d *Dispatcher) LaunchBead(is RepoIssue) (session string, err error) {
 	}
 	// The session `d` acts on must be the session the IN PROGRESS row showed
 	// as holder: the Dial F per-bead session, then — for a bead this persona
-	// already holds — the pre-Dial-F slot. That is the join
-	// cockpit.holderSession does (ADR 0004 §2) and the pair Run's held-bead
+	// already holds — the pre-Dial-F slot. Those are the two names
+	// cockpit.holderSession walks (ADR 0004 §2) and the pair Run's held-bead
 	// check walks. Resolving only the per-bead name left a slot-held bead
 	// unguarded: the working/blocked refusal never fired and the launch
 	// created a SECOND agent on the bead its holder was working
@@ -4446,6 +4446,12 @@ func (d *Dispatcher) LaunchBead(is RepoIssue) (session string, err error) {
 	// which exists would be called this. The two patterns stay behind it and
 	// unchanged — a session created before `bead:` landed has no record to
 	// find, and losing it here is how a twin gets launched beside a holder.
+	//
+	// The record head is HERE and not in cockpit.holderSession, so the two
+	// joins are not the same join: a bead held under neither name pattern is
+	// one this function resolves through the record and the row above drew
+	// as `no session` (ADR 0004 §2's divergence paragraph,
+	// ranger-base-eeg0s).
 	var names []string
 	if s, ok := d.HB.RunHolder(is.Dir, persona, is.ID); ok {
 		names = append(names, s.Name)

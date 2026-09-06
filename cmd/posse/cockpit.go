@@ -1336,11 +1336,20 @@ func (c *cockpit) nextSection() int {
 const noSession = "no session"
 
 // holderSession is the live session working an in-progress bead: its Dial F
-// per-bead session first, then the persona's slot session. ADR 0004 §2 names
-// only the slot (SessionFor) — but under Dial F the holder is almost always
-// SessionForBead, so the slot alone would report "no session" for nearly
-// every claimed bead. These are the same two names dispatch checks when it
-// decides whether a bead is held (dispatch.go, the --resume path).
+// per-bead session first, then the persona's slot session. As ACCEPTED ADR
+// 0004 §2 named only the slot (SessionFor) — but under Dial F the holder is
+// almost always SessionForBead, so the slot alone would report "no session"
+// for nearly every claimed bead, and §2's 2026-08-19 amendment names both.
+// These are the same two names dispatch checks when it decides whether a
+// bead is held (dispatch.go, the --resume path).
+//
+// What this join does NOT do is head that list with the run record, which
+// ADR 0008's 2026-08-28 amendment and dispatch.go's `d` path (RunHolder)
+// both do: a bead held under neither name pattern — a hand-dispatch that
+// stamped `bead:`, or a crew session handed the bead — reads "no session"
+// here while `d` on the same row finds its holder. Recorded in ADR 0004 §2
+// as a divergence and filed as ranger-base-eeg0s; do not read the two names
+// below as the whole rule.
 func (c *cockpit) holderSession(is posse.RepoIssue) *posse.HerdrSession {
 	if is.Assignee == "" {
 		return nil

@@ -30,7 +30,11 @@ precedence probe, measured 2026-09-01 — a contradicting native
 turn each, operator exception ranger-base-ff9pz), so
 `rules_precedence: pid` on both built-ins and the §4 revisit trigger
 did not fire; claude stays UNMEASURED (ranger-base-6rcv, verified
-ranger-base-kl58b, landed ranger-base-60p4b)*
+ranger-base-kl58b, landed ranger-base-60p4b) · amended 2026-09-06
+(ranger-base-mqoid): §1's settle row cites the turn-outcome refusal
+probe it was written from; §4's reap guard said `not killed` flat and
+`--force` takes it (`ForceKillSessionAndLand`,
+`reapguard_qa_test.go`)*
 
 > ADR 0002 answered "can a persona *launch* safely on any runtime." ADR
 > 0012 D4 answered "can a third engine be *added* without patching the
@@ -92,7 +96,7 @@ This contract is what **dispatch** requires of that same process.
 | **promptable** | the work prompt is the first user turn, *without* posse answering a dialog | runtime `prompt: argv` (preferred) or `prompt: typed` + `startup_wait:` | **refuse this launch**, loudly; see §2 |
 | **work** | herdr `working` then a settled state | herdr detection (already) | wait ladder as today (NOTES §6–7); a timeout is a check-in, never an unclaim |
 | **record** | bead `closed`, or a comment plus an ASK/question that takes it out of `bd ready` | runtime `record: trusted\|untrusted` (§4) | settle-without-record is **incomplete**, never ✓; unattended `--resume` re-prompts; see §4 |
-| **settle** | herdr `idle`/`done`/`blocked` *Seen()* — a matched rule, not the idle-fallback — plus, where readable, the runtime's own record of what the first turn did | pane half: herdr (already); turn half: runtime `turn_outcome:`, a registry key naming the reader (today: `claude-transcript`, `grok-session-store`) | pane half: existing ignorance path, claim kept. Turn half: **turn-blind** — an exhausted account and a settle-without-close are the same line; the per-bead blindness clause names the missing fact, and the per-pass account-degraded report (§5) is the roll-up |
+| **settle** | herdr `idle`/`done`/`blocked` *Seen()* — a matched rule, not the idle-fallback — plus, where readable, the runtime's own record of what the first turn did | pane half: herdr (already); turn half: runtime `turn_outcome:`, a registry key naming the reader (today: `claude-transcript`, `grok-session-store` — a reader joins the registry only after that runtime's own refusal artifact is captured and pinned, which is why codex has none; trace `0013-turn-outcome-refusal-probe.md`) | pane half: existing ignorance path, claim kept. Turn half: **turn-blind** — an exhausted account and a settle-without-close are the same line; the per-bead blindness clause names the missing fact, and the per-pass account-degraded report (§5) is the roll-up |
 | **account** | dollars in `posse cost` — a cost-adapter reading that *prices* (`CostPriced()`), or an explicit uncounted cap | adapter registry (ADR 0012 D4; registering IS the declaration — no `cost_adapter:` field, a second hand-kept declaration drifted, ranger-base-0lg6) or config `uncounted_cap_<runtime>:` | **account-degraded**, two ways — UNCOUNTED (nothing reads it) or UNPRICED (read, never priced): loud every pass; dispatchable; the cap is the brake (§5) |
 
 `posse runtime check <name>` prints this grid for a runtime. Unknown is
@@ -446,9 +450,14 @@ can write, it can write" — a stronger claim than "unmeasured," and
 false.
 
 **Reap guard.** A session whose bead is still `in_progress` and whose
-cwd is dirty is **not killed**. The 353-line near-miss is a shared
-checkout plus a reap, not a missing `Done:` line. L3's pathspec rule
-already stops an unqualified commit; it does not stop `posse kill`.
+cwd is dirty is **not killed** by an ordinary reap. `--force` is the
+operator saying they have looked at that session's unfinished work: it
+stands this guard down and nothing else — not the foreign-row refusal,
+which is `--foreign`, and not the tree's contents, which are left where
+they are (`KillOpts.Force`, `ForceKillSessionAndLand`). The 353-line
+near-miss is a shared checkout plus a reap, not a missing `Done:` line.
+L3's pathspec rule already stops an unqualified commit; it does not
+stop `posse kill`.
 
 **Native rulebooks.** A runtime declares `native_rules: [AGENTS.md, …]`
 (grok's list is longer — `Agents.md`, `CLAUDE.md`, …). Posse does not

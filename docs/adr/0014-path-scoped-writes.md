@@ -1,7 +1,9 @@
 # ADR 0014 — Path-scoped writes: a parametrized Edit/Write deny is a subtree file-write deny
 
 *Status: accepted 2026-08-25 · owner: architect · amends 0002 §3 L2/L4,
-§4 matrix, §5 `writable:`*
+§4 matrix, §5 `writable:` · amended 2026-09-06 (ranger-base-mqoid):
+§4's `.git/hooks` deferral named two beads that have since closed and
+not the record that decided it — it points at ADR 0038*
 
 > The write cage was binary. An external reader of the public surface
 > asked whether a persona can be allowed some paths and refused others.
@@ -140,7 +142,10 @@ read-only-repo persona can still claim, comment and close. The
 redirect-target extra (store of record outside the session dir) is
 ranger-base-rhw at L2; the L4 bead applies the same path as a read-write
 submount when it is outside the repo. `.git/hooks` as a further `:ro`
-overlay is ranger-base-3c3 / h15, not this ADR.
+overlay is not this ADR: it was deferred here to ranger-base-3c3 / h15,
+and [ADR 0038](0038-git-identity-write-deny.md) decided it — the hook
+slots are part of the repo's persistent git identity, denied at L2 and
+bound `:ro` at L4 with the rest of the common dir.
 
 **5. A hook is not a cage.** A posse-rendered Claude PreToolUse matcher
 is deterministic, claude-only, and sees tool-mediated writes only. It

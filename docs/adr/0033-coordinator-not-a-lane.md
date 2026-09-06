@@ -1,7 +1,11 @@
 # ADR 0033 — The coordinator is not a lane: dispatch never hires the persona that governs it
 
 *Status: accepted 2026-08-22 · bead ranger-base-kb7 · richard ·
-re-landed 2026-08-28 under a free number, bead ranger-base-gbkr*
+re-landed 2026-08-28 under a free number, bead ranger-base-gbkr ·
+amended 2026-09-06 (ranger-base-mqoid): §1's `pulse_persona` and §4's
+"until that lands" both described unbuilt code that is built —
+`pulse_persona` is parsed and carried as `GovInputs.PulsePersona`
+and G9 is computed in `govern.go`*
 
 > Restated from the private archive of the instance this harness was
 > developed in, where it was accepted 2026-08-22 as its ADR 0018. The
@@ -61,7 +65,7 @@ name.** New config key `coordinator:` (ranger-base sets `monica`). One
 fact, one store: config.yaml, the operator's file. Absent key = no
 coordinator = today's behavior — the engine ships crew-agnostic
 (hardcoding a persona name is the rangerhq-gk4k bug class). ADR 0027's
-`pulse_persona` (unbuilt) now defaults to `coordinator:`'s value, so
+`pulse_persona` now defaults to `coordinator:`'s value, so
 "who is delivered to" and "who is never hired" cannot drift apart
 (amended there). Exit hatch: the key holds no state; removing it
 restores old behavior wholesale.
@@ -91,10 +95,11 @@ to the operator (rangerhq-6ts), sightings she owns (ranger-base-kb7).
 **4. The stuck bead is surfaced, not silently parked.** ADR 0029 §1
 gains row G9 (amended there): a ready bead routed to the coordinator —
 predicate: bd assignee/labels + config `coordinator:`, computable by
-any process; class LANE. It rides into the §1–2 build (rangerhq-81y0).
-Until that lands, the residual is the pass line every pass prints plus
-monica's standing watch from the kb7 interim, which retires when §2
-ships.
+any process; class LANE. It rode into the §1–2 build (rangerhq-81y0)
+and is computed there — `govern.go`'s G9 arm, in the bd half of the
+condition set. So G9 is no longer the residual this paragraph described:
+the pass line and monica's kb7-interim watch are no longer the only
+surfacing, whatever the coordinator's own practice is now.
 
 **5. A drift alarm, mechanical and advisory.** The parity check warns
 when a PID's `allow:` grants `git push` — the coordinator's defining
