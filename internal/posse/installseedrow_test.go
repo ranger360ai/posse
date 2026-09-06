@@ -11,8 +11,15 @@ package posse
 //
 // The half the re-stamp deliberately does NOT cover is a PROMOTED manifest —
 // there the manifest is a claim about a commit and only `posse promote` may
-// restate it (ranger-base-pith). The row has to say so, because init says
-// nothing at all in that case; that is the second test here.
+// restate it (ranger-base-pith). The row has to say so, and what it has to
+// say CHANGED under this file twice: init used to be silent in that case,
+// then ranger-base-pith made it warn, then ranger-base-39jnl made it refuse
+// before the first write. The second test here reads the refusal. The row is
+// pinned against all four of init's outcomes rather than against a silence —
+// an absence is not something a reader can check, and reading one was the
+// defect ranger-base-8devq filed (swept under ranger-base-b22vq, which also
+// took this file's last pre-39jnl claim: a `promoted.json` assertion and a
+// t.Skip parked on a bead that had already closed).
 
 import (
 	"os"

@@ -5663,6 +5663,28 @@ one-deployment procedure). What is worth knowing here rather than there:
   `state/` and `personas/` are never created, copied or touched by promote,
   each for its own reason (§7 secrets with no commit behind them, machine-local
   state, persona memory).
+- **A sentence that SPELLS the set out is not a reader of it** (ranger-base-b22vq,
+  the drift ADR 0039 D2 left behind). The token widened the copy, the removal,
+  the manifest, the launch verify, the seatbelt grants and the wall's path
+  class in one edit — and left four shipped sentences naming four of the five
+  paths, because each spelled the list by hand. The sharpest was the commit
+  wall's own refusal: it refused `rhq/runtimes/claude.yaml`, printed the class
+  line naming `rhq/runtimes`, and one line above explained the class with a
+  list that omitted the path it had just refused. The other three were the
+  `posse promote` help, the `posse init` stamp and the `posse gates`
+  all-clear. Nothing in the suite asserted any of them, so the sweep and the
+  suite both stayed green. All four now render `PromotedProse` (promote.go),
+  and the pins (`internal/posse/promotedprose_qa_test.go`,
+  `cmd/posse/promotehelp_qa_test.go`) read the shipped text BACK and measure
+  it against a spec that is **written out** — a case list generated from
+  `PromotedPaths` deletes its own case when a member goes and passes.
+  Two traps worth carrying forward: the wall's refusal has to be read as a
+  REASON SPAN, because the class line below it prints the staged path
+  verbatim and a whole-message `Contains` is satisfied by the very line the
+  reason contradicts; and the same shape bit the help pin for real — with the
+  whole promote block as its subject it stayed GREEN under the mutation it
+  exists to catch, because the removal sentence four lines down names
+  `runtimes/` as its worked example.
 - **The manifest is the trust anchor** ranger-base-5na lacked, and it sits at
   `home/promoted.json` — **beside** the promoted copy, deliberately not under
   `state/`, which every session can write. It records source, repo, commit and

@@ -1525,8 +1525,12 @@ func (a *App) SeatbeltReport(ag *AgentFile, cwd string, out io.Writer, stateDirs
 		}
 		return nil
 	}
-	fmt.Fprintf(out, "    constitution at %s (agents/, config.yaml, recipes/, skills/, envs/, %s): in no grant above — ADR 0015 §2/§7\n",
-		AbbrevHome(a.Home), PromoteManifestFile)
+	// Same list as the bad-grant branch above reports members of, and read
+	// from the same place: the all-clear an operator sees on a clean home
+	// used to spell four of the five promoted paths by hand, so it went
+	// stale the day `runtimes` joined the set (ranger-base-b22vq).
+	fmt.Fprintf(out, "    constitution at %s (%s, %s/, %s): in no grant above — ADR 0015 §2/§7\n",
+		AbbrevHome(a.Home), PromotedProse(""), ConstitutionEnvsDir, PromoteManifestFile)
 	fmt.Fprintf(out, "    memory %s is granted and no other persona's is — ADR 0015 §5\n", AbbrevHome(ag.MemoryDir))
 	return nil
 }

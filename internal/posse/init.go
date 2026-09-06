@@ -359,8 +359,12 @@ func (a *App) initFrom(w io.Writer, src fs.FS, from string) error {
 		fmt.Fprintf(w, "filled %d missing seed file(s) and re-stamped %s (seeded): the manifest follows what init lays down, so the launch verify matches the repaired home (ADR 0015 §3)\n",
 			wrote, AbbrevHome(a.PromoteManifestPath()))
 	case fresh:
-		fmt.Fprintf(w, "stamped %s (seeded): every launch now hashes agents/, config.yaml, recipes/ and skills/ against it — a dispatched launch refuses on a mismatch, an interactive one warns (ADR 0015 §3)\n",
-			AbbrevHome(a.PromoteManifestPath()))
+		// The set is READ from PromotedPaths, not spelled here: this is the
+		// sentence that tells a new operator what the launch verify covers,
+		// and it named four of five for the whole life of `runtimes` in the
+		// set (ranger-base-b22vq).
+		fmt.Fprintf(w, "stamped %s (seeded): every launch now hashes %s against it — a dispatched launch refuses on a mismatch, an interactive one warns (ADR 0015 §3)\n",
+			AbbrevHome(a.PromoteManifestPath()), PromotedProse("and"))
 		fmt.Fprintf(w, "  `posse promote` is what re-stamps it after you change any of them\n")
 	case !fresh && wrote == 0 && man != nil && man.Seeded:
 		// ranger-base-g4cm: a seeded home whose re-run fills no gap matched

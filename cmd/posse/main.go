@@ -2428,13 +2428,20 @@ catalog:
                                  (examples/ beside the binary wins, for dev builds)
   posse promote [<dir>] [--dry-run]
                                  ADR 0015 §3 — put the constitution in force: copy
-                                 agents/, config.yaml, recipes/, skills/ from the
-                                 constitution repo AT HEAD into the home and record
-                                 {source, sha, sha256/file} in promoted.json beside
-                                 them. Prints the diff since the last promote, so
-                                 what is ratified is a diff and not a vibe. Refuses
-                                 on a dirty promoted path (nothing uncommitted is
-                                 ever in force) and under RHQ_PERSONA. Never
+                                 the promoted set —
+                                 ` + posse.PromotedProse("") + `
+                                 — from the constitution repo AT HEAD into the
+                                 home and record {source, sha, sha256/file} in
+                                 promoted.json beside them. Prints the diff since
+                                 the last promote, so what is ratified is a diff
+                                 and not a vibe. Refuses on a dirty promoted path
+                                 (nothing uncommitted is ever in force) and under
+                                 RHQ_PERSONA. It also REMOVES what the commit does
+                                 not carry, printing each removal: a file you put
+                                 at the home by hand — a runtimes/ overlay
+                                 especially, the file that decides which model a
+                                 tier launches on (ADR 0039 D2) — leaves, loudly,
+                                 rather than quietly staying in force. Never
                                  creates, copies or touches envs/ (§7: gitignored
                                  secrets, no commit to promote from), state/ or
                                  personas/. <dir> defaults to the last promote's

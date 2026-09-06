@@ -226,12 +226,25 @@ func i9dbbFlatten(body string) string {
 // is gone. A reader following the row meets a sentence the row lists no arm
 // for.
 //
-// Parked on the open bead. Un-skip when ranger-base-b22vq lands.
+// Was parked on the open bead; ranger-base-b22vq landed and the skip is
+// lifted. HALF of what this pin asked for arrived before that, from a
+// different bead: ranger-base-39jnl made init REFUSE a promoted home, and
+// the row was rewritten around the refusal, so "If neither sentence appears"
+// was already gone. The second arm was still owed and still red — §14's row
+// listed no arm for the mismatch sentence at all — and b22vq's edit added
+// it.
 //
-// Shown able to fail: with the skip lifted this FAILS today at 13db95e.
+// The other site 8devq named — installseedrow_test.go's header comment, its
+// `promoted.json` assertion and the t.Skip at its line 117 — is gone too,
+// swept by the same ranger-base-39jnl rewrite: the file now pins init's
+// refusal, holds no t.Skip, and asserts nothing about the manifest filename.
+// Checked at 1674846b, not assumed.
+//
+// Shown able to fail: with the skip lifted it FAILED at 1674846b on the
+// second arm, and it fails again the moment the row stops naming the
+// sentence.
 func TestQAInstallSeedingRowNamesTheManifestMismatchSentence(t *testing.T) {
 	t.Parallel()
-	t.Skip("ranger-base-b22vq (carries closed ranger-base-8devq): INSTALL.md §14's seeding row still teaches the promoted case as an absence of two sentences, and ranger-base-pith added a third")
 
 	// The witness that the sentence really is printed: the row is stale only
 	// because the code changed under it.

@@ -140,6 +140,40 @@ a hostname-derived identity at exit 0 rather than failing. Both are named in
 so the file's claim that "a name that is not here is not covered" is
 something a reader can now check. The family is narrowed, not closed.
 
+### Fixed
+
+**Four shipped sentences that spell the promoted set out for an operator now
+read it instead of repeating it, so `runtimes/` is in all four.**
+
+*Affected: `posse` usage, the `posse init` stamp line, the `posse gates`
+all-clear, and the constitution commit wall's refusal — the last one needs
+`posse gates install-hooks` (or the next launch that re-renders the hook) to
+reach a repo that already has it.*
+
+`runtimes/` joined the promoted set above, and the sweep that landed it
+reached every prose site and no OUTPUT site. Four sentences kept naming four
+of the five paths, and nothing in the suite asserted any of them — which is
+why the sweep and the suite both stayed green. The sharpest was the commit
+wall: it refused a persona commit on `rhq/runtimes/claude.yaml`, printed the
+class line naming `rhq/runtimes`, and one line above explained the class with
+a list that omitted the path it had just refused. The other three are the
+sentences that tell an operator what the promoted set IS — at the moment of
+refusal, at the moment of seeding, and in the verb's own help.
+
+All four now render `PromotedProse`, one reader of `PromotedPaths` like the
+copy, the removal, the manifest, the launch verify, the seatbelt grants and
+the wall's own path class — so the next member of the set widens them in the
+same edit. Seven pins read the shipped text back and measure it against a
+written-out spec, and the spec is written out on purpose: a case list
+generated from `PromotedPaths` shrinks with it silently.
+
+**`posse promote`'s help now says the verb REMOVES what the constitution
+commit does not carry.** It enumerated what promote never touches (`envs/`,
+`state/`, `personas/`) and said nothing about what it takes away, so a
+`runtimes/` overlay placed at the home by hand read as untouched. It is not —
+it leaves, loudly, printing the removal — and the verb's own help is where
+that belongs, not only the Upgrading note above.
+
 ### Added
 
 **The bd argv gate now refuses `bd close` typed in a session worktree that

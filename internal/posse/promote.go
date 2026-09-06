@@ -69,6 +69,36 @@ import (
 // are not in it; nothing mutates it at runtime.
 var PromotedPaths = []string{"agents", "config.yaml", "recipes", "runtimes", "skills"}
 
+// PromotedProse renders PromotedPaths for a sentence an operator READS —
+// each tree with a trailing slash, `config.yaml` as itself — with `last` as
+// the word before the final member ("and", or "" for a bare comma list).
+//
+// It exists because four shipped sentences spelled the promoted set out by
+// hand and went quietly false the day `runtimes` joined it (ADR 0039 D2,
+// ranger-base-ight8; the drift found by ranger-base-b22vq): the commit
+// wall's own refusal explained itself with a list that omitted the path it
+// had just refused, and the promote verb's help, the init stamp and the
+// seatbelt all-clear each named four of five. ADR 0039 D2's argument is that
+// one token widens every reader; a sentence that spells the list by hand is
+// not a reader, so these four read this instead.
+//
+// The tree/file split is taken from the path and not from a second list:
+// `config.yaml` is the one member with an extension, and a member added with
+// one gets the same treatment without an edit here.
+func PromotedProse(last string) string {
+	names := make([]string, 0, len(PromotedPaths))
+	for _, p := range PromotedPaths {
+		if path.Ext(p) == "" {
+			p += "/"
+		}
+		names = append(names, p)
+	}
+	if last == "" || len(names) < 2 {
+		return strings.Join(names, ", ")
+	}
+	return strings.Join(names[:len(names)-1], ", ") + " " + last + " " + names[len(names)-1]
+}
+
 // NotPromoted names what lives at the home and is never promoted — the
 // list exists so the exclusion is greppable and testable, not so anything
 // reads it in the copy path (the copy path only ever walks PromotedPaths).
