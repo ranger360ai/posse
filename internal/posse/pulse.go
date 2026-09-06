@@ -314,7 +314,16 @@ func pulseTakesPrompt(status string) bool { return status == "idle" || status ==
 // mark. The prompt itself carries no authority; the stores stay the record.
 func (d *Dispatcher) deliverPulse(cfg PulseConfig, tick pulseTick, state *PulseState) {
 	changed := state.PromptedFingerprint != tick.Fingerprint
-	due := changed || (!state.PromptedAt.IsZero() && tick.At.Sub(state.PromptedAt) >= cfg.Renag)
+	// A record with a fingerprint but no readable timestamp is a HALF-read
+	// record, and it reads as never prompted — not as a window that has not
+	// elapsed. Guarding the renag arm with `!IsZero()` alone would answer
+	// the second: the dedup arm says "already prompted" off the surviving
+	// fingerprint while the renag arm has no clock to measure from, so the
+	// set goes silent until it changes. That is the suppression ADR 0027
+	// rules out by name, and the direction this whole function is written
+	// to fail in is the other one — a repeat, which the renag interval
+	// already budgets for (ranger-base-bv2nq).
+	due := changed || state.PromptedAt.IsZero() || tick.At.Sub(state.PromptedAt) >= cfg.Renag
 	if !due {
 		return
 	}

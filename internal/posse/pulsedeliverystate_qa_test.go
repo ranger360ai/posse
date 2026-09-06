@@ -217,3 +217,63 @@ func TestQAEmptySetResetIsNotAnAllClear(t *testing.T) {
 		t.Errorf("an empty computed set must clear the delivery bookkeeping: %+v", s)
 	}
 }
+
+// The HALF-readable record, which is the other half of the sentence above
+// and the one the arm before it cannot reach: `prompted_fingerprint` parses
+// and `prompted_at` does not. That record has a standing fingerprint, so
+// the dedup arm answers "already prompted" while the renag arm has no
+// timestamp to measure a window from — and a reader that took the missing
+// timestamp as "no window has elapsed" would go silent for that condition
+// set until the set itself changed, which is the suppression ADR 0027 rules
+// out by name (a reset/error mistake must never suppress an undelivered
+// hint).
+//
+// Both arms matter. Without the second one, "always due" passes the first
+// and turns a hint that repeats every 30m into one that repeats every tick.
+//
+// The name carries "Pulse" on purpose: `-run 'Pulse|pulse'` is the filter
+// this package's pulse work is measured with, and a name outside it is a
+// pin that no mutation sweep run that way will ever consult.
+func TestQAHalfReadablePulseRecordRepeatsRatherThanSilences(t *testing.T) {
+	t.Parallel()
+	b, fake := newTestBackend(t)
+	id := personaSession(t, b, fake, "coordinator-work", "coordinator", "idle", false)
+	pane := id + ":p1"
+	unpushedRepo(t, b)
+
+	clock := time.Now()
+	d := deliveryDispatcher(t, b, &clock)
+	cfg := PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute}
+
+	d.pulseOnce(cfg)
+	if n := strings.Count(calls(t, fake), "agent prompt "+pane); n != 1 {
+		t.Fatalf("setup: want exactly one prompt, got %d", n)
+	}
+	// The fingerprint is read back from the record the tick just wrote
+	// rather than spelled out here: what is under test is a record whose
+	// dedup half still MATCHES the standing set, and a hand-written
+	// fingerprint would decay into a mismatch the moment a condition key
+	// is renamed, passing for the wrong reason.
+	fp := ReadPulseState(PulsePath(b.App)).PromptedFingerprint
+	if fp == "" {
+		t.Fatalf("setup: a delivered pulse left no fingerprint in %s", PulsePath(b.App))
+	}
+	if err := os.WriteFile(PulsePath(b.App),
+		[]byte("prompted_fingerprint: "+fp+"\nprompted_at: not-a-time\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	clock = clock.Add(time.Minute)
+	d.pulseOnce(cfg)
+	if n := strings.Count(calls(t, fake), "agent prompt "+pane); n != 2 {
+		t.Errorf("a delivery record with no readable timestamp must cost a repeat, not a silence: %d prompts", n)
+	}
+
+	// ...and exactly one repeat: the tick above rewrote the record whole,
+	// so the renag window it starts is the ordinary one.
+	clock = clock.Add(time.Minute)
+	d.pulseOnce(cfg)
+	if n := strings.Count(calls(t, fake), "agent prompt "+pane); n != 2 {
+		t.Errorf("the repeat must restart the renag window, not prompt every tick: %d prompts", n)
+	}
+}
