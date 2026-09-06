@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 // The tests in this file assert on flock ACQUISITION — who holds the lock,
 // and whether a released one reads as free — and they are SERIAL on purpose,
 // which is why none of them carries t.Parallel. Two of them side by side read
@@ -25,65 +27,9 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 )
-
-// syncBuf is an io.Writer a test goroutine may read while the code under
-// test is still writing to it.
-type syncBuf struct {
-	mu sync.Mutex
-	b  strings.Builder
-}
-
-func (s *syncBuf) Write(p []byte) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.Write(p)
-}
-
-func (s *syncBuf) String() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.String()
-}
-
-// waitForOut blocks until the writer has said want. The budget is generous
-// on purpose: every herdr call here forks the test binary, and under -race
-// one launch is tens of seconds.
-func waitForOut(t *testing.T, buf *syncBuf, want string) {
-	t.Helper()
-	deadline := time.Now().Add(90 * time.Second)
-	for time.Now().Before(deadline) {
-		if strings.Contains(buf.String(), want) {
-			return
-		}
-		time.Sleep(2 * time.Millisecond)
-	}
-	t.Fatalf("output never contained %q:\n%s", want, buf.String())
-}
-
-// mustHoldLock takes the launcher lock for the test itself — the other
-// launcher every test here needs.
-func mustHoldLock(t *testing.T, a *App) *LaunchLock {
-	t.Helper()
-	l, err := lockLaunches(a, &syncBuf{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(l.Release)
-	return l
-}
-
-// rawCalls is the fake herdr's log without calls()'s gate-prefix assertion:
-// these tests read it while a pass is mid-flight, when a partial line is
-// normal and is not evidence of a missing wall.
-func rawCalls(t *testing.T, fake string) string {
-	t.Helper()
-	b, _ := os.ReadFile(filepath.Join(fake, "calls.log"))
-	return string(b)
-}
 
 // ─── the lock itself ─────────────────────────────────────────────────────────
 
@@ -481,27 +427,6 @@ func TestTwoPassesDoNotInterleaveLaunches(t *testing.T) {
 	if transitions != 1 {
 		t.Errorf("fire loops interleaved (%d transitions): %v", transitions, order)
 	}
-}
-
-// createdPersonas is the persona of each session the fake herdr was asked to
-// create, in creation order.
-func createdPersonas(t *testing.T, fake string) []string {
-	t.Helper()
-	var order []string
-	for _, ln := range strings.Split(rawCalls(t, fake), "\n") {
-		if !strings.HasPrefix(ln, "workspace create ") {
-			continue
-		}
-		fields := strings.Fields(ln)
-		for i, f := range fields {
-			if f != "--label" || i+1 >= len(fields) {
-				continue
-			}
-			persona, _, _ := strings.Cut(fields[i+1], "-")
-			order = append(order, persona)
-		}
-	}
-	return order
 }
 
 // ─── the non-blocking take, and what it may say ─────────────────────────────

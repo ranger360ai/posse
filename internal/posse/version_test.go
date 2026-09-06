@@ -1,4 +1,4 @@
-//go:build posse_arm2
+//go:build posse_arm3
 
 package posse
 

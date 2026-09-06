@@ -1,4 +1,4 @@
-//go:build posse_arm3
+//go:build posse_arm2
 
 // The ≡ line's own evidence check (ranger-base-dmzk7).
 //

@@ -1,4 +1,4 @@
-//go:build !posse_arm2 && !posse_arm3
+//go:build posse_arm3
 
 // QA pin — ADR 0036's 2026-09-01 sub-ruling CUT `restore` on a single
 // premise, in the sub-ruling table's own words: "`restore` is `tar -xzf`,
