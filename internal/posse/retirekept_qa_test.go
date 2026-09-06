@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // ranger-base-daa60: ADR 0058's amendment of 2026-09-06 (ranger-base-qz3cr)

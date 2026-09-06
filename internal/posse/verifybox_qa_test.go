@@ -550,7 +550,7 @@ func TestG10ReachesTheGovernanceSet(t *testing.T) {
 	// The control: the same instance with a fresh CLEAN verdict has no G10.
 	write(t, VerifyBoxStatePath(b.App), fmt.Sprintf("at: %s\nrc: 0\nchecks:\n  verify-codex-pin: ok\n",
 		govNow.Add(-3*time.Hour).UTC().Format(time.RFC3339)))
-	if keys := shopKeys(t, govIn(t, b)); containsStr(keys, "verify-box:verify-codex-pin") {
+	if keys := shopKeys(t, govIn(t, b)); containsString(keys, "verify-box:verify-codex-pin") {
 		t.Errorf("a clean verdict still raises the red row: %v", keys)
 	}
 }
