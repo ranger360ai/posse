@@ -1,7 +1,10 @@
 # ADR 0053 — Exact model selection is an explicit crew-session canary
 
-*Status: accepted 2026-09-03 · owner: architect · amends ADR 0003 for
-interactive launches only*
+*Status: accepted 2026-09-03 · amended 2026-09-06 (ranger-base-4pee8:
+decision 3 restated to the property the canary needs — the tier's
+availability VERDICT is skipped — in place of the mechanism it named, the
+automatic substitution ADR 0003 §3 removes) · owner: architect · amends ADR
+0003 for interactive launches only*
 
 ## Context
 
@@ -31,11 +34,35 @@ the PID, skills and gates cannot be replaced by a raw command.
    flag and the existing shell quoting carry the id; no raw command is
    introduced.
 
-3. An exact model bypasses tier availability substitution. The point of the
-   launch is to ask the provider whether that exact id is available. A
-   provider refusal is the canary result; posse must not turn it into a
-   successful launch on the tier map's usual model. This does not alter the
-   normal tier preflight.
+3. An exact model asks the provider, not the catalog. The point of the
+   launch is to learn whether this account can run that exact id, and the
+   provider's answer — a model response or a refusal — is the canary
+   result. So the launch prints the exact-model line where an ordinary
+   launch prints the tier availability verdict (the 0003 §5 catalog reading
+   of the TIER's model): a verdict about the tier map's id would describe a
+   launch nobody made. The id reaches the launch line as typed (D2), and
+   nothing else about the launch moves — floor, parity and the first-run
+   refusals rule on the runtime/tier pair the operator typed, exactly as
+   they do for an ordinary launch, and a launch that names no exact model
+   asks the preflight as it always did.
+
+   *Amended 2026-09-06 (ranger-base-4pee8). The original read "An exact
+   model bypasses tier availability substitution … posse must not turn it
+   into a successful launch on the tier map's usual model." That named the
+   automatic fallback ADR 0003 §3 removes (ranger-base-hv2zr, replayed
+   under ranger-base-xpwlc): once it is gone, the sentence forbids a thing
+   nothing can do. The exception was always the same one in both worlds —
+   the canary never calls the preflight, so it never receives its verdict,
+   and before the removal the substitution lived inside that same call and
+   was skipped as a consequence, not as the rule. Dated snapshot: at
+   2026-09-06 the removal is on the xpwlc seat branch and not on main;
+   `git log --grep ranger-base-xpwlc` on main is the record of its landing,
+   and neither state changes this paragraph. The four code sites that still
+   quote the old wording — the `Model` field comment in herdrback.go, the
+   `ExactModelLine` doc and rendered clause in exactmodel.go, the `--model`
+   help in cmd/posse/main.go, and the test pin on the rendered clause — are
+   reworded after that landing (ranger-base-lh6h5, dep-blocked on the
+   replay), because the pin sits inside a hunk the replay carries verbatim.*
 
 4. `model:` in `state/herdr/<session>.yaml` is the store of record for the
    override. The rendered argv and listing are derived from it, matching ADR
@@ -81,6 +108,18 @@ the PID, skills and gates cannot be replaced by a raw command.
   different risk boundary. The requested scope is an operator-visible crew
   session, where provider refusal is immediately visible and no work is
   claimed.
+- **Check the exact id against the catalog before launching** (priced
+  2026-09-06 under the D3 amendment). The catalog is a leased reading of
+  one provider's model list, claude-only today, and a canary on an id that
+  is rolling out is exactly the case where yesterday's reading says no. A
+  pre-check would refuse or warn on the one launch whose purpose is to get
+  a fresher answer than the catalog holds. The launch is the probe.
+- **Delete D3 once the substitution is gone** (priced 2026-09-06). The
+  exception is live code and a live test — the branch in planLaunch that
+  prints the exact-model line instead of calling the preflight, and the
+  two-arm pin that proves the same fixture reaches a verdict without
+  `--model`. A cite with no sentence behind it is a hole, not a tidy-up;
+  the sentence stays and names the verdict.
 
 ## Verification and evidence
 
