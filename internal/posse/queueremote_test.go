@@ -26,6 +26,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -219,57 +220,149 @@ func TestSourceRemotesDoNotSoftenTheTargetRefusal(t *testing.T) {
 // must bring back byte for byte including a key nothing reads. The manifest
 // is the member a "record the source's remotes for provenance" change would
 // reach for, and it is a member here so that reach is a red.
+//
+// TWO ROWS, because a remote that is only DECLARED and one that has been
+// FETCHED are different archives, and only the first was exercised when
+// this pin landed (ranger-base-y4pwj verifying ranger-base-gjbdl). MEASURED
+// on the real verb: a queue that has fetched holds `refs/remotes/<name>/*`
+// and objects it did not author, and `git bundle --all` puts both inside
+// `queue/queue.bundle`. That is not a leak and not a stanza — no URL and no
+// `.git/config` ride along on either row, which is what these assertions
+// hold — but it is the shape the instance this deletion exists for
+// (ranger-base-8e31g, an employer-approved queue remote) is actually in, so
+// it is the shape the scope claim has to be read against. The fetched row's
+// premise fatals BY NAME if a later change narrows the bundle away from
+// `--all`, rather than leaving the harder fixture quietly unexercised.
 func TestSourceRemoteArchiveCarriesNoRemoteStanza(t *testing.T) {
 	t.Parallel()
-	a, queue := declaredRig(t, sanctionedRemote)
-	mustGit(t, queue, "remote", "add", "origin", sanctionedRemote)
-	mustGit(t, queue, "remote", "add", "mirror", otherRemote)
-	// The queue's own git config holds both URLs: the premise that makes
-	// "not under queue/" a finding rather than a tautology.
-	if got := mustGit(t, queue, "config", "--get", "remote.origin.url"); got != sanctionedRemote {
-		t.Fatalf("fixture premise: remote.origin.url = %q", got)
-	}
-	res := mustBackup(t, a, remoteAt())
-	members := tarMembers(t, res.Archive)
-	if len(members) == 0 {
-		t.Fatal("the archive has no members")
-	}
-	sawConfig := false
-	for name, body := range members {
-		if strings.HasPrefix(name, "queue/") && strings.HasSuffix(name, ".git/config") {
-			t.Errorf("%s is a member — the queue half carries git config", name)
-		}
-		has := strings.Contains(string(body), sanctionedRemote) || strings.Contains(string(body), otherRemote)
-		switch {
-		case name == "home/config.yaml":
-			sawConfig = true
-			if !has {
-				t.Errorf("%s does not carry the operator's own line — the restore would come back without it", name)
+	for _, row := range []struct {
+		name  string
+		fetch bool
+	}{
+		{"remotes declared, never fetched", false},
+		{"a remote that has been fetched", true},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
+			a, queue := declaredRig(t, sanctionedRemote)
+			mustGit(t, queue, "remote", "add", "origin", sanctionedRemote)
+			mustGit(t, queue, "remote", "add", "mirror", otherRemote)
+			// The queue's own git config holds both URLs: the premise that
+			// makes "not under queue/" a finding rather than a tautology.
+			if got := mustGit(t, queue, "config", "--get", "remote.origin.url"); got != sanctionedRemote {
+				t.Fatalf("fixture premise: remote.origin.url = %q", got)
 			}
-			if want, err := os.ReadFile(a.ConfigPath); err != nil {
-				t.Fatal(err)
-			} else if string(body) != string(want) {
-				t.Errorf("%s is not the source file byte for byte:\n got %q\nwant %q", name, body, want)
+			// Every URL that must not ride along. The fetched row adds the
+			// upstream's own path, because that row's remote has to be a
+			// real repository and an example host cannot be fetched from.
+			forbidden := []string{sanctionedRemote, otherRemote}
+			if row.fetch {
+				forbidden = append(forbidden, fetchableUpstream(t, queue))
 			}
-		case has:
-			t.Errorf("%s carries a source remote URL — only home/config.yaml may", name)
-		}
+
+			res := mustBackup(t, a, remoteAt())
+			members := tarMembers(t, res.Archive)
+			if len(members) == 0 {
+				t.Fatal("the archive has no members")
+			}
+			if row.fetch {
+				// The premise that makes this row the fetched shape and not
+				// a second copy of the first: the bundle inside the archive
+				// really carries the remote-tracking ref.
+				heads := bundleHeadsIn(t, members)
+				if !strings.Contains(heads, "refs/remotes/upstream/") {
+					t.Fatalf("fixture premise: queue/queue.bundle carries no refs/remotes/upstream/* — this row is not the fetched shape:\n%s", heads)
+				}
+			}
+			sawConfig := false
+			for name, body := range members {
+				if strings.HasPrefix(name, "queue/") && strings.HasSuffix(name, ".git/config") {
+					t.Errorf("%s is a member — the queue half carries git config", name)
+				}
+				has := false
+				for _, u := range forbidden {
+					if strings.Contains(string(body), u) {
+						has = true
+					}
+				}
+				switch {
+				case name == "home/config.yaml":
+					sawConfig = true
+					if !has {
+						t.Errorf("%s does not carry the operator's own line — the restore would come back without it", name)
+					}
+					if want, err := os.ReadFile(a.ConfigPath); err != nil {
+						t.Fatal(err)
+					} else if string(body) != string(want) {
+						t.Errorf("%s is not the source file byte for byte:\n got %q\nwant %q", name, body, want)
+					}
+				case has:
+					t.Errorf("%s carries a source remote URL — only home/config.yaml may", name)
+				}
+			}
+			if !sawConfig {
+				t.Fatalf("home/config.yaml is not a member; members: %v", memberNames(members))
+			}
+			if _, ok := members[backupManifestName]; !ok {
+				t.Fatalf("%s is not a member; members: %v", backupManifestName, memberNames(members))
+			}
+			queueMembers := 0
+			for name := range members {
+				if strings.HasPrefix(name, "queue/") {
+					queueMembers++
+				}
+			}
+			if queueMembers == 0 {
+				t.Fatal("no member under queue/ — the queue half was not archived, so 'no remote stanza under queue/' is vacuous")
+			}
+		})
 	}
-	if !sawConfig {
-		t.Fatalf("home/config.yaml is not a member; members: %v", memberNames(members))
+}
+
+// fetchableUpstream gives queue a third remote, `upstream`, that is a real
+// repository on disk, and fetches it — so the queue holds remote-tracking
+// refs and objects it did not author. It returns the upstream's path, which
+// is that remote's URL and therefore one more string no archive member but
+// `home/config.yaml` may carry.
+func fetchableUpstream(t *testing.T, queue string) string {
+	t.Helper()
+	up := filepath.Join(t.TempDir(), "upstream")
+	if err := os.MkdirAll(up, 0o700); err != nil {
+		t.Fatal(err)
 	}
-	if _, ok := members[backupManifestName]; !ok {
-		t.Fatalf("%s is not a member; members: %v", backupManifestName, memberNames(members))
+	mustGit(t, up, "init", "-q", "-b", "main", ".")
+	mustGit(t, up, "config", "user.email", "t@example.com")
+	mustGit(t, up, "config", "user.name", "t")
+	write(t, filepath.Join(up, "UPSTREAM.txt"), "content the queue did not author\n")
+	mustGit(t, up, "add", "--", "UPSTREAM.txt")
+	mustGit(t, up, "commit", "-q", "-m", "upstream", "--", "UPSTREAM.txt")
+	mustGit(t, queue, "remote", "add", "upstream", up)
+	mustGit(t, queue, "fetch", "-q", "upstream")
+	if refs := mustGit(t, queue, "for-each-ref", "--format=%(refname)"); !strings.Contains(refs, "refs/remotes/upstream/main") {
+		t.Fatalf("fixture premise: the fetch left no tracking ref:\n%s", refs)
 	}
-	queueMembers := 0
-	for name := range members {
-		if strings.HasPrefix(name, "queue/") {
-			queueMembers++
-		}
+	return up
+}
+
+// bundleHeadsIn reads queue/queue.bundle back out of a published archive and
+// asks git what refs it carries. The bundle is the queue half's whole
+// journal, so what the bundle carries IS the archive's git scope.
+func bundleHeadsIn(t *testing.T, members map[string][]byte) string {
+	t.Helper()
+	b, ok := members["queue/queue.bundle"]
+	if !ok {
+		t.Fatalf("no queue/queue.bundle member; members: %v", memberNames(members))
 	}
-	if queueMembers == 0 {
-		t.Fatal("no member under queue/ — the queue half was not archived, so 'no remote stanza under queue/' is vacuous")
+	dir := t.TempDir()
+	p := filepath.Join(dir, "queue.bundle")
+	if err := os.WriteFile(p, b, 0o600); err != nil {
+		t.Fatal(err)
 	}
+	out, err := git(dir, "bundle", "list-heads", p)
+	if err != nil {
+		t.Fatalf("git bundle list-heads: %v", err)
+	}
+	return out
 }
 
 func memberNames(m map[string][]byte) []string {
