@@ -280,11 +280,18 @@ import "os"
 //	                                /Library/Developer/CommandLineTools/…/
 //	                                gitconfig by a path this variable does
 //	                                not govern — so osxkeychain and
-//	                                init.defaultBranch survive the pin. Off
-//	                                darwin it WOULD suppress /etc/gitconfig,
-//	                                which is not measured; same standing as
-//	                                LD_PRELOAD, and the reason it is said
-//	                                here rather than left to a reader.
+//	                                init.defaultBranch survive the pin. That
+//	                                bundled file is NOT system scope, though,
+//	                                and the suppression this row performs is
+//	                                not conditional on the platform: git's
+//	                                system scope HERE is /etc/gitconfig, the
+//	                                same path as anywhere else — `git config
+//	                                --system --list` names the file it wanted
+//	                                — so the row empties it on darwin exactly
+//	                                as it does elsewhere. What is zero here is
+//	                                a MISSING FILE, a fact about this box
+//	                                rather than about the platform
+//	                                (ranger-base-sv8x4).
 //	                                AND READ THAT SUPPRESSION AGAINST THE
 //	                                GIT_CONFIG_GLOBAL PARAGRAPH ABOVE: it
 //	                                reaches the same guardrail, one scope

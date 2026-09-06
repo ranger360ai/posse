@@ -39,6 +39,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -293,7 +294,12 @@ func gitConfigProbeGlobal(t *testing.T, hooks string) string {
 // the row that IS pinned, for ranger-base-nn161 (found verifying
 // ranger-base-44or9 on ranger-base-53y2k). The close above disclosed that
 // GIT_CONFIG_SYSTEM=/dev/null "WOULD suppress /etc/gitconfig off darwin" and
-// stopped there. Two paragraphs up, the same file spells that exact cost out
+// stopped there. (That off-darwin framing was itself wrong, and is corrected
+// in the row now, on ranger-base-sv8x4: /etc/gitconfig is git's system scope
+// on darwin too — the fourth arm below runs the command that says so — so
+// the row empties it here as well, and what is zero on this box is a MISSING
+// FILE rather than a platform.) Two paragraphs up, the same file spells that
+// exact cost out
 // in full as its whole reason for refusing GIT_CONFIG_GLOBAL: emptying a
 // scope takes an e-mail literal out of the visibility wall, silently. The
 // asymmetry was the finding — a reader of the row that LANDED could not see a
@@ -311,6 +317,19 @@ func gitConfigProbeGlobal(t *testing.T, hooks string) string {
 //   - the BEHAVIOUR, by execution, three arms. It fails if git ever stops
 //     dropping the literal — at which point the clause above is a paragraph
 //     that lies, the same standing the two disclosed gaps are held to.
+//   - the PATH the row reaches, a fourth arm (ranger-base-sv8x4), because
+//     the sentence the two artifacts now agree on names it. The three arms
+//     above show the literal being dropped from whatever this variable
+//     points at; they say nothing about which file it points at when nobody
+//     sets it, which is the half that was got wrong. Ask git.
+//   - the SAME DISCLOSURE IN THE CHANGELOG, also ranger-base-sv8x4. The row
+//     is what a maintainer reads; the changelog paragraph is what the
+//     OPERATOR reads before installing the root-owned drop-in, and it was
+//     the paragraph that carried the wrong scope while the row was right.
+//     Nothing held it: this file read inletpin.go's row region only, so the
+//     paragraph could say anything and stay green — which is how it came to
+//     tell a macOS reader the pin was free. Same argument the close made for
+//     anchoring its own clause, one artifact further out.
 //
 // Not live on this box and not a bug: system scope here is empty, there is no
 // /etc/gitconfig, and the full config listing is byte-identical under the pin
@@ -339,6 +358,18 @@ func TestQATheGitConfigSystemPinDropsASystemScopeIdentityLiteral(t *testing.T) {
 			t.Errorf("the GIT_CONFIG_SYSTEM row does not name %q. Suppressing a config scope takes an e-mail out of the ADR 0024 D2 check 3 wall with no error — the file writes that cost out in full for GIT_CONFIG_GLOBAL, and a reader of the row that LANDED has to be able to see it too (ranger-base-nn161)", want)
 		}
 	}
+	// The row is a reader's only account of WHICH file this empties, and the
+	// answer is the same wherever git runs (ranger-base-sv8x4).
+	if !strings.Contains(row, "/etc/gitconfig") {
+		t.Errorf("the GIT_CONFIG_SYSTEM row does not name /etc/gitconfig. That is the file this pin empties — here as much as anywhere else — and a reader cannot go check a file the row will not name")
+	}
+	// The framing the row shipped with, and the reason ranger-base-sv8x4
+	// exists: it read the suppression as something that happens away from
+	// darwin. It happens here too; there is simply no such file on this box.
+	if m := offDarwinFraming.FindString(flattenProse(row)); m != "" {
+		t.Errorf("the GIT_CONFIG_SYSTEM row scopes its suppression away from darwin (%q). git's system scope on darwin IS /etc/gitconfig — the fourth arm of TestQATheGitConfigSystemPinDropsASystemScopeIdentityLiteral runs the command that says so — so the row empties it here as well, and what is zero on this box is a missing file", m)
+	}
+	mustNotScopeTheCostToAPlatform(t, "the GIT_CONFIG_SYSTEM row in inletpin.go", row)
 
 	// ── the behaviour, three arms ────────────────────────────────────────
 	//
@@ -396,5 +427,180 @@ func TestQATheGitConfigSystemPinDropsASystemScopeIdentityLiteral(t *testing.T) {
 	// The landed pin. Silently: no error, one fewer literal.
 	if walled(t, "GIT_CONFIG_SYSTEM="+os.DevNull+" (the landed pin)", os.DevNull) {
 		t.Errorf("GIT_CONFIG_SYSTEM=%s no longer empties system scope for DeriveIdentityLiterals. Good news, but the GIT_CONFIG_SYSTEM row in inletpin.go now says it does — re-measure and rewrite the clause", os.DevNull)
+	}
+
+	// ── the PATH, a fourth arm ───────────────────────────────────────────
+	//
+	// Both texts now name /etc/gitconfig for THIS platform, which is the
+	// correction on ranger-base-sv8x4. Neither of them gets to assert it.
+	if got, ok := gitSystemScopePath(t); ok && !strings.HasSuffix(got, "/etc/gitconfig") {
+		t.Errorf("git names %q as its system scope, not /etc/gitconfig. The row in inletpin.go and the changelog paragraph both say /etc/gitconfig is the file this pin empties on this platform — re-measure and rewrite both", got)
+	}
+
+	// ── the same disclosure, in the artifact the operator reads ──────────
+	changelogGitConfigSystemParagraph(t)
+}
+
+// flattenProse makes a wrapped region one line before a phrase is looked for
+// in it. Both regions this file scans are HARD-WRAPPED — a Go comment table
+// at 42 columns, and a changelog paragraph at 78 — so the phrase a rule bans
+// is as likely to arrive split across a line as whole, and a rule that only
+// matches the unwrapped spelling is a rule that measures the line breaks.
+// (Measured: "Off\ndarwin it WOULD suppress" walked straight through the ban
+// on `off[- ]darwin` until this existed.) Comment leaders go too, so a row's
+// text reads the same as the changelog's.
+func flattenProse(region string) string {
+	var b strings.Builder
+	for _, line := range strings.Split(region, "\n") {
+		line = strings.TrimSpace(line)
+		line = strings.TrimPrefix(line, "//")
+		b.WriteString(strings.TrimSpace(line))
+		b.WriteByte(' ')
+	}
+	return strings.Join(strings.Fields(b.String()), " ")
+}
+
+// gitSystemScopePath asks git which file it reads as system scope, with the
+// pin off — and checks its own environment first, because every arm above
+// this one leaves GIT_CONFIG_SYSTEM set and a probe that asks git about an
+// OVERRIDDEN system scope answers a different question at exit 0.
+func gitSystemScopePath(t *testing.T) (string, bool) {
+	t.Helper()
+	env := gitConfigScrubbedEnv()
+	for _, e := range env {
+		if strings.HasPrefix(e, "GIT_CONFIG") {
+			t.Fatalf("the system-scope probe is about to ask git about an overridden scope (%s). git's OWN default path is the question; a probe carrying this reports whatever the last arm pointed the variable at, or goes silent, and either way passes", strings.SplitN(e, "=", 2)[0])
+		}
+	}
+	c := exec.Command("git", "config", "--system", "--list", "--show-origin")
+	c.Env = env
+	out, _ := c.CombinedOutput() // rc 128 when the file is absent, and that output IS the answer
+	path, ok := parseGitSystemScopePath(string(out))
+	if !ok {
+		t.Errorf("git named no system-scope path, so this arm is not holding the claim that /etc/gitconfig is the file the pin empties on this platform. The one benign cause is a system config that EXISTS and is EMPTY, which prints neither an origin nor the fatal — re-measure by hand before reading this as noise.\ngit said: %q", out)
+		return "", false
+	}
+	t.Logf("system scope, named by git: %s", path)
+	return path, true
+}
+
+// parseGitSystemScopePath reads the path out of whichever of the two shapes
+// git produced: a `file:` origin when the file exists and holds something,
+// the fatal when it does not (which is this box). Split out from the command
+// so the third shape — an existing but EMPTY system config, which prints
+// nothing at rc 0 — is reachable in a test instead of being a branch nobody
+// on a darwin box can enter.
+func parseGitSystemScopePath(out string) (string, bool) {
+	if _, rest, ok := strings.Cut(out, "unable to read config file '"); ok {
+		if path, _, ok := strings.Cut(rest, "'"); ok {
+			return path, true
+		}
+	}
+	if _, rest, ok := strings.Cut(out, "file:"); ok {
+		path, _, _ := strings.Cut(rest, "\t")
+		return strings.TrimRight(path, "\r\n"), true
+	}
+	return "", false
+}
+
+// TestQAGitSystemScopePathParsesTheShapesGitActuallyPrints holds the probe's
+// own reader against the three outputs measured 2026-09-06 on git 2.50.1
+// (Apple Git-155). The middle one is what a Linux box or a CI image prints
+// and this box never will; the last one is the branch that reports not-ok,
+// and without this it would be unreachable here — a probe whose blind case
+// is untested is a probe that can go blind and pass.
+func TestQAGitSystemScopePathParsesTheShapesGitActuallyPrints(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		name, out, want string
+		ok              bool
+	}{
+		{"absent, the fatal (this box)", "fatal: unable to read config file '/etc/gitconfig': No such file or directory\n", "/etc/gitconfig", true},
+		{"present with content", "file:/etc/gitconfig\tuser.email=x@example.invalid\n", "/etc/gitconfig", true},
+		{"present but empty", "", "", false},
+	} {
+		got, ok := parseGitSystemScopePath(c.out)
+		if got != c.want || ok != c.ok {
+			t.Errorf("%s: parseGitSystemScopePath(%q) = %q, %v; want %q, %v", c.name, c.out, got, ok, c.want, c.ok)
+		}
+	}
+}
+
+// changelogGitConfigSystemParagraph holds the operator-facing half of the same
+// clause, for ranger-base-sv8x4.
+//
+// THE DEFECT IT PINS. The paragraph shipped saying "On macOS this costs
+// nothing (… there is no /etc/gitconfig)" — generalising THIS BOX's missing
+// file to the platform, in the artifact an operator reads before installing
+// the root-owned drop-in. The row above was scoped correctly at the same
+// commit, so the two artifacts disagreed and the wrong one was the one aimed
+// at the reader who is not a maintainer.
+//
+// It is anchored by the paragraph's own citation of this test, so a rewrite
+// that drops the citation is red rather than silently unpinned; and the ban
+// is aimed at the retracted claim's SHAPE rather than its wording, because a
+// ban on one spelling is a ban on nothing.
+func changelogGitConfigSystemParagraph(t *testing.T) {
+	t.Helper()
+	const path = "../../CHANGELOG.md"
+	const anchor = "TestQATheGitConfigSystemPinDropsASystemScopeIdentityLiteral"
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("cannot read the operator-facing half of this clause: %v", err)
+	}
+	text := string(b)
+
+	i := strings.Index(text, anchor)
+	if i < 0 {
+		t.Fatalf("%s does not cite %s. The paragraph disclosing what GIT_CONFIG_SYSTEM=%s costs is anchored here BY that citation — without it this reader measures nothing and the paragraph is unheld prose again, which is exactly how it came to be wrong (ranger-base-sv8x4)", path, anchor, os.DevNull)
+	}
+	start := strings.LastIndex(text[:i], "\n\n") + 2
+	end := len(text)
+	if j := strings.Index(text[i:], "\n\n"); j >= 0 {
+		end = i + j
+	}
+	para := text[start:end]
+
+	// Positive anchors: the file an operator has to go look at, and the
+	// scope this row empties.
+	for _, want := range []string{"/etc/gitconfig", "system scope"} {
+		if !strings.Contains(para, want) {
+			t.Errorf("the GIT_CONFIG_SYSTEM cost paragraph in %s does not name %q. The whole cost is that an identity in that file leaves the ADR 0024 D2 check 3 wall with no error, and an operator cannot check a file the paragraph will not name.\nparagraph:\n%s", path, want, para)
+		}
+	}
+	// And the scoping the row already carried: a box, not a platform.
+	if !changelogScopesTheZeroToABox.MatchString(para) {
+		t.Errorf("the GIT_CONFIG_SYSTEM cost paragraph in %s no longer scopes its zero to a BOX. That is the correction on ranger-base-sv8x4: the cost is zero where system scope holds no user.email, which is a fact about the box and not about the platform — inletpin.go's row says it that way, and these two must not disagree again.\nparagraph:\n%s", path, para)
+	}
+	mustNotScopeTheCostToAPlatform(t, "the GIT_CONFIG_SYSTEM cost paragraph in "+path, para)
+}
+
+// The framings this clause shipped with, both wrong the same way: they make
+// the pin's cost a property of the PLATFORM, when git's system scope on
+// darwin is /etc/gitconfig exactly as it is anywhere else and what is zero on
+// this box is a missing file. Case-folded and stem-matched, so an inflection
+// ("costs you nothing on a Mac") is caught by the rule the shipped spelling
+// is.
+//
+// LIMIT, stated rather than implied: these catch the SHAPE that shipped, not
+// every possible mis-scoping of it. What holds the underlying fact is the
+// fourth arm above, which asks git rather than a reader.
+var (
+	offDarwinFraming             = regexp.MustCompile(`(?i)\b(off|outside|away from|anywhere but|other than|not on|non)[- ]darwin`)
+	platformName                 = regexp.MustCompile(`(?i)\b(mac|macs|macos|os x|darwin|apple)\b`)
+	costIsFree                   = regexp.MustCompile(`(?i)(costs? (you )?nothing|no cost|zero cost|cost is zero|costs? zero|harmless)`)
+	changelogScopesTheZeroToABox = regexp.MustCompile(`(?i)(property of the box|of the box rather than|this box|a box with no)`)
+)
+
+// mustNotScopeTheCostToAPlatform fails on a sentence telling a reader that a
+// platform is what makes GIT_CONFIG_SYSTEM=/dev/null free. Both artifacts the
+// close landed are held to it: the row a maintainer reads, and the changelog
+// paragraph an operator reads before installing the root-owned drop-in.
+func mustNotScopeTheCostToAPlatform(t *testing.T, where, region string) {
+	t.Helper()
+	for _, sentence := range strings.Split(flattenProse(region), ". ") {
+		if platformName.MatchString(sentence) && costIsFree.MatchString(sentence) {
+			t.Errorf("%s tells a reader that a PLATFORM is what makes this free:\n\t%q\nIt is not. git's system scope on darwin is /etc/gitconfig, the same path as anywhere else, and this pin empties it here too — what is zero on this box is a missing file. Scope the sentence to a box whose system scope holds no user.email (ranger-base-sv8x4)", where, strings.TrimSpace(sentence))
+		}
 	}
 }
