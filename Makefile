@@ -42,7 +42,7 @@ FMT_ROOTS := cmd internal *.go
 BUILD_STAMP := $(shell $(GOBIN) run ./cmd/buildstamp)
 LDFLAGS     := -X github.com/ranger360ai/posse/internal/posse.Build=$(BUILD_STAMP)
 
-.PHONY: build release install deploy test test-reuse fmt-check crew-check selector-check seed-check history-check doc-check identity-check ops-check tree-check verify-test-times verify-suite-lock verify-silent-reverts verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-self-close verify-govern-honesty verify-grok-pin verify-codex-pin verify-credential-paths verify-hook-freshness verify-bd-pin verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
+.PHONY: build release install deploy test test-reuse fmt-check crew-check seed-check history-check doc-check identity-check ops-check tree-check verify-test-times verify-suite-lock verify-silent-reverts verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-self-close verify-govern-honesty verify-grok-pin verify-codex-pin verify-credential-paths verify-hook-freshness verify-bd-pin verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
 
 build:
 	$(GOBIN) build -ldflags '$(LDFLAGS)' -o bin/posse-go ./cmd/posse
@@ -366,7 +366,6 @@ fmt-check:
 # that reach a helper which WALKS from it — and checks the union both ways. A
 # new tree-wide pin fails that check until it is given a door here.
 QA_CREW_PINS     := TestShippedTreeNamesRolesNotThisCrew|TestShippedStringsNameRolesNotThisCrew|TestTestCorpusHidesNoCrewNameBehindAnEscape
-QA_SELECTOR_PINS := TestHerdrSelectorsAreNamedByADR0016
 QA_TOOL_PINS     := TestTreeIsGofmtClean
 QA_SEED_PINS     := TestSeedSurfaceNameCountIsZero|TestSeedConfigLiveKeysAreRead
 QA_HISTORY_PINS  := TestPublicationRootCommitOmitsExcludedPaths|TestPublicationRootCommitADRsCarryProvenance|TestPublicationHistoryNeverCarriesTheSeedScript|TestShippedExampleTableCoversEveryVersionInGitHistory
@@ -385,12 +384,6 @@ QA_OPS_PINS      := TestQAEveryOpsHitInTrackedMarkdownIsRuled|TestQAOpsShapeTabl
 # examples/ or any *_test.go.
 crew-check:
 	$(GOBIN) test ./internal/posse -timeout 15m -count=1 -run '^($(QA_CREW_PINS))$$'
-
-# ADR 0016 §1's four wire selectors, as named by the ADR page. ~0.5s, nearly
-# all of it the same package compile crew-check already paid for. Type it when you touch herdrevents.go or
-# the ADR.
-selector-check:
-	$(GOBIN) test ./internal/posse -timeout 15m -count=1 -run '^($(QA_SELECTOR_PINS))$$'
 
 # The eight members ranger-base-ik44f's census could not see, doored under
 # ranger-base-sx2dq. They were invisible because the census keyed on ONE
@@ -451,11 +444,11 @@ ops-check:
 	$(GOBIN) test ./internal/posse -timeout 15m -count=1 -run '^($(QA_OPS_PINS))$$'
 
 # The whole class, one command: every tree-wide pin in internal/posse — 21-41s
-# over four runs at eighteen pins. No recipe of its own — the doors are its prerequisites, so `make -n
+# over four runs at seventeen pins. No recipe of its own — the doors are its prerequisites, so `make -n
 # tree-check` prints exactly what a seat would otherwise have to type. It is a
 # prerequisite of `make test` for rulbl's reason: a full run fails on it in
 # seconds instead of at ~950.
-tree-check: fmt-check crew-check selector-check seed-check history-check doc-check identity-check ops-check
+tree-check: fmt-check crew-check seed-check history-check doc-check identity-check ops-check
 
 # Register the cockpit plugin with the running herdr (local dev link).
 # The manifest runs ./bin/posse relative to the plugin root; that is a symlink

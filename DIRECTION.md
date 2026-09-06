@@ -40,8 +40,8 @@ Each layer has a clean job:
   layout, and *ephemeral* state — which agent is in which pane and whether it
   is working, blocked, or idle right now — so the operator can see at a
   glance what is running, where, in parallel. Its CLI/socket API is the actuation surface
-  (`agent start` / `agent prompt --wait` / `agent wait` / `pane read` /
-  `events.subscribe`, per-pane env injection).
+  (`agent start` / `agent prompt --wait` / `agent wait` / `pane read`,
+  per-pane env injection).
 - **beads** (`bd`) is the durable work substrate: a dependency-aware issue
   graph with atomic claiming (`bd ready` → `bd update --claim` → `bd close`),
   inter-agent mail with threading, and project memory

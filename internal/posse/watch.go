@@ -216,43 +216,6 @@ func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string,
 			d.backupLoop(backupCtx, cfg)
 		}()
 	}
-	// The settle-event channel (ADR 0016 §1, ADR 0028 §1). One subscription
-	// for the life of this loop. A hint wakes the next pass immediately
-	// instead of waiting out the backoff (ADR 0028 §1's first trigger); the
-	// tick below is what fires it when no hint arrives at all — the
-	// backstop, not the mechanism. Either way it is Run's own gather loop
-	// that does the actual refiring, verified against bd and herdr fresh
-	// (refire) rather than trusted from the hint: a coalesced, replayed or
-	// entirely lost hint costs this loop latency, waiting out the backstop,
-	// and never correctness.
-	//
-	// No herdr, no socket, a dead server: the subscriber says so once and
-	// this loop goes on ticking. It is a latency path, never a dependency.
-	//
-	// The settle event is subscribable only one pane at a time, so the
-	// subscription is built from the panes herdr has an agent in — and this
-	// loop pokes it after every pass, because the pass is what knows a seat
-	// was added (herdrevents.go).
-	refresh := make(chan struct{}, 1)
-	subscribe := d.Hints
-	if subscribe == nil {
-		subscribe = func(ctx context.Context, report func(string)) <-chan HerdrHint {
-			panes := func() []string { return nil }
-			if d.HB != nil {
-				panes = d.HB.AgentPanes
-			}
-			return HerdrSettleHints(ctx, SocketID(), panes, refresh, report)
-		}
-	}
-	// quietf and not a bare Fprintf, and quiet rather than stamping
-	// (ranger-base-hpppv). herdrHints calls this report from ITS OWN
-	// goroutine (herdrevents.go: "herdr events restored", "herdr events
-	// unavailable — polling"), so an outage notice can arrive while a
-	// gather is mid-line — outMu is what keeps it off the launch line it
-	// would otherwise land inside. Quiet because a herdr outage notice is
-	// a reading of the shop and not a sign of life from this loop, which
-	// is the rule LastWrite states and the three other clocks keep.
-	hints := subscribe(ctx, func(line string) { d.quietf("   %s\n", line) })
 	// The launch ration, said once, at the top of the log this loop writes
 	// for the rest of its life (ranger-base-t8tq, fix ask (b)). See
 	// LaunchCapLine: the number is the operator's, the UNIT is ADR 0028 §2's
@@ -467,13 +430,6 @@ func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string,
 		if ctx.Err() != nil {
 			return passes, nil
 		}
-		// The pass just re-read herdr: let the subscription pick up any seat
-		// it found. Coalesced, never blocking — a poke nobody took yet is a
-		// poke that has not been acted on.
-		select {
-		case refresh <- struct{}{}:
-		default:
-		}
 		// A pass that carried prompts is not a quiet pass (ranger-base-3ryit).
 		// The backoff's question is "did this loop have anything to do?", and
 		// before the carry the answer could only be read off the beads this
@@ -484,9 +440,10 @@ func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string,
 		held := d.inFlightCount()
 		wait = NextInterval(wait, base, maxInterval, n+held)
 		d.printf("   %d dispatched · next pass in %s (ctrl-c to stop)\n", n, wait.Round(time.Second))
-		// One timer per pass; a hint cuts it short instead of waiting it
-		// out (ADR 0028 §1) — the next pass's own fireLoop re-verifies
-		// against bd and herdr before it acts on anything the hint implied.
+		// One timer per pass; a carried leg landing cuts it short instead
+		// of waiting it out (ADR 0028 §1) — the next pass's own fireLoop
+		// re-verifies against bd and herdr before it acts on anything that
+		// wake implied.
 		timer := time.NewTimer(wait)
 		for tick := false; !tick; {
 			select {
@@ -496,21 +453,11 @@ func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string,
 			case <-d.settled():
 				// A leg this loop was CARRYING has landed
 				// (ranger-base-3ryit): its bead is judged and its seat
-				// refilled by a pass, so take the next one now. Same
-				// trigger as the herdr hint below and strictly more
-				// reliable — it is this process's own channel, not an
-				// event socket — and it is what keeps the carry from
-				// costing a settle up to one interval.
-				timer.Stop()
-				tick = true
-			case h, ok := <-hints:
-				if !ok {
-					// The subscriber is gone for good (ctx ended, or it
-					// stopped); wait out the timer on a nil channel.
-					hints = nil
-					continue
-				}
-				d.printf("   settle hint · %s — waking the next pass now (ADR 0028 §1)\n", h)
+				// refilled by a pass, so take the next one now. It is the
+				// result of a wait THIS process owns, not an event socket
+				// (ADR 0016), and it is what keeps the carry from costing
+				// a settle up to one interval. It is a wake, never a
+				// claim: the pass it starts reads bd and herdr fresh.
 				timer.Stop()
 				tick = true
 			case <-timer.C:

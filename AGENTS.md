@@ -209,29 +209,27 @@ bd sync               # Sync with git
   you commit.** `make fmt` is the fix it names, and the two now read one
   `$(FMT_ROOTS)`, so the advice works on every file the check reports.
   The class is "a QA test whose subject is the TREE, living inside a package
-  nobody runs whole", and gofmt is one of five in internal/posse today:
+  nobody runs whole", and gofmt is one of four in internal/posse today:
 
   ```
   TestTreeIsGofmtClean                     make fmt-check       ~1.5s
   TestShippedTreeNamesRolesNotThisCrew     make crew-check      ~2.5s
   TestShippedStringsNameRolesNotThisCrew   make crew-check
   TestTestCorpusHidesNoCrewNameBehindAnEscape  make crew-check
-  TestHerdrSelectorsAreNamedByADR0016      make selector-check  ~0.5s
   ```
 
-  **`make tree-check` is all five, 5.1s warm and ~16s cold** (the cold half
+  **`make tree-check` is all four, 5.1s warm and ~16s cold** (the cold half
   is compiling internal/posse's test binary; ranger-base-ik44f) — that is
   the one command to type after a filtered run, and it is a prerequisite of
   `make test` for the same reason `fmt-check` is. The other two doors are
   worth knowing by name: `make crew-check` when your change touched `cmd/`,
-  `internal/`, `etc/`, `examples/` or any `*_test.go`, and `make
-  selector-check` when it touched `herdrevents.go` or ADR 0016. `crew-check`
+  `internal/`, `etc/`, `examples/` or any `*_test.go`. `crew-check`
   replaces the hand-composed `grep -rn '<every crew name>' cmd etc examples
   internal *_test.go` that standing orders used to carry: it prints path,
   line and the offending name, and it IS the pin, so it cannot disagree with
   the suite.
 
-  These four doors run the pin under a `-run` filter rather than
+  These doors run the pin under a `-run` filter rather than
   reimplementing it in shell, which is the difference from `fmt-check`
   (gofmt is a tool; a `gofmt -l` cannot disagree with `go/format`). A shell
   rewrite of an ast parse would be a second implementation to keep in sync

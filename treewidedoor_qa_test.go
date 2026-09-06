@@ -16,7 +16,6 @@ package posse
 //	TestShippedTreeNamesRolesNotThisCrew          make crew-check  ~2.5s
 //	TestShippedStringsNameRolesNotThisCrew        make crew-check
 //	TestTestCorpusHidesNoCrewNameBehindAnEscape   make crew-check
-//	TestHerdrSelectorsAreNamedByADR0016           make selector-check ~0.5s
 //
 // and eight more the first census could not see, doored under
 // ranger-base-sx2dq (see arm 2):
@@ -44,7 +43,7 @@ package posse
 //	                                              make history-check   ~3s
 //
 // and `make tree-check` is all of them — 21-41s on this box over four runs at
-// eighteen pins and seven doors — which is the command a seat types after a
+// seventeen pins and six doors — which is the command a seat types after a
 // filtered run.
 //
 // WHY THE DOOR RUNS THE PIN. fmt-check re-runs the TOOL, because gofmt is a
@@ -84,14 +83,14 @@ package posse
 //     tracked markdown file, one reads the history of every shipped
 //     example. All five now take the root from the one helper, that
 //     spelling is fenced in TestQAOneRepoRootHelperInTheTestPackage, and
-//     thirteen members became eighteen. The lesson the third rule is NOT:
+//     thirteen members became eighteen (seventeen since ADR 0016's socket
+//     hints and their selector pin were removed). The lesson the third rule is NOT:
 //     the class was never bounded by how a test spells its root, so the
 //     thing that bounds it is the single helper, not another rule.
 //  3. the doors can FAIL: `make -n`'s own expansion of each, run for real
 //     against a scratch copy of the tree carrying the real drift — a crew
-//     name in a shipped file, and an ADR page that stopped naming a selector
-//     it subscribes to. Clean arm first, so a door that always fails is not
-//     mistaken for one that detects.
+//     name in a shipped file. Clean arm first, so a door that always fails is
+//     not mistaken for one that detects.
 
 import (
 	"fmt"
@@ -110,7 +109,7 @@ import (
 // The Makefile variables that hold the class. One per door, plus the pin
 // whose door is a tool rather than a filter — the union is what arm 2
 // measures against the tree.
-var twdPinVars = []string{"QA_CREW_PINS", "QA_SELECTOR_PINS", "QA_TOOL_PINS", "QA_SEED_PINS", "QA_HISTORY_PINS", "QA_DOC_PINS", "QA_IDENTITY_PINS", "QA_OPS_PINS"}
+var twdPinVars = []string{"QA_CREW_PINS", "QA_TOOL_PINS", "QA_SEED_PINS", "QA_HISTORY_PINS", "QA_DOC_PINS", "QA_IDENTITY_PINS", "QA_OPS_PINS"}
 
 // twdRootHelper is the ONE repo-root helper internal/posse's tests may use.
 // It is a single identifier on purpose — the class below is derived from it,
@@ -183,7 +182,7 @@ func TestQAMakeTestOpensTheTreeWideDoors(t *testing.T) {
 	// The umbrella reaches every door. It carries no recipe of its own, so
 	// `make -n tree-check` prints exactly what a seat would have to type.
 	tree := strings.Join(twdPrereqs(t, src, "tree-check"), " ")
-	for _, door := range []string{"fmt-check", "crew-check", "selector-check", "seed-check", "history-check", "doc-check", "identity-check", "ops-check"} {
+	for _, door := range []string{"fmt-check", "crew-check", "seed-check", "history-check", "doc-check", "identity-check", "ops-check"} {
 		if !strings.Contains(tree, door) {
 			t.Errorf("`make tree-check` no longer reaches `%s`, so one tree-wide pin is back to being ~950s away: %q", door, tree)
 		}
@@ -196,14 +195,13 @@ func TestQAMakeTestOpensTheTreeWideDoors(t *testing.T) {
 	}
 
 	if phony := strings.Join(twdPrereqs(t, src, ".PHONY"), " "); !strings.Contains(phony, "tree-check") ||
-		!strings.Contains(phony, "crew-check") || !strings.Contains(phony, "selector-check") ||
+		!strings.Contains(phony, "crew-check") ||
 		!strings.Contains(phony, "identity-check") || !strings.Contains(phony, "ops-check") {
 		t.Errorf(".PHONY does not name the new doors — a file of that name in the tree would silence one: %q", phony)
 	}
 
 	for _, door := range []struct{ target, variable string }{
 		{"crew-check", "QA_CREW_PINS"},
-		{"selector-check", "QA_SELECTOR_PINS"},
 	} {
 		recipe := strings.Join(makeRecipe(src, door.target), "\n")
 		if recipe == "" {
@@ -699,7 +697,7 @@ func TestQAEveryTreeWidePinHasADoor(t *testing.T) {
 	for _, name := range names {
 		found[name] = true
 		if doored[name] == "" {
-			t.Errorf("%s reads the repo root and no Makefile door names it — it is reachable only by a `-run` filter that happens to spell it, which is ranger-base-ik44f arriving again. Add it to $(QA_CREW_PINS), $(QA_SELECTOR_PINS) or a new door.", name)
+			t.Errorf("%s reads the repo root and no Makefile door names it — it is reachable only by a `-run` filter that happens to spell it, which is ranger-base-ik44f arriving again. Add it to $(QA_CREW_PINS) or a new door.", name)
 		}
 	}
 	for name, v := range doored {
@@ -918,7 +916,6 @@ func twdExpand(t *testing.T, target string) string {
 func TestQATheTreeWideDoorsReportRealDrift(t *testing.T) {
 	t.Parallel()
 	crew := twdExpand(t, "crew-check")
-	selector := twdExpand(t, "selector-check")
 	seed := twdExpand(t, "seed-check")
 	doc := twdExpand(t, "doc-check")
 	dir := twdSeedTree(t)
@@ -932,7 +929,7 @@ func TestQATheTreeWideDoorsReportRealDrift(t *testing.T) {
 
 	// The clean arm first, both doors: a door that always fails detects
 	// nothing, and a filter that matches nothing passes in silence.
-	for _, door := range []struct{ name, recipe string }{{"crew-check", crew}, {"selector-check", selector}, {"seed-check", seed}, {"doc-check", doc}} {
+	for _, door := range []struct{ name, recipe string }{{"crew-check", crew}, {"seed-check", seed}, {"doc-check", doc}} {
 		got, err := run(door.recipe)
 		if err != nil {
 			t.Fatalf("`make %s` failed on a clean copy of this tree — it reports drift that is not there:\n%s", door.name, got)
@@ -976,35 +973,6 @@ func TestQATheTreeWideDoorsReportRealDrift(t *testing.T) {
 		}
 	}
 	if err := os.Remove(filepath.Join(dir, probe)); err != nil {
-		t.Fatal(err)
-	}
-
-	// The selector door's drift: the ADR page stops naming a selector posse
-	// subscribes to. Same length, so the pin's own byte floor on the page is
-	// not what fails.
-	const adr = "docs/adr/0016-herdr-event-hints.md"
-	const sel = "pane.agent_detected"
-	page, err := os.ReadFile(filepath.Join(dir, adr))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(page), sel) {
-		t.Fatalf("%s does not name %q even before this arm edits it — the drift is already here and selector-check should have caught it", adr, sel)
-	}
-	drifted := strings.ReplaceAll(string(page), sel, "pane.agent_renamed")
-	if err := os.WriteFile(filepath.Join(dir, adr), []byte(drifted), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	got, err = run(selector)
-	if err == nil {
-		t.Fatalf("`make selector-check` passed an ADR 0016 that no longer names %q — losing that selector strands every seat that appears after the dial:\n%s", sel, got)
-	}
-	for _, want := range []string{sel, "TestHerdrSelectorsAreNamedByADR0016"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("`make selector-check` failed without naming %q:\n%s", want, got)
-		}
-	}
-	if err := os.WriteFile(filepath.Join(dir, adr), page, 0o644); err != nil {
 		t.Fatal(err)
 	}
 

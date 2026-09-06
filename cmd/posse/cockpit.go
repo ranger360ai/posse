@@ -28,7 +28,6 @@ package main
 // renders the same row model at 80 wide.
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -320,40 +319,6 @@ type cockpit struct {
 	// have no herdr to launch into, and a launch runs off the event loop
 	// where a panic would take the process with it.
 	launcher func(bead posse.RepoIssue, resume bool) (string, error)
-
-	// The ADR 0016 §2 hint channel: the tty and display-only loops select
-	// on it beside their 2s tick. This is the cockpit's OWN filter, not
-	// the watch's settle gate — any subscribed event redraws, blocked
-	// included, which is where the operator's ⛔ gets event latency
-	// instead of tick latency.
-	//
-	// Hints overrides the real subscriber, mirroring Dispatcher.Hints;
-	// nil means startHints dials SocketID() for real. Tests point it at a
-	// hermetic socket or stub it to nil-channel so an unrelated test never
-	// dials anything.
-	Hints       func(ctx context.Context, report func(string)) <-chan posse.HerdrHint
-	hints       <-chan posse.HerdrHint
-	hintReports chan string   // subscriber outage/recovery line → event loop status
-	hintRefresh chan struct{} // this cockpit's own poke — see pokeHintsIfPanesMoved
-	// hintPanes is the pane set the live subscription was last dialled or
-	// poked with. Compared against a fresh AgentPanes() on every
-	// refreshSessions so the poke fires only when the pane set actually
-	// moved (§1: poking on the 2s tick would redial at 0.5 Hz).
-	hintPanes []string
-	// hintDirty is a hint that landed while a mode was up (prompt/confirm/
-	// peek): drawing over operator input is exactly what those modes
-	// exist to prevent, so the refresh waits for the return to normal.
-	hintDirty bool
-	// hintNext is the floor under hint-driven work: the earliest a hint may
-	// be spent, armed by every spend and by every display-only frame. Its
-	// gap is max(hintFloor, what that refresh itself cost), the same shape
-	// as beadsNext — see hintFloor.
-	hintNext time.Time
-	// hintPending is a hint that arrived inside that floor. It is the
-	// normal-mode twin of hintDirty: one bit, however many events land,
-	// spent once when the floor lifts. Both loops arm a timer on it, because
-	// a burst that stops mid-floor must still land its last event's frame.
-	hintPending bool
 }
 
 const (
@@ -374,34 +339,10 @@ const (
 	// Nothing here is the operator's own latency. Every key that changes
 	// these lists — c, u, x, o, r, and a landed dispatch — rescans at once
 	// through refresh(), which ignores the floor. That list is closed on
-	// purpose: it is exactly the callers that just wrote to the bead store.
-	// A herdr event did not, so the hint path goes through refreshHint and
-	// waits like the tick (ranger-base-u5rqp).
+	// purpose: it is exactly the callers that just wrote to the bead store,
+	// and it stays closed: a caller that did not write to bd waits out this
+	// floor like the tick does (ranger-base-u5rqp).
 	beadsEvery = 5 * time.Second
-	// hintFloor is the FLOOR under hint-driven refreshes, and the same shape
-	// as beadsEvery: the real gap is max(hintFloor, what that refresh itself
-	// cost), counted from when it started, so hint work can never take more
-	// than half the cockpit's wall clock however slow herdr gets.
-	//
-	// ADR 0016 §1 already promises this — "a burst means look again once,
-	// not N refreshes" — and rested it on the adapter's capacity-one
-	// channel. That is not enough on its own, and ranger-base-un5y5 is what
-	// it costs: the channel only bounds how many hints are OUTSTANDING, not
-	// how fast a consumer drains them, so a producer with another event
-	// always ready turns this loop as fast as the loop can go. MEASURED on
-	// an empty shop against the live socket: 313 full iterations in 32s
-	// (~9.8/s) against a 2s tick, each one a refreshSessions + buildRows +
-	// render whose result the ranger-base-w2uoe frame dedupe then threw
-	// away. The rate was set by nothing but how slow the box was.
-	//
-	// 250ms is a latency budget, not a cost one — the cost is bounded by
-	// the max() above whatever this is. It only ever bites INSIDE a burst:
-	// the first hint after a quiet floor is spent the moment it lands, so
-	// the lone status change this path exists for — the operator's ⛔ —
-	// keeps event latency exactly. What it bounds is a shop churning faster
-	// than a human reads, where 250ms is still eight times fresher than the
-	// 2s tick that remains the completeness path.
-	hintFloor = 250 * time.Millisecond
 )
 
 // govEvery is how often the GOVERNANCE block is recomputed. It is the
@@ -881,7 +822,7 @@ func newCockpit(a *posse.App, hb *posse.HerdrBackend, out io.Writer) *cockpit {
 		progress: make(chan string, 4), prompts: make(chan string, 4),
 		claims: make(chan string, 4), costs: make(chan *posse.CostReport, 1),
 		plans: make(chan planRead, 1), govs: make(chan govRead, 1),
-		beads: make(chan beadRead, 1), hintReports: make(chan string, 4)}
+		beads: make(chan beadRead, 1)}
 	// The dispatcher's Out is io.Discard — this screen is a TUI and a line
 	// written straight to it is garbage on the frame. That silences the one
 	// line a blocked launch has to say (ADR 0011 §1: "one line when a second
@@ -939,28 +880,11 @@ func runCockpit(a *posse.App, hb *posse.HerdrBackend, out io.Writer) error {
 
 	tick := time.NewTicker(2 * time.Second)
 	defer tick.Stop()
-	// The ADR 0016 §2 hint channel, for this process's whole life — ctx
-	// ties it to this loop, cancelled by the same defer/return path as
-	// raw-mode restore and the alt-screen exit.
-	hintCtx, cancelHints := context.WithCancel(context.Background())
-	defer cancelHints()
-	c.startHints(hintCtx)
 	c.refresh()
 	c.draw()
 	c.startCost()
 	c.startPlan()
 	c.startGov()
-	// hintWait is armed only while a coalesced hint is waiting out its
-	// floor; nil the rest of the time, which in a select is a case that
-	// never fires (hintFloor). armHintWait keeps exactly ONE of them alive
-	// for a pending hint — the burst may stop before the next event, and its
-	// last frame must still land without waiting out the 2s tick.
-	var hintWait <-chan time.Time
-	armHintWait := func() {
-		if c.hintPending && hintWait == nil {
-			hintWait = time.After(time.Until(c.hintNext))
-		}
-	}
 	costTick := time.NewTicker(costEvery)
 	defer costTick.Stop()
 	planTick := time.NewTicker(planEvery)
@@ -983,39 +907,6 @@ func runCockpit(a *posse.App, hb *posse.HerdrBackend, out io.Writer) error {
 			// minute must not stop the lists underneath it from tracking
 			// the fleet. kickBeads is a no-op until the floor is up.
 			c.kickBeads(false)
-		case h, ok := <-c.hints:
-			if !ok {
-				// The subscriber is gone for good (ctx ended, or it
-				// stopped); the 2s tick remains the completeness path
-				// (ADR 0016 §2).
-				c.hints = nil
-				break
-			}
-			if c.applyHint(h) {
-				c.draw()
-				break
-			}
-			// Coalesced or deferred: nothing was re-read, so there is
-			// nothing new to paint.
-			armHintWait()
-		case <-hintWait:
-			hintWait = nil
-			// Whatever landed inside the floor, spent once, now that it has
-			// lifted. Back through applyHint, because the mode may have
-			// changed under the timer — a prompt opened mid-floor must get
-			// the dirty bit, not a repaint over the operator's input.
-			if c.hintPending && c.applyHint(posse.HerdrHint{}) {
-				c.draw()
-			}
-			// And the floor may have moved under the timer instead: a key
-			// spends the dirty bit through spendHint and arms a fresh one.
-			// Re-arm rather than leave the pending bit for the 2s tick.
-			armHintWait()
-		case line := <-c.hintReports:
-			c.status = line
-			if c.mode == modeNormal {
-				c.draw()
-			}
 		case r := <-c.beads:
 			c.applyBeads(r)
 			if c.mode == modeNormal {
@@ -1076,10 +967,6 @@ func runCockpit(a *posse.App, hb *posse.HerdrBackend, out io.Writer) error {
 			if quit {
 				return nil
 			}
-			// A hint that landed while a mode was up is spent the moment
-			// that mode returns to normal, not on the next tick (ADR 0016
-			// §2's "refresh on return to normal").
-			c.consumeHintDirty()
 			c.draw()
 		}
 	}
@@ -1170,26 +1057,6 @@ func (c *cockpit) refresh() {
 	c.kickBeads(true)
 }
 
-// refreshHint is refresh's cadenced twin, and what separates them is which
-// store the caller just wrote to. A herdr event changed the SESSIONS, so
-// those are re-read here and now — that latency is the whole point of ADR
-// 0016 §2 — but it changed nothing in bd, so the bead half goes through the
-// floor exactly as the 2s tick's kick does.
-//
-// refresh()'s force belongs to the callers that just changed the bead lists
-// themselves: c, u, x, o, r, a landed dispatch. Putting an external event
-// stream on that list drives bd at whatever rate herdr emits, past the floor
-// that exists to hold bd to at most half the wall clock (ranger-base-u5rqp)
-// — and worse than one scan per event, because a force arriving mid-scan is
-// remembered and spent the instant that scan lands, so a sustained stream
-// chains scans back to back with no gap at all. ADR 0016 §2's own "the
-// two-second refresh remains the completeness path for beads-only changes"
-// is this line.
-func (c *cockpit) refreshHint() {
-	c.refreshSessions()
-	c.kickBeads(false)
-}
-
 // refreshAll is refresh's synchronous twin: the bead scan runs here, on this
 // goroutine, and is applied before it returns. It is the non-tty loop's path
 // (nothing there to starve) and the one a test can call without an event
@@ -1222,150 +1089,11 @@ func (c *cockpit) refreshSessions() {
 			}
 		}
 		c.herdrDown = false
-		c.pokeHintsIfPanesMoved()
 	} else {
 		c.status = err.Error()
 		c.herdrDown = true
 	}
 	c.buildRows()
-}
-
-// startHints begins the ADR 0016 §2 subscription for this process's whole
-// life — called once, by whichever loop actually runs. The tty cockpit and
-// its non-tty fallback are mutually exclusive within one process, so one
-// call site is the ADR's "one connection per long-running process."
-//
-// Hints overrides the real subscriber for tests, mirroring
-// Dispatcher.Hints (watch.go): nil dials SocketID() for real, so a
-// hermetic test clears it explicitly and points HERDR_SOCKET_PATH at a
-// test server, exactly like the watch tests do. Most cockpit tests never
-// call startHints at all, so they are unaffected either way.
-func (c *cockpit) startHints(ctx context.Context) {
-	c.hintRefresh = make(chan struct{}, 1)
-	subscribe := c.Hints
-	if subscribe == nil {
-		subscribe = func(ctx context.Context, report func(string)) <-chan posse.HerdrHint {
-			panes := func() []string { return nil }
-			if c.hb != nil {
-				panes = c.hb.AgentPanes
-			}
-			return posse.HerdrAllHints(ctx, posse.SocketID(), panes, c.hintRefresh, report)
-		}
-	}
-	c.hints = subscribe(ctx, func(line string) {
-		select {
-		case c.hintReports <- line:
-		default:
-		}
-	})
-	if c.hb != nil {
-		c.hintPanes = c.hb.AgentPanes()
-	}
-}
-
-// applyHint is this consumer's own filter (ADR 0016 §2): any subscribed
-// event redraws in normal mode, blocked included — never the watch's
-// settle gate, which drops exactly the transition the operator's ⛔ needs
-// at event latency. In prompt/confirm/peek mode it only marks the screen
-// dirty; drawing over operator input mid-keystroke is the one thing those
-// modes exist to prevent, so the deferred refresh happens in
-// consumeHintDirty instead, on the return to normal.
-//
-// Both halves go through refreshHint, not refresh: the sessions the event is
-// actually about are re-read now, and the bead lists — which no herdr event
-// changes — keep their cadence floor (ranger-base-u5rqp).
-//
-// It reports whether it actually re-read, because the caller is what draws:
-// a coalesced hint (hintFloor) and a deferred one (hintDirty) have both
-// changed nothing on screen yet, and repainting for them is the work
-// ranger-base-un5y5 is about.
-func (c *cockpit) applyHint(posse.HerdrHint) bool {
-	if c.mode != modeNormal {
-		// The dirty bit already coalesces perfectly here — it is one bit,
-		// however many events land — and it subsumes a pending one.
-		c.hintDirty, c.hintPending = true, false
-		return false
-	}
-	if time.Now().Before(c.hintNext) {
-		// Inside the floor: remember that something arrived and let the
-		// loop's timer spend it once. This is ADR 0016 §1's "a burst means
-		// look again once" (hintFloor).
-		c.hintPending = true
-		return false
-	}
-	c.spendHint()
-	return true
-}
-
-// spendHint is one hint-driven re-read, and the only place the floor under
-// them is armed. The gap is the larger of hintFloor and what this refresh
-// itself cost, counted from where it started — beadsNext's rule, applied to
-// the store the hint is actually about.
-func (c *cockpit) spendHint() {
-	c.hintPending = false
-	start := time.Now()
-	c.refreshHint()
-	gap := time.Since(start)
-	if gap < hintFloor {
-		gap = hintFloor
-	}
-	c.hintNext = start.Add(gap)
-}
-
-// consumeHintDirty is applyHint's other half: called after every key, it
-// catches the return to normal mode and spends the dirty bit there instead
-// of leaving the screen stale until the next tick. It goes through
-// spendHint, not refreshHint, so returning to normal arms the floor like
-// any other hint-driven read — an operator leaving a prompt into a burst
-// must not land on the unfloored path.
-func (c *cockpit) consumeHintDirty() {
-	if c.mode == modeNormal && c.hintDirty {
-		c.hintDirty = false
-		c.spendHint()
-	}
-}
-
-// pokeHintsIfPanesMoved is this consumer's own truth path for ADR 0016
-// §1's refresh poke: fed only when the agent pane set differs from the one
-// the live subscription was last dialled or poked with — never on every
-// tick, because poking at the cockpit's 2s cadence would redial the
-// subscription at 0.5 Hz (§1). The watch pokes unconditionally after every
-// pass instead, because its cadence is minutes, not seconds.
-func (c *cockpit) pokeHintsIfPanesMoved() {
-	if c.hintRefresh == nil || c.hb == nil {
-		return
-	}
-	now := c.hb.AgentPanes()
-	if samePaneSet(c.hintPanes, now) {
-		return
-	}
-	c.hintPanes = now
-	select {
-	case c.hintRefresh <- struct{}{}:
-	default:
-	}
-}
-
-// samePaneSet compares two pane lists as sets: herdr's agent listing
-// carries no ordering contract, and a false "moved" reading costs a
-// needless reconnect.
-func samePaneSet(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	seen := make(map[string]int, len(a))
-	for _, p := range a {
-		seen[p]++
-	}
-	for _, p := range b {
-		seen[p]--
-	}
-	for _, n := range seen {
-		if n != 0 {
-			return false
-		}
-	}
-	return true
 }
 
 // beadRead is one scan of the two bead lists, taken off the event loop.
@@ -2975,9 +2703,9 @@ func (c *cockpit) draw() {
 // is byte-identical to the one already on the glass (ranger-base-w2uoe).
 // render is a pure function of the model and the size it is asked for
 // (ADR 0004 §5), so an identical string IS an identical screen: draw has
-// fourteen call sites — a 2s ticker, WINCH, hints, hint reports, beads, the
-// cost/plan/gov ticks and each of their result channels, progress, results
-// and key handling — and every one of them repaints unconditionally.
+// many call sites — a 2s ticker, WINCH, beads, the cost/plan/gov ticks and
+// each of their result channels, progress, results and key handling — and
+// every one of them repaints unconditionally.
 //
 // This is the only writer that may skip, and it is safe to skip only
 // because nothing else paints into the alt screen: c.out is written here,
@@ -3223,55 +2951,14 @@ func (c *cockpit) displayOnly() error {
 	defer tick.Stop()
 	govTick := time.NewTicker(govEvery)
 	defer govTick.Stop()
-	// The ADR 0016 §2 hint channel, for this process's whole life. This
-	// loop has no modes to draw over — every frame is already a full
-	// redraw — so a hint just cuts the wait for the next one short,
-	// exactly like the tick does.
-	hintCtx, cancelHints := context.WithCancel(context.Background())
-	defer cancelHints()
-	c.startHints(hintCtx)
 	c.startGov()
 	for {
-		// Every frame here is a full re-read, so every frame arms the floor
-		// the same way a tty spendHint does — the gap is the larger of
-		// hintFloor and what this frame itself cost (hintFloor).
-		frameAt := time.Now()
 		c.displayFrame()
-		gap := time.Since(frameAt)
-		if gap < hintFloor {
-			gap = hintFloor
-		}
-		c.hintNext, c.hintPending = frameAt.Add(gap), false
 		select {
 		case <-stop:
 			return nil
 		case <-govTick.C:
 			c.startGov()
-		case _, ok := <-c.hints:
-			// Any subscribed event redraws (ADR 0016 §2) — the loop top
-			// just did, and the next iteration's is what this case exists
-			// to bring forward instead of waiting out the tick.
-			if !ok {
-				c.hints = nil
-				break
-			}
-			// Inside the floor the frame waits it out rather than turning
-			// the loop at whatever rate herdr emits (ranger-base-un5y5).
-			// Every hint arriving during the wait is already covered by the
-			// frame at the end of it, which is what makes not draining the
-			// channel here correct rather than merely cheap.
-			if d := time.Until(c.hintNext); d > 0 {
-				c.hintPending = true
-				t := time.NewTimer(d)
-				select {
-				case <-t.C:
-				case <-stop:
-					t.Stop()
-					return nil
-				}
-			}
-		case line := <-c.hintReports:
-			c.status = line
 		case <-tick.C:
 		}
 	}

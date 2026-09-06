@@ -69,6 +69,26 @@ as the condition stands; and if you were reading `state/pulse.yaml` to see
 what the last tick observed, it no longer answers that — the watch log's own
 `pulse:` line carries the same keys, dated by its pass header.
 
+**The herdr event subscription is gone; polling and bounded reconciliation
+own readiness on their own (ADR 0016).**
+
+Nothing to do — no config key changes, no promote, no state file. `posse
+dispatch --watch` no longer opens a Unix socket to herdr, and neither does
+`posse cockpit`; the two goroutines, the reconnect schedule and the pane-set
+bookkeeping that came with the subscription are gone with it. The watch loop
+still takes its next pass the moment a leg it was CARRYING lands — that is
+the completion of a wait the process already owns, not an event — and
+otherwise on its existing timer and backoff, unchanged. Both cockpit modes
+still refresh on their two-second tick.
+
+What you may notice: the `herdr events unavailable — polling` and `herdr
+events restored` lines are gone from the watch log, and so is `settle hint
+· …`. If you were reading those to tell whether herdr's socket was up, it
+is `herdr` itself that answers that now. The measurement behind the removal
+is on ranger-base-4dxpo: on this shop the subscriber woke a pass zero times
+in 142 passes over 15h31m, and a seat with ready work reached its next
+dispatch at p95 2m6s (max 2m48s) inside a 3m reconciliation interval.
+
 ### Security
 
 **The hooks lockdown ships as a policy drop-in you install,

@@ -259,9 +259,10 @@ func TestQADrainJoinsTheLegsAPassCarried(t *testing.T) {
 // The carry's one cost, paid back: a leg that lands AFTER its pass's window
 // closed must not wait out the backoff to be judged. The wait goroutine pokes
 // the loop when it reports (settled/enqueue), so the next pass is immediate —
-// the same trigger ADR 0016 §1 ratified, over this process's own channel
-// rather than herdr's event socket, which is nil in every test here
-// (newTestDispatcher) and can be down in production.
+// the trigger ADR 0028 §1 names first, over this process's own channel. It
+// is the ONLY early wake the loop has since ADR 0016's socket hints were
+// removed, which is what makes this pin the acceptance row for "bounded
+// passes still wake on local wait completion with no event socket".
 //
 // The margin is the measurement: the backoff here is five minutes and the
 // bead must be judged inside waitForOut's 90s, so the arm can only pass by

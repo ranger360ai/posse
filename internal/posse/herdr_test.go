@@ -5,7 +5,6 @@ package posse
 // herdr server is touched — tests/run.sh remains the tmux integration suite.
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -2448,13 +2447,6 @@ func newTestDispatcher(t *testing.T, b *HerdrBackend) *Dispatcher {
 	d.StatusGrace = 50 * time.Millisecond
 	d.Poll = 10 * time.Millisecond
 	d.TurnOutcome = func(string, string, time.Time) (TurnOutcome, bool) { return TurnOutcome{}, false }
-	// Hermetic by construction, like RHQ_FAKE_HERDR: Watch's settle-event
-	// subscription is the one herdr read that DIALS a socket, and the socket
-	// it resolves without this is the operator's live server (ADR 0016 §3 —
-	// no test reaches a real herdr). A nil channel never fires; a test that
-	// wants the real adapter clears this field and points HERDR_SOCKET_PATH
-	// at its own listener.
-	d.Hints = func(context.Context, func(string)) <-chan HerdrHint { return nil }
 	return d
 }
 

@@ -89,13 +89,6 @@ type Dispatcher struct {
 	// launching goroutine: a sink that blocks holds a launch, so the
 	// cockpit's drops rather than waits.
 	Progress func(line string)
-	// Hints is the settle-event channel Watch listens on (ADR 0016 §1, ADR
-	// 0028 §1). nil = subscribe to the herdr socket this posse resolves.
-	// Tests inject their own, and newTestDispatcher hands back a nil
-	// channel, so no test reaches a real herdr server unless it says so
-	// (ADR 0016 §3) — the subscription DIALS, where every other herdr read
-	// in the suite goes through the fake CLI.
-	Hints func(ctx context.Context, report func(string)) <-chan HerdrHint
 	// Lag is the launcher-lag reading Watch resolves once and re-counts
 	// every pass (ranger-base-z3hx6, launcherlag.go). nil = ask this
 	// instance, which is what a real loop does.
@@ -2792,7 +2785,7 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 		// this. What it costs a resuming pass is one `agent explain` per
 		// settled holder, which is the grain the skip above it already
 		// works at.
-		if d.Resume && holder != "" && isSettledStatus(holderStatus) {
+		if d.Resume && holder != "" && settledStatus(holderStatus) {
 			if hold := d.HB.sessionHolding(holder); hold.Waiting() {
 				d.skipf(skipWaiting, "– %-14s held by %s, %s idle with %s — waiting, not re-prompted\n",
 					is.ID, persona, holder, hold.Why())

@@ -32,11 +32,11 @@ package posse
 // WHAT THE CARRY COSTS. Between the window closing and the next pass, a leg
 // that settles is nobody's: its result sits in the channel until the next
 // pass reads it, so its seat is refilled up to one interval later than it
-// would have been. That is exactly the latency ADR 0016's settle hint already
-// exists to remove — a settle wakes the loop out of its backoff — and ADR
-// 0028 §1's own framing applies: a lost or coalesced hint costs latency,
-// never correctness, because the next pass re-verifies against bd and herdr
-// before it acts on anything.
+// would have been. That is exactly the latency `settled` below removes — the
+// landing wakes the loop out of its backoff — and ADR 0028 §1's own framing
+// applies: a lost or coalesced wake costs latency, never correctness,
+// because the next pass re-verifies against bd and herdr before it acts on
+// anything.
 //
 // WHAT MUST HAVE THE SAME LIFETIME AS THE SET. The busy map (ADR 0028 §3) is
 // the seats this Run fired into, released at the settle that judges them; a
@@ -137,17 +137,18 @@ func (d *Dispatcher) openFanin() {
 	}
 }
 
-// settled is the in-process settle hint: a leg CARRIED past the end of a
+// settled is the local wait completion: a leg CARRIED past the end of a
 // pass landed, and the loop should take its next pass now rather than wait
 // out the backoff (watch.go's timer select reads it).
 //
-// It is the same trigger ADR 0016 §1 ratified and the same one ADR 0028 §1
-// calls the refill's first, arriving over a channel this process owns
-// instead of over herdr's event socket — which matters because the carry's
+// It is the trigger ADR 0028 §1 calls the refill's first, and ADR 0016 keeps
+// it by name where it removed the event socket beside it: it is the result
+// of a wait THIS process already owns, so it needs no subscription and
+// cannot go down separately from the loop. That matters because the carry's
 // one cost is exactly this latency: a leg that settles after its pass's
 // window closed is judged, and its seat refilled, by the NEXT pass. With
-// this the next pass is immediate whether or not herdr's events are up; the
-// backoff tick stays the backstop it always was.
+// this the next pass is immediate; the backoff tick stays the backstop it
+// always was.
 func (d *Dispatcher) settled() <-chan struct{} {
 	d.mu.Lock()
 	defer d.mu.Unlock()

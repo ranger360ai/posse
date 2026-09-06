@@ -198,9 +198,12 @@ it stops new automatic invitations. Agents do not acquire a self-launch path.
 MEASURED in 0028's dated evidence: the gather barrier held seats behind a
 75-minute worker; narrowed refill starved other seats for seven hours;
 an unbounded pass delayed periodic duties for over two hours. Retaining
-these fixes removes zero runtime mechanisms. ASSUMED: removing optional
-hint latency remains acceptable; 0016's deferred measurement decides that
-implementation risk. The rejected alternatives remain an agent-invoked
+these fixes removes zero runtime mechanisms. The ASSUMED that removing
+optional hint latency stayed acceptable is now MEASURED: 0016's done-when
+row was taken on ranger-base-4dxpo over a 15h31m loop block at a fixed 3m
+cadence — 0 hint-driven wakes in 142 passes, and p95 2m6s (max 2m48s, n=41)
+from a seat becoming ready to its next dispatch wherever ready work
+existed, all inside one interval. The rejected alternatives remain an agent-invoked
 next-work ritual (duplicate delivery and a lost central throttle), one
 poller per persona (more concurrent owners), and a shorter gather ceiling
 with the same barrier. The standard disciplines are single writer,

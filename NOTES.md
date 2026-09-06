@@ -467,10 +467,10 @@ of the harness core:
    A one-shot
    `dispatch` (no `--watch`) never sets `Refill` and never refires: it
    fires once, gathers, and returns, exactly as before this ADR. `--watch`
-   also wakes the next pass on a herdr settle hint instead of waiting out
-   the backoff (`internal/posse/watch.go`) — the backstop for whatever a
-   `Run`'s own cascade did not catch (a seat freed by something dispatch
-   never fired into), never the refill's own mechanism.
+   also wakes the next pass the moment a leg it was CARRYING lands, instead
+   of waiting out the backoff (`internal/posse/watch.go`) — the completion
+   of a wait this process already owns, never an event socket (ADR 0016),
+   and never the refill's own mechanism.
    A refill **says whose seat it is refilling** (ranger-base-59jd): the fire
    path enumerates per bead, so on the first live refill, under `--persona
    gwart`, every settle reprinted a wall of `– <bead> … lane busy` lines and
