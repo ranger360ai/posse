@@ -122,8 +122,25 @@ wait_server() {
 LOOP_PID=
 start_loop() {
 	unset_herdr
-	(cd "$WORK" && env RHQ_HOME="$HOMEDIR" HERDR_SOCKET_PATH="$SESS_SOCK" "$POSSE" dispatch --watch 5m > "$RIG/watch.log" 2>&1) &
+	# `set -m` for this one launch, and `exec` inside the subshell: the job
+	# becomes a process-GROUP leader whose leader pid IS the binary under
+	# test, so the whole loop is reapable as `-$LOOP_PID` — by pid, never by
+	# pattern. What stood here was a plain subshell reaped with `pkill -9 -P`,
+	# and `pkill` is denied at every crew seat (operator ruling 2026-09-03,
+	# ranger-base-jjx19), realized as a PATH shim — so the refusal landed
+	# inside THIS SCRIPT, in a `2>/dev/null`, `kill -9 $LOOP_PID` took the
+	# wrapper only, and the loop outlived its own reaper while the arm below
+	# reported the flock stuck (ranger-base-q8hbz).
+	set -m
+	(cd "$WORK" && exec env RHQ_HOME="$HOMEDIR" HERDR_SOCKET_PATH="$SESS_SOCK" "$POSSE" dispatch --watch 5m > "$RIG/watch.log" 2>&1) &
 	LOOP_PID=$!
+	set +m
+	# Off the job table. With monitor mode on, bash announces the -9 itself
+	# ("Killed: 9   ( cd … )") on its own stderr, at whatever command happens
+	# to be running when it notices — in the middle of the PASS lines.
+	# Nothing waits on this job: kill_loop asks the kernel instead, and a
+	# disowned child is still reaped by the shell (measured, no zombie).
+	disown "$LOOP_PID" 2>/dev/null || true
 	local n=0 ws=
 	while [ "$n" -lt 100 ]; do
 		ws=$(p dispatch --watch-status 2>/dev/null)
@@ -135,23 +152,73 @@ start_loop() {
 	return 1
 }
 
+# group_alive <pid> — is anything of the job started as <pid> still there?
+# Asked of the kernel, both ways: the leader itself, and anything it forked
+# into its process group, because a child inherits the flock's fd and holds
+# the lock after the leader is gone. `pgrep` lists, it does not kill, and the
+# ruling leaves it running; `-g` takes a group id this script started, not an
+# argv pattern that would match every other seat on the box.
+group_alive() {
+	kill -0 "$1" 2>/dev/null && return 0
+	[ -n "$(pgrep -g "$1" 2>/dev/null)" ]
+}
+
 # kill -9, deliberately: the whole argument for the flock over a pidfile is
 # that release is process death, cleanup path or none (rangerhq-gir5).
+#
+# Three outcomes, and only the middle one is this script's finding to report:
+#   0  reaped, and the lock went with it        — the claim under test holds
+#   1  reaped, CONFIRMED dead, lock STILL HELD  — the defect this arm exists
+#                                                 for
+#   2  not reaped                               — the apparatus failed, so
+#      nothing was measured, and it must never be spelled as 1. A control that
+#      cannot clean up has not measured the thing it claims to, and what this
+#      printed as 1 was a 2 every time (ranger-base-q8hbz).
 kill_loop() {
 	[ -n "$LOOP_PID" ] || return 0
-	pkill -9 -P "$LOOP_PID" >/dev/null 2>&1 || true
-	kill -9 "$LOOP_PID" >/dev/null 2>&1 || true
-	wait "$LOOP_PID" 2>/dev/null || true
+	local pid=$LOOP_PID n=0 ws=
 	LOOP_PID=
-	local n=0 ws=
+	kill -9 -- "-$pid" >/dev/null 2>&1 || kill -9 "$pid" >/dev/null 2>&1 || true
+	# Bounded, and asked of the KERNEL rather than of `wait`: `wait` on a job
+	# the kill never reached blocks for that job's whole life, and reporting
+	# that is the whole point of this function rather than sitting in it. Not
+	# theory — the disabled-reaper mutant written to check the branch below
+	# hung on exactly this until it was killed by hand. The window between
+	# death and the shell's own reap is invisible to kill -0, pgrep and ps
+	# alike, so polling first costs nothing.
+	while [ "$n" -lt 100 ] && group_alive "$pid"; do
+		n=$((n + 1))
+		sleep 0.1
+	done
+	if group_alive "$pid"; then
+		echo "verify-govern-honesty: the watch loop ($pid) survived kill -9 — the reaper failed, so NOTHING was measured"
+		return 2
+	fi
+	n=0
 	while [ "$n" -lt 100 ]; do
 		ws=$(p dispatch --watch-status 2>/dev/null)
 		case $ws in *'watch-loop: none'*) return 0 ;; esac
 		n=$((n + 1))
 		sleep 0.1
 	done
-	echo "verify-govern-honesty: the lock was still held after kill -9"
+	echo "verify-govern-honesty: the loop was CONFIRMED DEAD and the lock was still held"
 	return 1
+}
+
+# The rig failing and the design failing are not the same result, so they do
+# not share an exit: 2 is "nothing measured", 1 is a FAIL line naming what
+# actually did not happen.
+reap_loop() {
+	kill_loop
+	case $? in
+	0) return 0 ;;
+	1)
+		check "lock-released-when-its-holder-dies" 0 "the flock outlived the process that held it"
+		echo "verify-govern-honesty: FAIL"
+		exit 1
+		;;
+	*) exit 2 ;;
+	esac
 }
 
 STATUS_OUT=; STATUS_RC=
@@ -169,18 +236,35 @@ cockpit_frame() {
 	local out=$RIG/cockpit.$1.txt n=0 frame=
 	: > "$out"
 	unset_herdr
-	(cd "$WORK" && env RHQ_HOME="$HOMEDIR" HERDR_SOCKET_PATH="$SESS_SOCK" "$POSSE" cockpit > "$out" 2>&1) &
+	# A group leader, for the reason start_loop is one: `kill -INT $cp` on a
+	# subshell wrapper never reaches the cockpit, so this rig leaked a live
+	# `posse cockpit` for every frame it took. MEASURED at ec0beaa: the run
+	# that aborted at arm 2 had taken ONE frame and left exactly one
+	# `posse-go cockpit` on ppid 1 beside the watch loop, still rendering
+	# into a $RIG the EXIT trap had already removed (ranger-base-q8hbz).
+	set -m
+	(cd "$WORK" && exec env RHQ_HOME="$HOMEDIR" HERDR_SOCKET_PATH="$SESS_SOCK" "$POSSE" cockpit > "$out" 2>&1) &
 	local cp=$!
+	set +m
+	disown "$cp" 2>/dev/null || true
 	while [ "$n" -lt 200 ]; do
 		frame=$(<"$out")
 		case $frame in *'gov '[a-zA-Z0-9]*) break ;; esac
 		n=$((n + 1))
 		sleep 0.1
 	done
-	kill -INT "$cp" >/dev/null 2>&1 || true
+	kill -INT -- "-$cp" >/dev/null 2>&1 || kill -INT "$cp" >/dev/null 2>&1 || true
 	sleep 0.3
-	kill -9 "$cp" >/dev/null 2>&1 || true
-	wait "$cp" 2>/dev/null || true
+	kill -9 -- "-$cp" >/dev/null 2>&1 || kill -9 "$cp" >/dev/null 2>&1 || true
+	local n2=0
+	while [ "$n2" -lt 50 ] && group_alive "$cp"; do
+		n2=$((n2 + 1))
+		sleep 0.1
+	done
+	if group_alive "$cp"; then
+		echo "verify-govern-honesty: the cockpit frame ($cp) survived kill -9 — the reaper failed, so NOTHING was measured"
+		exit 2
+	fi
 	COCKPIT_OUT=$(<"$out")
 	COCKPIT_OUT=${COCKPIT_OUT//$'\e'\[*([0-9;])[a-zA-Z]/}
 	last_lines 40 "$COCKPIT_OUT"
@@ -256,7 +340,7 @@ check "alive-cockpit-header-clear" "$(has "$COCKPIT_OUT" 'gov clear' && echo 1 |
 check "alive-cockpit-no-loop-dead" "$(has "$COCKPIT_OUT" 'loop dead' && echo 0 || echo 1)" "$COCKPIT_OUT"
 
 # ── 2 · the loop is killed -9: G7, non-zero, and the header says it ──────────
-kill_loop || exit 2
+reap_loop
 status_run
 check "dead-status-exit-nonzero" "$([ "$STATUS_RC" != 0 ] && echo 1 || echo 0)" "rc=$STATUS_RC"
 check "dead-status-G7-urgent" "$(has "$STATUS_OUT" 'URGENT' && has "$STATUS_OUT" 'G7' && echo 1 || echo 0)" "$STATUS_OUT"
@@ -313,7 +397,7 @@ moved() { [ -n "$(find "$HOMEDIR/state/pulse.yaml" -newer "$1" 2>/dev/null)" ] &
 touch "$RIG/pulse-mark-alive"
 sleep 5 # two-and-a-half pulse intervals
 check "pulse-keeps-writing-while-alive" "$(moved "$RIG/pulse-mark-alive")" "state/pulse.yaml did not move in 5s at pulse_interval 2s — the control arm for the check below"
-kill_loop || exit 2
+reap_loop
 touch "$RIG/pulse-mark-dead"
 sleep 5 # two-and-a-half pulse intervals
 check "pulse-stops-with-the-loop" "$([ "$(moved "$RIG/pulse-mark-dead")" = 0 ] && echo 1 || echo 0)" "state/pulse.yaml still moving after the loop died"

@@ -85,6 +85,39 @@ REPO_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 fail=0
 measured=0
 
+# Every pid this probe starts, so cleanup can end them BY PID. What stood in
+# cleanup was `pkill -9 -f "$ROOT/"`, and `pkill` is denied at every crew seat
+# (operator ruling 2026-09-03, ranger-base-jjx19) as a PATH shim: the refusal
+# landed inside this script, on a stderr the `2>/dev/null` ate, and the
+# cleanup silently did not happen — one such refusal is in the seat's own
+# refusals.log (ranger-base-q8hbz). A pattern kill was never the right verb
+# here anyway: `-f "$ROOT/"` matches on argv across every process on the box.
+LAUNCHED=
+
+# reap <pid> — the process GROUP first, then the pid alone. Callers start
+# their jobs under `set -m`, so the pid is also a process-group id, and a
+# Gatekeeper-suspended binary is the wrapper's CHILD: killing the wrapper on
+# its own leaves the suspended exec parked on $ROOT, which is then not
+# removable.
+reap() {
+	kill -9 -- "-$1" 2>/dev/null || kill -9 "$1" 2>/dev/null || true
+}
+
+# alive <pid> — anything of that job still there? `pgrep` lists, it does not
+# kill, and the ruling leaves it running; `-g` takes a group id this script
+# started, not an argv pattern.
+alive() {
+	kill -0 "$1" 2>/dev/null && return 0
+	[ -n "$(pgrep -g "$1" 2>/dev/null)" ]
+}
+
+# launched <pid> — register a job, and take it off the job table so monitor
+# mode does not print its death into the middle of the probe's own lines.
+launched() {
+	LAUNCHED="$LAUNCHED $1"
+	disown "$1" 2>/dev/null || true
+}
+
 say()  { printf '%s\n' "$*"; }
 ok()   { measured=1; printf '  ok      %s\n' "$*"; }
 bad()  { measured=1; fail=1; printf '  FAIL    %s\n' "$*"; }
@@ -113,8 +146,10 @@ BARE=${VERSION#v}
 ROOT=$(mktemp -d "${TMPDIR:-/tmp}/posse-macos-probe.XXXXXX") || die "mktemp failed"
 cleanup() {
 	# A binary that Gatekeeper blocked is still parked on a suspended exec; it
-	# has to go before the directory under it does.
-	pkill -9 -f "$ROOT/" 2>/dev/null
+	# has to go before the directory under it does — and so does a loopback
+	# server whose own `kill` line was skipped by an early return.
+	local pid
+	for pid in $LAUNCHED; do reap "$pid"; done
 	if [ "$KEEP" = 1 ]; then printf '\nscratch root kept: %s\n' "$ROOT"; else rm -rf "$ROOT"; fi
 }
 trap cleanup EXIT
@@ -235,7 +270,7 @@ probe_quarantine() {
 		B) xattr -w com.apple.quarantine "$q" "$p" ;;
 		C) xattr -w com.apple.quarantine "$q" "$p"; xattr -d com.apple.quarantine "$p" ;;
 		esac
-		got=$(run_bounded "$p")
+		run_bounded "$p"; got=$BOUNDED
 		case $arm in
 		A) expect=ran ;; B) expect=blocked ;; C) expect=ran ;;
 		esac
@@ -256,7 +291,8 @@ probe_quarantine() {
 	local p=$ROOT/q/posse-B
 	if [ -e "$p" ]; then
 		xattr -d com.apple.quarantine "$p" 2>/dev/null
-		if [ "$(run_bounded "$p")" = blocked ]; then
+		run_bounded "$p"
+		if [ "$BOUNDED" = blocked ]; then
 			ok "clearing the attribute on an already-blocked file does NOT recover it — re-extract instead"
 		else
 			note "an already-blocked file recovered after the attribute was cleared; the INSTALL.md 're-extract' sentence can be relaxed"
@@ -267,21 +303,39 @@ probe_quarantine() {
 # Run `<bin> version` under a wall-clock bound. Gatekeeper does not refuse, it
 # suspends: no output, no exit, no error. A plain `if ! out=$(...)` would sit
 # there until the caller's own timeout, so the bound is the measurement.
-run_bounded() { # $1=binary -> ran|blocked|broken
+#
+# It answers in $BOUNDED rather than on stdout, and callers read that instead
+# of `$(run_bounded …)`: a command substitution is a subshell, so a `die` in
+# here would end the subshell only and let the probe carry on with an empty
+# answer — the shape that hides a refusal as a result.
+BOUNDED=          # ran|blocked|broken, set by run_bounded
+run_bounded() { # $1=binary -> $BOUNDED
 	local p=$1 i
+	set -m
 	( RHQ_HOME=$ROOT/never-an-instance "$p" version >"$p.out" 2>"$p.err"; echo $? >"$p.rc" ) &
 	local child=$!
+	set +m
+	launched "$child"
 	for i in $(seq 1 12); do kill -0 "$child" 2>/dev/null || break; sleep 1; done
 	if kill -0 "$child" 2>/dev/null; then
-		kill -9 "$child" 2>/dev/null
-		pkill -9 -f "$p" 2>/dev/null
-		printf blocked
+		reap "$child"
+		for i in 1 2 3 4 5; do alive "$child" || break; sleep 1; done
+		# AND SAY SO WHEN IT CANNOT. Calling an unreaped bound "blocked"
+		# would report a Gatekeeper finding this probe did not measure.
+		# MEASURED at HEAD, the pre-fix spelling, one `quarantine` run: the
+		# arms all said ok and TWO `…/q/posse-B version` processes were left
+		# behind on ppid 1 — one per bounded call on that file — with both
+		# refusals in the seat's refusals.log. The rm -rf of $ROOT still
+		# succeeds around them (macOS unlinks a running file), so the leak
+		# is processes, and nothing in the output said so.
+		alive "$child" && die "could not reap $p ($child) after the Gatekeeper bound — nothing was measured"
+		BOUNDED=blocked
 		return
 	fi
 	if [ "$(cat "$p.rc" 2>/dev/null)" = 0 ] && grep -q "$BARE" "$p.out" 2>/dev/null; then
-		printf ran
+		BOUNDED=ran
 	else
-		printf broken
+		BOUNDED=broken
 	fi
 }
 
@@ -427,7 +481,8 @@ probe_tap() {
 			skip "darwin_amd64: Rosetta is not installed on this box, so the Intel binary cannot be run here"
 			continue
 		fi
-		case "$(run_bounded "$d/posse")" in
+		run_bounded "$d/posse"
+		case $BOUNDED in
 		ran) ok "$plat: the released binary runs here and reports $BARE" ;;
 		blocked) bad "$plat: the released binary was blocked (Gatekeeper?)" ;;
 		*) bad "$plat: the released binary did not report $BARE" ;;
@@ -578,7 +633,8 @@ PY
 
 	local installed=$B/prefix/bin/posse
 	if [ ! -x "$installed" ]; then bad "no posse in the scratch prefix's bin"; return; fi
-	case "$(run_bounded "$installed")" in
+	run_bounded "$installed"
+	case $BOUNDED in
 	ran) ok "the brew-installed posse reports $BARE: $(cat "$installed.out")" ;;
 	*) bad "the brew-installed posse did not report $BARE" ;;
 	esac
@@ -681,9 +737,14 @@ probe_bottle() {
 	local port
 	port=$(/usr/bin/python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1]);s.close()' 2>/dev/null)
 	[ -n "$port" ] || { skip "could not find a free loopback port"; return; }
+	# Its own group, like every other job here, so `reap` can take it the same
+	# way: four of the `kill "$server"` lines below are on early-return paths
+	# and cleanup is the only backstop for them.
+	set -m
 	/usr/bin/python3 -m http.server "$port" --bind 127.0.0.1 --directory "$D/dist" >"$ROOT/http.log" 2>&1 &
 	local server=$!
-	disown "$server" 2>/dev/null
+	set +m
+	launched "$server"
 	local i
 	for i in 1 2 3 4 5 6 7 8 9 10; do
 		curl -fsS -o /dev/null "http://127.0.0.1:$port/checksums.txt" 2>/dev/null && break
@@ -787,7 +848,8 @@ probe_bottle() {
 	local installed=$B/prefix/bin/posse
 	if [ -x "$installed" ]; then
 		BARE=$ver
-		case "$(run_bounded "$installed")" in
+		run_bounded "$installed"
+		case $BOUNDED in
 		ran) ok "the poured posse reports $ver: $(cat "$installed.out")" ;;
 		*) bad "the poured posse did not report $ver" ;;
 		esac
