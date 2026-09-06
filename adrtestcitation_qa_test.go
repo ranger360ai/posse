@@ -361,8 +361,10 @@ func TestADRCitedGoFilesResolveOrAreDeclared(t *testing.T) {
 	// Floors. A corpus that has silently emptied — the records moved, the
 	// walk rooted somewhere else, the tokenizer stopped matching — would
 	// otherwise pass with nothing measured. These are floors on the count,
-	// not a coupling to it (measured 2026-09-06: 620 base names over 641
-	// files, 378 citations, 142 distinct, across 51 records).
+	// not a coupling to it (measured 2026-09-06 at 30766252: 626 base
+	// names over 647 files, 386 citations, 144 distinct, across 54
+	// records; a corpus that only grows will drift these upward, which is
+	// why they are floors and not equalities).
 	if len(idx) < 300 {
 		t.Fatalf("the tree index holds %d Go base names; the walk is measuring the wrong root", len(idx))
 	}
@@ -382,8 +384,8 @@ func TestADRCitedGoFilesResolveOrAreDeclared(t *testing.T) {
 	}
 	// The half this file started as, floored separately: widening to every
 	// Go file must never be the trade that loses the test-file coverage
-	// ranger-base-efk14 and -1d8bk built (measured 2026-09-06: 63 mentions
-	// of 52 distinct test files).
+	// ranger-base-efk14 and -1d8bk built (measured 2026-09-06 at 30766252:
+	// 64 mentions of 55 distinct test files).
 	if tests < 40 {
 		t.Fatalf("found %d *_test.go citations; the widened tokenizer has lost the half this pin started as", tests)
 	}
@@ -541,27 +543,34 @@ func TestADRCitationCorpusReadsTheExecutableSupplements(t *testing.T) {
 		adr  = "0002-container-tier.probe.sh"
 		want = "internal/posse/cagelauncher.go"
 	)
-	found := false
-	for _, c := range cites {
+	var live *adrCite
+	for i, c := range cites {
 		if c.adr == adr && c.text == want {
-			found = true
+			live = &cites[i]
 			break
 		}
 	}
-	if !found {
+	if live == nil {
 		t.Fatalf("%s no longer contributes %s to the corpus; either the supplement stopped naming the launcher or it is no longer being read", adr, want)
 	}
 
-	// And the supplements are held to the rule, not merely collected: a
-	// stale directory in one is refused exactly as it is in a record.
+	// And the supplement's citation is held to the rule, not merely
+	// collected. adrUnresolved reads only .text — the rule is class-blind
+	// by design, so nothing here can measure that a SUPPLEMENT is treated
+	// like a record; what a hand-built fixture would measure is the rule,
+	// which TestADRCitationCheckCanFail already pins. So the cite is the
+	// one the corpus really produced for this supplement, at the line it
+	// really sits on, and only its directory is mutated: the arm says the
+	// path that reaches the rule from a *.probe.sh resolves, and the
+	// spelling it stood at until 2026-09-06 does not.
 	idx := adrGoFileIndex(t)
-	stale := adrCite{adr: adr, line: 148, text: "internal/rhq/cagelauncher.go"}
-	live := adrCite{adr: adr, line: 148, text: want}
+	stale := *live
+	stale.text = "internal/rhq/cagelauncher.go"
 	if got := adrUnresolved(idx, []adrCite{stale}); len(got) != 1 {
-		t.Fatalf("the supplement's own stale spelling resolved; reading the file buys nothing if the rule does not apply to it")
+		t.Fatalf("%s:%d's stale spelling %s resolved; reading the file buys nothing if the rule does not apply to what it carries", stale.adr, stale.line, stale.text)
 	}
-	if got := adrUnresolved(idx, []adrCite{live}); len(got) != 0 {
-		t.Fatalf("the supplement's live citation was reported missing")
+	if got := adrUnresolved(idx, []adrCite{*live}); len(got) != 0 {
+		t.Fatalf("%s:%d's live citation %s was reported missing", live.adr, live.line, live.text)
 	}
 }
 
