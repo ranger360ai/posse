@@ -444,10 +444,11 @@ of the harness core:
    **every free seat**, not only the one that settled (ranger-base-t8tq:
    the settle is the level-trigger while a rolling `Run` holds `--watch`'s
    loop, and it runs the reap sweep too) — sharing the `Run`'s occupancy
-   map (ADR 0028 §3: seats this `Run` fired into, released at their
-   settle; what a fire pass merely *reads* about a seat expires with that
-   pass) — so a `Run` under `--watch` keeps refilling for as long as there
-   is ready work for any free seat.
+   map (ADR 0028 §3: seats this `Run` fired into, released at the settle of
+   **the bead holding them** — a settle for some other bead on the same seat
+   releases nothing, and says so; what a fire pass merely *reads* about a
+   seat expires with that pass) — so a `Run` under `--watch` keeps refilling
+   for as long as there is ready work for any free seat.
    **The gather is bounded, and what is still in flight is carried**
    (ranger-base-3ryit, `internal/posse/passcarry.go`). "Only returns once
    the cascade quiets" is what this used to say and it was the defect: every
@@ -466,6 +467,20 @@ of the harness core:
    says so in one line naming the beads and their sessions, and the silence
    watchdog gained a second reading: no completed pass inside its budget is
    a finding, said once, naming the set holding it (`watchdog.go`).
+   **A settle releases the hold that names its own bead, never the seat**
+   (ranger-base-25cit). The settle and the fire pass are different moments —
+   each leg waits in its own goroutine and drops its result in a channel that
+   nothing drains until the loop reaches its gather — so an ordinary pass
+   routinely puts a new bead on the seat in between, and a release keyed on
+   the seat's NAME then retired a launch minutes younger than the settle
+   retiring it. MEASURED 2026-09-06, three times in two hours: the
+   fingerprint is a seat named `(busy: <bead>)` in one refill summary and
+   `(working: <session>)` in the next, with a `refill for settled seat` line
+   for that seat between them; once the hold is gone the seat is benched only
+   by the live reading, so the moment that agent goes idle mid-bead the seat
+   reads free and is hired into. A stale hold is not the cost of refusing:
+   `reconcileSeats` already releases a hold whose seat has no live session,
+   at the head of every fire pass and every refill.
    A one-shot
    `dispatch` (no `--watch`) never sets `Refill` and never refires: it
    fires once, gathers, and returns, exactly as before this ADR. `--watch`

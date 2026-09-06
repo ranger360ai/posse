@@ -412,6 +412,39 @@ is the intended trade (ADR 0006 §4).
 
 ### Fixed
 
+**A settle could hand a persona's seat to a second bead while the first was
+still working in it — three times in two hours on 2026-09-06, one of them a
+two-seat lane running 3/2.**
+
+*Affected: any `--watch` loop (the rolling Run). No action needed on upgrade
+beyond running the new binary.* A seat this Run fired into is occupied until
+**that bead** settles (ADR 0028 §3), but the release was keyed on the seat's
+NAME: whichever bead's settle was judged next deleted whatever hold the seat
+happened to be carrying. Those are two different moments — each leg waits in
+its own goroutine and drops its result in a channel that nothing drains until
+the main loop reaches its gather — so an ordinary fire pass routinely puts a
+new bead on the seat in between, and the stale settle then retired a launch
+minutes younger than itself. The refill that runs immediately after hired
+into it.
+
+MEASURED in `state/dispatch-watch.log`, on a verify lane of two seats:
+`ranger-base-6z06r` settled at 14:50:18, the pass fired `ranger-base-hr5j4`
+into that lane's second seat at 14:53:18 and correctly told the next bead in
+the same lane `qa lane busy: …` — and twelve lines later `↻ refill for
+settled seat <that seat> (ranger-base-6z06r settled)` gave that same bead
+`seat 2/2` on it while hr5j4 was still working there. The seat-idle ticker said so on the same pass: `previous
+settle not observed (last event is ranger-base-hr5j4's launch) — no honest
+window`. The other two that day are the same fingerprint with a slower fuse:
+the hold was dropped by a stale settle, the seat stayed benched for a while
+on the live `working` reading alone, and the moment that agent went idle —
+mid-bead, behind its own suite run — the seat read free and was hired into.
+
+A settle now releases only the hold that names its own bead, and says so when
+it does not (`↻ <seat> stays held by <bead>: <other> settled, …`). Nothing is
+stranded by the refusal: `reconcileSeats` already releases a hold whose seat
+has no live session, at the head of every fire pass and every refill, on
+evidence rather than on absence.
+
 **A cage image built from a dirty checkout could read CURRENT against a
 different dirty checkout, and `posse promote` could not show you the diff it
 was asking you to ratify — both whenever an external diff driver is
