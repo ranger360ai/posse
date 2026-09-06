@@ -1,6 +1,6 @@
 # ADR 0058 — A session tree is retired unattended when its bead is closed, its work is measured on the base, and its session is proven gone; "a human can retire the tree" stops being the answer
 
-*Status: accepted 2026-09-05 · owner: architect · source bead
+*Status: accepted 2026-09-05 · amended 2026-09-06 (fact 2 measures a whitespace-exact twin, ranger-base-lwd29, built in 06y60; a decision-paired or verdict-closed tree retires with its tip kept at refs/posse/retired/<branch>, ranger-base-qz3cr, builds in daa60) · owner: architect · source bead
 ranger-base-wo980, from ranger-base-d8o6 · extends ADR 0011 §2 (prune must
 prove death) to the session tree, ADR 0006 §3 (closed means it is on main),
 ADR 0041 (the dirty close stays) · overturns two code comments that call the
@@ -115,7 +115,7 @@ not reopen it:** an open bead's tree (a seat); a tree with no bead record
 (ADR 0006 — no record, no act; `--land --force` is the human's word);
 a dirty tree (ADR 0041 — its handoff bead is the record, the tree is its
 evidence); any commit whose landing is a decision or an inference rather
-than a measurement (the `-x` trailer, the replay pair — the 13 above);
+than a measurement (the `-x` trailer, the replay pair — the 13 above); *(amended 2026-09-06, qz3cr: that class is now retired WITH ITS TIP KEPT under refs/posse/retired/<branch> once no landing is still owed on it — the decision stays no licence, the ref is; see the second amendment below)*;
 the shared checkout (no tree). Each of these prints the sentence it
 prints today.
 
@@ -303,3 +303,169 @@ absence reds the git-floor arm; writing the twin lookup as a set rather
 than a count reds the add/revert/add arm. That last rule is not this
 record's — a base holding ONE copy of an id that two commits ahead share
 holds one of them, so a twin is consumed by the commit it pairs.*
+
+## Amendment 2026-09-06 — a tree whose landing was a decision retires with its tip kept; the decision is never the licence (ranger-base-qz3cr, from iz8fx)
+
+**The question.** The first on-demand `--retire` (monica, 2026-09-06,
+0.4.0+6f94a99c) kept 14 of 44 trees as "holds N commit(s) main does not"
+although the listing's own clause on each says "recorded as landed in
+<sha>" or "replayed onto main as <sha>". The bead asked whether the sweep
+may accept "the launcher's own landing record" — the `-x` trailer or the
+replay pair — as a retire witness beside patch-id, and recommended yes:
+"a witness the launcher wrote is stronger than the hand paste it replaces".
+
+**MEASURED 2026-09-06, ~/src/posse, git 2.50.1, the 14 trees by name.**
+
+- *The launcher writes no trailer.* `MergeSessionWork` fast-forwards or
+  rebases and never cherry-picks; there is no `cherry-pick` and no `-x` in
+  any non-test line of the binary. Every trailer that pairs one of these
+  trees was written BY HAND, by a persona replaying the branch inside a
+  merge-back-blocked bead — 50 such beads filed between 08-27 and 09-06,
+  five a day — with `git apply -3` and a trailer typed into the message
+  (8mj2q, xpwlc, 8orr, w5lpx, dr0fu, pghf4 …). The record is a persona's
+  decision, made once, about what they chose to keep; it is not the
+  launcher's, and it cannot be re-asked at retire time.
+- *The listing does not disagree with the sweep.* The clause the bead
+  quotes continues: "… which is a decision and not a measurement of what
+  the resolution kept". Both surfaces say the same thing; the bead read
+  half the sentence.
+- *The decisions did not keep the bytes.* 22 commits ahead across the 14
+  trees, every one paired: 17 by trailer, 5 by identity. Of the 17, six
+  are also patch-id twins (`git cherry` `-`; `--verbatim` equal) — those
+  are already fact 2's, and the tree is kept only because a SIBLING commit
+  on the same branch is not. The other 11 trailer pairs and all 5 identity
+  pairs DIFFER from their landing under both `git patch-id` and
+  `--verbatim`. x2abw says why in its own words for nxf11: "the resolution
+  kept MAIN's wording at the four overlapping sites"; uzgkz's identity pair is
+  the pair `equivalentOnBase`'s doc names as demonstrably dropping a hunk.
+  A retire licensed by the pairing deletes the only copy of what each
+  replayer chose to leave out. That is the loss fact 2 exists to prevent,
+  and ranger-base-as19's RISK paragraph — "it cannot prove the resolution
+  kept every hunk" — is confirmed on 16 of 22.
+- *The pile is real and the hand recipe is not run.* Seven `-l question`
+  beads on the desk (3ji2w k5aqw xphof 0tuje croqe u5cyx x2abw), each two
+  commands; the oldest tree of the class (zag6) has stood since 08-29 with
+  its paste filed the same day. The operator has executed none. And a
+  decayed verdict re-files: 10 of the 50 block beads are re-files against
+  a branch whose closed do-not-land verdict stood (9a53x four, nr3eq four,
+  4ts30 three, nw9zg three) — the P1 the tree costs every time its dedupe
+  window closes. This is the census that wrote this record, one class over.
+
+**Decision — no to the witness, yes to the retire.** A trailer or an
+identity pair never licenses a delete; D4's sentence about "a decision or an
+inference rather than a measurement" stands, and the `RemoveSessionTree`
+refusal keeps its words. What changes is where the bytes go: **fact 2 is
+satisfied by construction when the tip is first kept under a ref posse
+owns**, and then nothing anybody decided is the licence — the ref is.
+
+1. *The namespace already exists.* `refs/posse/merge-blocked/<branch>`
+   (ranger-base-m3195) is posse's answer to exactly this shape: "a ref
+   posse owns closes [the window]: `gc` never prunes what a ref reaches,
+   and `branch -D` cannot take work a second ref names. refs/posse/ and
+   not refs/heads/: this is not a branch, nothing should check it out, and
+   `git branch -a` must not grow a row per block." The kept tip goes to
+   **`refs/posse/retired/<branch>`**, keyed the way the pin is.
+2. *Who it applies to — the launcher must be DONE with the branch.* Facts
+   1, 3 and 4 unchanged. Fact 2 refused the tip as the last copy of commits
+   main does not measure, AND the merge-back record says no landing is
+   still owed: for a paired tip (every commit accounted for by trailer,
+   identity or patch-id — the shape the sweep prints `≡` for and files no
+   block on) there is no OPEN block bead for the branch; for an UNPAIRED tip
+   the latest block bead is CLOSED and the branch has not moved since that
+   verdict — `priorMergeBlocked`'s own standing-verdict test, the read the
+   sweep already makes. An open block is a handoff in flight and keeps the
+   tree; an unpaired tip with no block at all keeps it (nobody has decided
+   its landing; the sweep files that bead, and if the filing fails the tree
+   waits). The bead is the record; the pin is not read — it is derived from
+   the bead by a prune that can fail, and a pin left behind would keep a
+   tree forever with no sentence naming a bead.
+3. *The order under the lock.* After `retireHeldOrAlive`'s re-read: write
+   the ref at the branch tip, read it back (`rev-parse`), and only then
+   remove — `heldByTip` treats a tip reachable from
+   `refs/posse/retired/<branch>` as the last copy of nothing, so
+   `RemoveSessionTree(t, false)` deletes with `-D` on that licence and no
+   caller passes `force`. Every tip a removal would drop must be reachable
+   from the ref: a tree whose HEAD holds a commit its branch does not
+   (v2rj7's detached shape) is kept as today. A refused `update-ref`, or an
+   existing `refs/posse/retired/<branch>` at another sha (a reopened bead
+   relaunched into the seat name and retired here twice), keeps the tree
+   and names both shas — overwriting would lose the first, and the remedy
+   is the operator's `update-ref -d`.
+4. *What is said.* The sweep's line: `⌫ <bead> <branch> retired: … its N
+   commit(s) main accounts for only by <git's -x trailer | a replay | the
+   closed verdict <id>> are kept at refs/posse/retired/<branch> — compare
+   `git log main..refs/posse/retired/<branch>``. The listing's clause:
+   `retirable — the next pass takes it, keeping N commit(s) at
+   refs/posse/retired/<branch>`; `--retire` prints the sweep's line;
+   `--dry-run` says "would retire … keeping …" and writes no ref. The
+   measured retire is unchanged and writes NO ref: the trash 0058 rejected
+   is a copy of bytes main holds, and it still is.
+5. *Nothing prunes the namespace.* The pile moves from worktrees (8.5M, a
+   listing row, a re-filed P1 per decayed verdict) to refs: one packed-refs
+   line each, no objects added (they are already in the store), listed by
+   nothing posse prints. `git for-each-ref refs/posse/retired
+   --sort=committerdate` is the operator's index and `git update-ref -d`
+   the prune; `git log --all --grep <bead>` — the reflex for "did it land"
+   — now finds the kept tip, and the backup's `bundle --all` carries it.
+   One dial: `retire_tree_after: off` keeps every tree as before; the kept
+   retire is not separately switchable.
+
+**Alternatives rejected.**
+- *Do nothing; the doctrine already says why.* True, and it leaves the
+  class 0058 was written on — a hand recipe addressed to nobody — standing
+  at 14 trees and seven pastes, growing 1.5 a day (MEASURED: the 14 landed
+  08-29..09-06), plus the re-filed P1s.
+- *The pairing as licence* (the bead's yes). Measured above: 16 of 22 differ
+  in bytes, the record is a persona's not the launcher's, and the retire
+  would delete what the replayer chose to drop.
+- *Keep the branch, remove only the tree.* `EnsureSessionTree` reuses an
+  existing branch on relaunch (worktree.go, `worktree add` without `-b`),
+  so a reopened bead would start on the stale tip and re-block; and `git
+  branch` grows a row per retire, the reason m3195 chose refs/posse/.
+- *A retired directory.* 0058's own rejection stands: a directory is a
+  fifth store; a ref is the store the branch already lives in.
+- *Key the ref by branch AND sha* so two retires of one seat name coexist.
+  Names say less, the collision is a reopened bead's and a human's already,
+  and fail-closed with both shas named is one sentence.
+- *Read the pin as the "done" signal.* Derived from the bead by a prune;
+  two readings of one fact (ADR 0011) with the failure being a silent
+  permanent keep.
+- *A `retire-ok` attestation on the block bead.* A second decision by the
+  same hand and a new vocabulary, made unnecessary: nothing is lost, so
+  nobody's word is needed.
+- *Require replayers to land byte-exact.* Impossible when main's wording IS
+  the resolution — x2abw's shape, and the common one.
+
+**Consequences.** D4 shrinks by one row: the trailer/replay/verdict class
+leaves the human's list, and what remains a human's is an open bead's seat,
+a tree with no record (ADR 0006), a dirty tree (ADR 0041), a branch with an
+open block or no verdict, and the shared checkout. The 2026-09-05 table's
+"13 unmeasured" row and the seven question beads become a sweep pass once
+each tree's grace passes. A wrong kept-retire is bounded tighter than
+before: facts 3 and 4 unchanged, and no bytes lost at all.
+
+**MEASURED:** every count above, dated; the launcher's zero trailer writes;
+the 14-tree pairing table (in the bead's comment); `EnsureSessionTree`'s
+branch reuse; the store's 50 block beads and 10 re-files. **ASSUMED:** that
+a ref pile nobody reads costs nothing beyond the packed-refs line (no posse
+reader enumerates refs/posse/ generically — MEASURED at HEAD: only
+`blockedPinPrefix` is walked — but a future one would); that 1.5 a day is
+the rate and not a burst (nine days of data).
+
+**Verification (adds to laurie's list).** (a) A trailer-paired fixture —
+closed, dead, quiet, no block bead — is retired: ref at the old tip, tree
+and branch gone, the line names the ref and the compare command. (b) The
+same with an OPEN block bead is kept and the sentence names the bead. (c)
+An unpaired fixture with a CLOSED verdict and an unmoved branch is retired
+with the ref; the same with a commit after the verdict is kept. (d)
+Unpaired with no block at all: kept. (e) `refs/posse/retired/<branch>`
+already at another sha: kept, both shas named. (f) A PATH shim refusing
+`update-ref`: kept, nothing removed. (g) The measured fixture (0058 item 1)
+still retires with NO ref written. (h) `--dry-run` writes no ref. (i) The
+listing clause and `--retire` print the same verdict over (a). Mutations
+that must red: the ref written after the removal instead of before (f
+catches it through a shim that refuses the delete); the licence read from
+the pin instead of the bead (b, with a pin planted and no bead); the
+measured arm writing a ref (g).
+
+*Builds in ranger-base-daa60 (dinesh); `git log main --grep ranger-base-daa60` is the record, this sentence is a 2026-09-06 snapshot.*

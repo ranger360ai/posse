@@ -6344,7 +6344,7 @@ What a dispatched session gets:
 | session worktree | `<worktrees root>/<repo>/<session>` — its own tree, index, HEAD |
 | session branch | `posse/<session>`, cut from the repo's own branch |
 | merge-back | the launcher fast-forwards it onto that branch when the bead closes, under the ADR 0011 §1 launcher lock |
-| retirement | `posse kill` lands the branch then removes tree and branch — and REFUSES while either holds work. Since ADR 0058 the landing sweep also retires a tree whose bead is closed, whose work is measured on the base, whose session herdr proves gone, and whose git dir has not been written inside `retire_tree_after:` (1h) — the four facts read fresh under the launcher lock; `posse worktrees --retire` runs the same predicate on demand |
+| retirement | `posse kill` lands the branch then removes tree and branch — and REFUSES while either holds work. Since ADR 0058 the landing sweep also retires a tree whose bead is closed, whose work is measured on the base — or, since the 2026-09-06 amendment, accounted for only by a hand replay or a closed merge-back verdict, in which case the tip is first kept at `refs/posse/retired/<branch>` — whose session herdr proves gone, and whose git dir has not been written inside `retire_tree_after:` (1h) — the four facts read fresh under the launcher lock; `posse worktrees --retire` runs the same predicate on demand |
 
 The kill takes the launcher lock **without waiting**: the cockpit's `k` runs
 it on the TUI's single select loop, and blocking there behind a firing pass
