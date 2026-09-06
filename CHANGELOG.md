@@ -98,6 +98,51 @@ local pool meters (`grok_guard_week:` and friends), `budget_pass:` /
 `budget_day:`, `uncounted_cap_<runtime>:` with its ledger and writability
 checks, tier safety, and rolling dispatch.
 
+**An unavailable model is no longer substituted: the launch says so and
+opens on what you asked for.**
+
+Until this release, a tier whose model the account could not serve was
+quietly moved. The launch walked config `tier_fallback:` — default `strong`
+→ `standard` — opened the session on whatever it landed on, and wrote a
+`fallback:` line into the session meta so `posse list`, the cockpit, the
+relaunch receipt and dispatch could all say the session was not running the
+pair its PID names. That is gone (ADR 0003 §3). Availability is advisory
+now: the check still reads the catalog and still prints one loud line, and
+then the session opens on exactly the runtime, tier and model that were
+resolved for it.
+
+```
+richard: tier strong wants claude-fable-5-1 — unavailable on this account;
+launching as asked, and only an explicit --runtime/--tier/--model or a PID
+change moves it
+```
+
+**What you gain and what you lose.** The runtime itself may refuse a model
+it cannot run, and nothing behind posse will pick another one for you — an
+unattended dispatch against a model the account has lost now fails where it
+used to continue on a cheaper one. Against that: a PID with `tier_floor:
+strong` is no longer refused its launch during an outage, because nothing
+falls below the floor any more; and per-tier spend, session identity and the
+work prompt's own header stop being three surfaces that had to agree about a
+substitution. The removal was measured before it was made — over 2026-08-25
+→ 2026-09-06 on this instance's own catalog log (509 reads, 137 successful),
+no launch was ever substituted, and the 336 reads that answered 401 were
+UNKNOWN, which never substituted anything by construction.
+
+**What you may need to do.** Nothing. A `tier_fallback:` still in your
+`config.yaml` is inert rather than an error — nothing reads the key — and
+you can delete it whenever you next edit the file. Sessions created before
+the upgrade keep the pair they are really running: their meta's `runtime:`
+and `tier:` are untouched, `posse relaunch` replays that pair rather than
+re-resolving it, and dispatch still tells the persona which tier it is
+actually thinking at — it now compares the meta's pair against the bead's
+resolved one instead of reading a mark. The `fallback:` line in an existing
+meta is simply ignored, and is not rewritten; the `⤵️fallback` tag is gone
+from `posse list` and the cockpit, and `FALLBACK:` from the relaunch
+receipt. Everything else on this page stands: tier precedence, `tier_floor:`,
+the budget step-downs, and the catalog's own lease, cooldown, forced probe
+and `model_preflight:` off switch.
+
 **The herdr event subscription is gone; polling and bounded reconciliation
 own readiness on their own (ADR 0016).**
 

@@ -187,9 +187,15 @@ func TestExactModelRendersTheCodexLine(t *testing.T) {
 // ─── D3: no substitution ─────────────────────────────────────────────────────
 
 // Two arms over one fixture. The control arm proves the fixture really does
-// make a tier fall; the canary arm proves --model is what stops it. Without
+// reach the availability verdict; the canary arm proves --model is what
+// stops that verdict being reached about a model nobody launched. Without
 // the control, a green here would be indistinguishable from a preflight that
 // was never going to fire.
+//
+// The control used to assert a FALL. ADR 0003 §3 removed automatic
+// substitution (ranger-base-hv2zr), so what the fixture now produces is the
+// loud line and nothing else — which is still the thing D3 asks the canary
+// to skip, and still a fixture that has to be shown to bite.
 func TestExactModelSkipsTierSubstitution(t *testing.T) {
 	t.Parallel()
 	b, fake := newTestBackend(t)
@@ -197,16 +203,19 @@ func TestExactModelSkipsTierSubstitution(t *testing.T) {
 	b.Warn = &warn
 	pfPersona(t, b, "architect", TierStrong)
 	// claude's strong id is gone from the account's catalog: an ordinary
-	// launch at strong falls to the substitute.
+	// launch at strong says so, loudly.
 	seedCatalog(t, b.App, time.Minute, "claude-opus-5", "claude-sonnet-5")
 
-	// CONTROL — no --model: it falls, and says so.
+	// CONTROL — no --model: the verdict is reached and printed.
 	if err := b.CreateSession(NewSessionOpts{Name: "ctl", Agent: "architect", Dir: t.TempDir()}); err != nil {
 		t.Fatalf("control launch: %v", err)
 	}
-	ctl, _ := b.readMeta("ctl")
-	if ctl.Fallback == "" || ctl.Tier == TierStrong {
-		t.Fatalf("the fixture did not make the tier fall — this test would measure nothing: %+v", ctl)
+	if !strings.Contains(warn.String(), "tier strong wants claude-fable-5-1 — unavailable on this account") {
+		t.Fatalf("the fixture did not reach the tier verdict — this test would measure nothing: %q", warn.String())
+	}
+	// And even the control does not move: availability chooses nothing.
+	if ctl, _ := b.readMeta("ctl"); ctl.Tier != TierStrong || ctl.Runtime != "claude" {
+		t.Fatalf("the control's pair moved: %+v", ctl)
 	}
 
 	// CANARY — the same account, the same missing id, an exact model named.
@@ -218,9 +227,6 @@ func TestExactModelSkipsTierSubstitution(t *testing.T) {
 	m, ok := b.readMeta("canary")
 	if !ok {
 		t.Fatal("no canary meta")
-	}
-	if m.Fallback != "" {
-		t.Errorf("the canary was substituted: fallback = %q", m.Fallback)
 	}
 	if m.Tier != TierStrong {
 		t.Errorf("the canary's tier moved: %q", m.Tier)
@@ -234,9 +240,10 @@ func TestExactModelSkipsTierSubstitution(t *testing.T) {
 	if !strings.Contains(warn.String(), "EXACT model claude-6-astra") || !strings.Contains(warn.String(), "substitution is skipped") {
 		t.Errorf("the canary launch did not say it was skipping substitution: %q", warn.String())
 	}
-	// And it does NOT print a verdict about a model nobody launched.
-	if strings.Contains(warn.String(), "unavailable, falling back") {
-		t.Errorf("the canary printed the tier's substitution verdict: %q", warn.String())
+	// And it does NOT print a verdict about a model nobody launched — the
+	// control above proved that same fixture reaches one.
+	if strings.Contains(warn.String(), "unavailable on this account") {
+		t.Errorf("the canary printed the tier's availability verdict: %q", warn.String())
 	}
 }
 

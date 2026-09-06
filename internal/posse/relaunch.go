@@ -305,13 +305,6 @@ func RecreateOpts(m *HerdrMeta) NewSessionOpts {
 		// that bead was dispatched to: the reap guard must still find it
 		// (ADR 0013 §4).
 		Bead: m.Bead,
-		// The availability mark the session is wearing (ranger-base-twaq).
-		// The recreate asks for the pair the last launch FELL to, so the
-		// preflight will find it available and fall nowhere; without this
-		// the refresh blanks the one line saying the session is not running
-		// its tier's model. planLaunch drops it if the pair has stopped
-		// differing from the PID's own.
-		Fallback: m.Fallback,
 		// A session that had its own tree keeps it. Dir already IS the
 		// worktree, so EnsureSessionTree resolves the same main checkout
 		// through it and finds the tree standing; the flag is what keeps the
@@ -663,9 +656,6 @@ func describePlan(o NewSessionOpts, p *launchPlan) string {
 	}
 	if p.Degraded != "" {
 		parts = append(parts, "DEGRADED: "+p.Degraded)
-	}
-	if p.Fallback != "" {
-		parts = append(parts, "FALLBACK: "+p.Fallback)
 	}
 	return strings.Join(parts, ", ")
 }

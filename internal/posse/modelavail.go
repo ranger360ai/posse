@@ -13,30 +13,35 @@ package posse
 // substitution also moves that spend into another tier's row with no line
 // anywhere saying why.
 //
-// So: check, and when the answer is no, say so and substitute on purpose.
-// Four rules, in the operator's words (2026-08-20):
+// So: check, and when the answer is no, SAY so. Three rules — the
+// operator's four of 2026-08-20 less the one ADR 0003 §3 struck on
+// 2026-09-05 (ranger-base-hv2zr):
 //
 //  1. The probe is the cheapest honest one on the box. Anthropic's model
 //     list is a zero-token GET, read with the same credential the plan
 //     guard already reads (planusage.go) and shared through a snapshot in
 //     state/ with a TTL. Successful readings and rate-limit cooldowns are
 //     shared across the fleet; other failures stay UNKNOWN and may retry.
-//  2. Unavailable is LOUD: one line naming persona, tier, wanted model and
-//     substitute, `fallback:` in the session meta so `posse list` and the
-//     cockpit show it, and the tier column of `posse cost` already counts
-//     the model that actually ran (TierForModel reads the transcript, not
-//     the PID) — which is only true because (2) makes the substitution a
-//     decision instead of an accident.
-//  3. It NEVER refuses the launch on its own. "A degraded model is worse
-//     than nothing" is the operator's judgement, not the launcher's. What
-//     may still refuse afterwards is the PID's own `tier_floor:` and the
-//     wall's own rule at `fast` (ADR 0003 §3) — both of those ARE the
-//     operator's decision, recorded in advance, and the preflight hands
-//     them the substituted pair rather than the asked-for one so they rule
-//     on what would really launch. The fallback line prints either way.
-//  4. It reuses the keys that exist: config `tier_fallback:` for where a
-//     tier lands, and a runtime's own `model_<tier>:` for what a tier means
-//     there. No new vocabulary for either.
+//  2. Unavailable is LOUD: one line naming persona, tier and wanted model.
+//     The tier column of `posse cost` counts the model that actually ran
+//     (TierForModel reads the transcript, not the PID), so a launch the CLI
+//     serves off-tier is still accounted where the work happened.
+//  3. It NEVER refuses the launch, and it NEVER chooses a replacement.
+//     "A degraded model is worse than nothing" is the operator's judgement,
+//     not the launcher's — and so is which model to run instead. Availability
+//     is advisory (ADR 0003 §3): the runtime may refuse an unavailable
+//     choice on its own, and an operator who wants another pair selects it
+//     explicitly (`--runtime`/`--tier`/`--model`, or the PID). What may
+//     still refuse afterwards is the PID's own `tier_floor:` and the wall's
+//     own rule at `fast` (ADR 0003 §2) — both of those ARE the operator's
+//     decision, recorded in advance, and they rule on the asked-for pair
+//     because that is now the only pair a launch can open on.
+//
+// `tier_fallback:`, its default/override walk, the hop accounting and the
+// carried `fallback:` mark are GONE (ADR 0003 §3, dial H). Measured over
+// 2026-08-25 → 2026-09-06 the mechanism performed no substitution at all:
+// see the bead. A runtime's own `model_<tier>:` still says what a tier
+// means there — that is mapping, not substitution, and it stays.
 //
 // EVERYTHING HERE FAILS OPEN, and the asymmetry is the whole design: only a
 // list that was actually read, INSIDE ITS LEASE, and that does not contain
@@ -123,14 +128,6 @@ const (
 	// modelCooldownDefault is how long a rate-limited catalog is left alone
 	// when the response named no Retry-After.
 	modelCooldownDefault = 15 * time.Minute
-	// modelFallbackHops bounds the walk down `tier_fallback:`. A chain
-	// longer than this is a config the operator should see, not one the
-	// launcher should keep following.
-	modelFallbackHops = 4
-	// FallbackNone is the `tier_fallback:` value that means "there is no
-	// substitute for this one" — the explicit way to turn the default off
-	// for a tier without turning the map into a place things vanish.
-	FallbackNone = "none"
 )
 
 // ─── the catalog ─────────────────────────────────────────────────────────────
@@ -740,101 +737,29 @@ func (a *App) ModelProbeTTL(errw io.Writer) time.Duration {
 	return ModelProbeTTLDefault
 }
 
-// FallbackFor answers where a persona at (runtime, tier) goes when the
-// model that pair names is not on the account.
-//
-// config `tier_fallback:` is a one-level map. Its KEY is a persona name or
-// a tier name — persona first, because a lane can need a different
-// substitute than its tier's: the operator's standing example is the
-// security lane, whose fallback from the strong model may be a different
-// RUNTIME rather than a cheaper model on the same one (rangerhq-u2p). Its
-// VALUE is either a tier name (hop down on the same runtime) or a runtime
-// name (hop across at the same tier), or `none` for "there is no substitute
-// for this one".
-//
-// The default is `strong` → `standard`, which on claude is fable-5-1 →
-// opus-5, and it is a floor rather than a seed: a map that names other keys
-// does NOT take it away. That is deliberately unlike `tier_by_label:`,
-// where a present key replaces the ADR default wholesale — here the
-// operator's rule is that EVERYONE falls back, so adding one persona line
-// must not be able to silently switch the rest of the shop off.
-//
-// Returns ("", "", why) when there is no substitute; why is the clause that
-// goes in the loud line.
-func (a *App) FallbackFor(persona, runtime, tier string) (string, string, string) {
-	pairs := YamlMapPairs(a.ConfigPath, "tier_fallback")
-	v, from := "", ""
-	for _, kv := range pairs {
-		if kv[0] == persona && persona != "" {
-			v, from = kv[1], "tier_fallback "+persona
-			break
-		}
-	}
-	if v == "" {
-		for _, kv := range pairs {
-			if kv[0] == tier {
-				v, from = kv[1], "tier_fallback "+tier
-				break
-			}
-		}
-	}
-	if v == "" {
-		if tier != TierStrong {
-			return "", "", fmt.Sprintf("tier_fallback names no substitute for %s", tier)
-		}
-		v, from = TierStandard, "the default"
-	}
-	if v == FallbackNone {
-		return "", "", fmt.Sprintf("%s says none", from)
-	}
-	if ValidTier(v) {
-		if v == tier {
-			return "", "", fmt.Sprintf("%s points %s at itself", from, tier)
-		}
-		return runtime, v, ""
-	}
-	if _, err := a.LoadRuntime(v); err == nil {
-		if v == runtime {
-			return "", "", fmt.Sprintf("%s points %s at itself", from, runtime)
-		}
-		return v, tier, ""
-	}
-	// A value that is neither is a config error, and the honest place to
-	// report it is the line the operator is already being shown — a launch
-	// is not the moment to refuse over a typo in a fallback map.
-	return "", "", fmt.Sprintf("%s: %q is neither a tier nor a runtime", from, v)
-}
-
 // ─── the preflight ───────────────────────────────────────────────────────────
 
-// Preflight is what a launch gets back: the (runtime, tier) it should
-// actually use, the model ids on both ends, and the one line to print when
-// they differ. Line == "" means there is nothing to say, which is the
-// answer for every launch on an available model AND for every launch posse
-// cannot check.
+// Preflight is what a launch gets back: the model the asked-for pair names
+// and the one line to print about its availability. Line == "" means there
+// is nothing to say, which is the answer for every launch on an available
+// model AND for every launch posse cannot check.
+//
+// There is deliberately no pair in here (ADR 0003 §3). A preflight that
+// returned a runtime and a tier could return DIFFERENT ones, and the whole
+// of dial H was that it did; the type is now unable to say anything but
+// "here is what you asked for, and here is what is known about it", so
+// "availability never chooses a replacement" is a fact about the shape of
+// this struct rather than a rule some future branch could forget.
 type Preflight struct {
-	Runtime string // launch on this
-	Tier    string // at this
-	Wanted  string // the model the asked-for pair named ("" = the runtime's own default)
-	Got     string // the model the returned pair names
-	Line    string // the loud line, "" = nothing to say
-	// Unknown: the line states an UNKNOWN verdict rather than a
-	// substitution (ADR 0039 D3c). It prints — the operator has to hear
-	// that the launch is going ahead on an id the newest reading does not
-	// list — but NOTHING FELL, so the pair is unmoved and the session meta
-	// gets no `fallback:` mark to carry into relaunches.
-	Unknown bool
+	Wanted string // the model the asked-for pair names ("" = the runtime's own default)
+	Line   string // the loud line, "" = nothing to say
 }
 
-// Fell reports whether the pair moved. An UNKNOWN line is not a fall: it
-// says posse could not check, which is the one thing that never moves a
-// launch.
-func (p Preflight) Fell() bool { return p.Line != "" && !p.Unknown }
-
-// TierPreflight checks that the model a resolved tier names is one this
-// account can run, and substitutes per `tier_fallback:` when it is not.
-// persona may be "" (a session with no PID) — then only the tier keys of
-// the map apply.
+// TierPreflight checks whether the model a resolved tier names is one this
+// account can run, and says so. It never substitutes: an unavailable model
+// launches as asked with the line printed, and choosing another pair is the
+// operator's (ADR 0003 §3). persona may be "" (a session with no PID) — it
+// names the line's subject and nothing else.
 //
 // It is called once per LAUNCH, on the pair the launch has already resolved,
 // and never per prompt: a live session's model was decided when it started,
@@ -864,12 +789,12 @@ func (a *App) TierPreflightFrom(sets []string, persona, runtime, tier string, er
 // already holds — the seam a report that rules on many pairs needs, so one
 // reading answers all of them (ModelCatalog).
 func (a *App) TierPreflightOn(cat *ModelCatalog, persona, runtime, tier string) Preflight {
-	p := Preflight{Runtime: runtime, Tier: tier}
+	p := Preflight{}
 	rt, err := a.LoadRuntime(runtime)
 	if err != nil {
 		return p
 	}
-	p.Wanted, p.Got = rt.Model(tier), rt.Model(tier)
+	p.Wanted = rt.Model(tier)
 	// Nothing to check: this runtime maps no model for this tier (grok
 	// today — {model} renders empty and the CLI picks its own), the
 	// operator turned the preflight off, or posse knows no catalog for this
@@ -892,74 +817,39 @@ func (a *App) TierPreflightOn(cat *ModelCatalog, persona, runtime, tier string) 
 		// the launch is going ahead anyway — that line is the whole price of
 		// the ruling, paid once per launch until the probe comes back.
 		if cat.retained() {
-			p.Unknown = true
 			p.Line = fmt.Sprintf("%s — not in %s%s; availability UNKNOWN, launching as asked",
 				preflightWants(persona, tier, p.Wanted), catalogRead(cat.age()), cat.probeTail())
 		}
 		return p
 	}
 
-	clauses := []string{}
-	curRT, curTier := runtime, tier
-	seen := map[string]bool{curRT + "/" + curTier: true}
-	landed := false
-	for hop := 0; hop < modelFallbackHops && !landed; hop++ {
-		nextRT, nextTier, why := a.FallbackFor(persona, curRT, curTier)
-		if why != "" {
-			clauses = append(clauses, why)
-			break
-		}
-		if key := nextRT + "/" + nextTier; seen[key] {
-			clauses = append(clauses, "tier_fallback loops back to "+key)
-			break
-		}
-		seen[nextRT+"/"+nextTier] = true
-		rt2, err := a.LoadRuntime(nextRT)
-		if err != nil {
-			clauses = append(clauses, fmt.Sprintf("tier_fallback names runtime %s, which will not load", nextRT))
-			break
-		}
-		got := rt2.Model(nextTier)
-		curRT, curTier = nextRT, nextTier
-		p.Runtime, p.Tier, p.Got = curRT, curTier, got
-		switch {
-		case got == "" || !rt2.OnModelCatalog():
-			// Off the catalog posse can read: the hop is taken and stated,
-			// and what that runtime serves is its own business.
-			clauses = append(clauses, "falling back to "+hopDesc(runtime, curRT, curTier, got))
-			landed = true
-		case cat.has(got):
-			clauses = append(clauses, "falling back to "+hopDesc(runtime, curRT, curTier, got))
-			landed = true
-		default:
-			clauses = append(clauses, got+" — ALSO unavailable")
-		}
-	}
-	if !landed {
-		// Rule (3): the launch happens anyway. Whatever it lands on is the
-		// best this map could do, and saying so is the whole job.
-		clauses = append(clauses, "launching on "+hopDesc(runtime, p.Runtime, p.Tier, p.Got)+" anyway")
-	}
+	// A reading inside its lease that does not list the wanted id. This is
+	// the ONE verdict this file is entitled to reach, and since ADR 0003 §3
+	// it is the whole of what it does with it: say so, and launch what was
+	// asked for. Nothing hops, so there is no landing to describe and no
+	// clause list to join — the sentence names the pair the operator would
+	// have to change by hand, because a hand is the only thing that changes
+	// it now.
+	//
 	// No age clause on this verdict: an "unavailable" only ever rests on a
-	// reading inside its lease now (D3c), which is the operator's own
-	// freshness number, and the reading that would have needed dating no
-	// longer reaches a verdict at all — it prints the UNKNOWN line above.
-	p.Line = fmt.Sprintf("%s — unavailable, %s", preflightWants(persona, tier, p.Wanted), strings.Join(clauses, ", "))
+	// reading inside its lease (D3c), which is the operator's own freshness
+	// number, and the reading that would have needed dating no longer
+	// reaches a verdict at all — it prints the UNKNOWN line above.
+	p.Line = fmt.Sprintf("%s — unavailable on this account; launching as asked, and only an explicit --runtime/--tier/--model or a PID change moves it",
+		preflightWants(persona, tier, p.Wanted))
 	return p
 }
 
-// preflightWants is the clause every availability line opens with: WHO the
-// line is about and WHAT the pair it names asks for. It is a function and
-// not three literals because a carried mark is checked against it a launch
-// later (CarriedMark) — a check spelled out by hand would go on passing
-// while the sentence it is checking drifted away from it.
+// preflightWants is the clause both availability lines open with: WHO the
+// line is about and WHAT the pair it names asks for. One rendering for the
+// two verdicts, so an operator reading UNKNOWN and an operator reading
+// unavailable are reading the same sentence about the same ask.
+//
+// model is never "": both producers return before rendering a line when the
+// runtime maps no model for the tier. The branch that handled it existed for
+// CarriedMark, which asked about a PID rather than about a launch, and went
+// with it (ADR 0003 §3).
 func preflightWants(persona, tier, model string) string {
-	if model == "" {
-		// Reachable only from CarriedMark, asking about a PID whose own
-		// runtime maps no model for its tier: the producers above return
-		// before rendering a line when Wanted is empty.
-		return fmt.Sprintf("%s: tier %s wants the runtime's own default model", preflightWho(persona), tier)
-	}
 	return fmt.Sprintf("%s: tier %s wants %s", preflightWho(persona), tier, model)
 }
 
@@ -970,64 +860,6 @@ func preflightWho(persona string) string {
 		return "session"
 	}
 	return persona
-}
-
-// CarriedMark is what an availability mark a session is ALREADY wearing
-// should say at its next launch (ranger-base-cplx).
-//
-// ranger-base-twaq made the mark ride `posse relaunch`, because the fact it
-// states — this session is not running the pair its PID names — survives a
-// refresh, and blanking it would drop the ⤵️fallback tag, the receipt's
-// FALLBACK: line and dispatch's effectiveTier answer all at once. What rode
-// with the fact was the SENTENCE, and that sentence names the tier and the
-// model the PID asked for AT THE FALL. Edit `tier:` to a THIRD value —
-// neither what fell nor what is running — and both clauses stop describing
-// this PID while the fact stays true: the one surface an operator reads to
-// decide whether to act says "tier strong wants claude-fable-5-1" about a
-// PID that asks fast.
-//
-// So the mark is carried verbatim only while it still opens with what this
-// PID asks TODAY, and is otherwise re-derived from today's PID and the pair
-// this launch really runs. It is never emptied here. Dropping it would take
-// the two halves that are still RIGHT down with the stale explanation, and
-// the third-tier board is exactly where they are load-bearing: a session on
-// claude-opus-5 whose PID says fast is one dispatch would otherwise tell it
-// is thinking at fast. The one case where the mark is dropped is the pair
-// no longer differing from the PID's own at all, and that is twaq's own
-// condition, upstream of this call (herdrback.go planLaunch).
-//
-// runtime/tier are the pair the launch will really open on, which on this
-// path is the pair the session already runs.
-func (a *App) CarriedMark(ag *AgentFile, persona, mark, runtime, tier string) string {
-	if mark == "" {
-		return ""
-	}
-	own, ownTier := a.ResolveRuntime("", ag), a.ResolveTier("", ag)
-	ownRT, err := a.LoadRuntime(own)
-	if err != nil {
-		// The PID names a runtime that will not load. Nothing here can say
-		// what it asks for, and that is a reason to render no new sentence —
-		// not a reason to un-say the old fact. Carried as it was, which is
-		// what every launch before this did.
-		return mark
-	}
-	wants := ownRT.Model(ownTier)
-	// The separator both producers put after the clause is part of the
-	// check: without it a model id that is a PREFIX of the one the mark
-	// names reads as the same ask, and a runtime overlay rolling
-	// `model_strong:` from claude-fable-5-1 back to claude-fable-5 would
-	// carry a mark naming the id nothing asks for any more. It is also what
-	// makes the check notice if either line above stops opening this way.
-	if strings.HasPrefix(mark, preflightWants(persona, ownTier, wants)+" — ") {
-		return mark
-	}
-	got := ""
-	if rt, err := a.LoadRuntime(runtime); err == nil {
-		got = rt.Model(tier)
-	}
-	// hopDesc for the tail, so a hopped session reads "… on codex" here
-	// exactly as it did in the line it fell with.
-	return fmt.Sprintf("%s — this session is running %s from an earlier fall", preflightWants(persona, ownTier, wants), hopDesc(own, runtime, tier, got))
 }
 
 // PreflightReport is the same question `posse gates` asks out loud: for
@@ -1055,9 +887,9 @@ func (a *App) PreflightReportOn(cat *ModelCatalog, persona, runtime, tier string
 	}
 	want := rt.Model(tier)
 	// Its own lines lead with the runtime, because that is what they
-	// describe. The fallback branch does not: it returns the LAUNCH's line
-	// verbatim, persona and all, so the operator reads here the same bytes
-	// a launch would print — one rendering, no drift.
+	// describe. The two UNAVAILABLE branches do not: they return the
+	// LAUNCH's line verbatim, persona and all, so the operator reads here the
+	// same bytes a launch would print — one rendering, no drift.
 	//
 	// Every branch above the catalog is answered without touching it: the
 	// reading is lazy, so a report on a runtime posse knows no catalog for
@@ -1083,7 +915,7 @@ func (a *App) PreflightReportOn(cat *ModelCatalog, persona, runtime, tier string
 			return fmt.Sprintf("%s: tier %s → %s (availability UNKNOWN — the catalog could not be read; the launch takes the tier as asked)", runtime, tier, want)
 		case !cat.has(want):
 			// Past its lease AND missing the id: the launch's own line,
-			// verbatim, for the same reason the fallback branch below
+			// verbatim, for the same reason the unavailable branch below
 			// returns it — one rendering of the sentence that matters most.
 			return a.TierPreflightOn(cat, persona, runtime, tier).Line
 		}
@@ -1098,19 +930,6 @@ func (a *App) PreflightReportOn(cat *ModelCatalog, persona, runtime, tier string
 		return fmt.Sprintf("%s: tier %s → %s (available)", runtime, tier, want)
 	}
 	return a.TierPreflightOn(cat, persona, runtime, tier).Line
-}
-
-// hopDesc names where a hop landed, the way a person would say it: the
-// model id alone when only the tier moved, and the runtime too when the
-// runtime moved or when that runtime picks its own model.
-func hopDesc(fromRT, toRT, toTier, model string) string {
-	if model == "" {
-		return fmt.Sprintf("%s/%s (the runtime's own default model)", toRT, toTier)
-	}
-	if toRT != fromRT {
-		return fmt.Sprintf("%s on %s", model, toRT)
-	}
-	return model
 }
 
 // ModelCatalog is ONE reading of the account's catalog, ruled on as many

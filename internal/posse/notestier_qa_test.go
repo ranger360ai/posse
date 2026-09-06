@@ -92,20 +92,27 @@ func TestNotesTierParagraphNamesTheBuiltInClaudeIds(t *testing.T) {
 	}
 }
 
-var notesLoudLine = regexp.MustCompile(`tier strong wants (claude-[a-z0-9.-]+) — unavailable, falling back to (claude-[a-z0-9.-]+)`)
+var notesLoudLine = regexp.MustCompile(`tier strong wants (claude-[a-z0-9.-]+) — unavailable([^\n]*)`)
 
-// ARM 2 of ranger-base-1kvfr: NOTES.md quotes the preflight's fallback line.
-// A doc that quotes a rendering is worth its quote only while the renderer
+// ARM 2 of ranger-base-1kvfr: NOTES.md quotes the preflight's loud line. A
+// doc that quotes a rendering is worth its quote only while the renderer
 // still produces it, so this RENDERS the line — same call the launch path
 // makes — and requires NOTES.md to carry that sentence and no variant of it.
+//
+// The sentence changed shape when ADR 0003 §3 removed automatic
+// substitution (ranger-base-hv2zr): it named a substitute and now names
+// none. The regex below is deliberately open after "unavailable" so the
+// two-way arm still CATCHES the old sentence rather than stopping matching
+// it — a stale "falling back to …" left in the prose must red this pin, not
+// slip past it.
 func TestNotesPreflightLoudLineIsWhatPreflightPrints(t *testing.T) {
 	t.Parallel()
 	a := preflightApp(t)
 	// strong is off the account; standard and fast are on it.
 	seedCatalog(t, a, time.Minute, claudeModels[TierStandard], claudeModels[TierFast])
 	pf := a.TierPreflight("architect", "claude", TierStrong, nil)
-	if !pf.Fell() {
-		t.Fatalf("the fixture must produce a fallback line, or this pin quotes nothing: %+v", pf)
+	if pf.Line == "" {
+		t.Fatalf("the fixture must produce a loud line, or this pin quotes nothing: %+v", pf)
 	}
 	// NOTES.md's copy names a persona of its own, and the shipped tree may
 	// not name one back (ADR 0012 App.A §5) — so the coupled half is
@@ -120,11 +127,17 @@ func TestNotesPreflightLoudLineIsWhatPreflightPrints(t *testing.T) {
 	// this, the old sentence could stay beside a new one and read as fact.
 	found := notesLoudLine.FindAllStringSubmatch(notes, -1)
 	if len(found) == 0 {
-		t.Errorf("NOTES.md no longer quotes the fallback line at all — it is the sentence that says WHY a session is on a substitute (ranger-base-1kvfr)")
+		t.Errorf("NOTES.md no longer quotes the loud line at all — it is the sentence that says a session's tier asked for something the account will not serve (ranger-base-1kvfr)")
 	}
 	for _, m := range found {
-		if m[1] != claudeModels[TierStrong] || m[2] != claudeModels[TierStandard] {
-			t.Errorf("NOTES.md quotes %q → %q; the built-in table says %q → %q (ranger-base-1kvfr)", m[1], m[2], claudeModels[TierStrong], claudeModels[TierStandard])
+		if m[1] != claudeModels[TierStrong] {
+			t.Errorf("NOTES.md quotes %q; the built-in table says strong is %q (ranger-base-1kvfr)", m[1], claudeModels[TierStrong])
+		}
+		// The removal's own half: no quoted line may offer a substitute
+		// (ADR 0003 §3, ranger-base-hv2zr). A tail naming another model is
+		// prose describing a mechanism the code no longer has.
+		if strings.Contains(m[2], "falling back") {
+			t.Errorf("NOTES.md still quotes a substitution: %q — automatic fallback was removed (ranger-base-hv2zr)", m[0])
 		}
 	}
 }

@@ -2162,11 +2162,6 @@ func (c *cockpit) sessionCols(s posse.HerdrSession) []col {
 		if s.Degraded != "" {
 			name += " ⚠️degraded"
 		}
-		// The tag above says the session runs at the tier it names; this one
-		// says that tier is not the one its PID asked for (rangerhq-oay).
-		if s.Fallback != "" {
-			name += " " + posse.FallbackTag
-		}
 		if s.TurnFailure != "" {
 			name += " " + posse.TurnFailureTag
 		}

@@ -3164,13 +3164,14 @@ func (d *Dispatcher) fire(is RepoIssue, persona, session, runtime, tier, tierWhy
 	if err != nil {
 		return nil, err
 	}
-	// What the account would actually serve. The work prompt tells the
-	// persona which tier it is thinking at (promptContext), so a header
-	// naming a model the session is not running is the exact lie this
-	// preflight exists to kill (rangerhq-oay).
-	if rt, tr, fell := d.effectiveTier(session, runtime, tier); fell != "" {
-		d.printf("! %-14s %s\n", is.ID, fell)
-		runtime, tier, tierWhy = rt, tr, "fallback"
+	// What the session is really running. The work prompt tells the persona
+	// which tier it is thinking at (promptContext), so a header naming a
+	// pair the session is not on is the exact lie this read exists to kill
+	// (rangerhq-oay, re-aimed at the meta's own pair by ranger-base-hv2zr).
+	if rt, tr, differs := d.effectiveTier(session, runtime, tier); differs {
+		d.printf("! %-14s session %s opened on %s/%s, not the %s/%s this bead resolves — prompting at what it runs\n",
+			is.ID, session, rt, tr, runtime, tier)
+		runtime, tier, tierWhy = rt, tr, "the session"
 	}
 	how := "prompted"
 	if l.delivered {
@@ -3682,23 +3683,35 @@ func (d *Dispatcher) tierRefusal(ag *AgentFile, runtime, tier string) error {
 	return d.App.CheckTier(ag, rt, ResolveCage(d.Cage, ag), tier, d.AllowDegraded)
 }
 
-// effectiveTier reads back what the session was really created at. The
-// availability preflight (modelavail.go) runs inside the launch, where the
-// model id is known and where the meta is written; dispatch learns its
-// verdict from that meta rather than probing again, so the catalog is read
-// once per TTL and the loud line is printed once per launch.
+// effectiveTier reads back the pair the session was really created at, so
+// the work prompt tells the persona which tier it is actually thinking at
+// (promptContext). A header naming a model the session is not running is a
+// lie whatever produced the difference.
 //
-// It answers only for a session whose meta records a `fallback:` — the
-// footprint of this one fact and nothing more. A found session's tier is
-// still reported as the bead's resolved tier exactly as it always was;
-// whether THAT is honest for a session created at another tier is a
-// different question and not this bead's.
-func (d *Dispatcher) effectiveTier(session, runtime, tier string) (string, string, string) {
+// It used to key on the meta's `fallback:` mark, and until ADR 0003 §3 the
+// availability preflight was the only thing that could produce one. With
+// automatic substitution gone the mark is gone with it (ranger-base-hv2zr),
+// and what is left is the fact the mark only ever pointed at: the meta's
+// `runtime:`/`tier:` are what this session OPENED on, and the arguments are
+// what this bead RESOLVED. Comparing them directly answers for one more
+// case than the mark ever did — an operator's own `posse new --tier` or a
+// hand-edited relaunch, which no mark was ever written for — and it keeps
+// answering for a session that fell before the removal, whose meta still
+// records the pair it fell to. That is ADR 0003 §3's "retain current
+// runtime/tier identity": the mark went, the identity did not.
+//
+// An empty pair in the meta is not a difference. A session with no persona
+// records neither, and "the meta does not say" must read as the resolved
+// pair rather than as a launch on the empty runtime.
+func (d *Dispatcher) effectiveTier(session, runtime, tier string) (string, string, bool) {
 	m, ok := d.HB.readMeta(session)
-	if !ok || m.Fallback == "" {
-		return runtime, tier, ""
+	if !ok || m.Runtime == "" || m.Tier == "" {
+		return runtime, tier, false
 	}
-	return m.Runtime, m.Tier, m.Fallback
+	if m.Runtime == runtime && m.Tier == tier {
+		return runtime, tier, false
+	}
+	return m.Runtime, m.Tier, true
 }
 
 func hasLabel(labels []string, want string) bool {
@@ -4517,8 +4530,9 @@ func (d *Dispatcher) LaunchBead(is RepoIssue) (session string, err error) {
 	if err != nil {
 		return "", err
 	}
-	if rt, tr, fell := d.effectiveTier(session, launchRuntime, tier); fell != "" {
-		d.printf("! %-14s %s\n", is.ID, fell)
+	if rt, tr, differs := d.effectiveTier(session, launchRuntime, tier); differs {
+		d.printf("! %-14s session %s opened on %s/%s, not the %s/%s this bead resolves — prompting at what it runs\n",
+			is.ID, session, rt, tr, launchRuntime, tier)
 		launchRuntime, tier = rt, tr
 	}
 	if !l.delivered {

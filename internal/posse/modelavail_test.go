@@ -254,16 +254,18 @@ func TestModelCacheHonoursRetryAfterAcrossProcesses(t *testing.T) {
 // ─── fail-open ───────────────────────────────────────────────────────────────
 
 // The rule the whole file turns on: posse not knowing is not the same fact
-// as the model being gone, and only the second one may move a launch.
-func TestUnknownCatalogNeverDemotesAnything(t *testing.T) {
+// as the model being gone. Since ADR 0003 §3 neither one moves a launch —
+// what separates them now is whether anything is SAID, and an unreadable
+// catalog says nothing at all.
+func TestUnknownCatalogSaysNothing(t *testing.T) {
 	t.Parallel()
 	a := preflightApp(t) // no snapshot, unconfigured lister
 	pf := a.TierPreflight("architect", "claude", TierStrong, nil)
-	if pf.Fell() {
-		t.Errorf("an unreadable catalog must launch the tier as asked, got %q", pf.Line)
+	if pf.Line != "" {
+		t.Errorf("an unreadable catalog must launch the tier as asked in silence, got %q", pf.Line)
 	}
-	if pf.Runtime != "claude" || pf.Tier != TierStrong || pf.Got != "claude-fable-5-1" {
-		t.Errorf("pair moved: %+v", pf)
+	if pf.Wanted != "claude-fable-5-1" {
+		t.Errorf("the ask is still the ask: %+v", pf)
 	}
 }
 
@@ -272,7 +274,7 @@ func TestEmptyCatalogIsUnknownNotAnAccountWithNoModels(t *testing.T) {
 	a := preflightApp(t)
 	cs := newCatalogServer(t) // 200, zero entries
 	a.ModelLister = cs.lister()
-	if pf := a.TierPreflight("architect", "claude", TierStrong, nil); pf.Fell() {
+	if pf := a.TierPreflight("architect", "claude", TierStrong, nil); pf.Line != "" {
 		t.Errorf("an empty catalog must read as unknown, got %q", pf.Line)
 	}
 }
@@ -282,7 +284,7 @@ func TestPreflightOffSwitch(t *testing.T) {
 	a := preflightApp(t)
 	writeCfg(t, a, "model_preflight: false\n")
 	seedCatalog(t, a, time.Minute, "claude-opus-5") // fable absent
-	if pf := a.TierPreflight("architect", "claude", TierStrong, nil); pf.Fell() {
+	if pf := a.TierPreflight("architect", "claude", TierStrong, nil); pf.Line != "" {
 		t.Errorf("model_preflight: false must check nothing, got %q", pf.Line)
 	}
 }
@@ -307,16 +309,16 @@ func TestRuntimeWithNoModelMappingIsNotChecked(t *testing.T) {
 	if !rt.OnModelCatalog() || rt.Model(TierStrong) != "" {
 		t.Fatalf("fixture must be on the catalog and map nothing: egress %v model %q", rt.Egress, rt.Model(TierStrong))
 	}
-	if pf := a.TierPreflight("security", "blankcli", TierStrong, nil); pf.Fell() {
+	if pf := a.TierPreflight("security", "blankcli", TierStrong, nil); pf.Line != "" {
 		t.Errorf("a runtime with no per-tier model has nothing to check, got %q", pf.Line)
 	}
 	// The control: give the SAME fixture a model id the catalog does not
-	// hold and the preflight must fall. Without this the assertion above is
+	// hold and the preflight must speak. Without this the assertion above is
 	// satisfied by a preflight that checks nothing at all.
 	os.WriteFile(filepath.Join(a.RuntimesDir(), "blankcli.yaml"),
 		[]byte("command: blankcli {model} --sys {file}\negress: [api.anthropic.com]\nmodel_strong: claude-fable-5\n"), 0o644)
-	if pf := a.TierPreflight("security", "blankcli", TierStrong, nil); !pf.Fell() {
-		t.Errorf("control: a mapped id absent from the catalog must fall, got %q", pf.Line)
+	if pf := a.TierPreflight("security", "blankcli", TierStrong, nil); pf.Line == "" {
+		t.Error("control: a mapped id absent from the catalog must be reported")
 	}
 }
 
@@ -329,7 +331,7 @@ func TestMappedNonAnthropicRuntimeIsNotCheckedAgainstTheAnthropicCatalog(t *test
 	a := preflightApp(t)
 	seedCatalog(t, a, time.Minute, "claude-opus-5")
 	for _, tier := range Tiers {
-		if pf := a.TierPreflight("security", "codex", tier, nil); pf.Fell() {
+		if pf := a.TierPreflight("security", "codex", tier, nil); pf.Line != "" {
 			t.Errorf("codex/%s: no catalog posse can read, got %q", tier, pf.Line)
 		}
 	}
@@ -346,125 +348,93 @@ func TestPreflightAvailableSaysNothing(t *testing.T) {
 	a := preflightApp(t)
 	seedCatalog(t, a, time.Minute, "claude-fable-5-1", "claude-opus-5", "claude-sonnet-5")
 	pf := a.TierPreflight("architect", "claude", TierStrong, nil)
-	if pf.Fell() {
+	if pf.Line != "" {
 		t.Errorf("the model is on the account; nothing to say, got %q", pf.Line)
 	}
-	if pf.Tier != TierStrong || pf.Got != "claude-fable-5-1" {
+	if pf.Wanted != "claude-fable-5-1" {
 		t.Errorf("%+v", pf)
 	}
 }
 
-// The operator's own example line, verbatim in shape.
-func TestPreflightFallsBackToOpusAndSaysSo(t *testing.T) {
+// What the operator's own example line became when ADR 0003 §3 struck dial
+// H: the same opening clause, and then nothing about a substitute, because
+// there is not one.
+func TestPreflightUnavailableSaysSoAndNamesNoSubstitute(t *testing.T) {
 	t.Parallel()
 	a := preflightApp(t)
 	seedCatalog(t, a, time.Minute, "claude-opus-5", "claude-sonnet-5") // fable gone
 	pf := a.TierPreflight("architect", "claude", TierStrong, nil)
-	const want = "architect: tier strong wants claude-fable-5-1 — unavailable, falling back to claude-opus-5"
-	if pf.Line != want {
-		t.Errorf("line =\n  %q\nwant\n  %q", pf.Line, want)
+	if !strings.HasPrefix(pf.Line, "architect: tier strong wants claude-fable-5-1 — unavailable on this account") {
+		t.Errorf("line = %q", pf.Line)
 	}
-	if pf.Runtime != "claude" || pf.Tier != TierStandard || pf.Got != "claude-opus-5" {
-		t.Errorf("substituted pair = %+v", pf)
+	if !strings.Contains(pf.Line, "launching as asked") {
+		t.Errorf("the line must say the launch goes ahead: %q", pf.Line)
 	}
-}
-
-// Rule (3): the launch is never refused over availability, so a fallback
-// that is also gone still launches — loudly, on the best the map reached.
-func TestPreflightFallbackAlsoUnavailableIsLoudAndStillLaunches(t *testing.T) {
-	t.Parallel()
-	a := preflightApp(t)
-	seedCatalog(t, a, time.Minute, "claude-sonnet-5") // neither fable nor opus
-	pf := a.TierPreflight("developer", "claude", TierStrong, nil)
-	for _, want := range []string{
-		"developer: tier strong wants claude-fable-5-1 — unavailable",
-		"claude-opus-5 — ALSO unavailable",
-		"launching on claude-opus-5 anyway",
-	} {
-		if !strings.Contains(pf.Line, want) {
-			t.Errorf("line %q missing %q", pf.Line, want)
+	// The words the removed walk rendered. Their absence is the assertion:
+	// a line that still offers a substitute is a walk that came back.
+	for _, gone := range []string{"falling back to", "ALSO unavailable", "claude-opus-5"} {
+		if strings.Contains(pf.Line, gone) {
+			t.Errorf("line names a substitute (%q): %q", gone, pf.Line)
 		}
 	}
-	if pf.Tier != TierStandard || pf.Got != "claude-opus-5" {
-		t.Errorf("must still land somewhere and say where: %+v", pf)
+	if pf.Wanted != "claude-fable-5-1" {
+		t.Errorf("the ask is unmoved: %+v", pf)
 	}
 }
 
-// ─── the map ─────────────────────────────────────────────────────────────────
+// ─── the map that is no longer read ──────────────────────────────────────────
 
-// rangerhq-u2p's requirement: the security lane's fallback may be a
-// different RUNTIME, not a cheaper model on the same one.
-func TestPerPersonaFallbackCanNameARuntimeHop(t *testing.T) {
+// `tier_fallback:` is gone (ADR 0003 §3). It is not enough that posse stops
+// walking it: an operator's config still HOLDS the key, on this instance and
+// on every other one that configured it, and the removal is only honest if
+// that config now changes nothing.
+//
+// Each row is a shape the walk used to obey and a model id it used to reach.
+// The assertion is the same for all of them — the line names the asked-for
+// id and no other, so nothing was substituted — and it is checked against
+// the LAUNCH, not only against the preflight, because the walk's whole
+// product was a pair the launch then opened on.
+func TestTierFallbackConfigIsInertInEveryShapeItUsedToObey(t *testing.T) {
 	t.Parallel()
-	a := preflightApp(t)
-	writeCfg(t, a, "tier_fallback:\n  security: codex\n")
-	seedCatalog(t, a, time.Minute, "claude-opus-5")
-	pf := a.TierPreflight("security", "claude", TierStrong, nil)
-	if pf.Runtime != "codex" || pf.Tier != TierStrong {
-		t.Errorf("security must hop runtimes and keep its tier: %+v", pf)
-	}
-	// The hop names the RUNTIME, which is the requirement. It reads
-	// "<id> on codex" rather than "codex/strong" because codex maps a model
-	// per tier since ranger-base-arm — hopDesc says "codex/strong (the
-	// runtime\'s own default model)" only where nothing is mapped.
-	if !strings.Contains(pf.Line, "falling back to gpt-5.6-sol on codex") {
-		t.Errorf("line = %q", pf.Line)
-	}
-}
-
-// The operator's rule is that EVERYONE falls back, so naming one persona
-// must not silently switch the rest of the shop off — unlike tier_by_label,
-// where a present key replaces the ADR default wholesale.
-func TestNamingOnePersonaKeepsTheDefaultForEveryoneElse(t *testing.T) {
-	t.Parallel()
-	a := preflightApp(t)
-	writeCfg(t, a, "tier_fallback:\n  security: codex\n")
-	seedCatalog(t, a, time.Minute, "claude-opus-5")
-	pf := a.TierPreflight("architect", "claude", TierStrong, nil)
-	if pf.Tier != TierStandard || pf.Got != "claude-opus-5" {
-		t.Errorf("the default strong→standard must survive another persona's entry: %+v", pf)
-	}
-}
-
-func TestFallbackNoneMeansNoSubstitute(t *testing.T) {
-	t.Parallel()
-	a := preflightApp(t)
-	writeCfg(t, a, "tier_fallback:\n  strong: none\n")
-	seedCatalog(t, a, time.Minute, "claude-opus-5")
-	pf := a.TierPreflight("architect", "claude", TierStrong, nil)
-	if pf.Tier != TierStrong || pf.Got != "claude-fable-5-1" {
-		t.Errorf("`none` must leave the launch where it was: %+v", pf)
-	}
-	if !strings.Contains(pf.Line, "says none") || !strings.Contains(pf.Line, "launching on claude-fable-5-1 anyway") {
-		t.Errorf("line = %q", pf.Line)
-	}
-}
-
-func TestFallbackValueThatIsNeitherATierNorARuntimeIsReportedNotObeyed(t *testing.T) {
-	t.Parallel()
-	a := preflightApp(t)
-	writeCfg(t, a, "tier_fallback:\n  strong: gpt-9\n")
-	seedCatalog(t, a, time.Minute, "claude-opus-5")
-	pf := a.TierPreflight("architect", "claude", TierStrong, nil)
-	if pf.Tier != TierStrong {
-		t.Errorf("a typo must not move a launch: %+v", pf)
-	}
-	if !strings.Contains(pf.Line, `"gpt-9" is neither a tier nor a runtime`) {
-		t.Errorf("a typo in the map must be named on the line the operator is already reading: %q", pf.Line)
-	}
-}
-
-func TestFallbackCycleStops(t *testing.T) {
-	t.Parallel()
-	a := preflightApp(t)
-	writeCfg(t, a, "tier_fallback:\n  strong: standard\n  standard: strong\n")
-	seedCatalog(t, a, time.Minute, "claude-sonnet-5")
-	pf := a.TierPreflight("architect", "claude", TierStrong, nil)
-	if !strings.Contains(pf.Line, "loops back to") {
-		t.Errorf("a cycle must be reported, not walked: %q", pf.Line)
-	}
-	if pf.Tier != TierStandard {
-		t.Errorf("stops at the last hop it took: %+v", pf)
+	for _, tc := range []struct {
+		name, cfg string
+	}{
+		{"persona names a runtime hop", "tier_fallback:\n  architect: codex\n"},
+		{"tier names a cheaper tier", "tier_fallback:\n  strong: standard\n"},
+		{"the explicit none", "tier_fallback:\n  strong: none\n"},
+		{"a cycle", "tier_fallback:\n  strong: standard\n  standard: strong\n"},
+		{"a value that is neither", "tier_fallback:\n  strong: gpt-9\n"},
+		{"no key at all — the removed default strong→standard", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			b, fake := newTestBackend(t)
+			var warn strings.Builder
+			b.Warn = &warn
+			pfPersona(t, b, "architect", TierStrong)
+			if tc.cfg != "" {
+				writeCfg(t, b.App, tc.cfg)
+			}
+			seedCatalog(t, b.App, time.Minute, "claude-opus-5", "claude-sonnet-5") // fable gone
+			if err := b.CreateSession(NewSessionOpts{Name: "tf", Agent: "architect", Dir: t.TempDir()}); err != nil {
+				t.Fatalf("availability never refuses a launch: %v", err)
+			}
+			log := launchLog(t, b.App, fake)
+			if !strings.Contains(log, "--model 'claude-fable-5-1'") {
+				t.Errorf("the launch did not open on the asked-for model:\n%s", log)
+			}
+			for _, sub := range []string{"claude-opus-5", "claude-sonnet-5", "gpt-5.6"} {
+				if strings.Contains(log, sub) {
+					t.Errorf("%s was substituted onto the launch line:\n%s", sub, log)
+				}
+			}
+			if m, _ := b.readMeta("tf"); m.Runtime != "claude" || m.Tier != TierStrong {
+				t.Errorf("the session records a pair it was not asked for: %+v", m)
+			}
+			if !strings.Contains(warn.String(), "unavailable on this account") {
+				t.Errorf("unavailable must still be loud: %q", warn.String())
+			}
+		})
 	}
 }
 
@@ -481,10 +451,11 @@ func pfPersona(t *testing.T, b *HerdrBackend, name, tier string) {
 	}
 }
 
-// End to end over the fake CLI: the typed line names the substitute, the
-// meta records both the tier that ran and the line saying it was not the
-// one asked for, and `posse list` wears the mark.
-func TestLaunchTypesTheSubstituteAndRecordsIt(t *testing.T) {
+// End to end over the fake CLI: the typed line names the model the tier
+// asked for, the meta records the pair the launch really opened on, the
+// operator hears that it is unavailable — and `posse list` wears no mark,
+// because there is no longer a second fact for a mark to carry.
+func TestLaunchTypesTheAskedForModelAndSaysItIsUnavailable(t *testing.T) {
 	t.Parallel()
 	b, fake := newTestBackend(t)
 	var warn strings.Builder
@@ -497,44 +468,49 @@ func TestLaunchTypesTheSubstituteAndRecordsIt(t *testing.T) {
 	}
 
 	log := launchLog(t, b.App, fake)
-	if !strings.Contains(log, "--model 'claude-opus-5'") {
-		t.Errorf("the typed line must name the substitute:\n%s", log)
+	if !strings.Contains(log, "--model 'claude-fable-5-1'") {
+		t.Errorf("the typed line must name the model that was asked for:\n%s", log)
 	}
-	if strings.Contains(log, "claude-fable-5-1") {
-		t.Errorf("the typed line still names the unavailable model:\n%s", log)
+	if strings.Contains(log, "claude-opus-5") {
+		t.Errorf("the typed line was substituted:\n%s", log)
 	}
-	if !strings.Contains(warn.String(), "architect: tier strong wants claude-fable-5-1 — unavailable, falling back to claude-opus-5") {
-		t.Errorf("the substitution was silent: %q", warn.String())
+	if !strings.Contains(warn.String(), "architect: tier strong wants claude-fable-5-1 — unavailable on this account") {
+		t.Errorf("unavailable was silent: %q", warn.String())
 	}
 
 	m, ok := b.readMeta("r1")
 	if !ok {
 		t.Fatal("no meta")
 	}
-	// tier: is what the session IS, the way cage: and degraded: are — and
-	// fallback: is the line that says it is not what was asked for.
-	if m.Tier != TierStandard {
-		t.Errorf("meta tier = %q, want the tier that actually launched", m.Tier)
+	// tier: is what the session IS, the way cage: and degraded: are. Since
+	// nothing can move it, it is also what was asked for.
+	if m.Runtime != "claude" || m.Tier != TierStrong {
+		t.Errorf("meta pair = %s/%s, want the pair that was asked for", m.Runtime, m.Tier)
 	}
-	if !strings.Contains(m.Fallback, "wants claude-fable-5-1") {
-		t.Errorf("meta fallback = %q", m.Fallback)
+	// The mark's own byte, asserted absent by the one reader that would
+	// have written it: a meta file that grows a `fallback:` line again fails
+	// here rather than in a display test three surfaces away.
+	if raw := metaBytes(t, b, "r1"); strings.Contains(raw, "fallback:") {
+		t.Errorf("the removed mark is back in the meta:\n%s", raw)
 	}
 
 	var list strings.Builder
 	if err := b.CmdList(&list); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(list.String(), FallbackTag) {
-		t.Errorf("posse list does not show the fallback:\n%s", list.String())
+	if strings.Contains(list.String(), "⤵️") {
+		t.Errorf("posse list still wears a fallback mark:\n%s", list.String())
 	}
-	if !strings.Contains(list.String(), b.App.RuntimeTierTag("claude", TierStandard)) {
+	if !strings.Contains(list.String(), b.App.RuntimeTierTag("claude", TierStrong)) {
 		t.Errorf("posse list must name the tier that is really running:\n%s", list.String())
 	}
 }
 
-func TestLaunchOnAnAvailableModelRecordsNoFallback(t *testing.T) {
+func TestLaunchOnAnAvailableModelIsUnremarked(t *testing.T) {
 	t.Parallel()
 	b, fake := newTestBackend(t)
+	var warn strings.Builder
+	b.Warn = &warn
 	pfPersona(t, b, "architect", TierStrong)
 	seedCatalog(t, b.App, time.Minute, "claude-fable-5-1", "claude-opus-5")
 
@@ -544,8 +520,11 @@ func TestLaunchOnAnAvailableModelRecordsNoFallback(t *testing.T) {
 	if log := launchLog(t, b.App, fake); !strings.Contains(log, "--model 'claude-fable-5-1'") {
 		t.Errorf("available means launch it:\n%s", log)
 	}
-	if m, _ := b.readMeta("r2"); m.Fallback != "" || m.Tier != TierStrong {
-		t.Errorf("nothing happened, so nothing is recorded: %+v", m)
+	if m, _ := b.readMeta("r2"); m.Tier != TierStrong {
+		t.Errorf("nothing happened, so nothing moved: %+v", m)
+	}
+	if strings.Contains(warn.String(), "unavailable") {
+		t.Errorf("an available model has nothing to say: %q", warn.String())
 	}
 }
 
@@ -561,9 +540,22 @@ func TestLaunchWithNoCatalogIsUnchanged(t *testing.T) {
 	if log := launchLog(t, b.App, fake); !strings.Contains(log, "--model 'claude-fable-5-1'") {
 		t.Errorf("unknown launches as asked:\n%s", log)
 	}
-	if m, _ := b.readMeta("r3"); m.Fallback != "" {
-		t.Errorf("fallback recorded with no catalog to justify it: %q", m.Fallback)
+	if raw := metaBytes(t, b, "r3"); strings.Contains(raw, "fallback:") {
+		t.Errorf("a mark recorded with no catalog to justify it:\n%s", raw)
 	}
+}
+
+// metaBytes reads a session's meta FILE, not its parsed struct. The parse
+// is what stopped carrying `fallback:` (ADR 0003 §3), so a test that asks
+// the struct can only ever agree with itself; the bytes on disk are the
+// thing a future reader — a relaunch, another posse version — would find.
+func metaBytes(t *testing.T, b *HerdrBackend, name string) string {
+	t.Helper()
+	raw, err := os.ReadFile(b.metaPath(name))
+	if err != nil {
+		t.Fatalf("meta for %s: %v", name, err)
+	}
+	return string(raw)
 }
 
 // ─── the cost half ───────────────────────────────────────────────────────────
@@ -728,11 +720,12 @@ func TestVerdictNamesTheAgeOfTheReadingAndTheProbeOutcome(t *testing.T) {
 	if pf.Line != want {
 		t.Errorf("line =\n  %q\nwant\n  %q", pf.Line, want)
 	}
-	// It prints, and nothing fell: the pair is the one that was asked for,
-	// so the launch renders --model claude-fable-5-1 and the session meta
-	// gets no `fallback:` mark to carry into a relaunch.
-	if pf.Fell() || !pf.Unknown || pf.Tier != TierStrong || pf.Got != "claude-fable-5-1" {
-		t.Errorf("an UNKNOWN verdict must move nothing: %+v", pf)
+	// It prints, and the ask is unmoved: the launch renders
+	// --model claude-fable-5-1. Since ADR 0003 §3 that is true of the
+	// unavailable verdict too, and this arm is now about the WORDS — an
+	// UNKNOWN line must not read as one that ruled.
+	if pf.Wanted != "claude-fable-5-1" || strings.Contains(pf.Line, "unavailable") {
+		t.Errorf("an UNKNOWN verdict must not read as a verdict: %+v", pf)
 	}
 	// The error is ModelLister's own generic string and nothing else: a
 	// clause printed in front of an operator is one more place the
@@ -751,9 +744,10 @@ func TestVerdictNamesTheAgeOfTheReadingAndTheProbeOutcome(t *testing.T) {
 }
 
 // The control on the clause, and the rangerhq-oay case D3c had to preserve:
-// inside model_probe_ttl a reading still RULES, an absent id still demotes,
-// and the line is the byte-for-byte one the shop has been reading since that
-// bead. The lease bounds the old rule; it does not replace it.
+// inside model_probe_ttl a reading still RULES — it reaches the unavailable
+// verdict rather than the UNKNOWN one — and the line carries no age. What
+// the verdict no longer does is move anything (ADR 0003 §3); the lease still
+// bounds which of the two sentences is entitled to be printed.
 func TestAReadingInsideItsLeaseCarriesNoAgeClause(t *testing.T) {
 	t.Parallel()
 	var hits atomic.Int64
@@ -761,7 +755,8 @@ func TestAReadingInsideItsLeaseCarriesNoAgeClause(t *testing.T) {
 	a.ModelLister = failingLister(&hits)
 	seedCatalog(t, a, time.Minute, "claude-opus-5", "claude-sonnet-5") // fable gone, read a minute ago
 
-	const want = "architect: tier strong wants claude-fable-5-1 — unavailable, falling back to claude-opus-5"
+	const want = "architect: tier strong wants claude-fable-5-1 — unavailable on this account; " +
+		"launching as asked, and only an explicit --runtime/--tier/--model or a PID change moves it"
 	if got := a.TierPreflight("architect", "claude", TierStrong, nil).Line; got != want {
 		t.Errorf("line =\n  %q\nwant\n  %q", got, want)
 	}
@@ -771,13 +766,13 @@ func TestAReadingInsideItsLeaseCarriesNoAgeClause(t *testing.T) {
 	if hits.Load() != 0 {
 		t.Errorf("a reading inside its lease must ask nobody, %d requests", hits.Load())
 	}
-	// The same fixture, aged past the lease, stops demoting and starts
-	// dating itself — the arm that proves the assertions above are
-	// measuring the age of the reading and not something that never moves.
+	// The same fixture, aged past the lease, stops ruling and starts dating
+	// itself — the arm that proves the assertions above are measuring the
+	// age of the reading and not something that never moves.
 	seedCatalogAged(t, a, 48*time.Hour, "claude-opus-5", "claude-sonnet-5") // frozen: the clause is pinned to the minute
 	pf := a.TierPreflight("architect", "claude", TierStrong, nil)
-	if pf.Fell() || pf.Tier != TierStrong {
-		t.Errorf("control: past the lease nothing may be substituted: %+v", pf)
+	if strings.Contains(pf.Line, "unavailable") {
+		t.Errorf("control: past the lease no verdict may be reached: %+v", pf)
 	}
 	if !strings.Contains(pf.Line, "not in the catalog read 48h00m ago") || !strings.Contains(pf.Line, "availability UNKNOWN") {
 		t.Errorf("control: past the lease the reading must be quoted and dated: %q", pf.Line)

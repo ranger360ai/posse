@@ -138,18 +138,6 @@ type NewSessionOpts struct {
 	// dispatch; "" for every interactive launch, and what the reap guard
 	// reads to know there is a bead to ask about at all.
 	Bead string
-	// Fallback carries an availability mark this session is ALREADY wearing
-	// into a relaunch (ranger-base-twaq). Only RecreateOpts sets it: a fresh
-	// launch has no history, and its mark is whatever the preflight says.
-	//
-	// A recreate asks for the pair the last launch FELL to, so the preflight
-	// is asked about the substitute, finds it available, and falls nowhere —
-	// which used to blank the mark on a session that is still running the
-	// substitute. The session did not stop being degraded because it was
-	// refreshed; carrying the line is what keeps `posse list`, the receipt,
-	// the cockpit and dispatch's effectiveTier saying so. planLaunch drops
-	// it again the moment the pair stops differing from the PID's own.
-	Fallback string
 }
 
 func NewHerdrBackend(a *App) *HerdrBackend {
@@ -176,7 +164,6 @@ type HerdrMeta struct {
 	Cage        string    // cage tier the session got (ADR 0002 §4)
 	Sockets     string    // container: host sockets the PID declared and the cage mounted ("" = none)
 	Degraded    string    // "; "-joined gates the wall does not realize here ("" = full parity)
-	Fallback    string    // the availability preflight's line when the tier did not get its model ("" = it did) — rangerhq-oay
 	TurnFailure string    // provider refused the dispatch turn before model work began ("" = none observed)
 	Bead        string    // the bead dispatch launched this session to work (ADR 0013 §4; "" = not a dispatched bead session)
 	Crew        bool      // the operator's own session — dispatch treats it as if it did not exist (ADR 0008)
@@ -484,7 +471,6 @@ func (b *HerdrBackend) readMeta(name string) (*HerdrMeta, bool) {
 		Cage:         yamlGetLines(lines, "cage"),
 		Sockets:      yamlGetLines(lines, "sockets"),
 		Degraded:     yamlGetLines(lines, "degraded"),
-		Fallback:     yamlGetLines(lines, "fallback"),
 		TurnFailure:  yamlGetLines(lines, "turn_failure"),
 		Bead:         yamlGetLines(lines, "bead"),
 		HooksMode:    yamlGetLines(lines, "hooks_mode"),
@@ -561,13 +547,6 @@ func (b *HerdrBackend) writeMeta(m *HerdrMeta) error {
 	}
 	if m.Degraded != "" {
 		fmt.Fprintf(&s, "degraded: %s\n", m.Degraded)
-	}
-	// What the account would not serve, and what ran instead (rangerhq-oay).
-	// A session whose tier silently became a cheaper model is the one thing
-	// the listing could not show, and the tier: above already names the
-	// substitute — this is the line that says it was a substitute.
-	if m.Fallback != "" {
-		fmt.Fprintf(&s, "fallback: %s\n", m.Fallback)
 	}
 	// A live CLI can settle idle after the provider refused the turn before
 	// any model ran. Keep that outcome beside the live status so a later
@@ -677,14 +656,6 @@ func (b *HerdrBackend) replaceMeta(name, body string) error {
 
 // CrewTag is what a crew session wears in `posse list` and the cockpit.
 const CrewTag = "👤"
-
-// FallbackTag is what a session wears when the model its tier named was not
-// available on the account and the launch substituted another (ADR 0003 §1,
-// rangerhq-oay). It rides BESIDE the @runtime/tier tag rather than replacing
-// it, because that tag already names the substitute: the session really is
-// running at what it says, and this is the mark that says it was not asked
-// for. `fallback:` in the session meta carries the whole line.
-const FallbackTag = "⤵️fallback"
 
 // TurnFailureTag marks a live session whose provider refused its dispatch
 // turn before model work began. Herdr's idle/done status remains true of the
@@ -886,7 +857,6 @@ type HerdrSession struct {
 	Cage        string // persona sessions: cage tier
 	Sockets     string // persona sessions: host sockets the cage mounted ("" = none)
 	Degraded    string // persona sessions: gates the wall does not realize ("" = full parity)
-	Fallback    string // persona sessions: the tier's model was unavailable and this is what ran instead ("" = it got what it asked for)
 	TurnFailure string // provider refused the dispatch turn before model work began
 	Bead        string // the bead dispatch launched this session to work ("" = not a dispatched bead session; ADR 0013 §4)
 	Crew        bool   // the operator's own session — dispatch skips it entirely (ADR 0008)
@@ -1098,7 +1068,7 @@ func (b *HerdrBackend) listSessions() ([]HerdrSession, []string, error) {
 		out = append(out, HerdrSession{
 			Name: name, WorkspaceID: m.Workspace, PaneID: m.Pane,
 			Emoji: m.Emoji, Envs: m.Envs, Agent: m.Agent, Runtime: m.Runtime, Tier: m.Tier, Model: m.Model,
-			Cage: m.Cage, Sockets: m.Sockets, Degraded: m.Degraded, Fallback: m.Fallback, TurnFailure: m.TurnFailure, Bead: m.Bead, Crew: m.Crew, Dir: m.Dir,
+			Cage: m.Cage, Sockets: m.Sockets, Degraded: m.Degraded, TurnFailure: m.TurnFailure, Bead: m.Bead, Crew: m.Crew, Dir: m.Dir,
 			Repo: m.Repo, Status: status(ws), Focused: ws.Focused,
 		})
 	}
@@ -1844,7 +1814,6 @@ type launchPlan struct {
 	Cage     string
 	Sockets  string
 	Degraded string
-	Fallback string // the availability preflight's line ("" = the tier got the model it asked for)
 	// ADR 0052 D3, both "" on an ordinary launch: how L3 was realized
 	// ("redirect" = the per-session hooks dir the env aims git at) and the
 	// employer's hooks dir it forwards into.
@@ -1991,7 +1960,7 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 	// is the probe reading git's own dispatch path as it always has.
 	var hooksProbe *l3Redirect
 	managedHooksPath := ""
-	runtime, tier, gatesDir, cage, degraded, fallback := "", "", "", "", "", ""
+	runtime, tier, gatesDir, cage, degraded := "", "", "", "", ""
 	if o.Agent != "" {
 		var err error
 		if ag, err = a.LoadAgent(o.Agent); err != nil {
@@ -2037,67 +2006,41 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 		if o.Model != "" && rt.ModelFlag == "" {
 			return nil, Die("%s declares no model flag, so --model %s cannot be rendered onto its launch line — the session would open on the tier's own model with nothing saying so (ADR 0053 D1)", rt.Name, o.Model)
 		}
-		ownTier := a.ResolveTier("", ag)
 		tier = a.ResolveTier(o.Tier, ag)
 		if !ValidTier(tier) {
 			return nil, Die("unknown tier %q (strong | standard | fast)", tier)
 		}
 		// Availability preflight (rangerhq-oay, modelavail.go): the tier is
 		// resolved, so the model id it names is known — ask whether this
-		// account can actually run it, and substitute per `tier_fallback:`
-		// when it cannot. Loud, never silent, and never a refusal of its
-		// own (rule 3). It runs BEFORE the parity check on purpose: what
-		// the wall and the PID's tier_floor: must rule on is the pair that
-		// would really launch, not the one that was asked for.
+		// account can actually run it, and SAY so when it cannot. Loud,
+		// never silent, never a refusal of its own, and since ADR 0003 §3
+		// never a substitution either: the pair below this call is the pair
+		// resolved above it, always. `runtime` and `tier` are read-only from
+		// here down, which is what "availability never chooses a
+		// replacement" amounts to at this line.
+		//
+		// It still runs BEFORE the parity check, and now for a simpler
+		// reason than it used to have: the wall and the PID's `tier_floor:`
+		// rule on the asked-for pair because that is the only pair a launch
+		// can open on.
 		//
 		// ADR 0053 D3 is the one exception, and it is above the call rather
 		// than inside it: an exact-model launch is not running the tier's
 		// model, so a verdict about the tier's model would describe a launch
-		// nobody made — and a FALL would turn the canary into a successful
-		// launch on the very model the operator was trying to get past,
-		// which is the whole failure this decision names. The line printed
-		// instead says what is being asked and that nothing will substitute.
-		// Nothing else about the preflight changes: every launch that names
-		// no exact model asks it exactly as it did before.
-		pf := Preflight{}
+		// nobody made. The line printed instead says what is being asked and
+		// that nothing will substitute — which the rest of the shop now says
+		// too, but this one says it about the exact id.
 		if o.Model != "" {
 			b.warn("posse: %s\n", ExactModelLine(o.Name, runtime, tier, o.Model))
-		} else {
-			pf = a.TierPreflightFrom(envs, o.Agent, runtime, tier, b.warnWriter())
-		}
-		if pf.Line != "" {
-			// Printed whether or not anything fell: an UNKNOWN verdict over
-			// a reading past its lease launches the asked-for id and says so
-			// (ADR 0039 D3c), and that line is the whole bound on the risk.
-			b.warn("posse: %s\n", pf.Line)
-		}
-		if pf.Fell() {
-			fallback = pf.Line
-			runtime, tier = pf.Runtime, pf.Tier
-			if rt, err = a.LoadRuntime(runtime); err != nil {
-				return nil, err
-			}
-		} else if o.Fallback != "" && (runtime != own || tier != ownTier) {
-			// Nothing fell HERE because the pair asked for is already the
-			// substitute — this is a relaunch of a session that fell on an
-			// earlier launch (ranger-base-twaq). The mark rides through, so
-			// a refresh does not silently un-say it.
-			//
-			// Conditioned on the pair still differing from the PID's own,
-			// because that difference is the fact the mark states. An
-			// operator who edits `tier:` down to what the session is really
-			// running has made the substitute the asked-for pair, and the
-			// old line ("tier strong wants ...") would be a lie: it is
-			// dropped rather than carried.
-			//
-			// That condition is an EQUALITY test, and the fact it rules on
-			// is the only thing it rules on: an operator who edits `tier:`
-			// to a THIRD value leaves the pair differing, so the mark rides
-			// — with a sentence naming the tier and model the PID asked for
-			// at the FALL, neither of which it asks for now
-			// (ranger-base-cplx). CarriedMark keeps the fact and re-derives
-			// the sentence when it has stopped describing this PID.
-			fallback = a.CarriedMark(ag, o.Agent, o.Fallback, runtime, tier)
+		} else if line := a.TierPreflightFrom(envs, o.Agent, runtime, tier, b.warnWriter()).Line; line != "" {
+			// UNKNOWN or unavailable, and both launch the asked-for id and
+			// say so (ADR 0039 D3c, ADR 0003 §3). The line is the whole
+			// bound on the risk, and it is now the whole product of the
+			// preflight: nothing here writes it to the meta, because a mark
+			// that outlives the launch is a claim about a session, and the
+			// only claim posse keeps about a session's pair is `runtime:`
+			// and `tier:` — what it really opened on.
+			b.warn("posse: %s\n", line)
 		}
 		// ADR 0013 §2 layer 2 (ranger-base-a9y9, escaped as ranger-base-9r33):
 		// a first-run dialog whose DEFAULT ACTION MUTATES THE MACHINE is a
@@ -2606,7 +2549,7 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 	return &launchPlan{
 		Dir: dir, Repo: repo, Branch: branch, Cmd: cmd, Emoji: emoji, Envs: envs, Vars: vars,
 		Runtime: runtime, Tier: tier, Model: o.Model, Cage: cage, Sockets: sockets, Degraded: degraded,
-		Fallback: fallback, HooksMode: hooksMode, ManagedHooks: managedHooksPath,
+		HooksMode: hooksMode, ManagedHooks: managedHooksPath,
 	}, nil
 }
 
@@ -2634,7 +2577,7 @@ func (b *HerdrBackend) startPlanned(o NewSessionOpts, p *launchPlan) (string, er
 		Name: o.Name, Workspace: wsID, Pane: rootPane,
 		Emoji: p.Emoji, Envs: strings.Join(p.Envs, "+"), Agent: o.Agent, Runtime: p.Runtime, Tier: p.Tier, Model: p.Model,
 		Dir: p.Dir, Repo: p.Repo, Branch: p.Branch,
-		Cage: p.Cage, Sockets: p.Sockets, Degraded: p.Degraded, Fallback: p.Fallback, Bead: o.Bead, Crew: o.Crew,
+		Cage: p.Cage, Sockets: p.Sockets, Degraded: p.Degraded, Bead: o.Bead, Crew: o.Crew,
 		HooksMode: p.HooksMode, ManagedHooks: p.ManagedHooks,
 		// Which server, and which generation of it, issued this workspace
 		// id — the id alone identifies nothing across a restart or a
@@ -3558,9 +3501,6 @@ func (b *HerdrBackend) CmdList(w interface{ Write([]byte) (int, error) }) error 
 			}
 			if s.Degraded != "" {
 				line += "  ⚠️degraded"
-			}
-			if s.Fallback != "" {
-				line += "  " + FallbackTag
 			}
 			if s.TurnFailure != "" {
 				line += "  " + TurnFailureTag

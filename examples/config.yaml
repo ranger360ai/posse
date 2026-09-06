@@ -130,25 +130,23 @@ default_emoji: ⚙️
 #   security: strong
 #   adr: strong
 
-# Where a tier goes when the model it names is NOT AVAILABLE on this
+# What happens when the model a tier names is NOT AVAILABLE on this
 # account (rangerhq-oay). A tier is a name; the launch turns it into a
 # model id; nothing before this asked whether the account can run that id.
-# When it cannot, the launch says so in one line naming persona, tier,
-# wanted model and substitute, records `fallback:` in the session meta
-# (visible in `posse list` and the cockpit), and runs the substitute. It
-# NEVER refuses over availability — "a degraded model is worse than
-# nothing" is your call, and `tier_floor:` on a PID is where you record it
-# in advance.
+# When it cannot, the launch says so in one line naming persona, tier and
+# wanted model — and then launches exactly what you asked for. It NEVER
+# refuses over availability ("a degraded model is worse than nothing" is
+# your call, and `tier_floor:` on a PID is where you record it in advance),
+# and since ADR 0003 §3 it never SUBSTITUTES either: availability is
+# advisory, the runtime may refuse the choice on its own, and picking
+# another model is yours to do with `--runtime`/`--tier`/`--model` or a PID
+# edit.
 #
-# KEY: a persona name or a tier name (persona wins). VALUE: a tier name
-# (drop a tier on the same runtime), a runtime name (hop runtimes at the
-# same tier), or `none` (no substitute — run the unavailable model and say
-# so). The default is strong -> standard, which on claude is the strongest
-# model falling to the mid one, and unlike `tier_by_label:` above, naming
-# one key here does NOT take that default away from everyone else.
-# tier_fallback:
-#   strong: standard        # the default, written out
-#   <persona>: codex        # this lane's fallback is a different runtime
+# REMOVED: `tier_fallback:` (2026-09-06, ADR 0003 §3, ranger-base-hv2zr).
+# It named where a tier went when its model was unavailable — a tier, a
+# runtime, or `none`, with a default of strong -> standard. Nothing reads
+# the key now: a config that still carries it is inert, and posse neither
+# warns about it nor removes it for you. Delete it at your leisure.
 #
 # The check itself. It reads the account's model catalog with the same
 # credential the plan guard uses, costs no tokens, and shares one reading

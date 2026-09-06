@@ -32,20 +32,49 @@ func qaPID(t *testing.T, b *HerdrBackend, name, tier string, extra ...string) {
 	}
 }
 
-// qaFellSession creates a persona session on a catalog that has lost the
-// strong model, and returns the backend with the fallback already recorded.
-func qaFellSession(t *testing.T, name string) (*HerdrBackend, string) {
+// qaOffPairSession is what qaFellSession became when ADR 0003 §3 removed
+// automatic substitution (ranger-base-hv2zr). The old helper produced a
+// session running a pair its PID did not ask for by letting the preflight
+// substitute one; nothing does that any more, so the board is built the two
+// ways it can still arise:
+//
+//   - the operator's own explicit `--tier`, which is the whole of §3's
+//     "an operator can select another explicitly"; and
+//   - a session created BEFORE this removal, whose meta on disk still
+//     carries the substituted pair and the `fallback:` line the old code
+//     wrote. That is the existing-session transition §3 says must be priced
+//     and verified, and `legacy` plants exactly those bytes.
+//
+// Either way what comes back is a session whose meta records claude/standard
+// under a PID that asks for strong — the state every assertion below is
+// about — and the mark is never RE-created, only ever found.
+func qaOffPairSession(t *testing.T, name string, legacy bool) (*HerdrBackend, string) {
 	t.Helper()
 	b, fake := newTestBackend(t)
 	b.Warn = &strings.Builder{}
 	qaPID(t, b, "architect", TierStrong)
 	seedCatalog(t, b.App, time.Minute, "claude-opus-5", "claude-sonnet-5") // fable gone
-	if err := b.CreateSession(NewSessionOpts{Name: name, Agent: "architect", Dir: t.TempDir()}); err != nil {
+	if err := b.CreateSession(NewSessionOpts{Name: name, Agent: "architect", Tier: TierStandard, Dir: t.TempDir()}); err != nil {
 		t.Fatalf("the preflight must never refuse a launch (rule 3): %v", err)
 	}
 	m, ok := b.readMeta(name)
-	if !ok || m.Tier != TierStandard || m.Fallback == "" {
-		t.Fatalf("board not set up: the create must have fallen and recorded it: %+v", m)
+	if !ok || m.Tier != TierStandard || m.Runtime != "claude" {
+		t.Fatalf("board not set up: the create must record the pair it opened on: %+v", m)
+	}
+	if legacy {
+		// The bytes an old posse left behind, appended to the meta the new
+		// one just wrote. Nothing in the product writes this line now, so
+		// planting it by hand is the only way to ask what a reader does
+		// when it finds one.
+		p := b.metaPath(name)
+		raw, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		old := string(raw) + "fallback: architect: tier strong wants claude-fable-5-1 — unavailable, falling back to claude-opus-5\n"
+		if err := os.WriteFile(p, []byte(old), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 	return b, fake
 }
@@ -53,12 +82,12 @@ func qaFellSession(t *testing.T, name string) (*HerdrBackend, string) {
 // ─── the second launch ───────────────────────────────────────────────────────
 
 // The crash-restart path re-types into the live pane and writes the meta
-// back, so the mark rides through. This is the arm that works, and it is
-// here because it is the contrast that makes the next one a finding rather
-// than a preference: nothing about a refresh makes the fact less true.
-func TestQA7vpRelaunchAgentKeepsTheFallbackMark(t *testing.T) {
+// back. What must ride through is the session's PAIR: a re-type is not a
+// re-decision, and a session running standard must be re-typed on standard
+// whatever its PID says today.
+func TestQA7vpRelaunchAgentKeepsTheSessionsPair(t *testing.T) {
 	t.Parallel()
-	b, fake := qaFellSession(t, "ra")
+	b, fake := qaOffPairSession(t, "ra", false)
 
 	m, _ := b.readMeta("ra")
 	m.Launched = time.Now().Add(-time.Hour)
@@ -72,77 +101,138 @@ func TestQA7vpRelaunchAgentKeepsTheFallbackMark(t *testing.T) {
 	}
 
 	m2, _ := b.readMeta("ra")
-	if m2.Fallback == "" {
-		t.Errorf("the re-type dropped the mark: %+v", m2)
-	}
-	if m2.Tier != TierStandard {
-		t.Errorf("meta tier = %q, want the tier that is really running", m2.Tier)
+	if m2.Tier != TierStandard || m2.Runtime != "claude" {
+		t.Errorf("meta pair = %s/%s, want the pair that is really running", m2.Runtime, m2.Tier)
 	}
 	if log := launchLog(t, b.App, fake); !strings.Contains(log, "--model 'claude-opus-5'") {
-		t.Errorf("the re-typed line must still name the substitute:\n%s", log)
+		t.Errorf("the re-typed line must name what the session runs:\n%s", log)
 	}
 }
 
-// MEASURED RED 2026-08-28 (ranger-base-twaq). `posse relaunch` recreates from
-// RecreateOpts, which carries Tier: m.Tier — the SUBSTITUTE. The preflight
-// then finds standard/opus available, so nothing falls, so nothing is
-// recorded: the session goes on running opus while the PID says strong and
-// `fallback:` is empty. `posse list` and the cockpit drop ⤵️fallback,
-// describePlan prints no FALLBACK:, and dispatch's effectiveTier — which
-// answers ONLY for a meta that records a fallback — hands the work prompt
-// the bead's resolved tier, `strong`, for a session running opus. That last
-// one is the sentence dispatch.go calls "the exact lie this preflight exists
-// to kill".
-func TestQA7vpFallbackMarkSurvivesPosseRelaunch(t *testing.T) {
+// ranger-base-twaq and ranger-base-cplx, re-aimed at what survived ADR 0003
+// §3 (ranger-base-hv2zr).
+//
+// Both beads were about a MARK: a session off its PID's pair wore a
+// `fallback:` line, `posse relaunch` recreated from the substituted pair so
+// the preflight fell nowhere and blanked it, and dispatch's effectiveTier —
+// which answered only for a meta recording a mark — then handed the work
+// prompt the bead's resolved tier for a session running something else.
+// twaq carried the mark; cplx re-derived its sentence when a third-tier PID
+// edit made it stale.
+//
+// The mark is gone. The lie it was invented to stop is not, because the two
+// producers of an off-pair session are: the operator's own `--tier`, and a
+// session created before this removal. So the same board, asserted on the
+// two things left — the meta's `runtime:`/`tier:` survive the refresh, and
+// dispatch reads THEM rather than a mark. The third-tier PID is cplx's arm:
+// under a mark it made the sentence stale, and the pair-comparison has
+// nothing to go stale.
+func TestQA7vpAnOffPairSessionSurvivesPosseRelaunchAndDispatchReadsIt(t *testing.T) {
 	t.Parallel()
-	b, _ := qaFellSession(t, "pr")
+	for _, tc := range []struct {
+		name   string
+		legacy bool
+		pid    string // the PID's tier at the time of the refresh
+	}{
+		{"explicit --tier, PID unedited", false, TierStrong},
+		{"a session created before the removal", true, TierStrong},
+		{"cplx's third tier: neither what it runs nor what it fell from", false, TierFast},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			b, _ := qaOffPairSession(t, "pr", tc.legacy)
+			if tc.pid != TierStrong {
+				qaPID(t, b, "architect", tc.pid)
+			}
 
-	var out strings.Builder
-	if err := b.RelaunchSession(&out, RelaunchOpts{Name: "pr", NoLand: true}); err != nil {
-		t.Fatalf("relaunch: %v\n%s", err, out.String())
-	}
+			var out strings.Builder
+			if err := b.RelaunchSession(&out, RelaunchOpts{Name: "pr", NoLand: true}); err != nil {
+				t.Fatalf("relaunch: %v\n%s", err, out.String())
+			}
 
-	m, _ := b.readMeta("pr")
-	if m.Tier != TierStandard {
-		t.Fatalf("the refresh moved the tier as well: %+v", m)
+			m, _ := b.readMeta("pr")
+			if m.Tier != TierStandard || m.Runtime != "claude" {
+				t.Fatalf("the refresh moved the session off the pair it runs: %+v", m)
+			}
+			// The legacy row is the whole of the existing-session
+			// transition: the old mark is not carried forward, and the
+			// identity beside it is untouched.
+			if raw := metaBytes(t, b, "pr"); strings.Contains(raw, "fallback:") {
+				t.Errorf("the refresh re-created the removed mark:\n%s", raw)
+			}
+			if strings.Contains(out.String(), "FALLBACK:") {
+				t.Errorf("the receipt carries a mark nothing writes:\n%s", out.String())
+			}
+			var list strings.Builder
+			if err := b.CmdList(&list); err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(list.String(), "⤵️") {
+				t.Errorf("posse list wears a mark nothing writes:\n%s", list.String())
+			}
+			if !strings.Contains(list.String(), b.App.RuntimeTierTag("claude", TierStandard)) {
+				t.Errorf("posse list must name the tier that is really running:\n%s", list.String())
+			}
+			// The fact both beads were really about: what dispatch tells the
+			// persona it is thinking at.
+			d := &Dispatcher{App: b.App, HB: b}
+			if _, tier, differs := d.effectiveTier("pr", "claude", tc.pid); tier != TierStandard || !differs {
+				t.Errorf("dispatch tells the persona it is thinking at %q (differs=%v); it is running claude-opus-5", tier, differs)
+			}
+		})
 	}
-	if m.Fallback == "" {
-		t.Errorf("a session still running the substitute wears no mark saying so: %+v", m)
-	}
-	if !strings.Contains(out.String(), "FALLBACK:") {
-		t.Errorf("the receipt does not say the recreate is a degraded one:\n%s", out.String())
-	}
-	var list strings.Builder
-	if err := b.CmdList(&list); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(list.String(), FallbackTag) {
-		t.Errorf("posse list lost the mark across a refresh:\n%s", list.String())
-	}
-	// The downstream lie, which is the reason this matters beyond a tag.
-	d := &Dispatcher{App: b.App, HB: b}
-	if _, tier, fell := d.effectiveTier("pr", "claude", TierStrong); tier != TierStandard || fell == "" {
-		t.Errorf("dispatch tells the persona it is thinking at %q with fell=%q; it is running claude-opus-5", tier, fell)
-	}
+	// The negative arm, and the reason the comparison is a comparison: an
+	// operator who settles for what the session got has made it the
+	// asked-for pair, and there is then nothing to report.
+	t.Run("a PID that asks for what is running", func(t *testing.T) {
+		t.Parallel()
+		b, _ := qaOffPairSession(t, "cu", false)
+		qaPID(t, b, "architect", TierStandard)
+		d := &Dispatcher{App: b.App, HB: b}
+		if rt, tier, differs := d.effectiveTier("cu", "claude", TierStandard); differs {
+			t.Errorf("dispatch reports a difference against the pair the session runs: %s/%s", rt, tier)
+		}
+	})
+	// "The meta does not say" is not "the meta says the empty runtime". A
+	// session with no persona records neither half, and without the guard
+	// the comparison reads that silence as a difference and hands the work
+	// prompt an empty pair — worse than the stale tier the whole board is
+	// about.
+	t.Run("a session whose meta records no pair", func(t *testing.T) {
+		t.Parallel()
+		b, _ := newTestBackend(t)
+		b.Warn = &strings.Builder{}
+		if err := b.CreateSession(NewSessionOpts{Name: "np", Cmd: "true", Dir: t.TempDir()}); err != nil {
+			t.Fatal(err)
+		}
+		if m, _ := b.readMeta("np"); m.Runtime != "" || m.Tier != "" {
+			t.Fatalf("board not set up: a session with no persona must record no pair: %+v", m)
+		}
+		d := &Dispatcher{App: b.App, HB: b}
+		rt, tier, differs := d.effectiveTier("np", "claude", TierStrong)
+		if differs || rt != "claude" || tier != TierStrong {
+			t.Errorf("a meta that says nothing must leave the resolved pair alone: %s/%s differs=%v", rt, tier, differs)
+		}
+	})
 }
 
-// The other arm of the carry (ranger-base-twaq): a session that hopped to
-// another RUNTIME is off its PID's pair by runtime, not by tier, and its
-// mark rides a refresh for the same reason. Without it, collapsing the
-// carry's condition to the tier half alone would silently un-mark every
-// hopped session.
-func TestQA7vpARuntimeHopKeepsItsMarkAcrossPosseRelaunch(t *testing.T) {
+// The other half of off-pair, by RUNTIME rather than by tier. It used to be
+// reached by a `tier_fallback:` naming a runtime; since ADR 0003 §3 it is
+// reached the way §3 says it should be — an operator selecting one. The
+// assertion is the same and it is here for the same reason it was before:
+// collapsing the difference to the tier half alone would silently stop
+// reporting every hopped session.
+func TestQA7vpARuntimeDifferenceIsReportedTheSameWayATierOneIs(t *testing.T) {
 	t.Parallel()
 	b, _ := newTestBackend(t)
 	b.Warn = &strings.Builder{}
 	qaPID(t, b, "security", TierStrong)
-	writeCfg(t, b.App, "tier_fallback:\n  security: codex\n")
 	seedCatalog(t, b.App, time.Minute, "claude-opus-5", "claude-sonnet-5") // fable gone
-	if err := b.CreateSession(NewSessionOpts{Name: "hr", Agent: "security", Dir: t.TempDir()}); err != nil {
+	if err := b.CreateSession(NewSessionOpts{Name: "hr", Agent: "security", Runtime: "codex", Dir: t.TempDir()}); err != nil {
 		t.Fatal(err)
 	}
-	if m, _ := b.readMeta("hr"); m.Runtime != "codex" || m.Fallback == "" {
-		t.Fatalf("board not set up: the create must have hopped and recorded it: %+v", m)
+	if m, _ := b.readMeta("hr"); m.Runtime != "codex" || m.Tier != TierStrong {
+		t.Fatalf("board not set up: the create must record the runtime it opened on: %+v", m)
 	}
 
 	var out strings.Builder
@@ -151,150 +241,63 @@ func TestQA7vpARuntimeHopKeepsItsMarkAcrossPosseRelaunch(t *testing.T) {
 	}
 	m, _ := b.readMeta("hr")
 	if m.Runtime != "codex" {
-		t.Fatalf("the refresh moved the runtime as well: %+v", m)
+		t.Fatalf("the refresh moved the runtime: %+v", m)
 	}
-	if m.Fallback == "" {
-		t.Errorf("a session still running the substitute RUNTIME wears no mark saying so: %+v", m)
-	}
-	if !strings.Contains(out.String(), "FALLBACK:") {
-		t.Errorf("the receipt does not say the recreate is a hopped one:\n%s", out.String())
+	d := &Dispatcher{App: b.App, HB: b}
+	if rt, _, differs := d.effectiveTier("hr", "claude", TierStrong); rt != "codex" || !differs {
+		t.Errorf("a session off its PID's RUNTIME reads back as %q (differs=%v)", rt, differs)
 	}
 }
 
-// The negative arm, and the reason the carry is conditioned rather than
-// unconditional (ranger-base-twaq). The mark states a FACT — this session is
-// not running the pair its PID names — so it is carried only while that fact
-// holds. An operator who edits `tier:` down to what the session is really
-// running has made the substitute the asked-for pair, and the old line
-// ("tier strong wants claude-fable-5-1") is then false. It is dropped.
+// ─── what an unavailable model no longer costs ──────────────────────────────
+
+// The behaviour ADR 0003 §3 changed most sharply, pinned as the deliberate
+// reading it is. `tier_floor:` is the operator saying in advance "never run
+// me below this". Under dial H the preflight handed the wall the SUBSTITUTED
+// pair, so an unavailable strong model turned into a REFUSED launch for a
+// PID floored at strong: the outage cost that PID its session.
 //
-// TestQA7vpFallbackMarkSurvivesPosseRelaunch is the control: the same
-// fixture, the same refresh, no PID edit, and the mark stays.
-func TestQA7vpTheCarriedMarkIsDroppedOnceThePIDAsksForWhatIsRunning(t *testing.T) {
-	t.Parallel()
-	b, _ := qaFellSession(t, "cu") // architect: tier strong, fell to standard
-
-	qaPID(t, b, "architect", TierStandard) // the operator settles for what it got
-
-	var out strings.Builder
-	if err := b.RelaunchSession(&out, RelaunchOpts{Name: "cu", NoLand: true}); err != nil {
-		t.Fatalf("relaunch: %v\n%s", err, out.String())
-	}
-	m, _ := b.readMeta("cu")
-	if m.Tier != TierStandard {
-		t.Fatalf("the refresh moved the tier: %+v", m)
-	}
-	if m.Fallback != "" {
-		t.Errorf("the session runs exactly what its PID asks for; the mark is a lie now: %q", m.Fallback)
-	}
-	if strings.Contains(out.String(), "FALLBACK:") {
-		t.Errorf("the receipt marks a launch that fell nowhere:\n%s", out.String())
-	}
-	var list strings.Builder
-	if err := b.CmdList(&list); err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(list.String(), FallbackTag) {
-		t.Errorf("posse list marks a session that is on its PID's own pair:\n%s", list.String())
-	}
-}
-
-// ─── what a substitution may still cost ─────────────────────────────────────
-
-// rangerhq-u2p's shape end to end, which the delivered pins walk only as far
-// as the resolution: a per-persona `tier_fallback:` naming a RUNTIME hops the
-// launch across, types that runtime's own line, and records the pair it
-// really got. Rule (3) holds through the hop — nothing refuses.
-func TestQA7vpARuntimeHopLaunchesAndIsRecordedAsTheRuntimeItGot(t *testing.T) {
+// Nothing substitutes now, so the floor rules on strong, which is what the
+// PID asked for and what the launch opens on. The outage costs the line and
+// nothing else — and this is the "what breaks if wrong" of the removal read
+// the other way round: unattended continuity on an unavailable model is
+// gone, but so is a whole class of launch the floor used to refuse for a
+// reason the operator never asked for.
+func TestQA7vpTierFloorRulesOnTheAskedForPairAndTheLaunchGoesAhead(t *testing.T) {
 	t.Parallel()
 	b, fake := newTestBackend(t)
-	var warn strings.Builder
-	b.Warn = &warn
-	qaPID(t, b, "security", TierStrong)
-	writeCfg(t, b.App, "tier_fallback:\n  security: codex\n")
-	seedCatalog(t, b.App, time.Minute, "claude-opus-5", "claude-sonnet-5") // fable gone
-
-	if err := b.CreateSession(NewSessionOpts{Name: "hop", Agent: "security", Dir: t.TempDir()}); err != nil {
-		t.Fatalf("rule (3): a runtime hop must not turn a launch into a refusal: %v", err)
-	}
-	m, _ := b.readMeta("hop")
-	if m.Runtime != "codex" || m.Tier != TierStrong {
-		t.Errorf("the meta must record the pair that really launched: %+v", m)
-	}
-	if m.Fallback == "" || !strings.Contains(m.Fallback, "on codex") {
-		t.Errorf("meta fallback = %q", m.Fallback)
-	}
-	log := calls(t, fake)
-	if !strings.Contains(log, "RHQ_RUNTIME=codex") {
-		t.Errorf("the session was not launched on the substitute runtime:\n%s", log)
-	}
-	if strings.Contains(log, "claude-fable-5-1") {
-		t.Errorf("the typed line still names the unavailable model:\n%s", log)
-	}
-	// The wrong arm: with the strong model present the hop must not happen,
-	// or the assertions above are measuring a launch that always goes to
-	// codex.
-	b2, fake2 := newTestBackend(t)
-	b2.Warn = &strings.Builder{}
-	qaPID(t, b2, "security", TierStrong)
-	writeCfg(t, b2.App, "tier_fallback:\n  security: codex\n")
-	seedCatalog(t, b2.App, time.Minute, "claude-fable-5-1", "claude-opus-5")
-	if err := b2.CreateSession(NewSessionOpts{Name: "nohop", Agent: "security", Dir: t.TempDir()}); err != nil {
-		t.Fatal(err)
-	}
-	if m2, _ := b2.readMeta("nohop"); m2.Runtime != "claude" || m2.Fallback != "" {
-		t.Errorf("available means stay put: %+v", m2)
-	}
-	if log := calls(t, fake2); !strings.Contains(log, "RHQ_RUNTIME=claude") {
-		t.Errorf("control launched somewhere else:\n%s", log)
-	}
-}
-
-// The sharpest edge of rule (3), pinned as the deliberate reading it is
-// rather than left to be rediscovered as a surprise. `tier_floor:` is the
-// operator saying in advance "never run me below this"; the preflight hands
-// the wall the SUBSTITUTED pair, so an unavailable strong model turns into a
-// refused launch for a PID that set the floor at strong. The preflight still
-// did not refuse — it printed its line and the floor refused — but the
-// observable outcome for that PID is that the outage costs it the session.
-//
-// REFUTED while verifying ranger-base-7vp: the sibling worry, that a RUNTIME
-// hop could cost a launch through the parity wall, does not reproduce. At
-// cage shims every deny measured (Bash(git push:*), Edit, Write, Bash,
-// Read(~/.ssh/**), Edit(**), Bash(security:*), NotebookEdit, Task,
-// Bash(rm:*), WebFetch, WebSearch) refuses or launches identically on
-// claude, codex and grok, so the hop moves no verdict. The first attempt at
-// that board refused on codex only because the PID's WebFetch/WebSearch deny
-// refuses on claude too — the control had not been run.
-func TestQA7vpTierFloorStillRefusesTheSubstitutedPair(t *testing.T) {
-	t.Parallel()
-	b, _ := newTestBackend(t)
 	var warn strings.Builder
 	b.Warn = &warn
 	qaPID(t, b, "floored", TierStrong, "tier_floor: strong\n")
 	seedCatalog(t, b.App, time.Minute, "claude-opus-5", "claude-sonnet-5") // fable gone
 
-	err := b.CreateSession(NewSessionOpts{Name: "tf", Agent: "floored", Dir: t.TempDir()})
-	if err == nil {
-		t.Fatal("tier_floor: strong must rule on the pair that would really launch")
+	if err := b.CreateSession(NewSessionOpts{Name: "tf", Agent: "floored", Dir: t.TempDir()}); err != nil {
+		t.Fatalf("nothing fell below the floor, so nothing may refuse: %v", err)
 	}
-	if !strings.Contains(err.Error(), "tier_floor") || !strings.Contains(err.Error(), "launching at standard") {
-		t.Errorf("the refusal must name the floor and the substituted tier: %v", err)
+	if m, _ := b.readMeta("tf"); m.Tier != TierStrong {
+		t.Errorf("the floored session opened at %q", m.Tier)
 	}
-	// And the preflight's own line was printed first, so the operator reads
-	// WHY the floor was hit and not just that it was.
-	if !strings.Contains(warn.String(), "unavailable, falling back to claude-opus-5") {
-		t.Errorf("the refusal arrives with no explanation: %q", warn.String())
+	if log := launchLog(t, b.App, fake); !strings.Contains(log, "--model 'claude-fable-5-1'") {
+		t.Errorf("the floored session did not open on the id its tier names:\n%s", log)
 	}
-	// The wrong arm: the same PID launches when the model is there, so the
-	// refusal above is the availability substitution and not the floor
-	// misreading its own tier.
+	// It is not silent about it: the operator hears that the model the
+	// floor insists on is one the account will not serve.
+	if !strings.Contains(warn.String(), "unavailable on this account") {
+		t.Errorf("the launch went ahead with no explanation: %q", warn.String())
+	}
+	// The wrong arm: the floor still bites something. A PID asking BELOW
+	// its own floor is refused, so the launch above is availability no
+	// longer moving the pair rather than the floor having stopped working.
 	b2, _ := newTestBackend(t)
 	b2.Warn = &strings.Builder{}
 	qaPID(t, b2, "floored", TierStrong, "tier_floor: strong\n")
 	seedCatalog(t, b2.App, time.Minute, "claude-fable-5-1", "claude-opus-5")
-	if err := b2.CreateSession(NewSessionOpts{Name: "tf2", Agent: "floored", Dir: t.TempDir()}); err != nil {
-		t.Fatalf("control: an available strong model must launch under the same floor: %v", err)
+	err := b2.CreateSession(NewSessionOpts{Name: "tf2", Agent: "floored", Tier: TierStandard, Dir: t.TempDir()})
+	if err == nil {
+		t.Fatal("control: tier_floor: strong must still refuse an explicit standard")
+	}
+	if !strings.Contains(err.Error(), "tier_floor") {
+		t.Errorf("control: the refusal must name the floor: %v", err)
 	}
 }
 
@@ -313,8 +316,8 @@ func TestQA7vpAnExpiredSnapshotIsQuotedAndObeyedByNothing(t *testing.T) {
 	a := preflightApp(t) // unconfigured lister: every re-read fails
 	seedCatalog(t, a, 30*24*time.Hour, "claude-opus-5", "claude-sonnet-5")
 	pf := a.TierPreflight("architect", "claude", TierStrong, nil)
-	if pf.Fell() || pf.Tier != TierStrong || pf.Got != "claude-fable-5-1" {
-		t.Errorf("a month-old snapshot may not move a launch: %+v", pf)
+	if strings.Contains(pf.Line, "unavailable") || pf.Wanted != "claude-fable-5-1" {
+		t.Errorf("a month-old snapshot may not reach a verdict: %+v", pf)
 	}
 	if !strings.Contains(pf.Line, "not in the catalog read 720h00m ago") || !strings.Contains(pf.Line, "availability UNKNOWN, launching as asked") {
 		t.Errorf("it is still the newest fact anyone has, and the line must quote it: %q", pf.Line)
@@ -324,14 +327,14 @@ func TestQA7vpAnExpiredSnapshotIsQuotedAndObeyedByNothing(t *testing.T) {
 	// launch; an id the newest reading does not name is.
 	b := preflightApp(t)
 	seedCatalog(t, b, 30*24*time.Hour, "claude-fable-5-1", "claude-opus-5")
-	if pf := b.TierPreflight("architect", "claude", TierStrong, nil); pf.Fell() || pf.Line != "" {
+	if pf := b.TierPreflight("architect", "claude", TierStrong, nil); pf.Line != "" {
 		t.Errorf("an expired reading that lists the id has nothing to report: %+v", pf)
 	}
 	// The wrong arm: with NO snapshot at all the same failing re-read is
 	// UNKNOWN and silent, which is what it has always been. If this stopped
 	// holding, the assertions above would be measuring nothing.
 	c := preflightApp(t)
-	if pf := c.TierPreflight("architect", "claude", TierStrong, nil); pf.Fell() || pf.Tier != TierStrong || pf.Line != "" {
+	if pf := c.TierPreflight("architect", "claude", TierStrong, nil); pf.Line != "" || pf.Wanted != "claude-fable-5-1" {
 		t.Errorf("no snapshot must be UNKNOWN, not unavailable, and silent: %+v", pf)
 	}
 }
@@ -369,8 +372,11 @@ func TestQA7vpAStaleCatalogLaunchesTheAskedForIdAndMarksNothing(t *testing.T) {
 		t.Errorf("the launch must carry the id it was asked for:\n%s", sh)
 	}
 	m, ok := b.readMeta("st")
-	if !ok || m.Tier != TierStrong || m.Fallback != "" {
-		t.Errorf("nothing fell, so the meta records no fall: %+v", m)
+	if !ok || m.Tier != TierStrong {
+		t.Errorf("nothing moved, so the meta records the pair asked for: %+v", m)
+	}
+	if raw := metaBytes(t, b, "st"); strings.Contains(raw, "fallback:") {
+		t.Errorf("an UNKNOWN verdict left a mark behind:\n%s", raw)
 	}
 	said := warnBuf(t, b).String()
 	if !strings.Contains(said, "architect: tier strong wants claude-fable-5-1 — not in the catalog read 48h00m ago") ||
