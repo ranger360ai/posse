@@ -207,9 +207,62 @@ import "os"
 //	GIT_SSH_COMMAND=ssh             attack ran a marker script as the ssh
 //	                                transport; "" BREAKS ssh outright; `ssh`
 //	                                reproduces unset exactly.
-//	GIT_EXTERNAL_DIFF=""            attack ran a marker script as the diff
-//	                                driver of `git diff HEAD~1`; "" quiet and
-//	                                --shortstat identical to unset.
+//	GIT_EXTERNAL_DIFF=""            NOT NEUTRAL, and the row whose own
+//	                                measurement was taken with the one
+//	                                arm that could not see the cost. The
+//	                                attack was real — a marker script
+//	                                named here RAN as the diff driver of
+//	                                `git diff HEAD~1` — but the arm that
+//	                                cleared "" was --shortstat, which is
+//	                                one of the formats that never reaches
+//	                                a driver at all. Git does not read
+//	                                set-but-empty as unset: it execs "",
+//	                                which is the GIT_SSH_COMMAND="" trap
+//	                                two rows up, walked into. Re-measured
+//	                                2026-09-06 with a MARKER driver, so
+//	                                what is graded is whether the driver
+//	                                was invoked and not whether "" was
+//	                                harmless:
+//	                                  DRIVER RUNS, so "" is rc 128
+//	                                  `error: cannot run :` — git diff,
+//	                                  --cached/--staged, git diff <rev>,
+//	                                  -U0, --exit-code; and show/log -p
+//	                                  --ext-diff, which is opt-in.
+//	                                  DRIVER NEVER RUNS, so "" is
+//	                                  byte-identical to unset — --stat
+//	                                  --shortstat --numstat --name-only
+//	                                  --name-status --raw --check
+//	                                  --quiet --no-ext-diff; git show,
+//	                                  git log -p and format-patch (the
+//	                                  log family defaults ext-diff OFF);
+//	                                  diff-tree -p, diff-index -p,
+//	                                  stash show -p, range-diff.
+//	                                So the price is the `git diff`
+//	                                PORCELAIN asking for patch format and
+//	                                nothing else — NOT "all patch output",
+//	                                which is why a count of what this row
+//	                                breaks has to grade the FORMAT and not
+//	                                the verb. No neutral spelling exists:
+//	                                every value is EXECUTED, and git's way
+//	                                of saying "use the internal diff" is
+//	                                the --no-ext-diff FLAG, which an env
+//	                                pin cannot supply. So this row is
+//	                                fail-closed LOUDLY, not quiet, and it
+//	                                is flag-scope-effective — "" does not
+//	                                take at the policy tier
+//	                                (ranger-base-sn0w8), so it costs
+//	                                posse-launched seats and covers the
+//	                                operator's uncaged sessions not at all.
+//	                                posse's own `git diff` readers each
+//	                                state a format and are immune
+//	                                (memoryDiff, ranger-base-xw51s); a
+//	                                bare `git diff` anywhere else in a
+//	                                seat is not. KEEPING it at that price
+//	                                or moving it to ALSO NOT COVERED
+//	                                beside GIT_CONFIG_GLOBAL is the
+//	                                operator's, filed as ranger-base-5sph1
+//	                                — disclosed here, not decided here,
+//	                                exactly as the GIT_CONFIG_* pair above.
 //	GIT_PAGER=""                    the honest row: the attack arm stayed
 //	                                QUIET, because git does not page without
 //	                                a TTY and a fleet Bash call is a pipe. So

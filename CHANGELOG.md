@@ -279,12 +279,43 @@ is the command `""`, and it breaks every ssh remote; `DYLD_INSERT_LIBRARIES`
 pointed at `/dev/null` aborts every child process it touches. The table and
 the measurement behind each row are in `internal/posse/inletpin.go`.
 
-**What you may need to do.** Nothing, if you set none of those variables
-deliberately — on the box this was measured on, none was set anywhere, so
-the pin overrides nothing. If you *do* rely on one of them for your fleet (a
-corporate proxy, a custom CA, a non-default endpoint), the pin now wins over
-it for posse-launched sessions and you will want to change its row rather
-than set the variable outside.
+**One row does NOT leave your behaviour where it was, and the sentence above
+is wrong about it.** `GIT_EXTERNAL_DIFF=""` is the same trap as the
+`GIT_SSH_COMMAND=""` the paragraph above holds up as the thing to avoid: git
+does not read set-but-empty as unset, it execs `""`. In a posse-launched
+session a `git diff` asking for **patch** format dies rc 128 with
+`error: cannot run :`. Summary formats are untouched — `--stat`,
+`--shortstat`, `--numstat`, `--name-only`, `--name-status`, `--raw`,
+`--check` — and so are `git show`, `git log -p` and `git format-patch`,
+because the log family leaves external diffs off unless you ask with
+`--ext-diff`. The blast radius is the `git diff` porcelain in patch format,
+and nothing wider.
+
+That row shipped disclosed as neutral because the arm that cleared it was
+`--shortstat`, which is one of the formats that never reaches a diff driver
+at all. There is no neutral spelling: every value is executed, and git's
+"use the internal diff" is the `--no-ext-diff` **flag**, which an `env` pin
+cannot supply. So the choice is to keep it and pay that, or to drop it and
+accept the inlet — that call is open, and until it is made the row is
+disclosed for what it is rather than for what it was thought to be. posse's
+own `git diff` readers all state a format and are unaffected.
+
+Two limits worth knowing while it stands. The row is effective only in the
+`--settings` payload: an empty value does not take at the root-owned policy
+tier, so a claude you start yourself is neither broken by this row nor
+protected by it. And a session that was already running when the value
+arrived answers differently from one started before it — read
+`printenv GIT_EXTERNAL_DIFF` per run rather than trusting an earlier green.
+
+**What you may need to do.** Nothing, unless you shell `git diff` for patch
+output from a posse-launched session — a script, a hook, or a tool a
+session reaches for. Add `--no-ext-diff` to those callers, or unset the
+variable for that command. Otherwise nothing: if you set none of these
+variables deliberately, the pin overrides nothing — on the box this was
+measured on, none was set anywhere. If you *do* rely on one of them for your
+fleet (a corporate proxy, a custom CA, a non-default endpoint), the pin now
+wins over it for posse-launched sessions and you will want to change its row
+rather than set the variable outside.
 
 `--settings` reaches only sessions posse launches. The scope that also
 covers a claude you start yourself is the root-owned policy tier, and the
