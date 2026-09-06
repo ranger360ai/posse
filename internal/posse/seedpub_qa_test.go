@@ -719,8 +719,9 @@ func qspSurfaceHits(t *testing.T, root, needle string) []string {
 // anything writes into one. Measured under ranger-base-5htxx and again here:
 // `git archive main | tar -x` gives the tracked files and zero hits (950 there,
 // 951 here), and one `go build -o bin/posse-go ./cmd/posse` inside it puts
-// ranger-base-n0v6o's Mach-O offset back on the surface. The caller's second skip — not this function — is what
-// covers that (ranger-base-chd6w).
+// ranger-base-n0v6o's Mach-O offset back on the surface. The caller's
+// second skip — not this function — is what covers that
+// (ranger-base-chd6w).
 func qspGitIgnored(t *testing.T, root string) map[string]bool {
 	t.Helper()
 	ignored := map[string]bool{}
@@ -850,8 +851,12 @@ func TestSeedSurfaceScanSkipsAnIgnoredPathGitCQuotes(t *testing.T) {
 // against that repo's rules, and those rules were written about ITS paths.
 // The failure is a false SKIP, not a false hit: below, the parent ignores
 // notes/, and without the check the export's notes/kept.md silently leaves
-// the surface. Empty is right there because an export carries tracked files
-// only, so nothing under it is ignored.
+// the surface. Why empty is the right answer for an export at all — and why
+// it is an answer and not protection — is on qspGitIgnored above, amended
+// 2026-09-06 (ranger-base-chd6w). This comment restated the falsified half
+// of that reason until 2026-09-06; it points at the amendment instead, so
+// there is one live copy of the claim and not a second one 130 lines from
+// its own retraction (ranger-base-rpl85).
 func TestSeedSurfaceScanTakesNoIgnoreListFromAForeignRepo(t *testing.T) {
 	t.Parallel()
 	needle := "ranger" + "hq"
