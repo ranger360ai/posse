@@ -856,15 +856,20 @@ func TestProbeHonoursALiveCooldown(t *testing.T) {
 	}
 	// The arm that proves the line above is measuring the LEASE and not the
 	// cooldown: the same cooldown over a reading INSIDE model_probe_ttl
-	// still rules, and still demotes. --probe asked for maxAge 0 and was
-	// refused; how long a reading may rule is the operator's number, not
-	// the caller's, so the report keeps printing what a launch would do.
+	// still rules, and still reaches the unavailable verdict rather than the
+	// UNKNOWN one. --probe asked for maxAge 0 and was refused; how long a
+	// reading may rule is the operator's number, not the caller's, so the
+	// report keeps printing what a launch would print. Since ADR 0003 §3
+	// "rules" is the whole of what a verdict does — it decides which
+	// sentence, never which model (ranger-base-hv2zr).
 	seedCatalogEntry(t, a, modelEntry{
 		At:      now.Add(-30 * time.Minute),
 		Models:  []string{"claude-opus-5", "claude-sonnet-5"},
 		RetryAt: now.Add(10 * time.Minute),
 	})
-	if got := a.PreflightReportOn(a.ProbeCatalog(nil), "architect", "claude", TierStrong); got != "architect: tier strong wants claude-fable-5-1 — unavailable, falling back to claude-opus-5" {
+	const wantRules = "architect: tier strong wants claude-fable-5-1 — unavailable on this account; " +
+		"launching as asked, and only an explicit --runtime/--tier/--model or a PID change moves it"
+	if got := a.PreflightReportOn(a.ProbeCatalog(nil), "architect", "claude", TierStrong); got != wantRules {
 		t.Errorf("a cooled-down reading inside its lease must still rule: %q", got)
 	}
 	// The control: with the cooldown expired, the same fixture DOES ask.
