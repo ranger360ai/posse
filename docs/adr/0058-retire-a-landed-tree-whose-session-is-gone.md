@@ -28,7 +28,7 @@ live herdr session (`posse list`).** Bead status read fresh from the store;
 | class | trees | what stands there |
 |---|---|---|
 | bead closed · ahead 0 · clean · no session | 36 | fully landed by fast-forward, or never committed; nothing to lose, nothing retired it |
-| bead closed · ahead ≥1 · every commit patch-id equivalent · no session | 2 | the bead's shape (olwk, wr624): the sweep prints `≡ … nothing here is unlanded` for each on EVERY pass — 41 lines each in the current, rotated log alone |
+| bead closed · ahead ≥1 · every commit patch-id equivalent · no session | 2 | the bead's shape (olwk, wr624): the sweep prints `≡ … nothing here is unlanded` for each on EVERY pass — 41 lines each in the current, rotated log alone. *Amended 2026-09-06: fact 2 as written never takes this row — see the amendment below* |
 | bead closed · ahead ≥1 · some commit unmeasured (`-x` trailer, replay pair) or unpaired · no session | 13 | the listing says "compare before retiring" — correctly; stays a human's |
 | bead closed · dirty · no session | 3 | ADR 0041's closed-dirty class; kept by design |
 | bead open · no session | 6 | seats a relaunch will reuse; not this record's |
@@ -128,7 +128,9 @@ prints today.
   protects a case (`--land` reading git alone) the sweep is not in.
 - **Retire only on measured equivalence** — the bead's framing. Covers 2
   trees of 38. The class is dead-and-landed; equivalence is how ONE
-  landing shape reaches it.
+  landing shape reaches it. *(Amended 2026-09-06: as fact 2 stood on
+  2026-09-05 it covered 0 of 38 — the amendment below says why and what
+  fact 2 now measures.)*
 - **Retire inside `posse worktrees --land`.** Its comment is right about
   itself: a human command reading git cannot tell a dead tree from a live
   one and should not learn herdr to try. `--retire` beside it asks the
@@ -154,7 +156,10 @@ prints today.
 
 - The `≡` line becomes a one-pass event; the listing shrinks to live
   trees, the unmeasured 13 (with their "compare" sentence), the four
-  unrecorded, and ADR 0041's dirty three.
+  unrecorded, and ADR 0041's dirty three. *(Amended 2026-09-06: true of
+  the `≡` line only once fact 2 carries the whitespace-exact twin below;
+  until that lands the `≡` tree is kept on every pass, correctly, for
+  bytes it is not the last copy of.)*
 - Two code comments and one NOTES.md sentence stop being true and are
   amended with the build (landsweep.go header, `LandSessionTrees`,
   NOTES.md's `--land` paragraph and lifecycle table row — the NOTES row is
@@ -199,3 +204,80 @@ workspace on this server is death — ADR 0011 §2's prune accepted the same
 premise, and a second posse home sharing one worktree root would break it
 for both; that the git-dir mtime reading is a faithful "last write" on the
 box's filesystem (dinesh measures it on the way and says so in the code).
+
+## Amendment 2026-09-06 — fact 2 could not take the tree it was filed from (ranger-base-lwd29, from iz8fx)
+
+**The finding.** Fact 2's second half asks whether the base ever held the
+branch's BLOB for each touched path (`contentNotOnBase`, x8jp). A tree
+reaches the `≡` row because its landing was not a fast-forward — and every
+landing that is not a fast-forward writes a NEW blob whenever the base had
+moved the same file elsewhere in the meantime. For an append-heavy file
+(CHANGELOG.md, INSTALL.md, NOTES.md) the base has always moved it, so the
+branch's blob is never on the base, on any commit, and the row is kept on
+every pass — the permanence this record was written to end. The corner
+was not small; it was empty. The 2026-09-05 census counted it right and
+fact 2 covered 0 of it.
+
+**MEASURED 2026-09-06, ~/src/posse, git 2.50.1.** olwk is the whole row now
+(wr624's tree and branch are both gone). Its one commit landed on main as
+7ff3e4da by `cherry-pick -x` — not a hand re-landing, the bead's premise:
+the trailer is on the landing and `git cherry` says `-`. The blob walk finds
+5 of the 7 touched paths in `tip..main` and never CHANGELOG.md or
+INSTALL.md; every line the branch added to those two is on main verbatim.
+And `git patch-id --verbatim` — the whitespace-EXACT form the default
+patch-id is not — gives the branch commit and 7ff3e4da the same id. Over a
+scratch repo, the same instrument: a clean pick onto a base that moved the
+file outside the hunk's context → `cherry -`, blob never on base, verbatim
+EQUAL; a hand landing that re-indented (x8jp's shape), or added trailing
+whitespace → `cherry -`, verbatim DIFFERS; the same line under a changed
+neighbour, or a dropped hunk → `cherry +` (already unmeasured); a base that
+moved inside the three context lines → the pick CONFLICTS (kept by
+construction, h6g65); a squash of two commits → `cherry ++`. One call,
+`git log -p --no-ext-diff --no-renames <tip>..<base> | git patch-id
+--verbatim`, prints an id per non-merge commit of the range and finds the
+twin under later edits: 970 ids over olwk's 987-commit range in 5.5s wall.
+Live census of the 31 posse branches ahead of main: 30 are unpaired
+(D4's human class) and olwk is the only tree any of this reaches.
+
+**D1 fact 2, amended.** "The base holds the branch's bytes" is measured
+two ways, and either licenses: for every touched path the branch's blob
+was on the base in `tip..base` (today's walk, kept — it is the cheap common
+answer and the refusal's per-path pointer), OR every commit ahead has a
+whitespace-exact patch-id twin (`git patch-id --verbatim`) among the base's
+commits in the same bound. The second closes exactly the hole x8jp named —
+`git patch-id` normalises whitespace — with git's own flag for it, and
+nothing else: context lines are hashed, so the twin is the same hunks with
+the same neighbours, byte for byte; lines the branch never touched are not
+its to lose (the rule `contentNotOnBase` already states for paths). A
+commit the range form prints no id for (a merge) is unmeasured, and an
+older git that rejects `--verbatim` (it is 2.39+, and it cannot be combined
+with `--stable`) is an error, and both fail CLOSED — the tree is kept with
+the sentence it prints today. Asked in one helper, in `heldByTip` and
+`treeHolds` both, and `TestRetireGuardsSeeADetachedTreesWork` keeps their
+answers one. The refusal that remains names the commit with no exact twin
+and the paths whose bytes differ.
+
+**Alternatives rejected.**
+- *Say the corner is out of reach and stand on the 36.* Honest, and it
+  leaves the exact shape the source bead was filed about — one `≡` line
+  per pass forever — as the one shape the record does not fix, for the
+  price of a flag git already has.
+- *Replace the blob walk with the verbatim twin.* Buys ~70 lines and a
+  single question. Costs a git floor that turns into a silent refusal
+  class on an older box, the per-path pointer in the refusal, and a
+  rewrite of x8jp's pins under a seat (iz8fx) that is live on the same
+  file. Priced, not taken; a later simplification may fold them once the
+  twin has run a pass.
+- *Per-line containment* (every added line of the range diff present in
+  some base blob). Ignores order and placement, and matches a blank line
+  or a `}` against any file; the patch-id keeps the hunk whole.
+- *A third arm that reads the `-x` trailer.* The trailer is a decision,
+  not a measurement (as19); 7ff3e4da carries one AND a measured twin, and
+  it is the twin that licenses.
+
+**MEASURED:** everything in the paragraph above, dated. **ASSUMED:** that
+the base's edits to an append-heavy file fall outside a hunk's context
+often enough for the twin to take the row in the common case — one tree,
+one landing, measured; the next `≡` tree measures the rule. Verification
+adds to laurie's list: the eight scratch arms above as pins, with the
+re-indent and trailing-whitespace arms as the wrong arms that must KEEP.
