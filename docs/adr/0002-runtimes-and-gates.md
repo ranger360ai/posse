@@ -1,6 +1,6 @@
 # ADR 0002 — Runtimes and gates: launch boundaries and what they prove
 
-*Status: accepted 2026-08-17; consolidated 2026-09-05 under the operator ruling · owner: architect.*
+*Status: accepted 2026-08-17; consolidated 2026-09-05 under the operator ruling; §3 L3 amended 2026-09-06 (ranger-base-g9xr5) · owner: architect.*
 
 ## Context
 
@@ -94,8 +94,12 @@ and prescribed dispatchers. Execute only a fresh private temporary copy of
 the render, never on-disk hook bytes chosen by another writer. The behavior
 probe must refuse; marker text alone is no identity proof. A foreign hook
 degrades with its path and chaining remedy even if it would refuse; an owned
-stale hook names reinstallation. This proves a launch-time observation, not
-immunity to later tampering or use-time redirect.
+stale hook names reinstallation. A launch re-renders its owned slots and
+probes them BEFORE that render: drift that was on disk is reported on the
+launch as a finding, never healed in silence, while parity judges the
+post-render state (ranger-base-2mogn; a managed path skips the comparison,
+since the slots there are not posse's, 0052). This proves a launch-time
+observation, not immunity to later tampering or use-time redirect.
 
 [0052](0052-managed-hooks-path-session-redirect.md) owns the managed path
 exception: the per-session redirect must carry the same identity/behavior
@@ -192,7 +196,9 @@ Rejected: doing nothing (competing claims of realization); treating native
 permission prose as a boundary; trusting a marker or executing a foreign
 hook to certify it (a chosen witness can lie); hardening only one hook
 bypass (the others remain); replacing the shared gate shell with per-runtime
-login knobs. ASSUMED maintenance gain: fewer policy homes. Re-rendered
+login knobs; probing an owned slot only after the launch re-rendered it
+(the probe then reads the binary's own fresh bytes, so a drifted stamp
+self-heals and nobody hears — the shape ranger-base-2mogn removed). ASSUMED maintenance gain: fewer policy homes. Re-rendered
 artifacts hold no irreplaceable state; changing runtimes or container engines
 requires the same parity checks. Refusal history remains host-owned.
 
