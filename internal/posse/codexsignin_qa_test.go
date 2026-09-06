@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // ranger-base-n6s2u: a codex whose credentials are missing or expired draws a
@@ -34,11 +36,6 @@ import (
 	"strings"
 	"testing"
 )
-
-// signinFixtures are the two captures of the same screen at two widths:
-// 120 columns (the logo drawn, option 2 at non-empty line 21) and 60 (the
-// prose wrapped, option 2 at 23).
-var signinFixtures = []string{"blocked-signin.txt", "blocked-signin-narrow.txt"}
 
 func detectionDir(t *testing.T) string {
 	t.Helper()
