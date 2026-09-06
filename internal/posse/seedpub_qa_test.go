@@ -766,6 +766,50 @@ func TestSeedSurfaceScanSkipsGitIgnoredPaths(t *testing.T) {
 	}
 }
 
+// The third shape, and the one the `-z` above is for: a LONE ignored FILE
+// whose name git C-quotes. The directory shape hides it — a wholly-ignored
+// directory collapses to `scratch/`, which has nothing to quote — so only a
+// file inside a directory that is otherwise on the surface reaches the
+// quoting at all. Measured: without `-z` git answers `"notes/od\"d.md"`,
+// quotes and backslash included, and `core.quotePath=false` does NOT turn
+// that off; the quoted spelling matches no walked path, so the file stays on
+// the surface and the skip silently does nothing for it. That mutant survived
+// all three pins above (ranger-base-5htxx), which is why this one exists.
+func TestSeedSurfaceScanSkipsAnIgnoredPathGitCQuotes(t *testing.T) {
+	t.Parallel()
+	needle := "ranger" + "hq"
+	root := t.TempDir()
+	qspGit(t, root, "init")
+
+	write := func(rel, body string) {
+		t.Helper()
+		p := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	odd := "notes/od\"d.md"
+	write(".gitignore", odd+"\n")
+	write(odd, "scratch naming "+needle+"\n")
+	write("notes/kept.md", "a note naming "+needle+"\n")
+
+	var got []string
+	for _, h := range qspSurfaceHits(t, root, needle) {
+		got = append(got, h[:strings.Index(h, ":")])
+	}
+	sort.Strings(got)
+	want := []string{filepath.Join("notes", "kept.md")}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("seed surface is %v, want %v\n"+
+			"  extra = an ignored path whose name git C-quotes stayed on the surface, so the ignore set was read without -z;\n"+
+			"  missing = the scan stopped reading",
+			got, want)
+	}
+}
+
 // The other half of qspGitIgnored: a tree that is NOT the top of a checkout
 // takes no ignore list at all. An export unpacked inside some other repo —
 // the `git archive` scratch tree the house mutation rig runs in, when it
