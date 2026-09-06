@@ -392,10 +392,20 @@ fi
 //	   backstop is cleanup's `reap`, which IS a group kill and is checked by
 //	   this rule.
 //
-// A launch that captures no `$!` is exempt from A and D, and exactly one of
-// the five in these two files is: verify-govern-honesty.sh's scratch herdr
-// server, whose pid is never taken because it is ended by `herdr session
-// stop` and by nothing else.
+// A launch that captures no `$!` is exempt from A and D. That exemption is
+// not described here and counted nowhere — it is asserted by NAME in the arm
+// below, against the launches the reader actually exempted, because it is the
+// one way a launch leaves the ruleset while the 5/4 floor stays satisfied
+// (ranger-base-wenqb). One launch is named today: verify-govern-honesty.sh's
+// scratch herdr server, whose pid is never taken because it is ended by
+// `herdr session stop` and by nothing else.
+//
+// "Captures" is read FORWARD to the next launch, not at the single next
+// statement. `$!` survives intervening foreground commands in bash, so a
+// capture one ordinary statement further down is still a capture — and
+// reading only the next statement is what let one inserted `printf` exempt
+// start_loop from both launch rules with the pre-fix shape restored
+// underneath and nothing red (ranger-base-wenqb, measured).
 //
 // This is a static read, and it says so: it does not run either script, and
 // it is not a substitute for doing so. A seat cannot in any case — REPORTED
@@ -484,10 +494,15 @@ var (
 )
 
 // pkAudit reads one script and answers its complaints, how many background
-// launches it saw and how many explicit-signal kills it examined. The two
+// launches it saw, how many explicit-signal kills it examined, and which
+// launches it EXEMPTED from the launch rules for handing out no pid. The two
 // counts are the positive witness: a parse that recognized nothing produces no
-// complaints either, which reads exactly like a clean script.
-func pkAudit(name, text string) (complaints []string, launches, kills int) {
+// complaints either, which reads exactly like a clean script. The exempt list
+// is the second half of that witness, and it is returned rather than described
+// because the exemption is the one way a launch leaves rules A and D while
+// `launches++` still fires — so the caller pins WHICH launches took it
+// (ranger-base-wenqb), and a new one shows up as a named failure.
+func pkAudit(name, text string) (complaints []string, launches, kills int, exempt []string) {
 	lines := strings.Split(text, "\n")
 	code := make([]string, len(lines))
 	mask := make([][]bool, len(lines))
@@ -513,32 +528,62 @@ func pkAudit(name, text string) (complaints []string, launches, kills int) {
 		}
 		return -1
 	}
+	// isLaunch answers whether line j is a background launch: its last
+	// unquoted rune is a lone `&`. `&&` at the end of a line is a
+	// continuation and `>&2` is a redirection.
+	isLaunch := func(j int) bool {
+		c := strings.TrimSpace(code[j])
+		if !strings.HasSuffix(c, "&") || strings.HasSuffix(c, "&&") || strings.HasSuffix(c, ">&") {
+			return false
+		}
+		idx := strings.LastIndex(code[j], "&")
+		return idx >= 0 && !mask[j][len([]rune(code[j][:idx]))]
+	}
+	// captures answers whether the launch at line i has its pid taken, and it
+	// reads FORWARD to the next launch rather than at the single next
+	// statement. `$!` in bash names the most recent background job and
+	// survives any number of intervening foreground commands, so every
+	// statement up to the next launch — the line where `$!` starts naming
+	// something else — can still be the capture. MEASURED (ranger-base-wenqb):
+	// reading only the immediately-next statement let one `printf` between
+	// the launch and its `LOOP_PID=$!` exempt start_loop from BOTH launch
+	// rules, with `launches++` still firing, so the pre-fix shape restored
+	// under that one line of re-layout was green on every reader of either
+	// script. Erring the other way is safe and loud: a `$!` that belongs to
+	// some later block applies MORE rules to this launch, and says so.
+	captures := func(i int) bool {
+		for j := next(i); j >= 0; j = next(j) {
+			if strings.Contains(code[j], "$!") {
+				return true
+			}
+			if isLaunch(j) {
+				return false
+			}
+		}
+		return false
+	}
 
 	for i := range lines {
 		c := strings.TrimSpace(code[i])
 		at := fmt.Sprintf("%s:%d", name, i+1)
 
-		// ── the launch rules. A background launch is a line whose last
-		// unquoted rune is a lone `&`; `&&` at the end of a line is a
-		// continuation and `>&2` is a redirection.
-		if strings.HasSuffix(c, "&") && !strings.HasSuffix(c, "&&") && !strings.HasSuffix(c, ">&") {
-			if idx := strings.LastIndex(code[i], "&"); idx >= 0 && !mask[i][len([]rune(code[i][:idx]))] {
-				launches++
-				n := next(i)
-				captured := n >= 0 && strings.Contains(code[n], "$!")
-				if captured {
-					if p := prev(i); p < 0 || strings.TrimSpace(code[p]) != "set -m" {
-						complaints = append(complaints, at+": a background launch whose pid is captured "+
-							"is not under `set -m`, so that pid is not a process-group id and "+
-							"`kill -SIG -- \"-$pid\"` reaps the wrapper only (ranger-base-q8hbz): "+strings.TrimSpace(lines[i]))
-					}
-					if strings.HasPrefix(c, "(") &&
-						!pkHasUnquoted(code[i], mask[i], ';') &&
-						!pkExec.MatchString(code[i]) {
-						complaints = append(complaints, at+": a single-command subshell launch does not `exec`, "+
-							"so the group leader is a wrapper and `kill -0` speaks about the wrong "+
-							"process (ranger-base-q8hbz): "+strings.TrimSpace(lines[i]))
-					}
+		// ── the launch rules.
+		if isLaunch(i) {
+			launches++
+			if !captures(i) {
+				exempt = append(exempt, at+": "+strings.TrimSpace(lines[i]))
+			} else {
+				if p := prev(i); p < 0 || strings.TrimSpace(code[p]) != "set -m" {
+					complaints = append(complaints, at+": a background launch whose pid is captured "+
+						"is not under `set -m`, so that pid is not a process-group id and "+
+						"`kill -SIG -- \"-$pid\"` reaps the wrapper only (ranger-base-q8hbz): "+strings.TrimSpace(lines[i]))
+				}
+				if strings.HasPrefix(c, "(") &&
+					!pkHasUnquoted(code[i], mask[i], ';') &&
+					!pkExec.MatchString(code[i]) {
+					complaints = append(complaints, at+": a single-command subshell launch does not `exec`, "+
+						"so the group leader is a wrapper and `kill -0` speaks about the wrong "+
+						"process (ranger-base-q8hbz): "+strings.TrimSpace(lines[i]))
 				}
 			}
 		}
@@ -561,7 +606,7 @@ func pkAudit(name, text string) (complaints []string, launches, kills int) {
 			break // one complaint per line, whatever it chains to
 		}
 	}
-	return complaints, launches, kills
+	return complaints, launches, kills, exempt
 }
 
 // TestThePkAuditFlagsTheShapesItIsFor is pkAudit's control arm, and it is the
@@ -593,6 +638,17 @@ func TestThePkAuditFlagsTheShapesItIsFor(t *testing.T) {
 		want: "does not try the process GROUP first",
 		text: "\tkill -INT \"$cp\" >/dev/null 2>&1 || true\n",
 	}, {
+		// The case only the FORWARD capture read catches, and the escape
+		// ranger-base-wenqb measured: the pre-fix shape restored under one
+		// line of re-layout. `$!` survives an intervening foreground
+		// command, so this launch's pid IS handed out and rules A and D
+		// apply — a reader that looks only at the immediately-next
+		// statement calls it uncaptured and waives both, silently, with
+		// `launches++` still firing.
+		name: "a capture one statement below the launch",
+		want: "not under `set -m`",
+		text: "start_loop() {\n\t:\n\t(cd \"$W\" && env \"$P\" dispatch --watch 5m >\"$L\" 2>&1) &\n\tprintf 'launched\\n' >&2\n\tLOOP_PID=$!\n}\n",
+	}, {
 		// The case only the ANCHORED read catches: a group kill is present
 		// on the line, and it is for a different job than the pid-only kill
 		// that runs first. An unanchored `does this line contain a group
@@ -602,7 +658,7 @@ func TestThePkAuditFlagsTheShapesItIsFor(t *testing.T) {
 		want: "does not try the process GROUP first",
 		text: "\tkill -9 \"$a\" 2>/dev/null || kill -9 -- \"-$b\" 2>/dev/null\n",
 	}} {
-		got, _, _ := pkAudit("fixture.sh", c.text)
+		got, _, _, _ := pkAudit("fixture.sh", c.text)
 		if len(got) == 0 {
 			t.Errorf("%s: pkAudit flagged nothing, so a clean sweep of the real scripts measures nothing:\n%s", c.name, c.text)
 			continue
@@ -620,6 +676,11 @@ func TestThePkAuditFlagsTheShapesItIsFor(t *testing.T) {
 	}{{
 		name: "the fixed start_loop",
 		text: "\tset -m\n\t(cd \"$W\" && exec env \"$P\" dispatch --watch 5m >\"$L\" 2>&1) &\n\tLOOP_PID=$!\n\tset +m\n",
+	}, {
+		// The same shape with the re-layout: reading the capture forward
+		// must not turn a correct launch into a complaint either.
+		name: "the fixed start_loop with a statement before its capture",
+		text: "\tset -m\n\t(cd \"$W\" && exec env \"$P\" dispatch --watch 5m >\"$L\" 2>&1) &\n\tprintf 'launched\\n' >&2\n\tLOOP_PID=$!\n\tset +m\n",
 	}, {
 		name: "the group-first reaper and its fallback",
 		text: "\tkill -9 -- \"-$pid\" >/dev/null 2>&1 || kill -9 \"$pid\" >/dev/null 2>&1 || true\n",
@@ -642,8 +703,50 @@ func TestThePkAuditFlagsTheShapesItIsFor(t *testing.T) {
 		name: "&& at the end of a line is a continuation",
 		text: "\t( cd \"$t\" && git init -q . &&\n\t\tgit add F ) >\"$log\" 2>&1\n",
 	}} {
-		if got, _, _ := pkAudit("fixture.sh", c.text); len(got) != 0 {
+		if got, _, _, _ := pkAudit("fixture.sh", c.text); len(got) != 0 {
 			t.Errorf("%s: pkAudit complained about a line that is correct as it stands:\n\t%s", c.name, strings.Join(got, "\n\t"))
+		}
+	}
+
+	// And the exempt list, graded here rather than only where it is used. It
+	// is what the shipped-script arm pins by name, so a reader that exempts
+	// every launch — or none — has to fail in this control rather than pass
+	// there for the wrong reason. Each case gives the launches it contains
+	// and how many of them hand out no pid.
+	for _, c := range []struct {
+		name              string
+		launches, exempts int
+		text              string
+	}{{
+		name: "a launch whose pid is never taken is exempt",
+		// The shipped scratch herdr server: ended by `herdr session stop`.
+		launches: 1, exempts: 1,
+		text: "unset_herdr\nenv RHQ_HOME=\"$H\" \"$HERDR\" --session \"$S\" server >/dev/null 2>&1 &\nwait_server || exit 2\n",
+	}, {
+		name:     "a capture one statement below the launch is NOT exempt",
+		launches: 1, exempts: 0,
+		text: "\tset -m\n\t(exec \"$P\" run) &\n\tprintf 'launched\\n' >&2\n\tLOOP_PID=$!\n\tset +m\n",
+	}, {
+		// The bound on the forward read, and the reason it is the next
+		// LAUNCH rather than the end of the block: after a second launch,
+		// `$!` names that one. The first job's pid is genuinely never taken.
+		name:     "a `$!` below a SECOND launch names that one, so the first is exempt",
+		launches: 2, exempts: 1,
+		text: "\tset -m\n\t(exec \"$A\") &\n\tset -m\n\t(exec \"$B\") &\n\tB_PID=$!\n\tset +m\n",
+	}} {
+		got, launches, _, exempt := pkAudit("fixture.sh", c.text)
+		if launches != c.launches {
+			t.Errorf("%s: pkAudit saw %d background launches, want %d — the exempt count below "+
+				"says nothing if the launches were not recognized:\n%s", c.name, launches, c.launches, c.text)
+			continue
+		}
+		if len(exempt) != c.exempts {
+			t.Errorf("%s: pkAudit exempted %d of %d launches from the `set -m` and `exec` rules, want %d:\n\t%s",
+				c.name, len(exempt), launches, c.exempts, strings.Join(exempt, "\n\t"))
+		}
+		if len(got) != 0 {
+			t.Errorf("%s: pkAudit complained about a fixture that is correct as it stands:\n\t%s",
+				c.name, strings.Join(got, "\n\t"))
 		}
 	}
 }
@@ -658,15 +761,17 @@ func TestTheReapingScriptsKeepTheirGroupShape(t *testing.T) {
 	// told about, in a failure that names it.
 	want := []string{"scripts/verify-govern-honesty.sh", "scripts/macos-install-probe.sh"}
 	var totalLaunches, totalKills int
+	var totalExempt []string
 	for _, rel := range want {
 		b, err := os.ReadFile(filepath.FromSlash(rel))
 		if err != nil {
 			t.Fatalf("read %s: %v — this pin needs the shipped script, and a missing one "+
 				"is not a clean result", rel, err)
 		}
-		complaints, launches, kills := pkAudit(rel, string(b))
+		complaints, launches, kills, exempt := pkAudit(rel, string(b))
 		totalLaunches += launches
 		totalKills += kills
+		totalExempt = append(totalExempt, exempt...)
 		if len(complaints) > 0 {
 			t.Errorf("%s no longer carries the shape ranger-base-q8hbz landed:\n\t%s",
 				rel, strings.Join(complaints, "\n\t"))
@@ -682,6 +787,51 @@ func TestTheReapingScriptsKeepTheirGroupShape(t *testing.T) {
 	if totalLaunches < 5 || totalKills < 4 {
 		t.Fatalf("the reader found %d background launches and %d explicit-signal kills in %v — "+
 			"it is not recognizing them, so a clean result measures nothing", totalLaunches, totalKills, want)
+	}
+
+	// The floor cannot see the OTHER way a launch stops being measured: a
+	// launch that hands out no pid is exempt from rules A and D, and
+	// `launches++` fires for it just the same, so an exemption that grows
+	// leaves the floor satisfied and the shape unread. MEASURED
+	// (ranger-base-wenqb) before the forward capture read landed above: one
+	// `printf` between start_loop's launch and its `LOOP_PID=$!` took it out
+	// of both rules, and the pre-fix shape restored underneath was green on
+	// every reader of either script. So the exemption is pinned by NAME. A
+	// new one is either a genuine fire-and-forget job — add it here, with why
+	// its pid is never taken — or a launch that has quietly left the ruleset.
+	// Keyed on the launch itself rather than on `file:line`, so an edit
+	// anywhere above it does not red this pin for a reason that has nothing
+	// to do with the shape — which is what a line number would do here, and
+	// did while this was being written.
+	wantExempt := []struct{ file, launch, why string }{{
+		file: "scripts/verify-govern-honesty.sh", launch: `"$HERDR" --session`,
+		why: "the scratch herdr server, ended by `herdr session stop` and by nothing else",
+	}}
+	matched := make([]int, len(wantExempt))
+	for _, e := range totalExempt {
+		at, _, _ := strings.Cut(e, ": ")
+		file, _, _ := strings.Cut(at, ":")
+		hit := false
+		for i, w := range wantExempt {
+			if file == w.file && strings.Contains(e, w.launch) {
+				matched[i]++
+				hit = true
+			}
+		}
+		if !hit {
+			t.Errorf("a background launch is exempt from the `set -m` and `exec` rules because its pid is "+
+				"never captured, and it is not one of the %d that is meant to be — either it is a new "+
+				"fire-and-forget job (name it in `wantExempt` with why its pid is never taken), or it "+
+				"captures a pid this reader stopped seeing and it has left the ruleset silently "+
+				"(ranger-base-wenqb):\n\t%s", len(wantExempt), e)
+		}
+	}
+	for i, w := range wantExempt {
+		if matched[i] != 1 {
+			t.Errorf("%s: %q matched %d exempt launches, want exactly 1 (%s) — a named exemption that no "+
+				"longer happens is fine to delete here, but not to leave: this is what says the reader "+
+				"still recognizes the launch at all", w.file, w.launch, matched[i], w.why)
+		}
 	}
 
 	// And the two named files are the whole class, asserted by the property

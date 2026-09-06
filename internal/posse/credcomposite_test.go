@@ -52,21 +52,40 @@ import (
 // "fall" in any case, so the width these buy costs no false positive. The
 // present-clause arms are untouched: they assert what the fallback 401 must
 // SAY, and a wider must-NOT next to them cannot make them read differently.
+//
+// namesTheACLMove is the must-NOT half of the fallback 401's OTHER cause, and
+// it is here for the same reason and by the same finding's class: it stood as
+// a case-sensitive `strings.Contains(other.Error(), "make install")` — one
+// whole form, guarding vocabulary — until ranger-base-wenqb measured it.
+// MEASURED there, on a go test -overlay of planusage.go that gave the
+// non-fallback 401s the ACL clause respelled as "dropped when posse was
+// reinstalled": the arm was ok 0.435s, the whole package under the same
+// mutant was ok, and every Auth|401|Cred|Usage|Plan|Stale|Composite|Keychain
+// test was ok. Nothing else catches it, because the arm's other half cannot:
+// namesTheFallThrough matches the shipped clause only through the
+// interpolated store name (credentialsFileFallback carries the word
+// "fallback"), and a clause about the WRONG store need not name it.
+//
+// The family is the install vocabulary the move is spelled in — "make
+// install", "reinstalled", "installed", "installing" — all of which `install`
+// carries, with `(?i)` for the case the old form also lacked. MEASURED as the
+// unmutated control below: none of the strings this guards names an install
+// in any case, so the width costs no false positive here.
 var (
 	namesTheFallThrough = regexp.MustCompile(`(?i)(fall(s|ing|en)?|fell)[ \-]?(back|through)`)
 	namesARefresh       = regexp.MustCompile(`(?i)refresh`)
+	namesTheACLMove     = regexp.MustCompile(`(?i)install`)
 )
 
 // namesAnotherClassesMove is the never-list of the 44-and-no-file row below:
 // the operator moves that belong to a DIFFERENT credential class, in the
 // words that would send a reader at the wrong half of the system.
 //
-// It is the fifth must-NOT ban in this file, and it was the last one whose
-// entries were VOCABULARY — {"credential stale", "once to refresh", "not
-// entitled"} under a case-sensitive strings.Contains — when ranger-base-dopyl
-// widened the other four. (The three that stay `strings.Contains` after this
-// are fixture VALUES, not vocabulary: fallbackOnlyToken, keychainOnlyToken
-// and fakeToken. A value has no respelling; naming one is the whole defect.)
+// It is the fifth must-NOT ban in this file, and when ranger-base-dopyl
+// widened the other four its entries were still VOCABULARY — {"credential
+// stale", "once to refresh", "not entitled"} under a case-sensitive
+// strings.Contains.
+//
 // It is widened here for dopyl's own reason, measured on this row rather than
 // argued from it (ranger-base-8v29w, the verify of that close):
 // keychainFallbackFix carrying " — the credential is stale, so run claude
@@ -82,6 +101,26 @@ var (
 // MEASURED, as the unmutated control of that finding: none of the strings
 // this guards contains "stale" or "entitl" in any case, so the width costs no
 // false positive here.
+//
+// THE CENSUS, which is what the paragraph above is really for — a reader who
+// believes the sweep is finished stops sweeping. What stood here said this
+// was the LAST ban whose entries were vocabulary, and that the only
+// `strings.Contains` left were three fixture values. It was wrong by one:
+// ranger-base-wenqb found a sixth, `strings.Contains(other.Error(), "make
+// install")` in the fallback-401 arm below, and measured the respelling that
+// walked out from under it. That one is now namesTheACLMove.
+//
+// Re-counted by hand at that fix, and stated in CALL SITES rather than in
+// names, because counting names is what hid the sixth: FOUR `strings.Contains`
+// must-NOT calls remain in this file, and every one of them names a fixture
+// VALUE rather than vocabulary — fallbackOnlyToken and keychainOnlyToken (two
+// calls in one arm) and fakeToken (twice, in two). A value has no respelling;
+// naming one is the whole defect. A must-SAY `!strings.Contains` is a
+// different thing and is not counted: it pins bytes the shipped sentence has
+// to carry, and a respelling there reds, which is correct. The census is
+// `grep -n strings.Contains` on this file minus the `!` ones — one command,
+// so run it rather than trusting this sentence, which is the mistake it is
+// here to record.
 var namesAnotherClassesMove = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)stale`),  // the 401's move, not this row's
 	namesARefresh,                    // likewise
@@ -415,7 +454,7 @@ func TestAuthFailureOnAFallbackTokenNamesTheStoreAndBothCauses(t *testing.T) {
 	// store: without this arm the sentence could be unconditional and every
 	// assertion above would still pass.
 	for _, other := range []*AuthFailure{keychain, plain} {
-		if namesTheFallThrough.MatchString(other.Error()) || strings.Contains(other.Error(), "make install") {
+		if namesTheFallThrough.MatchString(other.Error()) || namesTheACLMove.MatchString(other.Error()) {
 			t.Errorf("a 401 on a token that did NOT fall through must carry no fallback clause: %q", other)
 		}
 	}
