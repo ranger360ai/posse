@@ -433,7 +433,14 @@ func TestReadFromReturnsOnlyTheDelta(t *testing.T) {
 func fakeProbeHerdr(t *testing.T, body string) Herdr {
 	t.Helper()
 	bin := filepath.Join(t.TempDir(), "herdr")
-	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"+body+"\nexit 0\n"), 0o755); err != nil {
+	// WriteExecutable, not os.WriteFile: this file is exec'd within
+	// microseconds of being written, by a test that runs beside hundreds of
+	// others that fork. os.WriteFile leaves a window for one of those forks
+	// to inherit its write descriptor, and Linux answers an execve inside
+	// that window with ETXTBSY — which is what red ubuntu-latest in ci.yml
+	// run 34002511879, 1 of the 6 runs in that streak
+	// (execwrite.go, ranger-base-d26ak).
+	if err := WriteExecutable(bin, []byte("#!/bin/sh\n"+body+"\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return Herdr{Bin: bin}
@@ -446,7 +453,9 @@ func probeFakeCLI(t *testing.T, dir, name, says string) string {
 		t.Fatal(err)
 	}
 	p := filepath.Join(dir, name)
-	if err := os.WriteFile(p, []byte("#!/bin/sh\necho \""+says+"\"\n"), 0o755); err != nil {
+	// Same window, same reason as fakeProbeHerdr above: the probe resolves
+	// this file and the pane execs it immediately.
+	if err := WriteExecutable(p, []byte("#!/bin/sh\necho \""+says+"\"\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return p

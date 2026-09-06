@@ -325,6 +325,19 @@ func main() {
 		// t.Parallel here panics; this map is where the tool is told.
 		"TestPlanReadHasFourCredentialFailureClasses": "env-tainted through a table's func value (unreadableKeychain)",
 		"TestTheFourCredentialClassesAreDistinct":     "env-tainted through a table's func value (unreadableKeychain)",
+		// The ForkLock pins (execwrite.go, ranger-base-d26ak). Same shape as
+		// the flock rows above, one level down: they READ whether
+		// syscall.ForkLock is held for writing, and that lock is the one
+		// every fork in this binary takes. A parallel sibling's subprocess
+		// answers that question for them — the rig's own "free before the
+		// window" control would read somebody else's fork as our lock — and
+		// two of them HOLD it, for 250ms and for as long as a FIFO stays
+		// unopened, which every other test's fork would then queue behind.
+		// Serial, they have the process to themselves and cost ~1.5s.
+		"TestUnderForkLockHoldsTheLockForTheWriteAndNoLonger":      "reads and holds the process-wide syscall.ForkLock",
+		"TestUnderForkLockKeepsAConcurrentForkOutOfTheWriteWindow": "reads and holds the process-wide syscall.ForkLock",
+		"TestWriteExecutableWritesAFileThatRuns":                   "reads and holds the process-wide syscall.ForkLock",
+		"TestWriteExecutableWritesUnderTheForkLock":                "reads and holds the process-wide syscall.ForkLock",
 	}
 	// Named parallel, and the counterpart of serial above: a test the three
 	// filters call ineligible, that a human has READ and cleared. These are
