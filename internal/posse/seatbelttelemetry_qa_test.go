@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // ranger-base-gr3ow: the Go toolchain's local telemetry counters were 18% of

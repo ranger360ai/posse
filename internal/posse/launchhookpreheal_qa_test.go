@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // QA pins for ranger-base-2mogn — part 1 of ranger-base-qxwd's "actual hole,
@@ -20,30 +22,10 @@ package posse
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 )
-
-// lhpFixture gives a backend a home with one declared repo, an agent it can
-// launch, and returns the backend and the repo's path.
-func lhpFixture(t *testing.T, visibility string) (*HerdrBackend, string) {
-	t.Helper()
-	b, _ := newTestBackend(t)
-	a := b.App
-	if err := os.MkdirAll(a.AgentsDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(a.AgentsDir, "ranger.md"), []byte("---\nname: ranger\n---\nwork\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	repo := hwsRepo(t, t.TempDir(), "declared")
-	if err := os.WriteFile(a.ConfigPath, []byte("beads_visibility:\n  "+repo+": "+visibility+"\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return b, repo
-}
 
 // A repo whose installed prepare-commit-msg stamp disagrees with what config
 // NOW says (planted PUBLIC, config says private — the direction that fails
@@ -127,29 +109,6 @@ func TestQALaunchIsQuietWhenTheWallAlreadyCarriesTheCurrentRender(t *testing.T) 
 // commitGuardLiterals derivation (gates.go). A second literal source on either
 // side, or a probe that moved above EnsureSessionTree, kills the alarm on
 // every dispatched launch and no non-worktree pin would notice.
-
-// lhpWorktreeFixture is lhpFixture with a repo a worktree can be cut from: one
-// commit on `main`, which `git worktree add` requires and `git init` alone
-// does not give.
-func lhpWorktreeFixture(t *testing.T, visibility string) (*HerdrBackend, string) {
-	t.Helper()
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("no git")
-	}
-	b, _ := newTestBackend(t)
-	a := b.App
-	if err := os.MkdirAll(a.AgentsDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(a.AgentsDir, "ranger.md"), []byte("---\nname: ranger\n---\nwork\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	repo := wtRepo(t)
-	if err := os.WriteFile(a.ConfigPath, []byte("beads_visibility:\n  "+repo+": "+visibility+"\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return b, repo
-}
 
 // The pin ranger-base-kd1f1 asked for: a first launch into a session dir that
 // does not exist yet must still report the drift it is about to repair.

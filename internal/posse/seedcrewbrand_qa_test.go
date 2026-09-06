@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // ranger-base-ungb (QA, verifying the close of rangerhq-dh5g).

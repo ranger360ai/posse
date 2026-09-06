@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // Pins for ranger-base-rflee: the launch pins the transport and exec

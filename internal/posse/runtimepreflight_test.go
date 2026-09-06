@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // ADR 0012 D4 / rangerhq-tr8k: the three preflight declarations and the

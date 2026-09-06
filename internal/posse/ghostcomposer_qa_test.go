@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // QA pins for ranger-base-2hvtv: a box previewing the line the pane last

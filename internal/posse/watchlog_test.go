@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // The loop's own log (ranger-base-n00wn, watchlog.go).

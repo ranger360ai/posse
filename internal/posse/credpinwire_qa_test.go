@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // QA, ranger-base-8rff — the endpoint pin (ranger-base-17i) over a REAL

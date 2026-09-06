@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // ranger-base-ktiik: what the reaper's candidate set actually is, and the

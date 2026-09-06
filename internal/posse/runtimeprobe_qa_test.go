@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // ADR 0032 §1 rule 1, assumed-until-probed: the parity wiring, which is the

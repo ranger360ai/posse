@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // QA pins for ranger-base-yi2f8 — ADR 0057's simplification: the pane-mode

@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // rangerhq-ouf9: `instance:` prefixes the herdr LABEL and nothing else.

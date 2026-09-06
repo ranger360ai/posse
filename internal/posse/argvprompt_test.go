@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // ADR 0013 §2 — the promptable stage, dispatch half (ranger-base-dg5).

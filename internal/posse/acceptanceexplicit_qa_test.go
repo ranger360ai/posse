@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // ADR 0006 §4 as simplified 2026-09-05, for ranger-base-0ezn7: acceptance is

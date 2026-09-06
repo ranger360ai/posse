@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // ADR 0006 §4, verifying ranger-base-0ezn7 (the QA lane, ranger-base-ps10r).

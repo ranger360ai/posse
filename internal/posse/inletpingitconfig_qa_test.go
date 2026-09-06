@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // The GIT_CONFIG_* family, for ranger-base-44or9. Filed from the verify bead

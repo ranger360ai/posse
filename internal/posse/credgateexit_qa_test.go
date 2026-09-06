@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // ADR 0042 D3, and ranger-base-f5fkk: the rendered CredBin shim's refusal

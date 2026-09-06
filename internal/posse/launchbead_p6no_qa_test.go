@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // ADR 0020 §2, amended 2026-08-27 (ranger-base-f8m9): the cockpit's `d`

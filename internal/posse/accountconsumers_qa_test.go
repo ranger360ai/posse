@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // QA pins for the two account-stage CONSUMERS (ranger-base-pjoy item 1,

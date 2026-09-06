@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // THE TWO GUARDS THAT NARROW THE `auto` DETECTION ARE NOT MEASURED BY

@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // Dial E (ADR 0003 §4, rangerhq-25p): budget caps, the 80% step-down and

@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // The load guard (ranger-base-innx): nothing new is launched into a box

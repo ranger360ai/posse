@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // ranger-base-9fl (from the ADR 0019 posture review, ranger-base-l8o): the

@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // rangerhq-9py0: codex draws an "Update available!" menu on a version delta,

@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // ranger-base-ntsz shipped sameRemoval: a deletion recorded before its branch

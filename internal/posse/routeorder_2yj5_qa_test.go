@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // ranger-base-2yj5 — the routing order among label matches is a stated

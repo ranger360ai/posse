@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // QA pin — the arm ranger-base-a0ln0's close named as NOT covered: "the

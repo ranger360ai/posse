@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // ranger-base-fytno: the reap sweep over the shape the whole fleet actually

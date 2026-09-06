@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // ADR 0036 §4's ticker (bead ranger-base-zv3y6): the `backup_interval:` key

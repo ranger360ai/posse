@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // ranger-base-qajs. `posse init` used to seed the nine example PIDs straight

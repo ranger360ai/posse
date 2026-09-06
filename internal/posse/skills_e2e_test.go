@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // The reproducible half of rangerhq-1qd: materialize a binding with the

@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // Repro for the cockpit's `d` (resume) key on an IN PROGRESS row whose holder

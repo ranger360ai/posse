@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // A live pin for rangerhq-aas, run against the real bd rather than the fake.

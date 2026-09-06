@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // ranger-base-wj7e9: the pins for the clocks a `dispatch --watch` loop was

@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // QA pins for ranger-base-2jl1's close (verified under ranger-base-cb5mg).

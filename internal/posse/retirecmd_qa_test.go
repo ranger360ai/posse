@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // ranger-base-iz8fx: ADR 0058 D3 — the operator gets the sweep's own retire

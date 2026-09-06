@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // Pins for ranger-base-bm9cd — the policy-tier hooks drop-in,

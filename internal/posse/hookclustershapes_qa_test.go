@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // THE SHAPES THE L3 HOOK CLUSTER'S OWN PINS DO NOT REACH (QA, verify

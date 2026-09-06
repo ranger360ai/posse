@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // QA pins for the cutover fan-out's redirect compare, filed as

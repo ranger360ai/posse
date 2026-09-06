@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // QA pins for the silent-revert detector (scripts/audit-silent-reverts.sh,

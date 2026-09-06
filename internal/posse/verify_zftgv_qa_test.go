@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // QA pins from verify bead ranger-base-zftgv. Two holes measured while

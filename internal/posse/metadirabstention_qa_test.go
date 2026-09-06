@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // ranger-base-jzxrh: the FOURTH door onto one double-seating, found while

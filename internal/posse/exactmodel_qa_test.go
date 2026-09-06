@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // ADR 0053 — `posse new --model <id>` is an explicit crew-session canary.

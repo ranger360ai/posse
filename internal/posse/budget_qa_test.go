@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // QA pin for rangerhq-9qho (verify of rangerhq-kiai, duplicate of rangerhq-dsk).

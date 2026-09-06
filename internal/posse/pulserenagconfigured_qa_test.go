@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // Two arms of ADR 0027's delivery rule that the 2026-09-05 simplification

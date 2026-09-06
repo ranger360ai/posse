@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // The persisted pulse record, after ADR 0027's 2026-09-05 simplification

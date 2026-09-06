@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // PAUSE (ADR 0029 §3, bead rangerhq-a2g6): the file, who may write it, the

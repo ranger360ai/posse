@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // QA pin for the third arm of PlanMeterSpender (verify ranger-base-s5j1t over

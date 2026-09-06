@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // runtimes/<name>.yaml v2 (ADR 0012 D4): the realizer-adjacent keys, tested

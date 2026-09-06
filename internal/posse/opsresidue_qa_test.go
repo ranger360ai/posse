@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // QA pin for ranger-base-lm22v (ADR 0024 D2/D4 residue, ruled on

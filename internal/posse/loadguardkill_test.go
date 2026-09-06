@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // The load guard's kill arm, arm 2 of ranger-base-apwr (ranger-base-gvp2p).

@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // THE CEILING'S BANNER MAY NOT TELL A REFUSED WRITER THAT CHECK 3 HAS NO

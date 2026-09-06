@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // QA pins for what scripts/queue-cutover.sh's abort trap tells the operator

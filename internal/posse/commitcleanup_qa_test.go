@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // THE MESSAGE ARM KEYED ON THE SOURCE ARGUMENT, AND THE CLEANUP MODE IS WHAT

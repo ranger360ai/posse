@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // The watch-loop lock (rangerhq-gir5). Real flock in a temp RHQ_HOME — no

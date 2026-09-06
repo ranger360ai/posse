@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // Expiry as a first-class answer (ADR 0019 D5/V5/V6, bead ranger-base-k6ha).

@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 // The ≡ line's own evidence check (ranger-base-dmzk7).
 //
 // EquivalentNote is the surface that decides whether a human is told at all:

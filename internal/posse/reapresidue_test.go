@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // The residue arms of the end-of-pass sweep (ranger-base-f6lk): the two

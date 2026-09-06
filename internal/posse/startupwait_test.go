@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // ranger-base-p84: Runtime.StartupWait was declared, parsed, validated,

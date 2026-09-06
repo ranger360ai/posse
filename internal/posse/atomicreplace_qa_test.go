@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // QA pin for the OTHER half of ranger-base-5qnt / ranger-base-5cv7.

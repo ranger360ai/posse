@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // ranger-base-2w9l: seatbeltReachRow reclassified a per-probe write denial

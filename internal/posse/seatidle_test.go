@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // ADR 0028 §5 observable 1 — the control arm's own tests.

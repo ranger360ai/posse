@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // The launch ledger's own contract (ledger.go), read straight through the

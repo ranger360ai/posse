@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // ranger-base-pith: the OTHER side of ranger-base-h7cd. h7cd stopped `posse

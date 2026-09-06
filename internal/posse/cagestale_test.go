@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // The cage image's third state (ranger-base-nwj7), pinned — and the gate

@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // Verification-pass additions for the rangerhq-4ish close (ranger-base-360s).

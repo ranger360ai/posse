@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // Live pin for rangerhq-3hb5: the readiness gate must not return on herdr's

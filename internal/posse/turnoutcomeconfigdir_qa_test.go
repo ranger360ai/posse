@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // The regression pin for ranger-base-r2s9l finding 1, filed PARKED from the

@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // QA suite for the rangerhq-9nso prune guards (verifying the close of

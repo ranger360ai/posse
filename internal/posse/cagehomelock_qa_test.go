@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // QA pins for the cage HOME config lock (ranger-base-5cv7, sibling of

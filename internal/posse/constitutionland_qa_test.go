@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // The BELT behind the commit wall's constitution arm (ranger-base-ak3e):

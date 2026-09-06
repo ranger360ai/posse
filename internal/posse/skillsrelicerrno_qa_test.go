@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // QA probe for ranger-base-epdyv finding 1 — the errno table danglingSkillLink

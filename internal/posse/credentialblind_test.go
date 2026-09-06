@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // A 401 is a credential condition, not blind weather (bead rangerhq-ytyj).

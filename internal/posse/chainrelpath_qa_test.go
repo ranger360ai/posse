@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // QA, ranger-base-87c9 (found verifying ranger-base-q32o under

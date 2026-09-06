@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // ONE NUL BYTE MAKES A MARKDOWN FILE BINARY, AND EVERY '+' LINE READER IN

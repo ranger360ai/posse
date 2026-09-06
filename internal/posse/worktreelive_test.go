@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // Live pins for rangerhq-09o2's beads clause, run against the real bd rather

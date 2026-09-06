@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // QA pin for ranger-base-vcqzb, verifying ranger-base-2eeb's close.

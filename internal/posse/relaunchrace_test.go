@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // ranger-base-w4h5: relaunch's destructive steps share the launcher lock.

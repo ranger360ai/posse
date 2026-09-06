@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // QA pin — freshness: "posse status / cockpit shows the age of the last

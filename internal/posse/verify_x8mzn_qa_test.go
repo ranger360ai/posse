@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // Verifying ranger-base-1mu9r's close (verify bead ranger-base-x8mzn).

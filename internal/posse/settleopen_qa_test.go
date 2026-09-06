@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // QA pins for settleopen.go's tree lines, from the verify pass on

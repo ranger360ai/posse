@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // ranger-base-nlya — the ADR 0013 six-stage dispatch contract, walked end

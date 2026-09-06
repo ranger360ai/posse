@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // ranger-base-p969: a --no-daemon reader (the whole fleet, since

@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // THE ≡ LINE'S SECOND CALL SITE IS THE CONSTITUTION ARM, AND NOTHING

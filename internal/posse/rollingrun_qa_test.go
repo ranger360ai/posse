@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // ranger-base-t8tq: what ADR 0028 §1's long-lived Run did to everything that

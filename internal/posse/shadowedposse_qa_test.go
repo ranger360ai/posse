@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // ranger-base-39jnl — the 2026-09-02 outage, pinned in four places.

@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // ranger-base-v9ptt, verifying ranger-base-pghf4: the ORDER of the two arms

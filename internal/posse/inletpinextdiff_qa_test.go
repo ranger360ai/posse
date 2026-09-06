@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // The GIT_EXTERNAL_DIFF row, for ranger-base-csfbj. Found verifying

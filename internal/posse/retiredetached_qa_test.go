@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // ranger-base-v2rj7: the two guards that stand between a session's committed

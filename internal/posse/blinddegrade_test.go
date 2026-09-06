@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // ADR 0018 — blind meter, armed ledger. The 2026-08-26 outage in one

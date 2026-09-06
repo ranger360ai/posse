@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // QA pins for the managed-hooks RECORD (ranger-base-m6szh, escaped from

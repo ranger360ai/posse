@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // ranger-base-nuu — ADR 0014 §3: the PID's own path-scoped write denies, at

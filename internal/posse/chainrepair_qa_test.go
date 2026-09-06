@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // QA, ranger-base-q32o — the chain prescription re-read at a slot posse has

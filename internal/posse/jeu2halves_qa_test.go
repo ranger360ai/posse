@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // QA suite for the rangerhq-jeu2 fix (verifying its close, rangerhq-hew0):

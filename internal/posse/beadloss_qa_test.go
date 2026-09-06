@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // QA pins for the bead-loss alarm (rangerhq-b33n, verifying the close
@@ -16,76 +18,6 @@ import (
 	"testing"
 	"time"
 )
-
-func qblLine(id, status string) string {
-	return `{"id":"` + id + `","title":"verify: ` + id + `","status":"` + status +
-		`","priority":2,"issue_type":"task","assignee":"qa"}`
-}
-
-func qblRepo(t *testing.T) string {
-	t.Helper()
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git not available")
-	}
-	repo := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(repo, ".beads"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	qblGit(t, repo, "init", "-q")
-	qblGit(t, repo, "config", "user.email", "t@example.com")
-	qblGit(t, repo, "config", "user.name", "t")
-	return repo
-}
-
-func qblGit(t *testing.T, repo string, args ...string) string {
-	t.Helper()
-	out, err := exec.Command("git", append([]string{"-C", repo}, args...)...).CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %v: %v %s", args, err, out)
-	}
-	return string(out)
-}
-
-// qblCommit writes the JSONL as exactly these lines and commits it.
-func qblCommit(t *testing.T, repo, msg string, lines ...string) {
-	t.Helper()
-	qblWrite(t, repo, lines...)
-	qblGit(t, repo, "add", "-A")
-	qblGit(t, repo, "commit", "-q", "-m", msg)
-}
-
-func qblWrite(t *testing.T, repo string, lines ...string) {
-	t.Helper()
-	body := ""
-	for _, l := range lines {
-		body += l + "\n"
-	}
-	if err := os.WriteFile(filepath.Join(repo, beadsDirName, beadsJSONL), []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
-}
-
-// qblLive is what the fake bd answers `list --all` with — the store of record.
-func qblLive(t *testing.T, repo string, ids ...string) {
-	t.Helper()
-	parts := make([]string, 0, len(ids))
-	for _, id := range ids {
-		parts = append(parts, qblLine(id, "open"))
-	}
-	if err := os.WriteFile(filepath.Join(repo, "fake-list.json"),
-		[]byte("["+strings.Join(parts, ",")+"]"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func qblLost(t *testing.T, repo string) []LostBead {
-	t.Helper()
-	lost, err := LostBeads(testBd(t), repo)
-	if err != nil {
-		t.Fatalf("LostBeads: %v", err)
-	}
-	return lost
-}
 
 // The ledger records a deletion; it must not exempt the id for the life of
 // the repo. `bd import` is the operator's documented next step for the three
@@ -224,47 +156,6 @@ func TestDispatchPassRingsTheBeadLossAlarmUnderDryRun(t *testing.T) {
 // one removal, so one id legitimately carries one record per removal and
 // .beads/deleted.jsonl becomes a real history rather than a set of exempt
 // ids. These pin what that history has to mean.
-
-// qblRecord owns whatever the check currently finds.
-func qblRecord(t *testing.T, repo string) {
-	t.Helper()
-	lost := qblLost(t, repo)
-	if len(lost) == 0 {
-		t.Fatal("setup: nothing to record")
-	}
-	if err := RecordDeletions(repo, "owned", "qa", lost, time.Now()); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func qblLedgerLines(t *testing.T, repo string) []string {
-	t.Helper()
-	b, err := os.ReadFile(beadsPath(repo, beadsDeleted))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var out []string
-	for _, l := range strings.Split(string(b), "\n") {
-		if strings.TrimSpace(l) != "" {
-			out = append(out, l)
-		}
-	}
-	return out
-}
-
-func qblWriteLedger(t *testing.T, repo string, lines []string) {
-	t.Helper()
-	if err := os.WriteFile(beadsPath(repo, beadsDeleted), []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func qblRedirect(t *testing.T, repo, target string) {
-	t.Helper()
-	if err := os.WriteFile(filepath.Join(repo, beadsDirName, beadsRedirect), []byte(target+"\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-}
 
 // One cycle is what rangerhq-6he5 was filed about; the contract is every
 // cycle. `bd import` is a repeatable operator move, so lose/restore/lose can

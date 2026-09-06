@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // Pins for ranger-base-rq83c: the launch pins CLAUDE_CONFIG_DIR and

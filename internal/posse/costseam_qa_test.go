@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // QA pin for the leg of the cost seam that used to have no consumer

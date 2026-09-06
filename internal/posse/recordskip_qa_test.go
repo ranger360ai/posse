@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // QA pins for the ADR 0013 §4 record stage (ranger-base-6jz): what a pass

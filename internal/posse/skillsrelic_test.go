@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // ranger-base-f6hiy: the post-cutover relic. A launch of developer on codex

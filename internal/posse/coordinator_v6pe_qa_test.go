@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // rangerhq-v6pe / rangerhq-c6u6: Route's coordinator refusal must hold for

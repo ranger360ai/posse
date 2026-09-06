@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // ranger-base-179hy — the credential-dir refusal on the OTHER launch path.

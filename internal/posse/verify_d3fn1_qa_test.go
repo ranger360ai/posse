@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // What survived the attack on four closes (ranger-base-d3fn1), kept runnable.

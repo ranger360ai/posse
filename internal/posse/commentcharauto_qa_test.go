@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // `core.commentChar=auto` IS A THIRD ANSWER, AND THE MESSAGE ARM ONLY HAS

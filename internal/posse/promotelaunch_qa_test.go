@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // ADR 0015 §3's launch verify, at the two launches that differ: a dispatched

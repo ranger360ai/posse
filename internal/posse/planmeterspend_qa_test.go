@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // QA pins for the meter that goes silent exactly when the fleet is most

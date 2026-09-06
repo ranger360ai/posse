@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // QA pins filed verifying four closes (verify bead ranger-base-uqslx):

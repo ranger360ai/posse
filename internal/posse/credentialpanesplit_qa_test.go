@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // Pins for ranger-base-r68d8: the seatbelt's credential read-deny is

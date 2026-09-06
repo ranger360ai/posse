@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // ADR 0019 D1's one-hand rule, as tests: everything under envs/ may reach a

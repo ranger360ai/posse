@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // The mode a session starts in is a LAUNCH fact (rangerhq-qs5r). Nothing on

@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // ADR 0033 §1–2 — the coordinator is not a lane: dispatch never hires the

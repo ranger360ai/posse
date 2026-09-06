@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // ranger-base-ewq9 is CLOSED with the decision that landThePlane's

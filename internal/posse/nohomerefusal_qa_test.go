@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // ranger-base-58b5's fifth site, ruled REFUSE by the operator on

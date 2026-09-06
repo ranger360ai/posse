@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // ADR 0012 D2 (rangerhq-icb3): the harness's headline feature must be

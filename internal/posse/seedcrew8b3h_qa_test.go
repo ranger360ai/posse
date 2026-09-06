@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // ranger-base-8b3h, verifying ranger-base-qajs. The fresh-install half of

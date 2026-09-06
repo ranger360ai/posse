@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // ranger-base-av446, verifying the close of ranger-base-v62hj.

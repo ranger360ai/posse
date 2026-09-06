@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // ranger-base-cwu7: every bd invocation posse makes goes out `--no-daemon`.

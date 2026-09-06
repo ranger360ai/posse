@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // ranger-base-fvfve: the THIRD reader of the class ranger-base-gs9r opened —

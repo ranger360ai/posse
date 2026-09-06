@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // THE REMEDY DID NOT FIT THE MODES THAT KEEP GIT'S TEMPLATE (ranger-base-b21e0,

@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // Live pin for ranger-base-23oo, run against the real bd rather than the

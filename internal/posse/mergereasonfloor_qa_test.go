@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // QA, ranger-base-xndgk FINDING 2 (verifying ranger-base-eq3ba's close).

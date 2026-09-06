@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // THE CUT COULD BE FORGED BY THE WRITER, AND THE CLASS BELOW IT LANDED

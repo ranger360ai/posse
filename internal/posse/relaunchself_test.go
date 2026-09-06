@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // A session cannot relaunch ITSELF, on either arm (ranger-base-521). The

@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // QA pin filed while verifying the close of ranger-base-5qe6 under

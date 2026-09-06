@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // The argv0 launcher (rangerhq-1k1). The claim under test is the one the

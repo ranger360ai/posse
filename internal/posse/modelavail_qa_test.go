@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // ranger-base-7vp — verifying the close of rangerhq-oay (the tier

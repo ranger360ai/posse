@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // QA pins for the second-store sweep (ranger-base-dj3k2, ADR 0012 D3, the

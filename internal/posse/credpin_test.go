@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // The endpoint pin (ranger-base-17i): posse hands the account's OAuth token

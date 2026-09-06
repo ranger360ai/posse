@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // ADR 0028 §2 — the epoch: the wall-clock window `budget_pass:` and `-n` are

@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // QA pin for the landing sweep's THIRD answer (ranger-base-gs9j, verifying

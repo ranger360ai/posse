@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // The PLANTED POSITIVE CONTROL for the load guard's orphan report

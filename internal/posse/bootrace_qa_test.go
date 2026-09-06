@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // QA pins for the rangerhq-3hb5 readiness gate (rangerhq-708f).

@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // ranger-base-n27xv: ADR 0058 D1/D2 — the landing sweep retires a session

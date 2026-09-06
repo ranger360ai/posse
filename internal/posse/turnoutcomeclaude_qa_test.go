@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // QA pins for claude's half of the turn_outcome: registry, in two halves —

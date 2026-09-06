@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // ADR 0031 §2–3: `posse init` joins the operator fence, keyed on the target

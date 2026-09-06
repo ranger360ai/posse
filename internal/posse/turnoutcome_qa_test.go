@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // QA pins for the ADR 0013 §1 settle stage's DECLARED half (ranger-base-02zr):

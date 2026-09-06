@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // ranger-base-09b7: the L1 half of the commit wall never reached the SEED.

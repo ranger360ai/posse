@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // ranger-base-ufdy (verifying ranger-base-d4ya / ranger-base-ig1o): the tree

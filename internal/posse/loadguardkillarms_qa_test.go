@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // QA pins for the two load-guard arm-2 behaviours that ranger-base-gvp2p's

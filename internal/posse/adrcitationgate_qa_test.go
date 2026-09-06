@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // THE COMMIT PATH HAS NO ADR CITATION CHECK, and these pins are what stops

@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // QA pins for the account stage's one answer (ranger-base-0lg6).

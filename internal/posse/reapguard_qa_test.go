@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // QA pins for the ADR 0013 §4 reap guard (ranger-base-6jz): a session whose

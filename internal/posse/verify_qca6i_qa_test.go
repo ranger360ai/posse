@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // QA pins from verify bead ranger-base-qca6i, measured against the close of

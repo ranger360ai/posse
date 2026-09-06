@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // The pin for execwrite.go. The defect is a WINDOW, not a value, so every arm

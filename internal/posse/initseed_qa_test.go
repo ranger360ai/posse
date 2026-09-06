@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // QA pins for the seed source (`posse init`, ADR 0012 D5), from the verify of

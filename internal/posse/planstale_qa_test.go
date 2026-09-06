@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // QA pins for meter blindness being LOUD (ranger-base-lpoui, the operator's

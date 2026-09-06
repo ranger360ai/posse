@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // ranger-base-vavx2: the pass-start landing sweep asked `<base>..<branch>`

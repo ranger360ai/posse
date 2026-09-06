@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // QA pin for the bd pin bump 0.49.1 -> 0.50.3 (ranger-base-yeg1 step 2,

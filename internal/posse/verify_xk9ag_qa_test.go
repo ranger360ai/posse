@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // TWO PINS ADDED VERIFYING ranger-base-xk9ag, one per close whose

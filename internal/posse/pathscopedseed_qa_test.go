@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // ranger-base-ccd: ADR 0014's grammar, applied to the example PIDs.

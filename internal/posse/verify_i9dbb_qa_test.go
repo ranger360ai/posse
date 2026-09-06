@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // QA pins written verifying four folded closes under ranger-base-i9dbb
@@ -206,7 +208,13 @@ func TestQAL0ModelDoesNotCallThePrefixFormALiteralStringPrefix(t *testing.T) {
 		witness string
 	}{
 		{[]string{"internal", "posse", "gates.go"}, "L0Spellings widens"},
-		{[]string{"internal", "posse", "gates_test.go"}, "claudeDenyMatch models"},
+		// claudeDenyMatch moved to gates_helpers_test.go when the suite was
+		// split into build-tag arms (ranger-base-qp1hm) — the helpers of a
+		// tagged file go to an untagged companion so every arm compiles
+		// them. The witness below is what caught the move: it named the file
+		// the text had left and failed loudly rather than reading an empty
+		// body and passing. Keep the pair that way.
+		{[]string{"internal", "posse", "gates_helpers_test.go"}, "claudeDenyMatch models"},
 		{[]string{"NOTES.md"}, "L0Spellings"},
 	}
 	for _, s := range sites {

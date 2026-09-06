@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // ranger-base-x5f6p — the seatbelt credential read-deny follows the file.

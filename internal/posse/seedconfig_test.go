@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // The seed config (examples/config.yaml) is what `posse init` copies verbatim

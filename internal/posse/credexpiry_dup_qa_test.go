@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // QA pins for the expiry surfaces' hostile inputs, from the verify pass on

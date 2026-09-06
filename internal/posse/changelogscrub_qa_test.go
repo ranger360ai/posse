@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // QA pin for ranger-base-5356: the public disclosure entry stays inside the

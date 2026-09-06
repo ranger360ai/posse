@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // QA pins for the refusals fold (ADR 0025 §4, refusalfold.go), filed while

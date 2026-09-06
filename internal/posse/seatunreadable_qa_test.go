@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // ranger-base-3yqyg: the THIRD door onto one double-seating.

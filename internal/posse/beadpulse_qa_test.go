@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // QA pins for the shop pulse (ranger-base-dwlb1): the arithmetic behind the

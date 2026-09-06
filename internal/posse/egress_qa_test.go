@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // QA pins for rangerhq-nc6y (close of rangerhq-9d0). The hermetic suite in

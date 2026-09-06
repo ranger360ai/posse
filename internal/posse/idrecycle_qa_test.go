@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // rangerhq-6bbz: herdr's workspace-id allocator is max(live id)+1, recomputed

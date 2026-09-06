@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // rangerhq-mgvx: the governance surface must stay honest when the thing it

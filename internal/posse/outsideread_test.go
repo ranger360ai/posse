@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // What these pin (ranger-base-d3fwo): claude 2.1.258 asks, once per config

@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // The bd half of the L1 shim's option-aware verb match (ranger-base-3bqn).

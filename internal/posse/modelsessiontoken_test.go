@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // The catalog probe's credential (ADR 0039 D3d, ranger-base-mvrke).

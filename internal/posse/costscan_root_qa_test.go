@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // ADR 0018 §3 — "the degraded brake must itself be honest" — at the three

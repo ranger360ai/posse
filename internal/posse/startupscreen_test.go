@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // Startup screens, retired (rangerhq-6723). grok opened on a splash our

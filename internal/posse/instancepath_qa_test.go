@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // QA pin for ranger-base-l9ii (rule revised on ranger-base-nhvr, routing

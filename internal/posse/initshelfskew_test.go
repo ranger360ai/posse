@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // ranger-base-788w: the retirement's LAST gate was still judged against the

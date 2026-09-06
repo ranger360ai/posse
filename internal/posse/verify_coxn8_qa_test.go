@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // Verifying ranger-base-hgzv's close (ranger-base-coxn8).

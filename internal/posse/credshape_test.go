@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // The keychain item is present, readable, and valid JSON of a shape posse

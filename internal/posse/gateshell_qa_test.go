@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // QA pin written verifying ranger-base-92n5p's close under ranger-base-vd5nl.

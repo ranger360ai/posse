@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // QA's adversarial half of the link-count guard (ranger-base-9hfgb, verified

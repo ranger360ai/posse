@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // The REAL-line audit (ranger-base-urnj) — see gateaudit.go's file doc for

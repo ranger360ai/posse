@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // ADR 0014 §4 at the mount layer — ranger-base-yu5. `parity.go` has printed

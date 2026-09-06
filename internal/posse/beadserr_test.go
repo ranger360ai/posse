@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // bd reports a --json verb's failure on STDOUT, not stderr (rangerhq-aas):

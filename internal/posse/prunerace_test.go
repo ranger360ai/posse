@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // rangerhq-3a5t: the prune's unlink and the session-meta write share the

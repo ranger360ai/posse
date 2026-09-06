@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // Live pin for rangerhq-ybec: the length at which a typed launch is lost.

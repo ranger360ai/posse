@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // ranger-base-b22vq. ADR 0039 D2 (ranger-base-ight8) added `runtimes` to

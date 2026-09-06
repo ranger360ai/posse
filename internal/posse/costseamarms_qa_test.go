@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // QA pins for the two arms of the ranger-base-8tut fix that its own

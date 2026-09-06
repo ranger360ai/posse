@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // QA's adversarial half of rangerhq-6so's live pin (rangerhq-pafo).

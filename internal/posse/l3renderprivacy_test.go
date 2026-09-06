@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // ADR 0023 Decision 2 rests on WHERE the launcher's own render sits between

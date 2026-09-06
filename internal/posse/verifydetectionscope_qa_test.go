@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // ranger-base-53w1 fixed WHICH manifest scripts/verify-detection.sh replays

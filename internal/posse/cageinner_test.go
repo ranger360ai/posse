@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // L1/L3 inside the cage, the mount boundary and `sockets:` (ADR 0002 §3 as

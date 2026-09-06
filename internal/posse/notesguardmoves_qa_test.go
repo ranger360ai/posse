@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // A move of NOTES.md out of the shared checkout is a FAMILY of forms, and

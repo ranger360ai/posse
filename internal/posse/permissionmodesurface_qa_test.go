@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // The SURFACE half of ranger-base-vwgt: what `posse list` and `posse gates

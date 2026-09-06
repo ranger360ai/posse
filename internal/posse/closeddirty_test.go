@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // ranger-base-tc2pp — ADR 0041 §1–§2: a close that leaves uncommitted paths

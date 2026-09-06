@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // Pin for ranger-base-x5cbz: the seatbelt's credential read-deny named

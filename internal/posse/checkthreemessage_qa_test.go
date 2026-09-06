@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // CHECK 3 HAS A THIRD SUBJECT: THE COMMIT MESSAGE (ADR 0024 D2 check 3 and

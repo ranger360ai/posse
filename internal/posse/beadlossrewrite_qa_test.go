@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // ranger-base-6mbz: sameRemoval (ranger-base-ntsz) covers a record whose

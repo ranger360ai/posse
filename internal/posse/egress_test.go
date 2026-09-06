@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // L4 egress (rangerhq-9d0): the allowlist rendered from the PID, the route

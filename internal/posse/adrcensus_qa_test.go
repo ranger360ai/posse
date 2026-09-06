@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // `posse gates adr-census` (ranger-base-gyrko): ADR 0051's predicate run

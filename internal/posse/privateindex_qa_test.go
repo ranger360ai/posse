@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // QA, rangerhq-705k — verifying the close of rangerhq-cqq1 (the private-index

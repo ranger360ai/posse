@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // The boot race (rangerhq-3hb5): herdr answers `idle` for a pane it has

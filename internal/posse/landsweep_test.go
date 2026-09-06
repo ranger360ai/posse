@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // QA pins for the landing sweep (ranger-base-nurl), one per clause of the

@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // ADR 0030 §1's tiebreak is a CONJUNCTION, and ranger-base-uco3m measured

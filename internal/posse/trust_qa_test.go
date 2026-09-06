@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // QA pin for ranger-base-5qnt (found verifying ranger-base-s83 / rangerhq-w4uf).

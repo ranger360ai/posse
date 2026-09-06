@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // QA pins for ranger-base-htafy: an idle agent with live background work,

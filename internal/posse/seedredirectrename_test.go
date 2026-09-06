@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // ranger-base-aojiu, fixing ranger-base-d14e1: seedBeadsRedirect must never

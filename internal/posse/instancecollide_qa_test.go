@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // ranger-base-rcwx (the escape filed against rangerhq-ouf9's close, found by

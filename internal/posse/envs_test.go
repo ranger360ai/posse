@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // storeContained is storeName's other half: the guard on the NAME does not

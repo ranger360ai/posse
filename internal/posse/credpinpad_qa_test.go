@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // QA, ranger-base-2lr90 — verifying the `not doing` close of ranger-base-00a0

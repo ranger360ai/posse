@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // ADR 0030 (bead ranger-base-um9a, discovered from ranger-base-adb7 via

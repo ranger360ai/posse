@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // Live probe for rangerhq-ouf9: does herdr tolerate the instance separator

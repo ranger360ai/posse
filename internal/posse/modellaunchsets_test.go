@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // The LAUNCH's env sets reach the catalog probe (ADR 0039 D3d as amended,

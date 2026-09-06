@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // rangerhq-ydfw / the close of rangerhq-1xsj: grok's startup_splash is idle

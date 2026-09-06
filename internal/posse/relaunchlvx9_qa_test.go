@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // rangerhq-lvx9 — verifying rangerhq-9jk1. The delivered pins walk the

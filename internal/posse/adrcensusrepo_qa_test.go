@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // The fixture `posse gates adr-census` is measured over: a walled repo whose

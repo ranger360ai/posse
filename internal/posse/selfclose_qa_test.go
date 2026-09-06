@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // ranger-base-hslbb: a process does NOT survive closing the workspace its own

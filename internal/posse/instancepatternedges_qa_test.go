@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // THE EDGES OF CHECK 3'S CONTENT AND PATH ARMS FOR AN INSTANCE PATTERN (ADR

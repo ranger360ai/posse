@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // ADR 0033 §2 authorizes on identity, but Route compares the raw assignee

@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // QA pins for scripts/queue-cutover.sh (ADR 0015 §4, ranger-base-tjfw,

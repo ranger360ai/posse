@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // Filed verifying ranger-base-t8tq's close (ranger-base-ogzh). That close

@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // ranger-base-stbt (verify of rangerhq-tr8k): ADR 0012 D4's `state_dir:` is

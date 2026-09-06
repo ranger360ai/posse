@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // QA pins on `posse promote` and ADR 0015 §3's invariant — "the promoted

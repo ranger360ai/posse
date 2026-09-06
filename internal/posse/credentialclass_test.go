@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // ADR 0019 P7 (bead rangerhq-pwpx): the plan guard's credential failures are

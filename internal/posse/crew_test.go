@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // ADR 0008 (bead rangerhq-b3p): a crew session is one the operator talks

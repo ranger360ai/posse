@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // Live pin for ranger-base-rq83c, run against the real claude rather than a

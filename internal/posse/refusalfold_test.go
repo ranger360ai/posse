@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // Hermetic tests for the fold itself (ADR 0025 §4, refusalfold.go). No

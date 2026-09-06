@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // The 401 that names the expiry it read (bead ranger-base-4poib).

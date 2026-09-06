@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // THE MESSAGE ARM READ EVERYTHING BELOW THE SCISSORS LINE

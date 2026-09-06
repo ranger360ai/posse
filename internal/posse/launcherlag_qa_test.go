@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // ranger-base-z3hx6 / ranger-base-pju9t — the eight-hour install lag,

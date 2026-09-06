@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // ranger-base-ifjgm: a seat that stays BUSY after its session is gone.

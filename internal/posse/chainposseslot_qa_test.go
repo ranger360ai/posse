@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // QA, ranger-base-hd56 — the other half of ranger-base-q32o's shape: the

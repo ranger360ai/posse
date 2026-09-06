@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 // QA pins for the SENTENCES ranger-base-emgdb added, built by the verify of
 // that close (ranger-base-9yje2).
 //

@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // verify-after (ADR 0006 §3, rangerhq-8q3) over the same fake bd substrate
@@ -6,7 +8,6 @@ package posse
 // bd-calls.log.
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,48 +15,6 @@ import (
 	"testing"
 	"time"
 )
-
-// vaRepo points config `beads:` at a fresh repo holding a canned `bd list
-// --all` answer, plus any extra config lines.
-func vaRepo(t *testing.T, a *App, list string, cfg ...string) string {
-	t.Helper()
-	repo := t.TempDir()
-	os.WriteFile(filepath.Join(repo, "fake-list.json"), []byte(list), 0o644)
-	conf := "beads:\n  - " + repo + "\n" + strings.Join(cfg, "\n")
-	os.WriteFile(a.ConfigPath, []byte(conf+"\n"), 0o644)
-	return repo
-}
-
-// vaDependents sets what `bd dep list <id> --direction=up` answers.
-func vaDependents(t *testing.T, repo, json string) {
-	t.Helper()
-	os.WriteFile(filepath.Join(repo, "fake-dependents.json"), []byte(json), 0o644)
-}
-
-func closedList(id, labels, closedAt string) string {
-	return closedListReason(id, labels, closedAt, "Closed")
-}
-
-// closedListReason is closedList with the close_reason spelled out — the
-// field the rejection exemption reads (ranger-base-skgs).
-func closedListReason(id, labels, closedAt, reason string) string {
-	return `[{"id":"` + id + `","title":"gate shell live","status":"closed","priority":1,` +
-		`"assignee":"developer","labels":` + labels + `,"closed_at":"` + closedAt +
-		`","close_reason":` + fmt.Sprintf("%q", reason) + `}]`
-}
-
-// vaRun runs one sweep and returns (filed, stdout, stderr).
-func vaRun(t *testing.T, a *App, bd Bd) (int, string, string) {
-	t.Helper()
-	var out, errb strings.Builder
-	n := a.VerifyAfter(bd, a.BeadsDirs(), &out, &errb)
-	return n, out.String(), errb.String()
-}
-
-func testBd(t *testing.T) Bd {
-	t.Helper()
-	return Bd{Bin: fakeBinFor(t, "bd")}
-}
 
 // The first sweep of a repo files nothing and seeds the watermark: before a
 // first pass there is no "since the last pass", and answering a repo's whole
@@ -770,15 +729,6 @@ func TestVerifiedSourcesIndexesQaBeadsOnly(t *testing.T) {
 // once per batch. What these pin is that the division is exact: every close
 // in a batch is named, commented and dedupeable on its own.
 
-// vaClosed is one closed `-l code` bead for a canned `bd list --all` answer.
-func vaClosed(id string, closedAt time.Time, prio int) string {
-	return fmt.Sprintf(`{"id":%q,"title":"gate shell %s","status":"closed","priority":%d,`+
-		`"assignee":"developer","labels":["code"],"closed_at":%q,"close_reason":"Closed"}`,
-		id, id, prio, closedAt.Format(time.RFC3339Nano))
-}
-
-func vaList(beads ...string) string { return "[" + strings.Join(beads, ",") + "]" }
-
 // N closes, ONE verify bead: it names every close in its title, carries a
 // section per close in its description, and `verify filed: <qid>` goes back
 // on all N. The priority is the batch's most urgent close — a P0 in the
@@ -1394,30 +1344,6 @@ func TestVerifyBatchSectionsCarryEachCloseOwnCloserAndCommits(t *testing.T) {
 	}
 }
 
-// vaGitRepo makes `dir` a real repo with one commit per message, so
-// verifySection's commit trail is actually emitted. The j8qk table below
-// passes t.TempDir(), which is NOT a repo: gitCommitsFor returns nil there
-// and every byte the commits block writes is invisible to it. This is what
-// makes that block adversarially reachable from a test.
-func vaGitRepo(t *testing.T, dir string, msgs ...string) {
-	t.Helper()
-	qblGit(t, dir, "init", "-q", "-b", "main")
-	qblGit(t, dir, "config", "user.email", "t@example.com")
-	qblGit(t, dir, "config", "user.name", "t")
-	for i, m := range msgs {
-		f := filepath.Join(dir, fmt.Sprintf("f%d.txt", i))
-		if err := os.WriteFile(f, []byte(m), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		mf := filepath.Join(dir, fmt.Sprintf("msg%d.txt", i))
-		if err := os.WriteFile(mf, []byte(m+"\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		qblGit(t, dir, "add", "-A")
-		qblGit(t, dir, "commit", "-q", "-F", mf)
-	}
-}
-
 // The j8qk table, re-run where the commit trail exists (ranger-base-rugy).
 //
 // That table is the close's central claim — "every interpolated field is
@@ -1537,10 +1463,6 @@ func TestVerifyAfterRefusesAnIDThatIsNotAPlainToken(t *testing.T) {
 		t.Errorf("the payload reached a bd invocation — a forged marker for a-2 is now the dedupe of record:\n%s", calls)
 	}
 }
-
-// forgedMarkerProbe is the substring that only appears if a payload made it
-// into something the harness wrote.
-const forgedMarkerProbe = "Verify the close of a-2 ("
 
 // A close whose reason says REJECTED — duplicate, invalid, wontfix — mints no
 // verify bead: it is not a claim about working software, and the QA session
@@ -1773,16 +1695,6 @@ func TestVerifyAfterFilesWhenGitCannotSayWhatACloseShipped(t *testing.T) {
 // that both are exact — including the two negatives, which a
 // missing-substring list cannot say: the closer's name is gone from the
 // trailer, and a class the close did not carry is never manufactured.
-
-// vaClosedClassed is vaClosed with the class fields spelled out: bd's
-// `issue_type` and the label list, which are the two fields ADR 0006 §1's
-// rule reads and the only ones BeadClass looks at.
-func vaClosedClassed(id string, closedAt time.Time, prio int, issueType string, labels ...string) string {
-	ls, _ := json.Marshal(labels)
-	return fmt.Sprintf(`{"id":%q,"title":"gate shell %s","status":"closed","priority":%d,`+
-		`"assignee":"developer","issue_type":%q,"labels":%s,"closed_at":%q,"close_reason":"Closed"}`,
-		id, id, prio, issueType, ls, closedAt.Format(time.RFC3339Nano))
-}
 
 // The trailer, single close: the RECORDED channel first — a finding whose
 // fix runs nothing files no bead at all — then ONE findings bead for the

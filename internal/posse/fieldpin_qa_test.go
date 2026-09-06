@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // Pins for ranger-base-i7cy4 — the command-string FIELD half of the

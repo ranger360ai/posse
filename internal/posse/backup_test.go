@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // `posse backup` (ADR 0036, build bead ranger-base-a0ln0): the archive, the

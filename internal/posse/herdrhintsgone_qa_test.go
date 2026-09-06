@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // ADR 0016's fourth done-when row, for ranger-base-4dxpo: no event

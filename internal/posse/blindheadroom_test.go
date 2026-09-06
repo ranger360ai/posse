@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // The 2026-08-31 incident (ranger-base-c3vqe): the fleet's meter credential

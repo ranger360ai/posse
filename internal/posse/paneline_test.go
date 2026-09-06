@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // The launch line's length (rangerhq-ybec). A command typed into a pane

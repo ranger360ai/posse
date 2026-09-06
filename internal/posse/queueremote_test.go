@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // ADR 0049 as the operator's 2026-09-05 simplification leaves it (bead

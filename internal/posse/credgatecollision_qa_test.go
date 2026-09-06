@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // ranger-base-eupf: a PID that denies the binary the RUNTIME reads and

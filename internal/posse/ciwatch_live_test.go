@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // Live pin for ci-watch (ranger-base-x9e34, ciwatch.go), run against the

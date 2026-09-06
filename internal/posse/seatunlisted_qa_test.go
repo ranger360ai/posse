@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // ranger-base-5kiu4: the OTHER half of ranger-base-6swlr's abstention.

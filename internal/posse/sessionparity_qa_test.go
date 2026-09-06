@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // QA pins for SESSION MANAGEMENT parity across runtimes (ranger-base-fbxg).

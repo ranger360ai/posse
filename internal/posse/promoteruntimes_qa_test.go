@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // ADR 0039 D2 (ranger-base-ight8): `runtimes` joins PromotedPaths, so the

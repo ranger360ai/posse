@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // ADR 0020 §2 — a lane is a set of labels, a seat is a persona, and

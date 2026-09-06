@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // QA pins for docs/runbooks/credential-rotation.md (rangerhq-m10j — the

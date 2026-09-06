@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // QA pins for the escalating 429 backoff (ranger-base-rwwp6, off spike

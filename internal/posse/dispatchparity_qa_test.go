@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // ADR 0013 DISPATCHING, measured once per runtime (ranger-base-unzn).

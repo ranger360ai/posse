@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // ADR 0019 D3 (ranger-base-vmqg): a (runtime, purpose, platform) with no

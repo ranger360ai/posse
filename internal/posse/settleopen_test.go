@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // ranger-base-9hm — a bead that settles open a SECOND time is escalated,

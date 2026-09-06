@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 // QA pin for ranger-base-67mdf over ranger-base-ddivo, built by the verify of
 // ranger-base-f8mqa (ranger-base-9yje2).
 //

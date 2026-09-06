@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // ranger-base-hw18: the read half ranger-base-9fl explicitly set aside.

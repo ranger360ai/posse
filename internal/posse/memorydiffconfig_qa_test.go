@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // QA pin written verifying ranger-base-r5wpk's close under ranger-base-vd5nl.

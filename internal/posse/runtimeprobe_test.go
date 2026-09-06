@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // The ADR 0032 §1 probe contract, pinned where it can be pinned without a

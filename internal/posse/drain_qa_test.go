@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // ranger-base-e9d9: the drain. On 2026-08-30 a `dispatch --watch` loop

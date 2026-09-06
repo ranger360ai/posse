@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // The table in exampledigests.go is posse's record of what posse shipped.

@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // rangerhq-2w1u — verifying rangerhq-i2g9, relaunch's unlink of a meta on a

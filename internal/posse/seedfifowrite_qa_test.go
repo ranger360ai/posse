@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // ranger-base-g5xoy, verifying ranger-base-xc2s4's close: the FIFO class at

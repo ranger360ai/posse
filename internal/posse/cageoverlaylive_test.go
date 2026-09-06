@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // Live pin for ranger-base-yu5 — ADR 0014's verification 3, run against the

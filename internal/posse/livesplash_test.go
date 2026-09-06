@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // Live pin for rangerhq-7sbo / rangerhq-aw9n, narrowed by rangerhq-6723:

@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // QA pins for grok's turn_outcome: reader (ranger-base-fc8go), the second

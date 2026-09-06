@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // ranger-base-rgx0: `seeded` was weaker than it read, and the retirement

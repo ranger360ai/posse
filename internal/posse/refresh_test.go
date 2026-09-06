@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // `posse refresh` (ADR 0019 D4, ranger-base-h207) — the one credential write

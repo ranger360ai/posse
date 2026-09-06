@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // QA pins for rangerhq-be7k: a path-limited commit leaves the index holding a

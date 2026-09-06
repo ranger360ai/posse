@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // The NOTES.md guard (ADR 0022 §3, ranger-base-hokh): the shared-index

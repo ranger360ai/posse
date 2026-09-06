@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // QA pins for the anchor-state line (ranger-base-xevp7, ADR 0015 §3

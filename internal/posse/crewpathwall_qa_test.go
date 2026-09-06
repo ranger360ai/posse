@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // CHECK 3 HAS A FOURTH LITERAL SOURCE, AND IT SCANS ONE SUBJECT: THE CREW

@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // rangerhq-o7y4. Two halves of one rule, ADR 0012 D2 ("persona names become

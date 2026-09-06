@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // ranger-base-k99a: the pulse was the second ungated AgentPrompt caller.

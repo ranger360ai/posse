@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // Filed verifying ranger-base-6ai5's close (ranger-base-ogzh). The fix's own

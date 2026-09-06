@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // Probes filed by QA verifying the close of ranger-base-2y96

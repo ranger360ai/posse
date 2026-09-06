@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // ranger-base-3p0: `posse prompt` typed into a pane herdr had only GUESSED

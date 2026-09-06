@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // ADR 0013 §4 reachability (ranger-base-hxhb, implemented on

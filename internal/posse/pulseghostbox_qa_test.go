@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // QA pins for ranger-base-wr624: the pulse's unsent-box gate false-fired on

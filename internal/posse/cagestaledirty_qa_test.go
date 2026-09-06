@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // ranger-base-b6fh, found verifying ranger-base-nwj7 (ranger-base-7sq9).

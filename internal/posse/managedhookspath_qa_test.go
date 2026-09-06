@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // QA pins for ranger-base-mhrta — ADR 0052 D1, "classify before touching".

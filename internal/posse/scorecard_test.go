@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 import (

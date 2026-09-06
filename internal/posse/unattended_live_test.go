@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // The residual risk rangerhq-qs5r could not close, made loud (rangerhq-beby).

@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // ranger-base-h7cd: `posse init` must not arm ADR 0015 §3 on a home that

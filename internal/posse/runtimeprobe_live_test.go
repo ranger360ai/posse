@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // The live half of `posse runtime probe` — the ADR 0032 verification

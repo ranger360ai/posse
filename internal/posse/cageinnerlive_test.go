@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // Live pin for rangerhq-6so — ADR 0002's verification 8 and 10, run against

@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // ranger-base-qxvh — nothing committed persona memory, so the ORDERS backlog

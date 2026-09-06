@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // QA pin for rangerhq-cmfj / rangerhq-gmnm (verified under rangerhq-o0el).

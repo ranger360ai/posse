@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // ranger-base-3ula, the verify of rangerhq-qfzr: the seatbelt's state grant

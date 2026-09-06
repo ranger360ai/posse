@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // QA pins for ranger-base-6prtx — ADR 0052 D2, "the realizer is a hooks dir

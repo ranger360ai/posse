@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // ranger-base-lpz0o — `bd ready` is not the definition of unblocked, so

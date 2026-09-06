@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // QA pins for rangerhq-74c6 — first live exercise of ADR 0007 binding.

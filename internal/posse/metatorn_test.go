@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // ranger-base-82e40: the FOURTH door onto one double-seating, and the only

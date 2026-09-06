@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // ranger-base-ufdy (verifying the close of ranger-base-h6fx): the test

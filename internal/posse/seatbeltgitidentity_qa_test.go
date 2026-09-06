@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // ADR 0038 (ranger-base-vqyxl, folding ranger-base-65po1): `.git/config`

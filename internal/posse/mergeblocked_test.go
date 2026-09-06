@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // ranger-base-5nf8m: the merge-back handoff is filed by every site that

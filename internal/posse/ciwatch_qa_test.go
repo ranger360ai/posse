@@ -1,3 +1,5 @@
+//go:build posse_arm3
+
 package posse
 
 // ci-watch driven through the REAL dispatch pass rather than through

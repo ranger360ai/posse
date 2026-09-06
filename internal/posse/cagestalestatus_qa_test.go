@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // ranger-base-2asm5, filed while fixing ranger-base-xw51s one function

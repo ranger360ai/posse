@@ -1,3 +1,5 @@
+//go:build !posse_arm2 && !posse_arm3
+
 package posse
 
 // ranger-base-fxs60: the guard clock. MEASURED 2026-09-02 — a `dispatch

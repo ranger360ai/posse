@@ -1,3 +1,5 @@
+//go:build posse_arm2
+
 package posse
 
 // QA suite for the rangerhq-yt1p identity guard (verifying its close,
