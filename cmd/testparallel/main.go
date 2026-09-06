@@ -331,8 +331,12 @@ func main() {
 		// every fork in this binary takes. A parallel sibling's subprocess
 		// answers that question for them — the rig's own "free before the
 		// window" control would read somebody else's fork as our lock — and
-		// two of them HOLD it, for 250ms and for as long as a FIFO stays
-		// unopened, which every other test's fork would then queue behind.
+		// three of them HOLD it: for 250ms, for as long as a FIFO stays
+		// unopened in open(2), and across a 4 MiB write into that pipe —
+		// past the open and for the whole drain. The two FIFO holds are
+		// bounded only by the pin's own cooperation, and on the failure
+		// path by its 5s deadline; every other test's fork queues behind
+		// each of the three.
 		// Serial, they have the process to themselves and cost ~1.5s.
 		"TestUnderForkLockHoldsTheLockForTheWriteAndNoLonger":      "reads and holds the process-wide syscall.ForkLock",
 		"TestUnderForkLockKeepsAConcurrentForkOutOfTheWriteWindow": "reads and holds the process-wide syscall.ForkLock",

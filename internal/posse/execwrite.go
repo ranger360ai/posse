@@ -69,10 +69,11 @@ func underForkLock(write func() error) error {
 // can't reasonably grab the lock across those operations." This function
 // does exactly that, so the hold is only as bounded as the open and the
 // write are, and while it is held no fork in the process can start. An
-// ordinary file on local disk — every call site in this tree — is bounded.
-// A named pipe is not, and that is not theoretical: the pins in
-// execwrite_test.go park this call on a FIFO for as long as they like, both
-// in open(2) and inside write(2). Do not point it at a path that can block.
+// ordinary file on local disk is bounded; a named pipe is not, and that is
+// not theoretical. Every call site in this tree writes an ordinary file
+// except this function's own FIFO pins in execwrite_test.go, which park
+// it on a pipe for as long as they like — deliberately, both in open(2) and
+// inside write(2). Do not point it at a path that can block.
 func WriteExecutable(path string, content []byte, perm fs.FileMode) error {
 	return underForkLock(func() error { return os.WriteFile(path, content, perm) })
 }

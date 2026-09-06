@@ -280,8 +280,11 @@ func TestWriteExecutableHoldsTheLockPastTheOpen(t *testing.T) {
 		t.Fatalf("the FIFO read end would not open (%v) — the parked write still holds ForkLock", err)
 	}
 	// Deferred, not inline: t.Fatal runs defers, so every exit from here on
-	// still drains the writer. The pin above releases inline and a failure
-	// on that path would hang the package instead of reporting.
+	// still drains the writer. The pin above releases in a defer now for the
+	// same reason (ranger-base-ctkhp). What the inline shape cost there was
+	// not a hang — with that pin's 17-byte body the writer is not left
+	// parked once the read end opens — it was the rest of the release and
+	// the ForkLock leak check under it, which the first t.Fatal skipped.
 	defer func() {
 		if _, err := io.Copy(io.Discard, f); err != nil {
 			t.Errorf("draining the FIFO: %v", err)
