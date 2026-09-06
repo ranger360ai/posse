@@ -254,3 +254,74 @@ func TestQAAdrCitationMachineryIsNotInTheRenderedHook(t *testing.T) {
 		}
 	}
 }
+
+// THE BLOCKLIST ABOVE ONLY CATCHES THE REVERT THAT REUSES THE WORDS. Every
+// assertion in this file so far is satisfied by a citation arm grown back
+// under fresh variable names, printing fresh prose and exiting 0 — the pass
+// cells check that the commit LANDS, and adrCitationRefusalMarks checks
+// seven strings the deleted arm happened to spell. Measured, not supposed:
+// mutant E under ranger-base-dclwi re-rendered a `docs/adr` selection plus
+// `git cat-file -e` and `git merge-base --is-ancestor` over every hex token
+// of every staged ADR line, exiting 0 with an "advisory:" line, and all four
+// cells above stayed green.
+//
+// ADR 0051's Decision forbids that arm by the word INVOKE, not by the word
+// refuse: "Committing an ADR must not invoke citation-specific object
+// lookup, ancestry classification or patch-ID equivalence." So this cell
+// reads the render for those three operations by the GIT SUBCOMMANDS that
+// implement them, which a rename cannot move:
+//
+//	ancestry classification   git merge-base   3 in the pre-removal render, 0 now
+//	patch-ID equivalence      git patch-id     3 in the pre-removal render, 0 now
+//	object lookup             git cat-file     3 before, 1 now — and that one
+//	                                           is the constitution guard's
+//	selection                 a docs/adr pathspec on a command line: 1 before, 0 now
+//
+// Object lookup keeps a legitimate caller, so its assertion is an inventory
+// naming that caller rather than a count: a number would license the next
+// one to be added under it (ranger-base-dclwi).
+func TestQAAdrCitationCostIsNotOnTheCommitPathUnderAnyName(t *testing.T) {
+	t.Parallel()
+	render := CommitGuardHook(VisibilityPublic, OpsPatternSet{})
+
+	for _, verb := range []string{"merge-base", "patch-id"} {
+		if strings.Contains(render, verb) {
+			t.Errorf("the commit path invokes `git %s` again — ADR 0051 took citation ancestry and patch-id equivalence off it, and no wall that stayed asks for either (ranger-base-bp0yj)", verb)
+		}
+	}
+
+	// The constitution guard's tree probe: the one object lookup the commit
+	// path is still allowed to make (ADR 0015 §2/§3, ranger-base-ak3e).
+	const constitutionProbe = "posse_cls_base:posse/agents"
+	lookups := 0
+	for _, line := range strings.Split(render, "\n") {
+		if !strings.Contains(line, "git cat-file") {
+			continue
+		}
+		lookups++
+		if !strings.Contains(line, constitutionProbe) {
+			t.Errorf("the commit path looks an object up for something that is not the constitution guard's tree probe — ADR 0051 took citation object lookup off it (ranger-base-bp0yj):\n\t%s", strings.TrimSpace(line))
+		}
+	}
+	// The control, and it is why this is not a blocklist too: without it
+	// every assertion here is satisfied by a render that is the empty
+	// string, which is exactly how this family would go green over a hook
+	// that stopped rendering.
+	if lookups == 0 {
+		t.Errorf("no `git cat-file` in the render at all — the constitution guard's %q probe must be there, or this census matched nothing and proved nothing", constitutionProbe)
+	}
+
+	// And the selection: a citation arm has to name the ADR files before it
+	// can judge them. Comments are excluded because two of the walls that
+	// stayed cite a `docs/adr` path in prose to explain a pathspec flag —
+	// what is forbidden is a COMMAND that selects them.
+	for _, line := range strings.Split(render, "\n") {
+		code := strings.TrimSpace(line)
+		if strings.HasPrefix(code, "#") {
+			continue
+		}
+		if strings.Contains(code, "git ") && strings.Contains(code, "docs/adr") {
+			t.Errorf("a command on the commit path selects the ADR records — ADR 0051 left no reason to name them there (ranger-base-bp0yj):\n\t%s", code)
+		}
+	}
+}
