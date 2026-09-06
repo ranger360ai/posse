@@ -48,8 +48,10 @@ package posse
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -399,5 +401,90 @@ func TestQAArmClassifierRefusesTheWrongShapes(t *testing.T) {
 	_, _, unknown := armClassify([]armFile{{name: "x_test.go", build: "posse_arm4", tests: []string{"TestX"}}})
 	if len(unknown) != 1 {
 		t.Errorf("a file tagged posse_arm4 was not reported as unknown: %v", unknown)
+	}
+}
+
+// ARM 6 — every arm TYPE-CHECKS, its test files included.
+//
+// The five arms above are structural: they read build lines off disk and
+// Makefile text, and every one of them asserts a SILENCE. None of them
+// compiles anything, so all five were green at a main whose arms 1 and 2 did
+// not build at all — ranger-base-gxfd4, out of ranger-base-i469g's verify of
+// the ranger-base-g4s6o landing.
+//
+// The class they missed: an UNTAGGED file — compiled into all three arms —
+// referring to a declaration that only ONE arm provides. Two files did it,
+// against helpers a landing had just moved behind `//go:build posse_arm3`:
+// resolved in arm 3, `undefined:` in arms 1 and 2. The partition was still
+// total, every tag was still one of the three, every arm still had a Makefile
+// line — arms 1 through 5 were all telling the truth. The tree simply did not
+// compile.
+//
+// It is also a class no seat's own green can rule out, which is why it needs
+// a pin rather than care. Each half was a legal partition alone; the two only
+// meet at the landing, and the launcher rebases the bead branch onto main's
+// tip and fast-forwards AFTER the close's suite run — so the tree that lands
+// is not the tree that was measured whenever main moved during the seat's run.
+//
+// `go vet` is the type-check, and the cheapest one that sees test files: it
+// builds the package under the tag it is given, with its `_test.go` files, so
+// an undefined identifier in any arm is a nonzero exit here. It is what `make
+// vet` already runs as three lines — this is the pin and that target is the
+// door, the shape `TestTreeIsGofmtClean` and `make fmt-check` already have.
+//
+// Arms 2 and 3 are the two only this pin can see: `go test ./...`, which is
+// what runs THIS file, builds arm 1 and nothing else. Arm 1 is checked too so
+// that the claim is total and so that a break names its arm here, instead of
+// arriving as a `[build failed]` line beside an `ok` for this package.
+//
+// MUTATION-CHECKED, with both halves of the escape this bead fixed. Deleting
+// `//go:build posse_arm3` from internal/posse/retirekept_qa_test.go reds
+// arm1 and arm2 and leaves arm3 green; putting internal/posse's shared
+// verifybox_qa_test.go back on `containsStr`, which pulse_test.go declares
+// behind `posse_arm3`, reds the same two. Neither mutant moves any of arms
+// 1-5, which is the finding: a build line can be legal and the arm still not
+// exist.
+
+// armGoTool is the `go` this arm shells out to: the one on PATH, else the one
+// beside the GOROOT the running binary was built against. A pin that skipped
+// when it could not find one would be a pin that reports nothing on the box
+// where it matters, so a missing tool is fatal.
+func armGoTool(t *testing.T) string {
+	t.Helper()
+	if p, err := exec.LookPath("go"); err == nil {
+		return p
+	}
+	if p := filepath.Join(runtime.GOROOT(), "bin", "go"); p != "" {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	t.Fatal("no `go` on PATH and none in GOROOT: this arm cannot type-check anything")
+	return ""
+}
+
+func TestQAEverySuiteArmTypeChecks(t *testing.T) {
+	t.Parallel()
+	goBin := armGoTool(t)
+	for a := 1; a <= 3; a++ {
+		t.Run(armTargetName(a), func(t *testing.T) {
+			t.Parallel()
+			args := []string{"vet"}
+			if a != 1 {
+				// arm 1 is the default build and takes no tag; asking for
+				// one by name here would stop measuring the build a bare
+				// `go test ./internal/posse` actually runs.
+				args = append(args, "-tags", armTagFor(a))
+			}
+			args = append(args, "./"+armPkgDir)
+			cmd := exec.Command(goBin, args...)
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Errorf("arm %d does not type-check: `go %s` exited %v.\n"+
+					"A file compiled into this arm names something no file in this arm declares — "+
+					"most often an UNTAGGED file reaching for a helper that lives behind one arm's tag.\n%s",
+					a, strings.Join(args, " "), err, out)
+			}
+		})
 	}
 }
