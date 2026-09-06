@@ -821,8 +821,10 @@ func TestCockpitRenderColours(t *testing.T) {
 // ─── ADR 0004 §2–3: the IN PROGRESS section ─────────────────────────────────
 
 // The holder join reads both session names a claimed bead can live under:
-// its Dial F per-bead session, and the pre-Dial-F persona slot. ADR 0004 §2
-// names only the slot; on a Dial F fleet that alone finds nothing.
+// its Dial F per-bead session, and the pre-Dial-F persona slot. On a Dial F
+// fleet the slot alone finds nothing, which is why ADR 0004 §2's 2026-08-19
+// amendment added the per-bead name. The run record ahead of both is
+// TestQAHolderJoinHeadsWithTheRunRecord (ranger-base-eeg0s).
 func TestCockpitHolderJoin(t *testing.T) {
 	c := fixture()
 	for _, tc := range []struct{ id, want string }{

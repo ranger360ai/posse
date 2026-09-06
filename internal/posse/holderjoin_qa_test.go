@@ -476,8 +476,8 @@ func TestDispatchResumeSlotHeldIdleDoesNotCreateTwin(t *testing.T) {
 // NON-resume path too — rangerhq-zom's "agent gone → the launch
 // creates/relaunches" never said which name, and until now the pass created
 // a Dial F session while cockpit `d` relaunched the slot. One answer on both
-// paths is what ADR 0004 §2's "the same two names" already claims; the leg
-// below is what holds the pass to it.
+// paths is what ADR 0004 §2's holder join already claims; the leg below is
+// what holds the pass to it.
 func TestDispatchResumeSlotAgentGoneDoesNotCreateTwin(t *testing.T) {
 	t.Parallel()
 	for _, leg := range []struct {

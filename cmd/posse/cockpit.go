@@ -1335,24 +1335,38 @@ func (c *cockpit) nextSection() int {
 // answer, which is why the status line says so.
 const noSession = "no session"
 
-// holderSession is the live session working an in-progress bead: its Dial F
-// per-bead session first, then the persona's slot session. As ACCEPTED ADR
-// 0004 §2 named only the slot (SessionFor) — but under Dial F the holder is
-// almost always SessionForBead, so the slot alone would report "no session"
-// for nearly every claimed bead, and §2's 2026-08-19 amendment names both.
-// These are the same two names dispatch checks when it decides whether a
-// bead is held (dispatch.go, the --resume path).
+// holderSession is the live session working an in-progress bead: its own run
+// record first, then its Dial F per-bead session, then the persona's slot
+// session. ADR 0004 §2, as amended 2026-09-06 (ranger-base-eeg0s), names all
+// three, in that order — the same join dispatch's `d` walks (dispatch.go, the
+// --resume path) and the same one ADR 0008's shield reads.
 //
-// What this join does NOT do is head that list with the run record, which
-// ADR 0008's 2026-08-28 amendment and dispatch.go's `d` path (RunHolder)
-// both do: a bead held under neither name pattern — a hand-dispatch that
-// stamped `bead:`, or a crew session handed the bead — reads "no session"
-// here while `d` on the same row finds its holder. Recorded in ADR 0004 §2
-// as a divergence and filed as ranger-base-eeg0s; do not read the two names
-// below as the whole rule.
+// The record heads it for the reason ADR 0011 §3 gives: `bead:` is what
+// dispatch WROTE when it created the session, where a name pattern is a guess
+// that a session which holds this bead would be called this. A hand-dispatched
+// bead (`posse prompt <session>`, stamping via NoteBeadFromPrompt) or one
+// handed to a crew session made by hand matches neither pattern, so the two
+// names alone reported "no session" for exactly the case the amendment was
+// written for — while `d` on the same row found the holder and refused.
+//
+// The arm is RunHolder's own predicate, asked of the sessions already in
+// hand: not foreign (a foreign row carries no record of ours), the record's
+// bead, the persona, and the CHECKOUT rather than the working directory,
+// because a per-session worktree's Dir is not the repo the bead came from
+// (rangerhq-09o2). Under Dial F the holder is almost always SessionForBead,
+// so the slot alone would report "no session" for nearly every claimed bead;
+// both patterns stay behind the record, unchanged.
 func (c *cockpit) holderSession(is posse.RepoIssue) *posse.HerdrSession {
 	if is.Assignee == "" {
 		return nil
+	}
+	if is.ID != "" && is.Dir != "" {
+		for i := range c.sessions {
+			s := &c.sessions[i]
+			if !s.Foreign && s.Bead == is.ID && s.Agent == is.Assignee && s.Checkout() == is.Dir {
+				return s
+			}
+		}
 	}
 	for _, name := range []string{
 		posse.SessionForBead(is.Assignee, is.Dir, is.ID),

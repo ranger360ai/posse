@@ -2779,9 +2779,9 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 		//
 		// The retarget asks only whether a holder is LIVE, never whether an
 		// agent is in it — the same walk LaunchBead does, so ADR 0004 §2's
-		// "the same two names" is one answer on both paths. It is not gated
-		// on --resume either: a holder with an agent that has settled was
-		// skipped above unless the operator asked, so what reaches this line
+		// holder join is one answer on both paths. It is not gated on
+		// --resume either: a holder with an agent that has settled was skipped
+		// above unless the operator asked, so what reaches this line
 		// without --resume is a holder whose agent is GONE, and the zom
 		// contract's "the launch creates/relaunches" is a relaunch in the
 		// session that holds the bead — never a second session beside it
@@ -4433,25 +4433,21 @@ func (d *Dispatcher) LaunchBead(is RepoIssue) (session string, err error) {
 		return "", Die("%s is held by %s, which is not a loadable persona — not dispatched", is.ID, is.Assignee)
 	}
 	// The session `d` acts on must be the session the IN PROGRESS row showed
-	// as holder: the Dial F per-bead session, then — for a bead this persona
-	// already holds — the pre-Dial-F slot. Those are the two names
-	// cockpit.holderSession walks (ADR 0004 §2) and the pair Run's held-bead
-	// check walks. Resolving only the per-bead name left a slot-held bead
-	// unguarded: the working/blocked refusal never fired and the launch
-	// created a SECOND agent on the bead its holder was working
-	// (rangerhq-lwx, same failure class as the rangerhq-zom resume storm).
+	// as holder: the run record, then the Dial F per-bead session, then — for
+	// a bead this persona already holds — the pre-Dial-F slot. That is the
+	// join cockpit.holderSession does (ADR 0004 §2, amended 2026-09-06 under
+	// ranger-base-eeg0s to head with the record, which is what the display
+	// join had been missing) and the names Run's held-bead check walks.
+	// Resolving only the per-bead name left a slot-held bead unguarded: the
+	// working/blocked refusal never fired and the launch created a SECOND
+	// agent on the bead its holder was working (rangerhq-lwx, same failure
+	// class as the rangerhq-zom resume storm).
 	// ADR 0011 §3 puts the record dispatch wrote at the head of that join:
 	// `bead:` says which session was created to work this bead, which is a
 	// fact about the run, where a name pattern is a guess that a session
 	// which exists would be called this. The two patterns stay behind it and
 	// unchanged — a session created before `bead:` landed has no record to
 	// find, and losing it here is how a twin gets launched beside a holder.
-	//
-	// The record head is HERE and not in cockpit.holderSession, so the two
-	// joins are not the same join: a bead held under neither name pattern is
-	// one this function resolves through the record and the row above drew
-	// as `no session` (ADR 0004 §2's divergence paragraph,
-	// ranger-base-eeg0s).
 	var names []string
 	if s, ok := d.HB.RunHolder(is.Dir, persona, is.ID); ok {
 		names = append(names, s.Name)

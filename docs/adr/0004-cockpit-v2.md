@@ -2,9 +2,9 @@
 
 *Status: accepted 2026-08-18 · amended 2026-08-19 (§2 holder join),
 2026-08-23 (§1 display cells, rangerhq-swh), 2026-08-26 (§4 short-terminal
-chrome), 2026-08-29 (§1 holder clip, rangerhq-zag6), 2026-09-06 (§2 the
-run record heads the holder join, and the display join does not read it —
-ranger-base-mqoid / ranger-base-eeg0s) · owner: architect*
+chrome), 2026-08-29 (§1 holder clip, rangerhq-zag6), 2026-09-06 (§2 the run
+record heads the holder join — the display join's divergence recorded by
+ranger-base-mqoid, closed by ranger-base-eeg0s) · owner: architect*
 
 > Restated from the private archive of the instance this harness was
 > developed in; incident citations reference that instance's history.
@@ -67,25 +67,25 @@ as `bd ready` returns it.
 
 An IN PROGRESS row is a bead with `status: in_progress` from every
 `beads:` repo (`Bd.InProgressAll`, `bd list --status in_progress --json`),
-joined to its holder: `SessionForBead(assignee, dir, id)` looked up in
-the live sessions, then `SessionFor(assignee, dir)` as the pre-Dial-F
-fallback — the same two names dispatch's held-bead/`--resume` path
-checks. *(Amended 2026-08-19: as accepted this line named
-only the slot, but under Dial F (ADR 0003) the dispatcher names sessions
-per bead, so the slot alone matches almost nothing live.)* *(Amended
-2026-09-06, ranger-base-mqoid: the join is headed by the RUN RECORD —
-[ADR 0008](0008-crew-sessions.md)'s 2026-08-28 amendment, `bead:` per
-ADR 0011 §3, which says which session was made to work this bead where a
-name pattern only guesses what such a session would be called. The
-cockpit's `d` path does head it that way (`RunHolder` in
-`dispatch.go`); `holderSession`, which draws this section and decides
-what enter/p/v act on, does NOT — it walks the two names above and
-nothing else, so a bead held under neither pattern reads `no session`
-here while `d` on the same row finds its holder. Recorded as the
-divergence it is, not as the rule: ranger-base-eeg0s.)* Columns:
-`id · p · holder · holder-state · age · title · repo`, where
-holder-state is the session's herdr status or `no session` and age is
-since `updated_at` (`3m`, `2h`, `1d`). Ready rows drop in_progress
+joined to its holder: the bead's own run record first (ADR 0011 §3
+`bead:`, matched against the live sessions on persona and checkout as
+`HerdrBackend.RunHolder` does), then `SessionForBead(assignee, dir, id)`
+looked up in the live sessions, then `SessionFor(assignee, dir)` as the
+pre-Dial-F fallback — the same three, in the same order, that dispatch's
+held-bead/`--resume` path and ADR 0008's crew shield walk. *(Amended
+2026-08-19: as accepted this line named only the slot, but under Dial F
+(ADR 0003) the dispatcher names sessions per bead, so the slot alone
+matches almost nothing live. Amended 2026-09-06, ranger-base-eeg0s: and
+the record heads all three. The display join shipped with the two names
+only, so a bead held by a session whose name matches neither pattern —
+the hand-dispatch route stamping via `NoteBeadFromPrompt`, or a crew
+session made by hand and handed the bead — read `no session` in this
+section and `enter`/`p`/`v` acted on nothing, while `d` on the same row
+found that holder through the record and refused. A name is a guess that
+a session holding this bead would be called this; the record is what
+dispatch wrote when it created the session.)* Columns: `id · p · holder · holder-state · age · title · repo`,
+where holder-state is the session's herdr status or `no session` and age
+is since `updated_at` (`3m`, `2h`, `1d`). Ready rows drop in_progress
 beads (today `bd ready` may include them; the cockpit filters — a bead
 appears in one section only).
 
