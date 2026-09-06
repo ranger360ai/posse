@@ -5305,13 +5305,26 @@ func priorMergeBlocked(bd Bd, dir, title string) (priorBlock, error) {
 	if err != nil {
 		return priorBlock{}, err
 	}
+	return blockOf(all, title), nil
+}
+
+// blockOf is the SELECTION half of the read above, over rows somebody else
+// has already fetched. Split out for ADR 0058's kept retire (retire.go),
+// which asks the same question about a branch and must not answer it with a
+// lookalike: that reader visits every tree on the board and holds the label
+// query for the run rather than paying it per tree — a memo it can afford
+// because the sweep's own prunePinnedBlocks already makes exactly this call
+// once per repo per pass, and this way the whole retire adds none.
+//
+// One writer of the rule, two readers of the store.
+func blockOf(all []BdIssue, title string) priorBlock {
 	var p priorBlock
 	for _, b := range all {
 		if b.Title != title {
 			continue // EXACTLY, never a prefix — openTitledBead's E6
 		}
 		if b.Status != "closed" {
-			return priorBlock{ID: b.ID, Open: true}, nil
+			return priorBlock{ID: b.ID, Open: true}
 		}
 		// ClosedAt is what bd records for a close; Updated is the fallback
 		// for a store that did not, and a zero verdict is reported as
@@ -5326,7 +5339,7 @@ func priorMergeBlocked(bd Bd, dir, title string) (priorBlock, error) {
 			p = priorBlock{ID: b.ID, Verdict: when}
 		}
 	}
-	return p, nil
+	return p
 }
 
 // baseOut is Out as the caller handed it in, before Watch teed the loop's

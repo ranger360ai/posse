@@ -252,7 +252,12 @@ func TestRemoveSessionTreeRetiresOnAWhitespaceExactTwin(t *testing.T) {
 					// the clause the listing prints is its answer, not a
 					// lookalike written beside it. A nil herdr cannot make it
 					// past this read while treeHolds has something to say.
-					if got := retireHeldOrAlive(tr, nil); got != held {
+					// nil blockedRecord and nil herdr: this arm is 06y60's
+					// class, which ADR 0058's kept retire is not for
+					// (keptTip refuses a wholly patch-id-measured pairing),
+					// so the predicate must still come back with treeHolds'
+					// own words and nothing else.
+					if _, got := retireHeldOrAlive(tr, nil, nil); got != held {
 						t.Errorf("the retire predicate no longer prints treeHolds: it says %q where treeHolds says %q", got, held)
 					}
 				}

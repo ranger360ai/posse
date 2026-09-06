@@ -1596,6 +1596,76 @@ const blockedPinPrefix = "refs/posse/merge-blocked/"
 // first.
 func blockedPinRef(branch string) string { return blockedPinPrefix + branch }
 
+// retiredTipPrefix is the namespace posse keeps a RETIRED tree's tip under,
+// keyed the way the pin above is and for one reason more (ADR 0058's
+// 2026-09-06 amendment, ranger-base-qz3cr).
+//
+// The class it exists for is the one D4 used to leave to a human: a tree
+// whose commits the base accounts for only by git's `-x` trailer or by an
+// identity match on a replay. Neither is a measurement of what the landing
+// kept — MEASURED 2026-09-06 over the 14 such trees standing here, 16 of
+// their 22 paired commits differ in bytes from the commit that landed them,
+// and every trailer was typed by a persona replaying by hand, because
+// MergeSessionWork writes none — so the pairing is a decision and a decision
+// never licences a delete. That sentence stands. What it does not settle is
+// where the bytes go: the 14 trees had stood up to nine days with seven
+// unrun hand recipes filed against them, and a decayed do-not-land verdict
+// re-files a P1 every time its dedupe window closes.
+//
+// So the tip is written HERE first and the licence is the ref, not anybody's
+// word: `gc` never prunes what a ref reaches and `branch -D` cannot take
+// work a second ref names, so after this write the branch is provably the
+// last copy of nothing and heldByTip says so. refs/posse/ and not
+// refs/heads/ for blockedPinPrefix's reasons, unchanged: nothing should
+// check it out and `git branch -a` must not grow a row per retire.
+//
+// NOTHING PRUNES IT, and that is the whole cost of the record: one
+// packed-refs line per retired tree, no objects added (they are already in
+// the store), and no reader in posse that enumerates it —
+// `git for-each-ref refs/posse/retired --sort=committerdate` is the
+// operator's index and `git update-ref -d` their prune.
+const retiredTipPrefix = "refs/posse/retired/"
+
+// retiredTipRef is where THIS branch's tip is kept when its tree is retired.
+// blockedPinRef's note on escaping applies unchanged: the branch name is
+// already a ref path, so anything refs/heads/ accepted this accepts too.
+func retiredTipRef(branch string) string { return retiredTipPrefix + branch }
+
+// keepRetiredTip writes the branch's tip under retiredTipRef and reads it
+// back, which is the whole of what makes the removal after it safe. "" is
+// written and verified; anything else is the refusal, and a refusal here
+// means NOTHING is removed (ADR 0058's amendment, point 3).
+//
+// THE ORDER IS THE POINT. The ref goes down before `worktree remove`, not
+// after, because a retire that removed first and then failed to write would
+// have taken the only copy of exactly the commits this class is defined by.
+// Read back with rev-parse rather than trusting update-ref's exit status:
+// the claim being made is "a ref now reaches this sha", and the only
+// instrument for that is asking git what the ref resolves to.
+//
+// An existing ref at ANOTHER sha keeps the tree and names both. That is a
+// reopened bead relaunched into the same seat name and retired twice, and
+// overwriting would lose the first tip — the remedy is the operator's
+// `update-ref -d`, so the sentence hands them it.
+func keepRetiredTip(t *SessionTree) string {
+	ref := retiredTipRef(t.Branch)
+	sha, err := git(t.Repo, "rev-parse", "--verify", "--quiet", "refs/heads/"+t.Branch)
+	if err != nil || sha == "" {
+		return fmt.Sprintf("%s's tip cannot be read, so there is nothing to keep at %s and nothing is removed", t.Branch, ref)
+	}
+	if have, err := git(t.Repo, "rev-parse", "--verify", "--quiet", ref); err == nil && have != "" && have != sha {
+		return fmt.Sprintf("%s already holds %s and %s is at %s — nothing is removed, and `git -C %s update-ref -d %s` decides which tip is kept",
+			ref, abbrevSHA(have), t.Branch, abbrevSHA(sha), AbbrevHome(t.Repo), ref)
+	}
+	if _, err := git(t.Repo, "update-ref", ref, sha); err != nil {
+		return fmt.Sprintf("%s could not be written (%s), so nothing here is kept and nothing is removed", ref, gitSaid(err))
+	}
+	if back, err := git(t.Repo, "rev-parse", "--verify", "--quiet", ref); err != nil || back != sha {
+		return fmt.Sprintf("%s did not read back at %s after it was written, so nothing is removed", ref, abbrevSHA(sha))
+	}
+	return ""
+}
+
 // pinBlockedWork makes a blocked branch's work reachable from a ref posse
 // owns, and returns the sha it pinned and the ref it pinned it under. The
 // sha comes back even when the pin does not, because a sha in the bead is
@@ -2327,7 +2397,17 @@ func dirtyPaths(path string) []string {
 // says only that a human decided this landed as that, and a hand resolution
 // can drop a hunk while writing it — so on that evidence the tree is kept,
 // and the refusal says which of the two this is instead of counting shas at
-// the operator. A patch-id match says the base holds this PATCH, which is a
+// the operator. THAT SENTENCE IS STILL THE RULE and the decision is still
+// never the licence; what changed on 2026-09-06 is that there is now a
+// second way for the tip to stop being the last copy of anything, and it is
+// not evidence about the base at all. ADR 0058's amendment has the retire
+// write the branch tip to refs/posse/retired/<branch> under the launcher
+// lock FIRST (keepRetiredTip), and heldByTip then answers off that ref: a
+// commit a ref posse owns reaches is held by something other than this
+// branch, whatever anybody decided about its landing. So this refusal is
+// what a HAND caller still reads over that class — nothing writes the ref
+// for them — and the class stopped being one nothing in posse would ever
+// take. A patch-id match says the base holds this PATCH, which is a
 // weaker statement than it reads as: `git patch-id` normalises whitespace,
 // so a resolution that only re-indented is "equivalent" while the bytes
 // differ (ranger-base-x8jp). What licenses `branch -D` is both halves — every
@@ -2336,6 +2416,8 @@ func dirtyPaths(path string) []string {
 // history holding the branch's blob for every path it touched
 // (contentNotOnBase), or every commit ahead having a whitespace-exact
 // patch-id twin among the base's own commits (`git patch-id --verbatim`).
+// A third licence, and the only one that is not a reading of the base:
+// retiredTipRef already reaching the tip (above).
 // Asked as one question, in baseHoldsBytes, whose doc says why the second
 // exists — the blob walk alone covered NONE of the class this guard's
 // unattended caller was written for (ADR 0058's 2026-09-06 amendment). (The
@@ -2475,8 +2557,8 @@ func removalTips(t *SessionTree) []removalTip {
 // heldByTip is RemoveSessionTree's refusal asked of ONE tip: nil when this
 // tip is the last copy of nothing, and the refusal itself when it is not.
 // redundant is the licence to force the ref away — every commit measured by
-// patch-id AND the base holding the bytes — and it is only ever true of a
-// tip nothing would lose.
+// patch-id AND the base holding the bytes, or a ref posse owns already
+// reaching this tip — and it is only ever true of a tip nothing would lose.
 func heldByTip(t *SessionTree, tip removalTip) (redundant bool, err error) {
 	n, err := git(t.Repo, "rev-list", "--count", t.Base+".."+tip.ref)
 	if err != nil {
@@ -2484,6 +2566,25 @@ func heldByTip(t *SessionTree, tip removalTip) (redundant bool, err error) {
 	}
 	if n == "0" {
 		return false, nil
+	}
+	// THE ONE ARM THAT IS NOT ABOUT THE BASE (ADR 0058's 2026-09-06
+	// amendment, ranger-base-qz3cr). Everything below asks whether the BASE
+	// accounts for these commits, and answers no for the class that class is
+	// defined by — a landing recorded by git's `-x` trailer or paired by
+	// identity, which is somebody's decision and not a measurement of what
+	// it kept. This asks a different question: is anything OTHER than this
+	// tip already keeping these commits? A ref under retiredTipPrefix is,
+	// and it is posse's own, written under the launcher lock immediately
+	// before the removal that reads it here (keepRetiredTip). So the licence
+	// is the ref and never the decision — which is exactly what the
+	// amendment decided and what every sentence below still says.
+	//
+	// It is asked of EACH tip and not of the tree, so v2rj7's shape is kept
+	// unchanged: a worktree HEAD holding a commit its branch does not reach
+	// is not reachable from a ref written at the branch tip, so this arm is
+	// silent about it and the refusal below is the answer.
+	if reaches(t.Repo, retiredTipRef(t.Branch), tip.ref) {
+		return true, nil
 	}
 	eq := equivalentOnBase(t.Repo, t.Base, tip.ref)
 	switch {

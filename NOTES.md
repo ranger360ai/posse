@@ -6377,9 +6377,11 @@ would be lost, and it stays the two-command hand recipe that refusal prints,
 typed at one tree by somebody who has just read why.
 
 The plain listing says the same verdict without acting: a third line per tree
-that reads `retirable — the next pass takes it`, or `kept: <the fact>`, or —
-for a tree no bead record accounts for — ADR 0006's sentence, because that
-tree is not the predicate's population at all and no pass will ever take it.
+that reads `retirable — the next pass takes it` — `…, keeping N commit(s) at
+refs/posse/retired/<branch>` where the retire is the amendment's kept one —
+or `kept: <the fact>`, or — for a tree no bead record accounts for — ADR
+0006's sentence, because that tree is not the predicate's population at all
+and no pass will ever take it.
 It replaces `a human can retire the tree`, which every one of these surfaces
 used to end with and which nobody had ever acted on.
 

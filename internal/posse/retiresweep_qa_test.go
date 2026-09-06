@@ -194,6 +194,10 @@ func TestSweepRetiresADeadLandedTreeAndNamesEveryFactThatKeepsOne(t *testing.T) 
 		// grace is transient and silent; a keep the sweep already spoke
 		// about in a landing line is not said twice (ADR 0058 D2).
 		line bool
+		// keptAt is ADR 0058's 2026-09-06 amendment: this retire keeps the
+		// branch tip at refs/posse/retired/<branch> and the ref must be
+		// there, at that exact sha, when the tree is gone.
+		keptAt bool
 		// landSays is what the sweep prints INSTEAD of a keep line, on an
 		// arm where the LANDING half speaks about this tree first and `said`
 		// therefore swallows the keep. Set it and `line` must be false: one
@@ -230,18 +234,35 @@ func TestSweepRetiresADeadLandedTreeAndNamesEveryFactThatKeepsOne(t *testing.T) 
 		says: []string{"has uncommitted work", "scratch.txt"},
 		line: true,
 	}, {
-		// Fact 2, the 13 trees the census leaves to a human: the base holds
-		// a commit carrying git's `-x` trailer for this one, which is
-		// somebody's DECISION that it landed and not a measurement of what
-		// the landing kept (ranger-base-as19).
-		name: "a commit whose landing is only a -x trailer keeps the tree",
+		// Fact 2, the 13 trees the 2026-09-05 census left to a human: the
+		// base holds a commit carrying git's `-x` trailer for this one,
+		// which is somebody's DECISION that it landed and not a measurement
+		// of what the landing kept (ranger-base-as19).
+		//
+		// IT USED TO KEEP AND NOW IT RETIRES, which is the whole of ADR
+		// 0058's 2026-09-06 amendment (ranger-base-qz3cr) and the one row
+		// D4 lost. The decision is still no licence — what licenses is the
+		// tip being kept at refs/posse/retired/<branch> first, so the
+		// removal takes nothing at all. keptAt asserts the ref really is at
+		// the tip that was there before the pass: a retire that removed
+		// first and wrote after, or wrote nothing, is a lost commit and the
+		// line about it would read exactly the same.
+		//
+		// The rest of the class — an open block, a verdict the branch has
+		// moved past, a refused ref — is retirekept_qa_test.go's, over
+		// fixtures this table has no field for.
+		name: "a commit whose landing is only a -x trailer retires with its tip kept",
 		setUp: func(t *testing.T, d *Dispatcher, repo string, tr *SessionTree) {
 			commitOldIn(t, tr.Path, "adr.md", "status: accepted\n", "a-1: the fix")
 			sha := mustGit(t, tr.Path, "rev-parse", "HEAD")
 			commitOldIn(t, repo, "adr.md", "status: accepted (reworded)\n",
 				"a-1: the fix, by hand\n\n(cherry picked from commit "+sha+")")
 		},
-		says: []string{"holds 1 commit(s)"},
+		retire: true,
+		keptAt: true,
+		says: []string{"its bead is closed", "session gone",
+			"its 1 commit(s) main accounts for only by git's own -x trailer are kept at refs/posse/retired/",
+			"compare `git log main..refs/posse/retired/"},
 	}, {
 		// Verification 3, and the reason this bead waited on
 		// ranger-base-v2rj7: `main..<branch>` is ZERO here while the tree's
@@ -327,9 +348,10 @@ func TestSweepRetiresADeadLandedTreeAndNamesEveryFactThatKeepsOne(t *testing.T) 
 				c.post(t, tr)
 			}
 			head, _ := workHead(tr)
+			branchTip := refSHA(tr.Repo, "refs/heads/"+tr.Branch)
 
 			grace := d.App.graceAfter("retire_tree_after", DefaultRetireTreeAfter, d.errWriter())
-			v := retirable(tr, status, d.HB, grace)
+			v := retirable(tr, status, newBlockedRecord(d.Bd), d.HB, grace)
 			if v.retire != c.retire {
 				t.Errorf("retirable = %+v, want retire=%v", v, c.retire)
 			}
@@ -395,6 +417,20 @@ func TestSweepRetiresADeadLandedTreeAndNamesEveryFactThatKeepsOne(t *testing.T) 
 			// that is not there.
 			if list := mustGit(t, repo, "worktree", "list", "--porcelain"); strings.Contains(list, tr.Path) {
 				t.Errorf("the worktree registration outlived the tree:\n%s", list)
+			}
+			// And what the branch was is either kept or provably not
+			// needed. Asserted in BOTH directions from one field, because a
+			// retire that writes the ref over the measured class is the
+			// trash directory ADR 0058 rejected and a retire that writes
+			// none over this one is a lost commit.
+			kept := refSHA(tr.Repo, retiredTipRef(tr.Branch))
+			switch {
+			case c.keptAt && kept != branchTip:
+				t.Errorf("%s is at %q, want the branch tip %q it was retired from:\n%s",
+					retiredTipRef(tr.Branch), kept, branchTip, out)
+			case !c.keptAt && kept != "":
+				t.Errorf("a MEASURED retire wrote %s at %s — the bytes are on the base, so the ref is the trash directory ADR 0058 rejected:\n%s",
+					retiredTipRef(tr.Branch), kept, out)
 			}
 		})
 	}

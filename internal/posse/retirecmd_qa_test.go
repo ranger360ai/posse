@@ -112,6 +112,11 @@ type izArm struct {
 	// noRecord unsets the branch's bead stamp: ADR 0006's population, which
 	// D4 leaves exactly where it was.
 	noRecord bool
+	// keptAt is ADR 0058's 2026-09-06 amendment: this retire writes the
+	// branch tip to refs/posse/retired/<branch> before it removes anything,
+	// and BOTH surfaces must leave the ref at that sha. A measured retire
+	// must leave none.
+	keptAt bool
 }
 
 var izArms = []izArm{{
@@ -137,21 +142,25 @@ var izArms = []izArm{{
 	},
 	says: []string{"has uncommitted work", "scratch.txt"},
 }, {
-	// Fact 2, the 13 trees the census leaves to a human: a `-x` trailer is
-	// somebody's DECISION that this landed, not a measurement of what the
-	// landing kept. The SWEEP reaches its landing half first and reports the
-	// unmeasured equivalence there, so the keep is swallowed; `--retire`
-	// lands nothing, so its verdict is never swallowed by anything. That
-	// difference is D3's shape and this arm is where it is pinned.
-	name: "a commit whose landing is only a -x trailer keeps it in both",
+	// The class ADR 0058's 2026-09-06 amendment took off D4's list
+	// (ranger-base-qz3cr): a `-x` trailer is somebody's DECISION that this
+	// landed, not a measurement of what the landing kept — so it is still no
+	// licence to delete, and the tree goes anyway because the tip is kept at
+	// refs/posse/retired/<branch> first. It is the second arm here that
+	// destroys its fixture, and it is the one that matters most for this
+	// file's question: the sweep and `--retire` must write the same ref and
+	// say the same sentence about it, or one of them is losing a commit.
+	name: "a commit whose landing is only a -x trailer retires from both, with its tip kept",
 	setUp: func(t *testing.T, d *Dispatcher, repo string, tr *SessionTree) {
 		commitOldIn(t, tr.Path, "adr.md", "status: accepted\n", "a-1: the fix")
 		sha := mustGit(t, tr.Path, "rev-parse", "HEAD")
 		commitOldIn(t, repo, "adr.md", "status: accepted (reworded)\n",
 			"a-1: the fix, by hand\n\n(cherry picked from commit "+sha+")")
 	},
-	says:       []string{"holds 1 commit(s)"},
-	sweepQuiet: true,
+	retire: true,
+	keptAt: true,
+	says: []string{"its 1 commit(s) main accounts for only by git's own -x trailer are kept at refs/posse/retired/",
+		"compare `git log main..refs/posse/retired/"},
 }, {
 	// Fact 3.
 	name: "a session herdr still lists keeps it in both",
@@ -257,6 +266,24 @@ func izBuild(t *testing.T, c izArm) (*Dispatcher, string, *SessionTree) {
 	return d, repo, tr
 }
 
+// izKeptTip is ADR 0058's amendment asked of whichever surface just acted:
+// the branch tip is at refs/posse/retired/<branch> when this arm's retire
+// keeps it, and no such ref exists when the retire was a MEASURED one. Both
+// directions from one field — a ref over the measured class is the trash
+// directory the record rejected, and no ref over this one is a lost commit,
+// and the line printed reads identically either way.
+func izKeptTip(t *testing.T, tr *SessionTree, branchTip string, want bool, out string) {
+	t.Helper()
+	got := refSHA(tr.Repo, retiredTipRef(tr.Branch))
+	switch {
+	case want && got != branchTip:
+		t.Errorf("%s is at %q, want the branch tip %q it was retired from:\n%s",
+			retiredTipRef(tr.Branch), got, branchTip, out)
+	case !want && got != "":
+		t.Errorf("a measured retire wrote %s at %s:\n%s", retiredTipRef(tr.Branch), got, out)
+	}
+}
+
 // izStanding is what every keep is for: the tree, the branch and the work
 // are all still there.
 func izStanding(t *testing.T, tr *SessionTree, head, out string) {
@@ -286,6 +313,7 @@ func TestRetireOnDemandActsAndSpeaksExactlyAsTheSweepDoes(t *testing.T) {
 			// The COMMAND, over its own fixture.
 			d, repo, tr := izBuild(t, c)
 			head, _ := workHead(tr)
+			branchTip := refSHA(tr.Repo, "refs/heads/"+tr.Branch)
 			out := izRetire(t, d, repo)
 
 			// One line per tree, always — the half of D3 that is not the
@@ -314,6 +342,7 @@ func TestRetireOnDemandActsAndSpeaksExactlyAsTheSweepDoes(t *testing.T) {
 				if list := mustGit(t, repo, "worktree", "list", "--porcelain"); strings.Contains(list, tr.Path) {
 					t.Errorf("the worktree registration outlived the tree:\n%s", list)
 				}
+				izKeptTip(t, tr, branchTip, c.keptAt, out)
 			} else {
 				if !strings.Contains(out, "kept: ") {
 					t.Errorf("--retire kept the tree without saying so:\n%s", out)
@@ -326,10 +355,12 @@ func TestRetireOnDemandActsAndSpeaksExactlyAsTheSweepDoes(t *testing.T) {
 			// an assertion that catches the second one drifting.
 			d2, repo2, tr2 := izBuild(t, c)
 			head2, _ := workHead(tr2)
+			branchTip2 := refSHA(tr2.Repo, "refs/heads/"+tr2.Branch)
 			d2.landClosedTrees(repo2)
 			sweep := dispatcherOut(d2)
 
 			if c.retire {
+				izKeptTip(t, tr2, branchTip2, c.keptAt, sweep)
 				if !strings.Contains(sweep, "retired:") {
 					t.Errorf("the sweep did not retire a tree --retire took:\n%s", sweep)
 				}

@@ -54,9 +54,23 @@ package posse
 // the lock held and facts 2 and 3 read again inside it (retire.go). What is
 // still not this sweep's, and prints exactly the sentence it printed before:
 // an OPEN bead's tree (the persona is working in it), a tree no bead record
-// accounts for (ADR 0006 — `--land --force` is the operator's word), a dirty
-// tree (ADR 0041), and any commit whose landing is a decision rather than a
-// measurement.
+// accounts for (ADR 0006 — `--land --force` is the operator's word), and a
+// dirty tree (ADR 0041).
+//
+// THE FOURTH ROW OF THAT LIST IS GONE (ADR 0058's amendment 2026-09-06,
+// ranger-base-qz3cr) and it is the one this file used to name last: a commit
+// whose landing is a DECISION — git's `-x` trailer, an identity match on a
+// replay — rather than a measurement. The decision is still no licence to
+// delete anything, and every refusal that says so still says it. What the
+// amendment measured is that leaving the tree was not protecting the bytes
+// either: 14 such trees standing here, up to nine days old, seven unrun hand
+// recipes filed against them, and a do-not-land verdict that re-files a P1
+// every time its dedupe window closes. So the tip is KEPT first —
+// refs/posse/retired/<branch>, written under this same lock and read back —
+// and then the tree goes, on the ref's licence and nobody's word. What still
+// keeps such a tree is the launcher not being done with the branch: an open
+// merge-back block, or an unpaired tip with no verdict or one the branch has
+// moved past.
 //
 // WHAT IT FILES, AND WHY THE SPAM OBJECTION WAS NEVER THE RIGHT ONE
 // (ranger-base-5nf8m). This paragraph used to refuse to file a merge-back
@@ -129,6 +143,11 @@ func (d *Dispatcher) landClosedTrees(dirFilter string) {
 		}
 	}()
 	grace := d.App.graceAfter("retire_tree_after", DefaultRetireTreeAfter, d.errWriter())
+	// One merge-back read per repo for the whole pass, not one per tree: the
+	// kept retire asks whether a landing is still owed on a branch, and
+	// blockedRecord's doc says why that question may be held where fact 1's
+	// may not. The prune above already paid this exact query once per repo.
+	blocks := newBlockedRecord(d.Bd)
 	for _, t := range trees {
 		// Whether there is anything to land at all, asked on BOTH tips a
 		// session's work can sit on (nothingToLand, below). `landed` is where
@@ -251,7 +270,7 @@ func (d *Dispatcher) landClosedTrees(dirFilter string) {
 			// left to the line above.
 			said = true
 		}
-		d.retireTree(t, id, is.Status, grace, &lock, said)
+		d.retireTree(t, id, is.Status, blocks, grace, &lock, said)
 	}
 }
 
@@ -273,8 +292,8 @@ func (d *Dispatcher) landClosedTrees(dirFilter string) {
 // `said` is whether the caller already printed a line about this tree. One
 // tree, one line: a keep is worth saying on every pass it holds (kftx), and
 // saying it twice is how a board of 70 trees stops being read at all.
-func (d *Dispatcher) retireTree(t *SessionTree, id, status string, grace time.Duration, lock **LaunchLock, said bool) {
-	v := retirable(t, status, d.HB, grace)
+func (d *Dispatcher) retireTree(t *SessionTree, id, status string, blocks *blockedRecord, grace time.Duration, lock **LaunchLock, said bool) {
+	v := retirable(t, status, blocks, d.HB, grace)
 	if !v.retire {
 		if !v.quiet && !said {
 			d.printf("◑ %-14s %s kept: %s\n", id, t.Branch, v.why)
@@ -282,6 +301,25 @@ func (d *Dispatcher) retireTree(t *SessionTree, id, status string, grace time.Du
 		return
 	}
 	if d.DryRun {
+		// It writes NO ref either (ADR 0058's amendment, point 4). --dry-run
+		// promises a pass that changes no state, and a ref under
+		// refs/posse/retired that nothing prunes is state.
+		//
+		// THE KEPT ARM IS NOT REACHED FROM THE SWEEP TODAY and the pin says
+		// so out loud (retirekept_qa_test.go): landClosedTrees under
+		// --dry-run says `would land …` and continues for every tree with
+		// anything ahead of the base, and a kept retire is by definition a
+		// tree that has. The sentence lives here because this is where it
+		// belongs the moment that changes, and widening the continue is a
+		// change to what --dry-run predicts over every other class — a tree
+		// that would fast-forward reads as unpaired until it has, so the
+		// retire asked before the land answers about a tree that will not
+		// exist. Left to whoever revisits the dry run (ranger-base-daa60).
+		if v.kept.ref != "" {
+			d.printf("would retire %s and %s, keeping %s commit(s) at %s (bead %s: %s)\n",
+				AbbrevHome(t.Path), t.Branch, v.kept.n, v.kept.ref, id, v.why)
+			return
+		}
 		d.printf("would retire %s and %s (bead %s: %s)\n", AbbrevHome(t.Path), t.Branch, id, v.why)
 		return
 	}
@@ -293,18 +331,30 @@ func (d *Dispatcher) retireTree(t *SessionTree, id, status string, grace time.Du
 		}
 		*lock = l
 	}
-	if why := retireHeldOrAlive(t, d.HB); why != "" {
+	keep, why := retireHeldOrAlive(t, blocks, d.HB)
+	if why != "" {
 		// It changed under us in the window the lock exists to close. Said
 		// whatever the caller printed: this is not the standing condition
 		// `said` covers, it is the race being caught.
 		d.printf("◑ %-14s %s kept: %s (it changed while the lock was being taken)\n", id, t.Branch, why)
 		return
 	}
+	// The ref goes down BEFORE anything is removed, and it is the RE-READ's
+	// answer that decides whether there is one — a landing that arrived
+	// while the lock was being taken turns a kept retire into a measured
+	// one, and the sentence is rebuilt from the same reading so the line
+	// describes the act rather than the guess that preceded it.
+	if keep.ref != "" {
+		if w := keepRetiredTip(t); w != "" {
+			d.printf("◑ %-14s %s kept: %s\n", id, t.Branch, w)
+			return
+		}
+	}
 	if err := RemoveSessionTree(t, false); err != nil {
 		d.printf("⚠ %-14s %s not retired: %v\n", id, t.Branch, err)
 		return
 	}
-	d.printf("⌫ %-14s %s retired: %s\n", id, t.Branch, v.why)
+	d.printf("⌫ %-14s %s retired: %s\n", id, t.Branch, retireWhy(t, keep, grace))
 }
 
 // nothingToLand is the sweep's landing test: true only when this tree holds

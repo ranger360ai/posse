@@ -2204,7 +2204,13 @@ sessions (herdr workspaces):
                                work is measured on the base, whose session herdr
                                proves gone and which nobody has written to inside
                                retire_tree_after: (1h) is removed with its
-                               branch. One line per tree, and it takes no
+                               branch. Since the 2026-09-06 amendment a tree
+                               whose commits the base accounts for only by a
+                               hand replay, or whose branch a closed merge-back
+                               verdict answered, goes too — with its tip kept
+                               first at refs/posse/retired/<branch>, so nothing
+                               anybody decided is the licence and nothing is
+                               lost. One line per tree, and it takes no
                                --force — overriding a refusal stays the hand
                                recipe the refusal prints
   posse crew <name> [--off]      mark a session as yours (👤) so dispatch leaves it

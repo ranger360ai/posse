@@ -84,6 +84,78 @@ type retireVerdict struct {
 	retire bool
 	why    string // why it was safe, or which fact refused
 	quiet  bool   // this keep is not worth a line: it is transient, or the dial is off
+	kept   retireKeep
+}
+
+// retireKeep is ADR 0058's second kind of retire (the 2026-09-06 amendment,
+// ranger-base-qz3cr): the tree goes and its tip is KEPT under a ref posse
+// owns, because fact 2 refused it as the last copy of commits the base
+// accounts for only by somebody's decision.
+//
+// The zero value is the MEASURED retire and writes no ref, deliberately: the
+// bytes are on the base, so a ref would be the trash directory ADR 0058
+// rejected — a copy of content main already holds.
+type retireKeep struct {
+	ref      string // where the tip goes first; "" = the measured retire
+	n        string // how many commits that ref is keeping
+	evidence string // what the base accounts for them by, in the line's words
+}
+
+// blockedRecord is the merge-back record as the retire reads it: one
+// `bd list --all --label-any <MergeBlockedLabel>` per repo, held for the run.
+//
+// WHY THIS ONE IS MEMOISED WHERE FACT 1 IS NOT. ADR 0011's reclaim rule is
+// that nothing destroys work on a status somebody read earlier, and fact 1
+// obeys it literally — a fresh `bd show` per tree, per pass. This read is
+// not that fact. It is the question "is a landing still owed on this
+// branch", and every direction it can be stale in is bounded by what the
+// retire does with the answer: a block that CLOSED since the read keeps a
+// tree that could have gone (free), and a block that OPENED since the read
+// takes a tree whose commits are then reachable from TWO refs posse owns —
+// the retired tip written under the lock a moment earlier, and the block's
+// own pin (blockedPinPrefix). Nothing is lost in either.
+//
+// And the cost it removes is real: MEASURED 2026-09-06 on this box, that
+// query is 0.43s and 3.5MB of JSON, and the class this reads for is 14 of
+// the 44 trees standing — 6 seconds added to every pass and to every
+// `posse worktrees` for an answer that is one answer per repo. The sweep
+// already makes exactly this call once per repo per pass for the pin prune
+// (prunePinnedBlocks), so held this way the whole kept retire adds none.
+//
+// One per command or per pass and never shared: it fills lazily, like
+// RetireAsk.listed, so two goroutines would race and neither caller has a
+// reason to be two.
+type blockedRecord struct {
+	bd  Bd
+	got map[string]repoBlocks
+}
+
+// repoBlocks is one repo's answer including the case where there was none —
+// an unreadable store is not "no block", and the two must not retire the
+// same tree.
+type repoBlocks struct {
+	all []BdIssue
+	err error
+}
+
+func newBlockedRecord(bd Bd) *blockedRecord {
+	return &blockedRecord{bd: bd, got: map[string]repoBlocks{}}
+}
+
+// on is priorMergeBlocked for one tree's branch, off the held rows. The
+// title is mergeBlockedTitle's, so the bead this finds is the one the sweep
+// would file and dedupe against and not a bead that merely mentions the
+// branch.
+func (b *blockedRecord) on(t *SessionTree) (priorBlock, error) {
+	got, ok := b.got[t.Repo]
+	if !ok {
+		got.all, got.err = b.bd.AllLabeledAny(t.Repo, MergeBlockedLabel)
+		b.got[t.Repo] = got
+	}
+	if got.err != nil {
+		return priorBlock{}, got.err
+	}
+	return blockOf(got.all, mergeBlockedTitle(t.Branch, orDetached(t.Base))), nil
 }
 
 // retirable is D1 over one tree: all four facts, in the order that makes the
@@ -94,7 +166,7 @@ type retireVerdict struct {
 // visits, and `posse worktrees --retire` asks it per tree. Nothing here
 // caches it: ADR 0011's rule is that a reclaim never acts on a status
 // somebody read earlier.
-func retirable(t *SessionTree, status string, hb *HerdrBackend, grace time.Duration) retireVerdict {
+func retirable(t *SessionTree, status string, br *blockedRecord, hb *HerdrBackend, grace time.Duration) retireVerdict {
 	if grace <= 0 {
 		// `retire_tree_after: off` is the operator saying they want the
 		// trees. Said once by the dial itself, not once per tree per pass.
@@ -115,12 +187,33 @@ func retirable(t *SessionTree, status string, hb *HerdrBackend, grace time.Durat
 			quiet: true,
 		}
 	}
-	if why := retireHeldOrAlive(t, hb); why != "" {
+	keep, why := retireHeldOrAlive(t, br, hb)
+	if why != "" {
 		return retireVerdict{why: why}
 	}
-	return retireVerdict{retire: true, why: fmt.Sprintf(
-		"its bead is closed, nothing here is unlanded, herdr proves its session gone, and nothing has written to %s in %s",
-		AbbrevHome(t.Path), grace)}
+	return retireVerdict{retire: true, kept: keep, why: retireWhy(t, keep, grace)}
+}
+
+// retireWhy is the sentence a retire is announced with, in ONE place because
+// two surfaces print it about two readings: `retirable` composes it from the
+// cheap read outside the launcher lock, and the sweep composes it again from
+// the re-read taken inside (landsweep.go). A line built from the first
+// reading and printed after the second would describe an act that did not
+// happen — the two disagree exactly when something landed in between, which
+// is the window the lock exists for.
+//
+// The kept form is ADR 0058's amendment, point 4, and it ends with the
+// command that reads what was kept: a retire nobody can inspect afterwards
+// is the trash directory again, without the directory.
+func retireWhy(t *SessionTree, keep retireKeep, grace time.Duration) string {
+	if keep.ref == "" {
+		return fmt.Sprintf(
+			"its bead is closed, nothing here is unlanded, herdr proves its session gone, and nothing has written to %s in %s",
+			AbbrevHome(t.Path), grace)
+	}
+	return fmt.Sprintf(
+		"its bead is closed, herdr proves its session gone, nothing has written to %s in %s, and its %s commit(s) %s accounts for only by %s are kept at %s — compare `git log %s..%s`",
+		AbbrevHome(t.Path), grace, keep.n, orDetached(t.Base), keep.evidence, keep.ref, orDetached(t.Base), keep.ref)
 }
 
 // retireHeldOrAlive is facts 2 and 3 — the two the sweep RE-READS with the
@@ -135,20 +228,151 @@ func retirable(t *SessionTree, status string, hb *HerdrBackend, grace time.Durat
 // this window reopens, and re-reading the grace HERE would read back the
 // index refresh that fact 2's own `git status` may just have written.
 //
-// "" when both hold, and the refusal itself when either does not.
-func retireHeldOrAlive(t *SessionTree, hb *HerdrBackend) string {
+// ("" refusal) when both hold — with a retireKeep naming the ref the tip
+// must be written to before anything is removed, or its zero value for the
+// measured retire that writes none — and the refusal itself when either
+// does not.
+func retireHeldOrAlive(t *SessionTree, br *blockedRecord, hb *HerdrBackend) (retireKeep, string) {
+	var keep retireKeep
 	if held := treeHolds(t); held != "" {
-		return held
+		// Fact 2 said no. ADR 0058's 2026-09-06 amendment is the one shape
+		// where that is not the end of it: the tip is kept under a ref and
+		// the removal takes nothing (retireKeeping). Every other shape keeps
+		// the tree on treeHolds' own words, which is the invariant
+		// verbatimtwin_test.go holds this predicate to.
+		k, why, mine := retireKeeping(t, br)
+		switch {
+		case !mine:
+			return retireKeep{}, held
+		case why != "":
+			return retireKeep{}, why
+		}
+		keep = k
 	}
 	if hb == nil {
 		// No herdr to ask is not "no session": the unanswerable question
 		// fails closed like every other one here.
-		return "nothing can be asked whether its session is still alive"
+		return retireKeep{}, "nothing can be asked whether its session is still alive"
 	}
 	if gone, why := hb.sessionGone(SessionOfBranch(t.Branch)); !gone {
-		return why
+		return retireKeep{}, why
 	}
-	return ""
+	return keep, ""
+}
+
+// retireKeeping is ADR 0058's amendment asked of a tree fact 2 has just
+// refused: may it go anyway, with its tip kept at refs/posse/retired/<branch>?
+//
+// Three answers, and the third is what keeps this from being a second fact 2
+// written beside the first:
+//
+//   - (keep, "", true)  — yes, and the ref is where the tip goes first;
+//   - (zero, why, true) — this class, and the merge-back record says no. The
+//     sentence is this function's, because treeHolds cannot name a bead;
+//   - (zero, "", false) — NOT this class. The caller keeps the tree on
+//     treeHolds' own words and nothing here is consulted.
+//
+// WHO IT APPLIES TO (the amendment's point 2). Facts 1, 3 and 4 are
+// untouched. Fact 2 must have refused the BRANCH tip over commits the base
+// does not MEASURE — the trailer, the identity match, or nothing at all —
+// and the launcher must be done with the branch:
+//
+//   - PAIRED (something accounts for every commit): retire unless an OPEN
+//     block bead names this branch. An open block is a handoff in flight and
+//     the tree it names is its evidence.
+//   - UNPAIRED (nothing does): retire only when the latest block is CLOSED
+//     and the branch has not moved since that verdict — priorMergeBlocked's
+//     own standing-verdict test, asked here for the same reason it is asked
+//     there. No block at all keeps the tree: nobody has decided its landing,
+//     and the sweep files that bead.
+//
+// The bead is the record and the pin is not read. A pin is DERIVED from the
+// bead by a prune that can fail (prunePinnedBlocks), and reading it here
+// would be two readings of one fact (ADR 0011) whose failure is a tree kept
+// forever with no sentence naming a bead.
+func retireKeeping(t *SessionTree, br *blockedRecord) (retireKeep, string, bool) {
+	eq, n, ok := keptTip(t)
+	if !ok || br == nil {
+		// Not this class, or nothing to put the question to. Either way the
+		// refusal that already exists is the answer, unchanged.
+		return retireKeep{}, "", false
+	}
+	held := fmt.Sprintf("%s holds %s commit(s) %s does not", t.Branch, n, orDetached(t.Base))
+	prior, err := br.on(t)
+	switch {
+	case err != nil:
+		return retireKeep{}, fmt.Sprintf("%s and bd could not say whether a merge-back block is still owed on it (%v)", held, err), true
+	case prior.Open:
+		return retireKeep{}, fmt.Sprintf("%s and %s is still open on it — a handoff in flight keeps the tree it names", held, prior.ID), true
+	}
+	if len(eq) > 0 {
+		return retireKeep{ref: retiredTipRef(t.Branch), n: n, evidence: unmeasuredEvidence(eq)}, "", true
+	}
+	// Unpaired: nothing accounts for these commits at all, so the only thing
+	// that can say no landing is still owed is a verdict somebody reached.
+	switch {
+	case prior.ID == "":
+		return retireKeep{}, fmt.Sprintf("%s, nothing on %s accounts for them and no verdict has been reached on landing them", held, orDetached(t.Base)), true
+	case prior.Verdict.IsZero():
+		return retireKeep{}, fmt.Sprintf("%s, and %s answered that and is closed, but the store did not say when", held, prior.ID), true
+	}
+	tip, ok := workHeadTime(t)
+	switch {
+	case !ok:
+		return retireKeep{}, fmt.Sprintf("%s, and whether it has moved since %s answered it cannot be read", held, prior.ID), true
+	case tip.After(prior.Verdict):
+		return retireKeep{}, fmt.Sprintf("%s and has moved since %s answered it (%s) — a branch that gained a commit after its verdict is a new question", held, prior.ID, tip.Format(time.RFC3339)), true
+	}
+	return retireKeep{ref: retiredTipRef(t.Branch), n: n, evidence: "the closed verdict " + prior.ID}, "", true
+}
+
+// keptTip is the SHAPE half of the question above: is everything fact 2
+// refuses over sitting on the BRANCH tip, and unmeasured?
+//
+// It is a second walk of removalTips and not a re-reading of treeHolds'
+// sentence, because the sentence is where the two shapes it must tell apart
+// are flattened together. What it returns is the branch's pairing and its
+// count; false is "not this class", and the caller then keeps the tree on
+// treeHolds' words, so nothing this answers can widen what may be deleted.
+//
+// Four shapes are refused here and each for its own reason:
+//
+//   - a DIRTY tree (ADR 0041's class, and RemoveSessionTree would refuse
+//     after the ref had already been written). Asked again here and not
+//     inferred from treeHolds' sentence, which costs a second `git status`
+//     over a tree treeHolds has already run one in — no tree is touched
+//     that was not touched a moment ago, because this is only ever called
+//     after that refusal;
+//   - a repo with no base, which cannot be asked at all;
+//   - a tip that is NOT the branch holding commits — v2rj7's detached shape.
+//     The ref is written at the branch tip, so a commit the branch does not
+//     reach would not be kept by it, and the amendment says that tree stays;
+//   - a pairing that IS wholly measured by patch-id. That is 06y60's class
+//     (patch-id normalises whitespace and the base does not hold the bytes),
+//     it is refused by its own careful sentence in treeHolds, and it is not
+//     what this amendment was measured over.
+func keptTip(t *SessionTree) (eq []equiv, n string, ok bool) {
+	if t.Base == "" || len(dirtyPaths(t.Path)) > 0 {
+		return nil, "", false
+	}
+	for _, tip := range removalTips(t) {
+		c, err := git(t.Repo, "rev-list", "--count", t.Base+".."+tip.ref)
+		if err != nil {
+			return nil, "", false
+		}
+		if c == "0" {
+			continue
+		}
+		if !tip.isBranch {
+			return nil, "", false
+		}
+		e := equivalentOnBase(t.Repo, t.Base, tip.ref)
+		if measuredOnBase(e) {
+			return nil, "", false
+		}
+		eq, n, ok = e, c, true
+	}
+	return eq, n, ok
 }
 
 // statusWord renders a bead status for a sentence, including the one bd can
@@ -252,6 +476,11 @@ type RetireAsk struct {
 	hb    *HerdrBackend
 	grace time.Duration
 
+	// blocks is the merge-back record ADR 0058's kept retire asks, held for
+	// the run for the reason blockedRecord's own doc gives — one query per
+	// repo rather than one per tree of a 14-tree class.
+	blocks *blockedRecord
+
 	// listed is one `bd list --all` per repo, and it is the LISTING's
 	// answer only. MEASURED 2026-09-06 on this box against the fleet's own
 	// store (~1300 issues, `bd --no-daemon`): `bd show` 0.59s, `bd list
@@ -276,9 +505,10 @@ type beadStatuses struct {
 // per tree could answer two trees in one run under two different rules.
 func NewRetireAsk(a *App, bd Bd, hb *HerdrBackend, errw io.Writer) *RetireAsk {
 	return &RetireAsk{
-		bd:    bd,
-		hb:    hb,
-		grace: a.graceAfter("retire_tree_after", DefaultRetireTreeAfter, errw),
+		bd:     bd,
+		hb:     hb,
+		grace:  a.graceAfter("retire_tree_after", DefaultRetireTreeAfter, errw),
+		blocks: newBlockedRecord(bd),
 	}
 }
 
@@ -345,8 +575,17 @@ func (r *RetireAsk) clause(t *SessionTree) string {
 	if err != nil {
 		return fmt.Sprintf("kept: bd could not say whether %s is closed (%v)", t.Bead, err)
 	}
-	if v := retirable(t, status, r.hb, r.grace); !v.retire {
+	v := retirable(t, status, r.blocks, r.hb, r.grace)
+	switch {
+	case !v.retire:
 		return "kept: " + v.why
+	case v.kept.ref != "":
+		// ADR 0058's amendment, point 4. The count and the ref are the whole
+		// of what a reader needs to go and look before the pass runs — the
+		// full sentence, with the evidence and the compare command, is the
+		// retire line's, and this is a third line on an entry that already
+		// carries treeState's.
+		return fmt.Sprintf("retirable — the next pass takes it, keeping %s commit(s) at %s", v.kept.n, v.kept.ref)
 	}
 	return "retirable — the next pass takes it"
 }
@@ -407,10 +646,20 @@ func RetireSessionTrees(w io.Writer, a *App, r *RetireAsk, dirs []string) error 
 			fmt.Fprintf(w, "◑ %-14s %s kept: bd could not say whether it is closed (%v)\n", id, t.Branch, err)
 			continue
 		}
-		v := retirable(t, status, r.hb, r.grace)
+		v := retirable(t, status, r.blocks, r.hb, r.grace)
 		if !v.retire {
 			fmt.Fprintf(w, "◑ %-14s %s kept: %s\n", id, t.Branch, v.why)
 			continue
+		}
+		// The ref FIRST, then the removal (ADR 0058's amendment, point 3).
+		// A refused write keeps the tree and removes nothing, which is the
+		// only order in which a failure costs nothing: these are the commits
+		// no measurement accounts for.
+		if v.kept.ref != "" {
+			if why := keepRetiredTip(t); why != "" {
+				fmt.Fprintf(w, "◑ %-14s %s kept: %s\n", id, t.Branch, why)
+				continue
+			}
 		}
 		if err := RemoveSessionTree(t, false); err != nil {
 			// The predicate said yes and the destroy still refused, which is
