@@ -7,12 +7,25 @@ package posse
 // git's output with whatever a named program prints. It is reachable three
 // ways — the GIT_EXTERNAL_DIFF environment variable, `diff.external` in any
 // gitconfig the repo can see, and a `diff=<driver>` attribute paired with
-// `diff.<driver>.command` — and posse's own inlet pin exports the FIRST of
-// them, as the EMPTY STRING, in every pinned seat (inletpin.go, and the
-// shipped etc/claude/managed-settings.d/10-posse-inlet-pin.json). git does
+// `diff.<driver>.command`. posse's own inlet pin exported the FIRST of them,
+// as the EMPTY STRING, in every pinned seat (inletpin.go, and the shipped
+// etc/claude/managed-settings.d/10-posse-inlet-pin.json). git does
 // not read set-but-empty as unset: it tries to exec "" and dies with
 // `error: cannot run : No such file or directory` / `fatal: external diff
 // died`, so every reader without --no-ext-diff was broken for every seat.
+//
+// THAT ROW IS GONE — the operator ruled it out rather than pay `git diff`
+// patch format fleet-wide (ranger-base-5sph1, applied on ranger-base-888fv)
+// — and NOTHING IN THIS FILE WEAKENS BECAUSE OF IT. Two reasons, and the
+// second is the one that matters. First, the fixtures never leaned on the
+// env var: they plant `diff.external` in the fixture repo's own config, for
+// the reason the next paragraph gives, so they measure the same thing in a
+// tree with no pin at all. Second, dropping the row does not close the
+// inlet, it ACCEPTS it: the name is now settable by anyone who can write a
+// lower-scope settings `env` block, which is the whole threat model the pin
+// was written for. A reader that states its format is immune to all three
+// spellings; a reader that does not is now exposed to one more of them than
+// it was.
 //
 // memoryland.go's memoryDiff (ranger-base-r5wpk) already stated this list
 // for the credential scan, and its comment names GIT_EXTERNAL_DIFF by name.
@@ -480,7 +493,7 @@ func TestQAPrescribedGitDiffChecksStateTheirFormat(t *testing.T) {
 			if extDiffExempt(span.sentence) {
 				continue
 			}
-			t.Errorf("%s prescribes `%s`, which dies rc 128 in a seat whose GIT_EXTERNAL_DIFF is set empty — on exactly the non-empty case it is there to detect. State the format: %v", s.name, span.argv, extDiffImmune)
+			t.Errorf("%s prescribes `%s`, which dies rc 128 wherever an external diff driver is configured — by diff.external in any gitconfig, by a `diff=<driver>` attribute, or by GIT_EXTERNAL_DIFF, which posse stopped pinning shut on ranger-base-888fv and now leaves open — on exactly the non-empty case it is there to detect. State the format: %v", s.name, span.argv, extDiffImmune)
 		}
 	}
 	// LIVENESS, and not a count of spans: a floor set to today's N reds the

@@ -372,9 +372,14 @@ func TestQAAgentsMdNamesTheStaleIndexCheck(t *testing.T) {
 	for _, want := range []string{
 		"git status", // the signal that misreports
 		// The check that tells the truth, and the flag that lets it run: a
-		// seat's GIT_EXTERNAL_DIFF is set EMPTY by posse's own inlet pin, and
-		// a bare `git diff HEAD` dies rc 128 there on exactly the non-empty
-		// case this check exists to detect (ranger-base-l1ix2).
+		// seat's GIT_EXTERNAL_DIFF was set EMPTY by posse's own inlet pin,
+		// and a bare `git diff HEAD` died rc 128 there on exactly the
+		// non-empty case this check exists to detect (ranger-base-l1ix2).
+		// The pin dropped that row on ranger-base-888fv, so a seat no longer
+		// sets it — but the flag stays prescribed, because diff.external in
+		// any gitconfig and a `diff=<driver>` attribute reach the same
+		// output with no environment at all, and the env name is now an open
+		// inlet rather than one posse holds shut.
 		"git diff --no-ext-diff HEAD -- <paths>",
 		"git restore --staged -- <paths>", // the recovery
 		"rangerhq-be7k",                   // where the measurement lives

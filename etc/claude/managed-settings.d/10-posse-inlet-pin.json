@@ -11,7 +11,6 @@
     "ENV": "/dev/null",
     "GIT_CONFIG_PARAMETERS": "",
     "GIT_CONFIG_SYSTEM": "/dev/null",
-    "GIT_EXTERNAL_DIFF": "",
     "GIT_PAGER": "",
     "GIT_SSH_COMMAND": "ssh",
     "HTTPS_PROXY": "",

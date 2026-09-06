@@ -279,43 +279,49 @@ is the command `""`, and it breaks every ssh remote; `DYLD_INSERT_LIBRARIES`
 pointed at `/dev/null` aborts every child process it touches. The table and
 the measurement behind each row are in `internal/posse/inletpin.go`.
 
-**One row does NOT leave your behaviour where it was, and the sentence above
-is wrong about it.** `GIT_EXTERNAL_DIFF=""` is the same trap as the
-`GIT_SSH_COMMAND=""` the paragraph above holds up as the thing to avoid: git
-does not read set-but-empty as unset, it execs `""`. In a posse-launched
-session a `git diff` asking for **patch** format dies rc 128 with
-`error: cannot run :`. Summary formats are untouched — `--stat`,
+**`GIT_EXTERNAL_DIFF` is deliberately NOT one of the pinned names**, and it
+is the reason the sentence above can say "leaving the box's existing
+behaviour exactly where it was" without an exception. It was pinned `""`
+during development and taken back out before release, because pinning it
+costs something no fleet should pay silently: git does not read set-but-empty
+as unset, it execs `""`, so a `git diff` asking for **patch** format dies rc
+128 with `error: cannot run :` in every session posse launches. Summary
+formats never reach a diff driver and are untouched — `--stat`,
 `--shortstat`, `--numstat`, `--name-only`, `--name-status`, `--raw`,
 `--check` — and so are `git show`, `git log -p` and `git format-patch`,
 because the log family leaves external diffs off unless you ask with
-`--ext-diff`. The blast radius is the `git diff` porcelain in patch format,
-and nothing wider.
+`--ext-diff`. That row cleared its own review on `--shortstat`, which is on
+the second list and could not have shown a cost whatever the value was.
 
-That row shipped disclosed as neutral because the arm that cleared it was
-`--shortstat`, which is one of the formats that never reaches a diff driver
-at all. There is no neutral spelling: every value is executed, and git's
-"use the internal diff" is the `--no-ext-diff` **flag**, which an `env` pin
-cannot supply. So the choice is to keep it and pay that, or to drop it and
-accept the inlet — that call is open, and until it is made the row is
-disclosed for what it is rather than for what it was thought to be. posse's
-own `git diff` readers all state a format and are unaffected.
+There is no neutral spelling to fall back on: every value in that name is
+executed, and git's "use the internal diff" is the `--no-ext-diff` **flag**,
+which an `env` block cannot supply. Pinning `diff.external` in config instead
+does not work either, because the environment variable overrides config. The
+protection was also never at the tier that matters most — an empty value does
+not take at the root-owned policy tier, so the row would have cost
+posse-launched sessions and protected a claude you start yourself not at all.
+So it is **not covered**, on the same standing as `GIT_CONFIG_COUNT` and
+`GIT_CONFIG_GLOBAL` below: an attacker who can write a lower-scope settings
+`env` block can still point this name at a program of their choosing and have
+it run on the next `git diff` a session makes. The measurement is in
+`internal/posse/inletpin.go` under `ALSO NOT COVERED`, and
+`TestQATheExternalDiffRowIsPinnedWithItsCostOrNotPinnedAtAll` holds it there:
+this name is pinned with its cost readable in its row, or absent from both
+ends and named as a gap with a reason — never either one silently.
 
-Two limits worth knowing while it stands. The row is effective only in the
-`--settings` payload: an empty value does not take at the root-owned policy
-tier, so a claude you start yourself is neither broken by this row nor
-protected by it. And a session that was already running when the value
-arrived answers differently from one started before it — read
-`printenv GIT_EXTERNAL_DIFF` per run rather than trusting an earlier green.
+**What you may need to do about that gap:** nothing posse can do for you, but
+if you shell `git diff` for patch output from anything that parses the
+result, pass `--no-ext-diff`. That is worth doing regardless of this pin —
+`diff.external` in any gitconfig and a `diff=<driver>` attribute reach the
+same output with no environment involved at all. posse's own four `git diff`
+readers each state a format for exactly this reason.
 
-**What you may need to do.** Nothing, unless you shell `git diff` for patch
-output from a posse-launched session — a script, a hook, or a tool a
-session reaches for. Add `--no-ext-diff` to those callers, or unset the
-variable for that command. Otherwise nothing: if you set none of these
-variables deliberately, the pin overrides nothing — on the box this was
-measured on, none was set anywhere. If you *do* rely on one of them for your
-fleet (a corporate proxy, a custom CA, a non-default endpoint), the pin now
-wins over it for posse-launched sessions and you will want to change its row
-rather than set the variable outside.
+**What you may need to do about the rest of the pin.** Nothing: if you set
+none of these variables deliberately, the pin overrides nothing — on the box
+this was measured on, none was set anywhere. If you *do* rely on one of them
+for your fleet (a corporate proxy, a custom CA, a non-default endpoint), the
+pin now wins over it for posse-launched sessions and you will want to change
+its row rather than set the variable outside.
 
 `--settings` reaches only sessions posse launches. The scope that also
 covers a claude you start yourself is the root-owned policy tier, and the
@@ -409,7 +415,7 @@ is the intended trade (ADR 0006 §4).
 **A cage image built from a dirty checkout could read CURRENT against a
 different dirty checkout, and `posse promote` could not show you the diff it
 was asking you to ratify — both whenever an external diff driver is
-configured, which every inlet-pinned session is.**
+configured, which at the time every inlet-pinned session was.**
 
 *Affected: `posse cage`'s staleness verdict and the live pin's skip line, and
 the ratification diff `posse promote` (and `--dry-run`) prints. No action
@@ -417,9 +423,13 @@ needed on upgrade.*
 
 `git diff` runs an external program when one is named — by `diff.external` in
 any gitconfig, by a `diff=<driver>` attribute, or by the `GIT_EXTERNAL_DIFF`
-environment variable, which posse's own inlet pin sets to the empty string.
-Git does not read set-but-empty as unset: it tries to exec `""` and the diff
-dies. Two readers had never been given `--no-ext-diff`.
+environment variable, which posse's own inlet pin set to the empty string
+while these two readers were broken. Git does not read set-but-empty as
+unset: it tries to exec `""` and the diff dies. Two readers had never been
+given `--no-ext-diff`. (The pin no longer carries that row — see the Security
+section above — which does not retire the fix: the other two spellings need
+no environment at all, and the dropped row leaves the variable settable by
+anyone the pin was written to keep out.)
 
 The quiet one was the cage staleness fingerprint. It hashed `git diff HEAD`
 and dropped the error, so under a driver *nothing* from the tracked half

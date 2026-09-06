@@ -34,12 +34,23 @@ package posse
 //     or it is absent from BOTH ends and named in `ALSO NOT COVERED` with a
 //     reason. What it may never be again is pinned while reading neutral.
 //
-// THE DECISION IS NOT HERE. Keeping the row at the price of `git diff` patch
-// format in every posse-launched seat, versus dropping it and accepting the
-// inlet the way ranger-base-37y0z already accepts GIT_CONFIG_COUNT and
-// GIT_CONFIG_GLOBAL, is the operator's on ranger-base-5sph1. This file is
-// written so that it passes under either, and fails under the third thing —
-// a row that costs something and does not say so.
+// THE DECISION WAS NOT HERE, AND IT HAS BEEN MADE. Keeping the row at the
+// price of `git diff` patch format in every posse-launched seat, versus
+// dropping it and accepting the inlet the way ranger-base-37y0z already
+// accepts GIT_CONFIG_COUNT and GIT_CONFIG_GLOBAL, was the operator's on
+// ranger-base-5sph1. They ruled 2026-09-06 to DROP it, and ranger-base-888fv
+// applied that at both ends: the row is out of inletPin() and out of
+// etc/claude/managed-settings.d/10-posse-inlet-pin.json (23 keys to 22), and
+// the measurement moved into inletpin.go's ALSO NOT COVERED paragraph beside
+// GIT_CONFIG_GLOBAL. So the contract test below now runs its NOT-PINNED arm,
+// which is the branch that had never executed against a real absence.
+//
+// The file is left written for BOTH answers deliberately. The two behaviour
+// tests are unconditional and do not care which way it went — they measure
+// git, not posse — and the disclosure test still fails under the third thing
+// a future edit could produce: a row that costs something and does not say
+// so, or a gap that is silent about being a gap. Re-pinning this name is a
+// legitimate future call and it does not need this file rewritten to make it.
 
 import (
 	"encoding/json"
@@ -88,9 +99,10 @@ func TestQATheEmptyExternalDiffValueIsNotNeutral(t *testing.T) {
 	repo := extDiffProbeRepo(t)
 
 	// Both arms of every form, run from an environment with this name and
-	// the GIT_CONFIG_* family taken out: a posse-launched seat carries the
-	// pin itself, and an ambient value would sit underneath every arm and
-	// make the "unset" column a lie.
+	// the GIT_CONFIG_* family taken out: seats used to carry the pin itself,
+	// the operator's own environment may carry the name at any time now that
+	// posse does not pin it, and either way an ambient value would sit
+	// underneath every arm and make the "unset" column a lie.
 	base := extDiffScrubbedEnv()
 	arms := func(t *testing.T, argv []string) (unsetOut, emptyOut string, unsetRC, emptyRC int) {
 		t.Helper()
@@ -200,12 +212,26 @@ func TestQATheExternalDiffRowIsPinnedWithItsCostOrNotPinnedAtAll(t *testing.T) {
 	if !pinnedHere {
 		// Option B: dropped. Then it owes the file the same thing
 		// GIT_CONFIG_GLOBAL owes it — a named gap with a measured reason.
-		const marker = "ALSO NOT COVERED"
+		//
+		// Bounded at `func inletPin(` and not read to EOF, which is what it
+		// did when only the Option-A arm had ever run: the table's own body
+		// comment names the three uncovered git variables so a reader of the
+		// code sees them, and a region running to EOF counts that mention as
+		// the disclosure. Measured under this change (ranger-base-888fv):
+		// with the whole measured bullet renamed out of the paragraph and
+		// only the body comment's mention left, the EOF-bounded version was
+		// GREEN. The disclosure this test is for is the MEASUREMENT, not the
+		// name appearing somewhere in the file.
+		const marker, end = "ALSO NOT COVERED", "func inletPin("
 		i := strings.Index(text, marker)
 		if i < 0 {
 			t.Fatalf("inletpin.go has no %q paragraph", marker)
 		}
-		if !strings.Contains(text[i:], key) {
+		j := strings.Index(text, end)
+		if j <= i {
+			t.Fatalf("inletpin.go has no %q after its %q paragraph — the region this arm reads is gone, so it is measuring nothing; re-anchor it before trusting a green", end, marker)
+		}
+		if !strings.Contains(text[i:j], key) {
 			t.Errorf("%s is pinned at neither end and is not named in the %q paragraph either. The file's contract is that a name which is not in the table is READABLE as not covered — dropping the row and saying nothing is the same defect as pinning it and saying nothing (ranger-base-csfbj)", key, marker)
 		}
 		return

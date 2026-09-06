@@ -1071,9 +1071,13 @@ func printPromoteDiff(w io.Writer, repo, src string, prev *PromoteManifest, sha 
 	// preview of what a constitution promote is about to put in force, and
 	// every setting that changes what a diff looks like is an input to that
 	// reading. GIT_EXTERNAL_DIFF is the one that bit — posse's own inlet pin
-	// exports it EMPTY, which git treats as an external diff command of "",
+	// exported it EMPTY, which git treats as an external diff command of "",
 	// so this diff died and printed the ratify-by-hand line instead of the
-	// change, in every pinned seat, every time (ranger-base-xw51s). One list
+	// change, in every pinned seat, every time (ranger-base-xw51s). That row
+	// is gone from the pin now (ranger-base-5sph1, applied on
+	// ranger-base-888fv), which does not soften this list: the name is an
+	// open inlet again, and diff.external and a `diff=<driver>` attribute
+	// reach the same output with no environment at all. One list
 	// with memoryland's scan rather than a second copy of it, so the two
 	// readers cannot drift apart about what a diff is.
 	args := append(memoryDiff(prev.SHA+".."+sha, "--"), specs...)

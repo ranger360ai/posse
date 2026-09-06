@@ -42,7 +42,6 @@ func TestQAInletPinCarriesEveryMeasuredNameAtItsMeasuredValue(t *testing.T) {
 
 		// Exec: what git runs.
 		"GIT_SSH_COMMAND":       "ssh",
-		"GIT_EXTERNAL_DIFF":     "",
 		"GIT_PAGER":             "",
 		"GIT_CONFIG_SYSTEM":     "/dev/null",
 		"GIT_CONFIG_PARAMETERS": "",

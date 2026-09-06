@@ -261,9 +261,14 @@ func SourceBuildStamp(src string) string {
 // written for: GIT_EXTERNAL_DIFF, diff.external, or a `diff=<driver>` line
 // in the tree's own .gitattributes makes git print whatever that program
 // prints, and set-but-EMPTY is not unset — git execs "" and the diff dies.
-// posse's own inlet pin exports that variable empty in every pinned seat
-// (inletpin.go), so this was not a hypothetical box: it was every seat
-// (ranger-base-xw51s). The rest of memoryDiff's flags cost nothing on a
+// posse's own inlet pin used to export that variable empty in every pinned
+// seat, so this was not a hypothetical box: it was every seat
+// (ranger-base-xw51s). The pin no longer carries the row — the operator
+// ruled it out on ranger-base-5sph1 rather than pay the cost, applied on
+// ranger-base-888fv — which makes the flag MORE load-bearing here, not
+// less: the name is now an open inlet anybody who can write a lower-scope
+// settings `env` block may set, and diff.external and the attribute never
+// needed an environment at all. The rest of memoryDiff's flags cost nothing on a
 // hash of the whole output and keep this reader from ever disagreeing with
 // the scan's about what a diff looks like.
 //

@@ -61,14 +61,18 @@ import "os"
 // attacker's hook. That half needs a per-field pin or an operator ruling,
 // and is filed separately rather than half-done here.
 //
-// ALSO NOT COVERED, and these two are inlets that FIRE: GIT_CONFIG_COUNT
-// with its GIT_CONFIG_KEY_n/VALUE_n indices, and GIT_CONFIG_GLOBAL. Both
-// were named in ranger-base-rflee's fix spec as part of "GIT_CONFIG_*" and
-// both were left out of the table silently, which is the defect
-// ranger-base-44or9 is about — under this file's own contract a name that is
-// not here is not covered, and a reader has to be able to SEE that. They are
-// still not pinned, but now for a measured reason each (2026-09-05, git
-// 2.50.1 Apple Git-155):
+// ALSO NOT COVERED, and these three are inlets that FIRE: GIT_CONFIG_COUNT
+// with its GIT_CONFIG_KEY_n/VALUE_n indices, GIT_CONFIG_GLOBAL, and
+// GIT_EXTERNAL_DIFF. The first two were named in ranger-base-rflee's fix
+// spec as part of "GIT_CONFIG_*" and both were left out of the table
+// silently, which is the defect ranger-base-44or9 is about. The third is
+// here by a different route: it WAS pinned, its cost was measured after the
+// fact, and it came back out by operator ruling (ranger-base-5sph1, applied
+// on ranger-base-888fv). Either way the file's contract is the same — a name
+// that is not here is not covered, and a reader has to be able to SEE that.
+// None of the three is pinned, and each has a measured reason (the
+// GIT_CONFIG pair 2026-09-05, GIT_EXTERNAL_DIFF 2026-09-06; git 2.50.1
+// Apple Git-155):
 //
 //   - GIT_CONFIG_COUNT has no pinnable value at all. `0` closes the inlet —
 //     and closes posse's OWN L3 hooks redirect with it, because ADR 0052 D2
@@ -102,15 +106,61 @@ import "os"
 //     only neutral value is the path git already resolves to, which is
 //     per-box, and the shipped drop-in is a constant this table is held
 //     equal to — so there is nothing to write in it.
+//   - GIT_EXTERNAL_DIFF has no neutral spelling either, and unlike the two
+//     above it was pinned `""` for a while before anyone measured what that
+//     cost. Every value in this name is EXECUTED as the diff driver, so `""`
+//     is not "no driver", it is the command `""` — the GIT_SSH_COMMAND=""
+//     trap the WHY THE VALUES ARE NOT ALL "" section above holds up as the
+//     thing to avoid, walked into. Git's way of saying "use the internal
+//     diff" is the --no-ext-diff FLAG, and an `env` block cannot supply a
+//     flag; pinning `diff.external` at the config layer instead does not
+//     close the inlet at all, because this variable overrides config.
+//     Re-measured 2026-09-06 with a MARKER driver, so what is graded is
+//     whether the driver was INVOKED and not whether `""` happened to be
+//     harmless:
+//       DRIVER RUNS, so `""` is rc 128 `error: cannot run :` — `git diff`,
+//       --cached/--staged, `git diff <rev>`, -U0, --exit-code; and
+//       show/log -p with --ext-diff, which is opt-in.
+//       DRIVER NEVER RUNS, so `""` is byte-identical to unset — --stat
+//       --shortstat --numstat --name-only --name-status --raw --check
+//       --quiet --no-ext-diff; git show, git log -p and format-patch (the
+//       log family defaults ext-diff OFF); diff-tree -p, diff-index -p,
+//       stash show -p, range-diff.
+//     So the price of pinning it is the `git diff` PORCELAIN asking for
+//     patch format, in every posse-launched seat — not "all patch output",
+//     which is why a count of what it breaks has to grade the FORMAT and
+//     not the verb. The original row cleared itself with --shortstat, which
+//     is on the second list and could not have shown a cost whatever the
+//     value was (ranger-base-csfbj). And the protection was never at the
+//     tier that matters most: `""` does not take at the root-owned policy
+//     tier (ranger-base-sn0w8), so the row cost posse-launched seats and
+//     covered the operator's uncaged sessions not at all. Operator ruled
+//     2026-09-06 to accept the inlet rather than pay that
+//     (ranger-base-5sph1); the accepted residue is an attacker who can
+//     write a lower-scope `env` block getting a program of their choosing
+//     run on the next `git diff` a posse-launched session makes.
+//     WHAT IS NOT ACCEPTED, and does not rest on this row: the diff
+//     READERS. `diff.external` in any gitconfig and a `diff=<driver>`
+//     attribute reach the same way with no environment at all, so posse's
+//     own four `git diff` readers each state a format and are immune on
+//     their own account (memoryDiff, ranger-base-xw51s), held by
+//     extdiff_qa_test.go rather than by anything here.
 //
-// So the GIT_CONFIG_* family is NARROWED here, not closed: an attacker who
-// can set a lower-scope `env` block still has GIT_CONFIG_COUNT and
-// GIT_CONFIG_GLOBAL. Closing either costs something the operator has to
-// accept, so it is filed for them as ranger-base-37y0z rather than decided
-// here. TestQATheInletPinCoversTheGitConfigFamilyOrSaysWhyNot holds this
-// paragraph against the live behaviour: it fails if either name stops being
-// disclosed, and it fails if either gap closes and the prose stops being
-// true.
+// So the GIT_CONFIG_* family is NARROWED here, not closed, and the git
+// exec surface is narrowed with it: an attacker who can set a lower-scope
+// `env` block still has GIT_CONFIG_COUNT, GIT_CONFIG_GLOBAL and
+// GIT_EXTERNAL_DIFF. Closing any of them costs something the operator has
+// to accept, so each was filed for them rather than decided here —
+// ranger-base-37y0z for the GIT_CONFIG pair, ranger-base-5sph1 for
+// GIT_EXTERNAL_DIFF — and all three were accepted.
+// TestQATheInletPinCoversTheGitConfigFamilyOrSaysWhyNot holds this
+// paragraph against the live behaviour for the pair: it fails if either
+// name stops being disclosed, and it fails if either gap closes and the
+// prose stops being true.
+// TestQATheExternalDiffRowIsPinnedWithItsCostOrNotPinnedAtAll holds the
+// third one to the same standard from the other direction: absent from
+// BOTH ends and named here with a reason, or pinned with its cost readable
+// in the row — never pinned silently, and never dropped silently either.
 
 // inletPin is the transport/exec half of what a launch pins. Each row's
 // value is the one measured to leave this box's behaviour exactly where it
@@ -207,62 +257,6 @@ import "os"
 //	GIT_SSH_COMMAND=ssh             attack ran a marker script as the ssh
 //	                                transport; "" BREAKS ssh outright; `ssh`
 //	                                reproduces unset exactly.
-//	GIT_EXTERNAL_DIFF=""            NOT NEUTRAL, and the row whose own
-//	                                measurement was taken with the one
-//	                                arm that could not see the cost. The
-//	                                attack was real — a marker script
-//	                                named here RAN as the diff driver of
-//	                                `git diff HEAD~1` — but the arm that
-//	                                cleared "" was --shortstat, which is
-//	                                one of the formats that never reaches
-//	                                a driver at all. Git does not read
-//	                                set-but-empty as unset: it execs "",
-//	                                which is the GIT_SSH_COMMAND="" trap
-//	                                two rows up, walked into. Re-measured
-//	                                2026-09-06 with a MARKER driver, so
-//	                                what is graded is whether the driver
-//	                                was invoked and not whether "" was
-//	                                harmless:
-//	                                  DRIVER RUNS, so "" is rc 128
-//	                                  `error: cannot run :` — git diff,
-//	                                  --cached/--staged, git diff <rev>,
-//	                                  -U0, --exit-code; and show/log -p
-//	                                  --ext-diff, which is opt-in.
-//	                                  DRIVER NEVER RUNS, so "" is
-//	                                  byte-identical to unset — --stat
-//	                                  --shortstat --numstat --name-only
-//	                                  --name-status --raw --check
-//	                                  --quiet --no-ext-diff; git show,
-//	                                  git log -p and format-patch (the
-//	                                  log family defaults ext-diff OFF);
-//	                                  diff-tree -p, diff-index -p,
-//	                                  stash show -p, range-diff.
-//	                                So the price is the `git diff`
-//	                                PORCELAIN asking for patch format and
-//	                                nothing else — NOT "all patch output",
-//	                                which is why a count of what this row
-//	                                breaks has to grade the FORMAT and not
-//	                                the verb. No neutral spelling exists:
-//	                                every value is EXECUTED, and git's way
-//	                                of saying "use the internal diff" is
-//	                                the --no-ext-diff FLAG, which an env
-//	                                pin cannot supply. So this row is
-//	                                fail-closed LOUDLY, not quiet, and it
-//	                                is flag-scope-effective — "" does not
-//	                                take at the policy tier
-//	                                (ranger-base-sn0w8), so it costs
-//	                                posse-launched seats and covers the
-//	                                operator's uncaged sessions not at all.
-//	                                posse's own `git diff` readers each
-//	                                state a format and are immune
-//	                                (memoryDiff, ranger-base-xw51s); a
-//	                                bare `git diff` anywhere else in a
-//	                                seat is not. KEEPING it at that price
-//	                                or moving it to ALSO NOT COVERED
-//	                                beside GIT_CONFIG_GLOBAL is the
-//	                                operator's, filed as ranger-base-5sph1
-//	                                — disclosed here, not decided here,
-//	                                exactly as the GIT_CONFIG_* pair above.
 //	GIT_PAGER=""                    the honest row: the attack arm stayed
 //	                                QUIET, because git does not page without
 //	                                a TTY and a fleet Bash call is a pipe. So
@@ -386,12 +380,13 @@ func inletPin() []EnvVar {
 		{Key: "LD_PRELOAD", Value: ""},
 		{Key: "NODE_OPTIONS", Value: " "},
 
-		// Exec inlets git opens whenever a session runs git. Two more
-		// of the GIT_CONFIG_* family are inlets and are NOT here; the
+		// Exec inlets git opens whenever a session runs git. Three
+		// more names git reads are inlets and are NOT here — two of
+		// the GIT_CONFIG_* family, and GIT_EXTERNAL_DIFF, which was
+		// pinned until the operator priced it and ruled it out. The
 		// ALSO NOT COVERED paragraph above carries the measurement
 		// that keeps each of them out.
 		{Key: "GIT_SSH_COMMAND", Value: "ssh"},
-		{Key: "GIT_EXTERNAL_DIFF", Value: ""},
 		{Key: "GIT_PAGER", Value: ""},
 		{Key: "GIT_CONFIG_SYSTEM", Value: os.DevNull},
 		{Key: "GIT_CONFIG_PARAMETERS", Value: ""},

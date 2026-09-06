@@ -142,8 +142,12 @@ func TestMain(m *testing.M) {
 	os.Setenv("CODEX_HOME", "")
 	os.Setenv("GROK_HOME", "")
 	// GIT_EXTERNAL_DIFF, UNSET and not emptied — emptying it is the defect.
-	// posse's own inlet pin exports this variable as the EMPTY STRING in
-	// every pinned seat (inletpin.go), git reads set-but-empty as an
+	// posse's own inlet pin used to export this variable as the EMPTY STRING
+	// in every pinned seat, which is how the defect reached the suite; the
+	// row came out on ranger-base-888fv and no posse seat sets it now. This
+	// unset stays anyway, and it is not vestigial: the operator's own
+	// gitconfig or environment can still carry the name (it is an OPEN inlet
+	// since the drop), git reads set-but-empty as an
 	// external diff command of "" and dies trying to exec it, and this
 	// package's fixtures shell out to a real `git diff` dozens of times to
 	// witness what git itself does with a file. Those are FIXTURE PREMISES,
