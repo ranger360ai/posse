@@ -161,7 +161,7 @@ func TestQACommitWallTakesAnotherPersonasStagedLineUnderACleanDiff(t *testing.T)
 	}
 	// The check that would have caught it, for the same tree.
 	if out, _ := git(nil, "diff", "HEAD~1", "--", "shared.txt"); !strings.Contains(out, "DEVELOPER HALF-WRITTEN") {
-		t.Errorf("`git diff HEAD -- <paths>` is the form that sees a staged edit; it did not:\n%s", out)
+		t.Errorf("`git diff --no-ext-diff HEAD -- <paths>` is the form that sees a staged edit; it did not:\n%s", out)
 	}
 }
 
@@ -173,8 +173,10 @@ func TestQACommitWallTakesAnotherPersonasStagedLineUnderACleanDiff(t *testing.T)
 // over-promise rangerhq-lvu9 was filed to remove, one remove down.
 //
 // Fixed by wording (ranger-base-erba): the refusal now prescribes
-// `git diff HEAD -- <paths>`, which does see a staged edit, and claims only
-// what NOTES.md measures — the form bounds the paths, not the content.
+// `git diff --no-ext-diff HEAD -- <paths>`, which does see a staged edit, and
+// claims only what NOTES.md measures — the form bounds the paths, not the
+// content. The flag arrived with ranger-base-l1ix2: without it the prescribed
+// command dies rc 128 in every pinned seat.
 func TestQACommitWallPrescribesADiffThatCatchesStagedWork(t *testing.T) {
 	t.Parallel()
 	repo, git, persona := commitWallRepo(t)
@@ -192,7 +194,7 @@ func TestQACommitWallPrescribesADiffThatCatchesStagedWork(t *testing.T) {
 	if err == nil {
 		t.Fatalf("an unqualified commit must be refused:\n%s", out)
 	}
-	if !strings.Contains(out, "git diff HEAD -- <paths>") {
+	if !strings.Contains(out, "git diff --no-ext-diff HEAD -- <paths>") {
 		t.Errorf("the prescribed check must be one that sees a staged edit, got:\n%s", out)
 	}
 	if strings.Contains(out, "a clean diff there is what makes the safe form actually safe") {

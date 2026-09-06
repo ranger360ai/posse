@@ -401,3 +401,388 @@ func f(r string) { g(r, memoryDiff("HEAD", "--")...) }
 		})
 	}
 }
+
+// ARM 6, the surface ARM 4 says it cannot read, and the class ARM 4's sweep
+// was never asked about (ranger-base-l1ix2, verifying ranger-base-9m1gm).
+// ARM 4 grades the `git diff` argvs this package BUILDS. It cannot see two
+// other places the same command is spelled out:
+//
+//   - the hook SCRIPTS, which are shell text inside string literals and
+//     assembled by concatenation, so no single literal holds a whole argv;
+//   - the command a shipped surface PRESCRIBES — the prepare-commit-msg
+//     refusal tells a persona whose commit was just refused to run
+//     `git diff HEAD -- <paths>` before retrying, and AGENTS.md and NOTES.md
+//     tell them the same thing about their own paths and about
+//     `.beads/issues.jsonl`. Nothing runs those; a reader does.
+//
+// A prescribed check is the same defect as a broken reader, one indirection
+// out: in a pinned seat the bare form exits 128 with nothing but the
+// driver's death, on exactly the non-empty case the check exists to detect.
+// It was the escape from ranger-base-xw51s.
+//
+// THE CENSUS reads the RENDERED hook bodies, not gates.go — the render is
+// what ships, and it is past every concatenation. `git diff-tree` is a
+// different command and measured immune (ARM 4's header), so the scan
+// requires a word boundary and never matches it.
+//
+// SCOPE, stated: markdown is graded inside CODE SPANS only (backticks and
+// fenced blocks). A prescription in this repo is always backticked, and
+// grading prose would red NOTES.md the day somebody writes the words in a
+// sentence. Two spans in NOTES.md name `git diff HEAD` as a MEASUREMENT of
+// what a half-broken git still does rather than as a check to run; they are
+// exempted by their own sentence, and the exemption is checked live below,
+// so a rewritten paragraph cannot leave a dead one behind.
+//
+// THE POPULATION IS THE TWO HOOK RENDERS AND THE TWO OPERATING DOCS, and the
+// rest of the tree was swept by hand once (ranger-base-l1ix2, at this
+// commit) rather than pinned: README.md, INSTALL.md and the ADRs spell
+// `git diff` only to DESCRIBE what a product reader does — promote's
+// ratification diff, the hook's own --name-only reader — and those readers
+// are what ARMs 1-4 hold. docs/notes.d/ is out too, deliberately: those
+// fragments are frozen per-bead records (they still name `internal/rhq/`
+// paths that no longer exist), and a record quoting the command as it was
+// then is accurate.
+func TestQAPrescribedGitDiffChecksStateTheirFormat(t *testing.T) {
+	t.Parallel()
+	seen := map[string]int{}
+	for _, s := range extDiffSurfaces(t) {
+		for _, span := range gitDiffSpans(s.text, s.markdown) {
+			seen[s.name]++
+			if extDiffImmuneSpan(span.argv) {
+				continue
+			}
+			if extDiffExempt(span.sentence) {
+				continue
+			}
+			t.Errorf("%s prescribes `%s`, which dies rc 128 in a seat whose GIT_EXTERNAL_DIFF is set empty — on exactly the non-empty case it is there to detect. State the format: %v", s.name, span.argv, extDiffImmune)
+		}
+	}
+	// LIVENESS, and not a count of spans: a floor set to today's N reds the
+	// day somebody legitimately rewords a paragraph. What must be true is
+	// that the extractor reached each surface that HAS a `git diff` in it —
+	// an extractor reading nothing grades nothing, and every green above is
+	// an empty scan. (The pre-push render carries none, which is why it is
+	// not in this list and why the list is named rather than derived.)
+	for _, name := range []string{"the prepare-commit-msg hook render", "AGENTS.md", "NOTES.md"} {
+		if seen[name] == 0 {
+			t.Errorf("the census found no `git diff` at all in %s — it is reading the wrong text, and the pass above measured nothing", name)
+		}
+	}
+	// The exemptions must still describe something in the tree. A stale one
+	// is a hole nobody can see: the sentence it named is gone, so the span
+	// it covered would be graded by a rule nobody re-read.
+	notes := extDiffReadDoc(t, "../../NOTES.md")
+	for sentence, why := range extDiffDocExempt {
+		if !strings.Contains(notes, sentence) {
+			t.Errorf("NOTES.md no longer carries the exempted sentence %q (%s) — delete the exemption or re-anchor it; until then that span is ungraded", sentence, why)
+		}
+	}
+}
+
+// ARM 7, the prescriptions RUN. The census above grades a string; this runs
+// the command the surfaces actually print, against a repo whose driver is
+// planted, and requires a patch out of it.
+//
+// THE FIXTURE IS DIRTY IN BOTH DIRECTIONS, and that is the whole rig. git
+// runs the driver only when it has a patch to render, so the same recipe on
+// a clean path exits 0 under a broken driver and the arm measures nothing —
+// the trap plantExtDiff's own comment names, which is why the tracked file
+// is modified on disk AND has different content staged: `git diff HEAD`,
+// `git diff --cached` and the two-dot form are each non-empty here.
+//
+// THE CONTROL is per command and not per suite: the same argv with
+// --no-ext-diff removed must die. That is what says the driver was live for
+// THIS argv on THIS path, rather than idle — a green above it would
+// otherwise be a green earned by rendering nothing.
+func TestQAPrescribedGitDiffChecksRunUnderADiffDriver(t *testing.T) {
+	t.Parallel()
+	repo := tempGitTree(t)
+	run := func(args ...string) ([]byte, error) {
+		c := exec.Command("git", append([]string{"-C", repo}, args...)...)
+		c.Env = append(os.Environ(), "PATH="+PathOutsideGates(""))
+		return c.CombinedOutput()
+	}
+	// staged ≠ HEAD and worktree ≠ staged: every form the surfaces spell has
+	// something to render.
+	if err := os.WriteFile(filepath.Join(repo, "f"), []byte("staged\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := run("add", "--", "f"); err != nil {
+		t.Fatalf("git add: %v\n%s", err, out)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "f"), []byte("on disk\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plantExtDiff(t, repo)
+
+	seen := 0
+	for _, s := range extDiffSurfaces(t) {
+		for _, span := range gitDiffSpans(s.text, s.markdown) {
+			if !span.prescribed || !extDiffImmuneSpan(span.argv) {
+				continue
+			}
+			argv := extDiffRunnable(span.argv, "f")
+			seen++
+			out, err := run(argv...)
+			if err != nil {
+				t.Errorf("%s prescribes `%s`; it does not run in a seat with a diff driver: %v\n%s", s.name, span.argv, err, out)
+				continue
+			}
+			if len(strings.TrimSpace(string(out))) == 0 {
+				t.Errorf("%s prescribes `%s`; it ran but rendered nothing over a tree that differs from HEAD, from the index and from both — a check that prints nothing over real work is the failure it exists to catch:\n%q", s.name, span.argv, string(out))
+				continue
+			}
+			// The control, on this exact argv and this exact path.
+			bare := extDiffStripFlag(argv, "--no-ext-diff")
+			if len(bare) == len(argv) {
+				t.Errorf("control not built for `%s`: nothing to strip", span.argv)
+				continue
+			}
+			if out, err := run(bare...); err == nil {
+				t.Errorf("control is inert for `%s`: the same argv without --no-ext-diff SUCCEEDED, so the driver rendered nothing here and the pass above measured nothing:\n%s", span.argv, out)
+			}
+		}
+	}
+	// A run over zero prescriptions is a green earned by finding nothing.
+	if seen < 3 {
+		t.Errorf("only %d prescribed check(s) were found across the hook render, AGENTS.md and NOTES.md — ranger-base-l1ix2 fixed three; the extractor is reading the wrong thing", seen)
+	}
+}
+
+// extDiffDocExempt maps a NOTES.md sentence to why the `git diff` it spells
+// is not a check. Keyed on the SENTENCE, not on the command, so a new
+// prescription that happens to be spelled the same way is still graded.
+var extDiffDocExempt = map[string]string{
+	"still renders a full patch":  "a measurement of what an invalid `status.*` value does NOT break, not a check to run",
+	"kills status AND":            "a measurement of what a garbage `.git/index` breaks, not a check to run",
+	"Making one half of git fail": "the paragraph header names the two commands as its subject; it prescribes neither",
+}
+
+// extDiffExempt answers whether a span's own sentence is one of the two
+// NOTES.md measurements, by the phrase that identifies it.
+func extDiffExempt(sentence string) bool {
+	for phrase := range extDiffDocExempt {
+		if strings.Contains(sentence, phrase) {
+			return true
+		}
+	}
+	return false
+}
+
+// extDiffSurface is one shipped place a `git diff` is spelled out.
+type extDiffSurface struct {
+	name     string
+	text     string
+	markdown bool
+}
+
+// extDiffSurfaces is the population: the two hook bodies posse installs, as
+// RENDERED, and the two docs that prescribe the same check in prose.
+func extDiffSurfaces(t *testing.T) []extDiffSurface {
+	t.Helper()
+	return []extDiffSurface{
+		{name: "the prepare-commit-msg hook render", text: CommitGuardHook(VisibilityPublic, OpsPatternSet{})},
+		{name: "the pre-push hook render", text: PrePushHook},
+		{name: "AGENTS.md", text: extDiffReadDoc(t, "../../AGENTS.md"), markdown: true},
+		{name: "NOTES.md", text: extDiffReadDoc(t, "../../NOTES.md"), markdown: true},
+	}
+}
+
+func extDiffReadDoc(t *testing.T, path string) string {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		// Not a skip: these two docs are in the repo this package ships
+		// from, and a missing one means the arm graded nothing.
+		t.Fatalf("read %s: %v", path, err)
+	}
+	return string(b)
+}
+
+// extDiffSpan is one `git diff` command found in a surface. prescribed marks
+// the ones a HUMAN is told to run — a quoted or backticked command — as
+// opposed to a reader the hook runs itself, whose operands are shell
+// variables and cannot be executed here.
+type extDiffSpan struct {
+	argv       string
+	sentence   string // the line it sits on, for the exemption lookup
+	prescribed bool
+}
+
+// gitDiffSpans returns every `git diff` command spelled out in text. In
+// markdown only CODE SPANS are read (see ARM 6's SCOPE note); in shell text
+// everything is, since it is all code.
+func gitDiffSpans(text string, markdown bool) []extDiffSpan {
+	var out []extDiffSpan
+	fenced := false
+	for _, line := range strings.Split(text, "\n") {
+		if markdown && strings.HasPrefix(strings.TrimSpace(line), "```") {
+			fenced = !fenced
+			continue
+		}
+		for _, seg := range gitDiffSegments(line, markdown && !fenced) {
+			out = append(out, extDiffSpan{argv: seg.argv, sentence: line, prescribed: seg.quoted})
+		}
+	}
+	return out
+}
+
+type gitDiffSegment struct {
+	argv   string
+	quoted bool
+}
+
+// gitDiffSegments finds the `git diff` commands in one line. codeSpansOnly
+// restricts the search to backticked spans, which is what a markdown
+// prescription always is here.
+func gitDiffSegments(line string, codeSpansOnly bool) []gitDiffSegment {
+	var out []gitDiffSegment
+	for i := 0; ; {
+		j := strings.Index(line[i:], "git diff")
+		if j < 0 {
+			return out
+		}
+		start := i + j
+		i = start + len("git diff")
+		// `git diff-tree` is plumbing and measured immune; the boundary is
+		// what keeps it out.
+		if i < len(line) && !strings.ContainsRune(" `'\"", rune(line[i])) {
+			continue
+		}
+		// The command runs to the first thing that cannot be part of it: a
+		// quote that closes it, or a shell operator.
+		end := len(line)
+		if k := strings.IndexAny(line[start:], "`'\"|;)&"); k >= 0 {
+			end = start + k
+		}
+		// PRESCRIBED means the command is QUOTED AS A COMMAND — a backtick
+		// span in markdown, a single-quoted one inside the hook's echo text
+		// — which is only true when the same delimiter opens and closes it.
+		// Ending at a quote is not enough on its own: shell code is full of
+		// quotes, and `$(git diff … "$posse_base" …)` would otherwise read
+		// as something a human was told to type.
+		var opener byte
+		if start > 0 && strings.ContainsRune("`'\"", rune(line[start-1])) {
+			opener = line[start-1]
+		}
+		quoted := opener != 0 && end < len(line) && line[end] == opener
+		if codeSpansOnly && !(quoted && opener == '`') {
+			i = end
+			continue
+		}
+		argv := strings.TrimSpace(line[start:end])
+		// Redirections belong to the shell, not to the command's format.
+		if k := strings.Index(argv, " 2>"); k >= 0 {
+			argv = strings.TrimSpace(argv[:k])
+		}
+		out = append(out, gitDiffSegment{argv: argv, quoted: quoted})
+		i = end
+	}
+}
+
+// extDiffImmuneSpan grades one command text: it must state the format, or
+// ask for one an external driver cannot reach.
+func extDiffImmuneSpan(argv string) bool {
+	for _, f := range extDiffImmune {
+		if strings.Contains(argv, f) {
+			return true
+		}
+	}
+	return false
+}
+
+// extDiffRunnable turns a prescription into an argv this fixture can run:
+// its placeholder operands (`<paths>`, `.beads/issues.jsonl`) name files
+// that do not exist here, so everything after `--` becomes the one tracked
+// file the fixture keeps dirty.
+func extDiffRunnable(argv, path string) []string {
+	fields := strings.Fields(argv)
+	for i, f := range fields {
+		if f == "--" {
+			return append(append([]string{}, fields[1:i+1]...), path)
+		}
+	}
+	return fields[1:]
+}
+
+func extDiffStripFlag(argv []string, flag string) []string {
+	out := make([]string, 0, len(argv))
+	for _, a := range argv {
+		if a != flag {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+// ARM 8, the extractor's own rules — ARM 5's trick applied to ARM 6. The
+// census above is only as good as what it reads, and two of its rules have
+// no live case in the tree today: nothing in AGENTS.md or NOTES.md names
+// `git diff` outside a code span, and no hook script spells `git diff-tree`
+// next to something that would be graded. Measured, not assumed: widening
+// the code-span filter to prose leaves ARM 6 green, so the filter is pinned
+// here instead of by the tree happening to have a case for it.
+//
+// PRESCRIBED is the judgement that decides what ARM 7 RUNS, and it is the
+// one worth stating twice: a command is prescribed when the same delimiter
+// opens and closes it — a backtick span in markdown, a single-quoted one in
+// the hook's echo text. Shell code is full of quotes, so "ends at a quote"
+// would read `$(git diff … "$posse_base")` as something a human was told to
+// type, and ARM 7 would then try to run a shell variable.
+func TestQAGitDiffSpanExtractorReadsCodeAndNotProse(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		name       string
+		text       string
+		markdown   bool
+		wantArgv   []string
+		prescribed []bool
+	}{
+		{name: "markdown prose mention is not a prescription", markdown: true,
+			text:     "a bare git diff HEAD is blind to a staged edit, and so is git diff\n",
+			wantArgv: nil},
+		{name: "markdown code span is", markdown: true,
+			text:       "Check with `git diff --no-ext-diff HEAD -- <paths>`, which compares\n",
+			wantArgv:   []string{"git diff --no-ext-diff HEAD -- <paths>"},
+			prescribed: []bool{true}},
+		{name: "a fenced block is code, not prose", markdown: true,
+			text:       "```\ngit diff --no-ext-diff HEAD -- .beads/issues.jsonl\n```\n",
+			wantArgv:   []string{"git diff --no-ext-diff HEAD -- .beads/issues.jsonl"},
+			prescribed: []bool{false}},
+		{name: "shell reader: graded, never prescribed",
+			text:       "posse_x=$(git diff --cached --name-only --no-renames HEAD 2>/dev/null)\n",
+			wantArgv:   []string{"git diff --cached --name-only --no-renames HEAD"},
+			prescribed: []bool{false}},
+		{name: "shell reader whose operand is a quoted variable",
+			text:       "  posse_added=$(git diff --cached -U0 --no-ext-diff \"$posse_base\" -- 'docs/*' 2>/dev/null |\n",
+			wantArgv:   []string{"git diff --cached -U0 --no-ext-diff"},
+			prescribed: []bool{false}},
+		{name: "the hook's own prescription, inside an echo",
+			text:       "  echo \"  'git diff --no-ext-diff HEAD -- <paths>' first: it shows what the\"\n",
+			wantArgv:   []string{"git diff --no-ext-diff HEAD -- <paths>"},
+			prescribed: []bool{true}},
+		{name: "git diff-tree is a different command",
+			text:     "  git diff-tree -p \"$1\" 2>/dev/null | git patch-id --stable\n",
+			wantArgv: nil},
+		{name: "two on one line, both read",
+			text:       "  echo \"  'git diff --no-ext-diff HEAD' or 'git diff --no-ext-diff --cached'\"\n",
+			wantArgv:   []string{"git diff --no-ext-diff HEAD", "git diff --no-ext-diff --cached"},
+			prescribed: []bool{true, true}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			got := gitDiffSpans(c.text, c.markdown)
+			if len(got) != len(c.wantArgv) {
+				t.Fatalf("extractor returned %d span(s), want %d:\n%+v\n--- text ---\n%s", len(got), len(c.wantArgv), got, c.text)
+			}
+			for i, want := range c.wantArgv {
+				if got[i].argv != want {
+					t.Errorf("span %d = %q, want %q", i, got[i].argv, want)
+				}
+				if got[i].prescribed != c.prescribed[i] {
+					t.Errorf("span %d (%q) prescribed = %v, want %v — prescribed is what ARM 7 tries to RUN", i, got[i].argv, got[i].prescribed, c.prescribed[i])
+				}
+			}
+		})
+	}
+}

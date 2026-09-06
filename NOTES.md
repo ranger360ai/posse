@@ -4925,8 +4925,8 @@ path-limited commit takes the WORKING TREE version of the paths it names and
 ignores what is staged for them, so the add did nothing and the unqualified
 commit it fed is one the shared-index wall refuses. If that line reports `no
 changes added to commit`, the tree already matches HEAD — check with
-`git diff HEAD -- .beads/issues.jsonl`, never `git status`, which also counts
-a stale index entry (`docs/notes.d/ranger-base-nor.md`).
+`git diff --no-ext-diff HEAD -- .beads/issues.jsonl`, never `git status`, which
+also counts a stale index entry (`docs/notes.d/ranger-base-nor.md`).
 
 **Still open from the 0.49.1 `bd doctor` (operator, all in the deny block):**
 - pre-push hook: `bd hooks install` (each repo).
@@ -6292,8 +6292,8 @@ takes whatever is in it.
 `git commit -m … -- <paths>` — builds a *temporary* index, commits only the
 named paths, and leaves the other persona's staged entries untouched in the
 shared index. Verified both directions: the sweeping form loses A's work, the
-path-limited form commits only B's path and A's `git diff --cached` still
-shows its own staged file afterwards.
+path-limited form commits only B's path and A's
+`git diff --no-ext-diff --cached` still shows its own staged file afterwards.
 
 **A hook can tell the forms apart — but not the obvious way.** git exports
 `GIT_INDEX_FILE` to hooks, and only a genuine path-limited commit gets a
@@ -6732,7 +6732,7 @@ this repo, 2026-08-22, all four forms of that incident:
 |---|---|
 | `git add <mine>` then `git commit -m …` — the incident itself | refused |
 | `git commit -a` | refused, named in the message as `git commit -a` |
-| `git commit -F - -- <mine>` | commits only `<mine>`; the other persona's staged entry is still in `git diff --cached` afterwards |
+| `git commit -F - -- <mine>` | commits only `<mine>`; the other persona's staged entry is still in `git diff --no-ext-diff --cached` afterwards |
 | `GIT_INDEX_FILE=<private> …` — the workaround that bead recorded | refused |
 
 **The residual, measured: the blessed form still takes another persona's

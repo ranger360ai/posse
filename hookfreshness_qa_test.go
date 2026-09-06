@@ -11,11 +11,11 @@ package posse_test
 // a session) is re-rendered by nothing at all, and one such pair ran a hook
 // three days behind the binary. It still refused; what it had lost was the
 // ranger-base-erba paragraph (b291784) prescribing
-// `git diff HEAD -- <paths>`, so it sent every reader to the bare two-dot
-// `git diff`, which is blind to another persona's staged edit. A wall that
-// refuses with stale guidance fails silently, and reinstalling once fixes the
-// day, not the class: the next change to the hook body re-stales those repos
-// exactly the same way.
+// `git diff --no-ext-diff HEAD -- <paths>`, so it sent every reader to the
+// bare two-dot `git diff`, which is blind to another persona's staged edit.
+// A wall that refuses with stale guidance fails silently, and reinstalling
+// once fixes the day, not the class: the next change to the hook body
+// re-stales those repos exactly the same way.
 //
 // Three arms are the whole point:
 //   - the STALE arm. A body that carries our marker and still refuses is the
@@ -286,11 +286,12 @@ func TestQAHookFreshnessFreshBoxPasses(t *testing.T) {
 
 // THE ARM THAT SHIPPED. A hook that carries our marker and still refuses, but
 // whose body is behind the binary — exactly the pair found stale on the box,
-// where the drift was the erba `git diff HEAD -- <paths>` paragraph.
+// where the drift was the erba `git diff --no-ext-diff HEAD -- <paths>`
+// paragraph.
 func TestQAHookFreshnessCatchesAStaleBodyThatStillRefuses(t *testing.T) {
 	r := hfNewRig(t, map[string]string{"priv": "private"})
 	body := hfRead(t, r.hook("priv"))
-	const erba = "'git diff HEAD -- <paths>'"
+	const erba = "'git diff --no-ext-diff HEAD -- <paths>'"
 	if !strings.Contains(body, erba) {
 		t.Fatalf("rig never built: the current render does not carry %s", erba)
 	}
@@ -700,7 +701,7 @@ func TestQAHookFreshnessStillCatchesAStaleHookOnAManagedBox(t *testing.T) {
 	// The same drift the control was built for: a body carrying our marker,
 	// still refusing, whose refusal prescribes the bare two-dot `git diff`.
 	body := hfRead(t, r.hook("pub"))
-	stale := strings.Replace(body, "git diff HEAD -- <paths>", "git diff", 1)
+	stale := strings.Replace(body, "git diff --no-ext-diff HEAD -- <paths>", "git diff", 1)
 	if stale == body {
 		t.Fatal("rig never built: the render no longer carries the erba paragraph to stale")
 	}
@@ -1089,7 +1090,7 @@ func hfVerdict(t *testing.T, out string) string {
 func TestQAHookFreshnessVerdictRestatesFindingsARunAboveItWouldLose(t *testing.T) {
 	r := hfNewRig(t, map[string]string{"priv": "private", "pub": "public"})
 	body := hfRead(t, r.hook("priv"))
-	const erba = "'git diff HEAD -- <paths>'"
+	const erba = "'git diff --no-ext-diff HEAD -- <paths>'"
 	if !strings.Contains(body, erba) {
 		t.Fatalf("rig never built: the current render does not carry %s", erba)
 	}
@@ -1160,7 +1161,7 @@ func TestQAHookFreshnessDoesNotPassAManagedBoxCarryingAFinding(t *testing.T) {
 // the fixture is TWO stale repos, and both names have to be in the block.
 func TestQAHookFreshnessVerdictRestatesEveryFindingAndNotJustOne(t *testing.T) {
 	r := hfNewRig(t, map[string]string{"alpha": "private", "omega": "public"})
-	const erba = "'git diff HEAD -- <paths>'"
+	const erba = "'git diff --no-ext-diff HEAD -- <paths>'"
 	for _, name := range []string{"alpha", "omega"} {
 		body := hfRead(t, r.hook(name))
 		if !strings.Contains(body, erba) {

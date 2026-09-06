@@ -157,7 +157,7 @@ func TestHookWallSweepCatchesAStaleBodyThatStillRefuses(t *testing.T) {
 	}
 	// Delete one sentence of guidance, exactly the shape of the real
 	// staleness: the marker survives, the refusal survives, the advice rots.
-	stale := strings.Replace(string(body), "git diff HEAD -- <paths>", "git diff", 1)
+	stale := strings.Replace(string(body), "git diff --no-ext-diff HEAD -- <paths>", "git diff", 1)
 	if stale == string(body) {
 		t.Skip("render no longer carries the erba sentence this fixture ages")
 	}

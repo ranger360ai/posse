@@ -386,6 +386,17 @@ what a constitution promote is about to put in force — printed `could not be
 read … ratify by hand before trusting this promote`, every time, in every
 pinned session. It reads now.
 
+The third site was not a reader at all: it was the check posse *tells you to
+run*. The commit wall's refusal, AGENTS.md's landing checklist and NOTES.md's
+`.beads/issues.jsonl` note each prescribed a bare `git diff HEAD -- <paths>`
+as the way to see what a path-limited commit will take — and in a pinned
+session that command exits 128 and prints nothing but the driver's death, on
+exactly the non-empty case it exists to detect. A clean path exits 0 and looks
+fine, which is why nobody hit it first on the day it mattered. All three
+prescribe `git diff --no-ext-diff HEAD -- <paths>` now. The refusal is hook
+text, so a repo that already has the hook needs `posse gates install-hooks`
+(or the next launch that re-renders it) to print the runnable form.
+
 **Four shipped sentences that spell the promoted set out for an operator now
 read it instead of repeating it, so `runtimes/` is in all four.**
 

@@ -370,8 +370,12 @@ func TestQAAgentsMdNamesTheStaleIndexCheck(t *testing.T) {
 	}
 	doc := string(b)
 	for _, want := range []string{
-		"git status",                      // the signal that misreports
-		"git diff HEAD -- <paths>",        // the check that tells the truth
+		"git status", // the signal that misreports
+		// The check that tells the truth, and the flag that lets it run: a
+		// seat's GIT_EXTERNAL_DIFF is set EMPTY by posse's own inlet pin, and
+		// a bare `git diff HEAD` dies rc 128 there on exactly the non-empty
+		// case this check exists to detect (ranger-base-l1ix2).
+		"git diff --no-ext-diff HEAD -- <paths>",
 		"git restore --staged -- <paths>", // the recovery
 		"rangerhq-be7k",                   // where the measurement lives
 	} {
