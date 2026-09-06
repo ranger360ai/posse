@@ -7129,3 +7129,27 @@ reproduced on this box, and each fix has a mutant that reds without it.
 And the `toolchain identity` step in ci.yml prints `git --version` and
 `make --version` on both runners now, for the same reason it prints awk's:
 the next userland split should be a log line rather than an expedition.
+
+**Making one half of git fail: `git status` and `git diff` break on different
+things** (ranger-base-2asm5, owed by ranger-base-xw51s). Both cagestale.go
+readers swallow a failed git call into a wrong verdict, so both need a fixture
+that FAILS a specific call — and a fixture that breaks everything cannot say
+which read a pin caught. Measured on git 2.50.1 / darwin 25.4.0:
+
+- **An invalid `status.*` config value** — `git config status.showUntrackedFiles
+  <not-a-mode>` — kills every `git status` at config-parse time (rc 128, and
+  an explicit `--untracked-files=all` on the command line does NOT rescue it),
+  while `git diff HEAD` still renders a full patch. This is the status-only
+  fixture, and the one that pins a status branch on its own.
+- **A garbage `.git/index`** kills status AND `git diff HEAD` (both `fatal:
+  index file smaller than expected`) while `git rev-parse HEAD` still answers,
+  since it reads refs and not the index. Use it for "nothing but HEAD can be
+  read", never to pin one call.
+- **An unreadable tracked file** (`chmod 000`) fails the diff and NOT the
+  status, which only stats — extdiff_qa_test.go's arm 2.
+- **An unreadable untracked DIRECTORY** (`chmod 000`) is not a fixture at all:
+  status WARNS and exits 0.
+
+The fixture helper witnesses both directions — the call it means to break, and
+the call that must still work — because a plant that broke both would leave
+the arm measuring the other reader.
