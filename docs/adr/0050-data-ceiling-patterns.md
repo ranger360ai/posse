@@ -4,8 +4,9 @@
 ranger-base-w9jv (b)) · owner: architect · extends ADR 0024 D2 and ADR
 0048 D2 · builds in ranger-base-nfg8l (code, dinesh); the posture
 doc and the work-install runbook amend in ranger-base-83crg (security, hoover) ·
-number: 0043–0045 stay pre-named by ADR 0040 §2; per 0040 §3.1 this file
-takes the next number no bead has claimed · amended 2026-09-04 (Context,
+number: this file took the next free number at commit; the 0043–0045 gap is
+not a reservation — ADR 0040 as simplified 2026-09-05 reversed the four-new-root
+plan those numbers were pre-named for (ranger-base-hn32r) · amended 2026-09-04 (Context,
 D2: the two arms read every staged FILE, not every staged "text" file —
 ADR 0048 D2 as amended; ranger-base-9307c, from ranger-base-h137b) ·
 amended 2026-09-03 (D2, D5, Consequences: the commit MESSAGE is a THIRD
