@@ -129,8 +129,9 @@ func TestBlindUnderBudgetOn401StillRuns(t *testing.T) {
 
 // ─── the governance row, which is what the pulse fingerprints ────────────────
 
-// G5 stays G5 — ADR 0029's table is closed at nine — but a credential
-// failure is a different INSTANCE of it and says so in the key. The last
+// G5 stays G5 — the fact is one fact, "the guard cannot read the meter" —
+// but a credential failure is a different INSTANCE of it and says so in the
+// key. The last
 // two rows are the control: an availability failure keeps the old key, so
 // this pin fails if the fork ever collapses in either direction.
 func TestGovG5CredentialBlindGetsItsOwnKey(t *testing.T) {

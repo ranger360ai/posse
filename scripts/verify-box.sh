@@ -18,13 +18,30 @@
 # regenerates is not a control; a recurring detective check is.
 #
 # THIS SCRIPT IS THE BODY OF THAT CONTROL AND NOT ITS SCHEDULE. It runs the
-# checks, classifies each, prints, and exits. It installs nothing, schedules
-# nothing, files nothing and writes nothing anywhere. Where a finding SURFACES
-# -- a bead, a log, the session-start checklist, the cockpit -- is one decision
-# for all of these at once and it is the operator's; so is any on-box schedule,
-# which is a launchd install. Both are asked on ranger-base-51z8j. Until one is
-# answered this is still a command a person types, which is honest: what it
-# fixes today is that the person types ONE.
+# checks, classifies each, prints, records the verdict, and exits. It installs
+# nothing, schedules nothing, files no bead and remediates nothing. Where a
+# finding SURFACES, and whether this box runs it on a clock, were both asked on
+# ranger-base-51z8j and both answered by the operator on 2026-09-06
+# (ranger-base-0x1wc, "d plus b, yes to launchagent after g code lands"): the
+# surface is the governance row G10 in `posse status` and the cockpit, and the
+# schedule is a daily user LaunchAgent whose plist is versioned in
+# $CONSTITUTION/scripts/launchd/, not here.
+#
+# SO THERE IS EXACTLY ONE WRITE, and this is the whole of it: the last run's
+# verdict, to $RHQ_HOME/state/verify-box.yaml (write_state below). It is the
+# only store G10 reads -- no second stamp, no index, nothing else writes it --
+# and posse dates every reading against `verify_box_max_age:` so that a verdict
+# nobody has refreshed since the schedule's interval renders STALE rather than
+# green. That freshness rule is what makes a ONE-LINE state file honest: this
+# script never has to report that it did not run, because not running is
+# exactly what an ageing file says.
+#
+# AND A RUN THAT DIES BEFORE ITS VERDICT STILL LEAVES A LINE. The first thing
+# a run prints is a start line carrying the same stamp it will write, and the
+# plist points StandardOutPath/StandardErrorPath at
+# $RHQ_HOME/state/verify-box.log -- so a killed, wedged or crashed run leaves
+# the start line and whatever the shell said about it, in the file G10's stale
+# row names. A job that logs only what it finished cannot say what killed it.
 #
 # THE ROSTER IS THE LIVE-BOX CHECKS AND ONLY THOSE. A check earns a place here
 # by asserting the state of THIS MACHINE -- a pin, a credential path, an
@@ -84,6 +101,24 @@ set -uo pipefail
 self=$(basename "$0")
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd) || {
   echo "$self: cannot locate the repo from $0" >&2; exit 2; }
+
+# posse's home, resolved as internal/posse/app.go resolves it: an explicit
+# RHQ_HOME, else ~/.config/posse, else the pre-0015 ~/.config/rhq if that is
+# what this box still has. The state file goes under it.
+#
+# AN EXPLICIT RHQ_HOME WINS WHETHER OR NOT THE DIRECTORY EXISTS YET, which is
+# where this parts company with verify-hook-freshness.sh's one-liner. That one
+# falls through to the legacy home when the named one is not there, and this
+# script WRITES: applying that fallback to a named home would send a scratch
+# run's verdict into a real state directory. --self-test runs every arm under
+# a scratch RHQ_HOME for exactly that reason, and the fallback must not
+# quietly undo it.
+home="${RHQ_HOME:-}"
+if [ -z "$home" ]; then
+  home="$HOME/.config/posse"
+  [ -d "$home" ] || { [ -d "$HOME/.config/rhq" ] && home="$HOME/.config/rhq"; }
+fi
+state_file="$home/state/verify-box.yaml"
 
 quiet=0
 selftest=0
@@ -202,25 +237,77 @@ if [ "${1:-}" = "--census" ]; then
 fi
 
 # ------------------------------------------------------------------ the run
+# write_state records the run's verdict where posse's governance row G10 reads
+# it (internal/posse/verifybox.go). One file, written once, at the end of a run.
+#
+# ATOMIC, and via a FIXED sibling name rather than a mktemp: a reader that
+# catches a half-written file would report the box unverifiable, and this
+# script deletes nothing (boxcheck_qa_test.go's read-only scan forbids `rm`),
+# so a crashed write must leave one predictable file the next run overwrites
+# rather than a growing pile of temporaries.
+#
+# A FAILURE TO WRITE IS NOT A FAILURE OF THE RUN. The checks already ran and
+# their verdict is already on stdout; losing the record must not turn a clean
+# box into exit 1. It says so on stderr and the file simply ages out, which is
+# the same thing G10 will report either way.
+write_state() { # write_state <stamp> <rc> <checks-block>
+  local stamp=$1 rc=$2 checks=$3 tmp
+  tmp="$state_file.new"
+  mkdir -p "$(dirname "$state_file")" 2>/dev/null || {
+    echo "$self: cannot create $(dirname "$state_file") -- no verdict recorded" >&2; return 0; }
+  {
+    echo "# The last live-box run's verdict. Written by scripts/verify-box.sh,"
+    echo "# read by posse's governance row G10. Hand edits are pointless: the"
+    echo "# next run overwrites this file whole."
+    echo "at: $stamp"
+    echo "rc: $rc"
+    echo "checks:"
+    printf '%s' "$checks"
+  } > "$tmp" 2>/dev/null && mv "$tmp" "$state_file" 2>/dev/null || {
+    echo "$self: cannot write $state_file -- no verdict recorded" >&2; return 0; }
+  return 0
+}
+
 run_roster() {
-  local ok=0 finding=0 nothing=0 error=0 lines="" detail=""
-  local name cmd rc out
+  local ok=0 finding=0 nothing=0 error=0 lines="" detail="" checks=""
+  local name cmd rc out started
+  # ONE stamp for the whole run, taken before the first check and used by the
+  # start line, the report header and the state file alike. The header used to
+  # take its own `date` at report time; two stamps for one run is two answers
+  # to "when was this box last checked", and the freshness rule is decided on
+  # that answer. The START is the conservative one -- a run that takes twenty
+  # minutes is dated from when it began looking.
+  started=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  # The line a dying run leaves behind. It is printed BEFORE any check runs
+  # and it is not suppressed by --quiet: the plist points stdout and stderr at
+  # $RHQ_HOME/state/verify-box.log, and a run that is killed before it can
+  # write a verdict leaves exactly this and whatever the shell said after it.
+  echo "$self: run started $started"
   while IFS=$'\t' read -r name cmd; do
     [ -n "$name" ] || continue
     if [ ! -x "$root/${cmd%% *}" ]; then
       lines+=$(printf '  %-26s %s' "$name" "ERROR    ${cmd%% *} is missing or not executable")
       lines+=$'\n'
       error=$((error + 1))
+      checks+="  $name: error"$'\n'
       detail+="--- $name (could not run)"$'\n'"$root/${cmd%% *} is missing or not executable"$'\n\n'
       continue
     fi
     out=$( cd "$root" && eval "$cmd" 2>&1 )
     rc=$?
+    # The state file's token per check is the same classification, spelled
+    # for a machine: posse's reader keys on it (internal/posse/verifybox.go's
+    # four VerifyBox* constants), so the tokens and the human column are set
+    # in one `case` and cannot come to mean different things.
     case $rc in
-      0) ok=$((ok + 1));           lines+=$(printf '  %-26s %s' "$name" "ok") ;;
-      1) finding=$((finding + 1)); lines+=$(printf '  %-26s %s' "$name" "FINDING") ;;
-      2) nothing=$((nothing + 1)); lines+=$(printf '  %-26s %s' "$name" "not measured") ;;
-      *) error=$((error + 1));     lines+=$(printf '  %-26s %s' "$name" "ERROR    exit $rc") ;;
+      0) ok=$((ok + 1));           lines+=$(printf '  %-26s %s' "$name" "ok")
+         checks+="  $name: ok"$'\n' ;;
+      1) finding=$((finding + 1)); lines+=$(printf '  %-26s %s' "$name" "FINDING")
+         checks+="  $name: finding"$'\n' ;;
+      2) nothing=$((nothing + 1)); lines+=$(printf '  %-26s %s' "$name" "not measured")
+         checks+="  $name: not-measured"$'\n' ;;
+      *) error=$((error + 1));     lines+=$(printf '  %-26s %s' "$name" "ERROR    exit $rc")
+         checks+="  $name: error"$'\n' ;;
     esac
     lines+=$'\n'
     # A finding's own output is the whole product -- it names the file, the
@@ -235,18 +322,28 @@ run_roster() {
 
   local total=$((ok + finding + nothing + error))
   printf '%s' "$detail"
-  echo "$self: live-box checks, $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  echo "$self: live-box checks, $started"
   printf '%s' "$lines"
   echo
 
+  local verdict=0
   if [ $((finding + error)) -gt 0 ]; then
-    echo "$self: $finding finding(s), $error error(s) of $total check(s) -- the box is not what the repo says it is"
-    return 1
+    verdict=1
+  elif [ "$total" -gt 0 ] && [ "$nothing" -eq "$total" ]; then
+    verdict=2
   fi
-  if [ "$total" -gt 0 ] && [ "$nothing" -eq "$total" ]; then
-    echo "$self: NOTHING MEASURED -- all $total check(s) exited 2. That is not a pass."
-    return 2
-  fi
+  # RECORDED BEFORE IT IS ANNOUNCED. The write is the thing a scheduled run
+  # exists to leave behind -- the summary line goes to a log nobody may read,
+  # the verdict goes to the surface -- so it happens before the return and on
+  # every arm, including the two red ones.
+  write_state "$started" "$verdict" "$checks"
+
+  case $verdict in
+    1) echo "$self: $finding finding(s), $error error(s) of $total check(s) -- the box is not what the repo says it is"
+       return 1 ;;
+    2) echo "$self: NOTHING MEASURED -- all $total check(s) exited 2. That is not a pass."
+       return 2 ;;
+  esac
   echo "$self: $ok ok, $nothing not measured, of $total check(s)"
   return 0
 }
@@ -290,6 +387,26 @@ self_test() {
   cp "$0" "$tmp/scripts/$self"
   chmod 0755 "$tmp/scripts/$self"
 
+  # EVERY ARM RUNS AGAINST A SCRATCH RHQ_HOME. run_roster now WRITES -- one
+  # state file, the verdict G10 reads -- so an arm inheriting the operator's
+  # home would publish a fixture's verdict as this box's own, and the surface
+  # would report a planted red or a two-check roster as the live-box answer.
+  local state state_text
+  mkdir -p "$tmp/home/state"
+  state="$tmp/home/state/verify-box.yaml"
+
+  # read_state slurps that file WITHOUT FORKING, for the reason the matcher
+  # below does not fork: a `cat` that is signalled or cannot be exec'd under
+  # load would make every state arm report the file empty, which is precisely
+  # the verdict these arms exist to distinguish from a real one.
+  read_state() {
+    local __l
+    state_text=""
+    [ -f "$state" ] || return 0
+    while IFS= read -r __l; do state_text+="$__l"$'\n'; done < "$state"
+    return 0
+  }
+
   # THE MATCHER DOES NOT FORK, and neither does the reporting beside it
   # (ranger-base-t07yx, ranger-base-7hx87, swept by ranger-base-s8b4g and
   # enforced tree-wide by selftestforkarm_qa_test.go). A `grep -q` that is
@@ -306,7 +423,7 @@ self_test() {
     local label=$1 want=$2 want_sub=$3; shift 3
     local roster="" got out r
     for r in "$@"; do roster+="$r"$'\n'; done
-    out=$( ROSTER_OVERRIDE="$roster" "$tmp/scripts/$self" --self-test-run 2>&1 ); got=$?
+    out=$( ROSTER_OVERRIDE="$roster" RHQ_HOME="$tmp/home" "$tmp/scripts/$self" --self-test-run 2>&1 ); got=$?
     if [ "$got" -ne "$want" ]; then
       echo "  FAIL $label: exit $got, want $want"; indent "$out"
       fails=$((fails + 1)); return
@@ -353,6 +470,83 @@ self_test() {
       "a"$'\t'"scripts/notexec.sh"
   arm 'control: the same shape made executable is ok' 0 'ok' \
       "a"$'\t'"scripts/arm0.sh"
+
+  # 6 and its controls: the run RECORDS its verdict where G10 reads it.
+  #
+  # The record is the whole reason a scheduled run is worth anything -- the
+  # summary goes to a log nobody opens, the verdict goes to the surface -- and
+  # it is written by a code path no other arm above touches. Three properties,
+  # each with a control that must come out the other way, because a state file
+  # that always says the same thing pins nothing:
+  #   - the per-check TOKENS are the run's own classification, not a constant
+  #   - the RUN VERDICT (rc:) is recorded on the red arms too, not only green
+  #   - the STAMP is there and is the one the start line announced
+  state_arm() { # state_arm <label> <want-substring>...
+    local label=$1; shift
+    local want
+    for want in "$@"; do
+      case "$state_text" in
+        *"$want"*) ;;
+        *) echo "  FAIL $label: $state does not carry [$want]"; indent "$state_text"
+           fails=$((fails + 1)); return ;;
+      esac
+    done
+    echo "  ok   $label"
+  }
+
+  arm 'a mixed run still reports 1' 1 'FINDING' \
+      "red"$'\t'"scripts/arm1.sh" "clean"$'\t'"scripts/arm0.sh" "blind"$'\t'"scripts/arm2.sh"
+  read_state
+  state_arm 'the verdict file records each check by name' \
+      'red: finding' 'clean: ok' 'blind: not-measured' 'rc: 1'
+  # The control: the SAME check names, all green, must write different tokens
+  # and a different rc. Without it every assertion above passes on a writer
+  # that hard-codes one table.
+  arm 'control: the same names all green' 0 'ok' \
+      "red"$'\t'"scripts/arm0.sh" "clean"$'\t'"scripts/arm0.sh" "blind"$'\t'"scripts/arm0.sh"
+  read_state
+  state_arm 'control: the tokens follow the run, not the roster' \
+      'red: ok' 'blind: ok' 'rc: 0'
+  # NOTHING MEASURED is recorded as its own verdict and not as a pass -- the
+  # one classification this whole control exists to refuse to launder.
+  arm 'all-2 is recorded, not laundered' 2 'NOTHING MEASURED' \
+      "a"$'\t'"scripts/arm2.sh" "b"$'\t'"scripts/arm2.sh"
+  read_state
+  state_arm 'the verdict file records rc 2' 'a: not-measured' 'rc: 2'
+  # The stamp: present, and the one the start line announced. A record whose
+  # stamp does not match its own run is a freshness rule reading someone
+  # else's clock.
+  read_state
+  local stamp=""
+  case "$state_text" in
+    *"at: "*) stamp=${state_text#*at: }; stamp=${stamp%%$'\n'*} ;;
+  esac
+  if [ -z "$stamp" ]; then
+    echo "  FAIL the verdict file carries an at: stamp"; indent "$state_text"
+    fails=$((fails + 1))
+  else
+    out=$( ROSTER_OVERRIDE="a"$'\t'"scripts/arm0.sh"$'\n' RHQ_HOME="$tmp/home" "$tmp/scripts/$self" --self-test-run 2>&1 )
+    read_state
+    local started=""
+    case "$out" in
+      *"run started "*) started=${out#*run started }; started=${started%%$'\n'*} ;;
+    esac
+    # An EMPTY $started is checked before it is compared, and this is not
+    # belt-and-braces: `at: ` is a prefix of every record this script writes,
+    # so a run that printed no start line at all would match the case below
+    # and the arm would report the two halves agreeing when one of them was
+    # missing. Measured -- with the start line deleted, this arm passed.
+    if [ -z "$started" ]; then
+      echo "  FAIL the run printed no start line, so a run that dies before its verdict leaves nothing"; indent "$out"
+      fails=$((fails + 1))
+    else
+      case "$state_text" in
+        *"at: $started"*) echo "  ok   the stamp on the record is the one the start line announced" ;;
+        *) echo "  FAIL the start line said [$started] and the record does not carry it"; indent "$state_text"
+           fails=$((fails + 1)) ;;
+      esac
+    fi
+  fi
 
   echo
   if [ "$fails" -gt 0 ]; then echo "$self --self-test: $fails arm(s) FAILED"; return 1; fi

@@ -711,12 +711,17 @@ default_emoji: ⚙️
 # load_guard: 25             # 1-min loadavg ceiling for FLEET launches; 0 = off
 
 # ─── governance: what needs a human (`posse status`) ─────────────────────────
-# `posse status` computes the condition set — the closed, enumerated list of
-# things that need a human — live from the stores that own each fact: herdr
-# (a blocked session), bd (a settled holder, an unanswered question, a bead
-# routed to the coordinator), the plan endpoint, the cost ledger, the watch
-# loop's flock, and state/pause.yaml. It exits non-zero when the set is
-# non-empty OR when a store could not be read: unknown is not an all-clear.
+# `posse status` computes the condition set — the things that need a human —
+# live from the stores that own each fact: herdr (a blocked session), bd (a
+# settled holder, an unanswered question, a bead routed to the coordinator),
+# the plan endpoint, the cost ledger, the watch loop's flock, state/pause.yaml
+# and state/verify-box.yaml. It exits non-zero when the set is non-empty OR
+# when a store could not be read: unknown is not an all-clear.
+#
+# The rows are named G1..G10 and documented per row in ADR 0029. That is a
+# description of what is computed today, not a fixed cardinality: a new
+# observation needs a documented predicate, owner, scope and class, and gets
+# a number when it has all four.
 #
 # ALWAYS ON, and there is no arm switch. A surface you have to arm is one
 # more thing that can be off when it is needed; the reads cost nothing that
@@ -733,6 +738,28 @@ default_emoji: ⚙️
 # automatic, self-healing — and only a sustained one is a condition.
 # attn_question_age: 4h      # how long a -l question / -l risk bead may sit open
 # attn_guard_stuck: 2h       # how long the plan guard may skip before it is a condition
+
+# G10 is the live-box row: the verdict scripts/verify-box.sh writes to
+# state/verify-box.yaml, which is where this box's own version pins, credential
+# paths, hooks and gate copy are asserted. FRESHNESS IS THE POINT — a verdict
+# older than the max renders STALE and never green, so a schedule that stopped,
+# a run killed before it could write, and a box nothing has ever checked all
+# reach the surface as the one fact they are. `posse status` also prints the
+# verdict and its age as a plain line, whether or not it is a condition.
+#
+# An instance that does not run this control at all says nothing: no state
+# file and neither key below is an unarmed instance, which is what a fresh
+# posse is. There is deliberately no value that switches the freshness rule
+# off — a key that turns off "is anyone checking this box" is the schedule
+# nobody installed, wearing a config value.
+# verify_box_max_age: 26h    # a daily schedule plus two hours of slack
+#
+# A check that is red BY DESIGN while a bead is open is named, never hidden:
+# the red stays on the G10 row and carries the bead beside it. An entry whose
+# check has gone green again — or that names no check the run knows — is
+# itself a G10 row, because a suppression nobody retires is a check going dark.
+# verify_box_accepted:
+#   verify-codex-pin: ranger-base-femsg
 
 # ─── scheduled dispatch (autostart) ──────────────────────────────────────────
 # The unattended loop: herdr's [[startup]] hook (plugin/autostart.sh) runs

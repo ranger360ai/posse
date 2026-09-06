@@ -74,8 +74,11 @@ type GovCondition struct {
 }
 
 // Row is the id as a reader sees it: a carry-over has no row name and must
-// not be given one — inventing G10 would make the design's "closed,
-// enumerated set" not closed.
+// not be given one. Not because the enumeration is closed — ADR 0029's
+// 2026-09-05 simplification retired that claim in as many words, and G10
+// landed under the bar it set instead (a documented predicate, owner, scope
+// and class; verifybox.go) — but because a row name is a promise that the
+// ADR's table describes this condition, and for a carry-over it does not.
 func (c GovCondition) Row() string {
 	if c.ID == "" {
 		return "—"
@@ -280,18 +283,19 @@ func ReadPause(path string) Pause {
 //	G7 watch loop dead, or mute, while armed      flock + its log    URGENT
 //	G8 paused                                     state/pause.yaml   URGENT
 //	G9 ready bead routed to the coordinator       bd + config        LANE
+//	G10 live-box checks stale, red or blind       verify-box.yaml    LANE
 //
 // plus the two conditions the pulse's own first cut shipped and this
 // widening deliberately does not drop — unpushed commits on a beads repo,
-// and no live session for the pulse persona. Neither is a G-row (the table
-// is closed at nine), both are things the coordinating persona owes, and
-// removing shipped oversight is not something a bead titled "widen" should
-// do quietly.
+// and no live session for the pulse persona. Neither is a G-row, both are
+// things the coordinating persona owes, and removing shipped oversight is
+// not something a bead titled "widen" should do quietly.
 //
 // And a third carry-over since ranger-base-a0ln0: the on-box backup is
-// stale, or armed and absent (ADR 0036 §6). It is a carry-over and not a
-// G10 for the reason spelled at its site below — 0029's table is closed at
-// nine, and 0036 asked for the fact on the surface, not for a number.
+// stale, or armed and absent (ADR 0036 §6). It is a carry-over for the
+// reason spelled at its site below — 0036 asked for the fact on the surface,
+// not for a number — and it stayed one when G10 arrived, because a row does
+// not earn a number by seniority.
 //
 // A store that cannot be READ is not a store that says no. bd scan failures
 // come back as errors alongside whatever was computed: the set is then
@@ -406,10 +410,11 @@ func ShopCheck(in GovInputs) (GovSet, []error) {
 		_, badInterval := ParseInterval(interval)
 		switch {
 		case interval == "":
-			// Still G7, and still URGENT: the table is closed at nine, the
-			// fact is the same one (nothing is delivering, and nothing
-			// will at the next herdr start), and only the cause differs —
-			// so it differs by KEY, which is what the fingerprint moves on.
+			// Still G7, and still URGENT: the fact is the same one
+			// (nothing is delivering, and nothing will at the next herdr
+			// start), and only the cause differs — so it differs by KEY,
+			// which is what the fingerprint moves on. A second row name
+			// would say the shop has two problems where it has one.
 			add("G7", GovUrgent, "arm-broken",
 				fmt.Sprintf("autostart_interval: in %s is present but empty — the herdr startup hook refuses it and arms nothing; give it an interval (30s, 5m, or bare seconds), or comment the key out to disarm",
 					AbbrevHome(in.App.ConfigPath)))
@@ -437,10 +442,10 @@ func ShopCheck(in GovInputs) (GovSet, []error) {
 				// The loop is alive. Is its RECORD (ranger-base-n00wn)?
 				//
 				// A third key on the same row, for the reason the two
-				// arm-broken keys above give: ADR 0029's table is closed at
-				// nine, the fact is G7's own — the fleet's one instrument is
-				// not working — and only the cause differs, so it differs by
-				// KEY. It is URGENT because it is silent by construction:
+				// arm-broken keys above give: the fact is G7's own — the
+				// fleet's one instrument is not working — and only the cause
+				// differs, so it differs by KEY. It is URGENT because it is
+				// silent by construction:
 				// the log stopped on 2026-08-31 18:08 and was found on 09-02
 				// with a live loop holding the lock, three days of passes,
 				// seats, kills and load readings unreconstructable, and
@@ -459,6 +464,33 @@ func ShopCheck(in GovInputs) (GovSet, []error) {
 	// whole reason the file shape makes both mandatory.
 	if p := ReadPause(PausePath(in.App)); p.Present {
 		add("G8", GovUrgent, "paused", PauseLine(p))
+	}
+
+	// ── G10 · the live-box checks are stale, red or unmeasured ───────────
+	//
+	// The one row that is about THIS MACHINE rather than about the queue or
+	// the loop: the version pins, the credential paths, the L3 hooks, the
+	// operator's gate copy. Its store of record is the verdict
+	// scripts/verify-box.sh writes, and the freshness rule is the whole
+	// design — a verdict older than `verify_box_max_age:` renders STALE and
+	// never green, so a schedule that stops, a run that dies before it can
+	// write, and a box nobody has checked all reach the surface as the same
+	// fact, which is what they are (bead ranger-base-jj2ax, the operator's
+	// 2026-09-06 ruling on ranger-base-0x1wc). verifybox.go carries the
+	// predicate, the class argument and the suppression.
+	//
+	// It reads a file and a config map, and nothing else — no subprocess, no
+	// check re-run. `posse status` and the cockpit tick this.
+	if vb := in.App.VerifyBoxFreshness(now, in.errw()); vb.Armed {
+		if vb.Err != nil {
+			// A store that cannot be READ is not a store that says no: the
+			// set is PARTIAL rather than clear, exactly as an unreadable bd
+			// is. A malformed verdict must never render as a green box.
+			failed = append(failed, fmt.Errorf("verify-box verdict %s: %w — G10 unknown", AbbrevHome(vb.Path), vb.Err))
+		}
+		for _, c := range vb.GovRows() {
+			add(c.ID, c.Class, c.Key, c.Detail)
+		}
 	}
 
 	// ── carry-over · unpushed commits on a beads repo ────────────────────
@@ -489,17 +521,20 @@ func ShopCheck(in GovInputs) (GovSet, []error) {
 
 	// ── carry-over · the on-box backup is stale (ADR 0036 §6) ────────────
 	//
-	// **The tenth row, resolved.** ADR 0036 §6 says on-box staleness
-	// "raises a ShopCheck condition (ADR 0029 G-table)", and ADR 0029 says
-	// the table is CLOSED AT NINE — twice, once in the section itself and
-	// once in its 2026-08-29 amendment, which kept two causes on one row
-	// rather than opening a tenth. **0029 wins**, and it costs 0036
-	// nothing: what 0036 asked for is that the fact be raised on the
-	// surface, not that it be numbered. So this is a CARRY-OVER, the shape
-	// 0029 already defines for a condition that is not a G-row — no id,
-	// Row() renders "—", and the closed enumeration stays closed. Ruled on
-	// ranger-base-a0ln0 per the operator's 2026-09-01 sub-ruling on
-	// ranger-base-ay3dr; both records carry the ruling.
+	// **A carry-over, and it stayed one.** ADR 0036 §6 says on-box
+	// staleness "raises a ShopCheck condition (ADR 0029 G-table)", and what
+	// it asked for is that the fact be raised on the SURFACE, not that it
+	// be numbered — so this is a CARRY-OVER, the shape 0029 already defines
+	// for a condition that is not a G-row: no id, and Row() renders "—".
+	// Ruled on ranger-base-a0ln0 per the operator's 2026-09-01 sub-ruling
+	// on ranger-base-ay3dr; both records carry the ruling.
+	//
+	// The argument that settled it was "0029's table is closed at nine",
+	// and that argument is GONE — 0029's 2026-09-05 simplification retired
+	// the closed-nine claim, and G10 landed below under the bar it set
+	// instead. The ruling stands on its own remaining half, which is the
+	// one that was always load-bearing: 0036 asked for the fact, not for a
+	// number, and nothing has since asked for the number.
 	//
 	// LANE, not URGENT, and the class is the honest one rather than the
 	// loud one: 0029 defines URGENT as "the shop is stopped", and a stale
@@ -820,8 +855,8 @@ func (in GovInputs) planReading(now time.Time) (PlanUsage, error) {
 }
 
 // guardBlindRow is G5's key and line for one blind read. The ROW is the
-// same row either way — "guard blind past plan_guard_blind_max", ADR 0029's
-// table is closed at nine and this invents nothing — but a credential
+// same row either way — "guard blind past plan_guard_blind_max", and this
+// invents no row — but a credential
 // failure is a different INSTANCE of it, and the key is the identity a
 // machine reader sees: it is what the pulse fingerprints, and the pulse's
 // prompt carries keys and not details (pulse.go pulsePromptText). A

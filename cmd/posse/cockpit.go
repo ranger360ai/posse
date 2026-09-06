@@ -2418,8 +2418,8 @@ func (c *cockpit) buildRows() {
 	// comment), so tab, reselect and every key below are untouched.
 	// The meter's own age, above even that (ranger-base-lpoui). It is not a
 	// governance condition — the shop may well be dispatching — so it is
-	// its own row rather than a tenth G-row in a set ADR 0029 closed at
-	// nine, and it is red because ten hours of a dim lower-case "guard
+	// its own row rather than a G-row at all, and it is red because ten
+	// hours of a dim lower-case "guard
 	// blind" in the header read as furniture. Filler, like the rows below:
 	// not in cursor space, so tab and reselect are untouched.
 	// The shop pulse, above everything (ranger-base-dwlb1): closes today,

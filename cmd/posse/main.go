@@ -929,6 +929,17 @@ func main() {
 		if f := a.BackupFreshness(time.Now(), os.Stderr); f.Armed {
 			fmt.Fprintf(out, "%s\n", f.Line())
 		}
+		// The live-box verdict and its AGE, always, on an instance that runs
+		// the control at all (bead ranger-base-jj2ax). Same split as the
+		// backup line one line up and for the same reason: the governance
+		// set below carries the LOUD half — G10, when the verdict is stale,
+		// red or measured nothing — and this carries the quiet half, which
+		// the set by design does not. Without it a clean box and a box
+		// nothing is checking print the same thing, which is the silence
+		// this row exists to end.
+		if vb := a.VerifyBoxFreshness(time.Now(), os.Stderr); vb.Armed {
+			fmt.Fprintf(out, "%s\n", vb.Line())
+		}
 		// How old the reading the shop is ruling on is, when that is past
 		// `plan_usage_stale_after:` (ranger-base-lpoui). The governance set
 		// below carries the PARK — G5, once the blind clock is past
@@ -2541,12 +2552,37 @@ governance:
                                  age is a line in "posse status"; past the max
                                  it is a LANE carry-over row there and in the
                                  cockpit's GOVERNANCE block. Not a G-row: ADR
-                                 0029's table is closed at nine
+                                 0036 §6 asked for the fact on the surface,
+                                 not for a number
                                config backup_keep: (3) archives kept on box;
                                  pruning only ever runs after a NEWER archive
                                  has verified
                                config backup_min_free_mb: (384) refuse rather
                                  than fill the disk
+                               config verify_box_max_age: (26h) how old the
+                                 last scripts/verify-box.sh verdict may be
+                                 before governance row G10 calls it STALE. A
+                                 daily schedule plus two hours of slack;
+                                 checked-recently-and-clean is the only green,
+                                 so a schedule that stopped and a run that
+                                 died before writing its verdict both surface
+                                 here. The verdict and its age are a line in
+                                 "posse status"; the row is in the cockpit's
+                                 GOVERNANCE block too. State file
+                                 state/verify-box.yaml, launchd stdout/stderr
+                                 state/verify-box.log
+                               config verify_box_accepted: (unset) a map of
+                                 check name to the bead id that tracks its
+                                 red, for a check that is red BY DESIGN while
+                                 a bead is open:
+                                   verify_box_accepted:
+                                     verify-codex-pin: ranger-base-femsg
+                                 The red stays on the G10 row and carries the
+                                 bead beside it — this names a finding, it
+                                 does not hide one. An entry whose check comes
+                                 back ok, or that names no check the run
+                                 knows, is itself a G10 row: a suppression
+                                 nobody retires is a check going dark
   posse pause "<why>"            stop dispatching until told otherwise. Writes
                                  state/pause.yaml (by:, at:, why: — the why is
                                  mandatory and is what every declining pass

@@ -1060,8 +1060,10 @@ func TestGovReportEmptyButPartial(t *testing.T) {
 	}
 }
 
-// A carry-over has no G-row and must not be given one: inventing G10 would
-// make the design's "closed, enumerated set" not closed.
+// A carry-over has no G-row and must not be given one. Not because the
+// enumeration is closed (ADR 0029's 2026-09-05 simplification retired that,
+// and G10 landed under the bar it set instead) but because a row name is a
+// promise that the ADR's table describes the condition.
 func TestGovCarryOverHasNoRowName(t *testing.T) {
 	t.Parallel()
 	if got := (GovCondition{Key: "no-live:coordinator"}).Row(); got != "—" {

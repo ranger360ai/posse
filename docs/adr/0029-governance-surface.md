@@ -23,6 +23,10 @@ the vocabulary is closed at nine or that every process has identical inputs.
 | G7 / `loop-mute` | Live watch lock but log older than the watchdog's maximum healthy silence | URGENT |
 | G8 / paused | Explicit `state/pause.yaml` intent | URGENT, reported without an alarm |
 | G9 / coordinator-routed work | Ready bead routing against config coordinator, per ADR 0033 | LANE |
+| G10 / `verify-box-stale` | Age of the last `scripts/verify-box.sh` verdict in `state/verify-box.yaml` against `verify_box_max_age` (default 26h); never run, and a stamp ahead of the clock, are the same observation | LANE |
+| G10 / `verify-box-unmeasured` | A fresh verdict in which every check answered "nothing measured" | LANE |
+| G10 / `verify-box:<checks>` | Checks the fresh verdict reports as finding or error; the key names them, and `verify_box_accepted` adds the tracking bead id to the detail without removing the check | LANE |
+| G10 / `verify-box-accept-stale:<check>` | A `verify_box_accepted` entry whose check is not red in the fresh verdict | LANE |
 | `unpushed:<repo>:<n>` | Local git upstream comparison for configured bead repositories; no upstream yields no finding | Existing carry-over, no G id |
 | `no-live:<persona>` | Missing delivery target, only when pulse is armed and a target exists | Existing carry-over, no G id |
 | `backup-stale` | Armed backup policy and archive observation under ADR 0036; no archive is stale | LANE, no G id |
@@ -30,8 +34,20 @@ the vocabulary is closed at nine or that every process has identical inputs.
 The table describes current computations, not a new enum. Key is identity;
 changing detail text, age or percentage alone must not make a fresh pulse
 episode. New observations need a documented predicate, owner, scope and class,
-not a fabricated G10 to satisfy a row count. Preserve current carry-over
+not a fabricated row to satisfy a row count. Preserve current carry-over
 rendering (`—`) and machine keys.
+
+G10 is the first row added under that bar (operator ruling 2026-09-06 on
+ranger-base-0x1wc; build ranger-base-jj2ax). Its owner is the state file
+`scripts/verify-box.sh` writes, and freshness is load-bearing rather than
+incidental: checked-recently-and-clean is the only green, so a schedule that
+stopped, a run killed before its verdict, and a box nothing has ever checked
+are one observation. A dying run's own output is separately preserved — the
+LaunchAgent's `StandardOutPath`/`StandardErrorPath` are `state/verify-box.log`
+— because a job that logs only what it finished cannot say what killed it. A
+red check tracked by an open bead is named with that bead id on the row and is
+not removed from it; automatic bead filing was considered and refused in the
+same ruling.
 
 G4's streak is process-local and resets on restart. A fresh status process
 cannot infer two hours of skips from one reading and reports no G4. G7 is
@@ -88,5 +104,6 @@ observation scopes prevents a fresh shell from inventing missing history.
 |---|---|
 | 0029 and its G4/G6/G7/carry-over amendments | One computed view with explicit observation scopes |
 | Operator ruling 2026-09-05 | Existing conditions retained without closed-nine fiction |
+| Operator ruling 2026-09-06 (ranger-base-0x1wc) | G10 live-box verdict with a mandatory freshness rule and a named-bead suppression |
 
 Prior tables and evidence: the page as it stood before this simplification is in git history, `git show c86a6b8:docs/adr/0029-governance-surface.md` (the dated copies were dropped by operator ruling 2026-09-05; git history is the record).

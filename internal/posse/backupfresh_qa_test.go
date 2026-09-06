@@ -12,11 +12,16 @@ package posse
 // pulse all render (ADR 0029 §2).
 //
 // And the third claim, which is the one the bead asked to be RESOLVED: the
-// condition is a carry-over, not a G10. ADR 0029's table is closed at nine —
-// it says so in §1 and again in its 2026-08-29 amendment, which kept two
-// causes on one row rather than opening a new one — and ADR 0036 §6 asked
-// for the fact to reach the surface, not for a number. 0029 wins. The pin is
-// below and it is exact: the row's ID is empty and it renders "—".
+// condition is a carry-over, with no G-row of its own. ADR 0036 §6 asked for
+// the fact to reach the surface, not for a number. The pin is below and it is
+// exact: the row's ID is empty and it renders "—".
+//
+// The argument that first settled it was "ADR 0029's table is closed at
+// nine". That half is gone — 0029's 2026-09-05 simplification retired the
+// closed-nine claim, and a real G10 landed under the bar it set instead
+// (verifybox.go, bead ranger-base-jj2ax). The ASSERTION below is unchanged
+// and still right: what 0036 §6 asked for is the fact, and nothing since has
+// asked for the number.
 
 import (
 	"os"
@@ -109,11 +114,11 @@ func TestStaleBackupRaisesACarryOverNotATenthGRow(t *testing.T) {
 	if row == nil {
 		t.Fatalf("a 30h-old backup under a 12h max raised nothing: %v", set.Keys())
 	}
-	// The ruling, pinned exactly: no G-row. ADR 0029's table is closed at
-	// nine, so this is a carry-over — empty ID, rendered "—" — exactly like
-	// `unpushed:` and `no-live:`.
+	// The ruling, pinned exactly: no G-row. 0036 §6 asked for the fact and
+	// not for a number, so this is a carry-over — empty ID, rendered "—" —
+	// exactly like `unpushed:` and `no-live:`.
 	if row.ID != "" || row.Row() != "—" {
-		t.Errorf("the backup row is %q/%q — ADR 0029's G-table is closed at nine and 0036 §6 asked for the fact, not a number", row.ID, row.Row())
+		t.Errorf("the backup row is %q/%q — ADR 0036 §6 asked for the fact on the surface, not for a number", row.ID, row.Row())
 	}
 	if row.Class != GovLane {
 		t.Errorf("class = %s, want %s: URGENT means the shop is stopped (ADR 0029 §1) and a stale backup stops nothing", row.Class, GovLane)
