@@ -916,6 +916,75 @@ func TestQueueRollbackBringsHomeTheTreesTheListForgets(t *testing.T) {
 	}
 }
 
+// qcRollbackWithoutTheWorktreeWalk is the printed block with its
+// `for w in <worktrees>/*/*` loop cut out — the control for the pin below,
+// and the mutation that found the gap: delete that loop from the script and
+// every rollback arm stayed green (measured on ranger-base-iddoa, 15/15).
+// The cut is anchored on the loop's opening line and fatals when it is not
+// there, so a reworded printer retires the control rather than silently
+// turning it into a copy of the real block.
+func qcRollbackWithoutTheWorktreeWalk(t *testing.T, f qcFixture) string {
+	t.Helper()
+	block := qcRollbackBlock(t, f)
+	open := "for w in '" + f.worktrees + "'/*/*; do\n"
+	i := strings.Index(block, open)
+	if i < 0 {
+		t.Fatalf("the printed rollback has no worktree-root loop to cut, so the control measures nothing:\n%s", block)
+	}
+	rest := block[i+len(open):]
+	const done = "done\n"
+	end := strings.Index(rest, done)
+	if end < 0 {
+		t.Fatalf("the printed rollback's worktree-root loop is unterminated:\n%s", block)
+	}
+	return block[:i] + rest[end+len(done):]
+}
+
+// The fan-out's OTHER half, and the half that is not a stray checkout. The
+// pin above covers the trees no list names — the discovery walk finds those.
+// This one covers the list that IS named: `--worktrees`, the session tree
+// every dispatched persona holds, which the rollback repoints with a loop of
+// its own because the walk cannot reach it. In the fixture and in the live
+// config alike: `find $SCAN -maxdepth 3 -type d -name .beads` stops one level
+// short of `<worktrees>/posse/<session>/.beads`, and live it is not even
+// under $SCAN. So that loop is the only thing that brings a session tree
+// home, and until now nothing read the result — `qcRolledBack` has always
+// planted a session worktree under `f.worktrees` that no rollback assertion
+// looked at, decorative for as long as the block lived in the runbook.
+// Measured on ranger-base-iddoa verifying ranger-base-l1vej: deleting the
+// loop from the printed block, and pointing it at a store that is not the
+// constitution's, both leave all 15 rollback arms green. A session tree still
+// naming the queue the last line of the rollback deletes is ranger-base-l9aa's
+// two-hop trap in reverse, aimed at the whole crew rather than one checkout.
+func TestQueueRollbackBringsHomeTheSessionWorktrees(t *testing.T) {
+	t.Parallel()
+	f := qcRolledBack(t)
+	store := filepath.Join(f.constitution, ".beads")
+	session := filepath.Join(f.worktrees, "posse", "developer-2-session")
+
+	// The state the cutover left, asserted and not assumed: a session tree
+	// that already named the constitution would let a rollback that walked
+	// nothing pass.
+	if got := qcRedirect(t, session); got != filepath.Join(f.queue, ".beads") {
+		t.Fatalf("the fixture's session worktree does not name the queue, so this measures nothing: %q", got)
+	}
+
+	out := qcRollbackRun(t, qcRollbackBlock(t, f), f)
+	if got := qcRedirect(t, session); got != store {
+		t.Errorf("the rollback left a session worktree pointed at the deleted queue: %q, want %q\n%s", got, store, out)
+	}
+
+	// The control: the same block with that loop cut out. Without it this pin
+	// goes green on a rollback that never walks the worktree root, which is
+	// exactly the state it was written to end.
+	f2 := qcRolledBack(t)
+	session2 := filepath.Join(f2.worktrees, "posse", "developer-2-session")
+	out2 := qcRollbackRun(t, qcRollbackWithoutTheWorktreeWalk(t, f2), f2)
+	if got := qcRedirect(t, session2); got == filepath.Join(f2.constitution, ".beads") {
+		t.Errorf("the block without its worktree loop brought the session tree home anyway — this pin measures nothing\n%s", out2)
+	}
+}
+
 func TestQueueCutoverCommitsDriftWithAPathQualifiedCommit(t *testing.T) {
 	t.Parallel()
 	shimDir := qcCageShim(t)
