@@ -633,6 +633,40 @@ many of the pass's launches the file will never hold. An UNSET cap is
 untouched: unlimited stays unlimited, loud by the report.
 `docs/notes.d/ranger-base-ws09.md`.
 
+*(2026-09-06, ranger-base-ubqcw)* **A set cap on a priced runtime is
+dead, and it dies loudly.** This section's law already kills it:
+`uncountedFor` returns nil for a runtime whose `CostPriced()` is true
+before it ever reads `uncounted_cap_<runtime>:`, so from the pass its
+adapter starts pricing, the key brakes nothing. The law makes no sound,
+and a cap that stopped capping because the RUNTIME moved out from under
+it is the failure `uncounted.go` is written against, arriving by the
+other door — grok did exactly that (ranger-base-0lg6) and no line said a
+word. The rule: a set `uncounted_cap_<runtime>:` on a priced runtime is
+named ONCE PER PASS, on stderr, as not applying, pointing at the brake
+that does — `budget_pass:`/`budget_day:` over the dollars `posse cost`
+now sees, and `grok_guard_week:` where it is armed, because an operator
+whose dead key was a pool brake wants the pool's brake and not the
+wallet's. It does not keep the cap alive: a runtime leaves this column by
+having its dollars priced and by nothing else. Unset is silent — a key
+nobody set is not news. codex is the control arm: read but unpriced, its
+cap is live and this line never prints for it. Built 2026-09-01 as
+`countedCapDead` (`uncounted.go`; ranger-base-2eeb, cut twice, the other
+id ranger-base-ql08), pinned in `uncounted_test.go`,
+`deadcapbrake_qa_test.go` and `accountstage_qa_test.go`. Lineage: this
+rule was ratified 2026-08-29 as ADR 0010 §3's third amendment, appended to
+the overflow mechanism because that is where the bead cap was first
+written; the 2026-09-05 simplification folded §3 away with that mechanism
+(ranger-base-6xx37) and the rule lost its page while its code stayed.
+This section owns the key, so it owns the key's death; the retired text
+is `git show e04aecb4:docs/adr/0010-plan-guard-overflow.md`. Snapshot
+2026-09-06 at main f2f3c6ab: the shipped stderr line and its three pins
+still print `(ADR 0010 §3)`, and their recite to `(ADR 0013 §5)` rides
+the 6xx37 removal — `git log --grep ranger-base-6xx37` on main is the
+record, this sentence is a snapshot. MEASURED: grok priced with the key
+still set and nothing printed (0lg6); the three pin arms (dead line on a
+priced runtime, none on unpriced codex, none on an unset key), green at
+this HEAD. ASSUMED: nothing — no behaviour changes with this paragraph.
+
 ### 6. Tier — the name is intent; the mapping is declared
 
 Amends ADR 0003 §1 display, not the three names. `strong` / `standard` /
@@ -793,6 +827,7 @@ rule-to-flag compilers, and an inference client inside dispatch.
 | 0017 §§1–2 derived checklist and verdicts; §3 shadow predicates; §§4–5 declarability and precedence | §7, using the existing §§1–6 grid; dated census and superseded sequencing stay in 0017 |
 | 0021 decisions 1–5 per-key overlays and source provenance | §8; promotion policy belongs to 0015 §§2–3 |
 | 0032 §§1–3 probe, code boundary and API-only ranking | §9 applied to the existing grid; dated engine evidence remains in 0032 |
+| 0010 §3 third amendment (2026-08-29): a set `uncounted_cap_<runtime>:` on a priced runtime is named once per pass as dead | §5, 2026-09-06 (ranger-base-ubqcw); the overflow mechanism it was appended to left with 0010's 2026-09-05 simplification |
 
 ## Consequences
 
