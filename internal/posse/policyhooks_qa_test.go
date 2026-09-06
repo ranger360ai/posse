@@ -203,6 +203,36 @@ func TestQAThePolicyHooksGateStringRefusesAFencedVerbAndFailsClosed(t *testing.T
 	}
 	// And a $HOME holding none — a scratch HOME, which posse really runs.
 	bare := t.TempDir()
+	// And a third shape, which is the one the `-x` in the shipped string is
+	// FOR: the gate is there and is not executable. A `cp` without a mode, an
+	// install that lost one, a checkout on a filesystem that dropped the bit.
+	// `exec` on it exits 126 — non-zero-but-not-2, i.e. FAIL-OPEN — so the
+	// difference between the shipped `[ -x "$p" ]` and a plausible
+	// `[ -r "$p" ]` is the whole fence, and only a row with the file PRESENT
+	// can see it. MEASURED under ranger-base-ir42u, verifying
+	// ranger-base-bm9cd: with `-r` in its place all four pins here stayed
+	// green while this shape returned 126 (ranger-base-ir42u).
+	unexec := t.TempDir()
+	unexecGate := filepath.Join(unexec, ".config", "posse", "gate")
+	if err := os.MkdirAll(unexecGate, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{"bd-argv-gate.sh", "bd-argv-gate.py"} {
+		b, err := os.ReadFile(filepath.Join("../../scripts", f))
+		if err != nil {
+			t.Fatalf("the gate source is missing from the repo: %v", err)
+		}
+		// The shim unreadable-as-a-program, the parser beside it untouched:
+		// the shipped string tests the shim and only the shim, so the row is
+		// about that one file's mode and not about a broken install.
+		mode := os.FileMode(0o755)
+		if f == "bd-argv-gate.sh" {
+			mode = 0o644
+		}
+		if err := os.WriteFile(filepath.Join(unexecGate, f), b, mode); err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	run := func(home, bashCommand string) (int, string, string) {
 		t.Helper()
@@ -255,6 +285,16 @@ func TestQAThePolicyHooksGateStringRefusesAFencedVerbAndFailsClosed(t *testing.T
 	}
 	if !strings.Contains(errs, "fail closed") {
 		t.Errorf("the fail-closed exit says nothing a reader can act on; stderr was %q", errs)
+	}
+
+	// The same question asked of the shape that keeps `-x` honest. A test on
+	// PRESENCE alone reads this row as a gate and hands it to `exec`.
+	rc, out, errs = run(unexec, "bd"+" list --status open")
+	if rc != 2 {
+		t.Errorf("with a NON-EXECUTABLE gate under $HOME the shipped string exited %d, want 2: `exec` on it exits 126, which is non-zero-but-not-2 and therefore FAIL-OPEN by Claude Code's own contract — every Bash call on the box would run unfenced and nothing would say so (stdout=%q stderr=%q)", rc, out, errs)
+	}
+	if !strings.Contains(errs, "fail closed") {
+		t.Errorf("the non-executable-gate exit says nothing a reader can act on; stderr was %q", errs)
 	}
 }
 
