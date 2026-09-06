@@ -200,18 +200,6 @@ func twdSameSet(got, want []string) bool {
 	return true
 }
 
-// twdPrereqs returns the prerequisites of a target, from its `target:` line.
-func twdPrereqs(t *testing.T, makefile, target string) []string {
-	t.Helper()
-	for _, line := range strings.Split(makefile, "\n") {
-		if strings.HasPrefix(line, target+":") && !strings.HasPrefix(line, target+":=") {
-			return strings.Fields(strings.TrimPrefix(line, target+":"))
-		}
-	}
-	t.Fatalf("the Makefile has no `%s` target", target)
-	return nil
-}
-
 // Arm 1: the doors exist, `make test` opens them, and they only read.
 func TestQAMakeTestOpensTheTreeWideDoors(t *testing.T) {
 	t.Parallel()
@@ -223,23 +211,31 @@ func TestQAMakeTestOpensTheTreeWideDoors(t *testing.T) {
 
 	// The umbrella reaches every door. It carries no recipe of its own, so
 	// `make -n tree-check` prints exactly what a seat would have to type.
-	tree := strings.Join(twdPrereqs(t, src, "tree-check"), " ")
+	//
+	// Every membership below is TOKENS, not the line's bytes: see mkPrereqs
+	// (ranger-base-hna69). This arm read the bytes until ranger-base-7kwb8,
+	// which is worse here than at the three sites hna69 fixed, because ONE
+	// `#` in front of the tail of `tree-check:` takes six of these seven
+	// doors off the umbrella at once — make stops at the comment, the old
+	// reader did not, and every `strings.Contains` below still found its
+	// door's name sitting on the line.
+	treeLine, tree := mkPrereqs(t, src, "tree-check")
 	for _, door := range []string{"fmt-check", "crew-check", "seed-check", "history-check", "doc-check", "identity-check", "ops-check"} {
-		if !strings.Contains(tree, door) {
-			t.Errorf("`make tree-check` no longer reaches `%s`, so one tree-wide pin is back to being ~950s away: %q", door, tree)
+		if !mkRuns(tree, door) {
+			t.Errorf("`make tree-check` no longer reaches `%s`, so one tree-wide pin is back to being ~950s away: %q", door, treeLine)
 		}
 	}
 
 	// And `make test` reaches the umbrella, so a full run fails on the class
 	// in seconds instead of at ~950 (rulbl's reason for fmt-check).
-	if deps := strings.Join(twdPrereqs(t, src, "test"), " "); !strings.Contains(deps, "tree-check") {
-		t.Errorf("`make test` no longer depends on tree-check: %q", deps)
+	if testLine, deps := mkPrereqs(t, src, "test"); !mkRuns(deps, "tree-check") {
+		t.Errorf("`make test` no longer depends on tree-check: %q", testLine)
 	}
 
-	if phony := strings.Join(twdPrereqs(t, src, ".PHONY"), " "); !strings.Contains(phony, "tree-check") ||
-		!strings.Contains(phony, "crew-check") ||
-		!strings.Contains(phony, "identity-check") || !strings.Contains(phony, "ops-check") {
-		t.Errorf(".PHONY does not name the new doors — a file of that name in the tree would silence one: %q", phony)
+	if phonyLine, phony := mkPrereqs(t, src, ".PHONY"); !mkRuns(phony, "tree-check") ||
+		!mkRuns(phony, "crew-check") ||
+		!mkRuns(phony, "identity-check") || !mkRuns(phony, "ops-check") {
+		t.Errorf(".PHONY does not name the new doors — a file of that name in the tree would silence one: %q", phonyLine)
 	}
 
 	for _, door := range []struct{ target, variable string }{
@@ -1162,7 +1158,14 @@ func TestQATheHeadCommentsPinAndDoorCountsAreTheMakefiles(t *testing.T) {
 			pins = append(pins, name)
 		}
 	}
-	doors := twdPrereqs(t, src, "tree-check")
+	// Tokens, and stopping at the `#`: a commented-out door is not a door.
+	// The byte reader this replaced counted the comment marker AND the names
+	// behind it, so this arm answered by accident either way — `# crew-check
+	// ...` counted the `#` as an eighth door and red for a reason that has
+	// nothing to do with the six it had just silenced, and `#ops-check`, no
+	// space, still counted seven while `make tree-check` ran six
+	// (ranger-base-7kwb8).
+	_, doors := mkPrereqs(t, src, "tree-check")
 
 	head := twdHead(t)
 
