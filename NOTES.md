@@ -7187,3 +7187,23 @@ ignoring `notes/` silently takes the export's `notes/` off the surface. Empty is
 the right answer for a tarball or a scratch tree because an export carries
 tracked files only, so nothing under it is ignored and the walk loses no
 coverage. (ranger-base-n0v6o)
+
+**Amended 2026-09-06 (ranger-base-chd6w): that last sentence was true of a
+PRISTINE export and false the moment anything writes into one.** Empty is the
+right ignore set there; what it is not is protection. Measured under
+ranger-base-5htxx and again here: `git archive main | tar -x` gives 951 files
+and zero hits — and one `go build -o bin/posse-go ./cmd/posse` inside that tree
+puts the same 13MB Mach-O back on the surface — a hit reported as
+`bin/posse-go:8189:`, a string-table offset with the banned name run together
+between `reopenedrejected` and `verify: username`, which is ranger-base-n0v6o
+byte for byte in the tree whose safety the paragraph above asserts. (The name
+itself is not quoted here for the same reason the pin exists.) `make build` is
+exactly what writes into it and `git archive | tar -x` is the house mutation
+rig. So the scan now skips **two** things, as a union: what git ignores, and
+what is not text (a NUL byte anywhere in the body — git's own test, and 0 of
+951 tracked files carry one). The ignore set still earns its place: it collapses
+whole directories and it keeps text-shaped build output off the surface. Both
+arms are pinned and each reds alone —
+`TestSeedSurfaceScanSkipsBuildOutputWhereThereIsNoIgnoreSet` for the second.
+ranger-base-n0v6o offered both shapes ("skip paths git itself ignores … or skip
+non-text files") and only the first shipped; this is the other half.

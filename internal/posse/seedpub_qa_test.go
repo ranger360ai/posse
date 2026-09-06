@@ -627,6 +627,10 @@ func TestSeedSurfaceNameCountIsZero(t *testing.T) {
 // TestPublicationRootCommitOmitsExcludedPaths already keeps bin/ off the
 // surface; the two arms of this file now agree about it.
 //
+// IT ALSO SKIPS WHAT IS NOT TEXT (the second skip in the body), because the
+// ignore set is empty wherever there is no checkout to ask and the same build
+// output then walks straight back onto the surface — ranger-base-chd6w.
+//
 // Extracted from TestSeedSurfaceNameCountIsZero so the skip has a pin of its
 // own against a fixture repo (TestSeedSurfaceScanSkipsGitIgnoredPaths): the
 // live tree's ignored paths are build output that may or may not exist when
@@ -660,6 +664,27 @@ func qspSurfaceHits(t *testing.T, root, needle string) []string {
 		if rerr != nil {
 			return rerr
 		}
+		// AND IT SKIPS WHAT IS NOT TEXT. The ignore set above exists only
+		// where root is the top of a checkout; an export has none, and
+		// `make build` inside a `git archive` scratch tree — the house
+		// mutation rig — writes that same 13MB Mach-O with nothing to skip
+		// it, reproducing ranger-base-n0v6o byte for byte — measured
+		// twice, `bin/posse-go:8185` under ranger-base-5htxx and
+		// `bin/posse-go:8189` here: the offset moves with the build, the
+		// hit does not (ranger-base-chd6w). The two skips are a
+		// union on purpose: the ignore set still saves reading build output
+		// in a checkout and still collapses whole directories, and this arm
+		// covers the trees where there is no ignore set to have.
+		//
+		// A NUL byte is git's own test for "not text" (git looks at the
+		// first 8000; the body is already read whole here, so there is no
+		// threshold to defend and none to pin). The seed surface is prose
+		// and source: 0 of 951 tracked files carry a NUL anywhere, measured
+		// in this worktree at 26d6a796, so this arm takes nothing off the
+		// surface that was ever on it.
+		if bytes.IndexByte(body, 0) >= 0 {
+			return nil
+		}
 		for i, line := range strings.Split(string(body), "\n") {
 			for _, m := range token.FindAllString(line, -1) {
 				if marker.MatchString(m) {
@@ -682,12 +707,20 @@ func qspSurfaceHits(t *testing.T, root, needle string) []string {
 // path.
 //
 // Empty when root is not the TOP of a checkout — a release tarball, or the
-// `git archive` scratch tree the house mutation rig runs in. Empty is the
-// right answer there rather than a skip: an export carries tracked files only,
-// so nothing under it is ignored and the walk loses no coverage. The at-the-top
-// check is what makes that honest — a scratch tree unpacked INSIDE some other
+// `git archive` scratch tree the house mutation rig runs in. Empty is still
+// the right answer there rather than borrowing a list: the at-the-top check is
+// what makes that honest, since a scratch tree unpacked INSIDE some other
 // checkout would otherwise answer with that repo's ignore list, keyed to a
-// different root.
+// different root (TestSeedSurfaceScanTakesNoIgnoreListFromAForeignRepo).
+//
+// What empty is NOT is protection. Until 2026-09-06 this comment read "an
+// export carries tracked files only, so nothing under it is ignored and the
+// walk loses no coverage" — true of a PRISTINE export and false the moment
+// anything writes into one. Measured under ranger-base-5htxx and again here:
+// `git archive main | tar -x` gives the tracked files and zero hits (950 there,
+// 951 here), and one `go build -o bin/posse-go ./cmd/posse` inside it puts
+// ranger-base-n0v6o's Mach-O offset back on the surface. The caller's second skip — not this function — is what
+// covers that (ranger-base-chd6w).
 func qspGitIgnored(t *testing.T, root string) map[string]bool {
 	t.Helper()
 	ignored := map[string]bool{}
@@ -843,6 +876,54 @@ func TestSeedSurfaceScanTakesNoIgnoreListFromAForeignRepo(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("seed surface under a non-toplevel root is %v, want %v\n"+
 			"  missing = the enclosing repo's ignore rules were applied to a tree they were not written about",
+			got, want)
+	}
+}
+
+// The skip the ignore set cannot give you: build output in a tree that is not
+// a checkout. This is ranger-base-chd6w's repro in miniature — the export
+// shape, where qspGitIgnored is empty by construction and the walk has only
+// the not-text arm to stop it. Two-way like its siblings: the source file
+// beside the binary must still be a hit, or a scanner that had stopped reading
+// anything would pass this and take the live pin down with it.
+//
+// The fixture leads with Mach-O magic and a run of NULs because that is what
+// `go build -o bin/posse-go ./cmd/posse` writes into the `git archive` scratch
+// tree; the token sits past them the way it sits in a real string table.
+func TestSeedSurfaceScanSkipsBuildOutputWhereThereIsNoIgnoreSet(t *testing.T) {
+	t.Parallel()
+	needle := "ranger" + "hq"
+	root := t.TempDir()
+	// NO git init: an export has no checkout to ask. Assert the premise —
+	// if this tree ever had an ignore set, the arm under test would not be
+	// the one doing the work.
+	if got := qspGitIgnored(t, root); len(got) != 0 {
+		t.Fatalf("fixture is not the export shape: ignore set is %v, want empty", got)
+	}
+
+	write := func(rel, body string) {
+		t.Helper()
+		p := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("bin/posse-go", "\xcf\xfa\xed\xfe\x00\x00\x00\x00string table: "+needle+" verify: username\n")
+	write("kept.md", "a doc naming "+needle+"\n")
+
+	var got []string
+	for _, h := range qspSurfaceHits(t, root, needle) {
+		got = append(got, h[:strings.Index(h, ":")])
+	}
+	sort.Strings(got)
+	want := []string{"kept.md"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("seed surface of an export with build output in it is %v, want %v\n"+
+			"  extra = a file that is not text was read as source and a binary offset reported as a line (ranger-base-n0v6o);\n"+
+			"  missing = the scan stopped reading",
 			got, want)
 	}
 }
