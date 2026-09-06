@@ -202,7 +202,7 @@ func TestPulseDeliversTheCredentialConditionOnce(t *testing.T) {
 	seedPlanSnapshot(t, b.App, clock.Add(-45*time.Minute))
 	d := deliveryDispatcher(t, b, &clock)
 	d.Plan = &fakePlanReader{err: &AuthFailure{Status: "401 Unauthorized", Code: http.StatusUnauthorized}}
-	cfg := PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute, RenagMax: 4 * time.Hour}
+	cfg := PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute}
 
 	d.pulseOnce(cfg)
 

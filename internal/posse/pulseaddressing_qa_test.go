@@ -36,7 +36,7 @@ func TestQAPulseAddressesAgentExplainByPaneNotSessionLabel(t *testing.T) {
 
 	clock := time.Now()
 	d := deliveryDispatcher(t, b, &clock)
-	d.pulseOnce(PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute, RenagMax: 4 * time.Hour})
+	d.pulseOnce(PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute})
 
 	log := calls(t, fake)
 	if !strings.Contains(log, "agent explain "+pane) {

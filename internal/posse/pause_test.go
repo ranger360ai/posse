@@ -489,7 +489,7 @@ func TestAPausedShopStillPulses(t *testing.T) {
 	pausedShop(t, b.App, "coordinator", "waiting on the operator")
 
 	d := newTestDispatcher(t, b)
-	d.pulseOnce(PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute, RenagMax: 4 * time.Hour})
+	d.pulseOnce(PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute})
 
 	log := calls(t, fake)
 	if !strings.Contains(log, "agent prompt "+target+":p1") {

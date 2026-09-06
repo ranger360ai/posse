@@ -842,8 +842,8 @@ func (in GovInputs) planReading(now time.Time) (PlanUsage, error) {
 // its job was wrong for this row, because a blind stretch that is still
 // growing is not the same condition it was an hour ago. The bucket is whole
 // hours (blindHours), so the escalation is hourly and not per tick: the key
-// changes, the pulse re-prompts and the renag backoff restarts, once an
-// hour, for as long as the lights are out.
+// changes, the pulse re-prompts and the renag clock restarts, once an hour,
+// for as long as the lights are out.
 func guardBlindRow(blindFor time.Duration, err error) (key, detail string) {
 	if af := AuthFailureReason(err); af != nil {
 		return fmt.Sprintf("guard-credential:%d", af.Code),

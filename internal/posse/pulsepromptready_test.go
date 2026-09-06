@@ -54,7 +54,7 @@ func TestPulseDoesNotPromptAPaneHerdrOnlyGuessesAt(t *testing.T) {
 
 	clock := time.Now()
 	d := deliveryDispatcher(t, b, &clock)
-	cfg := PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute, RenagMax: 4 * time.Hour}
+	cfg := PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute}
 
 	d.pulseOnce(cfg)
 
@@ -86,7 +86,7 @@ func TestPulseStillPromptsAPaneHerdrHasSeen(t *testing.T) {
 
 	clock := time.Now()
 	d := deliveryDispatcher(t, b, &clock)
-	cfg := PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute, RenagMax: 4 * time.Hour}
+	cfg := PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute}
 
 	d.pulseOnce(cfg)
 
@@ -117,7 +117,7 @@ func TestPulseSkipsAWorkingScreenTheListingCalledIdle(t *testing.T) {
 
 	clock := time.Now()
 	d := deliveryDispatcher(t, b, &clock)
-	cfg := PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute, RenagMax: 4 * time.Hour}
+	cfg := PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute}
 
 	d.pulseOnce(cfg)
 
@@ -149,7 +149,7 @@ func TestPulseStillPromptsWhenHerdrCannotExplain(t *testing.T) {
 
 	clock := time.Now()
 	d := deliveryDispatcher(t, b, &clock)
-	cfg := PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute, RenagMax: 4 * time.Hour}
+	cfg := PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute}
 
 	d.pulseOnce(cfg)
 

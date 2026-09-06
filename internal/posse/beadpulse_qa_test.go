@@ -331,7 +331,7 @@ func TestQAPulseTickLogsTheShopPulseOnItsOwnLine(t *testing.T) {
 
 	clock := time.Now()
 	d := deliveryDispatcher(t, b, &clock)
-	d.pulseOnce(PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute, RenagMax: 4 * time.Hour})
+	d.pulseOnce(PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute})
 
 	out := dispatcherOut(d)
 	var shop, cond string

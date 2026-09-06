@@ -1,8 +1,9 @@
 package posse
 
 // Delivery half of the pulse (ADR 0027 §3-4, rangerhq-44w1): prompt on a
-// new fingerprint, suppress inside renag, renag doubling, idle-only skip,
-// no crew mark written. Builds on rangerhq-4ish's ShopCheck and fixtures
+// new fingerprint, suppress inside renag, repeat at ONE fixed renag
+// interval (the doubling ladder left with ranger-base-thm0j), idle-only
+// skip, no crew mark written. Builds on rangerhq-4ish's ShopCheck and fixtures
 // (pulse_test.go); pulseOnce is called directly with a controlled clock
 // rather than through the ticker, so renag timing is deterministic.
 
@@ -82,7 +83,7 @@ func TestPulsePromptsOnNewFingerprint(t *testing.T) {
 
 	clock := time.Now()
 	d := deliveryDispatcher(t, b, &clock)
-	cfg := PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute, RenagMax: 4 * time.Hour}
+	cfg := PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute}
 
 	d.pulseOnce(cfg)
 
@@ -102,7 +103,7 @@ func TestPulsePromptsOnNewFingerprint(t *testing.T) {
 	}
 
 	state := ReadPulseState(PulsePath(b.App))
-	if state.PromptedFingerprint == "" || state.PromptedAt.IsZero() || state.RenagInterval != cfg.Renag {
+	if state.PromptedFingerprint == "" || state.PromptedAt.IsZero() {
 		t.Errorf("bookkeeping not recorded after a successful prompt: %+v", state)
 	}
 }
@@ -116,7 +117,7 @@ func TestPulseSuppressedOnUnchangedInsideRenag(t *testing.T) {
 
 	clock := time.Now()
 	d := deliveryDispatcher(t, b, &clock)
-	cfg := PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute, RenagMax: 4 * time.Hour}
+	cfg := PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute}
 
 	d.pulseOnce(cfg) // prompts once, sets the renag clock
 	if n := strings.Count(calls(t, fake), "agent prompt "+pane); n != 1 {
@@ -132,7 +133,19 @@ func TestPulseSuppressedOnUnchangedInsideRenag(t *testing.T) {
 	}
 }
 
-func TestPulseRenagDoublesUpToMax(t *testing.T) {
+// The repeat is ONE interval, over and over, and this is the test that used
+// to be TestPulseRenagDoublesUpToMax. It is written as the arm that
+// separates the two designs rather than as a restatement of the new one:
+// three ticks 30m apart must yield three prompts. Under the ladder the
+// third would have been suppressed: the second prompt doubled the stored
+// interval to 60m, and the third tick is only 30m after it. Restoring the
+// doubling reds this test and, measured, nothing else in the package.
+//
+// 117.3h of the operator's dispatch-watch.log say nothing real ever got
+// this far: 386 delivery episodes, 11 of them repeated once, none twice
+// (ranger-base-thm0j). The ladder's second rung was written to disk and
+// never read.
+func TestPulseRenagRepeatsAtOneFixedInterval(t *testing.T) {
 	t.Parallel()
 	b, fake := newTestBackend(t)
 	id := personaSession(t, b, fake, "coordinator-work", "coordinator", "idle", false)
@@ -141,28 +154,28 @@ func TestPulseRenagDoublesUpToMax(t *testing.T) {
 
 	clock := time.Now()
 	d := deliveryDispatcher(t, b, &clock)
-	cfg := PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute, RenagMax: 90 * time.Minute}
+	cfg := PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute}
 
-	d.pulseOnce(cfg) // 1st: due immediately (new fingerprint), sets interval = 30m
+	d.pulseOnce(cfg) // 1st: due immediately — a new fingerprint
 
 	clock = clock.Add(30 * time.Minute)
-	d.pulseOnce(cfg) // 2nd: renag elapsed, doubles to 60m
+	d.pulseOnce(cfg) // 2nd: one renag interval since the last delivery
 	if n := strings.Count(calls(t, fake), "agent prompt "+pane); n != 2 {
 		t.Fatalf("want 2 prompts after the first renag, got %d", n)
 	}
-	state := ReadPulseState(PulsePath(b.App))
-	if state.RenagInterval != 60*time.Minute {
-		t.Errorf("renag interval after 1st doubling = %s, want 60m", state.RenagInterval)
+
+	clock = clock.Add(30 * time.Minute)
+	d.pulseOnce(cfg) // 3rd: the SAME interval again, not a doubled one
+	if n := strings.Count(calls(t, fake), "agent prompt "+pane); n != 3 {
+		t.Fatalf("the repeat interval must not grow: want 3 prompts at +30m each, got %d", n)
 	}
 
-	clock = clock.Add(60 * time.Minute)
-	d.pulseOnce(cfg) // 3rd: renag elapsed again, would double to 120m but caps at RenagMax=90m
+	// And the clock runs from the last DELIVERY, not from the episode's
+	// first: 29m after the third prompt is still inside the window.
+	clock = clock.Add(29 * time.Minute)
+	d.pulseOnce(cfg)
 	if n := strings.Count(calls(t, fake), "agent prompt "+pane); n != 3 {
-		t.Fatalf("want 3 prompts after the second renag, got %d", n)
-	}
-	state = ReadPulseState(PulsePath(b.App))
-	if state.RenagInterval != cfg.RenagMax {
-		t.Errorf("renag interval after capping = %s, want RenagMax %s", state.RenagInterval, cfg.RenagMax)
+		t.Errorf("29m after the third delivery is inside the window, got %d prompts", n)
 	}
 }
 
@@ -175,7 +188,7 @@ func TestPulseIdleOnlySkipsWorkingSession(t *testing.T) {
 
 	clock := time.Now()
 	d := deliveryDispatcher(t, b, &clock)
-	cfg := PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute, RenagMax: 4 * time.Hour}
+	cfg := PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute}
 
 	d.pulseOnce(cfg)
 
@@ -209,7 +222,7 @@ func TestPulseUndeliverableWithNoLiveSession(t *testing.T) {
 
 	clock := time.Now()
 	d := deliveryDispatcher(t, b, &clock)
-	cfg := PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute, RenagMax: 4 * time.Hour}
+	cfg := PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute}
 
 	d.pulseOnce(cfg)
 
@@ -238,7 +251,7 @@ func TestPulseTargetsCrewSessionAndWritesNoCrewMark(t *testing.T) {
 
 	clock := time.Now()
 	d := deliveryDispatcher(t, b, &clock)
-	cfg := PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute, RenagMax: 4 * time.Hour}
+	cfg := PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute}
 
 	d.pulseOnce(cfg)
 
@@ -266,7 +279,7 @@ func TestPulseClearedSetResetsRenagClock(t *testing.T) {
 
 	clock := time.Now()
 	d := deliveryDispatcher(t, b, &clock)
-	cfg := PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute, RenagMax: 4 * time.Hour}
+	cfg := PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute}
 
 	d.pulseOnce(cfg) // condition present, prompts once
 	if n := strings.Count(calls(t, fake), "agent prompt "+pane); n != 1 {
@@ -277,7 +290,7 @@ func TestPulseClearedSetResetsRenagClock(t *testing.T) {
 	clock = clock.Add(time.Minute) // well inside the 30m renag window
 	d.pulseOnce(cfg)
 	state := ReadPulseState(PulsePath(b.App))
-	if state.PromptedFingerprint != "" || !state.PromptedAt.IsZero() || state.RenagInterval != 0 {
+	if state.PromptedFingerprint != "" || !state.PromptedAt.IsZero() {
 		t.Errorf("a cleared set must reset the renag clock: %+v", state)
 	}
 
@@ -309,7 +322,7 @@ func TestPulseWithNoPersonaDeliversToNobody(t *testing.T) {
 
 	clock := time.Now()
 	d := deliveryDispatcher(t, b, &clock)
-	cfg := PulseConfig{Armed: true, Persona: "", Renag: 30 * time.Minute, RenagMax: 4 * time.Hour}
+	cfg := PulseConfig{Armed: true, Persona: "", Renag: 30 * time.Minute}
 
 	d.pulseOnce(cfg)
 

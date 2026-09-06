@@ -67,8 +67,8 @@ func TestWatchSurvivesABadPulseInterval(t *testing.T) {
 // rangerhq-44w1's DONE WHEN sentence, run as written: "fake-herdr blocked
 // session yields exactly one prompt with the marker, renag honors backoff".
 //
-// The delivery tests carry every mechanism (due-ness, renag doubling,
-// idle-only, the crew seam) but all of them raise the condition set with an
+// The delivery tests carry every mechanism (due-ness, the one fixed renag
+// interval, idle-only, the crew seam) but all of them raise the condition set with an
 // unpushed repo, deliberately, so the target session's status can be held
 // fixed. Nothing exercised the shape the bead names and the incident is
 // about: a DIFFERENT persona's session goes blocked, and coordinator — idle, and
@@ -118,7 +118,7 @@ func TestQAPulseBlockedSessionYieldsExactlyOnePromptWithTheMarker(t *testing.T) 
 
 	clock := time.Now()
 	d := deliveryDispatcher(t, b, &clock)
-	cfg := PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute, RenagMax: 4 * time.Hour}
+	cfg := PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute}
 
 	d.pulseOnce(cfg)
 

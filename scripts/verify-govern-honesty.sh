@@ -288,19 +288,35 @@ check "disarmed-exit-zero" "$([ "$STATUS_RC" = 0 ] && echo 1 || echo 0)" "rc=$ST
 
 # ── 5 · what dies with the loop is delivery, and only delivery ───────────────
 # The pulse is the one thing the design says goes with it. Its tick is the
-# only writer of state/pulse.yaml, so a frozen mtime is delivery stopping;
+# only writer of state/pulse.yaml, so a frozen file is delivery stopping;
 # `posse status` answering the same second is the view not stopping with it.
+#
+# FROZEN IS MEASURED BY mtime, NOT BY CONTENT (ranger-base-thm0j). Until ADR
+# 0027's 2026-09-05 simplification the record carried `at:`, so its bytes
+# changed on every tick and a content comparison was a live-vs-dead
+# discriminator by accident. The record is two delivery fields now and its
+# bytes are IDENTICAL tick after tick on a shop with nothing to deliver — a
+# content check would pass with the loop still running, which is the arm
+# going quiet rather than the arm holding. `find -newer` is the POSIX
+# spelling and works on both platforms `make test-linux` covers; `stat`'s
+# format flags do not.
+#
+# Both directions, because "the file did not move" is worth nothing without
+# the arm that shows it moves at all: MOVES while alive, then STOPS.
 write_config armed pulse
 rm -f "$HOMEDIR/state/pulse.yaml"
 start_loop || exit 2
 n=0
 while [ "$n" -lt 100 ] && [ ! -f "$HOMEDIR/state/pulse.yaml" ]; do n=$((n + 1)); sleep 0.1; done
 check "pulse-writes-while-alive" "$([ -f "$HOMEDIR/state/pulse.yaml" ] && echo 1 || echo 0)" "no state/pulse.yaml after 10s at pulse_interval 2s"
-before=$(cat "$HOMEDIR/state/pulse.yaml" 2>/dev/null)
-kill_loop || exit 2
+moved() { [ -n "$(find "$HOMEDIR/state/pulse.yaml" -newer "$1" 2>/dev/null)" ] && echo 1 || echo 0; }
+touch "$RIG/pulse-mark-alive"
 sleep 5 # two-and-a-half pulse intervals
-after=$(cat "$HOMEDIR/state/pulse.yaml" 2>/dev/null)
-check "pulse-stops-with-the-loop" "$([ "$before" = "$after" ] && echo 1 || echo 0)" "state/pulse.yaml still moving after the loop died"
+check "pulse-keeps-writing-while-alive" "$(moved "$RIG/pulse-mark-alive")" "state/pulse.yaml did not move in 5s at pulse_interval 2s — the control arm for the check below"
+kill_loop || exit 2
+touch "$RIG/pulse-mark-dead"
+sleep 5 # two-and-a-half pulse intervals
+check "pulse-stops-with-the-loop" "$([ "$(moved "$RIG/pulse-mark-dead")" = 0 ] && echo 1 || echo 0)" "state/pulse.yaml still moving after the loop died"
 status_run
 check "view-outlives-the-loop" "$(has "$STATUS_OUT" 'G7' && echo 1 || echo 0)" "$STATUS_OUT"
 

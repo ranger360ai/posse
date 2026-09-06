@@ -35,7 +35,7 @@ func pulseAgainstScreen(t *testing.T, footer, box string) (out, log string) {
 
 	clock := time.Now()
 	d := deliveryDispatcher(t, b, &clock)
-	d.pulseOnce(PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute, RenagMax: 4 * time.Hour})
+	d.pulseOnce(PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute})
 	return dispatcherOut(d), calls(t, fake)
 }
 
@@ -91,7 +91,7 @@ func TestQAPulseStillRefusesAWorkingScreenWithTextInTheBox(t *testing.T) {
 
 	clock := time.Now()
 	d := deliveryDispatcher(t, b, &clock)
-	d.pulseOnce(PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute, RenagMax: 4 * time.Hour})
+	d.pulseOnce(PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute})
 
 	if log := calls(t, fake); strings.Contains(log, "agent prompt") {
 		t.Errorf("a shop check landed in the middle of a turn:\n%s", log)

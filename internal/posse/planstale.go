@@ -362,7 +362,7 @@ func PlanFailToken(err error) string {
 //
 // The bucket is the escalation, and it is coarse on purpose. A pulse key
 // that changed every minute would re-prompt the coordinator every tick and
-// reset the renag backoff each time (pulse.go deliverPulse), which is a
+// restart the renag clock each time (pulse.go deliverPulse), which is a
 // storm and not a warning; a key that never changes is what let ten hours
 // pass with one delivery. An hour is the cadence the operator asked for.
 func blindHours(d time.Duration) string {

@@ -4,8 +4,8 @@ package posse
 // 0027, rangerhq-wxd). Sensing (§1-2, rangerhq-4ish) computes the condition
 // set and fingerprints it to state/pulse.yaml. Delivery (§3-4, rangerhq-44w1)
 // decides, on a non-empty set, whether it is due — new fingerprint, or an
-// unchanged one past its renag backoff — and if so prompts pulse_persona's
-// live session idle-only, with no authority and no crew mark.
+// unchanged one past one fixed renag interval — and if so prompts
+// pulse_persona's live session idle-only, with no authority and no crew mark.
 //
 // It starts with the watch loop and dies with it (Watch's ctx), never a
 // second loop of its own — a hand-typed pass never pulses, the same premise
@@ -17,7 +17,10 @@ package posse
 // rangerhq-81y0 — see that file's header). The pulse is now one of three renderings of
 // ShopCheck, and it keeps exactly two things of its own: the fingerprint
 // that dedups DELIVERY, and delivery itself. state/pulse.yaml stays dedup
-// state and is never a record anyone reads for truth.
+// state and is never a record anyone reads for truth — since ADR 0027's
+// 2026-09-05 simplification it holds ONLY those two delivery fields, and
+// the observation itself (time, conditions, current fingerprint) lives in
+// memory for the length of one tick.
 //
 // That widening broke ADR 0027 §1's "never bd, never the plan endpoint"
 // boundary, deliberately and with the design's eyes open: G2/G3/G9 are bd
@@ -48,23 +51,28 @@ import (
 // a persona that never existed here.
 func pulsePersona(a *App) string { return a.CfgGet("pulse_persona", a.Coordinator()) }
 
-// DefaultPulseRenag and DefaultPulseRenagMax are the renag backoff bounds
-// (ADR 0027 §3) when pulse_renag:/pulse_renag_max: are unset: re-prompt an
-// unchanged condition set after 30m, doubling per repeat, capped at 4h.
-const (
-	DefaultPulseRenag    = 30 * time.Minute
-	DefaultPulseRenagMax = 4 * time.Hour
-)
+// DefaultPulseRenag is the one repeat interval (ADR 0027 §3) when
+// pulse_renag: is unset: re-prompt an unchanged condition set after 30m,
+// and after 30m again, for as long as it stands.
+//
+// It used to double per repeat up to a pulse_renag_max: of 4h, and the
+// operator ruling of 2026-09-05 took the ladder out because 117.3h of
+// dispatch-watch.log never climbed it: 397 deliveries fell into 386
+// episodes of one identical key set each, 11 of them repeated once, and
+// NOT ONE reached a second repeat — so the doubled 60m was computed,
+// written to disk and never read, and the 4h cap never bound at all
+// (ranger-base-thm0j). The set churns faster than the ladder: a new
+// fingerprint is a fresh prompt, and that is the common case by 35:1.
+const DefaultPulseRenag = 30 * time.Minute
 
 // PulseConfig is the pulse_* config family, autostart_* style (flat YAML,
 // plugin/autostart.sh): presence of pulse_interval: is the arm switch.
-// Renag/RenagMax are delivery's renag backoff bounds (ADR 0027 §3-4).
+// Renag is delivery's one repeat interval (ADR 0027 §3-4).
 type PulseConfig struct {
 	Armed    bool
 	Interval time.Duration
 	Persona  string
 	Renag    time.Duration
-	RenagMax time.Duration
 }
 
 // LoadPulseConfig reads config.yaml's pulse_* keys. Disarmed (pulse_interval
@@ -83,64 +91,74 @@ func LoadPulseConfig(a *App) (PulseConfig, error) {
 		Interval: interval,
 		Persona:  pulsePersona(a),
 		Renag:    DefaultPulseRenag,
-		RenagMax: DefaultPulseRenagMax,
 	}
 	if v := a.CfgGet("pulse_renag", ""); v != "" {
 		if d, err := ParseInterval(v); err == nil {
 			cfg.Renag = d
 		}
 	}
-	if v := a.CfgGet("pulse_renag_max", ""); v != "" {
-		if d, err := ParseInterval(v); err == nil {
-			cfg.RenagMax = d
-		}
-	}
+	// pulse_renag_max: is gone with the ladder it capped (ADR 0027,
+	// 2026-09-05). A config that still carries the key is not an error —
+	// CfgGet is never asked for it, so it reads as any other unknown key
+	// does, which is how every retired key in this family has left.
 	return cfg, nil
 }
 
-// PulsePath is state/pulse.yaml, the pulse's own fingerprint — machine-local
+// PulsePath is state/pulse.yaml, the pulse's delivery record — machine-local
 // like everything under state/ (gitignored).
 func PulsePath(a *App) string { return filepath.Join(a.StateDir, "pulse.yaml") }
 
-// PulseState is the ticker's whole persisted record: rangerhq-4ish's sensing
-// fields (At, Conditions, Fingerprint) plus this bead's delivery bookkeeping
-// — the fingerprint actually prompted, when, and the renag interval now in
-// force. One file, one writer (pulseOnce), so delivery reads exactly what
-// sensing just computed instead of a second store racing it.
+// PulseState is the ticker's whole persisted record, and since ADR 0027's
+// 2026-09-05 simplification that is delivery bookkeeping and nothing else:
+// the fingerprint actually prompted, and when. One file, one writer
+// (pulseOnce).
+//
+// It used to carry four more fields. Three of them — at, conditions,
+// fingerprint — were rangerhq-4ish's sensing snapshot, written every tick
+// and read back by nobody: ReadPulseState has never parsed them, and no
+// other reader in this codebase opens the file (`posse status` recomputes
+// the set from the stores, which is the rule that state/pulse.yaml is never
+// evidence the shop is healthy). The fourth, renag_interval, was the
+// doubling ladder's position, and the ladder is gone with it.
+//
+// What that costs: a human reading state/pulse.yaml no longer sees what the
+// last tick observed. That reading was never trustworthy anyway — it is the
+// last tick's snapshot, not the shop — and the watch log's own `pulse:` line
+// carries the same keys with a pass header dating them.
 type PulseState struct {
-	At                  time.Time
-	Conditions          []string
-	Fingerprint         string
-	PromptedFingerprint string        // "" once the condition set clears
-	PromptedAt          time.Time     // zero until the first successful prompt
-	RenagInterval       time.Duration // the backoff in force for the next re-prompt
+	PromptedFingerprint string    // "" once the condition set clears
+	PromptedAt          time.Time // zero until the first successful prompt
 }
 
-// WritePulseState fingerprints the condition set and the delivery
-// bookkeeping to disk. The ticker goroutine is this file's only writer; a
+// pulseTick is one tick's OBSERVATION: computed in memory, handed to
+// delivery, and dropped when the tick ends (ADR 0027 — "compute observation
+// time, conditions and current fingerprint in memory each tick"). Nothing
+// here reaches state/pulse.yaml.
+type pulseTick struct {
+	At          time.Time
+	Conditions  []string
+	Fingerprint string
+}
+
+// WritePulseState writes the delivery bookkeeping to disk, whole-file, the
+// way it always has (ADR 0027: the existing file replacement, no new writer
+// and no lock service). The ticker goroutine is this file's only writer; a
 // second watch loop's writes and this one's interleave last-writer-wins,
 // which ADR 0027's consequences accept — one loop per queue is the
 // invariant (ADR 0011 §1) in practice, and a stale fingerprint costs one
 // missed pulse, not a wrong one.
+//
+// It writes on every tick, including the ticks that change nothing, and
+// that is load-bearing: the file's EXISTENCE is what says an armed pulse
+// ran at all, which is the only difference a disarmed watch leaves behind.
 func WritePulseState(path string, s PulseState) error {
 	var b strings.Builder
-	fmt.Fprintf(&b, "at: %s\n", s.At.UTC().Format(time.RFC3339))
-	fmt.Fprintf(&b, "fingerprint: %s\n", s.Fingerprint)
-	if len(s.Conditions) == 0 {
-		fmt.Fprintf(&b, "conditions: []\n")
-	} else {
-		fmt.Fprintf(&b, "conditions:\n")
-		for _, c := range s.Conditions {
-			fmt.Fprintf(&b, "  - %s\n", c)
-		}
-	}
 	fmt.Fprintf(&b, "prompted_fingerprint: %s\n", s.PromptedFingerprint)
 	if s.PromptedAt.IsZero() {
 		fmt.Fprintf(&b, "prompted_at:\n")
 	} else {
 		fmt.Fprintf(&b, "prompted_at: %s\n", s.PromptedAt.UTC().Format(time.RFC3339))
 	}
-	fmt.Fprintf(&b, "renag_interval: %s\n", s.RenagInterval)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
@@ -151,17 +169,18 @@ func WritePulseState(path string, s PulseState) error {
 // missing or unreadable file, or a field that fails to parse, reads as that
 // field's zero value — the pulse's first tick, not an error worth failing
 // the loop over.
+//
+// This is also the whole migration for the six-field files written before
+// the 2026-09-05 simplification: it asks YamlGet for the two keys it wants
+// and never for the four that left, so an old record loads its dedup and
+// the first tick after the upgrade rewrites the file two keys wide. No
+// migration job, and no version stamp to get wrong (ADR 0027).
 func ReadPulseState(path string) PulseState {
 	var s PulseState
 	s.PromptedFingerprint = YamlGet(path, "prompted_fingerprint")
 	if v := YamlGet(path, "prompted_at"); v != "" {
 		if t, err := time.Parse(time.RFC3339, v); err == nil {
 			s.PromptedAt = t
-		}
-	}
-	if v := YamlGet(path, "renag_interval"); v != "" {
-		if d, err := time.ParseDuration(v); err == nil {
-			s.RenagInterval = d
 		}
 	}
 	return s
@@ -182,9 +201,9 @@ func (d *Dispatcher) pulseLoop(ctx context.Context, cfg PulseConfig) {
 	}
 }
 
-// pulseOnce is one tick: compute, decide whether the non-empty set is due
-// for delivery (ADR 0027 §3-4), fingerprint + bookkeeping to disk, log
-// non-empty.
+// pulseOnce is one tick: compute in memory, decide whether the non-empty
+// set is due for delivery (ADR 0027 §3-4), delivery bookkeeping to disk,
+// log non-empty. The observation itself is never written.
 func (d *Dispatcher) pulseOnce(cfg PulseConfig) {
 	set, failed := ShopCheck(d.govInputs(cfg))
 	// A store that could not be read is a condition set that is PARTIAL,
@@ -193,28 +212,33 @@ func (d *Dispatcher) pulseOnce(cfg PulseConfig) {
 	for _, err := range failed {
 		d.equietf("pulse: shop check partial: %v\n", err)
 	}
-	conditions := set.Keys()
+	tick := pulseTick{At: d.now(), Conditions: set.Keys(), Fingerprint: set.Fingerprint()}
 	path := PulsePath(d.App)
 	state := ReadPulseState(path)
-	state.At = d.now()
-	state.Conditions = conditions
-	state.Fingerprint = set.Fingerprint()
 
-	if len(conditions) == 0 {
+	if len(tick.Conditions) == 0 {
 		// Cleared set resets the renag clock — the next non-empty set, even
 		// one with the same fingerprint as a previous episode, is a fresh
 		// prompt, not a renag.
+		//
+		// "Cleared" is only ever a statement about what this tick COMPUTED.
+		// The partial lines above are the other half of it: a store that
+		// could not be read contributes no keys, so an empty set here can
+		// mean "nothing is wrong" or "we could not look", and the reset
+		// claims the first while the log says which it was. What it must
+		// never do is claim an unobserved condition cleared, and it does
+		// not — it forgets a delivery, it does not assert an all-clear, and
+		// nothing downstream reads this file for one (ADR 0027).
 		state.PromptedFingerprint = ""
 		state.PromptedAt = time.Time{}
-		state.RenagInterval = 0
 	} else {
-		d.deliverPulse(cfg, &state)
+		d.deliverPulse(cfg, tick, &state)
 	}
 
 	if err := WritePulseState(path, state); err != nil {
 		d.equietf("pulse: cannot write %s: %v\n", AbbrevHome(path), err)
 	}
-	if len(conditions) > 0 {
+	if len(tick.Conditions) > 0 {
 		// The shop pulse (ranger-base-dwlb1), on its OWN line above the
 		// conditions rather than appended to them: the condition line is
 		// the stable-token rendering a metric is greped out of, and a
@@ -269,27 +293,28 @@ func pulseTakesPrompt(status string) bool { return status == "idle" || status ==
 
 // deliverPulse decides whether this tick's non-empty condition set is due
 // for a prompt — a fingerprint not yet prompted, or an unchanged one whose
-// renag interval has elapsed — then attempts idle-only delivery to
-// cfg.Persona's live session. Only an actually-delivered prompt advances
-// state's bookkeeping; a skip or an undeliverable tick leaves it untouched
-// so the same fingerprint is retried next tick, never gated behind renag
-// for a prompt that never went out.
+// one renag interval has elapsed since the last SUCCESSFUL delivery — then
+// attempts idle-only delivery to cfg.Persona's live session. Only an
+// actually-delivered prompt advances state's bookkeeping; a skip or an
+// undeliverable tick leaves it untouched so the same fingerprint is retried
+// next tick, never gated behind renag for a prompt that never went out.
+//
+// Both of those are best-effort, not exactly-once: an unreadable delivery
+// record reads as "never prompted" and a crash between AgentPrompt here and
+// pulseOnce's WritePulseState loses the record of a prompt that did go out. Each
+// costs one repeat, which is the same cost the renag interval already
+// budgets for, and the alternative — a durable log, a lock, a second store
+// — is the machinery ADR 0027 declines to add for a hint that carries no
+// authority.
 //
 // This targets cfg.Persona's session directly via herdr's AgentPrompt, not
 // `posse prompt` or personaActive/crewHeld — the ADR 0008 §2 carve-out
 // (amended by ADR 0027): it may reach a crew-marked session, and because
 // nothing here calls MarkCrew/MarkCrewOnOperatorPrompt, it sets no crew
 // mark. The prompt itself carries no authority; the stores stay the record.
-func (d *Dispatcher) deliverPulse(cfg PulseConfig, state *PulseState) {
-	changed := state.PromptedFingerprint != state.Fingerprint
-	due := changed
-	if !due && !state.PromptedAt.IsZero() {
-		interval := state.RenagInterval
-		if interval <= 0 {
-			interval = cfg.Renag
-		}
-		due = state.At.Sub(state.PromptedAt) >= interval
-	}
+func (d *Dispatcher) deliverPulse(cfg PulseConfig, tick pulseTick, state *PulseState) {
+	changed := state.PromptedFingerprint != tick.Fingerprint
+	due := changed || (!state.PromptedAt.IsZero() && tick.At.Sub(state.PromptedAt) >= cfg.Renag)
 	if !due {
 		return
 	}
@@ -301,7 +326,7 @@ func (d *Dispatcher) deliverPulse(cfg PulseConfig, state *PulseState) {
 		// line the no-live case uses: an armed pulse that reaches nobody
 		// must be visible in the watch log, not silent.
 		d.quietf("pulse: %s → undeliverable (no pulse_persona: and no coordinator:)\n",
-			strings.Join(state.Conditions, "; "))
+			strings.Join(tick.Conditions, "; "))
 		return
 	}
 
@@ -315,7 +340,7 @@ func (d *Dispatcher) deliverPulse(cfg PulseConfig, state *PulseState) {
 		// Condition (c) from the sensing bead — already in state.Conditions.
 		// Never create a session to deliver into; log and retry next tick.
 		d.quietf("pulse: %s → undeliverable (no live session for %s)\n",
-			strings.Join(state.Conditions, "; "), cfg.Persona)
+			strings.Join(tick.Conditions, "; "), cfg.Persona)
 		return
 	}
 	if !pulseTakesPrompt(status) {
@@ -392,27 +417,18 @@ func (d *Dispatcher) deliverPulse(cfg PulseConfig, state *PulseState) {
 			name, ellipsis(typed, 60))
 	}
 
-	text := pulsePromptText(state.Conditions)
+	text := pulsePromptText(tick.Conditions)
 	if _, err := d.HB.H.AgentPrompt(pane, text, false, 0); err != nil {
 		d.equietf("pulse: prompt failed for %s: %v\n", name, err)
 		return
 	}
-	d.quietf("pulse: %s → prompted %s\n", strings.Join(state.Conditions, "; "), name)
+	d.quietf("pulse: %s → prompted %s\n", strings.Join(tick.Conditions, "; "), name)
 
-	if changed {
-		state.RenagInterval = cfg.Renag
-	} else {
-		next := state.RenagInterval * 2
-		if next <= 0 {
-			next = cfg.Renag
-		}
-		if cfg.RenagMax > 0 && next > cfg.RenagMax {
-			next = cfg.RenagMax
-		}
-		state.RenagInterval = next
-	}
-	state.PromptedFingerprint = state.Fingerprint
-	state.PromptedAt = state.At
+	// Delivered, so the clock restarts here and nowhere else — same two
+	// fields whether this was a new fingerprint or a repeat, because there
+	// is one interval now and no ladder position to advance.
+	state.PromptedFingerprint = tick.Fingerprint
+	state.PromptedAt = tick.At
 }
 
 // pulseTarget finds cfg.Persona's live session among sessions — first match

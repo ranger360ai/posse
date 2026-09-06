@@ -762,7 +762,7 @@ func TestQAClockLinesDoNotFeedTheWatchdog(t *testing.T) {
 			d := deliveryDispatcher(t, b, &at)
 			return d, &at
 		}, func(d *Dispatcher) {
-			d.pulseOnce(PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute, RenagMax: 4 * time.Hour})
+			d.pulseOnce(PulseConfig{Armed: true, Persona: "coordinator", Renag: 30 * time.Minute})
 		}, "pulse: shop "},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

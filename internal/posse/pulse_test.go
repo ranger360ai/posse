@@ -32,14 +32,45 @@ func TestLoadPulseConfigArmed(t *testing.T) {
 	t.Parallel()
 	a := wtApp(t)
 	os.WriteFile(a.ConfigPath, []byte(
-		"pulse_interval: 2m\npulse_persona: developer\npulse_renag: 30m\npulse_renag_max: 4h\n"), 0o644)
+		"pulse_interval: 2m\npulse_persona: developer\npulse_renag: 45m\n"), 0o644)
 	cfg, err := LoadPulseConfig(a)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !cfg.Armed || cfg.Interval != 2*time.Minute || cfg.Persona != "developer" ||
-		cfg.Renag != 30*time.Minute || cfg.RenagMax != 4*time.Hour {
+		cfg.Renag != 45*time.Minute {
 		t.Errorf("bad armed config: %+v", cfg)
+	}
+}
+
+// pulse_renag_max: went with the doubling ladder (ADR 0027, 2026-09-05,
+// ranger-base-thm0j), and the box it went from still has it in config.yaml.
+// A retired key is inert, not an error: the family loads, the one repeat
+// interval is the one pulse_renag: names, and nothing anywhere reads a
+// maximum. Both halves matter — a LoadPulseConfig that started refusing
+// unknown pulse_* keys would stand a live shop's pulse down at upgrade.
+func TestLoadPulseConfigIgnoresTheRetiredRenagMax(t *testing.T) {
+	t.Parallel()
+	a := wtApp(t)
+	os.WriteFile(a.ConfigPath, []byte(
+		"pulse_interval: 2m\npulse_persona: coordinator\npulse_renag: 20m\npulse_renag_max: 4h\n"), 0o644)
+	cfg, err := LoadPulseConfig(a)
+	if err != nil {
+		t.Fatalf("a config still carrying pulse_renag_max: must load: %v", err)
+	}
+	// 20m, not the 30m default: a reader that quietly stopped consulting
+	// pulse_renag: would answer the default and pass a weaker assertion.
+	if !cfg.Armed || cfg.Renag != 20*time.Minute {
+		t.Errorf("the surviving keys must load unchanged: %+v", cfg)
+	}
+	// The field is gone from the struct, so the pin that it is not consulted
+	// has to be written against the file: no reader in the package asks for
+	// the key, and DefaultPulseRenag is the only interval left.
+	if got := a.CfgGet("pulse_renag_max", "unread"); got == "unread" {
+		t.Fatal("fixture: the retired key must actually be in the config for this to pin anything")
+	}
+	if DefaultPulseRenag != 30*time.Minute {
+		t.Errorf("DefaultPulseRenag = %s, want the one 30m repeat interval", DefaultPulseRenag)
 	}
 }
 
@@ -270,13 +301,43 @@ func TestWatchPulseArmedLogsBlockedSession(t *testing.T) {
 		t.Fatal("watch never returned after cancel")
 	}
 
+	// The file is delivery bookkeeping and NOTHING else since ADR 0027's
+	// 2026-09-05 simplification, so the condition that raised this tick is
+	// no longer in it — it is on the watch line asserted above, which is
+	// where a human reads it. What the file still proves is the thing the
+	// disarmed sibling below asserts the negative of: an armed pulse ran.
 	state, err := os.ReadFile(PulsePath(b.App))
 	if err != nil {
 		t.Fatalf("state/pulse.yaml not written: %v", err)
 	}
-	if !strings.Contains(string(state), "blocked:coordinator-shop") {
-		t.Errorf("state/pulse.yaml missing the condition:\n%s", state)
+	// The condition text at all, anywhere: it used to reach the file twice,
+	// as a `conditions:` item and inside the `fingerprint:` join.
+	if strings.Contains(string(state), "blocked:coordinator-shop") {
+		t.Errorf("state/pulse.yaml still carries the observed condition:\n%s", state)
 	}
+	// And the four removed keys, anchored — "fingerprint:" is a suffix of
+	// "prompted_fingerprint:", so a plain Contains would call the surviving
+	// field a removed one and pass for the wrong reason.
+	for _, gone := range []string{"at:", "conditions:", "fingerprint:", "renag_interval:"} {
+		if lineHasKey(string(state), gone) {
+			t.Errorf("state/pulse.yaml still carries %q, which ADR 0027 removed:\n%s", gone, state)
+		}
+	}
+	if !lineHasKey(string(state), "prompted_fingerprint:") || !lineHasKey(string(state), "prompted_at:") {
+		t.Errorf("state/pulse.yaml must still carry the two delivery fields:\n%s", state)
+	}
+}
+
+// lineHasKey is "does any line of this YAML start with key" — the anchored
+// question, because `fingerprint:` is a suffix of `prompted_fingerprint:`
+// and a plain Contains would call the surviving field a removed one.
+func lineHasKey(yaml, key string) bool {
+	for _, ln := range strings.Split(yaml, "\n") {
+		if strings.HasPrefix(ln, key) {
+			return true
+		}
+	}
+	return false
 }
 
 func TestWatchPulseUnarmedNoTicker(t *testing.T) {

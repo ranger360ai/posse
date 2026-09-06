@@ -40,6 +40,35 @@ leaves, loudly, rather than quietly staying in force. `posse promote
 --dry-run` shows the whole ratification diff, including the arriving and
 departing overlay files, and writes nothing.
 
+**`pulse_renag_max:` is retired, and `state/pulse.yaml` is two fields wide.**
+
+An unchanged shop condition now repeats at one fixed `pulse_renag:` (default
+30m) instead of doubling 30m → 60m → 120m up to a `pulse_renag_max:` of 4h.
+117.3h of one shop's `dispatch-watch.log` says the ladder never ran: 397
+deliveries fell into 386 episodes of one unchanging condition set, 11 of
+those repeated once, and not one twice. The doubled interval was computed,
+written to disk and read by nothing, and the cap never bound at all. The
+condition set churns faster than the ladder climbs — a changed fingerprint
+is a fresh prompt, and that is the common case by 35 to 1.
+
+The delivery record shrank with it. `state/pulse.yaml` carried six fields:
+an observation snapshot (`at`, `conditions`, `fingerprint`) that no reader
+in the codebase has ever parsed back, the retired `renag_interval`, and the
+two that actually dedup delivery (`prompted_fingerprint`, `prompted_at`).
+Only those two are written now.
+
+**What you may need to do.** Nothing, in either half. A `pulse_renag_max:`
+still in your `config.yaml` is inert rather than an error — nothing asks for
+the key — and you can delete it whenever you next edit the file. An old
+six-field `state/pulse.yaml` loads its two surviving fields, so a watch
+restarting across the upgrade does not re-prompt a set it already delivered;
+the first tick rewrites the file two keys wide. Two things to know: if you
+were leaning on the ladder to quiet a long-lived condition, `pulse_renag:`
+is now the only lever and the interval it names is the interval for as long
+as the condition stands; and if you were reading `state/pulse.yaml` to see
+what the last tick observed, it no longer answers that — the watch log's own
+`pulse:` line carries the same keys, dated by its pass header.
+
 ### Security
 
 **The launch also pins the settings FIELDS whose value is a command, which

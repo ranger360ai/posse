@@ -294,7 +294,7 @@ func TestQAPlanFailTokenReadsTheTypeNotTheProse(t *testing.T) {
 // the pulse fingerprints (govern.go GovCondition.Key), so the key changing
 // is what re-reaches the coordinator: once an hour is the ruling, and every
 // two minutes would be a fingerprint that re-prompts on every tick and
-// resets the renag backoff each time.
+// restarts the renag clock each time.
 func TestQAGuardBlindKeyEscalatesHourlyNotPerTick(t *testing.T) {
 	t.Parallel()
 	rl := &RateLimit{Status: "429 Too Many Requests"}
