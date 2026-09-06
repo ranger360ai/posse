@@ -656,7 +656,7 @@ declared runtime rather than on whichever built-in happened to be blank,
 which is how a rule about the map stops being tested the day somebody
 fills that map in.
 
-Availability is advisory under [ADR 0003](0003-model-tiering.md); its catalog lease and approved substitution removal are not separately defined here. The currently running `egress:`/catalog-host selection is transition code, pending that removal task. Dead-on-arrival (allotment message, one assistant turn, idle)
+Availability is advisory under [ADR 0003](0003-model-tiering.md); its catalog lease and approved substitution removal are not separately defined here. The `egress:`/catalog-host selection is the advisory observer 0003 §5 keeps; the removal bead (ranger-base-hv2zr) takes the substitution walk and its carried marks, not this selection. Dead-on-arrival (allotment message, one assistant turn, idle)
 is a **turn outcome**, not a catalog miss (ranger-base-1cc shipped the
 detection half; ranger-base-02zr keyed it on `turn_outcome:` instead of
 the runtime's name). A runtime without that probe launches what it was

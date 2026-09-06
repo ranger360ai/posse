@@ -1,6 +1,10 @@
 # ADR 0003 — Explicit model tiers; availability is advisory
 
-*Status: accepted; simplified 2026-09-05 by operator ruling · automatic-substitution removal pending deferred implementation · owner: architect.*
+*Status: accepted; simplified 2026-09-05 by operator ruling · the §3 removal is
+ranger-base-hv2zr, its pause lifted by the operator 2026-09-06; `git log --grep
+ranger-base-hv2zr` on main is the record of its landing and this sentence is a
+dated snapshot — at 2026-09-06 the removal was built in that bead's seat tree
+and not yet on main · owner: architect.*
 
 ## Context
 
@@ -72,16 +76,18 @@ ASSUMED implementation price: 6–10 source files plus tests/docs, one config
 key and fallback-chain/carried-mark states removed; no new store, actor or
 operator flag. Catalog cache remains replaceable derived data; explicit
 maps remain in the promoted source. Useful unattended fallback recovery is
-unmeasured. First done-when on the deferred removal: count actual automatic
-substitutions that led to successful closes when the requested model could
-not run, identifying distinct launches and the observation window. If the
-removal is wrong, unattended continuity is lost until an operator reselects.
+unmeasured. First done-when on the removal bead (ranger-base-hv2zr): count
+actual automatic substitutions that led to successful closes when the
+requested model could not run, identifying distinct launches and the
+observation window. If the removal is wrong, unattended continuity is lost
+until an operator reselects.
 
 Rejected: doing nothing (carry an unpriced recovery mechanism), a second
 fallback registry or bypass flag, permanent authority for expired catalog
 data, and deleting budget floors with availability fallback (different
-decisions). Documentation accepts the smaller contract now; code still
-implements fallback until its deferred removal lands.
+decisions). Documentation accepts the smaller contract now; the code removal is
+ranger-base-hv2zr's, and whether it is on main is answered by `git log --grep
+ranger-base-hv2zr` there, not by this page.
 
 ## Lineage
 
@@ -94,4 +100,3 @@ implements fallback until its deferred removal lands.
 | 0039 D3d, built and ruled 2026-09-05 | §5 catalog credential; acquisition mechanics in 0019 D1; ruling text and V6–V8 on the 0039 page |
 
 Dated model measurements and prior alternatives: the page as it stood before this simplification is in git history, `git show c86a6b8:docs/adr/0003-model-tiering.md` (the dated copies were dropped by operator ruling 2026-09-05; git history is the record).
-are history, not current model recommendations.
