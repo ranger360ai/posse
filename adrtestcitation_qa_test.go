@@ -474,10 +474,13 @@ func TestADRCitationDeclarationsExemptOnlyWhatTheyDeclare(t *testing.T) {
 	// simplification, and the shape a reader who forgot the per-record half
 	// would write — leaves the whole root package green (ranger-base-9ycqa
 	// finding 2). ADR 0051 says "Declare once per base name per record", and
-	// the cost of losing it is that one `git show` of overflow.go in 0010
-	// exempts a bare, unresolvable overflow.go in all fifty other records.
-	elsewhere := adrCite{adr: "0010-plan-guard-overflow.md", line: 150, text: "internal/posse/herdrevents.go", decl: "historical"}
-	acrossRecords := adrCite{adr: adr, line: 55, text: "herdrevents.go"}
+	// the cost of losing it is that 0010's one `git show` of overflow.go
+	// exempts a bare, unresolvable overflow.go in every other record.
+	//
+	// The declaration is 0010:150 as the record actually carries it, which
+	// TestADRCitationDeclarationShapes reads by the same line.
+	elsewhere := adrCite{adr: "0010-plan-guard-overflow.md", line: 150, text: "internal/posse/overflow.go", decl: "historical"}
+	acrossRecords := adrCite{adr: adr, line: 55, text: "overflow.go"}
 	if got := adrUnresolved(idx, []adrCite{elsewhere, acrossRecords}); len(got) != 1 {
 		t.Fatalf("a declaration in %s exempted a bare mention in %s; the backreference radius is the corpus, not the record, got %v",
 			elsewhere.adr, acrossRecords.adr, got)
