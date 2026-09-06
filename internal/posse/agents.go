@@ -80,7 +80,49 @@ import (
 // claude records the answer instead (ClaudeOutsideReadSeenKey, trust.go).
 // A future launch that wants it here is welcome to it; it should read that
 // measurement first.
-const ClaudeFleetSettings = `{"permissions":{"defaultMode":"auto"},"skillOverrides":{"auto-mode-setup":"off"}}`
+//
+// autoMemoryEnabled: false — the fleet writes no auto-memory (ranger-base-7uhip).
+// claude resolves its auto-memory directory from the git WORKING-COPY root, not
+// the session cwd, so every seat launched into ~/.posse/worktrees/posse/<session>
+// resolved to the OPERATOR's own project memory and appended there. MEASURED
+// 2026-09-06 (ranger-base-7uhip): 114 memory files under the ONE directory
+// ~/.claude/projects/<sanitized main checkout>/memory/ carrying ~100 distinct
+// originSessionIds, MEMORY.md at 199 lines against a harness cap of 200 past
+// which the tail is cut; ZERO of the 1470 per-worktree project dirs has a
+// memory/ subdir at all. So the fleet was filling a 200-line index the operator
+// reads and no persona owns, and pruning it buys about a day at today's close
+// rate.
+//
+// Turning it OFF rather than redirecting it is the ruling of the bead's design
+// parent (ranger-base-bmr1c): ORDERS.md is the persona memory the constitution
+// names and posse already commits (memoryland.go), and the auto-memory was a
+// second, unowned channel beside it. A redirect to the persona dir would keep
+// that second channel and only move it — and it would make this const
+// per-persona, which is a shape change for a payload that is a const on purpose.
+//
+// The COST, named because it is real: a seat also stops READING that index, and
+// the ~150 lessons in it today are largely posse engineering lore written by
+// prior seats. ORDERS.md, AGENTS.md and docs/ are the channels that remain, and
+// they are the ones with an owner and a commit.
+//
+// MEASURED to work at this scope, two headless arms on claude 2.1.263 that
+// differ in this one key (ranger-base-7uhip): with `autoMemoryDirectory` alone
+// the session names that directory back; adding `autoMemoryEnabled:false` it
+// answers NONE. `--settings` is flagSettings; for the sibling key
+// `autoMemoryDirectory` the resolver's own scope list ranks it above
+// local/project/user and below policy alone (project scope is ignored for that
+// key outright, "for security"). What the arms measured for `autoMemoryEnabled`
+// is that flag scope beats the DEFAULT — the operator's `~/.claude` names the
+// key nowhere today. Flag versus a user-scope `true` (which is what the /config
+// toggle writes) is UNMEASURED and not measurable from a seat: the box's
+// root-owned policy file pins CLAUDE_CONFIG_DIR, so there is no scratch user
+// scope to plant in (ranger-base-i7cy4). If auto-memory ever comes back on for
+// the fleet, that contest is the first thing to measure.
+// Do NOT reach for CLAUDE_CODE_DISABLE_AUTO_MEMORY
+// instead: a launcher-exported variable loses to any settings scope naming the
+// same key (ranger-base-rq83c), which is the whole reason the pins travel in
+// this payload.
+const ClaudeFleetSettings = `{"autoMemoryEnabled":false,"permissions":{"defaultMode":"auto"},"skillOverrides":{"auto-mode-setup":"off"}}`
 
 // DefaultAgentCommand is the claude runtime's template — what a PID with
 // neither runtime: nor command: launches with.
