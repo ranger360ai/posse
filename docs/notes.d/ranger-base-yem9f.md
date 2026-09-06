@@ -60,7 +60,25 @@ filed**; but `measuredOnBase` is false the moment any commit pairs by
 anything but patch-id, so `worktree.go`'s retirement gate never fires and
 **the source tree and branch are never reaped**. That is
 `docs/notes.d`-worthy because it is the third instance: `ranger-base-3ji2w`
-and `ranger-base-k5aqw` are the same ask. A retire bead is filed here too.
+and `ranger-base-k5aqw` are the same ask. Filed here as `ranger-base-xphof`.
+
+There is a second, independent reason this tree will not be reaped, and it is
+new for the class: `contentNotOnBase` names all three merged paths, because on
+each of them the branch's exact blob is a **pre-merge** state that
+deliberately does not exist on main. `ranger-base-3ji2w` could show
+`git diff <branch> <replay> -- scripts/` empty; a merge that keeps both sides
+never can. Both gates are false, for different and both correct reasons.
+
+## Verified
+
+`env -u GIT_EXTERNAL_DIFF make test` on the replay, base `a7d93c57`: every Go
+package `ok` and zero `--- FAIL` lines — `internal/posse` 906.9s, root 362.7s,
+`cmd/posse` 205.5s, `cmd/testparallel` 1.7s — plus `fmt-check`,
+`verify-test-times`, `verify-parallel`, `verify-suite-lock`,
+`verify-silent-reverts` (all 17 detector self-test arms, including the four
+that grade the patch-id token) and `tree-check`. `doc-check`, `crew-check` and
+`identity-check` were re-run after this fragment was added. `go vet ./...` is
+clean. The one non-zero exit is the audit step, below.
 
 ## The red that was already there
 
