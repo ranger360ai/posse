@@ -96,10 +96,21 @@ func TestTheRunbookQuotesTheSentencesTheCodeActuallyEmits(t *testing.T) {
 	page := crRunbook(t)
 
 	// The keychain-unreadable sentence, taken from the adapter rather than
-	// from a literal: an absolute path that is not there fails to exec, is
-	// not a gate refusal, and lands on the class-1 error.
-	_, _, unreadable := readStore(keychainStoreAt(filepath.Join(t.TempDir(), "security")))
+	// from a literal: a `security` that RAN and exited non-zero on something
+	// that is not 44, which is ADR 0019 D2's own row for this class.
+	//
+	// It used to be an absolute path that is not there — which does not
+	// exec at all, and so was never this class: until 2026-09-06 the two
+	// were one error, and this arm was quoting the ACL row's sentence at a
+	// fixture that had never asked the keychain anything (ranger-base-h8u0l,
+	// and it is the shape the runbook's own last column now warns about).
+	// The read that never runs is the row below, from its own fixture.
+	_, _, unreadable := readStore(keychainStoreAt(keychainStub(t, "#!/bin/sh\nexit 36\n")))
 	if unreadable == nil {
+		t.Fatal("a `security` that exits 36 is not a credential")
+	}
+	_, _, notRun := readStore(keychainStoreAt(filepath.Join(t.TempDir(), "security")))
+	if notRun == nil {
 		t.Fatal("the keychain adapter read something at a path that does not exist")
 	}
 
@@ -117,6 +128,19 @@ func TestTheRunbookQuotesTheSentencesTheCodeActuallyEmits(t *testing.T) {
 		{name: "unreadable", produced: unreadable.Error(),
 			fragment: "keychain item " + strconv.Quote(item) + unreadableTail,
 			pageAs:   "keychain item " + strconv.Quote(KeychainService) + unreadableTail},
+
+		// The read that never ran, in two fragments: the OS's own reason
+		// sits between them and names a temp path, so the page renders it
+		// as a placeholder and the quotable parts are the head an operator
+		// matches the row by and the tail that carries the move.
+		{name: "did not run (head)", produced: notRun.Error(),
+			fragment: "keychain item " + strconv.Quote(item) + " was not read: security did not run (",
+			pageAs:   "keychain item " + strconv.Quote(KeychainService) + " was not read: security did not run ("},
+
+		{name: "did not run (tail)", produced: notRun.Error(),
+			fragment: "— no exit status came back, so nothing was learned about the store; " +
+				"that is a fault on this box and not a credential condition — check the binary " +
+				"is present and executable, and under load it is a transient fork/exec failure the next read answers"},
 
 		{name: "401 stale",
 			produced: (&AuthFailure{Status: "401 Unauthorized", Code: http.StatusUnauthorized}).Error(),

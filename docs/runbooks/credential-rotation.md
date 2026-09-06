@@ -90,7 +90,7 @@ that cannot do anything.
 
 ---
 
-## 2. Guard: the read failed — which of the five
+## 2. Guard: the read failed — which of the six
 
 The plan guard's credential is the **runtime-owned** rotating OAuth token,
 and on darwin its store of record is the macOS keychain item
@@ -121,6 +121,7 @@ alive and the endpoint refused it anyway.
 | what you see | what it is | the move | what it is NOT |
 |---|---|---|---|
 | ``keychain item "Claude Code-credentials" unreadable — this binary's keychain ACL may have been dropped by `make install`; grant access when prompted, or run `claude` once`` | the keychain ACL is per-binary, and every promotion of a new posse binary can drop this one's read | the sentence carries its own move now: grant access when macOS prompts, or run `claude` once | not a stale token — do **not** "refresh" |
+| `keychain item "Claude Code-credentials" was not read: security did not run (<why>) — no exit status came back, so nothing was learned about the store; that is a fault on this box and not a credential condition — check the binary is present and executable, and under load it is a transient fork/exec failure the next read answers` | the read never happened: `/usr/bin/security` was absent, was not executable, or the fork/exec failed. `<why>` is the operating system's own reason, and it names the binary's path | fix the box, not the credential. Under load this is transient and the next read answers; if it persists, the binary is the thing to look at | **not** the ACL row above. Until 2026-09-06 this case rendered that row's sentence byte for byte (ranger-base-h8u0l) — an ACL is checked by a binary that RAN, so on this failure that row names a cause that cannot be the cause |
 | ``usage endpoint returned 401 Unauthorized: credential EXPIRED 2026-09-03 22:51Z (37m ago) — run `claude` once to refresh`` | the token posse presented had already passed its own `expiresAt`. **MEASURED 2026-09-03 (ranger-base-4poib): that stamp is 8h after the operator's last interactive `claude`, and nothing else moves it** — the age is how long the fleet has been blind, and it is 8h-shaped, not weeks | run `claude` once and let it log in. If the age is small and this keeps coming back, the answer is the 8h life, not the login — see ranger-base-z089h | not an outage, and not weather — waiting alone does not clear it. An age of days does not mean a failed login; it means nobody has run `claude` for days |
 | ``usage endpoint returned 401 Unauthorized: credential stale — run `claude` once to refresh`` | the same 401 with **no expiry in the envelope** — posse could not date the credential, so it does not claim to know why. "Cannot tell" is reported as cannot tell (ADR 0019 D5) | run `claude` once; then check `posse refresh`, whose report says whether the expiry is readable at all | not a statement that the token expired — posse did not read one |
 | ``usage endpoint returned 401 Unauthorized: the credential posse presented had NOT expired (2026-09-04 06:28Z, in 7h) — so this is not a freshness problem…`` | a **live** token the endpoint refused anyway. `claude` hands back the same token and gets the same answer | treat it like the 403 below: scope, entitlement, or a credential revoked at the source. Do not go round the refresh loop | **not** staleness. The header still says "credential stale (401)" — the four classes are ADR 0019 D2's and a fifth is that ADR's to add (ranger-base-z089h); the SENTENCE is the diagnosis, as this section's own rule says |
@@ -128,7 +129,7 @@ alive and the endpoint refused it anyway.
 | `usage endpoint returned 429 Too Many Requests, retry after 1h00m` | rate limited, usually by something re-asking after a 401 | wait the cooldown out; find the poller before adding another | not unreadable, and not a credential condition at all |
 | `keychain read refused by a posse gate shim: security (deny: Bash(security:*)) — posse's own gate, not a credential outage` | posse's own L1 gate refused a command posse itself ran. The keychain was never reached | nothing about the credential. The read now execs `/usr/bin/security` absolutely, so this is a regression guard: if you see it live, a read went back to a bare command name | not an outage. Reading it as one is what got `plan_guard_blind_max: 0` set for hours on 2026-08-24 — the shop's only automated brake switched off on a wrong diagnosis |
 
-A sixth outcome is not a failure at all: **structural absence** — no meter
+A seventh outcome is not a failure at all: **structural absence** — no meter
 adapter for this runtime, or the platform's store does not exist. That is the
 guard **OFF**, not blind. One witness line names the platform, the store it
 would need and what would arm it; no blind clock starts and nothing parks.
