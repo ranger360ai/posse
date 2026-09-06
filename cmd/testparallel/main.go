@@ -332,11 +332,17 @@ func main() {
 		// answers that question for them — the rig's own "free before the
 		// window" control would read somebody else's fork as our lock — and
 		// three of them HOLD it: for 250ms, for as long as a FIFO stays
-		// unopened in open(2), and across a 4 MiB write into that pipe —
-		// past the open and for the whole drain. The two FIFO holds are
-		// bounded only by the pin's own cooperation, and on the failure
-		// path by its 5s deadline; every other test's fork queues behind
-		// each of the three.
+		// unopened in open(2), and across a 4 MiB write into a FIFO of its
+		// own — past the open and for the whole drain. The two FIFO holds
+		// are bounded only by the pin's own cooperation, and only on the
+		// path where the read end DOES open: the open releases the parked
+		// writer, and each pin's poll is capped at 5s. When that open
+		// FAILS, t.Fatalf fires before the draining defer is registered,
+		// nothing else can release a write parked in open(2), and the hold
+		// runs to the package's own timeout — what both pins call the one
+		// failure a defer cannot rescue (execwrite_test.go). That unbounded
+		// case, not the 5s, is what these rows would cost a parallel phase:
+		// every other test's fork queues behind each of the three.
 		// Serial, they have the process to themselves and cost ~1.5s.
 		"TestUnderForkLockHoldsTheLockForTheWriteAndNoLonger":      "reads and holds the process-wide syscall.ForkLock",
 		"TestUnderForkLockKeepsAConcurrentForkOutOfTheWriteWindow": "reads and holds the process-wide syscall.ForkLock",
