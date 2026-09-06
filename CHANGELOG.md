@@ -349,8 +349,11 @@ binary rather than on one path: git reads its own build-time sysconfdir, so
 `/usr/bin/git` and a distro git both read `/etc/gitconfig`, while a Homebrew
 git on apple silicon reads `/opt/homebrew/etc/gitconfig` — which is the git
 first on PATH on this repo's CI runner. Run
-`git config --system --list --show-origin`; git names the file it wanted,
-and that answer beats the paths in this paragraph.
+`git config --system --list --show-origin` in a shell where
+`GIT_CONFIG_SYSTEM` is UNSET; git then names the file it wanted, and that
+answer beats the paths in this paragraph. Run it inside a session that
+already carries the pin and it reports on `/dev/null` and prints nothing,
+which reads exactly like a box with no system config.
 What survives the pin on a Mac is a *different* file — Apple git's
 own bundled config under `/Library/Developer/CommandLineTools`, which this
 variable does not govern, which is why `osxkeychain` and `init.defaultBranch`

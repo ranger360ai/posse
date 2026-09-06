@@ -300,7 +300,12 @@ import "os"
 //	                                ranger-base-33r36). `git config --system
 //	                                --list --show-origin` names the file YOUR
 //	                                git wanted, and that answer beats this
-//	                                row. What is zero here is a MISSING FILE,
+//	                                row — but run it with this very variable
+//	                                UNSET, because inside a session carrying
+//	                                the pin it reports on /dev/null and says
+//	                                nothing at all (measured; it is why
+//	                                gitSystemScopePath checks its own env
+//	                                before it asks). What is zero here is a MISSING FILE,
 //	                                a fact about this box rather than about
 //	                                the platform (ranger-base-sv8x4).
 //	                                AND READ THAT SUPPRESSION AGAINST THE
