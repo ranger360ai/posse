@@ -265,13 +265,15 @@ You are developer.
 		"- acceptance: the closed bead's own description is this section's checklist — read it there (`bd show a-1`).",
 		"say so as this verification's limit rather than inventing them.",
 		"VERIFIED:",
-		// The trailer as ADR 0006 §1 rules it since 2026-09-02: ONE
-		// findings bead in the close's lane, labelled debt. This line read
-		// `-l code -a developer` until ranger-base-ozzau retired it — see
+		// The trailer as ADR 0006 §6 rules it since 2026-09-02, amended
+		// 2026-09-06: ONE findings bead in the close's lane, labelled debt,
+		// for LIVE findings only. This line read `-l code -a developer`
+		// until ranger-base-ozzau retired it — see
 		// TestVerifyTrailerFilesOneFindingsBundleAndNamesNoCloser for the
 		// half that pins the closer's name is GONE, which a missing-substring
-		// list cannot say.
-		"file ONE findings bead `-l code -l debt --deps discovered-from:<this bead's id>`",
+		// list cannot say, and for the recorded channel this list only
+		// reaches through the bundle's LIVE qualifier.
+		"for LIVE findings only, file ONE findings bead `-l code -l debt --deps discovered-from:<this bead's id>`",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("description missing %q:\n%s", want, got)
@@ -1782,12 +1784,16 @@ func vaClosedClassed(id string, closedAt time.Time, prio int, issueType string, 
 		id, id, prio, issueType, ls, closedAt.Format(time.RFC3339Nano))
 }
 
-// The trailer, single close: ONE findings bead, in the close's lane, `-l
-// debt`, hung off THIS bead — and no closer named anywhere in it. The
-// closer's name left the trailer with the §1 amendment of 2026-09-01 and
-// the text kept it until now, so the absence is the whole point of the
-// second half here: `-a developer` is not a substring the positive list
-// above could have caught.
+// The trailer, single close: the RECORDED channel first — a finding whose
+// fix runs nothing files no bead at all — then ONE findings bead for the
+// LIVE ones, in the close's lane, `-l debt`, hung off THIS bead. And no
+// closer named anywhere in it. The closer's name left the trailer with the
+// §1 amendment of 2026-09-01 and the text kept it until now, so the absence
+// is the whole point of the second half here: `-a developer` is not a
+// substring the positive list above could have caught. The recorded channel
+// is ADR 0006 §6 as amended 2026-09-06 (ranger-base-0f2zy): its pin is the
+// sentence that says NO bead is filed, which is the half a trailer built
+// only for filing cannot contain.
 func TestVerifyTrailerFilesOneFindingsBundleAndNamesNoCloser(t *testing.T) {
 	t.Parallel()
 	b, _ := newTestBackend(t)
@@ -1798,11 +1804,14 @@ func TestVerifyTrailerFilesOneFindingsBundleAndNamesNoCloser(t *testing.T) {
 	got := a.verifyDescription(t.TempDir(), is, verifyCloser(is))
 
 	for _, want := range []string{
-		"file ONE findings bead `-l code -l debt --deps discovered-from:<this bead's id>`",
+		// The recorded channel (ADR 0006 §6, amended 2026-09-06): the one
+		// sentence that tells the verifier a finding files NOTHING.
+		"the finding is RECORDED and NO bead is filed for it",
+		"for LIVE findings only, file ONE findings bead `-l code -l debt --deps discovered-from:<this bead's id>`",
 		"one line per finding: file:line · what fails · the bead it escaped from · the repro or failing test",
 		"`-t bug` bead at P1/P2",
 		"close this one `escape`",
-		"No findings, no bead.",
+		"No live findings, no bead.",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("trailer missing %q:\n%s", want, got)

@@ -708,17 +708,26 @@ func (a *App) verifyDescription(dir string, is BdIssue, closer string) string {
 	return b.String()
 }
 
-// ─── the findings bundle and the class (ADR 0006 §1/§3, amended 2026-09-02) ──
+// ─── the findings bundle and the class (ADR 0006 §6, amended 2026-09-06) ───
 
 // verifyTrailer is the closing instruction on every verify bead this rule
-// mints, single or batched. The ruling it spells: a verify close files ONE
-// findings bead carrying every finding, labelled with the close's own lane
-// and `debt`; only a LIVE defect in money, the constitution, or dispatch
-// correctness earns a bead of its own, and the bundle then names it by id.
-// It is one sentence for a batch as for a single close — the bundle is per
-// VERIFY close, not per close verified, which is the amplification the
-// ruling cut (a day that filed 111 beads against 86 closes, with QA's
-// per-finding filing the largest line).
+// mints, single or batched. The ruling it spells, in the order the verifier
+// meets it: each finding takes one of TWO channels, decided by one question
+// — would the fix change what a process does or what a pin proves? No, and
+// the finding is RECORDED, one line on the verify bead's own close comment
+// and no bead filed at all (comment claims, doc sentences, NOTES/CHANGELOG
+// wording, a measurement record's prose). Yes, and it is LIVE and filed as
+// before: ONE findings bead carrying every live finding, labelled with the
+// close's own lane and `debt`; only a LIVE defect in money, the
+// constitution, or dispatch correctness earns a bead of its own, and the
+// bundle then names it by id. It is one sentence for a batch as for a
+// single close — the bundle is per VERIFY close, not per close verified,
+// which is the amplification the 2026-09-02 ruling cut (a day that filed
+// 111 beads against 86 closes, with QA's per-finding filing the largest
+// line). The recorded channel is the 2026-09-06 amendment (ranger-base-0f2zy)
+// and it is stated FIRST because it is the answer for most findings: a
+// trailer that says what to file before it says what not to file has
+// already asked for the bead.
 //
 // Two things it deliberately no longer says. The closer's NAME: the fix is
 // lane work and the closer is not on §1's five-item `-a` allowlist (§1
@@ -731,10 +740,12 @@ func (a *App) verifyDescription(dir string, is BdIssue, closer string) string {
 // because there is no id yet: the description is bd `create`'s argument, so
 // the bead it describes does not exist while this string is built.
 func verifyTrailer(lane string) string {
-	return "For any close that does NOT verify, file ONE findings bead `-l " + lane +
-		" -l debt --deps discovered-from:<this bead's id>` — one line per finding: file:line · what fails · the bead it escaped from · the repro or failing test. " +
-		"A LIVE money / constitution / dispatch-correctness defect alone gets its own `-t bug` bead at P1/P2 with the domain in the title, named in the bundle by id (ADR 0006 §1). " +
-		"Then close this one `escape` (ADR 0006 §2). No findings, no bead. The closed bead is never reopened by a persona — that is the operator's call.\n"
+	return "For any close that does NOT verify, ask of each finding: would the fix change what a process does or what a pin proves? " +
+		"NO — the finding is RECORDED and NO bead is filed for it: one line on THIS bead's close comment, `file:line · what · the close it escaped from`, which is the whole class of comment claims, doc sentences, NOTES/CHANGELOG wording and a measurement record's prose (ADR 0006 §6). " +
+		"YES — the finding is LIVE, and for LIVE findings only, file ONE findings bead `-l " + lane +
+		" -l debt --deps discovered-from:<this bead's id>` — one line per finding: file:line · what fails · the bead it escaped from · the repro or failing test; a pin that is wrong about what it measures is live. " +
+		"A LIVE money / constitution / dispatch-correctness defect alone gets its own `-t bug` bead at P1/P2 with the domain in the title, named in the bundle by id (ADR 0006 §6). " +
+		"Then close this one `escape` (ADR 0006 §6) either way — a close carrying recorded lines and no bead is a complete close. No live findings, no bead. The closed bead is never reopened by a persona — that is the operator's call.\n"
 }
 
 // verifyLane is the lane that bundle is filed in: the close's own. The ADR

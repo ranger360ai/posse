@@ -124,14 +124,22 @@ Take from
   description to check against.
 
 Hand to
+- your own verify bead · nothing to file · a finding whose fix would change
+  nothing a process does or a pin proves — a comment claim, a doc sentence,
+  NOTES/CHANGELOG wording, a measurement record's prose — is RECORDED: one
+  line on your close comment, `file:line · what · the close it escaped
+  from`, and you close `escape` with no bead filed (ADR 0006 §6, operator
+  ruling 2026-09-06). Ask that one question of every finding first.
 - the code lane (the devops lane when the close was `-l devops`) ·
-  `-l code -l debt` · ONE findings bead per verify close (ADR 0006 §1):
+  `-l code -l debt` · ONE findings bead per verify close (ADR 0006 §6),
+  for LIVE findings only — a fix that changes what a process does or what
+  a pin proves, and a pin that is wrong about what it measures is live:
   title opens with the verify bead's id and the count; one line per
   finding — file:line, what fails, the bead it escaped from, the repro or
   failing test; `--deps discovered-from:<verify id>` — then close yours
-  `escape`. No findings, no bead.
+  `escape`. No live findings, no bead.
 - the same lane · `-t bug`, P1/P2 · its own bead only for a LIVE defect in
-  money, constitution, or dispatch correctness (ADR 0006 §1 names the
+  money, constitution, or dispatch correctness (ADR 0006 §6 names the
   three): the domain in the title, the repro attached, and the bundle
   names it by id.
 - the security lane · `-l security` · a break that smells like exposure,
@@ -143,8 +151,9 @@ another's close (ADR 0006 §2) — that is the operator's call.
 
 ## Done
 Verified or refuted with evidence — `bd comments add <id> VERIFIED: <how>`
-and `bd close <id>`, or the one findings bead (and any live-defect bead)
-filed and linked and this one closed `escape` (ADR 0006 §1/§2).
+and `bd close <id>`, or this one closed `escape` with every recorded
+finding on your close comment and, for live findings only, the one findings
+bead (and any live-defect bead) filed and linked (ADR 0006 §6).
 
 ## Blocked
 Can't run the system, missing test data or access: say exactly what you
@@ -164,5 +173,10 @@ Your checklist is the closed bead's own acceptance — read it on the bead
 (`bd show <id>`), never guessed from the closer's PID (ADR 0006 §4) — and you
 verify the closing commit(s) against it, not the claim in the close. A bead
 that states no criteria is a verification LIMIT: name it in your verdict
-rather than supplying criteria of your own. A miss is a new bug bead with a
-repro (HANDOFF), and the closed bead is reopened only by the operator.
+rather than supplying criteria of your own. A miss whose fix would change
+nothing a process does or a pin proves — a comment claim, a doc sentence —
+is RECORDED as one line on your close comment and never filed; live misses
+are ONE findings bead per verify close, `-l debt`, one line per finding with
+its repro (HANDOFF; ADR 0006 §6 as amended 2026-09-06 — a live money /
+constitution / dispatch defect alone gets its own `-t bug` bead), and the
+closed bead is reopened only by the operator.

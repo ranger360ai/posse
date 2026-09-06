@@ -150,6 +150,7 @@ var shippedExampleDigests = map[string][]string{
 		"7ba7ee4b6fe50d3555076eb7175b5492b9ee090944141ae00895f14c556292f0", // b0eae4d88f99 2026-09-03 pkill/killall enforced in every shipped PID: deny Bash(pkill:*) and Bash(killall:*) (ranger-base-jjx19)
 		"cbf923c6dabf1f30b43f50d085eed350e6a72814392633f683da4a35d81ec446", // ranger-base-29eei 2026-09-05 the verify section quotes the whole `## Intents` table when no done-when row matches (ADR 0006 §3, amended 2026-09-01)
 		"f1b10a333f25ca6abb3b5dd1ce82b818d9b79971c0d7182b185f4e4bd0a2eafb", // ranger-base-0ezn7 2026-09-06 the verify section points at the closed bead's own acceptance; no PID intent row is quoted (ADR 0006 §4, simplified 2026-09-05)
+		"b29a3222bb8463f20439d7a558c82c49e61f6fdbf46ed3393ad36bcedca5190d", // ranger-base-l3jaq 2026-09-06 escape doctrine: a recorded finding files nothing, the bundle is for LIVE findings only (ADR 0006 §6, amended 2026-09-06)
 	},
 	// agents/ranger.md is a RETIRED name: rangerhq-o7y4 renamed the example to
 	// agents/ops.md (ADR 0012 D2 — persona names become roles). The entries stay
