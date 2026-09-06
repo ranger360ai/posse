@@ -1,7 +1,8 @@
 package posse
 
-// ranger-base-2asm5, found by gwart fixing ranger-base-xw51s one function
-// down.
+// ranger-base-2asm5, filed while fixing ranger-base-xw51s one function
+// down, and deliberately not fixed there: different trigger, different
+// line.
 //
 // THE SWALLOW, and why it is the same one twice. SourceBuildStamp asked
 // `git status --porcelain` under `if err == nil && st != ""`, so an
