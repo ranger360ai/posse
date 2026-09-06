@@ -101,3 +101,31 @@ commit adds one Markdown file and cannot move a Go build.
 | `TestVerifyPruneGuardScriptPinsThreeFieldGen` at `b96a1080` | ok 0.673s, 7/7 |
 | the same with the branch's script half applied | **2 FAIL** (above), restored |
 | `git status --porcelain` after restore | empty |
+
+`make test` on the note commit at `b96a1080`: **every Go package `ok`** — root
+354.7s, `cmd/posse` 211.5s, `cmd/testparallel` 2.3s, `internal/posse` 922.6s,
+zero `FAIL` lines anywhere — and **`RC=2` from a red that is not this diff**.
+The whole of it is the last step, `scripts/audit-silent-reverts.sh`, on ONE
+untriaged hit: `b96a108`, which is `main`'s own tip at the time, deleting the 16
+`docs/adr/history/` copies the same ADR-simplification batch had just created.
+This commit adds one Markdown file under `docs/notes.d/` and cannot reach it.
+
+`main` moved twice during that 922s run — `0642fa28` (ranger-base-rq689) triages
+exactly that hit, and `aab26b76` — so this branch was rebased onto `aab26b76`
+and re-measured there, on the FINAL bytes:
+
+```
+scripts/audit-silent-reverts.sh --quiet   1447 commits, 0 untriaged   rc 0
+go test -run TestVerifyPruneGuardScriptPinsThreeFieldGen              ok 0.396s
+  the same with the branch's script half applied                     2 FAIL
+  git checkout -- ; git status --porcelain                            empty
+go build ./…  ·  go vet ./…                                          rc 0 · rc 0
+make fmt-check verify-test-times verify-parallel verify-suite-lock \
+     verify-silent-reverts tree-check                                rc 0
+```
+
+The Go half is not re-run at `aab26b76`: those two commits are a triage line in
+`scripts/silent-reverts.allow` and one `internal/posse` test file, and the arms
+above are the ones a new Markdown file plus a moved base can actually move —
+`docs/notes.d/ranger-base-fm23s.md`'s rule, and the gap is stated rather than
+hidden.
