@@ -1,6 +1,6 @@
 # ADR 0040 — Amend existing roots; preserve numbered history
 
-*Status: accepted 2026-09-01; simplified 2026-09-05 by operator ruling · owner: architect.*
+*Status: accepted 2026-09-01; simplified 2026-09-05 by operator ruling · amended 2026-09-06 (ranger-base-x2pbz: no index file, the status line is the index) · owner: architect.*
 
 ## Context
 
@@ -49,6 +49,22 @@ needed for this execution. Old citations resolve in one hop. Repoint them
 when their code is otherwise edited; do not change runtime strings, tests,
 or prompts just to change an ADR number.
 
+There is no index file: `docs/adr/README.md` is not written. The directory
+listing is the inventory, and line 3 of every decision record, its
+`*Status:` line, is that record's disposition; a superseded record's line
+names its successor (`superseded <date> by ADR NNNN`), which is the one-hop
+pointer this Decision already requires at the source. The set in force is
+rendered live, never transcribed:
+
+    grep -m1 '^\*Status' docs/adr/0*.md
+
+A new decision record carries that line on line 3. The probe traces
+(`0013-*-probe.md`, `*.probe.sh`) are supplements, not decisions, and carry
+none. MEASURED 2026-09-06 at 6f94a99c (ranger-base-x2pbz): 58 numbered
+pages, 55 carry the line and all 55 carry it on line 3; the three without
+are the 0013 traces; 40 decision records are in force, 15 are superseded or
+retired and every one of the 15 names its successor in that form.
+
 Accepted changes to running behavior remain **pending implementation** until
 their code beads land. Each removal has one task, priority 2, label `code`,
 unassigned, deferred to 2026-09-12. Its first done-when row records the review's
@@ -73,9 +89,26 @@ History remains in the superseded pages and git. The pre-execution version
 of this record retains the previous inventory, cost estimates and rejected
 migration plan; those dated counts are not current product facts.
 
+Rejected 2026-09-06 (ranger-base-x2pbz), a committed index in any of three
+shapes. Hand-written: it states every disposition a second time, which is
+the assembly this record exists to end, and the pre-execution §2 index went
+stale in four days. Generated and pinned: the same file, plus a pin that reds
+every ADR commit that did not regenerate it. Either way the file is a second
+writer on every ADR bead under ADR 0022's one writer per file — MEASURED
+2026-09-01 to 09-06: 71 commits changed a status line, and 41 distinct beads
+touched `docs/adr` on 2026-09-05 alone — so the index would conflict on the
+launcher's fast-forward on any busy day. Grouped by the policy-home table
+above: the table names 20 of the 40 records in force, so the other 20 would
+need homes invented for a page no reader is pointed at (crew reach a record
+by the bead's `design:` path or by number; nothing in AGENTS.md, the PIDs or
+the work prompt names a README). Every `.md` under `docs/adr` is a record to
+the citation corpus, the retired-package sweep and the SHA census, so an
+index would also be the most-cited record in the set.
+
 ## Lineage
 
 | Was | Now |
 |---|---|
 | 0040 §§1–2, 4, old new-root migration accepted on ranger-base-ay3dr | Existing-root disposition above; operator ruling 2026-09-05 reverses the migration preference |
 | 0040 §3 numbering, one-hop citations and single policy home | Decision above; stable numbers retained, amendment and folding replace new-root ceremony |
+| 0040 §2's concern index, the `docs/adr/README.md` it promised | No index file (Decision above, 2026-09-06); the status line on line 3 of each record is the disposition and the successor pointer, rendered live by the grep there |
