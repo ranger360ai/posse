@@ -1,6 +1,6 @@
 # ADR 0026 — Research before invention, within the task when bounded
 
-*Status: accepted 2026-09-05 · ADR simplification, operator ruling 2026-09-05 · mandatory task multiplication removed; prompt/skill implementation deferred.*
+*Status: accepted 2026-09-05 · ADR simplification, operator ruling 2026-09-05 · mandatory task multiplication removed; the ruling is implemented in the rendered rung as of ranger-base-k5fnr, and the skill surfaces were censused as needing no change.*
 
 ## Context
 

@@ -3,6 +3,7 @@ package posse
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -289,8 +290,9 @@ func TestEscalationLadderProvenanceCaveat(t *testing.T) {
 // HANDOFF's, which is legitimate and must stay.
 func TestEscalationLadderSpikeFilesNoProvenanceEdge(t *testing.T) {
 	t.Parallel()
-	spike, handoff, ask := "", "", ""
-	for _, ln := range strings.Split(EscalationLadder("b-1", ""), "\n") {
+	ladder := EscalationLadder("b-1", "")
+	spike, handoff, ask, prov := "", "", "", ""
+	for _, ln := range strings.Split(ladder, "\n") {
 		switch {
 		case strings.HasPrefix(ln, "- SPIKE — "):
 			spike = ln
@@ -298,10 +300,12 @@ func TestEscalationLadderSpikeFilesNoProvenanceEdge(t *testing.T) {
 			handoff = ln
 		case strings.HasPrefix(ln, "- ASK — "):
 			ask = ln
+		case strings.HasPrefix(ln, "Provenance: "):
+			prov = ln
 		}
 	}
-	if spike == "" || handoff == "" || ask == "" {
-		t.Fatalf("ladder lost a rung:\n%s", EscalationLadder("b-1", ""))
+	if spike == "" || handoff == "" || ask == "" || prov == "" {
+		t.Fatalf("ladder lost a rung:\n%s", ladder)
 	}
 
 	// The defect, stated as the string that must not be there. It is the
@@ -331,6 +335,40 @@ func TestEscalationLadderSpikeFilesNoProvenanceEdge(t *testing.T) {
 	}
 	if strings.Contains(spike, "bd refuses the `dep add`") {
 		t.Errorf("SPIKE must not re-assert the refusal as universal (ranger-base-ytsp9):\n%s", spike)
+	}
+
+	// ranger-base-8dnuy finding 2: and the same claim WHERE IT NOW LIVES.
+	// ranger-base-k5fnr moved the store split onto the Provenance line and
+	// its close said the claim was "pinned in both directions" there — it
+	// was not: everything above reads the SPIKE line only, so the sentence
+	// the persona actually reads about what bd does was unguarded. MEASURED
+	// by `go test -overlay` on the committed dispatch.go: replacing the
+	// split with "and bd refuses the dep add in every store" rendered
+	// ytsp9's exact defect into every work prompt and this file was ok in
+	// 1.099s.
+	//
+	// Two-way. The split, as the sentence that must be there —
+	if !strings.Contains(prov, "refused outright by some stores and silently accepted by others") {
+		t.Errorf("the Provenance line must keep the store split — the refusal belongs to a SQLite store, and a `bd init` store today accepts the add and answers `bd ready` with the bead anyway (ranger-base-lpz0o):\n%s", prov)
+	}
+	if !strings.Contains(prov, "never read a zero exit as the stop") {
+		t.Errorf("the Provenance line must say what the accepting store costs the persona — a zero exit is not the stop:\n%s", prov)
+	}
+	// — and the universal, as the shapes that must not be, over the WHOLE
+	// ladder rather than one rung. bd's answer to that add is the STORE's,
+	// measured different in two of them, so no sentence here may quantify
+	// it: an "every store" claim about it is false in whichever direction
+	// it is written.
+	for _, dead := range []string{
+		"bd refuses the `dep add`",
+		"bd refuses the dep add",
+		"in every store",
+		"in all stores",
+		"in any store",
+	} {
+		if strings.Contains(strings.ToLower(ladder), strings.ToLower(dead)) {
+			t.Errorf("the ladder asserts the store's behaviour as bd's, found %q (ranger-base-ytsp9):\n%s", dead, ladder)
+		}
 	}
 
 	// Controls, both directions. HANDOFF is the rung that legitimately files
@@ -436,7 +474,53 @@ func TestEscalationLadderSpikeResearchesInTheDecidingBead(t *testing.T) {
 	if o := EscalationLadder("other-9", ""); !strings.Contains(o, "`bd dep list other-9` to confirm the block landed") {
 		t.Errorf("the confirmation must name the bead it was rendered for:\n%s", o)
 	}
+
+	// ranger-base-8dnuy finding 3: every assertion above is Contains, so it
+	// pins the removal against DELETION only — a mandate restored by
+	// ADDITION keeps all of them and renders a rung that says both things at
+	// once. That is the realistic rot direction and not a hypothesis:
+	// ranger-base-zbqiq records four crew PIDs still carrying the mandate
+	// line, so the next editor re-syncing this rung to the PIDs adds rather
+	// than deletes. MEASURED by `go test -overlay`: appending "File that
+	// separate bead for EVERY gap, always, as the receipt that research
+	// happened" after the sid marker left this file ok in 0.991s.
+	//
+	// Two negatives, because the addition can be spelled either way.
+	//
+	// One: no universal quantifier. In THIS rung every universal is a
+	// mandate — the whole ruling is that a separate bead is for a distinct
+	// dependency or deliverable and not for every gap — and the rendered
+	// rung carries none today (`each` appears only inside "reaches").
+	for _, dead := range mandateQuantifier.FindAllString(spike, -1) {
+		t.Errorf("SPIKE carries the universal %q — the 2026-09-05 ruling is that a separate bead is for a distinct dependency or deliverable, so a universal here is the mandate coming back:\n%s", dead, spike)
+	}
+	// Two: the receipt, whatever it is called. The rung names it to REFUSE
+	// it ("never as proof that research happened"), so the words are legal
+	// only in that negation — a clause saying the bead IS the proof carries
+	// no quantifier and would survive the rule above.
+	low := strings.ToLower(spike)
+	for _, claim := range []string{"proof that research happened", "receipt that research happened"} {
+		for at := 0; ; {
+			i := strings.Index(low[at:], claim)
+			if i < 0 {
+				break
+			}
+			i += at
+			at = i + len(claim)
+			if lead := low[max(0, i-16):i]; !strings.Contains(lead, "never as") {
+				t.Errorf("SPIKE says the separate bead IS the %q (lead-in %q) — the mandate ranger-base-k5fnr removed, back as an addition:\n%s", claim, lead, spike)
+			}
+		}
+	}
 }
+
+// mandateQuantifier is the universal-quantifier rule for the SPIKE rung
+// (ranger-base-8dnuy). Word-bounded on purpose: `\b` in Go's regexp is a real
+// boundary, so this does not fire on the "each" inside "reaches" the way a
+// substring scan does, and it deliberately omits "all" — "all four", "all of
+// them" are ordinary prose in a rung this long, while "always", "every" and
+// "each" applied to filing a bead are the mandate itself.
+var mandateQuantifier = regexp.MustCompile(`(?i)\b(always|every|each)\b`)
 
 // ranger-base-uzw11: HANDOFF files to the LANE. ADR 0006 §1's amendment of
 // 2026-09-01 (ranger-base-tpc41) says a handoff names a label and not a

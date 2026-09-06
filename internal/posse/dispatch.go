@@ -2002,21 +2002,22 @@ func (a *App) promptContext(bd Bd, is RepoIssue, runtime, tier, session string, 
 // untouched: what was removed is the multiplication, not the research.
 //
 // When SPIKE does file a separate bead it files it with NO `--deps
-// discovered-from:`, and that absence is the whole of ranger-base-rs8j. A spike carrying `discovered-from:<id>`
-// makes the `bd dep add <id> <sid>` on the same line close a cycle, and bd
-// will not carry both edges between one pair whichever lands first
-// (measured both orders 2026-08-30; the sibling site is
-// ranger-base-23oo/settleopen.go).
+// discovered-from:`, and that absence is the whole of ranger-base-rs8j. A
+// spike carrying `discovered-from:<id>` makes the `bd dep add <id> <sid>`
+// on the same line close a cycle, and bd will not carry both edges between
+// one pair whichever lands first (measured both orders 2026-08-30; the
+// sibling site is ranger-base-23oo/settleopen.go).
 //
-// What bd does about that depends on the store rather than on its version, so
-// the rung says only the outcome — the block is lost — and the trailing
+// What bd does about that depends on the store rather than on its version,
+// so the rung says only the outcome — the block is lost — and the trailing
 // `Provenance:` line carries the two shapes (ranger-base-lpz0o, measured
 // 2026-09-01 on one 0.50.3 binary; the rung said "bd refuses" as if it were
-// universal until ranger-base-k5fnr rewrote it, which is ranger-base-ytsp9): a SQLite beads.db refuses the
-// add — "cannot add dependency: would create a cycle (<id> → <sid> → ... →
-// <id>)", exit 1 — and a store `bd init` writes today (`no-db: true`, JSONL
-// only) accepts it and then answers `bd ready` with <id> anyway. Either way
-// the block does not take.
+// universal until ranger-base-k5fnr rewrote it, which is
+// ranger-base-ytsp9): a SQLite beads.db refuses the add — "cannot add
+// dependency: would create a cycle (<id> → <sid> → ... → <id>)", exit 1 —
+// and a store `bd init` writes today (`no-db: true`, JSONL only) accepts it
+// and then answers `bd ready` with <id> anyway. Either way the block does
+// not take.
 //
 // The block is what this rung is FOR — without it the deciding bead stays in
 // `bd ready`, the next pass dispatches it again, and "deciding waits on

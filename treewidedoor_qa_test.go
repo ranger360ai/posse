@@ -42,23 +42,30 @@ package posse
 //	TestShippedExampleTableCoversEveryVersionInGitHistory
 //	                                              make history-check   ~3s
 //
-// and three more that arrived afterwards, each doored by the bead that wrote
+// and four more that arrived afterwards, each doored by the bead that wrote
 // it and given its own membership row in arm 2:
 //
 //	TestQAADR0035PaneModeSurfaceClaimIsBuilt      make doc-check
 //	                                              (ranger-base-vwgt)
+//	TestQAADR0026StatusLineDoesNotDeferTheImplementedRung
+//	                                              make doc-check
+//	                                              (ranger-base-8dnuy)
 //	TestInstancePathFormNeverAppearsInTrackedContentUndispositioned
 //	                                              make ops-check
 //	TestQAInstancePathCensusCanStillSayNo         make ops-check
 //	                                              (both ranger-base-l9ii)
 //
-// and `make tree-check` is all of them — 40-46s on this box over three runs
-// at twenty pins and seven doors — which is the command a seat types after a
-// filtered run. (It was 21-41s over four runs at the older, smaller class;
-// re-measured under ranger-base-4jogv, because the same sentence that had the
-// wrong count was also pricing a class three pins smaller than the one that
-// runs. The seconds are NOT pinned — an elapsed-seconds red belongs to the
-// box, per the `test` target's own note — but they are measured, not carried.)
+// and `make tree-check` is all of them — 12-27s on this box over three runs
+// at twenty-one pins and seven doors — which is the command a seat types
+// after a filtered run. (It was 40-46s under ranger-base-4jogv, one pin ago,
+// and 21-41s at the older, smaller class before that; re-measured under
+// ranger-base-8dnuy, because the sentence a seat prices the command from
+// should not quote a run of a class it did not run — and stated without a
+// second numeral, deliberately: a historical count in this comment is
+// invisible to arm 4's one-claim rule, which is ranger-base-erqvh row 2. The
+// seconds are NOT pinned — an elapsed-seconds red belongs to the box, per
+// the `test` target's own note, and a warm build cache is most of this
+// spread — but they are measured, not carried.)
 //
 // THAT SENTENCE IS THE ONLY LIVE COUNT IN THIS FILE, and arm 4 holds it to
 // the Makefile, both numerals and the enumeration above it. It read seventeen
