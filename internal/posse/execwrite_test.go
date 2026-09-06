@@ -211,22 +211,35 @@ func TestWriteExecutableWritesUnderTheForkLock(t *testing.T) {
 	// in this binary would queue behind it — a red nobody could read.
 	f, err := os.Open(p)
 	if err != nil {
-		t.Fatal(err)
+		// The one failure a defer cannot rescue: nothing but this open
+		// releases a write parked in open(2), so it holds ForkLock until
+		// the package times out. Name it, so the hang has a cause on the
+		// record before every later fork queues behind it.
+		t.Fatalf("the FIFO read end would not open (%v) — the parked write still holds ForkLock", err)
 	}
-	if _, err := io.Copy(io.Discard, f); err != nil {
-		t.Fatal(err)
-	}
-	if err := f.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if err := <-done; err != nil {
-		t.Fatalf("the write itself failed: %v", err)
-	}
+	// Deferred, not inline: t.Fatal runs defers, so a failure while draining
+	// or closing still reaches the close and the ForkLock check under it.
+	// Inline, the first t.Fatal ended the test and skipped both. MEASURED
+	// (ranger-base-ctkhp, go test -overlay, one mutant that fails the drain
+	// and leaks ForkLock): inline reports "injected drain failure" alone and
+	// the leaked lock goes unnamed; deferred reports the drain AND "ForkLock
+	// outlived WriteExecutable: ForkLock is still held for writing after 5s".
+	defer func() {
+		if _, err := io.Copy(io.Discard, f); err != nil {
+			t.Errorf("draining the FIFO: %v", err)
+		}
+		if err := f.Close(); err != nil {
+			t.Errorf("closing the FIFO: %v", err)
+		}
+		if err := <-done; err != nil {
+			t.Errorf("the write itself failed: %v", err)
+		}
+		waitForkLockFree(t, "ForkLock outlived WriteExecutable")
+	}()
 
 	if !held {
 		t.Error("WriteExecutable wrote with ForkLock free: a sibling fork can land inside its window and inherit the write descriptor")
 	}
-	waitForkLockFree(t, "ForkLock outlived WriteExecutable")
 }
 
 // The pin above parks WriteExecutable in open(2), which is the only place a
