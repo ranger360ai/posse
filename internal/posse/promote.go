@@ -1067,7 +1067,16 @@ func printPromoteDiff(w io.Writer, repo, src string, prev *PromoteManifest, sha 
 		fmt.Fprintf(w, "diff: already at %s — re-promoting the same commit\n", short(sha))
 		return
 	}
-	args := append([]string{"diff", prev.SHA + ".." + sha, "--"}, specs...)
+	// memoryDiff and not a bare `git diff`: this is the operator's only
+	// preview of what a constitution promote is about to put in force, and
+	// every setting that changes what a diff looks like is an input to that
+	// reading. GIT_EXTERNAL_DIFF is the one that bit — posse's own inlet pin
+	// exports it EMPTY, which git treats as an external diff command of "",
+	// so this diff died and printed the ratify-by-hand line instead of the
+	// change, in every pinned seat, every time (ranger-base-xw51s). One list
+	// with memoryland's scan rather than a second copy of it, so the two
+	// readers cannot drift apart about what a diff is.
+	args := append(memoryDiff(prev.SHA+".."+sha, "--"), specs...)
 	out, err := git(repo, args...)
 	if err != nil {
 		fmt.Fprintf(w, "diff: %s..%s could not be read (%v) — ratify by hand before trusting this promote\n", short(prev.SHA), short(sha), err)

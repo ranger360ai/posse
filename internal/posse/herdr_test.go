@@ -142,6 +142,23 @@ func TestMain(m *testing.M) {
 	os.Setenv("CLAUDE_CONFIG_DIR", "")
 	os.Setenv("CODEX_HOME", "")
 	os.Setenv("GROK_HOME", "")
+	// GIT_EXTERNAL_DIFF, UNSET and not emptied — emptying it is the defect.
+	// posse's own inlet pin exports this variable as the EMPTY STRING in
+	// every pinned seat (inletpin.go), git reads set-but-empty as an
+	// external diff command of "" and dies trying to exec it, and this
+	// package's fixtures shell out to a real `git diff` dozens of times to
+	// witness what git itself does with a file. Those are FIXTURE PREMISES,
+	// not claims about ext-diff: they were reporting a rig failure for a
+	// variable the operator's launcher happened to carry, so eight tests
+	// red and `make test` exits 2 for every pinned seat (ranger-base-xw51s).
+	// Scrubbed here for the same reason as the three above — the operator's
+	// live environment is not an input to this binary — and here rather than
+	// on ~60 call sites so the next `git diff` a fixture adds is covered by
+	// construction. It does NOT hide the two PRODUCT sites this bead fixed:
+	// their pins plant `diff.external` in the fixture repo's own config,
+	// which is git's other spelling of the same setting and is not env at
+	// all (cagestaleextdiff_qa_test.go, promoteextdiff_qa_test.go).
+	os.Unsetenv("GIT_EXTERNAL_DIFF")
 	code := m.Run()
 	os.RemoveAll(home)
 	os.Exit(code)

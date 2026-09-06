@@ -221,7 +221,19 @@ func SourceBuildStamp(src string) string {
 	// same way. A dirty ident never proves two trees are identical — it
 	// only stops a dirty build from claiming to be the commit it sits on.
 	if st, err := git(src, "status", "--porcelain"); err == nil && st != "" {
-		stamp += "-dirty-" + dirtyIdent(src)
+		id := dirtyIdent(src)
+		if id == "" {
+			// The tree is dirty and what makes it dirty could not be
+			// read, so there is no ident to compare. "" here is the
+			// UNCLEAR verdict cageAge already has for exactly this —
+			// "one of them could not be read at all" — and it is the
+			// only honest answer: a stamp that named the commit alone
+			// would claim two different dirty trees are one build,
+			// which is the false CURRENT this file exists to prevent
+			// (ranger-base-xw51s).
+			return ""
+		}
+		stamp += "-dirty-" + id
 	}
 	return stamp
 }
@@ -232,36 +244,55 @@ func SourceBuildStamp(src string) string {
 // those match — which is what "the same build" should mean, and what a
 // bare "-dirty" bit could never tell apart (ranger-base-b6fh).
 //
-// Read-only and best-effort by design: a git or filesystem error here
-// leaves the fingerprint short of some of the content rather than failing
-// the whole stamp, because "" would read as clean and worse, a hard error
-// would fail every live pin on a box where `git diff` merely raced an
-// editor's save. The tree is already known dirty by the caller's own
-// `status --porcelain` check, so an ident that fails to fully distinguish
-// two states is a narrower miss than the bare bit it replaces, never a
-// wider one.
+// memoryDiff and not a bare `git diff`, for one of the reasons that list was
+// written for: GIT_EXTERNAL_DIFF, diff.external, or a `diff=<driver>` line
+// in the tree's own .gitattributes makes git print whatever that program
+// prints, and set-but-EMPTY is not unset — git execs "" and the diff dies.
+// posse's own inlet pin exports that variable empty in every pinned seat
+// (inletpin.go), so this was not a hypothetical box: it was every seat
+// (ranger-base-xw51s). The rest of memoryDiff's flags cost nothing on a
+// hash of the whole output and keep this reader from ever disagreeing with
+// the scan's about what a diff looks like.
+//
+// "" — no ident at all — when either git call fails, and that reverses what
+// this comment used to say. The old rule was best-effort: hash whatever
+// could be read, on the argument that a `git diff` racing an editor's save
+// must not fail a live pin. But a fingerprint short of the tracked half is
+// not a narrower miss, it is a COLLISION: every tree whose diff could not
+// be read digests to the same value — sha256 of nothing, e3b0c442, when
+// both halves fail — so two different dirty trees compare EQUAL and a stale
+// cage image reads CURRENT with nothing printed. Failing to read must be
+// visible, and cageAge already has the word for it: "" propagates through
+// SourceBuildStamp to the UNCLEAR verdict, which claims nothing either way.
+// The per-untracked-file os.ReadFile below stays best-effort on purpose: it
+// is bounded to one file's bytes, the path is hashed either way, and an
+// unreadable fifo in the tree must not make the whole stamp unreadable.
 func dirtyIdent(src string) string {
 	h := sha256.New()
-	if diff, err := gitRaw(src, "diff", "HEAD", "--"); err == nil {
-		h.Write(diff)
+	diff, err := gitRaw(src, memoryDiff("HEAD", "--")...)
+	if err != nil {
+		return ""
 	}
+	h.Write(diff)
 	// `-z` and `--untracked-files=all`: the plain porcelain format quotes
 	// odd bytes and collapses an untracked directory to `dir/`, either of
 	// which would send the read below at a name no file has
 	// (memoryland.go's memoryChanges uses the same spelling for the same
 	// reason). porcelainZChanges is the parser already pinned for that
 	// format; reused here rather than re-derived.
-	if out, err := gitRaw(src, "status", "--porcelain", "--untracked-files=all", "-z", "--"); err == nil {
-		for _, c := range porcelainZChanges(out) {
-			if !c.Untracked {
-				continue
-			}
-			h.Write([]byte{0})
-			h.Write([]byte(c.Path))
-			h.Write([]byte{0})
-			if b, err := os.ReadFile(filepath.Join(src, c.Path)); err == nil {
-				h.Write(b)
-			}
+	out, err := gitRaw(src, "status", "--porcelain", "--untracked-files=all", "-z", "--")
+	if err != nil {
+		return ""
+	}
+	for _, c := range porcelainZChanges(out) {
+		if !c.Untracked {
+			continue
+		}
+		h.Write([]byte{0})
+		h.Write([]byte(c.Path))
+		h.Write([]byte{0})
+		if b, err := os.ReadFile(filepath.Join(src, c.Path)); err == nil {
+			h.Write(b)
 		}
 	}
 	return hex.EncodeToString(h.Sum(nil))[:8]
