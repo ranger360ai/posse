@@ -1042,7 +1042,7 @@ func TestQATheFourthArmAsksGitForThePath(t *testing.T) {
 		code.WriteByte('\n')
 	}
 	arm := code.String()
-	for _, want := range []string{"gitSystemScopePath(t)", "regionsNotAccountingFor("} {
+	for _, want := range []string{"gitSystemScopePath(t)", "regionsNotAccountingFor(", "t.Errorf("} {
 		if !strings.Contains(arm, want) {
 			t.Errorf("the fourth arm no longer calls %s. It is the arm that asks the git on THIS box which file the pin empties and holds both texts to that answer; without the call it is holding them to something a reader wrote down.\narm:\n%s", want, arm)
 		}

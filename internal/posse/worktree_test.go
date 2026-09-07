@@ -1000,6 +1000,67 @@ func TestRemoveSessionTreeRetiresOnlyWhatIsMeasuredOnTheBase(t *testing.T) {
 	}
 }
 
+// heldByTip's third licence — a ref posse owns already reaching this tip —
+// is graded here only where the ref stands EXACTLY at the tip, which every
+// close and every other pin in this file measures. `merge-base
+// --is-ancestor X X` is true in both directions, so at that one point
+// nothing distinguishes reaches(repo, retiredRef, tip) from its arguments
+// swapped, and nothing distinguishes "the ref names this commit" from "the
+// ref names ANY commit" — the two escapes ranger-base-fus3g finding 2 named
+// (a `reaches` call with the retired ref and the tip swapped, and a
+// `rev-parse --verify` that only asks whether the ref exists). Both mutants
+// answer the EQUAL case exactly as the shipped code does; they answer these
+// two differently.
+//
+// One chain, main -> B -> C, with main never touching B or C's path, so
+// equivalentOnBase and baseHoldsBytes are false in both arms and cannot
+// license anything on their own — a true answer below can only come from
+// the retired-tip arm this test is aimed at.
+func TestHeldByTipGradesTheRetiredRefsAncestryNotJustEquality(t *testing.T) {
+	t.Parallel()
+	repo := wtRepo(t)
+	commitIn(t, repo, "chain.txt", "1\n", "c1")
+	shaB := mustGit(t, repo, "rev-parse", "HEAD")
+	commitIn(t, repo, "chain.txt", "2\n", "c2")
+	shaC := mustGit(t, repo, "rev-parse", "HEAD")
+	mustGit(t, repo, "reset", "-q", "--hard", "HEAD~2") // main never gets B or C
+
+	for _, c := range []struct {
+		name        string
+		branch      string
+		tip, retire string // tip.ref, and where the retired ref is written
+		want        bool
+	}{{
+		name:   "the retired ref is a strict ANCESTOR of the tip — it has not kept these commits yet, and must refuse",
+		branch: "posse/ranger-r-ancestor",
+		tip:    shaC,
+		retire: shaB,
+		want:   false,
+	}, {
+		name:   "the retired ref is a strict DESCENDANT of the tip — it already reaches these commits, and must allow",
+		branch: "posse/ranger-r-descendant",
+		tip:    shaB,
+		retire: shaC,
+		want:   true,
+	}} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			tr := &SessionTree{Repo: repo, Branch: c.branch, Base: "main"}
+			mustGit(t, repo, "update-ref", retiredTipRef(c.branch), c.retire)
+			got, err := heldByTip(tr, removalTip{subject: "t", tail: "keep it", ref: c.tip, isBranch: true})
+			// A licence is (true, nil); a refusal is (false, an error naming
+			// why) — heldByTip's refusal IS the error, not a bare bool
+			// (worktree.go:2613). Grading err == nil is what tells the two
+			// apart; got alone cannot, since it is false on both a real
+			// refusal and an unreachable one.
+			if got != c.want || (err == nil) != c.want {
+				t.Errorf("heldByTip(tip=%s, retired ref at %s) = (%v, %v), want redundant=%v and an error iff not redundant — merge-base --is-ancestor is only measured here away from equality, which is the case every other pin already covers",
+					abbrevSHA(c.tip), abbrevSHA(c.retire), got, err, c.want)
+			}
+		})
+	}
+}
+
 // The kill's whole path, not the guard alone: `posse kill` reported Merged
 // and then kept the tree anyway, which is the bug as the operator met it.
 func TestKillRetiresACherryPickedTree(t *testing.T) {

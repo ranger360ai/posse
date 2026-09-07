@@ -418,20 +418,39 @@ func TestQABoxCheckCensusCoversEveryVerifyScript(t *testing.T) {
 // leaves the old name's bytes on the line, and make treats everything from a
 // `#` as a comment, so a name after one is on the line and is not a
 // prerequisite. Either takes the check off `make test` with the pin green.
+//
+// It takes the FIRST such line, which make itself may not: a target named
+// twice — once inside an `ifeq` guard, once bare — lets make pick whichever
+// arm the box actually takes while this always reads the first line on the
+// page, so the guarded rule could be inert on every box that matters and this
+// helper would never know (ranger-base-fus3g finding 3). Rather than guess
+// which line make reads, it refuses a Makefile that names the target twice:
+// the lane that wants to allow that shape has to teach this helper to ask
+// make (`make -pn` / `-qp`), not to keep reading line one.
 func mkPrereqs(t *testing.T, makefile, target string) (line string, deps []string) {
 	t.Helper()
+	var lines []string
 	for _, l := range strings.Split(makefile, "\n") {
 		if !strings.HasPrefix(l, target+":") || strings.HasPrefix(l, target+":=") {
 			continue
 		}
+		lines = append(lines, l)
+	}
+	switch len(lines) {
+	case 0:
+		t.Fatalf("the Makefile has no `%s` target", target)
+		return "", nil
+	case 1:
+		l := lines[0]
 		rest := strings.TrimPrefix(l, target+":")
 		if i := strings.Index(rest, "#"); i >= 0 {
 			rest = rest[:i]
 		}
 		return l, strings.Fields(rest)
+	default:
+		t.Fatalf("the Makefile names `%s:` %d times — this helper cannot tell which line make actually reads on this box (a conditional can guard one of them), so a check pinned to whichever one comes first may be pinned to a line make never runs: %q", target, len(lines), lines)
+		return "", nil
 	}
-	t.Fatalf("the Makefile has no `%s` target", target)
-	return "", nil
 }
 
 // mkRuns is membership in that token list. Named, because the whole finding is
