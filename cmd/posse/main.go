@@ -2546,7 +2546,7 @@ governance:
                                  git history as a bundle, its beads db staged
                                  through sqlite's online backup API, and the
                                  jsonl projections) plus the constitution home
-                                 (the promoted set, runtimes/, promoted.json).
+                                 (` + posse.PromotedProse("and") + `, promoted.json).
                                  envs/ and secrets/ are NEVER archived. The
                                  archive is read back and verified BEFORE it is
                                  named, so a published archive is a green one

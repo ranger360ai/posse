@@ -192,3 +192,45 @@ func TestQAGatesAllClearNamesTheWholePromotedSet(t *testing.T) {
 		}
 	}
 }
+
+// SITE 5, found verifying the original four (ranger-base-nn33e finding 1):
+// the shipped example config's own constitution paragraph — "Where `posse
+// promote` takes the fleet's prose FROM: the directory holding ..." — is
+// hand-spelled prose, not PromotedProse output, and it is what `posse init`
+// writes into every operator's live home (INSTALL.md:468, init.go:61):
+// config.yaml is itself in the promoted set, so a stale list here misstates
+// its own membership. Reader census before this pin: no *_test.go read this
+// paragraph — exampleConfigValues (opsresidue_qa_test.go) parses only the
+// commented `key:` lines, not the constitution prose above them.
+func TestQAExampleConfigConstitutionBlockNamesTheWholePromotedSet(t *testing.T) {
+	t.Parallel()
+	body, err := os.ReadFile(filepath.Join(qibRepoRoot(t), "examples", "config.yaml"))
+	if err != nil {
+		t.Fatalf("examples/config.yaml: %v", err)
+	}
+	const marker = "Where `posse promote` takes the fleet's prose FROM:"
+	text := string(body)
+	i := strings.Index(text, marker)
+	if i < 0 {
+		t.Fatalf("examples/config.yaml no longer carries %q — if it was reworded, re-aim this pin (ranger-base-nn33e)", marker)
+	}
+	rest := text[i:]
+	// The paragraph ends at the first blank comment line ("#" alone) —
+	// everything up to there is the sentence this pin judges.
+	if j := strings.Index(rest, "\n#\n"); j >= 0 {
+		rest = rest[:j]
+	}
+	// Flatten the comment wrap: strip each line's leading "#" (and the space
+	// after it, if any) and rejoin on single spaces, so the enumeration reads
+	// as it READS rather than as it happens to be broken across lines.
+	var stripped []string
+	for _, line := range strings.Split(rest, "\n") {
+		stripped = append(stripped, strings.TrimPrefix(strings.TrimPrefix(line, "#"), " "))
+	}
+	para := strings.Join(strings.Fields(strings.Join(stripped, " ")), " ")
+	for _, m := range promotedProseSpec {
+		if !strings.Contains(para, m) {
+			t.Errorf("examples/config.yaml's constitution block — the paragraph `posse init` writes into every home — does not name %q:\n  %s", m, para)
+		}
+	}
+}

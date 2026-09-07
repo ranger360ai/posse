@@ -109,3 +109,66 @@ func TestPromoteHelpSaysPromoteRemovesWhatTheCommitDoesNotCarry(t *testing.T) {
 		t.Error("the help's worked example names runtimes/ and the promoted set no longer holds it — rewrite the example with the removal rule intact")
 	}
 }
+
+// backupBlock is the catalog's `posse backup [--to <dir>]` entry: its header
+// line and every continuation under it, up to the next command header. The
+// header line does not start "posse backup " on its own (it also matches
+// `posse backup status` and `posse backup verify`), so it is matched exactly
+// rather than by prefix.
+func backupBlock(t *testing.T, out string) string {
+	t.Helper()
+	var b strings.Builder
+	in := false
+	for _, ln := range strings.Split(out, "\n") {
+		if strings.HasPrefix(ln, "  posse ") {
+			if in {
+				break
+			}
+			in = strings.HasPrefix(ln, "  posse backup [")
+		}
+		if in {
+			b.WriteString(ln)
+			b.WriteString("\n")
+		}
+	}
+	if b.Len() == 0 {
+		t.Fatal("the usage catalog no longer has a `posse backup [--to <dir>]` entry — this pin is reading nothing")
+	}
+	return b.String()
+}
+
+// TestBackupHelpNamesTheWholePromotedSet is ranger-base-nn33e finding 2, the
+// same class ranger-base-b22vq swept the promote verb's own help for: `posse
+// backup`'s help named `runtimes/` as a PEER of "the promoted set" rather
+// than as a member of it (true when written at 8ac4384d, made false 51
+// minutes later the same evening when cef85ee1 put `runtimes` INTO the set,
+// ADR 0039 D2 / ranger-base-ight8). The block now renders posse.PromotedProse
+// like the promote verb's help does, so the next member of the set widens
+// this one in the same edit instead of going stale beside it again.
+func TestBackupHelpNamesTheWholePromotedSet(t *testing.T) {
+	block := backupBlock(t, helpText(t))
+
+	// The catalog word-wraps, so "the constitution home" and its enumeration
+	// can land on different lines — the open paren is found after the
+	// marker rather than assumed adjacent to it.
+	const from, to = "the constitution home", ", promoted.json)"
+	h := strings.Index(block, from)
+	if h < 0 {
+		t.Fatalf("the backup entry no longer says %q:\n%s", from, block)
+	}
+	i := strings.Index(block[h:], "(")
+	j := strings.Index(block, to)
+	if i < 0 || j <= h+i {
+		t.Fatalf("the backup entry no longer enumerates the promoted set between %q and %q:\n%s", from, to, block)
+	}
+	list := block[h+i+1 : j]
+	list = strings.Join(strings.Fields(list), " ")
+	for _, m := range promoteHelpSpec {
+		if !strings.Contains(list, m) {
+			t.Errorf("`posse backup`'s help tells an operator the archive covers a set without %q:\n%s", m, list)
+		}
+	}
+	if got, want := posse.PromotedProse("and"), list; got != want {
+		t.Errorf("the backup entry's enumeration renders as %q, posse.PromotedProse(\"and\") = %q — they must be the same call", list, got)
+	}
+}

@@ -63,8 +63,16 @@ package posse
 //	                                              make execwrite-check
 //	                                              (ranger-base-rwnbd)
 //
+// and one more, folded into seed-check's own door rather than given a new
+// one — it touches examples/config.yaml, which is exactly what that door
+// already reads:
+//
+//	TestQAExampleConfigConstitutionBlockNamesTheWholePromotedSet
+//	                                              make seed-check
+//	                                              (ranger-base-nn33e)
+//
 // and `make tree-check` is all of them — 12-27s on this box over three runs
-// at twenty-two pins and eight doors — which is the command a seat types
+// at twenty-three pins and eight doors — which is the command a seat types
 // after a filtered run. (It was 40-46s under ranger-base-4jogv, one pin ago,
 // and 21-41s at the older, smaller class before that; re-measured under
 // ranger-base-8dnuy, because the sentence a seat prices the command from

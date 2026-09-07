@@ -167,7 +167,8 @@ default_emoji: ⚙️
 
 # ─── the constitution (ADR 0015) ─────────────────────────────────────────────
 # Where `posse promote` takes the fleet's prose FROM: the directory holding
-# agents/, config.yaml, recipes/ and skills/ in the repo you draft them in.
+# agents/, config.yaml, recipes/, runtimes/ and skills/ in the repo you draft
+# them in.
 # This home is the promoted COPY of that directory — promote writes it, and
 # every launch re-hashes it against `promoted.json` beside it (dispatch
 # refuses on a mismatch, an interactive launch warns DEGRADED).

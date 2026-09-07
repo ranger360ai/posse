@@ -483,7 +483,7 @@ fmt-check:
 # new tree-wide pin fails that check until it is given a door here.
 QA_CREW_PINS      := TestShippedTreeNamesRolesNotThisCrew|TestShippedStringsNameRolesNotThisCrew|TestTestCorpusHidesNoCrewNameBehindAnEscape
 QA_TOOL_PINS      := TestTreeIsGofmtClean
-QA_SEED_PINS      := TestSeedSurfaceNameCountIsZero|TestSeedConfigLiveKeysAreRead
+QA_SEED_PINS      := TestSeedSurfaceNameCountIsZero|TestSeedConfigLiveKeysAreRead|TestQAExampleConfigConstitutionBlockNamesTheWholePromotedSet
 QA_HISTORY_PINS   := TestPublicationRootCommitOmitsExcludedPaths|TestPublicationRootCommitADRsCarryProvenance|TestPublicationHistoryNeverCarriesTheSeedScript|TestShippedExampleTableCoversEveryVersionInGitHistory
 QA_DOC_PINS       := TestQANoCodeStringCallsTheDarwinCredentialsFileAStaleLeftover|TestQACageCredDocDoesNotCallTheOnDiskCredentialStale|TestQAADR0036StatusLineDoesNotCarryTheRetractedUnbuiltStamp|TestQAADR0035PaneModeSurfaceClaimIsBuilt|TestQAADR0026StatusLineDoesNotDeferTheImplementedRung
 QA_IDENTITY_PINS  := TestQAIdentityLiteralsNeverAppearInATrackedPath|TestIdentityLiteralsNeverAppearInTheHarnessRepoUndispositioned

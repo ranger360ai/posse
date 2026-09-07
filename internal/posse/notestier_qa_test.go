@@ -60,38 +60,86 @@ func notesParagraph(t *testing.T, notes, marker string) string {
 // inside it.
 var claudeModelID = regexp.MustCompile(`claude-[a-z0-9]+(?:[-.][a-z0-9]+)*`)
 
-// ARM 1 of ranger-base-1kvfr: the built-in tier table paragraph is a
-// restatement of claudeModels, and must name that map's three ids and no
-// other claude id.
-func TestNotesTierParagraphNamesTheBuiltInClaudeIds(t *testing.T) {
-	t.Parallel()
+// codexModelID and grokModelID are claudeModelID's twins for the other two
+// runtimes in the same sentence — ranger-base-1kvfr's own two-way check only
+// ever built one of these, which is finding 4 of ranger-base-nn33e: a stale
+// or invented codex or grok id in the SAME paragraph was pinned by nothing.
+var codexModelID = regexp.MustCompile(`gpt-[a-z0-9]+(?:[-.][a-z0-9]+)*`)
+var grokModelID = regexp.MustCompile(`grok-[a-z0-9]+(?:[-.][a-z0-9]+)*`)
+
+// tierTripleID captures a runtime's strong/standard/fast ids IN THE ORDER
+// the paragraph spells them — "<runtime> <id> / <id> / <id>". The set check
+// below cannot tell a permuted mapping from the true one (ranger-base-nn33e
+// finding 3: swapping the claude triple to sonnet/opus/fable-5-1 still
+// passes a set comparison), so the per-tier assertions read this instead.
+func tierTripleID(runtime string) *regexp.Regexp {
+	return regexp.MustCompile(runtime + ` ([a-z0-9.-]+) / ([a-z0-9.-]+) / ([a-z0-9.-]+)`)
+}
+
+// notesTierParagraphNamesBuiltInIds is ARM 1 of ranger-base-1kvfr, run once
+// per runtime (claude, codex, grok — ranger-base-nn33e finding 4 widened it
+// from claude-only): the built-in tier table paragraph is a restatement of
+// models, and must name that map's three ids, no other id of the runtime,
+// and in the tier order — strong/standard/fast — the map itself holds.
+func notesTierParagraphNamesBuiltInIds(t *testing.T, runtime string, id *regexp.Regexp, models map[string]string) {
+	t.Helper()
 	para := notesParagraph(t, notesText(t), "**Tiers (ADR 0003 §1–2).**")
 
 	// Compared as SETS of whole ids, not with Contains: claude-fable-5 is a
 	// prefix of claude-fable-5-1, so a containment check reads the stale id
 	// as present in the current one and cannot tell the two apart.
 	want := map[string]string{} // id -> tier, for the message
-	for tier, id := range claudeModels {
-		want[id] = tier
+	for tier, mid := range models {
+		want[mid] = tier
 	}
 	got := map[string]bool{}
 	var named []string
-	for _, id := range claudeModelID.FindAllString(para, -1) {
-		if !got[id] {
-			named = append(named, id)
+	for _, mid := range id.FindAllString(para, -1) {
+		if !got[mid] {
+			named = append(named, mid)
 		}
-		got[id] = true
-		if _, ok := want[id]; !ok {
-			t.Errorf("the tier paragraph names %q, which is not a claudeModels id (have %v) — a stale or invented id (ranger-base-1kvfr)", id, want)
+		got[mid] = true
+		if _, ok := want[mid]; !ok {
+			t.Errorf("the tier paragraph names %q, which is not a %s models id (have %v) — a stale or invented id (ranger-base-1kvfr)", mid, runtime, want)
 		}
 	}
-	for id, tier := range want {
-		if !got[id] {
+	for mid, tier := range want {
+		if !got[mid] {
 			// The paragraph itself is ~4KB of prose; the ids it named are
 			// the whole of what this arm is about.
-			t.Errorf("the tier paragraph does not name claudeModels[%s] = %q — NOTES.md and the built-in table disagree; it names %v (ranger-base-1kvfr)", tier, id, named)
+			t.Errorf("the tier paragraph does not name %s models[%s] = %q — NOTES.md and the built-in table disagree; it names %v (ranger-base-1kvfr)", runtime, tier, mid, named)
 		}
 	}
+
+	// ORDER, not just membership (ranger-base-nn33e finding 3): the triple
+	// must read strong/standard/fast in that position, or the paragraph
+	// tells a reader the wrong tier gets the wrong model even though every
+	// id it names is a real one.
+	tri := tierTripleID(runtime).FindStringSubmatch(para)
+	if tri == nil {
+		t.Fatalf("the tier paragraph has no %q triple in the shape %q — this pin cannot judge the mapping (ranger-base-nn33e)", runtime, runtime+" <id> / <id> / <id>")
+	}
+	for i, tier := range Tiers {
+		if got, want := tri[i+1], models[tier]; got != want {
+			t.Errorf("the %s triple's %s position reads %q, %s models[%s] = %q — the paragraph and the table disagree about WHICH tier gets WHICH model (ranger-base-nn33e)",
+				runtime, tier, got, runtime, tier, want)
+		}
+	}
+}
+
+func TestNotesTierParagraphNamesTheBuiltInClaudeIds(t *testing.T) {
+	t.Parallel()
+	notesTierParagraphNamesBuiltInIds(t, "claude", claudeModelID, claudeModels)
+}
+
+func TestNotesTierParagraphNamesTheBuiltInCodexIds(t *testing.T) {
+	t.Parallel()
+	notesTierParagraphNamesBuiltInIds(t, "codex", codexModelID, codexModels)
+}
+
+func TestNotesTierParagraphNamesTheBuiltInGrokIds(t *testing.T) {
+	t.Parallel()
+	notesTierParagraphNamesBuiltInIds(t, "grok", grokModelID, grokModels)
 }
 
 var notesLoudLine = regexp.MustCompile(`tier strong wants (claude-[a-z0-9.-]+) — unavailable([^\n]*)`)
