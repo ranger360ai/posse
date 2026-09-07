@@ -161,12 +161,15 @@ func sbSiblingRegex(p string) string {
 // §3's slot — a PID's path-scoped denies join Deny here).
 //
 // It exists because the allow block cannot be made narrow enough. `cwd` is
-// granted whole to any PID that does not deny Edit/Write, and the home is a
-// symlink INTO the constitution repo — so a session dispatched into that
-// repo is handed `posse/agents`, the PIDs every gate is rendered from, inside
-// an ordinary project grant (ranger-base-6ne, and measured again on
-// ranger-base-0djg). Narrowing the grant is not available: the session is
-// there to work in that tree.
+// granted whole to any PID that does not deny Edit/Write, and a session
+// dispatched into the constitution repo is handed `posse/agents` inside an
+// ordinary project grant (ranger-base-6ne, and measured again on
+// ranger-base-0djg). Since the ADR 0015 cutover the home is a real
+// directory — only `home/personas` is a symlink into the repo (§5's named
+// exception) — so `posse/agents` there is the DRAFT, not the live PIDs
+// every gate is rendered from (those sit under `home`, ranger-base-eqy7g).
+// Narrowing the grant is not available: the session is there to work in
+// that tree.
 //
 // The four lists are four different SBPL shapes and are kept apart for
 // that reason, not for tidiness:
