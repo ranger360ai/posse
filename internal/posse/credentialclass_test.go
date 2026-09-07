@@ -22,9 +22,23 @@ package posse
 import (
 	"errors"
 	"net/http"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
+)
+
+// The never-lists below ban ANOTHER class's move, and a class string is
+// vocabulary rather than a fixture value — "stale"/"staleness",
+// "entitled"/"entitlement", "refresh"/"refreshes" all carry the same move
+// under a respelling a case-sensitive strings.Contains on one whole form
+// never catches. Case-insensitive families, matching the convention
+// internal/posse/credcomposite_test.go already established for the same
+// class pair and cmd/posse/credentialclass_test.go's ranger-base-mummu fix
+// (ranger-base-atg18, the third unswept surface of that class of gap).
+var (
+	namesTheStaleMove  = regexp.MustCompile(`(?i)(refresh|stale)`)
+	namesTheEntitlMove = regexp.MustCompile(`(?i)entitl`)
 )
 
 // unreadableKeychain is the unreadable class as production makes it: the
@@ -80,7 +94,7 @@ func TestPlanReadHasFourCredentialFailureClasses(t *testing.T) {
 		err   func(*testing.T) error
 		class PlanFailure
 		says  []string
-		never []string
+		never []*regexp.Regexp
 	}{{
 		name:  "unreadable: security failed",
 		err:   unreadableKeychain,
@@ -95,7 +109,7 @@ func TestPlanReadHasFourCredentialFailureClasses(t *testing.T) {
 		// the MOVES, not the words — an envelope diagnosis legitimately
 		// names a key called `refreshToken`, and banning the bare word here
 		// would fail on the store's own vocabulary.
-		never: []string{"credential stale", "once to refresh", "not entitled"},
+		never: []*regexp.Regexp{namesTheStaleMove, namesTheEntitlMove},
 	}, {
 		name:  "unreadable: envelope holds no token",
 		err:   wrongShapeKeychain,
@@ -110,13 +124,21 @@ func TestPlanReadHasFourCredentialFailureClasses(t *testing.T) {
 		// omission: the shape diagnosis is one piece of code for both
 		// platforms, and an item that answered with a renamed key did not
 		// lose an ACL — re-granting one would fix nothing.
-		never: []string{"credential stale", "once to refresh", "not entitled", "make install"},
+		//
+		// Not namesTheStaleMove: this diagnosis's own last clause legitimately
+		// names the envelope's dropped key, "refreshToken", and the bare-word
+		// family would ban the store's own vocabulary. Case-insensitive at the
+		// phrase level keeps the respelling fix without that false positive.
+		never: []*regexp.Regexp{
+			regexp.MustCompile(`(?i)credential stale`), regexp.MustCompile(`(?i)once to refresh`),
+			namesTheEntitlMove, regexp.MustCompile(`make install`),
+		},
 	}, {
 		name:  "401",
 		err:   statusRead(http.StatusUnauthorized),
 		class: PlanFailStale,
 		says:  []string{"401", "credential stale", "run `claude` once to refresh"},
-		never: []string{"not entitled", "make install", "unreadable"},
+		never: []*regexp.Regexp{namesTheEntitlMove, regexp.MustCompile(`make install`), regexp.MustCompile(`unreadable`)},
 	}, {
 		name:  "403",
 		err:   statusRead(http.StatusForbidden),
@@ -125,13 +147,13 @@ func TestPlanReadHasFourCredentialFailureClasses(t *testing.T) {
 			"a setup-token never will be", "not a freshness problem"},
 		// The one word the amended D2 forbids BY NAME, and this message has
 		// no store vocabulary in it to make the bare ban unfair.
-		never: []string{"refresh", "stale", "make install", "unreadable"},
+		never: []*regexp.Regexp{namesTheStaleMove, regexp.MustCompile(`make install`), regexp.MustCompile(`unreadable`)},
 	}, {
 		name:  "429",
 		err:   statusRead(http.StatusTooManyRequests),
 		class: PlanFailRateLimited,
 		says:  []string{"429"},
-		never: []string{"credential", "refresh", "make install", "unreadable"},
+		never: []*regexp.Regexp{regexp.MustCompile(`credential`), namesTheStaleMove, regexp.MustCompile(`make install`), regexp.MustCompile(`unreadable`)},
 	}} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := tc.err(t)
@@ -144,8 +166,8 @@ func TestPlanReadHasFourCredentialFailureClasses(t *testing.T) {
 				}
 			}
 			for _, n := range tc.never {
-				if strings.Contains(err.Error(), n) {
-					t.Errorf("%q must not say %q — that is another class's move", err, n)
+				if m := n.FindString(err.Error()); m != "" {
+					t.Errorf("%q must not say %q (matched %q) — that is another class's move", err, n, m)
 				}
 			}
 		})
@@ -266,9 +288,9 @@ func TestGateRefusalIsNotWrappedAsUnreadable(t *testing.T) {
 	if !errors.As(err, &g) {
 		t.Fatalf("want *GateRefusal, got %T: %v", err, err)
 	}
-	for _, n := range []string{"unreadable", "make install", "stale", "refresh"} {
-		if strings.Contains(err.Error(), n) {
-			t.Errorf("a gate refusal must not carry the credential class's %q: %q", n, err)
+	for _, n := range []*regexp.Regexp{regexp.MustCompile(`unreadable`), regexp.MustCompile(`make install`), namesTheStaleMove} {
+		if m := n.FindString(err.Error()); m != "" {
+			t.Errorf("a gate refusal must not carry the credential class's %q (matched %q): %q", n, m, err)
 		}
 	}
 }
@@ -323,9 +345,9 @@ func TestBlindSkipOnUnreadableCredentialNamesTheClass(t *testing.T) {
 	}
 	// The class this is NOT. "Stale" here sends the operator to `/login`,
 	// which does not re-grant a dropped ACL.
-	for _, never := range []string{"stale", "not entitled"} {
-		if strings.Contains(out, never) {
-			t.Errorf("the park line must not say %q:\n%s", never, out)
+	for _, never := range []*regexp.Regexp{namesTheStaleMove, namesTheEntitlMove} {
+		if m := never.FindString(out); m != "" {
+			t.Errorf("the park line must not say %q (matched %q):\n%s", never, m, out)
 		}
 	}
 }
@@ -349,8 +371,8 @@ func TestBlindSkipOn403NeverSaysRefresh(t *testing.T) {
 			t.Errorf("the park line must carry %q, got:\n%s", want, out)
 		}
 	}
-	if strings.Contains(out, "refresh") {
-		t.Errorf("refreshing a credential that was never entitled produces the same 403 forever:\n%s", out)
+	if m := namesTheStaleMove.FindString(out); m != "" {
+		t.Errorf("refreshing a credential that was never entitled produces the same 403 forever (matched %q):\n%s", m, out)
 	}
 }
 
