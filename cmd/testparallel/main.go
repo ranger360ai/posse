@@ -280,6 +280,7 @@ func main() {
 		"TestTwoPassesDoNotInterleaveLaunches":                 "asserts flock acquisition",
 		"TestWatchLoopRunningTracksTheLock":                    "asserts flock acquisition",
 		"TestLockWatchRefusesASecondHolder":                    "asserts flock acquisition",
+		"TestLockWatchOutlastsAMomentaryProbe":                 "asserts flock acquisition",
 		"TestWatchLockDiesWithItsProcess":                      "asserts flock acquisition",
 		"TestWatchStatusReadsLockThenPidfile":                  "asserts flock acquisition",
 		"TestWatchHoldsTheLockForItsWholeLife":                 "asserts flock acquisition",
