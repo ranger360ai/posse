@@ -141,6 +141,20 @@ func ClaudeConfigFile() string {
 // Unicode normalization posse does not do: a config dir spelled with
 // decomposed codepoints is one posse and the runtime could disagree about
 // on a filesystem that preserves the difference.
+//
+// REVISITED, ranger-base-e9xba: this is the answer for credentialDir, which
+// this same empty arm feeds and where the divergence bites — a wall drawn
+// over ~/.claude while the runtime writes cwd-relative is a wall over a path
+// nothing uses. The runtime is not even self-consistent about it: the
+// CONFIG FILE path one module over (ClaudeConfigFile) takes the truthy form
+// `env.CLAUDE_CONFIG_DIR || homedir()`, so an empty value sends the config
+// file to the home and the config DIRECTORY to the cwd. Transcribing the
+// nullish form here would follow the directory resolver faithfully and still
+// disagree with the runtime's own file resolver, so there is no spelling of
+// this function that is consistent with both; ~/.claude — unset's answer,
+// and today's answer — is the one a misconfigured box should get. Pinned:
+// TestCredentialsFileFollowsTheRuntimesOwnDirectoryResolution's
+// "CLAUDE_CONFIG_DIR present but EMPTY, alone" arm (credseam_test.go).
 func ClaudeConfigDirIn(home string) string {
 	if d := os.Getenv("CLAUDE_CONFIG_DIR"); d != "" {
 		return d

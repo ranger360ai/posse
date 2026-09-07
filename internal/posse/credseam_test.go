@@ -127,6 +127,12 @@ func TestCredentialsFileFollowsTheRuntimesOwnDirectoryResolution(t *testing.T) {
 			want:          filepath.Join(home, ".claude", ".credentials.json"),
 			why:           "the arm nobody guesses. `n!==void 0` is presence and `n||join(homedir(),'.claude')` is truthiness, so an empty value ENTERS the branch and falls to the home — setting the variable to nothing shadows CLAUDE_CONFIG_DIR rather than deferring to it, and it is not the empty string either",
 		},
+		{
+			name:      "CLAUDE_CONFIG_DIR present but EMPTY, alone",
+			configDir: strPtr(""),
+			want:      filepath.Join(home, ".claude", ".credentials.json"),
+			why:       "the third arm of the same rule, and a DELIBERATE divergence rather than a bug: the runtime's own resolver is `env.CLAUDE_CONFIG_DIR ?? join(homedir(),'.claude')`, nullish-coalescing rather than truthiness, so a set-but-empty value is not null and the runtime's answer on that box is the empty string — a cwd-relative credentials path. ClaudeConfigDirIn's doc (trust.go) says why posse does not chase it there; this pins that it doesn't (ranger-base-e9xba)",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("HOME", home)
