@@ -263,11 +263,17 @@ release-notes:
 # per-arm recipe line has to appear in `test`'s recipe or CI and a seat run
 # different commands under one name (TestQAMakefileRunsEverySuiteArm), and
 # a cached-vet second is cheaper than an exception to that rule.
+#
+# The door runs FIRST here too (ranger-base-sp5z2, same shape as
+# ranger-base-p1r17 below): make aborts a recipe on its first non-zero exit,
+# and the arm2/arm3 tagged lines are exactly the ones an untagged arm-tags
+# mistake can fail to *compile*, which would abort the recipe before the
+# door ever ran.
 test: fmt-check verify-test-times verify-parallel verify-suite-lock verify-silent-reverts tree-check
+	$(GOBIN) test . -timeout 15m -count=1 -run '^TestQAEverySuiteArmTypeChecks$$'
 	scripts/test-times.sh $(GOBIN) test -timeout 25m ./...
 	scripts/test-times.sh $(GOBIN) test -timeout 25m -tags posse_arm2 ./internal/posse
 	scripts/test-times.sh $(GOBIN) test -timeout 25m -tags posse_arm3 ./internal/posse
-	$(GOBIN) test . -timeout 15m -count=1 -run '^TestQAEverySuiteArmTypeChecks$$'
 	@scripts/audit-silent-reverts.sh --quiet
 
 # One arm each, for CI, which runs them as three jobs. A seat wanting the
