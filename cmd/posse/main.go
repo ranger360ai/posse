@@ -1506,7 +1506,8 @@ func main() {
 		// `posse runtime check` already rules this way (the grid prints, the
 		// status is the verdict).
 		var runtimeErr error
-		if _, err := a.LoadRuntime(a.ResolveRuntime("", ag)); err != nil {
+		personaRuntime := a.ResolveRuntime("", ag)
+		if _, err := a.LoadRuntime(personaRuntime); err != nil {
 			runtimeErr = err
 			fmt.Fprintf(out, "  ⚠️  runtime: %v\n", err)
 			fmt.Fprintf(out, "      %s cannot launch: no row below is its runtime — every row that follows is one this persona does not launch on (`posse agent check %s` refuses the same way)\n", ag.Name, ag.Name)
@@ -1516,20 +1517,32 @@ func main() {
 		// failed read stores nothing for the next one to share.
 		cat := a.ReadCatalog(os.Stderr)
 		for _, rn := range a.ListRuntimes() {
-			if rt, err := a.LoadRuntime(rn); err == nil {
-				// Every other input to a launch is on this machine; this one
-				// is the ACCOUNT's (rangerhq-oay). It leads the runtime's
-				// block because it is a property of the runtime, not of a
-				// cage tier — and it is here so the operator can tell "the
-				// strong model is gone" from "the probe never answers on this
-				// box" without launching anything.
-				if line := a.PreflightReportOn(cat, ag.Name, rn, tier); line != "" {
-					fmt.Fprintf(out, "  %s\n", line)
+			rt, err := a.LoadRuntime(rn)
+			if err != nil {
+				// A runtimes/*.yaml that refuses the load (ADR 0021
+				// Decision 2) used to drop out of this table without a
+				// word — silent for every persona that does not happen to
+				// launch on it, since only the persona's OWN unresolvable
+				// runtime was named, above (ranger-base-w1cv4). Skip the
+				// persona's own name here so the one refusal is not said
+				// twice.
+				if rn != personaRuntime {
+					fmt.Fprintf(out, "  ⚠️  %s: %v\n", rn, err)
 				}
-				fmt.Fprint(out, "  "+a.CheckParityIn(ag, rt, posse.DefaultCage, tier, cwd).String())
-				if posse.AvailableCages[posse.CageSeatbelt] {
-					fmt.Fprint(out, "  "+a.CheckParityIn(ag, rt, posse.CageSeatbelt, tier, cwd).String())
-				}
+				continue
+			}
+			// Every other input to a launch is on this machine; this one
+			// is the ACCOUNT's (rangerhq-oay). It leads the runtime's
+			// block because it is a property of the runtime, not of a
+			// cage tier — and it is here so the operator can tell "the
+			// strong model is gone" from "the probe never answers on this
+			// box" without launching anything.
+			if line := a.PreflightReportOn(cat, ag.Name, rn, tier); line != "" {
+				fmt.Fprintf(out, "  %s\n", line)
+			}
+			fmt.Fprint(out, "  "+a.CheckParityIn(ag, rt, posse.DefaultCage, tier, cwd).String())
+			if posse.AvailableCages[posse.CageSeatbelt] {
+				fmt.Fprint(out, "  "+a.CheckParityIn(ag, rt, posse.CageSeatbelt, tier, cwd).String())
 			}
 		}
 		// The one thing above this line that is NOT a property of the PID:
@@ -1771,9 +1784,20 @@ func main() {
 		if probe {
 			cat = a.ProbeCatalog(os.Stderr)
 		}
+		// A profile whose runtimes/*.yaml refuses the load (ADR 0021
+		// Decision 2) used to drop out of this listing without a word: the
+		// row was simply absent, exit 0, nothing on stderr — the only loud
+		// surface for the same refusal was `runtime check <name>`, which an
+		// operator has to already suspect to reach (ranger-base-w1cv4). The
+		// Die error already carries the key and the why; naming it here
+		// costs one line, and the exit code stops being a green that a
+		// refused profile is hiding under.
+		refused := false
 		for _, n := range a.ListRuntimes() {
 			rt, err := a.LoadRuntime(n)
 			if err != nil {
+				fmt.Fprintf(out, "%s %-8s REFUSED — %v\n", a.EmojiExact(n), n, err)
+				refused = true
 				continue
 			}
 			kind := "template-only (gates go to the wall)"
@@ -1822,6 +1846,9 @@ func main() {
 		// conditional: a template profile's Bash(...) denies do not count
 		// until a live probe says they do (ADR 0032 §1).
 		fmt.Fprintln(out, "`posse runtime probe <name>` — the live wall probe a template-only profile needs before its Bash(...) denies count")
+		if refused {
+			os.Exit(1)
+		}
 
 	case "skills":
 		// ADR 0007 §1: the directory is the registry — this is `ls` with the
