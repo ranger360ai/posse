@@ -626,8 +626,8 @@ var arShadowAllowed = []arShadowAllow{
 		why: "§3's other example: seeding claude's own trust dialog. Accepted in the register update by name.",
 	},
 	{
-		file: "posse/credential.go", fn: "meterStore", shape: "branch",
-		why: "credential paths — the register update's third standing site. posse ships no usage-endpoint adapter for another runtime (ADR 0012 D4), so the arm returns a NoSource, not a behaviour.",
+		file: "posse/credential.go", fn: "meterStoreAt", shape: "branch",
+		why: "credential paths — the register update's third standing site. posse ships no usage-endpoint adapter for another runtime (ADR 0012 D4), so the arm returns a NoSource, not a behaviour. The branch was meterStore's until ad7d53e9 (ranger-base-6kkrq) moved the body into meterStoreAt to give the darwin composite's `security` binary a seam (ADR 0019 D2/D4); meterStore is now a one-line wrapper and holds no name-keyed branch, so the row is repointed and the reading it protects is unchanged.",
 	},
 	{
 		file: "posse/agents.go", fn: "AgentFile.RenderCommand", shape: "branch",
