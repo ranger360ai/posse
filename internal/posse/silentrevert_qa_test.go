@@ -264,7 +264,7 @@ func srDeadMoveRig(t *testing.T, inject string) (mutant, dir string) {
 
 	dir = t.TempDir()
 	mutant = filepath.Join(dir, "audit-mutant.sh")
-	if err := os.WriteFile(mutant, []byte(broken), 0o755); err != nil {
+	if err := WriteExecutable(mutant, []byte(broken), 0o755); err != nil {
 		t.Fatalf("write mutant: %v", err)
 	}
 	return mutant, dir
@@ -360,7 +360,7 @@ func srMutateScript(t *testing.T, old, new string) (mutant, dir string) {
 	}
 	dir = t.TempDir()
 	mutant = filepath.Join(dir, "audit-mutant.sh")
-	if err := os.WriteFile(mutant, []byte(strings.Replace(string(src), old, new, 1)), 0o755); err != nil {
+	if err := WriteExecutable(mutant, []byte(strings.Replace(string(src), old, new, 1)), 0o755); err != nil {
 		t.Fatalf("write mutant: %v", err)
 	}
 	return mutant, dir
@@ -748,7 +748,7 @@ func srAuditWithGitLog(t *testing.T, script, dir string, args ...string) (string
 	shimDir := t.TempDir()
 	logPath := filepath.Join(shimDir, "git-argv.log")
 	shim := fmt.Sprintf("#!/bin/sh\nprintf '%%s\\n' \"$*\" >> %q\nexec %q \"$@\"\n", logPath, real)
-	if err := os.WriteFile(filepath.Join(shimDir, "git"), []byte(shim), 0o755); err != nil {
+	if err := WriteExecutable(filepath.Join(shimDir, "git"), []byte(shim), 0o755); err != nil {
 		t.Fatalf("write git shim: %v", err)
 	}
 	cmd := exec.Command(script, args...)
