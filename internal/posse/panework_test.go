@@ -130,6 +130,23 @@ func TestComposerReadsTextLeftUnsentInThePromptBox(t *testing.T) {
 			"❯\n\n❯ 1. Yes\n  2. Yes, and don't ask again\n  3. No\n\nArrow keys to navigate · Esc to cancel\n", ""},
 		{"the mark leading the model picker",
 			"❯\n\n  1. Opus\n❯ 2. Sonnet\n\nTab/arrow keys to select · Enter to confirm\n", ""},
+
+		// ranger-base-uewmx: the three rows above never assert any one
+		// phrase alone — each carries two or three of composerChromePhrases
+		// at once, so deleting any single one of "enter to select",
+		// "esc to cancel", "arrow keys to navigate", or "↑/↓ to navigate"
+		// still leaves a sibling match in the same row and the suite stays
+		// green. These four hold exactly one phrase each, the same
+		// isolation the model-picker row above already gives "tab/arrow
+		// keys".
+		{"the mark leading a menu whose chrome is only 'Enter to select'",
+			"❯\n\n  6. Chat about this\n\nEnter to select\n", ""},
+		{"the mark leading a prompt whose chrome is only 'Esc to cancel'",
+			"❯\n\n  1. Yes\n  2. No\n\nEsc to cancel\n", ""},
+		{"the mark leading a menu whose chrome is only 'Arrow keys to navigate'",
+			"❯\n\n  1. Opus\n❯ 2. Sonnet\n\nArrow keys to navigate\n", ""},
+		{"the mark leading a menu whose chrome is only '↑/↓ to navigate'",
+			"❯\n\n  6. Chat about this\n\n↑/↓ to navigate\n", ""},
 	} {
 		if got := detectionWith("idle", "", c.box).Composer(); got != c.want {
 			t.Errorf("%s: Composer() = %q, want %q\nbox: %q", c.what, got, c.want, c.box)
