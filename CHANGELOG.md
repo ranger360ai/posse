@@ -374,6 +374,83 @@ is not settled here. `TestQATheGitConfigSystemPinDropsASystemScopeIdentityLitera
 measures both halves — the drop, and this paragraph — so the note cannot go
 stale.
 
+**A persona session could commit your constitution — the PIDs every future
+session runs under — and nothing refused it.**
+
+*Affected: every build before this one. Two walls added, both on by default.*
+
+The gates already fenced the *command* (`posse promote` is denied in every
+crew PID) and the *form* (an unqualified commit is refused in a shared
+checkout), and under `cage: seatbelt` the constitution area was never
+writable. Under `cage: shims`, which is what most personas run on, nothing
+checked the *path class*: a session could rewrite `rhq/agents/*.md` and commit
+it like any other file, and the next promote would put its own edits in force.
+
+The `prepare-commit-msg` hook now carries a third arm. A commit from a session
+carrying `RHQ_PERSONA` is refused when it touches `.claude/settings.json` or
+`.claude/settings.local.json` in any hooked repo — that file holds the deny
+list fencing the session's own destructive commands — and, in the repo whose
+top level has `rhq/agents`, when it touches `rhq/agents`, `rhq/config.yaml`,
+`rhq/recipes`, `rhq/skills` or `rhq/envs`. Your own shell carries no marker
+and is untouched. The refusal names the paths and tells the session to stage
+what it means somewhere outside the class for you to apply.
+
+Behind it, the launcher will not fast-forward a session branch whose diff
+touches those paths: it reports and leaves the branch alone for you to read
+and land. That half runs in your process, so a session cannot scrub its way
+past it — which the hook's arm, keyed on an environment variable, can be.
+`core.hooksPath` still defeats every hook-tier gate.
+
+Reinstall the hooks in repos you have already hooked (`posse gates
+install-hooks <repo>`); a dispatch into a repo refreshes it automatically.
+
+**...and the walls above go stale in every repo no session enters — including
+the one that holds the constitution.**
+
+*Affected: every build before this one.*
+
+The hook bodies are compiled into the binary, so every installed hook is a
+*copy* of the render that was current when someone wrote it. Only `posse gates
+install-hooks` and a dispatch re-render one, and a dispatch refreshes the repo
+it was cut from and no other — so a repo that never holds a session keeps
+whatever it was given, indefinitely. That is how a constitution repo can run a
+`prepare-commit-msg` without the arm above for hours after the arm shipped:
+the wall existed exactly where sessions launch, and nowhere else.
+
+`posse promote` and the `posse dispatch --watch` preamble now sweep every repo
+`beads_visibility:` names and print the ones whose hooks are not this binary's
+render — stale, foreign, or never installed — naming the repo and the command
+that fixes it. Both report and rewrite nothing: a hook rewrite in a shared
+checkout is a change you should type. A configured repo that is absent or is
+not a git repository is skipped, not reported, and an instance with no
+`beads_visibility:` block hears nothing at all. `make verify-hook-freshness`
+in a posse checkout is the same question on demand.
+
+**The bd argv gate you installed by hand went stale the moment the source
+changed, and nothing told you.**
+
+*Affected: every build before this one, on any box where the gate is
+installed. Reports only — it installs nothing.*
+
+`scripts/bd-argv-gate.{sh,py}` is source; what fences your box is the copy a
+PreToolUse hook names in your Claude settings, installed by hand because posse
+renders no box-wide hook (ADR 0015 §3). So a fix landing in this repo moves
+nothing, and the copy falls behind in silence — which is how a wrapper that
+failed OPEN on any bd call not on a command's first line stayed live after the
+fix for it had landed.
+
+`make install` now ends with that comparison, and `make verify-gate-freshness`
+asks it on demand. It resolves the wrapper out of your settings rather than
+assuming a path, compares both files against the main checkout's HEAD — never
+a worktree's, so no unfinished branch is ever prescribed for a box-wide hook —
+and then runs the installed wrapper three times, because a byte-perfect gate
+with no working `python3` under it passes everything: an allowed verb must get
+through, a denied one must be refused by the parser rather than by the
+wrapper's own fallback, and an unrelated command must be untouched. A finding
+prints the one line to type — a line written to survive the gate it repairs.
+A promote is never failed by it, and a box that never installed the gate hears
+nothing.
+
 ### Changed
 
 **A verify bead's checklist is now the closed bead's own acceptance, read off
@@ -970,85 +1047,6 @@ queue still mutates in a paused shop. With a schedule armed, `backup_max_age:`
 defaults to twice the interval instead of 48h, so changing the cadence moves
 the alarm with it. No `backup_interval:` starts no ticker at all, and
 `posse backup status` says which of the two you have.
-
-### Security
-
-**A persona session could commit your constitution — the PIDs every future
-session runs under — and nothing refused it.**
-
-*Affected: every build before this one. Two walls added, both on by default.*
-
-The gates already fenced the *command* (`posse promote` is denied in every
-crew PID) and the *form* (an unqualified commit is refused in a shared
-checkout), and under `cage: seatbelt` the constitution area was never
-writable. Under `cage: shims`, which is what most personas run on, nothing
-checked the *path class*: a session could rewrite `rhq/agents/*.md` and commit
-it like any other file, and the next promote would put its own edits in force.
-
-The `prepare-commit-msg` hook now carries a third arm. A commit from a session
-carrying `RHQ_PERSONA` is refused when it touches `.claude/settings.json` or
-`.claude/settings.local.json` in any hooked repo — that file holds the deny
-list fencing the session's own destructive commands — and, in the repo whose
-top level has `rhq/agents`, when it touches `rhq/agents`, `rhq/config.yaml`,
-`rhq/recipes`, `rhq/skills` or `rhq/envs`. Your own shell carries no marker
-and is untouched. The refusal names the paths and tells the session to stage
-what it means somewhere outside the class for you to apply.
-
-Behind it, the launcher will not fast-forward a session branch whose diff
-touches those paths: it reports and leaves the branch alone for you to read
-and land. That half runs in your process, so a session cannot scrub its way
-past it — which the hook's arm, keyed on an environment variable, can be.
-`core.hooksPath` still defeats every hook-tier gate.
-
-Reinstall the hooks in repos you have already hooked (`posse gates
-install-hooks <repo>`); a dispatch into a repo refreshes it automatically.
-
-**...and the walls above go stale in every repo no session enters — including
-the one that holds the constitution.**
-
-*Affected: every build before this one.*
-
-The hook bodies are compiled into the binary, so every installed hook is a
-*copy* of the render that was current when someone wrote it. Only `posse gates
-install-hooks` and a dispatch re-render one, and a dispatch refreshes the repo
-it was cut from and no other — so a repo that never holds a session keeps
-whatever it was given, indefinitely. That is how a constitution repo can run a
-`prepare-commit-msg` without the arm above for hours after the arm shipped:
-the wall existed exactly where sessions launch, and nowhere else.
-
-`posse promote` and the `posse dispatch --watch` preamble now sweep every repo
-`beads_visibility:` names and print the ones whose hooks are not this binary's
-render — stale, foreign, or never installed — naming the repo and the command
-that fixes it. Both report and rewrite nothing: a hook rewrite in a shared
-checkout is a change you should type. A configured repo that is absent or is
-not a git repository is skipped, not reported, and an instance with no
-`beads_visibility:` block hears nothing at all. `make verify-hook-freshness`
-in a posse checkout is the same question on demand.
-
-**The bd argv gate you installed by hand went stale the moment the source
-changed, and nothing told you.**
-
-*Affected: every build before this one, on any box where the gate is
-installed. Reports only — it installs nothing.*
-
-`scripts/bd-argv-gate.{sh,py}` is source; what fences your box is the copy a
-PreToolUse hook names in your Claude settings, installed by hand because posse
-renders no box-wide hook (ADR 0015 §3). So a fix landing in this repo moves
-nothing, and the copy falls behind in silence — which is how a wrapper that
-failed OPEN on any bd call not on a command's first line stayed live after the
-fix for it had landed.
-
-`make install` now ends with that comparison, and `make verify-gate-freshness`
-asks it on demand. It resolves the wrapper out of your settings rather than
-assuming a path, compares both files against the main checkout's HEAD — never
-a worktree's, so no unfinished branch is ever prescribed for a box-wide hook —
-and then runs the installed wrapper three times, because a byte-perfect gate
-with no working `python3` under it passes everything: an allowed verb must get
-through, a denied one must be refused by the parser rather than by the
-wrapper's own fallback, and an unrelated command must be untouched. A finding
-prints the one line to type — a line written to survive the gate it repairs.
-A promote is never failed by it, and a box that never installed the gate hears
-nothing.
 
 ### Fixed
 
