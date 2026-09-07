@@ -81,6 +81,55 @@ func TestLockWatchRefusesASecondHolder(t *testing.T) {
 	}
 }
 
+// The PIN for ranger-base-h8y4k: a starting loop must outlast a momentary
+// probe, not read it as another loop. WatchLoopRunning holds LOCK_SH only
+// for the instant it takes to learn nothing holds LOCK_EX, but on darwin a
+// released flock can still read as held tens of milliseconds later
+// (planmeterspend_qa_test.go's TestQAWatchLoopRunningUnmutesTheMeter
+// footnote measured up to ~100ms, 2 runs in 12) — and after ranger-base-ddivo
+// that probe fires from every PlanCache construction on a guard-unarmed
+// no-cap shop, not just a herdr start. Before lockWatch retried, the first
+// EWOULDBLOCK against a probe mid-release was read as a second loop and the
+// starting loop refused, never having run a pass. This test is the PIN;
+// TestLockWatchRefusesASecondHolder above is the control it must not break —
+// a goroutine that holds LOCK_EX for the whole retry budget is still refused.
+func TestLockWatchOutlastsAMomentaryProbe(t *testing.T) {
+	a := watchApp(t)
+	path := WatchLockPath(a)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o644); err != nil {
+		t.Fatal(err)
+	} else {
+		f.Close()
+	}
+	// A second open file description on the same path, exactly as
+	// WatchLoopRunning opens it — so this held lock contends with lockWatch's
+	// LOCK_EX the same way a real probe's does.
+	probe, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := flock(probe, syscall.LOCK_SH|syscall.LOCK_NB); err != nil {
+		t.Fatalf("probe could not take LOCK_SH: %v", err)
+	}
+	released := make(chan struct{})
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		_ = flock(probe, syscall.LOCK_UN)
+		probe.Close()
+		close(released)
+	}()
+	defer func() { <-released }()
+
+	lock, held, err := lockWatch(a)
+	if err != nil || held || lock == nil {
+		t.Fatalf("a starting loop must outlast a momentary probe's LOCK_SH, not refuse on it: held=%v err=%v", held, err)
+	}
+	lock.Release()
+}
+
 // The claim the pidfile could never make: liveness ends when the process
 // does. A killed holder leaves the lock free with nothing to reap — no
 // staleness window, no `kill -0`, no argv to match.

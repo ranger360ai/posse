@@ -61,13 +61,34 @@ func (l *WatchLock) Release() {
 	l.f = nil
 }
 
+// watchLockRetryBudget and watchLockRetryPoll bound how long lockWatch
+// keeps retrying an EWOULDBLOCK before it believes it (ranger-base-h8y4k).
+// WatchLoopRunning's probe (below) takes LOCK_SH for the instant it takes
+// to learn nothing holds LOCK_EX, but ddivo made that probe fire from
+// every PlanCache construction on a guard-unarmed no-cap shop — cockpit
+// planTick, pulse, every dispatch pass — rather than the twice-ish a herdr
+// start used to manage. A loop starting in that instant read EWOULDBLOCK
+// and refused with "another loop is already running", never having run a
+// pass. Darwin makes the window worse than a syscall: a released flock
+// measured up to ~100ms later still reading as held, 2 runs in 12
+// (planmeterspend_qa_test.go, TestQAWatchLoopRunningUnmutesTheMeter's pin
+// footnote). 250ms over ten tries is 2.5x that measurement, and it costs
+// nothing a genuine second loop doesn't already pay: a real loop holds
+// LOCK_EX for its whole life (rangerhq-gir5), so a hold that survives the
+// whole budget was never a probe.
+const (
+	watchLockRetryBudget = 250 * time.Millisecond
+	watchLockRetryPoll   = 25 * time.Millisecond
+)
+
 // lockWatch takes the watch-loop lock for the life of this loop. Three
 // answers, and the caller owes each a different response:
 //
 //	lock, false, nil  — ours. Hold it until the loop ends.
-//	nil,  true,  nil  — another loop of this RHQ_HOME holds it. Do not run:
-//	                    one loop per queue is the invariant, and unlike the
-//	                    pidfile this is proof rather than a guess.
+//	nil,  true,  nil  — another loop of this RHQ_HOME holds it, for the
+//	                    whole of watchLockRetryBudget. Do not run: one loop
+//	                    per queue is the invariant, and unlike the pidfile
+//	                    this is proof rather than a guess.
 //	nil,  false, err  — the lock file could not be opened at all. Degraded,
 //	                    not fatal: an unwritable state dir costs the record,
 //	                    never the loop (the rule stampWatchPid already
@@ -83,10 +104,17 @@ func lockWatch(a *App) (*WatchLock, bool, error) {
 	if err != nil {
 		return nil, false, err
 	}
-	err = flock(f, syscall.LOCK_EX|syscall.LOCK_NB)
-	if errors.Is(err, syscall.EWOULDBLOCK) {
-		f.Close()
-		return nil, true, nil
+	deadline := time.Now().Add(watchLockRetryBudget)
+	for {
+		err = flock(f, syscall.LOCK_EX|syscall.LOCK_NB)
+		if !errors.Is(err, syscall.EWOULDBLOCK) {
+			break
+		}
+		if !time.Now().Before(deadline) {
+			f.Close()
+			return nil, true, nil
+		}
+		time.Sleep(watchLockRetryPoll)
 	}
 	if err != nil {
 		f.Close()
