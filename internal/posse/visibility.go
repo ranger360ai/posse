@@ -25,6 +25,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -840,6 +841,19 @@ type IdentityLiteral struct {
 	// narrative are outside the path arm for the same reason they are
 	// outside the content one.
 	PathsOnly bool
+	// Keyed marks a box-literal guard-value (DeriveGuardValueLiterals,
+	// ranger-base-qdwet, from ranger-base-ei046): Class is the live config
+	// KEY (`autostart_interval`, `plan_guard_5h`, ...) and Value is the
+	// VALUE this box has it set to. A bare username or e-mail has no
+	// legitimate public spelling anywhere, so it is matched as Value alone
+	// (identityLiteralERE); a guard value is common vocabulary on its own
+	// -- "5m", "70", "false" appear in prose and fixtures constantly -- and
+	// only means THIS box when it is read back beside its own key
+	// (guardLiteralERE renders `key` + optional `[:=]` + `value`, the one
+	// keyed spelling ranger-base-ei046 measured and ranger-base-qdwet
+	// shipped; no currency arm, no digit-count floor -- those were only
+	// ever needed for budget_pass:/budget_day:, which stay out).
+	Keyed bool
 }
 
 // IdentityRule is what a check-3 refusal names. The enumeration at the end
@@ -1172,4 +1186,157 @@ func crewLiteralERE(s string) string {
 		b.WriteString(identityLiteralERE(string(r)))
 	}
 	return b.String()
+}
+
+// ─── ADR 0024 D2 check 3: box-literal guard values (ranger-base-qdwet) ───
+
+// guardValueKeys is the box-literal guard-value class's fixed scalar key
+// set — ranger-base-ei046's re-measurement, settled and shipped by
+// ranger-base-qdwet. The `plan_guard_<window>:` family is not listed here:
+// it is read straight off this config (PlanGuardThresholds' own prefix
+// scan, less the one reserved non-window key, planGuardReserved), because
+// the window names belong to whichever provider adapter is installed and
+// this list cannot know them in advance.
+//
+// budget_pass:/budget_day: are deliberately ABSENT: ranger-base-ei046
+// MEASURED 3-13 residual lines on this repo's own *_qa_test.go fixtures,
+// which reuse common round dollar figures (0, 5, 10, 25, 30, 150 and 10,
+// 100, 250, 3000) that no digit-count floor tells apart from a live
+// ceiling. Shipping them needs a design that closes that fixture-
+// vocabulary collision first — exclude this repo's own fixtures from the
+// scan, retire the round numbers from them, or an explicit operator/
+// security call to accept the residual — not this bead.
+var guardValueKeys = []string{
+	"autostart_interval", "autostart_max_beads",
+	"dispatch_epoch",
+	"model_preflight", "model_probe_ttl",
+	"plan_usage_ttl", "plan_usage_quiet",
+}
+
+// GuardValueRule is what a guard-value refusal names.
+const GuardValueRule = `ADR 0024 D2 check 3: this box's own guard/autostart/dispatch/model/plan-
+usage VALUES have no legitimate public use next to the key that names
+them — a threshold, an interval or a TTL this box happens to run today is
+derived at hook-render time (never shipped, never committed) and refused
+wherever the KEY and the VALUE appear together in the ADDED lines of any
+staged file, code included, in the ADDED staged paths (move detection
+off, so a move's destination counts as new), and in every line of the
+COMMIT MESSAGE, which replicates with the branch exactly as a staged line
+does. Keyed spelling only: the value alone is not refused, because a bare
+"5m" or "70" is common vocabulary this repo's own docs and fixtures use
+constantly. A value that MATCHES examples/config.yaml's documented
+default (read live or from its commented form) is not this box's own —
+every fresh install starts there — and is never refused.`
+
+// GuardValueWayThrough is the remedy a guard-value refusal names.
+const GuardValueWayThrough = `the way through: nothing that names this box's own guard values belongs
+in a public repo's history — generalize whatever carries it (a comment, a
+fixture, a worked example: a round number this repo already documents,
+or "your own <key>:" rather than the live number), or move the content
+to the instance tree (ADR 0024 D3, restate-and-cite). For a PATH: name
+the file without it, or write it in the instance tree — a rename is a
+fresh added entry and is scanned again, so the new name has to be clean
+too.`
+
+// GuardValueMessageWayThrough is the MESSAGE arm's remedy.
+const GuardValueMessageWayThrough = `the way through: rewrite the commit message. Nothing that names this
+box's own guard values belongs in a public repo's history, and a message
+replicates with the branch exactly as a staged line does — generalize
+whatever carries it, or say what you did without the live number and cite
+the bead id (ADR 0024 D3, restate-and-cite). Nothing was committed: HEAD
+is unchanged and your tree and index are exactly where you left them. The
+message you typed is still in .git/COMMIT_EDITMSG, a local file that
+never replicates and that your next commit overwrites; that is the same
+residual a refused staged file leaves.`
+
+// DeriveGuardValueLiterals derives ADR 0024 D2 check 3's box-literal
+// guard-value class from this box's own config (a.ConfigPath):
+// guardValueKeys' scalars plus every `plan_guard_<window>:` this config
+// names. Two skips, both required (ranger-base-ei046's re-measurement):
+//
+//   - a SENTINEL value — "0", "true" or "false" — is dropped whole. All
+//     three read as "off" (or the shipped "on") across every key here —
+//     plan_usage_ttl: 0 / model_probe_ttl: 0 = every launch asks,
+//     plan_guard_blind_max: 0 = disabled, model_preflight: false = off —
+//     which makes them the single most common token in this repo's own
+//     prose and fixtures. Deriving one as a box literal would refuse
+//     nearly every commit rather than protect this box's own setting.
+//   - a value equal to examples/config.yaml's documented default
+//     (exampleConfigDefault, read live or from its commented form) is
+//     dropped: a fresh install's autostart/plan_guard keys start at
+//     exactly that default, and MEASURED raw keyed hits (8, 4, 17 lines
+//     on three matching keys, ranger-base-ei046) collapse to 0 once
+//     skipped.
+//
+// KEYED SPELLING ONLY (IdentityLiteral.Keyed, guardLiteralERE): what is
+// derived is the KEY and the VALUE together, never the value alone. No
+// currency arm: nobody prices an interval or a percentage in dollars, and
+// the digit-count floor a currency arm would need was only ever priced
+// for budget_pass:/budget_day: (guardValueKeys' own doc), which stay out
+// of this class.
+func (a *App) DeriveGuardValueLiterals() ([]IdentityLiteral, error) {
+	keys := append([]string{}, guardValueKeys...)
+	for _, k := range YamlKeysWithPrefix(a.ConfigPath, "plan_guard_") {
+		if name := strings.TrimPrefix(k, "plan_guard_"); name != "" && !planGuardReserved[name] {
+			keys = append(keys, k)
+		}
+	}
+	var out []IdentityLiteral
+	for _, key := range keys {
+		raw := strings.TrimSpace(YamlGet(a.ConfigPath, key))
+		if raw == "" || raw == "0" || raw == "true" || raw == "false" {
+			continue
+		}
+		if def, ok := exampleConfigDefault(key); ok && raw == def {
+			continue
+		}
+		if len(raw) > identityLiteralMaxLen {
+			continue
+		}
+		if strings.Contains(raw, "'") {
+			return nil, fmt.Errorf("guard value literal (%s) contains a single quote — cannot render into a single-quoted sh word", key)
+		}
+		out = append(out, IdentityLiteral{Class: key, Value: raw, Keyed: true})
+	}
+	return out, nil
+}
+
+// exampleConfigDefault reads key's documented default from the EMBEDDED
+// examples/config.yaml (posse.Seed), never an on-disk copy — the same
+// EMBED-not-disk rule DeriveCrewLiterals follows and for the same reason
+// (ranger-base-cdxpf): the wall's own idea of "default" cannot be
+// something a commit, or an operator's own edited examples/config.yaml
+// beside a dev binary, can move. Reads both an uncommented top-level line
+// and the commented shape every guard-value default in the shipped file
+// actually uses (`# key: value    # ...`, one space after the `#`) —
+// whichever spelling this key's default is documented in.
+func exampleConfigDefault(key string) (string, bool) {
+	b, err := fs.ReadFile(posse.Seed, "config.yaml")
+	if err != nil {
+		return "", false
+	}
+	lines := strings.Split(string(b), "\n")
+	if v := yamlGetLines(lines, key); v != "" {
+		return v, true
+	}
+	prefix := "# " + key + ":"
+	for _, ln := range lines {
+		if !strings.HasPrefix(ln, prefix) {
+			continue
+		}
+		if v := yamlClean(ln[len(prefix):]); v != "" && v != "null" && v != "~" {
+			return v, true
+		}
+	}
+	return "", false
+}
+
+// guardLiteralERE renders a box-literal guard value as an ERE matching its
+// KEY and VALUE together, keyed spelling only (ranger-base-qdwet, from
+// ranger-base-ei046): key, then an optional single `:` or `=`, then the
+// value, with spaces optional on either side of the separator — `key:
+// value`, `key:value`, `key = value`, `key=value` and `key value` all
+// read as this box's own setting; the value alone does not.
+func guardLiteralERE(key, value string) string {
+	return identityLiteralERE(key) + `[[:space:]]*[:=]?[[:space:]]*` + identityLiteralERE(value)
 }

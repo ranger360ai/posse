@@ -3413,6 +3413,7 @@ func (r visGuardRefusal) keptModeNote(ind string) string {
 // block up.
 const (
 	identityScanLabel    = "identity literal scan"
+	guardValueScanLabel  = "guard value scan"
 	instanceScanLabel    = "instance pattern scan"
 	crewScanLabel        = "crew name scan"
 	dataCeilingScanLabel = "data ceiling scan"
@@ -4209,21 +4210,28 @@ func identityGuardCheck(identity []IdentityLiteral, extra []OpsPattern) string {
 	if len(identity) == 0 && len(extra) == 0 {
 		return ""
 	}
-	// THREE SOURCES OUT OF TWO ARGUMENTS. The derived slice carries two
-	// kinds and the literal itself says which (IdentityLiteral.PathsOnly):
-	// an operator identity literal has no legitimate public use in a line,
-	// a path or a message alike, and a crew persona name is refused in a
-	// PATH only (ranger-base-cdxpf). Partitioned here rather than at the
-	// call sites so every renderer of this hook — the two installers, the
-	// session-hooks redirect and the L3 probe — is handed ONE list and
-	// cannot pass a different partition of it than the wall renders.
-	var idLits, crew []IdentityLiteral
+	// FOUR SOURCES OUT OF TWO ARGUMENTS. The derived slice carries three
+	// kinds and the literal itself says which: an operator identity
+	// literal (IdentityLiteral.PathsOnly false, Keyed false) has no
+	// legitimate public use in a line, a path or a message alike; a
+	// box-literal guard value (Keyed true, ranger-base-qdwet) is refused
+	// the same three ways but only KEYED — key and value together
+	// (guardLiteralERE), never the value alone; a crew persona name
+	// (PathsOnly true) is refused in a PATH only (ranger-base-cdxpf).
+	// Partitioned here rather than at the call sites so every renderer of
+	// this hook — the two installers, the session-hooks redirect and the
+	// L3 probe — is handed ONE list and cannot pass a different partition
+	// of it than the wall renders.
+	var idLits, guard, crew []IdentityLiteral
 	for _, lit := range identity {
-		if lit.PathsOnly {
+		switch {
+		case lit.PathsOnly:
 			crew = append(crew, lit)
-			continue
+		case lit.Keyed:
+			guard = append(guard, lit)
+		default:
+			idLits = append(idLits, lit)
 		}
-		idLits = append(idLits, lit)
 	}
 
 	// Identity literals are regexp-ESCAPED fixed strings; an instance
@@ -4234,6 +4242,18 @@ func identityGuardCheck(identity []IdentityLiteral, extra []OpsPattern) string {
 		var b strings.Builder
 		for _, lit := range idLits {
 			b.WriteString(opsCheckCall(indent, lit.Class, identityLiteralERE(lit.Value), false))
+		}
+		return b.String()
+	}
+	// Keyed: guardLiteralERE renders the KEY (lit.Class, e.g.
+	// `autostart_interval`) and the VALUE together, not the value alone —
+	// the whole reason this class exists (ranger-base-qdwet, from
+	// ranger-base-ei046): a bare "5m" or "70" is round-number vocabulary
+	// this repo's own docs and fixtures already use.
+	guardChecks := func(indent string) string {
+		var b strings.Builder
+		for _, lit := range guard {
+			b.WriteString(opsCheckCall(indent, lit.Class, guardLiteralERE(lit.Class, lit.Value), false))
 		}
 		return b.String()
 	}
@@ -4295,6 +4315,45 @@ func identityGuardCheck(identity []IdentityLiteral, extra []OpsPattern) string {
 				rule:         IdentityRule,
 				matched:      commitMessageMatched,
 				wayThrough:   IdentityMessageWayThrough,
+				keptModeVar:  "posse_kept",
+			},
+		})
+	}
+	if len(guard) > 0 {
+		sources = append(sources, visScanSource{
+			checks:  guardChecks,
+			pathVar: "posse_gbad",
+			content: visGuardRefusal{
+				badVar:       "posse_bad",
+				label:        guardValueScanLabel,
+				logTail:      "(public repo)",
+				overrideWhat: "this box's own guard value is going into a public repo",
+				header:       "a box-literal guard value in a staged file",
+				rule:         GuardValueRule,
+				matched:      stagedLineMatched,
+				wayThrough:   GuardValueWayThrough,
+			},
+			path: visGuardRefusal{
+				badVar:       "posse_gbad",
+				label:        guardValueScanLabel,
+				logTail:      "(public repo, staged path)",
+				overrideAt:   " (staged path)",
+				overrideWhat: "this box's own guard value is going into a public repo in a staged PATH",
+				header:       "a box-literal guard value in a staged PATH",
+				rule:         GuardValueRule,
+				matched:      stagedPathMatched,
+				wayThrough:   GuardValueWayThrough,
+			},
+			message: visGuardRefusal{
+				badVar:       "posse_bad",
+				label:        guardValueScanLabel,
+				logTail:      "(public repo, commit message)",
+				overrideAt:   " (commit message)",
+				overrideWhat: "this box's own guard value is going into a public repo in the commit MESSAGE",
+				header:       "a box-literal guard value in the commit MESSAGE",
+				rule:         GuardValueRule,
+				matched:      commitMessageMatched,
+				wayThrough:   GuardValueMessageWayThrough,
 				keptModeVar:  "posse_kept",
 			},
 		})
@@ -4366,15 +4425,21 @@ func identityGuardCheck(identity []IdentityLiteral, extra []OpsPattern) string {
 			},
 		})
 	}
-	head := "\n" + shComment("  ", `─── check 3: identity literals, instance patterns, crew names ──────────
-(ADR 0024 D2 for the derived literals, ADR 0048 D2 for the config ones,
-ADR 0012 D2 / App.A 5 for the crew names.)
+	head := "\n" + shComment("  ", `─── check 3: identity literals, guard values, instance patterns, crew names ───
+(ADR 0024 D2 for the derived literals and the box-literal guard values,
+ADR 0048 D2 for the config ones, ADR 0012 D2 / App.A 5 for the crew names.)
 The literals are derived from THIS box at render time — whoami, git
 config user.email, and the instance repo path (dirname of
 .beads/redirect's target, both ~-relative and absolute) — never a
 shipped constant, never a commit: only this rendered hook file carries
 them (identityGuardCheck's own caller, DeriveIdentityLiterals,
-visibility.go). The instance patterns come from the operator's config
+visibility.go). The guard values are derived from this box's own config
+the same way (DeriveGuardValueLiterals, ranger-base-qdwet) — the live
+autostart/plan-guard/dispatch/model/plan-usage settings, less whatever
+matches examples/config.yaml's documented default or is a bare 0/true/
+false sentinel — and refused KEYED ONLY, key and value together
+(guardLiteralERE): the value alone is common vocabulary, not this box's.
+The instance patterns come from the operator's config
 (`+OpsPatternsConfigKey+`:) and are untracked for the same reason.
 The crew names are derived the same way and from the same box — the
 PIDs in this home's agents/, less every name posse itself ships as an
@@ -5181,11 +5246,12 @@ func runAdrCensus(dir string, files []string, env []string, stdout, stderr io.Wr
 // no interest in ADR 0024 D2 check 3 (a byte-exact fixture for a marker or
 // ordering test, say) keeps compiling unchanged; a caller that must match
 // what InstallCommitGuardHook actually writes has to pass the SAME slice
-// (a.commitGuardLiterals(dir): the derived identity literals AND this box's
-// crew names) or the two renders diverge on check 3 alone. It carries both
-// kinds because a variadic parameter can only be one — and because the
-// literal itself says which arms it belongs in (IdentityLiteral.PathsOnly),
-// so nothing is lost by shipping them in one slice.
+// (a.commitGuardLiterals(dir): the derived identity literals, this box's
+// guard values, AND this box's crew names) or the two renders diverge on
+// check 3 alone. It carries all three kinds because a variadic parameter
+// can only be one — and because the literal itself says which arms it
+// belongs in (IdentityLiteral.PathsOnly, .Keyed), so nothing is lost by
+// shipping them in one slice.
 func CommitGuardHook(visibility string, set OpsPatternSet, identity ...IdentityLiteral) string {
 	return commitGuardHead + hookStampFunc + visibilityGuardBody(visibility, set, identity) +
 		constitutionGuardBody() + sharedIndexBody
@@ -5226,9 +5292,10 @@ func hookRepo(dir string) string {
 
 // commitGuardLiterals is the ONE derivation every renderer of the commit
 // guard uses: ADR 0024 D2 check 3's identity literals off hookRepo(dir),
-// then this box's crew names (ADR 0012 D2, ranger-base-cdxpf), which are
-// the home's and not the repo's. Both are box-derived and neither is ever
-// committed.
+// then this box's own guard values (DeriveGuardValueLiterals,
+// ranger-base-qdwet), then this box's crew names (ADR 0012 D2,
+// ranger-base-cdxpf), which are the home's and not the repo's. All three
+// are box-derived and none is ever committed.
 //
 // One function because the renders are compared BYTE FOR BYTE: the two
 // installers write the hook, RenderSessionHooks writes the same bytes into
@@ -5241,6 +5308,11 @@ func (a *App) commitGuardLiterals(dir string) ([]IdentityLiteral, error) {
 	if err != nil {
 		return nil, err
 	}
+	guard, err := a.DeriveGuardValueLiterals()
+	if err != nil {
+		return nil, err
+	}
+	identity = append(identity, guard...)
 	return append(identity, a.DeriveCrewLiterals()...), nil
 }
 

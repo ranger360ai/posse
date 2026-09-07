@@ -14,7 +14,16 @@ because git's binary call flips on one NUL; ADR 0048 D2 as amended,
 ranger-base-9307c, from ranger-base-h137b) · amended 2026-09-03 (D2 check 3
 and Consequences: the commit MESSAGE is a THIRD subject of check 3 — product
 decision that date on ranger-base-1nbtn, landed 2026-09-04 in
-ranger-base-qk8i9, which is why this line sits after the 09-04 one above)*
+ranger-base-qk8i9, which is why this line sits after the 09-04 one above) ·
+amended 2026-09-07 (D2 check 3: a FIFTH derived source, box-literal guard
+values — this box's own live `autostart_*`/`plan_guard_*`/`dispatch_epoch`/
+`model_*`/`plan_usage_*` settings, KEYED spelling only (key and value
+together, never the value alone) and skipped whole where the value matches
+examples/config.yaml's documented default or is a bare 0/true/false
+sentinel; `budget_pass`/`budget_day` stay out, MEASURED
+(ranger-base-ei046) 3-13 residual lines on this repo's own *_qa_test.go
+fixtures reusing common round dollar figures, a collision no digit-count
+floor closes — ranger-base-qdwet, from ranger-base-ei046)*
 
 ## Context
 

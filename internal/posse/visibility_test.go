@@ -1022,6 +1022,174 @@ func TestDeriveIdentityLiteralsSkipsAbsentSourcesSilently(t *testing.T) {
 	}
 }
 
+// ranger-base-qdwet, from ranger-base-ei046's re-measurement: a value equal
+// to examples/config.yaml's documented default is not this box's own —
+// every fresh install starts there — and must not derive, whether the key
+// is a fixed scalar (autostart_max_beads) or a `plan_guard_<window>:` this
+// config names. A key set to something OTHER than the default must still
+// derive, in the same pass, so the skip is not silently swallowing every
+// key.
+func TestDeriveGuardValueLiteralsSkipsExampleDefault(t *testing.T) {
+	t.Parallel()
+	home := t.TempDir()
+	cfg := filepath.Join(home, "config.yaml")
+	write(t, cfg, "autostart_max_beads: 3\n"+ // shipped default: 3
+		"plan_guard_5h: 70\n"+ // shipped default: 70
+		"plan_guard_7d: 42\n"+ // shipped default: 85 — differs, must derive
+		"autostart_interval: 45s\n") // shipped default: 5m — differs, must derive
+	a := &App{ConfigPath: cfg}
+	lits, err := a.DeriveGuardValueLiterals()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, l := range lits {
+		got[l.Class] = l.Value
+		if !l.Keyed {
+			t.Errorf("%s: a guard-value literal must be Keyed", l.Class)
+		}
+	}
+	if _, ok := got["autostart_max_beads"]; ok {
+		t.Error("autostart_max_beads: 3 matches the shipped default and must not derive")
+	}
+	if _, ok := got["plan_guard_5h"]; ok {
+		t.Error("plan_guard_5h: 70 matches the shipped default and must not derive")
+	}
+	if got["plan_guard_7d"] != "42" {
+		t.Errorf("plan_guard_7d = %q, want 42 (differs from the shipped default 85)", got["plan_guard_7d"])
+	}
+	if got["autostart_interval"] != "45s" {
+		t.Errorf("autostart_interval = %q, want 45s (differs from the shipped default 5m)", got["autostart_interval"])
+	}
+}
+
+// The sentinel values — "0", "true", "false" — read as this class's own
+// "off"/"on" across every key it covers (plan_usage_ttl: 0, model_preflight:
+// false, ...), which makes them the single most common token in this
+// repo's own prose and fixtures; deriving one as a box literal would refuse
+// nearly every commit. A non-sentinel key alongside them must still derive,
+// so the skip is provably narrow.
+func TestDeriveGuardValueLiteralsSkipsSentinels(t *testing.T) {
+	t.Parallel()
+	home := t.TempDir()
+	cfg := filepath.Join(home, "config.yaml")
+	write(t, cfg, "autostart_max_beads: 0\n"+
+		"model_preflight: false\n"+
+		"plan_usage_ttl: 0\n"+
+		"dispatch_epoch: 30m\n") // not a sentinel, not the shipped default (1h): must derive
+	a := &App{ConfigPath: cfg}
+	lits, err := a.DeriveGuardValueLiterals()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, l := range lits {
+		got[l.Class] = l.Value
+	}
+	for _, sentinelKey := range []string{"autostart_max_beads", "model_preflight", "plan_usage_ttl"} {
+		if _, ok := got[sentinelKey]; ok {
+			t.Errorf("%s: a sentinel value (0/true/false) must not derive", sentinelKey)
+		}
+	}
+	if got["dispatch_epoch"] != "30m" {
+		t.Errorf("dispatch_epoch = %q, want 30m", got["dispatch_epoch"])
+	}
+}
+
+// NO LEAKAGE INTO THE RENDERED HOOK, and the keyed scope proven both ways:
+// the box's own guard value is refused only KEYED — key and value
+// together — never for the bare value alone and never for the bare key
+// alone, and never for the shipped default even where it names the same
+// key. ranger-base-qdwet's whole point: "5m" and "30m" are round numbers
+// this repo's own docs and fixtures use constantly, so only the pairing is
+// this box's.
+func TestGuardValueLiteralGuardHook(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	gates := t.TempDir()
+	pub := filepath.Join(home, "pub")
+	cfg := filepath.Join(home, "config.yaml")
+	write(t, cfg, "dispatch_epoch: 30m\n") // shipped default is 1h: this box's own value derives
+	a := &App{ConfigPath: cfg}
+	os.MkdirAll(pub, 0o755)
+
+	base := []string{"PATH=" + PathOutsideGates(""), "HOME=" + home,
+		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t"}
+	git := func(env []string, args ...string) (string, error) {
+		cmd := exec.Command("git", append([]string{"-C", pub}, args...)...)
+		cmd.Env = append(append([]string(nil), base...), env...)
+		out, err := cmd.CombinedOutput()
+		return string(out), err
+	}
+	if out, err := git(nil, "init", "-q", "-b", "main"); err != nil {
+		t.Fatalf("git init: %v %s", err, out)
+	}
+	if _, _, _, err := a.InstallCommitGuardHook(pub); err != nil {
+		t.Fatal(err)
+	}
+	persona := []string{"RHQ_PERSONA=tester", "RHQ_GATES_DIR=" + gates}
+	writeAndAdd := func(rel, body string) {
+		p := filepath.Join(pub, rel)
+		os.MkdirAll(filepath.Dir(p), 0o755)
+		os.WriteFile(p, []byte(body), 0o644)
+		git(nil, "add", rel)
+	}
+
+	// Keyed, colon spelling: refused.
+	writeAndAdd("notes.txt", "this box runs dispatch_epoch: 30m today\n")
+	out, err := git(persona, "commit", "-m", "x", "--", "notes.txt")
+	if err == nil {
+		t.Fatalf("this box's own dispatch_epoch value, keyed, must be refused: %s", out)
+	}
+	for _, want := range []string{
+		"refused by posse gate: a box-literal guard value in a staged file",
+		"dispatch_epoch:",
+		"ADR 0024 D2 check 3",
+		"ADR 0024 D3, restate-and-cite",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("guard-value refusal must carry %q:\n%s", want, out)
+		}
+	}
+	git(nil, "reset", "--", "notes.txt")
+
+	// Keyed, equals spelling: refused too (guardLiteralERE's optional
+	// separator).
+	writeAndAdd("notes2.txt", "dispatch_epoch=30m is what this box runs\n")
+	if out, err := git(persona, "commit", "-m", "x", "--", "notes2.txt"); err == nil {
+		t.Fatalf("the equals spelling must be refused too: %s", out)
+	}
+	git(nil, "reset", "--", "notes2.txt")
+
+	// The bare VALUE alone, no key beside it: commits clean — that is the
+	// no-leakage property this class exists for.
+	writeAndAdd("bare-value.txt", "the pass runs about every 30m or so\n")
+	if out, err := git(persona, "commit", "-m", "x", "--", "bare-value.txt"); err != nil {
+		t.Errorf("the bare value with no key beside it must commit clean: %v\n%s", err, out)
+	}
+
+	// The bare KEY alone, no value: commits clean.
+	writeAndAdd("bare-key.txt", "config dispatch_epoch: is documented in examples/config.yaml\n")
+	if out, err := git(persona, "commit", "-m", "x", "--", "bare-key.txt"); err != nil {
+		t.Errorf("the bare key with no value beside it must commit clean: %v\n%s", err, out)
+	}
+
+	// The shipped DEFAULT, same key: commits clean — it is not this box's
+	// own value (ranger-base-ei046's skip-on-default).
+	writeAndAdd("default.txt", "the documented default is dispatch_epoch: 1h\n")
+	if out, err := git(persona, "commit", "-m", "x", "--", "default.txt"); err != nil {
+		t.Errorf("the shipped default must commit clean: %v\n%s", err, out)
+	}
+
+	logb, _ := os.ReadFile(filepath.Join(gates, "refusals.log"))
+	if !strings.Contains(string(logb), "guard value scan [prepare-commit-msg hook] (public repo)") {
+		t.Errorf("a guard-value refusal must be logged:\n%s", logb)
+	}
+}
+
 // A literal containing a single quote cannot render into the single-quoted
 // sh word the hook uses — the same init-panic class validateOpsERE holds
 // the shipped OpsPatterns list to, except this is caught at install time
