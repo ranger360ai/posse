@@ -728,6 +728,9 @@ func TestTheMeterRowNamesTheCompositesState(t *testing.T) {
 		if !strings.Contains(row.Action, AbbrevHome(fallbackPath)) {
 			t.Errorf("Action must name the file: %q", row.Action)
 		}
+		if !strings.Contains(row.Action, renderStamp(frozenAt.UTC())) {
+			t.Errorf("Action must carry the planted file's own rendered mtime %q (ranger-base-0f929 finding 4 — how stale the leftover is, is the fact the S2 sentence exists to report): %q", renderStamp(frozenAt.UTC()), row.Action)
+		}
 		if strings.Contains(row.Action, keychainOnlyToken) || strings.Contains(row.Action, fallbackOnlyToken) {
 			t.Errorf("a credential must never appear in the report: %q", row.Action)
 		}
@@ -766,6 +769,22 @@ func TestTheMeterRowNamesTheCompositesState(t *testing.T) {
 		}
 		_ = fallbackPath
 	})
+}
+
+// TestMeterAccessTokenLifetimeIsEightHours pins the number the S2/S4 split
+// rests on directly (ranger-base-0f929 finding 3). The S2 and S4 subtests
+// above build their own planted-mtime fixtures FROM meterAccessTokenLifetime
+// (line 709's `issued := keychainExpiry.Add(-meterAccessTokenLifetime)`), so
+// a change to the constant moves the fixture along with it and every value
+// is equivalent to every other as far as those two subtests can tell —
+// MEASURED: lengthening it to 24h still passes both. This arm reads the
+// constant directly, with no fixture in between, so the number itself is
+// graded rather than mirrored.
+func TestMeterAccessTokenLifetimeIsEightHours(t *testing.T) {
+	t.Parallel()
+	if meterAccessTokenLifetime != 8*time.Hour {
+		t.Errorf("meterAccessTokenLifetime = %s, want 8h — MEASURED 2026-09-03 (ranger-base-4poib, credexpiry.go); the S1/S2/S3/S4 split in darwinCompositeAction (refresh.go) is derived from this exact span, and the S2/S4 subtests build their fixtures from the same constant, so nothing else in the suite catches a change to it", meterAccessTokenLifetime)
+	}
 }
 
 // Off darwin, meterRow never touches the composite logic at all: the store

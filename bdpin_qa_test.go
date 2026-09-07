@@ -815,7 +815,7 @@ func TestQABdPinFailsWhenSomethingIsLinkedInFrontOfThePin(t *testing.T) {
 	}
 }
 
-// bpStubGateShim writes a posse gate shim (internal/rhq/gates.go renderShim)
+// bpStubGateShim writes a posse gate shim (internal/posse/gates.go renderShim)
 // that execs target — the shape every persona session actually has on PATH
 // ahead of ~/.local/bin, distinct from an arbitrary shadowing binary.
 func bpStubGateShim(t *testing.T, dir, target string) {

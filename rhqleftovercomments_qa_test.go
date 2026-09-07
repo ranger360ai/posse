@@ -36,11 +36,15 @@ package posse_test
 // scripts/silent-reverts.allow convention: a citation triaged and accepted,
 // not a pattern that would silence a future one that happens to rhyme.
 //
-// WHAT THIS PIN DOES NOT COVER: scripts/, Makefile, CHANGELOG.md and
-// README.md all still name internal/rhq (measured 2026-09-06) but none of
-// the four are in the bead's declared census (`grep -rl internal/rhq over
-// internal/ cmd/ docs/`, plus INSTALL.md and NOTES.md named explicitly) —
-// left alone rather than swept unasked.
+// WHAT THIS PIN DOES NOT COVER: scripts/*.sh and Makefile still name
+// internal/rhq (measured 2026-09-07) but neither is *.go or *.md, so
+// widening the walk to the repo root (ranger-base-0f929 finding 1) did not
+// pull them in — left alone rather than swept unasked. The root widening DID
+// pull in CHANGELOG.md, README.md and this pin's own root-level siblings;
+// README.md is clean today, CHANGELOG.md's one hit is a dated changelog
+// entry and is in rhqLeftoverExemptions, and this pin's own file
+// (rhqLeftoverSelfFile) is excluded from its own corpus rather than
+// exempted line by line — see the const's comment.
 
 import (
 	"os"
@@ -101,22 +105,89 @@ var rhqLeftoverExemptions = []rhqLeftoverExempt{
 		"blames 2026-08-28, before the rename"},
 	{"NOTES.md", "On 2026-08-29 `make test` came back exit 2 with ~80 reds in `internal/rhq`,",
 		"narrates a specific 2026-08-29 incident, before the rename"},
+
+	// The rows below are ranger-base-0f929's: rhqLeftoverCorpus now walks the
+	// repo root (finding 1), which pulls this pin's own sibling QA files and
+	// the top-level docs into its population for the first time.
+	{"CHANGELOG.md", "The fix is `internal/rhq/credpin.go`, one rule for both readers:",
+		"a changelog entry narrates the fix as it stood when it was written; rewriting it misrepresents the historical record the same way a dated MEASURED narration would"},
+	{"suitetimeout_qa_test.go", "DEFAULT -timeout. The default is 10m per package and internal/rhq spends",
+		"prose scene-setting for the ranger-base-2ggb timeout measurement, not a citation of the directory as it exists today"},
+	{"suitetimeout_qa_test.go", "internal/rhq's worst measured run is 623.2s, standalone (ranger-base-2ggb,",
+		"a dated measurement (ranger-base-2ggb) reporting the package name as it was when the run was measured"},
+	{"adrpackagedirsweep_qa_test.go", "WHAT THE SWEEP DID. The Go package was renamed `internal/rhq` ->",
+		"prose narrating the 9c00e192 rename itself, part of this sibling pin's own header"},
+	{"adrpackagedirsweep_qa_test.go", "records. Its done-when was `grep -rn internal/rhq docs/adr` returning",
+		"quotes the repro command the sibling pin's done-when was defined against"},
+	{"adrpackagedirsweep_qa_test.go", "number. `0046-constitution-directory-posse.md` keeps its `internal/rhq/`.",
+		"describes the one frozen census row that ADR 0046 pin itself exempts; quoting the string it is a census of"},
+	{"adrpackagedirsweep_qa_test.go", `adrSweepRetired = "internal/rhq"`,
+		"the string literal the sibling pin's own predicate matches against, not a citation of the directory"},
+	{"adrpackagedirsweep_qa_test.go", `"the resolver lives in `,
+		"synthetic fixture text feeding TestADRPackageDirSweepCheckCanFail, invented to prove the predicate catches a stale citation"},
+	{"adrpackagedirsweep_qa_test.go", `"0098-invented.probe.sh": "# argv[0] reset`,
+		"synthetic fixture text, same can-fail test, the probe-supplement shape"},
+	{"adrpackagedirsweep_qa_test.go", `below := map[string]string{adrSweepExemptRecord:`,
+		"synthetic fixture proving the sibling pin's own heading-keyed exemption covers a line below it"},
+	{"adrpackagedirsweep_qa_test.go", `above := map[string]string{adrSweepExemptRecord:`,
+		"synthetic fixture proving the sibling pin's own heading-keyed exemption does NOT cover a line above it"},
+	{"adrpackagedirsweep_qa_test.go", `elsewhere := map[string]string{"0097-invented.md":`,
+		"synthetic fixture proving the sibling pin's exemption does not leak to a different record"},
+	{"adrtestcitation_qa_test.go", "records still spelled the retired `internal/rhq/` directory. ranger-base-",
+		"prose narrating a sibling pin's own history (ranger-base-efk14/1d8bk), not a live citation"},
+	{"adrtestcitation_qa_test.go", "`internal/rhq/` four days after the package was renamed and nothing went",
+		"same historical narration, continued"},
+	{"adrtestcitation_qa_test.go", "0002-container-tier.probe.sh carried `internal/rhq/cagelauncher.go` on main",
+		"prose citing the specific stale citation ranger-base-3ni7p's human sweep found, as history"},
+	{"adrtestcitation_qa_test.go", `text: "internal/rhq/constitutionwall_qa_test.go"}`,
+		"synthetic fixture: the stale half of a resolved/stale citation pair this pin's own test constructs"},
+	{"adrtestcitation_qa_test.go", `staleSource := adrCite{adr: "0017-runtime-equivalence.md", line: 35, text: "internal/rhq/runtime.go"}`,
+		"synthetic fixture: a non-test-file stale citation this pin's test constructs to prove the rule widened past *_test.go"},
+	{"adrtestcitation_qa_test.go", "a non-test citation under the retired internal/rhq/ resolved; widening the rule to every Go file did not take",
+		"a t.Fatalf failure message describing the synthetic fixture above it, not a citation of the directory"},
+	{"adrtestcitation_qa_test.go", `prefixed := adrCite{adr: adr, line: 60, text: "internal/rhq/herdrevents.go"}`,
+		"synthetic fixture proving a prefixed mention does not resolve as a backreference"},
+	{"adrtestcitation_qa_test.go", "as `internal/rhq/cagelauncher.go` until 2026-09-06; the point of the",
+		"prose naming the exact string a real citation carried before 2026-09-06, as history"},
+	{"adrtestcitation_qa_test.go", `stale.text = "internal/rhq/cagelauncher.go"`,
+		"synthetic fixture reusing the same historical string as a stale-citation test case"},
+	{"adrtestcitation_qa_test.go", "history is `git show 495d2a6:internal/posse/overflow.go`; live is internal/rhq/runtime.go",
+		"synthetic fixture: a git-show-declares-only-its-own-token test case pairing a live and a stale path"},
 }
 
-// rhqLeftoverPopFloor is the number of files this sweep's population reads,
-// measured 2026-09-06: 574 under internal/, 53 under cmd/, 7 docs/*.md
-// outside docs/adr and docs/notes.d, plus NOTES.md and INSTALL.md. A reader
-// that walks fewer than this has lost a directory and is reporting a green
-// over files it never read.
-const rhqLeftoverPopFloor = 600
+// rhqLeftoverPopFloors are the per-root floors this sweep's population must
+// clear, measured 2026-09-07: 576 files under internal/, 53 under cmd/, 7
+// docs/*.md outside docs/adr and docs/notes.d, and 60 at the repo root
+// (non-recursive, *.go and *.md, excluding this pin's own file — NOTES.md
+// and INSTALL.md are counted there, not read separately). A single floor
+// over the union let one root's files vanish entirely as long as another
+// root's slack covered the loss (ranger-base-0f929 finding 2: docs/ alone
+// carries 38 files of slack under the old union floor); keying the floor
+// per root means losing ANY single root is what trips it.
+var rhqLeftoverPopFloors = map[string]int{
+	"internal": 576,
+	"cmd":      53,
+	"docs":     7,
+	".":        60,
+}
 
-// rhqLeftoverCorpus walks internal/, cmd/ and docs/ (skipping docs/adr and
-// docs/notes.d, which have their own exemption policy), plus NOTES.md and
-// INSTALL.md, and returns every .go/.md file's body keyed by repo-relative
-// path.
+// rhqLeftoverSelfFile is this pin's own file. It is excluded from the root
+// walk below: once the root is in the corpus, every literal citation this
+// file's own exemption list and doc comments carry — the string the sweep
+// exists to find — would have to re-exempt itself against its own
+// predicate, one line at a time, forever.
+const rhqLeftoverSelfFile = "rhqleftovercomments_qa_test.go"
+
+// rhqLeftoverCorpus walks internal/, cmd/, docs/ (skipping docs/adr and
+// docs/notes.d, which have their own exemption policy) and the repo root
+// itself (non-recursive, so it does not re-walk internal/cmd/docs — this is
+// where NOTES.md, INSTALL.md and this pin's root-level *_qa_test.go/*.md
+// siblings live), and returns every .go/.md file's body keyed by
+// repo-relative path.
 func rhqLeftoverCorpus(t *testing.T) map[string]string {
 	t.Helper()
 	out := map[string]string{}
+	counts := map[string]int{}
 	for _, root := range []string{"internal", "cmd", "docs"} {
 		err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 			if err != nil {
@@ -136,21 +207,35 @@ func rhqLeftoverCorpus(t *testing.T) map[string]string {
 				return err
 			}
 			out[path] = string(b)
+			counts[root]++
 			return nil
 		})
 		if err != nil {
 			t.Fatalf("walk %s: %v", root, err)
 		}
 	}
-	for _, f := range []string{"NOTES.md", "INSTALL.md"} {
-		b, err := os.ReadFile(f)
-		if err != nil {
-			t.Fatalf("read %s: %v", f, err)
-		}
-		out[f] = string(b)
+	ents, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatalf("read .: %v", err)
 	}
-	if len(out) < rhqLeftoverPopFloor {
-		t.Fatalf("read %d files, floor is %d — a corpus this small has lost a directory, and every verdict below it would be a green over unread files", len(out), rhqLeftoverPopFloor)
+	for _, e := range ents {
+		if e.IsDir() || e.Name() == rhqLeftoverSelfFile {
+			continue
+		}
+		if !strings.HasSuffix(e.Name(), ".go") && !strings.HasSuffix(e.Name(), ".md") {
+			continue
+		}
+		b, err := os.ReadFile(e.Name())
+		if err != nil {
+			t.Fatalf("read %s: %v", e.Name(), err)
+		}
+		out[e.Name()] = string(b)
+		counts["."]++
+	}
+	for root, floor := range rhqLeftoverPopFloors {
+		if counts[root] < floor {
+			t.Fatalf("root %q read %d files, floor is %d — that root has lost files, and every verdict below it would be a green over files it never read", root, counts[root], floor)
+		}
 	}
 	return out
 }

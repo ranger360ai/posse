@@ -218,13 +218,13 @@ func TestQASuiteTestTargetCarriesATimeoutAboveTheMeasuredRuntime(t *testing.T) {
 
 	d, ok, err := timeoutOf(args)
 	if !ok {
-		t.Fatalf("`make test` runs `go test` on the DEFAULT 10m timeout (args %v) — internal/rhq's worst measured run is 623.2s, so the suite is a coin flip on a loaded box and the red it throws names no test (ranger-base-2ggb)", args)
+		t.Fatalf("`make test` runs `go test` on the DEFAULT 10m timeout (args %v) — internal/posse's worst measured run is 623.2s, so the suite is a coin flip on a loaded box and the red it throws names no test (ranger-base-2ggb)", args)
 	}
 	if err != nil {
 		t.Fatalf("-timeout value does not parse: %v", err)
 	}
 	if d < suiteTimeoutFloor {
-		t.Errorf("-timeout %s is below the %s floor — internal/rhq alone has been measured at 623.2s, and a ceiling under the measurement is worse than the default because it reads as a decision (ranger-base-2ggb)", d, suiteTimeoutFloor)
+		t.Errorf("-timeout %s is below the %s floor — internal/posse alone has been measured at 623.2s, and a ceiling under the measurement is worse than the default because it reads as a decision (ranger-base-2ggb)", d, suiteTimeoutFloor)
 	}
 }
 
@@ -266,7 +266,7 @@ func TestQANoEntryPointRunsGoTestOnTheDefaultTimeout(t *testing.T) {
 			d, ok, err := timeoutOf(args)
 			switch {
 			case !ok:
-				t.Errorf("%s:%d runs `go test` on the default 10m timeout: %s\n\tinternal/rhq's worst measured run is 623.2s — route this through `make test` or give it its own -timeout (ranger-base-2ggb)", f, n+1, strings.TrimSpace(line))
+				t.Errorf("%s:%d runs `go test` on the default 10m timeout: %s\n\tinternal/posse's worst measured run is 623.2s — route this through `make test` or give it its own -timeout (ranger-base-2ggb)", f, n+1, strings.TrimSpace(line))
 			case err != nil:
 				t.Errorf("%s:%d: -timeout does not parse: %v", f, n+1, err)
 			case d < suiteTimeoutFloor:
