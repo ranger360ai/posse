@@ -4926,15 +4926,7 @@ posse_adr_judge() {
   # guessed: --git-common-dir is the main .git from a session worktree and
   # this repo's own .git in a shared checkout. Detached there and this
   # answers nothing, which is the one arm below that judges nothing.
-  #
-  # Two statements and not one nested command substitution: this text was
-  # inside a rendered hook when it was written, and the HOOK_DEPS scanner
-  # (hookdeps_qa_test.go) read a command substitution inside an argument as
-  # closing the command it sits in. Kept as it is — the shape says the same
-  # thing to sh either way, and rewriting shell nobody has to rewrite is how
-  # a working audit acquires a bug (ranger-base-8lfbn is the scanner's own).
-  posse_adr_common=$(git rev-parse --git-common-dir 2>/dev/null)
-  posse_adr_base=$(git --git-dir="$posse_adr_common" symbolic-ref -q HEAD 2>/dev/null)
+  posse_adr_base=$(git --git-dir="$(git rev-parse --git-common-dir 2>/dev/null)" symbolic-ref -q HEAD 2>/dev/null)
   if [ -z "$posse_adr_base" ]; then
     echo "posse gates adr-census judged nothing — the main checkout's HEAD is detached, so this audit has no base branch to measure ancestry against (ADR 0051). Nothing here is a verdict: unjudged is not clean." >&2
     return 0

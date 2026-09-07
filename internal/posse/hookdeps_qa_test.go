@@ -371,10 +371,18 @@ func shellCommandWords(src string) (words, blind []shellCall) {
 			assignment := j < len(src) && src[j] == '='
 			i = j
 			switch {
-			case assignment:
+			case assignment && cmdPos:
 				// A VAR=value prefix leaves the next word still a command; the
 				// value is walked with assignVal set so nothing in it emits and
-				// nothing in it closes the position.
+				// nothing in it closes the position. Gated on cmdPos: an
+				// assignment-SHAPED word in an ARGUMENT position — `--git-dir=` in
+				// `git --git-dir="$(git rev-parse --git-common-dir)" symbolic-ref`
+				// — is not a prefix, and treating it as one leaked assignVal=true
+				// through the quoted value; the `)` closing the substitution then
+				// read that stale assignVal and reopened the command position for
+				// `symbolic-ref` (ranger-base-8lfbn). cmdPos stays true for the
+				// whole of a real prefix's value (endWord no-ops while assignVal
+				// is set), so a genuine `A=B=C cmd` chain still matches here.
 				assignVal = true
 			case assignVal:
 				// A bare word inside an assignment's value.
@@ -1042,5 +1050,76 @@ func TestShellCommandWordsSeesEveryCommandPrefixOrReportsIt(t *testing.T) {
 				"the clean-room probe calling every distro clean for it — the silence lxkdi was "+
 				"filed to end, now with a green test over it", line)
 		}
+	}
+}
+
+// ranger-base-8lfbn: a command substitution inside a DOUBLE-quoted
+// ASSIGNMENT-SHAPED word — `--git-dir="$(git rev-parse --git-common-dir)"` —
+// opened a command position for the word that followed it, off this rendered
+// hook line:
+//
+//	git --git-dir="$(git rev-parse --git-common-dir)" symbolic-ref -q HEAD
+//
+// Neither the `=` alone nor the substitution alone did it (the second and
+// third rows below), and neither did an assignment-shaped word with no `=`
+// in front of it (the fourth row); the two together in ONE word did. The
+// `case assignment:` arm set assignVal = true for ANY word shaped like
+// `NAME=`, never checking that the scanner was actually at the START of a
+// simple command (cmdPos) rather than mid-argument — here, `--git-dir=` sits
+// after `git` has already closed the command position. assignVal then leaked
+// into the substitution's substFrame, and the `)` that closed it restored
+// assignVal=true and reopened cmdPos for `symbolic-ref`, a git SUBCOMMAND
+// this scanner cannot tell from a command word (there is no `symbolic-ref`
+// binary). A false POSITIVE, not a false negative: nothing went unprobed,
+// but the next HOOK_DEPS census would have had to carry a name that can
+// never come back MISSING.
+func TestShellCommandWordsDoesNotOpenACommandPositionOnAnAssignmentShapedArgument(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			"assignment-shaped argument holding a substitution",
+			`git --git-dir="$(git rev-parse --git-common-dir)" symbolic-ref -q HEAD`,
+			[]string{"git"},
+		},
+		{
+			"assignment-shaped argument, no substitution",
+			`git --git-dir="$x" symbolic-ref -q HEAD`,
+			[]string{"git"},
+		},
+		{
+			"substitution in a plain option's value, not assignment-shaped",
+			`git -C "$(pwd)" status --short`,
+			[]string{"git"},
+		},
+		{
+			"substitution in a bare argument",
+			`foo "$(bar)" baz`,
+			[]string{"foo", "bar"},
+		},
+		// A genuine prefix chain still has to work: cmdPos stays true across
+		// it, which is what the gate above relies on.
+		{
+			"a real assignment prefix ahead of the command",
+			`X=$(date) awk '{print}'`,
+			[]string{"date", "awk"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			words, blind := shellCommandWords(tc.src)
+			var got []string
+			for _, w := range words {
+				got = append(got, w.Name)
+			}
+			if len(blind) > 0 {
+				t.Errorf("shellCommandWords(%q) reported %v as blind sites, want none", tc.src, blind)
+			}
+			if strings.Join(got, ",") != strings.Join(tc.want, ",") {
+				t.Errorf("shellCommandWords(%q) derived %v, want %v", tc.src, got, tc.want)
+			}
+		})
 	}
 }
