@@ -298,8 +298,18 @@ func TestQAAChainCertifiedByIdentityRefusesThroughAHostileNeighbour(t *testing.T
 // returned in 38ms (it was exec'd, and exec of a non-executable file fails
 // fast); at 88a7726 both modes block. The executable case predates the ADR;
 // the widening to any mode does not.
+//
+// No t.Parallel() here (ranger-base-d4u28): the fix above is isRegularFile's
+// os.Stat guard, which never reaches the blocking read, so this pin's own
+// work is microseconds. The 5s below is not measuring probeL3Hooks; it is
+// measuring wall clock, and t.Parallel() put that clock in a race against
+// the rest of internal/posse's ~1200s of concurrent tests for CPU — a slow
+// scheduler tick, not a regressed timeout, could burn the 5s and fail this
+// pin on correct code (MEASURED: green on two separate full-package runs,
+// red on a third with the same bytes, per ranger-base-d4u28). Serial, this
+// test's goroutine is never waiting on anything but the Go scheduler giving
+// it a turn at all, which 5s comfortably covers.
 func TestQAL3ProbeMustNotBlockOnANonRegularFileAtTheDispatchPath(t *testing.T) {
-	t.Parallel()
 	repo, hooks := qaHookRepo(t)
 	slot := filepath.Join(hooks, "prepare-commit-msg")
 	if err := syscall.Mkfifo(slot, 0o644); err != nil {
