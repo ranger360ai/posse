@@ -71,11 +71,14 @@ func bpRoot(t *testing.T) string {
 		if err != nil {
 			t.Fatal(err)
 		}
-		mode := os.FileMode(0o644)
+		dst := filepath.Join(root, filepath.FromSlash(f[1]))
 		if strings.HasSuffix(f[1], ".sh") {
-			mode = 0o755
+			if err := WriteExecutable(dst, body, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			continue
 		}
-		if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(f[1])), body, mode); err != nil {
+		if err := os.WriteFile(dst, body, 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}

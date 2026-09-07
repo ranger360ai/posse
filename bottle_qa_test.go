@@ -249,7 +249,7 @@ func releaseFixture(t *testing.T, version string) (out string) {
 	// The stub compiler. It honours only `-o <path>`, which is the whole of
 	// what release-artifacts.sh asks of it.
 	goStub := filepath.Join(root, "go")
-	if err := os.WriteFile(goStub, []byte(
+	if err := WriteExecutable(goStub, []byte(
 		"#!/bin/sh\nout=\nwhile [ $# -gt 0 ]; do case $1 in -o) out=$2; shift 2 ;; *) shift ;; esac; done\n"+
 			"[ -n \"$out\" ] || exit 3\nprintf 'stub posse\\n' > \"$out\"; chmod +x \"$out\"\n"), 0o755); err != nil {
 		t.Fatal(err)

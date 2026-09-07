@@ -70,7 +70,14 @@ func cpRoot(t *testing.T) string {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(root, f.dst), b, f.mode); err != nil {
+		dst := filepath.Join(root, f.dst)
+		if f.mode&0o111 != 0 {
+			if err := WriteExecutable(dst, b, f.mode); err != nil {
+				t.Fatal(err)
+			}
+			continue
+		}
+		if err := os.WriteFile(dst, b, f.mode); err != nil {
 			t.Fatal(err)
 		}
 	}

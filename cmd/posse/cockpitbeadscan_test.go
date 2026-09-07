@@ -31,7 +31,7 @@ func beadScanRig(t *testing.T, bdDelay time.Duration, bdOut string) (*cockpit, s
 		t.Fatal(err)
 	}
 	herdr := filepath.Join(binDir, "herdr")
-	if err := os.WriteFile(herdr, []byte(`#!/bin/sh
+	if err := posse.WriteExecutable(herdr, []byte(`#!/bin/sh
 if [ "$1" = "workspace" ] && [ "$2" = "list" ]; then
   printf '%s\n' '{"result":{"workspaces":[]}}'
   exit 0
@@ -60,7 +60,7 @@ exit 1
 	// `--no-daemon` (ranger-base-cwu7), so a fake keyed on $1 answers `[]`
 	// to everything and the rig quietly stops measuring what it is named for.
 	bd := filepath.Join(binDir, "bd")
-	if err := os.WriteFile(bd, []byte("#!/bin/sh\necho \"$@\" >> "+calls+"\n"+sleep+
+	if err := posse.WriteExecutable(bd, []byte("#!/bin/sh\necho \"$@\" >> "+calls+"\n"+sleep+
 		"verb=\nfor a in \"$@\"; do case \"$a\" in -*) ;; *) verb=$a; break ;; esac; done\n"+
 		"if [ \"$verb\" = ready ]; then cat <<'JSON'\n"+bdOut+"\nJSON\nelse echo '[]'; fi\n"), 0o755); err != nil {
 		t.Fatal(err)

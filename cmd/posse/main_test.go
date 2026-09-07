@@ -969,7 +969,7 @@ func TestPromptWarnsWhenTheCrewMarkCannotBeRecorded(t *testing.T) {
 	home := t.TempDir()
 	binDir := t.TempDir()
 	herdr := filepath.Join(binDir, "herdr")
-	if err := os.WriteFile(herdr, []byte(`#!/bin/sh
+	if err := posse.WriteExecutable(herdr, []byte(`#!/bin/sh
 case "$1 $2" in
 "workspace list")
   printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"w1","label":"owned","agent_status":"idle"},{"workspace_id":"w2","label":"stranger","agent_status":"idle"}]}}'
@@ -1065,7 +1065,7 @@ func TestPromptRefusesAPaneHerdrHasNotRecognized(t *testing.T) {
 			explain = `{"state":"idle","matched_rule":{"id":"live_prompt_box","state":"idle"},` +
 				`"visible_idle":true,"fallback_reason":null}`
 		}
-		if err := os.WriteFile(herdr, []byte(`#!/bin/sh
+		if err := posse.WriteExecutable(herdr, []byte(`#!/bin/sh
 echo "$*" >> `+log+`
 case "$1 $2" in
 "workspace list")

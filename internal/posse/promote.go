@@ -1108,7 +1108,11 @@ func (a *App) copyPromotedSet(w io.Writer, set []promotedFile, files map[string]
 		if err := os.MkdirAll(filepath.Dir(to), 0o755); err != nil {
 			return err
 		}
-		if err := os.WriteFile(to, f.Body, f.Mode); err != nil {
+		if f.Mode&0o111 != 0 {
+			if err := WriteExecutable(to, f.Body, f.Mode); err != nil {
+				return err
+			}
+		} else if err := os.WriteFile(to, f.Body, f.Mode); err != nil {
 			return err
 		}
 		// WriteFile's mode applies only when it CREATES the file, so a

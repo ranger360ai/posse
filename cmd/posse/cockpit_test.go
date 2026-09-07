@@ -107,7 +107,7 @@ func TestCockpitReadyScanFailureIsAStatus(t *testing.T) {
 	}
 	binDir := t.TempDir()
 	herdr := filepath.Join(binDir, "herdr")
-	if err := os.WriteFile(herdr, []byte(`#!/bin/sh
+	if err := posse.WriteExecutable(herdr, []byte(`#!/bin/sh
 if [ "$1" = "workspace" ] && [ "$2" = "list" ]; then
   printf '%s\n' '{"result":{"workspaces":[]}}'
   exit 0
@@ -1800,7 +1800,7 @@ func TestCockpitPromptWarnsWhenTheCrewMarkCannotBeRecorded(t *testing.T) {
 	home := t.TempDir()
 	binDir := t.TempDir()
 	herdr := filepath.Join(binDir, "herdr")
-	if err := os.WriteFile(herdr, []byte(`#!/bin/sh
+	if err := posse.WriteExecutable(herdr, []byte(`#!/bin/sh
 case "$1 $2" in
 "workspace list")
   printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"w1","label":"owned","agent_status":"idle"},{"workspace_id":"w2","label":"stranger","agent_status":"idle"}]}}'
