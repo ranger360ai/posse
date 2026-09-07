@@ -591,6 +591,14 @@ const meterUnconfirmed = " (posse's non-darwin credential path is built but not 
 // test on either box: no build tags means no branch that only one OS can
 // reach, and none that only one OS can prove.
 func meterStore(rt, goos string) (runtimeStore, *NoSource) {
+	return meterStoreAt(rt, goos, securityBin)
+}
+
+// meterStoreAt is meterStore with the darwin composite's `security` binary
+// named explicitly — the same seam keychainStoreAt gives readStore's own
+// tests, so the report (refresh.go's meterRow) can be driven by a stubbed
+// keychain CLI instead of the real one (ADR 0019 D2/D4, ranger-base-6kkrq).
+func meterStoreAt(rt, goos, bin string) (runtimeStore, *NoSource) {
 	if rt != "claude" {
 		return runtimeStore{}, &NoSource{
 			Runtime: rt, Purpose: CredMeter, GOOS: goos,
@@ -598,7 +606,7 @@ func meterStore(rt, goos string) (runtimeStore, *NoSource) {
 		}
 	}
 	if goos == "darwin" {
-		return keychainStore(), nil
+		return keychainStoreAt(bin), nil
 	}
 	return credentialsFileStore(goos), nil
 }

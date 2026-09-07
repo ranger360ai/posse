@@ -663,3 +663,121 @@ func TestGuardBlindRowOn401FromTheFallbackNamesTheFallbackStore(t *testing.T) {
 		t.Errorf("the pulsed row must name the store: %q", detail)
 	}
 }
+
+// ─── the no-argument report: which of the composite's two stores (D2/D4,
+// ranger-base-6kkrq) ──────────────────────────────────────────────────────
+
+// The report's OWN table is the S1-S4 one 6kkrq's design carries (the ADR's
+// dated evidence, since folded into git history at the 2026-09-05
+// consolidation): S1 healthy (keychain live, no file), S2 frozen (keychain
+// live, a stale file beside it), S3 inverted (keychain absent, the file is
+// the live record). S4 (split — an older keychain item beside a newer file)
+// is ASSUMED there and unmeasured; this bead does not classify it, and a
+// live-but-coexisting file below is asserted to fall back to the plain
+// no-state action rather than being mislabeled S2 or S3.
+//
+// Every row runs meterRow itself — the function the report line actually
+// calls — over a stubbed `security` and a planted fallback file, so what is
+// pinned is the RENDERED line and not an intermediate fact only a helper
+// computes.
+func TestTheMeterRowNamesTheCompositesState(t *testing.T) {
+	rt := &Runtime{Name: "claude"}
+	now := time.Now()
+
+	t.Run("S1: the keychain answers and no fallback file is there", func(t *testing.T) {
+		fallbackDir(t) // named, nothing planted
+		bin := keychainStub(t, "#!/bin/sh\ncat <<'JSON'\n"+envelope(keychainOnlyToken, now.Add(time.Hour).UnixMilli())+"\nJSON\n")
+		row := meterRow(rt, "darwin", now, bin)
+		if !strings.Contains(row.Source, "keychain item") {
+			t.Errorf("Source = %q, want the keychain item's own name", row.Source)
+		}
+		want := "nothing posse may do — the runtime's login loop is this credential's only writer; run `claude` once to refresh it"
+		if row.Action != want {
+			t.Errorf("Action = %q, want the plain S1 action %q", row.Action, want)
+		}
+		if strings.Contains(row.Action, "S2") || strings.Contains(row.Action, "S3") {
+			t.Errorf("S1 names no state at all: %q", row.Action)
+		}
+		if strings.Contains(row.Source+row.Action, keychainOnlyToken) {
+			t.Errorf("a credential must never appear in the report: %+v", row)
+		}
+	})
+
+	t.Run("S2: the keychain answers and the fallback file predates its envelope's issue", func(t *testing.T) {
+		fallbackPath := plantFallback(t, envelope(fallbackOnlyToken, now.Add(-48*time.Hour).UnixMilli()))
+		keychainExpiry := now.Add(2 * time.Hour)
+		issued := keychainExpiry.Add(-meterAccessTokenLifetime) // now-6h
+		frozenAt := issued.Add(-24 * time.Hour)                 // well before the horizon
+		if err := os.Chtimes(fallbackPath, frozenAt, frozenAt); err != nil {
+			t.Fatal(err)
+		}
+		bin := keychainStub(t, "#!/bin/sh\ncat <<'JSON'\n"+envelope(keychainOnlyToken, keychainExpiry.UnixMilli())+"\nJSON\n")
+		row := meterRow(rt, "darwin", now, bin)
+		if !strings.Contains(row.Source, "keychain item") {
+			t.Errorf("Source = %q, want the keychain item's own name — the keychain answered directly", row.Source)
+		}
+		for _, want := range []string{
+			"S2:", "a frozen fallback file is present",
+			"the sweep will keep finding it until the keychain fails a write while empty",
+			"harmless, not the record",
+		} {
+			if !strings.Contains(row.Action, want) {
+				t.Errorf("Action must carry %q:\n%q", want, row.Action)
+			}
+		}
+		if !strings.Contains(row.Action, AbbrevHome(fallbackPath)) {
+			t.Errorf("Action must name the file: %q", row.Action)
+		}
+		if strings.Contains(row.Action, keychainOnlyToken) || strings.Contains(row.Action, fallbackOnlyToken) {
+			t.Errorf("a credential must never appear in the report: %q", row.Action)
+		}
+	})
+
+	t.Run("S3: the keychain item is absent and the fallback file is the live record", func(t *testing.T) {
+		fallbackPath := plantFallback(t, envelope(fallbackOnlyToken, now.Add(90*24*time.Hour).UnixMilli()))
+		bin := keychainStub(t, "#!/bin/sh\nexit 44\n")
+		row := meterRow(rt, "darwin", now, bin)
+		if row.Source != credentialsFileFallback {
+			t.Errorf("Source = %q, want %q — the file is what answered", row.Source, credentialsFileFallback)
+		}
+		for _, want := range []string{
+			"S3:", "the keychain item is absent and claude is running on the fallback file",
+			"unlock or re-grant the keychain", "`/login` in claude",
+		} {
+			if !strings.Contains(row.Action, want) {
+				t.Errorf("Action must carry %q:\n%q", want, row.Action)
+			}
+		}
+		if strings.Contains(row.Action, keychainOnlyToken) || strings.Contains(row.Action, fallbackOnlyToken) {
+			t.Errorf("a credential must never appear in the report: %q", row.Action)
+		}
+		_ = fallbackPath
+	})
+
+	t.Run("S4 (split, ASSUMED and out of scope): a live file beside a live keychain is not called S2", func(t *testing.T) {
+		fallbackPath := plantFallback(t, envelope(fallbackOnlyToken, now.Add(-48*time.Hour).UnixMilli()))
+		keychainExpiry := now.Add(2 * time.Hour)
+		// Leave the planted file's mtime at "now" — after the envelope's own
+		// issue horizon (now-6h) — so it reads LIVE rather than frozen.
+		bin := keychainStub(t, "#!/bin/sh\ncat <<'JSON'\n"+envelope(keychainOnlyToken, keychainExpiry.UnixMilli())+"\nJSON\n")
+		row := meterRow(rt, "darwin", now, bin)
+		if strings.Contains(row.Action, "S2") || strings.Contains(row.Action, "S3") {
+			t.Errorf("an unmeasured split state must not be reported as S2 or S3: %q", row.Action)
+		}
+		_ = fallbackPath
+	})
+}
+
+// Off darwin, meterRow never touches the composite logic at all: the store
+// is the non-darwin file adapter, chosen before any state is computed, and a
+// row from it must never say S1/S2/S3 or name a keychain.
+func TestTheMeterRowNamesNoCompositeStateOffDarwin(t *testing.T) {
+	rt := &Runtime{Name: "claude"}
+	t.Setenv("HOME", t.TempDir())
+	row := meterRow(rt, "linux", time.Now(), "")
+	for _, never := range []string{"S1", "S2", "S3", "keychain"} {
+		if strings.Contains(row.Source+row.Action, never) {
+			t.Errorf("a non-darwin row must never say %q: %+v", never, row)
+		}
+	}
+}

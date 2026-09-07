@@ -118,11 +118,12 @@ type RefreshOpts struct {
 	// when it dies, and a guessed date is worse than no date (ADR 0019 D5).
 	Expires string
 
-	goos  string
-	tty   func() bool
-	mint  func(w io.Writer, rt *Runtime) error
-	ask   func(w io.Writer, prompt string) (string, error)
-	clock func() time.Time
+	goos   string
+	tty    func() bool
+	mint   func(w io.Writer, rt *Runtime) error
+	ask    func(w io.Writer, prompt string) (string, error)
+	clock  func() time.Time
+	secBin string
 }
 
 func (o RefreshOpts) os() string {
@@ -130,6 +131,18 @@ func (o RefreshOpts) os() string {
 		return o.goos
 	}
 	return runtime.GOOS
+}
+
+// securityBin is the `security` binary the darwin composite reads through.
+// Empty resolves to the real absolute path (securityBin, credential.go): a
+// test names its own stub here the same way it names a clock or a TTY
+// answer, and CmdRefresh's own callers never set this field, so a live run
+// always execs the one binary ADR 0019 D2's PATH note is about.
+func (o RefreshOpts) securityBin() string {
+	if o.secBin != "" {
+		return o.secBin
+	}
+	return securityBin
 }
 
 func (o RefreshOpts) now() time.Time {
@@ -197,7 +210,7 @@ type CredRow struct {
 // is the store of record and reading it is the whole point; it is also why
 // this is an operator-run command and not something a pass does.
 func (a *App) CredReport(o RefreshOpts) []CredRow {
-	now, goos := o.now(), o.os()
+	now, goos, bin := o.now(), o.os(), o.securityBin()
 	var rows []CredRow
 	for _, name := range a.ListRuntimes() {
 		rt, err := a.LoadRuntime(name)
@@ -206,7 +219,7 @@ func (a *App) CredReport(o RefreshOpts) []CredRow {
 			continue
 		}
 		rows = append(rows, a.sessionRows(rt, now)...)
-		rows = append(rows, meterRow(rt, goos, now))
+		rows = append(rows, meterRow(rt, goos, now, bin))
 	}
 	return rows
 }
@@ -276,9 +289,9 @@ func (a *App) sessionRows(rt *Runtime, now time.Time) []CredRow {
 // meterRow reports the runtime-owned credential without ever holding it: the
 // token is read and dropped, because what the report is asking is whether
 // the read WORKS and when the thing dies.
-func meterRow(rt *Runtime, goos string, now time.Time) CredRow {
+func meterRow(rt *Runtime, goos string, now time.Time, bin string) CredRow {
 	row := CredRow{Runtime: rt.Name, Purpose: CredMeter, Expiry: "—"}
-	store, ns := meterStore(rt.Name, goos)
+	store, ns := meterStoreAt(rt.Name, goos, bin)
 	if ns != nil {
 		row.Source = fmt.Sprintf("no store on %s", goos)
 		if ns.Store != "" {
@@ -299,9 +312,66 @@ func meterRow(rt *Runtime, goos string, now time.Time) CredRow {
 		row.Action = err.Error() + " — posse never writes this one (ADR 0019 D4); log in once with `claude` and its own login loop rewrites it"
 		return row
 	}
+	// meta.Source is store.Name for a direct hit and credentialsFileFallback
+	// for a fall-through (ADR 0019 D2 V9) — the two differ exactly once, on
+	// darwin, and only the read itself knows which store answered. Before
+	// this line the row always printed store.Name, so a fallen-through S3
+	// read reported the keychain item it never got an answer from.
+	row.Source = meta.Source
 	row.Expiry = renderExpiry(meta.ExpiresAt, now)
 	row.Action = "nothing posse may do — the runtime's login loop is this credential's only writer; run `claude` once to refresh it"
+	if goos == "darwin" {
+		row.Action = darwinCompositeAction(meta, row.Action)
+	}
 	return row
+}
+
+// meterAccessTokenLifetime is how long the runtime's own meter access token
+// lives once minted — MEASURED 2026-09-03 (ranger-base-4poib, credexpiry.go):
+// exactly 8h from the last interactive `claude` login, and nothing else
+// moves it. darwinCompositeAction runs it backwards: an envelope's issue
+// time is its own expiry minus this span, and a fallback file whose mtime
+// predates that issue time was not touched by whatever produced the
+// envelope the keychain just answered with — the ADR 0019 D2 table's S2.
+const meterAccessTokenLifetime = 8 * time.Hour
+
+// darwinCompositeAction is the report's ADR 0019 D2/D4 half. The read that
+// produced meta already knows which of the composite's two stores answered
+// (meta.Source, set above) — this says what the OTHER store's state means
+// for the operator: a frozen leftover the read never had a reason to open
+// (S2), or the live record the read is answering from right now (S3).
+//
+// Names, a size-free path and a mtime only, never a value (safeKeys house
+// style, ADR 0019's own "names only") — every fact here is a stat call, and
+// the envelope that answered is never reopened to describe the other one.
+func darwinCompositeAction(meta CredMeta, defaultAction string) string {
+	if meta.Source == credentialsFileFallback {
+		// S3: the keychain item did not answer and the composite already
+		// read the file to get here — its presence is the read's own proof,
+		// not a second question.
+		return "S3: the keychain item is absent and claude is running on the fallback file — unlock or re-grant the keychain, then `/login` in claude"
+	}
+	// The keychain answered directly. S1 unless the fallback file is ALSO
+	// sitting there, in which case its mtime says whether it is S2's frozen
+	// leftover — anything else is the split state (S4, ASSUMED by the ADR
+	// and unmeasured), which this bead does not classify.
+	p, present := keychainFallbackFile()
+	if !present {
+		return defaultAction // S1: nothing else to say
+	}
+	fi, err := os.Stat(p)
+	if err != nil || meta.ExpiresAt.IsZero() {
+		// Vanished between the composite's own two reads, or an envelope
+		// with no expiry to place a horizon against: say nothing new rather
+		// than guess at a state the facts on hand cannot decide.
+		return defaultAction
+	}
+	issued := meta.ExpiresAt.Add(-meterAccessTokenLifetime)
+	if !fi.ModTime().Before(issued) {
+		return defaultAction // not older than the live envelope's issue: not S2
+	}
+	return fmt.Sprintf("S2: a frozen fallback file is present (%s, mtime %s) — the sweep will keep finding it until the keychain fails a write while empty; harmless, not the record",
+		AbbrevHome(p), renderStamp(fi.ModTime().UTC()))
 }
 
 func (a *App) refreshReport(w io.Writer, o RefreshOpts) error {
