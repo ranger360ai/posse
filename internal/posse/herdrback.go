@@ -2013,14 +2013,17 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 		if err != nil {
 			return nil, err
 		}
-		// ADR 0053 D1's last precondition, asked at the first line where the
-		// runtime is loaded: a runtime with no model flag has nowhere to put
-		// the typed id. Dropping it would open the session on the tier map's
-		// own model while `model:` said otherwise — the silent substitution
-		// D3 exists to refuse, one layer down.
-		if o.Model != "" && rt.ModelFlag == "" {
-			return nil, Die("%s declares no model flag, so --model %s cannot be rendered onto its launch line — the session would open on the tier's own model with nothing saying so (ADR 0053 D1)", rt.Name, o.Model)
-		}
+		// ADR 0053 D1's last precondition — "the selected runtime must declare
+		// a model flag" — has no refusal here on purpose (ranger-base-uih37,
+		// escaped from ranger-base-1oyio): no loadable runtime can reach this
+		// line with an empty ModelFlag. A file runtime defaults to
+		// "--model %s" and is only overwritten by a non-empty model_flag: key
+		// (LoadRuntime/overlayBuiltin, runtime.go), and all three built-ins
+		// declare one. A guard that no fixture can trip cannot be pinned, so
+		// it stayed dead code with a false safety net; ExactModelText's own
+		// `rt.ModelFlag == ""` check (runtime.go) is what actually stands
+		// between an empty flag and a garbled launch line if that ever
+		// changes. ADR 0053's Verification bullet is amended to match.
 		tier = a.ResolveTier(o.Tier, ag)
 		if !ValidTier(tier) {
 			return nil, Die("unknown tier %q (strong | standard | fast)", tier)

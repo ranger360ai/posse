@@ -3,8 +3,11 @@
 *Status: accepted 2026-09-03 · amended 2026-09-06 (ranger-base-4pee8:
 decision 3 restated to the property the canary needs — the tier's
 availability VERDICT is skipped — in place of the mechanism it named, the
-automatic substitution ADR 0003 §3 removes) · owner: architect · amends ADR
-0003 for interactive launches only*
+automatic substitution ADR 0003 §3 removes) · amended 2026-09-07
+(ranger-base-uih37: the Verification bullet for "a runtime without a model
+flag" marked unsatisfiable as written and its dead planLaunch refusal
+removed) · owner: architect · amends ADR 0003 for interactive launches
+only*
 
 ## Context
 
@@ -123,8 +126,19 @@ the PID, skills and gates cannot be replaced by a raw command.
 
 ## Verification and evidence
 
-- Pin parsing and preflight refusal for every missing companion, whitespace
-  or control bytes, and a runtime without a model flag.
+- Pin parsing and preflight refusal for every missing companion and
+  whitespace or control bytes.
+- "A runtime without a model flag" is unsatisfiable as originally written
+  (ranger-base-uih37, escaped from ranger-base-1oyio): a file runtime
+  defaults its `ModelFlag` to `"--model %s"` and only a non-empty
+  `model_flag:` key overwrites it, and all three built-ins declare one, so
+  no loadable runtime can reach planLaunch with an empty `ModelFlag` —
+  there is nothing for a fixture to construct and no refusal to pin. The
+  `Die` this bullet asked for was removed as dead code rather than kept
+  unpinned; `ExactModelText`'s own `rt.ModelFlag == ""` guard (runtime.go)
+  is the actual backstop if a runtime ever gains a way to declare no model
+  flag, and that future change is what would make this bullet reachable
+  again.
 - Pin the rendered Codex line, `model:` record, exact listing tag, relaunch
   plan and recovery command. Pin an ordinary launch byte-for-byte against
   today's output.
