@@ -27,6 +27,8 @@ package posse
 // Everything here is fail-open: a monitoring failure never halts the fleet.
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -131,6 +133,41 @@ type AnthropicPlanReader struct {
 // MayShare is the PlanReader seam's half of credpin.go rule 5; the Shared
 // field above is where the answer is decided.
 func (r *AnthropicPlanReader) MayShare() bool { return r.Shared }
+
+// CredFingerprint is plancache's one question about identity, answered
+// without asking the endpoint anything (ranger-base-mc66k): is the
+// credential in force right now the one a stored 429 cooldown was earned
+// by? It reads the token the same way Read would present it — the local
+// store only, no network — and hashes it, never returning the bytes
+// themselves; credential.go's rule that a value never appears holds here
+// too, a hash being the one form of "this changed" that discloses nothing.
+//
+// Shared gates it, the same field and the same reason MayShare answers off
+// it: credpin.go rule 4 is "asked WITHOUT the credential" for a loopback
+// RHQ_PLAN_USAGE_URL override, and that rule does not get a carve-out for a
+// question this file only ever asks about the compiled-in endpoint's own
+// cooldown — a caller pointed at a listener it named gets no keychain read
+// out of this method, same as it gets none out of Read. Shared is the field
+// that already answers "is this reader vouched for as the compiled-in
+// endpoint" (an override's is false; a test standing in for the real reader
+// sets it true), so it is the one gate this method and MayShare must never
+// disagree about.
+//
+// "" is otherwise "cannot tell" — no Token func (a fake reader that never
+// set one), or the local read itself failed — and plancache reads that as
+// "assume unchanged": the safe default is the cooldown it already had,
+// honoured exactly as it was before this method existed.
+func (r *AnthropicPlanReader) CredFingerprint() string {
+	if r.Token == nil || !r.Shared {
+		return ""
+	}
+	tok, _, err := r.Token()
+	if err != nil || tok == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(tok))
+	return hex.EncodeToString(sum[:])
+}
 
 func (r *AnthropicPlanReader) now() time.Time {
 	if r.Now != nil {

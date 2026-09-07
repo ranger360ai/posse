@@ -104,6 +104,20 @@ type planEntry struct {
 	// verbatim, exactly as it was before.
 	Streak int           `json:"cooldown_streak,omitempty"`
 	Wait   time.Duration `json:"cooldown_wait,omitempty"`
+	// CredFP is a fingerprint of the credential that earned the live
+	// cooldown above — a hash, never the credential itself
+	// (planusage_anthropic.go CredFingerprint keeps credential.go's rule
+	// that the value never appears). A cooldown is a fact about a
+	// CREDENTIAL and not only about the clock (ranger-base-mc66k): a token
+	// that 429'd and was then replaced — an operator's interactive
+	// `claude`, a fresh /login — has nothing left to escalate, and Read
+	// checks this before honouring the wait.
+	//
+	// "" is "unknown" — a reader with no fingerprinter, a local read that
+	// failed, or a pre-upgrade snapshot — and is read the same way Streak's
+	// own pre-upgrade zero is: the cooldown is honoured exactly as it
+	// always was, never lifted on ignorance.
+	CredFP string `json:"cred_fp,omitempty"`
 }
 
 // PlanCache is the shared reading as one caller sees it. Caller is the name
@@ -219,7 +233,28 @@ func (c *PlanCache) Read(maxAge time.Duration) (PlanUsage, time.Time, error) {
 		return e.Windows, e.At, nil
 	}
 	if have && now.Before(e.RetryAt) {
-		return nil, time.Time{}, &planCooldownErr{Left: e.RetryAt.Sub(now)}
+		// A live cooldown is a fact about the CREDENTIAL that earned it, not
+		// only about the clock (ranger-base-mc66k): the operator's refresh
+		// already answers the question a wait cannot, and honouring the old
+		// token's escalation past it leaves the fleet blind for hours after
+		// the fix. So the cooldown is checked against the credential in
+		// force right now before it is honoured.
+		//
+		// The check is local and costs no network — credFingerprint reads
+		// the same store the request itself would present — and it fires
+		// only while a cooldown is actually holding a caller back. A
+		// mismatch clears the cooldown IMMEDIATELY, on disk, rather than
+		// only in this call's memory: the next failure might not be a 429
+		// (a still-broken new credential 401s, which sets no cooldown of
+		// its own), and leaving the old entry unwritten would have every
+		// caller re-detect the same mismatch and re-ask with no throttling
+		// at all until the stale RetryAt happened to expire.
+		if fp := credFingerprint(r); fp != "" && e.CredFP != "" && fp != e.CredFP {
+			e = planEntry{At: e.At, Windows: e.Windows}
+			c.share(r, e)
+		} else {
+			return nil, time.Time{}, &planCooldownErr{Left: e.RetryAt.Sub(now)}
+		}
 	}
 	u, err := r.Read()
 	var rate planRate
@@ -232,6 +267,10 @@ func (c *PlanCache) Read(maxAge time.Duration) (PlanUsage, time.Time, error) {
 		e.Wait = planCooldown(rl.RetryAfter, e.Wait)
 		rate = planRate{Asked: rl.RetryAfter, Wait: e.Wait, Streak: e.Streak}
 		e.RetryAt = now.Add(e.Wait)
+		// The credential that earned THIS cooldown, so a later mismatch
+		// against it is checked against the token that actually drew the
+		// 429 — not the one in force when the streak started.
+		e.CredFP = credFingerprint(r)
 	}
 	// The read log is written either way. A request that left the machine is
 	// evidence whoever answered it, and an override that is refused a place
@@ -283,6 +322,29 @@ func (e *planCooldownErr) Error() string {
 }
 
 func (e *planCooldownErr) Unwrap() error { return &e.rl }
+
+// planCredFingerprinter is an adapter's optional answer to one question a
+// live cooldown needs cheaply and without a network request: is the
+// credential in force right now the one that earned it (ranger-base-mc66k)?
+// A reader that does not implement it — a test fake, a future adapter that
+// never got around to it — is asked nothing, and its cooldowns are honoured
+// exactly as they were before this method existed: unconditionally, for the
+// duration.
+type planCredFingerprinter interface {
+	CredFingerprint() string
+}
+
+// credFingerprint asks r the question above, or answers "" — cannot tell —
+// for a reader that does not implement it. "" and a genuine local-read
+// failure look the same on purpose: plancache has no fact to act on either
+// way, and the safe default is the cooldown it already had.
+func credFingerprint(r PlanReader) string {
+	fp, ok := r.(planCredFingerprinter)
+	if !ok {
+		return ""
+	}
+	return fp.CredFingerprint()
+}
 
 // share is store with credpin.go rule 5 in front of it: an answer only
 // becomes the instance's fact when the reader that fetched it was still

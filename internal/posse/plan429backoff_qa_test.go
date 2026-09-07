@@ -169,6 +169,104 @@ func TestQAPlan429BackoffResetsOnSuccess(t *testing.T) {
 	}
 }
 
+// A refreshed credential is a fact a live cooldown must yield to
+// (ranger-base-mc66k): a token that drew three consecutive 429s and was
+// then replaced by an operator's `claude` has nothing left to escalate, and
+// honouring the stale token's wait would leave the fix unconfirmed for
+// hours it earned nothing.
+func TestQAPlan429BackoffCredentialRefreshClearsTheCooldown(t *testing.T) {
+	t.Parallel()
+	r := newStormRig(t, "3600")
+	r.tick(t, 4*time.Hour) // asks at 0, 1h, 3h — a streak of three, cooling until 7h
+	if len(r.asks) != 3 {
+		t.Fatalf("setup: want three asks, got %v", r.asks)
+	}
+
+	// The operator's fix: a new token, and the endpoint answers again.
+	r.ps.token = "sk-fake-refreshed"
+	r.ps.status, r.ps.retry = http.StatusOK, ""
+
+	// Long before the old streak's cooldown (7h) would have expired.
+	r.at(3*time.Hour + time.Minute)
+	if _, _, err := r.caller("dispatch").Read(time.Minute); err != nil {
+		t.Fatalf("a refreshed credential must not stay blind for the stale token's cooldown: %v", err)
+	}
+	if got := r.hits(); got != 4 {
+		t.Errorf("the refresh must let the very next ask through, got %d requests", got)
+	}
+
+	// And the streak is fully cleared on disk — not merely bypassed once in
+	// this caller's memory (a still-broken new credential's next failure
+	// might not be a 429 at all, and must not find a stale entry to
+	// re-detect the same mismatch against forever).
+	var e planEntry
+	b, err := os.ReadFile(filepath.Join(r.dir, "plan-usage.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(b, &e); err != nil {
+		t.Fatal(err)
+	}
+	if e.Streak != 0 || !e.RetryAt.IsZero() {
+		t.Errorf("the refresh must clear the streak and the cooldown, got streak=%d retry_at=%s", e.Streak, e.RetryAt)
+	}
+}
+
+// A refreshed credential that ALSO draws a 429 is the first 429 of a new
+// storm, not the fourth of the old one: the credential that earned streak 3
+// is gone, so there is nothing left for this one to escalate from.
+func TestQAPlan429BackoffCredentialRefreshRestartsTheEscalation(t *testing.T) {
+	t.Parallel()
+	r := newStormRig(t, "3600")
+	r.tick(t, 4*time.Hour) // asks at 0, 1h, 3h — a streak of three, cooling until 7h
+	if len(r.asks) != 3 {
+		t.Fatalf("setup: want three asks, got %v", r.asks)
+	}
+
+	r.ps.token = "sk-fake-refreshed"
+	r.at(3*time.Hour + time.Minute)
+	if _, _, err := r.caller("dispatch").Read(time.Minute); err == nil {
+		t.Fatal("setup: the new credential still draws a 429")
+	}
+
+	var e planEntry
+	b, err := os.ReadFile(filepath.Join(r.dir, "plan-usage.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(b, &e); err != nil {
+		t.Fatal(err)
+	}
+	if e.Streak != 1 {
+		t.Errorf("the new credential's 429 must be honoured as the first of a new storm, got streak=%d", e.Streak)
+	}
+	if want := time.Hour; e.Wait != want {
+		t.Errorf("the new credential's first 429 honours the endpoint's own hour, got wait=%s, want %s", e.Wait, want)
+	}
+}
+
+// An UNCHANGED credential gets none of this: the cooldown it earned is
+// honoured exactly as before this bead, all the way to its own expiry — the
+// fingerprint check is a bypass for a credential that changed, never a
+// second clock.
+func TestQAPlan429BackoffUnchangedCredentialStillCoolsDown(t *testing.T) {
+	t.Parallel()
+	r := newStormRig(t, "3600")
+	r.tick(t, 4*time.Hour) // asks at 0, 1h, 3h — a streak of three, cooling until 7h
+	if len(r.asks) != 3 {
+		t.Fatalf("setup: want three asks, got %v", r.asks)
+	}
+
+	r.ps.status, r.ps.retry = http.StatusOK, ""
+	r.at(6*time.Hour + 59*time.Minute)
+	if _, _, err := r.caller("dispatch").Read(time.Minute); err == nil {
+		t.Fatal("the same credential is still inside the cooldown it earned")
+	}
+	if got := r.hits(); got != 3 {
+		t.Errorf("nobody asks before the cooldown it earned expires, got %d requests", got)
+	}
+}
+
 // The schedule itself, at its edges. Three inputs matter and each is a
 // different clause of planCooldown: the header the endpoint sent, the cap on
 // believing it, and the ceiling on escalating it.

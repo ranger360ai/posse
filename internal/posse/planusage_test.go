@@ -30,11 +30,16 @@ type planServer struct {
 	status int
 	body   string
 	retry  string // Retry-After, when the fake endpoint is rate-limiting
+	// token is what reader()'s Token func presents, read fresh on every
+	// call so a test can simulate an operator's refresh mid-storm by
+	// mutating it (ranger-base-mc66k) — a fixed closure over fakeToken
+	// could never tell CredFingerprint apart from a stale one.
+	token string
 }
 
 func newPlanServer(t *testing.T, fiveH, sevenD float64) *planServer {
 	t.Helper()
-	ps := &planServer{status: http.StatusOK}
+	ps := &planServer{status: http.StatusOK, token: fakeToken}
 	// Loopback, because the endpoint override and the credentialed request
 	// are both pinned to it (credpin.go). Nothing listens on it: the fake
 	// transport below answers, so the port is decoration.
@@ -84,7 +89,7 @@ func (ps *planServer) setWindows(fiveH, sevenD float64) {
 func (ps *planServer) reader() *AnthropicPlanReader {
 	return &AnthropicPlanReader{
 		URL:    ps.URL,
-		Token:  func() (string, CredMeta, error) { return fakeToken, CredMeta{}, nil },
+		Token:  func() (string, CredMeta, error) { return ps.token, CredMeta{}, nil },
 		HTTP:   ps.client,
 		Shared: true,
 	}
