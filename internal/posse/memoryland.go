@@ -276,12 +276,12 @@ func (l *MemoryLanding) Line() string {
 // commit on a sentence, and a hold that fires on prose is the original
 // defect wearing a safety label. Measured against all fifteen live ORDERS
 // files (6,107 lines on 2026-09-02, after the 08-30 compaction), and over
-// every other file in those persona dirs beside them (7,109 lines in all,
-// which is what this scan actually reads): zero matches for every shape
-// below, the widened ones included. The earlier 20,200-line figure and the
-// one leak canary it counted are both gone with that compaction; the
-// added-lines rule below is what stops a canary a persona keeps from
-// re-firing on every future commit.
+// every other file in those persona dirs beside them (26,204 lines as of
+// 2026-09-07, which is what this scan actually reads): zero matches for
+// every shape below, the widened ones included. The earlier 20,200-line
+// figure and the one leak canary it counted are both gone with that
+// compaction; the added-lines rule below is what stops a canary a persona
+// keeps from re-firing on every future commit.
 //
 // TWO SPELLINGS AND SIX VENDORS (ranger-base-vd1bo). The assigned-secret
 // shape carried a \b on each side of the key word. Underscore is a word
@@ -301,7 +301,8 @@ func (l *MemoryLanding) Line() string {
 // generic one rather than sk-proj-: the same prefix is what Mistral,
 // DeepSeek, Together and OpenAI-compatible gateways all use, and it costs
 // nothing, measured — the whole widening matches zero lines of the live
-// corpus above and zero of the 32,108 lines of markdown in this repo.
+// corpus above and zero of the 44,459 lines of markdown in this repo
+// (227 files, 2026-09-07).
 //
 // BASIC AUTH AND URL USERINFO (ranger-base-4pfwg, split from ranger-base-
 // vd1bo's verify — finding 4, two of its five remaining misses judged cheap
@@ -318,11 +319,31 @@ func (l *MemoryLanding) Line() string {
 // the Basic value, four times narrower than what actually ships: still zero
 // matches in either corpus, the same wide margin the six-vendor widening
 // measured.
+//
+// CASE-INSENSITIVE PREFIXES (ranger-base-rlojy). The seven vendor prefix
+// shapes below (sk-ant-, sk-, xai-, the ghp/gho/ghu/ghs/ghr group,
+// github_pat_, xox[abeprs]-, lin_api_) are spelled (?i) because a case
+// change on the PREFIX alone — a line-start autocapitalisation, a
+// title-cased heading, an uppercasing clean filter (ranger-base-tcdgh) —
+// leaves the value body intact and is one flip from live. JWT (eyJ), the
+// PEM header and AKIA/ASIA stay case-sensitive: those are uppercase or
+// base64 by format with no prefix separable from the body, so folding
+// case there destroys the value instead of merely disguising it. Measured
+// 2026-09-07, go1.26.5, current table vs the same table with (?i) added
+// to every prefix shape, over whole lines (line counts, not match
+// counts): live persona memory (find -L over ~/.config/posse/personas,
+// 47 files, 26,204 lines) 0/0 every shape; repo tracked markdown (git
+// ls-files '*.md', 227 files, 44,459 lines) 0/0 every shape; repo tracked
+// non-markdown, extra (778 files, 292,966 lines) every hit a test
+// fixture, current == widened for every shape (36/36 sk-ant, 39/39 sk-,
+// 3/3 gh?_, 4/4 xox, 3/3 AKIA, 2/2 xai, 2/2 github_pat, 2/2 lin_api, 1/1
+// JWT, 1/1 PEM). The widening costs nothing on any corpus this scan
+// reads.
 var memoryCredShapes = []struct {
 	What string
 	Re   *regexp.Regexp
 }{
-	{"an Anthropic key", regexp.MustCompile(`sk-ant-[A-Za-z0-9_-]{16,}`)},
+	{"an Anthropic key", regexp.MustCompile(`(?i)sk-ant-[A-Za-z0-9_-]{16,}`)},
 	// Both segments, because a JWT's header and payload are both base64 of
 	// a `{"` and so both begin `eyJ`. One segment alone matches ordinary
 	// base64 and would fire on any pasted blob.
@@ -348,18 +369,18 @@ var memoryCredShapes = []struct {
 	// Bare values, in table order after the shapes above so a line that
 	// carries both a key word and a vendor value keeps reporting the
 	// assigned secret it always did.
-	{"a vendor API key", regexp.MustCompile(`\bsk-[A-Za-z0-9_-]{20,}`)},
-	{"an xAI key", regexp.MustCompile(`\bxai-[A-Za-z0-9]{20,}`)},
+	{"a vendor API key", regexp.MustCompile(`(?i)\bsk-[A-Za-z0-9_-]{20,}`)},
+	{"an xAI key", regexp.MustCompile(`(?i)\bxai-[A-Za-z0-9]{20,}`)},
 	// github_pat_ carries no \b on purpose: the character before it is
 	// usually the `_` of GITHUB_TOKEN=, and \b does not fire between two
 	// word characters — the same defect this bead fixed one line up.
-	{"a GitHub token", regexp.MustCompile(`\b(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}`)},
-	{"a GitHub token", regexp.MustCompile(`github_pat_[A-Za-z0-9_]{20,}`)},
-	{"a Slack token", regexp.MustCompile(`\bxox[abeprs]-[A-Za-z0-9-]{20,}`)},
+	{"a GitHub token", regexp.MustCompile(`(?i)\b(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}`)},
+	{"a GitHub token", regexp.MustCompile(`(?i)github_pat_[A-Za-z0-9_]{20,}`)},
+	{"a Slack token", regexp.MustCompile(`(?i)\bxox[abeprs]-[A-Za-z0-9-]{20,}`)},
 	// ASIA beside AKIA: the STS twin is what a temporary-credential env
 	// dump carries, and it is the one a persona is likelier to have.
 	{"an AWS access key id", regexp.MustCompile(`\b(AKIA|ASIA)[0-9A-Z]{16}\b`)},
-	{"a Linear key", regexp.MustCompile(`\blin_api_[A-Za-z0-9]{20,}`)},
+	{"a Linear key", regexp.MustCompile(`(?i)\blin_api_[A-Za-z0-9]{20,}`)},
 }
 
 // memoryDiff is a `git diff` argv with the FORMAT stated on it rather than

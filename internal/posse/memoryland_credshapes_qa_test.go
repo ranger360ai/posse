@@ -55,6 +55,10 @@ func TestMemoryCredShapesCatchTheFormsACredentialArrivesIn(t *testing.T) {
 		{`Authorization: Basic dXNlcjpodW50ZXIyaHVudGVyMmh1bnRlcjI=`, "a Basic auth token"},
 		{`git remote add origin https://me:ABCDEFGHIJKLMNOPQRSTUVWX@github.com/x/y.git`, "a URL userinfo credential"},
 		{`DATABASE_URL=postgres://u:SUPERSECRETPASSWORD1234@db.internal:5432/x`, "a URL userinfo credential"},
+		// (?i) on the vendor prefixes (ranger-base-rlojy): a line-start
+		// autocapitalisation title-cases just the prefix and leaves the
+		// value body intact.
+		{`Sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAA`, "an Anthropic key"},
 
 		// The noise arm, in the same table as the hits on purpose: a shape
 		// widened until it fires on prose about credentials has not made the
@@ -104,6 +108,12 @@ func TestMemoryCredShapesCatchAVendorValueStandingAlone(t *testing.T) {
 		{`AKIAIOSFODNN7EXAMPLE`, "an AWS access key id"},
 		{`ASIAIOSFODNN7EXAMPLE`, "an AWS access key id"},
 		{`lin_api_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA`, "a Linear key"},
+		// (?i) on the vendor prefixes (ranger-base-rlojy): a fully
+		// uppercased prefix is the shape an uppercasing clean filter or an
+		// all-caps paste leaves behind.
+		{`SK-ANT-API03-AAAAAAAAAAAAAAAAAAAAAAAA`, "an Anthropic key"},
+		{`GHP_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA`, "a GitHub token"},
+		{`XOXB-AAAAAAAAAAAA-AAAAAAAAAAAA-abcdefghijklmnop`, "a Slack token"},
 	} {
 		if got, _ := firstCredShape([]string{c.line}); got != c.want {
 			t.Errorf("firstCredShape(%q) = %q, want %q", c.line, got, c.want)
@@ -166,6 +176,37 @@ func TestKillHoldsAnEnvironmentDumpPastedIntoMemory(t *testing.T) {
 	}
 	line := landing.Memory.Line()
 	if !strings.Contains(line, "ORDERS.md:2") || !strings.Contains(line, "an assigned secret") {
+		t.Errorf("the refusal must name the file, the line and the shape: %q", line)
+	}
+	if strings.Contains(line, leaked) {
+		t.Errorf("the refusal echoed the credential: %q", line)
+	}
+}
+
+// The (?i) widening's reach (ranger-base-rlojy), through the real kill
+// rather than firstCredShape: a line-start autocapitalisation title-cases
+// just the prefix, sk-ant- becomes Sk-ant-, and that used to read as prose.
+// One arm through the kill is enough — the table above already measures the
+// shape.
+func TestKillHoldsALineStartCapitalizedAnthropicKey(t *testing.T) {
+	t.Parallel()
+	b, fake := newTestBackend(t)
+	agentPerLaunch(t, fake)
+	repo := memoryRepo(t, b)
+	devSession(t, b, "s1")
+	const leaked = "Sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAA"
+	appendOrders(t, repo, "dev", "- "+leaked+"\n")
+	before := mustGit(t, repo, "rev-parse", "HEAD")
+
+	landing, err := b.KillSessionAndLandOpts("s1", KillOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after := mustGit(t, repo, "rev-parse", "HEAD"); after != before {
+		t.Fatalf("a case-flipped Anthropic key was committed as %s:\n%s", after, headFiles(t, repo))
+	}
+	line := landing.Memory.Line()
+	if !strings.Contains(line, "ORDERS.md:2") || !strings.Contains(line, "an Anthropic key") {
 		t.Errorf("the refusal must name the file, the line and the shape: %q", line)
 	}
 	if strings.Contains(line, leaked) {
