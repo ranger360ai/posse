@@ -444,7 +444,7 @@ func TestQAOpsShapeTableCanStillSayNo(t *testing.T) {
 		{"credential: name and value share a spaced equals", "export ANTHROPIC_API_KEY = hunter2sekrit", "credential", "", false},
 		{"credential: name and value share a quoted equals", `the fleet key: ANTHROPIC_API_KEY="abc"`, "credential", "", false},
 		{"credential: name and value share an arrow", "ANTHROPIC_API_KEY -> hunter2sekrit on this box", "credential", "", false},
-		{"credential: a different vendor's token name with a value", "XAI_OAUTH_TOKEN: xoxb-1234-5678-notarealtoken", "credential", "", false},
+		{"credential: a different vendor's token name with a value", "XAI_OAUTH_TOKEN: xoxb-AAAAAAAAAAAA-AAAAAAAAAAAA-notarealtoken", "credential", "", false},
 		{"credential: a backtick-closed name with a value", "the item is `ANTHROPIC_API_KEY`: hunter2sekrit", "credential", "", false},
 		{"credential: an attached keychain item, no delimiter", "security find-generic-password -sacme-prod -w", "credential", "", false},
 		{"credential: a keychain item after an equals", "security find-generic-password -s=acme-prod -w", "credential", "", false},
