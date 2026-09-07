@@ -350,3 +350,74 @@ func TestQAReconcileSeatsNamesTheFailedReadItKeptTheHoldsFor(t *testing.T) {
 		t.Errorf("the line must say what it did NOT do: a hold kept and a hold released are the two states a phantom seat sits between:\n%s", out)
 	}
 }
+
+// ranger-base-uihdr, one surface over from ranger-base-wq1aq: the cockpit's
+// `d` (LaunchBead) answers WHICH SEAT with seatFor directly — it has no busy
+// map, so it never calls reconcileSeats, and the fix above never runs on
+// this path at all. Under an unreadable listing personaActive holds every
+// seat with a meta on disk (seatUnreadable) exactly as it does for the fire
+// loop, but the ONLY thing LaunchBead returns on that arm was the bare
+// laneBusyLine — "code lane busy: ranger — waits for a later pass", which by
+// §2's own design carries no status and reads exactly like an honestly full
+// shop.
+//
+// `d` has no second line to print into the way reconcileSeats does: the
+// cockpit's status is one field (cmd/posse/cockpit.go c.status), fed from
+// two channels — a progress line and the launch result — that the same
+// launch goroutine sends back to back with no draw forced between them, so
+// a diagnosis sent through Progress here would at best flicker before the
+// Die below overwrites it. The fix instead rides in the one line the
+// operator actually keeps: LaunchBead's own returned error, appended after
+// the lane line and never inside it — §2's wording, unchanged.
+//
+// MUTATION: drop the extra listSessions() probe, or its append onto Die →
+// red on the "herd unreadable" assertion. Probe unconditionally, even when
+// the control's listing answered in full → red on the control. Drop the
+// `%v` → red on the error-text assertion, the half that names the repair's
+// target.
+func TestQALaunchBeadNamesAnUnreadableListingOnTheBareLaneBusyLine(t *testing.T) {
+	t.Parallel()
+	b, fake := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+	writePersona(t, b.App, "ranger", "[go]")
+
+	repo := t.TempDir()
+	os.WriteFile(filepath.Join(fake, "agents.json"),
+		[]byte(`[{"agent":"claude","agent_status":"idle","pane_id":"w1:p1","workspace_id":"w1"}]`), 0o644)
+
+	a1 := RepoIssue{BdIssue: BdIssue{ID: "a-1", Title: "t", Labels: []string{"go"}}, Dir: repo}
+	if _, err := d.LaunchBead(a1); err != nil {
+		t.Fatalf("premise: a-1 must seat cleanly, or the lane below has nothing to read busy: %v", err)
+	}
+
+	// The CONTROL, and it is the whole reason the appended clause is worth
+	// anything: a lane that is honestly full, read through a listing that
+	// answered in full, says nothing about herdr — the same bare line the
+	// fire loop gives, unwidened.
+	ws := fakeLoadWSFrom(t, fake)
+	ws[0].AgentStatus = "working"
+	saveWSTo(t, fake, ws)
+	a2 := RepoIssue{BdIssue: BdIssue{ID: "a-2", Title: "t", Labels: []string{"go"}}, Dir: repo}
+	_, ctrlErr := d.LaunchBead(a2)
+	if ctrlErr == nil || !strings.Contains(ctrlErr.Error(), "lane busy") {
+		t.Fatalf("premise: a busy persona must refuse naming the lane: %v", ctrlErr)
+	}
+	if strings.Contains(ctrlErr.Error(), "herd unreadable") {
+		t.Errorf("a listing that answered in full was reported as unreadable, which says exactly as much as the old silence did: %v", ctrlErr)
+	}
+
+	// The bug's own shape: the listing that decides every seat in the lane
+	// now fails outright, over a herd that is still there (a-1's session is
+	// still live — only the READ is broken).
+	qaListError(t, fake)
+	_, err := d.LaunchBead(a2)
+	if err == nil || !strings.Contains(err.Error(), "lane busy") {
+		t.Fatalf("a lane held by an unreadable listing must still refuse naming the lane: %v", err)
+	}
+	if !strings.Contains(err.Error(), "herd unreadable") {
+		t.Errorf("`d` returned only the bare lane-busy line under an unreadable listing — the exact silence ranger-base-wq1aq was filed about, one surface over: %v", err)
+	}
+	if !strings.Contains(err.Error(), "no response from the herdr server") {
+		t.Errorf("the line did not carry the listing's own error, so it names no target for the repair it asks for: %v", err)
+	}
+}

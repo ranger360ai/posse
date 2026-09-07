@@ -4532,6 +4532,31 @@ func (d *Dispatcher) LaunchBead(is RepoIssue) (session string, err error) {
 		// launcher lock this function already holds.
 		seat, _, full := d.seatFor(lane, is, "", newSeatMap(map[string]string{}))
 		if seat < 0 {
+			// ranger-base-uihdr: seatFor's own listing read (through
+			// personaActive) can be what made every seat here read busy,
+			// and laneBusyLine says nothing about that by design — ADR
+			// 0020 §2 spells its wording by example, so widening the
+			// line itself is an amendment, not this bead.
+			// reconcileSeats' fix for the pass (ranger-base-wq1aq) prints
+			// that as a SEPARATE line above the lane line it explains,
+			// but `d` has no second line to land in: the cockpit's
+			// status is one field (cmd/posse/cockpit.go c.status), and a
+			// progress line sent through d.progressSink() here would
+			// race the Die below onto c.results from the same launch
+			// goroutine with no draw forced between the two sends — a
+			// flicker at best, not something an operator reads. So the
+			// diagnosis rides in the one line that stays on screen: the
+			// error this func already returns, appended after the lane
+			// line laneBusyLine produced and never inside it.
+			//
+			// The probe is a second listSessions() call, but only on
+			// this already-busy path, and it is free exactly where it
+			// matters: on the error arm it fails at Workspaces(), before
+			// touching a single meta (same lever seatunreadable_qa_test.go
+			// arms as "list-error").
+			if _, _, err := d.HB.listSessions(); err != nil {
+				return "", Die("%s %s (herd unreadable: %v — repair where that error points, not a meta)", is.ID, full, err)
+			}
 			return "", Die("%s %s", is.ID, full)
 		}
 		persona = lane.seats[seat].name
