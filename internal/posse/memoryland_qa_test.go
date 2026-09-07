@@ -435,6 +435,135 @@ func TestKillHoldsAMemoryFileGitAttributesCallBinary(t *testing.T) {
 	}
 }
 
+// ranger-base-qvild, the headline fixture. The untracked arm answered every
+// stat error by SKIPPING the path, and the stat it used FOLLOWED symlinks.
+// An untracked symlink whose target does not exist is therefore ENOENT here
+// and skipped — while git happily commits it, because what git stores for a
+// symlink is the LINK TEXT. So the one file whose entire content is the
+// thing the scan never read was the one file the scan waved through, under a
+// "memory committed" line. Measured on git 2.50.1 before the fix: `git show
+// HEAD:…/handle` printed the key back.
+func TestKillHoldsAnUntrackedSymlinkWhoseTargetIsACredential(t *testing.T) {
+	t.Parallel()
+	b, fake := newTestBackend(t)
+	agentPerLaunch(t, fake)
+	repo := memoryRepo(t, b)
+	devSession(t, b, "s1")
+	before := mustGit(t, repo, "rev-parse", "HEAD")
+
+	const leaked = "sk-ant-api03-EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE"
+	link := filepath.Join(repo, ConstitutionSourceDir, "personas", "dev", "handle")
+	if err := os.Symlink(leaked, link); err != nil {
+		t.Fatal(err)
+	}
+	// The fixture only measures anything if git offers the link to the
+	// commit in the first place: dangling and untracked, listed `??`.
+	if _, err := os.Stat(link); err == nil {
+		t.Fatal("the fixture's link is not dangling, so this measures a stat that succeeds")
+	}
+	if dirty := b.App.MemoryDirtyPaths("dev"); !strings.Contains(strings.Join(dirty, " "), "handle") {
+		t.Fatalf("git does not offer the dangling symlink to the commit here: %v", dirty)
+	}
+	// An ordinary lesson beside it: the hold is the whole commit's.
+	appendOrders(t, repo, "dev", "- a lesson that has to wait for the operator.\n")
+
+	landing, err := b.KillSessionAndLandOpts("s1", KillOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after := mustGit(t, repo, "rev-parse", "HEAD"); after != before {
+		t.Fatalf("the symlink was committed as %s:\n%s", after, headFiles(t, repo))
+	}
+	line := landing.Memory.Line()
+	if !strings.Contains(line, "handle") || !strings.Contains(line, "an Anthropic key") {
+		t.Errorf("the hold must name the path and what it looks like: %q", line)
+	}
+	if strings.Contains(line, leaked) {
+		t.Errorf("the refusal echoed the credential: %q", line)
+	}
+	if st := mustGit(t, repo, "diff", "--cached", "--name-only"); strings.TrimSpace(st) != "" {
+		t.Errorf("a held commit left paths staged: %q", st)
+	}
+}
+
+// The other direction, without which the test above is green over an arm
+// that holds every symlink — and a memory dir that cannot hold a symlink is
+// a memory dir that stops landing, which is the backlog this feature exists
+// to end. The link text is scanned and nothing else: a link to a file that
+// is not there is an ordinary thing for a persona to leave behind.
+func TestAnOrdinaryDanglingSymlinkStillLands(t *testing.T) {
+	t.Parallel()
+	b, fake := newTestBackend(t)
+	agentPerLaunch(t, fake)
+	repo := memoryRepo(t, b)
+	devSession(t, b, "s1")
+	link := filepath.Join(repo, ConstitutionSourceDir, "personas", "dev", "handle")
+	if err := os.Symlink("../../../notes/scratch-that-was-tidied-away.md", link); err != nil {
+		t.Fatal(err)
+	}
+	appendOrders(t, repo, "dev", "- a lesson landed beside the link.\n")
+
+	landing, err := b.KillSessionAndLandOpts("s1", KillOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if landing.Memory == nil || landing.Memory.Held != "" {
+		t.Fatalf("an ordinary symlink held the commit: %+v", landing.Memory)
+	}
+	if dirty := b.App.MemoryDirtyPaths("dev"); len(dirty) != 0 {
+		t.Fatalf("the kill left the persona's memory uncommitted: %v", dirty)
+	}
+	if body := mustGit(t, repo, "show", "HEAD:"+ConstitutionSourceDir+"/personas/dev/ORDERS.md"); !strings.Contains(body, "beside the link") {
+		t.Errorf("the lesson is not in the commit:\n%s", body)
+	}
+}
+
+// The two arms agreeing about what "unreadable" means (ranger-base-qvild).
+// TestKillHoldsATrackedFileTheScanCannotRead pins the tracked half: a NUL in
+// the first 8000 bytes makes git call a file binary and write no `+` lines,
+// so it holds. Untracked, the same file was READ — and read as bytes, which
+// is not the same as understood: a UTF-16 file spelling `token = sk-ant-…`
+// carries a NUL between every character, matches no shape, commits, and
+// decodes back to the credential with one iconv. It would then hold this
+// persona's every future kill on its next edit, from the tracked arm. Better
+// to say so on the commit that introduces it.
+func TestKillHoldsAnUntrackedFileGitWouldCallBinary(t *testing.T) {
+	t.Parallel()
+	b, fake := newTestBackend(t)
+	agentPerLaunch(t, fake)
+	repo := memoryRepo(t, b)
+	devSession(t, b, "s1")
+	before := mustGit(t, repo, "rev-parse", "HEAD")
+
+	const leaked = "token = sk-ant-api03-FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF\n"
+	var utf16le []byte
+	for _, r := range leaked {
+		utf16le = append(utf16le, byte(r), 0)
+	}
+	dump := filepath.Join(repo, ConstitutionSourceDir, "personas", "dev", "notes", "capture.md")
+	if err := os.MkdirAll(filepath.Dir(dump), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dump, utf16le, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// The fixture is only interesting if the shapes really cannot see it.
+	if what, _ := firstCredShape(strings.Split(string(utf16le), "\n")); what != "" {
+		t.Fatalf("the wide-encoded fixture matches %s directly, so this measures the ordinary scan", what)
+	}
+
+	landing, err := b.KillSessionAndLandOpts("s1", KillOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after := mustGit(t, repo, "rev-parse", "HEAD"); after != before {
+		t.Fatalf("a file the scan cannot read was committed as %s:\n%s", after, headFiles(t, repo))
+	}
+	if line := landing.Memory.Line(); !strings.Contains(line, "notes/capture.md") || !strings.Contains(line, "not checked for credentials") {
+		t.Errorf("the hold must name the file and say it was not checked: %q", line)
+	}
+}
+
 // ─── what the sweep takes ────────────────────────────────────────────────────
 
 // ranger-base-c9m7: the sweep takes the persona's whole memory dir, and that

@@ -53,6 +53,7 @@ package posse
 // in the dir it governs and the persona can edit it.
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -391,17 +392,59 @@ func memoryDiff(rest ...string) []string {
 // git declines to write is silently indistinguishable here from a diff with
 // nothing in it, and the file passes unscanned.
 func scanMemoryChanges(dir string, changes []memoryChange) string {
+	// Resolved lazily and exactly once, like memoryUnreadableChange's: most
+	// memory dirs have no untracked path at all, and this is a git process
+	// on the kill path.
+	root := ""
 	for _, c := range changes {
 		if !c.Untracked {
 			continue
 		}
+		if root == "" {
+			if root = memoryRepoRoot(dir); root == "" {
+				// The relative path a "" root leaves does not stat, and the
+				// arm this replaced read that as "it went away" and skipped
+				// it — a file committed with nothing scanned, under a
+				// success line (ranger-base-qvild).
+				return fmt.Sprintf("%s could not be located for the credential scan, so it was not checked for credentials", c.Path)
+			}
+		}
 		// A path git has never seen has no HEAD side to diff against, so
 		// the whole file is added content and is read from disk.
-		full := filepath.Join(memoryRepoRoot(dir), c.Path)
-		st, err := os.Stat(full)
+		//
+		// LSTAT, and a hold on any error. Stat FOLLOWS the link, so an
+		// untracked symlink whose target does not exist answered ENOENT —
+		// and git commits a symlink as its link TEXT, so the arm skipped
+		// the one path whose whole content is the thing it never read
+		// (measured, git 2.50.1: `ln -s 'sk-ant-…' link` in the memory dir
+		// is listed `??`, skipped here, added, and `git show HEAD:…link`
+		// prints it back). Nor is ENOENT the only error a skip swallowed:
+		// EACCES, ELOOP and ENAMETOOLONG are not "it went away" either.
+		// git status listed this path a moment ago, so a path that cannot
+		// be lstat-ed is not gone — and if it really is, the add says so.
+		full := filepath.Join(root, c.Path)
+		st, err := os.Lstat(full)
 		switch {
 		case err != nil:
-			continue // it went away between the status and here; git will say so
+			return fmt.Sprintf("%s could not be read for the credential scan (%v), so it was not checked for credentials", c.Path, err)
+		case st.Mode()&os.ModeSymlink != 0:
+			// What git will commit is the link text, not the target's
+			// bytes, so the link text is what there is to scan. Reading
+			// through the link instead would scan bytes this commit does
+			// not take and miss the ones it does.
+			target, err := os.Readlink(full)
+			if err != nil {
+				return fmt.Sprintf("%s could not be read for the credential scan (%v), so it was not checked for credentials", c.Path, err)
+			}
+			if what, _ := firstCredShape([]string{target}); what != "" {
+				return fmt.Sprintf("%s is a symlink whose target looks like %s", c.Path, what)
+			}
+			continue
+		case !st.Mode().IsRegular():
+			// A fifo, socket or device. `git status` does not list a fifo
+			// (measured) so this is mostly unreachable, but ReadFile on one
+			// blocks forever, and the kill path is not the place to find out.
+			return fmt.Sprintf("%s is not a regular file, so the scan could not read what it adds and it was not checked for credentials", c.Path)
 		case st.Size() > memoryScanMax:
 			return fmt.Sprintf("%s is %d bytes, past the %d the scan reads, so it was not checked for credentials",
 				c.Path, st.Size(), memoryScanMax)
@@ -409,6 +452,17 @@ func scanMemoryChanges(dir string, changes []memoryChange) string {
 		body, err := os.ReadFile(full)
 		if err != nil {
 			return fmt.Sprintf("%s could not be read for the credential scan (%v)", c.Path, err)
+		}
+		// Git's own binary test, so this arm and memoryUnreadableChange
+		// agree about what unreadable means: a NUL in the first 8000 bytes.
+		// The shapes below are byte patterns over a byte-per-character
+		// encoding, so a UTF-16 file spelling `token = sk-ant-…` matches
+		// nothing here, commits, and decodes back to the credential with
+		// one iconv. This is the same file the tracked arm would hold on
+		// its very next edit — holding it now is the two arms saying the
+		// same thing about the same file.
+		if nulWithin(body, 8000) {
+			return fmt.Sprintf("%s is binary to git, so the scan could not read what it adds and it was not checked for credentials", c.Path)
 		}
 		if what, n := firstCredShape(strings.Split(string(body), "\n")); what != "" {
 			return fmt.Sprintf("%s:%d looks like %s", c.Path, n, what)
@@ -500,8 +554,20 @@ func memoryUnreadableChange(dir string) string {
 				return fmt.Sprintf("%s could not be located for the credential scan, so it was not checked for credentials", path)
 			}
 		}
-		if _, err := os.Stat(filepath.Join(root, path)); err != nil {
-			continue // it adds nothing because it is gone; git will say so
+		// LSTAT, so a tracked path replaced by a dangling symlink reads as
+		// the modification it is rather than as a deletion. ENOENT is the
+		// one error that still skips, and it is not a fail-open: `--numstat`
+		// spells a DELETION `-` `-` exactly as it spells a binary
+		// modification, and the working tree is the only thing that tells
+		// them apart (see the paragraph above, and
+		// TestRemovingABinaryMemoryFileDoesNotHoldTheCommit). Every other
+		// error — EACCES, ELOOP, ENAMETOOLONG — is a path this cannot read,
+		// which is the hold this arm exists to take (ranger-base-qvild).
+		if _, err := os.Lstat(filepath.Join(root, path)); err != nil {
+			if os.IsNotExist(err) {
+				continue // it adds nothing because it is gone; git will say so
+			}
+			return fmt.Sprintf("%s could not be read for the credential scan (%v), so it was not checked for credentials", path, err)
 		}
 		return fmt.Sprintf("%s is binary to git, so the scan could not read what it adds and it was not checked for credentials", path)
 	}
@@ -509,23 +575,31 @@ func memoryUnreadableChange(dir string) string {
 }
 
 // memoryRepoRoot is the checkout the memory dir sits in, which is where
-// git's repo-relative paths are rooted. "" if it cannot be found, and the
-// two callers answer that differently ON PURPOSE, so read this before
-// copying either: memoryUnreadableChange HOLDS, because it cannot otherwise
-// tell a binary modification from a deletion. The untracked arm above
-// CONTINUES — the relative path it is left with does not stat, and a path
-// that does not stat is skipped — and a skipped untracked file is then
-// committed with nothing scanned. That is a fail-open, it predates
-// ranger-base-38a1, and it is handed to the fleet's security persona rather
-// than widened into that bead. The window is narrow: memoryChanges has just
-// run a successful `git status` from the same dir, so a rev-parse that fails
-// here means the checkout went away mid-kill.
+// git's repo-relative paths are rooted. "" if it cannot be found, and BOTH
+// callers hold on that, naming the path they could not locate. They did not
+// always: the untracked arm used to join the "" and skip the relative path
+// that would not stat, which committed that file with nothing scanned
+// (ranger-base-qvild, and the fail-open ranger-base-38a1 flagged and left).
+// The window is narrow either way — memoryChanges has just run a successful
+// `git status` from the same dir, so a rev-parse that fails here means the
+// checkout went away mid-kill — and a hold in it costs one deferred landing,
+// which the next kill takes.
 func memoryRepoRoot(dir string) string {
 	root, err := git(dir, "rev-parse", "--show-toplevel")
 	if err != nil {
 		return ""
 	}
 	return root
+}
+
+// nulWithin is git's own binary test: a NUL byte in the first n bytes. Git
+// applies it to decide whether to write a diff at all, so it is the line
+// that decides whether a file, once committed, is ever scanned again.
+func nulWithin(body []byte, n int) bool {
+	if len(body) < n {
+		n = len(body)
+	}
+	return bytes.IndexByte(body[:n], 0) >= 0
 }
 
 // firstCredShape is the scan over plain lines, 1-indexed like an editor.
