@@ -35,6 +35,17 @@
 # m.Socket != "" and so could never fire for a meta that records none.
 set -uo pipefail
 
+# `py`, below, returns 2 -- never printed as an answer -- when python3 could
+# not run to completion (could not be exec'd under load, or was signalled).
+# This script has no `-e`, so a stray call site (there are only the two,
+# both already checked by hand) would otherwise carry on with an empty
+# answer read as a real one; the trap fires independently of `-e` and is the
+# backstop for a THIRD such call site added later without that check
+# (ranger-base-h56nb). $? is exactly 2 only for that sentinel -- an ordinary
+# assertion FAIL here returns 0 or 1 -- so this never fires over a genuine
+# verdict.
+trap '[ "$?" -eq 2 ] && echo "verify-prune-guard: stopped by a python3 JSON reader that did not run to completion -- apparatus failure, not a verdict about herdr" >&2' ERR
+
 RHQ=${1:-$(command -v posse)}
 [ -x "$RHQ" ] || { echo "verify-prune-guard: not executable: ${RHQ:-<none>}"; exit 2; }
 command -v herdr >/dev/null || { echo "verify-prune-guard: herdr not on PATH"; exit 2; }
@@ -42,18 +53,41 @@ command -v herdr >/dev/null || { echo "verify-prune-guard: herdr not on PATH"; e
 sock=${HERDR_SOCKET_PATH:-$HOME/.config/herdr/herdr.sock}
 [ -S "$sock" ] || { echo "verify-prune-guard: no herdr socket at $sock"; exit 2; }
 
+# py <script> — python3 -c "<script>", except a python3 that could not be
+# exec'd under load or was killed by a signal (rc 126, 127, or 128+signal --
+# the shape ranger-base-s8b4g measured with a `python3` on PATH whose whole
+# body is `kill -TERM $$`) prints NOTHING, and to a caller that only reads
+# stdout that is indistinguishable from "herdr genuinely has no matching
+# workspace". Distinguish them here (ranger-base-h56nb): that rc shape
+# returns 2 instead of the (nonexistent) answer.
+py() {
+	local out rc
+	out=$(python3 -c "$1" 2>/dev/null)
+	rc=$?
+	if [ "$rc" -ge 126 ]; then
+		return 2
+	fi
+	printf '%s' "$out"
+	return "$rc"
+}
+
 # A workspace this server really holds, for the backfill arm — and its LABEL,
 # because since rangerhq-yt1p a meta is only that workspace's if it wears its
 # name (a workspace id alone is re-issued across a server restart or handoff).
 # The label has to be usable as a session name, since that is what the meta's
 # filename is.
-read -r live label < <(herdr workspace list 2>/dev/null | python3 -c '
+live_label=$(herdr workspace list 2>/dev/null | py '
 import json, re, sys
 for w in json.load(sys.stdin)["result"]["workspaces"]:
     if re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_-]*", w.get("label") or ""):
         print(w["workspace_id"], w["label"])
         break
-' 2>/dev/null)
+')
+if [ $? -eq 2 ]; then
+	echo "verify-prune-guard: python3 did not run to completion reading herdr's workspace list -- apparatus failure, not a claim that herdr holds no session-shaped label"
+	exit 2
+fi
+read -r live label <<<"$live_label"
 [ -n "${live:-}" ] || { echo "verify-prune-guard: herdr holds no workspace with a session-shaped label; nothing to test the backfill against"; exit 2; }
 
 home=$(mktemp -d "${TMPDIR:-/tmp}/posse-prune-guard.XXXXXX")
@@ -61,7 +95,15 @@ trap 'rm -rf "$home"' EXIT
 metas=$home/state/herdr
 mkdir -p "$metas"
 
-old=$(python3 -c 'import datetime as d; print((d.datetime.now(d.timezone.utc)-d.timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%SZ"))')
+# Same apparatus risk as the workspace-list reader above, and worse quietly:
+# an empty $old does not fail loudly, it plants a "launched:" field that
+# isn't a timestamp at all, and every arm below that depends on the fixture
+# being past PruneGrace is then testing an accident rather than the guard.
+old=$(python3 -c 'import datetime as d; print((d.datetime.now(d.timezone.utc)-d.timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%SZ"))' 2>/dev/null)
+if [ $? -ge 126 ] || [ -z "$old" ]; then
+	echo "verify-prune-guard: python3 did not run to completion computing the fixture timestamp -- apparatus failure, not a well-formed launched: time"
+	exit 2
+fi
 printf 'name: ghost-foreign\nworkspace: w404\npane: w404:p1\nemoji: G\nagent: developer\nruntime: claude\nlaunched: %s\nsocket: /tmp/not-this-server/herdr.sock\n' "$old" > "$metas/ghost-foreign.yaml"
 printf 'name: ghost-socketless\nworkspace: w405\npane: w405:p1\nemoji: G\nagent: qa\nruntime: claude\nlaunched: %s\n' "$old" > "$metas/ghost-socketless.yaml"
 printf 'name: %s\nworkspace: %s\npane: %s:p1\nemoji: G\nagent: architect\nruntime: claude\nlaunched: %s\n' "$label" "$live" "$live" "$old" > "$metas/$label.yaml"

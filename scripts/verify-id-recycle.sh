@@ -17,6 +17,16 @@
 # `herdr status` names this session's socket.
 set -euo pipefail
 
+# `py`, below, returns 2 -- never printed as a field -- when python3 could
+# not run to completion (could not be exec'd under load, or was signalled).
+# Most call sites below carry no `|| true` of their own, so `-e` already
+# stops the script right there; this just names why, everywhere, instead of
+# only at the sites (wait_running, stop_session) that check for it by hand
+# (ranger-base-h56nb). $? is exactly 2 only for that sentinel -- an ordinary
+# assertion FAIL or a `command -v`/`[ ]` miss returns 0 or 1 -- so this never
+# fires over a genuine verdict.
+trap '[ "$?" -eq 2 ] && echo "verify-id-recycle: stopped by a python3 JSON reader that did not run to completion -- apparatus failure, not a verdict about herdr" >&2' ERR
+
 HERDR=${HERDR:-$(command -v herdr)}
 [ -x "$HERDR" ] || { echo "verify-id-recycle: not executable: ${HERDR:-<none>}"; exit 2; }
 
@@ -55,28 +65,58 @@ check() { # check <name> <cond> <detail>
 	fi
 }
 
+# py <script> — python3 -c "<script>", except a python3 that could not be
+# exec'd under load or was killed by a signal (rc 126, 127, or 128+signal --
+# the shape ranger-base-s8b4g measured with a `python3` on PATH whose whole
+# body is `kill -TERM $$`) prints NOTHING, and to a caller that only reads
+# stdout that is indistinguishable from a reader that ran fine and found the
+# field empty -- both read as "" or "0". Distinguish them here (ranger-base-
+# h56nb): that rc shape returns 2 instead of the (nonexistent) field, so a
+# caller can tell "python3 answered nothing" from "the field is empty" rather
+# than reporting the property false.
+py() {
+	local out rc
+	out=$(python3 -c "$1" 2>/dev/null)
+	rc=$?
+	if [ "$rc" -ge 126 ]; then
+		return 2
+	fi
+	printf '%s' "$out"
+	return "$rc"
+}
+# read_field <json-reader-fn> <input> — <fn> over <input>, with the same
+# apparatus-vs-empty distinction: rc 2 means python3 did not answer, and the
+# caller must not treat that as the field's value.
+read_field() {
+	local out rc
+	out=$(printf '%s' "$2" | "$1")
+	rc=$?
+	[ "$rc" -eq 2 ] && return 2
+	printf '%s' "$out"
+}
+
 json_ids() {
-	python3 -c 'import json,sys; print(" ".join(w["workspace_id"] for w in json.load(sys.stdin)["result"]["workspaces"]))'
+	py 'import json,sys; print(" ".join(w["workspace_id"] for w in json.load(sys.stdin)["result"]["workspaces"]))'
 }
 
 json_create_id() {
-	python3 -c 'import json,sys; print(json.load(sys.stdin)["result"]["workspace"]["workspace_id"])'
+	py 'import json,sys; print(json.load(sys.stdin)["result"]["workspace"]["workspace_id"])'
 }
 
 json_status_sock() {
-	python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("server",{}).get("socket") or "")'
+	py 'import json,sys; d=json.load(sys.stdin); print(d.get("server",{}).get("socket") or "")'
 }
 
 json_status_session() {
-	python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("server",{}).get("session") or "")'
+	py 'import json,sys; d=json.load(sys.stdin); print(d.get("server",{}).get("session") or "")'
 }
 
 json_status_running() {
-	python3 -c 'import json,sys; d=json.load(sys.stdin); print("1" if d.get("server",{}).get("running") else "0")'
+	py 'import json,sys; d=json.load(sys.stdin); print("1" if d.get("server",{}).get("running") else "0")'
 }
 
 json_label() {
-	python3 -c 'import json,sys; d=json.load(sys.stdin); print((d.get("result") or {}).get("workspace",{}).get("label") or "")'
+	py 'import json,sys; d=json.load(sys.stdin); print((d.get("result") or {}).get("workspace",{}).get("label") or "")'
 }
 
 # GNU FIRST. Same inverted probe as scripts/verify-bd-pin.sh had
@@ -116,9 +156,23 @@ wait_running() {
 		if [ -S "$SESS_SOCK" ]; then
 			local st running sock sess
 			st=$(hs status --json 2>/dev/null || true)
-			running=$(printf '%s' "$st" | json_status_running 2>/dev/null || echo 0)
-			sock=$(printf '%s' "$st" | json_status_sock 2>/dev/null || true)
-			sess=$(printf '%s' "$st" | json_status_session 2>/dev/null || true)
+			# A python3 that cannot answer must not be read as "not up yet" --
+			# that reading is what turned a broken JSON reader into a false
+			# claim about herdr (MEASURED, ranger-base-h56nb, on the sibling
+			# verify-self-close.sh: 100 retries, then a false "did not come
+			# up" over a herdr that was fine the whole time).
+			running=$(read_field json_status_running "$st") || {
+				echo "verify-id-recycle: python3 did not run to completion reading herdr's status JSON -- apparatus failure, not a claim about $SESS_SOCK"
+				return 2
+			}
+			sock=$(read_field json_status_sock "$st") || {
+				echo "verify-id-recycle: python3 did not run to completion reading herdr's status JSON -- apparatus failure, not a claim about $SESS_SOCK"
+				return 2
+			}
+			sess=$(read_field json_status_session "$st") || {
+				echo "verify-id-recycle: python3 did not run to completion reading herdr's status JSON -- apparatus failure, not a claim about $SESS_SOCK"
+				return 2
+			}
 			if [ "$running" = 1 ] && [ "$sock" = "$SESS_SOCK" ] && [ "$sess" = "$SESSION" ]; then
 				return 0
 			fi
@@ -137,7 +191,15 @@ stop_session() {
 	while [ "$n" -lt 50 ]; do
 		local st running
 		st=$(hs status --json 2>/dev/null || true)
-		running=$(printf '%s' "$st" | json_status_running 2>/dev/null || echo 0)
+		# This runs from the EXIT trap's cleanup, so it must not abort the
+		# teardown -- but a python3 that cannot answer must not be silently
+		# read as "not running" either (the old `|| echo 0` did exactly that,
+		# which could let delete_session race a session that is, apparatus
+		# aside, still up). Say so and move on; delete_session runs either way.
+		running=$(read_field json_status_running "$st") || {
+			echo "verify-id-recycle: python3 did not run to completion reading herdr's status JSON during teardown -- apparatus failure, not a claim that $SESSION stopped"
+			return 0
+		}
 		if [ "$running" != 1 ]; then
 			return 0
 		fi
