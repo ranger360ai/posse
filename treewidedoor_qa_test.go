@@ -142,6 +142,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -220,7 +221,8 @@ func TestQAMakeTestOpensTheTreeWideDoors(t *testing.T) {
 	// reader did not, and every `strings.Contains` below still found its
 	// door's name sitting on the line.
 	treeLine, tree := mkPrereqs(t, src, "tree-check")
-	for _, door := range []string{"fmt-check", "crew-check", "seed-check", "history-check", "doc-check", "identity-check", "ops-check"} {
+	doors := []string{"fmt-check", "crew-check", "seed-check", "history-check", "doc-check", "identity-check", "ops-check"}
+	for _, door := range doors {
 		if !mkRuns(tree, door) {
 			t.Errorf("`make tree-check` no longer reaches `%s`, so one tree-wide pin is back to being ~950s away: %q", door, treeLine)
 		}
@@ -232,18 +234,36 @@ func TestQAMakeTestOpensTheTreeWideDoors(t *testing.T) {
 		t.Errorf("`make test` no longer depends on tree-check: %q", testLine)
 	}
 
-	if phonyLine, phony := mkPrereqs(t, src, ".PHONY"); !mkRuns(phony, "tree-check") ||
-		!mkRuns(phony, "crew-check") ||
-		!mkRuns(phony, "identity-check") || !mkRuns(phony, "ops-check") {
-		t.Errorf(".PHONY does not name the new doors — a file of that name in the tree would silence one: %q", phonyLine)
+	// All seven doors, not four of them (ranger-base-x5bgs finding 2): a file
+	// of any one of their names in the tree silences it the same way, and
+	// fmt-check/seed-check/history-check/doc-check were checked at wiring
+	// (arm above) but not here.
+	phonyLine, phony := mkPrereqs(t, src, ".PHONY")
+	if !mkRuns(phony, "tree-check") {
+		t.Errorf(".PHONY does not name tree-check — a file of that name in the tree would silence it: %q", phonyLine)
+	}
+	for _, door := range doors {
+		if !mkRuns(phony, door) {
+			t.Errorf(".PHONY does not name %s — a file of that name in the tree would silence it: %q", door, phonyLine)
+		}
 	}
 
 	for _, door := range []struct{ target, variable string }{
 		{"crew-check", "QA_CREW_PINS"},
 	} {
-		recipe := strings.Join(makeRecipe(src, door.target), "\n")
-		if recipe == "" {
+		rawRecipe := makeRecipe(src, door.target)
+		if len(rawRecipe) == 0 {
 			t.Errorf("the Makefile has no `%s` target", door.target)
+			continue
+		}
+		// mkRecipeCode, not the lines' bytes (ranger-base-x5bgs finding 1): a
+		// recipe line is handed to the SHELL verbatim, so it is the shell's
+		// comment rule that governs it, not make's — a `#` in front of the
+		// tail silences the line for sh while every `strings.Contains` below
+		// still found its bytes sitting after the `#`.
+		recipe := strings.Join(mkRecipeCode(rawRecipe), "\n")
+		if recipe == "" {
+			t.Errorf("`make %s`'s recipe is all comments — make hands the shell a no-op and the door is dark: %q", door.target, rawRecipe)
 			continue
 		}
 		// The door reads its filter from the one variable arm 2 measures.
@@ -267,6 +287,73 @@ func TestQAMakeTestOpensTheTreeWideDoors(t *testing.T) {
 		if strings.Contains(recipe, " -w") || strings.Contains(recipe, "rm ") {
 			t.Errorf("`make %s` writes — the point of a door is that a seat can ask the question without changing the tree:\n%s", door.target, recipe)
 		}
+	}
+}
+
+// mkRecipeCode returns a recipe's lines (as makeRecipe reads them) with any
+// shell comment stripped, and drops lines left empty by that. makeRecipe
+// hands a RECIPE line back whole, tab stripped, because that line is make's
+// own text — but make then hands it to the SHELL verbatim, so what governs a
+// `#` inside it is the shell's comment rule, not make's: a `#` starts a
+// comment only where it begins a word (nothing, or whitespace, before it) and
+// it is not inside a quote. A byte check against the raw line, uncorrected,
+// still finds its bytes sitting after a `#` a seat put there to silence the
+// line — or after one that only commented out the line's tail
+// (ranger-base-x5bgs finding 1).
+func mkRecipeCode(lines []string) []string {
+	var out []string
+	for _, line := range lines {
+		var single, double bool
+		cut := len(line)
+		for i := 0; i < len(line); i++ {
+			switch line[i] {
+			case '\'':
+				if !double {
+					single = !single
+				}
+			case '"':
+				if !single {
+					double = !double
+				}
+			case '#':
+				if !single && !double && (i == 0 || line[i-1] == ' ' || line[i-1] == '\t') {
+					cut = i
+				}
+			}
+			if cut != len(line) {
+				break
+			}
+		}
+		if c := strings.TrimSpace(line[:cut]); c != "" {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// The reader itself, on the lines a whole-line byte check got wrong. Without
+// this the only thing measuring the `#` stop is a Makefile mutant, and the
+// suite never runs one.
+func TestQARecipeLinesStopAtAnUnquotedShellComment(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		name string
+		in   []string
+		want []string
+	}{
+		{"plain line", []string{"$(GOBIN) test ./internal/posse -count=1"}, []string{"$(GOBIN) test ./internal/posse -count=1"}},
+		{"whole line commented", []string{"# $(GOBIN) test ./internal/posse -count=1"}, nil},
+		{"commented tail", []string{"$(GOBIN) test ./internal/posse -count=1 # -run '^($(QA_CREW_PINS))$$'"}, []string{"$(GOBIN) test ./internal/posse -count=1"}},
+		{"# inside single quotes is not a comment", []string{"echo '#not-a-comment' -count=1"}, []string{"echo '#not-a-comment' -count=1"}},
+		{"# inside double quotes is not a comment", []string{`echo "#not-a-comment" -count=1`}, []string{`echo "#not-a-comment" -count=1`}},
+		{"# glued to a word is not a comment", []string{"echo a#b"}, []string{"echo a#b"}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			got := mkRecipeCode(c.in)
+			if !slices.Equal(got, c.want) {
+				t.Errorf("mkRecipeCode(%q) = %q, want %q", c.in, got, c.want)
+			}
+		})
 	}
 }
 
