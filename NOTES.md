@@ -7044,6 +7044,16 @@ that could repair the box would be that tree, one flag away.
 
 ## Testing
 
+**Fixtures are detector-safe: all-A bodies; a realistic secret shape blocks
+the push of the whole branch** (ranger-base-m0ce1). Commit 34a27b4 shaped its
+Slack test fixtures xoxb-\<12 digits\>-\<12 digits\>-\<16 letters\> — exactly
+GitHub's own push-protection detector (GH013) — and GitHub refused every push
+of main until the commit was rewritten (6a230eb) with xox?-AAAA…-AAAA-…
+bodies. Any credential-shaped fixture (Slack, OpenAI, Anthropic, GitHub,
+AWS, Linear) must use a letter-only body; `detectorshapes_qa_test.go` scans
+the tracked tree for a digit inside one of those shapes and fails the
+commit locally instead of GitHub failing the push.
+
 **The suite command is `make test`, not a bare `go test ./...`**
 (ranger-base-2ggb, with gilfoyle's ranger-base-2ad3 and 7xla on the same
 invariant). The target adds `-timeout 25m` and the flag is load-bearing: go's
