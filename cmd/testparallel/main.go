@@ -306,6 +306,15 @@ func main() {
 		// away the t.Setenv that used to hold it out (the shim it installs
 		// now reaches the pane by absolute path, not through PATH).
 		"TestLiveRuntimeProbe": "drives a real herdr pane and one model turn",
+		// The rig ranger-base-9l77f's folded-in ranger-base-fwuck asked
+		// for: opt-in (RHQ_FORKRACE_PROBE), skipped by default. It spends
+		// its whole budget forking real processes to manufacture the
+		// fork()-duplicates-a-flocked-fd race this bead measured, on
+		// EVERY fd this process has open — running it alongside any other
+		// test would just add confounding forks and confounding locks to
+		// the outcome it is trying to isolate, forever, not until some
+		// future cleanup.
+		"TestForkFlockRaceReadsAReleasedLockAsHeld": "manufactures the ranger-base-9l77f race process-wide, on purpose",
 		// Drives a REAL backupLoop goroutine and times it: its treatment arm
 		// asserts the second archive lands in under the 60s interval, and its
 		// absence arm waits 3x that measured time. Both readings are wall
