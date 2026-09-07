@@ -7144,8 +7144,12 @@ is the built binary, BRACKET the run: seed immediately before the launch and
 accept every value the formatter could honestly have produced between that seed
 and the process exiting — `runAgedPlan` in `cmd/posse/costplan_test.go`, which
 has one accepted answer on an idle box and two on a loaded one, with every other
-byte of both renderings still exact. Four single-launch fixtures of the same
-shape are still in the tree, filed as ranger-base-boafa.
+byte of both renderings still exact. The four single-launch fixtures of the
+same shape (`cmd/posse/planquiet_qa_test.go`'s
+`TestQACostPlanServesTheSnapshotWhileQuiet` and three codex-hint tests in
+`costplan_test.go`) took the same bracket — `agedAges` and `wantOneOf`, factored
+out of `runAgedPlan`/`oneRendering` for a single launch with nothing to compare
+against — under ranger-base-boafa.
 
 ### The suite on Linux — `make test-linux`
 

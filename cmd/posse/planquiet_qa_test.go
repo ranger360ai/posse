@@ -16,6 +16,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -179,6 +180,12 @@ func TestQAStatusAndCostAskNothingWhileTheMeterIsQuiet(t *testing.T) {
 // and no request. The reading IS this command's output and a persona greps
 // it, so going silent would be the wrong fix — as would printing a
 // six-hour-old number with nothing on it.
+//
+// The snapshot is seeded immediately before the run it brackets rather than
+// at a fixed 3m30s: one `runPosse` launch is one process with its own
+// clock, and nothing bounds how long it takes (ranger-base-nmab1/boafa), so
+// agedAges names every age BlindFor could honestly have printed between the
+// seed and the process exiting.
 func TestQACostPlanServesTheSnapshotWhileQuiet(t *testing.T) {
 	bin := buildRhq(t)
 	srv, hits := quietServer(t)
@@ -189,15 +196,18 @@ func TestQACostPlanServesTheSnapshotWhileQuiet(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(home, "state"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	seedQuietSnapshot(t, filepath.Join(home, "state"), time.Now().UTC().Add(-3*time.Minute-30*time.Second))
+	at := time.Now().Add(-agedSeed)
+	seedQuietSnapshot(t, filepath.Join(home, "state"), at)
 
 	stdout, stderr, code := runPosse(t, bin, planEnvAt(home, srv.URL+"/usage"), "cost", "--plan")
 	if code != 0 {
 		t.Fatalf("exit %d, stderr %q", code, stderr)
 	}
-	if want := "plan windows: 5h 46% · 7d 29%, read 3m ago\n"; stdout != want {
-		t.Errorf("stdout = %q, want %q", stdout, want)
+	var want []string
+	for _, age := range agedAges(at) {
+		want = append(want, fmt.Sprintf("plan windows: 5h 46%% · 7d 29%%, read %s ago\n", age))
 	}
+	wantOneOf(t, "stdout", stdout, want, func(got, w string) bool { return got == w })
 	if n := hits.Load(); n != 0 {
 		t.Errorf("%d requests", n)
 	}

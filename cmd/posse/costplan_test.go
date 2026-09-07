@@ -272,6 +272,36 @@ const agedSeed = 3*time.Minute + 30*time.Second
 // is allowed to bolt on.
 const costFooterNote = " (the plan's own rate limits — the real budget; dollars above are API-equivalent)"
 
+// agedAges is every age BlindFor could honestly have printed for a reading
+// seeded `at`, from the moment it was written (agedSeed old) to the moment
+// the caller checks — one per whole minute the bracket spans, since
+// BlindFor is minute-resolution below an hour: one answer on an idle box,
+// more than one on a loaded one. Factored out of runAgedPlan so the other
+// single-launch fixtures of the same shape (ranger-base-boafa) can bracket
+// their own reading without a second process to compare against.
+func agedAges(at time.Time) []string {
+	var ages []string
+	for m := int(agedSeed.Minutes()); m <= int(time.Since(at).Minutes()); m++ {
+		ages = append(ages, posse.BlindFor(time.Duration(m)*time.Minute))
+	}
+	return ages
+}
+
+// wantOneOf fails unless got matches one of want under match — the
+// assertion every bracketed reading needs, since which age it printed
+// depends on how loaded the box was, not on anything the test can pin.
+func wantOneOf(t *testing.T, what, got string, want []string, match func(got, w string) bool) {
+	t.Helper()
+	quoted := make([]string, len(want))
+	for i, w := range want {
+		if match(got, w) {
+			return
+		}
+		quoted[i] = fmt.Sprintf("%q", w)
+	}
+	t.Errorf("%s: got %q, want one of:\n  %s", what, got, strings.Join(quoted, "\n  or "))
+}
+
 // runAgedPlan seeds the shared snapshot agedSeed old, runs the binary once,
 // and returns its stdout together with every age the reading honestly had
 // while that process was alive.
@@ -291,15 +321,7 @@ func runAgedPlan(t *testing.T, bin, home string, args ...string) (string, []stri
 	if code != 0 {
 		t.Fatalf("posse %s: exit %d, stderr %q", strings.Join(args, " "), code, stderr)
 	}
-	// BlindFor is minute-resolution below an hour, so the ages this run
-	// could have printed are one per whole minute the bracket spans: from
-	// agedSeed (the reading's age when the process was launched) to its age
-	// once the process had certainly exited.
-	var ages []string
-	for m := int(agedSeed.Minutes()); m <= int(time.Since(at).Minutes()); m++ {
-		ages = append(ages, posse.BlindFor(time.Duration(m)*time.Minute))
-	}
-	return stdout, ages
+	return stdout, agedAges(at)
 }
 
 // oneRendering holds one surface's line to the shared template: the same
@@ -308,13 +330,9 @@ func oneRendering(t *testing.T, what, got string, ages []string, note string) {
 	t.Helper()
 	var want []string
 	for _, age := range ages {
-		w := fmt.Sprintf("plan windows: 5h 42%% · 7d 61%%, read %s ago%s", age, note)
-		if got == w {
-			return
-		}
-		want = append(want, fmt.Sprintf("%q", w))
+		want = append(want, fmt.Sprintf("plan windows: 5h 42%% · 7d 61%%, read %s ago%s", age, note))
 	}
-	t.Errorf("%s is not the one rendering:\n got  %q\n want %s", what, got, strings.Join(want, "\n      or "))
+	wantOneOf(t, what, got, want, func(got, w string) bool { return got == w })
 }
 
 // The footer of the full report and `--plan` are one rendering with one
@@ -438,8 +456,12 @@ func seedCodexHint(t *testing.T, home string, at time.Time, pct float64, resets 
 
 // Both meters, in the order the header uses: the guard's reading, then the
 // hint — and the hint carries its age unconditionally, which is what makes
-// it readable as the snapshot it is. 3m30s sits in the middle of the "3m"
-// bucket so the run cannot straddle its edge.
+// it readable as the snapshot it is. The hint is seeded immediately before
+// the run it brackets (runAgedPlan's shape, ranger-base-nmab1/boafa): one
+// `runPosse` launch is a single process with its own clock, and nothing
+// bounds how long it takes, so the age asserted below is every answer
+// BlindFor could honestly have printed between that seed and the process
+// exiting rather than a guess at "well under 30s".
 func TestCostPlanPrintsTheCodexHintWithItsAge(t *testing.T) {
 	bin := buildRhq(t)
 	home := t.TempDir()
@@ -448,20 +470,25 @@ func TestCostPlanPrintsTheCodexHintWithItsAge(t *testing.T) {
 		"at":      now.Format(time.RFC3339Nano),
 		"windows": []map[string]any{{"name": "5h", "pct": 42}, {"name": "7d", "pct": 61}},
 	})
-	seedCodexHint(t, home, now.Add(-3*time.Minute-30*time.Second), 62, now.Add(24*time.Hour))
+	at := time.Now().Add(-agedSeed)
+	seedCodexHint(t, home, at, 62, now.Add(24*time.Hour))
 
 	stdout, stderr, code := runPosse(t, bin, planEnv(home), "cost", "--plan")
 	if code != 0 {
 		t.Fatalf("exit %d, stderr %q", code, stderr)
 	}
-	if want := "plan windows: 5h 42% · 7d 61%\ncodex 7d 62%, as of 3m ago\n"; stdout != want {
-		t.Errorf("stdout = %q, want exactly %q", stdout, want)
+	var want []string
+	for _, age := range agedAges(at) {
+		want = append(want, fmt.Sprintf("plan windows: 5h 42%% · 7d 61%%\ncodex 7d 62%%, as of %s ago\n", age))
 	}
+	wantOneOf(t, "stdout", stdout, want, func(got, w string) bool { return got == w })
 }
 
 // Past its own resets_at the percent is about a window that has rolled over,
 // and it is never printed — the one place this display knows something the
-// reading does not, used only to withhold a stale number.
+// reading does not, used only to withhold a stale number. Bracketed the
+// same way as the age above (ranger-base-boafa): one launch, no bound on
+// its duration.
 func TestCostPlanShowsAResetCodexWindowAsReset(t *testing.T) {
 	bin := buildRhq(t)
 	home := t.TempDir()
@@ -470,7 +497,8 @@ func TestCostPlanShowsAResetCodexWindowAsReset(t *testing.T) {
 		"at":      now.Format(time.RFC3339Nano),
 		"windows": []map[string]any{{"name": "5h", "pct": 42}, {"name": "7d", "pct": 61}},
 	})
-	seedCodexHint(t, home, now.Add(-3*time.Minute-30*time.Second), 96, now.Add(-time.Minute))
+	at := time.Now().Add(-agedSeed)
+	seedCodexHint(t, home, at, 96, now.Add(-time.Minute))
 
 	stdout, stderr, code := runPosse(t, bin, planEnv(home), "cost", "--plan")
 	if code != 0 {
@@ -479,16 +507,19 @@ func TestCostPlanShowsAResetCodexWindowAsReset(t *testing.T) {
 	if strings.Contains(stdout, "96%") {
 		t.Errorf("a window past its reset must not show its percent, got %q", stdout)
 	}
-	if want := "codex 7d reset, as of 3m ago\n"; !strings.HasSuffix(stdout, want) {
-		t.Errorf("stdout = %q, want it to end with %q", stdout, want)
+	var want []string
+	for _, age := range agedAges(at) {
+		want = append(want, fmt.Sprintf("codex 7d reset, as of %s ago\n", age))
 	}
+	wantOneOf(t, "stdout", stdout, want, func(got, w string) bool { return strings.HasSuffix(got, w) })
 }
 
 // The two readings are independent in both directions. The hint is not
 // suppressed by the guard's read failing — it has its own store, and showing
 // an operator less than the box knows is the failure this line exists to
 // prevent — and it does not rescue the exit status either: --plan's contract
-// is the guard's reading, so unreadable is still a failed command.
+// is the guard's reading, so unreadable is still a failed command. Bracketed
+// the same way as the age above (ranger-base-boafa).
 func TestCostPlanHintSurvivesAnUnreadableGuardReadingWithoutRescuingIt(t *testing.T) {
 	bin := buildRhq(t)
 	home := t.TempDir()
@@ -499,15 +530,18 @@ func TestCostPlanHintSurvivesAnUnreadableGuardReadingWithoutRescuingIt(t *testin
 		"windows":  []map[string]any{{"name": "5h", "pct": 42}, {"name": "7d", "pct": 61}},
 		"retry_at": now.Add(30 * time.Minute).Format(time.RFC3339Nano),
 	})
-	seedCodexHint(t, home, now.Add(-3*time.Minute-30*time.Second), 62, now.Add(24*time.Hour))
+	at := time.Now().Add(-agedSeed)
+	seedCodexHint(t, home, at, 62, now.Add(24*time.Hour))
 
 	stdout, stderr, code := runPosse(t, bin, planEnv(home), "cost", "--plan")
 	if code != 1 {
 		t.Fatalf("an unreadable guard reading must still exit 1, got %d (stdout %q, stderr %q)", code, stdout, stderr)
 	}
-	if want := "codex 7d 62%, as of 3m ago\n"; stdout != want {
-		t.Errorf("stdout = %q, want exactly the hint %q", stdout, want)
+	var want []string
+	for _, age := range agedAges(at) {
+		want = append(want, fmt.Sprintf("codex 7d 62%%, as of %s ago\n", age))
 	}
+	wantOneOf(t, "stdout", stdout, want, func(got, w string) bool { return got == w })
 	if !strings.Contains(stderr, "rate-limited") {
 		t.Errorf("stderr must still say why the guard's reading failed: %q", stderr)
 	}
