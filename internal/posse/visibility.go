@@ -210,9 +210,20 @@ var OpsPatterns = []OpsPattern{
 	{
 		Class: "guard",
 		Why:   "a live guard/budget/autostart value — what is set HERE",
+		// The colon form is the harness's own vocabulary, `key: value`. The
+		// second alternation is the other spelling prose actually uses —
+		// key in backticks, a space, the number, no colon at all (the shape
+		// 9ce6ddf on the jwcxu branch used for a live cap that neither arm
+		// saw, ranger-base-1gak4) — held to the narrower key set MEASURED
+		// zero noise over this repo's 176 tracked markdown files
+		// (ranger-base-x9r34); the wider colon key set (plan_usage_ttl,
+		// plan_usage_quiet, model_preflight, model_probe_ttl, dispatch_epoch)
+		// was not measured in the no-colon spelling and stays out of it.
 		ERE: `(plan_guard_[a-z0-9_]*|budget_pass|budget_day|plan_usage_ttl|plan_usage_quiet` +
 			`|model_preflight|model_probe_ttl|dispatch_epoch|autostart_[a-z_]*)` +
-			`[[:space:]]*:[[:space:]]*([0-9]|true|false)`,
+			`[[:space:]]*:[[:space:]]*([0-9]|true|false)` +
+			`|(plan_guard_[a-z0-9_]*|budget_pass|budget_day|autostart_[a-z_]*)` + "`?" +
+			`[[:space:]]+(of|at|=|to)?[[:space:]]*[0-9]`,
 	},
 	{
 		Class: "credential",

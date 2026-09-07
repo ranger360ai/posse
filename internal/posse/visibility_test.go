@@ -73,6 +73,19 @@ func TestScanOps(t *testing.T) {
 		// credential at every launch, a cadence fact about a credential read.
 		{"we run model_preflight: false on this box", "guard"},
 		{"model_probe_ttl: 0 here, so every launch asks", "guard"},
+		// The natural prose spelling — backtick key, space, number, no
+		// colon at all (the shape 9ce6ddf on the jwcxu branch used for a
+		// live cap, ranger-base-1gak4) — for the narrower key set MEASURED
+		// zero noise over this repo's tracked markdown (ranger-base-x9r34).
+		{"the live cap is `plan_guard_5m` 30 today", "guard"},
+		{"we set `autostart_interval` at 5 on this box", "guard"},
+		{"`budget_day` = 250 as of this morning", "guard"},
+		{"raise budget_pass to 400 for the pass", "guard"},
+		// The wider colon-only key set is NOT measured in the no-colon
+		// spelling, so it stays out of the second alternation: prose
+		// naming these keys without a colon must not match.
+		{"model_probe_ttl of 0 sounds about right, unconfirmed", ""},
+		{"dispatch_epoch of 30m sounds about right, unconfirmed", ""},
 		{"on Max 5x the fleet's marginal cost is inside the plan", "plan"},
 		{"the operator is on the SuperGrok plan this month", "plan"},
 		// Shell, quoted in beads about these very hooks: 22 of the 37 beads
