@@ -123,13 +123,18 @@ func TestQAHolderRecordArmIsNarrow(t *testing.T) {
 // record and shares the empty checkout.
 func TestQAHolderRecordArmRefusesAnEmptyKey(t *testing.T) {
 	c := qaProgFixture()
-	c.sessions = append(c.sessions, posse.HerdrSession{Name: "unstamped", Agent: "devops", Status: "working"})
+	c.sessions = append(c.sessions,
+		posse.HerdrSession{Name: "unstamped", Agent: "devops", Status: "working"},
+		// Bead+Agent already match is.ID/is.Assignee below, so only the Dir
+		// guard can keep this issue from joining it.
+		posse.HerdrSession{Name: "unstamped-handed", Bead: "b-handed", Agent: "devops", Status: "working"},
+	)
 	for _, is := range []posse.RepoIssue{
 		{BdIssue: posse.BdIssue{ID: "", Assignee: "devops"}, Dir: ""},
 		{BdIssue: posse.BdIssue{ID: "b-handed", Assignee: "devops"}, Dir: ""},
 	} {
-		if s := c.holderSession(is); s != nil && s.Name == "unstamped" {
-			t.Errorf("empty key (id=%q dir=%q) joined to the unstamped session", is.ID, is.Dir)
+		if s := c.holderSession(is); s != nil {
+			t.Errorf("empty key (id=%q dir=%q) joined to session %q", is.ID, is.Dir, s.Name)
 		}
 	}
 }

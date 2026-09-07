@@ -1729,6 +1729,12 @@ func TestVerifyTrailerFilesOneFindingsBundleAndNamesNoCloser(t *testing.T) {
 			t.Errorf("trailer missing %q:\n%s", want, got)
 		}
 	}
+	// The recorded channel is stated FIRST (ADR 0006 §6, 2026-09-06
+	// amendment): a trailer that says what to file before it says what not
+	// to file has already asked for the bead.
+	if strings.Index(got, "the finding is RECORDED") > strings.Index(got, "the finding is LIVE") {
+		t.Errorf("trailer says LIVE before RECORDED:\n%s", got)
+	}
 	// The retired shape, in every spelling it ever had. A trailer that still
 	// hands the fix to the closer by name is the defect this cut removed.
 	for _, gone := range []string{"-a developer", "file a bug bead", "-l code -a"} {
