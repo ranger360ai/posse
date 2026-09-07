@@ -198,6 +198,7 @@ func TestQueueCutoverLeavesAStrangerStoreAloneHoweverItIsSpelled(t *testing.T) {
 	t.Parallel()
 	for _, sp := range qcSloppySpellings {
 		t.Run(sp.name, func(t *testing.T) {
+			t.Parallel()
 			constitution, _ := qcConstitution(t)
 			store := filepath.Join(constitution, ".beads")
 			queue := filepath.Join(t.TempDir(), "queue")
