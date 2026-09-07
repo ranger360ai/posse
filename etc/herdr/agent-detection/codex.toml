@@ -27,7 +27,18 @@
 # Retire this file when herdr ships a remote codex manifest that reports
 # blocked for etc/herdr/agent-detection/testdata/*.txt — see the README.
 id = "codex"
-# posse_forked_from = "2026.08.09.1"   <- read by scripts/verify-detection.sh
+# posse_forked_from = "2026.09.05.1"   <- read by scripts/verify-detection.sh
+# Re-checked against upstream 2026.09.05.1 on 2026-09-07 (ranger-base-k39dz):
+# upstream added its own `startup_update` rule (bottom_non_empty_lines(20),
+# priority 950) that now catches the "Update available!" menu our
+# `update_menu` was written for — swapping in the pure upstream manifest and
+# replaying the fixtures turns blocked-update-menu green. It still misses
+# hooks_review, live_strong_blocker's "esc to go back" wording, and both
+# sign-in screens (blocked-hooks-review, blocked-model-picker,
+# blocked-signin*) — those five stayed idle/none. Not retiring: five of our
+# six rules remain unmatched upstream. `update_menu` itself is left in place
+# rather than trimmed as redundant — this bead only re-checks retire-vs-keep,
+# it doesn't prune rules upstream has since duplicated.
 # herdr requires a dotted-numeric version; the trailing .10x marks this as ours.
 version = "2026.08.09.103"
 min_engine_version = 3

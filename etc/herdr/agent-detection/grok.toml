@@ -32,7 +32,12 @@
 id = "grok"
 # posse_forked_from = "2026.07.16.2"   <- read by scripts/verify-detection.sh
 # ...which was the BUNDLED manifest of this herdr build, not a remote one:
-# posse_bundled_from_herdr = "0.8.0"
+# posse_bundled_from_herdr = "0.8.2"
+# Re-extracted and re-diffed on 2026-09-07 (ranger-base-k39dz): herdr moved
+# 0.8.0 -> 0.8.2 but the bundled grok manifest itself is byte-identical,
+# still version 2026.07.16.2 (re-extracted with the `dd` recipe below,
+# diffed rule-for-rule against this file's non-splash rules — no changes).
+# Upstream still has no rule for the startup splash; not retiring.
 # herdr requires a dotted-numeric version; the trailing .105 marks this as ours
 # and keeps it above the bundled .2 so herdr prefers it. ranger-base-z6n bumped
 # .104 to .105 when the splash anchor learned the production-width boxed layout.
