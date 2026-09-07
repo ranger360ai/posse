@@ -236,6 +236,21 @@ func TestQATheExternalDiffRowIsPinnedWithItsCostOrNotPinnedAtAll(t *testing.T) {
 		if !strings.Contains(text[i:j], key) {
 			t.Errorf("%s is pinned at neither end and is not named in the %q paragraph either. The file's contract is that a name which is not in the table is READABLE as not covered — dropping the row and saying nothing is the same defect as pinning it and saying nothing (ranger-base-csfbj)", key, marker)
 		}
+		// The name alone is not the disclosure this test is for (see the
+		// comment four lines above the Contains check that just ran) — the
+		// name occurs five more times in this region, none of them the
+		// measured bullet. "no neutral spelling" and "ranger-base-5sph1" are
+		// both ambiguous inside this paragraph too: GIT_CONFIG_GLOBAL's own
+		// bullet uses the first, and the paragraph's opener uses the second.
+		// "DRIVER RUNS" / "DRIVER NEVER RUNS" name the two format tables that
+		// price the row and appear nowhere else in inletpin.go, so they exist
+		// only inside the 39 lines (inletpin.go:109-147) this arm is meant to
+		// hold — deleting that bullet cannot leave them behind.
+		for _, want := range []string{"DRIVER RUNS", "DRIVER NEVER RUNS"} {
+			if !strings.Contains(text[i:j], want) {
+				t.Errorf("inletpin.go's %q paragraph names %s but does not say %q — the measured bullet that prices the gap (inletpin.go:109-147, the two format tables and the operator ruling) is gone even though the bare name survived", marker, key, want)
+			}
+		}
 		return
 	}
 
