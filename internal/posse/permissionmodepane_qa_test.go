@@ -451,7 +451,7 @@ func TestQAGrokBorderTableIsTheTwoMeasuredWords(t *testing.T) {
 //	herdr workspace create --cwd <scratch> --no-focus       # note the pane
 //	herdr pane run <pane> "claude --permission-mode auto"   # or codex/grok
 //	RHQ_LIVE_PANE=<pane> RHQ_LIVE_RUNTIME=claude RHQ_LIVE_MODE=auto \
-//	  go test ./internal/rhq -run TestQALivePermissionModeInPane -v
+//	  go test ./internal/posse -run TestQALivePermissionModeInPane -v
 //
 // It submits nothing, so it costs no turn. grok needs one character typed
 // and deleted first (the splash), and a claude pane in a fresh directory

@@ -6,8 +6,8 @@ package posse
 // checklist, items 1 and 2, run against real CLIs in real panes. It costs one model
 // turn per runtime, so it is opt-in:
 //
-//	RHQ_LIVE_PROBE=codex go test ./internal/rhq -run TestLiveRuntimeProbe -v
-//	RHQ_LIVE_PROBE=codex RHQ_LIVE_PROBE_FAKE=1 go test ./internal/rhq -run TestLiveRuntimeProbe -v
+//	RHQ_LIVE_PROBE=codex go test ./internal/posse -run TestLiveRuntimeProbe -v
+//	RHQ_LIVE_PROBE=codex RHQ_LIVE_PROBE_FAKE=1 go test ./internal/posse -run TestLiveRuntimeProbe -v
 //
 // RHQ_LIVE_PROBE names an INSTALLED CLI, which the test redeclares as a
 // template-only profile in its own RHQ_HOME — checklist item 2, "codex

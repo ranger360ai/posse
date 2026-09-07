@@ -10,7 +10,7 @@ package posse
 //	the hook fires on the repo mount, a read-only repo is read-only, and the
 //	one carve-out in it (`.beads`) is a bead the persona can still comment on.
 //
-//	RHQ_LIVE_DOCKER=1 go test ./internal/rhq -run TestLiveInnerGates -v
+//	RHQ_LIVE_DOCKER=1 go test ./internal/posse -run TestLiveInnerGates -v
 //
 // Needs docker (or an engine answering its CLI) and the cage image built —
 // `posse cage build ~/src/posse`. It spends no API turn: the "runtime" is a

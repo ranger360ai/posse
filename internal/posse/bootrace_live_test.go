@@ -14,7 +14,7 @@ package posse
 //	herdr --session <s> server &                       # scratch, not the fleet
 //	export HERDR_SOCKET_PATH=~/.config/herdr/sessions/<s>/herdr.sock
 //	herdr workspace create --cwd <scratch> --label qalive --no-focus  # ROOT pane id
-//	RHQ_LIVE_SHELL_PANE=<pane> go test ./internal/rhq -run TestLiveAwaitAgentHolds -v
+//	RHQ_LIVE_SHELL_PANE=<pane> go test ./internal/posse -run TestLiveAwaitAgentHolds -v
 //
 // RHQ_LIVE_CMD overrides the command (default: the fleet's grok line, which
 // is where the race was measured). It never prompts and never presses Enter,

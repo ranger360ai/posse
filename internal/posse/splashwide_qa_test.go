@@ -27,7 +27,7 @@ func TestQAGrokWideBoxedSplashIsNamedIdle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// go test ./internal/rhq runs with cwd = this package. The capture lives
+	// go test ./internal/posse runs with cwd = this package. The capture lives
 	// with the other detection fixtures so scripts/verify-detection.sh — the
 	// gate that runs against the INSTALLED manifest after `make install-detection`
 	// or a `herdr update` — covers the wide layout too (ranger-base-neyn).

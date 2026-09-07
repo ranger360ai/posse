@@ -52,10 +52,10 @@ nothing and a burned version is permanent.
 **1. The version in the source already equals the tag.**
 
 ```sh
-$ grep 'Version ' internal/rhq/app.go
+$ grep 'Version ' internal/posse/app.go
 ```
 **Verify:** `Version = "X.Y.Z"` matches the `vX.Y.Z` you are about to cut.
-`internal/rhq.Version` is a `const` — it cannot be stamped from outside, and
+`internal/posse.Version` is a `const` — it cannot be stamped from outside, and
 `scripts/release-artifacts.sh` refuses a build where the two disagree, because
 a binary whose `posse version` contradicts its own download URL is worse than
 no release. **Bumping a release is therefore: edit `app.go`, merge, then tag —

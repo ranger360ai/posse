@@ -9,7 +9,7 @@ package posse
 //
 //	herdr --session ybec server &                      # scratch, not the fleet
 //	export HERDR_SOCKET_PATH=~/.config/herdr/sessions/ybec/herdr.sock
-//	RHQ_LIVE_PANE_LINE=1 go test ./internal/rhq -run TestLivePaneLine -v
+//	RHQ_LIVE_PANE_LINE=1 go test ./internal/posse -run TestLivePaneLine -v
 //	herdr server stop
 //
 // It creates and closes its own workspaces, types only `printf` at them, and

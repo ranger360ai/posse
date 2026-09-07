@@ -19,7 +19,7 @@ package posse
 //	export HERDR_SOCKET_PATH=~/.config/herdr/sessions/<s>/herdr.sock
 //	herdr workspace create --cwd <scratch> --label qalive --no-focus  # pane id
 //	herdr pane run <pane> "grok --permission-mode auto"   # GrokFleetFlags
-//	RHQ_LIVE_PANE=<pane> go test ./internal/rhq -run TestLiveAwaitAgent -v
+//	RHQ_LIVE_PANE=<pane> go test ./internal/posse -run TestLiveAwaitAgent -v
 //
 // It never prompts: awaitAgent stops at a promptable target, so this costs
 // no agent turn. Tear down with `herdr workspace close` + `herdr server stop`.

@@ -18,8 +18,8 @@ package posse
 // This gate launches the session itself. It is opt-in because it SPENDS A
 // REAL TURN on the runtime under test:
 //
-//	RHQ_LIVE_RUNTIME=codex go test ./internal/rhq -run TestLiveRuntimeContractWalk -v -timeout 30m
-//	RHQ_LIVE_RUNTIME=grok  go test ./internal/rhq -run TestLiveRuntimeContractWalk -v -timeout 30m
+//	RHQ_LIVE_RUNTIME=codex go test ./internal/posse -run TestLiveRuntimeContractWalk -v -timeout 30m
+//	RHQ_LIVE_RUNTIME=grok  go test ./internal/posse -run TestLiveRuntimeContractWalk -v -timeout 30m
 //	RHQ_LIVE_RUNTIME=claude ...   # the ADR 0017 baseline, for comparison
 //
 // Run it before switching a lane back onto a runtime, and after any

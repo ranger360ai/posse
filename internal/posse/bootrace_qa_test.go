@@ -176,7 +176,7 @@ func TestQAGuessesForTheWholeWindowAreLostToOneLateExplainError(t *testing.T) {
 //	export HERDR_SOCKET_PATH=~/.config/herdr/sessions/<s>/herdr.sock
 //	herdr workspace create --cwd <scratch> --label qalive --no-focus
 //	RHQ_LIVE_SHELL_PANE=<pane> RHQ_LIVE_CMD='grok --permission-mode auto' \
-//	  go test ./internal/rhq -run TestQALiveGateOpensOnAScreen -v
+//	  go test ./internal/posse -run TestQALiveGateOpensOnAScreen -v
 //
 // The workspace LABEL must be qalive or the yt1p identity fence leaves the
 // meta out of the listing and AgentTarget never resolves. RHQ_LIVE_TITLE

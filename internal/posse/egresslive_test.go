@@ -10,7 +10,7 @@ package posse
 //
 //	inside the cage, an agent that ignores HTTPS_PROXY reaches nothing.
 //
-//	RHQ_LIVE_DOCKER=1 go test ./internal/rhq -run TestLiveEgressBoundary -v
+//	RHQ_LIVE_DOCKER=1 go test ./internal/posse -run TestLiveEgressBoundary -v
 //
 // Needs docker (or an engine answering its CLI) and the cage image built —
 // `posse cage build ~/src/posse`. It spends no API turn: the allowlisted

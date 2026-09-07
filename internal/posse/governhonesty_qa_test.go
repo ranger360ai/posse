@@ -16,7 +16,7 @@ package posse
 // Live run (scratch session; the fleet's socket is only compared against):
 //
 //	scripts/verify-govern-honesty.sh
-//	RHQ_LIVE_GOVERN_HONESTY=1 go test ./internal/rhq -run TestQAGovernHonestyScriptPassesAgainstAScratchServer -v
+//	RHQ_LIVE_GOVERN_HONESTY=1 go test ./internal/posse -run TestQAGovernHonestyScriptPassesAgainstAScratchServer -v
 //
 // Measured 2026-08-27 on bin/posse-go: 17/17 PASS. The same script against
 // the binary built from the commit before the header fix fails

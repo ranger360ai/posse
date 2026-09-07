@@ -12,7 +12,7 @@ package posse
 //	really denies the subtree the PID denied and really opens the one it
 //	left open.
 //
-//	RHQ_LIVE_DOCKER=1 go test ./internal/rhq -run TestLiveCageOverlay -v
+//	RHQ_LIVE_DOCKER=1 go test ./internal/posse -run TestLiveCageOverlay -v
 //
 // Needs the engine on PATH. It needs no cage image and spends no API turn:
 // every claim here is about the environment the runtime is handed, so the

@@ -70,7 +70,7 @@ func shopSet(t *testing.T, in GovInputs) GovSet {
 // Every test here goes through it, including the ones with no bd row to
 // assert. Without it BeadsDirs falls back to the process cwd and NewBd
 // finds the real binary — so the check would run `bd ready` against
-// internal/rhq and read whatever the operator's own queue happens to say.
+// internal/posse and read whatever the operator's own queue happens to say.
 // That is the live-state class (ranger-base-rp2y): red per hour, not per
 // commit.
 func govRepo(t *testing.T, b *HerdrBackend) string {

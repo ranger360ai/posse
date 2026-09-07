@@ -12,7 +12,7 @@ package posse
 // Live run (scratch session, fleet is only snapshotted):
 //
 //	scripts/verify-id-recycle.sh
-//	RHQ_LIVE_IDRECYCLE=1 go test ./internal/rhq -run TestQAIdRecycleScriptPassesAgainstAScratchServer -v
+//	RHQ_LIVE_IDRECYCLE=1 go test ./internal/posse -run TestQAIdRecycleScriptPassesAgainstAScratchServer -v
 
 import (
 	"os"

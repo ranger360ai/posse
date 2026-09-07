@@ -6582,7 +6582,7 @@ What was measured, before and during the build:
   `git pull`, or after bd's own pre-commit hook rewrote it — still raises it,
   in the worktree and in the main checkout alike, because it is one database
   and the fact is true of both. What worktrees do not add is a *new* source
-  of it. The live pin (`RHQ_LIVE_BD=1 go test ./internal/rhq -run
+  of it. The live pin (`RHQ_LIVE_BD=1 go test ./internal/posse -run
   TestLiveWorktreeSharesOneGraph`) asserts exactly that discrimination.
   **UPDATE (ranger-base-p969)**: the "no `bd sync --import-only` left sitting
   as a persona's obvious next step" line above is still right — that stays a
@@ -7047,7 +7047,7 @@ that could repair the box would be that tree, one flag away.
 **The suite command is `make test`, not a bare `go test ./...`**
 (ranger-base-2ggb, with gilfoyle's ranger-base-2ad3 and 7xla on the same
 invariant). The target adds `-timeout 25m` and the flag is load-bearing: go's
-default is 10m PER PACKAGE, and `internal/rhq` has been measured on darwin
+default is 10m PER PACKAGE, and `internal/posse` has been measured on darwin
 between 484.6s and 623.2s standalone — the worst reading already past the
 default — and at 600.8s / 601.0s / 601.1s under `./...`, which is not an
 assertion but the ceiling arriving as a timeout panic, because `./...` runs

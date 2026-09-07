@@ -4,7 +4,7 @@ package posse
 
 // A live pin for rangerhq-aas, run against the real bd rather than the fake.
 //
-//	RHQ_LIVE_BD=1 go test ./internal/rhq -run TestLiveBdRun -v
+//	RHQ_LIVE_BD=1 go test ./internal/posse -run TestLiveBdRun -v
 //
 // WHY THIS EXISTS ON TOP OF beadserr_test.go. Every arm of that file drives
 // the FAKE bd, whose failure shape we wrote ourselves from a measurement

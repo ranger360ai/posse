@@ -5,7 +5,7 @@ package posse
 // Live probe for rangerhq-ouf9: does herdr tolerate the instance separator
 // in a workspace label at all?
 //
-//	RHQ_LIVE_HERDR=1 go test ./internal/rhq -run TestLiveHerdrKeepsASlashInALabel -v
+//	RHQ_LIVE_HERDR=1 go test ./internal/posse -run TestLiveHerdrKeepsASlashInALabel -v
 //
 // The design that introduced `instance:` left exactly one assumption open
 // and said to probe it before building: labels are herdr's, not posse's, and

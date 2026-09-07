@@ -264,7 +264,7 @@ func TestCageLauncherRejectsHostileExeNames(t *testing.T) {
 // cannot see docker reset argv0. herdr identifies by argv0; if the docker
 // client re-execs as `docker`, a caged session is agent_not_found again.
 //
-//	RHQ_LIVE_DOCKER=1 go test ./internal/rhq -run TestLiveCageLauncherExecsDockerAsClaude -v
+//	RHQ_LIVE_DOCKER=1 go test ./internal/posse -run TestLiveCageLauncherExecsDockerAsClaude -v
 func TestLiveCageLauncherExecsDockerAsClaude(t *testing.T) {
 	t.Parallel()
 	if os.Getenv("RHQ_LIVE_DOCKER") == "" {
