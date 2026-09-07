@@ -76,7 +76,7 @@ is a history purge.`
 // which is exactly the review the wall exists to force. A file staged
 // directly under docs/, with no subdirectory, has no genre and is refused
 // the same as an unlisted one.
-var PublicDocsGenres = []string{"adr", "runbooks", "notes.d"}
+var PublicDocsGenres = []string{"adr", "runbooks", "notes.d", "probes"}
 
 // DocsGenreRule is what a check-1 refusal names.
 const DocsGenreRule = `ADR 0024 D2 check 1: a public repo's docs/ tree only carries genres any

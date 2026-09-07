@@ -392,6 +392,13 @@ func TestDocsGenreAndProseGuardHook(t *testing.T) {
 		t.Fatalf("an allowlisted genre with clean content must commit: %v\n%s", err, out)
 	}
 
+	// docs/probes is an allowlisted genre too (ranger-base-pop14): a fixture
+	// bead's file lands here per docs/probes/README.md and must commit clean.
+	writeAndAdd(pub, "docs/probes/ranger-base-example.md", "ranger-base-example: 2026-09-07, worktree ok\n")
+	if out, err := git(pub, persona, "commit", "-m", "x", "--", "docs/probes/ranger-base-example.md"); err != nil {
+		t.Fatalf("docs/probes must be an allowlisted genre: %v\n%s", err, out)
+	}
+
 	// The same, with a non-ASCII byte in the path: without core.quotePath=
 	// false on check 1's listing, git C-quotes the path, the leading quote
 	// matches neither 'docs/*/*' nor the genre split, and a legitimate
