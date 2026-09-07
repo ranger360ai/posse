@@ -603,7 +603,7 @@ func (a *App) RuntimeProbe(rt *Runtime, h Herdr, o ProbeOpts) (*ProbeRecord, err
 	}
 	whereFile := filepath.Join(dir, "where.txt")
 	script := filepath.Join(dir, "probe.sh")
-	if err := os.WriteFile(script, []byte("#!/bin/sh\n# posse runtime probe — the third subprocess shape (ADR 0009 §1)\nexec "+canary+" "+ProbeShapeScript+"\n"), 0o755); err != nil {
+	if err := WriteExecutable(script, []byte("#!/bin/sh\n# posse runtime probe — the third subprocess shape (ADR 0009 §1)\nexec "+canary+" "+ProbeShapeScript+"\n"), 0o755); err != nil {
 		return nil, err
 	}
 	promptFile := filepath.Join(dir, "prompt.txt")

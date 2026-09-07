@@ -235,7 +235,7 @@ func renderCageBd(binDir string) (string, error) {
 	}
 	script := fmt.Sprintf("#!/bin/sh\n# posse: bd inside the cage — the .beads carve-out's other half (rangerhq-abvm).\n# Rendered at launch by `posse gates wrap`; do not edit.\nexec %s %s \"$@\"\n",
 		shQuote(real), strings.Join(CageBdFlags, " "))
-	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+	if err := WriteExecutable(path, []byte(script), 0o755); err != nil {
 		return "", err
 	}
 	return path, nil

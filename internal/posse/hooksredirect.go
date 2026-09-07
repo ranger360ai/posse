@@ -135,12 +135,12 @@ func (a *App) RenderSessionHooks(session, dir string, m managedHooks, wantPrePus
 	}
 	for _, slot := range posseHookSlots(wantPrePush) {
 		name := "posse-" + slot
-		if err := os.WriteFile(filepath.Join(hooks, name), []byte(members[slot]), 0o755); err != nil {
+		if err := WriteExecutable(filepath.Join(hooks, name), []byte(members[slot]), 0o755); err != nil {
 			return nil, err
 		}
 	}
 	for _, slot := range r.Slots {
-		if err := os.WriteFile(filepath.Join(hooks, slot), []byte(redirectDispatcher(slot, m.Dir, members[slot] != "")), 0o755); err != nil {
+		if err := WriteExecutable(filepath.Join(hooks, slot), []byte(redirectDispatcher(slot, m.Dir, members[slot] != "")), 0o755); err != nil {
 			return nil, err
 		}
 	}

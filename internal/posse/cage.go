@@ -1406,7 +1406,7 @@ func (a *App) BuildCageImage(src, runtimes string, out *os.File) error {
 	if err != nil {
 		return Die("linux bd not where go install left it: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(bin, "bd"), b, 0o755); err != nil {
+	if err := WriteExecutable(filepath.Join(bin, "bd"), b, 0o755); err != nil {
 		return err
 	}
 	os.RemoveAll(gopath) // the staged GOPATH was only a landing spot for that binary
