@@ -343,7 +343,7 @@ func TestRenderAgentsSkills(t *testing.T) {
 	mkSkill(t, a.SkillsDir(), "dataviz")
 	mkSkill(t, a.SkillsDir(), "code-review")
 	mkSkill(t, a.SkillsDir(), "doomed")
-	repo := t.TempDir()
+	repo := gitTempDir(t)
 	if out, err := exec.Command("git", "-C", repo, "init", "-q").CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v %s", err, out)
 	}
@@ -581,7 +581,7 @@ func TestSkillsOnCodexAcceptance(t *testing.T) {
 	mkSkill(t, a.SkillsDir(), "dataviz")
 	os.WriteFile(filepath.Join(a.AgentsDir, "security.md"),
 		[]byte("---\nname: security\nruntime: codex\nskills: [dataviz]\ndeny: [Edit, Write]\n---\nYou are security.\n"), 0o644)
-	repo := t.TempDir()
+	repo := gitTempDir(t)
 	if out, err := exec.Command("git", "-C", repo, "init", "-q").CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v %s", err, out)
 	}

@@ -36,7 +36,7 @@ func sbRoot(t *testing.T) string {
 	wtqaHome(t) // HOME elsewhere too — .claude, .cache and friends
 	sbAssertHomeIsAFixture(t, before)
 	tmp := t.TempDir()  // what TMPDIR will name
-	root := t.TempDir() // a sibling of it: granted by nothing
+	root := gitTempDir(t) // a sibling of it: granted by nothing
 	if underDir("/tmp", root) {
 		t.Skip("TMPDIR resolves under /tmp; the profile's blanket temp grant would cover the fixture")
 	}

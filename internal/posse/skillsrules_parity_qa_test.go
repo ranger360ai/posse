@@ -177,7 +177,7 @@ func TestQASkillSurfacePerRuntimeDeclaration(t *testing.T) {
 			if len(p.Degraded) != 0 {
 				t.Fatalf("binding must be realizable: %v", p.Degraded)
 			}
-			dir := t.TempDir()
+			dir := gitTempDir(t)
 			if out, err := exec.Command("git", "-C", dir, "init", "-q").CombinedOutput(); err != nil {
 				t.Fatalf("git init: %v %s", err, out)
 			}
@@ -656,7 +656,7 @@ func TestQALiveNativeRulesDiscovery(t *testing.T) {
 // qmPlantRulebooks writes rel→token files into a fresh git repo.
 func qmPlantRulebooks(t *testing.T, files map[string]string) string {
 	t.Helper()
-	repo := t.TempDir()
+	repo := gitTempDir(t)
 	for rel, tok := range files {
 		p := filepath.Join(repo, filepath.FromSlash(rel))
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
@@ -740,7 +740,7 @@ func TestQALiveSkillDiscoveryPerRuntime(t *testing.T) {
 	bound := []string{"qm-alpha", "qm-beta"}
 
 	t.Run("cwd-runtimes", func(t *testing.T) {
-		repo := t.TempDir()
+		repo := gitTempDir(t)
 		if out, err := exec.Command("git", "-C", repo, "init", "-q").CombinedOutput(); err != nil {
 			t.Fatalf("git init: %v %s", err, out)
 		}

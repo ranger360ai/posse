@@ -81,7 +81,7 @@ func TestQAIdentityGuardCatchesAnEmailCarryingAMetacharacter(t *testing.T) {
 		t.Skip("no git")
 	}
 	const email = "qa+probe@example.com"
-	home := t.TempDir()
+	home := gitTempDir(t)
 	t.Setenv("HOME", home)
 	pub := filepath.Join(home, "pub")
 	cfg := filepath.Join(home, "config.yaml")

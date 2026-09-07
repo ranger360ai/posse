@@ -301,7 +301,7 @@ func TestL3StillRecoversGitPushOnAnUnprobedTemplateRuntime(t *testing.T) {
 		t.Skip("no git")
 	}
 	a, bob := probeParityApp(t)
-	repo := t.TempDir()
+	repo := gitTempDir(t)
 	if out, err := exec.Command("git", "-C", repo, "init", "-q", "-b", "main").CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v %s", err, out)
 	}

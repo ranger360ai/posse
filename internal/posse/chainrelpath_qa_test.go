@@ -110,7 +110,7 @@ func TestChainPrescriptionPathsSurviveItsOwnCd(t *testing.T) {
 		{"dot from inside the repo", func(parent, repo string) string { return repo }, func(parent, repo string) string { return "." }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			parent := t.TempDir()
+			parent := gitTempDir(t)
 			repo := filepath.Join(parent, "r")
 			hooks := relGitRepo(t, repo)
 			typedIn := tc.from(parent, repo)

@@ -61,7 +61,7 @@ func mhpFixture(t *testing.T) (repo, managed string) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
-	root := t.TempDir()
+	root := gitTempDir(t)
 	repo = filepath.Join(root, "checkout")
 	managed = filepath.Join(root, "managed-hooks")
 	for _, d := range []string{repo, managed} {

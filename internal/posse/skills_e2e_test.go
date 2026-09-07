@@ -27,7 +27,7 @@ func TestE2ESkillSurfaces(t *testing.T) {
 	a := &App{Home: home, StateDir: filepath.Join(home, "state")}
 	os.MkdirAll(a.SkillsDir(), 0o755)
 	mkSkill(t, a.SkillsDir(), "posse-e2e-probe")
-	repo := t.TempDir()
+	repo := gitTempDir(t)
 	if out, err := exec.Command("git", "-C", repo, "init", "-q").CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v %s", err, out)
 	}
@@ -87,7 +87,7 @@ func TestE2ESkillSurfaces(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(p, "SKILL.md"), []byte("---\nname: "+name+"\n---\nbody without a description line\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		repo2 := t.TempDir()
+		repo2 := gitTempDir(t)
 		if out, err := exec.Command("git", "-C", repo2, "init", "-q").CombinedOutput(); err != nil {
 			t.Fatalf("git init: %v %s", err, out)
 		}

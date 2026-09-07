@@ -124,7 +124,7 @@ func TestMetricCatalogReport(t *testing.T) {
 // transition between two commits.
 func TestReopensFromGit(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
+	dir := gitTempDir(t)
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}

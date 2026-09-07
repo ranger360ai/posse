@@ -149,7 +149,7 @@ func TestQAHomeCutoverRehearsal(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
-	root := t.TempDir()
+	root := gitTempDir(t)
 	repo := filepath.Join(root, "ranger-base")
 	src := filepath.Join(repo, ConstitutionSourceDir)
 	home := filepath.Join(root, ".config", "posse")

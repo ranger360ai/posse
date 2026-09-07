@@ -676,7 +676,7 @@ func TestHookDepsNamesEveryCommandTheRenderedHooksCall(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
-	repo := t.TempDir()
+	repo := gitTempDir(t)
 	cmd := exec.Command("git", "-C", repo, "init", "-q", "-b", "main")
 	cmd.Env = []string{"PATH=" + PathOutsideGates(""), "HOME=" + repo}
 	if b, err := cmd.CombinedOutput(); err != nil {
@@ -809,7 +809,7 @@ func TestShellCommandWordsReportsBackticksInCodeNotInProse(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
-	repo := t.TempDir()
+	repo := gitTempDir(t)
 	cmd := exec.Command("git", "-C", repo, "init", "-q", "-b", "main")
 	cmd.Env = []string{"PATH=" + PathOutsideGates(""), "HOME=" + repo}
 	if b, err := cmd.CombinedOutput(); err != nil {

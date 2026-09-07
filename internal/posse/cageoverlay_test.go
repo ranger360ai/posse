@@ -57,7 +57,7 @@ func gitRepoFixture(t *testing.T) string {
 	// Resolved before git sees it: mounts are same-path in and out, and a
 	// fixture mixing /tmp with its /private/tmp real path would be testing
 	// the symlink rather than the mount.
-	dir := absResolve(t.TempDir())
+	dir := absResolve(gitTempDir(t))
 	gitRun(t, dir, "init", "-b", "main")
 	gitRun(t, dir, "config", "user.email", "t@example.com")
 	gitRun(t, dir, "config", "user.name", "t")

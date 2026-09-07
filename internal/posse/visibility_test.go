@@ -195,7 +195,7 @@ func TestBeadsVisibilityGuardHook(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
-	home := t.TempDir()
+	home := gitTempDir(t)
 	gates := t.TempDir()
 	pub, priv, unmarked := filepath.Join(home, "pub"), filepath.Join(home, "priv"), filepath.Join(home, "unmarked")
 	cfg := filepath.Join(home, "config.yaml")
@@ -323,7 +323,7 @@ func TestDocsGenreAndProseGuardHook(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
-	home := t.TempDir()
+	home := gitTempDir(t)
 	gates := t.TempDir()
 	pub, priv := filepath.Join(home, "pub"), filepath.Join(home, "priv")
 	cfg := filepath.Join(home, "config.yaml")
@@ -682,7 +682,7 @@ func TestInstanceOpsPatternGuardsAPublicRepo(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
-	home := t.TempDir()
+	home := gitTempDir(t)
 	gates := t.TempDir()
 	pub, priv, plain := filepath.Join(home, "pub"), filepath.Join(home, "priv"), filepath.Join(home, "plain")
 	const secret = "Zephyrine"
@@ -870,7 +870,7 @@ func TestDeriveIdentityLiterals(t *testing.T) {
 	// has nothing to abbreviate and instance-path/instance-path-abs
 	// coincide — which is a real, DEDUPED case (seen in TestDeriveIdentity
 	// LiteralsSkipsAbsentSourcesSilently's kin below), not this test's.
-	home := t.TempDir()
+	home := gitTempDir(t)
 	t.Setenv("HOME", home)
 	repo := filepath.Join(home, "repo")
 	os.MkdirAll(repo, 0o755)
@@ -934,7 +934,7 @@ func TestDeriveIdentityLiteralsWallsEveryScopesEmail(t *testing.T) {
 		t.Skip("no git")
 	}
 	const local, global = "contrib@example.org", "box@work.example"
-	home := t.TempDir()
+	home := gitTempDir(t)
 	t.Setenv("HOME", home)
 	// The box's own env may already point the global scope elsewhere
 	// (GIT_CONFIG_GLOBAL outranks $HOME/.gitconfig); pin the scratch file
@@ -1107,7 +1107,7 @@ func TestGuardValueLiteralGuardHook(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
-	home := t.TempDir()
+	home := gitTempDir(t)
 	t.Setenv("HOME", home)
 	gates := t.TempDir()
 	pub := filepath.Join(home, "pub")
@@ -1201,7 +1201,7 @@ func TestIdentityLiteralSingleQuoteRefusesInstall(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
-	repo := t.TempDir()
+	repo := gitTempDir(t)
 	if out, err := exec.Command("git", "-C", repo, "init", "-q").CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v %s", err, out)
 	}
@@ -1249,7 +1249,7 @@ func TestIdentityLiteralDoesNotTripOnABareBeadID(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
-	home := t.TempDir()
+	home := gitTempDir(t)
 	repo := filepath.Join(home, "pub")
 	cfg := filepath.Join(home, "config.yaml")
 	os.WriteFile(cfg, []byte("beads_visibility:\n  "+repo+": public\n"), 0o644)
@@ -1286,7 +1286,7 @@ func TestIdentityLiteralGuardHook(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
-	home := t.TempDir()
+	home := gitTempDir(t)
 	// Install runs IN this Go process, not through the git subprocess
 	// helper below — DeriveIdentityLiterals reads $HOME directly (AbbrevHome),
 	// so it has to be THIS home too, or instance and instance-abs never

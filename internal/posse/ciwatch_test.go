@@ -87,7 +87,7 @@ func ciRunJSONID(sha, status, conclusion string, at time.Time, id string) string
 // origin and the workflow file — and points the fake gh's answers at it.
 func ghRepo(t *testing.T, workflow string, runs ...string) (dir, ghbin string) {
 	t.Helper()
-	dir = t.TempDir()
+	dir = gitTempDir(t)
 	run := func(args ...string) {
 		t.Helper()
 		if _, err := git(dir, args...); err != nil {
@@ -343,7 +343,7 @@ func TestReadCIAbstainsRatherThanGuessing(t *testing.T) {
 // `main` is read on its own branch rather than answered over an empty one.
 func TestCIBranchFollowsOriginHEADAndConfig(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
+	dir := gitTempDir(t)
 	if _, err := git(dir, "init", "-b", "trunk"); err != nil {
 		t.Fatal(err)
 	}

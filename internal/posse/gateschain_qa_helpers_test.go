@@ -59,7 +59,7 @@ func qaChainRepo(t *testing.T) (repo, witness string) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
-	repo = t.TempDir()
+	repo = gitTempDir(t)
 	if out, err := exec.Command("git", "-C", repo, "init", "-q", "-b", "main").CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v %s", err, out)
 	}
@@ -153,7 +153,7 @@ func qaGuardRepo(t *testing.T) (string, func(extra []string, args ...string) (st
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
-	repo := t.TempDir()
+	repo := gitTempDir(t)
 	env := []string{"PATH=" + PathOutsideGates(""), "HOME=" + repo, "GIT_EDITOR=true",
 		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t"}
 	git := func(extra []string, args ...string) (string, error) {

@@ -980,7 +980,7 @@ func TestPrePushHook(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
-	repo := t.TempDir()
+	repo := gitTempDir(t)
 	if out, err := exec.Command("git", "-C", repo, "init", "-q").CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v %s", err, out)
 	}
@@ -1039,7 +1039,7 @@ func TestPrePushHook(t *testing.T) {
 		t.Error("non-repo must error")
 	}
 	// End to end: a real push into a bare remote is refused by git itself.
-	remote := t.TempDir()
+	remote := gitTempDir(t)
 	exec.Command("git", "-C", remote, "init", "-q", "--bare").Run()
 	WriteExecutable(p, []byte(PrePushHook), 0o755)
 	git := func(env []string, args ...string) (string, error) {
@@ -1136,7 +1136,7 @@ func TestForeignHookRefusalPrescribesTheChain(t *testing.T) {
 		t.Skip("no git")
 	}
 	for _, slot := range []string{"pre-push", "prepare-commit-msg"} {
-		repo := t.TempDir()
+		repo := gitTempDir(t)
 		if out, err := exec.Command("git", "-C", repo, "init", "-q").CombinedOutput(); err != nil {
 			t.Fatalf("git init: %v %s", err, out)
 		}
@@ -1878,7 +1878,7 @@ func TestInstallCommitGuardRefreshesItsChainedHook(t *testing.T) {
 	}
 	for _, neighborName := range []string{"theirs-prepare-commit-msg", "bd-prepare-commit-msg"} {
 		t.Run(neighborName, func(t *testing.T) {
-			repo := t.TempDir()
+			repo := gitTempDir(t)
 			gitEnv := []string{"PATH=" + PathOutsideGates(""), "HOME=" + repo,
 				"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t"}
 			git := func(dir string, extra []string, args ...string) (string, error) {
@@ -2181,7 +2181,7 @@ func TestSharedIndexCommitHook(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
-	repo := t.TempDir()
+	repo := gitTempDir(t)
 	gates := t.TempDir()
 	if out, err := exec.Command("git", "-C", repo, "init", "-q", "-b", "main").CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v %s", err, out)
@@ -2315,7 +2315,7 @@ func TestSharedIndexCommitHook(t *testing.T) {
 // hookInstalled reports the wall missing rather than claiming it.
 func TestPreRenameSpelledHookIsForeign(t *testing.T) {
 	t.Parallel()
-	repo := t.TempDir()
+	repo := gitTempDir(t)
 	if out, err := exec.Command("git", "-C", repo, "init", "-q").CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v %s", err, out)
 	}
@@ -2366,7 +2366,7 @@ func TestSharedIndexCommitHookRefusesHandRolledNextIndex(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
-	repo := t.TempDir()
+	repo := gitTempDir(t)
 	if out, err := exec.Command("git", "-C", repo, "init", "-q", "-b", "main").CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v %s", err, out)
 	}
@@ -2497,7 +2497,7 @@ func TestL3HookProbeIdentityNotMarkersOrForeignBehavior(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
-	repo := t.TempDir()
+	repo := gitTempDir(t)
 	if out, err := exec.Command("git", "-C", repo, "init", "-q").CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v %s", err, out)
 	}
@@ -2749,7 +2749,7 @@ func TestL3HooksNeverLookUpDateOnThePath(t *testing.T) {
 	}
 
 	t.Run("pre-push", func(t *testing.T) {
-		repo := t.TempDir()
+		repo := gitTempDir(t)
 		if out, err := exec.Command("git", "-C", repo, "init", "-q").CombinedOutput(); err != nil {
 			t.Fatalf("git init: %v %s", err, out)
 		}
@@ -2772,7 +2772,7 @@ func TestL3HooksNeverLookUpDateOnThePath(t *testing.T) {
 	})
 
 	t.Run("prepare-commit-msg", func(t *testing.T) {
-		repo := t.TempDir()
+		repo := gitTempDir(t)
 		if out, err := exec.Command("git", "-C", repo, "init", "-q", "-b", "main").CombinedOutput(); err != nil {
 			t.Fatalf("git init: %v %s", err, out)
 		}

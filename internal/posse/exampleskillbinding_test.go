@@ -138,7 +138,7 @@ func TestExamplePIDsBindTheSeededSkill(t *testing.T) {
 	// plugin tree on its line, codex and grok get the session-dir symlink.
 	tree := filepath.Join(a.StateDir, "skills", "architect", "claude")
 	for _, name := range []string{"claude", "codex", "grok"} {
-		dir := t.TempDir()
+		dir := gitTempDir(t)
 		if out, err := exec.Command("git", "-C", dir, "init", "-q").CombinedOutput(); err != nil {
 			t.Fatalf("git init: %v %s", err, out)
 		}

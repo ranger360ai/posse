@@ -41,7 +41,7 @@ func TestQAGuardRefusalNamesQuotedPathsUsably(t *testing.T) {
 	const spaced, plain = "my file.md", "two.md"
 	accented := "café.md"
 
-	repo := t.TempDir()
+	repo := gitTempDir(t)
 	env := []string{"PATH=" + PathOutsideGates(""), "HOME=" + repo, "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t",
 		"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t"}
 	git := func(extra []string, args ...string) (string, error) {
@@ -176,7 +176,7 @@ func TestQAGuardRefusalNamesEveryPathGitQuotes(t *testing.T) {
 		"two.md",            // plain
 	}
 
-	repo := t.TempDir()
+	repo := gitTempDir(t)
 	env := []string{"PATH=" + PathOutsideGates(""), "HOME=" + repo, "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t",
 		"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t"}
 	git := func(extra []string, args ...string) (string, error) {
@@ -310,7 +310,7 @@ func TestQAGuardRefusalNamesBothSidesOfAStagedRename(t *testing.T) {
 		body.WriteString("a line of a realistic notes file\n")
 	}
 
-	repo := t.TempDir()
+	repo := gitTempDir(t)
 	env := []string{"PATH=" + PathOutsideGates(""), "HOME=" + repo, "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t",
 		"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t"}
 	git := func(extra []string, args ...string) (string, error) {
@@ -422,7 +422,7 @@ func TestQAGuardRevertHeadArmNamesAPathWithABackslashEscape(t *testing.T) {
 	}
 	const name = `back\nslash.md`
 
-	repo := t.TempDir()
+	repo := gitTempDir(t)
 	env := []string{"PATH=" + PathOutsideGates(""), "HOME=" + repo, "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t",
 		"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t"}
 	git := func(extra []string, args ...string) (string, error) {

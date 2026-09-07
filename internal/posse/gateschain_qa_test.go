@@ -159,7 +159,7 @@ func TestQAGuardRefusesACleanRevertAndNamesTheWayThrough(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
-	repo := t.TempDir()
+	repo := gitTempDir(t)
 	env := []string{"PATH=" + PathOutsideGates(""), "HOME=" + repo, "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t",
 		"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t"}
 	git := func(extra []string, args ...string) (string, error) {
@@ -287,7 +287,7 @@ func TestQAGuardRevertParagraphSurvivesAPathWithNoCmp(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
-	repo := t.TempDir()
+	repo := gitTempDir(t)
 	env := []string{"PATH=" + pathWithoutCmp(t), "HOME=" + repo, "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t",
 		"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t"}
 	git := func(extra []string, args ...string) (string, error) {
@@ -588,7 +588,7 @@ func TestQAInstallHooksHonoursCoreHooksPath(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
-	repo := t.TempDir()
+	repo := gitTempDir(t)
 	elsewhere := filepath.Join(repo, "myhooks")
 	if err := os.MkdirAll(elsewhere, 0o755); err != nil {
 		t.Fatal(err)
@@ -617,7 +617,7 @@ func TestQASessionCreateInstallsNothingIntoABdHookedRepo(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
-	repo := t.TempDir()
+	repo := gitTempDir(t)
 	if out, err := exec.Command("git", "-C", repo, "init", "-q", "-b", "main").CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v %s", err, out)
 	}
@@ -678,7 +678,7 @@ func TestQAChainedInstallTakesOverBdsShimAndStaysDetected(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
-	repo := t.TempDir()
+	repo := gitTempDir(t)
 	if out, err := exec.Command("git", "-C", repo, "init", "-q", "-b", "main").CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v %s", err, out)
 	}
@@ -742,7 +742,7 @@ func TestQAChainedInstallStillRefusesAGenuinelyUnknownHook(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
-	repo := t.TempDir()
+	repo := gitTempDir(t)
 	if out, err := exec.Command("git", "-C", repo, "init", "-q", "-b", "main").CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v %s", err, out)
 	}
@@ -800,7 +800,7 @@ func TestQALegacyChainIsUpgradedInPlace(t *testing.T) {
 	}
 	for _, slot := range []string{"pre-push", "prepare-commit-msg"} {
 		t.Run(slot, func(t *testing.T) {
-			repo := t.TempDir()
+			repo := gitTempDir(t)
 			if out, err := exec.Command("git", "-C", repo, "init", "-q", "-b", "main").CombinedOutput(); err != nil {
 				t.Fatalf("git init: %v %s", err, out)
 			}
@@ -856,7 +856,7 @@ func TestQALegacyUpgradeLeavesForeignHooksAlone(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
-	repo := t.TempDir()
+	repo := gitTempDir(t)
 	if out, err := exec.Command("git", "-C", repo, "init", "-q", "-b", "main").CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v %s", err, out)
 	}
@@ -911,7 +911,7 @@ func TestQADispatchIntoABdHookedRepoInstallsNothingAndRefuses(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	repo := t.TempDir()
+	repo := gitTempDir(t)
 	if out, err := exec.Command("git", "-C", repo, "init", "-q", "-b", "main").CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v %s", err, out)
 	}
@@ -992,7 +992,7 @@ func TestQAWorkingForeignChainIsRefusedOnIdentityNotBehavior(t *testing.T) {
 		[]byte("---\nname: dev\ndeny:\n  - Bash(git push:*)\n  - Bash(git commit unless --)\n---\nYou are dev.\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	repo := t.TempDir()
+	repo := gitTempDir(t)
 	if out, err := exec.Command("git", "-C", repo, "init", "-q", "-b", "main").CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v %s", err, out)
 	}

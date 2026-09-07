@@ -63,7 +63,7 @@ func TestLiveCIWatchFiresOnceAndClears(t *testing.T) {
 		t.Skip("no bd on PATH")
 	}
 
-	repo := t.TempDir()
+	repo := gitTempDir(t)
 	// Bd.run execs Bin directly, so --no-daemon rides in a wrapper rather
 	// than in the argv the code under test builds (settleescalation's rule):
 	// a daemon per throwaway db is a leak, and the point here is the store.

@@ -38,7 +38,7 @@ func relicRepo(t *testing.T, name string) (a *App, repo, dir string) {
 		t.Fatal(err)
 	}
 	mkSkill(t, a.SkillsDir(), name)
-	repo = t.TempDir()
+	repo = gitTempDir(t)
 	if out, err := exec.Command("git", "-C", repo, "init", "-q").CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v %s", err, out)
 	}

@@ -73,7 +73,7 @@ func hrFixture(t *testing.T) *hrFix {
 	if err != nil {
 		t.Skip("no git")
 	}
-	root := t.TempDir()
+	root := gitTempDir(t)
 	f := &hrFix{
 		gitBin:  gitBin,
 		t:       t,
@@ -649,7 +649,7 @@ func TestQARedirectEnvIgnoresTheLaunchersOwnGitConfigCount(t *testing.T) {
 
 	// What the session sees: no GIT_CONFIG_* of the launcher's, plus exactly
 	// the vars posse handed CreateWorkspace.
-	repo := t.TempDir()
+	repo := gitTempDir(t)
 	run := func(env []string, args ...string) (string, error) {
 		cmd := exec.Command(gitBin, args...)
 		cmd.Dir = repo

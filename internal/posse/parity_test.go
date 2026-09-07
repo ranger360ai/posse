@@ -716,7 +716,7 @@ func TestParityL3ClaimsFollowIdentityAndBehavior(t *testing.T) {
 	a := &App{Home: home, AgentsDir: filepath.Join(home, "agents"), ConfigPath: filepath.Join(home, "config.yaml")}
 	claude, _ := a.LoadRuntime("claude")
 	ag := loadTestAgent(t, "---\nname: dev\ndeny:\n  - Bash(git push:*)\n  - Bash(git commit unless --)\n---\nYou are dev.\n")
-	repo := t.TempDir()
+	repo := gitTempDir(t)
 	if out, err := exec.Command("git", "-C", repo, "init", "-q").CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v %s", err, out)
 	}
@@ -802,7 +802,7 @@ func TestLaunchInstallsHooksBeforeProbe(t *testing.T) {
 	os.MkdirAll(b.App.AgentsDir, 0o755)
 	os.WriteFile(filepath.Join(b.App.AgentsDir, "dev.md"),
 		[]byte("---\nname: dev\ndeny: [Bash(git push:*)]\n---\nYou are dev.\n"), 0o644)
-	repo := t.TempDir()
+	repo := gitTempDir(t)
 	if out, err := exec.Command("git", "-C", repo, "init", "-q").CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v %s", err, out)
 	}
@@ -825,7 +825,7 @@ func TestLaunchReportsForeignHookFailure(t *testing.T) {
 	os.MkdirAll(b.App.AgentsDir, 0o755)
 	os.WriteFile(filepath.Join(b.App.AgentsDir, "dev.md"),
 		[]byte("---\nname: dev\ndeny: [Bash(git push:*)]\n---\nYou are dev.\n"), 0o644)
-	repo := t.TempDir()
+	repo := gitTempDir(t)
 	if out, err := exec.Command("git", "-C", repo, "init", "-q").CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v %s", err, out)
 	}

@@ -320,7 +320,7 @@ func TestQASkillsExcludeIsAnchoredAtTheRepoRootAndSharedByWorktrees(t *testing.T
 	a := skillsApp(t)
 
 	// ── a session started below the repo root ──
-	repo := t.TempDir()
+	repo := gitTempDir(t)
 	gitAt(t, repo, "init", "-q")
 	sub := filepath.Join(repo, "services", "api")
 	if err := os.MkdirAll(sub, 0o755); err != nil {

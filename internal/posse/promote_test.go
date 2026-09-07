@@ -46,7 +46,7 @@ func promoteFixture(t *testing.T) (a *App, src string, git func(args ...string) 
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
-	root := t.TempDir()
+	root := gitTempDir(t)
 	repo := filepath.Join(root, "constitution")
 	src = filepath.Join(repo, ConstitutionSourceDir)
 	home := filepath.Join(root, "home")

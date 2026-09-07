@@ -85,7 +85,7 @@ func qspFakeOld(t *testing.T) string {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not available")
 	}
-	old := t.TempDir()
+	old := gitTempDir(t)
 	write := func(rel, body string, mode os.FileMode) {
 		t.Helper()
 		p := filepath.Join(old, rel)
@@ -765,7 +765,7 @@ func qspGitIgnored(t *testing.T, root string) map[string]bool {
 func TestSeedSurfaceScanSkipsGitIgnoredPaths(t *testing.T) {
 	t.Parallel()
 	needle := "ranger" + "hq"
-	root := t.TempDir()
+	root := gitTempDir(t)
 	qspGit(t, root, "init")
 
 	write := func(rel, body string) {
@@ -814,7 +814,7 @@ func TestSeedSurfaceScanSkipsGitIgnoredPaths(t *testing.T) {
 func TestSeedSurfaceScanSkipsAnIgnoredPathGitCQuotes(t *testing.T) {
 	t.Parallel()
 	needle := "ranger" + "hq"
-	root := t.TempDir()
+	root := gitTempDir(t)
 	qspGit(t, root, "init")
 
 	write := func(rel, body string) {
@@ -862,7 +862,7 @@ func TestSeedSurfaceScanSkipsAnIgnoredPathGitCQuotes(t *testing.T) {
 func TestSeedSurfaceScanTakesNoIgnoreListFromAForeignRepo(t *testing.T) {
 	t.Parallel()
 	needle := "ranger" + "hq"
-	parent := t.TempDir()
+	parent := gitTempDir(t)
 	qspGit(t, parent, "init")
 	if err := os.WriteFile(filepath.Join(parent, ".gitignore"), []byte("notes/\n"), 0o644); err != nil {
 		t.Fatal(err)

@@ -41,7 +41,7 @@ func qaPrivateIndexChainRepo(t *testing.T) (repo, witness string, git func(env [
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
-	repo = t.TempDir()
+	repo = gitTempDir(t)
 	if out, err := exec.Command("git", "-C", repo, "init", "-q", "-b", "main").CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v %s", err, out)
 	}

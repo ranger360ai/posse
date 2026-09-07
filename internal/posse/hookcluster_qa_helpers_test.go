@@ -49,7 +49,7 @@ func newVisWallCfg(t *testing.T, instanceDir, extraConfig string) *visWall {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
-	home := t.TempDir()
+	home := gitTempDir(t)
 	t.Setenv("HOME", home)
 	w := &visWall{
 		home:     home,
