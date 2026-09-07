@@ -15,10 +15,10 @@ package posse
 // and turnfailure.go named ClaudeConfigDirIn nowhere.
 //
 // The locator is a SEPARATE one on purpose (ranger-base-f09bw: it must name
-// one session's own store exactly, where TranscriptFiles substring-matches
+// one session's own store exactly, where transcriptFiles substring-matches
 // for `posse cost --project`), so the fix is claudeTranscripts asking
 // ClaudeConfigDirIn for its ROOT — not claudeTranscripts calling
-// TranscriptFiles, which would take the substring match with it.
+// transcriptFiles, which would take the substring match with it.
 //
 // It did not fire on this box the day it was found — the launch pins
 // CLAUDE_CONFIG_DIR to the home's own .claude (credentialdirpin) and the

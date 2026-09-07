@@ -76,9 +76,9 @@ type TurnOutcomeReader func(cwd, bead string, since time.Time) (out TurnOutcome,
 // config dir's projects/ — `$CLAUDE_CONFIG_DIR`'s, else `~/.claude`'s, so an
 // operator who moves the config home does not silently make every turn
 // unobserved (ranger-base-yqdov). The locator is claudeTranscripts, NOT
-// TranscriptFiles: it asks ClaudeConfigDirIn for that root, the same
-// question TranscriptFiles asks, and then names one project directory
-// exactly where TranscriptFiles substring-matches for `posse cost
+// transcriptFiles: it asks ClaudeConfigDirIn for that root, the same
+// question transcriptFiles asks, and then names one project directory
+// exactly where transcriptFiles substring-matches for `posse cost
 // --project` (ranger-base-f09bw). Saying "TranscriptFiles'" here was true of
 // neither locator's code and hid a root that followed no override at all
 // (ranger-base-r2s9l).
@@ -229,7 +229,7 @@ func claudeProjectDir(cwd string) string {
 // is not readable YET, which is the (no outcome, false) this reader exists to
 // keep distinct from a healthy turn, a substring match answers with the
 // stranger instead, and a stranger's synthetic refusal stops the bead as
-// "claude refused the first turn" about a turn nothing read. TranscriptFiles'
+// "claude refused the first turn" about a turn nothing read. transcriptFiles'
 // substring filter is right for what it is — an operator's `posse cost
 // --project` narrowing — and wrong for a locator that must name one
 // session's own store.
@@ -237,7 +237,7 @@ func claudeProjectDir(cwd string) string {
 // The root is ClaudeConfigDirIn's, the same rule cost.go's transcriptFiles
 // reads, so an operator's `CLAUDE_CONFIG_DIR` moves this locator exactly as
 // it moves the store the CLI writes. Being a SEPARATE locator from
-// TranscriptFiles is about the MATCH — one project directory named exactly,
+// transcriptFiles is about the MATCH — one project directory named exactly,
 // not a substring narrowing — and never was about the ROOT: joining
 // `<home>/.claude` here regardless, which this did until ranger-base-r2s9l,
 // left posse with two readers of one store disagreeing inside one binary

@@ -30,9 +30,9 @@ func (claudeCost) Prices() bool { return true }
 func (claudeCost) PriceFor(model string) (Price, bool) { return PriceFor(model) }
 
 // Transcripts uses the locator that distinguishes "no transcripts here" from
-// "cannot read where the transcripts are" (ADR 0018 §3) — the quiet
-// TranscriptFiles would collapse both to an empty list, and an unreadable
-// root would read as $0 spent.
+// "cannot read where the transcripts are" (ADR 0018 §3) — a quiet form that
+// only returned the files would collapse both to an empty list, and an
+// unreadable root would read as $0 spent.
 func (claudeCost) Transcripts(project string) ([]string, []error) { return transcriptFiles(project) }
 
 func (claudeCost) Decode(path string, since time.Time) ([]*Segment, error) {

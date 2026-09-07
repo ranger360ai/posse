@@ -415,16 +415,9 @@ func userText(raw json.RawMessage) string {
 	return ""
 }
 
-// TranscriptFiles lists Claude Code transcripts under the config dir's
+// transcriptFiles lists Claude Code transcripts under the config dir's
 // projects/ ($CLAUDE_CONFIG_DIR's, else ~/.claude's), optionally filtered
-// by a project-path substring. The quiet form, for callers that only ever
-// display what they found.
-func TranscriptFiles(project string) []string {
-	files, _ := transcriptFiles(project)
-	return files
-}
-
-// transcriptFiles is TranscriptFiles with the reasons it found nothing.
+// by a project-path substring, and the reasons it found nothing.
 //
 // "No transcripts here" and "cannot read where the transcripts are" are two
 // different facts and this listing used to return the same empty slice for
