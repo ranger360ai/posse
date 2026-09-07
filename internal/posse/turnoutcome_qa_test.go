@@ -154,7 +154,7 @@ func TestQAParityAccountRefusalIsNamedOnEveryRuntime(t *testing.T) {
 			if strings.Contains(out, "refused the first turn") {
 				t.Errorf("a blind runtime cannot claim to have read a refusal:\n%s", out)
 			}
-			if m, _ := b.readMeta(session); m.TurnFailure != "" {
+			if m, ok := b.readMeta(session); ok && m.TurnFailure != "" {
 				t.Errorf("a blind runtime marked a turn failure it never observed: %+v", m)
 			}
 		})
