@@ -5,9 +5,9 @@ package posse
 // ranger-base-hw18: the read half ranger-base-9fl explicitly set aside.
 // SeatbeltProfile renders `(deny file-write*)` and nothing else — no session
 // below the container tier had a file-read wall at all, so any same-uid
-// persona could read another runtime's credential, or the recurring unowned
-// `~/.claude/.credentials.json` byproduct ADR 0019 D2 names (ranger-base-xjj9,
-// ranger-base-m6cm).
+// persona could read another runtime's credential, or the darwin
+// `~/.claude/.credentials.json` keychain fallback ADR 0019 D2 store 3 names
+// (ranger-base-xjj9, ranger-base-m6cm).
 //
 // This file pins two things separately, per the bead's own "VERIFY BEFORE
 // SHIPPING" section: the pure runtime-aware/GOOS-shaped selection logic

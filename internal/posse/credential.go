@@ -952,13 +952,14 @@ func keychainCmd(bin, item string) *exec.Cmd {
 	return exec.Command(bin, "find-generic-password", "-s", item, "-w")
 }
 
-// CredentialsFile is where Claude Code keeps the same OAuth envelope on a
-// platform with no keychain. It is NOT read on darwin: there the keychain is
-// the store of record and the file is a recurring unowned byproduct — some
-// darwin auth flow regenerates it on its own schedule, but MEASURED it then
-// sits frozen for days while the keychain keeps rotating (ADR 0019 D2 store
-// 3 / amended rejected-alternatives entry) — so reading it would invert the
-// store of record on the one platform whose record lives elsewhere.
+// CredentialsFile is where Claude Code keeps the same OAuth envelope. Off
+// darwin it is the store of record. On darwin it is the runtime's own
+// keychain-fallback store (ADR 0019 D2 store 3): live when the keychain item
+// is missing (S3, `security` exit 44) and MEASURED sitting frozen for days
+// once the keychain holds the item again (S2) — written and read by the
+// same login/refresh loop that owns the keychain item, not a byproduct of
+// some other flow on its own schedule. keychainFallbackStore is the darwin
+// caller; this function does not choose platforms itself.
 //
 // The DIRECTORY is credentialDir's, not `$HOME/.claude`: this function
 // assumed the home for as long as it existed, which made posse blind to a
@@ -1067,9 +1068,10 @@ func credentialDirNamed() (dir string, named bool, err error) {
 //     home and shadows CLAUDE_CONFIG_DIR, so on that arm the home IS the
 //     answer and no variable says so.
 //   - whatever the runtime wrote in the home before a variable moved the
-//     write is still sitting there. ADR 0019 D2 calls that file a recurring
-//     unowned byproduct and ranger-base-xjj9 measured it regenerating 8h06m
-//     after a delete: it does not leave because the write moved on.
+//     write is still sitting there. ADR 0019 D2 store 3 is the login/refresh
+//     loop's own keychain-fallback file, and ranger-base-xjj9 measured it
+//     regenerating 8h06m after a delete: it does not leave because the
+//     write moved on.
 //
 // This is the shape scripts/verify-credential-paths.sh scans in, one dir
 // short: the sweep also scans CLAUDE_CONFIG_DIR's when an empty

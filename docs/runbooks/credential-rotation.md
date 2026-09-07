@@ -212,29 +212,33 @@ because a file left behind in a loser is still a second copy of a live grant,
 and because setting a variable must not be able to turn a finding into a
 silent pass (`ranger-base-wd4be`).
 
-**Anything printed is a finding.** The harness ADR counts the keychain and the
-env-set mints as darwin's owned stores; a file here is a third one nobody
-owns. `~/.claude` is in every runtime's writable set
+**Anything printed is a finding.** ADR 0019 D2 names three darwin stores: the
+keychain item (stores 1/2) and this file (store 3) — the runtime's own
+keychain-fallback, written and read by the same login/refresh loop. A finding
+here means the keychain failed a write at some point: S2 (frozen — the
+keychain has since recovered) or S3 (live — the keychain item is still
+missing or unwritable). `~/.claude` is in every runtime's writable set
 (`internal/posse/seatbelt.go`), so every same-user persona session below the
 container tier can still WRITE whatever sits there — this check is still the
 whole control for that half. The read half is closed: the rendered seatbelt
-profile now carries a `file-read*` deny on `~/.claude/.credentials.json`
-itself — that literal and only that, so on a box that sets either config-dir
-variable the file the runtime writes is outside the deny (`ranger-base-7pf1h`;
-this sweep sees it either way) — always, on darwin, even for a claude-launched
-session, because the
-keychain (not this file) is claude's store of record there and a caged
-session authenticates with `CLAUDE_CODE_OAUTH_TOKEN` instead of reading it.
-(`~/.codex/auth.json` and `~/.grok/auth.json` are denied the same way, minus
-whichever one belongs to the runtime a session is actually launching on — a
-runtime still needs to read its own credential. GOOS-shaped throughout: on
-linux this file is the store of record and stays readable. `ranger-base-hw18`.)
-So a session below the container tier can no longer read this file. This
-check stays the
+profile carries a `file-read*` deny on the credentials file itself
+(`CredentialsFile()`, `internal/posse/credential.go`) — that literal and only
+that, so on a box that sets either config-dir variable the file the runtime
+writes is outside the deny (`ranger-base-7pf1h`; this sweep sees it either
+way) — always, on darwin, even for a claude-launched session: the deny
+protects the fallback file exactly in S3, at the accepted cost that a
+seatbelt-caged claude session cannot authenticate through it until the
+operator unlocks or re-grants the keychain, then `/login` — running `claude`
+once on its own performs no keychain write. (The codex and grok auth files
+are denied the same way, minus whichever one belongs to the runtime a session
+is actually launching on — a runtime still needs to read its own credential.
+GOOS-shaped throughout: off darwin this file is the store of record and stays
+readable. `ranger-base-hw18`.) So a session below the container tier can no
+longer read this file. This check stays the
 detective half regardless — a deny that stops a read proves nothing about a
-byproduct that keeps regenerating, and `posse gates <persona>` is where an
-operator reads the deny off a live profile (`ADR 0015` verification items 5
-and 6).
+fallback file that keeps regenerating whenever the keychain write fails, and
+`posse gates <persona>` is where an operator reads the deny off a live
+profile (`ADR 0015` verification items 5 and 6).
 
 ### Why it is a glob and not the path
 
@@ -245,9 +249,10 @@ as the glob — the instance ADR's D5 was reconciled under `rangerhq-m10j`, so
 the two can no longer drift.
 
 The `stale-` name is not evidence of anything, either. Measured
-(`ranger-base-1lza`): the file **self-renews**. It is a recurring unowned
-byproduct of some darwin auth flow, not a one-off leftover of an old login,
-and "delete it once" was the implicit model that measured out a treadmill.
+(`ranger-base-1lza`): the file **self-renews**. It is the runtime's own
+keychain-fallback store (ADR 0019 D2 store 3), not a one-off leftover of an
+old login, and "delete it once" was the implicit model that measured out a
+treadmill.
 
 ### What to do with a finding
 
@@ -269,10 +274,12 @@ and "delete it once" was the implicit model that measured out a treadmill.
 `btime` separates a new file from a resurrected one — the deleted file was 1114
 bytes, the regenerated one 994.
 
-A **frozen content mtime while claude has been running daily** means this file
-is not the active store: Claude Code rewrites its credential file on every token
-refresh. Compare it against `history.jsonl`, `sessions/` and `projects/` in the
-same directory, which move constantly.
+A **frozen content mtime while claude has been running daily** means S2: the
+keychain has been the live store since that mtime and this file is the
+fallback's frozen leftover from whatever earlier S3 excursion produced it —
+Claude Code rewrites this file only while it is the live store (S3). Compare
+it against `history.jsonl`, `sessions/` and `projects/` in the same
+directory, which move constantly.
 
 **`atime` is not evidence of anything here.** Measured 2026-08-28 on this box's
 APFS data volume: reading a file does not advance its access time. The script

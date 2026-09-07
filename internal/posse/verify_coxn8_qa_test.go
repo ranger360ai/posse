@@ -29,11 +29,14 @@ import (
 // later scanner is pointed at a wider set than this one.
 var coxnDeadFraming = "stale " + "leftover"
 
-// The amended wording, present in credential.go since 26b21af: the witness
-// that the walk below actually opened files and read their bytes. Without
-// it "no file says the dead phrase" is equally true of a walk that visited
-// nothing (pass-count-is-not-a-coverage-floor).
-var coxnAmendedWording = "recurring unowned byproduct"
+// The amended wording, present in credential.go since 26b21af and carried
+// forward by ranger-base-scr4z's wording sweep (ADR 0019 D2 as amended by
+// ranger-base-v3qi4: the file is the runtime's own keychain fallback, not a
+// byproduct of an unrelated auth flow): the witness that the walk below
+// actually opened files and read their bytes. Without it "no file says the
+// dead phrase" is equally true of a walk that visited nothing
+// (pass-count-is-not-a-coverage-floor).
+var coxnAmendedWording = "keychain fallback"
 
 // coxnGoSources walks the repo for shipped .go files — every package, not
 // just this one, because the phrase travelled: the bead named credential.go
@@ -92,7 +95,7 @@ func TestQANoCodeStringCallsTheDarwinCredentialsFileAStaleLeftover(t *testing.T)
 		}
 		for i, line := range strings.Split(body, "\n") {
 			if strings.Contains(line, coxnDeadFraming) {
-				t.Errorf("%s:%d says %q — ADR 0019 was amended (ranger-base-1lza): on darwin the file is a recurring unowned byproduct that is not the store of record and posse never reads it, never a leftover of a keychain login:\n  %s",
+				t.Errorf("%s:%d says %q — ADR 0019 D2 as amended (ranger-base-1lza, ranger-base-v3qi4): on darwin the file is the runtime's own keychain fallback, live in S3 and frozen in S2, never a leftover of a keychain login:\n  %s",
 					name, i+1, coxnDeadFraming, strings.TrimSpace(line))
 			}
 		}

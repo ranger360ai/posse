@@ -910,18 +910,22 @@ func (a *App) SeatbeltCarveOut(ag *AgentFile, cwd, gatesDir string, writable []s
 // file is never this session's business, ADR 0019's own words for it.
 //
 // Claude's own credentials file is the one exception denied even for a
-// claude-launched session, and only on darwin: D2 names it a recurring
-// UNOWNED byproduct there, never the store of record (the keychain is,
-// D2 store 1), and a caged claude session authenticates with
-// CLAUDE_CODE_OAUTH_TOKEN when it needs a credential injected at all
-// (cageCredential, ADR 0002 §4) rather than by reading this file — so
-// denying its read costs claude nothing on darwin. That is backwards on
-// any other platform: D2 names the same path the store of record there,
-// so denying it would strand a future linux session's own credential
-// behind a wall posse itself put up — goos is a parameter, not
-// `runtime.GOOS` read here directly, so the branch a linux box would take
-// is provable from a darwin one too (credential.go's meterStore made the
-// same call, for the same reason).
+// claude-launched session, and only on darwin: D2 store 3 names it the
+// runtime's own keychain-fallback store — live when the keychain item is
+// missing (S3, `security` exit 44), frozen once the keychain holds it again
+// (S2) — written and read by the same login/refresh loop, never the store
+// of record itself (the keychain item is, D2 store 1). A caged claude
+// session authenticates with CLAUDE_CODE_OAUTH_TOKEN when it needs a
+// credential injected at all (cageCredential, ADR 0002 §4) rather than by
+// reading this file, so the deny protects the fallback file exactly in S3,
+// at the accepted cost that a seatbelt-caged claude session cannot
+// authenticate through it until the operator unlocks or re-grants the
+// keychain. That is backwards on any other platform: D2 names the same
+// path the store of record there, so denying it would strand a future
+// linux session's own credential behind a wall posse itself put up — goos
+// is a parameter, not `runtime.GOOS` read here directly, so the branch a
+// linux box would take is provable from a darwin one too (credential.go's
+// meterStore made the same call, for the same reason).
 //
 // WHICH file that is, this function does not spell: it asks
 // credentialFileCandidates. The deny was a home-shaped literal for as long
@@ -956,7 +960,7 @@ func (a *App) SeatbeltCarveOut(ag *AgentFile, cwd, gatesDir string, writable []s
 // BOTH spellings are denied per sibling, home-shaped and resolved, for the
 // reason credentialFileCandidates gives for keeping claude's home
 // unconditionally: whatever the CLI wrote before the variable moved it is
-// still sitting in the home (ADR 0019 D2's recurring unowned byproduct), and
+// still sitting in the home (ADR 0019 D2 store 3's keychain-fallback file), and
 // a deny over an absent path costs nothing — the read is ENOENT either way.
 // own() is keyed to the declared state_dir literal, as it always was, and
 // spares BOTH spellings for the owning runtime: a runtime denied its own

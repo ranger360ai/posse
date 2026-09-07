@@ -1573,8 +1573,8 @@ a keychain.
   days (the ranger-base-1lza observation), and why "delete once" measured out a
   treadmill.
 
-So the darwin file is not "some auth flow's byproduct on its own schedule". It is
-the runtime's own documented fallback, claude reads it, and a run of keychain
+So the darwin file is not some unrelated auth flow regenerating on a timer of
+its own. It is the runtime's own documented fallback, claude reads it, and a run of keychain
 write failures can move the record onto it *and delete the keychain item*. Posse
 declines to read it on the premise that reading it would invert the store of
 record; measured, the inversion runs both ways, and the failure mode is posse
@@ -3775,8 +3775,8 @@ Three different things get called "permissions"; keep them apart
   credential-store literals (`~/.claude/.credentials.json` on darwin,
   `~/.codex/auth.json`, `~/.grok/auth.json`, minus whichever belongs to the
   launching runtime), because those three files are the one *read* whose
-  cost was measured (ADR 0019 D2's unowned darwin byproduct). Everything
-  else stays open. A deny aimed at a **read-only** tool is therefore
+  cost was measured (ADR 0019 D2 store 3's darwin keychain fallback, live in
+  S3). Everything else stays open. A deny aimed at a **read-only** tool is therefore
   realized by **L1 alone** below the container tier — which is still worth
   declaring, because L1 is the only layer that refuses deterministically
   *and* writes a line to `refusals.log`. Read it as a tripwire, not a
