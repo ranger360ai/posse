@@ -314,6 +314,16 @@ func main() {
 		// it takes ~11s serial). The pure-arithmetic half of the same fix,
 		// TestQABackupLevelIsSampledFasterThanItFires, is parallel.
 		"TestQABackupLoopSamplesTheLevelBetweenIntervals": "times a real loop against its own interval",
+		// Statistical, not deterministic: it forks 8 children continuously
+		// for its whole run to make a fork's fork() land inside a 3ms
+		// hold-to-release window near-certain per round, and asserts ZERO
+		// rounds where that overlap left a stale lock (ranger-base-d6zyu
+		// finding 1). Its 100-round shape was tuned against a same-box
+		// standalone probe's 70/300 rate; unrelated tests' own forking and
+		// scheduling running alongside it in the parallel phase would move
+		// that rate in either direction, changing what the assertion has
+		// actually been measured against rather than just the wall clock.
+		"TestBackupLockReleasesEvenWhenAForkOverlapsTheHold": "statistical fork/flock race tuned against a measured rate",
 		// Env-tainted through a FUNC VALUE, which the call graph cannot
 		// see: both reach unreadableKeychain (and its t.Setenv) as
 		// `tc.err(t)` / `mk(t)` out of a table, and an identifier that is
