@@ -1343,8 +1343,8 @@ Cut the section out, and say who pushes and which tree the reader is
 standing in instead:
 
 ```sh
-$ grep -n "Landing the Plane" AGENTS.md
-$ awk '/^## /{s = ($0 ~ /^## Landing the Plane/)}
+$ grep -n -i "Landing the Plane" AGENTS.md
+$ awk '/^## /{s = (tolower($0) ~ /^## landing the plane/)}
        !s { if (NF==0) { b = b "\n"; next } printf "%s%s\n", b, $0; b = "" }' \
     AGENTS.md > AGENTS.md.new && mv AGENTS.md.new AGENTS.md
 $ cat >> AGENTS.md <<'EOF'
@@ -1448,8 +1448,12 @@ EOF
 The `awk` drops everything from `## Landing the Plane` to the next `##`
 heading (or end of file), leaves the rest alone, and holds back blank lines
 until a non-blank follows one — so the cut leaves no trailing blank for the
-appended section to double up on. If `grep` found nothing, skip it and just
-append the section.
+appended section to double up on. The match folds case, so it cuts the
+heading `bd init` plants (`## Landing the Plane …`) and the one this recipe
+itself appends (`## Landing the plane`) alike — running the recipe again
+over an `AGENTS.md` it already reconciled replaces that section instead of
+appending a second one. If `grep` found nothing, skip it and just append the
+section.
 
 **That block is a copy, and the original is this repo's own `AGENTS.md`.**
 Every bullet above is one of that file's, word for word, less two things a

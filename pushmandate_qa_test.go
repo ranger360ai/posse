@@ -429,9 +429,45 @@ func TestInstallSection9RecipeIsSafeWithNothingToCut(t *testing.T) {
 	if !namesWhoPushes(got) {
 		t.Errorf("§9's recipe appended nothing when there was nothing to cut:\n%s", got)
 	}
-	if twice := runSection9Recipe(t, got); strings.Count(twice, "## Landing the plane") != 2 {
-		// Not a defect — §9 says to run it once — but if the append ever
-		// starts eating its own output, this is where it shows.
-		t.Errorf("§9's recipe is not additive on a second run:\n%s", twice)
+}
+
+// TestInstallSection9RecipeReplacesRatherThanDuplicatesOnASecondRun is the
+// shape TestInstallSection9RecipeIsSafeWithNothingToCut's comment already
+// claimed to cover ("a second run of the recipe") but never measured: that
+// test's fixture has no Landing section on its first pass, so its "twice"
+// check ran the recipe over a file whose heading the recipe itself had just
+// written — the exact case ranger-base-23va7 found broken. The cut
+// (`/^## Landing the Plane/`, no fold) never matched the heading the
+// heredoc appends (`## Landing the plane`), so a second pass — over what
+// bd init plants and gets reconciled once, or over this repo's own
+// AGENTS.md — cut nothing and appended a second copy instead of replacing
+// the first. Fixed by folding case in the awk match.
+func TestInstallSection9RecipeReplacesRatherThanDuplicatesOnASecondRun(t *testing.T) {
+	once := runSection9Recipe(t, bdPlantedAgentsMd)
+	if n := strings.Count(once, "## Landing the plane"); n != 1 {
+		t.Fatalf("first pass over what bd init plants left %d Landing sections, want 1:\n%s", n, once)
+	}
+
+	twice := runSection9Recipe(t, once)
+	if n := strings.Count(twice, "## Landing the plane"); n != 1 {
+		t.Errorf("second pass over an already-reconciled AGENTS.md left %d Landing sections, want 1 (it must replace, not duplicate):\n%s", n, twice)
+	}
+	if left := readerDirectedPushOrders(twice); len(left) > 0 {
+		t.Errorf("second pass reinstated the push mandate: %v", left)
+	}
+	if !namesWhoPushes(twice) {
+		t.Errorf("second pass lost who pushes:\n%s", twice)
+	}
+
+	b, err := os.ReadFile("AGENTS.md")
+	if err != nil {
+		t.Fatalf("read AGENTS.md: %v", err)
+	}
+	own := runSection9Recipe(t, string(b))
+	if n := strings.Count(own, "## Landing the plane"); n != 1 {
+		t.Errorf("running §9's recipe over this repo's own, already-reconciled AGENTS.md left %d Landing sections, want 1:\n%s", n, own)
+	}
+	if left := readerDirectedPushOrders(own); len(left) > 0 {
+		t.Errorf("running §9's recipe over this repo's own AGENTS.md reinstated the push mandate: %v", left)
 	}
 }
