@@ -883,3 +883,32 @@ func TestProbeHonoursALiveCooldown(t *testing.T) {
 		t.Errorf("control: past the cooldown --probe must ask, %d requests", hits.Load())
 	}
 }
+
+// The arm ranger-base-g9rec found missing: every fixture above ages the
+// reading past model_probe_ttl, so a forced read there is never proof that
+// --probe asked for maxAge 0 — the age alone would have asked too. Here the
+// reading is inside its lease and no cooldown is live: ReadCatalog must
+// reuse it and spend nothing, and --probe over the SAME fixture must still
+// re-ask and spend exactly one request, because maxAge 0 is its own reason
+// to ask and not a side effect of staleness (ADR 0039 D3b/D3c).
+func TestProbeForcesAFreshReadInsideTheLease(t *testing.T) {
+	t.Parallel()
+	a := preflightApp(t)
+	cs := newCatalogServer(t, []string{"claude-opus-5", "claude-sonnet-5"})
+	a.ModelLister = cs.lister()
+	seedCatalog(t, a, 10*time.Minute, "claude-opus-5", "claude-sonnet-5")
+
+	if !a.ReadCatalog(nil).known() {
+		t.Fatal("a reading inside its lease must be known")
+	}
+	if cs.hits.Load() != 0 {
+		t.Errorf("a reading inside its lease must be reused, not asked for; got %d requests", cs.hits.Load())
+	}
+
+	if !a.ProbeCatalog(nil).known() {
+		t.Fatal("--probe must still resolve to a known catalog")
+	}
+	if cs.hits.Load() != 1 {
+		t.Errorf("--probe over a reading inside its lease must still ask exactly once, got %d requests", cs.hits.Load())
+	}
+}
