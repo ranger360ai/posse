@@ -181,7 +181,7 @@ func TestRenderClaudeSkillsKeepsTheExecuteBit(t *testing.T) {
 	os.MkdirAll(a.SkillsDir(), 0o755)
 	p := mkSkill(t, a.SkillsDir(), "tooling")
 	script := []byte("#!/bin/sh\necho ran\n")
-	if err := os.WriteFile(filepath.Join(p, "run.sh"), script, 0o755); err != nil {
+	if err := WriteExecutable(filepath.Join(p, "run.sh"), script, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
