@@ -508,8 +508,18 @@ func fakeBd(args []string) int {
 		// did are indistinguishable — and ci-watch closes the bead it filed
 		// (ciwatch.go), so the file-close-file cycle would have been
 		// untestable.
-		fakeBdMarkClosed(fakeBdID(args, "close"))
-		fmt.Print("{}")
+		//
+		// fake-close-answer.json overrides the id it answers about,
+		// regardless of the id asked for — the fake's own version of the
+		// prefix resolution ranger-base-n7lod measured live for `bd close`
+		// (`show`'s fake-show.json is the same shape).
+		if b, err := os.ReadFile("fake-close-answer.json"); err == nil {
+			fmt.Print(string(b))
+			return 0
+		}
+		id := fakeBdID(args, "close")
+		fakeBdMarkClosed(id)
+		fmt.Printf(`[{"id":%q,"status":"closed"}]`, id)
 		return 0
 	case "sync":
 		// The launcher's pre-commit export (ADR 0015 §4, queuejsonl.go).
@@ -998,6 +1008,14 @@ func fakeBdUpdate(args []string) int {
 		if _, err := os.Stat("fake-claim-fail"); err == nil {
 			fmt.Fprint(os.Stderr, "issue already claimed")
 			return 1
+		}
+		// fake-claim-answer.json overrides the id `update --claim` answers
+		// about, regardless of the id asked for — the fake's own version of
+		// the prefix resolution ranger-base-n7lod measured live for `bd
+		// update --claim` (`show`'s fake-show.json is the same shape).
+		if b, err := os.ReadFile("fake-claim-answer.json"); err == nil {
+			fmt.Print(string(b))
+			return 0
 		}
 		if holder := fakeBdHolder(id); holder != "" {
 			fmt.Fprintf(os.Stderr, "Error updating %s: operation failed: already claimed by %s\n", id, holder)

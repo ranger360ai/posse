@@ -607,8 +607,13 @@ func (e ClaimLostError) Error() string {
 func (b Bd) Claim(dir, id, actor string) (resumed bool, err error) {
 	out, runErr := b.run(dir, bdArgs(actor, "update", id, "--claim", "--json")...)
 	if runErr == nil {
-		// The claim was won iff bd handed back the claimed issue.
+		// The claim was won iff bd handed back the claimed issue — about the
+		// id asked for. bd resolves prefixes (ranger-base-cz2nw measured the
+		// same shape for `bd show`; ranger-base-n7lod measured it again for
+		// `bd update --claim`): a wrong-id answer must fall through to Show
+		// below rather than being trusted as a win.
 		if issues, perr := parseBdIssues(out); perr == nil && len(issues) == 1 &&
+			issues[0].ID == id &&
 			issues[0].Status == "in_progress" && (actor == "" || issues[0].Assignee == actor) {
 			return false, nil
 		}
@@ -762,9 +767,25 @@ func (b Bd) CommentCount(dir, id string) int {
 }
 
 // Close marks an issue done.
+//
+// bd RESOLVES PREFIXES on `close` too (ranger-base-n7lod, the same shape
+// ranger-base-cz2nw measured for `bd show`): rc=0 with the wrong issue
+// closed when id is a strictly-shorter prefix of another. The response is
+// parsed and checked against id rather than discarded, so a mismatch is
+// reported instead of a silent wrong-bead close.
 func (b Bd) Close(dir, id, actor string) error {
-	_, err := b.run(dir, bdArgs(actor, "close", id, "--json")...)
-	return err
+	out, err := b.run(dir, bdArgs(actor, "close", id, "--json")...)
+	if err != nil {
+		return err
+	}
+	issues, perr := parseBdIssues(out)
+	if perr != nil || len(issues) == 0 {
+		return Die("bd close %s: no issue in response", id)
+	}
+	if issues[0].ID != id {
+		return Die("bd close %s: answered about %s", id, issues[0].ID)
+	}
+	return nil
 }
 
 // BdNew is a bead to file: the fields the harness itself ever sets. The
