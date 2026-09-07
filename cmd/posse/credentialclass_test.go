@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -74,16 +75,24 @@ func TestCockpitHeaderNamesTheCredentialClass(t *testing.T) {
 		name   string
 		status int
 		says   string
-		never  []string
+		never  []*regexp.Regexp
 	}{
-		{"401", http.StatusUnauthorized, "credential stale (401)", []string{"not entitled"}},
+		// Whole-form bans ("not entitled", "refresh", "stale") pass under a
+		// case-sensitive Contains for any respelling of the same word
+		// ("Not Entitled", "entitlement", "refreshes"). These are families,
+		// case-insensitive, matching internal/posse/credcomposite_test.go's
+		// namesAnotherClassesMove: (?i)entitl carries "entitled" and
+		// "entitlement", (?i)(refresh|stale) carries "refresh(es/ing/ed)"
+		// and "stale(ness)" — the 401's move and the 403's, guarded against
+		// showing up in the other's header (ranger-base-mummu).
+		{"401", http.StatusUnauthorized, "credential stale (401)", []*regexp.Regexp{regexp.MustCompile(`(?i)entitl`)}},
 		// The header is a place the forbidden word could come back in: it
 		// is written once, read at a glance, and nothing else pins it.
-		{"403", http.StatusForbidden, "credential not entitled (403)", []string{"refresh", "stale"}},
-		{"429", http.StatusTooManyRequests, "rate limited", []string{"credential"}},
+		{"403", http.StatusForbidden, "credential not entitled (403)", []*regexp.Regexp{regexp.MustCompile(`(?i)(refresh|stale)`)}},
+		{"429", http.StatusTooManyRequests, "rate limited", []*regexp.Regexp{regexp.MustCompile(`credential`)}},
 		// Control: a 500 is weather. A header that named a class here would
 		// be inventing a credential problem out of an outage.
-		{"500 is not a class", http.StatusInternalServerError, "", []string{"credential", "rate limited"}},
+		{"500 is not a class", http.StatusInternalServerError, "", []*regexp.Regexp{regexp.MustCompile(`credential`), regexp.MustCompile(`rate limited`)}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := scanOnce(t, planClassCockpit(t, tc.status))
@@ -96,9 +105,9 @@ func TestCockpitHeaderNamesTheCredentialClass(t *testing.T) {
 			if tc.says == "" && strings.Count(got, "·") != 1 {
 				t.Errorf("an unclassified failure says blind and nothing more: %q", got)
 			}
-			for _, n := range tc.never {
-				if strings.Contains(got, n) {
-					t.Errorf("header %q must not say %q", got, n)
+			for _, never := range tc.never {
+				if m := never.FindString(got); m != "" {
+					t.Errorf("header %q must not say %q (matched %q)", got, never.String(), m)
 				}
 			}
 		})
