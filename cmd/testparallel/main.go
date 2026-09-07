@@ -359,6 +359,7 @@ func main() {
 		"TestWriteExecutableWritesAFileThatRuns":                   "reads and holds the process-wide syscall.ForkLock",
 		"TestWriteExecutableWritesUnderTheForkLock":                "reads and holds the process-wide syscall.ForkLock",
 		"TestWriteExecutableHoldsTheLockPastTheOpen":               "reads and holds the process-wide syscall.ForkLock",
+		"TestCopySkillFileRoutesExecModeThroughTheForkLock":        "reads and holds the process-wide syscall.ForkLock (copySkillFile's dispatch into WriteExecutable, ranger-base-to7b5)",
 	}
 	// Named parallel, and the counterpart of serial above: a test the three
 	// filters call ineligible, that a human has READ and cleared. These are
