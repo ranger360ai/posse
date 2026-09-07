@@ -2718,8 +2718,11 @@ self-updated mid-verification; no behaviour below differed).**
   --no-optional-locks` — were refused, and nothing reached the throwaway
   bare repo. `?` and `[…]` work too. Three divergences from claude, each
   verified rather than read off grok's own shipped docs
-  (`~/.grok/docs/user-guide/22-permissions-and-safety.md`, which describes
-  all three correctly — but a doc is not a probe):
+  (`~/.grok/docs/user-guide/22-permissions-and-safety.md` describes the
+  no-word-boundary prefix and the `:*` strip below, but on the shell-parse
+  one — the expensive half — says the opposite, "nothing else is
+  normalized" beyond leading whitespace; a matcher detail grok has not
+  committed to its own doc, so it can move under us):
   - **A segment reaches the matcher shell-parsed** — quotes off, runs of
     whitespace collapsed to one. So `git -C <r>  push …` (two spaces)
     matches a rule written with one, and, the expensive half, a *quoted

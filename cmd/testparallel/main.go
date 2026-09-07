@@ -293,11 +293,17 @@ func main() {
 		// acquisition test the rule above had missed: it releases a lock and
 		// asserts the release read as free, which is the 9l77f shape exactly,
 		// and its free-lock arm is the line that failed a pass unreproducibly.
-		// Both are INERT today and named anyway — they go through wtApp, so
-		// filter 3 calls them ineligible and `check` is quiet with or without
-		// these two lines (measured both ways). The judgment is what is being
-		// recorded: the day wtApp stops reading $HOME, the filter lets go and
-		// this is the only thing left holding them serial.
+		// Both are LOAD-BEARING today, not inert (ranger-base-g7ly8, escaped
+		// from ranger-base-zppcv: measured the other way — delete these two
+		// lines under -overlay and `check` reds on exactly these two names).
+		// The reasoning that used to live here was inverted at the root:
+		// wtApp's only $HOME read is hermetic, and filter 3 exempts hermetic
+		// BY NAME (homeInTest, main.go:543), so going through wtApp is
+		// precisely what does NOT taint. Neither test is var-, env- or
+		// fakeDir-tainted either, and neither calls t.Parallel, so nothing
+		// but this manual entry holds them serial — the day something else
+		// taints them, the filter's own report will say so; until then this
+		// is the only thing standing between `check` and a red gate.
 		"TestTryLockLaunchesDoesNotWait":       "asserts flock acquisition",
 		"TestTryLockLaunchesNamesWhichFailure": "asserts flock acquisition",
 		// The opt-in live probe: it creates a real herdr workspace, types a

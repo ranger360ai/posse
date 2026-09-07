@@ -439,7 +439,14 @@ func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string,
 		// when its seats are about to come free.
 		held := d.inFlightCount()
 		wait = NextInterval(wait, base, maxInterval, n+held)
-		d.printf("   %d dispatched · next pass in %s (ctrl-c to stop)\n", n, wait.Round(time.Second))
+		verb := "dispatched"
+		if d.DryRun {
+			// Same wording as the one-shot arm (cmd/posse/main.go:865): a
+			// dry pass walks the seats and benches each one it would have
+			// seated, so n is real, but nothing launched this pass.
+			verb = "would be dispatched"
+		}
+		d.printf("   %d %s · next pass in %s (ctrl-c to stop)\n", n, verb, wait.Round(time.Second))
 		// One timer per pass; a carried leg landing cuts it short instead
 		// of waiting it out (ADR 0028 §1) — the next pass's own fireLoop
 		// re-verifies against bd and herdr before it acts on anything that

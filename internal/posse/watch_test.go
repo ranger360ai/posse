@@ -102,6 +102,50 @@ func TestWatchStopsOnContext(t *testing.T) {
 	}
 }
 
+// A dry-run watch pass launches nothing, so its tail must not claim it
+// dispatched anything (ranger-base-g7ly8, escaped from rangerhq-f3wv: the
+// one-shot arm was fixed in 66db3a2, cmd/posse/main.go:832, but the watch
+// tail never was).
+func TestDryRunWatchTailDoesNotSayDispatched(t *testing.T) {
+	t.Parallel()
+	b, fake := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+	d.DryRun = true
+	writePersona(t, b.App, "ranger", "[go]")
+	qaRepo(t, b.App, `[{"id":"a-1","title":"t","labels":["go"]}]`, "")
+	tap := newPassTap(2) // pass 2's header proves pass 1's tail printed
+	d.Out = tap
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		select {
+		case <-tap.reached:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+	done := make(chan int, 1)
+	go func() { p, _ := d.Watch(ctx, "", "", 0, 20*time.Millisecond, 40*time.Millisecond); done <- p }()
+	select {
+	case <-done:
+	case <-time.After(30 * time.Second):
+		t.Fatalf("watch never returned:\n%s", tap.String())
+	}
+	out, log := tap.String(), calls(t, fake)
+	if strings.Contains(log, "workspace create") {
+		t.Fatalf("a dry pass must launch nothing:\n%s", log)
+	}
+	if !strings.Contains(out, "· next pass in") {
+		t.Fatalf("the tail line never printed:\n%s", out)
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, "· next pass in") &&
+			strings.Contains(line, "dispatched") && !strings.Contains(line, "would") {
+			t.Errorf("a dry pass that launched nothing reports %q", strings.TrimSpace(line))
+		}
+	}
+}
+
 // passHeader is what Watch prints at the top of every pass. Counting it is
 // the only account of its progress the loop offers while it is still
 // running, so it is what the cancel above waits on.
