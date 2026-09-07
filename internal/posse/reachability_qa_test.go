@@ -229,13 +229,17 @@ func reachRow(p Parity) string {
 // has to ride the parity path CreateSession already calls, or the check is
 // a function nobody runs.
 //
-// The unreachable arm is not contrived — it is ranger-base-f5dg, live and
-// open: a redirect that stays UNDER cwd is skipped by SeatbeltWritable's
-// `!underDir(cwd, home)` guard as already-covered, and for a PID that
-// denies Edit/Write nothing covers it (only cwd/.beads and cwd/.git are
-// granted). MEASURED there with bd 0.49.1: `bd sync` and `bd export` fail
-// on the database with "operation not permitted". No observable saw it
-// before this row.
+// The second arm is ranger-base-f5dg's shape: a redirect that stays UNDER
+// cwd but outside cwd/.beads, the only slice a deniesFiles PID's own grant
+// covers. Before f5dg's fix, SeatbeltWritable's `!underDir(cwd, home)`
+// guard skipped it as already-covered when nothing covered it, and this
+// row was how the resulting "operation not permitted" got observed at all
+// (MEASURED with bd 0.49.1: `bd sync` and `bd export` both failed on the
+// database). The fix grants that resolved directory explicitly instead
+// (deniesFiles-aware boundary, seatbelt.go) — TestSeatbeltGrantsARedirect
+// ThatStaysUnderCwd pins that at the SeatbeltWritable level — so this row
+// must ride the fix too: a wiring check still expecting a degrade here
+// would be pinning the bug back in by proxy.
 func TestQARecordReachRidesTheParityPath(t *testing.T) {
 	rchSkip(t)
 	f := rchNew(t)
@@ -246,15 +250,15 @@ func TestQARecordReachRidesTheParityPath(t *testing.T) {
 		t.Errorf("a pass must be a printed row, not a silence: %q", got)
 	}
 
-	// ranger-base-f5dg's shape, in the same tree.
+	// ranger-base-f5dg's shape, in the same tree — granted since the fix, so
+	// the launch must not degrade here either.
 	inner := sbMkdir(t, filepath.Join(f.work, "inner", beadsDirName))
 	sbWrite(t, filepath.Join(f.work, beadsDirName, beadsRedirect), inner+"\n")
-	row := reachRow(f.a.CheckParityIn(f.ag, f.rt, CageSeatbelt, TierStrong, f.work))
-	if row == "" {
-		t.Fatal("a store of record the profile does not grant must degrade the launch")
+	if row := reachRow(f.a.CheckParityIn(f.ag, f.rt, CageSeatbelt, TierStrong, f.work)); row != "" {
+		t.Fatalf("the f5dg fix grants a redirect landing outside cwd/.beads; parity must not degrade: %s", row)
 	}
-	if !strings.Contains(row, AbbrevHome(inner)) {
-		t.Errorf("the row must name the unreachable target: %s", row)
+	if got := f.a.CheckParityIn(f.ag, f.rt, CageSeatbelt, TierStrong, f.work).Realized[RecordReachGate].Detail; !strings.Contains(got, "probed at launch") {
+		t.Errorf("a pass must be a printed row, not a silence: %q", got)
 	}
 }
 
