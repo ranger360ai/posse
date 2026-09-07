@@ -457,18 +457,37 @@ func scanMemoryChanges(dir string, changes []memoryChange) string {
 	// memory dirs have no untracked path at all, and this is a git process
 	// on the kill path.
 	root := ""
+	var untracked []string
+	for _, c := range changes {
+		if c.Untracked {
+			untracked = append(untracked, c.Path)
+		}
+	}
+	if len(untracked) > 0 {
+		if root = memoryRepoRoot(dir); root == "" {
+			// The relative path a "" root leaves does not stat, and the
+			// arm this replaced read that as "it went away" and skipped
+			// it — a file committed with nothing scanned, under a
+			// success line (ranger-base-qvild).
+			return fmt.Sprintf("%s could not be located for the credential scan, so it was not checked for credentials", untracked[0])
+		}
+		// Ask git rather than read the bytes, and ask it BEFORE any of them
+		// are read: an untracked path under a clean filter commits the
+		// filter's OUTPUT, and the loop below reads the worktree's raw
+		// INPUT. A lowercasing filter over an uppercased paste, rot13,
+		// base64 -d — none of them leave a shape the regex below would ever
+		// see, and no amount of scanning the wrong bytes closes that
+		// (ranger-base-cjjm5). One call for every untracked path in this
+		// change set, since most memory dirs configure no filter at all.
+		if held, err := memoryFilteredUntrackedChange(root, untracked); err != nil {
+			return fmt.Sprintf("the credential scan could not check for a clean filter (%v)", err)
+		} else if held != "" {
+			return held
+		}
+	}
 	for _, c := range changes {
 		if !c.Untracked {
 			continue
-		}
-		if root == "" {
-			if root = memoryRepoRoot(dir); root == "" {
-				// The relative path a "" root leaves does not stat, and the
-				// arm this replaced read that as "it went away" and skipped
-				// it — a file committed with nothing scanned, under a
-				// success line (ranger-base-qvild).
-				return fmt.Sprintf("%s could not be located for the credential scan, so it was not checked for credentials", c.Path)
-			}
 		}
 		// A path git has never seen has no HEAD side to diff against, so
 		// the whole file is added content and is read from disk.
@@ -545,6 +564,42 @@ func scanMemoryChanges(dir string, changes []memoryChange) string {
 		return fmt.Sprintf("%s:%d looks like %s", file, n, what)
 	}
 	return ""
+}
+
+// memoryFilteredUntrackedChange names an untracked path under a git clean
+// filter, or "". It is non-mutating on purpose — the scan runs before the
+// add and must leave the index untouched — so it ASKS git rather than
+// running the filter itself: `check-attr` reports what .gitattributes (in
+// this dir or any ancestor up to the repo root) says without touching a
+// single byte.
+//
+// A committed clean filter changes what git stores relative to what the
+// untracked-file loop reads off disk, and nothing past this point can tell
+// the two apart — a filter is configured in gitconfig, which check-attr
+// does not need and the loop below has no way to consult. Filter values
+// are "unspecified" (no matching gitattributes line) or "unset" (a line
+// explicitly turning it off with `-filter`); anything else, including the
+// boolean "set", is a name naming an actual clean command and holds.
+//
+// One call for every untracked path in the change set: most memory dirs
+// configure no filter at all, and asking per-file would spend a git
+// process on the common case for nothing.
+func memoryFilteredUntrackedChange(root string, paths []string) (string, error) {
+	out, err := gitRaw(root, append([]string{"check-attr", "-z", "filter", "--"}, paths...)...)
+	if err != nil {
+		return "", err
+	}
+	// `-z` triples: path, attribute name, value — each NUL-terminated, so
+	// the split leaves one empty tail after the last record.
+	recs := strings.Split(string(out), "\x00")
+	for i := 0; i+2 < len(recs); i += 3 {
+		path, value := recs[i], recs[i+2]
+		if value == "unspecified" || value == "unset" {
+			continue
+		}
+		return fmt.Sprintf("%s is under clean filter %s, so the scan cannot read what the commit takes", path, value), nil
+	}
+	return "", nil
 }
 
 // memoryUnreadableChange names a tracked path whose added content the diff

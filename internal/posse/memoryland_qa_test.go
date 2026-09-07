@@ -564,6 +564,90 @@ func TestKillHoldsAnUntrackedFileGitWouldCallBinary(t *testing.T) {
 	}
 }
 
+// ranger-base-cjjm5: an untracked path under a git clean filter commits the
+// FILTER'S OUTPUT, and the untracked-file arm above reads the worktree's raw
+// INPUT — bytes the commit never takes. The fixture's raw text already
+// carries the credential shape UPPERCASED, so once (?i) is in the regex (it
+// is, as of the sibling bead) that arm would hold anyway just by reading the
+// raw bytes directly — for the wrong reason, and without ever asking about
+// the filter. The assertion below is what tells the two apart: it requires
+// the hold to NAME the filter, which only a `git check-attr` consultation
+// can produce. Measured on git 2.50.1: a lowercasing `tr A-Z a-z` clean
+// filter over `*.vault` leaves an untracked `vault.vault` whose raw text is
+// uppercase and whose committed blob would have been lowercase.
+func TestKillHoldsAnUntrackedFileUnderACleanFilter(t *testing.T) {
+	t.Parallel()
+	b, fake := newTestBackend(t)
+	agentPerLaunch(t, fake)
+	repo := memoryRepo(t, b)
+
+	personaDir := filepath.Join(repo, ConstitutionSourceDir, "personas", "dev")
+	attrsRel := ConstitutionSourceDir + "/personas/dev/.gitattributes"
+	write(t, filepath.Join(personaDir, ".gitattributes"), "*.vault filter=up\n")
+	mustGit(t, repo, "config", "filter.up.clean", "tr A-Z a-z")
+	mustGit(t, repo, "add", "--", attrsRel)
+	mustGit(t, repo, "commit", "-q", "-m", "configure the up filter", "--", attrsRel)
+
+	devSession(t, b, "s1")
+	before := mustGit(t, repo, "rev-parse", "HEAD")
+
+	const leaked = "SK-ANT-API03-GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG"
+	vault := filepath.Join(personaDir, "vault.vault")
+	write(t, vault, leaked+"\n")
+	if dirty := b.App.MemoryDirtyPaths("dev"); !strings.Contains(strings.Join(dirty, " "), "vault.vault") {
+		t.Fatalf("git does not offer the untracked file to the commit here: %v", dirty)
+	}
+	appendOrders(t, repo, "dev", "- a lesson that has to wait for the operator.\n")
+
+	landing, err := b.KillSessionAndLandOpts("s1", KillOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after := mustGit(t, repo, "rev-parse", "HEAD"); after != before {
+		t.Fatalf("the filtered file was committed as %s:\n%s", after, headFiles(t, repo))
+	}
+	line := landing.Memory.Line()
+	if !strings.Contains(line, "vault.vault") || !strings.Contains(line, "filter") || !strings.Contains(line, "up") {
+		t.Errorf("the hold must name the path and the filter: %q", line)
+	}
+	if strings.Contains(line, leaked) {
+		t.Errorf("the refusal echoed the credential: %q", line)
+	}
+	if st := mustGit(t, repo, "diff", "--cached", "--name-only"); strings.TrimSpace(st) != "" {
+		t.Errorf("a held commit left paths staged: %q", st)
+	}
+}
+
+// The other direction, without which the test above is green over an arm
+// that holds every untracked file: an ordinary untracked file in a
+// filter-less memory dir still lands. `git check-attr` answers
+// "unspecified" for it and the commit proceeds exactly as before this bead.
+func TestAnUntrackedFileWithNoFilterStillLands(t *testing.T) {
+	t.Parallel()
+	b, fake := newTestBackend(t)
+	agentPerLaunch(t, fake)
+	repo := memoryRepo(t, b)
+	devSession(t, b, "s1")
+
+	personaDir := filepath.Join(repo, ConstitutionSourceDir, "personas", "dev")
+	write(t, filepath.Join(personaDir, "notes", "plain.md"), "an ordinary note\n")
+	appendOrders(t, repo, "dev", "- a lesson landed beside a plain file.\n")
+
+	landing, err := b.KillSessionAndLandOpts("s1", KillOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if landing.Memory == nil || landing.Memory.Held != "" {
+		t.Fatalf("a plain untracked file held the commit: %+v", landing.Memory)
+	}
+	if dirty := b.App.MemoryDirtyPaths("dev"); len(dirty) != 0 {
+		t.Fatalf("the kill left the persona's memory uncommitted: %v", dirty)
+	}
+	if body := mustGit(t, repo, "show", "HEAD:"+ConstitutionSourceDir+"/personas/dev/notes/plain.md"); !strings.Contains(body, "ordinary note") {
+		t.Errorf("the plain file is not in the commit:\n%s", body)
+	}
+}
+
 // ─── what the sweep takes ────────────────────────────────────────────────────
 
 // ranger-base-c9m7: the sweep takes the persona's whole memory dir, and that
