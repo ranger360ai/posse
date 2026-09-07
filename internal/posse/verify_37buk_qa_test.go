@@ -104,7 +104,7 @@ func fifoLaunchRig(t *testing.T) (*App, string) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
-	root := t.TempDir()
+	root := gitTempDir(t)
 	home := filepath.Join(root, "home")
 	if err := os.MkdirAll(home, 0o755); err != nil {
 		t.Fatal(err)

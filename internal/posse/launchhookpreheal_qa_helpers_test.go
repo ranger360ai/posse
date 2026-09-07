@@ -23,7 +23,7 @@ func lhpFixture(t *testing.T, visibility string) (*HerdrBackend, string) {
 	if err := os.WriteFile(filepath.Join(a.AgentsDir, "ranger.md"), []byte("---\nname: ranger\n---\nwork\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	repo := hwsRepo(t, t.TempDir(), "declared")
+	repo := hwsRepo(t, gitTempDir(t), "declared")
 	if err := os.WriteFile(a.ConfigPath, []byte("beads_visibility:\n  "+repo+": "+visibility+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
