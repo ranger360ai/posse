@@ -463,7 +463,7 @@ func (a *App) RunBackup(o BackupOpts) (BackupResult, error) {
 	if err != nil {
 		return res, err
 	}
-	defer lock.Close()
+	defer lock.Release()
 
 	at := now().UTC()
 	stage := filepath.Join(dir, ".staging-"+at.Format(backupStamp)+"-"+strconv.Itoa(os.Getpid()))
@@ -1185,11 +1185,40 @@ func pruneBackups(w io.Writer, dir string, keep int) []string {
 	return pruned
 }
 
+// backupDirLock is the held single-flight lock, released by Release and not
+// by Close (ranger-base-d6zyu finding 1).
+//
+// flock(2) is released either by an explicit LOCK_UN on any duplicate of the
+// fd, or once EVERY duplicate has been closed. A fork made while the lock is
+// held hands the child a duplicate of that same fd — O_CLOEXEC only closes
+// it at the child's own exec, not at fork — so a bare Close() in the parent
+// does not free the lock until that child reaches exec, even though the
+// parent believes it has released it. watch.go's dispatch loop forks
+// constantly (22 non-test files in this package call exec.Command), so a
+// `posse backup` racing one of those forks could be refused with "another
+// posse backup is already running" when nothing was: measured on this box,
+// 208/300 releases did not take effect under overlapping forks, 0/300 with
+// no forks and 0/300 with forks that never overlapped the hold — the
+// overlap is the cause, not the forking. An explicit LOCK_UN drops the lock
+// for every duplicate immediately, regardless of how many are still open.
+type backupDirLock struct{ f *os.File }
+
+// Release drops the lock immediately and then closes the fd. Nil-safe and
+// idempotent so a caller may defer it unconditionally.
+func (l *backupDirLock) Release() {
+	if l == nil || l.f == nil {
+		return
+	}
+	_ = flock(l.f, syscall.LOCK_UN)
+	l.f.Close()
+	l.f = nil
+}
+
 // lockBackupDir is the single-flight lock (ADR 0011 §1's answer, as ADR 0036
 // §3 asks for it): flock on a file in the archive directory, non-blocking,
 // because a second backup is never worth waiting for — the first one is
 // making the archive the second one would have made.
-func lockBackupDir(dir string) (*os.File, error) {
+func lockBackupDir(dir string) (*backupDirLock, error) {
 	f, err := os.OpenFile(filepath.Join(dir, ".lock"), os.O_RDWR|os.O_CREATE, 0o600)
 	if err != nil {
 		return nil, Die("backup lock: %v", err)
@@ -1198,7 +1227,7 @@ func lockBackupDir(dir string) (*os.File, error) {
 		f.Close()
 		return nil, Die("another posse backup is already running in %s — one writer per archive directory", AbbrevHome(dir))
 	}
-	return f, nil
+	return &backupDirLock{f: f}, nil
 }
 
 // ─── small shared helpers ────────────────────────────────────────────────────

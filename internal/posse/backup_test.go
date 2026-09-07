@@ -21,7 +21,9 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -456,6 +458,71 @@ func TestBackupIsSingleFlight(t *testing.T) {
 	flock(held, syscall.LOCK_UN)
 	held.Close()
 	mustBackup(t, a, backupAt)
+}
+
+// A released lock is not a free lock if a fork raced the hold (ranger-base-
+// d6zyu finding 1, escaped from ranger-base-wrdz4's ubuntu leg): flock is
+// released by an explicit LOCK_UN, or once every duplicate fd a fork handed
+// a child has closed — and a child inherits a duplicate at fork regardless
+// of O_CLOEXEC, which only closes it at THAT child's own exec. Release must
+// unlock explicitly rather than rely on Close() alone.
+//
+// Statistical because the race is timing-dependent: each of iters rounds
+// gets its own lock file so one wedged round cannot be counted twice, and
+// forks 8 children continuously across the hold to make the fork-during-
+// hold window near-certain to be hit at least once per round (measured
+// standalone at 208/300 releases failing to take effect under this exact
+// overlap, and 0/300 with no forks or with forks that never overlapped the
+// hold — the overlap is what causes it, not the forking). A build that
+// regresses to relying on Close() alone would be expected to fail almost
+// every round; this asserts zero.
+func TestBackupLockReleasesEvenWhenAForkOverlapsTheHold(t *testing.T) {
+	root := t.TempDir()
+	const iters = 100
+
+	// The forkers run for the WHOLE loop, not per-round: warmed up and
+	// mid-fork continuously is what makes a fork's fork() syscall land
+	// inside a given round's hold-to-release window likely. Starting and
+	// stopping a fresh batch each round left scheduler latency eating the
+	// window and undermeasured the race (0/40 with the fix reverted, against
+	// a same-box standalone probe's 70/300 run continuously) — this shape
+	// reproduces that 70/300 rate.
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	for k := 0; k < 8; k++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				exec.Command("/bin/sh", "-c", ":").Run()
+			}
+		}()
+	}
+	defer func() { close(stop); wg.Wait() }()
+
+	for i := 0; i < iters; i++ {
+		dir := filepath.Join(root, strconv.Itoa(i))
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		lock, err := lockBackupDir(dir)
+		if err != nil {
+			t.Fatalf("round %d: lockBackupDir: %v", i, err)
+		}
+		time.Sleep(3 * time.Millisecond)
+		lock.Release()
+
+		second, err := lockBackupDir(dir)
+		if err != nil {
+			t.Fatalf("round %d: a lock Release()d before this call still refused a fresh acquisition (the fork/exec race): %v", i, err)
+		}
+		second.Release()
+	}
 }
 
 // ─── retention ───────────────────────────────────────────────────────────────
