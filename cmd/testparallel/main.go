@@ -360,6 +360,14 @@ func main() {
 		"TestWriteExecutableWritesUnderTheForkLock":                "reads and holds the process-wide syscall.ForkLock",
 		"TestWriteExecutableHoldsTheLockPastTheOpen":               "reads and holds the process-wide syscall.ForkLock",
 		"TestCopySkillFileRoutesExecModeThroughTheForkLock":        "reads and holds the process-wide syscall.ForkLock (copySkillFile's dispatch into WriteExecutable, ranger-base-to7b5)",
+		// Its own work is microseconds; the 5s ceiling it asserts against
+		// is wall clock, not a timeout being tested, and a parallel phase
+		// racing internal/posse's ~1200s of concurrent tests for CPU can
+		// burn that 5s on a slow scheduler tick alone -- MEASURED green on
+		// two full-package runs and red on a third with the same bytes
+		// (ranger-base-d4u28, see the comment above the test itself in
+		// verify_nx85_qa_test.go).
+		"TestQAL3ProbeMustNotBlockOnANonRegularFileAtTheDispatchPath": "shares internal/posse's clock, dropped t.Parallel() on purpose",
 	}
 	// Named parallel, and the counterpart of serial above: a test the three
 	// filters call ineligible, that a human has READ and cleared. These are
