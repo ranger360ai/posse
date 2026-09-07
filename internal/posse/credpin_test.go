@@ -686,7 +686,7 @@ func TestAnAnswerIsRefusedWhenTheAskedHostIsUnknown(t *testing.T) {
 		t.Fatal(err)
 	}
 	resp := &http.Response{Request: &http.Request{URL: u}}
-	if err := pinnedResponse("model list endpoint", resp, ""); err == nil {
+	if err := pinnedResponse("model list endpoint", resp, "", ""); err == nil {
 		t.Error("an empty asked host accepted an answer — belt 3 must fail closed")
 	}
 }

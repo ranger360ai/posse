@@ -271,7 +271,7 @@ func (r *AnthropicPlanReader) Read() (PlanUsage, error) {
 	// came from a host we did not ask, so it is not an answer — and this
 	// reader IS the compiled-in one, so without it a 302 to a listener
 	// would have been the fleet's fact (credpin.go rule 3, ranger-base-07ep).
-	if err := pinnedResponse("usage endpoint", resp, askedHost(r.URL)); err != nil {
+	if err := pinnedResponse("usage endpoint", resp, askedHost(r.URL), askedScheme(r.URL)); err != nil {
 		return nil, err
 	}
 	if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusServiceUnavailable {

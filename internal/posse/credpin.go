@@ -99,6 +99,28 @@ package posse
 // launch. The case that leaves — one loopback listener redirecting to
 // another — needs the reader already pointed at a listener the caller
 // chose, which is rules 4 and 5's ground rather than this one's.
+//
+// ─── what ranger-base-ji1d3 changed ──────────────────────────────────────
+//
+// The hostname unit had a gap of its own: same host, https asked, http
+// answered — Go's own redirect-header rule (shouldCopyHeaderOnRedirect,
+// isDomainOrSubdomain) only ever compares hostnames too, so it copied the
+// Authorization header straight across the downgrade, and rule 3 as it
+// stood said the host matched and waved it through (ranger-base-246xo).
+// Whoever holds the TLS session for the compiled-in endpoint — or the
+// upstream itself, 07ep's premise — could turn one interception into an
+// ongoing plaintext leak of the OAuth bearer at every catalog and plan
+// read, reachable by passive network observers the interception itself is
+// not.
+//
+// So the unit gains one exception, not a second unit: a same-host answer
+// still passes rule 3, UNLESS the scheme also stepped from https down to
+// http, in which case it is refused regardless of the host matching.
+// http asked, https answered stays allowed — that is the endpoint
+// upgrading itself — and so does a same-scheme port change; only the
+// downgrade direction is new. The refusal names the downgrade, not the
+// host: the host DID match, and a refusal phrased like a host mismatch
+// would send the operator hunting for the wrong break.
 
 import (
 	"fmt"
@@ -135,6 +157,17 @@ func pinAnswerRule(host string) string {
 		return "an answer counts only from the host posse asked"
 	}
 	return "an answer counts only from " + host + ", the host posse asked"
+}
+
+// pinDowngradeRule is rule 3's scheme exception: a same-host answer that
+// stepped from https down to http (ranger-base-246xo, ranger-base-ji1d3).
+// It says downgrade, not host — the host matched, so a sentence shaped
+// like pinAnswerRule's would send the operator hunting the wrong break.
+func pinDowngradeRule(host string) string {
+	if host == "" {
+		return "an https ask is not answered by http, even on the same host"
+	}
+	return "an https ask of " + host + " is not answered by http, even on the same host"
 }
 
 // PinRefusal is posse declining to point a credentialed request at a host
@@ -218,6 +251,18 @@ func askedHost(raw string) string {
 	return u.Hostname()
 }
 
+// askedScheme is the downgrade exception's other half of rule 3's want:
+// the scheme of the URL this reader is CONFIGURED with, read the same way
+// askedHost is — off the reader, not the compiled-in constant — so it
+// agrees with askedHost about which request was actually asked for.
+func askedScheme(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	return u.Scheme
+}
+
 // answeredHost is rule 3's test. An empty want is FALSE, not true: a host
 // nobody could name is not a host everybody satisfies, and the readers
 // have already passed this URL through pinnedEndpoint by the time it is
@@ -228,6 +273,16 @@ func answeredHost(u *url.URL, asked string) bool {
 	}
 	h := u.Hostname()
 	return h != "" && strings.EqualFold(h, asked)
+}
+
+// downgradesScheme is rule 3's scheme exception: true only for https asked,
+// http answered. Not a general scheme-mismatch test — http asked answered
+// by https is the endpoint upgrading itself and stays allowed, and an
+// empty scheme on either side (a parse failure, or via[0] before any
+// request exists) is never treated as a downgrade here; answeredHost's
+// empty-want-is-false already fails the answer closed on that path.
+func downgradesScheme(asked, answered string) bool {
+	return asked == "https" && answered == "http"
 }
 
 // credentialedURL is rule 4, and it is deliberately not a host test: the
@@ -285,17 +340,22 @@ func pinnedRequest(what string, req *http.Request, want string) error {
 
 // pinnedResponse is belt (3): the check made on the host that answered, so
 // a redirect off the host the reader ASKED is refused rather than decoded
-// and cached. asked is the effective host — askedHost(r.URL) — and not the
+// and cached. asked is the effective host — askedHost(r.URL) — and
+// askedScheme the effective scheme — askedScheme(r.URL) — neither the
 // compiled-in constant, which would let a redirect from the compiled-in
-// endpoint to this machine pass rule 2's set as if it had been asked.
-func pinnedResponse(what string, resp *http.Response, asked string) error {
+// endpoint to this machine (or a downgrade at it) pass as if it had been
+// asked for.
+func pinnedResponse(what string, resp *http.Response, asked, askedScheme string) error {
 	if resp == nil || resp.Request == nil || resp.Request.URL == nil {
 		return nil
 	}
-	if answeredHost(resp.Request.URL, asked) {
-		return nil
+	if !answeredHost(resp.Request.URL, asked) {
+		return &PinRefusal{What: what, Host: resp.Request.URL.Host, Why: pinAnswerRule(asked), Redirect: true}
 	}
-	return &PinRefusal{What: what, Host: resp.Request.URL.Host, Why: pinAnswerRule(asked), Redirect: true}
+	if downgradesScheme(askedScheme, resp.Request.URL.Scheme) {
+		return &PinRefusal{What: what, Host: resp.Request.URL.Host, Why: pinDowngradeRule(asked), Redirect: true}
+	}
+	return nil
 }
 
 // pinnedClient is the client the two readers build for themselves: one that
@@ -315,12 +375,16 @@ func pinnedClient(timeout time.Duration, what string) *http.Client {
 			if len(via) >= 10 {
 				return fmt.Errorf("stopped after 10 redirects")
 			}
-			var asked string
+			var asked, askedScheme string
 			if len(via) > 0 {
 				asked = via[0].URL.Hostname()
+				askedScheme = via[0].URL.Scheme
 			}
 			if !answeredHost(req.URL, asked) {
 				return &PinRefusal{What: what, Host: req.URL.Host, Why: pinAnswerRule(asked), Redirect: true}
+			}
+			if downgradesScheme(askedScheme, req.URL.Scheme) {
+				return &PinRefusal{What: what, Host: req.URL.Host, Why: pinDowngradeRule(asked), Redirect: true}
 			}
 			return nil
 		},
