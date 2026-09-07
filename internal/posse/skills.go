@@ -30,7 +30,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -261,21 +260,24 @@ func copySkillTree(name, src, dst string, chain []string) error {
 // posse's own 0755 instead, so a re-render can always remove what the last
 // launch wrote — the tree is rewritten from scratch at every launch and a
 // 0500 dir copied from the registry would outlive the skill.
+//
+// mode comes from the SOURCE file (copySkillTree's fi.Mode().Perm()), so
+// whether this write needs WriteExecutable's fork-lock window (execwrite.go)
+// isn't known until here — a plain os.OpenFile would leave the same
+// ETXTBSY/golang#22315 window WriteExecutable's other five call sites close
+// (ranger-base-to7b5). Content is read fully into memory rather than
+// streamed with io.Copy because WriteExecutable is os.WriteFile-shaped, not
+// io.Writer-shaped; skill files are source and scripts, not the kind of
+// payload streaming exists for.
 func copySkillFile(src, dst string, mode fs.FileMode) error {
-	in, err := os.Open(src)
+	content, err := os.ReadFile(src)
 	if err != nil {
 		return err
 	}
-	defer in.Close()
-	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode)
-	if err != nil {
-		return err
+	if mode&0o111 != 0 {
+		return WriteExecutable(dst, content, mode)
 	}
-	if _, err := io.Copy(out, in); err != nil {
-		out.Close()
-		return err
-	}
-	return out.Close()
+	return os.WriteFile(dst, content, mode)
 }
 
 // AgentsSkillsPath is the per-session skill surface codex and grok share,

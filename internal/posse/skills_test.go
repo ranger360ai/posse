@@ -169,6 +169,46 @@ func TestRenderClaudeSkills(t *testing.T) {
 	}
 }
 
+// copySkillFile's mode comes off the SOURCE file (ADR 0007: a skill's own
+// scripts "run inside the cage like anything else"), so a skill that ships
+// an executable must render one — the functional half of ranger-base-to7b5,
+// whose fork-lock half is TestCopySkillFileRoutesExecModeThroughTheForkLock
+// in execwrite_test.go.
+func TestRenderClaudeSkillsKeepsTheExecuteBit(t *testing.T) {
+	t.Parallel()
+	home := t.TempDir()
+	a := &App{Home: home, StateDir: filepath.Join(home, "state")}
+	os.MkdirAll(a.SkillsDir(), 0o755)
+	p := mkSkill(t, a.SkillsDir(), "tooling")
+	script := []byte("#!/bin/sh\necho ran\n")
+	if err := os.WriteFile(filepath.Join(p, "run.sh"), script, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	dir, err := a.RenderClaudeSkills("developer", []string{"tooling"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered := filepath.Join(dir, "skills", "tooling", "run.sh")
+	fi, err := os.Stat(rendered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := fi.Mode().Perm(); got != 0o755 {
+		t.Errorf("perm: got %04o, want 0755 — a copy that dropped the execute bit binds a skill whose own tooling no longer runs", got)
+	}
+	got, err := os.ReadFile(rendered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(script) {
+		t.Errorf("content: got %q, want %q", got, script)
+	}
+	if out, err := exec.Command(rendered).Output(); err != nil || string(out) != "ran\n" {
+		t.Errorf("the rendered copy does not run: got %q, %v", out, err)
+	}
+}
+
 // §2 again: {skills} renders through the runtime's realizer — claude's
 // --plugin-dir, nothing (and no gap) elsewhere or when the list is empty.
 func TestSkillsPlaceholderRendering(t *testing.T) {

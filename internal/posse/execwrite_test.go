@@ -313,3 +313,63 @@ func TestWriteExecutableHoldsTheLockPastTheOpen(t *testing.T) {
 	}
 	t.Error("ForkLock was free while WriteExecutable was inside write(2) with the descriptor open: a fork landing there inherits it, and an execve of the written file answers ETXTBSY while it does (golang/go#22315, ranger-base-d26ak)")
 }
+
+// copySkillFile (skills.go) is the seventh ETXTBSY sibling (ranger-base-to7b5):
+// its dst mode is a variable read off the SOURCE file, not a literal in the
+// call, so no grep-based census of os.OpenFile/os.Create ever saw this site.
+// This is TestWriteExecutableWritesUnderTheForkLock's rig aimed at
+// copySkillFile instead of WriteExecutable directly, to prove the dispatch
+// in copySkillFile actually reaches WriteExecutable when the source file's
+// mode carries an exec bit, rather than just trusting the one-line read.
+func TestCopySkillFileRoutesExecModeThroughTheForkLock(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "script.sh")
+	body := []byte("#!/bin/sh\necho hi\n")
+	if err := os.WriteFile(src, body, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dst := filepath.Join(dir, "fifo")
+	if err := syscall.Mkfifo(dst, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	waitForkLockFree(t, "the rig proves nothing")
+
+	done := make(chan error, 1)
+	go func() { done <- copySkillFile(src, dst, 0o755) }()
+
+	// Parked in open(2), same as WriteExecutable's own pin: if the write
+	// took the lock it is holding it now, and if it did not it never will.
+	held := false
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); {
+		if forkLockHeld() {
+			held = true
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	f, err := os.Open(dst)
+	if err != nil {
+		t.Fatalf("the FIFO read end would not open (%v) — the parked write still holds ForkLock", err)
+	}
+	defer func() {
+		got, err := io.ReadAll(f)
+		if err != nil {
+			t.Errorf("draining the FIFO: %v", err)
+		}
+		if err := f.Close(); err != nil {
+			t.Errorf("closing the FIFO: %v", err)
+		}
+		if err := <-done; err != nil {
+			t.Errorf("copySkillFile failed: %v", err)
+		}
+		if string(got) != string(body) {
+			t.Errorf("content: got %q, want %q", got, body)
+		}
+		waitForkLockFree(t, "ForkLock outlived copySkillFile")
+	}()
+
+	if !held {
+		t.Error("copySkillFile wrote an exec-mode file with ForkLock free: a sibling fork can land inside its window and inherit the write descriptor (golang/go#22315, ranger-base-to7b5)")
+	}
+}
