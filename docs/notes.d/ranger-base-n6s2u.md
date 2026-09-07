@@ -108,6 +108,15 @@ already resolves (ADR 0019: presence, mtime and path, never values — and an
 API-key environment variable reads *unknown* rather than "not silenced"), is
 handed to the code lane as its own bead.
 
+### Amendment (ranger-base-k987u)
+
+"a 15-line ASCII logo" above is wrong: codex's startup logo is 15 OR 16
+non-empty rows (measured, 60 fresh launches at 60 columns), and the 16-row
+draw pushes `2. Sign in with Device Code` to non-empty line 24 — the exact
+edge `region = "top_non_empty_lines(24)"` admitted with zero headroom. The
+region is now 25; see `etc/herdr/agent-detection/codex.toml` and its README
+for the current measurement.
+
 ### Not captured
 
 The device-code screen behind option 2, for the reason above. It is the one

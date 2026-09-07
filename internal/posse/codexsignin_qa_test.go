@@ -22,12 +22,14 @@ package posse
 //  2. each `all` clause of signin_menu is load-bearing, drop-one and with a
 //     positive witness that the drop is what did it — otherwise half the rule
 //     could be deleted with every package green (the ranger-base-ntsz shape);
-//  3. the region depth. signin_menu reads 24 non-empty lines where its
-//     siblings read 20, because codex draws the menu under a 15-line ASCII
-//     logo and a 60-column pane wraps the prose above it. That number is the
-//     one thing here with an edge, so it is mutated at its edge rather than
-//     trusted: testdata/codex/blocked-signin-narrow.txt is the pane that needs
-//     the last two lines of it.
+//  3. the region depth. signin_menu reads 25 non-empty lines where its
+//     siblings read 20, because codex draws the menu under a startup ASCII
+//     logo (15 OR 16 non-empty rows — ranger-base-k987u) and a 60-column pane
+//     wraps the prose above it. That number is the one thing here with an
+//     edge, so it is mutated at its edge rather than trusted:
+//     testdata/codex/blocked-signin-narrow.txt is the pane that needs the
+//     last two lines of it, and codexsigninregion_qa_test.go holds the
+//     16-row-logo case the same way.
 
 import (
 	"os"
@@ -191,15 +193,17 @@ func cutSignInClause(t *testing.T, toml, clause string) string {
 }
 
 // TestQACodexSignInMenuRegionReachesTheNarrowPane mutates the one number in
-// this fix that has an edge.
+// this fix that has an edge. (It probes the region at explicit values below
+// the shipped one, which is 25 as of ranger-base-k987u — see
+// codexsigninregion_qa_test.go for the arm pinned to the actual manifest.)
 //
-// signin_menu reads top_non_empty_lines(24). Its siblings read 20, and 20 is
-// not enough: codex draws the menu under a 15-line ASCII logo, so on a
-// 120-column pane "2. Sign in with Device Code" is already the 21st non-empty
-// line, and on a 60-column pane — where the two prose lines above it wrap —
-// it is the 23rd. Both fixtures must fail at 20, and the narrow one must fail
-// at 22, or the 24 is a number nobody measured and a manifest edit that walks
-// it back to the sibling value goes green.
+// signin_menu's siblings read 20, and 20 is not enough: codex draws the menu
+// under its startup ASCII logo, so on a 120-column pane "2. Sign in with
+// Device Code" is already the 21st non-empty line, and on a 60-column pane —
+// where the two prose lines above it wrap — it is the 23rd (15-row logo) or
+// 24th (16-row logo). Both fixtures must fail at 20, and the narrow one must
+// fail at 22, or 24 is a number nobody measured and a manifest edit that
+// walks it back to the sibling value goes green.
 func TestQACodexSignInMenuRegionReachesTheNarrowPane(t *testing.T) {
 	t.Parallel()
 	if _, err := exec.LookPath("herdr"); err != nil {

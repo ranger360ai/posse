@@ -302,17 +302,23 @@ the field's own words; its `Press enter to save` / `Press esc to go back`
 footer is two lines, so `live_strong_blocker`'s single-line
 `press enter to confirm or esc to go back` never reached it.
 
-**`region = "top_non_empty_lines(24)"`, not the siblings' 20**, and the number
-is measured rather than picked: codex draws this menu under a 15-line ASCII
-logo, so `2. Sign in with Device Code` is the 21st non-empty line on a
-120-column pane and the 23rd on a 60-column one, where the prose above it
-wraps. `testdata/codex/blocked-signin-narrow.txt` is that 60-column pane and
-is committed for exactly this — at region 22 it fails while the wide capture
-still passes. At 40 columns codex drops the logo and the whole screen is 15
-lines. `internal/posse/codexsignin_qa_test.go` mutates the region at that
-edge, cuts each `all` clause with a positive witness, and holds the inversion
-every rule here needs: delete `signin_menu` (or `signin_api_key`) and its
-fixtures go `blocked` → `idle`/`none`.
+**`region = "top_non_empty_lines(25)"`, not the siblings' 20**, and the number
+is measured rather than picked: codex draws this menu under its startup ASCII
+logo, which is **not** a constant height — 60 fresh launches at 60 columns
+(ranger-base-k987u) drew 22 distinct arts at two non-empty heights, 15 rows
+and 16 rows, the extra row pushing everything below it down one line. On a
+120-column pane that doesn't move much (`2. Sign in with Device Code` at 19/21
+non-empty lines); at 60 columns, where the prose above it wraps, the two
+heights land on 23 (`testdata/codex/blocked-signin-narrow.txt`) and 24
+(`testdata/codex/blocked-signin-tall-logo.txt`) — the deepest seen. 25 is that
+deepest-seen-plus-one, the margin this rule has always kept rather than
+pinning to the exact edge: at region 22 the narrow capture fails while the
+wide one still passes. At 40 columns codex drops the logo and the whole
+screen is 15 lines. `internal/posse/codexsignin_qa_test.go` and
+`codexsigninregion_qa_test.go` mutate the region at its edges, cut each `all`
+clause with a positive witness, and hold the inversion every rule here needs:
+delete `signin_menu` (or `signin_api_key`) and its fixtures go
+`blocked` → `idle`/`none`.
 
 **Not captured, deliberately:** the device-code screen behind option 2. It
 requests a real device code from OpenAI, and no reading is worth a network

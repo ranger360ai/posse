@@ -144,16 +144,25 @@ all = [
 # continue" is update_menu's footer too, so a reword must not be able to return
 # this screen to idle (hooks_review is keyed that way for the same reason).
 #
-# region 24 rather than the siblings' 20, and it is measured: the menu sits
-# under a 15-line ASCII logo, which puts "1. Sign in with ChatGPT" at non-empty
-# line 19 and "2. Sign in with Device Code" at 21 on a 120-column pane. At 60
-# columns the prose wraps and option 2 lands at 23 — the deepest seen, and what
-# the 24 is for; testdata/codex/blocked-signin-narrow.txt is that pane. At 40
-# columns codex drops the logo and the whole screen is 15 lines.
+# region 25 rather than the siblings' 20, and it is measured: the menu sits
+# under codex's startup ASCII logo, which is NOT a constant height — 60 fresh
+# launches at 60 columns (ranger-base-k987u) drew 22 distinct arts at TWO
+# non-empty heights, 15 rows (40 draws) and 16 rows (20 draws), the extra row
+# being a thin tail that pushes everything below it down one line. On a
+# 120-column pane the logo's height doesn't move the numbered options enough
+# to matter (19/21 at 15 rows); at 60 columns the prose above option 2 wraps
+# and the two heights land on 23 (testdata/codex/blocked-signin-narrow.txt)
+# and 24 (testdata/codex/blocked-signin-tall-logo.txt) — the deepest seen. 25
+# is that deepest-seen-plus-one, the same margin this rule has always kept
+# rather than pinning to the exact edge: a 24 region reads the 16-row pane
+# with zero headroom, one taller logo art or one narrower rewrap away from
+# falling back to default_known_agent_idle_fallback on the exact screen this
+# rule exists to keep untyped-into. At 40 columns codex drops the logo and
+# the whole screen is 15 lines.
 id = "signin_menu"
 state = "blocked"
 priority = 930
-region = "top_non_empty_lines(24)"
+region = "top_non_empty_lines(25)"
 visible_blocker = true
 all = [
   { regex = ['(?m)^\s*\S?\s*1\.\s+Sign in with ChatGPT\b'] },
@@ -173,7 +182,11 @@ all = [
 #
 # Keyed on the screen's own heading plus the field's own words — both inside
 # the first 20 non-empty lines at every width measured (17 and 18 at 120 and 80
-# columns, 3 and 5 at 40, where the logo is dropped).
+# columns, 3 and 5 at 40, where the logo is dropped). 20 is deliberate, not
+# widened alongside signin_menu's 24->25 (ranger-base-k987u): codex's logo is
+# 15 OR 16 non-empty rows (see signin_menu above), which puts this screen's
+# deepest clause at 19 on a 60-column pane either way — one line of headroom
+# under the real distribution, the same margin signin_menu's 25 restores.
 id = "signin_api_key"
 state = "blocked"
 priority = 920

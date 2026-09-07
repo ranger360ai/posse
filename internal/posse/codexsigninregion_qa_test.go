@@ -16,15 +16,21 @@ package posse
 //	15          non-empty line 23              non-empty line 18
 //	16          non-empty line 24              non-empty line 19
 //
-// signin_menu reads top_non_empty_lines(24) and signin_api_key reads 20, so
-// both are still correct — no live pane is misread. But one 60-column menu in
-// three lands on 24, the LAST line the region admits, and the fix's own pins
-// could not see it: blocked-signin{,-narrow}.txt and blocked-signin-api-key.txt
-// all carry 15-row logos, so `region 24 -> 23` and `region 20 -> 18` both went
-// green over `make verify-detection` and every arm of
-// codexsignin_qa_test.go — while a real 16-row-logo pane reads `idle` / rule
+// signin_menu read top_non_empty_lines(24) and signin_api_key reads 20, so
+// both were still correct — no live pane was misread. But one 60-column menu
+// in three lands on 24, the LAST line that region admitted, and the fix's own
+// pins could not see it: blocked-signin{,-narrow}.txt and
+// blocked-signin-api-key.txt all carry 15-row logos, so `region 24 -> 23` and
+// `region 20 -> 18` both went green over `make verify-detection` and every arm
+// of codexsignin_qa_test.go — while a real 16-row-logo pane read `idle` / rule
 // `none` under either, which is the default_known_agent_idle_fallback that
 // ranger-base-n6s2u, rangerhq-9py0 and rangerhq-7ia all exist to close.
+//
+// devops (ranger-base-k987u) widened signin_menu to top_non_empty_lines(25),
+// restoring the deepest-seen-plus-one margin the 24 was originally picked
+// with (see etc/herdr/agent-detection/codex.toml); signin_api_key's 20 was
+// left as-is, deliberately — its own deepest clause lands on 19 even under
+// the 16-row logo, so it already carries that same one-line margin.
 //
 // So the tall-logo captures are committed beside the short ones and the region
 // of each rule is mutated at the line that actually decides it. The heights
@@ -136,8 +142,8 @@ func TestQACodexSignInTallLogoCapturesAreTheDeepCase(t *testing.T) {
 // codexsignin_qa_test.go's — REWRITES the region before explaining, so it
 // asks its own question and passes identically no matter what the committed
 // manifest says. Only a capture deep enough to need the shipped depth,
-// explained against the manifest UNMODIFIED, fails when someone walks 24 back
-// to 23 or 20 back to 18.
+// explained against the manifest UNMODIFIED, fails when someone walks
+// signin_menu's region back below 24 or signin_api_key's back below 19.
 func TestQACodexSignInTallLogoCapturesAreBlockedByTheShippedManifest(t *testing.T) {
 	t.Parallel()
 	if _, err := exec.LookPath("herdr"); err != nil {
@@ -161,10 +167,12 @@ func TestQACodexSignInTallLogoCapturesAreBlockedByTheShippedManifest(t *testing.
 }
 
 // TestQACodexSignInMenuRegionIsPinnedAtItsRealEdge walks signin_menu's region
-// down to 23 — the value codexsignin_qa_test.go stops one short of, and the
-// value a "make it match its siblings" edit would pass through on its way to
-// 20. At 23 the tall-logo pane is the one that breaks, and the short one does
-// not: that pair is what says the 24th line is load-bearing rather than slack.
+// down to 24 and 23 — the value codexsignin_qa_test.go stops one short of,
+// and the value a "make it match its siblings" edit would pass through on its
+// way to 20. Both still work: 25 is the shipped region (ranger-base-k987u
+// widened it from 24 to restore a one-line margin), so 24 is now the probe
+// that says the margin is still there and 23 is the one that says the 24th
+// line is load-bearing rather than slack.
 func TestQACodexSignInMenuRegionIsPinnedAtItsRealEdge(t *testing.T) {
 	t.Parallel()
 	if _, err := exec.LookPath("herdr"); err != nil {
@@ -174,7 +182,7 @@ func TestQACodexSignInMenuRegionIsPinnedAtItsRealEdge(t *testing.T) {
 	dir := filepath.Join(detectionDir(t), "testdata", "codex")
 
 	for _, tc := range []struct{ region, fixture, want string }{
-		// Shipped. Both real logo heights are named.
+		// One line inside the shipped 25. Both real logo heights are named.
 		{"24", codexTallMenuFixture, "blocked"},
 		{"24", "blocked-signin-narrow.txt", "blocked"},
 		// One line back. The 16-row-logo pane falls out of the region and
