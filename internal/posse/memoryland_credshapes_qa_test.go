@@ -51,6 +51,10 @@ func TestMemoryCredShapesCatchTheFormsACredentialArrivesIn(t *testing.T) {
 		{`password: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA`, "an assigned secret"},
 		{`-----BEGIN OPENSSH PRIVATE KEY-----`, "a private key"},
 		{`eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abc`, "a JWT"},
+		// widened for ranger-base-4pfwg: bearer's Basic sibling, and URL userinfo
+		{`Authorization: Basic dXNlcjpodW50ZXIyaHVudGVyMmh1bnRlcjI=`, "a Basic auth token"},
+		{`git remote add origin https://me:ABCDEFGHIJKLMNOPQRSTUVWX@github.com/x/y.git`, "a URL userinfo credential"},
+		{`DATABASE_URL=postgres://u:SUPERSECRETPASSWORD1234@db.internal:5432/x`, "a URL userinfo credential"},
 
 		// The noise arm, in the same table as the hits on purpose: a shape
 		// widened until it fires on prose about credentials has not made the
@@ -103,6 +107,32 @@ func TestMemoryCredShapesCatchAVendorValueStandingAlone(t *testing.T) {
 	} {
 		if got, _ := firstCredShape([]string{c.line}); got != c.want {
 			t.Errorf("firstCredShape(%q) = %q, want %q", c.line, got, c.want)
+		}
+	}
+}
+
+// URL userinfo's own noise arm (ranger-base-4pfwg): the shape it must not
+// fire on is an ORDINARY url, which is everywhere in this fleet's own
+// prose — git remotes, doc links, ssh targets — none of which carry a
+// password between the `://` and the `@`. The 20-char floor is what keeps
+// a doc placeholder like "user:pass@host" off the scan; the `ssh://git@…`
+// row has no `:` before the `@` at all, so it never reaches the floor
+// check. Basic's own noise arm is the word alone: "basic" describing a
+// plan tier, an auth MODE, or a config knob, none of which pin a base64
+// value beside it.
+func TestMemoryCredShapesDoNotFireOnOrdinaryURLsOrTheWordBasic(t *testing.T) {
+	t.Parallel()
+	for _, line := range []string{
+		`see https://github.com/anthropics/claude-code for the repo`,
+		`clone with git@github.com:anthropics/claude-code.git`,
+		`ssh://git@github.com/anthropics/claude-code.git`,
+		`the doc example is https://user:pass@example.com/db, never a real one`,
+		`postgres://reader@db.internal:5432/x has no password, it's peer auth`,
+		`set the auth type to basic in the client config`,
+		`this is the basic plan, not the pro one`,
+	} {
+		if got, _ := firstCredShape([]string{line}); got != "" {
+			t.Errorf("firstCredShape(%q) = %q, want no match", line, got)
 		}
 	}
 }

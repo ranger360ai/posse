@@ -302,6 +302,22 @@ func (l *MemoryLanding) Line() string {
 // DeepSeek, Together and OpenAI-compatible gateways all use, and it costs
 // nothing, measured — the whole widening matches zero lines of the live
 // corpus above and zero of the 32,108 lines of markdown in this repo.
+//
+// BASIC AUTH AND URL USERINFO (ranger-base-4pfwg, split from ranger-base-
+// vd1bo's verify — finding 4, two of its five remaining misses judged cheap
+// enough to land). Basic is bearer's sibling, same 20-char floor, its own
+// base64 charset because Basic's payload is standard base64 and bearer's
+// value alphabet is JWT-safe. URL userinfo is the shape a git remote or a
+// DSN with an embedded token takes once it is pasted into a note — caught
+// today only when the value itself happens to carry a vendor prefix. Both
+// measured on 2026-09-07 against every live persona file this session could
+// read directly (36 files, 26,097 lines — the fifteen ORDERS.md files plus
+// every other file beside them, spot-fixture scripts and patches included)
+// and against this repo's markdown (228 files, 44,329 lines): zero matches
+// for either shape. Re-run at an 8-char floor on the userinfo password and
+// the Basic value, four times narrower than what actually ships: still zero
+// matches in either corpus, the same wide margin the six-vendor widening
+// measured.
 var memoryCredShapes = []struct {
 	What string
 	Re   *regexp.Regexp
@@ -312,8 +328,23 @@ var memoryCredShapes = []struct {
 	// base64 and would fire on any pasted blob.
 	{"a JWT", regexp.MustCompile(`eyJ[A-Za-z0-9_=-]{8,}\.eyJ[A-Za-z0-9_=-]{8,}\.`)},
 	{"a bearer token", regexp.MustCompile(`(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{20,}`)},
+	// Basic's payload is standard base64 (RFC 2045: `[A-Za-z0-9+/]`, `=`
+	// padding), not the JWT-safe alphabet bearer's value carries — kept as
+	// its own charset rather than widening bearer's, same 20-char floor
+	// (ranger-base-4pfwg).
+	{"a Basic auth token", regexp.MustCompile(`(?i)\bbasic\s+[A-Za-z0-9+/=]{20,}`)},
 	{"an assigned secret", regexp.MustCompile(`(?i)(access[_-]?token|api[_-]?key|secret|token|password|passwd)[A-Za-z0-9_-]*["']?\s*[:=]\s*["']?[A-Za-z0-9._~+/=-]{20,}`)},
 	{"a private key", regexp.MustCompile(`-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----`)},
+	// URL userinfo (ranger-base-4pfwg): a git remote or a DSN pasted into a
+	// note carries the credential between `://` and `@` with no key word to
+	// hang the assigned-secret shape on. The 20-char floor on the password
+	// segment is what keeps this off an ordinary "https://user:pass@host"
+	// doc placeholder — measured against the corpora in that bead's close,
+	// zero matches. The username segment excludes `:` so it stops at the
+	// separator instead of swallowing into the password; the password
+	// segment excludes only whitespace, `/` and `@` so it does not care
+	// what the value itself looks like.
+	{"a URL userinfo credential", regexp.MustCompile(`\b[A-Za-z][A-Za-z0-9+.-]*://[^\s/@:]{1,64}:[^\s/@]{20,}@`)},
 	// Bare values, in table order after the shapes above so a line that
 	// carries both a key word and a vendor value keeps reporting the
 	// assigned secret it always did.
