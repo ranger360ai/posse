@@ -909,7 +909,7 @@ func (a *App) RenderGates(persona string, deny []string) (gatesDir, binDir, shel
 	for _, c := range cmds {
 		real := resolveOutside(c, binDir)
 		script := renderShim(persona, c, real, log, dateBin, rules[c])
-		if err := os.WriteFile(filepath.Join(binDir, c), []byte(script), 0o755); err != nil {
+		if err := WriteExecutable(filepath.Join(binDir, c), []byte(script), 0o755); err != nil {
 			return "", "", "", err
 		}
 	}
@@ -1538,7 +1538,7 @@ func writeGateShell(persona, gatesDir, binDir, real, base string) (string, error
 		"__STAMP__", quotedStamp(resolveOutside("date", binDir)),
 	).Replace(gateShellScript)
 	p := filepath.Join(dir, base)
-	if err := os.WriteFile(p, []byte(script), 0o755); err != nil {
+	if err := WriteExecutable(p, []byte(script), 0o755); err != nil {
 		return "", err
 	}
 	return p, nil
@@ -2166,7 +2166,7 @@ func installHook(dir, slot, marker, legacy, script string, chain bool) (string, 
 			default:
 				return "", Die("%s is posse's chain dispatcher, but %s is not a posse hook — not overwriting.\nThe dispatcher runs that file first: restore posse's %s gate there, or delete the dispatcher and re-run install-hooks to build the chain afresh.", AbbrevHome(p), AbbrevHome(chained), slot)
 			}
-			if err := os.WriteFile(chained, []byte(script), 0o755); err != nil {
+			if err := WriteExecutable(chained, []byte(script), 0o755); err != nil {
 				return "", err
 			}
 			// Upgrade a chain written before rangerhq-xo65 while we are
@@ -2177,7 +2177,7 @@ func installHook(dir, slot, marker, legacy, script string, chain bool) (string, 
 			// for byte: we know exactly what it is, and we write back the
 			// same shape, same neighbour, plus the guard.
 			if string(b) == legacyChainHookDispatcherWith(slot, neighbour) {
-				if err := os.WriteFile(p, []byte(chainHookDispatcherWith(slot, neighbour)), 0o755); err != nil {
+				if err := WriteExecutable(p, []byte(chainHookDispatcherWith(slot, neighbour)), 0o755); err != nil {
 					return "", err
 				}
 			}
@@ -2204,7 +2204,7 @@ func installHook(dir, slot, marker, legacy, script string, chain bool) (string, 
 		}
 		return "", Die("%s exists and is not a posse hook — not overwriting.\n%s", AbbrevHome(p), chainDispatcher(dir, hooks, slot))
 	}
-	if err := os.WriteFile(p, []byte(script), 0o755); err != nil {
+	if err := WriteExecutable(p, []byte(script), 0o755); err != nil {
 		return "", err
 	}
 	return p, nil
@@ -2230,10 +2230,10 @@ func chainBdShim(hooks, slot, script string) (string, error) {
 		return "", err
 	}
 	chained := filepath.Join(hooks, "posse-"+slot)
-	if err := os.WriteFile(chained, []byte(script), 0o755); err != nil {
+	if err := WriteExecutable(chained, []byte(script), 0o755); err != nil {
 		return "", err
 	}
-	if err := os.WriteFile(p, []byte(chainHookDispatcherWith(slot, neighbor)), 0o755); err != nil {
+	if err := WriteExecutable(p, []byte(chainHookDispatcherWith(slot, neighbor)), 0o755); err != nil {
 		return "", err
 	}
 	return chained, nil
