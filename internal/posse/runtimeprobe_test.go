@@ -762,6 +762,34 @@ esac`)
 	}
 }
 
+// ranger-base-i6t90, from ranger-base-zftgv / ranger-base-te3ib: the probe
+// is a real launch, not a dry render, so ADR 0042 D2's credential
+// precondition now runs before it opens a workspace at all — the same guard
+// herdrback.go's planLaunch and RelaunchAgent both ask. Forced here by
+// giving bob the SAME binary the probe's own canary picks, so its deny
+// collides with its own CredBin exactly the way a real runtime's could if
+// ProbeCanaryCandidates ever grew one.
+func TestRuntimeProbeAsksTheCredentialPreconditionTooBeforeItLaunches(t *testing.T) {
+	a, rt := probeParityApp(t)
+	if _, path := probeCanary(); path == "" || filepath.Base(path) != "uname" {
+		t.Skip("uname does not resolve outside the gates dir as this host's probe canary — this row measures nothing here")
+	}
+	rt.CredBin = "uname"
+
+	h := fakeProbeHerdr(t, `case "$1 $2" in
+"workspace create") echo '{"id":"f","error":{"message":"workspace create must not be reached: the credential precondition should have refused first"}}' ;;
+*) echo '{"id":"f","result":{}}' ;;
+esac`)
+
+	_, err := a.RuntimeProbe(rt, h, ProbeOpts{Timeout: 2 * time.Second})
+	if err == nil {
+		t.Fatal("RuntimeProbe launched a runtime whose CredBin collides with its own probe canary — it should have refused before opening a session that cannot authenticate (ADR 0042 D2)")
+	}
+	if !strings.Contains(err.Error(), "uname") {
+		t.Errorf("the refusal does not name the colliding binary %q: %v", "uname", err)
+	}
+}
+
 // posse's own PATH need not have the CLI at all — the pane's is the herdr
 // daemon's, and that is the one the session launches from. The record spells
 // that absence rather than leaving the field empty, because an empty

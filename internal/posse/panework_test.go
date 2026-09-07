@@ -118,6 +118,18 @@ func TestComposerReadsTextLeftUnsentInThePromptBox(t *testing.T) {
 		{"a dialog drawn over the box is not typed text",
 			" ☐ uzyd2 quiet gap\n\n│ uzyd2 — the meter 429 storm cannot drain while posse keeps re-asking\n", ""},
 		{"no box on screen at all", "", ""},
+
+		// ranger-base-htafy's own guard comment said this region needed
+		// herdr's five not-clauses too, but its fixture never built the
+		// shape those clauses exist for: the region carrying the mark AND a
+		// menu at once, not the mark replaced by one. Without the clauses
+		// below, each of these returned the menu's own chrome as a hold.
+		{"the mark still leading a selection menu drawn over the box",
+			"❯\n\n  6. Chat about this\n\nEnter to select · ↑/↓ to navigate · Esc to cancel\n", ""},
+		{"the mark leading a permission prompt",
+			"❯\n\n❯ 1. Yes\n  2. Yes, and don't ask again\n  3. No\n\nArrow keys to navigate · Esc to cancel\n", ""},
+		{"the mark leading the model picker",
+			"❯\n\n  1. Opus\n❯ 2. Sonnet\n\nTab/arrow keys to select · Enter to confirm\n", ""},
 	} {
 		if got := detectionWith("idle", "", c.box).Composer(); got != c.want {
 			t.Errorf("%s: Composer() = %q, want %q\nbox: %q", c.what, got, c.want, c.box)

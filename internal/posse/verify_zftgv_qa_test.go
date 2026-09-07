@@ -19,39 +19,32 @@ import (
 // completeness contract by teaching the scanner a backslash and by making
 // skipOver REPORT a command substitution found inside a region the scan
 // steps over unread. Two such regions were given that treatment —
-// skipArith's `$(( ))` and skipBraceExpansion's `${ }`. There is a THIRD,
-// and it did not get it: skipRedirect walks a redirection and its target
-// word and steps over a quoted target whole, so a substitution written
-// there runs a command the scan neither names nor reports.
+// skipArith's `$(( ))` and skipBraceExpansion's `${ }`. There was a THIRD,
+// and it did not get it: skipRedirect walked a redirection and its target
+// word and stepped over a quoted target whole, so a substitution written
+// there ran a command the scan neither named nor reported.
 //
-// MEASURED at HEAD, one redirection operator apart:
+// FIXED (ranger-base-i6t90): skipRedirect now gives a DOUBLE-quoted target
+// skipOver's own treatment — a `$(` or a backtick found inside it is
+// reported, marker `>` — and leaves a SINGLE-quoted target alone, because a
+// single-quoted target runs nothing (`cat > '$(awk 1)'`) and a plain
+// Contains over the raw region would report a site that is not one. The
+// unquoted spelling (`cat > $(awk 1)`) is untouched: it was already SEEN,
+// because skipRedirect stops the target word at `(` and the outer scanner
+// picks up `awk` from there.
 //
-//	cat > "$(awk 1)"      words=[cat]      blind=[]   SILENT
-//	cat   "$(awk 1)"      words=[cat awk]  blind=[]   seen
-//
-// and the same silence for `>>`, `2>`, `<`, a prefix redirect, a `${ }` in
-// the target, and a backtick in it. The unquoted spelling `cat > $(awk 1)`
-// is SEEN, because skipRedirect stops the target word at `(` — which is
-// what makes the quoted one the shape to pin.
-//
-// NOT A LIVE MISS, measured the way ranger-base-xwepd measured its own
-// eight: over the three rendered hooks there are 93 redirection regions and
-// none carries a `$(` or a backtick. That is what the second half of this
-// test holds, and it is the half that matters: the day a hook grows one,
-// this reds and names the line, where the census itself would stay green
-// and the clean-room probe would report every distro clean for a command
-// the hook really runs.
-//
-// The fix, if a hook ever needs it, is skipOver's own shape applied to
-// skipRedirect's return — with one care this file's fixture records: a
-// SINGLE-quoted target (`cat > '$(awk 1)'`) runs nothing, so a Contains
-// check over the raw region would report a site that is not one.
-func TestQARedirectTargetSubstitutionIsSilentAndNoHookHasOne(t *testing.T) {
+// This is now a REGRESSION guard, not a silence pin: it reds the day the
+// fix above is lost, the same way TestShellCommandWordsSeesEveryCommandPrefixOrReportsIt's
+// "reported" rows for this shape do (hookdeps_qa_test.go) — kept here too
+// because this file is where the live census (half two) lives, and a
+// regression in the report and a regression in the census are different
+// failures worth telling apart.
+func TestQARedirectTargetSubstitutionIsReportedAndNoHookHasOne(t *testing.T) {
 	t.Parallel()
 
-	// Half one: the silence, with the control that proves the probe can see
-	// an `awk` at all. If the scanner ever learns this region, the first
-	// row moves to seen-or-reported and this row is what says so.
+	// Half one: the report, with the controls that prove the probe can see
+	// an `awk` at all and that a single-quoted target is correctly left
+	// alone.
 	sees := func(src string) (seen bool, blind []string) {
 		w, b := shellCommandWords(src)
 		for _, c := range w {
@@ -75,25 +68,33 @@ func TestQARedirectTargetSubstitutionIsSilentAndNoHookHasOne(t *testing.T) {
 		{"a backtick in the target", "cat > \"`awk 1`\"\n"},
 		{"a parameter expansion in the target", "cat > \"${x:-$(awk 1)}\"\n"},
 	} {
-		seen, blind := sees(row.src)
-		if seen || len(blind) > 0 {
-			t.Errorf("%s: shellCommandWords now sees or reports it (seen=%t blind=%v) — good news, and this row is stale: "+
-				"the redirection target has become a region the scan reads, so delete it and add the shape to the "+
-				"COMPLETENESS paragraph's TAUGHT or REPORTED list in hookdeps_qa_test.go (ranger-base-zftgv, from ranger-base-xwepd)",
+		if seen, blind := sees(row.src); !seen && len(blind) == 0 {
+			t.Errorf("%s: shellCommandWords is silent on it again (seen=%t blind=%v) — skipRedirect's quoted-target "+
+				"substitution check (hookdeps_qa_test.go) regressed (ranger-base-zftgv, from ranger-base-xwepd)",
 				row.what, seen, blind)
 		}
 	}
-	// The control, in the same test with a Fatal: without it the rows above
-	// are an absence asserted over a probe that can see nothing.
-	if seen, _ := sees("cat \"$(awk 1)\"\n"); !seen {
-		t.Fatal("the control did not see `awk` in `cat \"$(awk 1)\"` either, so the rows above measured a broken probe and not a silent region")
+	// The single-quoted control: the fix must not report a site that runs
+	// nothing.
+	if seen, blind := sees("cat > '$(awk 1)'\n"); seen || len(blind) > 0 {
+		t.Errorf("a SINGLE-quoted redirect target is seen or reported (seen=%t blind=%v) but it runs nothing — "+
+			"skipRedirect must leave a single-quoted target unread", seen, blind)
 	}
-	if seen, _ := sees("cat > $(awk 1)\n"); !seen {
-		t.Fatal("the UNQUOTED redirect target stopped being seen — skipRedirect no longer stops its target word at `(`, so the silence above is wider than this test describes")
+	// The plain control, with a Fatal: without it the rows above are a
+	// report asserted over a probe that can see nothing.
+	if seen, _ := sees("cat \"$(awk 1)\"\n"); !seen {
+		t.Fatal("the control did not see `awk` in `cat \"$(awk 1)\"` either, so the rows above measured a broken probe and not a real report")
+	}
+	if seen, blind := sees("cat > $(awk 1)\n"); !seen {
+		t.Fatal("the UNQUOTED redirect target stopped being seen — skipRedirect no longer stops its target word at `(`, so the fix above changed more than this test describes")
+	} else if len(blind) > 0 {
+		t.Errorf("the UNQUOTED redirect target is ALSO reported (blind=%v) — it is already seen by the outer scanner, and reporting it too is a duplicate the reader cannot act on", blind)
 	}
 
-	// Half two: the live census. The silence is only debt while no rendered
-	// hook writes one.
+	// Half two: the live census. Not a live miss today; this reds the day a
+	// hook actually writes one — now graded off skipRedirect's own `subst`
+	// return rather than a second Contains check, so a regression in the fix
+	// and a regression in this census cannot silently diverge.
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
@@ -123,17 +124,16 @@ func TestQARedirectTargetSubstitutionIsSilentAndNoHookHasOne(t *testing.T) {
 			if src[i] != '>' && src[i] != '<' {
 				continue
 			}
-			end, heredoc := skipRedirect(src, i)
+			end, heredoc, subst := skipRedirect(src, i)
 			if heredoc {
 				continue // its own reported marker, `<<`
 			}
 			regions++
-			if r := src[i:end]; strings.Contains(r, "$(") || strings.Contains(r, "`") {
-				t.Errorf("%s:%d writes a command substitution in a redirection target (%q) — shellCommandWords steps over that region unread, "+
-					"so the command it runs is missing from the census and the clean-room probe reports every distro clean for it. "+
-					"Give skipRedirect skipOver's treatment (report a `$(` or a backtick found inside, but NOT one inside a single-quoted "+
-					"target, which runs nothing), or rewrite the hook line (ranger-base-zftgv, from ranger-base-xwepd)",
-					name, 1+strings.Count(src[:i], "\n"), r)
+			if subst {
+				t.Errorf("%s:%d writes a command substitution in a redirection target (%q) — shellCommandWords now "+
+					"reports it (marker `>`), so HOOK_DEPS will not go quiet — but a hook growing this shape is worth a "+
+					"look on its own merits (ranger-base-zftgv, from ranger-base-xwepd)",
+					name, 1+strings.Count(src[:i], "\n"), src[i:end])
 			}
 			i = end - 1
 		}

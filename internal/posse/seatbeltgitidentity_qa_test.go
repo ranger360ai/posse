@@ -486,10 +486,18 @@ func giTry(t *testing.T, s giShape, p giProbe, walled bool) (giFixture, bool, st
 	return f, ok, out
 }
 
-// ADR 0038 verification items 1 and 2: `git config` refused in every
-// session shape, config byte-identical, no stray `config.lock` — and the
-// non-git spellings refused too, because a wall that only stops the `git`
-// binary is a wall around one spelling.
+// ADR 0038 verification items 1 and 2's REFUSAL half: `git config` (item 1)
+// and the non-git spellings (item 2) both refused in every session shape,
+// each row's control proving the deny is real rather than vacuous — because
+// a wall that only stops the `git` binary is a wall around one spelling.
+//
+// What this test does NOT assert, so a reader is not sent away satisfied
+// about a claim made two hundred lines down instead: the refusal's own
+// words ("could not lock config file", not "could not write") and config
+// staying byte-identical under the refusal are
+// TestQAConfigLockDenyMovesTheRefusalToLockCreation's, below — that test
+// grades the LOCK half of item 1, this one grades the REFUSAL half
+// (ranger-base-i6t90, from ranger-base-xwepd).
 func TestQAGitConfigWriteRefusedUnderSandboxExec(t *testing.T) {
 	sbSkipUnlessSandboxable(t)
 	cfg := func(f giFixture, cwd string) string { return f.configOf(t, cwd) }

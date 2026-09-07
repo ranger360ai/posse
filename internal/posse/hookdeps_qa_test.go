@@ -115,11 +115,15 @@ import (
 //   - a STRING RUNNER: `eval`, and `trap` which is eval with the run deferred
 //     to a signal. Its argument is shell text that may not exist until runtime.
 //   - a command substitution written INSIDE a region this scan steps over
-//     unread — `${x:-$(awk 1)}` and `$(( $(awk 1) + 1 ))`. Not reading those
-//     regions is load-bearing (`$((i + 1))` otherwise opens a subshell and `i`
-//     is scanned as a command; `${rule#Bash(}` is a pattern, not syntax), so
-//     the skip looks for a `$(` or a backtick inside and reports rather than
-//     stepping over it in silence. See skipOver.
+//     unread — `${x:-$(awk 1)}`, `$(( $(awk 1) + 1 ))`, and a QUOTED
+//     redirection target (`cat > "$(awk 1)"`). Not reading those regions is
+//     load-bearing (`$((i + 1))` otherwise opens a subshell and `i` is
+//     scanned as a command; `${rule#Bash(}` is a pattern, not syntax; and a
+//     redirection target's own quoting decides whether the shell runs it at
+//     all), so the skip looks for a `$(` or a backtick inside and reports
+//     rather than stepping over it in silence — except inside a
+//     SINGLE-quoted target, which runs nothing (ranger-base-zftgv, from
+//     ranger-base-xwepd). See skipOver and skipRedirect.
 //   - `. file` and `source file`: the commands are in another file, which this
 //     scan does not open. The hooks source nothing today; the entry costs
 //     nothing and turns a prose residual into a live guard.
@@ -307,10 +311,13 @@ func shellCommandWords(src string) (words, blind []shellCall) {
 			// it must not close the command position, and its target must not
 			// be read as the command: both were misses before h6k2r, the second
 			// one loudly — `2>/dev/null awk` emitted `2`.
-			var heredoc bool
-			i, heredoc = skipRedirect(src, i)
+			start := i
+			var heredoc, subst bool
+			i, heredoc, subst = skipRedirect(src, i)
 			if heredoc {
 				report("<<", i)
+			} else if subst {
+				report(">", start)
 			}
 		case c == '!' && cmdPos:
 			// `! cmd` — a reserved word, and the command follows it.
@@ -488,6 +495,8 @@ func blindSiteDescription(name string) string {
 		return "a command substitution inside a $(( )) arithmetic expansion, which this scanner steps over unread"
 	case name == "${":
 		return "a command substitution inside a ${ } parameter expansion, which this scanner steps over unread"
+	case name == ">":
+		return "a command substitution inside a quoted redirection target, which this scanner steps over unread"
 	case name == "trap":
 		return "trap: its handler is shell text the shell parses later, like eval"
 	case name == "." || name == "source":
@@ -499,17 +508,28 @@ func blindSiteDescription(name string) string {
 	}
 }
 
-// skipRedirect steps over one redirection operator and its target, starting at
-// the `>` or `<`, and reports whether the operator was a heredoc. It leaves the
-// command position exactly as it found it: a redirection can be written before
-// the command name, and POSIX says the command is still what follows.
-func skipRedirect(src string, i int) (int, bool) {
+// skipRedirect steps over one redirection operator and its target, starting
+// at the `>` or `<`, and reports whether the operator was a heredoc and
+// whether the target carries a command substitution the caller must report:
+// skipOver's own treatment (ranger-base-xwepd), applied here to the third
+// region this scan steps over unread (ranger-base-zftgv). A DOUBLE-quoted
+// target is read for a `$(` or a backtick inside it; a SINGLE-quoted one is
+// not, because a single-quoted target runs nothing (`cat > '$(awk 1)'`) and
+// a plain Contains over the raw region would report a site that is not one.
+// The unquoted spelling (`cat > $(awk 1)`) is untouched by this arm: it
+// still stops the target word at `(`, which is what leaves it to the outer
+// scanner to see (see the fixture in verify_zftgv_qa_test.go).
+//
+// It leaves the command position exactly as it found it: a redirection can
+// be written before the command name, and POSIX says the command is still
+// what follows.
+func skipRedirect(src string, i int) (end int, heredoc, subst bool) {
 	start := i
 	for i < len(src) && (src[i] == '>' || src[i] == '<' || src[i] == '&') {
 		i++
 	}
 	if strings.HasPrefix(src[start:i], "<<") {
-		return i, true // the body is data; the caller is told, not guessed at
+		return i, true, false // the body is data; the caller is told, not guessed at
 	}
 	for i < len(src) && (src[i] == ' ' || src[i] == '\t') {
 		i++
@@ -518,20 +538,32 @@ func skipRedirect(src string, i int) (int, bool) {
 	// `>&1` or a `>out;cmd` from swallowing what follows.
 	for i < len(src) {
 		switch c := src[i]; {
-		case c == '\'' || c == '"':
+		case c == '\'':
 			for i++; i < len(src) && src[i] != c; i++ {
 			}
 			if i < len(src) {
 				i++
 			}
+		case c == '"':
+			j := i + 1
+			for j < len(src) && src[j] != '"' {
+				j++
+			}
+			if r := src[i:j]; strings.Contains(r, "$(") || strings.Contains(r, "`") {
+				subst = true
+			}
+			i = j
+			if i < len(src) {
+				i++
+			}
 		case c == ' ' || c == '\t' || c == '\n' || c == ';' || c == '|' ||
 			c == '&' || c == '(' || c == ')' || c == '<' || c == '>':
-			return i, false
+			return i, false, subst
 		default:
 			i++
 		}
 	}
-	return i, false
+	return i, false, subst
 }
 
 // shellCall is one command word and the 1-based line of the rendered hook it
@@ -893,6 +925,14 @@ func TestShellCommandWordsSeesEveryCommandPrefixOrReportsIt(t *testing.T) {
 		// Not one of the eight; the same reasoning applied while it was
 		// open, and free because no hook sources anything today.
 		{"dot script", ". lib.sh", reported},
+
+		// The THIRD step-over region ranger-base-zftgv found: skipRedirect
+		// walked a quoted redirection target whole. Reported now, the same
+		// way as the other two; never reported for a SINGLE-quoted target,
+		// which runs nothing.
+		{"substitution in a redirect target", "cat > \"$(awk 1)\"", reported},
+		{"backtick in a redirect target", "cat > \"`awk 1`\"", reported},
+		{"parameter expansion in a redirect target", "cat > \"${x:-$(awk 1)}\"", reported},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			words, blind := shellCommandWords(tc.src)
@@ -962,7 +1002,7 @@ func TestShellCommandWordsSeesEveryCommandPrefixOrReportsIt(t *testing.T) {
 			"reference text and cannot tell a marker's own sentence from the wrapper default: %q",
 			blindSiteDescription("env"))
 	}
-	for _, marker := range []string{"`", "<<", "$((", "${", "trap", ".", "source", "-exec"} {
+	for _, marker := range []string{"`", "<<", "$((", "${", ">", "trap", ".", "source", "-exec"} {
 		if d := blindSiteDescription(marker); d == marker+fallthroughText {
 			t.Errorf("blindSiteDescription(%q) = %q — that is the WRAPPER default, and %q is not a "+
 				"wrapper; the reader is told to look past options that do not exist", marker, d, marker)

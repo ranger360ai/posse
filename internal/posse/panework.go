@@ -244,12 +244,35 @@ func isSummaryWordStart(r rune) bool {
 	return (r >= '0' && r <= '9') || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z')
 }
 
+// composerChromePhrases are herdr's own five `not` clauses on the SAME
+// region and mark (claude.toml, rule live_prompt_box) — adopted here for the
+// same reason herdr carries them: prompt_box_body was seen carrying a
+// prompt-box line AND a selection menu at once (a blocked form, a
+// permission prompt, the model picker), so composerMark leading the region
+// is not enough to tell the two apart. Without this, Composer returns the
+// menu's own chrome as text "sitting UNSENT in its box" (Why()), and govern
+// G2 files the row under settled-unsent for a pane that is blocked on the
+// operator, not holding a lost keystroke (ranger-base-i6t90, from
+// ranger-base-htafy). Matched lower-cased: herdr's manifest spells them
+// lower-case, and a live capture is Title Case ("Enter to select").
+var composerChromePhrases = []string{
+	"enter to select", "esc to cancel", "tab/arrow keys",
+	"arrow keys to navigate", "↑/↓ to navigate",
+}
+
 // Composer returns the text typed into the pane's prompt box, or "" when
-// the box is empty or no box is on screen.
+// the box is empty, no box is on screen, or the region is a menu drawn over
+// the box rather than the box itself.
 func (d AgentDetection) Composer() string {
 	body := strings.TrimLeft(d.regionPreview(composerRegion), " \t\n")
 	if !strings.HasPrefix(body, composerMark) {
 		return ""
+	}
+	lower := strings.ToLower(body)
+	for _, phrase := range composerChromePhrases {
+		if strings.Contains(lower, phrase) {
+			return ""
+		}
 	}
 	// U+00A0 is what claude draws between the mark and the text; TrimSpace
 	// takes it, being a space in Unicode's book and Go's.

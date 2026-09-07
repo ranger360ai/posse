@@ -654,6 +654,20 @@ func (a *App) RuntimeProbe(rt *Runtime, h Herdr, o ProbeOpts) (*ProbeRecord, err
 		{"RHQ_CAGE", CageShims},
 		{"RHQ_TOOLS_DENY", strings.Join(ag.Deny, "\n")},
 	}
+	// The launch precondition ADR 0042 D2 puts in front of every renderer of
+	// a persona line (CheckCredGate; herdrback.go's planLaunch and
+	// RelaunchAgent both ask it). This probe is a real launch of the same
+	// kind, not a dry render, so it asks too: today's canary list
+	// (ProbeCanaryCandidates) never collides with a runtime's own CredBin,
+	// which is what a runtime's own TestQANoProbeCanaryIsARuntimesCredentialBinary
+	// pins, but that is a fact about the list, not a rule the probe enforces
+	// itself — a canary added later without this check would open a session
+	// that cannot authenticate and report the runtime as never settling,
+	// ADR 0042 D1's misdiagnosis with a new sentence (ranger-base-zftgv,
+	// from ranger-base-te3ib / ranger-base-az23f).
+	if err := CheckCredGate(persona, rt, ag.Deny, binDir, CageEnvNames(vars)); err != nil {
+		return nil, err
+	}
 	label := a.WorkspaceLabel(persona)
 	wsID, rootPane, err := h.CreateWorkspace(label, dir, vars)
 	if err != nil {
