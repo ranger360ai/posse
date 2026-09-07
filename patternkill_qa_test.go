@@ -553,6 +553,53 @@ func pkExtraStatement(code string, mask []bool) bool {
 	return false
 }
 
+// pkShC matches a `sh -c` / `bash -c` invocation up through its payload's
+// opening quote. The caller still has to check the mask at the match's
+// start — this regexp alone cannot tell code from an occurrence of the same
+// words inside an existing quoted string, which is exactly the ambiguity
+// pkShellCode's mask exists to resolve everywhere else in this file.
+var pkShC = regexp.MustCompile(`(^|[^-\w])(?:sh|bash)\s+-c\s+(['"])`)
+
+// pkShCPayload answers the quoted argument handed to a `sh -c` / `bash -c`
+// invocation in code, and whether one was found at all — a launch reading
+// `sh -c` with nothing after it, or with an unterminated quote, answers ok
+// false rather than a truncated guess.
+//
+// MEASURED (ranger-base-x9e71, bash 3.2.57, darwin 25.4.0, `set -m`,
+// `pgrep -P "$!"` after 0.5s):
+//
+//	sh -c "true && sleep 9" &      pid 92643 (sh), child 92646
+//
+// The pid `$!` hands out IS sh — a background launch of a single simple
+// command execs it directly, same as any other — and the work inside the
+// quoted payload is its CHILD, exactly the condition rule D exists for.
+// pkWrapperLeader reading the OUTER line never sees this: the payload's
+// `&&` is masked as a quoted string, which is what keeps `grep -c 'a && b'
+// "$f" &` from reading as an AND-list too. The payload is a second,
+// independent script, and needs its OWN `exec` — one on the outer line
+// (`exec sh -c '...' &`) only replaces bash with sh, and does not touch
+// what sh does with its own argument.
+func pkShCPayload(code string, mask []bool) (payload string, ok bool) {
+	loc := pkShC.FindStringSubmatchIndex(code)
+	if loc == nil {
+		return "", false
+	}
+	if start := len([]rune(code[:loc[0]])); start < len(mask) && mask[start] {
+		return "", false // `sh -c` named inside a string is not a launch
+	}
+	quote := code[loc[4]]
+	r := []rune(code)
+	open := len([]rune(code[:loc[5]])) // rune index of the payload's first char
+	end := open
+	for end < len(mask) && mask[end] {
+		end++
+	}
+	if end <= open || end > len(r) || r[end-1] != rune(quote) {
+		return "", false // no closing quote on this line: nothing to read
+	}
+	return string(r[open : end-1]), true
+}
+
 var (
 	// pkGroupKill matches the group-first reaper anywhere in a line: an
 	// explicit signal, then the `--` that keeps the negative pid off the
@@ -658,13 +705,26 @@ func pkAudit(name, text string) (complaints []string, launches, kills int, exemp
 						"is not under `set -m`, so that pid is not a process-group id and "+
 						"`kill -SIG -- \"-$pid\"` reaps the wrapper only (ranger-base-q8hbz): "+strings.TrimSpace(lines[i]))
 				}
-				if pkWrapperLeader(code[i], mask[i]) &&
+				wrapper := pkWrapperLeader(code[i], mask[i]) &&
 					!pkExtraStatement(code[i], mask[i]) &&
-					!pkExec.MatchString(code[i]) {
+					!pkExec.MatchString(code[i])
+				// The same shape, spelled through a second interpreter: the
+				// payload handed to `sh -c` / `bash -c` is a script of its
+				// own, and rule D's read of the outer line cannot see past
+				// the quote that hides it (ranger-base-x9e71).
+				if !wrapper {
+					if payload, ok := pkShCPayload(code[i], mask[i]); ok {
+						pcode, pmask := pkShellCode(payload)
+						wrapper = pkWrapperLeader(pcode, pmask) &&
+							!pkExtraStatement(pcode, pmask) &&
+							!pkExec.MatchString(payload)
+					}
+				}
+				if wrapper {
 					complaints = append(complaints, at+": a background launch with a wrapper leader "+
-						"— a subshell, a `{ …; }` group or an AND/OR list — does not `exec`, "+
-						"so the group leader is a wrapper and `kill -0` speaks about the wrong "+
-						"process (ranger-base-q8hbz): "+strings.TrimSpace(lines[i]))
+						"— a subshell, a `{ …; }` group, an AND/OR list, or a payload handed to "+
+						"`sh -c`/`bash -c` — does not `exec`, so the group leader is a wrapper and "+
+						"`kill -0` speaks about the wrong process (ranger-base-q8hbz): "+strings.TrimSpace(lines[i]))
 				}
 			}
 		}
@@ -751,6 +811,24 @@ func TestThePkAuditFlagsTheShapesItIsFor(t *testing.T) {
 		want: "does not `exec`",
 		text: "start_loop() {\n\tset -m\n\t{ env \"$P\" dispatch --watch 5m >\"$L\" 2>&1; } &\n\tLOOP_PID=$!\n\tset +m\n}\n",
 	}, {
+		// The fifth spelling ranger-base-65tzm's close measured but did not
+		// fix: the wrapper leader is a second interpreter, and its AND-list
+		// payload is hidden from the outer line's read by the very quote
+		// mask that keeps `grep -c 'a && b' "$f" &` from misreading as one.
+		name: "a `sh -c` payload with an AND-list and no inner exec",
+		want: "does not `exec`",
+		text: "start_loop() {\n\tset -m\n\tsh -c 'cd \"$W\" && env \"$P\" dispatch --watch 5m' &\n\tLOOP_PID=$!\n\tset +m\n}\n",
+	}, {
+		name: "a `bash -c` payload with an OR-list and no inner exec",
+		want: "does not `exec`",
+		text: "start_loop() {\n\tset -m\n\tbash -c 'cd \"$W\" || fail_hard' &\n\tLOOP_PID=$!\n\tset +m\n}\n",
+	}, {
+		// The outer quote itself double rather than single — the same read
+		// has to reach the payload either way.
+		name: "a `bash -c` payload in double quotes with no inner exec",
+		want: "does not `exec`",
+		text: "start_loop() {\n\tset -m\n\tbash -c \"cd $W && env $P dispatch --watch 5m\" &\n\tLOOP_PID=$!\n\tset +m\n}\n",
+	}, {
 		// The case only the ANCHORED read catches: a group kill is present
 		// on the line, and it is for a different job than the pid-only kill
 		// that runs first. An unanchored `does this line contain a group
@@ -829,6 +907,30 @@ func TestThePkAuditFlagsTheShapesItIsFor(t *testing.T) {
 	}, {
 		name: "&& at the end of a line is a continuation",
 		text: "\t( cd \"$t\" && git init -q . &&\n\t\tgit add F ) >\"$log\" 2>&1\n",
+	}, {
+		name: "a `sh -c` payload that execs its last command",
+		text: "\tset -m\n\tsh -c 'cd \"$W\" && exec env \"$P\" dispatch --watch 5m' &\n\tLOOP_PID=$!\n\tset +m\n",
+	}, {
+		// No list inside the payload, so sh execs its one command directly —
+		// there is no wrapper to collapse.
+		name: "a `sh -c` payload that is a single simple command",
+		text: "\tset -m\n\tsh -c 'sleep 9' &\n\tLOOP_PID=$!\n\tset +m\n",
+	}, {
+		// The same extra-statement waiver, one level deeper: a payload that
+		// must outlive its command cannot exec either.
+		name: "a `sh -c` payload with a trailing statement that must outlive its command cannot exec",
+		text: "\tset -m\n\tsh -c 'work; echo $? >\"$rc\"' &\n\tlocal child=$!\n\tset +m\n",
+	}, {
+		// The mask reaches one level deeper too: a quote NESTED inside the
+		// sh -c payload hides its own `&&` from the payload's own read.
+		name: "an `&&` inside a quoted string inside a `sh -c` payload is not an AND-list",
+		text: "\tset -m\n\tsh -c 'grep -c \"a && b\" \"$f\"' &\n\tLOOP_PID=$!\n\tset +m\n",
+	}, {
+		// The words `sh -c` inside an unrelated quoted string are not a
+		// launch of the shape at all — the mask check at the match's start
+		// is what keeps this from misfiring.
+		name: "the text `sh -c` inside a quoted string is not a wrapper launch",
+		text: "\tset -m\n\techo 'note: sh -c is a wrapper leader' &\n\tLOOP_PID=$!\n\tset +m\n",
 	}} {
 		if got, _, _, _ := pkAudit("fixture.sh", c.text); len(got) != 0 {
 			t.Errorf("%s: pkAudit complained about a line that is correct as it stands:\n\t%s", c.name, strings.Join(got, "\n\t"))
