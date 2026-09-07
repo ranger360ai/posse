@@ -253,6 +253,31 @@ func sfMessageReaches(l string, from, to int) bool {
 	return true
 }
 
+// sfQuoted reports whether s ends inside an open '/" string. Same escaping
+// rules as sfMessageReaches: backslash escapes one byte outside a
+// single-quoted context, and closes nothing inside one.
+func sfQuoted(s string) bool {
+	quote := byte(0)
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case quote == '\'':
+			if c == '\'' {
+				quote = 0
+			}
+		case c == '\\':
+			i++
+		case quote == '"':
+			if c == '"' {
+				quote = 0
+			}
+		case c == '\'' || c == '"':
+			quote = c
+		}
+	}
+	return quote != 0
+}
+
 // sfScanLines classifies every matcher occurrence on an assertion path.
 // Exported as a function over lines so the controls below can drive it with
 // synthetic input and prove it separates the three roles.
@@ -288,8 +313,15 @@ func sfScanLines(file string, lines []string, wholeFile bool) ([]sfHit, *sfHit) 
 		// a left shift by a variable; blind both rather than trying to
 		// express "not those" in a Go regexp.
 		probe := sfArith.ReplaceAllString(strings.ReplaceAll(raw, "<<<", "\x00\x00\x00"), "")
-		if m := sfHeredoc.FindStringSubmatch(probe); m != nil {
-			heredoc = m[2]
+		// A "<<WORD" inside an odd number of quotes is prose mentioning a
+		// heredoc, not a redirection — it opens no body. Checked against the
+		// prefix up to the match, with the same quote/escape rules used
+		// elsewhere in this scan (ranger-base-5hv8z: an opener like this one
+		// that goes on to find a matching WORD later in the file closed the
+		// phantom body, so the unterminated-at-EOF backstop never fired and
+		// the lines between went unscanned).
+		if loc := sfHeredoc.FindStringSubmatchIndex(probe); loc != nil && !sfQuoted(probe[:loc[0]]) {
+			heredoc = probe[loc[4]:loc[5]]
 			opener = &sfHit{file: file, line: i + 1, text: l, role: "heredoc"}
 		}
 		if !wholeFile {
@@ -606,8 +638,6 @@ func TestQATheForkedMatcherScanSeesPastAPhantomHeredocAndAnEarlierMessage(t *tes
 // row. Delete the Skip when the opener probe stops reading a `<<` inside an
 // odd number of quotes as a redirection.
 func TestQATheForkedMatcherScanSeesPastAPhantomHeredocThatCloses(t *testing.T) {
-	t.Skip("ranger-base-5hv8z: a quoted `<<EOF` whose word is terminated later in the same file closes the phantom body, so the unterminated-at-EOF backstop never fires and the lines between go unscanned")
-
 	viol := `if printf '%s' "$out" | grep -q x; then`
 	// The control first, and it is the reason a green below would mean
 	// anything: the same line alone is a verdict violation, so a pass cannot
