@@ -1,7 +1,10 @@
 #!/bin/sh
 # The L4 worktree git grant, narrowed (ranger-base-t4f1, closing the gap
 # ranger-base-6q5e assessed; ADR 0014 §4, and ADR 0038 decision 4's L4 twin,
-# folded here as ranger-base-mugt2).
+# folded here as ranger-base-mugt2). Part B arm B4/B4c/B4n adds decision 4's
+# CURRENT L4 twin (ranger-base-n3ywd's restatement, item 6, ranger-base-017dx)
+# — a :ro FILE bind over an rw parent — which superseded the two-:ro-directory
+# text mugt2 built against.
 #
 #   sh docs/adr/0014-l4-worktree-narrowing.probe.sh
 #
@@ -289,10 +292,86 @@ git gc --auto 2>&1 | sed "s/^/gc-said=/" | head -3
 git cat-file -e "$head" 2>/dev/null && echo object-alive=yes || echo object-alive=no'
 
 echo
-echo "== B4. the same grant with HEAD ON the branch =="
+echo "== B4. ADR 0038 decision 4's L4 twin: :ro FILE binds over an rw tree =="
+echo "   (item 6, ranger-base-017dx — the engine composition, UNRUN elsewhere"
+echo "    in this file. Decision 4 renders a :ro FILE bind wherever the"
+echo "    launcher owns and the file exists — no directory :ro overlay, no"
+echo "    .lock sibling — and claims the engine sorts binds by destination"
+echo "    depth so the file bind wins over the rw mount it sits in. MEASURED"
+echo "    for a directory source, 0014-path-scoped-writes.probe.sh probe 6;"
+echo "    ASSUMED for a file source until this arm runs. 'config' stands in"
+echo "    for 4a's .git/config (ranger-base-672zt); 'worktrees/wt/commondir'"
+echo "    stands in for 4b's identity chain (ranger-base-p9h9d) — one"
+echo "    mechanism, one arm for both, an rw bind of the tree with the two"
+echo "    :ro file binds nested inside it. EROFS is the file bind refusing"
+echo "    open(); EBUSY is rename(2)/unlink(2) refusing to touch the"
+echo "    mountpoint itself — the title's distinction, not interchangeable)"
+F=$(fixture b4)
+probe "expect append=refused hookspath=refused config-byte-identical=yes config-lock-after=absent mv=EBUSY rm=EBUSY commondir-write=refused commondir-byte-identical=yes" \
+  -v "$F/main:$F/main" -v "$F/main/.git/config:$F/main/.git/config:ro" -v "$F/main/.git/worktrees/wt/commondir:$F/main/.git/worktrees/wt/commondir:ro" \
+  -w "$F/main" "$IMG" sh -c '
+C=$1/main/.git
+orig=$(cat "$C/config")
+{ echo x >> "$C/config"; } 2>/dev/null && echo "append=writable" || echo "append=refused"
+git config --local core.hooksPath /tmp/evil 2>err; rc=$?
+sed "s/^/hookspath-said=/" err | head -1
+[ $rc -eq 0 ] && echo "hookspath=planted" || echo "hookspath=refused"
+[ "$(cat "$C/config")" = "$orig" ] && echo "config-byte-identical=yes" || echo "config-byte-identical=no"
+[ -e "$C/config.lock" ] && echo "config-lock-after=present" || echo "config-lock-after=absent"
+echo forged > "$C/config.new"
+mv "$C/config.new" "$C/config" 2>/dev/null && echo "mv=ok" || echo "mv=EBUSY"
+rm "$C/config" 2>/dev/null && echo "rm=ok" || echo "rm=EBUSY"
+cd0=$(cat "$C/worktrees/wt/commondir")
+{ echo x > "$C/worktrees/wt/commondir"; } 2>/dev/null && echo "commondir-write=writable" || echo "commondir-write=refused"
+[ "$(cat "$C/worktrees/wt/commondir")" = "$cd0" ] && echo "commondir-byte-identical=yes" || echo "commondir-byte-identical=no"' sh "$F"
+
+echo
+echo "== B4c. CONTROL: the two file binds removed — rw tree whole =="
+echo "   (decision 4's alternatives-rejected note: the control must show"
+echo "    every one of these landing, or the arm beside it measured nothing)"
+F=$(fixture b4c)
+probe "expect append=writable hookspath=planted mv=ok rm=ok commondir-write=writable" \
+  -v "$F/main:$F/main" -w "$F/main" "$IMG" sh -c '
+C=$1/main/.git
+{ echo x >> "$C/config"; } 2>/dev/null && echo "append=writable" || echo "append=refused"
+git config --local core.hooksPath /tmp/evil 2>/dev/null && echo "hookspath=planted" || echo "hookspath=refused"
+echo forged > "$C/config.new"
+mv "$C/config.new" "$C/config" 2>/dev/null && echo "mv=ok" || echo "mv=EBUSY"
+rm "$C/config" 2>/dev/null && echo "rm=ok" || echo "rm=EBUSY"
+{ echo x > "$C/worktrees/wt/commondir"; } 2>/dev/null && echo "commondir-write=writable" || echo "commondir-write=refused"' sh "$F"
+
+echo
+echo "== B4n. the negative the design rests on: a :ro FILE bind, SOURCE absent =="
+echo "   (decision 4 rule (a) — bind only what the launcher owns and EXISTS —"
+echo "    because the engine does not refuse an absent source, it creates one,"
+echo "    AS A DIRECTORY (host-side, directory case: probe 7 of"
+echo "    0014-path-scoped-writes.probe.sh). config.worktree is the file"
+echo "    PrepareSessionHead must create before a caged launch for exactly"
+echo "    this reason — a directory there is fatal to every git command in"
+echo "    the tree (MEASURED at the host, ranger-base-n3ywd). This fixture"
+echo "    does not create it, so it is genuinely absent at bind time, the way"
+echo "    it would be if the launcher's mkdir were skipped or ran too late)"
+F=$(fixture b4n)
+probe "expect git=refused" \
+  -v "$F/main:$F/main" -v "$F/main/.git/config.worktree:$F/main/.git/config.worktree:ro" \
+  -w "$F/main" "$IMG" sh -c '
+git status >err 2>&1; rc=$?
+sed "s/^/said=/" err | head -2
+[ $rc -eq 0 ] && echo "git=ok" || echo "git=refused"'
+if [ -d "$F/main/.git/config.worktree" ]; then
+  echo "   host after: config.worktree is a DIRECTORY (created by the engine, as decision 4 rule (a) predicts)"
+elif [ -e "$F/main/.git/config.worktree" ]; then
+  echo "   host after: config.worktree is a file (unexpected — the created-as-directory claim did not hold here)"
+else
+  echo "   host after: config.worktree is absent (unexpected — nothing was created)"
+fi
+rm -rf "$F/main/.git/config.worktree"
+
+echo
+echo "== B5. the same grant with HEAD ON the branch =="
 echo "   (the detach is the mechanism, not a detail — Part A measured this"
 echo "    against uid permissions and it must answer the same way here)"
-F=$(fixture b4); git -C "$F/wt" checkout -q posse/s-1
+F=$(fixture b5); git -C "$F/wt" checkout -q posse/s-1
 probe "expect commit=refused, naming refs/heads/posse/s-1.lock" $(narrow "$F") -w "$F/wt" "$IMG" sh -c '
 git config user.email c@example.com; git config user.name c
 echo work > fix.txt; git add fix.txt >/dev/null 2>&1
@@ -302,12 +381,15 @@ git rev-parse --verify --quiet refs/heads/posse/s-1 >/dev/null && echo branch-ex
 echo
 echo "== verdict =="
 echo "B1 is the capability; B2 is the narrowing; B3 is the one cost that could"
-echo "still make it not worth having; B4 is why the launcher detaches."
+echo "still make it not worth having; B4 is ADR 0038 decision 4's L4 twin (a"
+echo "FILE bind holding against open, rename and unlink inside its rw parent);"
+echo "B5 is why the launcher detaches."
 echo
 echo "If any arm disagrees with its expect line on YOUR engine, comment"
-echo "DIVERGED: on ranger-base-t4f1 naming what the engine did. If a CONTROL"
-echo "disagrees, the fixture is wrong and the arm beside it measured nothing"
-echo "— fix the fixture before reading any refusal as a wall."
+echo "DIVERGED: on ranger-base-t4f1 (A, B1-B3, B5) or ranger-base-017dx (B4,"
+echo "B4c, B4n), naming what the engine did. If a CONTROL disagrees, the"
+echo "fixture is wrong and the arm beside it measured nothing — fix the"
+echo "fixture before reading any refusal as a wall."
 echo
 echo "One trap that is not the engine's, for anyone re-running these binds by"
 echo "hand in ZSH: \"\$R:\$R:ro\" is not what it looks like. \`:r\` is a zsh"
