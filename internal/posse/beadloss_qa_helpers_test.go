@@ -23,7 +23,7 @@ func qblRepo(t *testing.T) string {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not available")
 	}
-	repo := t.TempDir()
+	repo := gitTempDir(t)
 	if err := os.MkdirAll(filepath.Join(repo, ".beads"), 0o755); err != nil {
 		t.Fatal(err)
 	}

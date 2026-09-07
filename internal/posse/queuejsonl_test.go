@@ -14,7 +14,7 @@ import (
 // under version control and no remote.
 func qRepo(t *testing.T) string {
 	t.Helper()
-	repo := t.TempDir()
+	repo := gitTempDir(t)
 	mustGit(t, repo, "init", "-q", "-b", "main", ".")
 	mustGit(t, repo, "config", "user.email", "t@example.com")
 	mustGit(t, repo, "config", "user.name", "t")
