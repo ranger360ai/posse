@@ -33,7 +33,13 @@ and hash-matched (ranger-base-39jnl) · informs
 0002 §3, 0012 D3-C, 0014 §3, 0025 · amended 2026-09-02: the constitution directory in the instance repo is `posse/`, not `rhq/` — the cutover is complete and every historical `rhq/<p>` spelling below now means `posse/<p>` (ADR 0046 retired 2026-09-05; current source constant verified) · amended
 2026-09-06: §3's invariant claims the promoted SET as well as the bytes —
 ranger-base-70ry landed 2026-08-27 in b348799c and the record had gone on
-calling that half open (ranger-base-rowut)*
+calling that half open (ranger-base-rowut) · amended 2026-09-07: §3's
+commit-wall claim that "the L3 arm now holds on its own" overstated the
+2026-09-01 base-tree fix — the base tree is HEAD, which a persona owns
+as surely as the worktree, so an orphan checkout or a checkout predating
+the marker defeats it at the same L3 tier as `env -i` and
+`core.hooksPath`, caught by the land belt rather than the wall
+(ranger-base-5smxb, measured)*
 
 > The operator asked for the constitution to be clearly separated from
 > project work. The instance tree currently holds three kinds of thing
@@ -436,6 +442,22 @@ the same way twice:
   HEAD, marker on disk) working unchanged. The land-path belt below
   compensated for both, which is why they were hardening and not a live
   hole in the promoted constitution; the L3 arm now holds on its own.
+
+  *Amended 2026-09-07 (ranger-base-5smxb, measured).* "The L3 arm now
+  holds on its own" overstated what the base-tree read closes. The
+  worktree-removal defect (jex3) is closed — but the base tree the arm
+  falls back to is `HEAD`, and `HEAD` is a ref a persona owns in its own
+  worktree exactly as it owns the working tree: `git checkout --orphan`
+  or a checkout of a commit predating the marker moves the base tree to
+  one the marker was never in, and the wall's class test then runs
+  against a tree that never carried it (measured, control and both
+  attacks). That is a residual at the same L3 tier as `env -i` and
+  `core.hooksPath` two paragraphs up, not a closed hole: the land-path
+  belt below still refuses the result before it lands — no merge base
+  for the orphan branch, and a detached `HEAD` for the checkout that
+  predates the marker (`notOnBase`, ranger-base-dybv). The wall's own
+  comment (`constitutionGuardBody`, `internal/posse/gates.go`) carries
+  this residual now instead of claiming the arm closed.
 
   *Fourth — the launcher's land-path belt*
   (`MergeSessionWork`, `internal/posse/worktree.go`). The launcher

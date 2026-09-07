@@ -4606,22 +4606,30 @@ $posse_bad"
 // `env -i` scrubs RHQ_PERSONA and the arm stands down, which is the exact
 // residual PrePushHook already documents for its own marker; `core.hooksPath`
 // re-points the slot, the same tier of residual. A THIRD one was on this list
-// and has been closed rather than documented: removing the marker directory
-// from the session worktree before a path-limited commit stood the promoted
-// half of the class down (ranger-base-jex3, measured; the belt compensated,
-// which is why it was P2 and not P1). The marker is now read from the
-// worktree OR the base tree, so the route needs a marker removal the base
-// tree records — which is itself a class path, and refused. Two things sit
-// behind it and neither is claimed to be this: under `cage: seatbelt` the
-// constitution area is not writable at all (ConstitutionGrants, measured
-// empty), and the promote manifest is the DETECTOR at every tier — a
-// constitution that changed without a promotion is caught at the next launch
-// verify, whoever changed it and however. A pre-push arm would add nothing:
-// personas cannot push (PrePushHook, and every crew PID denies the verb) and
-// a push is operator-lane. A nested `.claude/settings.json` —
-// `sub/.claude/…` rather than the repo root's — is outside the class as
-// written, and outside what any runtime reads for a session dispatched at a
-// repo root.
+// and is narrowed rather than closed: removing the marker directory from the
+// session worktree before a path-limited commit stood the promoted half of
+// the class down (ranger-base-jex3, measured; the belt compensated, which is
+// why it was P2 and not P1). The marker is now read from the worktree OR the
+// base tree the commit is diffed against, which closes that removal on its
+// own — but the base tree is HEAD, and HEAD is a ref a persona owns in its
+// own worktree exactly as it owns the working tree: `git checkout --orphan`
+// or a checkout of a commit predating the marker moves the base tree to one
+// the marker was never in, and the class test then runs against a tree that
+// never carried it (ranger-base-5smxb, measured, control and both attacks).
+// That is a residual at the same L3 tier as `env -i` and `core.hooksPath`
+// above, not a closed hole: the land-path belt below still refuses the
+// result before it lands — no merge base for the orphan branch, and a
+// detached HEAD for the checkout that predates the marker (notOnBase,
+// ranger-base-dybv). Two things sit behind the wall itself and neither is
+// claimed to close this residual: under `cage: seatbelt` the constitution
+// area is not writable at all (ConstitutionGrants, measured empty), and the
+// promote manifest is the DETECTOR at every tier — a constitution that
+// changed without a promotion is caught at the next launch verify, whoever
+// changed it and however. A pre-push arm would add nothing: personas cannot
+// push (PrePushHook, and every crew PID denies the verb) and a push is
+// operator-lane. A nested `.claude/settings.json` — `sub/.claude/…` rather
+// than the repo root's — is outside the class as written, and outside what
+// any runtime reads for a session dispatched at a repo root.
 func constitutionGuardBody() string {
 	// One member per line, and a leading newline so EVERY member is a whole
 	// line of the rendered hook whichever block it lands in — that is what
