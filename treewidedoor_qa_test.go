@@ -78,15 +78,17 @@ package posse
 // THAT SENTENCE IS THE ONLY LIVE COUNT IN THIS FILE, and arm 4 holds it to
 // the Makefile, both numerals and the enumeration above it. It read seventeen
 // and six until ranger-base-4jogv, and arm 4 is why it is not quoted here:
-// the rule allows exactly ONE live count claim in this comment, so a second
-// sentence saying a number — even a historical one — reds it. The DOOR number
-// entered wrong at d189b623, which wrote "seven doors" over an enumeration of
-// eight and was then faithfully decremented by one when the selector door
-// went; the PIN number drifted on its own, because the three tests listed
-// directly above were added to a door variable by beads that had no reason to
-// read this comment. A seat prices `make tree-check` from this sentence, in
-// the one file whose whole subject is "the doors are wide enough", so nothing
-// but a derivation may say how many there are.
+// the rule matches only a sentence shaped exactly `<word> pins and <word>
+// doors`; a second sentence in that shape reds it, but a historical count
+// spelled some other way — like the sentence just above, on purpose — is
+// invisible to it. The DOOR number entered wrong at d189b623, which wrote
+// "seven doors" over an enumeration of eight and was then faithfully
+// decremented by one when the selector door went; the PIN number drifted on
+// its own, because the three tests listed directly above were added to a
+// door variable by beads that had no reason to read this comment. A seat
+// prices `make tree-check` from this sentence, in the one file whose whole
+// subject is "the doors are wide enough", so nothing but a derivation may
+// say how many there are.
 //
 // WHY THE DOOR RUNS THE PIN. fmt-check re-runs the TOOL, because gofmt is a
 // tool and `gofmt -l` cannot disagree with `go/format`. These four are Go:
@@ -1286,7 +1288,11 @@ func TestQATheHeadCommentsPinAndDoorCountsAreTheMakefiles(t *testing.T) {
 	// number drifted in the first place: three tests were doored by beads
 	// that never touched this comment.
 	for _, name := range pins {
-		if !strings.Contains(head, name) {
+		// Word-bounded: a plain strings.Contains is a SUBSTRING test, so a
+		// pin renamed to a strict prefix of a name already sitting in this
+		// comment (e.g. a since-removed long name in the inventory above)
+		// would satisfy it without being named here (ranger-base-erqvh row 1).
+		if !regexp.MustCompile(`\b` + regexp.QuoteMeta(name) + `\b`).MatchString(head) {
 			t.Errorf("$(%s) door variable names %s, and this file's head comment does not — the enumeration the count sentence rests on is short by at least one, so the next reader counts a smaller class than `make tree-check` runs", twdVarOf(t, src, name), name)
 		}
 	}
