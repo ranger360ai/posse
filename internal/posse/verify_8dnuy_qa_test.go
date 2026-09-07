@@ -65,7 +65,7 @@ func TestQAADR0026StatusLineDoesNotDeferTheImplementedRung(t *testing.T) {
 	// prose: the ruling is in the rendered rung. If this ever goes false the
 	// deferral is no longer a falsehood and this whole guard should be
 	// revisited.
-	if !strings.Contains(EscalationLadder("b-1", ""), "research it in THIS bead when the question is bounded") {
+	if !strings.Contains(EscalationLadder("b-1", "", ""), "research it in THIS bead when the question is bounded") {
 		t.Error("the rendered SPIKE rung no longer carries the 2026-09-05 ruling — the premise of this guard (the deferral is false) no longer holds")
 	}
 }

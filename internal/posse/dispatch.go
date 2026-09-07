@@ -1986,7 +1986,12 @@ func (a *App) promptContext(bd Bd, is RepoIssue, runtime, tier, session string, 
 
 // EscalationLadder is ADR 0005 §2: six rungs, one per honest state, the
 // same text in every work prompt. operator fills the ASK assignee; ""
-// leaves the question unassigned.
+// leaves the question unassigned. class is this bead's own BeadClass answer
+// (ADR 0006 §1, amended 2026-09-02): SPIKE and ASK render it in place of the
+// bare -t task their `bd create` renders when class is unclassified, because
+// a spike or question inherits the class of the bead it was raised against.
+// HANDOFF is unaffected — its class flag belongs to the work it found, not
+// to this bead, so the rung names the choice instead of rendering one.
 //
 // HANDOFF hands to the LANE: it files `-l <their label>` with no `-a`
 // (ADR 0006 §1 amendment of 2026-09-01, ranger-base-tpc41). The rung read
@@ -2078,17 +2083,35 @@ func (a *App) promptContext(bd Bd, is RepoIssue, runtime, tier, session string, 
 // harness already applies to itself — verify-after files the edge, dedupes
 // on a marker it wrote in the same breath as the issue, and treats the
 // comment as the provenance of record (fileVerifyBead).
-func EscalationLadder(id, operator string) string {
+// classFlag renders the bd create flag(s) a SPIKE or ASK inherits from its
+// parent's class (ADR 0006 §1, amended 2026-09-02): -t wins the argv the way
+// it wins BeadClass, so debt still needs its own -l alongside the bare -t
+// task an unclassified parent renders unchanged.
+func classFlag(class string) string {
+	switch class {
+	case ClassFeature:
+		return "-t feature"
+	case ClassBug:
+		return "-t bug"
+	case ClassDebt:
+		return "-t task -l debt"
+	default:
+		return "-t task"
+	}
+}
+
+func EscalationLadder(id, operator, class string) string {
 	ask := ""
 	if operator != "" {
 		ask = " -a " + operator
 	}
+	flag := classFlag(class)
 	return "Escalation (pick the lowest rung that is honest)\n" +
 		"- NOTE — a decision or finding worth keeping: `bd comments add " + id + " <note>`; continue.\n" +
 		"- ASSUME — a gap you can bridge without changing the deliverable's shape: comment `ASSUMED: <x> — <why>`; do the rest in full; continue.\n" +
-		"- SPIKE — the gap is knowledge, not permission: you are about to invent a mechanism or coin a name for one, this is the third attempt at one invariant, the choice is expensive to reverse, or the design rests on a number nobody measured. Read the skills and references you carry first; if they do not answer it, research it in THIS bead when the question is bounded — findings on the bead and in a committed ADR section or notes artifact, numbers labelled MEASURED or ASSUMED with their date and environment — and comment `SPIKE: <question> → <finding>`. A separate bead is for a distinct dependency or deliverable — work another lane must do, an experiment needing its own venue, findings that need their own handoff — never as proof that research happened: `bd create \"spike: <question>\" -t task -l <runner's lane>` — no `--deps`, because the block below is the point and a spike that already reaches " + id + " loses it — carrying its time box (normally one session), question and stopping condition; then `bd dep add " + id + " <sid>` so deciding waits on reading, `bd comments add <sid> \"discovered-from: " + id + "\"` for the provenance, and `bd dep list " + id + "` to confirm the block landed; comment `SPIKE: <question> → <sid>`; continue with whatever the answer cannot change, else stop.\n" +
-		"- ASK — a gap only the operator can fill and the bead is useless if you guess: `bd create \"<question>\" -t task -l question" + ask + "`, then `bd dep add " + id + " <qid>` so this bead leaves bd ready until answered; comment `BLOCKED: <need> → <qid>`; stop.\n" +
-		"- HANDOFF — part of the work belongs to another lane: `bd create \"<title>\" -l <their label> --deps discovered-from:" + id + "`; no `-a` unless the work needs that person (ADR 0006 §1 lists the five cases) and the first line of the description says which; comment it; continue with your part, and if nothing is left, close yours.\n" +
+		"- SPIKE — the gap is knowledge, not permission: you are about to invent a mechanism or coin a name for one, this is the third attempt at one invariant, the choice is expensive to reverse, or the design rests on a number nobody measured. Read the skills and references you carry first; if they do not answer it, research it in THIS bead when the question is bounded — findings on the bead and in a committed ADR section or notes artifact, numbers labelled MEASURED or ASSUMED with their date and environment — and comment `SPIKE: <question> → <finding>`. A separate bead is for a distinct dependency or deliverable — work another lane must do, an experiment needing its own venue, findings that need their own handoff — never as proof that research happened: `bd create \"spike: <question>\" " + flag + " -l <runner's lane>` — no `--deps`, because the block below is the point and a spike that already reaches " + id + " loses it — carrying its time box (normally one session), question and stopping condition; then `bd dep add " + id + " <sid>` so deciding waits on reading, `bd comments add <sid> \"discovered-from: " + id + "\"` for the provenance, and `bd dep list " + id + "` to confirm the block landed; comment `SPIKE: <question> → <sid>`; continue with whatever the answer cannot change, else stop.\n" +
+		"- ASK — a gap only the operator can fill and the bead is useless if you guess: `bd create \"<question>\" " + flag + " -l question" + ask + "`, then `bd dep add " + id + " <qid>` so this bead leaves bd ready until answered; comment `BLOCKED: <need> → <qid>`; stop.\n" +
+		"- HANDOFF — part of the work belongs to another lane: `bd create \"<title>\" -l <their label> --deps discovered-from:" + id + "`, carrying its class: -t feature, -t bug, or -l debt — the class of what you found, not of this bead; no `-a` unless the work needs that person (ADR 0006 §1 lists the five cases) and the first line of the description says which; comment it; continue with your part, and if nothing is left, close yours.\n" +
 		"- REFUSE — a hard risk line (money · publishing · deployed systems · visibility) or a gate you cannot realize: comment `REFUSED: <line> — <what would be needed>`; if a decision would unblock it, ASK with `-l risk`; stop.\n" +
 		"Provenance: only HANDOFF files `--deps discovered-from:`, and it is two writes, not one — bd can commit the bead and lose the edge (30s timeout, exit 1, no id printed). After a HANDOFF create, confirm it with `bd dep list <new-id>`; if no id was printed find the bead by title in `bd list`, and never re-run a create that failed. If the edge is missing, `bd comments add <new-id> \"discovered-from: " + id + "\"` and note it on " + id + " — the comment is the provenance that survives. When SPIKE files a separate spike it files no edge either, deliberately: bd will not carry a `discovered-from` edge and a block between the same pair, so a spike carrying one makes `bd dep add " + id + " <sid>` a cycle in either order — refused outright by some stores and silently accepted by others, which leaves " + id + " in `bd ready` and dispatched anyway, so never read a zero exit as the stop. Check `bd dep list " + id + "` names <sid> (reading <sid> back shows the wrong edge and looks fine), and let the comment carry the provenance.\n"
 }
@@ -2186,7 +2209,7 @@ func workPrompt(is RepoIssue, ctx PromptContext) string {
 	for _, l := range lines {
 		b.WriteString("- " + l + "\n")
 	}
-	b.WriteString(EscalationLadder(is.ID, ctx.Operator))
+	b.WriteString(EscalationLadder(is.ID, ctx.Operator, BeadClass(is.BdIssue)))
 	fmt.Fprintf(&b, "Done: `bd comments add %s <what you did, paths, ids>` then `bd close %s`.\n", is.ID, is.ID)
 	if h := strings.TrimSpace(ctx.Hook); h != "" {
 		b.WriteString(h + "\n")

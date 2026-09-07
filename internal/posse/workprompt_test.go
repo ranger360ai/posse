@@ -210,7 +210,7 @@ func TestBodySectionAndOptionalHeading(t *testing.T) {
 // ASK and SPIKE dep-add onto the bead they just created (ranger-base-rs8j).
 func TestEscalationLadderProvenanceCaveat(t *testing.T) {
 	t.Parallel()
-	l := EscalationLadder("b-1", "")
+	l := EscalationLadder("b-1", "", "")
 
 	// It is a caveat, not a seventh rung: ADR 0005 §2 is six rungs, and the
 	// ladder's own header says "pick the lowest rung that is honest".
@@ -260,7 +260,7 @@ func TestEscalationLadderProvenanceCaveat(t *testing.T) {
 	if strings.Contains(prov, "<id>") {
 		t.Errorf("caveat must interpolate the bead id, not print a placeholder:\n%s", prov)
 	}
-	if o := EscalationLadder("other-9", "opuser"); !strings.Contains(o, "discovered-from: other-9\"`") || !strings.Contains(o, "note it on other-9 —") {
+	if o := EscalationLadder("other-9", "opuser", ""); !strings.Contains(o, "discovered-from: other-9\"`") || !strings.Contains(o, "note it on other-9 —") {
 		t.Errorf("caveat must follow the id it was rendered for:\n%s", o)
 	}
 
@@ -292,7 +292,7 @@ func TestEscalationLadderProvenanceCaveat(t *testing.T) {
 // HANDOFF's, which is legitimate and must stay.
 func TestEscalationLadderSpikeFilesNoProvenanceEdge(t *testing.T) {
 	t.Parallel()
-	ladder := EscalationLadder("b-1", "")
+	ladder := EscalationLadder("b-1", "", "")
 	spike, handoff, ask, prov := "", "", "", ""
 	for _, ln := range strings.Split(ladder, "\n") {
 		switch {
@@ -387,7 +387,7 @@ func TestEscalationLadderSpikeFilesNoProvenanceEdge(t *testing.T) {
 	}
 
 	// The ids are the bead's wherever they appear, comment included.
-	o := EscalationLadder("other-9", "opuser")
+	o := EscalationLadder("other-9", "opuser", "")
 	if !strings.Contains(o, "`bd comments add <sid> \"discovered-from: other-9\"`") || !strings.Contains(o, "`bd dep add other-9 <sid>`") {
 		t.Errorf("SPIKE must interpolate the bead id:\n%s", o)
 	}
@@ -413,13 +413,13 @@ func TestEscalationLadderSpikeFilesNoProvenanceEdge(t *testing.T) {
 func TestEscalationLadderSpikeResearchesInTheDecidingBead(t *testing.T) {
 	t.Parallel()
 	spike := ""
-	for _, ln := range strings.Split(EscalationLadder("b-1", ""), "\n") {
+	for _, ln := range strings.Split(EscalationLadder("b-1", "", ""), "\n") {
 		if strings.HasPrefix(ln, "- SPIKE — ") {
 			spike = ln
 		}
 	}
 	if spike == "" {
-		t.Fatalf("ladder lost the SPIKE rung:\n%s", EscalationLadder("b-1", ""))
+		t.Fatalf("ladder lost the SPIKE rung:\n%s", EscalationLadder("b-1", "", ""))
 	}
 
 	// The removal, as the two things the rung must now say.
@@ -473,7 +473,7 @@ func TestEscalationLadderSpikeResearchesInTheDecidingBead(t *testing.T) {
 	if !strings.Contains(spike, "`bd dep list b-1` to confirm the block landed") {
 		t.Errorf("SPIKE must confirm the block it files:\n%s", spike)
 	}
-	if o := EscalationLadder("other-9", ""); !strings.Contains(o, "`bd dep list other-9` to confirm the block landed") {
+	if o := EscalationLadder("other-9", "", ""); !strings.Contains(o, "`bd dep list other-9` to confirm the block landed") {
 		t.Errorf("the confirmation must name the bead it was rendered for:\n%s", o)
 	}
 
@@ -539,7 +539,7 @@ var mandateQuantifier = regexp.MustCompile(`(?i)\b(always|every|each)\b`)
 func TestEscalationLadderHandoffFilesToTheLane(t *testing.T) {
 	t.Parallel()
 	handoff, ask, spike := "", "", ""
-	for _, ln := range strings.Split(EscalationLadder("b-1", "opuser"), "\n") {
+	for _, ln := range strings.Split(EscalationLadder("b-1", "opuser", ""), "\n") {
 		switch {
 		case strings.HasPrefix(ln, "- HANDOFF — "):
 			handoff = ln
@@ -550,7 +550,7 @@ func TestEscalationLadderHandoffFilesToTheLane(t *testing.T) {
 		}
 	}
 	if handoff == "" || ask == "" || spike == "" {
-		t.Fatalf("ladder lost a rung:\n%s", EscalationLadder("b-1", "opuser"))
+		t.Fatalf("ladder lost a rung:\n%s", EscalationLadder("b-1", "opuser", ""))
 	}
 
 	// The defect, as the string that must not be there.
@@ -581,5 +581,79 @@ func TestEscalationLadderHandoffFilesToTheLane(t *testing.T) {
 	}
 	if !strings.Contains(spike, "-l <runner's lane>") {
 		t.Errorf("SPIKE keeps the runner's lane:\n%s", spike)
+	}
+}
+
+// ranger-base-3w52f: SPIKE and ASK inherit this bead's own class (ADR 0006
+// §1, amended 2026-09-02) instead of always rendering the bare `-t task`
+// their `bd create` used to hardcode — a spike or question raised against a
+// feature- or bug-typed bead is itself that class, and against a
+// debt-labeled bead it is debt, never invented from a title or graph
+// (BeadClass, beads.go). Four arms, one per BeadClass answer.
+func TestEscalationLadderClassFlagsSpikeAndAsk(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct{ class, flag string }{
+		{ClassFeature, "-t feature"},
+		{ClassBug, "-t bug"},
+		{ClassDebt, "-t task -l debt"},
+		{ClassUnclassified, "-t task"},
+	} {
+		ladder := EscalationLadder("b-1", "", tc.class)
+		spike, ask := "", ""
+		for _, ln := range strings.Split(ladder, "\n") {
+			switch {
+			case strings.HasPrefix(ln, "- SPIKE — "):
+				spike = ln
+			case strings.HasPrefix(ln, "- ASK — "):
+				ask = ln
+			}
+		}
+		if spike == "" || ask == "" {
+			t.Fatalf("class %q: ladder lost a rung:\n%s", tc.class, ladder)
+		}
+		if want := "`bd create \"spike: <question>\" " + tc.flag + " -l <runner's lane>`"; !strings.Contains(spike, want) {
+			t.Errorf("class %q: SPIKE must render %q:\n%s", tc.class, want, spike)
+		}
+		if want := "`bd create \"<question>\" " + tc.flag + " -l question`"; !strings.Contains(ask, want) {
+			t.Errorf("class %q: ASK must render %q:\n%s", tc.class, want, ask)
+		}
+	}
+}
+
+// The HANDOFF rung's class sentence is fixed text naming the choice, not a
+// substitution: unlike SPIKE and ASK, the class of a handed-off bead belongs
+// to the work found, not to the bead handing it off, so the rung reads the
+// same regardless of this bead's own class.
+func TestEscalationLadderHandoffNamesTheClassChoice(t *testing.T) {
+	t.Parallel()
+	for _, class := range []string{ClassFeature, ClassBug, ClassDebt, ClassUnclassified, ""} {
+		handoff := ""
+		for _, ln := range strings.Split(EscalationLadder("b-1", "", class), "\n") {
+			if strings.HasPrefix(ln, "- HANDOFF — ") {
+				handoff = ln
+			}
+		}
+		if handoff == "" {
+			t.Fatalf("class %q: ladder lost the HANDOFF rung", class)
+		}
+		if want := "carrying its class: -t feature, -t bug, or -l debt — the class of what you found, not of this bead"; !strings.Contains(handoff, want) {
+			t.Errorf("class %q: HANDOFF must name the class choice:\n%s", class, handoff)
+		}
+	}
+}
+
+// End to end: a bug-typed bead's assembled work prompt carries `-t bug` in
+// its SPIKE and ASK rungs, proving the class travels from the bead through
+// workPrompt/BeadClass into the rendered ladder, not just through
+// EscalationLadder called directly with a hand-picked class string.
+func TestWorkPromptSpikeRungCarriesTheBeadsClass(t *testing.T) {
+	t.Parallel()
+	is := RepoIssue{BdIssue: BdIssue{ID: "b-1", Title: "fix the thing", IssueType: "bug"}}
+	p := workPrompt(is, PromptContext{})
+	if !strings.Contains(p, "`bd create \"spike: <question>\" -t bug -l <runner's lane>`") {
+		t.Errorf("bug-typed bead must render -t bug in its SPIKE rung:\n%s", p)
+	}
+	if !strings.Contains(p, "`bd create \"<question>\" -t bug -l question`") {
+		t.Errorf("bug-typed bead must render -t bug in its ASK rung:\n%s", p)
 	}
 }
