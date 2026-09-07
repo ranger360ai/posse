@@ -27,6 +27,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/ranger360ai/posse/internal/posse"
 )
 
 // mhFixture is a repo, an employer hooks directory outside it, and a global
@@ -49,7 +51,7 @@ func mhFixture(t *testing.T) (home, repo, managed, gitconfig string) {
 	if out, err := exec.Command("git", "-C", repo, "init", "-q", "-b", "main").CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v %s", err, out)
 	}
-	if err := os.WriteFile(filepath.Join(managed, "pre-commit"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	if err := posse.WriteExecutable(filepath.Join(managed, "pre-commit"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	gitconfig = filepath.Join(home, "gitconfig-managed")

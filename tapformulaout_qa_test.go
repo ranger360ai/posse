@@ -58,7 +58,7 @@ func tapOutScript(t *testing.T, rewrite func(string) string) string {
 		t.Fatal(err)
 	}
 	path := filepath.Join(t.TempDir(), "tap-formula.sh")
-	if err := os.WriteFile(path, []byte(rewrite(string(body))), 0o755); err != nil {
+	if err := WriteExecutable(path, []byte(rewrite(string(body))), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return path

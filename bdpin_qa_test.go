@@ -106,7 +106,7 @@ func bpStubBD(t *testing.T, path, version string) {
 		"[ \"$1\" = \"--no-daemon\" ] && shift\n" +
 		"if [ \"$1\" = \"version\" ]; then echo \"bd version " + version + " (deadbeef: HEAD@deadbeef)\"; exit 0; fi\n" +
 		"echo \"stub bd: $*\" >&2; exit 99\n"
-	if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
+	if err := WriteExecutable(path, []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -127,7 +127,7 @@ func bpStubBrew(t *testing.T, dir, state string) {
 		json = `{"formulae":[{"name":"beads","installed":[{"version":"1.2.2"}],"pinned":false,"linked_keg":null}]}`
 	}
 	body := "#!/bin/bash\ncat <<'JSON'\n" + json + "\nJSON\n"
-	if err := os.WriteFile(filepath.Join(dir, "brew"), []byte(body), 0o755); err != nil {
+	if err := WriteExecutable(filepath.Join(dir, "brew"), []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -169,7 +169,7 @@ case "$*" in
 esac
 exit 0
 `
-	if err := os.WriteFile(filepath.Join(dir, "ps"), []byte(body), 0o755); err != nil {
+	if err := WriteExecutable(filepath.Join(dir, "ps"), []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	// `lsof -p <pid> -a -d cwd -Fn`: one `n<path>` line, and nothing at all
@@ -185,7 +185,7 @@ done
 awk -F'\t' -v p="$pid" '$1==p && $5!=""{ print "p" $1; print "n" $5 }' "$F"
 exit 0
 `
-	if err := os.WriteFile(filepath.Join(dir, "lsof"), []byte(lsof), 0o755); err != nil {
+	if err := WriteExecutable(filepath.Join(dir, "lsof"), []byte(lsof), 0o755); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -305,7 +305,7 @@ echo "mtime: whenever"; exit 0
 		t.Fatalf("bpStubStat: unknown flavor %q", flavor)
 	}
 	body = "#!/bin/bash\nEPOCH=" + epoch + "\nTARGET=" + target + "\n" + strings.TrimPrefix(body, "#!/bin/bash\n")
-	if err := os.WriteFile(filepath.Join(dir, "stat"), []byte(body), 0o755); err != nil {
+	if err := WriteExecutable(filepath.Join(dir, "stat"), []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -823,7 +823,7 @@ func bpStubGateShim(t *testing.T, dir, target string) {
 	body := "#!/bin/sh\n" +
 		"# posse gate for testpersona — rendered from the PID's deny: at launch; do not edit (rangerhq-9ha)\n" +
 		"exec '" + target + "' \"$@\"\n"
-	if err := os.WriteFile(filepath.Join(dir, "bd"), []byte(body), 0o755); err != nil {
+	if err := WriteExecutable(filepath.Join(dir, "bd"), []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
 }

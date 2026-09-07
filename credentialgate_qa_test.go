@@ -164,7 +164,7 @@ func TestCredentialGateScannerCatchesEachShape(t *testing.T) {
 		{"runtime.sh", "#!/bin/sh\njq -r .accessToken ~/.claude/.credentials.json\n", "runtime credential store read"},
 	}
 	for _, c := range cases {
-		if err := os.WriteFile(filepath.Join(plant, c.name), []byte(c.body), 0o755); err != nil {
+		if err := WriteExecutable(filepath.Join(plant, c.name), []byte(c.body), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}

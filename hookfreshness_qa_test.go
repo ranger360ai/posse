@@ -165,7 +165,7 @@ func (r *hfRig) manage(t *testing.T) string {
 	}
 	// The employer's own hook, so the fixture is the shape the ADR describes
 	// rather than an empty directory.
-	if err := os.WriteFile(filepath.Join(managed, "pre-commit"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	if err := posse.WriteExecutable(filepath.Join(managed, "pre-commit"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Chmod(managed, 0o555); err != nil {
@@ -264,7 +264,7 @@ func hfRead(t *testing.T, p string) string {
 
 func hfWrite(t *testing.T, p, body string) {
 	t.Helper()
-	if err := os.WriteFile(p, []byte(body), 0o755); err != nil {
+	if err := posse.WriteExecutable(p, []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -809,7 +809,7 @@ func TestQAHookFreshnessDoesNotSkipEveryRepoOnABinaryWithoutTheQuery(t *testing.
 		"  echo \"posse: no such agent: managed-hooks\"; exit 0\n" +
 		"fi\n" +
 		"exec " + r.bin + " \"$@\"\n"
-	if err := os.WriteFile(old, []byte(body), 0o755); err != nil {
+	if err := posse.WriteExecutable(old, []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	r.bin = old
@@ -1048,7 +1048,7 @@ func hfShim(t *testing.T, r *hfRig, body string) string {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "git"), []byte("#!/bin/sh\n"+body+"\n"), 0o755); err != nil {
+	if err := posse.WriteExecutable(filepath.Join(dir, "git"), []byte("#!/bin/sh\n"+body+"\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	cmd := exec.Command("/bin/sh", "-c", "command -v git")

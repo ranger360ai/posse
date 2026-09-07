@@ -254,7 +254,7 @@ func zshPathProbe(t *testing.T, file string, flags []string) string {
 	if err := os.MkdirAll(bin, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(bin, "posse"), []byte("#!/bin/sh\necho HIT\n"), 0o755); err != nil {
+	if err := WriteExecutable(filepath.Join(bin, "posse"), []byte("#!/bin/sh\necho HIT\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if file != "" {

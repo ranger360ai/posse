@@ -88,7 +88,7 @@ func sfDyingBin(t *testing.T, name string) string {
 	t.Helper()
 	dir := t.TempDir()
 	p := filepath.Join(dir, name)
-	if err := os.WriteFile(p, []byte("#!/bin/bash\nkill -TERM $$\n"), 0o755); err != nil {
+	if err := WriteExecutable(p, []byte("#!/bin/bash\nkill -TERM $$\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return dir

@@ -116,7 +116,7 @@ func outGuardScript(t *testing.T, repo string, rewrite func(string) string) stri
 		t.Fatal(err)
 	}
 	path := filepath.Join(dir, "release-artifacts.sh")
-	if err := os.WriteFile(path, []byte(text), 0o755); err != nil {
+	if err := WriteExecutable(path, []byte(text), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return path

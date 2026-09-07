@@ -166,7 +166,7 @@ func TestQATheSuiteQueueSelfTestCanFail(t *testing.T) {
 		"_suite_lock_flock() {\n\treturn 0\n\tcase ${_SUITE_LOCK_TOOL:-} in", 1)
 
 	path := filepath.Join(t.TempDir(), "suite-lock-broken.sh")
-	if err := os.WriteFile(path, []byte(broken), 0o755); err != nil {
+	if err := WriteExecutable(path, []byte(broken), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	out, err := exec.Command("bash", path, "--self-test").CombinedOutput()
@@ -272,7 +272,7 @@ func TestQATestTimesQueuesBehindAHeldSlot(t *testing.T) {
 	// happen while the slot is held.
 	ran := filepath.Join(dir, "it-ran")
 	stub := filepath.Join(dir, "faketest")
-	if err := os.WriteFile(stub, []byte("#!/usr/bin/env bash\ntouch "+ran+"\nexit 0\n"), 0o755); err != nil {
+	if err := WriteExecutable(stub, []byte("#!/usr/bin/env bash\ntouch "+ran+"\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 

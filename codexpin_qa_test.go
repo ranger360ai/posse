@@ -102,7 +102,7 @@ func (b *cpBox) installCodex(t *testing.T, ver string, linked bool) {
 	}
 	body := "#!/bin/bash\nif [ \"$1\" = \"--version\" ]; then echo \"codex-cli " + ver + "\"; exit 0; fi\nexit 99\n"
 	real := filepath.Join(room, "codex")
-	if err := os.WriteFile(real, []byte(body), 0o755); err != nil {
+	if err := WriteExecutable(real, []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	onPath := filepath.Join(b.bin, "codex")
@@ -113,7 +113,7 @@ func (b *cpBox) installCodex(t *testing.T, ver string, linked bool) {
 		}
 		return
 	}
-	if err := os.WriteFile(onPath, []byte(body), 0o755); err != nil {
+	if err := WriteExecutable(onPath, []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -160,7 +160,7 @@ func (b *cpBox) brewRaw(t *testing.T, pinState, header string, infoRC int) {
 		"  list) echo '" + pinned + "'; exit 0 ;;\n" +
 		"  info) echo '" + header + "'; echo 'https://github.com/openai/codex'; exit " + strconv.Itoa(infoRC) + " ;;\n" +
 		"esac\nexit 99\n"
-	if err := os.WriteFile(filepath.Join(b.bin, "brew"), []byte(body), 0o755); err != nil {
+	if err := WriteExecutable(filepath.Join(b.bin, "brew"), []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
 }

@@ -41,6 +41,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ranger360ai/posse/internal/posse"
 )
 
 func TestQAGateschainSetupStillResolvesGitThroughTheCallersPath(t *testing.T) {
@@ -58,7 +60,7 @@ func TestQAGateschainSetupStillResolvesGitThroughTheCallersPath(t *testing.T) {
 	seen := filepath.Join(t.TempDir(), "git-calls.log")
 	real := gitOutsideGates(t) // the honest binary, resolved past the gates
 	shim := "#!/bin/sh\necho \"$*\" >> " + seen + "\nexec " + real + " \"$@\"\n"
-	if err := os.WriteFile(filepath.Join(plant, "git"), []byte(shim), 0o755); err != nil {
+	if err := posse.WriteExecutable(filepath.Join(plant, "git"), []byte(shim), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", plant+string(os.PathListSeparator)+os.Getenv("PATH"))

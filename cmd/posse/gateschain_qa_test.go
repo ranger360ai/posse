@@ -70,7 +70,7 @@ func qaForeignBoth(t *testing.T) (home, repo string) {
 	}
 	for _, slot := range []string{"pre-push", "prepare-commit-msg"} {
 		shim := "#!/bin/sh\n# bd-shim v1\necho \"bd shim ran: " + slot + "\" >&2\nexit 0\n"
-		if err := os.WriteFile(filepath.Join(repo, ".git", "hooks", slot), []byte(shim), 0o755); err != nil {
+		if err := posse.WriteExecutable(filepath.Join(repo, ".git", "hooks", slot), []byte(shim), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}

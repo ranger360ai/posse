@@ -23,6 +23,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ranger360ai/posse/internal/posse"
 )
 
 // promptSubmitHerdr writes a fake herdr whose `agent explain` reports an
@@ -53,7 +55,7 @@ esac
 printf '%s\n' '{"error":{"code":"no","message":"unexpected"}}'
 exit 1
 `
-	if err := os.WriteFile(herdr, []byte(script), 0o755); err != nil {
+	if err := posse.WriteExecutable(herdr, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	metaDir := filepath.Join(home, "state", "herdr")

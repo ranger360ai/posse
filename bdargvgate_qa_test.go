@@ -1127,7 +1127,7 @@ func TestQABdArgvGateEveryFallbackArmDecidesSomething(t *testing.T) {
 
 	// The control: an unmutated copy, run the same way, refuses every row.
 	control := filepath.Join(dir, "control.sh")
-	if err := os.WriteFile(control, shipped, 0o755); err != nil {
+	if err := WriteExecutable(control, shipped, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	for _, a := range arms {
@@ -1144,7 +1144,7 @@ func TestQABdArgvGateEveryFallbackArmDecidesSomething(t *testing.T) {
 		}
 		dead := strings.Replace(a.anchor, `"$bd_word"`, `'ZZ_NEVER_MATCHES_ZZ'`, 1)
 		script := filepath.Join(dir, "mutant.sh")
-		if err := os.WriteFile(script, []byte(strings.Replace(string(shipped), a.anchor, dead, 1)), 0o755); err != nil {
+		if err := WriteExecutable(script, []byte(strings.Replace(string(shipped), a.anchor, dead, 1)), 0o755); err != nil {
 			t.Fatal(err)
 		}
 		if r := run(script, a.payload, a.raw); r.code != 0 {

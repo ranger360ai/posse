@@ -153,7 +153,7 @@ func TestQATheWrapperSelfTestCanFail(t *testing.T) {
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "gotest-broken.sh")
-	if err := os.WriteFile(path, []byte(broken), 0o755); err != nil {
+	if err := WriteExecutable(path, []byte(broken), 0o755); err != nil {
 		t.Fatal(err)
 	}
 

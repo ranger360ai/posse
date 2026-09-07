@@ -287,7 +287,7 @@ run)
 *) exit 0 ;;
 esac
 `
-	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
+	if err := WriteExecutable(fake, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	// A fake git in front of the real one, inert unless FAKE_GIT_REV_PARSE is
@@ -303,7 +303,7 @@ esac
 		"\texit 0\n" +
 		"fi\n" +
 		"exec " + realGit + " \"$@\"\n"
-	if err := os.WriteFile(filepath.Join(scratch, "git"), []byte(gitStub), 0o755); err != nil {
+	if err := WriteExecutable(filepath.Join(scratch, "git"), []byte(gitStub), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	cmd := exec.Command("./scripts/test-linux.sh", scriptArgs...)
@@ -361,7 +361,7 @@ func TestTestLinuxDiesUpFrontOnAnUnresolvableGitdir(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "scripts", "test-linux.sh"), script, 0o755); err != nil {
+	if err := WriteExecutable(filepath.Join(root, "scripts", "test-linux.sh"), script, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	mod, err := os.ReadFile("go.mod")
@@ -383,7 +383,7 @@ func TestTestLinuxDiesUpFrontOnAnUnresolvableGitdir(t *testing.T) {
 	fake := "#!/bin/sh\n" +
 		"{ printf 'DOCKER'; for a; do printf '\\t%s' \"$a\"; done; printf '\\n'; } >>\"${FAKE_DOCKER_LOG:?}\"\n" +
 		"exit 0\n"
-	if err := os.WriteFile(filepath.Join(bin, "docker"), []byte(fake), 0o755); err != nil {
+	if err := WriteExecutable(filepath.Join(bin, "docker"), []byte(fake), 0o755); err != nil {
 		t.Fatal(err)
 	}
 

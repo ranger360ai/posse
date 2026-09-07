@@ -670,14 +670,14 @@ func TestInstallWarnsWhenBindirIsNotOnPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	installed := filepath.Join(bindir, "posse")
-	if err := os.WriteFile(installed, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	if err := WriteExecutable(installed, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	other := filepath.Join(t.TempDir(), "bin")
 	if err := os.MkdirAll(other, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(other, "posse"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	if err := WriteExecutable(filepath.Join(other, "posse"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -719,7 +719,7 @@ func TestInstallWarnsWhenBindirIsNotOnPath(t *testing.T) {
 		}
 		defer func() {
 			os.Remove(link)
-			os.WriteFile(link, []byte("#!/bin/sh\nexit 0\n"), 0o755)
+			WriteExecutable(link, []byte("#!/bin/sh\nexit 0\n"), 0o755)
 		}()
 		if _, stderr := pathWarning(t, bindir, other+":/usr/bin:/bin"); stderr != "" {
 			t.Errorf("a link to the promoted binary is not a stale posse: %s", stderr)

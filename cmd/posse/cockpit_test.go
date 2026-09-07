@@ -122,7 +122,7 @@ exit 1
 		t.Fatal(err)
 	}
 	bd := filepath.Join(binDir, "bd")
-	if err := os.WriteFile(bd, []byte("#!/bin/sh\necho 'database is locked' >&2\nexit 1\n"), 0o755); err != nil {
+	if err := posse.WriteExecutable(bd, []byte("#!/bin/sh\necho 'database is locked' >&2\nexit 1\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 

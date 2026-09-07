@@ -376,7 +376,7 @@ func stubGh(t *testing.T, dir string) (bin, argvFile string) {
 	}
 	argvFile = filepath.Join(dir, "gh-argv")
 	script := "#!/bin/sh\nfor a in \"$@\"; do printf '%s\\n' \"$a\" >>" + argvFile + "; done\nexit 0\n"
-	if err := os.WriteFile(filepath.Join(bin, "gh"), []byte(script), 0o755); err != nil {
+	if err := WriteExecutable(filepath.Join(bin, "gh"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return bin, argvFile
@@ -454,7 +454,7 @@ func TestReleaseDraftStepHandsGhTheChangelogSection(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(empty, "scripts"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(empty, "scripts", "release-notes.sh"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	if err := WriteExecutable(filepath.Join(empty, "scripts", "release-notes.sh"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	notes2 := filepath.Join(t.TempDir(), "empty-notes.md")

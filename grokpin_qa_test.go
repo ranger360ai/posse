@@ -52,7 +52,7 @@ func gpRoot(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "scripts", "verify-grok-pin.sh"), script, 0o755); err != nil {
+	if err := WriteExecutable(filepath.Join(root, "scripts", "verify-grok-pin.sh"), script, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(root, "etc", "grok", "version-pin.toml"), pin, 0o644); err != nil {
@@ -80,7 +80,7 @@ func gpStubGrok(t *testing.T, binDir, version, checkJSON string) {
 			"exit 0\nfi\n" +
 			"echo \"stub grok: $*\" >&2; exit 99\n"
 	}
-	if err := os.WriteFile(filepath.Join(binDir, "grok"), []byte(body), 0o755); err != nil {
+	if err := WriteExecutable(filepath.Join(binDir, "grok"), []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -291,7 +291,7 @@ func gpStubGrokNoVersion(t *testing.T, binDir, checkJSON string) {
 		"if [ \"$1\" = \"--version\" ]; then exit 1; fi\n" +
 		"if [ \"$1\" = \"update\" ]; then\ncat <<'JSON'\n" + checkJSON + "\nJSON\nexit 0\nfi\n" +
 		"echo \"stub grok: $*\" >&2; exit 99\n"
-	if err := os.WriteFile(filepath.Join(binDir, "grok"), []byte(body), 0o755); err != nil {
+	if err := WriteExecutable(filepath.Join(binDir, "grok"), []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
 }

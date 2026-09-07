@@ -260,7 +260,7 @@ func pkShimDir(t *testing.T) string {
 		"echo \"refused by posse gate: $(basename \"$0\") $* (deny: Bash($(basename \"$0\"):*))\" >&2\n" +
 		"exit 1\n"
 	for _, verb := range []string{"pkill", "killall"} {
-		if err := os.WriteFile(filepath.Join(dir, verb), []byte(shim), 0o755); err != nil {
+		if err := WriteExecutable(filepath.Join(dir, verb), []byte(shim), 0o755); err != nil {
 			t.Fatalf("write %s shim: %v", verb, err)
 		}
 	}
@@ -274,7 +274,7 @@ func pkRunReaper(t *testing.T, shimDir, body string) (pid int, alive bool) {
 	t.Helper()
 	script := "#!/usr/bin/env bash\nset -uo pipefail\n" + body
 	f := filepath.Join(t.TempDir(), "reaper.sh")
-	if err := os.WriteFile(f, []byte(script), 0o755); err != nil {
+	if err := WriteExecutable(f, []byte(script), 0o755); err != nil {
 		t.Fatalf("write reaper fixture: %v", err)
 	}
 	cmd := exec.Command("bash", f)

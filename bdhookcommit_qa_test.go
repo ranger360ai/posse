@@ -191,7 +191,7 @@ func bhcWorld(t *testing.T, persona string, deny []string) (repo, binDir, stubDi
 	// beads db. It records what it was called with, which is how the green
 	// arm proves the hooks actually ran.
 	stub := "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$BHC_LOG\"\nexit 0\n"
-	if err := os.WriteFile(filepath.Join(stubDir, "bd"), []byte(stub), 0o755); err != nil {
+	if err := posse.WriteExecutable(filepath.Join(stubDir, "bd"), []byte(stub), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -239,7 +239,7 @@ func bhcWorld(t *testing.T, persona string, deny []string) (repo, binDir, stubDi
 	}
 	for slot, body := range bhcHooks {
 		script := "#!/bin/sh\n" + body + "\n"
-		if err := os.WriteFile(filepath.Join(hooks, slot), []byte(script), 0o755); err != nil {
+		if err := posse.WriteExecutable(filepath.Join(hooks, slot), []byte(script), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
