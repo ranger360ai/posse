@@ -388,13 +388,25 @@ func (a *App) SeatbeltWritable(ag *AgentFile, cwd, gatesDir string, stateDirs ..
 		// repo — the persona's own ORDERS.md included — fails on
 		// .git/index.lock. Grant the resolved directory and that repo's
 		// git dirs, and nothing else: the instance tree stays unwritable,
-		// which is the point of the tier. Not conditional on deniesFiles —
-		// cwd's subpath does not reach another repo either way.
+		// which is the point of the tier.
 		//
 		// realizeCodex names the same directory for the runtimes that cage
 		// themselves (runtime.go, ranger-base-0fb); this is that grant at
 		// L2, same resolver, same one-hop bound (ranger-base-7kw).
-		if home := beadsHome(cwd); !underDir(cwd, home) {
+		//
+		// "Already covered" is NOT "under cwd": for a deniesFiles persona
+		// cwd itself is never granted (only cwd/.beads and cwd/.git,
+		// above), so a redirect that stays under cwd but outside .beads —
+		// cwd/inner/.beads, say — read as covered under that test when
+		// nothing above actually grants it, and bd's own database came
+		// back "operation not permitted" (ranger-base-f5dg, REPRO 2). The
+		// boundary already granted for this persona is cwd/.beads in that
+		// branch and cwd whole in the other; test against that, not cwd.
+		grantedBeadsBase := cwd
+		if deniesFiles {
+			grantedBeadsBase = filepath.Join(cwd, ".beads")
+		}
+		if home := beadsHome(cwd); !underDir(grantedBeadsBase, home) {
 			add(home)
 			for _, g := range beadsGitDirs(home) {
 				add(g)

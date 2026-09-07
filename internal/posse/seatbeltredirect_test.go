@@ -158,7 +158,6 @@ func TestBeadsGitDirsFallsBackToRepoDotGit(t *testing.T) {
 // would walk a repo bd is not using — the alarm disarmed without a word.
 func TestSeatbeltGrantsTheHopBdActuallyStopsAt(t *testing.T) {
 	t.Parallel()
-	t.Skip("ranger-base-f5dg: beadsHome follows chains bd refuses; grant is the wrong hop")
 	work, mid, store := blRepo(t), blRepo(t), blRepo(t)
 	blRedirect(t, work, filepath.Join(mid, beadsDirName))
 	blRedirect(t, mid, filepath.Join(store, beadsDirName))
@@ -189,7 +188,6 @@ func TestSeatbeltGrantsTheHopBdActuallyStopsAt(t *testing.T) {
 // mirror image of the bug this file's first test pins.
 func TestSeatbeltGrantsARedirectThatStaysUnderCwd(t *testing.T) {
 	t.Parallel()
-	t.Skip("ranger-base-f5dg: underDir(cwd) is the wrong boundary when only cwd/.beads is granted")
 	work := blRepo(t)
 	inner := filepath.Join(work, "inner")
 	if err := os.MkdirAll(filepath.Join(inner, beadsDirName), 0o755); err != nil {
