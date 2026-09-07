@@ -3,6 +3,8 @@
 package posse
 
 import (
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -43,6 +45,7 @@ func TestQAGatesWritesExecutablesUnderTheForkLock(t *testing.T) {
 		`WriteExecutable(chained, []byte(script), 0o755)`,
 		`WriteExecutable(p, []byte(chainHookDispatcherWith(slot, neighbour)), 0o755)`,
 		`WriteExecutable(p, []byte(chainHookDispatcherWith(slot, neighbor)), 0o755)`,
+		`WriteExecutable(name, []byte(body), 0o700)`,
 	} {
 		if !strings.Contains(src, want) {
 			t.Errorf("gates.go must write this executable through WriteExecutable, not os.WriteFile: %q not found", want)
@@ -50,14 +53,19 @@ func TestQAGatesWritesExecutablesUnderTheForkLock(t *testing.T) {
 	}
 	// The other direction: no exec-bit os.WriteFile call is left behind for
 	// a future edit to reintroduce beside a WriteExecutable one, which a
-	// pure substring-presence check above would miss entirely.
-	execModes := []string{"0o755", "0o750", "0o751", "0o770", "0o771", "0o775"}
+	// pure substring-presence check above would miss entirely. Parse each
+	// octal literal on the line and test its exec bits by mask rather than
+	// enumerating known exec modes — an enumerated list is blind to
+	// owner-only exec bits (0o700, 0o500, 0o711, 0o744, 0o540, ...), which
+	// is exactly how gates.go:5555 survived this census (ranger-base-0phqz).
+	octalLit := regexp.MustCompile(`0o[0-7]{3,4}`)
 	for _, line := range strings.Split(src, "\n") {
 		if !strings.Contains(line, "os.WriteFile(") {
 			continue
 		}
-		for _, mode := range execModes {
-			if strings.Contains(line, mode) {
+		for _, lit := range octalLit.FindAllString(line, -1) {
+			n, err := strconv.ParseInt(strings.TrimPrefix(lit, "0o"), 8, 32)
+			if err == nil && n&0o111 != 0 {
 				t.Errorf("gates.go still writes an executable with plain os.WriteFile (ETXTBSY window, golang/go#22315): %s", strings.TrimSpace(line))
 			}
 		}

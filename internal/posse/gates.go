@@ -5552,7 +5552,7 @@ func probeScratchDir() (string, error) {
 // probeScratchDir.
 func writeTempRender(dir, slot, body string) (string, error) {
 	name := filepath.Join(dir, slot)
-	if err := os.WriteFile(name, []byte(body), 0o700); err != nil {
+	if err := WriteExecutable(name, []byte(body), 0o700); err != nil {
 		return "", err
 	}
 	// WriteFile's perm is also umask-narrowed, and only on create.
