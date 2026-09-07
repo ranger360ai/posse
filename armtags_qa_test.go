@@ -40,7 +40,12 @@ package posse
 //
 // Arm 6 is TestQAEverySuiteArmTypeChecks, at the foot of this file: the
 // partition can be total by TAGS and broken by SYMBOLS, so each arm is also
-// vetted for real.
+// vetted for real. `go vet` over a package that matched nothing exits 0
+// too, so each arm also asks the toolchain WHICH FILES it built and checks
+// that set against what this census puts there — the only way to catch a
+// constraint armBuildLine cannot see at all (a platform filename suffix, a
+// legacy `// +build` line, a tag like `ignore`), any of which takes a file
+// out of every arm while its build line still reads "shared".
 //
 // Arm 7 is the fifth way this rots, found once the first four were held
 // (ranger-base-f8zw2). Arm 6 lives in the repo ROOT package, which only arm
@@ -445,6 +450,30 @@ func TestQAArmClassifierRefusesTheWrongShapes(t *testing.T) {
 // to an arm-3-only file (pulse_test.go) reds test-arm3 alone. Without it the
 // two mutants above are equally explained by a pin that compiles arm 1 three
 // times.
+//
+// THE FILE-SET HALF, and why the compile half alone is not enough
+// (ranger-base-6m7rd): `go vet` over a package that matched NOTHING also
+// exits 0, so if armPkgDir ever stopped naming a real package this arm would
+// stay green while reporting that every arm type-checks. The same hole is a
+// live class, not just a floor: every arm above decides which arm a file is
+// in by reading its `//go:build` line, and Go has other ways to take a file
+// out of a build that leave that line untouched and legal — a platform
+// filename suffix (`x_linux_test.go`), a legacy `// +build` line with no
+// `//go:build` beside it, a tag nothing passes (`//go:build ignore`). The
+// filename-suffix case is silent in every direction: armBuildLine reads ""
+// (shared, legal), arm 1 is green, and the file's tests run nowhere at all —
+// the same shape as the defect this arm exists for. So each arm also asks
+// `go list` which test files it actually built and compares that set both
+// ways against what armClassify puts there: a name in the census but not in
+// the build is a constraint this file cannot see; a name in the build but not
+// the census means the two readers have drifted.
+//
+// MUTATION-CHECKED (ranger-base-6m7rd), on ranger-base-pv5vt at 55af5461.
+// Renaming a shared file to `*_linux_test.go` fails the
+// file-set half for all three arms while the vet half stays green — the
+// finding in one mutant. Giving a shared file `//go:build !posse_arm3` fires
+// the "built but not in the census" direction for arms 1 and 2 (armClassify
+// puts an unrecognized expression in `unknown`, not in any arm's set).
 
 // armGoTool is the `go` this arm shells out to: the one on PATH, else the one
 // beside the GOROOT the running binary was built against. A pin that skipped
@@ -468,24 +497,78 @@ func armGoTool(t *testing.T) string {
 func TestQAEverySuiteArmTypeChecks(t *testing.T) {
 	t.Parallel()
 	goBin := armGoTool(t)
+	files := armFiles(t)
 	for a := 1; a <= 3; a++ {
+		a := a
 		t.Run(armTargetName(a), func(t *testing.T) {
 			t.Parallel()
-			args := []string{"vet"}
+			var tags []string
 			if a != 1 {
 				// arm 1 is the default build and takes no tag; asking for
 				// one by name here would stop measuring the build a bare
 				// `go test ./internal/posse` actually runs.
-				args = append(args, "-tags", armTagFor(a))
+				tags = []string{"-tags", armTagFor(a)}
 			}
-			args = append(args, "./"+armPkgDir)
-			cmd := exec.Command(goBin, args...)
-			out, err := cmd.CombinedOutput()
+			run := func(verb string, extra ...string) (out []byte, argv []string, err error) {
+				argv = append([]string{verb}, tags...)
+				argv = append(argv, extra...)
+				argv = append(argv, "./"+armPkgDir)
+				out, err = exec.Command(goBin, argv...).CombinedOutput()
+				return out, argv, err
+			}
+
+			// which files the toolchain actually built for this arm — see
+			// "THE FILE-SET HALF" above for why the vet call below cannot
+			// stand on its own.
+			out, argv, err := run("list", "-f", "{{range .TestGoFiles}}{{.}}\n{{end}}")
 			if err != nil {
+				t.Fatalf("`go %s` failed: %v\n%s", strings.Join(argv, " "), err, out)
+			}
+			built := map[string]bool{}
+			for _, line := range strings.Split(string(out), "\n") {
+				if n := strings.TrimSpace(line); n != "" {
+					built[n] = true
+				}
+			}
+			if len(built) < 100 {
+				t.Fatalf("`go %s` named %d test files — the toolchain and this census are not reading the same package",
+					strings.Join(argv, " "), len(built))
+			}
+			want := map[string]bool{}
+			for _, f := range files {
+				if f.build == "" || armExpr[f.build] == a {
+					want[f.name] = true
+				}
+			}
+			var missing, extra []string
+			for n := range want {
+				if !built[n] {
+					missing = append(missing, n)
+				}
+			}
+			for n := range built {
+				if !want[n] {
+					extra = append(extra, n)
+				}
+			}
+			sort.Strings(missing)
+			sort.Strings(extra)
+			for _, n := range missing {
+				t.Errorf("%s/%s reads as arm %d here and the toolchain does not build it there — "+
+					"a constraint this census cannot see (a `// +build` line, a platform filename suffix, a tag like `ignore`) "+
+					"has taken the file out of the arm while its build line still says it is in",
+					armPkgDir, n, a)
+			}
+			for _, n := range extra {
+				t.Errorf("%s/%s is built into arm %d and this census does not put it there — the two readers of the partition have drifted",
+					armPkgDir, n, a)
+			}
+
+			if out, argv, err := run("vet"); err != nil {
 				t.Errorf("arm %d does not type-check: `go %s` exited %v.\n"+
 					"A file compiled into this arm names something no file in this arm declares — "+
 					"most often an UNTAGGED file reaching for a helper that lives behind one arm's tag.\n%s",
-					a, strings.Join(args, " "), err, out)
+					a, strings.Join(argv, " "), err, out)
 			}
 		})
 	}
