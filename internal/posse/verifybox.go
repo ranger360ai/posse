@@ -294,6 +294,13 @@ func (a *App) VerifyBoxFreshness(now time.Time, errw io.Writer) VerifyBoxReading
 // verifyBoxVerdict recomputes the runner's exit status from the per-check
 // answers, by the runner's own rule: any red is 1, an all-unmeasured run is
 // 2 (never a pass), and everything else is 0.
+//
+// A CHECKLESS RECORD IS UNMEASURED, NOT CLEAN (ranger-base-lvzm7 finding 1):
+// `unmeasured == len(checks)` is vacuously true at zero and zero, so an empty
+// or absent `checks:` map computes 2 rather than falling through to 0. The
+// guard this replaced (`len(checks) > 0 &&`) special-cased away exactly the
+// room this whole check exists to light: a green board over a roster with
+// nothing on it.
 func verifyBoxVerdict(checks []VerifyBoxCheck) int {
 	red, unmeasured := 0, 0
 	for _, c := range checks {
@@ -307,7 +314,7 @@ func verifyBoxVerdict(checks []VerifyBoxCheck) int {
 	switch {
 	case red > 0:
 		return 1
-	case len(checks) > 0 && unmeasured == len(checks):
+	case unmeasured == len(checks):
 		return 2
 	}
 	return 0
@@ -326,14 +333,14 @@ func (r VerifyBoxReading) Red() []VerifyBoxCheck {
 }
 
 // Unmeasured reports the run in which NOTHING could be measured — every
-// check that ran answered 2. That is the answer a box with none of the
-// runtimes installed gives, and the script's own exit status calls it out
-// rather than laundering it: "a schedule that treats 2 as green is a green
-// light on an empty room".
+// check that ran answered 2, OR THERE WAS NO CHECK AT ALL. That is the
+// answer a box with none of the runtimes installed gives, and the script's
+// own exit status calls it out rather than laundering it: "a schedule that
+// treats 2 as green is a green light on an empty room" — a `checks:` map
+// with nothing in it is the same room, one size up, and the doctrine every
+// other status in this file gets ("an unknown token is red, not silently
+// benign") applies here too: a verdict is a green ONLY where something ran.
 func (r VerifyBoxReading) Unmeasured() bool {
-	if len(r.Checks) == 0 {
-		return false
-	}
 	for _, c := range r.Checks {
 		if c.Status != VerifyBoxUnmeasured {
 			return false
@@ -457,7 +464,11 @@ func (r VerifyBoxReading) GovRows() []GovCondition {
 	}
 
 	var out []GovCondition
-	if r.Unmeasured() {
+	if r.Unmeasured() && len(r.Checks) == 0 {
+		out = append(out, row("verify-box-unmeasured", fmt.Sprintf(
+			"the last live-box verdict carries no checks at all %s ago — that is not a pass, it is a green board over a roster with nothing on it (%s)",
+			BlindFor(r.Age), AbbrevHome(r.Path))))
+	} else if r.Unmeasured() {
 		out = append(out, row("verify-box-unmeasured", fmt.Sprintf(
 			"the last live-box run measured NOTHING — all %d check(s) answered \"nothing measured\" %s ago. That is not a pass; it is a green light on an empty room (%s)",
 			len(r.Checks), BlindFor(r.Age), AbbrevHome(r.Path))))

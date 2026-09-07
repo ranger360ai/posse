@@ -322,6 +322,60 @@ func TestAFreshRunThatMeasuredNothingIsNotGreen(t *testing.T) {
 	}
 }
 
+// A verdict with NO checks in it at all — `checks:` empty, or absent
+// altogether — must read the same as an all-unmeasured run, not as clean
+// (ranger-base-lvzm7 finding 1). Before the fix, `len(checks) > 0 &&` in
+// verifyBoxVerdict and the `len(r.Checks) == 0` guard in Unmeasured made a
+// checkless record cross-check clean (rc: 0), raise no G10 row, and print
+// "0 ok, 0 red, 0 not measured" — the doctrine every other status in this
+// file gets, applied to nothing, at the scale where it matters most: a green
+// board over a room with nothing in it.
+func TestAVerdictWithNoChecksIsNotGreen(t *testing.T) {
+	t.Parallel()
+	// `checks:` with no rows under it — vbRig writes the header line and
+	// nothing after it, exactly what the bug's repro plants by hand.
+	a := vbRig(t, "verify_box_max_age: 26h\n", vbNow().Add(-time.Hour), 2)
+	r := a.VerifyBoxFreshness(vbNow(), os.Stderr)
+	if r.Err != nil {
+		t.Fatalf("unexpected read error: %v", r.Err)
+	}
+	if !r.Unmeasured() {
+		t.Errorf("Unmeasured() = false for a checkless verdict — a room with nothing in it must not read as measured")
+	}
+	if row := vbRow(r, "verify-box-unmeasured"); row == nil {
+		t.Errorf("a checkless verdict raised nothing: %v", vbKeys(r))
+	}
+	if ok, red, unmeasured := r.Counts(); ok != 0 || red != 0 || unmeasured != 0 {
+		t.Errorf("Counts() = %d ok, %d red, %d not measured — a checkless verdict has zero of everything, not a clean board", ok, red, unmeasured)
+	}
+
+	// The control: ONE real check, even a red one, is enough to make this a
+	// measured run and not the checkless case — without it, the assertions
+	// above would pass on a reader that called every run unmeasured.
+	b := vbRig(t, "verify_box_max_age: 26h\n", vbNow().Add(-time.Hour), 1, "verify-grok-pin: finding")
+	rb := b.VerifyBoxFreshness(vbNow(), os.Stderr)
+	if rb.Unmeasured() {
+		t.Errorf("control: a run with one real check reads Unmeasured() = true")
+	}
+	if row := vbRow(rb, "verify-box-unmeasured"); row != nil {
+		t.Errorf("control: a run with one real (red) check raised the checkless row: %+v", row)
+	}
+}
+
+// verifyBoxVerdict itself, at the boundary the reader's cross-check trusts:
+// zero checks must compute 2, matching Unmeasured() above — a mismatch
+// between the two would surface as "rc: 0 but 0 checks compute 2", a
+// self-contradiction error instead of the checkless-verdict row.
+func TestVerifyBoxVerdictOfNoChecksIsTwo(t *testing.T) {
+	t.Parallel()
+	if got := verifyBoxVerdict(nil); got != 2 {
+		t.Errorf("verifyBoxVerdict(nil) = %d, want 2 — a checkless run is nothing measured, not clean", got)
+	}
+	if got := verifyBoxVerdict([]VerifyBoxCheck{}); got != 2 {
+		t.Errorf("verifyBoxVerdict(empty slice) = %d, want 2", got)
+	}
+}
+
 // ─── suppression, and its inverse ────────────────────────────────────────────
 
 // A check red BY DESIGN and already tracked names its bead on the row. The

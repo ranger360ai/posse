@@ -103,17 +103,30 @@ root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd) || {
   echo "$self: cannot locate the repo from $0" >&2; exit 2; }
 
 # posse's home, resolved as internal/posse/app.go resolves it: an explicit
-# RHQ_HOME, else ~/.config/posse, else the pre-0015 ~/.config/rhq if that is
-# what this box still has. The state file goes under it.
+# RHQ_HOME, else POSSE_HOME, else ~/.config/posse, else the pre-0015
+# ~/.config/rhq if that is what this box still has. The state file goes under
+# it.
 #
-# AN EXPLICIT RHQ_HOME WINS WHETHER OR NOT THE DIRECTORY EXISTS YET, which is
-# where this parts company with verify-hook-freshness.sh's one-liner. That one
-# falls through to the legacy home when the named one is not there, and this
-# script WRITES: applying that fallback to a named home would send a scratch
-# run's verdict into a real state directory. --self-test runs every arm under
-# a scratch RHQ_HOME for exactly that reason, and the fallback must not
-# quietly undo it.
+# POSSE_HOME WAS MISSING HERE (ranger-base-lvzm7 finding 3): app.go's newApp
+# reads RHQ_HOME then POSSE_HOME before ever touching $HOME, and this script
+# jumped straight from RHQ_HOME to the two-name fallback. On a box where
+# POSSE_HOME is set and RHQ_HOME is not, that made the producer and G10's
+# reader resolve different homes -- this script would write one file and
+# posse status would read another, forever NEVER RUN. app.go's own comment
+# says the RHQ_HOME read is the one to drop when the rename window closes, so
+# the gap only widens with time if it is not read the same way here.
+#
+# AN EXPLICIT RHQ_HOME OR POSSE_HOME WINS WHETHER OR NOT THE DIRECTORY EXISTS
+# YET, which is where this parts company with verify-hook-freshness.sh's
+# one-liner. That one falls through to the legacy home when the named one is
+# not there, and this script WRITES: applying that fallback to a named home
+# would send a scratch run's verdict into a real state directory. --self-test
+# runs every arm under a scratch RHQ_HOME for exactly that reason, and the
+# fallback must not quietly undo it.
 home="${RHQ_HOME:-}"
+if [ -z "$home" ]; then
+  home="${POSSE_HOME:-}"
+fi
 if [ -z "$home" ]; then
   home="$HOME/.config/posse"
   [ -d "$home" ] || { [ -d "$HOME/.config/rhq" ] && home="$HOME/.config/rhq"; }
@@ -326,10 +339,18 @@ run_roster() {
   printf '%s' "$lines"
   echo
 
+  # A CHECKLESS ROSTER IS NOTHING MEASURED, NOT A PASS (ranger-base-lvzm7
+  # finding 1). With total=0, nothing=0 too, so the `[ "$total" -gt 0 ] &&`
+  # guard this line used to carry made an empty roster fall all the way
+  # through to verdict=0 -- a green board over a room with nothing in it, the
+  # producer's half of the same defect internal/posse/verifybox.go's
+  # verifyBoxVerdict refused. Dropping the guard leaves `[ "$nothing" -eq
+  # "$total" ]` vacuously true at zero and zero, so an empty roster reads 2
+  # like every other run that measured nothing.
   local verdict=0
   if [ $((finding + error)) -gt 0 ]; then
     verdict=1
-  elif [ "$total" -gt 0 ] && [ "$nothing" -eq "$total" ]; then
+  elif [ "$nothing" -eq "$total" ]; then
     verdict=2
   fi
   # RECORDED BEFORE IT IS ANNOUNCED. The write is the thing a scheduled run
@@ -548,6 +569,68 @@ self_test() {
     fi
   fi
 
+  # A CHECKLESS ROSTER IS NOTHING MEASURED, NOT A PASS (ranger-base-lvzm7
+  # finding 1, the producer's half of the same defect
+  # internal/posse/verifybox.go's verifyBoxVerdict refused). An empty roster
+  # must not compute verdict=0 the way `[ "$total" -gt 0 ] && ...` used to
+  # leave it.
+  arm 'an empty roster is NOTHING MEASURED, not a pass' 2 'NOTHING MEASURED'
+
+  # --quiet KEEPS THE START LINE (ranger-base-lvzm7 finding 4). The claim
+  # beside run_roster's start-line echo is that it is "not suppressed by
+  # --quiet" -- the operator's whole ruling (b) on how a killed run leaves a
+  # trace -- and every arm above runs at quiet=0, so nothing had ever run
+  # the substituted roster with quiet=1. QUIET_OVERRIDE is that seam.
+  out=$( ROSTER_OVERRIDE="a"$'\t'"scripts/arm0.sh"$'\n' QUIET_OVERRIDE=1 RHQ_HOME="$tmp/home" "$tmp/scripts/$self" --self-test-run 2>&1 )
+  case "$out" in
+    *"run started "*) echo "  ok   --quiet keeps the start line" ;;
+    *) echo "  FAIL --quiet suppressed the start line -- a killed run under this flag would leave nothing"; indent "$out"
+       fails=$((fails + 1)) ;;
+  esac
+  case "$out" in
+    *"arm-0 speaking"*)
+      echo "  FAIL --quiet did not suppress a clean check's own output"; indent "$out"
+      fails=$((fails + 1)) ;;
+    *) echo "  ok   --quiet drops a clean check's own output" ;;
+  esac
+  # The control: the SAME roster at quiet=0 keeps the clean check's output --
+  # without it, a runner that always suppressed it (or always kept it) would
+  # pass one of the two lines above for the wrong reason.
+  out=$( ROSTER_OVERRIDE="a"$'\t'"scripts/arm0.sh"$'\n' RHQ_HOME="$tmp/home" "$tmp/scripts/$self" --self-test-run 2>&1 )
+  case "$out" in
+    *"arm-0 speaking"*) echo "  ok   control: quiet=0 keeps a clean check's own output" ;;
+    *) echo "  FAIL control: quiet=0 dropped a clean check's own output"; indent "$out"
+       fails=$((fails + 1)) ;;
+  esac
+
+  # POSSE_HOME RESOLVES THE SAME WAY app.go's newApp DOES (ranger-base-lvzm7
+  # finding 3): RHQ_HOME unset, POSSE_HOME named, must land the state file
+  # under POSSE_HOME -- the exact split that let this script write one file
+  # while G10 read another on any box where only POSSE_HOME is set.
+  local phome pfake
+  phome="$tmp/posse-home"; pfake="$tmp/fake-home"
+  mkdir -p "$phome" "$pfake"
+  out=$( env -u RHQ_HOME POSSE_HOME="$phome" HOME="$pfake" ROSTER_OVERRIDE="a"$'\t'"scripts/arm0.sh"$'\n' "$tmp/scripts/$self" --self-test-run 2>&1 )
+  if [ -f "$phome/state/verify-box.yaml" ]; then
+    echo "  ok   POSSE_HOME resolves the state file the way app.go resolves posse's home"
+  else
+    echo "  FAIL POSSE_HOME did not receive the verdict"; indent "$out"
+    fails=$((fails + 1))
+  fi
+  # The control: with NEITHER name set, the file must fall back to
+  # $HOME/.config/posse rather than the POSSE_HOME directory from the arm
+  # above -- without this, a script that always wrote to POSSE_HOME's path
+  # regardless of the environment would pass the assertion above for the
+  # wrong reason.
+  rm -rf "$phome/state"
+  out=$( env -u RHQ_HOME -u POSSE_HOME HOME="$pfake" ROSTER_OVERRIDE="a"$'\t'"scripts/arm0.sh"$'\n' "$tmp/scripts/$self" --self-test-run 2>&1 )
+  if [ -f "$pfake/.config/posse/state/verify-box.yaml" ] && [ ! -f "$phome/state/verify-box.yaml" ]; then
+    echo "  ok   control: with neither name set, the file falls back to \$HOME/.config/posse"
+  else
+    echo "  FAIL control: with neither name set, the fallback resolved to the wrong home"; indent "$out"
+    fails=$((fails + 1))
+  fi
+
   echo
   if [ "$fails" -gt 0 ]; then echo "$self --self-test: $fails arm(s) FAILED"; return 1; fi
   echo "$self --self-test: all arms pass"
@@ -558,9 +641,16 @@ self_test() {
 # refactoring the runner into something the real path does not use: the arms
 # must exercise the same run_roster the box run does, or they pin a replica
 # and the defect walks between the two.
+#
+# QUIET_OVERRIDE is that same seam for --quiet (ranger-base-lvzm7 finding 4):
+# without it this re-exec hard-set quiet=0 always, and the flag parser above
+# is a single-arg `case` with no way to hand --self-test-run a --quiet of its
+# own, so the claim beside the start line's echo -- "not suppressed by
+# --quiet" -- was true and measured by nothing. A regression moving that echo
+# behind the quiet gate would take the claim out with the suite green.
 if [ "${1:-}" = "--self-test-run" ]; then
   ROSTER="${ROSTER_OVERRIDE:-}"
-  quiet=0
+  quiet="${QUIET_OVERRIDE:-0}"
   run_roster
   exit $?
 fi
