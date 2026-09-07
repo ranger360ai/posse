@@ -515,12 +515,25 @@ func wholeTreeWriteDeny(deny []string) map[string]bool {
 // mount, so the pointer file resolves inside the cage to the thing it
 // points at outside. "" when there is nothing extra to mount (an ordinary
 // repo, or not a repo at all).
+//
+// Asks `rev-parse --git-common-dir` — the question actually being asked —
+// rather than deriving it from hooksDir's answer. hooksDir asks a hooks
+// question, and core.hooksPath overrides it independent of the common dir
+// (ADR 0052's managed box, or the planted redirect ADR 0038 exists to
+// contain): a repo with core.hooksPath=/opt/hooks would make the old
+// filepath.Dir(hooksDir(dir)) answer "/opt", not the repo's common dir at
+// all, and the cage would mount the wrong directory or none. Joined
+// against dir exactly like LinkedGitDirs (worktree.go) joins the same
+// flag's answer, since a relative common dir is rewritten by git against
+// the CWD it was asked from.
 func gitCommonDirOutside(dir string) string {
-	hooks, err := hooksDir(dir)
-	if err != nil {
+	common, err := git(dir, "rev-parse", "--git-common-dir")
+	if err != nil || common == "" {
 		return ""
 	}
-	common := filepath.Dir(hooks)
+	if !filepath.IsAbs(common) {
+		common = filepath.Join(dir, common)
+	}
 	if abs, err := filepath.Abs(common); err == nil {
 		common = abs
 	}

@@ -216,6 +216,52 @@ func TestWorktreeGitCommonDirCrossesTheBoundary(t *testing.T) {
 	}
 }
 
+// A planted or managed core.hooksPath points hooks somewhere OUTSIDE the
+// repo entirely (ADR 0052's managed box, or exactly the redirect ADR 0038
+// exists to contain). gitCommonDirOutside must still answer with the
+// repo's real common dir — not one derived from wherever hooks were
+// redirected to, which is a different question the hooks doctrine was
+// never asked.
+func TestGitCommonDirOutsideIgnoresAPlantedHooksPath(t *testing.T) {
+	t.Parallel()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("needs git")
+	}
+	main := t.TempDir()
+	run := func(dir string, args ...string) {
+		t.Helper()
+		c := exec.Command("git", args...)
+		c.Dir = dir
+		if b, err := c.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, b)
+		}
+	}
+	run(main, "init", "-b", "main")
+	run(main, "config", "user.email", "t@example.com")
+	run(main, "config", "user.name", "t")
+	os.WriteFile(filepath.Join(main, "f"), []byte("x\n"), 0o644)
+	run(main, "add", "f")
+	run(main, "commit", "-m", "one")
+	wt := filepath.Join(t.TempDir(), "wt")
+	run(main, "worktree", "add", wt)
+
+	// Written to the common config (main/.git/config), so every worktree
+	// sees it — exactly the shape of a managed or planted redirect.
+	outside := t.TempDir()
+	run(main, "config", "core.hooksPath", outside)
+
+	want, err := git(wt, "rev-parse", "--git-common-dir")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !filepath.IsAbs(want) {
+		want = filepath.Join(wt, want)
+	}
+	if got := gitCommonDirOutside(wt); got != want {
+		t.Errorf("core.hooksPath=%s must not relocate the common dir: got %q, want %q", outside, got, want)
+	}
+}
+
 // The herdr socket is a fleet-wide capability: a persona holding it can
 // prompt or close every other pane. Off unless the PID names it — and when
 // it does, the launch says so where the operator reads sessions.
