@@ -2463,8 +2463,9 @@ catalog:
                                  written or probed beyond one create-and-remove in the directory.
   posse gates adr-census [files...]
                                  ADR 0051's on-demand audit — nothing runs it for you — over every
-                                 line of every docs/adr record (default docs/adr/*.md at the repo
-                                 root). Prints ADMITTED/REFUSE per file and one summary — judged N
+                                 line of every docs/adr record (default docs/adr/*.md and
+                                 docs/adr/*.probe.sh at the repo root). Prints ADMITTED/REFUSE per
+                                 file and one summary — judged N
                                  distinct tokens: A ancestors, T admitted by twin, R refused —
                                  exit 1 when R>0; judges nothing, and says so, when the main
                                  checkout is detached. Findings are review inputs: unjudged is not

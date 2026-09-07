@@ -5159,9 +5159,13 @@ echo "posse gates adr-census: base $posse_adr_branch judged $((posse_adr_j+posse
 `
 }
 
-// AdrCensusDefault is what the census walks when handed no files: the
-// records under the repo root, resolved from dir's toplevel.
-const AdrCensusDefault = "docs/adr/*.md"
+// AdrCensusDefault is what the census walks when handed no files: every
+// record under the repo root, resolved from dir's toplevel. docs/adr holds
+// two file classes (ranger-base-bvich) — the *.md decisions and the
+// *.probe.sh supplements a record hands its reproduction to — and both are
+// records the census can find a stale sha in, so both globs are walked. A
+// slice, not one pattern, because Go has no const array/slice.
+var AdrCensusDefault = []string{"docs/adr/*.md", "docs/adr/*.probe.sh"}
 
 // RunAdrCensus runs AdrCensusScript over files, relative to dir, writing
 // the census to stdout and the predicate's own stderr (the detached
@@ -5186,12 +5190,16 @@ func runAdrCensus(dir string, files []string, env []string, stdout, stderr io.Wr
 			return false, fmt.Errorf("adr-census: %s is not inside a git repository", dir)
 		}
 		dir = strings.TrimSpace(string(top))
-		matches, gerr := filepath.Glob(filepath.Join(dir, filepath.FromSlash(AdrCensusDefault)))
-		if gerr != nil {
-			return false, gerr
+		var matches []string
+		for _, glob := range AdrCensusDefault {
+			m, gerr := filepath.Glob(filepath.Join(dir, filepath.FromSlash(glob)))
+			if gerr != nil {
+				return false, gerr
+			}
+			matches = append(matches, m...)
 		}
 		if len(matches) == 0 {
-			return false, fmt.Errorf("adr-census: no %s under %s — nothing to judge", AdrCensusDefault, dir)
+			return false, fmt.Errorf("adr-census: no %s under %s — nothing to judge", strings.Join(AdrCensusDefault, " or "), dir)
 		}
 		sort.Strings(matches)
 		for _, m := range matches {

@@ -248,6 +248,39 @@ func TestQAAdrCensusJudgesNothingWhenTheBaseIsDetached(t *testing.T) {
 	}
 }
 
+// PIN 5 — ranger-base-aktmg: the corpus the census walks when the caller
+// hands it NO files must see both record classes docs/adr holds, the same
+// gap ranger-base-bvich closed for the citation reader. Before this pin
+// AdrCensusDefault was "docs/adr/*.md" alone, so a stale sha placed only in a
+// *.probe.sh supplement was invisible to `posse gates adr-census` with no
+// arguments — latent per that bead's own measurement, but the corpus gap was
+// real. r.census(t) with no files is exactly that call: the default walk,
+// not an explicit path.
+func TestQAAdrCensusDefaultWalksTheProbeSupplements(t *testing.T) {
+	t.Parallel()
+	r := newAdrRepo(t)
+
+	const rel = "docs/adr/0002-container-tier.probe.sh"
+	r.stage(t, rel, "#!/bin/sh\n# fixture\n# stale: "+r.twinStale+"\n")
+	out, _, refused := r.census(t)
+	if !refused {
+		t.Fatalf("a stale sha in a *.probe.sh supplement must be refused by the default walk:\n%s", out)
+	}
+	if !strings.Contains(out, "REFUSE "+rel+":3 "+r.twinStale) {
+		t.Errorf("the refusal must name the supplement by path:\n%s", out)
+	}
+
+	// The control: the twin beside it, same file, same default walk, passes.
+	r.stage(t, rel, "#!/bin/sh\n# fixture\n# stale: "+r.twinStale+"\n# landed: "+r.twinLanded+"\n")
+	out, _, refused = r.census(t)
+	if refused {
+		t.Fatalf("the twin beside it, still under the default walk, must not be refused:\n%s", out)
+	}
+	if !strings.Contains(out, "ADMITTED "+rel+" "+r.twinStale+" twin "+r.twinLanded) {
+		t.Errorf("the pass must be an admission by twin, not a skip:\n%s", out)
+	}
+}
+
 // ONE TEXT, ONE READER. adrShaPredicate is rendered verbatim into the census
 // and into nothing else. Both halves are asserted: a census that stopped
 // carrying it is a census that judges nothing, and a SECOND renderer is how
