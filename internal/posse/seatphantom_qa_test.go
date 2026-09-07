@@ -228,10 +228,17 @@ func TestSeatSessionSpellsTheDialFName(t *testing.T) {
 // That one pins the ERROR; an abstention is a nil error, and the two reach
 // reconcileSeats through different returns.
 //
-// MUTATION: drop the `len(withheld) > 0` return from reconcileSeats → red on
-// the hold, on the release line, and on the workspace create. Same red from
-// `return out, nil, nil` in listSessions, which is the same defect one layer
-// down.
+// This fixture is an EMPTY board: every meta is withheld, including a-1's
+// own, so a-1's seat is kept whether reconcileSeats abstains whole-pass or
+// narrows to the seat (ranger-base-t1q5p) — the withheld name is in its
+// prefix either way. It does not by itself prove the narrowing; that is
+// TestQAANarrowedWithheldOnlyKeepsItsOwnSeat below, over a board with a live
+// workspace and exactly one seat's meta withheld.
+//
+// MUTATION: drop the withheld-name-in-prefix check from reconcileSeats'
+// per-seat loop → red on the hold, on the release line, and on the
+// workspace create. Same red from `return out, nil, nil` in listSessions,
+// which is the same defect one layer down.
 func TestQAAShortListingKeepsEverySeatHold(t *testing.T) {
 	t.Parallel()
 	b, fake := newTestBackend(t)
@@ -276,6 +283,66 @@ func TestQAAShortListingKeepsEverySeatHold(t *testing.T) {
 	}
 	if strings.Contains(calls(t, fake), "workspace create --label "+SessionForBead("ranger", repo, "a-2")) {
 		t.Errorf("a-2 got a session while a-1's was live — one persona, two beads:\n%s", out)
+	}
+}
+
+// ranger-base-t1q5p: the abstention TestQAAShortListingKeepsEverySeatHold
+// cannot discriminate, because an EMPTY board withholds every meta at once
+// — the pin above stays green whether reconcileSeats abstains whole-pass or
+// narrows to the seat. This fixture is the shape that tells the two apart: a
+// board that is NOT empty (one live, unrelated workspace, so the guard that
+// fires is cannotAnswerFor, not emptyBoard) with exactly one seat's meta
+// withheld — a socket that is not this herdr's. Seat B carries that meta;
+// seat A carries none and has no live session either.
+//
+// Old (whole-pass) reconcileSeats returns at `len(withheld) > 0` before
+// touching the map: seat A's hold survives even though nothing in its own
+// prefix is unanswerable. Narrowed reconcileSeats decides seat A on the
+// listing alone and releases it, and keeps seat B on the evidence that is
+// actually in its prefix.
+//
+// MUTATION: widen the per-seat withheld check back to `len(withheld) > 0`
+// (i.e. any withheld name anywhere blocks every seat) → seat A's release
+// never happens → red on the first assertion below.
+func TestQAANarrowedWithheldOnlyKeepsItsOwnSeat(t *testing.T) {
+	t.Setenv("HERDR_SOCKET_PATH", "/tmp/t1q5p/ours.sock")
+	b, fake := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+
+	// A live workspace of somebody else's, so what follows is cannotAnswerFor
+	// and not emptyBoard by another name (emptyBoard withholds every seat at
+	// once, which is TestQAAShortListingKeepsEverySeatHold's shape, not this
+	// one's).
+	saveWSTo(t, fake, []fakeWS{{WorkspaceID: "w1", Label: "live"}})
+
+	slotA := SessionFor("ranger", "/repo-a")
+	slotB := SessionFor("ranger", "/repo-b")
+	busy := map[string]string{slotA: "a-1", slotB: "b-1"}
+
+	// Seat B's own meta is the one this herdr cannot answer for; seat A has
+	// no meta at all.
+	qaWithheldMeta(t, b, slotB+"-b-1", "ranger", false)
+	if _, withheld, err := b.listSessions(); err != nil || len(withheld) != 1 {
+		t.Fatalf("premise: exactly one meta must be withheld: withheld=%v err=%v", withheld, err)
+	}
+
+	d.reconcileSeats(busy)
+	out := dispatcherOut(d)
+
+	if busy[slotA] != "" {
+		t.Errorf("seat A carries no withheld meta and no live session — the narrowed reconcile must release it on the listing alone, not stall on seat B's unrelated abstention: busy=%v\n%s", busy, out)
+	}
+	if busy[slotB] != "b-1" {
+		t.Errorf("seat B's own withheld meta must still keep its hold: busy=%v\n%s", busy, out)
+	}
+	if want := "↺ seat " + slotA + " released: no session (held a-1)"; !strings.Contains(out, want) {
+		t.Errorf("seat A's release must be logged: want %q\n%s", want, out)
+	}
+	if !strings.Contains(out, "seat "+slotB+" kept") || !strings.Contains(out, "cannot answer for") {
+		t.Errorf("seat B's kept hold must say it declined, and why:\n%s", out)
+	}
+	if strings.Contains(out, "seat "+slotA+" kept") {
+		t.Errorf("seat A was released, not kept — it must not be reported as declined:\n%s", out)
 	}
 }
 

@@ -1567,7 +1567,8 @@ func (m seatMap) hold(slot, bead string) { m.run[slot] = bead }
 //     just came up, a meta stamped with another socket or none, a spared
 //     meta prunable() could not prove dead, a recycled workspace id). Its
 //     sessions are live for all this listing knows, and they read here
-//     exactly like a reaped one.
+//     exactly like a reaped one — but only for the SEAT whose prefix the
+//     withheld name matches (ranger-base-t1q5p), not the whole pass.
 //
 // That third abstention is ranger-base-6swlr, and it is the one this code
 // shipped without. MEASURED 2026-09-03 by the QA lane verifying
@@ -1587,23 +1588,30 @@ func (m seatMap) hold(slot, bead string) { m.run[slot] = bead }
 // hold is released on it, and a listing that withheld anything releases
 // nothing — the same abstention Sessions() itself makes about the same metas.
 //
-// The abstention here is whole-pass, not per-seat, which is now a CHOICE and
-// no longer a limit of the return value: listSessions carries the withheld
-// names, and personaActive narrows on exactly them. It is left whole here
-// because the two callers are asking different questions — personaActive
-// asks whether one seat can be hired into, this asks whether a reading is
-// good enough to retire a hold that has already been paid for — and because
-// erring here costs a held seat while erring the other way costs a shared
-// worktree. The cost is real and stated: one withheld meta holds every seat
-// for as long as its cause lasts. A `spared` meta clears itself at
-// PruneGrace and an empty board clears when herdr has the fleet back, but a
-// meta stamped with a socket that no longer exists is repaired by hand or
-// not at all, and until it is, this reconcile does nothing. That is the
-// ranger-base-ifjgm phantom again, which is why the line below prints on
-// every pass it declines: a hold that silently stops reconciling is exactly
-// the failure this function was written for, and the operator has to be able
-// to see the difference. Sessions() warns with the repair on the same pass.
-// Narrowing it to the seat is filed as ranger-base-t1q5p.
+// The abstention is per-SEAT, the same narrowing personaActive takes
+// (ranger-base-5kiu4): listSessions carries the withheld NAMES, and a hold
+// is only kept on that evidence when a withheld name shares the seat's
+// prefix — the same prefix match the release loop already runs over the
+// listed rows, so a seat with no withheld meta in its own prefix is decided
+// on the listing alone, exactly as it always was. It is per-seat and not
+// whole-pass because the two callers are asking different questions —
+// personaActive asks whether one seat can be hired into, this asks whether
+// a reading is good enough to retire a hold that has already been paid for
+// — and because erring here costs a held seat while erring the other way
+// costs a shared worktree; stalling every OTHER seat in the shop on one
+// stale meta was never required by either trade, only by the return value
+// reconcileSeats first shipped with. The cost that remains is scoped to the
+// seat: one withheld meta in a seat's own prefix holds THAT seat for as long
+// as its cause lasts. A `spared` meta clears itself at PruneGrace and an
+// empty board clears when herdr has the fleet back, but a meta stamped with
+// a socket that no longer exists is repaired by hand or not at all, and
+// until it is, this reconcile does nothing for that one seat. That is the
+// ranger-base-ifjgm phantom again, narrowed to the seat it is stamped for,
+// which is why the line below prints on every seat it declines: a hold that
+// silently stops reconciling is exactly the failure this function was
+// written for, and the operator has to be able to see the difference.
+// Sessions() warns with the repair on the same pass. Narrowed by
+// ranger-base-t1q5p.
 //
 // The ERROR arm owed the same line and did not pay it (ranger-base-wq1aq).
 // It is the widest decline there is — the listing answered for nothing, so
@@ -1651,16 +1659,23 @@ func (d *Dispatcher) reconcileSeats(busy map[string]string) {
 	if d.DryRun || len(busy) == 0 {
 		return
 	}
-	if len(withheld) > 0 {
-		d.printf("↺ seats kept: %d session meta(s) this herdr cannot answer for — no hold released this pass\n", len(withheld))
-		return
-	}
 	slots := make([]string, 0, len(busy))
 	for slot := range busy {
 		slots = append(slots, slot)
 	}
 	sort.Strings(slots) // one release order for one reading, whatever the map's
 	for _, slot := range slots {
+		withheldSeat := false
+		for _, name := range withheld {
+			if name == slot || strings.HasPrefix(name, slot+"-") {
+				withheldSeat = true
+				break
+			}
+		}
+		if withheldSeat {
+			d.printf("↺ seat %s kept: a session meta in its prefix this herdr cannot answer for — no hold released this pass\n", slot)
+			continue
+		}
 		live := false
 		for _, s := range sessions {
 			if s.Name == slot || strings.HasPrefix(s.Name, slot+"-") {
