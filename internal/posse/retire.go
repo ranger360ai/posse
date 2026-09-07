@@ -37,7 +37,19 @@ package posse
 // it exists for the one actor the board cannot show — a process in the tree
 // whose workspace detection blinked, or the operator's own shell — and for
 // those the last write is the only evidence there is. A `git status` in the
-// tree resets it, which is the fail-safe direction.
+// tree resets it, which is the fail-safe direction — and so, MEASURED, does
+// the launcher's own merge-back rebase probe: `rebase (start): checkout
+// main` immediately followed by `rebase (abort): returning to
+// refs/heads/<branch>` writes HEAD and logs/HEAD exactly like any other
+// checkout. For a branch that keeps re-filing a merge block, that probe's
+// own cadence was measured well under the 1h default grace (max gap 46m
+// over 641 probes and two days, ranger-base-i96p3/ranger-base-5nbb0), so
+// fact 4 can never be reached for such a tree AT ALL — not "reset once by
+// this pass's own read" (the case the rest of this header is about) but
+// held open by a second actor this predicate cannot tell apart from a
+// human's. There is no escape hatch for that today;
+// TestAWriterFasterThanTheGraceKeepsTheTreeForever pins it so a future fix
+// to fact 4 has to reckon with it rather than silently keep failing it.
 //
 // WHY IT IS READ FIRST, before facts 2 and 3. Reading a git tree writes to
 // it. MEASURED on this box (2026-09-05, macOS/APFS, git 2.51): `git status`

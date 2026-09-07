@@ -627,6 +627,71 @@ func TestTheRetireRereadsHerdrUnderTheLauncherLock(t *testing.T) {
 	}
 }
 
+// ranger-base-5nbb0 (from ranger-base-i96p3's verify): fact 4's own header
+// says a `git status` resets the grace and that is the pass's OWN read
+// (TestARetireIsNotDefeatedByThePassesOwnReadOfTheTree, above). This pins
+// the OTHER writer, one nothing here can tell apart from a human's at all:
+// something outside the pass that keeps touching the tree at a cadence
+// SHORTER than the grace. MEASURED against three live trees the launcher
+// kept re-filing a merge block on: `rebase (start): checkout main` /
+// `rebase (abort): returning to ...`, seconds apart, in logs/HEAD, at a
+// maximum gap of 46m over 641 probes and two days — always under the 1h
+// default grace. lastTreeWrite reads exactly that file, so the clock this
+// predicate is timing never advances past the gap between two probes,
+// no matter how much real time passes. There is no fifth fact and no
+// escape hatch for it today: this pin is the inverse of the stale-index
+// one and exists to keep it that way from drifting silent if somebody
+// "fixes" fact 4 by widening what counts as quiet.
+func TestAWriterFasterThanTheGraceKeepsTheTreeForever(t *testing.T) {
+	t.Parallel()
+	// The margin between probeGap and grace has to absorb `retirable`'s own
+	// git calls, which run for real here and slow down under the suite's own
+	// parallel load — not just the wall clock between two Chtimes.
+	const grace = 2 * time.Second
+	const probeGap = 150 * time.Millisecond // < grace, the launcher probe's own shape
+	const probes = 20                       // probes*probeGap (3s) > grace (2s)
+
+	d, _, tr := n27xvFixture(t, "closed", grace.String())
+	n27xvQuiet(t, tr)
+
+	g := d.App.graceAfter("retire_tree_after", DefaultRetireTreeAfter, d.errWriter())
+	if g != grace {
+		t.Fatalf("fixture grace = %s, want %s", g, grace)
+	}
+
+	// logs/HEAD, not the index: it is what a rebase (or any checkout) in
+	// this tree actually rewrites, and lastTreeWrite walks every file in
+	// the git dir, so either would do — this one names the real writer.
+	logsHead := filepath.Join(mustGit(t, tr.Path, "rev-parse", "--absolute-git-dir"), "logs", "HEAD")
+	probe := func() {
+		t.Helper()
+		now := time.Now()
+		if err := os.Chtimes(logsHead, now, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	checkKept := func() {
+		t.Helper()
+		v := retirable(tr, "closed", newBlockedRecord(d.Bd), d.HB, g)
+		if v.retire {
+			t.Fatalf("the predicate retired a tree a writer faster than the grace is still touching: %+v", v)
+		}
+		if !strings.Contains(v.why, "inside the") || !strings.Contains(v.why, "grace") {
+			t.Fatalf("kept for a reason other than the grace, which is not what this pin is about: %q", v.why)
+		}
+	}
+
+	for i := 0; i < probes; i++ {
+		probe()
+		checkKept() // right after a probe: quiet is ~0
+		time.Sleep(probeGap)
+		checkKept() // right before the next one: quiet is ~probeGap, still short of grace
+	}
+	// Total real time elapsed comfortably clears the grace; the predicate
+	// must never once have said so, because no single gap between probes
+	// ever did.
+}
+
 // A tree no bead record accounts for is ADR 0006's, and ADR 0058 D4 leaves
 // it exactly where it was: nothing unattended acts on it, and the sweep says
 // nothing new about it either.
