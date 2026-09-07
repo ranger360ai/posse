@@ -42,7 +42,7 @@ FMT_ROOTS := cmd internal *.go
 BUILD_STAMP := $(shell $(GOBIN) run ./cmd/buildstamp)
 LDFLAGS     := -X github.com/ranger360ai/posse/internal/posse.Build=$(BUILD_STAMP)
 
-.PHONY: build release install deploy test test-arm1 test-arm2 test-arm3 test-reuse fmt-check crew-check seed-check history-check doc-check identity-check ops-check tree-check verify-test-times verify-suite-lock verify-silent-reverts verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-self-close verify-govern-honesty verify-grok-pin verify-codex-pin verify-credential-paths verify-hook-freshness verify-bd-pin verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk verify-box verify-box-self-test prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
+.PHONY: build release install deploy test test-arm1 test-arm2 test-arm3 test-reuse fmt-check crew-check seed-check history-check doc-check identity-check ops-check execwrite-check tree-check verify-test-times verify-suite-lock verify-silent-reverts verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-self-close verify-govern-honesty verify-grok-pin verify-codex-pin verify-credential-paths verify-hook-freshness verify-bd-pin verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk verify-box verify-box-self-test prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
 
 build:
 	$(GOBIN) build -ldflags '$(LDFLAGS)' -o bin/posse-go ./cmd/posse
@@ -481,13 +481,14 @@ fmt-check:
 # walk of internal/posse — the tests that read the repo root, and the tests
 # that reach a helper which WALKS from it — and checks the union both ways. A
 # new tree-wide pin fails that check until it is given a door here.
-QA_CREW_PINS     := TestShippedTreeNamesRolesNotThisCrew|TestShippedStringsNameRolesNotThisCrew|TestTestCorpusHidesNoCrewNameBehindAnEscape
-QA_TOOL_PINS     := TestTreeIsGofmtClean
-QA_SEED_PINS     := TestSeedSurfaceNameCountIsZero|TestSeedConfigLiveKeysAreRead
-QA_HISTORY_PINS  := TestPublicationRootCommitOmitsExcludedPaths|TestPublicationRootCommitADRsCarryProvenance|TestPublicationHistoryNeverCarriesTheSeedScript|TestShippedExampleTableCoversEveryVersionInGitHistory
-QA_DOC_PINS      := TestQANoCodeStringCallsTheDarwinCredentialsFileAStaleLeftover|TestQACageCredDocDoesNotCallTheOnDiskCredentialStale|TestQAADR0036StatusLineDoesNotCarryTheRetractedUnbuiltStamp|TestQAADR0035PaneModeSurfaceClaimIsBuilt|TestQAADR0026StatusLineDoesNotDeferTheImplementedRung
-QA_IDENTITY_PINS := TestQAIdentityLiteralsNeverAppearInATrackedPath|TestIdentityLiteralsNeverAppearInTheHarnessRepoUndispositioned
-QA_OPS_PINS      := TestQAEveryOpsHitInTrackedMarkdownIsRuled|TestQAOpsShapeTableCanStillSayNo|TestInstancePathFormNeverAppearsInTrackedContentUndispositioned|TestQAInstancePathCensusCanStillSayNo
+QA_CREW_PINS      := TestShippedTreeNamesRolesNotThisCrew|TestShippedStringsNameRolesNotThisCrew|TestTestCorpusHidesNoCrewNameBehindAnEscape
+QA_TOOL_PINS      := TestTreeIsGofmtClean
+QA_SEED_PINS      := TestSeedSurfaceNameCountIsZero|TestSeedConfigLiveKeysAreRead
+QA_HISTORY_PINS   := TestPublicationRootCommitOmitsExcludedPaths|TestPublicationRootCommitADRsCarryProvenance|TestPublicationHistoryNeverCarriesTheSeedScript|TestShippedExampleTableCoversEveryVersionInGitHistory
+QA_DOC_PINS       := TestQANoCodeStringCallsTheDarwinCredentialsFileAStaleLeftover|TestQACageCredDocDoesNotCallTheOnDiskCredentialStale|TestQAADR0036StatusLineDoesNotCarryTheRetractedUnbuiltStamp|TestQAADR0035PaneModeSurfaceClaimIsBuilt|TestQAADR0026StatusLineDoesNotDeferTheImplementedRung
+QA_IDENTITY_PINS  := TestQAIdentityLiteralsNeverAppearInATrackedPath|TestIdentityLiteralsNeverAppearInTheHarnessRepoUndispositioned
+QA_OPS_PINS       := TestQAEveryOpsHitInTrackedMarkdownIsRuled|TestQAOpsShapeTableCanStillSayNo|TestInstancePathFormNeverAppearsInTrackedContentUndispositioned|TestQAInstancePathCensusCanStillSayNo
+QA_EXECWRITE_PINS := TestQATestFilesWriteExecutablesUnderTheForkLock
 
 # The crew-name trio, one door between them because they are one question —
 # does the shipped tree name this instance's crew (ADR 0012 App.A 5) — asked
@@ -550,6 +551,17 @@ doc-check:
 identity-check:
 	$(GOBIN) test ./internal/posse -timeout 15m -count=1 -run '^($(QA_IDENTITY_PINS))$$'
 
+# The test-corpus exec-write census (ranger-base-o6oj4): every *_test.go file
+# under internal/posse, read afresh, must route an executable write through
+# WriteExecutable rather than a plain os.WriteFile with an exec bit set
+# (golang/go#22315's ETXTBSY window). It reads the tree from qibRepoRoot, so
+# ranger-base-rwnbd doored it here rather than folding it into crew-check,
+# whose own doc comment reserves that door for one question — does the
+# shipped tree name this instance's crew — that this pin does not ask.
+# Type it when you add or edit a *_test.go file under internal/posse.
+execwrite-check:
+	$(GOBIN) test ./internal/posse -timeout 15m -count=1 -run '^($(QA_EXECWRITE_PINS))$$'
+
 # The ops residue census over every tracked markdown file, the instance
 # path-form census over every tracked FILE (ranger-base-l9ii: this
 # deployment's constitution checkout written as a live path, dispositioned
@@ -564,7 +576,7 @@ ops-check:
 # tree-check` prints exactly what a seat would otherwise have to type. It is a
 # prerequisite of `make test` for rulbl's reason: a full run fails on it in
 # seconds instead of at ~950.
-tree-check: fmt-check crew-check seed-check history-check doc-check identity-check ops-check
+tree-check: fmt-check crew-check seed-check history-check doc-check identity-check ops-check execwrite-check
 
 # Register the cockpit plugin with the running herdr (local dev link).
 # The manifest runs ./bin/posse relative to the plugin root; that is a symlink

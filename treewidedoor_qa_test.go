@@ -55,8 +55,16 @@ package posse
 //	TestQAInstancePathCensusCanStillSayNo         make ops-check
 //	                                              (both ranger-base-l9ii)
 //
+// and one more, given its own door rather than folded into crew-check's
+// (crew-check's own comment reserves that door for one question, which this
+// pin does not ask):
+//
+//	TestQATestFilesWriteExecutablesUnderTheForkLock
+//	                                              make execwrite-check
+//	                                              (ranger-base-rwnbd)
+//
 // and `make tree-check` is all of them — 12-27s on this box over three runs
-// at twenty-one pins and seven doors — which is the command a seat types
+// at twenty-two pins and eight doors — which is the command a seat types
 // after a filtered run. (It was 40-46s under ranger-base-4jogv, one pin ago,
 // and 21-41s at the older, smaller class before that; re-measured under
 // ranger-base-8dnuy, because the sentence a seat prices the command from
@@ -152,7 +160,7 @@ import (
 // The Makefile variables that hold the class. One per door, plus the pin
 // whose door is a tool rather than a filter — the union is what arm 2
 // measures against the tree.
-var twdPinVars = []string{"QA_CREW_PINS", "QA_TOOL_PINS", "QA_SEED_PINS", "QA_HISTORY_PINS", "QA_DOC_PINS", "QA_IDENTITY_PINS", "QA_OPS_PINS"}
+var twdPinVars = []string{"QA_CREW_PINS", "QA_TOOL_PINS", "QA_SEED_PINS", "QA_HISTORY_PINS", "QA_DOC_PINS", "QA_IDENTITY_PINS", "QA_OPS_PINS", "QA_EXECWRITE_PINS"}
 
 // twdRootHelper is the ONE repo-root helper internal/posse's tests may use.
 // It is a single identifier on purpose — the class below is derived from it,
@@ -221,7 +229,7 @@ func TestQAMakeTestOpensTheTreeWideDoors(t *testing.T) {
 	// reader did not, and every `strings.Contains` below still found its
 	// door's name sitting on the line.
 	treeLine, tree := mkPrereqs(t, src, "tree-check")
-	doors := []string{"fmt-check", "crew-check", "seed-check", "history-check", "doc-check", "identity-check", "ops-check"}
+	doors := []string{"fmt-check", "crew-check", "seed-check", "history-check", "doc-check", "identity-check", "ops-check", "execwrite-check"}
 	for _, door := range doors {
 		if !mkRuns(tree, door) {
 			t.Errorf("`make tree-check` no longer reaches `%s`, so one tree-wide pin is back to being ~950s away: %q", door, treeLine)
