@@ -770,6 +770,7 @@ esac`)
 // collides with its own CredBin exactly the way a real runtime's could if
 // ProbeCanaryCandidates ever grew one.
 func TestRuntimeProbeAsksTheCredentialPreconditionTooBeforeItLaunches(t *testing.T) {
+	t.Parallel()
 	a, rt := probeParityApp(t)
 	if _, path := probeCanary(); path == "" || filepath.Base(path) != "uname" {
 		t.Skip("uname does not resolve outside the gates dir as this host's probe canary — this row measures nothing here")
