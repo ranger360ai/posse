@@ -1476,6 +1476,15 @@ const gateShellMarker = "posse gate shell"
 // /opt/gateskeeper/bin/zsh is not one of ours here either. False on error:
 // an unreadable candidate is refused a line later by os.Stat anyway, and
 // the render-time assertion is the backstop for whatever slips past.
+//
+// isRegularFile gates the open: os.Open on a FIFO with no writer never
+// returns, so a named pipe on the candidate path hung this exact check
+// (ranger-base-o5fpa; ranger-base-92n5p and ranger-base-gs9r taught the
+// same lesson to installHook and l3Identity). A special file is never our
+// render, so answering false here is the same call isRegularFile's other
+// callers already make, not a new one — and it costs nothing a real
+// wrapper needed: os.Stat follows symlinks, so a link to a regular file is
+// still checked below exactly as before.
 func isGateWrapper(p string) bool {
 	if p == "" {
 		return false
@@ -1483,6 +1492,9 @@ func isGateWrapper(p string) bool {
 	sep := string(filepath.Separator)
 	if strings.Contains(p, sep+"gates"+sep) {
 		return true
+	}
+	if !isRegularFile(p) {
+		return false
 	}
 	f, err := os.Open(p)
 	if err != nil {
