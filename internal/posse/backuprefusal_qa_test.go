@@ -160,12 +160,17 @@ func TestBackupHasNoOverride(t *testing.T) {
 	// "nil in production", measured rather than asserted: backup.go declares
 	// the field and reads it, and no other non-test file in this package
 	// mentions it. A production caller that set it would be a door into a
-	// half-built archive, which is the one thing the gate exists to stop.
+	// half-built archive, which is the one thing the gate exists to stop —
+	// and backup.go is not exempt from THAT: it may declare and read the
+	// field, but an assignment shape (`afterStage =` / `afterStage:`)
+	// anywhere, backup.go included, reds (ranger-base-cw50c finding 3 — the
+	// old exemption let the one file that CAN set the field also be the one
+	// file the census never checked for a setter).
 	paths, gerr := filepath.Glob("*.go")
 	if gerr != nil || len(paths) == 0 {
 		t.Fatalf("no .go files in this package: %v", gerr)
 	}
-	mentions := 0
+	var sawDecl, sawCall bool
 	for _, path := range paths {
 		if strings.HasSuffix(path, "_test.go") {
 			continue
@@ -174,17 +179,26 @@ func TestBackupHasNoOverride(t *testing.T) {
 		if rerr != nil {
 			t.Fatal(rerr)
 		}
-		n := strings.Count(string(b), "afterStage")
-		mentions += n
-		if n > 0 && path != "backup.go" {
+		s := string(b)
+		if n := strings.Count(s, "afterStage"); n > 0 && path != "backup.go" {
 			t.Errorf("%s names afterStage — the seam is declared and read in backup.go and set only from a test", path)
 		}
+		if strings.Contains(s, "afterStage =") || strings.Contains(s, "afterStage:") {
+			t.Errorf("%s assigns afterStage — the seam is declared and read in backup.go and set only from a test", path)
+		}
+		if path == "backup.go" {
+			sawDecl = strings.Contains(s, "afterStage func(stage string)")
+			sawCall = strings.Contains(s, "o.afterStage(stage)")
+		}
 	}
-	// The control: the census DID read backup.go's declaration and its one
-	// call site, so a zero above would be a broken glob rather than a clean
-	// package.
-	if mentions < 2 {
-		t.Errorf("the census found afterStage %d time(s) in the non-test files, want at least the declaration and the call in backup.go — it is reading the wrong tree or the seam moved", mentions)
+	// The control: the census DID read backup.go's own declaration and its
+	// one call site by name, so seeing either go missing is a broken glob or
+	// a moved seam, not a clean package. This is a floor on the call TEXT
+	// (ranger-base-cw50c finding 4 — a bare identifier count stayed >= 2 off
+	// nothing but the doc comment and the declaration, so deleting the one
+	// call site the census exists to confirm went unnoticed).
+	if !sawDecl || !sawCall {
+		t.Errorf("census saw backup.go declaration=%v call=%v, want both true — it is reading the wrong tree or the seam moved", sawDecl, sawCall)
 	}
 	// Dir is the field a caller CAN set, so the refusal has to run on it —
 	// not only on the configured default. A run pointed at a remote target
