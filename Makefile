@@ -276,13 +276,18 @@ test-arm1: fmt-check verify-test-times verify-parallel verify-suite-lock verify-
 	scripts/test-times.sh $(GOBIN) test -timeout 25m ./...
 	@scripts/audit-silent-reverts.sh --quiet
 
+# The door runs FIRST in both recipes below (ranger-base-p1r17): make aborts
+# a recipe on its first non-zero exit, and the tagged line is exactly the one
+# an untagged arm-tags mistake can fail to *compile*, which would abort the
+# recipe before the door ever ran — leaving the door's own reason for
+# existing unreachable for the bug shape it exists to catch.
 test-arm2:
-	scripts/test-times.sh $(GOBIN) test -timeout 25m -tags posse_arm2 ./internal/posse
 	$(GOBIN) test . -timeout 15m -count=1 -run '^TestQAEverySuiteArmTypeChecks$$'
+	scripts/test-times.sh $(GOBIN) test -timeout 25m -tags posse_arm2 ./internal/posse
 
 test-arm3:
-	scripts/test-times.sh $(GOBIN) test -timeout 25m -tags posse_arm3 ./internal/posse
 	$(GOBIN) test . -timeout 15m -count=1 -run '^TestQAEverySuiteArmTypeChecks$$'
+	scripts/test-times.sh $(GOBIN) test -timeout 25m -tags posse_arm3 ./internal/posse
 
 # The other half of the ceiling story, and the half ranger-base-pj87l asked
 # for: the wall grew 2.4x in four days with test-times.sh warning correctly on
