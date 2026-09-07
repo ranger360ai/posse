@@ -141,6 +141,28 @@ func TestMain(m *testing.M) {
 	os.Setenv("CLAUDE_CONFIG_DIR", "")
 	os.Setenv("CODEX_HOME", "")
 	os.Setenv("GROK_HOME", "")
+	// codexSigninProbe (interstitial.go, ranger-base-d1r4x) reads whether
+	// THIS box can authenticate codex, and the temp HOME above has no
+	// ~/.codex/auth.json — a fact every dispatch test that uses the codex
+	// built-in as a hermetic stand-in (ranger-base-9mz: the shipped adapter
+	// posse cannot price) never asked about, and now reads as "cannot
+	// authenticate" on this box or CI alike (ranger-base-khpbx: n=0 across
+	// every such test, all package-wide since HOME above is one temp dir
+	// for the whole binary). Plant a credential once, here, before any
+	// test runs — never per test, since t.Setenv panics on a parallel test
+	// and nearly every test in this package is one. A test that means to
+	// exercise the sign-in screen itself points CODEX_HOME at its own dir
+	// (runtimecheck_test.go, TestCodexSigninProbeReadsCredentialPresence;
+	// interstitial_qa_test.go isolates the same way for the update-menu
+	// entry).
+	if err := os.MkdirAll(filepath.Join(home, ".codex"), 0o755); err != nil {
+		fmt.Fprintf(os.Stderr, "posse test: codex home: %v\n", err)
+		os.Exit(1)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".codex", "auth.json"), []byte("{}"), 0o644); err != nil {
+		fmt.Fprintf(os.Stderr, "posse test: codex auth fixture: %v\n", err)
+		os.Exit(1)
+	}
 	// GIT_EXTERNAL_DIFF, UNSET and not emptied — emptying it is the defect.
 	// posse's own inlet pin used to export this variable as the EMPTY STRING
 	// in every pinned seat, which is how the defect reached the suite; the
