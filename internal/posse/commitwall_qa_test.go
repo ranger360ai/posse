@@ -17,12 +17,68 @@ package posse
 //     message has to be judged against it.
 
 import (
+	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
+
+// gitTempDir is t.TempDir(), except the registered cleanup tolerates a
+// concurrent writer this process does not control: ranger-base-mhxnh's CI
+// red is a t.TempDir RemoveAll hitting ENOTEMPTY on .git/objects with the
+// subtest body (a real `git init`/commit sequence) already returned clean —
+// something else put a new entry under objects between the walk and the
+// final rmdir. Root cause is still open (Spotlight/mds indexing the
+// runner's TMPDIR and an outliving git subprocess are the two live leads),
+// so this does not claim to fix the writer — it makes the wall tolerant of
+// it (a transient write should not cost a CI run) and, if the retries do
+// not clear it, logs what is actually left instead of just the syscall
+// error, since that is the evidence the next pass on this bead needs.
+func gitTempDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	t.Cleanup(func() { removeAllTolerant(t, dir) })
+	return dir
+}
+
+// removeAllTolerant is os.RemoveAll with a few retries for a transient
+// concurrent write. Cleanups run LIFO, so registering this AFTER t.TempDir()
+// means it runs BEFORE TempDir's own cleanup — if the retries clear the
+// dir, TempDir's later os.RemoveAll finds nothing there and reports no
+// error, which is what makes this a strict widening of tolerance rather
+// than a race against TempDir's own attempt. See gitTempDir.
+func removeAllTolerant(t *testing.T, dir string) {
+	t.Helper()
+	var err error
+	for i := 0; i < 5; i++ {
+		if err = os.RemoveAll(dir); err == nil {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if os.IsNotExist(err) {
+		return
+	}
+	var leftover []string
+	_ = filepath.WalkDir(dir, func(p string, d fs.DirEntry, werr error) error {
+		if werr != nil {
+			leftover = append(leftover, fmt.Sprintf("%s (stat error: %v)", p, werr))
+			return nil
+		}
+		info, ierr := d.Info()
+		if ierr != nil {
+			leftover = append(leftover, fmt.Sprintf("%s (info error: %v)", p, ierr))
+			return nil
+		}
+		leftover = append(leftover, fmt.Sprintf("%s mtime=%s size=%d dir=%v", p, info.ModTime().Format(time.RFC3339Nano), info.Size(), d.IsDir()))
+		return nil
+	})
+	t.Errorf("cleanup: os.RemoveAll(%s) still failing after retries: %v\nremaining entries:\n%s", dir, err, strings.Join(leftover, "\n"))
+}
 
 // commitWallRepo is a scratch repo with the real prepare-commit-msg wall
 // installed, plus a `git` runner in the shape TestSharedIndexCommitHook
@@ -32,8 +88,8 @@ func commitWallRepo(t *testing.T) (repo string, git func(env []string, args ...s
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
-	repo = t.TempDir()
-	gates := t.TempDir()
+	repo = gitTempDir(t)
+	gates := gitTempDir(t)
 	if out, err := exec.Command("git", "-C", repo, "init", "-q", "-b", "main").CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v %s", err, out)
 	}
@@ -61,7 +117,7 @@ func unwalledRepo(t *testing.T) (string, func(env []string, args ...string) (str
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
-	repo := t.TempDir()
+	repo := gitTempDir(t)
 	if out, err := exec.Command("git", "-C", repo, "init", "-q", "-b", "main").CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v %s", err, out)
 	}
