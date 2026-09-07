@@ -133,18 +133,11 @@ func TestMacosInstallProbeIsVersionedAndWired(t *testing.T) {
 			t.Fatalf("Makefile has no %q — an instrument nobody can run is a one-off, not a control", want)
 		}
 	}
-	phony := ""
-	for _, line := range strings.Split(string(makefile), "\n") {
-		if strings.HasPrefix(line, ".PHONY:") {
-			phony = line
-			break
-		}
-	}
-	if phony == "" {
-		t.Fatal("the Makefile has no .PHONY line")
-	}
-	if !strings.Contains(phony, "macos-install-probe") {
-		t.Fatal(".PHONY does not list macos-install-probe; a file of that name would shadow the target")
+	// Membership in the prerequisite TOKENS, not the line's bytes: see
+	// mkPrereqs (ranger-base-hna69, ranger-base-exv9h).
+	phonyLine, phony := mkPrereqs(t, string(makefile), ".PHONY")
+	if !mkRuns(phony, "macos-install-probe") {
+		t.Fatalf(".PHONY does not list macos-install-probe; a file of that name would shadow the target: %q", phonyLine)
 	}
 
 	if _, err := os.Stat("docs/runbooks/macos-install-routes.md"); err != nil {

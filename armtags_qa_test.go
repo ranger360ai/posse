@@ -48,6 +48,7 @@ package posse
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -182,32 +183,16 @@ func makefileText(t *testing.T) string {
 	return string(b)
 }
 
-// armTarget returns a Makefile target's prerequisite text and its recipe
-// lines. A recipe line is a tab-indented line after the target header; the
-// first line that is neither tab-indented nor blank ends it.
-func armTarget(t *testing.T, mk, name string) (deps string, recipe []string) {
+// armTarget returns a Makefile target's prerequisites, as TOKENS through
+// mkPrereqs (ranger-base-hna69) rather than the line's bytes, and its recipe
+// lines through makeRecipe. Membership against the result belongs to mkRuns,
+// not strings.Contains against a joined string: that shape stops at neither
+// a `#` nor a superstring, and is the class ranger-base-exv9h found this
+// call site still doing.
+func armTarget(t *testing.T, mk, name string) (deps []string, recipe []string) {
 	t.Helper()
-	lines := strings.Split(mk, "\n")
-	for i, line := range lines {
-		s, ok := strings.CutPrefix(line, name+":")
-		if !ok || strings.HasPrefix(s, "=") {
-			continue
-		}
-		deps = strings.TrimSpace(s)
-		for _, r := range lines[i+1:] {
-			if strings.HasPrefix(r, "\t") {
-				recipe = append(recipe, strings.TrimSpace(r))
-				continue
-			}
-			if strings.TrimSpace(r) == "" {
-				continue
-			}
-			break
-		}
-		return deps, recipe
-	}
-	t.Fatalf("the Makefile has no `%s:` target", name)
-	return "", nil
+	_, deps = mkPrereqs(t, mk, name)
+	return deps, makeRecipe(mk, name)
 }
 
 // ARM 2 — every arm the files declare is a line of `make test`, and every
@@ -251,13 +236,13 @@ func TestQAMakefileRunsEverySuiteArm(t *testing.T) {
 		if a != 1 {
 			continue
 		}
-		for _, gate := range strings.Fields(deps) {
-			if !strings.Contains(testDeps, gate) {
+		for _, gate := range deps {
+			if !mkRuns(testDeps, gate) {
 				t.Errorf("`test-arm1:` names the gate %s and `test:` does not — the two lines have drifted", gate)
 			}
 		}
-		for _, gate := range strings.Fields(testDeps) {
-			if !strings.Contains(deps, gate) {
+		for _, gate := range testDeps {
+			if !mkRuns(deps, gate) {
 				t.Errorf("`test:` names the gate %s and `test-arm1:` does not — CI's arm 1 job runs test-arm1 and would skip it", gate)
 			}
 		}
