@@ -58,7 +58,15 @@ package posse
 // EARLIER, unrelated episode's closed bead never suppresses a genuinely new
 // one, and gated on the closed bead lacking ciAlreadyCleared's comment so an
 // episode this mechanism itself already cleared is never mistaken for one
-// still racing a fix.
+// still racing a fix. It suppresses ONE PASS, not the rest of the episode's
+// life (ranger-base-95mw3): Since does not move while a streak keeps
+// failing, so a bead closed WITHOUT the gate ever recovering shares the same
+// sha forever and is indistinguishable, on marker and sha alone, from the
+// race this exists to catch. ciDupeFiled tells them apart over time instead
+// — it marks the closed bead the first time it abstains and reads that mark
+// back on the next pass, so a race (which resolves by the next read) gets
+// its one free pass and a still-red episode (which does not) files again
+// right after.
 //
 // WHERE IT PRINTS. The pass says something only when it ACTS — on the pass
 // that files and the pass that closes. A condition that recurs must not be
@@ -227,6 +235,16 @@ const (
 	// needs no process state: a restarted launcher reads the number off the
 	// bead it already filed.
 	ciStreakPrefix = "ci-red streak: "
+
+	// ciRaceAbstainPrefix opens the comment ciDupeFiled writes the ONE time
+	// it suppresses filing over a closed bead, and is read back by
+	// ciRaceAbstained. It is what bounds the race window jbnug's fix
+	// targets to one pass instead of the still-red episode's whole life
+	// (ranger-base-95mw3): a launcher restart between the grace pass and
+	// the next read must still see the same "already gave this one the
+	// benefit of the doubt" fact, so it goes on the bead rather than in
+	// process state, the same reason ciStreakPrefix does.
+	ciRaceAbstainPrefix = "ci-watch: still red, abstaining once: "
 )
 
 // CIQuery is everything a reading needs that is not the answer. GhBin is a
@@ -891,6 +909,19 @@ func ciAlreadyCleared(cs []BdComment) bool {
 	return false
 }
 
+// ciRaceAbstained is whether ciDupeFiled already gave this closed bead its
+// one grace pass. Read back the same way ciAlreadyCleared is, and for the
+// same reason: the fact has to survive a launcher restart, so it lives on
+// the bead and not in this process.
+func ciRaceAbstained(cs []BdComment) bool {
+	for _, c := range cs {
+		if strings.HasPrefix(strings.TrimSpace(c.Text), ciRaceAbstainPrefix) {
+			return true
+		}
+	}
+	return false
+}
+
 // ciOpenBeads is the dedupe's candidate set: every OPEN bead for THIS
 // gate, NEWEST FIRST. Marker-matched rather than label-matched alone, so an
 // instance watching two repos does not let one repo's red suppress the
@@ -978,6 +1009,24 @@ func ciSinceSha(desc string) (string, bool) {
 // exactly the refile cooldown the header rejects — this only ever matches a
 // close this mechanism was never told about at all, and the absence of that
 // comment is the tell.
+//
+// ONE GRACE PASS, not the rest of the episode's life (ranger-base-95mw3).
+// Marker-and-sha alone cannot tell the race jbnug's fix targets — a fixer's
+// close landing seconds ahead of this gate's own read catching up to green
+// — from a bead closed WITHOUT the gate ever recovering (jbnug's own d3dgd,
+// closed on a local verification ahead of CI): both leave a closed bead
+// sharing the live episode's Since sha while the read is still red, forever,
+// because Since does not move while one streak keeps failing. But the two
+// are distinguishable over TIME: the race resolves on the very next read —
+// the incident jbnug's fix answers shows exactly one stale-red pass between
+// the close (05:04:24) and the run actually going green (05:07:46) — while
+// a genuinely still-red episode goes on matching every pass after that.
+// So: the first still-red pass over a matching closed bead writes
+// ciRaceAbstainPrefix on it and suppresses, same as before. Every pass after
+// that reads the marker back (ciRaceAbstained) and, finding it, treats the
+// episode as still red rather than still racing — the grace already had its
+// one chance to turn green and did not, so this stops matching and the next
+// caller files.
 func ciDupeFiled(bd Bd, dir string, st CIState) (string, error) {
 	issues, err := bd.AllLabeledAny(dir, CIRedLabel)
 	if err != nil {
@@ -995,9 +1044,15 @@ func ciDupeFiled(bd Bd, dir string, st CIState) (string, error) {
 		if cerr != nil {
 			return "", cerr
 		}
-		if !ciAlreadyCleared(cs) {
-			return is.ID, nil
+		if ciAlreadyCleared(cs) || ciRaceAbstained(cs) {
+			continue
 		}
+		note := fmt.Sprintf("%sthis pass's own read of %s/%s is still red — streak since %s at %s — over an episode %s answers with no %s comment. That is either the fix racing this gate's own read catching up to green (ranger-base-jbnug), or the fix never actually landing (ranger-base-95mw3). This pass gives it the benefit of the doubt and abstains; if the NEXT pass over this episode is still red, it files its own bead rather than trusting this one again.",
+			ciRaceAbstainPrefix, st.Workflow, st.Branch, sha, st.Since.Created.UTC().Format(time.RFC3339), is.ID, ciClearedPrefix)
+		if err := bd.Comment(dir, is.ID, note, VerifyActor); err != nil {
+			return "", err
+		}
+		return is.ID, nil
 	}
 	return "", nil
 }

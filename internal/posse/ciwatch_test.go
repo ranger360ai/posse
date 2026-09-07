@@ -1312,6 +1312,82 @@ func TestCIWatchDoesNotRefileOverAnEpisodeASeatAlreadyClosed(t *testing.T) {
 	}
 }
 
+// ranger-base-95mw3, escaped from ranger-base-jbnug's own fix: marker-and-sha
+// alone cannot tell jbnug's race (a fixer's close landing seconds ahead of
+// this gate's own read catching up to green) from a bead closed WITHOUT the
+// gate ever recovering — Since does not move while one streak keeps failing,
+// so both leave a closed bead sharing the live episode's Since sha while the
+// read is still red. d3dgd itself, named in jbnug's own description, was
+// closed "verified locally, ahead of the CI run finishing" — exactly the
+// second shape. Unbounded, ciDupeFiled matched it forever and ci-watch never
+// filed again for the rest of a genuinely still-red episode.
+//
+// The fix bounds the suppression to ONE pass: the first still-red pass over
+// the closed bead marks it (ciRaceAbstainPrefix) and abstains, same as
+// before. A SECOND still-red pass over the same episode reads that mark
+// back and files — the grace already had its one chance to turn green (the
+// race jbnug's fix targets resolves by the very next read) and did not, so
+// this is not a race any more.
+func TestCIWatchStaysSilentAfterAPrematureCloseOnAStillRedStreak(t *testing.T) {
+	t.Parallel()
+	b, _ := newTestBackend(t)
+	a := b.App
+	repo := cwRepo(t, a)
+	if err := os.WriteFile(filepath.Join(repo, "fake-list-keep-closed"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	st := redState(3)
+	seeded := `[{"id":"d3dgd","title":"` + st.Title() + `",` +
+		`"status":"closed","labels":["` + CIRedLabel + `","` + CIRedLane + `"],` +
+		`"description":` + strconv.Quote(st.Description()) + `}]`
+	if err := os.WriteFile(filepath.Join(repo, "fake-list-labeled.json"), []byte(seeded), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// The gate's own read is still red on every pass — this streak never
+	// actually recovered, unlike jbnug's race.
+	a.CIRead = func(CIQuery) CIState { return st }
+	bd := testBd(t)
+
+	// Pass 1: indistinguishable from jbnug's race on this read alone, so it
+	// gets the same benefit of the doubt — abstain, no create.
+	if n, out, errs := cwRun(t, a, bd); n != 0 || cwSay(out) != "" {
+		t.Fatalf("the first still-red pass over a closed bead acted %d and said %q (stderr %s)", n, cwSay(out), errs)
+	}
+	if got := cwCount(t, "create"); got != 0 {
+		t.Fatalf("%d creates after the first still-red pass, want 0", got)
+	}
+	cs, err := bd.Comments(repo, "d3dgd")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ciRaceAbstained(cs) {
+		t.Fatalf("d3dgd carries no %s comment after the first still-red pass — the grace pass left no mark, so the next pass cannot tell this episode apart from a fresh race", ciRaceAbstainPrefix)
+	}
+
+	// Pass 2: still red, same episode, same closed bead — but the grace
+	// already had its one chance to resolve and did not. This is the pass
+	// that was silenced forever before the fix.
+	n, out, errs := cwRun(t, a, bd)
+	if n != 1 {
+		t.Fatalf("the second still-red pass over the same episode acted %d, want 1 (a genuinely still-red streak must not stay silenced forever) (stderr %s)", n, errs)
+	}
+	if !strings.Contains(out, "ci red ·") {
+		t.Errorf("the second pass said %q, want a filed-bead line", out)
+	}
+	if got := cwCount(t, "create"); got != 1 {
+		t.Errorf("%d creates after the second still-red pass, want 1", got)
+	}
+
+	// Pass 3: the ordinary dedupe (ciOpenBeads) now owns this episode
+	// through the bead pass 2 just filed — no third create.
+	if n, out, errs := cwRun(t, a, bd); n != 0 || cwSay(out) != "" {
+		t.Errorf("the third still-red pass acted %d and said %q (stderr %s) — the newly filed bead should dedupe it", n, cwSay(out), errs)
+	}
+	if got := cwCount(t, "create"); got != 1 {
+		t.Errorf("%d creates after the third still-red pass, want 1", got)
+	}
+}
+
 // The marker earns its place only where two gates share ONE store, which is
 // this shop's actual shape: every repo's `.beads` redirects to one queue, so
 // the ci-red bead for one gate is in the listing the OTHER gate's dedupe
