@@ -128,9 +128,20 @@ func TestBdRunCarriesNoDaemonOnEveryVerb(t *testing.T) {
 // TestLiveBdAcceptsTheTripwireAndAnswersTheSameRows asks the real binary the
 // thing the fake cannot: that D1's tripwire (ADR 0056) — the flag Bd.run
 // puts in front of every verb — is still one the pinned bd accepts, and
-// that carrying it does not change the answer. Run once against the
-// unlinked 1.2.2 keg (RHQ_BD_BIN or PATH, never linked in) and it fatals on
-// "unknown flag" instead: that red is the tripwire firing.
+// that carrying it does not change the answer. The direct arm (the one
+// carrying --no-daemon) runs FIRST, before the plain arm, and for that
+// reason: cobra rejects an unrecognized flag during parsing, ahead of the
+// command body that would otherwise touch the store, so a bd that stopped
+// accepting the flag fatals here regardless of whether it also understands
+// this rig. Run once against the unlinked 1.2.2 keg (RHQ_BD_BIN or PATH,
+// never linked in) and the direct arm fatals on "unknown flag: --no-daemon"
+// — that red is the tripwire firing (ranger-base-oluke; confirmed directly
+// against 1.2.2, both with and without this rig, same message either way).
+// Running the plain, unflagged arm first would not show this: 1.2.2 also
+// fails that arm, but on "no beads database found" — a rig-incompatibility
+// error from the store layer, unrelated to --no-daemon — and it fires
+// before the flagged arm ever runs, which is what let the wrong red pass
+// as the tripwire before this reordering.
 //
 // The rig is a no-db (JSONL-only) store asked for BY NAME — a
 // `.beads/config.yaml` holding `no-db: true` beside the seed row — and the
@@ -197,17 +208,21 @@ func TestLiveBdAcceptsTheTripwireAndAnswersTheSameRows(t *testing.T) {
 	}
 	mustGit(t, repo, "init", "-q", ".")
 
-	// The daemon arm first and the direct arm second — the order buys
-	// nothing now that neither arm materialises anything, so neither
-	// reading is a baseline for the other.
-	cmd := exec.Command("bd", "list", "--all", "--json", "--limit", "0")
-	cmd.Dir = repo
-	daemonArm := time.Now()
-	raw, err := cmd.Output()
+	// The direct arm first, carrying --no-daemon: cobra rejects an
+	// unrecognized flag during parsing, ahead of the command body that
+	// would otherwise touch the store, so this is where a bd that stopped
+	// accepting the flag fatals — regardless of whether it also
+	// understands this rig. Running the plain arm first (as this used to)
+	// let a rig-incompatibility failure there (1.2.2: "no beads database
+	// found") pass for the tripwire, since it fires before the flagged arm
+	// ever runs (ranger-base-oluke).
+	directArm := time.Now()
+	got, err := Bd{Bin: "bd"}.ListAll(repo)
 	if err != nil {
-		t.Fatalf("the daemon arm did not run, so there is nothing to compare against: %v", err)
+		t.Fatalf("ListAll against a no-db rig — bdGlobalFlags carries %v, and a bd that stopped accepting one of them fails here (the tripwire, D1): %v",
+			bdGlobalFlags, err)
 	}
-	plain := time.Since(daemonArm)
+	direct := time.Since(directArm)
 
 	// The class bd built, read after the first command that could have built
 	// one and before either answer is trusted: an empty arm below is then a
@@ -218,24 +233,29 @@ func TestLiveBdAcceptsTheTripwireAndAnswersTheSameRows(t *testing.T) {
 			filepath.Join(beads, "beads.db"))
 	}
 
+	// The plain arm second, carrying no flag: failing here — once the
+	// flagged arm above has already been accepted — means the rig itself
+	// is unsupported by this bd, a real failure but a different one from
+	// the tripwire above, and now distinguishable from it.
+	cmd := exec.Command("bd", "list", "--all", "--json", "--limit", "0")
+	cmd.Dir = repo
+	plainArm := time.Now()
+	raw, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("the plain arm did not run — the rig itself is unsupported by this bd, separate from the --no-daemon tripwire above, so there is nothing left to compare against: %v", err)
+	}
+	plain := time.Since(plainArm)
+
 	want, err := parseBdIssues(raw)
 	if err != nil {
-		t.Fatalf("the daemon arm answered nothing parseable: %v\n%s", err, raw)
+		t.Fatalf("the plain arm answered nothing parseable: %v\n%s", err, raw)
 	}
-
-	directArm := time.Now()
-	got, err := Bd{Bin: "bd"}.ListAll(repo)
-	if err != nil {
-		t.Fatalf("ListAll against a no-db rig — bdGlobalFlags carries %v, and a bd that stopped accepting one of them fails here: %v",
-			bdGlobalFlags, err)
-	}
-	direct := time.Since(directArm)
 
 	// Same store, same rows, with the flag and without it. This is the whole
 	// live claim now, and the seeded row is named so a rig that resolves to
 	// nothing fails here rather than passing on two empty answers.
 	if len(want) != 1 || len(got) != len(want) || got[0].ID != want[0].ID {
-		t.Fatalf("direct and daemon arms disagree: direct=%+v daemon=%+v", got, want)
+		t.Fatalf("direct and plain arms disagree: direct=%+v plain=%+v", got, want)
 	}
 
 	t.Logf("direct %v, plain %v — logged, not compared: the daemon class is gone on bd 0.50.x (see the header)", direct, plain)
