@@ -5150,7 +5150,13 @@ for posse_adr_l in $posse_adr_refused; do
   posse_adr_t=${posse_adr_l%% *}
   posse_adr_f=${posse_adr_l#* }
   posse_adr_lines=$(grep -anE "\b$posse_adr_t\b" "$posse_adr_f" | cut -d: -f1 | tr '\n' ',' | sed 's/,$//')
-  echo "REFUSE $posse_adr_f:$posse_adr_lines $posse_adr_t resolves here but is not on $posse_adr_branch and no landed twin is in the record — cite the bead id (git log --grep), or put the twin beside it (ADR 0051 D2/D5)"
+  # ranger-base-xfh1n: printf, not echo, same reason as ranger-base-23mvz.
+  # posse_adr_f is a record path off the loop's line; echo expands backslash
+  # escapes in its operand on the shells that run this hook (macOS /bin/sh is
+  # bash 3.2 with xpg_echo on when invoked as sh, a Linux /bin/sh is usually
+  # dash, same by spec), so a path holding \n, \t, \\ or \c prints mangled or
+  # truncated.
+  printf '%s\n' "REFUSE $posse_adr_f:$posse_adr_lines $posse_adr_t resolves here but is not on $posse_adr_branch and no landed twin is in the record — cite the bead id (git log --grep), or put the twin beside it (ADR 0051 D2/D5)"
 done
 posse_adr_j=$(printf '%s' "$posse_adr_ancestors" | grep -c .)
 posse_adr_a=$(printf '%s' "$posse_adr_admitted" | grep -c .)

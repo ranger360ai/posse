@@ -141,6 +141,28 @@ func TestQAAdrCensusRefusesAStaleShaBesideANonTwin(t *testing.T) {
 	}
 }
 
+// PIN 2b — ranger-base-xfh1n: a record path holding a backslash escape
+// prints verbatim, on one line. posse_adr_f is a path taken off the loop's
+// line and the REFUSE arm printed it through echo, which expands backslash
+// escapes in its operand on the shells this hook runs under (macOS /bin/sh
+// is bash 3.2 with xpg_echo on when invoked as sh; a Linux /bin/sh is
+// usually dash, same by spec) — the same class ranger-base-23mvz fixed in
+// the revert refusal's writer. \n would split the REFUSE line in two.
+func TestQAAdrCensusRefusalNamesAPathWithABackslashEscape(t *testing.T) {
+	t.Parallel()
+	r := newAdrRepo(t)
+
+	const rel = `docs/adr/0994-back\nslash.md`
+	r.stage(t, rel, "# x\n\nStale `"+r.stale+"`.\n")
+	out, _, refused := r.census(t, rel)
+	if !refused {
+		t.Fatalf("a stale sha must be refused:\n%s", out)
+	}
+	if !strings.Contains(out, "REFUSE "+rel+":3 "+r.stale) {
+		t.Errorf("the refusal must name the path verbatim, on one line:\n%s", out)
+	}
+}
+
 // PIN 3 — the radius is the RECORD: a twin in another file of the same
 // census admits nothing. The control is the two files' contents in one
 // file, over which the same census admits the pair.
