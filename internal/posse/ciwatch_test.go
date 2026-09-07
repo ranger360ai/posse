@@ -42,6 +42,24 @@ func fakeGh(args []string) int {
 		fmt.Fprint(os.Stderr, msg)
 		return 1
 	}
+	// `run view <id> --log-failed` is a second call ciCauses makes, answered
+	// from a per-id fixture (fake-gh-log-<id>.txt) so distinct runs can
+	// answer distinctly. Missing is a run gh could not be asked about —
+	// exit 1, the same "could not read" shape fake-gh-fail gives the list
+	// call, and ciCauses must treat it the same way: skipped, not fatal.
+	if len(args) >= 2 && args[0] == "run" && args[1] == "view" {
+		id := ""
+		if len(args) >= 3 {
+			id = args[2]
+		}
+		b, err := os.ReadFile(filepath.Join(fakeDir(), "fake-gh-log-"+id+".txt"))
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "no log fixture for run %s", id)
+			return 1
+		}
+		fmt.Print(string(b))
+		return 0
+	}
 	if b, err := os.ReadFile(filepath.Join(fakeDir(), "fake-gh-runs.json")); err == nil {
 		fmt.Print(string(b))
 	} else {
@@ -54,6 +72,15 @@ func fakeGh(args []string) int {
 func ciRunJSON(sha, status, conclusion string, at time.Time) string {
 	return fmt.Sprintf(`{"headSha":%q,"status":%q,"conclusion":%q,"createdAt":%q,"url":"https://github.com/o/n/actions/runs/1"}`,
 		sha, status, conclusion, at.UTC().Format(time.RFC3339))
+}
+
+// ciRunJSONID is ciRunJSON with its own run id, for the causes tests: every
+// row ciRunJSON itself renders shares run id 1, which is fine for the
+// streak arithmetic and wrong for anything that asks gh about one run by
+// id.
+func ciRunJSONID(sha, status, conclusion string, at time.Time, id string) string {
+	return fmt.Sprintf(`{"headSha":%q,"status":%q,"conclusion":%q,"createdAt":%q,"url":"https://github.com/o/n/actions/runs/%s"}`,
+		sha, status, conclusion, at.UTC().Format(time.RFC3339), id)
 }
 
 // ghRepo builds a checkout ReadCI will accept — a git repo with a github.com
@@ -151,6 +178,55 @@ func TestReadCICountsTheStreakThroughCancelledRuns(t *testing.T) {
 	}
 	if st.Slug != "ranger360ai/posse" || st.Branch != "main" {
 		t.Errorf("slug/branch = %q/%q", st.Slug, st.Branch)
+	}
+}
+
+// PriorRedRuns is the red streak a green reading is about to clear — free
+// of an extra gh call, since it is the same window ReadCI already scanned
+// for Streak and Since (ranger-base-d6zyu finding 3). Newest-first, and it
+// stops at the streak boundary rather than walking every red the window
+// holds.
+func TestReadCIRecordsThePriorRedStreakOnlyWhenItClears(t *testing.T) {
+	t.Parallel()
+	base := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	dir, bin := ghRepo(t, "ci.yml",
+		ciRunJSON("newestgree", "completed", "success", base.Add(4*time.Hour)), // Latest
+		ciRunJSON("secondgree", "completed", "success", base.Add(3*time.Hour)),
+		ciRunJSON("redrun0002", "completed", "failure", base.Add(2*time.Hour)), // PriorRedRuns[0]
+		ciRunJSON("redrun0001", "completed", "failure", base.Add(1*time.Hour)), // PriorRedRuns[1]
+		ciRunJSON("redrun0000", "completed", "failure", base),                  // PriorRedRuns[2]
+	)
+	st := ReadCI(CIQuery{Dir: dir, Workflow: "ci.yml", GhBin: bin})
+	if !st.Known() || st.Red {
+		t.Fatalf("st = %+v, want a known green reading", st)
+	}
+	if st.Streak != 2 {
+		t.Fatalf("streak = %d, want 2", st.Streak)
+	}
+	if got := len(st.PriorRedRuns); got != 3 {
+		t.Fatalf("PriorRedRuns has %d runs, want 3: %+v", got, st.PriorRedRuns)
+	}
+	wantOrder := []string{"redrun0002", "redrun0001", "redrun0000"}
+	for i, want := range wantOrder {
+		if got := st.PriorRedRuns[i].Sha; got != want {
+			t.Errorf("PriorRedRuns[%d] = %q, want %q (newest-first)", i, got, want)
+		}
+	}
+
+	// The control: a RED reading has no "prior" streak to report — the one
+	// it is IN is Since/Streak's job, and PriorRedRuns must stay empty so a
+	// still-red pass never asks ciCauses about anything.
+	dir2, bin2 := ghRepo(t, "ci.yml",
+		ciRunJSON("stillred01", "completed", "failure", base.Add(2*time.Hour)),
+		ciRunJSON("stillred00", "completed", "failure", base.Add(1*time.Hour)),
+		ciRunJSON("oldgreen00", "completed", "success", base),
+	)
+	st2 := ReadCI(CIQuery{Dir: dir2, Workflow: "ci.yml", GhBin: bin2})
+	if !st2.Red {
+		t.Fatalf("st2 = %+v, want red", st2)
+	}
+	if len(st2.PriorRedRuns) != 0 {
+		t.Errorf("a red reading has PriorRedRuns %+v, want none", st2.PriorRedRuns)
 	}
 }
 
@@ -303,6 +379,124 @@ func TestGithubSlugSpellings(t *testing.T) {
 		if got, ok := githubSlug(remote); ok {
 			t.Errorf("githubSlug(%q) = %q, want no match", remote, got)
 		}
+	}
+}
+
+// ─── the causes (ranger-base-d6zyu finding 3) ───────────────────────────────
+
+// writeGhLog plants the fixture fakeGh serves for `run view <id> --log-failed`.
+func writeGhLog(t *testing.T, id, body string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(fakeDirOf(t), "fake-gh-log-"+id+".txt"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// ciCauses reads one `--- FAIL: Name` per run regardless of what gh prefixed
+// the line with, dedupes repeats WITHIN a run (one run failing a test twice
+// is still one run's worth of evidence), and counts ACROSS runs.
+func TestCICausesAggregatesDedupesAndSortsByCount(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	bin := fakeBinFor(t, "gh")
+	writeGhLog(t, "101", "ubuntu-latest\tgo test\t--- FAIL: TestAlpha (0.01s)\nubuntu-latest\tgo test\t--- FAIL: TestAlpha (0.01s)\n")
+	writeGhLog(t, "102", "macos-latest\tgo test\t--- FAIL: TestAlpha (0.02s)\nmacos-latest\tgo test\t--- FAIL: TestBeta (0.03s)\n")
+	writeGhLog(t, "103", "ubuntu-latest\tgo test\t--- FAIL: TestBeta (0.01s)\n")
+
+	runs := []CIRun{
+		{Sha: "c", URL: "https://github.com/o/n/actions/runs/103"},
+		{Sha: "b", URL: "https://github.com/o/n/actions/runs/102"},
+		{Sha: "a", URL: "https://github.com/o/n/actions/runs/101"},
+	}
+	got := ciCauses(dir, bin, "o/n", runs)
+	want := []string{"TestAlpha (2 runs)", "TestBeta (2 runs)"}
+	if len(got) != len(want) {
+		t.Fatalf("ciCauses = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("ciCauses[%d] = %q, want %q (full: %v)", i, got[i], want[i], got)
+		}
+	}
+	if got := ghCalls(t); strings.Count(got, "run view") != 3 {
+		t.Errorf("gh calls = %q, want exactly 3 `run view`s, one per run", got)
+	}
+}
+
+// A run gh could not be asked about (missing fixture here — a run too old
+// for GitHub to still hold logs for, in production) is skipped rather than
+// failing the whole reading: best-effort, the same rule NoGate and Why
+// already follow in this file.
+func TestCICausesSkipsARunItCouldNotRead(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	bin := fakeBinFor(t, "gh")
+	writeGhLog(t, "201", "--- FAIL: TestReachable (0.01s)\n")
+	// 202 has no fixture: fakeGh exits 1 for it.
+	runs := []CIRun{
+		{Sha: "b", URL: "https://github.com/o/n/actions/runs/202"},
+		{Sha: "a", URL: "https://github.com/o/n/actions/runs/201"},
+	}
+	got := ciCauses(dir, bin, "o/n", runs)
+	if len(got) != 1 || got[0] != "TestReachable (1 run)" {
+		t.Fatalf("ciCauses = %v, want exactly the readable run's cause", got)
+	}
+}
+
+// No FAIL line anywhere is an abstention, not an empty report — nil, so
+// ciClear's caller can tell "nothing to say" from "said nothing".
+func TestCICausesReturnsNilWhenNothingFailed(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	bin := fakeBinFor(t, "gh")
+	writeGhLog(t, "301", "ok  \tinternal/posse\t0.5s\n")
+	got := ciCauses(dir, bin, "o/n", []CIRun{{Sha: "a", URL: "https://github.com/o/n/actions/runs/301"}})
+	if got != nil {
+		t.Errorf("ciCauses = %v, want nil", got)
+	}
+}
+
+// ciCauseScanCap bounds the cost: a streak longer than the cap is scanned
+// only at its newest ciCauseScanCap runs, and the report says so rather
+// than silently under-reporting as if that were the whole streak.
+func TestCICausesCapsHowManyRunsItAsksGhAbout(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	bin := fakeBinFor(t, "gh")
+	n := ciCauseScanCap + 3
+	runs := make([]CIRun, n)
+	for i := 0; i < n; i++ {
+		id := strconv.Itoa(400 + i)
+		writeGhLog(t, id, fmt.Sprintf("--- FAIL: TestRun%d (0.01s)\n", i))
+		runs[i] = CIRun{Sha: strconv.Itoa(i), URL: "https://github.com/o/n/actions/runs/" + id}
+	}
+	got := ciCauses(dir, bin, "o/n", runs)
+	if calls := strings.Count(ghCalls(t), "run view"); calls != ciCauseScanCap {
+		t.Errorf("gh calls = %d, want exactly the cap (%d)", calls, ciCauseScanCap)
+	}
+	joined := strings.Join(got, " ")
+	if !strings.Contains(joined, fmt.Sprintf("newest %d of %d", ciCauseScanCap, n)) {
+		t.Errorf("ciCauses = %v, want a line naming the cap against the true total", got)
+	}
+	// Only the FIRST (newest) ciCauseScanCap runs' tests appear — the last
+	// three (TestRun%d for i >= cap) are past the cap and must be silent.
+	for i := ciCauseScanCap; i < n; i++ {
+		name := fmt.Sprintf("TestRun%d", i)
+		if strings.Contains(joined, name) {
+			t.Errorf("ciCauses named %s, which is past the cap: %v", name, got)
+		}
+	}
+}
+
+// runIDFromURL — sorry, ciRunID: the id `gh run view` needs, off the URL
+// `gh run list` gave it.
+func TestCIRunIDPullsTheNumericIDOffTheURL(t *testing.T) {
+	t.Parallel()
+	if got := ciRunID("https://github.com/o/n/actions/runs/34067366022"); got != "34067366022" {
+		t.Errorf("ciRunID = %q, want the numeric id", got)
+	}
+	if got := ciRunID("not a url"); got != "" {
+		t.Errorf("ciRunID(%q) = %q, want empty", "not a url", got)
 	}
 }
 
@@ -539,6 +733,81 @@ func TestCIWatchClosesTheBeadNoSessionEverClaimed(t *testing.T) {
 	}
 	if got := cwCount(t, "create"); got != 2 {
 		t.Errorf("%d creates over two episodes, want 2", got)
+	}
+}
+
+// The clear comment carries the streak's own causes when the reading found
+// a prior red streak to ask about — App.CICauses is the seam (the same
+// reason CIRead is one), so this drives ciClear without a real gh
+// (ranger-base-d6zyu finding 3).
+func TestCIWatchClearCommentNamesTheStreaksCauses(t *testing.T) {
+	t.Parallel()
+	b, _ := newTestBackend(t)
+	a := b.App
+	repo := cwRepo(t, a)
+	a.CIRead = func(CIQuery) CIState { return redState(2) }
+	bd := testBd(t)
+	if n, _, e := cwRun(t, a, bd); n != 1 {
+		t.Fatalf("file: %d (%s)", n, e)
+	}
+
+	var gotDir, gotSlug string
+	var gotRuns []CIRun
+	green := greenState()
+	green.PriorRedRuns = []CIRun{
+		{Sha: "r1", URL: "https://x/2"},
+		{Sha: "r0", URL: "https://x/1"},
+	}
+	a.CICauses = func(dir, slug string, runs []CIRun) []string {
+		gotDir, gotSlug, gotRuns = dir, slug, runs
+		return []string{"TestFlaky (2 runs)"}
+	}
+	a.CIRead = func(CIQuery) CIState { return green }
+	if n, _, errs := cwRun(t, a, bd); n != 1 {
+		t.Fatalf("close pass acted %d (stderr %s)", n, errs)
+	}
+	if gotSlug != green.Slug || len(gotRuns) != 2 {
+		t.Errorf("CICauses called with slug %q runs %v, want %q and the 2 prior red runs", gotSlug, gotRuns, green.Slug)
+	}
+	if gotDir == "" {
+		t.Errorf("CICauses called with an empty dir")
+	}
+	body, _ := os.ReadFile(filepath.Join(repo, "fake-comments.json"))
+	if !strings.Contains(string(body), "TestFlaky (2 runs)") {
+		t.Errorf("clear comment is missing the reported cause: %s", body)
+	}
+}
+
+// The ordinary clear — no prior red streak in the reading — asks CICauses
+// nothing at all, and says nothing about causes. Most clears follow a
+// streak of exactly the run that filed the bead (finding 3's own examples
+// were 1 and 5 runs), so this is the common path, not the edge.
+func TestCIWatchClearAsksNothingWhenThereIsNoPriorStreak(t *testing.T) {
+	t.Parallel()
+	b, _ := newTestBackend(t)
+	a := b.App
+	repo := cwRepo(t, a)
+	a.CIRead = func(CIQuery) CIState { return redState(1) }
+	bd := testBd(t)
+	if n, _, e := cwRun(t, a, bd); n != 1 {
+		t.Fatalf("file: %d (%s)", n, e)
+	}
+
+	called := false
+	a.CICauses = func(dir, slug string, runs []CIRun) []string {
+		called = true
+		return []string{"should never be asked"}
+	}
+	a.CIRead = func(CIQuery) CIState { return greenState() } // PriorRedRuns is nil
+	if n, _, errs := cwRun(t, a, bd); n != 1 {
+		t.Fatalf("close pass acted %d (stderr %s)", n, errs)
+	}
+	if called {
+		t.Errorf("CICauses was called with no prior red streak to ask about")
+	}
+	body, _ := os.ReadFile(filepath.Join(repo, "fake-comments.json"))
+	if strings.Contains(string(body), "CAUSES") {
+		t.Errorf("clear comment names causes with nothing to name: %s", body)
 	}
 }
 

@@ -174,6 +174,23 @@ const (
 	// and an unreachable GitHub is an abstention like any other.
 	ciReadTimeout = 30 * time.Second
 
+	// ciCauseScanCap bounds how many of a cleared streak's own red runs
+	// ciCauses will fork a `gh run view --log-failed` for — a second,
+	// independent cost from ciScanLimit's one `run list` call, one child
+	// per run rather than one for the whole window. ci-watch's own reason
+	// to exist is that nothing bounded a red streak before it (the incident
+	// this file's header names ran 191 runs with nobody looking), and since
+	// it files a bead on the FIRST red, the ordinary streak it clears is
+	// this bead's own findings 1 and 2 — five runs and one. 10 covers those
+	// with room, and a streak long enough to hit it says so rather than
+	// pretending it read the rest.
+	ciCauseScanCap = 10
+
+	// ciCauseReadTimeout is per run, not per clear: ciCauseScanCap runs at
+	// this bound is the most one clear can cost, and a clear is not read on
+	// the hot path drumbeat and dedupe are.
+	ciCauseReadTimeout = 10 * time.Second
+
 	// ciMarkerPrefix opens every ci-red bead's description and is the dedupe
 	// of record: which repo, which workflow and which branch this bead is
 	// about, written by bd in the same breath as the issue. The label alone
@@ -263,6 +280,13 @@ type CIState struct {
 	// Both are still abstentions: neither files, neither closes, and neither
 	// is ever read as green.
 	NoGate bool
+	// PriorRedRuns is the immediately preceding red streak, set only when
+	// Red is false: the runs ciClear is about to say nothing went wrong in,
+	// unless something reads them (ranger-base-d6zyu finding 3). Free of
+	// cost — it is the same scan window ReadCI already fetched for Streak
+	// and Since, just not thrown away — and bounded the same way Streak is,
+	// by ciScanLimit.
+	PriorRedRuns []CIRun
 }
 
 // Known is whether Red means anything.
@@ -420,6 +444,14 @@ func ReadCI(q CIQuery) CIState {
 	}
 	s.Since = verdicts[s.Streak-1]
 	s.Capped = s.Streak == len(verdicts) && len(runs) >= ciScanLimit
+	// No `if !s.Red` needed: verdicts[s.Streak], if it exists, is by
+	// construction the first run whose verdict DIFFERS from reds[0] — so
+	// when the current streak is itself red, reds[s.Streak] is green and
+	// this appends nothing, and PriorRedRuns stays what a red reading
+	// wants it to be: empty.
+	for i := s.Streak; i < len(reds) && reds[i]; i++ {
+		s.PriorRedRuns = append(s.PriorRedRuns, verdicts[i])
+	}
 	return s
 }
 
@@ -460,6 +492,106 @@ func trimToJSON(b []byte) []byte {
 		s = s[i:]
 	}
 	return []byte(s)
+}
+
+// ciRunIDRe pulls the numeric run id off a run's URL — `gh run view` takes
+// an id, not a sha, and CIRun keeps only the four fields a bead needs (the
+// file header's own rule), which does not include a separate id field.
+var ciRunIDRe = regexp.MustCompile(`/runs/(\d+)`)
+
+func ciRunID(url string) string {
+	m := ciRunIDRe.FindStringSubmatch(url)
+	if m == nil {
+		return ""
+	}
+	return m[1]
+}
+
+// ciFailRe finds a Go test's own `--- FAIL: Name` wherever `--log-failed`
+// put it on the line — gh prefixes every line with the job and step it came
+// from, and that prefix is not this file's to depend on the shape of.
+var ciFailRe = regexp.MustCompile(`--- FAIL: (\S+)`)
+
+// ciCauses is the real reading behind App.CICauses: for up to
+// ciCauseScanCap of runs (newest first, so a capped streak still reports
+// its most recent causes), fork `gh run view --log-failed` and collect the
+// distinct failing test names it printed, each with how many of the
+// (scanned) runs carried it — "TestX (3 runs)" is a record a next reader
+// can check against an open bead before this happens again unnoticed
+// (ranger-base-d6zyu finding 3: the reason this file's own header names —
+// attribution — was being spent rather than banked).
+//
+// Best-effort and silent about it: a run gh could not be asked about (no
+// network, no auth, a run too old for GitHub to still hold logs for) is
+// left out rather than guessed at, on the same rule NoGate and Why already
+// follow in this file — an attribution that might be wrong is worse than
+// none, because the next reader trusts it.
+func ciCauses(dir, bin, slug string, runs []CIRun) []string {
+	scan := runs
+	if len(scan) > ciCauseScanCap {
+		scan = scan[:ciCauseScanCap]
+	}
+	counts := map[string]int{}
+	for _, r := range scan {
+		id := ciRunID(r.URL)
+		if id == "" {
+			continue
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), ciCauseReadTimeout)
+		cmd := exec.CommandContext(ctx, bin, "run", "view", id, "--repo", slug, "--log-failed")
+		cmd.Dir = dir
+		out, err := cmd.Output()
+		cancel()
+		if err != nil {
+			continue
+		}
+		seen := map[string]bool{}
+		for _, m := range ciFailRe.FindAllStringSubmatch(string(out), -1) {
+			seen[m[1]] = true
+		}
+		for name := range seen {
+			counts[name]++
+		}
+	}
+	if len(counts) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(counts))
+	for name := range counts {
+		names = append(names, name)
+	}
+	sort.Slice(names, func(i, j int) bool {
+		if counts[names[i]] != counts[names[j]] {
+			return counts[names[i]] > counts[names[j]]
+		}
+		return names[i] < names[j]
+	})
+	lines := make([]string, len(names))
+	for i, name := range names {
+		word := "run"
+		if counts[name] != 1 {
+			word = "runs"
+		}
+		lines[i] = fmt.Sprintf("%s (%d %s)", name, counts[name], word)
+	}
+	if len(runs) > ciCauseScanCap {
+		lines = append(lines, fmt.Sprintf("— scanned the newest %d of %d red runs", ciCauseScanCap, len(runs)))
+	}
+	return lines
+}
+
+// ciCausesFor is ciClear's one call site: nothing to ask when the streak it
+// is clearing left no red runs behind it (the ordinary case — most clears
+// follow a streak of one), App.CICauses when a test set the seam, otherwise
+// the real reading.
+func (a *App) ciCausesFor(dir string, st CIState) []string {
+	if len(st.PriorRedRuns) == 0 {
+		return nil
+	}
+	if a.CICauses != nil {
+		return a.CICauses(dir, st.Slug, st.PriorRedRuns)
+	}
+	return ciCauses(dir, ghBin(""), st.Slug, st.PriorRedRuns)
 }
 
 // ciMarker is the dedupe of record — repo, workflow and branch, one line.
@@ -851,6 +983,9 @@ func (a *App) ciClear(bd Bd, dir string, st CIState, open BdIssue, out, errw io.
 	}
 	note := fmt.Sprintf("%s%s is green again on %s — %s at %s, %s.\n\nNothing is left to build under this bead: ci-watch filed it when the gate went red and the gate is no longer red. %s",
 		ciClearedPrefix, st.Workflow, st.Branch, st.Latest.Short(), st.Latest.Created.UTC().Format(time.RFC3339), st.Latest.URL, why)
+	if causes := a.ciCausesFor(dir, st); len(causes) > 0 {
+		note += "\n\nCAUSES this streak's own runs carried, read off their failed steps rather than left for the next reader to rediscover: " + strings.Join(causes, "; ") + "."
+	}
 	if err := bd.Comment(dir, open.ID, note, VerifyActor); err != nil {
 		fmt.Fprintf(errw, "ci-watch: %s: clear comment: %v\n", open.ID, err)
 		return 0

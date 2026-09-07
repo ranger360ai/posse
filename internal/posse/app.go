@@ -75,6 +75,15 @@ type App struct {
 	// AND CLOSES BEADS, so a pin that could not fix it would be writing into
 	// the live store.
 	CIRead func(CIQuery) CIState
+	// CICauses reads the failing test names off a cleared red streak's own
+	// runs, for the record ciClear's comment carries forward (ranger-base-
+	// d6zyu finding 3: a clear that names no cause spends the attribution a
+	// red gate cost instead of banking it). nil = ciCauses, which forks
+	// `gh run view --log-failed` against the real GitHub, bounded to
+	// ciCauseScanCap runs. It is a seam for the same reason CIRead is one:
+	// ciClear's own tests must never shell out to a real gh, and this is a
+	// second, independent set of gh calls CIRead does not make.
+	CICauses func(dir, slug string, runs []CIRun) []string
 	// TopCPU reads the box's process table for the load guard's culprit
 	// line (loadguard.go). nil = SysTopCPU, one bounded `ps` on the real
 	// box, which is what every real refusal uses. It is a field for the
