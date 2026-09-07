@@ -142,7 +142,7 @@ func TestPersonaActiveHoldsAnUnreadableSeatAndOnlyThatSeat(t *testing.T) {
 	// still answers, this meta is withheld by name and the seat is held as
 	// `unlisted`. What the lever below changes is the CAUSE, and a status
 	// that did not move would be the two repairs rendered as one.
-	if name, st := d.personaActive("developer", dir); name != slot+"-a-1" || st != seatUnlisted {
+	if name, st := d.personaActive("developer", dir, "", false); name != slot+"-a-1" || st != seatUnlisted {
 		t.Fatalf("premise: with the listing readable this seat is held as %q: got %q %q", seatUnlisted, name, st)
 	}
 
@@ -151,7 +151,7 @@ func TestPersonaActiveHoldsAnUnreadableSeatAndOnlyThatSeat(t *testing.T) {
 		t.Fatalf("premise: the listing must fail")
 	}
 
-	name, st := d.personaActive("developer", dir)
+	name, st := d.personaActive("developer", dir, "", false)
 	if name != slot+"-a-1" {
 		t.Errorf("a seat whose session the herd could not be asked about read as an EMPTY seat: personaActive = %q, want %q", name, slot+"-a-1")
 	}
@@ -162,7 +162,7 @@ func TestPersonaActiveHoldsAnUnreadableSeatAndOnlyThatSeat(t *testing.T) {
 	// The control: a persona with no meta at all has no session to be
 	// unreadable, and stalling the whole shop on a failed read would stop
 	// hiring in every lane.
-	if name, st := d.personaActive("hopper", dir); name != "" {
+	if name, st := d.personaActive("hopper", dir, "", false); name != "" {
 		t.Errorf("an unreadable listing froze a seat with no session in it: personaActive(hopper) = %q %q, want free — the abstention is per-seat", name, st)
 	}
 }
@@ -194,19 +194,19 @@ func TestPersonaActiveSkipsCrewForeignAndRecipeMetasUnderAnUnreadableListing(t *
 	}
 
 	qaMetaNaming(t, b, slot, "developer", "w405", true) // the operator's own session
-	if name, st := d.personaActive("developer", dir); name != "" {
+	if name, st := d.personaActive("developer", dir, "", false); name != "" {
 		t.Errorf("an unreadable CREW session held the seat: %q %q — ADR 0008 keeps dispatch out of the operator's conversation, and a herd that cannot be listed does not change whose session it is", name, st)
 	}
 	os.Remove(b.metaPath(slot))
 
 	qaMetaNaming(t, b, slot+"-a-1", "hopper", "w406", false) // same prefix, another persona
-	if name, st := d.personaActive("developer", dir); name != "" {
+	if name, st := d.personaActive("developer", dir, "", false); name != "" {
 		t.Errorf("a meta belonging to another agent held this persona's seat: %q %q", name, st)
 	}
 	os.Remove(b.metaPath(slot + "-a-1"))
 
 	qaMetaNaming(t, b, slot+"-a-2", "developer", "", false) // a recipe: no workspace
-	if name, st := d.personaActive("developer", dir); name != "" {
+	if name, st := d.personaActive("developer", dir, "", false); name != "" {
 		t.Errorf("a RECIPE held the seat: %q %q — a meta naming no workspace is a session already gone, and holding a seat for one would stop hiring until the operator deletes the file", name, st)
 	}
 }
@@ -227,11 +227,11 @@ func TestPersonaActiveSkipsAStrandedSessionUnderAnUnreadableListing(t *testing.T
 	qaMetaNaming(t, b, slot+"-a-1", "developer", "w405", false)
 	qaListError(t, fake)
 
-	if name, _ := d.personaActive("developer", dir); name != slot+"-a-1" {
+	if name, _ := d.personaActive("developer", dir, "", false); name != slot+"-a-1" {
 		t.Fatalf("premise: the seat must be held before the strand, or the strand proves nothing: %q", name)
 	}
 	d.strand(slot + "-a-1")
-	if name, st := d.personaActive("developer", dir); name != "" {
+	if name, st := d.personaActive("developer", dir, "", false); name != "" {
 		t.Errorf("a session this pass stranded held the seat under an unreadable listing: %q %q", name, st)
 	}
 }

@@ -72,7 +72,7 @@ func TestQAAnUnreadableMetaDirHoldsTheSeat(t *testing.T) {
 
 	// The premise is the SEPARATION: while the dir is readable this seat is
 	// held, so what the lever below changes is the answer and not the setup.
-	if name, st := d.personaActive("developer", dir); name != slot+"-a-1" {
+	if name, st := d.personaActive("developer", dir, "", false); name != slot+"-a-1" {
 		t.Fatalf("premise: with the meta dir readable this seat is held: got %q %q", name, st)
 	}
 
@@ -95,7 +95,7 @@ func TestQAAnUnreadableMetaDirHoldsTheSeat(t *testing.T) {
 	// (seatunreadable_qa_test.go) and this one inherited none of it —
 	// `seatUnreadable` → `seatUnlisted` and the slot name → any other string
 	// both survived the whole seat suite.
-	if name, st := d.personaActive("developer", dir); name != slot || st != seatUnreadable {
+	if name, st := d.personaActive("developer", dir, "", false); name != slot || st != seatUnreadable {
 		t.Errorf("an unreadable meta DIR must hold the seat under the SLOT's own name and say which repair it is: personaActive = %q %q, want %q %q — the seat is reported under its slot because no session name can be read, and a status that did not move would render two different repairs as one", name, st, slot, seatUnreadable)
 	}
 
@@ -105,7 +105,7 @@ func TestQAAnUnreadableMetaDirHoldsTheSeat(t *testing.T) {
 	if _, _, err := b.listSessions(); err == nil {
 		t.Fatalf("premise: the listing must fail")
 	}
-	if name, st := d.personaActive("developer", dir); name != slot || st != seatUnreadable {
+	if name, st := d.personaActive("developer", dir, "", false); name != slot || st != seatUnreadable {
 		t.Errorf("the err arm must hold the seat when metaNames' own ReadDir failed: personaActive = %q %q, want %q %q — 88c2507 claims an unreadable listing holds the seat it cannot answer for", name, st, slot, seatUnreadable)
 	}
 }
@@ -172,7 +172,7 @@ func TestQAAMissingMetaDirIsStillAFreeSeat(t *testing.T) {
 		t.Fatalf("premise: metaNames over a missing dir is empty and NOT an error — a dir that was never written is no sessions: %v, %v", names, err)
 	}
 
-	if name, st := d.personaActive("developer", dir); name != "" {
+	if name, st := d.personaActive("developer", dir, "", false); name != "" {
 		t.Errorf("a box with no meta dir at all froze a seat: personaActive = %q %q, want free — a directory that was never written is no sessions, not an unanswered question (ranger-base-jzxrh's control)", name, st)
 	}
 }

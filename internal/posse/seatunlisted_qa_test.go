@@ -180,7 +180,7 @@ func TestPersonaActiveHoldsTheWithheldSeatAndOnlyThatSeat(t *testing.T) {
 
 	dir := "/src/posse"
 	slot := SessionFor("developer", dir)
-	if name, st := d.personaActive("developer", dir); name != "" {
+	if name, st := d.personaActive("developer", dir, "", false); name != "" {
 		t.Fatalf("premise: nothing is planted yet and the seat must read free: %q %q", name, st)
 	}
 
@@ -200,7 +200,7 @@ func TestPersonaActiveHoldsTheWithheldSeatAndOnlyThatSeat(t *testing.T) {
 		}
 	}
 
-	name, st := d.personaActive("developer", dir)
+	name, st := d.personaActive("developer", dir, "", false)
 	if name != slot+"-a-1" {
 		t.Errorf("a session this listing could not answer for read as an empty seat: personaActive = %q, want %q", name, slot+"-a-1")
 	}
@@ -209,7 +209,7 @@ func TestPersonaActiveHoldsTheWithheldSeatAndOnlyThatSeat(t *testing.T) {
 	}
 
 	// The control: one seat's unanswerable meta is not the whole shop's.
-	if name, st := d.personaActive("hopper", dir); name != "" {
+	if name, st := d.personaActive("hopper", dir, "", false); name != "" {
 		t.Errorf("a meta withheld in one seat froze another: personaActive(hopper) = %q %q, want free — the abstention is per-seat", name, st)
 	}
 }
@@ -236,14 +236,14 @@ func TestPersonaActiveSkipsAWithheldCrewOrForeignMeta(t *testing.T) {
 	if _, withheld, err := b.listSessions(); err != nil || len(withheld) != 1 {
 		t.Fatalf("premise: the crew meta must be withheld with a nil error: withheld=%v err=%v", withheld, err)
 	}
-	if name, st := d.personaActive("developer", dir); name != "" {
+	if name, st := d.personaActive("developer", dir, "", false); name != "" {
 		t.Errorf("a withheld CREW session held the seat: %q %q — ADR 0008 keeps dispatch out of the operator's conversation, and a listing that cannot answer does not change whose session it is", name, st)
 	}
 
 	// Same seat prefix, another persona's agent: not this persona working,
 	// listed or withheld (the same read the rows get, ranger-base-p6no).
 	qaWithheldMeta(t, b, slot+"-a-1", "hopper", false)
-	if name, st := d.personaActive("developer", dir); name != "" {
+	if name, st := d.personaActive("developer", dir, "", false); name != "" {
 		t.Errorf("a withheld meta belonging to another agent held this persona's seat: %q %q", name, st)
 	}
 }
@@ -335,13 +335,13 @@ func TestQAAStrandedLaunchDoesNotHoldItsSeatThroughTheWithheldWalk(t *testing.T)
 	// POSITIVE CONTROL: before the strand the withheld meta holds the seat.
 	// Without this the assertion below would be an absence that is true of
 	// nothing at all.
-	if name, st := d.personaActive("developer", dir); name != session {
+	if name, st := d.personaActive("developer", dir, "", false); name != session {
 		t.Fatalf("premise: an unstranded withheld meta must hold its seat: %q %q, want %q", name, st, session)
 	}
 
 	// This pass launched that session and could not use it (ADR 0013 §2).
 	d.strand(session)
-	if name, st := d.personaActive("developer", dir); name != "" {
+	if name, st := d.personaActive("developer", dir, "", false); name != "" {
 		t.Errorf("a session THIS PASS stranded held its own seat through the withheld walk: %q %q — "+
 			"the strand exists so the slot stays free for the retry the ceiling grants it, and the rows "+
 			"already read it that way", name, st)

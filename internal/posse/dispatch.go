@@ -1718,7 +1718,16 @@ func (d *Dispatcher) seatFor(l routeLane, is RepoIssue, personaFilter string, se
 			passed = append(passed, seatPass{m.name, where, doing})
 			continue
 		}
-		if name, st := d.personaActive(m.name, is.Dir); name != "" {
+		// wide (ranger-base-ajpbe): personaActive's in_progress-bead busy
+		// check only applies when this lane actually has somewhere ELSE to
+		// put the bead. A lane of one has no alternative seat, and denying
+		// the only candidate there is not "wait for a later pass" — it is
+		// refusing Dial F's own multi-session-per-persona design outright
+		// (TestLaunchBeadTwiceWhileStillIdle: a persona idle behind an
+		// unrelated in_progress bead still takes a second bead's session).
+		// A wide lane has a real choice to make, and that is what the
+		// bug's own incident was — a busy seat beside a genuinely free one.
+		if name, st := d.personaActive(m.name, is.Dir, is.ID, len(l.seats) > 1); name != "" {
 			seats.note(slot)
 			passed = append(passed, seatPass{m.name, name, st})
 			continue
@@ -3818,7 +3827,26 @@ func hasLabel(labels []string, want string) bool {
 // "one meta this listing would not answer for" and "the herd could not be
 // listed" are different repairs, and the seat clause is where an operator
 // reads which one they have.
-func (d *Dispatcher) personaActive(persona, dir string) (string, string) {
+//
+// selfBead (ranger-base-ajpbe) is the id seatFor is CURRENTLY deciding
+// routing for, and it is excluded from the in_progress-bead busy check
+// below: that check exists to keep a DIFFERENT bead off a seat another
+// claim already holds, and asking it about the very bead being routed is
+// circular — every in_progress bead's own seatFor call would read its own
+// persona as busy on account of itself, before the holder-join logic a few
+// lines below ever got to decide whether this is a resume, an escalation,
+// or a lost claim. "" (no bead in play, e.g. a stray listing walk) excludes
+// nothing.
+//
+// wide (ranger-base-ajpbe) says whether the in_progress-bead busy check
+// runs at all: it is seatFor's own len(l.seats) > 1, so a lane of one never
+// takes it. A single-persona lane has no seat to move the ready bead TO,
+// and Dial F's whole design is a persona running several beads' sessions
+// at once (TestLaunchBeadTwiceWhileStillIdle, and LaunchBead's own seatFor
+// call for a fresh unclaimed bead); refusing the only candidate there is
+// not "wait for a later pass", it is refusing Dial F outright. false is
+// also every caller with no lane to widen — direct test calls included.
+func (d *Dispatcher) personaActive(persona, dir, selfBead string, wide bool) (string, string) {
 	sessions, withheld, err := d.HB.listSessions()
 	held := seatUnlisted
 	if err != nil {
@@ -3887,6 +3915,48 @@ func (d *Dispatcher) personaActive(persona, dir string) (string, string) {
 		}
 		if s.Status == "working" || s.Status == "blocked" {
 			return s.Name, s.Status
+		}
+		// ranger-base-ajpbe: an idle/done session is not a free seat when it
+		// is still holding an IN_PROGRESS bead — the agent stopped typing,
+		// not the claim. Dial F only ever retargets a bead onto the live
+		// holder that already carries it (fireLoop's own `session = holder`,
+		// gated on is.Assignee == persona); it never seats a DIFFERENT ready
+		// bead into a session another bead still holds, so a walk that reads
+		// this seat as empty offers it to one anyway. MEASURED 2026-09-07 on
+		// a two-seat QA lane: one seat's dispatched session read
+		// agent_status idle behind "1 shell, 1 monitor still running"
+		// (ranger-base-htafy's own shape) with its bead still in_progress,
+		// and a second ready bead was hired into that same seat within the
+		// hour — two live sessions holding one seat. No PaneHold read is
+		// needed here, unlike htafy's three sites: this seat is occupied by
+		// the CLAIM, whatever the pane is doing.
+		//
+		// A bead the store now calls closed is the ordinary case this must
+		// NOT catch: the session is Dial F's to reuse or reap, and it reads
+		// idle/done with a Bead every time that happens. Only Bd.Show says
+		// which one this is — the listing's own Status is the agent's, not
+		// the bead's.
+		//
+		// s.Bead == selfBead is excluded: that is THIS bead's own claim on
+		// its own holder, which is the holder-join logic's question to
+		// answer (resume it, escalate a settle-open, notice the claim was
+		// lost to someone else) a few lines below fireLoop's own seatFor
+		// call — never this walk's, and never by reading it as a busy seat
+		// before that logic runs at all.
+		//
+		// bi.Assignee == persona is required too, and not redundant with
+		// in_progress: a launch whose claim was LOST — someone else's `bd
+		// claim` beat this persona's — leaves exactly this shape, a session
+		// dispatch made for a bead that reads in_progress under a DIFFERENT
+		// assignee now (TestDispatchClaimLostKeepsSessionInPlay). That
+		// session is not this persona's occupancy of the seat; it is a
+		// stranded launch the claim-loss path already accounts for on its
+		// own terms, and reading it as a hold here would freeze every OTHER
+		// bead in the lane behind a claim this persona no longer has.
+		if wide && s.Bead != "" && s.Bead != selfBead && SeatFreeing(s.Status) {
+			if bi, err := d.Bd.Show(dir, s.Bead); err == nil && bi.Status == "in_progress" && bi.Assignee == persona {
+				return s.Name, s.Status
+			}
 		}
 	}
 	// Nothing in the listing holds this seat. That is only an empty seat if

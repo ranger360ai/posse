@@ -271,12 +271,12 @@ func TestPersonaActiveHoldsASeatWhoseMetaCannotBeRead(t *testing.T) {
 	session := slot + "-a-1"
 
 	qaWithheldMeta(t, b, session, "", false)
-	if name, st := d.personaActive("developer", dir); name != session || st != seatUnlisted {
+	if name, st := d.personaActive("developer", dir, "", false); name != session || st != seatUnlisted {
 		t.Fatalf("premise: intact, this seat is held: personaActive = %q %q, want %q %q", name, st, session, seatUnlisted)
 	}
 
 	tornMeta(t, b, session)
-	name, st := d.personaActive("developer", dir)
+	name, st := d.personaActive("developer", dir, "", false)
 	if name != session {
 		t.Errorf("personaActive = %q %q, want %q held: a meta this pass cannot read is a session it cannot show idle, and reporting the seat FREE is how a second bead gets seated into a live one (ranger-base-82e40)", name, st, session)
 	}
@@ -286,7 +286,7 @@ func TestPersonaActiveHoldsASeatWhoseMetaCannotBeRead(t *testing.T) {
 
 	// The control, from ranger-base-5kiu4: the abstention is per-seat. One
 	// unreadable meta must not freeze the shop.
-	if name, st := d.personaActive("hopper", dir); name != "" {
+	if name, st := d.personaActive("hopper", dir, "", false); name != "" {
 		t.Errorf("an unreadable meta in one seat froze another: personaActive(hopper) = %q %q, want free", name, st)
 	}
 }
