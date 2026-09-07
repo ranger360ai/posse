@@ -101,16 +101,30 @@ func ClaudeConfigFile() string {
 	// SeedClaudeTrust documents cfg == "" as a no-op and not a fallback.
 	// os.UserHomeDir() is no second source — on unix it IS $HOME (measured,
 	// go1.26.5: `env -i` gives err="$HOME is not defined").
-	if os.Getenv("HOME") == "" && os.Getenv("CLAUDE_CONFIG_DIR") == "" {
+	home := os.Getenv("HOME")
+	if home == "" && os.Getenv("CLAUDE_CONFIG_DIR") == "" {
 		return ""
 	}
-	cfgDir := ClaudeConfigDirIn(os.Getenv("HOME"))
+	cfgDir := ClaudeConfigDirIn(home)
 	if p := filepath.Join(cfgDir, ".config.json"); fileExists(p) {
 		return p
 	}
-	base := os.Getenv("CLAUDE_CONFIG_DIR")
-	if base == "" {
-		base = os.Getenv("HOME")
+	// base is <CLAUDE_CONFIG_DIR or $HOME> — ClaudeConfigDirIn's own rule,
+	// minus the `.claude` it joins on for the DIRECTORY, since the runtime's
+	// file resolver reads the truthy env var directly (doc above). Reading
+	// CLAUDE_CONFIG_DIR here a second time is exactly how this grew back into
+	// two spellings of the same rule (ranger-base-api7c, from
+	// ranger-base-wd4be): a mutant that deletes the check inside
+	// ClaudeConfigDirIn left this branch answering correctly regardless,
+	// because it never called ClaudeConfigDirIn to find out. So ask it
+	// instead: ClaudeConfigDirIn ignores its `home` argument exactly when
+	// CLAUDE_CONFIG_DIR is in force, which a second call with a `home` that
+	// cannot coincide with the real one (the empty string — Join(home,
+	// ".claude") is never bare ".claude" for a non-empty home) reveals
+	// without re-deriving the rule by hand.
+	base := home
+	if cfgDir == ClaudeConfigDirIn("") {
+		base = cfgDir
 	}
 	return filepath.Join(base, ".claude.json")
 }
