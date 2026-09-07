@@ -8,9 +8,11 @@ The surviving decision is in [0024 — current contract](0024-work-product-routi
 
 *Status: accepted 2026-09-02 (ranger-base-9ubk6, from ranger-base-n8shu) ·
 owner: architect · extends ADR 0024 D2 · builds in ranger-base-uzgkz
-(code) and ranger-base-856sv (the operator's one config line) · number: 0043–0045
-stay pre-named by ADR 0040 §2 with live build beads; per 0040 §3.1 this file
-takes the next number no bead has claimed · amended 2026-09-04 (title, Context,
+(code) and ranger-base-856sv (the operator's one config line) · number: this
+file took the next free number at commit; the 0043–0045 gap is not a
+reservation — ADR 0040 as simplified 2026-09-05 reversed the four-new-root
+plan that had reserved those numbers (hn32r, yv9uo, vl294, all closed) ·
+amended 2026-09-04 (title, Context,
 D2, Consequences, Alternatives: the scope is every staged FILE, not every
 staged "text" file — "text" was the reader's mechanism written down as the
 rule, and git's text/binary call is a guess on the file's own bytes that one

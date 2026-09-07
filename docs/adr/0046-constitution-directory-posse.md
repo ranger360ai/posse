@@ -16,9 +16,10 @@ renaming existing ADRs or changing the retained `RHQ_*` environment names.
 *Status: accepted 2026-09-02 (ranger-base-woox9, operator ruling of
 2026-09-02 that the rhq leftovers are swept, env var names excepted) ·
 unbuilt: ranger-base-woox9's code, runbook and cutover beads (ids in the
-bead's close comment) · number: 0043–0045 are pre-named by ADR 0040 §2 with
-live build beads (hn32r, yv9uo, vl294); per 0040 §3.1 this file takes the
-next number no bead has claimed rather than shifting three · amended
+bead's close comment) · number: this file took the next free number at
+commit; the 0043–0045 gap is not a reservation — ADR 0040 as simplified
+2026-09-05 reversed the four-new-root plan that had reserved those numbers
+(hn32r, yv9uo, vl294, all closed) · amended
 2026-09-02 (ranger-base-qpsis): item 3 corrected by the runbook's dry run
 (ranger-base-4pjnm, ranger-base `docs/runbooks/constitution-dir-cutover.md`
 @ fc7f13c) — the window opens at the `mv`, the `constitution:` key moves in
