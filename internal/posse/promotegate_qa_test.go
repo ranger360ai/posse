@@ -11,8 +11,9 @@ package posse
 // not, and ranger-base-znma is the gap — so the bytes now come out of the
 // object store (`promotedAtCommit`) and the gate keeps only the question it
 // answers honestly. These tests are that history, kept: the readings git
-// gives truthfully, the readings it does not, and the ways the working tree
-// still reaches a promote it should not (ranger-base-70ry).
+// gives truthfully, the readings it does not, and the way the working tree
+// once reached further into a promote than it should have, closed
+// (ranger-base-70ry, fixed 2026-08-27 in b348799c).
 
 import (
 	"bytes"
@@ -202,32 +203,37 @@ func TestQAPromoteRefusesASymlinkInThePromotedSet(t *testing.T) {
 	}
 }
 
-// TestQAPromoteSetIsDecidedByTheWorkingTree is the escape found verifying the
-// close of ranger-base-znma: filed as ranger-base-70ry.
+// TestQAPromoteSetIsDecidedByTheCommitNotTheWorkingTree is the escape found
+// verifying the close of ranger-base-znma: filed as ranger-base-70ry, fixed
+// 2026-08-27 in b348799c.
 //
 // The znma fix moved the promoted BYTES to the commit (`promotedAtCommit`),
-// and the close states "no path in promote reads the constitution's working
-// tree any more". `promotePathspecs` still does — it `os.Stat`s each of
-// PromotedPaths under `src` and drops the ones the working tree does not
-// have. That one stat decides the whole promoted SET, and every downstream
-// layer inherits it:
+// and the close stated "no path in promote reads the constitution's working
+// tree any more". That was wrong: `promotePathspecs` still did — it
+// `os.Stat`ed each of PromotedPaths under `src` and dropped the ones the
+// working tree did not have. That one stat decided the whole promoted SET,
+// and every downstream layer inherited it:
 //
-//   - the clean gate is scoped to the surviving specs, so the missing path's
-//     deletion is reported as "outside the promoted set" — which is false —
-//     or, when git is not watching it, not reported at all;
-//   - `unwatchedPaths` is scoped to the same specs, so the note that would
-//     have named it does not fire either;
-//   - `promotedAtCommit` reads only the surviving specs, so the manifest is
-//     born naming a subset of what the recorded SHA carries;
-//   - `copyPromotedSet` then REMOVES the absent files from the home, printing
-//     "not in the constitution" about prose the recorded SHA does carry;
-//   - the launch verify compares the home with that manifest — both written
-//     in the same breath — and says OK forever.
+//   - the clean gate was scoped to the surviving specs, so the missing path's
+//     deletion was reported as "outside the promoted set" — which was false —
+//     or, when git was not watching it, not reported at all;
+//   - `unwatchedPaths` was scoped to the same specs, so the note that would
+//     have named it did not fire either;
+//   - `promotedAtCommit` read only the surviving specs, so the manifest was
+//     born naming a subset of what the recorded SHA carried;
+//   - `copyPromotedSet` then REMOVED the absent files from the home, printing
+//     "not in the constitution" about prose the recorded SHA did carry;
+//   - the launch verify compared the home with that manifest — both written
+//     in the same breath — and said OK forever.
 //
 // Same shape as znma, opposite direction: not unratified prose put in force,
-// but ratified prose taken OUT of force under a SHA that still attests to it.
-// `git sparse-checkout` reaches it with no adversary at all.
-func TestQAPromoteSetIsDecidedByTheWorkingTree(t *testing.T) {
+// but ratified prose taken OUT of force under a SHA that still attested to
+// it. `git sparse-checkout` reached it with no adversary at all.
+//
+// promotePathspecs no longer stats the working tree; this test pins that the
+// promoted set now comes from the commit regardless of what the working tree
+// does or doesn't have.
+func TestQAPromoteSetIsDecidedByTheCommitNotTheWorkingTree(t *testing.T) {
 	t.Parallel()
 	unwatch := func(t *testing.T, git func(...string) (string, error), src string) {
 		t.Helper()
