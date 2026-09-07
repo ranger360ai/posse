@@ -38,6 +38,16 @@ package posse
 // planted file of each wrong shape, or the four arms above are a spelling
 // exercise.
 //
+// Arm 6 is TestQAEverySuiteArmTypeChecks, at the foot of this file: the
+// partition can be total by TAGS and broken by SYMBOLS, so each arm is also
+// vetted for real.
+//
+// Arm 7 is the fifth way this rots, found once the first four were held
+// (ranger-base-f8zw2). Arm 6 lives in the repo ROOT package, which only arm
+// 1's `./...` line builds — so the arms a mistagged file actually reds, 2
+// and 3, could not run the pin that explains it. `make test-arm2` and `make
+// test-arm3` carry a `-run` door onto it, and arm 7 pins those two lines.
+//
 // MUTATION-CHECKED. Retagging one file `posse_arm4` reds arm 1 alone;
 // dropping the `-tags posse_arm3` line from `make test`'s recipe reds arm 2
 // alone, and so does a `test-arm2` recipe whose timeout stops matching
@@ -478,5 +488,106 @@ func TestQAEverySuiteArmTypeChecks(t *testing.T) {
 					a, strings.Join(args, " "), err, out)
 			}
 		})
+	}
+}
+
+// armRunFilter returns the value of a `-run` flag in either spelling
+// (`-run X` / `-run=X`, one dash or two), and whether one is present. The
+// value arrives with its shell quotes already stripped by shellWords and
+// with make's `$$` still doubled, which armDoorMatches undoubles.
+func armRunFilter(args []string) (string, bool) {
+	for i, a := range args {
+		flag := strings.TrimPrefix(strings.TrimPrefix(a, "-"), "-")
+		switch {
+		case flag == "run" && i+1 < len(args):
+			return args[i+1], true
+		case strings.HasPrefix(flag, "run="):
+			return strings.TrimPrefix(flag, "run="), true
+		}
+	}
+	return "", false
+}
+
+// armDoorMatches reports whether a `-run` filter selects a test by name. It
+// undoubles make's `$$` first, because the regexp under test is the one the
+// SHELL is handed, not the one the Makefile spells.
+func armDoorMatches(t *testing.T, filter, name string) bool {
+	t.Helper()
+	re, err := regexp.Compile(strings.ReplaceAll(filter, "$$", "$"))
+	if err != nil {
+		t.Errorf("`-run %s` is not a regexp: %v — go test would refuse the door outright", filter, err)
+		return false
+	}
+	return re.MatchString(name)
+}
+
+// armDoorBuildsRootPkg reports whether a `go test` argument list names the
+// repo root package, which is where the type-check pin lives. `./...`
+// counts: it is arm 1's spelling and it builds the root too.
+func armDoorBuildsRootPkg(args []string) bool {
+	for _, a := range args {
+		if a == "." || a == "./..." {
+			return true
+		}
+	}
+	return false
+}
+
+// ARM 7 — the two tagged arms open a DOOR onto arm 6 above
+// (ranger-base-f8zw2).
+//
+// TestQAEverySuiteArmTypeChecks vets all three arms, and it lives in THIS
+// package — the repo root — which only arm 1's `./...` line builds. So the
+// pin whose whole job is catching an untagged file that reaches behind one
+// arm's tag ran in exactly one of CI's three jobs, and never in `go test
+// -tags posse_arm3 ./internal/posse`, which is the command a seat verifying
+// an arm actually types. `make test-arm2` and `make test-arm3` therefore
+// carry a `-run` door onto it, and a door is a Makefile line, which is a
+// thing that gets edited.
+//
+// It is arm 4's silence one level up, so the check is that the filter
+// MATCHES the name rather than that the line mentions it: a `-run` selecting
+// nothing exits 0, and so does a door pointed at ./internal/posse, where
+// this pin does not live. Both are read here.
+//
+// MUTATION-CHECKED, on 2026-09-07. Dropping either door line reds this arm
+// alone, and so does dropping the `-run` flag from one (arm 2 reads the
+// recipe by substring, and the shorter line is still a substring of `make
+// test`'s). Typoing the name inside the filter and repointing the door at
+// ./internal/posse red this arm AND arm 2 — arm 2 because the line then no
+// longer appears in `make test`'s recipe, which is a second true thing
+// about the same edit. Dropping the door line from `make test`'s recipe
+// alone reds arm 2 alone.
+func TestQAEachTaggedArmTargetOpensTheTypeCheckDoor(t *testing.T) {
+	t.Parallel()
+	mk := makefileText(t)
+	const pin = "TestQAEverySuiteArmTypeChecks"
+	for a := 2; a <= 3; a++ {
+		name := armTargetName(a)
+		_, recipe := armTarget(t, mk, name)
+		found := false
+		for _, line := range recipe {
+			// isComment first: a recipe comment DISCUSSING the door is not
+			// the door, and this file's head comment quotes the very line.
+			if isComment(line) {
+				continue
+			}
+			args := goTestArgs(line)
+			if args == nil || !armDoorBuildsRootPkg(args) {
+				continue
+			}
+			filter, ok := armRunFilter(args)
+			if !ok || !armDoorMatches(t, filter, pin) {
+				continue
+			}
+			found = true
+			break
+		}
+		if !found {
+			t.Errorf("`make %s` runs no `go test` over the root package whose `-run` filter selects %s.\n"+
+				"That pin type-checks all three arms and lives in the ROOT package, which arm %d's recipe does not build, "+
+				"so without this door an untagged file reaching behind one arm's tag reds only in a full `make test`:\n%s",
+				name, pin, a, strings.Join(recipe, "\n"))
+		}
 	}
 }

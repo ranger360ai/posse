@@ -239,10 +239,35 @@ release-notes:
 # follow it wrong. The price paid instead is four duplicated lines, and
 # armtags_qa_test.go pins that every `test-armN` recipe line appears verbatim
 # here and that `test-arm1` carries the same gates.
+# THE ARM-TAGS TYPE-CHECK DOOR, on both tagged arms and here
+# (ranger-base-f8zw2). `TestQAEverySuiteArmTypeChecks` is the pin that vets
+# all three arms and names the file:line when an untagged file reaches for a
+# helper that lives behind one arm's tag. It is in the ROOT package, which
+# only the arm-1 line below (`./...`) builds — so the two jobs that could not
+# run it were arms 2 and 3, the arms such a file actually reds, and `go test
+# -tags posse_arm3 ./internal/posse`, the command a seat verifying an arm
+# types, ran it never. The class landed on main twice on 2026-09-06
+# (ranger-base-tcns9, ranger-base-re99m).
+#
+# A `-run` DOOR rather than widening arm 2/3 to `./...`: the root package's
+# test binary has no config-dir fence (ranger-base-773pj), so building the
+# whole of it in two more jobs would carry hookfreshness_qa_test.go:130 —
+# the one child launch that inherits CLAUDE_CONFIG_DIR and resolves the
+# operator's live ~/.claude — along with it. The filter selects one test, and
+# that test shells out to `go vet` and reads no config dir. `-count=1`
+# because the pin's subject is a SUBPROCESS's view of internal/posse, which
+# go's test cache does not key on: it would replay `ok` over a tree that
+# stopped type-checking.
+#
+# `test`'s copy is redundant with `./...` above and kept anyway — every
+# per-arm recipe line has to appear in `test`'s recipe or CI and a seat run
+# different commands under one name (TestQAMakefileRunsEverySuiteArm), and
+# a cached-vet second is cheaper than an exception to that rule.
 test: fmt-check verify-test-times verify-parallel verify-suite-lock verify-silent-reverts tree-check
 	scripts/test-times.sh $(GOBIN) test -timeout 25m ./...
 	scripts/test-times.sh $(GOBIN) test -timeout 25m -tags posse_arm2 ./internal/posse
 	scripts/test-times.sh $(GOBIN) test -timeout 25m -tags posse_arm3 ./internal/posse
+	$(GOBIN) test . -timeout 15m -count=1 -run '^TestQAEverySuiteArmTypeChecks$$'
 	@scripts/audit-silent-reverts.sh --quiet
 
 # One arm each, for CI, which runs them as three jobs. A seat wanting the
@@ -253,9 +278,11 @@ test-arm1: fmt-check verify-test-times verify-parallel verify-suite-lock verify-
 
 test-arm2:
 	scripts/test-times.sh $(GOBIN) test -timeout 25m -tags posse_arm2 ./internal/posse
+	$(GOBIN) test . -timeout 15m -count=1 -run '^TestQAEverySuiteArmTypeChecks$$'
 
 test-arm3:
 	scripts/test-times.sh $(GOBIN) test -timeout 25m -tags posse_arm3 ./internal/posse
+	$(GOBIN) test . -timeout 15m -count=1 -run '^TestQAEverySuiteArmTypeChecks$$'
 
 # The other half of the ceiling story, and the half ranger-base-pj87l asked
 # for: the wall grew 2.4x in four days with test-times.sh warning correctly on
