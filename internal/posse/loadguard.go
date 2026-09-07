@@ -559,10 +559,11 @@ type leakRow struct {
 // declared process reported as a leak would be precisely that false
 // positive.
 //
-// It is "" whenever it has nothing to say, which is every healthy box and
-// every box whose orphans are not ours.
-func (a *App) orphanReport(busy []Proc) string {
-	var leaks, spared []leakRow
+// classifyOrphans splits a census into the leaked gate-shell children (ours,
+// no marker) and the ones a declare-or-die marker spared, off the caller's
+// own census — the single read orphanReport and orphanLeakReport both render
+// from.
+func (a *App) classifyOrphans(busy []Proc) (leaks, spared []leakRow) {
 	for _, p := range busy {
 		if !p.orphanSuspect() {
 			continue
@@ -577,6 +578,33 @@ func (a *App) orphanReport(busy []Proc) string {
 		}
 		leaks = append(leaks, leakRow{p, payload, ""})
 	}
+	return leaks, spared
+}
+
+// orphanLeakReport is orphanReport's LEAK half, for the guard clock's
+// under-the-line tick (guardclock.go): "" whenever the box holds no
+// UNDECLARED leak, even where it holds a spared DECLARED one.
+//
+// declaredLine is deliberately left out here. It is a fact about a pass that
+// is refusing to launch ("printed in BOTH modes" — its own comment), and a
+// refusal happens once and is already loud; the clock ticks at the base
+// interval for the life of the process, so the same declaration would repeat
+// forever on a box holding no leak (ranger-base-a6xhb). orphanReport, used
+// inside an actual refusal (culpritLineFrom) and by the clock's over-the-line
+// branch, keeps declaredLine — that call site fires only while the box is
+// over the line, which is the rare-and-loud case the comment means.
+func (a *App) orphanLeakReport(busy []Proc) string {
+	leaks, _ := a.classifyOrphans(busy)
+	if len(leaks) == 0 {
+		return ""
+	}
+	return a.orphanReport(busy)
+}
+
+// It is "" whenever it has nothing to say, which is every healthy box and
+// every box whose orphans are not ours.
+func (a *App) orphanReport(busy []Proc) string {
+	leaks, spared := a.classifyOrphans(busy)
 	if len(leaks) == 0 {
 		return declaredLine(spared)
 	}

@@ -108,8 +108,12 @@ func (a *App) GuardTickLine(errw io.Writer) string {
 		return "◷ " + why + " — measured off the pass (guard clock); nothing new is launched while it stands" + a.culpritLineFrom(busy)
 	}
 	// Under the line, and the census still ran — see this file's head. The
-	// report is "" on every box that is not holding one of ours.
-	if report := a.orphanReport(busy); report != "" {
+	// report is the LEAK half only (orphanLeakReport, not orphanReport): a
+	// spared DECLARED orphan is a fact this clock would otherwise repeat
+	// every tick for the life of the process on a box holding no leak at
+	// all (ranger-base-a6xhb) — declaredLine belongs to a refusal, which
+	// happens once, not to a clock that never stops ticking.
+	if report := a.orphanLeakReport(busy); report != "" {
 		return "◷ load guard: box under the line, orphan census ran anyway (the leak is the predicate, not the load)" + report
 	}
 	return ""

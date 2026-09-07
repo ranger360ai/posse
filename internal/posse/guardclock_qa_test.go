@@ -80,6 +80,15 @@ func TestGuardTickIsSilentWhenThereIsNothingTrueToSay(t *testing.T) {
 		{"busy with somebody else's work", []Proc{
 			{PID: 812, PPID: 400, CPU: 88.2, Comm: "node", Age: 3 * time.Hour, Args: "node build.js"},
 		}},
+		// ranger-base-a6xhb: a DECLARED orphan of our own, under the line.
+		// declaredLine says one is there — but that is a fact about a
+		// refusal, and this tick took none; the silence claim must hold
+		// here too, or the clock repeats the declaration every interval
+		// for the life of the process on a box that is holding no leak.
+		{"busy with our own declared process", []Proc{
+			{PID: 71100, PPID: 1, CPU: 50.4, Comm: "zsh", Age: 40 * time.Minute,
+				Args: gateArgv(LoadOrphanKeepMarker + "ranger-base-5185i nohup go test ./internal/posse and background it")},
+		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			a := NewAppAt(t.TempDir())
