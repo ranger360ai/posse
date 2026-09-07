@@ -1591,24 +1591,9 @@ func (a *App) WrapWithGates(persona string, rt *Runtime, deny []string, cmd stri
 // a foreign one.
 const prePushMarker = "# posse-gate"
 
-// legacyPrePushMarker / legacySharedIndexMarker are the pre-rename
-// spellings (rangerhq-tyay). Ownership is a question about a file written
-// by an EARLIER binary, so it cannot be asked in the new vocabulary alone:
-// a repo hooked before the rename carries `# rhq-gate`, and matching only
-// the new marker would make `posse gates install-hooks` refuse it as a
-// stranger's hook and hookInstalled report the L3 wall missing on a repo
-// that has it. Recognized, therefore replaced in place; the hook written
-// back always wears the new marker, so this is a one-way door per repo.
-const (
-	legacyPrePushMarker     = "# rhq-gate"
-	legacySharedIndexMarker = "# rhq-gate shared-index"
-)
-
-// ownsHook reports whether body is one of ours — this hook's marker in
-// either spelling. Matched longest-first is unnecessary: each slot is
-// asked only about its own marker pair, and no hook carries the other's.
-func ownsHook(body, marker, legacy string) bool {
-	return strings.Contains(body, marker) || strings.Contains(body, legacy)
+// ownsHook reports whether body is one of ours — this hook's marker.
+func ownsHook(body, marker string) bool {
+	return strings.Contains(body, marker)
 }
 
 // hookStampFunc is the timestamp helper both L3 hooks call for their
@@ -2119,7 +2104,7 @@ func isBdShim(body string) bool {
 // true, additionally lets bd's own shim through: rather than refuse, it is
 // moved aside and chained (see chainBdShim). A genuinely unknown hook is
 // still refused whether or not chain is set.
-func installHook(dir, slot, marker, legacy, script string, chain bool) (string, error) {
+func installHook(dir, slot, marker, script string, chain bool) (string, error) {
 	// ADR 0052 D1: classify before touching. On a managed hooks path every
 	// line below this is a write posse must not attempt — MkdirAll included —
 	// and the typed verdict is what the caller reports instead of the create's
@@ -2140,7 +2125,7 @@ func installHook(dir, slot, marker, legacy, script string, chain bool) (string, 
 	if err := refuseNonRegularHook(p); err != nil {
 		return "", err
 	}
-	if b, err := os.ReadFile(p); err == nil && !ownsHook(string(b), marker, legacy) {
+	if b, err := os.ReadFile(p); err == nil && !ownsHook(string(b), marker) {
 		// A chain made from our printed prescription is deliberately foreign
 		// at the slot: overwriting it would discard the other tool's hook. Its
 		// posse-* member is ours, though, and must not become a frozen copy of
@@ -2158,7 +2143,7 @@ func installHook(dir, slot, marker, legacy, script string, chain bool) (string, 
 		if neighbour, isChain := chainDispatcherNeighbour(string(b), slot); isChain {
 			owned, readErr := os.ReadFile(chained)
 			switch {
-			case readErr == nil && ownsHook(string(owned), marker, legacy):
+			case readErr == nil && ownsHook(string(owned), marker):
 				// The ordinary refresh.
 			case os.IsNotExist(readErr):
 				// RESTORE. The slot is our own dispatcher byte for byte, so
@@ -2208,7 +2193,7 @@ func installHook(dir, slot, marker, legacy, script string, chain bool) (string, 
 		// gives (ranger-base-hd56). No posse instruction creates a foreign
 		// posse-<slot>, so this is the operator's own file and moving it is
 		// the operator's call.
-		if owned, readErr := os.ReadFile(chained); readErr == nil && !ownsHook(string(owned), marker, legacy) {
+		if owned, readErr := os.ReadFile(chained); readErr == nil && !ownsHook(string(owned), marker) {
 			return "", Die("%s exists and is not a posse hook, and neither is %s — not overwriting.\nChaining this slot puts posse's %s gate at %s: move that file aside yourself, then re-run install-hooks for the chain prescription.", AbbrevHome(p), AbbrevHome(chained), slot, AbbrevHome(chained))
 		}
 		if chain && isBdShim(string(b)) {
@@ -2255,7 +2240,7 @@ func chainBdShim(hooks, slot, script string) (string, error) {
 // either directly, or, since install-hooks --chain (and the manual
 // prescription it mirrors) never puts our marker in the slot itself, behind
 // a recognized chain dispatcher whose posse-<slot> member is ours.
-func hookInstalled(dir, slot, marker, legacy string) bool {
+func hookInstalled(dir, slot, marker string) bool {
 	hooks, err := hooksDir(dir)
 	if err != nil {
 		return false
@@ -2274,7 +2259,7 @@ func hookInstalled(dir, slot, marker, legacy string) bool {
 		return false
 	}
 	body := string(b)
-	if ownsHook(body, marker, legacy) {
+	if ownsHook(body, marker) {
 		return true
 	}
 	if isChainHookDispatcher(body, slot) {
@@ -2283,7 +2268,7 @@ func hookInstalled(dir, slot, marker, legacy string) bool {
 			return false
 		}
 		owned, err := os.ReadFile(chained)
-		return err == nil && ownsHook(string(owned), marker, legacy)
+		return err == nil && ownsHook(string(owned), marker)
 	}
 	return false
 }
@@ -2292,13 +2277,13 @@ func hookInstalled(dir, slot, marker, legacy string) bool {
 // dir, so worktrees share it). Returns the hook path. Refuses to overwrite
 // a hook that is not ours; replaces ours in place.
 func InstallPrePushHook(dir string) (string, error) {
-	return installHook(dir, "pre-push", prePushMarker, legacyPrePushMarker, PrePushHook, false)
+	return installHook(dir, "pre-push", prePushMarker, PrePushHook, false)
 }
 
 // InstallPrePushHookChained is InstallPrePushHook, but a slot occupied by
 // bd's own shim is chained rather than refused (rangerhq-mgdk).
 func InstallPrePushHookChained(dir string) (string, error) {
-	return installHook(dir, "pre-push", prePushMarker, legacyPrePushMarker, PrePushHook, true)
+	return installHook(dir, "pre-push", prePushMarker, PrePushHook, true)
 }
 
 // PrePushHookInstalled reports whether the repo at dir has a hook carrying
@@ -2306,7 +2291,7 @@ func InstallPrePushHookChained(dir string) (string, error) {
 // evidence: a foreign dispatcher can enforce the gate without the marker,
 // and a marker-bearing file can be rewritten to exit 0.
 func PrePushHookInstalled(dir string) bool {
-	return hookInstalled(dir, "pre-push", prePushMarker, legacyPrePushMarker)
+	return hookInstalled(dir, "pre-push", prePushMarker)
 }
 
 // deniesGitPush reports whether the PID's deny list carries a rule the
@@ -5355,7 +5340,7 @@ func (a *App) InstallCommitGuardHook(dir string) (path, visibility, source strin
 	if err != nil {
 		return "", "", "", err
 	}
-	path, err = installHook(dir, "prepare-commit-msg", sharedIndexMarker, legacySharedIndexMarker, CommitGuardHook(visibility, a.OpsPatternSet(), identity...), false)
+	path, err = installHook(dir, "prepare-commit-msg", sharedIndexMarker, CommitGuardHook(visibility, a.OpsPatternSet(), identity...), false)
 	return path, visibility, source, err
 }
 
@@ -5367,14 +5352,14 @@ func (a *App) InstallCommitGuardHookChained(dir string) (path, visibility, sourc
 	if err != nil {
 		return "", "", "", err
 	}
-	path, err = installHook(dir, "prepare-commit-msg", sharedIndexMarker, legacySharedIndexMarker, CommitGuardHook(visibility, a.OpsPatternSet(), identity...), true)
+	path, err = installHook(dir, "prepare-commit-msg", sharedIndexMarker, CommitGuardHook(visibility, a.OpsPatternSet(), identity...), true)
 	return path, visibility, source, err
 }
 
 // CommitGuardHookInstalled reports whether the repo at dir has a hook carrying
 // our ownership marker. See PrePushHookInstalled: parity must probe behavior.
 func CommitGuardHookInstalled(dir string) bool {
-	return hookInstalled(dir, "prepare-commit-msg", sharedIndexMarker, legacySharedIndexMarker)
+	return hookInstalled(dir, "prepare-commit-msg", sharedIndexMarker)
 }
 
 // l3HookProbe is launch-time evidence about the two hook slots. Repo is false
@@ -5434,7 +5419,7 @@ type l3HookProbe struct {
 // the dispatch-path file itself, or posse-<slot> behind a chain dispatcher —
 // so a degraded line can name the file to fix rather than the slot in
 // general.
-func l3Identity(hooks, slot, render, marker, legacy string) (identity, stale bool, path string) {
+func l3Identity(hooks, slot, render, marker string) (identity, stale bool, path string) {
 	top := filepath.Join(hooks, slot)
 	if !isRegularFile(top) {
 		return false, false, top
@@ -5451,13 +5436,13 @@ func l3Identity(hooks, slot, render, marker, legacy string) (identity, stale boo
 					return true, false, chained
 				}
 				if isRegularFile(chained) {
-					if cb, cerr := os.ReadFile(chained); cerr == nil && ownsHook(string(cb), marker, legacy) {
+					if cb, cerr := os.ReadFile(chained); cerr == nil && ownsHook(string(cb), marker) {
 						return false, true, chained
 					}
 				}
 				return false, false, chained
 			}
-		} else if ownsHook(string(body), marker, legacy) {
+		} else if ownsHook(string(body), marker) {
 			return false, true, top
 		}
 	}
@@ -5730,9 +5715,9 @@ func (a *App) probeL3HooksIn(dir string, wantPrePush bool, red *l3Redirect) l3Ho
 	var prePushIdentity, prePushStale bool
 	var prePushPath string
 	if wantPrePush {
-		prePushIdentity, prePushStale, prePushPath = l3IdentityIn(red, hooks, "pre-push", PrePushHook, prePushMarker, legacyPrePushMarker)
+		prePushIdentity, prePushStale, prePushPath = l3IdentityIn(red, hooks, "pre-push", PrePushHook, prePushMarker)
 	}
-	commitIdentity, commitStale, commitPath := l3IdentityIn(red, hooks, "prepare-commit-msg", commitRender, sharedIndexMarker, legacySharedIndexMarker)
+	commitIdentity, commitStale, commitPath := l3IdentityIn(red, hooks, "prepare-commit-msg", commitRender, sharedIndexMarker)
 
 	prePushBehavior, commitBehavior := execOwnRenders(dir, wantPrePush, commitRender)
 

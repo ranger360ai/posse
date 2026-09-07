@@ -1953,8 +1953,8 @@ func TestInstallCommitGuardRestampsAChainedHookWhenTheMarkChanges(t *testing.T) 
 	}
 	write(t, theirs, neighbour)
 	write(t, slot, dispatcher)
-	if hookInstalled(repo, "prepare-commit-msg", sharedIndexMarker, legacySharedIndexMarker) != true ||
-		ownsHook(dispatcher, sharedIndexMarker, legacySharedIndexMarker) {
+	if hookInstalled(repo, "prepare-commit-msg", sharedIndexMarker) != true ||
+		ownsHook(dispatcher, sharedIndexMarker) {
 		t.Fatal("fixture: want our hook behind a dispatcher that is itself foreign")
 	}
 
@@ -2263,14 +2263,13 @@ func TestSharedIndexCommitHook(t *testing.T) {
 	}
 }
 
-// TestLegacyMarkedHooksAreOursToReplace pins the transition arm of the
-// posse rename (rangerhq-tyay). Every repo hooked before the rename carries
-// the OLD marker; ownership is a question about a file an earlier binary
-// wrote, so it has to be asked in both vocabularies or the rename converts
-// every already-hooked repo into a repo we refuse to touch — install
-// refusing it as a stranger's, and parity reporting the L3 wall missing on
-// a repo that has it.
-func TestLegacyMarkedHooksAreOursToReplace(t *testing.T) {
+// TestPreRenameSpelledHookIsForeign pins the retirement of the pre-rename
+// marker recognition (ranger-base-fvo0v, ADR 0002 §3 L3): the one-way door
+// (posse never published a build that wrote the old spelling) is now
+// closed, so a hook wearing what used to be the recognized old marker is an
+// ordinary foreign hook. install refuses to touch it, naming the path, and
+// hookInstalled reports the wall missing rather than claiming it.
+func TestPreRenameSpelledHookIsForeign(t *testing.T) {
 	t.Parallel()
 	repo := t.TempDir()
 	if out, err := exec.Command("git", "-C", repo, "init", "-q").CombinedOutput(); err != nil {
@@ -2281,38 +2280,31 @@ func TestLegacyMarkedHooksAreOursToReplace(t *testing.T) {
 
 	for _, c := range []struct {
 		slot      string
-		legacy    string
+		old       string
 		installed func(string) bool
 		install   func(string) (string, error)
 	}{
-		{"pre-push", legacyPrePushMarker, PrePushHookInstalled, InstallPrePushHook},
-		{"prepare-commit-msg", legacySharedIndexMarker, CommitGuardHookInstalled, installCommitGuard},
+		{"pre-push", "# " + strings.Join([]string{"rhq", "gate"}, "-"), PrePushHookInstalled, InstallPrePushHook},
+		{"prepare-commit-msg", "# " + strings.Join([]string{"rhq", "gate"}, "-") + " shared-index", CommitGuardHookInstalled, installCommitGuard},
 	} {
 		p := filepath.Join(hooks, c.slot)
-		// What the previous binary left behind: the old marker, old wording.
-		old := "#!/bin/sh\n" + c.legacy + " — installed by rhq gates install-hooks\nexit 0\n"
+		// What the pre-rename binary used to leave behind: no build ever
+		// published this spelling (ranger-base-g9xr5's census), so this is a
+		// hand-planted fixture, not a real repo's history.
+		old := "#!/bin/sh\n" + c.old + " — installed by the pre-rename binary\nexit 0\n"
 		if err := WriteExecutable(p, []byte(old), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if !c.installed(repo) {
-			t.Errorf("%s: a hook written before the rename must still read as installed", c.slot)
+		if c.installed(repo) {
+			t.Errorf("%s: an old-spelling hook must read as the wall missing, not installed", c.slot)
 		}
-		if _, err := c.install(repo); err != nil {
-			t.Errorf("%s: re-install over the legacy marker must replace, not refuse: %v", c.slot, err)
+		if _, err := c.install(repo); err == nil || !strings.Contains(err.Error(), "not a posse hook") || !strings.Contains(err.Error(), AbbrevHome(p)) {
+			t.Errorf("%s: install must refuse the old-spelling hook and name its path: %v", c.slot, err)
 		}
-		// Replaced in place, and the file written back wears the new marker:
-		// the door only swings one way, so the legacy arm cannot go stale.
+		// Refused means untouched.
 		b, _ := os.ReadFile(p)
-		if strings.Contains(string(b), "exit 0\n") && !strings.Contains(string(b), prePushMarker) && !strings.Contains(string(b), sharedIndexMarker) {
-			t.Errorf("%s: legacy hook was not replaced: %q", c.slot, b)
-		}
-		if !strings.Contains(string(b), "posse-gate") {
-			t.Errorf("%s: replacement does not carry the new marker: %q", c.slot, b)
-		}
-		// And a genuinely foreign hook is still nobody's to overwrite.
-		WriteExecutable(p, []byte("#!/bin/sh\necho theirs\n"), 0o755)
-		if _, err := c.install(repo); err == nil || !strings.Contains(err.Error(), "not a posse hook") {
-			t.Errorf("%s: foreign hook must still be refused: %v", c.slot, err)
+		if string(b) != old {
+			t.Errorf("%s: a refused install must not touch the file: %q", c.slot, b)
 		}
 	}
 }

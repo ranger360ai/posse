@@ -178,7 +178,7 @@ func TestQARedirectProbeRefusesARelativeNeighbourDispatcher(t *testing.T) {
 
 	// The control, and the reason this is a REAL difference rather than a
 	// tautology: the ordinary identity check accepts exactly these bytes.
-	identity, _, _ := l3Identity(f.hooks, "prepare-commit-msg", CommitGuardHook(f.visibility(), f.a.OpsPatternSet(), testIdentity(t, f.repo)...), sharedIndexMarker, legacySharedIndexMarker)
+	identity, _, _ := l3Identity(f.hooks, "prepare-commit-msg", CommitGuardHook(f.visibility(), f.a.OpsPatternSet(), testIdentity(t, f.repo)...), sharedIndexMarker)
 	if !identity {
 		t.Fatal("fixture: the sibling chain form must be what the ORDINARY probe accepts, or this pin measures nothing")
 	}

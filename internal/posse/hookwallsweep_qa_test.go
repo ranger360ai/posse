@@ -82,7 +82,7 @@ func TestHookWallSweepCatchesAStaleBodyThatStillRefuses(t *testing.T) {
 	if err := WriteExecutable(p, []byte(stale), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if !ownsHook(stale, sharedIndexMarker, legacySharedIndexMarker) {
+	if !ownsHook(stale, sharedIndexMarker) {
 		t.Fatal("fixture no longer carries our marker — it would be caught as foreign, not as stale")
 	}
 

@@ -287,9 +287,9 @@ func (r *hooksRedirect) probe() *l3Redirect {
 
 // l3IdentityIn is l3Identity, or its redirect-mode twin. Same shape so
 // probeL3HooksIn asks one question either way.
-func l3IdentityIn(red *l3Redirect, hooks, slot, render, marker, legacy string) (identity, stale bool, path string) {
+func l3IdentityIn(red *l3Redirect, hooks, slot, render, marker string) (identity, stale bool, path string) {
 	if red == nil {
-		return l3Identity(hooks, slot, render, marker, legacy)
+		return l3Identity(hooks, slot, render, marker)
 	}
 	identity, path = l3RedirectIdentity(hooks, red.Managed, slot, render)
 	return identity, false, path

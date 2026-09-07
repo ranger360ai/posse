@@ -45,7 +45,7 @@ func TestQAAFifoAtTheDispatchPathMustNotWedgeTheLaunch(t *testing.T) {
 			t.Errorf("InstallCommitGuardHook blocked on a %04o FIFO at the dispatch path", mode)
 		}
 		if !returnsWithin(t, 30*time.Second, func() {
-			hookInstalled(repo, "prepare-commit-msg", sharedIndexMarker, legacySharedIndexMarker)
+			hookInstalled(repo, "prepare-commit-msg", sharedIndexMarker)
 		}) {
 			t.Errorf("hookInstalled blocked on a %04o FIFO at the dispatch path", mode)
 		}
