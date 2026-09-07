@@ -194,8 +194,11 @@ bd sync               # Sync with git
   whole suite.** internal/posse's tests are three binaries now, split by
   build tag because half its wall was a serial stream no `-parallel` value
   can widen (747 tests that cannot take `t.Parallel`, 537.6s inside a 1091.8s
-  run). `go test ./...` builds arm 1 — 1276 of the package's 2869 tests — and
-  says `ok` over the two thirds it did not compile. `make test` is the three:
+  run). `go test ./...` builds arm 1 — roughly a third of the package's
+  tests, the exact fraction drifting with every landing that adds, removes,
+  or retags a test file (`armtags_qa_test.go`'s pin logs the current split)
+  — and says `ok` over the two thirds it did not compile. `make test` is the
+  three:
   `make test-arm1` (which is also `./...`, the gates and the silent-revert
   audit), `make test-arm2`, `make test-arm3`. Each arm takes a suite slot, so
   a `make test` queues three times and cannot run three suites at once behind

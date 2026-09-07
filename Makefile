@@ -197,15 +197,21 @@ release-notes:
 #   arm 2   //go:build posse_arm2
 #   arm 3   //go:build posse_arm3
 #
-# 1276 / 1291 / 1234 tests, projected ~236s apiece on CI. The arms are packed
-# by PREDICTED WALL, not by weight: a second of a test that cannot take
-# t.Parallel costs the wall 7.3x what a parallel second costs, and the first
+# Roughly equal thirds of the package's tests, projected ~236s apiece on CI —
+# the exact per-arm counts drift on every landing that adds, removes, or
+# retags a test file (measured three times in one day, three different
+# numbers, ranger-base-3w037), so they are not written here; run
+# `go test -run TestQAEveryPosseTestFileIsSharedOrInANamedArm .` for the
+# current split. The arms are packed by PREDICTED WALL, not by weight: a
+# second of a test that cannot take t.Parallel costs the wall 7.3x what a
+# parallel second costs, and the first
 # cut — balanced on weight, and even to three figures — had quietly given arm
 # 1 sixty percent of the serial stream and a modelled 302s. Arm 1 is the
 # DEFAULT so a bare `go test ./internal/posse` still runs an arm rather than
 # nothing, and so the `-run` doors below — which take no tag — keep finding
-# their pins. Files with no tag at all are the shared helper set: 41 files
-# every arm compiles, whose own 466 tests therefore run in all three. docs/notes.d/ranger-base-qp1hm.md prices the two
+# their pins. Files with no tag at all are shared — compiled and run by every
+# arm; the shared file and test counts drift the same way as the per-arm
+# counts and the same pin logs the current shared test count. docs/notes.d/ranger-base-qp1hm.md prices the two
 # splits this is NOT (sub-package: 101 of 112 product files are one SCC;
 # moving the QA pins to their own package: 1% of the runtime at any export
 # budget) and carries the file lists.
