@@ -4,29 +4,31 @@ package posse
 
 // ranger-base-cwu7: every bd invocation posse makes goes out `--no-daemon`.
 //
-// The number that earns this: ~5.3s of every ~5.6s bd call was the daemon
-// dial, flat across result size, in a store where bd cannot start a daemon
-// at all and says so (`Mode: direct, Connected: no`). Bd.run's doc comment
-// carries the full sweep. That number is bd 0.49.1's: on the pinned 0.50.3
-// the daemon class is gone and the flag is deprecated, so it buys nothing
-// and half 2 below no longer times anything — ranger-base-a67nu holds what
-// that means for the flag and for the doc comment. What is pinned here is
-// unchanged by any of it, because it was never the seconds: the flag is on the
-// RUNNER — one seam, every verb, reads and writes alike — because the way
-// this regresses is somebody adding a method that builds its own argv, or a
-// refactor that drops the prefix from a `run` nobody re-measured.
+// D1 (ADR 0056): the flag is the pin's tripwire, not a speedup. On the
+// pinned bd 0.50.3 it costs nothing on every axis measured — the daemon
+// class is gone and `bd --help` documents the flag as a deprecated no-op.
+// What it still does is fail: past the pin's line the flag is `unknown
+// flag`, rc 1, at cobra's parser, before a 1.x binary can touch a store or
+// refuse it in its own words. That is why the flag is on the RUNNER — one
+// seam, every verb, reads and writes alike — rather than a hand-picked
+// list of read verbs: the way this regresses is somebody adding a method
+// that builds its own argv, which is what TestBdRunCarriesNoDaemonOnEveryVerb
+// below catches.
+//
+// HISTORY (bd 0.49.1, measured 2026-08-30, ranger-base-cwu7): the flag was
+// also a 12x speedup then — ~5.3s of every ~5.6s call was a dial for a
+// daemon that could not start, and Bd.run's doc comment carries that
+// sweep. That gap left with the daemon class in 0.50.x; it is no longer
+// why the flag is here (ranger-base-a67nu).
 //
 // Two halves, because a fake and a binary answer different questions:
 //
 //  1. TestBdRunCarriesNoDaemonOnEveryVerb — a recording fake, in the
 //     ordinary suite. Ours to keep: the flag is there, first, ahead of the
 //     verb, for every method a caller can reach.
-//  2. TestLiveBdRunAcceptsNoDaemonAndAnswersTheSameRows — the real binary,
-//     env-gated. bd's to keep: the shipped bd still accepts the flag and
-//     still answers with the same rows either way. It ran both arms for the
-//     seconds too until bd 0.50.x retired the daemon class and the gap it
-//     was measuring went with it — see the test for that measurement, and
-//     for the two observables before it that did NOT work.
+//  2. TestLiveBdAcceptsTheTripwireAndAnswersTheSameRows — the real binary,
+//     env-gated. bd's to keep: the pinned bd still accepts the flag and
+//     still answers with the same rows either way — D1's premise, live.
 
 import (
 	"os"
@@ -72,10 +74,11 @@ func TestBdRunCarriesNoDaemonOnEveryVerb(t *testing.T) {
 	dir := t.TempDir()
 
 	// Every method that reaches run, not a sample of them: the read scans
-	// the cockpit and the dispatch pass live on, and the writes, which cost
-	// the same 5.3s and which a reads-only fix would have left paying it.
-	// Return values are ignored on purpose — the fake's `[]` does not parse
-	// as an id or an issue, and the argv is recorded before any of that.
+	// the cockpit and the dispatch pass live on, and the writes, which paid
+	// the same HISTORY dial (bd 0.49.1) and which a reads-only fix would
+	// have left paying it. Return values are ignored on purpose — the
+	// fake's `[]` does not parse as an id or an issue, and the argv is
+	// recorded before any of that.
 	verbs := map[string]func(){
 		"ListAll":        func() { b.ListAll(dir) },
 		"Ready":          func() { b.Ready(dir, "an-actor") },
@@ -122,10 +125,12 @@ func TestBdRunCarriesNoDaemonOnEveryVerb(t *testing.T) {
 	}
 }
 
-// TestLiveBdRunAcceptsNoDaemonAndAnswersTheSameRows asks the real binary the
-// thing the fake cannot: that the flag Bd.run puts in front of every verb is
-// still one the shipped bd accepts, and that carrying it does not change the
-// answer.
+// TestLiveBdAcceptsTheTripwireAndAnswersTheSameRows asks the real binary the
+// thing the fake cannot: that D1's tripwire (ADR 0056) — the flag Bd.run
+// puts in front of every verb — is still one the pinned bd accepts, and
+// that carrying it does not change the answer. Run once against the
+// unlinked 1.2.2 keg (RHQ_BD_BIN or PATH, never linked in) and it fatals on
+// "unknown flag" instead: that red is the tripwire firing.
 //
 // The rig is a no-db (JSONL-only) store asked for BY NAME — a
 // `.beads/config.yaml` holding `no-db: true` beside the seed row — and the
@@ -167,7 +172,7 @@ func TestBdRunCarriesNoDaemonOnEveryVerb(t *testing.T) {
 // pass). With the flag a no-op both arms are the same command either way, so
 // half 1's recording fake — which does kill that mutant — is the only thing
 // holding the flag on the runner. Do not read a green here as covering it.
-func TestLiveBdRunAcceptsNoDaemonAndAnswersTheSameRows(t *testing.T) {
+func TestLiveBdAcceptsTheTripwireAndAnswersTheSameRows(t *testing.T) {
 	t.Parallel()
 	if os.Getenv("RHQ_LIVE_BD") == "" {
 		t.Skip("set RHQ_LIVE_BD=1 (shells out to the real bd)")
@@ -192,9 +197,9 @@ func TestLiveBdRunAcceptsNoDaemonAndAnswersTheSameRows(t *testing.T) {
 	}
 	mustGit(t, repo, "init", "-q", ".")
 
-	// The daemon arm first and the direct arm second, in the order the header
-	// describes them. Neither materialises anything now, so the order buys
-	// nothing and neither reading is a baseline for the other.
+	// The daemon arm first and the direct arm second — the order buys
+	// nothing now that neither arm materialises anything, so neither
+	// reading is a baseline for the other.
 	cmd := exec.Command("bd", "list", "--all", "--json", "--limit", "0")
 	cmd.Dir = repo
 	daemonArm := time.Now()
