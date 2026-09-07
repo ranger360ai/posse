@@ -229,9 +229,19 @@ func seatbeltReachProbe(profile, target string) (string, error) {
 	return string(out), err
 }
 
+// reachProbeReason names the probe's failure. It reads from the END of the
+// child's combined output, not the start: a dyld/libmalloc line the child
+// inherited into its own environment prints to the same stream before
+// sandbox-exec's own diagnostic does, so the first line can be loader noise
+// while the last is always the diagnostic this row exists to report
+// (ranger-base-mtnzv) — the same lines-from-the-end reader errEnvelope
+// (herdr.go) already uses against a comparable ordering.
 func reachProbeReason(out string, err error) string {
-	if s := strings.TrimSpace(firstLine(strings.TrimSpace(out))); s != "" {
-		return s
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if s := strings.TrimSpace(lines[i]); s != "" {
+			return s
+		}
 	}
 	return err.Error()
 }

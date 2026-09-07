@@ -20,6 +20,7 @@ package posse
 //     SeatbeltWritable's return value would pass all three.
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -419,6 +420,31 @@ func TestQAAnApplyRefusalIsNotAWriteRefusal(t *testing.T) {
 		if got := isSandboxApplyRefusal(tc.out); got != tc.want {
 			t.Errorf("%s: isSandboxApplyRefusal(%q) = %v, want %v", tc.what, tc.out, got, tc.want)
 		}
+	}
+}
+
+// The reason a caller sees must be sandbox-exec's own diagnostic, not
+// whatever the child inherited into its environment and printed first.
+// Measured 2026-09-04 on macOS 25.4.0: an inherited MallocStackLogging
+// value makes the loader print a tag line to the child's stderr BEFORE
+// sandbox-exec writes its own diagnostic to the same stream, so a
+// first-line reader reports the loader's noise as "the reason"
+// (ranger-base-mtnzv). This pins reachProbeReason directly on the captured
+// bytes — no sandbox-exec, no cage dependency.
+func TestQAReachProbeReasonSkipsInheritedLoaderNoise(t *testing.T) {
+	t.Parallel()
+	const clean = "sandbox-exec: sandbox_apply: Operation not permitted\n"
+	const withLoaderNoise = "sandbox-exec(12345) MallocStackLogging: could not tag MSL-related memory as no_footprint, so those pages will be included in process footprint - No such file or directory (2)\nsandbox-exec: sandbox_apply: Operation not permitted\n"
+	fakeExit := errors.New("exit status 1")
+
+	if got := reachProbeReason(clean, fakeExit); got != "sandbox-exec: sandbox_apply: Operation not permitted" {
+		t.Errorf("clean output: got %q", got)
+	}
+	if got := reachProbeReason(withLoaderNoise, fakeExit); got != "sandbox-exec: sandbox_apply: Operation not permitted" {
+		t.Errorf("with inherited loader noise ahead of it, the diagnostic must still win: got %q", got)
+	}
+	if got := reachProbeReason("", fakeExit); got != fakeExit.Error() {
+		t.Errorf("empty output falls back to err: got %q", got)
 	}
 }
 
