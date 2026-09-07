@@ -495,6 +495,21 @@ func (b *HerdrBackend) writeMeta(m *HerdrMeta) error {
 	if err := os.MkdirAll(b.metaDir(), 0o755); err != nil {
 		return err
 	}
+	// Dir, Repo, Branch and TurnFailure are the fields that reach this writer
+	// unchecked (ranger-base-kn68j): paths posse did not make and provider
+	// text dispatch.go found, none of them one line by construction the way
+	// Cmd, Degraded and the timestamps are, and none of them guarded at a
+	// call site the way managed_hooks is at planLaunch. Refused here, before
+	// any byte is written, on the same predicate that guard asks — a record
+	// that quietly reads back as a different value (or grows a `crew: true`
+	// line nobody wrote) is worse than a write that did not happen.
+	for _, f := range [...][2]string{
+		{"dir", m.Dir}, {"repo", m.Repo}, {"branch", m.Branch}, {"turn_failure", m.TurnFailure},
+	} {
+		if why := flatFieldRefusal(f[0], f[1]); why != "" {
+			return Die("posse: %s — session record cannot be written: %s (ranger-base-kn68j)", m.Name, why)
+		}
+	}
 	var s strings.Builder
 	fmt.Fprintf(&s, "name: %s\n", m.Name)
 	fmt.Fprintf(&s, "workspace: %s\n", m.Workspace)

@@ -10,6 +10,7 @@ package posse
 // quotes go only as a matched pair.
 
 import (
+	"fmt"
 	"os"
 	"strings"
 )
@@ -79,6 +80,22 @@ func yamlGetLines(lines []string, key string) string {
 func flatScalarRoundTrip(v string) (string, bool) {
 	got := yamlGetLines(strings.Split("k: "+v, "\n"), "k")
 	return got, got == v
+}
+
+// flatFieldRefusal names why key cannot carry v as a writeMeta scalar field,
+// "" when it can. It is the writer-side twin of the managed_hooks guard
+// planLaunch already asks (ranger-base-m6szh, escaped from
+// ranger-base-buvq4): asked of flatScalarRoundTrip itself, so it needs no
+// separate newline check — a value carrying one splits into a second line
+// the reader never rejoins, so the round trip already fails on it — and
+// catches the same four further shapes managed_hooks does (ranger-base-kn68j,
+// widening the one call site to every free-form field writeMeta puts in a
+// session record: Dir, Repo, Branch and TurnFailure reached it unchecked).
+func flatFieldRefusal(key, v string) string {
+	if got, ok := flatScalarRoundTrip(v); !ok {
+		return fmt.Sprintf("%s: %q would be recorded as %q", key, v, got)
+	}
+	return ""
 }
 
 // YamlList returns list items of a top-level key (inline or block form).
