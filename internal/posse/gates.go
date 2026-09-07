@@ -5144,7 +5144,15 @@ IFS='
 for posse_adr_l in $posse_adr_admitted; do
   posse_adr_t=${posse_adr_l%% *}
   posse_adr_l=${posse_adr_l#* }
-  echo "ADMITTED ${posse_adr_l#* } $posse_adr_t twin ${posse_adr_l%% *}"
+  posse_adr_twin=${posse_adr_l%% *}
+  posse_adr_f=${posse_adr_l#* }
+  # ranger-base-xu8ng: printf, not echo, same reason as ranger-base-xfh1n's
+  # REFUSE-line fix (ranger-base-23mvz): posse_adr_f is a record path off the
+  # loop's line; echo expands backslash escapes in its operand on the shells
+  # that run this hook (macOS /bin/sh is bash 3.2 with xpg_echo on when
+  # invoked as sh, a Linux /bin/sh is usually dash, same by spec), so a path
+  # holding \n, \t, \\ or \c prints mangled or truncated.
+  printf '%s\n' "ADMITTED $posse_adr_f $posse_adr_t twin $posse_adr_twin"
 done
 for posse_adr_l in $posse_adr_refused; do
   posse_adr_t=${posse_adr_l%% *}

@@ -163,6 +163,25 @@ func TestQAAdrCensusRefusalNamesAPathWithABackslashEscape(t *testing.T) {
 	}
 }
 
+// PIN 2c — ranger-base-xu8ng: the same backslash-escape mangling as PIN 2b,
+// but for the ADMITTED arm, which ranger-base-xfh1n's sweep did not name.
+// posse_adr_f is a path taken off the loop's line here too, and was printed
+// through echo before this fix.
+func TestQAAdrCensusAdmissionNamesAPathWithABackslashEscape(t *testing.T) {
+	t.Parallel()
+	r := newAdrRepo(t)
+
+	const rel = `docs/adr/0993-back\nslash.md`
+	r.stage(t, rel, "# x\n\nStale `"+r.twinStale+"`, landed `"+r.twinLanded+"`.\n")
+	out, _, refused := r.census(t, rel)
+	if refused {
+		t.Fatalf("a twin beside its stale sha must not be refused:\n%s", out)
+	}
+	if !strings.Contains(out, "ADMITTED "+rel+" "+r.twinStale+" twin "+r.twinLanded) {
+		t.Errorf("the admission must name the path verbatim, on one line:\n%s", out)
+	}
+}
+
 // PIN 3 — the radius is the RECORD: a twin in another file of the same
 // census admits nothing. The control is the two files' contents in one
 // file, over which the same census admits the pair.
