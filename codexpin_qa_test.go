@@ -172,6 +172,26 @@ func (b *cpBox) config(t *testing.T, body string) {
 	}
 }
 
+// declarePin rewrites one line of the box's own copy of version-pin.toml —
+// old must appear exactly once, the way the pin's own extractor reads a
+// single first-match line, so a typo in a test fixture fails loudly instead
+// of silently declaring nothing.
+func (b *cpBox) declarePin(t *testing.T, old, new string) {
+	t.Helper()
+	p := filepath.Join(b.root, "etc", "codex", "version-pin.toml")
+	body, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(body)
+	if n := strings.Count(s, old); n != 1 {
+		t.Fatalf("declarePin: %q appears %d times in version-pin.toml, want 1", old, n)
+	}
+	if err := os.WriteFile(p, []byte(strings.Replace(s, old, new, 1)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func (b *cpBox) run(t *testing.T) (string, int) {
 	t.Helper()
 	cmd := exec.Command(filepath.Join(b.root, "scripts", "verify-codex-pin.sh"))
@@ -588,6 +608,31 @@ func TestQACodexPinEachRowFailsAlone(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// ranger-base-g29az finding 3: caskroom_dir compared as a PREFIX of the
+// resolved binary's directory let a version-less declaration
+// ("Caskroom/codex") pass both rollback rows — Homebrew never removes that
+// parent, and whichever version IS installed sits underneath it, so the row
+// answered "yes" about a directory that names no version to roll back to.
+// The version-ful wrong arm (a stale version that is actually gone) is
+// TestQACodexPinEachRowFailsAlone's "rollback target cleaned away" — this
+// test is the sibling wrong arm that survived it.
+func TestQACodexPinRollbackTargetMustNameTheVersion(t *testing.T) {
+	b := cpNewBox(t)
+	b.declarePin(t, `caskroom_dir = "Caskroom/codex/`+cpPinnedVer+`"`, `caskroom_dir = "Caskroom/codex"`)
+	out, code := b.run(t)
+	if code != 1 {
+		t.Fatalf("a caskroom_dir naming no version must fail: exit %d\n%s", code, out)
+	}
+	if !cpRowFailed(out, "rollback target on disk") {
+		t.Errorf("rollback target row did not fail against a version-less caskroom_dir:\n%s", out)
+	}
+	// Not a FAIL of its own — same shape as the "rollback target gone" arm:
+	// nothing to resolve into is said, not measured wrong.
+	if !strings.Contains(out, "codex resolves into the pin") || cpRowFailed(out, "codex resolves into the pin") {
+		t.Errorf("codex-resolves row must say nothing to resolve into, not FAIL:\n%s", out)
 	}
 }
 

@@ -151,12 +151,21 @@ chk_row "config check_for_update"  "$want_cfuos"  "$cfg_cfuos"
 # `command -v` names a path; only resolving it says which tree answers. A
 # Caskroom directory that is present but is NOT what codex runs from is a
 # rollback target for a binary nobody uses, so both halves are one row each.
+#
+# `caskroom_dir` is asserted to NAME the pinned version, not merely to be a
+# directory that exists: a version-less declaration (`Caskroom/codex`) is
+# always "present" — Homebrew never removes the parent — and any installed
+# version's bin/ sits underneath it, so a plain path-prefix compare against
+# that parent reads "codex resolves into the pin" ok no matter which version
+# is actually running. ranger-base-g29az finding 3. The version-anchored
+# case ("Caskroom/codex/0.153.4") is unaffected: its own last path segment
+# already IS $want_ver.
 room="$(brew --prefix 2>/dev/null)/$want_room"
 # Named rather than re-tested: the UPSTREAM MOVED block below tells an
 # operator whether the rollback artifact is still fetchable, and asking the
 # disk a second time could answer differently from the row above it.
 room_state=gone
-if [ -d "$room" ]; then
+if [ -d "$room" ] && [ "${want_room##*/}" = "$want_ver" ]; then
   room_state=present
   # Both sides get resolved before they are compared. `readlink -f` follows
   # the cask's symlink to a REAL path, so an unresolved prefix on the other
@@ -172,6 +181,13 @@ if [ -d "$room" ]; then
     "$room"/*) printf '  %-30s %-12s ok\n' "codex resolves into the pin" "yes" ;;
     *)         printf '  %-30s %-12s <-- FAIL (%s)\n' "codex resolves into the pin" "no" "${real:-?}"; fail=$((fail + 1)) ;;
   esac
+elif [ -d "$room" ]; then
+  printf '  %-30s %-12s <-- FAIL (%s)\n' "rollback target on disk" "unversioned" "$want_room names no version ($want_ver)"
+  fail=$((fail + 1))
+  # Not measured, and said so rather than counted: a declared path that names
+  # no version is not a rollback target for THIS pin, whatever happens to be
+  # sitting under it.
+  printf '  %-30s %-12s (declared path names no version; nothing to resolve into)\n' "codex resolves into the pin" "—"
 else
   printf '  %-30s %-12s <-- FAIL (%s)\n' "rollback target on disk" "GONE" "$room"; fail=$((fail + 1))
   # Not measured, and said so rather than counted: "does codex resolve into a
@@ -307,14 +323,28 @@ EOF
      trust grant, and \`-c developer_instructions="\$(cat ...)"\` — which is
      how the work prompt is delivered at all. \`posse runtime check codex\`.
   3. The startup-update key itself. \`check_for_update_on_startup\` exists at
-     $want_ver; a rename retires the affordance kill silently. Re-run the
-     four-arm rig (key absent / true / false / an unrelated key) against a
-     CODEX_HOME whose version.json is due a menu — the unrelated-key arm is
-     what separates "this key works" from "any key works".
+     $want_ver; a rename retires the affordance kill silently, and the
+     four-arm rig alone cannot catch it — a renamed key and a working one
+     both give "no menu", because a key codex does not recognise is ignored
+     without a word. Re-run the rig (key absent / true / false / an
+     unrelated key) against a CODEX_HOME whose version.json is due a menu —
+     the unrelated-key arm is what separates "this key works" from "any key
+     works" — AND read the name off codex's own config schema: \`codex
+     --strict-config exec -c check_for_update_on_startup=false\` must be
+     accepted, and the same invocation with a bogus key
+     (\`-c bogus_key_xyz=false\`) must be rejected by name ("unknown
+     configuration field"), or the rig above is answering for a key that no
+     longer exists.
   4. Interstitial detection (etc/herdr/agent-detection/codex.toml and its
      testdata: update_menu, model_picker, hooks_review, trust_directory,
      signin_menu, signin_api_key, idle_composer). \`make verify-detection\`
-     against the new build's screens.
+     replays RECORDED fixtures against the tree's manifest — it proves the
+     rules still parse and still decide, never that the new build still
+     draws those screens. Capture the new build's screens and run each
+     through \`herdr agent explain --file <capture> --agent codex\` with the
+     checkout's manifests staged into a throwaway XDG_CONFIG_HOME (what
+     scripts/verify-detection.sh does), then refresh the fixtures if the
+     shapes moved.
 
   Runbook: docs/notes.d/ranger-base-poj5.md.
 EOF
