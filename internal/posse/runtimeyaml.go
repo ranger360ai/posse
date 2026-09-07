@@ -271,15 +271,23 @@ func runtimeStateDirs(path string) ([]string, error) {
 // one guarantee this key makes is that posse never reads, prints or
 // forwards a secret's value — and a list an operator can put a value in is
 // a list that ends up in a `posse runtime check` someone pastes into a bead.
+//
+// A value that is entirely name-class characters (a base64 secret with no
+// `+`/`/`, a `ghp_`/`AKIA`-style token) cannot be told apart from a NAME by
+// this validator, or by elideEnvValue below, and passes through as one —
+// it is a residual of "names only", not a bug in the elision: what this
+// guarantees is that posse never prints the VALUE of a NAME, and a value
+// put where a name goes is, to this check, a name.
 func runtimeEnvRequired(path string) ([]string, error) {
 	var out []string
-	for _, v := range runtimeScalarOrList(path, "env_required") {
+	entries := runtimeScalarOrList(path, "env_required")
+	for i, v := range entries {
 		if strings.ContainsAny(v, "=$ \t") {
-			return nil, fmt.Errorf("env_required: %q — names only, never values (posse never reads what these hold, and this refusal is elided at the first character that is not part of a name)", elideEnvValue(v))
+			return nil, fmt.Errorf("env_required: entry %d of %d, %q — names only, never values (posse never reads what these hold, and this refusal is elided at the first character that is not part of a name)", i+1, len(entries), elideEnvValue(v))
 		}
-		for i, r := range v {
-			if !envNameRune(i, r) {
-				return nil, fmt.Errorf("env_required: %q — not an environment variable name (elided at the first character that is not one)", elideEnvValue(v))
+		for j, r := range v {
+			if !envNameRune(j, r) {
+				return nil, fmt.Errorf("env_required: entry %d of %d, %q — not an environment variable name (elided at the first character that is not one)", i+1, len(entries), elideEnvValue(v))
 			}
 		}
 		out = append(out, v)
@@ -296,6 +304,17 @@ func envNameRune(i int, r rune) bool {
 	return r == '_' || (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || (i > 0 && r >= '0' && r <= '9')
 }
 
+// envValueEchoCap bounds how many leading bytes of a refused env_required
+// entry elideEnvValue ever prints. The name/value boundary alone is not a
+// bound: that cut assumes the run before the first non-name byte IS a name,
+// which fails for a BARE value — an operator's paste of a secret where a
+// name belongs has no separator near the front, so the old cut ran to
+// wherever the secret's own bytes happened to stop being name-class, deep
+// into a base64 payload for most of them. 8 bytes is enough of a NAME to
+// find in a short yaml list; entry N of M (runtimeEnvRequired above) makes
+// up the rest of "which one" a longer echo used to buy.
+const envValueEchoCap = 8
+
 // elideEnvValue is what a refusal prints in place of the entry. The
 // guarantee above — posse never reads, prints or forwards a value — was
 // broken by the sentence that makes it: the refusal echoed the whole entry,
@@ -303,14 +322,19 @@ func envNameRune(i int, r rune) bool {
 // check` output, which is output meant to be pasted into a bead, and beads
 // sync to a store repo (ranger-base-60lj).
 //
-// What survives is the leading run of name characters plus the first
-// character that is not one — the operator has to see WHICH entry and which
-// separator made it a value — and "..." for everything after it, which is
-// the part that may be a secret. No arm is exempt: `=`, `$`, a space and a
-// stray `-` all cut the same way, because `=` is not the only spelling a
-// value arrives in and a rule with an exception leaks on the day the
-// exception was wrong. An entry with nothing after the offending character
-// (`FOO=`) is printed whole, because nothing was elided.
+// What survives is at most envValueEchoCap bytes of the leading run of name
+// characters, plus the first character that is not one if that still fits
+// under the cap — the operator has to see WHICH entry and which separator
+// made it a value — and "..." for everything after it, which is the part
+// that may be a secret. No arm is exempt: `=`, `$`, a space and a stray `-`
+// all cut the same way, because `=` is not the only spelling a value
+// arrives in and a rule with an exception leaks on the day the exception
+// was wrong. An entry with nothing after the offending character (`FOO=`)
+// is printed whole, but only when the name run itself is under the cap —
+// a run at or past the cap is a bare value's leading bytes, not a name a
+// trailing separator happens to close, and gets cut regardless of what (if
+// anything) follows it, closing the hole where a secret ending in exactly
+// one bad byte used to print whole.
 func elideEnvValue(v string) string {
 	for i := 0; i < len(v); i++ {
 		// Byte-indexed on purpose: any non-ASCII byte fails envNameRune at
@@ -318,6 +342,9 @@ func elideEnvValue(v string) string {
 		// validator refuses, and never mid-name.
 		if envNameRune(i, rune(v[i])) {
 			continue
+		}
+		if i >= envValueEchoCap {
+			return v[:envValueEchoCap] + "..."
 		}
 		if i+1 < len(v) {
 			return v[:i+1] + "..."

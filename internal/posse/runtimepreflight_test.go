@@ -100,17 +100,25 @@ func TestEnvRequiredTakesNamesNeverValues(t *testing.T) {
 // (ranger-base-60lj). Both arms are pinned, and both directions: the value
 // is absent AND the elided entry is present, because a refusal that says
 // nothing at all costs the operator the line they have to edit.
+//
+// envValueEchoCap (ranger-base-oaqmq): a name-class run that reaches the
+// cap before its separator is, from the leading bytes alone, indistinguishable
+// from a BARE value that never had a name in it — so both get the same
+// fixed cut, and "nothing follows" only prints the entry whole when the run
+// itself was already under the cap (AWS_REGION, 10 bytes, is not).
 func TestEnvRequiredRefusalElidesTheValue(t *testing.T) {
 	t.Parallel()
 	a := checkApp(t)
 	const secret = "wJalrXUtnFEMI0EXAMPLEKEY"
 	for _, c := range []struct{ entry, want string }{
-		{"AWS_SECRET_ACCESS_KEY=" + secret, `"AWS_SECRET_ACCESS_KEY=..."`}, // the = arm
-		{"AWS_SECRET_ACCESS_KEY " + secret, `"AWS_SECRET_ACCESS_KEY ..."`}, // whitespace
-		{"$" + secret, `"$..."`}, // a reference
-		{"AWS_SECRET_ACCESS_KEY:" + secret, `"AWS_SECRET_ACCESS_KEY:..."`}, // the bad-character arm
-		{"AWS_SECRET_ACCESS_KEY-" + secret, `"AWS_SECRET_ACCESS_KEY-..."`}, // same arm, another separator
-		{"AWS_REGION=", `"AWS_REGION="`},                                   // nothing follows: nothing elided
+		{"AWS_SECRET_ACCESS_KEY=" + secret, `"AWS_SECR..."`}, // the = arm, name past the cap
+		{"AWS_SECRET_ACCESS_KEY " + secret, `"AWS_SECR..."`}, // whitespace
+		{"$" + secret, `"$..."`},                             // a reference, cut well before the cap
+		{"AWS_SECRET_ACCESS_KEY:" + secret, `"AWS_SECR..."`}, // the bad-character arm
+		{"AWS_SECRET_ACCESS_KEY-" + secret, `"AWS_SECR..."`}, // same arm, another separator
+		{"AWS_REGION=", `"AWS_REGI..."`},                     // name past the cap: cut even though nothing follows
+		{"DB=" + secret, `"DB=..."`},                         // a name under the cap: printed, then cut
+		{"DB=", `"DB="`},                                     // under the cap AND nothing follows: nothing elided
 	} {
 		if err := os.WriteFile(filepath.Join(a.RuntimesDir(), "leaky.yaml"),
 			[]byte("command: c {file}\nenv_required: ["+c.entry+"]\n"), 0o644); err != nil {
@@ -126,6 +134,59 @@ func TestEnvRequiredRefusalElidesTheValue(t *testing.T) {
 		} else if !strings.Contains(msg, c.want) {
 			t.Errorf("env_required: %q — want the entry elided as %s, got: %s", c.entry, c.want, msg)
 		}
+	}
+}
+
+// A BARE value carries no name near its front at all, so the first bad byte
+// can land anywhere in it — deep inside a base64 payload, or as its very
+// last byte (the "nothing follows" arm used to print that case whole).
+// envValueEchoCap bounds the leak to a fixed number of bytes regardless of
+// where the bad byte falls, which Contains(msg, secret) alone does not pin:
+// a prefix leak shorter than the whole secret still passes that check.
+func TestEnvRequiredRefusalCapsABareValue(t *testing.T) {
+	t.Parallel()
+	a := checkApp(t)
+	for _, entry := range []string{
+		"wJalrXUtnFEMI0EXAMPLEKEY/rest-of-the-secret-goes-here-and-on", // bad byte deep in
+		"wJalrXUtnFEMI0EXAMPLEKEYEXTRA=",                               // bad byte is the last byte
+	} {
+		if err := os.WriteFile(filepath.Join(a.RuntimesDir(), "leaky.yaml"),
+			[]byte("command: c {file}\nenv_required: ["+entry+"]\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		_, err := a.LoadRuntime("leaky")
+		if err == nil {
+			t.Fatalf("env_required: %q must refuse", entry)
+		}
+		msg := err.Error()
+		start, end := strings.Index(msg, `"`), strings.LastIndex(msg, `"`)
+		if start < 0 || end <= start {
+			t.Fatalf("env_required: %q — refusal has no quoted entry: %s", entry, msg)
+		}
+		elided := strings.TrimSuffix(msg[start+1:end], "...")
+		if elided == entry {
+			t.Errorf("env_required: %q — the refusal printed the entry whole: %s", entry, msg)
+		} else if len(elided) > envValueEchoCap {
+			t.Errorf("env_required: %q — %d bytes of the entry survived, want at most %d: %s", entry, len(elided), envValueEchoCap, msg)
+		}
+	}
+}
+
+// The cap means "which entry" can no longer come from the echo alone, so
+// the refusal names the entry's position in the list.
+func TestEnvRequiredRefusalNamesTheOrdinal(t *testing.T) {
+	t.Parallel()
+	a := checkApp(t)
+	if err := os.WriteFile(filepath.Join(a.RuntimesDir(), "leaky.yaml"),
+		[]byte("command: c {file}\nenv_required: [AWS_REGION, AWS_PROFILE, BAD=value]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := a.LoadRuntime("leaky")
+	if err == nil {
+		t.Fatal("env_required: BAD=value must refuse")
+	}
+	if msg := err.Error(); !strings.Contains(msg, "entry 3 of 3") {
+		t.Errorf("env_required: refusal must name the ordinal: %s", msg)
 	}
 }
 
