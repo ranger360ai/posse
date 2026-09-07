@@ -64,7 +64,7 @@ func opts(o RefreshOpts, tok string, minted *int) RefreshOpts {
 func writeEnvFile(t *testing.T, a *App, set, body string, mode os.FileMode) string {
 	t.Helper()
 	p := filepath.Join(a.EnvsDir, set+".env")
-	if err := os.WriteFile(p, []byte(body), mode); err != nil {
+	if err := WriteExecutable(p, []byte(body), mode); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Chmod(p, mode); err != nil {

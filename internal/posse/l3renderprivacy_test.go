@@ -53,7 +53,7 @@ func TestL3ProbeRendersAreNotLooseInTheSharedTempDir(t *testing.T) {
 		"printf '%s\\n%s\\n%s\\n' \"$4\" \"$5\" \"$6\" > " + filepath.Join(rec, "paths") + "\n" +
 		"mv \"$(dirname \"$5\")\" " + filepath.Join(rec, "scratch") + "\n" +
 		"exit 0\n"
-	if err := os.WriteFile(filepath.Join(bin, "sh"), []byte(shim), 0o755); err != nil {
+	if err := WriteExecutable(filepath.Join(bin, "sh"), []byte(shim), 0o755); err != nil {
 		t.Fatal(err)
 	}
 

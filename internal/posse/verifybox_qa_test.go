@@ -693,12 +693,12 @@ func TestTheScriptWritesWhatThisReaderParses(t *testing.T) {
 		t.Fatal(err)
 	}
 	copied := filepath.Join(dir, "scripts", "verify-box.sh")
-	if err := os.WriteFile(copied, body, 0o755); err != nil {
+	if err := WriteExecutable(copied, body, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	for _, rc := range []int{0, 1, 2} {
 		arm := filepath.Join(dir, "scripts", fmt.Sprintf("arm%d.sh", rc))
-		if err := os.WriteFile(arm, []byte(fmt.Sprintf("#!/bin/sh\nexit %d\n", rc)), 0o755); err != nil {
+		if err := WriteExecutable(arm, []byte(fmt.Sprintf("#!/bin/sh\nexit %d\n", rc)), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}

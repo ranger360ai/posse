@@ -62,7 +62,7 @@ func TestQAAFifoAtTheDispatchPathMustNotWedgeTheLaunch(t *testing.T) {
 	// isRegularFile there, installHook does not.
 	a, repo = fifoLaunchRig(t)
 	hooks := filepath.Join(repo, ".git", "hooks")
-	if err := os.WriteFile(filepath.Join(hooks, "prepare-commit-msg"),
+	if err := WriteExecutable(filepath.Join(hooks, "prepare-commit-msg"),
 		[]byte(chainHookDispatcherWith("prepare-commit-msg", "theirs-prepare-commit-msg")), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -227,7 +227,7 @@ func TestQAHookWallSweepStampDriftBothDirectionsOverTheInstallersOwnRender(t *te
 	}
 	plant := func(vis string) {
 		t.Helper()
-		if err := os.WriteFile(slot, []byte(CommitGuardHook(vis, a.OpsPatternSet(), id...)), 0o755); err != nil {
+		if err := WriteExecutable(slot, []byte(CommitGuardHook(vis, a.OpsPatternSet(), id...)), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}

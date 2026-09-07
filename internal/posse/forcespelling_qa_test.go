@@ -50,7 +50,7 @@ func TestQAMirrorIsAFourthForcePushSpellingThatOnlyTheVerbRuleCloses(t *testing.
 	home := t.TempDir()
 	a := &App{Home: home, StateDir: filepath.Join(home, "state")}
 	realBin := t.TempDir()
-	os.WriteFile(filepath.Join(realBin, "git"), []byte("#!/bin/sh\necho \"real git $*\"\n"), 0o755)
+	WriteExecutable(filepath.Join(realBin, "git"), []byte("#!/bin/sh\necho \"real git $*\"\n"), 0o755)
 	t.Setenv("PATH", realBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	shimFor := func(persona, deny string) string {
 		_, binDir, _, err := a.RenderGates(persona, []string{deny})

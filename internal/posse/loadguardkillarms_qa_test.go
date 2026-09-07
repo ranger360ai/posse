@@ -65,7 +65,7 @@ func fakePS(t *testing.T, table string) {
 	t.Helper()
 	dir := t.TempDir()
 	script := "#!/bin/sh\ncat <<'ROWS'\n" + table + "ROWS\n"
-	if err := os.WriteFile(filepath.Join(dir, "ps"), []byte(script), 0o755); err != nil {
+	if err := WriteExecutable(filepath.Join(dir, "ps"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))

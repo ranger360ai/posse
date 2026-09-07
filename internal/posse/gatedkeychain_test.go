@@ -63,7 +63,7 @@ func keychainStub(t *testing.T, script string) string {
 		t.Skip("no sh")
 	}
 	p := filepath.Join(t.TempDir(), "security")
-	if err := os.WriteFile(p, []byte(script), 0o755); err != nil {
+	if err := WriteExecutable(p, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return p

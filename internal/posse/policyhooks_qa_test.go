@@ -199,7 +199,7 @@ func TestQAThePolicyHooksGateStringRefusesAFencedVerbAndFailsClosed(t *testing.T
 		if err != nil {
 			t.Fatalf("the gate source is missing from the repo: %v", err)
 		}
-		if err := os.WriteFile(filepath.Join(gateDir, f), b, 0o755); err != nil {
+		if err := WriteExecutable(filepath.Join(gateDir, f), b, 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -231,7 +231,7 @@ func TestQAThePolicyHooksGateStringRefusesAFencedVerbAndFailsClosed(t *testing.T
 		if f == "bd-argv-gate.sh" {
 			mode = 0o644
 		}
-		if err := os.WriteFile(filepath.Join(unexecGate, f), b, mode); err != nil {
+		if err := WriteExecutable(filepath.Join(unexecGate, f), b, mode); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -321,7 +321,7 @@ func TestQAThePolicyHooksReporterStringExecsWhenPresentAndIsQuietWhenAbsent(t *t
 	// ship it. It records the argument, which is the half of the command line
 	// that is this file's to get right.
 	stub := "#!/bin/sh\nprintf '%s' \"$1\" > " + marker + "\n"
-	if err := os.WriteFile(filepath.Join(hookDir, "herdr-agent-state.sh"), []byte(stub), 0o755); err != nil {
+	if err := WriteExecutable(filepath.Join(hookDir, "herdr-agent-state.sh"), []byte(stub), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	bare := t.TempDir()

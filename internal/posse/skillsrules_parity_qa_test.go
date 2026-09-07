@@ -332,7 +332,7 @@ func TestQARenderedTreeNeedsNoSymlinkFollowed(t *testing.T) {
 	if err := os.Symlink(outside, filepath.Join(alpha, "references", "leases.md")); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(alpha, "run.sh"), []byte("#!/bin/sh\necho hi\n"), 0o755); err != nil {
+	if err := WriteExecutable(filepath.Join(alpha, "run.sh"), []byte("#!/bin/sh\necho hi\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	qmSkill(t, a.SkillsDir(), "qm-beta", "TOKBETA")

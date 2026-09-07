@@ -55,7 +55,7 @@ func TestQAAFifoOnThePathMustNotWedgeTheGateShellRender(t *testing.T) {
 
 	// Controls first, in this rig, through this call.
 	reg := filepath.Join(dir, "zsh-regular")
-	if err := os.WriteFile(reg, []byte("#!/bin/sh\nexec /bin/sh \"$@\"\n"), 0o755); err != nil {
+	if err := WriteExecutable(reg, []byte("#!/bin/sh\nexec /bin/sh \"$@\"\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	ask("an ordinary executable candidate", reg, 10*time.Second)

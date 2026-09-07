@@ -92,7 +92,7 @@ func qspFakeOld(t *testing.T) string {
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(p, []byte(body), mode); err != nil {
+		if err := WriteExecutable(p, []byte(body), mode); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -393,7 +393,7 @@ func TestSeedScriptRefusesToRunInsideNew(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(copy, body, 0o755); err != nil {
+	if err := WriteExecutable(copy, body, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	_, stderr, code := qspRun(t, copy, nil, "--preflight-only", "--new", dest)

@@ -259,7 +259,7 @@ func TestQAGuardRefusesACleanRevertAndNamesTheWayThrough(t *testing.T) {
 	if out, err := git(nil, "revert", "--no-edit", "HEAD"); err != nil {
 		t.Fatalf("a revert with no hook in the slot must complete: %v %s", err, out)
 	}
-	if err := os.WriteFile(slot, body, 0o755); err != nil {
+	if err := WriteExecutable(slot, body, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(repo, ".git", "AUTO_MERGE")); err != nil {
@@ -627,7 +627,7 @@ func TestQASessionCreateInstallsNothingIntoABdHookedRepo(t *testing.T) {
 	}
 	shim := "#!/usr/bin/env sh\n# bd-shim v1\nexit 0\n"
 	for _, slot := range []string{"pre-push", "prepare-commit-msg"} {
-		if err := os.WriteFile(filepath.Join(hooks, slot), []byte(shim), 0o755); err != nil {
+		if err := WriteExecutable(filepath.Join(hooks, slot), []byte(shim), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -689,7 +689,7 @@ func TestQAChainedInstallTakesOverBdsShimAndStaysDetected(t *testing.T) {
 	witness := filepath.Join(t.TempDir(), "bd.log")
 	shim := "#!/bin/sh\n# bd-shim v1\nprintf 'ran[%s]\\n' \"$0\" >> " + witness + "\nexit 0\n"
 	for _, slot := range []string{"pre-push", "prepare-commit-msg"} {
-		if err := os.WriteFile(filepath.Join(hooks, slot), []byte(shim), 0o755); err != nil {
+		if err := WriteExecutable(filepath.Join(hooks, slot), []byte(shim), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -750,7 +750,7 @@ func TestQAChainedInstallStillRefusesAGenuinelyUnknownHook(t *testing.T) {
 	if err := os.MkdirAll(hooks, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(hooks, "pre-push"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	if err := WriteExecutable(filepath.Join(hooks, "pre-push"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := InstallPrePushHookChained(repo); err == nil || !strings.Contains(err.Error(), "not a posse hook") {
@@ -817,10 +817,10 @@ func TestQALegacyChainIsUpgradedInPlace(t *testing.T) {
 				t.Fatal(err)
 			}
 			legacy := legacyChainHookDispatcherWith(slot, "bd-"+slot)
-			if err := os.WriteFile(filepath.Join(hooks, slot), []byte(legacy), 0o755); err != nil {
+			if err := WriteExecutable(filepath.Join(hooks, slot), []byte(legacy), 0o755); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.WriteFile(filepath.Join(hooks, "bd-"+slot), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+			if err := WriteExecutable(filepath.Join(hooks, "bd-"+slot), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 				t.Fatal(err)
 			}
 
@@ -870,7 +870,7 @@ func TestQALegacyUpgradeLeavesForeignHooksAlone(t *testing.T) {
 	}
 	// Ours dispatched, but its exit status discarded — not a chain.
 	foreign := "#!/bin/sh\nd=$(dirname \"$0\")\n\"$d/posse-prepare-commit-msg\" \"$@\"\nexec \"$d/bd-prepare-commit-msg\" \"$@\"\n"
-	if err := os.WriteFile(slot, []byte(foreign), 0o755); err != nil {
+	if err := WriteExecutable(slot, []byte(foreign), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := installCommitGuard(repo); err == nil {
@@ -918,7 +918,7 @@ func TestQADispatchIntoABdHookedRepoInstallsNothingAndRefuses(t *testing.T) {
 	hooks := filepath.Join(repo, ".git", "hooks")
 	slots := []string{"pre-push", "prepare-commit-msg"}
 	for _, slot := range slots {
-		if err := os.WriteFile(filepath.Join(hooks, slot), []byte(bdShimBody(slot)), 0o755); err != nil {
+		if err := WriteExecutable(filepath.Join(hooks, slot), []byte(bdShimBody(slot)), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -999,7 +999,7 @@ func TestQAWorkingForeignChainIsRefusedOnIdentityNotBehavior(t *testing.T) {
 	hooks := filepath.Join(repo, ".git", "hooks")
 	slots := []string{"pre-push", "prepare-commit-msg"}
 	for _, slot := range slots {
-		if err := os.WriteFile(filepath.Join(hooks, slot), []byte(qaWorkingForeignChain), 0o755); err != nil {
+		if err := WriteExecutable(filepath.Join(hooks, slot), []byte(qaWorkingForeignChain), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}

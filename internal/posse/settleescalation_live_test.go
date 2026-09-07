@@ -61,7 +61,7 @@ func TestLiveSettleEscalationBlocksTheStuckBead(t *testing.T) {
 	// the graph, not the transport.
 	wrapper := filepath.Join(t.TempDir(), "bd-nodaemon")
 	script := "#!/bin/sh\nexec " + bin + " --no-daemon \"$@\"\n"
-	if err := os.WriteFile(wrapper, []byte(script), 0o755); err != nil {
+	if err := WriteExecutable(wrapper, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	sh := func(args ...string) (string, error) {

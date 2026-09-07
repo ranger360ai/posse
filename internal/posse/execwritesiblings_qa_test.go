@@ -3,6 +3,8 @@
 package posse
 
 import (
+	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -58,23 +60,66 @@ func TestQASiblingsWriteExecutablesUnderTheForkLock(t *testing.T) {
 
 	// The other direction: no exec-bit os.WriteFile call left behind in
 	// these same files for a future edit to reintroduce, which a pure
-	// substring-presence check above would miss entirely. Parse each octal
-	// literal on the line and test its exec bits by mask rather than
-	// enumerating known exec modes — an enumerated list is blind to
-	// owner-only exec bits (0o700, 0o500, 0o711, 0o744, 0o540, ...), which
-	// is exactly how gates.go:5555 survived this census (ranger-base-0phqz).
-	octalLit := regexp.MustCompile(`0o[0-7]{3,4}`)
+	// substring-presence check above would miss entirely.
 	for file, src := range srcByFile {
-		for _, line := range strings.Split(src, "\n") {
-			if !strings.Contains(line, "os.WriteFile(") {
-				continue
-			}
-			for _, lit := range octalLit.FindAllString(line, -1) {
-				n, err := strconv.ParseInt(strings.TrimPrefix(lit, "0o"), 8, 32)
-				if err == nil && n&0o111 != 0 {
-					t.Errorf("%s still writes an executable with plain os.WriteFile (ETXTBSY window, golang/go#22315): %s", file, strings.TrimSpace(line))
-				}
+		assertNoExecBitOSWriteFile(t, file, src)
+	}
+}
+
+// assertNoExecBitOSWriteFile flags any os.WriteFile call on a line carrying
+// an octal literal with an exec bit set. It parses each octal literal on the
+// line and tests its exec bits by mask rather than enumerating known exec
+// modes — an enumerated list is blind to owner-only exec bits (0o700, 0o500,
+// 0o711, 0o744, 0o540, ...), which is exactly how gates.go:5555 survived the
+// original census (ranger-base-0phqz).
+func assertNoExecBitOSWriteFile(t *testing.T, file, src string) {
+	t.Helper()
+	octalLit := regexp.MustCompile(`0o[0-7]{3,4}`)
+	for _, line := range strings.Split(src, "\n") {
+		if !strings.Contains(line, "os.WriteFile(") {
+			continue
+		}
+		for _, lit := range octalLit.FindAllString(line, -1) {
+			n, err := strconv.ParseInt(strings.TrimPrefix(lit, "0o"), 8, 32)
+			if err == nil && n&0o111 != 0 {
+				t.Errorf("%s still writes an executable with plain os.WriteFile (ETXTBSY window, golang/go#22315): %s", file, strings.TrimSpace(line))
 			}
 		}
+	}
+}
+
+// TestQATestFilesWriteExecutablesUnderTheForkLock widens the census above to
+// every *_test.go file in this package (ranger-base-o6oj4). The sibling
+// census above deliberately excluded test files (ranger-base-jaqnp's scope
+// was non-test siblings found alongside gates.go); a repo-wide grep of
+// internal/posse/*_test.go turned up ~150 more os.WriteFile(...,0o<exec-bit>)
+// call sites across ~50 files — same golang/go#22315 window, fixed here by
+// routing them through WriteExecutable, and guarded going forward by the
+// sweep below.
+//
+// A test file's sheer count of sites rules out the per-site positive check
+// the sibling census above uses (enumerating a want string per site does not
+// scale to 150 of them, and a new test file adding one more exec-write site
+// tomorrow would not be in the list to enumerate anyway). The negative sweep
+// alone is the right shape here: any *_test.go file, present or future,
+// that writes an octal literal with an exec bit through plain os.WriteFile
+// fails this test.
+func TestQATestFilesWriteExecutablesUnderTheForkLock(t *testing.T) {
+	t.Parallel()
+
+	dir := filepath.Join(qibRepoRoot(t), "internal", "posse")
+	matches, err := filepath.Glob(filepath.Join(dir, "*_test.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) == 0 {
+		t.Fatal("no *_test.go files found — glob or repo root is wrong")
+	}
+	for _, path := range matches {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertNoExecBitOSWriteFile(t, filepath.Base(path), string(b))
 	}
 }

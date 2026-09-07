@@ -27,7 +27,7 @@ func plantWrapper(t *testing.T, a *App, persona, base, real string) string {
 	}
 	p := filepath.Join(dir, base)
 	body := "#!/bin/sh\n# posse gate shell for " + persona + " — rendered at launch from the PID; do not edit (ADR 0009).\nREAL=" + shQuote(real) + "\nexec \"$REAL\" \"$@\"\n"
-	if err := os.WriteFile(p, []byte(body), 0o755); err != nil {
+	if err := WriteExecutable(p, []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return p
@@ -96,7 +96,7 @@ func TestChainedGateWrappersSkipsWhatItDoesNotRecognize(t *testing.T) {
 	a := NewAppAt(t.TempDir())
 	dir := filepath.Join(a.GatesDir("coordinator"), "shell")
 	os.MkdirAll(dir, 0o755)
-	os.WriteFile(filepath.Join(dir, "zsh"), []byte("#!/bin/sh\necho no real line here\n"), 0o755)
+	WriteExecutable(filepath.Join(dir, "zsh"), []byte("#!/bin/sh\necho no real line here\n"), 0o755)
 	// A subdirectory under shell/ (should never happen, but Stat-and-skip
 	// rather than error).
 	os.MkdirAll(filepath.Join(dir, "nested"), 0o755)

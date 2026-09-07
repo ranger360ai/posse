@@ -54,14 +54,14 @@ func qaPrivateIndexChainRepo(t *testing.T) (repo, witness string, git func(env [
 		t.Fatal(err)
 	}
 	bd := "#!/bin/sh\nprintf 'reached[%s]\\n' \"$*\" >> " + witness + "\nexit 0\n"
-	if err := os.WriteFile(filepath.Join(hooks, "bd-prepare-commit-msg"), []byte(bd), 0o755); err != nil {
+	if err := WriteExecutable(filepath.Join(hooks, "bd-prepare-commit-msg"), []byte(bd), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	chain := "#!/bin/sh\nd=$(dirname \"$0\")\n" +
 		"\"$d/posse-prepare-commit-msg\" \"$@\" || exit $?\n" +
 		"[ -x \"$d/bd-prepare-commit-msg\" ] || exit 0\n" +
 		"exec \"$d/bd-prepare-commit-msg\" \"$@\"\n"
-	if err := os.WriteFile(filepath.Join(hooks, "prepare-commit-msg"), []byte(chain), 0o755); err != nil {
+	if err := WriteExecutable(filepath.Join(hooks, "prepare-commit-msg"), []byte(chain), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	base := []string{"PATH=" + PathOutsideGates(""), "HOME=" + repo,

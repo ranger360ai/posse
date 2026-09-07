@@ -17,7 +17,7 @@ func liveProcess(t *testing.T, name string) int {
 	t.Helper()
 	dir := t.TempDir()
 	script := filepath.Join(dir, name)
-	if err := os.WriteFile(script, []byte("sleep 30\n"), 0o755); err != nil {
+	if err := WriteExecutable(script, []byte("sleep 30\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	cmd := exec.Command("sh", script)

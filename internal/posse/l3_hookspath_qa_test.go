@@ -53,7 +53,7 @@ func TestGitRunsCoreHooksPathNotTheGitDirHooks(t *testing.T) {
 	qaGit(t, repo, "config", "user.name", "qa")
 
 	fired := filepath.Join(repo, "gitdir-hook-fired")
-	os.WriteFile(filepath.Join(hooks, "prepare-commit-msg"),
+	WriteExecutable(filepath.Join(hooks, "prepare-commit-msg"),
 		[]byte("#!/bin/sh\n: > "+fired+"\nexit 0\n"), 0o755)
 	os.WriteFile(filepath.Join(repo, "a.txt"), []byte("a\n"), 0o644)
 	qaGit(t, repo, "add", "a.txt")
@@ -64,7 +64,7 @@ func TestGitRunsCoreHooksPathNotTheGitDirHooks(t *testing.T) {
 
 	elsewhere := t.TempDir()
 	other := filepath.Join(repo, "other-hook-fired")
-	os.WriteFile(filepath.Join(elsewhere, "prepare-commit-msg"),
+	WriteExecutable(filepath.Join(elsewhere, "prepare-commit-msg"),
 		[]byte("#!/bin/sh\n: > "+other+"\nexit 0\n"), 0o755)
 	os.Remove(fired)
 	qaGit(t, repo, "config", "core.hooksPath", elsewhere)
@@ -192,7 +192,7 @@ func TestParityFollowsCoreHooksPath(t *testing.T) {
 		// waved through at the redirect, which is the only slot git runs.
 		qaArm(t, gitHooks, "pre-push", "prepare-commit-msg")
 		for _, slot := range []string{"pre-push", "prepare-commit-msg"} {
-			if err := os.WriteFile(filepath.Join(redirect, slot), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+			if err := WriteExecutable(filepath.Join(redirect, slot), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -234,7 +234,7 @@ func TestL3ProbeIsDefeatedByItsOwnSignature(t *testing.T) {
 	repo, hooks := qaHookRepo(t)
 	body := "#!/bin/sh\n[ \"$RHQ_PERSONA\" = probe ] && exit 1\nexit 0\n"
 	for _, slot := range []string{"pre-push", "prepare-commit-msg"} {
-		os.WriteFile(filepath.Join(hooks, slot), []byte(body), 0o755)
+		WriteExecutable(filepath.Join(hooks, slot), []byte(body), 0o755)
 	}
 	home := t.TempDir()
 	a := &App{Home: home, AgentsDir: filepath.Join(home, "agents"), ConfigPath: filepath.Join(home, "config.yaml")}
@@ -266,7 +266,7 @@ func TestL3ProbeNeverExecsForeignBytes(t *testing.T) {
 	canary := filepath.Join(repo, "canary")
 	body := "#!/bin/sh\n: > " + canary + "\nexit 1\n"
 	for _, slot := range []string{"pre-push", "prepare-commit-msg"} {
-		os.WriteFile(filepath.Join(hooks, slot), []byte(body), 0o755)
+		WriteExecutable(filepath.Join(hooks, slot), []byte(body), 0o755)
 	}
 	a := &App{}
 	a.probeL3Hooks(repo, true)
@@ -284,9 +284,9 @@ func TestL3ProbeCertifiesThePrescribedChain(t *testing.T) {
 	t.Parallel()
 	repo, hooks := qaHookRepo(t)
 	a := &App{}
-	os.WriteFile(filepath.Join(hooks, "pre-push"), []byte(chainHookDispatcherWith("pre-push", "theirs-pre-push")), 0o755)
-	os.WriteFile(filepath.Join(hooks, "theirs-pre-push"), []byte("#!/bin/sh\nexit 1\n"), 0o755)
-	os.WriteFile(filepath.Join(hooks, "posse-pre-push"), []byte(PrePushHook), 0o755)
+	WriteExecutable(filepath.Join(hooks, "pre-push"), []byte(chainHookDispatcherWith("pre-push", "theirs-pre-push")), 0o755)
+	WriteExecutable(filepath.Join(hooks, "theirs-pre-push"), []byte("#!/bin/sh\nexit 1\n"), 0o755)
+	WriteExecutable(filepath.Join(hooks, "posse-pre-push"), []byte(PrePushHook), 0o755)
 
 	if got := a.probeL3Hooks(repo, true); !got.PrePush {
 		t.Fatalf("byte-exact chain must certify: %+v (degraded: %q)", got, got.PrePushDegraded)
@@ -297,7 +297,7 @@ func TestL3ProbeCertifiesThePrescribedChain(t *testing.T) {
 	if tampered == PrePushHook {
 		t.Fatal("fixture did not actually change a byte")
 	}
-	os.WriteFile(filepath.Join(hooks, "posse-pre-push"), []byte(tampered), 0o755)
+	WriteExecutable(filepath.Join(hooks, "posse-pre-push"), []byte(tampered), 0o755)
 	got := a.probeL3Hooks(repo, true)
 	if got.PrePush {
 		t.Fatalf("a one-byte-flipped member must not certify: %+v", got)
@@ -356,12 +356,12 @@ func TestL3ProbeCatchesTamperingAtTheKnownPath(t *testing.T) {
 			os.Chmod(filepath.Join(h, "prepare-commit-msg"), 0o644)
 		}, false},
 		{"truncated to empty", func(h string) {
-			os.WriteFile(filepath.Join(h, "pre-push"), nil, 0o755)
-			os.WriteFile(filepath.Join(h, "prepare-commit-msg"), nil, 0o755)
+			WriteExecutable(filepath.Join(h, "pre-push"), nil, 0o755)
+			WriteExecutable(filepath.Join(h, "prepare-commit-msg"), nil, 0o755)
 		}, false},
 		{"marker-bearing pass-through", func(h string) {
-			os.WriteFile(filepath.Join(h, "pre-push"), []byte("#!/bin/sh\n"+prePushMarker+"\nexit 0\n"), 0o755)
-			os.WriteFile(filepath.Join(h, "prepare-commit-msg"), []byte("#!/bin/sh\n"+sharedIndexMarker+"\nexit 0\n"), 0o755)
+			WriteExecutable(filepath.Join(h, "pre-push"), []byte("#!/bin/sh\n"+prePushMarker+"\nexit 0\n"), 0o755)
+			WriteExecutable(filepath.Join(h, "prepare-commit-msg"), []byte("#!/bin/sh\n"+sharedIndexMarker+"\nexit 0\n"), 0o755)
 		}, true},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -393,7 +393,7 @@ func TestFailedL3ProbeNamesWhatWasLost(t *testing.T) {
 	t.Parallel()
 	repo, hooks := qaHookRepo(t)
 	for _, slot := range []string{"pre-push", "prepare-commit-msg"} {
-		os.WriteFile(filepath.Join(hooks, slot), []byte("#!/bin/sh\nexit 0\n"), 0o755)
+		WriteExecutable(filepath.Join(hooks, slot), []byte("#!/bin/sh\nexit 0\n"), 0o755)
 	}
 	home := t.TempDir()
 	a := &App{Home: home, AgentsDir: filepath.Join(home, "agents"), ConfigPath: filepath.Join(home, "config.yaml")}

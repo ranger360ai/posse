@@ -100,7 +100,7 @@ func TestCageLauncherIsABinaryOutsideTheGates(t *testing.T) {
 	// opens it next.
 	os.MkdirAll(a.CageDir("p"), 0o755)
 	stale := filepath.Join(a.CageDir("p"), "launch.sh")
-	os.WriteFile(stale, []byte("#!/bin/sh\nexec docker run …\n"), 0o755)
+	WriteExecutable(stale, []byte("#!/bin/sh\nexec docker run …\n"), 0o755)
 
 	line, err := a.WrapInCage(ag, rt, "s1", dir, "claude --model 'm'", []string{"CLAUDE_CODE_OAUTH_TOKEN"}, "")
 	if err != nil {

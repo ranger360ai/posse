@@ -97,7 +97,7 @@ func TestLiveRuntimeProbe(t *testing.T) {
 			"# ADR 0009's silent case (b): a CLI that re-execs a LOGIN shell.\n" +
 			": > " + shim2q(ran) + "\n" +
 			"exec /bin/zsh -l -c 'exec \"$0\" \"$@\"' " + shim2q(real) + " \"$@\"\n"
-		if err := os.WriteFile(shim, []byte(body), 0o755); err != nil {
+		if err := WriteExecutable(shim, []byte(body), 0o755); err != nil {
 			t.Fatal(err)
 		}
 		// The shim reaches the pane by ABSOLUTE PATH, in the profile the

@@ -75,7 +75,7 @@ func mhpFixture(t *testing.T) (repo, managed string) {
 	// The employer's own hook. It is here so the fixture is the shape the
 	// ADR describes rather than an empty directory, and so a write posse
 	// makes shows up beside something rather than in an empty listing.
-	if err := os.WriteFile(filepath.Join(managed, "pre-commit"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	if err := WriteExecutable(filepath.Join(managed, "pre-commit"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return repo, managed
@@ -403,7 +403,7 @@ func TestQALaunchIntoAManagedRepoWritesNothingAndSaysSo(t *testing.T) {
 	if err := os.MkdirAll(managed, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(managed, "pre-commit"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	if err := WriteExecutable(filepath.Join(managed, "pre-commit"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	qaGit(t, repo, "config", "core.hooksPath", managed)

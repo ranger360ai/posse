@@ -220,7 +220,7 @@ func TestEgressWatcherOutlivesTheExecAndThenTakesTheRouteDown(t *testing.T) {
 	// writing the argv a line at a time only makes that certain instead of
 	// occasional, which is what keeps the wait below honest: take the first
 	// non-empty read and this test is red every time (ranger-base-yl8j).
-	os.WriteFile(stub, []byte("#!/bin/sh\n: > "+seen+"\nfor a in \"$@\"; do printf '%s\\n' \"$a\" >> "+seen+"; sleep 0.05; done\n"), 0o755)
+	WriteExecutable(stub, []byte("#!/bin/sh\n: > "+seen+"\nfor a in \"$@\"; do printf '%s\\n' \"$a\" >> "+seen+"; sleep 0.05; done\n"), 0o755)
 	old := cageReaperBin
 	cageReaperBin = func() (string, error) { return stub, nil }
 	defer func() { cageReaperBin = old }()

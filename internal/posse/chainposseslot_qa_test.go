@@ -43,10 +43,10 @@ func hd56Repo(t *testing.T, slotBody string) (repo, hooks string) {
 	if err := os.MkdirAll(hooks, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(hooks, "pre-push"), []byte(slotBody), 0o755); err != nil {
+	if err := WriteExecutable(filepath.Join(hooks, "pre-push"), []byte(slotBody), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(hooks, "posse-pre-push"), []byte(hd56ForeignPosse), 0o755); err != nil {
+	if err := WriteExecutable(filepath.Join(hooks, "posse-pre-push"), []byte(hd56ForeignPosse), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return repo, hooks
@@ -127,7 +127,7 @@ func TestQAChainedInstallOverBdShimDoesNotOverwriteAForeignPosseSlot(t *testing.
 func TestQAOurOwnPosseSlotStillGetsThePrescription(t *testing.T) {
 	t.Parallel()
 	repo, hooks := hd56Repo(t, hd56Foreign)
-	if err := os.WriteFile(filepath.Join(hooks, "posse-pre-push"), []byte(PrePushHook), 0o755); err != nil {
+	if err := WriteExecutable(filepath.Join(hooks, "posse-pre-push"), []byte(PrePushHook), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	_, err := InstallPrePushHook(repo)

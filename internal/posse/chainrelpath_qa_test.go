@@ -77,7 +77,7 @@ func relGitRepo(t *testing.T, repo string) string {
 	if err := os.MkdirAll(hooks, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(hooks, "pre-push"), []byte(q32oTheirHook), 0o755); err != nil {
+	if err := WriteExecutable(filepath.Join(hooks, "pre-push"), []byte(q32oTheirHook), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return hooks
@@ -222,7 +222,7 @@ func relPaste(t *testing.T, text, cwd string) {
 	if j < 0 {
 		t.Fatalf("prescription's heredoc has no terminator: %q", text)
 	}
-	if err := os.WriteFile("pre-push", []byte(rest[:j+1]), 0o755); err != nil {
+	if err := WriteExecutable("pre-push", []byte(rest[:j+1]), 0o755); err != nil {
 		t.Fatal(err)
 	}
 }

@@ -422,7 +422,7 @@ func TestVerbatimTwinKeepsTheTreeOnAGitTooOldForTheFlag(t *testing.T) {
 	}
 	shim := t.TempDir()
 	script := "#!/bin/sh\nfor a in \"$@\"; do\n  if [ \"$a\" = \"--verbatim\" ]; then\n    echo \"error: unknown option \\`verbatim'\" >&2\n    exit 129\n  fi\ndone\nexec " + real + " \"$@\"\n"
-	if err := os.WriteFile(filepath.Join(shim, "git"), []byte(script), 0o755); err != nil {
+	if err := WriteExecutable(filepath.Join(shim, "git"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", shim+string(os.PathListSeparator)+os.Getenv("PATH"))

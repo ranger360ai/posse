@@ -211,7 +211,7 @@ func TestQAShadowedPosseIsNamedNotGuessed(t *testing.T) {
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(p, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		if err := WriteExecutable(p, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -261,7 +261,7 @@ func TestQAGateShimIsNotAShadow(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(running), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(running, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	if err := WriteExecutable(running, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	// The shim as renderGates actually writes it, not a hand-typed copy —
@@ -274,7 +274,7 @@ func TestQAGateShimIsNotAShadow(t *testing.T) {
 	shim := filepath.Join(shimDir, "posse")
 	body := renderShim("testpersona", "posse", running, filepath.Join(dir, "refusals.log"), "/bin/date",
 		ParseShimRules([]string{"Bash(posse promote:*)"})["posse"])
-	if err := os.WriteFile(shim, []byte(body), 0o755); err != nil {
+	if err := WriteExecutable(shim, []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -294,13 +294,13 @@ func TestQAGateShimIsNotAShadow(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(other), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(other, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	if err := WriteExecutable(other, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	stale := filepath.Join(shimDir, "stale-posse")
 	staleBody := renderShim("testpersona", "posse", other, filepath.Join(dir, "refusals.log"), "/bin/date",
 		ParseShimRules([]string{"Bash(posse promote:*)"})["posse"])
-	if err := os.WriteFile(stale, []byte(staleBody), 0o755); err != nil {
+	if err := WriteExecutable(stale, []byte(staleBody), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	c := runningPosse(

@@ -185,7 +185,7 @@ func TestRenderedSecurityShimRefusesEveryArgv(t *testing.T) {
 	a := &App{Home: home, StateDir: filepath.Join(home, "state")}
 	leaked := filepath.Join(t.TempDir(), "leaked")
 	realBin := t.TempDir()
-	os.WriteFile(filepath.Join(realBin, "security"), []byte("#!/bin/sh\necho LEAK >>'"+leaked+"'\n"), 0o755)
+	WriteExecutable(filepath.Join(realBin, "security"), []byte("#!/bin/sh\necho LEAK >>'"+leaked+"'\n"), 0o755)
 	t.Setenv("PATH", realBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	gatesDir, binDir, _, err := a.RenderGates("qa", []string{"Bash(git push:*)", "Bash(security:*)"})
@@ -247,7 +247,7 @@ func TestRefusalNamesWhereTheCommandDoesRun(t *testing.T) {
 	leaked := filepath.Join(t.TempDir(), "leaked")
 	realBin := t.TempDir()
 	for _, c := range []string{"security", "git"} {
-		os.WriteFile(filepath.Join(realBin, c), []byte("#!/bin/sh\necho LEAK "+c+" >>'"+leaked+"'\n"), 0o755)
+		WriteExecutable(filepath.Join(realBin, c), []byte("#!/bin/sh\necho LEAK "+c+" >>'"+leaked+"'\n"), 0o755)
 	}
 	t.Setenv("PATH", realBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
@@ -332,7 +332,7 @@ func TestRenderedShimRefusesAndPasses(t *testing.T) {
 	a := &App{Home: home, StateDir: filepath.Join(home, "state")}
 	// A fake "real" git on PATH so the shim has something to exec.
 	realBin := t.TempDir()
-	os.WriteFile(filepath.Join(realBin, "git"), []byte("#!/bin/sh\necho \"real git $*\"\n"), 0o755)
+	WriteExecutable(filepath.Join(realBin, "git"), []byte("#!/bin/sh\necho \"real git $*\"\n"), 0o755)
 	t.Setenv("PATH", realBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	gatesDir, binDir, _, err := a.RenderGates("security", []string{"Bash(git push:*)", "Bash(git push --force:*)", "Edit", "Bash(bd)"})
@@ -429,7 +429,7 @@ func TestShimSkipsGlobalOptionsBeforeSubcommand(t *testing.T) {
 	home := t.TempDir()
 	a := &App{Home: home, StateDir: filepath.Join(home, "state")}
 	realBin := t.TempDir()
-	os.WriteFile(filepath.Join(realBin, "git"), []byte("#!/bin/sh\necho \"real git $*\"\n"), 0o755)
+	WriteExecutable(filepath.Join(realBin, "git"), []byte("#!/bin/sh\necho \"real git $*\"\n"), 0o755)
 	t.Setenv("PATH", realBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	_, binDir, _, err := a.RenderGates("developer", []string{"Bash(git push:*)"})
 	if err != nil {
@@ -518,7 +518,7 @@ func TestShimMatchesAVerbFlagWhereverItSits(t *testing.T) {
 	home := t.TempDir()
 	a := &App{Home: home, StateDir: filepath.Join(home, "state")}
 	realBin := t.TempDir()
-	os.WriteFile(filepath.Join(realBin, "git"), []byte("#!/bin/sh\necho \"real git $*\"\n"), 0o755)
+	WriteExecutable(filepath.Join(realBin, "git"), []byte("#!/bin/sh\necho \"real git $*\"\n"), 0o755)
 	t.Setenv("PATH", realBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	_, binDir, _, err := a.RenderGates("developer", []string{"Bash(git push --force:*)"})
 	if err != nil {
@@ -614,7 +614,7 @@ func TestForceFlagRuleLeavesSpellingsThatTheVerbRuleCloses(t *testing.T) {
 	home := t.TempDir()
 	a := &App{Home: home, StateDir: filepath.Join(home, "state")}
 	realBin := t.TempDir()
-	os.WriteFile(filepath.Join(realBin, "git"), []byte("#!/bin/sh\necho \"real git $*\"\n"), 0o755)
+	WriteExecutable(filepath.Join(realBin, "git"), []byte("#!/bin/sh\necho \"real git $*\"\n"), 0o755)
 	t.Setenv("PATH", realBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	shimFor := func(persona, deny string) string {
 		_, binDir, _, err := a.RenderGates(persona, []string{deny})
@@ -1028,7 +1028,7 @@ func TestPrePushHook(t *testing.T) {
 	if _, err := InstallPrePushHook(repo); err != nil {
 		t.Errorf("re-install of our hook must succeed: %v", err)
 	}
-	os.WriteFile(p, []byte("#!/bin/sh\necho mine\n"), 0o755)
+	WriteExecutable(p, []byte("#!/bin/sh\necho mine\n"), 0o755)
 	if _, err := InstallPrePushHook(repo); err == nil || !strings.Contains(err.Error(), "not a posse hook") {
 		t.Errorf("foreign hook must not be overwritten: %v", err)
 	}
@@ -1041,7 +1041,7 @@ func TestPrePushHook(t *testing.T) {
 	// End to end: a real push into a bare remote is refused by git itself.
 	remote := t.TempDir()
 	exec.Command("git", "-C", remote, "init", "-q", "--bare").Run()
-	os.WriteFile(p, []byte(PrePushHook), 0o755)
+	WriteExecutable(p, []byte(PrePushHook), 0o755)
 	git := func(env []string, args ...string) (string, error) {
 		cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
 		cmd.Env = append([]string{"PATH=" + os.Getenv("PATH"), "HOME=" + repo, "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t"}, env...)
@@ -1079,7 +1079,7 @@ func TestPrePushHookExitsForReal(t *testing.T) {
 	// first, so tail never decides anything.
 	run := func(tail string, env ...string) (string, int) {
 		p := filepath.Join(t.TempDir(), "pre-push")
-		if err := os.WriteFile(p, []byte(PrePushHook+tail), 0o755); err != nil {
+		if err := WriteExecutable(p, []byte(PrePushHook+tail), 0o755); err != nil {
 			t.Fatal(err)
 		}
 		cmd := exec.Command(p, "origin", "https://example.invalid/x.git")
@@ -1117,7 +1117,7 @@ func TestPrePushHookExitsForReal(t *testing.T) {
 	os.WriteFile(filepath.Join(tmp, "Bash(git push:x)"), nil, 0o644)
 	cmd := exec.Command("/bin/sh", "-c", "cd \"$1\" && exec \"$2\" origin x", "sh", tmp, func() string {
 		p := filepath.Join(t.TempDir(), "pre-push")
-		os.WriteFile(p, []byte(PrePushHook), 0o755)
+		WriteExecutable(p, []byte(PrePushHook), 0o755)
 		return p
 	}())
 	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "RHQ_PERSONA=probe", deny}
@@ -1142,7 +1142,7 @@ func TestForeignHookRefusalPrescribesTheChain(t *testing.T) {
 		}
 		hooks := filepath.Join(repo, ".git", "hooks")
 		os.MkdirAll(hooks, 0o755)
-		os.WriteFile(filepath.Join(hooks, slot), []byte("#!/bin/sh\nexec other\n"), 0o755)
+		WriteExecutable(filepath.Join(hooks, slot), []byte("#!/bin/sh\nexec other\n"), 0o755)
 		var err error
 		if slot == "pre-push" {
 			_, err = InstallPrePushHook(repo)
@@ -1341,7 +1341,7 @@ func TestGateShellRealShellResolution(t *testing.T) {
 	install := func(name string) string {
 		t.Helper()
 		p := filepath.Join(pathDir, name)
-		if err := os.WriteFile(p, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		if err := WriteExecutable(p, []byte("#!/bin/sh\n"), 0o755); err != nil {
 			t.Fatal(err)
 		}
 		return p
@@ -1377,7 +1377,7 @@ func TestGateShellRealShellResolution(t *testing.T) {
 	// $SHELL wins when it names a bash or zsh that is really there — even one
 	// nothing on PATH would have found.
 	own := filepath.Join(t.TempDir(), "bash")
-	if err := os.WriteFile(own, []byte("#!/bin/sh\n"), 0o755); err != nil {
+	if err := WriteExecutable(own, []byte("#!/bin/sh\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	fromShell := render(own)
@@ -1438,7 +1438,7 @@ func TestGateShellNeverChainsToAnotherWrapper(t *testing.T) {
 	// the answer the search must fall through to on any platform.
 	pathDir := t.TempDir()
 	honest := filepath.Join(pathDir, "zsh")
-	if err := os.WriteFile(honest, []byte("#!/bin/sh\nexec /bin/sh \"$@\"\n"), 0o755); err != nil {
+	if err := WriteExecutable(honest, []byte("#!/bin/sh\nexec /bin/sh \"$@\"\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", pathDir)
@@ -1522,7 +1522,7 @@ func TestGateShellDropsAnotherPersonasGatesBin(t *testing.T) {
 	// A zsh that is really a shell, so REAL is honest on every platform.
 	pathDir := t.TempDir()
 	honest := filepath.Join(pathDir, "zsh")
-	if err := os.WriteFile(honest, []byte("#!/bin/sh\nexec /bin/sh \"$@\"\n"), 0o755); err != nil {
+	if err := WriteExecutable(honest, []byte("#!/bin/sh\nexec /bin/sh \"$@\"\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("SHELL", honest)
@@ -1599,7 +1599,7 @@ func TestGateShellScriptCarriesItsMarker(t *testing.T) {
 		t.Fatal(err)
 	}
 	moved := filepath.Join(t.TempDir(), "zsh") // no `gates` path element
-	if err := os.WriteFile(moved, b, 0o755); err != nil {
+	if err := WriteExecutable(moved, b, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if !isGateWrapper(moved) {
@@ -1609,7 +1609,7 @@ func TestGateShellScriptCarriesItsMarker(t *testing.T) {
 		t.Error("a missing file is not a wrapper")
 	}
 	plain := filepath.Join(t.TempDir(), "zsh")
-	if err := os.WriteFile(plain, []byte("#!/bin/sh\nexec /bin/sh \"$@\"\n"), 0o755); err != nil {
+	if err := WriteExecutable(plain, []byte("#!/bin/sh\nexec /bin/sh \"$@\"\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if isGateWrapper(plain) {
@@ -1689,7 +1689,7 @@ func TestShimNegativeMatchUnless(t *testing.T) {
 	home := t.TempDir()
 	a := &App{Home: home, StateDir: filepath.Join(home, "state")}
 	realBin := t.TempDir()
-	os.WriteFile(filepath.Join(realBin, "git"), []byte("#!/bin/sh\necho \"real git $*\"\n"), 0o755)
+	WriteExecutable(filepath.Join(realBin, "git"), []byte("#!/bin/sh\necho \"real git $*\"\n"), 0o755)
 	t.Setenv("PATH", realBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	gatesDir, binDir, _, err := a.RenderGates("developer", []string{"Bash(git push:*)", "Bash(git commit unless --)"})
 	if err != nil {
@@ -1873,7 +1873,7 @@ exit 1
 `
 			neighbor := "#!/bin/sh\nexit 0\n"
 			for path, body := range map[string]string{slot: dispatcher, ours: stale, theirs: neighbor} {
-				if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
+				if err := WriteExecutable(path, []byte(body), 0o755); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -2251,7 +2251,7 @@ func TestSharedIndexCommitHook(t *testing.T) {
 	if err != nil {
 		t.Fatalf("re-install of our hook must succeed: %v", err)
 	}
-	os.WriteFile(p, []byte("#!/bin/sh\necho mine\n"), 0o755)
+	WriteExecutable(p, []byte("#!/bin/sh\necho mine\n"), 0o755)
 	if _, err := installCommitGuard(repo); err == nil || !strings.Contains(err.Error(), "not a posse hook") {
 		t.Errorf("foreign hook must not be overwritten: %v", err)
 	}
@@ -2291,7 +2291,7 @@ func TestLegacyMarkedHooksAreOursToReplace(t *testing.T) {
 		p := filepath.Join(hooks, c.slot)
 		// What the previous binary left behind: the old marker, old wording.
 		old := "#!/bin/sh\n" + c.legacy + " — installed by rhq gates install-hooks\nexit 0\n"
-		if err := os.WriteFile(p, []byte(old), 0o755); err != nil {
+		if err := WriteExecutable(p, []byte(old), 0o755); err != nil {
 			t.Fatal(err)
 		}
 		if !c.installed(repo) {
@@ -2310,7 +2310,7 @@ func TestLegacyMarkedHooksAreOursToReplace(t *testing.T) {
 			t.Errorf("%s: replacement does not carry the new marker: %q", c.slot, b)
 		}
 		// And a genuinely foreign hook is still nobody's to overwrite.
-		os.WriteFile(p, []byte("#!/bin/sh\necho theirs\n"), 0o755)
+		WriteExecutable(p, []byte("#!/bin/sh\necho theirs\n"), 0o755)
 		if _, err := c.install(repo); err == nil || !strings.Contains(err.Error(), "not a posse hook") {
 			t.Errorf("%s: foreign hook must still be refused: %v", c.slot, err)
 		}
@@ -2471,7 +2471,7 @@ func TestL3HookProbeIdentityNotMarkersOrForeignBehavior(t *testing.T) {
 	}
 	write := func(slot, body string) {
 		t.Helper()
-		if err := os.WriteFile(filepath.Join(hooks, slot), []byte(body), 0o755); err != nil {
+		if err := WriteExecutable(filepath.Join(hooks, slot), []byte(body), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -2548,7 +2548,7 @@ func TestShimRefusalNeverLooksUpDateOnThePath(t *testing.T) {
 	// running a real `git push`.
 	realBin := t.TempDir()
 	leaked := filepath.Join(t.TempDir(), "leaked")
-	if err := os.WriteFile(filepath.Join(realBin, "git"), []byte("#!/bin/sh\necho LEAK >>'"+leaked+"'\n"), 0o755); err != nil {
+	if err := WriteExecutable(filepath.Join(realBin, "git"), []byte("#!/bin/sh\necho LEAK >>'"+leaked+"'\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", realBin+string(os.PathListSeparator)+os.Getenv("PATH"))
@@ -2559,7 +2559,7 @@ func TestShimRefusalNeverLooksUpDateOnThePath(t *testing.T) {
 	}
 	decoyDir := t.TempDir()
 	witness := filepath.Join(decoyDir, "witness")
-	if err := os.WriteFile(filepath.Join(decoyDir, "date"),
+	if err := WriteExecutable(filepath.Join(decoyDir, "date"),
 		[]byte("#!/bin/sh\necho DECOY >>'"+witness+"'\necho DECOY-TIME\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}

@@ -66,7 +66,7 @@ func liveCageRepo(t *testing.T, probe string) string {
 	if _, err := InstallPrePushHook(dir); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "probe.sh"), []byte(probe), 0o755); err != nil {
+	if err := WriteExecutable(filepath.Join(dir, "probe.sh"), []byte(probe), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return dir
@@ -338,7 +338,7 @@ if [ -S "$RHQ_HERDR_SOCK_PROBE" ]; then echo "herdr=$(conn "$RHQ_HERDR_SOCK_PROB
 	if b, err := c.CombinedOutput(); err != nil {
 		t.Fatalf("git worktree add: %v\n%s", err, b)
 	}
-	os.WriteFile(filepath.Join(wt, "probe.sh"), []byte(probe), 0o755)
+	WriteExecutable(filepath.Join(wt, "probe.sh"), []byte(probe), 0o755)
 	if _, err := InstallPrePushHook(wt); err != nil {
 		t.Fatal(err)
 	}

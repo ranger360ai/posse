@@ -49,7 +49,7 @@ func recordingBd(t *testing.T) (Bd, func() [][]string) {
 		"printf '%s\\0' \"$@\" >> " + log + "\n" +
 		"printf '\\n' >> " + log + "\n" +
 		"echo '[]'\n"
-	if err := os.WriteFile(bin, []byte(body), 0o755); err != nil {
+	if err := WriteExecutable(bin, []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return Bd{Bin: bin}, func() [][]string {

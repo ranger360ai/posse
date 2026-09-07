@@ -683,7 +683,7 @@ func TestParityL3ClaimsFollowIdentityAndBehavior(t *testing.T) {
 	hooks, _ := hooksDir(repo)
 	write := func(slot, body string) {
 		t.Helper()
-		if err := os.WriteFile(filepath.Join(hooks, slot), []byte(body), 0o755); err != nil {
+		if err := WriteExecutable(filepath.Join(hooks, slot), []byte(body), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -791,7 +791,7 @@ func TestLaunchReportsForeignHookFailure(t *testing.T) {
 	}
 	hooks, _ := hooksDir(repo)
 	for _, slot := range []string{"pre-push", "prepare-commit-msg"} {
-		if err := os.WriteFile(filepath.Join(hooks, slot), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		if err := WriteExecutable(filepath.Join(hooks, slot), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}

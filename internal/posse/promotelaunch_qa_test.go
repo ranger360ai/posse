@@ -162,7 +162,7 @@ func TestQAHomeCutoverRehearsal(t *testing.T) {
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(p, []byte(body), mode); err != nil {
+		if err := WriteExecutable(p, []byte(body), mode); err != nil {
 			t.Fatal(err)
 		}
 	}

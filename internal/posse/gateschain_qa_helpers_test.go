@@ -77,10 +77,10 @@ func qaChainRepo(t *testing.T) (repo, witness string) {
 		}
 		bd := "#!/bin/sh\nprintf 'argv[%s]\\n' \"$*\" >> " + witness +
 			"\nprintf 'stdin[%s]\\n' \"$(cat)\" >> " + witness + "\nexit 0\n"
-		if err := os.WriteFile(filepath.Join(hooks, "bd-"+slot), []byte(bd), 0o755); err != nil {
+		if err := WriteExecutable(filepath.Join(hooks, "bd-"+slot), []byte(bd), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(hooks, slot), []byte(docChainDispatcher(t, slot)), 0o755); err != nil {
+		if err := WriteExecutable(filepath.Join(hooks, slot), []byte(docChainDispatcher(t, slot)), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}

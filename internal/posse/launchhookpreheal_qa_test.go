@@ -40,7 +40,7 @@ func TestQALaunchReportsPreHealHookDriftBeforeSilentlyRepairingIt(t *testing.T) 
 	// exactly the one line that decides the exemption, same fixture shape
 	// TestHookWallSweepCatchesAStampThatDisagreesWithConfig uses.
 	hook := hwsHook(t, repo, "prepare-commit-msg")
-	if err := os.WriteFile(hook, []byte(CommitGuardHook(VisibilityPublic, a.OpsPatternSet())), 0o755); err != nil {
+	if err := WriteExecutable(hook, []byte(CommitGuardHook(VisibilityPublic, a.OpsPatternSet())), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if v, _ := a.BeadsVisibility(repo); v != VisibilityPrivate {
@@ -118,7 +118,7 @@ func TestQALaunchReportsPreHealHookDriftOnAFirstWorktreeLaunch(t *testing.T) {
 	a := b.App
 
 	hook := hwsHook(t, repo, "prepare-commit-msg")
-	if err := os.WriteFile(hook, []byte(CommitGuardHook(VisibilityPublic, a.OpsPatternSet())), 0o755); err != nil {
+	if err := WriteExecutable(hook, []byte(CommitGuardHook(VisibilityPublic, a.OpsPatternSet())), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -193,13 +193,13 @@ func TestQALaunchReportsPreHealDriftBehindTheChainDispatcher(t *testing.T) {
 	member := filepath.Join(filepath.Dir(slot), "posse-prepare-commit-msg")
 	// The third party's hook, the dispatcher that runs ours first, and our
 	// gate — stale in the one line that decides the exemption.
-	if err := os.WriteFile(filepath.Join(filepath.Dir(slot), "theirs-prepare-commit-msg"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	if err := WriteExecutable(filepath.Join(filepath.Dir(slot), "theirs-prepare-commit-msg"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(slot, []byte(chainHookDispatcherWith("prepare-commit-msg", "theirs-prepare-commit-msg")), 0o755); err != nil {
+	if err := WriteExecutable(slot, []byte(chainHookDispatcherWith("prepare-commit-msg", "theirs-prepare-commit-msg")), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(member, []byte(CommitGuardHook(VisibilityPublic, a.OpsPatternSet())), 0o755); err != nil {
+	if err := WriteExecutable(member, []byte(CommitGuardHook(VisibilityPublic, a.OpsPatternSet())), 0o755); err != nil {
 		t.Fatal(err)
 	}
 

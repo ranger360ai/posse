@@ -79,7 +79,7 @@ func TestHookWallSweepCatchesAStaleBodyThatStillRefuses(t *testing.T) {
 	if stale == string(body) {
 		t.Skip("render no longer carries the erba sentence this fixture ages")
 	}
-	if err := os.WriteFile(p, []byte(stale), 0o755); err != nil {
+	if err := WriteExecutable(p, []byte(stale), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if !ownsHook(stale, sharedIndexMarker, legacySharedIndexMarker) {
@@ -108,7 +108,7 @@ func TestHookWallSweepCatchesAStalePrePush(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(p, append(body, []byte("\n# aged\n")...), 0o755); err != nil {
+	if err := WriteExecutable(p, append(body, []byte("\n# aged\n")...), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	out, found := hwsReport(t, a, "pin")
@@ -124,7 +124,7 @@ func TestHookWallSweepCatchesAStampThatDisagreesWithConfig(t *testing.T) {
 	p := hwsHook(t, dirs["priv"], "prepare-commit-msg")
 	// Plant the PUBLIC render — a whole, current, marker-bearing hook that
 	// is stale in exactly one line, the one that decides the exemption.
-	if err := os.WriteFile(p, []byte(CommitGuardHook(VisibilityPublic, a.OpsPatternSet())), 0o755); err != nil {
+	if err := WriteExecutable(p, []byte(CommitGuardHook(VisibilityPublic, a.OpsPatternSet())), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if v, _ := a.BeadsVisibility(dirs["priv"]); v != VisibilityPrivate {
@@ -155,7 +155,7 @@ func TestHookWallSweepCatchesAStampThatDisagreesWithConfig(t *testing.T) {
 	if v, _ := a.BeadsVisibility(dirs["priv"]); v != VisibilityPublic {
 		t.Fatalf("fixture flip did not take: visibility is %q", v)
 	}
-	if err := os.WriteFile(p, []byte(CommitGuardHook(VisibilityPrivate, a.OpsPatternSet())), 0o755); err != nil {
+	if err := WriteExecutable(p, []byte(CommitGuardHook(VisibilityPrivate, a.OpsPatternSet())), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if out, found := hwsReport(t, a, "pin"); !found {
@@ -188,7 +188,7 @@ func TestHookWallSweepNamesAnUninstalledSlotAsUninstalled(t *testing.T) {
 func TestHookWallSweepReportsAForeignHookAsForeign(t *testing.T) {
 	a, dirs := hwsFixture(t, map[string]string{"priv": VisibilityPrivate}, "priv")
 	p := hwsHook(t, dirs["priv"], "prepare-commit-msg")
-	if err := os.WriteFile(p, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	if err := WriteExecutable(p, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	out, found := hwsReport(t, a, "pin")
@@ -327,7 +327,7 @@ func TestPromoteEpilogueSweepsTheHookWall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(p, append(hook, []byte("\n# aged\n")...), 0o755); err != nil {
+	if err := WriteExecutable(p, append(hook, []byte("\n# aged\n")...), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if out := run(); !strings.Contains(out, repo) || !strings.Contains(out, "ours but stale") {
@@ -373,7 +373,7 @@ func TestWatchPreambleSweepsTheHookWallOncePerLoop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(p, append(hook, []byte("\n# aged\n")...), 0o755); err != nil {
+	if err := WriteExecutable(p, append(hook, []byte("\n# aged\n")...), 0o755); err != nil {
 		t.Fatal(err)
 	}
 

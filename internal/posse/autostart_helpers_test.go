@@ -69,7 +69,7 @@ func newHookWorld(t *testing.T, config string) *hookWorld {
 		"      fi\n" +
 		"      rm -f " + shq(w.exists) + "; exit 0 ;;\n" +
 		"esac\nexit 0\n"
-	if err := os.WriteFile(filepath.Join(home, "posse"), []byte(fake), 0o755); err != nil {
+	if err := WriteExecutable(filepath.Join(home, "posse"), []byte(fake), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return w
@@ -265,7 +265,7 @@ func newHomeWorld(t *testing.T, homes map[string]string) *homeWorld {
 		"echo \"RHQ_HOME=${RHQ_HOME-<unset>} $*\" >> " + shq(w.log) + "\n" +
 		"if [ \"$1 $2\" = 'dispatch --watch-status' ]; then echo 'watch-loop: none'; exit 0; fi\n" +
 		"exit 0\n"
-	if err := os.WriteFile(filepath.Join(user, "posse"), []byte(fake), 0o755); err != nil {
+	if err := WriteExecutable(filepath.Join(user, "posse"), []byte(fake), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return w

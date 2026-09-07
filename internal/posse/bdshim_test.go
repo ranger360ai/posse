@@ -30,7 +30,7 @@ func TestBdShimResolvesTheVerbBehindGlobalOptions(t *testing.T) {
 	home := t.TempDir()
 	a := &App{Home: home, StateDir: filepath.Join(home, "state")}
 	realBin := t.TempDir()
-	if err := os.WriteFile(filepath.Join(realBin, "bd"), []byte("#!/bin/sh\necho \"real bd $*\"\n"), 0o755); err != nil {
+	if err := WriteExecutable(filepath.Join(realBin, "bd"), []byte("#!/bin/sh\necho \"real bd $*\"\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", realBin+string(os.PathListSeparator)+os.Getenv("PATH"))
@@ -132,7 +132,7 @@ func TestBdSyncFullIsRefusedWhereverTheFlagSits(t *testing.T) {
 	home := t.TempDir()
 	a := &App{Home: home, StateDir: filepath.Join(home, "state")}
 	realBin := t.TempDir()
-	if err := os.WriteFile(filepath.Join(realBin, "bd"), []byte("#!/bin/sh\necho \"real bd $*\"\n"), 0o755); err != nil {
+	if err := WriteExecutable(filepath.Join(realBin, "bd"), []byte("#!/bin/sh\necho \"real bd $*\"\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", realBin+string(os.PathListSeparator)+os.Getenv("PATH"))
@@ -225,7 +225,7 @@ func TestBdRuleOnAValueTakingFlagStillRefuses(t *testing.T) {
 	home := t.TempDir()
 	a := &App{Home: home, StateDir: filepath.Join(home, "state")}
 	realBin := t.TempDir()
-	if err := os.WriteFile(filepath.Join(realBin, "bd"), []byte("#!/bin/sh\necho \"real bd $*\"\n"), 0o755); err != nil {
+	if err := WriteExecutable(filepath.Join(realBin, "bd"), []byte("#!/bin/sh\necho \"real bd $*\"\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", realBin+string(os.PathListSeparator)+os.Getenv("PATH"))

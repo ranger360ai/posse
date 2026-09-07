@@ -99,7 +99,7 @@ func newCredShimRig(t *testing.T) credShimRig {
 	// prompt on their screen included (gatedkeychain_test.go).
 	leak := filepath.Join(t.TempDir(), "leaked")
 	stubDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(stubDir, rt.CredBin), []byte("#!/bin/sh\necho LEAK \"$@\" >>'"+leak+"'\n"), 0o755); err != nil {
+	if err := WriteExecutable(filepath.Join(stubDir, rt.CredBin), []byte("#!/bin/sh\necho LEAK \"$@\" >>'"+leak+"'\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", stubDir+string(os.PathListSeparator)+os.Getenv("PATH"))
@@ -185,7 +185,7 @@ func TestQACredBinShimNullExitTurnsThePinRed(t *testing.T) {
 		t.Run(fmt.Sprintf("exit%d", code), func(t *testing.T) {
 			mutant := filepath.Join(t.TempDir(), r.rt.CredBin)
 			mutated := credRefusalExitRe.ReplaceAllString(string(body), fmt.Sprintf("${1}%d${3}", code))
-			if err := os.WriteFile(mutant, []byte(mutated), 0o755); err != nil {
+			if err := WriteExecutable(mutant, []byte(mutated), 0o755); err != nil {
 				t.Fatal(err)
 			}
 

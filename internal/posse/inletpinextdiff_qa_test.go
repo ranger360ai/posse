@@ -337,7 +337,7 @@ func extDiffRun(repo string, env, argv []string) (string, int) {
 func extDiffMarkerDriver(t *testing.T, log string) string {
 	t.Helper()
 	p := filepath.Join(t.TempDir(), "marker-driver")
-	if err := os.WriteFile(p, []byte("#!/bin/sh\necho ran >> "+log+"\nexit 0\n"), 0o755); err != nil {
+	if err := WriteExecutable(p, []byte("#!/bin/sh\necho ran >> "+log+"\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return p

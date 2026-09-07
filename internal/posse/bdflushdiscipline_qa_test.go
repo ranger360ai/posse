@@ -67,7 +67,7 @@ func bfdRepo(t *testing.T, hook bool) string {
 			t.Fatalf("mkdir hooks: %v", err)
 		}
 		body := "#!/bin/sh\ncp db.txt .beads/" + beadsJSONL + "\ngit add .beads/" + beadsJSONL + "\n"
-		if err := os.WriteFile(filepath.Join(dir, "pre-commit"), []byte(body), 0o755); err != nil {
+		if err := WriteExecutable(filepath.Join(dir, "pre-commit"), []byte(body), 0o755); err != nil {
 			t.Fatalf("write hook: %v", err)
 		}
 	}

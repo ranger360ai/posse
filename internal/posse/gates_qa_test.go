@@ -169,7 +169,7 @@ func TestQACommitWallL1IncludeForm(t *testing.T) {
 	home := t.TempDir()
 	a := &App{Home: home, StateDir: filepath.Join(home, "state")}
 	realBin := t.TempDir()
-	os.WriteFile(filepath.Join(realBin, "git"), []byte("#!/bin/sh\necho \"real git $*\"\n"), 0o755)
+	WriteExecutable(filepath.Join(realBin, "git"), []byte("#!/bin/sh\necho \"real git $*\"\n"), 0o755)
 	t.Setenv("PATH", realBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	_, binDir, _, err := a.RenderGates("qa", []string{"Bash(git commit unless --)"})
 	if err != nil {
@@ -622,7 +622,7 @@ func qaRenderCommitShim(t *testing.T) func(argv ...string) (string, int) {
 	home := t.TempDir()
 	a := &App{Home: home, StateDir: filepath.Join(home, "state")}
 	realBin := t.TempDir()
-	if err := os.WriteFile(filepath.Join(realBin, "git"), []byte("#!/bin/sh\necho \"real git $*\"\n"), 0o755); err != nil {
+	if err := WriteExecutable(filepath.Join(realBin, "git"), []byte("#!/bin/sh\necho \"real git $*\"\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", realBin+string(os.PathListSeparator)+os.Getenv("PATH"))

@@ -120,7 +120,7 @@ func fakeCageEngine(t *testing.T, a *App, name, versionLine string) *Engine {
 	} else {
 		body += "exit 1\n" // an image that cannot answer at all
 	}
-	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+	if err := WriteExecutable(script, []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(a.CagesDir(), 0o755); err != nil {

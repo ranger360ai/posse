@@ -250,7 +250,7 @@ func gitConfigProbeHooks(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	body := "#!/bin/sh\necho fired >> " + filepath.Join(dir, "marker") + "\n"
-	if err := os.WriteFile(filepath.Join(dir, "post-checkout"), []byte(body), 0o755); err != nil {
+	if err := WriteExecutable(filepath.Join(dir, "post-checkout"), []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return dir

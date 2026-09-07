@@ -121,7 +121,7 @@ func siRepo(t *testing.T, hook bool) string {
 			t.Fatalf("mkdir hooks: %v", err)
 		}
 		body := "#!/bin/sh\nprintf 'gen-FLUSHED\\n' > gen.txt\ngit add gen.txt\n"
-		if err := os.WriteFile(filepath.Join(dir, "pre-commit"), []byte(body), 0o755); err != nil {
+		if err := WriteExecutable(filepath.Join(dir, "pre-commit"), []byte(body), 0o755); err != nil {
 			t.Fatalf("write hook: %v", err)
 		}
 	}

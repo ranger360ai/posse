@@ -32,7 +32,7 @@ func qaHookRepo(t *testing.T) (repo, hooks string) {
 func qaArm(t *testing.T, hooks string, slots ...string) {
 	t.Helper()
 	for _, slot := range slots {
-		if err := os.WriteFile(filepath.Join(hooks, slot), []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+		if err := WriteExecutable(filepath.Join(hooks, slot), []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}

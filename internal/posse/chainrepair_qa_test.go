@@ -99,7 +99,7 @@ func q32oPaste(t *testing.T, repo, hooks, text string) {
 		t.Fatalf("the prescription's own install step failed: %v", err)
 	}
 	mv(moves[1])
-	if err := os.WriteFile(filepath.Join(hooks, "pre-push"), []byte(body), 0o755); err != nil {
+	if err := WriteExecutable(filepath.Join(hooks, "pre-push"), []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -120,7 +120,7 @@ func q32oChainedRepo(t *testing.T) (repo, hooks string) {
 	if err := os.MkdirAll(hooks, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(hooks, "pre-push"), []byte(q32oTheirHook), 0o755); err != nil {
+	if err := WriteExecutable(filepath.Join(hooks, "pre-push"), []byte(q32oTheirHook), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	q32oPaste(t, repo, hooks, q32oPrescription(t, repo))
@@ -231,7 +231,7 @@ func TestQAPrescriptionAtAChainedSlotMovesNothingOntoAnotherHook(t *testing.T) {
 	t.Parallel()
 	repo, hooks := q32oChainedRepo(t)
 	const retaken = "#!/bin/sh\necho \"the new tool ran\" >&2\nexit 0\n"
-	if err := os.WriteFile(filepath.Join(hooks, "pre-push"), []byte(retaken), 0o755); err != nil {
+	if err := WriteExecutable(filepath.Join(hooks, "pre-push"), []byte(retaken), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -270,7 +270,7 @@ func TestQAChainOverAForeignPosseSlotRefusesWithoutPrescribingARechain(t *testin
 	repo, hooks := q32oChainedRepo(t)
 	const foreign = "#!/bin/sh\necho not-ours\nexit 0\n"
 	posse := filepath.Join(hooks, "posse-pre-push")
-	if err := os.WriteFile(posse, []byte(foreign), 0o755); err != nil {
+	if err := WriteExecutable(posse, []byte(foreign), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	_, err := InstallPrePushHook(repo)

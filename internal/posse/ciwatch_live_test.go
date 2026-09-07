@@ -68,7 +68,7 @@ func TestLiveCIWatchFiresOnceAndClears(t *testing.T) {
 	// than in the argv the code under test builds (settleescalation's rule):
 	// a daemon per throwaway db is a leak, and the point here is the store.
 	wrapper := filepath.Join(t.TempDir(), "bd-nodaemon")
-	if err := os.WriteFile(wrapper, []byte("#!/bin/sh\nexec "+bdbin+" --no-daemon \"$@\"\n"), 0o755); err != nil {
+	if err := WriteExecutable(wrapper, []byte("#!/bin/sh\nexec "+bdbin+" --no-daemon \"$@\"\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	sh := func(args ...string) (string, error) {
@@ -103,7 +103,7 @@ func TestLiveCIWatchFiresOnceAndClears(t *testing.T) {
 	ghdir := t.TempDir()
 	runsPath := filepath.Join(ghdir, "runs.json")
 	ghPath := filepath.Join(ghdir, "gh")
-	if err := os.WriteFile(ghPath, []byte("#!/bin/sh\nexec cat "+runsPath+"\n"), 0o755); err != nil {
+	if err := WriteExecutable(ghPath, []byte("#!/bin/sh\nexec cat "+runsPath+"\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	at := time.Now().UTC().Add(-2 * time.Hour)

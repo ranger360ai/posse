@@ -114,7 +114,7 @@ func hrFixture(t *testing.T) *hrFix {
 func (f *hrFix) managedHook(slot string) {
 	f.t.Helper()
 	body := fmt.Sprintf("#!/bin/sh\nprintf 'managed-%s\\n' >> %s\nexit 0\n", slot, f.log)
-	if err := os.WriteFile(filepath.Join(f.managed, slot), []byte(body), 0o755); err != nil {
+	if err := WriteExecutable(filepath.Join(f.managed, slot), []byte(body), 0o755); err != nil {
 		f.t.Fatal(err)
 	}
 }
@@ -181,7 +181,7 @@ func (f *hrFix) render(wantPrePush bool) (*hooksRedirect, []string) {
 func (f *hrFix) stubMember(slot string, exit int) {
 	f.t.Helper()
 	body := fmt.Sprintf("#!/bin/sh\nprintf 'posse-%s\\n' >> %s\nexit %d\n", slot, f.log, exit)
-	if err := os.WriteFile(filepath.Join(f.hooks, "posse-"+slot), []byte(body), 0o755); err != nil {
+	if err := WriteExecutable(filepath.Join(f.hooks, "posse-"+slot), []byte(body), 0o755); err != nil {
 		f.t.Fatal(err)
 	}
 }
@@ -484,7 +484,7 @@ func TestQARenderNamesWhatItDidNotForward(t *testing.T) {
 			t.Fatal(err)
 		}
 		// An executable posse would overwrite with a member of its own.
-		if err := os.WriteFile(filepath.Join(f.managed, "posse-prepare-commit-msg"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		if err := WriteExecutable(filepath.Join(f.managed, "posse-prepare-commit-msg"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -518,7 +518,7 @@ func TestQARenderIsFreshAndTouchesNothingManaged(t *testing.T) {
 	before := mhpSnapshot(t, f.managed)
 	r, _ := f.render(false)
 	stale := filepath.Join(r.Dir, "stale-from-a-previous-launch")
-	if err := os.WriteFile(stale, []byte("#!/bin/sh\n"), 0o755); err != nil {
+	if err := WriteExecutable(stale, []byte("#!/bin/sh\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := f.a.RenderSessionHooks("s1", f.repo, mustManaged(t, f.repo), false); err != nil {
@@ -694,7 +694,7 @@ func TestQALaunchIntoAManagedRepoRendersTheRedirectAndCarriesItInTheEnv(t *testi
 	if err := os.MkdirAll(managed, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(managed, "pre-commit"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	if err := WriteExecutable(filepath.Join(managed, "pre-commit"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	qaGit(t, repo, "config", "core.hooksPath", managed)
@@ -759,7 +759,7 @@ func TestQALaunchRefusesAManagedHooksPathThatIsNotOneLine(t *testing.T) {
 	if err := os.MkdirAll(managed, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(managed, "pre-commit"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	if err := WriteExecutable(filepath.Join(managed, "pre-commit"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	qaGit(t, repo, "config", "core.hooksPath", managed)
@@ -797,7 +797,7 @@ func TestQAKillRemovesTheSessionHooksDir(t *testing.T) {
 	if err := os.MkdirAll(hooks, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(hooks, "prepare-commit-msg"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+	if err := WriteExecutable(filepath.Join(hooks, "prepare-commit-msg"), []byte("#!/bin/sh\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := b.KillSession("s1"); err != nil {

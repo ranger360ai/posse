@@ -410,7 +410,7 @@ func TestNonDarwinNeverExecsSecurityAndNamesOnlyItsOwnStore(t *testing.T) {
 	bin := t.TempDir()
 	ran := filepath.Join(bin, "it-ran")
 	stub := "#!/bin/sh\ntouch " + ran + "\necho '{}'\n"
-	if err := os.WriteFile(filepath.Join(bin, "security"), []byte(stub), 0o755); err != nil {
+	if err := WriteExecutable(filepath.Join(bin, "security"), []byte(stub), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))

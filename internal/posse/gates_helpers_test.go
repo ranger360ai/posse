@@ -164,7 +164,7 @@ func renderGateShellFor(t *testing.T, base, body string) (wrapper, gatesDir, bin
 	a := &App{Home: home, StateDir: filepath.Join(home, "state")}
 	fakeDir := t.TempDir()
 	fake := filepath.Join(fakeDir, base)
-	if err := os.WriteFile(fake, []byte(body), 0o755); err != nil {
+	if err := WriteExecutable(fake, []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("SHELL", fake)

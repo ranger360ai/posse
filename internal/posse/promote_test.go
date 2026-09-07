@@ -61,7 +61,7 @@ func promoteFixture(t *testing.T) (a *App, src string, git func(args ...string) 
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(p, []byte(body), mode); err != nil {
+		if err := WriteExecutable(p, []byte(body), mode); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -163,7 +163,7 @@ func TestPromoteTakesModesAndOddNamesFromTheCommit(t *testing.T) {
 	t.Parallel()
 	a, src, git := promoteFixture(t)
 	hook := filepath.Join(src, "skills", "thing", "run me.sh")
-	if err := os.WriteFile(hook, []byte("#!/bin/sh\necho thing\n"), 0o755); err != nil {
+	if err := WriteExecutable(hook, []byte("#!/bin/sh\necho thing\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if out, err := git("add", "-A"); err != nil {

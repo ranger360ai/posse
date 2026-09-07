@@ -53,7 +53,7 @@ func (f *hrFix) probe(wantPrePush bool) l3HookProbe {
 func (f *hrFix) corrupt(name, body string) string {
 	f.t.Helper()
 	p := filepath.Join(f.hooks, name)
-	if err := os.WriteFile(p, []byte(body), 0o755); err != nil {
+	if err := WriteExecutable(p, []byte(body), 0o755); err != nil {
 		f.t.Fatal(err)
 	}
 	return p
@@ -114,7 +114,7 @@ func TestQARedirectProbeDegradesAnEditedMemberAndNamesTheFile(t *testing.T) {
 	// One byte, in a comment: the hook still runs and still refuses, so
 	// nothing here is measuring behavior — identity is the only thing that
 	// changed, which is the ADR 0023 half this bead moves.
-	if err := os.WriteFile(member, append(body, '\n'), 0o755); err != nil {
+	if err := WriteExecutable(member, append(body, '\n'), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -141,7 +141,7 @@ func TestQARedirectProbeDegradesAnEditedMemberAndNamesTheFile(t *testing.T) {
 		t.Errorf("pre-push was not edited and must still count: %q", got.PrePushDegraded)
 	}
 	// The wrong arm: put the render back and it counts again.
-	if err := os.WriteFile(member, body, 0o755); err != nil {
+	if err := WriteExecutable(member, body, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if !f.probe(true).CommitGuard {
@@ -428,7 +428,7 @@ func TestQAManagedLaunchRecordsHooksModeAndTheManagedDir(t *testing.T) {
 	if err := os.MkdirAll(managed, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(managed, "pre-commit"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	if err := WriteExecutable(filepath.Join(managed, "pre-commit"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	qaGit(t, repo, "config", "core.hooksPath", managed)
@@ -498,7 +498,7 @@ func TestQARedirectCompletenessIsIdentityNotPresence(t *testing.T) {
 		t.Fatalf("a dispatcher that is not the render is not a forward: %v", gaps)
 	}
 	// The wrong arm: the render's own bytes at that path are a forward.
-	if err := os.WriteFile(present, []byte(redirectDispatcher("pre-commit", f.managed, false)), 0o755); err != nil {
+	if err := WriteExecutable(present, []byte(redirectDispatcher("pre-commit", f.managed, false)), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if gaps := f.probe(true).Forward; len(gaps) != 0 {

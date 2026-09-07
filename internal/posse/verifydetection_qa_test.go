@@ -44,7 +44,7 @@ func detectionRig(t *testing.T) string {
 		if err := os.MkdirAll(filepath.Dir(to), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(to, b, mode); err != nil {
+		if err := WriteExecutable(to, b, mode); err != nil {
 			t.Fatal(err)
 		}
 	}

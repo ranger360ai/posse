@@ -118,7 +118,7 @@ func qaRunCage(t *testing.T, a *App, e *Engine, front, dir, session string, deny
 	}
 	probe = strings.ReplaceAll(probe, "%MEM%", ag.MemoryDir)
 	probe = strings.ReplaceAll(probe, "%CAGEHOME%", e.Home)
-	if err := os.WriteFile(filepath.Join(dir, "probe.sh"), []byte(probe), 0o755); err != nil {
+	if err := WriteExecutable(filepath.Join(dir, "probe.sh"), []byte(probe), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := a.WrapInCage(ag, rt, session, dir, "sh ./probe.sh",
