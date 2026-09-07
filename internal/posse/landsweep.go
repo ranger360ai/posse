@@ -102,6 +102,7 @@ package posse
 //     the one whose dirt nobody is going to notice.
 
 import (
+	"fmt"
 	"strconv"
 	"time"
 )
@@ -224,7 +225,35 @@ func (d *Dispatcher) landClosedTrees(dirFilter string) {
 					return
 				}
 			}
-			o, err := MergeSessionWork(t)
+			var (
+				o   MergeOutcome
+				err error
+			)
+			if reason, skip := standingMergeBlock(t, blocks); skip {
+				// Skip the mutating rebase probe entirely: this exact tip
+				// already has a merge-back verdict on record, unmoved since
+				// it was recorded, and asking git the same question again
+				// could only reproduce the same answer while writing to the
+				// tree — `rebase (start): checkout main` / `rebase (abort):
+				// returning to refs/heads/<branch>`, both in logs/HEAD, at a
+				// cadence under any grace this dial can hold (retire.go's
+				// header, MEASURED). That write is what kept a stranded
+				// branch's tree "just written" every single pass and its
+				// grace clock from ever reaching zero (ranger-base-9u5zy).
+				// o.Commits is read without touching the tree so the line
+				// below still says how much is stuck.
+				o = MergeOutcome{Branch: t.Branch, Base: t.Base, Reason: reason}
+				o.Commits, _ = unlandedCount(t)
+				// Dirty is read every pass regardless (ADR 0041 §1-§2,
+				// closeddirty.go): it is the persona's own uncommitted work
+				// and not the rebase probe, `git status` alone does not
+				// reproduce the write the header above measures, and its
+				// report dedupes on the comment's own marker rather than on
+				// this skip.
+				o.Dirty = dirtyPaths(t.Path)
+			} else {
+				o, err = MergeSessionWork(t)
+			}
 			switch {
 			case err != nil:
 				d.printf("⚠ %-14s %s not landed onto %s: %v — the branch still holds the work\n", id, t.Branch, orDetached(t.Base), err)
@@ -272,6 +301,59 @@ func (d *Dispatcher) landClosedTrees(dirFilter string) {
 		}
 		d.retireTree(t, id, is.Status, blocks, grace, &lock, said)
 	}
+}
+
+// standingMergeBlock is ranger-base-9u5zy's fix: true when this branch's tip
+// already carries a merge-back verdict the store holds ON RECORD — an OPEN
+// handoff pinned at this exact sha, or a CLOSED one the branch has not moved
+// past since (priorMergeBlocked's own "still stands" rule, dispatch.go) —
+// with the sentence to report in place of asking git the same question
+// again.
+//
+// WHY THE QUESTION MUST NOT BE ASKED AGAIN. MergeSessionWork's rebase probe
+// mutates the tree exactly like a human's checkout would to answer it:
+// `rebase (start): checkout main` immediately followed by `rebase (abort):
+// returning to refs/heads/<branch>`, both writing logs/HEAD (retire.go's
+// header, MEASURED at a max gap of 46m over 641 probes and two days — always
+// under the 1h default grace). Asked every pass over a branch whose answer
+// cannot have changed, that write is indistinguishable from a human's own
+// and keeps ADR 0058's fact 4 from ever being reached: the tree reads as
+// "just written" forever, and `posse worktrees --retire` can never take it
+// (MEASURED live on ranger-base-zrbff, 63 replays in one day's log). Skipping
+// the probe here is what lets the tree actually go quiet, so the grace
+// clock — and, once a human answers the handoff, the retire behind it — can
+// run at all.
+//
+// ("", false) whenever the answer might be new: no block on record yet (the
+// first attempt still has to happen and file one), the pin cannot be read
+// (an OPEN block's only evidence that its branch has not moved — a missing
+// pin falls back to asking git for real, which self-heals the pin on the
+// very next pass), or the branch has moved since a CLOSED verdict, which is
+// a question nobody has answered yet.
+func standingMergeBlock(t *SessionTree, blocks *blockedRecord) (string, bool) {
+	prior, err := blocks.on(t)
+	if err != nil || prior.ID == "" {
+		return "", false
+	}
+	if prior.Open {
+		head, ok := workHead(t)
+		if !ok {
+			return "", false
+		}
+		pinned, err := git(t.Repo, "rev-parse", "--verify", "--quiet", blockedPinRef(t.Branch))
+		if err != nil || pinned == "" || pinned != head {
+			return "", false
+		}
+		return fmt.Sprintf("%s already answered this and is still open — not retried, so %s is left untouched", prior.ID, AbbrevHome(t.Path)), true
+	}
+	if prior.Verdict.IsZero() {
+		return "", false
+	}
+	tip, ok := workHeadTime(t)
+	if !ok || tip.After(prior.Verdict) {
+		return "", false
+	}
+	return fmt.Sprintf("%s already answered this and closed it, and %s has not moved since — not retried, so %s is left untouched", prior.ID, t.Branch, AbbrevHome(t.Path)), true
 }
 
 // retireTree is ADR 0058 D2: the landing sweep's own act on a tree there is

@@ -170,6 +170,62 @@ func TestSweepFilesOneMergeBackBeadOverEveryPass(t *testing.T) {
 	}
 }
 
+// ranger-base-9u5zy: the objection above measured the BEAD side of the
+// spam — one handoff, not N — and left the TREE side unmeasured. Every pass
+// that still called MergeSessionWork over an unchanged blocked branch ran
+// its real rebase probe (`rebase (start): checkout main` / `rebase (abort):
+// returning to refs/heads/<branch>`), which writes logs/HEAD exactly like a
+// human's own checkout would — so the tree read as "just written" on every
+// single pass and ADR 0058's retire grace could never reach zero on it
+// (MEASURED live on ranger-base-zrbff: 63 replays logged in one day, and the
+// tree never cooled). This is the property that replaces THAT: once a pass
+// has answered a branch's block, later passes over the same unmoved tip
+// must not write to the tree at all.
+func TestSweepStopsTouchingTheTreeOnceTheBlockStands(t *testing.T) {
+	t.Parallel()
+	d, repo, tr := nurlBlocked(t)
+
+	if _, err := d.Run("", "", 0); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(mergeBlockedBeads(t, repo)); n != 1 {
+		t.Fatalf("fixture: the first pass filed %d handoffs, want 1", n)
+	}
+	logsHead := filepath.Join(mustGit(t, tr.Path, "rev-parse", "--absolute-git-dir"), "logs", "HEAD")
+	before, err := os.Stat(logsHead)
+	if err != nil {
+		t.Fatalf("fixture: the first pass's own probe left no %s to measure: %v", logsHead, err)
+	}
+
+	// Three more passes, each one exactly what the field runs every three
+	// minutes over a branch nobody has touched.
+	for i := 0; i < 3; i++ {
+		d2 := newTestDispatcher(t, d.HB)
+		dispatcherErr(t, d2)
+		if _, err := d2.Run("", "", 0); err != nil {
+			t.Fatal(err)
+		}
+		out := dispatcherOut(d2)
+		if !strings.Contains(out, "did NOT reach") {
+			t.Fatalf("fixture: pass %d did not read the blocked tree at all:\n%s", i+2, out)
+		}
+		if !strings.Contains(out, "already answered this and is still open") {
+			t.Errorf("pass %d did not say the block already stands:\n%s", i+2, out)
+		}
+	}
+	after, err := os.Stat(logsHead)
+	if err != nil {
+		t.Fatalf("%s vanished between passes: %v", logsHead, err)
+	}
+	if !after.ModTime().Equal(before.ModTime()) {
+		t.Errorf("%s was written to by a pass over an unmoved, already-blocked branch (%s -> %s) — this is the write that kept ADR 0058's grace clock from ever reaching zero",
+			logsHead, before.ModTime(), after.ModTime())
+	}
+	if n := len(mergeBlockedBeads(t, repo)); n != 1 {
+		t.Errorf("four passes over one blocked branch left %d handoffs, want 1", n)
+	}
+}
+
 // The wrong arm, and the one that makes the pins above worth having: an OPEN
 // bead's branch that will not fast-forward is a persona at work, not a
 // strand, and a P1 filed at them for it is a false handoff.
