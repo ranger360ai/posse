@@ -132,6 +132,17 @@ WHY = {
 WRAPPERS = {"env", "command", "builtin", "exec", "nohup", "time", "nice",
             "stdbuf", "setsid", "doas", "sudo"}
 
+# Shell reserved words that only ever introduce another command word, never
+# one of their own. `;`-splitting a compound command leaves each of these as
+# the FIRST token of the segment it opens — `if true; then bd close; fi`
+# splits into `then bd close`, whose command word without this set resolves
+# to `then` and drops the segment unread (ranger-base-0rfce, predates the
+# close arm and escapes the verb fence the same way). `for`/`case`/`in` are
+# deliberately absent: `for x in 1 2` has no command word after them to skip
+# past, and `fi`/`done`/`esac`/`;;` close a block rather than open one, so a
+# `bd` after one of those starts its own segment already.
+RESERVED = {"if", "then", "elif", "else", "while", "until", "do", "!"}
+
 # Constructs whose contents this parser cannot see. If bd is mentioned in a
 # segment carrying one of these, the segment is refused rather than guessed.
 OPAQUE = ("$(", "`", "${", "eval ", "eval\t", "<(", ">(")
@@ -540,7 +551,8 @@ def skip_redirect(toks, i):
 
 
 def command_word(toks):
-    """Resolve the command word, skipping redirections, assignments, wrappers.
+    """Resolve the command word, skipping redirections, assignments, wrappers,
+    and the shell reserved words that introduce one.
 
     Returns (word, rest) or (None, None) when the segment has no command
     word this parser will vouch for.
@@ -554,6 +566,9 @@ def command_word(toks):
             continue
         if "=" in t and not t.startswith("-") and t.split("=", 1)[0].isidentifier():
             i += 1                      # FOO=bar bd …
+            continue
+        if t in RESERVED:
+            i += 1                      # then bd …, do bd …, ! bd …
             continue
         if os.path.basename(t) in WRAPPERS:
             i += 1                      # env -i, nice -n 5, …
@@ -659,6 +674,15 @@ def session_worktree(cwd):
     walk-around against an invisible false negative, and a cooperative fence
     takes the visible one.
 
+    The two answers are compared as REALPATHS, not as strings (ranger-base-
+    0rfce). git does not print `--git-dir` and `--git-common-dir` in the same
+    format: from a subdirectory of a main checkout, MEASURED git 2.50.1 prints
+    the first absolute (`/path/repo/.git`) and the second relative to cwd
+    (`../.git`), so a string compare disagreed with itself and read every
+    subdirectory of a main checkout as a linked worktree. Resolving each
+    against cwd before comparing needs no git version floor and agrees with
+    itself from any cwd — the root and its subdirectories alike.
+
     POSSE/, the second arm, is what makes it a POSSE session tree rather than
     any linked worktree someone made: SessionBranch (worktree.go) is
     "posse/" + session, and a session tree checks that branch out. A detached
@@ -669,7 +693,9 @@ def session_worktree(cwd):
     common = git_out(cwd, "rev-parse", "--git-common-dir")
     if top is None or gitdir is None or common is None:
         return None
-    if gitdir.strip() == common.strip():
+    gitdir_real = os.path.realpath(os.path.join(cwd, gitdir.strip()))
+    common_real = os.path.realpath(os.path.join(cwd, common.strip()))
+    if gitdir_real == common_real:
         return None                     # a main checkout — the shared one
     branch = git_out(cwd, "symbolic-ref", "--quiet", "--short", "HEAD")
     if branch is None:

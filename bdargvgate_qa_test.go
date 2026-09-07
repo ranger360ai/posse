@@ -1426,7 +1426,7 @@ func TestQABdArgvGateCloseArmDiscriminatesPerArm(t *testing.T) {
 		},
 		{
 			name:   "the linked-worktree arm",
-			anchor: "if gitdir.strip() == common.strip():",
+			anchor: "if gitdir_real == common_real:",
 			dead:   "if False:",
 			flips:  fx.onPosse,
 		},
@@ -1483,8 +1483,6 @@ func TestQABdArgvGateCloseArmDiscriminatesPerArm(t *testing.T) {
 // `rev-parse --path-format=absolute --git-dir --git-common-dir` (one format
 // from any cwd, git 2.31+) or os.path.realpath on both answers.
 func TestQABdArgvGateCloseArmIsSilentBelowAMainCheckout(t *testing.T) {
-	t.Skip("ranger-base-0rfce: --git-common-dir prints `../.git` from a subdirectory of a main checkout while --git-dir prints an absolute path, so the linked arm's string compare reads any subdirectory of a main checkout as a session worktree")
-
 	if _, err := exec.LookPath("python3"); err != nil {
 		t.Skip("no python3")
 	}
@@ -1534,8 +1532,6 @@ func TestQABdArgvGateCloseArmIsSilentBelowAMainCheckout(t *testing.T) {
 // structure. Delete the Skip when command_word stops resolving `then`/`do`/
 // `else` as a command word.
 func TestQABdArgvGateReadsBdInsideACompoundCommand(t *testing.T) {
-	t.Skip("ranger-base-0rfce: `if true; then bd …; fi` splits into a segment whose command word is the reserved word `then`, so every bd call inside a compound command escapes both the verb fence and the close arm")
-
 	if _, err := exec.LookPath("python3"); err != nil {
 		t.Skip("no python3")
 	}
