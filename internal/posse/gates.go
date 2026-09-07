@@ -3155,9 +3155,8 @@ if [ "$posse_beads_visibility" = ` + shQuote(VisibilityPublic) + ` ]; then
   # ─── check 1: docs-genre allowlist (ADR 0024 D2) ────────────────────────
   # Staged NEW files under docs/ only — 'A' entries; a MODIFIED existing
   # file already cleared this the day it was added. name-status, not -z:
-  # docs/ paths are this repo's own and ASCII by convention, and the
-  # tab-delimited form is what the cut below expects — a path carrying a
-  # literal newline is the same residual constitutionGuardBody's -z form
+  # the tab-delimited form is what the cut below expects — a path carrying
+  # a literal newline is the same residual constitutionGuardBody's -z form
   # already accepts elsewhere in this hook, just not paid for here.
   # --no-renames (ranger-base-60azj), the same flag and the same reason the
   # NOTES.md arm and the shared-index reader below carry it
@@ -3171,7 +3170,13 @@ if [ "$posse_beads_visibility" = ` + shQuote(VisibilityPublic) + ` ]; then
   # fired correctly — only docs/ -> docs/ moves slipped. With the flag the
   # removal and the add are reported separately and the destination is an A
   # entry like any other new file (MEASURED, git 2.50.1).
-  posse_docs_hits=$(git diff --cached --name-status --no-renames "$posse_base" -- 'docs/*' 2>/dev/null | grep -E '^A[[:space:]]')
+  # core.quotePath=false, the same flag and the same residual as check 3's
+  # path arm below (RESIDUAL, stated there — cited, not re-explained):
+  # without it, a path carrying a non-ASCII byte comes back C-quoted, the
+  # leading quote matches neither 'docs/*/*' nor cut's expectations, and
+  # the genre split below falls to "(none)" for a path that plainly has one
+  # (ranger-base-k2ohx — fail-closed either way, but the wrong diagnosis).
+  posse_docs_hits=$(git -c core.quotePath=false diff --cached --name-status --no-renames "$posse_base" -- 'docs/*' 2>/dev/null | grep -E '^A[[:space:]]')
   if [ -n "$posse_docs_hits" ]; then
     posse_docs_bad=''
     posse_docs_ifs=$IFS

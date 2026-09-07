@@ -379,6 +379,15 @@ func TestDocsGenreAndProseGuardHook(t *testing.T) {
 		t.Fatalf("an allowlisted genre with clean content must commit: %v\n%s", err, out)
 	}
 
+	// The same, with a non-ASCII byte in the path: without core.quotePath=
+	// false on check 1's listing, git C-quotes the path, the leading quote
+	// matches neither 'docs/*/*' nor the genre split, and a legitimate
+	// allowlisted file is refused as having "(genre: none)" (ranger-base-k2ohx).
+	writeAndAdd(pub, "docs/adr/0101-ünicode.md", "# an ADR\n\nno ops content here either.\n")
+	if out, err := git(pub, persona, "commit", "-m", "x", "--", "docs/adr/0101-ünicode.md"); err != nil {
+		t.Fatalf("an allowlisted genre with a non-ASCII path and clean content must commit: %v\n%s", err, out)
+	}
+
 	// Check 2 — an allowlisted genre is still scanned for ops content: a
 	// dollar figure in an ADR is refused, showing the matched text. This is
 	// the DONE WHEN's other half verbatim: "a docs/adr/x.md carrying a
