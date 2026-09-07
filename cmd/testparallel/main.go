@@ -546,6 +546,10 @@ func main() {
 	// test-file functions it calls — filter 2's verdict with the var kept,
 	// which is what a clearance has to be compared against.
 	reached := map[string][]string{}
+	// reachedPairs: the same walk, kept as fn:var pairs so the extra row can
+	// name which function reaches each var (ranger-base-dwn2v) — a clearance
+	// still matches on the bare var, so reached above is untouched.
+	reachedPairs := map[string][]string{}
 	// otherFlag: held back by something a parallelOK line cannot argue away
 	// — the environment, the binary-wide fakeDir(), or a serial entry.
 	otherFlag := func(name string) bool {
@@ -556,7 +560,7 @@ func main() {
 		for _, g := range gs {
 			if g.topTest {
 				tests = append(tests, g)
-				reached[g.name] = reachedVars(funcs, g.name, writtenVars, exempt)
+				reached[g.name], reachedPairs[g.name] = reachedVars(funcs, g.name, writtenVars, exempt)
 			}
 		}
 	}
@@ -699,9 +703,11 @@ func main() {
 				why = append(why, "env")
 			}
 			if varTainted[g.name] {
-				// The MEASURED vars, not the class word: a clearance is an
-				// argument about these names, so the line has to carry them.
-				why = append(why, "pkgvar("+strings.Join(reached[g.name], " ")+")")
+				// fn:var pairs, not the bare var: "extra" has to name which
+				// function reaches each one, or its own error message
+				// ("run ... extra for the var ... behind each") cannot be
+				// followed (ranger-base-dwn2v).
+				why = append(why, "pkgvar("+strings.Join(reachedPairs[g.name], " ")+")")
 			}
 			if fakeDirTainted[g.name] {
 				why = append(why, "fakeDir")
@@ -906,10 +912,16 @@ func isT(e ast.Expr) bool {
 // its own body or in any test-file function it transitively calls. It is
 // filter 2 (varTainted) with the var kept: the same walk over the same
 // functions, so a test is in reached iff it is varTainted.
-func reachedVars(funcs map[string][]*fn, test string, writtenVars, exempt map[string]bool) []string {
+//
+// It also answers, from the same walk, which function reaches each var: the
+// deduped "fn:var" pairs (ranger-base-dwn2v) — needed because reachedVars'
+// vars alone name the state but not where the test picks it up, which is
+// what a patch-run-revert cycle on this file used to have to answer by hand.
+func reachedVars(funcs map[string][]*fn, test string, writtenVars, exempt map[string]bool) (vars, pairs []string) {
 	seen := map[string]bool{test: true}
 	queue := []string{test}
-	vars := map[string]bool{}
+	varSet := map[string]bool{}
+	pairSet := map[string]bool{}
 	for len(queue) > 0 {
 		n := queue[0]
 		queue = queue[1:]
@@ -919,7 +931,8 @@ func reachedVars(funcs map[string][]*fn, test string, writtenVars, exempt map[st
 			}
 			for id := range g.idents {
 				if writtenVars[id] && !exempt[id] {
-					vars[id] = true
+					varSet[id] = true
+					pairSet[g.name+":"+id] = true
 				}
 			}
 			for c := range g.calls {
@@ -930,12 +943,15 @@ func reachedVars(funcs map[string][]*fn, test string, writtenVars, exempt map[st
 			}
 		}
 	}
-	var out []string
-	for v := range vars {
-		out = append(out, v)
+	for v := range varSet {
+		vars = append(vars, v)
 	}
-	sort.Strings(out)
-	return out
+	sort.Strings(vars)
+	for p := range pairSet {
+		pairs = append(pairs, p)
+	}
+	sort.Strings(pairs)
+	return vars, pairs
 }
 
 // clearanceCovers answers whether a parallelOK reason waives a test AS IT IS

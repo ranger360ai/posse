@@ -233,6 +233,33 @@ func TestEligibleListsTheSetToMarkAndLeavesTheTaintedOut(t *testing.T) {
 	}
 }
 
+// TestExtraNamesTheFunctionBehindEachWrittenVar pins the fix for
+// ranger-base-dwn2v: `extra`'s own error message tells the reader to run it
+// "for the var ... behind each", so the pkgvar row has to name where a test
+// picks the var up and not just the class word or the bare var name. It also
+// pins the dedupe — a var reached through two calls into the same function
+// must appear once, not once per call.
+func TestExtraNamesTheFunctionBehindEachWrittenVar(t *testing.T) {
+	t.Parallel()
+	dir := pkg(t, map[string]string{"a_test.go": fixtureHeader + "import \"sync\"\n\n" +
+		"var blindT sync.Map\n\n" +
+		"func at(t *testing.T) { blindT.Store(1, 2) }\n\n" +
+		"func newCacheRig(t *testing.T) { blindT.Store(3, 4) }\n\n" +
+		"func TestOne(t *testing.T) {\n\tt.Parallel()\n\tat(t)\n\tat(t)\n\tnewCacheRig(t)\n}\n"})
+	code, out := run(t, dir, "extra")
+	if code != 0 {
+		t.Fatalf("extra is a listing, not a gate: exit %d\n%s", code, out)
+	}
+	for _, want := range []string{"pkgvar(at:blindT newCacheRig:blindT)"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("extra must name the fn:var pairs, deduped and sorted, got %q in:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "pkgvar(blindT)") {
+		t.Errorf("extra must not fall back to the bare var name:\n%s", out)
+	}
+}
+
 // A parallelOK reason covers the vars it names as whole identifiers, and
 // nothing that merely contains one of them (ranger-base-acvq3). The scan pin
 // over internal/posse (testparallelclearancescope_qa_test.go at the repo
