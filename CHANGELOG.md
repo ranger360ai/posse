@@ -1431,8 +1431,6 @@ production probe. It now reaches the pane by absolute path, re-execs the
 login shell itself, and checks a witness that its shim actually ran before
 it judges anything.
 
-### Fixed
-
 **The shop check stopped sending the coordinator to clear a prompt that had
 already been sent, and `--resume` stopped parking a bead behind one.**
 
@@ -1492,8 +1490,6 @@ which also records that a child calling `setsid(2)` first *does* survive
 closing its own workspace — so a self-refresh is buildable, and is not built
 here: a new session leader cannot inherit the launcher lock that makes the
 kill and the recreate one step or neither.
-
-### Fixed
 
 **The pulse arm switched itself off for ten hours a day, skipping on an
 "unsent prompt" in a box that was empty.**
