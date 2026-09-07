@@ -808,10 +808,22 @@ func TestBuiltinDimensionRowsSpeakTheVerdictVocabulary(t *testing.T) {
 	}
 	// claude: the flag surface, spelled as the flag the CLI reads.
 	claude := gridRow(t, grid("claude"), "skills")
-	for _, w := range []string{"flag — --plugin-dir ", "real DIRECTORY OF FILES, copied out of RHQ_HOME/skills"} {
+	for _, w := range []string{
+		"flag — --plugin-dir ", "real DIRECTORY OF FILES, copied out of RHQ_HOME/skills",
+		// ranger-base-oyjrv: grok names the installed plugin from plugin.json
+		// on every surface a person or config touches — the basename only
+		// keys the on-disk storage entry, never the plugin's identity.
+		"grok's on-disk store keys the unpacked copy `claude-<hash>` from that basename",
+		"grok names the installed plugin `posse-<persona>` from the plugin.json on every surface",
+	} {
 		if !strings.Contains(claude, w) {
 			t.Errorf("claude's skills row must carry %q:\n%s", w, claude)
 		}
+	}
+	// The false half of the row ranger-base-oyjrv found: it must not claim
+	// grok names the plugin FROM the basename instead of plugin.json.
+	if strings.Contains(claude, "grok names the installed plugin `claude-<hash>` from it, not from the plugin.json") {
+		t.Errorf("claude's skills row still claims grok names the plugin from the basename — false on grok 1.0.5:\n%s", claude)
 	}
 	// codex and grok: the cwd surface, whose binding is the links and not
 	// anything on the line — the fact a "flag" row would hide.
