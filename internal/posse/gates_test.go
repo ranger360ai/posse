@@ -1206,6 +1206,50 @@ func TestPathOutsideGates(t *testing.T) {
 	}
 }
 
+// ranger-base-z51g: PathOutsideGates (and the gate shell's PRE guard, which
+// copies its test) can only afford a literal spelling match, so a symlink
+// that reaches another persona's gates bin without spelling "/gates/" in
+// its OWN name survives both. ForeignGatesElements is the check that can
+// afford to resolve — this pins it against exactly that repro.
+func TestForeignGatesElementsCatchesASymlinkAlias(t *testing.T) {
+	home := t.TempDir()
+	alphaBin := filepath.Join(home, "state", "gates", "alpha", "bin")
+	betaBin := filepath.Join(home, "state", "gates", "beta", "bin")
+	for _, d := range []string{alphaBin, betaBin} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	scratch := t.TempDir()
+	betalink := filepath.Join(scratch, "betalink")
+	if err := os.Symlink(betaBin, betalink); err != nil {
+		t.Fatal(err)
+	}
+	other := filepath.Join(scratch, "usr-bin") // an ordinary, non-gates dir
+	if err := os.MkdirAll(other, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sep := string(os.PathListSeparator)
+	t.Setenv("PATH", strings.Join([]string{betalink, other, betaBin}, sep))
+
+	got := ForeignGatesElements(alphaBin)
+	want := []string{betalink, betaBin}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Errorf("ForeignGatesElements(alpha) = %v, want %v — the symlink alias must be caught by what it resolves to, and the literal spelling still caught as before", got, want)
+	}
+
+	// Reached from behind ITS OWN alias, alpha's own bin dir must not be
+	// flagged as foreign to itself.
+	alphalink := filepath.Join(scratch, "alphalink")
+	if err := os.Symlink(alphaBin, alphalink); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", strings.Join([]string{alphalink, other}, sep))
+	if got := ForeignGatesElements(alphaBin); len(got) != 0 {
+		t.Errorf("alpha's own bin dir must not be foreign to itself, symlinked or not: %v", got)
+	}
+}
+
 // ─── The gate shell (ADR 0009) ───────────────────────────────────────────────
 
 // The rendered wrapper walks argv the way a shell does and prepends the

@@ -937,6 +937,40 @@ func PathOutsideGates(binDir string) string {
 	return strings.Join(keep, string(os.PathListSeparator))
 }
 
+// ForeignGatesElements is the spelling-independent half PathOutsideGates
+// cannot be: it names every $PATH element that REACHES a posse gates bin
+// dir other than ownBinDir, resolving symlinks first. A path element whose
+// own name never spells "gates" (a symlink alias pointed at another
+// persona's shim dir, for instance) still reads as foreign here, because
+// what matters is what the element resolves to, not how it is written
+// (ranger-base-z51g — the gate shell's own PRE guard, and PathOutsideGates
+// it copies the test from, must stay a cheap literal match inside a shell
+// one-liner and so cannot make this promise; this is the check that can
+// afford to call the filesystem).
+func ForeignGatesElements(ownBinDir string) []string {
+	own := ownBinDir
+	if r, err := filepath.EvalSymlinks(ownBinDir); err == nil {
+		own = r
+	}
+	var foreign []string
+	for _, p := range filepath.SplitList(os.Getenv("PATH")) {
+		if p == "" || p == ownBinDir {
+			continue
+		}
+		real := p
+		if r, err := filepath.EvalSymlinks(p); err == nil {
+			real = r
+		}
+		if real == own {
+			continue
+		}
+		if strings.Contains(real, string(filepath.Separator)+"gates"+string(filepath.Separator)) {
+			foreign = append(foreign, p)
+		}
+	}
+	return foreign
+}
+
 // resolveOutside finds cmd on PATH ignoring binDir (and any other posse
 // gates bin) — the real binary the shim execs. "" when not found: the shim
 // then searches PATH itself at run time, still skipping its own dir.

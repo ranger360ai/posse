@@ -118,6 +118,46 @@ func TestCheckParity(t *testing.T) {
 	}
 }
 
+// ranger-base-z51g: the PRE guard (and PathOutsideGates, which it copies)
+// drop a foreign gates dir by the SPELLING of the path, so a symlink alias
+// that never spells "/gates/" in its own name survives the rebuild and the
+// launched session inherits another persona's shims. Parity is the durable
+// check: it resolves symlinks, so it catches the property directly rather
+// than the spelling.
+func TestCheckParityFlagsAForeignGatesDirReachedThroughASymlink(t *testing.T) {
+	home := t.TempDir()
+	a := &App{Home: home, StateDir: filepath.Join(home, "state"), AgentsDir: filepath.Join(home, "agents"), ConfigPath: filepath.Join(home, "config.yaml")}
+	claude, _ := a.LoadRuntime("claude")
+	alpha := loadTestAgent(t, "---\nname: alpha\ndeny: [Bash(curl:*)]\n---\nYou are alpha.\n")
+
+	alphaBin := filepath.Join(a.GatesDir("alpha"), "bin")
+	betaBin := filepath.Join(a.GatesDir("beta"), "bin")
+	for _, d := range []string{alphaBin, betaBin} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	outside := PathOutsideGates("") // captured before PATH is overridden below
+	scratch := t.TempDir()
+	betalink := filepath.Join(scratch, "betalink")
+	if err := os.Symlink(betaBin, betalink); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", betalink+string(os.PathListSeparator)+outside)
+
+	p := a.CheckParity(alpha, claude, CageShims, TierStrong)
+	joined := strings.Join(p.Degraded, "\n")
+	if !strings.Contains(joined, betalink) {
+		t.Errorf("CheckParity must flag the symlinked foreign gates dir on PATH: %+v", p)
+	}
+
+	// A clean PATH (own dir aside) must not be flagged.
+	t.Setenv("PATH", outside)
+	if p := a.CheckParity(alpha, claude, CageShims, TierStrong); strings.Contains(strings.Join(p.Degraded, "\n"), "gates dir") {
+		t.Errorf("a clean PATH must not be flagged: %+v", p)
+	}
+}
+
 // Dispatch never allows degradation on its own; with --allow-degraded the
 // session launches marked.
 func TestDispatchRefusesDegradedUnlessAllowed(t *testing.T) {
