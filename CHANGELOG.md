@@ -1432,10 +1432,12 @@ it judges anything.
 **The shop check stopped sending the coordinator to clear a prompt that had
 already been sent, and `--resume` stopped parking a bead behind one.**
 
-*Affected: `posse status` / the cockpit's G2 row, and `posse dispatch
---resume`, for any claude session whose composer previews text.* Both read
-claude's prompt box off `herdr agent explain` and called any text there "a
-prompt sitting UNSENT in its box". That is a matcher over a screen region
+*Affected: `posse status` / the cockpit's G2 row, `posse dispatch --resume`,
+and the settle judgment a plain `posse dispatch` pass makes when a persona
+went idle without closing its bead — three callers, not two, for any claude
+session whose composer previews text.* All three read claude's prompt box
+off `herdr agent explain` and called any text there "a prompt sitting UNSENT
+in its box". That is a matcher over a screen region
 that can hold a line nobody is about to send, and a matcher like that cannot
 go false on its own: the same reading took the pulse arm off for about ten
 hours on 2026-09-04 (~586 skipped ticks on lines the operator had already

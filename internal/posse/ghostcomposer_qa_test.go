@@ -40,7 +40,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 )
 
 // ─── the store ───────────────────────────────────────────────────────────────
@@ -144,6 +146,63 @@ func TestLastSubmittedFailsTowardsToday(t *testing.T) {
 	}
 	if got, ok := lastSubmitted(mixed, probeSession); !ok || got != "good row" {
 		t.Errorf("one bad row hid the good ones: %q, %v", got, ok)
+	}
+}
+
+// claudeHistoryPath is a second spelling of the config-dir rule, and it must
+// answer exactly what ClaudeConfigDirIn (trust.go) does — the two disagreed
+// before this bead on a whitespace-only CLAUDE_CONFIG_DIR, because this
+// spelling TrimSpaced the variable where ClaudeConfigDirIn does not.
+func TestClaudeHistoryPathAgreesWithClaudeConfigDirIn(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	for _, c := range []struct{ what, configDir string }{
+		{"unset", ""},
+		{"a real override", filepath.Join(home, "elsewhere")},
+		{"whitespace only", "   "},
+	} {
+		if c.configDir == "" {
+			unsetenvForTest(t, "CLAUDE_CONFIG_DIR")
+		} else {
+			t.Setenv("CLAUDE_CONFIG_DIR", c.configDir)
+		}
+		want := filepath.Join(ClaudeConfigDirIn(home), claudeHistoryFile)
+		if got := claudeHistoryPath(); got != want {
+			t.Errorf("%s: claudeHistoryPath() = %q, want %q (ClaudeConfigDirIn's own answer)", c.what, got, want)
+		}
+	}
+}
+
+// A non-regular file at the history path must answer "no echo" WITHOUT
+// os.Open ever running on it. os.Open on a FIFO with no writer blocks in
+// open(2), and this read runs inside govern's G2 tick and dispatch's settle
+// judgments — a planted FIFO there must not hang them. A regular file gives
+// the FIFO no reader, so a lastSubmitted that opened it anyway would park
+// this goroutine forever; the deadline below is what makes that failure
+// visible instead of wedging the test binary.
+func TestLastSubmittedRefusesANonRegularFileWithoutOpeningIt(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	fifo := filepath.Join(dir, "history.jsonl")
+	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan struct{})
+	var got string
+	var ok bool
+	go func() {
+		got, ok = lastSubmitted(fifo, probeSession)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		if ok || got != "" {
+			t.Fatalf("a FIFO answered %q, %v — every failure must answer nothing", got, ok)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("lastSubmitted blocked opening a non-regular file instead of refusing it after Stat")
 	}
 }
 

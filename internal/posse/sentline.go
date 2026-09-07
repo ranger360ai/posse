@@ -118,15 +118,17 @@ type submittedRow struct {
 
 // claudeHistoryPath is the store of record's path, or "" when there is no
 // home to hang it off.
+//
+// The config dir is resolved through ClaudeConfigDirIn (trust.go), the one
+// rule, rather than a second spelling here: an earlier version TrimSpaced
+// CLAUDE_CONFIG_DIR where ClaudeConfigDirIn does not, so a whitespace-only
+// value made the two disagree.
 func claudeHistoryPath() string {
-	if d := strings.TrimSpace(os.Getenv("CLAUDE_CONFIG_DIR")); d != "" {
-		return filepath.Join(d, claudeHistoryFile)
-	}
 	home, err := os.UserHomeDir()
-	if err != nil || home == "" {
+	if (err != nil || home == "") && os.Getenv("CLAUDE_CONFIG_DIR") == "" {
 		return ""
 	}
-	return filepath.Join(home, ".claude", claudeHistoryFile)
+	return filepath.Join(ClaudeConfigDirIn(home), claudeHistoryFile)
 }
 
 // lastSubmitted returns the text of the most recent prompt submitted in the
@@ -136,15 +138,20 @@ func lastSubmitted(path, session string) (string, bool) {
 	if path == "" || session == "" {
 		return "", false
 	}
+	info, err := os.Stat(path)
+	if err != nil || !info.Mode().IsRegular() {
+		// os.Open on a FIFO with no writer blocks in-process (measured: a 3s
+		// timer expired against a scratch mkfifo named history.jsonl), and
+		// this read runs inside govern's G2 tick and dispatch's settle
+		// judgments — a non-regular file here must not hang them. claude's
+		// own history pruner refuses the same case.
+		return "", false
+	}
 	f, err := os.Open(path)
 	if err != nil {
 		return "", false
 	}
 	defer f.Close()
-	info, err := f.Stat()
-	if err != nil {
-		return "", false
-	}
 	off, whole := int64(0), true
 	if info.Size() > historyTailBytes {
 		off, whole = info.Size()-historyTailBytes, false
