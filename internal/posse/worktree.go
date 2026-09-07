@@ -900,16 +900,31 @@ func seedBeadsRedirect(t *SessionTree) error {
 			}
 		}
 	}
-	// os.MkdirAll Stats each component, so this still FOLLOWS a symlink at
-	// <tree>/.beads itself and seeds into whatever directory it points at. That
-	// is the residual of the write below, one component up, measured against
-	// this fix and filed as ranger-base-42au9 (P3, security) rather than folded
-	// in: the basename is fixed at "redirect" and the content at the repo's own
-	// .beads path, so it creates or clobbers a file NAMED redirect and reaches
-	// none of the classes ranger-base-d14e1 did. Cited here so the next reader
-	// of this line knows it was looked at and bounded, not missed.
-	dst := filepath.Join(t.Path, ".beads")
-	if err := os.MkdirAll(dst, 0o755); err != nil {
+	// os.MkdirAll Stats each component, so THAT primitive still follows a
+	// symlink at <tree>/.beads itself — the residual ranger-base-42au9 found
+	// one component up from the write below, and ranger-base-efe36 closes it
+	// the same way the write closed the leaf: resolve through the tree's own
+	// directory fd (os.Root = openat/renameat with the kernel's own escape
+	// check) rather than through a path the session can redirect with a link.
+	// os.Root refuses an escaping component AT THE SYSCALL, so there is no
+	// check-then-write window a leftover session process can race — an lstat
+	// guard in front of MkdirAll would have had exactly that window. A link
+	// INSIDE the tree is still followed (arm G of
+	// internal/posse/seedparentescape_test.go): that is fine, the write stays
+	// under t.Path either way. A non-directory AT .beads itself — symlink,
+	// FIFO, regular file — is the session's and never posse's render, so it
+	// gets the leaf's own answer: replaced, not opened and not followed.
+	root, err := os.OpenRoot(t.Path)
+	if err != nil {
+		return Die("session worktree beads redirect: %v", err)
+	}
+	defer root.Close()
+	if fi, err := root.Lstat(".beads"); err == nil && !fi.IsDir() {
+		if err := root.Remove(".beads"); err != nil {
+			return Die("session worktree beads redirect: %v", err)
+		}
+	}
+	if err := root.Mkdir(".beads", 0o755); err != nil && !os.IsExist(err) {
 		return Die("session worktree beads redirect: %v", err)
 	}
 	// And the WRITE, which is of the same class and was cleared as "the WRITE,
@@ -931,13 +946,15 @@ func seedBeadsRedirect(t *SessionTree) error {
 	//
 	// Both fall to one primitive, and it is not a check: NEVER OPEN THE
 	// DESTINATION — the security lane's ruling on ranger-base-d14e1, carried out
-	// here under ranger-base-aojiu. Write the bytes to a sibling temp (a fresh
-	// inode, O_CREATE|O_EXCL, inside dst so the rename stays within one
-	// filesystem) and rename it over the name. rename(2) replaces the
-	// destination's last component without following it and without opening it:
-	// a symlink is REPLACED and the file it pointed at is untouched, a FIFO is
-	// replaced without the open that blocked, a directory errors (file exists)
-	// so Die returns rather than hanging. All three MEASURED, 2026-09-05.
+	// here under ranger-base-aojiu and, for the directory above it, under
+	// ranger-base-efe36. Write the bytes to a sibling temp (a fresh inode,
+	// O_CREATE|O_EXCL, inside .beads so the rename stays within one filesystem
+	// and resolved through the same root fd) and rename it over the name.
+	// rename(2) replaces the destination's last component without following it
+	// and without opening it: a symlink is REPLACED and the file it pointed at
+	// is untouched, a FIFO is replaced without the open that blocked, a
+	// directory errors (file exists) so Die returns rather than hanging. All
+	// three MEASURED, 2026-09-05.
 	//
 	// It closes a fourth shape of the same class for free, which is the sign
 	// the primitive is right rather than merely sufficient: a session that
@@ -957,26 +974,28 @@ func seedBeadsRedirect(t *SessionTree) error {
 	// to a FIFO and os.Lstat would not, and refuseNonRegularHook documents that a
 	// symlinked hook installs by design. This write was the only site of its
 	// class under the session tree (line 691 is O_EXCL; seedWorktreeLinks is
-	// Lstat+Symlink).
+	// Lstat+Symlink, both now against the same root).
 	//
 	// Rename-over-a-temp is already how this package replaces a file it must not
 	// leave half-written: replaceMeta (herdrback.go), plancache.go ×2,
 	// modelavail.go, trust.go, refresh.go. As there, a crash between create and
 	// rename leaves litter rather than a wrong file; the temp is dot-prefixed so
-	// nothing reading this directory for a redirect can mistake one for it.
-	seeded := filepath.Join(dst, "redirect")
-	f, err := os.CreateTemp(dst, ".redirect-*")
+	// nothing reading this directory for a redirect can mistake one for it, and
+	// it carries the pid and a nanosecond timestamp rather than CreateTemp's
+	// pattern so two concurrent seeds of the same tree never collide on it.
+	tmp := filepath.Join(".beads", fmt.Sprintf(".redirect-%d-%d", os.Getpid(), time.Now().UnixNano()))
+	f, err := root.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 	if err != nil {
 		return Die("session worktree beads redirect: %v", err)
 	}
-	tmp := f.Name()
-	defer os.Remove(tmp) // no-op once the rename has taken it
+	defer root.Remove(tmp) // no-op once the rename has taken it
 	if _, err := f.WriteString(target + "\n"); err != nil {
 		f.Close()
 		return Die("session worktree beads redirect: %v", err)
 	}
-	// CreateTemp opens at 0600; the seeded redirect has been 0644 since this
-	// function first wrote one, and beadsHome reads it on the launch path.
+	// OpenFile above already asked 0644, but honor CreateTemp's old contract
+	// explicitly rather than trust the umask: beadsHome reads this on the
+	// launch path and the mode is part of it.
 	if err := f.Chmod(0o644); err != nil {
 		f.Close()
 		return Die("session worktree beads redirect: %v", err)
@@ -984,7 +1003,7 @@ func seedBeadsRedirect(t *SessionTree) error {
 	if err := f.Close(); err != nil {
 		return Die("session worktree beads redirect: %v", err)
 	}
-	if err := os.Rename(tmp, seeded); err != nil {
+	if err := root.Rename(tmp, filepath.Join(".beads", "redirect")); err != nil {
 		return Die("session worktree beads redirect: %v", err)
 	}
 	return nil
@@ -996,7 +1015,22 @@ func seedBeadsRedirect(t *SessionTree) error {
 // `plugin/bin/` and `bin/` in this repo, a local settings file in another.
 // Declared rather than guessed: linking every gitignored path would link
 // build output and caches two personas would then race over.
+//
+// Same class as seedBeadsRedirect's parent, same fix (ranger-base-42au9 arm
+// J, closed under ranger-base-efe36): os.MkdirAll(filepath.Dir(dst)) Stats
+// each component, so a link a caged seat planted at, say, `<tree>/plugin`
+// (with `plugin/bin` declared) was FOLLOWED, and the create-only Symlink
+// then landed a link named `bin` outside the tree, in the main checkout's
+// own directory tree, pointing at `src`. Resolving every write against the
+// tree's own directory fd closes it the same way: an escaping component is
+// refused at the syscall, and a link INSIDE the tree is still followed by
+// design (dst may itself be several components under a declared subdir).
 func seedWorktreeLinks(t *SessionTree, a *App) error {
+	root, err := os.OpenRoot(t.Path)
+	if err != nil {
+		return Die("worktree_link: %v", err)
+	}
+	defer root.Close()
 	for _, rel := range YamlList(a.ConfigPath, "worktree_link") {
 		rel = strings.TrimSpace(rel)
 		if rel == "" {
@@ -1010,14 +1044,16 @@ func seedWorktreeLinks(t *SessionTree, a *App) error {
 		if _, err := os.Lstat(src); err != nil {
 			continue // the main checkout does not have it either
 		}
-		dst := filepath.Join(t.Path, clean)
-		if _, err := os.Lstat(dst); err == nil {
+		if _, err := root.Lstat(clean); err == nil {
 			continue // git checked it out, or a previous launch linked it
 		}
-		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		if err := root.MkdirAll(filepath.Dir(clean), 0o755); err != nil {
 			return Die("worktree_link %s: %v", clean, err)
 		}
-		if err := os.Symlink(src, dst); err != nil {
+		// src is absolute (t.Repo joined above) and becomes the symlink's
+		// TARGET STRING, not a path Root resolves — Root only walks the
+		// LINK's own name (clean), which is what stays inside the tree.
+		if err := root.Symlink(src, clean); err != nil {
 			return Die("worktree_link %s: %v", clean, err)
 		}
 	}
