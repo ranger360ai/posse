@@ -17,9 +17,10 @@ package posse
 // is therefore not "zero hits" but "zero hits OUTSIDE the ruled shapes" —
 // and a shape table is only a bar if adding to it is a reviewed edit, the same
 // class as PublicDocsGenres. DO NOT WIDEN OR NARROW A SHAPE WITHOUT A RULING;
-// every ruling below was made by the security reviewer on ranger-base-lm22v,
-// and each answers ADR 0024 D1's question: could ANY deployer of this
-// software have written this line?
+// every ruling below was made by the security reviewer on ranger-base-lm22v
+// (K-RED value/item narrowed to the ruling on ranger-base-tj01c and
+// ranger-base-xn492), and each answers ADR 0024 D1's question: could ANY
+// deployer of this software have written this line?
 //
 // SCOPE, and it is the whole point of the pin's honesty. This measures TRACKED
 // MARKDOWN, from the REPOSITORY ROOT — the same scope ADR 0024 D2 check 2
@@ -225,7 +226,7 @@ func opsShapeTable(t *testing.T, cfg map[string][]string) ([]opsAllow, []opsRed)
 				`|(~/\.grok/)?auth\.json`),
 		},
 		opsAllow{
-			class: "credential", name: "K2", why: "an env var NAME — the name is the vendor's, the value is the fact (a value makes it K-RED)",
+			class: "credential", name: "K2", why: "an env var NAME with no value on the line — the vendor owns the name, the value is the fact (an ordinary delimiter followed by a value makes it K-RED, in any of the spellings that ruling covers)",
 			re: regexp.MustCompile(`(OAUTH_TOKEN|API_KEY)`),
 		},
 		opsAllow{
@@ -237,14 +238,15 @@ func opsShapeTable(t *testing.T, cfg map[string][]string) ([]opsAllow, []opsRed)
 	red := []opsRed{
 		{
 			class: "credential", name: "K-RED (value)",
-			why: "a credential-class line also carrying a value-shaped token — the class exists to keep the map without the keys",
-			re:  regexp.MustCompile(`sk-ant-|xai-|ghp_|eyJ[A-Za-z0-9_-]{10,}|[A-Za-z0-9+/_-]{40,}|(OAUTH_TOKEN|API_KEY)=[A-Za-z0-9]`),
+			why: "a credential-class line also carrying a value-shaped token, in any ordinary delimiter spelling ( = : := == -> ), optionally quoted — the class exists to keep the map without the keys; no value on the line stays K2 (ruling on ranger-base-tj01c/xn492)",
+			re: regexp.MustCompile(`sk-ant-|xai-|ghp_|eyJ[A-Za-z0-9_-]{10,}|[A-Za-z0-9+/_-]{40,}|(OAUTH_TOKEN|API_KEY)` +
+				"`" + `?[[:space:]]*(->|[:=]+)[[:space:]]*["'` + "`" + `]?[A-Za-z0-9]`),
 		},
 		{
 			class: "credential", name: "K-RED (item)",
-			why:    "a keychain item name chosen by an instance — the map this class exists for; the runtime's own default is K3",
-			re:     regexp.MustCompile(`find-generic-password.*-s[[:space:]]+[^[:space:]]`),
-			unless: regexp.MustCompile(`-s[[:space:]]+` + regexp.QuoteMeta(KeychainService)),
+			why:    "a keychain item name chosen by an instance, attached or spaced — the map this class exists for; the runtime's own default is K3",
+			re:     regexp.MustCompile(`find-generic-password.*-s[[:space:]]*[^[:space:]]`),
+			unless: regexp.MustCompile(`-s[[:space:]]*` + regexp.QuoteMeta(KeychainService)),
 		},
 	}
 	return allow, red
@@ -434,6 +436,21 @@ func TestQAOpsShapeTableCanStillSayNo(t *testing.T) {
 		{"credential: a store path beside a token", "`~/.claude/.credentials.json` held sk-ant-notarealtoken", "credential", "", false},
 		{"credential: an env var name with a value", "export ANTHROPIC_API_KEY=abcd1234 in the env set", "credential", "", false},
 		{"credential: the runtime's own keychain item", "security find-generic-password -s " + KeychainService + " -w", "credential", "", true},
+
+		// K-RED (value)/(item) narrowed per the ruling on ranger-base-tj01c
+		// and ranger-base-xn492: any ordinary delimiter carrying a value
+		// reds, and an attached -s item reds the same as a spaced one.
+		{"credential: name and value share a colon delimiter", "ANTHROPIC_API_KEY: hunter2sekrit is what the box exports", "credential", "", false},
+		{"credential: name and value share a spaced equals", "export ANTHROPIC_API_KEY = hunter2sekrit", "credential", "", false},
+		{"credential: name and value share a quoted equals", `the fleet key: ANTHROPIC_API_KEY="abc"`, "credential", "", false},
+		{"credential: name and value share an arrow", "ANTHROPIC_API_KEY -> hunter2sekrit on this box", "credential", "", false},
+		{"credential: a different vendor's token name with a value", "XAI_OAUTH_TOKEN: xoxb-1234-5678-notarealtoken", "credential", "", false},
+		{"credential: a backtick-closed name with a value", "the item is `ANTHROPIC_API_KEY`: hunter2sekrit", "credential", "", false},
+		{"credential: an attached keychain item, no delimiter", "security find-generic-password -sacme-prod -w", "credential", "", false},
+		{"credential: a keychain item after an equals", "security find-generic-password -s=acme-prod -w", "credential", "", false},
+		{"credential: a placeholder value stays green", "ANTHROPIC_API_KEY: <your key>", "credential", "", true},
+		{"credential: an empty quoted value stays green", `ANTHROPIC_API_KEY=""`, "credential", "", true},
+		{"credential: the runtime's own keychain item, attached", "security find-generic-password -s" + KeychainService + " -w", "credential", "", true},
 	} {
 		path := c.path
 		if path == "" {
