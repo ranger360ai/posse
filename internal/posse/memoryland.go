@@ -353,6 +353,15 @@ var memoryCredShapes = []struct {
 //	--dst-prefix   the `+++ b/` header stops saying `b/`, so a refusal
 //	               names no file. Attribution only — but the refusal is
 //	               the whole product here.
+//	--inter-hunk-context=0
+//	               diff.interHunkContext: with --unified=0 the diff would
+//	               otherwise carry no context lines at all, but this
+//	               setting re-introduces them to merge nearby hunks.
+//	               firstCredShapeInDiff only increments its line counter on
+//	               `+` lines, so those re-introduced context lines are
+//	               skipped and every hit past the first merged hunk is
+//	               reported short by the context line count (ranger-base-
+//	               p70ug). Attribution only, same class as the pair above.
 //
 // The realistic setter is the operator's global gitconfig, not an attacker:
 // a persona that wants a credential into a git object can commit one
@@ -366,7 +375,7 @@ var memoryCredShapes = []struct {
 func memoryDiff(rest ...string) []string {
 	return append([]string{"diff",
 		"--no-color", "--no-ext-diff", "--no-textconv", "--no-relative",
-		"--src-prefix=a/", "--dst-prefix=b/",
+		"--src-prefix=a/", "--dst-prefix=b/", "--inter-hunk-context=0",
 	}, rest...)
 }
 

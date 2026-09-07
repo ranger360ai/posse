@@ -38,7 +38,6 @@ import (
 // git 2.50.1. Un-skip when ranger-base-p70ug lands.
 func TestTheDiffScanCountsLinesWhateverTheConfigurationSays(t *testing.T) {
 	t.Parallel()
-	t.Skip("ranger-base-p70ug: diff.interHunkContext moves the line number the refusal names")
 
 	b, fake := newTestBackend(t)
 	agentPerLaunch(t, fake)
@@ -64,15 +63,20 @@ func TestTheDiffScanCountsLinesWhateverTheConfigurationSays(t *testing.T) {
 	write(t, filepath.Join(dev, "ORDERS.md"),
 		"# ORDERS\nADDED-ONE\nl2\nl3\nl4\nl5\nl6\n- the key that worked: "+leaked+"\nl7\n")
 
-	// Fixture guard: the PINNED argv must still render context lines here,
-	// else the setting is not honoured and nothing below is pinned.
-	raw, err := gitRaw(dev, memoryDiff("HEAD", "--unified=0", "--", ".")...)
+	// Fixture guard: this git must honour diff.interHunkContext at all,
+	// else the setting is not a real route here and nothing below is
+	// pinned. Checked WITHOUT --inter-hunk-context=0 — the fix itself —
+	// since running it through the pinned argv would only prove the fix
+	// undoes its own override.
+	raw, err := gitRaw(dev, "diff", "--no-color", "--no-ext-diff", "--no-textconv",
+		"--no-relative", "--src-prefix=a/", "--dst-prefix=b/",
+		"HEAD", "--unified=0", "--", ".")
 	if err != nil {
 		t.Fatal(err)
 	}
 	d := string(raw)
 	if !strings.Contains(d, "\n l2\n") {
-		t.Fatalf("this git does not honour diff.interHunkContext under the pinned argv, so nothing here is pinned:\n%s", d)
+		t.Fatalf("this git does not honour diff.interHunkContext, so nothing here is pinned:\n%s", d)
 	}
 
 	landing, err := b.KillSessionAndLandOpts("s1", KillOpts{})
