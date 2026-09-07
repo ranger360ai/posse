@@ -51,6 +51,13 @@
 # LIFTING THE PIN is the operator's, and 1.x is a migration, not a version
 # bump: 0.51.0 Phase 2 replaced the SQLite backend with embedded Dolt and does
 # not read .beads/beads.db at all. HOLD at 0.50.3 stands.
+#
+# Step one of any lift past 0.50.x is cutting the tripwire: `--no-daemon` is
+# spelled on every posse call in four places — bdGlobalFlags
+# (internal/posse/beads.go), CageBdFlags (internal/posse/cageinner.go),
+# scripts/verify-bd-pin.sh, scripts/queue-cutover.sh — and the moment a
+# >=0.51 binary answers, every one of those calls fails "unknown flag", by
+# design (ADR 0056 D5). That is the day's first symptom, not a surprise.
 # Runbook: NOTES.md, "beads (bd) substrate".
 
 posse_pinned_version = "0.50.3"   # `bd version` at the time of the pin

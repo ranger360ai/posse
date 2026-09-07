@@ -177,9 +177,15 @@ func (a *App) PrepareGatesWrap(persona string, deny []string, noGateShell bool, 
 
 // ─── `bd` inside the cage (ADR 0002 amendment, rangerhq-3nxk) ────────────────
 
-// CageBdFlags are the global flags the inner `bd` is given: JSONL only, no
-// daemon. The other half of the `.beads` carve-out (CageMounts) — the mount
-// makes the store writable, this makes bd able to use it.
+// CageBdFlags are the global flags the inner `bd` is given. `--no-db` is
+// the measured, load-bearing half (see WHAT `--no-db` COSTS below);
+// `--no-daemon` is the pin's tripwire per ADR 0056 D1 — ASSUMED to behave
+// in the image exactly as it does on the host (the container tier is
+// unrunnable on this box). The other half of the `.beads` carve-out
+// (CageMounts) — the mount makes the store writable, this makes bd able to
+// use it.
+//
+// HISTORY (bd 0.49.1 in the image, measured 2026-08-22):
 //
 // Measured 2026-08-22 (Docker 29.0.1, bd 0.49.1, BD_ACTOR forwarded):
 // through the carve-out with these flags, `create` / `comments add` /

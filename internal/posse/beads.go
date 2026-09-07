@@ -49,6 +49,15 @@ func (b Bd) Available() bool {
 
 // bdGlobalFlags go in front of every verb Bd.run invokes.
 //
+// `--no-daemon` is the pin's tripwire, not a speedup (ADR 0056 D1). On the
+// pinned bd 0.50.3 it is a documented deprecated no-op that costs nothing:
+// MEASURED 2026-09-04 (ranger-base-a67nu), same timing both arms, same
+// rows, 0 bytes stderr, same staleness refusal. On any bd past the pin's
+// line — 0.51.0, homebrew's 1.2.2 keg — every posse call fails `unknown
+// flag: --no-daemon`, rc 1, at the flag parser, before a store is opened.
+//
+// HISTORY (bd 0.49.1, measured 2026-08-30, ranger-base-cwu7/p969):
+//
 // `--no-daemon` is a 12x speedup, not a preference (ranger-base-cwu7,
 // measured 2026-08-30 on bd 0.49.1 against the fleet's own store, 1275
 // issues): every store-touching call cost ~5.6s, and ~5.3s of that was bd
@@ -99,11 +108,14 @@ func (b Bd) Available() bool {
 // failure (including a second "out of sync") is returned as-is — no loop.
 var bdGlobalFlags = []string{"--no-daemon"}
 
-// staleDBMessage is the substring bd 0.49.1 puts in both stdout and stderr
-// when a --no-daemon reader finds issues.jsonl newer than the database it
-// resolved to and refuses rather than importing (worktree.go, beads.go
-// above). It is the one bd error `run` treats as self-healing rather than
-// fatal.
+// staleDBMessage is the substring bd puts in stdout (--json verbs) or
+// stderr (text verbs) when its staleness check — issues.jsonl's mtime
+// against an import marker — refuses; on the pinned 0.50.3 it is identical
+// with and without --no-daemon (MEASURED 2026-09-04, two rigs, either
+// order). Writers that trip it on 0.50.x: a git pull or merge, bd's own
+// pre-commit hook rewriting issues.jsonl, the launcher's explicit Bd.Flush
+// (0.50.x no longer auto-flushes), another worktree's flush, a bare touch.
+// It is the one bd error `run` treats as self-healing rather than fatal.
 const staleDBMessage = "Database out of sync with JSONL"
 
 func (b Bd) run(dir string, args ...string) ([]byte, error) {
