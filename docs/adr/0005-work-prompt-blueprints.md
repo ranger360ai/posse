@@ -1,14 +1,19 @@
 # ADR 0005 — Work-prompt blueprints and the escalation ladder
 
 *Status: accepted 2026-08-18 · owner: architect · amended 2026-08-30
-(§2: the SPIKE rung files no `discovered-from` edge — bd refuses the
-block it exists for as a cycle against that edge, ranger-base-rs8j) ·
+(§2: the SPIKE rung files no `discovered-from` edge — a
+`discovered-from` edge and a block between the same pair is a cycle
+that some stores refuse outright and others silently accept, so a
+spike carrying one is not reliably stopped by bd, ranger-base-rs8j) ·
 amended 2026-09-01 (§2: the HANDOFF rung files `-l <their label>` with
 no `-a` — hand to the lane, ADR 0006 §1; the rendered ladder follows
 when its code bead lands, ranger-base-tpc41) · amended 2026-09-06
 (§1: delivery is ADR 0013 §2's argv-first prompt file, not `AgentPrompt`
 alone, and the skeleton carries the own-worktree block `workPrompt`
-renders from `ctx.Tree` — ranger-base-mppjc)*
+renders from `ctx.Tree` — ranger-base-mppjc) · amended 2026-09-07
+(this header still asserted the 2026-08-30 refusal as absolute after
+the shipped rung and its pin were reworded to the qualified claim
+above — ranger-base-ytsp9, sweep tail of ranger-base-lpz0o)*
 
 > Restated from the private archive of the instance this harness was
 > developed in; incident citations reference that instance's history.
