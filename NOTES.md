@@ -6365,7 +6365,18 @@ The kill takes the launcher lock **without waiting**: the cockpit's `k` runs
 it on the TUI's single select loop, and blocking there behind a firing pass
 freezes the cockpit. Losing that race costs only time — the workspace is
 closed, the tree and branch are kept, and the line says
-`posse worktrees --land` finishes it. `--land` merges every landable branch
+`posse worktrees --land` finishes it.
+
+A rarer false busy on that same non-blocking take is an accepted risk
+(ranger-base-a40d9, operator ruling 2026-09-07): flock is held by the open
+file description, and any sibling goroutine's fork (the backup clock,
+ciwatch's gh polling, gates.go's git/sh calls, a cage build) duplicates the
+lock's fd into its child before that child reaches execve, so the probe can
+read a lock the fire loop just released as still held — MEASURED 5.31% of
+release+reprobe pairs on a synthetic rig
+(`internal/posse/forkflockrace_live_test.go`, `RHQ_FORKRACE_PROBE=1`).
+Accepted rather than built out as a process-wide fork gate: the probe
+already defers instead of acting unserialized, so the cost is one retry. `--land` merges every landable branch
 under one blocking lock and **never removes a tree**: it reads git, so it
 cannot tell a dead session's tree from one a persona is working in this
 second, and removing the second is the exact damage this feature exists to

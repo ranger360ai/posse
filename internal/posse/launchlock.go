@@ -178,6 +178,20 @@ func lockLaunches(a *App, out io.Writer) (*LaunchLock, error) {
 //
 // The contended arm stays silent-and-false for its callers regardless — the
 // string is what it is, and nothing here waits, retries or logs.
+//
+// Accepted risk (ranger-base-a40d9, operator ruling 2026-09-07): flock(2) is
+// held by the open file description, and fork() duplicates every open fd
+// into the child before it reaches execve — CLOEXEC fires at exec, not
+// fork. So any sibling goroutine's exec.Command (the backup clock, ciwatch's
+// gh polling, gates.go's git/sh calls, a cage build) that forks in the
+// instant the fire loop releases this lock can make a probe here read the
+// just-freed lock as still held. MEASURED on a synthetic rig
+// (forkflockrace_live_test.go, RHQ_FORKRACE_PROBE=1, 8 forking goroutines
+// over 20s): 5.31% of release+reprobe pairs on this lock, 0.84% on the
+// watch lock. Accepted rather than fixed with a process-wide fork gate
+// across every exec.Command call site: this function already promises to
+// defer rather than act unserialized on any non-free read, so the false
+// busy costs the caller exactly one retry.
 func tryLockLaunches(a *App) (*LaunchLock, string) {
 	path := LaunchLockPath(a)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
