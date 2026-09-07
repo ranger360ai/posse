@@ -564,6 +564,52 @@ func TestKillHoldsAnUntrackedFileGitWouldCallBinary(t *testing.T) {
 	}
 }
 
+// ranger-base-97omd: check-attr answers by PATHNAME PATTERN, not on-disk
+// type, so it reports the `*.vault filter=up` line for a symlink named
+// `handle.vault` too — but git never runs a clean filter on a symlink's
+// blob (measured, git 2.50.1: `git add` of a symlink commits the raw link
+// text verbatim regardless of a matching `filter=` line). The symlink arm
+// below memoryFilteredUntrackedChange already reads exactly that link text,
+// so this ordinary, credential-free symlink must land, not hold — a hold
+// here would be citing a filter that provably never touches its bytes.
+func TestSymlinkUnderFilterPatternStillLands(t *testing.T) {
+	t.Parallel()
+	b, fake := newTestBackend(t)
+	agentPerLaunch(t, fake)
+	repo := memoryRepo(t, b)
+
+	personaDir := filepath.Join(repo, ConstitutionSourceDir, "personas", "dev")
+	attrsRel := ConstitutionSourceDir + "/personas/dev/.gitattributes"
+	write(t, filepath.Join(personaDir, ".gitattributes"), "*.vault filter=up\n")
+	mustGit(t, repo, "config", "filter.up.clean", "tr A-Z a-z")
+	mustGit(t, repo, "add", "--", attrsRel)
+	mustGit(t, repo, "commit", "-q", "-m", "configure the up filter", "--", attrsRel)
+
+	devSession(t, b, "s1")
+	link := filepath.Join(personaDir, "handle.vault")
+	if err := os.Symlink("../../../notes/scratch-that-was-tidied-away.md", link); err != nil {
+		t.Fatal(err)
+	}
+	if dirty := b.App.MemoryDirtyPaths("dev"); !strings.Contains(strings.Join(dirty, " "), "handle.vault") {
+		t.Fatalf("git does not offer the symlink to the commit here: %v", dirty)
+	}
+	appendOrders(t, repo, "dev", "- a lesson landed beside the filtered symlink.\n")
+
+	landing, err := b.KillSessionAndLandOpts("s1", KillOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if landing.Memory == nil || landing.Memory.Held != "" {
+		t.Fatalf("a symlink was held on a filter that never applies to it: %+v", landing.Memory)
+	}
+	if dirty := b.App.MemoryDirtyPaths("dev"); len(dirty) != 0 {
+		t.Fatalf("the kill left the persona's memory uncommitted: %v", dirty)
+	}
+	if body := mustGit(t, repo, "show", "HEAD:"+ConstitutionSourceDir+"/personas/dev/ORDERS.md"); !strings.Contains(body, "beside the filtered symlink") {
+		t.Errorf("the lesson is not in the commit:\n%s", body)
+	}
+}
+
 // ranger-base-cjjm5: an untracked path under a git clean filter commits the
 // FILTER'S OUTPUT, and the untracked-file arm above reads the worktree's raw
 // INPUT — bytes the commit never takes. The fixture's raw text already

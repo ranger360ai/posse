@@ -479,10 +479,32 @@ func scanMemoryChanges(dir string, changes []memoryChange) string {
 		// see, and no amount of scanning the wrong bytes closes that
 		// (ranger-base-cjjm5). One call for every untracked path in this
 		// change set, since most memory dirs configure no filter at all.
-		if held, err := memoryFilteredUntrackedChange(root, untracked); err != nil {
-			return fmt.Sprintf("the credential scan could not check for a clean filter (%v)", err)
-		} else if held != "" {
-			return held
+		//
+		// SYMLINKS EXCLUDED from the batch. check-attr answers by pathname
+		// pattern, not on-disk type, so it reports a filter for a symlink
+		// whose path matches -- but git never runs a clean filter on a
+		// symlink's blob (measured, git 2.50.1: `git add` of a symlink
+		// commits the raw link text verbatim regardless of a matching
+		// `filter=` line). The per-path loop below already reads a
+		// symlink's link text, which is exactly what the commit takes,
+		// filter or not -- asking check-attr for it here would hold on a
+		// filter that provably never touches its bytes (ranger-base-97omd).
+		// A path that fails to lstat is left in the batch and reported by
+		// the loop below instead, so every lstat error still holds the
+		// commit.
+		var filterCheck []string
+		for _, p := range untracked {
+			if st, err := os.Lstat(filepath.Join(root, p)); err == nil && st.Mode()&os.ModeSymlink != 0 {
+				continue
+			}
+			filterCheck = append(filterCheck, p)
+		}
+		if len(filterCheck) > 0 {
+			if held, err := memoryFilteredUntrackedChange(root, filterCheck); err != nil {
+				return fmt.Sprintf("the credential scan could not check for a clean filter (%v)", err)
+			} else if held != "" {
+				return held
+			}
 		}
 	}
 	for _, c := range changes {
