@@ -76,11 +76,6 @@ var awsPublishedExamples = map[string]bool{
 	"ASIAIOSFODNN7EXAMPLE": true,
 }
 
-// pinSourceFile is this file's own path. TestTheDigitRealisticScanIsNotVacuous
-// below plants a real digit-realistic example to prove the scan fires, and
-// the tree scan must skip this one file or its own control would flag itself.
-const pinSourceFile = "detectorshapes_qa_test.go"
-
 func trackedFiles(t *testing.T) []string {
 	t.Helper()
 	out, err := exec.Command("git", "ls-files", "-z").Output()
@@ -125,9 +120,6 @@ func digitRealisticHits(body []byte) []string {
 func TestNoTrackedFileCarriesADigitRealisticDetectorShape(t *testing.T) {
 	var findings []string
 	for _, rel := range trackedFiles(t) {
-		if rel == pinSourceFile {
-			continue
-		}
 		body, err := os.ReadFile(rel)
 		if err != nil {
 			t.Fatalf("%s: %v", rel, err)
@@ -150,7 +142,11 @@ func TestNoTrackedFileCarriesADigitRealisticDetectorShape(t *testing.T) {
 // fix landed in, or a clean result above is a clean result over a scan that
 // looks at nothing (or one that would hold every future commit).
 func TestTheDigitRealisticScanIsNotVacuous(t *testing.T) {
-	planted := []byte("SLACK_BOT_TOKEN=xoxb-123456789012-123456789012-abcdefghijklmnop")
+	// Built at runtime, not spelled as a source literal: the pin now scans
+	// its own file too (no self-skip), and this exact shape is what GH013
+	// blocked in 34a27b4 — a literal here would be the same incident again.
+	digitBody := "xoxb-" + strings.Repeat("1", 12) + "-" + strings.Repeat("2", 12) + "-abcdefghijklmnop"
+	planted := []byte("SLACK_BOT_TOKEN=" + digitBody)
 	if hits := digitRealisticHits(planted); len(hits) == 0 {
 		t.Fatal("control: the digit-realistic Slack shape that blocked 34a27b4 does not trip the scan — every clean verdict above is empty")
 	}
