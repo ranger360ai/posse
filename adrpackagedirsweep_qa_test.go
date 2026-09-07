@@ -18,9 +18,15 @@ package posse_test
 // surviving a full root-package run (397.8s, zero FAIL) with the sweep
 // reverted at that site:
 //
-//   - `0015-constitution-promotion.md:368` cites the package DIRECTORY,
-//     `internal/posse`, with no file after it. A run of pure directory
-//     segments emits no token at all, so nothing judged it.
+//   - `0015-constitution-promotion.md` cites the package DIRECTORY,
+//     `internal/posse`, with no file after it, in the sentence "every
+//     renderer test in `internal/posse` drops the gates dir from the
+//     child's `PATH`". A run of pure directory segments emits no token
+//     at all, so nothing judged it. Anchored by content, not line
+//     number: two later amendments (ranger-base-rowut, then
+//     ranger-base-5smxb) each grew the record's header above this
+//     sentence and moved it, and a line number in a Go comment cannot
+//     be pinned against Markdown drift.
 //   - `0002-container-tier.probe.sh:148` cites `cagelauncher.go` inside an
 //     executable supplement. That reader's corpus was `docs/adr/*.md`.
 //     ranger-base-bvich widens the corpus to both record classes and kills
