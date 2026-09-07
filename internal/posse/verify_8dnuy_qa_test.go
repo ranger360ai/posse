@@ -52,6 +52,17 @@ func TestQAADR0026StatusLineDoesNotDeferTheImplementedRung(t *testing.T) {
 		t.Fatal("ADR 0026 has no status line — this guard has nothing to judge")
 	}
 
+	// ranger-base-ogqp9, escaped from this close under ranger-base-4dkrp:
+	// pinned two-way, matching how the same commit pinned its sibling claim
+	// on the Provenance line (workprompt_test.go's store-split checks) — a
+	// negative alone lets a reword that drops the true claim pass silently
+	// so long as it also avoids the two dead clauses below. The positive
+	// costs nothing new: the premise check at the end of this test already
+	// measures that the rendered rung backs this claim.
+	if !strings.Contains(adr, "implemented in the rendered rung") {
+		t.Error("0026's status no longer says the ruling is implemented in the rendered rung — a reword could drop the true claim while still avoiding the dead clauses below, and this guard would not catch it")
+	}
+
 	for _, dead := range []string{
 		"prompt/skill implementation deferred",
 		"implementation deferred",

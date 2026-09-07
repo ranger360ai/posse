@@ -487,7 +487,7 @@ func TestEscalationLadderSpikeResearchesInTheDecidingBead(t *testing.T) {
 	// separate bead for EVERY gap, always, as the receipt that research
 	// happened" after the sid marker left this file ok in 0.991s.
 	//
-	// Two negatives, because the addition can be spelled either way.
+	// Three negatives, because the addition can be spelled more than one way.
 	//
 	// One: no universal quantifier. In THIS rung every universal is a
 	// mandate — the whole ruling is that a separate bead is for a distinct
@@ -512,6 +512,22 @@ func TestEscalationLadderSpikeResearchesInTheDecidingBead(t *testing.T) {
 			if lead := low[max(0, i-16):i]; !strings.Contains(lead, "never as") {
 				t.Errorf("SPIKE says the separate bead IS the %q (lead-in %q) — the mandate ranger-base-k5fnr removed, back as an addition:\n%s", claim, lead, spike)
 			}
+		}
+	}
+	// Three (ranger-base-ogqp9, escaped from this close under ranger-base-4dkrp):
+	// the PID re-sync spelling. ranger-base-zbqiq's APPLY-VERBATIM line reads
+	// "check your bound skills first, then file 'spike: <question>' and
+	// dep-block the deciding bead on it (ADR 0014)" — an addition that names
+	// neither a universal quantifier nor the receipt phrase, so it passes both
+	// checks above. Four crew PIDs still carried that exact sentence as of
+	// ranger-base-8dnuy's close, making the re-sync a realistic edit and not a
+	// hypothesis. The rung's own legitimate text says `bd create "spike:
+	// <question>"` (double-quoted, inside the procedure this rung actually
+	// asks for) — that occurrence must survive, so the dead spelling is the
+	// imperative with single quotes, not the double-quoted `bd create`.
+	for _, dead := range []string{"dep-block the deciding bead", "file 'spike:"} {
+		if strings.Contains(low, dead) {
+			t.Errorf("SPIKE carries %q — the ranger-base-zbqiq PID re-sync spelling of the mandate ranger-base-k5fnr removed, back as an addition:\n%s", dead, spike)
 		}
 	}
 }
