@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -182,5 +183,57 @@ func TestEnvSetVarsRefusesAHardLinkWithinTheStore(t *testing.T) {
 	}
 	if vars, err := a.EnvSetVars("alias"); err == nil {
 		t.Errorf("EnvSetVars(\"alias\") = %v, want refusal — the link count, not the target, is the rule", vars)
+	}
+}
+
+// WriteEnvSet's own guard (ranger-base-wafvm): its siblings all resolve the
+// name through storeName before it ever reaches EnvsDir. A name holding a
+// path separator must not write outside envs/.
+func TestWriteEnvSetRefusesAPathSeparatorInTheName(t *testing.T) {
+	t.Parallel()
+	a := symlinkApp(t)
+	outside := t.TempDir()
+	name := filepath.Join(outside, "escape") + string(filepath.Separator) + "x"
+	if err := a.WriteEnvSet(name, []EnvVar{{Key: "K", Value: "v"}}); err == nil {
+		t.Errorf("WriteEnvSet(%q) = nil, want refusal — the name holds a path separator", name)
+	}
+	if _, err := os.Stat(filepath.Join(outside, "escape")); err == nil {
+		t.Errorf("WriteEnvSet(%q) wrote outside envs/ despite refusing", name)
+	}
+}
+
+// WriteEnvSet must not write THROUGH a hard link (ranger-base-wafvm): the
+// readers' guard (storeContained, ListEnvSets) is on link count at read
+// time, but os.WriteFile truncates the inode it finds regardless of how
+// many names point at it — so a name hard-linked to secrets/harness.env
+// would clobber the harness credential in place. The fix breaks the link
+// with a temp-file rename instead, the same shape setEnvVarStamped uses.
+func TestWriteEnvSetBreaksAHardLinkInsteadOfWritingThroughIt(t *testing.T) {
+	t.Parallel()
+	a := symlinkApp(t)
+	secret := filepath.Join(a.SecretsDir, "harness.env")
+	linked := filepath.Join(a.EnvsDir, "hard.env")
+	if err := os.Link(secret, linked); err != nil {
+		t.Skipf("the fixture needs both paths on one device: %v", err)
+	}
+
+	if err := a.WriteEnvSet("hard", []EnvVar{{Key: "SESSION_TOKEN", Value: "s"}}); err != nil {
+		t.Fatalf("WriteEnvSet(hard) = %v, want success", err)
+	}
+
+	b, err := os.ReadFile(secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), "HARNESS_TOKEN=sk-secret") {
+		t.Errorf("secrets/harness.env = %q, want the harness credential intact — the write went through the link", b)
+	}
+
+	b, err = os.ReadFile(linked)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), "SESSION_TOKEN=s") {
+		t.Errorf("envs/hard.env = %q, want the new vars — the rename should have replaced the directory entry", b)
 	}
 }

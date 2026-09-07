@@ -178,7 +178,21 @@ func (a *App) ListEnvSets() []string {
 // WriteEnvSet rewrites (or creates) an env set, preserving nothing but the
 // given vars — the TUI editor round-trips comments away by design; use
 // $EDITOR to keep hand-written structure. Files stay 600 in a 700 dir.
+//
+// Guarded the way its sibling readers are: storeName on the name (a path
+// separator must not write outside envs/, same as envFilePath), and a
+// temp-file-plus-rename in place of a direct WriteFile — os.WriteFile
+// TRUNCATES the inode it finds, and an entry hard-linked to
+// secrets/harness.env would clobber that credential in place. The readers'
+// guard (storeContained, ListEnvSets) is on link count at READ time; a
+// writer that truncates through the link reaches the inode before that
+// guard is ever consulted. setEnvVarStamped breaks the link instead of
+// writing through it the same way; this copies that shape (ranger-base-9hfgb,
+// ranger-base-wafvm).
 func (a *App) WriteEnvSet(name string, vars []EnvVar) error {
+	if !storeName(name) {
+		return Die("env set name must be a file stem, not a path: %q", name)
+	}
 	if err := os.MkdirAll(a.EnvsDir, 0o700); err != nil {
 		return err
 	}
@@ -186,8 +200,24 @@ func (a *App) WriteEnvSet(name string, vars []EnvVar) error {
 	for _, v := range vars {
 		b.WriteString(v.Key + "=" + v.Value + "\n")
 	}
-	f := filepath.Join(a.EnvsDir, name+".env")
-	return os.WriteFile(f, []byte(b.String()), 0o600)
+	p := filepath.Join(a.EnvsDir, name+".env")
+	tmp, err := os.CreateTemp(a.EnvsDir, "."+name+".env.*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	if err := tmp.Chmod(0o600); err != nil {
+		tmp.Close()
+		return err
+	}
+	if _, err := tmp.WriteString(b.String()); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), p)
 }
 
 // EnsureEnvSet creates an empty env set file (700 dir / 600 file) if missing
