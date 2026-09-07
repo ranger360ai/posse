@@ -1247,6 +1247,71 @@ func TestCIWatchNeverAdoptsAClosedBead(t *testing.T) {
 	}
 }
 
+// ranger-base-jbnug: ci-watch filed duplicate ci-red beads (d3dgd, x11iy) for
+// one episode. d3dgd was closed by the fixer's own `bd close` at 05:04:24,
+// the run that actually cleared the gate (3f4402a7) went green on GitHub at
+// 05:07:46, and x11iy was filed at 05:09:16 — for the identical "since
+// d2f13e68" episode — by a pass whose own `gh run list` reading raced the
+// fix and was still red. ciOpenBeads only ever sees OPEN beads, so d3dgd's
+// close dropped it out of the dedupe before ci-watch's reading caught up,
+// and the stale-red pass found nothing open and filed a second bead.
+//
+// The closed bead is SEEDED with the real streak line (st.Description(), so
+// its "since <sha> at <time>" text is the shipped shape ciSinceSha reads)
+// and no comments, which is the whole of what makes it look like a fixer's
+// own close rather than one ci-watch itself already answered.
+func TestCIWatchDoesNotRefileOverAnEpisodeASeatAlreadyClosed(t *testing.T) {
+	t.Parallel()
+	b, _ := newTestBackend(t)
+	a := b.App
+	repo := cwRepo(t, a)
+	if err := os.WriteFile(filepath.Join(repo, "fake-list-keep-closed"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	st := redState(1)
+	seeded := `[{"id":"d3dgd","title":"` + st.Title() + `",` +
+		`"status":"closed","labels":["` + CIRedLabel + `","` + CIRedLane + `"],` +
+		`"description":` + strconv.Quote(st.Description()) + `}]`
+	if err := os.WriteFile(filepath.Join(repo, "fake-list-labeled.json"), []byte(seeded), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// The gate's own read is STILL RED — it raced the fix — so this is
+	// exactly the pass that would have filed x11iy.
+	a.CIRead = func(CIQuery) CIState { return st }
+	bd := testBd(t)
+
+	n, out, errs := cwRun(t, a, bd)
+	if n != 0 || cwSay(out) != "" {
+		t.Fatalf("a stale-red pass over an episode a seat already closed acted %d and said %q (stderr %s) — this is the duplicate-file bug", n, cwSay(out), errs)
+	}
+	if got := cwCount(t, "create"); got != 0 {
+		t.Errorf("%d creates over an episode already closed by a seat, want 0", got)
+	}
+
+	// The control: the SAME closed bead, but ci-watch itself already told it
+	// its gate cleared (ciClearedPrefix). That is an ANSWERED episode, and
+	// treating it as a reason not to file the NEXT red would be the refile
+	// cooldown the header rejects — so this must still file.
+	b2, _ := newTestBackend(t)
+	a2 := b2.App
+	repo2 := cwRepo(t, a2)
+	if err := os.WriteFile(filepath.Join(repo2, "fake-list-keep-closed"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo2, "fake-list-labeled.json"), []byte(seeded), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cleared := `[{"issue_id":"d3dgd","author":"` + VerifyActor + `","text":` +
+		strconv.Quote(ciClearedPrefix+"ci.yml is green again on main — 3f4402a7 at 2026-09-07T09:07:46Z, https://x/9.") + `}]`
+	if err := os.WriteFile(filepath.Join(repo2, "fake-comments.json"), []byte(cleared), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	a2.CIRead = func(CIQuery) CIState { return st }
+	if n, _, e := cwRun(t, a2, testBd(t)); n != 1 {
+		t.Fatalf("an episode ci-watch itself already cleared should still let the next red file, acted %d (%s)", n, e)
+	}
+}
+
 // The marker earns its place only where two gates share ONE store, which is
 // this shop's actual shape: every repo's `.beads` redirects to one queue, so
 // the ci-red bead for one gate is in the listing the OTHER gate's dedupe

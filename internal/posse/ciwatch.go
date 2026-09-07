@@ -47,6 +47,19 @@ package posse
 // carried: a red that follows a green is a NEW red, and the store already
 // shows the previous episode closed beside it.
 //
+// A THIRD thing enforces it against ONE MORE race the first two do not
+// cover (ciDupeFiled, ranger-base-jbnug): OpenLabeledAny's own OPEN-only
+// promise means a bead a SEAT closed on their own commits — fixed and
+// closed before this gate's next `gh run list` catches up to green — drops
+// out of the dedupe's query, so a pass whose reading is still red because it
+// raced the fix finds nothing open and files a second bead for the episode
+// the first one already answered. ciDupeFiled reads CLOSED beads back too,
+// scoped to this gate's marker AND the streak's own Since sha so an
+// EARLIER, unrelated episode's closed bead never suppresses a genuinely new
+// one, and gated on the closed bead lacking ciAlreadyCleared's comment so an
+// episode this mechanism itself already cleared is never mistaken for one
+// still racing a fix.
+//
 // WHERE IT PRINTS. The pass says something only when it ACTS — on the pass
 // that files and the pass that closes. A condition that recurs must not be
 // re-announced every pass; that is how a visible line becomes an invisible
@@ -837,10 +850,26 @@ func (a *App) ciActOnGate(bd Bd, dir string, st CIState, out, errw io.Writer) in
 	case open == nil:
 		// No live bead for this gate: either none was ever filed, or every
 		// one of them has been told its episode is over.
-		if st.Red {
-			return a.ciFile(bd, dir, st, out, errw)
+		if !st.Red {
+			return 0
 		}
-		return 0
+		dupe, derr := ciDupeFiled(bd, dir, st)
+		if derr != nil {
+			// Same rule as the ciOpenBeads read above: a store this pass
+			// could not read is an unknown queue, and filing over an unknown
+			// queue is the one-bead-per-push failure this exists to prevent.
+			fmt.Fprintf(errw, "ci-watch: %s: %v\n", AbbrevHome(ExpandTilde(dir)), derr)
+			return 0
+		}
+		if dupe != "" {
+			// A bead already answers this exact episode — closed ahead of
+			// this gate's own reading catching up to green (ciDupeFiled's
+			// doc comment; ranger-base-jbnug). Filing here would be the
+			// duplicate this mechanism exists to prevent, one race window
+			// narrower than ciOpenBeads alone catches.
+			return 0
+		}
+		return a.ciFile(bd, dir, st, out, errw)
 	case st.Red:
 		a.ciDrumbeat(bd, dir, st, *open, cs, errw)
 		return 0
@@ -902,6 +931,75 @@ func ciOpenBeads(bd Bd, dir string, st CIState) ([]BdIssue, error) {
 	}
 	sort.SliceStable(found, func(i, j int) bool { return found[i].Created.After(found[j].Created) })
 	return found, nil
+}
+
+// ciSinceRe pulls the sha ciSinceSha reads back out of a filed bead's own
+// streak line — streakLine's two shapes both put it right before " at "
+// and a timestamp: "since %s at %s" (uncapped) and "the oldest still in the
+// window is %s at %s" (capped).
+var ciSinceRe = regexp.MustCompile(`(?:since|window is) ([0-9a-f]{4,40}) at `)
+
+// ciSinceSha is the sha a filed ci-red bead's own description names as the
+// start of ITS episode. It is read back out of the description rather than
+// compared against a CIState this reading computed, because it is the one
+// thing a filed bead never revises after the fact — unlike a live CIState's
+// own Since, which moves forward while a streak is capped (streakLine).
+func ciSinceSha(desc string) (string, bool) {
+	m := ciSinceRe.FindStringSubmatch(desc)
+	if m == nil {
+		return "", false
+	}
+	return m[1], true
+}
+
+// ciDupeFiled closes the one gap ciOpenBeads' OPEN-only promise leaves: a
+// bead a SEAT closed — their own `bd close`, the moment they fixed it —
+// drops out of ciOpenBeads before this gate's own next `gh run list` catches
+// up to green. A pass whose reading is still red because it raced the fix
+// then walks an empty cands list and files a SECOND bead for an episode
+// that already has one and is already closed (ranger-base-jbnug: d3dgd
+// closed 05:04:24, 3f4402a7 went green on GitHub at 05:07:46, x11iy filed
+// 05:09:16 for the identical "since d2f13e68" episode).
+//
+// Marker AND the streak's own Since sha both have to match. The marker
+// alone spans this gate's whole history, and a closed bead from an EARLIER,
+// answered episode must not suppress a genuinely new one — a red that
+// follows a green is a new red, no cooldown, on streakLine's own rule
+// (TestCIWatchDoesNotRefileWhileAnEarlierEpisodesBeadIsStillOpen pins two
+// episodes sharing everything but their own bead). The sha is read back off
+// each candidate's own description, fixed at the moment IT was filed, so a
+// later, unrelated episode that happens to start where an old one did not
+// is not conflated with one that actually did.
+//
+// And ciAlreadyCleared has to say NO on the candidate. A bead ci-watch
+// itself cleared and closed under ADR 0013 §4's exception already went
+// through that comment before it closed, and treating an ALREADY-answered
+// episode's own closed bead as a reason not to file its successor would be
+// exactly the refile cooldown the header rejects — this only ever matches a
+// close this mechanism was never told about at all, and the absence of that
+// comment is the tell.
+func ciDupeFiled(bd Bd, dir string, st CIState) (string, error) {
+	issues, err := bd.AllLabeledAny(dir, CIRedLabel)
+	if err != nil {
+		return "", err
+	}
+	marker, sha := ciMarker(st), st.Since.Short()
+	for _, is := range issues {
+		if is.Status != "closed" || !strings.Contains(is.Description, marker) {
+			continue
+		}
+		if since, ok := ciSinceSha(is.Description); !ok || since != sha {
+			continue
+		}
+		cs, cerr := bd.Comments(dir, is.ID)
+		if cerr != nil {
+			return "", cerr
+		}
+		if !ciAlreadyCleared(cs) {
+			return is.ID, nil
+		}
+	}
+	return "", nil
 }
 
 func (a *App) ciFile(bd Bd, dir string, st CIState, out, errw io.Writer) int {
