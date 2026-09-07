@@ -670,6 +670,15 @@ func (b Bd) Unclaim(dir, id, actor string, keepAssignee bool) error {
 }
 
 // Show fetches one issue's current state (bd show returns a one-item array).
+//
+// bd RESOLVES PREFIXES: `bd show <prefix>` returns rc=0 with the one issue
+// that prefix names, even when that issue's id is not the id asked for.
+// Bead ids on a store are not fixed width, so one full id being another's
+// prefix is a shape a store can hold (ranger-base-cz2nw). Every caller here
+// passes an id it already holds programmatically (a session's bead
+// pointer, a `bd ready`/`bd list` result) rather than one typed by hand, so
+// there is nothing that depends on prefix resolution succeeding — the
+// mismatch is checked here rather than pushed onto each caller.
 func (b Bd) Show(dir, id string) (BdIssue, error) {
 	out, err := b.run(dir, "show", id, "--json")
 	if err != nil {
@@ -678,6 +687,9 @@ func (b Bd) Show(dir, id string) (BdIssue, error) {
 	issues, err := parseBdIssues(out)
 	if err != nil || len(issues) == 0 {
 		return BdIssue{}, Die("bd show %s: no issue in response", id)
+	}
+	if issues[0].ID != id {
+		return BdIssue{}, Die("bd show %s: answered about %s", id, issues[0].ID)
 	}
 	return issues[0], nil
 }
