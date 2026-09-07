@@ -490,7 +490,7 @@ func fakeBd(args []string) int {
 		return 0
 	case "show":
 		if b, err := os.ReadFile("fake-show.json"); err == nil {
-			fmt.Print(string(b))
+			fmt.Print(fakeBdShowByID(string(b), fakeBdID(args, "show")))
 		} else if st, ok := fakeBdState()[fakeBdID(args, "show")]; ok {
 			fmt.Printf(`[{"id":%q,"title":"t","status":%q,"assignee":%q}]`, st.ID, st.Status, st.assignee())
 		} else {
@@ -724,6 +724,36 @@ func fakeBdDropClosed(body string) string {
 		return "[]"
 	}
 	return string(b)
+}
+
+// fakeBdShowByID narrows a fake-show.json body to the one entry matching the
+// id `bd show` was asked about — real bd's own one-item-array contract
+// (beads.go's Bd.Show comment). A file holding several fixtures (one per id
+// a test's Run touches, e.g. a-1 and a-2) answers each id with ITS OWN entry
+// rather than always the array's first, which is what silently satisfied
+// Bd.Show before ranger-base-cz2nw taught it to check.
+//
+// No match found is left AS THE WHOLE BODY, unfiltered: that is
+// beadshowprefix_test.go's fixture shape on purpose — an id the file never
+// names, answered from whatever the file holds anyway — which is exactly
+// bd's live prefix-collision quirk the guard exists to catch. Filtering that
+// case down to `[]` would make Bd.Show fail on "no issue in response"
+// instead of the mismatch this fake is built to reproduce.
+func fakeBdShowByID(body, id string) string {
+	var list []map[string]any
+	if json.Unmarshal([]byte(body), &list) != nil {
+		return body
+	}
+	for _, is := range list {
+		if got, _ := is["id"].(string); got == id {
+			b, err := json.Marshal([]map[string]any{is})
+			if err != nil {
+				return body
+			}
+			return string(b)
+		}
+	}
+	return body
 }
 
 // fakeBdFilterStatus keeps the rows whose own status field is exactly this

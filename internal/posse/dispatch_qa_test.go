@@ -879,7 +879,7 @@ func TestDispatchClaimLostKeepsSessionInPlay(t *testing.T) {
 	writePersona(t, b.App, "ranger", "[go]")
 	repo := qaRepo(t, b.App,
 		`[{"id":"a-1","title":"t","labels":["go"]},{"id":"a-2","title":"u","labels":["go"]}]`,
-		`[{"id":"a-1","status":"in_progress","assignee":"someone-else"}]`)
+		`[{"id":"a-1","status":"in_progress","assignee":"someone-else"},{"id":"a-2","status":"in_progress","assignee":"someone-else"}]`)
 	agentPerLaunch(t, fake)
 	os.WriteFile(filepath.Join(repo, "fake-claim-fail"), nil, 0o644)
 
@@ -1568,7 +1568,7 @@ func TestDispatchClaimLostExitZeroKeepsSessionInPlay(t *testing.T) {
 	writePersona(t, b.App, "ranger", "[go]")
 	repo := qaRepo(t, b.App,
 		`[{"id":"a-1","title":"t","labels":["go"]},{"id":"a-2","title":"u","labels":["go"]}]`,
-		`[{"id":"a-1","status":"in_progress","assignee":"someone-else"}]`)
+		`[{"id":"a-1","status":"in_progress","assignee":"someone-else"},{"id":"a-2","status":"in_progress","assignee":"someone-else"}]`)
 	agentPerLaunch(t, fake)
 	os.WriteFile(filepath.Join(repo, "fake-claim-lost"), []byte("someone-else"), 0o644)
 
