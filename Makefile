@@ -270,7 +270,7 @@ release-notes:
 # mistake can fail to *compile*, which would abort the recipe before the
 # door ever ran.
 test: fmt-check verify-test-times verify-parallel verify-suite-lock verify-silent-reverts tree-check
-	$(GOBIN) test . -timeout 15m -count=1 -run '^TestQAEverySuiteArmTypeChecks$$'
+	scripts/test-times.sh $(GOBIN) test . -timeout 15m -count=1 -run '^TestQAEverySuiteArmTypeChecks$$'
 	scripts/test-times.sh $(GOBIN) test -timeout 25m ./...
 	scripts/test-times.sh $(GOBIN) test -timeout 25m -tags posse_arm2 ./internal/posse
 	scripts/test-times.sh $(GOBIN) test -timeout 25m -tags posse_arm3 ./internal/posse
@@ -288,11 +288,11 @@ test-arm1: fmt-check verify-test-times verify-parallel verify-suite-lock verify-
 # recipe before the door ever ran — leaving the door's own reason for
 # existing unreachable for the bug shape it exists to catch.
 test-arm2:
-	$(GOBIN) test . -timeout 15m -count=1 -run '^TestQAEverySuiteArmTypeChecks$$'
+	scripts/test-times.sh $(GOBIN) test . -timeout 15m -count=1 -run '^TestQAEverySuiteArmTypeChecks$$'
 	scripts/test-times.sh $(GOBIN) test -timeout 25m -tags posse_arm2 ./internal/posse
 
 test-arm3:
-	$(GOBIN) test . -timeout 15m -count=1 -run '^TestQAEverySuiteArmTypeChecks$$'
+	scripts/test-times.sh $(GOBIN) test . -timeout 15m -count=1 -run '^TestQAEverySuiteArmTypeChecks$$'
 	scripts/test-times.sh $(GOBIN) test -timeout 25m -tags posse_arm3 ./internal/posse
 
 # The other half of the ceiling story, and the half ranger-base-pj87l asked
