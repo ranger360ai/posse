@@ -734,8 +734,15 @@ watching them is the operator's interactive headroom — a fleet that eats the
   becomes a state with a clock on it — **time since the last successful
   reading**, seeded at loop start (a fresh loop gets the whole grace, not an
   instant skip):
-  - **under `plan_guard_blind_max:`** (default **10m**) — the old behaviour
-    unchanged: one stderr line, pass not gated, pass runs;
+  - **under `plan_guard_blind_max:`** (default **10m**) — one stderr line,
+    pass not gated, pass runs — but only where the guard knows nothing. The
+    grace is tolerance for IGNORANCE, so the meter's last successful reading
+    is asked first: if it was over one of the thresholds or in the 80%
+    braking band, the on-meter lanes park from the **first** blind pass, with
+    the stale reading, its percentage and its age on every park line
+    (ranger-base-vq5zz — a guard that had skipped eleven passes on an
+    over-threshold reading met one 429 and hired four seats from inside the
+    grace). A reading with room, or none ever taken, keeps the whole grace;
   - **over it** — the pass still gathers and routes work, and forks on
     whether Dial E is armed (ADR 0018 §1, below). With `budget_pass:`/
     `budget_day:` **unset** the plan guard is the last automated brake and it
@@ -759,7 +766,8 @@ watching them is the operator's interactive headroom — a fleet that eats the
   - **the first good reading** clears the clock and that same pass proceeds.
     No manual reset, no sticky state, no operator action.
   - **`plan_guard_blind_max: 0`** is the operator's escape hatch for on-meter
-    work: never fail closed. It is not needed to keep off-meter work alive.
+    work: never fail closed — the last-reading park above included, since
+    that too is a fail-closed-while-blind. It is not needed to keep off-meter work alive.
     Unsetting the thresholds also disables the guard entirely — then nothing
     is read. It is quiet tolerance without end, not a degrade: nothing is
     declared under it, because nothing has been decided. The knob's single

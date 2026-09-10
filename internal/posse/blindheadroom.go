@@ -54,6 +54,21 @@ package posse
 // parking it cost a measured hour of zero dispatch. No reading is no
 // evidence of being near a ceiling; a reading in the braking band is
 // evidence. This parks on evidence and not on ignorance.
+//
+// —— and it is not the degrade's rule any more (ranger-base-vq5zz,
+// 2026-09-07). The refusal above was reachable only from blindFork, i.e.
+// only past `plan_guard_blind_max:`, so for the first ten minutes of every
+// blind stretch the last reading gated nothing at all. That is the whole of
+// the 2026-09-07 incident: eleven passes skipped at 96% > 95%, then one 429,
+// then "pass not gated" and four seats hired — inside the grace, on a shop
+// the guard had just measured over its own ceiling. The grace is quiet
+// tolerance for a pass that knows NOTHING; where a reading is in hand it has
+// nothing to buy. So dispatch.go blindGuard asks this on every unattended
+// blind pass from the first one, and the wait, the cap and the ledger are
+// only ever consulted for a reading that left room. What did not change: the
+// rule itself, both boundaries, the no-reading arm, the attended fail-open,
+// and `plan_guard_blind_max: 0` — the hatch still disarms every blind brake,
+// this one included.
 
 import (
 	"fmt"
@@ -62,13 +77,20 @@ import (
 )
 
 // PlanBlindRefusal is why the meter's last reading refuses to license a
-// degraded blind pass, as a clause to hang on the line that reports it, or
-// "" when it licenses one.
+// blind pass, as a clause to hang on the line that reports it, or "" when
+// it licenses one.
 //
 // It makes no request and reads no credential: the snapshot is a file, and
 // this is the same instance-wide record G5's blind clock is read from
 // (govern.go blindPast), so a cockpit, a `posse status` and the watch loop
 // all answer this the same way rather than one answer per process.
+//
+// The clause ENDS at the reading's age. "a dollar cap is not a brake on the
+// plan window" used to be part of it, and since ranger-base-vq5zz this
+// refusal also holds passes where no cap is armed and none was ever
+// consulted — so that sentence is the armed caller's to add (dispatch.go
+// blindGuard), on the passes where a cap is the thing a reader would
+// otherwise mistake for the brake.
 func (a *App) PlanBlindRefusal(caller string, now time.Time) string {
 	last, at, ok := a.PlanCache(caller).LastReading()
 	if !ok {
@@ -80,7 +102,7 @@ func (a *App) PlanBlindRefusal(caller string, now time.Time) string {
 	if why == "" {
 		return ""
 	}
-	return fmt.Sprintf("%s, read %s ago — a dollar cap is not a brake on the plan window", why, BlindFor(now.Sub(at)))
+	return fmt.Sprintf("%s, read %s ago", why, BlindFor(now.Sub(at)))
 }
 
 // planHeadroomRefusal is the rule itself, over a reading and the thresholds

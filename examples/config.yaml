@@ -364,6 +364,15 @@ default_emoji: ⚙️
 # That is ALL this knob means (ADR 0018): how long quiet tolerance lasts.
 # Hand-run passes are never affected — their stderr line has a witness.
 #
+# Tolerance for a pass that knows NOTHING, and only that. If the meter's last
+# reading was already over one of your thresholds or in the 80% braking band,
+# the on-meter lanes park from the FIRST blind pass and this knob buys them
+# nothing (2026-09-07, ranger-base-vq5zz: a guard that had skipped eleven
+# passes on an over-threshold reading met one 429, said "pass not gated" from
+# inside the grace, and hired four seats past the brake). Going blind is not
+# a promotion from skipped to running, and a rate-limited probe does not
+# retire the reading before it — only a fresh reading does.
+#
 # Past it the pass forks on whether `budget_pass:`/`budget_day:` below are
 # set, because what blindness costs depends on whether anything else is
 # still counting:
@@ -398,7 +407,10 @@ default_emoji: ⚙️
 # *blind* dispatch; the default spends about a third of that gap and keeps
 # the rest. Measure your own burn against your own threshold and set this
 # from those two numbers. **0 = never fail closed** — the escape hatch, and
-# with caps armed it is quiet tolerance without end, not a degrade.
+# with caps armed it is quiet tolerance without end, not a degrade. It is the
+# whole of the blind brake, so it also switches off the last-reading park
+# above: with it set, a stale over-threshold reading stops gating the moment
+# the meter goes dark. That is the sentence you are writing when you set it.
 # plan_guard_blind_max: 10m  # 30s, 5m, bare seconds, or 0 to disable
 #
 # How long one reading of those windows is shared before anybody asks the

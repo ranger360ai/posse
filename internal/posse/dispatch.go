@@ -836,12 +836,24 @@ func (d *Dispatcher) overThreshold(reason string) { d.planTrip = reason }
 
 // blindGuard is the guard with no reading to make a decision on.
 //
+// …which is not the same as a guard with nothing to say. THE LAST GOOD
+// READING KEEPS GATING until a fresh one replaces it (ranger-base-vq5zz).
+// On 2026-09-07 the guard had read 96% of the weekly window against a 95%
+// threshold and skipped every hire for eleven passes; the twelfth probe
+// answered 429, the pass printed "pass not gated" from inside the 10m
+// grace, and four seats were hired one pass after the brake — at a shop the
+// guard knew was over its own ceiling. The grace below is tolerance for
+// IGNORANCE, so what this instance already knows is asked first: a reading
+// does not stop gating because the endpoint rate-limited the probe after
+// it, and "pass not gated" is defensible only where no reading was ever
+// taken (staleGate, blindheadroom.go).
+//
 // `plan_guard_blind_max:` has exactly one meaning here (ADR 0018): how long
-// quiet tolerance lasts. Under it, nothing changes and the pass runs. Past
-// it — unattended only — the policy fork in blindFork decides between a
-// per-bead park and a declared degrade; either way off-meter beads still
-// launch (ADR 0013 §3). The knob does not bound the degrade: no amount of
-// wall-clock is a reason to run, and none is a reason to stop.
+// quiet tolerance lasts. Under it — with nothing known — nothing changes and
+// the pass runs. Past it, unattended, the policy fork in blindFork decides
+// between a per-bead park and a declared degrade; either way off-meter beads
+// still launch (ADR 0013 §3). The knob does not bound the degrade: no amount
+// of wall-clock is a reason to run, and none is a reason to stop.
 //
 // The log-noise rule (rangerhq-6h1): a --watch loop that is blind for a
 // weekend must not write the same line 500 times into a log nobody reads.
@@ -863,17 +875,58 @@ func (d *Dispatcher) blindGuard(now time.Time, err error) {
 	first := !d.blindFailed
 	d.blindFailed = true
 
+	// Before the clock, because the clock is measuring the wrong thing here:
+	// there is nothing to wait out when the answer is already in hand. An
+	// unattended pass holds on the refusal the last reading still carries
+	// from its FIRST blind pass — it held on that same reading while the
+	// meter was up, and losing the next probe is not a promotion from
+	// skipped to running (ADR 0010 §5).
+	stale := d.staleGate(now, budget)
+	if d.Unattended && stale != "" {
+		d.blindSaid = now
+		why := stale
+		if d.ledgerArmed() {
+			// 2026-08-31's sentence, said where a cap is the thing that
+			// would otherwise be read as the brake (ranger-base-c3vqe).
+			why += " — a dollar cap is not a brake on the plan window"
+		}
+		d.planBlind = fmt.Sprintf("plan guard: blind %s (%v), %s", BlindFor(blind), err, why)
+		return
+	}
 	if past {
 		d.blindSaid = now
 		d.blindFork(blind, err)
 		return
 	}
 	// Under the budget (or attended, or the escape hatch): today's line,
-	// today's outcome — the pass is not gated and it runs.
+	// today's outcome — the pass is not gated and it runs. An attended pass
+	// carries the stale reading in the line when there is one: fail-open is
+	// premised on a human witness, and a witness told "unreachable" without
+	// being told "96% twelve minutes ago" is watching the wrong number.
 	if first || now.Sub(d.blindSaid) >= blindQuiet {
 		d.blindSaid = now
-		d.eprintf("plan guard: %v — pass not gated\n", err)
+		note := ""
+		if stale != "" {
+			note = " (" + stale + ")"
+		}
+		d.eprintf("plan guard: %v — pass not gated%s\n", err, note)
 	}
+}
+
+// staleGate is the refusal the meter's last good reading still carries, or
+// "" when it left room, when no reading was ever taken here, or when the
+// operator disarmed the blind brakes.
+//
+// `plan_guard_blind_max: 0` is that disarm and it is honoured here as
+// everywhere else (ADR 0010 §5, "attended, or `blind_max: 0`, …"): the hatch
+// says never fail closed while blind, and this is a fail-closed-while-blind.
+// It is the one way to hire against a stale braking reading, and it is a
+// sentence the operator wrote in their own config.
+func (d *Dispatcher) staleGate(now time.Time, budget time.Duration) string {
+	if budget <= 0 {
+		return ""
+	}
+	return d.App.PlanBlindRefusal("dispatch", now)
 }
 
 // blindFork is ADR 0018 §1: what an unattended blind window past its budget
@@ -896,8 +949,11 @@ func (d *Dispatcher) blindGuard(now time.Time, err error) {
 // account ceiling at all. So the licence is asked of the METER first: the
 // last reading it managed is the only thing it still has to say, and a
 // reading that was already in the braking band left no headroom to degrade
-// into. That park the caps do not override (blindheadroom.go). A reading
-// with room, or no reading ever taken, is §1 unchanged.
+// into. That park the caps do not override — and since ranger-base-vq5zz it
+// is not asked here at all: blindGuard asks it of every unattended blind
+// pass, grace or no grace, so this function is only ever reached with a
+// reading that left room or with no reading at all. Both are §1 unchanged,
+// which is all that is left below.
 //
 // No fork by failure class (§2): a shape mismatch, a gate refusal, a 401 and
 // a dead socket are one state here — no reading. The classes are for the
@@ -916,17 +972,6 @@ func (d *Dispatcher) blindFork(blind time.Duration, err error) {
 	}
 	if !d.ledgerArmed() {
 		park("")
-		return
-	}
-	// The meter's own last word, before the ledger's. §1 licensed this
-	// degrade on "there is a floor under the blind meter", and 2026-08-31
-	// measured that the floor is made of dollars while the thing at risk is
-	// the account's weekly window (blindheadroom.go, ranger-base-c3vqe). A
-	// reading that was already in the braking band when the lights went out
-	// left nothing to spend into, and no dollar cap knows that — so this
-	// park is one the caps do not override.
-	if why := d.App.PlanBlindRefusal("dispatch", d.now()); why != "" {
-		park(", " + why)
 		return
 	}
 	st := d.passBudget()

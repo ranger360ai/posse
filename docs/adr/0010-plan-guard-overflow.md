@@ -4,7 +4,9 @@
 executed 2026-09-06 in ranger-base-6xx37, built in that bead's seat tree and
 not on main at this stamp — `git log --grep ranger-base-6xx37` on main is the
 record of whether it landed, this sentence is a dated snapshot (ADR 0038
-shape, ranger-base-w5xu7) · owner: architect.*
+shape, ranger-base-w5xu7) · §5's table amended 2026-09-10
+(ranger-base-vq5zz): the last reading is asked before the blind grace, not
+after it · owner: architect.*
 
 ## Context
 
@@ -47,14 +49,27 @@ always remain in force.
 | Bead off the guarded meter, or guard disabled | No refusal from this guard |
 | Valid reading over an operator threshold | Park on-meter work; do not substitute a provider |
 | Valid reading at or below thresholds | Continue, subject to Dial E and other brakes |
-| No reading; attended, or `blind_max: 0`, or not past `plan_guard_blind_max` | Continue with the existing diagnostic/tolerance; never infer overflow from blindness |
+| No reading, and `blind_max: 0` | Continue; the hatch disarms every blind brake, this table's included |
+| No reading; unattended, last successful reading strictly over an operator threshold | Park from the FIRST blind pass, grace or no grace; name threshold, window, percentage and reading age |
+| Same, last reading at or above `BudgetStepDownPct` (80%) | Park from the first blind pass; a spending cap cannot bound a plan window, and neither can a clock |
+| No reading; attended, or last reading with room, or none ever taken, and not past `plan_guard_blind_max` | Continue with the existing diagnostic/tolerance; never infer overflow from blindness. Attended names the stale reading in that line when there is one |
 | Unattended blindness past the limit, no `budget_pass` or `budget_day` cap armed | Park on-meter work |
-| Same, caps armed, last successful reading strictly over an operator threshold | Park; name threshold, window, percentage and reading age |
-| Same, caps armed, last reading at or above `BudgetStepDownPct` (80%) | Park; a spending cap cannot bound a plan window |
-| Same, caps armed, last reading below both boundaries **or no successful reading ever**, ledger unreadable | Park; cannot-read is not an empty ledger |
-| Same, caps armed, last reading below both boundaries **or no successful reading ever**, ledger readable | Degraded and loud on each pass; continue only within Dial E's step-down/stop brakes |
+| Same, caps armed, ledger unreadable | Park; cannot-read is not an empty ledger |
+| Same, caps armed, ledger readable | Degraded and loud on each pass; continue only within Dial E's step-down/stop brakes |
 
-Arming is checked first, then the last reading, then the ledger scan.
+The last reading is asked first, before the grace, before arming and before
+the ledger scan (amended 2026-09-10, ranger-base-vq5zz). The rows below it
+are therefore only ever reached for a reading that left room or for no
+reading at all. Its two boundaries, its adapter order and its refusal text
+are unchanged; what changed is WHEN it is asked. MEASURED 2026-09-07: with
+it reachable only past the limit, a guard that had skipped eleven passes on
+an over-threshold reading answered one 429, printed "pass not gated" from
+inside the ten-minute grace, and hired four seats past the brake — the grace
+is tolerance for a pass that knows nothing, and it has nothing to buy where
+a reading is in hand. Attended fail-open and `blind_max: 0` are deliberately
+NOT covered by that move: the first has a human witness (now told the stale
+number), the second is the operator's own written sentence.
+
 Thresholds precede the braking-band test and use adapter window order.
 The reading is evidence about the past: never extrapolate it, age it into
 headroom, or erase a refusal on a timer. A 429 retains the reading; a
@@ -112,6 +127,22 @@ been published since 2026-08-23 with both keys documented in
 set them is UNKNOWN and unmeasurable from here. This is one instance's
 non-use, not a product-wide obsolescence finding, and the operator ruling to
 remove was taken knowing that.
+
+*(amended 2026-09-10, ranger-base-vq5zz.)* The blind grace no longer
+outranks the meter's own last word. Before this, `plan_guard_blind_max:`
+bought ten minutes in which a reading the guard had been skipping on gated
+nothing at all, and on 2026-09-07 that bought four hires past a known
+over-threshold reading, one pass after the eleventh skip on it. The cost of
+the move is the mirror of the 2026-08-26 one and is bounded the same way: an
+unattended shop whose last reading was in the braking band now dispatches
+zero from the first blind pass instead of the eleventh minute, and the cure
+is unchanged — a reading, not a clock and not a raised cap. Two states keep
+today's behaviour on purpose: an attended pass (a human typed the command,
+and the line now tells them the stale number they are failing open on) and
+the `plan_guard_blind_max:` escape hatch set to zero, which disarms every
+blind brake including this one. Pinned in
+`internal/posse/blindgrace_test.go`; the rule itself is unchanged in
+`internal/posse/blindheadroom.go`.
 
 The **overflow** ledger is expendable historical telemetry; Dial E's
 spending ledger remains the independent brake in §5.
