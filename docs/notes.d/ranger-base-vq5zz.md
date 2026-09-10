@@ -78,13 +78,19 @@ Mutation-checked per pin rather than per count: each mutation below was
 applied to a clean tree, the named test run, the tree restored and asserted
 clean.
 
-| Mutation | Expected red |
+| Mutation | Red, and only these |
 |---|---|
-| `staleGate` returns `""` unconditionally (the defect itself) | `TestBlindInsideTheGraceStillGatesOnTheLastReading` |
-| drop the `budget <= 0` hatch check in `staleGate` | `TestBlindGraceHatchIsUntouched` |
-| drop `d.Unattended` from the park condition | `TestBlindGraceAttendedRunsButNamesTheStaleReading` |
+| `staleGate` returns `""` — the defect itself, restored | the incident pin, the no-caps pin, the attended pin — and, run against the whole blind suite, the three 2026-08-31 pins too, because the same edit is what removed the refusal from `blindFork` |
+| drop the hatch check in `staleGate` | `TestBlindGraceHatchIsUntouched`, `TestBlindMaxZeroIsUntouchedByTheHeadroomRule` |
+| drop `d.Unattended` from the park condition | `TestBlindGraceAttendedRunsButNamesTheStaleReading`, `TestHeadroomRuleIsUnattendedOnly` |
 | append the dollar-cap sentence unconditionally | `TestBlindGraceParkWithNoCapsSaysNothingAboutDollars` |
-| park on any blind pass (ignore the refusal's ``""``) | `TestBlindInsideTheGraceRunsWhenTheLastReadingHadRoom`, `…WithNoReadingEverIsUnchanged` |
+| refuse on any reading, not on the rule's verdict | `TestBlindInsideTheGraceRunsWhenTheLastReadingHadRoom`, `TestBlindStillDegradesWhenTheLastReadingHadHeadroom` |
+| refuse on NO reading (park on ignorance, the 2026-08-26 shape) | `TestBlindInsideTheGraceWithNoReadingEverIsUnchanged`, `TestBlindWithNoReadingEverIsUnchanged` |
+
+The last two are separate mutations on purpose: a rule that refuses on any
+reading and a rule that refuses on none are different wrongs, and one
+mutation cannot red both controls — the no-reading arm returns before the
+verdict is computed.
 
 The controls matter as much as the incident arm: without them the change
 reads as "park whenever blind", which is the 2026-08-26 outage (a measured

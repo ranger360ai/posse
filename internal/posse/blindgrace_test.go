@@ -124,6 +124,13 @@ func TestBlindInsideTheGraceStillGatesOnTheLastReading(t *testing.T) {
 	if !strings.Contains(r.out(), "read 8m ago") {
 		t.Errorf("the repeat carries the reading's real age:\n%s", r.out())
 	}
+	// …and that second pass is the incident's own line: inside the cooldown
+	// the 429 wrote, no request leaves the box at all, so the error is the
+	// cache's "not asking again" rather than a fresh rate limit. That is the
+	// string the shop printed while it hired, and it must gate too.
+	if !strings.Contains(r.out(), "not asking again") {
+		t.Errorf("a cooldown pass must gate on the same reading:\n%s", r.out())
+	}
 }
 
 // The other side of it, and the reason this is not "park whenever blind":
