@@ -6,6 +6,7 @@ references), not inferred publication dates. Undated fragments sort last.
 
 ## 2026-09
 
+- [ranger-base-vq5zz](ranger-base-vq5zz.md) — ranger-base-vq5zz — the last good reading keeps gating — 2026-09-10
 - [ranger-base-vuosd](ranger-base-vuosd.md) — Outside-in review of posse — 2026-09-09 (grok) — 2026-09-09
 - [ranger-base-b0fsz](ranger-base-b0fsz.md) — Outside-in review of posse — 2026-09-09, Codex — 2026-09-09
 - [ranger-base-ff2va](ranger-base-ff2va.md) — The per-site census: zero of the 103 (now 116) sites are actually blind (ranger-base-ff2va) — 2026-09-07
