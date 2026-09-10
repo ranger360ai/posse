@@ -644,36 +644,106 @@ func armDoorBuildsRootPkg(args []string) bool {
 // longer appears in `make test`'s recipe, which is a second true thing
 // about the same edit. Dropping the door line from `make test`'s recipe
 // alone reds arm 2 alone.
+//
+// The counts above were read before arm 8 below, which reads the same door
+// and so joins several of them. RE-MEASURED 2026-09-10 (ranger-base-w9ihu),
+// two of the four: dropping `test-arm2`'s door line reds this arm AND arm 8,
+// and dropping `make test`'s reds arm 2 AND arm 8. The other two were not
+// re-run; read every "alone" above as "alone among arms 1-7".
+// armTypeCheckPin is the pin every door below is a door ONTO. Named once so
+// arms 7 and 8 cannot drift onto two different tests.
+const armTypeCheckPin = "TestQAEverySuiteArmTypeChecks"
+
+// armDoorIndex returns the index in a recipe of the first line that is a
+// type-check door — a `go test` over the ROOT package whose `-run` filter
+// selects armTypeCheckPin — or -1 when the recipe carries none.
+//
+// isComment first: a recipe comment DISCUSSING the door is not the door, and
+// this file's head comment quotes the very line.
+func armDoorIndex(t *testing.T, recipe []string) int {
+	t.Helper()
+	for i, line := range recipe {
+		if isComment(line) {
+			continue
+		}
+		args := goTestArgs(line)
+		if args == nil || !armDoorBuildsRootPkg(args) {
+			continue
+		}
+		filter, ok := armRunFilter(args)
+		if !ok || !armDoorMatches(t, filter, armTypeCheckPin) {
+			continue
+		}
+		return i
+	}
+	return -1
+}
+
 func TestQAEachTaggedArmTargetOpensTheTypeCheckDoor(t *testing.T) {
 	t.Parallel()
 	mk := makefileText(t)
-	const pin = "TestQAEverySuiteArmTypeChecks"
 	for a := 2; a <= 3; a++ {
 		name := armTargetName(a)
 		_, recipe := armTarget(t, mk, name)
-		found := false
-		for _, line := range recipe {
-			// isComment first: a recipe comment DISCUSSING the door is not
-			// the door, and this file's head comment quotes the very line.
-			if isComment(line) {
-				continue
-			}
-			args := goTestArgs(line)
-			if args == nil || !armDoorBuildsRootPkg(args) {
-				continue
-			}
-			filter, ok := armRunFilter(args)
-			if !ok || !armDoorMatches(t, filter, pin) {
-				continue
-			}
-			found = true
-			break
-		}
-		if !found {
+		if armDoorIndex(t, recipe) < 0 {
 			t.Errorf("`make %s` runs no `go test` over the root package whose `-run` filter selects %s.\n"+
 				"That pin type-checks all three arms and lives in the ROOT package, which arm %d's recipe does not build, "+
 				"so without this door an untagged file reaching behind one arm's tag reds only in a full `make test`:\n%s",
-				name, pin, a, strings.Join(recipe, "\n"))
+				name, armTypeCheckPin, a, strings.Join(recipe, "\n"))
+		}
+	}
+}
+
+// ARM 8 — the door runs BEFORE the lines it guards, in every recipe that
+// carries one. That is ranger-base-p1r17 for `test-arm2`/`test-arm3` and
+// ranger-base-sp5z2 for `test` itself, and until this arm neither fix was
+// held by anything: arm 7 above reads only that a door is PRESENT, and both
+// recipes carried a present door for the whole time the bug was live. Arm 2
+// (TestQAMakefileRunsEverySuiteArm) reads each per-arm line as a SUBSTRING of
+// `test`'s recipe, which is order-independent by construction. So a reorder
+// — the entire content of both fixes — was a silent revert twice over.
+//
+// The mechanism: GNU make aborts a recipe on its first non-zero exit (no `-`
+// prefix, no `.IGNORE`, and CI passes no `-k`), and the lines the door guards
+// — `go test -tags posse_armN ./internal/posse` — are exactly the ones an
+// untagged file reaching behind an arm's tag fails to COMPILE. A door written
+// after them never runs for the one bug shape it exists to name.
+//
+// MEASURED 2026-09-10, on this tree, with an untagged
+// internal/posse/w9ihuplant_test.go calling i9dbbRead (which lives behind
+// `!posse_arm2 && !posse_arm3`): `make test` reds AT the door, naming
+// test-arm2 and test-arm3 and the file:line. With the pre-e8f62920 line order
+// replayed, the arm-2 line aborts the recipe first and only one `go test`
+// runs at all.
+//
+// MUTATION-CHECKED 2026-09-10. Moving the door to the end of `test`'s recipe
+// reds this arm alone; the same move in `test-arm2` reds this arm alone;
+// deleting `test`'s door line reds this arm and arm 2, and deleting
+// `test-arm2`'s reds this arm and arm 7 (not arm 2, which reads each per-arm
+// line as a substring of `test`'s recipe and not the other way round).
+func TestQAEveryTypeCheckDoorRunsBeforeTheLinesItGuards(t *testing.T) {
+	t.Parallel()
+	mk := makefileText(t)
+	// `test` is here as well as the two tagged targets: it repeats both
+	// tagged lines, so it has the same shape one level up.
+	for _, name := range []string{"test", armTargetName(2), armTargetName(3)} {
+		_, recipe := armTarget(t, mk, name)
+		door := armDoorIndex(t, recipe)
+		if door < 0 {
+			t.Errorf("`make %s` carries no `-run` door onto %s — arm 7 above says why every recipe here needs one:\n%s",
+				name, armTypeCheckPin, strings.Join(recipe, "\n"))
+			continue
+		}
+		for i, line := range recipe {
+			if i >= door || isComment(line) || goTestArgs(line) == nil {
+				continue
+			}
+			t.Errorf("`make %s` runs a `go test` at recipe line %d and opens the %s door only at line %d:\n"+
+				"\tline %d: %s\n\tline %d: %s\n"+
+				"make aborts a recipe on its first non-zero exit, and an untagged file reaching behind an arm's tag "+
+				"fails the earlier line's COMPILE — so the door never runs for the shape it exists to name. "+
+				"ranger-base-p1r17 and ranger-base-sp5z2 each fixed this once.",
+				name, i+1, armTypeCheckPin, door+1, i+1, line, door+1, recipe[door])
 		}
 	}
 }
