@@ -103,7 +103,7 @@ var rhqLeftoverExemptions = []rhqLeftoverExempt{
 		"blames 2026-08-29, before the rename"},
 	{"internal/posse/watchlock_test.go", "bug — left ., ./cmd/posse and ./internal/rhq all green.",
 		"blames 2026-08-28, before the rename"},
-	{"NOTES.md", "On 2026-08-29 `make test` came back exit 2 with ~80 reds in `internal/rhq`,",
+	{"docs/notes.d/notes-testing.md", "On 2026-08-29 `make test` came back exit 2 with ~80 reds in `internal/rhq`,",
 		"narrates a specific 2026-08-29 incident, before the rename"},
 
 	// The rows below are ranger-base-0f929's: rhqLeftoverCorpus now walks the
@@ -238,6 +238,19 @@ func rhqLeftoverCorpus(t *testing.T) map[string]string {
 		}
 		out[e.Name()] = string(b)
 		counts["."]++
+	}
+	// These sections retain the old NOTES.md population. Other notes.d
+	// fragments keep their existing frozen-record exclusion.
+	archives, err := filepath.Glob("docs/notes.d/notes-*.md")
+	if err != nil || len(archives) == 0 {
+		t.Fatalf("NOTES history corpus: %v, %v", archives, err)
+	}
+	for _, path := range archives {
+		body, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		out[path] = string(body)
 	}
 	for root, floor := range rhqLeftoverPopFloors {
 		if counts[root] < floor {

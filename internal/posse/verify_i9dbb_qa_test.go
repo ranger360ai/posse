@@ -215,7 +215,7 @@ func TestQAL0ModelDoesNotCallThePrefixFormALiteralStringPrefix(t *testing.T) {
 		// the text had left and failed loudly rather than reading an empty
 		// body and passing. Keep the pair that way.
 		{[]string{"internal", "posse", "gates_helpers_test.go"}, "claudeDenyMatch models"},
-		{[]string{"NOTES.md"}, "L0Spellings"},
+		{[]string{"docs", "notes.d", "notes-personas.md"}, "L0Spellings"},
 	}
 	for _, s := range sites {
 		name := filepath.Join(s.parts...)

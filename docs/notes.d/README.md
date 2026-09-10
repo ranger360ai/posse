@@ -12,6 +12,8 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-d0xvw](ranger-base-d0xvw.md) — Pricing a -race arm (ranger-base-d0xvw) — 2026-09-07
 - [ranger-base-qp1hm](ranger-base-qp1hm.md) — Splitting `internal/posse`'s test binary: what each of the three options costs (ranger-base-qp1hm) — 2026-09-06
 - [ranger-base-g4s6o](ranger-base-g4s6o.md) — ranger-base-g4s6o — landing ranger-base-qp1hm by REPLAY: one conflict, and it was a sibling landing — 2026-09-06
+- [notes-live-box-checks](notes-live-box-checks.md) — The live-box checks, and the one command that runs them (ranger-base-51z8j) — 2026-09-06
+- [notes-auto-memory](notes-auto-memory.md) — The fleet writes no auto-memory (ranger-base-7uhip) — 2026-09-06
 - [ranger-base-l1rjl](ranger-base-l1rjl.md) — Two seats wrote two pins for one red; main's is a superset (ranger-base-l1rjl) — 2026-09-05
 - [ranger-base-k62e](ranger-base-k62e.md) — The root codexWritableRoot cannot resolve (ranger-base-k62e) — 2026-09-05
 - [ranger-base-k5fnr](ranger-base-k5fnr.md) — What the mandatory spike bought: a bounded census (ranger-base-k5fnr) — 2026-09-05
@@ -34,6 +36,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-emgdb](ranger-base-emgdb.md) — ranger-base-emgdb — a rebase landing leaves no evidence either of the two equivalence arms can read — 2026-09-02
 - [ranger-base-avq12](ranger-base-avq12.md) — The do-not-land verdict is monotone: the same block, filed a third time (ranger-base-avq12) — 2026-09-02
 - [ranger-base-4ri4n](ranger-base-4ri4n.md) — A merge-back block re-filed on a branch a previous rescue already landed (ranger-base-4ri4n) — 2026-09-02
+- [notes-process-cleanup](notes-process-cleanup.md) — Leaked gate-shell children, and `POSSE_KEEP=` (ranger-base-apwr, -gvp2p) — 2026-09-02
 - [ranger-base-w5lpx](ranger-base-w5lpx.md) — A merge-back block that is superseded in one file and stranded in the other (ranger-base-w5lpx) — 2026-09-01
 - [ranger-base-gjbdl](ranger-base-gjbdl.md) — ranger-base-gjbdl — the source-remote refusal, measured before it was deleted — 2026-09-01
 - [ranger-base-fmift](ranger-base-fmift.md) — A hand RE-LAND under another bead is a fourth landing shape, and no arm sees it (ranger-base-fmift) — 2026-09-01
@@ -49,6 +52,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-c9l8-verify](ranger-base-c9l8-verify.md) — ranger-base-c9l8 — verify of four closes: the fourth verdict, and the wrap-up — 2026-08-30
 - [ranger-base-c9l8-treestate](ranger-base-c9l8-treestate.md) — ranger-base-d8o6 — `posse worktrees` calls an already-landed duplicate unlanded — 2026-08-30
 - [ranger-base-c9l8-seedrow](ranger-base-c9l8-seedrow.md) — ranger-base-g4cm — INSTALL.md §14's seeding row reads a silent re-run as a promoted home — 2026-08-30
+- [notes-interstitials](notes-interstitials.md) — Instance interstitials: the keys posse names, and the one it writes (ADR 0013 §2) — 2026-08-30
 - [rangerhq-tr8k](rangerhq-tr8k.md) — Runtime preflight: three more declarable keys, and a check with a verdict (rangerhq-tr8k) — 2026-08-29
 - [rangerhq-myso](rangerhq-myso.md) — The grok weekly pool has a meter after all (rangerhq-myso) — 2026-08-29
 - [rangerhq-be7k](rangerhq-be7k.md) — A path-limited commit does not refresh the index for paths it did not name (rangerhq-be7k) — 2026-08-29
@@ -61,6 +65,8 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-c02a](ranger-base-c02a.md) — codex refuses a writable root with a symlink component (ranger-base-c02a) — 2026-08-29
 - [ranger-base-9ix7](ranger-base-9ix7.md) — The fence has three carriers and they do not refresh alike (ranger-base-9ix7) — 2026-08-29
 - [ranger-base-2ggb](ranger-base-2ggb.md) — `make test`, not `go test ./...` — the suite outgrew go's default timeout (ranger-base-2ggb) — 2026-08-29
+- [notes-write-overlays](notes-write-overlays.md) — Path-scoped writes at L4: the overlays, measured (ranger-base-yu5) — 2026-08-29
+- [notes-testing](notes-testing.md) — Testing — 2026-08-29
 - [rangerhq-pwpx](rangerhq-pwpx.md) — The four credential-failure classes, and the two surfaces that name them (rangerhq-pwpx) — 2026-08-28
 - [ranger-base-vczf](ranger-base-vczf.md) — The worktree beads redirect: bd does not read it, and the cage does (ranger-base-vczf) — 2026-08-28
 - [ranger-base-t8tq](ranger-base-t8tq.md) — The pass stopped ending, and three things denominated in it broke (ranger-base-t8tq) — 2026-08-28
@@ -72,6 +78,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-59jd](ranger-base-59jd.md) — A refill that does not say it is one (ranger-base-59jd) — 2026-08-28
 - [ranger-base-4fxz](ranger-base-4fxz.md) — Linux distro variance is invisible to the Go suite and visible in the shell we generate (ranger-base-4fxz) — 2026-08-28
 - [ranger-base-42mv](ranger-base-42mv.md) — bd daemons leak, and there are two vectors (ranger-base-42mv) — 2026-08-28
+- [notes-herdr](notes-herdr.md) — herdr substrate: upgrading the fleet's herdr — 2026-08-28
 - [rangerhq-ouf9](rangerhq-ouf9.md) — `instance:` — one herdr server, many homes (rangerhq-ouf9) — 2026-08-27
 - [rangerhq-bnvk](rangerhq-bnvk.md) — Cage engine watch: the #2062 leak has a host precondition (rangerhq-bnvk) — 2026-08-27
 - [rangerhq-81y0](rangerhq-81y0.md) — The governance surface: the condition set, and what it costs (rangerhq-81y0) — 2026-08-27
@@ -80,12 +87,16 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-kftx](ranger-base-kftx.md) — What keeps a session out of the auto-reap (ranger-base-kftx) — 2026-08-27
 - [ranger-base-hr5x](ranger-base-hr5x.md) — The refusal path may not use a verb it can refuse (ranger-base-hr5x) — 2026-08-27
 - [ranger-base-atxe](ranger-base-atxe.md) — `--land` read no record before it merged (ranger-base-atxe) — 2026-08-27
+- [notes-state](notes-state.md) — State lives in files, never in the multiplexer — 2026-08-27
 - [ranger-base-rgx0](ranger-base-rgx0.md) — A record the home wrote about itself is not provenance (ranger-base-rgx0) — 2026-08-26
 - [ranger-base-m6cm](ranger-base-m6cm.md) — path 3 regenerates, so deleting it was never the control (ranger-base-m6cm) — 2026-08-26
 - [rangerhq-9py0](rangerhq-9py0.md) — codex's update menu reads `blocked` now (rangerhq-9py0) — 2026-08-25
+- [notes-personas](notes-personas.md) — Personas — 2026-08-25
 - [ranger-base-oej](ranger-base-oej.md) — The autostart hook's by-hand run said "already running" about a husk (ranger-base-oej) — 2026-08-23
+- [notes-cage-engine](notes-cage-engine.md) — Cage engine re-evaluation: still Docker (rangerhq-rli) — 2026-08-23
 - [rangerhq-ytyj](rangerhq-ytyj.md) — A 401 is a credential condition, not blind weather (rangerhq-ytyj) — 2026-08-22
 - [ranger-base-nor](ranger-base-nor.md) — A path-limited commit never reads the index, so the `git add` in front of it is not the suspect (ranger-base-nor) — 2026-08-22
+- [notes-grok](notes-grok.md) — grok substrate: pinned at 1.0.5, upgrades are a security re-audit (rangerhq-y7jr) — 2026-08-22
 - [ranger-base-lasj](ranger-base-lasj.md) — A corrupt ledger line is an unknown week, not a zero (ranger-base-lasj) — 2026-08
 
 ## Undated
@@ -151,3 +162,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-0s36](ranger-base-0s36.md) — The selector the ADR could not have (ranger-base-0s36)
 - [ranger-base-09b7](ranger-base-09b7.md) — The L1 commit wall reaches the seed (ranger-base-09b7)
 - [ranger-base-08a2](ranger-base-08a2.md) — The shared-index guard exempts where git refuses a pathspec, not where an operation is in progress (ranger-base-08a2)
+- [notes-yaml](notes-yaml.md) — The YAML subset
+- [notes-workspace-identity](notes-workspace-identity.md) — Workspace ids recycle across a server process boundary (rangerhq-6bg7)
+- [notes-mapping](notes-mapping.md) — NOTES — how posse works under the hood (herdr-native)
+- [notes-cockpit](notes-cockpit.md) — The cockpit is a herdr plugin

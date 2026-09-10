@@ -83,28 +83,26 @@ func flat(s string) string { return spaceRun.ReplaceAllString(s, " ") }
 // or a cap (the operator's to publish, and not from a rendered example — the
 // ADR's Consequences section is where the caps are stated and dated).
 func TestTheRenderedBrakeLineCarriesNoLiveFigures(t *testing.T) {
-	found := 0
+	foundADR := false
 	for _, f := range trackedMarkdown(t) {
 		body, err := os.ReadFile(f)
 		if err != nil {
 			t.Fatalf("%s: %v", f, err)
 		}
 		for _, m := range brakeRender.FindAllStringSubmatch(flat(string(body)), -1) {
-			found++
+			foundADR = foundADR || f == "docs/adr/0018-blind-meter-armed-ledger.md"
 			if liveMoney.MatchString(m[1]) {
 				t.Errorf("%s renders the degraded brake line with a live figure in it: (%s)\n"+
 					"the spend halves are this instance's, the caps belong to ADR 0018's Consequences — "+
-					"render both as the placeholders NOTES.md uses (ranger-base-jwcxu, ranger-base-99ps site 3)",
+					"render both as the placeholders ADR 0018 uses (ranger-base-jwcxu, ranger-base-99ps site 3)",
 					f, m[1])
 			}
 		}
 	}
-	// Two copies exist and are the point of the pin — NOTES.md's, which was
-	// always right, and ADR 0018 §1's, which was not. A matcher that found
-	// neither would report a clean tree while measuring nothing.
-	if found < 2 {
-		t.Fatalf("found %d copies of the degraded brake render in tracked markdown, want at least 2 "+
-			"(NOTES.md and docs/adr/0018) — the scan above measured nothing", found)
+	// The old NOTES.md copy is now in a private instance record. Keep the
+	// positive witness on the public ADR; no public test reads that private copy.
+	if !foundADR {
+		t.Fatal("the degraded brake render is missing from docs/adr/0018-blind-meter-armed-ledger.md — the scan has lost its public subject")
 	}
 
 	// The control. Plant the line in the SHAPE it had before the scrub and

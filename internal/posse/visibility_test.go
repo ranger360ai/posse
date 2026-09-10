@@ -1455,7 +1455,7 @@ func TestIdentityLiteralsNeverAppearInTheHarnessRepoUndispositioned(t *testing.T
 	// a file on this list has one judged hit, and must not become a free pass
 	// for a DIFFERENT identity class landing in it later.
 	//
-	// NOTES.md, docs/adr/0015-constitution-promotion.md and
+	// docs/adr/0015-constitution-promotion.md and
 	// internal/posse/queuecutover_qa_test.go all name, in full, the shared
 	// queue repo's conventional path — the software's OWN shipped,
 	// documented location for it (ADR 0015 §4), not an operator secret. A
@@ -1468,8 +1468,8 @@ func TestIdentityLiteralsNeverAppearInTheHarnessRepoUndispositioned(t *testing.T
 	// written to catch; ranger-base-r00pq scrubbed it, and re-measuring at
 	// ranger-base-d3fn1 found zero username hits, so it is off the list
 	// rather than kept as a standing licence.
+	// The former NOTES.md exception is gone: its beads section is private.
 	known := map[string]bool{
-		"instance-path\x00NOTES.md":                                true,
 		"instance-path\x00docs/adr/0015-constitution-promotion.md": true,
 		"instance-path\x00internal/posse/queuecutover_qa_test.go":  true,
 	}

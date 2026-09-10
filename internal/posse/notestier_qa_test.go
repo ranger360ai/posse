@@ -25,7 +25,7 @@ import (
 
 func notesText(t *testing.T) string {
 	t.Helper()
-	b, err := os.ReadFile(filepath.Join("..", "..", "NOTES.md"))
+	b, err := os.ReadFile(filepath.Join("..", "..", "docs", "notes.d", "notes-personas.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +45,7 @@ func notesParagraph(t *testing.T, notes, marker string) string {
 	t.Helper()
 	i := strings.Index(notes, marker)
 	if i < 0 {
-		t.Fatalf("NOTES.md no longer carries the paragraph opening %q — if it was reworded, re-aim this pin (ranger-base-1kvfr)", marker)
+		t.Fatalf("docs/notes.d/notes-personas.md no longer carries the paragraph opening %q — if it was reworded, re-aim this pin (ranger-base-1kvfr)", marker)
 	}
 	rest := notes[i:]
 	if j := strings.Index(rest, "\n\n"); j >= 0 {
@@ -171,23 +171,23 @@ func TestNotesPreflightLoudLineIsWhatPreflightPrints(t *testing.T) {
 
 	notes := notesFlat(notesText(t))
 	if !strings.Contains(notes, sentence) {
-		t.Errorf("NOTES.md does not quote the line preflight actually prints (ranger-base-1kvfr):\n  renders %q", sentence)
+		t.Errorf("docs/notes.d/notes-personas.md does not quote the line preflight actually prints (ranger-base-1kvfr):\n  renders %q", sentence)
 	}
 	// Two-way: every such sentence in NOTES.md must be THIS pair. Without
 	// this, the old sentence could stay beside a new one and read as fact.
 	found := notesLoudLine.FindAllStringSubmatch(notes, -1)
 	if len(found) == 0 {
-		t.Errorf("NOTES.md no longer quotes the loud line at all — it is the sentence that says a session's tier asked for something the account will not serve (ranger-base-1kvfr)")
+		t.Errorf("docs/notes.d/notes-personas.md no longer quotes the loud line at all — it is the sentence that says a session's tier asked for something the account will not serve (ranger-base-1kvfr)")
 	}
 	for _, m := range found {
 		if m[1] != claudeModels[TierStrong] {
-			t.Errorf("NOTES.md quotes %q; the built-in table says strong is %q (ranger-base-1kvfr)", m[1], claudeModels[TierStrong])
+			t.Errorf("docs/notes.d/notes-personas.md quotes %q; the built-in table says strong is %q (ranger-base-1kvfr)", m[1], claudeModels[TierStrong])
 		}
 		// The removal's own half: no quoted line may offer a substitute
 		// (ADR 0003 §3, ranger-base-hv2zr). A tail naming another model is
 		// prose describing a mechanism the code no longer has.
 		if strings.Contains(m[2], "falling back") {
-			t.Errorf("NOTES.md still quotes a substitution: %q — automatic fallback was removed (ranger-base-hv2zr)", m[0])
+			t.Errorf("docs/notes.d/notes-personas.md still quotes a substitution: %q — automatic fallback was removed (ranger-base-hv2zr)", m[0])
 		}
 	}
 }

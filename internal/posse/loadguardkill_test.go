@@ -542,7 +542,7 @@ func TestSelfCheckTellsAPersonaHowToDeclare(t *testing.T) {
 // carry the LITERAL token rather than a description of it.
 func TestTheMarkerIsDocumentedForEveryPersona(t *testing.T) {
 	t.Parallel()
-	for _, path := range []string{"../../AGENTS.md", "../../NOTES.md"} {
+	for _, path := range []string{"../../AGENTS.md", "../../docs/notes.d/notes-process-cleanup.md"} {
 		b, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatalf("read %s: %v", path, err)

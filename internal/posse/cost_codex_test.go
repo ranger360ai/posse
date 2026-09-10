@@ -19,7 +19,7 @@ import (
 // still naming three.
 func TestNotesCostSectionAgreesWithWhatCostPrints(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	b, err := os.ReadFile(filepath.Join("..", "..", "NOTES.md"))
+	b, err := os.ReadFile(filepath.Join("..", "..", "docs", "notes.d", "notes-personas.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +44,7 @@ func TestNotesCostSectionAgreesWithWhatCostPrints(t *testing.T) {
 		"no bead here has a rate",
 	} {
 		if !strings.Contains(notes, quoted) {
-			t.Errorf("NOTES.md no longer quotes %q", quoted)
+			t.Errorf("docs/notes.d/notes-personas.md no longer quotes %q", quoted)
 		}
 		if !strings.Contains(out.String(), quoted) {
 			t.Errorf("the report no longer renders %q, which NOTES.md quotes:\n%s", quoted, out.String())

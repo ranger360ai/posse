@@ -509,7 +509,7 @@ func TestQAPrescribedGitDiffChecksStateTheirFormat(t *testing.T) {
 	// until the extractor no longer finds it, is a red naming the file
 	// rather than one fewer span in a total nobody counts — which is how
 	// ranger-base-3ersc FINDING 2 escaped in NOTES.md.
-	for _, name := range []string{"the prepare-commit-msg hook render", "AGENTS.md", "NOTES.md", "examples/agents/reviewer.md"} {
+	for _, name := range []string{"the prepare-commit-msg hook render", "AGENTS.md", "docs/notes.d/notes-testing.md", "examples/agents/reviewer.md"} {
 		if seen[name] == 0 {
 			t.Errorf("the census found no `git diff` at all in %s — it is reading the wrong text, and the pass above measured nothing", name)
 		}
@@ -517,10 +517,10 @@ func TestQAPrescribedGitDiffChecksStateTheirFormat(t *testing.T) {
 	// The exemptions must still describe something in the tree. A stale one
 	// is a hole nobody can see: the sentence it named is gone, so the span
 	// it covered would be graded by a rule nobody re-read.
-	notes := extDiffReadDoc(t, "../../NOTES.md")
+	notes := extDiffReadDoc(t, "../../docs/notes.d/notes-testing.md")
 	for sentence, why := range extDiffDocExempt {
 		if !strings.Contains(notes, sentence) {
-			t.Errorf("NOTES.md no longer carries the exempted sentence %q (%s) — delete the exemption or re-anchor it; until then that span is ungraded", sentence, why)
+			t.Errorf("docs/notes.d/notes-testing.md no longer carries the exempted sentence %q (%s) — delete the exemption or re-anchor it; until then that span is ungraded", sentence, why)
 		}
 	}
 }
@@ -597,7 +597,9 @@ func TestQAPrescribedGitDiffChecksRunUnderADiffDriver(t *testing.T) {
 	// each surface that PRESCRIBES one had one RUN. A prescription that
 	// stops being found is then a red naming its file, not a smaller number
 	// in a total nobody reads.
-	for _, name := range []string{"the prepare-commit-msg hook render", "AGENTS.md", "NOTES.md", "examples/agents/reviewer.md"} {
+	// The beads and shared-working-tree sections are now private. Their
+	// entries are retired here; the public hook and instruction checks remain.
+	for _, name := range []string{"the prepare-commit-msg hook render", "AGENTS.md", "examples/agents/reviewer.md"} {
 		if ran[name] == 0 {
 			t.Errorf("no prescribed check was RUN from %s — either it prescribes none any more or the extractor stopped finding them, and every green above was earned somewhere else", name)
 		}
@@ -641,6 +643,18 @@ func extDiffSurfaces(t *testing.T) []extDiffSurface {
 		{name: "the pre-push hook render", text: PrePushHook},
 		{name: "AGENTS.md", text: extDiffReadDoc(t, "../../AGENTS.md"), markdown: true},
 		{name: "NOTES.md", text: extDiffReadDoc(t, "../../NOTES.md"), markdown: true},
+	}
+	// Census the public NOTES.md sections. Private instance records are
+	// outside this repository and must not be read by its tests.
+	paths, err := filepath.Glob("../../docs/notes.d/notes-*.md")
+	if err != nil || len(paths) == 0 {
+		t.Fatalf("notes sections: %v, %v", paths, err)
+	}
+	for _, path := range paths {
+		out = append(out, extDiffSurface{
+			name: filepath.ToSlash(filepath.Join("docs", "notes.d", filepath.Base(path))),
+			text: extDiffReadDoc(t, path), markdown: true,
+		})
 	}
 	return append(out, extDiffSeedSurfaces(t)...)
 }
