@@ -59,9 +59,10 @@ package posse
 // (crew-check's own comment reserves that door for one question, which this
 // pin does not ask):
 //
-//	TestQATestFilesWriteExecutablesUnderTheForkLock
+//	TestQATreeGoFilesWriteExecutablesUnderTheForkLock
 //	                                              make execwrite-check
-//	                                              (ranger-base-rwnbd)
+//	                                              (ranger-base-rwnbd, widened
+//	                                              by ranger-base-6cznr)
 //
 // and one more, folded into seed-check's own door rather than given a new
 // one — it touches examples/config.yaml, which is exactly what that door

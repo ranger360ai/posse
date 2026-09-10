@@ -494,7 +494,7 @@ QA_HISTORY_PINS   := TestPublicationRootCommitOmitsExcludedPaths|TestPublication
 QA_DOC_PINS       := TestQANoCodeStringCallsTheDarwinCredentialsFileAStaleLeftover|TestQACageCredDocDoesNotCallTheOnDiskCredentialStale|TestQAADR0036StatusLineDoesNotCarryTheRetractedUnbuiltStamp|TestQAADR0035PaneModeSurfaceClaimIsBuilt|TestQAADR0026StatusLineDoesNotDeferTheImplementedRung
 QA_IDENTITY_PINS  := TestQAIdentityLiteralsNeverAppearInATrackedPath|TestIdentityLiteralsNeverAppearInTheHarnessRepoUndispositioned
 QA_OPS_PINS       := TestQAEveryOpsHitInTrackedMarkdownIsRuled|TestQAOpsShapeTableCanStillSayNo|TestInstancePathFormNeverAppearsInTrackedContentUndispositioned|TestQAInstancePathCensusCanStillSayNo
-QA_EXECWRITE_PINS := TestQATestFilesWriteExecutablesUnderTheForkLock
+QA_EXECWRITE_PINS := TestQATreeGoFilesWriteExecutablesUnderTheForkLock
 
 # The crew-name trio, one door between them because they are one question —
 # does the shipped tree name this instance's crew (ADR 0012 App.A 5) — asked
@@ -557,14 +557,17 @@ doc-check:
 identity-check:
 	$(GOBIN) test ./internal/posse -timeout 15m -count=1 -run '^($(QA_IDENTITY_PINS))$$'
 
-# The test-corpus exec-write census (ranger-base-o6oj4): every *_test.go file
-# under internal/posse, read afresh, must route an executable write through
-# WriteExecutable rather than a plain os.WriteFile with an exec bit set
-# (golang/go#22315's ETXTBSY window). It reads the tree from qibRepoRoot, so
+# The exec-write census (ranger-base-o6oj4, widened by ranger-base-6cznr):
+# every .go file in the repository, test and production alike, read afresh,
+# must route an executable write through WriteExecutable rather than a plain
+# os.WriteFile with an exec bit set (golang/go#22315's ETXTBSY window). It
+# read only internal/posse/*_test.go until 6cznr, which left the root package
+# and cmd/posse — 46 sites ranger-base-c2er3 had just converted — free to
+# regrow the class undoored. It reads the tree from qibRepoRoot, so
 # ranger-base-rwnbd doored it here rather than folding it into crew-check,
 # whose own doc comment reserves that door for one question — does the
 # shipped tree name this instance's crew — that this pin does not ask.
-# Type it when you add or edit a *_test.go file under internal/posse.
+# Type it when you add or edit any .go file.
 execwrite-check:
 	$(GOBIN) test ./internal/posse -timeout 15m -count=1 -run '^($(QA_EXECWRITE_PINS))$$'
 

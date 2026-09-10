@@ -317,6 +317,9 @@ func TestQAArmOneIsTheDefaultBuild(t *testing.T) {
 var armDoorVars = []string{
 	"QA_CREW_PINS", "QA_SEED_PINS", "QA_HISTORY_PINS",
 	"QA_DOC_PINS", "QA_IDENTITY_PINS", "QA_OPS_PINS",
+	// Missing until ranger-base-6cznr, which renamed this door's pin — the
+	// exact drift this arm exists to catch, on the one door it could not see.
+	"QA_EXECWRITE_PINS",
 }
 
 // ARM 4 — every pin a Makefile door names is in arm 1 or shared. This is the
