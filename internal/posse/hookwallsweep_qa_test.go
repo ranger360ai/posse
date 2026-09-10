@@ -273,7 +273,7 @@ func TestHookWallSweepIsSilentWhenConfigDeclaresNoRepo(t *testing.T) {
 func TestPromoteEpilogueSweepsTheHookWall(t *testing.T) {
 	t.Parallel()
 	a, src, git := promoteFixture(t)
-	repo := hwsRepo(t, t.TempDir(), "declared")
+	repo := hwsRepo(t, gitTempDir(t), "declared")
 
 	// The declaration travels IN the constitution, because promote copies
 	// config.yaml over the home's — a beads_visibility: written straight
@@ -344,7 +344,7 @@ func TestWatchPreambleSweepsTheHookWallOncePerLoop(t *testing.T) {
 	t.Parallel()
 	b, _ := newTestBackend(t)
 	d := newTestDispatcher(t, b)
-	repo := hwsRepo(t, t.TempDir(), "declared")
+	repo := hwsRepo(t, gitTempDir(t), "declared")
 	// beads: must point at a scratch dir — without it the dispatcher falls
 	// back to the process cwd, which for `go test ./internal/posse` is inside
 	// this worktree and resolves to the live fleet queue (ranger-base-uk0v).
