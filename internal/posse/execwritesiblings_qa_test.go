@@ -124,7 +124,8 @@ var execwriteSweepFloors = []struct {
 	dir   string
 	floor int
 }{
-	{".", 40},
+	{".", 1},
+	{"internal/treepins", 40},
 	{"cmd/posse", 30},
 	{"internal/posse", 400},
 }
