@@ -23,9 +23,9 @@ load, `-count=1` (default):
 
 | arm | wall |
 |---|---|
-| candidate set, no `-race` | ~11s (`go test` reports 6.2s, `time` 11.0s) |
-| candidate set, `-race` (run 1) | FAIL, package clock 282.1s, `time` 299.1s |
-| candidate set, `-race` (run 2) | FAIL, package clock 251.8s, `time` 252.9s |
+| candidate set as RUN — 20 of 106, see CORRECTION, no `-race` | ~11s (`go test` reports 6.2s, `time` 11.0s) |
+| candidate set as RUN — 20 of 106, `-race` (run 1) | FAIL, package clock 282.1s, `time` 299.1s |
+| candidate set as RUN — 20 of 106, `-race` (run 2) | FAIL, package clock 251.8s, `time` 252.9s |
 
 So ~23-27x on this slice — same order as y3x6n's 90x on its smaller,
 more-concurrent 4-test slice; the multiplier depends on which tests are in
@@ -98,3 +98,98 @@ race in this package, and it is demonstrably not gate-clean yet — the
 watch-loop tests need a bigger (or `-race`-aware) backstop before this arm
 can be trusted to fail for the right reason. That hardening is the filed
 bead's job, not a prerequisite to deciding what to do with the arm itself.
+
+---
+
+## CORRECTION — laurie, 2026-09-10 (verify ranger-base-7npp8)
+
+### The priced arm ran 20 of the 106 tests it names
+
+`internal/posse` became three build-tag binaries on 2026-09-06
+(ranger-base-qp1hm, a65d34a0 / 1b840d96) — the day before the measurement
+above. The candidate set straddles all three partitions:
+
+| file | build line | tests |
+|---|---|---|
+| `dispatchparity_qa_test.go` | `!posse_arm2 && !posse_arm3` (arm 1) | 4 |
+| `passcarry_qa_test.go` | `!posse_arm2 && !posse_arm3` (arm 1) | 8 |
+| `watch_test.go` | none — shared, in all three | 4 |
+| `watchpid_test.go` | none — shared, in all three | 4 |
+| `dispatch_qa_test.go` | `posse_arm2` | 52 |
+| `watchlock_test.go` | `posse_arm2` | 9 |
+| `watchlog_test.go` | `posse_arm2` | 6 |
+| `watchhang_qa_test.go` | `posse_arm3` | 19 |
+
+One `go test ./internal/posse -run <regex>` with no `-tags` compiles only the
+arm-1 and shared files, so 86 of the 106 names matched nothing and were never
+built — every one of the 52 dispatch tests included, among them
+`TestRunRefillsAFreedSeatInsideOnePass` and
+`TestQARefillFiresASecondBeadIntoTheSameSeat`, the two arms whose `-race`
+failures are why ranger-base-y3x6n and this bead exist. `go test -run` emits
+no diagnostic for a name that matches nothing. MEASURED 2026-09-10, HEAD
+736a2a32, by `-list` census against the 106 names: **default build 20,
+`-tags posse_arm2` 75, `-tags posse_arm3` 27**.
+
+This is rot #4 in `armtags_qa_test.go`'s own header, verbatim: "a `go test
+-run` that matches no test exits 0". The same trap has already eaten y3x6n's
+recorded repro — at HEAD, its command prints `ok … 0.509s [no tests to run]`
+and exits 0.
+
+### The corrected price: three commands, ~11.4 min, ~13x — and it is WAIT, not CPU
+
+MEASURED 2026-09-10, darwin/arm64, go1.26.5, HEAD 736a2a32, `-count=1`. This
+box was NOT quiet — other seats held load average between 13 and 85 across
+these runs, so treat the wall figures as an upper bound; the user-CPU column
+is the load-insensitive one.
+
+| arm | tests | no-`race` pkg clock | `-race` pkg clock | `-race` user CPU / %CPU |
+|---|---|---|---|---|
+| default (arm 1 + shared) | 20 | 7.5s | 256.2s FAIL | 58.2s / 31% |
+| `-tags posse_arm2` | 75 | 22.2s | 369.1s FAIL | 42.3s / 18% |
+| `-tags posse_arm3` | 27 | 21.7s | 45.6s FAIL | 14.3s / 32% |
+| **whole candidate set** | **106** | **51.4s** | **670.9s** | — |
+
+With the four known-failing tests skipped every arm is green and the price
+does not move: 263.3s + 378.9s + 39.6s = **681.8s, `ok`, `DATA RACE` 0**, at
+13-14% CPU. So the arm's cost is not the detector's instrumentation tax — it
+is wall-clock waiting: fixed intervals, backstops and barrier timeouts inside
+these tests stretch under the `-race` build while the box sits idle. `~23-27x`
+above is `~13x` over the whole set, and `~250-300s` is `~11.4 min` in three
+commands.
+
+That also undercuts the (c) reasoning: the extrapolation there assumes a
+per-access CPU tax spread over the package. Two other claims in it do not
+hold as written either — `sync.Mutex`/`go func` appear in **3** of
+`internal/posse`'s 117 non-test files (14 if `sync.` of any kind counts), not
+"most", and of the six named, `autoreap.go`, `backuploop.go` and `herdr.go`
+carry neither token while `app.go` and `beads.go` carry only a `sync.Map`
+used to dedupe notices. The (c) verdict may well survive on the other
+grounds given (no `schedule:` trigger anywhere in `.github/workflows`, the
+25m ceiling, three ~239s CI arms); the arithmetic behind it should be redone
+rather than relied on.
+
+### `-race` did name more than time — in the arm that never ran
+
+`-tags posse_arm2` under `-race` fails three tests that are green without it.
+Reproduced 2026-09-10 alone, on a quiet box, at 4% CPU — so not contention:
+
+    $ go test -race -tags posse_arm2 ./internal/posse -run '^TestDispatchParallelPass$' -count=1
+    dispatch_qa_test.go:1421: prompt 0 was released "timeout" after 10.003964s
+        — it was the only one in flight, so the pass awaited serially rather than gathering
+    dispatch_qa_test.go:1421: prompts never overlapped — awaited serially, not gathered (13.207167s between them)
+    --- FAIL: TestDispatchParallelPass (65.02s)      # 1.08s and PASS without -race
+
+`TestDispatchParallelPassGathersDespiteCreateStagger` fails identically and
+`TestStatusAfterTimeoutRidesOutABlink` fails at `dispatch_qa_test.go:715`.
+`DATA RACE` count is still 0, and the two readings are y3x6n's two readings —
+a fixture that serializes under the `-race` build, or a gather that does. It
+is filed, not diagnosed here.
+
+### What this changes
+
+Nothing about the SHAPE of the answer — a narrow on-demand arm is still the
+proposal, and this correction is not a reopen. What it changes is the recipe
+and the number: the arm is three commands, not one; it costs ~11.4 min, not
+~250-300s; and "the detector has yet to name one real data race in this
+package" was said over a run that never compiled the package's dispatch
+tests.
