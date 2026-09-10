@@ -297,6 +297,9 @@ func qibScanShippedTree(t *testing.T, root string, roots []string, re qibReaders
 			}
 			scan.scanned[rel]++
 			relPath, _ := filepath.Rel(root, path)
+			if strings.HasPrefix(filepath.ToSlash(relPath), "internal/treepins/") && strings.HasSuffix(relPath, "_test.go") {
+				scan.rootTestFiles++
+			}
 			scan.hits = append(scan.hits, qibPathHit(re.path, relPath)...)
 			for i, line := range bytes.Split(body, []byte("\n")) {
 				if loc := re.line.FindIndex(line); loc != nil {
@@ -347,10 +350,10 @@ func TestShippedTreeNamesRolesNotThisCrew(t *testing.T) {
 	// that, so ordinary growth doesn't flake it, but nowhere near 0.
 	const qibRootTestFloor = 20
 	if scan.rootTestFiles < qibRootTestFloor {
-		t.Fatalf("only %d _test.go files read at the repo root (floor %d) — the walk found nothing to pin there",
+		t.Fatalf("only %d _test.go files read in treepins or at the repo root (floor %d) — the walk found nothing to pin there",
 			scan.rootTestFiles, qibRootTestFloor)
 	}
-	t.Logf("read %d _test.go files at repo root", scan.rootTestFiles)
+	t.Logf("read %d _test.go files in treepins or at repo root", scan.rootTestFiles)
 
 	// A pin that measures pure absence is satisfied by measuring nothing
 	// (the fm4p lesson, and the guard q3gp put on the pin below): say how
