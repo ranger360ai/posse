@@ -11,6 +11,27 @@ being cut is a precondition of the tag; see `docs/runbooks/release.md`.
 
 ## Unreleased
 
+(nothing yet — this section fills as commits land after v0.5.0)
+
+## v0.5.0
+
+*2026-09-11. Cut at the end of posse's first three weeks public.*
+
+**What this release is.** v0.4.0 was the harness that could run a crew; v0.5.0
+is the harness that could run one unattended and be wrong about less. The
+1,300 commits between them are mostly walls, each one measured against an
+incident: the spend guard keeps gating on its last good reading when the
+meter goes blind; every bd call is bound to the store it named and resolves
+an exact id before it mutates; a kill lands a branch only when its bead is
+closed; a stranded branch stops replaying every pass; the git runner has a
+deadline; a session's tree is its own. Two outside-in reviews by other models
+are in the tree (`docs/notes.d/ranger-base-b0fsz.md`, `ranger-base-vuosd.md`),
+and their first finding — the pins outgrowing the product — is now a rule
+(ADR 0006 §7) and a cleanup: the root of the repo holds one Go file, NOTES.md
+is a 141-line map, and the test suite is three build-tag arms. Upgrade if you
+run a crew you do not watch. The upgrading notes below are the ones that need
+a hand.
+
 ### Upgrading
 
 **`runtimes/` is now part of the promoted set, so this release needs `make
