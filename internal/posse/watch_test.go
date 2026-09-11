@@ -83,14 +83,10 @@ func TestWatchStopsOnContext(t *testing.T) {
 	done := make(chan int, 1)
 	go func() { p, _ := d.Watch(ctx, "", "", 0, 20*time.Millisecond, 40*time.Millisecond); done <- p }()
 
-	// A backstop, not a margin: a loop that wedges mid-pass, or one that
-	// stops honouring ctx, fails with a sentence instead of hanging until
-	// go test's global timeout. No assertion below depends on the loop
-	// being faster than this.
 	var passes int
 	select {
 	case passes = <-done:
-	case <-time.After(30 * time.Second):
+	case <-time.After(watchBackstop(t)):
 		t.Fatalf("watch never returned, though cancel fired on pass %d's header:\n%s", wantPasses, tap.String())
 	}
 	out := tap.String()
@@ -128,7 +124,7 @@ func TestDryRunWatchTailDoesNotSayDispatched(t *testing.T) {
 	go func() { p, _ := d.Watch(ctx, "", "", 0, 20*time.Millisecond, 40*time.Millisecond); done <- p }()
 	select {
 	case <-done:
-	case <-time.After(30 * time.Second):
+	case <-time.After(watchBackstop(t)):
 		t.Fatalf("watch never returned:\n%s", tap.String())
 	}
 	out, log := tap.String(), calls(t, fake)
@@ -182,4 +178,82 @@ func (p *passTap) String() string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.buf.String()
+}
+
+// ─── the backstop these two watch tests wait on ──────────────────────────────
+
+// watchBackstop is how long a watch test waits for the loop to return before
+// saying so in a sentence. A backstop, not a margin: a loop that wedges
+// mid-pass, or one that stops honouring ctx, fails with a message and the
+// passes it did print instead of hanging until go test's global timeout.
+// Nothing either caller asserts depends on the loop being faster than this.
+//
+// It is derived from that global timeout rather than being a constant
+// (ranger-base-khhnd). The constant was 30s, which a quiet box never noticed
+// and a loaded one did: MEASURED 2026-09-07 under `go test -race` in a
+// package with ~750 t.Parallel tests, pass 2 of a 40ms loop landed ~21s
+// behind pass 1, and TestDryRunWatchTailDoesNotSayDispatched reported "watch
+// never returned" about a loop that was running correctly, just slowly
+// (docs/notes.d/ranger-base-d0xvw.md). Widening the constant only moves the
+// guess; the backstop's whole job is to beat `go test`'s own timeout panic
+// with a better sentence, so the deadline it is racing — less the room to
+// print — is the honest value, and it costs a genuinely wedged loop nothing
+// it was not already going to cost the run.
+func watchBackstop(t *testing.T) time.Duration {
+	t.Helper()
+	dl, ok := t.Deadline()
+	return backstopBefore(dl, ok, time.Now())
+}
+
+// backstopBefore is watchBackstop's arithmetic, split out so it can be pinned
+// over inputs a test binary cannot produce on demand (its own -timeout is
+// whatever the runner passed).
+func backstopBefore(deadline time.Time, ok bool, now time.Time) time.Duration {
+	// Room for the Fatalf to be formatted and flushed before `go test`
+	// panics over the whole binary and takes the buffered output with it.
+	const reporting = 30 * time.Second
+	// `-timeout 0`: nothing bounds the binary, so nothing bounds this
+	// either, beyond keeping a wedge from sitting there for the afternoon.
+	const unbounded = 10 * time.Minute
+	if !ok {
+		return unbounded
+	}
+	// A deadline already on top of us: go test will report first whatever we
+	// choose, so choose the old floor rather than a zero or negative wait.
+	if d := deadline.Sub(now) - reporting; d > reporting {
+		return d
+	}
+	return reporting
+}
+
+// The two callers above cannot exercise this: a test binary's deadline is
+// whatever -timeout the runner passed, and the interesting arms are the ends.
+func TestWatchBackstopTracksTheBinaryDeadline(t *testing.T) {
+	t.Parallel()
+	now := time.Now()
+	for _, c := range []struct {
+		name     string
+		deadline time.Time
+		ok       bool
+		want     time.Duration
+	}{
+		{"no -timeout at all", time.Time{}, false, 10 * time.Minute},
+		{"make test's 25m", now.Add(25 * time.Minute), true, 25*time.Minute - 30*time.Second},
+		{"go test's default 10m", now.Add(10 * time.Minute), true, 10*time.Minute - 30*time.Second},
+		// Below the old 30s constant the backstop stops shrinking: go test
+		// reports first whatever we pick, and a zero or negative wait would
+		// fire instantly and call a healthy loop wedged.
+		{"a minute left", now.Add(time.Minute), true, 30 * time.Second},
+		{"45s left", now.Add(45 * time.Second), true, 30 * time.Second},
+		{"deadline already past", now.Add(-time.Minute), true, 30 * time.Second},
+	} {
+		if got := backstopBefore(c.deadline, c.ok, now); got != c.want {
+			t.Errorf("%s: backstop %s, want %s", c.name, got, c.want)
+		}
+	}
+	// And the live wiring, whatever this binary's -timeout happens to be: a
+	// wait no shorter than the constant it replaced.
+	if got := watchBackstop(t); got < 30*time.Second {
+		t.Errorf("watchBackstop under this binary's own deadline: %s, want >= 30s", got)
+	}
 }
