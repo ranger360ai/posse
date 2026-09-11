@@ -364,7 +364,7 @@ shell profile, not just this shell.
 
 That build carries the seed tree (`examples/`) embedded, so `posse init`
 works with no repo beside it. `@latest` installs the newest release tag —
-currently `v0.4.0`, which trails `main`.
+currently `v0.5.0`, which trails `main`.
 
 **Verify:** `posse version` prints `0.5.0` — the tag, with no `+<sha>`,
 which is how a release install reads. Installed off a later commit
