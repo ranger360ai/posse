@@ -539,6 +539,41 @@ func k45gnSeedEnvHits(data string) []k45gnEnvHit {
 	return out
 }
 
+// k45gnSeedEnvSetFile reports whether the seed path p is an env set, and so
+// is the SCOPE of the census below — named rather than inlined so it can be
+// pinned on its own (TestQASeedEnvCensusReadsSuffixlessSetsUnderEnvs).
+//
+// TWO RULES, because the suffix is not what makes a file an env set and never
+// was. envFilePath (envs.go) stats `<name>.env` and then the bare `<name>` —
+// its own comment says "allow names with or without .env" — so `envs/hostile`
+// carrying no suffix at all is one env set spelled the second way, and
+// init.go's `copyDir("envs", a.EnvsDir, 0o600)` lists every non-dir entry
+// under the seed's envs/ with no suffix test anywhere in initFrom, so that
+// file is laid down on every fresh home at 0600 and is loaded by name like
+// any other set. A census keyed on the suffix alone walks straight past a
+// seeded row that reaches the session verbatim (ranger-base-9jeb5, escaped
+// from ranger-base-z541t).
+//
+//   - Under envs/: EVERY file, whatever it is called. That is exactly the
+//     set init copies and exactly the set envFilePath resolves, so the
+//     census's scope and posse's own idea of "an env set" are the same files
+//     by construction and not by a spelling rule kept in step by hand.
+//     Direct children only, which is the same two: copyDir does not recurse
+//     and storeName rejects a name with a `/` in it, so `envs/sub/x` is not
+//     a set anybody can name.
+//   - Anywhere else: the `*.env` suffix, case-INsensitively. Nothing outside
+//     envs/ is copied into EnvsDir, so no file out here is resolvable by
+//     name — but a set that ships in the tree is a set somebody copies into
+//     envs/ by hand, and the walk costs the same. EqualFold because out here
+//     the suffix is the whole of the claim, and `stray.ENV` is the same file
+//     to the operator who copies it.
+func k45gnSeedEnvSetFile(p string) bool {
+	if path.Dir(p) == "envs" {
+		return true
+	}
+	return strings.EqualFold(path.Ext(p), ".env")
+}
+
 // k45gnAssertSeedEnvSetsShipNoStoreVar is the Go census's claim over the one
 // corpus the Go census cannot read: the env sets posse SHIPS.
 //
@@ -547,16 +582,14 @@ func k45gnSeedEnvHits(data string) []k45gnEnvHit {
 // (embed.go, ADR 0012 D5), and because reading it by its own root means no
 // path here to drift out of step with a rename of the directory.
 //
-// Every `*.env` in the seed is censused, not just envs/: init copies envs/
-// (init.go seedRoots) and that is where these two live, but a set that ships
-// anywhere in the tree is a set somebody can point `default_env` at, and the
-// walk costs the same.
+// Its scope is k45gnSeedEnvSetFile, which is wider than the `*.env` suffix
+// on purpose: see there.
 func k45gnAssertSeedEnvSetsShipNoStoreVar(t *testing.T) {
 	t.Helper()
 	var hits []string
 	files, rows := 0, 0
 	err := fs.WalkDir(posse.Seed, ".", func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() || path.Ext(p) != ".env" {
+		if err != nil || d.IsDir() || !k45gnSeedEnvSetFile(p) {
 			return err
 		}
 		b, rerr := fs.ReadFile(posse.Seed, p)
@@ -589,12 +622,18 @@ it in their OWN env set, which is input and is not censused.`, strings.Join(hits
 	// LIVENESS, the same argument the Go walk makes: a reader that found no
 	// files reports the same zero as a reader that works. MEASURED 2026-09-11
 	// (darwin/arm64, go1.26.5) by raising each floor and reading the count
-	// back: 2 seeded .env files, 4 KEY=VALUE rows between them. The floors sit
-	// under both so deleting an example set does not red this, but an empty
-	// embed, a seed with no env sets left, or a parseEnvLines that stops
-	// yielding rows does.
+	// back: 2 seeded env sets, 4 KEY=VALUE rows between them — unchanged by
+	// the wider scope (ranger-base-9jeb5), because both sets the seed ships
+	// today sit in envs/ AND carry the suffix, so each matches either rule.
+	// The floors sit under both so deleting an example set does not red this,
+	// but an empty embed, a seed with no env sets left, or a parseEnvLines
+	// that stops yielding rows does. The floors do NOT hold the envs/ rule up
+	// on their own — both files satisfy the suffix rule too, so a revert to
+	// suffix-only counts the same 2 — which is why that rule is pinned
+	// directly, on the predicate, by
+	// TestQASeedEnvCensusReadsSuffixlessSetsUnderEnvs.
 	if files < 1 {
-		t.Errorf("the census read %d seeded .env files, want at least 1 — posse.Seed carries none, so the zero above is a census of nothing", files)
+		t.Errorf("the census read %d seeded env sets, want at least 1 — posse.Seed carries none, so the zero above is a census of nothing", files)
 	}
 	if rows < 2 {
 		t.Errorf("the census read %d KEY=VALUE rows across the seeded env sets, want at least 2 — the reader is parseEnvLines (envs.go) and it is yielding nothing, so a BEADS_DB= line would read as no row at all", rows)
@@ -818,6 +857,48 @@ func TestQASeedEnvCensusReadsPosseOwnEnvParser(t *testing.T) {
 			}
 			if len(hits) != 1 || hits[0].line != tc.want {
 				t.Errorf("k45gnSeedEnvHits = %v, want one hit at line %d, over:\n%s", hits, tc.want, tc.src)
+			}
+		})
+	}
+}
+
+// TestQASeedEnvCensusReadsSuffixlessSetsUnderEnvs pins the census's SCOPE,
+// which the liveness floors in k45gnAssertSeedEnvSetsShipNoStoreVar cannot:
+// both env sets the seed ships today are under envs/ AND spelled `*.env`, so
+// a guard narrowed back to the suffix alone reads the same 2 files, the same
+// 4 rows, and stays green while a seeded `envs/hostile` goes uncensused —
+// which is exactly how ranger-base-9jeb5 escaped ranger-base-z541t.
+//
+// The two arms that matter are the suffix-less and odd-cased names under
+// envs/: `posse init` copies every non-dir entry there (init.go copyDir, no
+// suffix test) and envFilePath resolves the bare name (envs.go, "allow names
+// with or without .env"), so those files are env sets to posse and must be
+// env sets to the census.
+func TestQASeedEnvCensusReadsSuffixlessSetsUnderEnvs(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		p    string
+		want bool
+		why  string
+	}{
+		{"envs/default.env", true, "the ordinary spelling, and one of the two the seed ships"},
+		{"envs/projA.env", true, "the other shipped set"},
+		{"envs/hostile", true, "NO SUFFIX: init copies it, envFilePath resolves it by bare name, so it is an env set"},
+		{"envs/hostile.ENV", true, "an odd-cased suffix is just another name under envs/"},
+		{"envs/README", true, "under envs/ is the rule: a file posse init lays down in EnvsDir can be named as a set whatever it is called"},
+		{"recipes/stray.env", true, "the suffix rule still holds outside envs/ — the mutant ranger-base-z541t measured"},
+		{"recipes/stray.ENV", true, "and case-insensitively: it is the same file to an operator who copies it into envs/"},
+		{"agents/qa.md", false, "an example persona is not an env set"},
+		{"config.yaml", false, "nor is the config"},
+		{"skills/distributed-systems/references/toctou.md", false, "nor a skill reference"},
+		{"envsy/hostile", false, "a sibling directory whose name merely starts with envs is not envs/"},
+		{"deep/envs/hostile", false, "only the seed's OWN envs/ is copied into EnvsDir; a nested one is not"},
+		{"envs/sub/x", false, "copyDir does not recurse and storeName rejects a name with a slash, so this is not a set anybody can name"},
+	} {
+		t.Run(tc.p, func(t *testing.T) {
+			t.Parallel()
+			if got := k45gnSeedEnvSetFile(tc.p); got != tc.want {
+				t.Errorf("k45gnSeedEnvSetFile(%q) = %v, want %v — %s", tc.p, got, tc.want, tc.why)
 			}
 		})
 	}
