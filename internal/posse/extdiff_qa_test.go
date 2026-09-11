@@ -317,6 +317,27 @@ func bareDiffReaders(fset *token.FileSet, file *ast.File) (findings []string, sa
 			return true
 		}
 		sawDiffLiteral = true
+		// A KEY of a map literal is a SET MEMBER and can never be an argv:
+		// no command line is spelled `map[string]bool{"diff": true}`, and
+		// the value side is not exempted, so `map[string][]string{"x":
+		// {"diff", "HEAD"}}` is still read. Added for githang.go's
+		// gitReadOnlyVerbs (ranger-base-zfza8), a table of the git verbs
+		// whose hang leaves the repository as it was — where the census
+		// read fourteen verb names as one argv and reported the whole map.
+		//
+		// Narrower than an exemption by file or by name, which is the rule
+		// this function's header already states: what is exempted has to be
+		// a shape that CANNOT carry a reader, not a place a reader happens
+		// not to be today.
+		if len(stack) >= 3 {
+			kv, isKey := stack[len(stack)-2].(*ast.KeyValueExpr)
+			cl, inComposite := stack[len(stack)-3].(*ast.CompositeLit)
+			if isKey && kv.Key == ast.Expr(lit) && inComposite {
+				if _, isMap := cl.Type.(*ast.MapType); isMap {
+					return true
+				}
+			}
+		}
 		var scope ast.Node
 		for i := len(stack) - 1; i >= 0; i-- {
 			if v, ok := stack[i].(*ast.ValueSpec); ok {
@@ -398,6 +419,19 @@ func f(r string) {
 		{"assembled through memoryDiff, no literal at all", `package p
 func f(r string) { g(r, memoryDiff("HEAD", "--")...) }
 `, 0},
+		// The map-key exemption (ranger-base-zfza8), and the three cases
+		// that keep it from being a hole. A set of verb names is not a
+		// command line; the VALUE side of the same literal still is, and so
+		// is a slice, which is the shape an argv actually takes.
+		{"a set of verb names, keyed", `package p
+var v = map[string]bool{"diff": true, "log": true, "rev-parse": true}
+`, 0},
+		{"a map VALUE is still an argv", `package p
+var v = map[string][]string{"read": {"diff", "HEAD", "--"}}
+`, 1},
+		{"a slice literal is not exempted by looking like a set", `package p
+var v = []string{"diff", "HEAD", "--"}
+`, 1},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
