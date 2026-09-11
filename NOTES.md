@@ -2,8 +2,10 @@
 
 Start with [README.md](README.md) for the product and
 [INSTALL.md](INSTALL.md) for installation. This page maps the implementation
-and its operating rules. Decisions live in [docs/adr/](docs/adr/);
-procedures live in [docs/runbooks/](docs/runbooks/).
+and its operating rules. Decisions live in [docs/adr/](docs/adr/), which
+carries a [reading guide](docs/adr/README.md) for its conventions and the
+one command that renders the set in force; procedures live in
+[docs/runbooks/](docs/runbooks/).
 
 The public sections formerly on this page are preserved unchanged in
 [docs/notes.d/](docs/notes.d/). Sections carrying instance-ops content are
