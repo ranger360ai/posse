@@ -976,9 +976,22 @@ STRICT
 	# acquired straight away, and the arm went green without the queued
 	# acquire it exists to test — safe direction, and still not measuring.
 	# Its output is named `<marker>.log` so wait_answer's convention holds.
+	#
+	# And it asks WHICH answer came (ranger-base-lhaae). wait_answer returns
+	# on the queued line OR on the wrapper's exit, so on its own it says
+	# "answered", not "queued": a wrapper already through with both slots held
+	# never stood in the queue this arm exists to test, and an unqueued
+	# acquire under `set -e` returns 0 and reaches the end whether or not the
+	# queued path is safe. That green would be as vacuous as the `sleep 1`
+	# one, arrived at by a different road — so the queued LINE is the gate,
+	# and a wrapper that is through without it FAILs saying so. Its rc then
+	# separates the two ways that happens: `set -e` killed it in the acquire
+	# (rc non-zero — the regression this arm is for) or it took a slot that
+	# was not there to take (rc 0, and arm 2's property is broken too).
 	local strict_queued=0
 	( POSSE_SUITE_LOCK_POLL=0.2 bash "$tmp/strict.sh" "$SUITE_LOCK_LIB" >"$tmp/strict.rc.log" 2>&1; echo $? >"$tmp/strict.rc" ) &
-	wait_answer "$tmp/strict.rc" "$fork_s" && strict_queued=1
+	wait_answer "$tmp/strict.rc" "$fork_s" &&
+		log_has "$tmp/strict.rc.log" 'waiting for suite lock' && strict_queued=1
 	rm -f "$tmp/hold12"
 	if [ "$strict_queued" = 1 ] && wait_file "$tmp/strict.rc" "$fork_s" &&
 		[ "$(<"$tmp/strict.rc")" = 0 ] &&
@@ -986,7 +999,7 @@ STRICT
 		ok 'set -e: a queued acquire does not kill the wrapper'
 	else
 		bad 'set -e: a queued acquire does not kill the wrapper' \
-			"answered=$strict_queued, rc=$(cat "$tmp/strict.rc" 2>/dev/null), out: $(tr '\n' '|' <"$tmp/strict.rc.log" 2>/dev/null)"
+			"queued=$strict_queued, rc=$(cat "$tmp/strict.rc" 2>/dev/null), out: $(tr '\n' '|' <"$tmp/strict.rc.log" 2>/dev/null)"
 	fi
 	rm -f "$tmp/hold13"
 
