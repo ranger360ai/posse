@@ -27,9 +27,14 @@ architecture and [NOTES.md](NOTES.md) for how it works.
 
 Persona design credits the [DISCOVER framework](https://discover-framework.ai/): the Persona Intent Document ([ADR 0001](docs/adr/0001-persona-intent-documents.md)) takes its name and its persona · intent · tools · guardrails · metrics binding from that framework's Specify artifact.
 
-The original Ghostty + tmux session manager (bash + Go, launcher TUI, 2×2
-grid) lives on the **tmux-reference** branch, kept working as the reference
-implementation.
+## Status
+
+- **Released:** v0.4.0 (2026-08-29); **main** is the product, 1252 commits
+  past the tag as of 2026-09-10.
+- **Outside-in reviews:** [ranger-base-b0fsz](docs/notes.d/ranger-base-b0fsz.md)
+  and [ranger-base-vuosd](docs/notes.d/ranger-base-vuosd.md).
+- **Crew off** 2026-09-11 → 2026-09-17; work resumes after that.
+- **Questions:** [github.com/ranger360ai/posse/issues](https://github.com/ranger360ai/posse/issues).
 
 ## Requirements
 
@@ -37,7 +42,8 @@ implementation.
 - [beads](https://github.com/gastownhall/beads) (`bd`) for the work graph —
   **0.50.3 exactly**; anything from 0.51 up — brew's `beads` included —
   does not read `.beads/beads.db` at all
-- Go ≥ 1.26 to build (`make build`); one Go dependency (`golang.org/x/term`)
+- Go ≥ 1.26 to build (`make build`); two Go dependencies
+  (`golang.org/x/sys`, `golang.org/x/term`)
 
 Neither substrate ships with posse and neither is optional — `posse new`
 dies on its first call without herdr. [INSTALL.md §1](INSTALL.md) is where to
@@ -121,3 +127,8 @@ stops). Like `make install`, it is a human's: every shipped PID denies
 `Bash(posse promote:*)` and promote refuses under a persona env marker. It
 never touches `envs/` (gitignored secret values — no commit to promote
 from), `state/`, or `personas/`.
+
+---
+
+The original Ghostty + tmux session manager lives on the **tmux-reference**
+branch, kept as the reference implementation.
