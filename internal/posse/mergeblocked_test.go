@@ -658,9 +658,9 @@ func blockedPromise(reason string) string {
 // fixture. The refusal is the premise: a fixture that landed, or that errored
 // before the function decided anything, files no bead and measures no wording
 // (MergeOutcome.Blocked's own doc says why both halves are load-bearing).
-func mergeBlockedReason(t *testing.T, tr *SessionTree) string {
+func mergeBlockedReason(t *testing.T, a *App, tr *SessionTree) string {
 	t.Helper()
-	o, err := MergeSessionWork(tr)
+	o, err := MergeSessionWork(a, tr)
 	if err != nil {
 		t.Fatalf("fixture: MergeSessionWork errored, so no reason was produced: %v", err)
 	}
@@ -673,7 +673,7 @@ func mergeBlockedReason(t *testing.T, tr *SessionTree) string {
 // wtTreeWithWork is the common half of every fixture below: a repo, a session
 // tree, and one commit on the branch — because a branch with nothing ahead of
 // its base never reaches a refusal at all.
-func wtTreeWithWork(t *testing.T) (string, *SessionTree) {
+func wtTreeWithWork(t *testing.T) (*App, string, *SessionTree) {
 	t.Helper()
 	a := wtApp(t)
 	repo := wtRepo(t)
@@ -682,7 +682,7 @@ func wtTreeWithWork(t *testing.T) (string, *SessionTree) {
 		t.Fatal(err)
 	}
 	commitIn(t, tr.Path, "fix.txt", "the work\n", "s-1: the fix")
-	return repo, tr
+	return a, repo, tr
 }
 
 // detachTreeHead puts the session's own tree off its branch and commits
@@ -716,7 +716,7 @@ func mergeBlockedCases() []mergeBlockedCase {
 			name: "the tree has no base branch to land on",
 			arm:  "there is no branch for",
 			reason: func(t *testing.T) string {
-				repo, tr := wtTreeWithWork(t)
+				a, repo, tr := wtTreeWithWork(t)
 				// The reachable shape: a branch cut before the base was
 				// recorded, in a checkout that is now detached — so the
 				// record is empty AND the fallback has nothing to give.
@@ -732,7 +732,7 @@ func mergeBlockedCases() []mergeBlockedCase {
 				if trees[0].Base != "" {
 					t.Fatalf("fixture: base = %q, want empty — this arm was not reached", trees[0].Base)
 				}
-				return mergeBlockedReason(t, trees[0])
+				return mergeBlockedReason(t, a, trees[0])
 			},
 		},
 		{
@@ -741,9 +741,9 @@ func mergeBlockedCases() []mergeBlockedCase {
 			name: "the operator has another branch checked out",
 			arm:  "checked out, not",
 			reason: func(t *testing.T) string {
-				repo, tr := wtTreeWithWork(t)
+				a, repo, tr := wtTreeWithWork(t)
 				mustGit(t, repo, "checkout", "-q", "-b", "sidetrack")
-				return mergeBlockedReason(t, tr)
+				return mergeBlockedReason(t, a, tr)
 			},
 		},
 		{
@@ -753,9 +753,9 @@ func mergeBlockedCases() []mergeBlockedCase {
 			name: "the operator detached the checkout",
 			arm:  "has a detached HEAD, so",
 			reason: func(t *testing.T) string {
-				repo, tr := wtTreeWithWork(t)
+				a, repo, tr := wtTreeWithWork(t)
 				mustGit(t, repo, "checkout", "--detach")
-				return mergeBlockedReason(t, tr)
+				return mergeBlockedReason(t, a, tr)
 			},
 		},
 		{
@@ -767,7 +767,7 @@ func mergeBlockedCases() []mergeBlockedCase {
 			name: "git could not read the diff",
 			arm:  "so whether",
 			reason: func(t *testing.T) string {
-				_, tr := wtTreeWithWork(t)
+				_, _, tr := wtTreeWithWork(t)
 				broken := *tr
 				broken.Base = "no-such-base"
 				hit, why := constitutionOnBranch(&broken)
@@ -784,29 +784,29 @@ func mergeBlockedCases() []mergeBlockedCase {
 			name: "the branch touches the constitution",
 			arm:  "it touches the constitution",
 			reason: func(t *testing.T) string {
-				_, _, tr := constitutionLandTree(t, true)
+				a, _, tr := constitutionLandTree(t, true)
 				commitIn(t, tr.Path, constitutionClassSpec[0]+"/probe.md", "rewritten\n", "s-1: edit the law")
-				return mergeBlockedReason(t, tr)
+				return mergeBlockedReason(t, a, tr)
 			},
 		},
 		{
 			name: "the tree has uncommitted changes to rebase over",
 			arm:  "has uncommitted changes",
 			reason: func(t *testing.T) string {
-				repo, tr := wtTreeWithWork(t)
+				a, repo, tr := wtTreeWithWork(t)
 				commitIn(t, repo, "other.txt", "meanwhile\n", "main moved")
 				write(t, filepath.Join(tr.Path, "wip.txt"), "not committed\n")
-				return mergeBlockedReason(t, tr)
+				return mergeBlockedReason(t, a, tr)
 			},
 		},
 		{
 			name: "the replay conflicts and is aborted",
 			arm:  "the rebase was aborted, so this attempt changed nothing",
 			reason: func(t *testing.T) string {
-				repo, tr := wtTreeWithWork(t)
+				a, repo, tr := wtTreeWithWork(t)
 				commitIn(t, tr.Path, "clash.txt", "the session's line\n", "s-1: mine")
 				commitIn(t, repo, "clash.txt", "the operator's line\n", "main: theirs")
-				return mergeBlockedReason(t, tr)
+				return mergeBlockedReason(t, a, tr)
 			},
 		},
 		{
@@ -816,7 +816,7 @@ func mergeBlockedCases() []mergeBlockedCase {
 			name: "the replay never reached a merge",
 			arm:  "failed before any merge",
 			reason: func(t *testing.T) string {
-				repo, tr := wtTreeWithWork(t)
+				a, repo, tr := wtTreeWithWork(t)
 				commitIn(t, repo, "elsewhere.txt", "meanwhile\n", "main: moved on")
 				// A pre-rebase hook is the cheapest honest stand-in for the
 				// class (a full disk, a lock, a bad object): git exits
@@ -828,7 +828,7 @@ func mergeBlockedCases() []mergeBlockedCase {
 					t.Fatal(err)
 				}
 				mustGit(t, repo, "config", "core.hooksPath", hooks)
-				return mergeBlockedReason(t, tr)
+				return mergeBlockedReason(t, a, tr)
 			},
 		},
 		{
@@ -838,12 +838,12 @@ func mergeBlockedCases() []mergeBlockedCase {
 			name: "the fast-forward refuses after a clean replay",
 			arm:  "still would not fast-forward after the rebase",
 			reason: func(t *testing.T) string {
-				repo, tr := wtTreeWithWork(t)
+				a, repo, tr := wtTreeWithWork(t)
 				commitIn(t, repo, "other.txt", "meanwhile\n", "main moved")
 				// An untracked file the merge would overwrite: git refuses
 				// the ff without moving the base an inch.
 				write(t, filepath.Join(repo, "fix.txt"), "the operator's own copy\n")
-				return mergeBlockedReason(t, tr)
+				return mergeBlockedReason(t, a, tr)
 			},
 		},
 		{
@@ -852,10 +852,10 @@ func mergeBlockedCases() []mergeBlockedCase {
 			name: "the base moved under every replay",
 			arm:  "never held still",
 			reason: func(t *testing.T) string {
-				repo, tr := wtTreeWithWork(t)
+				a, repo, tr := wtTreeWithWork(t)
 				commitIn(t, repo, "other.txt", "meanwhile\n", "main moved")
 				count := raceOnRebase(t, repo, mergeRebaseAttempts)
-				reason := mergeBlockedReason(t, tr)
+				reason := mergeBlockedReason(t, a, tr)
 				if got := countIn(t, count); got != mergeRebaseAttempts {
 					t.Fatalf("fixture: the rebase ran %d time(s), want %d — the race did not happen", got, mergeRebaseAttempts)
 				}
@@ -869,19 +869,19 @@ func mergeBlockedCases() []mergeBlockedCase {
 			name: "the tree's HEAD is off its own branch",
 			arm:  "is on neither",
 			reason: func(t *testing.T) string {
-				_, tr := wtTreeWithWork(t)
+				a, _, tr := wtTreeWithWork(t)
 				detachTreeHead(t, tr)
-				return mergeBlockedReason(t, tr)
+				return mergeBlockedReason(t, a, tr)
 			},
 		},
 		{
 			name: "no branch reaches the tree's work at all",
 			arm:  "no branch here reaches it",
 			reason: func(t *testing.T) string {
-				repo, tr := wtTreeWithWork(t)
+				a, repo, tr := wtTreeWithWork(t)
 				detachTreeHead(t, tr)
 				mustGit(t, repo, "branch", "-D", tr.Branch)
-				return mergeBlockedReason(t, tr)
+				return mergeBlockedReason(t, a, tr)
 			},
 		},
 		// The two refusals a SIGNALLED git child produces (ranger-base-zfza8).
@@ -901,7 +901,7 @@ func mergeBlockedCases() []mergeBlockedCase {
 			name: "the fast-forward was signalled with no answer",
 			arm:  "is how one landing becomes two",
 			reason: func(t *testing.T) string {
-				_, tr := wtTreeWithWork(t)
+				_, _, tr := wtTreeWithWork(t)
 				return mergeHangReason(tr, &GitHangError{
 					Argv: []string{"git", "-C", tr.Repo, "merge", "--ff-only", tr.Branch},
 					Dir:  tr.Repo, Limit: GitTimeout, Waited: GitTimeout, Mutation: true,
@@ -912,7 +912,7 @@ func mergeBlockedCases() []mergeBlockedCase {
 			name: "the replay was signalled with no answer",
 			arm:  "this is not a conflict",
 			reason: func(t *testing.T) string {
-				_, tr := wtTreeWithWork(t)
+				_, _, tr := wtTreeWithWork(t)
 				return rebaseHangReason(tr, &GitHangError{
 					Argv: []string{"git", "-C", tr.Path, "rebase", tr.Base},
 					Dir:  tr.Path, Limit: GitTimeout, Waited: GitTimeout, Mutation: true,

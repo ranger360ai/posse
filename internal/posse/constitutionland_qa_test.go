@@ -51,11 +51,11 @@ func TestQAConstitutionLandRefusesEveryClassMember(t *testing.T) {
 	t.Parallel()
 	for _, member := range constitutionClassSpec {
 		t.Run(member, func(t *testing.T) {
-			_, repo, tr := constitutionLandTree(t, true)
+			a, repo, tr := constitutionLandTree(t, true)
 			rel := member + "/probe.md"
 			commitIn(t, tr.Path, rel, "rewritten\n", "s-1: edit the law")
 
-			o, err := MergeSessionWork(tr)
+			o, err := MergeSessionWork(a, tr)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -102,9 +102,9 @@ func TestQAConstitutionLandPassesOrdinaryWork(t *testing.T) {
 		"scripts/thing.sh",
 	} {
 		t.Run(rel, func(t *testing.T) {
-			_, repo, tr := constitutionLandTree(t, true)
+			a, repo, tr := constitutionLandTree(t, true)
 			commitIn(t, tr.Path, rel, "ordinary\n", "s-1: draft")
-			o, err := MergeSessionWork(tr)
+			o, err := MergeSessionWork(a, tr)
 			if err != nil || !o.Merged {
 				t.Fatalf("ordinary work must land: %+v %v", o, err)
 			}
@@ -122,17 +122,17 @@ func TestQAConstitutionLandPassesOrdinaryWork(t *testing.T) {
 func TestQAConstitutionLandScopesThePromotedSetToTheConstitutionRepo(t *testing.T) {
 	t.Parallel()
 	t.Run("no marker: recipes lands", func(t *testing.T) {
-		_, _, tr := constitutionLandTree(t, false)
+		a, _, tr := constitutionLandTree(t, false)
 		commitIn(t, tr.Path, ConstitutionSourceDir+"/recipes/thing.yaml", "not a constitution\n", "s-1: draft")
-		o, err := MergeSessionWork(tr)
+		o, err := MergeSessionWork(a, tr)
 		if err != nil || !o.Merged {
 			t.Fatalf("must land in a repo that is not the constitution: %+v %v", o, err)
 		}
 	})
 	t.Run("no marker: settings.json is still refused", func(t *testing.T) {
-		_, _, tr := constitutionLandTree(t, false)
+		a, _, tr := constitutionLandTree(t, false)
 		commitIn(t, tr.Path, ClaudeProjectConfig, "{}\n", "s-1: unfence myself")
-		o, err := MergeSessionWork(tr)
+		o, err := MergeSessionWork(a, tr)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -154,13 +154,13 @@ func TestQAConstitutionLandScopesThePromotedSetToTheConstitutionRepo(t *testing.
 // there can reach the work at all.
 func TestQAConstitutionLandRefusesARetiredTreesBranch(t *testing.T) {
 	t.Parallel()
-	_, repo, tr := constitutionLandTree(t, true)
+	a, repo, tr := constitutionLandTree(t, true)
 	rel := ConstitutionRepoMarker + "/developer.md"
 	commitIn(t, tr.Path, rel, "rewritten\n", "s-1: edit the law")
 	if out, err := git(repo, "worktree", "remove", "--force", tr.Path); err != nil {
 		t.Skipf("git worktree remove: %v %s", err, out)
 	}
-	o, err := MergeSessionWork(tr)
+	o, err := MergeSessionWork(a, tr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +178,7 @@ func TestQAConstitutionLandRefusesARetiredTreesBranch(t *testing.T) {
 // already-landed and not as a refusal repeated on every pass forever.
 func TestQAConstitutionLandStillReportsWorkAlreadyOnTheBase(t *testing.T) {
 	t.Parallel()
-	_, repo, tr := constitutionLandTree(t, true)
+	a, repo, tr := constitutionLandTree(t, true)
 	rel := ConstitutionRepoMarker + "/developer.md"
 	commitIn(t, tr.Path, rel, "rewritten\n", "s-1: edit the law")
 	sha, err := git(tr.Path, "rev-parse", "HEAD")
@@ -190,7 +190,7 @@ func TestQAConstitutionLandStillReportsWorkAlreadyOnTheBase(t *testing.T) {
 	if out, err := git(repo, "cherry-pick", "-x", sha); err != nil {
 		t.Skipf("git cherry-pick: %v %s", err, out)
 	}
-	o, err := MergeSessionWork(tr)
+	o, err := MergeSessionWork(a, tr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -271,9 +271,9 @@ func TestQAConstitutionClassInReadsTheRepo(t *testing.T) {
 func TestQAConstitutionLandPrescribesPromoteOnlyForPromotedPaths(t *testing.T) {
 	t.Parallel()
 	t.Run("a promoted path names promote", func(t *testing.T) {
-		_, _, tr := constitutionLandTree(t, true)
+		a, _, tr := constitutionLandTree(t, true)
 		commitIn(t, tr.Path, ConstitutionRepoMarker+"/developer.md", "rewritten\n", "s-1: edit the law")
-		o, err := MergeSessionWork(tr)
+		o, err := MergeSessionWork(a, tr)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -282,9 +282,9 @@ func TestQAConstitutionLandPrescribesPromoteOnlyForPromotedPaths(t *testing.T) {
 		}
 	})
 	t.Run("settings.json does not", func(t *testing.T) {
-		_, _, tr := constitutionLandTree(t, false)
+		a, _, tr := constitutionLandTree(t, false)
 		commitIn(t, tr.Path, ClaudeProjectConfig, "{}\n", "s-1: unfence myself")
-		o, err := MergeSessionWork(tr)
+		o, err := MergeSessionWork(a, tr)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -295,4 +295,46 @@ func TestQAConstitutionLandPrescribesPromoteOnlyForPromotedPaths(t *testing.T) {
 			t.Errorf("no promote puts a settings file in force; the refusal must not prescribe one:\n%s", o.Reason)
 		}
 	})
+}
+
+// ranger-base-17cmp, END TO END: the App reaches the refusal from the real
+// land path, and the sentence it produces is the one a single-tree home can
+// act on.
+//
+// The pins in singletreerefresh_qa_test.go call constitutionLandRefusal
+// directly, which measures the sentence and NOT the plumbing: MergeSessionWork
+// grew an *App parameter for exactly this, and a caller that passed the wrong
+// one — or a future one that passed none — would leave those pins green while
+// the sweep printed the old remedy. This arm goes through MergeSessionWork.
+func TestQAConstitutionLandRefusalReachesTheHomeItIsAbout(t *testing.T) {
+	t.Parallel()
+	a, _, tr := constitutionLandTree(t, true)
+	// Make that App the single-tree shape: seeded manifest, no `constitution:`.
+	// This is the home the refusal is ABOUT, and it is deliberately not the
+	// repo being landed into — which is the whole reason the App has to be
+	// carried down rather than derived from the session tree.
+	if err := os.MkdirAll(a.AgentsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(a.ConfigPath, []byte("default_dir: /tmp\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.SeedPromoteManifest(); err != nil {
+		t.Fatal(err)
+	}
+	commitIn(t, tr.Path, ConstitutionSourceDir+"/agents/ranger.md", "rewritten\n", "s-1: edit the law")
+
+	o, err := MergeSessionWork(a, tr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if o.Merged {
+		t.Fatalf("a branch touching the constitution must not land: %+v", o)
+	}
+	if !strings.Contains(o.Reason, SingleTreeRefreshFile) {
+		t.Errorf("the sweep's own sentence names no refresh this home can run: %q", o.Reason)
+	}
+	if strings.Contains(o.Reason, "posse promote") {
+		t.Errorf("the sweep still ends its recipe in a command this home cannot run: %q", o.Reason)
+	}
 }

@@ -272,3 +272,142 @@ func TestAPromotedHomeIsNeverToldToDeleteItsManifest(t *testing.T) {
 		t.Errorf("the dispatch refusal on a promoted home names its manifest as a thing to remove: %v", err)
 	}
 }
+
+// ─── ranger-base-17cmp: the two sites outside the launch verify ─────────────
+//
+// The four sites above are the launch verify's own sentences. A census of the
+// same prescription found two more, both reached by an operator who is not
+// launching at all, and qnn6j left them deliberately rather than sweeping
+// them. They keep the same rule and they get the same controls.
+//
+// One of them, SITE 6, is the only site where the hint REPLACES `posse
+// promote` instead of following it: constitutionLandRefusal is a recipe the
+// operator types step by step, and a recipe whose last step refuses is the
+// defect. The pins below say so in both directions, because "replaces" is
+// only safe if it cannot fire on a home promote can serve.
+
+// SITE 5 — LoadGuardEscape, the advice half of the fleet load refusal. It is
+// read by an operator already stopped by one guard, and it sends them to edit
+// `config.yaml`, which is promoted — so it names the consequence AND the
+// remedy, and on this shape the remedy was a command that refuses.
+func TestLoadGuardEscapeOnASingleTreeHomeNamesTheRefreshItActuallyHas(t *testing.T) {
+	t.Parallel()
+	a := initTestApp(t)
+	singleTreeHome(t, a)
+
+	got := a.LoadGuardEscape()
+	if !strings.Contains(got, "load_guard: 0") || !strings.Contains(got, "config.yaml is promoted") {
+		t.Fatalf("this is not the escape sentence any more; the pin below measures the wrong string: %q", got)
+	}
+	if !strings.Contains(got, SingleTreeRefreshFile) {
+		t.Errorf("the escape sends a single-tree home to `posse promote` and names no refresh it can run: %q", got)
+	}
+}
+
+// …and the consequence half must SURVIVE the hint. The edit really does drift
+// a seeded home from its manifest and really does refuse every later
+// dispatch; only the remedy was wrong, and a fix that dropped the warning
+// would trade a bad instruction for no instruction.
+func TestLoadGuardEscapeStillNamesTheConsequenceOnASingleTreeHome(t *testing.T) {
+	t.Parallel()
+	a := initTestApp(t)
+	singleTreeHome(t, a)
+
+	if got := a.LoadGuardEscape(); !strings.Contains(got, "refuses every dispatched launch") {
+		t.Errorf("the escape stopped warning that the edit refuses later launches: %q", got)
+	}
+}
+
+// The control: a home `posse promote` serves is still sent to it, and is
+// never told to remove the manifest that promote would re-stamp.
+func TestLoadGuardEscapeOnAPromotedHomeIsNeverToldToDeleteItsManifest(t *testing.T) {
+	t.Parallel()
+	b, _ := newTestBackend(t)
+	promotedTestHome(t, b)
+
+	got := b.App.LoadGuardEscape()
+	if !strings.Contains(got, "posse promote") {
+		t.Errorf("a promoted home stopped being told to promote: %q", got)
+	}
+	if strings.Contains(got, PromoteManifestFile) {
+		t.Errorf("the escape on a promoted home names its manifest as a thing to remove: %q", got)
+	}
+}
+
+// The other control, and the one that predates this bead: a home with NO
+// manifest verifies nothing, so the bare knob is the whole truth there and
+// neither promote nor the refresh belongs in it (ranger-base-6s00n).
+func TestLoadGuardEscapeOnAnUnpromotedHomeIsStillTheBareKnob(t *testing.T) {
+	t.Parallel()
+	a := initTestApp(t)
+	if err := os.MkdirAll(a.Home, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(a.ConfigPath, []byte("default_dir: /tmp\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := a.LoadGuardEscape()
+	if strings.Contains(got, "posse promote") || strings.Contains(got, PromoteManifestFile) {
+		t.Errorf("a home with no manifest was told about promotion at all: %q", got)
+	}
+}
+
+// landRefusalTree is a session tree the refusal can be rendered for. The
+// sentence is pure formatting over these four fields and the hit, so no git
+// is needed to measure which remedy it prescribes.
+func landRefusalTree() *SessionTree {
+	return &SessionTree{Repo: "/somewhere/rhq", Path: "/somewhere/wt", Branch: "posse/s-1", Base: "main"}
+}
+
+// SITE 6 — constitutionLandRefusal, printed by the sweep every pass and
+// embedded verbatim in a merge-back bead read some unbounded time later. The
+// hit is a promoted path, so `posse promote` was named and was unrunnable.
+func TestConstitutionLandRefusalOnASingleTreeHomeNamesTheRefreshItActuallyHas(t *testing.T) {
+	t.Parallel()
+	a := initTestApp(t)
+	singleTreeHome(t, a)
+
+	got := constitutionLandRefusal(a, landRefusalTree(), []string{ConstitutionSourceDir + "/agents/ranger.md"})
+	if !strings.Contains(got, "merge --ff-only") {
+		t.Fatalf("this is not the land refusal any more; the pins below measure the wrong string: %q", got)
+	}
+	if !strings.Contains(got, SingleTreeRefreshFile) {
+		t.Errorf("the refusal names no refresh a single-tree home can run: %q", got)
+	}
+	// The replacement, not an addition: this one is a numbered recipe, and
+	// leaving `posse promote` as its last step leaves the defect in place
+	// with a second sentence beside it.
+	if strings.Contains(got, "posse promote") {
+		t.Errorf("the recipe still ends in a command this home cannot run: %q", got)
+	}
+}
+
+// The control that makes the replacement safe: a promoted home still gets
+// `posse promote` as the last step and is never told to remove its manifest.
+func TestConstitutionLandRefusalOnAPromotedHomeStillPrescribesPromote(t *testing.T) {
+	t.Parallel()
+	b, _ := newTestBackend(t)
+	promotedTestHome(t, b)
+
+	got := constitutionLandRefusal(b.App, landRefusalTree(), []string{ConstitutionSourceDir + "/agents/ranger.md"})
+	if !strings.Contains(got, "then `posse promote`") {
+		t.Errorf("a promoted home stopped being told to promote after landing the law: %q", got)
+	}
+	if strings.Contains(got, PromoteManifestFile) {
+		t.Errorf("the refusal on a promoted home names its manifest as a thing to remove: %q", got)
+	}
+}
+
+// …and the rule this site already kept, which the gate must not disturb: a
+// hit with no promoted path in it gets neither remedy, because no promotion
+// and no refresh does anything about what was just read.
+func TestConstitutionLandRefusalStillSaysNothingWhenNoPromotedPathIsInTheHit(t *testing.T) {
+	t.Parallel()
+	a := initTestApp(t)
+	singleTreeHome(t, a)
+
+	got := constitutionLandRefusal(a, landRefusalTree(), []string{".claude/settings.json"})
+	if strings.Contains(got, "posse promote") || strings.Contains(got, PromoteManifestFile) {
+		t.Errorf("a hit with no promoted path was given a promotion remedy anyway: %q", got)
+	}
+}

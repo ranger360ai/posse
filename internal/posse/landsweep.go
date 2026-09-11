@@ -259,7 +259,7 @@ func (d *Dispatcher) landClosedTrees(dirFilter string) {
 				o = MergeOutcome{Branch: t.Branch, Base: t.Base, Reason: reason, Dirty: dirty, Standing: true}
 				o.Commits, _ = unlandedCount(t)
 			} else {
-				o, err = MergeSessionWork(t)
+				o, err = MergeSessionWork(d.App, t)
 			}
 			switch {
 			case err != nil:

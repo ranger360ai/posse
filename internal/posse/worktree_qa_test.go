@@ -711,7 +711,7 @@ func TestQAMergeBackDoesNotLandOnTheOperatorsCurrentBranch(t *testing.T) {
 	baseBefore := mustGit(t, repo, "rev-parse", tr.Base)
 
 	mustGit(t, repo, "checkout", "-q", "-b", "operator-side")
-	o, err := MergeSessionWork(tr)
+	o, err := MergeSessionWork(a, tr)
 	if err != nil {
 		t.Fatal(err)
 	}

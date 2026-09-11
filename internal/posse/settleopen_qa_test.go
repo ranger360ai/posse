@@ -71,7 +71,7 @@ func TestQASettleTreeLinesNamesTheBaseItCannotKnow(t *testing.T) {
 // when the pin above was the only red this state produced.
 func TestQADetachedLegacyBaseIsSweptEverywhereElse(t *testing.T) {
 	t.Parallel()
-	_, _, tr := detachedLegacyTree(t)
+	b, _, tr := detachedLegacyTree(t)
 	said := orDetached("")
 
 	// treeState and unaccountedFor guard on the empty base rather than
@@ -89,7 +89,7 @@ func TestQADetachedLegacyBaseIsSweptEverywhereElse(t *testing.T) {
 	// that is the one the fix routed through orDetached — so this is the
 	// measurement standing behind leaving dispatch.go:3803/3817/3824 and
 	// landsweep.go:133 interpolating t.Base raw.
-	o, err := MergeSessionWork(tr)
+	o, err := MergeSessionWork(b.App, tr)
 	if err != nil {
 		t.Fatalf("MergeSessionWork errored on an empty base: %v", err)
 	}

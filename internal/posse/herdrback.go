@@ -3400,7 +3400,7 @@ func (b *HerdrBackend) killAndLand(name string, opts KillOpts) (*KillLanding, er
 		return l, nil
 	}
 	defer lock.Release()
-	o, err := MergeSessionWork(t)
+	o, err := MergeSessionWork(b.App, t)
 	l.Merge = o
 	// The third site of ADR 0041 §1–§2 (closeddirty.go) and of the merge-back
 	// handoff, and the last chance anything has to write either: a close

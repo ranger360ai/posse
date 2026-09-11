@@ -44,7 +44,7 @@ import (
 // branch, and nothing alive anywhere. setUp makes whatever commits the arm
 // is about, so a detached arm can detach BEFORE it commits — which is the
 // whole fixture.
-func vavxClosed(t *testing.T, setUp func(t *testing.T, repo string, tr *SessionTree)) (*Dispatcher, string, *SessionTree) {
+func vavxClosed(t *testing.T, setUp func(t *testing.T, a *App, repo string, tr *SessionTree)) (*Dispatcher, string, *SessionTree) {
 	t.Helper()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
@@ -56,7 +56,7 @@ func vavxClosed(t *testing.T, setUp func(t *testing.T, repo string, tr *SessionT
 	if err != nil {
 		t.Fatal(err)
 	}
-	setUp(t, repo, tr)
+	setUp(t, b.App, repo, tr)
 	if err := recordBead(tr.Repo, tr.Branch, "a-1"); err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +67,7 @@ func TestSweepLandsADetachedTreesClosedWork(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
 		name  string
-		setUp func(t *testing.T, repo string, tr *SessionTree)
+		setUp func(t *testing.T, a *App, repo string, tr *SessionTree)
 		// detached says the fixture must BE the blind spot: the branch count
 		// is zero while the tree's own HEAD holds a commit the base does not.
 		// Without it an arm that quietly stayed on its branch pins nothing.
@@ -94,7 +94,7 @@ func TestSweepLandsADetachedTreesClosedWork(t *testing.T) {
 		// MergeSessionWork splices it back onto the branch and lands it —
 		// but only if this sweep asks the bead at all.
 		name: "a caged session's detached work is landed",
-		setUp: func(t *testing.T, repo string, tr *SessionTree) {
+		setUp: func(t *testing.T, a *App, repo string, tr *SessionTree) {
 			mustGit(t, repo, "config", detachedKey(tr.Branch), "1")
 			mustGit(t, tr.Path, "checkout", "-q", "--detach")
 			commitIn(t, tr.Path, "fix.txt", "the persona's work\n", "a-1: the caged fix")
@@ -108,7 +108,7 @@ func TestSweepLandsADetachedTreesClosedWork(t *testing.T) {
 		// pass cannot fix is still a strand the pass has to say out loud,
 		// and it prescribes the `branch -f` that makes the next pass land it.
 		name: "an unstamped detached tree is said out loud",
-		setUp: func(t *testing.T, repo string, tr *SessionTree) {
+		setUp: func(t *testing.T, a *App, repo string, tr *SessionTree) {
 			mustGit(t, tr.Path, "checkout", "-q", "--detach")
 			commitIn(t, tr.Path, "fix.txt", "the persona's work\n", "a-1: off its own branch")
 		},
@@ -118,7 +118,7 @@ func TestSweepLandsADetachedTreesClosedWork(t *testing.T) {
 		// The on-branch control for the landing arms: the shape that was
 		// never blind. It passes before the fix and after it.
 		name: "work on the session branch is landed",
-		setUp: func(t *testing.T, repo string, tr *SessionTree) {
+		setUp: func(t *testing.T, a *App, repo string, tr *SessionTree) {
 			commitIn(t, tr.Path, "fix.txt", "the persona's work\n", "a-1: on the branch")
 		},
 		landed: true,
@@ -129,7 +129,7 @@ func TestSweepLandsADetachedTreesClosedWork(t *testing.T) {
 		// from, so the head reaches nothing the base does not while the
 		// branch is a whole close's work. MergeSessionWork lands the branch.
 		name: "a branch the tree walked away from is landed",
-		setUp: func(t *testing.T, repo string, tr *SessionTree) {
+		setUp: func(t *testing.T, a *App, repo string, tr *SessionTree) {
 			commitIn(t, tr.Path, "fix.txt", "the persona's work\n", "a-1: left on the branch")
 			// Back to where the branch was cut, off the branch.
 			mustGit(t, tr.Path, "checkout", "-q", "--detach", tr.Base)
@@ -142,9 +142,9 @@ func TestSweepLandsADetachedTreesClosedWork(t *testing.T) {
 		// without the launcher lock. A guard that answered "there is
 		// something here" over everything would fail it.
 		name: "a tree whose work is already on the base is skipped in silence",
-		setUp: func(t *testing.T, repo string, tr *SessionTree) {
+		setUp: func(t *testing.T, a *App, repo string, tr *SessionTree) {
 			commitIn(t, tr.Path, "fix.txt", "the persona's work\n", "a-1: the fix")
-			if _, err := MergeSessionWork(tr); err != nil {
+			if _, err := MergeSessionWork(a, tr); err != nil {
 				t.Fatal(err)
 			}
 		},

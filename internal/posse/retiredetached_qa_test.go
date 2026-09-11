@@ -48,7 +48,7 @@ func TestRetireGuardsSeeADetachedTreesWork(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
 		name  string
-		setUp func(t *testing.T, repo string, tr *SessionTree)
+		setUp func(t *testing.T, a *App, repo string, tr *SessionTree)
 		// detached says the fixture must be the blind spot itself: the
 		// branch count is zero while the tree holds a commit. Without this
 		// an arm that quietly stayed on its branch would pin nothing.
@@ -61,7 +61,7 @@ func TestRetireGuardsSeeADetachedTreesWork(t *testing.T) {
 		// The bug, in the shape the fleet runs: no stamp, so nothing will
 		// splice this back either.
 		name: "a detached tree's unlanded work is held by both",
-		setUp: func(t *testing.T, repo string, tr *SessionTree) {
+		setUp: func(t *testing.T, a *App, repo string, tr *SessionTree) {
 			mustGit(t, tr.Path, "checkout", "-q", "--detach")
 			commitIn(t, tr.Path, "adr.md", "status: accepted\n", "s-1: off its own branch")
 		},
@@ -74,7 +74,7 @@ func TestRetireGuardsSeeADetachedTreesWork(t *testing.T) {
 		// whether or not anything ever splices, because the splice is the
 		// caller's act and not their evidence.
 		name: "a caged session's detached work is held by both",
-		setUp: func(t *testing.T, repo string, tr *SessionTree) {
+		setUp: func(t *testing.T, a *App, repo string, tr *SessionTree) {
 			mustGit(t, repo, "config", detachedKey(tr.Branch), "1")
 			mustGit(t, tr.Path, "checkout", "-q", "--detach")
 			commitIn(t, tr.Path, "adr.md", "status: accepted\n", "s-1: the caged work")
@@ -88,7 +88,7 @@ func TestRetireGuardsSeeADetachedTreesWork(t *testing.T) {
 		// red if the branch tip stops being asked at all — asking the head
 		// INSTEAD of the branch would be a trade, not a fix.
 		name: "work on the session branch is held by both",
-		setUp: func(t *testing.T, repo string, tr *SessionTree) {
+		setUp: func(t *testing.T, a *App, repo string, tr *SessionTree) {
 			commitIn(t, tr.Path, "adr.md", "status: accepted\n", "s-1: on the branch")
 		},
 		kept: true,
@@ -99,7 +99,7 @@ func TestRetireGuardsSeeADetachedTreesWork(t *testing.T) {
 		// "nothing held" here, and `branch -D` below would take the branch
 		// anyway — so this is the arm the head-only fix loses.
 		name: "a branch the tree walked away from is held by both",
-		setUp: func(t *testing.T, repo string, tr *SessionTree) {
+		setUp: func(t *testing.T, a *App, repo string, tr *SessionTree) {
 			commitIn(t, tr.Path, "adr.md", "status: accepted\n", "s-1: left on the branch")
 			// Back to where the branch was cut, off the branch: HEAD reaches
 			// nothing the base does not, the branch still holds the commit.
@@ -112,9 +112,9 @@ func TestRetireGuardsSeeADetachedTreesWork(t *testing.T) {
 		// copy of anything, and a guard that answered "held" over everything
 		// would fail it.
 		name: "an on-branch tree whose work is on the base is taken by both",
-		setUp: func(t *testing.T, repo string, tr *SessionTree) {
+		setUp: func(t *testing.T, a *App, repo string, tr *SessionTree) {
 			commitIn(t, tr.Path, "adr.md", "status: accepted\n", "s-1: the fix")
-			if _, err := MergeSessionWork(tr); err != nil {
+			if _, err := MergeSessionWork(a, tr); err != nil {
 				t.Fatal(err)
 			}
 		},
@@ -125,7 +125,7 @@ func TestRetireGuardsSeeADetachedTreesWork(t *testing.T) {
 		// would be lost. A pick, because a merge cannot reach a detached
 		// tree's HEAD — which is the case in the first place.
 		name: "a detached tree whose work is measured on the base is taken by both",
-		setUp: func(t *testing.T, repo string, tr *SessionTree) {
+		setUp: func(t *testing.T, a *App, repo string, tr *SessionTree) {
 			mustGit(t, tr.Path, "checkout", "-q", "--detach")
 			commitIn(t, tr.Path, "adr.md", "status: accepted\n", "s-1: the fix, off its branch")
 			sha := mustGit(t, tr.Path, "rev-parse", "HEAD")
@@ -148,7 +148,7 @@ func TestRetireGuardsSeeADetachedTreesWork(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			c.setUp(t, repo, tr)
+			c.setUp(t, a, repo, tr)
 			head := mustGit(t, tr.Path, "rev-parse", "HEAD")
 
 			if c.detached {

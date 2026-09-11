@@ -1248,7 +1248,16 @@ func (o MergeOutcome) Blocked() bool {
 // CALLERS MUST HOLD THE LAUNCHER LOCK. This moves the repo's branch, which
 // is the same kind of check-then-act against a shared store that ADR 0011 §1
 // serializes everything else for.
-func MergeSessionWork(t *SessionTree) (MergeOutcome, error) {
+//
+// It takes the App for one reason: constitutionLandRefusal below prescribes
+// `posse promote`, and whether that command can run at all is a fact about
+// the HOME (its manifest and its `constitution:` key), not about the session
+// tree — so the refusal cannot be written honestly without one
+// (ranger-base-17cmp). Handing the sentence in instead of the App was the
+// alternative and is not cheaper: this is the only caller of that function,
+// so the same App would have had to reach this frame regardless. Every
+// caller already holds one.
+func MergeSessionWork(a *App, t *SessionTree) (MergeOutcome, error) {
 	o := MergeOutcome{Branch: t.Branch, Base: t.Base}
 	// THE SPLICE (ranger-base-t4f1), before every guard below it. A session
 	// launched at the container tier works on a DETACHED HEAD, because that
@@ -1341,7 +1350,7 @@ func MergeSessionWork(t *SessionTree) (MergeOutcome, error) {
 				return o, nil
 			}
 		}
-		o.Reason = constitutionLandRefusal(t, hit)
+		o.Reason = constitutionLandRefusal(a, t, hit)
 		return o, nil
 	}
 	if _, err := git(t.Repo, "merge", "--ff-only", t.Branch); err == nil {
@@ -1559,6 +1568,20 @@ func constitutionOnBranch(t *SessionTree) ([]string, string) {
 // that does nothing about what they just read — the kind of near-right
 // instruction that teaches people to skim the refusal.
 //
+// A SINGLE-TREE home is the same near-right instruction one step further in
+// (ranger-base-17cmp): the hit really is a promoted path, and `posse promote`
+// still cannot run, because promote refuses a source and a home that are the
+// same tree. Here the hint REPLACES the promote step rather than following
+// it, which is where this site parts company with the four launch-verify
+// sentences ranger-base-qnn6j fixed by appending. Those offer promote as a
+// remedy in prose, and a second sentence beside it costs a reader nothing.
+// This one is a RECIPE — read the diff, then fast-forward, then N — and a
+// recipe whose last step refuses is the defect, not a sentence short of it.
+// Both shapes come out runnable end to end: a promoted home is still sent to
+// `posse promote` (SingleTreeRefresh answers "" for it and cannot replace
+// anything), and a single-tree home is never told to promote and never told
+// to remove a manifest that a promote could still re-stamp.
+//
 // It reports what the launcher DID — landed nothing, changed nothing — and
 // never that the branch still holds every commit (ranger-base-eq3ba). This
 // sentence is o.Reason, and noteMergeBlocked embeds o.Reason verbatim in a
@@ -1567,7 +1590,7 @@ func constitutionOnBranch(t *SessionTree) ([]string, string) {
 // an arm that close did not edit. The branch is still named — the `log -p`
 // and the `merge --ff-only` need it — but as the thing to act on, not as a
 // thing asserted to exist.
-func constitutionLandRefusal(t *SessionTree, hit []string) string {
+func constitutionLandRefusal(a *App, t *SessionTree, hit []string) string {
 	promoted := false
 	for _, h := range hit {
 		if strings.HasPrefix(h, ConstitutionSourceDir+"/") {
@@ -1578,6 +1601,16 @@ func constitutionLandRefusal(t *SessionTree, hit []string) string {
 	then := ""
 	if promoted {
 		then = ", then `posse promote`"
+		// The manifest is read for its `seeded` mark and nothing else — not
+		// VerifyPromoted, which would hash the whole promoted set to answer a
+		// question the mark already answers. An unreadable manifest reads as
+		// not-seeded, the same answer SingleTreeRefreshFor gives that arm:
+		// posse cannot say what shape a home is from a file it cannot parse,
+		// and the shape it does not know is the one it must not prescribe for.
+		m, _ := ReadPromoteManifest(a.PromoteManifestPath())
+		if hint := a.SingleTreeRefresh(m != nil && m.Seeded); hint != "" {
+			then = " — " + hint
+		}
 	}
 	return fmt.Sprintf("it touches the constitution — %s — and ADR 0015 §2/§3 makes putting that in force the operator's act, not a fast-forward the launcher does unattended. Nothing was landed and nothing here was changed. To land it: `git -C %s log -p %s...%s` to read it, then `git -C %s merge --ff-only %s`%s",
 		strings.Join(hit, ", "),
@@ -3290,7 +3323,7 @@ func LandSessionTrees(w io.Writer, a *App, dirs []string, force bool) error {
 			fmt.Fprintf(w, "◑ %s\n", why)
 			continue
 		}
-		o, err := MergeSessionWork(t)
+		o, err := MergeSessionWork(a, t)
 		switch {
 		case err != nil:
 			fmt.Fprintf(w, "⚠ %s not landed: %v\n", t.Branch, err)

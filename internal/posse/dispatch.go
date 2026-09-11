@@ -5084,7 +5084,7 @@ func (d *Dispatcher) mergeBack(is RepoIssue, persona, session string) {
 	}
 	defer lock.Release()
 
-	o, err := MergeSessionWork(t)
+	o, err := MergeSessionWork(d.App, t)
 	if err != nil {
 		d.printf("⚠ %-14s %s not merged onto %s: %v — the branch still holds the work\n", is.ID, t.Branch, t.Base, err)
 		return

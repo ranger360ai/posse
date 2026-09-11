@@ -130,12 +130,32 @@ func (a *App) LoadHigh(errw io.Writer) string {
 // what was just read is what teaches people to skim refusals. A manifest
 // this binary cannot READ counts as present — that is the launch verify's
 // own failure mode (PromoteVerdict.Err), and it refuses on it too.
+//
+// And on a SINGLE-TREE home that re-promote is itself the near-right
+// instruction this comment warns about: promote refuses a source and a home
+// that are the same tree, so the sentence above sent the operator out of the
+// load stop and into a command that cannot run (ranger-base-17cmp, the same
+// defect as ranger-base-qnn6j's four launch-verify sites). The consequence
+// half stays true on that shape — a seeded manifest attests config.yaml, so
+// the edit really does refuse every later dispatch — and only the remedy
+// changes, which is the whole of what SingleTreeRefresh adds. It answers ""
+// on every home promote can serve, so the shape is never asked about twice:
+// the branch below is over the separator, not over the home.
 func (a *App) LoadGuardEscape() string {
 	const knob = "set config load_guard: 0 to launch anyway"
-	if m, err := ReadPromoteManifest(a.PromoteManifestPath()); err == nil && m == nil {
+	m, err := ReadPromoteManifest(a.PromoteManifestPath())
+	if err == nil && m == nil {
 		return knob
 	}
-	return knob + " — but config.yaml is promoted (ADR 0015 §3), so that edit needs a `posse promote` after it or the launch verify refuses every dispatched launch"
+	// An unreadable manifest reaches here with m == nil, and SingleTreeRefresh
+	// is asked `false` for it rather than being skipped: posse cannot tell
+	// what shape a home is from a file it cannot parse, which is the same
+	// answer SingleTreeRefreshFor gives that arm.
+	esc := knob + " — but config.yaml is promoted (ADR 0015 §3), so that edit needs a `posse promote` after it or the launch verify refuses every dispatched launch"
+	if hint := a.SingleTreeRefresh(m != nil && m.Seeded); hint != "" {
+		esc += " — " + hint
+	}
+	return esc
 }
 
 // ─── who is burning it (ranger-base-0p6x) ───────────────────────────────────

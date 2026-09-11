@@ -67,7 +67,7 @@ func TestMergeBackPairsACommitReplayedOntoTheBaseByRebase(t *testing.T) {
 	}
 
 	// The whole point: no strand report, no P1, and the branch kept.
-	o, err := MergeSessionWork(tr)
+	o, err := MergeSessionWork(a, tr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +122,7 @@ func TestMergeBackDoesNotPairOnTheSubjectAlone(t *testing.T) {
 	if eq := equivalentOnBase(repo, "main", tr.Branch); len(eq) != 0 {
 		t.Fatalf("a same-subject commit authored at another time was paired as a replay: %+v", eq)
 	}
-	o, err := MergeSessionWork(tr)
+	o, err := MergeSessionWork(a, tr)
 	if err != nil {
 		t.Fatal(err)
 	}

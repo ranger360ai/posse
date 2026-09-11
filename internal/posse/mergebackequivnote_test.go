@@ -26,7 +26,7 @@ import (
 // amendedAfterLandingFixture is that shape: main holds v1 of the session's
 // commit under its own sha, and the branch holds an amended v2 whose extra
 // line main has never seen.
-func amendedAfterLandingFixture(t *testing.T) (string, *SessionTree) {
+func amendedAfterLandingFixture(t *testing.T) (*App, string, *SessionTree) {
 	t.Helper()
 	a := wtApp(t)
 	repo := wtRepo(t)
@@ -45,12 +45,12 @@ func amendedAfterLandingFixture(t *testing.T) (string, *SessionTree) {
 	write(t, tr.Path+"/notes.txt", "one\ntwo\nthree-main-has-never-seen-this\n")
 	mustGit(t, tr.Path, "add", "notes.txt")
 	mustGit(t, tr.Path, "commit", "-q", "--amend", "--no-edit", "--", "notes.txt")
-	return repo, tr
+	return a, repo, tr
 }
 
 func TestMergeBackNoteWillNotClaimAMeasurementItDoesNotHave(t *testing.T) {
 	t.Parallel()
-	repo, tr := amendedAfterLandingFixture(t)
+	a, repo, tr := amendedAfterLandingFixture(t)
 
 	// The fixture only measures anything while the pairing is the UNMEASURED
 	// kind: a patch-id twin would license the confident sentence honestly.
@@ -69,7 +69,7 @@ func TestMergeBackNoteWillNotClaimAMeasurementItDoesNotHave(t *testing.T) {
 		t.Fatalf("fixture: main must not hold the branch's bytes for notes.txt, got %v", lost)
 	}
 
-	o, err := MergeSessionWork(tr)
+	o, err := MergeSessionWork(a, tr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +140,7 @@ func TestMergeBackNoteStillSaysNothingIsUnlandedWhenItMeasuredIt(t *testing.T) {
 	if !measuredOnBase(eq) {
 		t.Fatalf("fixture: the clean pick must be a patch-id measurement, got %+v", eq)
 	}
-	o, err := MergeSessionWork(tr)
+	o, err := MergeSessionWork(a, tr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,7 +166,7 @@ func TestMergeBackNoteStillSaysNothingIsUnlandedWhenItMeasuredIt(t *testing.T) {
 // removed, on the 36% of landings ADR 0051 measures as rebases.
 func TestContentNotOnBaseCannotDecideTheReportingHalf(t *testing.T) {
 	t.Parallel()
-	_, repo, tr := replayFixture(t)
+	a, repo, tr := replayFixture(t)
 
 	lost, err := contentNotOnBase(repo, "main", tr.Branch)
 	if err != nil {
@@ -179,7 +179,7 @@ func TestContentNotOnBaseCannotDecideTheReportingHalf(t *testing.T) {
 	if line := mustGit(t, repo, "show", "main:shared.mk"); !strings.Contains(line, "verify-gotest") {
 		t.Fatalf("fixture: main must carry the session's target, got %q", line)
 	}
-	o, err := MergeSessionWork(tr)
+	o, err := MergeSessionWork(a, tr)
 	if err != nil {
 		t.Fatal(err)
 	}

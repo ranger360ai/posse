@@ -237,7 +237,7 @@ func TestEnsureSessionTreeKeepsAnExistingTreeWhileHeadIsDetached(t *testing.T) {
 	if strings.Contains(warn.String(), "SHARED checkout") {
 		t.Errorf("a private tree was reported as shared:\n%s", warn.String())
 	}
-	if o, err := MergeSessionWork(again); err != nil || o.Merged || !strings.Contains(o.Reason, "detached HEAD") {
+	if o, err := MergeSessionWork(a, again); err != nil || o.Merged || !strings.Contains(o.Reason, "detached HEAD") {
 		t.Errorf("merge-back = (%+v, %v), want a deferral naming the detached HEAD", o, err)
 	}
 }
@@ -357,7 +357,7 @@ func TestMergeSessionWorkFastForwards(t *testing.T) {
 	}
 	commitIn(t, tr.Path, "fix.txt", "the work\n", "s-1: the fix")
 
-	o, err := MergeSessionWork(tr)
+	o, err := MergeSessionWork(a, tr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -369,7 +369,7 @@ func TestMergeSessionWorkFastForwards(t *testing.T) {
 	}
 	// Idempotent: a second merge has nothing to do and says so rather than
 	// failing, because a kill may land what a pass already landed.
-	again, err := MergeSessionWork(tr)
+	again, err := MergeSessionWork(a, tr)
 	if err != nil || !again.Merged || again.Commits != 0 {
 		t.Errorf("second merge = %+v, %v; want merged with nothing to do", again, err)
 	}
@@ -386,7 +386,7 @@ func TestMergeSessionWorkRebasesWhenTheBaseMoved(t *testing.T) {
 	commitIn(t, tr.Path, "fix.txt", "the work\n", "s-1: the fix")
 	commitIn(t, repo, "other.txt", "meanwhile\n", "main moved")
 
-	o, err := MergeSessionWork(tr)
+	o, err := MergeSessionWork(a, tr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -459,7 +459,7 @@ func TestMergeSessionWorkReplaysWhenTheBaseMovesUnderTheRebase(t *testing.T) {
 			commitIn(t, repo, "other.txt", "meanwhile\n", "main moved")
 			count := raceOnRebase(t, repo, c.moves)
 
-			o, err := MergeSessionWork(tr)
+			o, err := MergeSessionWork(a, tr)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -521,7 +521,7 @@ func TestMergeSessionWorkRefusesAConflictAndKeepsEverything(t *testing.T) {
 	commitIn(t, repo, "clash.txt", "the operator's line\n", "main: theirs")
 	before := mustGit(t, repo, "rev-parse", tr.Branch)
 
-	o, err := MergeSessionWork(tr)
+	o, err := MergeSessionWork(a, tr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -558,7 +558,7 @@ func TestMergeSessionWorkTellsAConflictFromARebaseThatNeverMerged(t *testing.T) 
 	// A pre-rebase hook is the cheapest honest stand-in for the class the
 	// bead is about — a full disk, a lock, a bad object: git exits non-zero
 	// before any merge, and leaves no rebase state behind.
-	setup := func(t *testing.T, conflict, refuse bool) (*SessionTree, string) {
+	setup := func(t *testing.T, conflict, refuse bool) (*App, *SessionTree, string) {
 		t.Helper()
 		a := wtApp(t)
 		repo := wtRepo(t)
@@ -583,12 +583,12 @@ func TestMergeSessionWorkTellsAConflictFromARebaseThatNeverMerged(t *testing.T) 
 			}
 			mustGit(t, repo, "config", "core.hooksPath", hooks)
 		}
-		return tr, repo
+		return a, tr, repo
 	}
 
 	t.Run("a rebase that stopped on a merge still says conflicts", func(t *testing.T) {
-		tr, _ := setup(t, true, false)
-		o, err := MergeSessionWork(tr)
+		a, tr, _ := setup(t, true, false)
+		o, err := MergeSessionWork(a, tr)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -606,10 +606,10 @@ func TestMergeSessionWorkTellsAConflictFromARebaseThatNeverMerged(t *testing.T) 
 	})
 
 	t.Run("a rebase that never merged names what git said", func(t *testing.T) {
-		tr, repo := setup(t, false, true)
+		a, tr, repo := setup(t, false, true)
 		before := mustGit(t, repo, "rev-parse", tr.Branch)
 
-		o, err := MergeSessionWork(tr)
+		o, err := MergeSessionWork(a, tr)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -632,8 +632,8 @@ func TestMergeSessionWorkTellsAConflictFromARebaseThatNeverMerged(t *testing.T) 
 	})
 
 	t.Run("the same fixture lands without the refusal", func(t *testing.T) {
-		tr, repo := setup(t, false, false)
-		o, err := MergeSessionWork(tr)
+		a, tr, repo := setup(t, false, false)
+		o, err := MergeSessionWork(a, tr)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -716,7 +716,7 @@ func TestMergeSessionWorkRefusesWorkTheBranchDoesNotReach(t *testing.T) {
 			}
 			head := mustGit(t, tr.Path, "rev-parse", "HEAD")
 
-			o, err := MergeSessionWork(tr)
+			o, err := MergeSessionWork(a, tr)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -764,7 +764,7 @@ func TestMergeSessionWorkReportsUncommittedWork(t *testing.T) {
 	commitIn(t, tr.Path, "fix.txt", "committed\n", "s-1: the fix")
 	write(t, filepath.Join(tr.Path, "forgotten.txt"), "never committed\n")
 
-	o, err := MergeSessionWork(tr)
+	o, err := MergeSessionWork(a, tr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -787,7 +787,7 @@ func TestMergeSessionWorkSaysSoOnADetachedRepo(t *testing.T) {
 	commitIn(t, tr.Path, "fix.txt", "the work\n", "s-1: the fix")
 	mustGit(t, repo, "checkout", "-q", "--detach", "HEAD")
 
-	o, err := MergeSessionWork(&SessionTree{Repo: tr.Repo, Path: tr.Path, Branch: tr.Branch, Base: repoBranch(repo)})
+	o, err := MergeSessionWork(a, &SessionTree{Repo: tr.Repo, Path: tr.Path, Branch: tr.Branch, Base: repoBranch(repo)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -827,7 +827,7 @@ func TestSessionTreeRemembersTheBaseItWasCutFrom(t *testing.T) {
 
 	// And the merge refuses rather than landing on operator-side.
 	before := mustGit(t, repo, "rev-parse", "main")
-	o, err := MergeSessionWork(trees[0])
+	o, err := MergeSessionWork(a, trees[0])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -842,7 +842,7 @@ func TestSessionTreeRemembersTheBaseItWasCutFrom(t *testing.T) {
 
 	// Nothing is lost by refusing: back on the base, the same call lands it.
 	mustGit(t, repo, "checkout", "-q", "main")
-	if o, err = MergeSessionWork(trees[0]); err != nil || !o.Merged || o.Commits != 1 {
+	if o, err = MergeSessionWork(a, trees[0]); err != nil || !o.Merged || o.Commits != 1 {
 		t.Fatalf("outcome back on the base = %+v, %v; want the commit landed", o, err)
 	}
 }
@@ -865,7 +865,7 @@ func TestRemoveSessionTreeRefusesWhileWorkWouldBeLost(t *testing.T) {
 		t.Errorf("the refusal must name what would be lost, got: %v", err)
 	}
 
-	if _, err := MergeSessionWork(tr); err != nil {
+	if _, err := MergeSessionWork(a, tr); err != nil {
 		t.Fatal(err)
 	}
 	write(t, filepath.Join(tr.Path, "scratch.txt"), "uncommitted\n")
@@ -1077,7 +1077,7 @@ func TestKillRetiresACherryPickedTree(t *testing.T) {
 	commitIn(t, repo, "moved.txt", "meanwhile\n", "main moved on")
 	mustGit(t, repo, "cherry-pick", "-x", sha)
 
-	o, err := MergeSessionWork(tr)
+	o, err := MergeSessionWork(a, tr)
 	if err != nil || !o.Merged || len(o.Equivalent) == 0 {
 		t.Fatalf("outcome = %+v, %v; want the pick reported as already landed", o, err)
 	}
@@ -1117,7 +1117,7 @@ func TestListSessionTreesNamesWhatHasNotLanded(t *testing.T) {
 		}
 	}
 
-	if _, err := MergeSessionWork(tr); err != nil {
+	if _, err := MergeSessionWork(a, tr); err != nil {
 		t.Fatal(err)
 	}
 	os.Remove(filepath.Join(tr.Path, "scratch.txt"))
@@ -1444,7 +1444,7 @@ func TestMergeSessionWorkTellsACherryPickedBranchFromAStrand(t *testing.T) {
 			pick := c.land(t, repo, sha)
 			before := mustGit(t, repo, "rev-parse", tr.Branch)
 
-			o, err := MergeSessionWork(tr)
+			o, err := MergeSessionWork(a, tr)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1551,7 +1551,7 @@ func TestMergeSessionWorkStillStrandsAPartlyLandedBranch(t *testing.T) {
 	commitIn(t, repo, "adr.md", "status: accepted (2026-08-29, amended)\n",
 		"s-1: the fix\n\n(cherry picked from commit "+picked+")")
 
-	o, err := MergeSessionWork(tr)
+	o, err := MergeSessionWork(a, tr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2083,7 +2083,7 @@ func TestCagedWorktreeSessionCommitsDetachedAndTheCloseSplicesItBack(t *testing.
 		t.Fatalf("a detached commit moved %s (%s → %s) — the narrowed mount grants no ref write, so this shape would not commit inside the cage", tr.Branch, cutAt[:12], now[:12])
 	}
 
-	o, err := MergeSessionWork(tr)
+	o, err := MergeSessionWork(a, tr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2198,7 +2198,7 @@ func TestOnlyARecordedDetachSplices(t *testing.T) {
 			}
 			commitIn(t, tr.Path, "fix.txt", "the work\n", "s-1: the fix")
 
-			o, err := MergeSessionWork(tr)
+			o, err := MergeSessionWork(a, tr)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -2252,7 +2252,7 @@ func TestAnUncagedLaunchPutsADetachedTreeBackOnItsBranch(t *testing.T) {
 	// here is reported, not landed.
 	mustGit(t, tr.Path, "checkout", "-q", "--detach")
 	commitIn(t, tr.Path, "again.txt", "more\n", "s-1: more")
-	o, err := MergeSessionWork(tr)
+	o, err := MergeSessionWork(a, tr)
 	if err != nil {
 		t.Fatal(err)
 	}

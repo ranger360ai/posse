@@ -80,7 +80,7 @@ func TestQAConstitutionArmsEquivalenceNoteAsksItsEvidenceToo(t *testing.T) {
 		t.Fatalf("fixture: main must not hold the branch's bytes for %s, got %v", rel, lost)
 	}
 
-	o, err := MergeSessionWork(tr)
+	o, err := MergeSessionWork(a, tr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +120,7 @@ func TestQAConstitutionArmsEquivalenceNoteAsksItsEvidenceToo(t *testing.T) {
 	if out, err := git(repo2, "cherry-pick", "-x", sha); err != nil {
 		t.Skipf("git cherry-pick: %v %s", err, out)
 	}
-	o2, err := MergeSessionWork(tr2)
+	o2, err := MergeSessionWork(a2, tr2)
 	if err != nil {
 		t.Fatal(err)
 	}
