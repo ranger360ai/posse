@@ -2395,7 +2395,10 @@ func deniesGitPush(deny []string) bool {
 // push` invocation, by any of the three forms claude matches a Bash rule
 // (exact, `:*` prefix, `*` wildcard — see L0Spellings)? The alarm is
 // advisory, so it over-approximates on purpose: an unrecognized grant is
-// silence, and silence is the defect being fixed.
+// silence, and silence is the defect being fixed. ranger-base-06avg took
+// that one step further out, to the rule's COMMAND slot — `Bash(env git
+// push)`, `Bash(/usr/bin/git push)`, `Bash(cd /x && git push)`, three more
+// measured grants that were silent; grantsGitPushRule says how.
 func grantsGitPush(allow []string) string {
 	for _, rule := range allow {
 		if grantsGitPushRule(rule) {
@@ -2406,6 +2409,35 @@ func grantsGitPush(allow []string) string {
 }
 
 // grantsGitPushRule is grantsGitPush for one rule.
+//
+// It used to read `git` out of words[0] alone and give up if the first
+// token was not that bare name, so a rule that spells the command some
+// other way came back false — silence, the failure mode this alarm was
+// widened to remove (ranger-base-06avg). Three such spellings were
+// **MEASURED** silent on a binary built from d309e2b, and the first two
+// are not hypothetical: `docs/notes.d/notes-personas.md` records both live
+// on claude 2.1.234 — `env git push --dry-run origin HEAD` WAS refused by
+// a deny rule spelled `git push` (claude's matcher is not anchored at
+// argv[0]), and `/usr/bin/git push` walked straight past a rule spelled
+// that way.
+//
+//	Bash(/usr/bin/git push)   the command word is a path ending in git
+//	Bash(env git push)        a wrapper stands in the command slot
+//	Bash(cd /x && git push)   a shell operator does
+//
+// So `git` is looked for at EVERY word, not just the first, and the walk
+// to the subcommand slot runs from wherever it is found. That is one
+// over-approximation covering all three: a wrapper and a shell operator
+// are both just words in front of git, so neither needs a table of its
+// own, and `/usr/bin/git` is reached by matching the command word's base
+// name. What stands in the command slot is not examined — per ADR 0033 §5
+// the alarm is lint, and a rule whose subcommand slot can hold `push` is
+// worth a line whatever put git there.
+//
+// The scan is what keeps its reach honest rather than turning every
+// push-shaped word into a warning: `Bash(git stash push:*)` and
+// `Bash(git log --grep=push)` hold no word that reaches `git` except the
+// first, and from there the subcommand slot holds `stash` and `log`.
 func grantsGitPushRule(rule string) bool {
 	if rule == "Bash" {
 		return true // every Bash command, push with them
@@ -2422,18 +2454,37 @@ func grantsGitPushRule(rule string) bool {
 	// The LAST word of a `:*` rule is a string prefix, not a whole word:
 	// `Bash(git pus:*)` matches `git push` and `Bash(gi:*)` matches all of
 	// git. Anywhere else a word is a word.
-	if !reachesWord(words[0], "git", prefix && len(words) == 1) {
-		return false
+	for i := range words {
+		if !reachesCommand(words[i], "git", prefix && i == len(words)-1) {
+			continue
+		}
+		if grantsPushAfterGit(words, i, prefix) {
+			return true
+		}
 	}
-	if strings.Contains(words[0], "*") {
-		// The wildcard sits in front of the subcommand, so it can absorb
-		// it: `Bash(* log)` is `^.* log$`, which matches `git push origin
-		// log`. Whatever is written behind it cannot make that not a push.
+	return false
+}
+
+// grantsPushAfterGit reports whether the rule's subcommand slot — the one
+// belonging to the `git` standing at words[cmd] — can hold `push`.
+func grantsPushAfterGit(words []string, cmd int, prefix bool) bool {
+	if cmd == 0 && strings.Contains(words[0], "*") {
+		// The wildcard is the whole head of the pattern, so it can absorb
+		// the subcommand: `Bash(* log)` is `^.* log$`, which matches `git
+		// push origin log`. Whatever is written behind it cannot make that
+		// not a push. Only at words[0]: a wildcard further in has literal
+		// text anchored in front of it, and `Bash(git log -- *)` is
+		// `^git log -- .*$`, which reaches no push.
 		return true
 	}
-	rest := words[1:]
+	rest := words[cmd+1:]
 	if len(rest) == 0 {
-		return true // the whole verb: Bash(git), Bash(git:*), Bash(*)
+		// Nothing behind git. In the command slot that is the whole verb —
+		// `Bash(git)`, `Bash(git:*)` — and the alarm takes both. Behind a
+		// wrapper it is the prefix that decides: `Bash(env git:*)` leaves
+		// the subcommand open and grants a push, while the exact
+		// `Bash(env git)` matches that command line and nothing longer.
+		return cmd == 0 || prefix
 	}
 	// Walk to the word standing where the SUBCOMMAND stands, consuming
 	// git's global options on the way — and consuming in PAIRS the ones
@@ -2459,12 +2510,26 @@ func grantsGitPushRule(rule string) bool {
 		// --grep=push)` quiet — but a token carrying a wildcard reaches
 		// push whenever its literal head does, and so does a trailing
 		// partial word.
-		return reachesWord(w, "push", prefix && i == len(rest)-1)
+		return reachesWord(w, "push", prefix && cmd+1+i == len(words)-1)
 	}
 	// Every word was a global option. A prefix rule leaves the subcommand
 	// open (`git -C x push` starts with `git -C x`); an exact one matches
 	// that command line and nothing longer.
 	return prefix
+}
+
+// reachesCommand is reachesWord for the slot a COMMAND word stands in,
+// where a path spells the same command: `/usr/bin/git` and `./git` are
+// git, so the token is matched by its base name. The dirname is dropped
+// rather than matched because any of them can be the one that resolves —
+// which is measured, not assumed: `/usr/bin/git push` is the spelling that
+// walked past a live claude `git push` rule, and on macOS `command -v git`
+// has answered `/usr/bin/git` inside a gated session (rangerhq-vjl).
+func reachesCommand(tok, want string, partial bool) bool {
+	if i := strings.LastIndex(tok, "/"); i >= 0 {
+		tok = tok[i+1:]
+	}
+	return reachesWord(tok, want, partial)
 }
 
 // reachesWord reports whether a claude Bash-rule token can stand where the
@@ -2473,6 +2538,14 @@ func grantsGitPushRule(rule string) bool {
 // only by the literal text in front of the wildcard: `p*s` matches `push
 // origin refs`, `l*g` reaches no push at all. partial is the last word of a
 // `:*` rule, which is a string prefix rather than a whole word.
+//
+// That last reading is the GROK dialect, measured: `:*` is a prefix with no
+// word boundary there, so `Bash(git push:*)` refuses `git pushy --help`.
+// Claude requires the boundary (`docs/notes.d/notes-personas.md`), so on
+// claude `Bash(git pus:*)` grants no push and this reader warns about it
+// anyway. That is the over-approximating direction this alarm is built to
+// take, not a claim about claude — a4265d0's flat rationale states the grok
+// half as if it were both.
 func reachesWord(tok, want string, partial bool) bool {
 	if i := strings.Index(tok, "*"); i >= 0 {
 		return strings.HasPrefix(want, tok[:i])

@@ -116,6 +116,60 @@ func TestGrantsGitPushRuleShapes(t *testing.T) {
 		"Bash(git pu)",              // EXACT: a partial word matches nothing longer
 		"Bash(gi)",                  // …at the command slot too
 		"Bash(git commit unless --)",
+		"Bash(gitk push)",    // no word here is git; push is not a subcommand slot
+		"Bash(git log -- *)", // `^git log -- .*$` — a wildcard BEHIND the
+		//                              subcommand has literal text anchored in
+		//                              front of it and reaches no push
+	} {
+		if got := grantsGitPush([]string{quiet}); got != "" {
+			t.Errorf("%s grants no push; grantsGitPush returned %q", quiet, got)
+		}
+	}
+}
+
+// ranger-base-06avg: the same false-negative class one step further out —
+// the rule's COMMAND slot. grantsGitPushRule read `git` out of words[0] and
+// gave up if that first token was not the bare name, so a rule that spells
+// the command another way granted a push in silence, which is the direction
+// ranger-base-b2os says fails open. Measured silent on a binary built from
+// d309e2b (scratch RHQ_HOME, no coordinator: line, counting `defining
+// permission` lines out of `posse agent check`).
+//
+// The first two are not hypothetical spellings: `docs/notes.d/notes-personas.md`
+// records both live on claude 2.1.234 — `env git push --dry-run origin HEAD`
+// WAS refused by a deny rule spelled `git push` (the matcher is not anchored
+// at argv[0]), and `/usr/bin/git push` walked straight past a rule spelled
+// that way.
+//
+// Each firing row is paired with the wrong arm that keeps it from passing for
+// the wrong reason: the same spelling written EXACT and ending before a
+// subcommand grants no push, and neither does a wrapper in front of a
+// subcommand that is not one. Without the pairs, a reader that simply
+// returned true whenever a word reached `git` would be green here.
+func TestGrantsGitPushCommandSlotSpellings(t *testing.T) {
+	t.Parallel()
+	for _, fires := range []string{
+		"Bash(/usr/bin/git push)",                        // an absolute path IS the command word git
+		"Bash(./git push)",                               // …and so is a relative one
+		"Bash(env git push)",                             // a wrapper stands in the command slot
+		"Bash(cd /x && git push)",                        // a shell operator does
+		"Bash(sudo -u builder git push:*)",               // wrapper with options of its own
+		"Bash(env GIT_DIR=/r /usr/bin/git push --force)", // both at once
+		"Bash(env git:*)",                                // prefix: the subcommand is still open
+		"Bash(/usr/bin/git -C /repo push)",               // the option walk runs from the path too
+		"Bash(/usr/bin/gi:*)",                            // a partial word at a path command slot
+	} {
+		if got := grantsGitPush([]string{"Edit", fires, "Bash(bd:*)"}); got != fires {
+			t.Errorf("%s grants push — git reached by a spelling that is not the bare command word is still git; grantsGitPush returned %q", fires, got)
+		}
+	}
+	for _, quiet := range []string{
+		"Bash(env git)",       // EXACT, and it ends before a subcommand
+		"Bash(cd /x && git)",  // …the same, behind an operator
+		"Bash(env git log:*)", // the subcommand slot behind the wrapper is log
+		"Bash(/usr/bin/git log:*)",
+		"Bash(cd /srv/git && ls)", // a PATH that ends in git is not a command word here
+		"Bash(env gitk push)",
 	} {
 		if got := grantsGitPush([]string{quiet}); got != "" {
 			t.Errorf("%s grants no push; grantsGitPush returned %q", quiet, got)

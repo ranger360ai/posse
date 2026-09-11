@@ -5,7 +5,9 @@ re-landed 2026-08-28 under a free number, bead ranger-base-gbkr ·
 amended 2026-09-06 (ranger-base-mqoid): §1's `pulse_persona` and §4's
 "until that lands" both described unbuilt code that is built —
 `pulse_persona` is parsed and carried as `GovInputs.PulsePersona`
-and G9 is computed in `govern.go`*
+and G9 is computed in `govern.go` ·
+amended 2026-09-11 (ranger-base-06avg): §5's "any spelling" reaches the
+rule's command slot, not only its first word*
 
 > Restated from the private archive of the instance this harness was
 > developed in, where it was accepted 2026-08-22 as its ADR 0018. The
@@ -109,7 +111,15 @@ grants it, not just the `Bash(git push:*)` the coordinator's own PID
 carries: bare `Bash`, `Bash(*)`, `Bash(git * push)` and `Bash(git -C
 <repo> push)` all hand a persona push, and all four were silent while
 the check keyed on the L1 shim's rule parser (ranger-base-b2os, from
-ranger-base-telz). The alarm over-approximates on purpose — an
+ranger-base-telz). "Any spelling" reaches the rule's COMMAND slot too,
+which that same reader then read only at the first word: `Bash(env git
+push)`, `Bash(/usr/bin/git push)` and `Bash(cd /x && git push)` were
+silent one step further out (ranger-base-06avg), and the first two are
+spellings the fleet has already met — on claude a deny rule spelled `git
+push` refused `env git push`, while `/usr/bin/git push` walked past it.
+The checker looks for `git` at every word of a rule now, by base name so
+a path spells it, and does not examine what stands in front of it. The
+alarm over-approximates on purpose — an
 unrecognized grant is silence, and silence is the failure mode. This
 is the guardrail expressed twice (prose in the record, rule in the
 checker),
