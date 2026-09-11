@@ -101,10 +101,15 @@ func TestHandTypedLaunchExitsNonZeroOnASkillsRefusal(t *testing.T) {
 		// exits non-zero, so the code == 0 arm keeps passing while this pin
 		// measures something else entirely — it would go on passing even if
 		// the skills refusal regressed to exit 0. Name the refusal that has
-		// actually done it.
-		if strings.Contains(errb.String(), "does not realize every gate") {
+		// actually done it, and treat "some other refusal" as its own case
+		// (ranger-base-40n7l): parity is only the one we have already been
+		// bitten by, and the silence arm must not absorb the next one.
+		switch {
+		case strings.Contains(errb.String(), "does not realize every gate"):
 			t.Errorf("this pin measured a parity refusal, not the skills one — the fixture's own PATH carried a gates dir (git resolved to %s)\nstderr %q", git, errb.String())
-		} else {
+		case strings.TrimSpace(errb.String()) != "":
+			t.Errorf("a refusal answered above the skills step, so this pin measured that one and not its subject\nstderr %q", errb.String())
+		default:
 			t.Errorf("the refusal must reach stderr, not stdout and not silence\nstdout %q\nstderr %q", out.String(), errb.String())
 		}
 	}
