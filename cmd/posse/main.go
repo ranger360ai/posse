@@ -2212,12 +2212,16 @@ sessions (herdr workspaces):
       --force                  refresh even while its bead is open and its tree dirty
   posse kill <name>              land the plane (one bounded turn to write lessons
                                  down), commit the persona's standing orders, close
-                                 the workspace, land its worktree's branch on the
-                                 repo's branch and remove the worktree (a tree still
-                                 holding work is kept and says so). A session still
-                                 holding an in_progress bead over uncommitted work is
-                                 NOT killed at all (ADR 0013 §4)
-      --force                  kill it anyway, once you have read the refusal
+                                 the workspace, and — once its bead is CLOSED — land
+                                 its worktree's branch on the repo's branch and remove
+                                 the worktree (a tree still holding work, or holding
+                                 work no closed bead has released, is kept and says
+                                 so; closing the bead lands it on the next pass).
+                                 A session still holding an in_progress bead over
+                                 uncommitted work is NOT killed at all (ADR 0013 §4)
+      --force                  kill it anyway, once you have read the refusal. It
+                               stands down that refusal and nothing else: an unclosed
+                               bead's branch is still not landed
       --foreign                close a workspace this home holds no session meta for
                                (another instance's session, or one made in herdr by
                                hand) — refused without it, naming the workspace id

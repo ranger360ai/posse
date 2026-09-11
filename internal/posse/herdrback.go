@@ -3347,6 +3347,19 @@ func (b *HerdrBackend) killAndLand(name string, opts KillOpts) (*KillLanding, er
 		return l, nil
 	}
 	l.Tree = t
+	// The landing gate (landgate.go, ranger-base-pqque): the merge below
+	// moves the operator's branch, and a bead that is not closed has not
+	// released the work it would move. Before the lock, because a kill that
+	// is not going to land has no reason to wait on a pass to finish.
+	//
+	// noteUnlandedOnKill is not skipped in substance by returning here: its
+	// two records are both about a CLOSED bead's tree, and both need an
+	// outcome carrying dirt or an obstacle — neither exists when no merge
+	// was attempted, so it would return at its own first line.
+	if why := b.landRefusal(m, t); why != "" {
+		l.Kept = why
+		return l, nil
+	}
 	// Moving the repo's branch is a launcher act (ADR 0011 §1) — the same
 	// check-then-act against a store a dispatch pass is also writing. The
 	// lock is taken around the landing ONLY, never around the kill: a kill

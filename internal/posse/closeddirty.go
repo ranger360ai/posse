@@ -291,10 +291,14 @@ func openMatchedBead(bd Bd, dir, label string, match func(string) bool) (string,
 // `posse kill` run by hand on a box where no launcher runs again — and it
 // costs nothing to cover, because the two sites dedupe on one title.
 //
-// It asks bd for the status rather than assuming one. A kill lands open beads
-// too — the reap guard refuses that pair only as far as `--force` — and a
-// persona's work in progress is not a close that did not land. Ignorance is
-// reported and never guessed past, in the direction that files nothing:
+// It asks bd for the status rather than assuming one, and still has to since
+// the landing gate (landgate.go, ranger-base-pqque) narrowed the population
+// that reaches it. A kill no longer MERGES an unclosed bead's work — but it
+// reaches this line over every tree with nothing ahead of its base, whatever
+// the bead says, and a tree that committed nothing and left dirt is exactly
+// that tree. A persona's work in progress is not a close that did not land.
+// Ignorance is reported and never guessed past, in the direction that files
+// nothing:
 // unlike the guard, nothing here is about to destroy anything, and the tree
 // (which a dirty status or a failed merge keeps) is still there for the next
 // reader.

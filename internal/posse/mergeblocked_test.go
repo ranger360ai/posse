@@ -291,19 +291,29 @@ func TestKillLandingFilesTheMergeBackHandoffOnAClosedBead(t *testing.T) {
 	}
 }
 
-// The kill's wrong arm, for the reason noteUnlandedOnKill states: a kill
-// lands OPEN beads too (the reap guard refuses that pair only as far as
-// --force), and work in progress that will not fast-forward is not a close
-// that did not land.
+// The kill's wrong arm: work in progress that will not fast-forward is not a
+// close that did not land, and a P1 filed at the persona for it is a false
+// handoff.
+//
+// SINCE ranger-base-pqque IT IS TRUE TWICE OVER, and the second reason is
+// the stronger one. This kill no longer attempts the merge at all — the
+// landing gate (landgate.go) keeps an unclosed bead's tree — so there is no
+// outcome to judge and noteUnlandedOnKill returns at its own first line. The
+// keep is asserted here as well, or this pin would be satisfied by a kill
+// that landed the work and merely declined to say so.
 func TestKillLandingFilesNothingWhenTheBeadIsStillOpen(t *testing.T) {
 	t.Parallel()
 	b, repo, name := mergeBlockedKillSession(t, "in_progress")
 
-	if _, err := b.ForceKillSessionAndLand(name); err != nil {
+	l, err := b.ForceKillSessionAndLand(name)
+	if err != nil {
 		t.Fatal(err)
 	}
 	if n := len(mergeBlockedBeads(t, repo)); n != 0 {
 		t.Errorf("an open bead's blocked branch drew %d merge-back handoff(s)", n)
+	}
+	if !strings.Contains(l.Kept, "a-1 is in_progress") {
+		t.Errorf("the kill did not keep the tree over an unclosed bead: %+v", l)
 	}
 }
 
