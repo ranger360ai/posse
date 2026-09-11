@@ -635,7 +635,8 @@ ORPHANER
 	# measurement — the holder processes, `suite_lock_status`, `lsof` — stay.
 
 	# wait_file <path> <seconds> — did it appear in time? Whole seconds, which
-	# is what all eighteen call sites pass; bash arithmetic, not awk's.
+	# is what every call site passes ($fork_s below); bash arithmetic, not
+	# awk's.
 	wait_file() {
 		local n=0 lim=$(( $2 * 10 ))
 		while [ "$n" -lt "$lim" ]; do
@@ -645,6 +646,7 @@ ORPHANER
 		done
 		return 1
 	}
+
 	# marker_field <file> <key> — prints the first `<key>:<value>` line's
 	# value, nothing when there is none. The command substitution at the ~30
 	# call sites stays; what is gone from inside it is the exec and the pipe.
@@ -675,6 +677,58 @@ ORPHANER
 		return 1
 	}
 
+	# HOW LONG A FORK GETS, and it is a backstop rather than a measurement
+	# (ranger-base-4psg2). Nothing below TIMES a lock operation: every arm
+	# decides on a marker's VALUE or on a log line, and the deadline is only
+	# for the case where the forked holder never got anywhere at all.
+	#
+	# The 5s it replaces at arms 4, 5 and 5b was a scheduler budget wearing an
+	# assertion's name. MEASURED 2026-09-11, darwin/arm64, with both slots
+	# held by two real crew suites: arm 4 read its marker as 'none' — its own
+	# claim, and TRUE — and still printed FAIL, because wait_file's five
+	# seconds had expired and short-circuited the `&&` before the value was
+	# ever compared. `make test` runs verify-suite-lock as a prereq, so that
+	# reds a whole suite before a package builds, with a message about lock
+	# slots. The same five seconds sat on arms 8 and 9, and 8-15s on the rest:
+	# one number, so there is one place to argue with it.
+	#
+	# 60 is ASSUMED and not measured. The only thing it has to outlast is a
+	# fork on a loaded box, it is spent only by an arm that is already going
+	# to fail, and nothing is bought by cutting it finer.
+	local fork_s=60
+
+	# wait_answer <marker> <seconds> — wait until the forked holder has
+	# ANSWERED, either way, and say whether it did. A holder answers by
+	# writing its marker (it is through the acquire, and the slot it got — or
+	# `none` — is in the file) or by announcing that it is QUEUED (it is not
+	# through, and it will not be while this arm holds the slots). Both are
+	# positive evidence, so an arm built on this fails fast on a broken lock
+	# without its verdict resting on when the scheduler got round to a fork.
+	# The caller decides with slot_of/log_has afterwards, exactly as before.
+	wait_answer() {
+		local n=0 lim=$(( $2 * 10 ))
+		while [ "$n" -lt "$lim" ]; do
+			[ -e "$1" ] && return 0
+			log_has "$1.log" 'waiting for suite lock' && return 0
+			sleep 0.1
+			n=$((n + 1))
+		done
+		return 1
+	}
+
+	# answer_of <marker> <seconds> — the same three states in the words the
+	# reader of a FAIL line needs, so "it queued" and "it never started" stop
+	# arriving as the same sentence.
+	answer_of() {
+		if [ -e "$1" ]; then
+			printf "its marker says slot '%s'\n" "$(slot_of "$1")"
+		elif log_has "$1.log" 'waiting for suite lock'; then
+			printf 'it queued behind the held slots\n'
+		else
+			printf 'it never answered: no marker and no queued line in %ss\n' "$2"
+		fi
+	}
+
 	local h1 h2 h3
 	touch "$tmp/hold1" "$tmp/hold2" "$tmp/hold3"
 
@@ -682,10 +736,10 @@ ORPHANER
 	# property POSSE_SUITE_SLOTS names.
 	"$tmp/holder.sh" "$SUITE_LOCK_LIB" "$tmp/m1" "$tmp/hold1" go test -timeout 25m ./... &
 	h1=$!
-	wait_file "$tmp/m1" 10 || bad 'slots: two concurrent full suites both run' 'first holder never acquired'
+	wait_file "$tmp/m1" "$fork_s" || bad 'slots: two concurrent full suites both run' 'first holder never acquired'
 	"$tmp/holder.sh" "$SUITE_LOCK_LIB" "$tmp/m2" "$tmp/hold2" go test -timeout 25m ./... &
 	h2=$!
-	if wait_file "$tmp/m2" 10 && [ "$(slot_of "$tmp/m1")" != "$(slot_of "$tmp/m2")" ] &&
+	if wait_file "$tmp/m2" "$fork_s" && [ "$(slot_of "$tmp/m1")" != "$(slot_of "$tmp/m2")" ] &&
 		[ "$(slot_of "$tmp/m1")" != none ] && [ "$(slot_of "$tmp/m2")" != none ]; then
 		ok 'slots: two concurrent full suites both run'
 	else
@@ -718,24 +772,29 @@ ORPHANER
 	# ARM 4: a filtered run is NOT queued behind them. The second control
 	# for arm 1, and the one that keeps the cure from being worse than the
 	# disease: `-run TestFoo` is what a person types while thinking.
+	#
+	# Unqueued means the marker appears AND says `none`; queued means the log
+	# says so. Waiting for either (wait_answer) is what keeps this arm off the
+	# scheduler's clock — the question is which answer the holder gave, never
+	# how soon it was able to give one.
 	touch "$tmp/hold4"
 	"$tmp/holder.sh" "$SUITE_LOCK_LIB" "$tmp/m4" "$tmp/hold4" go test -timeout 25m -run TestFoo ./... &
-	if wait_file "$tmp/m4" 5 && [ "$(slot_of "$tmp/m4")" = none ]; then
+	if wait_answer "$tmp/m4" "$fork_s" && [ -e "$tmp/m4" ] && [ "$(slot_of "$tmp/m4")" = none ]; then
 		ok 'unlocked: a -run filtered suite takes no slot'
 	else
 		bad 'unlocked: a -run filtered suite takes no slot' \
-			"marker '$(slot_of "$tmp/m4")' after 5s with both slots held"
+			"with both slots held, $(answer_of "$tmp/m4" "$fork_s")"
 	fi
 	rm -f "$tmp/hold4"
 
 	# ARM 5: nor is a single package.
 	touch "$tmp/hold5"
 	"$tmp/holder.sh" "$SUITE_LOCK_LIB" "$tmp/m5" "$tmp/hold5" go test -timeout 25m ./internal/posse &
-	if wait_file "$tmp/m5" 5 && [ "$(slot_of "$tmp/m5")" = none ]; then
+	if wait_answer "$tmp/m5" "$fork_s" && [ -e "$tmp/m5" ] && [ "$(slot_of "$tmp/m5")" = none ]; then
 		ok 'unlocked: a single-package run takes no slot'
 	else
 		bad 'unlocked: a single-package run takes no slot' \
-			"marker '$(slot_of "$tmp/m5")' after 5s with both slots held"
+			"with both slots held, $(answer_of "$tmp/m5" "$fork_s")"
 	fi
 	rm -f "$tmp/hold5"
 
@@ -750,14 +809,25 @@ ORPHANER
 	# An unqueued run writes its marker at once and says `none`, so reading
 	# the SLOT is no test at all — both answers pass. What separates the two
 	# is whether the marker appears: queued, it does not.
+	#
+	# But it must be an absence READ AFTER THE HOLDER HAS SPOKEN, not an
+	# absence read off a five-second timer (ranger-base-4psg2). A fork that
+	# had not been scheduled yet has no marker either, so the old spelling of
+	# this arm went GREEN on a loaded box over a tagged run that would have
+	# gone on to take a slot in front of it — the one direction that does not
+	# announce itself. So wait for the queued LINE, and treat the marker
+	# appearing at all as the failure it is.
 	touch "$tmp/hold5b"
 	"$tmp/holder.sh" "$SUITE_LOCK_LIB" "$tmp/m5b" "$tmp/hold5b" go test -timeout 25m -tags posse_arm2 ./internal/posse &
 	h5b=$!
-	if wait_file "$tmp/m5b" 5; then
-		bad 'queue: a tagged suite arm takes a slot' \
-			"marker '$(slot_of "$tmp/m5b")' after 5s with both slots held — the arm ran unqueued"
-	else
+	if wait_answer "$tmp/m5b" "$fork_s" && [ ! -e "$tmp/m5b" ]; then
 		ok 'queue: a tagged suite arm takes a slot'
+	elif [ -e "$tmp/m5b" ]; then
+		bad 'queue: a tagged suite arm takes a slot' \
+			"the arm ran unqueued with both slots held: $(answer_of "$tmp/m5b" "$fork_s")"
+	else
+		bad 'queue: a tagged suite arm takes a slot' \
+			"with both slots held, $(answer_of "$tmp/m5b" "$fork_s")"
 	fi
 	rm -f "$tmp/hold5b"
 	kill "$h5b" 2>/dev/null
@@ -767,7 +837,7 @@ ORPHANER
 	# left queued takes the freed slot — which is also the proof that arm
 	# 2's silence was a queue and not a deadlock.
 	rm -f "$tmp/hold1"
-	if wait_file "$tmp/m3" 15 && [ "$(slot_of "$tmp/m3")" = "$(slot_of "$tmp/m1")" ]; then
+	if wait_file "$tmp/m3" "$fork_s" && [ "$(slot_of "$tmp/m3")" = "$(slot_of "$tmp/m1")" ]; then
 		ok 'queue: a freed slot is taken by the waiter'
 	else
 		bad 'queue: a freed slot is taken by the waiter' \
@@ -784,7 +854,7 @@ ORPHANER
 	touch "$tmp/hold7"
 	"$tmp/holder.sh" "$SUITE_LOCK_LIB" "$tmp/m7" "$tmp/hold7" go test -timeout 25m ./... &
 	local h7=$!
-	if wait_file "$tmp/m7" 15 && [ "$(slot_of "$tmp/m7")" = "$(slot_of "$tmp/m2")" ]; then
+	if wait_file "$tmp/m7" "$fork_s" && [ "$(slot_of "$tmp/m7")" = "$(slot_of "$tmp/m2")" ]; then
 		ok 'crash: the slot of a kill -9 run is reclaimed'
 	else
 		bad 'crash: the slot of a kill -9 run is reclaimed' \
@@ -799,7 +869,7 @@ ORPHANER
 	touch "$tmp/hold8"
 	POSSE_SUITE_LOCK_HELD=1 "$tmp/holder.sh" "$SUITE_LOCK_LIB" "$tmp/m8" "$tmp/hold8" go test -timeout 25m ./... &
 	rm -f "$tmp/hold8"
-	if wait_file "$tmp/m8" 5 && [ "$(slot_of "$tmp/m8")" = none ] &&
+	if wait_file "$tmp/m8" "$fork_s" && [ "$(slot_of "$tmp/m8")" = none ] &&
 		log_has "$tmp/m8.log" 'already inside suite slot'; then
 		ok 'nested: a run inside a held slot takes no second slot'
 	else
@@ -812,7 +882,7 @@ ORPHANER
 	touch "$tmp/hold9"
 	POSSE_SUITE_LOCK=0 "$tmp/holder.sh" "$SUITE_LOCK_LIB" "$tmp/m9" "$tmp/hold9" go test -timeout 25m ./... &
 	rm -f "$tmp/hold9"
-	if wait_file "$tmp/m9" 5 && [ "$(slot_of "$tmp/m9")" = none ] &&
+	if wait_file "$tmp/m9" "$fork_s" && [ "$(slot_of "$tmp/m9")" = none ] &&
 		log_has "$tmp/m9.log" unserialized; then
 		ok 'opt-out: POSSE_SUITE_LOCK=0 runs unserialized and says so'
 	else
@@ -827,9 +897,9 @@ ORPHANER
 	touch "$tmp/hold10" "$tmp/hold11"
 	"$tmp/releaser.sh" "$SUITE_LOCK_LIB" "$tmp/m10" "$tmp/hold10" go test -timeout 25m ./... &
 	local h10=$!
-	if wait_file "$tmp/m10.released" 10; then
+	if wait_file "$tmp/m10.released" "$fork_s"; then
 		"$tmp/holder.sh" "$SUITE_LOCK_LIB" "$tmp/m11" "$tmp/hold11" go test -timeout 25m ./... &
-		if wait_file "$tmp/m11" 10 && kill -0 "$h10" 2>/dev/null &&
+		if wait_file "$tmp/m11" "$fork_s" && kill -0 "$h10" 2>/dev/null &&
 			[ "$(slot_of "$tmp/m11")" = "$(slot_of "$tmp/m10")" ]; then
 			ok 'release: a slot handed back is free before the process exits'
 		else
@@ -848,9 +918,9 @@ ORPHANER
 	# box into a suite that will not start and says nothing about why.
 	touch "$tmp/hold12" "$tmp/hold13"
 	"$tmp/holder.sh" "$SUITE_LOCK_LIB" "$tmp/m12" "$tmp/hold12" go test -timeout 25m ./... &
-	wait_file "$tmp/m12" 10 || bad 'set -e: a queued acquire does not kill the wrapper' 'rig holder never acquired'
+	wait_file "$tmp/m12" "$fork_s" || bad 'set -e: a queued acquire does not kill the wrapper' 'rig holder never acquired'
 	"$tmp/holder.sh" "$SUITE_LOCK_LIB" "$tmp/m13" "$tmp/hold13" go test -timeout 25m ./... &
-	wait_file "$tmp/m13" 10 || bad 'set -e: a queued acquire does not kill the wrapper' 'rig holder never acquired'
+	wait_file "$tmp/m13" "$fork_s" || bad 'set -e: a queued acquire does not kill the wrapper' 'rig holder never acquired'
 	cat >"$tmp/strict.sh" <<'STRICT'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -868,7 +938,7 @@ STRICT
 	( POSSE_SUITE_LOCK_POLL=0.2 bash "$tmp/strict.sh" "$SUITE_LOCK_LIB" >"$tmp/strict.out" 2>&1; echo $? >"$tmp/strict.rc" ) &
 	sleep 1
 	rm -f "$tmp/hold12"
-	if wait_file "$tmp/strict.rc" 15 && [ "$(<"$tmp/strict.rc")" = 0 ] &&
+	if wait_file "$tmp/strict.rc" "$fork_s" && [ "$(<"$tmp/strict.rc")" = 0 ] &&
 		log_has "$tmp/strict.out" 'reached the end'; then
 		ok 'set -e: a queued acquire does not kill the wrapper'
 	else
@@ -899,11 +969,11 @@ STRICT
 		touch "$tmp/hold14"
 		POSSE_SUITE_SLOTS=$n "$tmp/holder.sh" "$SUITE_LOCK_LIB" "$tmp/m14" "$tmp/hold14" go test -timeout 25m ./... &
 		hp=$!
-		if ! wait_file "$tmp/m14" 8 || [ "$(slot_of "$tmp/m14")" = none ] ||
+		if ! wait_file "$tmp/m14" "$fork_s" || [ "$(slot_of "$tmp/m14")" = none ] ||
 			! log_has "$tmp/m14.log" 'not a positive integer'; then
 			rc12=1
 			bad 'slots: a bad POSSE_SUITE_SLOTS runs on the default and says so' \
-				"POSSE_SUITE_SLOTS=$n gave slot '$(slot_of "$tmp/m14")' after 8s, log: $(tr '\n' '|' <"$tmp/m14.log" 2>/dev/null)"
+				"POSSE_SUITE_SLOTS=$n gave slot '$(slot_of "$tmp/m14")', log: $(tr '\n' '|' <"$tmp/m14.log" 2>/dev/null)"
 		fi
 		rm -f "$tmp/hold14"
 		kill "$hp" 2>/dev/null
@@ -921,10 +991,10 @@ STRICT
 	local h15 h16 h17
 	POSSE_SUITE_SLOTS=-1 "$tmp/holder.sh" "$SUITE_LOCK_LIB" "$tmp/m15" "$tmp/hold15" go test -timeout 25m ./... &
 	h15=$!
-	wait_file "$tmp/m15" 10 || bad 'slots: a negative POSSE_SUITE_SLOTS does not widen the queue' 'first holder never acquired'
+	wait_file "$tmp/m15" "$fork_s" || bad 'slots: a negative POSSE_SUITE_SLOTS does not widen the queue' 'first holder never acquired'
 	POSSE_SUITE_SLOTS=-1 "$tmp/holder.sh" "$SUITE_LOCK_LIB" "$tmp/m16" "$tmp/hold16" go test -timeout 25m ./... &
 	h16=$!
-	wait_file "$tmp/m16" 10 || bad 'slots: a negative POSSE_SUITE_SLOTS does not widen the queue' 'second holder never acquired'
+	wait_file "$tmp/m16" "$fork_s" || bad 'slots: a negative POSSE_SUITE_SLOTS does not widen the queue' 'second holder never acquired'
 	POSSE_SUITE_SLOTS=-1 "$tmp/holder.sh" "$SUITE_LOCK_LIB" "$tmp/m17" "$tmp/hold17" go test -timeout 25m ./... &
 	h17=$!
 	sleep 2
@@ -977,7 +1047,7 @@ STRICT
 	POSSE_SUITE_LOCK_DIR="$od" POSSE_SUITE_SLOTS=1 \
 		"$tmp/orphaner.sh" "$SUITE_LOCK_LIB" "$tmp/m18" "$tmp/hold18" go test -timeout 25m ./... &
 	h18=$!
-	if ! wait_file "$tmp/m18" 10 || [ "$(slot_of "$tmp/m18")" = none ]; then
+	if ! wait_file "$tmp/m18" "$fork_s" || [ "$(slot_of "$tmp/m18")" = none ]; then
 		bad "$arm14" "the orphaning holder never acquired: $(tr '\n' '|' <"$tmp/m18.log" 2>/dev/null)"
 		kill "$h18" 2>/dev/null
 	else
@@ -991,7 +1061,7 @@ STRICT
 		# The kernel has to agree the acquirer is gone, or what follows
 		# is a race and not a leak. Its own pid, never a pattern.
 		n=0
-		while kill -0 "$opid" 2>/dev/null && [ "$n" -lt 50 ]; do
+		while kill -0 "$opid" 2>/dev/null && [ "$n" -lt $((fork_s * 10)) ]; do
 			sleep 0.1
 			n=$((n + 1))
 		done
@@ -1009,7 +1079,7 @@ STRICT
 		# also the proof that the child was what held it, and that this
 		# is a slot spent by a survivor and not a permanent wedge.
 		rm -f "$tmp/hold18"
-		if wait_file "$tmp/m19" 15 && [ "$(slot_of "$tmp/m19")" = "$(slot_of "$tmp/m18")" ]; then
+		if wait_file "$tmp/m19" "$fork_s" && [ "$(slot_of "$tmp/m19")" = "$(slot_of "$tmp/m18")" ]; then
 			drained=1
 		fi
 		rm -f "$tmp/hold19"
