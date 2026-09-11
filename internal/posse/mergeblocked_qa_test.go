@@ -441,3 +441,98 @@ func TestAnOpenBlockWithNoPinProbesOnceAndSelfHeals(t *testing.T) {
 		t.Errorf("the pass after the self-heal probed the tree again:\n%s", out)
 	}
 }
+
+// TODAY'S BEHAVIOUR AND NOT THE REQUIREMENT — the same idiom as
+// TestAConflictRevertedOnTheBaseIsStillNotRetried above, and for the same
+// reason: a defect that no test names gets fixed by nobody. Whoever lands
+// ranger-base-zyrr4 inverts this test to theWritesStop.
+//
+// The dirt arm reads the obstacle out of prior.Why — the OPEN handoff's
+// description — and noteMergeBlocked NEVER rewrites an open handoff (its
+// `case prior.Open` refreshes the pin, says "already filed", and returns).
+// So a block first filed on the dirt arm carries dirtyBlockMark in its
+// description for the rest of its life, whatever the obstacle becomes.
+//
+// Clean the dirt off such a tree and the picture is: no fast-forward, no
+// equivalence, dirtyPaths empty, Why still carrying dirtyBlockMark — so
+// blockStillStands un-skips on EVERY pass, and the replay it lets through
+// conflicts on every one of them. That is the every-pass rebase write
+// ranger-base-9u5zy removed and ranger-base-ejju3 undertook not to bring
+// back, on the one branch shape whose dirt was cleaned before a conflicting
+// base was resolved. Nothing surfaces it: the handoff is deduped, so the
+// pass prints its ⚠ line and files nothing, and lastTreeWrite advances at
+// the sweep's own cadence forever — the tree never goes quiet, so the retire
+// grace never expires and ADR 0058 D2 is never reached.
+//
+// MEASURED 2026-09-10 (ranger-base-z8xx1, a QA seat, macOS 26.4.1, git 2.50.1):
+// /HEAD, /index and /logs/HEAD written on passes 4-7 of this fixture, every
+// pass past the settle window; COUNTERFACTUAL with blockStillStands neutered
+// to the pre-26090db3 constant `return dirty, true`, same fixture, ok — so
+// this is a regression against 26090db3's parent and not a pre-existing gap.
+//
+// TestCleaningTheDirtWithoutCommittingIsReconsidered is the arm that must
+// keep working: there the base moved on a DIFFERENT path, the replay
+// succeeds, and one un-skip lands the work and ends. The difference between
+// the two is only whether the replay conflicts, which is why the un-skip
+// cannot be conditioned on the dirt alone.
+func TestTheDirtArmReplaysEveryPassOnceTheDirtIsGoneAndTheBaseStillConflicts(t *testing.T) {
+	t.Parallel()
+	d, repo, tr := nurlStranded(t, "closed", true)
+	write(t, filepath.Join(repo, "fake-show.json"), `[{"id":"a-1","status":"closed","assignee":"ranger"}]`)
+	// The base moves on the SAME path the branch touches, so the replay this
+	// un-skip lets through conflicts.
+	commitIn(t, repo, "fix.txt", "the operator's line\n", "main: conflicting")
+	draft := filepath.Join(tr.Path, "draft.txt")
+	write(t, draft, "half a thought\n")
+	dispatcherErr(t, d)
+	if _, err := d.Run("", "", 0); err != nil {
+		t.Fatal(err)
+	}
+	// The fixture's positive witness: the block has to be the DIRT one, or
+	// this measures some other arm entirely.
+	if out := dispatcherOut(d); !strings.Contains(out, dirtyBlockMark) {
+		t.Fatalf("fixture: pass 1 did not block on the dirt, so nothing here measures the dirt arm:\n%s", out)
+	}
+	filed := mergeBlockedBeads(t, repo)
+	if len(filed) != 1 {
+		t.Fatalf("fixture: pass 1 filed %d handoffs, want 1", len(filed))
+	}
+	if err := os.Remove(draft); err != nil {
+		t.Fatal(err)
+	}
+
+	const settle, quiet = 3, 4
+	prev, prevLast := gitDirWrites(t, tr), mustLastTreeWrite(t, tr)
+	wrote := 0
+	for n := 2; n <= settle+quiet; n++ {
+		d2 := newTestDispatcher(t, d.HB)
+		dispatcherErr(t, d2)
+		if _, err := d2.Run("", "", 0); err != nil {
+			t.Fatal(err)
+		}
+		cur, curLast := gitDirWrites(t, tr), mustLastTreeWrite(t, tr)
+		moved := !curLast.Equal(prevLast)
+		for p, ts := range cur {
+			if b, had := prev[p]; !had || !b.Equal(ts) {
+				moved = true
+			}
+		}
+		if moved && n > settle {
+			wrote++
+		}
+		prev, prevLast = cur, curLast
+	}
+	if wrote != quiet {
+		t.Errorf("the tree was written on %d of the %d passes past the settle window, want %d — if it is now 0 the defect is FIXED and this pin has to be inverted to theWritesStop; anything between is a third behaviour nobody has described",
+			wrote, quiet, quiet)
+	}
+	// And the reason it never stops: the handoff still says "dirt" while the
+	// pass has been reporting a conflict for six passes.
+	again := mergeBlockedBeads(t, repo)
+	if len(again) != 1 {
+		t.Fatalf("the churn filed %d handoffs, want the one deduped from pass 1", len(again))
+	}
+	if desc, _ := again[0]["description"].(string); !strings.Contains(desc, dirtyBlockMark) {
+		t.Errorf("the open handoff no longer carries %q — if noteMergeBlocked rewrites it now, that is the fix and this pin has to be inverted", dirtyBlockMark)
+	}
+}
