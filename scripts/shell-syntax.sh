@@ -16,16 +16,31 @@
 #     EXCLUDED_EOF
 #     )
 #
-# bash scans $( ) for its closing paren while tracking quote state, and the
-# heredoc quoting does not stop that. So a single apostrophe in a reason
+# bash 3.2 scans $( ) for its closing paren while tracking quote state, and
+# the heredoc quoting does not stop that. So a single apostrophe in a reason
 # field — the natural English for a possessive, and every row there is English
 # written by whoever added a check — opens a quote that never closes and
 # swallows the rest of the file. MEASURED 2026-09-11, darwin arm64, under
-# bash 3.2.57 and bash 5 alike: the parser reports a syntax error at line 318,
-# hundreds of lines below the table, on a case-statement token nobody touched.
+# bash 3.2.57: the parser reports a syntax error at line 318, hundreds of
+# lines below the table, on a case-statement token nobody touched.
 # Row 203 of that table reads "this repo own seed PIDs", ungrammatical, which
 # is what meeting this hazard once and working around it without writing it
 # down looks like.
+#
+# AND NOT EVERY PARSER HAS THAT HAZARD, which is a property of the shell and
+# not of this repo. RE-MEASURED 2026-09-11 (ranger-base-ftr3e): bash 5.2.21 on
+# ubuntu-latest parses the same shape CLEAN — its parser reads the heredoc as
+# a heredoc rather than scanning the substitution for a paren. The version
+# where that changed is not measured here; the two end points are. This header
+# used to read "bash 3.2.57 and bash 5 alike", and CI run 34581919232 is the
+# counter-measurement: the self-test arm built on that reading is what put
+# ci.yml red on main at a40b2ce3.
+#
+# That is not a hole in the sweep — it is the sweep's rule. Each file is
+# parsed by the shell that will RUN it on THIS box, so on the darwin box where
+# an apostrophe really does swallow verify-box.sh the sweep is the thing that
+# says so. It does mean a linux runner is not where this particular class gets
+# caught, and a green CI is not a report about bash 3.2.
 #
 # WHY A SWEEP AND NOT A COMMENT ABOVE THE TABLES. boxcheck_qa_test.go fails
 # when a verify-* target is in neither table, so those tables WILL keep being
@@ -239,7 +254,7 @@ st_say() {   # st_say <ok|no> <message>
 }
 
 selftest() {
-  local d out rc
+  local d out rc bead_parses
   st_tmp=$(mktemp -d "${TMPDIR:-/tmp}/posse-shell-syntax.XXXXXX") || return 2
   trap 'rm -rf "${st_tmp:?}"' EXIT
   st_rc=0
@@ -247,6 +262,21 @@ selftest() {
 
   # Arm 1 — the shape this check was written for. A quoted heredoc inside a
   # command substitution, one apostrophe in the body.
+  #
+  # WHETHER THAT SHAPE IS A SYNTAX ERROR IS THE PARSER'S PROPERTY, not this
+  # repo's, so the arm asks the parser and pins that the sweep answers the
+  # same. MEASURED 2026-09-11: darwin arm64 bash 3.2.57 says "unexpected EOF
+  # while looking for matching" and swallows the file; ubuntu-latest bash
+  # 5.2.21 parses it clean. An arm that asserted the darwin verdict on every
+  # box is what put ci.yml red on main at a40b2ce3 — runs 34581610397 and
+  # 34581919232, ranger-base-ftr3e. The sweep was right and the arm was wrong.
+  #
+  # The expectation is MEASURED here by the same call the sweep makes, not
+  # inferred from a version boundary nobody in this tree has both sides of. If
+  # `bash -n` cannot be run at all the two sides fail TOGETHER and loudly: the
+  # probe reads "does not parse", the sweep reports ERROR rather than FINDING,
+  # and the arm says no. The gutted-parser mutant is owned on every box by
+  # arms 3 and 8; this arm owns it only where the shape really is an error.
   d=$(st_repo bead) || return 2
   st_add "$d" table.sh <<'FIXTURE_EOF'
 #!/usr/bin/env bash
@@ -258,11 +288,21 @@ case "$T" in
   *gotest*) echo yes ;;
 esac
 FIXTURE_EOF
+  # `bash` and not interp_of's answer: the fixture's shebang is six lines up
+  # and names bash, so this is the same binary sweep resolves for it.
+  if bash -n "$d/table.sh" 2>/dev/null; then bead_parses=yes; else bead_parses=no; fi
   out=$(sweep "$d" 2>&1); rc=$?
-  case "$rc:$out" in
-    1:*FINDING*table.sh*) st_say ok "an apostrophe in a heredoc inside \$( ) is caught (exit 1)" ;;
-    *) st_say no "the bead shape went unreported: exit $rc, output: $out" ;;
-  esac
+  if [ "$bead_parses" = no ]; then
+    case "$rc:$out" in
+      1:*FINDING*table.sh*) st_say ok "this bash rejects an apostrophe in a heredoc inside \$( ), and the sweep reports it (exit 1)" ;;
+      *) st_say no "the bead shape went unreported: exit $rc, output: $out" ;;
+    esac
+  else
+    case "$rc:$out" in
+      0:*"1 shell scripts parse"*) st_say ok "this bash parses an apostrophe in a heredoc inside \$( ), and the sweep invents no finding (exit 0)" ;;
+      *) st_say no "the bead shape parses under this bash and the sweep disagreed: exit $rc, output: $out" ;;
+    esac
+  fi
 
   # Arm 2 — the control that must come out the other way: the same file, same
   # structure, no apostrophe. Without this the arm above passes on a sweep
