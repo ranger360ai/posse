@@ -108,7 +108,7 @@ their floor; the L4 engine is off-box and UNRUN for this shape.
   checkout — expensive to reverse, unmeasured, and buying nothing D1 does
   not.
 - **A git knob to skip the packed lock on delete.** None exists, and one
-  cannot: MEASURED (arm A7), deleting only the loose copy of a packed ref
+  cannot: MEASURED (D2.3), deleting only the loose copy of a packed ref
   resurrects the packed value — the lock is how git avoids that.
 
 ## Consequences
@@ -123,8 +123,9 @@ their floor; the L4 engine is off-box and UNRUN for this shape.
   arms). `posse gates` prints it as a `w` line — a reader sees exactly one
   new name.
 - The 71g2f arm keeps firing where it still applies: a stray lock from
-  anyone (arm A11 — git retries the lock for `core.packedRefsTimeout`,
-  default 1000 ms, then exits 0 leaving the blocker, MEASURED), and L4.
+  anyone (the stray arm — git retries the lock for `core.packedRefsTimeout`,
+  default 1000 ms, once per transaction, three transactions, 3.4–3.8 s wall,
+  then exits 0 leaving the blocker, MEASURED), and L4.
   Its two texts that say "the cage denies it" and "seatbelt.go declines to
   grant" become false on main the day D1 lands and are reworded in the
   dependent bead; the recipe gains no `rm` of anything under the common dir
@@ -132,8 +133,9 @@ their floor; the L4 engine is off-box and UNRUN for this shape.
 - The failure mode D1 adds is not a new class: a SIGKILL landing inside the
   window a git process holds the lock strands it. MEASURED: SIGTERM and
   SIGHUP to the holder remove the lock (git's own signal cleanup); SIGKILL
-  strands it. The window for a whole `cherry-pick --abort` is 64–75 ms
-  (five runs). The SAME kill inside the SAME window under the SHIPPED grant
+  strands it. The window for a whole `cherry-pick --abort` is 64–242 ms
+  (ten hook-instrumented runs, two batches, the spread is box load). The
+  SAME kill inside the SAME window under the SHIPPED grant
   already strands `refs/heads/<branch>.lock` and the per-worktree
   `index.lock`, and the operator's `gc` already dies at rc 128 on the
   stranded ref lock (the reflock control arm). One more file joins a class the fleet already
@@ -151,7 +153,7 @@ their floor; the L4 engine is off-box and UNRUN for this shape.
   spell "only the lock you created", so this stays cooperative and is said
   so here rather than dressed as a wall. What it cannot do is reach
   `packed-refs`: on git 2.50.1 the lock is a pure lock and the content
-  goes through `packed-refs.new` (MEASURED, arm A7), which is why removing a live lock costs
+  goes through `packed-refs.new` (MEASURED, D2.3), which is why removing a live lock costs
   at most a lost update between two UNSANDBOXED writers, not a corrupt
   file. ASSUMED that two operator-side writers racing on this repo is a
   case nobody runs.
@@ -195,8 +197,8 @@ beside this record; every arm on a fresh fixture, shipped profile as control):
 | SIGTERM, SIGHUP to the lock holder | n/a | lock removed |
 | SIGKILL to the lock holder | n/a | lock stranded |
 | SIGKILL to a plain commit holding its ref lock (shipped) | ref lock + index.lock stranded, `gc` rc 128 | same class |
-| lock held per `cherry-pick --abort` | n/a | 64–75 ms, 3 transactions |
-| stray lock from anyone, then `--abort` | rc 0, blocker survives | rc 0 after the 1 s retry, blocker survives (71g2f arm fires) |
+| lock held per `cherry-pick --abort` | n/a | 64–242 ms, 3 transactions |
+| stray lock from anyone, then `--abort` | rc 0 after 3 × 1 s retries, blocker survives | same; the 71g2f arm fires in both |
 
 ASSUMED: the rate of SIGKILLs landing inside a ~70 ms window (the launcher's
 kill path is SIGTERM then SIGKILL to the runtime's pid — loadguardkill.go —
