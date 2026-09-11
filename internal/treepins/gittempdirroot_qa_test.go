@@ -266,7 +266,7 @@ func gtdParsePosse(t *testing.T) (*token.FileSet, []*ast.File) {
 	fset := token.NewFileSet()
 	var files []*ast.File
 	for _, path := range paths {
-		file, err := parser.ParseFile(fset, path, nil, parser.SkipObjectResolution)
+		file, err := parser.ParseFile(fset, path, nil, parser.SkipObjectResolution|parser.ParseComments)
 		if err != nil {
 			t.Fatalf("parse %s: %v", path, err)
 		}
@@ -429,7 +429,7 @@ func TestQAGitInitRootCensusCanStillSayNo(t *testing.T) {
 func TestQATheTolerantTempDirWrapperCompilesInEveryArm(t *testing.T) {
 	t.Parallel()
 	fset, files := gtdParsePosse(t)
-	found := ""
+	found, tagged := "", false
 	for _, file := range files {
 		for _, decl := range file.Decls {
 			fn, ok := decl.(*ast.FuncDecl)
@@ -441,9 +441,13 @@ func TestQATheTolerantTempDirWrapperCompilesInEveryArm(t *testing.T) {
 				t.Fatalf("%s is declared twice, at %s and %s:%d — one of them is a tagged copy, and a copy is how the arms drift apart", gtdTolerant, found, at.Filename, at.Line)
 			}
 			found = fmt.Sprintf("%s:%d", at.Filename, at.Line)
+			// file.Comments is populated only because gtdParsePosse passes
+			// parser.ParseComments; without it this loop never runs and the
+			// tag half of this arm silently cannot fail (ranger-base-3klcb).
 			for _, group := range file.Comments {
 				for _, c := range group.List {
 					if strings.HasPrefix(c.Text, "//go:build") {
+						tagged = true
 						t.Errorf("%s is declared in %s, which carries %q — the other arms have no tolerant wrapper to convert to", gtdTolerant, at.Filename, c.Text)
 					}
 				}
@@ -453,7 +457,9 @@ func TestQATheTolerantTempDirWrapperCompilesInEveryArm(t *testing.T) {
 	if found == "" {
 		t.Fatalf("internal/posse's tests no longer declare %s — every arm of this pin is stated over it", gtdTolerant)
 	}
-	t.Logf("%s declared once, untagged, at %s", gtdTolerant, found)
+	if !tagged {
+		t.Logf("%s declared once, untagged, at %s", gtdTolerant, found)
+	}
 }
 
 func gtdAt(fset *token.FileSet, p token.Pos) string {
