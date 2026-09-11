@@ -46,6 +46,8 @@ import (
 type storeBindCall struct {
 	beadsDir string // "" when the variable was absent from the child's env
 	set      bool
+	beadsDB  string // BEADS_DB, the second spelling of the same redirect
+	dbSet    bool
 	actor    string // BD_ACTOR, the other variable a bd child is launched with
 	cwd      string
 	argv     string
@@ -66,7 +68,7 @@ func storeBindBd(t *testing.T) (Bd, func() []storeBindCall) {
 		// `${BEADS_DIR+1}` rather than a sentinel value: "set to the empty
 		// string" and "absent" are different answers here, and no in-band
 		// marker can say so — a NUL one is eaten by printf.
-		"printf '%s\\t%s\\t%s\\t%s\\t%s\\n' \"${BEADS_DIR+set}\" \"$BEADS_DIR\" \"$BD_ACTOR\" \"$(pwd)\" \"$*\" >> " + log + "\n" +
+		"printf '%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n' \"${BEADS_DIR+set}\" \"$BEADS_DIR\" \"${BEADS_DB+set}\" \"$BEADS_DB\" \"$BD_ACTOR\" \"$(pwd)\" \"$*\" >> " + log + "\n" +
 		"case \" $* \" in *\\ blocked\\ *) echo '[]'; exit 0;; esac\n" +
 		"if [ -f \"$store/rows.json\" ]; then cat \"$store/rows.json\"; else echo '[]'; fi\n"
 	if err := WriteExecutable(bin, []byte(body), 0o755); err != nil {
@@ -79,12 +81,14 @@ func storeBindBd(t *testing.T) (Bd, func() []storeBindCall) {
 		}
 		var calls []storeBindCall
 		for _, line := range strings.Split(strings.TrimSuffix(string(b), "\n"), "\n") {
-			f := strings.SplitN(line, "\t", 5)
-			if len(f) != 5 {
+			f := strings.SplitN(line, "\t", 7)
+			if len(f) != 7 {
 				continue
 			}
 			calls = append(calls, storeBindCall{
-				set: f[0] == "set", beadsDir: f[1], actor: f[2], cwd: f[3], argv: f[4],
+				set: f[0] == "set", beadsDir: f[1],
+				dbSet: f[2] == "set", beadsDB: f[3],
+				actor: f[4], cwd: f[5], argv: f[6],
 			})
 		}
 		return calls
@@ -251,12 +255,22 @@ func TestBdCallsKeepTheRestOfTheEnvironment(t *testing.T) {
 		t.Errorf("the child's BD_ACTOR = %q, want %q — cmd.Env REPLACES the environment, it does not extend it", call.actor, "an-actor")
 	}
 
-	// And the rebuild is that one variable and nothing else: same length,
-	// one BEADS_DIR, so neither a dropped entry nor a second copy (whose
-	// winner is the child's own last-wins rule, not ours) can hide here.
+	// And the rebuild is the redirecting variables and nothing else: the
+	// inherited environment minus every one of them, plus the single
+	// BEADS_DIR this call binds. Counted rather than asserted flat, because
+	// the process running this test may itself have been launched with one
+	// (a session's BEADS_DIR, an operator's BEADS_DB), and a second copy —
+	// whose winner is the child's own last-wins rule, not ours — must not
+	// hide here either.
 	got, env := bdStoreEnv(os.Environ(), a), os.Environ()
-	if len(got) != len(env) {
-		t.Errorf("the rebuilt environment is %d entries against the process's %d — nothing but BEADS_DIR is this fix's to change", len(got), len(env))
+	shed := 0
+	for _, kv := range env {
+		if bdStoreVar(kv) {
+			shed++
+		}
+	}
+	if len(got) != len(env)-shed+1 {
+		t.Errorf("the rebuilt environment is %d entries against the process's %d less %d shed binding(s) plus the one set — nothing but %v is this fix's to change", len(got), len(env), shed, bdStoreEnvShed)
 	}
 	var beads int
 	for _, kv := range got {
@@ -303,29 +317,74 @@ func TestReadyAllLabelsRowsWithTheStoreThatHeldThem(t *testing.T) {
 }
 
 // bdStoreEnv itself, at the boundary the arms above cannot reach through a
-// child: the binding is REPLACED rather than appended to, however many
+// child: EVERY variable that repoints bd's store is shed, however many
 // copies the inherited environment carried — a child handed two would settle
-// it by its own last-wins rule, which is not a rule this runner may borrow.
-// Matched by exact name, so `BEADS_DIRS` and anything else merely sharing
-// the prefix is left alone.
+// it by its own last-wins rule, which is not a rule this runner may borrow —
+// and exactly one, BEADS_DIR, is then set. Matched by exact name, so
+// `BEADS_DIRS` and anything else merely sharing a prefix is left alone.
+//
+// `BEADS_DB` is on the list because bd 0.50.3 honours it over discovery
+// (ranger-base-tqcrp; the measurement is quoted at bdStoreEnvShed, beads.go)
+// and it is SHED ONLY, never set: it names a database file and beadsHome
+// resolves a directory. `BEADS_JSONL` measured inert on that bd and is
+// deliberately absent — the row below would otherwise claim a redirect
+// nobody saw.
 func TestBdStoreEnvReplacesEveryInheritedBinding(t *testing.T) {
 	t.Parallel()
 	a := storeBindRepo(t, "a-1")
-	in := []string{"PATH=/usr/bin", "BEADS_DIR=/one", "BD_ACTOR=an-actor", "BEADS_DIR=/two", "BEADS_DIRS=/not-it"}
+	in := []string{
+		"PATH=/usr/bin", "BEADS_DIR=/one", "BD_ACTOR=an-actor", "BEADS_DIR=/two",
+		"BEADS_DIRS=/not-it", "BEADS_DB=/elsewhere/beads.db", "BEADS_DBX=/not-it-either",
+		"BEADS_JSONL=/inert.jsonl",
+	}
 	got := bdStoreEnv(in, a)
-	want := []string{"PATH=/usr/bin", "BD_ACTOR=an-actor", "BEADS_DIRS=/not-it", "BEADS_DIR=" + filepath.Join(a, beadsDirName)}
+	want := []string{
+		"PATH=/usr/bin", "BD_ACTOR=an-actor", "BEADS_DIRS=/not-it", "BEADS_DBX=/not-it-either",
+		"BEADS_JSONL=/inert.jsonl", "BEADS_DIR=" + filepath.Join(a, beadsDirName),
+	}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Errorf("bdStoreEnv:\n got %q\nwant %q", got, want)
 	}
-	// A directory with no store sheds the binding and keeps the rest.
+	// A directory with no store sheds every binding and keeps the rest: the
+	// question goes back to bd's own resolution from cmd.Dir, which an
+	// inherited BEADS_DB would answer for it.
 	got = bdStoreEnv(in, t.TempDir())
 	for _, kv := range got {
-		if strings.HasPrefix(kv, "BEADS_DIR=") {
-			t.Errorf("a directory with no store must shed the binding, got %q", kv)
+		if bdStoreVar(kv) {
+			t.Errorf("a directory with no store must shed every store binding, got %q", kv)
 		}
 	}
-	if len(got) != 3 {
-		t.Errorf("want the other three entries kept, got %q", got)
+	if len(got) != 5 {
+		t.Errorf("want the other five entries kept, got %q", got)
+	}
+}
+
+// The same claim through a real child, which is where it has to hold: the
+// runner launches bd with a caller-named directory and the child must not
+// be able to see a BEADS_DB at all.
+//
+// Asserted on the child's ENVIRONMENT rather than on returned rows, unlike
+// every other arm in this file. The fake resolves `$BEADS_DIR` else `$cwd`,
+// which is measured; where BEADS_DB sits against BEADS_DIR in bd's own
+// precedence was not measured, and a fake that ranked them would be pinning
+// an invention. "The variable did not reach the child" needs no ranking.
+func TestBdChildrenNeverInheritAStoreDatabase(t *testing.T) {
+	b, calls := storeBindBd(t)
+	a := storeBindRepo(t, "a-1")
+	c := storeBindRepo(t, "c-1")
+	// Arrived from outside the process tree: nothing posse ships sets it.
+	t.Setenv("BEADS_DB", filepath.Join(c, beadsDirName, "beads.db"))
+
+	issues, err := b.Ready(a, "")
+	if err != nil {
+		t.Fatalf("Ready: %v", err)
+	}
+	if len(issues) != 1 || issues[0].ID != "a-1" {
+		t.Fatalf("Ready named %s, got %v", AbbrevHome(a), storeBindIDs(issues))
+	}
+	if call := lastCall(t, calls()); call.dbSet {
+		t.Errorf("the child was handed BEADS_DB=%q — bd honours it over discovery, so this call reads %s's store and ReadyAll labels the rows %s",
+			call.beadsDB, AbbrevHome(c), AbbrevHome(a))
 	}
 }
 

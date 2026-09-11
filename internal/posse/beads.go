@@ -235,6 +235,33 @@ func (b Bd) runOnce(dir string, args ...string) ([]byte, error) {
 	return out.Bytes(), nil
 }
 
+// bdStoreEnvShed names every environment variable MEASURED to repoint bd
+// 0.50.3's store. bdStoreEnv sheds all of them and then sets exactly one,
+// `BEADS_DIR`: it is the only one of the two that names a DIRECTORY, which
+// is what beadsHome(dir) resolves to.
+//
+// MEASURED 2026-09-10 (ranger-base-k45gn), pinned bd 0.50.3, production argv
+// (`--no-daemon`), from a git root holding no `.beads`, each arm read against
+// a baseline so no zero is taken off an empty scan:
+//
+//	BEADS_DIR unset, no store            -> "Error: no beads database found"   (baseline)
+//	BEADS_DB=<another repo>/beads.db     -> that repo's rows                   (REDIRECTS)
+//	BEADS_DB=<a file of plain text>      -> "sqlite3: file is not a database"  (path honoured)
+//	BEADS_JSONL=<another repo>/x.jsonl   -> the baseline error                 (INERT)
+//	--db <another repo>/beads.db         -> that repo's rows                   (flag control)
+//
+// `BEADS_JSONL` is deliberately NOT on this list: it bought nothing when it
+// was measured, and a row here would read as a redirect somebody confirmed.
+// If a later bd honours it, measure it again and add it then.
+//
+// Spelled as NAMES, not as quoted NAME= prefixes, on purpose.
+// verify_k45gn_qa_test.go censuses shipped files for a quoted NAME= string
+// literal, which is how a child env row is BUILT in this tree; shedding a
+// variable is the opposite of building one and must not read as one. That
+// census matches file bytes rather than parsed string literals, so a comment
+// here that quoted the prefix would red it too — ranger-base-15txf.
+var bdStoreEnvShed = []string{"BEADS_DIR", "BEADS_DB"}
+
 // bdStoreEnv binds one bd child to the store of the directory its caller
 // ASKED FOR, rather than to whatever store this process happens to be bound
 // to (ranger-base-ub2x9, codex review finding 1). `cmd.Dir` alone does not
@@ -261,12 +288,15 @@ func (b Bd) runOnce(dir string, args ...string) ([]byte, error) {
 //
 // UNSET, not left alone, where the resolved directory is not there: a repo
 // with no `.beads` has no store of its own, and an inherited value naming
-// ANOTHER repo is the whole of the bug. Shedding it hands the question back
-// to bd's own resolution from `cmd.Dir` — FindBeadsDir walks a worktree to
-// its main checkout and a subdirectory to its repo root — which is the
-// honest answer for a directory that names no store, where a no-db bd says
-// "no .beads directory found" and means it. Same condition as planLaunch's
-// `isDirPath(home)`, for the same reason.
+// ANOTHER repo is the whole of the bug. The shed runs whatever the directory
+// resolves to, so an inherited `BEADS_DB` — which can only arrive from
+// outside the process tree, since nothing posse ships builds one — cannot
+// survive into a child a caller pointed elsewhere either (ranger-base-tqcrp).
+// Shedding hands the question back to bd's own resolution from `cmd.Dir` —
+// FindBeadsDir walks a worktree to its main checkout and a subdirectory to
+// its repo root — which is the honest answer for a directory that names no
+// store, where a no-db bd says "no .beads directory found" and means it.
+// Same condition as planLaunch's `isDirPath(home)`, for the same reason.
 //
 // Callers that pass dir == "" keep the inherited environment untouched
 // (runOnce sets no Env at all then): that call names no directory, so the
@@ -288,7 +318,7 @@ func (b Bd) runOnce(dir string, args ...string) ([]byte, error) {
 func bdStoreEnv(env []string, dir string) []string {
 	out := make([]string, 0, len(env)+1)
 	for _, kv := range env {
-		if strings.HasPrefix(kv, "BEADS_DIR=") {
+		if bdStoreVar(kv) {
 			continue
 		}
 		out = append(out, kv)
@@ -297,6 +327,18 @@ func bdStoreEnv(env []string, dir string) []string {
 		out = append(out, "BEADS_DIR="+home)
 	}
 	return out
+}
+
+// bdStoreVar reports whether an environment entry is one of the redirecting
+// bindings, matched by EXACT name: `BEADS_DIRS` and anything else merely
+// sharing a prefix is somebody else's variable and is kept.
+func bdStoreVar(kv string) bool {
+	for _, v := range bdStoreEnvShed {
+		if strings.HasPrefix(kv, v+"=") {
+			return true
+		}
+	}
+	return false
 }
 
 // bdStdoutError recovers the reason from a --json verb that reported its

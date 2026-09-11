@@ -36,6 +36,13 @@ package posse
 // of these into a child env, this reds and names it, and the failure message
 // spells the fix.
 //
+// FIXED IN THE CODE LANE, ranger-base-tqcrp (2026-09-11): bdStoreEnv now
+// sheds `BEADS_DB` beside `BEADS_DIR` (bdStoreEnvShed, beads.go), pinned by
+// TestBdStoreEnvReplacesEveryInheritedBinding and
+// TestBdChildrenNeverInheritAStoreDatabase in beadsstorebind_test.go. This
+// pin did not move and its list did not shrink; bdRedirectingEnvVars below
+// says why, and what it still guards that the runner cannot.
+//
 // SCOPE, and why it is Go only. bdStoreEnv governs exactly one thing: the
 // environment runOnce hands the bd children posse launches. A shell script
 // that runs bd itself never passes through it. `scripts/prune-bd-relates-to.sh`
@@ -51,9 +58,21 @@ import (
 )
 
 // bdRedirectingEnvVars are the environment variables MEASURED to repoint bd
-// 0.50.3's store, minus the one bdStoreEnv already sheds. A shipped file
-// that sets any of them reintroduces ranger-base-ub2x9 through a spelling
-// that runner does not clear.
+// 0.50.3's store, minus `BEADS_DIR`. A shipped file that sets any of them
+// puts a redirect into a child environment.
+//
+// BEADS_DIR is off the list because beads.go legitimately BUILDS that row:
+// bdStoreEnv SETS it, which is ranger-base-ub2x9's own fix, so censusing it
+// would name beads.go every run. That is also how this pin was
+// control-checked — aimed at BEADS_DIR it reds, and names beads.go.
+//
+// Do NOT shorten this list on the grounds that bdStoreEnv now sheds
+// BEADS_DB too (ranger-base-tqcrp). That runner governs exactly one thing:
+// the environment runOnce hands the bd children posse launches. A shipped
+// file that builds one of these into a SESSION environment (planLaunch,
+// herdrback.go) or into cage.go's carry list reaches a bd that never passes
+// through bdStoreEnv at all, and this census is the only thing watching for
+// it. Emptying the list would leave the pin green over nothing.
 var bdRedirectingEnvVars = []string{"BEADS_DB"}
 
 func TestQANoShippedFileSetsAStoreVarBdStoreEnvDoesNotShed(t *testing.T) {
@@ -101,11 +120,13 @@ store and that bdStoreEnv (beads.go) does not shed:
 
   %s
 
-That is ranger-base-ub2x9 through a second spelling: bdStoreEnv drops only
-BEADS_DIR, so this value is inherited by every bd child runOnce launches with
-a caller-named directory, and ReadyAll labels the rows it returns with the
-directory it MEANT to query. The fix is in bdStoreEnv: shed every variable in
-bdRedirectingEnvVars beside BEADS_DIR. (MEASURED on bd 0.50.3: BEADS_DB
+That is ranger-base-ub2x9 through a second spelling. bdStoreEnv (beads.go)
+sheds these for the bd children runOnce launches, so a row built for THAT
+environment is already covered — but a row built for a session environment
+(planLaunch, herdrback.go), or carried into the cage (cage.go), reaches a bd
+this runner never rebuilds, and ReadyAll then labels the rows it returns with
+the directory it MEANT to query. Either do not build the row, or shed it
+where that environment is assembled. (MEASURED on bd 0.50.3: BEADS_DB
 redirects; BEADS_JSONL does not.)`, strings.Join(hits, "\n  "))
 	}
 	// LIVENESS. A walk that read nothing is satisfied by sweeping nothing,
