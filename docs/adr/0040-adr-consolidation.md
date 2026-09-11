@@ -1,6 +1,6 @@
 # ADR 0040 — Amend existing roots; preserve numbered history
 
-*Status: accepted 2026-09-01; simplified 2026-09-05 by operator ruling · amended 2026-09-06 (ranger-base-x2pbz: no index file, the status line is the index) · owner: architect.*
+*Status: accepted 2026-09-01; simplified 2026-09-05 by operator ruling · amended 2026-09-06 (ranger-base-x2pbz: no index file, the status line is the index) · amended 2026-09-11 (ranger-base-yci3t: the no-index rule is about dispositions; a reading guide that carries none is written) · owner: architect.*
 
 ## Context
 
@@ -49,10 +49,11 @@ needed for this execution. Old citations resolve in one hop. Repoint them
 when their code is otherwise edited; do not change runtime strings, tests,
 or prompts just to change an ADR number.
 
-There is no index file: `docs/adr/README.md` is not written. The directory
-listing is the inventory, and line 3 of every decision record, its
-`*Status:` line, is that record's disposition; a superseded record's line
-names its successor (`superseded <date> by ADR NNNN`), which is the one-hop
+There is no index: no committed page states, transcribes or generates which
+records exist or what their dispositions are (the three shapes rejected
+below). The directory listing is the inventory, and line 3 of every
+decision record, its `*Status:` line, is that record's disposition; a
+superseded record's line names its successor (`superseded <date> by ADR NNNN`), which is the one-hop
 pointer this Decision already requires at the source. The set in force is
 rendered live, never transcribed:
 
@@ -64,6 +65,27 @@ none. MEASURED 2026-09-06 at 6f94a99c (ranger-base-x2pbz): 58 numbered
 pages, 55 carry the line and all 55 carry it on line 3; the three without
 are the 0013 traces; 40 decision records are in force, 15 are superseded or
 retired and every one of the 15 names its successor in that form.
+
+`docs/adr/README.md` is a reading guide and nothing else (amended 2026-09-11,
+ranger-base-yci3t; the page is ranger-base-0cl6w's): the grep above, the
+four status-line shapes, the supplement convention, where to start for a
+subject, and how to write a record. It names no record as an inventory entry
+and no disposition, so it restates no decision and has nothing to go stale
+when a status line changes; it carries no `*Status:` line, and its name keeps
+it outside the `0*.md` grep. It changes only when a convention in this
+section changes, in the same commit as the amendment here that changes it —
+one writer, this record's, so it is not a second writer on any ADR bead
+(ADR 0022). MEASURED 2026-09-11 at d9dc5f6f (ranger-base-yci3t): this
+section has changed once in the record's six commits, the 09-06 commit that
+wrote it, against 39 commits and 15 status-line changes under `docs/adr` on
+main since; the page holds no sha token, so `posse gates adr-census` judges 0
+on it and the default walk stays at 0 refused with it present; the
+package-directory sweep, the citation corpus, the leftover-comment sweep and
+the status-line pins are green with it staged; line 3 on main reads 39
+accepted, 14 superseded, 1 retired, 1 proposed — the four shapes the guide
+names. Snapshot, same date and sha: main holds no `docs/adr/README.md`;
+ranger-base-0cl6w carries the page in its seat tree (`git log --grep
+ranger-base-0cl6w` on main is the record, this sentence is a snapshot).
 
 Accepted changes to running behavior remain **pending implementation** until
 their code beads land. Each removal has one task, priority 2, label `code`,
@@ -105,10 +127,24 @@ the work prompt names a README). Every `.md` under `docs/adr` is a record to
 the citation corpus, the retired-package sweep and the SHA census, so an
 index would also be the most-cited record in the set.
 
+Rejected 2026-09-11 (ranger-base-yci3t), two ways of keeping the 09-06
+sentence as written. Ruling the reading guide out and deleting it: the
+sentence was broader than its three grounds, which are about dispositions
+being stated twice and written by many, and a guide with no disposition
+meets none of them; and two outside-in reviews found the directory unreadable
+on a first open (docs/notes.d/ranger-base-vuosd.md §9,
+docs/notes.d/ranger-base-b0fsz.md §5), a finding the sentence left with no
+fix. Folding the guide into this record and pointing a newcomer at 0040: a
+first open is the directory listing, and README is the one name every
+renderer and every reader opens first — the name is the mechanism, and a
+numbered record's name says nothing of the kind. Also rejected,
+a guide that lists the policy homes: that is the table above stated a second
+time, for 20 of 40 records, which is the assembly this record ends.
+
 ## Lineage
 
 | Was | Now |
 |---|---|
 | 0040 §§1–2, 4, old new-root migration accepted on ranger-base-ay3dr | Existing-root disposition above; operator ruling 2026-09-05 reverses the migration preference |
 | 0040 §3 numbering, one-hop citations and single policy home | Decision above; stable numbers retained, amendment and folding replace new-root ceremony |
-| 0040 §2's concern index, the `docs/adr/README.md` it promised | No index file (Decision above, 2026-09-06); the status line on line 3 of each record is the disposition and the successor pointer, rendered live by the grep there |
+| 0040 §2's concern index, the `docs/adr/README.md` it promised | No index (Decision above, 2026-09-06); the status line on line 3 of each record is the disposition and the successor pointer, rendered live by the grep there. Since 2026-09-11 a `README.md` exists as a reading guide only — the conventions and the grep, never the inventory §2 promised |
