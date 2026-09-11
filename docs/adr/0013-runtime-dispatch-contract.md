@@ -764,6 +764,10 @@ name-keyed site is still loud, and `TestPaneModeReadingDecidesNothing` in the
 same file reds if the reading is named outside the reader and the listing
 backend, or read there as anything but a rendered token. The removal was priced before it was
 taken: zero working external `pane_mode:` declarations ever existed.
+*Asked to widen 2026-09-11 (ranger-base-ujhut): a second observation on
+the same readers — the model a session is running, off grok's composer
+border — was priced and refused; the exception stays one dimension by
+name, and the ruling with its reopen condition is ADR 0053 D6.*
 
 `runtimeYamlKeys()` and its rendered onboarding footer own the available
 key set. Present-but-invalid values refuse; absent facts stay honest and
