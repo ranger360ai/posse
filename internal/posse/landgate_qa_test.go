@@ -79,11 +79,24 @@ func landGateState(t *testing.T, repo, tip string, tr *SessionTree) (onBase, tre
 // until the operator answers).
 func blockedOn(t *testing.T, repo, id, status string) {
 	t.Helper()
-	writeJSON(t, repo, "fake-deps.json", []map[string]any{{
+	depsOf(t, repo, dep(id, status, "blocks"))
+}
+
+// dep is one row of that listing, and depsOf is the whole of it. Seeding the
+// listing by hand states what `dep list` returns rather than what the graph
+// holds, which is the right fixture for a reader and the wrong one for a
+// writer (herdr_test.go's own note on fake-deps.json).
+func dep(id, status, kind string) map[string]any {
+	return map[string]any{
 		"id": id, "title": "may this land?", "status": status,
 		"issue_type": "bug", "labels": []string{"question"},
-		"dependency_type": "blocks",
-	}})
+		"dependency_type": kind,
+	}
+}
+
+func depsOf(t *testing.T, repo string, rows ...map[string]any) {
+	t.Helper()
+	writeJSON(t, repo, "fake-deps.json", rows)
 }
 
 // THE HEADLINE, and the reported incident exactly: in_progress, blocked on an
@@ -172,14 +185,19 @@ func TestQAForceKillStillDoesNotLandAnUnclosedBeadsBranch(t *testing.T) {
 	}
 }
 
-// The blocker half's own wrong arm: an ANSWERED question is not a decision
-// the operator still owes, and a keep that names it sends them to a closed
-// bead to read a verdict that is already in. The bead's status is what holds
-// this tree, and the sentence says only that.
+// The blocker half's two wrong arms, in one fixture. An ANSWERED question is
+// not a decision the operator still owes, and a keep that names it sends them
+// to a closed bead to read a verdict that is already in; a `discovered-from`
+// edge is not a block at all. The bead's status is what holds this tree, and
+// the sentence says only that.
 func TestQAKillsKeepDoesNotNameAnAlreadyAnsweredQuestion(t *testing.T) {
 	t.Parallel()
 	b, repo, name, tr, tip := landGateSession(t, `[{"id":"a-1","status":"in_progress","assignee":"ranger"}]`)
-	blockedOn(t, repo, "q-1", "closed")
+	// Beside the answered question, the edge every handoff leaves behind
+	// (ADR 0006 §1) — open, and not a blocker. `bd dep list` returns both
+	// from one call, so a reader that takes the listing for the block list
+	// would name this bead on nearly every tree it ever keeps.
+	depsOf(t, repo, dep("q-1", "closed", "blocks"), dep("d-1", "open", "discovered-from"))
 
 	l, err := b.KillSessionAndLand(name)
 	if err != nil {
@@ -193,6 +211,9 @@ func TestQAKillsKeepDoesNotNameAnAlreadyAnsweredQuestion(t *testing.T) {
 	}
 	if strings.Contains(l.Kept, "q-1") {
 		t.Errorf("the keep sends the operator to a question that is already answered:\n%s", l.Kept)
+	}
+	if strings.Contains(l.Kept, "d-1") {
+		t.Errorf("the keep reads a `discovered-from` edge as a block:\n%s", l.Kept)
 	}
 }
 
