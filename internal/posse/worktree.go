@@ -1686,7 +1686,11 @@ func mergeHangReason(t *SessionTree, hang error) string {
 // rebaseHangReason words a replay that was signalled with no answer, and the
 // abort that was attempted over it.
 func rebaseHangReason(t *SessionTree, hang, abortErr error) string {
-	found := fmt.Sprintf("%s is back off the rebase and holds the work", AbbrevHome(t.Path))
+	// What rebaseStopped answers and not a word more: "no rebase is in
+	// progress" is not "the work is where it was". This sentence is embedded
+	// verbatim in a bead somebody opens much later, and the one thing it may
+	// not do is promise them a tree it only asked one question of.
+	found := fmt.Sprintf("no rebase is in progress in %s any more", AbbrevHome(t.Path))
 	if rebaseStopped(t.Path) {
 		found = fmt.Sprintf("%s is STILL part-way through a rebase and needs `git rebase --abort` by hand before anything else touches it", AbbrevHome(t.Path))
 	} else if abortErr != nil && IsGitHang(abortErr) {

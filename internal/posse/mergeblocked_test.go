@@ -884,6 +884,41 @@ func mergeBlockedCases() []mergeBlockedCase {
 				return mergeBlockedReason(t, tr)
 			},
 		},
+		// The two refusals a SIGNALLED git child produces (ranger-base-zfza8).
+		//
+		// Produced by calling the sentence's own function rather than
+		// through MergeSessionWork — the "git could not read the diff" case
+		// above is the same shape and the same reason: every way to reach
+		// this arm through the whole function costs more than the arm is
+		// worth. Here the cost is a clock. GitTimeout is two minutes, so a
+		// fixture that drove a real hang would spend two minutes of the
+		// suite's wall to learn what the caller does with the error, and
+		// githang_qa_test.go already pins the kill itself by execution on
+		// the seams that take a limit. What these rows hold is the thing
+		// this table exists for: the WORDING, over a real repo, with the
+		// re-read each sentence makes actually running.
+		{
+			name: "the fast-forward was signalled with no answer",
+			arm:  "is how one landing becomes two",
+			reason: func(t *testing.T) string {
+				_, tr := wtTreeWithWork(t)
+				return mergeHangReason(tr, &GitHangError{
+					Argv: []string{"git", "-C", tr.Repo, "merge", "--ff-only", tr.Branch},
+					Dir:  tr.Repo, Limit: GitTimeout, Waited: GitTimeout, Mutation: true,
+				})
+			},
+		},
+		{
+			name: "the replay was signalled with no answer",
+			arm:  "this is not a conflict",
+			reason: func(t *testing.T) string {
+				_, tr := wtTreeWithWork(t)
+				return rebaseHangReason(tr, &GitHangError{
+					Argv: []string{"git", "-C", tr.Path, "rebase", tr.Base},
+					Dir:  tr.Path, Limit: GitTimeout, Waited: GitTimeout, Mutation: true,
+				}, nil)
+			},
+		},
 	}
 }
 

@@ -340,8 +340,18 @@ func TestQARebaseHangReasonIsNotAConflictReport(t *testing.T) {
 			t.Errorf("a signalled replay is reported in the conflict arm's words (%q):\n%s", absent, r)
 		}
 	}
-	if !strings.Contains(r, "holds the work") {
+	if !strings.Contains(r, "no rebase is in progress") {
 		t.Errorf("the reason does not say what the tree reads as after the abort:\n%s", r)
+	}
+	// And it says only that. "no rebase in progress" is one question asked
+	// of the tree; "the work is where it was" is a different one nobody
+	// asked, and this sentence outlives the pass that wrote it. The same
+	// claims blockedPromise refuses (mergeblocked_test.go, arm 2 — spelled
+	// again here rather than reached across an arm tag).
+	for _, claim := range []string{"untouched", "still holds", "still there", "still on the branch"} {
+		if strings.Contains(strings.ToLower(r), claim) {
+			t.Errorf("the reason promises the tree still holds the work (%q) — the abort was attempted, not verified:\n%s", claim, r)
+		}
 	}
 }
 
