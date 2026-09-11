@@ -33,6 +33,7 @@ package posse
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -519,6 +520,38 @@ func (a *App) CanonAgent(name string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// PlainPaneHint is what `posse new <name>` says when <name> is the name of a
+// persona in this home and no `--agent` came with it: that this is a plain
+// pane, and what the persona launch would have been. "" in every other case.
+//
+// WHY A HINT AND NOT A LAUNCH (ranger-base-qnn6j asked for one of the two,
+// cited). A bare `posse new <name>` is not a mistake posse may correct: ADR
+// 0008 §1 marks every `posse new` Crew — the operator made it to talk to it
+// — so the name is a SESSION name, and a session named after a persona is a
+// legitimate thing to open (a pane to read that persona's memory in, a
+// second shell in their repo). And launching the persona would bind what
+// only a PID may bind: ADR 0002's wall — cage tier, allow/deny, envs,
+// skills — plus BD_ACTOR and RHQ_PERSONA, none of which the operator asked
+// for and all of which a session then carries for its whole life. Inferring
+// that from a name is the kind of near-right help that is worst when it is
+// right most of the time.
+//
+// So the plain pane is created exactly as typed and the hint goes to stderr
+// beside it: the operator who meant the pane has lost nothing, and the one
+// who meant the persona has the line to retype. What they were missing was
+// never a refusal — it was ever hearing that the two differ.
+func (a *App) PlainPaneHint(name, agent string) string {
+	if agent != "" {
+		return ""
+	}
+	canon, ok := a.CanonAgent(name)
+	if !ok {
+		return ""
+	}
+	return fmt.Sprintf("posse: %q names a persona here and no --agent was given, so this is a plain pane — no PID, no wall, no BD_ACTOR (ADR 0002, ADR 0008 §1).\n"+
+		"  the persona launch is: posse new %s --agent %s --dir <repo>", name, name, canon)
 }
 
 // HardRiskLines are the four crew-wide guardrails from ADR 0001. Every

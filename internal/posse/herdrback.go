@@ -1917,11 +1917,20 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 	// No manifest = nothing was ever promoted here = nothing to check, which
 	// is what keeps every pre-0015 home launching.
 	if v := a.VerifyPromoted(); !v.OK() {
+		// …and on a single-tree home that one command is not available:
+		// `posse promote` refuses a source and a home that are the same
+		// tree, so both sentences below prescribe the one thing that cannot
+		// help (ranger-base-qnn6j). The hint is empty on every home promote
+		// can serve, so it appends unconditionally.
+		fix := a.SingleTreeRefreshFor(v)
+		if fix != "" {
+			fix = "\n  " + fix
+		}
 		if o.Bead != "" {
 			return nil, constitutionRefusal{Die("%s\n  dispatch refuses to launch on a constitution nobody promoted (ADR 0015 §3)\n"+
-				"  the operator clears it with: posse promote", v.Line())}
+				"  the operator clears it with: posse promote%s", v.Line(), fix)}
 		}
-		b.warn("posse: DEGRADED — %s (ADR 0015 §3; clear it with `posse promote`)\n", v.Line())
+		b.warn("posse: DEGRADED — %s (ADR 0015 §3; clear it with `posse promote`)%s\n", v.Line(), fix)
 	}
 
 	dir := o.Dir

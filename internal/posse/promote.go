@@ -532,6 +532,57 @@ func (v PromoteVerdict) Line() string {
 	return lead + "constitution does not match its manifest: " + strings.Join(parts, "; ")
 }
 
+// SingleTreeRefreshFile is the only refresh a single-tree home has, named as
+// a file rather than as a command because there is no command (M2 deviation
+// 3, 2026-09-02).
+//
+// THE TWO SHAPES. ADR 0015 §2 recommends keeping the constitution and the
+// home apart, and every sentence posse prints about the launch verify was
+// written for that shape: the mismatch is cleared by `posse promote`, which
+// re-stamps the manifest from a commit. A SINGLE-TREE home is the other
+// shape — one home seeded by `posse init`, edited in place, with no separate
+// repo and no `constitution:` — and there promote REFUSES before it writes
+// anything ("the same tree — nothing to promote", CmdPromote), so every one
+// of those sentences prescribes a command that cannot run. What that shape
+// has instead is removing the manifest, which turns the verify OFF; that is
+// the posture, not a workaround, because a home nobody ratifies has no
+// ratification step to re-run. The operator found this by following the
+// sentences (a home seeded, PIDs added in place, every launch DEGRADED,
+// promote refusing, and nothing anywhere naming the one thing that helps).
+//
+// It is a hint appended to those sentences and never a refusal of its own:
+// `rm promoted.json` disarms a check, so posse names it and the operator
+// types it.
+const SingleTreeRefreshFile = "single-tree home (no `constitution:`)? remove " + PromoteManifestFile +
+	" — the verify is off for a home you edit in place, and that is the posture for this shape, not a workaround"
+
+// SingleTreeRefresh is SingleTreeRefreshFile when this home is that shape,
+// and "" when it is not — so a caller appends it unconditionally and the
+// sentence appears only where it applies.
+//
+// Gated on BOTH facts, not either: `seeded` says no promote has ever
+// happened here (init writes that mark and promote never does), and an unset
+// `constitution:` says there is no tree a promote could be aimed at. A home
+// with one and not the other is a home `posse promote` can still serve, and
+// telling that operator to delete their manifest would disarm a check that
+// works. Naming a command — or a file — only where it applies is the rule
+// LoadGuardEscape and constitutionLandRefusal already keep.
+func (a *App) SingleTreeRefresh(seeded bool) string {
+	if !seeded || a.CfgGet("constitution", "") != "" {
+		return ""
+	}
+	return SingleTreeRefreshFile
+}
+
+// SingleTreeRefreshFor asks SingleTreeRefresh of the manifest a verdict was
+// read against, which is the form the two launch-verify sites want. A
+// manifest this binary could not READ is not called seeded — it is the
+// verify's own failure mode (PromoteVerdict.Err) and posse cannot say what
+// shape the home is from a file it cannot parse.
+func (a *App) SingleTreeRefreshFor(v PromoteVerdict) string {
+	return a.SingleTreeRefresh(v.Manifest != nil && v.Manifest.Seeded)
+}
+
 // VerifyPromoted hashes the home's promoted set and compares it with the
 // manifest. `envs/` is not in the promoted set and never reaches this
 // comparison (ADR 0015 §7): a corrupted or hand-edited env file must NOT

@@ -193,6 +193,14 @@ func main() {
 		// is the operator's own judgement about the box, so the fleet's
 		// load guard warns here instead of refusing (ranger-base-jfe5z).
 		o.Crew, o.ByHand = true, true
+		// A name that IS a persona, launched without --agent, opens a plain
+		// pane and nothing says so (ranger-base-qnn6j). Said before the
+		// create, so it reads as a fact about the line just typed rather
+		// than as a complaint about the session that now exists — and on
+		// stderr, because the created line below is this command's output.
+		if hint := a.PlainPaneHint(o.Name, o.Agent); hint != "" {
+			fmt.Fprintln(os.Stderr, hint)
+		}
 		if err := hb.CreateSession(o); err != nil {
 			die(err)
 		}

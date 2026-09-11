@@ -62,7 +62,10 @@ posse init                       # seed $RHQ_HOME (default ~/.config/posse) from
                                  # examples: examples/ beside the binary when that
                                  # is a seed tree, else the copy embedded at build time
 mkdir -p ~/code/myproj           # --dir must exist; point it at a project of yours
-posse new myproj --dir ~/code/myproj --cmd claude
+posse new myproj --dir ~/code/myproj --cmd claude   # a PLAIN PANE: no persona.
+                                 # `posse init` seeds no crew, so there is none to name
+                                 # yet. The persona launch is `posse new <session>
+                                 # --agent <persona>` — INSTALL.md §7 and §10
 posse list                       # live agent state per session
 posse prompt myproj "fix the failing test" --wait
 make link-plugin                 # register the cockpit with herdr (runs the installed posse)

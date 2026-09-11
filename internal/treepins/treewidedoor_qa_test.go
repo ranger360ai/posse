@@ -75,8 +75,15 @@ package treepins
 //	                                              make seed-check
 //	                                              (ranger-base-nn33e)
 //
+// and one more, folded into doc-check's own door for the same reason — it
+// is a prose pin over two shipped documents, which is that door's subject:
+//
+//	TestQAShippedLaunchLinesParseAsThePersonaLaunch
+//	                                              make doc-check
+//	                                              (ranger-base-qnn6j)
+//
 // and `make tree-check` is all of them — 15-43s on this box over three runs
-// at twenty-one pins and eight doors — which is the command a seat types
+// at twenty-two pins and eight doors — which is the command a seat types
 // after a filtered run. (It was 12-27s under ranger-base-8dnuy, two pins ago,
 // and 40-46s at a smaller class before that; re-measured under
 // ranger-base-xrdb0, because the sentence a seat prices the command from

@@ -684,6 +684,22 @@ dispatch again.
 On a home `posse promote` manages, `init` refuses outright (§4) and the
 retirement belongs in the constitution repo instead.
 
+**A single-tree home has no promote, and that is the shape rather than a
+gap.** If you skipped the constitution repo in §4 — one home, seeded by
+`posse init`, PIDs and `config.yaml` edited in place, no `constitution:` key
+— then the `seeded` manifest §4 describes is anchoring files you go on to
+change by hand, so every dispatched launch refuses and every interactive one
+warns `DEGRADED` about the crew you just wrote. `posse promote` cannot clear that: it refuses when the source and the
+home are the same tree, and there is nothing else to promote from. The
+refresh for this shape is to remove the manifest — `rm
+$RHQ_HOME/promoted.json` — which turns the launch verify **off**. That is the
+posture for a home you edit in place, not a workaround: ADR 0015 §3 is armed
+by a ratification, and this shape has no ratification step to re-run. The
+launch verify now says so wherever it speaks — the `init` stamp, the
+`DEGRADED` warning, the dispatch refusal — and says nothing of the kind on a
+home `posse promote` can actually serve. To arm it later, move the
+constitution into its own repo (§4) and promote from there.
+
 The frontmatter keys that do work:
 
 | key | what it does |
@@ -851,6 +867,22 @@ QA takes the developer's shape rather than the reviewer's on purpose:
 `harden-suite` commits tests, so a bare `Edit`/`Write` wall would be the
 wrong shape. `reviewer` and `security` keep that bare wall and get nothing
 path-scoped — they are already stricter.
+
+**And to start one of them, name the persona.** The launch form is the one
+§10 runs with its Verify, and `--agent` is the load-bearing part of it:
+
+```sh
+$ posse new <session-name> --dir ~/src/<your-work-repo> --agent <persona>
+```
+
+`posse new <name>` *without* `--agent` is a different command, not a broken
+one: it opens a plain herdr pane — no PID, no wall, no `BD_ACTOR`, no
+persona memory — and nothing starts in it, however much the name looks like
+one of the crew you just wrote. Both are yours either way (ADR 0008 §1
+marks every `posse new` **crew**, so dispatch leaves it alone). posse says
+which one you got when the name you typed *is* a persona and `--agent` is
+not there (ranger-base-qnn6j). §10 is where you run it for real: the smoke
+step there is this line with a Verify under it.
 
 ---
 

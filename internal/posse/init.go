@@ -366,6 +366,14 @@ func (a *App) initFrom(w io.Writer, src fs.FS, from string) error {
 		fmt.Fprintf(w, "stamped %s (seeded): every launch now hashes %s against it — a dispatched launch refuses on a mismatch, an interactive one warns (ADR 0015 §3)\n",
 			AbbrevHome(a.PromoteManifestPath()), PromotedProse("and"))
 		fmt.Fprintf(w, "  `posse promote` is what re-stamps it after you change any of them\n")
+		// …on the shape that HAS a promote. A single-tree home does not,
+		// and this is the sentence that told the operator otherwise (M2
+		// deviation 3): it is `fresh`, so the manifest this run just wrote
+		// is seeded by construction, and SingleTreeRefresh answers "" the
+		// moment a `constitution:` names a tree promote could re-stamp from.
+		if hint := a.SingleTreeRefresh(true); hint != "" {
+			fmt.Fprintf(w, "  %s\n", hint)
+		}
 	case !fresh && wrote == 0 && man != nil && man.Seeded:
 		// ranger-base-g4cm: a seeded home whose re-run fills no gap matched
 		// none of the arms above, so init said nothing here too — and
@@ -392,6 +400,13 @@ func (a *App) initFrom(w io.Writer, src fs.FS, from string) error {
 	// out is what the next dispatched launch will read too.
 	if v := a.VerifyPromoted(); !v.OK() {
 		fmt.Fprintf(w, "%s — every dispatched launch will refuse until you run `posse promote` (ADR 0015 §3)\n", v.Line())
+		// The same sentence as the fresh-stamp arm above, and wrong in the
+		// same way on a single-tree home: this one is read by an operator
+		// whose launches are ALREADY refusing, so sending them to a command
+		// that refuses is the worst place to do it.
+		if hint := a.SingleTreeRefreshFor(v); hint != "" {
+			fmt.Fprintf(w, "  %s\n", hint)
+		}
 	}
 	// A fresh instance has no crew, and that is the shipped state, not a
 	// half-seed: say where the reference PIDs are and how to get a real
