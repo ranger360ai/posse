@@ -342,6 +342,26 @@ func TestQASequencerAuditLeavesEverythingElseAlone(t *testing.T) {
 // answers differ and the distinction is measurable at all.
 func TestQASequencerRecipeStaysOutOfTheCommonDir(t *testing.T) {
 	shim, _, _ := sequencerShim(t)
+
+	// The two structural halves run FIRST, so a change that stops the arm
+	// firing at all still reports WHY here rather than only that it went
+	// quiet. The first is structural because outside a worktree-shaped git dir
+	// the two rev-parse answers are the same string, so no execution can tell
+	// them apart.
+	rendered := renderSequencerAudit("git", "/usr/bin/git", "/bin/date")
+	if !strings.Contains(rendered, "rev-parse --absolute-git-dir") {
+		t.Error("the audit no longer asks rev-parse for the session's own git dir")
+	}
+	if strings.Contains(rendered, "--git-common-dir") {
+		t.Error("the audit asks git for the COMMON dir, the one place ADR 0059 D3 says its recipe may not point")
+	}
+	// The lists the recipe is built from hold this session's leftovers only.
+	for _, m := range append(append([]string{}, sequencerLeftovers...), sequencerBlockers...) {
+		if strings.Contains(m, "packed-refs") {
+			t.Errorf("%q is shared state, not a leftover of this session's operation", m)
+		}
+	}
+
 	common := filepath.Join(t.TempDir(), ".git")
 	own := filepath.Join(common, "worktrees", "w1")
 	stray := filepath.Join(common, "packed-refs.lock")
@@ -403,21 +423,5 @@ func TestQASequencerRecipeStaysOutOfTheCommonDir(t *testing.T) {
 	// It audits, it does not repair: the stray lock is still there.
 	if _, err := os.Stat(stray); err != nil {
 		t.Errorf("the stray lock is gone — the audit removed shared state on a guess: %v", err)
-	}
-	// Structurally, because outside a worktree-shaped git dir the two
-	// rev-parse answers are the same string and no execution can tell them
-	// apart: the arm asks for its OWN git dir, by name.
-	rendered := renderSequencerAudit("git", "/usr/bin/git", "/bin/date")
-	if !strings.Contains(rendered, "rev-parse --absolute-git-dir") {
-		t.Error("the audit no longer asks rev-parse for the session's own git dir")
-	}
-	if strings.Contains(rendered, "--git-common-dir") {
-		t.Error("the audit asks git for the COMMON dir, the one place ADR 0059 D3 says its recipe may not point")
-	}
-	// The lists the recipe is built from hold this session's leftovers only.
-	for _, m := range append(append([]string{}, sequencerLeftovers...), sequencerBlockers...) {
-		if strings.Contains(m, "packed-refs") {
-			t.Errorf("%q is shared state, not a leftover of this session's operation", m)
-		}
 	}
 }
