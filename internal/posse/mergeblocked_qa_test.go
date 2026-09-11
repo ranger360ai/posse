@@ -12,12 +12,12 @@ package posse
 // files of the session's git dir — so a pass that stopped writing logs/HEAD
 // and kept writing the index would pass that pin and still hold the grace
 // clock open forever. MEASURED here 2026-09-10 (macOS 26.4.1/APFS, git
-// 2.50.1): the index moves exactly ONCE more after the block stands — the
-// stat-cache settle of the first `git status` following the last aborted
-// rebase — and then no file in the git dir moves again over four further
-// passes. So the property holds, with a one-pass lag neither the commit
-// message nor the skip's comment mentions, and this is the pin that
-// measures the property rather than its proxy.
+// 2.50.1), 10 runs of this fixture: the index moves once more after the
+// block stands — the stat-cache settle of the first `git status` following
+// the last aborted rebase — in 10/10, and once more again in 1/10, and
+// never after that. So the property holds, with a one-to-two-pass lag
+// neither the commit message nor the skip's comment mentions, and the pin
+// below measures the property and that bound rather than their proxy.
 //
 // AND THE COST, pinned below as it currently stands: the skip is keyed on
 // the BRANCH not having moved, while every reason a merge-back blocks is a
