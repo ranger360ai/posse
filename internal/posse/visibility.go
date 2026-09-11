@@ -141,11 +141,22 @@ type OpsPattern struct {
 	re    *regexp.Regexp
 }
 
-// Match reports whether s carries this class, and MatchedText returns what
-// matched — a refusal that shows the operator the string it tripped on is
-// actionable; one that only names a class is a puzzle.
+// Match reports whether s carries this class. It is the whole of what the
+// guard asks: opsClassesOf walks a list of these and keeps the classes that
+// hit.
 func (p OpsPattern) Match(s string) bool { return p.re.MatchString(s) }
 
+// MatchedText returns up to n of the strings in s that tripped this class —
+// a refusal that shows the operator the string it tripped on is actionable;
+// one that only names a class is a puzzle.
+//
+// It has one caller and it is a test: the CHANGELOG pin in
+// changelogscrub_qa_test.go, whose failure quotes what it found so the
+// release fix is a grep the reader does not have to run. No Go rendering
+// reads it — the refusal that shows an operator the matched string is the
+// prepare-commit-msg hook, and that is shell (gates.go, `grep -oE | head
+// -3`), not this. Kept and exported for the pin, deliberately, rather than
+// deleted as unused (ranger-base-zyou5).
 func (p OpsPattern) MatchedText(s string, n int) []string {
 	return p.re.FindAllString(s, n)
 }
@@ -246,21 +257,6 @@ func init() {
 	}
 }
 
-// ScanOps returns the classes of instance-ops content s carries, over the
-// shipped list plus whatever set adds (the zero OpsPatternSet is the
-// shipped list alone — a caller that knows nothing about an instance still
-// gets the guard, never an empty one). Empty is the common case and the
-// cheap one.
-func ScanOps(s string, set OpsPatternSet) []OpsPattern {
-	var hits []OpsPattern
-	for _, p := range set.All() {
-		if p.Match(s) {
-			hits = append(hits, p)
-		}
-	}
-	return hits
-}
-
 // ─── which repos are public ──────────────────────────────────────────────────
 
 // BeadsVisibility answers what config says about the beads db in the repo at
@@ -337,7 +333,11 @@ func (a *App) WarnOpsContent(w io.Writer, dir, what, text string) bool {
 	return true
 }
 
-// opsClassesOf is the classes in list that text carries, in list order.
+// opsClassesOf is the classes in list that text carries, in list order. It
+// is the ONE scanner: it takes a list rather than an OpsPatternSet because
+// the data ceiling is scanned from set.Ceiling alone, which is a list, and a
+// second set-taking twin beside it (the exported ScanOps, deleted in
+// ranger-base-zyou5) could not serve that caller and had none of its own.
 func opsClassesOf(text string, list []OpsPattern) []string {
 	var classes []string
 	for _, p := range list {

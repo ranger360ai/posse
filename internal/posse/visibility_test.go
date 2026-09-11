@@ -47,7 +47,7 @@ func TestOpsPatternsArePortable(t *testing.T) {
 // made the start set unusable in this repo — a lint that fires on a quarter
 // of commits is a lint that gets uninstalled, so the misses are pinned as
 // hard as the hits.
-func TestScanOps(t *testing.T) {
+func TestOpsClassesOf(t *testing.T) {
 	t.Parallel()
 	for _, c := range []struct {
 		text  string
@@ -100,13 +100,9 @@ func TestScanOps(t *testing.T) {
 		{"the plan-usage adapter reads the token from the macOS keychain", ""},
 		{"env sets, personas and skills are config under ~/.config/rhq/", ""},
 	} {
-		hits := ScanOps(c.text, OpsPatternSet{})
-		var got []string
-		for _, h := range hits {
-			got = append(got, h.Class)
-		}
+		got := opsClassesOf(c.text, OpsPatternSet{}.All())
 		switch {
-		case c.class == "" && len(hits) > 0:
+		case c.class == "" && len(got) > 0:
 			t.Errorf("false positive %v on %q", got, c.text)
 		case c.class != "" && !contains(got, c.class):
 			t.Errorf("missed %s in %q (got %v)", c.class, c.text, got)
@@ -535,18 +531,10 @@ func TestPlanBrandsAreNotShippedVerbatim(t *testing.T) {
 	}
 	// And the assembling must not have cost the guard a branch. This is the
 	// one brand no prose fixture can spell out, so it is exercised here from
-	// the same kind of fragments; the other three are prose in TestScanOps.
-	if s := "on " + "Claude" + " Max" + " the fleet is inside the plan"; !contains(classesOf(ScanOps(s, OpsPatternSet{})), "plan") {
+	// the same kind of fragments; the other three are prose in TestOpsClassesOf.
+	if s := "on " + "Claude" + " Max" + " the fleet is inside the plan"; !contains(opsClassesOf(s, OpsPatternSet{}.All()), "plan") {
 		t.Errorf("assembling the fragments lost a branch: %q no longer matches", s)
 	}
-}
-
-func classesOf(ps []OpsPattern) []string {
-	var cs []string
-	for _, p := range ps {
-		cs = append(cs, p.Class)
-	}
-	return cs
 }
 
 // The other half of the same lesson, and the one that bit twice: this file
@@ -659,10 +647,10 @@ func TestOpsPatternSetFromConfig(t *testing.T) {
 		t.Errorf("the zero set must be the shipped list alone, got %d", n)
 	}
 	// Both readers see it: the in-session warn is the Go one.
-	if !contains(classesOf(ScanOps(secret+" Holdings signed", set)), "client-acme") {
+	if !contains(opsClassesOf(secret+" Holdings signed", set.All()), "client-acme") {
 		t.Error("an accepted instance pattern must match in Go")
 	}
-	if contains(classesOf(ScanOps(secret+" Holdings signed", OpsPatternSet{})), "client-acme") {
+	if contains(opsClassesOf(secret+" Holdings signed", OpsPatternSet{}.All()), "client-acme") {
 		t.Error("the shipped list alone must not carry an instance's class")
 	}
 	var w bytes.Buffer

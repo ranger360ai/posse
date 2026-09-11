@@ -64,6 +64,24 @@ func shopSet(t *testing.T, in GovInputs) GovSet {
 	return set
 }
 
+// govHasID asks whether the set holds a given G-row. Tests ask this; no
+// rendering does — the cockpit's one by-name reader wants the ROW (it
+// switches on G7's Key), which a bool cannot answer, so the method this
+// replaces (GovSet.Has, ranger-base-zyou5) had no caller outside a test.
+//
+// A carry-over has no row name, so the empty id matches nothing.
+func govHasID(s GovSet, id string) bool {
+	if id == "" {
+		return false
+	}
+	for _, c := range s {
+		if c.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
 // govRepo is a bd repo the fake bd serves from files: one directory, one
 // `beads:` entry, whatever JSON the row under test needs.
 //

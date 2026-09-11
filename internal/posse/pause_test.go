@@ -500,7 +500,7 @@ func TestAPausedShopStillPulses(t *testing.T) {
 	// And the pause itself is one of the things it escalates (G8), beside
 	// the condition that has nothing to do with the pause.
 	set := shopSet(t, d.govInputs(PulseConfig{Armed: true, Persona: "coordinator"}))
-	if !set.Has("G8") || !set.Has("G1") {
+	if !govHasID(set, "G8") || !govHasID(set, "G1") {
 		t.Errorf("a paused shop with a blocked session must report both: %v", set.Keys())
 	}
 }
