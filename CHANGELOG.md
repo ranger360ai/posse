@@ -489,6 +489,49 @@ is the intended trade (ADR 0006 §4).
 
 ### Fixed
 
+**posse can now tell a prompt somebody typed from the next-prompt suggestion
+claude writes into an empty box: the composer is read a second time WITH its
+escape sequences, and a box drawn entirely faint is claude's own text.**
+
+*Affected: every reader of a claude pane's composer — `posse status` / the
+cockpit's G2 row, the settle judgment, and the read-back `posse prompt` does
+after it submits. Nothing to do on upgrade; no configuration.* The release
+above dropped the `settled-unsent:` row while a seat has live background
+work, and said out loud what it did not reach: a settled seat with NOTHING
+running whose box previews a suggestion was still filed `settled-unsent:` on
+every tick, by a row nobody could make go false — nobody typed the text, so
+nobody could clear it.
+
+herdr's region preview is plain text, so the two cases arrive identical. The
+escapes are one call away and they are not: measured over 77 reads of every
+idle claude pane on one box, 20s apart (herdr 0.8.2, claude manifest
+2026.09.04.1), a suggestion is drawn faint every single time — 60 of 60 — and
+an empty box carries no faint run at all, which is what rules out the pane's
+theme and herdr's rendering as the explanation. posse now reads the composer
+once more through `herdr agent read --format ansi` when, and only when, the
+box holds text no store claims, and treats a body whose every printing
+character is drawn faint as claude's own.
+
+Three readers change, and all three only REPORT: the G2 row goes back to its
+plain `settled:` shape and says which reading changed it, a settle behind a
+suggestion is judged instead of being held unjudged forever with its seat
+unrefilled, and `posse prompt` stops warning that a prompt it delivered
+successfully "was typed but not submitted" — that warning fired because the
+box a successful submit leaves behind is usually not empty.
+
+One reader deliberately does not change, and it is the one that types.
+`posse dispatch --resume` still refuses to re-prompt a holder whose box is
+drawn faint, and now says so in its own line. Half of the measurement above
+is missing: that a line somebody TYPED is *not* also drawn faint has been
+measured zero times, and if it were, a resuming pass would type on top of a
+prompt the operator is still writing. Retiring that refusal needs one run of
+`scripts/verify-ghost-composer.sh` from an uncaged shell.
+
+Every failure of the new reading answers "not a suggestion": a herdr that
+will not read the pane, a screen with no composer in it, a read that cannot
+be joined to the preview posse already has. Each one leaves the box a hold
+and every caller behaving exactly as it did before this release.
+
 **The shop check stopped sending the coordinator to clear a prompt claude
 had written itself: a seat waiting on its own suite run files no
 `settled-unsent:` row, whatever its composer previews.**

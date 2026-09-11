@@ -2862,9 +2862,30 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 		// settled holder, which is the grain the skip above it already
 		// works at.
 		if d.Resume && holder != "" && settledStatus(holderStatus) {
-			if hold := d.HB.sessionHolding(holder); hold.Waiting() {
+			hold := d.HB.sessionHolding(holder)
+			switch {
+			case hold.Waiting():
 				d.skipf(skipWaiting, "– %-14s held by %s, %s idle with %s — waiting, not re-prompted\n",
 					is.ID, persona, holder, hold.Why())
+				continue
+			case hold.Ghost != "":
+				// ranger-base-6o7wm, AND THE ONE PLACE ITS READING DOES NOT
+				// DECIDE. A box drawn wholly faint is claude's own suggestion
+				// by every reading posse has (ghostbox.go: 60 dim
+				// suggestions, 17 empty boxes carrying no dim run at all),
+				// and the row that reports it drops its -unsent subtype
+				// everywhere else on that evidence — because everywhere else
+				// only REPORTS. This line types. The other half of that
+				// measurement does not exist yet: that a line somebody TYPED
+				// is not drawn dim too is measured zero times, and if it were
+				// dim this would re-prompt on top of a prompt the operator is
+				// still writing. So the skip stands, unchanged from before
+				// the reading existed, and says what retires it —
+				// `scripts/verify-ghost-composer.sh` from an UNCAGED shell,
+				// whose arm A types a marker into a scratch claude and never
+				// submits it.
+				d.skipf(skipGhostBox, "– %-14s held by %s, %s idle, box previewing claude's own suggestion (%s) — not re-prompted: a TYPED line has not been measured undimmed (ranger-base-6o7wm)\n",
+					is.ID, persona, holder, ellipsis(hold.Ghost, 60))
 				continue
 			}
 		}

@@ -1735,6 +1735,35 @@ func fakeHerdr(args []string) int {
 			return fakeErr(code, msg)
 		}
 		return fakeOK(fmt.Sprintf(`{"type":"agent_wait","agent":{"agent_status":%q}}`, fakeWaitStatus()))
+	case "agent read": // plain text with the escapes in it, like the real CLI
+		// composer-ansi (file) is the screen THIS fake shows when posse asks
+		// for the attributes rather than the characters — the second read
+		// ranger-base-6o7wm's ghost discriminator is taken through
+		// (ghostbox.go). Served verbatim, escapes and all, because the whole
+		// subject is bytes herdr's other readings strip.
+		//
+		// agent-read-error (file, "code|message") is the failure arm: a herdr
+		// that will not read the pane must leave every caller judging the box
+		// exactly as it did before the reading existed.
+		//
+		// The DEFAULT is a screen with no prompt mark in it at all, not an
+		// error: every test in this package that arms a composer through
+		// explain-rules and never thinks about the escapes then runs the real
+		// reading and gets "not a ghost" out of it, which is the answer that
+		// leaves it behaving as it always has.
+		if b, err := os.ReadFile(filepath.Join(fakeDir(), "agent-read-error")); err == nil {
+			code, msg, ok := strings.Cut(strings.TrimSpace(string(b)), "|")
+			if !ok {
+				msg = "fake herdr: agent read refused"
+			}
+			return fakeErr(code, msg)
+		}
+		if b, err := os.ReadFile(filepath.Join(fakeDir(), "composer-ansi")); err == nil {
+			fmt.Print(string(b))
+			return 0
+		}
+		fmt.Print("prompt$ echo hi\nhi\nprompt$\n")
+		return 0
 	case "agent explain": // a BARE object, like the real `explain --json`
 		if b, err := os.ReadFile(filepath.Join(fakeDir(), "explain-error")); err == nil && fakeExplainErrorArmed() {
 			code, msg, ok := strings.Cut(strings.TrimSpace(string(b)), "|")

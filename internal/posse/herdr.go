@@ -587,6 +587,22 @@ func (h Herdr) PaneRead(paneID string, lines int) (string, error) {
 	return text, nil
 }
 
+// AgentReadANSI returns the pane's terminal output with the escape sequences
+// left in — the same screen `agent explain` previews a region of, read once
+// more with the attributes on it.
+//
+// It is the argv the ranger-base-6o7wm corpus was measured through, verbatim
+// and including its default `--source recent`: the discriminator that corpus
+// found is an SGR run, and a reading that quietly asked for a different
+// snapshot than the one that was measured would be a different measurement.
+// The one caller reads it through composerIsGhost (ghostbox.go), which
+// answers false for anything it cannot join to the preview it already has —
+// so an error here, and a herdr with no `agent read` at all, cost nothing but
+// the reading.
+func (h Herdr) AgentReadANSI(target string) (string, error) {
+	return h.RunText("agent", "read", target, "--format", "ansi")
+}
+
 // PaneAgentSession is the RUNTIME's own id for the conversation in this
 // pane — `agent_session.value` off `pane get`, which for claude is the
 // session uuid its transcript and its submit log are keyed on (measured

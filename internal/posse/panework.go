@@ -149,6 +149,18 @@ type PaneHold struct {
 	// hold and Typed is empty beside it. "" = no echo was found, which is
 	// also what an unreadable store answers (sentline.go).
 	Sent string
+	// Ghost is the line the box is DRAWING FAINT: claude's own suggested
+	// next prompt, written into an empty box by nobody, so it is not a
+	// hold either and Typed is empty beside it. "" = the box was not
+	// wholly dim, or posse could not read the escapes (ghostbox.go).
+	//
+	// It is reported by every caller and acted on by all but one. The
+	// measurement behind it is half-taken — a dim SUGGESTION is measured
+	// 60 times, a typed line measured not-dim zero times — so it may
+	// retire a claim posse makes about a box and may never license a
+	// keystroke into one. ghostbox.go's note carries both halves and the
+	// command that finishes them.
+	Ghost string
 }
 
 // Waiting reports whether this pane's idle is a wait rather than a settle.
@@ -303,15 +315,31 @@ func (b *HerdrBackend) PaneHolding(target string) PaneHold {
 	// nothing else, and answered "no" by every failure on the way: a pane
 	// herdr will not name a claude session for, a store that will not open,
 	// a session with no row in it.
-	sess, err := b.H.PaneAgentSession(target)
-	if err != nil {
-		return hold
+	//
+	// The STORE IS ASKED FIRST and returns on its own. It is the authority
+	// for "was this submitted" (Helland, CIDR 2005: the screen is a derived
+	// copy of a fact that store owns), where the reading below is the same
+	// derived copy read a second way — so where both could speak, the one
+	// with a store behind it does.
+	if sess, err := b.H.PaneAgentSession(target); err == nil {
+		if sent, ok := lastSubmitted(b.ClaudeHistory, sess); ok && submittedEcho(hold.Typed, sent, det.ComposerTruncated()) {
+			hold.Sent, hold.Typed = sent, ""
+			return hold
+		}
 	}
-	sent, ok := lastSubmitted(b.ClaudeHistory, sess)
-	if !ok || !submittedEcho(hold.Typed, sent, det.ComposerTruncated()) {
-		return hold
+	// ranger-base-6o7wm. The other way that text is nobody's to clear:
+	// claude drew it. A suggestion is in NO store — claude logs submits and
+	// never suggestions, so the echo reading above answers "not an echo" for
+	// every one of them — and it previews in `prompt_box_body` character for
+	// character like typed input. What tells them apart is that claude draws
+	// its own suggestion FAINT, which herdr's ANSI-stripped preview flattens
+	// away and one more read puts back (ghostbox.go, and the corpus behind
+	// it). One `agent read` per settled holder whose box has text no store
+	// claims, which is the grain the two calls above already work at; an
+	// empty box still costs one `explain` and nothing else.
+	if ansi, err := b.H.AgentReadANSI(target); err == nil && composerIsGhost(ansi, hold.Typed) {
+		hold.Ghost, hold.Typed = hold.Typed, ""
 	}
-	hold.Sent, hold.Typed = sent, ""
 	return hold
 }
 
@@ -378,6 +406,17 @@ func (b *HerdrBackend) ConfirmSubmitted(target string) string {
 			return ""
 		}
 		if !time.Now().Add(promptSubmitPoll).Before(deadline) {
+			// ranger-base-6o7wm, and the reason this one is asked at the
+			// deadline rather than in the loop: the box a SUCCESSFUL submit
+			// leaves behind is usually not empty, because claude writes its
+			// next suggestion into it — so the poll above runs out its two
+			// seconds and this warned that posse's own delivered prompt was
+			// "typed but not submitted". One ansi read, on the path that was
+			// about to warn and nowhere else; a dim box warns nothing, and
+			// every failure of the reading warns exactly as it did before.
+			if ansi, err := b.H.AgentReadANSI(target); err == nil && composerIsGhost(ansi, typed) {
+				return ""
+			}
 			return typed
 		}
 		time.Sleep(promptSubmitPoll)

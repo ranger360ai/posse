@@ -657,6 +657,28 @@ func (in GovInputs) beadConditions(now time.Time, sessions []HerdrSession, add f
 			sub, why := in.ladderSubtype(dir, is.ID)
 			if hold.Typed != "" {
 				sub, why = "-unsent", " — "+hold.Why()
+			} else if hold.Ghost != "" {
+				// ranger-base-6o7wm, and the half ranger-base-l51p1 left:
+				// a seat with NOTHING running whose box previews claude's
+				// own next-prompt suggestion. That row was -unsent on every
+				// tick and could not go false — nobody typed the text, so
+				// nobody could clear it — and a coordinator that obeys it
+				// types the suggestion back into the seat. claude draws its
+				// suggestion FAINT and herdr's plain-text preview flattens
+				// that away; ghostbox.go reads the escapes back.
+				//
+				// Said out loud rather than silently dropped, for the same
+				// reason the echo clause below is: "the row changed shape"
+				// is how a reader finds out the reading is discriminating,
+				// and the day claude stops drawing suggestions dim this
+				// clause goes quiet and the -unsent row comes back.
+				ghost := "box previews claude's own suggestion, drawn dim (" +
+					strconv.Quote(ellipsis(hold.Ghost, 60)) + ")"
+				if why == "" {
+					why = " — " + ghost
+				} else {
+					why += ", " + ghost
+				}
 			} else if hold.Sent != "" {
 				// ranger-base-2hvtv. The box HAS text and this row is
 				// deliberately not the -unsent one: claude's own submit log
