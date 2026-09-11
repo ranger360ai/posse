@@ -317,3 +317,47 @@ func TestQAKillsKeepNamesTheBeadAndNotTheLauncherLock(t *testing.T) {
 		}
 	}
 }
+
+// QA, ranger-base-aty66: the claim every keep above rests on — "NOTHING IS
+// STRANDED BY A KEEP", because the branch carries its own `bead:` stamp,
+// which outlives the session meta the kill removes, so closing the bead
+// lands it on the next pass with nobody typing anything. Both halves of the
+// gate's own printed cure are that sentence; if it is false, a keep is a
+// strand and this gate traded one loss for another.
+//
+// Driven end to end and in order, because the interesting part is the seam:
+// the kill takes the meta, so the sweep can only name this tree from the
+// BRANCH record, and a stamp written but not read would leave the tree to be
+// reported as unaccounted for instead of landed (ADR 0058 D4).
+func TestQAClosingTheBeadLandsTheTreeAKeepLeftBehind(t *testing.T) {
+	t.Parallel()
+	b, repo, name, tr, tip := landGateSession(t, `[{"id":"a-1","status":"in_progress","assignee":"ranger"}]`)
+	blockedOn(t, repo, "q-1", "open")
+
+	if _, err := b.KillSessionAndLand(name); err != nil {
+		t.Fatal(err)
+	}
+	if onBase, treeThere, branchThere := landGateState(t, repo, tip, tr); onBase || !treeThere || !branchThere {
+		t.Fatalf("fixture: landed=%v tree=%v branch=%v — there is no keep here to finish", onBase, treeThere, branchThere)
+	}
+	if _, ok := b.readMeta(name); ok {
+		t.Fatalf("fixture: the meta survived the kill, so the sweep below could read the bead from it and the stamp would not be exercised")
+	}
+
+	// The operator answers the question and the persona closes the bead.
+	// Nothing else happens: no attach, no re-launch, nobody types a landing.
+	writeJSON(t, repo, "fake-show.json", []map[string]any{{"id": "a-1", "status": "closed", "assignee": "ranger"}})
+	d := newTestDispatcher(t, b)
+	d.landClosedTrees(repo)
+
+	// Landed is the whole claim. RETIRING the tree is a separate question
+	// on a grace clock (retire_tree_after, retire.go) and this pass is the
+	// tree's own first quiet moment, so the tree standing here is the sweep
+	// working, not a strand: the commit is on the base either way.
+	if onBase, _, _ := landGateState(t, repo, tip, tr); !onBase {
+		t.Errorf("the next pass did not land the kept branch after the bead closed — then a keep is a strand, and both cures the gate prints are one sentence:\n%s", dispatcherOut(d))
+	}
+	if !strings.Contains(dispatcherOut(d), tr.Branch) {
+		t.Errorf("the pass landed it without saying which branch it moved:\n%s", dispatcherOut(d))
+	}
+}
