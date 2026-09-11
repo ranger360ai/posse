@@ -193,3 +193,24 @@ and the number: the arm is three commands, not one; it costs ~11.4 min, not
 ~250-300s; and "the detector has yet to name one real data race in this
 package" was said over a run that never compiled the package's dispatch
 tests.
+
+---
+
+## THE RECIPE IS A TARGET NOW — `make test-race` (ranger-base-nhc23, 2026-09-10)
+
+The decision above stands; its recipe does not. "Run by hand when a change
+touches dispatch/passcarry/watch" was written as one `go test -run`, and the
+arm is three build-tag binaries — which is how it came to be priced over 19%
+of itself. It is `scripts/test-race.sh` now, run by `make test-race`, and it
+does the two things a typed recipe cannot: it reads the candidate test names
+out of the eight candidate FILES on every run, so no list of names ages in a
+document, and it censuses all three arms before it spends a minute, so a name
+compiled into NO arm reds in ~8 seconds instead of being skipped in silence
+(the run carries the same check a second time, because `[no tests to run]` is
+also a zero exit).
+
+Census MEASURED 2026-09-10, HEAD e4341e56: **107 candidate tests — arm 1 21,
+`-tags posse_arm2` 76, `-tags posse_arm3` 28**, every one reachable. Pinned by
+`internal/treepins/racearm_qa_test.go`, mutation-checked. The price above is
+unchanged and the arm is still on-demand only.
+Notes: `docs/notes.d/ranger-base-nhc23.md`.

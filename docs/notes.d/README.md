@@ -7,6 +7,7 @@ references), not inferred publication dates. Undated fragments sort last.
 ## 2026-09
 
 - [ranger-base-vq5zz](ranger-base-vq5zz.md) — ranger-base-vq5zz — the last good reading keeps gating — 2026-09-10
+- [ranger-base-nhc23](ranger-base-nhc23.md) — The `-race` arm is a target now, not a recipe (ranger-base-nhc23) — 2026-09-10
 - [ranger-base-khhnd](ranger-base-khhnd.md) — The watch-loop backstop is the binary's own deadline, not 30s (ranger-base-khhnd) — 2026-09-10
 - [ranger-base-a8tqz](ranger-base-a8tqz.md) — `git status` writes the index, so the blocked tree never went quiet (ranger-base-a8tqz) — 2026-09-10
 - [ranger-base-vuosd](ranger-base-vuosd.md) — Outside-in review of posse — 2026-09-09 (grok) — 2026-09-09

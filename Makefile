@@ -42,7 +42,7 @@ FMT_ROOTS := cmd internal *.go
 BUILD_STAMP := $(shell $(GOBIN) run ./cmd/buildstamp)
 LDFLAGS     := -X github.com/ranger360ai/posse/internal/posse.Build=$(BUILD_STAMP)
 
-.PHONY: build release install deploy test test-arm1 test-arm2 test-arm3 test-reuse fmt-check crew-check seed-check history-check doc-check identity-check ops-check execwrite-check tree-check verify-test-times verify-suite-lock verify-silent-reverts verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-self-close verify-govern-honesty verify-grok-pin verify-codex-pin verify-credential-paths verify-hook-freshness verify-bd-pin verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk verify-box verify-box-self-test prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
+.PHONY: build release install deploy test test-arm1 test-arm2 test-arm3 test-race test-reuse fmt-check crew-check seed-check history-check doc-check identity-check ops-check execwrite-check tree-check verify-test-times verify-suite-lock verify-silent-reverts verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-self-close verify-govern-honesty verify-grok-pin verify-codex-pin verify-credential-paths verify-hook-freshness verify-bd-pin verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk verify-box verify-box-self-test prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
 
 build:
 	$(GOBIN) build -ldflags '$(LDFLAGS)' -o bin/posse-go ./cmd/posse
@@ -294,6 +294,26 @@ test-arm2:
 test-arm3:
 	scripts/test-times.sh $(GOBIN) test ./internal/treepins -timeout 15m -count=1 -run '^TestQAEverySuiteArmTypeChecks$$'
 	scripts/test-times.sh $(GOBIN) test -timeout 25m -tags posse_arm3 ./internal/posse
+
+# THE `-race` ARM, and it is THREE COMMANDS (ranger-base-nhc23). On demand
+# only: type it when a change touches dispatch/passcarry/watch or a race is
+# suspected. ~11.4 minutes, and the cost is WAIT, not CPU — 13-14% of one box
+# over the three binaries, because what `-race` stretches in these tests is
+# fixed intervals, backstops and barrier timeouts, not per-access
+# instrumentation (MEASURED 2026-09-10, docs/notes.d/ranger-base-d0xvw.md).
+#
+# It is a target rather than a recipe in a notes file because the arm straddles
+# all three build-tag partitions, and the version that lived in prose ran 19%
+# of what it named and exited 0 — a `go test -run` that matches no test is
+# green. The script derives its names from the candidate FILES every run and
+# censuses all three arms before it spends a minute, so a retagged, renamed or
+# deleted file reds in seconds instead of going quiet.
+#
+# Not a prerequisite of anything, and not in CI: the arm is not gate-clean
+# today (ranger-base-0dt50), and a detector that costs eleven minutes of wall
+# belongs where a person is waiting for its answer.
+test-race:
+	GOBIN='$(GOBIN)' scripts/test-race.sh
 
 # The other half of the ceiling story, and the half ranger-base-pj87l asked
 # for: the wall grew 2.4x in four days with test-times.sh warning correctly on
