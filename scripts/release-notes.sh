@@ -7,6 +7,10 @@
 #   --file     changelog to read (default: CHANGELOG.md beside this repo root)
 #   --require  exit 1 unless the version has a section OF ITS OWN. Without it,
 #              a missing section is a warning on stderr and an empty stdout.
+#   --cap N    keep whole `### ` subsections while the output fits N characters
+#              (default 60000; 0 = no cap) and close with a pointer to the rest.
+#              GitHub refuses a release body over 125,000 characters with HTTP
+#              422, AFTER the tag is pushed (v0.5.0's first run, ranger-base-597lo).
 #
 # THE DEFAULT IS LENIENT ON PURPOSE. This runs inside the release workflow,
 # AFTER the tag is pushed, and a version number cannot be reused: a release
@@ -24,13 +28,15 @@ set -eu
 VERSION=
 FILE=
 REQUIRE=0
+CAP=60000
 
 while [ $# -gt 0 ]; do
 	case $1 in
 	--version) VERSION=${2:?--version needs a tag}; shift 2 ;;
 	--file) FILE=${2:?--file needs a path}; shift 2 ;;
 	--require) REQUIRE=1; shift ;;
-	-h|--help) sed -n '2,18p' "$0"; exit 0 ;;
+	--cap) CAP=${2:?--cap needs a character count}; shift 2 ;;
+	-h|--help) sed -n '2,22p' "$0"; exit 0 ;;
 	*) echo "release-notes: unknown argument: $1" >&2; exit 2 ;;
 	esac
 done
@@ -77,6 +83,26 @@ section() {
 	' "$FILE"
 }
 
+# Whole `### ` subsections while they fit CAP characters — the text before the
+# first subsection always ships — and one closing line naming what was left
+# in CHANGELOG.md. The section in the tagged tree is the record; the release
+# body is its opening. With CAP=0 the section passes through untouched.
+capped() {
+	if [ "${CAP:-0}" -le 0 ]; then cat; return; fi
+	awk -v lim="$CAP" -v ver="$VERSION" '
+		{ line[NR] = $0; if ($0 ~ /^### /) { sec++ } part[NR] = sec; size[sec] += length($0) + 1; total++ }
+		END {
+			keep = 0; used = 0
+			for (k = 0; k <= sec; k++) { if (k > 0 && used + size[k] > lim) break; used += size[k]; keep = k }
+			for (i = 1; i <= NR; i++) if (part[i] <= keep) print line[i]
+			if (keep < sec) {
+				dropped = 0; for (i = 1; i <= NR; i++) if (part[i] > keep) dropped++
+				printf "\n_This is the opening of the `%s` section: %d of its %d lines. The whole section is CHANGELOG.md in the tagged tree; a release body is capped at 125,000 characters._\n", ver, NR - dropped, NR
+			}
+		}
+	'
+}
+
 out=
 if [ -n "$VERSION" ]; then
 	esc=$(printf '%s' "$VERSION" | sed 's/\./\\./g')
@@ -86,7 +112,7 @@ if [ -n "$VERSION" ]; then
 fi
 
 if [ -n "$out" ]; then
-	printf '%s\n' "$out"
+	printf '%s\n' "$out" | capped
 	exit 0
 fi
 
@@ -97,7 +123,7 @@ if [ -n "$fallback" ]; then
 		exit 1
 	fi
 	echo "release-notes: no section for ${VERSION:-this version}; using '## Unreleased' (rename it — docs/runbooks/release.md)" >&2
-	printf '%s\n' "$fallback"
+	printf '%s\n' "$fallback" | capped
 	exit 0
 fi
 
