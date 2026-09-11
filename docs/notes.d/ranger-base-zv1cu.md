@@ -329,8 +329,9 @@ that only tests read.
 Filed as separate beads, in codex's order — unused policy and duplicated
 readings first, then one move at a time behind its existing owner.
 
-1. **ranger-base-zyou5** — the three exported readers nothing reads
-   (`GovSet.Urgent`, `GovSet.Has`, `ScanOps`, `OpsPattern.MatchedText`).
+1. **ranger-base-zyou5** — the four exported readers nothing in production
+   reads: `GovSet.Urgent` (zero callers anywhere), `GovSet.Has`, `ScanOps`,
+   `OpsPattern.MatchedText`.
 2. **ranger-base-tn3u2** — the ADR census is not a gate: move it out of
    `gates.go` (−332 lines, pure move).
 3. **ranger-base-xfo6d** — one refusal shape: fold `visibilityGuardBody`'s
