@@ -121,6 +121,17 @@ corpus() {
   done
 }
 
+# indent <text> — two spaces before every line, without forking a sed. The
+# verdict never depends on this, but a detail line that vanishes because a
+# matcher could not be exec'd under load is a finding with its evidence
+# removed, which is the same shape ranger-base-t07yx took the forks out for.
+indent() {
+  local line
+  while IFS= read -r line || [ -n "$line" ]; do
+    printf '  %s\n' "$line"
+  done <<<"$1"
+}
+
 is_worktree() {
   git -C "$1" rev-parse --is-inside-work-tree >/dev/null 2>&1
 }
@@ -155,7 +166,7 @@ sweep() {
     fi
     if ! out=$("$interp" -n "$root/$f" 2>&1); then
       printf 'FINDING %s (%s)\n' "$f" "$interp"
-      printf '%s\n' "$out" | sed 's|^|  |'
+      indent "$out"
       findings=$((findings + 1))
     fi
   done < <(corpus "$root")
@@ -200,6 +211,21 @@ st_add() {   # st_add <dir> <path>, body on stdin
   cat > "$d/$p" || return 2
   chmod +x "$d/$p"
   git -C "$d" add -- "$p" >/dev/null 2>&1 || return 2
+}
+
+# st_line <text> <line> — is <line> one WHOLE line of <text>? An assertion arm
+# must not decide through a matcher that FORKS (ranger-base-t07yx,
+# ranger-base-7hx87): a grep that is signalled, or that cannot be exec'd under
+# the load a suite runs in, reports the property false when the apparatus is
+# what failed. This is the sr_has/log_has shape already in the tree — `case`
+# over the text with newline sentinels, and no subprocess between the run and
+# the verdict.
+st_line() {
+  local hay=$'\n'$1$'\n' needle=$'\n'$2$'\n'
+  case "$hay" in
+    *"$needle"*) return 0 ;;
+  esac
+  return 1
 }
 
 st_say() {   # st_say <ok|no> <message>
@@ -296,8 +322,8 @@ echo bashy
 FIXTURE_EOF
   out=$(census "$d" 2>&1); rc=$?
   if [ "$rc" -eq 0 ] &&
-     printf '%s\n' "$out" | grep -q "^posix\.sh	sh$" &&
-     printf '%s\n' "$out" | grep -q "^bashy\.sh	bash$"; then
+     st_line "$out" "posix.sh"$'\t'"sh" &&
+     st_line "$out" "bashy.sh"$'\t'"bash"; then
     st_say ok "each file is parsed by the shell its own shebang names"
   else
     st_say no "the census does not follow the shebang: exit $rc, output: $out"
@@ -305,7 +331,7 @@ FIXTURE_EOF
 
   # Arm 6 — a shebang naming a shell this box lacks is an ERROR that names it,
   # not a silent pass and not a quiet fallback to bash. Reached by scrubbing
-  # PATH down to the two tools the sweep itself needs rather than by naming a
+  # PATH down to git, the one command the sweep runs, rather than by naming a
   # rare shell: every shell this script recognises ships on darwin, so an arm
   # keyed on one being absent would skip on the box it is most often typed
   # from, and a skipped arm is not an arm.
@@ -316,7 +342,6 @@ echo hello
 FIXTURE_EOF
   mkdir -p "$st_tmp/nosh" || return 2
   ln -sf "$(command -v git)" "$st_tmp/nosh/git" || return 2
-  ln -sf "$(command -v sed)" "$st_tmp/nosh/sed" || return 2
   out=$(PATH=$st_tmp/nosh; sweep "$d" 2>&1); rc=$?
   case "$rc:$out" in
     2:*ERROR*odd.sh*bash*) st_say ok "a shebang naming a shell this box lacks is an ERROR (exit 2)" ;;
