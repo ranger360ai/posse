@@ -225,9 +225,10 @@ Nothing is downloadable until you publish — and the formula's URLs 404 until
 you do, which makes step 3 fail in a way that looks like a bad formula.
 
 **After publishing, verify the "Latest" pointer moved (`ranger-base-8vx0`).**
-The draft carries `--latest` from the workflow, but the GitHub UI shows a
-"Set as the latest release" checkbox on the publish screen too — check it's
-ticked before you press Publish, and confirm after:
+The workflow does not mark the draft latest (GitHub's API refuses `make_latest`
+on a draft; v0.5.0's second run died on it, `ranger-base-597lo`), so the
+"Set as the latest release" checkbox on the publish screen is the only place
+it gets set — tick it before you press Publish, and confirm after:
 
 ```sh
 $ curl -fsS -o /dev/null -w '%{url_effective}\n' -L \

@@ -138,6 +138,10 @@ jobs:
       - name: draft the release
         env:
           GH_TOKEN: ${{ github.token }}
+          # GitHub's full error body in the log, not gh's one line: v0.5.0's
+          # second run died here with only "HTTP 403: Resource not accessible
+          # by integration" to go on (ranger-base-597lo).
+          GH_DEBUG: api
           TAG: ${{ steps.tag.outputs.tag }}
           SHA: ${{ steps.tag.outputs.sha }}
           NOTES: ${{ runner.temp }}/release-notes.md
@@ -170,13 +174,14 @@ jobs:
             ' "$NOTES" >"$NOTES.cut" && mv "$NOTES.cut" "$NOTES"
             echo "release: CHANGELOG section over the body cap — cut to $(wc -c <"$NOTES") characters at a subsection boundary" >&2
           fi
-          # --latest is stored on the draft and takes effect when the operator
-          # publishes it (gh release create --help: draft fields are mutable
-          # pre-publish). Without it GitHub's automatic "latest" pointer does
-          # not reliably follow publish order once releases are drafted out of
-          # band — v0.3.0 stayed "latest" through v0.4.0's publish
-          # (ranger-base-8vx0) — so state it explicitly every time.
-          args=(--draft --latest --title "posse $TAG" --generate-notes --target "$SHA")
+          # No --latest here. GitHub's API says drafts cannot be set as latest,
+          # and the flag was added after v0.4.0 (ranger-base-8vx0) without a
+          # release rehearsal; v0.5.0's retry died at this call with HTTP 403
+          # (ranger-base-597lo). This is the v0.4.0-proven call. The "latest"
+          # pointer is set by the operator at publish — runbook Step 1 says to
+          # tick "Set as the latest release" — because v0.3.0 stayed "latest"
+          # through v0.4.0's publish when nobody did.
+          args=(--draft --title "posse $TAG" --generate-notes --target "$SHA")
           if [ -s "$NOTES" ]; then
             args+=(--notes-file "$NOTES")
             echo "release: notes will open with the CHANGELOG section for $TAG:"
