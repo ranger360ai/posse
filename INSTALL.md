@@ -1412,6 +1412,22 @@ $ cat >> AGENTS.md <<'EOF'
   already staged it; undo that path-limited with `git restore
   --source=HEAD --staged --worktree -- <those paths>`, never
   `git reset --hard`.
+- **In a session worktree, a `cherry-pick`/`revert`/`rebase` that exits 0 has
+  not necessarily ended.** Ending one deletes a pseudo-ref
+  (`CHERRY_PICK_HEAD`), that delete wants the SHARED repo's
+  `.git/packed-refs.lock`, the cage denies it — one more line among the
+  `packed-refs.lock: Operation not permitted` lines every commit here already
+  prints — and git **exits 0 anyway**. The tree is restored and HEAD is right,
+  so every signal says it worked; the marker survives, and your NEXT
+  path-limited commit dies at `fatal: cannot do a partial commit during a
+  cherry-pick`, in a later Bash call. **That fatal is this, not your PID.**
+  Measured: `--abort`, `--quit`, `--continue` and `--skip` all leak, and so
+  does a plain `git cherry-pick <sha>` that never conflicted; `git merge
+  --abort` and `git am --abort` are clean. The L1 git shim refuses such a run
+  (exit 1) and prints the `rm -rf` that ends it — read its recipe, run it,
+  then re-read `git status`. Doing it by hand: remove `CHERRY_PICK_HEAD`,
+  `REVERT_HEAD`, `AUTO_MERGE` and `MERGE_MSG`, and `rm -rf sequencer`, all
+  under the dir `git rev-parse --git-dir` names.
 - **In the shared checkout, never `--amend`, `rebase` or `reset`.** HEAD there
   moves under you between any two of your own commands — another persona's
   commit, or posse landing a persona's memory at a kill nobody scheduled —
