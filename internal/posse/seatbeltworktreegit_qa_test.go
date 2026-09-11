@@ -117,6 +117,42 @@ func (f wgFixture) wide(t *testing.T) []string {
 
 func (f wgFixture) ref(name string) string { return filepath.Join(f.common, "refs", "heads", name) }
 
+// lock is the one entry ADR 0059 D1 adds to the grant: the shared repo's
+// packed-refs lock, writable so git can create AND unlink it.
+func (f wgFixture) lock() string { return absResolve(filepath.Join(f.common, "packed-refs.lock")) }
+
+// withoutLock is the writable set as it shipped BEFORE ADR 0059 — the same
+// list with that one entry taken out. It is how the controls below vary the
+// grant and nothing else, and it fatals when there is nothing to remove: a
+// control identical to the arm measures nothing, and would go quiet exactly
+// when the entry it exists to isolate was dropped.
+func (f wgFixture) withoutLock(t *testing.T) []string {
+	t.Helper()
+	w := f.writable(t)
+	var out []string
+	for _, p := range w {
+		if absResolve(p) == f.lock() {
+			continue
+		}
+		out = append(out, p)
+	}
+	if len(out) == len(w) {
+		t.Fatalf("%s is not in the writable set, so removing it varies nothing — the ADR 0059 grant is gone and every control below is the arm:\n  %s",
+			f.lock(), strings.Join(w, "\n  "))
+	}
+	return out
+}
+
+// profile renders a seatbelt for this fixture from a writable set the
+// caller chose. RenderSeatbelt is the shipped path and is what the arms
+// use; this is for the CONTROL, which needs the same profile minus one
+// entry, assembled the way RenderSeatbelt assembles it rather than by hand.
+func (f wgFixture) profile(t *testing.T, name string, w []string) string {
+	t.Helper()
+	carve := f.a.SeatbeltCarveOut(f.ag, f.tree, f.gates, w)
+	return sbRenderProfile(t, name, SeatbeltProfile(f.ag.Name, w, nil, carve, sessionRefDirs(f.tree)...))
+}
+
 // ─── the writable set ────────────────────────────────────────────────────────
 
 // What the narrowed grant names, and what it stops naming. The list is the
@@ -131,6 +167,7 @@ func TestQAWorktreeGrantNamesObjectsLogsAndItsOwnRefOnly(t *testing.T) {
 		filepath.Join(f.common, "logs"),    // the reflog of the ref it moves
 		f.ref(f.branch),                    // its own branch
 		f.ref(f.branch) + ".lock",          // and the lock git renames onto it
+		f.lock(),                           // the packed backend's lock (ADR 0059 D1)
 		filepath.Join(f.tree, "work.txt"),  // its tree, unchanged by this bead
 	} {
 		if !sbCovers(w, p) {
@@ -143,8 +180,9 @@ func TestQAWorktreeGrantNamesObjectsLogsAndItsOwnRefOnly(t *testing.T) {
 		filepath.Join(f.common, "hooks"), // L3's shared slots
 		filepath.Join(f.common, "hooks", "pre-push"),
 		filepath.Join(f.common, "config"),
-		filepath.Join(f.common, "packed-refs"),
-		filepath.Join(f.common, "refs", "heads"), // the directory, or main comes back with it
+		filepath.Join(f.common, "packed-refs"),     // the lock above is granted; the file it guards is not
+		filepath.Join(f.common, "packed-refs.new"), // nor the tempfile git writes the new content through
+		filepath.Join(f.common, "refs", "heads"),   // the directory, or main comes back with it
 		filepath.Join(f.common, "refs", "remotes"),
 		f.other,                    // another session's index and HEAD
 		f.ref("posse/other-probe"), // and its branch
@@ -657,6 +695,338 @@ func TestQAWorktreeCommitLeavesNoStrayPackedRefsLock(t *testing.T) {
 	if wgExists(t, lock) {
 		t.Fatal("packed-refs.lock survived a commit after pack-refs")
 	}
+
+	// ─── ADR 0059 D2: what the write+unlink grant must keep true ──────────
+	//
+	// The body above is D2.2 and predates the grant: it was the msex
+	// control that the SHIPPED profile leaves no stray lock, and it says
+	// the same thing about the granted one. What follows is the rest of
+	// D2, each item by EXECUTION under the profile a dispatched session
+	// really gets (RenderSeatbelt), with the set as it shipped — this one
+	// entry short — as the control wherever a control can run the probe.
+	for _, arm := range wgSeqArms() {
+		t.Run("D2.1 "+arm.what, func(t *testing.T) { wgRunSeqArm(t, arm) })
+	}
+	t.Run("D2.3 deleting a PACKED ref fails at packed-refs.new and rolls back", wgRunPackedRefRewrite)
+	for _, arm := range wgAliasArms() {
+		t.Run("D2.4 "+arm.what, func(t *testing.T) { wgRunAliasArm(t, arm) })
+	}
+}
+
+// ─── D2.1: every sequencer end (ADR 0059's reason for existing) ──────────────
+//
+// ranger-base-71g2f's finding, which is what D1 buys off: every git verb
+// that ends by DELETING a pseudo-ref asks the SHARED repo's
+// packed-refs.lock — `cherry-pick`, `revert`, `rebase`, on `--abort`,
+// `--quit`, `--continue`, and on a CLEAN run that never conflicted at all.
+// Refused, git gives up the delete and exits 0; CHERRY_PICK_HEAD survives,
+// and the session's next path-limited commit — the only form its PID allows
+// — dies at `fatal: cannot do a partial commit during a cherry-pick`.
+//
+// So the arm is not "the verb exits 0". It is: exits as git says, says
+// nothing about packed-refs.lock, leaves no blocker, leaves no lock. The
+// control is the same script under the set one entry short, and it has two
+// jobs — witness that the arm really reaches the lock (it names it), and
+// witness that the defect is real (a blocker survives). An arm whose
+// control goes quiet is measuring the fixture.
+
+type wgSeqArm struct {
+	what string
+	// prep runs under the SAME profile and its exit code is ignored on
+	// purpose: a conflicted cherry-pick exits 1, and that conflict is the
+	// state the arm needs.
+	prep func(f wgFixture, clean, conflict string) []string
+	// steps are the measured commands, in order.
+	steps func(f wgFixture, clean, conflict string) []string
+}
+
+// wgSequencer gives a fresh fixture what a sequencer arm needs, and nothing
+// else: one commit on the operator's main that cherry-picks CLEANLY into
+// the session tree (a file the tree has never seen), and a pair — one on
+// main, one in the tree — that add the SAME file with different content, so
+// the verbs conflict. It is built on top of wgNewFixture rather than beside
+// it so the shape stays the fleet's: refs packed before the branch was cut,
+// the branch two directories deep, a sibling worktree on the same repo.
+func wgSequencer(t *testing.T, f wgFixture) (clean, conflict string) {
+	t.Helper()
+	commitIn(t, f.repo, "clean.txt", "main line\n", "clean-on-main")
+	clean = mustGit(t, f.repo, "rev-parse", "HEAD")
+	commitIn(t, f.repo, "conflict.txt", "main says A\n", "conflict-on-main")
+	conflict = mustGit(t, f.repo, "rev-parse", "HEAD")
+	commitIn(t, f.tree, "conflict.txt", "session says B\n", "session-conflict")
+	return clean, conflict
+}
+
+// wgBlockers names the sequencer state that makes the session's next
+// path-limited commit fail. It lives in the PER-WORKTREE git dir, which the
+// session may write — the file it cannot delete is the packed lock in the
+// SHARED one, and that is what stops git deleting these.
+//
+// `AUTO_MERGE` is deliberately NOT in the list, and that is a measurement:
+// the ort strategy's scratch ref survives a clean cherry-pick in BOTH arms
+// (MEASURED 2026-09-11, darwin 25.4.0, git 2.50.1 — sealed common dir
+// leaves `AUTO_MERGE CHERRY_PICK_HEAD`, writable leaves `AUTO_MERGE`), and
+// a path-limited commit lands with it sitting there. It blocks nothing and
+// it does not vary with this grant, so counting it would make every arm
+// below red for a reason that has nothing to do with the lock.
+func wgBlockers(t *testing.T, f wgFixture) []string {
+	t.Helper()
+	var out []string
+	for _, n := range []string{"CHERRY_PICK_HEAD", "REVERT_HEAD", "MERGE_HEAD", "sequencer", "rebase-merge", "rebase-apply"} {
+		if wgExists(t, filepath.Join(f.own, n)) {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+func wgSeqArms() []wgSeqArm {
+	g := func(f wgFixture, rest string) string { return "git -C " + f.tree + " " + rest }
+	// The commit afterwards is the cost D1 buys back, so the arm that
+	// aborts carries it: under the shipped grant this is where the session
+	// actually dies, one command after the verb that exited 0.
+	commit := func(f wgFixture) string {
+		return "echo after >> " + filepath.Join(f.tree, "work.txt") +
+			" && " + g(f, "add work.txt") + " && " + g(f, "commit -q -m after -- work.txt")
+	}
+	pick := func(f wgFixture, _, conflict string) []string { return []string{g(f, "cherry-pick "+conflict)} }
+	return []wgSeqArm{
+		{"a clean cherry-pick, which never conflicts at all", nil,
+			func(f wgFixture, clean, _ string) []string { return []string{g(f, "cherry-pick "+clean)} }},
+		{"conflicted cherry-pick --abort, then the path-limited commit the PID allows", pick,
+			func(f wgFixture, _, _ string) []string { return []string{g(f, "cherry-pick --abort"), commit(f)} }},
+		{"conflicted cherry-pick --quit", pick,
+			func(f wgFixture, _, _ string) []string { return []string{g(f, "cherry-pick --quit")} }},
+		{"conflicted cherry-pick, resolved, --continue", pick,
+			func(f wgFixture, _, _ string) []string {
+				return []string{"echo resolved > " + filepath.Join(f.tree, "conflict.txt") +
+					" && " + g(f, "add conflict.txt") + " && GIT_EDITOR=true " + g(f, "cherry-pick --continue")}
+			}},
+		{"conflicted revert --abort", func(f wgFixture, _, _ string) []string {
+			return []string{"echo later >> " + filepath.Join(f.tree, "conflict.txt") +
+				" && " + g(f, "add conflict.txt") + " && " + g(f, "commit -q -m later -- conflict.txt"),
+				g(f, "revert --no-edit HEAD~1")}
+		}, func(f wgFixture, _, _ string) []string { return []string{g(f, "revert --abort")} }},
+		{"conflicted rebase --abort", func(f wgFixture, _, conflict string) []string {
+			return []string{g(f, "rebase "+conflict)}
+		}, func(f wgFixture, _, _ string) []string { return []string{g(f, "rebase --abort")} }},
+	}
+}
+
+func wgRunSeqArm(t *testing.T, arm wgSeqArm) {
+	t.Helper()
+	sbSkipUnlessSandboxable(t)
+
+	f := wgNewFixture(t)
+	clean, conflict := wgSequencer(t, f)
+	prof, err := f.a.RenderSeatbelt(f.ag, f.tree)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if arm.prep != nil {
+		for _, sh := range arm.prep(f, clean, conflict) {
+			wgRun(t, prof, sh) // may fail: the conflict IS the setup
+		}
+		// Prep's exit codes are ignored, so this is what says it worked. An
+		// arm that ends a sequencer git never started measures the grant
+		// against nothing at all.
+		if b := wgBlockers(t, f); len(b) == 0 {
+			t.Fatalf("the setup left no sequencer state in %s — there is nothing for this arm's verb to end", f.own)
+		}
+	}
+	for _, sh := range arm.steps(f, clean, conflict) {
+		ok, out := wgRun(t, prof, sh)
+		if !ok {
+			t.Errorf("refused under the ADR 0059 grant, which is what the grant exists to allow:\n  %s\n%s", sh, out)
+		}
+		if strings.Contains(out, "packed-refs.lock") {
+			t.Errorf("the grant is in the set and git still could not have the lock — the entry is not reaching the profile:\n  %s\n%s", sh, out)
+		}
+	}
+	if b := wgBlockers(t, f); len(b) != 0 {
+		t.Errorf("the verb exited 0 and left %v in %s — the session's next path-limited commit dies on it, which is the whole defect ADR 0059 D1 closes", b, f.own)
+	}
+	if wgExists(t, f.lock()) {
+		t.Errorf("git created %s and never unlinked it — write WITHOUT unlink is the ranger-base-msex strand, and it kills the operator's gc", f.lock())
+	}
+
+	// The control, on its own fresh fixture: the same script under the set
+	// as it SHIPPED, one entry short and nothing else varied.
+	c := wgNewFixture(t)
+	cclean, cconflict := wgSequencer(t, c)
+	ctl := c.profile(t, "shipped.sb", c.withoutLock(t))
+	var said, last string
+	run := func(sh string) {
+		_, out := wgRun(t, ctl, sh)
+		last = out
+		if strings.Contains(out, "packed-refs.lock") {
+			said = out
+		}
+	}
+	if arm.prep != nil {
+		for _, sh := range arm.prep(c, cclean, cconflict) {
+			run(sh)
+		}
+		if b := wgBlockers(t, c); len(b) == 0 {
+			t.Fatalf("the control's setup left no sequencer state in %s — there is nothing for its verb to end either", c.own)
+		}
+	}
+	for _, sh := range arm.steps(c, cclean, cconflict) {
+		run(sh)
+	}
+	if said == "" {
+		t.Errorf("the CONTROL never asked for packed-refs.lock — this arm does not reach the grant it is varying, so its green above measures nothing:\n%s", last)
+	}
+	if b := wgBlockers(t, c); len(b) == 0 {
+		t.Errorf("the CONTROL left no sequencer state behind — the defect ADR 0059 prices is not reproducing on this box, and the arm above is proving nothing")
+	}
+	if wgExists(t, c.lock()) {
+		t.Errorf("the control STRANDED a lock it was never granted: %s", c.lock())
+	}
+}
+
+// ─── D2.3: the rewrite git actually wants ────────────────────────────────────
+//
+// The lock is a pure lock on git 2.50.1: the new content goes through
+// `packed-refs.new` and is renamed over `packed-refs`, and both of those
+// stay denied. So a session that gets git to WANT a packed-refs rewrite —
+// deleting a ref that exists only in the pack — gets as far as the lock and
+// no further: git fails at the tempfile, rolls back, removes its own lock,
+// and `packed-refs` is byte-identical. This is also why removing a live
+// lock costs at most a lost update between two unsandboxed writers rather
+// than a corrupt file, and why the "just skip the packed lock on delete"
+// alternative cannot exist — deleting only the loose copy of a packed ref
+// resurrects the packed value.
+func wgRunPackedRefRewrite(t *testing.T) {
+	sbSkipUnlessSandboxable(t)
+	f := wgNewFixture(t)
+	wgPack(t, f) // the session's ref now lives ONLY in packed-refs
+	prof, err := f.a.RenderSeatbelt(f.ag, f.tree)
+	if err != nil {
+		t.Fatal(err)
+	}
+	packed := filepath.Join(f.common, "packed-refs")
+	before := mustRead(t, packed)
+	del := "git -C " + f.repo + " update-ref -d refs/heads/" + f.branch
+
+	ok, out := wgRun(t, prof, del)
+	if ok {
+		t.Errorf("the grant let a session delete a PACKED ref — packed-refs is rewritable through the lock after all:\n%s", out)
+	}
+	if !strings.Contains(out, "packed-refs.new") {
+		t.Errorf("the refusal did not land at packed-refs.new — if git stopped somewhere else the rollback this arm asserts is a different rollback:\n%s", out)
+	}
+	if wgExists(t, f.lock()) {
+		t.Errorf("git did not remove its own lock after the rollback — the unlink half of D1 is what keeps a failed rewrite from stranding: %s", f.lock())
+	}
+	if after := mustRead(t, packed); after != before {
+		t.Errorf("packed-refs changed under the grant:\n--- before\n%s\n--- after\n%s", before, after)
+	}
+	if got := mustGit(t, f.repo, "rev-parse", "refs/heads/"+f.branch); got != f.head {
+		t.Errorf("the session's packed ref moved anyway: %s != %s", got, f.head)
+	}
+
+	// The control: same command, the set one entry short. The refusal is
+	// still a refusal — it just lands a step EARLIER, at the lock — and
+	// packed-refs survives in both. What D1 changed is where git stops,
+	// not whether packed-refs is reachable.
+	c := wgNewFixture(t)
+	wgPack(t, c)
+	ctl := c.profile(t, "shipped.sb", c.withoutLock(t))
+	cbefore := mustRead(t, filepath.Join(c.common, "packed-refs"))
+	cok, cout := wgRun(t, ctl, "git -C "+c.repo+" update-ref -d refs/heads/"+c.branch)
+	if cok {
+		t.Errorf("the CONTROL deleted the packed ref — packed-refs was reachable before this grant too, and this arm is not about the grant:\n%s", cout)
+	}
+	if !strings.Contains(cout, "packed-refs.lock") {
+		t.Errorf("the CONTROL did not stop at the lock — then the arm above is not measuring the entry that was added:\n%s", cout)
+	}
+	if after := mustRead(t, filepath.Join(c.common, "packed-refs")); after != cbefore {
+		t.Errorf("the control changed packed-refs:\n--- before\n%s\n--- after\n%s", cbefore, after)
+	}
+}
+
+// ─── D2.4: the lock name is not a route to anything else ─────────────────────
+//
+// A writable file name in a directory that is otherwise denied is only as
+// narrow as the operations it permits. These are the ways a name becomes a
+// write on its neighbours — a hard link, a symlink, a rename — and the
+// tempfile the real content goes through. None needs a control: a refusal
+// under the grant is the whole claim, and the grant is what is being
+// varied, so a control could only show the same refusal for a wider reason.
+
+type wgAliasArm struct {
+	what string
+	// pre, when set, must SUCCEED before sh is measured. Only one arm has
+	// one, and it is why: planting a symlink at the lock name is allowed —
+	// the name is granted — and the refusal that matters is the write
+	// THROUGH it. Folded into sh with an `&&` the two would be one exit
+	// code, and an arm that reported "refused" could be reporting that the
+	// symlink was never planted at all.
+	pre  func(f wgFixture) string
+	sh   func(f wgFixture) string
+	want bool
+}
+
+func wgAliasArms() []wgAliasArm {
+	packed := func(f wgFixture) string { return filepath.Join(f.common, "packed-refs") }
+	return []wgAliasArm{
+		{what: "a hard link of packed-refs at the lock name", sh: func(f wgFixture) string {
+			return "ln " + packed(f) + " " + f.lock()
+		}},
+		{
+			// sandbox-exec resolves the path, so the grant follows the NAME
+			// and not the inode a symlink at it points to.
+			what: "a write THROUGH a symlink planted at the lock name",
+			pre:  func(f wgFixture) string { return "ln -s " + packed(f) + " " + f.lock() },
+			sh:   func(f wgFixture) string { return "echo junk >> " + f.lock() },
+		},
+		{what: "the lock renamed onto packed-refs", sh: func(f wgFixture) string {
+			return "touch " + f.lock() + " && mv " + f.lock() + " " + packed(f)
+		}},
+		{what: "the lock renamed onto refs/heads/main", sh: func(f wgFixture) string {
+			return "touch " + f.lock() + " && mv " + f.lock() + " " + f.ref("main")
+		}},
+		{what: "packed-refs renamed onto the lock name", sh: func(f wgFixture) string {
+			return "mv " + packed(f) + " " + f.lock()
+		}},
+		{what: "a write to packed-refs.new, which is where the content really goes", sh: func(f wgFixture) string {
+			return "echo x > " + filepath.Join(f.common, "packed-refs.new")
+		}},
+	}
+}
+
+func wgRunAliasArm(t *testing.T, arm wgAliasArm) {
+	t.Helper()
+	sbSkipUnlessSandboxable(t)
+	f := wgNewFixture(t)
+	prof, err := f.a.RenderSeatbelt(f.ag, f.tree)
+	if err != nil {
+		t.Fatal(err)
+	}
+	packed := filepath.Join(f.common, "packed-refs")
+	before := mustRead(t, packed)
+	mainRef := mustGit(t, f.repo, "rev-parse", "refs/heads/main")
+
+	if arm.pre != nil {
+		if ok, out := wgRun(t, prof, arm.pre(f)); !ok {
+			t.Fatalf("the setup for %q was refused, so the refusal below would be that refusal and not the one this arm is about:\n%s", arm.what, out)
+		}
+	}
+	if ok, out := wgRun(t, prof, arm.sh(f)); ok != arm.want {
+		t.Errorf("%s: got %v, want %v — the lock name is a grant on ONE file and this is the list of ways it could stop being one:\n%s",
+			arm.what, ok, arm.want, out)
+	}
+	// Whatever the exit code said, the shared files are the claim.
+	if !wgExists(t, packed) {
+		t.Fatalf("packed-refs is gone after %q — the grant moved the operator's ref store", arm.what)
+	}
+	if after := mustRead(t, packed); after != before {
+		t.Errorf("packed-refs changed after %q:\n--- before\n%s\n--- after\n%s", arm.what, before, after)
+	}
+	if got := mustGit(t, f.repo, "rev-parse", "refs/heads/main"); got != mainRef {
+		t.Errorf("the operator's main moved after %q: %s != %s", arm.what, got, mainRef)
+	}
 }
 
 // The rejected shape, kept alive on purpose: a createOnly grant for
@@ -678,8 +1048,15 @@ func TestQAWorktreeCommitLeavesNoStrayPackedRefsLock(t *testing.T) {
 func TestQAPackedRefsLockCreateGrantIsUnsafe(t *testing.T) {
 	sbSkipUnlessSandboxable(t)
 	f := wgNewFixture(t)
-	w := f.writable(t)
-	lock := filepath.Join(f.common, "packed-refs.lock")
+	// ADR 0059 D1 put the lock in the WRITABLE set, and a subpath grant
+	// outvotes the create-only line this test exists to measure: built on
+	// today's set the candidate would get the unlink too, leave no stray,
+	// and the test would report the hazard gone. So the candidate is built
+	// on the set as it shipped BEFORE 0059 — the one entry removed, and
+	// nothing else varied. withoutLock fatals if the entry is not there to
+	// remove, so this cannot quietly become a test of the shipped set.
+	w := f.withoutLock(t)
+	lock := f.lock()
 	createOnly := append(append([]string{}, sessionRefDirs(f.tree)...), lock)
 	carve := f.a.SeatbeltCarveOut(f.ag, f.tree, f.gates, w)
 	candidate := sbRenderProfile(t, "candidate.sb", SeatbeltProfile(f.ag.Name, w, nil, carve, createOnly...))
@@ -728,5 +1105,135 @@ func TestQAPackedRefsLockCreateGrantIsUnsafe(t *testing.T) {
 	}
 	if !wgExists(t, lock) {
 		t.Error("gc cleared the stray lock — the strand this test pins is not permanent after all, and the doc comment on sessionRefDirs's neighbour needs revisiting instead of this test")
+	}
+}
+
+// ─── what an operator reads (ADR 0059 verification 3) ───────────────────────
+//
+// The grant costs a reader exactly one line, and it has to be the RIGHT
+// line. `posse gates` marks create-only grants with `+` and atomic-write
+// siblings with `~` precisely so neither is mistaken for a writable path,
+// and this entry is neither: create-only is the spelling ranger-base-msex
+// measured and rejected — it strands the lock and kills the operator's gc —
+// and a sibling grant would hand back `packed-refs.lock.*` names nobody has
+// measured. So the assertion is the marker, not just the presence.
+//
+// It needs no sandbox-exec, which is the point: this is the one arm of ADR
+// 0059 a caged session can run, and it is the one an operator actually
+// looks at.
+func TestQAGatesReportShowsThePackedRefsLockAsOneWriteLine(t *testing.T) {
+	f := wgNewFixture(t)
+	var buf strings.Builder
+	if err := f.a.SeatbeltReport(f.ag, f.tree, &buf); err != nil {
+		t.Fatal(err)
+	}
+	report := buf.String()
+	want := "w " + AbbrevHome(f.lock())
+	var got int
+	for _, line := range strings.Split(report, "\n") {
+		line = strings.TrimSpace(line)
+		if line == want {
+			got++
+			continue
+		}
+		if !strings.Contains(line, "packed-refs.lock") {
+			continue
+		}
+		if strings.HasPrefix(line, "+ ") {
+			t.Errorf("the lock is reported as a CREATE-ONLY grant — that is the ranger-base-msex spelling, which strands the lock and kills the operator's gc:\n  %s", line)
+		}
+		if strings.HasPrefix(line, "~ ") {
+			t.Errorf("the lock is reported as an atomic-write SIBLING grant — that would cover packed-refs.lock.* names nothing has measured:\n  %s", line)
+		}
+	}
+	if got != 1 {
+		t.Errorf("`posse gates` printed %d lines reading %q, want exactly 1 — ADR 0059 verification 3 is what an operator reads this grant off:\n%s", got, want, report)
+	}
+	// And it is the LOCK that joined the report, not the file it guards.
+	if bad := "w " + AbbrevHome(filepath.Join(f.common, "packed-refs")); strings.Contains(report, bad+"\n") {
+		t.Errorf("packed-refs itself is reported writable — that is the grant ranger-base-m2wf narrowed away:\n%s", report)
+	}
+}
+
+// ─── the premise, without sandbox-exec (ranger-base-xjw9) ────────────────────
+//
+// Every arm above is a sandbox-exec, and a session that may not apply a
+// profile skips all of them — which is every DISPATCHED session on this
+// fleet, since a caged persona cannot nest one. The same gap that
+// TestQAWorktreeCommitNeedsTheRefsParentDirectory closes for the ref's
+// parent directory, closed the same way for this grant: the variable is
+// whether git may CREATE that one file in the shared common dir, so
+// refusing the create by any means reproduces the failure, and a read-only
+// common DIRECTORY refuses it while leaving `objects`, `logs` and
+// `refs/heads/...` — which have their own modes — exactly as they were.
+//
+// Two arms, one variable, on two fresh fixtures, and the first names the
+// refusal it got so the wall is witnessed rather than assumed. MEASURED
+// 2026-09-11, darwin 25.4.0, git 2.50.1 Apple Git-155, inside a caged
+// session where every probe above skipped.
+func TestQASequencerNeedsThePackedRefsLock(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root: a read-only directory is not a wall, so the sealed arm cannot fail (same reason as the refs-parent arm above)")
+	}
+	// One clean cherry-pick and the path-limited commit after it, run
+	// UNSANDBOXED so this holds wherever the suite runs. Returns what git
+	// said on the way — stderr included, because the defect is a command
+	// that exits 0 and complains.
+	arm := func(t *testing.T, sealed bool) (pickOut string, blockers []string, lock bool, commitErr error) {
+		t.Helper()
+		f := wgNewFixture(t)
+		clean, _ := wgSequencer(t, f)
+		if sealed {
+			if err := os.Chmod(f.common, 0o555); err != nil {
+				t.Fatal(err)
+			}
+			defer os.Chmod(f.common, 0o755)
+		}
+		out, _ := exec.Command("git", "-C", f.tree, "cherry-pick", clean).CombinedOutput()
+		pickOut = strings.TrimSpace(string(out))
+		blockers = wgBlockers(t, f)
+		lock = wgExists(t, f.lock())
+		if err := os.WriteFile(filepath.Join(f.tree, "after.txt"), []byte("after\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := git(f.tree, "add", "--", "after.txt"); err != nil {
+			t.Fatal(err)
+		}
+		_, commitErr = git(f.tree, "commit", "-q", "-m", "after", "--", "after.txt")
+		return
+	}
+
+	// 1. the create refused — the shipped grant's shape. git exits 0, gives
+	//    up the pseudo-ref delete, and the next commit dies on what it left.
+	out, blockers, lock, err := arm(t, true)
+	if !strings.Contains(out, "packed-refs.lock") {
+		t.Fatalf("the sealed arm never mentioned packed-refs.lock — the wall is not measuring this file, so neither arm says anything about the grant:\n%s", out)
+	}
+	if len(blockers) == 0 {
+		t.Error("arm 1: a cherry-pick whose packed-refs.lock was refused left no sequencer state — the defect ADR 0059 D1 closes does not reproduce, and the grant is dead weight")
+	}
+	if lock {
+		t.Error("arm 1: a refused create left the lock file behind anyway")
+	}
+	if err == nil {
+		t.Error("arm 1: the path-limited commit after it LANDED — then the refused delete costs a stderr line and nothing more, and ADR 0059's premise is wrong")
+	} else if !strings.Contains(err.Error(), "partial commit") {
+		t.Errorf("arm 1: the commit failed for some other reason than the stranded pseudo-ref: %v", err)
+	}
+
+	// 2. the same create allowed, and the unlink with it: git finishes its
+	//    own cleanup, says nothing, leaves nothing, and the commit lands.
+	out, blockers, lock, err = arm(t, false)
+	if strings.Contains(out, "packed-refs.lock") {
+		t.Errorf("arm 2: git still could not have the lock with the directory writable — the two arms differ by something other than this file:\n%s", out)
+	}
+	if len(blockers) != 0 {
+		t.Errorf("arm 2: %v survived a clean cherry-pick that had the lock — then the lock is not what git needed to delete them", blockers)
+	}
+	if lock {
+		t.Error("arm 2: git created the lock and did not unlink it — write-without-unlink is the ranger-base-msex strand, and the grant would be shipping it")
+	}
+	if err != nil {
+		t.Errorf("arm 2: the path-limited commit after a clean cherry-pick was refused: %v", err)
 	}
 }

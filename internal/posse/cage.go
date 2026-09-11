@@ -609,14 +609,28 @@ func cageIdentityFileBinds(ms []CageMount, paths []string, why string) []CageMou
 // mount list can say: the three regions inside a worktree's git common dir
 // that a DETACHED-HEAD commit in this tree writes — its own
 // `worktrees/<name>` dir (index, HEAD, its locks), `objects`, and `logs`.
-// Everything else there — `config`, `hooks`, `packed-refs`, `refs`, other
-// sessions' `worktrees/<name>` — is left under the `:ro` common mount.
+// Everything else there — `config`, `hooks`, `packed-refs`,
+// `packed-refs.lock`, `refs`, other sessions' `worktrees/<name>` — is left
+// under the `:ro` common mount.
 //
-// The ref pair L2 also grants is deliberately absent, and that is the whole
-// narrowing: at L2 the session commits ON its branch and needs
-// `refs/heads/<branch>` plus the `.lock` git renames onto it; here the
-// launcher detaches HEAD instead and splices the work back at close, so
-// there is no ref for the cage to write and none to grant.
+// Two of L2's entries are deliberately absent, for two different reasons.
+//
+// The ref pair, and that is the whole narrowing: at L2 the session commits
+// ON its branch and needs `refs/heads/<branch>` plus the `.lock` git renames
+// onto it; here the launcher detaches HEAD instead and splices the work back
+// at close, so there is no ref for the cage to write and none to grant.
+//
+// `packed-refs.lock`, which L2 grants write+unlink (ADR 0059 D1) so git can
+// finish its own cleanup after a sequencer verb instead of stranding a
+// pseudo-ref. ADR 0059 D4 declines the twin here, by the `.lock` rule the
+// paragraph above cageGitIdentityBinds already states: a bind of an ABSENT
+// source is not refused, it creates the source on the host as a DIRECTORY,
+// and this lock is absent whenever nothing holds it — so the twin would put
+// a `packed-refs.lock` DIRECTORY in the OPERATOR's git dir and kill their
+// every `gc` and `pack-refs` permanently, which is the ranger-base-msex
+// landmine with no human able to undo it by deleting a file. The sequencer
+// verbs at L4 keep the ranger-base-71g2f shim arm as their floor instead.
+// The L4 engine is off-box and this shape is UNRUN there.
 //
 // `own` comes from LinkedGitDirs so it cannot disagree with the common dir
 // the caller already resolved — the two are one `git rev-parse`. A shape

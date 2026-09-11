@@ -641,8 +641,13 @@ func pidWritableExtras(ag *AgentFile, cwd string) []string {
 // MEASURED under the narrowed profile (seatbeltworktreegit_qa_test.go):
 // `<common>/objects`, `<common>/logs`, and its OWN loose ref
 // `<common>/refs/heads/<branch>` with the `.lock` git renames onto it.
-// Everything else there — `config`, `packed-refs`, `hooks/`, other refs,
-// other sessions' `worktrees/<name>` dirs — stays under the default deny.
+// `<common>/packed-refs.lock` joins them by ADR 0059 D1 — a lock git takes
+// on every ref transaction and removes again, granted write+unlink so that
+// git can clean up after itself; the block below this function is that
+// decision and why the create-only spelling stays rejected.
+// Everything else there — `config`, `packed-refs`, `packed-refs.new`,
+// `hooks/`, other refs, other sessions' `worktrees/<name>` dirs — stays
+// under the default deny.
 //
 // The ref is granted as that pair of subpaths rather than as the posture
 // check's prescribed `(regex #"^<common>/refs/heads/<branch>")`: the pair is
@@ -670,7 +675,8 @@ func sessionGitGrants(cwd string) []string {
 		return dirs // main checkout: cwd's own grant already covers .git
 	}
 	own, common := dirs[0], dirs[1]
-	out := []string{own, filepath.Join(common, "objects"), filepath.Join(common, "logs")}
+	out := []string{own, filepath.Join(common, "objects"), filepath.Join(common, "logs"),
+		filepath.Join(common, "packed-refs.lock")} // ADR 0059 D1 — the lock, not packed-refs
 	if b := repoBranch(cwd); b != "" {
 		ref := filepath.Join(common, "refs", "heads", b)
 		out = append(out, ref, ref+".lock")
@@ -736,51 +742,104 @@ func sessionRefDirs(cwd string) []string {
 	return out
 }
 
-// packed-refs.lock is DECLARED, not granted (ranger-base-msex, second
-// finding on ranger-base-uuze). Every commit under the narrowed grant —
-// packed or not, first commit or fifth — prints
+// packed-refs.lock is GRANTED, write and unlink (ADR 0059 D1, from
+// ranger-base-71g2f's zero-exit sequencer leak) — the one entry above that
+// names a file in the shared common dir for anything other than this
+// session's own ref.
+//
+// The history it replaces, because it is also the reason the pin below
+// survives. ranger-base-msex measured a commit under the narrowed grant
+// printing
 //
 //	error: Unable to create '<common>/packed-refs.lock': Operation not permitted
 //
-// on stderr and then succeeds. MEASURED (2026-08-30, darwin 25.4.0): it is
-// unconditional, not a packing effect — reproduced on a fresh unpacked
-// fixture's very first commit, where the session's ref has never been
-// packed at all. Git's ref-transaction takes this lock speculatively on
-// every ref update to check the packed backend, needs nothing from it here
-// (the session's ref lives loose), and falls back cleanly when refused —
-// which is why the commit still lands.
+// on stderr and then succeeding, unconditionally — git's ref transaction
+// takes this lock speculatively on every ref update to check the packed
+// backend, needs nothing from it when the session's ref lives loose, and
+// falls back cleanly when refused. The tempting fix then was a CREATE-ONLY
+// grant, the shape sessionRefDirs uses above. MEASURED and rejected:
+// create-only buys the create and not git's own cleanup unlink, so every
+// commit strands the lock FILE in the operator's git dir, and it kills
+// the operator's unsandboxed `git gc` and `git pack-refs` at rc 128 until a
+// human removes it. That rejection stands, and
+// TestQAPackedRefsLockCreateGrantIsUnsafe still pins it — on a writable set
+// with this entry REMOVED, or the subpath grant outvotes the create-only
+// line the test exists to measure.
 //
-// The tempting fix is a createOnly grant beside sessionRefDirs, the same
-// shape as the ref's parent directory. MEASURED and REJECTED: create-only
-// buys the create but not the delete, and git's own cleanup is an unlink of
-// that same lock file once it decides packed-refs needs no change. Refused,
-// that unlink leaves the lock FILE ITSELF behind in the shared common dir —
-// unlike the refusal it replaces, a stray lock is not self-healing, and it
-// is not symmetric either. A session's own later commits are UNAFFECTED:
-// each one retries the same create, finds the file already there, prints a
-// scarier line — `error: … packed-refs.lock: File exists … Another git
-// process seems to be running … remove the file manually to continue` — and
-// still lands, exit 0, because an ordinary commit's ref update never
-// actually needs that lock. What the stray file DOES break, hard, is
-// anything that does need it: the operator's own unsandboxed `git gc` and
-// `git pack-refs` on the shared repo both die at rc=128 with the identical
-// message, for as long as the file sits there — which is until a human
-// notices and removes it by hand, since no session may write there to
-// unstick it either. Reproduced with a hand-planted lock file, no sandbox
-// involved, so this is git's own locking discipline, not a profile quirk.
+// What msex never measured is the other shape, and ADR 0059 does: the lock
+// as a WRITABLE SUBPATH — create AND unlink — with `packed-refs` and
+// `packed-refs.new` still denied. What the refusal actually cost was not
+// the stderr line. Every git operation that ends by DELETING a pseudo-ref —
+// `cherry-pick`, `revert`, `rebase`, on `--abort`, `--quit`, `--continue`,
+// and on a clean run that never conflicted — asks for this lock, is
+// refused, gives up the delete and exits 0. CHERRY_PICK_HEAD survives, and
+// the session's next path-limited commit — the only form its PID allows —
+// dies at `fatal: cannot do a partial commit during a cherry-pick`. With
+// the unlink granted git finishes its own cleanup: every one of those verbs
+// exits as git says, silently, leaving no blocker and no lock, and the
+// commit after it lands.
 //
-// So the grant trades a benign, self-repairing stderr line for a silent,
-// human-interrupt-shaped landmine in shared state — worse than what it
-// silences, and worse in a way that would not surface until whoever runs
-// gc next. No grant is added; the stderr line stays.
-// TestQAWorktreeCommitLeavesNoStrayPackedRefsLock pins the accepted
-// behaviour and TestQAPackedRefsLockCreateGrantIsUnsafe pins why the
-// tempting grant must not come back.
+// MEASURED by `docs/adr/0059-packed-refs-lock.probe.sh` (2026-09-11, darwin
+// 25.4.0, git 2.50.1 Apple Git-155), and pinned by execution under the
+// rendered profile with the shipped grant as the control, in
+// TestQAWorktreeCommitLeavesNoStrayPackedRefsLock's D2 arms. Those arms are
+// sandbox-execs and skip wherever a session may not apply a profile — which
+// is every dispatched session on this fleet — so the PREMISE under them is
+// measured a second way, without a sandbox, in
+// TestQASequencerNeedsThePackedRefsLock: refuse the create by making the
+// common dir read-only and the clean cherry-pick still exits 0, still
+// strands CHERRY_PICK_HEAD, and the path-limited commit after it still dies.
+//
+// What the grant does NOT buy — probe-measured, and pinned by the D2.4 arms
+// alone, since a read-only directory cannot tell these apart: the lock name
+// is not a route to anything else. A hard link of `packed-refs` onto it is refused;
+// a symlink can be planted at the name but a write THROUGH it is refused,
+// because the profile resolves paths; renaming the lock onto `packed-refs`
+// or onto `refs/heads/main` is refused; `packed-refs.new` is refused. A
+// rewrite git genuinely wants to make — deleting a ref that is packed —
+// fails at `packed-refs.new`, git rolls back, removes its own lock, and
+// `packed-refs` is byte-identical afterwards.
+//
+// D3 — a stray `packed-refs.lock` is the OPERATOR's to remove, never a
+// session's, and no gate prescribes its removal. Git's lock files carry no
+// holder identity and no expiry, so a session cannot tell a stranded lock
+// from a live `gc` holding one; the 71g2f recipe keeps naming the pseudo-
+// refs in the session's OWN git dir and nothing under the common dir. This
+// grant lets git clean up after ITSELF. It does not make the session a
+// cleaner of shared state, and the PID cannot spell "only the lock you
+// created", so that line is cooperative and is said here rather than
+// dressed as a wall.
+//
+// What it adds is not a new class. A SIGKILL landing in the window a git
+// process holds the lock strands it (SIGTERM and SIGHUP do not — git's own
+// signal cleanup removes it); the same kill in the same window under the
+// SHIPPED grant already strands `refs/heads/<branch>.lock` and the
+// per-worktree `index.lock`, and the operator's `gc` already dies at rc 128
+// on the stranded ref lock. Those signal arms and the window are MEASURED
+// by `docs/adr/0059-packed-refs-lock.probe.sh` (2026-09-11, darwin 25.4.0,
+// git 2.50.1), not by a test in this package — no arm here kills a git
+// mid-transaction. Likewise the hand a session gains is the `pack-refs`
+// exit code and not the ability to block the operator: a session that
+// plants its OWN `refs/heads/<branch>.lock` has killed `gc` at rc 128 since
+// m2wf.
+//
+// D4 — no L4 twin, and that is a decision rather than an omission. At L4
+// the common dir is `:ro` with three overlays and no `.lock` sibling is
+// ever bound, because a bind of an ABSENT source makes the source a
+// DIRECTORY on the host (ADR 0038 decision 4, measured) — and this lock is
+// absent whenever nothing holds it, so the bind would leave a
+// `packed-refs.lock` DIRECTORY in the operator's git dir: the msex landmine
+// made permanent. The sequencer verbs at L4 keep 71g2f's arm as their
+// floor. See sessionCommonDirWrites in cage.go, which says the same thing
+// where the other wall's reader stands.
+//
+// Exit hatch: delete the one entry. Every pin flips back to the shipped
+// shape and the 71g2f arm is already the floor.
 //
 // `git gc` from inside a session dying separately at `gc.pid.lock:
 // Operation not permitted` is not this: a session should not gc the shared
-// repo, and that refusal is the point, not a gap — noted here only because
-// the same bead raised both and this is where the first one's answer lives.
+// repo, and that refusal is the point, not a gap — noted here because msex
+// raised both and this is where the first one's answer lives.
 
 // SeatbeltCarveOut computes the trailing block for a session: the three
 // artifact classes ranger-base-6ne walked through, ENUMERATED at the

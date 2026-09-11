@@ -456,9 +456,19 @@ func TestRedirectedBeadStoreCrossesTheBoundaryReadWrite(t *testing.T) {
 // `core.hooksPath` in `config` (dodging the hooks-:ro overlay of
 // ranger-base-3c3/h15 rather than being stopped by it) and edit another
 // session's `worktrees/<name>`. So it is `:ro`, with read-write overlays of
-// the three regions a DETACHED-HEAD commit actually writes — the same set
-// sessionGitGrants names at L2 minus the ref pair, because the launcher
-// detaches HEAD (PrepareSessionHead) and splices at close instead.
+// the three regions a DETACHED-HEAD commit actually writes — the set
+// sessionGitGrants names at L2, less two entries.
+//
+// The ref pair, because the launcher detaches HEAD (PrepareSessionHead) and
+// splices at close instead, so there is no shared ref to move.
+//
+// `packed-refs.lock`, which L2 grants write+unlink (ADR 0059 D1), by ADR
+// 0059 D4: a bind of an ABSENT source is not refused, it creates the source
+// on the host as a DIRECTORY (ADR 0038 decision 4, measured), and that lock
+// is absent whenever nothing holds it — so the twin would leave a
+// `packed-refs.lock` DIRECTORY in the OPERATOR's git dir and kill their
+// every `gc` and `pack-refs` with no file for a human to delete. It joins
+// the wantNoMount list below for that reason and not by oversight.
 //
 // This test measures the MOUNT LIST. That the engine honours a read-write
 // bind over a `:ro` parent is measured in
@@ -505,7 +515,7 @@ func TestWorktreeGitCommonDirIsTheGitCarveOut(t *testing.T) {
 		// mount and under NO overlay, so the deepest bind covering it is the
 		// read-only one. A mount of its own here — in either mode — would be
 		// the bug, so the assertion is that nothing lands on them at all.
-		for _, p := range []string{"config", "hooks", "packed-refs", "refs"} {
+		for _, p := range []string{"config", "hooks", "packed-refs", "packed-refs.lock", "refs"} {
 			wantNoMount(t, ms, filepath.Join(common, p), "<common>/"+p+" stays under the :ro mount ("+front+")")
 		}
 		// Another session's tree, which is the sibling of the one overlay
