@@ -1,6 +1,6 @@
 # ADR 0006 — Handoffs carry explicit acceptance; verification stays batched
 
-*Status: accepted; simplified 2026-09-05 by operator ruling · inferred-intent removal landed 2026-09-06 (ranger-base-0ezn7) · escape doctrine amended 2026-09-06 by operator ruling (§1, §6; ranger-base-0f2zy) · owner: architect.*
+*Status: accepted; simplified 2026-09-05 by operator ruling · inferred-intent removal landed 2026-09-06 (ranger-base-0ezn7) · escape doctrine amended 2026-09-06 by operator ruling (§1, §6; ranger-base-0f2zy) · pin write-freeze added 2026-09-10 by operator ruling (§7; ranger-base-7dh59) · owner: architect.*
 
 ## Context
 
@@ -86,6 +86,24 @@ recorded lines and no bead is a complete close. Only a reproduced live
 money, constitution or dispatch-correctness defect gets a separate P1/P2
 bug, cited by id in the bundle. Personas do not reopen the original close.
 Verification never holds a build close hostage.
+
+### §7 — a pin has to name the process it protects
+
+Two outside-in reviews of 2026-09-09 (docs/notes.d/ranger-base-b0fsz.md §6–7,
+docs/notes.d/ranger-base-vuosd.md §6) measured the cost of the escape
+doctrine's habit: 1,120 `TestQA*` functions, 328 new `*_qa_test.go` files in
+fourteen days, a class of tests whose subject is a comment, a Makefile
+recipe, an ADR status line or another pin, and one pin that encoded a live
+bug as its fixture so the fix broke the test. From this ruling, a new
+`*_qa_test.go` whose scanner reads prose — code comments, Makefile text, ADR
+or NOTES wording, another test's source — is filed only with the answer to
+one question written on the bead that files it: **what process behaves
+differently if this pin is deleted?** "The comment would be wrong" is not an
+answer; "the launcher would grant a path the profile denies" is. A pin with
+no answer is not written; the finding is recorded on the verify bead under
+§6 and closes with it. Existing pins are not swept by this section — the
+silent-revert audit exists because sweeps are how pins die — they are
+retired one at a time, measured, as the census beads name them.
 
 ## Consequences and alternatives
 
