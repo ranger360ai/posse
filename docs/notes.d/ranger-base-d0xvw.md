@@ -214,3 +214,94 @@ Census MEASURED 2026-09-10, HEAD e4341e56: **107 candidate tests — arm 1 21,
 `internal/treepins/racearm_qa_test.go`, mutation-checked. The price above is
 unchanged and the arm is still on-demand only.
 Notes: `docs/notes.d/ranger-base-nhc23.md`.
+
+---
+
+## RE-DECISION — (c) on the corrected price (ranger-base-sv174, richard, 2026-09-10)
+
+**(c) stays rejected, and this is the sentence it rests on:** a periodic arm
+off the critical path is priced by its trigger and its reader, not its
+minutes — and this repo's one CI reader, `ciwatch.go`, lists runs by workflow
+file and branch with no event filter (`DefaultCIWorkflow = "ci.yml"`,
+`ciVerdict` looks only at status and conclusion), so a scheduled `-race` arm
+would either have no reader at all (its own workflow file, which nothing
+polls) or the wrong one (a `schedule:` inside `ci.yml`, whose red files a
+"main is red" bead against whatever commit HEAD happens to be — the exact
+attribution failure `ciwatch.go`'s header was written against) — while the
+arm is red today on three tests that are not a data race (ranger-base-0dt50,
+reproduced alone at 4% CPU). No value of the whole-package number makes a
+reader appear or the known red go away, so the number is not load-bearing
+and it is not taken.
+
+### What the corrected price actually argues
+
+Honestly: FOR (c)'s affordability. The CORRECTION measured the arm at 13-14%
+CPU — it buys its signal with wait, and off the critical path wait is the
+cheapest resource there is. So the rejection cannot rest on cost, and this
+section does not: the extrapolated "per-access tax package-wide" and "most
+of the package's non-test files" are withdrawn, not replaced with a different
+arithmetic. What replaces them is the reader argument above and the surface
+measurement below.
+
+### What held from the original verdict, re-verified at HEAD b6903aed
+
+| ground | state |
+|---|---|
+| no `schedule:` trigger anywhere in `.github/workflows` | holds — `ci.yml` is `on: push (main) / pull_request`; `pages.yml`, `release.yml` carry none |
+| the 25m `-timeout` ceiling | holds — `Makefile` `test`/`test-arm{1,2,3}`, pinned by `suitetimeout_qa_test.go`; `ci.yml` sets no `timeout-minutes`, so the job limit is GitHub's default |
+| three ~239s CI arms to clear the budget | holds — `ci.yml:145-151`, six jobs (two OSes × three arms) |
+
+### Where the concurrency surface actually is (MEASURED 2026-09-10, HEAD b6903aed, grep)
+
+- **Product goroutine spawn sites: 3 of 117 non-test files** — `dispatch.go`
+  (3), `passcarry.go` (1), `watch.go` (4); the same three and only those three
+  `make(chan …)`. These are exactly the files the candidate set was cut for,
+  so the on-demand arm covers 100% of in-package spawn sites.
+- **The other `sync.` uses are not race surface on their own**: 7 `sync.Map`
+  notice dedupes (`app`, `beads`, `ciwatch`, `modelavail`, `runtimeprobe` ×2,
+  `runtimeyaml`), 2 `sync.Once` (`modelavail`, `seatbelt`), 4 mutexes outside
+  the candidate files (`cagestale`, `cageinner`, `cost`, `watchlog`). A mutex
+  with no goroutine in the package is contended only by callers' goroutines.
+- **Those callers exist, in tests**: 35 test files OUTSIDE the candidate set
+  spawn 75 goroutines of their own (`launchlock_test.go` 8,
+  `backuploop_test.go` 7, `launchlock_qa_test.go` 6, `egress`/`execwrite`/
+  `planstale`/`pulse` 4 each …) against 13 spawns in the 7 candidate files
+  that spawn any. That is the surface (c) would sweep and (b) does not:
+  product code driven concurrently by a test's own goroutines.
+- Repo-wide, the only other non-test spawn site is `cmd/posse/cockpit.go`.
+
+The lever for that surface already ships: `POSSE_RACE_FILES=<files> make
+test-race` runs the same censused three-arm recipe over any test-file list.
+Widening the default list is a candidate-list edit in `scripts/test-race.sh`,
+not a fourth CI arm — and it is not done here, because nothing suspects a race
+there and the detector's yield over every run of the concurrency-carrying set
+to date is `DATA RACE` 0 (y3x6n, d0xvw, 7npp8's three arms).
+
+### Alternatives priced
+
+- **Do nothing (taken).** Cost: zero. Carries: the surface above stays
+  on-demand behind an env var a person has to know about; the line in
+  `Makefile` and `scripts/test-race.sh` names it.
+- **(c) as its own workflow file, cron-triggered.** Cost: one workflow, its
+  own `-timeout` (ASSUMED: past 25m — the three candidate arms alone are 11.4
+  min and the other 98% of the package has 75 test-side spawn sites whose
+  stretch nobody has measured), and a red that nothing reads. `ciwatch` would
+  need a second workflow name and an event-aware verdict — new config key,
+  new state, no bead demanding either.
+- **(c) as a `schedule:` inside `ci.yml`.** Cost: the same arm plus a reader
+  that misattributes: `gh run list --workflow ci.yml --branch main` returns
+  scheduled runs too (ASSUMED from GitHub's run model — head_branch of a
+  scheduled run is the default branch; not probed, because the arm below it
+  is rejected either way), and `ciVerdict` calls their failure red. With
+  0dt50 open, that is a "main is red" bead every night that names a commit
+  that did not cause it.
+- **(c) after 0dt50 closes.** Still no reader. Re-raise only with a bead that
+  brings one; the whole-package measurement is that bead's FIRST slice, on a
+  quiet box, three tagged arms — not a spike filed now as proof of research.
+
+### Not filed, on purpose
+
+- The whole-package `-race` number. The bead that hands it a reader takes it.
+- Running the three `test-race` arms concurrently (13-14% CPU each; wall would
+  fall from the sum ~11.4 min toward the longest arm, ~6.3 min). Unmeasured
+  under contention, and no one has asked for the six minutes back.
