@@ -656,6 +656,27 @@ def self_test():
           "a `#` comment runs to the newline and its bytes are not shell "
           "syntax — the apostrophe in prose must not open a quote that eats "
           "the real kill below it")
+    # --- the command-position walk's own two clauses (ranger-base-aty66) ---
+    # Both survived a mutant against the 34 arms above and are measurably
+    # inert on today's corpus (130 kills / 128 ran / 121 not-unique, byte-for
+    # -byte, with either clause removed). Inert is not the same as idle: they
+    # are the difference between reading the shell's syntax and reading its
+    # characters, and an arm is what keeps a later cut of this walk honest.
+    check(kill_patterns("echo a\;pkill -f teau") == [],
+          "an ESCAPED separator is not a separator — `a\;pkill` is one word "
+          "to echo, so the verb after it is argument text and not a command "
+          "(the walk-back requires a separator that is itself CODE; without "
+          "that clause this reads as a kill that ran)")
+    check(kill_patterns("sudo pkill -f 'make test'")
+          == [("pkill", "-f", "make test")]
+          and kill_patterns("sudo sudo pkill -f teau")
+          == [("pkill", "-f", "teau")],
+          "`sudo` is walked back over, any number of them, so a privileged "
+          "pattern kill is still a pattern kill — and the same word inside a "
+          "quoted argument is not, which is the pair that makes the walk-back "
+          "a reading of code rather than a prefix strip")
+    check(kill_patterns("echo 'sudo pkill -f x'") == [],
+          "...and that is the second half of the pair")
     check(bool(UNIQUE_HINT.search("/private/tmp/claude-501/x/scratchpad/load.sh")),
           "a scratchpad path is session-unique")
     check(not UNIQUE_HINT.search("go test -timeout 25m"),

@@ -16,9 +16,11 @@ package posse
 // anyway would pin nothing at all.
 
 import (
+	"io"
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 // landGateSession is the live shape: a dispatched session with its own
@@ -264,5 +266,54 @@ func TestQAKillRetiresAnEmptyTreeWhateverTheBeadSays(t *testing.T) {
 	if treeThere || branchThere {
 		t.Errorf("an empty tree was kept over an open bead (tree=%v branch=%v, kept: %s) — nothing was at risk and nothing else will ever remove it",
 			treeThere, branchThere, l.Kept)
+	}
+}
+
+// QA, ranger-base-aty66 (verify of ranger-base-pqque): the gate is asked
+// BEFORE the launcher lock, and that order is a claim about what the operator
+// is TOLD, not only about what waits. Moved behind the lock, every pin above
+// stays green on both arms — measured — and a kill that loses the race then
+// keeps the tree with the LOCK's sentence, which names `posse worktrees
+// --land` as the cure. That is the one path to the repo's branch that does
+// not ask the bead — landgate.go's own note says so, and so does the
+// closer's NOT FILED line on the bead — so the deferral would hand an
+// unreleased bead's branch to the one command that lands it without asking.
+// A keep over an unclosed bead says the BEAD, whoever else holds the lock.
+func TestQAKillsKeepNamesTheBeadAndNotTheLauncherLock(t *testing.T) {
+	t.Parallel()
+	b, repo, name, tr, tip := landGateSession(t, `[{"id":"a-1","status":"in_progress","assignee":"ranger"}]`)
+	blockedOn(t, repo, "q-1", "open")
+
+	held, err := lockLaunches(b.App, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan *KillLanding, 1)
+	go func() {
+		l, err := b.KillSessionAndLand(name)
+		if err != nil {
+			t.Error(err)
+		}
+		done <- l
+	}()
+	var l *KillLanding
+	select {
+	case l = <-done:
+	case <-time.After(20 * time.Second):
+		held.Release()
+		t.Fatal("the kill waited on the launcher lock to decide something the lock has no part in — and the cockpit runs this on its select loop")
+	}
+	held.Release()
+
+	// The fixture is the headline's, so the keeps it asserts are the same
+	// ones; what this arm adds is that a contended lock cannot change them.
+	onBase, treeThere, branchThere := landGateState(t, repo, tip, tr)
+	if onBase || !treeThere || !branchThere {
+		t.Errorf("landed=%v tree=%v branch=%v while a-1 was in_progress and blocked on q-1", onBase, treeThere, branchThere)
+	}
+	for _, want := range []string{"a-1 is in_progress", "blocked on q-1"} {
+		if !strings.Contains(l.Kept, want) {
+			t.Errorf("the keep does not say %q — a lock-shaped sentence here sends the operator to `posse worktrees --land`, which does not ask the bead:\n%s", want, l.Kept)
+		}
 	}
 }
