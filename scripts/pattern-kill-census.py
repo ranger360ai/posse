@@ -420,6 +420,46 @@ def self_test():
           "prose inside a quoted string is NOT a kill")
     check(PKILL_ANY.search("grep -rnE '(pkill|killall)' ORDERS.md") is not None,
           "...and the loose matcher DOES see it, so the two really differ")
+
+    # --- the separator set does not respect quoting or heredocs ------------
+    # RED as committed (ranger-base-151nr, the week-after verify of jjx19).
+    # The arm above passes INCIDENTALLY: in `echo 'never pkill ...'` the verb
+    # is preceded by "never ", not by a separator, so quoting is never tested.
+    # Put a separator INSIDE the quotes — a newline, which `'...'` and a
+    # heredoc body both carry — and text the shell never ran is counted as a
+    # kill that ran. MEASURED on this box 2026-09-11 by the verify: over
+    # --days 7, 16 kills reported / 14 "ran" where 2 were real and 0 ran, and
+    # BOTH lines printed as confirmed cross-session kills were text (a
+    # `rep('''...''')` patch body, and prose in a `bd comments add` heredoc).
+    # Over the whole corpus, 162 reported / 105 real — 57 false positives.
+    # Fixing the matcher must leave the three positive arms above green; the
+    # quote-and-comment walk at internal/treepins/patternkill_qa_test.go:95
+    # (pkUnquotedKills) is the model, but it is per-LINE and so does not by
+    # itself cover either case below.
+    quoted_arg = ("bd comments add ranger-base-uvzjk 'AGENTS.md \"Landing the "
+                  "plane\", beside the\npkill bullet, with the numbers'")
+    check(kill_patterns(quoted_arg) == [],
+          "a line-leading pkill inside a MULTI-LINE single-quoted argument is "
+          "not a kill — shell quotes span newlines (corpus: gwart, "
+          "2026-09-04T07:23:25Z, counted as a kill that ran)")
+    heredoc = ("bd comments add x <<'EOF'\n"
+               "patternkill_qa_test.go sweeps every shipped .sh for\n"
+               "pkill/killall outside a quote or comment\nEOF\n")
+    check(kill_patterns(heredoc) == [],
+          "nor is prose in a heredoc BODY, which is data written to a file or "
+          "an interpreter and not a command this shell ran (corpus: gilfoyle, "
+          "2026-09-06T14:00:20Z, reported as a CONFIRMED cross-session kill)")
+    patch = ("python3 - <<'PYEOF'\nrep('''cleanup() {\n"
+             "\tpkill -9 -f \"$ROOT/\" 2>/dev/null\n}''')\nPYEOF\n")
+    check(kill_patterns(patch) == [],
+          "nor a shell line quoted inside a python patch body being written "
+          "INTO a script (corpus: gilfoyle, 2026-09-06T13:38:33Z, the other "
+          "CONFIRMED line)")
+    check(kill_patterns('kill 21666 2>/dev/null; pkill -f "make test-arm1"')
+          == [("pkill", "-f", "make test-arm1")],
+          "...and the real typed kill beside them is STILL a kill, so the fix "
+          "is quote-awareness and not a blinded matcher (corpus: gilfoyle, "
+          "2026-09-07T00:30:18Z, refused by the gate and ran nowhere)")
     check(bool(UNIQUE_HINT.search("/private/tmp/claude-501/x/scratchpad/load.sh")),
           "a scratchpad path is session-unique")
     check(not UNIQUE_HINT.search("go test -timeout 25m"),
