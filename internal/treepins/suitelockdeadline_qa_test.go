@@ -85,10 +85,19 @@ var (
 	// A call, never the definitions: both helpers take a quoted path first.
 	slWaitCall = regexp.MustCompile(`\bwait_(?:file|answer)\s+"[^"]+"\s+(\S+?)(?:;|\s|$)`)
 	slForkS    = regexp.MustCompile(`^\s*local fork_s=(\d+)\s*$`)
-	// A literal duration only. `sleep "${POSSE_SUITE_LOCK_POLL:-5}"` is the
-	// library's queue poll and is lock behaviour, not an arm's deadline —
-	// and it is outside the self-test body this scan reads anyway.
-	slSleep = regexp.MustCompile(`\bsleep\s+([0-9]+(?:\.[0-9]+)?)\b`)
+	// EVERY argument, not only a numeric literal, and the classification is
+	// arm 3's job (ranger-base-c85id). A scan that matched digits only was
+	// satisfied by `local b=2; sleep "$b"` — the same deadline, one name over
+	// — and that spelling was MEASURED 2026-09-11 (darwin/arm64, main
+	// 9539276a) passing every suite-lock pin at once when it gated arm 6's
+	// `slot_of` read. The capture stops at the shell separators so
+	// `sleep 0.05; done` yields `0.05` and not `0.05;`.
+	//
+	// `sleep "${POSSE_SUITE_LOCK_POLL:-5}"` is the library's queue poll and is
+	// lock behaviour, not an arm's deadline — it is outside the self-test body
+	// this scan reads, which is why scoping the body is what makes matching
+	// every argument affordable here.
+	slSleep = regexp.MustCompile(`\bsleep\s+([^\s;&|)]+)`)
 )
 
 // slSelfTestBody returns the lines of _suite_lock_selftest, which is where
@@ -240,6 +249,18 @@ func TestQATheFilteredRunArmFailsOnEvidenceAndNotOnATimeout(t *testing.T) {
 // need to: sub-second is poll granularity and one second is a guess about a
 // fork.
 //
+// So the rule has two halves, and the second one is ranger-base-c85id. Reading
+// the duration requires that it BE on the line: a scan that matched only a
+// numeric literal was answered by `local b=2; sleep "$b"`, which is the same
+// budget with a name in front of it. That spelling was MEASURED 2026-09-11
+// (darwin/arm64, main 9539276a) gating arm 6's slot_of read and passing every
+// suite-lock pin in the package — the fhjvs marker-absence arm decides on
+// positive structure but only over `-e "$tmp/m*"` reads, and the lhaae arm is
+// scoped to arm 11, so a named deadline in front of a `slot_of` or a `log_has`
+// was seen by nobody. A sleep whose argument this scan cannot evaluate is
+// therefore a FAIL in its own right, on the honest ground that neither the
+// scan nor the next reader of the arm can tell what it waits.
+//
 // The fix for every hit is one helper over. wait_answer (scripts/suite-lock.sh)
 // returns as soon as the forked holder has answered EITHER way — marker
 // written, or 'waiting for suite lock' in its log — and answer_of names which
@@ -248,7 +269,7 @@ func TestQANoSuiteLockArmWaitsOutAFixedNumberOfSeconds(t *testing.T) {
 	lines, off := slSelfTestBody(t)
 
 	var seen int
-	var stood []string
+	var stood, unreadable []string
 	for i, raw := range lines {
 		l := strings.TrimLeft(raw, " \t")
 		if strings.HasPrefix(l, "#") {
@@ -256,11 +277,19 @@ func TestQANoSuiteLockArmWaitsOutAFixedNumberOfSeconds(t *testing.T) {
 		}
 		for _, m := range slSleep.FindAllStringSubmatch(l, -1) {
 			seen++
+			at := suiteLockScript + ":" + strconv.Itoa(off+i+1) + ": " + l
 			d, err := strconv.ParseFloat(m[1], 64)
-			if err != nil || d < 1 {
+			if err != nil {
+				// A name, a substitution, an arithmetic expansion: the
+				// duration is somewhere else and neither this scan nor the
+				// next reader of the arm can see it from here.
+				unreadable = append(unreadable, at)
 				continue
 			}
-			stood = append(stood, suiteLockScript+":"+strconv.Itoa(off+i+1)+": "+l)
+			if d < 1 {
+				continue
+			}
+			stood = append(stood, at)
 		}
 	}
 
@@ -270,8 +299,21 @@ func TestQANoSuiteLockArmWaitsOutAFixedNumberOfSeconds(t *testing.T) {
 	// was written — four in the holder rigs, two in wait_file/wait_answer, one
 	// in the orphan arm's kill -0 loop.
 	if seen < 4 {
-		t.Fatalf("the scan found only %d literal `sleep <n>` in %s's self-test — it was 7, so the scan has gone blind and a clean result here means nothing",
+		t.Fatalf("the scan found only %d `sleep` in %s's self-test — it was 7, so the scan has gone blind and a clean result here means nothing",
 			seen, suiteLockScript)
+	}
+	if len(unreadable) > 0 {
+		t.Errorf("%d `sleep` in %s --self-test name their duration instead of spelling it:\n  %s\n\n"+
+			"Every wait the self-test is allowed is a POLL, and a poll's granularity\n"+
+			"is readable on its own line. A duration behind a name is a budget the\n"+
+			"next reader cannot check and this scan cannot evaluate — and that is\n"+
+			"not hypothetical: `local b=2; sleep \"$b\"` gating arm 6's slot_of read\n"+
+			"was MEASURED passing every suite-lock pin at once (ranger-base-c85id,\n"+
+			"2026-09-11), because the marker-absence arm reads `-e \"$tmp/m*\"` only\n"+
+			"and the strict-queue arm is scoped to arm 11. It is ranger-base-4psg2's\n"+
+			"defect one spelling over. Write the poll as a sub-second literal, or\n"+
+			"wait for the holder's own answer: `wait_answer \"$marker\" \"$fork_s\"`.",
+			len(unreadable), suiteLockScript, strings.Join(unreadable, "\n  "))
 	}
 	if len(stood) > 0 {
 		t.Errorf("%d arm(s) of %s --self-test wait out a fixed number of seconds:\n  %s\n\n"+
