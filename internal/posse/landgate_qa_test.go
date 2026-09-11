@@ -172,6 +172,30 @@ func TestQAForceKillStillDoesNotLandAnUnclosedBeadsBranch(t *testing.T) {
 	}
 }
 
+// The blocker half's own wrong arm: an ANSWERED question is not a decision
+// the operator still owes, and a keep that names it sends them to a closed
+// bead to read a verdict that is already in. The bead's status is what holds
+// this tree, and the sentence says only that.
+func TestQAKillsKeepDoesNotNameAnAlreadyAnsweredQuestion(t *testing.T) {
+	t.Parallel()
+	b, repo, name, tr, tip := landGateSession(t, `[{"id":"a-1","status":"in_progress","assignee":"ranger"}]`)
+	blockedOn(t, repo, "q-1", "closed")
+
+	l, err := b.KillSessionAndLand(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if onBase, _, _ := landGateState(t, repo, tip, tr); onBase {
+		t.Fatalf("fixture: the branch landed, so there is no keep here to read (kept: %s)", l.Kept)
+	}
+	if !strings.Contains(l.Kept, "a-1 is in_progress") {
+		t.Errorf("the keep does not name the bead and its status:\n%s", l.Kept)
+	}
+	if strings.Contains(l.Kept, "q-1") {
+		t.Errorf("the keep sends the operator to a question that is already answered:\n%s", l.Kept)
+	}
+}
+
 // A store that cannot answer is not a store that said yes — the same
 // fail-closed reading the reap guard and RemoveSessionTree already make of
 // the same pair.
