@@ -1454,6 +1454,51 @@ func fakeHeldDelay(d time.Duration) string {
 	return "delay"
 }
 
+// fakeReadFormat is the `--format` an `agent read` argv asked for. An argv
+// that names no format is NOT treated as asking for ansi: posse passes the
+// flag explicitly (Herdr.AgentReadANSI), so the fake never has to guess
+// herdr's default, and a call that dropped the flag is a call whose format
+// posse stopped deciding.
+func fakeReadFormat(args []string) string {
+	for i := 2; i < len(args)-1; i++ {
+		if args[i] == "--format" {
+			return args[i+1]
+		}
+	}
+	return ""
+}
+
+// fakeStripEscapes is what the text reading hands back: the same screen with
+// its CSI and OSC sequences gone. Its own small walk on purpose, never a call
+// into ghostbox.go — a fixture built out of the code under test makes every
+// mutant of that code equivalent.
+func fakeStripEscapes(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); {
+		if s[i] == 0x1b && i+1 < len(s) {
+			switch s[i+1] {
+			case '[':
+				j := i + 2
+				for j < len(s) && (s[j] < 0x40 || s[j] > 0x7e) {
+					j++
+				}
+				i = j + 1
+				continue
+			case ']':
+				j := i + 2
+				for j < len(s) && s[j] != 0x07 {
+					j++
+				}
+				i = j + 1
+				continue
+			}
+		}
+		b.WriteByte(s[i])
+		i++
+	}
+	return b.String()
+}
+
 func fakeHerdr(args []string) int {
 	f, _ := os.OpenFile(filepath.Join(fakeDir(), "calls.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if f != nil {
@@ -1758,7 +1803,21 @@ func fakeHerdr(args []string) int {
 			}
 			return fakeErr(code, msg)
 		}
+		// The FORMAT is part of the argv, and serving the escapes whatever
+		// was asked for is how this fake stops being able to refuse. herdr
+		// answers `agent read --format text` with the SAME screen and the
+		// attributes gone — the two readings are measured side by side in
+		// ghostbox.go's corpus note — so a fake that dispatched on the verb
+		// pair alone left `--format ansi` unpinned: posse could ask for text,
+		// find no dim run anywhere on any screen, call every suggestion a
+		// typed hold, and this suite would stay green over the whole of
+		// ranger-base-6o7wm (measured 2026-09-11: the substitution survived
+		// arm2 and arm3 of internal/posse, ranger-base-bettd).
 		if b, err := os.ReadFile(filepath.Join(fakeDir(), "composer-ansi")); err == nil {
+			if fakeReadFormat(args) != "ansi" {
+				fmt.Print(fakeStripEscapes(string(b)))
+				return 0
+			}
 			fmt.Print(string(b))
 			return 0
 		}
