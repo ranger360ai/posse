@@ -20,6 +20,13 @@ package main
 //
 // Hermetic: no herdr. The refusal is raised in planLaunch, above every
 // herdr call, which is exactly why it can be measured this way.
+//
+// git is resolved with gitOutsideGates, not exec.LookPath (ranger-base-ebhdx).
+// A bare LookPath on a persona seat answers with that seat's L0 shim, and this
+// fixture hands the resolved binary's DIRECTORY to the child as $PATH — which
+// laundered a foreign gates dir into the launch under test, so parity marked it
+// DEGRADED and `posse new` refused on THAT, above the skills refusal pinned
+// here. Red for every seat, green in CI, and measuring the wrong refusal.
 
 import (
 	"os"
@@ -31,10 +38,7 @@ import (
 
 func TestHandTypedLaunchExitsNonZeroOnASkillsRefusal(t *testing.T) {
 	bin := buildRhq(t)
-	git, err := exec.LookPath("git")
-	if err != nil {
-		t.Fatalf("git: %v", err)
-	}
+	git := gitOutsideGates(t)
 
 	home := t.TempDir()
 	rhq := filepath.Join(home, "posse")
@@ -81,7 +85,7 @@ func TestHandTypedLaunchExitsNonZeroOnASkillsRefusal(t *testing.T) {
 	cmd.Env = []string{"HOME=" + home, "RHQ_HOME=" + rhq, "PATH=" + filepath.Dir(git) + ":/usr/bin:/bin"}
 	var out, errb strings.Builder
 	cmd.Stdout, cmd.Stderr = &out, &errb
-	err = cmd.Run()
+	err := cmd.Run()
 
 	code := 0
 	if ee, ok := err.(*exec.ExitError); ok {
@@ -93,7 +97,16 @@ func TestHandTypedLaunchExitsNonZeroOnASkillsRefusal(t *testing.T) {
 		t.Errorf("a skills refusal exited 0 — the launch failed and the caller cannot tell\nstdout %q\nstderr %q", out.String(), errb.String())
 	}
 	if !strings.Contains(errb.String(), "not overwriting") {
-		t.Errorf("the refusal must reach stderr, not stdout and not silence\nstdout %q\nstderr %q", out.String(), errb.String())
+		// Same trap as load_guard above: a refusal that answers FIRST still
+		// exits non-zero, so the code == 0 arm keeps passing while this pin
+		// measures something else entirely — it would go on passing even if
+		// the skills refusal regressed to exit 0. Name the refusal that has
+		// actually done it.
+		if strings.Contains(errb.String(), "does not realize every gate") {
+			t.Errorf("this pin measured a parity refusal, not the skills one — the fixture's own PATH carried a gates dir (git resolved to %s)\nstderr %q", git, errb.String())
+		} else {
+			t.Errorf("the refusal must reach stderr, not stdout and not silence\nstdout %q\nstderr %q", out.String(), errb.String())
+		}
 	}
 	// ...and no session behind it: the failure this bead is about was one
 	// where the operator could not tell "refused" from "launched".
