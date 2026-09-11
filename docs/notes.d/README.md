@@ -10,6 +10,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-nhc23](ranger-base-nhc23.md) — The `-race` arm is a target now, not a recipe (ranger-base-nhc23) — 2026-09-10
 - [ranger-base-khhnd](ranger-base-khhnd.md) — The watch-loop backstop is the binary's own deadline, not 30s (ranger-base-khhnd) — 2026-09-10
 - [ranger-base-a8tqz](ranger-base-a8tqz.md) — `git status` writes the index, so the blocked tree never went quiet (ranger-base-a8tqz) — 2026-09-10
+- [ranger-base-0dt50](ranger-base-0dt50.md) — The gather was gathering: `-race` moved the fixture's unit, not the dispatcher (ranger-base-0dt50) — 2026-09-10
 - [ranger-base-vuosd](ranger-base-vuosd.md) — Outside-in review of posse — 2026-09-09 (grok) — 2026-09-09
 - [ranger-base-b0fsz](ranger-base-b0fsz.md) — Outside-in review of posse — 2026-09-09, Codex — 2026-09-09
 - [ranger-base-ff2va](ranger-base-ff2va.md) — The per-site census: zero of the 103 (now 116) sites are actually blind (ranger-base-ff2va) — 2026-09-07

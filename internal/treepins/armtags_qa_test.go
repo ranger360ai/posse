@@ -13,6 +13,14 @@ package treepins
 //	//go:build posse_arm3                   arm 3
 //	(no build line)                         shared — compiled into all three
 //
+// And one axis that is NOT the partition: a constraint naming no arm tag
+// splits the package by BUILD MODE — a flag on the command line, not a tag
+// — and a file behind one is in every arm, in the mode that builds it.
+// `race` is the whole of it today (armModeAxis). Reading such a file as an
+// unknown ARM would be two wrong answers at once: arm 1 would call it a
+// file nothing runs, and arm 6 would call the partition drifted, because
+// the toolchain does build it and this census would not put it anywhere.
+//
 // WHY IT NEEDS A PIN AT ALL, and why every arm here is about SILENCE. A
 // build tag removes a file from a build; there is no diagnostic for a test
 // that stopped being compiled. Four ways this rots, and none of them is
@@ -60,6 +68,16 @@ package treepins
 // Giving `test-arm1` a `-tags` of its own reds arm 3 AND arm 2 — arm 2
 // because the recipe then no longer matches `test`'s, which is a second true
 // thing about the same edit rather than a leak between the two.
+//
+// MUTATION-CHECKED for the mode axis too (ranger-base-0dt50): misspelling
+// internal/posse/fakecallcost_test.go's constraint as `!raced` reds arm 1
+// ("no arm `make test` runs builds this file") and all three of arm 6's
+// file-set halves ("built into arm N and this census does not put it
+// there") — the same pair of readings the unlisted spelling `!race`
+// produced before the axis was named, and worth having: `!raced` names a
+// tag nobody passes, so it is SATISFIED, the toolchain builds the file into
+// every arm, and only the census disagrees. Listing a mode is therefore not
+// a way to silence either arm; it is a way to answer them.
 
 import (
 	"os"
@@ -80,6 +98,42 @@ var armExpr = map[string]int{
 	"!posse_arm2 && !posse_arm3": 1,
 	"posse_arm2":                 2,
 	"posse_arm3":                 3,
+}
+
+// armModeAxis names the build constraints that split internal/posse by
+// BUILD MODE rather than by arm, mapped to whether the mode THIS census
+// runs in — the default one, no extra flags — compiles the file. A file
+// behind one of these is in every arm; what decides whether it is built is
+// a flag, so the arm partition has nothing to say about it.
+//
+// `race` is the whole axis: fakecallcost_test.go and its `_race_test.go`
+// sibling declare one constant at two values, because a fixture budget
+// bounding work done in forked fake-herdr calls is a different number of
+// calls under `-race` (ranger-base-0dt50). Both files are in all three
+// arms; exactly one is built in any given run.
+//
+// Nothing here weakens arm 1's refusal: an expression that is neither an
+// arm nor a listed mode is still a file nothing runs. Adding a mode means
+// adding BOTH of its spellings here, and the value is the answer for the
+// census's own build — so `race` is false, and a pin that lived behind it
+// would correctly read as one no untagged `go test` door can select.
+var armModeAxis = map[string]bool{
+	"!race": true,
+	"race":  false,
+}
+
+// armPlaces answers where a build line puts a file: whether it belongs to
+// arm a at all, and whether the build mode this census measures compiles it
+// there. The two are separate questions and only the mode axis answers them
+// differently — an arm's own files are built whenever their arm is.
+func armPlaces(build string, a int) (in, built bool) {
+	if build == "" {
+		return true, true
+	}
+	if b, ok := armModeAxis[build]; ok {
+		return true, b
+	}
+	return armExpr[build] == a, true
 }
 
 const armPkgDir = "internal/posse"
@@ -141,12 +195,32 @@ func armFiles(t *testing.T) []armFile {
 }
 
 // classify sorts the files and returns the per-arm test counts. Unknown
-// carries the files whose build line is neither empty nor one of the three.
+// carries the files whose build line is neither empty, nor one of the three
+// arms, nor one of the build modes that cut across them.
 func armClassify(files []armFile) (perArm map[int]int, shared int, unknown []armFile) {
 	perArm = map[int]int{1: 0, 2: 0, 3: 0}
 	for _, f := range files {
 		if len(f.tests) == 0 && f.build == "" {
 			continue // a helper-only file, which is the shape helpers should have
+		}
+		if built, ok := armModeAxis[f.build]; ok {
+			// Every arm, but only in one mode. The mode this census does
+			// not build is the mode `make test` does not run either, so a
+			// file behind it that CARRIES TESTS is rot class 1 wearing a
+			// legal tag — reported, not counted. Carrying no tests is the
+			// shape that mode belongs in (a constant, a helper), and is
+			// what fakecallcost_race_test.go is.
+			if !built {
+				if len(f.tests) > 0 {
+					unknown = append(unknown, f)
+				}
+				continue
+			}
+			shared += len(f.tests)
+			for a := range perArm {
+				perArm[a] += len(f.tests)
+			}
+			continue
 		}
 		if f.build == "" {
 			shared += len(f.tests)
@@ -172,7 +246,7 @@ func TestQAEveryPosseTestFileIsSharedOrInANamedArm(t *testing.T) {
 	files := armFiles(t)
 	perArm, shared, unknown := armClassify(files)
 	for _, f := range unknown {
-		t.Errorf("%s/%s: build tag %q is not one of the three arms — nothing runs this file",
+		t.Errorf("%s/%s: build tag %q — no arm `make test` runs builds this file, so nothing runs its tests",
 			armPkgDir, f.name, f.build)
 	}
 	for a := 1; a <= 3; a++ {
@@ -361,9 +435,12 @@ func TestQAEveryMakefileDoorPinIsReachableInTheDefaultArm(t *testing.T) {
 			continue // the pin lives in another package; not this arm's subject
 		}
 		seen++
-		if f.build != "" && armExpr[f.build] != 1 {
-			t.Errorf("door pin %s lives in %s (arm %d): the door runs `go test -run` with no tag, "+
-				"so it selects nothing and exits 0", n, f.name, armExpr[f.build])
+		// The door is a bare `go test -run`: no tag and no mode flag. A pin
+		// it names has to be in arm 1 AND built by the default mode, or the
+		// filter selects nothing.
+		if in, built := armPlaces(f.build, 1); !in || !built {
+			t.Errorf("door pin %s lives in %s (%q): the door runs `go test -run` with no tag and no mode flag, "+
+				"so it selects nothing and exits 0", n, f.name, f.build)
 		}
 	}
 	if seen < 15 {
@@ -387,6 +464,8 @@ func TestQAArmClassifierRefusesTheWrongShapes(t *testing.T) {
 		{"a tag below the package clause is a comment", "package posse\n\n//go:build posse_arm2\n", ""},
 		{"an unknown arm", "//go:build posse_arm4\n\npackage posse\n", "posse_arm4"},
 		{"an unsatisfiable pair", "//go:build posse_arm2 && posse_arm3\n\npackage posse\n", "posse_arm2 && posse_arm3"},
+		{"a build mode, not an arm", "//go:build !race\n\npackage posse\n", "!race"},
+		{"the other half of that mode", "//go:build race\n\npackage posse\n", "race"},
 	}
 	for _, c := range cases {
 		if got := armBuildLine(c.src); got != c.want {
@@ -403,6 +482,33 @@ func TestQAArmClassifierRefusesTheWrongShapes(t *testing.T) {
 	_, _, unknown := armClassify([]armFile{{name: "x_test.go", build: "posse_arm4", tests: []string{"TestX"}}})
 	if len(unknown) != 1 {
 		t.Errorf("a file tagged posse_arm4 was not reported as unknown: %v", unknown)
+	}
+
+	// THE MODE AXIS says no the same way. A listed mode is every arm — and
+	// only the half this census's own build compiles counts as running —
+	// while a near-miss spelling is still a file nothing runs.
+	for _, c := range []struct {
+		build                string
+		wantArm1, wantShared int
+		wantUnknown          int
+		wantIn, wantBuilt    bool
+		what                 string
+	}{
+		{"!race", 1, 1, 0, true, true, "the mode this census builds is in every arm and counted"},
+		{"race", 0, 0, 1, true, false, "a TEST behind the mode make test never builds is rot class 1 in a legal tag"},
+		{"!raced", 0, 0, 1, false, true, "a near-miss mode tag is a file nothing runs"},
+	} {
+		perArm, shared, unknown := armClassify([]armFile{{name: "x_test.go", build: c.build, tests: []string{"TestX"}}})
+		if perArm[1] != c.wantArm1 || shared != c.wantShared || len(unknown) != c.wantUnknown {
+			t.Errorf("%q: arm1=%d shared=%d unknown=%d, want %d/%d/%d — %s",
+				c.build, perArm[1], shared, len(unknown), c.wantArm1, c.wantShared, c.wantUnknown, c.what)
+		}
+		// and the placement the type-check arm reads off the same line —
+		// arm 2, so that "every arm" is asserted somewhere other than the
+		// default one.
+		if in, built := armPlaces(c.build, 2); in != c.wantIn || built != c.wantBuilt {
+			t.Errorf("armPlaces(%q, 2) = in=%v built=%v, want in=%v built=%v", c.build, in, built, c.wantIn, c.wantBuilt)
+		}
 	}
 }
 
@@ -539,7 +645,7 @@ func TestQAEverySuiteArmTypeChecks(t *testing.T) {
 			}
 			want := map[string]bool{}
 			for _, f := range files {
-				if f.build == "" || armExpr[f.build] == a {
+				if in, built := armPlaces(f.build, a); in && built {
 					want[f.name] = true
 				}
 			}
