@@ -162,6 +162,7 @@ package posse
 // where someone happens to look.
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -256,21 +257,31 @@ func (a *App) SessionTreePath(repo, session string) (string, error) {
 // carries git's stderr, which is the only part of a git failure worth
 // reading. A caller that parses a porcelain format wants gitRaw
 // (promote.go) instead — see dirtyPaths.
+//
+// BOUNDED, and sized by the call (githang.go): posse's other two children
+// have carried a deadline since ranger-base-wj7e9, and this one held the
+// launcher lock without one (ranger-base-zfza8). A blown deadline comes back
+// as a *GitHangError and NOT as a Die, unwrapped, for the same reason
+// capture's does in herdr.go: IsGitHang is how a caller tells "git said no"
+// from "git said nothing at all", and only the second leaves the repository
+// in a state nobody has read.
 func git(dir string, args ...string) (string, error) {
-	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
-	var out, errb strings.Builder
-	cmd.Stdout, cmd.Stderr = &out, &errb
-	if err := cmd.Run(); err != nil {
-		msg := strings.TrimSpace(errb.String())
+	out, errb, err := gitCapture(gitDeadline(args), dir, args)
+	trimmed := strings.TrimSpace(string(out))
+	if err != nil {
+		if IsGitHang(err) {
+			return trimmed, err
+		}
+		msg := errb
 		if msg == "" {
-			msg = strings.TrimSpace(out.String())
+			msg = trimmed
 		}
 		if msg == "" {
 			msg = err.Error()
 		}
-		return strings.TrimSpace(out.String()), Die("git %s: %s", strings.Join(args, " "), msg)
+		return trimmed, Die("git %s: %s", strings.Join(args, " "), msg)
 	}
-	return strings.TrimSpace(out.String()), nil
+	return trimmed, nil
 }
 
 // MainCheckout answers the MAIN working tree of the repo dir belongs to, and
@@ -1335,6 +1346,9 @@ func MergeSessionWork(t *SessionTree) (MergeOutcome, error) {
 	}
 	if _, err := git(t.Repo, "merge", "--ff-only", t.Branch); err == nil {
 		return landed(o, t), nil
+	} else if IsGitHang(err) {
+		o.Reason = mergeHangReason(t, err)
+		return o, nil
 	}
 	// Ahead by sha is not ahead by work. A commit cherry-picked onto the
 	// base keeps its own sha here, so `rev-list --count` still calls the
@@ -1407,6 +1421,25 @@ func MergeSessionWork(t *SessionTree) (MergeOutcome, error) {
 		// behaviour is the failure mode, so it owes nobody a sentence.
 		_ = recordProbedBase(t.Repo, t.Branch, wasAt)
 		if _, err := git(t.Path, "rebase", t.Base); err != nil {
+			// A REPLAY POSSE STOPPED HEARING FROM is not a conflicted one
+			// and must not be worded as one (ranger-base-zfza8): the child
+			// was signalled part-way through rewriting the session's only
+			// copy of its work, and git's exit status is then the signal
+			// rather than an answer about the branch. Asked FIRST, above
+			// rebaseStopped, because the sequencer directory a killed rebase
+			// leaves behind is exactly what rebaseStopped reads as "stopped
+			// on a conflict".
+			//
+			// The abort still runs: `rebase --abort` is git's own undo for
+			// precisely this state, it restores the pre-rebase HEAD, and it
+			// is a no-op error over a rebase that had in fact finished. What
+			// does NOT run is the loop — the tree is re-read afterwards and
+			// what it says is reported, never retried.
+			if IsGitHang(err) {
+				_, abortErr := git(t.Path, "rebase", "--abort")
+				o.Reason = rebaseHangReason(t, err, abortErr)
+				return o, nil
+			}
 			// EVERY non-zero exit used to print as a conflict, and the P1
 			// under it told a persona to "fix the conflicts" — over a
 			// rebase that never reached a merge at all (ranger-base-5hqa:
@@ -1444,6 +1477,19 @@ func MergeSessionWork(t *SessionTree) (MergeOutcome, error) {
 		_, err := git(t.Repo, "merge", "--ff-only", t.Branch)
 		if err == nil {
 			return landed(o, t), nil
+		}
+		// THE RETRY THIS LOOP MUST NOT MAKE (ranger-base-zfza8). The swap
+		// below reads the base's sha and replays again when it MOVED, and a
+		// fast-forward posse stopped hearing from is the one failure that
+		// moves it: git's ff had every chance to complete between the signal
+		// and the wait returning. So the measured move would be this call's
+		// OWN effect, read as somebody else's commit, and the answer would
+		// be to replay the branch onto a base that already holds it.
+		// At-least-once's standard trap, and the standard answer is the
+		// one below: stop, and make a human read git.
+		if IsGitHang(err) {
+			o.Reason = mergeHangReason(t, err)
+			return o, nil
 		}
 		nowAt := refSHA(t.Repo, t.Base)
 		if nowAt == wasAt || wasAt == "" || nowAt == "" {
@@ -1586,6 +1632,68 @@ func gitSaid(err error) string {
 		said = strings.TrimSpace(string(r[:most])) + "…"
 	}
 	return said
+}
+
+// ─── what a blown git deadline gets said about it (ranger-base-zfza8) ────────
+//
+// A landing mutation posse stopped hearing from is a THIRD outcome, and the
+// two this function already had could not carry it: "merged" claims an
+// effect nobody read, and the ordinary refusal wording ("the rebase was
+// aborted, so this attempt changed nothing") is a promise about a tree whose
+// state is exactly what is unknown. So both sentences below re-read git —
+// which is the cheap half, and the half the review asked for by name — and
+// then say what they found WITHOUT deciding for the reader.
+//
+// They are Reason strings and not errors, deliberately: MergeOutcome.Blocked
+// is "the merge was attempted, answered, and the answer was no", and a
+// signalled child is an answer of that class. Returning an error instead
+// would print one line on the pass and file nothing, and this is the outcome
+// that most needs a human to go and look.
+
+// baseHoldsBranch is the re-read: does the repo's base now contain every
+// commit on the session branch? Tri-state, because the third answer is the
+// point — "could not ask" is not "no", and a sentence that flattened the two
+// would be guessing on behalf of the person it is written for.
+//
+// Counted rather than asked with `merge-base --is-ancestor`, whose answer is
+// an EXIT STATUS: git() renders every non-zero exit as the same Die, so
+// "not an ancestor" (1) and "no such rev" (128) would arrive here
+// indistinguishable, and only the first is an answer.
+func baseHoldsBranch(t *SessionTree) (held, known bool) {
+	n, err := git(t.Repo, "rev-list", "--count", t.Base+".."+t.Branch)
+	if err != nil {
+		return false, false
+	}
+	c, err := strconv.Atoi(n)
+	if err != nil {
+		return false, false
+	}
+	return c == 0, true
+}
+
+// mergeHangReason words a fast-forward that was signalled with no answer.
+func mergeHangReason(t *SessionTree, hang error) string {
+	found := fmt.Sprintf("git would not say afterwards whether %s holds it", t.Base)
+	if held, known := baseHoldsBranch(t); known && held {
+		found = fmt.Sprintf("%s DOES now hold every commit on %s, so the fast-forward took effect — but the checkout may still be part-way through updating its index and working tree", t.Base, t.Branch)
+	} else if known {
+		found = fmt.Sprintf("%s does not hold %s, so the fast-forward did not take effect", t.Base, t.Branch)
+	}
+	return fmt.Sprintf("the fast-forward of %s onto %s in %s was signalled with no answer (%s); re-read afterwards, %s — nothing was retried, because retrying a merge that may already have moved the base is how one landing becomes two",
+		t.Branch, t.Base, AbbrevHome(t.Repo), gitSaid(hang), found)
+}
+
+// rebaseHangReason words a replay that was signalled with no answer, and the
+// abort that was attempted over it.
+func rebaseHangReason(t *SessionTree, hang, abortErr error) string {
+	found := fmt.Sprintf("%s is back off the rebase and holds the work", AbbrevHome(t.Path))
+	if rebaseStopped(t.Path) {
+		found = fmt.Sprintf("%s is STILL part-way through a rebase and needs `git rebase --abort` by hand before anything else touches it", AbbrevHome(t.Path))
+	} else if abortErr != nil && IsGitHang(abortErr) {
+		found = fmt.Sprintf("the abort was signalled too, so the state of %s is unread", AbbrevHome(t.Path))
+	}
+	return fmt.Sprintf("replaying %s onto %s was signalled with no answer (%s) — this is not a conflict, and git's status over a killed replay is the signal rather than an answer about the branch; `rebase --abort` was attempted and %s. Nothing was retried",
+		t.Branch, t.Base, gitSaid(hang), found)
 }
 
 // mergeRebaseAttempts bounds the replay loop in MergeSessionWork. It is a
@@ -2333,7 +2441,30 @@ func verbatimUnpaired(repo, base, tip string) (string, error) {
 //
 // A commit the stream carries no patch for gets no entry at all, and that
 // absence is the caller's fail-closed case, not a lookup miss to shrug at.
+//
+// BOTH children are on ONE deadline (githang.go), and it is the pipe pair
+// that made this worth naming separately from git(): the two processes wait
+// on EACH OTHER, so either one wedging holds the other and the caller, and
+// this call sits under the launcher lock via MergeSessionWork →
+// equivalentOnBase (ranger-base-zfza8). One context cancels both, and the
+// range walk is an ordinary read — MEASURED 2.8s over 900 commits and 5.5s
+// over 987 (baseHoldsBytes' cost note), against GitTimeout's two minutes.
 func patchIDsVerbatim(repo, rng string) (map[string]string, error) {
+	return patchIDsVerbatimWithin(GitTimeout, repo, rng)
+}
+
+// patchIDsVerbatimWithin is the whole of it, with the deadline passed in.
+// Split for one reason and it is the suite's: GitTimeout is two minutes, and
+// a test that waited one out would BE the hang it is pinning. The two other
+// children solved that with a struct field (Herdr.ControlTimeout,
+// Bd.Timeout); this one is a free function, so the seam is a parameter —
+// which beats a package var, because a var shrunk by one test is shrunk for
+// every other test running beside it.
+func patchIDsVerbatimWithin(limit time.Duration, repo, rng string) (map[string]string, error) {
+	args := []string{"log", "-p", "--no-ext-diff", "--no-renames", rng}
+	ctx, cancel := context.WithTimeout(context.Background(), limit)
+	defer cancel()
+
 	pr, pw, err := os.Pipe()
 	if err != nil {
 		return nil, Die("git patch-id --verbatim: %v", err)
@@ -2341,12 +2472,15 @@ func patchIDsVerbatim(repo, rng string) (map[string]string, error) {
 	defer pr.Close()
 	defer pw.Close()
 
-	logCmd := exec.Command("git", "-C", repo, "log", "-p", "--no-ext-diff", "--no-renames", rng)
-	idCmd := exec.Command("git", "-C", repo, "patch-id", "--verbatim")
+	logCmd := exec.CommandContext(ctx, "git", append([]string{"-C", repo}, args...)...)
+	idCmd := exec.CommandContext(ctx, "git", "-C", repo, "patch-id", "--verbatim")
+	bindGitDeadline(ctx, logCmd)
+	bindGitDeadline(ctx, idCmd)
 	var logErr, idErr, out strings.Builder
 	logCmd.Stdout, logCmd.Stderr = pw, &logErr
 	idCmd.Stdin, idCmd.Stdout, idCmd.Stderr = pr, &out, &idErr
 
+	started := time.Now()
 	if err := idCmd.Start(); err != nil {
 		return nil, Die("git patch-id --verbatim: %v", err)
 	}
@@ -2360,6 +2494,12 @@ func patchIDsVerbatim(repo, rng string) (map[string]string, error) {
 	pw.Close()
 	logWait := logCmd.Wait()
 	idWait := idCmd.Wait()
+	// Asked before either exit status, because a signalled child's status is
+	// the signal and reporting that as git's answer is how a hang gets filed
+	// as a defect in the range.
+	if ctx.Err() != nil {
+		return nil, gitHang(repo, args, limit, time.Since(started))
+	}
 	if idWait != nil {
 		return nil, Die("git patch-id --verbatim: %s", gitErrText(idErr.String(), idWait))
 	}

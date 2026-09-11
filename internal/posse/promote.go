@@ -1032,13 +1032,19 @@ func gitCatBlobs(repo string, oids []string) (map[string][]byte, error) {
 
 // gitRaw is `git` without the trimming — ls-tree's -z records end in NUL and
 // a promoted path is allowed to be spelled with whitespace.
+//
+// Bounded through the same runner as git() (githang.go), and it has to be:
+// dirtyPaths is a gitRaw caller and dirtyPaths is on MergeSessionWork's
+// path, which runs under the launcher lock. A second git runner with no
+// clock would have left that lock exactly as unbounded as the first one did
+// (ranger-base-zfza8).
 func gitRaw(dir string, args ...string) ([]byte, error) {
-	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
-	var errb strings.Builder
-	cmd.Stderr = &errb
-	out, err := cmd.Output()
+	out, errb, err := gitCapture(gitDeadline(args), dir, args)
 	if err != nil {
-		msg := strings.TrimSpace(errb.String())
+		if IsGitHang(err) {
+			return nil, err
+		}
+		msg := errb
 		if msg == "" {
 			msg = err.Error()
 		}
