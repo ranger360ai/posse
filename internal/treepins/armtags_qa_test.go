@@ -584,6 +584,19 @@ func TestQAArmClassifierRefusesTheWrongShapes(t *testing.T) {
 // the "built but not in the census" direction for arms 1 and 2 (armClassify
 // puts an unrecognized expression in `unknown`, not in any arm's set).
 
+// armListTestFiles is the `go list -f` template the file-set half reads the
+// `built` set with. It names BOTH of Go's test-file kinds, because armFiles
+// censuses both: Go splits a directory's `_test.go` files into the in-package
+// ones (.TestGoFiles) and an external `package posse_test` in the same
+// directory (.XTestGoFiles), while armFiles reads the DIRECTORY and never the
+// package clause. Reading only .TestGoFiles made every legal external test
+// file a false `missing` in all three arms — this half reporting that the
+// toolchain does not build a file it builds and runs, which is the opposite
+// of the truth about legal Go (ranger-base-772ti, escaped from
+// ranger-base-6m7rd). TestQAArmListTemplateNamesBothTestFileKinds pins it
+// against a real toolchain rather than against this comment.
+const armListTestFiles = "{{range .TestGoFiles}}{{.}}\n{{end}}{{range .XTestGoFiles}}{{.}}\n{{end}}"
+
 // armGoTool is the `go` this arm shells out to: the one on PATH, else the one
 // beside the GOROOT the running binary was built against. A pin that skipped
 // when it could not find one would be a pin that reports nothing on the box
@@ -629,7 +642,9 @@ func TestQAEverySuiteArmTypeChecks(t *testing.T) {
 			// which files the toolchain actually built for this arm — see
 			// "THE FILE-SET HALF" above for why the vet call below cannot
 			// stand on its own.
-			out, argv, err := run("list", "-f", "{{range .TestGoFiles}}{{.}}\n{{end}}")
+			//
+			// BOTH test-file kinds — see armListTestFiles.
+			out, argv, err := run("list", "-f", armListTestFiles)
 			if err != nil {
 				t.Fatalf("`go %s` failed: %v\n%s", strings.Join(argv, " "), err, out)
 			}
@@ -680,6 +695,48 @@ func TestQAEverySuiteArmTypeChecks(t *testing.T) {
 					a, strings.Join(argv, " "), err, out)
 			}
 		})
+	}
+}
+
+// TestQAArmListTemplateNamesBothTestFileKinds pins armListTestFiles against a
+// real toolchain, over a throwaway module holding one of each test-file kind.
+//
+// The arm above can only catch this over the subject package, and only while
+// some file there happens to be an external test package — internal/posse has
+// none today, so the defect this pins was latent and the arm was green over
+// the very template that was wrong. Here both kinds always exist, so a
+// template that names one of them fails whatever the subject package holds.
+func TestQAArmListTemplateNamesBothTestFileKinds(t *testing.T) {
+	t.Parallel()
+	goBin := armGoTool(t)
+	dir := t.TempDir()
+	for name, src := range map[string]string{
+		"go.mod":           "module armlistprobe\n\ngo 1.21\n",
+		"p.go":             "package p\n",
+		"inpkg_test.go":    "package p\n",
+		"xtestpkg_test.go": "package p_test\n",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(src), 0o644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+	cmd := exec.Command(goBin, "list", "-f", armListTestFiles, ".")
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("`go list` in the probe module failed: %v\n%s", err, out)
+	}
+	got := map[string]bool{}
+	for _, line := range strings.Split(string(out), "\n") {
+		if n := strings.TrimSpace(line); n != "" {
+			got[n] = true
+		}
+	}
+	for _, want := range []string{"inpkg_test.go", "xtestpkg_test.go"} {
+		if !got[want] {
+			t.Errorf("armListTestFiles does not name %s: %v — armFiles censuses every `_test.go` file in the "+
+				"directory, so a kind this template omits becomes a false `missing` in every arm", want, got)
+		}
 	}
 }
 
