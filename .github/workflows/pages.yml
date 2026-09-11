@@ -35,21 +35,23 @@ jobs:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
-      # v5 for the node24 runtime (ranger-base-wjlkt). The three pages
-      # actions below are STILL node20 as pinned — configure-pages v5 and
-      # deploy-pages v4 directly, upload-pages-artifact v3 through the
-      # upload-artifact@v4 it shells to (measured 2026-09-11 from each
-      # action.yml). Moving them deploys the live site to find out, so they
-      # are their own gated bead: ranger-base-9cat6.
+      # Every action in this job is node24 as pinned, measured 2026-09-11
+      # from each action.yml's `using:`. checkout v5 came from
+      # ranger-base-wjlkt; the three below from ranger-base-9cat6, which had
+      # to be its own operator-gated bead because the commit that bumps them
+      # is itself the deploy. upload-pages-artifact is a composite and
+      # carries its runtime transitively: v5 shells to upload-artifact
+      # v7.0.0 (node24), where v3 shelled to v4 (node20). Check the
+      # composite, not just the tag, before calling this file node24 again.
       - uses: actions/checkout@v5
 
       # www/CNAME carries the custom domain into the artifact so the apex
       # survives a redeploy instead of depending on repo settings alone.
-      - uses: actions/configure-pages@v5
+      - uses: actions/configure-pages@v6
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: www
 
       - id: deploy
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
