@@ -25,11 +25,20 @@ package posse
 // the cage. It reads no repo root, so it is not a tree-wide pin and owes the
 // Makefile no door (AGENTS.md, "A -run filter cannot reach a tree-wide pin").
 //
-// MUTATION-CHECKED (2026-09-11): dropping AUTO_MERGE from sequencerLeftovers
-// reds the recipe arm alone; adding it to sequencerBlockers reds the
-// AUTO_MERGE arm alone; adding `merge` to sequencerVerbs reds the
-// not-audited arm alone; changing `[ $posse_src -eq 0 ]` to `-ne` reds the
-// pass-the-failure arm; dropping the global-option scan reds the `-C` arm.
+// MUTATION-CHECKED (2026-09-11), each mutation applied to gates.go alone and
+// the five arms below run against it:
+//
+//	drop AUTO_MERGE from sequencerLeftovers   reds the recipe arm alone
+//	add AUTO_MERGE to sequencerBlockers       reds the AUTO_MERGE arm alone
+//	add `merge` to sequencerVerbs             reds the leaves-alone arm alone
+//	drop the globalValueOpts scan             reds the `-C` arm alone
+//	`[ $posse_src -eq 0 ]` -> `-ne 0`         reds FOUR arms
+//
+// The last one reds four and that is the honest reading, not a leak: inverted,
+// the audit fires on every failing run and on no succeeding one, so the three
+// arms that expect an alarm go quiet and the one that expects quiet alarms.
+// A mutation that breaks the invariant itself is supposed to be visible
+// everywhere the invariant is asserted.
 
 import (
 	"os"
@@ -173,6 +182,13 @@ func TestQASequencerVerbExitingZeroWithoutEndingIsRefused(t *testing.T) {
 // The recipe removes the STALE state as well as the blocker, so one line ends
 // the operation instead of leaving the seat to find AUTO_MERGE and the
 // sequencer dir on its next commit.
+//
+// The wanted set is written out LITERALLY rather than read off
+// sequencerLeftovers. Ranging over the variable under test made this pin
+// agree with every edit to it — dropping AUTO_MERGE from the list dropped it
+// from the assertion too, and the arm stayed green over a recipe that no
+// longer ends the operation (caught in this bead's own mutation check, which
+// is the only reason it is not still written that way).
 func TestQASequencerRecipeNamesEveryLeftoverNotJustTheBlocker(t *testing.T) {
 	shim, _, gitDir := sequencerShim(t)
 	_, errs, code := runSequencerShim(t, shim, gitDir,
@@ -180,16 +196,16 @@ func TestQASequencerRecipeNamesEveryLeftoverNotJustTheBlocker(t *testing.T) {
 	if code != 1 {
 		t.Fatalf("code=%d err=%q", code, errs)
 	}
-	for _, m := range sequencerLeftovers {
-		p := filepath.Join(gitDir, m)
-		if m == "REVERT_HEAD" || m == "MERGE_HEAD" {
-			if strings.Contains(errs, p) {
-				t.Errorf("recipe must name only what is THERE, not %s: %q", m, errs)
-			}
-			continue
-		}
-		if !strings.Contains(errs, "'"+p+"'") {
+	for _, m := range []string{"CHERRY_PICK_HEAD", "AUTO_MERGE", "MERGE_MSG", "sequencer"} {
+		if p := filepath.Join(gitDir, m); !strings.Contains(errs, "'"+p+"'") {
 			t.Errorf("recipe must name %s, quoted: %q", p, errs)
+		}
+	}
+	// And only what is actually there: a path the operation did not leave
+	// behind has no business in an `rm -rf` a seat is told to paste.
+	for _, m := range []string{"REVERT_HEAD", "MERGE_HEAD"} {
+		if p := filepath.Join(gitDir, m); strings.Contains(errs, p) {
+			t.Errorf("recipe must not name the absent %s: %q", m, errs)
 		}
 	}
 }
