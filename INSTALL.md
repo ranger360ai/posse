@@ -2190,6 +2190,16 @@ directory holds uncommitted work, and names both halves (ADR 0013 §4).
 Look before you reap — `posse attach <session>` — then let it commit and
 close, or `posse kill <session> --force` once you have read the refusal.
 
+Committing is not the same as finishing, so a kill that *does* go ahead
+still will not **land** an unfinished session's branch on your branch: the
+merge happens only once the bead reads closed, and otherwise the worktree
+and the branch are kept and the line says which bead is holding them, and
+which unanswered question is holding that bead. `--force` does not change
+it — it says you have looked at the session's unfinished work, and where
+its commits go is a decision about your branch, not about the session.
+Nothing is stranded either way: close the bead and the next pass lands it,
+or land it yourself with `posse worktrees --land`.
+
 Useful while you watch: `posse peek <session>`, `posse cockpit` (or `ctrl+b g`),
 `posse scorecard`, `posse cost`.
 

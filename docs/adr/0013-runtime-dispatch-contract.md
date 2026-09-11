@@ -34,7 +34,9 @@ ranger-base-kl58b, landed ranger-base-60p4b) · amended 2026-09-06
 (ranger-base-mqoid): §1's settle row cites the turn-outcome refusal
 probe it was written from; §4's reap guard said `not killed` flat and
 `--force` takes it (`ForceKillSessionAndLand`,
-`reapguard_qa_test.go`)*
+`reapguard_qa_test.go`) · amended 2026-09-11 (ranger-base-pqque): §4's
+reap guard gains its landing half — a kill merges a session's branch onto
+the repo's branch only over a CLOSED bead, and keeps the tree otherwise*
 
 > ADR 0002 answered "can a persona *launch* safely on any runtime." ADR
 > 0012 D4 answered "can a third engine be *added* without patching the
@@ -459,6 +461,29 @@ near-miss is a shared checkout plus a reap, not a missing `Done:` line.
 L3's pathspec rule already stops an unqualified commit; it does not
 stop `posse kill`.
 
+**Landing (added 2026-09-11, ranger-base-pqque).** The same reading, one
+step later and about a different loss. The reap guard is about what a
+kill DESTROYS; this is about what a kill PUBLISHES. A session's branch is
+merged onto the repo's branch only when the bead is **closed** — a commit
+is not the record releasing the work, the close is — and otherwise the
+worktree and the branch are kept, with the bead, its status and any
+unanswered question blocking it named in the line (`landgate.go`,
+`landgate_qa_test.go`). MEASURED: a seat holding an `in_progress` bead
+stopped ON PURPOSE because landing its one committed change deploys a
+live site, filed a question bead and blocked its own bead on it — and the
+kill that freed the seat performed exactly the landing the seat had
+refused, onto the repo's branch, in one line of output.
+
+Three clauses keep it from becoming a different bug. A tree with nothing
+ahead of its base is not a landing, so the gate does not reach it and the
+reaper's empty-tree arms still retire what they always did. It fails
+CLOSED on a store that cannot answer, for the asymmetry the reap guard
+already names. And `--force` does not take it: the flag says the operator
+has looked at that session's unfinished work, and where the branch goes
+is a decision about the repo. Nothing is stranded by a keep — the branch
+carries its own `bead:` stamp, which outlives the session meta the kill
+removes, so closing the bead lands it on the next pass.
+
 **Native rulebooks.** A runtime declares `native_rules: [AGENTS.md, …]`
 (grok's list is longer — `Agents.md`, `CLAUDE.md`, …). Posse does not
 rewrite the operator's `AGENTS.md` (shared checkout, operator's file).
@@ -854,7 +879,9 @@ rule-to-flag compilers, and an inference client inside dispatch.
 - `dispatch.go`: claim-then-argv path; busy-key split; plan-guard skip
   is per-bead including blind; gather never ✓ on untrusted
   settle-without-close.
-- `posse kill` / refresh land: dirty+open-bead reap refuse.
+- `posse kill` / refresh land: dirty+open-bead reap refuse; and the
+  landing itself gated on a CLOSED bead (2026-09-11, ranger-base-pqque —
+  the kill was the one path to the repo's branch that asked nothing).
 - `posse runtime check <name>`: the grid, one screen.
 - Config: `uncounted_cap_<runtime>:`. NOTES/INSTALL: instance
   interstitial keys (document, don't write).
