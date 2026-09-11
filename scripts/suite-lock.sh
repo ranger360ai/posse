@@ -563,10 +563,32 @@ _suite_lock_selftest() {
 	tmp=$(mktemp -d "${TMPDIR:-/tmp}/posse-suite-lock.XXXXXX") || return 1
 	trap 'rm -rf "${tmp:?}"' EXIT
 
+	# The rig decides its OWN environment for every POSSE_* name the library
+	# reads, because each holder below is a fresh process that inherits this
+	# one's. Three are set to the values the arms assert against; the other
+	# two are unset, and for the same reason — an ambient value does not make
+	# an arm fail loudly, it makes the arm measure nothing and then report
+	# that reading as a verdict.
+	#
+	#   POSSE_SUITE_LOCK_HELD  inherited whenever the self-test itself runs
+	#                          inside a queued suite (`make test` gates on
+	#                          verify-suite-lock). Every holder would decline
+	#                          to take a second slot.
+	#   POSSE_SUITE_LOCK       the header's documented opt-out, which a seat
+	#                          may export for a session, from a wrapper or
+	#                          from a shell profile. Every acquire then
+	#                          returns at once and unserialized, so the arms
+	#                          read no lock where they hold one. MEASURED
+	#                          2026-09-11, darwin/arm64: `POSSE_SUITE_LOCK=0
+	#                          bash scripts/suite-lock.sh --self-test` printed
+	#                          10 FAIL lines and FAILED, which reds all of
+	#                          `make test` before a package builds
+	#                          (ranger-base-ebrwn). Arm 9 sets it per-command,
+	#                          which is where opting out is the subject.
 	export POSSE_SUITE_LOCK_DIR="$tmp/locks"
 	export POSSE_SUITE_LOCK_POLL=0.2
 	export POSSE_SUITE_SLOTS=2
-	unset POSSE_SUITE_LOCK_HELD
+	unset POSSE_SUITE_LOCK_HELD POSSE_SUITE_LOCK
 
 	# A holder is a whole separate process, which is the only kind of
 	# witness an flock has. It acquires, records the slot it got, and then
