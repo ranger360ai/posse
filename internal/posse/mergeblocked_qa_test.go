@@ -256,7 +256,51 @@ func TestWorkThatReachedTheBaseUnderAnotherShaEndsTheStrand(t *testing.T) {
 	}
 	head := mustGit(t, tr.Path, "rev-parse", "HEAD")
 	mustGit(t, repo, "reset", "--hard", "HEAD~1")
-	mustGit(t, repo, "cherry-pick", head)
+	// ANOTHER SHA IS THE PREMISE, SO THE FIXTURE HAS TO GUARANTEE ONE RATHER
+	// THAN HOPE FOR IT (ranger-base-f5l0d). This line was `cherry-pick head`,
+	// and a cherry-pick back onto the commit's own parent reproduces every
+	// field of that commit — tree, parent, author, author date, message —
+	// leaving the COMMITTER date as the only difference, and git records that
+	// to the second. MEASURED 2026-09-10 (macOS 26.4.1/APFS, git 2.50.1):
+	// replayed inside the second the original was committed in, the replay IS
+	// the original, byte for byte and sha for sha. Then `main..<branch>` is 0,
+	// nothingToLand is true, and the sweep says nothing about this tree at
+	// all — so the pass under test never ran, both assertions below read a
+	// bare "no ready work", and neither arm of this file's subject was
+	// involved in the answer.
+	//
+	// That is the whole of ci.yml's red on main from 26090db3 to 1e1d08d0,
+	// seven runs: green wherever a pass took over a second (a loaded mac, 2.0s
+	// local), red on a runner fast enough to fit the fixture inside one
+	// (0.26-1.07s, ubuntu and macos alike), in and out of the suite by nothing
+	// but where the second boundary fell. Reproduced on demand by pinning the
+	// clock the fixture was resting on: `GIT_COMMITTER_DATE=<fixed> go test`
+	// reds this test here, with the same message CI printed.
+	//
+	// NOT A NEW HAZARD, WHICH IS THE OTHER HALF OF WHY THIS ONE IS WORTH
+	// WRITING DOWN: every other fixture that lands a branch's patch on the
+	// base already defends against it, in as many words. mergebackequivnote_
+	// test.go moves the base first, "or the pick rebuilds the identical commit
+	// object and the base reaches it by sha with nothing measured"; worktree_
+	// test.go's four arms do the same and then assert `rev-list --count
+	// main..<branch>` is 1, "without this the retiring arms could be passing
+	// because the guard was never reached" (both ranger-base-g2xf). This test
+	// arrived later (ranger-base-ejju3) and carried neither.
+	//
+	// A hand-landing of the same patch under its own subject is the same ≡ arm
+	// and cannot collide with anything: `git cherry` measures patch-ids, a
+	// message is not in a patch-id, and a differing message is a differing
+	// sha whatever the clock says. It stays off `cherry-pick -x` deliberately —
+	// the trailer is equivalentOnBase's SECOND arm and is pinned elsewhere
+	// (worktree_test.go), and the arm this test is about is the first.
+	commitIn(t, repo, "fix.txt", "the persona's work\n", "main: the same fix, landed by hand")
+	// And the assertion those two fixtures pair with the base move, which is
+	// what turns the degeneracy above from seven silent runs into one loud
+	// one: a pin on the ≡ arm is worth nothing if the base and the branch are
+	// the same commit.
+	if tip := mustGit(t, repo, "rev-parse", "HEAD"); tip == head {
+		t.Fatalf("fixture: %s is the branch's own tip, so no work reached the base under ANOTHER sha and nothing here measures the ≡ arm", abbrevSHA(tip))
+	}
 
 	d2 := newTestDispatcher(t, d.HB)
 	dispatcherErr(t, d2)
