@@ -159,6 +159,12 @@ func (a *App) RuntimeCheck(rt *Runtime, h Herdr, w io.Writer) bool {
 	fmt.Fprintln(w)
 	wrapGrid(w, "tier", a.tierLine(rt))
 	wrapGrid(w, "", "by "+rt.tierBy())
+	// Read in the same breath as the tier for the same reason: both are
+	// about which model actually answers. `tier:` is the map posse reads;
+	// this is what the CLI does when it is handed an id that is in no map
+	// at all, which is every ADR 0053 canary.
+	wrapGrid(w, "unknown_id", rt.unknownModelLine())
+	wrapGrid(w, "", "by "+rt.unknownModelBy())
 	if len(rt.NativeRules) > 0 {
 		wrapGrid(w, "rulebooks", strings.Join(rt.NativeRules, ", "))
 		wrapGrid(w, "", "posse loads none of these and rewrites none of them — they are the operator's files in a shared checkout.")
@@ -215,7 +221,7 @@ func (a *App) RuntimeCheck(rt *Runtime, h Herdr, w io.Writer) bool {
 		fmt.Fprintf(w, "\n  onboarding a runtime is filling this grid: runtimes/%s.yaml takes command:, prompt:,\n", rt.Name)
 	}
 	fmt.Fprintln(w, "  startup_wait:, record: (+ record_why:), turn_outcome:, native_rules:,")
-	fmt.Fprintln(w, "  rules_precedence: (+ rules_precedence_why:),")
+	fmt.Fprintln(w, "  rules_precedence: (+ rules_precedence_why:), unknown_model: (+ unknown_model_why:),")
 	fmt.Fprintln(w, "  model_flag:/model_<tier>:, skills_flag: OR skills_cwd:, self_sandbox:, unattended:,")
 	fmt.Fprintln(w, "  project_config: (+ project_config_keys:), egress:, cage_cred:, gate_shell:,")
 	fmt.Fprintln(w, "  state_dir:, env_required:, interstitial_<name>:. Undeclared is loud, never")
@@ -518,6 +524,61 @@ func (a *App) tierLine(rt *Runtime) string {
 // alike — only command:/skills_flag: still refuse there (Decision 2).
 func (rt *Runtime) tierFix() string {
 	return "Declare model_<tier>: (and model_flag:) in runtimes/" + rt.Name + ".yaml to change that"
+}
+
+// unknownModelLine is the ADR 0053 D3 row: what this CLI does with a model
+// id it does not know. It sits under the tier row because the two answer
+// the same question from opposite ends — the tier names an id posse's own
+// map holds, and an exact model (`posse new --model <id>`) deliberately
+// names one it does not.
+//
+// The label is the row's, not the key's — `project_cfg` for
+// `project_config:` set that precedent — because the stage column is eleven
+// wide and every line of the row body names `unknown_model:` outright.
+//
+// The loud default is the whole point of having the row. ADR 0053's canary
+// reads a launch that comes up as the provider accepting the id; on a CLI
+// measured to run its own default instead, that reading is false and posse
+// used to print it anyway (ranger-base-jzm04). An UNDECLARED here is posse
+// saying it does not know which of the two this CLI does — never that the
+// canary is sound.
+func (rt *Runtime) unknownModelLine() string {
+	switch rt.UnknownModel {
+	case UnknownModelCarry:
+		return "CARRIED to the provider — an exact model this account cannot serve comes back as the provider's own refusal, which is what ADR 0053's canary reads as its answer." + whyClause(rt.UnknownModelWhy)
+	case UnknownModelSwap:
+		return "SWAPPED for this CLI's own default, silently — a DECLARED DIFFERENCE (ADR 0017 §2). An exact-model canary proves NOTHING here: the session comes up, nothing refuses, and the model answering is the CLI's default rather than the id that was typed. `posse list` marks such a row " +
+			ModelUncheckedMark + " for that reason, and the launch line says it at the time." + whyClause(rt.UnknownModelWhy)
+	}
+	return "UNDECLARED — nobody has measured what this CLI does with an id it does not know, so a clean exact-model launch here is not evidence the provider took the id (ADR 0053 D3). Measure it with one canary launch and declare unknown_model: " +
+		UnknownModelCarry + " | " + UnknownModelSwap + " (with unknown_model_why:) in runtimes/" + rt.Name + ".yaml"
+}
+
+// unknownModelBy is the row's provenance, and it does not reach for
+// declaredBy when the value is unset. declaredBy answers "built-in default"
+// for any key a built-in did not set, which is the right reading for a key
+// whose built-in HAS a value — and a lie for this one: claude's built-in
+// declares nothing here, so "by built-in default" would credit a
+// measurement nobody took under a row that just said UNDECLARED. An unset
+// value is attributed to the file an onboarder would write it in.
+func (rt *Runtime) unknownModelBy() string {
+	if ValidUnknownModel(rt.UnknownModel) {
+		return rt.declaredBy("unknown_model")
+	}
+	if rt.Path == "" {
+		return "nothing — the built-in declares no unknown_model:, and there is no runtimes/" + rt.Name + ".yaml on this box to declare one in, so this is the loud default"
+	}
+	return "nothing — unknown_model: unset in runtimes/" + rt.Name + ".yaml, so this is the loud default"
+}
+
+// whyClause appends a measurement to a row, or nothing when there is none.
+// A declared value with no why is legal and says less; it must not render
+// as a dangling dash.
+func whyClause(why string) string {
+	if strings.TrimSpace(why) == "" {
+		return ""
+	}
+	return " " + why
 }
 
 // tierBy is the tier row's declared-by line, one attribution per MAPPED

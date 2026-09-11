@@ -88,15 +88,71 @@ func ModelTag(model string) string {
 	return "=" + model
 }
 
+// ModelUncheckedMark is what the listing adds to a recorded exact model on a
+// runtime MEASURED to run its own default for an id it does not know
+// (Runtime.UnknownModel == UnknownModelSwap).
+//
+// ADR 0053 D4 makes `model:` the store of record for the override and the
+// listing a rendering of it, and that is still what this is: the mark adds
+// no second store and reads nothing about the session. What it fixes is a
+// claim the rendering was making on its own. `@grok/strong=grok-4.7` reads
+// as the model this session is running, and on grok it is the model posse
+// was ASKED to run: an id that does not exist launched clean and the row
+// said grok-4.7 while Grok 4.6 answered (ranger-base-jzm04). The mark is
+// the difference between the two sentences, said in one token, and the
+// `unknown model` row of `posse runtime check <runtime>` is the long form.
+//
+// It is keyed on the MEASURED swap and not on the absence of a measurement:
+// an unmeasured runtime is already loud in `runtime check`, and a mark that
+// also meant "nobody has measured this CLI" would stop meaning "this row
+// may be naming a model that is not running", which is the one thing an
+// operator reading a canary row needs it to mean.
+const ModelUncheckedMark = "?unchecked"
+
 // ExactModelLine is what a canary launch says on stderr. It is printed
 // instead of the availability preflight's line (ADR 0053 D3): the preflight
 // reads the CATALOG for the TIER's model, and this launch is not running the
 // tier's model — a verdict about a model nobody launched would describe a
-// launch nobody made. The canary asks the provider instead, and the
-// provider's answer is the whole result.
-func ExactModelLine(name, runtime, tier, model string) string {
+// launch nobody made. The canary asks the provider instead.
+//
+// The last clause is the runtime's own DECLARATION (Runtime.UnknownModel),
+// not prose, and that is the fix ranger-base-jzm04 was filed for. This line
+// used to end "the provider is asked, not the catalog, and its refusal is
+// the canary's answer" for every runtime. On grok 1.0.5, measured, nothing
+// refuses: an unknown -m runs Grok's own default and says nothing, so posse
+// was promising the operator a refusal that cannot arrive and reporting an
+// id nobody served. A launch may only promise what the runtime declares —
+// and where nothing is declared it says that, which is the third clause.
+//
+// It consumes the declaration rather than the runtime's NAME (ADR 0013 §7,
+// ADR 0017 §3): what a CLI does with an unknown id is a dimension, so it is
+// a field on Runtime, measured per runtime and overlayable per box.
+func ExactModelLine(name, runtime, tier, model string, rt *Runtime) string {
 	return strings.Join([]string{
 		name + " launches on " + runtime + " @ " + tier + " with the EXACT model " + model,
-		"the tier availability verdict is skipped (ADR 0053 D3) — the provider is asked, not the catalog, and its refusal is the canary's answer",
+		"the tier availability verdict is skipped (ADR 0053 D3) — a verdict about the tier's own model would describe a launch nobody made",
+		exactModelAnswerClause(runtime, model, rt),
 	}, " — ")
+}
+
+// exactModelAnswerClause says what an answer from this runtime is worth.
+// Three clauses because the dimension is three-valued, and the UNDECLARED
+// one is not the swap clause softened: "nobody measured this" and "this CLI
+// was measured to run something else" are different facts to an operator
+// deciding whether the session in front of them is the canary they asked
+// for.
+func exactModelAnswerClause(runtime, model string, rt *Runtime) string {
+	unknown := ""
+	if rt != nil {
+		unknown = rt.UnknownModel
+	}
+	switch unknown {
+	case UnknownModelCarry:
+		return "and the provider is asked rather than the catalog: " + runtime + " takes an id it does not know to the provider (declared unknown_model: " + UnknownModelCarry + "), so the provider's refusal is the canary's answer"
+	case UnknownModelSwap:
+		return "but " + runtime + " answers an id it does not know by running its OWN default and saying nothing (declared unknown_model: " + UnknownModelSwap +
+			"), so this launch coming up clean is NOT the provider taking " + model + ": read the model off the session's own screen, and posse list marks the row " + ModelUncheckedMark
+	}
+	return "and whether " + runtime + " takes an unknown id to the provider or runs its own default instead is UNMEASURED here (unknown_model: unset), so a clean launch is not yet evidence " + model +
+		" exists — `posse runtime check " + runtime + "` says as much"
 }

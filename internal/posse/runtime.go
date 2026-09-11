@@ -83,6 +83,16 @@ const (
 	// this runtime discovers on its own outranks the PID on collision.
 	RulesPrecedenceNative = "native"
 
+	// UnknownModelCarry: measured — this CLI takes an id it does not know
+	// to the provider, so the id on the launch line is the id being asked
+	// about and the provider's answer is the canary's answer (ADR 0053 D3).
+	UnknownModelCarry = "carry"
+	// UnknownModelSwap: measured the other way — this CLI answers an id it
+	// does not know by running its OWN default and saying nothing, so a
+	// pane that comes up is not the provider saying yes. Nothing refuses,
+	// and the canary's premise does not hold here.
+	UnknownModelSwap = "swap"
+
 	// DefaultStartupWait is the claude-shaped patience for a launch to reach
 	// a promptable screen. It is a per-runtime number (`startup_wait:`)
 	// because 45s is measured on claude and grok's cold start exceeds it on
@@ -96,6 +106,10 @@ func ValidRecord(r string) bool { return r == RecordTrusted || r == RecordUntrus
 
 func ValidRulesPrecedence(p string) bool {
 	return p == RulesPrecedencePID || p == RulesPrecedenceNative
+}
+
+func ValidUnknownModel(u string) bool {
+	return u == UnknownModelCarry || u == UnknownModelSwap
 }
 
 // Interstitial is a first-run dialog this runtime draws that dispatch must
@@ -182,6 +196,28 @@ type Runtime struct {
 	Builtin   bool
 	Models    map[string]string // tier → model id; unset tier → runtime default (fast falls back to standard)
 	ModelFlag string            // printf form for {model}: "--model %s", "-c model=%s", "-m %s"
+	// UnknownModel is what this CLI does with a model id it does not know:
+	// UnknownModelCarry (it goes to the provider, whose answer is then the
+	// answer) or UnknownModelSwap (it runs its own default instead and says
+	// nothing). Zero value is UNMEASURED, the loud default (ADR 0017 §5).
+	//
+	// It exists because ADR 0053's canary rests on it. An exact-model launch
+	// asks the PROVIDER rather than the catalog, and D3 reads the provider's
+	// refusal as the canary's result — which is only a reading where the id
+	// reaches a provider at all. On a CLI that swaps, a canary on an id that
+	// does not exist comes up clean and every surface posse has says the
+	// operator is running the id they typed (ranger-base-jzm04).
+	//
+	// So this is consumed, not decorative: the launch line says which of the
+	// three it is printing under, and the exact-model listing tag marks a
+	// recorded id that a swapping CLI may not be running. Both are sentences
+	// about the launch; neither refuses one, and nothing picks a model from
+	// it — the id posse was told to ask for is still the id it asks for.
+	UnknownModel string
+	// UnknownModelWhy is the measurement behind a non-zero UnknownModel — a
+	// bead id, a date and the CLI release, so a reader can tell a measured
+	// value from a guess. Ignored when UnknownModel is unset.
+	UnknownModelWhy string
 	// NoGateShell: do not point SHELL/GROK_SHELL at the gate shell on the
 	// typed line for this runtime (ADR 0009 §2 exit hatch, `gate_shell:
 	// false` in a template-only runtimes/<name>.yaml). The wrapper is what
@@ -1413,6 +1449,11 @@ var builtinRuntimes = []Runtime{
 		// borrowing their answer. The one claude datapoint on the books is
 		// an incidental live collision (rangerhq-cmfj, ADR 0013 Claims),
 		// which is a report, not a measurement under a controlled fixture.
+		// unknown_model: UNMEASURED, the same way and for the same reason.
+		// ranger-base-jzm04 measured codex and grok the same minute; nobody
+		// has spent a launch on a claude id this account cannot serve, and
+		// borrowing either answer would put a number in the grid that no
+		// launch here produced. The grid says UNDECLARED out loud instead.
 		// turn_outcome: the same transcript, read for a different fact —
 		// claude writes an allotment refusal as a synthetic assistant
 		// message, so a pass can tell an exhausted account from a settle.
@@ -1436,7 +1477,11 @@ var builtinRuntimes = []Runtime{
 		// measurement 2026-09-01").
 		RulesPrecedence:    RulesPrecedencePID,
 		RulesPrecedenceWhy: "measured 2026-09-01 (ranger-base-6rcv): against a fixture AGENTS.md demanding lowercase, the word 'prepared' and its own token, codex 0.150.1 replied 'READY.' — all three AGENTS rules broken, the PID's two decidable rules obeyed and neither token emitted; both rulebooks were in the rendered prompt (ranger-base-kl58b)",
-		Command:            `codex {model} {skills} {deny} -a never ` + CodexFleetFlags + ` -c developer_instructions="$(cat {file})"`},
+		// unknown_model: carry — MEASURED, and it is the contrast that made
+		// grok's answer legible rather than a lone oddity.
+		UnknownModel:    UnknownModelCarry,
+		UnknownModelWhy: "measured 2026-09-09 (ranger-base-jzm04) on codex-cli 0.150.1: a canary launched with -c model=gpt-6-astra came up with 'model: gpt-6-astra high' in its own banner — the typed id, not this box's default, so the id reaches the provider and its answer is the canary's",
+		Command:         `codex {model} {skills} {deny} -a never ` + CodexFleetFlags + ` -c developer_instructions="$(cat {file})"`},
 	{Name: "grok", Builtin: true, Realize: realizeGrok, Skills: skillsCwd, SkillsCwd: true, Models: grokModels, ModelFlag: "-m %s", Unattended: GrokFleetFlags,
 		Egress: []string{"cli-chat-proxy.grok.com", "grok.com"}, StateDirs: []string{"~/.grok"},
 		// record: trusted — the qa lane on grok closed a bead properly on
@@ -1464,7 +1509,14 @@ var builtinRuntimes = []Runtime{
 		// self-evidencing.
 		RulesPrecedence:    RulesPrecedencePID,
 		RulesPrecedenceWhy: "measured 2026-09-01 (ranger-base-6rcv): against the same fixture AGENTS.md, grok 1.0.5 replied 'READY / PID-WINS' — the PID's own token, all three AGENTS rules broken; both rulebooks were in the rendered prompt (ranger-base-kl58b)",
-		Command:            `grok {model} {skills} ` + GrokFleetFlags + ` --rules="$(cat {file})" {allow} {deny}`},
+		// unknown_model: swap — and this is the value the dimension was
+		// added for. A canary on an id that DOES NOT EXIST launched clean
+		// here, which is the strongest form the measurement can take: there
+		// was no entitlement to roll out and no refusal to time, so the
+		// clean launch can only have been grok's own default answering.
+		UnknownModel:    UnknownModelSwap,
+		UnknownModelWhy: "measured 2026-09-09 (ranger-base-jzm04) on grok 1.0.5 (5115b46bc909): -m grok-4.7, an id 'grok models' does not list and the operator confirms does not exist, launched with no refusal anywhere and the composer border read 'Grok 4.6 (high)' — the CLI ran its own default for the unknown id and said nothing",
+		Command:         `grok {model} {skills} ` + GrokFleetFlags + ` --rules="$(cat {file})" {allow} {deny}`},
 }
 
 // RuntimesDir holds template-only runtimes: RHQ_HOME/runtimes/<name>.yaml.
@@ -1677,6 +1729,20 @@ func (a *App) LoadRuntime(name string) (*Runtime, error) {
 		rt.RulesPrecedence = v
 		rt.RulesPrecedenceWhy = YamlGet(p, "rules_precedence_why")
 	}
+	// unknown_model: what THIS box's CLI does with a model id it does not
+	// know — carry it to the provider, or run its own default instead and
+	// say nothing. Absent is UNMEASURED, the loud default: ADR 0053's
+	// exact-model canary reads a clean launch as the provider saying yes,
+	// and that reading is only available where somebody measured which of
+	// the two this CLI does (ranger-base-jzm04). Present-but-wrong refuses,
+	// like record: and rules_precedence: above.
+	if v := YamlGet(p, "unknown_model"); v != "" {
+		if !ValidUnknownModel(v) {
+			return nil, Die("runtime %s: %s has unknown_model: %q (want %s or %s — ADR 0053 D3)", name, AbbrevHome(p), v, UnknownModelCarry, UnknownModelSwap)
+		}
+		rt.UnknownModel = v
+		rt.UnknownModelWhy = YamlGet(p, "unknown_model_why")
+	}
 	// turn_outcome: which registered reader sees this runtime's own first
 	// turn. Absent is the loud default — the settle line says posse cannot
 	// tell a refused turn from a worked one here. Present-but-unregistered
@@ -1759,6 +1825,11 @@ var builtinOverlayKeys = []string{
 	// that CLI keeps its state, what its session env must carry — so each
 	// overlays.
 	"rules_precedence", "rules_precedence_why", "state_dir", "env_required",
+	// unknown_model:/unknown_model_why: — an instance fact by the same
+	// line: what the CLI INSTALLED HERE does with an id it does not know
+	// (ranger-base-jzm04). A release that changes it changes it for this
+	// box first, and the canary that rests on it is read by an operator.
+	"unknown_model", "unknown_model_why",
 }
 
 // builtinMechanismKeys are the ADR 0021 Decision 2 keys: declared in a
@@ -1920,6 +1991,17 @@ func (a *App) overlayBuiltin(rt *Runtime, name string) (*Runtime, error) {
 		}
 		rt.RulesPrecedence = v
 		rt.RulesPrecedenceWhy = YamlGet(p, "rules_precedence_why")
+	}
+	// unknown_model: the same instance fact on a built-in. A built-in's own
+	// value is one release of one CLI measured on one box, which is exactly
+	// the kind of answer a newer release moves — grok gaining a refusal for
+	// an unknown -m would be declared HERE, without waiting for a posse.
+	if v := YamlGet(p, "unknown_model"); v != "" {
+		if !ValidUnknownModel(v) {
+			return nil, Die("runtime %s: %s has unknown_model: %q (want %s or %s — ADR 0053 D3)", name, AbbrevHome(p), v, UnknownModelCarry, UnknownModelSwap)
+		}
+		rt.UnknownModel = v
+		rt.UnknownModelWhy = YamlGet(p, "unknown_model_why")
 	}
 	// state_dir:/env_required: REPLACE when present, keep the built-in's
 	// when absent — the native_rules:/egress: rule, and for the same
@@ -2122,6 +2204,41 @@ func (a *App) RuntimeMapsTier(runtime, tier string) bool {
 		}
 	}
 	return rt.Model(tier) != ""
+}
+
+// RuntimeUnknownModel is Runtime.UnknownModel for a runtime named in a
+// session record — what that CLI does with a model id it does not know.
+//
+// A listing's cheap reading of the same declaration LoadRuntime returns, for
+// RuntimeMapsTier's reason: the listing paths ask it once per session per
+// redraw, and a launch is the only caller that needs the whole runtime. It
+// reads the overlay AHEAD of the built-in, unlike RuntimeMapsTier, because
+// this is the key an overlay exists to move — the built-in's value is one
+// release of one CLI, and a release that grows a refusal for an unknown -m
+// is declared in the yaml (ADR 0021 D1) long before a posse ships.
+//
+// "" is the honest answer to every question this cannot settle: no instance
+// to read a yaml from, a runtime nobody has heard of, or a yaml whose value
+// is not one of the two words. That last one is not a silent pardon — a
+// launch on that runtime refuses on the same key (LoadRuntime), loudly,
+// naming the file; what a DISPLAY path must not do is render the operator's
+// typo as a measurement.
+func (a *App) RuntimeUnknownModel(runtime string) string {
+	if runtime == "" {
+		runtime = DefaultRuntime
+	}
+	if a != nil && a.Home != "" {
+		p := filepath.Join(a.RuntimesDir(), runtime+".yaml")
+		if v := YamlGet(p, "unknown_model"); ValidUnknownModel(v) {
+			return v
+		}
+	}
+	for i := range builtinRuntimes {
+		if builtinRuntimes[i].Name == runtime {
+			return builtinRuntimes[i].UnknownModel
+		}
+	}
+	return ""
 }
 
 // DisplayTier is the tier as an operator should READ it for a session on

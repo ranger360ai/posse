@@ -69,6 +69,8 @@ var runtimeFieldAudit = map[string]runtimeFieldNote{
 	"Builtin":            {fcConsumed, []string{"runtime.go", "runtimecheck.go"}, nil, "LoadRuntime returns a built-in ahead of any yaml; the grid says so"},
 	"Models":             {fcConsumed, []string{"runtime.go", "modelavail.go"}, nil, "tier → model id for {model} and the availability preflight"},
 	"ModelFlag":          {fcConsumed, []string{"runtime.go"}, nil, "the printf form ModelText renders {model} with"},
+	"UnknownModel":       {fcConsumed, []string{"exactmodel.go", "herdrback.go", "runtimecheck.go"}, nil, "what this CLI does with an id it does not know: exactmodel.go's last launch clause is chosen on it, herdrback.go marks a canary listing row on it, and the grid prints it. ADR 0053 D3's premise — a clean launch means the provider took the id — is only available on a runtime declared to carry one (ranger-base-jzm04)"},
+	"UnknownModelWhy":    {fcDisplay, []string{"runtimecheck.go"}, nil, "the measurement behind a non-zero UnknownModel — the bead, the date and the CLI release, so a reader tells a measurement from a guess"},
 	"NoGateShell":        {fcConsumed, []string{"gates.go", "parity.go"}, nil, "leaves SHELL/GROK_SHELL alone, and costs the L1 verdict for it"},
 	"Skills":             {fcConsumed, []string{"agents.go", "parity.go"}, nil, "what {skills} renders to, and whether a skills: PID can launch here at all"},
 	"SkillsCwd":          {fcConsumed, []string{"skills.go", "parity.go"}, nil, "materializes <cwd>/.agents/skills/<name>; the links are the binding"},

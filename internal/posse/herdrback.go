@@ -92,6 +92,10 @@ type NewSessionOpts struct {
 	// (CheckExactModel), and it makes the launch print the exact-model line
 	// where an ordinary launch prints the tier availability verdict, because
 	// asking the PROVIDER about THIS id is the point of the session (D3).
+	// What the provider's silence is worth is the RUNTIME's declaration, not
+	// this field's: a CLI measured to run its own default for an id it does
+	// not know (unknown_model: swap) makes a clean launch no evidence at
+	// all, and the line printed says which case it is in (ranger-base-jzm04).
 	//
 	// "" for every other launch, and dispatch never sets it: a pass-wide
 	// model experiment is a different risk boundary (D5).
@@ -2049,7 +2053,7 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 		// and of whom: the provider, about the exact id, rather than the
 		// catalog about the tier's.
 		if o.Model != "" {
-			b.warn("posse: %s\n", ExactModelLine(o.Name, runtime, tier, o.Model))
+			b.warn("posse: %s\n", ExactModelLine(o.Name, runtime, tier, o.Model, rt))
 		} else if line := a.TierPreflightFrom(envs, o.Agent, runtime, tier, b.warnWriter()).Line; line != "" {
 			// UNKNOWN or unavailable, and both launch the asked-for id and
 			// say so (ADR 0039 D3c, ADR 0003 §3). The line is the whole
@@ -2945,7 +2949,17 @@ func (a *App) RuntimeTierModelTag(runtime, tier, model string) string {
 	if tier == "" {
 		tier = DefaultTier
 	}
-	return "@" + runtime + "/" + tier + ModelTag(model)
+	mark := ""
+	if a.RuntimeUnknownModel(runtime) == UnknownModelSwap {
+		// MEASURED on this runtime: an id it does not know is answered by
+		// its own default, silently. So the recorded id is what posse was
+		// asked for and may not be what is answering, and the row says so
+		// (ModelUncheckedMark, ranger-base-jzm04). Nothing here reads the
+		// session — this is the declaration rendered, and the record is
+		// still the only store (ADR 0053 D4).
+		mark = ModelUncheckedMark
+	}
+	return "@" + runtime + "/" + tier + ModelTag(model) + mark
 }
 
 func (a *App) RuntimeTierTag(runtime, tier string) string {
