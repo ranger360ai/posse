@@ -110,6 +110,10 @@ func TestComposerIsGhostReadsTheDrawnState(t *testing.T) {
 			"❯ \x1b[2msomething else entirely\x1b[0m\n", ghostWaitText, false},
 		{"no composer on screen at all", "prompt$ echo hi\nhi\n", ghostWaitText, false},
 		{"nothing previewed to join to", ghostWaitANSI, "", false},
+		// This row pins the `plain == ""` guard and NOT scanSGRDim's `any`:
+		// a whitespace-only box previews as "" through Composer, so the
+		// reading returns before the scan. `any` is unfalsifiable behind the
+		// join — see the note in ghostbox.go.
 		{"a dim box with nothing printing in it is not a suggestion",
 			"❯ \x1b[2m   \x1b[0m\n", "", false},
 

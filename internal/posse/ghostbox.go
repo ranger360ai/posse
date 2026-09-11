@@ -145,6 +145,14 @@ func reverseLines(s string) []string {
 // An `any` of false is a box with nothing printing in it, which the caller
 // must not read as "wholly dim": an empty box vacuously satisfies "every
 // character is dim", and that is the one answer this must never give.
+//
+// Today that guard is NOT independently reachable, and it is kept anyway.
+// Mutating it away survives the whole suite (ranger-base-6o7wm, measured
+// 2026-09-11), because composerIsGhost's join gets there first: a `plain` it
+// could disagree with is non-empty and already trimmed, so matching it
+// requires a printing character. The join is the falsifiable guard and `any`
+// is the one that still holds if the join is ever loosened — said out loud
+// rather than pinned, because a pin that cannot go red is worse than none.
 func scanSGRDim(line string) (text string, allDim, any bool) {
 	var b strings.Builder
 	dim := false
