@@ -146,6 +146,30 @@ jobs:
         shell: bash
         run: |
           scripts/release-notes.sh --version "$TAG" >"$NOTES"
+          # GitHub refuses a release body over 125,000 characters with HTTP 422
+          # AFTER the tag is pushed — v0.5.0's first run died here with the
+          # artifacts already built (ranger-base-597lo). release-notes.sh caps
+          # its own output at whole `### ` subsections now, but a workflow_dispatch
+          # retry checks out the TAG's tree and runs the reader THAT tree ships,
+          # which may predate the cap; so the same cut is applied here too, and
+          # it is a no-op for a reader that already capped. Byte-identical
+          # pass-through under the limit is what the treepins pin holds.
+          limit=60000
+          if [ -s "$NOTES" ] && [ "$(wc -c <"$NOTES")" -gt "$limit" ]; then
+            awk -v lim="$limit" -v ver="$TAG" '
+              { line[NR] = $0; if ($0 ~ /^### /) { sec++ } part[NR] = sec; size[sec] += length($0) + 1 }
+              END {
+                keep = 0; used = 0
+                for (k = 0; k <= sec; k++) { if (k > 0 && used + size[k] > lim) break; used += size[k]; keep = k }
+                for (i = 1; i <= NR; i++) if (part[i] <= keep) print line[i]
+                if (keep < sec) {
+                  kept = 0; for (i = 1; i <= NR; i++) if (part[i] <= keep) kept++
+                  printf "\n_This is the opening of the `%s` section: %d of its %d lines. The whole section is CHANGELOG.md in the tagged tree; a release body is capped at 125,000 characters._\n", ver, kept, NR
+                }
+              }
+            ' "$NOTES" >"$NOTES.cut" && mv "$NOTES.cut" "$NOTES"
+            echo "release: CHANGELOG section over the body cap — cut to $(wc -c <"$NOTES") characters at a subsection boundary" >&2
+          fi
           # --latest is stored on the draft and takes effect when the operator
           # publishes it (gh release create --help: draft fields are mutable
           # pre-publish). Without it GitHub's automatic "latest" pointer does
