@@ -365,7 +365,19 @@ func TestQAResumeStillRefusesToTypeIntoAGhostBox(t *testing.T) {
 	if !strings.Contains(out, "a TYPED line has not been measured undimmed") {
 		t.Errorf("the skip does not say what would retire it:\n%s", out)
 	}
-	_ = repo
+	// The other half, and it says what the two passes actually did. Pass 1
+	// JUDGED the settle — that is this bead's fix at the heaviest caller,
+	// and it writes settle-open number one. Pass 2 refused to re-prompt, so
+	// it never reached the judgement again and there is no number two.
+	//
+	// Exactly one is the assertion that matters: a second would be the
+	// escalation rung (ranger-base-9hm), and a refusal that still walked the
+	// ladder every pass would file the operator a question about a seat
+	// nobody has spoken to. Zero would mean pass 1 never judged and this
+	// test is measuring the old hold rather than the new refusal.
+	if cs := readComments(t, repo); len(cs) != 1 {
+		t.Fatalf("the two passes recorded %d settle-open(s), want exactly 1: %v", len(cs), cs)
+	}
 }
 
 // ─── the read-back ───────────────────────────────────────────────────────────
