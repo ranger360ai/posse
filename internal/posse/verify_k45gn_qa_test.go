@@ -51,8 +51,12 @@ package posse
 // censusing them would red on the day someone documents a variable.
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -75,9 +79,75 @@ import (
 // it. Emptying the list would leave the pin green over nothing.
 var bdRedirectingEnvVars = []string{"BEADS_DB"}
 
+// k45gnHit is one redirecting variable, found in one Go string literal.
+type k45gnHit struct {
+	v   string
+	pos token.Pos
+}
+
+// k45gnStoreVarHits returns the redirecting variables whose child-env
+// spelling, `NAME=`, appears in a STRING LITERAL of the Go file `name` — at
+// most one hit per variable, at its first occurrence.
+//
+// PARSED, NOT SCANNED FOR BYTES (ranger-base-15txf). This census used to be
+// strings.Contains over the file bytes for a quoted `"NAME=` prefix, and its
+// own comment claimed what that cannot deliver: "A bare mention in a comment
+// must not red this pin". It did. MEASURED 2026-09-11: a doc comment on
+// bdStoreEnvShed (beads.go) explaining why the shed list is spelled as names
+// — prose, no code — turned the pin red, naming a row beads.go does not
+// build. The workaround then was to reword the prose; the fix is here, and
+// that paragraph now quotes the prefix on purpose as the corpus witness.
+//
+// Reading literals rather than bytes is the documented claim exactly, and it
+// is also WIDER in the one direction that matters: the byte scan needed the
+// opening quote immediately before the name, so `"--setenv=BEADS_DB="`, the
+// shape cage.go's carry list is built from, walked straight past it. Any
+// literal containing the prefix hits now, however it is assembled.
+func k45gnStoreVarHits(t *testing.T, fset *token.FileSet, name string, src any) []k45gnHit {
+	t.Helper()
+	// The READ is inside this helper on purpose. It is the whole subject —
+	// "parsed literals, not file bytes" — and a caller that handed in an
+	// already-parsed file would make the prose arms of
+	// TestQAStoreVarCensusReadsParsedLiteralsNotFileBytes unfailable: no
+	// mutation of a census that never touches the source can red them.
+	// src is nil to read `name` off disk, or the source itself for a fixture.
+	f, err := parser.ParseFile(fset, name, src, parser.SkipObjectResolution)
+	if err != nil {
+		t.Fatalf("parse %s: %v", name, err)
+	}
+	var out []k45gnHit
+	for _, v := range bdRedirectingEnvVars {
+		var at token.Pos
+		ast.Inspect(f, func(n ast.Node) bool {
+			if at != token.NoPos {
+				return false
+			}
+			lit, ok := n.(*ast.BasicLit)
+			if !ok || lit.Kind != token.STRING {
+				return true
+			}
+			// Unquote, so an escaped or raw spelling reads the same as the
+			// plain one and the source form is not the subject.
+			s, err := strconv.Unquote(lit.Value)
+			if err != nil {
+				return true
+			}
+			if strings.Contains(s, v+"=") {
+				at = lit.Pos()
+			}
+			return true
+		})
+		if at != token.NoPos {
+			out = append(out, k45gnHit{v: v, pos: at})
+		}
+	}
+	return out
+}
+
 func TestQANoShippedFileSetsAStoreVarBdStoreEnvDoesNotShed(t *testing.T) {
 	t.Parallel()
 	root := k45gnRepoRoot(t)
+	fset := token.NewFileSet()
 	var hits []string
 	for _, dir := range []string{"cmd", "internal"} {
 		err := filepath.WalkDir(filepath.Join(root, dir), func(p string, d os.DirEntry, err error) error {
@@ -93,20 +163,14 @@ func TestQANoShippedFileSetsAStoreVarBdStoreEnvDoesNotShed(t *testing.T) {
 			if filepath.Ext(p) != ".go" {
 				return nil
 			}
-			b, rerr := os.ReadFile(p)
-			if rerr != nil {
-				return rerr
-			}
-			for _, v := range bdRedirectingEnvVars {
-				// The child-env spelling and only that: a Go string literal
-				// opening `"BEADS_DB=`, which is how every env row in this
-				// tree is built (beads.go bdStoreEnv, cage.go's carry list).
-				// A bare mention in a comment must not red this pin — the
-				// one above names the variable a dozen times.
-				if strings.Contains(string(b), `"`+v+`=`) {
-					rel, _ := filepath.Rel(root, p)
-					hits = append(hits, rel+" builds "+v+" into a child environment")
-				}
+			// PARSED, not read. The claim is about a child-env row this
+			// tree BUILDS, and a row is built out of a Go string literal
+			// (beads.go bdStoreEnv, cage.go's carry list) — so only string
+			// literals are censused, and prose is structurally invisible.
+			rel, _ := filepath.Rel(root, p)
+			for _, h := range k45gnStoreVarHits(t, fset, p, nil) {
+				hits = append(hits, filepath.ToSlash(rel)+":"+strconv.Itoa(fset.Position(h.pos).Line)+
+					" builds "+h.v+" into a child environment")
 			}
 			return nil
 		})
@@ -174,4 +238,60 @@ func k45gnCountScanned(t *testing.T, root string) int {
 		}
 	}
 	return n
+}
+
+// The census's claim, in a table: a shipped file that BUILDS a child-env row
+// hits; prose that merely quotes the prefix does not.
+//
+// ranger-base-15txf. The two prose arms are the defect this pin was rebuilt
+// for — a byte census reds on both — and the remaining arms are what the byte
+// census caught and must keep catching, plus the two shapes it MISSED (the
+// prefix not at the start of the literal, and an escaped spelling).
+func TestQAStoreVarCensusReadsParsedLiteralsNotFileBytes(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		src  string
+		want bool
+	}{{
+		name: "a doc comment quoting the prefix is prose, not a build",
+		src:  "// spelled as names, never as \"BEADS_DB=\", on purpose.\nvar shed = []string{\"BEADS_DB\"}\n",
+		want: false,
+	}, {
+		name: "a comment inside a function body is prose too",
+		src:  "func f(env []string) {\n\t// strip \"BEADS_DB=\" rows from the child env\n\t_ = env\n}\n",
+		want: false,
+	}, {
+		name: "the shed list names the variable without the = and does not hit",
+		src:  "var shed = []string{\"BEADS_DIR\", \"BEADS_DB\"}\n",
+		want: false,
+	}, {
+		name: "the plain child-env row hits",
+		src:  "func f(env []string, db string) []string { return append(env, \"BEADS_DB=\"+db) }\n",
+		want: true,
+	}, {
+		name: "a Sprintf template hits",
+		src:  "func f(db string) string { return fmt.Sprintf(\"BEADS_DB=%s\", db) }\n",
+		want: true,
+	}, {
+		name: "the prefix inside a longer literal hits: the cage carry-list shape the byte scan walked past",
+		src:  "func f(db string) string { return \"--setenv=BEADS_DB=\" + db }\n",
+		want: true,
+	}, {
+		name: "a raw string literal hits",
+		src:  "func f(db string) string { return `BEADS_DB=` + db }\n",
+		want: true,
+	}, {
+		name: "an escaped spelling hits: the literal is unquoted before it is read",
+		src:  "func f(db string) string { return \"\\x42EADS_DB=\" + db }\n",
+		want: true,
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			hits := k45gnStoreVarHits(t, token.NewFileSet(), "fixture.go", "package posse\n"+tc.src)
+			if got := len(hits) > 0; got != tc.want {
+				t.Errorf("k45gnStoreVarHits = %v, want hit=%v, over:\n%s", hits, tc.want, tc.src)
+			}
+		})
+	}
 }

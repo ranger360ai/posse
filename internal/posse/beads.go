@@ -254,12 +254,16 @@ func (b Bd) runOnce(dir string, args ...string) ([]byte, error) {
 // was measured, and a row here would read as a redirect somebody confirmed.
 // If a later bd honours it, measure it again and add it then.
 //
-// Spelled as NAMES, not as quoted NAME= prefixes, on purpose.
-// verify_k45gn_qa_test.go censuses shipped files for a quoted NAME= string
-// literal, which is how a child env row is BUILT in this tree; shedding a
-// variable is the opposite of building one and must not read as one. That
-// census matches file bytes rather than parsed string literals, so a comment
-// here that quoted the prefix would red it too — ranger-base-15txf.
+// Spelled as NAMES, not as the `"BEADS_DB="` prefix a child env row is built
+// from, on purpose. verify_k45gn_qa_test.go censuses shipped files for that
+// prefix; shedding a variable is the opposite of building one and must not
+// read as one.
+//
+// This comment quotes the prefix deliberately, and is the live witness that
+// the census reads PARSED STRING LITERALS and not file bytes
+// (ranger-base-15txf). A byte census reds here, on prose, naming a row this
+// file does not build; revert that pin to bytes and this paragraph turns it
+// red on the same run.
 var bdStoreEnvShed = []string{"BEADS_DIR", "BEADS_DB"}
 
 // bdStoreEnv binds one bd child to the store of the directory its caller
