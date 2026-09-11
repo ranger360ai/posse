@@ -1089,7 +1089,7 @@ STRICT
 	# provable: with two slots a second suite takes the other one and the
 	# arm measures nothing.
 	local od=$tmp/orphan-locks arm14='orphan: a dead wrapper leaves the slot held by its child, and says so'
-	local opid ochild before after queued=0 drained=0 named=0 h18 h19 n held_re=
+	local opid ochild before after queued=0 queued_why= drained=0 named=0 h18 h19 n held_re=
 	mkdir -p "$od"
 	orphan_status() { ( export POSSE_SUITE_LOCK_DIR="$od" POSSE_SUITE_SLOTS=1; suite_lock_status ); }
 	touch "$tmp/hold18"
@@ -1129,6 +1129,12 @@ STRICT
 		# would catch a fix that freed it.
 		if wait_answer "$tmp/m19" "$fork_s" && [ ! -e "$tmp/m19" ]; then
 			queued=1
+		else
+			# queued=0 is two different failures and the FAIL line has to
+			# say which: the waiter took the orphan's slot (the leak was
+			# "fixed" by freeing it), or it never answered at all. Arms 2
+			# and 13 already separate those; this one said only `queued=0`.
+			queued_why=" ($(answer_of "$tmp/m19" "$fork_s"))"
 		fi
 		# Let the child go. The slot must drain to the waiter — which is
 		# also the proof that the child was what held it, and that this
@@ -1166,7 +1172,7 @@ STRICT
 			ok "$arm14"
 		else
 			bad "$arm14" \
-				"queued=$queued drained=$drained named=$named; alive: $(printf '%s' "$before" | tr '\n' '|'); dead: $(printf '%s' "$after" | tr '\n' '|')"
+				"queued=$queued$queued_why drained=$drained named=$named; alive: $(printf '%s' "$before" | tr '\n' '|'); dead: $(printf '%s' "$after" | tr '\n' '|')"
 		fi
 	fi
 
