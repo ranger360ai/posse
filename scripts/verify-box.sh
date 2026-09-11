@@ -154,6 +154,13 @@ esac
 #   verify-credential-paths      ADR 0019 path 3: a credential file that
 #                                REGENERATES, which is why deleting it once
 #                                was never the control.
+#   verify-policy-pins           the root-owned policy drop-ins this repo ships
+#                                and the operator installs by hand, against
+#                                HEAD. Nothing compared the two until
+#                                ranger-base-lle18: a row dropped from the
+#                                shipped file on 2026-09-06 stayed in force for
+#                                five days and killed bare `git diff` in every
+#                                seat on the box.
 #   verify-hook-freshness        the L3 hooks in every configured repo against
 #                                a fresh render from the binary on PATH. Red in
 #                                all three repos the day this script was
@@ -175,6 +182,7 @@ verify-grok-pin	scripts/verify-grok-pin.sh
 verify-codex-pin	scripts/verify-codex-pin.sh
 verify-bd-pin	scripts/verify-bd-pin.sh
 verify-credential-paths	scripts/verify-credential-paths.sh
+verify-policy-pins	scripts/verify-policy-pins.sh
 verify-hook-freshness	scripts/verify-hook-freshness.sh
 verify-gate-freshness	scripts/verify-gate-freshness.sh
 verify-bd-no-relate-pairs	scripts/verify-bd-dep-safety.sh --gate

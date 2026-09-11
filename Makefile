@@ -42,7 +42,7 @@ FMT_ROOTS := cmd internal *.go
 BUILD_STAMP := $(shell $(GOBIN) run ./cmd/buildstamp)
 LDFLAGS     := -X github.com/ranger360ai/posse/internal/posse.Build=$(BUILD_STAMP)
 
-.PHONY: build release install deploy test test-arm1 test-arm2 test-arm3 test-race test-reuse fmt-check crew-check seed-check history-check doc-check identity-check ops-check execwrite-check tree-check verify-test-times verify-suite-lock verify-pattern-kill-census verify-silent-reverts verify-shell-syntax verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-self-close verify-govern-honesty verify-grok-pin verify-codex-pin verify-credential-paths verify-hook-freshness verify-bd-pin verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk verify-box verify-box-self-test prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
+.PHONY: build release install deploy test test-arm1 test-arm2 test-arm3 test-race test-reuse fmt-check crew-check seed-check history-check doc-check identity-check ops-check execwrite-check tree-check verify-test-times verify-suite-lock verify-pattern-kill-census verify-silent-reverts verify-shell-syntax verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-self-close verify-govern-honesty verify-grok-pin verify-codex-pin verify-credential-paths verify-policy-pins verify-hook-freshness verify-bd-pin verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk verify-box verify-box-self-test prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
 
 build:
 	$(GOBIN) build -ldflags '$(LDFLAGS)' -o bin/posse-go ./cmd/posse
@@ -814,6 +814,23 @@ verify-codex-pin:
 # Runbook: docs/runbooks/credential-rotation.md.
 verify-credential-paths:
 	scripts/verify-credential-paths.sh
+
+# The policy-tier drop-in staleness control (ranger-base-lle18).
+# `etc/claude/managed-settings.d/*.json` here is SOURCE; the files that pin this
+# box are the root-owned copies the operator installs by hand, per change, and
+# nothing compared the two. ranger-base-888fv dropped the GIT_EXTERNAL_DIFF row
+# from both in-repo ends on 2026-09-06 and left the installed copy, reading
+# ranger-base-sn0w8 as "an empty row is a no-op at that tier"; sn0w8 measured
+# that policy-tier "" does not OVERRIDE a name the process env already carries,
+# which is not the same fact. The row kept exporting GIT_EXTERNAL_DIFF= into
+# every seat for five days and bare `git diff` died `cannot run :` in all of
+# them. Three classes: STALE, MISSING, and EXTRA (a `*-posse-*.json` HEAD no
+# longer ships, still in force). Reference is the MAIN checkout's HEAD, for
+# verify-gate-freshness's reason. Read-only: it installs nothing, removes
+# nothing and never runs sudo — a finding prints the line for the operator.
+# Exit 1 = drift. Exit 2 = no policy dir on this box, i.e. nothing measured.
+verify-policy-pins:
+	scripts/verify-policy-pins.sh
 
 # The L3 hook staleness control (ranger-base-8zki). Hook bodies are compiled
 # into the binary, so every hook on the box is a COPY; only `gates

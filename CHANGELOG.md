@@ -297,10 +297,13 @@ There is no neutral spelling to fall back on: every value in that name is
 executed, and git's "use the internal diff" is the `--no-ext-diff` **flag**,
 which an `env` block cannot supply. Pinning `diff.external` in config instead
 does not work either, because the environment variable overrides config. The
-protection was also never at the tier that matters most — an empty value does
-not take at the root-owned policy tier, so the row would have cost
-posse-launched sessions and protected a claude you start yourself not at all.
-So it is **not covered**, on the same standing as `GIT_CONFIG_COUNT` and
+protection was also thought never to be at the tier that matters most, and
+that half of the reasoning turned out to be wrong — see the entry below: an
+empty `env` row in the root-owned policy tier **does** reach a session's
+environment, so this row at that tier would have cost the uncaged session a
+working `git diff` as well, rather than doing nothing there. Either way the
+price is the same porcelain, so the decision stands on the cost alone. It is
+**not covered**, on the same standing as `GIT_CONFIG_COUNT` and
 `GIT_CONFIG_GLOBAL` below: an attacker who can write a lower-scope settings
 `env` block can still point this name at a program of their choosing and have
 it run on the next `git diff` a session makes. The measurement is in
@@ -322,6 +325,40 @@ this was measured on, none was set anywhere. If you *do* rely on one of them
 for your fleet (a corporate proxy, a custom CA, a non-default endpoint), the
 pin now wins over it for posse-launched sessions and you will want to change
 its row rather than set the variable outside.
+
+**`make verify-policy-pins` is new, and it is the check that says whether the
+policy drop-ins pinning your box are the ones this release ships.**
+
+*Affected: anyone who has installed any of `etc/claude/managed-settings.d/`.*
+
+Those three files are source here and root-owned copies there, and posse
+installs neither — that is deliberate, and it means a change to one of them
+moves nothing on your box until you install it by hand. Until now nothing
+compared the two, so a file could sit a release behind in silence. That is not
+hypothetical: on the box this was developed on, the drop-in kept a
+`GIT_EXTERNAL_DIFF: ""` row for five days after the row came out of the shipped
+file, and bare `git diff` died `error: cannot run :` in every session on the
+machine for all five. Nothing could see it — both in-repo ends were correct and
+already held equal by their own test, and the only witness was the environment
+a session actually received.
+
+The check reports three things per file against the main checkout's `HEAD`:
+**STALE** (installed, not these bytes), **MISSING** (shipped, not installed)
+and **EXTRA** (a `*-posse-*.json` this repo no longer ships, still in force —
+the same defect with the whole file retired instead of one row). A drop-in that
+is not posse's is never a finding. Exit 0 clean, 1 findings, 2 no policy
+directory on this box, which is *not* a pass. It installs nothing, removes
+nothing and never runs `sudo`: a finding prints the line for you to type,
+because writing that tier is a root change to a live system. It is on the
+`make verify-box` roster, so it runs with the other live-box detective checks
+rather than only when someone remembers it.
+
+**The lesson underneath it, if you are reading this to decide something:** "an
+empty string in the policy tier does not take" is a claim about one READER, not
+about the tier. Measured 2026-09-11, an empty `env` row there reaches the
+child's environment as a set-but-empty variable; whether that is harmless is
+the per-reader question, and git's answer for `GIT_EXTERNAL_DIFF` is to exec
+it.
 
 `--settings` reaches only sessions posse launches. The scope that also
 covers a claude you start yourself is the root-owned policy tier, and the

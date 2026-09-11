@@ -30,15 +30,31 @@ import "os"
 //     under it dies with `error: cannot run : No such file or directory`,
 //     while GIT_SSH_COMMAND=ssh is byte-identical to unset. Pinning that
 //     one empty would have broken every ssh remote in the fleet.
-//   - An empty value may not REACH. The operator measured
-//     (ranger-base-sn0w8, 2026-09-04, claude 2.1.260) that an empty string
-//     in the root-owned policy tier does not take, while a non-empty one
-//     overrides even the process environment. The launcher's own pin rides
-//     at flag scope, where rq83c measured "" honored — but this same table
-//     is what the policy-tier file is rendered from, and the policy tier is
-//     the only end that covers the operator's OWN uncaged session. So where
-//     a non-empty spelling is neutral, it is preferred: it is the spelling
-//     that works at both ends.
+//   - An empty value may not REACH ITS READER. The operator measured
+//     (ranger-base-sn0w8, 2026-09-04, claude 2.1.260) that an empty
+//     CLAUDE_SECURESTORAGE_CONFIG_DIR in the root-owned policy tier does not
+//     take — the redirect probe still read the real store — while a non-empty
+//     value overrides even the process environment. The launcher's own pin
+//     rides at flag scope, where rq83c measured "" honored — but this same
+//     table is what the policy-tier file is rendered from, and the policy
+//     tier is the only end that covers the operator's OWN uncaged session. So
+//     where a non-empty spelling is neutral, it is preferred: it is the
+//     spelling that works at both ends.
+//
+//     READ THAT ROW AS A READER FACT AND NEVER AS A TIER FACT — the
+//     correction is ranger-base-lle18's, and the shorter reading cost the
+//     fleet five days of `git diff`. "Does not take" there is the claude-side
+//     resolver treating "" as unset for that one key and falling back to
+//     ~/.claude. It is NOT that the policy tier drops an empty row: MEASURED
+//     2026-09-11 on this box (darwin 25.4.0), a session's own `env` carried
+//     GIT_EXTERNAL_DIFF set-and-empty while the only end declaring it was the
+//     installed policy drop-in — inletPin() had not named it since
+//     ranger-base-888fv and the shipped binary held the string zero times. A
+//     single-variable natural experiment, and the answer is that an empty
+//     `env` row at the policy tier DOES reach the child's environment as a
+//     set-but-empty variable. Whether that is harmless is the per-reader
+//     question this whole section is about, and git's answer for
+//     GIT_EXTERNAL_DIFF is to exec it.
 //
 // Where no non-empty neutral exists the row says so and is pinned empty,
 // which is honest about being flag-scope-effective and possibly a no-op in
