@@ -1357,12 +1357,176 @@ func renderShim(persona, cmd, real, log, dateBin string, rules []shimRule) strin
 		b.WriteString("posse_verb_match \"$@\"\n")
 		b.WriteString("if [ -n \"$RHQ_GATE_RULE\" ]; then posse_refuse \"$@\"; fi\n")
 	}
+	b.WriteString(renderSequencerAudit(cmd, real, dateBin))
 	if real != "" {
 		fmt.Fprintf(&b, "exec %s \"$@\"\n", shQuote(real))
 	} else {
 		// Not on PATH at render time: search at run time, skipping our own dir.
 		fmt.Fprintf(&b, "self=$(cd \"$(dirname \"$0\")\" && pwd)\nIFS=:\nfor d in $PATH; do\n  [ \"$d\" = \"$self\" ] && continue\n  if [ -x \"$d/%s\" ]; then unset IFS; exec \"$d/%s\" \"$@\"; fi\ndone\necho \"posse gate: %s: real binary not found\" >&2\nexit 127\n", cmd, cmd, cmd)
 	}
+	return b.String()
+}
+
+// ─── The sequencer-audit arm (ranger-base-71g2f) ─────────────────────────────
+
+// sequencerVerbs are the git subcommands that END by DELETING a pseudo-ref,
+// and so are the ones that can report success without having finished.
+//
+// `merge` and `am` are deliberately absent, and both were MEASURED rather
+// than reasoned about (2026-09-11, darwin 25.4.0, git 2.50.1, a dispatched
+// worktree under the live seatbelt): `git merge --abort` removes MERGE_HEAD
+// by unlinking it out of `reset --merge`, not through the ref transaction,
+// and came back clean; `git am --abort/--quit` ends by removing the
+// `rebase-apply` DIRECTORY, which is an rmdir and not a ref delete, and came
+// back clean too. Neither ever writes one of sequencerBlockers, so naming
+// them here would add a case label that can never fire.
+var sequencerVerbs = []string{"cherry-pick", "revert", "rebase"}
+
+// sequencerBlockers are the pseudo-refs whose survival is the DEFECT: git
+// consults exactly these to decide an operation is still in progress, and
+// their presence is what turns every later path-limited commit into
+// `fatal: cannot do a partial commit during a cherry-pick`.
+//
+// AUTO_MERGE is NOT one of them, measured the same session: a tree left
+// holding only AUTO_MERGE commits path-limited exactly as it always did (it
+// is a cached auto-merge tree for `git diff AUTO_MERGE`, nothing more). It is
+// stale after a finished operation and so belongs in the recipe below, but
+// alarming on it would fire where nothing is wrong.
+var sequencerBlockers = []string{"CHERRY_PICK_HEAD", "REVERT_HEAD", "MERGE_HEAD"}
+
+// sequencerLeftovers is sequencerBlockers plus the state that is merely
+// stale — what the printed recipe removes, so one line ends the operation
+// instead of leaving the seat to find the rest on its next commit.
+var sequencerLeftovers = []string{"CHERRY_PICK_HEAD", "REVERT_HEAD", "MERGE_HEAD", "AUTO_MERGE", "MERGE_MSG", "sequencer"}
+
+// renderSequencerAudit is the git shim's one non-deny arm: it refuses to let
+// a sequencer verb exit 0 while the operation it claims to have ended is
+// still in progress (ranger-base-71g2f, from the ranger-base-a6gcp
+// merge-back).
+//
+// WHAT IT CATCHES. In a dispatched worktree the ref delete that ends a
+// cherry-pick wants the SHARED repo's `.git/packed-refs.lock`, which the cage
+// denies and seatbelt.go declines to grant (see the packed-refs.lock block
+// there — a create-only grant was measured and REJECTED under
+// ranger-base-msex, because it strands the lock FILE in shared state and
+// kills the operator's `git gc`). Git prints the refusal among the two or
+// three `packed-refs.lock` lines every commit in these trees already prints,
+// ignores it, and EXITS 0. The working tree is restored and HEAD is right, so
+// every signal a seat can read says the command worked. CHERRY_PICK_HEAD
+// survives, and the next path-limited commit — the only commit form a crew
+// PID allows — dies at `fatal: cannot do a partial commit during a
+// cherry-pick`, in a later Bash call, with nothing to connect it to the
+// abort. A seat that reads that fatal as "the PID denies my commit" closes
+// its bead with the work uncommitted, and in a dispatched worktree
+// uncommitted is gone.
+//
+// MEASURED 2026-09-11 (darwin 25.4.0, git 2.50.1) in a live dispatched
+// worktree under the seatbelt, every verb run against a real conflict:
+//
+//	cherry-pick --abort     rc 0   CHERRY_PICK_HEAD survives
+//	cherry-pick --quit      rc 0   CHERRY_PICK_HEAD survives
+//	cherry-pick --continue  rc 0   CHERRY_PICK_HEAD survives
+//	cherry-pick --skip      rc 0   CHERRY_PICK_HEAD survives
+//	revert --abort/--quit   rc 0   REVERT_HEAD survives
+//	rebase --abort          rc 0   CHERRY_PICK_HEAD survives
+//	rebase --quit           rc 0   CHERRY_PICK_HEAD survives
+//	rebase --continue       rc 0   CHERRY_PICK_HEAD survives
+//	rebase --skip           rc 1   the one git already says out loud
+//	merge --abort           rc 0   clean
+//	am --abort/--quit       rc 0   clean
+//
+// The bead was filed against `--abort`, and the measurement says the bug is
+// wider than the bead: a CLEAN, non-conflicting `git cherry-pick <sha>`,
+// `git revert <sha>` and `git rebase <sha>` each exit 0 and leak the same
+// pseudo-ref. That is why this arm keys on the VERB and not on `--abort` — a
+// merge-back seat that only ever cherry-picks cleanly is bitten just as hard,
+// and would never have matched a flag-shaped rule.
+//
+// THE INVARIANT is exactly "rc 0 and a blocker survives". It needs no
+// before/after comparison, because a sequencer verb that STOPS — a conflict,
+// a rebase pausing at `edit` — exits nonzero, so a zero exit from one of
+// these verbs is git's own claim that nothing is in progress. The converse
+// holds too: `cherry-pick --quit` and `revert --quit` exit 0 with nothing in
+// progress (measured) and leave no blocker, so they do not fire.
+//
+// IT AUDITS, IT DOES NOT REPAIR. The shim knows the exact files git failed to
+// unlink and could remove them, and that was considered: it would make a
+// clean cherry-pick silent again instead of alarming on every one. It is not
+// done because the CAUSE is a cage decision the operator has not made yet
+// (handed off as its own bead), and a shim that quietly finishes git's
+// cleanup hides the one signal that would bring that decision forward.
+// Refusing changes no state and is one line to undo if the lane later
+// prefers repair.
+//
+// THE ARM DOES NOT `exec`. For these verbs the shim runs git as a child and
+// exits with its code, which is the only way to look at anything afterwards.
+// A git ended by a signal therefore reports the shell's 128+n rather than
+// dying of the signal itself; every other verb still execs and is untouched.
+//
+// Two holes, both inherited from the shim this sits in and neither new: a git
+// ALIAS (`alias.cp = cherry-pick`) reaches the real verb without ever
+// spelling it, the same hole this file's preamble names for `push`; and a
+// leading global option that takes a separate value but is missing from
+// globalValueOpts hides the verb, which is why this scan reuses that one
+// table instead of keeping a second.
+//
+// Emitted only for `git`, and only when the real binary resolved at render
+// time — the audit has to run `rev-parse` against the same binary, and the
+// no-real-binary shim is a best-effort PATH search with no name to run.
+//
+// It therefore rides a shim the PID's deny list caused to exist, and a PID
+// denying no git verb would get no git shim and no arm. That is not a hole
+// today, and RenderGates is deliberately not widened to force one: every crew
+// PID denies `Bash(git push:*)` and `Bash(git commit unless --)` (AGENTS.md,
+// "Landing the plane"; parity's pre-push claim reads the first through
+// deniesGitPush), so the arm reaches every seat. A future PID that drops both
+// loses the audit — stated here rather than answered by rendering a shim in
+// front of a command the PID does not gate at all.
+func renderSequencerAudit(cmd, real, dateBin string) string {
+	if cmd != "git" || real == "" {
+		return ""
+	}
+	q := shQuote(real)
+	var b strings.Builder
+	b.WriteString("# ranger-base-71g2f: cherry-pick/revert/rebase can exit 0 without ending\n")
+	b.WriteString("# the operation — the pseudo-ref delete needs the SHARED repo's\n")
+	b.WriteString("# packed-refs.lock and the cage denies it. Audited here, never repaired.\n")
+	// The verb scan, and the count of words in front of it: the same walk
+	// posse_verb_match does, keeping the global prefix so rev-parse can be
+	// asked about the SAME repo the verb ran against (`git -C <repo> …`).
+	b.WriteString("posse_seq_scan() {\n  posse_sverb=; posse_sskip=0\n  while [ $# -gt 0 ]; do\n    case \"$1\" in\n")
+	if pairs := globalValueOpts[cmd]; len(pairs) > 0 {
+		quoted := make([]string, 0, len(pairs))
+		for _, o := range pairs {
+			quoted = append(quoted, shQuote(o))
+		}
+		fmt.Fprintf(&b, "      %s)\n        [ $# -ge 2 ] || break\n        posse_sskip=$((posse_sskip+2)); shift 2 ;;\n", strings.Join(quoted, "|"))
+	}
+	b.WriteString("      -*) posse_sskip=$((posse_sskip+1)); shift ;;\n      *) posse_sverb=$1; break ;;\n    esac\n  done\n")
+	verbs := make([]string, 0, len(sequencerVerbs))
+	for _, v := range sequencerVerbs {
+		verbs = append(verbs, shQuote(v))
+	}
+	fmt.Fprintf(&b, "  case \"$posse_sverb\" in %s) return 0 ;; esac\n  return 1\n}\n", strings.Join(verbs, "|"))
+	// The global prefix, recovered by rotating the first posse_sskip words to
+	// the end and dropping everything that stood in front of them. POSIX sh
+	// can slice positional parameters no other way, and an eval of a re-quoted
+	// argv is not a thing to put in a wall.
+	fmt.Fprintf(&b, "posse_seq_gitdir() {\n  posse_sdrop=$(( $# - posse_sskip ))\n  posse_si=0\n  while [ $posse_si -lt $posse_sskip ]; do set -- \"$@\" \"$1\"; shift; posse_si=$((posse_si+1)); done\n  posse_si=0\n  while [ $posse_si -lt $posse_sdrop ]; do shift; posse_si=$((posse_si+1)); done\n  %s \"$@\" rev-parse --absolute-git-dir 2>/dev/null\n}\n", q)
+	b.WriteString("posse_seq_left() {\n  posse_sleft=; posse_srm=\n")
+	fmt.Fprintf(&b, "  for posse_sm in %s; do\n    [ -e \"$posse_sg/$posse_sm\" ] && posse_sleft=\"$posse_sleft $posse_sm\"\n  done\n", strings.Join(sequencerBlockers, " "))
+	fmt.Fprintf(&b, "  for posse_sm in %s; do\n    [ -e \"$posse_sg/$posse_sm\" ] && posse_srm=\"$posse_srm '$posse_sg/$posse_sm'\"\n  done\n", strings.Join(sequencerLeftovers, " "))
+	b.WriteString("  [ -n \"$posse_sleft\" ]\n}\n")
+	b.WriteString("if posse_seq_scan \"$@\"; then\n")
+	fmt.Fprintf(&b, "  %s \"$@\"; posse_src=$?\n", q)
+	b.WriteString("  if [ $posse_src -eq 0 ]; then\n    posse_sg=$(posse_seq_gitdir \"$@\")\n    if [ -n \"$posse_sg\" ] && posse_seq_left; then\n")
+	b.WriteString("      echo \"posse gate: git $* exited 0 but the operation is STILL IN PROGRESS:$posse_sleft survives in $posse_sg (ranger-base-71g2f).\" >&2\n")
+	b.WriteString("      echo \"  git's delete of that pseudo-ref wants the SHARED repo's .git/packed-refs.lock, the cage denies it, and git exits 0 anyway.\" >&2\n")
+	b.WriteString("      echo \"  Left alone, your next path-limited commit dies at 'fatal: cannot do a partial commit during a cherry-pick' — that is THIS, not your PID.\" >&2\n")
+	b.WriteString("      echo \"  End it by hand, then re-read the tree with git status:\" >&2\n")
+	b.WriteString("      echo \"    rm -rf --$posse_srm\" >&2\n")
+	fmt.Fprintf(&b, "      echo \"%s git $* exited 0 leaving$posse_sleft (alarm: ranger-base-71g2f)\" >> \"$RHQ_GATE_LOG\" 2>/dev/null\n", refusalTimestamp(dateBin))
+	b.WriteString("      exit 1\n    fi\n  fi\n  exit $posse_src\nfi\n")
 	return b.String()
 }
 
