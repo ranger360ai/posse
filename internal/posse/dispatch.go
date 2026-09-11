@@ -5447,6 +5447,13 @@ type priorBlock struct {
 	ID      string
 	Open    bool
 	Verdict time.Time // when the close was recorded; zero = the store did not say
+	// Why is the handoff's body, which embeds the MergeOutcome.Reason that
+	// filed it verbatim. Its one reader asks the body one question — was
+	// this block the dirt (dirtyBlockMark) — because that is the one obstacle
+	// a later pass can see cleared without anything moving (landsweep.go's
+	// blockStillStands, ranger-base-ejju3). "" is a store that did not say,
+	// and it reads as "not the dirt", which leaves the block standing.
+	Why string
 }
 
 // priorMergeBlocked is the dedupe, and it reads CLOSED beads too
@@ -5506,7 +5513,7 @@ func blockOf(all []BdIssue, title string) priorBlock {
 			continue // EXACTLY, never a prefix — openTitledBead's E6
 		}
 		if b.Status != "closed" {
-			return priorBlock{ID: b.ID, Open: true}
+			return priorBlock{ID: b.ID, Open: true, Why: b.Description}
 		}
 		// ClosedAt is what bd records for a close; Updated is the fallback
 		// for a store that did not, and a zero verdict is reported as
@@ -5518,7 +5525,7 @@ func blockOf(all []BdIssue, title string) priorBlock {
 			when = *b.ClosedAt
 		}
 		if p.ID == "" || when.After(p.Verdict) {
-			p = priorBlock{ID: b.ID, Verdict: when}
+			p = priorBlock{ID: b.ID, Verdict: when, Why: b.Description}
 		}
 	}
 	return p

@@ -2,7 +2,7 @@
 
 package posse
 
-// ranger-base-yct7l (laurie's verify of ranger-base-9u5zy): what
+// ranger-base-yct7l (the verify of ranger-base-9u5zy): what
 // standingMergeBlock's skip actually buys, and what it costs.
 //
 // THE SKIP'S OWN CLAIM IS ABOUT THE TREE, AND logs/HEAD IS NOT THE TREE.
@@ -19,16 +19,23 @@ package posse
 // neither the commit message nor the skip's comment mentions, and the pin
 // below measures the property and that bound rather than their proxy.
 //
-// AND THE COST, pinned below as it currently stands: the skip is keyed on
-// the BRANCH not having moved, while every reason a merge-back blocks is a
-// statement about the BASE. Once a block stands, a base that moves back
-// under the branch is never re-read, so work that would now land does not
-// land and work that has since reached the base under another sha is still
-// reported as a strand. The two tests after the quiet one assert TODAY'S
-// behaviour and not the desired behaviour — the idiom of
-// TestAWriterFasterThanTheGraceKeepsTheTreeForever, for the same reason: a
-// defect that no test names gets fixed by nobody. Whoever fixes it inverts
-// them; the finding is filed at ranger-base-yct7l's escape bundle.
+// AND THE COST, WHICH WAS THE FINDING AND IS NOW THE REQUIREMENT
+// (ranger-base-ejju3 fixed it, and these tests are inverted as this file's
+// header said whoever fixed it would). The skip was keyed on the BRANCH not
+// having moved, while every reason a merge-back blocks is a statement about
+// the BASE. Once a block stood, a base that moved back under the branch was
+// never re-read: work that would now land did not land, and work that had
+// since reached the base under another sha was reported a strand forever.
+// standingMergeBlock now re-reads the operands — the base, and the tree's
+// dirt — on every pass, and honours the block only while none of them can
+// have changed the answer.
+//
+// THE TWO PROPERTIES ARE IN TENSION AND BOTH ARE PINNED HERE, which is the
+// point of keeping them in one file: the quiet tests above say the tree is
+// not written over a block that still stands, and the tests below say the
+// block stops standing the moment the base or the dirt says it might. A fix
+// to either that breaks the other is the same bug with the operands swapped
+// (ranger-base-9u5zy one way, ranger-base-ejju3 the other).
 
 import (
 	"fmt"
@@ -120,10 +127,10 @@ func TestTheWholeGitDirGoesQuietOnceTheBlockStands(t *testing.T) {
 // deliberately (ADR 0041 §1-§2 — the persona's uncommitted work is not the
 // rebase probe), and the comment asserts it "does not reproduce the write
 // the header above measures". Nothing measured that, and the tree it
-// matters most for is the one with dirt in it — the shape monica preserved
-// on ranger-base-wj7e9. MEASURED here: over five passes the git dir does
-// not move at all, so the steady-state `git status` writes nothing even
-// when it has modifications to report.
+// matters most for is the one with dirt in it — the shape ranger-base-wj7e9
+// preserved. MEASURED here: over five passes the git dir does not move at
+// all, so the steady-state `git status` writes nothing even when it has
+// modifications to report.
 func TestADirtyBlockedTreeGoesQuietTooAlthoughEveryPassReadsIt(t *testing.T) {
 	t.Parallel()
 	d, repo, tr := nurlStranded(t, "closed", true)
@@ -167,17 +174,15 @@ func mustLastTreeWrite(t *testing.T, tr *SessionTree) time.Time {
 	return ts
 }
 
-// TODAY'S BEHAVIOUR AND NOT THE REQUIREMENT (ranger-base-yct7l). The block
-// said "main moved on and replaying conflicts". main moves back — the
-// operator reverts the commit that conflicted, which is one of the two ways
-// a human answers this handoff — and the branch, untouched, now
-// fast-forwards. The skip is keyed on the branch, so the question is never
-// asked again and the work never lands. Before ranger-base-9u5zy the very
-// next pass landed it (measured by reverting standingMergeBlock's call:
-// `⤴ a-1 1 commit(s) fast-forwarded`), which is also the sequence
-// MergeSessionWork's own header measures on ranger-base-c02a/59fs — a bead
-// filed at 09:57:11 and the same untouched branch landed at 09:57:26.
-func TestABlockThatStandsIsNotReconsideredWhenTheBaseMovesBack(t *testing.T) {
+// THE REQUIREMENT (ranger-base-ejju3, inverted from the pin ranger-base-yct7l
+// left here). The block said "main moved on and replaying conflicts". main
+// moves back — the operator resets or reverts what conflicted, which is one
+// of the two ways a human answers this handoff — and the branch, untouched,
+// now fast-forwards. The pass must land it, which is what it did before
+// ranger-base-9u5zy and is the sequence MergeSessionWork's own header
+// measures on ranger-base-c02a/59fs: a bead filed at 09:57:11 and the same
+// untouched branch landed at 09:57:26.
+func TestABlockThatStandsIsReconsideredWhenTheBaseMovesBack(t *testing.T) {
 	t.Parallel()
 	d, repo, _ := nurlBlocked(t)
 	if _, err := d.Run("", "", 0); err != nil {
@@ -194,22 +199,24 @@ func TestABlockThatStandsIsNotReconsideredWhenTheBaseMovesBack(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := dispatcherOut(d2)
-	if !strings.Contains(out, "already answered this and is still open") {
-		t.Errorf("the skip no longer holds over a base that moved back — if that is the fix, this test is the one to invert:\n%s", out)
+	if strings.Contains(out, "already answered this and is still open") {
+		t.Errorf("the block was honoured over a base that moved back under it — the skip's key is the branch again, and a branch that would now land never lands:\n%s", out)
 	}
-	if _, err := os.Stat(filepath.Join(repo, "fix.txt")); !os.IsNotExist(err) {
-		t.Errorf("the branch landed after the base moved back (%v) — the defect this pins is fixed, so invert it", err)
+	if !strings.Contains(out, "fast-forwarded") {
+		t.Errorf("the pass did not land a branch that now fast-forwards:\n%s", out)
+	}
+	if body, err := os.ReadFile(filepath.Join(repo, "fix.txt")); err != nil || string(body) != "the persona's work\n" {
+		t.Errorf("a closed bead's work is still not on main after the base moved back (%v)\n%s", err, out)
 	}
 }
 
-// TODAY'S BEHAVIOUR AND NOT THE REQUIREMENT (ranger-base-yct7l), the same
-// key read from the other side: the branch's commit reaches the base under
-// ANOTHER sha after the block stands. That is the ≡ arm (equivalentOnBase,
-// ranger-base-g2xf) and it is the arm that ENDS a strand — Merged with
-// nothing left to land, which is what lets the tree retire by the measured
-// path ADR 0058 D2 wants. Skipped now, so the strand is reported forever
-// over work that is already on main and the tree stays kept.
-func TestWorkThatReachedTheBaseUnderAnotherShaIsStillReportedAStrand(t *testing.T) {
+// THE REQUIREMENT, the same key read from the other side (ranger-base-ejju3):
+// the branch's commit reaches the base under ANOTHER sha after the block
+// stands. That is the ≡ arm (equivalentOnBase, ranger-base-g2xf) and it is
+// the arm that ENDS a strand — Merged with nothing left to land, which is
+// what lets the tree retire by the measured path ADR 0058 D2 wants. Reported
+// as a strand forever while the skip was keyed on the branch alone.
+func TestWorkThatReachedTheBaseUnderAnotherShaEndsTheStrand(t *testing.T) {
 	t.Parallel()
 	d, repo, tr := nurlBlocked(t)
 	if _, err := d.Run("", "", 0); err != nil {
@@ -224,8 +231,144 @@ func TestWorkThatReachedTheBaseUnderAnotherShaIsStillReportedAStrand(t *testing.
 	if _, err := d2.Run("", "", 0); err != nil {
 		t.Fatal(err)
 	}
-	if out := dispatcherOut(d2); !strings.Contains(out, "did NOT reach") {
-		t.Errorf("the pass read the base again and saw the equivalence — the defect this pins is fixed, so invert it:\n%s", out)
+	out := dispatcherOut(d2)
+	if strings.Contains(out, "did NOT reach") {
+		t.Errorf("work already on main under another sha is still reported a strand:\n%s", out)
+	}
+	if !strings.Contains(out, "already on main under other sha(s)") {
+		t.Errorf("the pass did not say the base already holds this work:\n%s", out)
+	}
+}
+
+// THE OTHER OPERAND, and the findings bead's second trigger for it
+// (ranger-base-ejju3): the block was "main moved on and <tree> has
+// uncommitted changes, which git will not rebase over". The dirt is then
+// cleaned WITHOUT a commit — dirtyPaths reads empty, the branch is where it
+// was — and the rebase that would now succeed must be attempted. The base
+// here moves on a DIFFERENT path, so nothing conflicts and the only thing
+// that ever blocked this branch is the dirt.
+func TestCleaningTheDirtWithoutCommittingIsReconsidered(t *testing.T) {
+	t.Parallel()
+	d, repo, tr := nurlStranded(t, "closed", true)
+	write(t, filepath.Join(repo, "fake-show.json"), `[{"id":"a-1","status":"closed","assignee":"ranger"}]`)
+	commitIn(t, repo, "elsewhere.txt", "the operator's own line\n", "main: moved on")
+	draft := filepath.Join(tr.Path, "draft.txt")
+	write(t, draft, "half a thought\n")
+	dispatcherErr(t, d)
+	if _, err := d.Run("", "", 0); err != nil {
+		t.Fatal(err)
+	}
+	if out := dispatcherOut(d); !strings.Contains(out, "uncommitted changes") {
+		t.Fatalf("fixture: the first pass did not block on the dirt:\n%s", out)
+	}
+	if err := os.Remove(draft); err != nil {
+		t.Fatal(err)
+	}
+
+	d2 := newTestDispatcher(t, d.HB)
+	dispatcherErr(t, d2)
+	if _, err := d2.Run("", "", 0); err != nil {
+		t.Fatal(err)
+	}
+	out := dispatcherOut(d2)
+	if strings.Contains(out, "already answered this and is still open") {
+		t.Errorf("the block was honoured over a tree whose dirt is gone — the rebase that would now succeed is never attempted:\n%s", out)
+	}
+	if body, err := os.ReadFile(filepath.Join(repo, "fix.txt")); err != nil || string(body) != "the persona's work\n" {
+		t.Errorf("the work did not land after the dirt was cleaned (%v)\n%s", err, out)
+	}
+}
+
+// TODAY'S BEHAVIOUR AND NOT THE REQUIREMENT, and the one arm ranger-base-ejju3
+// deliberately did not close — the idiom this file already uses twice, for its
+// reason: a defect that no test names gets fixed by nobody.
+//
+// The operator answers the handoff by REVERTING the conflicting commit with a
+// new one rather than by resetting main. The base is then not an ancestor of
+// the branch (no fast-forward), the work is on main under no sha at all (no
+// equivalence), the tree is clean (not the dirt arm) — and only the replay can
+// say the conflict is gone. The replay in the session tree is the write ADR
+// 0058's fact 4 reads, so it cannot be run on a hunch; `git merge-tree` can
+// answer it in the object store with no worktree at all, but a branch where
+// merge-tree and rebase disagree would then be probed on EVERY pass, which is
+// ranger-base-9u5zy's bug again. Closing this needs a record of the base a
+// probe last ran against, so it costs one probe per base movement — filed as
+// ranger-base-c6ohn. Whoever lands that inverts this test.
+func TestAConflictRevertedOnTheBaseIsStillNotRetried(t *testing.T) {
+	t.Parallel()
+	d, repo, _ := nurlBlocked(t)
+	if _, err := d.Run("", "", 0); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(dispatcherOut(d), "did NOT reach") {
+		t.Fatalf("fixture: the first pass was not blocked:\n%s", dispatcherOut(d))
+	}
+	mustGit(t, repo, "revert", "--no-edit", "HEAD")
+
+	d2 := newTestDispatcher(t, d.HB)
+	dispatcherErr(t, d2)
+	if _, err := d2.Run("", "", 0); err != nil {
+		t.Fatal(err)
+	}
+	out := dispatcherOut(d2)
+	if !strings.Contains(out, "already answered this and is still open") {
+		t.Errorf("the pass re-asked a base whose conflict was reverted — if that is the fix, this test is the one to invert:\n%s", out)
+	}
+	if _, err := os.Stat(filepath.Join(repo, "fix.txt")); !os.IsNotExist(err) {
+		t.Errorf("the branch landed after the conflict was reverted (%v) — the gap this pins is closed, so invert it", err)
+	}
+}
+
+// AND THE OTHER HALF OF THE TENSION, which is what keeps the fix above from
+// being ranger-base-9u5zy's bug again: a base that moves and STILL conflicts
+// must leave the block standing and the tree untouched. main moves on every
+// few minutes in the field, so a skip re-keyed on the base's sha alone would
+// put the every-pass rebase probe — and ADR 0058's unreachable fact 4 — back
+// exactly as they were.
+func TestABaseThatMovesAndStillConflictsKeepsTheBlockAndTheTreeQuiet(t *testing.T) {
+	t.Parallel()
+	d, repo, tr := nurlBlocked(t)
+	if _, err := d.Run("", "", 0); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(dispatcherOut(d), "did NOT reach") {
+		t.Fatalf("fixture: the first pass was not blocked:\n%s", dispatcherOut(d))
+	}
+	// Two more passes first, so the stat-cache settle the header measures is
+	// spent before anything here is read (settle = 3 passes).
+	for n := 2; n <= 3; n++ {
+		d2 := newTestDispatcher(t, d.HB)
+		dispatcherErr(t, d2)
+		if _, err := d2.Run("", "", 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	prev, prevLast := gitDirWrites(t, tr), mustLastTreeWrite(t, tr)
+	for n := 4; n <= 6; n++ {
+		// main moves on every pass, and every move still conflicts with the
+		// branch's own edit of the same path.
+		commitIn(t, repo, "fix.txt", fmt.Sprintf("the operator's line %d\n", n), "main: conflicting again")
+		d2 := newTestDispatcher(t, d.HB)
+		dispatcherErr(t, d2)
+		if _, err := d2.Run("", "", 0); err != nil {
+			t.Fatal(err)
+		}
+		if out := dispatcherOut(d2); !strings.Contains(out, "already answered this and is still open") {
+			t.Fatalf("pass %d re-asked a question whose answer cannot have changed — the base moved, and it still conflicts:\n%s", n, out)
+		}
+		cur, curLast := gitDirWrites(t, tr), mustLastTreeWrite(t, tr)
+		for p, ts := range cur {
+			if b, had := prev[p]; !had || !b.Equal(ts) {
+				t.Errorf("pass %d wrote %s over a still-blocked tree nobody touched (%s -> %s) — re-reading the base must not cost the tree write ranger-base-9u5zy removed", n, p, b, ts)
+			}
+		}
+		if !curLast.Equal(prevLast) {
+			t.Errorf("pass %d moved lastTreeWrite over a still-blocked tree (%s -> %s)", n, prevLast, curLast)
+		}
+		prev, prevLast = cur, curLast
+	}
+	if n := len(mergeBlockedBeads(t, repo)); n != 1 {
+		t.Errorf("six passes over one blocked branch left %d handoffs, want 1", n)
 	}
 }
 

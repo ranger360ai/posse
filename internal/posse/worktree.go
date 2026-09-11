@@ -1276,8 +1276,14 @@ func MergeSessionWork(t *SessionTree) (MergeOutcome, error) {
 	// Not a fast-forward: the repo's branch moved while the session worked.
 	// Replay the session's commits onto it — in the SESSION's tree, so the
 	// operator's checkout is untouched by the risky half.
+	//
+	// The dirt is the one obstacle here that is a fact about the TREE, and
+	// the only one a persona clears without committing anything — so the
+	// sentence carries dirtyBlockMark, which is how a later pass recognises
+	// its own answer and re-asks it once the tree is clean (landsweep.go's
+	// blockStillStands, ranger-base-ejju3).
 	if len(o.Dirty) > 0 {
-		o.Reason = fmt.Sprintf("%s moved on and %s has uncommitted changes (%s), which git will not rebase over", t.Base, AbbrevHome(t.Path), strings.Join(o.Dirty, " "))
+		o.Reason = fmt.Sprintf("%s moved on and %s has uncommitted changes (%s), %s", t.Base, AbbrevHome(t.Path), strings.Join(o.Dirty, " "), dirtyBlockMark)
 		return o, nil
 	}
 	// The rebase and the fast-forward under it are ONE compare-and-swap on
@@ -2348,6 +2354,21 @@ func gitPathsZ(repo string, args ...string) ([]string, error) {
 	}
 	return paths, nil
 }
+
+// dirtyBlockMark ends the one merge-back reason that is a fact about the
+// TREE rather than about the base: git will not rebase over uncommitted
+// paths. It is a marker and not a sentence fragment by accident — a standing
+// block is honoured on later passes without asking git again, and this is how
+// the pass tells the one verdict a persona can invalidate by deleting a file
+// from the ones only a commit can (blockStillStands, ranger-base-ejju3).
+//
+// ONE WRITER AND ONE READER of the same constant, the idiom every other
+// marker in this codebase uses (discoveredFromMarkerPrefix, the closed-dirty
+// comment's own mark), because the alternative is a reader matching a literal
+// the writer is free to reword. The wording is UNCHANGED from before the
+// constant existed, so every block already filed against an older posse is
+// still recognised by it.
+const dirtyBlockMark = "which git will not rebase over"
 
 // reaches is the fast-forward precondition, asked of git rather than assumed
 // from an exit status somewhere else: does ref already contain sha?

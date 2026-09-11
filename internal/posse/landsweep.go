@@ -104,6 +104,7 @@ package posse
 import (
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -229,28 +230,35 @@ func (d *Dispatcher) landClosedTrees(dirFilter string) {
 				o   MergeOutcome
 				err error
 			)
-			if reason, skip := standingMergeBlock(t, blocks); skip {
+			reason, dirty, skip := standingMergeBlock(t, blocks)
+			if skip {
 				// Skip the mutating rebase probe entirely: this exact tip
 				// already has a merge-back verdict on record, unmoved since
-				// it was recorded, and asking git the same question again
-				// could only reproduce the same answer while writing to the
-				// tree — `rebase (start): checkout main` / `rebase (abort):
-				// returning to refs/heads/<branch>`, both in logs/HEAD, at a
-				// cadence under any grace this dial can hold (retire.go's
-				// header, MEASURED). That write is what kept a stranded
-				// branch's tree "just written" every single pass and its
-				// grace clock from ever reaching zero (ranger-base-9u5zy).
+				// it was recorded, nothing the verdict was ABOUT has moved
+				// either (standingMergeBlock re-reads the base and the dirt
+				// for itself, ranger-base-ejju3), and asking git the same
+				// question again could only reproduce the same answer while
+				// writing to the tree — `rebase (start): checkout main` /
+				// `rebase (abort): returning to refs/heads/<branch>`, both in
+				// logs/HEAD, at a cadence under any grace this dial can hold
+				// (retire.go's header, MEASURED). That write is what kept a
+				// stranded branch's tree "just written" every single pass and
+				// its grace clock from ever reaching zero (ranger-base-9u5zy).
 				// o.Commits is read without touching the tree so the line
 				// below still says how much is stuck.
-				o = MergeOutcome{Branch: t.Branch, Base: t.Base, Reason: reason}
-				o.Commits, _ = unlandedCount(t)
-				// Dirty is read every pass regardless (ADR 0041 §1-§2,
+				//
+				// Dirty comes back from the skip's own read (ADR 0041 §1-§2,
 				// closeddirty.go): it is the persona's own uncommitted work
-				// and not the rebase probe, `git status` alone does not
-				// reproduce the write the header above measures, and its
-				// report dedupes on the comment's own marker rather than on
-				// this skip.
-				o.Dirty = dirtyPaths(t.Path)
+				// and not the rebase probe, it is reported on every pass
+				// whether the block stands or not, and `git status` alone
+				// does not reproduce the write the header above measures.
+				// Returned rather than read again here because the skip now
+				// has to ask it anyway — git will not rebase over dirt, so
+				// while it is there the answer cannot have changed — and two
+				// `git status` runs for one question is two readings that can
+				// disagree.
+				o = MergeOutcome{Branch: t.Branch, Base: t.Base, Reason: reason, Dirty: dirty}
+				o.Commits, _ = unlandedCount(t)
 			} else {
 				o, err = MergeSessionWork(t)
 			}
@@ -324,36 +332,130 @@ func (d *Dispatcher) landClosedTrees(dirFilter string) {
 // clock — and, once a human answers the handoff, the retire behind it — can
 // run at all.
 //
-// ("", false) whenever the answer might be new: no block on record yet (the
-// first attempt still has to happen and file one), the pin cannot be read
-// (an OPEN block's only evidence that its branch has not moved — a missing
-// pin falls back to asking git for real, which self-heals the pin on the
-// very next pass), or the branch has moved since a CLOSED verdict, which is
-// a question nobody has answered yet.
-func standingMergeBlock(t *SessionTree, blocks *blockedRecord) (string, bool) {
+// AND WHY THE BRANCH IS ONLY HALF THE KEY (ranger-base-ejju3). Every reason
+// MergeSessionWork blocks on is a statement about the BASE — "main moved on
+// and replaying conflicts", "main moved on and <tree> has uncommitted
+// changes", notOnBase, the detached base, the constitution refusal — so a
+// record keyed on the branch alone caches the answer against the wrong
+// operand. Keyed that way this skip made the premise above false exactly
+// when the base moves, which is every time anything lands on main: a closed
+// bead's work that WOULD now land was never landed by a pass, and a strand
+// whose work had since reached main under another sha was reported a strand
+// forever, both until a human closed the block by hand.
+//
+// So the operands are re-read on every pass, and blockStillStands is where
+// the tension is paid: it asks the three questions that can change the
+// answer without writing the session tree — the base moved back under the
+// branch, the work reached the base under other shas, the dirt was cleaned —
+// and, for the one that used to need the rebase, asks the replay itself in
+// the repo's object store (mergesCleanly). Keying the skip on the base's sha
+// instead would re-probe on every base move, which is most passes, and that
+// is the every-pass tree write ranger-base-9u5zy removed.
+//
+// ("", nil, false) whenever the answer might be new: no block on record yet
+// (the first attempt still has to happen and file one), the pin cannot be
+// read (an OPEN block's only evidence that its branch has not moved — a
+// missing pin falls back to asking git for real, which self-heals the pin on
+// the very next pass), the branch has moved since a CLOSED verdict, which is
+// a question nobody has answered yet, or an operand of the question itself
+// has moved.
+func standingMergeBlock(t *SessionTree, blocks *blockedRecord) (string, []string, bool) {
 	prior, err := blocks.on(t)
 	if err != nil || prior.ID == "" {
-		return "", false
+		return "", nil, false
 	}
+	// Hoisted, because every arm below needs it and the two that used to ask
+	// separately (workHead here, workHeadTime's own call) must not be able to
+	// answer about two different commits.
+	head, ok := workHead(t)
+	if !ok {
+		return "", nil, false
+	}
+	var say string
 	if prior.Open {
-		head, ok := workHead(t)
-		if !ok {
-			return "", false
-		}
 		pinned, err := git(t.Repo, "rev-parse", "--verify", "--quiet", blockedPinRef(t.Branch))
 		if err != nil || pinned == "" || pinned != head {
-			return "", false
+			return "", nil, false
 		}
-		return fmt.Sprintf("%s already answered this and is still open — not retried, so %s is left untouched", prior.ID, AbbrevHome(t.Path)), true
+		say = fmt.Sprintf("%s already answered this and is still open — not retried, so %s is left untouched", prior.ID, AbbrevHome(t.Path))
+	} else {
+		if prior.Verdict.IsZero() {
+			return "", nil, false
+		}
+		tip, tok := commitTime(t.Repo, head)
+		if !tok || tip.After(prior.Verdict) {
+			return "", nil, false
+		}
+		say = fmt.Sprintf("%s already answered this and closed it, and %s has not moved since — not retried, so %s is left untouched", prior.ID, t.Branch, AbbrevHome(t.Path))
 	}
-	if prior.Verdict.IsZero() {
-		return "", false
+	dirty, stands := blockStillStands(t, head, prior)
+	if !stands {
+		return "", nil, false
 	}
-	tip, ok := workHeadTime(t)
-	if !ok || tip.After(prior.Verdict) {
-		return "", false
+	return say, dirty, true
+}
+
+// blockStillStands re-asks the standing verdict's question over the operands
+// it was actually about, and it asks them IN MERGESESSIONWORK'S OWN ORDER so
+// the two can never disagree about which obstacle comes first: fast-forward,
+// equivalence, dirt, replay. false is "this could land now — probe for real",
+// and the dirt it read comes back either way because the caller reports it on
+// every pass (ADR 0041 §1–§2) and a second `git status` would be a second
+// reading of the same question.
+//
+// NONE OF THESE WRITES THE SESSION TREE, which is the whole constraint
+// (ranger-base-9u5zy, ADR 0058 fact 4). Two run in the repo — merge-base and
+// equivalentOnBase's rev-list/cherry — and the third is `git status`, which
+// the pass already ran here before this function existed and which MEASURED
+// writes nothing over a blocked tree in the steady state, dirt or no dirt
+// (ranger-base-yct7l, mergeblocked_qa_test.go).
+//
+// WHAT IT STILL DOES NOT ASK, deliberately and not by oversight: whether a
+// base that moved FORWARD would now replay cleanly — the conflicting commit
+// reverted by a new commit rather than reset away, or fixed on main. Only the
+// replay can answer that, and the replay is the tree write this whole
+// mechanism exists to stop; probing on every base move is ranger-base-9u5zy's
+// bug back, and probing on a cheap filter's say-so (`git merge-tree`, which
+// answers it with no worktree at all) re-probes forever on the branch where
+// the filter and the rebase disagree, because nothing here records that a
+// probe already ran against this base. That arm needs a record of the base
+// last probed and is filed as ranger-base-c6ohn; today it ends the way it
+// ended before — a human answering the handoff, or `posse worktrees --land`.
+//
+// A base with nothing to land on (t.Base == "") is left standing: the block's
+// reason is that the branch records no base at all, and that is not a fact
+// about anything read here.
+func blockStillStands(t *SessionTree, head string, prior priorBlock) ([]string, bool) {
+	dirty := dirtyPaths(t.Path)
+	if t.Base == "" {
+		return dirty, true
 	}
-	return fmt.Sprintf("%s already answered this and closed it, and %s has not moved since — not retried, so %s is left untouched", prior.ID, t.Branch, AbbrevHome(t.Path)), true
+	// The base moved back under the branch — the operator reset or reverted
+	// what conflicted — and the landing is now the fast-forward that touches
+	// no worktree at all.
+	if reaches(t.Repo, head, t.Base) {
+		return dirty, false
+	}
+	// Or the work reached the base under other shas while the block stood
+	// (ranger-base-g2xf). That is the arm that ENDS a strand — Merged with
+	// nothing left to land — and it is the one ADR 0058 D2 needs to reach for
+	// the tree to become retirable by the measured path.
+	if len(equivalentOnBase(t.Repo, t.Base, head)) > 0 {
+		return dirty, false
+	}
+	// git will not rebase over uncommitted paths, so while they are there the
+	// answer cannot have changed whatever the base did.
+	if len(dirty) > 0 {
+		return dirty, true
+	}
+	// And the other side of that: a block that WAS the dirt, over a tree that
+	// is clean now. The persona deleted the stray file and restored the
+	// edited one — dirtyPaths reads empty, nothing was committed, so neither
+	// the branch nor the base moved and nothing above this line can see it —
+	// and the rebase that would now succeed was never attempted again
+	// (ranger-base-ejju3, the findings bead's second trigger). The verdict's
+	// own body is the record of which obstacle it was.
+	return dirty, !strings.Contains(prior.Why, dirtyBlockMark)
 }
 
 // retireTree is ADR 0058 D2: the landing sweep's own act on a tree there is

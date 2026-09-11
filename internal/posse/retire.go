@@ -50,7 +50,9 @@ package posse
 // answer already stood for (MEASURED live on ranger-base-zrbff: 63 replays
 // logged in one day, and the tree never cooled). landsweep.go's
 // standingMergeBlock closes THAT one at the source (ranger-base-9u5zy): once
-// a branch's tip has a merge-back verdict on record and unmoved, later
+// a branch's tip has a merge-back verdict on record and unmoved, and nothing
+// the verdict was about has moved either (ranger-base-ejju3 — the base and
+// the tree's dirt, re-read every pass by readings that write no tree), later
 // passes report it without asking git again, so this specific writer stops
 // firing and the tree can go quiet. What is still true, and still has no
 // escape hatch, is every OTHER actor this predicate cannot tell apart from a
