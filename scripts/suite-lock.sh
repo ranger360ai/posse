@@ -778,6 +778,40 @@ ORPHANER
 		return 1
 	}
 
+	# wait_log <file> <literal> <seconds> — wait for a literal to REACH a log,
+	# rather than reading for it once. The QUEUED ANNOUNCEMENT IS TWO
+	# `_suite_lock_say` LINES and `wait_answer` returns on the first of them:
+	# the holder list arrives first, and the count, the unopenable note and
+	# the opt-out hint are all on the second, with `_suite_lock_holders` and
+	# `_suite_lock_unopenable` — a `seq`, a `sed` and a subshell open per slot
+	# — running between the two. A `log_has` fired the instant wait_answer
+	# returns is therefore a race against the scheduler, and an arm that asks
+	# about the second line LOSES it under load while the queue behaves
+	# perfectly.
+	#
+	# MEASURED 2026-09-11 on ci.yml's macos-latest runner (run 34592502814,
+	# ranger-base-stbh0): arm 16 read m22.log between the two lines, found no
+	# count, and reported the pre-3poyb phantom over a queue that had simply
+	# not said its number yet — while the SAME script, run by
+	# `make verify-suite-lock` seconds earlier in the same job on the same
+	# box, passed that arm. That is the signature: the assertion is timed, not
+	# read. Reproduced here by widening the gap with one `sleep 1` between the
+	# two says, which reds arm 16 in the runner's exact words, and green again
+	# with that sleep still in place once the arm waits.
+	#
+	# The deadline is the same backstop as everywhere below and is spent only
+	# by an arm that is going to fail anyway: a count that is WRONG rather
+	# than late never arrives, so the arm still says no.
+	wait_log() {
+		local n=0 lim=$(( $3 * 10 ))
+		while [ "$n" -lt "$lim" ]; do
+			log_has "$1" "$2" && return 0
+			sleep 0.1
+			n=$((n + 1))
+		done
+		return 1
+	}
+
 	# HOW LONG A FORK GETS, and it is a backstop rather than a measurement
 	# (ranger-base-4psg2). Nothing below TIMES a lock operation: every arm
 	# decides on a marker's VALUE or on a log line, and the deadline is only
@@ -1373,11 +1407,11 @@ STRICT
 				bad "$arm16" "it took slot $(slot_of "$tmp/m22") with the other one held"
 			elif log_has "$tmp/m22.log" '(pid , since )'; then
 				bad "$arm16" "the queued line named a phantom holder: $(tr '\n' '|' <"$tmp/m22.log" 2>/dev/null)"
-			elif ! log_has "$tmp/m22.log" '1 of 2 slots hold a full suite'; then
-				bad "$arm16" "it counted the queue's width instead of its holders: $(tr '\n' '|' <"$tmp/m22.log" 2>/dev/null)"
+			elif ! wait_log "$tmp/m22.log" '1 of 2 slots hold a full suite' "$fork_s"; then
+				bad "$arm16" "it counted the queue's width instead of its holders, or never said a number in ${fork_s}s: $(tr '\n' '|' <"$tmp/m22.log" 2>/dev/null)"
 			elif ! log_has "$tmp/m22.log" 'cannot open and does not judge'; then
 				bad "$arm16" "the unopenable slot was dropped without a word: $(tr '\n' '|' <"$tmp/m22.log" 2>/dev/null)"
-			elif ! log_has "$tmp/m3.log" '2 of 2 slots hold a full suite'; then
+			elif ! wait_log "$tmp/m3.log" '2 of 2 slots hold a full suite' "$fork_s"; then
 				bad "$arm16" "the control failed: over arm 3's two ordinary held slots the same reader said $(tr '\n' '|' <"$tmp/m3.log" 2>/dev/null) — a holders reader that dropped every slot would pass the arm above"
 			else
 				ok "$arm16"
