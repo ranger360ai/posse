@@ -70,6 +70,35 @@ package treepins
 // refused — a false pass by an arm that had stopped measuring its own claim.
 // Arm 3 below is what makes the next `sleep 2` visible, since it was arm 1's
 // scan being blind to this spelling that let it sit through the 4psg2 fix.
+//
+// THE THIRD SPELLING (ranger-base-ijt4u), and the last one this file intends
+// to have. Arm 1 read `wait_(?:file|answer)` — a list of the two helpers that
+// existed the day it was written. ranger-base-stbh0 then added a third,
+// `wait_log <file> <literal> <seconds>`, to stop arm 16 racing the second
+// line of the queued announcement; it is a good helper and the arm needed it.
+// Its deadline is its THIRD argument, and arm 1 read no argument of it at all.
+//
+// MEASURED 2026-09-11, darwin/arm64, at d3ef4a88, tree clean before and after:
+// cutting that deadline to a literal 3 at scripts/suite-lock.sh:1410 — a
+// three-second scheduler budget gating arm 16's read, 4psg2's defect exactly —
+// left the whole package green, `ok ... 30.059s`. The controls in the same
+// tree still bit: the same cut on a wait_file call reds arm 1, and `sleep 2`
+// or `local b=2; sleep "$b"` before a slot_of read reds arm 3. Only the new
+// spelling walked through.
+//
+// So the answer is not `wait_(?:file|answer|log)`, which would also be wrong —
+// adding `log` to that alternation captures the literal `'1` rather than the
+// seconds, because the three helpers do not share an arity. And it would be
+// the same shape of answer for the fourth time on one invariant
+// (4psg2 -> 1p4ig -> c85id -> here), three of those rounds spent because a
+// scan enumerated the spellings it knew.
+//
+// slDeadlineHelpers below derives the set instead, from the line each helper
+// has to write to be a deadline helper at all: `lim=$(( $N * 10 ))`, which
+// names its own deadline argument. A fifth waiter is read the day it is
+// written, with its own arity. A waiter that cannot be read that way fails the
+// arm outright rather than being skipped, which is the part that makes this a
+// closed set rather than a longer list.
 
 import (
 	"os"
@@ -81,10 +110,24 @@ import (
 	"testing"
 )
 
+// slShellWord is one argument as the self-test writes them: a double-quoted
+// path, a single-quoted literal with spaces in it, or a bare word. It stops at
+// the shell separators so `wait_file "$tmp/m1" "$fork_s" || bad ...` yields
+// `"$fork_s"` and not `"$fork_s"` plus the rest of the line.
+const slShellWord = `(?:"[^"]*"|'[^']*'|[^\s;&|()]+)`
+
 var (
-	// A call, never the definitions: both helpers take a quoted path first.
-	slWaitCall = regexp.MustCompile(`\bwait_(?:file|answer)\s+"[^"]+"\s+(\S+?)(?:;|\s|$)`)
-	slForkS    = regexp.MustCompile(`^\s*local fork_s=(\d+)\s*$`)
+	// A helper DEFINITION inside the self-test body: one tab in, opened and
+	// closed at that column. `slot_of() { ...; }` is a one-liner and is not
+	// one of these, which is correct — it takes no deadline.
+	slHelperOpen = regexp.MustCompile(`^\t(\w+)\(\) \{$`)
+	// A positional argument becoming a poll budget. This is the STRUCTURE
+	// that makes a helper a deadline helper, and it is what arm 1 derives its
+	// scan from instead of naming the helpers it knows about
+	// (ranger-base-ijt4u): `lim=$(( $3 * 10 ))` says "my third argument is
+	// wall-clock seconds" in a way a fourth helper cannot be added without.
+	slHelperLim = regexp.MustCompile(`\blim=\$\(\(\s*\$(\d+)\s*\*\s*\d+\s*\)\)`)
+	slForkS     = regexp.MustCompile(`^\s*local fork_s=(\d+)\s*$`)
 	// EVERY argument, not only a numeric literal, and the classification is
 	// arm 3's job (ranger-base-c85id). A scan that matched digits only was
 	// satisfied by `local b=2; sleep "$b"` — the same deadline, one name over
@@ -133,10 +176,119 @@ func slSelfTestBody(t *testing.T) ([]string, int) {
 	return nil, 0
 }
 
+// slDeadlineHelper is one of the self-test's waiters: its name, which of its
+// arguments is the wall-clock deadline, and the pattern that reads that
+// argument at a call site.
+type slDeadlineHelper struct {
+	name string
+	arg  int // 1-based position of the deadline argument
+	call *regexp.Regexp
+}
+
+// slDeadlineHelpers DERIVES the set of helpers whose argument arm 1 has to
+// read, instead of naming them (ranger-base-ijt4u).
+//
+// Arm 1 used to carry an alternation — `wait_(?:file|answer)` — and that made
+// it an ENUMERATION OF NAMES that only held while the list was complete.
+// ranger-base-stbh0 added `wait_log <file> <literal> <seconds>` and arm 1 went
+// on passing: MEASURED 2026-09-11, darwin/arm64, at d3ef4a88, that helper's
+// deadline cut from `"$fork_s"` to 3 at scripts/suite-lock.sh:1410 left every
+// suite-lock pin in the package green (`ok ... 30.059s`). That is the THIRD
+// time a new spelling walked past a scan written for the old ones
+// (4psg2 -> 1p4ig -> c85id -> here), so the answer here is not a fourth name
+// in a list.
+//
+// What it reads instead is the structure that MAKES a helper a deadline
+// helper. Each of them turns a positional argument into a poll budget in one
+// shape and cannot do its job without:
+//
+//	wait_log() {
+//		local n=0 lim=$(( $3 * 10 ))
+//
+// `$3` there is the helper's own statement of which argument is wall-clock
+// seconds, written by the person who added it, in the line that makes it
+// true. A fifth waiter is picked up the day it is written, with its own
+// arity, and nobody has to remember this pin exists.
+//
+// Two guards, because a derivation can go blind in ways an enumeration
+// cannot. The caller asserts a floor on how many helpers were found and how
+// many calls they matched; and a helper named `wait_*` that this scan cannot
+// read a deadline out of is a FAIL in its own right, on the same honest
+// ground as arm 3's unreadable sleeps — a waiter whose budget nothing can
+// find is exactly the hole ranger-base-stbh0 opened.
+func slDeadlineHelpers(t *testing.T, lines []string) []slDeadlineHelper {
+	t.Helper()
+
+	var found []slDeadlineHelper
+	var waiters, unreadable []string
+	seen := map[string]bool{}
+	cur := ""
+	for _, raw := range lines {
+		if m := slHelperOpen.FindStringSubmatch(raw); m != nil {
+			cur = m[1]
+			if strings.HasPrefix(cur, "wait_") {
+				waiters = append(waiters, cur)
+			}
+			continue
+		}
+		if raw == "\t}" {
+			cur = ""
+			continue
+		}
+		if cur == "" || seen[cur] {
+			continue
+		}
+		m := slHelperLim.FindStringSubmatch(raw)
+		if m == nil {
+			continue
+		}
+		n, err := strconv.Atoi(m[1])
+		if err != nil || n < 1 {
+			t.Fatalf("%s: %s() computes its budget from $%s, which is not an argument position — this scan cannot say which of its arguments is the deadline",
+				suiteLockScript, cur, m[1])
+		}
+		seen[cur] = true
+		pat := `\b` + regexp.QuoteMeta(cur) + `\b`
+		for i := 1; i < n; i++ {
+			pat += `\s+` + slShellWord
+		}
+		pat += `\s+(` + slShellWord + `)`
+		found = append(found, slDeadlineHelper{name: cur, arg: n, call: regexp.MustCompile(pat)})
+	}
+
+	for _, w := range waiters {
+		if !seen[w] {
+			unreadable = append(unreadable, w)
+		}
+	}
+	if len(unreadable) > 0 {
+		t.Fatalf("%s's self-test defines %d waiter(s) this scan cannot read a deadline out of: %s\n\n"+
+			"A helper named `wait_*` bounds something, and arm 1 has to know WHICH of\n"+
+			"its arguments is the wall-clock budget or it cannot check that the budget\n"+
+			"is `\"$fork_s\"`. It learns that from the line that makes it true —\n"+
+			"`local n=0 lim=$(( $N * 10 ))` — so write the wait as a poll loop bounded\n"+
+			"that way, like wait_file/wait_answer/wait_log. A waiter whose deadline\n"+
+			"nothing can find is the hole ranger-base-stbh0 opened and\n"+
+			"ranger-base-ijt4u closed: arm 1 stayed green over a 3-second budget\n"+
+			"gating arm 16's read for a whole round.",
+			suiteLockScript, len(unreadable), strings.Join(unreadable, ", "))
+	}
+	// The positive witness for the derivation itself. There were 3 —
+	// wait_file, wait_answer, wait_log — when this was written. A helper-def
+	// regexp that stopped matching would leave arm 1 scanning for nothing and
+	// passing, which is the failure this whole round is about.
+	if len(found) < 3 {
+		t.Fatalf("the scan derived only %d deadline helper(s) from %s's self-test — it was 3 (wait_file, wait_answer, wait_log), so the derivation has gone blind and a clean result from arm 1 means nothing",
+			len(found), suiteLockScript)
+	}
+	return found
+}
+
 // Arm 1: every arm's deadline comes from the one backstop, and the backstop is
 // generous.
 func TestQANoSuiteLockArmCarriesItsOwnWallClockBudget(t *testing.T) {
 	lines, off := slSelfTestBody(t)
+	helpers := slDeadlineHelpers(t, lines)
 
 	var budget int
 	var calls int
@@ -149,19 +301,23 @@ func TestQANoSuiteLockArmCarriesItsOwnWallClockBudget(t *testing.T) {
 		if m := slForkS.FindStringSubmatch(raw); m != nil {
 			budget, _ = strconv.Atoi(m[1])
 		}
-		for _, m := range slWaitCall.FindAllStringSubmatch(l, -1) {
-			calls++
-			if m[1] != `"$fork_s"` {
-				literal = append(literal, suiteLockScript+":"+strconv.Itoa(off+i+1)+": "+l)
+		for _, h := range helpers {
+			for _, m := range h.call.FindAllStringSubmatch(l, -1) {
+				calls++
+				if m[1] != `"$fork_s"` {
+					literal = append(literal, suiteLockScript+":"+strconv.Itoa(off+i+1)+
+						": ("+h.name+" argument "+strconv.Itoa(h.arg)+" is its deadline) "+l)
+				}
 			}
 		}
 	}
 
 	// The positive witness. A regexp that stopped matching, or a body finder
 	// that stopped finding the body, would leave this arm green over a scan
-	// that read nothing. There were 19 such calls when this pin was written.
+	// that read nothing. There were 28 such calls when this round rewrote it —
+	// 26 to wait_file/wait_answer and 2 to wait_log.
 	if calls < 12 {
-		t.Fatalf("the scan found only %d wait_file/wait_answer calls in %s's self-test — it was 19, so the scan has gone blind and a clean result here means nothing",
+		t.Fatalf("the scan found only %d calls to %s's self-test deadline helpers — it was 28, so the scan has gone blind and a clean result here means nothing",
 			calls, suiteLockScript)
 	}
 	if len(literal) > 0 {
