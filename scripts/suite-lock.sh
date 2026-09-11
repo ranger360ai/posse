@@ -1155,9 +1155,9 @@ STRICT
 		POSSE_SUITE_LOCK_DIR="$cd" \
 			"$tmp/holder.sh" "$SUITE_LOCK_LIB" "$tmp/m20" "$tmp/hold20" go test -timeout 25m ./... &
 		h20=$!
-		# 10s against a 0.2s poll: a queued acquire would still be waiting,
-		# and that is the whole finding — the hang, not the words.
-		if ! wait_file "$tmp/m20" 10; then
+		# the one fork backstop against a 0.2s poll: a queued acquire would
+		# still be waiting, and that is the whole finding — the hang, not the words.
+		if ! wait_file "$tmp/m20" "$fork_s"; then
 			bad "$arm15" 'the run never started — it is queued against a dir it cannot open, which is the hang this arm exists for'
 		elif [ "$(slot_of "$tmp/m20")" != none ]; then
 			bad "$arm15" "it took slot $(slot_of "$tmp/m20") out of a dir it cannot open"
