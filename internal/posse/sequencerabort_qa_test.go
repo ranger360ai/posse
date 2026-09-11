@@ -92,7 +92,7 @@ func sequencerShim(t *testing.T) (shim, gatesDir, gitDir string) {
 	t.Setenv("PATH", realBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	a := &App{Home: home, StateDir: filepath.Join(home, "state")}
 	// The deny list every crew PID carries — the shim this arm rides on.
-	gatesDir, binDir, _, err := a.RenderGates("gwart", []string{"Bash(git push:*)", "Bash(git commit unless --)"})
+	gatesDir, binDir, _, err := a.RenderGates("security", []string{"Bash(git push:*)", "Bash(git commit unless --)"})
 	if err != nil {
 		t.Fatal(err)
 	}
