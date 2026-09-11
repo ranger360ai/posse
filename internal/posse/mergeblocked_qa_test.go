@@ -115,6 +115,49 @@ func TestTheWholeGitDirGoesQuietOnceTheBlockStands(t *testing.T) {
 	}
 }
 
+// The other reader the skip leaves in the path, and the claim its comment
+// makes about it: `git status` runs on EVERY pass over a blocked tree,
+// deliberately (ADR 0041 §1-§2 — the persona's uncommitted work is not the
+// rebase probe), and the comment asserts it "does not reproduce the write
+// the header above measures". Nothing measured that, and the tree it
+// matters most for is the one with dirt in it — the shape monica preserved
+// on ranger-base-wj7e9. MEASURED here: over five passes the git dir does
+// not move at all, so the steady-state `git status` writes nothing even
+// when it has modifications to report.
+func TestADirtyBlockedTreeGoesQuietTooAlthoughEveryPassReadsIt(t *testing.T) {
+	t.Parallel()
+	d, repo, tr := nurlStranded(t, "closed", true)
+	write(t, filepath.Join(repo, "fake-show.json"), `[{"id":"a-1","status":"closed","assignee":"ranger"}]`)
+	commitIn(t, repo, "fix.txt", "the operator's line\n", "main: conflicting")
+	// The persona's uncommitted draft, left behind by the close.
+	write(t, filepath.Join(tr.Path, "draft.txt"), "half a thought\n")
+	dispatcherErr(t, d)
+	if _, err := d.Run("", "", 0); err != nil {
+		t.Fatal(err)
+	}
+	if out := dispatcherOut(d); !strings.Contains(out, "uncommitted changes") {
+		t.Fatalf("fixture: the first pass did not block on the dirt, so nothing here measures that arm:\n%s", out)
+	}
+	prev, prevLast := gitDirWrites(t, tr), mustLastTreeWrite(t, tr)
+	for n := 2; n <= 6; n++ {
+		d2 := newTestDispatcher(t, d.HB)
+		dispatcherErr(t, d2)
+		if _, err := d2.Run("", "", 0); err != nil {
+			t.Fatal(err)
+		}
+		cur, curLast := gitDirWrites(t, tr), mustLastTreeWrite(t, tr)
+		for p, ts := range cur {
+			if b, had := prev[p]; !had || !b.Equal(ts) {
+				t.Errorf("pass %d wrote %s over a blocked DIRTY tree nobody touched (%s -> %s) — `git status` is the only reader left in that path, and a write of its own puts ADR 0058's grace clock back where ranger-base-9u5zy found it", n, p, b, ts)
+			}
+		}
+		if !curLast.Equal(prevLast) {
+			t.Errorf("pass %d moved lastTreeWrite over a blocked DIRTY tree (%s -> %s)", n, prevLast, curLast)
+		}
+		prev, prevLast = cur, curLast
+	}
+}
+
 func mustLastTreeWrite(t *testing.T, tr *SessionTree) time.Time {
 	t.Helper()
 	ts, ok := lastTreeWrite(tr)
