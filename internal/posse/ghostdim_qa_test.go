@@ -80,6 +80,12 @@ func TestComposerIsGhostReadsTheDrawnState(t *testing.T) {
 		{"the measured suggestion", ghostWaitANSI, ghostWaitText, true},
 		{"the same characters with no dim run — a typed line", typedWaitANSI, ghostWaitText, false},
 		{"an empty box carries no dim run to confuse it", emptyBoxANSI, "", false},
+		// U+00A0, not a space: it is what claude draws between the mark and
+		// the text (panework.go), it sits OUTSIDE the run in every capture,
+		// and a reading that counts it as a printing character finds no
+		// suggestion anywhere on a real screen.
+		{"the separator claude really draws is a non-breaking space",
+			"❯\u00a0\x1b[0m\x1b[2m" + ghostWaitText + "\x1b[0m\n", ghostWaitText, true},
 
 		// The state, not the bytes.
 		{"one sequence rather than two", "❯ \x1b[0;2m" + ghostWaitText + "\x1b[0m\n", ghostWaitText, true},
