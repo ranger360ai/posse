@@ -1075,6 +1075,18 @@ type MergeOutcome struct {
 	Dirty   []string // uncommitted paths left in the worktree (never merged)
 	Reason  string   // why not merged ("" when Merged)
 
+	// Standing says this outcome was NOT produced by attempting the merge:
+	// the sweep found a block already on record, skipped the probe that
+	// would write the session tree (landsweep.go's standingMergeBlock), and
+	// filled Reason with the sentence it reports in place of asking — "<id>
+	// already answered this and is still open …". That sentence is a report
+	// about the RECORD and not a reading of the obstacle, which matters to
+	// anything that would treat Reason as a fresh fact: restateMergeBlocked
+	// would otherwise overwrite a still-standing handoff's real reason with
+	// it, losing the one thing blockStillStands reads that body for
+	// (ranger-base-zyrr4).
+	Standing bool
+
 	// Equivalent pairs each commit ahead of the base with the commit on the
 	// base that already holds its work under another sha. Non-empty only
 	// when EVERY commit ahead is accounted for — that is the whole point of

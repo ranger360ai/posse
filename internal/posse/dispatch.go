@@ -5220,8 +5220,8 @@ func noteMergeBlocked(bd Bd, dir, id, persona string, t *SessionTree, o MergeOut
 		// closest to being reaped. Refreshed to the tree's head rather than
 		// left where it was: what this block is about is what the branch
 		// holds now.
-		pinBlockedWork(t)
-		say("  ↳ %s already filed for %s — not re-filed\n", prior.ID, persona)
+		sha, pin := pinBlockedWork(t)
+		restateMergeBlocked(bd, dir, prior, persona, id, base, t, o, sha, pin, say, warn)
 		return
 	default:
 		// A CLOSED block is a verdict somebody reached about this branch,
@@ -5248,21 +5248,13 @@ func noteMergeBlocked(bd Bd, dir, id, persona string, t *SessionTree, o MergeOut
 	// spelling (ranger-base-m3195, pinBlockedWork).
 	sha, pin := pinBlockedWork(t)
 	filed, err := bd.Create(dir, BdNew{
-		Title:    title,
-		Assignee: persona,
-		Labels:   []string{MergeBlockedLabel},
-		Deps:     []string{"discovered-from:" + id},
-		Priority: "1",
-		Actor:    "posse",
-		Description: fmt.Sprintf(
-			"%s closed %s, but the %d commit(s) on %s are not on %s.\n\n%s\n\n%s%s\nworktree: %s\nrepo:     %s\n%s\n"+
-				"Its code is NOT on %s, so anything reading %s does not see this bead's work.\n"+
-				"Fix what the reason above names — only a real conflict is resolved by\n"+
-				"rebasing onto %s by hand — then a launcher pass or `posse kill` lands it.\n\n%s",
-			persona, id, o.Commits, t.Branch, base, o.Reason,
-			discoveredFromMarkerPrefix, id,
-			t.Path, t.Repo, mergeBlockedWhere(sha, pin), base, base, base,
-			mergeBlockedShelfLife(t, base, sha, pin)),
+		Title:       title,
+		Assignee:    persona,
+		Labels:      []string{MergeBlockedLabel},
+		Deps:        []string{"discovered-from:" + id},
+		Priority:    "1",
+		Actor:       "posse",
+		Description: mergeBlockedBody(persona, id, base, t, o, sha, pin),
 	})
 	if err != nil {
 		// bd may have committed the issue and failed on the `--deps` edge
@@ -5294,6 +5286,139 @@ func noteMergeBlocked(bd Bd, dir, id, persona string, t *SessionTree, o MergeOut
 	if err := bd.Comment(dir, id, "merge-back blocked: filed "+filed, "posse"); err != nil {
 		warn("posse: %s not commented with %s (%v) — the bead exists, the pointer back does not\n", id, filed, err)
 	}
+}
+
+// mergeBlockedBody is the handoff's body, and it has TWO writers now
+// (ranger-base-zyrr4): the filing, and the restatement a later pass makes
+// when the obstacle has changed underneath an open block. One renderer, so
+// the two can never say the same situation two ways — a restated block that
+// read differently from a freshly filed one would be a second format for
+// every reader of this text to learn, including blockStillStands.
+func mergeBlockedBody(persona, id, base string, t *SessionTree, o MergeOutcome, sha, pin string) string {
+	return fmt.Sprintf(
+		"%s closed %s, but the %d commit(s) on %s are not on %s.\n\n%s\n\n%s%s\nworktree: %s\nrepo:     %s\n%s\n"+
+			"Its code is NOT on %s, so anything reading %s does not see this bead's work.\n"+
+			"Fix what the reason above names — only a real conflict is resolved by\n"+
+			"rebasing onto %s by hand — then a launcher pass or `posse kill` lands it.\n\n%s",
+		persona, id, o.Commits, t.Branch, base, o.Reason,
+		discoveredFromMarkerPrefix, id,
+		t.Path, t.Repo, mergeBlockedWhere(sha, pin), base, base, base,
+		mergeBlockedShelfLife(t, base, sha, pin))
+}
+
+// blockedOnDirt is the one question anything asks of a merge-back reason
+// after the pass that wrote it: was this block the DIRT — the obstacle a
+// persona clears by deleting a file, with nothing committed and neither the
+// branch nor the base moving — or was it something only a commit can change?
+//
+// One predicate, asked of the live reason here and of the stored one in
+// blockStillStands, because the two must agree about a block or the
+// restatement below cannot end anything.
+func blockedOnDirt(reason string) bool { return strings.Contains(reason, dirtyBlockMark) }
+
+// restateMergeBlocked is the open handoff's arm: the pin is already
+// refreshed, no bead is re-filed, and the only question left is whether the
+// bead's own description is still a fact about this branch.
+//
+// WHY IT HAS TO BE ASKED AT ALL (ranger-base-zyrr4). blockStillStands reads
+// the obstacle back out of prior.Why — the open handoff's description — and
+// nothing here ever rewrote one: the arm refreshed the pin, printed "already
+// filed" and returned. So a block first filed on the dirt carried
+// dirtyBlockMark for the rest of its life whatever the obstacle later became,
+// and a tree whose dirt was cleaned while its base still CONFLICTED read
+// un-skip on every operand forever — no fast-forward, no equivalence, no
+// dirt, dirtyBlockMark still in Why. Every pass then replayed the rebase in
+// the session tree, which is ranger-base-9u5zy's every-pass tree write back,
+// deduped into silence: each pass filed nothing and lastTreeWrite advanced at
+// the sweep's own cadence, so the tree never went quiet, the retire grace
+// never expired and ADR 0058 D2 was never reached.
+//
+// THE REWRITE IS WHAT MAKES THE UN-SKIP SELF-LIMITING. Pass 2 un-skips,
+// probes, comes back with the conflict reason, and restates the description
+// to it; pass 3 reads a Why that no longer names the dirt and the block
+// stands. One probe, not one per pass — and the arm that must keep working
+// (TestCleaningTheDirtWithoutCommittingIsReconsidered) is untouched, because
+// there the probe LANDS the work and there is no second pass to limit.
+//
+// AND IT IS KEYED ON THE DIRT AND NOT ON THE REASON'S TEXT, deliberately.
+// Two reasons here carry what git or the base said at that instant — the
+// replay-lost one names the shas it watched move — so "the string changed"
+// would be true on passes where nothing a reader cares about did, and this
+// would buy back a bd write per pass to pay off a tree write per pass. The
+// dirt is the one distinction anything reads out of this text, and it flips
+// only when a persona adds or clears uncommitted paths, so the writes here
+// are bounded by what a human did and not by how often the sweep runs.
+//
+// AND A STANDING OUTCOME IS NOT A READING OF THE OBSTACLE AT ALL. The sweep
+// calls this site on a SKIPPED pass too, with a MergeOutcome whose Reason is
+// the sentence it prints instead of asking git ("<id> already answered this
+// and is still open …"). Read as an obstacle, that sentence names no dirt —
+// so without the guard the first skipped pass over a tree whose dirt is
+// still exactly where it was restates the handoff to it (MEASURED building
+// this, with the guard removed: pass 2 of
+// TestADirtyBlockedTreeGoesQuietTooAlthoughEveryPassReadsIt).
+//
+// It is ONE write and not a per-pass one — the skip sentence names no dirt
+// either, so the classes match from then on — and that is the worse of the
+// two shapes, not the better. The description is where the obstacle is
+// RECORDED: blockStillStands reads it, and a body that now says "already
+// answered" has lost the fact that this block was the dirt. Clean the dirt
+// off afterwards and nothing un-skips, so the branch that would land never
+// lands — ranger-base-ejju3's defect, restored by the fix for it. And the
+// persona who opens the handoff is told what the launcher said about the
+// handoff instead of what is wrong with the branch. So the restatement is
+// asked only of an outcome this pass actually measured.
+//
+// A BODY THAT COULD NOT BE READ IS NOT EVIDENCE THAT IT CHANGED. priorBlock
+// already documents "" as a store that did not say, and blockStillStands
+// reads it as "not the dirt" and leaves the block standing. If it were read
+// as a class here instead, a store that serves no descriptions at all would
+// make every dirt block look changed, this would write, the next pass would
+// read "" again — a bd write per pass, forever, on a store where nothing is
+// wrong. So "" declines to answer, which is what it is.
+//
+// Best effort and never quiet, on this file's rule: a description that
+// cannot be rewritten costs a probe per pass while the dirt is gone, which
+// is the defect and not a disaster, and the pass owes the operator the
+// reason it is still churning.
+func restateMergeBlocked(bd Bd, dir string, prior priorBlock, persona, id, base string, t *SessionTree, o MergeOutcome, sha, pin string, say, warn func(string, ...any)) {
+	was, now := blockedOnDirt(prior.Why), blockedOnDirt(o.Reason)
+	if o.Standing || prior.Why == "" || was == now {
+		say("  ↳ %s already filed for %s — not re-filed\n", prior.ID, persona)
+		return
+	}
+	if err := bd.SetDescription(dir, prior.ID, mergeBlockedBody(persona, id, base, t, o, sha, pin), "posse"); err != nil {
+		warn("posse: %s still says %s blocks %s and could not be restated (%v) — %s\n",
+			prior.ID, dirtWord(was), t.Branch, err, staleBlockCost(was))
+		return
+	}
+	say("  ↳ %s already filed for %s — not re-filed, and restated: %s blocks %s now, not %s\n",
+		prior.ID, persona, dirtWord(now), t.Branch, dirtWord(was))
+}
+
+// dirtWord names a block's obstacle class in the one line an operator reads
+// about it. Not "true"/"false": the pass says which of the two situations a
+// handoff is about, because that is what decides whether the reader deletes
+// a file or rebases by hand.
+func dirtWord(dirt bool) string {
+	if dirt {
+		return "uncommitted paths"
+	}
+	return "the base"
+}
+
+// staleBlockCost is what a failed restatement actually costs, which is not
+// the same in the two directions and must not be reported as if it were.
+// A body left saying "dirt" over a tree with none is the churn this whole
+// mechanism is about: blockStillStands un-skips on it every pass. A body
+// left saying "the base" over a tree that has since been dirtied costs no
+// probe at all — dirt is answered above that line — and misleads only the
+// human who opens the bead.
+func staleBlockCost(was bool) string {
+	if was {
+		return "so the sweep will re-probe it every pass until the body is corrected"
+	}
+	return "the block still stands, so no pass is churning on it — what is wrong is only what the bead tells whoever opens it"
 }
 
 // mergeBlockedWhere is the handoff's durable half of "where the work is":

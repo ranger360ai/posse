@@ -104,7 +104,6 @@ package posse
 import (
 	"fmt"
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -257,7 +256,7 @@ func (d *Dispatcher) landClosedTrees(dirFilter string) {
 				// while it is there the answer cannot have changed — and two
 				// `git status` runs for one question is two readings that can
 				// disagree.
-				o = MergeOutcome{Branch: t.Branch, Base: t.Base, Reason: reason, Dirty: dirty}
+				o = MergeOutcome{Branch: t.Branch, Base: t.Base, Reason: reason, Dirty: dirty, Standing: true}
 				o.Commits, _ = unlandedCount(t)
 			} else {
 				o, err = MergeSessionWork(t)
@@ -466,7 +465,18 @@ func blockStillStands(t *SessionTree, head string, prior priorBlock) ([]string, 
 	// and the rebase that would now succeed was never attempted again
 	// (ranger-base-ejju3, the findings bead's second trigger). The verdict's
 	// own body is the record of which obstacle it was.
-	return dirty, !strings.Contains(prior.Why, dirtyBlockMark)
+	//
+	// AND THAT BODY IS KEPT CURRENT, which is what bounds this un-skip
+	// (ranger-base-zyrr4). It used to be written once and never again, so on
+	// a tree whose dirt was cleaned while the base still CONFLICTED this line
+	// said un-skip on every pass forever and the replay it let through wrote
+	// the tree every time — ranger-base-9u5zy's bug back, silent because the
+	// handoff was deduped. restateMergeBlocked now rewrites an open block's
+	// description when the obstacle stops being the dirt, so the probe this
+	// line allows happens ONCE: it returns the conflict reason, the handoff is
+	// restated to it, and the next pass reads a body that no longer names the
+	// dirt. The two ends read the same predicate so they cannot drift.
+	return dirty, !blockedOnDirt(prior.Why)
 }
 
 // retireTree is ADR 0058 D2: the landing sweep's own act on a tree there is

@@ -1012,6 +1012,29 @@ func (b Bd) Create(dir string, n BdNew) (string, error) {
 	return "", Die("bd create: no issue id in response")
 }
 
+// SetDescription REPLACES an issue's description. bd has no patch verb for
+// this field, so the caller renders the whole body and this writes it —
+// which makes every caller's job "re-render from the current facts", never
+// "edit what is there".
+//
+// Its one caller is the merge-back handoff's restatement (restateMergeBlocked):
+// an open block whose obstacle has changed under it is a bead posse wrote,
+// about a branch posse owns, and the text being corrected is text posse
+// generated. Nothing here rewrites a description a HUMAN wrote, and nothing
+// should — a persona's own words are not posse's to replace.
+//
+// The id is resolved before the update runs (requireExactID) for the reason
+// Close and Unclaim resolve theirs: bd prefix-resolves this verb, and a
+// description written onto the wrong bead destroys whatever that bead said
+// (ranger-base-s92di).
+func (b Bd) SetDescription(dir, id, desc, actor string) error {
+	if err := b.requireExactID(dir, "update --description", id); err != nil {
+		return err
+	}
+	_, err := b.run(dir, bdArgs(actor, "update", id, "-d", desc, "--json")...)
+	return err
+}
+
 // Comment adds a comment to an issue.
 func (b Bd) Comment(dir, id, text, actor string) error {
 	_, err := b.run(dir, bdArgs(actor, "comments", "add", id, text)...)

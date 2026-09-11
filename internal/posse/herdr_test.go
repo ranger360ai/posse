@@ -1104,8 +1104,47 @@ func fakeBdUpdate(args []string) int {
 	}
 	st[id] = cur
 	fakeBdSaveState(st)
+	// `-d` lands in the LISTINGS, on fakeBdAppendCreated's rule: real bd
+	// answers the next `list` with the description it was just given, and a
+	// mechanism that reads its own bead's body back (blockStillStands, via
+	// priorMergeBlocked) is only pinnable against a fake that does. Without
+	// this the restatement and a pass that merely says it restated are
+	// indistinguishable — which is exactly ranger-base-zyrr4's defect, in a
+	// fixture instead of production.
+	if desc, ok := fakeBdFlag(args, "-d"); ok {
+		fakeBdSetDescription(id, desc)
+	}
 	fmt.Print("{}")
 	return 0
+}
+
+// fakeBdSetDescription is the write half of `bd update -d`, over the same
+// three files fakeBdMarkClosed writes and for the same reason: a caller that
+// reads a bead back through `show` must not see the body the `list` query
+// has already stopped serving. Rows the files do not name are left alone.
+func fakeBdSetDescription(id, desc string) {
+	if id == "" {
+		return
+	}
+	for _, f := range []string{"fake-list.json", "fake-list-labeled.json", "fake-show.json"} {
+		var list []map[string]any
+		b, err := os.ReadFile(f)
+		if err != nil || json.Unmarshal(b, &list) != nil {
+			continue
+		}
+		hit := false
+		for _, is := range list {
+			if s, _ := is["id"].(string); s == id {
+				is["description"], hit = desc, true
+			}
+		}
+		if !hit {
+			continue
+		}
+		if nb, err := json.Marshal(list); err == nil {
+			os.WriteFile(f, nb, 0o644)
+		}
+	}
 }
 
 // fakeBdReadyDropClosed is bd's own first contract on `ready`, which this fake
