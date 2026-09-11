@@ -74,7 +74,9 @@ over-subscription, so `make test` takes one of `POSSE_SUITE_SLOTS` (2)
 box-wide slots before it starts and a third full run waits, saying which
 checkout it is waiting on. Filtered and single-package runs are never queued.
 `POSSE_SUITE_LOCK=0` opts a run out; `scripts/suite-lock.sh --status` says
-who holds the slots.
+who holds the slots. A sandbox that cannot open the slot files at all gets
+one line and an unserialized run — the queue degrades, it never refuses
+(ranger-base-r3czg).
 
 ### On macOS, also `make test-linux`
 

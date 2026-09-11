@@ -515,6 +515,11 @@ func (a *App) checkParityIn(ag *AgentFile, rt *Runtime, cage, tier, dir string, 
 	// concrete launch dir, not about a persona — and the dir is already in
 	// hand here (reachability.go, ranger-base-hxhb).
 	a.applyRecordReach(&p, ag, rt, dir)
+	// The same shape for the other box-wide thing a caged session has to be
+	// able to reach: the suite queue's slot dir (ranger-base-r3czg). It
+	// never degrades — see applySuiteQueueReach — so it sits here for the
+	// printing, not for the verdict.
+	a.applySuiteQueueReach(&p, ag, rt, dir)
 	if why := ProjectConfigTrust(rt, ag, dir); why != "" {
 		p.Degraded = append(p.Degraded, why)
 	}
@@ -810,9 +815,12 @@ func realizedOrder(realized map[string]RealizedGate) []string {
 	return gates
 }
 
-// gateRank groups the ✓ lines: 0 the PID's deny rules, then the three
-// gates that are computed rather than typed, in the order CheckParity
-// reaches them.
+// gateRank groups the ✓ lines: 0 the PID's deny rules, then the computed
+// gates — the ones nobody typed into a PID — in the order CheckParity
+// reaches them. A gate that falls through to 0 is printed among the PID's
+// own rules, which is where the suite-queue row landed before it was named
+// here (ranger-base-r3czg): wrong company for a line the PID never asked
+// for, and the ordering exists so a reviewer can diff this block.
 func gateRank(gate string) int {
 	switch {
 	case strings.HasPrefix(gate, "egress: "):
@@ -821,6 +829,8 @@ func gateRank(gate string) int {
 		return 2
 	case gate == RecordReachGate:
 		return 3
+	case gate == SuiteQueueGate:
+		return 4
 	default:
 		return 0
 	}

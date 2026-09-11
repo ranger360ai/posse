@@ -49,6 +49,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/ranger360ai/posse/internal/posse"
 )
 
 // The queue, by path. Named rather than pattern-matched: one specific script
@@ -85,6 +87,13 @@ var suiteLockArms = []string{
 	// it did not, so a leaked slot and a live suite printed the same line for
 	// fifteen minutes on a two-slot box).
 	"orphan: a dead wrapper leaves the slot held by its child, and says so",
+	// ranger-base-r3czg: the third input to the header's "it never makes
+	// the suite unrunnable" promise, and the one that had never been tried.
+	// A slot file the kernel refuses to OPEN is not a slot somebody holds —
+	// it fell through the sweep into the same answer as a busy one, and a
+	// codex seat whose sandbox did not grant the slot dir queued against it
+	// forever instead of running unserialized.
+	"sandbox: an unopenable slot file runs unserialized, not queued",
 }
 
 // Arm 1: `make test` still runs the queue's self-test, and `make
@@ -360,5 +369,61 @@ func TestQAGotestQueuesBehindAHeldSlot(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "cmd/buildstamp") {
 		t.Errorf("the slot was freed and the wrapper still ran nothing:\n%s", out.String())
+	}
+}
+
+// Arm 6 (ranger-base-r3czg): the two resolvers of "where the slots live"
+// agree, over every environment shape either of them reads.
+//
+// There are two now. The script's suite_lock_dir() is where the slot files
+// are opened; posse.SuiteLockDir() is what the launch line GRANTS a
+// self-sandboxing runtime, because a codex seat's sandbox confines it out of
+// the dir otherwise and its `make test-arm*` dies on
+// `suite-slot.*.lock: Operation not permitted` (measured 2026-09-10). A
+// grant that names a directory the script does not use renders exactly like
+// a working one and behaves exactly like the gap — the seat queues against
+// slots it cannot open — so the drift has to be caught here, by asking both,
+// and not by reading either.
+//
+// The script is SOURCED rather than re-implemented: a copy of its two
+// fallbacks in this file would be a third spelling to drift.
+func TestQATheSuiteQueueSlotDirHasOneSpelling(t *testing.T) {
+	if _, err := os.Stat(suiteLockScript); err != nil {
+		t.Fatalf("%s is gone: %v", suiteLockScript, err)
+	}
+	home := filepath.Join(t.TempDir(), "home")
+	cache := filepath.Join(t.TempDir(), "xdg")
+	named := filepath.Join(t.TempDir(), "named")
+	for _, c := range []struct {
+		what                  string
+		lockDir, xdg, homeDir string
+	}{
+		// The default, which is what every seat on this box actually runs.
+		{"neither override", "", "", home},
+		// XDG_CACHE_HOME moves the whole cache; POSSE_SUITE_LOCK_DIR names
+		// the dir outright and beats it. Both are documented in the
+		// script's own header, so both are a spelling the grant has to
+		// follow.
+		{"XDG_CACHE_HOME", "", cache, home},
+		{"POSSE_SUITE_LOCK_DIR", named, cache, home},
+	} {
+		t.Setenv("POSSE_SUITE_LOCK_DIR", c.lockDir)
+		t.Setenv("XDG_CACHE_HOME", c.xdg)
+		t.Setenv("HOME", c.homeDir)
+		cmd := exec.Command("bash", "-c", ". "+suiteLockScript+" && suite_lock_dir")
+		cmd.Env = append(os.Environ(),
+			"POSSE_SUITE_LOCK_DIR="+c.lockDir, "XDG_CACHE_HOME="+c.xdg, "HOME="+c.homeDir)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("%s: sourcing %s failed: %v\n%s", c.what, suiteLockScript, err, out)
+		}
+		want := strings.TrimSpace(string(out))
+		if want == "" {
+			t.Fatalf("%s: the script named no slot dir, so this arm measures nothing", c.what)
+		}
+		if got := posse.SuiteLockDir(); got != want {
+			t.Errorf("%s: posse grants %q and the script opens slot files in %q — a seat caged out of the second gets a grant on the first and queues against slots it cannot open (ranger-base-r3czg)",
+				c.what, got, want)
+		}
 	}
 }

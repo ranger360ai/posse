@@ -341,18 +341,45 @@ _suite_lock_stamp() {
 # _SUITE_LOCK_SLOT and leaves fd 9 open and locked on success; leaves fd 9
 # CLOSED on failure, so a caller may sweep again without leaking a descriptor.
 #
+#   0   the slot is ours
+#   1   every slot was OPENED and every one of them is held: a busy box
+#   2   the lock tool stopped working
+#   3   not one slot file could be OPENED at all
+#
 # Every status here is captured with `|| rc=$?` rather than read from `$?`
 # after a bare call. A wrapper that sources this file may be running under
 # `set -e` (scripts/gotest.sh is), and there a bare command returning 1 —
 # which is this function's ordinary "all slots busy" answer — kills the
 # wrapper instead of queueing it.
+#
+# 3 EXISTS BECAUSE AN UNOPENABLE SLOT IS NOT A BUSY SLOT (ranger-base-r3czg).
+# Until it did, the open failure fell through `|| continue` into the same
+# answer as a held slot, and the caller queued — forever, against holders
+# whose stamps it could not read either, so the waiting line named nobody.
+# MEASURED 2026-09-10 on a codex seat whose sandbox did not grant the slot
+# dir: all three of `make test-arm1/2/3` hung on
+# `suite-slot.*.lock: Operation not permitted` and left waiting wrappers the
+# operator ended by hand. The grant is fixed elsewhere (launchWritableRoots,
+# internal/posse/suitelock.go); this is the half that belongs to the queue,
+# because the header's own rule — IT NEVER MAKES THE SUITE UNRUNNABLE — was
+# what the hang broke, and the next cage to withhold that directory must
+# degrade rather than wait.
+#
+# ANY open is enough to keep queueing: a box where slot 1 opens and slot 2
+# does not is a box with one usable slot, not a box with none, and calling
+# that unserialized would widen the queue on a partial failure.
+#
+# The open's own diagnostic is deliberately NOT suppressed — the caller
+# bails on 3 rather than polling, so the kernel's words are printed once per
+# slot, and they are the only line that says WHICH directory and WHY.
 _suite_lock_sweep() {
-	local dir i f rc
+	local dir i f rc opened=0
 	dir=$(suite_lock_dir)
 	_suite_lock_slots
 	for i in $(seq 1 "$_SUITE_LOCK_SLOTS"); do
 		f=$dir/suite-slot.$i.lock
 		exec 9>>"$f" || continue
+		opened=1
 		rc=0
 		_suite_lock_flock || rc=$?
 		if [ "$rc" = 0 ]; then
@@ -362,6 +389,7 @@ _suite_lock_sweep() {
 		exec 9>&-
 		if [ "$rc" = 2 ]; then return 2; fi
 	done
+	[ "$opened" = 1 ] || return 3
 	return 1
 }
 
@@ -414,6 +442,14 @@ suite_lock_acquire() {
 		if [ "$rc" = 0 ]; then break; fi
 		if [ "$rc" = 2 ]; then
 			_suite_lock_say 'the lock tool stopped working — running unserialized'
+			return 0
+		fi
+		if [ "$rc" = 3 ]; then
+			# The cage does not grant $dir. Said once, with the fix, and
+			# then out of the way: queueing here is queueing against a
+			# box this process cannot see (ranger-base-r3czg).
+			_suite_lock_say "cannot open any slot file in $dir (the line above is the kernel's) — running unserialized"
+			_suite_lock_say 'this seat is not queued against the other suites on this box; grant that directory to the session (posse names it in the launch line for a self-sandboxing runtime — `posse gates` prints the row) or set POSSE_SUITE_LOCK_DIR to one it can write'
 			return 0
 		fi
 		if [ "$announced" = 0 ]; then
@@ -474,6 +510,16 @@ suite_lock_status() {
 	for i in $(seq 1 "$_SUITE_LOCK_SLOTS"); do
 		f=$dir/suite-slot.$i.lock
 		[ -f "$f" ] || { printf '  slot %s: free (never used)\n' "$i"; continue; }
+		# Asked BEFORE the flock, because the flock below cannot tell the
+		# two apart: a failed `exec 9>>` leaves the subshell running with
+		# no fd 9, `_suite_lock_flock` fails on it, and the slot printed as
+		# HELD by whatever the stamp happened to say — a live holder and a
+		# directory this process may not open read identically
+		# (ranger-base-r3czg).
+		if ! ( exec 9>>"$f" ) 2>/dev/null; then
+			printf '  slot %s: UNOPENABLE from here — this process cannot open the slot file, so it can neither take the slot nor judge it. A suite run from here is NOT queued against this box (see the acquire line)\n' "$i"
+			continue
+		fi
 		if ( exec 9>>"$f"; _suite_lock_flock ); then
 			printf '  slot %s: free\n' "$i"
 		else
@@ -998,6 +1044,64 @@ STRICT
 				"queued=$queued drained=$drained named=$named; alive: $(printf '%s' "$before" | tr '\n' '|'); dead: $(printf '%s' "$after" | tr '\n' '|')"
 		fi
 	fi
+
+	# ARM 15: a slot dir this process may NOT open runs unserialized, at
+	# once, instead of queueing against it forever (ranger-base-r3czg).
+	#
+	# This is the header's own rule — IT NEVER MAKES THE SUITE UNRUNNABLE —
+	# on the one input that had never been tried: not a missing lock tool,
+	# not a bad POSSE_SUITE_SLOTS, but a slot file the kernel refuses to
+	# open. MEASURED 2026-09-10 on a codex seat whose sandbox did not grant
+	# the slot dir: `suite-slot.*.lock: Operation not permitted`, three
+	# `make test-arm*` runs that never started, and two waiting wrappers the
+	# operator ended by hand. The open failure fell through the sweep's
+	# `|| continue` into the same answer as a held slot, so the seat queued —
+	# behind holders whose stamps it also could not read, which is why the
+	# waiting line named nobody.
+	#
+	# Mode 000 on the slot files is the portable spelling of that refusal:
+	# the dir is listable and `mkdir -p` succeeds, and it is the OPEN that is
+	# denied — the sandbox's shape exactly. Under uid 0 mode denies nothing,
+	# so there the arm says it measured nothing rather than printing like a
+	# pass over a check that could not run.
+	#
+	# ITS CONTROL IS ARM 1, which runs the same holder against a writable
+	# dir and gets a slot: without that pair, "slot:none, at once" is also
+	# what a lock that never locks looks like. And the message is asserted by
+	# its own words, not by "unserialized" alone — POSSE_SUITE_LOCK=0, a
+	# missing python3 and an uncreatable dir all say that, and any of them
+	# would make this arm green for the wrong reason.
+	local cd=$tmp/caged-locks arm15='sandbox: an unopenable slot file runs unserialized, not queued'
+	local h20
+	mkdir -p "$cd"
+	: >"$cd/suite-slot.1.lock"
+	: >"$cd/suite-slot.2.lock"
+	chmod 000 "$cd/suite-slot.1.lock" "$cd/suite-slot.2.lock"
+	if [ "$(id -u)" = 0 ]; then
+		printf 'note  %s: uid 0, where mode 000 denies nothing — NOT MEASURED here\n' "$arm15"
+		ok "$arm15"
+	else
+		touch "$tmp/hold20"
+		POSSE_SUITE_LOCK_DIR="$cd" \
+			"$tmp/holder.sh" "$SUITE_LOCK_LIB" "$tmp/m20" "$tmp/hold20" go test -timeout 25m ./... &
+		h20=$!
+		# 10s against a 0.2s poll: a queued acquire would still be waiting,
+		# and that is the whole finding — the hang, not the words.
+		if ! wait_file "$tmp/m20" 10; then
+			bad "$arm15" 'the run never started — it is queued against a dir it cannot open, which is the hang this arm exists for'
+		elif [ "$(slot_of "$tmp/m20")" != none ]; then
+			bad "$arm15" "it took slot $(slot_of "$tmp/m20") out of a dir it cannot open"
+		elif ! log_has "$tmp/m20.log" 'cannot open any slot file'; then
+			bad "$arm15" "it ran unserialized without saying why: $(tr '\n' '|' <"$tmp/m20.log" 2>/dev/null)"
+		else
+			ok "$arm15"
+		fi
+		rm -f "$tmp/hold20"
+		kill "$h20" 2>/dev/null
+		wait "$h20" 2>/dev/null
+	fi
+	# So the EXIT trap can remove them.
+	chmod 644 "$cd/suite-slot.1.lock" "$cd/suite-slot.2.lock" 2>/dev/null
 
 	wait 2>/dev/null
 

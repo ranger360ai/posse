@@ -274,18 +274,10 @@ func codexReachRow(cmd, dir string, targets []string) string {
 		return fmt.Sprintf("the rendered launch line names writable root %s, whose component %s is a SYMLINK — a self-sandboxing runtime refuses a writable root with a symlink component before it applies its sandbox, so the session runs no command at all and %s is unreachable along with everything else (ranger-base-k62e; ranger-base-c02a is the same refusal arriving at command-run time, silently). Make %s resolve and the root renders real by itself",
 			AbbrevHome(root), AbbrevHome(comp), AbbrevHome(targets[0]), AbbrevHome(comp))
 	}
-	toks := shellTokens(cmd)
-	for i := 0; i+1 < len(toks); i++ {
-		if toks[i] == "-s" && toks[i+1] == "read-only" {
-			return fmt.Sprintf("the rendered launch line is `-s read-only`, so the sandbox makes NOTHING writable — %s included, which is where every `bd claim`, `bd comments add` and `bd close` this session owes lands (ADR 0013 §4 reachability, ranger-base-hxhb). A PID that denies Edit and Write on a self-sandboxing runtime buys the file gate at the cost of the record stage: raise it to cage: seatbelt, or accept the trade with --allow-degraded",
-				AbbrevHome(targets[0]))
-		}
-	}
-	roots := []string{dir}
-	for i := 0; i+1 < len(toks); i++ {
-		if toks[i] == "--add-dir" {
-			roots = append(roots, toks[i+1])
-		}
+	roots, readOnly := lineWritableRoots(cmd, dir)
+	if readOnly {
+		return fmt.Sprintf("the rendered launch line is `-s read-only`, so the sandbox makes NOTHING writable — %s included, which is where every `bd claim`, `bd comments add` and `bd close` this session owes lands (ADR 0013 §4 reachability, ranger-base-hxhb). A PID that denies Edit and Write on a self-sandboxing runtime buys the file gate at the cost of the record stage: raise it to cage: seatbelt, or accept the trade with --allow-degraded",
+			AbbrevHome(targets[0]))
 	}
 	for _, t := range targets {
 		if !anyUnderDir(roots, t) {
@@ -322,6 +314,34 @@ func (a *App) containerReachRow(ag *AgentFile, dir, home string) string {
 			AbbrevHome(home))
 	}
 	return ""
+}
+
+// lineWritableRoots is the writable set a self-sandboxing runtime's RENDERED
+// launch line names: the workspace it starts in, plus every --add-dir on the
+// line. readOnly is `-s read-only`, where the set is EMPTY rather than "the
+// workspace" — the distinction both rows that read this line turn on
+// (rangerhq-5oi: under read-only codex exits on an --add-dir, so the flag is
+// not even emitted).
+//
+// One reader, because two rows ask this of the same line now — the store of
+// record (codexReachRow) and the box-wide suite queue
+// (applySuiteQueueReach, ranger-base-r3czg) — and two spellings of "what
+// this line makes writable" is how one of them passes a line the other
+// fails.
+func lineWritableRoots(cmd, dir string) (roots []string, readOnly bool) {
+	toks := shellTokens(cmd)
+	for i := 0; i+1 < len(toks); i++ {
+		if toks[i] == "-s" && toks[i+1] == "read-only" {
+			return nil, true
+		}
+	}
+	roots = []string{dir}
+	for i := 0; i+1 < len(toks); i++ {
+		if toks[i] == "--add-dir" {
+			roots = append(roots, toks[i+1])
+		}
+	}
+	return roots, false
 }
 
 func anyUnderDir(dirs []string, p string) bool {

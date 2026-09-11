@@ -177,7 +177,13 @@ bd sync               # Sync with git
   package takes no slot — type those as freely as you ever did.
   `scripts/suite-lock.sh --status` says who holds the slots;
   `POSSE_SUITE_SLOTS` changes how many there are and `POSSE_SUITE_LOCK=0`
-  opts a run out loudly. A held slot whose line also reads **`that pid is
+  opts a run out loudly. A seat whose cage cannot OPEN the slot files —
+  `suite-slot.*.lock: Operation not permitted`, which is what a codex seat
+  saw before `~/.cache/posse` was named on its launch line — says so and runs
+  unserialized rather than queueing against a box it cannot see
+  (ranger-base-r3czg). That run is not held back by anything and holds
+  nothing back; `posse gates` prints the row that says whether this session's
+  wall names the dir. A held slot whose line also reads **`that pid is
   GONE`** is not a live suite: the wrapper that took it has died and something
   it forked inherited the lock (fd 9 is inherited on purpose — a test tree
   that outlives its wrapper is still spending the box). It frees itself when

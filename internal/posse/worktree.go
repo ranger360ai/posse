@@ -353,6 +353,13 @@ func LinkedGitDirs(dir string) []string {
 //     no grant, and <dir>/.git in a linked worktree is a FILE, not a root.
 //   - in a session worktree, this tree's own git dirs, which hold its index
 //     and the repo's objects and sit outside the tree (rangerhq-09o2).
+//   - in a tree that carries the box-wide suite queue, its slot dir. The
+//     slots are box-wide by design, so they live outside every session's
+//     workspace, and a seat that cannot open one cannot run the repo's
+//     suite: a codex seat's `make test-arm*` died on
+//     `suite-slot.*.lock: Operation not permitted` while claude seats under
+//     the seatbelt — which grants ~/.cache whole — took a slot on the same
+//     box (ranger-base-r3czg, measured; suitelock.go carries it).
 //
 // THE TRADE, stated rather than closed: --add-dir is directory-granular, so
 // naming the store repo's git dirs grants its refs, hooks and config whole.
@@ -374,6 +381,10 @@ func launchWritableRoots(dir string) []string {
 	if home != "" && !underDir(dir, home) {
 		roots = append(roots, beadsGitDirs(home)...)
 	}
+	// suiteLockRoot resolves the slot dir exactly as the script does and
+	// answers "" in a tree with no queue, so no other repo's session buys a
+	// cache grant it has no use for.
+	roots = append(roots, suiteLockRoot(dir))
 	return dedupeStrings(roots)
 }
 
