@@ -489,6 +489,35 @@ is the intended trade (ADR 0006 §4).
 
 ### Fixed
 
+**The shop check stopped sending the coordinator to clear a prompt claude
+had written itself: a seat waiting on its own suite run files no
+`settled-unsent:` row, whatever its composer previews.**
+
+*Affected: `posse status` / the cockpit's G2 row, for a claude seat that
+went idle with background work still running. Nothing else reads it this
+way.* Dropping that row required an EMPTY prompt box, and a settled claude
+pane rarely has one — it draws its own next-prompt SUGGESTION there, which
+previews in `prompt_box_body` character for character like typed input
+(herdr 0.8.2, claude manifest 2026.09.04.1: one plain-text region, no
+typed-vs-suggested anywhere in it) and is in no store to check it against,
+because claude logs submits and never suggestions. Measured 2026-09-10
+~22:30Z: two seats idle behind their own suite runs, boxes previewing "keep
+waiting, then commit and close" and "ping me when it's green", both filed
+`settled-unsent:` on every tick — and a coordinator that obeys that row
+types the suggestion back into a working seat.
+
+Live background work now drops the row whatever the box holds. That is a
+deferral, not a silencing: when the work ends the footer's task summary goes
+with it, and a box that really is holding an unsent prompt files its
+`settled-unsent:` row on the next tick, unchanged. A settled seat with
+nothing running is judged exactly as it was, and so is every other reader of
+the composer — `posse dispatch --resume` and the settle judgment both
+already treat live work as a wait.
+
+One thing this does not reach, said out loud: a seat with NOTHING running
+whose box previews a suggestion is still filed `settled-unsent:`. The row is
+right — it is a settled holder — and only its subtype is wrong.
+
 **A posse command run inside a session read that session's queue whatever
 repo it was asked about — so a shop with more than one `beads:` directory
 could see one repo's beads labelled as another's.**

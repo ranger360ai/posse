@@ -406,21 +406,13 @@ func TestQAResumeStillWaitsWhenHerdrNamesNoSession(t *testing.T) {
 }
 
 // govG2Row runs the shop check over one settled holder with the box and the
-// store armed, and hands back the G2 row.
+// store armed, and hands back the G2 row. The footer is the idle one on
+// purpose: this bead's question is what the BOX says, and since
+// ranger-base-l51p1 a footer with live work in it drops the row before the
+// box is consulted at all (govG2RowOn, ghostsuggestion_qa_test.go).
 func govG2Row(t *testing.T, box string, submitted []string) *GovCondition {
 	t.Helper()
-	b, fake := newTestBackend(t)
-	dir := govRepo(t, b)
-	writePersona(t, b.App, "developer", "code")
-	mustCreate(t, b, NewSessionOpts{Name: "developer-x", Agent: "developer", Dir: dir, Bead: "bd-1"})
-	sessionAgent(t, fake, "developer-x", "idle")
-	writeJSON(t, dir, "fake-list.json", []map[string]any{
-		{"id": "bd-1", "status": "in_progress", "assignee": "developer", "title": "held"},
-	})
-	armScreen(t, fake, idleFooter, box)
-	armPaneSession(t, fake, probeSession)
-	armSubmitted(t, b, probeSession, submitted...)
-	return find(shopSet(t, govIn(t, b)), "G2")
+	return govG2RowOn(t, idleFooter, box, submitted)
 }
 
 // THE BEAD, govern half. The row the coordinator is told to fix by hand is

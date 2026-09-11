@@ -625,15 +625,33 @@ func (in GovInputs) beadConditions(now time.Time, sessions []HerdrSession, add f
 			// at, and a herdr that will not answer holds nothing — the row
 			// then stands exactly as it did before this bead.
 			//
-			// Unsent text is the other half and it does NOT drop the row:
-			// a prompt that never left the composer is a session nobody has
-			// actually spoken to, which is the one thing here a human has
-			// to fix. It keeps the row and says so instead.
+			// ranger-base-l51p1. Text in the box used to keep the row even
+			// here, on the reasoning that a prompt which never left the
+			// composer is a session nobody has actually spoken to. That
+			// made an EMPTY box the precondition of the drop, and a settled
+			// claude pane rarely has one: claude draws its own next-prompt
+			// SUGGESTION into the box, which previews in `prompt_box_body`
+			// character for character like typed input (herdr 0.8.2,
+			// manifest 2026.09.04.1 — one plain-text region, no
+			// typed-vs-suggested anywhere in it) and is in no store, since
+			// claude logs submits and never suggestions (sentline.go).
+			// Measured 2026-09-10 ~22:30Z: two seats idle behind their own
+			// suite runs, boxes previewing "keep waiting, then commit and
+			// close" and "ping me when it's green", both filed
+			// settled-unsent on every tick — and a coordinator that obeys
+			// the row types the suggestion into a working seat.
+			//
+			// So live work drops the row whatever the box holds. That is a
+			// DEFERRAL and not a silencing, which is what makes it safe:
+			// when the work ends Work goes "" and a box that really is
+			// holding an unsent prompt files its -unsent row on the next
+			// tick, unchanged. A settled seat with nothing running is
+			// judged exactly as it was.
 			hold := PaneHold{}
 			if in.HB != nil {
 				hold = in.HB.sessionHolding(s.Name)
 			}
-			if hold.Work != "" && hold.Typed == "" {
+			if hold.Work != "" {
 				continue
 			}
 			sub, why := in.ladderSubtype(dir, is.ID)
