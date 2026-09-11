@@ -38,6 +38,7 @@ package posse
 //	`[ $posse_src -eq 0 ]` -> `-ne 0`         reds FOUR arms
 //	add packed-refs.lock to sequencerLeftovers  reds the common-dir arm alone
 //	`--absolute-git-dir` -> `--git-common-dir`  reds the common-dir arm alone
+//	a recipe line that rm's the stray lock too  reds the common-dir arm alone
 //
 // The `-ne 0` one reds four and that is the honest reading, not a leak:
 // inverted, the audit fires on every failing run and on no succeeding one, so
@@ -45,9 +46,14 @@ package posse
 // alarms. A mutation that breaks the invariant itself is supposed to be
 // visible everywhere the invariant is asserted.
 //
-// The last two are ranger-base-o0dr4's (ADR 0059 D3), and the common-dir arm
-// is the one that can go vacuous with nothing else noticing: no other arm in
-// this file looks at WHICH dir the recipe points into.
+// The last three are ranger-base-o0dr4's (ADR 0059 D3), and the common-dir
+// arm is the one that can go vacuous with nothing else noticing: no other arm
+// in this file looks at WHICH dir the recipe points into. They are deliberately
+// the two directions the arm can be wrong in — the recipe reaching a shared
+// path by NAME (row 6), by asking git for the wrong dir (row 7), and by
+// helpfully tidying the stray lock it can see (row 8, written as a second
+// `rm -f` line built with dirname, so it needs no --git-common-dir and tests
+// the executed half on its own). Row 8 reds three separate assertions.
 
 import (
 	"os"
