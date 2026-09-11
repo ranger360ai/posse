@@ -1,7 +1,8 @@
 ## The gather was gathering: `-race` moved the fixture's unit, not the dispatcher (ranger-base-0dt50)
 
 ranger-base-7npp8 found three arm-2 tests failing under `-race` and green
-without it, with `grep -c 'DATA RACE'` = 0 across every log. It named two
+without it — the only three reds in the arm `make test-race` now runs
+(ranger-base-nhc23) — with `grep -c 'DATA RACE'` = 0 across every log. It named two
 readings and said only measurement separates them:
 
 - **(a) a fixture defect** — something in the test rig serialises the two
@@ -159,4 +160,9 @@ three of them make:
 - **Green in the condition that broke it.** All three tests pass under
   `-race -tags posse_arm2`, run TOGETHER so their fake-herdr forks contend
   for the box (71.3s package clock: blink 7.47s, parallel pass 68.12s,
-  create-stagger 69.82s), and `make test` is green without `-race`.
+  create-stagger 69.82s).
+- **And the whole arm is green.** ranger-base-nhc23 landed `make test-race`
+  while this was in flight, which is the gate these three were the only
+  reds in. MEASURED here at b6903aed + this fix, 2026-09-10: 107 of 107
+  candidate tests, `arm 1 ok 273s · arm 2 ok 401s · arm 3 ok 78s`, **DATA
+  RACE 0** in every arm, exit 0. `make test` green without `-race`.
