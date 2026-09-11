@@ -675,6 +675,11 @@ func (e ClaimLostError) Error() string {
 // pass a persona name to claim on its behalf; "" uses bd's default actor
 // (BD_ACTOR / git user).
 //
+// The id is resolved before the claim runs (requireExactID): bd resolves
+// prefixes on `update --claim` as well, and a claim that lands on the wrong
+// bead has already taken somebody else's work away by the time the answer
+// can be checked (ranger-base-s92di).
+//
 // The exit code cannot decide this (rangerhq-kux): bd 0.49.1 refuses a claim
 // with "already claimed by X" on stderr, empty stdout — and exit 0. So the
 // outcome is read from the bead itself. A won claim prints the updated issue;
@@ -682,6 +687,9 @@ func (e ClaimLostError) Error() string {
 // assignee-routed case: bd refuses --claim on a bead already assigned to this
 // actor and leaves it open, so the status is set here instead.
 func (b Bd) Claim(dir, id, actor string) (resumed bool, err error) {
+	if err := b.requireExactID(dir, "update --claim", id); err != nil {
+		return false, err
+	}
 	out, runErr := b.run(dir, bdArgs(actor, "update", id, "--claim", "--json")...)
 	if runErr == nil {
 		// The claim was won iff bd handed back the claimed issue — about the
@@ -739,16 +747,39 @@ func bdArgs(actor string, rest ...string) []string {
 // reached the agent (rangerhq-81d) — leaving it claimed strands the bead
 // as in_progress with nobody working it.
 //
+// The id is resolved before the update runs (requireExactID) for the same
+// reason Close resolves it: bd prefix-resolves this verb too, and an unclaim
+// on the wrong bead reopens and unassigns a bead somebody is working
+// (ranger-base-s92di). The cockpit's unclaim takes a typed id.
+//
 // keepAssignee leaves the assignee in place: the bead was resumed, not
 // claimed by this pass, so its routing was somebody else's decision (usually
 // the operator's) and clearing it would throw that away (rangerhq-kux).
 func (b Bd) Unclaim(dir, id, actor string, keepAssignee bool) error {
+	if err := b.requireExactID(dir, "update --status open", id); err != nil {
+		return err
+	}
 	args := []string{"update", id, "--status", "open"}
 	if !keepAssignee {
 		args = append(args, "--assignee", "")
 	}
 	_, err := b.run(dir, bdArgs(actor, append(args, "--json")...)...)
 	return err
+}
+
+// BdIDMismatchError is bd answering about a DIFFERENT id than the one asked
+// for: its prefix resolution, the one failure shape that means a verb is
+// about to act, or has just acted, on the wrong bead. It is a type rather
+// than a sentence because requireExactID has to tell it apart from every
+// OTHER reason a read can fail — see there (ranger-base-s92di).
+type BdIDMismatchError struct {
+	Verb     string
+	Asked    string
+	Answered string
+}
+
+func (e BdIDMismatchError) Error() string {
+	return fmt.Sprintf("bd %s %s: answered about %s", e.Verb, e.Asked, e.Answered)
 }
 
 // Show fetches one issue's current state (bd show returns a one-item array).
@@ -771,9 +802,49 @@ func (b Bd) Show(dir, id string) (BdIssue, error) {
 		return BdIssue{}, Die("bd show %s: no issue in response", id)
 	}
 	if issues[0].ID != id {
-		return BdIssue{}, Die("bd show %s: answered about %s", id, issues[0].ID)
+		return BdIssue{}, BdIDMismatchError{Verb: "show", Asked: id, Answered: issues[0].ID}
 	}
 	return issues[0], nil
+}
+
+// requireExactID refuses a MUTATING verb whose id does not resolve to
+// itself, before the verb runs.
+//
+// bd resolves prefixes on every verb that takes an id — measured live on
+// 0.50.3 for `show` (ranger-base-cz2nw) and for `update --claim` and
+// `close` (ranger-base-n7lod). Checking the ANSWER afterwards, which is
+// what Bd.Close and Bd.Claim did, names the mistake but does not undo it:
+// the store has already lost the longer bead, and the caller gets an error
+// about a write that happened (ranger-base-s92di, finding 2 of the codex
+// outside-in review). So the read comes FIRST: Bd.Show already reports the
+// collision as a typed BdIDMismatchError, and this is that call with the
+// verb named and both ids in the sentence the operator sees.
+//
+// It is on the verbs an operator can reach with an id TYPED BY HAND —
+// `posse close`/`posse claim` (cmd/posse/main.go), the cockpit's claim and
+// unclaim — because that is where a prefix is a plausible input at all. The
+// id-taking verbs left without it (Comment, DepAdd) are only ever called
+// with an id posse just read back from a listing or a create, which is the
+// same argument Bd.Show's own comment makes; the answer-side checks stay
+// where they are either way.
+//
+// ONE failure shape refuses, and it is deliberately not "the read failed".
+// A read that answers about ANOTHER id is the prefix collision itself: the
+// store holds a longer id, the verb is about to write to it, and refusing
+// is the whole fix. A read that fails any other way — no such issue, a
+// locked database, bd unreachable — says nothing about a collision, and
+// there is no wrong write to prevent: bd refuses a verb on an id it cannot
+// resolve, and the answer-side check is still there for the case where it
+// resolves one anyway. Failing CLOSED on those would turn every unreadable
+// store into a refused close while preventing nothing, so this fails open
+// on them, and the verb reports its own error as it always did.
+func (b Bd) requireExactID(dir, verb, id string) error {
+	var mismatch BdIDMismatchError
+	if _, err := b.Show(dir, id); errors.As(err, &mismatch) {
+		return Die("bd %s %s: refusing to write, that id resolves to %s — pass the full id",
+			verb, id, mismatch.Answered)
+	}
+	return nil
 }
 
 // BdDep is one entry of `bd dep list <id> --json`: a parent of the issue
@@ -847,10 +918,21 @@ func (b Bd) CommentCount(dir, id string) int {
 //
 // bd RESOLVES PREFIXES on `close` too (ranger-base-n7lod, the same shape
 // ranger-base-cz2nw measured for `bd show`): rc=0 with the wrong issue
-// closed when id is a strictly-shorter prefix of another. The response is
-// parsed and checked against id rather than discarded, so a mismatch is
-// reported instead of a silent wrong-bead close.
+// closed when id is a strictly-shorter prefix of another. `posse close <id>`
+// takes that id from the operator's hand (cmd/posse/main.go), so the prefix
+// is a real input here and not a theoretical one.
+//
+// TWO checks, and the ORDER is the point (ranger-base-s92di). The id is
+// resolved first (requireExactID), so a prefix is refused BEFORE bd closes
+// the bead it names — the earlier version of this function checked only the
+// answer, which reported the wrong close accurately and one call too late.
+// The answer check stays as the second line: it is what catches a bd whose
+// resolution changes between the two calls, or a store that gained a
+// colliding id in between.
 func (b Bd) Close(dir, id, actor string) error {
+	if err := b.requireExactID(dir, "close", id); err != nil {
+		return err
+	}
 	out, err := b.run(dir, bdArgs(actor, "close", id, "--json")...)
 	if err != nil {
 		return err
@@ -860,7 +942,7 @@ func (b Bd) Close(dir, id, actor string) error {
 		return Die("bd close %s: no issue in response", id)
 	}
 	if issues[0].ID != id {
-		return Die("bd close %s: answered about %s", id, issues[0].ID)
+		return BdIDMismatchError{Verb: "close", Asked: id, Answered: issues[0].ID}
 	}
 	return nil
 }

@@ -15,6 +15,7 @@ package posse
 // stage and grok became counted.
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -50,11 +51,37 @@ func uncountedPass(t *testing.T, cfg, ready string, personas ...string) *uncount
 			t.Fatal(err)
 		}
 	}
-	repo := planRepo(t, ready, `[{"id":"a-1","title":"t","status":"closed"}]`)
+	repo := planRepo(t, ready, closedShowFor(t, ready))
 	planConfig(t, b.App, repo, cfg)
 	idleClaude(t, fake)
 	agentPerLaunch(t, fake)
 	return &uncountedFixture{d: d, errb: errb, b: b, fake: fake, repo: repo}
+}
+
+// closedShowFor is the end state for EVERY bead the ready list offers, not
+// just the first (ranger-base-s92di). A fixture that named only a-1 was
+// describing a store that does not exist: `bd show a-2` against it answered
+// about a-1, because fakeBdShowByID hands back the whole body when the id it
+// was asked about is not in it — the deliberate stand-in for bd's prefix
+// resolution. Nothing read `show` for the second bead, so the lie sat there;
+// the claim preflight reads it now and correctly refuses to write to a store
+// that says a-2 resolves to a-1.
+func closedShowFor(t *testing.T, ready string) string {
+	t.Helper()
+	var list []map[string]any
+	if err := json.Unmarshal([]byte(ready), &list); err != nil {
+		t.Fatalf("ready fixture is not JSON: %v", err)
+	}
+	rows := make([]map[string]any, 0, len(list))
+	for _, is := range list {
+		id, _ := is["id"].(string)
+		rows = append(rows, map[string]any{"id": id, "title": "t", "status": "closed"})
+	}
+	b, err := json.Marshal(rows)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
 }
 
 // oneCodexBead is the common case: one ready bead, one seat, one launch.

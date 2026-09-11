@@ -517,7 +517,15 @@ func fakeBd(args []string) int {
 			fmt.Print(string(b))
 			return 0
 		}
-		id := fakeBdID(args, "close")
+		// The WRITE follows the prefix, not only the answer
+		// (ranger-base-s92di). fake-close-answer.json above fakes the
+		// answer alone, and against that fixture a guard that PREVENTS the
+		// wrong close and a guard that merely reports it afterwards are
+		// indistinguishable — which is exactly what the codex review said
+		// the old pin proved. Resolving here means the fake's own store
+		// really loses the longer bead when posse lets the call through,
+		// so reading that bead back is a survival assertion with teeth.
+		id := fakeBdResolvePrefix(fakeBdID(args, "close"))
 		fakeBdMarkClosed(id)
 		fmt.Printf(`[{"id":%q,"status":"closed"}]`, id)
 		return 0
@@ -676,7 +684,12 @@ func fakeBdMarkClosed(id string) {
 	if id == "" {
 		return
 	}
-	for _, f := range []string{"fake-list.json", "fake-list-labeled.json"} {
+	// fake-show.json is in the list because `bd show` is how a caller asks
+	// whether one named bead survived a call (ranger-base-s92di); a fake
+	// whose close moved the listings but not the row itself answered "open"
+	// for a bead it had just closed. Rows the file does not name are left
+	// alone, so a fixture with no such row is untouched.
+	for _, f := range []string{"fake-list.json", "fake-list-labeled.json", "fake-show.json"} {
 		var list []map[string]any
 		b, err := os.ReadFile(f)
 		if err != nil || json.Unmarshal(b, &list) != nil {
@@ -736,26 +749,31 @@ func fakeBdDropClosed(body string) string {
 	return string(b)
 }
 
-// fakeBdShowByID narrows a fake-show.json body to the one entry matching the
-// id `bd show` was asked about — real bd's own one-item-array contract
-// (beads.go's Bd.Show comment). A file holding several fixtures (one per id
-// a test's Run touches, e.g. a-1 and a-2) answers each id with ITS OWN entry
-// rather than always the array's first, which is what silently satisfied
-// Bd.Show before ranger-base-cz2nw taught it to check.
+// fakeBdShowByID narrows a fake-show.json body to the one entry `bd show`
+// answers with — real bd's own one-item-array contract (beads.go's Bd.Show
+// comment). A file holding several fixtures (one per id a test's Run
+// touches, e.g. a-1 and a-2) answers each id with ITS OWN entry rather than
+// always the array's first, which is what silently satisfied Bd.Show before
+// ranger-base-cz2nw taught it to check.
 //
-// No match found is left AS THE WHOLE BODY, unfiltered: that is
-// beadshowprefix_test.go's fixture shape on purpose — an id the file never
-// names, answered from whatever the file holds anyway — which is exactly
-// bd's live prefix-collision quirk the guard exists to catch. Filtering that
-// case down to `[]` would make Bd.Show fail on "no issue in response"
-// instead of the mismatch this fake is built to reproduce.
+// An id the file does not name resolves BY PREFIX, and only by prefix
+// (fakeBdResolveIn) — then `[]`.
+//
+// It used to answer any unnamed id with the WHOLE BODY, which stood in for
+// bd's prefix collision without needing a prefix. That was a store no bd can
+// hold: `[{"id":"x"}]` is the idiom for "this fixture has nothing to show",
+// and it made `bd show a-1` answer about `x`. Nothing read `show` for those
+// ids, so the lie sat still — until the ranger-base-s92di preflight read it
+// before every claim and, quite correctly, refused to write to a store
+// saying a-1 is really x. Resolving by prefix keeps the quirk the guards
+// exist to catch and drops the part that was never bd.
 func fakeBdShowByID(body, id string) string {
 	var list []map[string]any
 	if json.Unmarshal([]byte(body), &list) != nil {
 		return body
 	}
 	for _, is := range list {
-		if got, _ := is["id"].(string); got == id {
+		if got, _ := is["id"].(string); got == fakeBdResolveIn(list, id) {
 			b, err := json.Marshal([]map[string]any{is})
 			if err != nil {
 				return body
@@ -763,7 +781,55 @@ func fakeBdShowByID(body, id string) string {
 			return string(b)
 		}
 	}
-	return body
+	return "[]"
+}
+
+// fakeBdResolvePrefix is bd's live prefix resolution, applied to the id a
+// MUTATING verb was asked about: an id the store does not hold, which is a
+// strict prefix of exactly one id it does, resolves to that longer id and
+// the write lands there — rc=0, wrong bead (ranger-base-cz2nw measured it
+// on `show`, ranger-base-n7lod on `update --claim` and `close`).
+//
+// It resolves against fake-show.json, the file that describes the store to
+// these tests. An EXACT hit wins outright, and no hit or an ambiguous one is
+// returned unchanged — so every fixture without a collision, which is every
+// fixture in the suite but ranger-base-s92di's, behaves as it always did.
+func fakeBdResolvePrefix(id string) string {
+	if id == "" {
+		return id
+	}
+	b, err := os.ReadFile("fake-show.json")
+	if err != nil {
+		return id
+	}
+	var list []map[string]any
+	if json.Unmarshal(b, &list) != nil {
+		return id
+	}
+	return fakeBdResolveIn(list, id)
+}
+
+// fakeBdResolveIn is that resolution over a body already parsed — the half
+// `show` needs, since it is handed the rows rather than the file.
+func fakeBdResolveIn(list []map[string]any, id string) string {
+	hit := ""
+	for _, is := range list {
+		got, _ := is["id"].(string)
+		if got == id {
+			return id
+		}
+		if !strings.HasPrefix(got, id) {
+			continue
+		}
+		if hit != "" {
+			return id // ambiguous: bd resolves nothing and neither does this
+		}
+		hit = got
+	}
+	if hit == "" {
+		return id
+	}
+	return hit
 }
 
 // fakeBdFilterStatus keeps the rows whose own status field is exactly this

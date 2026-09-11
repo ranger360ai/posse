@@ -18,16 +18,23 @@ import (
 )
 
 // TestBdShowRefusesAnAnswerAboutADifferentBead pins Bd.Show itself: the fake
-// bd's `show` verb answers from fake-show.json regardless of the id it was
-// asked about (herdr_test.go), which is exactly bd's own prefix-resolution
-// shape — a live-store rc=0 answer about an issue other than the one named.
+// bd's `show` verb resolves an id its store does not hold onto the one id
+// that id PREFIXES (herdr_test.go), which is exactly bd's own
+// prefix-resolution shape — a live-store rc=0 answer about an issue other
+// than the one named.
+//
+// The fixture is a real prefix pair (a-1 → a-12) rather than the unrelated
+// `other-9` it used to be, because that is the live shape this file's
+// header measured (`ranger-base-uqsl` answering `ranger-base-uqslx`), and
+// because the fake no longer answers an unrelated id at all
+// (ranger-base-s92di).
 func TestBdShowRefusesAnAnswerAboutADifferentBead(t *testing.T) {
 	t.Parallel()
 	newTestBackend(t)
 	bd := Bd{Bin: fakeBinFor(t, "bd")}
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "fake-show.json"),
-		[]byte(`[{"id":"other-9","status":"closed"}]`), 0o644); err != nil {
+		[]byte(`[{"id":"a-12","status":"closed"}]`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -35,7 +42,7 @@ func TestBdShowRefusesAnAnswerAboutADifferentBead(t *testing.T) {
 	if err == nil {
 		t.Fatal("an answer about a different id must not be accepted")
 	}
-	if !strings.Contains(err.Error(), "a-1") || !strings.Contains(err.Error(), "other-9") {
+	if !strings.Contains(err.Error(), "a-1") || !strings.Contains(err.Error(), "a-12") {
 		t.Errorf("the error must name both the id asked for and the id answered, got %q", err.Error())
 	}
 
@@ -55,20 +62,21 @@ func TestBdShowRefusesAnAnswerAboutADifferentBead(t *testing.T) {
 
 // TestAutoReapDoesNotKillOnAShowAnswerAboutADifferentBead is the consequence
 // at the reap arm (autoreap.go's reapWhy): a session pointed at bead "a-1"
-// whose store answers `bd show a-1` about "other-9" (a live prefix
-// collision, or a stale/deleted pointer another id now prefixes) must NOT be
-// reaped, and the refusal must be said — not silently skipped and not acted
-// on under the wrong bead's name.
+// whose store answers `bd show a-1` about "a-12" (a live prefix collision,
+// or a stale/deleted pointer another id now prefixes) must NOT be reaped,
+// and the refusal must be said — not silently skipped and not acted on
+// under the wrong bead's name.
 func TestAutoReapDoesNotKillOnAShowAnswerAboutADifferentBead(t *testing.T) {
 	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
 	dir := reapCandidate(t, b, "ranger-repo-a-1", "a-1", "closed")
-	// Overwrite the candidate's fake-show.json with an answer about a
-	// DIFFERENT bead than the session's own pointer (a-1).
+	// Overwrite the candidate's fake-show.json with a store that holds only
+	// a bead the session's own pointer (a-1) PREFIXES, so `bd show a-1`
+	// answers about a-12 at rc 0.
 	if err := os.WriteFile(filepath.Join(dir, "fake-show.json"),
-		[]byte(`[{"id":"other-9","status":"closed"}]`), 0o644); err != nil {
+		[]byte(`[{"id":"a-12","status":"closed"}]`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	idleClaude(t, fake)

@@ -105,9 +105,16 @@ func TestQAIdleHolderWithClosedBeadIsStillAFreeSeat(t *testing.T) {
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "scout", "[qa]")
 	writePersona(t, b.App, "verifier", "[qa]")
+	// BOTH beads are in the show fixture, a-2 included (ranger-base-s92di):
+	// a store that names only a-1 answers `bd show a-2` about a-1 (the
+	// fake's stand-in for bd's prefix resolution), and the claim preflight
+	// reads that before it writes — correctly refusing to claim against a
+	// store that says a-2 is really a-1. The seat, not the store, is what
+	// this test is about.
 	repo := qaRepo(t, b.App,
 		`[{"id":"a-2","title":"u","labels":["qa"]}]`,
-		`[{"id":"a-1","title":"t","status":"closed","assignee":"verifier"}]`)
+		`[{"id":"a-1","title":"t","status":"closed","assignee":"verifier"},
+		  {"id":"a-2","title":"u","status":"open"}]`)
 	agentPerLaunch(t, fake)
 
 	scoutSlot := SessionFor("scout", repo)
