@@ -35,7 +35,13 @@ jobs:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
+      # v5 for the node24 runtime (ranger-base-wjlkt). The three pages
+      # actions below are STILL node20 as pinned — configure-pages v5 and
+      # deploy-pages v4 directly, upload-pages-artifact v3 through the
+      # upload-artifact@v4 it shells to (measured 2026-09-11 from each
+      # action.yml). Moving them deploys the live site to find out, so they
+      # are their own gated bead: ranger-base-9cat6.
+      - uses: actions/checkout@v5
 
       # www/CNAME carries the custom domain into the artifact so the apex
       # survives a redeploy instead of depending on repo settings alone.

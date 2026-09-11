@@ -86,7 +86,7 @@ jobs:
       # Full history: `make test` ends in scripts/audit-silent-reverts.sh,
       # which walks every commit. A shallow clone makes it wrong rather than
       # loud. Same reason release.yml pins fetch-depth: 0.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -94,7 +94,35 @@ jobs:
       # a push and the version that builds a tag are the same toolchain, read
       # from go.mod. check-latest: false so a new patch release upstream cannot
       # change what CI ran without a commit here.
-      - uses: actions/setup-go@v5
+      #
+      # v6, not v5, and the same reason as checkout@v5 above: v5 is a node20
+      # action, GitHub was force-running it on node24, and the forcing is a
+      # stopgap that ends (ranger-base-wjlkt):
+      #
+      #   Node.js 20 is deprecated. The following actions target Node.js 20
+      #   but are being forced to run on Node.js 24: actions/checkout@v4,
+      #   actions/setup-go@v5.
+      #   https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+      #
+      # — on all six jobs of every run, which is a warning today and a red on
+      # main later, with no PR in front of it to catch it. Measured 2026-09-11
+      # from each action.yml's `using:`: checkout v4 node20 / v5 node24,
+      # setup-go v5 node20 / v6 node24. Both majors want runner >= v2.327.1
+      # (released 2025-07-25); run 34560341643 reports 2.337.0 on both
+      # ubuntu-latest and macos-latest, so the floor is not in play.
+      #
+      # v6 is also the release that exports GOTOOLCHAIN=local into the job
+      # (actions/setup-go#460), and that turns the line below from advisory
+      # into load-bearing: before it, a go.mod asking for a Go newer than the
+      # installed one made `go` DOWNLOAD that toolchain mid-build, which is
+      # precisely the upstream-changes-what-CI-ran that check-latest: false
+      # exists to forbid. Now the same mismatch is an error naming both
+      # versions. go.mod carries `go 1.26.5` and no `toolchain` directive, so
+      # setup-go installs 1.26.5 and 1.26.5 is what runs. Measured 2026-09-11
+      # on darwin/arm64 go1.26.5: all three arms vet clean under
+      # GOTOOLCHAIN=local and `make test-arm1` is green, so nothing in this
+      # tree was relying on a toolchain download.
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           check-latest: false

@@ -41,12 +41,16 @@ jobs:
       # worktree and scripts/audit-silent-reverts.sh walks every commit. A
       # shallow clone makes both of them wrong rather than loud. It also
       # fetches the tags, which the next step needs to resolve one.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ inputs.tag || github.ref }}
           fetch-depth: 0
 
-      - uses: actions/setup-go@v5
+      # checkout@v5 / setup-go@v6 for the node24 runtime, and setup-go v6's
+      # GOTOOLCHAIN=local: ci.yml's setup-go block is where that is argued
+      # (ranger-base-wjlkt). Keep the two files on the same two pins — a tag
+      # must be built by the toolchain that gated the commit.
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           check-latest: false

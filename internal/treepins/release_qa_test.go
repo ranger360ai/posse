@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -35,7 +36,14 @@ func TestReleaseWorkflowChecksOutTheTagItBuilds(t *testing.T) {
 	// The pre-fix shape: checkout with fetch-depth only, no ref. A comment
 	// mentioning fetch-depth is fine; a with: block that is only fetch-depth
 	// is the original bug.
-	if strings.Contains(body, "uses: actions/checkout@v4\n        with:\n          fetch-depth: 0\n") {
+	//
+	// The MAJOR is a wildcard and not a literal (ranger-base-wjlkt). This
+	// line read `actions/checkout@v4` until the node20 deprecation moved that
+	// pin to v5, and a literal major is the worst failure a guard has: the
+	// string stops matching the file, the guard keeps passing, and what it
+	// guards is unwatched from the bump onward. Nothing here is about which
+	// major checkout is on — the claim is about the `with:` block under it.
+	if regexp.MustCompile("uses: actions/checkout@v[0-9]+\n        with:\n          fetch-depth: 0\n").MatchString(body) {
 		t.Fatal("release.yml checkout is back to triggering-ref only (no ref:); workflow_dispatch would test main and ship the tag")
 	}
 }
