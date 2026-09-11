@@ -1405,23 +1405,39 @@ var sequencerLeftovers = []string{"CHERRY_PICK_HEAD", "REVERT_HEAD", "MERGE_HEAD
 // merge-back).
 //
 // WHAT IT CATCHES. In a dispatched worktree the ref delete that ends a
-// cherry-pick wants the SHARED repo's `.git/packed-refs.lock`, which the cage
-// denies and seatbelt.go declines to grant (see the packed-refs.lock block
-// there — a create-only grant was measured and REJECTED under
-// ranger-base-msex, because it strands the lock FILE in shared state and
-// kills the operator's `git gc`). Git prints the refusal among the two or
-// three `packed-refs.lock` lines every commit in these trees already prints,
-// ignores it, and EXITS 0. The working tree is restored and HEAD is right, so
-// every signal a seat can read says the command worked. CHERRY_PICK_HEAD
-// survives, and the next path-limited commit — the only commit form a crew
-// PID allows — dies at `fatal: cannot do a partial commit during a
-// cherry-pick`, in a later Bash call, with nothing to connect it to the
-// abort. A seat that reads that fatal as "the PID denies my commit" closes
-// its bead with the work uncommitted, and in a dispatched worktree
-// uncommitted is gone.
+// cherry-pick takes the SHARED repo's `.git/packed-refs.lock`. When it cannot
+// HAVE that lock git gives up the delete and EXITS 0 anyway. The working tree
+// is restored and HEAD is right, so every signal a seat can read says the
+// command worked. CHERRY_PICK_HEAD survives, and the next path-limited
+// commit — the only commit form a crew PID allows — dies at `fatal: cannot do
+// a partial commit during a cherry-pick`, in a later Bash call, with nothing
+// to connect it to the abort. A seat that reads that fatal as "the PID denies
+// my commit" closes its bead with the work uncommitted, and in a dispatched
+// worktree uncommitted is gone.
+//
+// WHY THE LOCK CAN STILL BE UNAVAILABLE. It is no longer the cage refusing to
+// hand it over: ADR 0059 D1 grants `<common>/packed-refs.lock` write AND
+// unlink, so on the ordinary path git creates the lock, deletes the pseudo-ref
+// and removes the lock itself, and every one of the verbs below is clean and
+// silent (see the packed-refs.lock block above `sessionGitGrants` in
+// seatbelt.go, which carries the measurement and the rejected create-only
+// shape). Two routes are left, and this arm is the floor for both:
+//
+//  1. A STRAY LOCK, from anyone — another session, an operator `gc`, a git
+//     that took SIGKILL inside the ~70 ms one holds it. A grant lets git
+//     CREATE the file; it does nothing about a file already there. git retries
+//     for `core.packedRefsTimeout` (default 1000 ms) once per transaction,
+//     three transactions to a sequencer end — 3.4–3.8 s of silence, MEASURED
+//     — then gives up the delete and exits 0 with the blocker in place.
+//  2. L4, where the common dir is `:ro` and no `.lock` sibling is bound at all
+//     (ADR 0059 D4: a bind of an ABSENT source would leave a
+//     `packed-refs.lock` DIRECTORY in the operator's git dir). A sequencer end
+//     there behaves exactly as every tree did before D1.
 //
 // MEASURED 2026-09-11 (darwin 25.4.0, git 2.50.1) in a live dispatched
-// worktree under the seatbelt, every verb run against a real conflict:
+// worktree under the seatbelt, before D1 landed — which is to say with the
+// lock unavailable, the shape cases 1 and 2 still have — every verb run
+// against a real conflict:
 //
 //	cherry-pick --abort     rc 0   CHERRY_PICK_HEAD survives
 //	cherry-pick --quit      rc 0   CHERRY_PICK_HEAD survives
@@ -1449,14 +1465,27 @@ var sequencerLeftovers = []string{"CHERRY_PICK_HEAD", "REVERT_HEAD", "MERGE_HEAD
 // holds too: `cherry-pick --quit` and `revert --quit` exit 0 with nothing in
 // progress (measured) and leave no blocker, so they do not fire.
 //
+// THE RECIPE NAMES THE SESSION'S OWN GIT DIR AND NOTHING SHARED (ADR 0059
+// D3). Every path it prints is `$posse_sg/<leftover>`, and `$posse_sg` is
+// `rev-parse --absolute-git-dir` — the session's own git dir, which for a
+// linked worktree is the private `<common>/worktrees/<name>` and not the
+// shared part of the common dir. It never names `packed-refs.lock`, not even
+// in case 1 where a stray lock is the CAUSE and its name is known: git's lock
+// files carry no holder identity and no expiry, so a session cannot tell a
+// stranded lock from the one a live `gc` is holding right now, and an `rm` a
+// seat pastes on that guess is the destructive act the wall exists to
+// prevent. Removing it is the operator's. Pinned by
+// TestQASequencerRecipeStaysOutOfTheCommonDir.
+//
 // IT AUDITS, IT DOES NOT REPAIR. The shim knows the exact files git failed to
-// unlink and could remove them, and that was considered: it would make a
-// clean cherry-pick silent again instead of alarming on every one. It is not
-// done because the CAUSE is a cage decision the operator has not made yet
-// (handed off as its own bead), and a shim that quietly finishes git's
-// cleanup hides the one signal that would bring that decision forward.
-// Refusing changes no state and is one line to undo if the lane later
-// prefers repair.
+// unlink and could remove them, and that was considered. It is not done, and
+// after ADR 0059 the reason is no longer "the cage decision is pending": on
+// the ordinary path there is nothing left to repair, and what remains is case
+// 1, where the leftover the shim can see is downstream of a lock in SHARED
+// state that only the operator may touch. A shim that finished git's cleanup
+// there would trade a visible alarm for a silent 3.8 s pause and still be
+// removing state on a guess. Refusing changes no state and is one line to
+// undo if the lane later prefers repair.
 //
 // THE ARM DOES NOT `exec`. For these verbs the shim runs git as a child and
 // exits with its code, which is the only way to look at anything afterwards.
@@ -1490,7 +1519,9 @@ func renderSequencerAudit(cmd, real, dateBin string) string {
 	var b strings.Builder
 	b.WriteString("# ranger-base-71g2f: cherry-pick/revert/rebase can exit 0 without ending\n")
 	b.WriteString("# the operation — the pseudo-ref delete needs the SHARED repo's\n")
-	b.WriteString("# packed-refs.lock and the cage denies it. Audited here, never repaired.\n")
+	b.WriteString("# packed-refs.lock, and where it cannot have one (a stray lock someone\n")
+	b.WriteString("# else left, or L4) git gives up the delete and exits 0. Audited here,\n")
+	b.WriteString("# never repaired, and the recipe stays in this session's own git dir.\n")
 	// The verb scan, and the count of words in front of it: the same walk
 	// posse_verb_match does, keeping the global prefix so rev-parse can be
 	// asked about the SAME repo the verb ran against (`git -C <repo> …`).
@@ -1521,10 +1552,14 @@ func renderSequencerAudit(cmd, real, dateBin string) string {
 	fmt.Fprintf(&b, "  %s \"$@\"; posse_src=$?\n", q)
 	b.WriteString("  if [ $posse_src -eq 0 ]; then\n    posse_sg=$(posse_seq_gitdir \"$@\")\n    if [ -n \"$posse_sg\" ] && posse_seq_left; then\n")
 	b.WriteString("      echo \"posse gate: git $* exited 0 but the operation is STILL IN PROGRESS:$posse_sleft survives in $posse_sg (ranger-base-71g2f).\" >&2\n")
-	b.WriteString("      echo \"  git's delete of that pseudo-ref wants the SHARED repo's .git/packed-refs.lock, the cage denies it, and git exits 0 anyway.\" >&2\n")
+	b.WriteString("      echo \"  git's delete of that pseudo-ref needs the SHARED repo's .git/packed-refs.lock and could not have it — a stray lock someone left there, or L4 — so git gave up the delete and exited 0.\" >&2\n")
 	b.WriteString("      echo \"  Left alone, your next path-limited commit dies at 'fatal: cannot do a partial commit during a cherry-pick' — that is THIS, not your PID.\" >&2\n")
-	b.WriteString("      echo \"  End it by hand, then re-read the tree with git status:\" >&2\n")
+	b.WriteString("      echo \"  End it by hand — all of these are in YOUR OWN git dir — then re-read the tree with git status:\" >&2\n")
 	b.WriteString("      echo \"    rm -rf --$posse_srm\" >&2\n")
+	// D3: the seat is told what it may NOT do, in the same breath, because
+	// the stray lock is the one thing it can see and the one thing it must
+	// leave alone.
+	b.WriteString("      echo \"  Touch nothing in the SHARED git dir: a stray packed-refs.lock there is the operator's to remove, never yours (ADR 0059 D3). Say so on your bead.\" >&2\n")
 	fmt.Fprintf(&b, "      echo \"%s git $* exited 0 leaving$posse_sleft (alarm: ranger-base-71g2f)\" >> \"$RHQ_GATE_LOG\" 2>/dev/null\n", refusalTimestamp(dateBin))
 	b.WriteString("      exit 1\n    fi\n  fi\n  exit $posse_src\nfi\n")
 	return b.String()

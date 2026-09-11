@@ -174,8 +174,18 @@ their floor; the L4 engine is off-box and UNRUN for this shape.
 4. In a live dispatched worktree after landing: `git cherry-pick <clean sha>`
    prints nothing to stderr, exits 0, `git rev-parse --git-dir` holds no
    CHERRY_PICK_HEAD, and `git commit -m x -- <path>` lands.
-5. The 71g2f recipe text, on main after both beads land, names no path
-   under `git rev-parse --git-common-dir`.
+5. The 71g2f recipe text, on main after both beads land, names no path in the
+   SHARED part of the common dir. Read that way rather than as a substring
+   test, because a linked worktree's own git dir IS `<common>/worktrees/
+   <name>` (MEASURED 2026-09-11 on this box, git 2.50.1, ranger-base-o0dr4:
+   `rev-parse --absolute-git-dir` answers that, `--git-common-dir` answers the
+   dir two levels above it), so every CORRECT recipe names paths under the
+   common dir textually. What holds, pinned by execution over a
+   worktree-shaped fixture in `TestQASequencerRecipeStaysOutOfTheCommonDir`:
+   every path the recipe prints is under `--absolute-git-dir`, the refusal
+   names nothing in the common dir outside that private subtree, it never
+   names `packed-refs.lock`, and a stray lock placed beside the fixture is
+   still there afterwards.
 
 ## MEASURED vs ASSUMED
 
