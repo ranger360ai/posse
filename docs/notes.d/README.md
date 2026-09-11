@@ -6,6 +6,7 @@ references), not inferred publication dates. Undated fragments sort last.
 
 ## 2026-09
 
+- [ranger-base-zv1cu](ranger-base-zv1cu.md) — Verbs that grew a subsystem: a responsibility census (ranger-base-zv1cu) — 2026-09-11
 - [ranger-base-c6ohn](ranger-base-c6ohn.md) — The fourth operand: a base that moved FORWARD past the conflict (ranger-base-c6ohn) — 2026-09-11
 - [ranger-base-vq5zz](ranger-base-vq5zz.md) — ranger-base-vq5zz — the last good reading keeps gating — 2026-09-10
 - [ranger-base-nhc23](ranger-base-nhc23.md) — The `-race` arm is a target now, not a recipe (ranger-base-nhc23) — 2026-09-10
