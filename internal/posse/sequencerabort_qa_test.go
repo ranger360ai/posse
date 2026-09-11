@@ -353,8 +353,13 @@ func TestQASequencerRecipeStaysOutOfTheCommonDir(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// A lock in the session's OWN git dir as well, which real git never puts
+	// there — deliberately, so the mutation this arm exists to catch is
+	// REACHABLE by execution and not only by reading the list. The recipe
+	// names what it finds, so a `packed-refs.lock` added to sequencerLeftovers
+	// prints only if there is one to find.
 	_, errs, code := runSequencerShim(t, shim, own,
-		"CHERRY_PICK_HEAD AUTO_MERGE MERGE_MSG sequencer", "0", "cherry-pick", "--abort")
+		"CHERRY_PICK_HEAD AUTO_MERGE MERGE_MSG sequencer packed-refs.lock", "0", "cherry-pick", "--abort")
 	if code != 1 {
 		t.Fatalf("the arm did not fire, so this pin is reading nothing: code=%d err=%q", code, errs)
 	}
