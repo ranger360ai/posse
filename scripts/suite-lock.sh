@@ -301,7 +301,27 @@ END { if (n > 8) { out = out ", and " (n - 8) " more" }
 # _suite_lock_holders — one line per slot that somebody holds, worktree first.
 # A hint for the waiting line and for --status, never evidence: the kernel
 # holds the lock and these bytes are a courtesy, exactly as launchlock.go's
-# stamp is. A slot whose stamp cannot be read still counts as held.
+# stamp is. A slot whose stamp cannot be READ still counts as held.
+#
+# A slot this process cannot OPEN does not (ranger-base-3poyb). EXISTS was
+# the whole test here — `[ -f "$f" ] || continue` — and ranger-base-r3czg
+# taught that difference to suite_lock_status and to the sweep and left this
+# reader, the one the queued line and the 300s heartbeat both go through,
+# answering from the stamp of a slot it can neither take nor judge. MEASURED
+# 2026-09-11 against a dir holding one held slot and one mode-000 sibling:
+#
+#   suite-lock: waiting for suite lock held by <worktree> (pid 37777, since
+#     2026-09-11T09:08:49Z);another worktree (pid , since )
+#   suite-lock: 2 full suites already running on this box; this one is queued
+#
+# Neither half true of slot 2: nobody holds it, this process may not open it,
+# and the count was $_SUITE_LOCK_SLOTS — the slot WIDTH, never a reading. One
+# `sudo make test` leaves a root-owned slot file and every later run of that
+# seat is in that mixed state permanently.
+#
+# The open is asked the sweep's way, `exec 9>>` in a subshell, so this reader
+# and the taker agree about what "can open" means — and in a subshell so the
+# caller's own fd 9, which may be a slot it HOLDS, is never touched.
 _suite_lock_holders() {
 	local dir i f who pid gone
 	dir=$(suite_lock_dir)
@@ -309,6 +329,7 @@ _suite_lock_holders() {
 	for i in $(seq 1 "$_SUITE_LOCK_SLOTS"); do
 		f=$dir/suite-slot.$i.lock
 		[ -f "$f" ] || continue
+		( exec 9>>"$f" ) 2>/dev/null || continue
 		who=$(sed -n 's/^worktree: //p' "$f" 2>/dev/null | head -1)
 		[ -n "$who" ] || who="another worktree"
 		pid=$(sed -n 's/^pid: //p' "$f" 2>/dev/null | head -1)
@@ -321,6 +342,24 @@ _suite_lock_holders() {
 		printf '%s (pid %s%s, since %s)\n' "$who" "$pid" "$gone" \
 			"$(sed -n 's/^since: //p' "$f" 2>/dev/null | head -1)"
 	done
+}
+
+# _suite_lock_unopenable — how many slot files EXIST and cannot be OPENED
+# from here. The other half of what _suite_lock_holders now drops
+# (ranger-base-3poyb): such a slot is not a holder, and it is not nothing
+# either — it is a slot nobody here can account for, so the queued line says
+# how many rather than counting them as running suites or silently losing
+# them. Prints a number, always, including 0.
+_suite_lock_unopenable() {
+	local dir i f n=0
+	dir=$(suite_lock_dir)
+	_suite_lock_slots
+	for i in $(seq 1 "$_SUITE_LOCK_SLOTS"); do
+		f=$dir/suite-slot.$i.lock
+		[ -f "$f" ] || continue
+		( exec 9>>"$f" ) 2>/dev/null || n=$((n + 1))
+	done
+	printf '%s\n' "$n"
 }
 
 # _suite_lock_stamp <slotfile> — who has it now. Written through a SECOND fd,
@@ -435,7 +474,7 @@ suite_lock_acquire() {
 	fi
 
 	start=$(date +%s)
-	local rc
+	local rc held n_held n_unopen unopen line
 	while :; do
 		rc=0
 		_suite_lock_sweep || rc=$?
@@ -457,8 +496,39 @@ suite_lock_acquire() {
 			# Named before the wait, never after it: a run that has
 			# stopped for a reason must never look like a run that
 			# has hung (launchlock.go says the same thing).
-			_suite_lock_say "waiting for suite lock held by $(_suite_lock_holders | paste -sd '; ' - )"
-			_suite_lock_say "$_SUITE_LOCK_SLOTS full suites already running on this box; this one is queued (POSSE_SUITE_SLOTS to change, POSSE_SUITE_LOCK=0 to opt out)"
+			#
+			# COUNTED, not assumed (ranger-base-3poyb). The number
+			# here used to be $_SUITE_LOCK_SLOTS, which is the width
+			# of the queue and not a reading of it: on a box with one
+			# held slot beside one this seat may not open, it said two
+			# suites were running when one was. Both numbers are read
+			# from the same slot files the sweep just tried, and they
+			# are said apart because they are different facts — one
+			# slot is spent, the other is unaccountable from here.
+			held=$(_suite_lock_holders)
+			n_held=0
+			# `if`, not `&&`: a body whose last command is false
+			# leaves the whole loop non-zero, and a wrapper under
+			# `set -e` dies on it — the hazard this file's own header
+			# names, one statement from the queue it protects.
+			while IFS= read -r line; do
+				if [ -n "$line" ]; then
+					n_held=$((n_held + 1))
+				fi
+			done <<<"$held"
+			if [ "$n_held" = 0 ]; then
+				# The holder released between the sweep and this
+				# read. Saying so beats naming nobody, which is
+				# the sentence ranger-base-jhyiv found unreadable.
+				_suite_lock_say 'waiting for a suite slot; none of them carries a stamp this seat can read'
+			else
+				_suite_lock_say "waiting for suite lock held by $(printf '%s\n' "$held" | paste -sd '; ' - )"
+			fi
+			n_unopen=$(_suite_lock_unopenable)
+			unopen=''
+			[ "$n_unopen" = 0 ] ||
+				unopen=", $n_unopen this seat cannot open and does not judge (--status names them)"
+			_suite_lock_say "$n_held of $_SUITE_LOCK_SLOTS slots hold a full suite$unopen; this one is queued (POSSE_SUITE_SLOTS to change, POSSE_SUITE_LOCK=0 to opt out)"
 		fi
 		sleep "${POSSE_SUITE_LOCK_POLL:-5}"
 		waited=$(( $(date +%s) - start ))
@@ -495,18 +565,27 @@ suite_lock_release() {
 }
 
 suite_lock_status() {
-	local dir held who
+	local dir who i f any=0
 	dir=$(suite_lock_dir)
 	_suite_lock_slots
-	held=$(_suite_lock_holders)
+	# "Has anything ever run here" is a question about FILES, and is asked of
+	# the files (ranger-base-3poyb). It went through _suite_lock_holders
+	# until that reader learned to drop the slots it cannot open — and a dir
+	# holding nothing but unopenable slot files is exactly what --status
+	# exists to describe, so answering it from holders would print `no slot
+	# file has ever been written here` over the ones below.
+	for i in $(seq 1 "$_SUITE_LOCK_SLOTS"); do
+		if [ -f "$dir/suite-slot.$i.lock" ]; then
+			any=1
+		fi
+	done
 	printf 'suite-lock: %s slot(s), %s\n' "$_SUITE_LOCK_SLOTS" "$dir"
-	if [ -z "$held" ]; then
+	if [ "$any" = 0 ]; then
 		printf '  no slot file has ever been written here\n'
 		return 0
 	fi
 	# The stamps say who wrote them LAST, which is not who holds them now.
 	# Ask the kernel for that, one slot at a time.
-	local i f
 	for i in $(seq 1 "$_SUITE_LOCK_SLOTS"); do
 		f=$dir/suite-slot.$i.lock
 		[ -f "$f" ] || { printf '  slot %s: free (never used)\n' "$i"; continue; }
@@ -1244,6 +1323,75 @@ STRICT
 		kill "$h20" 2>/dev/null
 		wait "$h20" 2>/dev/null
 	fi
+
+	# ARM 16: one held slot beside one this process may not open is ONE
+	# suite running, and the queued line says so (ranger-base-3poyb).
+	#
+	# Arm 15's dir is all-unopenable, which the sweep degrades on before any
+	# of this is reached. The MIXED dir is the one that stays: a slot file
+	# this seat cannot append to sitting next to one it can — one `sudo make
+	# test` leaves a root-owned suite-slot.N.lock and every later run of that
+	# seat is in that state permanently. There the queue behaves correctly
+	# (one usable slot is not none, so it waits rather than degrading) and
+	# the SENTENCE was wrong twice over: `_suite_lock_holders` answered from
+	# `[ -f ]` and rendered the unopenable slot's empty stamp as a holder —
+	# `another worktree (pid , since )` — and the count beneath it was
+	# $_SUITE_LOCK_SLOTS, the queue's WIDTH, so it said two suites were
+	# running when one was. That is the line an operator reads to decide
+	# whether a run is queued or wedged, which is the whole of r3czg.
+	#
+	# BOTH halves are asserted, because either alone is passable by
+	# accident: no phantom holder, and a count of 1. And the arm carries its
+	# own CONTROL, in arm 3's log — over two ordinary held slots the same
+	# reader must still say 2, or "1 of 2" is just a reader that drops
+	# everything. Mode 000 again, and the same uid 0 abstention.
+	local md=$tmp/mixed-locks arm16='sandbox: an unopenable slot is not counted as a holder'
+	local h21 h22
+	mkdir -p "$md"
+	: >"$md/suite-slot.1.lock"
+	: >"$md/suite-slot.2.lock"
+	chmod 000 "$md/suite-slot.2.lock"
+	if [ "$(id -u)" = 0 ]; then
+		printf 'note  %s: uid 0, where mode 000 denies nothing — NOT MEASURED here\n' "$arm16"
+		ok "$arm16"
+	else
+		touch "$tmp/hold21" "$tmp/hold22"
+		POSSE_SUITE_LOCK_DIR="$md" \
+			"$tmp/holder.sh" "$SUITE_LOCK_LIB" "$tmp/m21" "$tmp/hold21" go test -timeout 25m ./... &
+		h21=$!
+		if ! wait_file "$tmp/m21" "$fork_s"; then
+			bad "$arm16" 'the holder never took the one openable slot, so there is no mixed dir to read'
+		elif [ "$(slot_of "$tmp/m21")" != 1 ]; then
+			bad "$arm16" "the holder answered slot '$(slot_of "$tmp/m21")', not the one slot it can open"
+		else
+			POSSE_SUITE_LOCK_DIR="$md" \
+				"$tmp/holder.sh" "$SUITE_LOCK_LIB" "$tmp/m22" "$tmp/hold22" go test -timeout 25m ./... &
+			h22=$!
+			if ! wait_answer "$tmp/m22" "$fork_s"; then
+				bad "$arm16" "$(answer_of "$tmp/m22" "$fork_s")"
+			elif [ -e "$tmp/m22" ]; then
+				bad "$arm16" "it took slot $(slot_of "$tmp/m22") with the other one held"
+			elif log_has "$tmp/m22.log" '(pid , since )'; then
+				bad "$arm16" "the queued line named a phantom holder: $(tr '\n' '|' <"$tmp/m22.log" 2>/dev/null)"
+			elif ! log_has "$tmp/m22.log" '1 of 2 slots hold a full suite'; then
+				bad "$arm16" "it counted the queue's width instead of its holders: $(tr '\n' '|' <"$tmp/m22.log" 2>/dev/null)"
+			elif ! log_has "$tmp/m22.log" 'cannot open and does not judge'; then
+				bad "$arm16" "the unopenable slot was dropped without a word: $(tr '\n' '|' <"$tmp/m22.log" 2>/dev/null)"
+			elif ! log_has "$tmp/m3.log" '2 of 2 slots hold a full suite'; then
+				bad "$arm16" "the control failed: over arm 3's two ordinary held slots the same reader said $(tr '\n' '|' <"$tmp/m3.log" 2>/dev/null) — a holders reader that dropped every slot would pass the arm above"
+			else
+				ok "$arm16"
+			fi
+			rm -f "$tmp/hold22"
+			kill "$h22" 2>/dev/null
+			wait "$h22" 2>/dev/null
+		fi
+		rm -f "$tmp/hold21"
+		kill "$h21" 2>/dev/null
+		wait "$h21" 2>/dev/null
+	fi
+	chmod 644 "$md/suite-slot.2.lock" 2>/dev/null
+
 	# So the EXIT trap can remove them.
 	chmod 644 "$cd/suite-slot.1.lock" "$cd/suite-slot.2.lock" 2>/dev/null
 

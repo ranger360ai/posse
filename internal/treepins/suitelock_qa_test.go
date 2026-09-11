@@ -94,6 +94,14 @@ var suiteLockArms = []string{
 	// codex seat whose sandbox did not grant the slot dir queued against it
 	// forever instead of running unserialized.
 	"sandbox: an unopenable slot file runs unserialized, not queued",
+	// ranger-base-3poyb: r3czg taught the sweep and --status that EXISTS is
+	// not HELD and left _suite_lock_holders — the reader the queued line and
+	// the 300s heartbeat both go through — answering from `[ -f ]`. On a
+	// mixed dir (one held slot, one this seat may not open) that rendered
+	// the unopenable slot's empty stamp as `another worktree (pid , since )`
+	// and counted the queue's WIDTH beneath it, so the line said two suites
+	// were running when one was.
+	"sandbox: an unopenable slot is not counted as a holder",
 }
 
 // Arm 1: `make test` still runs the queue's self-test, and `make

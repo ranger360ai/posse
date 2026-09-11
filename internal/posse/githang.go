@@ -16,9 +16,10 @@ package posse
 // Code-inspected, never reproduced in production — that is the honest
 // provenance of the finding, and it is the same provenance the bd arm was
 // built on. What makes it credible anyway is that a git child is the one
-// posse controls LEAST: `commit` hands control to whatever the repo's hooks
-// are (in this shop, two of bd's), and hooks, filesystem operations and
-// their grandchildren are outside the dispatcher's own progress logic.
+// posse controls LEAST: `commit`, `merge` and `checkout` hand control to
+// whatever the repo's hooks are (in this shop, bd's), and hooks, filesystem
+// operations and their grandchildren are outside the dispatcher's own
+// progress logic.
 //
 // THE DEADLINE IS SIZED BY THE CALL, for the same reason herdr's is: posse
 // makes git calls whose legitimate costs differ by three orders of
@@ -85,19 +86,32 @@ import (
 // it is the longest a wedged git can now hold that lock.
 const GitTimeout = 2 * time.Minute
 
-// GitCommitTimeout bounds `git commit`, which is not really a git call at
-// all: it runs the repo's configured hooks, and in this shop both slots it
-// fills are bd's (`bd hook pre-commit` and `bd hooks run
-// prepare-commit-msg`). So the child posse is actually waiting on is a bd,
-// and killing it sooner than posse is willing to wait for its OWN bd
-// children would make a commit fail where a bd call would have been allowed
-// to finish. Sized off BdTimeout for exactly that reason, plus the same
-// grace again for the hooks' own work around it.
+// GitHookTimeout bounds the git calls that are not really git calls at all:
+// the ones that hand control to the repo's configured hooks, which in this
+// shop are bd's shims (`bd hook pre-commit`, `bd hooks run
+// prepare-commit-msg`, `bd hook post-merge`, `bd hook post-checkout`). So
+// the child posse is actually waiting on is a bd, and killing it sooner than
+// posse is willing to wait for its OWN bd children would make a git call
+// fail where the same bd called directly would have been allowed to finish.
+// Sized off BdTimeout for exactly that reason, plus the same grace again for
+// the hooks' own work around it.
 //
-// It matters that this stays modest: `git commit` IS on a launcher-lock
-// path — commitQueue (dispatch.go) takes the lock and commits the queue's
-// projection through queuejsonl.go.
-const GitCommitTimeout = BdTimeout + 2*time.Minute
+// It was `git commit` alone until ranger-base-3poyb, which is the whole
+// lesson: the reasoning was written about the HOOKS and the table was
+// written about one VERB, so `merge` and `checkout` — whose hooks in this
+// tree are the same bd shims — sat on the 2m tier, a full minute BELOW
+// BdTimeout, from the day the table landed. What that costs is not a slow
+// merge. post-merge runs AFTER the merge has landed, so it is a merge that
+// SUCCEEDED coming back as a *GitHangError with Mutation=true, and
+// MergeSessionWork stopping to send a human to read a repo that is fine.
+// gitHookedVerbs is the table now, and githang_qa_test.go reads the hooks
+// dir rather than trusting it.
+//
+// It matters that this stays modest: the verbs on this tier are on
+// launcher-lock paths — commitQueue (dispatch.go) takes the lock and commits
+// the queue's projection through queuejsonl.go, and mergeBack takes it and
+// reaches `merge --ff-only` twice through MergeSessionWork (worktree.go).
+const GitHookTimeout = BdTimeout + 2*time.Minute
 
 // GitArchiveTimeout bounds `git bundle`, the one verb MEASURED in minutes
 // (150.8s over the queue repo, 2026-09-11) and the one whose cost scales
@@ -191,10 +205,21 @@ var gitGlobalValueOpts = map[string]bool{
 
 // gitVerb is the subcommand in args, "" when there is none.
 func gitVerb(args []string) string {
-	for i := 0; i < len(args); i++ {
+	verb, _ := gitVerbPair(args)
+	return verb
+}
+
+// gitVerbPair is the subcommand in args and the word after it, each "" when
+// args carries no such word. The second word exists for one caller: `git
+// worktree add` checks out a tree and fires post-checkout, `git worktree
+// list` does not, and the deadline table has to tell those apart.
+func gitVerbPair(args []string) (string, string) {
+	var words [2]string
+	n := 0
+	for i := 0; i < len(args) && n < 2; i++ {
 		a := args[i]
 		if a == "--" {
-			return ""
+			break
 		}
 		if strings.HasPrefix(a, "-") {
 			if gitGlobalValueOpts[a] {
@@ -202,9 +227,10 @@ func gitVerb(args []string) string {
 			}
 			continue
 		}
-		return a
+		words[n] = a
+		n++
 	}
-	return ""
+	return words[0], words[1]
 }
 
 // gitReadOnlyVerbs is POSITIVE EVIDENCE that a signalled child cannot have
@@ -225,14 +251,68 @@ var gitReadOnlyVerbs = map[string]bool{
 	"rev-list": true, "rev-parse": true, "show": true,
 }
 
-// gitDeadline is the whole of the sizing rule: the table above, and
+// gitHookedVerbs are the calls that hand control to one of THIS TREE's
+// hooks, every one of which is a bd shim (`.git/hooks`, bd-hooks-version
+// 0.49.1). The child posse waits on is therefore a bd, so these belong on
+// the bd tier and not the ordinary one — the reasoning GitHookTimeout
+// carries, with the verbs it applies to written down for once.
+//
+// The hook that earns each entry, because that is what a reader has to
+// check when adding one:
+//
+//	commit    pre-commit, prepare-commit-msg
+//	merge     post-merge — and a FAST-FORWARD runs it too, so `--ff-only`
+//	          does not dodge this. MEASURED 2026-09-11, darwin/arm64, git
+//	          2.50.1, scratch repo: `merge --ff-only` against a 3s
+//	          post-merge hook took 4s wall
+//	pull      post-merge
+//	checkout  post-checkout — same rig, a 2s post-checkout hook made
+//	          `git checkout` take 3s wall
+//	switch    post-checkout
+//	worktree  post-checkout, on `add` alone — see gitRunsBdHook
+//	push      pre-push, which is chained: posse's own gate, then bd's
+//
+// Two absences that are decisions, not oversights. `clone` runs
+// post-checkout out of the NEW repo's hooks dir, which comes from the
+// template and carries no bd shim. `rebase` runs pre-rebase and post-rewrite
+// and neither is installed here — and it is on the launcher-lock path, so it
+// keeps the tighter deadline until a hook actually lands for it.
+//
+// This table is a claim about a directory, and githang_qa_test.go goes and
+// reads that directory: a bd shim installed for a verb this map does not
+// name fails there rather than in a merge-back six weeks later.
+var gitHookedVerbs = map[string]bool{
+	"commit": true, "merge": true, "pull": true,
+	"checkout": true, "switch": true, "push": true,
+	"worktree": true,
+}
+
+// gitRunsBdHook reports whether this call hands control to a bd hook.
+func gitRunsBdHook(args []string) bool {
+	verb, sub := gitVerbPair(args)
+	if !gitHookedVerbs[verb] {
+		return false
+	}
+	// `worktree add` is the only one of the worktree subcommands that
+	// checks out a tree, so it is the only one post-checkout fires for.
+	// The others stay on the ordinary tier deliberately: `worktree remove`
+	// and `worktree prune` run under the launcher lock on the reaping
+	// path, and there is nothing there for posse to wait three more
+	// minutes on.
+	if verb == "worktree" {
+		return sub == "add"
+	}
+	return true
+}
+
+// gitDeadline is the whole of the sizing rule: the tables above, and
 // GitTimeout for everything else.
 func gitDeadline(args []string) time.Duration {
-	switch gitVerb(args) {
-	case "commit":
-		return GitCommitTimeout
-	case "bundle":
+	if gitVerb(args) == "bundle" {
 		return GitArchiveTimeout
+	}
+	if gitRunsBdHook(args) {
+		return GitHookTimeout
 	}
 	return GitTimeout
 }

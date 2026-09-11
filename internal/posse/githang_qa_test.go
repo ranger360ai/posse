@@ -28,6 +28,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -179,16 +180,26 @@ func TestQAGitDeadlineIsSizedByTheCall(t *testing.T) {
 		why  string
 	}{
 		{[]string{"rev-parse", "HEAD"}, GitTimeout, "an ordinary read"},
-		{[]string{"merge", "--ff-only", "b"}, GitTimeout, "the landing mutation, under the launcher lock"},
-		{[]string{"rebase", "main"}, GitTimeout, "the replay, under the launcher lock"},
-		{[]string{"commit", "-m", "x", "--", "."}, GitCommitTimeout, "a commit runs the repo's hooks, which in this shop are bd's"},
+		{[]string{"rebase", "main"}, GitTimeout, "the replay, under the launcher lock, and no bd hook is installed for it"},
+		{[]string{"commit", "-m", "x", "--", "."}, GitHookTimeout, "a commit runs the repo's hooks, which in this shop are bd's"},
 		{[]string{"bundle", "create", "/tmp/x", "--all"}, GitArchiveTimeout, "MEASURED in minutes, and growing with the object store"},
+		// ranger-base-3poyb: the landing mutation waits on `bd hook
+		// post-merge`, and post-merge runs AFTER the merge has landed — so
+		// at the 2m tier a merge that SUCCEEDED came back as a hang with
+		// Mutation=true and stopped merge-back on a healthy repo.
+		{[]string{"merge", "--ff-only", "b"}, GitHookTimeout, "the landing mutation waits on bd's post-merge hook"},
+		{[]string{"checkout", "main"}, GitHookTimeout, "and a checkout waits on bd's post-checkout hook"},
+		{[]string{"worktree", "add", "-b", "b", "/p", "main"}, GitHookTimeout, "`worktree add` checks out a tree, so post-checkout fires for it too"},
+		{[]string{"worktree", "prune"}, GitTimeout, "and the worktree subcommands that check out nothing do not"},
+		{[]string{"worktree", "remove", "/p"}, GitTimeout, "— they are on the reaping path under the launcher lock"},
 		// The option-aware half, which is gates.go's globalValueOpts lesson
 		// asked of the other binary: a global option that eats the next word
 		// must not make that word the verb.
-		{[]string{"-c", "core.hooksPath=/dev/null", "commit", "-m", "x"}, GitCommitTimeout, "a global option's VALUE is not the verb"},
+		{[]string{"-c", "core.hooksPath=/dev/null", "commit", "-m", "x"}, GitHookTimeout, "a global option's VALUE is not the verb"},
 		{[]string{"--git-dir=/x/.git", "bundle", "create", "/tmp/x", "--all"}, GitArchiveTimeout, "the joined spelling is one word and is skipped"},
 		{[]string{"-c", "commit.gpgsign=false", "rev-parse", "HEAD"}, GitTimeout, "and the value is not read as a verb even when it looks like one"},
+		{[]string{"-C", "worktree", "rev-parse", "HEAD"}, GitTimeout, "nor is it read as the hooked verb it spells"},
+		{[]string{"-c", "x=y", "worktree", "add", "/p"}, GitHookTimeout, "and the SECOND word survives the option walk as well"},
 	} {
 		if got := gitDeadline(c.args); got != c.want {
 			t.Errorf("git %s got %s, want %s — %s", strings.Join(c.args, " "), got, c.want, c.why)
@@ -198,8 +209,8 @@ func TestQAGitDeadlineIsSizedByTheCall(t *testing.T) {
 	// child a commit is really waiting on is a bd. If BdTimeout moves and
 	// this does not, a commit starts being killed for a bd posse elsewhere
 	// is still willing to wait for.
-	if GitCommitTimeout <= BdTimeout {
-		t.Errorf("GitCommitTimeout (%s) must leave room above BdTimeout (%s) — a commit's hooks ARE bd", GitCommitTimeout, BdTimeout)
+	if GitHookTimeout <= BdTimeout {
+		t.Errorf("GitHookTimeout (%s) must leave room above BdTimeout (%s) — these verbs' hooks ARE bd", GitHookTimeout, BdTimeout)
 	}
 	// Sized for the reading, not to it. 150.8s was 12.5x the reading taken
 	// ten days earlier over the same repo.
@@ -410,4 +421,143 @@ func TestQAMergeSessionWorkRefusesToRetryAHungMerge(t *testing.T) {
 	case hangAt > retryAt:
 		t.Errorf("the replay loop reads the base's move before it asks whether its own fast-forward was signalled — that move can be this call's own effect")
 	}
+}
+
+// ranger-base-3poyb: the tier is decided by a DIRECTORY, so the pin reads
+// that directory.
+//
+// THE DEFECT this holds. GitHookTimeout's reasoning is "the child posse is
+// waiting on IS a bd, and must not be killed sooner than posse waits for its
+// own bd children" — and the table that reasoning justified named one verb,
+// `commit`, from the day it landed. `merge` and `checkout` in this tree run
+// `bd hook post-merge` and `bd hook post-checkout` (bd-hooks-version 0.49.1)
+// and sat on the 2m tier, a full minute BELOW BdTimeout. post-merge runs
+// AFTER the merge lands, so what that produces is not a slow merge: it is a
+// merge that SUCCEEDED, returned as a *GitHangError with Mutation=true, and
+// MergeSessionWork stopping to send a human to read a repo that is fine.
+//
+// So this arm does not re-state the table. It asks the hooks dir which verbs
+// hand control to bd today, and requires every one of them to be sized at or
+// above BdTimeout. A new bd shim — bd installs them, this tree does not
+// write them — then fails here, in a test named for the sizing rule, rather
+// than in a merge-back weeks later.
+//
+// It SKIPS where no bd hook is installed (a fresh clone, a CI checkout):
+// there is nothing to be wrong about, and a pin that failed there would be
+// asserting about a box rather than about this one.
+var gitHookRunsBd = regexp.MustCompile(`(^|[ \t;&|(])bd[ \t]+hooks?[ \t]`)
+
+// gitHookDelays maps a git hook name to calls that WAIT for it. Every
+// documented client-side hook is here; the server-side ones are present with
+// no calls, because nothing posse runs can be delayed by them. A hook name
+// this map does not carry is ignored — that is what lets the chained shims
+// (`bd-pre-push`, `posse-prepare-commit-msg`) sit in the same directory
+// without being mistaken for hooks git itself runs. If git ever grows a new
+// hook, add the name.
+var gitHookDelays = map[string][][]string{
+	"applypatch-msg":     {{"am", "x.patch"}},
+	"pre-applypatch":     {{"am", "x.patch"}},
+	"post-applypatch":    {{"am", "x.patch"}},
+	"pre-commit":         {{"commit", "-m", "x", "--", "."}},
+	"prepare-commit-msg": {{"commit", "-m", "x", "--", "."}},
+	"commit-msg":         {{"commit", "-m", "x", "--", "."}},
+	"post-commit":        {{"commit", "-m", "x", "--", "."}},
+	"pre-merge-commit":   {{"merge", "b"}},
+	"post-merge":         {{"merge", "--ff-only", "b"}, {"pull"}},
+	"post-checkout":      {{"checkout", "main"}, {"switch", "main"}, {"worktree", "add", "-b", "b", "/p", "main"}},
+	"pre-rebase":         {{"rebase", "main"}},
+	"post-rewrite":       {{"rebase", "main"}, {"commit", "--amend", "-m", "x"}},
+	"pre-push":           {{"push", "origin", "main"}},
+	"pre-auto-gc":        {{"gc"}, {"commit", "-m", "x", "--", "."}},
+	"post-index-change":  {{"checkout", "main"}, {"reset", "--hard"}, {"read-tree", "HEAD"}},
+	"reference-transaction": {{"merge", "--ff-only", "b"}, {"commit", "-m", "x", "--", "."},
+		{"update-ref", "refs/heads/b", "HEAD"}, {"branch", "b"}, {"fetch", "origin"}},
+	"sendemail-validate": {{"send-email", "x.patch"}},
+	"push-to-checkout":   nil, // server side: the receiving end, never posse's
+	"pre-receive":        nil,
+	"update":             nil,
+	"proc-receive":       nil,
+	"post-receive":       nil,
+	"post-update":        nil,
+	"fsmonitor-watchman": nil, // a query hook, and never a bd shim
+}
+
+// gitHookInvokesBd reports whether the hook file named name in dir ends up
+// running bd — directly, or through a sibling it dispatches to. The chained
+// spelling is this tree's: `prepare-commit-msg` runs posse's gate and then
+// execs `bd-prepare-commit-msg`, so reading the named file alone would miss
+// the bd underneath it.
+func gitHookInvokesBd(t *testing.T, dir, name string, depth int) bool {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join(dir, name))
+	if err != nil {
+		return false
+	}
+	text := string(b)
+	if gitHookRunsBd.MatchString(text) {
+		return true
+	}
+	if depth == 0 {
+		return false
+	}
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	for _, e := range ents {
+		n := e.Name()
+		if n == name || e.IsDir() || strings.HasSuffix(n, ".sample") {
+			continue
+		}
+		if strings.Contains(text, n) && gitHookInvokesBd(t, dir, n, depth-1) {
+			return true
+		}
+	}
+	return false
+}
+
+func TestQAEveryVerbWhoseHookIsABdIsSizedForABd(t *testing.T) {
+	t.Parallel()
+	out, err := exec.Command("git", "rev-parse", "--git-common-dir").Output()
+	if err != nil {
+		t.Skipf("not in a git repo, so there are no hooks to read: %v", err)
+	}
+	dir := filepath.Join(strings.TrimSpace(string(out)), "hooks")
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		t.Skipf("no hooks dir at %s: %v", dir, err)
+	}
+
+	var found []string
+	for _, e := range ents {
+		name := e.Name()
+		if e.IsDir() || strings.HasSuffix(name, ".sample") {
+			continue
+		}
+		calls, known := gitHookDelays[name]
+		if !known {
+			continue // not a hook git runs: a chained shim, or a stray file
+		}
+		if !gitHookInvokesBd(t, dir, name, 2) {
+			continue
+		}
+		found = append(found, name)
+		for _, argv := range calls {
+			if got := gitDeadline(argv); got < BdTimeout {
+				t.Errorf("`git %s` is sized at %s, but %s in this tree runs bd and posse waits %s for its own bd children.\n"+
+					"A git call that WAITS on a bd is killed before posse would give up on that same bd — and for the hooks that\n"+
+					"run after the mutation lands (post-merge, post-checkout) what that produces is a call that SUCCEEDED reported\n"+
+					"as a hang with Mutation=true. Put the verb in gitHookedVerbs (githang.go). %s",
+					strings.Join(argv, " "), got, filepath.Join(dir, name), BdTimeout, dir)
+			}
+		}
+	}
+
+	// The positive witness. This box installs five bd shims (pre-commit,
+	// prepare-commit-msg, post-merge, post-checkout, pre-push); a run that
+	// finds none has nothing to say, and must say that rather than pass.
+	if len(found) == 0 {
+		t.Skipf("no bd hook is installed in %s — this pin measured nothing here", dir)
+	}
+	t.Logf("bd-backed hooks read in %s: %s", dir, strings.Join(found, ", "))
 }

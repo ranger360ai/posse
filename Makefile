@@ -336,7 +336,7 @@ verify-parallel:
 verify-test-times:
 	@scripts/test-times.sh --self-test
 
-# Prove the box-wide suite queue still queues (ranger-base-uvzjk). Fifteen
+# Prove the box-wide suite queue still queues (ranger-base-uvzjk). Seventeen
 # arms, each driving REAL concurrent processes against a scratch lock dir,
 # because the only thing worth knowing about a lock is what a SECOND process
 # sees: two full suites run at once and a third waits; the waiting line names
@@ -352,7 +352,13 @@ verify-test-times:
 # on the default without widening the queue; and a wrapper that dies leaving a
 # CHILD behind keeps the slot — held on the inherited fd, by design — while
 # `--status` says the acquiring pid is gone and names the survivor
-# (ranger-base-2fgu4). ~17s, no go build, no suite.
+# (ranger-base-2fgu4); a slot dir this seat cannot open at all runs
+# unserialized instead of queueing against a box it cannot see
+# (ranger-base-r3czg); and on a MIXED dir — one held slot beside one it may
+# not open — the queued line counts the holders it actually read rather than
+# the queue's width, and names no phantom for the slot it cannot judge
+# (ranger-base-3poyb). ~11s MEASURED 2026-09-11 on an idle box, no go build,
+# no suite.
 verify-suite-lock:
 	@scripts/suite-lock.sh --self-test
 
