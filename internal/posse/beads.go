@@ -209,6 +209,7 @@ func (b Bd) runOnce(dir string, args ...string) ([]byte, error) {
 	cmd.WaitDelay = bdKillGrace
 	if dir != "" {
 		cmd.Dir = dir
+		cmd.Env = bdStoreEnv(os.Environ(), dir)
 	}
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
@@ -232,6 +233,70 @@ func (b Bd) runOnce(dir string, args ...string) ([]byte, error) {
 		return nil, Die("bd %s: %s", strings.Join(argv, " "), msg)
 	}
 	return out.Bytes(), nil
+}
+
+// bdStoreEnv binds one bd child to the store of the directory its caller
+// ASKED FOR, rather than to whatever store this process happens to be bound
+// to (ranger-base-ub2x9, codex review finding 1). `cmd.Dir` alone does not
+// do it: bd resolves `$BEADS_DIR` FIRST and the working directory only after
+// — so a posse process running inside a session, which planLaunch
+// deliberately gives `BEADS_DIR=beadsHome(<that session's dir>)`
+// (herdrback.go), read one store while every caller here believed it had
+// named another. ReadyAll then stamped each row `RepoIssue{Dir: dir}` with
+// the directory it INTENDED to query (ReadyAll, below), so one repo's queue
+// came back wearing another repo's name and an exact bead id no longer
+// authenticated its repository.
+//
+// MEASURED 2026-09-10, bd 0.50.3 (the pin), two synthetic single-row stores
+// under $HOME: with cwd = B and `BEADS_DIR` naming A's `.beads`,
+// `bd --no-daemon list --json` returns A's row, exit 0, no stderr. The
+// environment wins; the chdir is decoration.
+//
+// beadsHome(dir) is the answer, and it is deliberately the SAME answer the
+// census, the seatbelt writable set, the cage mount and the launch line
+// already take (ADR 0012 D3-C, ADR 0055 D1): one resolver, one store, so
+// this runner cannot disagree with the grant it was launched under. The
+// redirect hop is beadsHome's, which is why a no-db bd — which reads no
+// redirect at all — still lands on the right directory here.
+//
+// UNSET, not left alone, where the resolved directory is not there: a repo
+// with no `.beads` has no store of its own, and an inherited value naming
+// ANOTHER repo is the whole of the bug. Shedding it hands the question back
+// to bd's own resolution from `cmd.Dir` — FindBeadsDir walks a worktree to
+// its main checkout and a subdirectory to its repo root — which is the
+// honest answer for a directory that names no store, where a no-db bd says
+// "no .beads directory found" and means it. Same condition as planLaunch's
+// `isDirPath(home)`, for the same reason.
+//
+// Callers that pass dir == "" keep the inherited environment untouched
+// (runOnce sets no Env at all then): that call names no directory, so the
+// session's own binding IS the requested store — AGENTS.md tells a persona
+// to leave `BEADS_DIR` alone and to shed it per call, and this is posse
+// honouring the same rule at its own cross-repository boundary.
+//
+// SETTING it buys no new refusal class, which had to be measured rather
+// than assumed: worktree.go's PLACEMENT block measured bd 0.49.1 refusing
+// every `BEADS_DIR` under /tmp by name ("BEADS_DIR points to unsafe
+// location"), on the ~50 verbs that call GetRepoContext. MEASURED
+// 2026-09-10 on the pinned 0.50.3, a `BEADS_DIR` naming a fixture under
+// /private/tmp: `list`, `ready`, `blocked`, `show`, `create`, `close` and
+// `sync --flush-only` each opened THAT store and answered from it, in a
+// no-db fixture and a database fixture alike — no location refusal on any
+// of them. (`close` and `sync` failed there, on the fixture's own missing
+// row and empty database; neither failure is about the path.) So the live
+// suite's temp-dir stores, and any store outside $HOME, keep working.
+func bdStoreEnv(env []string, dir string) []string {
+	out := make([]string, 0, len(env)+1)
+	for _, kv := range env {
+		if strings.HasPrefix(kv, "BEADS_DIR=") {
+			continue
+		}
+		out = append(out, kv)
+	}
+	if home := beadsHome(dir); isDirPath(home) {
+		out = append(out, "BEADS_DIR="+home)
+	}
+	return out
 }
 
 // bdStdoutError recovers the reason from a --json verb that reported its

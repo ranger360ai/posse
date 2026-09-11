@@ -489,6 +489,36 @@ is the intended trade (ADR 0006 §4).
 
 ### Fixed
 
+**A posse command run inside a session read that session's queue whatever
+repo it was asked about — so a shop with more than one `beads:` directory
+could see one repo's beads labelled as another's.**
+
+*Affected: shops with more than one `beads:` repo configured, wherever a
+posse command runs inside a dispatched or crew session. No action needed on
+upgrade beyond running the new binary.* posse launches every session with
+`BEADS_DIR` naming that session's store of record (ADR 0055), and bd
+resolves `$BEADS_DIR` **before** its working directory. The bd runner set
+the child's working directory and nothing else, so `posse ready`, the
+cockpit's scans and a dispatch pass typed inside a session all read the
+session's store while stamping the rows with the directory they had meant to
+query. An exact bead id did not tell you which repo held it. A single-repo
+shop never saw it, and neither did any process whose inherited value already
+agreed with every configured directory.
+
+MEASURED 2026-09-10 on the pinned bd 0.50.3, two single-row stores: with the
+working directory in B and `BEADS_DIR` naming A, `bd --no-daemon list
+--json` returns A's row — exit 0, nothing on stderr.
+
+Every bd call posse makes now binds its store explicitly: `BEADS_DIR` set to
+the requested directory's own store — the same resolution the census, the
+seatbelt writable set, the cage mount and the launch line already take, so
+they cannot disagree — and shed entirely where that directory has no store,
+because an inherited value must never stand in for one. A call that names no
+directory is unchanged and still inherits the session's binding; it named no
+store either. Nothing changes for a bd you type yourself: leave `BEADS_DIR`
+alone, and shed it for the one call that wants another repo's graph
+(`env -u BEADS_DIR bd …`).
+
 **A settle could hand a persona's seat to a second bead while the first was
 still working in it — three times in two hours on 2026-09-06, one of them a
 two-seat lane running 3/2.**
