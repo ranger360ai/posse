@@ -3335,6 +3335,56 @@ func visibilityGuardBody(visibility string, set OpsPatternSet, identity []Identi
 			fmt.Fprintf(&rejects, "#   %s\n", r)
 		}
 	}
+	// CHECKS 0, 1 AND 2 REFUSE IN visGuardRefusal'S SHAPE, the one check 3
+	// and the ceiling already render (ranger-base-xfo6d). They were older
+	// than the helper — whose own doc called itself "check 3's refusal
+	// shape" until this bead — and nothing but their age kept them
+	// hand-written: the override branch, the two refusals.log lines, the
+	// stamp footer and the override remedy stood in four copies, so a
+	// change to any of those words was four edits, and this tree has paid
+	// for that class of drift once already (ranger-base-4rbs).
+	//
+	// THEIR READERS STAY INLINE, which is the difference that is real:
+	// each arm scans a different staged set — '.beads/*.jsonl' here, a
+	// --name-status listing in check 1, MarkdownPathspecs in check 2 —
+	// where twoArmScan's reader takes no pathspec at all and scans every
+	// staged file. Folding them onto it would mean a pathspec parameter
+	// that exists for these two callers and is empty for its own, which
+	// reads worse than three reader lines that say what they read.
+	beadsRefusal := visGuardRefusal{
+		badVar: "posse_bad",
+		label:  "beads visibility guard",
+		// See visGuardRefusal.overrideLabel: this arm's terminal line and
+		// its log lines have never agreed, and the fold kept both words.
+		overrideLabel: "visibility guard",
+		logTail:       publicRepoLogTail,
+		overrideWhat:  "ops-class content is going into a public repo's beads db",
+		header:        "ops-class content in a public repo's beads db",
+		rule:          VisibilityRule,
+		matched:       "matched in the staged .beads/*.jsonl additions:",
+		wayThrough:    VisibilityWayThrough,
+	}
+	docsRefusal := visGuardRefusal{
+		badVar:       "posse_docs_bad",
+		label:        "docs-genre allowlist",
+		logTail:      publicRepoLogTail,
+		overrideWhat: "a new docs/ file outside the allowlist is going into a public repo",
+		header:       "a new docs/ file outside the public genre allowlist",
+		rule:         DocsGenreRule,
+		preMatched:   "today's allowlist: " + publicDocsGenrePattern(),
+		matched:      "staged new file(s):",
+		wayThrough:   DocsGenreWayThrough,
+	}
+	markdownRefusal := visGuardRefusal{
+		badVar:       "posse_bad",
+		label:        "markdown ops-content scan",
+		logTail:      publicRepoLogTail,
+		overrideWhat: "ops-class prose is going into a public repo",
+		header:       "ops-class content in staged markdown in a public repo",
+		rule:         OpsProseRule,
+		matched:      "matched in the staged markdown additions:",
+		wayThrough:   OpsProseWayThrough,
+	}
 	// THE CEILING RENDERS ABOVE THE STAMP GATE (ADR 0050 D2). The question
 	// it asks — may this content exist in a local file here at all? — is not
 	// about where the repo goes, so the stamp is not consulted: a private
@@ -3414,31 +3464,7 @@ if [ "$posse_beads_visibility" = ` + shQuote(VisibilityPublic) + ` ]; then
     grep -a '^+' | grep -av '^+++')
   if [ -n "$posse_added" ]; then
     posse_bad=''
-` + checks.String() + `    if [ -n "$posse_bad" ]; then
-      if [ "${` + VisibilityOverrideEnv + `:-}" = ` + shQuote(VisibilityOverrideValue) + ` ]; then
-        echo "posse gate: visibility guard OVERRIDDEN by ` + VisibilityOverrideEnv + ` — ops-class content is going into a public repo's beads db" >&2
-        if [ -n "$RHQ_GATES_DIR" ]; then
-          echo "$(posse_stamp) beads visibility guard OVERRIDDEN [prepare-commit-msg hook]" >> "$RHQ_GATES_DIR/refusals.log" 2>/dev/null
-        fi
-      else
-        {
-          echo "refused by posse gate: ops-class content in a public repo's beads db — prepare-commit-msg hook, session ${RHQ_PERSONA:-?}"
-          echo ` + shQuote(VisibilityRule) + `
-          echo "matched in the staged .beads/*.jsonl additions:"
-          printf '%s' "$posse_bad"
-          echo ` + shQuote(VisibilityWayThrough) + `
-          echo "  this repo's beads db is marked: public (stamped by posse gates install-hooks"
-          echo "  from config beads_visibility:; an unmarked repo is treated as public)"
-          echo "  override, operator-typed, never passed by dispatch:"
-          echo "    ` + VisibilityOverrideEnv + `=` + VisibilityOverrideValue + ` git commit -F - -- <paths>"
-        } >&2
-        if [ -n "$RHQ_GATES_DIR" ]; then
-          echo "$(posse_stamp) beads visibility guard [prepare-commit-msg hook] (public repo)" >> "$RHQ_GATES_DIR/refusals.log" 2>/dev/null
-        fi
-        exit 1
-      fi
-    fi
-  fi
+` + checks.String() + beadsRefusal.render("    ") + `  fi
 
   # ─── check 1: docs-genre allowlist (ADR 0024 D2) ────────────────────────
   # Staged NEW files under docs/ only — 'A' entries; a MODIFIED existing
@@ -3490,32 +3516,7 @@ if [ "$posse_beads_visibility" = ` + shQuote(VisibilityPublic) + ` ]; then
       esac
     done
     IFS=$posse_docs_ifs
-    if [ -n "$posse_docs_bad" ]; then
-      if [ "${` + VisibilityOverrideEnv + `:-}" = ` + shQuote(VisibilityOverrideValue) + ` ]; then
-        echo "posse gate: docs-genre allowlist OVERRIDDEN by ` + VisibilityOverrideEnv + ` — a new docs/ file outside the allowlist is going into a public repo" >&2
-        if [ -n "$RHQ_GATES_DIR" ]; then
-          echo "$(posse_stamp) docs-genre allowlist OVERRIDDEN [prepare-commit-msg hook]" >> "$RHQ_GATES_DIR/refusals.log" 2>/dev/null
-        fi
-      else
-        {
-          echo "refused by posse gate: a new docs/ file outside the public genre allowlist — prepare-commit-msg hook, session ${RHQ_PERSONA:-?}"
-          echo ` + shQuote(DocsGenreRule) + `
-          echo "today's allowlist: ` + publicDocsGenrePattern() + `"
-          echo "staged new file(s):"
-          printf '%s' "$posse_docs_bad"
-          echo ` + shQuote(DocsGenreWayThrough) + `
-          echo "  this repo's beads db is marked: public (stamped by posse gates install-hooks"
-          echo "  from config beads_visibility:; an unmarked repo is treated as public)"
-          echo "  override, operator-typed, never passed by dispatch:"
-          echo "    ` + VisibilityOverrideEnv + `=` + VisibilityOverrideValue + ` git commit -F - -- <paths>"
-        } >&2
-        if [ -n "$RHQ_GATES_DIR" ]; then
-          echo "$(posse_stamp) docs-genre allowlist [prepare-commit-msg hook] (public repo)" >> "$RHQ_GATES_DIR/refusals.log" 2>/dev/null
-        fi
-        exit 1
-      fi
-    fi
-  fi
+` + docsRefusal.render("    ") + `  fi
 
   # ─── check 2: the SHIPPED OpsPatterns over staged markdown (0024 D2) ────
   # Every staged markdown file, any path — NOT code: the detector's own
@@ -3535,39 +3536,19 @@ if [ "$posse_beads_visibility" = ` + shQuote(VisibilityPublic) + ` ]; then
     grep -a '^+' | grep -av '^+++')
   if [ -n "$posse_added" ]; then
     posse_bad=''
-` + shippedChecks.String() + `    if [ -n "$posse_bad" ]; then
-      if [ "${` + VisibilityOverrideEnv + `:-}" = ` + shQuote(VisibilityOverrideValue) + ` ]; then
-        echo "posse gate: markdown ops-content scan OVERRIDDEN by ` + VisibilityOverrideEnv + ` — ops-class prose is going into a public repo" >&2
-        if [ -n "$RHQ_GATES_DIR" ]; then
-          echo "$(posse_stamp) markdown ops-content scan OVERRIDDEN [prepare-commit-msg hook]" >> "$RHQ_GATES_DIR/refusals.log" 2>/dev/null
-        fi
-      else
-        {
-          echo "refused by posse gate: ops-class content in staged markdown in a public repo — prepare-commit-msg hook, session ${RHQ_PERSONA:-?}"
-          echo ` + shQuote(OpsProseRule) + `
-          echo "matched in the staged markdown additions:"
-          printf '%s' "$posse_bad"
-          echo ` + shQuote(OpsProseWayThrough) + `
-          echo "  this repo's beads db is marked: public (stamped by posse gates install-hooks"
-          echo "  from config beads_visibility:; an unmarked repo is treated as public)"
-          echo "  override, operator-typed, never passed by dispatch:"
-          echo "    ` + VisibilityOverrideEnv + `=` + VisibilityOverrideValue + ` git commit -F - -- <paths>"
-        } >&2
-        if [ -n "$RHQ_GATES_DIR" ]; then
-          echo "$(posse_stamp) markdown ops-content scan [prepare-commit-msg hook] (public repo)" >> "$RHQ_GATES_DIR/refusals.log" 2>/dev/null
-        fi
-        exit 1
-      fi
-    fi
-  fi
+` + shippedChecks.String() + markdownRefusal.render("    ") + `  fi
 ` + identityGuardCheck(identity, set.Extra) + `fi
 `
 }
 
-// visGuardRefusal is check 3's refusal shape, written once. SIX call sites
-// — the CONTENT arm, the PATH arm and, since ranger-base-qk8i9, the
-// MESSAGE arm, each for the derived identity literals and for the instance
-// patterns ADR 0048 D2 moved into this scope — differ only in their words,
+// visGuardRefusal is this hook's refusal shape, written once. It was built
+// as check 3's — the CONTENT arm, the PATH arm and, since ranger-base-qk8i9,
+// the MESSAGE arm, each for the derived identity literals and for the
+// instance patterns ADR 0048 D2 moved into this scope — and the data ceiling
+// took the same three (ADR 0050 D2). Since ranger-base-xfo6d the three arms
+// that predate it render through it too: check 0 (the beads jsonl), check 1
+// (the docs-genre allowlist) and check 2 (staged markdown), which had been
+// hand-written copies of these words. Every call differs only in its words,
 // and the words are the part a reader of a refusal needs to be right; the
 // shape (override branch, one refusals.log line each way, exit 1) is the
 // same wall every time.
@@ -3589,15 +3570,29 @@ if [ "$posse_beads_visibility" = ` + shQuote(VisibilityPublic) + ` ]; then
 // text it prints back is a message the same writer just typed, on the box
 // the literal names.
 type visGuardRefusal struct {
-	badVar       string // the shell variable this arm accumulated its hits in
-	label        string // what refusals.log calls this scan
-	logTail      string // what follows the label on the refusal's log line
-	overrideAt   string // "" or " (staged path)", on the OVERRIDDEN log line
-	overrideWhat string // the clause after the em dash in the override echo
-	header       string // the refusal's first line, after "refused by posse gate: "
-	rule         string // the rule it names — a refusal that names no rule is a regex saying no
-	matched      string // the line that introduces the matched text
-	wayThrough   string
+	badVar string // the shell variable this arm accumulated its hits in
+	label  string // what refusals.log calls this scan
+	// overrideLabel is what the OVERRIDDEN echo calls this scan on the
+	// terminal when that is not what refusals.log calls it; "" — the zero,
+	// and every arm but one — means label. It exists for check 0 alone,
+	// whose terminal line has always said "visibility guard" where both of
+	// its log lines say "beads visibility guard" (ranger-base-xfo6d folded
+	// that arm onto this shape and kept its words, divergence included:
+	// this field is a recorded accident, not a design, and the day the two
+	// are reconciled it goes).
+	overrideLabel string
+	logTail       string // what follows the label on the refusal's log line
+	overrideAt    string // "" or " (staged path)", on the OVERRIDDEN log line
+	overrideWhat  string // the clause after the em dash in the override echo
+	header        string // the refusal's first line, after "refused by posse gate: "
+	rule          string // the rule it names — a refusal that names no rule is a regex saying no
+	// preMatched is an optional line between the rule and the matched
+	// introducer; "" — every arm but check 1 — renders nothing. Check 1's
+	// rule names an allowlist that is a rendered constant, so its refusal
+	// prints today's list rather than sending the writer to find it.
+	preMatched string
+	matched    string // the line that introduces the matched text
+	wayThrough string
 	// keptModeVar is "" or the name of the shell variable messageArm sets to
 	// the live template-KEEPING cleanup mode (ranger-base-b21e0). Non-empty
 	// on the MESSAGE refusals alone, because that variable exists only inside
@@ -3631,10 +3626,14 @@ func (r visGuardRefusal) render(ind string) string {
 	if footer == [2]string{} {
 		footer = visPublicFooter
 	}
+	ovLabel := r.overrideLabel
+	if ovLabel == "" {
+		ovLabel = r.label
+	}
 	i1, i2, i3 := ind+"  ", ind+"    ", ind+"      "
 	return ind + `if [ -n "$` + r.badVar + `" ]; then
 ` + i1 + `if [ "${` + VisibilityOverrideEnv + `:-}" = ` + shQuote(VisibilityOverrideValue) + ` ]; then
-` + i2 + `echo "posse gate: ` + r.label + ` OVERRIDDEN by ` + VisibilityOverrideEnv + ` — ` + r.overrideWhat + `" >&2
+` + i2 + `echo "posse gate: ` + ovLabel + ` OVERRIDDEN by ` + VisibilityOverrideEnv + ` — ` + r.overrideWhat + `" >&2
 ` + i2 + `if [ -n "$RHQ_GATES_DIR" ]; then
 ` + i3 + `echo "$(posse_stamp) ` + r.label + ` OVERRIDDEN [prepare-commit-msg hook]` + r.overrideAt + `" >> "$RHQ_GATES_DIR/refusals.log" 2>/dev/null
 ` + i2 + `fi
@@ -3642,7 +3641,7 @@ func (r visGuardRefusal) render(ind string) string {
 ` + i2 + `{
 ` + i3 + `echo "refused by posse gate: ` + r.header + ` — prepare-commit-msg hook, session ${RHQ_PERSONA:-?}"
 ` + i3 + `echo ` + shQuote(r.rule) + `
-` + i3 + `echo "` + r.matched + `"
+` + r.preMatchedLine(i3) + i3 + `echo "` + r.matched + `"
 ` + i3 + `printf '%s' "$` + r.badVar + `"
 ` + i3 + `echo ` + shQuote(r.wayThrough) + `
 ` + r.keptModeNote(i3) + i3 + `echo "  ` + footer[0] + `"
@@ -3657,6 +3656,18 @@ func (r visGuardRefusal) render(ind string) string {
 ` + i1 + `fi
 ` + ind + `fi
 `
+}
+
+// preMatchedLine is preMatched as its own echo at the echo indent ind, or
+// "" for a refusal that has none — which is every arm but check 1. It
+// renders between the rule and the matched introducer because that is where
+// it reads: the rule says a genre must be allowlisted, this says which
+// genres are on today's list, and then the refusal names what was staged.
+func (r visGuardRefusal) preMatchedLine(ind string) string {
+	if r.preMatched == "" {
+		return ""
+	}
+	return ind + `echo "` + r.preMatched + `"` + "\n"
 }
 
 // keptModeNote is the mode clause of the remedy, at the echo indent ind, or
@@ -3708,6 +3719,13 @@ const (
 	stagedPathMatched    = "matched in the staged added path(s) — the FILENAME, not its content:"
 	stagedLineMatched    = "matched in the staged additions:"
 	commitMessageMatched = "matched in the commit message:"
+
+	// publicRepoLogTail is what checks 0, 1 and 2 write after the label on
+	// their refusals.log line. They are the three arms that run ONLY inside
+	// the posse_beads_visibility gate, so the stamp is not a variable for
+	// them the way it is for the ceiling (dataCeilingStampTail): reaching
+	// the line at all is the proof.
+	publicRepoLogTail = "(public repo)"
 )
 
 // dataCeilingStampTail is what the ceiling's refusals.log lines carry after
