@@ -1426,10 +1426,10 @@ $ cat >> AGENTS.md <<'EOF'
   tool — `pkill -f "go test"`, the test script, the make target, `killall
   yes`, `pkill -f "python3 -"` — matches all of them and not the one you
   started; reading pids off a `pgrep` of that same pattern is the same mistake
-  one step later. MEASURED over every session transcript on a fleet box, 74
-  days: 138 pattern kills named a target that was not unique to the typing
-  session, and 18 of them were followed within ten seconds by another
-  session's run ending — against 4.3 expected when the same kills are
+  one step later. MEASURED over every session transcript on a fleet box, 83
+  days: 121 pattern kills named a target that was not unique to the typing
+  session, and 17 of them were followed within ten seconds by another
+  session's run ending — against 3.7 expected when the same kills are
   displaced in time. Eleven of those ended a full test suite. A run killed that way prints no red and names no test, so
   it reads as a green run with a short tail. Keep the pid of what you launched
   and kill that. A pattern is only safe when it can match nothing but your own

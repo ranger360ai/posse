@@ -19,8 +19,9 @@ every `<task-notification>` (which carries the launching `<tool-use-id>`).
 That is enough for cross-session forensics with no `ps`, no unified log and
 no root — all three of which are refused inside a caged seat anyway.
 
-THE THREE THINGS IT HAD TO GET RIGHT, each of which was wrong in a draft and
-each of which changed the answer:
+THE FOUR THINGS IT HAD TO GET RIGHT. Each was wrong at some point and each
+changed the answer; the fourth was wrong in the SHIPPED script for a week and
+is the reason every number below is dated 2026-09-11 and not 2026-09-03.
 
   1. A BACKGROUNDED RUN'S END IS ITS NOTIFICATION, NOT ITS tool_result. A
      `run_in_background` launch returns a task id at once, so pairing on
@@ -28,43 +29,79 @@ each of which changed the answer:
      it from the population. It is the commonest shape for the long suite.
      Measured cost of the omission on this corpus: 3 confirmed kills became
      11, and the single best-documented occurrence (2026-09-02 21:28:33Z)
-     read as having no victims at all.
+     read as having no victims at all. RE-MEASURED 2026-09-11 through the
+     fixed matcher of point 4: still 3 -> 11, on a suite population of 31.
 
   2. COMMAND POSITION, NOT WORD PRESENCE. `grep -rn 'SIGTERM|pkill|kill -'`
      — a CENSUS of the word — is not a kill, and neither is a heredoc that
      appends a runbook warning about pattern kills to an ORDERS.md. Counting
      mere presence made this script's own audit line a "confirmed hit". A
      match is only counted after a line start, `;`, `&`, `&&` or `||`. The
-     separator that matters is the BARE `|`, and it is excluded: admitting it
-     adds 11 lines to this corpus and every one of them is a grep or a
-     heredoc whose alternation happens to list `pkill`. `(` is excluded too,
-     though measured on the same corpus it changes nothing either way (144
-     lines with or without it) — a real `(pkill ...)` subshell is a shape
-     nobody on this box has typed.
+     separator that matters is the BARE `|`, and it is excluded: when this
+     was written, admitting it added 11 lines to the corpus and every one of
+     them was a grep or a heredoc whose alternation happened to list `pkill`.
+     `(` is excluded on the same reasoning. RE-MEASURED 2026-09-11 with point
+     4 in place: both exclusions now add ZERO — quote-awareness already
+     removes every line they were carrying (130 lines with them, with either,
+     or with both). They are kept because `ps aux | pkill -f x` is a pipeline
+     whose `pkill` really does run and a `(pkill ...)` subshell really is a
+     kill; neither is a shape anyone on this box has typed, so what they buy
+     here is no longer measurable and the exclusion should not be defended
+     with the old 11.
 
   3. A HIT NEEDS A NULL. Runs end all day and busy hours cluster, so some
      sibling run ends within the window by coincidence. The same measurement
      is therefore re-run over kill times jittered inside +/- JITTER, and the
      observed count is reported against that distribution. Without it the
-     headline number is unreadable: the all-targets population scores 18
-     observed against a null mean of 4.4, but a draft that scored 6 observed
+     headline number is unreadable: the all-targets population scores 17
+     observed against a null mean of 3.7, but a draft that scored 6 observed
      against a null mean of 3.1 (p=0.08) would have supported the same
      sentence and been wrong to.
 
-MEASURED 2026-09-03 over 85,451 Bash calls / 1,380 sessions / 2026-06-21 to
-2026-09-03, window 10s, +/-3h jitter, 400 trials. (The corpus grows while you
-work — these move. Re-run rather than quote them at a later date.)
+  4. QUOTED AND HEREDOC TEXT IS NOT CODE. Point 2's separator set included a
+     newline and respected nothing else, so a line-leading `pkill` inside a
+     multi-line single-quoted argument, a heredoc BODY, or a python patch
+     body being written INTO a file read as a kill in command position that
+     ran. The arm pinning point 2 passed INCIDENTALLY — in
+     `echo 'never pkill -f ...'` the verb is preceded by "never ", not by a
+     separator, so quoting was never exercised — which is how it survived
+     review. The false-positive rate was worst exactly when the crew was
+     working ON the pkill deny, i.e. whenever this script's own verify ran.
+     Fixed by _shell_code_mask: a walk that tracks quotes ACROSS newlines,
+     heredoc bodies and `#` comments, modelled on pkUnquotedKills at
+     internal/treepins/patternkill_qa_test.go:95, which is per-line and so
+     covers neither of the first two shapes. MEASURED on this corpus
+     2026-09-11, old matcher against new: 169 reported lines became 130 —
+     39 dropped, every one of them inspected and every one text (heredoc
+     script bodies, `rep('''...''')` patch bodies, `bd create`/`bd comments`
+     bodies, a grep), and NOT ONE real kill lost. Over --days 7, the verify
+     week of ranger-base-jjx19: 23 reported / 21 "ran" became 2 reported / 2
+     refused / 0 ran. The headline that week was measuring prose
+     (ranger-base-151nr, ranger-base-zbg8o).
 
-    pkill/killall in command position                        144 lines
-      of those, target NOT unique to the typing session      138 lines, 64 seats, 18 days
-      of those, pattern could match a sibling's SUITE argv    35 lines, 28 seats,  8 days
+MEASURED 2026-09-11 over 141,676 Bash calls / 2,236 sessions / 2026-06-21 to
+2026-09-11, window 10s, +/-3h jitter, 400 trials, seed 20260903, darwin /
+python3. RE-DERIVED from the fixed matcher (point 4) — the 2026-09-03 figures
+this block used to carry were the broken one's and are not comparable line for
+line. (The corpus grows while you work — these move. Re-run rather than quote
+them at a later date.)
 
-    all non-unique kills:  18 of 138 had a sibling run end within 10s
-                           null mean 4.28, max 10, p < 0.0025
-                           16 killer seats, 7 personas, 22 victim sessions
-    suite-pattern subset:  11 of  35 did, hitting 15 victim sessions
-                           null mean 1.33, max  5, p < 0.0025
+    pkill/killall in command position                        130 lines
+      of those, refused by the L1/L0 deny, so they ran nowhere  2 lines
+      of the 128 that RAN, target not unique to the seat     121 lines, 63 seats, 17 days
+      of those, pattern could match a sibling's SUITE argv    31 lines, 27 seats,  8 days
+
+    all non-unique kills:  17 of 121 had a sibling run end within 10s
+                           null mean 3.67, max 10, p < 0.0025
+                           16 killer seats, 7 personas, 21 victim sessions
+    suite-pattern subset:  11 of  31 did, hitting 15 victim sessions
+                           null mean 1.21, max  5, p < 0.0025
                            11 killer seats, 5 personas, over 5 days
+
+What the fix moved is the DENOMINATOR, not the hits: the 39 false positives
+were text, and text lands nothing, so the suite subset's 11 confirmed kills,
+11 seats, 5 personas, 15 victims and 1,373s longest victim are the same
+lines as before. The rate they are quoted against is not.
 
 Eleven confirmed cross-session suite kills, by eleven seats belonging to five
 different personas, of runs up to 1,373s. It is not one persona's footgun.
@@ -117,12 +154,16 @@ REFUSED_RE = re.compile(r"refused by posse gate: (?:pkill|killall)\b|"
                         r"Permission to use Bash with command .{0,400}?has been denied",
                         re.S)
 
-# A kill only happens in command position. A bare `|` is NOT in the separator
-# set: `grep -rn 'pkill|killall'` is a census, not a kill, and admitting `|`
-# adds 11 such lines to this corpus and no real ones. See point 2 above.
-SEP = r"(?:^|\n|;|&&|\|\||&)[ \t]*(?:sudo[ \t]+)?"
-PKILL_CMD = re.compile(SEP + r"(pkill|killall)\b([^\n;&|]*)")
+# A kill only happens in command position, and only in text the shell reads
+# as CODE. A bare `|` is NOT in the separator set: `grep -rn 'pkill|killall'`
+# is a census, not a kill, and admitting `|` adds 11 such lines to this corpus
+# and no real ones. See points 2 and 4 above.
+SEP_CHARS = "\n;&"
 PKILL_ANY = re.compile(r"\b(pkill|killall)\b")
+
+# `<<WORD`, `<<'WORD'`, `<<-WORD`. `<<<` is a here-STRING — one argument, not
+# a body — and is skipped by the caller before this is tried.
+HEREDOC_RE = re.compile(r"<<(-?)[ \t]*(\"[^\"]*\"|\'[^\']*\'|[A-Za-z_][A-Za-z0-9_.-]*)")
 
 # What a seat LAUNCHING the suite looks like, and what WAITING on one looks
 # like. Both end when the suite dies, so both are evidence, but they are
@@ -227,11 +268,141 @@ def runs_of(calls):
     return out
 
 
+def _skip_heredoc_body(cmd, i, word, dash, code):
+    """Mark one heredoc body (and its terminator line) as not-code; return the
+    index after it. An UNTERMINATED body runs to the end of the command: the
+    transcript holds the whole `command` string, so that shape means the body
+    really was the rest of it."""
+    n = len(cmd)
+    while i < n:
+        e = cmd.find("\n", i)
+        end = n if e < 0 else e
+        line = cmd[i:end]
+        term = (line.lstrip("\t") if dash else line).rstrip() == word
+        for k in range(i, end):
+            code[k] = False
+        i = end + 1 if e >= 0 else n
+        if term:
+            return i
+    return n
+
+
+def _shell_code_mask(cmd):
+    """True at every index of cmd that the SHELL would read as code.
+
+    False inside '...' and "..." — WHICH SPAN NEWLINES — inside a `#` comment,
+    and inside a heredoc BODY, which is data written to a file or an
+    interpreter and never a command this shell ran.
+
+    This is the whole of point 4 above. Quoting cannot be done per line: the
+    matcher this replaced took a newline as a separator and nothing else as
+    quoting, so a line-leading `pkill` inside a multi-line quoted argument, a
+    heredoc body or a python patch body read as a kill in command position
+    that ran. The Go detector at internal/treepins/patternkill_qa_test.go:95
+    (pkUnquotedKills) walks quotes and comments the same way, but per LINE,
+    which is why it is the model here and not the implementation.
+    """
+    n = len(cmd)
+    code = [True] * n
+    quote = ""        # "'" or '"' while inside one
+    pending = []      # heredoc terminators queued by the current line
+    i = 0
+    while i < n:
+        c = cmd[i]
+        if quote:
+            code[i] = False
+            if quote == '"' and c == "\\" and i + 1 < n:
+                code[i + 1] = False   # an escape inside "…" hides the next byte
+                i += 2
+                continue
+            if c == quote:
+                quote = ""
+            i += 1
+            continue
+        if c == "\\" and i + 1 < n:
+            code[i + 1] = False       # `\;` is not a separator, `\p` not the verb
+            i += 2
+            continue
+        if c in "'\"":
+            quote = c
+            code[i] = False
+            i += 1
+            continue
+        if c == "#" and (i == 0 or cmd[i - 1] in " \t\n;&|("):
+            e = cmd.find("\n", i)
+            e = n if e < 0 else e
+            for k in range(i, e):
+                code[k] = False
+            i = e
+            continue
+        if c == "<":
+            if cmd.startswith("<<<", i):
+                i += 3                # a here-STRING is an argument, not a body
+                continue
+            m = HEREDOC_RE.match(cmd, i)
+            if m:
+                pending.append((m.group(2).strip("\"'"), m.group(1) == "-"))
+                i = m.end()
+                continue
+            i += 1
+            continue
+        if c == "\n" and pending:
+            i += 1
+            for word, dash in pending:
+                i = _skip_heredoc_body(cmd, i, word, dash, code)
+            pending = []
+            continue
+        i += 1
+    return code
+
+
+def _in_command_position(cmd, code, i):
+    """Is the verb at i the first word of a command this shell would run?
+
+    Walks back over blanks and any number of `sudo` to a separator that is
+    ITSELF code — so the newline inside a quoted argument, which is what made
+    the census read prose as kills, does not qualify.
+    """
+    j = i
+    while True:
+        while j > 0 and cmd[j - 1] in " \t":
+            j -= 1
+        if j == 0:
+            return True
+        if not code[j - 1]:
+            return False
+        c = cmd[j - 1]
+        if c in SEP_CHARS:
+            return True
+        if c == "|":
+            # A bare `|` is not a separator here (point 2); `||` is.
+            return j >= 2 and cmd[j - 2] == "|" and code[j - 2]
+        if j >= 4 and cmd[j - 4:j] == "sudo" and (j == 4 or cmd[j - 5] in " \t\n;&|"):
+            j -= 4
+            continue
+        return False
+
+
+def _argument_text(cmd, code, start):
+    """The verb's arguments, up to the next separator the SHELL would see. A
+    QUOTED separator does not end them: `pkill -f 'a;b'` names one pattern."""
+    j = start
+    while j < len(cmd) and not (code[j] and cmd[j] in "\n;&|"):
+        j += 1
+    return cmd[start:j]
+
+
 def kill_patterns(cmd):
     """(tool, flags, pattern) for every pkill/killall in command position."""
+    if not PKILL_ANY.search(cmd):
+        return []                      # the common case pays no walk
+    code = _shell_code_mask(cmd)
     out = []
-    for m in PKILL_CMD.finditer(cmd):
-        toks = re.findall(r"\"[^\"]*\"|'[^']*'|\S+", m.group(2).strip())
+    for m in PKILL_ANY.finditer(cmd):
+        if not code[m.start()] or not _in_command_position(cmd, code, m.start()):
+            continue
+        arg = _argument_text(cmd, code, m.end()).strip()
+        toks = re.findall(r"\"[^\"]*\"|'[^']*'|\S+", arg)
         pats = [t for t in toks if not t.startswith("-")]
         if not pats:
             continue
@@ -460,6 +631,31 @@ def self_test():
           "...and the real typed kill beside them is STILL a kill, so the fix "
           "is quote-awareness and not a blinded matcher (corpus: gilfoyle, "
           "2026-09-07T00:30:18Z, refused by the gate and ran nowhere)")
+    # --- the walk's own controls: four ways it could over-blind -----------
+    # Every arm above says "not a kill", so a mask that answered False to
+    # everything would pass all of them. These say where the not-code text
+    # ENDS. Each was red against a plausible wrong cut of _shell_code_mask.
+    after = ("cat >> ORDERS.md <<'EOF'\nnever pkill a suite pattern\nEOF\n"
+             "pkill -f 'make test-arm1'")
+    check(kill_patterns(after) == [("pkill", "-f", "make test-arm1")],
+          "a heredoc BODY ends at its terminator, so the real kill on the "
+          "next line is still a kill (a body that ran to the end of the "
+          "command would swallow it and read 0 kills wherever a seat "
+          "documents the rule and then types one)")
+    dashed = ("run <<-EOF\n\tpkill -f 'go test'\n\tEOF\npkill -f teau")
+    check(kill_patterns(dashed) == [("pkill", "-f", "teau")],
+          "`<<-` strips leading tabs from the TERMINATOR too, so a "
+          "tab-indented EOF closes the body and does not leak it to the end")
+    herestring = "grep -f - x <<<'never pkill'\npkill -f teau"
+    check(kill_patterns(herestring) == [("pkill", "-f", "teau")],
+          "`<<<` is a here-STRING, one argument and not a body: read as a "
+          "heredoc its word is the quoted text, nothing ever terminates it, "
+          "and the real kill on the next line is swallowed")
+    commented = "# do not pkill, it isn't yours\npkill -f teau"
+    check(kill_patterns(commented) == [("pkill", "-f", "teau")],
+          "a `#` comment runs to the newline and its bytes are not shell "
+          "syntax — the apostrophe in prose must not open a quote that eats "
+          "the real kill below it")
     check(bool(UNIQUE_HINT.search("/private/tmp/claude-501/x/scratchpad/load.sh")),
           "a scratchpad path is session-unique")
     check(not UNIQUE_HINT.search("go test -timeout 25m"),

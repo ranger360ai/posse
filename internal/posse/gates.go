@@ -883,6 +883,26 @@ func (a *App) GatesDir(persona string) string {
 	return filepath.Join(a.StateDir, "gates", persona)
 }
 
+// GateShellOn names the gate shell ALREADY rendered under gatesDir without
+// writing anything, "" when there is none. renderGateShell's read-only half,
+// for a report that must not write: `posse gates <persona>` renders as a side
+// effect of describing the shims, and inside a cage the gates dir is not
+// writable, so the report died before printing a row — for the seat's own
+// persona, on a box where the gates were correct (ranger-base-zbg8o).
+func GateShellOn(gatesDir string) string {
+	dir := filepath.Join(gatesDir, "shell")
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		return ""
+	}
+	for _, e := range ents {
+		if !e.IsDir() {
+			return filepath.Join(dir, e.Name())
+		}
+	}
+	return ""
+}
+
 // RenderGates writes the persona's shims and gate shell fresh and returns
 // the gates dir, its bin dir and the gate shell's path. Existing shims are
 // removed first so a rule dropped from the PID stops being enforced.

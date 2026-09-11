@@ -193,6 +193,7 @@ verify-parallel	tree check; already a prerequisite of make test, so CI runs it
 verify-test-times	tree check (--self-test); already a prerequisite of make test
 verify-suite-lock	tree check (--self-test); already a prerequisite of make test
 verify-silent-reverts	tree check (--self-test); already a prerequisite of make test
+verify-pattern-kill-census	tree check (--self-test) of the matcher in scripts/pattern-kill-census.py, on planted fixtures in a mktemp root; reads no transcripts and measures no box state; already a prerequisite of make test
 verify-gotest	tree check (--self-test) of the reusing wrapper; measures no box state
 verify-detection	promote-time probe: replays fixtures against THIS CHECKOUT in a throwaway XDG_CONFIG_HOME. install-detection already runs its --check-install half
 verify-prune-guard	promote-time probe of a BINARY against scratch state; POSSE= names the candidate, so it belongs to a promote and not to a clock

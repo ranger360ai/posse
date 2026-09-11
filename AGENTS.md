@@ -133,16 +133,21 @@ bd sync               # Sync with git
   `killall yes`, `pkill -f "python3 -"`, `pkill -f "sleep 300"` and `pkill
   -f "dispatch --watch"`. Reading pids off a `pgrep` of the same pattern is
   the same mistake one step later.
-  MEASURED 2026-09-03 over every session transcript on the box, 74 days,
-  by `scripts/pattern-kill-census.py` (re-run it; the corpus grows): 138
-  pattern kills from 64 seats named a target that was not unique to the
-  typing session, and **18 of them were followed within ten seconds by
-  another seat's run ending** — against 4.3 expected when the same kills
-  are displaced in time (p < 0.0025). Of the 35 whose pattern could match a
+  MEASURED 2026-09-11 over every session transcript on the box, 83 days,
+  by `scripts/pattern-kill-census.py` (re-run it; the corpus grows): 121
+  pattern kills from 63 seats named a target that was not unique to the
+  typing session, and **17 of them were followed within ten seconds by
+  another seat's run ending** — against 3.7 expected when the same kills
+  are displaced in time (p < 0.0025). Of the 31 whose pattern could match a
   sibling's suite argv, **11 landed**: eleven seats, five personas, victim
-  runs up to 1,373s. One pair three minutes apart is a kill and a
+  runs up to 1,373s. One pair two and a half minutes apart is a kill and a
   counter-kill, each ending the other seat's suite. This is not one
   persona's footgun and prose has not stopped it.
+  (These replace the 2026-09-03 figures — 138/18/35 — which were the output
+  of a matcher that read quoted and heredoc TEXT as kills that ran, fixed
+  under ranger-base-zbg8o. The 39 lines it dropped were all text, so what
+  moved is the denominator: the eleven confirmed suite kills are the same
+  eleven. Never quote the pre-fix numbers.)
   A run that dies this way prints no red and names no test — it looks like
   a green suite with a short tail — so the cost lands on whoever reads it
   next. `scripts/test-times.sh` prints its own pid at the start (`kill

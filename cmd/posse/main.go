@@ -1481,9 +1481,29 @@ func main() {
 		if err != nil {
 			die(err)
 		}
-		gatesDir, binDir, gateShell, err := a.RenderGates(ag.Name, ag.Deny)
-		if err != nil {
-			die(err)
+		// This report RE-RENDERS the shim dir as a side effect of being
+		// asked to describe it, which made it unrunnable from inside a cage:
+		// the gates dir is not writable there (ADR 0015 §2), the unlink of
+		// the first shim fails, and the command died with
+		// "unlinkat .../gates/<persona>/bin/pkill: operation not permitted"
+		// before printing a single row — for the seat's OWN persona, on a box
+		// where the gates were in fact correct. A caged QA seat handed
+		// `posse gates <persona> | grep pkill` as a verify step could not run
+		// it, and it failed CLOSED, with no rows (ranger-base-151nr, measured
+		// under seatbelt 2026-09-11; ranger-base-zbg8o).
+		//
+		// So a render that cannot write degrades to a READ of what is on
+		// disk — which is exactly what a live session is running behind — and
+		// says so. It only dies when there is nothing to read either: then
+		// the report would be an invention.
+		gatesDir, binDir, gateShell, renderErr := a.RenderGates(ag.Name, ag.Deny)
+		if renderErr != nil {
+			gatesDir = a.GatesDir(ag.Name)
+			binDir = filepath.Join(gatesDir, "bin")
+			gateShell = posse.GateShellOn(gatesDir)
+			if _, statErr := os.Stat(binDir); statErr != nil {
+				die(fmt.Errorf("cannot render %s's gates (%v), and none are on disk to report: %v", ag.Name, renderErr, statErr))
+			}
 		}
 		tier := a.ResolveTier("", ag)
 		// The matrix is read here for a launch *somewhere*, so it is computed
@@ -1554,7 +1574,15 @@ func main() {
 		fmt.Fprintln(out, "permission mode on the pane — read from the live screen, never from the launch line (ADR 0035 §3):")
 		hb.SessionModeReport(out, ag.Name)
 		fmt.Fprintf(out, "%s\n", posse.AbbrevHome(gatesDir))
-		fmt.Fprintf(out, "  gate shell %s (typed as SHELL/GROK_SHELL — ADR 0009)\n", posse.AbbrevHome(gateShell))
+		if renderErr != nil {
+			fmt.Fprintf(out, "  ⚠️  NOT re-rendered: %v\n", renderErr)
+			fmt.Fprintln(out, "      Reporting the shims ON DISK instead — which is what a live session is running behind. Expected from inside a cage, where the gates dir is read-only by design (ADR 0015 §2); anywhere else it is a real fault. Any deny below with NO SHIM is unrealized at L1.")
+		}
+		if gateShell == "" {
+			fmt.Fprintln(out, "  gate shell: NONE rendered (SHELL/GROK_SHELL point at the real shell — ADR 0009 §2; expected only under a runtime with gate_shell: false)")
+		} else {
+			fmt.Fprintf(out, "  gate shell %s (typed as SHELL/GROK_SHELL — ADR 0009)\n", posse.AbbrevHome(gateShell))
+		}
 		if posse.ResolveCage("", ag) == posse.CageSeatbelt && posse.AvailableCages[posse.CageSeatbelt] {
 			// Said out loud rather than swallowed: this block is where an
 			// operator reads ADR 0015 §2's wall off the output, and a
@@ -1576,12 +1604,28 @@ func main() {
 			fmt.Fprintln(out, "  no shell-verb denies → no shims (Edit/Write/WebFetch-class denies are other layers')")
 		}
 		ents, _ := os.ReadDir(binDir)
+		onDisk := make(map[string]bool, len(ents))
 		for _, e := range ents {
+			onDisk[e.Name()] = true
 			var rs []string
 			for _, r := range rules[e.Name()] {
 				rs = append(rs, r.Rule)
 			}
 			fmt.Fprintf(out, "  bin/%-12s %s\n", e.Name(), strings.Join(rs, ", "))
+		}
+		// A shell-verb deny with no shim is unrealized at L1. The render path
+		// writes one per rule so it cannot happen there; on the read-only path
+		// above it is the whole difference between "these gates are current"
+		// and "these gates are stale", and saying nothing reads as the first.
+		var unshimmed []string
+		for c := range rules {
+			if !onDisk[c] {
+				unshimmed = append(unshimmed, c)
+			}
+		}
+		sort.Strings(unshimmed)
+		for _, c := range unshimmed {
+			fmt.Fprintf(out, "  bin/%-12s ⚠️  NO SHIM on disk — this deny is UNREALIZED at L1\n", c)
 		}
 		if b, err := os.ReadFile(gatesDir + "/refusals.log"); err == nil && len(b) > 0 {
 			lines := strings.Split(strings.TrimRight(string(b), "\n"), "\n")
@@ -1599,7 +1643,12 @@ func main() {
 		// first dispatch, so its exit status is a verdict and not a
 		// formality: a wall of green over a persona whose runtime resolves to
 		// nothing exited 0 and read as "cleared to dispatch" (rangerhq-qz51).
-		if runtimeErr != nil {
+		// A deny the shim dir does not realize is the same class of lie as a
+		// persona that cannot launch: read as cleared to dispatch when it is
+		// not. The failed RENDER is not itself the verdict — inside a cage it
+		// is expected and the shims it could not rewrite are the live ones —
+		// so what is exited on is the gap between the PID and the disk.
+		if runtimeErr != nil || len(unshimmed) > 0 {
 			os.Exit(1)
 		}
 
@@ -2447,7 +2496,9 @@ catalog:
   posse skills                   list bound skills (RHQ_HOME/skills) and the PIDs that bind them
   posse gates <persona>          the persona's L1 gate shims (from deny:), the seatbelt
                                  writable set with ADR 0015 §2's constitution check
-                                 over it, and refusals.log
+                                 over it, and refusals.log. Re-renders the shims; from
+                                 a caged seat, where that dir is read-only, it reports
+                                 what is on disk and says so instead of dying
   posse gates install-hooks [dir] [--chain]
                                     L3: .git/hooks/pre-push refusing git push under RHQ_TOOLS_DENY,
                                     and prepare-commit-msg refusing an unqualified commit from any shell

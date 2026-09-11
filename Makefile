@@ -42,7 +42,7 @@ FMT_ROOTS := cmd internal *.go
 BUILD_STAMP := $(shell $(GOBIN) run ./cmd/buildstamp)
 LDFLAGS     := -X github.com/ranger360ai/posse/internal/posse.Build=$(BUILD_STAMP)
 
-.PHONY: build release install deploy test test-arm1 test-arm2 test-arm3 test-race test-reuse fmt-check crew-check seed-check history-check doc-check identity-check ops-check execwrite-check tree-check verify-test-times verify-suite-lock verify-silent-reverts verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-self-close verify-govern-honesty verify-grok-pin verify-codex-pin verify-credential-paths verify-hook-freshness verify-bd-pin verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk verify-box verify-box-self-test prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
+.PHONY: build release install deploy test test-arm1 test-arm2 test-arm3 test-race test-reuse fmt-check crew-check seed-check history-check doc-check identity-check ops-check execwrite-check tree-check verify-test-times verify-suite-lock verify-pattern-kill-census verify-silent-reverts verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-self-close verify-govern-honesty verify-grok-pin verify-codex-pin verify-credential-paths verify-hook-freshness verify-bd-pin verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk verify-box verify-box-self-test prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
 
 build:
 	$(GOBIN) build -ldflags '$(LDFLAGS)' -o bin/posse-go ./cmd/posse
@@ -269,7 +269,7 @@ release-notes:
 # and the arm2/arm3 tagged lines are exactly the ones an untagged arm-tags
 # mistake can fail to *compile*, which would abort the recipe before the
 # door ever ran.
-test: fmt-check verify-test-times verify-parallel verify-suite-lock verify-silent-reverts tree-check
+test: fmt-check verify-test-times verify-parallel verify-suite-lock verify-pattern-kill-census verify-silent-reverts tree-check
 	scripts/test-times.sh $(GOBIN) test ./internal/treepins -timeout 15m -count=1 -run '^TestQAEverySuiteArmTypeChecks$$'
 	scripts/test-times.sh $(GOBIN) test -timeout 25m ./...
 	scripts/test-times.sh $(GOBIN) test -timeout 25m -tags posse_arm2 ./internal/posse
@@ -278,7 +278,7 @@ test: fmt-check verify-test-times verify-parallel verify-suite-lock verify-silen
 
 # One arm each, for CI, which runs them as three jobs. A seat wanting the
 # whole thing types `make test`.
-test-arm1: fmt-check verify-test-times verify-parallel verify-suite-lock verify-silent-reverts tree-check
+test-arm1: fmt-check verify-test-times verify-parallel verify-suite-lock verify-pattern-kill-census verify-silent-reverts tree-check
 	scripts/test-times.sh $(GOBIN) test -timeout 25m ./...
 	@scripts/audit-silent-reverts.sh --quiet
 
@@ -355,6 +355,17 @@ verify-test-times:
 # (ranger-base-2fgu4). ~17s, no go build, no suite.
 verify-suite-lock:
 	@scripts/suite-lock.sh --self-test
+
+# The pattern-kill census proving its matcher still tells a typed kill from
+# text about one. It is the instrument the pkill/killall deny's verifies read
+# their verdict off (AGENTS.md "Ending anything"), and for a week it counted
+# quoted arguments, heredoc bodies and python patch bodies as kills that ran —
+# worst, 14 of 16, exactly when the crew was working ON that deny, i.e.
+# whenever the verify ran (ranger-base-151nr, fixed under ranger-base-zbg8o).
+# Nothing invoked `--self-test`, so the arms were comments. 34 arms on planted
+# fixtures in a mktemp root; ~0.05s, no go build, no suite, no transcripts read.
+verify-pattern-kill-census:
+	@python3 scripts/pattern-kill-census.py --self-test
 
 # The silent-revert detector proving it can still fire, BEFORE the run that
 # ends in `--quiet` trusts its silence over every commit on the branch (1392
