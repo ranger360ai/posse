@@ -347,9 +347,12 @@ func (d *Dispatcher) landClosedTrees(dirFilter string) {
 // answer without writing the session tree — the base moved back under the
 // branch, the work reached the base under other shas, the dirt was cleaned —
 // and, for the one that used to need the rebase, asks the replay itself in
-// the repo's object store (mergesCleanly). Keying the skip on the base's sha
-// instead would re-probe on every base move, which is most passes, and that
-// is the every-pass tree write ranger-base-9u5zy removed.
+// the repo's object store (mergesCleanly) behind a record of the base that
+// replay last really ran against (probedBaseKey, ranger-base-c6ohn). Keying
+// the skip on the base's sha instead would re-probe on every base move, which
+// is most passes, and that is the every-pass tree write ranger-base-9u5zy
+// removed — the record is what buys the fourth question at one probe per base
+// MOVEMENT rather than one per pass.
 //
 // ("", nil, false) whenever the answer might be new: no block on record yet
 // (the first attempt still has to happen and file one), the pin cannot be
@@ -420,17 +423,34 @@ func standingMergeBlock(t *SessionTree, blocks *blockedRecord) (string, []string
 // sentence true rather than aspirational; the pins in mergeblocked_qa_test.go
 // are what caught it, on ubuntu under the full suite.
 //
-// WHAT IT STILL DOES NOT ASK, deliberately and not by oversight: whether a
-// base that moved FORWARD would now replay cleanly — the conflicting commit
-// reverted by a new commit rather than reset away, or fixed on main. Only the
-// replay can answer that, and the replay is the tree write this whole
-// mechanism exists to stop; probing on every base move is ranger-base-9u5zy's
-// bug back, and probing on a cheap filter's say-so (`git merge-tree`, which
-// answers it with no worktree at all) re-probes forever on the branch where
-// the filter and the rebase disagree, because nothing here records that a
-// probe already ran against this base. That arm needs a record of the base
-// last probed and is filed as ranger-base-c6ohn; today it ends the way it
-// ended before — a human answering the handoff, or `posse worktrees --land`.
+// AND THE FOURTH OPERAND, WHICH IT NOW DOES ASK (ranger-base-c6ohn): whether
+// a base that moved FORWARD would replay cleanly — the conflicting commit
+// reverted by a NEW commit rather than reset away, or fixed on main some other
+// way. Nothing above can see it: the base is not an ancestor of the branch, so
+// there is no fast-forward; the work is on main under no sha at all, so there
+// is no equivalence; the tree is clean, so it is not the dirt arm. Only the
+// replay answers it, and the replay is the tree write this whole mechanism
+// exists to stop. It is asked as a FILTER and a RECORD, because either half
+// alone is one of the two bugs this file is about:
+//
+//   - the filter is `git merge-tree --write-tree` (mergesCleanly), which
+//     merges in the repo's object store with no worktree at all, so asking it
+//     every pass writes nothing the grace clock reads. It is not an authority —
+//     a whole-branch merge is not a commit-by-commit replay — so a clean answer
+//     is "worth asking git for real" and never "this will land".
+//   - the record is the base sha the replay last actually ran against
+//     (probedBaseKey, written by MergeSessionWork). Without it, the branch where
+//     the filter and the rebase disagree is probed on every pass forever, which
+//     is ranger-base-9u5zy's bug back wearing the other operand's clothes; with
+//     it, a probe costs one tree write per base MOVEMENT.
+//
+// THE RESIDUAL, STATED RATHER THAN HIDDEN: a branch where the two disagree,
+// over a base that moves every pass, still probes every pass. Nothing cheaper
+// than the replay can tell that branch from the one that would now land, and
+// the population is narrow — a branch whose net diff is empty where its own
+// commits conflict one at a time. A base that moves and STILL conflicts is the
+// common case and costs nothing: the filter answers no, and the tree stays
+// quiet (TestABaseThatMovesAndStillConflictsKeepsTheBlockAndTheTreeQuiet).
 //
 // A base with nothing to land on (t.Base == "") is left standing: the block's
 // reason is that the branch records no base at all, and that is not a fact
@@ -476,7 +496,30 @@ func blockStillStands(t *SessionTree, head string, prior priorBlock) ([]string, 
 	// line allows happens ONCE: it returns the conflict reason, the handoff is
 	// restated to it, and the next pass reads a body that no longer names the
 	// dirt. The two ends read the same predicate so they cannot drift.
-	return dirty, !blockedOnDirt(prior.Why)
+	if blockedOnDirt(prior.Why) {
+		return dirty, false
+	}
+	// And the last operand, the one only the replay can answer — a base that
+	// moved FORWARD past the conflict (ranger-base-c6ohn; the header has the
+	// shape and the residual). The base's sha is resolved once and used for
+	// both halves, so the record cannot be compared against one commit while
+	// the filter merges another.
+	base := refSHA(t.Repo, t.Base)
+	if base == "" {
+		// The base does not resolve. That is not "it still conflicts" and it
+		// is not a licence to write the tree either: it is a question that
+		// could not be asked, and every one of those here leaves the block
+		// standing.
+		return dirty, true
+	}
+	if base == probedBase(t.Repo, t.Branch) {
+		// A replay already ran against this exact base and the block is what
+		// it produced. Asking again could only reproduce the same answer while
+		// writing the tree — ranger-base-9u5zy's sentence, now keyed on the
+		// operand the answer is actually about.
+		return dirty, true
+	}
+	return dirty, !mergesCleanly(t.Repo, base, head)
 }
 
 // retireTree is ADR 0058 D2: the landing sweep's own act on a tree there is

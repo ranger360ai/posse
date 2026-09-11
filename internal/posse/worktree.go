@@ -536,6 +536,64 @@ func launchedDetached(repo, branch string) bool {
 	return err == nil && strings.TrimSpace(out) == "1"
 }
 
+// ─── the base a replay was last attempted against (ranger-base-c6ohn) ────────
+
+// probedBaseKey names where a session branch records the base sha its work
+// was last REPLAYED onto — the rebase MergeSessionWork runs, not a question
+// anything answered about it. Kept in git config on the branch, beside
+// baseKey, beadKey and detachedKey and for their reason: a kill takes the
+// session's meta and leaves the tree standing, so the record has to be the
+// one git keeps, and `git branch -d` takes it with the branch when the tree
+// retires.
+//
+// WHAT IT IS FOR. The landing sweep skips the replay over a branch that
+// already has a merge-back verdict on record, because the replay writes the
+// session tree and a tree written every pass never goes quiet
+// (ranger-base-9u5zy, ADR 0058 fact 4). One obstacle can change without
+// anything the sweep can read changing: a base that moved FORWARD past the
+// conflict, the operator answering the handoff by REVERTING the conflicting
+// commit rather than resetting main. `git merge-tree` can say the whole-branch
+// merge is clean without a worktree (mergesCleanly), but it is a filter and
+// not an authority — a whole-branch merge is not a commit-by-commit replay,
+// so the two disagree over a branch whose own commits cancel out — and on such
+// a branch a filter with no memory lets the replay through on EVERY pass,
+// which is the bug it was meant to fix wearing the other operand's clothes.
+//
+// This is the memory. A replay that already ran against this exact base sha
+// is not run again; a base that MOVES is a new question and gets one probe.
+// So the cost is one tree write per base movement rather than one per pass,
+// and the residual is stated rather than hidden: a branch where merge-tree
+// and the rebase disagree, over a base that moves every pass, still probes
+// every pass. Nothing cheaper than the replay can tell that branch apart from
+// the one that would now land, and the population is narrow — a branch whose
+// net diff is empty where its commits conflict one at a time.
+func probedBaseKey(branch string) string { return "branch." + branch + ".posseProbedBase" }
+
+// recordProbedBase writes that record, at the moment the replay is about to
+// run and from the sha the replay is about to read. Best effort by contract:
+// a config write that fails leaves the record where it was, and the worst a
+// missing record can do is let the next pass probe again — which is exactly
+// what every pass did before this existed.
+func recordProbedBase(repo, branch, base string) error {
+	if branch == "" || base == "" {
+		return nil
+	}
+	_, err := git(repo, "config", probedBaseKey(branch), base)
+	return err
+}
+
+// probedBase is the base sha this branch's work was last replayed onto, "" for
+// a branch nothing has replayed since this landed. "" un-skips: a question
+// nobody recorded an answer to is asked, which is the direction that lands
+// work rather than the one that strands it.
+func probedBase(repo, branch string) string {
+	out, err := git(repo, "config", "--get", probedBaseKey(branch))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(out)
+}
+
 // treeDetachedHead is the tree's own HEAD sha when that tree exists and its
 // HEAD is on no branch, ("", false) otherwise. Asked of the TREE and not of
 // workHead, which deliberately falls back to the branch ref for a retired
@@ -1321,6 +1379,22 @@ func MergeSessionWork(t *SessionTree) (MergeOutcome, error) {
 	// a report, not a spin.
 	for attempt := 1; ; attempt++ {
 		wasAt := refSHA(t.Repo, t.Base)
+		// THE RECORD THE SWEEP'S FILTER RESTS ON (ranger-base-c6ohn), written
+		// HERE because this is the replay: one line below is the only thing
+		// in posse that answers "would this branch land on this base" by
+		// running it, and the record has to mean that and nothing weaker.
+		// Written from `wasAt` — the sha this attempt is about to read — and
+		// on every attempt, because a base that moved between two attempts is
+		// two questions and the last one asked is the one that was answered.
+		//
+		// Written BEFORE the rebase, not after: a replay that crashes the
+		// process still wrote the session tree, and a record that only lands
+		// on the clean paths would let the next pass write it again.
+		//
+		// Best effort. A config write that fails leaves the next pass probing
+		// again, which is what every pass did before this existed — the old
+		// behaviour is the failure mode, so it owes nobody a sentence.
+		_ = recordProbedBase(t.Repo, t.Branch, wasAt)
 		if _, err := git(t.Path, "rebase", t.Base); err != nil {
 			// EVERY non-zero exit used to print as a conflict, and the P1
 			// under it told a persona to "fix the conflicts" — over a
@@ -2390,6 +2464,67 @@ func reaches(repo, ref, sha string) bool {
 	}
 	_, err := git(repo, "merge-base", "--is-ancestor", sha, ref)
 	return err == nil
+}
+
+// mergesCleanly is the FILTER in front of the replay (ranger-base-c6ohn), and
+// the only reader of a merge-back obstacle that nothing else here can re-read:
+// whether a base that moved FORWARD would now take this work at all.
+//
+// It answers in the repo's object store with NO WORKTREE — `git merge-tree
+// --write-tree` merges two commits and writes the result as a tree — so it
+// costs none of the session-tree write the rebase probe costs, which is the
+// whole constraint (ranger-base-9u5zy, ADR 0058 fact 4).
+//
+// AND THE WRITE IT DOES MAKE IS BOUNDED BY THE QUESTION, not by how often it
+// is asked, which is what makes it affordable on every pass over every blocked
+// tree on the board: git's objects are content-addressed, so re-merging the
+// same pair writes the same oids and the store already holds them. MEASURED
+// 2026-09-11 (git 2.50.1, macOS 26.4.1), 10 consecutive calls over an unmoved
+// pair: 2 loose objects on the first conflicted call and ZERO on the nine
+// after it, zero on all ten of the clean case. Only a base that MOVES is a new
+// question, and only a new question costs anything.
+//
+// CLEAN IS READ AS EXIT 0 **AND** AN OBJECT NAME, never the exit status and
+// never the output alone. MEASURED 2026-09-11 (git 2.50.1, macOS 26.4.1),
+// re-measuring ranger-base-ejju3's 2026-09-10 reading and agreeing with it:
+// a clean merge exits 0 with the tree oid as the whole of stdout; a CONFLICT
+// exits 1 and also prints a tree oid, followed by the conflicted stages and
+// git's own `CONFLICT (add/add)` lines; a revision git cannot resolve exits 1
+// with the message on stderr and nothing on stdout. A git before 2.38 has no
+// `--write-tree` at all and reads it as a tree-ish, failing the same way. So
+// the exit status separates clean from conflicted and the single object name
+// separates both from every version and argument accident — and an
+// unanswerable question comes back false, which leaves the block standing
+// rather than letting a probe through on a reading nobody got.
+//
+// IT IS A FILTER AND NOT AN AUTHORITY, deliberately. A whole-branch merge is
+// not a commit-by-commit replay: a branch whose commits cancel out merges
+// clean and rebases into a conflict on its first commit. That is why the
+// caller pairs it with probedBaseKey — the filter says "worth asking git for
+// real", the record says "already asked, against this base".
+func mergesCleanly(repo, base, tip string) bool {
+	if repo == "" || base == "" || tip == "" {
+		return false
+	}
+	out, err := git(repo, "merge-tree", "--write-tree", base, tip)
+	return err == nil && isObjectName(out)
+}
+
+// isObjectName is "this is the whole of what git printed and it is a sha":
+// 40 hex for sha1, 64 for sha256. Written out rather than a regexp because
+// its one caller is reading an exit-status-plus-output pair on a path where
+// the repo may be the thing that is broken, and the answer must not depend on
+// anything but the bytes.
+func isObjectName(s string) bool {
+	if len(s) != 40 && len(s) != 64 {
+		return false
+	}
+	for _, c := range s {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 // abbrevSHA shortens a sha for a sentence a human reads. Not `git

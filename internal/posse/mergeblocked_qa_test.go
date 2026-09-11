@@ -30,6 +30,15 @@ package posse
 // dirt — on every pass, and honours the block only while none of them can
 // have changed the answer.
 //
+// THE FOURTH OPERAND CAME LAST AND ON ITS OWN (ranger-base-c6ohn), because it
+// is the one no reading can answer: a base that moved FORWARD past the
+// conflict. It is asked as a cheap filter in the object store plus a record of
+// the base the replay last ran against, so the answer costs one tree write per
+// base MOVEMENT — TestAConflictRevertedOnTheBaseIsProbedAgainAndLands is the
+// requirement and TestAFilterThatDisagreesWithTheReplayProbesOncePerBaseMove
+// is the bound on it. With that, every reason MergeSessionWork blocks on has
+// a pass that can see it stop being true.
+//
 // THE TWO PROPERTIES ARE IN TENSION AND BOTH ARE PINNED HERE, which is the
 // point of keeping them in one file: the quiet tests above say the tree is
 // not written over a block that still stands, and the tests below say the
@@ -374,31 +383,49 @@ func TestCleaningTheDirtWithoutCommittingIsReconsidered(t *testing.T) {
 	}
 }
 
-// TODAY'S BEHAVIOUR AND NOT THE REQUIREMENT, and the one arm ranger-base-ejju3
-// deliberately did not close — the idiom this file already uses twice, for its
-// reason: a defect that no test names gets fixed by nobody.
+// THE REQUIREMENT, inverted from the pin ranger-base-ejju3 left here against
+// today's behaviour — the fourth operand, and the last one (ranger-base-c6ohn).
 //
 // The operator answers the handoff by REVERTING the conflicting commit with a
 // new one rather than by resetting main. The base is then not an ancestor of
 // the branch (no fast-forward), the work is on main under no sha at all (no
-// equivalence), the tree is clean (not the dirt arm) — and only the replay can
-// say the conflict is gone. The replay in the session tree is the write ADR
-// 0058's fact 4 reads, so it cannot be run on a hunch; `git merge-tree` can
-// answer it in the object store with no worktree at all, but a branch where
-// merge-tree and rebase disagree would then be probed on EVERY pass, which is
-// ranger-base-9u5zy's bug again. Closing this needs a record of the base a
-// probe last ran against, so it costs one probe per base movement — filed as
-// ranger-base-c6ohn. Whoever lands that inverts this test.
-func TestAConflictRevertedOnTheBaseIsStillNotRetried(t *testing.T) {
+// equivalence), the tree is clean (not the dirt arm) — so every operand the
+// three arms above read says the block stands, and only the replay can say the
+// conflict is gone. The replay in the session tree is the write ADR 0058's
+// fact 4 reads, so it is not run on a hunch: `git merge-tree` answers the
+// merge in the object store with no worktree at all (mergesCleanly), and the
+// base it answered about is recorded when the replay runs (probedBaseKey), so
+// the branch where merge-tree and the rebase disagree costs one probe per base
+// MOVEMENT rather than one per pass. The test below this one is that half.
+//
+// What must happen here is what happened before ranger-base-9u5zy and what
+// MergeSessionWork's own header measures on ranger-base-c02a/59fs: the
+// untouched branch lands on the pass after the operator's answer, with nobody
+// closing the handoff by hand.
+func TestAConflictRevertedOnTheBaseIsProbedAgainAndLands(t *testing.T) {
 	t.Parallel()
-	d, repo, _ := nurlBlocked(t)
+	d, repo, tr := nurlBlocked(t)
 	if _, err := d.Run("", "", 0); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(dispatcherOut(d), "did NOT reach") {
 		t.Fatalf("fixture: the first pass was not blocked:\n%s", dispatcherOut(d))
 	}
-	mustGit(t, repo, "revert", "--no-edit", "HEAD")
+	// The fixture's positive witness for the OTHER half: the pass that
+	// actually replayed recorded the base it replayed onto, or the record
+	// below can only ever be empty and nothing here measures it.
+	if got, want := probedBase(tr.Repo, tr.Branch), mustGit(t, repo, "rev-parse", "HEAD"); got != want {
+		t.Fatalf("fixture: the replay recorded %q as the base it ran against, want %q — the record the filter is gated on was never written", got, want)
+	}
+	// REVERTED and not reset: the conflicting commit stays in main's history
+	// and a new commit undoes it, which is the shape no arm but the replay can
+	// read. `--no-commit` plus the path-limited commit, because a plain
+	// `git revert` names no paths and the crew's commit wall refuses it.
+	mustGit(t, repo, "revert", "--no-commit", "HEAD")
+	mustGit(t, repo, "commit", "-q", "-m", "main: revert the conflicting line", "--", "fix.txt")
+	if reaches(repo, mustGit(t, tr.Path, "rev-parse", "HEAD"), "main") {
+		t.Fatal("fixture: main is an ancestor of the branch, so this would land by fast-forward and nothing here measures the replay arm")
+	}
 
 	d2 := newTestDispatcher(t, d.HB)
 	dispatcherErr(t, d2)
@@ -406,11 +433,114 @@ func TestAConflictRevertedOnTheBaseIsStillNotRetried(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := dispatcherOut(d2)
-	if !strings.Contains(out, "already answered this and is still open") {
-		t.Errorf("the pass re-asked a base whose conflict was reverted — if that is the fix, this test is the one to invert:\n%s", out)
+	if strings.Contains(out, "already answered this and is still open") {
+		t.Errorf("the block was honoured over a base that moved past the conflict — a branch that would now land never lands:\n%s", out)
 	}
-	if _, err := os.Stat(filepath.Join(repo, "fix.txt")); !os.IsNotExist(err) {
-		t.Errorf("the branch landed after the conflict was reverted (%v) — the gap this pins is closed, so invert it", err)
+	if body, err := os.ReadFile(filepath.Join(repo, "fix.txt")); err != nil || string(body) != "the persona's work\n" {
+		t.Errorf("a closed bead's work is still not on main after the conflict was reverted (%v)\n%s", err, out)
+	}
+}
+
+// THE OTHER HALF OF THE FILTER, and the reason it is a filter behind a record
+// rather than a filter alone (ranger-base-c6ohn). `git merge-tree` answers
+// about the WHOLE branch merged at once; the rebase replays commit by commit,
+// and the two disagree over a branch whose own commits cancel out — here the
+// second commit puts fix.txt back to exactly what main holds, so the merge is
+// clean while replaying the FIRST commit is the same add/add conflict it
+// always was.
+//
+// On such a branch a filter with no memory lets the replay through on every
+// pass, and that is ranger-base-9u5zy's every-pass tree write with the
+// operands swapped — silent, because the handoff is deduped, so nothing is
+// filed while lastTreeWrite advances at the sweep's own cadence forever and
+// ADR 0058 D2 is never reached. What the record buys is ONE probe per base
+// movement: the base moves, the filter says clean, the replay runs and
+// conflicts and writes down the base it ran against, and every pass after that
+// stands on the record until the base moves again.
+func TestAFilterThatDisagreesWithTheReplayProbesOncePerBaseMove(t *testing.T) {
+	t.Parallel()
+	d, repo, tr := nurlStranded(t, "closed", true)
+	write(t, filepath.Join(repo, "fake-show.json"), `[{"id":"a-1","status":"closed","assignee":"ranger"}]`)
+	commitIn(t, repo, "fix.txt", "the operator's line\n", "main: conflicting")
+	// The branch's second commit, which nets its own first one out: the tip's
+	// fix.txt is byte-identical to main's, so the whole-branch merge is clean.
+	commitIn(t, tr.Path, "fix.txt", "the operator's line\n", "a-1: the operator's line after all")
+	dispatcherErr(t, d)
+	if _, err := d.Run("", "", 0); err != nil {
+		t.Fatal(err)
+	}
+	if out := dispatcherOut(d); !strings.Contains(out, "did NOT reach") {
+		t.Fatalf("fixture: the first pass was not blocked, so nothing here measures the disagreement:\n%s", out)
+	}
+	// The fixture's positive witness, both halves of it: the cheap filter says
+	// this branch would merge clean, and the replay the pass just ran says it
+	// does not. Without this the test could pass over a branch the filter
+	// refuses, where no probe was ever on the table.
+	head := mustGit(t, tr.Path, "rev-parse", "HEAD")
+	if !mergesCleanly(repo, mustGit(t, repo, "rev-parse", "HEAD"), head) {
+		t.Fatal("fixture: merge-tree refuses this branch, so the filter would never let a probe through and nothing here measures the record")
+	}
+
+	// pass runs one sweep and says whether it took the skip. skip=true is
+	// "the record answered and no replay ran".
+	pass := func(n int, skip bool) {
+		t.Helper()
+		d2 := newTestDispatcher(t, d.HB)
+		dispatcherErr(t, d2)
+		if _, err := d2.Run("", "", 0); err != nil {
+			t.Fatal(err)
+		}
+		out := dispatcherOut(d2)
+		if took := strings.Contains(out, "already answered this and is still open"); took != skip {
+			if skip {
+				t.Fatalf("pass %d re-asked a base a replay already ran against — the filter is unrecorded again, and this branch writes its tree on every pass forever:\n%s", n, out)
+			}
+			t.Fatalf("pass %d stood on a record taken against a base that has since moved — a base that moved past the conflict would never be re-read:\n%s", n, out)
+		}
+	}
+	// quietPass is the same with the reading ADR 0058's fact 4 takes wrapped
+	// around it. Taken only after the stat-cache settle the file's header
+	// measures has been spent, for theWritesStop's reason: the first `git
+	// status` runs after the last aborted rebase can still write the index,
+	// and that window is an allowance, never the property.
+	quietPass := func(n int) {
+		t.Helper()
+		prev, prevLast := gitDirWrites(t, tr), mustLastTreeWrite(t, tr)
+		pass(n, true)
+		cur, curLast := gitDirWrites(t, tr), mustLastTreeWrite(t, tr)
+		for p, ts := range cur {
+			if b, had := prev[p]; !had || !b.Equal(ts) {
+				t.Errorf("pass %d wrote %s over a tree whose base nobody moved (%s -> %s)", n, p, b, ts)
+			}
+		}
+		if !curLast.Equal(prevLast) {
+			t.Errorf("pass %d moved lastTreeWrite over a tree whose base nobody moved (%s -> %s)", n, prevLast, curLast)
+		}
+	}
+	// The base has NOT moved, so the record answers: the one probe this base
+	// was worth was pass 1's, and by pass 4 the tree is quiet.
+	pass(2, true)
+	pass(3, true)
+	quietPass(4)
+
+	// The base MOVES — on a path nothing here touches, so the filter still
+	// says clean and the replay still conflicts. That is a new question and it
+	// is worth exactly one probe.
+	commitIn(t, repo, "elsewhere.txt", "the operator's own line\n", "main: moved on")
+	pass(5, false)
+	if got, want := probedBase(tr.Repo, tr.Branch), mustGit(t, repo, "rev-parse", "HEAD"); got != want {
+		t.Errorf("the probe recorded %q, want the base it ran against (%q) — a record that lags the probe re-probes on the next pass", got, want)
+	}
+	// And it is one probe and not a standing licence: the base is where pass 5
+	// left it, so the record answers again and the tree goes quiet again.
+	pass(6, true)
+	pass(7, true)
+	quietPass(8)
+
+	// The whole run costs the persona one handoff, as every other pass over
+	// this file's fixtures does.
+	if n := len(mergeBlockedBeads(t, repo)); n != 1 {
+		t.Errorf("six passes over one blocked branch left %d handoffs, want 1", n)
 	}
 }
 
