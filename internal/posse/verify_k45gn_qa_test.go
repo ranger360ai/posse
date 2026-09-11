@@ -55,11 +55,15 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/ranger360ai/posse"
 )
 
 // bdRedirectingEnvVars are the environment variables MEASURED to repoint bd
@@ -78,12 +82,27 @@ import (
 // herdrback.go) or into cage.go's carry list reaches a bd that never passes
 // through bdStoreEnv at all, and this census is the only thing watching for
 // it. Emptying the list would leave the pin green over nothing.
+//
+// "A shipped file" is not "a shipped Go file", and that difference cost this
+// pin a hole (ranger-base-z541t): posse ships two env sets —
+// examples/envs/default.env, which config.yaml names as `default_env` and so
+// applies to NEW sessions by default, and examples/envs/projA.env — whose
+// plain `KEY=VALUE` lines envs.go passes to the session VERBATIM, with no key
+// filter anywhere in that file. One `BEADS_DB=` line there is a session-env
+// row by construction AND crosses the cage (CageEnvNames forwards any Key
+// matching cageEnvName), which is both halves of the paragraph above at once,
+// in a file the Go walk below cannot see. So there are two readers here: the
+// Go census over cmd/ and internal/, and k45gnAssertSeedEnvSetsShipNoStoreVar
+// over the seed tree posse embeds. The operator's OWN env sets stay out of
+// both, and that half of the old sentence was always true — input is not
+// something posse ships.
 var bdRedirectingEnvVars = []string{"BEADS_DB"}
 
-// The four SHAPES a shipped file can put a redirecting variable into an
+// The four SHAPES a shipped GO file can put a redirecting variable into an
 // environment with, and how a hit on each reads. One line each, because a
 // hit names the shape it was found in and they are not repaired the same
-// way.
+// way. A shipped file that is not Go has a shape of its own and a reader of
+// its own: k45gnHowSeedEnv, below.
 //
 // ranger-base-1fjq5: only the first of these was ever censused, while the
 // comment above claimed all three — so the two shapes that carry a value to
@@ -100,11 +119,14 @@ const (
 	// launches, and the only shape that carries its own `=`.
 	k45gnHowRow = "builds %s into a child environment (a `NAME=` row)"
 	// EnvVar{Key: NAME}: the shape EVERY session-env row a shipped file
-	// WRITES is built in (herdrback.go planLaunch, runtimeprobe.go). envs.go
-	// builds the same rows out of a parsed line rather than a literal, and
-	// is invisible here on purpose — an operator's env set is input, not
-	// something posse ships. CageEnvNames forwards any such Key that is a
-	// legal env name, so this one shape reaches the session AND the cage.
+	// WRITES AS A GO LITERAL is built in (herdrback.go planLaunch,
+	// runtimeprobe.go). envs.go builds the same rows out of a parsed line
+	// rather than a literal and so is invisible to this arm — which is
+	// correct for the file, and was wrong for the ROWS: an operator's env set
+	// is input, but the seed's two are shipped, and they arrive through this
+	// exact code path (ranger-base-z541t). k45gnHowSeedEnv is the arm that
+	// reads them. CageEnvNames forwards any such Key that is a legal env
+	// name, so this one shape reaches the session AND the cage.
 	k45gnHowSession = "builds %s into a session environment (an EnvVar Key)"
 	// A bare name in CageEnvNames' own list: the engine forwards `-e NAME`
 	// and takes the value from the pane's environment, so the name is the
@@ -390,6 +412,8 @@ redirects; BEADS_JSONL does not.)`, strings.Join(hits, "\n  "))
 		t.Errorf("the walk read %d shipped .go files under cmd/ and internal/, want at least 80 — it is reading the wrong tree and the census above measured nothing", n)
 	}
 	k45gnAssertShapesReachTheCorpus(t, root)
+	// The same claim over the corpus a Go walk cannot read (ranger-base-z541t).
+	k45gnAssertSeedEnvSetsShipNoStoreVar(t)
 }
 
 // k45gnAssertShapesReachTheCorpus is the same liveness argument as the file
@@ -406,8 +430,9 @@ redirects; BEADS_JSONL does not.)`, strings.Join(hits, "\n  "))
 // EnvVar Key literals and 252 string-valued const/var specs under cmd/ and
 // internal/, herdrback.go's planLaunch the largest single source of the
 // first. (envs.go contributes no Key — it builds one out of a parsed line,
-// not a literal, which is correct: an operator's env set is input, not
-// something posse ships.) Both floors are far under the counts so ordinary
+// not a literal; the rows that line comes from are censused by
+// k45gnAssertSeedEnvSetsShipNoStoreVar instead, which has liveness floors of
+// its own.) Both floors are far under the counts so ordinary
 // deletion does not red this, but renaming the Key field, or moving the
 // session environment off the type, does.
 func k45gnAssertShapesReachTheCorpus(t *testing.T, root string) {
@@ -458,6 +483,121 @@ func k45gnAssertShapesReachTheCorpus(t *testing.T, root string) {
 		t.Errorf("no shipped func %s: the cage carry-list arm of the census is reading nothing. It finds the list BY FUNCTION NAME (k45gnCageCarryFunc) because the list's own shape is bdStoreEnvShed's shape — so point the constant at whatever builds the carry list now", k45gnCageCarryFunc)
 	} else if !containsString(carry, "BEADS_DIR") {
 		t.Errorf("func %s no longer names BEADS_DIR (%v) — the census is reading a function by that name but not the carry list, whose whole business is forwarding store names (ADR 0055 D1)", k45gnCageCarryFunc, carry)
+	}
+}
+
+// ─── the shape that is not Go (ranger-base-z541t) ───────────────────────────
+
+// k45gnHowSeedEnv is the fifth shape and the only one with no Go literal
+// behind it: a plain `KEY=VALUE` line in an env set posse SHIPS.
+const k45gnHowSeedEnv = "ships %s in a seeded env set (a KEY=VALUE line posse init lays down)"
+
+// k45gnEnvHit is one redirecting variable found in one seeded env set, at
+// the line that sets it. Separate from k45gnHit because there is no
+// token.Pos here and inventing one would mean lying about a file the Go
+// parser never read.
+type k45gnEnvHit struct {
+	v    string
+	line int
+}
+
+func (h k45gnEnvHit) what() string { return fmt.Sprintf(k45gnHowSeedEnv, h.v) }
+
+// k45gnSeedEnvHits returns the redirecting variables that the env set text
+// `data` SETS — at most one hit per variable, at the first line that sets it.
+//
+// POSSE'S OWN PARSER, one line at a time. parseEnvLines (envs.go) is what
+// actually turns these files into session rows, so it is what decides here:
+// a census with its own idea of the format would red on lines posse ignores
+// and, worse, stay green on lines it honours (`export BEADS_DB=…` is the
+// standing example — a hand-rolled `strings.HasPrefix(line, v+"=")` walks
+// straight past it, and envs.go does not). parseEnvLines splits on "\n" and
+// carries nothing across lines, so feeding it one line yields exactly the row
+// the whole file would, plus the number to report it at.
+//
+// The KEY is compared with surrounding space trimmed, which is WIDER than
+// what posse would set. Deliberate: whether the `--env KEY=VALUE` argv
+// herdr.CreateWorkspace builds treats " BEADS_DB" as BEADS_DB is not measured
+// here, and a guard that has not measured the difference fails closed. A
+// leading space is not a spelling any seeded row has a reason to carry, so
+// the cost of the wider match is zero and the cost of the narrow one is a
+// redirect this pin would call green. (The cage half needs no such care:
+// cageEnvName rejects the space outright.)
+func k45gnSeedEnvHits(data string) []k45gnEnvHit {
+	var out []k45gnEnvHit
+	seen := map[string]bool{}
+	for i, line := range strings.Split(data, "\n") {
+		for _, row := range parseEnvLines(line) {
+			for _, v := range bdRedirectingEnvVars {
+				if strings.TrimSpace(row.Key) == v && !seen[v] {
+					seen[v] = true
+					out = append(out, k45gnEnvHit{v: v, line: i + 1})
+				}
+			}
+		}
+	}
+	return out
+}
+
+// k45gnAssertSeedEnvSetsShipNoStoreVar is the Go census's claim over the one
+// corpus the Go census cannot read: the env sets posse SHIPS.
+//
+// It reads posse.Seed — the embedded tree, not examples/ on disk — because
+// the embed is what a release binary lays down on a laptop with no repo
+// (embed.go, ADR 0012 D5), and because reading it by its own root means no
+// path here to drift out of step with a rename of the directory.
+//
+// Every `*.env` in the seed is censused, not just envs/: init copies envs/
+// (init.go seedRoots) and that is where these two live, but a set that ships
+// anywhere in the tree is a set somebody can point `default_env` at, and the
+// walk costs the same.
+func k45gnAssertSeedEnvSetsShipNoStoreVar(t *testing.T) {
+	t.Helper()
+	var hits []string
+	files, rows := 0, 0
+	err := fs.WalkDir(posse.Seed, ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || path.Ext(p) != ".env" {
+			return err
+		}
+		b, rerr := fs.ReadFile(posse.Seed, p)
+		if rerr != nil {
+			t.Fatalf("read seed %s: %v", p, rerr)
+		}
+		files++
+		rows += len(parseEnvLines(string(b)))
+		for _, h := range k45gnSeedEnvHits(string(b)) {
+			hits = append(hits, p+":"+strconv.Itoa(h.line)+" "+h.what())
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hits) > 0 {
+		t.Errorf(`a SEEDED env set now sets an environment variable that repoints bd's
+store and that bdStoreEnv (beads.go) does not shed:
+
+  %s
+
+`+"`posse init`"+` copies these into RHQ_HOME/envs, config.yaml names default.env
+as `+"`default_env`"+`, and envs.go passes every row to the session VERBATIM — there
+is no key filter in that file. So the row reaches a session bd that never
+passes through bdStoreEnv, and CageEnvNames (cage.go) forwards the same Key
+across the cage boundary. Delete the line; an operator who wants this writes
+it in their OWN env set, which is input and is not censused.`, strings.Join(hits, "\n  "))
+	}
+	// LIVENESS, the same argument the Go walk makes: a reader that found no
+	// files reports the same zero as a reader that works. MEASURED 2026-09-11
+	// (darwin/arm64, go1.26.5) by raising each floor and reading the count
+	// back: 2 seeded .env files, 4 KEY=VALUE rows between them. The floors sit
+	// under both so deleting an example set does not red this, but an empty
+	// embed, a seed with no env sets left, or a parseEnvLines that stops
+	// yielding rows does.
+	if files < 1 {
+		t.Errorf("the census read %d seeded .env files, want at least 1 — posse.Seed carries none, so the zero above is a census of nothing", files)
+	}
+	if rows < 2 {
+		t.Errorf("the census read %d KEY=VALUE rows across the seeded env sets, want at least 2 — the reader is parseEnvLines (envs.go) and it is yielding nothing, so a BEADS_DB= line would read as no row at all", rows)
 	}
 }
 
@@ -605,6 +745,79 @@ func TestQAStoreVarCensusReadsParsedLiteralsNotFileBytes(t *testing.T) {
 			hits := k45gnStoreVarHits(t, token.NewFileSet(), "fixture.go", "package posse\n"+tc.src)
 			if got := len(hits) > 0; got != tc.want {
 				t.Errorf("k45gnStoreVarHits = %v, want hit=%v, over:\n%s", hits, tc.want, tc.src)
+			}
+		})
+	}
+}
+
+// The seed-env census's claim, in a table (ranger-base-z541t): a line that
+// SETS the variable hits; a line posse's own parser does not turn into a row
+// does not.
+//
+// The arms are chosen against the two ways a hand-rolled reader gets this
+// wrong. Too narrow: `export BEADS_DB=` and a row further down the file are
+// both real rows envs.go builds, and a `HasPrefix(line, "BEADS_DB=")` census
+// misses the first. Too wide: a commented-out line is the shape
+// examples/envs/projA.env already ships (`# API_TOKEN=…`), so a census that
+// reds on it reds on the seed as it stands today.
+func TestQASeedEnvCensusReadsPosseOwnEnvParser(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		src  string
+		want int // 0 = no hit, else the line the hit must name
+	}{{
+		name: "a plain row hits",
+		src:  "BEADS_DB=/tmp/other/beads.db\n",
+		want: 1,
+	}, {
+		name: "the export spelling hits: parseEnvLines tolerates the prefix, so a prefix census would miss a live row",
+		src:  "export BEADS_DB=/tmp/other/beads.db\n",
+		want: 1,
+	}, {
+		name: "a row further down names its own line",
+		src:  "EDITOR=vim\n\n# a comment\nBEADS_DB=/tmp/other/beads.db\n",
+		want: 4,
+	}, {
+		name: "a commented row is prose: the shape projA.env already ships",
+		src:  "# BEADS_DB=/tmp/other/beads.db\n",
+		want: 0,
+	}, {
+		name: "an indented comment is prose too",
+		src:  "   # BEADS_DB=/tmp/other/beads.db\n",
+		want: 0,
+	}, {
+		name: "the name in a VALUE does not hit: the key is what gets set",
+		src:  "NOTE=BEADS_DB=/tmp/other/beads.db\n",
+		want: 0,
+	}, {
+		name: "a key that merely contains the name does not hit",
+		src:  "MY_BEADS_DB=/tmp/other/beads.db\n",
+		want: 0,
+	}, {
+		name: "a leading space still hits: the census fails closed on whitespace it has not measured herdr's argv against",
+		src:  " BEADS_DB=/tmp/other/beads.db\n",
+		want: 1,
+	}, {
+		name: "a line with no = is not a row",
+		src:  "BEADS_DB\n",
+		want: 0,
+	}, {
+		name: "the seeded sets as they stand today do not hit",
+		src:  "EDITOR=vim\nPAGER=less\nNODE_ENV=development\nAPI_BASE=http://localhost:8080\n# API_TOKEN=put-real-secrets-in-your-own-copy\n",
+		want: 0,
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			hits := k45gnSeedEnvHits(tc.src)
+			if tc.want == 0 {
+				if len(hits) > 0 {
+					t.Errorf("k45gnSeedEnvHits = %v, want no hit, over:\n%s", hits, tc.src)
+				}
+				return
+			}
+			if len(hits) != 1 || hits[0].line != tc.want {
+				t.Errorf("k45gnSeedEnvHits = %v, want one hit at line %d, over:\n%s", hits, tc.want, tc.src)
 			}
 		})
 	}
