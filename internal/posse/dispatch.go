@@ -1,7 +1,8 @@
 package posse
 
-// The dispatch loop — the harness core (DIRECTION.md). Small on purpose:
-// the substrates do the hard parts.
+// The dispatch loop — the harness core (DIRECTION.md). Not small, whatever
+// the substrates do: 5,542 lines and 128 functions here (MEASURED
+// 2026-09-10, ranger-base-cwbzp).
 //
 //   ready beads (config repos)
 //     → ordered into a queue: priority first, oldest first inside a

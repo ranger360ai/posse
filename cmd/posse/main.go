@@ -2230,9 +2230,8 @@ sessions (herdr workspaces):
                                  session worktrees, which bead each one's unlanded
                                  work belongs to, what has not landed yet, and
                                  whether anything will retire it; --land merges
-                                 every branch that will land (it never removes a
-                                 tree — it cannot tell a dead session's from a
-                                 live one's)
+                                 every branch that will land and removes nothing
+                                 — --retire below is what removes a tree
       --force                  land a tree holding work no bead record accounts
                                for — refused without it, because from git alone
                                that is indistinguishable from work already

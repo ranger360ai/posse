@@ -59,10 +59,12 @@ everything posse knows about a session is a flat meta file under
 `state/herdr/`, and all durable state lives in beads, never in the
 multiplexer. If a better multiplexer ships (Superlogical's
 libghostty-based one is still the obvious candidate), the rewrite is the
-one file that talks to herdr, not the harness. **Decided 2026-08-17:**
-tmux-reference is retired — a dead-end reference, kept but not maintained.
-It is not a fallback and there is no bead to keep it building; the exit
-hatch is the meta-file design above, not a second backend.
+herdr client (`herdr.go`, `herdrback.go`), not the harness — not one file:
+13 non-test files name that seam today (MEASURED 2026-09-10).
+**Decided 2026-08-17:** tmux-reference is retired — a dead-end reference,
+kept but not maintained. It is not a fallback and there is no bead to keep
+it building; the exit hatch is the meta-file design above, not a second
+backend.
 
 ## The four pillars, and who owns what
 
@@ -114,13 +116,15 @@ trying: interactive **crew** agents that design and review, background
 **fleet** workers that consume the work graph, mail between them, a
 multiplexer under it all. posse's existing UI maps straight onto it:
 
-- **crew** = the 2×2 grid slots — personas the operator actively talks to
+- **crew** = sessions marked crew (`posse crew <name>`, and any session the
+  operator starts a conversation in) — dispatch leaves them alone
 - **fleet** = background sessions (~20 today) — workers grinding the queue
 - **cockpit** = a herdr plugin pane (`posse cockpit`) showing `bd ready`
   alongside live sessions, with dispatch from the keyboard
 
-The dispatch loop is the entire harness core, and it is small because the
-substrates do the hard parts:
+The dispatch loop is the entire harness core. It is not small —
+`internal/posse/dispatch.go` is 5,542 lines and 128 functions (MEASURED
+2026-09-10) — and the sketch below is its shape, not its size:
 
 ```
 bd ready
