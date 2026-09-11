@@ -167,7 +167,7 @@ func TestQASkillSurfacePerRuntimeDeclaration(t *testing.T) {
 				if len(p.Degraded) != 1 || p.Degraded[0] != want {
 					t.Fatalf("must degrade with %q, got %v", want, p.Degraded)
 				}
-				err := b.CreateSession(NewSessionOpts{Name: "qm-" + s.runtime, Agent: "prober", Runtime: s.runtime, Dir: t.TempDir()})
+				err := b.CreateSession(NewSessionOpts{Name: "qm-" + s.runtime, Agent: "prober", Runtime: s.runtime, Dir: gitTempDir(t)})
 				if err == nil || !strings.Contains(err.Error(), want) {
 					t.Fatalf("the launch must refuse, got %v", err)
 				}
@@ -729,7 +729,7 @@ func TestQALiveSkillDiscoveryPerRuntime(t *testing.T) {
 	if os.Getenv("RHQ_PARITY_LIVE") != "1" {
 		t.Skip("set RHQ_PARITY_LIVE=1 with codex, grok and claude installed")
 	}
-	home := t.TempDir()
+	home := gitTempDir(t)
 	a := &App{Home: home, StateDir: filepath.Join(home, "state")}
 	if err := os.MkdirAll(a.SkillsDir(), 0o755); err != nil {
 		t.Fatal(err)
@@ -808,7 +808,7 @@ func TestQALiveSkillDiscoveryPerRuntime(t *testing.T) {
 		// PERSONA would have. HOME is redirected: `plugin install` writes a
 		// registry, and never into the operator's own ~/.grok.
 		if _, err := exec.LookPath("grok"); err == nil {
-			grokHome := t.TempDir()
+			grokHome := gitTempDir(t)
 			grok := func(arg ...string) (string, error) {
 				cmd := exec.Command("grok", arg...)
 				cmd.Env = append(os.Environ(), "HOME="+grokHome)

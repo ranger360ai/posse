@@ -28,7 +28,7 @@ func notesGuardRepo(t *testing.T) (repo string, git func(env []string, args ...s
 		t.Skip("no git")
 	}
 	repo = gitTempDir(t)
-	gates := t.TempDir()
+	gates := gitTempDir(t)
 	if out, err := exec.Command("git", "-C", repo, "init", "-q", "-b", "main").CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v %s", err, out)
 	}

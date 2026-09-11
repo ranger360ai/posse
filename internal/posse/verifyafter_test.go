@@ -1298,7 +1298,7 @@ func TestVerifyBatchSectionsCarryEachCloseOwnCloserAndCommits(t *testing.T) {
 	t.Parallel()
 	b, _ := newTestBackend(t)
 	a := b.App
-	repo := t.TempDir()
+	repo := gitTempDir(t)
 	qblGit(t, repo, "init", "-q", "-b", "main")
 	qblGit(t, repo, "config", "user.email", "t@example.com")
 	qblGit(t, repo, "config", "user.name", "t")

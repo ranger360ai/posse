@@ -641,7 +641,7 @@ func TestQARedirectEnvIgnoresTheLaunchersOwnGitConfigCount(t *testing.T) {
 	t.Setenv("GIT_CONFIG_KEY_0", "user.name")
 	t.Setenv("GIT_CONFIG_VALUE_0", "the-operator")
 
-	hooks := t.TempDir()
+	hooks := gitTempDir(t)
 	got := gitConfigHooksPathVars(nil, hooks)
 	if got[0].Value != "1" || got[1].Key != "GIT_CONFIG_KEY_0" {
 		t.Errorf("the launcher's own count leaked into the session's index: %v", got)
@@ -657,7 +657,7 @@ func TestQARedirectEnvIgnoresTheLaunchersOwnGitConfigCount(t *testing.T) {
 		out, err := cmd.CombinedOutput()
 		return strings.TrimSpace(string(out)), err
 	}
-	base := []string{"PATH=" + os.Getenv("PATH"), "HOME=" + t.TempDir(),
+	base := []string{"PATH=" + os.Getenv("PATH"), "HOME=" + gitTempDir(t),
 		"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null"}
 	if out, err := run(base, "init", "-q", "."); err != nil {
 		t.Fatalf("git init: %v %s", err, out)

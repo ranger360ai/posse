@@ -196,7 +196,7 @@ func TestBeadsVisibilityGuardHook(t *testing.T) {
 		t.Skip("no git")
 	}
 	home := gitTempDir(t)
-	gates := t.TempDir()
+	gates := gitTempDir(t)
 	pub, priv, unmarked := filepath.Join(home, "pub"), filepath.Join(home, "priv"), filepath.Join(home, "unmarked")
 	cfg := filepath.Join(home, "config.yaml")
 	os.WriteFile(cfg, []byte("beads_visibility:\n  "+pub+": public\n  "+priv+": private\n"), 0o644)
@@ -324,7 +324,7 @@ func TestDocsGenreAndProseGuardHook(t *testing.T) {
 		t.Skip("no git")
 	}
 	home := gitTempDir(t)
-	gates := t.TempDir()
+	gates := gitTempDir(t)
 	pub, priv := filepath.Join(home, "pub"), filepath.Join(home, "priv")
 	cfg := filepath.Join(home, "config.yaml")
 	os.WriteFile(cfg, []byte("beads_visibility:\n  "+pub+": public\n  "+priv+": private\n"), 0o644)
@@ -690,7 +690,7 @@ func TestInstanceOpsPatternGuardsAPublicRepo(t *testing.T) {
 		t.Skip("no git")
 	}
 	home := gitTempDir(t)
-	gates := t.TempDir()
+	gates := gitTempDir(t)
 	pub, priv, plain := filepath.Join(home, "pub"), filepath.Join(home, "priv"), filepath.Join(home, "plain")
 	const secret = "Zephyrine"
 
@@ -1116,7 +1116,7 @@ func TestGuardValueLiteralGuardHook(t *testing.T) {
 	}
 	home := gitTempDir(t)
 	t.Setenv("HOME", home)
-	gates := t.TempDir()
+	gates := gitTempDir(t)
 	pub := filepath.Join(home, "pub")
 	cfg := filepath.Join(home, "config.yaml")
 	write(t, cfg, "dispatch_epoch: 30m\n") // shipped default is 1h: this box's own value derives
@@ -1299,7 +1299,7 @@ func TestIdentityLiteralGuardHook(t *testing.T) {
 	// so it has to be THIS home too, or instance and instance-abs never
 	// differ and dedupe drops one of them.
 	t.Setenv("HOME", home)
-	gates := t.TempDir()
+	gates := gitTempDir(t)
 	pub, priv := filepath.Join(home, "pub"), filepath.Join(home, "priv")
 	cfg := filepath.Join(home, "config.yaml")
 	os.WriteFile(cfg, []byte("beads_visibility:\n  "+pub+": public\n  "+priv+": private\n"), 0o644)

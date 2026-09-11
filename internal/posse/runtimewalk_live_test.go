@@ -746,7 +746,7 @@ func walkRepo(t *testing.T) (string, string) {
 	if seed == "" {
 		seed = walkSeedStore(t)
 	}
-	root := t.TempDir()
+	root := gitTempDir(t)
 	repo, store := filepath.Join(root, "repo"), filepath.Join(root, "beads")
 	if err := os.MkdirAll(filepath.Join(repo, ".beads"), 0o755); err != nil {
 		t.Fatal(err)

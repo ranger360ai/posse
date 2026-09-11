@@ -32,7 +32,7 @@ import (
 // skills/ carries name.
 func relicRepo(t *testing.T, name string) (a *App, repo, dir string) {
 	t.Helper()
-	home := t.TempDir()
+	home := gitTempDir(t)
 	a = &App{Home: home, StateDir: filepath.Join(home, "state")}
 	if err := os.MkdirAll(a.SkillsDir(), 0o755); err != nil {
 		t.Fatal(err)

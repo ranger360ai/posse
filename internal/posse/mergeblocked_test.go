@@ -1017,7 +1017,7 @@ func TestPinsStandWhenTheStoreWillNotSayWhichBlocksAreOpen(t *testing.T) {
 	t.Parallel()
 	newTestBackend(t)
 	bd := Bd{Bin: fakeBinFor(t, "bd")}
-	repo := t.TempDir()
+	repo := gitTempDir(t)
 	for _, args := range [][]string{{"init", "-q", "-b", "main"}, {"config", "user.email", "p@example.com"}, {"config", "user.name", "p"}} {
 		if _, err := git(repo, args...); err != nil {
 			t.Fatal(err)

@@ -54,12 +54,12 @@ func TestLiveSettleEscalationBlocksTheStuckBead(t *testing.T) {
 		t.Skip("no bd on PATH")
 	}
 
-	repo := t.TempDir()
+	repo := gitTempDir(t)
 	// Bd.run execs Bin directly, so --no-daemon rides in a wrapper rather
 	// than in the argv the code under test builds: a daemon per throwaway db
 	// is the leak ranger-base's daemon note is about, and the point here is
 	// the graph, not the transport.
-	wrapper := filepath.Join(t.TempDir(), "bd-nodaemon")
+	wrapper := filepath.Join(gitTempDir(t), "bd-nodaemon")
 	script := "#!/bin/sh\nexec " + bin + " --no-daemon \"$@\"\n"
 	if err := WriteExecutable(wrapper, []byte(script), 0o755); err != nil {
 		t.Fatal(err)

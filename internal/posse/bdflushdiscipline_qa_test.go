@@ -49,7 +49,7 @@ import (
 // never a derived `.git/hooks` (ranger-base-flz7).
 func bfdRepo(t *testing.T, hook bool) string {
 	t.Helper()
-	repo := t.TempDir()
+	repo := gitTempDir(t)
 	siMust(t, repo, "init", "-q", "-b", "main", ".")
 	siMust(t, repo, "config", "user.email", "qa@t")
 	siMust(t, repo, "config", "user.name", "qa")

@@ -170,7 +170,7 @@ func TestSilentRevertSelfTestStillFires(t *testing.T) {
 // rather than an edit to an existing one. Returns the repo path.
 func srPlantAddOnlyRevert(t *testing.T) string {
 	t.Helper()
-	repo := t.TempDir()
+	repo := gitTempDir(t)
 	write := func(name, body string) {
 		t.Helper()
 		if err := os.WriteFile(filepath.Join(repo, name), []byte(body), 0o644); err != nil {
@@ -186,7 +186,7 @@ func srPlantAddOnlyRevert(t *testing.T) string {
 	// The fix: one new file, landed from a PRIVATE index. HEAD gets it; the
 	// shared .git/index never hears about it.
 	write("newpin_test.go", "package x // the regression pin\n")
-	priv := []string{"GIT_INDEX_FILE=" + filepath.Join(t.TempDir(), "index")}
+	priv := []string{"GIT_INDEX_FILE=" + filepath.Join(gitTempDir(t), "index")}
 	srGit(t, repo, priv, "read-tree", "HEAD")
 	srGit(t, repo, priv, "add", "--", "newpin_test.go")
 	srGit(t, repo, priv, "commit", "-qm", "the fix: add newpin_test.go")

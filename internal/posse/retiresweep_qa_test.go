@@ -141,7 +141,7 @@ func n27xvFixture(t *testing.T, status, grace string) (*Dispatcher, string, *Ses
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
 
-	repo := t.TempDir()
+	repo := gitTempDir(t)
 	mustGit(t, repo, "init", "-q", "-b", "main", ".")
 	mustGit(t, repo, "config", "user.email", "t@example.com")
 	mustGit(t, repo, "config", "user.name", "t")

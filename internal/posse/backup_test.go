@@ -36,7 +36,7 @@ var backupAt = time.Date(2026, 9, 1, 3, 15, 0, 0, time.UTC)
 // and a backup dir. It returns the app and the queue repo.
 func backupRig(t *testing.T) (*App, string) {
 	t.Helper()
-	root := t.TempDir()
+	root := gitTempDir(t)
 	queue := filepath.Join(root, "queue")
 	store := filepath.Join(queue, ".beads")
 	if err := os.MkdirAll(store, 0o700); err != nil {
@@ -573,7 +573,7 @@ func TestBackupPrunesToKeepNewest(t *testing.T) {
 // the missing journal is said out loud.
 func TestBackupOfAQueueWithNoCommits(t *testing.T) {
 	a, queue := backupRig(t)
-	fresh := filepath.Join(t.TempDir(), "fresh")
+	fresh := filepath.Join(gitTempDir(t), "fresh")
 	if err := os.MkdirAll(filepath.Join(fresh, ".beads"), 0o700); err != nil {
 		t.Fatal(err)
 	}

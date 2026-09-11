@@ -223,7 +223,7 @@ func TestShopCheckUnpushedCommits(t *testing.T) {
 	t.Parallel()
 	b, _ := newTestBackend(t)
 	repo := wtRepo(t)
-	bare := t.TempDir()
+	bare := gitTempDir(t)
 	mustGit(t, bare, "init", "-q", "--bare")
 	mustGit(t, repo, "remote", "add", "origin", bare)
 	mustGit(t, repo, "push", "-q", "-u", "origin", "main")

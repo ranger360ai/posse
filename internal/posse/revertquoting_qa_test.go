@@ -77,7 +77,7 @@ func TestQAGuardRefusalNamesQuotedPathsUsably(t *testing.T) {
 	if _, err := installCommitGuard(repo); err != nil {
 		t.Fatal(err)
 	}
-	persona := []string{"RHQ_PERSONA=qa", "RHQ_GATES_DIR=" + t.TempDir()}
+	persona := []string{"RHQ_PERSONA=qa", "RHQ_GATES_DIR=" + gitTempDir(t)}
 
 	out, err := git(persona, "revert", "--no-edit", "HEAD~1")
 	if err == nil {
@@ -214,7 +214,7 @@ func TestQAGuardRefusalNamesEveryPathGitQuotes(t *testing.T) {
 	if _, err := installCommitGuard(repo); err != nil {
 		t.Fatal(err)
 	}
-	persona := []string{"RHQ_PERSONA=qa", "RHQ_GATES_DIR=" + t.TempDir()}
+	persona := []string{"RHQ_PERSONA=qa", "RHQ_GATES_DIR=" + gitTempDir(t)}
 
 	out, err := git(persona, "revert", "--no-edit", "HEAD~1")
 	if err == nil {
@@ -357,7 +357,7 @@ func TestQAGuardRefusalNamesBothSidesOfAStagedRename(t *testing.T) {
 	if _, err := installCommitGuard(repo); err != nil {
 		t.Fatal(err)
 	}
-	persona := []string{"RHQ_PERSONA=qa", "RHQ_GATES_DIR=" + t.TempDir()}
+	persona := []string{"RHQ_PERSONA=qa", "RHQ_GATES_DIR=" + gitTempDir(t)}
 
 	out, err := git(persona, "revert", "--no-edit", "HEAD")
 	if err == nil {
@@ -453,7 +453,7 @@ func TestQAGuardRevertHeadArmNamesAPathWithABackslashEscape(t *testing.T) {
 	if _, err := installCommitGuard(repo); err != nil {
 		t.Fatal(err)
 	}
-	persona := []string{"RHQ_PERSONA=qa", "RHQ_GATES_DIR=" + t.TempDir()}
+	persona := []string{"RHQ_PERSONA=qa", "RHQ_GATES_DIR=" + gitTempDir(t)}
 
 	// --no-commit stages the revert and writes REVERT_HEAD without reaching
 	// this hook; the unqualified commit after it is what the arm answers.

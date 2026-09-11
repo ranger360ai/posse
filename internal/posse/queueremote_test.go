@@ -328,7 +328,7 @@ func TestSourceRemoteArchiveCarriesNoRemoteStanza(t *testing.T) {
 // `home/config.yaml` may carry.
 func fetchableUpstream(t *testing.T, queue string) string {
 	t.Helper()
-	up := filepath.Join(t.TempDir(), "upstream")
+	up := filepath.Join(gitTempDir(t), "upstream")
 	if err := os.MkdirAll(up, 0o700); err != nil {
 		t.Fatal(err)
 	}

@@ -53,7 +53,7 @@ func newVisWallCfg(t *testing.T, instanceDir, extraConfig string) *visWall {
 	t.Setenv("HOME", home)
 	w := &visWall{
 		home:     home,
-		gates:    t.TempDir(),
+		gates:    gitTempDir(t),
 		pub:      filepath.Join(home, "pub"),
 		priv:     filepath.Join(home, "priv"),
 		instance: filepath.Join(home, instanceDir),

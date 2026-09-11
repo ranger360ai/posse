@@ -29,7 +29,7 @@ func qRepo(t *testing.T) string {
 // worktree looks like after the cutover.
 func qWork(t *testing.T, store string) string {
 	t.Helper()
-	dir := t.TempDir()
+	dir := gitTempDir(t)
 	write(t, filepath.Join(dir, ".beads", beadsRedirect), store+"\n")
 	return dir
 }
@@ -197,7 +197,7 @@ func TestQueueCommitRefusesAStoreOutsideTheQueueRepo(t *testing.T) {
 // the real one with no remote at all, so this is the second wall, not the
 // first.
 func TestQueueCommitNeverPushes(t *testing.T) {
-	bare := t.TempDir()
+	bare := gitTempDir(t)
 	mustGit(t, bare, "init", "-q", "--bare", ".")
 	repo := qRepo(t)
 	mustGit(t, repo, "remote", "add", "origin", bare)

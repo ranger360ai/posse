@@ -348,7 +348,7 @@ func extDiffMarkerDriver(t *testing.T, log string) string {
 // quiet on an empty index whatever the variable says.
 func extDiffProbeRepo(t *testing.T) string {
 	t.Helper()
-	dir := t.TempDir()
+	dir := gitTempDir(t)
 	run := func(args ...string) {
 		t.Helper()
 		c := exec.Command("git", args...)

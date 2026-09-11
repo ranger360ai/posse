@@ -994,7 +994,7 @@ func TestPrePushHook(t *testing.T) {
 	if !PrePushHookInstalled(repo) {
 		t.Error("installed hook not detected")
 	}
-	gates := t.TempDir()
+	gates := gitTempDir(t)
 	run := func(env ...string) (string, int) {
 		cmd := exec.Command(p, "origin", "https://example.invalid/x.git")
 		cmd.Env = append([]string{"PATH=" + os.Getenv("PATH"), "RHQ_GATES_DIR=" + gates, "RHQ_PERSONA=security"}, env...)
@@ -1035,7 +1035,7 @@ func TestPrePushHook(t *testing.T) {
 	if b, _ := os.ReadFile(p); !strings.Contains(string(b), "echo mine") {
 		t.Error("foreign hook was clobbered")
 	}
-	if _, err := InstallPrePushHook(t.TempDir()); err == nil {
+	if _, err := InstallPrePushHook(gitTempDir(t)); err == nil {
 		t.Error("non-repo must error")
 	}
 	// End to end: a real push into a bare remote is refused by git itself.
@@ -1899,7 +1899,7 @@ func TestInstallCommitGuardRefreshesItsChainedHook(t *testing.T) {
 			if out, err := git(repo, nil, "commit", "-qm", "base"); err != nil {
 				t.Fatalf("base commit: %v %s", err, out)
 			}
-			wt := filepath.Join(t.TempDir(), "session")
+			wt := filepath.Join(gitTempDir(t), "session")
 			if out, err := git(repo, nil, "worktree", "add", "-q", "-b", "posse/session", wt); err != nil {
 				t.Fatalf("git worktree add: %v %s", err, out)
 			}
@@ -2182,7 +2182,7 @@ func TestSharedIndexCommitHook(t *testing.T) {
 		t.Skip("no git")
 	}
 	repo := gitTempDir(t)
-	gates := t.TempDir()
+	gates := gitTempDir(t)
 	if out, err := exec.Command("git", "-C", repo, "init", "-q", "-b", "main").CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v %s", err, out)
 	}
@@ -2302,7 +2302,7 @@ func TestSharedIndexCommitHook(t *testing.T) {
 	if b, _ := os.ReadFile(p); !strings.Contains(string(b), "echo mine") {
 		t.Error("foreign hook was clobbered")
 	}
-	if _, err := installCommitGuard(t.TempDir()); err == nil {
+	if _, err := installCommitGuard(gitTempDir(t)); err == nil {
 		t.Error("non-repo must error")
 	}
 }
@@ -2407,7 +2407,7 @@ func TestSharedIndexCommitHookRefusesHandRolledNextIndex(t *testing.T) {
 		"next-index-x/index",
 		"", // .git/next-index-mine
 	} {
-		dir := t.TempDir()
+		dir := gitTempDir(t)
 		idx := filepath.Join(dir, name)
 		if name == "" {
 			name = ".git/next-index-mine"
@@ -2439,7 +2439,7 @@ func TestSharedIndexCommitHookRefusesHandRolledNextIndex(t *testing.T) {
 	// reproduce end to end from a shell the wall exempted, which is what made
 	// the exemption expensive rather than free.
 	{
-		dir := t.TempDir()
+		dir := gitTempDir(t)
 		env := []string{"GIT_INDEX_FILE=" + filepath.Join(dir, "index")}
 		write(repo, "fix.go", "v2-THE-FIX")
 		if out, err := git(repo, env, "read-tree", "HEAD"); err != nil {
@@ -2469,7 +2469,7 @@ func TestSharedIndexCommitHookRefusesHandRolledNextIndex(t *testing.T) {
 	// …and in a linked worktree, whose next-index-<pid> lives in
 	// .git/worktrees/<name>, not in the common git dir. A location check
 	// written against the common dir would refuse this.
-	wt := filepath.Join(t.TempDir(), "wt")
+	wt := filepath.Join(gitTempDir(t), "wt")
 	if out, err := git(repo, nil, "worktree", "add", "-q", wt, "-b", "side"); err != nil {
 		t.Fatalf("worktree add: %v %s", err, out)
 	}
@@ -2711,7 +2711,7 @@ func TestL3HooksNeverLookUpDateOnThePath(t *testing.T) {
 	if _, err := exec.LookPath("date"); err != nil {
 		t.Skip("no date")
 	}
-	home := t.TempDir()
+	home := gitTempDir(t)
 	a := &App{Home: home, StateDir: filepath.Join(home, "state")}
 	shimGates, shimBin, _, err := a.RenderGates("developer", []string{"Bash(date:*)"})
 	if err != nil {
@@ -2760,7 +2760,7 @@ func TestL3HooksNeverLookUpDateOnThePath(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		hookGates := t.TempDir()
+		hookGates := gitTempDir(t)
 		cmd := exec.Command(filepath.Join(hooks, "pre-push"))
 		cmd.Env = []string{"PATH=" + sessionPath, "RHQ_GATES_DIR=" + hookGates,
 			"RHQ_TOOLS_DENY=Bash(git push:*)", "RHQ_PERSONA=developer"}
@@ -2782,7 +2782,7 @@ func TestL3HooksNeverLookUpDateOnThePath(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(repo, "shared.txt"), []byte("mine\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		hookGates := t.TempDir()
+		hookGates := gitTempDir(t)
 		env := []string{"PATH=" + sessionPath, "HOME=" + repo, "RHQ_GATES_DIR=" + hookGates,
 			"RHQ_PERSONA=developer",
 			"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t"}

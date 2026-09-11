@@ -67,7 +67,7 @@ func TestLiveCIWatchFiresOnceAndClears(t *testing.T) {
 	// Bd.run execs Bin directly, so --no-daemon rides in a wrapper rather
 	// than in the argv the code under test builds (settleescalation's rule):
 	// a daemon per throwaway db is a leak, and the point here is the store.
-	wrapper := filepath.Join(t.TempDir(), "bd-nodaemon")
+	wrapper := filepath.Join(gitTempDir(t), "bd-nodaemon")
 	if err := WriteExecutable(wrapper, []byte("#!/bin/sh\nexec "+bdbin+" --no-daemon \"$@\"\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +100,7 @@ func TestLiveCIWatchFiresOnceAndClears(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ghdir := t.TempDir()
+	ghdir := gitTempDir(t)
 	runsPath := filepath.Join(ghdir, "runs.json")
 	ghPath := filepath.Join(ghdir, "gh")
 	if err := WriteExecutable(ghPath, []byte("#!/bin/sh\nexec cat "+runsPath+"\n"), 0o755); err != nil {

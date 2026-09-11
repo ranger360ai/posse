@@ -260,7 +260,7 @@ func gitConfigProbeHooks(t *testing.T) string {
 // checkout to move and fire post-checkout.
 func gitConfigProbeRepo(t *testing.T) string {
 	t.Helper()
-	dir := t.TempDir()
+	dir := gitTempDir(t)
 	run := func(args ...string) {
 		t.Helper()
 		c := exec.Command("git", args...)

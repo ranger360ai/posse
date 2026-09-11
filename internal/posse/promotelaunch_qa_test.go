@@ -329,10 +329,10 @@ func TestQAHomeCutoverRehearsal(t *testing.T) {
 	if err := os.WriteFile(pid, append(body, []byte("cage: shims\n")...), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := b.planLaunch(NewSessionOpts{Name: "s1", Dir: t.TempDir(), Agent: "developer", Bead: "x-1"}); err == nil {
+	if _, err := b.planLaunch(NewSessionOpts{Name: "s1", Dir: gitTempDir(t), Agent: "developer", Bead: "x-1"}); err == nil {
 		t.Error("dispatch launched on a corrupted promoted set")
 	}
-	if _, err := b.planLaunch(NewSessionOpts{Name: "s2", Dir: t.TempDir(), Agent: "developer"}); err != nil {
+	if _, err := b.planLaunch(NewSessionOpts{Name: "s2", Dir: gitTempDir(t), Agent: "developer"}); err != nil {
 		t.Errorf("an interactive launch was refused: %v", err)
 	}
 	if !strings.Contains(warn.String(), "DEGRADED") || !strings.Contains(warn.String(), "agents/devops.md") {
@@ -346,7 +346,7 @@ func TestQAHomeCutoverRehearsal(t *testing.T) {
 		t.Fatalf("re-promote did not clear the mismatch: %s", v.Line())
 	}
 	t.Logf("live-shape rehearsal: %d promoted files, verify cost %v", len(v.Manifest.Files), v.Elapsed)
-	if _, err := b.planLaunch(NewSessionOpts{Name: "s3", Dir: t.TempDir(), Agent: "developer", Bead: "x-1"}); err != nil {
+	if _, err := b.planLaunch(NewSessionOpts{Name: "s3", Dir: gitTempDir(t), Agent: "developer", Bead: "x-1"}); err != nil {
 		t.Errorf("dispatch still refused after the re-promote: %v", err)
 	}
 }

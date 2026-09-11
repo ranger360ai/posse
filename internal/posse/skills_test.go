@@ -337,7 +337,7 @@ func TestSkillsParity(t *testing.T) {
 // leaves another persona's links alone, and sweeps its own dead ones.
 func TestRenderAgentsSkills(t *testing.T) {
 	t.Parallel()
-	home := t.TempDir()
+	home := gitTempDir(t)
 	a := &App{Home: home, StateDir: filepath.Join(home, "state")}
 	os.MkdirAll(a.SkillsDir(), 0o755)
 	mkSkill(t, a.SkillsDir(), "dataviz")

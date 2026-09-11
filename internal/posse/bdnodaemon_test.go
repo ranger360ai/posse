@@ -191,7 +191,7 @@ func TestLiveBdAcceptsTheTripwireAndAnswersTheSameRows(t *testing.T) {
 	if _, err := exec.LookPath("bd"); err != nil {
 		t.Skip("no bd on PATH")
 	}
-	repo := t.TempDir()
+	repo := gitTempDir(t)
 	beads := filepath.Join(repo, ".beads")
 	if err := os.MkdirAll(beads, 0o755); err != nil {
 		t.Fatal(err)

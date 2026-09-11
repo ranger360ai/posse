@@ -712,7 +712,7 @@ func TestParityL3ClaimsFollowIdentityAndBehavior(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
-	home := t.TempDir()
+	home := gitTempDir(t)
 	a := &App{Home: home, AgentsDir: filepath.Join(home, "agents"), ConfigPath: filepath.Join(home, "config.yaml")}
 	claude, _ := a.LoadRuntime("claude")
 	ag := loadTestAgent(t, "---\nname: dev\ndeny:\n  - Bash(git push:*)\n  - Bash(git commit unless --)\n---\nYou are dev.\n")

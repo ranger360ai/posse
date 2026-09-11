@@ -169,7 +169,7 @@ func TestWorktreeGitCommonDirCrossesTheBoundary(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("needs git")
 	}
-	main := t.TempDir()
+	main := gitTempDir(t)
 	run := func(dir string, args ...string) {
 		t.Helper()
 		c := exec.Command("git", args...)
@@ -184,7 +184,7 @@ func TestWorktreeGitCommonDirCrossesTheBoundary(t *testing.T) {
 	os.WriteFile(filepath.Join(main, "f"), []byte("x\n"), 0o644)
 	run(main, "add", "f")
 	run(main, "commit", "-m", "one")
-	wt := filepath.Join(t.TempDir(), "wt")
+	wt := filepath.Join(gitTempDir(t), "wt")
 	run(main, "worktree", "add", wt)
 
 	a := cageApp(t)
@@ -211,7 +211,7 @@ func TestWorktreeGitCommonDirCrossesTheBoundary(t *testing.T) {
 		}
 	}
 	// Neither does a directory that is not a repo at all.
-	if got := gitCommonDirOutside(t.TempDir()); got != "" {
+	if got := gitCommonDirOutside(gitTempDir(t)); got != "" {
 		t.Errorf("not a repo → nothing to mount, got %q", got)
 	}
 }
@@ -227,7 +227,7 @@ func TestGitCommonDirOutsideIgnoresAPlantedHooksPath(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("needs git")
 	}
-	main := t.TempDir()
+	main := gitTempDir(t)
 	run := func(dir string, args ...string) {
 		t.Helper()
 		c := exec.Command("git", args...)
@@ -242,12 +242,12 @@ func TestGitCommonDirOutsideIgnoresAPlantedHooksPath(t *testing.T) {
 	os.WriteFile(filepath.Join(main, "f"), []byte("x\n"), 0o644)
 	run(main, "add", "f")
 	run(main, "commit", "-m", "one")
-	wt := filepath.Join(t.TempDir(), "wt")
+	wt := filepath.Join(gitTempDir(t), "wt")
 	run(main, "worktree", "add", wt)
 
 	// Written to the common config (main/.git/config), so every worktree
 	// sees it — exactly the shape of a managed or planted redirect.
-	outside := t.TempDir()
+	outside := gitTempDir(t)
 	run(main, "config", "core.hooksPath", outside)
 
 	want, err := git(wt, "rev-parse", "--git-common-dir")

@@ -49,7 +49,7 @@ func qaPrivateIndexChainRepo(t *testing.T) (repo, witness string, git func(env [
 		t.Fatal(err)
 	}
 	hooks := filepath.Join(repo, ".git", "hooks")
-	witness = filepath.Join(t.TempDir(), "bd.log")
+	witness = filepath.Join(gitTempDir(t), "bd.log")
 	if err := os.Rename(filepath.Join(hooks, "prepare-commit-msg"), filepath.Join(hooks, "posse-prepare-commit-msg")); err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func qaPrivateIndexChainRepo(t *testing.T) (repo, witness string, git func(env [
 	if out, err := git(nil, "commit", "-qm", "base", "--", "fix.go", "other.txt"); err != nil {
 		t.Fatalf("fixture base commit: %v %s", err, out)
 	}
-	return repo, witness, git, []string{"RHQ_PERSONA=qa", "RHQ_GATES_DIR=" + t.TempDir()}
+	return repo, witness, git, []string{"RHQ_PERSONA=qa", "RHQ_GATES_DIR=" + gitTempDir(t)}
 }
 
 // TestQAPrivateIndexRefusedThroughTheChain: rangerhq-cqq1's recipe, run in the

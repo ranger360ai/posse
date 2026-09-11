@@ -1988,7 +1988,7 @@ func fakeDirOf(t *testing.T) string {
 	if v, ok := fakeDirs.Load(t); ok {
 		return v.(string)
 	}
-	dir := t.TempDir()
+	dir := gitTempDir(t)
 	setFakeDir(t, dir)
 	return dir
 }
@@ -2016,8 +2016,8 @@ func fakeBinFor(t *testing.T, name string) string {
 
 func newTestBackend(t *testing.T) (*HerdrBackend, string) {
 	t.Helper()
-	home := t.TempDir()
-	fake := t.TempDir()
+	home := gitTempDir(t)
+	fake := gitTempDir(t)
 	setFakeDir(t, fake)
 	b := &HerdrBackend{App: hermetic(t, NewAppAt(home)), H: Herdr{Bin: fakeBinFor(t, "herdr")}}
 	captureWarn(t, b)

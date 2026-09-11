@@ -70,7 +70,7 @@ func qaChainRepo(t *testing.T) (repo, witness string) {
 		t.Fatal(err)
 	}
 	hooks := filepath.Join(repo, ".git", "hooks")
-	witness = filepath.Join(t.TempDir(), "bd.log")
+	witness = filepath.Join(gitTempDir(t), "bd.log")
 	for _, slot := range []string{"pre-push", "prepare-commit-msg"} {
 		if err := os.Rename(filepath.Join(hooks, slot), filepath.Join(hooks, "posse-"+slot)); err != nil {
 			t.Fatal(err)
@@ -120,7 +120,7 @@ func runHook(t *testing.T, repo, slot, stdin string, env ...string) (string, int
 // symlink shadows relative to the ambient PATH.
 func pathWithoutCmp(t *testing.T) string {
 	t.Helper()
-	bin := t.TempDir()
+	bin := gitTempDir(t)
 	seen := map[string]bool{}
 	for _, dir := range filepath.SplitList(PathOutsideGates("")) {
 		entries, err := os.ReadDir(dir)

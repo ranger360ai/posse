@@ -99,7 +99,7 @@ func qcRollbackRecipe(t *testing.T, f qcFixture) string {
 // replay is that it still reads after the move.
 func qcConstitution(t *testing.T) (repo, droppedID string) {
 	t.Helper()
-	repo = t.TempDir()
+	repo = gitTempDir(t)
 	mustGit(t, repo, "init", "-q", "-b", "main", ".")
 	mustGit(t, repo, "config", "user.email", "t@example.com")
 	mustGit(t, repo, "config", "user.name", "t")
@@ -262,7 +262,7 @@ func qcCageShim(t *testing.T) string {
 	if err != nil {
 		t.Skipf("no git on PATH: %v", err)
 	}
-	dir := t.TempDir()
+	dir := gitTempDir(t)
 	shim := filepath.Join(dir, "git")
 	write(t, shim, `#!/bin/sh
 qualified() {
@@ -301,9 +301,9 @@ exec '`+gitBin+`' "$@"
 func TestQueueCutoverCarriesTheCensusIntoTheQueueRepo(t *testing.T) {
 	t.Parallel()
 	constitution, dropped := qcConstitution(t)
-	queue := filepath.Join(t.TempDir(), "queue")
-	worktrees := t.TempDir()
-	project := qcWork(t, t.TempDir(), filepath.Join(constitution, ".beads"))
+	queue := filepath.Join(gitTempDir(t), "queue")
+	worktrees := gitTempDir(t)
+	project := qcWork(t, gitTempDir(t), filepath.Join(constitution, ".beads"))
 
 	before, err := removedBeads(constitution)
 	if err != nil {
@@ -339,7 +339,7 @@ func TestQueueCutoverCarriesTheCensusIntoTheQueueRepo(t *testing.T) {
 	// The counterfactual, in the same test: the naive move — copy the
 	// projection into a repo that starts at one commit — and the alarm goes
 	// quiet with no error anywhere.
-	naive := t.TempDir()
+	naive := gitTempDir(t)
 	mustGit(t, naive, "init", "-q", "-b", "main", ".")
 	mustGit(t, naive, "config", "user.email", "t@example.com")
 	mustGit(t, naive, "config", "user.name", "t")
@@ -993,7 +993,7 @@ func TestQueueCutoverCommitsDriftWithAPathQualifiedCommit(t *testing.T) {
 	// The witness that the fixture blocks anything at all: the shim refuses
 	// the unqualified form in a repo of its own. Without it this pin is
 	// green against a shim that never fires.
-	scratch := t.TempDir()
+	scratch := gitTempDir(t)
 	mustGit(t, scratch, "init", "-q", "-b", "main", ".")
 	write(t, filepath.Join(scratch, "f"), "x\n")
 	caged := exec.Command(filepath.Join(shimDir, "git"), "-C", scratch, "commit", "-q", "-m", "unqualified")
@@ -1003,11 +1003,11 @@ func TestQueueCutoverCommitsDriftWithAPathQualifiedCommit(t *testing.T) {
 
 	constitution, _ := qcConstitution(t)
 	qcDrift(t, constitution)
-	queue := filepath.Join(t.TempDir(), "queue")
-	project := qcWork(t, t.TempDir(), filepath.Join(constitution, ".beads"))
+	queue := filepath.Join(gitTempDir(t), "queue")
+	project := qcWork(t, gitTempDir(t), filepath.Join(constitution, ".beads"))
 
 	out, err := qcRunEnv(t, []string{"PATH=" + shimDir + string(os.PathListSeparator) + os.Getenv("PATH")},
-		constitution, queue, t.TempDir(), []string{project})
+		constitution, queue, gitTempDir(t), []string{project})
 	if err != nil {
 		t.Fatalf("the script cannot run to completion from a caged session: %v\n%s", err, out)
 	}

@@ -195,7 +195,7 @@ func TestAStaleImageSkipsTheLivePinAndACurrentOneRunsIt(t *testing.T) {
 // own tree.
 func tempGitTree(t *testing.T) string {
 	t.Helper()
-	dir := t.TempDir()
+	dir := gitTempDir(t)
 	run := func(args ...string) string {
 		t.Helper()
 		c := exec.Command("git", append([]string{"-C", dir}, args...)...)

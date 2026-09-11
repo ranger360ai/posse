@@ -34,7 +34,7 @@ import (
 // App instead of to backupRig's own bare home.
 func backupClockQueue(t *testing.T) string {
 	t.Helper()
-	queue := filepath.Join(t.TempDir(), "queue")
+	queue := filepath.Join(gitTempDir(t), "queue")
 	store := filepath.Join(queue, ".beads")
 	if err := os.MkdirAll(store, 0o700); err != nil {
 		t.Fatal(err)

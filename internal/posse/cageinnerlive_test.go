@@ -76,13 +76,19 @@ func liveCageRepo(t *testing.T, probe string) string {
 // sun_path at 104 bytes and the go test temp dir alone spends most of it.
 // The sockets here are the point of two of the assertions, so the path has
 // to be short before anything else can be true.
+//
+// It cannot be gitTempDir — the length is the whole reason it exists — so it
+// registers gitTempDir's removal itself. liveCageRepo `git init`s this root,
+// which makes it the same exposure gitTempDir exists for, and the old
+// os.RemoveAll here did not even report the leftover: it discarded the error,
+// so a tree that would not go away left no trace at all (ranger-base-0gp7d).
 func shortTempDir(t *testing.T) string {
 	t.Helper()
 	dir, err := os.MkdirTemp("/tmp", "posse6so")
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { os.RemoveAll(dir) })
+	t.Cleanup(func() { removeAllTolerant(t, dir) })
 	// Resolved, because /tmp is a symlink to /private/tmp on macOS and git
 	// writes the RESOLVED path into a worktree's .git pointer and into a
 	// local remote's url. Mounts are same-path in and out, so a fixture that

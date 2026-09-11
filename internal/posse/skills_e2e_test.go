@@ -23,7 +23,7 @@ func TestE2ESkillSurfaces(t *testing.T) {
 	if os.Getenv("RHQ_E2E") != "1" {
 		t.Skip("set RHQ_E2E=1 with codex and grok installed")
 	}
-	home := t.TempDir()
+	home := gitTempDir(t)
 	a := &App{Home: home, StateDir: filepath.Join(home, "state")}
 	os.MkdirAll(a.SkillsDir(), 0o755)
 	mkSkill(t, a.SkillsDir(), "posse-e2e-probe")

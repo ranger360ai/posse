@@ -365,7 +365,7 @@ func TestQASkillsExcludeIsAnchoredAtTheRepoRootAndSharedByWorktrees(t *testing.T
 	}
 	gitAt(t, repo, "-c", "user.email=t@t", "-c", "user.name=t", "add", "seed")
 	gitAt(t, repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "seed")
-	wt := filepath.Join(t.TempDir(), "wt")
+	wt := filepath.Join(gitTempDir(t), "wt")
 	gitAt(t, repo, "worktree", "add", "-q", "--detach", wt)
 	before, _ := os.ReadFile(ex)
 	if _, err := a.RenderAgentsSkills(wt, "developer", []string{"dataviz"}); err != nil {
@@ -395,7 +395,7 @@ func TestQASkillsExcludeIsAnchoredAtTheRepoRootAndSharedByWorktrees(t *testing.T
 	// Best effort: two git calls fail, nothing is written, the binding still
 	// happens. A refusal here would make `posse new` in a plain directory
 	// fail over a hygiene step.
-	plain := t.TempDir()
+	plain := gitTempDir(t)
 	if dir, err := a.RenderAgentsSkills(plain, "developer", []string{"dataviz"}); err != nil || dir == "" {
 		t.Errorf("a dir that is not a repo has nothing to pollute and must still bind: %q %v", dir, err)
 	}

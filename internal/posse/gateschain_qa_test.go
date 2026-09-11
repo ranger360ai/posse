@@ -187,7 +187,7 @@ func TestQAGuardRefusesACleanRevertAndNamesTheWayThrough(t *testing.T) {
 	if _, err := installCommitGuard(repo); err != nil {
 		t.Fatal(err)
 	}
-	persona := []string{"RHQ_PERSONA=qa", "RHQ_GATES_DIR=" + t.TempDir()}
+	persona := []string{"RHQ_PERSONA=qa", "RHQ_GATES_DIR=" + gitTempDir(t)}
 
 	// A clean revert is refused — and the refusal has to be usable, because
 	// git has already staged the revert by the time it prints.
@@ -311,7 +311,7 @@ func TestQAGuardRevertParagraphSurvivesAPathWithNoCmp(t *testing.T) {
 	if _, err := installCommitGuard(repo); err != nil {
 		t.Fatal(err)
 	}
-	persona := []string{"RHQ_PERSONA=qa", "RHQ_GATES_DIR=" + t.TempDir()}
+	persona := []string{"RHQ_PERSONA=qa", "RHQ_GATES_DIR=" + gitTempDir(t)}
 
 	out, err := git(persona, "revert", "--no-edit", "HEAD")
 	if err == nil {
@@ -686,7 +686,7 @@ func TestQAChainedInstallTakesOverBdsShimAndStaysDetected(t *testing.T) {
 	if err := os.MkdirAll(hooks, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	witness := filepath.Join(t.TempDir(), "bd.log")
+	witness := filepath.Join(gitTempDir(t), "bd.log")
 	shim := "#!/bin/sh\n# bd-shim v1\nprintf 'ran[%s]\\n' \"$0\" >> " + witness + "\nexit 0\n"
 	for _, slot := range []string{"pre-push", "prepare-commit-msg"} {
 		if err := WriteExecutable(filepath.Join(hooks, slot), []byte(shim), 0o755); err != nil {
@@ -1005,7 +1005,7 @@ func TestQAWorkingForeignChainIsRefusedOnIdentityNotBehavior(t *testing.T) {
 	}
 
 	// Witness: §9's three probes, verbatim, against what was just planted.
-	msg := filepath.Join(t.TempDir(), "COMMIT_EDITMSG")
+	msg := filepath.Join(gitTempDir(t), "COMMIT_EDITMSG")
 	if err := os.WriteFile(msg, []byte("x\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}

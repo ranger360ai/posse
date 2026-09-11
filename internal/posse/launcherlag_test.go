@@ -14,7 +14,7 @@ import (
 // would carry.
 func posseRig(t *testing.T, module string) (repo, first string) {
 	t.Helper()
-	repo = t.TempDir()
+	repo = gitTempDir(t)
 	mustGit(t, repo, "init", "-q", "-b", "main", ".")
 	mustGit(t, repo, "config", "user.email", "t@example.com")
 	mustGit(t, repo, "config", "user.name", "t")
