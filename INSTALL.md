@@ -668,15 +668,18 @@ $ posse agent check --all               # lint every PID against ADR 0001
 ```
 
 **Upgrading an instance that has the generics?** Re-run `posse init`. It
-moves each generic that is still byte-for-byte the shipped example out of
-`agents/` and onto the shelf, and prints what it moved. It writes no
-`promoted.json` on a home that already has a constitution (§4), so it cannot
-arm the launch verify behind your back. It leaves alone —
-and names — any you edited in place (that one is your persona now, not an
-example), any named by `coordinator:`, `default_persona:` or
-`verify_assignee:`. Work
-already assigned to a retired name is not reassigned: check `bd list
---assignee <name>` before you dispatch again.
+moves each generic that is still byte-for-byte an example posse shipped —
+this release's or any earlier one's — out of `agents/` and onto the shelf,
+and prints what it moved. The identity test is posse's own record of every
+version it has ever shipped of that file, not just the one this binary
+carries, so a home seeded by an older posse retires its generics too
+(`ranger-base-8ehw`). It writes no `promoted.json` on a home that already
+has a constitution (§4), so it cannot arm the launch verify behind your
+back. It leaves alone — and names — any you edited in place (that one is
+your persona now, not an example), any named by `coordinator:`,
+`default_persona:` or `verify_assignee:`. Work already assigned to a retired
+name is not reassigned: check `bd list --assignee <name>` before you
+dispatch again.
 
 On a home `posse promote` manages, `init` refuses outright (§4) and the
 retirement belongs in the constitution repo instead.
