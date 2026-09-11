@@ -771,10 +771,20 @@ ORPHANER
 
 	# ARM 2, the control for arm 1: the THIRD is queued, not run. Without
 	# this arm, arm 1 is equally green over a lock that never locks.
+	#
+	# It waits for the holder's own ANSWER, not for a number of seconds
+	# (ranger-base-1p4ig). The `sleep 2` this replaces was the
+	# ranger-base-4psg2 defect in the one spelling that pin cannot see —
+	# a deadline that is not a wait_file argument — and THIS arm survived it
+	# only because it reads in the safe direction: a fork that has not been
+	# scheduled has not written its marker either, so a loaded box made the
+	# arm vacuously green rather than falsely red. Arm 3 reads the same log
+	# and is not safe that way, which is what the sleep actually cost.
 	"$tmp/holder.sh" "$SUITE_LOCK_LIB" "$tmp/m3" "$tmp/hold3" go test -timeout 25m ./... &
 	h3=$!
-	sleep 2
-	if [ -e "$tmp/m3" ]; then
+	if ! wait_answer "$tmp/m3" "$fork_s"; then
+		bad 'queue: a third full suite waits' "$(answer_of "$tmp/m3" "$fork_s")"
+	elif [ -e "$tmp/m3" ]; then
 		bad 'queue: a third full suite waits' "it started anyway, on slot $(slot_of "$tmp/m3")"
 	else
 		ok 'queue: a third full suite waits'
@@ -782,6 +792,11 @@ ORPHANER
 
 	# ARM 3: and the waiting run SAYS whose lock it is waiting on, by
 	# worktree. A queue nobody can read is a hang.
+	#
+	# Arm 2's wait_answer is what makes this arm about the SENTENCE. The log
+	# is known to have been written by the time this reads it, so a FAIL here
+	# means the queued line does not name a worktree — never that the fork
+	# was slow. Read once, deliberately: there is nothing left to wait for.
 	waiting_re='waiting for suite lock held by .*/'
 	m3_log=$([ -r "$tmp/m3.log" ] && printf '%s' "$(<"$tmp/m3.log")")
 	if [[ $m3_log =~ $waiting_re ]]; then
@@ -954,18 +969,24 @@ suite_lock_release
 printf 'reached the end
 '
 STRICT
-	# Two slots are held, so this one queues. Give it long enough to have
-	# swept and gone round the loop, then free a slot and require it to
-	# have got all the way through.
-	( POSSE_SUITE_LOCK_POLL=0.2 bash "$tmp/strict.sh" "$SUITE_LOCK_LIB" >"$tmp/strict.out" 2>&1; echo $? >"$tmp/strict.rc" ) &
-	sleep 1
+	# Two slots are held, so this one queues. Wait until it SAYS it has
+	# queued, then free a slot and require it to have got all the way
+	# through. The `sleep 1` this replaces was a budget for the scheduler
+	# (ranger-base-1p4ig): a fork not yet scheduled when the slot was freed
+	# acquired straight away, and the arm went green without the queued
+	# acquire it exists to test — safe direction, and still not measuring.
+	# Its output is named `<marker>.log` so wait_answer's convention holds.
+	local strict_queued=0
+	( POSSE_SUITE_LOCK_POLL=0.2 bash "$tmp/strict.sh" "$SUITE_LOCK_LIB" >"$tmp/strict.rc.log" 2>&1; echo $? >"$tmp/strict.rc" ) &
+	wait_answer "$tmp/strict.rc" "$fork_s" && strict_queued=1
 	rm -f "$tmp/hold12"
-	if wait_file "$tmp/strict.rc" "$fork_s" && [ "$(<"$tmp/strict.rc")" = 0 ] &&
-		log_has "$tmp/strict.out" 'reached the end'; then
+	if [ "$strict_queued" = 1 ] && wait_file "$tmp/strict.rc" "$fork_s" &&
+		[ "$(<"$tmp/strict.rc")" = 0 ] &&
+		log_has "$tmp/strict.rc.log" 'reached the end'; then
 		ok 'set -e: a queued acquire does not kill the wrapper'
 	else
 		bad 'set -e: a queued acquire does not kill the wrapper' \
-			"rc=$(cat "$tmp/strict.rc" 2>/dev/null), out: $(tr '\n' '|' <"$tmp/strict.out" 2>/dev/null)"
+			"answered=$strict_queued, rc=$(cat "$tmp/strict.rc" 2>/dev/null), out: $(tr '\n' '|' <"$tmp/strict.rc.log" 2>/dev/null)"
 	fi
 	rm -f "$tmp/hold13"
 
@@ -1019,8 +1040,14 @@ STRICT
 	wait_file "$tmp/m16" "$fork_s" || bad 'slots: a negative POSSE_SUITE_SLOTS does not widen the queue' 'second holder never acquired'
 	POSSE_SUITE_SLOTS=-1 "$tmp/holder.sh" "$SUITE_LOCK_LIB" "$tmp/m17" "$tmp/hold17" go test -timeout 25m ./... &
 	h17=$!
-	sleep 2
-	if [ -e "$tmp/m17" ]; then
+	# The third one's own answer, not a second on the clock
+	# (ranger-base-1p4ig): a fork too slow to have queued yet read as proof
+	# it had been refused, which is a false PASS for the arm that is meant
+	# to catch a fallback handing out as many slots as anyone asks for.
+	if ! wait_answer "$tmp/m17" "$fork_s"; then
+		bad 'slots: a negative POSSE_SUITE_SLOTS does not widen the queue' \
+			"the third holder: $(answer_of "$tmp/m17" "$fork_s")"
+	elif [ -e "$tmp/m17" ]; then
 		bad 'slots: a negative POSSE_SUITE_SLOTS does not widen the queue' \
 			"a third suite ran anyway, on slot $(slot_of "$tmp/m17")"
 	elif [ "$(slot_of "$tmp/m15")" = "$(slot_of "$tmp/m16")" ] ||
@@ -1095,8 +1122,14 @@ STRICT
 		POSSE_SUITE_LOCK_DIR="$od" POSSE_SUITE_SLOTS=1 \
 			"$tmp/holder.sh" "$SUITE_LOCK_LIB" "$tmp/m19" "$tmp/hold19" go test -timeout 25m ./... &
 		h19=$!
-		sleep 2
-		[ -e "$tmp/m19" ] || queued=1
+		# queued=1 only on the waiter's own announcement (ranger-base-1p4ig).
+		# The `sleep 2` this replaces set it from an ABSENCE, so a fork that
+		# had not been scheduled yet counted as a suite that could not have
+		# the orphan's slot — a false pass for the half of this arm that
+		# would catch a fix that freed it.
+		if wait_answer "$tmp/m19" "$fork_s" && [ ! -e "$tmp/m19" ]; then
+			queued=1
+		fi
 		# Let the child go. The slot must drain to the waiter — which is
 		# also the proof that the child was what held it, and that this
 		# is a slot spent by a survivor and not a permanent wedge.

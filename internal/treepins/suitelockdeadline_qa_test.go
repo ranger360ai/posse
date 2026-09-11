@@ -46,6 +46,30 @@ package treepins
 //
 // Arm 2 is what keeps arm 1 from being satisfiable by a self-test that waits
 // generously and then decides nothing at all.
+//
+// THE SECOND SPELLING (ranger-base-1p4ig). Arm 1 reads wait_file/wait_answer
+// ARGUMENTS, so it could only ever see a deadline that was written as one.
+// Four arms held the identical defect where the deadline was a statement:
+//
+//	"$tmp/holder.sh" ... "$tmp/m3" ... &
+//	sleep 2
+//	...
+//	if [[ $m3_log =~ $waiting_re ]]; then   # reads m3.log ONCE, no backstop
+//
+// m3.log does not exist until the forked holder has started, sourced the lib
+// and reached its first sweep. A fork that had not been scheduled inside those
+// two seconds printed
+//
+//	FAIL  queue: the waiting line names the holding worktree: got:
+//
+// with the arm's claim TRUE and only the wall clock disagreeing — 4psg2's
+// finding exactly, at 2s where 4psg2 measured a fork missing 5. The other
+// three (the queue control, the negative-POSSE_SUITE_SLOTS arm, the orphan
+// arm's waiter) failed only in the SAFE direction: each slept and then read an
+// ABSENCE, so a fork too slow to have queued yet counted as proof it had been
+// refused — a false pass by an arm that had stopped measuring its own claim.
+// Arm 3 below is what makes the next `sleep 2` visible, since it was arm 1's
+// scan being blind to this spelling that let it sit through the 4psg2 fix.
 
 import (
 	"os"
@@ -61,6 +85,10 @@ var (
 	// A call, never the definitions: both helpers take a quoted path first.
 	slWaitCall = regexp.MustCompile(`\bwait_(?:file|answer)\s+"[^"]+"\s+(\S+?)(?:;|\s|$)`)
 	slForkS    = regexp.MustCompile(`^\s*local fork_s=(\d+)\s*$`)
+	// A literal duration only. `sleep "${POSSE_SUITE_LOCK_POLL:-5}"` is the
+	// library's queue poll and is lock behaviour, not an arm's deadline —
+	// and it is outside the self-test body this scan reads anyway.
+	slSleep = regexp.MustCompile(`\bsleep\s+([0-9]+(?:\.[0-9]+)?)\b`)
 )
 
 // slSelfTestBody returns the lines of _suite_lock_selftest, which is where
@@ -197,5 +225,66 @@ func TestQATheFilteredRunArmFailsOnEvidenceAndNotOnATimeout(t *testing.T) {
 				"marker that did not arrive is a deadline deciding the arm again\n"+
 				"(ranger-base-4psg2).", l)
 		}
+	}
+}
+
+// Arm 3: and no arm reaches its deadline by standing still, either.
+//
+// The rule is duration, because that is the line the rig itself draws. Every
+// wait in the self-test that is allowed is a POLL — a tenth of a second or a
+// twentieth, inside a loop that re-checks evidence and is bounded by fork_s.
+// A fixed wait of a whole second or more is not waiting for evidence; there is
+// nothing it can be but a budget for the scheduler, which is the thing
+// ranger-base-4psg2 measured a loaded box blowing. A regexp cannot tell a
+// statement from a loop body reliably enough to assert on, and it does not
+// need to: sub-second is poll granularity and one second is a guess about a
+// fork.
+//
+// The fix for every hit is one helper over. wait_answer (scripts/suite-lock.sh)
+// returns as soon as the forked holder has answered EITHER way — marker
+// written, or 'waiting for suite lock' in its log — and answer_of names which
+// of the three states it found, in the words the reader of a FAIL line needs.
+func TestQANoSuiteLockArmWaitsOutAFixedNumberOfSeconds(t *testing.T) {
+	lines, off := slSelfTestBody(t)
+
+	var seen int
+	var stood []string
+	for i, raw := range lines {
+		l := strings.TrimLeft(raw, " \t")
+		if strings.HasPrefix(l, "#") {
+			continue
+		}
+		for _, m := range slSleep.FindAllStringSubmatch(l, -1) {
+			seen++
+			d, err := strconv.ParseFloat(m[1], 64)
+			if err != nil || d < 1 {
+				continue
+			}
+			stood = append(stood, suiteLockScript+":"+strconv.Itoa(off+i+1)+": "+l)
+		}
+	}
+
+	// The positive witness, the same one arm 1 carries: the polls are still
+	// there and always will be, so a scan that stopped finding them has gone
+	// blind and a clean result would mean nothing. There were 7 when this pin
+	// was written — four in the holder rigs, two in wait_file/wait_answer, one
+	// in the orphan arm's kill -0 loop.
+	if seen < 4 {
+		t.Fatalf("the scan found only %d literal `sleep <n>` in %s's self-test — it was 7, so the scan has gone blind and a clean result here means nothing",
+			seen, suiteLockScript)
+	}
+	if len(stood) > 0 {
+		t.Errorf("%d arm(s) of %s --self-test wait out a fixed number of seconds:\n  %s\n\n"+
+			"That is ranger-base-4psg2's defect in the spelling arm 1 above cannot\n"+
+			"see, because the deadline is not a wait_file argument. Waiting a whole\n"+
+			"second for a fork is a budget for the SCHEDULER: on a loaded box the\n"+
+			"fork does not get it, and the arm then reads a log that has not been\n"+
+			"written yet. Reading a value afterwards makes that a FAIL over a true\n"+
+			"claim (arm 3, ranger-base-1p4ig); reading an ABSENCE afterwards makes\n"+
+			"it a PASS by an arm that measured nothing. Wait for the holder's own\n"+
+			"answer instead: `wait_answer \"$marker\" \"$fork_s\"`, then decide with\n"+
+			"slot_of/log_has, and say which of the three states you got with\n"+
+			"`answer_of`. Sub-second polls inside a bounded loop are not this.",
+			len(stood), suiteLockScript, strings.Join(stood, "\n  "))
 	}
 }
