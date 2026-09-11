@@ -702,7 +702,13 @@ func TestStatusAfterTimeoutRidesOutABlink(t *testing.T) {
 	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
-	d.StatusGrace = 2 * time.Second
+	// The blink is the point: the first poll has to MISS the agent and a
+	// later one find it, so the grace has to buy more than one poll — and a
+	// poll is two fake-herdr calls (workspace list, agent list), not a fixed
+	// span of time. Two seconds was ~70 polls without -race and not quite
+	// one with it (2.05s against the 2s deadline), so the blink was all the
+	// grace ever saw and "no agent" was the answer (ranger-base-0dt50).
+	d.StatusGrace = 8 * fakeCallCost
 	mustCreate(t, b, NewSessionOpts{Name: "s1"})
 	os.WriteFile(filepath.Join(fake, "agents.json"), []byte(`[]`), 0o644)
 

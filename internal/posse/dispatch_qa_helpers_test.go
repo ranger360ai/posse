@@ -223,6 +223,15 @@ func dispatchParallelPass(t *testing.T, createDelayMS string) {
 	// gathered pass reaches two-in-flight whatever the machine is doing,
 	// and a serial one cannot reach it at all, so each of its prompts is
 	// released alone by the barrier's timeout.
+	//
+	// "Whatever the machine is doing" is the barrier's own deadline making
+	// that promise, and it can only keep it in the unit the work is done
+	// in: fireLoop fires these two beads one after the other, so the second
+	// prompt arrives a whole launch after the first, and a launch is a
+	// count of fake-herdr calls (24 here) whose price the -race build moves
+	// by ~123x. fakeBarrierWait is written in that unit for that reason;
+	// spelled in seconds it accused this dispatcher a third time
+	// (ranger-base-0dt50).
 	w := promptWindows(t, fake)
 	if len(w) != 2 {
 		t.Fatalf("want two barrier-held prompts, got %d:\n%s", len(w), calls(t, fake))

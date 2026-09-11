@@ -1316,10 +1316,23 @@ func fakeErr(code, msg string) int {
 }
 
 // fakeBarrierWait bounds the prompt barrier. It is a deadlock guard, not a
-// budget for how fast a pass fires its prompts: a gathered pass clears the
-// barrier as soon as the second prompt arrives, whatever the load, and only
-// a genuinely serial one ever waits this long.
-const fakeBarrierWait = 10 * time.Second
+// stopwatch on the pass: a gathered pass clears the barrier the moment the
+// second prompt arrives, and only a genuinely serial one waits this long.
+//
+// What it must outlast is therefore the pass's NEXT FIRE — from the first
+// prompt going in flight to the second one reaching the fake — and that is
+// a whole launch, which is work measured in fake-herdr calls, not in
+// seconds. Measured in TestDispatchParallelPass: 24 calls between the two
+// `agent prompt`s, 0.44s of them without -race and 23.9s with, because the
+// per-call cost is what the build changes (fakeCallCost). Spelled as ten
+// seconds this guard was 1200 calls of headroom in one build and ten in
+// the other, and it fired on a dispatcher that was gathering correctly —
+// the third time a wall-clock margin here has accused one (rangerhq-g6lx,
+// rangerhq-3ig1, ranger-base-0dt50).
+//
+// 40 calls: 1.6x the 24 a launch measured, over a unit that already
+// carries its own load margin.
+const fakeBarrierWait = 40 * fakeCallCost
 
 // fakeAwaitPrompts registers this prompt's arrival and blocks until n
 // prompts are in flight at once. It reports how the prompt was released:
@@ -2209,7 +2222,12 @@ func promptWindows(t *testing.T, fake string) []promptWindow {
 
 // joinWait bounds every leg of joinHeldPrompts. Generous for the same
 // reason waitForOut's is: each held leg is a forked test binary, and under
-// -race that fork is tens of seconds slow before it reaches the register.
+// -race running one costs ~1.02s against ~8ms — MEASURED 2026-09-10, and
+// corrected here from "tens of seconds", which was the whole launch's
+// worth of calls and not one fork's (ranger-base-0dt50). What has to fit
+// inside this bound is a leg registering, then the register emptying, so
+// it is a handful of those and not a launch's worth; 60s holds in both
+// builds and is left alone.
 const joinWait = 60 * time.Second
 
 // joinHeldPrompts ends the `agent prompt` legs the fake is holding and waits
