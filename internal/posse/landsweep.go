@@ -406,9 +406,20 @@ func standingMergeBlock(t *SessionTree, blocks *blockedRecord) (string, []string
 // NONE OF THESE WRITES THE SESSION TREE, which is the whole constraint
 // (ranger-base-9u5zy, ADR 0058 fact 4). Two run in the repo — merge-base and
 // equivalentOnBase's rev-list/cherry — and the third is `git status`, which
-// the pass already ran here before this function existed and which MEASURED
-// writes nothing over a blocked tree in the steady state, dirt or no dirt
-// (ranger-base-yct7l, mergeblocked_qa_test.go).
+// the pass already ran here before this function existed.
+//
+// THAT THIRD ONE DID WRITE, and this header said it did not (ranger-base-
+// a8tqz). The claim was "MEASURED writes nothing over a blocked tree in the
+// steady state, dirt or no dirt" — measured on an idle box, where the stat
+// cache settles in a pass or two. `git status` refreshes a racy index and
+// writes it back, an aborted rebase is what makes the index racy, and under
+// load the refresh can repeat on every pass without end (MEASURED, 3 trials,
+// one of which never went quiet in 8 — dirtyPaths' header has the numbers).
+// lastTreeWrite reads the newest mtime in the git dir, so that write held the
+// grace clock open exactly the way the rebase probe used to. dirtyPaths now
+// passes --no-optional-locks, which is what makes this paragraph's first
+// sentence true rather than aspirational; the pins in mergeblocked_qa_test.go
+// are what caught it, on ubuntu under the full suite.
 //
 // WHAT IT STILL DOES NOT ASK, deliberately and not by oversight: whether a
 // base that moved FORWARD would now replay cleanly — the conflicting commit

@@ -101,6 +101,39 @@ func theWritesStop(t *testing.T, tr *SessionTree, pass func(n int)) {
 	}
 }
 
+// THE WRITE THE SETTLE WINDOW ABOVE IS AN ALLOWANCE FOR, asked directly and
+// answered the same on every platform (ranger-base-a8tqz). theWritesStop
+// reads the property through the sweep, which makes it a reading of the
+// whole pass and leaves it sensitive to how fast the box runs them: the
+// window it tolerates was measured on an idle mac, and on ubuntu under the
+// full suite the pins around it red — not on a regression, on `git status`
+// refreshing a racy index and writing it back, which MEASURED can repeat
+// without bound (three trials of the bare command over an untouched tree:
+// quiet after pass 3, after pass 6, and in one trial never quiet at all in
+// eight; dirtyPaths' header carries the numbers). So the window can never be
+// widened into correctness, and the sweep is the wrong altitude to ask from.
+// This asks the one question underneath, where the answer does not depend on
+// the box: dirtyPaths over a tree whose last git operation was an aborted
+// rebase must not write the index — not on a loaded runner, not once.
+func TestDirtyPathsDoesNotWriteTheIndexOfABlockedTree(t *testing.T) {
+	t.Parallel()
+	d, _, tr := nurlBlocked(t)
+	if _, err := d.Run("", "", 0); err != nil {
+		t.Fatal(err)
+	}
+	before, ok := gitDirWrites(t, tr)["/index"]
+	if !ok {
+		t.Fatal("fixture: the session tree has no .git/index, so nothing here measures the refresh")
+	}
+	for n := 1; n <= 8; n++ {
+		dirtyPaths(tr.Path)
+		if after := gitDirWrites(t, tr)["/index"]; !after.Equal(before) {
+			t.Fatalf("dirtyPaths call %d wrote the index of a tree nobody touched (%s -> %s) — `git status` refreshed the stat cache an aborted rebase left racy and wrote it back, and lastTreeWrite reads exactly that mtime, so the retire grace clock restarts every sweep pass: ranger-base-9u5zy's bug through a second writer. --no-optional-locks is what stops it (worktree.go, dirtyPaths)",
+				n, before, after)
+		}
+	}
+}
+
 // The property ADR 0058's fact 4 actually reads, over the blocked branch
 // that motivated ranger-base-9u5zy. MEASURED 10 runs of this fixture on an
 // idle box, 2026-09-10: the git dir was written on the pass after the block

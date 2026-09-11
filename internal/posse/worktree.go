@@ -2418,7 +2418,36 @@ func dirtyPaths(path string) []string {
 	// and the ln[3:] below then cuts one real character off the first path
 	// (ranger-base-8ogq). git()'s trim stays: every other caller reads a
 	// whole value (a count, a branch name, a sha) and wants it.
-	out, err := gitRaw(path, "status", "--porcelain")
+	//
+	// --no-optional-locks BECAUSE THIS READ IS ON THE QUIET TREE'S PATH
+	// (ranger-base-a8tqz). `git status` is not read-only: when the stat cache
+	// is racy — every file whose mtime is not comfortably older than the
+	// index's, which is exactly what an aborted rebase leaves behind — it
+	// re-hashes, finds the file clean, and WRITES THE REFRESHED INDEX BACK.
+	// That write lands in the session's git dir, and lastTreeWrite (retire.go)
+	// takes the newest mtime of every file in it, so a tree asked this
+	// question once per sweep pass reads as "just written" forever and
+	// `posse worktrees --retire` can never take it. That is ranger-base-9u5zy's
+	// bug exactly — its fix removed the rebase probe's write and left this
+	// one, and blockStillStands' header asserted this call "MEASURED writes
+	// nothing over a blocked tree in the steady state", which was measured on
+	// an idle box and is false under load.
+	//
+	// MEASURED 2026-09-10 (macOS 26.4.1/APFS, git 2.50.1), the aborted-rebase
+	// fixture, 8 consecutive `git status --porcelain` over a tree nobody
+	// touched, 3 trials: the index was written on passes 2-3, on 2-8 (every
+	// pass observed — it never went quiet at all), and on 2-6. With
+	// --no-optional-locks: quiet from pass 2, 3 trials of 3, not one write.
+	// So the settle is not a window that can be widened — it is unbounded,
+	// and a pass-count bound for it cannot be made correct.
+	//
+	// The flag is git's documented way to say so (git 2.19+, and the repo
+	// already spells it this way on the push gate): it skips sub-operations
+	// that take a lock, which for `status` is precisely the index refresh.
+	// The output is unchanged — git still computes the true status, it just
+	// does not cache what it learned — so every caller here reads the same
+	// answer and pays a re-hash instead of a write.
+	out, err := gitRaw(path, "--no-optional-locks", "status", "--porcelain")
 	if err != nil {
 		return nil
 	}
