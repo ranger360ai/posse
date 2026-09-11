@@ -19,9 +19,12 @@ package posse
 // beads landed and both skips are lifted. As of ranger-base-mqoid
 // (2026-09-06) NONE of the pins here is parked — a third park was retired
 // with its subject when the ADR simplification deleted ADR 0040 §1, and the
-// arm that replaced it guards the same falsehood one record over. What the
-// two status-line arms have in common is that each guards a falsehood a
-// sweep is still instructed to write, rather than a fix somebody owes.
+// arm that replaced it guards the same falsehood one record over. That
+// surviving status-line arm (0038's) guards a falsehood a sweep is still
+// INSTRUCTED to write, rather than a fix somebody owes — which is why it
+// stayed when ranger-base-xrdb0 deleted 0036's, whose editorial correction
+// had already been made and whose premise is measured as behaviour in
+// cmd/posse/backupsurface_qa_test.go.
 
 import (
 	"fmt"
@@ -45,80 +48,43 @@ func i9dbbRead(t *testing.T, parts ...string) string {
 // ─── ranger-base-9guhz, carried into ranger-base-mqoid ───────────────────────
 
 // ranger-base-9guhz was closed "folded into ranger-base-mqoid: an input
-// correction for the mqoid taker, now a comment there". The comment there is
-// a POINTER — one line naming 9guhz — and mqoid's own description and NOTES
-// still carry the instruction 9guhz exists to retract: "0036's status line
-// gains '· unbuilt: ranger-base-a0ln0'". That input was true when the ay3dr
-// ruling was written and is false now. A taker who works the description and
-// does not chase the pointer writes a falsehood into a shipped record.
+// correction for the mqoid taker, now a comment there", and it had two
+// halves. Neither is guarded here any more; what survives it is the CLASS,
+// one record over, and the arm below is that.
 //
-// So this arm is LIVE, not parked. It is green today and reds the moment the
-// sweep writes the retracted stamp — the correction enforced by the suite
-// instead of by a comment somebody has to think to open.
+// THE FIRST HALF was 0036's status line: mqoid's description still asks a
+// sweep to stamp it "· unbuilt: ranger-base-a0ln0" when a0ln0 built the verb
+// on 2026-09-01. A pin held that wording here
+// (TestQAADR0036StatusLineDoesNotCarryTheRetractedUnbuiltStamp, doored in
+// $(QA_DOC_PINS)) until ranger-base-xrdb0 deleted it — codex finding 7 and
+// grok finding 6, both reading it the same way: a pin on the WORDING of one
+// record's status turns a dated editorial correction into a permanent
+// executable dependency on one account of history. What was worth keeping is
+// kept, and by a better reader than an os.Stat on backup.go —
+// cmd/posse/backupsurface_qa_test.go builds the binary and runs `posse backup
+// status` against it, so the premise "a0ln0 built the verb" is measured as
+// behaviour rather than asserted from a filename.
 //
-// MEASURED 2026-09-02 at 13db95e: ranger-base-a0ln0 built the verb
-// (internal/posse/backup.go, `case "backup"` in cmd/posse/main.go, five
-// `backup_*` config keys, 13 files citing the record) and ranger-base-zv3y6
-// built §4's ticker. Both are named BUILT in 0036's own status line.
-func TestQAADR0036StatusLineDoesNotCarryTheRetractedUnbuiltStamp(t *testing.T) {
-	t.Parallel()
-	adr := i9dbbRead(t, "docs", "adr", "0036-posse-backup.md")
-
-	// Positive witness first: without it "the stamp is absent" is equally
-	// true of a read that got the wrong file (pass-count-is-not-a-coverage-
-	// floor). Witnessed on the record's identity and on the presence of a
-	// status line — NOT on the bead id, which a legitimate rewording of the
-	// status may drop and which would then red this guard for no defect.
-	if !strings.HasPrefix(adr, "# ADR 0036") {
-		t.Fatalf("this guard is not reading ADR 0036 — first line %q", strings.SplitN(adr, "\n", 2)[0])
-	}
-	if !strings.Contains(adr, "*Status:") {
-		t.Fatal("ADR 0036 has no status line — this guard has nothing to judge")
-	}
-
-	// The retracted stamp, written the way ADR 0040 §3.5 spells it. Assert
-	// on the pairing, not on the word "unbuilt" alone: §4's ticker and §1's
-	// cut sections are legitimately discussed as unbuilt in the prose below
-	// the status, and 0036 says so deliberately.
-	for _, dead := range []string{
-		"unbuilt: ranger-base-a0ln0",
-		"unbuilt: `ranger-base-a0ln0`",
-	} {
-		if strings.Contains(adr, dead) {
-			t.Errorf("0036's status carries %q — ranger-base-a0ln0 BUILT the verb on 2026-09-01 (backup.go, the `backup` case in main.go, five backup_* keys). ranger-base-9guhz retracted that ruling input; mqoid's description still asks for it", dead)
-		}
-	}
-
-	// And the reason, measured rather than asserted from the ADR's own
-	// prose: the verb is in the tree. If this ever goes false the stamp is
-	// no longer a falsehood and this whole guard should be revisited.
-	if _, err := os.Stat(filepath.Join(qibRepoRoot(t), "internal", "posse", "backup.go")); err != nil {
-		t.Errorf("backup.go is gone — the premise of this guard (a0ln0 built the verb) no longer holds: %v", err)
-	}
-	if main := i9dbbRead(t, "cmd", "posse", "main.go"); !strings.Contains(main, `case "backup":`) {
-		t.Error("cmd/posse/main.go no longer dispatches a backup verb — the premise of this guard no longer holds")
-	}
-}
-
-// The other half of ranger-base-9guhz was ADR 0040's disposition row for
-// 0036 — "nothing live: no `backup` symbol, no age dependency, no config
-// key; no build bead found", four clauses all false. That row is GONE: the
-// ADR simplification (operator ruling 2026-09-05, 8f95e4d5) replaced 0040
-// §1's per-record disposition table with a policy-home table, and 0040's
-// own Lineage row retires §§1–2. The pin parked here for it is retired with
-// its subject rather than left skipped on a closed bead: there is no row to
-// read, so the only verdict it could reach is the t.Fatal that says so.
-// Retired under ranger-base-mqoid, which owed the fix.
+// THE SECOND HALF was ADR 0040's disposition row for 0036 — "nothing live: no
+// `backup` symbol, no age dependency, no config key; no build bead found",
+// four clauses all false. That row is GONE: the ADR simplification (operator
+// ruling 2026-09-05, 8f95e4d5) replaced 0040 §1's per-record disposition
+// table with a policy-home table, and 0040's own Lineage row retires §§1–2.
+// The pin parked here for it is retired with its subject rather than left
+// skipped on a closed bead: there is no row to read, so the only verdict it
+// could reach is the t.Fatal that says so. Retired under ranger-base-mqoid,
+// which owed the fix.
 //
-// What is NOT retired is the CLASS the 0036 arm above guards, because the
-// same ruling input is still standing for a second record. ranger-base-mqoid
-// carries "0038's status gains '· unbuilt: ranger-base-vqyxl,
-// ranger-base-mugt2'" from the ay3dr ruling, and both beads are CLOSED and
-// built — measured 2026-09-06: vqyxl's L2 config write-deny is
-// `sessionGitConfigFiles` in seatbelt.go with the hook slots denied beside
-// it, and mugt2's L4 twin is the `:ro` common-dir mount in cage.go. Writing
-// that stamp is the same falsehood 9guhz retracted for 0036, one record
-// over, and nothing read it. This arm is that reader.
+// WHAT IS NOT RETIRED is the class, because the same ruling input is still
+// standing for a second record — and this one is not a wording correction
+// somebody already made, it is an instruction a sweep has not yet carried
+// out. ranger-base-mqoid carries "0038's status gains '· unbuilt:
+// ranger-base-vqyxl, ranger-base-mugt2'" from the ay3dr ruling, and both
+// beads are CLOSED and built — measured 2026-09-06: vqyxl's L2 config
+// write-deny is `sessionGitConfigFiles` in seatbelt.go with the hook slots
+// denied beside it, and mugt2's L4 twin is the `:ro` common-dir mount in
+// cage.go. Writing that stamp is the falsehood 9guhz retracted for 0036, one
+// record over, and nothing else reads it. This arm is that reader.
 //
 // Shown able to fail: writing either spelling into 0038's status reds it,
 // and restoring greens it (mutation-checked both ways, 2026-09-06).
@@ -126,11 +92,12 @@ func TestQAADR0036StatusLineDoesNotCarryTheRetractedUnbuiltStamp(t *testing.T) {
 // No Makefile door, deliberately, and NOT an oversight to correct: this arm
 // reads three named files and walks nothing, so treewidedoor_qa_test.go's
 // class does not hold it (that class keys on a test body reaching
-// qibRepoRoot itself — which is why the 0036 arm above, whose backup.go
-// os.Stat does, is in $(QA_DOC_PINS) and this one is not). Verified by
-// execution 2026-09-06: TestQAEveryTreeWidePinHasADoor is green with this
-// arm undoored, and reds when the 0036 arm is taken out of its door, so the
-// census does reach this file and does not ask for a door here.
+// qibRepoRoot itself, which no test in this file does any more — the 0036 arm
+// was the one that did, which is why its deletion took the file's
+// $(QA_DOC_PINS) entry with it). Verified by execution 2026-09-06:
+// TestQAEveryTreeWidePinHasADoor is green with this arm undoored, and red
+// when a doored arm is taken out of its door, so the census does reach this
+// file and does not ask for a door here.
 func TestQAADR0038StatusLineDoesNotCarryTheRetractedUnbuiltStamp(t *testing.T) {
 	t.Parallel()
 	adr := i9dbbRead(t, "docs", "adr", "0038-git-identity-write-deny.md")

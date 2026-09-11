@@ -28,8 +28,12 @@ package treepins
 //	TestQANoCodeStringCallsTheDarwinCredentialsFileAStaleLeftover
 //	                                              make doc-check     ~0.1s
 //	TestQACageCredDocDoesNotCallTheOnDiskCredentialStale   make doc-check
-//	TestQAADR0036StatusLineDoesNotCarryTheRetractedUnbuiltStamp
-//	                                              make doc-check
+//
+// (seven rows under a count of eight: the eighth was
+// TestQAADR0036StatusLineDoesNotCarryTheRetractedUnbuiltStamp, deleted with
+// its door entry under ranger-base-xrdb0. The numeral is sx2dq's and stays —
+// it says what that bead doored, not what the class holds today, which only
+// the derived sentence below may say.)
 //
 // and five more that took their root from `git rev-parse --show-toplevel`,
 // doored under ranger-base-xndgk (FINDING 5 of the ranger-base-xtgvp verify):
@@ -43,13 +47,12 @@ package treepins
 //	                                              make history-check   ~3s
 //
 // and four more that arrived afterwards, each doored by the bead that wrote
-// it and given its own membership row in arm 2:
+// it and given its own membership row in arm 2 — three rows now, the fourth
+// being TestQAADR0026StatusLineDoesNotDeferTheImplementedRung
+// (ranger-base-8dnuy), deleted with its door entry under ranger-base-xrdb0:
 //
 //	TestQAADR0035PaneModeSurfaceClaimIsBuilt      make doc-check
 //	                                              (ranger-base-vwgt)
-//	TestQAADR0026StatusLineDoesNotDeferTheImplementedRung
-//	                                              make doc-check
-//	                                              (ranger-base-8dnuy)
 //	TestInstancePathFormNeverAppearsInTrackedContentUndispositioned
 //	                                              make ops-check
 //	TestQAInstancePathCensusCanStillSayNo         make ops-check
@@ -72,11 +75,11 @@ package treepins
 //	                                              make seed-check
 //	                                              (ranger-base-nn33e)
 //
-// and `make tree-check` is all of them — 12-27s on this box over three runs
-// at twenty-three pins and eight doors — which is the command a seat types
-// after a filtered run. (It was 40-46s under ranger-base-4jogv, one pin ago,
-// and 21-41s at the older, smaller class before that; re-measured under
-// ranger-base-8dnuy, because the sentence a seat prices the command from
+// and `make tree-check` is all of them — 15-43s on this box over three runs
+// at twenty-one pins and eight doors — which is the command a seat types
+// after a filtered run. (It was 12-27s under ranger-base-8dnuy, two pins ago,
+// and 40-46s at a smaller class before that; re-measured under
+// ranger-base-xrdb0, because the sentence a seat prices the command from
 // should not quote a run of a class it did not run — and stated without a
 // second numeral, deliberately: a historical count in this comment is
 // invisible to arm 4's one-claim rule, which is ranger-base-erqvh row 2. The
