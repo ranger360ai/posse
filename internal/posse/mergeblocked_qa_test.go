@@ -69,14 +69,44 @@ func gitDirWrites(t *testing.T, tr *SessionTree) map[string]time.Time {
 	return m
 }
 
-// The property ADR 0058's fact 4 actually reads: the writes STOP. Not
-// "the next pass writes nothing" — the settle above is a write and it is
-// sometimes two (MEASURED over 10 runs of this fixture on 2026-09-10: the
-// git dir was written on the pass after the block stood in 10/10, and on
-// the pass after THAT in 1/10, and never later). What fact 4 needs is that
-// the writing ends while the grace still has room, so this pins a BOUND on
-// the settle and then requires the tree to be still — every file of the git
-// dir and lastTreeWrite itself, which is the reading the retire takes.
+// theWritesStop is the reading fact 4 takes, asked over a run of passes.
+// The settle window is passes 2 and 3: the first `git status` after the last
+// aborted rebase rewrites the index whose stat cache that rebase left dirty,
+// and on a loaded box that has been seen to take one pass more. Every pass
+// after the window must write NOTHING — and THAT is the property, because
+// the probe ranger-base-9u5zy removed wrote on every pass forever, so no
+// settle window would ever have saved it and a grace clock can only reach
+// zero once the writing ends. Read over every file of the session's git dir
+// and over lastTreeWrite itself, which is the reading the retire takes.
+func theWritesStop(t *testing.T, tr *SessionTree, pass func(n int)) {
+	t.Helper()
+	const settle, quiet = 3, 4
+	prev, prevLast := gitDirWrites(t, tr), mustLastTreeWrite(t, tr)
+	for n := 2; n <= settle+quiet; n++ {
+		pass(n)
+		cur, curLast := gitDirWrites(t, tr), mustLastTreeWrite(t, tr)
+		var moved []string
+		for p, ts := range cur {
+			if b, had := prev[p]; !had {
+				moved = append(moved, fmt.Sprintf("%s CREATED (%s)", p, ts))
+			} else if !b.Equal(ts) {
+				moved = append(moved, fmt.Sprintf("%s (%s -> %s)", p, b, ts))
+			}
+		}
+		if wrote := len(moved) > 0 || !curLast.Equal(prevLast); wrote && n > settle {
+			t.Errorf("pass %d wrote the tree of an unmoved, already-blocked branch: %s (lastTreeWrite %s -> %s) — that is past the %d-pass stat-cache settle, and ADR 0058's fact 4 reads exactly this, so a tree written at the sweep's own cadence never goes quiet",
+				n, strings.Join(moved, ", "), prevLast, curLast, settle)
+		}
+		prev, prevLast = cur, curLast
+	}
+}
+
+// The property ADR 0058's fact 4 actually reads, over the blocked branch
+// that motivated ranger-base-9u5zy. MEASURED 10 runs of this fixture on an
+// idle box, 2026-09-10: the git dir was written on the pass after the block
+// stood in 10/10, on the pass after THAT in 1/10, and never later; a run
+// under the full suite took the second pass too, which is why the window
+// theWritesStop allows is three and not two.
 func TestTheWholeGitDirGoesQuietOnceTheBlockStands(t *testing.T) {
 	t.Parallel()
 	d, repo, tr := nurlBlocked(t)
@@ -96,30 +126,7 @@ func TestTheWholeGitDirGoesQuietOnceTheBlockStands(t *testing.T) {
 			t.Fatalf("fixture: pass %d did not take the skip, so nothing here measures it:\n%s", n, out)
 		}
 	}
-	// The settle window: passes 2 and 3 may still write, because the first
-	// `git status` after the last aborted rebase rewrites the index whose
-	// stat cache that rebase left dirty. Every pass after them must write
-	// NOTHING — which is the whole difference between a bounded settle and
-	// the removed probe, whose write landed on every pass forever.
-	const settle, quiet = 3, 4
-	prev, prevLast := gitDirWrites(t, tr), mustLastTreeWrite(t, tr)
-	for n := 2; n <= settle+quiet; n++ {
-		pass(n)
-		cur, curLast := gitDirWrites(t, tr), mustLastTreeWrite(t, tr)
-		var moved []string
-		for p, ts := range cur {
-			if b, had := prev[p]; !had {
-				moved = append(moved, fmt.Sprintf("%s CREATED (%s)", p, ts))
-			} else if !b.Equal(ts) {
-				moved = append(moved, fmt.Sprintf("%s (%s -> %s)", p, b, ts))
-			}
-		}
-		if wrote := len(moved) > 0 || !curLast.Equal(prevLast); wrote && n > settle {
-			t.Errorf("pass %d wrote the tree of an unmoved, already-blocked branch: %s (lastTreeWrite %s -> %s) — that is past the %d-pass stat-cache settle, and fact 4 reads exactly this, so a tree written at the sweep's own cadence never goes quiet",
-				n, strings.Join(moved, ", "), prevLast, curLast, settle)
-		}
-		prev, prevLast = cur, curLast
-	}
+	theWritesStop(t, tr, pass)
 }
 
 // The other reader the skip leaves in the path, and the claim its comment
@@ -128,9 +135,9 @@ func TestTheWholeGitDirGoesQuietOnceTheBlockStands(t *testing.T) {
 // rebase probe), and the comment asserts it "does not reproduce the write
 // the header above measures". Nothing measured that, and the tree it
 // matters most for is the one with dirt in it — the shape ranger-base-wj7e9
-// preserved. MEASURED here: over five passes the git dir does not move at
-// all, so the steady-state `git status` writes nothing even when it has
-// modifications to report.
+// preserved. Held to the same window as the clean tree above: `git status`
+// over modifications it reports on every pass still writes nothing once the
+// stat cache has settled.
 func TestADirtyBlockedTreeGoesQuietTooAlthoughEveryPassReadsIt(t *testing.T) {
 	t.Parallel()
 	d, repo, tr := nurlStranded(t, "closed", true)
@@ -145,24 +152,16 @@ func TestADirtyBlockedTreeGoesQuietTooAlthoughEveryPassReadsIt(t *testing.T) {
 	if out := dispatcherOut(d); !strings.Contains(out, "uncommitted changes") {
 		t.Fatalf("fixture: the first pass did not block on the dirt, so nothing here measures that arm:\n%s", out)
 	}
-	prev, prevLast := gitDirWrites(t, tr), mustLastTreeWrite(t, tr)
-	for n := 2; n <= 6; n++ {
+	theWritesStop(t, tr, func(n int) {
 		d2 := newTestDispatcher(t, d.HB)
 		dispatcherErr(t, d2)
 		if _, err := d2.Run("", "", 0); err != nil {
 			t.Fatal(err)
 		}
-		cur, curLast := gitDirWrites(t, tr), mustLastTreeWrite(t, tr)
-		for p, ts := range cur {
-			if b, had := prev[p]; !had || !b.Equal(ts) {
-				t.Errorf("pass %d wrote %s over a blocked DIRTY tree nobody touched (%s -> %s) — `git status` is the only reader left in that path, and a write of its own puts ADR 0058's grace clock back where ranger-base-9u5zy found it", n, p, b, ts)
-			}
+		if out := dispatcherOut(d2); !strings.Contains(out, "already answered this and is still open") {
+			t.Fatalf("fixture: pass %d did not take the skip, so nothing here measures it:\n%s", n, out)
 		}
-		if !curLast.Equal(prevLast) {
-			t.Errorf("pass %d moved lastTreeWrite over a blocked DIRTY tree (%s -> %s)", n, prevLast, curLast)
-		}
-		prev, prevLast = cur, curLast
-	}
+	})
 }
 
 func mustLastTreeWrite(t *testing.T, tr *SessionTree) time.Time {
