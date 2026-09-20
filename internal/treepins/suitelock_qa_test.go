@@ -102,6 +102,17 @@ var suiteLockArms = []string{
 	// and counted the queue's WIDTH beneath it, so the line said two suites
 	// were running when one was.
 	"sandbox: an unopenable slot is not counted as a holder",
+	// ranger-base-xgseo: the sweep let the kernel's open failure out
+	// unguarded because the caller "bails on 3 rather than polling" — true
+	// of the all-unopenable dir, and not of the MIXED one, where one slot
+	// opens, the sweep returns 1 and the acquire polls. 14 copies of
+	// `suite-slot.1.lock: Permission denied` in 3 queued seconds at a 0.2s
+	// poll (MEASURED 2026-09-20, darwin/arm64); ~240 in a real 20-minute
+	// queue at the 5s default, which one `sudo make test` makes permanent
+	// for that seat. The arm counts: 0 is a fix that blinded the degrade
+	// path, more than 1 is the repeat, and its control is arm 15's log,
+	// where every slot must still be named exactly once.
+	"sandbox: an unopenable slot is named once per acquire, not once per poll",
 }
 
 // Arm 1: `make test` still runs the queue's self-test, and `make

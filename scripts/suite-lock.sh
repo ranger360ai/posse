@@ -408,16 +408,49 @@ _suite_lock_stamp() {
 # does not is a box with one usable slot, not a box with none, and calling
 # that unserialized would widen the queue on a partial failure.
 #
-# The open's own diagnostic is deliberately NOT suppressed — the caller
-# bails on 3 rather than polling, so the kernel's words are printed once per
-# slot, and they are the only line that says WHICH directory and WHY.
+# The open's own diagnostic is NOT suppressed, and it is not reprinted
+# either: ONCE PER DISTINCT SLOT PER ACQUIRE (ranger-base-xgseo). The kernel's
+# words are the only line that says WHICH file and WHY, so nothing here may
+# swallow them — but the reasoning that let them out unguarded covered only
+# rc=3, where the caller bails rather than polls and each slot is therefore
+# tried once. The MIXED dir is the case it did not cover: one slot opens, this
+# returns 1, and suite_lock_acquire sweeps again every POSSE_SUITE_LOCK_POLL
+# for as long as the queue lasts. MEASURED 2026-09-20, darwin/arm64, one held
+# slot beside one mode-000 sibling: 14 copies of
+#
+#   scripts/suite-lock.sh: line <n>: <dir>/suite-slot.1.lock: Permission denied
+#
+# in 3 queued seconds at a 0.2s poll — the same shape ranger-base-xgseo was
+# filed on (2026-09-11: arm 16 held 60s at a failing assertion, a 51 KB log
+# dump, ~12 repetitions of one line). A real 20-minute queue at the 5s default
+# prints it ~240 times, and one `sudo make test` leaves a seat in that state
+# permanently. The announcement beneath it has been said-once behind
+# $announced since it was written; this is the same guard for the line above
+# it, and $_SUITE_LOCK_SAID_OPEN is where it is remembered.
+#
+# `{ exec 9>>"$f"; } 2>/dev/null` and not `exec 9>>"$f" 2>/dev/null`: a bare
+# `exec` applies its redirections to the SHELL, so the second spelling sends
+# this process's stderr to /dev/null for the rest of its life and silences the
+# queue, the heartbeat and the suite behind it. The group's redirection is
+# scoped to the group; the fd 9 it opens is not. MEASURED on bash 3.2.57
+# (/bin/bash, the one this runs under): suppressed on failure, fd 9 still open
+# after success, fd 2 restored either way.
+#
+# A slot is marked only when its open FAILED, so a slot that has always opened
+# is never silenced; a slot that starts opening again simply stops being
+# reached by the guard. What it will not say twice in one acquire is the same
+# slot failing the same way, which is the only thing it was saying.
 _suite_lock_sweep() {
 	local dir i f rc opened=0
 	dir=$(suite_lock_dir)
 	_suite_lock_slots
 	for i in $(seq 1 "$_SUITE_LOCK_SLOTS"); do
 		f=$dir/suite-slot.$i.lock
-		exec 9>>"$f" || continue
+		case " ${_SUITE_LOCK_SAID_OPEN:-} " in
+		*" $i "*) { exec 9>>"$f"; } 2>/dev/null || continue ;;
+		*) exec 9>>"$f" ||
+			{ _SUITE_LOCK_SAID_OPEN="${_SUITE_LOCK_SAID_OPEN:-} $i"; continue; } ;;
+		esac
 		opened=1
 		rc=0
 		_suite_lock_flock || rc=$?
@@ -439,6 +472,12 @@ _suite_lock_sweep() {
 # does not refuse them, and a wrapper under `set -e` must not die here.
 suite_lock_acquire() {
 	_SUITE_LOCK_SLOT=
+	# Per ACQUIRE, not per process: the slots whose open failure this run has
+	# already let the kernel speak about (_suite_lock_sweep says why). Cleared
+	# here so a second acquire in the same shell — and every fresh wrapper —
+	# hears it again, and so the rc=3 line below keeps its "the line above is
+	# the kernel's".
+	_SUITE_LOCK_SAID_OPEN=
 
 	suite_lock_wanted "$@" || return 0
 
@@ -776,6 +815,31 @@ ORPHANER
 		c=$(<"$1")
 		case $c in *"$2"*) return 0 ;; esac
 		return 1
+	}
+
+	# log_count <file> <literal> — HOW MANY times the literal occurs. The
+	# `sort | uniq -c` that found ranger-base-xgseo by hand is exactly the
+	# exec'd matcher the paragraph above forbids an arm to decide with, and
+	# `${rest#*"$lit"}` is bash's own answer: the quoted half is literal, so
+	# a path full of dots and slashes is not a pattern. Prints a number,
+	# always, including 0 for a log that does not exist — an arm asking "once"
+	# must be able to tell 0 (blinded) from 1 (right) from many (the defect).
+	log_count() {
+		local c rest n=0
+		if [ -r "$1" ]; then
+			c=$(<"$1")
+			rest=$c
+			while :; do
+				case $rest in
+				*"$2"*)
+					n=$((n + 1))
+					rest=${rest#*"$2"}
+					;;
+				*) break ;;
+				esac
+			done
+		fi
+		printf '%s\n' "$n"
 	}
 
 	# wait_log <file> <literal> <seconds> — wait for a literal to REACH a log,
@@ -1425,6 +1489,85 @@ STRICT
 		wait "$h21" 2>/dev/null
 	fi
 	chmod 644 "$md/suite-slot.2.lock" 2>/dev/null
+
+	# ARM 17: the unopenable slot's kernel line is said ONCE PER ACQUIRE, not
+	# once per poll (ranger-base-xgseo).
+	#
+	# Arm 16's dir again, with the modes swapped: the UNOPENABLE slot is
+	# numbered 1 and the usable one 2, so every sweep reaches the bad slot
+	# before it can take the good one. Arm 16's own layout cannot measure
+	# this — there the winning sweep returns on slot 1 and never tries slot 2,
+	# so "it acquired" proves nothing about how often slot 2 was spoken of.
+	#
+	# HOW MANY SWEEPS THIS ARM IS WORTH, without timing one. The queued run
+	# announces (sweep 1 tried slot 1), then the holder's slot is handed back
+	# and the run ACQUIRES slot 2 — which it can only do from a later sweep,
+	# and every sweep walks slot 1 first. So its marker is positive evidence
+	# of at least two failed opens of slot 1, which is the defect's minimum
+	# reproduction. Nothing here sleeps for a number of polls and then reads:
+	# a loaded box that managed fewer would make that arm vacuously green,
+	# which is the ranger-base-4psg2 defect wearing this bead's clothes.
+	#
+	# TWO-SIDED, because a count is the one assertion that can fail both
+	# ways: 0 is a fix that blinded the open and left a cage with no words at
+	# all, many is the bug. Only 1 passes.
+	#
+	# ITS CONTROL IS ARM 15's LOG, where the rc=3 path must still name EVERY
+	# slot exactly once — that is the case the suppression must not reach,
+	# and the two assertions together are the whole of "once per distinct
+	# slot per acquire".
+	local xd=$tmp/repeat-locks arm17='sandbox: an unopenable slot is named once per acquire, not once per poll'
+	local h23 h24 bad_slot=suite-slot.1.lock
+	mkdir -p "$xd"
+	: >"$xd/suite-slot.1.lock"
+	: >"$xd/suite-slot.2.lock"
+	chmod 000 "$xd/suite-slot.1.lock"
+	if [ "$(id -u)" = 0 ]; then
+		printf 'note  %s: uid 0, where mode 000 denies nothing — NOT MEASURED here\n' "$arm17"
+		ok "$arm17"
+	else
+		touch "$tmp/hold23" "$tmp/hold24"
+		POSSE_SUITE_LOCK_DIR="$xd" \
+			"$tmp/holder.sh" "$SUITE_LOCK_LIB" "$tmp/m23" "$tmp/hold23" go test -timeout 25m ./... &
+		h23=$!
+		if ! wait_file "$tmp/m23" "$fork_s"; then
+			bad "$arm17" 'the holder never took the one openable slot, so nothing was queued against it'
+		elif [ "$(slot_of "$tmp/m23")" != 2 ]; then
+			bad "$arm17" "the holder answered slot '$(slot_of "$tmp/m23")', not the one slot it can open"
+		else
+			POSSE_SUITE_LOCK_DIR="$xd" \
+				"$tmp/holder.sh" "$SUITE_LOCK_LIB" "$tmp/m24" "$tmp/hold24" go test -timeout 25m ./... &
+			h24=$!
+			if ! wait_answer "$tmp/m24" "$fork_s"; then
+				bad "$arm17" "$(answer_of "$tmp/m24" "$fork_s")"
+			elif [ -e "$tmp/m24" ]; then
+				bad "$arm17" "it took slot $(slot_of "$tmp/m24") with the other one held"
+			else
+				# The handback. Until this lands the queued run has swept
+				# once; its marker is what says it swept again.
+				rm -f "$tmp/hold23"
+				if ! wait_file "$tmp/m24" "$fork_s"; then
+					bad "$arm17" 'the queued run never took the freed slot, so no second sweep is proven and the count below would measure nothing'
+				elif [ "$(slot_of "$tmp/m24")" != 2 ]; then
+					bad "$arm17" "the freed slot came back as '$(slot_of "$tmp/m24")'"
+				elif [ "$(log_count "$tmp/m24.log" "$bad_slot")" != 1 ]; then
+					bad "$arm17" "across at least two sweeps the kernel's open failure was printed $(log_count "$tmp/m24.log" "$bad_slot") times, wanted exactly 1 (0 is blinded, more is the poll-repeat)"
+				elif [ "$(log_count "$tmp/m20.log" suite-slot.1.lock)" != 1 ] ||
+					[ "$(log_count "$tmp/m20.log" suite-slot.2.lock)" != 1 ]; then
+					bad "$arm17" "the control failed: over arm 15's all-unopenable dir the kernel named slot 1 $(log_count "$tmp/m20.log" suite-slot.1.lock) and slot 2 $(log_count "$tmp/m20.log" suite-slot.2.lock) times, wanted 1 each — the degrade path must still say WHICH file and WHY"
+				else
+					ok "$arm17"
+				fi
+			fi
+			rm -f "$tmp/hold24"
+			kill "$h24" 2>/dev/null
+			wait "$h24" 2>/dev/null
+		fi
+		rm -f "$tmp/hold23"
+		kill "$h23" 2>/dev/null
+		wait "$h23" 2>/dev/null
+	fi
+	chmod 644 "$xd/suite-slot.1.lock" 2>/dev/null
 
 	# So the EXIT trap can remove them.
 	chmod 644 "$cd/suite-slot.1.lock" "$cd/suite-slot.2.lock" 2>/dev/null
