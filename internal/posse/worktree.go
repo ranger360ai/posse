@@ -1647,10 +1647,18 @@ func rebaseStopped(dir string) bool {
 // gitSaid renders git's own complaint for a bead a person reads: one line,
 // without the hint block git writes for a human sitting at a terminal, and
 // bounded — a description is a handoff, not a transcript.
+//
+// Split on newline, flattened with oneLine (ranger-base-bq2jl): git writes
+// its PROGRESS with a carriage return and no newline, so a split on "\n"
+// alone leaves "Rebasing (1/1)\rerror: could not apply …" inside a single
+// line — and this string is embedded verbatim in a P1 body, where a terminal
+// reads the CR as an instruction to rewrite the line over itself. oneLine is
+// the house answer to exactly that and the fallback below already used it;
+// now both arms agree.
 func gitSaid(err error) string {
 	var keep []string
 	for _, ln := range strings.Split(err.Error(), "\n") {
-		ln = strings.TrimSpace(ln)
+		ln = strings.TrimSpace(oneLine(ln))
 		if ln == "" || strings.HasPrefix(ln, "hint:") {
 			continue
 		}

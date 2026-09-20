@@ -603,6 +603,15 @@ func TestMergeSessionWorkTellsAConflictFromARebaseThatNeverMerged(t *testing.T) 
 		if !strings.Contains(o.Reason, "could not apply") {
 			t.Errorf("reason = %q, want git's own message in it", o.Reason)
 		}
+		// ranger-base-bq2jl: git writes its progress with a CARRIAGE RETURN
+		// ("Rebasing (1/1)\rerror: could not apply …"), and this reason is
+		// embedded verbatim in a P1 body a person reads in a terminal — where
+		// the CR rewrites the line over itself. Pinned on the production pair
+		// and not on gitSaid alone, because the CR only exists because a real
+		// rebase wrote it.
+		if strings.ContainsAny(o.Reason, "\r\n") {
+			t.Errorf("reason carries a control character and will overwrite itself in a terminal: %q", o.Reason)
+		}
 	})
 
 	t.Run("a rebase that never merged names what git said", func(t *testing.T) {
@@ -644,6 +653,49 @@ func TestMergeSessionWorkTellsAConflictFromARebaseThatNeverMerged(t *testing.T) 
 			t.Errorf("the work did not reach the base: %q", body)
 		}
 	})
+}
+
+// ranger-base-bq2jl, the helper asked directly — because the arm above only
+// sees a carriage return while GIT still writes one, and a fixture that
+// stops producing the defect goes green without pinning anything. These
+// inputs are the shapes gitSaid is handed: git's progress (CR, no newline),
+// the hint block it must still drop, and an error with nothing but control
+// characters, which falls through to the fallback that always flattened.
+func TestGitSaidKeepsNoControlCharacters(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		err  error
+		want string
+	}{{
+		name: "git's progress is written with a carriage return",
+		err:  fmt.Errorf("git rebase main: Rebasing (1/1)\rerror: could not apply d127d79... work\nCould not apply d127d79... work"),
+		want: "git rebase main: Rebasing (1/1) error: could not apply d127d79... work; Could not apply d127d79... work",
+	}, {
+		name: "the hint block is still dropped",
+		err:  fmt.Errorf("error: could not apply d127d79\nhint: Resolve all conflicts manually\nhint: then run `git rebase --continue`"),
+		want: "error: could not apply d127d79",
+	}, {
+		name: "a hint reached over a carriage return is text, not a hint",
+		err:  fmt.Errorf("Rebasing (1/1)\rhint: use --continue"),
+		want: "Rebasing (1/1) hint: use --continue",
+	}, {
+		name: "control characters alone fall through to the fallback",
+		err:  fmt.Errorf("\r\n\r"),
+		want: "",
+	}}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			got := gitSaid(c.err)
+			if got != c.want {
+				t.Errorf("gitSaid = %q, want %q", got, c.want)
+			}
+			if strings.ContainsAny(got, "\r\n") {
+				t.Errorf("gitSaid = %q — it is embedded in a bead body a person reads in a terminal", got)
+			}
+		})
+	}
 }
 
 // The predicate the arms above rest on, asked directly: the state directory
