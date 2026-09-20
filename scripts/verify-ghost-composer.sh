@@ -191,11 +191,19 @@ if [ "$SELFTEST" = 1 ]; then
 
    Login successful. Press Enter to continue..."
 
-	# Same screen as a pane read leaves it: rows under the drawn text.
-	LOGIN_PADDED="$LOGIN_SCREEN
-
-
-"
+	# The same screen as a pane read of a 40-row pane leaves it: the drawn
+	# text at the top and the rest of the viewport blank. Thirty-odd rows,
+	# not three, because three is inside any tail window a reader might
+	# reach for and this arm is here to red one. Appended a row at a time
+	# and NOT through a `$(printf ...)`, which strips every trailing newline
+	# it produces and would leave this fixture identical to the one above --
+	# an arm that measures nothing and says PASS.
+	LOGIN_PADDED=$LOGIN_SCREEN
+	i=0
+	while [ "$i" -lt 34 ]; do
+		LOGIN_PADDED=$LOGIN_PADDED$'\n'
+		i=$((i + 1))
+	done
 
 	COMPOSER_SCREEN="   Welcome to Claude Code
 
