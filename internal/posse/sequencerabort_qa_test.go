@@ -40,13 +40,25 @@ package posse
 //	`--absolute-git-dir` -> `--git-common-dir`  reds the common-dir arm alone
 //	a recipe line that rm's the stray lock too  reds the common-dir arm alone
 //
+// Re-run in full 2026-09-20 (ranger-base-u18bo) with three more, each applied
+// to renderSequencerAudit alone — the first is the escape that bead found:
+//
+//	an UNQUOTED `rm` of <common>/index            reds :431 and :457
+//	an unquoted `rm` of /etc/<x>, outside common  reds :431
+//	<common>/worktrees/other in PROSE, no `rm`    reds :457
+//
+// The last two are there to keep the two halves of the common-dir check
+// honest about what each one sees: a path outside the common dir entirely is
+// the rm-line scan's alone, a shared path named in prose is the whole-refusal
+// scan's alone, and the escape reds both.
+//
 // The `-ne 0` one reds four and that is the honest reading, not a leak:
 // inverted, the audit fires on every failing run and on no succeeding one, so
 // the three arms that expect an alarm go quiet and the one that expects quiet
 // alarms. A mutation that breaks the invariant itself is supposed to be
 // visible everywhere the invariant is asserted.
 //
-// The last three are ranger-base-o0dr4's (ADR 0059 D3), and the common-dir
+// Rows 6-8 are ranger-base-o0dr4's (ADR 0059 D3), and the common-dir
 // arm is the one that can go vacuous with nothing else noticing: no other arm
 // in this file looks at WHICH dir the recipe points into. They are deliberately
 // the two directions the arm can be wrong in — the recipe reaching a shared
@@ -395,7 +407,11 @@ func TestQASequencerRecipeStaysOutOfTheCommonDir(t *testing.T) {
 	if want := "'" + filepath.Join(own, "CHERRY_PICK_HEAD") + "'"; !strings.Contains(errs, want) {
 		t.Fatalf("recipe does not name the blocker in the session's own git dir (%s): %q", want, errs)
 	}
-	// Every path it tells the seat to remove is inside that dir.
+	// Every path it tells the seat to remove is inside that dir — QUOTED OR
+	// NOT. This loop used to split the line on `'` and read the odd fields,
+	// which is no check at all for a recipe that prints a bare path: the
+	// split yields nothing and every token goes unexamined
+	// (ranger-base-u18bo). Tokenise instead, and strip the quoting after.
 	for _, line := range strings.Split(errs, "\n") {
 		if !strings.Contains(line, "rm ") {
 			continue
@@ -405,26 +421,41 @@ func TestQASequencerRecipeStaysOutOfTheCommonDir(t *testing.T) {
 		if strings.Contains(line, "packed-refs.lock") {
 			t.Errorf("the recipe tells a seat to remove a packed-refs.lock (ADR 0059 D3): %q", line)
 		}
-		for _, q := range strings.Split(line, "'")[1:] {
+		for _, tok := range strings.Fields(line) {
+			q := strings.Trim(tok, "'\"")
 			if !strings.HasPrefix(q, "/") {
-				continue // the quoted `fatal: ...` text, not a path
+				continue // `rm`, `-rf`, `--`, or the quoted `fatal: ...` text
 			}
-			if !strings.HasPrefix(q, own+string(os.PathSeparator)) {
+			q = strings.TrimRight(q, ".,;:")
+			if q != own && !strings.HasPrefix(q, own+string(os.PathSeparator)) {
 				t.Errorf("the recipe tells a seat to remove %q, outside its own git dir %s (ADR 0059 D3): %q", q, own, errs)
 			}
 		}
 	}
 	// And the shared part of the common dir is not named anywhere in the
 	// refusal, quoted or not, recipe or prose — the stray lock included.
-	for _, shared := range []string{stray,
-		filepath.Join(common, "packed-refs"),
-		filepath.Join(common, "packed-refs.new"),
-		filepath.Join(common, "refs"),
-		filepath.Join(common, "HEAD"),
-	} {
-		if strings.Contains(errs, shared) {
-			t.Errorf("the refusal names %s, which is the operator's to touch and not this session's (ADR 0059 D3): %q", shared, errs)
+	//
+	// Stated over the common dir itself rather than as a list of names under
+	// it: every occurrence of `common` in the refusal has to be the head of
+	// `own`, and anything else is by definition the shared part. The fixed
+	// five-name list this replaces (the stray lock, `packed-refs`,
+	// `packed-refs.new`, `refs`, `HEAD`) saw none of `index`, `logs/`,
+	// `config`, `objects/` or a sibling `worktrees/<other>` — ranger-base-u18bo.
+	for rest := errs; ; {
+		j := strings.Index(rest, common)
+		if j < 0 {
+			break
 		}
+		if strings.HasPrefix(rest[j:], own) {
+			rest = rest[j+len(own):]
+			continue
+		}
+		named := rest[j:]
+		if k := strings.IndexAny(named, "'\" \n"); k > 0 {
+			named = named[:k]
+		}
+		t.Errorf("the refusal names %s, in the common dir but outside this session's own git dir %s — the operator's to touch and not this session's (ADR 0059 D3): %q", named, own, errs)
+		break
 	}
 	// It audits, it does not repair: the stray lock is still there.
 	if _, err := os.Stat(stray); err != nil {

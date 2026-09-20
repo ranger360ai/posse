@@ -187,6 +187,21 @@ their floor; the L4 engine is off-box and UNRUN for this shape.
    names `packed-refs.lock`, and a stray lock placed beside the fixture is
    still there afterwards.
 
+   Both of the first two clauses are checked without regard to SHELL QUOTING,
+   which is the whole of what ranger-base-u18bo corrected (2026-09-20): as
+   first written the arm read only the fields between `'`s on an `rm` line, so
+   a recipe printing a bare `<common>/index` was checked against nothing and
+   the arm stayed green, and the backstop under it was a five-name list
+   (`packed-refs`, `packed-refs.new`, `refs`, `HEAD`, the stray lock) that
+   named none of `index`, `logs/`, `config`, `objects/` or a sibling
+   `worktrees/<other>`. Item 5 held for the recipe on main, which quotes
+   everything, and not for the next change to it. It is now two checks, and
+   the second is stated over the common dir rather than over a list of names
+   under it: every `rm`-line token that looks like an absolute path, quoted or
+   bare, must be under `--absolute-git-dir`, and every occurrence of the
+   fixture's common dir anywhere in the refusal — recipe or prose — must be
+   the head of that private subtree.
+
 ## MEASURED vs ASSUMED
 
 MEASURED (2026-09-11, darwin 25.4.0, git 2.50.1, `0059-packed-refs-lock.probe.sh`
