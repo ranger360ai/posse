@@ -202,6 +202,22 @@ their floor; the L4 engine is off-box and UNRUN for this shape.
    fixture's common dir anywhere in the refusal — recipe or prose — must be
    the head of that private subtree.
 
+   Both are decided on the RESOLVED path, which is what ranger-base-f6pt2
+   corrected (2026-09-20). As u18bo left them both comparisons were raw string
+   prefixes, so `<own>/../../index` — textually inside `own`, and the SHARED
+   `<common>/index` once resolved — read as inside the private subtree and
+   both clauses stayed green over a recipe deleting the operator's index
+   (MEASURED: the token added to the rendered recipe, and `"../../index"`
+   added to `sequencerLeftovers`, each left the arm `ok`). Each `rm`-line
+   token and each common-dir span is now `filepath.Clean`ed before the
+   comparison, with trailing sentence punctuation stripped only where it is
+   not itself a `.` or `..` path element — `<own>/..` is the shared
+   `worktrees` dir, and trimming that dot is the same hole in the one
+   spelling `Clean` cannot undo afterwards. The fixture also gained an `index`
+   beside its stray lock, which every real repo has and it did not, so the
+   traversal is reachable by execution rather than only at parse level; the
+   arm pins that both survive.
+
 ## MEASURED vs ASSUMED
 
 MEASURED (2026-09-11, darwin 25.4.0, git 2.50.1, `0059-packed-refs-lock.probe.sh`

@@ -341,6 +341,25 @@ func TestQASequencerAuditLeavesEverythingElseAlone(t *testing.T) {
 	}
 }
 
+// trimPathPunct strips the sentence punctuation the refusal's PROSE leaves on
+// the end of a path — `... survives in <dir>.` — without eating a trailing `.`
+// or `..` PATH element. `<own>/..` is the shared `worktrees` dir; trimming it
+// to `<own>` would hand the two scans below the blind spot ranger-base-f6pt2
+// found, in the one spelling filepath.Clean cannot then undo.
+func trimPathPunct(s string) string {
+	for len(s) > 0 {
+		c := s[len(s)-1]
+		if c != ',' && c != ';' && c != ':' && c != '.' {
+			break
+		}
+		if c == '.' && (strings.HasSuffix(s, "/.") || strings.HasSuffix(s, "/..")) {
+			break
+		}
+		s = s[:len(s)-1]
+	}
+	return s
+}
+
 // ADR 0059 D3: the recipe a seat is told to paste names the pseudo-refs in
 // the session's OWN git dir and nothing in the shared part of the common dir
 // — above all not the `packed-refs.lock` that is now the only thing standing
@@ -390,6 +409,15 @@ func TestQASequencerRecipeStaysOutOfTheCommonDir(t *testing.T) {
 	if err := os.WriteFile(stray, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// The SHARED index, which every real repo has and this fixture did not.
+	// It is here so the traversal ranger-base-f6pt2 found is reachable by
+	// EXECUTION and not only by reading: the recipe names what it finds, so a
+	// `../../index` added to sequencerLeftovers prints only if the file it
+	// resolves to exists.
+	shared := filepath.Join(common, "index")
+	if err := os.WriteFile(shared, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	// A lock in the session's OWN git dir as well, which real git never puts
 	// there — deliberately, so the mutation this arm exists to catch is
@@ -426,7 +454,12 @@ func TestQASequencerRecipeStaysOutOfTheCommonDir(t *testing.T) {
 			if !strings.HasPrefix(q, "/") {
 				continue // `rm`, `-rf`, `--`, or the quoted `fatal: ...` text
 			}
-			q = strings.TrimRight(q, ".,;:")
+			// Resolved, not compared raw: `<own>/../../index` wears `own`
+			// as a prefix and IS `<common>/index` — the shared index — so a
+			// string prefix test reads the traversal as inside the private
+			// subtree and passes a recipe that deletes shared state
+			// (ranger-base-f6pt2).
+			q = filepath.Clean(trimPathPunct(q))
 			if q != own && !strings.HasPrefix(q, own+string(os.PathSeparator)) {
 				t.Errorf("the recipe tells a seat to remove %q, outside its own git dir %s (ADR 0059 D3): %q", q, own, errs)
 			}
@@ -436,8 +469,8 @@ func TestQASequencerRecipeStaysOutOfTheCommonDir(t *testing.T) {
 	// refusal, quoted or not, recipe or prose — the stray lock included.
 	//
 	// Stated over the common dir itself rather than as a list of names under
-	// it: every occurrence of `common` in the refusal has to be the head of
-	// `own`, and anything else is by definition the shared part. The fixed
+	// it: every occurrence of `common` in the refusal has to RESOLVE to a path
+	// under `own`, and anything else is by definition the shared part. The fixed
 	// five-name list this replaces (the stray lock, `packed-refs`,
 	// `packed-refs.new`, `refs`, `HEAD`) saw none of `index`, `logs/`,
 	// `config`, `objects/` or a sibling `worktrees/<other>` — ranger-base-u18bo.
@@ -446,19 +479,28 @@ func TestQASequencerRecipeStaysOutOfTheCommonDir(t *testing.T) {
 		if j < 0 {
 			break
 		}
-		if strings.HasPrefix(rest[j:], own) {
-			rest = rest[j+len(own):]
-			continue
-		}
+		// Take the whole path-looking span and RESOLVE it before deciding,
+		// rather than skipping past a bare `own` prefix: the skip walked over
+		// the `own` in `<own>/../../index` and read the `../..` that followed
+		// as the next thing to look for `common` in, which it is not
+		// (ranger-base-f6pt2).
 		named := rest[j:]
 		if k := strings.IndexAny(named, "'\" \n"); k > 0 {
 			named = named[:k]
 		}
+		rest = rest[j+len(named):]
+		if q := filepath.Clean(trimPathPunct(named)); q == own || strings.HasPrefix(q, own+string(os.PathSeparator)) {
+			continue
+		}
 		t.Errorf("the refusal names %s, in the common dir but outside this session's own git dir %s — the operator's to touch and not this session's (ADR 0059 D3): %q", named, own, errs)
 		break
 	}
-	// It audits, it does not repair: the stray lock is still there.
+	// It audits, it does not repair: the stray lock and the shared index are
+	// both still there.
 	if _, err := os.Stat(stray); err != nil {
 		t.Errorf("the stray lock is gone — the audit removed shared state on a guess: %v", err)
+	}
+	if _, err := os.Stat(shared); err != nil {
+		t.Errorf("the shared index is gone — the audit removed shared state on a guess: %v", err)
 	}
 }
