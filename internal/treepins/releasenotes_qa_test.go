@@ -425,9 +425,20 @@ func TestReleaseDraftStepHandsGhTheChangelogSection(t *testing.T) {
 	tag := newestChangelogVersion(t)
 	argv, stdout := runDraftStep(t, repo, "TAG="+tag, "SHA=deadbeef", "NOTES="+notes)
 
-	for _, want := range []string{"release", "create", tag, "--draft", "--generate-notes", "--target", "deadbeef", "--notes-file", notes} {
+	for _, want := range []string{"release", "create", tag, "--draft", "--generate-notes", "--notes-file", notes} {
 		if !slices.Contains(argv, want) {
 			t.Errorf("gh was not handed %q.\nargv: %v\nstep output:\n%s", want, argv, stdout)
+		}
+	}
+	// No --target, ever (ranger-base-597lo). The tag exists before this step
+	// runs, so a target is unused for the release — but GitHub treats it as
+	// a tag creation and 403s GITHUB_TOKEN whenever .github/workflows/* at
+	// that commit differ from the default branch's tip. v0.5.0's retries all
+	// died there. The process this pin protects: a workflow_dispatch rebuild
+	// after a release.yml fix on main.
+	for _, banned := range []string{"--target", "deadbeef"} {
+		if slices.Contains(argv, banned) {
+			t.Errorf("gh was handed %q — a target on the draft create is a tag creation to GitHub and 403s the Actions token (ranger-base-597lo).\nargv: %v", banned, argv)
 		}
 	}
 	body, err := os.ReadFile(notes)

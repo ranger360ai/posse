@@ -170,7 +170,6 @@ func TestReleaseWorkflowPassesTheTagThroughEnv(t *testing.T) {
 		`tag="$INPUT_TAG"`,
 		"shell: bash", // `[[ =~ ]]` is not POSIX; the guard needs the shell it was measured in
 		`gh release create "$TAG"`,
-		`--target "$SHA"`,
 		`scripts/release-artifacts.sh --rev "$SHA" --version "$TAG"`,
 		`scripts/tap-formula.sh --version "$TAG"`,
 	} {
