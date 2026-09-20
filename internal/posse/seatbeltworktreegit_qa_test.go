@@ -1046,7 +1046,6 @@ func wgRunAliasArm(t *testing.T, arm wgAliasArm) {
 // both halves, so the temptation cannot be re-added without this test
 // failing first.
 func TestQAPackedRefsLockCreateGrantIsUnsafe(t *testing.T) {
-	sbSkipUnlessSandboxable(t)
 	f := wgNewFixture(t)
 	// ADR 0059 D1 put the lock in the WRITABLE set, and a subpath grant
 	// outvotes the create-only line this test exists to measure: built on
@@ -1055,7 +1054,16 @@ func TestQAPackedRefsLockCreateGrantIsUnsafe(t *testing.T) {
 	// on the set as it shipped BEFORE 0059 — the one entry removed, and
 	// nothing else varied. withoutLock fatals if the entry is not there to
 	// remove, so this cannot quietly become a test of the shipped set.
+	//
+	// It is called ABOVE the sandbox skip on purpose (ranger-base-xfhqi,
+	// from ranger-base-qfkw1): that fatal is the only thing standing between
+	// "the grant was dropped" and this test quietly measuring the shipped
+	// set, and every seat the suite actually runs on — dispatched sessions
+	// and an operator seat alike — cannot apply a profile and skips. Below
+	// the skip the net is not a net. The subtraction needs no sandbox; only
+	// the arms below it do.
 	w := f.withoutLock(t)
+	sbSkipUnlessSandboxable(t)
 	lock := f.lock()
 	createOnly := append(append([]string{}, sessionRefDirs(f.tree)...), lock)
 	carve := f.a.SeatbeltCarveOut(f.ag, f.tree, f.gates, w)

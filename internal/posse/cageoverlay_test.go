@@ -467,8 +467,24 @@ func TestRedirectedBeadStoreCrossesTheBoundaryReadWrite(t *testing.T) {
 // on the host as a DIRECTORY (ADR 0038 decision 4, measured), and that lock
 // is absent whenever nothing holds it — so the twin would leave a
 // `packed-refs.lock` DIRECTORY in the OPERATOR's git dir and kill their
-// every `gc` and `pack-refs` with no file for a human to delete. It joins
-// the wantNoMount list below for that reason and not by oversight.
+// every `gc` and `pack-refs` with no file for a human to delete.
+//
+// That is WHY the twin is declined; it is not what this test measures, and
+// the `packed-refs.lock` row below does NOT pin D4 (MEASURED 2026-09-11,
+// ranger-base-qfkw1 verifying ranger-base-hcbsc; corrected here under
+// ranger-base-xfhqi — the comment this replaces claimed otherwise).
+// cageOverlay drops every read-write overlay whose source is not an
+// existing DIRECTORY (cage.go, isExistingDir), so the twin a reader would
+// actually type — an entry appended to sessionCommonDirWrites, which is
+// where cage.go's own comment sends them — never reaches the mount list at
+// all, and that row stays green with the twin in place. Both FILE rows
+// below (`packed-refs` has the same blindness, and predates D4) are
+// documentation of intent; only the DIRECTORY rows can fail.
+//
+// D4 is pinned at the LIST instead, where the twin would be typed:
+// TestQAL4CommonDirWritesNameNoPackedRefsLock in
+// packedrefslockl4_qa_test.go, which reds on that twin whatever cageOverlay
+// would have done with it afterwards.
 //
 // This test measures the MOUNT LIST. That the engine honours a read-write
 // bind over a `:ro` parent is measured in
@@ -511,11 +527,21 @@ func TestWorktreeGitCommonDirIsTheGitCarveOut(t *testing.T) {
 		wantMode(t, ms, own[0], false, "the session's own per-worktree git dir")
 		wantMode(t, ms, filepath.Join(common, "objects"), false, "objects")
 		wantMode(t, ms, filepath.Join(common, "logs"), false, "logs")
-		// The four the narrowing exists for: each is inside the `:ro` common
-		// mount and under NO overlay, so the deepest bind covering it is the
-		// read-only one. A mount of its own here — in either mode — would be
-		// the bug, so the assertion is that nothing lands on them at all.
-		for _, p := range []string{"config", "hooks", "packed-refs", "packed-refs.lock", "refs"} {
+		// The DIRECTORY rows, which are the ones that can fail: each is
+		// inside the `:ro` common mount and under NO overlay, so the deepest
+		// bind covering it is the read-only one. A mount of its own here —
+		// in either mode — would be the bug, so the assertion is that
+		// nothing lands on them at all.
+		for _, p := range []string{"config", "hooks", "refs"} {
+			wantNoMount(t, ms, filepath.Join(common, p), "<common>/"+p+" stays under the :ro mount ("+front+")")
+		}
+		// The FILE rows, which say the same thing and cannot fail saying it:
+		// cageOverlay drops a read-write overlay whose source is not an
+		// existing directory, so nothing this package can do puts a mount on
+		// either path. Kept as the statement of intent, NOT as a pin — ADR
+		// 0059 D4 is pinned at the list, in
+		// TestQAL4CommonDirWritesNameNoPackedRefsLock. See the header.
+		for _, p := range []string{"packed-refs", "packed-refs.lock"} {
 			wantNoMount(t, ms, filepath.Join(common, p), "<common>/"+p+" stays under the :ro mount ("+front+")")
 		}
 		// Another session's tree, which is the sibling of the one overlay
