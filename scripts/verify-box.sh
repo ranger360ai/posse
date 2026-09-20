@@ -232,7 +232,7 @@ EXCLUDED_EOF
 #
 # script<TAB>reason
 UNTARGETED=$(cat <<'UNTARGETED_EOF'
-verify-ghost-composer.sh	needs an UNCAGED shell: it drives a real claude in a scratch herdr pane, and from a `cage: seatbelt` seat claude never reaches a composer at all -- the header of that script says so and keeps the negative as the finding. Event-triggered, and the bead it was written for (ranger-base-2hvtv) was answered another way in the end (internal/posse/sentline.go). A target here would offer a `make` line that cannot work from the seat most likely to type it
+verify-ghost-composer.sh	needs an UNCAGED shell: it drives a real claude in a scratch herdr pane, and from a `cage: seatbelt` seat claude never reaches a composer at all -- the header of that script says so and keeps the negative as the finding. Event-triggered, and the bead it was written for (ranger-base-2hvtv) was answered another way in the end (internal/posse/sentline.go). A target here would offer a `make` line that cannot work from the seat most likely to type it. Its `--self-test` arm is hermetic and DOES run under `make test` -- internal/posse/ghostrig_qa_test.go drives the Enter-screen dismissal over captured screens (ranger-base-trb9z); the rig itself still has no target
 verify-orphan-report.sh	runs in a throwaway CPU-limited container and MUST NOT run on this box: it plants busy loops on purpose, and the standing operator rule -- after sixteen leaked ones froze the fleet for 2.5 hours -- is that a persona generates no load here (ranger-base-teau). It also waits out the real orphan age floor, so it takes minutes. A make target for it would be a target whose only correct use is somewhere this Makefile does not run
 UNTARGETED_EOF
 )

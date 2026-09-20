@@ -36,6 +36,12 @@
 #
 # Usage: scripts/verify-ghost-composer.sh
 #        HERDR=/path/to/herdr CLAUDE=/path/to/claude scripts/verify-ghost-composer.sh
+#        scripts/verify-ghost-composer.sh --self-test
+#
+# --self-test drives the Enter-screen dismissal list over captured screens and
+# opens nothing: no herdr, no claude, no pane, no HOME. It is the one half of
+# this rig a caged seat CAN run, and internal/posse/ghostrig_qa_test.go is
+# what runs it.
 #
 # SAFETY, the same two fences as scripts/verify-self-close.sh — a scratch
 # HOME (herdr derives its whole root from $HOME, so this is a fresh install
@@ -50,19 +56,26 @@
 # arm B costs one short turn.
 set -euo pipefail
 
+SELFTEST=0
+case ${1:-} in
+"") ;;
+--self-test) SELFTEST=1 ;;
+*) echo "verify-ghost-composer: usage: verify-ghost-composer.sh [--self-test]" >&2; exit 2 ;;
+esac
+
 HERDR=${HERDR:-$(command -v herdr || true)}
 CLAUDE=${CLAUDE:-$(command -v claude || true)}
-[ -x "$HERDR" ] || { echo "verify-ghost-composer: not executable: ${HERDR:-<none>}"; exit 2; }
-[ -x "$CLAUDE" ] || { echo "verify-ghost-composer: not executable: ${CLAUDE:-<none>}"; exit 2; }
+# The self-test needs neither binary, and the scratch root below is not made
+# until it has run: `mktemp -d /private/tmp/...` is a darwin path, and a
+# hermetic pin that cannot run on linux is a pin CI does not have.
+if [ "$SELFTEST" = 0 ]; then
+	[ -x "$HERDR" ] || { echo "verify-ghost-composer: not executable: ${HERDR:-<none>}"; exit 2; }
+	[ -x "$CLAUDE" ] || { echo "verify-ghost-composer: not executable: ${CLAUDE:-<none>}"; exit 2; }
+fi
 
 REAL_HOME=$HOME
 SESSION="ghostbox-$$"
 FLEET_SOCK=${REAL_HOME}/.config/herdr/herdr.sock
-# Short root: sun_path caps the socket path at ~104 bytes.
-HHOME=$(mktemp -d /private/tmp/pghost.XXXXXX)
-SESS_SOCK="$HHOME/.config/herdr/sessions/${SESSION}/herdr.sock"
-OUT="$HHOME/out"
-mkdir -p "$OUT"
 MARKER=${MARKER:-"ghost probe $$ say ok"}
 
 unset_herdr() {
@@ -117,6 +130,94 @@ last_lines() {
 	done <<<"$2"
 	printf '%s' "${buf%$'\n'}"
 }
+
+# THE DISMISSAL LIST. A screen that names the key which clears it is matched
+# on its own text and pressed only while it is up. The one-key setup choosers
+# (the theme list) name no key and print nothing stable to match, so they keep
+# the blind nudge in the wait loop below; this list is for the screens that do.
+#
+# ranger-base-trb9z is why it exists. A fresh scratch HOME with a valid
+# keychain token completes an OAuth login and then draws ONE MORE SCREEN
+# before the composer -- the banner art, "Logged in as <operator>", "Login
+# successful. Press Enter to continue...". MEASURED 2026-09-11 ~15:20Z from an
+# uncaged shell, claude 2.1.268, herdr 0.8.2: the four blind nudges went to the
+# choosers, the interstitial arrived with the budget spent, and the run
+# reported `setup choosers dismissed: 4 / FAIL claude-reached-a-live-composer`
+# over a claude that was one keystroke away from a composer. A budget spent on
+# screens nobody matched cannot be reserved for the one that comes last.
+#
+# One pattern per line. Matched against the WHOLE visible screen and not a
+# tail window: how many blank rows a pane read leaves under a half-drawn
+# screen is not measured here, and a window chosen by guess would fail exactly
+# where this one already failed. Pressing at a live composer is what the
+# window would have bought, and the loop below buys it another way -- the
+# composer check runs FIRST, and an Enter at an empty box submits nothing.
+ENTER_SCREENS="Press Enter to continue"
+
+# needs_enter <screen-text> -- true if the screen is one of those.
+needs_enter() {
+	local pat
+	while IFS= read -r pat; do
+		[ -n "$pat" ] || continue
+		if has_text "$1" "$pat"; then
+			return 0
+		fi
+	done <<<"$ENTER_SCREENS"
+	return 1
+}
+
+# --self-test: the list above is a pure text match, so the half of this rig
+# that was WRONG is provable without herdr, claude, a pane or a HOME. The
+# quoted lines are the ones ranger-base-trb9z records off the failing run; the
+# banner rows are a stand-in, because nothing here reads them.
+if [ "$SELFTEST" = 1 ]; then
+	arm_fail=0
+	# Named for the arm, not `st` -- the live rig below uses that as a
+	# variable and a reader should not have to know the namespaces differ.
+	arm() { # arm <name> <cond>
+		if [ "$2" = 1 ]; then
+			echo "self-test PASS: $1"
+		else
+			echo "self-test FAIL: $1"
+			arm_fail=1
+		fi
+	}
+	yn() { if "$@"; then echo 1; else echo 0; fi; }
+
+	LOGIN_SCREEN="   ######   ##         ###    ##  ##  ######   ######
+   ##       ##        ## ##   ##  ##  ##   ##  ##
+
+   Logged in as operator@example.com
+
+   Login successful. Press Enter to continue..."
+
+	# Same screen as a pane read leaves it: rows under the drawn text.
+	LOGIN_PADDED="$LOGIN_SCREEN
+
+
+"
+
+	COMPOSER_SCREEN="   Welcome to Claude Code
+
+ >                                                        "
+
+	arm "the login interstitial is matched" \
+		"$(yn needs_enter "$LOGIN_SCREEN")"
+	arm "and is still matched under trailing blank rows" \
+		"$(yn needs_enter "$LOGIN_PADDED")"
+	arm "a live composer is not matched" \
+		"$([ "$(yn needs_enter "$COMPOSER_SCREEN")" = 0 ] && echo 1 || echo 0)"
+	arm "a pane read that came back empty is not matched" \
+		"$([ "$(yn needs_enter "")" = 0 ] && echo 1 || echo 0)"
+	exit "$arm_fail"
+fi
+
+# Short root: sun_path caps the socket path at ~104 bytes. Made here and not
+# with the other paths above so that --self-test touches no filesystem.
+HHOME=$(mktemp -d /private/tmp/pghost.XXXXXX)
+SESS_SOCK="$HHOME/.config/herdr/sessions/${SESSION}/herdr.sock"
+OUT="$HHOME/out"
+mkdir -p "$OUT"
 
 py() { python3 -c "$1"; }
 json_create_pane() { py 'import json,sys; print(json.load(sys.stdin)["result"]["root_pane"]["pane_id"])'; }
@@ -236,11 +337,21 @@ h pane run "$pane" sh "$HHOME/launch.sh" >/dev/null
 
 # Wait for a composer: herdr recognising claude AND live_prompt_box matching.
 #
-# A claude whose binary updated under it re-shows its one-key setup choosers
-# (the theme list, measured on 2.1.261's first run after the 2.1.258 update),
-# and those are drawn over the composer. `enter` takes the default on each;
-# nothing here depends on which theme, and a chooser that does not clear is
-# reported by the check below rather than pressed at forever.
+# Two kinds of screen stand between the launch and the composer, and they are
+# cleared differently.
+#
+# The one-key setup choosers: a claude whose binary updated under it re-shows
+# them (the theme list, measured on 2.1.261's first run after the 2.1.258
+# update), drawn over the composer. They name no key, so they get the BLIND
+# nudge -- `enter` takes the default on each; nothing here depends on which
+# theme, and a chooser that does not clear is reported by the check below
+# rather than pressed at forever.
+#
+# The screens that name Enter themselves: matched on their own text against
+# ENTER_SCREENS and pressed only while they are up (ranger-base-trb9z -- the
+# post-login interstitial is one, and it comes AFTER the choosers). Each kind
+# spends its own budget, because the defect was the interstitial arriving with
+# the choosers' budget already gone.
 at_composer() {
 	h agent explain "$pane" --json >"$OUT/boot.json" 2>/dev/null || return 1
 	py 'import json,sys; d=json.load(open("'"$OUT"'/boot.json")); sys.exit(0 if (d.get("matched_rule") or {}).get("id")=="live_prompt_box" else 1)'
@@ -248,14 +359,23 @@ at_composer() {
 n=0
 ready=0
 nudges=0
+presses=0
 while [ "$n" -lt 120 ]; do
 	if at_composer; then
 		ready=1
 		break
 	fi
+	screen=$(h pane read "$pane" --source visible 2>/dev/null || true)
+	if needs_enter "$screen"; then
+		# Bounded like the nudges: a named screen that does not clear is
+		# reported by the check below rather than pressed at forever.
+		if [ "$presses" -lt 8 ]; then
+			h pane send-keys "$pane" enter >/dev/null 2>&1 || true
+			presses=$((presses + 1))
+		fi
 	# Only after claude is actually up (herdr names the agent) and only a
 	# bounded number of times.
-	if [ "$n" -ge 10 ] && [ "$nudges" -lt 4 ] && [ $((n % 6)) = 0 ]; then
+	elif [ "$n" -ge 10 ] && [ "$nudges" -lt 4 ] && [ $((n % 6)) = 0 ]; then
 		h pane send-keys "$pane" enter >/dev/null 2>&1 || true
 		nudges=$((nudges + 1))
 	fi
@@ -263,6 +383,7 @@ while [ "$n" -lt 120 ]; do
 	sleep 0.5
 done
 note "setup choosers dismissed: $nudges"
+note "enter screens dismissed: $presses"
 check "claude-reached-a-live-composer" "$ready" "$(last_lines 12 "$(h pane read "$pane" --source detection 2>&1)")"
 [ "$ready" = 1 ] || exit 1
 

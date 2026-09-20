@@ -64,8 +64,12 @@ nothing, with a green board over it. Two were in the tree the day this landed â€
 wrote the census counted 21 `verify-*` *targets* and never enumerated
 `scripts/`, so neither had ever been classified. Neither is schedulable today
 (one needs an uncaged seat, one needs a container), so nothing was
-unrun-and-needed; the gap was the guard's. A third table, `UNTARGETED`, now
-carries every `verify-*` script that is no target's recipe with the reason it
+unrun-and-needed; the gap was the guard's. `verify-ghost-composer.sh` has since
+grown a hermetic `--self-test` arm that `make test` DOES run
+(`internal/posse/ghostrig_qa_test.go`, ranger-base-trb9z): the rig still needs
+the uncaged seat and still has no target, but the text match deciding which
+startup screen it presses at is pinned without one. A third table, `UNTARGETED`,
+now carries every `verify-*` script that is no target's recipe with the reason it
 cannot have one, and the QA test globs the directory against it both ways.
 
 Three tables of *sentences* are checked rather than read, for the same reason:
