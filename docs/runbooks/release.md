@@ -225,6 +225,14 @@ Nothing is downloadable until you publish — and the formula's URLs 404 until
 you do, which makes step 3 fail in a way that looks like a bad formula.
 
 **After publishing, verify the "Latest" pointer moved (`ranger-base-8vx0`).**
+The draft is created without `--target` (`ranger-base-597lo`). GitHub treats
+a target on a release create as a tag creation, and refuses `GITHUB_TOKEN`
+whenever `.github/workflows/*` at that commit differ from the default
+branch's tip — so a `workflow_dispatch` retry 403'd every time after a
+release.yml fix landed on main. With no target the release attaches to the
+existing tag and the check never runs. Corollary: editing a workflow file on
+main between the tag and the publish is safe now, and was not before.
+
 The workflow does not mark the draft latest (GitHub's API refuses `make_latest`
 on a draft; v0.5.0's second run died on it, `ranger-base-597lo`), so the
 "Set as the latest release" checkbox on the publish screen is the only place

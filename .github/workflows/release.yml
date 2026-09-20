@@ -143,7 +143,6 @@ jobs:
           # by integration" to go on (ranger-base-597lo).
           GH_DEBUG: api
           TAG: ${{ steps.tag.outputs.tag }}
-          SHA: ${{ steps.tag.outputs.sha }}
           NOTES: ${{ runner.temp }}/release-notes.md
         # Arrays are bash, like the tag guard above; stated so the flag cannot
         # be quietly dropped by a shell that splits "${args[@]}" differently.
@@ -181,7 +180,15 @@ jobs:
           # pointer is set by the operator at publish — runbook Step 1 says to
           # tick "Set as the latest release" — because v0.3.0 stayed "latest"
           # through v0.4.0's publish when nobody did.
-          args=(--draft --title "posse $TAG" --generate-notes --target "$SHA")
+          # No --target. The tag already exists (resolve-the-tag proved it), so
+          # target_commitish is unused for the release itself — but GitHub still
+          # treats a target on a release create as a tag creation and refuses
+          # GITHUB_TOKEN whenever the workflow files at that commit differ from
+          # the default branch's tip ("workflows" permission, which GITHUB_TOKEN
+          # never has). That is why v0.5.0's tag-push run got past this call and
+          # every workflow_dispatch retry after a release.yml edit on main 403'd
+          # (ranger-base-597lo; cli/cli#9514).
+          args=(--draft --title "posse $TAG" --generate-notes)
           if [ -s "$NOTES" ]; then
             args+=(--notes-file "$NOTES")
             echo "release: notes will open with the CHANGELOG section for $TAG:"
