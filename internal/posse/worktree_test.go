@@ -1320,6 +1320,75 @@ func TestLandRefusalTellsAnAlreadyLandedTreeFromAStrand(t *testing.T) {
 	}
 }
 
+// The same tree, three surfaces, and the clause that disagreed with the
+// other two (ranger-base-vy6hc). unaccountedFor's MEASURED arm is the one
+// refusal that ends by saying who retires this tree — ADR 0006's sentence,
+// "retiring it stays a human's" — and it said it without asking dirtyPaths.
+// The `--land` pass prints that sentence and `continue`s, so it never
+// reaches LandSessionTrees' own "N uncommitted path(s) stay in …" line; the
+// listing beside it named the path, and RemoveSessionTree, the retire the
+// clause points at, refuses over it before it asks anything else.
+//
+// So the operator read one answer about one tree that mentioned nothing to
+// lose and pointed at an act that was already refused. Nothing was ever lost
+// — both ends of the machinery are right — which is why this is the
+// SENTENCE's pin and nothing else's: the gate still holds, main does not
+// move, and the retire still declines.
+func TestTheLandRefusalNamesTheUncommittedWorkItsRetireWouldRefuseOver(t *testing.T) {
+	t.Parallel()
+	a := wtApp(t)
+	repo := wtRepo(t)
+	commitIn(t, repo, "adr.md", "status: proposed\n", "seed the adr")
+	tr, err := a.EnsureSessionTree(repo, "s-1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commitIn(t, tr.Path, "adr.md", "status: accepted\n", "s-1: the fix")
+	sha := mustGit(t, tr.Path, "rev-parse", "HEAD")
+	// The base moves first, or the pick rebuilds the identical object and
+	// the base reaches it by sha, which measures nothing (ranger-base-g2xf).
+	commitIn(t, repo, "moved.txt", "meanwhile\n", "main moved on")
+	mustGit(t, repo, "cherry-pick", "-x", sha)
+	write(t, filepath.Join(tr.Path, "scratch.txt"), "uncommitted\n")
+	was := mustGit(t, repo, "rev-parse", "main")
+
+	var out strings.Builder
+	if err := LandSessionTrees(&out, a, []string{repo}, false); err != nil {
+		t.Fatal(err)
+	}
+	got := out.String()
+	// The fixture has to REACH the measured arm, or this pin measures
+	// nothing: any other arm carries no promise about retiring.
+	if !strings.Contains(got, "nothing here is unlanded") {
+		t.Fatalf("the fixture did not reach the measured-equivalence refusal:\n%s", got)
+	}
+	for _, want := range []string{"uncommitted", "scratch.txt"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the refusal points at a retire and does not say %q:\n%s", want, got)
+		}
+	}
+	// ADR 0006's own sentence is the part the tail keeps — this is a clause
+	// appended to it, not a replacement for it.
+	for _, want := range []string{"no record says which bead", "ADR 0006"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the refusal dropped %q:\n%s", want, got)
+		}
+	}
+
+	// The two surfaces it disagreed with, unchanged and still disagreeing
+	// with nothing: the retire refuses over the same path, and the gate held.
+	err = RemoveSessionTree(tr, false)
+	if err == nil {
+		t.Fatal("RemoveSessionTree removed a dirty tree — the clause now points at an act that happens")
+	}
+	if !strings.Contains(err.Error(), "scratch.txt") {
+		t.Errorf("the retire refusal does not name the path the land refusal now names: %v", err)
+	}
+	if now := mustGit(t, repo, "rev-parse", "main"); now != was {
+		t.Errorf("the gate did not hold: main moved %s → %s\n%s", was, now, got)
+	}
+}
+
 // The half an operator reads BEFORE they type --land. "1 commit(s) not on
 // main" was the whole basis for that decision and it is true of a strand and
 // of an already-landed duplicate alike; which bead the work belongs to is the

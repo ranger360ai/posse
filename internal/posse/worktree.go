@@ -3436,8 +3436,23 @@ func unaccountedFor(t *SessionTree, force bool) string {
 		// FOR — the one population fact 1 keeps forever (ADR 0006, D4). So
 		// the ADR 0006 sentence stands unchanged and the tail now says what
 		// follows from it.
-		return fmt.Sprintf("%s holds %d commit(s) not on %s by sha%s and no record says which bead — but every one of them is already on %s as an equivalent patch (%s), so nothing here is unlanded; %s",
+		//
+		// AND IT ASKS dirtyPaths BEFORE IT SAYS SO (ranger-base-vy6hc). This
+		// is the only arm that ends by pointing at an act, and the act it
+		// points at is the one RemoveSessionTree refuses over a dirty tree
+		// before it asks anything else. The `--land` pass prints this
+		// sentence and `continue`s, so it never reaches the "N uncommitted
+		// path(s) stay in …" line it prints for every tree it does land —
+		// leaving this the one surface about that tree that named nothing to
+		// lose, while the listing beside it named the path and the retire
+		// declined. Same call treeState makes, same words RemoveSessionTree
+		// refuses in, so the three cannot disagree.
+		refusal := fmt.Sprintf("%s holds %d commit(s) not on %s by sha%s and no record says which bead — but every one of them is already on %s as an equivalent patch (%s), so nothing here is unlanded; %s",
 			t.Branch, n, t.Base, where, t.Base, strings.Join(equivNotes(eq), "; "), noRecordKeeps)
+		if d := dirtyPaths(t.Path); len(d) > 0 {
+			refusal += fmt.Sprintf(", and that retire is refused while %s has uncommitted work (%s)", AbbrevHome(t.Path), dirtyList(d))
+		}
+		return refusal
 	case len(eq) > 0:
 		// No measurement of content: somebody's decision that this landed
 		// (the -x trailer), or an identity match on a replay. Neither says
