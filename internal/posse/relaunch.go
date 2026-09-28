@@ -41,10 +41,14 @@ type RelaunchOpts struct {
 // what to recreate, so the order is: prove the replacement is buildable,
 // *then* destroy the original. planLaunch resolves the whole recreate —
 // persona, runtime, tier, cage, parity, skills, seatbelt, gates, env sets,
-// working directory — without touching herdr, and the plan it returns is
-// the one the recreate is built from, so preflight and create cannot
-// disagree. A relaunch that cannot be completed is refused with the session
-// still running (rangerhq-v52t).
+// working directory — and the plan it returns is the one the recreate is
+// built from, so preflight and create cannot disagree. A relaunch that
+// cannot be completed is refused with the session still running
+// (rangerhq-v52t). Since ranger-base-d8riq that preflight also asks herdr
+// one read-only question, ADR 0013 §1's launch row: a runtime herdr has no
+// detection manifest for cannot be recreated as a dispatched session, and
+// this is where the ADR wants that answer — before the kill, so the session
+// the operator asked to refresh is still theirs.
 //
 // The kill has a twin, and the preflight cannot help there either: a
 // session this pass cannot see is not a session that is gone, so the unlink

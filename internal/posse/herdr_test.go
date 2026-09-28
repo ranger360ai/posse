@@ -1878,7 +1878,17 @@ func fakeHerdr(args []string) int {
 		// is the answer every test that predates the lever needs.
 		//
 		//	herdr-kinds   space-separated labels this fake has manifests for
+		//	explain-agent-error
+		//	              this herdr answers the LABEL question neither way:
+		//	              the UNKNOWN reading (ADR 0013 §1), which is the
+		//	              third answer and the one that must refuse nothing —
+		//	              a herdr that cannot be asked is never a "no"
+		//	              (ranger-base-d8riq). Separate from explain-error,
+		//	              which arms `explain <pane>`, a different question.
 		if want := fakeExplainAgentArg(args); want != "" {
+			if _, err := os.Stat(filepath.Join(fakeDir(), "explain-agent-error")); err == nil {
+				return fakeErr("bad_request", "fake herdr: this build cannot explain a label")
+			}
 			kinds, err := os.ReadFile(filepath.Join(fakeDir(), "herdr-kinds"))
 			if err == nil && !containsString(strings.Fields(string(kinds)), want) {
 				fmt.Printf(`{"agent":%q,"fallback_reason":"unknown_agent","manifest_version":null}`+"\n", want)

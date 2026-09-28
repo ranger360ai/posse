@@ -303,25 +303,13 @@ func (a *App) writePreflight(rt *Runtime, h Herdr, w io.Writer) bool {
 }
 
 func (a *App) launchRow(rt *Runtime, h Herdr) stageRow {
-	exe := rt.Exe()
 	// Asked the way herdr resolves it — a manifest reached through another
 	// agent's `aliases = [...]` counts, and on herdr 0.8.0 that is the only
-	// route a CLI it was not built with has (Herdr.AgentManifest).
-	seen := "herdr recognition UNKNOWN (herdr not on PATH, or its output moved)"
-	if ver, known, ok := h.AgentManifest(exe); ok {
-		seen = fmt.Sprintf("herdr does NOT recognize argv0 %q — no detection here, so work/settle are guesses", exe)
-		if known {
-			seen = fmt.Sprintf("herdr recognizes argv0 %q (detection manifest %s)", exe, ver)
-		}
-	} else if kinds := h.KnownAgentKinds(); kinds != nil {
-		seen = fmt.Sprintf("herdr does NOT recognize argv0 %q — no detection here, so work/settle are guesses", exe)
-		for _, k := range kinds {
-			if k == exe {
-				seen = fmt.Sprintf("herdr recognizes argv0 %q", exe)
-				break
-			}
-		}
-	}
+	// route a CLI it was not built with has (Herdr.AgentManifest). ONE
+	// reading, shared with the preflight gap and with the launch refusal
+	// itself (detection.go): this row saying "does NOT recognize" and a
+	// bead-carrying launch refusing are the same fact asked once.
+	seen := DetectionRow(ReadDetection(h, rt.Exe()))
 	un := "unattended flag " + rt.Unattended + " on the line"
 	if rt.Unattended == "" {
 		un = "NO unattended flag known — a tool call may sit unapproved with nobody watching"

@@ -158,23 +158,22 @@ func (a *App) RuntimeGaps(rt *Runtime, h Herdr) []RuntimeGap {
 	// state is default_known_agent_idle_fallback, so `working` and every
 	// settled state are guesses.
 	//
-	// Asked through AgentManifest, not through the compiled kind list: an
-	// `aliases = [...]` entry on another agent's manifest also resolves, and
-	// on herdr 0.8.0 it is the only route a CLI herdr was not built with has
-	// to detection at all. The kind list is the fallback when the probe
-	// cannot be run.
-	switch _, known, ok := h.AgentManifest(exe); {
-	case ok && known:
-	case ok:
-		add("detection", fmt.Sprintf("herdr has no detection manifest for argv0 %q — a dispatched session is agent_not_found, so it cannot be addressed at all. Author one: docs/runbooks/%s", exe, detectionDoc), true)
-	default:
-		kinds := h.KnownAgentKinds()
-		switch {
-		case kinds == nil:
-			add("detection", "herdr could not be asked (not on PATH, or its output changed shape) — whether it recognizes "+exe+" is UNKNOWN here, not no", false)
-		case !containsString(kinds, exe):
-			add("detection", fmt.Sprintf("herdr does not recognize argv0 %q — a dispatched session is agent_not_found, so it cannot be addressed at all. Author a manifest: docs/runbooks/%s", exe, detectionDoc), true)
-		}
+	// ONE reading, shared with the launch row and with every launch that
+	// refuses on it (detection.go, ranger-base-d8riq): this gap being
+	// Blocking and a bead-carrying launch refusing are the same fact asked
+	// once, so the grid cannot promise a refusal the launcher does not make.
+	// The kind list is the fallback when `agent explain` cannot be read, and
+	// the reading itself carries which route answered.
+	//
+	// `exe != ""` on the UNKNOWN arm because an empty argv0 already has its
+	// own blocking gap above and herdr was never asked about it — a second
+	// line saying herdr's recognition of "" is unknown names a question
+	// nobody put.
+	switch det := ReadDetection(h, exe); {
+	case det.Undetectable():
+		add("detection", DetectionGapLine(rt, det), true)
+	case det.State == ManifestUnreadable && exe != "":
+		add("detection", "herdr could not be asked (not on PATH, or its output changed shape) — whether it recognizes "+exe+" is UNKNOWN here, not no", false)
 	}
 
 	// yaml — keys nothing reads. A launch WARNS and proceeds on these

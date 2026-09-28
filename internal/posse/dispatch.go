@@ -4317,10 +4317,29 @@ func (d *Dispatcher) launchSession(is RepoIssue, persona, session, runtime, tier
 	// persona on this runtime meets the same screen, and claiming them one
 	// at a time to refuse them one at a time is the sterilised queue ADR
 	// 0013 §2 already named once.
+	//
+	// ADR 0013 §1's launch row, beside it and for the same reasons
+	// (ranger-base-d8riq): herdr has no detection manifest for this
+	// runtime's argv0, so a session created here would be `agent_not_found`
+	// — AgentTarget lists herdr's agents for the workspace and finds none,
+	// the wait cannot even reach the settle gate, and what is spent before
+	// anyone finds out is the worktree, the workspace, the pane and the
+	// runtime's own first turn. Same placement, same busy-key arm, same
+	// create-only condition; the only difference is that this reading is a
+	// question put to herdr rather than a file read (detection.go).
+	//
+	// planLaunch asks it again inside the create, which is the backstop for
+	// every launch path that is not this one. Two `agent explain` calls on a
+	// dispatched create, then — 0.00-0.04s each, measured — exactly as the
+	// danger reading is taken twice, and for the same reason: neither
+	// surface can stand down without leaving the other path unguarded.
 	if resolveErr != nil {
 		if rt, err := d.App.LoadRuntime(runtime); err == nil {
 			if line := DangerLine(rt); line != "" {
 				return launched{}, DangerRefusal(rt, line)
+			}
+			if det := ReadDetection(d.HB.H, rt.Exe()); det.Undetectable() {
+				return launched{}, DetectionRefusal(rt, det)
 			}
 		}
 	}

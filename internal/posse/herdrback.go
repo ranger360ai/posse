@@ -1840,12 +1840,27 @@ type launchPlan struct {
 	ManagedHooks string
 }
 
-// planLaunch resolves a launch without touching herdr: persona, runtime,
-// tier, cage, parity, skills, seatbelt, gates, env sets, working directory.
-// Every refusal a launch can raise for reasons that are knowable in advance
-// is raised here. Its side effects are the renders a launch always redoes
+// planLaunch resolves a launch and refuses it: persona, runtime, tier, cage,
+// parity, skills, seatbelt, gates, env sets, working directory. Every
+// refusal a launch can raise for reasons that are knowable in advance is
+// raised here. Its side effects are the renders a launch always redoes
 // (gates, skills, seatbelt profiles, the memory dir) — idempotent by
 // design, so planning twice costs nothing and changes nothing.
+//
+// It used to say "without touching herdr", and that sentence is amended
+// rather than defended (ranger-base-d8riq). ADR 0013 §1's launch row is a
+// question only herdr can answer — does it have a detection manifest for
+// this runtime's argv0 — and the property the ADR sets is "refused before a
+// pane or a claim exists", which is this function and not the create below
+// it: RelaunchSession plans before it kills, so a refusal raised from
+// createSession would arrive on the far side of the kill.
+//
+// What the old sentence was really promising is still true, and is the
+// standard any future reading here has to meet: nothing planLaunch asks of
+// herdr CREATES anything, none of it is destructive, and a herdr that cannot
+// be asked at all decides nothing (ReadDetection's UNKNOWN). The one call it
+// makes is `agent explain` over an empty temp file — read-only, 0.00-0.04s,
+// MEASURED 2026-09-28 on herdr 0.9.1.
 func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 	a := b.App
 
@@ -2104,6 +2119,37 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 				return nil, DangerRefusal(rt, line)
 			}
 			b.warn("posse: DEGRADED — %s launch opens on %s; an interactive launch proceeds because answering that screen is what you would open a session to do (ADR 0013 §2)\n", rt.Name, line)
+		}
+		// ADR 0013 §1's launch row, on the same rung and with the same
+		// asymmetry (ranger-base-d8riq, from ranger-base-i3q6g). herdr has no
+		// detection manifest for this runtime's argv0, so a session created
+		// here can be labelled and never addressed: every state is
+		// `agent_not_found`, the prompt cannot be confirmed, the settle
+		// cannot be read, and the NEXT pass reads "no agent status" as the
+		// CLI-died signal and types the persona's launch line into the live
+		// composer as a chat turn.
+		//
+		// This is the backstop for every bead-carrying path that is not the
+		// dispatch loop — a cockpit `d` on a session it must create, a
+		// recipe — and for the recreate half it is also the placement that
+		// matters: RelaunchSession plans BEFORE it kills, so a refusal here
+		// leaves the session the operator asked to refresh still running and
+		// still theirs (ADR 0013 §1 property 3).
+		//
+		// Dispatch does not normally reach it: launchSession refuses above
+		// the claim, because the argv ladder has taken the bead by the time a
+		// launch is being planned (dispatch.go).
+		//
+		// Interactive warns and proceeds, and here that asymmetry is
+		// load-bearing in the strongest form it takes anywhere: the fixtures
+		// an upstream detection filing needs are captured from an interactive
+		// session (ADR 0060 D2), so a posse that refused `posse new` here
+		// would have walled off the only route that can end its own refusal.
+		if det := ReadDetection(b.H, rt.Exe()); det.Undetectable() {
+			if o.Bead != "" {
+				return nil, DetectionRefusal(rt, det)
+			}
+			b.warn("posse: %s\n", DetectionDegraded(rt, det))
 		}
 		// Enforcement parity (ADR 0002 §4): the cage the session gets is the
 		// best available tier (shims today); the PID may demand more. Any
