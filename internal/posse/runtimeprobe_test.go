@@ -528,9 +528,13 @@ func TestProbeSessionExeRefusesWhatItCannotName(t *testing.T) {
 	for _, tc := range []struct {
 		name, body, want string
 	}{
-		// Nothing named carol exists on any PATH the pane has, so the
-		// lookup writes an empty answer — which the `.part` rename tells
-		// apart from a redirect this read got to before the shell did.
+		// Nothing named probeFixtureExe exists on any PATH the pane has,
+		// so the lookup writes an empty answer — which the `.part` rename
+		// tells apart from a redirect this read got to before the shell
+		// did. This arm runs `command -v` in a real subprocess that
+		// inherits the ambient PATH, so the premise is the RESERVED name
+		// and nothing else: it was `bob` when an npm package put a real
+		// bob on this box, and it went red (ranger-base-mis0i).
 		{"resolves nothing",
 			`[ "$1" = pane ] && [ "$2" = run ] || exit 0
 /bin/sh -c "$4"`,
@@ -546,7 +550,7 @@ func TestProbeSessionExeRefusesWhatItCannotName(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 			h := fakeProbeHerdr(t, tc.body)
-			got, err := probeSessionExe(h, "%1", filepath.Join(dir, "bin"), "carol", filepath.Join(dir, "cli.txt"), 300*time.Millisecond)
+			got, err := probeSessionExe(h, "%1", filepath.Join(dir, "bin"), probeFixtureExe, filepath.Join(dir, "cli.txt"), 300*time.Millisecond)
 			if err == nil {
 				t.Fatalf("a probe that cannot name its binary must refuse; got %q", got)
 			}
@@ -718,8 +722,12 @@ func TestRuntimeProbeRecordsTheBinaryTheSessionResolved(t *testing.T) {
 	dir := t.TempDir()
 	srv := filepath.Join(dir, "srvbin") // the herdr daemon's PATH
 	cli := filepath.Join(dir, "clibin") // posse's own
-	srvExe := probeFakeCLI(t, srv, "carol", "carol 2.0-daemon-copy")
-	launcherExe := probeFakeCLI(t, cli, "carol", "carol 1.0-launcher-copy")
+	// Planted under the runtime's own exe, which probeParityApp spells
+	// probeFixtureExe: this arm needs the name to resolve, in two temp dirs
+	// it controls, which is the opposite of the ambient-PATH bet that the
+	// reserved spelling exists to end (ranger-base-mis0i).
+	srvExe := probeFakeCLI(t, srv, probeFixtureExe, "carol 2.0-daemon-copy")
+	launcherExe := probeFakeCLI(t, cli, probeFixtureExe, "carol 1.0-launcher-copy")
 	t.Setenv("PATH", cli+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	h := fakeProbeHerdr(t, `case "$1 $2" in
@@ -798,7 +806,7 @@ esac`)
 // apart from one written after it.
 func TestProbeLauncherPathSpellsAnAbsenceRatherThanLeavingItEmpty(t *testing.T) {
 	t.Parallel()
-	absent := &Runtime{Name: "carol", Command: "definitely-not-installed-anywhere-385x --pid {file}"}
+	absent := &Runtime{Name: "carol", Command: probeFixtureExe + " --pid {file}"}
 	if got := probeLauncherPath(absent); got != ProbeExeUnresolved {
 		t.Errorf("an exe posse cannot resolve must be spelled, not blank: %q", got)
 	}

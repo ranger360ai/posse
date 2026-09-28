@@ -20,16 +20,34 @@ import (
 	"time"
 )
 
-// probeParityApp is an App with a template-only runtime declared in yaml and
-// a state dir of its own.
+// probeFixtureExe is the CLI every fixture in this file asserts is NOT
+// installed here, and its spelling is the deliverable of ranger-base-mis0i.
 //
-// `carol` is the placeholder for a CLI the harness has never seen, and the
-// rename is the point: `bob` played that part from ADR 0017 until ADR 0060
-// made bob a fourth BUILT-IN (ranger-base-ymmiv), at which point every
-// fixture here would have been a template-only assertion about a runtime
-// that loads built-in — the arm below is what said so first. Carol is the
-// next placeholder down the alice/bob/carol line, and the rule is that a
-// fixture CLI is named for nothing real.
+// The reserved form is `posse-<bead>-no-such-exe` — a word no package
+// manager will ever ship — and it is a rule rather than a taste because the
+// short, plausible alternative has already cost a red suite. ProbeState's
+// drift check resolves rt.Exe() on the REAL PATH (runtimeprobe.go, the
+// like-for-like branch), so "a runtime that does not exist here" is not a
+// property of the fixture: it is a bet that the name stays free on every box
+// the suite runs on. `bob` held that bet from ADR 0017 until an npm install
+// of an unrelated tool called bobshell put a real `bob` on this box
+// (2026-09-28 14:31), and five arm3 tests went red at a HEAD nobody had
+// touched. ranger-base-ymmiv renamed the placeholder to `carol`, which is
+// the same bet at longer odds — alice/bob/carol are exactly the names a
+// package manager ships.
+//
+// Only the EXE is reserved. The runtime NAME stays `carol`, because nothing
+// ever resolves a name: it is a filename under runtimes/ and a word in the
+// `posse runtime probe <name>` remedy, and the assertions below read better
+// for it. internal/treepins/fixtureexe_qa_test.go is what keeps this true
+// for the whole test corpus rather than for the file somebody remembered.
+const probeFixtureExe = "posse-mis0i-no-such-exe"
+
+// probeParityApp is an App with a template-only runtime declared in yaml and
+// a state dir of its own. The Builtin guard below is ranger-base-ymmiv's:
+// when ADR 0060 made bob a fourth BUILT-IN, every fixture in this file would
+// otherwise have become a template-only assertion about a runtime that loads
+// built-in, and that guard is what said so first.
 func probeParityApp(t *testing.T) (*App, *Runtime) {
 	t.Helper()
 	home := t.TempDir()
@@ -37,7 +55,7 @@ func probeParityApp(t *testing.T) (*App, *Runtime) {
 	if err := os.MkdirAll(a.RuntimesDir(), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(a.RuntimesDir(), "carol.yaml"), []byte("command: carol --pid {file}\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(a.RuntimesDir(), "carol.yaml"), []byte("command: "+probeFixtureExe+" --pid {file}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	rt, err := a.LoadRuntime("carol")
@@ -60,7 +78,7 @@ func writeProbe(t *testing.T, a *App, pass bool) {
 		obs[0] = ProbeObservable{1, "shim-precedence", false, "command -v uname → /usr/bin/uname"}
 	}
 	rec := &ProbeRecord{
-		Runtime: "carol", CLIPath: "/usr/local/bin/carol", LauncherPath: "/usr/local/bin/carol",
+		Runtime: "carol", CLIPath: "/usr/local/bin/" + probeFixtureExe, LauncherPath: "/usr/local/bin/" + probeFixtureExe,
 		Version: "carol 1.2.3",
 		Date:    time.Now().UTC(), PosseVersion: Version, Canary: "uname", Observables: obs,
 	}
