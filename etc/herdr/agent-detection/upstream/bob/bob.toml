@@ -1,0 +1,159 @@
+# DRAFT agent-detection manifest for IBM Bob (bobshell) — posse, ranger-base-q0e1y.
+#
+# NOT INSTALLABLE AND NOT INSTALLED. herdr's agent kinds are compiled into the
+# binary; a standalone manifest for an id herdr does not know is ignored
+# outright — not listed by `server agent-manifests`, `agent explain` answers
+# `unknown_agent`, `evaluated_rules: []`. Measured on 0.8.0 (rangerhq-tr8k), on
+# 0.8.2 (2026-09-28, ADR 0060 Context 2) and on 0.9.1 the same day
+# (ranger-base-p8afi). A local `aliases` entry does
+# not resolve either: only the compiled alias table does (ADR 0060 Context 1).
+# So this file is a PROPOSAL to send upstream with `../../upstream-bob.md`, not
+# an override. It lives under `upstream/` for that reason — `scripts/verify-
+# detection.sh` globs `etc/herdr/agent-detection/*.toml` and only that level,
+# so nothing here is staged, installed or replayed.
+#
+# The day herdr ships a `bob` kind:
+#   1. move `upstream/bob/*.txt` into `../../testdata/bob/` (a rename — the
+#      names already carry the state prefix verify-detection reads),
+#   2. delete this file (upstream's manifest is the one to run; fork it only
+#      if it misses one of these screens),
+#   3. `make verify-detection`,
+#   4. `posse runtime probe bob` (ranger-base-6wqe).
+# `internal/posse/bobtripwire_qa_test.go` reds on step 0 and says all of that.
+#
+# Every rule below is keyed on the DIALOG'S OWN TEXT, never on a shared
+# footer: `Press Enter to confirm` is the Execute Command dialog's footer AND
+# nothing else's today, but codex's `hooks_review` exists because a footer
+# reword silently returned a blocked screen to idle (rangerhq-7ia, README).
+#
+# Fixtures, all beside this file, all `herdr pane read <pane> --source
+# detection` captures of bobshell 2.0.5:
+#   blocked-signin.txt                      -> signin
+#   blocked-execute-command.txt             -> execute_command
+#   blocked-execute-command-scrollback.txt  -> execute_command (same dialog
+#                                              with a completed tool call and
+#                                              two notices above it)
+#   idle-composer.txt                       -> live_composer
+#   idle-after-turn.txt                     -> live_composer
+#   idle-command-picker.txt                 -> NO RULE; see the note at the
+#                                              foot of this file
+id = "bob"
+version = "2026.09.28.1"
+min_engine_version = 3
+updated_at = "2026-09-28T00:00:00Z"
+
+# ---------------------------------------------------------------- blockers --
+
+[[rules]]
+# The browser sign-in screen. A bob with no usable gateway token draws this
+# INSTEAD of a composer — there is nothing beneath it. Reproduced on demand
+# with a dead gateway (`BOB_GATEWAY_URL=http://127.0.0.1:9 SANDBOX=1`), which
+# is how blocked-signin.txt was captured; a real expiry draws the same screen.
+# Esc / Ctrl+C exits the program, so this is a state no key posse is willing
+# to press can clear — the operator's, always (rangerhq-4mzt).
+#
+# ASSUMED, not measured: that the screen discards typed text. It exits on Esc
+# and Ctrl+C and nothing else was typed at it (ADR 0060, ASSUMED list; the
+# probe line is on ranger-base-6wqe). `blocked` here does not rest on that —
+# it rests on there being no composer to type into at all.
+#
+# Anchored on both lines: the first alone could plausibly appear as a notice
+# over a live composer in some future build, the pair cannot.
+id = "signin"
+state = "blocked"
+priority = 1200
+region = "bottom_non_empty_lines(10)"
+visible_blocker = true
+all = [
+  { contains = ["Complete sign-in in your browser"] },
+  { contains = ["Press ESC or Ctrl+C to exit"] },
+]
+
+[[rules]]
+# The Execute Command approval dialog — Bob's permission prompt. It replaces
+# the composer at the foot of the pane (the `Build Anything…` placeholder is
+# gone while it is up), so live_composer below cannot fire underneath it; the
+# priority gap is the belt to that braces.
+#
+# Keyed on the heading and the selected option, both line-anchored. The
+# heading alone is not enough: a COMPLETED call leaves ` Execute Command
+# (completed)` in the scrollback, which `^\s*Execute Command\s*$` excludes and
+# which blocked-execute-command-scrollback.txt pins — that fixture has both
+# spellings on screen and must still resolve to this rule.
+#
+# Not keyed on `Press Enter to confirm` (the footer) and not on `Command:`
+# (which the completed block also carries).
+id = "execute_command"
+state = "blocked"
+priority = 1190
+region = "bottom_non_empty_lines(20)"
+visible_blocker = true
+all = [
+  { regex = ['(?m)^\s*Execute Command\s*$'] },
+  { regex = ['(?m)^\s*[→>]?\s*Approve Once\s*$'] },
+]
+
+# ------------------------------------------------------------------ working --
+
+# TODO(ranger-base-6wqe): the working rule. NO FIXTURE EXISTS. The recon's
+# `working.txt` is byte-identical to its `after-turn.txt` (md5
+# b5a03d49b95134eaa1a9390b9a484987, both) — the capture was taken after the
+# turn had settled, so what it holds is an idle composer and not a working
+# screen. `idle-after-turn.txt` beside this file IS that capture, kept under
+# the name that says what it shows.
+#
+# Nothing is written here on purpose. A rule invented from Bob's source or
+# from a guess at its spinner chrome would be a rule upstream cannot check and
+# we cannot fail — and the fallback it would displace (`unknown` for an agent
+# with no matching rule) is the SAFE direction, unlike idle. When 6wqe
+# captures a mid-turn pane, the fixture is `working-<what>.txt` and the rule
+# goes here, below the blockers and above live_composer.
+#
+# What is known about the screen, from the same recon, for whoever captures
+# it: the sqlite `tasks.status` column reads `running` mid-turn and `active`
+# once settled, and per-assistant-message `data._meta.spend` gains a row. That
+# is the database, not the pane; the pane's own mid-turn chrome is unread.
+
+# --------------------------------------------------------------------- idle --
+
+[[rules]]
+# The live composer. `Build Anything, @ for context, / for commands, $ for
+# skills` is the composer's placeholder, drawn between two rules with the mode
+# footer (`Agent Mode · …`) beneath. It is present on a fresh signed-in pane
+# and again after a turn settles, which is the pair of fixtures.
+#
+# priority 1105, NOT above the blockers. An idle rule must lose to every
+# blocker: posse shipped one at 1250 once and a real permission dialog drawn
+# over it read `idle`, which is a dispatched prompt typed into the dialog
+# (rangerhq-1xsj, and the ladder in docs/runbooks/agent-detection-manifest.md).
+# 1105 is that runbook's slot for exactly this rule.
+#
+# visible_idle marks this a SEEN idle rather than a fallback guess. posse's
+# readiness gate (`awaitSettled`, internal/posse/dispatch.go) demands a seen
+# state, because `default_known_agent_idle_fallback` answers idle for any
+# known agent whose screen matched nothing — including a pane that is still a
+# shell 0.2s into a launch.
+id = "live_composer"
+state = "idle"
+priority = 1105
+region = "bottom_non_empty_lines(8)"
+visible_idle = true
+all = [
+  { contains = ["Build Anything, @ for context"] },
+]
+
+# `idle-command-picker.txt` has NO rule here, deliberately. It is the `/`
+# command picker drawn over the live composer: the placeholder above is
+# replaced by the typed `/`, so live_composer does not match it, and the
+# screen resolves to whatever the fallback says.
+#
+# It is shipped anyway because it is a real Bob screen upstream should see,
+# and because of the hazard beneath it: the picker eats Enter, so a prompt
+# that STARTS with `/` is typed into the composer and never submitted (ADR
+# 0060 D5). That is a property of the prompt's content, not of the pane —
+# there is a live composer underneath and the text is kept through Esc and
+# C-u — so no detection rule can fix it and posse's answer is "typed prompts
+# to Bob never start with `/`". Whoever moves these fixtures into testdata/
+# must read this one before assuming it is pinned: under a known-agent
+# fallback it will report idle and pass without any rule matching, which is
+# the vacuous-fixture shape rangerhq-uglc named.

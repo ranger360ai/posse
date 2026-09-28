@@ -58,6 +58,11 @@ done
 
 command -v herdr >/dev/null || { echo "verify-detection: herdr not on PATH"; exit 2; }
 
+# Only this level, deliberately: etc/herdr/agent-detection/upstream/<agent>/
+# holds filing packages for agents herdr has no kind for — a draft manifest and
+# the pane snapshots to send with it — and every fixture of such an agent fails
+# here, forever, because herdr cannot evaluate it (ADR 0060 D2, ranger-base-q0e1y).
+# internal/posse/bobtripwire_qa_test.go is what fires the day that changes.
 agents=()
 for toml in "$root"/*.toml; do
   [ -e "$toml" ] || continue

@@ -1,0 +1,34 @@
+
+                                                 ───────────────────── Welcome to ─────────────────────
+
+                                                 ▀▀▀▀▀▀▀▀▀▀▀▀▀▀       ▀▀▀▀▀▀▀▀▀▀▀▀     ▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+                                                 ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    ▀▀▀▀▀▀▀▀▀▀▀▀▀▀    ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+                                                   ▀▀▀▀     ▀▀▀▀▀   ▀▀▀▀        ▀▀▀▀     ▀▀▀▀     ▀▀▀▀▀
+                                                   ▀▀▀▀▀▀▀▀▀▀▀▀▘    ▀▀▀▀        ▀▀▀▀     ▀▀▀▀▀▀▀▀▀▀▀▀▘
+                                                   ▀▀▀▀▀▀▀▀▀▀▀▀▘    ▀▀▀▀        ▀▀▀▀     ▀▀▀▀▀▀▀▀▀▀▀▀▘
+                                                   ▀▀▀▀     ▀▀▀▀▀   ▀▀▀▀        ▀▀▀▀     ▀▀▀▀     ▀▀▀▀▀
+                                                 ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    ▀▀▀▀▀▀▀▀▀▀▀▀▀▀    ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+                                                 ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀      ▀▀▀▀▀▀▀▀▀▀▀▀     ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+
+                                                 ░░░░░░░░░█▀▀▀░░░░█░░█░░░░█▀▀▀░░░░█░░░░░░░█░░░░░░░░░░░░
+                                                 ░░░░░░░░░▀▀▀█░░░░█▀▀█░░░░█▀▀▀░░░░█░░░░░░░█░░░░░░░░░░░░
+                                                 ░░░░░░░░░▀▀▀▀░░░░▀░░▀░░░░▀▀▀▀░░░░▀▀▀▀░░░░▀▀▀▀░░░░░░░░░
+
+                                                 ─────────────────── Version 2.0.5 ───────────────────
+
+
+                                                                      Did you know?
+
+                                                          Use Shift+Tab to cycle through modes
+                                                    You can use `bob -r` to resume a previous session
+                                  How to use Bob Shell? Just ask and it will use the docs tool to answer your question
+
+                                       <scratch-dir>
+
+                                          Users should independently verify accuracy of AI-generated content.
+
+
+
+
+                                                          ●∙∙ Complete sign-in in your browser…
+                                                              (Press ESC or Ctrl+C to exit)

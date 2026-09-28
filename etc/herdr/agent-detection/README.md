@@ -325,6 +325,42 @@ requests a real device code from OpenAI, and no reading is worth a network
 round trip nobody asked for. It is the one screen of this flow with no rule
 and no fixture.
 
+## upstream/ — filing packages, not overrides (ranger-base-q0e1y)
+
+`upstream/<agent>/` holds the material for an agent herdr has **no kind for**:
+a draft manifest and the pane snapshots to send with it. Nothing in there is
+installed, staged or replayed. `make install-detection` globs
+`etc/herdr/agent-detection/*.toml` and `verify-detection` globs the same level
+plus `testdata/<agent>/`, so a subdirectory is invisible to both — which is the
+point, because every fixture of an agent herdr cannot evaluate would fail on
+every run, forever.
+
+`upstream/bob/` is the first (ADR 0060 D2): IBM Bob, `bobshell` 2.0.5. herdr
+0.8.2 has no `bob` kind, a standalone manifest for an unknown id is ignored and
+a local `aliases` entry does not resolve — all measured, all in the ADR — so
+the only route is herdr compiling the kind in. `upstream-bob.md` is the filing;
+`upstream/bob/bob.toml` is the proposed manifest, commented rule by rule;
+`upstream/bob/*.txt` are six snapshots named `<state>-<what>.txt` already, so
+the day the kind ships the move into `testdata/bob/` is a rename.
+
+`internal/posse/bobtripwire_qa_test.go` is what makes that day arrive. It
+asserts every one of those snapshots still comes back `unknown_agent` from the
+herdr binary, and reds when one does not — printing the move, the delete, the
+`make verify-detection` and the `posse runtime probe bob`. Without it a herdr
+release would quietly make six captured screens detectable and they would stay
+in a directory named "upstream" forever.
+
+Two notes for whoever does the move:
+
+- There is **no `working-…` fixture**. Nobody has captured a mid-turn Bob pane
+  (the recon's `working.txt` was byte-identical to its `after-turn.txt`), so
+  `bob.toml` leaves the working slot a TODO rather than inventing chrome.
+  Capturing it is on ranger-base-6wqe.
+- `idle-command-picker.txt` is pinned by **no rule** and will pass through the
+  known-agent fallback the moment the kind exists — the vacuous-fixture shape
+  rangerhq-uglc named. It is shipped for the screen, not the assertion; the
+  foot of `bob.toml` says why.
+
 ## Working on this
 
 ```sh
@@ -388,4 +424,6 @@ agent:
 4. If not, re-fork the new upstream version and re-apply our rules.
 
 `upstream-report.md` in this directory is the write-up to send to herdr if the
-gap is still open; it has not been filed — filing it is the operator's call.
+gap is still open; `upstream-bob.md` is the other one (a missing kind rather
+than a missing rule). Neither has been filed — filing them is the operator's
+call.

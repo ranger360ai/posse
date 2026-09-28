@@ -1,0 +1,71 @@
+
+                                                 ───────────────────── Welcome to ─────────────────────
+
+                                                 ▀▀▀▀▀▀▀▀▀▀▀▀▀▀       ▀▀▀▀▀▀▀▀▀▀▀▀     ▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+                                                 ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    ▀▀▀▀▀▀▀▀▀▀▀▀▀▀    ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+                                                   ▀▀▀▀     ▀▀▀▀▀   ▀▀▀▀        ▀▀▀▀     ▀▀▀▀     ▀▀▀▀▀
+                                                   ▀▀▀▀▀▀▀▀▀▀▀▀▘    ▀▀▀▀        ▀▀▀▀     ▀▀▀▀▀▀▀▀▀▀▀▀▘
+                                                   ▀▀▀▀▀▀▀▀▀▀▀▀▘    ▀▀▀▀        ▀▀▀▀     ▀▀▀▀▀▀▀▀▀▀▀▀▘
+                                                   ▀▀▀▀     ▀▀▀▀▀   ▀▀▀▀        ▀▀▀▀     ▀▀▀▀     ▀▀▀▀▀
+                                                 ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀    ▀▀▀▀▀▀▀▀▀▀▀▀▀▀    ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+                                                 ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀      ▀▀▀▀▀▀▀▀▀▀▀▀     ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+
+                                                 ░░░░░░░░░█▀▀▀░░░░█░░█░░░░█▀▀▀░░░░█░░░░░░░█░░░░░░░░░░░░
+                                                 ░░░░░░░░░▀▀▀█░░░░█▀▀█░░░░█▀▀▀░░░░█░░░░░░░█░░░░░░░░░░░░
+                                                 ░░░░░░░░░▀▀▀▀░░░░▀░░▀░░░░▀▀▀▀░░░░▀▀▀▀░░░░▀▀▀▀░░░░░░░░░
+
+                                                 ─────────────────── Version 2.0.5 ───────────────────
+
+
+                                                                      Did you know?
+
+                                                    You can use `bob -r` to resume a previous session
+                                  How to use Bob Shell? Just ask and it will use the docs tool to answer your question
+                                                          Use Shift+Tab to cycle through modes
+
+                                                              ~/src/harness-scratch/bob-r2
+
+                                          Users should independently verify accuracy of AI-generated content.
+
+
+  (ℹ) Logged in as <work-email>
+
+
+ ❯ reply with the single word ready
+
+
+
+• ready
+
+
+ ┌───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+ │                                                                                                                                                   │
+ │  Available Commands:                                                                                                                              │
+ │                                                                                                                                                   │
+ │   ❯ /help - Show available commands                                                                                                               │
+ │     /hooks - Manage configured hooks                                                                                                              │
+ │     /init - Analyze codebase and create concise AGENTS.md files for AI assistants                                                                 │
+ │     /clear - Start a new task                                                                                                                     │
+ │     /copy - Copy an item from conversation history to the clipboard                                                                               │
+ │     /compact - Compact the context window (optionally with custom instructions)                                                                   │
+ │     /exit - Exit the CLI                                                                                                                          │
+ │     /resume - Browse and resume previous conversations                                                                                            │
+ │     /team - Select team                                                                                                                           │
+ │     /manage-secrets - Manage secrets for MCP configurations                                                                                       │
+ │     /processes - View all running Shell processes across tasks                                                                                    │
+ │     /mcp - Manage configured MCP servers                                                                                                          │
+ │     /mode - Switch the active mode                                                                                                                │
+ │     /editor - Set external editor preference                                                                                                      │
+ │     /skills - Insert a skill reference into the prompt                                                                                            │
+ │     /status - View Bob Shell task status, along with usage and version information                                                                │
+ │     /docs - Open Bob Shell documentation in your browser                                                                                          │
+ │     /logs - Open the latest log file with system viewer                                                                                           │
+ │     /bug - Submit a bug report                                                                                                                    │
+ │     /settings - View and edit Bob Shell settings                                                                                                  │
+ │     /permissions - View and change this folder's trust level                                                                                      │
+ │                                                                                                                                                   │
+ └───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+ ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ❯ /
+ ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Agent Mode · 10.5k / 270.0k (4%) · 0.021 🅞
