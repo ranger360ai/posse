@@ -712,6 +712,17 @@ type OpsPatternSet struct {
 
 	Ceiling         []OpsPattern // DataCeilingConfigKey's accepted entries, in config order
 	CeilingRejected []string     // "class: reason", in config order
+
+	// CeilingSelfMatch names the ACCEPTED ceiling classes whose regexp
+	// matches the raw line that defined them (ADR 0050 D6), in config
+	// order. Those entries are in Ceiling and IN FORCE — the wall is
+	// total; what this list says is that a commit of the config file
+	// holding that line will be refused by the class the line defines,
+	// class-only, with no way for the refusal to say why. Only
+	// WriteStampReport reads it, so no hook render changes: the property
+	// is the config's, not any one repo's, and the L3 byte-for-byte probe
+	// is untouched.
+	CeilingSelfMatch []string
 }
 
 // All is the effective VISIBILITY list, shipped first: the order the hook
@@ -741,8 +752,11 @@ func (a *App) OpsPatternSet() OpsPatternSet {
 	for _, p := range OpsPatterns {
 		seen[p.Class] = "the shipped list"
 	}
-	read := func(key, owner string, accepted *[]OpsPattern, rejected *[]string) {
-		for _, kv := range YamlMapPairs(a.ConfigPath, key) {
+	// selfMatch is nil for the visibility key: the question is the
+	// ceiling's, because only the ceiling scans every repo under every
+	// stamp and so reaches the instance's own config.yaml (ADR 0050 D6).
+	read := func(key, owner string, accepted *[]OpsPattern, rejected *[]string, selfMatch *[]string) {
+		for _, kv := range YamlMapPairsRaw(a.ConfigPath, key) {
 			p, err := NewOpsPattern(kv[0], kv[1])
 			if err == nil && seen[p.Class] != "" {
 				err = fmt.Errorf("that class is already taken by %s — the refusal names the class, so it has to be one", seen[p.Class])
@@ -753,13 +767,20 @@ func (a *App) OpsPatternSet() OpsPatternSet {
 			}
 			seen[p.Class] = owner
 			*accepted = append(*accepted, p)
+			// The RAW line, not kv[1]: `git diff --cached` hands the hook
+			// the line as the file holds it — indentation, quoting and a
+			// trailing comment included — so that is what the wall will
+			// judge and that is what decides this.
+			if selfMatch != nil && p.re.MatchString(kv[2]) {
+				*selfMatch = append(*selfMatch, p.Class)
+			}
 		}
 	}
-	read(DataCeilingConfigKey, "config "+DataCeilingConfigKey+":", &set.Ceiling, &set.CeilingRejected)
+	read(DataCeilingConfigKey, "config "+DataCeilingConfigKey+":", &set.Ceiling, &set.CeilingRejected, &set.CeilingSelfMatch)
 	for i := range set.Ceiling {
 		set.Ceiling[i].Why = dataCeilingConfigWhy
 	}
-	read(OpsPatternsConfigKey, "config "+OpsPatternsConfigKey+":", &set.Extra, &set.Rejected)
+	read(OpsPatternsConfigKey, "config "+OpsPatternsConfigKey+":", &set.Extra, &set.Rejected, nil)
 	return set
 }
 
@@ -783,6 +804,12 @@ func (s OpsPatternSet) WriteStampReport(w io.Writer) {
 	}
 	for _, r := range s.CeilingRejected {
 		fmt.Fprintf(w, "  data ceiling pattern REFUSED, not in force: %s\n", r)
+	}
+	// IN FORCE and warned (ADR 0050 D6). Class only, like every other line
+	// here: the value is the vocabulary the ceiling exists to keep out of
+	// local files, and this report is one.
+	for _, class := range s.CeilingSelfMatch {
+		fmt.Fprintf(w, "  data ceiling pattern IN FORCE and matches its own definition line, so a commit of the config that defines it will be refused by this class — write one literal character of the value in brackets (X -> [X]) and re-stamp: %s\n", class)
 	}
 }
 

@@ -794,3 +794,109 @@ func TestQADataCeilingMessageRefusalLeavesTheMessageAndOverrides(t *testing.T) {
 	}
 	qaNoCeilingVocabulary(t, "refusals.log after the override", log)
 }
+
+// PIN (l): a ceiling value whose regexp matches the LINE that defines it is
+// named at stamp time, and nothing else about it changes (ADR 0050 D6,
+// ranger-base-c4xix). D2 reads the added lines of every staged file in every
+// hooked repo and $RHQ_HOME/config.yaml is one of them, so such a value
+// refuses the commit of the config that defines it, class-only, with no way
+// for the refusal to say why. The answer is a warning where the list is READ
+// — once, so every renderer carries the same one (D3) — never a refusal, an
+// exemption or a rewrite.
+//
+// The subject is `posse gates install-hooks`' output, which is the process
+// that changes if this pin is deleted: OpsPatternSet carries the classes and
+// WriteStampReport prints one line each.
+//
+// The arms that matter are the RAW-LINE ones. The check reads the bytes as
+// the file holds them, because that is what `git diff --cached` hands the
+// hook: a trailing `# e.g. FILL-ME` on an otherwise-bracketed value DOES
+// refuse the config's commit, and a reader that judged YamlMapPairs' cleaned
+// value would call that line safe — yamlClean strips the comment and the
+// quotes. The quoted arms are the other direction: quoting is not a bracket
+// and does not make a literal safe, nor does it make a bracketed value
+// unsafe.
+//
+// MEASURED 2026-09-28: Go's regexp and grep -E judge nine self-match cases
+// identically (ADR 0050 D6), so a Go-side pin speaks for the hook; PIN (a)
+// already proves the hook refuses on the staged line.
+func TestQADataCeilingWarnsWhenAValueMatchesItsOwnDefinitionLine(t *testing.T) {
+	// A placeholder, which is how the property was found, and the remedy
+	// D6 prints for it. Never this box's vocabulary: what is measured here
+	// is the mechanism.
+	const (
+		plain     = "FILL-ME"
+		bracketed = "FILL[-]ME"
+	)
+	for _, tc := range []struct {
+		name string
+		val  string // the value as the config line spells it
+		want bool
+	}{
+		{"a pure literal: the line contains it verbatim", plain, true},
+		{"one literal character in brackets, which is the remedy", bracketed, false},
+		{"quoted, still a pure literal", `"` + plain + `"`, true},
+		{"quoted and bracketed is still bracketed", `"` + bracketed + `"`, false},
+		{"a trailing comment is part of the line the hook reads", bracketed + "  # e.g. " + plain, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := filepath.Join(t.TempDir(), "config.yaml")
+			line := "  " + qaCeilingClass + ": " + tc.val
+			if err := os.WriteFile(cfg, []byte(DataCeilingConfigKey+":\n"+line+"\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			set := (&App{ConfigPath: cfg}).OpsPatternSet()
+
+			// FIXTURE PREMISE, both ways: a pin over a pattern the parser
+			// threw away would be green against any check at all.
+			if len(set.CeilingRejected) > 0 || len(set.Ceiling) != 1 || set.Ceiling[0].Class != qaCeilingClass {
+				t.Fatalf("fixture premise: the entry must be ACCEPTED, got ceiling=%+v rejected=%v", set.Ceiling, set.CeilingRejected)
+			}
+			got := strings.Join(set.CeilingSelfMatch, ",")
+			want := ""
+			if tc.want {
+				want = qaCeilingClass
+			}
+			if got != want {
+				t.Errorf("CeilingSelfMatch = %v, want %q for value %q", set.CeilingSelfMatch, want, tc.val)
+			}
+
+			var report bytes.Buffer
+			set.WriteStampReport(&report)
+			// IN FORCE: the warning is about one file's commit, not about
+			// the pattern, so the stamped-in line is printed either way.
+			stamped := "data ceiling stamped in (config " + DataCeilingConfigKey + ":), scanned under every stamp: " + qaCeilingClass
+			if !strings.Contains(report.String(), stamped) {
+				t.Errorf("the entry stays in force, so the stamp report must still carry %q:\n%s", stamped, report.String())
+			}
+			warned := strings.Contains(report.String(), "matches its own definition line")
+			if warned != tc.want {
+				t.Errorf("the report warned=%v, want %v for value %q:\n%s", warned, tc.want, tc.val, report.String())
+			}
+			if tc.want {
+				for _, w := range []string{"matches its own definition line", "(X -> [X])", "re-stamp: " + qaCeilingClass} {
+					if !strings.Contains(report.String(), w) {
+						t.Errorf("the warning must name the class and the remedy, missing %q:\n%s", w, report.String())
+					}
+				}
+			}
+			// Class only — the value is the vocabulary the ceiling exists
+			// to keep out of local files, and this report is one.
+			if strings.Contains(report.String(), plain) || strings.Contains(report.String(), bracketed) {
+				t.Errorf("the stamp report echoed the value:\n%s", report.String())
+			}
+		})
+	}
+
+	// And the file's own fixture patterns, which the other pins run the
+	// whole wall over: neither self-matches, by the accident of its form
+	// (ADR 0050 D6 — an escape or a bracket may or may not). If one ever
+	// does, every report in those pins grows a line and this says why.
+	cfg := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(cfg, []byte(qaCeilingCfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if set := (&App{ConfigPath: cfg}).OpsPatternSet(); len(set.CeilingSelfMatch) != 0 {
+		t.Errorf("the fixture ceiling patterns must not self-match: %v", set.CeilingSelfMatch)
+	}
+}

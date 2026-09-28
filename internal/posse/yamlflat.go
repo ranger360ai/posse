@@ -140,7 +140,27 @@ func yamlListLines(lines []string, key string) []string {
 
 // YamlMapPairs returns ordered subkey/value pairs of a one-level map.
 func YamlMapPairs(path, mapkey string) [][2]string {
-	var out [][2]string
+	raw := YamlMapPairsRaw(path, mapkey)
+	out := make([][2]string, 0, len(raw))
+	for _, kv := range raw {
+		out = append(out, [2]string{kv[0], kv[1]})
+	}
+	return out
+}
+
+// YamlMapPairsRaw is YamlMapPairs plus the RAW line each pair was read from
+// — the bytes as the file holds them, indentation, quoting and any trailing
+// comment included. Same block-walking rules; YamlMapPairs is this function
+// with the third field dropped, so the two cannot disagree about what a
+// pair is.
+//
+// It exists because one reader has to judge a value against the LINE rather
+// than against the cleaned value: a data ceiling pattern is matched by the
+// commit hook over the raw lines `git diff --cached` hands it, and the line
+// that DEFINES the pattern is one of them when $RHQ_HOME/config.yaml is
+// staged (ADR 0050 D6). Cleaning first would answer a different question.
+func YamlMapPairsRaw(path, mapkey string) [][3]string {
+	var out [][3]string
 	inmap := false
 	for _, ln := range readLines(path) {
 		if !inmap {
@@ -160,7 +180,7 @@ func YamlMapPairs(path, mapkey string) [][2]string {
 		if i <= 0 {
 			continue
 		}
-		out = append(out, [2]string{trimmed[:i], yamlClean(trimmed[i+1:])})
+		out = append(out, [3]string{trimmed[:i], yamlClean(trimmed[i+1:]), ln})
 	}
 	return out
 }
