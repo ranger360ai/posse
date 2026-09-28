@@ -396,10 +396,13 @@ func redact(tok string) string {
 // unconfigured platform, and reporting it as structural absence would switch
 // the guard off on the one box that has one.
 //
-// What it GAINS is the second cause. `security` exiting 44 is two different
-// facts wearing one exit code, repaired at opposite ends, and an operator
-// told only one of them repairs the wrong end.
-func TestDarwinCompositeExitFortyFourWithNoFileIsBlindAndNamesBothCauses(t *testing.T) {
+// What it GAINS are the other causes. `security` exiting 44 is three
+// different facts wearing one exit code, repaired at opposite ends, and an
+// operator told only one of them repairs the wrong end. The third arrived
+// with the account (ranger-base-tghn5): a read that names a service AND an
+// account can be answered 44 by an item sitting right there under a
+// different one, which is why the account is in the sentence.
+func TestDarwinCompositeExitFortyFourWithNoFileIsBlindAndNamesEveryCause(t *testing.T) {
 	fallbackDir(t) // named, and nothing planted in it
 	_, _, err := readStore(keychainStoreAt(keychainStub(t, "#!/bin/sh\nexit 44\n")))
 	if err == nil {
@@ -421,10 +424,19 @@ func TestDarwinCompositeExitFortyFourWithNoFileIsBlindAndNamesBothCauses(t *test
 	if !strings.Contains(cu.Store, item) {
 		t.Errorf("the sentence must name the item posse actually asked for: Store %q, item %q", cu.Store, item)
 	}
-	// Both causes, each with its own move.
+	// The account, which is half of what the read asked for: a 44 has to say
+	// WHICH account answered nothing, or the first cause below is a sentence
+	// that opens "it really is gone" about an item sitting right there under
+	// another name (ranger-base-tghn5).
+	if acct := keychainAccount(); !strings.Contains(cu.Store, acct) {
+		t.Errorf("the sentence must name the account posse asked as: Store %q, account %q", cu.Store, acct)
+	}
+	// All three causes, each with its own move — the third is the one the
+	// account itself introduced, and it is why that account is printed.
 	for _, want := range []string{
 		"it really is gone and claude is running on its fallback credentials file",
 		"repair the keychain", "`/login` in claude",
+		"under a DIFFERENT account", "compare its Account field",
 		"keychain ACL may have been dropped by `make install`",
 		"grant access when prompted, or run `claude` once",
 	} {

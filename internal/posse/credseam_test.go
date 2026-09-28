@@ -16,6 +16,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -337,7 +338,7 @@ func TestTheKeychainReadAsksForTheDerivedItemAndTheSentencesNameIt(t *testing.T)
 	if rerr != nil {
 		t.Fatalf("the stub recorded no argv, so nothing here measured the read: %v", rerr)
 	}
-	if !strings.Contains(string(argv), "-s "+derived+" -w") {
+	if !strings.Contains(string(argv), "-w -s "+derived) {
 		t.Errorf("the keychain read asked for %q — under a set CLAUDE_CONFIG_DIR the runtime's item is %q, and the constant reads an item that is not there (ADR 0019 V12)", strings.TrimSpace(string(argv)), derived)
 	}
 	if !strings.Contains(meta.Source, derived) {
@@ -360,6 +361,163 @@ func TestTheKeychainReadAsksForTheDerivedItemAndTheSentencesNameIt(t *testing.T)
 		t.Errorf("the unreadable sentence says %q — an operator matching it in Keychain Access needs the suffix that was tried", unreadable)
 	}
 }
+
+// ─── WHICH ACCOUNT, ranger-base-tghn5 ────────────────────────────────────────
+//
+// A generic password is identified by service AND account. The item pins
+// above say posse asks for the right service; these say it asks as the right
+// account, by the runtime's own rule, so that a service this box holds twice
+// cannot answer posse with a row the runtime never wrote.
+
+// The derivation, arm by arm, against the rule MEASURED off the shipped
+// bundles (credential.go's keychainAccount header carries the source).
+func TestTheKeychainAccountFollowsTheRuntimesOwnRule(t *testing.T) {
+	// The OS's own answer, which the empty and unset arms must both reach.
+	// It is read here rather than asserted as a literal: this runs on the
+	// operator's box and on GitHub's runners, and the fact under test is
+	// WHICH SOURCE answered, never what that source is called.
+	osName := ""
+	if u, err := user.Current(); err == nil {
+		osName = u.Username
+	}
+	if osName == "" || !keychainAccountOK.MatchString(osName) {
+		osName = keychainAccountFallback
+	}
+
+	for _, tc := range []struct {
+		name string
+		user *string // nil unsets USER
+		want string
+		why  string
+	}{
+		{
+			name: "a set USER is the account",
+			user: strptr("set.user"),
+			want: "set.user",
+			why:  "the runtime reads process.env.USER first and asks the keychain as that",
+		},
+		{
+			name: "an EMPTY USER falls through to the OS, it does not shadow it",
+			user: strptr(""),
+			want: osName,
+			why:  "`process.env.USER || u().username` is a truthiness test — the mirror image of CLAUDE_SECURESTORAGE_CONFIG_DIR, where an empty value IS a presence and shadows the variable beside it. Reading this one as a presence test would ask the keychain as \"\", which the regexp then rejects to claude-code-user: a second account nobody wrote",
+		},
+		{
+			name: "an unset USER is the OS's username",
+			user: nil,
+			want: osName,
+			why:  "the same arm the empty value reaches, and the ordinary one on a box with no USER exported",
+		},
+		{
+			name: "a space is rejected, not cleaned",
+			user: strptr("ci runner"),
+			want: keychainAccountFallback,
+			why:  "the runtime replaces a value failing /^[a-zA-Z0-9._-]+$/ with the literal, so both sides ask for the literal and cannot disagree",
+		},
+		{
+			name: "a slash is rejected",
+			user: strptr("DOMAIN/user"),
+			want: keychainAccountFallback,
+			why:  "the class has no slash, and a path-shaped account is the shape a lookup would most like to accept",
+		},
+		{
+			name: "a non-ASCII letter is rejected",
+			user: strptr("josé"),
+			want: keychainAccountFallback,
+			why:  "the class is ASCII, and this is the arm where the account rule and the item rule differ: the item HASHES a non-ASCII directory as spelled and carries a note, the account refuses one outright",
+		},
+		{
+			name: "an embedded newline is rejected",
+			user: strptr("ok\nnotok"),
+			want: keychainAccountFallback,
+			why:  "Go's `$` is end-of-text and not before-a-final-newline, which is what the JS literal means too — a multiline `$` here would accept a first line and hand `security` an argv nobody wrote",
+		},
+		{
+			name: "dot, underscore and hyphen are IN the class",
+			user: strptr("a.b_c-9"),
+			want: "a.b_c-9",
+			why:  "all three are inside the character class; rejecting one would send an ordinary account to the fallback and read an item the runtime never wrote",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.user == nil {
+				unsetenvForTest(t, "USER")
+			} else {
+				t.Setenv("USER", *tc.user)
+			}
+			if got := keychainAccount(); got != tc.want {
+				t.Errorf("keychainAccount() = %q, want %q — %s", got, tc.want, tc.why)
+			}
+		})
+	}
+}
+
+// And the read asks as that account, measured through production's own
+// wiring — keychainStoreAt's Read, the one place keychainCmd is called —
+// together with the sentences an operator is handed on a failure. Until
+// 2026-09-28 this argv named the service alone, so posse's read was not the
+// runtime's read on any box holding that service under a second account
+// (ranger-base-tghn5).
+func TestTheKeychainReadAsksAsTheRuntimesAccountAndTheSentencesNameIt(t *testing.T) {
+	t.Setenv("HOME", "/tmp/home")
+	unsetenvForTest(t, "CLAUDE_SECURESTORAGE_CONFIG_DIR")
+	unsetenvForTest(t, "CLAUDE_CONFIG_DIR")
+	t.Setenv("USER", "fixture.account")
+
+	argvLog := filepath.Join(t.TempDir(), "argv")
+	stub := keychainStub(t, "#!/bin/sh\nprintf '%s\\n' \"$*\" >>'"+argvLog+"'\ncat <<'JSON'\n"+envelope("account-fixture", 0)+"\nJSON\n")
+
+	tok, meta, err := readStore(keychainStoreAt(stub))
+	if err != nil {
+		t.Fatalf("the stub must answer: %v", err)
+	}
+	if tok != "account-fixture" {
+		t.Fatalf("read %q — the envelope this arm measures is not the one that answered", tok)
+	}
+	argv, rerr := os.ReadFile(argvLog)
+	if rerr != nil {
+		t.Fatalf("the stub recorded no argv, so nothing here measured the read: %v", rerr)
+	}
+	if !strings.Contains(string(argv), "-a fixture.account") {
+		t.Errorf("the keychain read asked %q — a generic password is identified by service AND account, and a read that names no account takes whichever row `security` reaches first (ranger-base-tghn5)", strings.TrimSpace(string(argv)))
+	}
+	// Every sentence an operator can be handed names it, for the same reason
+	// each one names the item: on a 44 the question is WHICH account answered
+	// nothing, and an item sitting right there under another account is the
+	// misdiagnosis this store exists to prevent.
+	for _, tc := range []struct{ what, got string }{
+		{"the seam's Source", meta.Source},
+		{"the store's own name", keychainStoreAt(stub).Name},
+	} {
+		if !strings.Contains(tc.got, `(account "fixture.account")`) {
+			t.Errorf("%s is %q — it must name the account the read asked as, beside the item", tc.what, tc.got)
+		}
+	}
+	// The unreadable sentence, which is the one that reaches the operator
+	// through the plan guard's blind line: a `security` that RAN and exited
+	// non-zero on something that is not 44.
+	_, _, unreadable := readStore(keychainStoreAt(keychainStub(t, "#!/bin/sh\nexit 36\n")))
+	if unreadable == nil {
+		t.Fatal("a `security` that exits 36 is not a credential")
+	}
+	if !strings.Contains(unreadable.Error(), `(account "fixture.account")`) {
+		t.Errorf("the unreadable sentence says %q — the account is half of what was asked for, and the operator matching it in Keychain Access needs both halves", unreadable)
+	}
+	// And the 44 fall-through's own sentence, which opens "it really is
+	// gone": with no account named, that sentence was the one thing an
+	// operator would read over an item sitting right there under another
+	// account.
+	credentialsHome(t, "") // a scratch home with no fallback file beside the keychain
+	_, _, gone := readStore(keychainStoreAt(keychainStub(t, "#!/bin/sh\nexit 44\n")))
+	if gone == nil {
+		t.Fatal("a 44 with no fallback file is not a credential")
+	}
+	if !strings.Contains(gone.Error(), `(account "fixture.account")`) {
+		t.Errorf("the item-not-found sentence says %q — it must name the account that answered nothing", gone)
+	}
+}
+
+func strptr(s string) *string { return &s }
 
 // The note rides on the STORE's name, which is where an operator meets it:
 // the refresh report's source column, the seam's Source and the shape

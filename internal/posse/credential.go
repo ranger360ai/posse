@@ -48,7 +48,9 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
 	"strings"
@@ -709,6 +711,78 @@ func keychainItem() (name, note string) {
 	return name, ""
 }
 
+// keychainAccountFallback is the literal the runtime falls back to when it
+// cannot name an account, and posse's item is only half of the read: a
+// generic password is identified by service AND account, so a service the
+// keychain holds twice under two accounts answers whichever one `security`
+// reaches first when the read names no account at all.
+const keychainAccountFallback = "claude-code-user"
+
+// keychainAccountOK is the runtime's own validity rule, copied character for
+// character out of the bundle. Go's `^`/`$` are anchors on the TEXT (no
+// multiline flag, and `$` is end-of-text and not before-a-final-newline),
+// which is what the JS literal means as well, so a value with an embedded
+// newline is rejected by both.
+var keychainAccountOK = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
+
+// keychainAccount is the account posse asks the keychain for, derived by the
+// runtime's own rule, in ONE place, the way keychainItem derives the item.
+//
+// MEASURED 2026-09-28 (ranger-base-tghn5, discovered under ranger-base-58qr8)
+// by `strings` over the shipped darwin-arm64 bundles 2.1.268 / 2.1.278 /
+// 2.1.280 / 2.1.283 in ~/.local/share/claude/versions — a read of the
+// PROGRAM and of no store. The read and the write, verbatim and identical in
+// all four:
+//
+//	security find-generic-password -a "${o}" -w -s "${s}"
+//	security add-generic-password -U -a "${o}" -s "${s}" -X "${hex}"
+//
+// where `s` is the item keychainItem derives and `o` is:
+//
+//	var s=/^[a-zA-Z0-9._-]+$/;
+//	function wk(){let n;try{n=process.env.USER||u().username}catch{n="claude-code-user"}
+//	if(!s.test(n))return"claude-code-user";return n}
+//
+// Three rules ride here, and each one is a way this can be wrong:
+//
+//   - `process.env.USER || …` is a TRUTHINESS test, not a presence test. An
+//     empty USER falls through to the OS's own username exactly as an unset
+//     one does — the mirror image of CLAUDE_SECURESTORAGE_CONFIG_DIR, where
+//     an empty value is a presence and shadows the variable beside it. The
+//     two arms of the store's identity read their environments by opposite
+//     rules, which is why each has its own pin.
+//   - The rejection is total, and it is a REJECTION and not a repair: an
+//     account with a space, a slash or a non-ASCII letter is not cleaned, it
+//     is replaced by the literal. Both sides then ask for the same literal,
+//     so this arm is the one where posse and the runtime cannot disagree.
+//   - `u()` is node's os.userInfo, which is getpwuid, and so is Go's
+//     user.Current on darwin — the same passwd entry by the same uid. The
+//     one place they can differ is a box where Go's lookup fails and node's
+//     does not; the runtime's catch answers the literal there and so does
+//     this, which keeps the two the same shape when they are wrong.
+func keychainAccount() string {
+	name := os.Getenv("USER")
+	if name == "" {
+		u, err := user.Current()
+		if err != nil {
+			return keychainAccountFallback
+		}
+		name = u.Username
+	}
+	if !keychainAccountOK.MatchString(name) {
+		return keychainAccountFallback
+	}
+	return name
+}
+
+// keychainSubject is WHAT the read asked for, in one spelling, so the store
+// that names itself and the failure that names itself cannot drift: the item
+// and the account together, because either one alone can be the reason the
+// keychain answered nothing (ADR 0019 D2 store 1, ranger-base-tghn5).
+func keychainSubject(item, account string) string {
+	return fmt.Sprintf("keychain item %q (account %q)", item, account)
+}
+
 // securityBin is macOS's `security`, named ABSOLUTELY and not looked up on
 // PATH (ranger-base-ypf5, part B of ranger-base-r64).
 //
@@ -735,8 +809,8 @@ const securityBin = "/usr/bin/security"
 // usable is the same class and is fixed by the second half of the same line.
 const keychainACLFix = "this binary's keychain ACL may have been dropped by `make install`; grant access when prompted, or run `claude` once"
 
-// keychainFallbackFix is that move with the second cause the composite made
-// visible (ADR 0019 D2 as amended, V9). `security` exiting 44 is two
+// keychainFallbackFix is that move with the causes the composite made
+// visible (ADR 0019 D2 as amended, V9). `security` exiting 44 is several
 // different facts wearing one exit code, and they are repaired at opposite
 // ends: the item really is gone and the runtime is living on its fallback
 // credentials file, or the item is there and THIS binary may no longer read
@@ -744,13 +818,22 @@ const keychainACLFix = "this binary's keychain ACL may have been dropped by `mak
 // keychain; told only the first, they `/login` a keychain that was never the
 // problem.
 //
+// The THIRD cause arrived with the account (ranger-base-tghn5), and naming
+// it is the price of naming the account at all: a read that asks for a
+// service and an account can be answered with 44 by an item that is sitting
+// right there under a different account. Before 2026-09-28 that could not
+// happen, because the read named no account and took whatever the service
+// matched — which is the defect, and this is its shadow. The account posse
+// asked as is in the sentence's own subject, so the move is a comparison the
+// operator can make in Keychain Access without running anything.
+//
 // ASSUMED, and operator-measurable only because every crew PID denies
 // `security` (ADR 0019 V10): a dropped posse ACL is believed to answer 36,
 // not 44, in which case this sentence is reached only by a genuinely empty
 // keychain and its first cause is the true one. It names both anyway — the
 // cost of the extra clause is a longer line, and the cost of guessing wrong
 // is the operator repairing the wrong end of the composite.
-const keychainFallbackFix = "the item did not answer this binary, which is two different things: it really is gone and claude is running on its fallback credentials file — repair the keychain (unlock it, grant access), then `/login` in claude — or this binary's keychain ACL may have been dropped by `make install`; grant access when prompted, or run `claude` once"
+const keychainFallbackFix = "the item did not answer this binary under the account named above, which is three different things: it really is gone and claude is running on its fallback credentials file — repair the keychain (unlock it, grant access), then `/login` in claude — or it is there under a DIFFERENT account, which is what that account is printed for: open the item in Keychain Access and compare its Account field — or this binary's keychain ACL may have been dropped by `make install`; grant access when prompted, or run `claude` once"
 
 // errSecItemNotFound is `security`'s exit for "no such item in this
 // keychain" — the ONE exit the composite falls through to the file on (ADR
@@ -778,11 +861,11 @@ const errSecItemNotFound = 44
 // without running the read a second time, which is how the read and the
 // decision about the read stay one read.
 type keychainExit struct {
-	item string
-	code int
+	subject string
+	code    int
 }
 
-func (e *keychainExit) Error() string { return fmt.Sprintf("keychain item %q unreadable", e.item) }
+func (e *keychainExit) Error() string { return e.subject + " unreadable" }
 
 // keychainItemNotFound reports the one exit that falls through.
 func keychainItemNotFound(err error) bool {
@@ -825,11 +908,13 @@ func keychainStoreAt(bin string) runtimeStore {
 	// Keychain Access, and a second derivation is how the read and the
 	// sentence about it would come to disagree (ADR 0019 D2 store 1).
 	item, note := keychainItem()
+	account := keychainAccount()
+	subject := keychainSubject(item, account)
 	s := runtimeStore{
-		Name: fmt.Sprintf("keychain item %q", item) + note,
+		Name: subject + note,
 		Fix:  keychainACLFix,
 		Read: func() ([]byte, error) {
-			out, err := keychainCmd(bin, item).Output()
+			out, err := keychainCmd(bin, item, account).Output()
 			if err != nil {
 				// GateRefusal stays after part B removed its cause: it is
 				// what stops the 08-24 misdiagnosis returning if this ever
@@ -853,7 +938,7 @@ func keychainStoreAt(bin string) runtimeStore {
 				if !errors.As(err, &ee) {
 					return nil, &execNotRun{cmd: filepath.Base(bin), err: err}
 				}
-				return nil, &keychainExit{item: item, code: ee.ExitCode()}
+				return nil, &keychainExit{subject: subject, code: ee.ExitCode()}
 			}
 			return out, nil
 		},
@@ -948,8 +1033,17 @@ func keychainFallbackStore(p string) runtimeStore {
 // The item is an ARGUMENT and not the constant: the name the environment
 // derives is the name the read must ask for, and this is the one argv that
 // carries it (ADR 0019 V12).
-func keychainCmd(bin, item string) *exec.Cmd {
-	return exec.Command(bin, "find-generic-password", "-s", item, "-w")
+//
+// The ACCOUNT is the other half of that rule and arrived late
+// (ranger-base-tghn5): a generic password is identified by service AND
+// account, and this argv named only the service until 2026-09-28. `security`
+// answers A password matching the attributes it was given, so on a box
+// holding that service under more than one account, posse read whichever the
+// keychain reached first and the runtime read its own — two different reads
+// wearing one item name. The flags are in the runtime's own order so the
+// line above and this one can be compared by eye.
+func keychainCmd(bin, item, account string) *exec.Cmd {
+	return exec.Command(bin, "find-generic-password", "-a", account, "-w", "-s", item)
 }
 
 // CredentialsFile is where Claude Code keeps the same OAuth envelope. Off

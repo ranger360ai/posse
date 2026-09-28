@@ -6,6 +6,7 @@ references), not inferred publication dates. Undated fragments sort last.
 
 ## 2026-09
 
+- [ranger-base-tghn5](ranger-base-tghn5.md) — ranger-base-tghn5 — the keychain read names an ACCOUNT — 2026-09-28
 - [ranger-base-58qr8](ranger-base-58qr8.md) — ranger-base-58qr8 — the empty-token line led with the wrong class — 2026-09-28
 - [ranger-base-zv1cu](ranger-base-zv1cu.md) — Verbs that grew a subsystem: a responsibility census (ranger-base-zv1cu) — 2026-09-11
 - [ranger-base-c6ohn](ranger-base-c6ohn.md) — The fourth operand: a base that moved FORWARD past the conflict (ranger-base-c6ohn) — 2026-09-11

@@ -56,8 +56,16 @@ not whenever the path happens to equal the default. Otherwise append the
 first eight hexadecimal digits of SHA-256 over the named directory string.
 Do not clean the string before hashing. Posse does not add Unicode NFC
 normalization; non-ASCII names retain the documented diagnostic limitation.
-`credentialDirNamed`, `keychainItem`, and `CredentialsFile` are the concrete
-definitions; store locations are not independently reconstructed by callers.
+A generic password is identified by service **and account**, so the read
+names both: the account is the runtime's own rule — `USER`, else the OS
+username, else the literal `claude-code-user` when the value falls outside
+`[a-zA-Z0-9._-]` — derived once and printed in the store's own sentence
+(amended 2026-09-28, ranger-base-tghn5: the read named the service alone
+until then, so on a box holding it under a second account posse read whatever
+the keychain reached first and reported an item the runtime never wrote).
+`credentialDirNamed`, `keychainItem`, `keychainAccount` and `CredentialsFile`
+are the concrete definitions; store locations are not independently
+reconstructed by callers.
 
 On a Claude launch, `credentialDirPin` fixes both directory variables in the
 launcher's flag-settings scope, preserving whether a variable named the

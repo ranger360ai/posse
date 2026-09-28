@@ -116,8 +116,13 @@ func TestTheRunbookQuotesTheSentencesTheCodeActuallyEmits(t *testing.T) {
 
 	// The item name is the environment's and not the constant's: a suite run
 	// on a box that sets a config-dir variable reads a suffixed item and says
-	// so (ranger-base-mx4q6). This arm measures the sentence THAT box gets.
+	// so (ranger-base-mx4q6). The ACCOUNT is this process's own by the
+	// runtime's rule (ranger-base-tghn5), so it is derived the same way and
+	// for the same reason. This arm measures the sentence THAT box gets;
+	// pageSubject is what the page quotes, where neither is a constant.
 	item, _ := keychainItem()
+	subject := keychainSubject(item, keychainAccount())
+	const pageSubject = `keychain item "Claude Code-credentials" (account "<account>")`
 	const unreadableTail = " unreadable — this binary's keychain ACL " +
 		"may have been dropped by `make install`; grant access when prompted, or run `claude` once"
 
@@ -126,16 +131,16 @@ func TestTheRunbookQuotesTheSentencesTheCodeActuallyEmits(t *testing.T) {
 		// one-line fix, so that the 80% of this section stands in the error
 		// itself whether or not the operator ever reaches this page.
 		{name: "unreadable", produced: unreadable.Error(),
-			fragment: "keychain item " + strconv.Quote(item) + unreadableTail,
-			pageAs:   "keychain item " + strconv.Quote(KeychainService) + unreadableTail},
+			fragment: subject + unreadableTail,
+			pageAs:   pageSubject + unreadableTail},
 
 		// The read that never ran, in two fragments: the OS's own reason
 		// sits between them and names a temp path, so the page renders it
 		// as a placeholder and the quotable parts are the head an operator
 		// matches the row by and the tail that carries the move.
 		{name: "did not run (head)", produced: notRun.Error(),
-			fragment: "keychain item " + strconv.Quote(item) + " was not read: security did not run (",
-			pageAs:   "keychain item " + strconv.Quote(KeychainService) + " was not read: security did not run ("},
+			fragment: subject + " was not read: security did not run (",
+			pageAs:   pageSubject + " was not read: security did not run ("},
 
 		{name: "did not run (tail)", produced: notRun.Error(),
 			fragment: "— no exit status came back, so nothing was learned about the store; " +
