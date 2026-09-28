@@ -381,17 +381,63 @@ func trimPathPunct(s string) string {
 // path follows. An unterminated quote runs to the end of the line, which is
 // the conservative reading: the tail is then one span and every `..` element
 // in it is resolved rather than dropped.
-func pathSpanAt(s string, i int) string {
+//
+// The second return, and the refusal that hangs off it, is ranger-base-yplnv,
+// and it is meant to end a series rather than add one more spelling to it.
+// u18bo taught these scans about a bare token, f6pt2 about a traversal, 1h6d6
+// about a quoted space; each was right about the spelling in front of it, and
+// each left the next one open, because deciding where a path ends from the
+// character in front of it alone is a shell parser written one escape at a
+// time. Two spellings were still open after 1h6d6, both naming the SHARED
+// `<common>/index`:
+//
+//	<own>/a\ b/../../../index      the space is BACKSLASH-escaped, so the
+//	                               unquoted span ends at it — backslash is not
+//	                               a quote — and the tail `b/../../../index`
+//	                               has no `/` at a word boundary for either
+//	                               scan to examine
+//	'<own>/a'\''b/../../../index'  the shell's own splice for an apostrophe:
+//	                               the closing-quote search ends the span at
+//	                               the splice's first quote, and the same tail
+//	                               goes unread
+//
+// So the scans stop guessing where such a span ends and REPORT it instead. A
+// span is readable only when it carries no backslash at all and the shell word
+// ends where the span does; an unreadable one is reported as it was written,
+// not resolved, because its resolved form is a fiction. This refuses more than
+// it has to — `'<own>/a\ b/MERGE_MSG'` is a literal path inside `own`, since a
+// backslash inside single quotes is not an escape — and that is the trade:
+// telling those two apart is exactly the shell parser this is not. The
+// rendered recipe has never held either spelling (every path is
+// `'$posse_sg/$posse_sm'`, a git pseudo-ref with no space, no backslash and no
+// `..`), so what the refusal costs is that a recipe which grows one gets read
+// by a person, which is what this pin is for. It fails LOUD, in the same
+// direction as the unquoted prose path the ADR already records.
+func pathSpanAt(s string, i int) (string, bool) {
 	if i > 0 && (s[i-1] == '\'' || s[i-1] == '"') {
 		if k := strings.IndexByte(s[i:], s[i-1]); k >= 0 {
-			return s[i : i+k]
+			// +1 for the closing quote: the word ends after it, not at it.
+			return s[i : i+k], spanIsWholePath(s[i:i+k], s, i+k+1)
 		}
-		return s[i:]
+		return s[i:], spanIsWholePath(s[i:], s, len(s))
 	}
 	if k := strings.IndexAny(s[i:], "'\" \t"); k >= 0 {
-		return s[i : i+k]
+		return s[i : i+k], spanIsWholePath(s[i:i+k], s, i+k)
 	}
-	return s[i:]
+	return s[i:], spanIsWholePath(s[i:], s, len(s))
+}
+
+// spanIsWholePath reports whether span, which ends at s[end], is the whole
+// path the shell would read there: no backslash in it, and the shell WORD ends
+// where the span does. A span that ends at a quote or any other non-blank is a
+// fragment of a longer word — the apostrophe splice above, and a bare path
+// with a quoted part spliced onto its end — and what follows it is part of the
+// same path.
+func spanIsWholePath(span, s string, end int) bool {
+	if strings.ContainsRune(span, '\\') {
+		return false
+	}
+	return end >= len(s) || s[end] == ' ' || s[end] == '\t'
 }
 
 // insideOwn reports whether the RESOLVED path q is the session's own git dir
@@ -424,8 +470,15 @@ func recipeRemovalsOutside(errs, own string) []string {
 			if i > 0 && line[i-1] != ' ' && line[i-1] != '\t' && line[i-1] != '\'' && line[i-1] != '"' {
 				continue // an interior separator, not the head of a path
 			}
-			span := pathSpanAt(line, i)
+			span, whole := pathSpanAt(line, i)
 			i += len(span)
+			// Unreadable is reported, not resolved: where the span is a
+			// fragment of a longer word the resolved form names a path the
+			// line does not (ranger-base-yplnv).
+			if !whole {
+				out = append(out, span)
+				continue
+			}
 			// Resolved, not compared raw: `<own>/../../index` wears `own` as
 			// a prefix and IS `<common>/index` — the shared index — so a
 			// string prefix test reads the traversal as inside the private
@@ -457,10 +510,14 @@ func refusalSpansOutside(errs, own, common string) []string {
 			// skip walked over the `own` in `<own>/../../index` and read the
 			// `../..` that followed as the next thing to look for `common`
 			// in, which it is not (ranger-base-f6pt2).
-			named := pathSpanAt(line, j)
+			named, whole := pathSpanAt(line, j)
 			off = j + len(named)
 			if named == "" {
 				off++
+				continue
+			}
+			if !whole {
+				out = append(out, named)
 				continue
 			}
 			if q := filepath.Clean(trimPathPunct(named)); insideOwn(q, own) {
@@ -554,8 +611,11 @@ func TestQASequencerRecipeStaysOutOfTheCommonDir(t *testing.T) {
 			t.Errorf("the recipe tells a seat to remove a packed-refs.lock (ADR 0059 D3): %q", line)
 		}
 	}
-	// Every path it tells the seat to remove is inside that dir — QUOTED OR
-	// NOT, and with a space in it or without.
+	// Every path it tells the seat to remove is inside that dir — quoted or
+	// not, and with a space in it or without. Where the scan cannot tell
+	// WHERE a path ends it reports the span rather than resolving it, so a
+	// recipe that grows shell quoting this reader does not do lands here too
+	// (ranger-base-yplnv); pathSpanAt says which spellings those are.
 	for _, q := range recipeRemovalsOutside(errs, own) {
 		t.Errorf("the recipe tells a seat to remove %q, outside its own git dir %s (ADR 0059 D3): %q", q, own, errs)
 	}
@@ -581,14 +641,23 @@ func TestQASequencerRecipeStaysOutOfTheCommonDir(t *testing.T) {
 	}
 }
 
-// The escape ranger-base-1h6d6 found, pinned on the two scans themselves.
-// The arm above can only read what renderSequencerAudit prints TODAY, and the
-// recipe on main is correct — every name a git pseudo-ref with no space and no
-// `..`. What failed was the READING, for a spelling the recipe does not have
-// yet: `'<own>/a b/../../../index'` is the shared `<common>/index`, and both
-// scans passed it because both ended the path at the first space. So the cases
-// below are lines the refusal could grow on the next change to it, handed
-// straight to the scans, and each one says which reading is the correct one.
+// The escapes ranger-base-1h6d6 and ranger-base-yplnv found, pinned on the two
+// scans themselves. The arm above can only read what renderSequencerAudit
+// prints TODAY, and the recipe on main is correct — every name a git pseudo-ref
+// with no space, no backslash and no `..`. What failed was the READING, for
+// spellings the recipe does not have yet: `'<own>/a b/../../../index'` is the
+// shared `<common>/index`, and both scans passed it because both ended the path
+// at the first space (1h6d6); then `<own>/a\ b/../../../index` and the
+// apostrophe splice passed for the same reason one layer down, because a
+// backslash is not a quote and a spliced quote is not the end of a word
+// (yplnv). So the cases below are lines the refusal could grow on the next
+// change to it, handed straight to the scans.
+//
+// `out` is what BOTH scans must report, and after yplnv it has two grounds:
+// the line names something outside `own` once resolved, or the scans cannot
+// read where its paths end and refuse it unread. The distinction is in
+// pathSpanAt's comment and the case names say which one each row is; what
+// matters here is that no such line goes unreported.
 func TestQASequencerScansEndAPathAtItsQuoteNotAtASpace(t *testing.T) {
 	t.Parallel()
 
@@ -599,7 +668,8 @@ func TestQASequencerScansEndAPathAtItsQuoteNotAtASpace(t *testing.T) {
 		name string
 		line string
 		// out is what BOTH scans must say: true when the line names something
-		// outside `own` once resolved, false when it is the session's own.
+		// outside `own` once resolved OR is refused unread, false when it is
+		// the session's own and readable.
 		out bool
 	}{
 		{"the recipe on main", "    rm -rf -- '" + own + "/CHERRY_PICK_HEAD' '" + own + "/sequencer'", false},
@@ -611,6 +681,22 @@ func TestQASequencerScansEndAPathAtItsQuoteNotAtASpace(t *testing.T) {
 		{"a bare path, inside", "    rm -rf -- " + own + "/AUTO_MERGE", false},
 		{"a trailing `..`, which is the shared worktrees dir", "    rm -rf -- '" + own + "/..'", true},
 		{"a space and a traversal clean out of the repo", "    rm -rf -- '" + own + "/a b/../../../../etc/hosts'", true},
+		// ranger-base-yplnv: the two spellings that end a path somewhere the
+		// character in FRONT of the span cannot see. Each names the SHARED
+		// `<common>/index`, and each was read as a path inside `own` plus a
+		// tail with no `/` at a word boundary for anything to examine.
+		{"THE ESCAPE: a backslash-escaped space that traverses out", "    rm -rf -- " + own + "/a\\ b/../../../index", true},
+		{"THE ESCAPE: the shell's own splice for an apostrophe", "    rm -rf -- '" + own + "/a'\\''b/../../../index'", true},
+		// And the two neighbouring spellings that were already caught, here
+		// so the fix for the two above cannot be a widening that loses them.
+		{"a backslash-escaped space inside quotes, traversing out", "    rm -rf -- '" + own + "/a\\ b/../../../index'", true},
+		{"a double-quoted path holding an apostrophe, traversing out", "    rm -rf -- \"" + own + "/a'b/../../../index\"", true},
+		// A backslash that resolves INSIDE own is refused all the same: a
+		// scan that decided this one would have to know that a backslash is
+		// literal inside single quotes and an escape outside them, which is a
+		// shell parser. The rendered recipe has never carried a backslash, so
+		// refusing is the cheap end and it fails loud.
+		{"a backslash inside own is refused unread, not resolved", "    rm -rf -- '" + own + "/a\\ b/MERGE_MSG'", true},
 		// Prose, where the apostrophes live. A quote-STATE machine reads
 		// `operator's` as an opening quote and welds the rest of the sentence
 		// onto the path that follows — `../../index` in the prose after it

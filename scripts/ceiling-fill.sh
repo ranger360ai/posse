@@ -51,12 +51,64 @@ cd "$repo"
 rel=$(python3 -c 'import os,sys; print(os.path.relpath(sys.argv[1], sys.argv[2]))' "$cfg" "$repo")
 git add -- "$rel"
 git diff --cached -U0 --no-color --no-ext-diff -- "$rel" | grep '^+' | grep -v '^+++' > "${TMPDIR:-/tmp}/ceiling-staged.txt" || true
-awk '/^data_ceiling_patterns:/{f=1;next} f&&/^[^ ]/{f=0} f&&NF{sub(/^[ ]*[a-z-]+:[ ]*/,""); print}' "$cfg" | while read -r re; do
+# The PATTERN has to be the value the HOOK will judge by, which is yamlClean's
+# reading of the line and not "everything after the key". An entry carrying a
+# trailing comment — and this file's own documentation in examples/config.yaml
+# shows one, because a comment repeating the literal refuses the commit on its
+# own — yielded the regexp `<value>  # <comment>`, which the staged lines do not
+# contain, so the guard below read hits=0 and stamped the exact shape it exists
+# to refuse (ranger-base-yplnv, escaped from ranger-base-l2569). The four keys
+# this script writes itself were never at risk: the rewrite above replaces the
+# whole line and rx() brackets the first character. Any OTHER class the operator
+# added by hand was. internal/posse/yamlflat.go is the authority for this
+# reading, and TestQACeilingFillReadsTheValueTheHookReads runs THESE bytes
+# against it.
+python3 - "$cfg" <<'PY_CEILING_VALUES' > "${TMPDIR:-/tmp}/ceiling-patterns.txt"
+import sys
+def clean(v):                        # yamlClean: comment, trim, one quote pair
+    for i in range(1, len(v)):
+        if v[i] == '#' and v[i-1] in ' \t':
+            v = v[:i-1]
+            break
+    v = v.strip()
+    if len(v) >= 2 and v[0] == '"' and v[-1] == '"':
+        v = v[1:-1]
+    return v
+inmap = False
+for ln in open(sys.argv[1]).read().split('\n'):   # YamlMapPairsRaw
+    if not inmap:
+        inmap = ln.startswith('data_ceiling_patterns:')
+        continue
+    if ln and ln[0] not in ' \t#':
+        break
+    t = ln.lstrip(' \t')
+    if not t or t == ln or t[0] == '#':
+        continue
+    i = t.find(':')
+    if i > 0:
+        print(clean(t[i+1:]))
+PY_CEILING_VALUES
+# Redirected, not piped: `exit 1` in the body of a piped `while` ends a
+# SUBSHELL, and only `set -e` over the pipeline's status carried the refusal out.
+while read -r re; do
+  [ -n "$re" ] || continue
   n=$(grep -cE "$re" "${TMPDIR:-/tmp}/ceiling-staged.txt" || true)
   echo "self-match hits=$n"
   [ "$n" -eq 0 ] || { echo "ceiling-fill: a value matches its own definition; refusing to stamp" >&2; exit 1; }
-done
-rm -f "${TMPDIR:-/tmp}/ceiling-staged.txt"
-posse gates install-hooks "$repo" | tail -1 | cut -c1-72
+done < "${TMPDIR:-/tmp}/ceiling-patterns.txt"
+rm -f "${TMPDIR:-/tmp}/ceiling-staged.txt" "${TMPDIR:-/tmp}/ceiling-patterns.txt"
+# The stamp report in FULL, and the hook's own reading is the one that decides.
+# `tail -1 | cut -c1-72` kept the last line only, truncated to 72 characters, so
+# the one sentence that explains a class-only refusal — which is the only
+# explanation there is (ADR 0050 D6) — was not guaranteed to reach the operator
+# before the commit ran (ranger-base-yplnv). A failing stamp now stops the
+# script too; under the pipeline it was `tail`'s exit status that `set -e` read.
+stamp=$(posse gates install-hooks "$repo" 2>&1) || { printf '%s\n' "$stamp" >&2; exit 1; }
+printf '%s\n' "$stamp"
+case "$stamp" in
+  *"matches its own definition line"*)
+    echo "ceiling-fill: the hook's own reading says a value matches its own definition line — refusing to commit the config; follow the remedy above and re-run" >&2
+    exit 1 ;;
+esac
 git commit -qm 'config: data ceiling armed (ceiling-fill.sh)' -- "$rel"
 git log --oneline | head -1

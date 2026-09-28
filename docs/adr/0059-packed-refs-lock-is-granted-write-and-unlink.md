@@ -197,10 +197,13 @@ their floor; the L4 engine is off-box and UNRUN for this shape.
    `worktrees/<other>`. Item 5 held for the recipe on main, which quotes
    everything, and not for the next change to it. It is now two checks, and
    the second is stated over the common dir rather than over a list of names
-   under it: every `rm`-line token that looks like an absolute path, quoted or
-   bare, must be under `--absolute-git-dir`, and every occurrence of the
-   fixture's common dir anywhere in the refusal — recipe or prose — must be
-   the head of that private subtree.
+   under it: every `rm`-line token that looks like an absolute path must be
+   one the scan can READ — a whole shell word, carrying no backslash — and
+   under `--absolute-git-dir`; and every occurrence of the fixture's common dir
+   anywhere in the refusal — recipe or prose — must likewise be readable and be
+   the head of that private subtree. Quoted or bare is read either way; what a
+   token may not be is quoted in a way that decides where it ends somewhere
+   this reader cannot see (ranger-base-yplnv, below).
 
    Both are decided on the RESOLVED path, which is what ranger-base-f6pt2
    corrected (2026-09-20). As u18bo left them both comparisons were raw string
@@ -218,8 +221,10 @@ their floor; the L4 engine is off-box and UNRUN for this shape.
    traversal is reachable by execution rather than only at parse level; the
    arm pins that both survive.
 
-   And both are decided on the WHOLE path, which is what ranger-base-1h6d6
-   corrected (2026-09-28). As f6pt2 left them both scans ended a path at the
+   And both are decided on the whole path a QUOTE delimits, which is what
+   ranger-base-1h6d6 corrected (2026-09-28) — one layer of shell quoting, not
+   the last of them; the paragraph after this one is where that ends.
+   As f6pt2 left them both scans ended a path at the
    first space — the `rm`-line scan by `strings.Fields`, the refusal scan by
    `strings.IndexAny(named, "'\" \n")` — and stripped the quoting only
    afterwards, so the quoting they acknowledged was not the quoting they read.
@@ -240,8 +245,41 @@ their floor; the L4 engine is off-box and UNRUN for this shape.
    `TestQASequencerScansEndAPathAtItsQuoteNotAtASpace` pins the reading itself
    over lines the refusal could grow, since the arm can only read what
    `renderSequencerAudit` prints today — which stays
-   CORRECT: `'$posse_sg/$posse_sm'`, every name a git pseudo-ref with no space
-   and no `..`.
+   CORRECT: `'$posse_sg/$posse_sm'`, every name a git pseudo-ref with no space,
+   no backslash and no `..`.
+
+   And both REFUSE a path they cannot read, rather than deciding where it ends
+   from the character in front of it, which is what ranger-base-yplnv corrected
+   (2026-09-28) and is meant to end this series. As 1h6d6 left them, a span
+   opened by a quote ran to its closing quote and any other span ended at the
+   first whitespace or quote — correct for the spelling in front of it, and
+   two spellings were still open, each naming the SHARED `<common>/index`:
+   `<own>/a\ b/../../../index`, whose space is BACKSLASH-escaped, so the
+   unquoted span ends at it (a backslash is not a quote) and the tail
+   `b/../../../index` has no `/` at a word boundary for either scan to examine;
+   and `'<own>/a'\''b/../../../index'`, the shell's own splice for an
+   apostrophe, where the closing-quote search ends the span at the splice's
+   first quote and the same tail goes unread. MEASURED 2026-09-28 (git 2.50.1,
+   main 1d244ea0): at unit level both scans returned nothing for either line,
+   while the 1h6d6 escape, the same backslash inside quotes, and the
+   double-quoted `"<own>/a'b/../../../index"` were all caught; end to end, the
+   backslash line added to the rendered recipe left
+   `TestQASequencerRecipeStaysOutOfTheCommonDir` `ok` over a refusal telling a
+   seat to `rm -f -- <own>/a\ b/../../../index`, directly above "Touch nothing
+   in the SHARED git dir".
+
+   The remedy is not a fifth spelling. Deciding where a quoted path ends is a
+   shell parser, and three closes had each taught this reader one more of its
+   rules; so a span is now READABLE only when it carries no backslash at all
+   and the shell word ends where the span does, and an unreadable span is
+   reported as written rather than resolved — its resolved form names a path
+   the line does not. This refuses more than it must: `'<own>/a\ b/MERGE_MSG'`
+   is a literal path inside the private subtree, because a backslash inside
+   single quotes is not an escape, and it is refused all the same. That is the
+   trade, and it is the cheap end of the series — telling those two apart is
+   exactly the parser this is not. The rendered recipe has never held either
+   spelling, so what the refusal costs is that a recipe which grows one is read
+   by a person before it ships.
 
    A space in the fixture's own git dir still fails LOUD rather than silent,
    and now in one half only (MEASURED 2026-09-28, `TMPDIR` set to a directory

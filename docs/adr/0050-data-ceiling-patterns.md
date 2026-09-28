@@ -308,6 +308,25 @@ the banner finds nothing — which is what fact (b) wants of a local file.
 time, where the value is still the operator's to change; it stays as an
 operator convenience and is not the mechanism.
 
+*Amended 2026-09-28 (ranger-base-yplnv): that convenience read the key
+differently from the hook, and for exactly the shape this amendment is about.
+The script proves no value matches its own definition line before it stamps —
+past the stamp the refusal is class-only and the sentence above is the only
+explanation there is — and it took the pattern to be everything after the key,
+a trailing comment included. So for `restricted-banner: FILL[-]ME  # e.g.
+FILL-ME`, the shape `examples/config.yaml` documents because a comment
+repeating the literal refuses the commit on its own, it grepped the staged
+lines for `FILL[-]ME  # e.g. FILL-ME`, found nothing, and stamped and
+committed into a hook that then refused the commit (MEASURED 2026-09-28: hits=0
+for that entry, hits=1 for a plain literal beside it, while
+`TestQADataCeilingWarnsWhenAValueMatchesItsOwnDefinitionLine` arm A0 has the
+hook warning on the same line — the two readings disagreed, and the one that
+stamps was the wrong one). It now reads the value as `yamlClean` does, prints
+the stamp report in FULL rather than `tail -1 | cut -c1-72`, and refuses to
+commit on the hook's own warning; `TestQACeilingFillReadsTheValueTheHookReads`
+runs the script's own extractor against `YamlMapPairsRaw` so the two cannot
+drift apart again.*
+
 ## Consequences
 
 - Every hooked repo's render changes; the L3 probe reads them all as "ours

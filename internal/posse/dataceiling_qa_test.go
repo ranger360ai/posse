@@ -28,6 +28,7 @@ package posse
 import (
 	"bytes"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -1143,5 +1144,153 @@ func TestQASelfMatchWarningIsTheCeilingsAlone(t *testing.T) {
 	set.WriteStampReport(&report)
 	if strings.Contains(report.String(), "matches its own definition line") {
 		t.Errorf("the stamp report warned about a visibility pattern's definition line — ADR 0050 defers that:\n%s", report.String())
+	}
+}
+
+// ranger-base-yplnv: scripts/ceiling-fill.sh and the hook must read the same
+// PATTERN out of a `data_ceiling_patterns:` line.
+//
+// The script's job is to refuse to STAMP a value that matches its own
+// definition line, because past the stamp that refusal reaches the operator
+// class-only and with no way to say why (ADR 0050 D6) — so before it commits it
+// greps the staged `+` lines for each pattern. It took the pattern to be
+// everything after the key, a trailing comment included, and examples/
+// config.yaml's own documentation of this key shows a commented entry, because
+// a comment repeating the literal refuses the commit on its own. So for exactly
+// the shape ranger-base-l2569 was filed for, the script tested the regexp
+// `<value>  # <comment>` — which the staged lines do not contain — read hits=0,
+// and stamped and committed into a hook that then refused the commit. MEASURED
+// 2026-09-28 (darwin 25.4.0, main 1d244ea0), the script's own two lines over a
+// two-entry config: hits=0 for `FILL[-]ME  # e.g. FILL-ME` and hits=1 for a
+// plain literal beside it, while arm A0 of
+// TestQADataCeilingWarnsWhenAValueMatchesItsOwnDefinitionLine — same shape,
+// same tree — has the hook WARNING on it. The two readings disagreed, and the
+// one that stamps was the wrong one.
+//
+// Two arms, and both are about AGREEMENT rather than about the script:
+//
+//  1. the value the script extracts is the value YamlMapPairsRaw hands the
+//     hook, over every shape this file already knows about. The script's own
+//     bytes are run, sliced out of the tagged heredoc: a rewrite of that
+//     reading in Go here would be a third implementation, and it could not
+//     disagree with either of the two it exists to compare.
+//  2. the sentence the script greps the stamp report for is a sentence
+//     WriteStampReport prints. That grep is an assertion of PRESENCE written in
+//     shell, so a rename of the warning leaves it silently inert; this reds.
+func TestQACeilingFillReadsTheValueTheHookReads(t *testing.T) {
+	t.Parallel()
+	script := filepath.Join("..", "..", "scripts", "ceiling-fill.sh")
+	b, err := os.ReadFile(script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(b)
+	// The CODE of the script, with whole-line comments dropped. Both reads
+	// below are substring tests over a file whose prose says what the code
+	// does — the `tail -1` read went red on this pin's own explanation of why
+	// `tail -1` is gone, which is the ranger-base-cx2ok mistake in miniature:
+	// a substring guard over text that is part code and part prose. Dropping
+	// whole-line comments is enough here and is all that is claimed: every
+	// line either read names is one.
+	var code string
+	for _, ln := range strings.Split(src, "\n") {
+		if t := strings.TrimLeft(ln, " \t"); t == "" || t[0] == '#' {
+			continue
+		}
+		code += ln + "\n"
+	}
+
+	// ARM 2 first, because it needs no python3: the pin still says something
+	// on a box that has none.
+	const warn = "matches its own definition line"
+	if !strings.Contains(code, warn) {
+		t.Errorf("%s no longer greps the stamp report for %q, so it can commit the config past the one sentence that explains a class-only refusal (ADR 0050 D6)", script, warn)
+	}
+	var report bytes.Buffer
+	OpsPatternSet{
+		Ceiling:          []OpsPattern{{Class: qaCeilingClass}},
+		CeilingSelfMatch: []string{qaCeilingClass},
+	}.WriteStampReport(&report)
+	if !strings.Contains(report.String(), warn) {
+		t.Errorf("WriteStampReport no longer prints %q, so %s greps for a sentence nothing writes and its last gate is inert:\n%s", warn, script, report.String())
+	}
+	// And the script must READ that report, not a slice of it. `tail -1 |
+	// cut -c1-72` kept the last line only, truncated, so the warning was not
+	// guaranteed to reach the operator before `git commit` ran.
+	if strings.Contains(code, "tail -1") || strings.Contains(code, "cut -c1-72") {
+		t.Errorf("%s truncates the stamp report again — the warning above is one long line and the operator needs all of it", script)
+	}
+
+	// ARM 1: the script's own extractor, run.
+	const marker = "<<'PY_CEILING_VALUES'"
+	_, after, ok := strings.Cut(src, marker)
+	if !ok {
+		t.Fatalf("%s no longer holds a %s heredoc — this pin runs those bytes, so it is now measuring nothing", script, marker)
+	}
+	_, body, ok := strings.Cut(after, "\n")
+	if !ok {
+		t.Fatalf("%s: nothing follows %s", script, marker)
+	}
+	body, _, ok = strings.Cut(body, "\nPY_CEILING_VALUES\n")
+	if !ok {
+		t.Fatalf("%s: the %s heredoc is never closed", script, marker)
+	}
+	if _, err := exec.LookPath("python3"); err != nil {
+		// Not a skip: the script itself cannot run without python3, so a box
+		// that has none cannot be the box this is measured on.
+		t.Fatalf("no python3 on PATH, and %s is four python3 blocks — the reading this pin compares cannot be run here: %v", script, err)
+	}
+
+	// Each row is one `data_ceiling_patterns:` entry as the config spells it.
+	// The value column is only here to name the row; what is compared is the
+	// script's answer against YamlMapPairsRaw's, so a row whose expectation
+	// is wrong is still a row where the two must agree.
+	for _, tc := range []struct {
+		name string
+		line string
+	}{
+		{"a bare value", "  " + qaCeilingClass + ": FILL[-]ME"},
+		{"THE DEFECT: a trailing comment is not part of the pattern", "  " + qaCeilingClass + ": FILL[-]ME  # e.g. FILL-ME"},
+		{"a tab before the comment", "  " + qaCeilingClass + ": FILL[-]ME\t# e.g. FILL-ME"},
+		{"a double-quoted value loses its quotes", `  ` + qaCeilingClass + `: "FILL[-]ME"`},
+		{"trailing whitespace is trimmed", "  " + qaCeilingClass + ": FILL[-]ME   "},
+		{"a `#` with no blank in front of it is part of the value", "  " + qaCeilingClass + ": FILL[-]ME#1"},
+		{"a value holding a blank keeps it", "  " + qaCeilingClass + ": FILL[-]ME ME"},
+		{"an indented comment line is not an entry", "  # " + qaCeilingClass + ": FILL-ME\n  " + qaCeilingClass + ": FILL[-]ME"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			cfg := filepath.Join(dir, "config.yaml")
+			if err := os.WriteFile(cfg, []byte(DataCeilingConfigKey+":\n"+tc.line+"\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			// FIXTURE PREMISE: the hook's reader has to see the entry at all,
+			// or both sides answer nothing and agree about it.
+			var want []string
+			for _, kv := range YamlMapPairsRaw(cfg, DataCeilingConfigKey) {
+				want = append(want, kv[1])
+			}
+			if len(want) != 1 {
+				t.Fatalf("fixture premise: YamlMapPairsRaw read %d entries from %q, want 1", len(want), tc.line)
+			}
+
+			py := filepath.Join(dir, "values.py")
+			if err := os.WriteFile(py, []byte(body+"\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			out, err := exec.Command("python3", py, cfg).CombinedOutput()
+			if err != nil {
+				t.Fatalf("the script's extractor failed on %q: %v\n%s", tc.line, err, out)
+			}
+			var got []string
+			for _, ln := range strings.Split(strings.TrimRight(string(out), "\n"), "\n") {
+				if ln != "" {
+					got = append(got, ln)
+				}
+			}
+			if strings.Join(got, "\x00") != strings.Join(want, "\x00") {
+				t.Errorf("%s extracts %q from %q; the hook judges by %q. The script greps the staged lines for its own answer, so a disagreement here is a stamp of the shape it exists to refuse.", script, got, tc.line, want)
+			}
+		})
 	}
 }
