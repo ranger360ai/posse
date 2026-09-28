@@ -820,7 +820,23 @@ func TestQADataCeilingMessageRefusalLeavesTheMessageAndOverrides(t *testing.T) {
 // MEASURED 2026-09-28: Go's regexp and grep -E judge nine self-match cases
 // identically (ADR 0050 D6), so a Go-side pin speaks for the hook; PIN (a)
 // already proves the hook refuses on the staged line.
+//
+// MUTATION-CHECKED (runs on ranger-base-c4xix): each of these reds this pin
+// and nothing else under the same filter.
+// M12 judges the CLEANED value (kv[1]) instead of the raw line (kv[2]), and
+// reds the trailing-comment arm alone — which is the whole reason the reader
+// is a raw one.
+// M13 makes every accepted entry self-match, and reds both bracketed arms
+// and the fixture-pattern arm.
+// M14 makes no entry ever self-match, and reds the three matching arms.
+// M15 has WriteStampReport print no self-match line while the set still
+// carries the classes, and reds the same three — which is what keeps the
+// field from being carried and never said.
+// M16 has CommitGuardHook render one comment line per self-matching class,
+// and reds the render-identity arm below under both stamps — the arm that
+// keeps this field out of the L3 probe's subject.
 func TestQADataCeilingWarnsWhenAValueMatchesItsOwnDefinitionLine(t *testing.T) {
+	t.Parallel() // a config file in a t.TempDir and pure readers; no repo, no env
 	// A placeholder, which is how the property was found, and the remedy
 	// D6 prints for it. Never this box's vocabulary: what is measured here
 	// is the mechanism.
@@ -898,5 +914,28 @@ func TestQADataCeilingWarnsWhenAValueMatchesItsOwnDefinitionLine(t *testing.T) {
 	}
 	if set := (&App{ConfigPath: cfg}).OpsPatternSet(); len(set.CeilingSelfMatch) != 0 {
 		t.Errorf("the fixture ceiling patterns must not self-match: %v", set.CeilingSelfMatch)
+	}
+
+	// And NO renderer reads the new field. The three sites that render the
+	// commit hook compare byte-for-byte at every launch (ADR 0023, ADR 0050
+	// D3), so a hook that grew a byte from a property of the CONFIG would
+	// read "ours but stale" on every launch into every hooked repo until
+	// install-hooks re-ran — for a warning that is not about any repo. The
+	// pin is the identity: the same set with the classes cleared renders
+	// the same bytes.
+	selfCfg := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(selfCfg, []byte(DataCeilingConfigKey+":\n  "+qaCeilingClass+": FILL-ME\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	set := (&App{ConfigPath: selfCfg}).OpsPatternSet()
+	if len(set.CeilingSelfMatch) != 1 {
+		t.Fatalf("fixture premise: the entry must self-match, got %v", set.CeilingSelfMatch)
+	}
+	bare := set
+	bare.CeilingSelfMatch = nil
+	for _, stamp := range []string{VisibilityPublic, VisibilityPrivate} {
+		if got, want := CommitGuardHook(stamp, set), CommitGuardHook(stamp, bare); got != want {
+			t.Errorf("the %s hook render changed with CeilingSelfMatch — every launch into every hooked repo would read it as stale", stamp)
+		}
 	}
 }
