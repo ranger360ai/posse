@@ -81,3 +81,51 @@ and it logs only the subject it asked for and the envelope's expiry. On a
 box whose credential has been cleared (the ranger-base-58qr8 tombstone) it
 fails with "holds no credential … run `claude` and `/login`", which is a
 login state and not an account mismatch — the sentence distinguishes them.
+
+### What the first live run found (ranger-base-ryg9w)
+
+The pin FAILED on the logged-in box, and the failure was the pin's, not the
+account's. MEASURED 2026-09-28 on darwin 25.4, personal box, logged in:
+
+- posse's own argv — the one `keychainCmd` builds, naming the service and the
+  account both — exits **0** typed from a shell, with `stdin=/dev/null`, with
+  `env -i`, and with `env -i HOME=$HOME`; a throwaway Go program running the
+  same argv through `exec.Command(...).Output()` gets `err=nil` and a
+  non-empty envelope. **So the account is right**: the item on that box
+  answers under the runtime's derived account, which is the one thing about
+  ranger-base-tghn5 that no reading could settle.
+- The same argv with `HOME=$(mktemp -d)` exits **44**. `security` locates the
+  login keychain through `$HOME`, and `internal/posse`'s `TestMain` replaces
+  `$HOME` with an empty temp dir for the whole binary (deliberately —
+  ranger-base-gvrh, so no test cuts a worktree in the operator's live
+  `~/.posse`). The pin therefore asked the right question of the wrong
+  keychain and could never pass, for 100% of runs, whatever the account was.
+- Not the cause, each ruled out separately: `RHQ_CAGE`/`RHQ_PERSONA`/
+  `RHQ_RUNTIME`, and running the built test binary directly (`go test -c`).
+
+The fix is the child's environment and nothing else: the pin builds the store
+through `liveKeychainStoreAt`, which is `keychainStoreAt` with `Read`
+replaced by the same `keychainCmd` argv carrying `HOME=<operatorHome>` and
+classified by the same `keychainRun`. It is put back on the CHILD, never on
+the process — `os.Setenv`/`t.Setenv` here would hand the operator's live home
+to every test running in parallel beside it, which is the property `TestMain`
+bought. `keychainRun` was extracted out of `keychainStoreAt`'s `Read` for
+exactly this: a copy of the failure classification in the test file would be
+a pin that can go green after production's sentence has moved.
+
+`TestQALiveKeychainReadHandsTheChildTheOperatorHome` is the guard, and unlike
+the pin it always runs — it asks a stubbed `security` which `$HOME` it was
+handed, so it needs no login, no keychain and no darwin. MEASURED: delete the
+one `cmd.Env` line and it reds naming both homes. A pin the operator can only
+run by hand, on a box nobody else has, is the kind that rots unobserved.
+
+**Still out of the pin's reach: the ITEM.** `keychainItem` reads
+`CLAUDE_CONFIG_DIR` in the test process, and `TestMain` clears that too, so
+the name derived under the pin is the default spelling whatever the launching
+shell exported (this box exports `CLAUDE_CONFIG_DIR=$HOME/.claude` from a
+managed-settings file, which would otherwise derive the suffixed spelling).
+On a box where the runtime logged in
+under a config-dir variable, the pin asks the unsuffixed name and gets a 44
+whose sentence sends the operator to Keychain Access — the right place, for a
+reason the sentence does not name. The item derivation is ranger-base-ig4op's
+pin and is MEASURED off the bundle; this one is the account's.

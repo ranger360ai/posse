@@ -914,33 +914,7 @@ func keychainStoreAt(bin string) runtimeStore {
 		Name: subject + note,
 		Fix:  keychainACLFix,
 		Read: func() ([]byte, error) {
-			out, err := keychainCmd(bin, item, account).Output()
-			if err != nil {
-				// GateRefusal stays after part B removed its cause: it is
-				// what stops the 08-24 misdiagnosis returning if this ever
-				// regresses to a PATH lookup, and it names the command by
-				// the word a deny rule is spelled with. It is asked FIRST
-				// and it never falls through: the item was not reached, so
-				// nothing about the keychain's contents was learned.
-				if g := gateRefusal(filepath.Base(bin), err); g != nil {
-					return nil, g
-				}
-				// Then the read that never happened. An *exec.ExitError is
-				// the ONLY error here that means the binary ran and the
-				// system answered; everything else — no such file, not
-				// executable, ETXTBSY or any other transient fork/exec
-				// failure under load — is this process failing to ask, and
-				// says nothing whatever about the keychain. Asking the TYPE
-				// is the whole of the distinction: a failure to exec writes
-				// no stderr, so there is no text to read it off (the note
-				// on ranger-base-h8u0l).
-				var ee *exec.ExitError
-				if !errors.As(err, &ee) {
-					return nil, &execNotRun{cmd: filepath.Base(bin), err: err}
-				}
-				return nil, &keychainExit{subject: subject, code: ee.ExitCode()}
-			}
-			return out, nil
+			return keychainRun(bin, subject, keychainCmd(bin, item, account))
 		},
 	}
 	// The composite's read order, with D2's one narrowing: the file, only on
@@ -1044,6 +1018,45 @@ func keychainFallbackStore(p string) runtimeStore {
 // line above and this one can be compared by eye.
 func keychainCmd(bin, item, account string) *exec.Cmd {
 	return exec.Command(bin, "find-generic-password", "-a", account, "-w", "-s", item)
+}
+
+// keychainRun runs that read and turns a failure into the error that says
+// WHICH failure it was. Production has one caller, keychainStoreAt's Read,
+// and it hands over keychainCmd's answer unchanged.
+//
+// It takes the built *exec.Cmd rather than building one so the live pin can
+// hand it the SAME argv with one thing put back on the child:
+// credentialaccount_live_test.go must set HOME, because `security` locates
+// the login keychain through it and this package's TestMain replaces HOME
+// for the whole binary (ranger-base-ryg9w — the pin asked the right question
+// of an empty keychain and answered 44 for 100% of runs). The classification
+// below is the part that must not be copied into that file: a second copy is
+// a pin that can go green while production's sentence has drifted.
+func keychainRun(bin, subject string, cmd *exec.Cmd) ([]byte, error) {
+	out, err := cmd.Output()
+	if err == nil {
+		return out, nil
+	}
+	// GateRefusal stays after part B removed its cause: it is what stops the
+	// 08-24 misdiagnosis returning if this ever regresses to a PATH lookup,
+	// and it names the command by the word a deny rule is spelled with. It
+	// is asked FIRST and it never falls through: the item was not reached,
+	// so nothing about the keychain's contents was learned.
+	if g := gateRefusal(filepath.Base(bin), err); g != nil {
+		return nil, g
+	}
+	// Then the read that never happened. An *exec.ExitError is the ONLY
+	// error here that means the binary ran and the system answered;
+	// everything else — no such file, not executable, ETXTBSY or any other
+	// transient fork/exec failure under load — is this process failing to
+	// ask, and says nothing whatever about the keychain. Asking the TYPE is
+	// the whole of the distinction: a failure to exec writes no stderr, so
+	// there is no text to read it off (the note on ranger-base-h8u0l).
+	var ee *exec.ExitError
+	if !errors.As(err, &ee) {
+		return nil, &execNotRun{cmd: filepath.Base(bin), err: err}
+	}
+	return nil, &keychainExit{subject: subject, code: ee.ExitCode()}
 }
 
 // CredentialsFile is where Claude Code keeps the same OAuth envelope. Off
