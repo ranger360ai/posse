@@ -15,7 +15,10 @@ subject — product decision that date on ranger-base-pqlxr, landed
 09-04 one above) · amended 2026-09-28 (D6, Alternatives: a value that
 matches its own definition line is WARNED at stamp time, never refused and
 never exempted — ranger-base-3gdqv, from monica's work-box measurement
-2026-09-27; builds in the code bead named on that bead).*
+2026-09-27; builds in the code bead named on that bead) · amended
+2026-09-28 (D6: the printed remedy names the LINE, not the value alone,
+because the check reads the line — ranger-base-l2569, from
+ranger-base-tl0mg).*
 
 > An instance that holds someone else's data has two different questions
 > to ask of a staged line. *May this be public?* is visibility, and ADR
@@ -277,9 +280,24 @@ line the hook will read out of `git diff --cached`, not the cleaned value —
 and carries each match on the set as a class name beside the accepted and
 refused lists. `WriteStampReport` prints one line per such class: this value
 matches its own definition line, so a commit of the config file that defines
-it will be refused by the class it defines; write one literal character of it
-in brackets (`X` → `[X]`) and re-stamp. Class only — never the value, never
-the line; the value is the vocabulary. The entry stays IN FORCE: the wall is
+it will be refused by the class it defines; write one literal character in
+brackets (`X` → `[X]`) in every part of the LINE that carries the match and
+re-stamp. Class only — never the value, never the line; the value is the
+vocabulary. *Amended 2026-09-28 (ranger-base-l2569, from
+ranger-base-tl0mg): that sentence first named the value alone, and where
+the match is carried by something else on the line — a trailing
+`# e.g. <the literal>` beside an already-bracketed value, which is the live
+shape, or the class name in the key, which is the pathological one — an
+operator who followed it exactly re-stamped and got the identical line
+back. The refusal is class-only by the rule's own condition, so this
+sentence is the only explanation there is and it has to be reachable for
+every shape the check flags: it now names the whole line, says the value
+and any trailing comment that repeats it alike, and sends the key case to
+renaming the class, which is the one shape no bracketing of the value can
+reach. The check, the field, the in-force rule and every render are
+unchanged; this amends one operator-facing sentence and the two doc
+sentences (`examples/config.yaml`, `INSTALL.md`) that carried the same
+narrowing.* The entry stays IN FORCE: the wall is
 total, and the warning is about one file's commit, not about the pattern.
 The hook file does not carry the line (the hook is per repo; the property is
 the config's), so the L3 byte-for-byte probe is untouched. The bracketed

@@ -1653,9 +1653,12 @@ identity literals, all as amended 2026-09-03). What differs is the gate and
 the remedy: the ceiling refuses in every repo and first, the visibility
 arms only in a public-stamped one. A ceiling value that matches its own
 definition line — every plain literal does — refuses the commit of the
-config that defines it, class-only; write one character of it in brackets
-(`ACME[-]RESTRICTED`), re-stamp, and `posse gates install-hooks` names the
-class of any value that still would (ADR 0050 D6). A message given with `-m`, `-F`, `-F -`
+config that defines it, class-only; what is judged is the whole raw line,
+key and value and any trailing comment, so write one character in brackets
+(`ACME[-]RESTRICTED`) in every part of the line that carries it, a comment
+that spells the literal out beside a bracketed value included, re-stamp, and
+`posse gates install-hooks` names the class of any line that still would
+(ADR 0050 D6). A message given with `-m`, `-F`, `-F -`
 or reused by `--amend` is scanned; one typed in your EDITOR is not, because
 the hook runs before the editor opens (ADR 0050 D5). git's own template is
 not a subject either, WHERE GIT STRIPS IT: the arm reads

@@ -808,8 +808,19 @@ func (s OpsPatternSet) WriteStampReport(w io.Writer) {
 	// IN FORCE and warned (ADR 0050 D6). Class only, like every other line
 	// here: the value is the vocabulary the ceiling exists to keep out of
 	// local files, and this report is one.
+	//
+	// The remedy names the LINE, not the value, because the check above
+	// reads the raw line and the match need not come from the value
+	// (ranger-base-l2569). A trailing `# e.g. <the literal>` beside an
+	// already-bracketed value still refuses the commit, and an operator
+	// who read "one literal character of the value" there had already
+	// done what the sentence asked: re-stamping printed the identical
+	// line back, and the refusal is class-only by design, so this
+	// sentence is the only explanation there is. The key is on the line
+	// too, which no bracketing of the value can reach — rare enough to
+	// ride in a parenthesis, and it would otherwise be the same dead end.
 	for _, class := range s.CeilingSelfMatch {
-		fmt.Fprintf(w, "  data ceiling pattern IN FORCE and matches its own definition line, so a commit of the config that defines it will be refused by this class — write one literal character of the value in brackets (X -> [X]) and re-stamp: %s\n", class)
+		fmt.Fprintf(w, "  data ceiling pattern IN FORCE and matches its own definition line, so a commit of the config that defines it will be refused by this class — the check reads the WHOLE raw line, so write one literal character in brackets (X -> [X]) in every part of the line that carries the match, the value and any trailing comment that repeats it alike (a value matched by the class name in its own key cannot be bracketed clear — rename the class), and re-stamp: %s\n", class)
 	}
 }
 

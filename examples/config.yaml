@@ -265,9 +265,12 @@ default_emoji: ⚙️
 #   export-name: export-[0-9]{8}\.(csv|xlsx)
 # A value that matches its own definition line refuses the commit of THIS
 # file, class-only — and every plain literal does (`ACME-RESTRICTED`,
-# `FILL-ME`), because the line contains it verbatim. Write one character of
-# it in brackets (`ACME[-]RESTRICTED`: same regex everywhere else) and
-# re-stamp; `posse gates install-hooks` names the class when a value would
+# `FILL-ME`), because the line contains it verbatim. What is judged is the
+# WHOLE raw line, key and value and any trailing comment, so write one
+# character in brackets (`ACME[-]RESTRICTED`: same regex everywhere else) in
+# every part of the line that carries it — a comment that spells the literal
+# out beside a bracketed value refuses the commit on its own — and re-stamp;
+# `posse gates install-hooks` names the class when a line still would
 # (ADR 0050 D6).
 
 # ─── verify-after (ADR 0006 §3) ──────────────────────────────────────────────

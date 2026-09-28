@@ -808,7 +808,10 @@ func TestQADataCeilingMessageRefusalLeavesTheMessageAndOverrides(t *testing.T) {
 // that changes if this pin is deleted: OpsPatternSet carries the classes and
 // WriteStampReport prints one line each.
 //
-// The arms that matter are the RAW-LINE ones. The check reads the bytes as
+// The arms that matter are the RAW-LINE ones, and the walk below them is
+// what an operator does about one (ranger-base-l2569): the sentence the
+// report prints has to be reachable for every shape the raw-line check
+// flags, or re-stamping hands the operator the line they already had. The check reads the bytes as
 // the file holds them, because that is what `git diff --cached` hands the
 // hook: a trailing `# e.g. FILL-ME` on an otherwise-bracketed value DOES
 // refuse the config's commit, and a reader that judged YamlMapPairs' cleaned
@@ -835,6 +838,9 @@ func TestQADataCeilingMessageRefusalLeavesTheMessageAndOverrides(t *testing.T) {
 // M16 has CommitGuardHook render one comment line per self-matching class,
 // and reds the render-identity arm below under both stamps — the arm that
 // keeps this field out of the L3 probe's subject.
+// M17 (runs on ranger-base-l2569) restores the remedy sentence that named
+// only the value, and reds all four substrings of the remedy-text arm —
+// which is the whole of what that bead moved.
 func TestQADataCeilingWarnsWhenAValueMatchesItsOwnDefinitionLine(t *testing.T) {
 	t.Parallel() // a config file in a t.TempDir and pure readers; no repo, no env
 	// A placeholder, which is how the property was found, and the remedy
@@ -902,6 +908,70 @@ func TestQADataCeilingWarnsWhenAValueMatchesItsOwnDefinitionLine(t *testing.T) {
 				t.Errorf("the stamp report echoed the value:\n%s", report.String())
 			}
 		})
+	}
+
+	// THE PRINTED REMEDY IS REACHABLE (ranger-base-l2569). The arms above
+	// assert that the warning FIRES on the trailing-comment shape, which
+	// is the arm that matters; nobody asked what the operator does next.
+	// The refusal is class-only by design (ADR 0050 D6, Context), so this
+	// sentence is the only explanation there is — and while it named the
+	// VALUE alone, following it exactly on a line whose match is carried
+	// by something else re-stamped the identical line, with no new
+	// information. Each row below is ONE operator edit applied to the row
+	// above it, so the walk is the operator's and `want` is what they see.
+	for _, tc := range []struct {
+		name string
+		val  string // the value as the config line spells it
+		want bool
+	}{
+		// Shape A, the live one: a comment that names the literal.
+		{"A0 bracketed value, comment repeats the literal", bracketed + "  # e.g. " + plain, true},
+		{"A1 bracket another character of the VALUE: unchanged, which is the defect", "F[I]LL[-]ME  # e.g. " + plain, true},
+		{"A2 bracket the COMMENT too, which the sentence now names: clear", bracketed + "  # e.g. " + bracketed, false},
+		// Shape B, lower value, same root: the class name is on the line
+		// as the KEY, so no bracketing of the value reaches it. The escape
+		// is to rename the class, which is why the sentence says so.
+		{"B0 a value that matches the class name in its own key", qaCeilingClass, true},
+		{"B1 bracket the value: the key still carries it", "[" + qaCeilingClass[:1] + "]" + qaCeilingClass[1:], true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := filepath.Join(t.TempDir(), "config.yaml")
+			line := "  " + qaCeilingClass + ": " + tc.val
+			if err := os.WriteFile(cfg, []byte(DataCeilingConfigKey+":\n"+line+"\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			set := (&App{ConfigPath: cfg}).OpsPatternSet()
+			// FIXTURE PREMISE: a pin over a pattern the parser threw away
+			// would be green against any check at all.
+			if len(set.CeilingRejected) > 0 || len(set.Ceiling) != 1 {
+				t.Fatalf("fixture premise: the entry must be ACCEPTED, got ceiling=%+v rejected=%v", set.Ceiling, set.CeilingRejected)
+			}
+			if got := len(set.CeilingSelfMatch) == 1; got != tc.want {
+				t.Errorf("self-match = %v, want %v for value %q", got, tc.want, tc.val)
+			}
+		})
+	}
+
+	// And the sentence itself says what those arms walk: the LINE, not the
+	// value alone. Pinned as text because the text IS the deliverable —
+	// the operator gets this and nothing else.
+	{
+		cfg := filepath.Join(t.TempDir(), "config.yaml")
+		if err := os.WriteFile(cfg, []byte(DataCeilingConfigKey+":\n  "+qaCeilingClass+": "+plain+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		var report bytes.Buffer
+		(&App{ConfigPath: cfg}).OpsPatternSet().WriteStampReport(&report)
+		for _, w := range []string{
+			"the WHOLE raw line",                   // the root: what the check reads
+			"every part of the line that carries",  // so: not the value alone
+			"any trailing comment that repeats it", // shape A, the live one
+			"rename the class",                     // shape B, which brackets cannot reach
+		} {
+			if !strings.Contains(report.String(), w) {
+				t.Errorf("the remedy must name the line and both shapes, missing %q:\n%s", w, report.String())
+			}
+		}
 	}
 
 	// And the file's own fixture patterns, which the other pins run the
