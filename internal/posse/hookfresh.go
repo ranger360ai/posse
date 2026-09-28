@@ -118,10 +118,10 @@ func (a *App) SweepHookWall() HookWallSweep {
 		}
 		s.Measured++
 		if !p.CommitGuard {
-			r.Degraded = append(r.Degraded, hookWallLine(p.HooksDir, "prepare-commit-msg", key, p.CommitGuardDegraded))
+			r.Degraded = append(r.Degraded, hookWallLine(p.HooksDir, "prepare-commit-msg", key, p.CommitGuardDegraded, p.CommitGuardVerdict))
 		}
 		if !p.PrePush {
-			r.Degraded = append(r.Degraded, hookWallLine(p.HooksDir, "pre-push", key, p.PrePushDegraded))
+			r.Degraded = append(r.Degraded, hookWallLine(p.HooksDir, "pre-push", key, p.PrePushDegraded, p.PrePushVerdict))
 		}
 		if len(r.Degraded) > 0 {
 			s.Findings++
@@ -131,21 +131,21 @@ func (a *App) SweepHookWall() HookWallSweep {
 	return s
 }
 
-// hookWallLine keeps l3DegradeLine's wording for every case it describes
-// correctly, and replaces the one it does not. A slot with no file at all
-// reaches l3Identity as "neither ours nor a chain dispatcher" and so prints
-// as "foreign hook — posse cannot vouch for a hook it did not write", which
-// is true of a hook that exists. Here the common case is a repo the operator
-// declared and never installed into, where naming a foreign hook that is not
-// there sends the reader looking for a file to inspect.
-func hookWallLine(hooks, slot, repo, degraded string) string {
-	if hooks != "" {
-		_, topErr := os.Stat(filepath.Join(hooks, slot))
-		_, memberErr := os.Stat(filepath.Join(hooks, "posse-"+slot))
-		if topErr != nil && memberErr != nil {
-			return fmt.Sprintf("L3 %s hook — %s — no hook installed at all; run `posse gates install-hooks %s`",
-				slot, AbbrevHome(filepath.Join(hooks, slot)), repo)
-		}
+// hookWallLine keeps the probe's own line for every case, and re-words the
+// one the sweep can say better: an uninstalled slot here is almost always a
+// repo the operator DECLARED and never installed into, and this caller —
+// unlike a launch, which is already in the repo it is talking about — knows
+// which repo to name in the remedy.
+//
+// The absence itself is the probe's verdict now, not a second stat of the
+// same two paths (ranger-base-gw9o5). It was re-derived here because the
+// probe called every absent slot foreign, which only this caller had been
+// taught to correct; the launch said "foreign hook" about a file that was
+// never there.
+func hookWallLine(hooks, slot, repo, degraded string, v l3Verdict) string {
+	if v == l3Uninstalled && hooks != "" {
+		return fmt.Sprintf("L3 %s hook — %s — no hook installed at all; run `posse gates install-hooks %s`",
+			slot, AbbrevHome(filepath.Join(hooks, slot)), repo)
 	}
 	return degraded
 }

@@ -2144,6 +2144,17 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 		// judges the launch on the POST-heal state; this only reports what
 		// was actually on disk a moment earlier, so a real drift is a
 		// finding rather than a repair nobody heard about.
+		//
+		// A DRIFT, and nothing else: the line below is about a stamp this
+		// launch rewrote in place, so it asks the pre-heal verdict rather
+		// than the bare "did not count" (ranger-base-gw9o5). A slot with no
+		// hook in it — every first launch into a repo somebody just ran
+		// `git init` in — was printed as a foreign hook posse cannot vouch
+		// for, at a path that held no file, over an install that repaired
+		// nothing because there was nothing there. A foreign hook is not
+		// re-stamped either: installHook refuses it (ADR 0002 §3), and the
+		// parity check below reports it on the post-heal state it is still
+		// in, which is the honest place for it.
 		preHeal := a.probeL3Hooks(dir, deniesGitPush(ag.Deny))
 		// ADR 0052 D1: on a MANAGED hooks path the install step writes
 		// nothing at all — not the two renders, not a chain — and says so
@@ -2213,7 +2224,7 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 			a.InstallCommitGuardHook(dir)
 		}
 		parity := a.checkParityIn(ag, rt, cage, tier, dir, hooksProbe)
-		if !mh.Managed && preHeal.Repo && !preHeal.CommitGuard {
+		if !mh.Managed && preHeal.Repo && preHeal.CommitGuardVerdict.reStamped() {
 			b.warn("posse: %s launch found the L3 prepare-commit-msg wall in %s WRONG before this launch just silently re-stamped it — %s\n", o.Name, AbbrevHome(dir), preHeal.CommitGuardDegraded)
 		}
 		if len(parity.Degraded) > 0 {

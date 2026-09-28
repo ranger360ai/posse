@@ -287,12 +287,15 @@ func (r *hooksRedirect) probe() *l3Redirect {
 
 // l3IdentityIn is l3Identity, or its redirect-mode twin. Same shape so
 // probeL3HooksIn asks one question either way.
-func l3IdentityIn(red *l3Redirect, hooks, slot, render, marker string) (identity, stale bool, path string) {
+func l3IdentityIn(red *l3Redirect, hooks, slot, render, marker string) (l3Verdict, string) {
 	if red == nil {
 		return l3Identity(hooks, slot, render, marker)
 	}
-	identity, path = l3RedirectIdentity(hooks, red.Managed, slot, render)
-	return identity, false, path
+	identity, path := l3RedirectIdentity(hooks, red.Managed, slot, render)
+	if identity {
+		return l3Held, path
+	}
+	return l3RedirectMismatch, path
 }
 
 // l3RedirectIdentity is the identity half of ADR 0023 asked at the session
@@ -330,9 +333,9 @@ func l3RedirectIdentity(hooks, managed, slot, render string) (identity bool, pat
 // per-session dir it does not write, and "foreign" describes nothing there.
 // A behavior failure (identity held, our own render did not refuse) is the
 // same renderer regression it always was, in the same words.
-func l3DegradeLineIn(red *l3Redirect, hooks, slot, path, consequence string, identity, stale bool) string {
-	if red == nil || identity {
-		return l3DegradeLine(hooks, slot, path, consequence, identity, stale)
+func l3DegradeLineIn(red *l3Redirect, slot, path, consequence string, v l3Verdict) string {
+	if red == nil || v == l3Held {
+		return l3DegradeLine(slot, path, consequence, v)
 	}
 	return fmt.Sprintf("L3 %s hook — %s — the session hooks dir does not carry this launch's render — re-launch to re-render; %s", slot, AbbrevHome(path), consequence)
 }

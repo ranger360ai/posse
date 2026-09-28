@@ -5421,6 +5421,15 @@ type l3HookProbe struct {
 	PrePushDegraded     string
 	CommitGuardDegraded string
 
+	// PrePushVerdict and CommitGuardVerdict are the same finding for the
+	// callers that must do more than print it: the launch's pre-heal
+	// comparison, which reports only what its own install actually
+	// re-stamped, and the hook-wall sweep, which can name the repo in the
+	// remedy. l3Held both when the slot counts and when it was not asked
+	// about (wantPrePush false), exactly as PrePush is true in both.
+	PrePushVerdict     l3Verdict
+	CommitGuardVerdict l3Verdict
+
 	// Forward carries redirect mode's own arm (ADR 0052 D3): one
 	// ready-to-display line per managed hook this session's git would
 	// SKIP, because the dir it dispatches from does not carry that slot's
@@ -5430,43 +5439,112 @@ type l3HookProbe struct {
 	Forward []string
 }
 
+// l3Verdict names WHICH state the identity half found. The states are
+// l3Identity's own — it has always distinguished them internally — and they
+// are returned rather than flattened into a bool pair because two callers
+// need more than a line: the launch's pre-heal comparison, which must know
+// whether its own install re-stamped something, and the hook-wall sweep,
+// which used to re-derive one of them from the filesystem a second time and
+// so only ever fixed its own wording (ranger-base-gw9o5).
+type l3Verdict int
+
+const (
+	// l3Held: the dispatched file is byte-for-byte our current render (or
+	// the prescribed chain to it). The slot can still fail ADR 0023's
+	// behavior half, which is a renderer regression and not an identity
+	// verdict at all. Also the zero value, which is what an unasked slot
+	// carries — wantPrePush=false reports PrePush true for the same reason.
+	l3Held l3Verdict = iota
+	// l3Uninstalled: nothing is at the dispatch path, and nothing behind
+	// it. NOT a hook posse did not write: no hook at all. This is what a
+	// repo created seconds ago by `git init` has, and what a declared repo
+	// nobody ever installed into has.
+	l3Uninstalled
+	// l3Foreign: something IS there and carries no mark of ours — a hook,
+	// or a special file that can never be one. installHook refuses to
+	// overwrite it (ADR 0002 §3, ranger-base-3c3), so a launch does not
+	// repair this one.
+	l3Foreign
+	// l3Stale: ours by marker, not by bytes. installHook rewrites it in
+	// place.
+	l3Stale
+	// l3MemberGone: our chain dispatcher holds the slot and the
+	// posse-<slot> member it runs first is missing — reached by posse's own
+	// uninstall instructions. installHook restores it (see its RESTORE arm).
+	l3MemberGone
+	// l3RedirectMismatch: redirect mode only (ADR 0052 D3) — the session
+	// hooks dir does not carry this launch's render. Neither foreign nor
+	// stale: that dir is posse's own, rebuilt at every launch, and the
+	// remedy is the launch. l3DegradeLineIn words this one itself, so it
+	// never reaches l3DegradeLine.
+	l3RedirectMismatch
+)
+
+// reStamped reports whether install rewrites, in place and without asking,
+// something that was already posse's and already wrong. It is the only
+// pre-heal state a launch silently repairs: l3Foreign is refused, l3Held is
+// rewritten with the bytes it already had, and l3Uninstalled had nothing
+// there to repair.
+func (v l3Verdict) reStamped() bool { return v == l3Stale || v == l3MemberGone }
+
 // l3Identity reports whether the file at hooks/slot is byte-for-byte render
 // (+x) — our current render, dispatched — or the prescribed chain dispatcher
-// (+x) with posse-<slot> byte-for-byte render (+x). When it is neither, stale
-// distinguishes "carries our marker but the bytes differ" (reinstall fixes
-// it) from "no marker of ours at all" (foreign; installHook will not touch
-// it — ranger-base-3c3). path names the file the verdict is actually about —
-// the dispatch-path file itself, or posse-<slot> behind a chain dispatcher —
-// so a degraded line can name the file to fix rather than the slot in
-// general.
-func l3Identity(hooks, slot, render, marker string) (identity, stale bool, path string) {
+// (+x) with posse-<slot> byte-for-byte render (+x). When it is neither, the
+// verdict says why (see l3Verdict). path names the file the verdict is
+// actually about — the dispatch-path file itself, or posse-<slot> behind a
+// chain dispatcher — so a degraded line can name the file to fix rather than
+// the slot in general.
+func l3Identity(hooks, slot, render, marker string) (l3Verdict, string) {
 	top := filepath.Join(hooks, slot)
 	if !isRegularFile(top) {
-		return false, false, top
+		// Absent and present-but-unusable are different findings: a FIFO or
+		// a directory at the dispatch path is something posse did not write
+		// and will not overwrite (refuseNonRegularHook), while nothing at
+		// all is simply not installed yet.
+		return hookSlotVerdict(top), top
 	}
 	body, err := os.ReadFile(top)
 	if err == nil {
 		if identityMatch(top, render) {
-			return true, false, top
+			return l3Held, top
 		}
 		if isChainHookDispatcher(string(body), slot) {
 			if fi, statErr := os.Stat(top); statErr == nil && fi.Mode()&0o111 != 0 {
 				chained := filepath.Join(hooks, "posse-"+slot)
 				if identityMatch(chained, render) {
-					return true, false, chained
+					return l3Held, chained
 				}
 				if isRegularFile(chained) {
 					if cb, cerr := os.ReadFile(chained); cerr == nil && ownsHook(string(cb), marker) {
-						return false, true, chained
+						return l3Stale, chained
 					}
+					return l3Foreign, chained
 				}
-				return false, false, chained
+				// The member is the file the verdict is about, so its
+				// absence is the same question asked one level down — and
+				// the answer is NOT l3Uninstalled: our dispatcher is right
+				// there holding the slot.
+				if v := hookSlotVerdict(chained); v == l3Uninstalled {
+					return l3MemberGone, chained
+				}
+				return l3Foreign, chained
 			}
 		} else if ownsHook(string(body), marker) {
-			return false, true, top
+			return l3Stale, top
 		}
 	}
-	return false, false, top
+	return l3Foreign, top
+}
+
+// hookSlotVerdict classifies a path that is not a regular file: nothing
+// there at all, or something there that is not ours and never could be.
+// Lstat, not Stat: a dangling symlink is an entry somebody made — a reader
+// sent to it finds it — so it is foreign rather than absent.
+func hookSlotVerdict(path string) l3Verdict {
+	if _, err := os.Lstat(path); os.IsNotExist(err) {
+		return l3Uninstalled
+	}
+	return l3Foreign
 }
 
 // isRegularFile answers the question l3Identity must ask before it reads:
@@ -5683,11 +5761,15 @@ func writeTempRender(dir, slot, body string) (string, error) {
 // because a black-box probe cannot tell that from a hook that refuses only
 // the probe (the escape this ADR closes), and the launcher no longer runs
 // it to find out.
-func l3DegradeLine(hooks, slot, path, consequence string, identity, stale bool) string {
-	switch {
-	case !identity && stale:
+func l3DegradeLine(slot, path, consequence string, v l3Verdict) string {
+	switch v {
+	case l3Stale:
 		return fmt.Sprintf("L3 %s hook — %s — ours but stale — run `posse gates install-hooks`; %s", slot, AbbrevHome(path), consequence)
-	case !identity:
+	case l3Uninstalled:
+		return fmt.Sprintf("L3 %s hook — %s — no hook installed at all; run `posse gates install-hooks`; %s", slot, AbbrevHome(path), consequence)
+	case l3MemberGone:
+		return fmt.Sprintf("L3 %s hook — %s — posse's chain dispatcher holds the slot and the member it runs first is missing — run `posse gates install-hooks`; %s", slot, AbbrevHome(path), consequence)
+	case l3Foreign:
 		return fmt.Sprintf("L3 %s hook — %s — foreign hook, posse cannot vouch for a hook it did not write; %s (run `posse gates install-hooks` to see the chain prescription)", slot, AbbrevHome(path), consequence)
 	default:
 		return fmt.Sprintf("L3 %s hook — %s — our own render did not refuse the operation (renderer regression); %s", slot, AbbrevHome(path), consequence)
@@ -5732,23 +5814,23 @@ func (a *App) probeL3HooksIn(dir string, wantPrePush bool, red *l3Redirect) l3Ho
 	identity, _ := a.commitGuardLiterals(dir)
 	commitRender := CommitGuardHook(visibility, a.OpsPatternSet(), identity...)
 
-	var prePushIdentity, prePushStale bool
 	var prePushPath string
 	if wantPrePush {
-		prePushIdentity, prePushStale, prePushPath = l3IdentityIn(red, hooks, "pre-push", PrePushHook, prePushMarker)
+		r.PrePushVerdict, prePushPath = l3IdentityIn(red, hooks, "pre-push", PrePushHook, prePushMarker)
 	}
-	commitIdentity, commitStale, commitPath := l3IdentityIn(red, hooks, "prepare-commit-msg", commitRender, sharedIndexMarker)
+	var commitPath string
+	r.CommitGuardVerdict, commitPath = l3IdentityIn(red, hooks, "prepare-commit-msg", commitRender, sharedIndexMarker)
 
 	prePushBehavior, commitBehavior := execOwnRenders(dir, wantPrePush, commitRender)
 
-	r.PrePush = !wantPrePush || (prePushIdentity && prePushBehavior)
-	r.CommitGuard = commitIdentity && commitBehavior
+	r.PrePush = !wantPrePush || (r.PrePushVerdict == l3Held && prePushBehavior)
+	r.CommitGuard = r.CommitGuardVerdict == l3Held && commitBehavior
 
 	if wantPrePush && !r.PrePush {
-		r.PrePushDegraded = l3DegradeLineIn(red, hooks, "pre-push", prePushPath, "this layer is not realized", prePushIdentity, prePushStale)
+		r.PrePushDegraded = l3DegradeLineIn(red, "pre-push", prePushPath, "this layer is not realized", r.PrePushVerdict)
 	}
 	if !r.CommitGuard {
-		r.CommitGuardDegraded = l3DegradeLineIn(red, hooks, "prepare-commit-msg", commitPath, "the data ceiling, beads visibility, constitution-path and shared-index guards are not realized", commitIdentity, commitStale)
+		r.CommitGuardDegraded = l3DegradeLineIn(red, "prepare-commit-msg", commitPath, "the data ceiling, beads visibility, constitution-path and shared-index guards are not realized", r.CommitGuardVerdict)
 	}
 	// The forward-completeness arm, and the reason it is separate from the
 	// two slots above: what a missing dispatcher costs is not a posse gate

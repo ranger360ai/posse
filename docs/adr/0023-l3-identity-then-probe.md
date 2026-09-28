@@ -98,6 +98,29 @@ the launch regardless of what the file would do:
   install-hooks`". The launch path (herdrback.go install-then-probe)
   makes this unreachable there.
 
+> *Amended 2026-09-28 (ranger-base-gw9o5): the two bullets above were the
+> whole enumeration, and the probe reached both of the states below
+> through the "no ownership marker" return — so a slot holding NO FILE was
+> reported as a hook posse did not write, at a path that held nothing, and
+> a launch into a repo created seconds earlier by `git init` printed it.
+> Absence is its own verdict now (`l3Verdict`), and so is the third
+> state, which the sweep and the launch had each been wording as foreign
+> too:*
+
+- *nothing at the dispatch path and nothing behind it → "no hook
+  installed at all — run `posse gates install-hooks`". Not foreign:
+  install writes here rather than refusing, and a reader sent to look at
+  the file finds no file. A caller that knows which repo it is talking
+  about (`SweepHookWall`) names it in the remedy.*
+- *our chain dispatcher in the slot with `posse-<slot>` missing → "posse's
+  chain dispatcher holds the slot and the member it runs first is
+  missing". Reached by posse's own uninstall line, and repaired by
+  install's RESTORE arm (`installHook`) — so, like stale, it is one of
+  the two states a launch silently re-stamps and therefore reports
+  (`l3Verdict.reStamped`, herdrback.go). Foreign is not: install refuses
+  it, so the launch that used to claim it had "just silently re-stamped
+  it" was describing a repair that never happened.*
+
 **4. The pins invert — that failure is the signal.**
 `TestL3ProbeIsDefeatedByItsOwnSignature` must FAIL when this lands.
 Rewrite as two contracts: the discriminating hook is reported down on

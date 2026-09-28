@@ -225,3 +225,138 @@ func TestQALaunchReportsPreHealDriftBehindTheChainDispatcher(t *testing.T) {
 		t.Errorf("the launch rewrote the chain dispatcher, which is the third party's arrangement")
 	}
 }
+
+// ─── ranger-base-gw9o5: absence is not foreignness, and neither is a re-stamp ─
+//
+// THE DEFECT, MEASURED on the operator's work box and reproduced here by the
+// fixture alone: `git init` a directory and launch into it, and the launch
+// printed the pre-heal alarm — "found the L3 prepare-commit-msg wall WRONG
+// before this launch just silently re-stamped it — foreign hook, posse cannot
+// vouch for a hook it did not write" — naming a path that held no file at all.
+// Three things were wrong in one line. The wall was not WRONG, it was absent.
+// Nothing was RE-STAMPED, it was installed for the first time. And the file
+// was not FOREIGN: l3Identity reached "no file here" through the same return
+// as "a hook somebody else wrote", so every absent slot was worded as
+// somebody else's. SweepHookWall had already met that third one and corrected
+// it in its own caller (hookWallLine), which is why the launch still said it.
+//
+// THE FIX. The probe returns which state it found (l3Verdict), so the wording
+// is decided once; the launch's alarm asks for the one state its own install
+// silently repairs.
+
+// The bead's own shape: a repo created by plain `git init`, launched into for
+// the first time. The wall gets installed and the launch says nothing about
+// it.
+func TestQALaunchIsQuietOnAFirstLaunchIntoARepoWithNoHookAtAll(t *testing.T) {
+	t.Parallel()
+	b, repo := lhpFixture(t, VisibilityPrivate)
+	a := b.App
+
+	// The premise, asserted rather than assumed: nothing in the slot.
+	hook := hwsHook(t, repo, "prepare-commit-msg")
+	if _, err := os.Lstat(hook); !os.IsNotExist(err) {
+		t.Fatalf("premise: %s already exists (%v) — this is not the fresh-repo shape", hook, err)
+	}
+
+	warn := warnBuf(t, b)
+	if _, err := b.planLaunch(NewSessionOpts{Name: "s1", Dir: repo, Agent: "ranger"}); err != nil {
+		t.Fatalf("first launch into a fresh repo was refused: %v", err)
+	}
+	got := warn.String()
+	if strings.Contains(got, "WRONG before this launch") {
+		t.Errorf("a slot that held no hook was reported as a wall this launch found wrong:\n%s", got)
+	}
+	if strings.Contains(got, "foreign hook") {
+		t.Errorf("an absent hook was reported as foreign — the reader goes looking for a file that is not there:\n%s", got)
+	}
+	// And the install still happened: silence here is "nothing to report",
+	// never "nothing was done".
+	if post := a.probeL3Hooks(repo, false); !post.CommitGuard {
+		t.Errorf("the launch did not install the wall it was quiet about: %s", post.CommitGuardDegraded)
+	}
+}
+
+// A hook posse did not write is refused by installHook (ADR 0002 §3), so the
+// launch cannot have re-stamped it. It is reported — by the parity check, on
+// the post-heal state the repo is actually still in — and not by an alarm
+// claiming a repair that did not happen.
+func TestQALaunchDoesNotClaimItReStampedAForeignHook(t *testing.T) {
+	t.Parallel()
+	b, repo := lhpFixture(t, VisibilityPrivate)
+	hook := hwsHook(t, repo, "prepare-commit-msg")
+	foreign := "#!/bin/sh\n# somebody else's\nexit 0\n"
+	if err := WriteExecutable(hook, []byte(foreign), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	warn := warnBuf(t, b)
+	_, err := b.planLaunch(NewSessionOpts{Name: "s1", Dir: repo, Agent: "ranger"})
+	if err == nil {
+		t.Fatal("a launch into a repo whose commit wall is a foreign hook must be refused, not marked")
+	}
+	if !strings.Contains(err.Error(), "foreign hook") {
+		t.Errorf("the refusal does not name what is in the slot:\n%v", err)
+	}
+	if got := warn.String(); strings.Contains(got, "re-stamped") {
+		t.Errorf("the launch claimed it re-stamped a hook install refuses to touch:\n%s", got)
+	}
+	// The claim the alarm would have made, checked against the disk.
+	if body, _ := os.ReadFile(hook); string(body) != foreign {
+		t.Errorf("the foreign hook was overwritten:\n%s", body)
+	}
+}
+
+// The wording pins, at the probe, where the wording is now decided. Each is a
+// state l3Identity has always told apart and the degraded line has not.
+func TestQAProbeWordsAnAbsentSlotAsAbsentAndAMissingMemberAsMissing(t *testing.T) {
+	t.Parallel()
+	b, repo := lhpFixture(t, VisibilityPrivate)
+	a := b.App
+
+	// 1. Nothing there at all.
+	p := a.probeL3Hooks(repo, false)
+	if p.CommitGuardVerdict != l3Uninstalled {
+		t.Fatalf("an empty hooks dir is not l3Uninstalled: verdict=%d line=%q", p.CommitGuardVerdict, p.CommitGuardDegraded)
+	}
+	if !strings.Contains(p.CommitGuardDegraded, "no hook installed at all") || strings.Contains(p.CommitGuardDegraded, "foreign") {
+		t.Errorf("an absent hook is not a foreign hook: %q", p.CommitGuardDegraded)
+	}
+	if p.CommitGuardVerdict.reStamped() {
+		t.Error("installing into an empty slot is not a re-stamp")
+	}
+
+	// 2. Our chain dispatcher holding the slot with its member gone — the
+	// state posse's own uninstall line leaves behind, and the one install
+	// RESTORES. The remedy is ours, so the line must not send the reader
+	// looking for somebody else's hook.
+	slot := hwsHook(t, repo, "prepare-commit-msg")
+	member := filepath.Join(filepath.Dir(slot), "posse-prepare-commit-msg")
+	if err := WriteExecutable(filepath.Join(filepath.Dir(slot), "theirs-prepare-commit-msg"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteExecutable(slot, []byte(chainHookDispatcherWith("prepare-commit-msg", "theirs-prepare-commit-msg")), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	p = a.probeL3Hooks(repo, false)
+	if p.CommitGuardVerdict != l3MemberGone {
+		t.Fatalf("a chain dispatcher with no member is not l3MemberGone: verdict=%d line=%q", p.CommitGuardVerdict, p.CommitGuardDegraded)
+	}
+	if !strings.Contains(p.CommitGuardDegraded, member) || strings.Contains(p.CommitGuardDegraded, "foreign") {
+		t.Errorf("the line must name the missing member and not call it foreign: %q", p.CommitGuardDegraded)
+	}
+	if !p.CommitGuardVerdict.reStamped() {
+		t.Error("install restores the member, so a launch that does must still say so")
+	}
+
+	// 3. The wrong-arm control: a hook somebody else wrote is still foreign.
+	if err := WriteExecutable(slot, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	p = a.probeL3Hooks(repo, false)
+	if p.CommitGuardVerdict != l3Foreign || !strings.Contains(p.CommitGuardDegraded, "foreign hook") {
+		t.Errorf("a real foreign hook lost its own wording: verdict=%d line=%q", p.CommitGuardVerdict, p.CommitGuardDegraded)
+	}
+	if p.CommitGuardVerdict.reStamped() {
+		t.Error("installHook refuses a foreign hook, so no launch re-stamps one")
+	}
+}
