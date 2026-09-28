@@ -27,9 +27,9 @@ import (
 )
 
 // crdWant is a readability helper: the append order in
-// credentialReadDenyLiterals is fixed (claude, then codex, then grok), so
-// the expected slices below can be written in that order rather than
-// compared as a set.
+// credentialReadDenyLiterals is fixed (claude, then codex, then grok, then
+// bob), so the expected slices below can be written in that order rather
+// than compared as a set.
 func crdWant(items ...string) []string { return items }
 
 // The selection logic, every branch provable from this box: goos is a
@@ -40,6 +40,11 @@ func TestCredentialReadDenyLiteralsIsRuntimeAwareAndGOOSShaped(t *testing.T) {
 	claudeFile := filepath.Join(home, ".claude", ".credentials.json")
 	codexFile := filepath.Join(home, ".codex", "auth.json")
 	grokFile := filepath.Join(home, ".grok", "auth.json")
+	// ranger-base-prjck: bob's store is NESTED under its state dir and is
+	// not named auth.json — `~/.bob/settings/auth-secrets.json`, the fixed
+	// path bobshell 2.0.5's bundle joins (bobHomeIn's own measurement). No
+	// variable to unset beside it: bob declares no home override.
+	bobFile := filepath.Join(home, ".bob", "settings", "auth-secrets.json")
 	t.Setenv("HOME", home)
 	// ranger-base-x5f6p: the claude expectation below is the HOME spelling,
 	// and the deny now also follows CLAUDE_SECURESTORAGE_CONFIG_DIR /
@@ -64,18 +69,24 @@ func TestCredentialReadDenyLiteralsIsRuntimeAwareAndGOOSShaped(t *testing.T) {
 		stateDirs []string
 		want      []string
 	}{
-		{"darwin, no runtime declared: all three unowned", "darwin", nil,
-			crdWant(claudeFile, codexFile, grokFile)},
+		{"darwin, no runtime declared: all four unowned", "darwin", nil,
+			crdWant(claudeFile, codexFile, grokFile, bobFile)},
 		{"darwin, claude launching: claude's own file is STILL denied — the keychain is the store of record there, not this file (ADR 0019 D2)", "darwin",
-			[]string{"~/.claude", "~/.claude.json"}, crdWant(claudeFile, codexFile, grokFile)},
+			[]string{"~/.claude", "~/.claude.json"}, crdWant(claudeFile, codexFile, grokFile, bobFile)},
 		{"darwin, codex launching: codex's own file is spared — it is not this session's business to deny its own credential", "darwin",
-			[]string{"~/.codex"}, crdWant(claudeFile, grokFile)},
+			[]string{"~/.codex"}, crdWant(claudeFile, grokFile, bobFile)},
 		{"darwin, grok launching: grok's own file is spared, same reason", "darwin",
-			[]string{"~/.grok"}, crdWant(claudeFile, codexFile)},
+			[]string{"~/.grok"}, crdWant(claudeFile, codexFile, bobFile)},
+		// ranger-base-prjck: own() keys on the declared state_dir literal,
+		// and bob's (ADR 0060 D1, runtime.go) is `~/.bob` — the spelling
+		// the sibling line passes. A bob-launched session denied bob's own
+		// token store could not authenticate itself, hw18's rule.
+		{"darwin, bob launching: bob's own store spared, same reason", "darwin",
+			[]string{"~/.bob"}, crdWant(claudeFile, codexFile, grokFile)},
 		{"linux, no runtime declared: claude's file IS the store of record there (ADR 0019 D2) — must stay readable", "linux", nil,
-			crdWant(codexFile, grokFile)},
+			crdWant(codexFile, grokFile, bobFile)},
 		{"linux, grok launching: grok's own file spared, claude's stays open for the same GOOS reason", "linux",
-			[]string{"~/.grok"}, crdWant(codexFile)},
+			[]string{"~/.grok"}, crdWant(codexFile, bobFile)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := credentialReadDenyLiterals(tc.goos, tc.stateDirs)
@@ -125,9 +136,23 @@ func TestCarveOutCarriesCredentialLiteralsIntoTheRenderedProfile(t *testing.T) {
 	if !strings.Contains(prof, "(deny file-read*") {
 		t.Errorf("rendered profile carries no file-read* deny:\n%s", prof)
 	}
-	claudeCreds := absResolve(ExpandTilde("~/.claude/.credentials.json"))
-	if !strings.Contains(prof, `(literal `+sbQuote(claudeCreds)) {
-		t.Errorf("rendered profile does not name %s:\n%s", claudeCreds, prof)
+	// One literal per runtime this ordinary (no stateDirs) project owns
+	// none of. The RENDER level is asserted here and not only under
+	// sandbox-exec because the kernel probe below SKIPS inside a caged
+	// session (ranger-base-xjw9: a seatbelt session may not nest a
+	// sandbox_apply), which is exactly where a posse session runs — so
+	// without this arm a new literal could reach main witnessed by nothing
+	// on the box that landed it (credentialdenymove_qa_test.go takes the
+	// same stance for the moved-file half).
+	for _, want := range []string{
+		absResolve(ExpandTilde("~/.claude/.credentials.json")),
+		absResolve(ExpandTilde("~/.codex/auth.json")),
+		absResolve(ExpandTilde("~/.grok/auth.json")),
+		absResolve(ExpandTilde("~/.bob/settings/auth-secrets.json")),
+	} {
+		if !strings.Contains(prof, `(literal `+sbQuote(want)) {
+			t.Errorf("rendered profile does not name %s:\n%s", want, prof)
+		}
 	}
 }
 
@@ -163,6 +188,16 @@ func TestQACredentialReadDenyRefusesUnderSandboxExecAndTheControlDoesNot(t *test
 	sbWrite(t, filepath.Join(claudeDir, "settings.json"), `{}`)
 	codexAuth := filepath.Join(sbMkdir(t, filepath.Join(home, ".codex")), "auth.json")
 	sbWrite(t, codexAuth, `{"token":"x"}`)
+	// ranger-base-prjck: bob's store, and a non-credential file in the SAME
+	// directory. The nested file name is the reason the second one is here
+	// — `~/.bob/settings/` holds settings.json beside auth-secrets.json, so
+	// a deny that widened into the directory would be invisible on the
+	// claude fixture above (whose ~/.claude control sits one level up).
+	bobSettings := sbMkdir(t, filepath.Join(home, ".bob", "settings"))
+	bobAuth := filepath.Join(bobSettings, "auth-secrets.json")
+	sbWrite(t, bobAuth, `{"bob.auth.tokens-https://example.invalid":"x"}`)
+	bobOther := filepath.Join(bobSettings, "settings.json")
+	sbWrite(t, bobOther, `{}`)
 
 	work := sbMkdir(t, filepath.Join(root, "work"))
 	a := NewAppAt(filepath.Join(root, "posse-home"))
@@ -209,6 +244,16 @@ func TestQACredentialReadDenyRefusesUnderSandboxExecAndTheControlDoesNot(t *test
 	}
 	if !crdRun(t, control, codexAuth) {
 		t.Fatal("the CONTROL refused codex's auth.json too — the probe proves nothing about the deny")
+	}
+
+	if crdRun(t, walled, bobAuth) {
+		t.Errorf("reading %s was ALLOWED under the carve-out — bob's credential is not this (claude) session's business (ranger-base-9k9ff, measured readable from a caged seat before ranger-base-prjck)", bobAuth)
+	}
+	if !crdRun(t, control, bobAuth) {
+		t.Fatal("the CONTROL refused bob's auth-secrets.json too — the probe proves nothing about the deny")
+	}
+	if !crdRun(t, walled, bobOther) {
+		t.Errorf("reading %s (not a credential literal) was refused under the carve-out — the deny widened into ~/.bob/settings, the directory the store sits in, rather than naming the file", bobOther)
 	}
 }
 

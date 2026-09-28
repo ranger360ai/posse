@@ -1020,7 +1020,7 @@ func (a *App) SeatbeltCarveOut(ag *AgentFile, cwd, gatesDir string, writable []s
 // would otherwise be walked straight past. Denying a path that is not
 // there costs nothing: the read is ENOENT either way.
 //
-// The two SIBLING runtimes are resolved the same way, and were not for as
+// The THREE SIBLING runtimes are resolved the same way, and were not for as
 // long as the claude half was (ranger-base-x5cbz, one runtime over from
 // x5f6p): `~/.codex/auth.json` and `~/.grok/auth.json` were ExpandTilde
 // literals while `$CODEX_HOME` / `$GROK_HOME` move those CLIs' homes, so on
@@ -1030,6 +1030,18 @@ func (a *App) SeatbeltCarveOut(ag *AgentFile, cwd, gatesDir string, writable []s
 // other reader of those stores already asks (the cost adapters, the plan
 // hint, the turn-outcome reader) — and this function was the third holder of
 // the hardcoded spelling ranger-base-z65xu's sweep did not reach.
+//
+// bob is the third sibling and the newest (ranger-base-prjck, off the
+// finding ranger-base-9k9ff). ranger-base-ymmiv landed bob as a fourth
+// built-in with state_dir `~/.bob` (ADR 0060 D1, runtime.go), and D2 item 3's
+// rule then had a fourth name to apply to with no deny behind it: MEASURED
+// 2026-09-28 from a seatbelt-caged claude seat, `~/.bob/settings/auth-secrets.json`
+// was READABLE (2062 bytes; the operator's Bob API token set) while the codex
+// and grok stores beside it answered "operation not permitted". Its file name
+// is NESTED — `settings/auth-secrets.json`, not a bare `auth.json` — which
+// both spellings below take without comment, `stateDir + "/" + file` and
+// filepath.Join alike. bobHomeIn has no env branch because the bundle has no
+// override to honour; the measurement is in its own comment.
 //
 // BOTH spellings are denied per sibling, home-shaped and resolved, for the
 // reason credentialFileCandidates gives for keeping claude's home
@@ -1109,6 +1121,7 @@ func credentialReadDenyLiterals(goos string, stateDirs []string) []string {
 	}
 	sibling("~/.codex", "auth.json", codexHomeIn)
 	sibling("~/.grok", "auth.json", grokHomeIn)
+	sibling("~/.bob", "settings/auth-secrets.json", bobHomeIn)
 	return out
 }
 

@@ -93,6 +93,33 @@ func codexHomeIn(home string) string {
 	return filepath.Join(home, ".codex")
 }
 
+// bobHomeIn is the same rule for bob's home, and it is the one of the three
+// with NO env branch: bob has no home override to honour.
+//
+// MEASURED 2026-09-28, bobshell 2.0.5,
+// /opt/homebrew/lib/node_modules/bobshell/dist/bob.js, read and not run: the
+// credential store is a fixed `path.join(os.homedir(), ".bob", "settings",
+// "auth-secrets.json")`, and of the 25 distinct BOB_* names in the bundle
+// none is a home or config-dir override — they are the gateway, web-login,
+// api/dev/support key, product, session, log-level, extensions, supervised,
+// model-env, powershell and telemetry families (ranger-base-9k9ff, re-read
+// here before landing). $HOME is the only mover, exactly as for the two
+// siblings once their variables are unset.
+//
+// It exists as a FUNCTION rather than as a hardcoded `~/.bob` at the one
+// call site for ranger-base-x5cbz's rule: one resolver per CLI home, so a
+// BOB_HOME that ships tomorrow lands in one place rather than beside a
+// hardcoded `~/.bob` a later sweep has to find. The empty-home arm is
+// grokHomeIn's, for grokHomeIn's reason — Join("", ".bob") is a RELATIVE
+// ".bob" under whatever cwd the process happens to have, which is another
+// box's answer reported as this operator's.
+func bobHomeIn(home string) string {
+	if home == "" {
+		return ""
+	}
+	return filepath.Join(home, ".bob")
+}
+
 // noHomeSilence is what a probe answers when it has no home to read under:
 // UNKNOWN, and never "not silenced". The difference is the one these probes
 // are built on — a missing FILE is a reading, because these CLIs write these

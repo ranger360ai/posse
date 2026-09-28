@@ -88,13 +88,17 @@ func TestQACredentialReadDenyFollowsTheConfigDirVariables(t *testing.T) {
 	homeCreds := cdmCreds(filepath.Join(home, ".claude"))
 	codexFile := filepath.Join(home, ".codex", "auth.json")
 	grokFile := filepath.Join(home, ".grok", "auth.json")
+	// ranger-base-prjck: the fourth sibling. Nested under its state dir and
+	// with no home variable of its own, so it is a constant on every arm
+	// below — the variables these rows move are claude's.
+	bobFile := filepath.Join(home, ".bob", "settings", "auth-secrets.json")
 	claudeState := []string{"~/.claude", "~/.claude.json"}
 
 	for _, tc := range []struct {
 		name     string
 		goos     string
 		sec, cfg string
-		want     []string // the claude half; codex and grok are appended below
+		want     []string // the claude half; codex, grok and bob are appended below
 		absent   string   // a path this arm must NOT deny, "" for none
 	}{
 		{
@@ -160,7 +164,7 @@ func TestQACredentialReadDenyFollowsTheConfigDirVariables(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cdmEnv(t, home, tc.sec, tc.cfg)
-			want := append(append([]string(nil), tc.want...), codexFile, grokFile)
+			want := append(append([]string(nil), tc.want...), codexFile, grokFile, bobFile)
 			got := credentialReadDenyLiterals(tc.goos, claudeState)
 			if !reflect.DeepEqual(got, want) {
 				t.Errorf("goos=%s sec=%q cfg=%q:\n got  %v\n want %v", tc.goos, tc.sec, tc.cfg, got, want)
