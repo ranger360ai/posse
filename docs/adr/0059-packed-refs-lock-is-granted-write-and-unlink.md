@@ -218,6 +218,40 @@ their floor; the L4 engine is off-box and UNRUN for this shape.
    traversal is reachable by execution rather than only at parse level; the
    arm pins that both survive.
 
+   And both are decided on the WHOLE path, which is what ranger-base-1h6d6
+   corrected (2026-09-28). As f6pt2 left them both scans ended a path at the
+   first space — the `rm`-line scan by `strings.Fields`, the refusal scan by
+   `strings.IndexAny(named, "'\" \n")` — and stripped the quoting only
+   afterwards, so the quoting they acknowledged was not the quoting they read.
+   The recipe single-quotes every path precisely because a path may contain a
+   space, and `'<own>/a b/../../../index'` was read as `'<own>/a` — absolute,
+   under `own`, passing — plus `b/../../../index'`, which has no leading `/`
+   and was skipped unexamined. The path the line names is the SHARED
+   `<common>/index` (MEASURED 2026-09-28: that token added to the rendered
+   recipe left the arm `ok`; it now reds both halves, naming the resolved
+   `<common>/index`). Both scans now take a span opened by a quote through to
+   its CLOSING quote, spaces included, and end any other span at the first
+   whitespace or quote — the character in FRONT of the span, not a quote-state
+   machine over the line, because the refusal's prose carries apostrophes
+   (`git's delete`, `the SHARED repo's`, `the operator's to remove`) and a
+   state machine welds those onto whatever path follows. An unterminated quote
+   runs to the end of the line, which is the conservative reading. The scans
+   are two named functions now, and
+   `TestQASequencerScansEndAPathAtItsQuoteNotAtASpace` pins the reading itself
+   over lines the refusal could grow, since the arm can only read what
+   `renderSequencerAudit` prints today — which stays
+   CORRECT: `'$posse_sg/$posse_sm'`, every name a git pseudo-ref with no space
+   and no `..`.
+
+   A space in the fixture's own git dir still fails LOUD rather than silent,
+   and now in one half only (MEASURED 2026-09-28, `TMPDIR` set to a directory
+   containing a space): the recipe half passes, because the recipe quotes, and
+   the refusal half reds on the truncated span, because the PROSE line
+   (`… survives in $posse_sg`) prints its path unquoted and no reader — this
+   arm or a seat pasting it — can tell where such a path ends. That is a
+   property of an unquoted path, not of the scan, and it is the same loud
+   failure the arm had before this change.
+
 ## MEASURED vs ASSUMED
 
 MEASURED (2026-09-11, darwin 25.4.0, git 2.50.1, `0059-packed-refs-lock.probe.sh`

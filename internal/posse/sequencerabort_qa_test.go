@@ -360,6 +360,118 @@ func trimPathPunct(s string) string {
 	return s
 }
 
+// pathSpanAt returns the path span that begins at s[i], where s is ONE line of
+// the refusal. Where a path ENDS depends on how it is quoted, and that is the
+// whole of what ranger-base-1h6d6 corrected: both scans below used to end a
+// span at the first space — one by `strings.Fields`, the other by
+// `strings.IndexAny(..., "'\" \n")` — and strip the quoting only afterwards,
+// so the quoting they acknowledged was not the quoting they read. The recipe
+// single-quotes every path precisely because a path may contain a space, so
+// `'<own>/a b/../../../index'` was read as `'<own>/a` — absolute, under `own`,
+// passing — plus `b/../../../index'`, which has no leading `/` and was skipped
+// unexamined; the path the line actually names is the SHARED `<common>/index`,
+// and both scans stayed green over a recipe deleting the operator's index.
+//
+// So: a span opened by a quote runs to its CLOSING quote, spaces included, and
+// any other span ends at the first whitespace or quote. The test is the
+// character in FRONT of the span rather than a quote-state machine over the
+// line, because the refusal's prose carries apostrophes — `git's delete of
+// that pseudo-ref`, `the SHARED repo's`, `the operator's to remove` — and a
+// state machine reads those as opening quotes and welds prose onto whatever
+// path follows. An unterminated quote runs to the end of the line, which is
+// the conservative reading: the tail is then one span and every `..` element
+// in it is resolved rather than dropped.
+func pathSpanAt(s string, i int) string {
+	if i > 0 && (s[i-1] == '\'' || s[i-1] == '"') {
+		if k := strings.IndexByte(s[i:], s[i-1]); k >= 0 {
+			return s[i : i+k]
+		}
+		return s[i:]
+	}
+	if k := strings.IndexAny(s[i:], "'\" \t"); k >= 0 {
+		return s[i : i+k]
+	}
+	return s[i:]
+}
+
+// insideOwn reports whether the RESOLVED path q is the session's own git dir
+// or something under it. `own` is `<common>/worktrees/<name>`, so every
+// correct recipe names paths that are textually under the common dir; what D3
+// forbids is the rest of it.
+func insideOwn(q, own string) bool {
+	return q == own || strings.HasPrefix(q, own+string(os.PathSeparator))
+}
+
+// recipeRemovalsOutside returns, resolved, every absolute path an `rm` line of
+// the refusal tells a seat to remove that is not inside `own`.
+//
+// A path starts at a `/` that opens a word or sits just inside the quote that
+// opens one; an interior `/` is not a new path. This replaces a `strings.Fields`
+// walk that read the odd fields between `'`s (no check at all for a recipe that
+// prints a BARE path — the split yields nothing and every token goes unexamined,
+// ranger-base-u18bo) and then, once tokenising on whitespace, could not read a
+// quoted path with a space in it at all (ranger-base-1h6d6).
+func recipeRemovalsOutside(errs, own string) []string {
+	var out []string
+	for _, line := range strings.Split(errs, "\n") {
+		if !strings.Contains(line, "rm ") {
+			continue
+		}
+		for i := 0; i < len(line); i++ {
+			if line[i] != '/' {
+				continue
+			}
+			if i > 0 && line[i-1] != ' ' && line[i-1] != '\t' && line[i-1] != '\'' && line[i-1] != '"' {
+				continue // an interior separator, not the head of a path
+			}
+			span := pathSpanAt(line, i)
+			i += len(span)
+			// Resolved, not compared raw: `<own>/../../index` wears `own` as
+			// a prefix and IS `<common>/index` — the shared index — so a
+			// string prefix test reads the traversal as inside the private
+			// subtree and passes a recipe that deletes shared state
+			// (ranger-base-f6pt2).
+			if q := filepath.Clean(trimPathPunct(span)); !insideOwn(q, own) {
+				out = append(out, q)
+			}
+		}
+	}
+	return out
+}
+
+// refusalSpansOutside returns every span of the refusal — recipe or prose,
+// quoted or bare — that names the fixture's common dir and does not resolve
+// under `own`. Stated over the common dir itself rather than as a list of
+// names under it: everything else beneath it is by definition the shared part.
+func refusalSpansOutside(errs, own, common string) []string {
+	var out []string
+	for _, line := range strings.Split(errs, "\n") {
+		for off := 0; off < len(line); {
+			j := strings.Index(line[off:], common)
+			if j < 0 {
+				break
+			}
+			j += off
+			// Take the whole path-looking span and RESOLVE it before
+			// deciding, rather than skipping past a bare `own` prefix: the
+			// skip walked over the `own` in `<own>/../../index` and read the
+			// `../..` that followed as the next thing to look for `common`
+			// in, which it is not (ranger-base-f6pt2).
+			named := pathSpanAt(line, j)
+			off = j + len(named)
+			if named == "" {
+				off++
+				continue
+			}
+			if q := filepath.Clean(trimPathPunct(named)); insideOwn(q, own) {
+				continue
+			}
+			out = append(out, named)
+		}
+	}
+	return out
+}
+
 // ADR 0059 D3: the recipe a seat is told to paste names the pseudo-refs in
 // the session's OWN git dir and nothing in the shared part of the common dir
 // — above all not the `packed-refs.lock` that is now the only thing standing
@@ -435,35 +547,17 @@ func TestQASequencerRecipeStaysOutOfTheCommonDir(t *testing.T) {
 	if want := "'" + filepath.Join(own, "CHERRY_PICK_HEAD") + "'"; !strings.Contains(errs, want) {
 		t.Fatalf("recipe does not name the blocker in the session's own git dir (%s): %q", want, errs)
 	}
-	// Every path it tells the seat to remove is inside that dir — QUOTED OR
-	// NOT. This loop used to split the line on `'` and read the odd fields,
-	// which is no check at all for a recipe that prints a bare path: the
-	// split yields nothing and every token goes unexamined
-	// (ranger-base-u18bo). Tokenise instead, and strip the quoting after.
+	// Not by path alone: a `packed-refs.lock` the recipe reached by any
+	// spelling is the removal D3 forbids.
 	for _, line := range strings.Split(errs, "\n") {
-		if !strings.Contains(line, "rm ") {
-			continue
-		}
-		// Not by path alone: a `packed-refs.lock` the recipe reached by any
-		// spelling is the removal D3 forbids.
-		if strings.Contains(line, "packed-refs.lock") {
+		if strings.Contains(line, "rm ") && strings.Contains(line, "packed-refs.lock") {
 			t.Errorf("the recipe tells a seat to remove a packed-refs.lock (ADR 0059 D3): %q", line)
 		}
-		for _, tok := range strings.Fields(line) {
-			q := strings.Trim(tok, "'\"")
-			if !strings.HasPrefix(q, "/") {
-				continue // `rm`, `-rf`, `--`, or the quoted `fatal: ...` text
-			}
-			// Resolved, not compared raw: `<own>/../../index` wears `own`
-			// as a prefix and IS `<common>/index` — the shared index — so a
-			// string prefix test reads the traversal as inside the private
-			// subtree and passes a recipe that deletes shared state
-			// (ranger-base-f6pt2).
-			q = filepath.Clean(trimPathPunct(q))
-			if q != own && !strings.HasPrefix(q, own+string(os.PathSeparator)) {
-				t.Errorf("the recipe tells a seat to remove %q, outside its own git dir %s (ADR 0059 D3): %q", q, own, errs)
-			}
-		}
+	}
+	// Every path it tells the seat to remove is inside that dir — QUOTED OR
+	// NOT, and with a space in it or without.
+	for _, q := range recipeRemovalsOutside(errs, own) {
+		t.Errorf("the recipe tells a seat to remove %q, outside its own git dir %s (ADR 0059 D3): %q", q, own, errs)
 	}
 	// And the shared part of the common dir is not named anywhere in the
 	// refusal, quoted or not, recipe or prose — the stray lock included.
@@ -474,26 +568,8 @@ func TestQASequencerRecipeStaysOutOfTheCommonDir(t *testing.T) {
 	// five-name list this replaces (the stray lock, `packed-refs`,
 	// `packed-refs.new`, `refs`, `HEAD`) saw none of `index`, `logs/`,
 	// `config`, `objects/` or a sibling `worktrees/<other>` — ranger-base-u18bo.
-	for rest := errs; ; {
-		j := strings.Index(rest, common)
-		if j < 0 {
-			break
-		}
-		// Take the whole path-looking span and RESOLVE it before deciding,
-		// rather than skipping past a bare `own` prefix: the skip walked over
-		// the `own` in `<own>/../../index` and read the `../..` that followed
-		// as the next thing to look for `common` in, which it is not
-		// (ranger-base-f6pt2).
-		named := rest[j:]
-		if k := strings.IndexAny(named, "'\" \n"); k > 0 {
-			named = named[:k]
-		}
-		rest = rest[j+len(named):]
-		if q := filepath.Clean(trimPathPunct(named)); q == own || strings.HasPrefix(q, own+string(os.PathSeparator)) {
-			continue
-		}
-		t.Errorf("the refusal names %s, in the common dir but outside this session's own git dir %s — the operator's to touch and not this session's (ADR 0059 D3): %q", named, own, errs)
-		break
+	if named := refusalSpansOutside(errs, own, common); len(named) > 0 {
+		t.Errorf("the refusal names %s, in the common dir but outside this session's own git dir %s — the operator's to touch and not this session's (ADR 0059 D3): %q", named[0], own, errs)
 	}
 	// It audits, it does not repair: the stray lock and the shared index are
 	// both still there.
@@ -502,5 +578,57 @@ func TestQASequencerRecipeStaysOutOfTheCommonDir(t *testing.T) {
 	}
 	if _, err := os.Stat(shared); err != nil {
 		t.Errorf("the shared index is gone — the audit removed shared state on a guess: %v", err)
+	}
+}
+
+// The escape ranger-base-1h6d6 found, pinned on the two scans themselves.
+// The arm above can only read what renderSequencerAudit prints TODAY, and the
+// recipe on main is correct — every name a git pseudo-ref with no space and no
+// `..`. What failed was the READING, for a spelling the recipe does not have
+// yet: `'<own>/a b/../../../index'` is the shared `<common>/index`, and both
+// scans passed it because both ended the path at the first space. So the cases
+// below are lines the refusal could grow on the next change to it, handed
+// straight to the scans, and each one says which reading is the correct one.
+func TestQASequencerScansEndAPathAtItsQuoteNotAtASpace(t *testing.T) {
+	t.Parallel()
+
+	common := filepath.Join("/tmp", "fixture", ".git")
+	own := filepath.Join(common, "worktrees", "w1")
+
+	for _, c := range []struct {
+		name string
+		line string
+		// out is what BOTH scans must say: true when the line names something
+		// outside `own` once resolved, false when it is the session's own.
+		out bool
+	}{
+		{"the recipe on main", "    rm -rf -- '" + own + "/CHERRY_PICK_HEAD' '" + own + "/sequencer'", false},
+		{"a quoted path with a space, still inside", "    rm -rf -- '" + own + "/a b/MERGE_MSG'", false},
+		{"THE ESCAPE: a quoted path with a space that traverses out", "    rm -rf -- '" + own + "/a b/../../../index'", true},
+		{"the same, quote never closed", "    rm -rf -- '" + own + "/a b/../../../index", true},
+		{"a quoted traversal with no space (ranger-base-f6pt2)", "    rm -rf -- '" + own + "/../../index'", true},
+		{"a bare traversal", "    rm -rf -- " + own + "/../../HEAD", true},
+		{"a bare path, inside", "    rm -rf -- " + own + "/AUTO_MERGE", false},
+		{"a trailing `..`, which is the shared worktrees dir", "    rm -rf -- '" + own + "/..'", true},
+		{"a space and a traversal clean out of the repo", "    rm -rf -- '" + own + "/a b/../../../../etc/hosts'", true},
+		// Prose, where the apostrophes live. A quote-STATE machine reads
+		// `operator's` as an opening quote and welds the rest of the sentence
+		// onto the path that follows — `../../index` in the prose after it
+		// would then resolve out of `own` and red an innocent line. Reading
+		// the character in front of the span instead ends this one at the
+		// space, which is the correct reading of an unquoted path.
+		{"prose: an apostrophe before the path does not open a quote", "  the operator's " + own + "/sequencer, not ../../index — say so on your bead.", false},
+		{"prose: a path ending a sentence keeps its dot out of the path", "  CHERRY_PICK_HEAD survives in " + own + ".", false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			rm := recipeRemovalsOutside(c.line, own)
+			named := refusalSpansOutside(c.line, own, common)
+			if strings.Contains(c.line, "rm ") && (len(rm) > 0) != c.out {
+				t.Errorf("recipeRemovalsOutside(%q) = %q, want outside=%v", c.line, rm, c.out)
+			}
+			if (len(named) > 0) != c.out {
+				t.Errorf("refusalSpansOutside(%q) = %q, want outside=%v", c.line, named, c.out)
+			}
+		})
 	}
 }
