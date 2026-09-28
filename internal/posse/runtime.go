@@ -135,9 +135,27 @@ type Interstitial struct {
 	Key     string // the key itself, by name
 	Silence string // what the operator does, with the SAFE choice named — or what the launch does when Seeded
 	Danger  string // the default action when it mutates the machine ("" = safe default)
-	// Seeded: the LAUNCH writes this key, rather than naming it and
-	// refusing. True only where the key is per-session-directory and the
-	// grant is one posse already makes on another runtime.
+	// Seeded: the LAUNCH answers this screen, rather than naming its key and
+	// refusing — so there is nothing for the operator to have done first,
+	// and DangerUnsilenced and the preflight both skip it.
+	//
+	// Two shapes qualify, and each carries its own condition:
+	//
+	//   - posse WRITES the key (claude's directory trust). True only where
+	//     the key is per-session-directory and the grant is one posse
+	//     already makes on another runtime.
+	//   - posse TYPES it, as a flag on the runtime's own template (bob's
+	//     --accept-license and --trust, ADR 0060 D1). True only where the
+	//     screen's default action mutates nothing — Danger must be empty,
+	//     since a launch may not answer a machine-mutating dialog at all —
+	//     and where the ANSWER ITSELF is one the operator has recorded: the
+	//     license acceptance is a decision made in the ADR, not one this
+	//     table takes on their behalf.
+	//
+	// Where posse answers a screen, Probe should READ the answer rather than
+	// assume it: bob's two flag probes read the template, so a template
+	// edited to drop the flag stops the grid saying "silenced" instead of
+	// leaving the row lying (bobFlagSilence, interstitial.go).
 	Seeded bool
 	// Probe reports whether the key is set on this machine. nil = posse
 	// cannot cheaply tell, which prints as "unknown" rather than as "no".
@@ -1398,6 +1416,99 @@ var (
 		".claude/CLAUDE.md", ".grok/rules/*.md", ".claude/rules/*.md", ".cursor/rules/*.md", "~/.grok/rules/*.md"}
 )
 
+// ─── bob (IBM Bob Shell), ADR 0060 D1 ────────────────────────────────────────
+//
+// The fourth built-in, and the only one whose LAUNCH row is unmet: herdr
+// 0.8.2 has no `bob` kind, so a dispatched bob session is `agent_not_found`
+// and cannot be addressed at all. Nothing below papers over that — the
+// profile is honest, not green, and `posse runtime check bob` says so by
+// name (RuntimeGaps' detection arm, blocking). The detection filing is
+// upstream's to ship (ADR 0060 D2, ranger-base-p8afi/yq44v); until it does,
+// bob is a runtime posse can LAUNCH interactively and cannot DISPATCH.
+//
+// Everything here is MEASURED on bobshell 2.0.5 (Homebrew, node 25.2.1) on
+// 2026-09-28 unless a comment says ASSUMED. The bench is
+// docs/notes.d/ranger-base-v1yrt.md; the record is ADR 0060.
+
+// BobCommand is the launch template, and the ORDER in it is the measured
+// part (ADR 0060 D3, notes fragment §5).
+//
+// `-p` goes BEFORE `chat`. The program declares `-p, --prompt <prompt>` at
+// PROGRAM level and is built with `.enablePositionalOptions()`
+// `.allowExcessArguments()` `.allowUnknownOption()`, so a `-p` typed AFTER
+// the subcommand is an unknown option the program is configured to swallow
+// in silence — the PID would vanish with no error anywhere. `bob chat`
+// reads it back through `optsWithGlobals()`. Verified against the two help
+// screens on 2.0.5: `bob --help` lists `-p, --prompt`, `bob chat --help`
+// does not.
+//
+// The PID rides `-p` as the first user message because bob has no
+// launch-time system channel at all: no rules flag, no system-prompt flag.
+// Its instruction files are read from the workspace (the project-config
+// channel posse refuses on, bobProjectConfig below) or from the operator's
+// own ~/.bob/settings/custom_modes.yaml. The price is stated rather than
+// hidden: one bob turn per launch is spent on the PID and the model's reply
+// to it is noise (ADR 0060 D3). The work prompt is TYPED after it.
+//
+// The three flags after `chat` are all `bob chat` options on 2.0.5 — read
+// off `bob chat --help`, which matters here more than elsewhere because
+// `allowUnknownOption()` means a misspelled one would be accepted and
+// ignored rather than refused:
+//
+//   - --accept-license silences the IBM license screen. posse ANSWERS this
+//     one on the line rather than naming it and refusing, which is ADR 0060
+//     D1's decision, not this file's: the screen's default action mutates
+//     nothing on the machine, so it is not the ADR 0013 §2 refuse class.
+//   - --trust silences the folder-trust screen. Per SESSION DIRECTORY, so
+//     it is claude's dialog one runtime over, and the same grant posse
+//     already types on codex's line (CodexFleetFlags' trust_level).
+//   - --auto-approve is the unattended flag, declared as such below so
+//     EnsureUnattended puts it back on a PID's hand-written command:.
+//
+// `-w .` because the pane's cwd IS the session directory and bob resolves
+// its workspace from --workspace, not from where it was started.
+//
+// {allow}/{deny} render to NOTHING: bob has no per-verb permission surface
+// posse has measured, so there is no realizer (Realize is nil, like a
+// template-only runtime) and every gate goes to the wall — gates.go, ADR
+// 0002 §3, which is safe by construction. The placeholders stay on the line
+// so the day a realizer is measured it has somewhere to render.
+const BobCommand = `bob -p "$(cat {file})" chat --accept-license --trust --auto-approve -w . {allow} {deny}`
+
+// bobNativeRules — the rulebooks bob discovers and loads by itself, ahead
+// of anything posse types (ADR 0013 §4, declared and never rewritten).
+// Read out of the 2.0.5 bundle rather than from a live discovery turn,
+// which is why bob is NOT in qmRulebookTruth: that table's contract is
+// "what TestQALiveNativeRulesDiscovery measured", and nobody has spent a
+// bob turn on it. The live probe is the instance side's (ranger-base-6wqe).
+var bobNativeRules = []string{"AGENTS.md", "CLAUDE.md",
+	".bob/rules-agent/AGENTS.md", ".bob/rules-plan/AGENTS.md", ".bob/rules-ask/AGENTS.md"}
+
+// bobProjectConfig is what a trusted session directory hands bob before any
+// model turn — the repo→box channel no PID sits in front of, guarded by
+// ProjectConfigTrust (parity.go) and opted into with trust_project_config:.
+//
+// ProjectConfigKeys stays EMPTY on purpose, so the check keeps its
+// whole-file presence predicate. Two of these are DIRECTORIES (.bob/settings
+// holds custom_modes.yaml and friends; .bob/hooks is a tree) and the key
+// names inside the other two are ASSUMED — nobody has read their shapes.
+// project_config_keys: is the one declarable key that LOOSENS a safety
+// check, and loosening it on a guess is the failure mode the field's own
+// doc names.
+var bobProjectConfig = []string{".bob/settings", ".bob/mcp.json", ".bob/hooks", ".bob/custom_modes.yaml"}
+
+// BobCageCred is the env var name `bob run` demands, quoted from its own
+// refusal on 2.0.5: "Bob API key is required. Set BOB_API_KEY environment
+// variable." The bundle carries a second spelling (a dev key); this is the
+// one the CLI names. ASSUMED, and stated as such in ADR 0060's Claims: that
+// `bob chat` honours it inside a container was read off the bundle's env
+// name list and never exercised.
+//
+// Spelled here in Go and NOWHERE in markdown: the ops-residue scan reads a
+// credential env NAME in prose as a finding, and this is the whole reason
+// the name lives in the code rather than in the ADR's own table.
+const BobCageCred = "BOB_API_KEY"
+
 // PROMPT DELIVERY, AS THE PROBE MEASURED IT (ADR 0013 §2, ranger-base-cl7,
 // full trace in docs/adr/0013-argv-prompt-probe.md). The ADR's table read
 // "grok/codex argv *if the probe holds*, else typed plus a measured wait".
@@ -1517,6 +1628,68 @@ var builtinRuntimes = []Runtime{
 		UnknownModel:    UnknownModelSwap,
 		UnknownModelWhy: "measured 2026-09-09 (ranger-base-jzm04) on grok 1.0.5 (5115b46bc909): -m grok-4.7, an id 'grok models' does not list and the operator confirms does not exist, launched with no refusal anywhere and the composer border read 'Grok 4.6 (high)' — the CLI ran its own default for the unknown id and said nothing",
 		Command:         `grok {model} {skills} ` + GrokFleetFlags + ` --rules="$(cat {file})" {allow} {deny}`},
+	// bob — the fourth built-in, declared from ADR 0060 D1's table and
+	// measured on bobshell 2.0.5. The LAUNCH row is the one that is unmet
+	// (herdr 0.8.2 has no `bob` kind), and nothing here hides it: the
+	// detection gap is blocking in RuntimeGaps, so `posse runtime check bob`
+	// exits 1 and dispatch refuses by name. See BobCommand above for the
+	// argv order, which is the part a reader is most likely to get wrong.
+	{Name: "bob", Builtin: true, Skills: skillsCwd, SkillsCwd: true, Unattended: "--auto-approve",
+		// Realize is nil, deliberately: no per-verb permission surface on
+		// bob has been measured, so {allow}/{deny} render to nothing and
+		// every gate goes to the wall (gates.go). Realized is empty, exactly
+		// like a template-only runtime — the honest shape, not a gap hidden
+		// by a guessed flag dialect.
+		//
+		// Models nil and ModelFlag "" for the same rule one dimension over:
+		// neither `chat` nor `run` takes a per-launch model on 2.0.5, so
+		// TIERS ARE UNMAPPED and the grid says so as a DECLARED DIFFERENCE.
+		// The model is an instance setting on bob, not a launch argument.
+		//
+		// UnknownModel stays unset — UNMEASURED, the loud default. With no
+		// model flag there is no id to hand this CLI, so the ADR 0053 canary
+		// has no launch to make here; a value either way would be a guess.
+		Egress: []string{"bob.ibm.com", "iam.cloud.ibm.com"}, StateDirs: []string{"~/.bob"},
+		CageCred: BobCageCred,
+		// prompt: typed, and StartupWait deliberately UNSET so the built-in
+		// runs on DefaultStartupWait. The recon watched one launch reach a
+		// signed-in composer in ~20s; that is a single reading, not a
+		// measurement, and a per-runtime wait is the one number that exists
+		// BECAUSE it is measured. runtimes/bob.yaml overlays `startup_wait:`
+		// the day the instance side measures one (ADR 0013 §8, ADR 0021).
+		//
+		// record: untrusted — and here that is not even a measurement that
+		// went the other way, it is the absence of one: bd runs inside a Bob
+		// shell tool, and no bob session has been DISPATCHED at all, because
+		// the launch row refuses. Promotion waits on the first dispatched
+		// close (ADR 0060 D4's trigger).
+		Prompt: PromptTyped, Record: RecordUntrusted,
+		NativeRules: bobNativeRules, Interstitials: BobInterstitials,
+		// rules_precedence: UNMEASURED. Bob reads AGENTS.md and CLAUDE.md
+		// out of the shared checkout and takes the PID as its first user
+		// turn; which one the model follows on a collision is a billed turn
+		// nobody has spent (ranger-base-6rcv's shape, on the instance side's
+		// lane).
+		ProjectConfig: bobProjectConfig,
+		// ProjectConfigKeys stays empty — see bobProjectConfig.
+		//
+		// SelfSandbox false: bob does not wrap its own child commands, so
+		// posse's own seatbelt is what enforces Edit/Write here, exactly as
+		// on claude and grok.
+		//
+		// turn_outcome: no reader. Bob's own refusal artifact has never been
+		// captured — the likely home is tasks.last_error in ~/.bob/db/bob.db
+		// — and ADR 0013 §1's rule is that a reader is promoted on a captured
+		// artifact, never a guessed one. So a refused turn and an agent that
+		// worked and skipped the bead settle identically here, which is the
+		// named degrade dispatch.go's settle clause prints (ADR 0060 D4).
+		//
+		// No cost adapter either, and it is not an oversight: bob's unit is
+		// Bobcoins, not dollars, so an adapter would flip the account row
+		// from UNCOUNTED to UNPRICED and buy nothing while there is no
+		// dispatched session to attribute to. `uncounted_cap_bob:` is the
+		// brake meanwhile (ADR 0013 §5, ADR 0060 D4).
+		Command: BobCommand},
 }
 
 // RuntimesDir holds template-only runtimes: RHQ_HOME/runtimes/<name>.yaml.
@@ -1537,7 +1710,7 @@ func (a *App) LoadRuntime(name string) (*Runtime, error) {
 	}
 	p := filepath.Join(a.RuntimesDir(), name+".yaml")
 	if _, err := os.Stat(p); err != nil {
-		return nil, Die("unknown runtime %q (built-ins: claude, codex, grok; or %s)", name, AbbrevHome(p))
+		return nil, Die("unknown runtime %q (built-ins: claude, codex, grok, bob; or %s)", name, AbbrevHome(p))
 	}
 	cmd := YamlGet(p, "command")
 	if cmd == "" {

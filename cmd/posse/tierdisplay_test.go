@@ -97,10 +97,19 @@ func TestAgentsListingShowsTheDisplayTier(t *testing.T) {
 // `runtime check` grid reads — so this is a pin on the CATALOG line, which
 // is where an operator picking a runtime actually looks.
 //
-// All three built-in rows are asserted together on purpose. The line grok
-// used to print was "tiers: UNMAPPED — ignores tier:, the CLI picks its own
-// model"; a test that only checked grok's new row would stay green if the
-// switch that chooses between the three renderings broke for everyone else.
+// Every built-in row is asserted together on purpose. The line grok used to
+// print was "tiers: UNMAPPED — ignores tier:, the CLI picks its own model";
+// a test that only checked grok's new row would stay green if the switch
+// that chooses between the renderings broke for everyone else.
+//
+// bob is the row that reads UNMAPPED now, and it is not a regression to
+// rangerhq-jp6's state: bobshell 2.0.5 takes no per-launch model on `chat`
+// or `run` at all, so there is nothing for a tier to map to and ADR 0060 D1
+// declares the gap as a DECLARED DIFFERENCE rather than papering it with an
+// invented flag. So the blanket "no built-in says UNMAPPED" became "exactly
+// one does, and it is bob" — which still reds if claude, codex or grok ever
+// loses its map, and additionally reds if bob quietly grows one nobody
+// measured.
 func TestRuntimesCatalogShowsEveryBuiltinTierMap(t *testing.T) {
 	bin := buildRhq(t)
 	cmd := exec.Command(bin, "runtimes")
@@ -115,13 +124,15 @@ func TestRuntimesCatalogShowsEveryBuiltinTierMap(t *testing.T) {
 		"claude   built-in · tiers: strong=claude-fable-5-1 standard=claude-opus-5 fast=claude-sonnet-5",
 		"codex    built-in · tiers: strong=gpt-5.6-sol standard=gpt-5.6-sol fast=gpt-5.6-luna",
 		"grok     built-in · tiers: strong=grok-4.6 standard=grok-4.6 fast=grok-4.5",
+		"bob      built-in · tiers: UNMAPPED — ignores tier:, the CLI picks its own model",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("posse runtimes missing %q in:\n%s", want, got)
 		}
 	}
-	// No built-in may still be advertising that it ignores the key.
-	if strings.Contains(got, "UNMAPPED") {
-		t.Errorf("every built-in maps every tier since rangerhq-jp6:\n%s", got)
+	// And bob is the ONLY one saying it. Every other built-in has mapped
+	// every tier since rangerhq-jp6.
+	if n := strings.Count(got, "UNMAPPED"); n != 1 {
+		t.Errorf("%d built-in rows advertise that they ignore tier:, want exactly one (bob, ADR 0060 D1):\n%s", n, got)
 	}
 }

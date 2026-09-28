@@ -59,8 +59,8 @@ func TestQASeatbeltGrantsOnlyTheLaunchingRuntimesStateDir(t *testing.T) {
 	for _, rt := range builtinRuntimes {
 		all[rt.Name] = rt.StateDirs
 	}
-	if len(all) != 3 {
-		t.Fatalf("this pin is written against the three built-ins; got %v", all)
+	if len(all) != 4 {
+		t.Fatalf("this pin is written against the four built-ins; got %v", all)
 	}
 
 	for name, own := range all {

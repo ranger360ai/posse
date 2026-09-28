@@ -345,11 +345,36 @@ func (a *App) promptableRow(rt *Runtime) stageRow {
 			val += " (startup_wait: unset → the default)"
 		}
 	}
+	// The PATIENCE is a second declaration on this row, and until
+	// ranger-base-ymmiv it had no provenance at all: `by` named `prompt:`
+	// alone, so a runtimes/<name>.yaml overlaying `startup_wait:` rendered
+	// its own number over the words "built-in default" — the one fact this
+	// line exists to carry, WHO declared it, naming the wrong declarer
+	// (ADR 0060 verification row 1). Appended only where the yaml actually
+	// sets the key, which is exactly the case that was wrong: everywhere
+	// else the value line already says "(startup_wait: unset → the
+	// default)" and a second clause would be noise.
+	by := rt.declaredBy("prompt")
+	if rt.PromptMode() == PromptTyped && rt.Path != "" && YamlGet(rt.Path, "startup_wait") != "" {
+		by += " + " + rt.declaredBy("startup_wait")
+	}
 	r := stageRow{
 		stage:   "promptable",
 		value:   val,
-		by:      rt.declaredBy("prompt"),
+		by:      by,
 		missing: "refuse THIS launch, loudly — the session, not the persona (ADR 0013 §2 busy-key split)",
+	}
+	// The typed path's one SILENT delivery failure, printed for every typed
+	// runtime rather than branched on a name (ADR 0017 §3 — a name-keyed
+	// branch here would be a dimension wearing a CLI's name, and the
+	// hazard is a property of typed delivery, not of one vendor).
+	//
+	// The victim is an operator at `posse prompt`, not dispatch: posse's own
+	// work prompt never begins with `/`. A hand-typed one can, and that is
+	// the shape with no error anywhere — the ADR 0013 §2 prompt-into-a-hole,
+	// arriving through the keyboard instead of through argv.
+	if rt.PromptMode() == PromptTyped {
+		r.note = append(r.note, "typed prompts must NEVER start with `/`: in a composer that has a slash-command picker, the picker takes the Enter, the text stays in the composer and no turn ever starts — a prompt typed into a hole, with no error on any surface. posse's own work prompt never begins with `/`; a hand-typed `posse prompt` can (ADR 0013 §2, ADR 0060 D5).")
 	}
 	// Layer 2 of §2: what the operator has to silence before a fresh pane
 	// of this runtime is promptable at all, and whether they have.

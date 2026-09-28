@@ -882,11 +882,13 @@ default_emoji: ⚙️
 # Session name → emoji (exact match first, then substring match).
 # A recipe's explicit `emoji:` always wins over this map.
 # No brand emojis exist for the coding agents — these are the nearest glyphs:
-# ✳️ Claude (Anthropic's starburst), 🪢 Codex (OpenAI's knot), ✖️ Grok (the X).
+# ✳️ Claude (Anthropic's starburst), 🪢 Codex (OpenAI's knot), ✖️ Grok (the X),
+# 🔵 Bob (IBM's blue).
 emoji:
   claude: ✳️
   codex: 🪢
   grok: ✖️
+  bob: 🔵
   shell: 🐚
   api: 🔌
   web: 🌐

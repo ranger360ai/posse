@@ -21,8 +21,15 @@ import (
 )
 
 // probeParityApp is an App with a template-only runtime declared in yaml and
-// a state dir of its own. `bob` is the ADR's own name for a CLI the harness
-// has never seen.
+// a state dir of its own.
+//
+// `carol` is the placeholder for a CLI the harness has never seen, and the
+// rename is the point: `bob` played that part from ADR 0017 until ADR 0060
+// made bob a fourth BUILT-IN (ranger-base-ymmiv), at which point every
+// fixture here would have been a template-only assertion about a runtime
+// that loads built-in — the arm below is what said so first. Carol is the
+// next placeholder down the alice/bob/carol line, and the rule is that a
+// fixture CLI is named for nothing real.
 func probeParityApp(t *testing.T) (*App, *Runtime) {
 	t.Helper()
 	home := t.TempDir()
@@ -30,20 +37,20 @@ func probeParityApp(t *testing.T) (*App, *Runtime) {
 	if err := os.MkdirAll(a.RuntimesDir(), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(a.RuntimesDir(), "bob.yaml"), []byte("command: bob --pid {file}\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(a.RuntimesDir(), "carol.yaml"), []byte("command: carol --pid {file}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	rt, err := a.LoadRuntime("bob")
+	rt, err := a.LoadRuntime("carol")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if rt.Builtin {
-		t.Fatal("bob must load as template-only, or this file tests the wrong thing")
+		t.Fatal("carol must load as template-only, or this file tests the wrong thing")
 	}
 	return a, rt
 }
 
-// writeProbe stores a record for bob with every observable green (or one
+// writeProbe stores a record for carol with every observable green (or one
 // red), so the tests below can move the runtime between assumed and measured
 // without a CLI.
 func writeProbe(t *testing.T, a *App, pass bool) {
@@ -53,8 +60,8 @@ func writeProbe(t *testing.T, a *App, pass bool) {
 		obs[0] = ProbeObservable{1, "shim-precedence", false, "command -v uname → /usr/bin/uname"}
 	}
 	rec := &ProbeRecord{
-		Runtime: "bob", CLIPath: "/usr/local/bin/bob", LauncherPath: "/usr/local/bin/bob",
-		Version: "bob 1.2.3",
+		Runtime: "carol", CLIPath: "/usr/local/bin/carol", LauncherPath: "/usr/local/bin/carol",
+		Version: "carol 1.2.3",
 		Date:    time.Now().UTC(), PosseVersion: Version, Canary: "uname", Observables: obs,
 	}
 	if err := a.WriteProbeRecord(rec); err != nil {
@@ -64,13 +71,13 @@ func writeProbe(t *testing.T, a *App, pass bool) {
 
 func TestTemplateBashDenyIsAssumedUntilProbed(t *testing.T) {
 	t.Parallel()
-	a, bob := probeParityApp(t)
+	a, carol := probeParityApp(t)
 	dev := loadTestAgent(t, "---\nname: dev\ndeny:\n  - Bash(git push:*)\n  - Bash(rm -rf /)\n---\nYou are dev.\n")
 
 	// Unprobed: BOTH shell-verb denies land in Degraded, and neither is
 	// Realized. This is the whole change — before it, parity counted them
 	// realized on the strength of three behaviours nobody had measured.
-	p := a.CheckParity(dev, bob, CageShims, TierStrong)
+	p := a.CheckParity(dev, carol, CageShims, TierStrong)
 	if len(p.Unrealized) != 2 {
 		t.Fatalf("both Bash denies must be unrealized on an unprobed template runtime: %+v", p)
 	}
@@ -80,7 +87,7 @@ func TestTemplateBashDenyIsAssumedUntilProbed(t *testing.T) {
 		}
 	}
 	joined := strings.Join(p.Degraded, "\n")
-	for _, want := range []string{"assumed, not measured", "posse runtime probe bob", "no probe record"} {
+	for _, want := range []string{"assumed, not measured", "posse runtime probe carol", "no probe record"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("the degrade line must carry %q — a refusal that does not name its unlock trains the operator to waive by habit:\n%s", want, joined)
 		}
@@ -89,7 +96,7 @@ func TestTemplateBashDenyIsAssumedUntilProbed(t *testing.T) {
 	// A recorded FAILURE is not a record that unlocks anything, and it must
 	// say what failed rather than repeating "no probe record".
 	writeProbe(t, a, false)
-	p = a.CheckParity(dev, bob, CageShims, TierStrong)
+	p = a.CheckParity(dev, carol, CageShims, TierStrong)
 	if len(p.Unrealized) != 2 {
 		t.Fatalf("a FAILED probe leaves the claim assumed: %+v", p)
 	}
@@ -100,7 +107,7 @@ func TestTemplateBashDenyIsAssumedUntilProbed(t *testing.T) {
 	// Probed and passing: the claim flips to realized, exactly as it reads
 	// on a built-in, and the launch stops degrading.
 	writeProbe(t, a, true)
-	p = a.CheckParity(dev, bob, CageShims, TierStrong)
+	p = a.CheckParity(dev, carol, CageShims, TierStrong)
 	if len(p.Degraded) != 0 {
 		t.Fatalf("a passing probe must clear the degradation: %+v", p.Degraded)
 	}
@@ -115,13 +122,13 @@ func TestTemplateBashDenyIsAssumedUntilProbed(t *testing.T) {
 // degrade goes through p.Degraded rather than through a bespoke field.
 func TestAssumedProbeIsNotWaivableAtTierFast(t *testing.T) {
 	t.Parallel()
-	a, bob := probeParityApp(t)
+	a, carol := probeParityApp(t)
 	dev := loadTestAgent(t, "---\nname: dev\ndeny: [Bash(rm -rf /)]\n---\nYou are dev.\n")
-	if p := a.CheckParity(dev, bob, CageShims, TierFast); !p.NoDegrade {
+	if p := a.CheckParity(dev, carol, CageShims, TierFast); !p.NoDegrade {
 		t.Errorf("an unprobed template runtime at tier fast must refuse without a waiver: %+v", p)
 	}
 	writeProbe(t, a, true)
-	if p := a.CheckParity(dev, bob, CageShims, TierFast); p.NoDegrade || len(p.Degraded) != 0 {
+	if p := a.CheckParity(dev, carol, CageShims, TierFast); p.NoDegrade || len(p.Degraded) != 0 {
 		t.Errorf("a probed runtime at tier fast is clean: %+v", p)
 	}
 }
@@ -176,9 +183,9 @@ func TestGateShellFalseKeepsItsOwnDiagnosis(t *testing.T) {
 // prints the OPPOSITE word once a record lands.
 func TestRuntimeCheckPrintsTheProbeRowBothWays(t *testing.T) {
 	t.Parallel()
-	a, bob := probeParityApp(t)
+	a, carol := probeParityApp(t)
 	var out bytes.Buffer
-	a.RuntimeCheck(bob, Herdr{Bin: filepath.Join(t.TempDir(), "no-herdr")}, &out)
+	a.RuntimeCheck(carol, Herdr{Bin: filepath.Join(t.TempDir(), "no-herdr")}, &out)
 	got := out.String()
 	// Scoped to the probe ROW, not to the screen. ASSUMED and MEASURED are
 	// ordinary English on a grid that spends most of its width telling an
@@ -187,7 +194,7 @@ func TestRuntimeCheckPrintsTheProbeRowBothWays(t *testing.T) {
 	// whichever row said the word first, and would have called this runtime
 	// probed on the strength of a sentence about skills (ranger-base-bcpa).
 	row := gridRow(t, got, "probe")
-	for _, want := range []string{"ASSUMED", "posse runtime probe bob"} {
+	for _, want := range []string{"ASSUMED", "posse runtime probe carol"} {
 		if !strings.Contains(row, want) {
 			t.Errorf("the unprobed grid's probe row must carry %q:\n%s", want, row)
 		}
@@ -198,13 +205,13 @@ func TestRuntimeCheckPrintsTheProbeRowBothWays(t *testing.T) {
 
 	writeProbe(t, a, true)
 	out.Reset()
-	a.RuntimeCheck(bob, Herdr{Bin: filepath.Join(t.TempDir(), "no-herdr")}, &out)
+	a.RuntimeCheck(carol, Herdr{Bin: filepath.Join(t.TempDir(), "no-herdr")}, &out)
 	got = out.String()
 	row = gridRow(t, got, "probe")
 	if !strings.Contains(row, "MEASURED") || strings.Contains(row, "ASSUMED") {
 		t.Errorf("a probed runtime prints MEASURED and not ASSUMED:\n%s", row)
 	}
-	if !strings.Contains(got, a.ProbeRecordPath("bob")) && !strings.Contains(got, AbbrevHome(a.ProbeRecordPath("bob"))) {
+	if !strings.Contains(got, a.ProbeRecordPath("carol")) && !strings.Contains(got, AbbrevHome(a.ProbeRecordPath("carol"))) {
 		t.Errorf("the grid must name the record it read:\n%s", got)
 	}
 
@@ -224,17 +231,17 @@ func TestRuntimeCheckPrintsTheProbeRowBothWays(t *testing.T) {
 // which turns ADR 0032's goal into a requirement by accident of exit status.
 func TestProbeGapIsNamedAndNonBlocking(t *testing.T) {
 	t.Parallel()
-	a, bob := probeParityApp(t)
+	a, carol := probeParityApp(t)
 	h := Herdr{Bin: filepath.Join(t.TempDir(), "no-herdr")}
 	var found *RuntimeGap
-	for _, g := range a.RuntimeGaps(bob, h) {
+	for _, g := range a.RuntimeGaps(carol, h) {
 		if g.Name == "probe" {
 			gg := g
 			found = &gg
 		}
 	}
 	if found == nil {
-		t.Fatalf("the preflight must report the probe gap by name: %+v", a.RuntimeGaps(bob, h))
+		t.Fatalf("the preflight must report the probe gap by name: %+v", a.RuntimeGaps(carol, h))
 	}
 	if found.Blocking {
 		t.Error("an unprobed runtime is a named degrade, not a refusal")
@@ -243,7 +250,7 @@ func TestProbeGapIsNamedAndNonBlocking(t *testing.T) {
 		t.Errorf("the gap must state the waiver semantics it costs: %q", found.Line)
 	}
 	writeProbe(t, a, true)
-	for _, g := range a.RuntimeGaps(bob, h) {
+	for _, g := range a.RuntimeGaps(carol, h) {
 		if g.Name == "probe" {
 			t.Errorf("a passing probe leaves no gap: %q", g.Line)
 		}
@@ -256,8 +263,8 @@ func TestProbeGapIsNamedAndNonBlocking(t *testing.T) {
 // as long as the session lives.
 func TestProbeRefusesToOverwriteALivePersonasGates(t *testing.T) {
 	t.Parallel()
-	a, bob := probeParityApp(t)
-	persona := probeAgentName("bob")
+	a, carol := probeParityApp(t)
+	persona := probeAgentName("carol")
 	if err := os.MkdirAll(a.AgentsDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -265,7 +272,7 @@ func TestProbeRefusesToOverwriteALivePersonasGates(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(a.AgentsDir, persona+".md"), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, err := a.RuntimeProbe(bob, Herdr{Bin: filepath.Join(t.TempDir(), "no-herdr")}, ProbeOpts{})
+	_, err := a.RuntimeProbe(carol, Herdr{Bin: filepath.Join(t.TempDir(), "no-herdr")}, ProbeOpts{})
 	if err == nil || !strings.Contains(err.Error(), "would overwrite its wall") {
 		t.Fatalf("the probe must refuse a name collision with a real PID: %v", err)
 	}
@@ -276,15 +283,15 @@ func TestProbeRefusesToOverwriteALivePersonasGates(t *testing.T) {
 // realized mark on a runtime dispatch is blind on.
 func TestProbeRefusesWithoutHerdr(t *testing.T) {
 	t.Parallel()
-	a, bob := probeParityApp(t)
-	rec, err := a.RuntimeProbe(bob, Herdr{Bin: filepath.Join(t.TempDir(), "definitely-not-herdr")}, ProbeOpts{})
+	a, carol := probeParityApp(t)
+	rec, err := a.RuntimeProbe(carol, Herdr{Bin: filepath.Join(t.TempDir(), "definitely-not-herdr")}, ProbeOpts{})
 	if err == nil || !strings.Contains(err.Error(), "herdr") {
 		t.Fatalf("no herdr, no probe: %v %v", rec, err)
 	}
 	if rec != nil {
 		t.Error("a probe that could not run must write no record — an absent record is the honest state")
 	}
-	if _, statErr := os.Stat(a.ProbeRecordPath("bob")); statErr == nil {
+	if _, statErr := os.Stat(a.ProbeRecordPath("carol")); statErr == nil {
 		t.Error("a refused probe left a record behind")
 	}
 }
@@ -300,7 +307,7 @@ func TestL3StillRecoversGitPushOnAnUnprobedTemplateRuntime(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
-	a, bob := probeParityApp(t)
+	a, carol := probeParityApp(t)
 	repo := gitTempDir(t)
 	if out, err := exec.Command("git", "-C", repo, "init", "-q", "-b", "main").CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v %s", err, out)
@@ -309,17 +316,17 @@ func TestL3StillRecoversGitPushOnAnUnprobedTemplateRuntime(t *testing.T) {
 		t.Fatal(err)
 	}
 	dev := loadTestAgent(t, "---\nname: dev\ndeny:\n  - Bash(git push:*)\n  - Bash(rm -rf /)\n---\nYou are dev.\n")
-	p := a.CheckParityIn(dev, bob, CageShims, TierStrong, repo)
+	p := a.CheckParityIn(dev, carol, CageShims, TierStrong, repo)
 
 	got := p.Realized["Bash(git push:*)"].Detail
 	if !strings.Contains(got, "L3 pre-push hook") {
 		t.Fatalf("L3 does not depend on the shim's PATH race and must still count: %q / %+v", got, p.Unrealized)
 	}
-	if !strings.Contains(got, "posse runtime probe bob") {
+	if !strings.Contains(got, "posse runtime probe carol") {
 		t.Errorf("the L3-only line must name the probe as the reason L1 is not counted: %q", got)
 	}
 	if strings.Contains(got, "gate_shell: false") {
-		t.Errorf("bob never declared gate_shell: false — naming that key sends the operator to a fix that is not theirs: %q", got)
+		t.Errorf("carol never declared gate_shell: false — naming that key sends the operator to a fix that is not theirs: %q", got)
 	}
 	// And the gate that L3 cannot reach stays assumed, or the recovery
 	// would be reading as a wall for every shell verb.

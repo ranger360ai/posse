@@ -558,7 +558,7 @@ func TestTemplateOnlyRuntime(t *testing.T) {
 	if _, err := a.LoadRuntime("nope"); err == nil {
 		t.Error("unknown runtime must error")
 	}
-	if names := a.ListRuntimes(); strings.Join(names, ",") != "claude,codex,grok,mycli" {
+	if names := a.ListRuntimes(); strings.Join(names, ",") != "claude,codex,grok,bob,mycli" {
 		t.Errorf("ListRuntimes: %v", names)
 	}
 }

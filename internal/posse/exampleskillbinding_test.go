@@ -175,7 +175,7 @@ func TestExamplePIDsBindTheSeededSkill(t *testing.T) {
 	}
 }
 
-// The seed's recipes must cover the two non-claude runtimes, and must be
+// The seed's recipes must cover the three non-claude runtimes, and must be
 // launchable on the instance they ship to: agents/ arrives empty, so a
 // recipe naming a persona names one that does not exist.
 func TestExampleRecipesCoverNonClaudeRuntimes(t *testing.T) {
@@ -187,6 +187,7 @@ func TestExampleRecipesCoverNonClaudeRuntimes(t *testing.T) {
 	want := map[string][3]string{ // name → purpose, command, emoji
 		"codex-projA": {"codex", "codex", "🪢"},
 		"grok-projB":  {"grok", "grok", "✖️"},
+		"bob-projC":   {"bob", "bob", "🔵"},
 	}
 	for name, w := range want {
 		r, err := a.LoadRecipe(name)

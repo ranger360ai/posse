@@ -747,7 +747,7 @@ func main() {
 				rest = rest[1:]
 			case "--runtime":
 				if len(rest) < 2 {
-					die(posse.Die("--runtime needs a name (claude, codex, grok, or runtimes/<name>.yaml)"))
+					die(posse.Die("--runtime needs a name (claude, codex, grok, bob, or runtimes/<name>.yaml)"))
 				}
 				if _, err := a.LoadRuntime(rest[1]); err != nil {
 					die(err)
@@ -2245,18 +2245,18 @@ sessions (herdr workspaces):
   posse list                     sessions with live agent state (working/blocked/idle)
   posse new <name> [opts]        create a background session
       --dir <path>  --env-file <name> (repeatable)  --cmd "..."  --agent <name>  --emoji <e>
-      --runtime <claude|codex|grok|name>   launch profile for the persona (over its PID runtime:)
-      --tier <strong|standard|fast>        model tier for the persona (over its PID tier:)
-      --model <id>                         EXACT model for this session only (ADR 0053) — needs --agent,
-                                           --runtime and --tier; prints the exact-model line instead of the
-                                           tier availability verdict, so the provider is asked about this id
-                                           rather than the catalog about the tier's. What that answer is WORTH
-                                           is the runtime's own declaration: a CLI measured to run its own
-                                           default for an id it does not know proves nothing by coming up
-                                           clean, and the line says so (posse runtime check <runtime>, the
-                                           unknown model row)
-      --allow-degraded                     launch even if the wall cannot realize every PID gate here (marked)
-      --cage <shims|seatbelt|container>    wall tier (over the PID cage:); seatbelt = sandbox-exec file gate
+      --runtime <claude|codex|grok|bob|name>  launch profile for the persona (over its PID runtime:)
+      --tier <strong|standard|fast>           model tier for the persona (over its PID tier:)
+      --model <id>                            EXACT model for this session only (ADR 0053) — needs --agent,
+                                              --runtime and --tier; prints the exact-model line instead of the
+                                              tier availability verdict, so the provider is asked about this id
+                                              rather than the catalog about the tier's. What that answer is WORTH
+                                              is the runtime's own declaration: a CLI measured to run its own
+                                              default for an id it does not know proves nothing by coming up
+                                              clean, and the line says so (posse runtime check <runtime>, the
+                                              unknown model row)
+      --allow-degraded                        launch even if the wall cannot realize every PID gate here (marked)
+      --cage <shims|seatbelt|container>       wall tier (over the PID cage:); seatbelt = sandbox-exec file gate
   posse attach <name>            focus its workspace in herdr (alias: focus)
   posse up <name>                create-or-focus (alias: local)
   posse recipe <name>            launch a saved recipe (<config home>/recipes)
@@ -2489,7 +2489,7 @@ catalog:
                                  OAuth token's only writer is the runtime's own login
                                  loop, and it prints where that store is instead.
   posse agents                   list personas
-  posse runtimes [--probe]       list launch profiles (claude/codex/grok + runtimes/*.yaml),
+  posse runtimes [--probe]       list launch profiles (claude/codex/grok/bob + runtimes/*.yaml),
                                  with per-tier model availability under each profile whose
                                  egress: names the model catalog host (ADR 0039 D3b).
                                  --probe re-reads that catalog now instead of ruling off

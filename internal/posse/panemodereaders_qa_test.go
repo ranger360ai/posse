@@ -280,10 +280,19 @@ func TestQAOnlyAMeasuredScreenCostsAPaneRead(t *testing.T) {
 	}
 }
 
-// Every built-in has a MEASURED reader. The registry made this checkable as a
-// declaration; without one it is a property of paneReaderFor, and the symptom
-// of losing it is codex-shaped — every session on a runtime posse measured in
-// August listing `mode:?` forever, with nothing refusing at load to say so.
+// Every built-in has a MEASURED reader, or a row in paneModeUnmeasured
+// saying why not. The registry made this checkable as a declaration; without
+// one it is a property of paneReaderFor, and the symptom of losing it is
+// codex-shaped — every session on a runtime posse measured in August listing
+// `mode:?` forever, with nothing refusing at load to say so.
+//
+// The register beside it is a deliberate second table, the qmKnownMismatch
+// shape one file over: it holds an open gap to a named owner AND goes red
+// the day a NEW one appears. Without it the census had two ways to be
+// useless — iterate builtinRuntimes and a fourth built-in with nothing
+// measured reds a pin about a measurement nobody threw away; iterate the
+// measured three instead and a fifth escapes the census in silence, which is
+// the rot this exists to catch.
 //
 // The second half is the one that could actually be wrong. Every reader's
 // not-named answer is asserted to be what its own documented sentence says:
@@ -292,10 +301,33 @@ func TestQAOnlyAMeasuredScreenCostsAPaneRead(t *testing.T) {
 // is the same defect one layer down from a registry row that did.
 func TestQAEveryBuiltinScreenIsMeasuredAndSaysWhatItReturns(t *testing.T) {
 	t.Parallel()
+	seen := map[string]bool{}
 	for _, rt := range builtinRuntimes {
 		r := paneReaderFor(rt.Name)
+		if why, open := paneModeUnmeasured[rt.Name]; open {
+			seen[rt.Name] = true
+			if r.known {
+				t.Errorf("built-in %s HAS a pane reader and is still listed unmeasured (%s) — delete its paneModeUnmeasured row; a register that outlives its gap is a dated snapshot wearing a test's clothes", rt.Name, why)
+				continue
+			}
+			// The gap is open, so what is pinned is that it stays LOUD.
+			// Undeclared is not a mode, not a blank and not NEVER, and a
+			// listing must not spend a herdr call re-learning that nobody
+			// has measured this screen (ADR 0057).
+			m := ReadPaneMode(rt.Name, "")
+			if m != PaneModeUndeclared(rt.Name) {
+				t.Errorf("built-in %s is unmeasured and does not read as UNDECLARED: %+v — collapsing 'nobody measured this' into any other state is the defect the three-valued field exists to remove", rt.Name, m)
+			}
+			if PaneModeReadsPane(rt.Name) {
+				t.Errorf("built-in %s has no reader and a listing would still spend a pane read on it", rt.Name)
+			}
+			if got := ReadPaneMode(rt.Name, claudePaneAuto); got != m {
+				t.Errorf("built-in %s answers %+v with a pane and %+v without one — an unmeasured screen must not be parsed by another CLI's reader", rt.Name, got, m)
+			}
+			continue
+		}
 		if !r.known {
-			t.Errorf("built-in %s has no pane reader — posse measured all three built-ins on 2026-08-29 (permissionmodepane_qa_test.go), so an unmeasured one is a measurement thrown away, not an unknown", rt.Name)
+			t.Errorf("built-in %s has no pane reader and no paneModeUnmeasured row — posse measured claude, codex and grok on 2026-08-29 (permissionmodepane_qa_test.go), so for those an unmeasured one is a measurement thrown away rather than an unknown; for a NEW built-in, add the row with its reason and the bead that owns it", rt.Name)
 			continue
 		}
 		// A screen with nothing on it: every reader's not-named answer.
@@ -334,6 +366,24 @@ func TestQAEveryBuiltinScreenIsMeasuredAndSaysWhatItReturns(t *testing.T) {
 			t.Errorf("%s: reader returns %q, the constant says %q", c.what, got.Why, c.want)
 		}
 	}
+	// And the register's other half: a row for a runtime that is not a
+	// built-in at all is a row nothing can red.
+	for name := range paneModeUnmeasured {
+		if !seen[name] {
+			t.Errorf("paneModeUnmeasured names %q, which is not a built-in — drop the row", name)
+		}
+	}
+}
+
+// paneModeUnmeasured is every BUILT-IN whose pane posse has not measured,
+// with the reason and the bead that owns it. A row is deleted when a reader
+// lands, which is how this table says a measurement happened.
+//
+// Onboarding a screen is a concrete reader plus its capture corpus (ADR 0057)
+// — deliberately not a substring language and not a silent fallback — so a
+// row here is a real piece of work and not a waiver.
+var paneModeUnmeasured = map[string]string{
+	"bob": "landed as a built-in from the recon (ADR 0060 D1, ranger-base-ymmiv) with its LAUNCH row already unmet: herdr 0.8.2 cannot name a bob pane at all, so there is no labelled pane to capture a mode corpus off. Nothing was thrown away here — no bob screen has ever been read. The capture is the instance side's (ranger-base-6wqe), after herdr learns the kind.",
 }
 
 // ADR 0035 §4's other half, which lost its pin when the registry-derived

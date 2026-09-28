@@ -26,14 +26,14 @@ func passingReading(binDir string) probeReading {
 	return probeReading{
 		Canary:     "uname",
 		BinDir:     binDir,
-		Exe:        "bob",
+		Exe:        "carol",
 		Where:      filepath.Join(binDir, "uname") + "\n",
 		WhereFound: true,
 		Refusals: "2026-08-28T00:00:00Z uname " + ProbeShapeDirect + " (deny: Bash(uname:*))\n" +
 			"2026-08-28T00:00:01Z uname " + ProbeShapeShellC + " (deny: Bash(uname:*))\n" +
 			"2026-08-28T00:00:02Z uname " + ProbeShapeScript + " (deny: Bash(uname:*))\n",
 		Settled:   "idle",
-		AgentKind: "bob",
+		AgentKind: "carol",
 		Detection: AgentDetection{State: "idle", VisibleIdle: true},
 	}
 }
@@ -190,7 +190,7 @@ func TestProbeHerdrDetectionRejectsTheIdleFallback(t *testing.T) {
 
 	r = passingReading(bin)
 	r.AgentKind = "claude"
-	if o := obs(t, r, 4); o.OK || !strings.Contains(o.Detail, "not bob") {
+	if o := obs(t, r, 4); o.OK || !strings.Contains(o.Detail, "not carol") {
 		t.Errorf("herdr naming another agent's kind must fail: ok=%v %q", o.OK, o.Detail)
 	}
 }
@@ -237,15 +237,15 @@ func TestProbeRecordRoundTrips(t *testing.T) {
 	t.Parallel()
 	a := probeApp(t)
 	want := &ProbeRecord{
-		Runtime: "bob", CLIPath: "/opt/homebrew/bin/bob", LauncherPath: "/usr/local/bin/bob",
-		Version: "bob 1.2.3",
+		Runtime: "carol", CLIPath: "/opt/homebrew/bin/carol", LauncherPath: "/usr/local/bin/carol",
+		Version: "carol 1.2.3",
 		Date:    time.Now().UTC().Truncate(time.Second), PosseVersion: Version, Canary: "uname",
 		Observables: evalProbe(passingReading("/tmp/gates/bin")),
 	}
 	if err := a.WriteProbeRecord(want); err != nil {
 		t.Fatal(err)
 	}
-	got, err := a.ReadProbeRecord("bob")
+	got, err := a.ReadProbeRecord("carol")
 	if err != nil || got == nil {
 		t.Fatalf("read back: %v %v", got, err)
 	}
@@ -262,10 +262,10 @@ func TestProbeRecordRoundTrips(t *testing.T) {
 	// the state the operator is told to fix by probing, so treating a
 	// corrupt file as absent would let the next pass overwrite it having
 	// never noticed.
-	if err := os.WriteFile(a.ProbeRecordPath("bob"), []byte("{not json"), 0o644); err != nil {
+	if err := os.WriteFile(a.ProbeRecordPath("carol"), []byte("{not json"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if rec, err := a.ReadProbeRecord("bob"); err == nil || rec != nil {
+	if rec, err := a.ReadProbeRecord("carol"); err == nil || rec != nil {
 		t.Errorf("a corrupt record must be an error, not (nil, nil): %v %v", rec, err)
 	}
 	// And a missing one is (nil, nil) — "nobody probed" is an answer.
@@ -281,15 +281,15 @@ func TestProbeRecordRoundTrips(t *testing.T) {
 func TestProbeStateDriftAndCurrency(t *testing.T) {
 	t.Parallel()
 	a := probeApp(t)
-	rt := &Runtime{Name: "bob", Command: "bob --pid {file}"}
+	rt := &Runtime{Name: "carol", Command: "carol --pid {file}"}
 	at := func(path, version string) (func(string) string, func(string) string) {
 		return func(string) string { return path }, func(string) string { return version }
 	}
-	resolve, version := at("/usr/local/bin/bob", "bob 1.2.3")
+	resolve, version := at("/usr/local/bin/carol", "carol 1.2.3")
 
 	// 1. Nothing recorded — loud, and it names the command that fixes it.
 	st := a.probeStateWith(rt, resolve, version)
-	if st.Current || st.Drift || !strings.Contains(st.Why, "posse runtime probe bob") {
+	if st.Current || st.Drift || !strings.Contains(st.Why, "posse runtime probe carol") {
 		t.Errorf("unprobed: %+v", st)
 	}
 
@@ -297,7 +297,7 @@ func TestProbeStateDriftAndCurrency(t *testing.T) {
 	// remedy differs: fix the runtime, then re-probe.
 	failed := evalProbe(passingReading("/tmp/gates/bin"))
 	failed[0] = ProbeObservable{1, "shim-precedence", false, "command -v uname → /usr/bin/uname"}
-	rec := &ProbeRecord{Runtime: "bob", CLIPath: "/usr/local/bin/bob", LauncherPath: "/usr/local/bin/bob", Version: "bob 1.2.3", Date: time.Now().UTC(), Observables: failed}
+	rec := &ProbeRecord{Runtime: "carol", CLIPath: "/usr/local/bin/carol", LauncherPath: "/usr/local/bin/carol", Version: "carol 1.2.3", Date: time.Now().UTC(), Observables: failed}
 	if err := a.WriteProbeRecord(rec); err != nil {
 		t.Fatal(err)
 	}
@@ -317,17 +317,17 @@ func TestProbeStateDriftAndCurrency(t *testing.T) {
 	}
 
 	// 4. Version drift: same path, the CLI moved under the record.
-	_, newer := at("", "bob 1.3.0")
+	_, newer := at("", "carol 1.3.0")
 	st = a.probeStateWith(rt, resolve, newer)
-	if st.Current || !st.Drift || !strings.Contains(st.Why, "bob 1.3.0") || !strings.Contains(st.Why, "bob 1.2.3") {
+	if st.Current || !st.Drift || !strings.Contains(st.Why, "carol 1.3.0") || !strings.Contains(st.Why, "carol 1.2.3") {
 		t.Errorf("version drift must un-current the record and name both versions: %+v", st)
 	}
 
 	// 5. Path drift: a DIFFERENT binary answers to the same name now. Not
 	// covered by the version check — two builds can print the same string.
-	elsewhere, _ := at("/opt/homebrew/bin/bob", "")
+	elsewhere, _ := at("/opt/homebrew/bin/carol", "")
 	st = a.probeStateWith(rt, elsewhere, version)
-	if st.Current || !st.Drift || !strings.Contains(st.Why, "/opt/homebrew/bin/bob") {
+	if st.Current || !st.Drift || !strings.Contains(st.Why, "/opt/homebrew/bin/carol") {
 		t.Errorf("path drift must un-current the record: %+v", st)
 	}
 
@@ -338,14 +338,14 @@ func TestProbeStateDriftAndCurrency(t *testing.T) {
 	if err := a.WriteProbeRecord(rec); err != nil {
 		t.Fatal(err)
 	}
-	st = a.probeStateWith(rt, resolve, func(string) string { return "bob 9.9.9" })
+	st = a.probeStateWith(rt, resolve, func(string) string { return "carol 9.9.9" })
 	if !st.Current || !strings.Contains(st.Why, "UNKNOWN") {
 		t.Errorf("an unreadable version keeps the record but must be loud about the drift check it is not doing: %+v", st)
 	}
 
 	// 7. And the version reader answering "" now (the CLI stopped talking)
 	// must not read as drift — an unknown is not a difference.
-	rec.Version = "bob 1.2.3"
+	rec.Version = "carol 1.2.3"
 	if err := a.WriteProbeRecord(rec); err != nil {
 		t.Fatal(err)
 	}
@@ -472,8 +472,8 @@ func TestProbeSessionExeIsThePanesAnswerAndNotTheLaunchers(t *testing.T) {
 	srv := filepath.Join(dir, "srvbin") // only the "daemon" has this
 	cli := filepath.Join(dir, "clibin") // only posse has this
 	bin := filepath.Join(dir, "gatesbin")
-	srvExe := probeFakeCLI(t, srv, "bob", "server copy")
-	probeFakeCLI(t, cli, "bob", "launcher copy")
+	srvExe := probeFakeCLI(t, srv, "carol", "server copy")
+	probeFakeCLI(t, cli, "carol", "launcher copy")
 	if err := os.MkdirAll(bin, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -481,7 +481,7 @@ func TestProbeSessionExeIsThePanesAnswerAndNotTheLaunchers(t *testing.T) {
 
 	h := fakeProbeHerdr(t, `[ "$1" = pane ] && [ "$2" = run ] || exit 0
 PATH="`+srv+`:$PATH" /bin/sh -c "$4"`)
-	got, err := probeSessionExe(h, "%1", bin, "bob", filepath.Join(dir, "cli.txt"), 10*time.Second)
+	got, err := probeSessionExe(h, "%1", bin, "carol", filepath.Join(dir, "cli.txt"), 10*time.Second)
 	if err != nil {
 		t.Fatalf("the pane would not answer: %v", err)
 	}
@@ -491,10 +491,10 @@ PATH="`+srv+`:$PATH" /bin/sh -c "$4"`)
 	// Two-way, or the arm passes on a rig where both sides happen to agree:
 	// posse's own lookup names the other file, and that is the answer the
 	// record used to carry.
-	if out := resolveOutside("bob", ""); out == got {
-		t.Fatalf("the rig proves nothing: posse's own PATH resolves bob to %q too", out)
-	} else if out != filepath.Join(cli, "bob") {
-		t.Fatalf("the rig is not set up: posse resolves bob to %q", out)
+	if out := resolveOutside("carol", ""); out == got {
+		t.Fatalf("the rig proves nothing: posse's own PATH resolves carol to %q too", out)
+	} else if out != filepath.Join(cli, "carol") {
+		t.Fatalf("the rig is not set up: posse resolves carol to %q", out)
 	}
 }
 
@@ -507,11 +507,11 @@ func TestProbeSessionExeSeesThroughTheGatePrefix(t *testing.T) {
 	dir := t.TempDir()
 	srv := filepath.Join(dir, "srvbin")
 	bin := filepath.Join(dir, "gatesbin")
-	probeFakeCLI(t, srv, "bob", "server copy")
-	shim := probeFakeCLI(t, bin, "bob", "the shim")
+	probeFakeCLI(t, srv, "carol", "server copy")
+	shim := probeFakeCLI(t, bin, "carol", "the shim")
 	h := fakeProbeHerdr(t, `[ "$1" = pane ] && [ "$2" = run ] || exit 0
 PATH="`+srv+`:$PATH" /bin/sh -c "$4"`)
-	got, err := probeSessionExe(h, "%1", bin, "bob", filepath.Join(dir, "cli.txt"), 10*time.Second)
+	got, err := probeSessionExe(h, "%1", bin, "carol", filepath.Join(dir, "cli.txt"), 10*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -528,7 +528,7 @@ func TestProbeSessionExeRefusesWhatItCannotName(t *testing.T) {
 	for _, tc := range []struct {
 		name, body, want string
 	}{
-		// Nothing named bob exists on any PATH the pane has, so the
+		// Nothing named carol exists on any PATH the pane has, so the
 		// lookup writes an empty answer — which the `.part` rename tells
 		// apart from a redirect this read got to before the shell did.
 		{"resolves nothing",
@@ -539,14 +539,14 @@ func TestProbeSessionExeRefusesWhatItCannotName(t *testing.T) {
 		// and its answer is not a file anyone can record.
 		{"answers something that is not a path",
 			`[ "$1" = pane ] && [ "$2" = run ] || exit 0
-/bin/sh -c "$(printf '%s' "$4" | sed 's|command -v [^ ]*|echo alias-for-bob|')"`,
+/bin/sh -c "$(printf '%s' "$4" | sed 's|command -v [^ ]*|echo alias-for-carol|')"`,
 			"not a path to a binary"},
 		{"never runs the lookup", `exit 0`, "did not say which binary"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 			h := fakeProbeHerdr(t, tc.body)
-			got, err := probeSessionExe(h, "%1", filepath.Join(dir, "bin"), "bob", filepath.Join(dir, "cli.txt"), 300*time.Millisecond)
+			got, err := probeSessionExe(h, "%1", filepath.Join(dir, "bin"), "carol", filepath.Join(dir, "cli.txt"), 300*time.Millisecond)
 			if err == nil {
 				t.Fatalf("a probe that cannot name its binary must refuse; got %q", got)
 			}
@@ -607,23 +607,23 @@ func TestReadCLIVersionAtDoesNotReResolveTheName(t *testing.T) {
 func TestProbeStateRefusesARecordThatCannotNameTheSessionsBinary(t *testing.T) {
 	t.Parallel()
 	a := probeApp(t)
-	rt := &Runtime{Name: "bob", Command: "bob --pid {file}"}
-	resolve := func(string) string { return "/usr/local/bin/bob" }
-	version := func(string) string { return "bob 1.2.3" }
+	rt := &Runtime{Name: "carol", Command: "carol --pid {file}"}
+	resolve := func(string) string { return "/usr/local/bin/carol" }
+	version := func(string) string { return "carol 1.2.3" }
 
 	for _, tc := range []struct{ name, cli, launcher string }{
-		{"written before the probe asked the pane", "/usr/local/bin/bob", ""},
-		{"the pane never answered", "", "/usr/local/bin/bob"},
+		{"written before the probe asked the pane", "/usr/local/bin/carol", ""},
+		{"the pane never answered", "", "/usr/local/bin/carol"},
 	} {
 		rec := &ProbeRecord{
-			Runtime: "bob", CLIPath: tc.cli, LauncherPath: tc.launcher, Version: "bob 1.2.3",
+			Runtime: "carol", CLIPath: tc.cli, LauncherPath: tc.launcher, Version: "carol 1.2.3",
 			Date: time.Now().UTC(), Observables: evalProbe(passingReading("/tmp/gates/bin")),
 		}
 		if err := a.WriteProbeRecord(rec); err != nil {
 			t.Fatal(err)
 		}
 		st := a.probeStateWith(rt, resolve, version)
-		if st.Current || !strings.Contains(st.Why, "posse runtime probe bob") {
+		if st.Current || !strings.Contains(st.Why, "posse runtime probe carol") {
 			t.Errorf("%s: a record that cannot name its binary is not current: %+v", tc.name, st)
 		}
 	}
@@ -636,31 +636,31 @@ func TestProbeStateRefusesARecordThatCannotNameTheSessionsBinary(t *testing.T) {
 func TestProbeStateComparesTheLauncherSideAgainstTheLauncherSide(t *testing.T) {
 	t.Parallel()
 	a := probeApp(t)
-	rt := &Runtime{Name: "bob", Command: "bob --pid {file}"}
+	rt := &Runtime{Name: "carol", Command: "carol --pid {file}"}
 	rec := &ProbeRecord{
-		Runtime: "bob", CLIPath: "/opt/daemon/bin/bob", LauncherPath: "/usr/local/bin/bob",
-		Version: "bob 1.2.3", Date: time.Now().UTC(),
+		Runtime: "carol", CLIPath: "/opt/daemon/bin/carol", LauncherPath: "/usr/local/bin/carol",
+		Version: "carol 1.2.3", Date: time.Now().UTC(),
 		Observables: evalProbe(passingReading("/tmp/gates/bin")),
 	}
 	if err := a.WriteProbeRecord(rec); err != nil {
 		t.Fatal(err)
 	}
-	unmoved := func(string) string { return "/usr/local/bin/bob" }
+	unmoved := func(string) string { return "/usr/local/bin/carol" }
 
 	// Nothing has moved on posse's side, so nothing has drifted — even
 	// though the version reader, which can only reach posse's binary,
 	// answers something else entirely. That version belongs to another file.
-	st := a.probeStateWith(rt, unmoved, func(string) string { return "bob 9.9.9" })
+	st := a.probeStateWith(rt, unmoved, func(string) string { return "carol 9.9.9" })
 	if st.Drift {
 		t.Errorf("two PATHs naming two binaries is not drift, or a divergent box re-probes forever: %+v", st)
 	}
-	if !st.Current || !strings.Contains(st.Why, "cannot be checked") || !strings.Contains(st.Why, "/opt/daemon/bin/bob") {
+	if !st.Current || !strings.Contains(st.Why, "cannot be checked") || !strings.Contains(st.Why, "/opt/daemon/bin/carol") {
 		t.Errorf("it must name the measured binary and say the version check it is NOT doing: %+v", st)
 	}
 	// And when posse's own side really does move, that IS drift, named from
 	// the recorded launcher path and not from the measured one.
-	st = a.probeStateWith(rt, func(string) string { return "/opt/homebrew/bin/bob" }, unmoved)
-	if !st.Drift || !strings.Contains(st.Why, "/usr/local/bin/bob") || !strings.Contains(st.Why, "/opt/homebrew/bin/bob") {
+	st = a.probeStateWith(rt, func(string) string { return "/opt/homebrew/bin/carol" }, unmoved)
+	if !st.Drift || !strings.Contains(st.Why, "/usr/local/bin/carol") || !strings.Contains(st.Why, "/opt/homebrew/bin/carol") {
 		t.Errorf("a moved launcher binary is drift, and the line names both sides: %+v", st)
 	}
 	// A record whose launcher side resolved nothing at probe time keeps the
@@ -692,11 +692,11 @@ func TestProbeLaunchExeAnswersTheNameTheDriftCheckReResolves(t *testing.T) {
 	t.Parallel()
 	a := probeApp(t)
 	for _, cmd := range []string{
-		"bob --pid {file}",
-		"/opt/homebrew/bin/bob exec --pid {file} --memory {memory}",
-		"bob",
+		"carol --pid {file}",
+		"/opt/homebrew/bin/carol exec --pid {file} --memory {memory}",
+		"carol",
 	} {
-		rt := &Runtime{Name: "bob", Command: cmd}
+		rt := &Runtime{Name: "carol", Command: cmd}
 		ag, err := a.writeProbePID(probeAgentName(rt.Name), rt, t.TempDir(), "uname")
 		if err != nil {
 			t.Fatal(err)
@@ -718,15 +718,15 @@ func TestRuntimeProbeRecordsTheBinaryTheSessionResolved(t *testing.T) {
 	dir := t.TempDir()
 	srv := filepath.Join(dir, "srvbin") // the herdr daemon's PATH
 	cli := filepath.Join(dir, "clibin") // posse's own
-	srvExe := probeFakeCLI(t, srv, "bob", "bob 2.0-daemon-copy")
-	launcherExe := probeFakeCLI(t, cli, "bob", "bob 1.0-launcher-copy")
+	srvExe := probeFakeCLI(t, srv, "carol", "carol 2.0-daemon-copy")
+	launcherExe := probeFakeCLI(t, cli, "carol", "carol 1.0-launcher-copy")
 	t.Setenv("PATH", cli+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	h := fakeProbeHerdr(t, `case "$1 $2" in
 "workspace create") echo '{"id":"f","result":{"workspace":{"workspace_id":"w1"},"root_pane":{"pane_id":"w1:p1"}}}' ;;
 "pane run") PATH="`+srv+`:$PATH" /bin/sh -c "$4" >/dev/null 2>&1
 	echo '{"id":"f","result":{"type":"pane_run"}}' ;;
-"agent list") echo '{"id":"f","result":{"agents":[{"agent":"bob","agent_status":"idle","pane_id":"w1:p1","workspace_id":"w1"}]}}' ;;
+"agent list") echo '{"id":"f","result":{"agents":[{"agent":"carol","agent_status":"idle","pane_id":"w1:p1","workspace_id":"w1"}]}}' ;;
 "agent wait") echo '{"id":"f","result":{"agent":{"agent_status":"idle"}}}' ;;
 "agent explain") echo '{"id":"f","result":{"state":"idle","matched_rule":{"id":"live_prompt_box"},"visible_idle":true}}' ;;
 "pane read") echo "fake pane" ;;
@@ -747,13 +747,13 @@ esac`)
 		t.Errorf("launcher_cli_path must be posse's own answer: got %q, want %q", rec.LauncherPath, launcherExe)
 	}
 	// And the version is read off the measured binary, not off the name.
-	if rec.Version != "bob 2.0-daemon-copy" {
+	if rec.Version != "carol 2.0-daemon-copy" {
 		t.Errorf("the version must come from the binary the session resolved: %q", rec.Version)
 	}
 	// Read back from disk, because the record on disk is what every later
 	// surface reads — and it is not current, precisely because the two sides
 	// disagree here.
-	back, err := a.ReadProbeRecord("bob")
+	back, err := a.ReadProbeRecord("carol")
 	if err != nil || back == nil {
 		t.Fatalf("record: %v %v", back, err)
 	}
@@ -766,7 +766,7 @@ esac`)
 // is a real launch, not a dry render, so ADR 0042 D2's credential
 // precondition now runs before it opens a workspace at all — the same guard
 // herdrback.go's planLaunch and RelaunchAgent both ask. Forced here by
-// giving bob the SAME binary the probe's own canary picks, so its deny
+// giving carol the SAME binary the probe's own canary picks, so its deny
 // collides with its own CredBin exactly the way a real runtime's could if
 // ProbeCanaryCandidates ever grew one.
 func TestRuntimeProbeAsksTheCredentialPreconditionTooBeforeItLaunches(t *testing.T) {
@@ -798,7 +798,7 @@ esac`)
 // apart from one written after it.
 func TestProbeLauncherPathSpellsAnAbsenceRatherThanLeavingItEmpty(t *testing.T) {
 	t.Parallel()
-	absent := &Runtime{Name: "bob", Command: "definitely-not-installed-anywhere-385x --pid {file}"}
+	absent := &Runtime{Name: "carol", Command: "definitely-not-installed-anywhere-385x --pid {file}"}
 	if got := probeLauncherPath(absent); got != ProbeExeUnresolved {
 		t.Errorf("an exe posse cannot resolve must be spelled, not blank: %q", got)
 	}
@@ -806,7 +806,7 @@ func TestProbeLauncherPathSpellsAnAbsenceRatherThanLeavingItEmpty(t *testing.T) 
 	if name == "" {
 		t.Skip("no resolvable command on this host to use as the present arm")
 	}
-	present := &Runtime{Name: "bob", Command: name + " --pid {file}"}
+	present := &Runtime{Name: "carol", Command: name + " --pid {file}"}
 	if got := probeLauncherPath(present); got != path {
 		t.Errorf("a resolvable exe is recorded as its path: got %q, want %q", got, path)
 	}

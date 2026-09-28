@@ -188,8 +188,8 @@ func TestQAPromoteRemovesAHomeOverlayTheConstitutionDoesNotCarry(t *testing.T) {
 	if err := os.MkdirAll(a.RuntimesDir(), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	stray := filepath.Join(a.RuntimesDir(), "bob.yaml")
-	if err := os.WriteFile(stray, []byte("command: bob\n"), 0o644); err != nil {
+	stray := filepath.Join(a.RuntimesDir(), "carol.yaml")
+	if err := os.WriteFile(stray, []byte("command: carol\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -197,7 +197,7 @@ func TestQAPromoteRemovesAHomeOverlayTheConstitutionDoesNotCarry(t *testing.T) {
 	if _, err := os.Stat(stray); !os.IsNotExist(err) {
 		t.Errorf("a home overlay no commit carries survived a promote: %v", err)
 	}
-	if !strings.Contains(out, "removed runtimes/bob.yaml") {
+	if !strings.Contains(out, "removed runtimes/carol.yaml") {
 		t.Errorf("the removal was silent; ADR 0039 D2 says it prints:\n%s", out)
 	}
 }

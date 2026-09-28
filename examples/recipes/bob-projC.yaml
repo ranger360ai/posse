@@ -1,0 +1,18 @@
+# Recipe: an IBM Bob Shell session in project C — the third non-claude shape.
+# Launch with: posse recipe bob-projC
+#
+# Same shape as codex-projA.yaml and grok-projB.yaml: the CLI is the pane's
+# command, nothing else. See codex-projA.yaml for the `agent:` form that turns
+# a recipe into a persona session on a non-claude runtime.
+#
+# A recipe is the operator launching something to sit in (ADR 0008), which is
+# the one way bob is usable today: herdr has no `bob` detection manifest, so a
+# DISPATCHED bob session cannot be addressed at all and `posse runtime check
+# bob` refuses the launch row by name (ADR 0060 D1/D2). Sitting in a pane
+# yourself needs no detection.
+name: bob-projC
+purpose: bob
+dir: ~/code/projC
+env_files: []
+command: bob
+emoji: 🔵

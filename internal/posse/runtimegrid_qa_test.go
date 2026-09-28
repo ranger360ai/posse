@@ -65,7 +65,7 @@ func TestGridDrawsAllSixStagesAsRows(t *testing.T) {
 	// Both kinds, because they take different branches through RuntimeCheck:
 	// a template-only yaml that declares nothing, and each built-in.
 	runtimes := []*Runtime{writeRuntime(t, a, "mycli", "command: mycli --sys {file}\n")}
-	for _, n := range []string{"claude", "codex", "grok"} {
+	for _, n := range []string{"claude", "codex", "grok", "bob"} {
 		rt, err := a.LoadRuntime(n)
 		if err != nil {
 			t.Fatal(err)

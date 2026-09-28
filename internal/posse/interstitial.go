@@ -476,6 +476,88 @@ var ClaudeInterstitials = []Interstitial{{
 	Probe:   claudeOutsideReadProbe,
 }}
 
+// bobFlagSilence is the probe for a screen posse answers ON ITS OWN LAUNCH
+// LINE rather than through a config key the operator owns. It reads
+// BobCommand — the only file posse controls here — and says whether the
+// flag is still on it.
+//
+// It is a real reading and not a rubber stamp: the whole reason these two
+// screens never draw is that the template carries the flag, so a template
+// edited to drop one is a launch that opens on the screen and a grid that
+// must stop saying "silenced". Without it these rows printed the generic
+// probe-less line, "state unknown — posse cannot read this CLI's config
+// format", which is wrong twice over: there is no config file in the
+// question, and posse is not the party that cannot tell.
+func bobFlagSilence(flag string) func() Silence {
+	return func() Silence {
+		for _, w := range strings.Fields(BobCommand) {
+			if w == flag {
+				return Silence{Silenced: true, Why: "the launch line carries " + flag}
+			}
+		}
+		return Silence{Why: "the launch line no longer carries " + flag + " — nothing else silences this screen, so a fresh pane opens on it"}
+	}
+}
+
+// bobSignInSilence reads NOTHING, on purpose, and that is what it says.
+//
+// The distinction Silence exists to keep is between "posse looked and the
+// answer is no" and "posse cannot tell" — and there is a third thing here
+// which belongs with the second: posse CAN tell, cheaply, and declines to.
+// The only cheap answer to "is this box signed in to bob" lives in bob's
+// own token store under ~/.bob, and opening a credential store to fill in a
+// display row is not a read posse makes (ADR 0019 D1). A nil Probe would
+// print the same word through the generic line — "posse cannot read this
+// CLI's config format" — and that sentence is false: this is a decision,
+// and the operator reading the grid is owed the difference.
+func bobSignInSilence() Silence {
+	return Silence{Unknown: true, Why: "posse does not look: the only cheap answer is in bob's own token store under ~/.bob, and a credential store is not read to fill in a display row (ADR 0019)"}
+}
+
+// BobInterstitials — the three first-run screens bobshell 2.0.5 draws
+// (ADR 0060 D1, bench in docs/notes.d/ranger-base-v1yrt.md). None carries a
+// `danger:`: no default action on any of them mutates the machine, so none
+// of them is the ADR 0013 §2 launch-refuse class, and DangerUnsilenced
+// yields nothing for bob.
+//
+// Two of the three are answered BY THE LAUNCH LINE rather than by a config
+// key, which is what Seeded means here — the flag is on BobCommand, so
+// there is nothing for the operator to have done first. That is the same
+// exception claude's trust dialog takes, and for the folder-trust entry it
+// is literally the same grant: per session directory, and one posse already
+// types on codex's line. Their probes read the template rather than a file,
+// so the grid's "silenced" is a reading of the thing that does the
+// silencing and stops being one if the flag ever leaves the line.
+//
+// The third is the operator's, the way codex's sign-in is: posse never
+// types at a sign-in screen, and never reads whether they have. Its probe
+// says UNKNOWN and says WHY — a decision, not an inability: bob keeps its
+// token under ~/.bob, and opening a credential store to fill in a display
+// row is not a read posse makes (ADR 0019). A nil Probe would have printed
+// the same word through the generic line, "posse cannot read this CLI's
+// config format", which is the one sentence here that would be false.
+var BobInterstitials = []Interstitial{{
+	Screen:  "the IBM license agreement screen, drawn before the composer on a run that has not accepted it",
+	Where:   "the launch line (BobCommand, runtime.go)",
+	Key:     "--accept-license",
+	Silence: "the LAUNCH carries --accept-license, which is the flag bob's own screen names as the way to continue \"if you have reviewed the license\". ADR 0060 D1 is where that acceptance was decided; it is the operator's agreement, recorded in the ADR and typed by the launch, and `bob --show-license` prints the full paths for review.",
+	Seeded:  true,
+	Probe:   bobFlagSilence("--accept-license"),
+}, {
+	Screen:  "the folder-trust screen — bob refuses to run in an untrusted folder and names --trust as the way through",
+	Where:   "the launch line (BobCommand, runtime.go)",
+	Key:     "--trust",
+	Silence: "the LAUNCH carries --trust, per session directory. Same grant posse already types on codex's line (CodexFleetFlags' trust_level) and seeds on claude's (SeedClaudeTrust) — and the reason it is the launch's rather than the operator's is claude's: trust is per DIRECTORY, so a fleet that grows a new repo, worktree or scratch dir grows a new screen with it and no key answers it once.",
+	Seeded:  true,
+	Probe:   bobFlagSilence("--trust"),
+}, {
+	Screen:  `"Complete sign-in in your browser… (Press ESC or Ctrl+C to exit)" — the full-screen sign-in bob falls to when it cannot reach its gateway with a usable token. Esc or Ctrl+C EXITS the program rather than dismissing the screen, so a dispatched prompt typed at it reaches no composer; the recon typed nothing else there, so that it discards other text is ASSUMED.`,
+	Where:   "~/.bob (bob's own token store — posse does not read it)",
+	Key:     "a signed-in bob session on this box",
+	Silence: "the OPERATOR signs in ONCE, in their own bob session; posse never types at this screen and never reads whether they have, so this row stays unknown here forever rather than sometimes wrong.",
+	Probe:   bobSignInSilence,
+}}
+
 // DangerUnsilenced is ADR 0013 §2's launch rule, in one place because three
 // surfaces have to agree about it: the dispatch loop refuses before it
 // claims (dispatch.go launchSession), every other launch path refuses or

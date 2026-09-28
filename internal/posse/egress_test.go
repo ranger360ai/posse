@@ -41,7 +41,7 @@ func TestEgressAllowlistIsThePIDPlusTheRuntimesOwnHosts(t *testing.T) {
 	}
 	// Each runtime brings its own, and none brings the others'.
 	for _, c := range []struct{ rt, host string }{
-		{"codex", "chatgpt.com"}, {"grok", "cli-chat-proxy.grok.com"},
+		{"codex", "chatgpt.com"}, {"grok", "cli-chat-proxy.grok.com"}, {"bob", "bob.ibm.com"},
 	} {
 		rt, _ := a.LoadRuntime(c.rt)
 		h, _ := EgressHosts(nil, rt)
