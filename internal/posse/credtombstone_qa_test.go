@@ -177,3 +177,63 @@ func TestQAUnknownShapeKeepsItsLead(t *testing.T) {
 		})
 	}
 }
+
+// And the same sentence at the SURFACE THE OPERATOR READS (added while
+// verifying this close, ranger-base-tl0mg).
+//
+// Every pin above calls credentialToken and reads the error it returns. That
+// is the right subject for which clause the code CHOOSES, and it is not quite
+// the subject of this bead's complaint: the TAIL of this line had been correct
+// since ranger-base-6ai5, and the operator still filed 88 blind hours having
+// read the head and stopped, because the head was 200 bytes upstream of the
+// part that was right and the report they quoted was cut before it. A fix
+// whose whole point is WHICH CLAUSE COMES FIRST is verified at the line the
+// plan guard actually prints, or it is not verified at all — every unit pin
+// above stays green over a guard that truncates, re-wraps or prefixes its way
+// back into the same failure.
+//
+// So this one runs the guard: a keychain stub holding the measured tombstone,
+// the blind line taken off the rig's stderr, asserted to OPEN with the empty
+// fork and never with the class it is not. It is the sibling of
+// TestPlanGuardBlindLineNamesTheShapeItFound, which takes the same rig down
+// the renamed-or-dropped fork.
+//
+// MUTATION-CHECKED (run on ranger-base-tl0mg): returning credLeadUnknown for
+// the empty fork reds this pin at the SURFACE as well as the unit pins above,
+// which is what says the lead survives the whole path and not just the return.
+func TestQATheTombstoneLineReachesTheOperatorLeadFirst(t *testing.T) {
+	bin := keychainStub(t, "#!/bin/sh\ncat <<'JSON'\n"+tombstoneEnvelope+"\nJSON\n")
+
+	r := newBlindRig(t, guardOn)
+	keychainOnly(planReaderOf(r.d), keychainTokenAt(bin))
+
+	if n := r.run(t); n != 1 {
+		t.Fatalf("a monitoring failure still fails open when attended: %d dispatched\n%s", n, r.out())
+	}
+	errs := r.err()
+	t.Logf("operator-visible blind line:\n  %s", errs)
+
+	if !strings.Contains(errs, "plan guard: ") {
+		t.Fatalf("the rig printed no plan guard line at all: %q", errs)
+	}
+	// The lead, at the surface. This is the whole fix.
+	if !strings.Contains(errs, "holds a token field that is PRESENT BUT EMPTY") {
+		t.Errorf("the operator-visible line must open the empty fork by name: %q", errs)
+	}
+	// And never the clause the bead quoted.
+	if strings.Contains(errs, "holds no token in any shape posse knows") {
+		t.Errorf("the operator-visible line still names the class this is not: %q", errs)
+	}
+	// The tombstone's own tail: not a refresh anybody can wait for.
+	if !strings.Contains(errs, "both token fields hold nothing") {
+		t.Errorf("the tombstone's tail must say both fields are empty: %q", errs)
+	}
+	if strings.Contains(errs, "a refresh that did not complete fits") {
+		t.Errorf("a cleared refreshToken must not be reported as a refresh in flight: %q", errs)
+	}
+	// Shapes and key names only, never a value — the guardrail this whole
+	// file works under.
+	if strings.Contains(errs, "user:inference") {
+		t.Errorf("the blind line echoed a value out of the envelope: %q", errs)
+	}
+}

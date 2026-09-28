@@ -939,3 +939,139 @@ func TestQADataCeilingWarnsWhenAValueMatchesItsOwnDefinitionLine(t *testing.T) {
 		}
 	}
 }
+
+// PIN (m): D6's warning is about a refusal that REALLY HAPPENS, and the
+// remedy it prints really clears it (ADR 0050 D6, verified under
+// ranger-base-tl0mg).
+//
+// PIN (l) above is a Go-side pin: it reads OpsPatternSet and
+// WriteStampReport and never starts git. Its licence is the measurement in
+// D6 — Go's regexp and `grep -E` judge a value against its own definition
+// line identically — plus PIN (a), which proves the rendered hook refuses a
+// staged line at all. That licence is sound and it is still two hops. This
+// pin closes them into one: the config block the operator typed, staged as
+// a file in a hooked repo, committed through the rendered hook. If the
+// stamp-time warning ever describes a refusal that does not happen, or the
+// bracket remedy it prints stops clearing it, the sentence
+// `posse gates install-hooks` prints to an operator becomes false and only
+// this pin says so.
+//
+// Both arms matter and the second one more: a warning whose remedy does not
+// work sends an operator to edit a file that will be refused again, with a
+// class-only refusal that cannot tell them why — which is the state
+// ranger-base-3gdqv was filed from.
+//
+// MUTATION-CHECKED (runs on ranger-base-tl0mg).
+// M17, dataCeilingCheck renders nothing so the wall is not in the hook at
+// all, reds the refusing arm alone — that arm's teeth are the hook's.
+// M18, every ceiling class rendered as the ERE `.`, reds BOTH arms, which
+// is what gives the remedy arm teeth of its own rather than leaving it
+// green against any wall that refuses nothing.
+// M12, PIN (l)'s own mutant — judge the CLEANED value instead of the raw
+// line — leaves both arms HERE green and reds only PIN (l). That is
+// deliberate, and it is what says these two are not one pin wearing two
+// names: PIN (l) owns the reader's raw-line reading, this one owns the
+// hook.
+func TestQADataCeilingSelfMatchRefusesTheConfigThatDefinesItAndTheBracketClearsIt(t *testing.T) {
+	// No t.Parallel: newVisWallCfg sets HOME through t.Setenv.
+	const (
+		plain     = "FILL-ME"
+		bracketed = "FILL[-]ME"
+	)
+	for _, tc := range []struct {
+		name    string
+		val     string
+		refused bool
+	}{
+		{"a pure literal refuses the commit of the config that defines it", plain, true},
+		{"the bracketed remedy lets the same file land", bracketed, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			block := DataCeilingConfigKey + ":\n  " + qaCeilingClass + ": " + tc.val + "\n"
+			w := newVisWallCfg(t, "instance", block)
+
+			// FIXTURE PREMISE, both ways: the entry has to be ACCEPTED and
+			// IN FORCE before anything below means anything, and the stamp
+			// report has to be making exactly the claim this arm is about to
+			// take to git.
+			set := (&App{ConfigPath: w.home + "/config.yaml"}).OpsPatternSet()
+			if len(set.CeilingRejected) > 0 || len(set.Ceiling) != 1 || set.Ceiling[0].Class != qaCeilingClass {
+				t.Fatalf("fixture premise: the entry must be ACCEPTED, got ceiling=%+v rejected=%v", set.Ceiling, set.CeilingRejected)
+			}
+			if warned := len(set.CeilingSelfMatch) == 1; warned != tc.refused {
+				t.Fatalf("fixture premise: the stamp report must warn for exactly the arm that is refused; CeilingSelfMatch=%v, want warned=%v", set.CeilingSelfMatch, tc.refused)
+			}
+
+			// The config file as the instance repo holds it — D6's subject
+			// is that this block is itself a staged file in a hooked repo.
+			w.stage(t, w.priv, "config.yaml", block)
+			out, err := w.git(w.priv, w.persona, "commit", "-m", "x", "--", "config.yaml")
+
+			if !tc.refused {
+				if err != nil {
+					t.Fatalf("the remedy the stamp report prints must let the config land: %v\n%s", err, out)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("D6 warns that this commit is refused by the class the line defines; it landed:\n%s", out)
+			}
+			for _, want := range []string{
+				"refused by posse gate: data-ceiling content in a staged file",
+				qaCeilingClass + ": 1 hit(s)",
+				"stamped: " + VisibilityPrivate,
+			} {
+				if !strings.Contains(out, want) {
+					t.Errorf("the refusal must carry %q:\n%s", want, out)
+				}
+			}
+			// Class-only is the rule's own condition, and it binds hardest
+			// here: the refused line IS the definition, so a refusal that
+			// echoed the staged line would print the vocabulary verbatim.
+			if strings.Contains(out, plain) {
+				t.Errorf("the refusal echoed the value it matched:\n%s", out)
+			}
+			w.unstage(t, w.priv, "config.yaml")
+		})
+	}
+}
+
+// PIN (n): the self-match warning is the CEILING's, and only the ceiling's
+// (ADR 0050 D6 item 4 and the Alternatives bullet that DEFERS the same
+// warning for `beads_visibility_patterns:`; ranger-base-tl0mg).
+//
+// The deferral has a reason — the visibility arms are inside the stamp gate,
+// so the property holds only where the config's own repo is stamped public,
+// and the instance the ceiling exists for stamps that repo private — which
+// means a warning printed for a visibility pattern would hedge on a stamp
+// the reader of the report can already see. Nothing pinned it: wiring the
+// visibility read to the same accumulator left the whole ceiling, pattern,
+// visibility, stamp and hook filter green. A decision that costs nothing to
+// reverse by accident is a decision that will be.
+//
+// MUTATION-CHECKED (run recorded on ranger-base-tl0mg): passing
+// `&set.CeilingSelfMatch` in place of `nil` for OpsPatternsConfigKey reds
+// this pin and nothing else.
+func TestQASelfMatchWarningIsTheCeilingsAlone(t *testing.T) {
+	t.Parallel() // a config file in a t.TempDir and pure readers; no repo, no env
+	cfg := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(cfg, []byte(OpsPatternsConfigKey+":\n  "+qaCeilingClass+": FILL-ME\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	set := (&App{ConfigPath: cfg}).OpsPatternSet()
+
+	// FIXTURE PREMISE: accepted as a VISIBILITY pattern, and self-matching
+	// by the same rule PIN (l) measures — so the only thing keeping the
+	// warning away is the decision, not the value.
+	if len(set.Rejected) > 0 || len(set.Extra) != 1 || set.Extra[0].Class != qaCeilingClass || len(set.Ceiling) != 0 {
+		t.Fatalf("fixture premise: the entry must be an ACCEPTED visibility pattern and no ceiling configured, got extra=%+v rejected=%v ceiling=%+v", set.Extra, set.Rejected, set.Ceiling)
+	}
+	if len(set.CeilingSelfMatch) != 0 {
+		t.Errorf("a self-matching VISIBILITY pattern must not be warned as a ceiling one: %v", set.CeilingSelfMatch)
+	}
+	var report bytes.Buffer
+	set.WriteStampReport(&report)
+	if strings.Contains(report.String(), "matches its own definition line") {
+		t.Errorf("the stamp report warned about a visibility pattern's definition line — ADR 0050 defers that:\n%s", report.String())
+	}
+}
