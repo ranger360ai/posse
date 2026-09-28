@@ -263,6 +263,12 @@ default_emoji: ⚙️
 # data_ceiling_patterns:
 #   restricted-banner: [[:upper:]]+-RESTRICTED
 #   export-name: export-[0-9]{8}\.(csv|xlsx)
+# A value that matches its own definition line refuses the commit of THIS
+# file, class-only — and every plain literal does (`ACME-RESTRICTED`,
+# `FILL-ME`), because the line contains it verbatim. Write one character of
+# it in brackets (`ACME[-]RESTRICTED`: same regex everywhere else) and
+# re-stamp; `posse gates install-hooks` names the class when a value would
+# (ADR 0050 D6).
 
 # ─── verify-after (ADR 0006 §3) ──────────────────────────────────────────────
 # The one handoff the harness files itself: a closed bead with one of these

@@ -12,7 +12,10 @@ ADR 0048 D2 as amended; ranger-base-9307c, from ranger-base-h137b) ·
 amended 2026-09-03 (D2, D5, Consequences: the commit MESSAGE is a THIRD
 subject — product decision that date on ranger-base-pqlxr, landed
 2026-09-04 in ranger-base-o2v6n, which is why this line sits after the
-09-04 one above).*
+09-04 one above) · amended 2026-09-28 (D6, Alternatives: a value that
+matches its own definition line is WARNED at stamp time, never refused and
+never exempted — ranger-base-3gdqv, from monica's work-box measurement
+2026-09-27; builds in the code bead named on that bead).*
 
 > An instance that holds someone else's data has two different questions
 > to ask of a staged line. *May this be public?* is visibility, and ADR
@@ -246,6 +249,47 @@ the ceiling (f85 §4). The posture's §3 (ii) sentence "as built, the ceiling
 has no wall" becomes "the ceiling has a wall at the commit; above it,
 routing" once the code bead lands.
 
+**D6 — a value that matches its own definition line is warned at stamp
+time; the pattern stays in force and the file that defines it is not
+exempted.** *(Added 2026-09-28, ranger-base-3gdqv.)* D2 reads the ADDED
+lines of every staged file in every hooked repo, and `$RHQ_HOME/config.yaml`
+— the file that holds the key — is one of them: the instance repo is hooked
+and config.yaml rides in every archive. So a ceiling value whose regex
+matches its own line, `  <class>: <value>`, refuses the commit of the config
+that defines it, class-only, and the refusal cannot say why (class-only is
+the rule's own condition, Context). Every PURE LITERAL does this
+unconditionally, because the line contains the value verbatim: a plain
+banner (`ACME-RESTRICTED`), a marker written plainly, a placeholder
+(`FILL-ME`, which is how it was found — the work box's four definition lines
+were the only hits, four per class). A value carrying any escape or bracket
+may or may not (`\[ATTACHMENT\]` and `vault\.example\.internal` do not,
+`RESTRICTED.*` does), which is why this is a check and not a rule of thumb;
+the shipped examples never self-match by the accident of their form.
+MEASURED 2026-09-28, personal box: nine values judged identically by Go's
+`regexp` and `grep -E` against their own definition line, so the check can
+run in the reader and speak for the hook.
+
+The check lives where the list is read, once, so every renderer carries the
+same answer (D3): `OpsPatternSet()` tests each ACCEPTED ceiling entry's
+compiled regexp against the RAW bytes of the line that defined it —
+indentation, quoting and any trailing comment included, because that is the
+line the hook will read out of `git diff --cached`, not the cleaned value —
+and carries each match on the set as a class name beside the accepted and
+refused lists. `WriteStampReport` prints one line per such class: this value
+matches its own definition line, so a commit of the config file that defines
+it will be refused by the class it defines; write one literal character of it
+in brackets (`X` → `[X]`) and re-stamp. Class only — never the value, never
+the line; the value is the vocabulary. The entry stays IN FORCE: the wall is
+total, and the warning is about one file's commit, not about the pattern.
+The hook file does not carry the line (the hook is per repo; the property is
+the config's), so the L3 byte-for-byte probe is untouched. The bracketed
+form is not a trick around the wall: it is the same regex over every other
+file, and it is the form under which a plain search of the instance repo for
+the banner finds nothing — which is what fact (b) wants of a local file.
+`scripts/ceiling-fill.sh` (monica, 2026-09-27) does that rewrite at typing
+time, where the value is still the operator's to change; it stays as an
+operator convenience and is not the mechanism.
+
 ## Consequences
 
 - Every hooked repo's render changes; the L3 probe reads them all as "ours
@@ -318,3 +362,25 @@ routing" once the code bead lands.
 - **Reuse check 0's bead-shaped remedy.** A ceiling hit in the jsonl has
   no private db to be re-filed into; sending the writer there is the wrong
   door.
+- **Exempt the `data_ceiling_patterns:` block of config.yaml from the
+  staged-file arm (the bead's option (b)).** Rejected: a hole the size of one
+  file in a wall whose point is every file, keyed on a path the per-repo hook
+  does not know and would have to be stamped with; and it is unnecessary,
+  because the bracketed spelling is the same regex with the same reach and
+  costs no mechanism. *(2026-09-28, ranger-base-3gdqv.)*
+- **Refuse a self-matching value at stamp time, as the validator refuses a
+  bad ERE.** Rejected: that drops the wall for the class until the operator
+  edits, when the value works everywhere but one line. A warning keeps the
+  wall up and the commit refusal that follows now has a line that explains
+  it. *(2026-09-28.)*
+- **Rewrite the value in the harness (bracket the first character at read,
+  as ceiling-fill.sh does at typing).** Rejected: the hook would then enforce
+  a regex that is not the config's text, breaking "what is in force is what
+  the file says" and the byte-for-byte probe's meaning; and a first character
+  of `[`, `\` or `^` needs a grammar. The rewrite belongs where the value is
+  typed. *(2026-09-28.)*
+- **The same warning for `beads_visibility_patterns:`.** Deferred, not
+  rejected: the property holds, but only where the config's repo is stamped
+  public, so the line would hedge on a stamp the reader of the report already
+  sees, and the instance the ceiling exists for stamps that repo private.
+  File it on the first refusals.log line that shows it. *(2026-09-28.)*
