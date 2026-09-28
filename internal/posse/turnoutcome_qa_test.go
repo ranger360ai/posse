@@ -451,21 +451,42 @@ func TestQATurnOutcomeDeclarationIsRegistryKeyed(t *testing.T) {
 // The built-in table, which is where the fleet's answer actually lives: claude
 // reads its own transcript and grok its own session store (ranger-base-fc8go,
 // over the artifact docs/adr/0013-turn-outcome-refusal-probe.md captured).
-// codex declares none — reachable in principle (ranger-base-xaev), but its
-// refusal artifact has never been captured, and ADR 0013 §1's promotion rule
-// is that a reader waits for the capture rather than guessing the shape.
+// codex and bob declare none — reachable in principle (ranger-base-xaev), but
+// neither refusal artifact has ever been captured, and ADR 0013 §1's promotion
+// rule is that a reader waits for the capture rather than guessing the shape.
+//
+// Driven off builtinRuntimes rather than off its own keys, which is the fix
+// ranger-base-rg19l made: iterating `want` asked the three built-ins that were
+// already in it and said nothing at all about a FOURTH, so bob shipped with no
+// assertion that it reads no turn outcome (ranger-base-ymmiv) and a fifth would
+// have escaped the same way. Setting bob's adapter to claude's reader — which
+// would make dispatch run the claude transcript reader over a bob session, the
+// thing ADR 0013 §1's promotion rule forbids — went green through this table
+// and everything else in the tree (MEASURED 2026-09-28). The register shape is
+// paneModeUnmeasured's: a row per built-in, red on a new one.
 func TestQABuiltinTurnOutcomeDeclarations(t *testing.T) {
 	t.Parallel()
 	a := checkApp(t)
-	want := map[string]bool{"claude": true, "codex": false, "grok": true}
-	for name, readable := range want {
-		rt, err := a.LoadRuntime(name)
+	want := map[string]bool{"claude": true, "codex": false, "grok": true, "bob": false}
+	for _, b := range builtinRuntimes {
+		readable, declared := want[b.Name]
+		if !declared {
+			t.Errorf("built-in %s has no row here, so nothing in the tree asserts whether it reads a turn outcome — add one: a reader is promoted only on a CAPTURED refusal artifact (ADR 0013 §1), so a new built-in's row is false until someone measures its refusal", b.Name)
+			continue
+		}
+		rt, err := a.LoadRuntime(b.Name)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if rt.ReadsTurnOutcome() != readable {
-			t.Errorf("%s reads turn outcome = %v, want %v (adapter %q)", name, rt.ReadsTurnOutcome(), readable, rt.TurnOutcomeAdapter)
+			t.Errorf("%s reads turn outcome = %v, want %v (adapter %q)", b.Name, rt.ReadsTurnOutcome(), readable, rt.TurnOutcomeAdapter)
 		}
+		delete(want, b.Name)
+	}
+	// A row that outlives its built-in is a dated snapshot wearing a test's
+	// clothes — the same reason paneModeUnmeasured reds on a stale row.
+	for name := range want {
+		t.Errorf("this table names %q, which is not a built-in — delete the row rather than leaving a pin keyed on a runtime that no longer exists", name)
 	}
 	// The two readers are not one reader wearing two names: grok's refusal is
 	// not in a transcript at all, so a built-in pointed at the wrong key would

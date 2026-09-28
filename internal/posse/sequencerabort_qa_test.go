@@ -448,11 +448,42 @@ func insideOwn(q, own string) bool {
 	return q == own || strings.HasPrefix(q, own+string(os.PathSeparator))
 }
 
-// recipeRemovalsOutside returns, resolved, every absolute path an `rm` line of
-// the refusal tells a seat to remove that is not inside `own`.
+// sequencerRecipeWords is the closed list of NON-PATH, non-option words an
+// `rm` line of the refusal may hold. The rendered recipe holds exactly one —
+// `echo "    rm -rf --$posse_srm"`, whose every operand is a quoted
+// `'$posse_sg/$posse_sm'`. A word added here is a word the scan below stops
+// reading, so the reason belongs beside it.
+var sequencerRecipeWords = map[string]bool{"rm": true}
+
+// recipeRemovalsOutside returns every word of an `rm` line of the refusal that
+// this reader cannot account for as a path inside `own` — resolved where the
+// word is an absolute path it can read, and quoted as written where it is not.
 //
-// A path starts at a `/` that opens a word or sits just inside the quote that
-// opens one; an interior `/` is not a new path. This replaces a `strings.Fields`
+// The vocabulary is a WHITELIST, and that is the whole difference from the four
+// beads in front of it. ranger-base-u18bo, -f6pt2, -1h6d6 and -yplnv each asked
+// "where does this path END", and each was one spelling whose answer came back
+// wrong — a bare path, a traversal wearing `own` as a prefix, a space inside
+// quotes, a backslash and an apostrophe splice. A word that does not begin with
+// `/` asks a different question — "is this a path at all" — and a scan whose
+// spans start at a `/` never looks at it. So `rm -rf -- ../../index`, from a
+// worktree's own git dir, IS the shared `<common>/index` and was reported by
+// NEITHER scan: silence over a line that names shared state, which is the one
+// direction the other four never failed in (ranger-base-rg19l). Every spelling
+// they added fails loud; this one did not fail at all.
+//
+// Enumerating spellings is what kept losing, so this no longer does. An `rm`
+// line may hold an option word, a word in sequencerRecipeWords, or an absolute
+// path this reader can read and resolve under `own`. Anything else is reported
+// as written, unread. `cd` and `&&` are not on the list, so a recipe that grows
+// a subshell prefix is read by a person too — that is the trade, and it is the
+// same trade ranger-base-yplnv made one axis over: refuse rather than resolve,
+// on a recipe that has never held either spelling.
+//
+// Words, not `/`-spans, so a quoted operand is one word: a word runs to the
+// next blank, unless it OPENS with a quote, in which case it runs to the
+// closing one. pathSpanAt reads the span inside it and says whether that span
+// is the whole word; an unreadable word ends the line, because what follows it
+// belongs to a path this reader cannot read. This replaces a `strings.Fields`
 // walk that read the odd fields between `'`s (no check at all for a recipe that
 // prints a BARE path — the split yields nothing and every token goes unexamined,
 // ranger-base-u18bo) and then, once tokenising on whitespace, could not read a
@@ -463,20 +494,43 @@ func recipeRemovalsOutside(errs, own string) []string {
 		if !strings.Contains(line, "rm ") {
 			continue
 		}
-		for i := 0; i < len(line); i++ {
-			if line[i] != '/' {
+		for i := 0; i < len(line); {
+			if line[i] == ' ' || line[i] == '\t' {
+				i++
 				continue
 			}
-			if i > 0 && line[i-1] != ' ' && line[i-1] != '\t' && line[i-1] != '\'' && line[i-1] != '"' {
-				continue // an interior separator, not the head of a path
+			// The span starts just INSIDE an opening quote, which is the
+			// index pathSpanAt reads a quoted path at.
+			start := i
+			if line[i] == '\'' || line[i] == '"' {
+				start++
 			}
-			span, whole := pathSpanAt(line, i)
-			i += len(span)
+			span, whole := pathSpanAt(line, start)
+			next := start + len(span)
+			if start > i && next < len(line) {
+				next++ // the closing quote; the word ends after it, not at it
+			}
+			word := line[i:next]
+			i = next
 			// Unreadable is reported, not resolved: where the span is a
 			// fragment of a longer word the resolved form names a path the
-			// line does not (ranger-base-yplnv).
+			// line does not (ranger-base-yplnv). The REST of the line is that
+			// same unread path, so the reading of this line stops here.
 			if !whole {
 				out = append(out, span)
+				break
+			}
+			if strings.HasPrefix(word, "-") || sequencerRecipeWords[word] {
+				continue
+			}
+			// Not an absolute path, so not a path this reader can resolve at
+			// all: `../../index` and `sequencer/../../../index` both name the
+			// shared part from a worktree's own git dir, and neither can be
+			// told from a shell word by anything short of a parser. Reported
+			// as the WHOLE word, quotes included — the seat has to find it in
+			// the refusal, and an empty operand (`''`) has no span to print.
+			if !strings.HasPrefix(span, "/") {
+				out = append(out, word)
 				continue
 			}
 			// Resolved, not compared raw: `<own>/../../index` wears `own` as
@@ -611,11 +665,16 @@ func TestQASequencerRecipeStaysOutOfTheCommonDir(t *testing.T) {
 			t.Errorf("the recipe tells a seat to remove a packed-refs.lock (ADR 0059 D3): %q", line)
 		}
 	}
-	// Every path it tells the seat to remove is inside that dir — quoted or
-	// not, and with a space in it or without. Where the scan cannot tell
-	// WHERE a path ends it reports the span rather than resolving it, so a
-	// recipe that grows shell quoting this reader does not do lands here too
-	// (ranger-base-yplnv); pathSpanAt says which spellings those are.
+	// Every WORD on that line is an option, a word in sequencerRecipeWords, or
+	// a path inside that dir — quoted or not, and with a space in it or
+	// without. Stated over the whole word rather than over the paths in it
+	// because a word that is not a path AT ALL is what escaped last: a
+	// relative operand names no `/` for a span to start at, so it went unread
+	// by both scans while naming shared state (ranger-base-rg19l). Where the
+	// scan cannot tell WHERE a path ends it reports the span rather than
+	// resolving it, so a recipe that grows shell quoting this reader does not
+	// do lands here too (ranger-base-yplnv); pathSpanAt says which spellings
+	// those are.
 	for _, q := range recipeRemovalsOutside(errs, own) {
 		t.Errorf("the recipe tells a seat to remove %q, outside its own git dir %s (ADR 0059 D3): %q", q, own, errs)
 	}
@@ -653,11 +712,24 @@ func TestQASequencerRecipeStaysOutOfTheCommonDir(t *testing.T) {
 // (yplnv). So the cases below are lines the refusal could grow on the next
 // change to it, handed straight to the scans.
 //
-// `out` is what BOTH scans must report, and after yplnv it has two grounds:
-// the line names something outside `own` once resolved, or the scans cannot
-// read where its paths end and refuse it unread. The distinction is in
-// pathSpanAt's comment and the case names say which one each row is; what
-// matters here is that no such line goes unreported.
+// `out` is what the refusal must be REPORTED as, and after yplnv it has three
+// grounds: the line names something outside `own` once resolved, the scans
+// cannot read where its paths end and refuse it unread, or an `rm` line holds
+// a word the removal scan cannot account for as a path inside `own` at all
+// (ranger-base-rg19l). The distinction is in pathSpanAt's and
+// recipeRemovalsOutside's comments and the case names say which one each row
+// is; what matters here is that no such line goes unreported.
+//
+// `out` was BOTH scans until ranger-base-rg19l, and rmScanOnly is where that
+// stopped being true. refusalSpansOutside is defined over occurrences of the
+// COMMON DIR in the refusal, prose included, and a purely relative operand
+// carries the common dir nowhere — so nothing about widening it would let it
+// see one. Widening it to read relative spans in PROSE is the opposite of a
+// fix: the two prose rows at the foot of this table each hold a `../../index`
+// that resolves out of `own` and is an innocent sentence, so a scan that read
+// them would red the refusal for saying what a seat may not do. The removal
+// scan is therefore the only reader of that class, and it is the one whose
+// line is an instruction to delete rather than a sentence.
 func TestQASequencerScansEndAPathAtItsQuoteNotAtASpace(t *testing.T) {
 	t.Parallel()
 
@@ -667,44 +739,55 @@ func TestQASequencerScansEndAPathAtItsQuoteNotAtASpace(t *testing.T) {
 	for _, c := range []struct {
 		name string
 		line string
-		// out is what BOTH scans must say: true when the line names something
-		// outside `own` once resolved OR is refused unread, false when it is
-		// the session's own and readable.
+		// out is what the line must be reported as: true when it names
+		// something outside `own` once resolved, is refused unread, or holds a
+		// word the removal scan cannot read as a path inside `own`; false when
+		// it is the session's own and readable.
 		out bool
+		// rmScanOnly: the offending word is RELATIVE, so the line names the
+		// common dir nowhere and only recipeRemovalsOutside can see it.
+		rmScanOnly bool
 	}{
-		{"the recipe on main", "    rm -rf -- '" + own + "/CHERRY_PICK_HEAD' '" + own + "/sequencer'", false},
-		{"a quoted path with a space, still inside", "    rm -rf -- '" + own + "/a b/MERGE_MSG'", false},
-		{"THE ESCAPE: a quoted path with a space that traverses out", "    rm -rf -- '" + own + "/a b/../../../index'", true},
-		{"the same, quote never closed", "    rm -rf -- '" + own + "/a b/../../../index", true},
-		{"a quoted traversal with no space (ranger-base-f6pt2)", "    rm -rf -- '" + own + "/../../index'", true},
-		{"a bare traversal", "    rm -rf -- " + own + "/../../HEAD", true},
-		{"a bare path, inside", "    rm -rf -- " + own + "/AUTO_MERGE", false},
-		{"a trailing `..`, which is the shared worktrees dir", "    rm -rf -- '" + own + "/..'", true},
-		{"a space and a traversal clean out of the repo", "    rm -rf -- '" + own + "/a b/../../../../etc/hosts'", true},
+		{"the recipe on main", "    rm -rf -- '" + own + "/CHERRY_PICK_HEAD' '" + own + "/sequencer'", false, false},
+		{"a quoted path with a space, still inside", "    rm -rf -- '" + own + "/a b/MERGE_MSG'", false, false},
+		{"THE ESCAPE: a quoted path with a space that traverses out", "    rm -rf -- '" + own + "/a b/../../../index'", true, false},
+		{"the same, quote never closed", "    rm -rf -- '" + own + "/a b/../../../index", true, false},
+		{"a quoted traversal with no space (ranger-base-f6pt2)", "    rm -rf -- '" + own + "/../../index'", true, false},
+		{"a bare traversal", "    rm -rf -- " + own + "/../../HEAD", true, false},
+		{"a bare path, inside", "    rm -rf -- " + own + "/AUTO_MERGE", false, false},
+		{"a trailing `..`, which is the shared worktrees dir", "    rm -rf -- '" + own + "/..'", true, false},
+		{"a space and a traversal clean out of the repo", "    rm -rf -- '" + own + "/a b/../../../../etc/hosts'", true, false},
 		// ranger-base-yplnv: the two spellings that end a path somewhere the
 		// character in FRONT of the span cannot see. Each names the SHARED
 		// `<common>/index`, and each was read as a path inside `own` plus a
 		// tail with no `/` at a word boundary for anything to examine.
-		{"THE ESCAPE: a backslash-escaped space that traverses out", "    rm -rf -- " + own + "/a\\ b/../../../index", true},
-		{"THE ESCAPE: the shell's own splice for an apostrophe", "    rm -rf -- '" + own + "/a'\\''b/../../../index'", true},
+		{"THE ESCAPE: a backslash-escaped space that traverses out", "    rm -rf -- " + own + "/a\\ b/../../../index", true, false},
+		{"THE ESCAPE: the shell's own splice for an apostrophe", "    rm -rf -- '" + own + "/a'\\''b/../../../index'", true, false},
 		// And the two neighbouring spellings that were already caught, here
 		// so the fix for the two above cannot be a widening that loses them.
-		{"a backslash-escaped space inside quotes, traversing out", "    rm -rf -- '" + own + "/a\\ b/../../../index'", true},
-		{"a double-quoted path holding an apostrophe, traversing out", "    rm -rf -- \"" + own + "/a'b/../../../index\"", true},
+		{"a backslash-escaped space inside quotes, traversing out", "    rm -rf -- '" + own + "/a\\ b/../../../index'", true, false},
+		{"a double-quoted path holding an apostrophe, traversing out", "    rm -rf -- \"" + own + "/a'b/../../../index\"", true, false},
 		// A backslash that resolves INSIDE own is refused all the same: a
 		// scan that decided this one would have to know that a backslash is
 		// literal inside single quotes and an escape outside them, which is a
 		// shell parser. The rendered recipe has never carried a backslash, so
 		// refusing is the cheap end and it fails loud.
-		{"a backslash inside own is refused unread, not resolved", "    rm -rf -- '" + own + "/a\\ b/MERGE_MSG'", true},
+		{"a backslash inside own is refused unread, not resolved", "    rm -rf -- '" + own + "/a\\ b/MERGE_MSG'", true, false},
 		// Prose, where the apostrophes live. A quote-STATE machine reads
 		// `operator's` as an opening quote and welds the rest of the sentence
 		// onto the path that follows — `../../index` in the prose after it
 		// would then resolve out of `own` and red an innocent line. Reading
 		// the character in front of the span instead ends this one at the
 		// space, which is the correct reading of an unquoted path.
-		{"prose: an apostrophe before the path does not open a quote", "  the operator's " + own + "/sequencer, not ../../index — say so on your bead.", false},
-		{"prose: a path ending a sentence keeps its dot out of the path", "  CHERRY_PICK_HEAD survives in " + own + ".", false},
+		{"prose: an apostrophe before the path does not open a quote", "  the operator's " + own + "/sequencer, not ../../index — say so on your bead.", false, false},
+		{"prose: a path ending a sentence keeps its dot out of the path", "  CHERRY_PICK_HEAD survives in " + own + ".", false, false},
+		// ranger-base-rg19l: the axis none of the four before it touched — the
+		// operand is not an absolute path, so there is no span for a scan that
+		// starts at a `/` to read, and the line was reported by NEITHER scan.
+		// Each of these three resolves to the SHARED index from `own`.
+		{"a relative traversal out of own", "    rm -rf -- ../../index", true, true},
+		{"a relative traversal with cd in front", "    cd '" + own + "' && rm -rf -- ../../index", true, true},
+		{"a relative traversal through a leftover name", "    rm -rf -- sequencer/../../../index", true, true},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			rm := recipeRemovalsOutside(c.line, own)
@@ -712,9 +795,25 @@ func TestQASequencerScansEndAPathAtItsQuoteNotAtASpace(t *testing.T) {
 			if strings.Contains(c.line, "rm ") && (len(rm) > 0) != c.out {
 				t.Errorf("recipeRemovalsOutside(%q) = %q, want outside=%v", c.line, rm, c.out)
 			}
-			if (len(named) > 0) != c.out {
-				t.Errorf("refusalSpansOutside(%q) = %q, want outside=%v", c.line, named, c.out)
+			if want := c.out && !c.rmScanOnly; (len(named) > 0) != want {
+				t.Errorf("refusalSpansOutside(%q) = %q, want outside=%v", c.line, named, want)
 			}
 		})
 	}
+
+	// And a relative word is reported AS WRITTEN rather than resolved, which
+	// is the reason recipeRemovalsOutside has an arm for it instead of letting
+	// one fall through to filepath.Clean. Clean answers `../../index` for the
+	// word below — a path the line does not name, from a base the scan does
+	// not know — and printing it would be the same fiction ranger-base-yplnv
+	// refused to print for an unreadable span. The seat reading the refusal
+	// has to find the word in it.
+	t.Run("a relative word is reported as written", func(t *testing.T) {
+		t.Parallel()
+		const word = "sequencer/../../../index"
+		got := recipeRemovalsOutside("    rm -rf -- "+word, own)
+		if len(got) != 1 || got[0] != word {
+			t.Errorf("recipeRemovalsOutside reported %q, want exactly [%q]", got, word)
+		}
+	})
 }

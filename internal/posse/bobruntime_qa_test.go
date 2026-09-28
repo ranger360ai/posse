@@ -198,6 +198,25 @@ func TestQABobRuntimeCheckRefusesTheLaunchRowByName(t *testing.T) {
 // rather than off the struct — the grid IS the contract for a
 // display-by-design field, and a value the grid drops is a value nobody
 // has (ADR 0013 §1, the shape ranger-base-x7m1 pinned for rulebooks).
+//
+// "Every row" is a claim, so it is MUTATION-CHECKED (2026-09-28,
+// ranger-base-rg19l — the five it did not cover when it first shipped). Each
+// mutant applied to bob's builtinRuntimes entry alone, restored after, the
+// grid diffed to prove it is not a no-op:
+//
+//	TurnOutcomeAdapter: <the claude reader>    reds the settle row + the absence
+//	SelfSandbox: true                          reds the sandbox row
+//	SkillsCwd dropped                          reds the skills row
+//	StateDirs -> ~/.config/bobshell            reds state_dir
+//	ProjectConfigKeys -> {"guessed"}           reds project_cfg
+//	Egress with one host dropped               reds egress
+//	Record -> RecordTrusted                    reds record
+//
+// The first five went GREEN through this pin and through everything else in
+// the tree before that date — the SkillsCwd one measured with no -run filter
+// at all across internal/posse, cmd/posse and internal/treepins. So the shape
+// to keep is a want-string per declared row, anchored to the row's own label
+// where the value is a path or a word another row's prose also holds.
 func TestQABobGridDeclaresEveryRow(t *testing.T) {
 	a := checkApp(t)
 	t.Setenv("HOME", t.TempDir())
@@ -219,8 +238,13 @@ func TestQABobGridDeclaresEveryRow(t *testing.T) {
 		// rather than a borrowed one (ADR 0017 §2's two vocabularies).
 		"UNMAPPED — this runtime ignores tier: entirely",
 		"UNDECLARED — nobody has measured what this CLI does with an id it does not know",
-		// the state dir the seatbelt grants, and only it
-		"~/.bob",
+		// the state dir the seatbelt grants, and only it. Anchored to the ROW
+		// LABEL: `~/.bob` as a bare substring is also in the sign-in
+		// interstitial's prose ("bob's own token store under ~/.bob"), so it
+		// was satisfied with the state_dir row pointed somewhere else entirely
+		// — StateDirs → `~/.config/bobshell` moved 12 grid lines and nothing
+		// went red (MEASURED 2026-09-28, ranger-base-rg19l).
+		"state_dir ~/.bob —",
 		// egress: what a caged bob must reach to be a session at all
 		"bob.ibm.com", "iam.cloud.ibm.com",
 		// the container credential, by NAME
@@ -233,6 +257,28 @@ func TestQABobGridDeclaresEveryRow(t *testing.T) {
 		"precedence UNMEASURED",
 		// the three first-run screens
 		"--accept-license", "--trust", "Complete sign-in in your browser",
+		// The four rows below were declared by ranger-base-ymmiv and asserted
+		// by nothing: each of these mutants moved the grid and left the whole
+		// tree green (MEASURED 2026-09-28, ranger-base-rg19l — `go test` over
+		// internal/posse, cmd/posse and internal/treepins for the skills one).
+		//
+		// skills: cwd-discovery, not a flag. Dropping SkillsCwd renders
+		// `skills flag — , pointed at the tree posse renders per persona` — an
+		// empty flag name and a dangling comma, a malformed row — and posse
+		// then points bob at a tree its CLI never walks.
+		"cwd-discovery — " + AgentsSkillsPath + " under the session dir",
+		// sandbox: self_sandbox UNSET, so L2 is posse's seatbelt and not
+		// bob's own. Declaring it flips who enforces Edit/Write here on a CLI
+		// nobody has measured wrapping its own children.
+		"self_sandbox: unset, so `cage: seatbelt` renders sandbox-exec",
+		// settle: no turn-outcome reader. See the negative assertion below —
+		// this is the half that says what the row DOES read.
+		"turn outcome: NOT READ",
+		// project_config: the WHOLE FILE is the predicate, because
+		// project_config_keys: is unset. Declaring keys narrows the one gate
+		// that stands in front of a repo→box channel, and the grid swaps this
+		// sentence for the narrowing when it happens.
+		"the WHOLE FILE is the predicate",
 	} {
 		if !strings.Contains(flat, strings.Join(strings.Fields(want), " ")) {
 			t.Errorf("the bob grid never says %q:\n%s", want, b.String())
@@ -243,6 +289,17 @@ func TestQABobGridDeclaresEveryRow(t *testing.T) {
 	// claiming a reading nobody can make.
 	if !strings.Contains(flat, "uncounted_cap_bob:") {
 		t.Errorf("the account row does not name bob's own brake:\n%s", b.String())
+	}
+	// The turn-outcome half of that sentence, which the comment announced and
+	// nothing asserted (ranger-base-rg19l). Stated as an ABSENCE rather than
+	// as the presence of "NOT READ" above, because the two fail differently: a
+	// row naming a reader is a claim that an exhausted account is told apart
+	// from an agent that worked without closing its bead, and dispatch would
+	// then run another CLI's transcript reader over a bob session — which is
+	// what ADR 0013 §1's promotion rule forbids for a refusal artifact nobody
+	// has captured.
+	if strings.Contains(flat, "turn outcome: READ by the") {
+		t.Errorf("the settle row credits bob with a turn-outcome reader — no bob refusal artifact has been captured, so there is nothing for an adapter to read (ADR 0013 §1, ADR 0060 D4):\n%s", b.String())
 	}
 	// No screen on bob carries danger:, so nothing here refuses the launch
 	// for an interstitial — the detection gap is the only refusal.

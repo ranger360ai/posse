@@ -84,8 +84,13 @@ func TestQAEveryCreateLineNamesTheRuntime(t *testing.T) {
 				t.Errorf("create line must carry runtime/%s: %q", f.b.App.DisplayTier(c.runtime, tier), line)
 			}
 			// The negative arm: a hardcoded name, or a tag built from the
-			// wrong variable, would put SOME runtime on every line.
-			for _, other := range []string{"claude", "codex", "grok"} {
+			// wrong variable, would put SOME runtime on every line. Read off
+			// builtinRuntimes, not a literal triple: the triple was still the
+			// three built-ins of ADR 0017 after bob landed as the fourth, so a
+			// create line that wrongly named `bob/` for a claude launch was not
+			// caught (ranger-base-rg19l, over ranger-base-ymmiv).
+			for _, b := range builtinRuntimes {
+				other := b.Name
 				if other != c.runtime && strings.Contains(line, other+"/") {
 					t.Errorf("the create line names %s for a launch that went to %s: %q", other, c.runtime, line)
 				}
