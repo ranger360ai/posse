@@ -36,7 +36,12 @@ probe it was written from; §4's reap guard said `not killed` flat and
 `--force` takes it (`ForceKillSessionAndLand`,
 `reapguard_qa_test.go`) · amended 2026-09-11 (ranger-base-pqque): §4's
 reap guard gains its landing half — a kill merges a session's branch onto
-the repo's branch only over a CLOSED bead, and keeps the tree otherwise*
+the repo's branch only over a CLOSED bead, and keeps the tree otherwise ·
+amended 2026-09-28 (ranger-base-i3q6g, from ranger-base-ymmiv): §1's
+launch row gains its launch path — a bead-carrying launch refuses when
+herdr answers that it has no manifest for the runtime's argv0, above the
+claim and before the kill; `runtime check`'s exit code had been the only
+consumer of that reading*
 
 > ADR 0002 answered "can a persona *launch* safely on any runtime." ADR
 > 0012 D4 answered "can a third engine be *added* without patching the
@@ -105,6 +110,140 @@ This contract is what **dispatch** requires of that same process.
 the expensive column to get wrong: a template-only yaml with no
 declarations is `prompt: typed`, `record: untrusted`, uncounted, unmapped
 tiers — dispatchable and noisy, not silent.
+
+**The launch row's refuse now runs (amended 2026-09-28, ranger-base-i3q6g,
+from ranger-base-ymmiv).** It did not: the row said *refuse the launch*
+and the reading behind it — herdr has no manifest for this argv0 —
+reached `posse runtime check` (exit 1) and `posse runtime probe` (refuses
+to open a pane) and no launch path. MEASURED 2026-09-28 on this HEAD by
+reading the call sites: `RuntimeGap.Blocking` had exactly those two
+consumers; `planLaunch` refused on a `danger:` screen and on
+`env_required:` and on nothing else; `launchSession` on `danger:` only.
+That is the third time a row of this grid has held a printed sentence
+with no launch behind it (9r33: the danger refuse; vbp3: the declared
+screen; now detection), which is why this block names the class and not
+only the fix: **a "missing → refuse" cell in this grid is a claim about a
+launch, and its pin is a dispatch that creates nothing, never an exit
+code.**
+
+What the gap costs, on a typed runtime herdr cannot name (bob is the
+only one declared today, ADR 0060; every template-only yaml whose argv0
+herdr does not know is the same shape). Per attempt: the worktree, the
+workspace, the pane, the runtime's own first turn (bob spends one on the
+PID, D3), then `startup_wait` of no answer — `AgentTarget` lists herdr's
+agents for the workspace and finds none, so the wait cannot even reach
+the settle gate — then `sessionFailure`: the slot stays free once and is
+benched on the second (§2 ceiling), and the pane is stranded, alive. The
+next pass, same bead, is worse: the Dial F session resolves with no
+agent status, which is the *CLI died* signal, so `RelaunchAgent` passes
+its 45s grace, finds no agent, and **types the persona's launch line
+into the live TUI's composer as a chat turn**. And every line printed
+along the way names the wrong cause — `no agent detected in <session>
+after 45s — check the session` reads as a slow start, whose remedy is a
+larger `startup_wait:`, which changes nothing. Zero occurrences on this
+box so far (MEASURED 2026-09-28: 51 `never became promptable` lines in
+`state/dispatch-*.log`, all 51 the idle-fallback shape, 0
+`agent_not_found`; no shipped PID names `runtime: bob`), so the price of
+doing nothing today is zero and the sentence in ADR 0060 D2 is false of
+the code. The refusal is cut for the first undetectable runtime, not for
+bob.
+
+The rule, as properties the builder needs and not as helper names:
+
+1. **It is a reading, never ignorance** (9r33's rule, unchanged). The
+   launch refuses only on herdr's own answer that it has no manifest for
+   the runtime's argv0 — the same question `runtime check`'s launch row
+   asks, aliases included, one function, so the grid and the launch
+   cannot disagree (9r33's one-rule-three-surfaces shape). A herdr that
+   cannot be asked, or whose output has moved, is UNKNOWN and refuses
+   nothing; the launch proceeds exactly as today.
+2. **It is the detection reading, not the `Blocking` bit.** `Blocking`
+   stays `runtime check`'s exit-code classification: an unread yaml key
+   is Blocking there by that command's stricter standard and a launch
+   warns and proceeds on it by design (the file is the operator's own
+   config root). A launch that looped over every Blocking gap would start
+   refusing over a typo in a key nothing reads. The launch reads one gap.
+3. **Before anything is spent, on every path that types a launch line.**
+   Dispatch: above the claim and above both delivery branches, beside the
+   `danger:` refusal, because the argv branch claims before it creates
+   (§2). Recreate (`posse relaunch`): before the kill — relaunch already
+   asks herdr one question between the plan and the kill
+   (`provenNameTakeable`), and this is a second on the same rung; the
+   session the operator asked to refresh stays theirs. Re-type in place
+   (`RelaunchAgent`, the *agent gone, session kept* arm): refuses by name
+   rather than typing, because on an undetectable runtime *no agent
+   detected* is the steady state of a live CLI, not evidence it died.
+   Every other bead-carrying path (a cockpit `d`, a recipe) refuses
+   before a pane exists.
+4. **It is the persona/runtime arm of the busy key** (§2): a plain
+   refusal like `DangerRefusal`, so the slot is benched for the pass on
+   the first bead and nothing is claimed for the rest — one refusal per
+   benched slot per pass, never one per bead. It counts as a launch
+   attempt the way the danger refusal does; the constitution refusal's
+   ration hand-back was for a fact about the whole home that every seat
+   read, and this is one persona's runtime.
+5. **Dispatched refuses, interactive warns** — ADR 0015 §3's asymmetry,
+   load-bearing here as it was for codex's menu: the fixtures the
+   upstream detection filing needs are captured from an interactive
+   session (ADR 0060 D2), so a posse that refused `posse new` on an
+   undetectable runtime would wall off the only way to end its own
+   refusal. That asymmetry is the escape hatch; there is no flag
+   (`--allow-undetected` was rejected in 0060 D2 and stays rejected).
+6. **The line names the cause and the door, never the session.** It says
+   herdr has no manifest for argv0 *X*, that a dispatched session there is
+   `agent_not_found` and cannot be addressed, and where to go: `posse
+   runtime check <name>`, and the manifest runbook — or, for a built-in
+   whose detection is upstream's to ship, the filing (0060 D2). It never
+   says *check the session*; there is none.
+
+Price: one `agent explain` over an empty file per launch that creates or
+recreates a session. MEASURED 2026-09-28, herdr 0.9.1 on this box (the
+tripwire in `bobtripwire_qa_test.go` still reads `unknown_agent` for bob
+on 0.9.1, so 0060's gap stands on the newer herdr): 0.00s for an unknown
+label, 0.03–0.04s for a known one, and no cache — a cached reading is a
+second store of a fact herdr owns, stale across the very upgrade the
+tripwire waits for. The test substrate is unaffected by construction:
+the shared fake herdr's `agent explain` carries neither
+`manifest_version` nor `unknown_agent` (`herdr_test.go`, `fakeExplain`),
+which the reader grades UNKNOWN, so every existing dispatch pin launches
+as before and the new pins need the `unknown_agent` fake
+`bobruntime_qa_test.go` already writes.
+
+Rejected, priced:
+
+- **Do nothing** — the operator's grid is the refusal surface. Zero cost
+  today (the census above), but the danger row sat in exactly this state
+  and was filed as a P2 bug (9r33), the second-pass composer typing is
+  latent for the first undetectable runtime, and 0060 D2 would keep
+  saying *refuses by name* about a launch that spends.
+- **Amend 0060 D2 and this row to say the refusal is `runtime check`'s
+  exit code and a spent launch is the named degrade.** Honest prose,
+  wrong contract: it would make *refuse the launch* mean an exit code
+  nobody on the dispatch path reads, and it does not close the typing
+  hazard.
+- **Refuse on any `Blocking` gap** (the bead's option 1 as filed). Row 2:
+  the yaml gap would refuse the operator's own config.
+- **A per-pass cache of the reading.** Priced above; 40ms is not worth a
+  second store.
+- **A smarter `RelaunchAgent` liveness read** (process-info instead of
+  the agent label) so the in-place arm could tell a dead CLI from a live
+  undetectable one. The general question — *no agent detected* is not
+  *CLI gone* — is real, but its only known instance is the one this
+  refusal removes, and a liveness read keyed on argv would be a second
+  detection for one runtime. Trigger: a runtime herdr labels
+  intermittently.
+- **Refuse interactive too.** Row 5.
+
+The pins are the row's own words: a dispatch onto a herdr that answers
+`unknown_agent` creates no workspace, claims nothing, prints argv0 and
+the door, and benches the slot rather than the bead; the same profile
+against a herdr that answers with a manifest launches; a herdr that
+cannot be asked launches; `posse new` warns and proceeds; a relaunch
+refuses with the session still alive; the in-place arm types nothing;
+and `runtime check`'s launch row and the launch refusal agree on the
+same fake (the three-surface pin, 9r33's shape). Cut as ranger-base
+beads for the builder on close of ranger-base-i3q6g; `git log --grep
+ranger-base-i3q6g` on main is the record of what landed.
 
 **Settle's declared half (added 2026-08-28, ranger-base-02zr).** herdr's
 settle says the pane went quiet; it cannot say whether a model ever

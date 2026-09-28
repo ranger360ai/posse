@@ -98,6 +98,19 @@ new`, the operator's own keyboard) and cannot **dispatch** — the launch
 row refuses by name, which is what ADR 0013 §1 says a missing launch
 observable does. No flag, no `--allow-undetected`.
 
+*Snapshot 2026-09-28 (ranger-base-i3q6g): when this record was accepted
+the sentence above was true of the grid and not of a launch — the
+detection reading reached `posse runtime check` and `posse runtime
+probe` and no dispatch path, so a dispatched Bob session would have
+spent the worktree, the pane, the PID turn and a `startup_wait` before
+timing out as a slow start, and the next pass's `RelaunchAgent` would
+have typed the launch line into the live composer. ADR 0013 §1 now
+carries the rule and its properties (a reading, never ignorance; above
+the claim and before the kill; dispatched refuses, interactive warns;
+the line names argv0 and this filing, never the session). The code lands
+under the beads cut from ranger-base-i3q6g; `git log --grep
+ranger-base-i3q6g` on main is the record, this sentence is a snapshot.*
+
 **D3 — The PID rides `-p` as the first user message; the work prompt is
 typed.** Bob has no launch-time system channel: no rules flag, no
 system-prompt flag. Its instruction files are all read from the
