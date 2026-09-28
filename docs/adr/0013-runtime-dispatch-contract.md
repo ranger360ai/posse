@@ -241,9 +241,10 @@ against a herdr that answers with a manifest launches; a herdr that
 cannot be asked launches; `posse new` warns and proceeds; a relaunch
 refuses with the session still alive; the in-place arm types nothing;
 and `runtime check`'s launch row and the launch refusal agree on the
-same fake (the three-surface pin, 9r33's shape). Cut as ranger-base
-beads for the builder on close of ranger-base-i3q6g; `git log --grep
-ranger-base-i3q6g` on main is the record of what landed.
+same fake (the three-surface pin, 9r33's shape). Cut as
+ranger-base-d8riq (dispatch and create) and ranger-base-enmu2 (the two
+relaunch arms, blocked on the first); `git log --grep ranger-base-i3q6g`
+on main is the record of what landed, this sentence is a snapshot.
 
 **Settle's declared half (added 2026-08-28, ranger-base-02zr).** herdr's
 settle says the pane went quiet; it cannot say whether a model ever
