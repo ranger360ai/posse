@@ -126,7 +126,7 @@ and a running coin total, a blank in the money column — and it needs a
 requires). Until a Bob session can be dispatched there is no bead
 segment to attribute, so the adapter earns nothing today; the account
 row reads UNCOUNTED and `uncounted_cap_bob:` is the brake (0013 §5).
-Trigger: the first dispatched Bob close. Shape when built: `cost_bob.go`
+Trigger: the first dispatched Bob close. Shape when built: a `cost_*.go` adapter for Bob
 beside `cost_grok.go`, segment by the `Work beads issue` user message,
 sum assistant `_meta.spend.cost` per segment. A turn-outcome reader
 joins the registry only after Bob's own refusal artifact is captured
