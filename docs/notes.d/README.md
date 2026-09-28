@@ -10,6 +10,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-v1yrt](ranger-base-v1yrt.md) — Bob on herdr 0.8.2: three detection routes measured, one alive by half (ranger-base-v1yrt) — 2026-09-28
 - [ranger-base-tghn5](ranger-base-tghn5.md) — ranger-base-tghn5 — the keychain read names an ACCOUNT — 2026-09-28
 - [ranger-base-rg19l](ranger-base-rg19l.md) — Why the sequencer recipe scan stopped enumerating spellings (ranger-base-rg19l) — 2026-09-28
+- [ranger-base-mx5x9](ranger-base-mx5x9.md) — Reported and detected labels do not expire the same way (ranger-base-mx5x9) — 2026-09-28
 - [ranger-base-mis0i](ranger-base-mis0i.md) — A fixture CLI is named for nothing real (ranger-base-mis0i) — 2026-09-28
 - [ranger-base-8eqaa](ranger-base-8eqaa.md) — ranger-base-8eqaa — typed prompt delivery to a pane herdr labels but does not detect — 2026-09-28
 - [ranger-base-58qr8](ranger-base-58qr8.md) — ranger-base-58qr8 — the empty-token line led with the wrong class — 2026-09-28
