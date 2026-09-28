@@ -54,6 +54,16 @@ package posse
 // and making every hand prompt cost 45 silent seconds against such a herdr
 // would be a worse regression than the bug. A guess is a real answer and
 // holds the full wait; only the never-answered case is cut short.
+//
+// AND THE PANE WITH NO SCREEN READING AT ALL (ranger-base-8eqaa). Everything
+// above is about `agent explain`, which herdr refuses outright for a pane
+// whose agent label it did not detect but somebody else REPORTED
+// (agent_explain_unavailable). Against such a pane every poll of the gate
+// errors and it falls into the concession in the paragraph above — the
+// weakest reading there is, over a pane that has a perfectly good one. So
+// there is a second gate below, awaitReportedPromptable, taking the same
+// decision off the reported lifecycle state; the route between them is
+// Herdr.ReportedAgent, and reportedagent.go carries why.
 
 import (
 	"fmt"
@@ -87,6 +97,16 @@ const (
 // the refusal it is the last guess, which is what the error already
 // describes.
 func (b *HerdrBackend) AwaitPromptable(session, target string) (AgentDetection, string, error) {
+	// A pane herdr LABELS but does not DETECT has no screen reading at all:
+	// `agent explain` answers agent_explain_unavailable, so every poll below
+	// errors and the gate falls into its never-answered concession —
+	// prompting with no readiness reading at all, which is the opposite of
+	// what such a pane deserves. It has a real state, stated by the
+	// authority that labelled it; that reading is the gate
+	// (ranger-base-8eqaa).
+	if ag, reported := b.H.ReportedAgent(target); reported {
+		return b.awaitReportedPromptable(session, target, ag)
+	}
 	wait := b.promptReadyWait(session)
 	start := time.Now()
 	deadline := start.Add(wait)
@@ -138,13 +158,99 @@ func (b *HerdrBackend) AwaitPromptable(session, target string) (AgentDetection, 
 		session, wait, lastGuess.State, reason, session, lastGuess.WhatHerdrSaw())
 }
 
-// seenBy names the positive evidence the gate opened on, in herdr's own
-// words — the rule that matched, or the chrome it saw without one.
-func seenBy(det AgentDetection) string {
-	if det.Rule.ID != "" {
-		return fmt.Sprintf("%s via rule %q", det.State, det.Rule.ID)
+// awaitReportedPromptable is the gate over a pane whose agent label came
+// from `pane report-agent` — a herdr plugin, or any other external
+// authority (ranger-base-8eqaa).
+//
+// SAME RULE, DIFFERENT EVIDENCE. It asks the question the screen gate asks —
+// does the CLI hold the keyboard — and answers it from the only source that
+// can speak about this pane: the reported lifecycle state. Any named state
+// is a yes, because an authority does not report idle, working, done or
+// blocked about a CLI it has not seen start. `unknown` is the reported way
+// of saying nothing is known, and it waits exactly as a guess does.
+//
+// It does NOT refuse a blocked pane, and that is deliberate rather than an
+// omission: the screen gate opens on blocked too, and delivery is where the
+// refusal lives — sendTextPrompt mirrors herdr's own agent_blocked rejection
+// so that both routes refuse in the same place, by the same rule, with the
+// same code. A gate that refused here as well would make the two routes
+// disagree about which failure a caller sees.
+//
+// The concession is the same one and for the same reason: an `agent get`
+// that will not answer is not evidence of unreadiness, and after
+// promptExplainGrace of nothing but errors it prompts out loud rather than
+// spending a whole startup wait on a reading that is not working.
+func (b *HerdrBackend) awaitReportedPromptable(session, target string, first HerdrAgent) (AgentDetection, string, error) {
+	wait := b.promptReadyWait(session)
+	start := time.Now()
+	deadline := start.Add(wait)
+	answered, attempts := false, 0
+	// ag is the last reading that ANSWERED, never the last one attempted: a
+	// poll that errored says nothing about the pane, and the refusal below
+	// names a state and a label, which an error has neither of (the rule
+	// rangerhq-lhy2 put on the screen gate, one reading over). The first
+	// attempt spends no call — ReportedAgent's own `agent get` is what
+	// routed us here, microseconds ago, and asking again would make every
+	// reported prompt cost two.
+	ag := first
+	var lastErr string
+	for {
+		attempts++
+		cur, err := ag, error(nil)
+		if attempts > 1 {
+			cur, err = b.H.AgentInfo(target)
+		}
+		switch {
+		case err != nil:
+			lastErr = err.Error()
+		case cur.AgentStatus != "" && cur.AgentStatus != "unknown":
+			det := AgentDetection{State: cur.AgentStatus, Reported: cur.Agent}
+			if attempts > 1 {
+				return det, fmt.Sprintf("waited %s for %s to report a state (%s)",
+					time.Since(start).Round(100*time.Millisecond), session, seenBy(det)), nil
+			}
+			return det, "", nil
+		default:
+			lastErr, answered, ag = "", true, cur
+		}
+		if !answered && time.Since(start) >= promptExplainGrace {
+			break
+		}
+		if !time.Now().Add(promptReadyPoll).Before(deadline) {
+			break
+		}
+		time.Sleep(promptReadyPoll)
 	}
-	return fmt.Sprintf("%s, visible chrome", det.State)
+	if !answered {
+		return AgentDetection{}, fmt.Sprintf("herdr cannot describe %s (%s) — prompting without the readiness gate", session, lastErr), nil
+	}
+	return AgentDetection{Reported: ag.Agent}, "", Die("nothing was sent: %s is labelled %q by something other than herdr's own detection, and that authority reports its state as "+
+		"%q — which is what a CLI nobody has watched start looks like, and text typed there lands in whatever holds the keyboard "+
+		"(ranger-base-3p0). herdr cannot read this screen itself (`agent explain` refuses a reported pane), so this state is the "+
+		"whole reading. Prompt again once it has settled, look first (posse peek %s), or send it anyway with --now",
+		session, ag.Agent, orUnknown(ag.AgentStatus), session)
+}
+
+// orUnknown names the state a reported pane has when it has none, in the
+// authority's own vocabulary rather than as an empty string in a message.
+func orUnknown(state string) string {
+	if state == "" {
+		return "unknown"
+	}
+	return state
+}
+
+// seenBy names the positive evidence the gate opened on, in herdr's own
+// words — the rule that matched, the chrome it saw without one, or, for a
+// pane herdr did not detect at all, the label whoever did report it used.
+func seenBy(det AgentDetection) string {
+	switch {
+	case det.Rule.ID != "":
+		return fmt.Sprintf("%s via rule %q", det.State, det.Rule.ID)
+	case det.VisibleIdle:
+		return fmt.Sprintf("%s, visible chrome", det.State)
+	}
+	return fmt.Sprintf("%s, reported for agent %q (herdr detects no such kind)", det.State, det.Reported)
 }
 
 // promptReadyWait is how long this session's runtime is given to reach a

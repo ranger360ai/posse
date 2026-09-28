@@ -22,10 +22,13 @@ package posse
 //     is that the profile says so out loud and `runtime check` exits 1 —
 //     a profile that quietly printed six green rows over a runtime nothing
 //     can address is the failure the grid exists to remove.
-//  3. the typed-delivery `/` hazard under promptable (ADR 0060 D5). It has
-//     no code guard by design — there is no dispatched caller until
-//     detection lands — so the ONE thing carrying it is this line on this
-//     screen. Delete the line and nothing else goes red.
+//  3. the typed-delivery `/` hazard under promptable (ADR 0060 D5). It is
+//     now guarded in code too — a herdr plugin supplies the detection D5
+//     was waiting on, so the caller arrived and sendTextPrompt refuses a
+//     leading `/` outright (ranger-base-8eqaa). This line is still the only
+//     thing that puts the hazard in front of the OPERATOR, who reads the
+//     grid before ever reaching a refusal: delete it and nothing else goes
+//     red on the reading, only on the send.
 //
 // The herdr in these tests is a fake binary, and it ANSWERS BOTH WAYS on
 // purpose: `Herdr{Bin: "no-such-herdr-binary"}` reads UNKNOWN, which is a

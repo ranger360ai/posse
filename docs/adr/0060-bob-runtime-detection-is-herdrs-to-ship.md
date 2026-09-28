@@ -152,6 +152,21 @@ prompt never does; this is a hazard for `posse prompt` operators and is
 documented in the profile's `runtime check` notes, not guarded in code —
 there is no caller until detection lands.
 
+*Snapshot 2026-09-28 (ranger-base-8eqaa): the caller arrived, from the
+route this record measured half-alive and declined to build. The
+MartinLoeper/herdr-bob PLUGIN is the reporter — third-party, installed
+by the operator, so the "daemon in costume" posse would have had to run
+is somebody else's process (ranger-base-p8afi). That leaves posse one
+gap, and it is exactly the one Context 3 named: `agent prompt` refuses a
+reported pane (`agent_not_ready`), so typed delivery goes in by `pane
+send-text` + Enter. It is keyed on the PANE, never on this runtime's
+name — a label herdr has no manifest for, asked of herdr — so there is
+no second name-keyed mechanism and nothing to prune the day D2's
+tripwire fires. The `/` hazard is now refused in code on that route as
+well as printed in the grid; the grid line stays, because the operator
+reads it before they ever reach a refusal. `git log --grep
+ranger-base-8eqaa` is the record, this paragraph is a snapshot.*
+
 ## Consequences
 
 - Built: one built-in entry plus its declared tables; one filing package

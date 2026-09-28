@@ -641,7 +641,19 @@ func (h Herdr) PaneAgentSession(paneID string) (string, error) {
 
 // AgentPrompt submits text to an agent (unique name or hosting pane id).
 // wait=true blocks until the first settled idle|done|blocked state.
+//
+// It is the ONE door for typed delivery, and the route is chosen here rather
+// than at the seven call sites so that none of them can be the one that
+// forgot. A pane herdr labels but does not detect cannot be addressed by the
+// `agent prompt` verb at all (agent_not_ready), and is typed into instead —
+// reportedagent.go carries the measurement, the discriminator and the
+// contract that route mirrors. Every other pane reaches the verb below on
+// the same argv it always did, including when the readings this branch needs
+// cannot be taken.
 func (h Herdr) AgentPrompt(target, text string, wait bool, timeoutMS int) (json.RawMessage, error) {
+	if ag, reported := h.ReportedAgent(target); reported {
+		return h.sendTextPrompt(ag, text, wait, timeoutMS)
+	}
 	args := []string{"agent", "prompt", target, text}
 	if wait {
 		args = append(args, "--wait")
@@ -708,6 +720,15 @@ type AgentDetection struct {
 	// — see WhatHerdrSaw and ranger-base-3j8 for why a launch failure that
 	// does not say this costs a hand-launch and a peek to diagnose.
 	EvaluatedRules []EvaluatedRule `json:"evaluated_rules"`
+	// Reported is posse's own field, never herdr's — the agent LABEL a
+	// pane carries when `agent explain` refuses to describe it at all, so
+	// the state above came from whoever reported it through `pane
+	// report-agent` (ranger-base-8eqaa). It is positive evidence of the one
+	// thing Seen asks about — some authority has watched this CLI's
+	// lifecycle, so the CLI has the keyboard — and it is the ONLY evidence
+	// available for such a pane, because every herdr-side reading here is a
+	// screen reading and herdr will not read that screen as an agent's.
+	Reported string `json:"-"`
 }
 
 // EvaluatedRule is one line of herdr's working: a manifest rule, whether it
@@ -735,7 +756,7 @@ type EvaluatedRule struct {
 // Seen reports whether herdr actually recognized what is on the screen,
 // rather than guessing from the fact that a known agent lives in the pane.
 // Positive evidence only: a matched rule, or chrome herdr can see.
-func (d AgentDetection) Seen() bool { return d.Rule.ID != "" || d.VisibleIdle }
+func (d AgentDetection) Seen() bool { return d.Rule.ID != "" || d.VisibleIdle || d.Reported != "" }
 
 // AgentExplain asks herdr why an agent is in the state it is in. `explain
 // --json` prints a bare object, not a result envelope — Run hands that back

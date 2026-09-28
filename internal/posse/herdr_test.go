@@ -1823,7 +1823,70 @@ func fakeHerdr(args []string) int {
 		}
 		fmt.Print("prompt$ echo hi\nhi\nprompt$\n")
 		return 0
+	case "agent get":
+		// `agent get <pane>` — the ONE reading that answers for a pane
+		// labelled through `pane report-agent`, which `agent explain`
+		// refuses outright (ranger-base-8eqaa). Absent lever means the real
+		// 0.9.1 answer for a pane with no agent in it: an error, which is
+		// what every caller of this fake got before the lever existed and
+		// what keeps the reported route unreachable unless a test asks for
+		// it.
+		//
+		//	reported-agent   "<label>|<status>" — the label and the state
+		//	                 whoever reported it stated. A bare label means
+		//	                 idle; an EMPTY status means the authority has
+		//	                 said nothing yet (herdr's "unknown").
+		//	agent-get-error  "code|message" — the read fails (the lever shape
+		//	                 every other arm here uses)
+		if b, err := os.ReadFile(filepath.Join(fakeDir(), "agent-get-error")); err == nil {
+			code, msg, ok := strings.Cut(strings.TrimSpace(string(b)), "|")
+			if !ok {
+				msg = "fake herdr: agent get refused"
+			}
+			return fakeErr(code, msg)
+		}
+		b, err := os.ReadFile(filepath.Join(fakeDir(), "reported-agent"))
+		if err != nil || len(args) < 3 {
+			return fakeErr("agent_not_found", "fake herdr: no agent on that pane")
+		}
+		label, status, ok := strings.Cut(strings.TrimSpace(string(b)), "|")
+		if !ok {
+			status = "idle"
+		}
+		return fakeOK(fmt.Sprintf(`{"type":"agent_info","agent":{"agent":%q,"agent_status":%q,"pane_id":%q}}`,
+			label, status, args[2]))
+	case "pane send-text":
+		// The reported route's delivery. Recorded in calls.log like
+		// everything else, which is how a test pins that the text went in
+		// this way and not through `agent prompt`.
+		if b, err := os.ReadFile(filepath.Join(fakeDir(), "send-text-error")); err == nil {
+			code, msg, ok := strings.Cut(strings.TrimSpace(string(b)), "|")
+			if !ok {
+				msg = "fake herdr: send-text refused"
+			}
+			return fakeErr(code, msg)
+		}
+		return fakeOK(`{"type":"pane_send_text"}`)
+	case "pane send-keys":
+		return fakeOK(`{"type":"pane_send_keys"}`)
 	case "agent explain": // a BARE object, like the real `explain --json`
+		// `explain --agent <label> --file <screen>` is a different question
+		// from `explain <pane>`: it is AgentManifest asking whether herdr
+		// has a manifest for one LABEL at all, and it is what decides the
+		// prompt route (reportedagent.go). The lever names the labels this
+		// herdr was compiled with; absent means every label is known, which
+		// is the answer every test that predates the lever needs.
+		//
+		//	herdr-kinds   space-separated labels this fake has manifests for
+		if want := fakeExplainAgentArg(args); want != "" {
+			kinds, err := os.ReadFile(filepath.Join(fakeDir(), "herdr-kinds"))
+			if err == nil && !containsString(strings.Fields(string(kinds)), want) {
+				fmt.Printf(`{"agent":%q,"fallback_reason":"unknown_agent","manifest_version":null}`+"\n", want)
+				return 0
+			}
+			fmt.Printf(`{"agent":%q,"fallback_reason":null,"manifest_version":"2026.09.28.1"}`+"\n", want)
+			return 0
+		}
 		if b, err := os.ReadFile(filepath.Join(fakeDir(), "explain-error")); err == nil && fakeExplainErrorArmed() {
 			code, msg, ok := strings.Cut(strings.TrimSpace(string(b)), "|")
 			if !ok {
@@ -1910,6 +1973,19 @@ func fakeExplainErrorArmed() bool {
 	}
 	os.WriteFile(p, []byte(strconv.Itoa(n-1)), 0o644)
 	return false
+}
+
+// fakeExplainAgentArg returns the --agent value on an `agent explain` call,
+// or "" when there is none. Its presence is what separates the manifest
+// question (explain --agent X --file f) from the screen question (explain
+// <pane>) — the real herdr answers both through one verb.
+func fakeExplainAgentArg(args []string) string {
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] == "--agent" {
+			return args[i+1]
+		}
+	}
+	return ""
 }
 
 // fakeExplain answers `agent explain --json` in one of the two shapes a real
