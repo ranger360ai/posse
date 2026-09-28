@@ -89,8 +89,15 @@ func TestWrongShapeNamesTheKeysItFound(t *testing.T) {
 			blob: `{"claudeAiOauth":{"accessToken":"","refreshToken":"r"}}`,
 			wants: []string{"claudeAiOauth's keys are [accessToken refreshToken]",
 				"incomplete credential", "re-authenticate rather than change posse",
-				"a refreshToken is present"},
-			not: []string{"renamed or dropped"},
+				"a refreshToken is present",
+				// The LEAD, not only the tail (ranger-base-58qr8). This fork
+				// is the one that is not a shape at all, and the first clause
+				// of the line has to say so — the operator who read 88 blind
+				// hours as a renamed key read no further than that clause.
+				"PRESENT BUT EMPTY"},
+			not: []string{"renamed or dropped",
+				// And it must not OPEN by naming the class it is not.
+				"holds no token in any shape posse knows"},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -167,9 +174,10 @@ func TestObservedOutageShapeNamesBothLevels(t *testing.T) {
 				"claudeAiOauth's keys are [accessToken expiresAt rateLimitTier refreshToken " +
 					"refreshTokenExpiresAt scopes subscriptionType]",
 				"incomplete credential", "re-authenticate rather than change posse",
-				"a refreshToken is present",
+				"a refreshToken is present", "PRESENT BUT EMPTY",
 			},
-			not: []string{"renamed or dropped", "teach credShapes"},
+			not: []string{"renamed or dropped", "teach credShapes",
+				"holds no token in any shape posse knows"},
 		},
 		{
 			name:  "the fork it was not — accessToken gone, and ours to fix",

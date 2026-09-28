@@ -1363,6 +1363,28 @@ type credShape struct {
 // incomplete credential, fixed by re-authenticating, and the shop came back
 // with no change to this file. Guessing a shape and appending it would have
 // been a second wrong diagnosis on top of the first.
+//
+// It stayed at one entry through 2026-09-28 (ranger-base-58qr8) for the same
+// reason, and that bead is the one that asked for a second entry by name.
+// MEASURED off the shipped darwin-arm64 bundles on this box — 2.1.268, the
+// last version that read, and 2.1.278/2.1.280/2.1.283, the window the meter
+// went blind in — by `strings` over the binary, which is a read of the
+// program and not of any store:
+//
+//   - The keychain SERVICE name is derived by the same expression in every
+//     one of the four: `Claude Code`, OAUTH_FILE_SUFFIX, `-credentials`, and
+//     — when the environment names a config dir — `-` plus the first 8 hex
+//     digits of sha256 over that directory string. That is keychainItem()
+//     above, rule for rule. posse asks the right store for the right item.
+//   - The ENVELOPE is the same one: `claudeAiOauth.accessToken`, written by
+//     the same mutate. No key was renamed and no second envelope appeared.
+//   - What changed is the STATE, not the shape: the runtime empties both
+//     token fields in place when a refresh is refused (refreshHint below has
+//     the measurement). An emptied field is not a shape, and a credShapes
+//     entry for it would be an entry that can never match.
+//
+// So: nothing to append here, again, and for the third time the way to know
+// that was to measure rather than to guess.
 var credShapes = []credShape{
 	{
 		Name: "claudeAiOauth.accessToken",
@@ -1431,9 +1453,31 @@ func credentialToken(store string, out []byte) (string, CredMeta, error) {
 			return t, CredMeta{Source: store, Shape: s.Name, ExpiresAt: s.Expires(top)}, nil
 		}
 	}
-	return "", CredMeta{}, Die("%s holds no token in any shape posse knows (tried %s) — %s",
-		store, credShapeNames(), foundShape(top))
+	lead, detail := shapeFailure(top)
+	return "", CredMeta{}, Die("%s %s (tried %s) — %s", store, lead, credShapeNames(), detail)
 }
+
+// credLeadUnknown is the opening clause for every fork where the token posse
+// wants is not there to read: no envelope, an envelope that is not an object,
+// a renamed field, or a field restructured into something that is not a
+// string. All four are shapes, and the move for all four is a line in
+// credShapes.
+const credLeadUnknown = "holds no token in any shape posse knows"
+
+// credLeadEmpty is the opening clause for the fork that is NOT a shape: the
+// field posse looks for is there, is a string, and is empty.
+//
+// It is a separate lead because the lead is the part that SURVIVES. The tail
+// of this sentence has said "present but empty … re-authenticate rather than
+// change posse" since ranger-base-6ai5, and on 2026-09-28 the operator still
+// filed 88 blind hours quoting the head of it — `keychain item
+// 'Claude Code-credentials' holds no token in any shape posse knows (tried
+// claudeAiOauth.accessToken)` — and read that as posse not knowing the
+// runtime's new shape (ranger-base-58qr8). Nothing was wrong with the tail.
+// It was 200 bytes downstream of a first clause that says the opposite of
+// what the fork found, and a line that opens by naming the wrong class is a
+// line whose reader stops there.
+const credLeadEmpty = "holds a token field that is PRESENT BUT EMPTY — a login state, not an unknown shape: run `claude` once"
 
 func credShapeNames() string {
 	names := make([]string, 0, len(credShapes))
@@ -1443,10 +1487,17 @@ func credShapeNames() string {
 	return strings.Join(names, ", ")
 }
 
-// foundShape describes what the store DOES contain, in key names only: the
-// top level, and — when the envelope we look for is there but empty — that
-// envelope too, since "no claudeAiOauth at all" and "claudeAiOauth without
-// the token" are different diagnoses with different fixes.
+// shapeFailure is the failure sentence in its two parts, from ONE walk of the
+// envelope: the LEAD, the clause that names the class and is read first, and
+// the DETAIL, what the store DOES contain in key names only — the top level,
+// and, when the envelope we look for is there, that envelope too, since "no
+// claudeAiOauth at all" and "claudeAiOauth without the token" are different
+// diagnoses with different fixes.
+//
+// Two returns and not two functions: the lead and the detail are the same
+// fork seen from two distances, and a second walk to pick the lead is exactly
+// how the head of this sentence would come to contradict its tail — which is
+// the defect ranger-base-58qr8 reports, arrived at the other way.
 //
 // It also says WHICH of those two it is rather than leaving the reader to
 // diff a key list by eye. On 2026-08-26 the operator's reading came back
@@ -1455,26 +1506,28 @@ func credShapeNames() string {
 // incomplete — a login problem, nothing to change here), or the field is
 // gone (renamed — a line in credShapes). Naming the fork is the difference
 // between a line an operator can act on and one they have to interpret.
-func foundShape(top map[string]json.RawMessage) string {
+func shapeFailure(top map[string]json.RawMessage) (lead, detail string) {
 	desc := "its top-level keys are " + safeKeys(top)
 	raw, ok := top["claudeAiOauth"]
 	if !ok {
-		return desc + "; posse's envelope (claudeAiOauth) is not among them, so this store holds some other credential structure"
+		return credLeadUnknown, desc + "; posse's envelope (claudeAiOauth) is not among them, so this store holds some other credential structure"
 	}
 	var inner map[string]json.RawMessage
 	// nil map, no error: claudeAiOauth is `null`, which is not an object.
 	if err := json.Unmarshal(raw, &inner); err != nil || inner == nil {
-		return desc + ", and claudeAiOauth is " + jsonKind(raw) + ", not an object"
+		return credLeadUnknown, desc + ", and claudeAiOauth is " + jsonKind(raw) + ", not an object"
 	}
-	return desc + ", and claudeAiOauth's keys are " + safeKeys(inner) + " — " + tokenVerdict(raw, inner)
+	lead, verdict := tokenVerdict(raw, inner)
+	return lead, desc + ", and claudeAiOauth's keys are " + safeKeys(inner) + " — " + verdict
 }
 
 // tokenVerdict states which side of the fork we are on once posse's own
-// envelope has been found. There are three sides, not two: the field is gone
-// (renamed — a line in credShapes), the field is there and empty (an
-// incomplete credential — a login fixes it), or the field is there and is not
-// a string at all (the envelope restructured it — credShapes again, and no
-// number of logins can help). The shape's Token func returns "" for the last
+// envelope has been found, as the sentence's LEAD and its closing verdict —
+// one fork, read at two distances (shapeFailure's rule). There are three
+// sides, not two: the field is gone (renamed — a line in credShapes), the
+// field is there and empty (an incomplete credential — a login fixes it), or
+// the field is there and is not a string at all (the envelope restructured
+// it — credShapes again, and no number of logins can help). The shape's Token func returns "" for the last
 // two alike, so a verdict that reads only key presence calls a restructured
 // field an empty one and sends the operator to re-authenticate forever about
 // a change only this file can absorb (ranger-base-6ai5).
@@ -1487,14 +1540,14 @@ func foundShape(top map[string]json.RawMessage) string {
 // shape's Token func actually saw, under the same rules; decoding THAT into a
 // string takes the same fork Token took, and jsonKind names what it found
 // without printing a byte of it.
-func tokenVerdict(raw json.RawMessage, inner map[string]json.RawMessage) string {
+func tokenVerdict(raw json.RawMessage, inner map[string]json.RawMessage) (lead, verdict string) {
 	var env struct {
 		AccessToken  json.RawMessage `json:"accessToken"`
 		RefreshToken json.RawMessage `json:"refreshToken"`
 	}
 	// raw decoded as an object at the call site, so this cannot fail.
 	if err := json.Unmarshal(raw, &env); err != nil || env.AccessToken == nil {
-		return "accessToken is not among them, so the field was renamed or dropped: teach credShapes the new name"
+		return credLeadUnknown, "accessToken is not among them, so the field was renamed or dropped: teach credShapes the new name"
 	}
 	// The key list above is spelled the way the store spells it, which need
 	// not be the way posse spells it. Say so, or the verdict looks like it is
@@ -1510,16 +1563,60 @@ func tokenVerdict(raw json.RawMessage, inner map[string]json.RawMessage) string 
 	// incomplete. Everything else is a value Token could not read at all.
 	var tok string
 	if err := json.Unmarshal(env.AccessToken, &tok); err != nil {
-		return "accessToken is present and is " + jsonKind(env.AccessToken) +
+		return credLeadUnknown, "accessToken is present and is " + jsonKind(env.AccessToken) +
 			", not a string, so the shape changed and re-authenticating cannot fix it: teach credShapes to read it" + spelling
 	}
 	// A string reaching here is necessarily the empty one — a non-empty one
 	// would have been returned as the token and this line never reached.
 	v := "accessToken is present but empty, so this is an incomplete credential and not a shape posse cannot read: re-authenticate rather than change posse"
-	if env.RefreshToken != nil {
-		v += " (a refreshToken is present, so a refresh that did not complete fits)"
+	v += refreshHint(env.RefreshToken)
+	return credLeadEmpty, v + spelling
+}
+
+// refreshHint is the clause about the OTHER token, and it has three states
+// where it used to have two.
+//
+// A refreshToken that is there and holds something is a refresh that was
+// started and did not finish — the original clause, and still the common
+// case. A refreshToken that is there and holds NOTHING is a different fact
+// entirely: BOTH token fields have been emptied in place while every other
+// key of the envelope was kept.
+//
+// MEASURED 2026-09-28 off the shipped Claude Code bundles on this box
+// (darwin-arm64 2.1.268 and 2.1.283, `strings` over the binary; no keychain
+// was read and no credential value was seen): on an `invalid_grant` from the
+// refresh endpoint the runtime rewrites its own envelope as
+// `{...envelope, refreshToken: "", accessToken: "", expiresAt: 0}` and
+// counts `tengu_oauth_refresh_token_cleared_on_disk`. That is exactly the
+// shape ranger-base-58qr8 reported — both tokens empty, scopes,
+// subscriptionType, rateLimitTier and refreshTokenExpiresAt all still there
+// — so the item is a tombstone the runtime wrote on purpose, not a write
+// that was interrupted. Telling that operator "a refresh that did not
+// complete fits" points them at a refresh that cannot complete from here:
+// the credential the refresh needed is the one that was cleared.
+//
+// It folds the way the parser folds, for the reason ranger-base-6ai5 and its
+// verifying bead ranger-base-ogzh both give: presence is asked of
+// encoding/json and not of the key map, so an envelope spelling the field
+// `RefreshToken` keeps its clause. Emptiness is asked the same way — the
+// same decode into the same type Token uses — so a `null` reads as holding
+// nothing, which it does.
+//
+// A refreshToken that is present and is not a string at all keeps the first
+// clause rather than earning a fourth. posse cannot say such a field is
+// empty, so the one claim it must not make is the tombstone's; and the first
+// clause says "fits", which is consistent-with and not established-as. That
+// is the honest reading of a field posse can see and cannot open, and it
+// stays one branch until an envelope actually restructures this field.
+func refreshHint(raw json.RawMessage) string {
+	if raw == nil {
+		return ""
 	}
-	return v + spelling
+	var rt string
+	if err := json.Unmarshal(raw, &rt); err == nil && rt == "" {
+		return " (the refreshToken is present and empty too, so both token fields hold nothing: the runtime empties them in place when the refresh endpoint refuses the grant, and no refresh can complete from here — log in)"
+	}
+	return " (a refreshToken is present, so a refresh that did not complete fits)"
 }
 
 // maxKeyName is the longest key this file will repeat back. Well above every
