@@ -111,6 +111,15 @@ the line names argv0 and this filing, never the session). The code lands
 under the beads cut from ranger-base-i3q6g; `git log --grep
 ranger-base-i3q6g` on main is the record, this sentence is a snapshot.*
 
+*Snapshot 2026-09-28 (ranger-base-qa73t): "cannot dispatch" above is now
+conditional. A reported label is enough to launch on — as identity, with
+herdr's `pane process-info` reading as liveness, because a reported label
+outlives its process (MEASURED) — when the instance declares `detection:
+reported` in `runtimes/bob.yaml`, an overlayable instance fact naming the
+plugin in `detection_why`. This built-in stays `detection: herdr` and
+keeps saying it has no detection; D2's tripwire and the upstream filing
+stand. ADR 0061 is the record.*
+
 **D3 — The PID rides `-p` as the first user message; the work prompt is
 typed.** Bob has no launch-time system channel: no rules flag, no
 system-prompt flag. Its instruction files are all read from the

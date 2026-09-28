@@ -41,7 +41,11 @@ amended 2026-09-28 (ranger-base-i3q6g, from ranger-base-ymmiv): §1's
 launch row gains its launch path — a bead-carrying launch refuses when
 herdr answers that it has no manifest for the runtime's argv0, above the
 claim and before the kill; `runtime check`'s exit code had been the only
-consumer of that reading*
+consumer of that reading · amended 2026-09-28 (ranger-base-qa73t): §1's
+launch row gains its second form — a runtime declaring `detection:
+reported` launches without a manifest and observes a report-agent label
+within `startup_wait`, with herdr's process reading as the liveness half
+(ADR 0061)*
 
 > ADR 0002 answered "can a persona *launch* safely on any runtime." ADR
 > 0012 D4 answered "can a third engine be *added* without patching the
@@ -99,7 +103,7 @@ This contract is what **dispatch** requires of that same process.
 
 | stage | observable | declared by | missing → |
 |---|---|---|---|
-| **launch** | argv0 herdr recognizes; PID delivered; unattended flag on the line; cage grants reach `beadsHome(cwd)` (§4 Reachability) | runtime template + herdr manifest (ADR 0002 / 0012 D4.1–3,6) | **refuse** the launch |
+| **launch** | argv0 herdr recognizes — or, declared `detection: reported`, a report-agent label within `startup_wait` over a pane whose foreground is not its shell (ADR 0061); PID delivered; unattended flag on the line; cage grants reach `beadsHome(cwd)` (§4 Reachability) | runtime template + herdr manifest (ADR 0002 / 0012 D4.1–3,6) | **refuse** the launch |
 | **promptable** | the work prompt is the first user turn, *without* posse answering a dialog | runtime `prompt: argv` (preferred) or `prompt: typed` + `startup_wait:` | **refuse this launch**, loudly; see §2 |
 | **work** | herdr `working` then a settled state | herdr detection (already) | wait ladder as today (NOTES §6–7); a timeout is a check-in, never an unclaim |
 | **record** | bead `closed`, or a comment plus an ASK/question that takes it out of `bd ready` | runtime `record: trusted\|untrusted` (§4) | settle-without-record is **incomplete**, never ✓; unattended `--resume` re-prompts; see §4 |
