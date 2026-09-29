@@ -239,8 +239,8 @@ func renderCageBd(binDir string) (string, error) {
 	if real == "" {
 		return "", nil
 	}
-	script := fmt.Sprintf("#!/bin/sh\n# posse: bd inside the cage — the .beads carve-out's other half (rangerhq-abvm).\n# Rendered at launch by `posse gates wrap`; do not edit.\nexec %s %s \"$@\"\n",
-		shQuote(real), strings.Join(CageBdFlags, " "))
+	script := fmt.Sprintf("#!/bin/sh\n# posse: bd inside the cage — the .beads carve-out's other half (rangerhq-abvm).\n# %s, at launch, by `posse gates wrap`; do not edit.\nexec %s %s \"$@\"\n",
+		RenderedByPosse(), shQuote(real), strings.Join(CageBdFlags, " "))
 	if err := WriteExecutable(path, []byte(script), 0o755); err != nil {
 		return "", err
 	}

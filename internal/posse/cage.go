@@ -1254,7 +1254,10 @@ func (a *App) cageNoBinary(e *Engine) string {
 // identical 1500-byte line is lost on a new pane and runs on the same pane
 // a second later — rangerhq-ybec, which is the general fix). Like
 // gates/<persona>/ and seatbelt.sb, both are rendered fresh from the PID at
-// every launch and nothing hand-edited there survives; the argv file is per
+// every launch by the INSTALLED binary — so a fix to what is rendered here
+// reaches a seat at its next launch UNDER AN INSTALLED POSSE THAT CARRIES IT,
+// and not before (ranger-base-vso72; every header says which one rendered it).
+// Nothing hand-edited there survives; the argv file is per
 // *session*, because two beads put the same persona in two containers with
 // different mounts.
 //

@@ -1523,6 +1523,14 @@ func main() {
 		// operator driving a second instance is usually standing in the other
 		// instance's repo, and read without the word "shell" the line looks
 		// like a fact about the persona (rangerhq-qz51).
+		// WHICH posse's renders the matrix below is describing
+		// (ranger-base-vso72). Every row is a claim about a wall that THIS
+		// binary rendered moments ago, at the top of this branch — so a
+		// matrix read off a binary that predates the gate fix it is being
+		// checked for is a wall of green about a wall nobody has. Printed
+		// before the matrix and in every case, UNKNOWN included; it moves no
+		// exit code.
+		a.ReportWallRenderer(out, "gates", cwd)
 		fmt.Fprintf(out, "parity (ADR 0002 §4, ADR 0003 §3) — what the wall realizes per runtime at cage shims, tier %s, launching in this shell's cwd %s:\n", tier, posse.AbbrevHome(cwd))
 		// The persona's OWN runtime, before the table. The loop below walks
 		// the CATALOG, so a `runtime:` naming neither a built-in nor a

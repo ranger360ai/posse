@@ -7,6 +7,7 @@ references), not inferred publication dates. Undated fragments sort last.
 ## 2026-09
 
 - [ranger-base-xea2y](ranger-base-xea2y.md) — ranger-base-xea2y — replaying a one-commit merge-back without the sequencer — 2026-09-28
+- [ranger-base-vso72](ranger-base-vso72.md) — A rendered wall now names its renderer, and promote reads what it records (ranger-base-vso72) — 2026-09-28
 - [ranger-base-v1yrt](ranger-base-v1yrt.md) — Bob on herdr 0.8.2: three detection routes measured, one alive by half (ranger-base-v1yrt) — 2026-09-28
 - [ranger-base-tghn5](ranger-base-tghn5.md) — ranger-base-tghn5 — the keychain read names an ACCOUNT — 2026-09-28
 - [ranger-base-rg19l](ranger-base-rg19l.md) — Why the sequencer recipe scan stopped enumerating spellings (ranger-base-rg19l) — 2026-09-28

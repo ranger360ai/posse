@@ -198,7 +198,7 @@ func (a *App) RenderEgress(ag *AgentFile, rt *Runtime, session string, hosts []s
 		return "", "", "", err
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "# posse egress allowlist for %s on %s (session %s) — rendered from the PID\n", ag.Name, rt.Name, session)
+	fmt.Fprintf(&b, "# posse egress allowlist for %s on %s (session %s) — %s from the PID\n", ag.Name, rt.Name, session, RenderedByPosse())
 	fmt.Fprintf(&b, "# at launch; do not edit. One host per line, or *.suffix for a subtree.\n")
 	fmt.Fprintf(&b, "# The runtime's own hosts are always added (ADR 0002 §4).\n")
 	for _, h := range hosts {

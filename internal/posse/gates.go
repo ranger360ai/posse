@@ -1284,7 +1284,10 @@ func quotedStamp(dateBin string) string {
 // renderShim writes the POSIX sh shim for one command.
 func renderShim(persona, cmd, real, log, dateBin string, rules []shimRule) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "#!/bin/sh\n# posse gate for %s — rendered from the PID's deny: at launch; do not edit (%s)\n", persona, gateShimMarker)
+	// The marker stays on line 2 and stays where gateShimTarget and
+	// scripts/verify-bd-pin.sh read it (`head -2`); the renderer clause is
+	// inserted before it, not after (ranger-base-vso72).
+	fmt.Fprintf(&b, "#!/bin/sh\n# posse gate for %s — %s from the PID's deny: at launch; do not edit (%s)\n", persona, RenderedByPosse(), gateShimMarker)
 	fmt.Fprintf(&b, "RHQ_GATE_LOG=%s\n", shQuote(log))
 	fmt.Fprintf(&b, "posse_refuse() {\n  echo \"refused by posse gate: %s $* (deny: $RHQ_GATE_RULE)\" >&2\n", cmd)
 	b.WriteString("  [ -n \"$RHQ_GATE_HINT\" ] && echo \"$RHQ_GATE_HINT\" >&2\n")
@@ -1595,7 +1598,7 @@ func renderSequencerAudit(cmd, real, dateBin string) string {
 // on grok 1.0.5, claude and codex 0.147 — with three placeholders rendered
 // per persona. Keep it in step with the probe rather than re-deriving it.
 const gateShellScript = `#!/bin/sh
-# posse gate shell for __PERSONA__ — rendered at launch from the PID; do not edit (ADR 0009).
+# posse gate shell for __PERSONA__ — __RENDERER__ at launch from the PID; do not edit (ADR 0009).
 # Stands in for the login shell a runtime re-execs.
 G=__GATES_BIN__   # rendered: RHQ_HOME/state/gates/<persona>/bin
 REAL=__REAL__
@@ -1792,6 +1795,9 @@ func writeGateShell(persona, gatesDir, binDir, real, base string) (string, error
 	}
 	script := strings.NewReplacer(
 		"__PERSONA__", persona,
+		// Which posse wrote this wrapper, not only that a launch did
+		// (ranger-base-vso72).
+		"__RENDERER__", RenderedByPosse(),
 		"__GATES_BIN__", shQuote(binDir),
 		"__REAL__", shQuote(real),
 		"__GATES_DIR__", shQuote(gatesDir),

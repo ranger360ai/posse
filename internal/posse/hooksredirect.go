@@ -337,7 +337,7 @@ func l3DegradeLineIn(red *l3Redirect, slot, path, consequence string, v l3Verdic
 	if red == nil || v == l3Held {
 		return l3DegradeLine(slot, path, consequence, v)
 	}
-	return fmt.Sprintf("L3 %s hook — %s — the session hooks dir does not carry this launch's render — re-launch to re-render; %s", slot, AbbrevHome(path), consequence)
+	return fmt.Sprintf("L3 %s hook — %s — the session hooks dir does not carry this launch's render — re-launch to re-render under an installed posse that carries it; %s", slot, AbbrevHome(path), consequence)
 }
 
 // redirectForwardGaps is the completeness arm: every executable regular file
@@ -358,7 +358,7 @@ func l3DegradeLineIn(red *l3Redirect, slot, path, consequence string, v l3Verdic
 func redirectForwardGaps(hooks, managed string, wantPrePush bool) []string {
 	slots, _, err := forwardableSlots(managed)
 	if err != nil {
-		return []string{fmt.Sprintf("L3 managed hooks — %s — cannot be listed (%v) — posse cannot tell whether every managed hook is still forwarded; re-launch to re-render", AbbrevHome(managed), err)}
+		return []string{fmt.Sprintf("L3 managed hooks — %s — cannot be listed (%v) — posse cannot tell whether every managed hook is still forwarded; re-launch to re-render under an installed posse that carries it", AbbrevHome(managed), err)}
 	}
 	ours := map[string]bool{}
 	for _, s := range posseHookSlots(wantPrePush) {
@@ -372,7 +372,7 @@ func redirectForwardGaps(hooks, managed string, wantPrePush bool) []string {
 			continue
 		}
 		if !identityMatch(filepath.Join(hooks, slot), redirectDispatcher(slot, managed, false)) {
-			out = append(out, fmt.Sprintf("L3 managed hooks — %s — managed hook %s not forwarded — re-launch to re-render; this session's git dispatches from %s and would skip it, so the employer's %s does not run here", AbbrevHome(filepath.Join(managed, slot)), slot, AbbrevHome(hooks), slot))
+			out = append(out, fmt.Sprintf("L3 managed hooks — %s — managed hook %s not forwarded — re-launch to re-render under an installed posse that carries it; this session's git dispatches from %s and would skip it, so the employer's %s does not run here", AbbrevHome(filepath.Join(managed, slot)), slot, AbbrevHome(hooks), slot))
 		}
 	}
 	return out

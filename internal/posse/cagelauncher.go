@@ -157,7 +157,7 @@ func (a *App) WriteCageLaunch(persona, session string, rt *Runtime, engine strin
 		Path:   engine,
 		Egress: eg,
 		Note: "posse cage launch for " + persona + " on " + rt.Name + " (session " + session +
-			") — rendered from the PID at launch; do not edit. `" + filepath.Base(launcher) +
+			") — " + RenderedByPosse() + " from the PID at launch; do not edit. `" + filepath.Base(launcher) +
 			"` execs path with this argv, whose argv[0] is the runtime's name so herdr identifies the caged session (rangerhq-1k1).",
 	}
 	plan.Line = CageLine(append([]string{engine}, argv[1:]...))

@@ -81,7 +81,8 @@ The session env carries the redirect as git's own config-in-env form:
 `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_n`/`GIT_CONFIG_VALUE_n` naming
 `core.hooksPath=<that dir>`, appended after any count already in the
 operator's env, never clobbering it. Set beside `RHQ_PERSONA` in the launch
-vars (`herdrback.go` ~1803). The dir is rendered fresh every launch and
+vars (`herdrback.go` ~1803). The dir is rendered fresh every launch, by the
+INSTALLED binary and from its own compiled-in hook bodies, and
 removed when the session is retired, so hook freshness holds by
 construction and the sweep has nothing to measure for a managed repo.
 
@@ -90,7 +91,10 @@ construction and the sweep has nothing to measure for a managed repo.
 the renders, dispatchers byte-equal to the absolute-neighbour chain form,
 all `+x` — plus one new arm, forward completeness: every executable in the
 managed dir has a dispatcher, else the slot degrades as
-`managed hook <slot> not forwarded — re-launch to re-render`. The behaviour
+`managed hook <slot> not forwarded — re-launch to re-render under an
+installed posse that carries it` — the render is the installed binary's, so a
+re-launch alone re-renders whatever that binary holds (ranger-base-vso72).
+The behaviour
 half (`execOwnRenders`) is unchanged. Parity prints
 `(render probed, dispatch verified — session hooks dir, redirected by env;
 managed hooks <dir> run after ours)`; the launch is not degraded; class
@@ -180,7 +184,8 @@ operator's own commits do.
   forbids; also unavailable at tier fast (ADR 0003 §3).
 - **Hardcode githooks(5) for the forward set.** Replaced by enumerating the
   managed dir at render: no list to go stale under a new git, and a new
-  managed hook is forwarded from the next launch.
+  managed hook is forwarded from the next launch under an installed posse
+  that carries the enumeration (ranger-base-vso72).
 
 ## Verification (laurie's checklist; each is a pin)
 

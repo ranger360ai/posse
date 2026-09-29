@@ -240,7 +240,11 @@ func (c SeatbeltCarveOut) Empty() bool {
 // file and nothing beside it.
 func SeatbeltProfile(persona string, writable, siblings []string, carve SeatbeltCarveOut, createOnly ...string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, ";; posse seatbelt for %s — rendered from the PID at launch; do not edit (rangerhq-5vt)\n", persona)
+	// The renderer, not only the render: this profile is written by the
+	// INSTALLED binary, so a seat that does not find the deny it expects
+	// needs to tell "relaunch pending" from "install pending"
+	// (ranger-base-vso72; renderstamp.go has the incident).
+	fmt.Fprintf(&b, ";; posse seatbelt for %s — %s from the PID at launch; do not edit (rangerhq-5vt)\n", persona, RenderedByPosse())
 	b.WriteString("(version 1)\n(allow default)\n(deny file-write*)\n")
 	b.WriteString("(allow file-write*\n")
 	for _, p := range writable {

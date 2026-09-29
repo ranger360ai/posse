@@ -692,6 +692,19 @@ func (a *App) CmdPromote(w io.Writer, o PromoteOpts) error {
 	// The diff comes first, because it is the thing being ratified: what
 	// this promote puts in force that the last one did not.
 	printPromoteDiff(w, repo, src, prev, sha)
+	// …and whether the binary about to write `posse:` into the manifest
+	// carries the source it is promoting from (ranger-base-vso72). This
+	// command RECORDED the renderer from the start — m.stampWriter() below —
+	// and nothing ever read it against the sha beside it: on 2026-09-28 a
+	// binary 40 commits behind the sha it had that moment promoted, one of
+	// them a seatbelt.go change, printed nothing. Here rather than in the
+	// epilogue so the DRY RUN — the ratification read, the moment an operator
+	// can still act — carries it too. `src` leads the candidate list so a
+	// constitution that is itself a posse checkout is counted against the
+	// tree being promoted rather than against whichever repo `beads:` names
+	// first. A reading, not a gate: installing over a binary that is
+	// dispatching a live fleet is the operator's (guardrail 3).
+	a.ReportWallRenderer(w, "promote", src)
 
 	set, files, err := promotedAtCommit(repo, src, sha)
 	if err != nil {

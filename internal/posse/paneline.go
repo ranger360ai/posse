@@ -96,7 +96,7 @@ func (a *App) PaneLine(session, cmd string) (string, error) {
 	// (env crosses a launch as names, never values), but a PID's own
 	// `command:` is the one template posse did not write, and this file is
 	// not the place to widen whatever it put there.
-	body := "# posse launch line for session " + oneLine(session) + " — rendered at launch, do not edit.\n" +
+	body := "# posse launch line for session " + oneLine(session) + " — " + RenderedByPosse() + " at launch, do not edit.\n" +
 		"# The pane sources this instead of typing it: a line this long is lost in a\n" +
 		"# freshly created pane, whose tty is still in canonical mode (rangerhq-ybec).\n" +
 		cmd + "\n"
