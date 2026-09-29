@@ -4,11 +4,11 @@
 published. See `README.md` in this directory. (posse-side record: ADR 0060,
 bead ranger-base-q0e1y.)
 
-- herdr 0.8.2, client and server (macOS 15 / darwin 25.4.0)
+- herdr 0.9.1, client and server (macOS 26.4.1 / darwin 25.4.0); first measured on 0.8.2 the same day
 - bobshell 2.0.5, Homebrew, under node 25.2.1
 - proposed manifest and pane snapshots: `upstream/bob/` in this directory
 
-The table below was measured on 0.8.2. Its first row was measured again on
+The table below was first measured on 0.8.2. Rows 1 and 3 were measured again on
 **0.9.1** the same day, with the same answer: a manifest with
 `id = "bob"` dropped into `~/.config/herdr/agent-detection/` and reloaded is
 ignored, `agent explain --agent bob` → `unknown_agent`, and
@@ -29,7 +29,7 @@ wait on and no `agent prompt` target.
 We could not close this from the outside, and the three routes we measured are
 worth stating so the ask is precise:
 
-| route | result (herdr 0.8.2, 2026-09-28) |
+| route | result (herdr 0.8.2; rows 1 and 3 re-measured on 0.9.1, 2026-09-28) |
 |---|---|
 | a standalone `~/.config/herdr/agent-detection/bob.toml` | ignored — not listed by `server agent-manifests`, `agent explain --agent bob` → `unknown_agent`, `manifest_source: null`, `evaluated_rules: []` (same on 0.8.0) |
 | `aliases = [..., "bob"]` added to a forked manifest for a kind herdr *does* know (tried on `gemini`, then on `claude`, each installed as the ACTIVE local override at a higher version) | `--agent bob` still `unknown_agent`; the compiled alias `claude-code` resolves from the same file. Only the compiled alias table resolves, so a manifest cannot add a label |

@@ -6,7 +6,7 @@ about the `agent prompt` verb — but it lives here because this is where posse
 keeps the drafts it means to send herdr. (posse-side record: bead
 ranger-base-8eqaa, and `docs/notes.d/ranger-base-8eqaa.md` in the posse repo.)
 
-- herdr 0.9.1, client and server (macOS 15 / darwin 25.4.0)
+- herdr 0.9.1, client and server (macOS 26.4.1 / darwin 25.4.0)
 - reproduced with no agent CLI at all — see the recipe, which uses a scratch
   pane and a label of no significance
 
