@@ -134,6 +134,24 @@ bd sync               # Sync with git
   instead — it reads the real process table (ppid 1, old enough not to be a
   fork/exec teardown window, argv matched against the ADR 0009 gate-shell
   preamble) and exits nonzero if anything of yours is still there.
+  **It runs from a caged seat, and until 2026-09-28 it did not**
+  (ranger-base-yxmwx). `/bin/ps` on darwin is setuid root, and seatbelt
+  refuses to exec a setuid binary from inside a sandbox whatever the profile
+  says — `(allow default)` does not lift it and neither does an explicit
+  `(allow process-exec* (literal "/bin/ps"))`, both MEASURED — so the
+  mandated check was the one check a caged seat could not run: `fork/exec
+  /bin/ps: operation not permitted`, exit 2, leak status unknown — four
+  closes across three personas in one day, each inventing a different
+  substitute. It takes the table from `sysctl kern.proc.all` now, with no
+  fork at all, and a caged run prints what an uncaged one prints. If it ever
+  answers **exit 2** anyway, that is "leak status unknown" and never
+  "clean": fall back to `kill -0 <the pid the launcher printed>`,
+  `pgrep -fl <your worktree path>` and
+  `scripts/suite-lock.sh --status`, and say on the bead that you did —
+  because that substitute is weakest in exactly the case the tool exists
+  for. A `pgrep` of one path cannot see the fan-out of forty low-CPU
+  children above, and a pid you already know about was never the part you
+  were unsure of.
 - **Something you MEANT to leave running: declare it** (ranger-base-gvp2p).
   Write `POSSE_KEEP=<reason>` at the head of the Bash line that backgrounds
   it — `POSSE_KEEP=ranger-base-abcd nohup ./bench.sh &` — with the reason

@@ -85,3 +85,87 @@ ships **off**: the ruling's first bar for the live flip is arm-1 field data
 showing real leaks and no deliberate process, and reading that is the
 operator's, not the guard's.
 
+
+### The self-check takes no fork on darwin, and why it had to (ranger-base-yxmwx)
+
+`go run ./cmd/checkorphans` is the check AGENTS.md mandates after
+backgrounding anything, and from the day it landed (2026-08-31,
+ranger-base-6mhxw) to 2026-09-28 it was the one check a **caged** seat could
+not run:
+
+```
+checkorphans: fork/exec /bin/ps: operation not permitted — could not read the
+process table, leak status unknown
+exit status 2
+```
+
+Four closes across three personas ran into it in one day — dinesh
+(ranger-base-mis0i), gwart (-prjck, -rg19l), holden (-vl8zu) — and each
+invented its own substitute on its own bead. The tool was never dishonest
+about it: it says "leak status unknown" and exits 2 rather than reading
+clean. The gap was that the seats that most need the check are the caged
+ones.
+
+**The cause is one bit.** `/bin/ps` on darwin is `-rwsr-xr-x root wheel` —
+**setuid root** — and seatbelt refuses to exec a setuid binary from inside a
+sandbox. It has nothing to do with this shop's profile, which is `(allow
+default)` plus file-write denies and does not mention exec at all.
+
+MEASURED 2026-09-28, darwin 25.4.0, the rendered `gilfoyle` persona profile
+unless stated:
+
+| probe | result |
+| --- | --- |
+| `sandbox-exec -f <persona>.sb /bin/ps -axo pid=` | `execvp() of '/bin/ps' failed: Operation not permitted` |
+| `sandbox-exec -p '(version 1)(allow default)' /bin/ps …` | same refusal — nothing about the persona wall is involved |
+| profile + `(allow process-exec* (literal "/bin/ps"))` | same refusal — **an explicit allow does not lift it** |
+| profile + `(allow process-exec* (with no-sandbox) (literal "/bin/ps"))` | runs — i.e. only by running a setuid-root binary *outside* the wall |
+| `sandbox-exec -f <persona>.sb /usr/bin/pgrep …` | runs (pgrep is not setuid — which is why every seat's substitute reached for it) |
+| a non-setuid **copy** of `/bin/ps`, sandboxed or not | 0 rows, exit 0 — darwin's `ps` needs its privilege even to list |
+
+So the carve-out was closed on both ends: the only profile line that lifts the
+refusal grants a setuid-root exec outside the sandbox, which is the opposite
+of what the profile exists for. **The route is the syscall.**
+`unix.SysctlKinfoProcSlice("kern.proc.all")` needs no fork and no privilege,
+and per-pid `kern.procargs2` gives the untruncated argv the preamble match
+reads (proctable_darwin.go). Measured the same day: 452 rows via sysctl
+against 451 via `ps` (ps does not list itself), argv readable for every
+process of our own uid and refused for 165 of 452 that belong to another —
+and a gate-shell child is always ours. Age comes from `p_starttime` instead
+of an `etime` rounded to the second, and there is no second read to get past
+a column width.
+
+**What did NOT move: the load guard's `ps`.** `kinfo_proc.p_pctcpu` is **0 in
+every row** on darwin 25.4.0 (all 451 comparable rows, including one at
+`ps_pcpu=58.4`), so a %CPU this route reported would be a fabricated zero.
+The self-check has no CPU term by design, so it loses nothing; `SysTopCPU`
+keeps its fork, and does not need a cage — the load guard runs where `ps`
+runs.
+
+**The two routes agree on a real payload, not only on a row count.** The first
+caged run that worked printed, for pid 47360, `source
+~/.claude/shell-snapshots/snapshot-zsh-…sh 2>/d…` — the same
+preamble-stripped payload the `ps` route printed for the same process from an
+uncaged seat minutes earlier. `kern.procargs2` hands over the argv vector and
+this code space-joins it exactly as `ps -o args=` renders it, so
+`gateShellForkPayload` reads one string either way.
+
+**The pins** are `internal/posse/proctablecage_qa_test.go`: an empty `PATH`
+(cheap, hermetic, reds in milliseconds if the exec comes back) and the
+reported bug itself — the check run inside `sandbox-exec -p '(version
+1)(allow default)'`, with a control that skips rather than passes if a future
+macOS stops refusing the setuid exec. MUTATION-CHECKED: pointing
+`sysSelfProcs` back at the `ps` route reds both arms.
+
+**If it ever answers exit 2 again**, that is "leak status unknown", never
+"clean". The substitute the four seats converged on is `kill -0 <the pid the
+launcher printed>`, `pgrep -fl <your worktree path>` and
+`scripts/suite-lock.sh --status` — and it is weakest in exactly the case the
+tool exists for: a `pgrep` of one path cannot see a fan-out of forty low-CPU
+children, and a pid you already know about was never the part you were unsure
+of. Say on the bead that you substituted.
+
+One corroboration from the first caged run that worked, worth keeping because
+it is the shape every cheaper check misses: pid 47360, a gate-shell child
+orphaned to launchd **21 days** earlier, `0.0%` CPU, idle. No %CPU floor would
+ever have named it, and no `jobs -l` could have seen it.

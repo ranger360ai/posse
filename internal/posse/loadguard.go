@@ -285,6 +285,13 @@ func (p Proc) Orphaned() bool { return p.PPID == 1 }
 // function's one deadline, so two reads cannot outlast what one was allowed,
 // and it fails open to no argv at all — which renders no orphan report and
 // leaves the culprit line exactly as ranger-base-0p6x shipped it.
+//
+// WHY THIS ONE STILL FORKS, where the self-check no longer does
+// (ranger-base-yxmwx): the kernel leaves kinfo_proc's p_pctcpu at 0 on darwin,
+// so the sysctl route that gives the self-check its table for free cannot give
+// this one its %CPU — the measurement is in proctable_darwin.go. A caged seat
+// therefore cannot take this census, and does not need to: the load guard runs
+// where `ps` runs.
 func SysTopCPU() ([]Proc, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), loadCulpritTimeout)
 	defer cancel()
@@ -297,9 +304,10 @@ func SysTopCPU() ([]Proc, error) {
 }
 
 // sysProcTable is the census's first `ps` — see SysTopCPU for why the
-// columns are what they are. Shared with SysSelfOrphans (ranger-base-6mhxw),
-// which needs the same table under a different predicate for which rows get
-// their argv read.
+// columns are what they are. Off darwin it is also the self-check's table
+// (proctable_other.go), which needs the same rows under a different predicate
+// for which of them get their argv read; on darwin the self-check reads the
+// table through sysctl instead and this stays the CPU census's alone.
 func sysProcTable(ctx context.Context) ([]Proc, error) {
 	out, err := exec.CommandContext(ctx, "ps", "-axo", "pid=,ppid=,pcpu=,etime=,comm=").Output()
 	if err != nil {
@@ -320,10 +328,11 @@ func fillOrphanArgs(ctx context.Context, procs []Proc) {
 
 // fillArgsForPIDs reads the untruncated argv of exactly the given pids and
 // writes it back onto the matching rows of procs — the half of the census
-// that fillOrphanArgs (the load guard's own CPU-gated suspects) and
-// SysSelfOrphans (no CPU floor: a leak that never uses much of a core is
-// still a leak, ranger-base-6mhxw) share. It reports nothing: a read it
-// could not take leaves those rows' Args empty, same as before the call.
+// that fillOrphanArgs (the load guard's own CPU-gated suspects) and the
+// non-darwin self-check (no CPU floor: a leak that never uses much of a core
+// is still a leak, ranger-base-6mhxw) share; fillArgsFromSysctl is its darwin
+// counterpart. It reports nothing: a read it could not take leaves those
+// rows' Args empty, same as before the call.
 func fillArgsForPIDs(ctx context.Context, procs []Proc, ids []string) {
 	if len(ids) == 0 {
 		return
@@ -713,17 +722,22 @@ const SelfCheckMinAge = 3 * time.Second
 // with Args already trimmed to the persona's own command, preamble
 // stripped, same as orphanReport's payload. Empty and nil on a clean box.
 //
-// It costs one `ps` on every call and a second, pid-scoped one only when the
-// first turns up an orphan — the same shape as SysTopCPU, so a call that
-// finds nothing costs what SysTopCPU costs a healthy box.
+// HOW IT READS THE TABLE IS PER PLATFORM, and on darwin that is the point of
+// the split: it takes no fork at all, because `/bin/ps` there is setuid root
+// and seatbelt refuses to exec a setuid binary from inside a sandbox — which
+// made the mandated post-background check the one check a caged seat could not
+// run (ranger-base-yxmwx, measured in proctable_darwin.go). Off darwin it is
+// the two bounded `ps` reads it has always been: one for the table and a
+// second, pid-scoped one only when the first turns up an orphan — the same
+// shape as SysTopCPU, so a call that finds nothing costs what SysTopCPU costs
+// a healthy box.
 func SysSelfOrphans() ([]Proc, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), loadCulpritTimeout)
 	defer cancel()
-	procs, err := sysProcTable(ctx)
+	procs, err := sysSelfProcs(ctx)
 	if err != nil {
 		return nil, err
 	}
-	fillArgsForPIDs(ctx, procs, selfCheckSuspectPIDs(procs))
 	return selfOrphansFrom(procs), nil
 }
 

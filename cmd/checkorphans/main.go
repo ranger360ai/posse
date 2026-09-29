@@ -15,11 +15,18 @@
 // ADR 0009 gate-shell preamble — the same predicate the load guard's own
 // orphan report (ranger-base-apwr) uses, without its CPU floor.
 //
+// IT RUNS FROM A CAGED SEAT, which took a second bead to make true
+// (ranger-base-yxmwx): on darwin the table comes from sysctl and not from a
+// fork of `/bin/ps`, which is setuid root and therefore un-exec'able from
+// inside a seatbelt sandbox whatever the profile says — so every seat
+// AGENTS.md sends here can now run what it was sent to run.
+//
 // Exit 0: nothing leaked. Exit 1: leaks found, listed on stdout. Exit 2: the
-// census itself failed (ps missing, denied, or timed out) — this does not
-// fail open the way the load guard does, because a persona asking "did I
+// census itself failed (a sysctl or a `ps` that would not answer) — this does
+// not fail open the way the load guard does, because a persona asking "did I
 // leak" and getting silence back is worse than being told the answer is
-// unknown.
+// unknown. AGENTS.md names the substitute for that case, and says why it is
+// weaker than this.
 package main
 
 import (

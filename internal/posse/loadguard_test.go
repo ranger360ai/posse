@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -1237,13 +1238,17 @@ func TestFormatSelfOrphans(t *testing.T) {
 }
 
 // The reader for whatever platform this is built for, the sibling of
-// TestSysTopCPUReadsThisBox: only that `ps` answers and the columns land
-// where the parser looks. What this box is running is whatever it is — a
+// TestSysTopCPUReadsThisBox: only that the route answers and the fields land
+// where the predicate looks. What this box is running is whatever it is — a
 // clean dev box is expected to come back empty.
 func TestSysSelfOrphansReadsThisBox(t *testing.T) {
 	t.Parallel()
 	leaks, err := SysSelfOrphans()
-	if errors.Is(err, os.ErrPermission) {
+	// Off darwin this is still two `ps` reads and a cage may refuse the exec,
+	// which is not a parser fault. On darwin there is no exec left to refuse
+	// (ranger-base-yxmwx, proctablecage_qa_test.go), so a refusal there is a
+	// real failure and this test must not swallow it.
+	if errors.Is(err, os.ErrPermission) && runtime.GOOS != "darwin" {
 		t.Skipf("SysSelfOrphans: %v — cage denies exec of ps, not a parser fault", err)
 	}
 	if err != nil {
