@@ -1,7 +1,8 @@
 package posse
 
 // The launch stage's first observable, as ONE reading (ADR 0013 §1, amended
-// 2026-09-28 by ranger-base-i3q6g; built under ranger-base-d8riq).
+// 2026-09-28 by ranger-base-i3q6g; built under ranger-base-d8riq, and the
+// relaunch arms added under ranger-base-enmu2).
 //
 // The question is "does herdr have a detection manifest for this runtime's
 // argv0", and until this file it was asked twice — once by `posse runtime
@@ -182,6 +183,36 @@ func DetectionRefusal(rt *Runtime, r ManifestReading) error {
 		"  %s\n"+
 		"  the whole grid, with what this box reads today: posse runtime check %s",
 		rt.Name, r.Argv0, DetectionDoor(rt), rt.Name)
+}
+
+// DetectionRetypeRefusal is the RE-TYPE arm's refusal — ADR 0013 §1 property
+// 3's third path, the one that does not create anything (ranger-base-enmu2).
+//
+// It needs its own sentence because its cause is the one place this rule is
+// not about a session that would be created. `RelaunchAgent` fires on the
+// *agent gone, session kept* reading: the workspace is alive, herdr reports
+// no agent in it, and on every runtime herdr CAN name that means the CLI
+// exited and left a bare shell, so re-typing the launch line there is a full
+// persona restart (rangerhq-vk2).
+//
+// On a runtime herdr cannot name, "no agent in this session" is the STEADY
+// STATE of a perfectly live CLI — every reading of such a session is
+// `agent_not_found` — so the same signal is not evidence of anything, and the
+// line goes into the running TUI's composer as a chat turn. That is the
+// costliest end of this whole gap: the first arm spends a pane, this one
+// spends the operator's live session and a turn of the model's attention on a
+// prompt that reads as a user message.
+//
+// A plain error like DetectionRefusal, for the same reason: launchSession
+// hands RelaunchAgent's error straight back, so fireLoop's three-way switch
+// lands it on the default arm and benches the SLOT rather than blaming the
+// pane (sessionFailure) or the bead.
+func DetectionRetypeRefusal(rt *Runtime, r ManifestReading, session string) error {
+	return Die("%s: refusing to retype the %s launch line — herdr has no detection manifest for argv0 %q\n"+
+		"  ADR 0013 §1: this path fires because herdr reports no agent in the session, and on a runtime it cannot name that is the steady state of a LIVE CLI, not evidence that one died — so the line would land in the running composer as a chat turn\n"+
+		"  %s\n"+
+		"  the whole grid, with what this box reads today: posse runtime check %s",
+		session, rt.Name, r.Argv0, DetectionDoor(rt), rt.Name)
 }
 
 // DetectionDegraded is the interactive half of ADR 0015 §3's asymmetry

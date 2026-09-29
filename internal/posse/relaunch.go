@@ -46,9 +46,13 @@ type RelaunchOpts struct {
 // cannot be completed is refused with the session still running
 // (rangerhq-v52t). Since ranger-base-d8riq that preflight also asks herdr
 // one read-only question, ADR 0013 §1's launch row: a runtime herdr has no
-// detection manifest for cannot be recreated as a dispatched session, and
-// this is where the ADR wants that answer — before the kill, so the session
-// the operator asked to refresh is still theirs.
+// detection manifest for cannot be recreated at all, and this is where the
+// ADR wants that answer — before the kill, so the session the operator asked
+// to refresh is still theirs. Every recreate, not only one whose meta carries
+// a bead (ranger-base-enmu2): a refresh is the one launch that is paid for
+// with a live session, and an operator who wants a session on a runtime posse
+// cannot read can still have one from `posse new` — which is how the manifest
+// that ends the refusal gets written (RecreateOpts, ADR 0060 D2).
 //
 // The kill has a twin, and the preflight cannot help there either: a
 // session this pass cannot see is not a session that is gone, so the unlink
@@ -143,6 +147,18 @@ func (b *HerdrBackend) RelaunchSession(w io.Writer, o RelaunchOpts) error {
 		// Nothing has been destroyed yet, and this is the whole reason for
 		// planning first: the session the operator asked to refresh is still
 		// running, and still theirs.
+		//
+		// ADR 0013 §1's detection refusal arrives HERE, wearing this sentence
+		// (ranger-base-enmu2). The ADR names the rung below — beside
+		// provenNameTakeable, the other question this preflight puts to herdr
+		// — and the answer is taken one rung up instead, inside planLaunch,
+		// because that is where the reading already is and where its
+		// interactive counterpart lives: the same branch that refuses a
+		// recreate warns DEGRADED and proceeds for `posse new`, and split
+		// across two files the two would be free to disagree about one launch.
+		// The property the ADR sets is met more strictly, not less — nothing
+		// is planned, printed or spent before the refusal, and the line below
+		// is the shape it asked for.
 		return Die("%s cannot be recreated as it stands, so it was NOT closed: %v", o.Name, err)
 	}
 	fmt.Fprintf(w, "checked %s: %s\n", o.Name, describePlan(recreate, plan))
@@ -309,6 +325,14 @@ func RecreateOpts(m *HerdrMeta) NewSessionOpts {
 		// that bead was dispatched to: the reap guard must still find it
 		// (ADR 0013 §4).
 		Bead: m.Bead,
+		// And this launch is bought with a session that is alive right now,
+		// which is the fact ADR 0013 §1's detection arm decides on
+		// (ranger-base-enmu2). It is set here and nowhere else: every other
+		// launch adds a session, and only this one spends one. The line above
+		// is why it cannot be left to Bead — a crew session's meta carries
+		// none, and the recreate would then be read as the operator's own
+		// fresh launch and warned at rather than refused.
+		Recreate: true,
 		// A session that had its own tree keeps it. Dir already IS the
 		// worktree, so EnsureSessionTree resolves the same main checkout
 		// through it and finds the tree standing; the flag is what keeps the

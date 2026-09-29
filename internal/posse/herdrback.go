@@ -142,6 +142,22 @@ type NewSessionOpts struct {
 	// dispatch; "" for every interactive launch, and what the reap guard
 	// reads to know there is a bead to ask about at all.
 	Bead string
+	// Recreate says this launch REPLACES a session that is alive right now:
+	// `posse relaunch`, and nothing else (RecreateOpts is its only writer).
+	// It is not the launch's provenance — ByHand already carries that, and a
+	// relaunch is read off a meta nobody is standing at — it is the launch's
+	// PRICE: the session being planned is bought with one the operator still
+	// has.
+	//
+	// Its one reader is planLaunch's ADR 0013 §1 detection arm
+	// (ranger-base-enmu2), where that price is what decides. A launch with a
+	// bead refuses on an undetectable runtime and an interactive one warns and
+	// proceeds, because a pane the operator asked for is how the manifest that
+	// ends the refusal gets written (ADR 0060 D2). A recreate is neither: it
+	// pays for an unreadable session by destroying the live one, and the
+	// scrollback it would close is the fixture. So it refuses, above the kill,
+	// and the operator still has both the session and `posse new`.
+	Recreate bool
 }
 
 func NewHerdrBackend(a *App) *HerdrBackend {
@@ -2131,10 +2147,10 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 		//
 		// This is the backstop for every bead-carrying path that is not the
 		// dispatch loop — a cockpit `d` on a session it must create, a
-		// recipe — and for the recreate half it is also the placement that
-		// matters: RelaunchSession plans BEFORE it kills, so a refusal here
-		// leaves the session the operator asked to refresh still running and
-		// still theirs (ADR 0013 §1 property 3).
+		// recipe — and for the RECREATE it is the placement that matters:
+		// RelaunchSession plans BEFORE it kills, so a refusal here leaves the
+		// session the operator asked to refresh still running and still
+		// theirs (ADR 0013 §1 property 3).
 		//
 		// Dispatch does not normally reach it: launchSession refuses above
 		// the claim, because the argv ladder has taken the bead by the time a
@@ -2145,8 +2161,21 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 		// an upstream detection filing needs are captured from an interactive
 		// session (ADR 0060 D2), so a posse that refused `posse new` here
 		// would have walled off the only route that can end its own refusal.
+		//
+		// A RECREATE is on the refusing side of that asymmetry, and it is the
+		// one arm that is not decided by whether a bead rode in
+		// (ranger-base-enmu2). `posse relaunch` is typed by the operator, so
+		// Bead is whatever the meta happened to carry — "" for every crew
+		// session — and the interactive clause above would have let a refresh
+		// through on exactly the runtime it was written to protect. What
+		// separates it from `posse new` is not who typed it but what it
+		// spends: a recreate buys a session posse cannot read with one that is
+		// alive, and the screens it would close are the fixtures the manifest
+		// is written from. Refusing costs the operator nothing — the session
+		// keeps running, and `posse new` is still open — so the escape hatch
+		// is not narrowed by making this arm refuse.
 		if det := ReadDetection(b.H, rt.Exe()); det.Undetectable() {
-			if o.Bead != "" {
+			if o.Bead != "" || o.Recreate {
 				return nil, DetectionRefusal(rt, det)
 			}
 			b.warn("posse: %s\n", DetectionDegraded(rt, det))
@@ -2821,6 +2850,34 @@ func (b *HerdrBackend) RelaunchAgent(name string, grace time.Duration) (bool, er
 	rt, err := b.App.LoadRuntime(m.Runtime)
 	if err != nil {
 		return false, err
+	}
+	// ADR 0013 §1 property 3's third arm, and the only one that types into a
+	// pane that already exists (ranger-base-enmu2).
+	//
+	// Everything above this line read the session as "the CLI died": the
+	// workspace is alive, the launch is past its grace, the pane is this
+	// meta's own, and AgentTarget found no agent. On every runtime herdr can
+	// name, that last fact is the evidence — a CLI that exited leaves a bare
+	// shell still carrying the launch env, so re-typing the line there is a
+	// full persona restart (rangerhq-vk2). On a runtime herdr CANNOT name it
+	// is evidence of nothing: `agent_not_found` is what such a session reads
+	// as while its CLI sits there perfectly healthy, so the line would be
+	// typed into a live TUI's composer as a chat turn. That is this gap's
+	// worst end, and the one the ADR block was written from.
+	//
+	// It is asked at the first line where the runtime is known, which is also
+	// above the meta write that re-stamps `launched:` and above every render
+	// and the typing itself. A refusal must not bump that stamp: it is the
+	// grace this path measures, and moving it would hide the refusal behind
+	// "too young to relaunch" on the next pass.
+	//
+	// Unconditional, because this path has one caller and it is the
+	// unattended one (dispatch.launchSession) — there is no interactive arm to
+	// hold the ADR 0015 §3 asymmetry open here. The error is plain, so
+	// launchSession's `return launched{}, err` reaches fire's default arm and
+	// benches the slot for the pass.
+	if det := ReadDetection(b.H, rt.Exe()); det.Undetectable() {
+		return false, DetectionRetypeRefusal(rt, det, name)
 	}
 	m.Launched = time.Now()
 	if err := b.writeMeta(m); err != nil {

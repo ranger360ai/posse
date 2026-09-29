@@ -76,7 +76,10 @@ func herdrNames(t *testing.T, fake string, labels ...string) {
 // the bead is claimed BEFORE the session is created, and only a refusal
 // above both branches leaves it untouched. A fixture that exercised one of
 // them would pin a placement that holds for the other by accident.
-func undetectableFixture(t *testing.T, b *HerdrBackend, prompt, ready string) {
+// It returns the repo it wrote the ready rows into, which the relaunch arms
+// need to name a session the way dispatch does (relaunchdetection_qa_test.go,
+// ranger-base-enmu2).
+func undetectableFixture(t *testing.T, b *HerdrBackend, prompt, ready string) string {
 	t.Helper()
 	if err := os.MkdirAll(b.App.RuntimesDir(), 0o755); err != nil {
 		t.Fatal(err)
@@ -95,7 +98,7 @@ func undetectableFixture(t *testing.T, b *HerdrBackend, prompt, ready string) {
 	if err := os.WriteFile(filepath.Join(b.App.AgentsDir, "ranger.md"), []byte(pid), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	qaRepo(t, b.App, ready, "")
+	return qaRepo(t, b.App, ready, "")
 }
 
 // The rule, over all three readings of the same profile — which is the only
