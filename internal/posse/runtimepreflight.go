@@ -169,9 +169,21 @@ func (a *App) RuntimeGaps(rt *Runtime, h Herdr) []RuntimeGap {
 	// own blocking gap above and herdr was never asked about it — a second
 	// line saying herdr's recognition of "" is unknown names a question
 	// nobody put.
-	switch det := ReadDetection(h, exe); {
-	case det.Undetectable():
+	// FOUR arms since ADR 0061 D2 (ranger-base-rx7l7), and only the first
+	// blocks. `reported` is a non-blocking DEGRADE rather than a refusal
+	// precisely so `posse runtime probe` still runs here: the probe refuses
+	// on a blocking gap, and it is the one surface that can measure what
+	// detection on a reported runtime actually reads. The inert arm is the
+	// day herdr ships the kind — the declaration stops mattering, and a
+	// declaration that has stopped mattering reads exactly like one that has
+	// not, so it is said out loud and the remedy is to drop the key.
+	switch det := ReadDetection(h, rt); {
+	case det.Refuses():
 		add("detection", DetectionGapLine(rt, det), true)
+	case det.Reported():
+		add("detection", DetectionReportedGapLine(det), false)
+	case det.InertDeclaration():
+		add("detection", DetectionInertGapLine(det), false)
 	case det.State == ManifestUnreadable && exe != "":
 		add("detection", "herdr could not be asked (not on PATH, or its output changed shape) — whether it recognizes "+exe+" is UNKNOWN here, not no", false)
 	}

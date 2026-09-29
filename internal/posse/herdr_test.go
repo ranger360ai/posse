@@ -1869,6 +1869,45 @@ func fakeHerdr(args []string) int {
 		return fakeOK(`{"type":"pane_send_text"}`)
 	case "pane send-keys":
 		return fakeOK(`{"type":"pane_send_keys"}`)
+	case "pane report-agent":
+		// The verb an outside authority states a pane's agent label through,
+		// and the one thing a `detection: reported` launch reads before it
+		// spends anything (ADR 0061 D2, ranger-base-rx7l7). Only its
+		// `--help` is ever asked for from posse — HasReportAgent reads the
+		// EXIT CODE and parses no text, because clap exits 0 for a
+		// subcommand it has and nonzero for one it does not.
+		//
+		// PRESENT is the default, and it has to be: this fake models herdr
+		// 0.9.1 everywhere else in this file (the reported route, `agent
+		// get`, the 5000ms stall window), and a fake that answered "no such
+		// verb" by default would be a 0.8.2 wearing a 0.9.1's answers.
+		//
+		//	no-report-surface (file)  this build has no such subcommand — the
+		//	                          0.8.2 shape, which is the second
+		//	                          refusing state of the launch row
+		//	report-surface-hang (file)
+		//	                          the call blows its deadline: UNKNOWN,
+		//	                          which must refuse NOTHING. Spelled as a
+		//	                          sleep past the control timeout rather
+		//	                          than as an exit code, because an exit
+		//	                          code is exactly what this reading must
+		//	                          not confuse it with.
+		// The hang is checked FIRST, and that order is the contract: a box
+		// whose herdr both lacks the verb and cannot answer reads UNKNOWN,
+		// because the reading has no way to tell those apart and UNKNOWN is
+		// the one that refuses nothing. A fake that answered "no such verb"
+		// while hung would let a test arm both and pin the weaker rule.
+		if _, err := os.Stat(filepath.Join(fakeDir(), "report-surface-hang")); err == nil {
+			time.Sleep(5 * time.Second)
+		}
+		if _, err := os.Stat(filepath.Join(fakeDir(), "no-report-surface")); err == nil {
+			return fakeErr("bad_request", "fake herdr: unrecognized subcommand 'report-agent'")
+		}
+		if containsString(args, "--help") {
+			fmt.Println("Report an agent label for a pane\n\nUsage: herdr pane report-agent [OPTIONS] <PANE>")
+			return 0
+		}
+		return fakeOK(`{"type":"pane_report_agent"}`)
 	case "agent explain": // a BARE object, like the real `explain --json`
 		// `explain --agent <label> --file <screen>` is a different question
 		// from `explain <pane>`: it is AgentManifest asking whether herdr

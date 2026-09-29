@@ -93,7 +93,12 @@ func TestLiveAwaitAgentAcceptsAStartupScreen(t *testing.T) {
 	d.Poll = 500 * time.Millisecond
 
 	start := time.Now()
-	target, err := d.awaitAgent("live-7sbo", "qalive", d.StartupWait)
+	// The runtime name reaches awaitAgent for its FAILURE line alone
+	// (ranger-base-rx7l7) — `grok` because that is the CLI the recipe above
+	// runs in the pane. This test asserts the wait succeeds, so the line is
+	// never rendered; naming the wrong runtime here would be invisible, which
+	// is why it is named to match the recipe rather than left blank.
+	target, err := d.awaitAgent("live-7sbo", "qalive", "grok", d.StartupWait)
 	t.Logf("awaitAgent: %s target=%q err=%v\n%s", time.Since(start), target, err, out.String())
 	if err != nil {
 		t.Fatalf("awaitAgent refused a live pane herdr calls %q/%q: %v", before.State, before.Rule.ID, err)

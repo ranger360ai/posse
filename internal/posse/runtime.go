@@ -93,6 +93,19 @@ const (
 	// and the canary's premise does not hold here.
 	UnknownModelSwap = "swap"
 
+	// DetectionHerdr: the default, and the only reading posse had before
+	// ADR 0061 — herdr detects the agent from argv0 and a manifest, so a
+	// missing manifest is `agent_not_found` and a bead-carrying launch
+	// refuses by name (ADR 0013 §1).
+	DetectionHerdr = "herdr"
+	// DetectionReported: measured on THIS box — an outside authority labels
+	// this runtime's panes through `herdr pane report-agent`, herdr's own
+	// "integrate your own agent" route and the route every herdr plugin
+	// takes. The label is identity and not liveness (ADR 0061 D1), so the
+	// i3q6g refusal does not fire; what the launch reads instead is whether
+	// this herdr can carry a report at all.
+	DetectionReported = "reported"
+
 	// DefaultStartupWait is the claude-shaped patience for a launch to reach
 	// a promptable screen. It is a per-runtime number (`startup_wait:`)
 	// because 45s is measured on claude and grok's cold start exceeds it on
@@ -111,6 +124,8 @@ func ValidRulesPrecedence(p string) bool {
 func ValidUnknownModel(u string) bool {
 	return u == UnknownModelCarry || u == UnknownModelSwap
 }
+
+func ValidDetection(d string) bool { return d == DetectionHerdr || d == DetectionReported }
 
 // Interstitial is a first-run dialog this runtime draws that dispatch must
 // not answer for the operator (ADR 0013 §2, layer 2). Posse NAMES the key
@@ -462,6 +477,23 @@ type Runtime struct {
 	// RulesPrecedence — a probe bead id and date, so a reader can tell a
 	// measured value from a guess. Ignored when RulesPrecedence is unset.
 	RulesPrecedenceWhy string
+	// Detection is WHO labels this runtime's panes: DetectionHerdr (the
+	// zero value — herdr's own argv0-and-manifest reading) or
+	// DetectionReported (an outside authority states the label through
+	// `herdr pane report-agent`). ADR 0061 D1.
+	//
+	// It is an instance fact and never a property of the engine: whether
+	// THIS box installed a reporter is measured here, so the key overlays
+	// onto a built-in and no built-in ships `reported` (the bob built-in
+	// stays herdr, ADR 0060 D1's tripwire untouched).
+	Detection string
+	// DetectionWhy names the authority behind a DetectionReported — the
+	// plugin id and its install date is the honest form. REQUIRED with
+	// `reported`, because this sentence is what the launch's failure line
+	// prints when the label never comes: "no authority labelled the pane"
+	// is only actionable beside the name of the authority that was supposed
+	// to. Ignored when Detection is herdr.
+	DetectionWhy string
 	// Interstitials are the first-run dialogs this runtime draws, with the
 	// operator-owned config key that silences each. Documented, never
 	// written.
@@ -1916,6 +1948,23 @@ func (a *App) LoadRuntime(name string) (*Runtime, error) {
 		rt.UnknownModel = v
 		rt.UnknownModelWhy = YamlGet(p, "unknown_model_why")
 	}
+	// detection: WHO labels this runtime's panes — herdr itself, or an
+	// outside authority through `herdr pane report-agent` (ADR 0061 D1).
+	// Absent is `herdr`, which is the loud default in the strongest sense
+	// here: it is the reading that REFUSES a bead-carrying launch when
+	// herdr has no manifest for the argv0, so a box that installed a
+	// reporter and declared nothing keeps being told the truth about what
+	// herdr can see. Present-but-wrong refuses, like record: and
+	// unknown_model: above; `reported` with no detection_why: refuses too,
+	// because that sentence is the whole of the failure line when the label
+	// never comes.
+	if v := YamlGet(p, "detection"); v != "" {
+		if err := validateDetectionDecl(v, YamlGet(p, "detection_why")); err != nil {
+			return nil, Die("runtime %s: %s %v", name, AbbrevHome(p), err)
+		}
+		rt.Detection = v
+		rt.DetectionWhy = YamlGet(p, "detection_why")
+	}
 	// turn_outcome: which registered reader sees this runtime's own first
 	// turn. Absent is the loud default — the settle line says posse cannot
 	// tell a refused turn from a worked one here. Present-but-unregistered
@@ -2003,6 +2052,14 @@ var builtinOverlayKeys = []string{
 	// (ranger-base-jzm04). A release that changes it changes it for this
 	// box first, and the canary that rests on it is read by an operator.
 	"unknown_model", "unknown_model_why",
+	// detection:/detection_why: — the most instance-shaped key on the list
+	// (ADR 0061 D1). Whether an outside authority labels this runtime's
+	// panes is a fact about what THIS box installed — a herdr plugin, with
+	// an install date — so shipping it in the binary would be a claim about
+	// every instance. The bob built-in stays `herdr` and says it has no
+	// detection; `runtimes/bob.yaml` on a box that installed the plugin
+	// declares `reported`.
+	"detection", "detection_why",
 }
 
 // builtinMechanismKeys are the ADR 0021 Decision 2 keys: declared in a
@@ -2176,6 +2233,23 @@ func (a *App) overlayBuiltin(rt *Runtime, name string) (*Runtime, error) {
 		rt.UnknownModel = v
 		rt.UnknownModelWhy = YamlGet(p, "unknown_model_why")
 	}
+	// detection: WHO labels this runtime's panes — herdr itself, or an
+	// outside authority through `herdr pane report-agent` (ADR 0061 D1).
+	// Absent is `herdr`, which is the loud default in the strongest sense
+	// here: it is the reading that REFUSES a bead-carrying launch when
+	// herdr has no manifest for the argv0, so a box that installed a
+	// reporter and declared nothing keeps being told the truth about what
+	// herdr can see. Present-but-wrong refuses, like record: and
+	// unknown_model: above; `reported` with no detection_why: refuses too,
+	// because that sentence is the whole of the failure line when the label
+	// never comes.
+	if v := YamlGet(p, "detection"); v != "" {
+		if err := validateDetectionDecl(v, YamlGet(p, "detection_why")); err != nil {
+			return nil, Die("runtime %s: %s %v", name, AbbrevHome(p), err)
+		}
+		rt.Detection = v
+		rt.DetectionWhy = YamlGet(p, "detection_why")
+	}
 	// state_dir:/env_required: REPLACE when present, keep the built-in's
 	// when absent — the native_rules:/egress: rule, and for the same
 	// reason: a merge would be a hidden rule, and a length check cannot
@@ -2218,6 +2292,38 @@ func validateRecordDecl(record, why string) error {
 		return fmt.Errorf("has record: trusted with no record_why: — promotion follows a measurement (ADR 0013 §4), never a bare edit; name what you measured")
 	}
 	return nil
+}
+
+// validateDetectionDecl is the detection:/detection_why: rule, shared by the
+// overlay and template-only paths for validateRecordDecl's reason: the two
+// readers are the same rule twice, and a rule written twice is a rule that
+// disagrees with itself on one of them.
+//
+// Both refusals NAME what the file should have said. A wrong VALUE names the
+// two values, because `detection: reproted` is the `prompt: arvg` shape — a
+// typo that reads as a declaration, silently demoted to the default, and the
+// default here is the reading that refuses the launch. A `reported` with no
+// why names BOTH keys, because the missing one is not the one that is wrong:
+// the declaration is fine and the sentence the failure line needs is absent.
+func validateDetectionDecl(detection, why string) error {
+	if !ValidDetection(detection) {
+		return fmt.Errorf("has detection: %q (want %s or %s — ADR 0061 D1)", detection, DetectionHerdr, DetectionReported)
+	}
+	if detection == DetectionReported && why == "" {
+		return fmt.Errorf("has detection: %s with no detection_why: — name the authority that labels these panes (the plugin id and its install date is the honest form). "+
+			"That sentence is what the launch prints when no label ever arrives, and \"no authority labelled the pane\" is only actionable beside the name of the authority that was supposed to (ADR 0061 D1); both keys are %s: and %s:",
+			DetectionReported, "detection", "detection_why")
+	}
+	return nil
+}
+
+// DetectionMode is the runtime's declaration with the zero value resolved,
+// so no caller has to remember that absent means herdr.
+func (rt *Runtime) DetectionMode() string {
+	if rt.Detection == DetectionReported {
+		return DetectionReported
+	}
+	return DetectionHerdr
 }
 
 // ResolveTier applies the launch-site precedence available here: explicit

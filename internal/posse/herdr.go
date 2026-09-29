@@ -146,6 +146,46 @@ func (h Herdr) AgentManifest(label string) (version string, known, ok bool) {
 	return "", false, false
 }
 
+// HasReportAgent reports whether this herdr carries the `pane report-agent`
+// surface at all — the verb an outside authority states a pane's agent label
+// through, and the one thing a `detection: reported` runtime's launch reads
+// before it spends anything (ADR 0061 D2 property 1).
+//
+// WHY A VERSION IS NOT THE READING. herdr 0.8.2 has no such verb and 0.9.0+
+// does, and both were on seats of this shop on the same day
+// (ranger-base-v1yrt) — so the fact is per-box and per-upgrade, and a
+// version string parsed out of `--version` would be posse deciding which
+// releases have it. The verb answering its own `--help` is the verb saying
+// so.
+//
+// ok is false when herdr could not be asked at all — absent from PATH, or a
+// call that hung. That is UNKNOWN and never a "no", the same rule
+// KnownAgentKinds and AgentManifest apply: a launch refused because a
+// diagnostic verb went missing is the wall this whole file's callers exist
+// not to build.
+//
+// A `--help` and not a report: this runs on every launch of such a runtime,
+// and a real `pane report-agent` would label a pane posse does not own. clap
+// prints help and exits 0 for a subcommand it has; for one it does not, it
+// prints its usage error and exits nonzero, so the exit code IS the answer
+// and nothing here parses text.
+func (h Herdr) HasReportAgent() (present, ok bool) {
+	if !h.Available() {
+		return false, false
+	}
+	_, _, err := h.capture([]string{"pane", "report-agent", "--help"})
+	if err == nil {
+		return true, true
+	}
+	// A hang is not a "no" — it is the one failure mode that says nothing
+	// about the verb. Every other nonzero exit is clap refusing a subcommand
+	// it does not have, which is exactly the fact being asked for.
+	if _, hung := err.(*HerdrHangError); hung {
+		return false, false
+	}
+	return false, true
+}
+
 type herdrError struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`

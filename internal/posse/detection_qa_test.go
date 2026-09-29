@@ -79,7 +79,14 @@ func herdrNames(t *testing.T, fake string, labels ...string) {
 // It returns the repo it wrote the ready rows into, which the relaunch arms
 // need to name a session the way dispatch does (relaunchdetection_qa_test.go,
 // ranger-base-enmu2).
-func undetectableFixture(t *testing.T, b *HerdrBackend, prompt, ready string) string {
+//
+// decl is extra yaml LINES for that profile, variadic so the three callers
+// that predate it are untouched. It is how the reported arms declare
+// `detection:`/`detection_why:` on the same fixture the refusing arms use
+// (reporteddetection_qa_test.go, ranger-base-rx7l7) — one profile shape for
+// both, because the whole subject is one declaration changing what the same
+// herdr answer MEANS, and two fixtures would let the two halves drift.
+func undetectableFixture(t *testing.T, b *HerdrBackend, prompt, ready string, decl ...string) string {
 	t.Helper()
 	if err := os.MkdirAll(b.App.RuntimesDir(), 0o755); err != nil {
 		t.Fatal(err)
@@ -87,6 +94,9 @@ func undetectableFixture(t *testing.T, b *HerdrBackend, prompt, ready string) st
 	body := "command: mycli {file}\n"
 	if prompt != "" {
 		body += "prompt: " + prompt + "\n"
+	}
+	for _, ln := range decl {
+		body += ln + "\n"
 	}
 	if err := os.WriteFile(filepath.Join(b.App.RuntimesDir(), "mycli.yaml"), []byte(body), 0o644); err != nil {
 		t.Fatal(err)

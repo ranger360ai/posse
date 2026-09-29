@@ -1874,9 +1874,13 @@ type launchPlan struct {
 // What the old sentence was really promising is still true, and is the
 // standard any future reading here has to meet: nothing planLaunch asks of
 // herdr CREATES anything, none of it is destructive, and a herdr that cannot
-// be asked at all decides nothing (ReadDetection's UNKNOWN). The one call it
-// makes is `agent explain` over an empty temp file — read-only, 0.00-0.04s,
-// MEASURED 2026-09-28 on herdr 0.9.1.
+// be asked at all decides nothing (ReadDetection's UNKNOWN). The calls it
+// makes are `agent explain` over an empty temp file — read-only, 0.00-0.04s,
+// MEASURED 2026-09-28 on herdr 0.9.1 — and, on a runtime that declares
+// `detection: reported` and that herdr has no manifest for, `pane
+// report-agent --help` (ranger-base-rx7l7). A `--help` and not a report: a
+// real report would LABEL a pane posse does not own, and the exit code is the
+// whole answer, so nothing here parses herdr's text either.
 func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 	a := b.App
 
@@ -2174,11 +2178,33 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 		// is written from. Refusing costs the operator nothing — the session
 		// keeps running, and `posse new` is still open — so the escape hatch
 		// is not narrowed by making this arm refuse.
-		if det := ReadDetection(b.H, rt.Exe()); det.Undetectable() {
+		// Two readings out of one call since ADR 0061 D2 (ranger-base-rx7l7).
+		// Refuses() is the refusal — the missing manifest, plus a runtime
+		// declaring `detection: reported` on a herdr that has no `pane
+		// report-agent` verb for anyone to report through — and it keeps the
+		// same asymmetry: dispatch and a recreate refuse, `posse new` warns
+		// and proceeds.
+		//
+		// The second reading refuses NOTHING and is the point of the whole
+		// record: a reported runtime whose herdr carries the surface launches,
+		// and says so once. This is the placement for that line because it is
+		// the one function under every launch path — a dispatch, a cockpit
+		// `d`, a recipe and `posse new` all plan here — so the sentence is
+		// printed once per launch and never twice.
+		//
+		// The INERT declaration says nothing here on purpose: it changes no
+		// launch, and `runtime check` is where an operator is told to drop a
+		// key. A launch that printed it would be a line on every pane of a
+		// runtime that works perfectly.
+		det := ReadDetection(b.H, rt)
+		switch {
+		case det.Refuses():
 			if o.Bead != "" || o.Recreate {
 				return nil, DetectionRefusal(rt, det)
 			}
 			b.warn("posse: %s\n", DetectionDegraded(rt, det))
+		case det.Reported():
+			b.warn("posse: %s\n", DetectionReportedNote(rt, det))
 		}
 		// Enforcement parity (ADR 0002 §4): the cage the session gets is the
 		// best available tier (shims today); the PID may demand more. Any
@@ -2876,7 +2902,13 @@ func (b *HerdrBackend) RelaunchAgent(name string, grace time.Duration) (bool, er
 	// hold the ADR 0015 §3 asymmetry open here. The error is plain, so
 	// launchSession's `return launched{}, err` reaches fire's default arm and
 	// benches the slot for the pass.
-	if det := ReadDetection(b.H, rt.Exe()); det.Undetectable() {
+	// NoManifest() and not Refuses(): this arm refuses on a `reported`
+	// runtime too (ADR 0061 D3.4). There the signal is the AUTHORITY's
+	// silence rather than herdr's ignorance, and it is if anything a weaker
+	// reason to believe a CLI died — a live pane its reporter has not
+	// labelled reads identically. The refusal's wording says which of the two
+	// it is; the predicate does not care.
+	if det := ReadDetection(b.H, rt); det.NoManifest() {
 		return false, DetectionRetypeRefusal(rt, det, name)
 	}
 	m.Launched = time.Now()

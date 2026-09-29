@@ -4338,7 +4338,15 @@ func (d *Dispatcher) launchSession(is RepoIssue, persona, session, runtime, tier
 			if line := DangerLine(rt); line != "" {
 				return launched{}, DangerRefusal(rt, line)
 			}
-			if det := ReadDetection(d.HB.H, rt.Exe()); det.Undetectable() {
+			// Refuses(), not Undetectable(): ADR 0061 D2 gives this row a
+			// SECOND refusing state — a runtime declaring `detection:
+			// reported` on a herdr with no `pane report-agent` verb — and
+			// one predicate for both is what stops a launch path growing an
+			// arm for one cause and missing the other. A `reported` runtime
+			// whose herdr HAS the verb is not a refusal at all: it proceeds,
+			// and planLaunch prints the one line that says detection here is
+			// by report.
+			if det := ReadDetection(d.HB.H, rt); det.Refuses() {
 				return launched{}, DetectionRefusal(rt, det)
 			}
 		}
@@ -4385,7 +4393,7 @@ func (d *Dispatcher) launchSession(is RepoIssue, persona, session, runtime, tier
 	// The persona CLI needs a moment to start before it can take a prompt —
 	// this launch's own runtime's patience, not necessarily the pass's
 	// default (runtimeWait, ranger-base-p84).
-	target, err := d.awaitAgent(is.ID, session, d.runtimeWait(runtime))
+	target, err := d.awaitAgent(is.ID, session, runtime, d.runtimeWait(runtime))
 	if err != nil {
 		// ADR 0013 §2's busy-key split: a CLI that never came up, never
 		// became promptable, or sat behind a screen posse does not know is
@@ -4453,7 +4461,7 @@ func (d *Dispatcher) launchWithPrompt(is RepoIssue, persona, session, runtime, t
 		return launched{}, d.unclaimAfterLaunchFailure(is, persona, resumed, err)
 	}
 	d.noteTree(is.ID, session)
-	target, seen, err := d.awaitDelivered(is.ID, session, d.runtimeWait(runtime))
+	target, seen, err := d.awaitDelivered(is.ID, session, runtime, d.runtimeWait(runtime))
 	if err != nil {
 		// No agent ever appeared: the CLI did not start, so nothing read
 		// the prompt file and nobody is working this bead. Hand it back.
@@ -4796,17 +4804,40 @@ func (d *Dispatcher) LaunchBead(is RepoIssue) (session string, err error) {
 // wait is only for the failure line — deadline already carries the real
 // budget — but it must be the SAME number the caller derived deadline from
 // (runtimeWait), or the message would name a patience nobody waited.
-func (d *Dispatcher) awaitTarget(session string, deadline time.Time, wait time.Duration) (string, error) {
+//
+// runtime is the launching profile's NAME, and it is here for the failure
+// line alone (ADR 0061 D2 property 2): on a runtime that declares `detection:
+// reported` the observable this loop waits on is an outside authority
+// labelling the pane, so "check the session" is the wrong sentence — an
+// absent label says nothing about the CLI, which may be up and working with
+// nobody having reported it. The profile is loaded only on the FAILURE path:
+// the happy exit is the first iteration for most launches and it pays nothing
+// for a line it will not print.
+func (d *Dispatcher) awaitTarget(session, runtime string, deadline time.Time, wait time.Duration) (string, error) {
 	for {
 		t, err := d.HB.AgentTarget(session)
 		if err == nil {
 			return t, nil
 		}
 		if time.Now().After(deadline) {
-			return "", Die("no agent detected in %s after %s — check the session (posse peek %s)", session, wait, session)
+			return "", Die("%s", d.noAgentLine(session, runtime, wait))
 		}
 		time.Sleep(d.Poll)
 	}
+}
+
+// noAgentLine picks the sentence awaitTarget fails with. A runtime that will
+// not load hands NoAgentLine the ZERO reading, which renders the sentence this
+// line has always been: the detection-by-report wording is a claim about a
+// declaration, and a profile posse could not read has made no declaration it
+// may quote. Spelling that fallback here instead would be a second copy of a
+// sentence two files then have to keep identical.
+func (d *Dispatcher) noAgentLine(session, runtime string, wait time.Duration) string {
+	rt, err := d.App.LoadRuntime(runtime)
+	if err != nil {
+		return NoAgentLine(ManifestReading{}, session, wait)
+	}
+	return NoAgentLine(ReadDetection(d.HB.H, rt), session, wait)
 }
 
 // awaitDelivered is the argv path's wait, ADR 0013 §2 step 4. The prompt is
@@ -4831,9 +4862,9 @@ func (d *Dispatcher) awaitTarget(session string, deadline time.Time, wait time.D
 //     not judge the bead, because starting a settle-wait here would be
 //     waiting on herdr's idle guess, which returns instantly and would read
 //     a session that never worked as one that settled.
-func (d *Dispatcher) awaitDelivered(id, session string, wait time.Duration) (target string, seen bool, err error) {
+func (d *Dispatcher) awaitDelivered(id, session, runtime string, wait time.Duration) (target string, seen bool, err error) {
 	deadline := time.Now().Add(wait)
-	target, err = d.awaitTarget(session, deadline, wait)
+	target, err = d.awaitTarget(session, runtime, deadline, wait)
 	if err != nil {
 		return "", false, err
 	}
@@ -4871,9 +4902,9 @@ func (d *Dispatcher) awaitDelivered(id, session string, wait time.Duration) (tar
 	}
 }
 
-func (d *Dispatcher) awaitAgent(id, session string, wait time.Duration) (string, error) {
+func (d *Dispatcher) awaitAgent(id, session, runtime string, wait time.Duration) (string, error) {
 	deadline := time.Now().Add(wait)
-	target, err := d.awaitTarget(session, deadline, wait)
+	target, err := d.awaitTarget(session, runtime, deadline, wait)
 	if err != nil {
 		return "", err
 	}

@@ -291,6 +291,16 @@ func TestOverlayAppliesEveryInstanceFactKey(t *testing.T) {
 			func(r *Runtime) string { return r.UnknownModel }, UnknownModelSwap},
 		"unknown_model_why": {"unknown_model: " + UnknownModelSwap + "\nunknown_model_why: measured here 2026-09-09, ranger-base-jzm04\n",
 			func(r *Runtime) string { return r.UnknownModelWhy }, "measured here 2026-09-09, ranger-base-jzm04"},
+		// detection:/detection_why: — the ADR 0061 D1 pair, and the reason
+		// they overlay at all: whether THIS box installed an authority that
+		// labels a runtime's panes is a measurement of the box, so shipping
+		// it in a built-in would be a claim about every instance. claude's
+		// own value is the zero one (herdr detects it), which is what makes
+		// the control below bite.
+		"detection": {"detection: " + DetectionReported + "\ndetection_why: herdr-bob plugin, installed 2026-09-28\n",
+			func(r *Runtime) string { return r.DetectionMode() }, DetectionReported},
+		"detection_why": {"detection: " + DetectionReported + "\ndetection_why: herdr-bob plugin, installed 2026-09-28\n",
+			func(r *Runtime) string { return r.DetectionWhy }, "herdr-bob plugin, installed 2026-09-28"},
 		"state_dir":    {"state_dir: ~/.instance-claude\n", func(r *Runtime) string { return strings.Join(r.StateDirs, ",") }, "~/.instance-claude"},
 		"env_required": {"env_required: AWS_REGION\n", func(r *Runtime) string { return strings.Join(r.EnvRequired, ",") }, "AWS_REGION"},
 	}

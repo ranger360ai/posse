@@ -208,7 +208,9 @@ posse runtime check <name>
 
 The `launch` row says whether herdr recognizes your argv0 and which
 manifest version answered; the preflight at the bottom reports a missing
-manifest as a **blocking gap** and exits 1. It asks herdr the way herdr
+manifest as a **blocking gap** and exits 1 — unless the profile declares
+`detection: reported`, in which case it is a named degrade and the check
+exits 0 (below). It asks herdr the way herdr
 resolves it (`agent explain`), so a CLI reached through an `aliases` entry
 counts as recognized — a check that only read the compiled kind list would
 tell an operator who aliased correctly that their CLI is undetectable.
@@ -216,3 +218,96 @@ tell an operator who aliased correctly that their CLI is undetectable.
 A green `posse runtime check` is not a launched session. Nothing here
 proves the contract end to end; that gate still wants a human to stand up a
 pane (ranger-base-nlya).
+
+---
+
+## Detection by report — when you do not author a manifest at all
+
+*ADR 0061. Two keys, and the one case where a missing manifest is not a
+missing anything.*
+
+Everything above assumes the pane's label comes from **herdr**: argv0 plus
+a manifest. There is a second route, and it is herdr's own documented
+"integrate your own agent" one — an outside authority states the label:
+
+```sh
+herdr pane report-agent --source <who> --agent <label> --state working <pane>
+```
+
+Every herdr **plugin** takes that route. The `MartinLoeper/herdr-bob`
+plugin labels Bob panes this way today, from its own watcher. If your CLI
+is labelled by something like that, you author no TOML: the label already
+arrives, and what posse needs to be told is that it does.
+
+```yaml
+# runtimes/<name>.yaml
+detection: reported
+detection_why: herdr-bob plugin MartinLoeper/herdr-bob, installed 2026-09-28
+```
+
+`detection:` is `herdr` (the default — everything above) or `reported`.
+`detection_why:` is **required** with `reported` and names the authority;
+the plugin id and its install date is the honest form. It is not
+documentation — it is the sentence posse prints when the label never
+arrives, and "no authority labelled the pane" is only actionable beside the
+name of the authority that was supposed to.
+
+Both keys are **instance facts**: whether *this box* installed a reporter is
+a measurement of the box, so they overlay onto a built-in
+(`runtimes/bob.yaml`) and no built-in ships `reported` — `bob` says it has
+no detection until upstream compiles the kind in.
+
+### When to declare it
+
+When all three hold:
+
+1. herdr has no manifest for your argv0 — `posse runtime check <name>` says
+   so, and authoring one is not the plan.
+2. Something else labels the pane through `pane report-agent`, and you have
+   watched it do so: `herdr agent get <pane>` names your label while the CLI
+   is running.
+3. Your herdr has the verb. It arrives in **0.9.0** — `herdr --version`.
+   Declaring `reported` on 0.8.2 makes a bead-carrying launch **refuse by
+   name**, because nothing can report and the launch could only wait out
+   `startup_wait`.
+
+If herdr already detects your argv0, the declaration is **inert** and
+`runtime check` says so: herdr's own detection wins, and the key should be
+dropped. That is what the day upstream ships your kind looks like.
+
+### What it costs (and what it does not)
+
+`detection: reported` lifts the launch refusal. It does not make the pane
+as readable as a detected one, and `runtime check` reports the difference as
+a non-blocking degrade rather than a clean row:
+
+- **Every state posse acts on is the reporter's word.** herdr reads no
+  screen for such a pane — `agent explain` answers
+  `agent_explain_unavailable` — so there is no matched rule behind
+  `working` and no visible chrome behind `idle`.
+- **`blocked` is whatever the reporter can see**, which may be nothing. On
+  herdr-bob today it is nothing: moot for a dispatched seat under
+  `--auto-approve`, real for a session you launched by hand.
+- **A reported label outlives its process.** herdr ties it to the pane, not
+  to the process, and the herdr-bob watcher releases only when the pane
+  closes — so a CLI that exits to its shell keeps reading `idle`. posse
+  guards that with herdr's own process reading (ADR 0061 D3), and upstream
+  has two asks open (D4).
+- **The launch says it once.** A launch onto a reported runtime prints one
+  line naming the authority, before anything reads a state off the session.
+- **`posse runtime probe <name>` runs here** — that is why the gap does not
+  block. It is what measures what detection on this runtime actually reads.
+
+### When no label arrives
+
+The launch's failure line does not say "check the session" and does not
+offer a larger `startup_wait:`. The observable was an authority labelling
+the pane, and an absent label says nothing about the CLI — it may be up and
+working with nobody having reported it. First remedy:
+
+```sh
+herdr plugin list      # is that authority installed, enabled, and watching?
+```
+
+An *enabled* plugin is not a *running* one; herdr-bob's watcher needs a hand
+start today.

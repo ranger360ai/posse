@@ -139,6 +139,7 @@ func runtimeYamlKeys() []string {
 		"prompt", "startup_wait", "record", "record_why", "native_rules", "turn_outcome",
 		"rules_precedence", "rules_precedence_why",
 		"unknown_model", "unknown_model_why",
+		"detection", "detection_why",
 		"state_dir", "env_required",
 	}
 	for _, t := range Tiers {
