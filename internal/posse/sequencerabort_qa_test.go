@@ -455,6 +455,34 @@ func insideOwn(q, own string) bool {
 // reading, so the reason belongs beside it.
 var sequencerRecipeWords = map[string]bool{"rm": true}
 
+// isRecipeRemovalLine reports whether this line of the refusal is a removal
+// instruction, and it is the gate in FRONT of the word walk below — the
+// decision about which lines get read at all.
+//
+// By FIELDS, not by the substring `"rm "`. The substring is a literal `rm`
+// followed by a SPACE, so `rm\t-rf\t--\t../../index` holds no such
+// substring and the walk below never ran on it: the one class of operand for
+// which the removal scan is the ONLY reader — relative, so it carries the
+// common dir nowhere for refusalSpansOutside to find — escaped on the
+// separator alone (ranger-base-yhih9). The walk itself has always skipped
+// ' ' and '\t' alike; only this gate was space-bound. Five beads before it
+// asked what a path LOOKS like; this one is whether the line holding it is
+// read.
+//
+// strings.Fields, so every blank run separates and the test is membership in
+// the same closed vocabulary the walk uses. Over-selection is the safe
+// direction: a line selected in error is WALKED, and a walk of a line whose
+// every word resolves inside `own` is silent. `"rm "` over-selected too, and
+// worse — it matches inside `confirm `.
+func isRecipeRemovalLine(line string) bool {
+	for _, w := range strings.Fields(line) {
+		if sequencerRecipeWords[w] {
+			return true
+		}
+	}
+	return false
+}
+
 // recipeRemovalsOutside returns every word of an `rm` line of the refusal that
 // this reader cannot account for as a path inside `own` — resolved where the
 // word is an absolute path it can read, and quoted as written where it is not.
@@ -491,7 +519,7 @@ var sequencerRecipeWords = map[string]bool{"rm": true}
 func recipeRemovalsOutside(errs, own string) []string {
 	var out []string
 	for _, line := range strings.Split(errs, "\n") {
-		if !strings.Contains(line, "rm ") {
+		if !isRecipeRemovalLine(line) {
 			continue
 		}
 		for i := 0; i < len(line); {
@@ -661,20 +689,26 @@ func TestQASequencerRecipeStaysOutOfTheCommonDir(t *testing.T) {
 	// Not by path alone: a `packed-refs.lock` the recipe reached by any
 	// spelling is the removal D3 forbids.
 	for _, line := range strings.Split(errs, "\n") {
-		if strings.Contains(line, "rm ") && strings.Contains(line, "packed-refs.lock") {
+		if isRecipeRemovalLine(line) && strings.Contains(line, "packed-refs.lock") {
 			t.Errorf("the recipe tells a seat to remove a packed-refs.lock (ADR 0059 D3): %q", line)
 		}
 	}
-	// Every WORD on that line is an option, a word in sequencerRecipeWords, or
-	// a path inside that dir — quoted or not, and with a space in it or
-	// without. Stated over the whole word rather than over the paths in it
-	// because a word that is not a path AT ALL is what escaped last: a
-	// relative operand names no `/` for a span to start at, so it went unread
-	// by both scans while naming shared state (ranger-base-rg19l). Where the
-	// scan cannot tell WHERE a path ends it reports the span rather than
-	// resolving it, so a recipe that grows shell quoting this reader does not
-	// do lands here too (ranger-base-yplnv); pathSpanAt says which spellings
-	// those are.
+	// Every WORD of every removal line is an option, a word in
+	// sequencerRecipeWords, or a path inside that dir — quoted or not, and
+	// with a space in it or without. Stated over the whole word rather than
+	// over the paths in it because a word that is not a path AT ALL is what
+	// escaped the bead before it: a relative operand names no `/` for a span to
+	// start at, so it went unread by both scans while naming shared state
+	// (ranger-base-rg19l). Where the scan cannot tell WHERE a path ends it
+	// reports the span rather than resolving it, so a recipe that grows shell
+	// quoting this reader does not do lands here too (ranger-base-yplnv);
+	// pathSpanAt says which spellings those are.
+	//
+	// "Every removal line" is isRecipeRemovalLine's, and that gate is the
+	// sixth axis, one step in front of the vocabulary: while the line was
+	// selected by the substring `"rm "` this sentence was false for any line
+	// whose argv is TAB-separated, which the walk below would have read
+	// correctly had it been handed one (ranger-base-yhih9).
 	for _, q := range recipeRemovalsOutside(errs, own) {
 		t.Errorf("the recipe tells a seat to remove %q, outside its own git dir %s (ADR 0059 D3): %q", q, own, errs)
 	}
@@ -788,11 +822,36 @@ func TestQASequencerScansEndAPathAtItsQuoteNotAtASpace(t *testing.T) {
 		{"a relative traversal out of own", "    rm -rf -- ../../index", true, true},
 		{"a relative traversal with cd in front", "    cd '" + own + "' && rm -rf -- ../../index", true, true},
 		{"a relative traversal through a leftover name", "    rm -rf -- sequencer/../../../index", true, true},
+		// ranger-base-yhih9: the sixth axis, which is not a spelling of a path
+		// but the gate that decides whether the line is read. While that gate
+		// was the substring `"rm "` — a literal `rm` and a SPACE — every row
+		// below reported false, because the walk that reads them was never
+		// reached. The tab is doing all the work: each of these is a row above
+		// with its blanks respelled.
+		{"THE ESCAPE: a tab-separated relative traversal", "    rm\t-rf\t--\t../../index", true, true},
+		{"the same, no leading indent", "rm\t-rf\t--\t../../index", true, true},
+		{"one tab after the verb, the rest spaces", "    rm\t-rf -- ../../index", true, true},
+		// And the two neighbouring tab spellings, so a fix for the three above
+		// cannot be a widening that loses them. An ABSOLUTE operand still
+		// carries the common dir, so the span scan sees it whatever the
+		// separator — the gap was exactly tab AND relative.
+		{"a tab-separated absolute traversal (both scans)", "    rm\t-rf\t--\t'" + own + "/../../index'", true, false},
+		{"a tab-separated path inside own", "    rm\t-rf\t--\t'" + own + "/MERGE_MSG'", false, false},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			rm := recipeRemovalsOutside(c.line, own)
 			named := refusalSpansOutside(c.line, own, common)
-			if strings.Contains(c.line, "rm ") && (len(rm) > 0) != c.out {
+			// UNGATED, deliberately. This read `if
+			// strings.Contains(c.line, "rm ") && ...`, which is the scan's
+			// own line filter — so a row the scan wrongly declined to read
+			// was a row this assertion also declined to make, and the table
+			// went green over exactly the class it was added to catch. A
+			// gate shared with the function under test makes a row inert
+			// precisely when the function is wrong (ranger-base-yhih9).
+			// Nothing needs one: every out=false row is either a removal
+			// line whose words all resolve inside `own` or prose holding no
+			// verb, and the scan reports nothing for both.
+			if (len(rm) > 0) != c.out {
 				t.Errorf("recipeRemovalsOutside(%q) = %q, want outside=%v", c.line, rm, c.out)
 			}
 			if want := c.out && !c.rmScanOnly; (len(named) > 0) != want {
