@@ -5338,12 +5338,74 @@ func mergeBlockedBody(persona, id, base string, t *SessionTree, o MergeOutcome, 
 	return fmt.Sprintf(
 		"%s closed %s, but the %d commit(s) on %s are not on %s.\n\n%s\n\n%s%s\nworktree: %s\nrepo:     %s\n%s\n"+
 			"Its code is NOT on %s, so anything reading %s does not see this bead's work.\n"+
-			"Fix what the reason above names — only a real conflict is resolved by\n"+
-			"rebasing onto %s by hand — then a launcher pass or `posse kill` lands it.\n\n%s",
+			"Fix what the reason above names, then a launcher pass or `posse kill` lands it.\n\n%s\n\n%s",
 		persona, id, o.Commits, t.Branch, base, o.Reason,
 		discoveredFromMarkerPrefix, id,
-		t.Path, t.Repo, mergeBlockedWhere(sha, pin), base, base, base,
+		t.Path, t.Repo, mergeBlockedWhere(sha, pin), base, base,
+		mergeBlockedReplay(base, sha),
 		mergeBlockedShelfLife(t, base, sha, pin))
+}
+
+// mergeBlockedReplay is the handoff's HOW, and it exists because the sentence
+// it replaced named the one tool this shop measured and retired for a session
+// worktree (ranger-base-vh2o8). That sentence read: "only a real conflict is
+// resolved by rebasing onto <base> by hand", and it is the first thing every
+// seat dispatched on one of these blocks reads. MEASURED 2026-09-28, by
+// title over the store's issues.jsonl: 66 of them had been filed.
+//
+// TWO THINGS WERE WRONG WITH IT. The rebase is the hazard AGENTS.md
+// ("Landing the plane") warns about: ending one needs the SHARED repo's
+// `packed-refs.lock`, and when that lock is unavailable git exits 0 with the
+// sequencer marker still set, so the seat's NEXT path-limited commit dies at
+// `fatal: cannot do a partial commit during a cherry-pick` — in a later call,
+// looking like a PID refusal. And it was never needed: mergesCleanly, the
+// filter this pass already ran, merged the two in the object store, so the
+// merged tree is a `git cat-file blob` away and no sequencer state is created
+// at all. docs/notes.d/ranger-base-xea2y.md measured that replay;
+// ranger-base-glf3j landed one by it, over a conflict that was one add/add
+// hunk in a GENERATED file.
+//
+// THE AUTHOR DATE IS PART OF THE RECIPE AND NOT A FLOURISH. A replay writes
+// no `-x` trailer and its resolution changes the patch, so `git cherry` says
+// `+` and the trailer arm finds nothing: equivalentOnBase's third arm —
+// replayKey, (author email, AUTHOR date, subject) — is the only one that can
+// pair the seat's commit with the stranded original. Miss it and the branch
+// reads as unlanded on every later pass, which re-files this same block
+// forever.
+//
+// NO SHA, NO OPERANDS. The commands need the pinned commit, and a filing that
+// could not read a head has none — mergeBlockedShelfLife's third arm is what
+// tells that seat so. The warning stands in both arms: it is about a tool,
+// not about this commit.
+func mergeBlockedReplay(base, sha string) string {
+	const warn = "RESOLVING A REAL CONFLICT: REPLAY, DO NOT REBASE. A rebase or cherry-pick in\n" +
+		"a session worktree needs the SHARED repo's packed-refs.lock to END; when that\n" +
+		"lock is unavailable git exits 0 with the sequencer marker still set, and your\n" +
+		"next path-limited commit dies at `fatal: cannot do a partial commit during a\n" +
+		"cherry-pick` — in a later call, looking like a PID refusal (AGENTS.md,\n" +
+		"\"Landing the plane\").\n"
+	if sha == "" {
+		return warn + "Nothing here needs one: `git merge-tree --write-tree " + base + " <the\n" +
+			"work>` merges in the object store and `git cat-file blob` takes the merged\n" +
+			"blobs back out — no sequencer state, nothing to leak. This filing has no sha\n" +
+			"to put in that command, so the reason above is what there is.\n" +
+			"docs/notes.d/ranger-base-xea2y.md is the worked example, MEASURED."
+	}
+	return warn + "Nothing here needs one: the merge this pass already made is in the\n" +
+		"object store, and every worktree of this repo shares it. In YOUR tree, on " + base + ":\n" +
+		"  # the merged tree, conflict markers and all:\n" +
+		"  TREE=$(git merge-tree --write-tree " + base + " " + sha + " | head -1)\n" +
+		"  # nothing deleted — the loop below only writes and adds:\n" +
+		"  git diff --diff-filter=D --name-only " + base + " $TREE\n" +
+		"  # the paths to replay, then one cat-file per path:\n" +
+		"  git diff --name-only " + base + "..." + sha + "\n" +
+		"  git cat-file blob \"$TREE:<p>\" > <p>\n" +
+		"Resolve whatever came out carrying conflict markers — a GENERATED file is\n" +
+		"regenerated, never hand-merged — then `git add -- <new paths>` and commit\n" +
+		"path-limited. Keep that commit's author identity, AUTHOR date (`git commit\n" +
+		"--date=...`; `--amend` ignores GIT_AUTHOR_DATE) and subject, or nothing pairs\n" +
+		"your commit with it and every later pass re-files this block.\n" +
+		"docs/notes.d/ranger-base-xea2y.md is the worked example, MEASURED."
 }
 
 // blockedOnDirt is the one question anything asks of a merge-back reason

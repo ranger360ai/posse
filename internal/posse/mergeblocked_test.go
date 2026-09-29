@@ -1153,3 +1153,113 @@ func TestPassPinsABlockItAlreadyFiledAndDidNotRefile(t *testing.T) {
 		t.Errorf("a pass that read an open block left its work at %q, want %s pinned (%v)", got, sha, err)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// The handoff's HOW (ranger-base-vh2o8).
+//
+// The sentence these pins replaced was "only a real conflict is resolved by
+// rebasing onto <base> by hand", and it is the first thing every seat
+// dispatched on one of these blocks reads — 66 of them had been filed
+// carrying it (MEASURED 2026-09-28, by title over the store's
+// issues.jsonl). `git rebase` is the one tool a session worktree cannot
+// reliably END (AGENTS.md, "Landing the plane"), and the replay the block
+// actually needs creates no sequencer state at all
+// (docs/notes.d/ranger-base-xea2y.md, MEASURED).
+//
+// So: the copy may not prescribe a rebase, and it has to name the operand
+// that replaces one.
+
+// rebaseRecipes is every way this copy could tell a seat to rebase. It is a
+// list of PRESCRIPTIONS and not of the word: the block quotes git's own
+// report of what the launcher already did ("the rebase was aborted"), which
+// is a fact, and the copy names the tool in order to warn about it.
+var rebaseRecipes = []string{
+	"rebasing onto", "rebase onto", "`git rebase`", "git rebase ",
+	"rebase by hand", "rebase it", "cherry-pick onto",
+}
+
+// rebaseRecommendations names the prescriptions a piece of copy carries.
+func rebaseRecommendations(text string) []string {
+	var out []string
+	for _, r := range rebaseRecipes {
+		if strings.Contains(text, r) {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// The control. The scanner has to be red on the sentence the bead is about,
+// quiet on a block reason that REPORTS a rebase, and quiet on the copy that
+// replaced it — without all three it is a green function nobody has seen
+// refuse anything.
+func TestRebaseRecommendationScannerDiscriminates(t *testing.T) {
+	t.Parallel()
+	const preFix = "Fix what the reason above names — only a real conflict is resolved by\n" +
+		"rebasing onto main by hand — then a launcher pass or `posse kill` lands it."
+	if got := rebaseRecommendations(preFix); len(got) == 0 {
+		t.Fatal("the scanner finds nothing to object to in the pre-fix sentence — it would pass on the defect (ranger-base-vh2o8)")
+	}
+	const reason = "main moved on and replaying posse/ranger-r-a-1 onto it conflicts — the rebase " +
+		"was aborted, so this attempt changed nothing (git: CONFLICT (content))"
+	if got := rebaseRecommendations(reason); len(got) > 0 {
+		t.Errorf("the scanner reads git's report of the launcher's own rebase as a prescription: %q", got)
+	}
+	for _, sha := range []string{"", "a1e32986d8e56fa33aa18b1c7748b01b97591124"} {
+		if got := rebaseRecommendations(mergeBlockedReplay("main", sha)); len(got) > 0 {
+			t.Errorf("sha %q: the replacement copy still prescribes a rebase: %q", sha, got)
+		}
+	}
+}
+
+// The property, over the body a seat actually reads. Two arms, because the
+// recipe's operands are the pinned commit and a filing that could not read a
+// head has none — the warning is in both, since it is about a tool and not
+// about this commit.
+func TestMergeBlockedBodyTellsTheSeatToReplayAndNotToRebase(t *testing.T) {
+	t.Parallel()
+	tr := &SessionTree{Repo: "/r", Path: "/w/t", Branch: "posse/ranger-r-a-1", Base: "main"}
+	o := MergeOutcome{
+		Commits: 1,
+		Reason: "main moved on and replaying posse/ranger-r-a-1 onto it conflicts — the rebase " +
+			"was aborted, so this attempt changed nothing (git: CONFLICT (content))",
+	}
+	const sha = "a1e32986d8e56fa33aa18b1c7748b01b97591124"
+
+	for _, c := range []struct {
+		what, sha, pin string
+		want           []string
+	}{
+		{"pinned", sha, blockedPinRef(tr.Branch), []string{
+			"REPLAY, DO NOT REBASE",
+			"merge-tree --write-tree main " + sha, // the launcher's own operand, with the handle
+			"--diff-filter=D",                     // the one thing a write-and-add loop misses
+			"git cat-file blob",
+			"AUTHOR date", // or equivalentOnBase's replay arm cannot pair the commit
+			"docs/notes.d/ranger-base-xea2y.md",
+		}},
+		{"no head at all", "", "", []string{
+			"REPLAY, DO NOT REBASE",
+			"merge-tree --write-tree main",
+			"no sha",
+			"docs/notes.d/ranger-base-xea2y.md",
+		}},
+	} {
+		got := mergeBlockedBody("p", "a-1", "main", tr, o, c.sha, c.pin)
+		for _, w := range c.want {
+			if !strings.Contains(got, w) {
+				t.Errorf("%s: the block does not say %q:\n%s", c.what, w, got)
+			}
+		}
+		// Read the COPY, not git's report: the reason is what the launcher
+		// found, and it names the rebase it aborted.
+		said := strings.Replace(got, o.Reason, "<the reason>", 1)
+		if strings.Contains(said, "rebase was aborted") {
+			t.Fatalf("%s: the fixture reason is not in the body, so this arm measures nothing:\n%s", c.what, got)
+		}
+		if bad := rebaseRecommendations(said); len(bad) > 0 {
+			t.Errorf("%s: the block prescribes %q — the tool a session worktree cannot reliably end (ranger-base-vh2o8):\n%s",
+				c.what, bad, said)
+		}
+	}
+}
