@@ -56,7 +56,24 @@ const whatHerdrSawRules = 3
 // It returns "" when there is nothing to add: an older herdr that does not
 // emit `evaluated_rules`, or a detection that has none. The caller's
 // message must stand on its own without this.
-func (d AgentDetection) WhatHerdrSaw() string {
+//
+// ON A REPORTED READING there is no working to print — herdr evaluated no
+// rules, because it read no screen — so it prints the REPORTER's word
+// instead, which is the whole of the evidence on that route (ADR 0061 D3.3,
+// ranger-base-nm5i6). `why` is the runtime's `detection_why:`, the sentence
+// that names the authority; a caller that does not have the profile in hand
+// passes "" and the block stands without it.
+//
+// The why is an ARGUMENT rather than a field on the detection because the
+// reading is taken from herdr, which has never heard of a posse runtime: a
+// detection that carried a declaration would be a reading claiming to know
+// something only the profile can say. Every caller therefore decides whether
+// it has one, which is what ADR 0061 D3.3's "where the runtime is in hand"
+// means.
+func (d AgentDetection) WhatHerdrSaw(why string) string {
+	if d.Reported != "" {
+		return d.whatTheReporterSaid(why)
+	}
 	if len(d.EvaluatedRules) == 0 {
 		return ""
 	}
@@ -152,4 +169,29 @@ func namedFew(names []string, n int) string {
 		return strings.Join(names, ", ")
 	}
 	return fmt.Sprintf("%s, +%d more", strings.Join(names[:n], ", "), len(names)-n)
+}
+
+// whatTheReporterSaid is WhatHerdrSaw's reported arm: herdr's working replaced
+// by the only evidence this route has, in the same indented shape, so a
+// failure line reads the same whichever route produced it.
+//
+// It names the label and the state on their own line because those two are
+// what a reader has to act on: the label says WHO to go ask, and the state
+// says what that authority last believed. The stale clause is named
+// separately, not folded into the state, because a stale `idle` and a live
+// `unknown` are opposite problems with opposite remedies and the old line
+// described them identically — the same failure WhatHerdrSaw was written for
+// one reading over (ranger-base-3j8).
+func (d AgentDetection) whatTheReporterSaid(why string) string {
+	var b strings.Builder
+	b.WriteString("\n    No screen evidence on this route: herdr has no detection manifest for this pane, so `agent explain` refuses it outright and every state here is an outside authority's word (ADR 0061 D3).")
+	fmt.Fprintf(&b, "\n      label %q, reported state %s", d.Reported, orUnknown(d.State))
+	if d.ShellForeground {
+		b.WriteString("\n      and every foreground process in the pane is the pane's own SHELL — so that label is STALE whatever it says, and nothing is holding the keyboard (ADR 0061 D3.2)")
+	}
+	if why != "" {
+		fmt.Fprintf(&b, "\n      detection_why: %s", why)
+	}
+	b.WriteString("\n      first remedy: `herdr plugin list` — is that authority installed, enabled and watching? Not a larger startup_wait:")
+	return b.String()
 }

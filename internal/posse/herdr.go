@@ -769,6 +769,16 @@ type AgentDetection struct {
 	// available for such a pane, because every herdr-side reading here is a
 	// screen reading and herdr will not read that screen as an agent's.
 	Reported string `json:"-"`
+	// ShellForeground is posse's own field too, and it is the LIVENESS half
+	// of the reading above (ADR 0061 D3.2, ranger-base-nm5i6): herdr's
+	// process reading said every foreground process in this pane IS the
+	// pane's own shell. A reported label outlives its process — herdr ties
+	// it to the pane, and only the reporter or the pane's close ever clears
+	// it — so `Reported` alone is identity, and this is the one field that
+	// says the identity is still somebody's. Never set on a detected
+	// reading: herdr drops a detected label when argv0 leaves the pane, so
+	// that route has this guard already (ADR 0061 Claims facts 1 and 3).
+	ShellForeground bool `json:"-"`
 }
 
 // EvaluatedRule is one line of herdr's working: a manifest rule, whether it
@@ -796,7 +806,53 @@ type EvaluatedRule struct {
 // Seen reports whether herdr actually recognized what is on the screen,
 // rather than guessing from the fact that a known agent lives in the pane.
 // Positive evidence only: a matched rule, or chrome herdr can see.
-func (d AgentDetection) Seen() bool { return d.Rule.ID != "" || d.VisibleIdle || d.Reported != "" }
+//
+// ON A REPORTED READING there is no screen to have recognized — herdr will
+// not read one for a pane it has no manifest for — and the positive evidence
+// is the other authority's word, held to two conditions (ADR 0061 D3). The
+// label alone was enough until ranger-base-nm5i6 and is not:
+//
+//  1. a lifecycle state that authority would only report about a CLI it has
+//     watched. `unknown`, or none at all, is not one (D3.1).
+//  2. the pane is still LIVE. A label whose pane has gone back to its own
+//     shell is a pidfile whose process is gone, and the cost of believing one
+//     is a work prompt typed into a shell that runs every line of it
+//     (D3.2 — ranger-base-3p0's failure with the cause one layer over).
+//
+// The two routes do not compose — a reading either came from a screen or from
+// a report — and the rule arm is first so a detected pane pays nothing for
+// this arm existing.
+func (d AgentDetection) Seen() bool {
+	if d.Rule.ID != "" || d.VisibleIdle {
+		return true
+	}
+	return d.Reported != "" && reportedStateIsWatched(d.State) && !d.ShellForeground
+}
+
+// ReportedNotSeen names WHY a reported reading is not positive evidence, in
+// the authority's own vocabulary — the sentence ADR 0061 D3.2 asks every
+// failure line on this route to carry: the label, the state the reporter
+// left, and, where that is the cause, that the foreground is the pane's own
+// shell.
+//
+// One copy, because the surfaces that print it — the promptable gate's
+// refusal, the settle ladder's working, the probe's detection observable —
+// are the same surfaces that used to print three different concessions about
+// one pane. Empty for a reading that IS seen and for one that is not reported
+// at all, so a caller cannot print it by forgetting to branch.
+func (d AgentDetection) ReportedNotSeen() string {
+	switch {
+	case d.Reported == "":
+		return ""
+	case d.ShellForeground:
+		return fmt.Sprintf("the label %q is STALE: the authority that stated it left the state at %q, and every foreground process in the pane is now the pane's own SHELL — so nothing is holding the keyboard there, and text typed at that label lands in a shell that runs every line of it (ADR 0061 D3.2)",
+			d.Reported, orUnknown(d.State))
+	case !reportedStateIsWatched(d.State):
+		return fmt.Sprintf("the authority that labels this pane %q reports its state as %q — which is what a CLI nobody has watched start looks like. herdr cannot read this screen itself (`agent explain` refuses a reported pane), so that state is the whole reading (ADR 0061 D3.1)",
+			d.Reported, orUnknown(d.State))
+	}
+	return ""
+}
 
 // AgentExplain asks herdr why an agent is in the state it is in. `explain
 // --json` prints a bare object, not a result envelope — Run hands that back
@@ -805,6 +861,18 @@ func (h Herdr) AgentExplain(target string) (AgentDetection, error) {
 	var det AgentDetection
 	res, err := h.Run("agent", "explain", target, "--json")
 	if err != nil {
+		// THE ONE DOOR (ADR 0061 D3.1, ranger-base-nm5i6). herdr refuses
+		// this verb outright for a pane whose agent label it did not detect
+		// but somebody else REPORTED, and that refusal is not the absence of
+		// a reading — it is the route to the only reading such a pane has.
+		// Taken HERE and nowhere else, so that every consumer of an
+		// AgentDetection reads a reported pane through the same function that
+		// reads a detected one: none of them branches, and none of them
+		// names a runtime. reportedagent.go carries the measurement, the
+		// discriminator and the liveness half.
+		if rep, ok := h.reportedDetection(target, err); ok {
+			return rep, nil
+		}
 		return det, err
 	}
 	if err := json.Unmarshal(res, &det); err != nil {

@@ -248,6 +248,17 @@ func TestQAAReportedPromptHonoursACallerTimeoutShorterThanTheStallWindow(t *test
 // outright, so every poll of the screen gate errors and it falls into its
 // never-answered concession — prompting with no readiness reading at all.
 // The reported state IS the reading, and it opens the gate at once.
+//
+// AMENDED by ranger-base-nm5i6, and the amendment is the point of ADR 0061
+// D3. This test once pinned that the gate spent NO `agent explain` on a
+// reported pane, because 8eqaa routed with `ReportedAgent` BEFORE the screen
+// ladder and skipped the verb it knew would refuse. That saving bought a
+// second ladder, and two ladders over one pane could disagree — 8eqaa's
+// opened on any named state, where the one door also asks whether the pane is
+// still live (D3.2) — so a stranded label was promptable through one and not
+// the other. The refusal is now the ROUTE: one refused call per poll (0.00s
+// measured) buys a reading every consumer shares, re-derived per read, and
+// what is pinned here is that order.
 func TestQAThePromptGateReadsAReportedStateAsPromptable(t *testing.T) {
 	t.Parallel()
 	b, fake := newTestBackend(t)
@@ -271,8 +282,30 @@ func TestQAThePromptGateReadsAReportedStateAsPromptable(t *testing.T) {
 	if !det.Seen() {
 		t.Errorf("an authority reporting a lifecycle state is positive evidence: %+v", det)
 	}
-	if log := calls(t, fake); strings.Contains(log, "agent explain w1:p1") {
-		t.Errorf("herdr refuses to explain a reported pane — asking it is a wasted startup wait every time:\n%s", log)
+	// THE ONE DOOR, as an order of calls. `agent explain <pane>` first —
+	// always, because nothing else can tell a reported pane from a detected
+	// one — then the label, then whether herdr has a manifest for it, then
+	// the pane's own processes. A build that read any of these without the
+	// first has grown a second reading; one that stops before the last has
+	// dropped the liveness half and will type a work prompt at a shell.
+	log := calls(t, fake)
+	var at []int
+	for _, want := range []string{"agent explain w1:p1 --json", "agent get w1:p1", "--agent plugged", "pane process-info --pane w1:p1"} {
+		i := strings.Index(log, want)
+		if i < 0 {
+			t.Fatalf("the one detection reading must ask %q:\n%s", want, log)
+		}
+		at = append(at, i)
+	}
+	for i := 1; i < len(at); i++ {
+		if at[i] < at[i-1] {
+			t.Errorf("the reading's calls are out of order — the explain refusal is what routes it, so nothing may precede it:\n%s", log)
+		}
+	}
+	// And ONE of each per poll. A gate that opened on the first reading must
+	// not have polled at all, which is what the empty note above says too.
+	if n := strings.Count(log, "pane process-info"); n != 1 {
+		t.Errorf("the liveness read is one call per reading, not %d:\n%s", n, log)
 	}
 }
 

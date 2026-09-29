@@ -4840,6 +4840,20 @@ func (d *Dispatcher) noAgentLine(session, runtime string, wait time.Duration) st
 	return NoAgentLine(ReadDetection(d.HB.H, rt), session, wait)
 }
 
+// detectionWhy is the launching profile's `detection_why:` — the authority a
+// reported pane's label came from — for the failure lines that have a runtime
+// NAME in hand (ADR 0061 D3.3). Loaded on the failure path only, like
+// noAgentLine above, and empty for every way of not having one: a profile that
+// will not load, or one that declares `herdr` and therefore names no authority
+// to quote.
+func (d *Dispatcher) detectionWhy(runtime string) string {
+	rt, err := d.App.LoadRuntime(runtime)
+	if err != nil || rt.DetectionMode() != DetectionReported {
+		return ""
+	}
+	return rt.DetectionWhy
+}
+
 // awaitDelivered is the argv path's wait, ADR 0013 §2 step 4. The prompt is
 // already with the CLI, so this is not a readiness gate and nothing is
 // waiting to be typed: it waits for herdr to SEE a screen, which is the
@@ -4887,6 +4901,14 @@ func (d *Dispatcher) awaitDelivered(id, session, runtime string, wait time.Durat
 		case det.Seen():
 			return target, true, nil
 		default:
+			// ADR 0061 D3.3: on a reported reading there is no rule that
+			// failed to match, so `only "idle" (no rule matched)` would
+			// describe a screen nobody read. ReportedNotSeen is the reporter's
+			// state and, where that is the cause, the stale-label clause.
+			if why := det.ReportedNotSeen(); why != "" {
+				lastWhy, lastGuess = why, det
+				break
+			}
 			reason := det.FallbackReason
 			if reason == "" {
 				reason = "no rule matched"
@@ -4895,7 +4917,7 @@ func (d *Dispatcher) awaitDelivered(id, session, runtime string, wait time.Durat
 		}
 		if !time.Now().Add(poll).Before(deadline) {
 			d.printf("◷ %-14s work prompt delivered on %s's launch line, but herdr never recognized a screen there within %s — %s%s\n",
-				id, session, wait, lastWhy, lastGuess.WhatHerdrSaw())
+				id, session, wait, lastWhy, lastGuess.WhatHerdrSaw(d.detectionWhy(runtime)))
 			return target, false, nil
 		}
 		time.Sleep(poll)
@@ -5019,19 +5041,38 @@ func (d *Dispatcher) awaitSettled(id, session, target string, until []string, de
 			return det.State, det, nil
 		case det.Seen() && (det.State == "idle" || det.State == "done"):
 			return det.State, det, nil
+		case det.Seen() && det.Reported != "":
+			// The reported route's version of the arm below: the authority
+			// reported a state it HAS watched, and it is neither idle nor
+			// done — `working`, most of the time. There is no rule to name
+			// (herdr matched none and read no screen), and lastGuess is KEPT
+			// rather than cleared, because the block it renders is the label
+			// and whether that label is still somebody's — which is the whole
+			// of the evidence here, where a matched rule has nothing to
+			// explain (ADR 0061 D3.3).
+			lastErr, lastGuess = "", det
+			lastWhy = fmt.Sprintf("the authority that labels this pane %q last reported %q, which is not a settle", det.Reported, orUnknown(det.State))
 		case det.Seen():
 			// Settled a moment ago, something else on screen now. Not an
 			// answer either way: wait for one.
 			lastErr, lastWhy = "", fmt.Sprintf("herdr last read %q from rule %q", det.State, det.Rule.ID)
 			lastGuess = AgentDetection{}
 		default:
+			lastErr = ""
+			lastGuess = det
+			// The reported arm (ADR 0061 D3.3). "herdr never saw a screen it
+			// recognizes" is true of every reported pane forever, so it is
+			// not the news; what is, is what the AUTHORITY said and whether
+			// the pane it described is still live.
+			if why := det.ReportedNotSeen(); why != "" {
+				lastWhy = why
+				break
+			}
 			reason := det.FallbackReason
 			if reason == "" {
 				reason = "no rule matched"
 			}
-			lastErr = ""
 			lastWhy = fmt.Sprintf("herdr never saw a screen it recognizes there, only %q (%s) — the pane may still be at a shell prompt", status, reason)
-			lastGuess = det
 		}
 		if !time.Now().Add(poll).Before(deadline) {
 			// The concession is for detection that could not be READ at
@@ -5044,7 +5085,14 @@ func (d *Dispatcher) awaitSettled(id, session, target string, until []string, de
 				d.printf("· %-14s herdr cannot explain %s (%s) — prompting on its %q anyway\n", id, session, lastErr, status)
 				return status, AgentDetection{State: status}, nil
 			}
-			return "", AgentDetection{}, Die("agent in %s never became promptable within %s — %s; check the session (posse peek %s)%s", session, wait, lastWhy, session, lastGuess.WhatHerdrSaw())
+			// WhatHerdrSaw("") and not a declaration: this ladder takes a
+			// target and never a runtime, so the profile is not in hand and
+			// ADR 0061 D3.3's "where the runtime is in hand" does not hold
+			// here. The reported block still names the label and the state,
+			// which is what the sentence above needs; threading a runtime
+			// through four callers to quote one more clause would be paying
+			// for a sentence the operator can read off `posse runtime check`.
+			return "", AgentDetection{}, Die("agent in %s never became promptable within %s — %s; check the session (posse peek %s)%s", session, wait, lastWhy, session, lastGuess.WhatHerdrSaw(""))
 		}
 		time.Sleep(poll)
 	}

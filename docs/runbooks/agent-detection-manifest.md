@@ -311,3 +311,42 @@ herdr plugin list      # is that authority installed, enabled, and watching?
 
 An *enabled* plugin is not a *running* one; herdr-bob's watcher needs a hand
 start today.
+
+### When the label is there and the pane is a shell
+
+This is the one hazard detection by report ADDS, and posse guards it for you
+(ADR 0061 D3.2). A reported label is a pidfile: herdr ties it to the **pane**,
+and only the reporter — or the pane closing — ever clears it. Measured on this
+box: a pane reported `working` ran `sleep 6`, went back to its shell prompt,
+and `agent get` still read `working` ten minutes later. So a CLI that exits to
+its shell keeps reading `idle`, and a work prompt typed at that reading is
+typed at a **shell**, which runs every line of it.
+
+Every state posse reads on a reported pane therefore carries one extra
+question, `herdr pane process-info --pane <pane>` (0.00–0.02s):
+
+```sh
+herdr pane process-info --pane <pane>
+#  shell_pid 34661, foreground_processes [{pid 82630, argv0 node}]   ← live
+#  shell_pid 34661, foreground_processes [{pid 34661, argv0 zsh}]    ← a shell
+```
+
+If every foreground process **is** the pane's own shell, the label is stale
+whatever state it carries: posse treats it as no evidence, refuses the prompt
+with nothing typed, and the line names the label, the state the reporter left,
+and that the foreground is the shell. No argv is matched and no shell list is
+kept — a pid compared to a pid needs neither.
+
+What to do when you see it:
+
+```sh
+posse peek <session>              # is the CLI actually gone?
+herdr plugin list                 # the authority is still labelling a dead pane
+```
+
+The fix is upstream's, and both asks are open (ADR 0061 D4): the plugin should
+release the label when its process leaves the pane's foreground, and herdr
+should scope a reported label to the foreground process group. Until then this
+read is the guard; afterwards it is a redundant hundredth of a second and
+stays. A `process-info` that **cannot** be read is not evidence either way —
+the label stands on its own, exactly as it did before the guard existed.

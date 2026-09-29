@@ -513,6 +513,16 @@ func evalProbe(r probeReading) []ProbeObservable {
 	case r.AgentKind != r.Exe:
 		obs = append(obs, ProbeObservable{4, "herdr-detection", false,
 			"herdr named the pane " + r.AgentKind + ", not " + r.Exe + " — dispatch would address it as another agent's kind"})
+	// The REPORTED arms (ADR 0061 D3, ranger-base-nm5i6). The reading came
+	// through the same door a detected pane's does, so nothing here branched
+	// to get it — but the two SENTENCES cannot be one. "settled it from
+	// visible_idle" over a pane herdr read no screen for would be the probe
+	// claiming chrome herdr never saw, on the one surface whose whole job is
+	// to measure what detection on this runtime actually reads.
+	case !r.Detection.Seen() && r.Detection.Reported != "":
+		obs = append(obs, ProbeObservable{4, "herdr-detection", false,
+			"herdr has no manifest for this pane and " + r.Detection.ReportedNotSeen() +
+				" — so posse has no readable state here: a dispatched seat would wait out its startup_wait and prompt on nothing"})
 	case !r.Detection.Seen():
 		reason := r.Detection.FallbackReason
 		if reason == "" {
@@ -521,6 +531,11 @@ func evalProbe(r probeReading) []ProbeObservable {
 		obs = append(obs, ProbeObservable{4, "herdr-detection", false,
 			"herdr named the pane " + r.AgentKind + " but its idle is a GUESS (" + reason +
 				"): no rule matched and it saw no chrome, so `working` and every settled state on this runtime are guesses too"})
+	case r.Detection.Reported != "":
+		obs = append(obs, ProbeObservable{4, "herdr-detection", true,
+			"herdr has no manifest for this pane — the label " + r.Detection.Reported + " was REPORTED by an outside authority, and its " +
+				orUnknown(r.Detection.State) + " is that authority's word about a pane whose foreground is not the shell. " +
+				"DETECTION BY REPORT: herdr matches no rule and reads no screen here, so `blocked` is whatever the reporter can see, which may be nothing (ADR 0061 D2 property 3, D3)"})
 	default:
 		how := "visible_idle"
 		if r.Detection.Rule.ID != "" {

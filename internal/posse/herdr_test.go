@@ -1869,6 +1869,47 @@ func fakeHerdr(args []string) int {
 		return fakeOK(`{"type":"pane_send_text"}`)
 	case "pane send-keys":
 		return fakeOK(`{"type":"pane_send_keys"}`)
+	case "pane process-info":
+		// The LIVENESS half of the reported reading (ADR 0061 D3.2,
+		// ranger-base-nm5i6). Two fields of a rich answer: the pane's own
+		// shell, and the pids herdr says are in its foreground.
+		//
+		//	pane-foreground     "<shell_pid>|<pid>[,<pid>…]" — what herdr
+		//	                    reports for this pane. A foreground pid equal
+		//	                    to the shell's is a pane sitting at a bare
+		//	                    prompt; anything else is a CLI holding the tty.
+		//	process-info-error  "code|message" — the read fails, which is the
+		//	                    concession arm: not evidence that the pane is
+		//	                    at a shell, so a label stands on its own.
+		//
+		// The DEFAULT is a LIVE pane, and it has to be the default for the
+		// same reason `pane report-agent` defaults present: a fake that put
+		// the shell in the foreground unless asked would make every reported
+		// label read stale, every reported pane unpromptable, and the whole
+		// route unreachable through this fake while its own pins stayed
+		// green. The numbers are the measured ones (ADR 0061 Claims fact 2:
+		// shell_pid 34661, `sleep` at 82630).
+		if b, err := os.ReadFile(filepath.Join(fakeDir(), "process-info-error")); err == nil {
+			code, msg, ok := strings.Cut(strings.TrimSpace(string(b)), "|")
+			if !ok {
+				msg = "fake herdr: pane process-info refused"
+			}
+			return fakeErr(code, msg)
+		}
+		shell, fg := "34661", "82630"
+		if b, err := os.ReadFile(filepath.Join(fakeDir(), "pane-foreground")); err == nil {
+			if s, f, ok := strings.Cut(strings.TrimSpace(string(b)), "|"); ok {
+				shell, fg = s, f
+			}
+		}
+		var procs []string
+		for _, pid := range strings.Split(fg, ",") {
+			if pid = strings.TrimSpace(pid); pid != "" {
+				procs = append(procs, fmt.Sprintf(`{"pid":%s,"argv0":"sh","name":"sh"}`, pid))
+			}
+		}
+		return fakeOK(fmt.Sprintf(`{"type":"pane_process_info","process_info":{"shell_pid":%s,"foreground_process_group_id":%s,"foreground_processes":[%s]}}`,
+			shell, shell, strings.Join(procs, ",")))
 	case "pane report-agent":
 		// The verb an outside authority states a pane's agent label through,
 		// and the one thing a `detection: reported` launch reads before it
@@ -1942,6 +1983,27 @@ func fakeHerdr(args []string) int {
 				msg = "fake herdr: cannot explain"
 			}
 			return fakeErr(code, msg)
+		}
+		// `explain <pane>` over a pane whose label came from `pane
+		// report-agent` — the real 0.9.1 REFUSES it, and that refusal is the
+		// discriminator posse's one detection reading routes on (ADR 0061
+		// D3.1, ranger-base-nm5i6; MEASURED shape in reportedagent.go's head
+		// comment). Derived from the same two levers the reported route
+		// already reads — a label in `reported-agent` that `herdr-kinds` does
+		// not name — rather than given a lever of its own, because a fake
+		// that could be armed reported-but-explainable would be a herdr that
+		// has never existed, and every pin of the reported arm could be
+		// satisfied by the detected path instead.
+		//
+		// AFTER explain-error, so a test that arms its own code still gets it:
+		// that lever is about a herdr that went away, which can happen over
+		// any pane.
+		if b, err := os.ReadFile(filepath.Join(fakeDir(), "reported-agent")); err == nil && len(args) > 2 {
+			label, _, _ := strings.Cut(strings.TrimSpace(string(b)), "|")
+			if kinds, kerr := os.ReadFile(filepath.Join(fakeDir(), "herdr-kinds")); kerr == nil &&
+				!containsString(strings.Fields(string(kinds)), label) {
+				return fakeErr("agent_explain_unavailable", "fake herdr: "+args[2]+" does not have a detected agent label")
+			}
 		}
 		fmt.Println(fakeExplain())
 		return 0

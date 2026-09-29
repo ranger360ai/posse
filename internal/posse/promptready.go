@@ -55,15 +55,28 @@ package posse
 // would be a worse regression than the bug. A guess is a real answer and
 // holds the full wait; only the never-answered case is cut short.
 //
-// AND THE PANE WITH NO SCREEN READING AT ALL (ranger-base-8eqaa). Everything
-// above is about `agent explain`, which herdr refuses outright for a pane
-// whose agent label it did not detect but somebody else REPORTED
-// (agent_explain_unavailable). Against such a pane every poll of the gate
-// errors and it falls into the concession in the paragraph above — the
-// weakest reading there is, over a pane that has a perfectly good one. So
-// there is a second gate below, awaitReportedPromptable, taking the same
-// decision off the reported lifecycle state; the route between them is
-// Herdr.ReportedAgent, and reportedagent.go carries why.
+// AND THE PANE WITH NO SCREEN READING AT ALL (ranger-base-8eqaa, folded into
+// this gate by ranger-base-nm5i6). Everything above is about `agent explain`,
+// which herdr refuses outright for a pane whose agent label it did not detect
+// but somebody else REPORTED (agent_explain_unavailable). Against such a pane
+// every poll of the gate errored and it fell into the concession in the
+// paragraph above — the weakest reading there is, over a pane that has a
+// perfectly good one.
+//
+// 8eqaa answered that with a SECOND gate beside this one, reading the reported
+// lifecycle state off `agent get`. ADR 0061 D3 puts that reading inside
+// `AgentExplain` instead, where all six consumers of a detection share it, and
+// this file keeps ONE ladder again: the loop below is unchanged, every
+// `det.Seen()` it reads is now true of a reported pane whose authority has
+// watched a live CLI, and the only thing that branches is the REFUSAL's
+// wording — because there is no screen to describe and no rule to name, so
+// "herdr has not recognized a screen" would be a sentence about the wrong
+// thing (D3.3).
+//
+// Two readings that could disagree was the whole risk: the second gate opened
+// on ANY named state, where the one door also asks whether the pane is still
+// live (D3.2), so a stranded label was promptable through one ladder and not
+// the other. The fold is why that cannot be true of one build.
 
 import (
 	"fmt"
@@ -97,16 +110,12 @@ const (
 // the refusal it is the last guess, which is what the error already
 // describes.
 func (b *HerdrBackend) AwaitPromptable(session, target string) (AgentDetection, string, error) {
-	// A pane herdr LABELS but does not DETECT has no screen reading at all:
-	// `agent explain` answers agent_explain_unavailable, so every poll below
-	// errors and the gate falls into its never-answered concession —
-	// prompting with no readiness reading at all, which is the opposite of
-	// what such a pane deserves. It has a real state, stated by the
-	// authority that labelled it; that reading is the gate
-	// (ranger-base-8eqaa).
-	if ag, reported := b.H.ReportedAgent(target); reported {
-		return b.awaitReportedPromptable(session, target, ag)
-	}
+	// No reported pre-check here since ranger-base-nm5i6: AgentExplain's own
+	// refusal is what routes a reported pane onto its reading, so the loop
+	// below reads one and judges it with the same `Seen()` it judges a screen
+	// with (ADR 0061 D3.1). A reported pane pays one refused `agent explain`
+	// per poll for that — MEASURED 0.00s on herdr 0.9.1 — and buys a route
+	// that is re-derived every read rather than decided once.
 	wait := b.promptReadyWait(session)
 	start := time.Now()
 	deadline := start.Add(wait)
@@ -130,8 +139,8 @@ func (b *HerdrBackend) AwaitPromptable(session, target string) (AgentDetection, 
 			// poll all by itself, and that is not the gate looping — it is
 			// the ordinary cost of asking (ranger-base-vstc).
 			if attempts > 1 {
-				return det, fmt.Sprintf("waited %s for %s to draw a screen herdr recognizes (%s)",
-					time.Since(start).Round(100*time.Millisecond), session, seenBy(det)), nil
+				return det, fmt.Sprintf("waited %s for %s %s (%s)",
+					time.Since(start).Round(100*time.Millisecond), session, waitedFor(det), seenBy(det)), nil
 			}
 			return det, "", nil
 		default:
@@ -148,6 +157,16 @@ func (b *HerdrBackend) AwaitPromptable(session, target string) (AgentDetection, 
 	if !answered {
 		return AgentDetection{}, fmt.Sprintf("herdr cannot explain %s (%s) — prompting without the readiness gate", session, lastErr), nil
 	}
+	// The REPORTED wording (ADR 0061 D3.3). Same refusal, same remedies, and
+	// a different sentence about the cause, because on this route there is no
+	// screen herdr failed to recognize: what there is, is another authority's
+	// word, and either it says nothing useful or the pane it describes has
+	// gone back to its shell. ReportedNotSeen is the one copy of that clause.
+	if why := lastGuess.ReportedNotSeen(); why != "" {
+		return lastGuess, "", Die("nothing was sent: %s is labelled by something other than herdr's own detection, and %s "+
+			"(ranger-base-3p0). Prompt again once it has settled, look first (posse peek %s), or send it anyway with --now.%s",
+			session, why, session, lastGuess.WhatHerdrSaw(b.reportedWhy(session)))
+	}
 	reason := lastGuess.FallbackReason
 	if reason == "" {
 		reason = "no rule matched"
@@ -155,80 +174,30 @@ func (b *HerdrBackend) AwaitPromptable(session, target string) (AgentDetection, 
 	return lastGuess, "", Die("nothing was sent: herdr has not recognized a screen in %s within %s — it reports %q with %s, "+
 		"which is what a CLI that has not taken the keyboard yet looks like, and text typed there lands in whatever has it "+
 		"(ranger-base-3p0). Prompt again once it has settled, look first (posse peek %s), or send it anyway with --now.%s",
-		session, wait, lastGuess.State, reason, session, lastGuess.WhatHerdrSaw())
+		session, wait, lastGuess.State, reason, session, lastGuess.WhatHerdrSaw(""))
 }
 
-// awaitReportedPromptable is the gate over a pane whose agent label came
-// from `pane report-agent` — a herdr plugin, or any other external
-// authority (ranger-base-8eqaa).
+// reportedWhy is the DECLARATION behind a reported pane's label — the
+// runtime's `detection_why:`, which is the sentence that names the authority
+// (ADR 0061 D1 requires it exactly so this line has something to name).
 //
-// SAME RULE, DIFFERENT EVIDENCE. It asks the question the screen gate asks —
-// does the CLI hold the keyboard — and answers it from the only source that
-// can speak about this pane: the reported lifecycle state. Any named state
-// is a yes, because an authority does not report idle, working, done or
-// blocked about a CLI it has not seen start. `unknown` is the reported way
-// of saying nothing is known, and it waits exactly as a guess does.
-//
-// It does NOT refuse a blocked pane, and that is deliberate rather than an
-// omission: the screen gate opens on blocked too, and delivery is where the
-// refusal lives — sendTextPrompt mirrors herdr's own agent_blocked rejection
-// so that both routes refuse in the same place, by the same rule, with the
-// same code. A gate that refused here as well would make the two routes
-// disagree about which failure a caller sees.
-//
-// The concession is the same one and for the same reason: an `agent get`
-// that will not answer is not evidence of unreadiness, and after
-// promptExplainGrace of nothing but errors it prompts out loud rather than
-// spending a whole startup wait on a reading that is not working.
-func (b *HerdrBackend) awaitReportedPromptable(session, target string, first HerdrAgent) (AgentDetection, string, error) {
-	wait := b.promptReadyWait(session)
-	start := time.Now()
-	deadline := start.Add(wait)
-	answered, attempts := false, 0
-	// ag is the last reading that ANSWERED, never the last one attempted: a
-	// poll that errored says nothing about the pane, and the refusal below
-	// names a state and a label, which an error has neither of (the rule
-	// rangerhq-lhy2 put on the screen gate, one reading over). The first
-	// attempt spends no call — ReportedAgent's own `agent get` is what
-	// routed us here, microseconds ago, and asking again would make every
-	// reported prompt cost two.
-	ag := first
-	var lastErr string
-	for {
-		attempts++
-		cur, err := ag, error(nil)
-		if attempts > 1 {
-			cur, err = b.H.AgentInfo(target)
-		}
-		switch {
-		case err != nil:
-			lastErr = err.Error()
-		case cur.AgentStatus != "" && cur.AgentStatus != "unknown":
-			det := AgentDetection{State: cur.AgentStatus, Reported: cur.Agent}
-			if attempts > 1 {
-				return det, fmt.Sprintf("waited %s for %s to report a state (%s)",
-					time.Since(start).Round(100*time.Millisecond), session, seenBy(det)), nil
-			}
-			return det, "", nil
-		default:
-			lastErr, answered, ag = "", true, cur
-		}
-		if !answered && time.Since(start) >= promptExplainGrace {
-			break
-		}
-		if !time.Now().Add(promptReadyPoll).Before(deadline) {
-			break
-		}
-		time.Sleep(promptReadyPoll)
+// Read on the FAILURE path only, and only from the profile, so it costs no
+// herdr call and the happy exit pays nothing for it. Empty for every way of
+// not having one: no meta, no runtime, a profile that will not load, or a
+// runtime that declares `herdr` — a pane can be reported on a runtime that
+// never declared it (the reading is a property of the pane, not of the
+// profile), and quoting a `detection_why:` that is not there would be posse
+// putting words in an operator's mouth.
+func (b *HerdrBackend) reportedWhy(session string) string {
+	m, ok := b.readMeta(session)
+	if !ok || m.Runtime == "" || b.App == nil {
+		return ""
 	}
-	if !answered {
-		return AgentDetection{}, fmt.Sprintf("herdr cannot describe %s (%s) — prompting without the readiness gate", session, lastErr), nil
+	rt, err := b.App.LoadRuntime(m.Runtime)
+	if err != nil || rt.DetectionMode() != DetectionReported {
+		return ""
 	}
-	return AgentDetection{Reported: ag.Agent}, "", Die("nothing was sent: %s is labelled %q by something other than herdr's own detection, and that authority reports its state as "+
-		"%q — which is what a CLI nobody has watched start looks like, and text typed there lands in whatever holds the keyboard "+
-		"(ranger-base-3p0). herdr cannot read this screen itself (`agent explain` refuses a reported pane), so this state is the "+
-		"whole reading. Prompt again once it has settled, look first (posse peek %s), or send it anyway with --now",
-		session, ag.Agent, orUnknown(ag.AgentStatus), session)
+	return rt.DetectionWhy
 }
 
 // orUnknown names the state a reported pane has when it has none, in the
@@ -238,6 +207,18 @@ func orUnknown(state string) string {
 		return "unknown"
 	}
 	return state
+}
+
+// waitedFor names what the gate was waiting FOR, which is not the same
+// question on the two routes and must not be reported as though it were: a
+// reported pane never draws a screen herdr recognizes and never will, so
+// saying it finally did would be the one sentence in the note that is false
+// (ADR 0061 D3.3, the success side of it).
+func waitedFor(det AgentDetection) string {
+	if det.Reported != "" {
+		return "to be labelled by the authority that labels its panes"
+	}
+	return "to draw a screen herdr recognizes"
 }
 
 // seenBy names the positive evidence the gate opened on, in herdr's own
