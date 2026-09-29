@@ -124,8 +124,11 @@ names a runtime (ADR 0017 §3). Properties:
    seen, and the line says so by name: the label, the state the reporter
    left, and that the foreground is the shell. This is the guard the
    detected route gets for free — herdr drops a detected label when
-   argv0 leaves — and the one keystroke-shaped hazard the reported route
-   adds. It runs inside the reading, so it runs before every keystroke
+   argv0 leaves (MEASURED 2026-09-28, Claims fact 3: `pane get`, `agent
+   list`, `agent explain` and `agent wait` all say so at once; `agent
+   get` alone keeps describing the gone agent for a few seconds) — and
+   the one keystroke-shaped hazard the reported route adds. It runs
+   inside the reading, so it runs before every keystroke
    the promptable gate admits and inside every settle the ladder judges,
    at one `process-info` per read (MEASURED 0.00s).
 3. `blocked` is handed back as given, as today. `working` waits, as
@@ -137,7 +140,11 @@ names a runtime (ADR 0017 §3). Properties:
    5000ms hands the claim back, rangerhq-1z0). The in-place relaunch arm
    keeps ADR 0013 §1 property 3's rule on a `reported` runtime — refuse
    by name rather than type — because "no agent listed" there is still
-   the reporter's silence, not the CLI's death. Trigger to extend it: the
+   the reporter's silence, not the CLI's death. On a *detected* runtime
+   that arm's "CLI died" read is `agent list` (`AgentTarget`), the verb
+   that drops the label first; `agent get` is the one that lags, and
+   nothing in posse reads liveness from `agent get` alone (Claims fact
+   3). Trigger to extend it: the
    first stranded reported pane a pass meets whose foreground is the
    shell, which D3.2 can now tell apart; that is a relaunch onto a
    shell, and correct.
@@ -242,6 +249,28 @@ chat` is adopted by the watcher from `process-info` (argv0 `node`, argv1
 only when `pane get` fails (the pane is gone), never when Bob leaves the
 foreground.
 
+3. **A detected label IS released when argv0 leaves the pane — and the
+   verbs do not agree on the second.** MEASURED 2026-09-28 under
+   ranger-base-mx5x9 (herdr 0.9.1 client and server, darwin 25.4.0,
+   scratch workspace, no agent CLI and no plugin; recipe and full table
+   in docs/notes.d/ranger-base-mx5x9.md). The rig: `(exec -a codex sleep
+   25)` in a scratch pane — herdr detects from argv0, so it reads `agent
+   codex, idle` with no credentials, no network and no turn; that is the
+   cheap rig for every label-lifecycle question after this one. After
+   the process exits, at the pane's shell prompt: `pane get` answers
+   `agent: null`, `agent list` does not list the pane, `agent explain`
+   and `agent wait` answer `agent_not_found`. **The wrinkle:** `agent
+   get` keeps returning the old row (`agent codex, idle`) for a few
+   seconds after those four already say the agent is gone. Nothing in
+   posse depends on that window — the detected route's gate is `Seen()`
+   over `agent explain`, and the in-place relaunch arm reads `agent
+   list` (D3.4) — but a caller polling `agent get` alone would read a
+   state for a pane that has no agent, and the lag points the safe way
+   only for the reading that treats "no agent" as "died": it fires
+   later, never sooner. Read beside fact 1: the detected label expires
+   with its process, the reported one by nothing; that asymmetry is what
+   D4's two asks are about.
+
 **ASSUMED** (each a line on the instance-side live probe, ranger-base-6wqe):
 1. A dispatched Bob pane is labelled within the default `startup_wait`
    (45s): adoption runs every third watcher tick at a 2s interval, ~6s,
@@ -252,9 +281,11 @@ foreground.
    Where the typed text then lands is unmeasured; the stall contract
    bounds a prompt that starts no turn, and nothing bounds one that is
    queued behind the PID turn.
-3. herdr drops a *detected* label when argv0 leaves the pane — the
-   premise the in-place relaunch arm already stands on; not re-measured
-   here.
+3. *Discharged* — was "herdr drops a *detected* label when argv0 leaves
+   the pane; not re-measured here". MEASURED 2026-09-28 and it holds,
+   with the `agent get` lag: Claims fact 3 (ranger-base-mx5x9,
+   ranger-base-zcevd). The number is kept so 1, 2 and 4 still match the
+   6wqe probe's lines.
 4. Bob's sign-in screen discards typed text (ADR 0060's assumption,
    unchanged).
 

@@ -139,7 +139,11 @@ agents for the workspace and finds none, so the wait cannot even reach
 the settle gate — then `sessionFailure`: the slot stays free once and is
 benched on the second (§2 ceiling), and the pane is stranded, alive. The
 next pass, same bead, is worse: the Dial F session resolves with no
-agent status, which is the *CLI died* signal, so `RelaunchAgent` passes
+agent status, which is the *CLI died* signal (on a detected runtime it
+is one: `agent list` drops a detected label the moment argv0 leaves the
+pane, while `agent get` alone lags it by a few seconds — MEASURED
+2026-09-28, ADR 0061 Claims fact 3, docs/notes.d/ranger-base-mx5x9.md;
+`RelaunchAgent` reads the list), so `RelaunchAgent` passes
 its 45s grace, finds no agent, and **types the persona's launch line
 into the live TUI's composer as a chat turn**. And every line printed
 along the way names the wrong cause — `no agent detected in <session>
