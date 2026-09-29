@@ -494,6 +494,28 @@ type Runtime struct {
 	// is only actionable beside the name of the authority that was supposed
 	// to. Ignored when Detection is herdr.
 	DetectionWhy string
+	// DetectionFiling is the repo-relative path of the upstream detection
+	// filing posse CARRIES for this runtime — the draft manifest and
+	// fixtures the operator sends, ADR 0060 D2's route. Empty means posse
+	// carries none, and on a built-in that is the honest answer far more
+	// often than not: three of the four built-ins are detected by upstream
+	// already, so there is nothing to file for them and never was.
+	//
+	// It exists because the door a refusal hands the operator used to be
+	// rendered from the runtime's NAME —
+	// `etc/herdr/agent-detection/upstream-<rt.Name>.md`, on every built-in —
+	// and the tree ships one such file. So on claude, codex or grok the
+	// refusal named a path that is not there, on the one box where the door
+	// is the whole remedy: a herdr too old, or too trimmed, to carry the
+	// manifest (ranger-base-ecchw). Declared here rather than derived so
+	// that the sentence is a fact somebody wrote down, and so the pin can
+	// hold it: a filing named here must be IN the tree
+	// (detectiondoor_qa_test.go).
+	//
+	// Built-in only, and not a yaml key: a DECLARED runtime's door is the
+	// manifest runbook — its author writes the toml on their own box — and
+	// nothing about that route goes through upstream.
+	DetectionFiling string
 	// Interstitials are the first-run dialogs this runtime draws, with the
 	// operator-owned config key that silences each. Documented, never
 	// written.
@@ -1667,6 +1689,12 @@ var builtinRuntimes = []Runtime{
 	// exits 1 and dispatch refuses by name. See BobCommand above for the
 	// argv order, which is the part a reader is most likely to get wrong.
 	{Name: "bob", Builtin: true, Skills: skillsCwd, SkillsCwd: true, Unattended: "--auto-approve",
+		// The ONE built-in posse carries an upstream filing for, because it
+		// is the one whose detection upstream does not ship: ADR 0060 D2's
+		// draft manifest, its five redacted fixtures and the covering note.
+		// Every refusal's door names this path, so the path has to be there
+		// (ranger-base-ecchw).
+		DetectionFiling: "etc/herdr/agent-detection/upstream-bob.md",
 		// Realize is nil, deliberately: no per-verb permission surface on
 		// bob has been measured, so {allow}/{deny} render to nothing and
 		// every gate goes to the wall (gates.go). Realized is empty, exactly

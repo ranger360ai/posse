@@ -82,12 +82,22 @@ package treepins
 //	                                              make doc-check
 //	                                              (ranger-base-qnn6j)
 //
-// and `make tree-check` is all of them — 15-43s on this box over three runs
-// at twenty-two pins and eight doors — which is the command a seat types
-// after a filtered run. (It was 12-27s under ranger-base-8dnuy, two pins ago,
-// and 40-46s at a smaller class before that; re-measured under
-// ranger-base-xrdb0, because the sentence a seat prices the command from
-// should not quote a run of a class it did not run — and stated without a
+// and one more into the same door, a prose pin whose subject is a PATH: the
+// door a detection refusal hands the operator has to name a filing the tree
+// holds, and it was rendered from the runtime's NAME, so three of four
+// built-ins named a file that is not there:
+//
+//	TestQADetectionDoorCitesAFilingThatExists
+//	                                              make doc-check
+//	                                              (ranger-base-ecchw)
+//
+// and `make tree-check` is all of them — 14.9-16.5s on this box over three
+// runs at twenty-three pins and eight doors — which is the command a seat
+// types after a filtered run. (It was 15-43s at twenty-two, 12-27s under
+// ranger-base-8dnuy, and 40-46s at a smaller class before that. Re-measured
+// whenever the class changes — under ranger-base-xrdb0, and again under
+// ranger-base-ecchw — because the sentence a seat prices the command from
+// should not quote a run of a class it did not run; and stated without a
 // second numeral, deliberately: a historical count in this comment is
 // invisible to arm 4's one-claim rule, which is ranger-base-erqvh row 2. The
 // seconds are NOT pinned — an elapsed-seconds red belongs to the box, per

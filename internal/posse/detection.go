@@ -66,6 +66,13 @@ import (
 	"time"
 )
 
+// detectionFilingDoc is where the upstream filing route is written down —
+// how posse tracks a filing, what goes in one, and what the fixtures are
+// for. Named as the door for a built-in posse carries NO filing for, because
+// there the operator is not sending something that exists; they are deciding
+// whether one has to be written at all (ADR 0060 D2).
+const detectionFilingDoc = "etc/herdr/agent-detection/README.md"
+
 // ManifestState is herdr's answer about one agent label, in the three shapes
 // a caller can act on.
 type ManifestState int
@@ -392,15 +399,37 @@ func DetectionReportedNote(rt *Runtime, r ManifestReading) string {
 // and detection arrives on their own box.
 //
 // A BUILT-IN's is not. Its argv0 is posse's own and its detection is
-// upstream's to ship — posse ships the filing and the operator sends it
-// (ADR 0060 D2, etc/herdr/agent-detection/upstream-<name>.md). Branched on
-// rt.Builtin and never on a runtime NAME: a name-keyed clause here would be
-// the ADR 0017 §3 shadow predicate ADR 0060 rejected a whole adapter over,
-// and would say the wrong thing about the second built-in that meets this.
+// upstream's to ship, so the door is the upstream route and never a toml the
+// operator authors (ADR 0060 D2). Branched on rt.Builtin and never on a
+// runtime NAME: a name-keyed clause here would be the ADR 0017 §3 shadow
+// predicate ADR 0060 rejected a whole adapter over, and would say the wrong
+// thing about the second built-in that meets this.
+//
+// WHETHER POSSE CARRIES THE FILING IS THE SECOND BRANCH, and it is read off
+// rt.DetectionFiling — a declaration — rather than rendered from the name.
+// The clause used to spell `upstream-<rt.Name>.md` for every built-in, and
+// the tree ships upstream-bob.md and nothing else, so on claude, codex or
+// grok all FOUR surfaces that print this door handed the operator a path that
+// is not in the tree — the launch refusal, the re-type refusal, `runtime
+// check`'s detection gap and the interactive DEGRADED warn
+// (ranger-base-ecchw). That is not a cosmetic wrong:
+// this door is only ever read on a box whose herdr LACKS the manifest — an
+// older herdr, a trimmed manifest set — which is the one moment the sentence
+// is the whole remedy.
+//
+// So a built-in with a filing names it, and a built-in without one says the
+// true thing instead: nothing is carried, and an old herdr is the likely
+// cause before anybody writes a manifest. The version check comes first
+// deliberately — for the three built-ins upstream already detects, upgrading
+// IS the door, and authoring a filing for them would be work nobody wants.
 func DetectionDoor(rt *Runtime) string {
 	if rt.Builtin {
-		return "detection for a built-in is upstream's to ship, not yours to author: posse ships the filing at etc/herdr/agent-detection/upstream-" +
-			rt.Name + ".md and the operator sends it (ADR 0060 D2)"
+		if rt.DetectionFiling == "" {
+			return "detection for a built-in is upstream's to ship, not yours to author — this argv0 is posse's own, and posse carries no filing for " +
+				rt.Name + ": check `herdr --version` first, because a current herdr may already carry this manifest and an old or trimmed one is the usual cause; if it does not, the filing has to be written and sent (" + detectionFilingDoc + ", ADR 0060 D2)"
+		}
+		return "detection for a built-in is upstream's to ship, not yours to author: posse ships the filing at " +
+			rt.DetectionFiling + " and the operator sends it (ADR 0060 D2)"
 	}
 	return "author a detection manifest, or alias " + rt.Exe() + " onto one that exists: docs/runbooks/" + detectionDoc
 }
