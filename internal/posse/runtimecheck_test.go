@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func checkApp(t *testing.T) *App {
@@ -770,6 +771,105 @@ func TestDeclaredDimensionsAreReadAndCredited(t *testing.T) {
 		strings.Join(rt.ProjectConfig, ",") != ".fullcli/settings.json" ||
 		strings.Join(rt.ProjectConfigKeys, ",") != "hooks,mcpServers" {
 		t.Errorf("the grid printed declarations LoadRuntime did not read: %+v", rt)
+	}
+}
+
+// The `by` column's two PROVENANCE APPENDS — WHO declared the stage's own
+// second fact, where that declarer can be the yaml (ranger-base-mmvrh
+// finding 4).
+//
+// Both are the same defect caught twice. `startup_wait:` was ranger-base-ymmiv:
+// the promptable row's `by` named `prompt:` alone, so a runtimes/<name>.yaml
+// overlaying the patience rendered its own number over the words "built-in
+// default" — the one fact the line exists to carry, WHO declared it, naming
+// the wrong declarer (ADR 0060 verification row 1). `detection:` is the same
+// shape on the launch row, appended by ranger-base-rx7l7 precisely so ADR 0061
+// would not re-introduce it. Neither append had a pin: disable either one and
+// nothing in the suite noticed.
+//
+// The UNDECLARED arm sits beside each declared one and is not decoration: an
+// append that fires always is the other half of the defect. Everywhere the key
+// is unset the value line already carries the whole provenance — the manifest
+// is what the launch row read, and the promptable row says "(startup_wait:
+// unset → the default)" — so a second clause there credits a file that
+// declared nothing.
+//
+// Each declared arm asserts the VALUE moved too. Without that a `by` crediting
+// the yaml would be green for a loader that read the key and threw it away,
+// which is the p84 shape the grid is most prone to.
+func TestByColumnCreditsTheYamlThatDeclaredDetectionOrStartupWait(t *testing.T) {
+	t.Parallel()
+	const why = "herdr-bob plugin MartinLoeper/herdr-bob, installed 2026-09-28"
+	for _, c := range []struct {
+		name, row, body string
+		want, unwanted  []string
+		read            func(*testing.T, *Runtime)
+	}{{
+		name: "detection: declared in the yaml",
+		row:  "launch",
+		body: "command: mycli {file}\ndetection: " + DetectionReported + "\ndetection_why: " + why + "\n",
+		want: []string{"runtimes/mycli.yaml (detection:)", "runtime template + herdr manifest"},
+		read: func(t *testing.T, rt *Runtime) {
+			if rt.DetectionMode() != DetectionReported || rt.DetectionWhy != why {
+				t.Errorf("the grid credited a detection: the loader did not read: %q/%q", rt.DetectionMode(), rt.DetectionWhy)
+			}
+		},
+	}, {
+		name: "detection: left unset",
+		row:  "launch",
+		body: "command: mycli {file}\n",
+		want: []string{"runtime template + herdr manifest"},
+		// Two spellings, because an append that fires ALWAYS renders the
+		// other one: declaredBy answers "nothing — detection: unset in
+		// runtimes/mycli.yaml, so this is the loud default" for a key the
+		// yaml never set, so a test watching only for the credited form
+		// would pass over the unconditional append entirely.
+		unwanted: []string{"(detection:)", "detection: unset in runtimes/mycli.yaml"},
+	}, {
+		name: "startup_wait: declared in the yaml",
+		row:  "promptable",
+		// 30s, because it is not DefaultStartupWait: a declared value equal
+		// to the default would leave the value half of this arm green for a
+		// loader that ignored the key entirely.
+		body:     "command: mycli {file}\nstartup_wait: 30s\n",
+		want:     []string{"runtimes/mycli.yaml (startup_wait:)", "30s of patience"},
+		unwanted: []string{DefaultStartupWait.String() + " of patience", "startup_wait: unset"},
+		read: func(t *testing.T, rt *Runtime) {
+			if rt.Wait() != 30*time.Second {
+				t.Errorf("the grid credited a startup_wait: the loader did not read: %s", rt.Wait())
+			}
+		},
+	}, {
+		name: "startup_wait: left unset",
+		row:  "promptable",
+		body: "command: mycli {file}\n",
+		// The VALUE says it, which is the reason the `by` must not: "unset →
+		// the default" and "unset in runtimes/mycli.yaml" are the two
+		// spellings, and only the first belongs on this row.
+		want:     []string{"startup_wait: unset → the default"},
+		unwanted: []string{"(startup_wait:)", "startup_wait: unset in runtimes/mycli.yaml"},
+	}} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			a := checkApp(t)
+			rt := writeRuntime(t, a, "mycli", c.body)
+			if c.read != nil {
+				c.read(t, rt)
+			}
+			var b bytes.Buffer
+			a.RuntimeCheck(rt, Herdr{Bin: "no-such-herdr-binary"}, &b)
+			row := gridRow(t, b.String(), c.row)
+			for _, w := range c.want {
+				if !strings.Contains(row, w) {
+					t.Errorf("the %s row must carry %q:\n%s", c.row, w, row)
+				}
+			}
+			for _, u := range c.unwanted {
+				if strings.Contains(row, u) {
+					t.Errorf("the %s row credits %q on a yaml that never set the key:\n%s", c.row, u, row)
+				}
+			}
+		})
 	}
 }
 

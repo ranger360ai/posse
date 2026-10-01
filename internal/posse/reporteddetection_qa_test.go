@@ -502,6 +502,92 @@ func TestQAReportedWaitFailureNamesTheAuthorityAndNotTheSession(t *testing.T) {
 	}
 }
 
+// ADR 0061 D2 property 2 asked of the WIRING — ranger-base-mmvrh finding 2,
+// the same shape as finding 1 one property over.
+//
+// TestQAReportedWaitFailureNamesTheAuthorityAndNotTheSession is a good pin on
+// the SENTENCE, and it hands NoAgentLine a hand-built reading. Nothing read
+// the line off a dispatch, so `(*Dispatcher).noAgentLine` could return
+// `NoAgentLine(ManifestReading{}, session, wait)` — the zero reading, which is
+// its own load-failure fallback and therefore the most plausible wrong thing
+// there — and the whole suite stayed green while every reported runtime's wait
+// failed with "check the session".
+//
+// That sentence is what the operator acts on. The observable this loop waits
+// for is an authority LABELLING the pane; an absent label says nothing about
+// the CLI, which may be up and working with nobody having reported it. So
+// "check the session" sends them to read a healthy screen, and the move it
+// invites — a larger `startup_wait:` — is patience for a report nothing is
+// going to send (ranger-base-p8afi #3). The door is `herdr plugin list`.
+//
+// Both ladders, because they reach awaitTarget through different callers
+// (awaitAgent on the typed one, awaitDelivered on the argv one) and a pin on
+// either alone would pass over the other.
+func TestQAReportedWaitFailureIsWiredAtTheDispatch(t *testing.T) {
+	t.Parallel()
+	for _, ladder := range []string{PromptTyped, PromptArgv} {
+		t.Run("on the "+ladder+" ladder", func(t *testing.T) {
+			t.Parallel()
+			b, fake := newTestBackend(t)
+			d := newTestDispatcher(t, b)
+			d.StartupWait = 150 * time.Millisecond
+			herdrNames(t, fake, "claude", "codex", "grok")
+			undetectableFixture(t, b, ladder, `[{"id":"a-1","title":"t","labels":["go"]}]`, qaReportedLines()...)
+			// agents.json absent on purpose: the launch PROCEEDS (the surface
+			// is there, so this is a runtime posse will dispatch), and then
+			// nothing ever labels the pane — which is precisely the state ADR
+			// 0061 D2 property 2 is about, and the one a bigger wait does not
+			// fix.
+
+			n, err := d.Run("", "", 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out := dispatcherOut(d)
+			if n != 0 {
+				t.Fatalf("dispatched %d bead(s) into a session no authority ever labelled:\n%s", n, out)
+			}
+			for _, want := range []string{"no agent reported", qaReportedWhy, "herdr plugin list", "detection: " + DetectionReported} {
+				if !strings.Contains(squashSpace(out), squashSpace(want)) {
+					t.Errorf("the wait's failure line must carry %q — it is the whole of what the operator can act on here:\n%s", want, out)
+				}
+			}
+			// The two sentences that send them the wrong way. "check the
+			// session" is a claim about the CLI that an absent label cannot
+			// support, and naming the knob invites the one move that buys
+			// nothing.
+			for _, bad := range []string{"check the session", "no agent detected", "startup_wait"} {
+				if strings.Contains(out, bad) {
+					t.Errorf("the reported wait's failure must not say %q — an absent label is not evidence about the CLI, and a bigger wait is patience for a report nothing will send:\n%s", bad, out)
+				}
+			}
+		})
+	}
+
+	// The load-failure fallback, which is the branch the mutant above
+	// impersonates: a runtime whose profile will not load has made no
+	// declaration posse may quote, so it gets the sentence this line has
+	// always printed. Asked of the dispatcher's own method rather than the
+	// renderer, because the thing being pinned is which reading noAgentLine
+	// passes on, and the two arms bracket it from both sides: a noAgentLine
+	// that ALWAYS takes the fallback reds on the two ladders above, and one
+	// that never takes it reds here — on today's code by dereferencing the nil
+	// profile LoadRuntime returned with its error, which is the other reason
+	// this branch is not decoration.
+	t.Run("a profile that will not load keeps the sentence it always had", func(t *testing.T) {
+		t.Parallel()
+		b, _ := newTestBackend(t)
+		d := newTestDispatcher(t, b)
+		line := d.noAgentLine("s9", "no-such-runtime-profile", 45*time.Second)
+		if !strings.Contains(line, "check the session") || !strings.Contains(line, "s9") {
+			t.Errorf("a runtime posse could not load has nothing to quote, so the session IS the thing to check:\n%s", line)
+		}
+		if strings.Contains(line, "herdr plugin list") || strings.Contains(line, DetectionReported) {
+			t.Errorf("a profile that would not load must not be credited with a declaration:\n%s", line)
+		}
+	})
+}
+
 // ADR 0061 D3.4 — the one arm this record leaves exactly as it found it. The
 // RE-TYPE path fires on "the workspace is alive and herdr reports no agent in
 // it", and on a reported runtime that is the AUTHORITY's silence, not the
@@ -510,9 +596,13 @@ func TestQAReportedWaitFailureNamesTheAuthorityAndNotTheSession(t *testing.T) {
 // refusal says which of the two silences it is.
 //
 // This is the one predicate that is deliberately NOT Refuses(): a reported
-// runtime whose herdr carries the surface LAUNCHES and still refuses a retype,
-// and nothing else in this file would notice if that arm were wired to the
-// launch predicate instead.
+// runtime whose herdr carries the surface LAUNCHES and still refuses a retype.
+// Nothing else in this file would notice if that arm were wired to the launch
+// predicate instead — which was true of the whole suite until
+// TestQAReportedRuntimeRetypeRefusalIsWiredAtTheRelaunch below, the arm that
+// drives RelaunchAgent for real and is the one that now kills that
+// substitution (ranger-base-mmvrh finding 1). This test keeps the READING and
+// the SENTENCE; that one keeps the CALL SITE.
 func TestQAReportedRuntimeStillRefusesARetype(t *testing.T) {
 	t.Parallel()
 	a := checkApp(t)
@@ -536,5 +626,118 @@ func TestQAReportedRuntimeStillRefusesARetype(t *testing.T) {
 	// a pane an authority is supposed to label is sent to the wrong place.
 	if strings.Contains(err.Error(), detectionDoc) {
 		t.Errorf("the reported retype refusal points at the manifest runbook, which is not this runtime's door: %v", err)
+	}
+}
+
+// The same property as the test above, asked of the WIRING instead of the
+// renderer — ranger-base-mmvrh finding 1, and the arm the comment above
+// predicted would be missing.
+//
+// TestQAReportedRuntimeStillRefusesARetype asserts the reading
+// (`!Refuses()`, `NoManifest()`) and the refusal's SENTENCE
+// (DetectionRetypeRefusal called directly), and never the call site. So
+// herdrback.go's `if det := ReadDetection(b.H, rt); det.NoManifest()` could be
+// wired to `det.Refuses()` — the predicate every CREATE path in this file
+// uses, which is what makes it the plausible wrong one here — and nothing in
+// the suite would red. The
+// undetectable end of the same wiring IS driven for real
+// (relaunchdetection_qa_test.go), but both of its fixtures declare nothing, so
+// `Refuses()` is true for them and the substitution is invisible there.
+//
+// This is the costliest end of the whole gap. On a reported runtime whose
+// herdr HAS the report surface the launch PROCEEDS, so the pane is real and
+// its CLI is alive; `Refuses()` is false and `NoManifest()` is true, so under
+// the wrong predicate RelaunchAgent types the persona's launch line into a
+// live composer as a chat turn — a work prompt arriving at the operator's own
+// session as if they had typed it. Everything the create paths spend is a
+// pane; this spends a running session and a turn of the model's attention.
+//
+// The fixture is the sequence run for real, because a refusal on a rig that
+// was never going to re-type measures nothing:
+//
+//	launch the session                        → proceeds (the surface is there)
+//	age the launch past the grace, kill the CLI
+//	relaunch                                  → what this pin is about
+func TestQAReportedRuntimeRetypeRefusalIsWiredAtTheRelaunch(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name   string
+		names  []string
+		refuse bool
+	}{
+		// herdr has no manifest for mycli and the profile declares the
+		// authority: the launch proceeded, the pane is alive, and the retype
+		// must still refuse. The ONE arm the predicate substitution shows up
+		// in, because it is the one where the two predicates disagree.
+		{"declared reported and herdr has no manifest — refuses", []string{"claude", "codex", "grok"}, true},
+		// The negative control. An INERT declaration — herdr detects mycli
+		// itself — re-types exactly as it did before ADR 0061, and without
+		// this arm every assertion above holds equally for a RelaunchAgent
+		// that had simply stopped re-typing on any runtime at all.
+		{"an inert declaration re-types", []string{"claude", "mycli"}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			b, fake := newTestBackend(t)
+			agentPerLaunch(t, fake)
+			herdrNames(t, fake, tc.names...)
+			undetectableFixture(t, b, PromptTyped, `[]`, qaReportedLines()...)
+			m := undetectableSession(t, b, "s1", t.TempDir())
+
+			// The state this path reads as "the CLI died", which on a reported
+			// runtime is the AUTHORITY's silence and says nothing about the
+			// CLI: the launch is well past the grace, and herdr lists no agent
+			// anywhere.
+			m.Launched = time.Now().Add(-time.Hour)
+			if err := b.writeMeta(m); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Remove(filepath.Join(fake, "agents.json")); err != nil {
+				t.Fatal(err)
+			}
+			typedAtLaunch := strings.Count(calls(t, fake), "pane run")
+
+			ok, err := b.RelaunchAgent("s1", time.Second)
+			typed := strings.Count(calls(t, fake), "pane run") - typedAtLaunch
+
+			if !tc.refuse {
+				if err != nil || !ok {
+					t.Fatalf("an inert declaration refuses nothing — herdr detects this argv0 itself, so a dead CLI must come back as it always did: ok=%v err=%v", ok, err)
+				}
+				if typed != 1 {
+					t.Errorf("the persona line was not re-typed (%d pane runs), so this control measured nothing", typed)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("a reported runtime's silent reporter is not evidence its CLI died — re-typing there lands the launch line in a LIVE composer as a chat turn (ADR 0061 D3.4): ok=%v", ok)
+			}
+			// The pin: the line was not typed. Every other assertion here
+			// could hold for a refusal that still put the command in the pane,
+			// which is the chat turn this arm exists to prevent.
+			if typed != 0 {
+				t.Errorf("%d launch line(s) were typed into the live pane after the refusal:\n%s", typed, calls(t, fake))
+			}
+			if ok {
+				t.Error("RelaunchAgent reported it re-typed the session it had just refused")
+			}
+			// And it is THIS runtime's refusal, not the undetectable one's: an
+			// operator sent to author a manifest for a pane an authority was
+			// supposed to label is sent to the wrong door.
+			for _, want := range []string{"refusing to retype", "s1", qaReportedWhy, "herdr plugin list"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("the refusal must carry %q:\n%v", want, err)
+				}
+			}
+			if strings.Contains(err.Error(), detectionDoc) {
+				t.Errorf("the reported retype refusal points at the manifest runbook, which is not this runtime's door:\n%v", err)
+			}
+			// The stamp this path measures its own grace against must be
+			// untouched. Bumped, the refusal comes back next pass as "too
+			// young to relaunch" — the same silence in a different costume.
+			after, found := b.readMeta("s1")
+			if !found || time.Since(after.Launched) < 30*time.Minute {
+				t.Errorf("a refusal re-stamped launched: (%s ago) — the next pass would read this session as a CLI still starting up", time.Since(after.Launched).Round(time.Second))
+			}
+		})
 	}
 }

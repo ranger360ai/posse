@@ -399,6 +399,27 @@ func TestOverlayInstanceFactKeysRefuseAWrongValue(t *testing.T) {
 		{"rules_precedence", "rules_precedence: pdi\n", "want pid or native"},
 		{"state_dir", "state_dir: .claude\n", "must be absolute or ~-prefixed"},
 		{"env_required", "env_required: AWS_REGION=us-east-1\n", "names only, never values"},
+		// ADR 0061 D1's two keys, on the reader that will actually carry
+		// them. The built-in bob stays `herdr` and `runtimes/bob.yaml` on an
+		// instance that installed the plugin is where `reported` gets
+		// declared — so the OVERLAY is the primary route and the
+		// template-only reader is the secondary one, which is the reverse of
+		// how they were pinned (ranger-base-mmvrh finding 3). The
+		// template-only half is
+		// TestQADetectionKeyRefusesBothBadShapesAndNamesWhatIsMissing, and
+		// the two are pinned separately because they are two call sites of
+		// validateDetectionDecl and neutralising either one leaves the other
+		// green.
+		//
+		// Both shapes, because they are different mistakes: a wrong VALUE is
+		// silently demoted to the default, and the default here is the
+		// reading that REFUSES a bead-carrying launch, so the operator who
+		// typed `reproted` would be told their runtime is undetectable and
+		// never told why their key did nothing. A `reported` with no why is
+		// not a wrong declaration at all — what is missing is the sentence
+		// the launch's failure line prints.
+		{"detection", "detection: reproted\n", "want " + DetectionHerdr + " or " + DetectionReported},
+		{"detection_why", "detection: " + DetectionReported + "\n", "detection_why:"},
 	} {
 		writeOverlay(t, a, "claude", c.body)
 		_, err := a.LoadRuntime("claude")
