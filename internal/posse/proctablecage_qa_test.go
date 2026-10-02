@@ -58,6 +58,21 @@ func TestQASelfCheckAnswersInsideASeatbelt(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("seatbelt is darwin's")
 	}
+	// The seat this arm exists to serve may itself be caged, and macOS will
+	// not nest a seatbelt: from inside one, every sandbox-exec here dies at
+	// `sandbox_apply: Operation not permitted` before it execs anything, so
+	// this arm can neither pass nor fail (ranger-base-26y03 — it reported
+	// the FAIL, from the one class of seat ranger-base-yxmwx is for). The
+	// control below cannot stand in for this: it reads the nested `/bin/ps`
+	// FAILING as "the setuid refusal is live, keep going", and a nesting
+	// refusal fails that command for a different reason wearing the same
+	// face. So the applicability question is asked first, by the shop's one
+	// reader of it. That reader's probe profile carries a deny where this
+	// arm's is allow-default, which costs a skip in the one corner where a
+	// lenient outer wrapper would have let this arm's apply through (the
+	// xjw9 grid's row two) — an over-skip, where a second applicability
+	// reader of our own risks the green that measured nothing.
+	sbSkipUnlessSandboxable(t)
 	sandboxExec, err := exec.LookPath("sandbox-exec")
 	if err != nil {
 		t.Skipf("no sandbox-exec on this box: %v", err)

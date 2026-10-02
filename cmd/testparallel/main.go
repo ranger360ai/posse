@@ -476,10 +476,13 @@ func main() {
 		// OpsPatterns (2)
 		"TestQAEveryOpsHitInTrackedMarkdownIsRuled": "reads OpsPatterns",
 		"TestQAOpsShapeTableCanStillSayNo":          "reads OpsPatterns",
-		// sandboxApplyRefusal (3)
+		// sandboxApplyRefusal (4). The fourth reaches the seam through
+		// sbSkipUnlessSandboxable, added at its head under ranger-base-26y03
+		// because a caged seat cannot nest the sandbox the arm launches.
 		"TestQASandboxApplyProbeAgreesWithARenderedProfile": "calls sandboxApplyRefusal",
 		"TestQASandboxApplyProbeGrid":                       "calls sandboxApplyRefusal",
 		"TestQASandboxExecStaysOnPathInsideTheCage":         "calls sandboxApplyRefusal",
+		"TestQASelfCheckAnswersInsideASeatbelt":             "calls sandboxApplyRefusal",
 	}
 	// ── filter 2: written package-level vars named anywhere reachable ────
 	varTainted := propagateIn(funcs, func(g *fn) bool {
