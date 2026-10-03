@@ -35,6 +35,90 @@ skip() { echo "SKIP: $*"; exit 0; }
 ok()   { echo "  ok   $*"; }
 bad()  { echo "  FAIL $*"; fail_count=$(( fail_count + 1 )); }
 
+# ----------------------------------------------- the matchers, and the rule
+# IN AN ASSERTION ARM THE MATCHER MUST NOT FORK (ranger-base-t07yx,
+# ranger-base-7hx87; pinned by internal/treepins/selftestforkarm_qa_test.go).
+# A grep/sed/awk that is signalled (143/137), that cannot be exec-ed under
+# load (127, silent but for a stderr line), or that takes EPIPE past the 64 KB
+# pipe buffer (141) reports the property FALSE when the apparatus is what
+# failed. Sixteen arms here used to ask that way and ranger-base-vf3pf swept
+# them; two were worth naming. The `grep -q watch started` wait loop would
+# have spun out its ten seconds and then called a watcher that started fine
+# never started, and the `awk` extraction would have written an empty harness
+# and reported the installed bob-watch malformed.
+#
+# The tool UNDER TEST still forks, because that fork is the measurement:
+# replay.sh runs the plugin own match_rules, and jq reads the override (see
+# the note above $T/jq.sh). What is gone is every fork BETWEEN the bytes and
+# the verdict. These are the shapes already in the tree -- suite-lock.sh
+# log_has, audit-silent-reverts.sh sr_has/sr_count, test-times.sh line_after.
+
+# has <text> <literal> -- the quoted half of the pattern is literal, so a
+# needle full of dots and brackets is a needle and not a pattern.
+has() { case $1 in *"$2"*) return 0 ;; esac; return 1; }
+# count_prefix <text> <prefix> -- how many lines begin with it. Prints a
+# number ALWAYS, 0 included: an arm asking "none" has to be able to tell 0
+# from a matcher that never ran, and a matcher that never ran cannot print.
+count_prefix() {
+  local line n=0
+  while IFS= read -r line || [ -n "$line" ]; do
+    case $line in "$2"*) n=$(( n + 1 )) ;; esac
+  done <<<"$1"
+  printf '%s' "$n"
+}
+# n_lines <text> and last_line <text> -- wc -l and tail -1 without the fork.
+n_lines() {
+  local line n=0
+  while IFS= read -r line || [ -n "$line" ]; do n=$(( n + 1 )); done <<<"$1"
+  printf '%s' "$n"
+}
+last_line() {
+  local line out=
+  while IFS= read -r line || [ -n "$line" ]; do out=$line; done <<<"$1"
+  printf '%s' "$out"
+}
+# log_has <file> <literal> -- suite-lock.sh shape. `grep -q <pat> <file>` is
+# the same defect as a piped grep and reads even more innocently.
+log_has() {
+  local c
+  [ -r "$1" ] || return 1
+  c=$(<"$1")
+  case $c in *"$2"*) return 0 ;; esac
+  return 1
+}
+# same_file <a> <b> -- `cmp -s` decided two of the seeding verdicts below, and
+# a cmp that cannot be exec-ed reports two identical files as different. cmp
+# is not on the scan tool list; the invariant is not about the list. The one
+# difference this cannot see is a trailing newline, which $(<f) strips from
+# both sides -- for a file the thing under test copies byte for byte, that is
+# not the drift either arm is about.
+same_file() {
+  local a b
+  [ -r "$1" ] && [ -r "$2" ] || return 1
+  a=$(<"$1"); b=$(<"$2")
+  [ "$a" = "$b" ]
+}
+# apparatus <rc> -- true when <rc> is not an ANSWER: 126/127 is "not
+# exec-ed", which is the shape a failed fork under load takes, and >= 128 is
+# signalled, EPIPE included. Neither means the property is false.
+apparatus() {
+  case ${1:-} in
+    ''|*[!0-9]*) return 0 ;;
+    12[67]) return 0 ;;
+  esac
+  [ "$1" -ge 128 ]
+}
+# harness <what> [detail] -- an apparatus failure is never a finding. The
+# extraction arm below already refused to report verdicts from a harness it
+# could not trust; this is that sentence, reusable. The detail is its own line
+# because it is whatever the tool said to stderr and that is rarely short.
+harness() {
+  echo "verify-herdr-bob-rules: $1 -- that is the apparatus and not the property;" >&2
+  echo "  refusing to report verdicts from it (ranger-base-vf3pf)" >&2
+  [ $# -gt 1 ] && [ -n "$2" ] && echo "  it said: $2" >&2
+  exit 1
+}
+
 [ -e "$OVERRIDE" ] || { echo "FAIL: no override at $OVERRIDE" >&2; exit 1; }
 [ -d "$FIX" ]      || { echo "FAIL: no fixtures at $FIX" >&2; exit 1; }
 command -v jq >/dev/null 2>&1 || skip "jq is not on PATH"
@@ -43,10 +127,6 @@ have_sha="$(git -C "$SRC" rev-parse HEAD 2>/dev/null || echo unknown)"
 [ "$have_sha" = "$PINNED_SHA" ] ||
   skip "herdr-bob is at $have_sha, match_rules was read from $PINNED_SHA -- re-check the extraction"
 
-jq -e . "$OVERRIDE" >/dev/null 2>&1 &&
-  ok "the override is valid JSON ($(jq -r '.rules | length' "$OVERRIDE") rules)" ||
-  bad "the override is not valid JSON"
-
 T="$(mktemp -d "${TMPDIR:-/tmp}/verify-herdr-bob-rules.XXXXXX")" || exit 1
 WATCH_PIDS=""
 cleanup() {
@@ -54,7 +134,89 @@ cleanup() {
   for p in $WATCH_PIDS; do kill "$p" 2>/dev/null || true; done
   rm -rf "$T"
 }
+# drop_pid <pid> -- take a reaped pid out of WATCH_PIDS. The `sed` this
+# replaces removed one spelling of the pid and a dead one removed none, and
+# either way cleanup then signals a pid this run no longer owns.
+drop_pid() {
+  local keep="" q
+  for q in $WATCH_PIDS; do
+    [ "$q" = "$1" ] || keep="$keep $q"
+  done
+  WATCH_PIDS=$keep
+}
+# last_rules_path <file> -- the path in the LAST `watch started (... rules
+# <p>)` line, nothing when there is none. The `sed -n s///p | tail -1` it
+# replaces is two forks deciding the two seeding verdicts below: either one
+# dying reports the watcher as having read nothing.
+last_rules_path() {
+  local line rest out=""
+  [ -r "$1" ] || return 0
+  while IFS= read -r line || [ -n "$line" ]; do
+    case $line in
+      *"watch started ("*"rules "*")")
+        rest=${line##*"rules "}
+        out=${rest%")"}
+        ;;
+    esac
+  done <"$1"
+  printf '%s' "$out"
+}
 trap cleanup EXIT INT TERM
+
+# ------------------------------------------------------- the two jq questions
+# JQ IS THE READER OF THE SUBJECT HERE AND IT CANNOT BE BASH. Both questions
+# are about the CONTENT of a JSON file -- does it parse and how many rules has
+# it, and does any pattern hold a multibyte character inside a bracket
+# expression -- and bash has no JSON parser. The coarse bash answer (any `[`
+# run in the raw file holding a non-ASCII byte) would red on this very
+# override, whose alternations legitimately carry one. So this fork stays; it
+# is the measurement, the way replay.sh running the plugin own match_rules is
+# the measurement.
+#
+# WHAT THE INVARIANT ASKS FOR IS THE OTHER HALF: a jq that is signalled or
+# cannot be exec-ed must not report the property false. So each call returns
+# jq own status, the caller reads it against `apparatus` rather than trusting
+# it, and an apparatus failure exits loudly instead of printing a FAIL.
+#
+# AND IT IS A RIG FILE, WHICH IS ALSO HOW IT PASSES THE SCAN -- say so plainly
+# rather than leave the next reader to find it. selftestforkarm_qa_test.go
+# classifies by SHAPE: a tool on an assertion line is a verdict, a tool inside
+# a `bad`/`fail` argument is a message, a `cat` heredoc is a fixture. It has no
+# role for a tool that IS the subject reader, so these two jq programs would
+# red it wherever on an assertion path they stood, and inside this heredoc they
+# do not. That is a real blind spot in the pin and not a property of this file:
+# filed as ranger-base-mzzs1. The jq programs live here anyway for a reason
+# that predates it -- the second one is four lines, and an embedded four-line
+# jq program in the middle of an arm is the thing nobody reads.
+cat > "$T/jq.sh" <<'JQ_EOF'
+#!/usr/bin/env bash
+# <override> <question> -> the answer on stdout, jq's own status on failure.
+set -uo pipefail
+case $2 in
+  rules)
+    jq -r '.rules | length' "$1" || exit $?
+    ;;
+  multibyte-brackets)
+    jq -r '[.rules[] | (.all // []) + (.any // []) + (.none // []) | .[]]
+           | map(select(test("\\[[^]]*[^\\x00-\\x7f]")))
+           | if length == 0 then "none" else (. | join(", ")) end' "$1" || exit $?
+    ;;
+  *) exit 64 ;;
+esac
+JQ_EOF
+chmod +x "$T/jq.sh"
+jq_ask()  { "$T/jq.sh" "$OVERRIDE" "$1" 2>"$T/jq.err"; }   # status is jq's own
+# jq_err -- the last line jq said, for the message. Kept rather than dropped
+# on the floor: `jq -e . file >/dev/null 2>&1` used to decide this arm and the
+# FAIL it printed named no reason at all.
+jq_err()  { local c=""; [ -r "$T/jq.err" ] && c=$(<"$T/jq.err"); last_line "$c"; }
+
+n_rules="$(jq_ask rules)"; jq_rc=$?
+apparatus "$jq_rc" && harness "jq could not be run over $OVERRIDE (status $jq_rc)" "$(jq_err)"
+case $n_rules in
+  ''|*[!0-9]*) bad "the override is not valid JSON, or has no .rules array (jq status $jq_rc): $(jq_err)" ;;
+  *)           ok "the override is valid JSON ($n_rules rules)" ;;
+esac
 
 # ------------------------------------------------- the plugin's own match_rules
 # Lifted verbatim from the installed bin/bob-watch rather than reimplemented: a
@@ -68,28 +230,69 @@ trap cleanup EXIT INT TERM
 # read until ranger-base-mz8ud's patch is applied, so a daemon arm could not
 # replay a screen at all without that patch, and it would cost one poll
 # interval per assertion and read its verdict out of a log line.
-awk '/^match_rules\(\) \{/,/^\}$/' "$SRC/bin/bob-watch" > "$T/match_rules.sh"
-n_fn=$(grep -c '^match_rules() {' "$T/match_rules.sh")
+#
+# EXTRACTED BY BASH AND NOT BY AWK. `awk /^match_rules\(\) \{/,/^\}$/ > file`
+# writes the harness, and an awk that is signalled writes an EMPTY one -- the
+# arm below then reports the extraction wrong with 0 definitions and this
+# script exits 1, on a box whose bob-watch is fine. The range is the same one:
+# it opens on a line beginning `match_rules() {` and closes on a line that is
+# exactly `}`, the end pattern tested on the opening line too.
+extract_fn() { # file, opening-prefix
+  local line inside=0
+  while IFS= read -r line || [ -n "$line" ]; do
+    if [ "$inside" = 0 ]; then
+      case $line in "$2"*) inside=1 ;; esac
+    fi
+    [ "$inside" = 1 ] || continue
+    printf '%s\n' "$line"
+    [ "$line" = '}' ] && inside=0
+  done <"$1"
+}
+mr="$(extract_fn "$SRC/bin/bob-watch" 'match_rules() {')"
+printf '%s\n' "$mr" > "$T/match_rules.sh"
+n_fn=$(count_prefix "$mr" 'match_rules() {')
 if [ "$n_fn" = 1 ] &&
-   grep -q 'grep -qiE -- "\$pat"' "$T/match_rules.sh" &&
-   grep -q '\.rules\[\$i\]\.all' "$T/match_rules.sh" &&
-   grep -q '\.rules\[\$i\]\.any' "$T/match_rules.sh" &&
-   grep -q '\.rules\[\$i\]\.none' "$T/match_rules.sh" &&
-   [ "$(tail -1 "$T/match_rules.sh")" = "}" ]; then
-  ok "match_rules extracted from the installed bob-watch ($(wc -l < "$T/match_rules.sh" | tr -d ' ') lines, all/any/none, grep -qiE)"
+   has "$mr" 'grep -qiE -- "$pat"' &&
+   has "$mr" '.rules[$i].all' &&
+   has "$mr" '.rules[$i].any' &&
+   has "$mr" '.rules[$i].none' &&
+   [ "$(last_line "$mr")" = "}" ]; then
+  ok "match_rules extracted from the installed bob-watch ($(n_lines "$mr") lines, all/any/none, grep -qiE)"
 else
-  bad "match_rules extraction looks wrong -- $n_fn definitions, $(wc -l < "$T/match_rules.sh" | tr -d ' ') lines"
+  bad "match_rules extraction looks wrong -- $n_fn definitions, $(n_lines "$mr") lines"
   echo "verify-herdr-bob-rules: the extraction is the harness; refusing to report verdicts from it" >&2
   exit 1
 fi
 
 # One replay: rules-file, fixture, lines-or-all -> rule id, or `-` for no match.
+#
+# THE SCREEN IS READ WITHOUT A FORK, and this one was measured rather than
+# reasoned (ranger-base-vf3pf, 2026-10-03). `cat` and `tail -n` here are the
+# APPARATUS; match_rules is the subject. With a `tail` on PATH whose whole body
+# is `kill -TERM $$` the window came back empty, which reads exactly like the
+# rule not firing: three override arms and all four locale arms reported MOVED
+# and the script exited 1, with nothing in the output naming tail. bash reads
+# the file twice instead -- once to count, once to emit the last $3 lines -- so
+# no fork sits between the capture and the verdict. No arrays: `${arr[@]}`
+# under `set -u` is an unbound-variable error on the bash 3.2 this box ships.
 cat > "$T/replay.sh" <<'REPLAY'
 #!/usr/bin/env bash
 set -uo pipefail
 . "$MR"
 RULES="$1"
-if [ "$3" = all ]; then screen="$(cat "$2")"; else screen="$(tail -n "$3" "$2")"; fi
+if [ "$3" = all ]; then
+  screen="$(<"$2")"
+else
+  n=0
+  while IFS= read -r l || [ -n "$l" ]; do n=$(( n + 1 )); done <"$2"
+  skip=$(( n - $3 )); [ "$skip" -lt 0 ] && skip=0
+  i=0; first=1; screen=""
+  while IFS= read -r l || [ -n "$l" ]; do
+    i=$(( i + 1 ))
+    [ "$i" -le "$skip" ] && continue
+    if [ "$first" = 1 ]; then screen=$l; first=0; else screen=$screen$'\n'$l; fi
+  done <"$2"
+fi
 match_rules "$screen" || printf '%s' -
 REPLAY
 chmod +x "$T/replay.sh"
@@ -133,7 +336,7 @@ arm() { # label, rules-file, which-column
 run_arm() { # label, rules-file, column
   local out; out="$(arm "$1" "$2" "$3")"
   printf '%s\n' "$out"
-  local n; n=$(printf '%s\n' "$out" | grep -c '^  FAIL ')
+  local n; n=$(count_prefix "$out" '  FAIL ')
   fail_count=$(( fail_count + ${n:-0} ))
 }
 
@@ -169,18 +372,24 @@ done
 # and hence this arm.
 if [ -x /usr/bin/grep ]; then
   mkdir -p "$T/bsdbin"; ln -sf /usr/bin/grep "$T/bsdbin/grep"
-  echo "grep x locale (verdicts must not move):"
-  jq -e -r '[.rules[] | (.all // []) + (.any // []) + (.none // []) | .[]]
-            | map(select(test("\\[[^]]*[^\\x00-\\x7f]")))
-            | if length == 0 then "none" else (. | join(", ")) end' "$OVERRIDE" \
-    | { read -r multi
-        [ "$multi" = none ] &&
-          ok "no bracket expression in the override contains a multibyte character" ||
-          bad "bracket expression with a multibyte character: $multi"; }
+  # WHICH grep the first pair of arms ran, named ONCE and here rather than in
+  # every label. `grep --version | head -1 | cut -d' ' -f1` was three forks
+  # deciding a label, and on this box it only ever printed the word `grep`;
+  # `command -v` is a builtin and the path is what a reader needs anyway. It
+  # also makes a thing the old label hid visible: where /usr/bin/grep IS the
+  # PATH grep, the BSD pair below re-runs the same binary.
+  path_grep="$(command -v grep || true)"
+  echo "grep x locale (verdicts must not move; PATH grep is ${path_grep:-not on PATH}):"
+  multi="$(jq_ask multibyte-brackets)"; jq_rc=$?
+  apparatus "$jq_rc" && harness "jq could not read the override patterns (status $jq_rc)" "$(jq_err)"
+  case $multi in
+    none) ok "no bracket expression in the override contains a multibyte character" ;;
+    '')   bad "the override patterns could not be read at all (jq status $jq_rc): $(jq_err)" ;;
+    *)    bad "bracket expression with a multibyte character: $multi" ;;
+  esac
   for grepdir in "" "$T/bsdbin"; do
     for loc in en_US.UTF-8 C; do
-      lbl="$([ -n "$grepdir" ] && echo 'BSD grep' || echo "$(grep --version 2>&1 | head -1 | cut -d' ' -f1)") LC_ALL=$loc"
-      moved=0
+      if [ -n "$grepdir" ]; then lbl="BSD grep LC_ALL=$loc"; else lbl="grep LC_ALL=$loc"; fi
       printf '%s\n' "$EXPECT" | while IFS=$'\t' read -r name up ov; do
         g="$(env PATH="${grepdir:+$grepdir:}$PATH" LC_ALL="$loc" MR="$T/match_rules.sh" \
              "$T/replay.sh" "$OVERRIDE" "$FIX/$name" "$WINDOW")"
@@ -227,29 +436,29 @@ watch_once() { # config-dir, log-tag
   local p=$!
   WATCH_PIDS="$WATCH_PIDS $p"
   while [ "$i" -lt 10 ]; do
-    grep -q 'watch started' "$T/state-$tag/herdr-bob.log" 2>/dev/null && break
+    log_has "$T/state-$tag/herdr-bob.log" 'watch started' && break
     sleep 1; i=$(( i + 1 ))
   done
   kill "$p" 2>/dev/null || true
   wait "$p" 2>/dev/null || true
-  WATCH_PIDS="$(printf '%s' "$WATCH_PIDS" | sed "s/ $p\$//; s/ $p / /")"
-  sed -n 's/.*watch started (.*rules \(.*\))$/\1/p' "$T/state-$tag/herdr-bob.log" 2>/dev/null | tail -1
+  drop_pid "$p"
+  last_rules_path "$T/state-$tag/herdr-bob.log"
 }
 
 echo "seeding (the real bob-watch, fake herdr, scratch state and config):"
 got="$(watch_once "$T/seed" seed)"
-if [ "$got" = "$T/seed/rules.json" ] && cmp -s "$T/seed/rules.json" "$SRC/rules.json"; then
+if [ "$got" = "$T/seed/rules.json" ] && same_file "$T/seed/rules.json" "$SRC/rules.json"; then
   ok "a fresh config dir is seeded from the plugin's own copy, and read from there"
 else
-  bad "fresh seeding: watcher read '${got:-nothing}', seeded file $(cmp -s "$T/seed/rules.json" "$SRC/rules.json" && echo matches || echo 'does NOT match') the plugin's"
+  bad "fresh seeding: watcher read '${got:-nothing}', seeded file $(same_file "$T/seed/rules.json" "$SRC/rules.json" && echo matches || echo 'does NOT match') the plugin's"
 fi
 
 cp "$OVERRIDE" "$T/kept/rules.json"
 got="$(watch_once "$T/kept" kept)"
-if [ "$got" = "$T/kept/rules.json" ] && cmp -s "$T/kept/rules.json" "$OVERRIDE"; then
+if [ "$got" = "$T/kept/rules.json" ] && same_file "$T/kept/rules.json" "$OVERRIDE"; then
   ok "an installed override is preferred over the plugin's copy and never refreshed"
 else
-  bad "override not read: watcher read '${got:-nothing}', and the file $(cmp -s "$T/kept/rules.json" "$OVERRIDE" && echo survived || echo 'was OVERWRITTEN')"
+  bad "override not read: watcher read '${got:-nothing}', and the file $(same_file "$T/kept/rules.json" "$OVERRIDE" && echo survived || echo 'was OVERWRITTEN')"
 fi
 
 if [ "$fail_count" = 0 ]; then
