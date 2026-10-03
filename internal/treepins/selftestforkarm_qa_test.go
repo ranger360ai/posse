@@ -195,9 +195,10 @@ func TestQATheSelfTestsDiskArmsDoNotContradictEachOtherWhenAForkFails(t *testing
 //
 // Read the tool list as a proxy and not as the invariant, because the tree
 // already shows the difference. verify-id-recycle.sh, verify-self-close.sh
-// and verify-prune-guard.sh each read herdr's status JSON with `python3` and
-// each spell the apparatus-vs-verdict distinction out (rc 2 means python3 did
-// not answer). They are the same subject-reader shape, with no rig and no
+// and verify-prune-guard.sh each read herdr's JSON with `python3` — its
+// status, or its workspace list — and each spell the apparatus-vs-verdict
+// distinction out (rc 2 means python3 did not answer, and is never printed as
+// one). They are the same subject-reader shape, with no rig and no
 // heredoc, and they pass this scan for one reason only: `python3` is not on
 // sfMatcher's list. Their safety comes from the apparatus check, not from the
 // scan — so never "fix" a flagged reader by reaching for an unlisted tool,
