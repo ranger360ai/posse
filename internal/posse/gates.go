@@ -5767,6 +5767,10 @@ func writeTempRender(dir, slot, body string) (string, error) {
 // because a black-box probe cannot tell that from a hook that refuses only
 // the probe (the escape this ADR closes), and the launcher no longer runs
 // it to find out.
+//
+// consequence is the CALLER's, and for prepare-commit-msg it is no longer a
+// literal: commitGuardConsequence derives it from the installed body for the
+// verdicts where posse is holding one (ranger-base-e78c4).
 func l3DegradeLine(slot, path, consequence string, v l3Verdict) string {
 	switch v {
 	case l3Stale:
@@ -5780,6 +5784,127 @@ func l3DegradeLine(slot, path, consequence string, v l3Verdict) string {
 	default:
 		return fmt.Sprintf("L3 %s hook — %s — our own render did not refuse the operation (renderer regression); %s", slot, AbbrevHome(path), consequence)
 	}
+}
+
+// commitGuardWorstCase is the prepare-commit-msg slot's STATIC consequence:
+// every guard the slot has ever been described as carrying, named as lost.
+// It is the honest answer for a verdict where posse is not holding a body
+// of its own to compare — nothing installed, a foreign hook, a session
+// hooks dir that is not this launch's — and it was the answer for every
+// verdict until ranger-base-e78c4 measured what that cost: a config edit
+// that added this instance's FIRST data_ceiling_patterns: block staled
+// three repos' hooks at once, the wall named four guards, and the stale
+// bodies carried three of them byte-for-byte (docs/notes.d/ranger-base-knux2.md,
+// 0 removed / 324 added). One name of four was true and the operator paid
+// a bead to find out which.
+const commitGuardWorstCase = "the data ceiling, beads visibility, constitution-path and shared-index guards are not realized"
+
+// l3CommitGuard pairs one of the prepare-commit-msg slot's guards with the
+// banner line its arm renders. The banner is the sentinel because it is the
+// one string per arm that is already load-bearing for a human reading the
+// file, and because the box-drawing prefix appears nowhere else in the body
+// — prose in this hook cites another arm by NAME, never by its banner.
+// TestL3CommitGuardBannersAreInTheRender is the pin: a renamed banner must
+// red a test rather than silently report its guard as absent.
+type l3CommitGuard struct{ name, banner string }
+
+// l3CommitGuards is that table, in render order — which is also the order
+// commitGuardWorstCase names the four it knows about. NOTES.md is the
+// fifth: a guard the slot has carried since ADR 0022 §3 that the static
+// line has never named. A derived line that left it out would under-report
+// exactly the way the static one over-reported.
+var l3CommitGuards = []l3CommitGuard{
+	{"data ceiling", "─── the data ceiling (ADR 0050)"},
+	{"beads visibility", "─── the beads visibility guard (rangerhq-hrz)"},
+	{"constitution-path", "─── the constitution-path guard (ranger-base-ak3e)"},
+	{"shared-index", "─── the shared-index guard (rangerhq-lmq9)"},
+	{"NOTES.md", "─── the NOTES.md guard (ADR 0022 §3"},
+}
+
+// commitGuardConsequence is the consequence clause l3DegradeLine prints for
+// the prepare-commit-msg slot. For the two verdicts where the installed
+// body is posse's own it is DERIVED from both bodies; everywhere else it is
+// commitGuardWorstCase, unchanged.
+//
+// render is this launch's render — the probe already has it, because
+// identity was decided by comparing against it one line earlier.
+func commitGuardConsequence(path, render string, v l3Verdict) string {
+	var installed string
+	switch v {
+	case l3Stale:
+		// Re-read rather than thread the body out of l3Identity: this is
+		// the degraded path, reached once per launch per failing slot, and
+		// the alternative is a body parameter across every caller for a
+		// string only this clause reads. A file that has gone since the
+		// identity read is no body to diff, so it falls back.
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return commitGuardWorstCase
+		}
+		installed = string(b)
+	case l3MemberGone:
+		// Nothing at path, by construction: l3Identity reached this verdict
+		// by asking hookSlotVerdict about the member and being told
+		// l3Uninstalled. So the installed body is empty and every in-force
+		// guard is genuinely absent — deriving it anyway is what drops the
+		// name of a guard THIS instance does not render at all.
+	default:
+		// l3Uninstalled, l3Foreign, l3RedirectMismatch, and the renderer
+		// regression where identity held and behavior did not: no body of
+		// ours to compare, or nothing about the body to report. The static
+		// worst case is honest there and stays.
+		return commitGuardWorstCase
+	}
+	return l3GuardGap(installed, render)
+}
+
+// l3GuardGap is the diff, in one line (Degraded is ONE LINE — yamlflat.go,
+// ranger-base-ujdg): which of the slot's named guards this render carries
+// and the installed body does not.
+//
+// A guard THIS render does not carry is named on neither side. That is the
+// half the static line got wrong from the other direction: an instance with
+// no data_ceiling_patterns: renders no ceiling arm at all (dataCeilingCheck
+// returns "" for an empty list), so an installed body without one has lost
+// nothing by lacking it.
+//
+// What the present side does not claim is CURRENCY. The body failed
+// identity by bytes, so a guard whose banner is there may still be an older
+// render of itself — which is why its clause says where it is, not that it
+// is current.
+func l3GuardGap(installed, render string) string {
+	var missing, present []string
+	for _, g := range l3CommitGuards {
+		switch {
+		case !strings.Contains(render, g.banner):
+			// Not in force this launch: see above.
+		case strings.Contains(installed, g.banner):
+			present = append(present, g.name)
+		default:
+			missing = append(missing, g.name)
+		}
+	}
+	switch {
+	case len(missing) == 0 && len(present) == 0:
+		// This render carries no banner in the table, which no shipped
+		// render does — the table and the render have drifted and the pin
+		// is red. Say the worst case rather than "nothing is wrong".
+		return commitGuardWorstCase
+	case len(missing) == 0:
+		return "no named guard is missing from the installed body — " + l3GuardClause(present) + " in it, this render's or an older one — so the drift is elsewhere"
+	case len(present) == 0:
+		return l3GuardClause(missing) + " not realized"
+	}
+	return l3GuardClause(missing) + " not realized; " + l3GuardClause(present) + " present in the installed body, this render's or an older one"
+}
+
+// l3GuardClause renders a guard list as the sentence fragment the Degraded
+// line needs: "the X guard is", "the X, Y and Z guards are".
+func l3GuardClause(names []string) string {
+	if len(names) == 1 {
+		return "the " + names[0] + " guard is"
+	}
+	return "the " + strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1] + " guards are"
 }
 
 func (a *App) probeL3Hooks(dir string, wantPrePush bool) l3HookProbe {
@@ -5836,7 +5961,8 @@ func (a *App) probeL3HooksIn(dir string, wantPrePush bool, red *l3Redirect) l3Ho
 		r.PrePushDegraded = l3DegradeLineIn(red, "pre-push", prePushPath, "this layer is not realized", r.PrePushVerdict)
 	}
 	if !r.CommitGuard {
-		r.CommitGuardDegraded = l3DegradeLineIn(red, "prepare-commit-msg", commitPath, "the data ceiling, beads visibility, constitution-path and shared-index guards are not realized", r.CommitGuardVerdict)
+		r.CommitGuardDegraded = l3DegradeLineIn(red, "prepare-commit-msg", commitPath,
+			commitGuardConsequence(commitPath, commitRender, r.CommitGuardVerdict), r.CommitGuardVerdict)
 	}
 	// The forward-completeness arm, and the reason it is separate from the
 	// two slots above: what a missing dispatcher costs is not a posse gate
