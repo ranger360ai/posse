@@ -64,6 +64,17 @@ package posse
 // verdict differently because what they protect differs: a claim here, a
 // turn running inside a workspace about to be closed there
 // (ranger-base-wjfnp).
+//
+// AND THE THIRD SITE is `posse probe`'s typed-delivery arm
+// (runtimeprobe.go), which spelled the stall "the prompt was not delivered"
+// and — because that sentence is a SettleWhy — skipped the one reading that
+// would have disproved it, the wait for the canary the turn goes on to
+// write. A runtime that works, recorded as one whose prompt does not land.
+// The stall falls through to that reading now and is only quoted if the
+// turn never arrives (ranger-base-3ys1f). Three sites, one taxonomy: a
+// stall is EVIDENCE ABOUT HERDR'S WINDOW and never about delivery, so
+// whatever each site protects, none of them may answer it by assuming the
+// text is missing.
 
 import (
 	"fmt"

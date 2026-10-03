@@ -419,6 +419,14 @@ type probeReading struct {
 	// SettleWhy the reason when it did not.
 	Settled   string
 	SettleWhy string
+	// StallWhy is herdr's agent_prompt_stalled sentence when the typed
+	// delivery drew one ("" = it did not). It is NOT a SettleWhy, and the
+	// whole of ranger-base-3ys1f is that distinction: a stall is an
+	// UNOBSERVED turn, not an undelivered prompt, so it must not stop the
+	// turn from being read — it is carried here so that a probe which then
+	// fails for a different reason can still say herdr never saw the turn
+	// start.
+	StallWhy string
 	// KeysSent counts keystrokes posse sent at a dialog. It is structurally
 	// zero — nothing in this file sends any — and it is recorded so the
 	// unattended observable states its own precondition instead of assuming
@@ -440,6 +448,19 @@ type probeReading struct {
 	// given. It is the number the reported arm has to quote, because on that
 	// route a bigger one is patience for a report nothing is going to send.
 	Wait time.Duration
+}
+
+// stallNote is what observable 3 adds when herdr reported a stalled prompt.
+// Only on the two FAILING arms, where it is the half a reader cannot infer:
+// a turn that never completed is a different diagnosis depending on whether
+// herdr saw it start, and the record carries nothing but the observables.
+// On the passing arm the turn is its own evidence and the stall is behind it
+// — the probe prints that one on screen instead (Run).
+func (r probeReading) stallNote() string {
+	if r.StallWhy == "" {
+		return ""
+	}
+	return " (herdr accepted the submission, so the prompt WAS typed, but saw no turn start inside its own 5s window: " + r.StallWhy + ")"
 }
 
 // evalProbe turns a reading into the four observables of ADR 0032 §1 rule 2.
@@ -504,10 +525,10 @@ func evalProbe(r probeReading) []ProbeObservable {
 			why = "it never reached a settled state"
 		}
 		obs = append(obs, ProbeObservable{3, "unattended-turn", false,
-			"the turn did not complete — " + why + ". A template runtime's unattended flag is hand-written in command:, and nothing but this observable checks it"})
+			"the turn did not complete — " + why + r.stallNote() + ". A template runtime's unattended flag is hand-written in command:, and nothing but this observable checks it"})
 	case !r.WhereFound:
 		obs = append(obs, ProbeObservable{3, "unattended-turn", false,
-			"the pane settled (" + r.Settled + ") but the turn ran none of the probe's commands — a session that settles without acting is a dialog nobody is watching, or a CLI that answered in prose"})
+			"the pane settled (" + r.Settled + ") but the turn ran none of the probe's commands" + r.stallNote() + " — a session that settles without acting is a dialog nobody is watching, or a CLI that answered in prose"})
 	default:
 		obs = append(obs, ProbeObservable{3, "unattended-turn", true, fmt.Sprintf(
 			"the turn ran the probe's commands and settled at %q with posse sending %d keystrokes — nobody approved anything (posse never answers an interstitial: ADR 0013 §2)", r.Settled, r.KeysSent)})
@@ -788,7 +809,40 @@ func (a *App) RuntimeProbe(rt *Runtime, h Herdr, o ProbeOpts) (*ProbeRecord, err
 			if _, err := h.AgentWait(pane, []string{"idle", "done", "blocked"}, msUntil(startBy)); err != nil {
 				r.SettleWhy = "never became promptable: " + err.Error()
 			} else if _, err := h.AgentPrompt(pane, probePrompt(canary, whereFile, script), true, msUntil(deadline)); err != nil {
-				r.SettleWhy = "the prompt was not delivered: " + err.Error()
+				// agent_prompt_stalled is the one delivery error that does
+				// NOT say the text is missing, and putting it on this side
+				// of the line was the same taxonomy error ranger-base-uauvn
+				// fixed in dispatch and ranger-base-wjfnp in landThePlane
+				// (promptstall.go holds the three codes and herdr's own
+				// words for them). agent_not_ready and agent_blocked are
+				// refusals made BEFORE any input is sent; a stall means
+				// herdr ACCEPTED the submission — the prompt WAS typed —
+				// and only failed to OBSERVE the turn starting inside its
+				// own 5000ms, which on this box is a slow start far more
+				// often than a lost prompt.
+				//
+				// So it was false twice over: the sentence, and the SKIP it
+				// caused. Setting SettleWhy at all is what makes the guard
+				// below bypass awaitProbeTurn, which is the one reading
+				// that would have found the canary the turn goes on to
+				// write — a runtime that works, recorded as one whose
+				// prompt does not land (ranger-base-3ys1f).
+				//
+				// It falls through now and the witness file decides. The
+				// probe can afford the wait where dispatch could not:
+				// nothing is claimed here and no work is discarded, the
+				// deadline already bounds it, and awaitProbeTurn already
+				// spends the whole budget on a settle with no witness for
+				// the same reason it would here — "a failing probe may be
+				// slow" is its own doc. The stall is remembered rather than
+				// dropped, so a probe that fails anyway still says herdr
+				// never saw the turn start (stallNote).
+				if IsHerdrCode(err, "agent_prompt_stalled") {
+					r.StallWhy = err.Error()
+					fmt.Fprintf(out, "  herdr typed the prompt into %s and saw no turn start inside its own 5s window — reading the pane for the turn anyway (%v)\n", pane, err)
+				} else {
+					r.SettleWhy = "the prompt was not delivered: " + err.Error()
+				}
 			}
 		}
 		if r.SettleWhy == "" {
