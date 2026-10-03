@@ -557,6 +557,41 @@ func (w dispatcherStampOut) Write(p []byte) (int, error) {
 
 func (d *Dispatcher) outWriter() io.Writer { return dispatcherStampOut{d} }
 
+// launchWarns is progressSink's serialized twin, and the writer every
+// launch this dispatcher makes says its own diagnostic lines through:
+// NewSessionOpts.Warn (ranger-base-lcode). Without it the backend writes
+// them to the PROCESS's stderr, which in the one process the fleet's
+// launches happen in — a `--watch` loop — is /dev/null on fd 1, 2 and 0
+// alike (MEASURED 2026-10-03, pid 52273). The loop's record is a file the
+// loop opens and tees Out and Err into (watchlog.go), so a launch line that
+// does not go through one of this file's writers is not in the record at
+// all: the pre-heal drift finding fired zero times in dispatch-watch.log
+// across every generation the loop itself wrote, and once in the one
+// generation an operator had piped by hand with 2>&1
+// (docs/notes.d/ranger-base-knux2.md).
+//
+// Progress first, for the cockpit, whose Out is io.Discard: a launch's
+// warning is one of the "lines LaunchBead prints before it returns" that
+// field exists for, and routing it to d.printf there would discard it for
+// the same reason the watch loop lost it. Otherwise d.printf — Out, STAMPED
+// and under outMu, because a launch is the pass (see LastWrite) and a
+// gather writes this stream from a goroutine of its own meanwhile.
+//
+// Lazy on purpose: the cockpit sets Progress after NewDispatcher returns,
+// and Watch replaces Out with the tee after that, so both are read at write
+// time rather than captured.
+type dispatcherLaunchWarn struct{ d *Dispatcher }
+
+func (w dispatcherLaunchWarn) Write(p []byte) (int, error) {
+	if w.d.Progress != nil {
+		return lineWriter(w.d.Progress).Write(p)
+	}
+	w.d.printf("%s", p)
+	return len(p), nil
+}
+
+func (d *Dispatcher) launchWarns() io.Writer { return dispatcherLaunchWarn{d} }
+
 // planGuard takes this pass's shared plan reading (rangerhq-jgm). The plan's
 // own rate windows are the real budget; `plan_guard_<window>:` (percent) are
 // the thresholds and none is set by default — with none set the guard
@@ -4541,7 +4576,8 @@ func (d *Dispatcher) launchSession(is RepoIssue, persona, session, runtime, tier
 	if resolveErr != nil {
 		d.printf("· %-14s creating session %s (persona %s, %s, %s)\n", is.ID, session, persona, AbbrevHome(is.Dir), d.launchTag(runtime, tier))
 		if err := d.HB.createSession(NewSessionOpts{Name: session, Dir: is.Dir, Agent: persona, Runtime: runtime, Tier: tier,
-			AllowDegraded: d.AllowDegraded, Cage: d.Cage, Worktree: true, Bead: is.ID, ByHand: byHand}, held); err != nil {
+			AllowDegraded: d.AllowDegraded, Cage: d.Cage, Worktree: true, Bead: is.ID, ByHand: byHand,
+			Warn: d.launchWarns()}, held); err != nil {
 			return launched{}, err
 		}
 		d.noteTree(is.ID, session)
@@ -4626,7 +4662,8 @@ func (d *Dispatcher) launchWithPrompt(is RepoIssue, persona, session, runtime, t
 	}
 	d.printf("· %-14s creating session %s (persona %s, %s, %s; work prompt on the launch line)\n", is.ID, session, persona, AbbrevHome(is.Dir), d.launchTag(runtime, tier))
 	if err := d.HB.createSession(NewSessionOpts{Name: session, Dir: is.Dir, Agent: persona, Runtime: runtime, Tier: tier,
-		AllowDegraded: d.AllowDegraded, Cage: d.Cage, PromptFile: file, Worktree: true, Bead: is.ID, ByHand: byHand}, held); err != nil {
+		AllowDegraded: d.AllowDegraded, Cage: d.Cage, PromptFile: file, Worktree: true, Bead: is.ID, ByHand: byHand,
+		Warn: d.launchWarns()}, held); err != nil {
 		return launched{}, d.unclaimAfterLaunchFailure(is, persona, resumed, err)
 	}
 	d.noteTree(is.ID, session)

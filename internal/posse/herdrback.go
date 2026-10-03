@@ -75,6 +75,19 @@ func (b *HerdrBackend) warnWriter() io.Writer {
 	return b.Warn
 }
 
+// warnWriterFor is warnWriter with ONE launch's own writer (NewSessionOpts
+// Warn) over the backend's. It is resolved per launch and never stored on
+// b, because the backend is shared: a dispatch pass's gathers run beside
+// the launch on goroutines of their own (ADR 0028 §1), and a field set for
+// the duration of a launch would route their warnings too, at whatever
+// moment they happened to write.
+func (b *HerdrBackend) warnWriterFor(w io.Writer) io.Writer {
+	if w != nil {
+		return w
+	}
+	return b.warnWriter()
+}
+
 type NewSessionOpts struct {
 	Name    string
 	Dir     string   // "" → config default_dir → $HOME
@@ -158,6 +171,25 @@ type NewSessionOpts struct {
 	// scrollback it would close is the fixture. So it refuses, above the kill,
 	// and the operator still has both the session and `posse new`.
 	Recreate bool
+	// Warn is where THIS launch's own diagnostic lines go, over
+	// HerdrBackend.Warn (ranger-base-lcode). Nil is every interactive
+	// launch: `posse new`, a recipe and a relaunch leave it unset and the
+	// backend's writer answers — os.Stderr, the terminal the operator typed
+	// at, which is the right place for exactly as long as somebody is
+	// standing there.
+	//
+	// Dispatch is the case where nobody is. A launch in a watch loop has
+	// fd 1 and fd 2 on /dev/null (the loop's record is a file the loop
+	// opens itself, watchlog.go), so a launch line written to the process's
+	// stderr is a line nobody will ever read — MEASURED 2026-10-03 on the
+	// running loop, pid 52273, which is how the pre-heal drift finding
+	// below came to fire zero times in dispatch-watch.log while the wall it
+	// reports on was silently re-stamped three times in one pass
+	// (docs/notes.d/ranger-base-knux2.md). So the launcher hands its own
+	// writer down: Dispatcher.launchWarns(), which is the same stream the
+	// "creating session" line this one annotates goes to, serialized by the
+	// same mutex.
+	Warn io.Writer
 }
 
 func NewHerdrBackend(a *App) *HerdrBackend {
@@ -1884,6 +1916,13 @@ type launchPlan struct {
 func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 	a := b.App
 
+	// Every line this function says goes to warn/warnw, never to b.warn or
+	// to os.Stderr: on a dispatch launch o.Warn is the launcher's own
+	// stream and the process's stderr is /dev/null (NewSessionOpts.Warn,
+	// ranger-base-lcode). Resolved once, above the first of them.
+	warnw := b.warnWriterFor(o.Warn)
+	warn := func(format string, args ...any) { fmt.Fprintf(warnw, format, args...) }
+
 	// ADR 0053 D1, first because it is pure: an exact model with a missing
 	// companion, or an id posse cannot render as one token, is a refusal
 	// that reads no state at all. Asking it here — above the load guard,
@@ -1918,17 +1957,17 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 	// knob needs on a home whose config.yaml a manifest attests
 	// (ranger-base-6s00n) — the fleet ceiling is a legitimate config change,
 	// but on a promoted home an unattested one refuses every later dispatch.
-	if why := a.LoadHigh(b.warnWriter()); why != "" {
+	if why := a.LoadHigh(warnw); why != "" {
 		if o.ByHand {
-			b.warn("posse: %s — launching %s anyway: this guard holds the FLEET back, not a launch you typed (ranger-base-jfe5z)%s\n",
+			warn("posse: %s — launching %s anyway: this guard holds the FLEET back, not a launch you typed (ranger-base-jfe5z)%s\n",
 				why, o.Name, a.LoadCulpritLine())
 		} else {
 			return nil, Die("%s — refusing to launch %s into a saturated box; wait for it to drain, or %s%s",
 				why, o.Name, a.LoadGuardEscape(), a.LoadCulpritLine())
 		}
 	}
-	a.TightenEnvPerms(os.Stderr)    // every launch re-asserts 700/600 on envs/
-	a.TightenSecretPerms(os.Stderr) // and on secrets/, which no launch reads
+	a.TightenEnvPerms(warnw)    // every launch re-asserts 700/600 on envs/
+	a.TightenSecretPerms(warnw) // and on secrets/, which no launch reads
 
 	// The instance tag is checked here, with the other refusals that are
 	// knowable before anything is touched (rangerhq-ouf9). It gates every
@@ -1965,7 +2004,7 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 			return nil, constitutionRefusal{Die("%s\n  dispatch refuses to launch on a constitution nobody promoted (ADR 0015 §3)\n"+
 				"  the operator clears it with: posse promote%s", v.Line(), fix)}
 		}
-		b.warn("posse: DEGRADED — %s (ADR 0015 §3; clear it with `posse promote`)%s\n", v.Line(), fix)
+		warn("posse: DEGRADED — %s (ADR 0015 §3; clear it with `posse promote`)%s\n", v.Line(), fix)
 	}
 
 	dir := o.Dir
@@ -1986,7 +2025,7 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 	repo, branch := "", ""
 	var tree *SessionTree
 	if o.Worktree {
-		t, err := a.EnsureSessionTree(dir, o.Name, b.warnWriter())
+		t, err := a.EnsureSessionTree(dir, o.Name, warnw)
 		if err != nil {
 			return nil, err
 		}
@@ -1999,7 +2038,7 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 			// is already gone (ranger-base-nurl). Best effort — a launch
 			// must not fail because a git config write did not.
 			if err := recordBead(t.Repo, t.Branch, o.Bead); err != nil {
-				b.warn("posse: %s not stamped with bead %s (%v) — a later pass cannot tell what it is holding\n", t.Branch, o.Bead, err)
+				warn("posse: %s not stamped with bead %s (%v) — a later pass cannot tell what it is holding\n", t.Branch, o.Bead, err)
 			}
 		}
 	}
@@ -2097,8 +2136,8 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 		// and of whom: the provider, about the exact id, rather than the
 		// catalog about the tier's.
 		if o.Model != "" {
-			b.warn("posse: %s\n", ExactModelLine(o.Name, runtime, tier, o.Model, rt))
-		} else if line := a.TierPreflightFrom(envs, o.Agent, runtime, tier, b.warnWriter()).Line; line != "" {
+			warn("posse: %s\n", ExactModelLine(o.Name, runtime, tier, o.Model, rt))
+		} else if line := a.TierPreflightFrom(envs, o.Agent, runtime, tier, warnw).Line; line != "" {
 			// UNKNOWN or unavailable, and both launch the asked-for id and
 			// say so (ADR 0039 D3c, ADR 0003 §3). The line is the whole
 			// bound on the risk, and it is now the whole product of the
@@ -2106,7 +2145,7 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 			// that outlives the launch is a claim about a session, and the
 			// only claim posse keeps about a session's pair is `runtime:`
 			// and `tier:` — what it really opened on.
-			b.warn("posse: %s\n", line)
+			warn("posse: %s\n", line)
 		}
 		// ADR 0013 §2 layer 2 (ranger-base-a9y9, escaped as ranger-base-9r33):
 		// a first-run dialog whose DEFAULT ACTION MUTATES THE MACHINE is a
@@ -2138,7 +2177,7 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 			if o.Bead != "" {
 				return nil, DangerRefusal(rt, line)
 			}
-			b.warn("posse: DEGRADED — %s launch opens on %s; an interactive launch proceeds because answering that screen is what you would open a session to do (ADR 0013 §2)\n", rt.Name, line)
+			warn("posse: DEGRADED — %s launch opens on %s; an interactive launch proceeds because answering that screen is what you would open a session to do (ADR 0013 §2)\n", rt.Name, line)
 		}
 		// ADR 0013 §1's launch row, on the same rung and with the same
 		// asymmetry (ranger-base-d8riq, from ranger-base-i3q6g). herdr has no
@@ -2202,9 +2241,9 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 			if o.Bead != "" || o.Recreate {
 				return nil, DetectionRefusal(rt, det)
 			}
-			b.warn("posse: %s\n", DetectionDegraded(rt, det))
+			warn("posse: %s\n", DetectionDegraded(rt, det))
 		case det.Reported():
-			b.warn("posse: %s\n", DetectionReportedNote(rt, det))
+			warn("posse: %s\n", DetectionReportedNote(rt, det))
 		}
 		// Enforcement parity (ADR 0002 §4): the cage the session gets is the
 		// best available tier (shims today); the PID may demand more. Any
@@ -2291,7 +2330,7 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 			if got, ok := flatScalarRoundTrip(mh.Dir); !caged && !ok {
 				return nil, Die("posse: %s — managed hooks path %q cannot be recorded: the session record's flat-YAML reader would read it back as %q (ADR 0052 D3)", o.Name, mh.Dir, got)
 			}
-			b.warn("posse: %s in %s — %s\n", o.Name, AbbrevHome(dir), mh.line())
+			warn("posse: %s in %s — %s\n", o.Name, AbbrevHome(dir), mh.line())
 			// ADR 0052 D2: the wall posse may not install THERE is rendered
 			// here instead — its own dir, per session, and the session's env
 			// aims git at it. Rendered before CheckParityIn, so the probe
@@ -2306,16 +2345,16 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 			// caged launch on a managed repo keeps today's behaviour and
 			// says which half it did not get.
 			if caged {
-				b.warn("posse: %s — the session redirect is not applied at the container tier: %s is not inside the cage, and a core.hooksPath naming a path the cage does not have skips every hook there, the managed ones too (ADR 0052 D2)\n", o.Name, AbbrevHome(a.SessionHooksDir(o.Name)))
+				warn("posse: %s — the session redirect is not applied at the container tier: %s is not inside the cage, and a core.hooksPath naming a path the cage does not have skips every hook there, the managed ones too (ADR 0052 D2)\n", o.Name, AbbrevHome(a.SessionHooksDir(o.Name)))
 			} else {
 				red, err := a.RenderSessionHooks(o.Name, dir, mh, deniesGitPush(ag.Deny))
 				if err != nil {
 					return nil, err
 				}
 				hooksRedirectDir, hooksProbe, managedHooksPath = red.Dir, red.probe(), red.Managed
-				b.warn("posse: %s — L3 rendered at %s: %s dispatched into %s\n", o.Name, AbbrevHome(red.Dir), strings.Join(red.Slots, ", "), AbbrevHome(red.Managed))
+				warn("posse: %s — L3 rendered at %s: %s dispatched into %s\n", o.Name, AbbrevHome(red.Dir), strings.Join(red.Slots, ", "), AbbrevHome(red.Managed))
 				for _, skip := range red.Skipped {
-					b.warn("posse: %s — not forwarded from %s: %s\n", o.Name, AbbrevHome(red.Managed), skip)
+					warn("posse: %s — not forwarded from %s: %s\n", o.Name, AbbrevHome(red.Managed), skip)
 				}
 			}
 		} else {
@@ -2326,7 +2365,7 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 		}
 		parity := a.checkParityIn(ag, rt, cage, tier, dir, hooksProbe)
 		if !mh.Managed && preHeal.Repo && preHeal.CommitGuardVerdict.reStamped() {
-			b.warn("posse: %s launch found the L3 prepare-commit-msg wall in %s WRONG before this launch just silently re-stamped it — %s\n", o.Name, AbbrevHome(dir), preHeal.CommitGuardDegraded)
+			warn("posse: %s launch found the L3 prepare-commit-msg wall in %s WRONG before this launch just silently re-stamped it — %s\n", o.Name, AbbrevHome(dir), preHeal.CommitGuardDegraded)
 		}
 		if len(parity.Degraded) > 0 {
 			// ADR 0003 §3: at fast the operator's consent is not on offer —
@@ -2335,7 +2374,7 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 				return nil, degradedError{parity}
 			}
 			degraded = strings.Join(parity.Degraded, "; ")
-			b.warn("posse: %s launches DEGRADED on %s @ %s — %s\n", o.Name, rt.Name, cage, degraded)
+			warn("posse: %s launches DEGRADED on %s @ %s — %s\n", o.Name, rt.Name, cage, degraded)
 		}
 		// Skills (ADR 0007 §2): rendered fresh here, like the gates — the
 		// tree {skills} points at for claude, the session dir's
@@ -2454,7 +2493,7 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 			if o.Bead != "" {
 				return nil, PIDChannelRefusal(o.Agent, rt, where)
 			}
-			b.warn("posse: %s\n", PIDChannelDegraded(rt, where))
+			warn("posse: %s\n", PIDChannelDegraded(rt, where))
 		}
 		if f := rt.PIDVoided(cmd); f != "" {
 			return nil, Die("%s: the rendered %s launch line names %s, which makes %s discard the PID this line delivers — the session would open carrying every native rulebook and no persona at all (measured, ranger-base-64qx; docs/adr/0013-rules-precedence-probe.md)\n"+
@@ -2712,7 +2751,7 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 	// the PID's demand and what this host can actually provide are different
 	// answers and only the second decides what the session gets.
 	if tree != nil {
-		if err := PrepareSessionHead(tree, caged, b.warnWriter()); err != nil {
+		if err := PrepareSessionHead(tree, caged, warnw); err != nil {
 			return nil, err
 		}
 	}
@@ -2838,7 +2877,7 @@ func (b *HerdrBackend) createSession(o NewSessionOpts, held *LaunchLock) error {
 	if err := nameSyntax(o.Name); err != nil {
 		return err
 	}
-	return underLaunchLock(b.App, b.warnWriter(), held, func(*LaunchLock) error {
+	return underLaunchLock(b.App, b.warnWriterFor(o.Warn), held, func(*LaunchLock) error {
 		if err := b.nameFree(o.Name); err != nil {
 			return err
 		}
