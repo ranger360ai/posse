@@ -1,4 +1,4 @@
-## The 2026-10-01 "watch loop hung ~6h" was a suspend, and the second one (ranger-base-sqxo1)
+## 2026-10-01 and 2026-10-02: two long sessions, two hung-looking passes, two different causes (ranger-base-sqxo1)
 
 ranger-base-sqxo1 was filed as a hang: "watch loop hung ~6h after pass 6
 (18:26 local): 'prompt(s) in flight, gathering' never returned". It was not a
@@ -9,7 +9,7 @@ was the first, and it was retracted on the same ground — and because the two
 readings that *did* fire both times were correct and both pointed away from
 the cause.
 
-### 1. What happened, MEASURED 2026-10-02 on this box
+### 1. Occurrence 1 (2026-10-01): what happened, MEASURED 2026-10-02 on this box
 
 Three independent witnesses, agreeing to the second.
 
@@ -166,3 +166,132 @@ Three things in it are load-bearing and each is pinned
   and the pulse delivers the KEY and not the detail — so the token monica was
   handed can only change by changing the shop's condition contract. Handed off
   rather than decided here.
+
+
+---
+
+## 7. Occurrence 2 (2026-10-02): this one really did ignore the stop
+
+Filed on the same bead while the above was being worked, and it is **not** the
+same thing. A suspend freezes a process; this process was running and its
+context was cancelled.
+
+### 7.1 The timeline, corrected
+
+The operator's recollection was "TERM at ~00:30, INT three minutes later, KILL
+at ~00:52". The box's own record says otherwise and the correction matters,
+because it bounds the window:
+
+```
+last reboot            shutdown time   Sat Oct  3 00:07
+                       reboot time     Sat Oct  3 00:13
+sysctl kern.boottime   Sat Oct  3 00:13:21 2026
+```
+
+One reboot on 10-03. So pid 49599 cannot have been KILLed at 00:52 — it was
+gone by 00:07 at the latest, and the generation that armed at 00:15:59 (pid
+2074, `duetexpertd [ORPHANED 51s]`, loadavg **318.50**) is post-boot. The
+honest bound on occurrence 2 is therefore:
+
+> pass 7 started **23:56:42** and had not completed when the box went down at
+> **00:07** — **at least 10m18s**, with its context cancelled for part of it.
+
+Note what that also means: pass 7 was still *inside* the 12m pass budget when
+the box went down, so the watchdog was right to say nothing about it. The
+detection was not the gap this time.
+
+### 7.2 Where it was, exactly
+
+`state/dispatch-watch.log` 17363-17528. Pass 7 printed, in order:
+
+1. the header, `── pass 7 · 23:56:42`
+2. the reap sweep's two `◑ … kept:` lines
+3. two pulse lines
+4. `◷ ranger-base-sqxo1 watch loop stopping — claim kept, not judged this pass`
+
+and nothing else, ever. What is **absent** localises it: no land-sweep line
+(passes 1, 2 and 5 all printed one), no `+ … verify filed` (pass 6 printed
+four), no `◷ launch cap: 4 of 4 attempt(s) spent` (passes 5 and 6 printed it),
+and — the decisive one — no `… N prompt(s) in flight, gathering`, which the
+carried leg **guaranteed**: pass 6 ended `… 1 prompt(s) still in flight,
+carried into the next pass`, so `inFlightCount()` was 1 and Run prints that
+line unconditionally once past the fire loop.
+
+So the pass was between `autoReapPass(beforeRouting)` and the gather. And line
+4 proves the cancel arrived: that line is `stopClaim`, which only the wait
+goroutine's stop exit prints (ranger-base-e9d9). The signal path worked. The
+gather worked. The **epilogue between them read ctx nowhere**.
+
+### 7.3 Why it took minutes
+
+That epilogue is where a pass spends its forks, across four configured repos:
+
+| stage | forks |
+|---|---|
+| reap sweep | herdr + bd, per session |
+| land sweep | `git worktree list` per repo, more where it finds an unlanded branch |
+| plan guard | the usage endpoint |
+| credential read | files |
+| verify-after | bd per dir, under the launcher lock |
+| ci-watch | `gh` + bd per dir |
+| lost-bead sweep | bd + git per dir |
+| queue read | bd per dir |
+
+Each child is individually bounded — `BdTimeout`, `HerdrControlTimeout`, the
+herdr wait's own declared timeout. Four repos' worth of them is not. The guard
+clock's own readings that evening: **68.81, 90.56, 72.24, 95.86** against a
+`load_guard:` of 60, with 12.1G wired and 6.1G of swap. At that load a fork
+costs seconds instead of milliseconds and a stage costs minutes.
+
+Pass 7 was let through because the load reading at **23:56:42** happened to be
+under 60 — the guard skipped passes 3 and 4 and did not skip this one. The
+guard is a launch brake, not a stop.
+
+**Disclosure:** part of that load was mine. This bead's own `make test` (three
+arms, one suite slot at a time) ran from 23:44, and the guard clock named
+`posse.test`, `compile`, `link` and `go` among the top consumers at 23:21,
+23:30, 23:36 and 23:46. The box was already at 68-95 before it started, from
+other seats' suites, but a three-arm run was not free and the standing ruling
+("no load testing on this box") is adjacent to what happened here.
+
+### 7.4 The fix, and its bound
+
+Seven stop checks, one at each boundary of that epilogue (`stopHere`,
+dispatch.go). What it buys, stated as a bound rather than as a fix:
+
+> the operator's TERM is honoured within **one stage** instead of after all
+> eight, and a stage is bounded by its own children's deadlines times their
+> count.
+
+It does **not** make any single stage interruptible; that means threading a
+context through every bd and git call site, which is a different change.
+`stopHere`'s doc says so, so the next person does not rediscover the residual
+by sending a signal into it.
+
+The last boundary sits on the **far side** of the queue read, and that
+placement was measured rather than chosen: put before the read, it occupied a
+window whose only content is the pause decline — a struct field, no fork — and
+**deleting it reddened nothing**. After the read it is the gate that keeps a
+stopping loop from hiring, which matters because the fire loop creates a
+session, claims a bead and prompts it. The refill arm has refused on this same
+reading since ADR 0028 §1 (`judge`); the fire pass never asked.
+
+A one-shot Run has a nil `stopCtx`, so every boundary is invisible to it and
+`posse dispatch` without `--watch` is unchanged. Pinned
+(`drainstage_qa_test.go`): the honoured arm, a control arm proving the fixture
+can hire, the one-shot arm, and a source-order sweep that reds when a new
+epilogue stage lands without a check. Eight mutants, eight kills.
+
+### 7.5 Not a leak, and not done
+
+- **The lock and pidfile "left behind" are correct behaviour.** The watch
+  lock is kernel-owned and release *is* death (rangerhq-gir5), so it read free
+  the moment the process went; the pidfile is removed by a defer that a KILL
+  or a reboot skips, and the next loop overwrites it rather than inspecting it
+  (`stampWatchPid`). Neither is evidence of anything.
+- **"A watchdog that acts, not logs" is not built here.** A loop that ends
+  itself on a stalled pass is a mechanism with real blast radius: the loop
+  holds live `agent prompt --wait` clients for up to four hours, a false
+  positive ends a healthy loop mid-pass, and ADR 0028 §4 ratifies that every
+  refill originates in the one watch process. Deciding that is a design call,
+  not an implementation detail. Handed off.

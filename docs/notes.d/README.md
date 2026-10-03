@@ -7,7 +7,7 @@ references), not inferred publication dates. Undated fragments sort last.
 ## 2026-10
 
 - [ranger-base-wcy4s](ranger-base-wcy4s.md) — The launch verify's cost, measured as work instead of wall clock (ranger-base-wcy4s) — 2026-10-02
-- [ranger-base-sqxo1](ranger-base-sqxo1.md) — The 2026-10-01 "watch loop hung ~6h" was a suspend, and the second one (ranger-base-sqxo1) — 2026-10-01
+- [ranger-base-sqxo1](ranger-base-sqxo1.md) — 2026-10-01 and 2026-10-02: two long sessions, two hung-looking passes, two different causes (ranger-base-sqxo1) — 2026-10-01
 - [ranger-base-5jjtn](ranger-base-5jjtn.md) — Bob's launch line delivers no PID, and its pane is never labelled: two independent causes (ranger-base-5jjtn) — 2026-10-01
 - [ranger-base-26y03](ranger-base-26y03.md) — A nesting refusal wears the setuid refusal's face, and one seat can see both after all (ranger-base-26y03) — 2026-10-01
 
