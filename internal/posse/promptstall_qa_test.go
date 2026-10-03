@@ -201,6 +201,70 @@ func TestRefusedPromptHandsBackWithNoSecondReading(t *testing.T) {
 	}
 }
 
+// Arm 6, the branch the incident actually takes — and the one no arm above
+// reaches (ranger-base-szxlx, verifying this file's close).
+//
+// afterStall has two ways to say "no turn", and they are different events:
+// herdr NAMES a state that is not working or blocked (the `default:` arm,
+// "herdr answered %q rather than a turn starting"), or herdr watches the
+// whole grace out and returns its own `timeout` code — which is what a seat
+// whose screen has not moved yet looks like, i.e. the loadavg-94 incident
+// this file exists for. Both verdicts are stallNoTurn, so on the hand-back
+// path the two are observationally identical, which is exactly how one of
+// them ends up unpinned.
+//
+// MEASURED 2026-10-03: with no lever the fake answers the second reading
+// `idle`, so arms 2 and 4 — the only two that reach a hand-back — both
+// travel `default:`. Inverting the TIMEOUT arm's verdict to stallUnreadable
+// (never hand back) left all eight arms of this file green; inverting
+// `default:`'s reds arms 2 and 4. Two guards, one visible outcome: deleting
+// the one no fixture drives is free.
+//
+// What this arm pins is the VERDICT on that branch, which is what the
+// mutant moved. It does not pin the two branches' sentences apart — on a
+// hand-back judgeStall prints neither, and the distinguishing text is only
+// reachable on the keep-the-claim side.
+func TestStalledPromptWhoseGraceExpiresWithNoTurnHandsBack(t *testing.T) {
+	t.Parallel()
+	d, fake, _ := stalledSeat(t, "agent_prompt_stalled")
+	// herdr accepted the submission, then watched posse's whole grace out
+	// without seeing a transition — its own `timeout`, not a named state.
+	stallWait(t, fake, "timeout|timed out waiting for agent status")
+
+	if _, err := d.Run("", "", 0); err != nil {
+		t.Fatalf("a stalled prompt whose grace expired must not abort the pass: %v", err)
+	}
+	out, bd, log := dispatcherOut(d), bdCalls(t, fake), calls(t, fake)
+
+	// THE FIXTURE PREMISE, asserted rather than assumed: the second reading
+	// was actually taken, and it is the leg the lever answers. Without this
+	// the arm below is also green over a build that never asks herdr again
+	// and hands back on the code alone — the ranger-base-uauvn defect.
+	if !strings.Contains(log, "--until working --until blocked") {
+		t.Fatalf("setup: the second reading was never asked, so this arm is not about afterStall's timeout verdict:\n%s", log)
+	}
+	// And the verdict: herdr answered, and what it answered was "no turn in
+	// the whole grace either". That is evidence, not ignorance, so the
+	// rangerhq-81d cleanup still happens.
+	if !strings.Contains(out, "unclaimed") {
+		t.Errorf("a grace that expired with no turn is herdr ANSWERING, not refusing to answer — the bead goes back:\n%s", out)
+	}
+	if !strings.Contains(bd, "--actor ranger update a-1 --status open --assignee  --json") {
+		t.Errorf("a-1 must be handed back:\n%s", bd)
+	}
+	// The pair that makes the verdict legible rather than silent, same as
+	// arm 2: the bead says why it is open and names the code.
+	if !strings.Contains(bd, "comments add a-1") || !strings.Contains(bd, "agent_prompt_stalled") {
+		t.Errorf("the unclaim must say so on the bead, naming the code:\n%s", bd)
+	}
+	// The control on the arm's own reading of "answered": an unreadable
+	// herdr is the OTHER outcome on the same leg, and arm 3 pins it. If this
+	// arm's lever were being read as a refusal, it would print arm 3's line.
+	if strings.Contains(out, "claim kept, not judged this pass") {
+		t.Errorf("herdr's own timeout is an answer, not a herdr that could not be asked (that is arm 3):\n%s", out)
+	}
+}
+
 // A comment the store would not take must not turn a cleaned-up claim into a
 // stranded one: the unclaim stands, the pass says what could not be written.
 func TestUnclaimSurvivesABeadThatWillNotTakeTheComment(t *testing.T) {
