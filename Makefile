@@ -42,7 +42,7 @@ FMT_ROOTS := cmd internal *.go
 BUILD_STAMP := $(shell $(GOBIN) run ./cmd/buildstamp)
 LDFLAGS     := -X github.com/ranger360ai/posse/internal/posse.Build=$(BUILD_STAMP)
 
-.PHONY: build release install deploy test test-arm1 test-arm2 test-arm3 test-race test-reuse fmt-check crew-check seed-check history-check doc-check identity-check ops-check execwrite-check tree-check verify-test-times verify-suite-lock verify-pattern-kill-census verify-silent-reverts verify-shell-syntax verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-herdr-bob-rules install-herdr-bob-rules verify-prune-guard verify-id-recycle verify-self-close verify-govern-honesty verify-grok-pin verify-codex-pin verify-credential-paths verify-policy-pins verify-hook-freshness verify-bd-pin verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk verify-box verify-box-self-test prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
+.PHONY: build release install deploy test test-arm1 test-arm2 test-arm3 test-race test-reuse fmt-check crew-check seed-check history-check doc-check identity-check ops-check execwrite-check tree-check verify-test-times verify-suite-lock verify-pattern-kill-census verify-silent-reverts verify-shell-syntax verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-herdr-bob install-herdr-bob verify-herdr-bob-rules install-herdr-bob-rules verify-prune-guard verify-id-recycle verify-self-close verify-govern-honesty verify-grok-pin verify-codex-pin verify-credential-paths verify-policy-pins verify-hook-freshness verify-bd-pin verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk verify-box verify-box-self-test prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
 
 build:
 	$(GOBIN) build -ldflags '$(LDFLAGS)' -o bin/posse-go ./cmd/posse
@@ -692,6 +692,30 @@ install-detection:
 # install-detection's own run (--check-install) fails on a mismatch.
 verify-detection:
 	scripts/verify-detection.sh
+
+# The herdr-bob plugin's watcher had never run on this box: its start arm calls
+# setsid(1), which is util-linux and absent on darwin, so it exited 127 and the
+# pidfile recorded a dead subshell — and adopt_unclaimed, the only route that
+# labels a Bob pane with NO prompt typed, therefore never fired once
+# (ranger-base-mz8ud). Four darwin bugs, patched in
+# etc/herdr/herdr-bob/darwin-portability.patch: setsid, `date -Is`,
+# `stat -c %Y`, and `declare -A` on the bash 3.2 a stock darwin resolves.
+#
+# verify-herdr-bob proves the patch against COPIES of the installed checkout
+# under a fake herdr, with a control arm on the pristine tree that must fail
+# the same four ways — nothing in it reaches the live server. It is NOT a
+# prerequisite of `make test`: it needs the plugin installed, which is an
+# instance fact, and it spends ~45s in sleeps watching a 1s poll loop.
+verify-herdr-bob:
+	scripts/verify-herdr-bob.sh
+
+# install-herdr-bob writes to the LIVE herdr: --start hands the watcher a
+# standing licence to label any unclaimed pane whose foreground process is
+# Bob. Operator-gated, per persona; `scripts/herdr-bob-install.sh --check` is
+# the read-only half and reports pin, patch state and watcher state.
+install-herdr-bob:
+	scripts/herdr-bob-install.sh --apply
+	scripts/herdr-bob-install.sh --start
 
 # herdr-bob's shipped rules.json is the whole of that plugin's `blocked`
 # reporting — Bob has no approval hook event, so a permission prompt can only

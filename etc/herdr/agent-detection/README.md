@@ -460,5 +460,11 @@ agent:
 
 `upstream-report.md` in this directory is the write-up to send to herdr if the
 gap is still open; `upstream-bob.md` is the other one (a missing kind rather
-than a missing rule). Neither has been filed — filing them is the operator's
-call.
+than a missing rule). Two more live here for the same reason — this is where
+posse keeps the drafts it means to send, whether or not the subject is a
+manifest: `upstream-agent-prompt-reported.md` (herdr's `agent prompt` refuses a
+pane labelled through `pane report-agent`) and
+`upstream-herdr-bob-darwin.md` (the **herdr-bob plugin**, not herdr: four
+darwin portability bugs that kept its watcher from ever starting on this box,
+plus the `rules.json` gap — ranger-base-mz8ud). None has been filed — filing
+them is the operator's call.

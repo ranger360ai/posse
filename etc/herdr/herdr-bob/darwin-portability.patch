@@ -1,0 +1,125 @@
+diff --git a/bin/bob-watch b/bin/bob-watch
+index d0e51df..69b9da1 100755
+--- a/bin/bob-watch
++++ b/bin/bob-watch
+@@ -23,7 +23,26 @@ mkdir -p "$(config_root)" "$(panes_dir)" "$(state_root)/heartbeat" 2>/dev/null
+ [ -e "$RULES" ] || cp "$ROOT/rules.json" "$RULES" 2>/dev/null
+ [ -e "$RULES" ] || RULES="$ROOT/rules.json"
+ 
+-declare -A last_state=()
++# The panes last reported `blocked`, as a space-delimited set. This was an
++# associative array, which costs nothing on bash 4 and everything on bash 3.2 --
++# the only bash a stock darwin has, and the one `command -v bash` resolves to
++# there. On 3.2 `declare -A` is an invalid option and a string subscript is
++# evaluated as arithmetic, so under `set -u` the first READ of last_state[$pane]
++# is an unbound variable and this process exits -- at the first screen read of
++# the first registered pane, with its stderr on /dev/null and no log line, and
++# with whatever status the previous command left (0 in a bare reproduction, 1
++# in the loop below), so no caller can tell it from a clean stop.
++# A set is all this ever held: the only values ever assigned were "blocked"
++# and "". herdr pane ids (`w2KJ:p1`) contain no whitespace, which is what makes
++# the delimiter safe.
++blocked_panes=" "
++is_blocked()    { case "$blocked_panes" in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
++mark_blocked()  { is_blocked "$1" || blocked_panes="$blocked_panes$1 "; }
++clear_blocked() {
++  local out=" " p
++  for p in $blocked_panes; do [ "$p" = "$1" ] || out="$out$p "; done
++  blocked_panes="$out"
++}
+ 
+ # Bob only fires SessionStart on the first prompt, so a freshly launched
+ # `bob chat` is invisible to Herdr until the user says something. Claim such
+@@ -72,7 +91,7 @@ adopt_unclaimed() {
+ heartbeat_fresh() { # pane
+   local f; f="$(beat_file "$1")"
+   [ -e "$f" ] || return 1
+-  local age=$(( $(date +%s) - $(stat -c %Y "$f" 2>/dev/null || echo 0) ))
++  local age=$(( $(date +%s) - $(file_mtime "$f") ))
+   [ "$age" -lt "$HEARTBEAT_TTL" ]
+ }
+ 
+@@ -128,7 +147,7 @@ while :; do
+ 
+     if ! pane_alive "$pane"; then
+       release_agent "$pane"; forget_pane "$pane"
+-      unset "last_state[$pane]"
++      clear_blocked "$pane"
+       log "pane $pane gone -> released"
+       continue
+     fi
+@@ -138,15 +157,15 @@ while :; do
+     [ -n "$screen" ] || continue
+ 
+     if rule="$(match_rules "$screen")"; then
+-      if [ "${last_state[$pane]:-}" != "blocked" ]; then
++      if ! is_blocked "$pane"; then
+         report_state "$pane" "blocked" "" "Bob is waiting for input ($rule)"
+-        last_state[$pane]="blocked"
++        mark_blocked "$pane"
+         log "pane $pane -> blocked ($rule)"
+       fi
+-    elif [ "${last_state[$pane]:-}" = "blocked" ]; then
++    elif is_blocked "$pane"; then
+       # The prompt cleared. Hand authority back: if the hook is live it will set
+       # the real state on its next event; otherwise fall back to idle.
+-      last_state[$pane]=""
++      clear_blocked "$pane"
+       if ! heartbeat_fresh "$pane"; then
+         report_state "$pane" "idle"
+         log "pane $pane -> idle (block cleared, no live hook)"
+diff --git a/bin/bob-watchctl b/bin/bob-watchctl
+index 01ed736..7c73871 100755
+--- a/bin/bob-watchctl
++++ b/bin/bob-watchctl
+@@ -46,7 +46,21 @@ case "${1:-status}" in
+     write_hook_launcher "$ROOT" || log "could not refresh hook launcher"
+     readopt
+     if running; then echo "herdr-bob: watcher already running (pid $(cat "$PIDFILE"))"; exit 0; fi
+-    setsid nohup "$HERDR_BOB_BASH" "$ROOT/bin/bob-watch" >/dev/null 2>&1 &
++    # setsid(1) is util-linux and does not exist on darwin, where this arm
++    # exited 127 and `echo $!` then recorded the dead subshell -- and since the
++    # only caller is a one-shot [[startup]] hook that nothing retries, the
++    # watcher never ran at all. perl's POSIX::setsid is in the darwin base
++    # system and gives a real new session, with the pid preserved across exec.
++    # The last arm is the old behaviour: it survives SIGHUP, but not a kill of
++    # the startup hook's process group.
++    if command -v setsid >/dev/null 2>&1; then
++      setsid nohup "$HERDR_BOB_BASH" "$ROOT/bin/bob-watch" >/dev/null 2>&1 &
++    elif command -v perl >/dev/null 2>&1; then
++      nohup perl -MPOSIX -e 'setsid(); exec @ARGV or die "exec: $!"' \
++        "$HERDR_BOB_BASH" "$ROOT/bin/bob-watch" >/dev/null 2>&1 &
++    else
++      nohup "$HERDR_BOB_BASH" "$ROOT/bin/bob-watch" >/dev/null 2>&1 &
++    fi
+     echo $! > "$PIDFILE"
+     disown 2>/dev/null || true
+     echo "herdr-bob: watcher started (pid $(cat "$PIDFILE"))"
+diff --git a/lib/common.sh b/lib/common.sh
+index 3126914..51c35ba 100755
+--- a/lib/common.sh
++++ b/lib/common.sh
+@@ -55,10 +55,22 @@ pane_file()    { printf '%s/panes/%s' "$(state_root)" "$1"; }
+ beat_file()    { printf '%s/heartbeat/%s' "$(state_root)" "$1"; }
+ HEARTBEAT_TTL=90
+ 
++# Modification time in epoch seconds, or 0. GNU coreutils and BSD/darwin `stat`
++# share no spelling for it, and the two cannot be probed in either order: on
++# GNU, `stat -f %m` is a *filesystem* query that succeeds and prints a mount
++# point, so it may only run after `-c` has failed -- and the answer is checked
++# for digits before any arithmetic sees it.
++file_mtime() { # path
++  local m
++  m="$(stat -c %Y "$1" 2>/dev/null)" || m="$(stat -f %m "$1" 2>/dev/null)" || m=0
++  case "$m" in ''|*[!0-9]*) m=0 ;; esac
++  printf '%s' "$m"
++}
++
+ log() {
+   local d; d="$(state_root)"
+   mkdir -p "$d" 2>/dev/null || return 0
+-  printf '%s %s\n' "$(date -Is)" "$*" >> "$d/herdr-bob.log" 2>/dev/null || true
++  printf '%s %s\n' "$(date -Iseconds)" "$*" >> "$d/herdr-bob.log" 2>/dev/null || true
+   # Keep the log from growing without bound; cheap and good enough.
+   local n; n=$(wc -l < "$d/herdr-bob.log" 2>/dev/null || echo 0)
+   if [ "${n:-0}" -gt 2000 ]; then
