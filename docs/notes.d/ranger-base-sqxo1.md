@@ -88,11 +88,27 @@ minus monotonic elapsed) and a different line; this file is not it"* — and
 that was the right call for one incident and the wrong one for two.
 
 Every clock inside the loop measures **awake** time, because `LastWrite`,
-`lastPass` and `d.now()` all carry Go monotonic readings and the darwin
-monotonic clock does not advance across a suspend (MEASURED 2026-09-03: wall
-uptime 323192s against a runtime monotonic of 296514s). So all of them were
-correctly silent. Every reading **outside** the loop is wall time, so all of
-them said something true and misleading:
+`lastPass` and `d.now()` all carry Go monotonic readings and the reading Go
+takes on darwin does not advance across a suspend. MEASURED 2026-10-03 03:50Z
+on this box, because it is the number the whole fix rests on:
+
+| reading | value | behaviour |
+|---|---|---|
+| wall uptime (`now - sysctl kern.boottime`) | 2509051.5s | — |
+| `CLOCK_MONOTONIC` | 2509051.2s | tracks wall — **includes** suspend on darwin |
+| `CLOCK_UPTIME_RAW` == `mach_absolute_time` | 1352850.5s | **excludes** suspend |
+
+1156201s between the last two: thirteen days and nine hours of suspend inside a
+twenty-nine-day uptime. And it is `mach_absolute_time` that Go reads —
+`runtime.nanotime1` for `GOOS=darwin` is the `mach_absolute_time` trampoline
+(go1.26.5, `src/runtime/sys_darwin.go:304`), not `clock_gettime` — so a Go
+monotonic difference on this platform is awake time, and darwin's
+`CLOCK_MONOTONIC` is a trap rather than an alternative. The 2026-09-03 reading
+in `watchdog.go`'s head measured the same thing less directly (wall uptime
+323192s against a runtime monotonic of 296514s) and agrees.
+
+So every clock inside the loop was correctly silent. Every reading **outside**
+the loop is wall time, so all of them said something true and misleading:
 
 | reading | what it said | what it meant |
 |---|---|---|

@@ -58,12 +58,27 @@ package posse
 // read them was handed a muted shop with no cause in it.
 //
 // THE READING. time.Now() carries both a wall reading and a monotonic one.
-// Across a darwin suspend the wall clock keeps time and the monotonic clock
-// does not advance at all — MEASURED 2026-09-03 on this box at wall uptime
-// 323192s against a runtime monotonic of 296514s, the 7h25m difference being
-// that incident's sleep — so the gap between the two, taken over one tick,
+// Across a darwin suspend the wall clock keeps time and the monotonic reading
+// does not advance at all, so the gap between the two, taken over one tick,
 // IS the suspend. Nothing else produces it: a tick delayed by a loaded box
 // grows both gaps equally, because both readings are taken in the same call.
+//
+// MEASURED 2026-10-03 03:50Z on this box, and this is the number the whole
+// file rests on, so it is worth having exactly:
+//
+//	wall uptime        2509051.5s   (now - sysctl kern.boottime)
+//	CLOCK_MONOTONIC    2509051.2s   tracks wall — it INCLUDES suspend on darwin
+//	CLOCK_UPTIME_RAW   1352850.5s   == mach_absolute_time, excludes suspend
+//
+// 1156201s between the last two: thirteen days and nine hours of suspend in a
+// twenty-nine-day uptime. And it is mach_absolute_time that Go reads —
+// runtime.nanotime1 for GOOS=darwin is the mach_absolute_time trampoline
+// (go1.26.5, src/runtime/sys_darwin.go:304, with the numer/denom conversion
+// under it), NOT clock_gettime, so a Go monotonic difference on this platform
+// is awake time and the middle row above is a trap rather than an
+// alternative. The 2026-09-03 reading in watchdog.go's head measured the same
+// thing less directly (wall uptime 323192s against a runtime monotonic of
+// 296514s) and agrees.
 //
 // THE WALL GAP IS COMPUTED FROM UnixNano AND NOT FROM Time.Sub, and that is
 // the whole correctness of this file. Sub prefers the monotonic reading
