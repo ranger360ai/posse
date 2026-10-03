@@ -70,12 +70,12 @@ type SecondStore struct {
 // ones holding a store beside a redirect. Read-only: three stats, one read of
 // the redirect and one directory listing per entry.
 //
-// Deduplicated by resolved `.beads` path, because two spellings of one
-// checkout are one store and would otherwise be two findings naming the same
-// file. Reported in config order.
+// Deduplicated by `.beads` path IDENTITY (samePath), because two spellings
+// of one checkout are one store and would otherwise be two findings naming
+// the same file. Reported in config order.
 func (a *App) SweepSecondStores() []SecondStore {
 	var out []SecondStore
-	seen := map[string]bool{}
+	var seen []string
 	for _, dir := range a.BeadsDirs() {
 		home, target, why := beadsRedirectHop(dir)
 		if target == "" && why == "" {
@@ -83,16 +83,15 @@ func (a *App) SweepSecondStores() []SecondStore {
 			// the store of record and not a second one.
 			continue
 		}
-		real := resolvedPath(home)
-		if seen[real] {
+		if anySamePath(seen, home) {
 			continue
 		}
-		seen[real] = true
+		seen = append(seen, home)
 		// A redirect that resolves back to the directory holding it is one
 		// store reached by a pointless hop, not two. bd reads exactly the
 		// files below, so naming them as a store to delete would be an
 		// instruction to delete the store of record.
-		if target != "" && resolvedPath(target) == real {
+		if target != "" && samePath(target, home) {
 			continue
 		}
 		files := storeFilesIn(home)

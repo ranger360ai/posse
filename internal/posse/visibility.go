@@ -271,9 +271,8 @@ func init() {
 // path, an unreadable config and a value that is neither word all come back
 // public — every way of being unsure fails the same way, closed.
 func (a *App) BeadsVisibility(dir string) (visibility, source string) {
-	want := resolvedPath(dir)
 	for _, kv := range YamlMapPairs(a.ConfigPath, "beads_visibility") {
-		if resolvedPath(ExpandTilde(kv[0])) != want {
+		if !samePath(kv[0], dir) {
 			continue
 		}
 		switch v := strings.ToLower(strings.TrimSpace(kv[1])); v {
@@ -288,9 +287,58 @@ func (a *App) BeadsVisibility(dir string) (visibility, source string) {
 	return VisibilityPublic, "unmarked in config beads_visibility: — unmarked is public (fail closed)"
 }
 
-// resolvedPath is how two spellings of one repo are compared: expanded,
-// cleaned, and with symlinks resolved when they resolve (/tmp → /private/tmp
-// on macOS is the case that bites, and it bites tests first).
+// samePath is how two spellings of one repo are compared — and the question
+// is "do these name the same directory", never "are these the same string".
+// It is asked by IDENTITY (os.SameFile: same device, same inode) because no
+// amount of string normalizing can answer it:
+//
+//   - CASE. EvalSymlinks does not fold case, and on a case-INsensitive
+//     volume — the APFS default — `~/src/hcn` and `~/src/HCN` are one
+//     directory under two spellings. A `beads_visibility:` key the operator
+//     typed in one case never met the path git derived in the other, the
+//     repo fell through to "unmarked is public", and the shared
+//     prepare-commit-msg stamp flipped on every launch (ranger-base-99gww).
+//   - And it stays right where a case FOLD would be wrong: on a
+//     case-sensitive volume those two spellings are two directories with two
+//     inodes, and identity keeps them apart. Nothing has to answer "is this
+//     mount case-sensitive", which is a per-mount question neither statfs
+//     nor a filesystem name answers.
+//
+// Two spellings that resolve to the same string are the same path without a
+// stat, which is also the only answer available when the path does not exist
+// — a typo'd config key matches nothing and the caller fails closed, as it
+// did before.
+func samePath(a, b string) bool {
+	ra, rb := resolvedPath(a), resolvedPath(b)
+	if ra == rb {
+		return true
+	}
+	fa, erra := os.Stat(ra)
+	if erra != nil {
+		return false
+	}
+	fb, errb := os.Stat(rb)
+	return errb == nil && os.SameFile(fa, fb)
+}
+
+// anySamePath reports whether p is one of the paths already seen. A linear
+// scan and not a map, because the key a map would need is a canonical STRING
+// and no canonical string exists for the question samePath answers; the
+// callers iterate config entries, of which an instance has a handful.
+func anySamePath(seen []string, p string) bool {
+	for _, s := range seen {
+		if samePath(s, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// resolvedPath is one spelling normalized as far as a string can be:
+// expanded, cleaned, and with symlinks resolved when they resolve
+// (/tmp → /private/tmp on macOS is the case that bites, and it bites tests
+// first). It is samePath's fast path and nothing else — compare two paths
+// with samePath, which answers the case this cannot.
 func resolvedPath(p string) string {
 	p = filepath.Clean(ExpandTilde(p))
 	if abs, err := filepath.Abs(p); err == nil {

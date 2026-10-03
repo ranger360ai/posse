@@ -67,13 +67,13 @@ type HookWallSweep struct {
 // SweepHookWall asks the ADR 0023 question — identity at the dispatch path,
 // behavior of our own render — of every repo `beads_visibility:` names.
 //
-// Repos are deduplicated by resolved path (two spellings of one checkout are
+// Repos are deduplicated by path identity (two spellings of one checkout are
 // one wall) and reported in config order. A repo that is absent or is not a
 // git repository is recorded as skipped, never as a finding: config outliving
 // a checkout is an ordinary thing and not evidence about any wall.
 func (a *App) SweepHookWall() HookWallSweep {
 	var s HookWallSweep
-	seen := map[string]bool{}
+	var seen []string
 	for _, kv := range YamlMapPairs(a.ConfigPath, "beads_visibility") {
 		key := strings.TrimSpace(kv[0])
 		if key == "" {
@@ -82,12 +82,14 @@ func (a *App) SweepHookWall() HookWallSweep {
 		// Two spellings of one checkout are one wall, and one entry in
 		// the counts: a duplicate key that inflated Declared would make
 		// "0 of N present" name a repo that was never a separate repo.
+		// Compared by identity, not by string — on a case-insensitive
+		// volume `~/src/hcn` and `~/src/HCN` are one checkout and would
+		// otherwise be two rows probing one wall (ranger-base-99gww).
 		dir := absResolve(ExpandTilde(key))
-		real := resolvedPath(dir)
-		if seen[real] {
+		if anySamePath(seen, dir) {
 			continue
 		}
-		seen[real] = true
+		seen = append(seen, dir)
 		s.Declared++
 		r := HookWallRepo{Config: key, Dir: dir}
 		if st, err := os.Stat(dir); err != nil || !st.IsDir() {
