@@ -6,6 +6,7 @@ references), not inferred publication dates. Undated fragments sort last.
 
 ## 2026-10
 
+- [ranger-base-rb05v](ranger-base-rb05v.md) — How long a healthy pass takes, and what every long one was (ranger-base-rb05v) — 2026-10-03
 - [ranger-base-f1ytb](ranger-base-f1ytb.md) — Bob's PID channel is a workspace custom mode, and an unknown mode slug falls back in silence (ranger-base-f1ytb) — 2026-10-03
 - [ranger-base-wcy4s](ranger-base-wcy4s.md) — The launch verify's cost, measured as work instead of wall clock (ranger-base-wcy4s) — 2026-10-02
 - [ranger-base-sqxo1](ranger-base-sqxo1.md) — 2026-10-01 and 2026-10-02: two long sessions, two hung-looking passes, two different causes (ranger-base-sqxo1) — 2026-10-01
