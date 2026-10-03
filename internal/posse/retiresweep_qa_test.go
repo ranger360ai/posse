@@ -97,37 +97,44 @@ func commitOldIn(t *testing.T, dir, path, body, msg string) {
 //     them.
 func n27xvQuiet(t *testing.T, tr *SessionTree) {
 	t.Helper()
-	age := func(root string, when time.Time, skipGit bool) int {
-		n := 0
-		if err := filepath.WalkDir(root, func(p string, e fs.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-			if skipGit && e.Name() == ".git" {
-				if e.IsDir() {
-					return fs.SkipDir
-				}
-				return nil
-			}
-			if e.IsDir() {
-				return nil
-			}
-			if err := os.Chtimes(p, when, when); err != nil {
-				return err
-			}
-			n++
-			return nil
-		}); err != nil {
-			t.Fatal(err)
-		}
-		return n
-	}
-	age(tr.Path, time.Now().Add(-n27xvAge-time.Hour), true)
+	n27xvAgeFiles(t, tr.Path, time.Now().Add(-n27xvAge-time.Hour), true)
 	mustGit(t, tr.Path, "status", "--porcelain")
 	gd := mustGit(t, tr.Path, "rev-parse", "--absolute-git-dir")
-	if n := age(gd, time.Now().Add(-n27xvAge), false); n == 0 {
+	if n := n27xvAgeFiles(t, gd, time.Now().Add(-n27xvAge), false); n == 0 {
 		t.Fatalf("no files under %s to age — the fixture is not measuring fact 4", gd)
 	}
+}
+
+// n27xvAgeFiles dates every FILE under root to `when` and answers how many
+// it touched. The directories’ own mtimes are deliberately left alone — step
+// 3 above, and the measurement under it — and skipGit skips a nested `.git`
+// altogether. Shared with the writer-cadence pin at the foot of this file,
+// which re-lays this same floor under every probe.
+func n27xvAgeFiles(t *testing.T, root string, when time.Time, skipGit bool) int {
+	t.Helper()
+	n := 0
+	if err := filepath.WalkDir(root, func(p string, e fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if skipGit && e.Name() == ".git" {
+			if e.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if e.IsDir() {
+			return nil
+		}
+		if err := os.Chtimes(p, when, when); err != nil {
+			return err
+		}
+		n++
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return n
 }
 
 // n27xvFixture is the population ADR 0058 exists for: a session tree whose
@@ -644,12 +651,53 @@ func TestTheRetireRereadsHerdrUnderTheLauncherLock(t *testing.T) {
 // "fixes" fact 4 by widening what counts as quiet.
 func TestAWriterFasterThanTheGraceKeepsTheTreeForever(t *testing.T) {
 	t.Parallel()
-	// The margin between probeGap and grace has to absorb `retirable`'s own
-	// git calls, which run for real here and slow down under the suite's own
-	// parallel load — not just the wall clock between two Chtimes.
-	const grace = 2 * time.Second
-	const probeGap = 150 * time.Millisecond // < grace, the launcher probe's own shape
-	const probes = 20                       // probes*probeGap (3s) > grace (2s)
+	// THE WRITER IS SIMULATED BY THE STAMP, NOT SAT THROUGH. The only
+	// time-dependent input this predicate has is `time.Since(lastTreeWrite)`
+	// — fact 4 compares that one duration to the grace and reads no other
+	// clock — so a probe is logs/HEAD dated `now - age` and the verdict
+	// asked about that age. Sweeping age over [0, cadence] is then every
+	// reading a writer at this cadence can produce at ANY instant, which is
+	// what "forever" in the name is: not the three seconds of real time a
+	// test can afford to sit through, but the whole range the predicate
+	// could ever be asked over.
+	//
+	// ranger-base-1jgch is why it is written this way. The first cut touched
+	// logs/HEAD at `now` against a 2s grace and asked 40 times with a 150ms
+	// sleep between, which made the assertion a race between this goroutine
+	// and the scheduler: it false-failed arm 3 reporting the retire
+	// predicate broken ("nothing has written to ... in 2s") when what
+	// actually happened is that more than 2s of wall clock passed between a
+	// Chtimes and the read after it — MEASURED 2026-10-01/02, darwin 25.4.0,
+	// go1.26.5, inside an 852s `make test-arm3` at box loadavg 38-57 on 8
+	// cores, while the same test alone at the same loadavg passed 5/5. A
+	// larger `grace:` would only have moved the loadavg at which it happens
+	// (ranger-base-2jl5's lesson, same class as rangerhq-g6lx/3ig1: the fix
+	// for a wall-clock-bound assertion is not a bigger number).
+	//
+	// WHY THE MARGIN IS THE DEFENCE. Load can only ever ADD time between
+	// the stamp and the read, so the quiet this test is asking about drifts
+	// in ONE direction — up, toward the retire — and the distance to the
+	// grace is the whole of the protection. It is grace - cadence = 14
+	// MINUTES here, against a stall measured in seconds, and nothing
+	// sleeps: a run that breaks this line lost a quarter of an hour inside
+	// one test goroutine, and the arm's own 25m timeout would reach that
+	// first. The control below asks the other direction, which load cannot
+	// false-fail at all.
+	//
+	// And the numbers are the real ones from the header above rather than
+	// two small ones chosen to run fast: the 1h default grace, and a cadence
+	// at the 46m maximum gap that writer actually showed over 641 probes.
+	const grace = time.Hour
+	const cadence = 46 * time.Minute // < grace, the measured worst real gap
+	const probes = 20
+	// Past the grace, and still far short of the fixture's own age: every
+	// stamp has to stay inside n27xvAge or the reading becomes the 26h-old
+	// commits of the tips lastTreeWrite also asks about, and this pin would
+	// be measuring gitOld instead of the writer.
+	const controlAge = grace + grace/10
+	if controlAge >= n27xvAge {
+		t.Fatalf("controlAge %s is not inside the fixture's %s — the reading would be the fixture's commit dates, not the stamp", controlAge, n27xvAge)
+	}
 
 	d, _, tr := n27xvFixture(t, "closed", grace.String())
 	n27xvQuiet(t, tr)
@@ -662,34 +710,53 @@ func TestAWriterFasterThanTheGraceKeepsTheTreeForever(t *testing.T) {
 	// logs/HEAD, not the index: it is what a rebase (or any checkout) in
 	// this tree actually rewrites, and lastTreeWrite walks every file in
 	// the git dir, so either would do — this one names the real writer.
-	logsHead := filepath.Join(mustGit(t, tr.Path, "rev-parse", "--absolute-git-dir"), "logs", "HEAD")
-	probe := func() {
+	gd := mustGit(t, tr.Path, "rev-parse", "--absolute-git-dir")
+	logsHead := filepath.Join(gd, "logs", "HEAD")
+	// A probe dates the whole git dir a second OLDER than the age it wants
+	// and logs/HEAD exactly at it, so lastTreeWrite's newest-file reading is
+	// logs/HEAD and the quiet under test is unambiguous. The floor is
+	// re-laid every time because `retirable`'s own git calls can leave a
+	// fresher file behind in there (git creates and renames index.lock on a
+	// status), and one of those would silently become the reading on a
+	// later probe.
+	probe := func(age time.Duration) {
 		t.Helper()
-		now := time.Now()
-		if err := os.Chtimes(logsHead, now, now); err != nil {
+		when := time.Now().Add(-age)
+		if n := n27xvAgeFiles(t, gd, when.Add(-time.Second), false); n == 0 {
+			t.Fatalf("no files under %s to age — the probe is not setting the reading", gd)
+		}
+		if err := os.Chtimes(logsHead, when, when); err != nil {
 			t.Fatal(err)
 		}
 	}
-	checkKept := func() {
+	verdict := func() retireVerdict {
 		t.Helper()
-		v := retirable(tr, "closed", newBlockedRecord(d.Bd), d.HB, g)
-		if v.retire {
-			t.Fatalf("the predicate retired a tree a writer faster than the grace is still touching: %+v", v)
-		}
-		if !strings.Contains(v.why, "inside the") || !strings.Contains(v.why, "grace") {
-			t.Fatalf("kept for a reason other than the grace, which is not what this pin is about: %q", v.why)
-		}
+		return retirable(tr, "closed", newBlockedRecord(d.Bd), d.HB, g)
 	}
 
 	for i := 0; i < probes; i++ {
-		probe()
-		checkKept() // right after a probe: quiet is ~0
-		time.Sleep(probeGap)
-		checkKept() // right before the next one: quiet is ~probeGap, still short of grace
+		// [0, cadence] inclusive: the instant after a write, the instant
+		// before the next one, and the span between them.
+		age := time.Duration(int64(cadence) * int64(i) / int64(probes-1))
+		probe(age)
+		v := verdict()
+		if v.retire {
+			t.Fatalf("the predicate retired a tree a writer faster than the grace is still touching (newest write %s old, grace %s): %+v", age, grace, v)
+		}
+		if !strings.Contains(v.why, "inside the") || !strings.Contains(v.why, "grace") {
+			t.Fatalf("a tree written %s ago was kept for a reason other than the grace, which is not what this pin is about: %q", age, v.why)
+		}
 	}
-	// Total real time elapsed comfortably clears the grace; the predicate
-	// must never once have said so, because no single gap between probes
-	// ever did.
+
+	// The control, and the reason the sweep above is evidence about the
+	// DIAL and not about a predicate that keeps everything: ONE gap past the
+	// grace does retire this same tree. Load moves this reading the same way
+	// it moves the others — up, further past the grace — so this direction
+	// cannot false-fail.
+	probe(controlAge)
+	if v := verdict(); !v.retire {
+		t.Fatalf("a tree written %s ago, past the %s grace, was kept — the probes above are not measuring the grace at all: %+v", controlAge, grace, v)
+	}
 }
 
 // A tree no bead record accounts for is ADR 0006's, and ADR 0058 D4 leaves
