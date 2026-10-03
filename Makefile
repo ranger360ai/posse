@@ -42,7 +42,7 @@ FMT_ROOTS := cmd internal *.go
 BUILD_STAMP := $(shell $(GOBIN) run ./cmd/buildstamp)
 LDFLAGS     := -X github.com/ranger360ai/posse/internal/posse.Build=$(BUILD_STAMP)
 
-.PHONY: build release install deploy test test-arm1 test-arm2 test-arm3 test-race test-reuse fmt-check crew-check seed-check history-check doc-check identity-check ops-check execwrite-check tree-check verify-test-times verify-suite-lock verify-pattern-kill-census verify-silent-reverts verify-shell-syntax verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-prune-guard verify-id-recycle verify-self-close verify-govern-honesty verify-grok-pin verify-codex-pin verify-credential-paths verify-policy-pins verify-hook-freshness verify-bd-pin verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk verify-box verify-box-self-test prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
+.PHONY: build release install deploy test test-arm1 test-arm2 test-arm3 test-race test-reuse fmt-check crew-check seed-check history-check doc-check identity-check ops-check execwrite-check tree-check verify-test-times verify-suite-lock verify-pattern-kill-census verify-silent-reverts verify-shell-syntax verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-herdr-bob-rules install-herdr-bob-rules verify-prune-guard verify-id-recycle verify-self-close verify-govern-honesty verify-grok-pin verify-codex-pin verify-credential-paths verify-policy-pins verify-hook-freshness verify-bd-pin verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk verify-box verify-box-self-test prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
 
 build:
 	$(GOBIN) build -ldflags '$(LDFLAGS)' -o bin/posse-go ./cmd/posse
@@ -692,6 +692,33 @@ install-detection:
 # install-detection's own run (--check-install) fails on a mismatch.
 verify-detection:
 	scripts/verify-detection.sh
+
+# herdr-bob's shipped rules.json is the whole of that plugin's `blocked`
+# reporting — Bob has no approval hook event, so a permission prompt can only
+# be read off the pane. MEASURED 2026-10-03 (ranger-base-0sa5a): it matches
+# none of Bob 2.0.5's three blocked screens, and it DOES match one of its idle
+# ones, because the `/` command picker lists `/permissions - View and change
+# this folder's trust level` and that satisfies trust_folder_prompt whole. The
+# false positive is the serious half: a wrong `blocked` is acted on and stops
+# every wait on the pane, while a missed one falls back to the hook's state.
+#
+# verify-herdr-bob-rules replays the six real captures in
+# etc/herdr/agent-detection/upstream/bob through the plugin's OWN match_rules,
+# lifted verbatim from the installed bin/bob-watch, and asserts which rule each
+# lands on — with a control arm on the shipped file that must reproduce both
+# upstream failures first, and a grep x locale arm. ~9s. NOT a prerequisite of
+# `make test`: it needs the plugin installed, which is an instance fact.
+verify-herdr-bob-rules:
+	scripts/verify-herdr-bob-rules.sh
+
+# install-herdr-bob-rules writes etc/herdr/herdr-bob/rules.json into the LIVE
+# herdr plugin config dir, which is the server every dispatched seat runs in.
+# Operator-gated, per persona (ranger-base-knikn carries the ask). It runs the
+# verify first and refuses on red — an unproved rules file is not installable.
+# `scripts/herdr-bob-rules.sh --check` is the read-only half; it also reports
+# whether what is installed is a HAND-EDIT, which on this box it was.
+install-herdr-bob-rules:
+	scripts/herdr-bob-rules.sh --install
 
 # The promote gate for the session-meta prune guard (rangerhq-m15): plants
 # ghost metas in a scratch RHQ_HOME and lists them against the LIVE herdr,
