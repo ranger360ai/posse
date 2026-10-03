@@ -30,13 +30,18 @@ package posse
 //       interval, judges the legs that settled and carries the rest into
 //       the next pass, and each judged settle refills that seat through the
 //       fire path under the launcher lock, so the pass returns in time for
-//       the loop's other periodic duties. A prompt that fails (stalled,
-//       agent_not_ready, agent_blocked) unclaims the bead; a --wait timeout
-//       never does — it asks herdr what the agent is doing, keeps the claim
-//       and waits again while it is still working (rangerhq-1z0), and keeps
-//       it too when herdr cannot say: a wait running out is not evidence
-//       the prompt failed to land, and one blink of detection must not free
-//       a bead somebody is working (rangerhq-khc)
+//       the loop's other periodic duties. A prompt herdr REFUSED
+//       (agent_not_ready, agent_blocked — nothing was sent) unclaims the
+//       bead; a --wait timeout never does — it asks herdr what the agent is
+//       doing, keeps the claim and waits again while it is still working
+//       (rangerhq-1z0), and keeps it too when herdr cannot say: a wait
+//       running out is not evidence the prompt failed to land, and one
+//       blink of detection must not free a bead somebody is working
+//       (rangerhq-khc). agent_prompt_stalled belongs with the timeout and
+//       not with the refusals: herdr ACCEPTED that submission, so the text
+//       was typed and only the TURN was unobserved, and it takes a second
+//       reading — the turn herdr did not see, then this session's own
+//       commits — before any hand-back (promptstall.go, ranger-base-uauvn)
 //     → closed by the persona → ✓ · blocked → flagged for a human
 //       (herdr's sidebar already shows it) · settled-but-open → review
 //     → end of pass: the auto-reap sweep (autoreap.go, rangerhq-us8) kills
@@ -3527,8 +3532,31 @@ wait:
 		// ever asked anything. Every error there goes to the same question
 		// a timeout asks — what is the agent doing? — and the claim is
 		// never handed back on the answer "posse cannot tell".
+		// …and neither is a prompt herdr ACCEPTED and then did not see
+		// start (ranger-base-uauvn). agent_prompt_stalled is the one code
+		// in this branch that is about herdr's own five-second window
+		// rather than about delivery — the text was typed — so it gets a
+		// second reading before anything is handed back, and only the arm
+		// that finds no turn and no commit falls through to the unclaim
+		// below. promptstall.go carries the incident and herdr's wording.
+		if IsHerdrCode(r.err, "agent_prompt_stalled") && !p.delivered {
+			if d.stopping() {
+				// The drain (ranger-base-e9d9), before the grace is spent:
+				// that reading costs up to a startup_wait of wall and the
+				// verdict it protects — the claim is kept — is the one a
+				// stopping loop reaches anyway.
+				return d.stopClaim(p)
+			}
+			switch d.judgeStall(p) {
+			case stallRewait:
+				d.rewait(p)
+				continue
+			case stallKeep:
+				return true, nil
+			}
+		}
 		if !IsHerdrCode(r.err, "timeout") && !p.delivered {
-			return false, d.unclaimAfterPromptFailure(p.is, p.persona, p.resumed, r.err)
+			return false, d.unclaimAfterPromptFailure(p.is, p.persona, p.session, p.resumed, r.err)
 		}
 		if d.stopping() {
 			// The same verdict one rung earlier, and defensive rather than
@@ -4687,10 +4715,16 @@ func (d *Dispatcher) unclaimAfterLaunchFailure(is RepoIssue, persona string, res
 	return Die("%v — unclaimed", launchErr)
 }
 
-func (d *Dispatcher) unclaimAfterPromptFailure(is RepoIssue, persona string, resumed bool, promptErr error) error {
+// session is here for the comment and for nothing else (ranger-base-uauvn,
+// ask 3): the pass prints why it handed the bead back, and the pass's output
+// is not what the next reader of the bead has — unclaimedOnTheBead writes it
+// where the bead's reader will find it, naming the session so `posse
+// worktrees` can be pointed at something.
+func (d *Dispatcher) unclaimAfterPromptFailure(is RepoIssue, persona, session string, resumed bool, promptErr error) error {
 	if uerr := d.Bd.Unclaim(is.Dir, is.ID, persona, resumed); uerr != nil {
 		return Die("%v (and unclaim failed: %v — %s stays claimed by %s)", promptErr, uerr, is.ID, persona)
 	}
+	d.unclaimedOnTheBead(is, persona, session, promptErr)
 	return Die("%v — unclaimed", promptErr)
 }
 
@@ -4922,7 +4956,7 @@ func (d *Dispatcher) LaunchBead(is RepoIssue) (session string, err error) {
 	}
 	if !l.delivered {
 		if _, err := d.HB.H.AgentPrompt(l.target, prompt(), false, 0); err != nil {
-			return "", d.unclaimAfterPromptFailure(is, persona, l.resumed, err)
+			return "", d.unclaimAfterPromptFailure(is, persona, session, l.resumed, err)
 		}
 	}
 	d.notePrompted(session)

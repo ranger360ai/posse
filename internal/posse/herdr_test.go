@@ -1468,6 +1468,20 @@ func fakeReadFormat(args []string) string {
 	return ""
 }
 
+// fakeWaitAsksWorking reports whether this `agent wait` argv asked for a
+// WORKING state. One `--until working` is the whole discriminator: posse
+// passes the flag explicitly and repeats it per state (Herdr.AgentWait), so
+// the fake never has to guess herdr's default set, and the only waits that
+// name it are the stall re-reads.
+func fakeWaitAsksWorking(args []string) bool {
+	for i := 2; i < len(args)-1; i++ {
+		if args[i] == "--until" && args[i+1] == "working" {
+			return true
+		}
+	}
+	return false
+}
+
 // fakeStripEscapes is what the text reading hands back: the same screen with
 // its CSI and OSC sequences gone. Its own small walk on purpose, never a call
 // into ghostbox.go — a fixture built out of the code under test makes every
@@ -1769,6 +1783,28 @@ func fakeHerdr(args []string) int {
 		}
 		return fakeOK(`{"type":"agent_prompted","agent":{"agent_status":"idle"}}`)
 	case "agent wait": // settles idle unless wait-status overrides (timeout path)
+		// stall-wait-status (file) answers only the wait that asks for a
+		// WORKING state — the second reading a stalled prompt gets
+		// (promptstall.go, ranger-base-uauvn), and the one reportedagent.go
+		// mirrors herdr's own stall contract with. Keyed on the `--until`
+		// set because that is what tells the two waits of one leg apart in
+		// the argv, the way fakeReadFormat keys on `--format`: every other
+		// wait in dispatch asks for idle|done|blocked, so a fake dir with
+		// no lever behaves exactly as it did before this one existed.
+		//
+		// "code|message" is spelled here too, because the arm that matters
+		// most is the one where herdr REFUSES to say: a stalled prompt over
+		// an unreadable agent must keep its claim, and that is a different
+		// outcome from a stall over an idle one.
+		if fakeWaitAsksWorking(args) {
+			if b, err := os.ReadFile(filepath.Join(fakeDir(), "stall-wait-status")); err == nil {
+				st := strings.TrimSpace(string(b))
+				if code, msg, isErr := strings.Cut(st, "|"); isErr {
+					return fakeErr(code, msg)
+				}
+				return fakeOK(fmt.Sprintf(`{"type":"agent_wait","agent":{"agent_status":%q}}`, st))
+			}
+		}
 		// wait-error (file) fails the wait leg itself — what a server that
 		// went away under an in-flight prompt returns. "code|message" like
 		// prompt-error.
