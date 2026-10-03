@@ -9,14 +9,19 @@ package posse
 // a fixture repeating a literal proves nothing — but the three facts that
 // fail SILENTLY if they drift:
 //
-//  1. argv ORDER. `bob -p … chat …`, never `bob chat … -p …`. bobshell 2.0.5
-//     is built with .enablePositionalOptions().allowExcessArguments()
-//     .allowUnknownOption(), so a `-p` after the subcommand is an unknown
-//     option the program SWALLOWS: the persona identity document would
-//     vanish with no error on any surface, and the session would open
-//     looking perfectly healthy (ADR 0060 D3, docs/notes.d/ranger-base-v1yrt.md §5).
-//     The same swallowing is why every other flag on the line is asserted
-//     too — a misspelling is accepted and ignored rather than refused.
+//  1. THE ABSENCE OF `-p`. This used to read "argv ORDER: `bob -p … chat …`,
+//     never `bob chat … -p …`", because bobshell 2.0.5 is built with
+//     .enablePositionalOptions().allowExcessArguments().allowUnknownOption()
+//     and a `-p` after the subcommand is an unknown option the program
+//     SWALLOWS. True about order, and the wrong question: MEASURED
+//     2026-10-01 (ranger-base-5jjtn), `bob chat` reads the program-level
+//     `-p` back and IGNORES it, so the ordering the pin defended bought
+//     nothing and the persona identity document vanished anyway — with no
+//     error on any surface and a session that looked perfectly healthy,
+//     which is the failure this item was written to catch. The pin is
+//     inverted: no `-p`, no `$(cat …)`, and the line says so in BobCommand.
+//     The swallowing is still why every other flag on the line is asserted
+//     — a misspelling is accepted and ignored rather than refused.
 //  2. the LAUNCH ROW refusing by name. herdr 0.8.2 has no `bob` kind, so a
 //     dispatched bob session is agent_not_found. ADR 0060 D1's whole claim
 //     is that the profile says so out loud and `runtime check` exits 1 —
@@ -96,7 +101,22 @@ func bobRuntime(t *testing.T, a *App) *Runtime {
 
 // (1) The rendered launch line, which is verification row 2 of ADR 0060:
 // what `posse new --runtime bob` puts in the pane.
-func TestQABobLaunchLinePutsTheProgramPromptBeforeTheSubcommand(t *testing.T) {
+//
+// INVERTED by ranger-base-5jjtn, and the inversion is the point. This pin
+// used to assert `-p` BEFORE `chat`, from ADR 0060 D3 — which reasoned
+// correctly about argv ORDER from the two help screens, over an ASSUMED
+// claim that a `-p` value is submitted as a turn at all. MEASURED 2026-10-01
+// on bob 2.0.5: it is not. `bob -p '<text>' chat …` parses, is accepted, and
+// delivers nothing — splash plus an empty composer at 45s, no reply, no
+// lifecycle hook — and top-level `-p` without `chat` is headless and
+// key-gated. So the old pin defended the one spelling that looks like it
+// works and does not, and it was green for every day the channel was dead.
+//
+// What it guards now is the way back: a `-p`, or any `$(cat …)` PID
+// substitution, reappearing on this line. Both would be read by the next
+// reader as "bob delivers a PID", which is exactly the belief that cost a
+// probe and a dispatched seat.
+func TestQABobLaunchLineCarriesNoPromptFlagBecauseNoneDelivers(t *testing.T) {
 	t.Parallel()
 	a := checkApp(t)
 	rt := bobRuntime(t, a)
@@ -104,16 +124,20 @@ func TestQABobLaunchLinePutsTheProgramPromptBeforeTheSubcommand(t *testing.T) {
 
 	for _, tier := range Tiers {
 		got := ag.RenderCommandFor(rt, "claude", tier)
-		p, chat := strings.Index(got, " -p "), strings.Index(got, " chat ")
-		if p < 0 || chat < 0 {
-			t.Fatalf("%s: the line names no -p or no chat at all:\n%s", tier, got)
+		if !strings.Contains(got, " chat ") {
+			t.Fatalf("%s: the line names no chat subcommand at all — top-level bob is headless and key-gated, and refuses --auto-approve outright:\n%s", tier, got)
 		}
-		if p > chat {
-			t.Errorf("%s: -p is AFTER the chat subcommand. bobshell allows unknown options, so it is swallowed in silence and the PID never reaches the model (ADR 0060 D3):\n%s", tier, got)
+		// The two spellings of the dead channel. `-p` is matched with its
+		// spaces so a longer flag is a different flag, the same way
+		// PIDVoided matches a token.
+		for _, dead := range []string{" -p ", " --prompt ", `"$(cat `} {
+			if strings.Contains(got, dead) {
+				t.Errorf("%s: the line carries %q. No argv shape on bob 2.0.5 submits a prompt into the TUI — `bob chat` accepts -p and ignores it, top-level -p is headless and key-gated (MEASURED 2026-10-01, ranger-base-5jjtn) — so this delivers no PID while reading as though it does:\n%s", tier, dead, got)
+			}
 		}
-		// Every flag on the line, for the same swallowing reason: a
+		// Every flag on the line, because bobshell allows unknown options: a
 		// misspelling here is accepted and ignored rather than refused.
-		for _, want := range []string{"--accept-license", "--trust", "--auto-approve", "-w .", `"$(cat `} {
+		for _, want := range []string{"--accept-license", "--trust", "--auto-approve", "-w ."} {
 			if !strings.Contains(got, want) {
 				t.Errorf("%s: the line does not carry %q:\n%s", tier, want, got)
 			}

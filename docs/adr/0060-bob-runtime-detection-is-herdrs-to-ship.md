@@ -58,7 +58,7 @@ not green. Declared facts (MEASURED unless marked):
 
 | key | value | note |
 |---|---|---|
-| command | `bob -p "$(cat {file})" chat --accept-license --trust -w . {allow} {deny}` | D3; `-w .` because the pane's cwd is the session dir |
+| command | `bob chat --accept-license --trust --auto-approve -w . {allow} {deny}` | `-w .` because the pane's cwd is the session dir. The `-p "$(cat {file})"` D3 put at the head of this line is GONE — measured not to deliver, see Claims/ASSUMED 1 and ranger-base-5jjtn |
 | unattended | `--auto-approve` | "approve all tool executions without prompting" |
 | prompt | `typed` | 20s to a composer signed in (recon); see D3 |
 | record | `untrusted` | `bd` runs inside a Bob shell tool; no dispatched close yet |
@@ -251,7 +251,26 @@ bobshell 2.0.5, node 25.2.1)** — recipe and raw output in
 - The recon's per-turn cost: 0.021 coins on the "ready" turn.
 
 **ASSUMED** (each is a probe line on 6wqe):
-- A `-p` value is submitted as the first turn when `chat` starts.
+- ~~A `-p` value is submitted as the first turn when `chat` starts.~~
+  **MEASURED FALSE 2026-10-01** (ranger-base-5jjtn,
+  `docs/notes.d/ranger-base-5jjtn.md` §1). `bob chat` reads the
+  program-level `-p` back through `optsWithGlobals()` and IGNORES it: the
+  pane holds the splash and an empty composer at 5/10/20/30/45s, no reply,
+  and no lifecycle hook fires. Top-level `-p` without `chat` is headless and
+  key-gated (`Bob API key is required.`), and posse cannot reach it anyway —
+  `EnsureUnattended` appends `--auto-approve`, which top-level bob refuses.
+  So **no argv shape on 2.0.5 opens the TUI with a prompt already
+  submitted**, D3's revisit trigger has fired, and `BobCommand` now carries
+  no `-p` and no `{file}`: bob has no PID channel, stated rather than
+  hidden. D3's reasoning about argv ORDER was correct and moot — the order
+  mattered only if the flag delivered. On a program built with
+  `.allowUnknownOption()` a swallowed flag and an accepted-then-ignored one
+  look identical from outside, which is the whole reason this cost a probe;
+  INSTALL's pair probe only ever proved parsing. Which channel replaces it
+  is this ADR's to amend, and both candidates are already priced in
+  Alternatives rejected (PID typed as the first message; PID as a custom
+  mode — "file it the day a PID-as-first-turn measurably misbehaves"), and
+  it is filed as ranger-base-f1ytb.
 - `bob chat` honours the API-key env name in a container (read from the
   env name list in the bundle, never exercised).
 - The project-config key names; the trust check stays whole-file until
@@ -264,8 +283,12 @@ bobshell 2.0.5, node 25.2.1)** — recipe and raw output in
 1. `posse runtime check bob` exits 1 with the launch row naming herdr
    non-recognition and every other row declared; `runtimes/bob.yaml`
    overlaying `startup_wait:` shows as `runtimes/bob.yaml (startup_wait:)`.
-2. `posse new --runtime bob` renders `-p` before `chat` and
-   `--auto-approve` on the line.
+2. `posse new --runtime bob` renders `chat` with `--auto-approve` on the
+   line and **no `-p`, `--prompt` or `$(cat …)` anywhere on it** — the
+   observable is inverted from "`-p` before `chat`" by Claims/ASSUMED 1
+   (ranger-base-5jjtn): the flag delivers nothing, so the ordering it was
+   written about bought nothing, and the old row was satisfied on every day
+   the channel was dead.
 3. The tripwire pin is green today and its failure message names the
    move into `testdata/bob/`.
 4. `make verify-detection` passes with the fixtures where D2 puts them.

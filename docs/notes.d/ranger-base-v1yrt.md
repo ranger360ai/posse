@@ -89,6 +89,12 @@ closed by the script's trap; `pane list` shows none of them.
   read `optsWithGlobals()` and set `prompt` from the positionals
   (`r.join(" ")`) only when `-p` is unset. Hence `bob -p … chat …`, never
   `bob chat … -p …`.
+  **Correction, MEASURED 2026-10-01 (ranger-base-5jjtn): the ordering is
+  right and buys nothing — `bob chat` reads that `-p` back and SUBMITS NO
+  TURN.** This section says "read, not run" and this is what that costs:
+  the bundle shows where the value is parsed to, not that anything sends it.
+  See `docs/notes.d/ranger-base-5jjtn.md` §1; `BobCommand` now carries no
+  `-p` at all.
 - Custom modes: `~/.bob/settings/custom_modes.yaml` is "available in all
   workspaces", `.bob/custom_modes.yaml` per workspace; a mode carries
   `roleDefinition`, `customInstructions`, `groups`.

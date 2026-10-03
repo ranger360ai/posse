@@ -427,6 +427,19 @@ type probeReading struct {
 	// AgentKind is what herdr named the pane, and Detection its explanation.
 	AgentKind string
 	Detection AgentDetection
+	// Manifest is the launch-stage detection reading for this runtime —
+	// herdr's manifest answer plus the runtime's own `detection:`
+	// declaration. It is carried here for ONE reason: observable 4's
+	// no-agent arm is the one failure whose right DOOR depends on the
+	// declaration and not on anything the pane did (ADR 0061 D2 property 2,
+	// ranger-base-5jjtn). Everything else in this reading is measured in the
+	// pane; this is the half herdr and the profile supply, taken once in Run
+	// so evalProbe stays pure.
+	Manifest ManifestReading
+	// Wait is the runtime's own `startup_wait:` — the patience the label was
+	// given. It is the number the reported arm has to quote, because on that
+	// route a bigger one is patience for a report nothing is going to send.
+	Wait time.Duration
 }
 
 // evalProbe turns a reading into the four observables of ADR 0032 §1 rule 2.
@@ -507,6 +520,21 @@ func evalProbe(r probeReading) []ProbeObservable {
 	//    settled state is then a guess. Seen() is the repo's own
 	//    positive-evidence predicate — a matched rule or visible chrome.
 	switch {
+	// NO LABEL AT ALL, and the door depends on who was supposed to supply
+	// one (ADR 0061 D2 property 2, ranger-base-5jjtn). On a runtime
+	// declaring `reported` the manifest is not the remedy and never was:
+	// it is upstream's to ship (ADR 0060 D2), the observable here was an
+	// outside authority LABELLING the pane, and an absent label says
+	// nothing whatever about the CLI — which may be up and working with
+	// nobody having reported it. MEASURED 2026-10-02: it was, and the
+	// authority's watcher had never once started, so this very line sent
+	// the reader to write a manifest for a runtime whose detection is not
+	// posse's to write. NoAgentLine is the ONE copy of both sentences, so
+	// the probe says here exactly what the launch's own wait says.
+	case r.AgentKind == "" && r.Manifest.Reported():
+		obs = append(obs, ProbeObservable{4, "herdr-detection", false,
+			NoAgentLine(r.Manifest, "the probe pane", r.Wait) +
+				" A dispatched seat here would wait out its startup_wait and prompt on nothing"})
 	case r.AgentKind == "":
 		obs = append(obs, ProbeObservable{4, "herdr-detection", false,
 			"herdr saw no agent in the probe pane — agent_not_found, so a dispatched session here could not be addressed at all. Author a detection manifest (docs/runbooks/" + detectionDoc + ")"})
@@ -713,10 +741,11 @@ func (a *App) RuntimeProbe(rt *Runtime, h Herdr, o ProbeOpts) (*ProbeRecord, err
 	// for a runtime that never started. `startup_wait:` is the number
 	// somebody measured for exactly this question.
 	startBy := time.Now().Add(minDuration(rt.Wait(), o.Timeout))
-	r := probeReading{Canary: canary, BinDir: binDir, Exe: rt.Exe()}
+	r := probeReading{Canary: canary, BinDir: binDir, Exe: rt.Exe(),
+		Manifest: ReadDetection(h, rt), Wait: rt.Wait()}
 	pane, kind, err := awaitProbeAgent(h, wsID, rootPane, startBy)
 	if err != nil {
-		r.SettleWhy = fmt.Sprintf("%v (startup_wait %s on %s)", err, rt.Wait(), rt.Name)
+		r.SettleWhy = probeNoAgentWhy(r.Manifest, rt, err)
 	} else {
 		r.AgentKind = kind
 		fmt.Fprintf(out, "  herdr sees %s in %s\n", kind, pane)
@@ -865,6 +894,29 @@ func probeSessionExe(h Herdr, pane, binDir, exe, file string, wait time.Duration
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
+}
+
+// probeNoAgentWhy is observable 3's reason when the probe's startup wait ran
+// out with herdr listing no agent — and on a `reported` runtime it is not the
+// same sentence (ADR 0061 D2 property 2, ranger-base-5jjtn).
+//
+// "herdr saw no agent within the timeout" reads as a slow or dead CLI, which
+// is what it means on a runtime herdr detects. On a reported one it means
+// nobody REPORTED one, which says nothing about the CLI, and the remedy is
+// the authority rather than the session or a larger `startup_wait:` — a
+// bigger wait there is patience for a report nothing is going to send.
+//
+// A function rather than two lines inside Run, so the branch is pinned where
+// it is WIRED instead of one step short of it (ranger-base-mmvrh's lesson):
+// a pin that composed this sentence itself and handed it to evalProbe would
+// have stayed green over a Run that never took the reported arm at all.
+// NoAgentLine keeps being the one copy, so the probe cannot drift from the
+// launch's own wait.
+func probeNoAgentWhy(r ManifestReading, rt *Runtime, err error) string {
+	if r.Reported() {
+		return NoAgentLine(r, "the probe pane", rt.Wait())
+	}
+	return fmt.Sprintf("%v (startup_wait %s on %s)", err, rt.Wait(), rt.Name)
 }
 
 // awaitProbeAgent waits for herdr to see an agent in the probe's workspace

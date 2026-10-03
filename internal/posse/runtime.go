@@ -1484,25 +1484,52 @@ var (
 // 2026-09-28 unless a comment says ASSUMED. The bench is
 // docs/notes.d/ranger-base-v1yrt.md; the record is ADR 0060.
 
-// BobCommand is the launch template, and the ORDER in it is the measured
-// part (ADR 0060 D3, notes fragment §5).
+// BobCommand is the launch template, and what is MEASURED about it now is
+// an absence: there is no `-p` on it, because no argv shape on bob 2.0.5
+// opens the TUI with a prompt already submitted.
 //
-// `-p` goes BEFORE `chat`. The program declares `-p, --prompt <prompt>` at
-// PROGRAM level and is built with `.enablePositionalOptions()`
-// `.allowExcessArguments()` `.allowUnknownOption()`, so a `-p` typed AFTER
-// the subcommand is an unknown option the program is configured to swallow
-// in silence — the PID would vanish with no error anywhere. `bob chat`
-// reads it back through `optsWithGlobals()`. Verified against the two help
-// screens on 2.0.5: `bob --help` lists `-p, --prompt`, `bob chat --help`
-// does not.
+// ADR 0060 D3 put the PID on `-p` BEFORE `chat`, reasoning from the two help
+// screens and from the program being built with `.enablePositionalOptions()`
+// `.allowExcessArguments()` `.allowUnknownOption()` — a `-p` after the
+// subcommand is an unknown option the program swallows in silence. That
+// reasoning about ORDER was right and is beside the point: the ADR's own
+// Claims marked "a `-p` value is submitted as the first turn when `chat`
+// starts" as ASSUMED, read off the flag's help text and never off a turn,
+// and it is now measured FALSE. Both halves, MEASURED 2026-10-01 on bob
+// 2.0.5 / node 25.2.1 (ranger-base-5jjtn, from ranger-base-6wqe's probe
+// line):
 //
-// The PID rides `-p` as the first user message because bob has no
-// launch-time system channel at all: no rules flag, no system-prompt flag.
-// Its instruction files are read from the workspace (the project-config
-// channel posse refuses on, bobProjectConfig below) or from the operator's
-// own ~/.bob/settings/custom_modes.yaml. The price is stated rather than
-// hidden: one bob turn per launch is spent on the PID and the model's reply
-// to it is noise (ADR 0060 D3). The work prompt is TYPED after it.
+//   - `bob -p '<text>' chat --accept-license --trust --auto-approve -w <dir>`
+//     PARSES — INSTALL's pair probe only ever proved that much — and
+//     DELIVERS NOTHING. At 5, 10, 20, 30 and 45s the pane holds the splash
+//     and an EMPTY composer ("Agent Mode (auto-approve)"), there is no
+//     reply, and the lifecycle hooks never fire, so `bob chat` reads the
+//     flag back and ignores it. A swallowed flag and an ignored one look
+//     identical from outside, which is why this cost a probe to find.
+//   - Top-level `-p` WITHOUT `chat` is HEADLESS mode: it exits at once with
+//     "Bob API key is required.", exactly as `bob run` does. posse cannot
+//     use it anyway — EnsureUnattended appends `--auto-approve`, which is a
+//     `chat`/`run` option that top-level bob REFUSES outright ("unknown
+//     option") — so whatever shape ever delivers a prompt has to keep one
+//     of those two subcommands.
+//
+// SO THIS LINE CARRIES NO `{file}`, AND THAT IS THE HONEST SHAPE. bob has no
+// launch-time system channel — no rules flag, no system-prompt flag — and
+// now no first-user-message channel either. Its instruction files are read
+// from the workspace (the project-config channel posse refuses on,
+// bobProjectConfig below) or from the operator's own
+// ~/.bob/settings/custom_modes.yaml. Both remaining routes (the PID typed as
+// the first message; the PID materialized as a workspace mode/rules file)
+// are priced in ADR 0060's rejected alternatives and choosing between them
+// amends D3, so it is filed rather than guessed here — ranger-base-f1ytb,
+// which also carries the second half of that decision: whether a dispatched
+// launch onto a runtime that can deliver no PID should refuse rather than
+// spend a seat. Until it lands, a bob session opens with no persona, and
+// nothing pretends otherwise.
+//
+// DO NOT PUT `-p` BACK while this stands. It parses, it is accepted, it is
+// silently ignored, and a reader checking "does bob deliver a PID?" by
+// reading this template would answer yes.
 //
 // The three flags after `chat` are all `bob chat` options on 2.0.5 — read
 // off `bob chat --help`, which matters here more than elsewhere because
@@ -1527,7 +1554,7 @@ var (
 // template-only runtime) and every gate goes to the wall — gates.go, ADR
 // 0002 §3, which is safe by construction. The placeholders stay on the line
 // so the day a realizer is measured it has somewhere to render.
-const BobCommand = `bob -p "$(cat {file})" chat --accept-license --trust --auto-approve -w . {allow} {deny}`
+const BobCommand = `bob chat --accept-license --trust --auto-approve -w . {allow} {deny}`
 
 // bobNativeRules — the rulebooks bob discovers and loads by itself, ahead
 // of anything posse types (ADR 0013 §4, declared and never rewritten).
@@ -1686,8 +1713,9 @@ var builtinRuntimes = []Runtime{
 	// measured on bobshell 2.0.5. The LAUNCH row is the one that is unmet
 	// (herdr 0.8.2 has no `bob` kind), and nothing here hides it: the
 	// detection gap is blocking in RuntimeGaps, so `posse runtime check bob`
-	// exits 1 and dispatch refuses by name. See BobCommand above for the
-	// argv order, which is the part a reader is most likely to get wrong.
+	// exits 1 and dispatch refuses by name. See BobCommand above for why the
+	// line carries no `-p` and so delivers no PID at all — the part a reader
+	// is most likely to get wrong, and now the part that is measured.
 	{Name: "bob", Builtin: true, Skills: skillsCwd, SkillsCwd: true, Unattended: "--auto-approve",
 		// The ONE built-in posse carries an upstream filing for, because it
 		// is the one whose detection upstream does not ship: ADR 0060 D2's
@@ -1725,11 +1753,14 @@ var builtinRuntimes = []Runtime{
 		// close (ADR 0060 D4's trigger).
 		Prompt: PromptTyped, Record: RecordUntrusted,
 		NativeRules: bobNativeRules, Interstitials: BobInterstitials,
-		// rules_precedence: UNMEASURED. Bob reads AGENTS.md and CLAUDE.md
-		// out of the shared checkout and takes the PID as its first user
-		// turn; which one the model follows on a collision is a billed turn
-		// nobody has spent (ranger-base-6rcv's shape, on the instance side's
-		// lane).
+		// rules_precedence: MOOT for now, and it used to be UNMEASURED. It
+		// read "Bob reads AGENTS.md and CLAUDE.md out of the shared checkout
+		// and takes the PID as its first user turn; which one the model
+		// follows on a collision is a billed turn nobody has spent"
+		// (ranger-base-6rcv's shape). There is no collision to measure while
+		// the PID never arrives at all (BobCommand): every bob session today
+		// carries the native rulebooks and nothing else. The question comes
+		// back the day a PID channel does.
 		ProjectConfig: bobProjectConfig,
 		// ProjectConfigKeys stays empty — see bobProjectConfig.
 		//

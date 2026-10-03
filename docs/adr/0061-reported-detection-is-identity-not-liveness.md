@@ -158,6 +158,30 @@ label was reported (today it carries no source, so posse infers "reported"
 from "no manifest"). Until (a) or (b) lands, D3.2 is the guard; after
 either, it is a redundant read that costs 0.00s and stays.
 
+*Snapshot 2026-10-02 (ranger-base-5jjtn): a THIRD upstream ask, and it
+outranks both of the above because it is why neither has mattered yet.
+(c) herdr-bob: start the watcher on darwin, and supervise it. Its
+`[[startup]]` hook runs `setsid nohup … bin/bob-watch &`; `setsid` is
+util-linux and absent on darwin, so the child exits 127, `$!` records a
+dead subshell, and the watcher has never run once on this box — zero
+`watch started` lines in its log across the whole install, and therefore
+zero adoptions. Nothing supervises or re-starts it either, so one dead
+start is permanent until the herdr server restarts. Two more darwin
+spellings in the same plugin are broken for the same reason: `date -Is`
+(so every log line it has ever written is untimestamped) and `stat -c %Y`
+in `heartbeat_fresh` (so the heartbeat always reads stale). None of this
+is posse's code; all of it is measured in
+`docs/notes.d/ranger-base-5jjtn.md` §2 and filed as ranger-base-mz8ud.
+What it VINDICATES is this
+record's own rejected alternative "name the reporter plugin in the
+declaration and verify it is enabled at launch", priced `"enabled" is not
+"running"`: `herdr plugin list` said ENABLED throughout, so that check
+would have passed exactly when it should fail. Its named trigger — a
+measured spent launch with the plugin not reporting — has fired, and the
+label-within-`startup_wait` observable is still the only reading that
+catches this. What posse owed was the right door, and the probe was not
+giving one; that half landed under this bead.*
+
 ## Consequences
 
 - Built: two overlayable keys and their validation; one branch in the
@@ -272,15 +296,37 @@ foreground.
    D4's two asks are about.
 
 **ASSUMED** (each a line on the instance-side live probe, ranger-base-6wqe):
-1. A dispatched Bob pane is labelled within the default `startup_wait`
-   (45s): adoption runs every third watcher tick at a 2s interval, ~6s,
-   plus Bob's own start — never timed on a dispatched launch.
-2. The typed work prompt and Bob's own `-p` first turn (ADR 0060 D3): the
-   adoption `idle` arrives before the `-p` turn runs, so the promptable
-   gate may open on a composer that is about to be used by Bob itself.
-   Where the typed text then lands is unmeasured; the stall contract
-   bounds a prompt that starts no turn, and nothing bounds one that is
-   queued behind the PID turn.
+1. *Discharged, FALSE on darwin* — was "a dispatched Bob pane is labelled
+   within the default `startup_wait` (45s): adoption runs every third
+   watcher tick at a 2s interval, ~6s, plus Bob's own start — never timed
+   on a dispatched launch". MEASURED 2026-10-02 (ranger-base-5jjtn,
+   `docs/notes.d/ranger-base-5jjtn.md` §2), and it fails for a reason the
+   timing never reaches: **the watcher cannot start on darwin.** The
+   plugin's `[[startup]]` hook runs `setsid nohup … bin/bob-watch &`, and
+   `setsid` is util-linux — `command -v setsid` exits 1 here — so the child
+   exits 127 and `$!` records the dead subshell. Corroborated: zero
+   `watch started` and zero `adopted hand-started bob` lines in the
+   plugin's log across the whole install, so `adopt_unclaimed` has never
+   fired on this box; a live `bob chat` pane reads `agent_not_found` while
+   two foreground processes match the plugin's own adoption regexes. The
+   claim about adoption's SHAPE still stands — it was read off the plugin
+   and the predicate would have succeeded; what is false is that anything
+   runs it. Whether adoption lands inside `startup_wait` on a box where the
+   watcher CAN run is still ASSUMED and still a 6wqe probe line; the fix is
+   upstream's, and D4 gains a third ask.
+2. *Discharged, MOOT* — was "the typed work prompt and Bob's own `-p` first
+   turn (ADR 0060 D3): the adoption `idle` arrives before the `-p` turn
+   runs, so the promptable gate may open on a composer that is about to be
+   used by Bob itself. Where the typed text then lands is unmeasured … and
+   nothing bounds one that is queued behind the PID turn". There is no
+   `-p` turn to queue behind: `bob chat` accepts the flag and submits
+   nothing (ADR 0060 Claims/ASSUMED 1, MEASURED FALSE 2026-10-01). The
+   hazard this line named cannot occur while that holds, and it comes back
+   the day a PID channel does — as a property of whatever channel wins, not
+   of this record. Consequences already routed it: "if the probe measures
+   the typed work prompt landing before Bob's own `-p` turn, D3's revisit
+   trigger has fired and the fix is in delivery, not detection." It has
+   fired, and the fix is in delivery.
 3. *Discharged* — was "herdr drops a *detected* label when argv0 leaves
    the pane; not re-measured here". MEASURED 2026-09-28 and it holds,
    with the `agent get` lag: Claims fact 3 (ranger-base-mx5x9,

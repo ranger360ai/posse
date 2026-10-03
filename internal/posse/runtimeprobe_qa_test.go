@@ -12,6 +12,7 @@ package posse
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -350,5 +351,93 @@ func TestL3StillRecoversGitPushOnAnUnprobedTemplateRuntime(t *testing.T) {
 	// would be reading as a wall for every shell verb.
 	if p.Realized["Bash(rm -rf /)"].Detail != "" {
 		t.Errorf("L3 recovers git, not every shell verb: %q", p.Realized["Bash(rm -rf /)"].Detail)
+	}
+}
+
+// ADR 0061 D2 property 2 asked of the PROBE — ranger-base-5jjtn.
+//
+// `posse runtime probe` is the one surface ADR 0061 D2 property 3 keeps
+// RUNNING on a reported runtime: its detection gap is a non-blocking degrade
+// precisely so the probe can measure what detection here actually reads. So
+// the probe is also the surface most likely to be the one an operator meets
+// first — and it kept the DETECTED route's wording for both of its no-label
+// failures, because evalProbe is pure and had no declaration in hand.
+//
+// MEASURED 2026-10-01, the live record at
+// ~/.config/posse/state/runtimes/bob/probe.json with `detection: reported`
+// declared in runtimes/bob.yaml: observable 4 read "herdr saw no agent in the
+// probe pane — agent_not_found … Author a detection manifest", and observable
+// 3 read "herdr saw no agent in the probe pane within the timeout
+// (startup_wait 45s on bob)". Both are the wrong door twice over: the
+// manifest is upstream's to ship and not posse's to write (ADR 0060 D2), and
+// the cause was an authority whose watcher had never once started — so the
+// reader was sent to author a manifest and to raise a wait, and the one
+// command that would have answered (`herdr plugin list`) was on neither line.
+//
+// Both arms go through NoAgentLine, so the probe cannot drift from the
+// launch's own wait: there is one copy of each sentence and this pin reads it
+// through the probe's own evaluator rather than restating it.
+func TestQAProbeNoLabelNamesTheAuthorityOnAReportedRuntime(t *testing.T) {
+	t.Parallel()
+	// This arm's own copy of the declaration text. The launch-wait pin that
+	// shares the sentence lives in arm 1 (reporteddetection_qa_test.go), and
+	// hoisting one const across the build-tag split would buy nothing: what
+	// keeps the two pins from drifting is that both read the same FUNCTION,
+	// not that they spell one fixture the same way.
+	const qaReportedWhy = "herdr-bob plugin MartinLoeper/herdr-bob, installed 2026-09-28"
+	rr := ManifestReading{Argv0: "mycli", State: ManifestUnknownAgent, Declared: DetectionReported, Why: qaReportedWhy, Surface: ReportSurfacePresent}
+
+	r := passingReading("/tmp/gates/bin")
+	r.AgentKind, r.Detection = "", AgentDetection{}
+	r.Manifest, r.Wait = rr, 45*time.Second
+	// Observable 3's reason travels in SettleWhy, which Run composes where
+	// the runtime is in hand. Driven through probeNoAgentWhy — the production
+	// branch itself — rather than composed here: a pin that wrote the sentence
+	// for itself would be green over a Run that never took the reported arm
+	// (ranger-base-mmvrh).
+	bob := &Runtime{Name: "mycli", StartupWait: 45 * time.Second}
+	r.Settled, r.SettleWhy = "", probeNoAgentWhy(rr, bob, fmt.Errorf("herdr saw no agent in the probe pane within the timeout"))
+
+	four := obs(t, r, 4)
+	if four.OK {
+		t.Fatal("no label at all cannot be a passing detection observable")
+	}
+	for _, want := range []string{qaReportedWhy, "herdr plugin list", "45s"} {
+		if !strings.Contains(four.Detail, want) {
+			t.Errorf("observable 4 on a reported runtime must carry %q:\n%s", want, four.Detail)
+		}
+	}
+	for _, bad := range []string{"Author a detection manifest", detectionDoc, "agent_not_found"} {
+		if strings.Contains(four.Detail, bad) {
+			t.Errorf("observable 4 on a reported runtime must not say %q — the manifest is upstream's (ADR 0060 D2) and the absent label is the authority's silence:\n%s", bad, four.Detail)
+		}
+	}
+	if three := obs(t, r, 3); strings.Contains(three.Detail, "startup_wait") || !strings.Contains(three.Detail, "herdr plugin list") {
+		t.Errorf("observable 3's reason on a reported runtime must put `herdr plugin list` first and must not offer a larger startup_wait:\n%s", three.Detail)
+	}
+
+	// THE CONTROL, and it is the whole value of this pin: a probe that
+	// printed the reported sentence over every runtime would satisfy every
+	// assertion above. On a runtime herdr DETECTS, "author a manifest" is
+	// the correct door and must survive.
+	d := passingReading("/tmp/gates/bin")
+	d.AgentKind, d.Detection = "", AgentDetection{}
+	d.Manifest = ManifestReading{Argv0: "carol", State: ManifestKnown, Declared: DetectionHerdr, Version: "2026.09.28.1"}
+	detail := obs(t, d, 4).Detail
+	if !strings.Contains(detail, "Author a detection manifest") {
+		t.Errorf("on a runtime herdr detects, authoring the manifest IS the remedy and that sentence must survive:\n%s", detail)
+	}
+	if strings.Contains(detail, "herdr plugin list") || strings.Contains(detail, qaReportedWhy) {
+		t.Errorf("a detected runtime's observable must not quote a declaration it does not carry:\n%s", detail)
+	}
+	// The same control on observable 3's branch, through the same production
+	// function: on a detected runtime the raw timeout IS the news, and the
+	// runtime's own wait is what bounds it.
+	plain := probeNoAgentWhy(d.Manifest, bob, fmt.Errorf("herdr saw no agent in the probe pane within the timeout"))
+	if !strings.Contains(plain, "startup_wait 45s on mycli") {
+		t.Errorf("on a runtime herdr detects, observable 3's reason must stay the timeout and name the wait it was given:\n%s", plain)
+	}
+	if strings.Contains(plain, "herdr plugin list") {
+		t.Errorf("a detected runtime's observable 3 must not send the reader to the plugin list:\n%s", plain)
 	}
 }
