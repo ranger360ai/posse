@@ -6,7 +6,8 @@ amends ADR 0013 §1's launch row ("PID delivered" becomes a reading, not a
 sentence) · sits under ADR 0012 D4 (adapter seams), ADR 0007 (a
 session-local tree in the cwd, excluded from git) and ADR 0017 §3 (declare
 the dimension, never key on the name) · measurements in
-`docs/notes.d/ranger-base-f1ytb.md`*
+`docs/notes.d/ranger-base-f1ytb.md` · amended 2026-10-03 (ranger-base-er6mt):
+D1 ruled to STAND with `hidden` measured inert — see "Ruling" below*
 
 ## Context
 
@@ -69,7 +70,9 @@ not helper names:
    `roleDefinition` the PID body verbatim, `groups` the ten the built-in
    agent mode carries (`read edit command browser mcp skill todo artifact
    subagent mode` — MEASURED by reading the bundle that an omitted
-   `groups` is `[]`, a mode with no tools), `hidden: true`. The directory
+   `groups` is `[]`, a mode with no tools), `hidden: true` — a declared
+   intent and NOT a boundary: MEASURED FALSE, claim 6, and the Ruling
+   below is why the choice stands without it. The directory
    is excluded the way `.agents/skills` is (ADR 0007: `.git/info/exclude`,
    session-local, never the repo's). It is the skills tree's sibling: same
    paths call it, same lifecycle, same cage behaviour (the session dir is
@@ -138,6 +141,87 @@ a channel. `PIDVoided` keeps refusing interactive too — it asks about a
 flag the operator wrote into their own PID, where the remedy is editing
 that line; this check asks about a template the operator may not own.
 
+## Ruling 2026-10-03 — D1 stands without `hidden` (ranger-base-er6mt)
+
+The question (ADR 0006 §1, exclusive ruling): D1 was written with `hidden:
+true` among the rendered file's properties and the global file was rejected
+partly on "every persona in their `/mode` menu". Claim 6 measured the field
+inert. Does the session tree still win, and what did the field's loss cost?
+
+**It stands, and the reasoning is re-priced rather than the Decision.** The
+do-nothing option — leave D1 as written — is the ruling's shape, because
+D1's weight never rested on the field. Each ground, re-read with `hidden`
+removed, session tree against the two home-glob alternatives:
+
+| ground | session tree | `~/.bob/settings/custom_modes.yaml` | `~/.bob/plugins/posse-<p>/` |
+|---|---|---|---|
+| where the mode is listed and selectable | one directory, the session's; the last persona launched there (MEASURED: the file holds one mode, `PersonaModeFile` does not vary by persona) | every workspace on the box, every persona ever launched (MEASURED: the home glob, notes f1ytb §1) | every workspace, every persona (same glob) |
+| lifetime | dispatch: dies with the worktree (MEASURED: the tree is retired). shared checkout: the file stays until the next launch there rewrites it (MEASURED: no reader removes it) | outlives every seat; a sweep joins the build | same |
+| inside the cage | rides in with the mounted session dir (MEASURED, qllt8) | invisible — the cage has its own home | same |
+| write under the operator's home | refused by name (se81d) | is the write | is the write |
+| posse rewriting a file the operator edits (ADR 0022) | no: a namespace bob gives away, never-clobber reads the marker | yes: it is their file | no |
+
+Every row that chose the session tree is intact; the one cell `hidden`
+touched is the first, and it moved on both sides as the bead said: the
+session tree's exposure went from "none" to "one persona, in one
+directory", the global file's from "every persona, hidden" to "every
+persona, in every workspace". Strictly narrower on both axes. The margin
+shrank; the sign did not change.
+
+**What D1 gains, written down as a property and not a "should" (the bead's
+option 2, rejected).** Wherever the operator opens `bob` in a directory a
+seat used as its session dir, the persona's mode is the fourth Shift+Tab
+stop and `Tab` in the `/mode` picker prints the PID. For dispatch that
+directory is `~/.posse/worktrees/<repo>/<session>`, which the operator does
+not open. For a crew session it is the shared checkout — by design, not
+by accident: "a crew session is the operator's own conversation in the
+operator's own checkout" (ADR 0008, quoted from `herdrback.go`'s
+`Worktree` field), and the skills tree, the hooks and the gates already
+land there for the same reason. So the exposure is: the operator, in their
+own checkout, can read their own persona file from their own CLI's picker.
+No visibility line moves — the PID's audience was the operator and the
+seat, and it still is. The cost is one extra mode stop and the chance of
+selecting it by hand, which the footer names and Shift+Tab reverses. A
+`posse new --worktree` would remove even that, but it changes the crew
+model ADR 0008 chose, nothing measured demands it, and ranger-base-q114b
+already carries it as the root-cause note for the `$HOME` sibling; the
+`$HOME` case itself — the only one where the exposure is box-wide — is
+refused by name (Consequences, se81d). Not filed.
+
+**Found on the way, the shared checkout with two bob personas.** D1's
+materializer says "one session directory, one persona" and rewrites one
+file; ADR 0007 settled the same directory as the REPO's, hosting several
+personas with union semantics; ADR 0022 is the record of two writers in one
+checkout. So in a shared checkout the second bob persona's launch replaces
+the first's mode file (MEASURED by reading `RenderPersonaModeFor`: same
+path for every persona, both files carry the marker, so never-clobber
+passes). Is a live seat hurt? **No, MEASURED 2026-10-03 by reading the
+2.0.5 bundle:** the modes manager watches the workspace glob and reloads
+the list (`_workspaceWatchers`, `updateFromFiles` → `triggerModeChange`),
+but `onModesUpdate` has NO subscriber anywhere in the bundle — the three
+occurrences of `_modeChangeEvents` are its declaration, its push and its
+forEach — and a session's mode is the object resolved at start (`n.mode`),
+re-resolved only by `setSessionMode` when the user switches. The running
+seat keeps its persona; what changes is the picker in that directory, which
+names the last persona launched there, and a by-hand switch back to a slug
+no longer in the file fails with bob's own "Mode with id … not found".
+ASSUMED 4 below carries the half that needs a turn. The fix priced and
+rejected: one plugin dir per persona (`plugins/posse-<slug>/`, the glob's
+own namespace, one writer per file by construction). It costs Dir becoming
+a template, the trust exemption narrowing to this launch's dir, an exclude
+pattern and the pins — small — and it BUYS the operator's picker in that
+checkout every persona ever launched there, which is the global file's
+rejected cost confined to one directory, for no seat-side gain. ADR 0022
+does not bite: this file is never committed, so there is no sweep to
+mis-attribute. Last-writer-wins is recorded, not fixed; `rm` the file or
+launch the persona again is the remedy, and `.git/info/exclude` keeps it
+out of every diff either way.
+
+**Not decided here:** whether bob should implement `hidden` (upstream, the
+`create-mode` skill documents the field); whether `~/.agents/skills` under
+the home wants a guard (ranger-base-q114b, in progress); the two billed
+turns (ranger-base-x5xt6).
+
 ## Consequences
 
 - Built: one placeholder, one materializer seam with one member, one
@@ -170,7 +254,8 @@ that line; this check asks about a template the operator may not own.
   while `.bob/plugins/posse` there is read by every bob session anywhere.
   That sibling is ranger-base-q114b; the root cause both share — `posse new`
   having no worktree option, so an interactive session never gets a tree of
-  its own — is ranger-base-er6mt's option 2.
+  its own — was raised as ranger-base-er6mt's option 2 and ruled not a
+  consequence of this record (Ruling, above).
 - Not built, on purpose: the typed-PID route (below); the realizer
   (`groups` with `fileRegex` restrictions is where `{deny}` could render
   one day — ADR 0060 already said so; the trigger is unchanged, a measured
@@ -205,7 +290,9 @@ that line; this check asks about a template the operator may not own.
   Bob documents for personas (`create-mode` skill: "a mode or persona").
 - **The operator's global `~/.bob/settings/custom_modes.yaml`** (0060's
   rejection, reasons intact): posse rewriting a file the operator edits
-  (ADR 0022), every persona in their `/mode` menu, a stale mode outliving
+  (ADR 0022), every persona in their `/mode` menu — in every workspace,
+  re-priced in the Ruling against the session tree's one persona in one
+  directory, since `hidden` hides neither — a stale mode outliving
   the session.
 - **`~/.bob/plugins/posse-<persona>/custom_modes.yaml`** — the clever one:
   Bob reads the plugins glob under the home too, so one file per persona
@@ -272,8 +359,8 @@ ranger-base-se81d):
    of intent, it costs nothing on a CLI that ignores it, and it is the
    behaviour for free the day bob implements it — but nothing may read it
    as a confidentiality boundary. **D1's premise that this field keeps the
-   PID out of the operator's own picker is gone; whether D1's choice
-   survives losing it is open on ranger-base-er6mt.**
+   PID out of the operator's own picker is gone; D1's choice was ruled to
+   STAND without it (Ruling, ranger-base-er6mt).**
 7. **The session dir is not always a session tree, and `.bob/plugins/posse`
    under the home is bob's GLOBAL modes glob.** `posse new` has no worktree
    option, so `o.Worktree` is false and its session dir is `--dir`, else
@@ -289,6 +376,17 @@ ranger-base-se81d):
    Caught before the fact — ranger-base-4mrmc looked and found nothing had
    landed — and guarded since, see Consequences.
 
+**MEASURED 2026-10-03** (ranger-base-er6mt, by reading the 2.0.5 bundle at
+`/opt/homebrew/lib/node_modules/bobshell/dist/bob.js`, 15.5 MB, no turn):
+
+8. **A live bob session keeps the mode it opened with when the modes file
+   changes under it.** The modes manager watches the workspace glob and
+   reloads its list, but nothing subscribes to the change (`onModesUpdate`
+   has no caller; `_modeChangeEvents` occurs three times: declared, pushed,
+   iterated), and a session's mode is the object `resolveMode` returned at
+   start, re-resolved only by `setSessionMode` on a by-hand switch. The
+   Ruling's shared-checkout reading rests on this.
+
 **ASSUMED** (each a line for the instance side, ranger-base-6wqe's lane):
 1. The `roleDefinition` reaches the model as the persona — the footer
    says the mode is selected; that the model answers as the PID is one
@@ -298,6 +396,11 @@ ranger-base-se81d):
    ASSUMED lines this record shipped with stay countable.
 3. Precedence of `roleDefinition` over the workspace's AGENTS.md on a
    collision (rules_precedence, UNMEASURED).
+4. The per-turn system prompt is built from the session's held mode object
+   and not re-read from the modes file (claim 8 shows no re-resolution;
+   that the prompt builder reads `n.mode` rather than the file is one turn
+   in a shared checkout after a second persona's launch — ranger-base-4mrmc's
+   lane, if the operator wants it).
 
 ## Verification (the closer's observables)
 

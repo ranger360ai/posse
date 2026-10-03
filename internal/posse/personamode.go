@@ -443,9 +443,12 @@ func personaModeYAML(c *PersonaModeChannel, slug, name, body string) string {
 	// a reader taking it for a confidentiality boundary — there is no
 	// "loaded but hidden" state to reach for, the only switch that takes a
 	// workspace mode out of the list is workspace trust, and that same
-	// switch stops the mode being SELECTED, which is the channel. Whether
-	// ADR 0062 D1's choice of the session tree survives losing this is the
-	// architect's: ranger-base-er6mt, from ranger-base-se81d.
+	// switch stops the mode being SELECTED, which is the channel. ADR 0062
+	// D1's choice of the session tree was RULED TO STAND without this field
+	// (ADR 0062 "Ruling", ranger-base-er6mt): the grounds that chose the
+	// tree never rested on it, and the exposure it leaves — one persona's
+	// mode in the operator's own picker, in the one directory the seat used
+	// — is recorded there as a property, priced against the alternatives.
 	b.WriteString("    hidden: true\n")
 	return b.String()
 }
