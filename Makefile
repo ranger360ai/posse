@@ -706,8 +706,12 @@ verify-detection:
 # etc/herdr/agent-detection/upstream/bob through the plugin's OWN match_rules,
 # lifted verbatim from the installed bin/bob-watch, and asserts which rule each
 # lands on — with a control arm on the shipped file that must reproduce both
-# upstream failures first, and a grep x locale arm. ~9s. NOT a prerequisite of
-# `make test`: it needs the plugin installed, which is an instance fact.
+# upstream failures first, and a grep x locale arm. It also replays every rule
+# ALONE, because the override orders the precisely-named rules first and an
+# ordered matrix cannot see a property a rule ahead of it already matches, and
+# it derives two screens the corpus has not got from two it has
+# (ranger-base-b96nx). ~15s. NOT a prerequisite of `make test`: it needs the
+# plugin installed, which is an instance fact.
 verify-herdr-bob-rules:
 	scripts/verify-herdr-bob-rules.sh
 

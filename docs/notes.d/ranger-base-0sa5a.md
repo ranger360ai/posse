@@ -81,12 +81,27 @@ format, keeping their three deliberate properties:
   and is that dialog's footer and nothing else's *today*; codex's
   `hooks_review` rule exists because a footer reword silently returned a
   blocked screen to idle (rangerhq-7ia).
-- **`^[[:space:]]*Execute Command[[:space:]]*$` must be anchored**, because a
+- **`^[[:space:]]*Execute Command[[:space:]]*$` is anchored**, because a
   completed call leaves ` Execute Command (completed)` in the scrollback.
-  `blocked-execute-command-scrollback.txt` is the capture that pins it: both
-  spellings are on screen at once and it must still resolve to the live dialog.
+  `blocked-execute-command-scrollback.txt` carries both spellings at once and
+  must still resolve to the live dialog, and it does.
+
+  CORRECTED 2026-10-03 (ranger-base-b96nx): that capture does **not** pin the
+  anchor, which this bullet originally claimed it did, and neither does
+  anything else. MEASURED on this box — unanchoring the heading to a bare
+  `Execute Command` moves no verdict on any of the six captures, in either
+  window, in the ordered matrix or with the rule replayed alone, nor on the
+  derived completed-only screen. The reason is in the rule itself: `all` also
+  requires an `Approve Once` row and a finished call leaves none, so the
+  anchor is belt to that brace and no screen Bob is known to draw separates
+  the two spellings. What the pair of them buys **is** pinned, by the derived
+  completed-only screen in `scripts/verify-herdr-bob-rules.sh`: a finished
+  Execute Command in the scrollback, with no dialog up, matches nothing.
 - **The row marker is optional.** The dialog being up is the block; which row
-  the cursor sits on is not.
+  the cursor sits on is not. Both captures have the cursor on `Approve Once`,
+  so dropping the `?` moved no verdict and this was unasserted until
+  ranger-base-b96nx; what pins it is the derived cursor-moved screen in the
+  verify — the same dialog with ↓ pressed once.
 
 `trust_folder_prompt` is narrowed to `(do you trust|trust this
 (folder|workspace|directory))` — upstream's own other spelling, with the bare

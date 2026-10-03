@@ -190,11 +190,17 @@ trap cleanup EXIT INT TERM
 # jq program in the middle of an arm is the thing nobody reads.
 cat > "$T/jq.sh" <<'JQ_EOF'
 #!/usr/bin/env bash
-# <override> <question> -> the answer on stdout, jq's own status on failure.
+# <override> <question> [arg] -> the answer on stdout, jq's own status on failure.
 set -uo pipefail
 case $2 in
   rules)
     jq -r '.rules | length' "$1" || exit $?
+    ;;
+  ids)
+    jq -r '.rules[].id' "$1" || exit $?
+    ;;
+  one-rule)
+    jq --arg id "$3" '{rules: [.rules[] | select(.id==$id)]}' "$1" || exit $?
     ;;
   multibyte-brackets)
     jq -r '[.rules[] | (.all // []) + (.any // []) + (.none // []) | .[]]
@@ -205,7 +211,10 @@ case $2 in
 esac
 JQ_EOF
 chmod +x "$T/jq.sh"
-jq_ask()  { "$T/jq.sh" "$OVERRIDE" "$1" 2>"$T/jq.err"; }   # status is jq's own
+jq_ask()  { "$T/jq.sh" "$OVERRIDE" "$@" 2>"$T/jq.err"; }   # status is jq's own
+# jq_one <id> <outfile> -- the override with that ONE rule in it and nothing
+# else, for the isolation matrix below. Same rig, same status discipline.
+jq_one()  { "$T/jq.sh" "$OVERRIDE" one-rule "$1" > "$2" 2>"$T/jq.err"; }
 # jq_err -- the last line jq said, for the message. Kept rather than dropped
 # on the floor: `jq -e . file >/dev/null 2>&1` used to decide this arm and the
 # FAIL it printed named no reason at all.
@@ -310,6 +319,15 @@ idle-composer.txt	-	-
 idle-after-turn.txt	-	-
 idle-command-picker.txt	trust_folder_prompt	-"
 
+# The fixture names, read OFF that table rather than written out a second
+# time: the isolation matrix below replays the same six, and two lists that
+# can drift are two lists that will.
+FIXTURES=""
+while IFS=$'\t' read -r name up ov; do
+  [ -n "$name" ] || continue
+  FIXTURES="$FIXTURES $name"
+done <<<"$EXPECT"
+
 arm() { # label, rules-file, which-column
   local label=$1 rules=$2 col=$3 name want got_full got_win
   echo "$label"
@@ -362,6 +380,189 @@ done
 [ "$idle_hit" = 0 ] &&
   ok "no override rule reports blocked on any of the three idle captures" ||
   bad "an override rule reports blocked on an idle capture -- a false blocked stops waits"
+
+# ------------------------------------------------------------ isolation matrix
+# WHY A SECOND MATRIX (ranger-base-b96nx, from the ranger-base-ksfk6 verify).
+# The matrix above asserts WHICH RULE WINS, and the override deliberately
+# orders the two precisely-named rules first -- so every property of a rule
+# that a rule ahead of it already matches is stated and unasserted. Nine
+# single-property mutants of the override were put through the harness as it
+# stood and five survived it, all of them that shape.
+#
+# Replaying each rule ALONE removes the ordering. MEASURED 2026-10-03, this
+# box, over the four properties the ordered matrix cannot see:
+#
+#   sso_login_prompt's `sign[- ]?in` reverted to upstream's `sign in`
+#     -- ordered: no verdict moves (bob_signin wins). alone: KILLED.
+#   tool_approval_prompt's `any` reverted to upstream's two row marks
+#     -- ordered: no verdict moves (bob_execute_command wins). alone: KILLED.
+#   bob_execute_command's row marker made REQUIRED (the `?` dropped)
+#     -- alone: SURVIVES. No capture has the cursor anywhere else, so this
+#        one needs a screen, not an ordering; see the derived arms below.
+#   bob_execute_command's heading UNANCHORED
+#     -- alone: SURVIVES, and nothing below kills it either. See the note at
+#        the completed-only arm; do not re-measure it.
+#
+# The negative half is the point for the two UNFIXTURED rules: alone, each of
+# trust_folder_prompt and license_prompt must match NONE of the six, which is
+# the whole of what the override claims about them and was until now asserted
+# only through rules ordered in front of them.
+#
+# rule <TAB> the fixtures it must match ALONE, space separated. A row with
+# no tab at all is a rule that must match NONE of them.
+ISOLATION="bob_execute_command	blocked-execute-command.txt blocked-execute-command-scrollback.txt
+bob_signin	blocked-signin.txt
+tool_approval_prompt	blocked-execute-command.txt blocked-execute-command-scrollback.txt
+trust_folder_prompt
+license_prompt
+sso_login_prompt	blocked-signin.txt"
+
+ids="$(jq_ask ids)"; jq_rc=$?
+apparatus "$jq_rc" && harness "jq could not list the override's rule ids (status $jq_rc)" "$(jq_err)"
+ids_nl=$'\n'"$ids"$'\n'
+iso_nl=$'\n'
+while IFS=$'\t' read -r id want; do
+  [ -n "$id" ] || continue
+  iso_nl="$iso_nl$id"$'\n'
+done <<<"$ISOLATION"
+# A rule added to the override and not to the table would be replayed by
+# nobody, and a table row naming a rule that is gone would replay an EMPTY
+# one-rule file and read as six clean misses. Both are green silence, which
+# is the failure this whole arm exists to end, so the two lists are compared
+# before a single verdict is taken.
+iso_missing=""; iso_extra=""
+while IFS= read -r id; do
+  [ -n "$id" ] || continue
+  has "$iso_nl" $'\n'"$id"$'\n' || iso_missing="$iso_missing $id"
+done <<<"$ids"
+while IFS=$'\t' read -r id want; do
+  [ -n "$id" ] || continue
+  has "$ids_nl" $'\n'"$id"$'\n' || iso_extra="$iso_extra $id"
+done <<<"$ISOLATION"
+
+echo "isolation (each rule replayed ALONE, so no rule ordered in front of it can answer for it):"
+if [ -z "$iso_missing" ] && [ -z "$iso_extra" ]; then
+  ok "the table names every rule in the override and no others"
+else
+  bad "the table and the override disagree --${iso_missing:+ in the override but not the table:$iso_missing}${iso_extra:+ in the table but not the override:$iso_extra}"
+fi
+while IFS=$'\t' read -r id want; do
+  [ -n "$id" ] || continue
+  one="$T/one-$id.json"
+  jq_one "$id" "$one"; jq_rc=$?
+  apparatus "$jq_rc" && harness "jq could not isolate the rule $id (status $jq_rc)" "$(jq_err)"
+  one_c=""; [ -r "$one" ] && one_c=$(<"$one")
+  if ! has "$one_c" "\"$id\""; then
+    bad "$id alone: the one-rule file does not name it (jq status $jq_rc) -- nothing here is a verdict about $id"
+    continue
+  fi
+  got_list=""; rule_bad=""
+  for name in $FIXTURES; do
+    if [ ! -e "$FIX/$name" ]; then rule_bad="$rule_bad; $name: no such fixture"; continue; fi
+    want_v=-
+    case " $want " in *" $name "*) want_v=$id ;; esac
+    got_full="$(verdict "$one" "$FIX/$name" all)"
+    got_win="$(verdict "$one" "$FIX/$name" "$WINDOW")"
+    [ "$got_full" = "$id" ] && got_list="$got_list $name"
+    if [ "$got_full" != "$got_win" ]; then
+      rule_bad="$rule_bad; $name: whole capture -> ${got_full}, last $WINDOW lines -> ${got_win} (want ${want_v}, and the two must agree)"
+    elif [ "$got_full" != "$want_v" ]; then
+      rule_bad="$rule_bad; $name: got ${got_full}, want ${want_v}"
+    fi
+  done
+  if [ -z "$rule_bad" ]; then
+    ok "$id alone ->${got_list:- nothing}"
+  else
+    bad "$id alone:${rule_bad#;}"
+  fi
+done <<<"$ISOLATION"
+
+# ----------------------------------------------------------- derived screens
+# TWO SCREENS THE CORPUS DOES NOT HAVE, built FROM captures it does have.
+# Each is a stated transformation of one real capture, applied here rather
+# than checked in as a seventh and eighth file: etc/herdr/agent-detection/
+# upstream/bob holds what a real Bob really drew, and a synthetic screen in
+# there is a capture the next reader will trust as one. Derived at run time it
+# cannot drift from its source, and the derivation is refused loudly -- not
+# reported as a verdict -- when the source stops having the lines it reads.
+derive_cursor_moved() { # <capture> -> the same dialog, cursor one row down
+  local line out="" off=0 on=0
+  while IFS= read -r line || [ -n "$line" ]; do
+    case $line in
+      '  → Approve Once')                  line='    Approve Once'; off=1 ;;
+      '    Always Allow Command for task') line='  → Always Allow Command for task'; on=1 ;;
+      *'(1/3)'*)                           line=${line%'(1/3)'*}'(2/3)'${line#*'(1/3)'} ;;
+    esac
+    out="$out$line"$'\n'
+  done <"$1"
+  [ "$off" = 1 ] && [ "$on" = 1 ] || return 1
+  printf '%s' "$out"
+}
+derive_completed_only() { # <capture> -> the same pane, just before the dialog
+  local line prev="" have=0 out="" hit=0
+  while IFS= read -r line || [ -n "$line" ]; do
+    case $line in '  Execute Command') hit=1; break ;; esac
+    [ "$have" = 1 ] && out="$out$prev"$'\n'
+    prev=$line; have=1
+  done <"$1"
+  [ "$hit" = 1 ] || return 1
+  printf '%s' "$out"   # the line before the heading is the dialog's top rule
+}
+
+echo "derived screens (a stated transformation of a real capture; no capture is either):"
+
+# THE ROW MARKER IS OPTIONAL, which is what `(>|❯|→)?` says and what the rule's
+# `_why` states: the dialog being up is the block, not which row the cursor
+# sits on. Both execute-command captures have the cursor on Approve Once, so
+# the ordered matrix and the isolation matrix above are both green with the
+# `?` dropped -- MEASURED 2026-10-03. The screen that separates it is the same
+# dialog with ↓ pressed once: the marker on `Always Allow Command for task`,
+# `Approve Once` indented like the other unselected rows, and the counter at
+# (2/3). That is three substitutions on one capture and no invention.
+if cursor_moved="$(derive_cursor_moved "$FIX/blocked-execute-command.txt")"; then
+  printf '%s' "$cursor_moved" > "$T/cursor-moved.txt"
+  g_full="$(verdict "$OVERRIDE" "$T/cursor-moved.txt" all)"
+  g_win="$(verdict "$OVERRIDE" "$T/cursor-moved.txt" "$WINDOW")"
+  if [ "$g_full" = bob_execute_command ] && [ "$g_win" = bob_execute_command ]; then
+    ok "the dialog with the cursor on row 2/3 -> bob_execute_command (the row marker is optional)"
+  else
+    bad "the dialog with the cursor on row 2/3: whole capture -> ${g_full}, last $WINDOW lines -> ${g_win}, want bob_execute_command -- the row marker has become required, so the block is missed whenever the cursor has moved"
+  fi
+else
+  bad "the cursor-moved screen could not be derived from blocked-execute-command.txt: its rows are no longer '  → Approve Once' and '    Always Allow Command for task'. That is the capture's shape, not the rule -- but until the derivation is updated the optional row marker is unasserted"
+fi
+
+# A FINISHED CALL IN THE SCROLLBACK IS NOT A BLOCK. blocked-execute-command-
+# scrollback.txt is that pane one dialog later; cut just above the live
+# dialog it is the pane as it stood before, carrying ` Execute Command
+# (completed)` and no dialog at all. Nothing may fire on it: a stopped wait on
+# an idle pane is the expensive half of a wrong verdict.
+#
+# AND IT IS NOT THE ANCHOR'S PIN, which the rule's `_why` and
+# docs/notes.d/ranger-base-0sa5a.md both said it was. MEASURED 2026-10-03
+# (ranger-base-b96nx): unanchoring the heading to a bare `Execute Command`
+# moves no verdict on any of the six captures, in either window, ordered or
+# alone, NOR on this screen -- because `all` also requires an `Approve Once`
+# row, and a completed call leaves none behind. No screen Bob is known to draw
+# separates the two spellings, so the anchor is belt to that brace and this
+# arm pins the property the pair of them actually buys. Do not re-measure it;
+# if you want the anchor pinned, what is missing is a capture, not a mutant.
+if completed_only="$(derive_completed_only "$FIX/blocked-execute-command-scrollback.txt")"; then
+  printf '%s' "$completed_only" > "$T/completed-only.txt"
+  if has "$completed_only" 'Execute Command (completed)' && ! has "$completed_only" 'Approve Once'; then
+    g_full="$(verdict "$OVERRIDE" "$T/completed-only.txt" all)"
+    g_win="$(verdict "$OVERRIDE" "$T/completed-only.txt" "$WINDOW")"
+    if [ "$g_full" = - ] && [ "$g_win" = - ]; then
+      ok "a finished Execute Command in the scrollback, with no dialog up -> no rule"
+    else
+      bad "a finished Execute Command in the scrollback reports blocked: whole capture -> ${g_full}, last $WINDOW lines -> ${g_win} -- that is a false blocked on an idle pane, and every wait on it stops"
+    fi
+  else
+    bad "the completed-only screen is not what this arm claims: it must carry 'Execute Command (completed)' and no 'Approve Once' row, and the cut above the live dialog no longer produces that"
+  fi
+else
+  bad "the completed-only screen could not be derived from blocked-execute-command-scrollback.txt: no line is exactly '  Execute Command', so the cut has nothing to cut at and the false-blocked property is unasserted"
+fi
 
 # ----------------------------------------------------------- grep x locale arm
 # The watcher does not choose which grep or which locale it gets: the herdr
