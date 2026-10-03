@@ -3532,13 +3532,15 @@ wait:
 		// ever asked anything. Every error there goes to the same question
 		// a timeout asks — what is the agent doing? — and the claim is
 		// never handed back on the answer "posse cannot tell".
-		// …and neither is a prompt herdr ACCEPTED and then did not see
-		// start (ranger-base-uauvn). agent_prompt_stalled is the one code
-		// in this branch that is about herdr's own five-second window
+		//
+		// A prompt herdr ACCEPTED and then did not see START is the same
+		// shape as that timeout, and was read as the opposite of it
+		// (ranger-base-uauvn). agent_prompt_stalled is the one code reaching
+		// the branch below that is about herdr's own five-second window
 		// rather than about delivery — the text was typed — so it gets a
-		// second reading before anything is handed back, and only the arm
-		// that finds no turn and no commit falls through to the unclaim
-		// below. promptstall.go carries the incident and herdr's wording.
+		// second reading first, and only the arm that finds no turn and no
+		// commit falls through to the unclaim. promptstall.go carries the
+		// incident and herdr's own wording for the difference.
 		if IsHerdrCode(r.err, "agent_prompt_stalled") && !p.delivered {
 			if d.stopping() {
 				// The drain (ranger-base-e9d9), before the grace is spent:

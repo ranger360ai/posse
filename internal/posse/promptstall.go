@@ -47,6 +47,14 @@ package posse
 // state that was already there and reports a turn that never started
 // (reportedagent.go carries the same contract for the one route herdr will
 // not take). So the window stays herdr's, and the VERDICT becomes posse's.
+//
+// BOTH DELIVERY ROUTES, by construction rather than by a second branch. The
+// reported route types the text itself and then mirrors herdr's stall
+// contract by hand (reportedagent.go), so its stall means the same thing
+// — posse pressed Enter — and arrives at the same gather branch under the
+// same code. It is the route with no herdr envelope behind it and no `agent
+// explain` to read the box back with, so it is the one where a hand-back on
+// an unobserved turn costs most.
 
 import (
 	"fmt"
@@ -117,9 +125,9 @@ func (d *Dispatcher) judgeStall(p *pendingBead) stallVerdict {
 		d.printf("◷ %-14s %s — claim kept, not judged this pass (posse peek %s)\n", p.is.ID, why, p.session)
 		return stallKeep
 	}
-	// st is stallNoTurn from here down.
-	// herdr watched the grace out and no turn started in it. The second
-	// reading decides, and only a git that ANSWERED "nothing" hands back.
+	// st is stallNoTurn: herdr watched the grace out and no turn started in
+	// it. The second reading decides, and only a git that ANSWERED
+	// "nothing" reaches the hand-back.
 	switch n, read := d.committedWork(p); {
 	case !read:
 		d.printf("◷ %-14s %s, and whether %s has committed anything cannot be read — claim kept, not judged this pass (posse peek %s)\n",
