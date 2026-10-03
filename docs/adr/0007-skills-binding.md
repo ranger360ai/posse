@@ -200,6 +200,26 @@ that ship scripts run *inside* the cage like anything else.
   (rangerhq-1qd — both landed on the `.agents/skills` surface; `skills.go`
   gained `RenderAgentsSkills` and `runtime.go` a `SkillsCwd` flag for the
   runtimes that discover from the cwd instead of from a flag).
+- **A session dir of `$HOME` renders this tree to `~/.agents/skills/`, and
+  that is accepted** (ranger-base-q114b, 2026-10-03). `posse new` has no
+  worktree option, so its dir is `--dir`, else `default_dir`, else `$HOME`,
+  and one interactive launch with no `--dir` reaches it with nothing
+  misconfigured — as it already did (the tree was created 2026-09-05). It is
+  accepted because discovery is at the cwd only (§2, MEASURED 2026-08-18)
+  and no CLI reads `~/.agents` as a global root at all — each of the three
+  has its own and it is a different path: `~/.codex/skills`,
+  `~/.grok/skills`, `~/.bob/skills` under bob's state dir (ADR 0060)
+  — so the tree at the home is read by the cwd-at-home session that asked
+  for it, under exactly the §4 contract above: additive, owned by the dir,
+  outliving the seat. The contrast is ADR 0062's persona-mode file, which
+  shares the `dir` default and *refuses* this input, because its relative
+  path lies inside a glob bob reads globally. Both halves are pinned in
+  `internal/posse/skillshomedir_qa_test.go`, and the fact that would flip
+  this one — a CLI declaring `.agents` as its own config root — reds an arm
+  there rather than drifting. A refusal of the dir itself, if it is ever
+  wanted, belongs where the dir is resolved (ranger-base-er6mt): four writes
+  land inside the session dir — the pre-push and commit-guard hooks, this
+  tree, the mode file — and a guard in one of them stops one.
 - `posse skills list` (names, and which PIDs bind each) — read-only.
 - Instance: the operator populates the instance repo's `RHQ_HOME/skills/`
   (symlinks to what already exists in `~/.claude/skills`, `~/.codex/skills`)

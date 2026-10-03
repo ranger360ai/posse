@@ -280,10 +280,47 @@ func copySkillFile(src, dst string, mode fs.FileMode) error {
 	return os.WriteFile(dst, content, mode)
 }
 
-// AgentsSkillsPath is the per-session skill surface codex and grok share,
-// relative to the session's working directory. Both CLIs walk it at *that
+// AgentsSkillsPath is the per-session skill surface codex and grok share
+// (and bob, whose own row reads it from the cwd — ADR 0060), relative to
+// the session's working directory. Codex and grok walk it at *that
 // directory only* — neither climbs to the repo root — so the launch links
 // into the dir the session actually starts in.
+//
+// WHICH IS WHY A SESSION DIR OF `$HOME` IS NOT A SPECIAL CASE HERE
+// (ranger-base-q114b, the decision). `posse new` has no worktree option, so
+// its session dir is `--dir`, else `default_dir`, else `$HOME` — the
+// fallback `CfgGet` is handed in herdrback.go — and one interactive launch
+// with no `--dir` therefore renders this tree to `~/.agents/skills/`, as it
+// already has (created 2026-09-05, ranger-base-4mrmc F2). That write is
+// read by a cwd-at-home session, which is the session that asked for it:
+// discovery is at the cwd only (MEASURED 2026-08-18, ADR 0007 §2) and no
+// CLI reads `~/.agents` as a global root at all — each of the three has its
+// own and it is a different path: `~/.codex/skills`, `~/.grok/skills`, and
+// `~/.bob/skills` under bob's state dir (ADR 0060). So the tree at
+// the home means exactly what the tree in any other directory means, and
+// ADR 0007 §4 has already declared what that is: additive, owned by the
+// DIR rather than by the persona, and outliving the seat.
+//
+// The contrast is the persona-mode file one path over, which DOES refuse
+// this input (refusePersonaModeGlobalWrite, personamode.go): its relative
+// path sits inside a glob bob reads globally, so at the home the same write
+// means something it means nowhere else. Same accident, two blast radii —
+// ADR 0062's Consequences, and the pins for both halves are
+// skillshomedir_qa_test.go.
+//
+// And the seam, which is the other half of the decision: a session dir that
+// is the home is a fact about the DIR, and FOUR writes land inside it — the
+// pre-push and commit-guard hooks under its `.git/hooks`, this tree (plus
+// its `.git/info/exclude` line), and the mode file — with two more keyed on
+// the dir without writing into it (the L3 hooks redirect's `core.hooksPath`,
+// claude's directory trust). A refusal bolted into one of the four stops
+// that one and lets the rest proceed: a bob launch at the home installs the
+// hooks, writes this tree, and THEN refuses at the mode file, which is the
+// order herdrback.go has. If the dir itself should be refused, that belongs
+// where the dir is resolved: ranger-base-er6mt's root cause, giving `posse
+// new` a tree of its own — which that bead priced the same day and did not
+// file (it changes ADR 0008's crew model and nothing MEASURED demands it),
+// so this is where the refusal would go, not a refusal that is coming.
 const AgentsSkillsPath = ".agents/skills"
 
 // AgentsSkillsDir is AgentsSkillsPath under a session's cwd.

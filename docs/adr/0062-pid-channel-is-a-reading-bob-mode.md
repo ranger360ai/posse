@@ -219,8 +219,9 @@ out of every diff either way.
 
 **Not decided here:** whether bob should implement `hidden` (upstream, the
 `create-mode` skill documents the field); whether `~/.agents/skills` under
-the home wants a guard (ranger-base-q114b, in progress); the two billed
-turns (ranger-base-x5xt6).
+the home wants a guard — ruled the same day, the other way: no guard
+(ranger-base-q114b, Consequences below); the two billed turns
+(ranger-base-x5xt6).
 
 ## Consequences
 
@@ -252,10 +253,27 @@ turns (ranger-base-x5xt6).
   0007's tree, created 2026-09-05), which `GlobalRoot` does not cover,
   because `.agents/skills` in the home is read by a cwd-at-home session
   while `.bob/plugins/posse` there is read by every bob session anywhere.
-  That sibling is ranger-base-q114b; the root cause both share — `posse new`
+  That sibling is ranger-base-q114b, **and it was decided the other way,
+  2026-10-03: no guard.** The skills tree at the home means what the skills
+  tree in any other directory means — ADR 0007 §4's contract is already
+  additive, dir-owned and seat-outliving, and no CLI reads `~/.agents` as a
+  global root (each of the three has its own, and it is a different path:
+  `~/.codex/skills`, `~/.grok/skills`, `~/.bob/skills`) — so the home is a
+  directory under that contract rather than an escalation of it. The
+  asymmetry is pinned from both sides in
+  `internal/posse/skillshomedir_qa_test.go`, including the ORDER: a bob
+  launch at the home renders the skills tree and *then* refuses here, so the
+  already-created `~/.agents/skills` is a correct tree for a cwd-at-home
+  session and not residue of a refused write. Nothing to sweep, for a
+  stronger reason than this bead's — not "posse cannot prove it wrote it"
+  but "the write was right". The root cause both share — `posse new`
   having no worktree option, so an interactive session never gets a tree of
   its own — was raised as ranger-base-er6mt's option 2 and ruled not a
-  consequence of this record (Ruling, above).
+  consequence of this record (Ruling, above). It is still where a refusal of
+  a home-as-session-dir would belong if one is ever wanted: one rule about
+  the dir, not a guard in one of the four writes that land inside it (the
+  pre-push and commit-guard hooks, the skills tree, this file), which stops
+  one and lets the rest run.
 - Not built, on purpose: the typed-PID route (below); the realizer
   (`groups` with `fileRegex` restrictions is where `{deny}` could render
   one day — ADR 0060 already said so; the trigger is unchanged, a measured
