@@ -556,3 +556,86 @@ func TestQAPersonaModeRefusesAWriteIntoTheCLIsGlobalConfigRoot(t *testing.T) {
 		t.Errorf("claude at a session dir of $HOME: wrote %q, err %v — a runtime with no channel writes nothing and so has nothing to refuse", p, err)
 	}
 }
+
+// (6) THE ORDER OF THE TWO REFUSALS (ranger-base-t96ku, verifying
+// ranger-base-se81d; filed as ranger-base-ie68e F2).
+//
+// RenderPersonaModeFor runs refusePersonaModeGlobalWrite BEFORE
+// refusePersonaModeClobber, and personamode.go says in so many words that
+// "the order is the rule's correctness". Nothing asserted it: swapping the
+// two calls left every pin in this file — and in
+// skillshomedir_qa_test.go and pidchannelprobe_qa_test.go — green
+// (MEASURED 2026-10-03, `ok internal/posse 2.968s` on the swap). Arm (5)
+// above cannot see it, because it creates no file at posse's path, so the
+// clobber check has nothing to say and the order cannot matter.
+//
+// AN ORDERING CLAIM NEEDS A FIXTURE WHERE BOTH ARMS WANT TO FIRE, and it
+// has to assert WHICH refusal came back rather than that one did. The
+// fixture is the operator's own modes file already sitting at posse's path
+// under the CLI home — which is a shape to expect rather than invent, since
+// `~/.bob/plugins/posse/custom_modes.yaml` is a path a bob user may own.
+//
+// WHAT THE ORDER BUYS, measured both ways: at HEAD the refusal names the
+// GLOBAL root and the two remedies that fix the real problem (`--dir`,
+// `default_dir`); swapped, it is the clobber check's "move it aside" —
+// which personamode.go itself calls out as "the one remedy that would LET
+// the write happen". Moving the file aside does not in fact let it happen,
+// because the guard still refuses on the next line; the cost is a seat sent
+// after the wrong thing, which is the cost a refusal exists not to impose.
+func TestQAPersonaModeUnderTheGlobalRootRefusesAsAGlobalWriteNotAsAClobber(t *testing.T) {
+	// No t.Parallel: t.Setenv.
+	a := checkApp(t)
+	rt := bobRuntime(t, a)
+	ag := loadTestAgent(t, personaModePID)
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	path := rt.PersonaModeFile(home)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// THE FIXTURE BOTH ARMS WANT: a file at posse's path that posse did not
+	// write, under the CLI's global root. The clobber check refuses it (no
+	// marker) and so does the guard (it is under `~/.bob`) — so whichever
+	// runs first is the one that answers, and the answer is the assertion.
+	foreign := []byte("customModes:\n  - slug: the-operators-own\n")
+	if err := os.WriteFile(path, foreign, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Both halves of "both arms want to fire" are checked, not assumed —
+	// without this the test could pass over a fixture only one arm reads.
+	if strings.HasPrefix(string(foreign), personaModeMarker) {
+		t.Fatal("the fixture carries posse's marker, so the clobber check would wave it through and this test measures nothing")
+	}
+	if err := refusePersonaModeGlobalWrite(ag, rt, home, home); err == nil {
+		t.Fatal("the guard does not refuse this fixture either, so there are not two arms to order")
+	}
+	if err := a.refusePersonaModeClobber(ag, rt, home, path); err == nil {
+		t.Fatal("the clobber check does not refuse this fixture, so the order is unobservable here and this test measures nothing")
+	}
+
+	_, err := a.RenderPersonaModeFor(ag, rt, home)
+	if err == nil {
+		t.Fatal("a foreign file under the CLI's global root was overwritten")
+	}
+	// The GLOBAL refusal, by the two things only it says: where the path is
+	// and what to do about it.
+	for _, want := range []string{"GLOBAL", "--dir", "default_dir"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not mention %q — either the clobber check answered first (the order), or the guard stopped saying it (the message). Either way posse sent the operator after %q under a root it will refuse again on the next line, instead of naming the session directory that is the actual problem (ranger-base-ie68e F2):\n%v",
+				want, "move it aside", err)
+		}
+	}
+	// And NOT the clobber check's remedy, which is the wrong one here. Said
+	// as its own assertion so a message that somehow carried both still
+	// reds rather than passing on the four substrings above.
+	if strings.Contains(err.Error(), "move it aside") {
+		t.Errorf("the refusal offers \"move it aside\" for a path under the CLI's global root — that is the remedy for a workspace collision, and following it here just reaches the guard one line later:\n%v", err)
+	}
+	// The write still did not happen, which is the property the order must
+	// not cost: the operator's bytes are untouched.
+	if b, rerr := os.ReadFile(path); rerr != nil || string(b) != string(foreign) {
+		t.Errorf("the operator's file at %s was modified (%v): %q", AbbrevHome(path), rerr, string(b))
+	}
+}
