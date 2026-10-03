@@ -805,7 +805,7 @@ ADR blocks the parallel beads already running (dk5, w1b, g7lt).
 | `bd sync` does not commit; `--full` commits and pushes | **MEASURED** (`bd sync --help`) |
 | store relocation via redirect rewrite + daemon restart is clean | **ASSUMED** — implementation bead rehearses on a copy first |
 | launcher-side jsonl commit at close-merge is a natural hook point | **ASSUMED** — bead confirms against the close path before building |
-| launch-time hashing of the promoted set is negligible | **ASSUMED** (dozens of small files; measure in the bead, it bounds the refusal path) |
+| launch-time hashing of the promoted set is negligible | **MEASURED** 2026-10-02 (median 11-22ms per verify over 121 files / 1.2MB — twice the live constitution — on darwin 25.4.0 / go1.26.5, 8 cores at loadavg 48-70; `internal/posse/promote_test.go` `TestVerifyPromotedCostIsNegligible`. That pin asserts the WORK, one full read of every regular file the manifest names, and keeps the clock as a reported median under a 1s ceiling: a worst-of-20 millisecond bound read the scheduler and false-failed arm 3 of a `make test` it passed in arms 1 and 2, ranger-base-wcy4s.) |
 | env values are gitignored in the constitution repo, tracked=0 on-disk=4 | **MEASURED** 2026-08-26 (`git check-ignore -v`, h56a) |
 | env sets are runtime-mutable at the home (TUI/`$EDITOR` write paths) | **MEASURED** (`envs.go` WriteEnvSet/EnsureEnvSet/DeleteEnvSet) |
 | every env read re-asserts 0700/0600 | **MEASURED** (`envs.go` TightenEnvPerms, called from EnvSetVars) |

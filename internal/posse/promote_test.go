@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -624,6 +625,27 @@ func TestInitSeedsAManifestMarkedSeeded(t *testing.T) {
 // measurement, because it sits on the refusal path of every dispatch. This
 // is that measurement, at more than twice the live constitution's size, and
 // it fails if the assumption stops holding.
+//
+// IT ASSERTS WORK, NOT WALL CLOCK (ranger-base-wcy4s). It used to red when
+// the worst of 20 wall-clock readings passed 250ms, which is the one
+// estimator a single descheduling can move: a maximum cannot average out
+// contention, and this test runs inside a binary whose other hundreds of
+// tests are `t.Parallel`. One `make test` over an identical tree passed it
+// in arms 1 and 2 and failed it in arm 3 at 348.6ms — two greens and a red
+// from the same code, which is the scheduler being read, not VerifyPromoted
+// regressing. Same class as ranger-base-1jgch, ranger-base-ze9p,
+// ranger-base-5i4c and the ranger-base-2jl5 precedent whose lesson is that
+// the fix is not a bigger number.
+//
+// So the alarm is the work: one verify opens each regular file the manifest
+// names exactly once and reads exactly its bytes. That is what the two
+// regressions the old comment named actually change — hashing per launch in
+// a loop multiplies the file count, reading the whole tree twice doubles
+// both — and neither count moves with the box's load. The clock stays as a
+// REPORTED median plus an order-of-magnitude ceiling, because ADR 0015's
+// question is about a launch's seconds and only a clock answers it; for the
+// median of 20 to breach that ceiling the box has to be slow throughout,
+// where the old bound needed one unlucky iteration in twenty.
 func TestVerifyPromotedCostIsNegligible(t *testing.T) {
 	t.Setenv("RHQ_HOME", filepath.Join(t.TempDir(), "home"))
 	a, err := NewApp()
@@ -654,25 +676,66 @@ func TestVerifyPromotedCostIsNegligible(t *testing.T) {
 	if err := a.SeedPromoteManifest(); err != nil {
 		t.Fatal(err)
 	}
+	// The work one verify owes: every regular file the manifest names,
+	// read once, in full. Taken from the fixture on disk rather than from
+	// the loop above, so a home that seeds a promoted file this test did
+	// not write is counted instead of silently widening the bound.
+	var wantFiles int
+	var wantBytes int64
+	for rel := range mustManifest(t, a).Files {
+		st, err := os.Stat(filepath.Join(a.Home, filepath.FromSlash(rel)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !st.Mode().IsRegular() {
+			continue // not prose posse attests to, so never hashed
+		}
+		wantFiles++
+		wantBytes += st.Size()
+	}
 	n := len(mustManifest(t, a).Files)
 
-	var worst time.Duration
-	for i := 0; i < 20; i++ {
+	const runs = 20
+	elapsed := make([]time.Duration, 0, runs)
+	for i := 0; i < runs; i++ {
 		v := a.VerifyPromoted()
 		if !v.OK() {
 			t.Fatalf("fixture does not verify: %s", v.Line())
 		}
-		if v.Elapsed > worst {
-			worst = v.Elapsed
+		// THE ALARM. Load-independent, and it fires on the shape of the
+		// regression rather than on its duration: a per-launch hash loop
+		// multiplies Files, a second walk of the tree inside one verify
+		// doubles both, and a verify that starts reading what it is not
+		// attesting to moves Bytes on its own.
+		if v.work.Files != wantFiles || v.work.Bytes != wantBytes {
+			t.Fatalf("one verify read %d files / %d bytes, want %d / %d — exactly one "+
+				"full read of every regular file the manifest names. Hashing per launch "+
+				"in a loop, or reading the whole tree twice, is what ADR 0015's "+
+				"ASSUMED-negligible launch verify cannot afford (run %d of %d)",
+				v.work.Files, v.work.Bytes, wantFiles, wantBytes, i+1, runs)
 		}
+		elapsed = append(elapsed, v.Elapsed)
 	}
-	t.Logf("VerifyPromoted over %d files (~%dKB): worst of 20 runs = %v", n, n*len(body)/1024, worst)
-	// A launch already costs seconds (herdr, the runtime's own start, the
-	// availability preflight). The bound is deliberately far above the
-	// measurement: it is a regression alarm — someone hashing per-launch in
-	// a loop, or reading the whole tree twice — not a benchmark.
-	if worst > 250*time.Millisecond {
-		t.Errorf("the launch verify costs %v — ADR 0015's ASSUMED-negligible no longer holds", worst)
+	slices.Sort(elapsed)
+	median, worst := elapsed[len(elapsed)/2], elapsed[len(elapsed)-1]
+	t.Logf("VerifyPromoted over %d files (~%dKB): %d files / %dKB read per run; "+
+		"median of %d runs = %v, worst = %v", n, n*len(body)/1024,
+		wantFiles, wantBytes/1024, runs, median, worst)
+	// The clock backstop, for the blowup no read count can see — an O(n^2)
+	// compare, a per-file exec, a sleep. A launch already costs seconds
+	// (herdr, the runtime's own start, the availability preflight), and the
+	// measurement this bound sits above is a MEASURED median of 11-22ms
+	// (2026-10-02, darwin 25.4.0 / go1.26.5, 8 cores at loadavg 48-70,
+	// five runs of this 121-file fixture; worst single reading in that
+	// state 120ms, and 348.6ms once inside a full arm run). The ceiling is
+	// ~50x that median on purpose: the median of 20 reaches it only if the
+	// box is slow for the whole test, which is a box fact a bigger number
+	// would not fix either, where one descheduled iteration used to be
+	// enough.
+	const ceiling = time.Second
+	if median > ceiling {
+		t.Errorf("the launch verify costs a median of %v over %d runs (worst %v, ceiling %v) "+
+			"— ADR 0015's ASSUMED-negligible no longer holds", median, runs, worst, ceiling)
 	}
 }
 

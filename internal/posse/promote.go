@@ -283,16 +283,43 @@ func (m *PromoteManifest) write(p string) error {
 
 // sha256File is the per-file hash the manifest records.
 func sha256File(p string) (string, error) {
+	sum, _, err := sha256FileN(p)
+	return sum, err
+}
+
+// sha256FileN is sha256File plus the bytes it actually read through the
+// hash — the work half of the reading promoteWork keeps.
+func sha256FileN(p string) (string, int64, error) {
 	f, err := os.Open(p)
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
 	defer f.Close()
 	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return "", err
+	n, err := io.Copy(h, f)
+	if err != nil {
+		return "", n, err
 	}
-	return hex.EncodeToString(h.Sum(nil)), nil
+	return hex.EncodeToString(h.Sum(nil)), n, nil
+}
+
+// promoteWork is what one promoted-set walk DID: the regular files it
+// opened and the bytes it read through the hash. It is the load-independent
+// reading of the launch verify's cost, and it exists because the wall-clock
+// one is not: a worst-of-N millisecond bound inside a test binary running
+// hundreds of parallel tests reds on a single descheduling, which is how
+// one `make test` over an identical tree passed this pin in arms 1 and 2
+// and failed it in arm 3 (ranger-base-wcy4s).
+//
+// Both regressions ADR 0015's negligible-cost assumption actually guards
+// against MULTIPLY these counts — hashing per launch in a loop multiplies
+// Files, reading the whole tree twice doubles both — while a loaded box
+// moves neither. The counts are per call: VerifyPromoted carries the
+// reading of its own walk on the verdict, so a second walk inside one
+// verify is visible as the doubling it is.
+type promoteWork struct {
+	Files int   // regular files opened and hashed
+	Bytes int64 // bytes read through the hash
 }
 
 // HashPromotedSet hashes the promoted set under root, keyed by slash-
@@ -305,6 +332,12 @@ func sha256File(p string) (string, error) {
 // entry with no hash — which is a mismatch on both sides of the comparison
 // and therefore never silently blessed.
 func HashPromotedSet(root string) (map[string]string, error) {
+	return hashPromotedSet(root, &promoteWork{})
+}
+
+// hashPromotedSet is HashPromotedSet with the walk's work tallied into w,
+// for the callers that want to assert over the work rather than the clock.
+func hashPromotedSet(root string, w *promoteWork) (map[string]string, error) {
 	out := map[string]string{}
 	for _, rel := range PromotedPaths {
 		p := filepath.Join(root, rel)
@@ -316,7 +349,7 @@ func HashPromotedSet(root string) (map[string]string, error) {
 			return nil, err
 		}
 		if !st.IsDir() {
-			sum, err := hashEntry(p, st)
+			sum, err := hashEntry(p, st, w)
 			if err != nil {
 				return nil, err
 			}
@@ -334,7 +367,7 @@ func HashPromotedSet(root string) (map[string]string, error) {
 			if err != nil {
 				return err
 			}
-			sum, err := hashEntry(fp, info)
+			sum, err := hashEntry(fp, info, w)
 			if err != nil {
 				return err
 			}
@@ -356,11 +389,14 @@ func HashPromotedSet(root string) (map[string]string, error) {
 // not a hex string, so it can never collide with a real one.
 const notRegular = "not-a-regular-file"
 
-func hashEntry(p string, info os.FileInfo) (string, error) {
+func hashEntry(p string, info os.FileInfo, w *promoteWork) (string, error) {
 	if !info.Mode().IsRegular() {
 		return notRegular, nil
 	}
-	return sha256File(p)
+	sum, n, err := sha256FileN(p)
+	w.Files++
+	w.Bytes += n
+	return sum, err
 }
 
 // ─── the launch verify ───────────────────────────────────────────────────────
@@ -383,6 +419,14 @@ type PromoteVerdict struct {
 	// upgrade order, and refusing on the drift alone would take the fleet
 	// down on every release that widens PromotedPaths.
 	Drift string
+
+	// work is what this verify's walk did — files opened, bytes hashed.
+	// Unexported because it is nobody's verdict: it is the load-independent
+	// reading the cost pin asserts over, in place of the wall clock
+	// (ranger-base-wcy4s). Elapsed above stays, reported rather than
+	// bounded tightly, because ADR 0015's question is about a launch's
+	// seconds and only a clock answers that.
+	work promoteWork
 }
 
 // manifestRoots is the promoted set a manifest was written for: its own
@@ -607,7 +651,7 @@ func (a *App) VerifyPromoted() PromoteVerdict {
 	}
 	v.Manifest = m
 	v.Drift = setDrift(m)
-	have, err := HashPromotedSet(a.Home)
+	have, err := hashPromotedSet(a.Home, &v.work)
 	if err != nil {
 		v.Err, v.Elapsed = err, time.Since(start)
 		return v
