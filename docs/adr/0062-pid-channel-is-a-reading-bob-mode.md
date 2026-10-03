@@ -145,6 +145,32 @@ that line; this check asks about a template the operator may not own.
   trust-list entry and its exemption, one footer read before the first
   keystroke, one PID-channel reading behind three surfaces. No new config
   key, no new actor, no runtime name in code, no write under the home.
+- **"No write under the home" is a GUARD and not a property of the paths**
+  (ranger-base-se81d, from claim 7). posse's workspace path and bob's home
+  glob are the same relative path, so the channel turns global by itself
+  whenever the session directory is the operator's home — which is what a
+  `posse new` with no `--dir` names on any install that has not pointed
+  `default_dir` elsewhere, since `$HOME` is the fallback. The channel
+  therefore declares the CLI's own config root (`GlobalRoot`, `.bob`) beside
+  the Dir it writes, and the materializer **refuses** — before the
+  never-clobber read, which under that root answers the wrong question
+  twice — when the file it would write lies under `<home>/<GlobalRoot>`.
+  Refuse and not warn: proceeding IS the harm, it lands on the operator's
+  files rather than on the seat, and `posse new` is interactive, so a
+  warning would not stop the one path that reaches it. Not sweep: deleting
+  under the operator's CLI home a file posse cannot prove it wrote is a
+  larger liberty than the write being undone. The cost, stated: on a box
+  whose `default_dir` is the home, an interactive `posse new --runtime bob`
+  refuses until the operator names a `--dir`. That is this record's own
+  position — the channel is the SESSION tree — and the message names both
+  remedies. The class is older than this channel and has landed once
+  already down the same `dir` default: `~/.agents/skills/` exists (ADR
+  0007's tree, created 2026-09-05), which `GlobalRoot` does not cover,
+  because `.agents/skills` in the home is read by a cwd-at-home session
+  while `.bob/plugins/posse` there is read by every bob session anywhere.
+  That sibling is ranger-base-q114b; the root cause both share — `posse new`
+  having no worktree option, so an interactive session never gets a tree of
+  its own — is ranger-base-er6mt's option 2.
 - Not built, on purpose: the typed-PID route (below); the realizer
   (`groups` with `fileRegex` restrictions is where `{deny}` could render
   one day — ADR 0060 already said so; the trigger is unchanged, a measured
@@ -225,12 +251,51 @@ herdr 0.9.1), scratch workspace, no turn, no spend, both panes closed and
    `PIDVoided` is the only PID-delivery check on any launch path.
 5. 19 CLI-shaped test `command:` templates carry no `{file}`.
 
+**MEASURED FALSE 2026-10-03** (ranger-base-4mrmc, discharging ASSUMED 2
+below; evidence in `docs/notes.d/ranger-base-4mrmc.md`, fixes in
+ranger-base-se81d):
+
+6. **`hidden: true` hides NOTHING on bob 2.0.5.** The mode is the fourth
+   Shift+Tab stop (Agent → Plan → Ask → `<persona>`), `/mode` lists it
+   4/4, and the picker's `Tab to view mode` prints the whole PID —
+   frontmatter and `deny:` list included. By reading the bundle: the YAML
+   `hidden` is parsed and carried onto the mode object and nothing reads
+   it; both consumers take `runtime.getModes({workspace})`, which filters
+   only tool groups and duplicate ids. (`hiddenFromUser` is a different
+   field, filtered in `isModeEnabled`, and belongs to provider/builtin
+   modes — which a workspace modes file never becomes.) 5jjtn's
+   `.allowUnknownOption()` class a third time, in the schema this time.
+   There is no "loaded but hidden" state to reach for either: the only
+   switch that takes a workspace mode out of the list is workspace trust,
+   and that same switch stops the mode being SELECTED, which is the
+   channel. posse keeps emitting the field — it is the honest declaration
+   of intent, it costs nothing on a CLI that ignores it, and it is the
+   behaviour for free the day bob implements it — but nothing may read it
+   as a confidentiality boundary. **D1's premise that this field keeps the
+   PID out of the operator's own picker is gone; whether D1's choice
+   survives losing it is open on ranger-base-er6mt.**
+7. **The session dir is not always a session tree, and `.bob/plugins/posse`
+   under the home is bob's GLOBAL modes glob.** `posse new` has no worktree
+   option, so `o.Worktree` is false and its session dir is `--dir`, else
+   `default_dir`, else **`$HOME`** — the last being the fallback `CfgGet` is
+   handed, so it needs no misconfiguration to reach. One `posse new
+   --runtime bob -a <persona>` with no `--dir` would therefore write the PID
+   to `~/.bob/plugins/posse/custom_modes.yaml`, which is the home glob
+   (`{settings/…,plugins/*/…}`, notes `ranger-base-f1ytb.md` §1) and global
+   scope: a mode in every bob session on that box, in every workspace,
+   returned even for an UNTRUSTED one, and outliving the seat, since nothing
+   in the tree removes the file. That is this record's own rejected
+   alternative (`~/.bob/plugins/posse-<persona>/…`) reached by accident.
+   Caught before the fact — ranger-base-4mrmc looked and found nothing had
+   landed — and guarded since, see Consequences.
+
 **ASSUMED** (each a line for the instance side, ranger-base-6wqe's lane):
 1. The `roleDefinition` reaches the model as the persona — the footer
    says the mode is selected; that the model answers as the PID is one
    billed turn nobody has spent.
-2. `hidden: true` keeps the mode out of Shift+Tab and the `/mode` picker
-   (schema field present; consumer unread).
+2. ~~`hidden: true` keeps the mode out of Shift+Tab and the `/mode`
+   picker~~ — MEASURED FALSE, claim 6 above. Kept numbered so the three
+   ASSUMED lines this record shipped with stay countable.
 3. Precedence of `roleDefinition` over the workspace's AGENTS.md on a
    collision (rules_precedence, UNMEASURED).
 
@@ -251,3 +316,14 @@ herdr 0.9.1), scratch workspace, no turn, no spend, both panes closed and
 4. A session dir whose repo tracks `.bob/plugins/posse/custom_modes.yaml`
    refuses by name; a repo shipping `.bob/plugins/other/custom_modes.yaml`
    trips the project-config trust refusal; posse's own file does not.
+5. A session dir that is `$HOME`, or anything under `$HOME/.bob`, refuses
+   by name — naming the path it would have written, that the directory is
+   the CLI's GLOBAL modes root and not a workspace, and both remedies
+   (`--dir`, `default_dir`) — and creates neither the file nor `.bob/` on
+   the way. `$HOME/.bobbish` and an ordinary dir under the home do not
+   refuse, and a runtime with no persona-mode channel does not refuse at
+   `$HOME` either, because it writes nothing there to refuse.
+   (ranger-base-se81d; the pin is
+   `TestQAPersonaModeRefusesAWriteIntoTheCLIsGlobalConfigRoot`, and it reds
+   on all three of: the guard call deleted, `underDir` downgraded to a
+   string prefix, and `Dir` moved out from under `GlobalRoot`.)

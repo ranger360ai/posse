@@ -449,3 +449,110 @@ func TestQAPersonaModeSlugStaysInsideTheCLIsAlphabet(t *testing.T) {
 		}
 	}
 }
+
+// (5) THE WRITE STAYS IN THE SESSION TREE (ranger-base-se81d, from
+// ranger-base-4mrmc F2).
+//
+// The hazard is that posse's workspace path and bob's GLOBAL modes glob are
+// THE SAME relative path — `.bob/plugins/*/custom_modes.yaml` is read under
+// the workspace and under the home — so the channel turns global whenever
+// the session directory happens to be the operator's home. That takes no
+// misconfiguration at all: `posse new` has no worktree option, so its
+// session dir is `--dir`, else `default_dir`, else `$HOME` — and the last is
+// the fallback `CfgGet` is handed, so an install that never set
+// `default_dir` is already there. One `posse new --runtime bob -a <persona>`
+// with no `--dir` would put that persona's whole PID in every bob session on
+// that box, in every workspace, trusted or not, outliving the seat.
+//
+// Nothing in this file could red on that before: every other pin here hands
+// the writer its own temp dir as the session dir, which is the one input
+// under which the bug is invisible. So this one sets the home and aims at
+// it.
+func TestQAPersonaModeRefusesAWriteIntoTheCLIsGlobalConfigRoot(t *testing.T) {
+	// No t.Parallel: t.Setenv. The home is the PROCESS's `$HOME`, which is
+	// this tree's spelling of it (AbbrevHome, ExpandTilde) for the reason
+	// trust.go gives — the path printed has to be the path read.
+	a := checkApp(t)
+	rt := bobRuntime(t, a)
+	ag := loadTestAgent(t, personaModePID)
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	// The declaration has to be coherent or the guard is decorative: the
+	// Dir posse writes lives UNDER the GlobalRoot it refuses to write in,
+	// and that containment IS why one relative path means two scopes. A
+	// change to Dir that left GlobalRoot behind would leave every arm below
+	// green over a guard that can no longer fire.
+	if c := rt.PersonaMode; !strings.HasPrefix(c.Dir+"/", c.GlobalRoot+"/") {
+		t.Fatalf("the channel writes %q but declares the CLI's global root as %q — the guard only bites on paths under that root, so these two have to be the same arithmetic", c.Dir, c.GlobalRoot)
+	}
+
+	// THE MEASURED CASE: the session dir IS the home.
+	_, err := a.RenderPersonaModeFor(ag, rt, home)
+	if err == nil {
+		t.Fatalf("a session dir that is $HOME wrote the PID into bob's GLOBAL modes glob without a word")
+	}
+	// The refusal has to say WHERE it would have landed and WHAT to do, or
+	// it costs a seat the way a bare refusal does.
+	for _, want := range []string{"GLOBAL", "--dir", "default_dir", "~/.bob"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not mention %q:\n%v", want, err)
+		}
+	}
+	// And it refused BEFORE writing anything — not even the directory on
+	// the way to the file, since `~/.bob/plugins` existing at all is what
+	// ranger-base-4mrmc checked to know this had not landed yet.
+	for _, p := range []string{rt.PersonaModeFile(home), filepath.Join(home, ".bob")} {
+		if _, serr := os.Stat(p); serr == nil {
+			t.Errorf("the refusal still created %s", p)
+		}
+	}
+
+	// Deeper inside the same root: a session dir of `~/.bob` itself. Under
+	// the root, so refused — containment and not an equality test on the
+	// home, because the root is the CLI's and the dir is the operator's.
+	if _, err := a.RenderPersonaModeFor(ag, rt, filepath.Join(home, ".bob")); err == nil {
+		t.Errorf("a session dir INSIDE the CLI's config root was written to")
+	}
+
+	// THE NEAR MISS. `~/.bobbish` is not under `~/.bob`, and a prefix test
+	// on the string would say it is. This arm is why the check compares
+	// paths rather than strings.
+	near := filepath.Join(home, ".bobbish")
+	if err := os.MkdirAll(near, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.RenderPersonaModeFor(ag, rt, near); err != nil {
+		t.Errorf("a session dir whose name merely starts like the CLI's config root was refused: %v", err)
+	}
+
+	// THE CONTROL, and without it every green above is consistent with a
+	// writer that refuses everything once $HOME is set: an ordinary session
+	// dir UNDER the home — `default_dir: ~/work`, a worktree beneath
+	// ~/.posse — still gets the PID written.
+	ok := filepath.Join(home, "work", "repo")
+	if err := os.MkdirAll(ok, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path, err := a.RenderPersonaModeFor(ag, rt, ok)
+	if err != nil {
+		t.Fatalf("an ordinary session dir under the home was refused: %v", err)
+	}
+	b, rerr := os.ReadFile(path)
+	if rerr != nil || !strings.Contains(string(b), "the probe persona") {
+		t.Fatalf("the control launch wrote no PID to %s (%v)", path, rerr)
+	}
+
+	// The seam, at the one input that matters (ADR 0017 §3): a runtime with
+	// no persona-mode channel has no global root to be inside of, so the
+	// home is just a directory to it and the guard is silent rather than
+	// refusing a launch that writes nothing anyway.
+	claude, err := a.LoadRuntime("claude")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p, err := a.RenderPersonaModeFor(ag, claude, home); err != nil || p != "" {
+		t.Errorf("claude at a session dir of $HOME: wrote %q, err %v — a runtime with no channel writes nothing and so has nothing to refuse", p, err)
+	}
+}

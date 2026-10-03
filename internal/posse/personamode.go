@@ -75,6 +75,23 @@ type PersonaModeChannel struct {
 	Trusted string
 	// File is the modes file's name inside Dir.
 	File string
+	// GlobalRoot is the CLI's OWN configuration directory under the
+	// operator's home, relative to it and slash-separated. It is NOT a path
+	// posse writes — it is the one path posse must never write, and it is
+	// here because the hazard is arithmetic rather than a name: bob reads
+	// `plugins/*/custom_modes.yaml` under BOTH the workspace and the home,
+	// so the very glob that makes Dir a session-local channel makes the
+	// same Dir a GLOBAL one when the session directory happens to be the
+	// home (MEASURED 2026-10-03, ranger-base-4mrmc F2; the home glob is in
+	// docs/notes.d/ranger-base-f1ytb.md §1). A global-scope mode is
+	// returned for an untrusted workspace too, so there is no second switch
+	// behind which such a write would be inert.
+	//
+	// Declared and not derived, for ADR 0017 §3's reason: the next CLI's
+	// config root is `~/.config/<cli>` as readily as `~/.<cli>`, and a
+	// guard that recomputed it from Dir would be guessing at the half of
+	// the pair that is NOT posse's to choose.
+	GlobalRoot string
 	// Flag is the printf form `{mode}` renders with, given the slug.
 	Flag string
 	// Prefix namespaces the slug, so posse's mode cannot collide with one
@@ -97,11 +114,12 @@ type PersonaModeChannel struct {
 
 // bobPersonaMode is the one member, MEASURED on bob 2.0.5 (notes §1-2).
 var bobPersonaMode = &PersonaModeChannel{
-	Dir:     ".bob/plugins/posse",
-	Trusted: ".bob/plugins",
-	File:    "custom_modes.yaml",
-	Flag:    "--mode %s",
-	Prefix:  "posse-",
+	Dir:        ".bob/plugins/posse",
+	Trusted:    ".bob/plugins",
+	File:       "custom_modes.yaml",
+	GlobalRoot: ".bob",
+	Flag:       "--mode %s",
+	Prefix:     "posse-",
 	// The built-in agent mode's ten, read out of the bundle. `command` is
 	// the spelling the mode file takes; bob maps it to `execute` itself.
 	Groups:   []string{"read", "edit", "command", "browser", "mcp", "skill", "todo", "artifact", "subagent", "mode"},
@@ -233,6 +251,15 @@ func (a *App) RenderPersonaModeFor(ag *AgentFile, rt *Runtime, dir string) (stri
 		return "", Die("%s: %s is empty — a mode whose roleDefinition is empty is a session with no persona in it, which is the harm this channel exists to stop (ADR 0062 D1)", ag.Name, AbbrevHome(ag.Path))
 	}
 	path := rt.PersonaModeFile(dir)
+	// BEFORE the clobber read, and the order is the rule's correctness.
+	// Under the operator's CLI home the clobber check answers the wrong
+	// question twice: on the operator's own file it refuses with "move it
+	// aside", which is the one remedy that would LET the write happen; and
+	// on a file an older posse put there it recognises its own marker and
+	// waves the write through. Neither reading is about where the path is.
+	if err := refusePersonaModeGlobalWrite(ag, rt, dir, os.Getenv("HOME")); err != nil {
+		return "", err
+	}
 	if err := a.refusePersonaModeClobber(ag, rt, dir, path); err != nil {
 		return "", err
 	}
@@ -245,6 +272,68 @@ func (a *App) RenderPersonaModeFor(ag *AgentFile, rt *Runtime, dir string) (stri
 	}
 	excludeFromGit(dir, c.Dir)
 	return path, nil
+}
+
+// refusePersonaModeGlobalWrite is the SESSION-TREE rule: posse's mode file
+// is this seat's PID channel, so a launch whose session directory would put
+// that file inside the CLI's own configuration root refuses instead of
+// writing it (ADR 0062 D1, whose Consequences say "no write under the home"
+// and whose Alternatives rejected `~/.bob/plugins/posse-<persona>/
+// custom_modes.yaml` by name, on these costs exactly).
+//
+// IT IS REACHED BY ACCIDENT AND NOT BY MISCONFIGURATION, which is why it
+// needs a guard rather than a doc line (ranger-base-4mrmc F2). `posse new`
+// has no worktree option at all, so `o.Worktree` is false and its session
+// directory is `--dir`, else `default_dir`, else — and this is the part that
+// needs nobody to have set anything wrong — **`$HOME`**, which is the
+// fallback `CfgGet` is handed in herdrback.go. So one interactive `posse new
+// --runtime bob -a <persona>` with no `--dir`, on any install that has not
+// pointed `default_dir` somewhere else, names the home as the workspace. And
+// `$HOME/.bob/plugins/posse/custom_modes.yaml` is not a workspace file at
+// all: it is in bob's GLOBAL modes glob, which makes that persona's whole
+// PID a mode in EVERY bob session on that box, in every workspace, trusted
+// or untrusted, selectable from the picker — `hidden` buys nothing, MEASURED
+// FALSE in the same bead — and outliving the seat, because nothing in this
+// tree ever removes the file.
+//
+// REFUSE, and not warn or sweep. Warning is what a channel does when the
+// session is merely degraded; here proceeding IS the harm, it lands on the
+// operator's own files rather than on this seat, and `posse new` is
+// interactive by definition — so the one path that reaches this would be
+// the one path a warning does not stop. Sweeping means deleting under the
+// operator's CLI home a file posse cannot prove it wrote, which is a larger
+// liberty than the write it would be undoing — and ranger-base-4mrmc looked
+// before the fact and found nothing had landed yet, so there was never
+// anything to sweep.
+//
+// CONTAINMENT, deliberately wider than the glob, and `underDir`'s
+// containment rather than a prefix test. The glob is
+// `<home>/<GlobalRoot>/plugins/*/<File>`; this refuses anywhere under
+// `<home>/<GlobalRoot>`. The extra ground is writes that are not read as
+// modes at all, and posse has no business under that root either way — a
+// predicate that tracked the glob exactly would have to be re-derived every
+// time the CLI widens what it reads, and would read green in the window
+// before anybody noticed. seatbelt.go's `underDir` is the comparison
+// because it is the one in this package that resolves symlinks over the
+// deepest existing ancestor: the file does not exist yet (that is the
+// point), and on darwin a textual prefix test reads a `/tmp` or `/var` home
+// as outside itself.
+func refusePersonaModeGlobalWrite(ag *AgentFile, rt *Runtime, dir, home string) error {
+	c := rt.PersonaMode
+	if c == nil || c.GlobalRoot == "" || home == "" {
+		// No channel, no declared root, or no home to own one: nothing to
+		// be inside of. The empty home is AbbrevHome's and ExpandTilde's
+		// shape for the same question — a scrubbed environment is not a
+		// second place to go looking for a home.
+		return nil
+	}
+	file := rt.PersonaModeFile(dir)
+	root := filepath.Join(home, filepath.FromSlash(c.GlobalRoot))
+	if file == "" || !underDir(root, file) {
+		return nil
+	}
+	return Die("%s: this session's directory is %s, so %s's mode file would be written to %s — which is under %s, the directory %s reads its GLOBAL modes from, not a workspace at all. That PID would be a mode in every %s session on this box, in every workspace, and would outlive this seat. ADR 0062 D1 puts this channel in the SESSION tree and rejected a write under the CLI home by name. Give the session a directory of its own (`--dir <path>`), or point `default_dir` at one",
+		ag.Name, AbbrevHome(dir), ag.Name, AbbrevHome(file), AbbrevHome(root), rt.Name, rt.Name)
 }
 
 // refusePersonaModeClobber is the never-clobber rule. Two ways a path is not
@@ -335,9 +424,28 @@ func personaModeYAML(c *PersonaModeChannel, slug, name, body string) string {
 		b.WriteString(indent + line + "\n")
 	}
 	fmt.Fprintf(&b, "    groups: [%s]\n", strings.Join(c.Groups, ", "))
-	// hidden: the mode is posse's, not an entry in the operator's picker.
-	// ASSUMED that it hides it (the schema field is there, its consumer was
-	// not found in the bundle) — ranger-base-4mrmc measures it.
+	// hidden: MEASURED FALSE 2026-10-03 (ranger-base-4mrmc F1, bob 2.0.5) —
+	// it hides NOTHING. bob parses the YAML `hidden` and carries it onto
+	// the mode object, and nothing reads it: both consumers take
+	// `runtime.getModes({workspace})`, which filters only tool groups and
+	// duplicate ids, and the picker maps every row. (`hiddenFromUser` is a
+	// DIFFERENT field, filtered in `isModeEnabled`, and belongs to
+	// provider/builtin modes — which a workspace modes file never becomes.)
+	// So Shift+Tab cycles Agent → Plan → Ask → `<persona>`, `/mode` lists
+	// it 4/4, and `Tab to view mode` prints the whole PID, frontmatter and
+	// `deny:` list included. 5jjtn's `.allowUnknownOption()` class a third
+	// time, in the schema this time.
+	//
+	// KEPT ANYWAY, and the comment is the reason it can be: it is the one
+	// honest declaration of what posse means by this mode, it costs nothing
+	// on a CLI that ignores it, and the day bob implements the field posse
+	// gets the behaviour without a second landing. What must NOT happen is
+	// a reader taking it for a confidentiality boundary — there is no
+	// "loaded but hidden" state to reach for, the only switch that takes a
+	// workspace mode out of the list is workspace trust, and that same
+	// switch stops the mode being SELECTED, which is the channel. Whether
+	// ADR 0062 D1's choice of the session tree survives losing this is the
+	// architect's: ranger-base-er6mt, from ranger-base-se81d.
 	b.WriteString("    hidden: true\n")
 	return b.String()
 }
