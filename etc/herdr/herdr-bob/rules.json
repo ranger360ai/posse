@@ -1,0 +1,106 @@
+{
+  "_comment": [
+    "posse's fork of herdr-bob's shipped rules.json (ranger-base-0sa5a).",
+    "",
+    "Upstream's file matches NONE of Bob 2.0.5's three blocked screens and DOES",
+    "match one of its idle screens -- MEASURED 2026-10-03 against the six",
+    "captures in etc/herdr/agent-detection/upstream/bob/ by",
+    "scripts/verify-herdr-bob-rules.sh, which replays them through the plugin's",
+    "OWN match_rules. The false positive is the serious half: the `/` command",
+    "picker lists `/permissions - View and change this folder's trust level`,",
+    "which satisfies trust_folder_prompt's `all` (`trust`) and its `any`",
+    "(`this folder`), so an idle composer with the picker open reports blocked",
+    "and every wait on that pane stops.",
+    "",
+    "bob-watch seeds this file into config_root() once and never refreshes it,",
+    "and prefers it over the plugin's own copy, so this is an override that",
+    "needs no write to the managed checkout. Installed by",
+    "scripts/herdr-bob-rules.sh --install; sent upstream as",
+    "etc/herdr/agent-detection/upstream-herdr-bob-rules.md.",
+    "",
+    "THE TWO MEASURED RULES COME FIRST, and they are ports of posse's own draft",
+    "herdr manifest for Bob (etc/herdr/agent-detection/upstream/bob/bob.toml),",
+    "which already keyed on exactly the right lines -- the patterns existed, in",
+    "the wrong file. Each is a PAIR of line-anchored patterns on two different",
+    "lines, never a shared footer: `Press Enter to confirm` is the Execute",
+    "Command dialog's footer and nothing else's today, but codex's hooks_review",
+    "rule exists because a footer reword silently returned a blocked screen to",
+    "idle (rangerhq-7ia). grep matches per line, so two patterns that cannot",
+    "share a line are a two-line anchor.",
+    "",
+    "NO MULTIBYTE CHARACTER IN A BRACKET EXPRESSION -- use alternation.",
+    "MEASURED 2026-10-03: /usr/bin/grep (BSD grep 2.6.0-FreeBSD) under LC_ALL=C",
+    "evaluates `[>❯→]` byte-wise, so it matches a pure box-drawing line (`─` is",
+    "E2 94 80 and the class degenerates to the byte set {>, E2, 9D, AF, 86,",
+    "92}); `(>|❯|→)` does not, in any of the four grep x locale combinations",
+    "tested. It changes no verdict in upstream's file today, because its class",
+    "is followed by a required keyword -- but the watcher does not choose which",
+    "grep or which locale it gets, and a daemon started from launchd has no",
+    "LANG at all.",
+    "",
+    "trust_folder_prompt and license_prompt remain UNFIXTURED: no capture in the",
+    "corpus shows Bob's trust or licence screen, so their positive side is still",
+    "upstream's guess and is left as upstream wrote it apart from the narrowing",
+    "that fixes the picker. What IS pinned about them is negative and checkable:",
+    "they must match none of the six.",
+    "",
+    "Rules are matched, in order, against the bottom of the pane buffer; the",
+    "first match wins, so the precisely-named rules are first and the log line",
+    "says which screen was recognised. `all` entries must every one match; `any`",
+    "needs one; `none` must not match. POSIX extended regexes, case-insensitive."
+  ],
+  "rules": [
+    {
+      "id": "bob_execute_command",
+      "state": "blocked",
+      "_why": "Bob 2.0.5's Execute Command approval dialog. Keyed on the heading and the selected option. The heading alone is not enough: a COMPLETED call leaves ' Execute Command (completed)' in the scrollback, which the anchored pattern excludes and which blocked-execute-command-scrollback.txt pins -- that capture carries both spellings and must still resolve here. The row marker is optional on purpose: the dialog being up is the block, not which row the cursor sits on.",
+      "all": [
+        "^[[:space:]]*Execute Command[[:space:]]*$",
+        "^[[:space:]]*(>|❯|→)?[[:space:]]*Approve Once[[:space:]]*$"
+      ],
+      "none": ["esc to interrupt"]
+    },
+    {
+      "id": "bob_signin",
+      "state": "blocked",
+      "_why": "The browser sign-in screen. A bob with no usable gateway token draws this INSTEAD of a composer -- there is nothing beneath it, and Esc or Ctrl+C exits the program, so no key posse is willing to press can clear it. Anchored on both lines: the first alone could plausibly appear as a notice over a live composer in some future build, the pair cannot.",
+      "all": [
+        "Complete sign[- ]?in in your browser",
+        "Press (ESC|Escape) or Ctrl\\+C to exit"
+      ]
+    },
+    {
+      "id": "tool_approval_prompt",
+      "state": "blocked",
+      "_why": "Upstream's generic approval rule, kept as the net under bob_execute_command. Matches no capture in the corpus. Two changes from upstream: the row-marker bracket expression is now an alternation (see the locale note above), and U+2192 is in it, which is what Bob 2.0.5 actually draws.",
+      "all": ["(allow|approve|permission|run this command|wants to)"],
+      "any": [
+        "\\(y(es)?/n(o)?\\)",
+        "[[:space:]]*(>|❯|→)[[:space:]]*(yes|allow|approve)",
+        "esc to (cancel|reject)"
+      ],
+      "none": ["esc to interrupt"]
+    },
+    {
+      "id": "trust_folder_prompt",
+      "state": "blocked",
+      "_why": "UNFIXTURED. Narrowed from upstream's `(trust|do you trust)`, whose bare `trust` alternative matched `/permissions - View and change this folder's trust level` in the command picker -- a false blocked on a live composer. This asks for the question form, which is upstream's own other alternative; nothing is invented here.",
+      "all": ["(do you trust|trust this (folder|workspace|directory))"],
+      "any": ["this (folder|workspace|directory)", "\\(y(es)?/n(o)?\\)"]
+    },
+    {
+      "id": "license_prompt",
+      "state": "blocked",
+      "_why": "UNFIXTURED, and unchanged from upstream: no capture in the corpus contains `licen[sc]e` at all, so it cannot fire on one.",
+      "all": ["licen[sc]e"],
+      "any": ["accept", "agree", "\\(y(es)?/n(o)?\\)"]
+    },
+    {
+      "id": "sso_login_prompt",
+      "state": "blocked",
+      "_why": "Upstream's generic sign-in rule, kept as the net under bob_signin. Two changes: the hyphen, because Bob writes `sign-in` and upstream's `sign in` therefore matched nothing in blocked-signin.txt -- the second miss in the shipped file; and `press enter` is dropped from `any`, because it is the Execute Command dialog's footer too (MEASURED: present in both execute-command captures), which is a shared footer doing identifying work.",
+      "all": ["(sign[- ]?in|log[- ]?in|login|authenticate)"],
+      "any": ["browser", "https?://"]
+    }
+  ]
+}

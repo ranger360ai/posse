@@ -9,6 +9,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-rb05v](ranger-base-rb05v.md) — How long a healthy pass takes, and what every long one was (ranger-base-rb05v) — 2026-10-03
 - [ranger-base-f1ytb](ranger-base-f1ytb.md) — Bob's PID channel is a workspace custom mode, and an unknown mode slug falls back in silence (ranger-base-f1ytb) — 2026-10-03
 - [ranger-base-99gww](ranger-base-99gww.md) — A path-keyed config lookup compared spellings, and one repo had two (ranger-base-99gww) — 2026-10-03
+- [ranger-base-0sa5a](ranger-base-0sa5a.md) — The herdr-bob plugin's screen rules read none of Bob's blockers, and one of its idle screens (ranger-base-0sa5a) — 2026-10-03
 - [ranger-base-wcy4s](ranger-base-wcy4s.md) — The launch verify's cost, measured as work instead of wall clock (ranger-base-wcy4s) — 2026-10-02
 - [ranger-base-sqxo1](ranger-base-sqxo1.md) — 2026-10-01 and 2026-10-02: two long sessions, two hung-looking passes, two different causes (ranger-base-sqxo1) — 2026-10-01
 - [ranger-base-5jjtn](ranger-base-5jjtn.md) — Bob's launch line delivers no PID, and its pane is never labelled: two independent causes (ranger-base-5jjtn) — 2026-10-01
