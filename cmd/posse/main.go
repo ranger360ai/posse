@@ -730,6 +730,13 @@ func main() {
 	case "dispatch":
 		// One pass of the harness core: route ready beads to personas.
 		d := posse.NewDispatcher(a, hb, out)
+		// The backend's own diagnostic lines belong to this pass's record,
+		// not to a stderr the one process the fleet's passes happen in has
+		// on /dev/null (ranger-base-ws20a). Here and not in NewDispatcher
+		// because the cockpit shares this same hb with a dispatcher of its
+		// own, and before any goroutine of d exists because the pulse clock
+		// reads the field it sets — both in RouteBackendWarnings' doc.
+		d.RouteBackendWarnings()
 		dirF, personaF, maxN := "", "", 0
 		var watch, watchMax time.Duration
 		watchStatus := false

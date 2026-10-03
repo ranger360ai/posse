@@ -592,6 +592,63 @@ func (w dispatcherLaunchWarn) Write(p []byte) (int, error) {
 
 func (d *Dispatcher) launchWarns() io.Writer { return dispatcherLaunchWarn{d} }
 
+// RouteBackendWarnings points the SHARED backend's own diagnostic stream at
+// this dispatcher's, by setting HerdrBackend.Warn (ranger-base-ws20a). It is
+// the non-launch half of ranger-base-lcode: that bead gave ONE launch its own
+// writer (NewSessionOpts.Warn), and left every b.warn site outside
+// planLaunch/createSession on the field — which was assigned nowhere in
+// non-test code, so it was always os.Stderr, which the one process the
+// fleet's passes happen in has on /dev/null (MEASURED 2026-10-03, pid 52273,
+// lsof: fd 0, 1 AND 2). The loop's record is a file the loop opens and tees
+// Out and Err into (watchlog.go), so a line that goes to neither is not in
+// the record at all.
+//
+// What it covers, all of it on a pass's own goroutines (gather,
+// autoReapPass, killAndLand):
+//
+//   - listSessions' five "session meta file(s) kept, not listed" lines,
+//     three of which name the repair nobody could read;
+//   - the "fold refusals spool for <name>" refusal, at all three of its
+//     sites (killAndLand, RelaunchAgent, closeRecorded);
+//   - noteUnlandedOnKill's "<bead> left work unlanded in <tree> ... and bd
+//     could not say whether it is closed", which is the loudest of them: a
+//     kill that could not note unlanded work ON the bead was then saying so
+//     to nobody either.
+//
+// NOT in NewDispatcher, and that is this bead's decision. The cockpit shares
+// its backend with its dispatcher (cmd/posse/cockpit.go: c.hb and c.disp),
+// and its Out is io.Discard with Progress a one-field status line — c.note,
+// a non-blocking send that DROPS what will not fit (cmd/posse/cockpit.go).
+// So a constructor that set the field would push a listing's five
+// abstentions and their repair recipes through a surface that shows one at a
+// time and discards the rest, and the thing that did it would be the
+// constructor. Where a cockpit should show them is a surface decision and a
+// bead of its own (ranger-base-2vhqo); here the cockpit is left exactly as
+// it was.
+//
+// Called by the CALLER rather than by Run or Watch, for a second reason: the
+// field is READ on goroutines that outlive a pass. The pulse clock calls
+// d.HB.Sessions() every tick (pulse.go deliverPulse) while a pass is
+// running, so a Run that re-assigned it per pass would be a plain data race
+// on the writer — the `make test-race` arm exists for changes in this file.
+// `posse dispatch` assigns it once, before any goroutine of this dispatcher
+// exists.
+//
+// QUIET (quietErrWriter), which is the other half of that same fact: a line
+// through this writer is not a sign of the PASS's life, because the clock
+// that calls Sessions() is not the pass. A box holding one unreadable meta
+// would otherwise refresh LastWrite from the pulse clock on every tick and
+// leave the watchdog's silence input dead for as long as the meta sat there
+// — ranger-base-0fz98 finding 3 exactly (see LastWrite). It keeps quietf's
+// serialization, because a gather writes this stream from a goroutine of its
+// own meanwhile (ADR 0028 §1).
+//
+// errw() and not Out because these are warnings and errw() is where they
+// already went: a hand-run `posse dispatch` keeps them off stdout, and the
+// loop tees Err into its record beside Out, so the unattended case — the one
+// this bead is about — gets them either way.
+func (d *Dispatcher) RouteBackendWarnings() { d.HB.Warn = d.quietErrWriter() }
+
 // planGuard takes this pass's shared plan reading (rangerhq-jgm). The plan's
 // own rate windows are the real budget; `plan_guard_<window>:` (percent) are
 // the thresholds and none is set by default — with none set the guard

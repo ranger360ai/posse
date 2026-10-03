@@ -27,9 +27,25 @@ import (
 )
 
 type HerdrBackend struct {
-	App  *App
-	H    Herdr
-	Warn io.Writer // where degraded-launch notices go (nil = stderr)
+	App *App
+	H   Herdr
+	// Warn is where the backend's OWN diagnostic lines go — the ones no
+	// single launch owns, and so the ones NewSessionOpts.Warn cannot carry:
+	// listSessions' five "kept, not listed" abstentions, the fold-refusals
+	// spool refusal at its three sites (killAndLand, RelaunchAgent,
+	// closeRecorded) and noteUnlandedOnKill's unlanded-work line. nil = the
+	// process's stderr, which is the operator's terminal for `posse list`,
+	// `posse new` and `posse kill` and the right place for exactly as long
+	// as somebody is standing there.
+	//
+	// `posse dispatch` is the case where nobody is, and until
+	// ranger-base-ws20a this field was assigned NOWHERE in non-test code, so
+	// that case was stderr too — /dev/null in a watch loop, whose record is a
+	// file the loop opens and tees Out and Err into (watchlog.go). The
+	// dispatch command now hands its own writer down:
+	// Dispatcher.RouteBackendWarnings(), whose doc carries the measurement
+	// and the reason the cockpit's backend is deliberately left on stderr.
+	Warn io.Writer
 	// ClaudeConfig is the claude config the launch seeds directory trust
 	// into (trust.go, rangerhq-w4uf) — the ONE file a launch writes that
 	// lies outside RHQ_HOME and the session dir, which is why it is a field
