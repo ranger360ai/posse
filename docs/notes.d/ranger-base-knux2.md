@@ -11,7 +11,7 @@ did not capture it. Everything below is MEASURED 2026-10-03 on this box, with
     == dispatch --watch armed 2026-10-03 00:15:59 · pid 2074 ==
     posse binary · ~/.local/bin/posse · 0.5.0+1b8ffe2d
     hook wall (watch): 3 of 4 repo(s) do NOT carry this binary's render
-      ~/src/ranger-base
+      $CONSTITUTION
         L3 prepare-commit-msg hook — … — ours but stale — run `posse gates install-hooks`;
         the data ceiling, beads visibility, constitution-path and shared-index guards are not realized
       <the queue repo>     (same slot, same verdict; path elided — ADR 0024 D2)
@@ -57,7 +57,7 @@ control arm: it is the one of the four that row 2 found fresh.
 
 ## Which rules the stale render was grading by
 
-Rendered `~/src/ranger-base`'s `prepare-commit-msg` under the pre-edit config
+Rendered `$CONSTITUTION`'s `prepare-commit-msg` under the pre-edit config
 and under the current one, both under a `core.hooksPath` redirect into a
 scratch dir so nothing of the repo's was touched (the mechanism
 `scripts/verify-hook-freshness.sh` uses):
@@ -95,7 +95,7 @@ Window opens 2026-10-02 23:39:07 for all three. It closes:
 - `~/src/posse` — at the session create at ~00:28:18 (the 00:26:04 pass). Every
   launch runs `a.InstallCommitGuardHook(dir)` (herdrback.go:2326), and a
   worktree shares its parent's common hooks dir. ≈49m.
-- `~/src/ranger-base` and the queue repo — at a hand-typed
+- `$CONSTITUTION` and the queue repo — at a hand-typed
   `install-hooks` at 08:36, four minutes after row 3 reported them; both repos'
   `pre-push` and ranger-base's `prepare-commit-msg` carry that mtime. ≈8h57m.
 
@@ -106,7 +106,7 @@ to the first wall that reported it FRESH:
 
 ```
 ~/src/posse        23:39:07 → 08:32:36   12 commits   0 hits
-~/src/ranger-base  23:39:07 → 09:43:41   10 commits   0 hits
+$CONSTITUTION  23:39:07 → 09:43:41   10 commits   0 hits
 the queue repo     23:39:07 → 09:43:41    3 commits   0 hits
 ```
 
