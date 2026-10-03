@@ -636,6 +636,60 @@ func TestQAPersonaModeRefusesAWriteIntoTheCLIsGlobalConfigRoot(t *testing.T) {
 		t.Errorf("the refusal still wrote %s through the symlink", filepath.Join(outside, rt.PersonaMode.File))
 	}
 
+	// THE SYMLINK **INTO** THE ROOT, which is the other containment
+	// question and the half the arm above cannot see (ranger-base-4w7rk,
+	// verifying ranger-base-ie68e). The fix asks containment twice because
+	// neither answer subsumes the other; the arm above drives the SPELLING
+	// side, and until this one landed the RESOLVED side — `underDir(root,
+	// file)` — could be deleted outright with every pin in the package
+	// still green. MEASURED 2026-10-03, darwin 25.4.0, go1.26.5: with that
+	// one disjunct removed, a session dir whose own `.bob/plugins` is a
+	// symlink to `~/.bob/plugins` wrote 621 bytes of the PID, marker and
+	// all, to `~/.bob/plugins/posse/custom_modes.yaml` — bob's global modes
+	// glob exactly, not merely under the root — and nothing said a word.
+	//
+	// It is the mirror image of the arm above: there the spelling was in
+	// the root and the inode outside it; here the spelling is outside and
+	// the inode inside. `ln -s ~/.bob ~/work/repo/.bob` is a thing a bob
+	// user does on purpose to share their global config with a workspace,
+	// so this one does not even need hostile input.
+	//
+	// Its own home, because the arm above left a symlink at posse's path
+	// under `~/.bob` and the write this arm is about resolves straight
+	// through it — two fixtures in one tree would measure their
+	// interaction rather than either question.
+	inHome := t.TempDir()
+	t.Setenv("HOME", inHome)
+	inRoot := filepath.Join(inHome, ".bob", "plugins")
+	if err := os.MkdirAll(inRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ws := filepath.Join(inHome, "work", "repo", rt.PersonaMode.GlobalRoot)
+	if err := os.MkdirAll(ws, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(inRoot, filepath.Join(ws, "plugins")); err != nil {
+		t.Fatal(err)
+	}
+	inGlob := filepath.Join(inRoot, "posse", rt.PersonaMode.File)
+	if _, err := a.RenderPersonaModeFor(ag, rt, filepath.Dir(ws)); err == nil {
+		t.Errorf("a symlink at %s carried the write INTO the root and the PID was written anyway", filepath.Join(ws, "plugins"))
+	} else {
+		for _, want := range []string{"GLOBAL", "--dir", "default_dir", "~/.bob"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("the symlinked-in refusal does not mention %q:\n%v", want, err)
+			}
+		}
+	}
+	// The whole of the harm, asserted where it would land rather than on
+	// the error alone: this path IS the glob bob reads its global modes
+	// from, so a byte here is this persona's PID in every bob session on
+	// the box.
+	if _, serr := os.Stat(inGlob); serr == nil {
+		t.Errorf("the refusal still wrote %s — bob's global modes glob — through the symlink", inGlob)
+	}
+	t.Setenv("HOME", home)
+
 	// THE CONTROL, and without it every green above is consistent with a
 	// writer that refuses everything once $HOME is set: an ordinary session
 	// dir UNDER the home — `default_dir: ~/work`, a worktree beneath

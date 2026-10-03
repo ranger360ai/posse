@@ -22,6 +22,7 @@ package posse
 // probeNoAgentWhy doc states for the same reason).
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -107,6 +108,17 @@ func TestQAProbeStalledPromptIsReadForTheTurnAndNotCalledUndelivered(t *testing.
 		// want / never: substrings observable 3's sentence must and must
 		// not carry.
 		want, never string
+		// screen: what Run must print about the stall, or "" when the
+		// delivery error is not a stall and nothing may be said about one.
+		//
+		// The RECORD is not the only place a stall can be lost
+		// (ranger-base-4w7rk, verifying this close). On the passing arm
+		// observable 3 deliberately says nothing — the turn is its own
+		// evidence — so the screen is the ONLY place the fact survives
+		// that herdr never saw the turn start, and until this column
+		// landed the whole `fmt.Fprintf` could be deleted with all three
+		// arms green (MEASURED 2026-10-03).
+		screen string
 	}{
 		{
 			// The incident. herdr typed the prompt, the turn started late,
@@ -115,7 +127,8 @@ func TestQAProbeStalledPromptIsReadForTheTurnAndNotCalledUndelivered(t *testing.
 			name: "a stall whose turn then arrives is a pass",
 			code: "agent_prompt_stalled", turn: theTurnRuns,
 			pass: true, read: true,
-			never: "not delivered",
+			never:  "not delivered",
+			screen: "saw no turn start inside its own 5s window — reading the pane for the turn anyway",
 		},
 		{
 			// The stall is not forgotten either: a probe that fails anyway
@@ -125,6 +138,7 @@ func TestQAProbeStalledPromptIsReadForTheTurnAndNotCalledUndelivered(t *testing.
 			code: "agent_prompt_stalled", turn: theTurnRunsNothing,
 			pass: false, read: true,
 			want: "saw no turn start inside its own 5s window", never: "not delivered",
+			screen: "saw no turn start inside its own 5s window — reading the pane for the turn anyway",
 		},
 		{
 			// The wrong arm, and the reason the fix is not "fall through on
@@ -155,7 +169,8 @@ func TestQAProbeStalledPromptIsReadForTheTurnAndNotCalledUndelivered(t *testing.
 			}
 
 			h, log := probeStallHerdr(t, srv, tc.code, tc.turn)
-			rec, err := a.RuntimeProbe(rt, h, ProbeOpts{Timeout: 2 * time.Second})
+			var screen bytes.Buffer
+			rec, err := a.RuntimeProbe(rt, h, ProbeOpts{Timeout: 2 * time.Second, Out: &screen})
 			if err != nil {
 				t.Fatalf("the probe could not run: %v", err)
 			}
@@ -172,6 +187,18 @@ func TestQAProbeStalledPromptIsReadForTheTurnAndNotCalledUndelivered(t *testing.
 			}
 			if got := probeTurnWasRead(t, log); got != tc.read {
 				t.Errorf("the probe read the pane for the turn: %v, want %v (argv log %s)", got, tc.read, log)
+			}
+			// What the operator watching the probe is told. Asserted both
+			// ways: a stall is said out loud on every arm it happened on,
+			// and a delivery error that is NOT a stall may not be dressed
+			// as one — without that second half the column passes on a
+			// line printed unconditionally.
+			const stallSaid = "saw no turn start inside its own 5s window"
+			switch got := screen.String(); {
+			case tc.screen != "" && !strings.Contains(got, tc.screen):
+				t.Errorf("the probe printed nothing saying %q — on the passing arm this is the only record left that herdr never saw the turn start:\n%s", tc.screen, got)
+			case tc.screen == "" && strings.Contains(got, stallSaid):
+				t.Errorf("the probe said herdr stalled on a %s, which is a refusal made before any input was sent:\n%s", tc.code, got)
 			}
 		})
 	}
