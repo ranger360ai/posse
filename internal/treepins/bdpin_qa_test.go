@@ -135,24 +135,36 @@ func bpStubBrew(t *testing.T, dir, state string) {
 	}
 }
 
+// bpRealCwd is what an unset fixture cwd stands for: "an ordinary daemon in a
+// real repo". The cwd layer asks exactly two things of such a path — that it
+// EXISTS, and that it is not under a temp root (is_ephemeral in
+// scripts/verify-bd-pin.sh) — so the stand-in has to answer both, and it must
+// NOT be derived from where this package is being run.
+//
+// It was `os.Getwd()`, the checkout, on the assumption that a checkout is
+// never under a temp root. A detached worktree in a session scratchpad is —
+// `/private/tmp/claude-501/.../wt-xxxxx` — and the script then classified
+// every unset-cwd fixture EPHEMERAL, correctly, reddening four pins in this
+// file that pass in place on the same tree: HappyPathDaemonOnPinnedBinary,
+// ReadsBinaryMtimeWhicheverStatIsInstalled (both /young arms),
+// CallsAnUnreadableMtimeUnverifiedNotOk and
+// SparesTheCanonicalDaemonAndNamesOnlyTheLeaked — the last of which asserts
+// that this very row is SPARED, so a worktree verify read as the detector
+// naming the canonical queue's daemon (MEASURED 2026-10-03, ranger-base-4sj55).
+// `/usr` is present on darwin and linux and under no temp root on either, and
+// it is the same string wherever the package is run from.
+const bpRealCwd = "/usr"
+
 // bpStubPS writes the fixture plus a `ps` that serves the three forms the
 // script asks for. Real ps is never consulted, so the suite cannot be
 // perturbed by whatever daemons the box happens to be running.
 func bpStubPS(t *testing.T, dir string, procs []bpProc) {
 	t.Helper()
-	// An unset cwd stands for "an ordinary daemon in a real repo", and it has
-	// to be a directory that EXISTS and is not under a temp root, or the new
-	// cwd layer would flag every fixture in the file. The test binary's own
-	// working directory is the repo checkout, which is exactly that.
-	real, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
 	var b strings.Builder
 	for _, p := range procs {
 		cwd := p.cwd
 		if cwd == "" {
-			cwd = real
+			cwd = bpRealCwd
 		}
 		fmt.Fprintf(&b, "%s\t%s\t%s\t%s\t%s\n", p.pid, p.comm, p.started.Format(bpLstart), p.args, cwd)
 	}
@@ -665,6 +677,41 @@ func bpDaemonAt(pid, argv0, comm string, started time.Time, cwd string) bpProc {
 	p := bpDaemon(pid, argv0, comm, started)
 	p.cwd = cwd
 	return p
+}
+
+// ranger-base-4sj55. The stand-in above is the one value in this file that
+// was read off the environment, and reading it off the CHECKOUT made four
+// pins answer about WHERE the package was run rather than about the script:
+// green in ~/src/posse, red from a detached worktree in a session scratchpad,
+// on the same tree. The property is asserted here, by name, so that a default
+// derived from the checkout reds in one place instead of reddening four
+// unrelated pins in one location and passing in another.
+//
+// It does not reimplement is_ephemeral — whether bpRealCwd is ephemeral is
+// the script's question and the pins above are the ones that ask it. What is
+// asked here is the two things the fixture owes them: that the stand-in
+// exists, since a missing directory routes those same pins to LEAKED (the
+// other wrong answer), and that it is not derived from here.
+func TestQABdPinFixtureCwdIsNotReadOffTheCheckout(t *testing.T) {
+	info, err := os.Stat(bpRealCwd)
+	if err != nil || !info.IsDir() {
+		t.Fatalf("bpRealCwd %q must be an existing directory on this host: %v", bpRealCwd, err)
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stubs := t.TempDir()
+	// An argv0 outside the checkout, so the only way the table can name the
+	// checkout is through the cwd column this pin is about.
+	bpStubPS(t, stubs, []bpProc{bpDaemon("4548", "/opt/bd", "/opt/bd", time.Now())})
+	table, err := os.ReadFile(filepath.Join(stubs, "ps.fixture"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(table), cwd) {
+		t.Errorf("the fixture names the working directory %q, so every unset-cwd row is a verdict about where this package was run:\n%s", cwd, table)
+	}
 }
 
 // The nine coordinator reaped by hand on 2026-08-26: session scratchpads and test
