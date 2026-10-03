@@ -6,6 +6,7 @@ references), not inferred publication dates. Undated fragments sort last.
 
 ## 2026-10
 
+- [ranger-base-knux2](ranger-base-knux2.md) — A stale hook wall named four guards and had lost one (ranger-base-knux2) — 2026-10-03
 - [ranger-base-rb05v](ranger-base-rb05v.md) — How long a healthy pass takes, and what every long one was (ranger-base-rb05v) — 2026-10-03
 - [ranger-base-f1ytb](ranger-base-f1ytb.md) — Bob's PID channel is a workspace custom mode, and an unknown mode slug falls back in silence (ranger-base-f1ytb) — 2026-10-03
 - [ranger-base-elf2v](ranger-base-elf2v.md) — Which `projects[]` key does claude read? (ranger-base-elf2v) — 2026-10-03
