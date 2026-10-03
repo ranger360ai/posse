@@ -205,6 +205,21 @@ func (d *Dispatcher) pulseLoop(ctx context.Context, cfg PulseConfig) {
 // set is due for delivery (ADR 0027 §3-4), delivery bookkeeping to disk,
 // log non-empty. The observation itself is never written.
 func (d *Dispatcher) pulseOnce(cfg PulseConfig) {
+	// The suspend pair FIRST, before anything else on this tick reads a
+	// clock (ADR 0064 D3). After a wake the witness's 30s ticker and this
+	// loop's 2m one both resume with whatever was left on each, so the
+	// witness is not guaranteed to have seen the gap by the time this tick
+	// computes its set — about one wake in eight lands this way — and a
+	// wall-clock condition built from a ledger that has not been told yet
+	// is the false URGENT this whole page exists to end (the 2026-10-01
+	// wake: `guard-blind:5h; loop-mute` one second after a 5h30m sleep).
+	//
+	// Calling it here cannot double-count: suspendTick is under mu and
+	// re-seeds the pair, so whichever goroutine sees the gap records it and
+	// prints the line, and the other measures an awake box. The write also
+	// freshens this log's mtime, which would clear `loop-mute` on its own
+	// — incidental, not the mechanism; the subtraction is what is pinned.
+	d.suspendTick()
 	set, failed := ShopCheck(d.govInputs(cfg))
 	// A store that could not be read is a condition set that is PARTIAL,
 	// never one that is empty. Off a timer that is a line in the log, not a

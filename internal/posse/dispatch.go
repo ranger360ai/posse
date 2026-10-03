@@ -231,6 +231,13 @@ type Dispatcher struct {
 	// see and the reading two incidents were triaged as hangs for want of.
 	clockWall time.Time
 	clockMono time.Duration
+	// suspends is the witness's LEDGER of the gaps it has already named
+	// (ADR 0064 D2): the pairs suspendedSince sums to answer "how much of
+	// this window was the box asleep", which is what makes a wall-clock
+	// shop condition a statement about awake time. Bounded by
+	// suspendLedgerCap; written and read under mu, by the witness's own
+	// goroutine and by the pulse's.
+	suspends []suspendSpan
 
 	// lastWrite is when this Dispatcher last wrote a line, guarded by outMu
 	// because every writer already holds it. See LastWrite and watchdog.go.

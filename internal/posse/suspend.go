@@ -97,17 +97,37 @@ package posse
 // clock being SET — ntpd, or an operator — and a one-second correction is not
 // a suspend. A suspend worth a line is minutes.
 //
-// WHAT IT DOES NOT DO. It does not report a BACKWARD step, which would make
-// every wall-clock reading in the shop read fresher than it is; that is a
-// real gap and a different line. It does not shorten the pass this loop is
-// waiting out: the next-pass timer is monotonic too, so a wake lands with
-// whatever was left of it still to run — 2m50s of a 3m interval on the night
-// this was filed, against the 5h30m it explains, and ADR 0028 §1's rule that
-// a late wake costs latency and never correctness. And it cannot name the
-// suspend to a surface outside this process: `guard-blind` and `loop-mute`
-// are built in govern.go from files, by any process that asks, and teaching
-// the governance set to subtract a suspend is a change to the shop's own
-// condition contract rather than to this loop's log.
+// WHAT IT DOES NOT DO. It does not shorten the pass this loop is waiting
+// out: the next-pass timer is monotonic too, so a wake lands with whatever
+// was left of it still to run — 2m50s of a 3m interval on the night this was
+// filed, against the 5h30m it explains, and ADR 0028 §1's rule that a late
+// wake costs latency and never correctness.
+//
+// WHAT IT DOES NOW THAT IT DID NOT (ADR 0064, ranger-base-m154u). Two
+// clauses above were written as declines and have been re-ruled, both for
+// the same reason: the reading existed and the surfaces that needed it could
+// not reach it.
+//
+//   - It could not name the suspend to a surface outside this goroutine —
+//     "`guard-blind` and `loop-mute` are built in govern.go from files, by
+//     any process that asks, and teaching the governance set to subtract a
+//     suspend is a change to the shop's own condition contract rather than
+//     to this loop's log". That change is now made, deliberately and in one
+//     place: ADR 0064 D1 rules that a wall-clock shop condition is a
+//     statement about AWAKE time, so this file keeps a small ledger of the
+//     suspends it witnessed and answers suspendedSince for a window. The
+//     condition set subtracts it in the WATCH process only, through
+//     GovInputs.Suspended (D2) — `posse status` and the cockpit are separate
+//     processes with no witness and keep the wall reading (D4).
+//   - It was silent on a BACKWARD step — "that is a real gap and a different
+//     line". It is that line now (D6), and nothing more: a backward step is
+//     REPORTED and never corrected, and never enters the ledger. A forward
+//     gap leaves a hole in wall time that no timestamp falls into, so
+//     overlap-with-a-window is exact; a backward step makes two frames
+//     overlap for its own length, and a timestamp inside the overlap cannot
+//     be told pre-step from post-step. The hazard is bounded by the step and
+//     self-heals as the overlap passes. Zero backward steps in the record;
+//     the first line this prints is the measurement that reopens the clause.
 //
 // It writes through quietf, like every other clock here and for the reason
 // under LastWrite (dispatch.go): a line from a goroutine of its own is not
@@ -139,6 +159,35 @@ const SuspendFloor = 30 * time.Second
 // in which the log holds a five-hour gap and no reason for it is this
 // number, and on the armed loop the base interval would make it 3m.
 const SuspendTick = 30 * time.Second
+
+// suspendLedgerCap bounds the ledger of witnessed suspends (ADR 0064 D2):
+// past it the OLDEST pair is dropped, which is the one no window can still
+// reach.
+//
+// Sized from the rate, MEASURED 2026-10-03 on this box over `pmset -g log`'s
+// whole retention (2026-09-26 → 10-02, six days): 1127 sleeps, 751 of them at
+// or over SuspendFloor, 319 over ten minutes — so about 125 pairs a day at
+// this box's duty cycle, and the witness cannot record faster than one per
+// SuspendTick because two sleeps inside one tick arrive as one gap. Against
+// that, the LONGEST window anything asks about is `WatchLogStaleAfter` at its
+// cap (85m at this box's arm) or `plan_guard_blind_max` (10m default), both
+// far under a day. 256 is therefore about two days of pairs and twenty times
+// the longest window's worth, at 32 bytes each.
+//
+//	pmset -g log | grep -c 'Entering Sleep'
+//	pmset -g log | grep 'Entering Sleep' | grep -oE '[0-9]+ secs' | awk '$1>=30' | wc -l
+const suspendLedgerCap = 256
+
+// suspendSpan is one witnessed suspend: the box came back at back having
+// been gone for slept, so the hole it left in wall time is the interval
+// [back-slept, back]. Two spans cannot overlap — a span's start is
+// the wall reading of the tick BEFORE the one that recorded it, which is at
+// or after the previous span's back — so summing overlaps double-counts
+// nothing.
+type suspendSpan struct {
+	back  time.Time
+	slept time.Duration
+}
 
 // suspendEvery is the witness's cadence: SuspendTick, or the caller's own
 // interval when that is shorter, so a fixture running a 20ms loop is not
@@ -194,10 +243,86 @@ func (d *Dispatcher) suspendTick() {
 	wallGap := time.Duration(wall.UnixNano() - prevWall.UnixNano())
 	monoGap := mono - prevMono
 	slept := wallGap - monoGap
+	if slept <= -SuspendFloor {
+		// The same reading with the sign flipped: the wall clock was SET
+		// BACK by this much (ADR 0064 D6). Reported, never corrected, and
+		// never written to the ledger — see this file's head for why the
+		// correction is not computable. -slept is exactly the step, because
+		// a clock set back by S over an interval in which mono really moved
+		// m leaves wallGap = m - S.
+		d.quietf("%s\n", ClockSetBackLine(-slept, monoGap, wallGap, wall))
+		return
+	}
 	if slept < SuspendFloor {
 		return
 	}
+	// The ledger before the line, so a reader of the pair never sees a
+	// SUSPENDED line the window sum does not know about.
+	d.mu.Lock()
+	d.suspends = append(d.suspends, suspendSpan{back: wall, slept: slept})
+	if n := len(d.suspends); n > suspendLedgerCap {
+		// Overlapping copy in place, so the backing array stays the cap's
+		// size rather than creeping forward one header at a time.
+		d.suspends = append(d.suspends[:0], d.suspends[n-suspendLedgerCap:]...)
+	}
+	d.mu.Unlock()
 	d.quietf("%s\n", SuspendLine(slept, monoGap, wallGap, wall))
+}
+
+// suspendedSince is GovInputs.Suspended's answer (ADR 0064 D2): how much of
+// the window from since to now THIS process witnessed the box suspended,
+// summed over the ledger as each span's overlap with [since, now].
+//
+// Two properties the caller leans on. The result never exceeds now-since,
+// because every overlap is clipped to both ends — so a caller subtracting it
+// from an age it measured over the same window cannot go negative. And it is
+// exact rather than an estimate: a forward gap is wall time no timestamp
+// falls into, and the spans are disjoint (see suspendSpan).
+//
+// now comes from the witness's own pair seam and never from d.now(), for the
+// reason the whole file reads that seam: the dispatcher's clock is aged by
+// hours and run at 10000x by the fixtures in this package, and the ledger is
+// written in the pair's frame. The clip against now is close to inert either
+// way — a span's back is the wall reading of a tick that has already
+// happened — and it is here so the sum is one frame end to end.
+//
+// A zero since is no window rather than all of time, and answers zero: the
+// caller with no timestamp to measure from (an absent file) has no age to
+// subtract from either.
+func (d *Dispatcher) suspendedSince(since time.Time) time.Duration {
+	if since.IsZero() {
+		return 0
+	}
+	now, _ := d.clocks()
+	// UnixNano, not Sub — see this file's head, and here for a sharper
+	// reason than there. This function mixes two kinds of instant: the
+	// LEDGER's came from time.Now() through the pair seam and carry a
+	// monotonic reading, while the WINDOW's come from outside this process
+	// (a file mtime) and do not. So `now.Sub(mtime)` is a true wall
+	// difference and reads like a licence, while a Sub between two ledger
+	// instants, or between the ledger and now, is a MONOTONIC difference
+	// that excludes every suspend after the span being measured — the
+	// answer comes back short by the next sleep, on the box that sleeps. No
+	// fixture can see it (a hand-driven clock's Times carry no monotonic
+	// reading at all), so it is pinned at the source.
+	sinceNS, nowNS := since.UnixNano(), now.UnixNano()
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	var total time.Duration
+	for _, sp := range d.suspends {
+		backNS := sp.back.UnixNano()
+		lo, hi := backNS-int64(sp.slept), backNS
+		if sinceNS > lo {
+			lo = sinceNS
+		}
+		if nowNS < hi {
+			hi = nowNS
+		}
+		if hi > lo {
+			total += time.Duration(hi - lo)
+		}
+	}
+	return total
 }
 
 // SuspendLine is the finding, rendered. It names how long the box was gone,
@@ -218,4 +343,34 @@ func SuspendLine(slept, mono, wall time.Duration, back time.Time) string {
 		"waiting out (ranger-base-sqxo1)",
 		BlindFor(slept.Round(time.Second)), back.Format("15:04:05"),
 		BlindFor(mono.Round(time.Second)), BlindFor(wall.Round(time.Second)))
+}
+
+// ClockSetBackLine is the backward half of the same reading, and the whole of
+// what ADR 0064 D6 decided to do about it: say it, once, and correct nothing.
+//
+// It is the inverse of SuspendLine's three readings. A forward gap makes
+// every wall-clock reading in the shop name a window and not a fault; a
+// backward step makes every one of them read FRESHER than it is by the step,
+// so `loop-mute` and `guard-blind` go quiet over a real outage for that long
+// and the shop says nothing is wrong when something may be. The line says
+// which way it went and for how long, because that is the whole of what is
+// knowable: inside the overlap the step created, two wall frames are live at
+// once and a timestamp in it cannot be told pre-step from post-step, so there
+// is no correction to apply (this file's head; D6's rejected alternative).
+//
+// The step is in the shop's own units. The pair it is a difference of is
+// rendered as signed Durations rather than through BlindFor, which floors at
+// zero: across a backward step the wall gap is usually negative and may be
+// positive (a step of 35s inside a 45s tick leaves it at +10s), while the
+// monotonic gap never is — and a pair printed as "0s" would be the
+// one number on the line that is not checkable.
+func ClockSetBackLine(step, mono, wall time.Duration, at time.Time) string {
+	return fmt.Sprintf("◷ the wall clock was SET BACK by %s at %s — every wall-clock reading in this shop now names a "+
+		"time %s FRESHER than it is, and will until that much wall time has passed: `loop-mute` and `guard-blind` "+
+		"are quiet over that window whether or not anything is wrong. NOTHING corrects it — inside the overlap a "+
+		"step makes, a timestamp cannot be told pre-step from post-step, so the step is reportable and the "+
+		"correction is not computable (ADR 0064 D6). The box was not suspended; this is a clock being set "+
+		"(%s of monotonic across %s of wall)",
+		BlindFor(step.Round(time.Second)), at.Format("15:04:05"), BlindFor(step.Round(time.Second)),
+		mono.Round(time.Second), wall.Round(time.Second))
 }
