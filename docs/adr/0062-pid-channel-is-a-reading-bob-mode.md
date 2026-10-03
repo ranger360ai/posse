@@ -441,10 +441,19 @@ ranger-base-se81d):
    by name — naming the path it would have written, that the directory is
    the CLI's GLOBAL modes root and not a workspace, and both remedies
    (`--dir`, `default_dir`) — and creates neither the file nor `.bob/` on
-   the way. `$HOME/.bobbish` and an ordinary dir under the home do not
-   refuse, and a runtime with no persona-mode channel does not refuse at
-   `$HOME` either, because it writes nothing there to refuse.
-   (ranger-base-se81d; the pin is
+   the way. **Including when a symlink inside `$HOME/.bob` would carry the
+   file out of the root**: the containment asks both where the write lands
+   and how the path is spelled, because the spelling is what bob's glob
+   matches and a symlink at `~/.bob/plugins/posse` makes the two differ
+   (ranger-base-ie68e F1; before it the guard returned nil there and the PID
+   was written, readable at the in-root path all the same — so the sentence
+   this row used to carry, "anything under `$HOME/.bob` refuses", was
+   MEASURED FALSE from the day it landed). `$HOME/.bobbish` and an ordinary dir under the
+   home do not refuse, and a runtime with no persona-mode channel does not
+   refuse at `$HOME` either, because it writes nothing there to refuse.
+   (ranger-base-se81d, ranger-base-ie68e; the pin is
    `TestQAPersonaModeRefusesAWriteIntoTheCLIsGlobalConfigRoot`, and it reds
-   on all three of: the guard call deleted, `underDir` downgraded to a
-   string prefix, and `Dir` moved out from under `GlobalRoot`.)
+   on all six of: the guard call deleted, `underDir` downgraded to a
+   string prefix, `Dir` moved out from under `GlobalRoot`, the spelling arm
+   deleted, the root left unresolved for the spelling test, and the spelling
+   test resolving the leaf too.)

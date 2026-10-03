@@ -1479,7 +1479,17 @@ func absResolve(p string) string {
 // underDir reports whether p is dir or inside it, compared as the sandbox
 // sees them — /tmp and its /private/tmp real path are the same directory.
 func underDir(dir, p string) bool {
-	rel, err := filepath.Rel(absResolve(dir), absResolve(p))
+	return insideDir(absResolve(dir), absResolve(p))
+}
+
+// insideDir is underDir's comparison with no resolution of its own: both
+// sides arrive resolved as far as the caller means them to be. Split out
+// because one caller needs the two sides resolved DIFFERENTLY — a
+// containment rule about a path some other program will read has to compare
+// the spelling that program matches, not the inode the write lands on
+// (personamode.go's refusePersonaModeGlobalWrite, ranger-base-ie68e).
+func insideDir(dir, p string) bool {
+	rel, err := filepath.Rel(dir, p)
 	if err != nil {
 		return false
 	}

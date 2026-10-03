@@ -527,6 +527,43 @@ func TestQAPersonaModeRefusesAWriteIntoTheCLIsGlobalConfigRoot(t *testing.T) {
 		t.Errorf("a session dir whose name merely starts like the CLI's config root was refused: %v", err)
 	}
 
+	// THE SYMLINK OUT OF THE ROOT (ranger-base-ie68e F1). `~/.bob/plugins/
+	// posse` is a symlink to a directory outside the root, so the file
+	// RESOLVES out of `~/.bob` while the path bob's glob matches is still
+	// `~/.bob/plugins/posse/custom_modes.yaml` — and the bytes are readable
+	// at both. Resolution is right for the ROOT side (the `.bobbish` arm
+	// above is why) and wrong for the leaf: the harm is the spelling the
+	// CLI reads, not the inode the write lands on. This one needs the
+	// operator to have put a symlink there, so it is hostile input rather
+	// than the accident path ranger-base-4mrmc found — the refusal is the
+	// same refusal either way, and before this arm the guard returned nil
+	// here and the whole PID landed with no word said.
+	if err := os.MkdirAll(filepath.Join(home, ".bob", "plugins"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(home, "elsewhere")
+	if err := os.MkdirAll(outside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(home, ".bob", "plugins", "posse")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.RenderPersonaModeFor(ag, rt, home); err == nil {
+		t.Errorf("a symlink at %s carried the write out of the root and the PID was written anyway", link)
+	} else {
+		for _, want := range []string{"GLOBAL", "--dir", "default_dir", "~/.bob"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("the symlinked-out refusal does not mention %q:\n%v", want, err)
+			}
+		}
+	}
+	// Nothing landed where the symlink pointed either, which is the half a
+	// containment test on the resolved path alone would still have allowed.
+	if _, serr := os.Stat(filepath.Join(outside, rt.PersonaMode.File)); serr == nil {
+		t.Errorf("the refusal still wrote %s through the symlink", filepath.Join(outside, rt.PersonaMode.File))
+	}
+
 	// THE CONTROL, and without it every green above is consistent with a
 	// writer that refuses everything once $HOME is set: an ordinary session
 	// dir UNDER the home — `default_dir: ~/work`, a worktree beneath

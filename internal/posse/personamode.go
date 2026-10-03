@@ -253,10 +253,18 @@ func (a *App) RenderPersonaModeFor(ag *AgentFile, rt *Runtime, dir string) (stri
 	path := rt.PersonaModeFile(dir)
 	// BEFORE the clobber read, and the order is the rule's correctness.
 	// Under the operator's CLI home the clobber check answers the wrong
-	// question twice: on the operator's own file it refuses with "move it
-	// aside", which is the one remedy that would LET the write happen; and
-	// on a file an older posse put there it recognises its own marker and
-	// waves the write through. Neither reading is about where the path is.
+	// question: on the operator's own file at posse's path it refuses with
+	// "move it aside", which is the one remedy that would LET the write
+	// happen, so the seat is sent after the wrong thing. Nothing the clobber
+	// check has to say is about where the path IS.
+	//
+	// NOT a second reason, though this comment used to give one: a
+	// posse-MARKED file here is not "waved through" by the other order
+	// either. The clobber check recognising its own marker returns nil, and
+	// nil runs the guard on the next line — so the refusal is the GLOBAL one
+	// both ways (MEASURED 2026-10-03, ranger-base-ie68e F2). That is why the
+	// pin asserts the MESSAGE and not the order:
+	// TestQAPersonaModeUnderTheGlobalRootRefusesAsAGlobalWriteNotAsAClobber.
 	if err := refusePersonaModeGlobalWrite(ag, rt, dir, os.Getenv("HOME")); err != nil {
 		return "", err
 	}
@@ -306,18 +314,37 @@ func (a *App) RenderPersonaModeFor(ag *AgentFile, rt *Runtime, dir string) (stri
 // before the fact and found nothing had landed yet, so there was never
 // anything to sweep.
 //
-// CONTAINMENT, deliberately wider than the glob, and `underDir`'s
-// containment rather than a prefix test. The glob is
-// `<home>/<GlobalRoot>/plugins/*/<File>`; this refuses anywhere under
+// CONTAINMENT, deliberately wider than the glob, and asked TWICE. The glob
+// is `<home>/<GlobalRoot>/plugins/*/<File>`; this refuses anywhere under
 // `<home>/<GlobalRoot>`. The extra ground is writes that are not read as
 // modes at all, and posse has no business under that root either way — a
 // predicate that tracked the glob exactly would have to be re-derived every
 // time the CLI widens what it reads, and would read green in the window
-// before anybody noticed. seatbelt.go's `underDir` is the comparison
-// because it is the one in this package that resolves symlinks over the
-// deepest existing ancestor: the file does not exist yet (that is the
-// point), and on darwin a textual prefix test reads a `/tmp` or `/var` home
-// as outside itself.
+// before anybody noticed.
+//
+// The two questions are WHERE THE WRITE LANDS and HOW THE PATH IS SPELLED,
+// and one symlink puts one of them inside the root while the other is
+// outside it (ranger-base-ie68e F1, MEASURED 2026-10-03). Both are asked,
+// either one refuses, and neither subsumes the other:
+//
+//   - seatbelt.go's `underDir` resolves both sides over the deepest existing
+//     ancestor, which answers where the bytes land. The ROOT side needs that
+//     resolution — on darwin a textual prefix test reads a `/tmp` or `/var`
+//     home as outside itself — and so does a session dir that is a symlink
+//     INTO the root, which no reading of its spelling reveals.
+//   - `insideDir` over the SPELLING answers which path bob's glob matches,
+//     and that is the harm this guard is named for. Resolving the leaf loses
+//     it: with `<home>/<GlobalRoot>/plugins/posse` a symlink to a directory
+//     elsewhere, the file resolves OUT of the root, `underDir` alone answers
+//     nil, and the PID is written — readable at the in-root path all the
+//     same, because that is what a symlink is. The spelling is anchored at
+//     the resolved SESSION DIR and joined lexically from there, so the one
+//     path posse resolves is the one that existed before the launch and
+//     nothing below it can carry the file out of the root.
+//
+// The clobber check catches a symlink AT the file (`Lstat` before its read)
+// and looks at no ancestor at all, which is why the ancestor was the half
+// nothing refused.
 func refusePersonaModeGlobalWrite(ag *AgentFile, rt *Runtime, dir, home string) error {
 	c := rt.PersonaMode
 	if c == nil || c.GlobalRoot == "" || home == "" {
@@ -329,7 +356,14 @@ func refusePersonaModeGlobalWrite(ag *AgentFile, rt *Runtime, dir, home string) 
 	}
 	file := rt.PersonaModeFile(dir)
 	root := filepath.Join(home, filepath.FromSlash(c.GlobalRoot))
-	if file == "" || !underDir(root, file) {
+	if file == "" {
+		return nil
+	}
+	// The spelling: the same arithmetic PersonaModeFile does, over a
+	// session dir that is resolved (it exists, and a symlinked one is still
+	// inside whatever it points at) and nothing below it that is.
+	spelled := rt.PersonaModeFile(absResolve(dir))
+	if !underDir(root, file) && !insideDir(absResolve(root), spelled) {
 		return nil
 	}
 	return Die("%s: this session's directory is %s, so %s's mode file would be written to %s — which is under %s, the directory %s reads its GLOBAL modes from, not a workspace at all. That PID would be a mode in every %s session on this box, in every workspace, and would outlive this seat. ADR 0062 D1 puts this channel in the SESSION tree and rejected a write under the CLI home by name. Give the session a directory of its own (`--dir <path>`), or point `default_dir` at one",
