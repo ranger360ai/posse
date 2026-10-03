@@ -431,12 +431,22 @@ func TestCockpitDLaunchesOverTheLoadGuard(t *testing.T) {
 	if session == "" || !b.HasSession(session) {
 		t.Fatalf("no session behind a `d` that returned none: %q", session)
 	}
-	warn := warnBuf(t, b).String()
-	if !strings.Contains(warn, "load guard") || !strings.Contains(warn, "263.00") {
-		t.Errorf("`d` over the guard must still say what it launched into:\n%s", warn)
+	// On the LAUNCHER's stream, not the backend's (ranger-base-lcode): a
+	// dispatched launch says its own lines through NewSessionOpts.Warn, and
+	// for `d` that is Progress — the cockpit's status line — falling back to
+	// Out, which is what this dispatcher has. The claim is unchanged; the
+	// stream the line is read off is the whole of that bead.
+	said := dispatcherOut(d)
+	if !strings.Contains(said, "load guard") || !strings.Contains(said, "263.00") {
+		t.Errorf("`d` over the guard must still say what it launched into:\n%s", said)
 	}
-	if strings.Contains(warn, "refusing to launch") {
-		t.Errorf("`d` must not print the fleet's refusal:\n%s", warn)
+	if strings.Contains(said, "refusing to launch") {
+		t.Errorf("`d` must not print the fleet's refusal:\n%s", said)
+	}
+	// And NOT on the backend's writer, which is os.Stderr in production —
+	// /dev/null under the loop, and garbage on a raw-mode cockpit frame.
+	if warn := warnBuf(t, b).String(); strings.Contains(warn, "load guard") {
+		t.Errorf("the guard's line went to the backend's writer instead of the launcher's:\n%s", warn)
 	}
 	// The session `d` made is still the FLEET's: dispatch has to be able to
 	// judge, reap and merge it. Crew here would take it out of the pass's
