@@ -2437,6 +2437,9 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 	// yet, so the unpointed arm holds here and fires at the two sites past
 	// routing below (autoreap.go).
 	d.autoReapPass(beforeRouting)
+	if d.stopHere("the reap sweep") {
+		return 0, nil
+	}
 
 	// And land what nobody watched close (landsweep.go). It runs next to the
 	// reap and for the same reason — a close this instance never judged is
@@ -2445,6 +2448,9 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 	// gone. Read-only until it finds a closed bead's unlanded branch, so it
 	// costs a `git worktree list` per repo on the ordinary pass.
 	d.landClosedTrees(dirFilter)
+	if d.stopHere("the land sweep") {
+		return 0, nil
+	}
 
 	// Before anything else, take one shared reading for the pass. Its verdict
 	// is applied later, after each bead's runtime is known; the pass itself
@@ -2452,6 +2458,9 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 	d.planGuard()
 	d.noteGuardStreak()
 	d.credentialExpiry()
+	if d.stopHere("the plan guard and the credential read") {
+		return 0, nil
+	}
 
 	// verify-after (ADR 0006 §3) before ready work is gathered, so a verify
 	// bead filed by this pass is dispatched by this pass. --dry-run shows
@@ -2468,6 +2477,9 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 			dirs = []string{dirFilter}
 		}
 		d.App.VerifyAfter(d.Bd, dirs, d.Out, d.errw())
+	}
+	if d.stopHere("verify-after") {
+		return 0, nil
 	}
 
 	// ci-watch (ranger-base-x9e34, ciwatch.go): is the gate red on the
@@ -2495,6 +2507,9 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 		}
 		d.App.CIWatch(d.Bd, dirs, d.Out, d.errw())
 	}
+	if d.stopHere("the CI watch") {
+		return 0, nil
+	}
 
 	// The bead-loss alarm (rangerhq-fuom): bd's auto-import can delete rows
 	// and logs nothing when it does, so a pass says out loud what the git
@@ -2507,6 +2522,9 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 		}
 		d.App.WarnLostBeads(d.Bd, dirs, d.errw())
 	}
+	if d.stopHere("the lost-bead sweep") {
+		return 0, nil
+	}
 
 	// The pause decline itself (ADR 0029 §3: "one read under the fire-loop's
 	// entry"), read at the top of the pass and acted on here — the fire
@@ -2515,6 +2533,15 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 	// and the next pass reads the file again. --dry-run has already said
 	// what a real pass would do here, and goes on to show the routing.
 	if paused.Present && !d.DryRun {
+		return 0, nil
+	}
+	// The last boundary before the pass spends anything: `bd ready` per dir
+	// and then the fire loop, which creates sessions and prompts them. A
+	// loop that is stopping must not hire — the session would be launched,
+	// claimed and prompted by a process on its way out, with nobody left to
+	// gather it. The refill arm has refused on this reading since ADR 0028
+	// §1 (judge); the FIRE pass never asked.
+	if d.stopHere("the pre-routing epilogue, before any hire") {
 		return 0, nil
 	}
 
@@ -3365,6 +3392,59 @@ func (d *Dispatcher) fire(is RepoIssue, persona, session, runtime, tier, tierWhy
 // stopping reports that the watch loop this Run belongs to has been asked to
 // end (SIGTERM/SIGINT). A one-shot Run has no loop and is never stopping.
 func (d *Dispatcher) stopping() bool { return d.stopCtx != nil && d.stopCtx.Err() != nil }
+
+// stopHere is the same question asked at a STAGE BOUNDARY of a pass's
+// pre-routing epilogue, with the answer said out loud (ranger-base-sqxo1).
+//
+// MEASURED 2026-10-02/03, the second occurrence on this bead. Watch pid 49599
+// printed "── pass 7 · 23:56:42" and the reap sweep's two "kept" lines, and
+// then nothing: no land-sweep line, no verify-after filing, no launch-cap
+// line, no "N prompt(s) in flight, gathering" — though the loop was carrying
+// a leg and would have printed that. The operator sent TERM, waited three
+// minutes, sent INT, and both looked ignored; the box was shut down at 00:07
+// (`last reboot`), so the pass held for AT LEAST 10m18s with its context
+// already cancelled. That the cancel arrived is not in doubt: the carried
+// leg's wait goroutine took gather's stop exit and printed "◷ ranger-base-…
+// watch loop stopping — claim kept, not judged this pass", which is the last
+// line in the log.
+//
+// The cause is that a pass read ctx in exactly TWO places — the gather
+// (ranger-base-e9d9) and the post-pass wait (watch.go) — and the epilogue
+// between them read it nowhere. That epilogue is where a pass spends its
+// forks: the reap sweep, the land sweep (a `git worktree list` per configured
+// repo and more where it finds a closed bead's unlanded branch), the plan
+// read, the credential read, verify-after, ci-watch, the lost-bead sweep and
+// then `bd ready` per dir. Every child is individually bounded — BdTimeout,
+// HerdrControlTimeout, the herdr wait's own declared timeout — and the SUM of
+// four repos' worth of them is not: on a box at loadavg 68-95 with 6.1G of
+// swap, which is what the guard clock recorded all evening, each fork costs
+// seconds instead of milliseconds and the stage costs minutes. The stop was
+// honoured eventually, after the whole epilogue, which from the operator's
+// chair is not honoured at all.
+//
+// So the stop is now read at every boundary between those stages. What that
+// buys is exact and worth stating as a bound rather than as a fix: the
+// operator's TERM is honoured within ONE stage instead of all eight, and a
+// stage is bounded by its own children's deadlines times their count. It does
+// not make any single stage interruptible — that means threading a context
+// through every bd and git call site, which is a different change — and this
+// doc is the place that says so rather than leaving the next reader to
+// discover the residual by sending a signal into it.
+//
+// It prints through printf and not quietf: this is the PASS speaking, at a
+// point it reached, which is exactly what LastWrite is a reading of.
+//
+// A one-shot Run has a nil stopCtx and therefore no stop to honour, so every
+// call here is false and `posse dispatch` without --watch is byte-identical
+// to what it was. That is stopping()'s own rule and the fail-closed
+// direction: "no loop to stop" is never "interrupt me".
+func (d *Dispatcher) stopHere(stage string) bool {
+	if !d.stopping() {
+		return false
+	}
+	d.printf("◷ stop honoured after %s — the rest of this pass is skipped; anything in flight keeps its claim (ranger-base-sqxo1)\n", stage)
+	return true
+}
 
 // stopped is the same question as a channel, for a select that is already
 // blocking on something else. A one-shot Run's nil context yields a nil
