@@ -53,9 +53,19 @@ Use one resolver for credential directory and item identity. Secure-storage
 config-dir presence takes precedence over ordinary config-dir; present-empty
 has meaning. The default item applies only when no variable names a directory,
 not whenever the path happens to equal the default. Otherwise append the
-first eight hexadecimal digits of SHA-256 over the named directory string.
-Do not clean the string before hashing. Posse does not add Unicode NFC
-normalization; non-ASCII names retain the documented diagnostic limitation.
+first eight hexadecimal digits of SHA-256 over the named directory string
+in Unicode NFC, which is the runtime's own form: it normalizes the resolved
+string before it hashes. Do not otherwise clean the string before hashing —
+no path cleaning, no slash trimming, no case folding. NFC is applied to the
+item NAME only; the directory posse opens, walls and prints keeps the spelling
+it was handed (amended 2026-10-03, ranger-base-4ch00: this page declined NFC
+while Go's standard library had none and the price of being wrong was a
+diagnostic note; x/text entered the binary for the trust key under
+ranger-base-d88rp, after which a decomposed non-ASCII directory still derived
+an item the runtime never wrote — MEASURED `-16eb4464` where the runtime
+derives `-0873cca0` — for no dependency saved and zero bytes of binary. The
+decline was a price, never a design, and is reversed; the "as spelled" note
+retires with it. Pricing in docs/notes.d/ranger-base-4ch00.md).
 A generic password is identified by service **and account**, so the read
 names both: the account is the runtime's own rule — `USER`, else the OS
 username, else the literal `claude-code-user` when the value falls outside
@@ -138,11 +148,18 @@ the name in no set it returns the refresh-verb sentence, never the
 environment's value. ADR 0039 V6–V8 carry the probe-side rows.
 
 Zero runtime/config/state/actor/flag removals. ASSUMED: rare ACL-as-44 and
-split-store cases, non-ASCII config-dir behavior beyond the recorded probes,
+split-store cases, non-ASCII config-dir behavior beyond the recorded probes
+(the item name is exact since ranger-base-4ch00; the credentials FILE is
+still opened at the spelled directory while the runtime resolves its own
+directory in NFC, a difference only a normalization-preserving filesystem
+can show, and no such box has been measured — darwin's APFS is not one),
 and reader-maintenance savings. Rejected: doing nothing to the record;
 copying rotating tokens; a second OAuth writer; literal runtime-null fallback
 in the meter adapter; mint-as-meter without entitlement evidence; autonomous
-owner refresh; alarms without a measured failure of existing diagnostics.
+owner refresh; alarms without a measured failure of existing diagnostics;
+keeping the as-spelled item hash once NFC was already linked (2026-10-03,
+ranger-base-4ch00 — a diagnostic note is a confession, and a confession kept
+when the cure is one call is not restraint).
 If ownership were removed, concurrent refresh/authentication could break;
 this simplification preserves it.
 
