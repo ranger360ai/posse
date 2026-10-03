@@ -146,6 +146,72 @@ func TestQATheSelfTestsDiskArmsDoNotContradictEachOtherWhenAForkFails(t *testing
 // Heredoc BODIES are skipped: they are data the script writes out, not its own
 // assertion path.
 //
+// THE SUBJECT READER, and why it is not a third role (ranger-base-mzzs1,
+// deciding what ranger-base-vf3pf found). Sometimes a tool ON THE LIST is the
+// only thing that can read the subject at all. scripts/verify-herdr-bob-rules.sh
+// asks two questions about the CONTENT of etc/herdr/herdr-bob/rules.json —
+// does it parse and how many rules has it, and does any pattern carry a
+// multibyte character inside a bracket expression — and bash has no JSON
+// parser. The coarse bash answer (any `[`-run in the raw bytes holding a
+// non-ASCII byte) reds on the very override whose alternations legitimately
+// carry one. So that `jq` cannot be taken out of the arm: it IS the
+// measurement, the way running the thing under test is.
+//
+// A third role was considered and REFUSED. Spelled honestly it would read
+// "the tool is the only reader of the subject, its status is read against an
+// apparatus check, and an apparatus status exits rather than reporting a
+// verdict" — and not one of those three clauses can be decided from a line:
+//
+//	"the only reader of the subject" is a judgement about the whole script,
+//	and the two shapes are textually identical anyway. `jq -e '.x' sub.json`
+//	reads the subject; `grep -q x "$tmp/m3.log"` reads output the script
+//	captured three lines earlier and is the canonical violation. Both are a
+//	listed tool with a file path.
+//
+//	"its status is read against an apparatus check" is dataflow across lines,
+//	not a property of one.
+//
+//	Keying the role on a HELPER NAME instead — excuse the fork when
+//	`apparatus` is in the arm — is sfUnswept with extra steps. MESSAGE and
+//	FIXTURE are safe because they are STRUCTURALLY bounded: a message's
+//	verdict is already decided, so a dead matcher there can only blank an
+//	explanation, and a dead `cat` writing a rig fails the whole rig loudly.
+//	A subject reader is bounded by nothing — its status is the verdict — so a
+//	name-keyed role would excuse exactly the fork this pin exists to catch,
+//	for any script that typed the name.
+//
+// THE ROUTE, which is the answer instead. Put the reader in a rig the script
+// WRITES and RUNS — a `cat` heredoc, whose body this scan skips — read the
+// rig's exit status, and distinguish an apparatus status (126/127 not exec'd,
+// >= 128 signalled) from a verdict, EXITING loudly on the former rather than
+// printing a FAIL. That satisfies the invariant the pin is a proxy for: a
+// reader that never ran cannot report the property false. The scan stops
+// seeing the lines, which is the cost, so the comment at the rig MUST say
+// that the route is deliberate and point at this section by name. That is a
+// requirement on the script, not on this file, and it is the only part of the
+// route nothing mechanical can check: ranger-base-vf3pf's rig carried such a
+// comment, and whatever re-lands it (ranger-base-rsgca) inherits the
+// requirement along with the 16 arms.
+//
+// Read the tool list as a proxy and not as the invariant, because the tree
+// already shows the difference. verify-id-recycle.sh, verify-self-close.sh
+// and verify-prune-guard.sh each read herdr's status JSON with `python3` and
+// each spell the apparatus-vs-verdict distinction out (rc 2 means python3 did
+// not answer). They are the same subject-reader shape, with no rig and no
+// heredoc, and they pass this scan for one reason only: `python3` is not on
+// sfMatcher's list. Their safety comes from the apparatus check, not from the
+// scan — so never "fix" a flagged reader by reaching for an unlisted tool,
+// which is the one route that leaves no comment behind.
+//
+// The route is meant to stay rare and it is measurable. MEASURED 2026-10-03:
+// 9 occurrences of a listed tool inside a heredoc body across scripts/, in 5
+// files (queue-cutover.sh 4, shell-syntax.sh 2, test-times.sh 1,
+// verify-codex-pin.sh 1, verify-grok-pin.sh 1) — all of them rigs or fixture
+// data, none of them a subject reader, because vf3pf's landing was reverted
+// off main in 65ee98c4 and re-lands under ranger-base-rsgca. If that number
+// starts climbing in verify-*.sh, the route is being used as a dodge and this
+// doctrine is what it is being measured against.
+//
 // Both of those roles are bounded, because ranger-base-u2etb measured three
 // ways they were not (all three green over a planted violation at 3851edc):
 //
@@ -198,64 +264,116 @@ type sfHit struct {
 	role       string // "verdict" (a violation), "message", "fixture", "heredoc"
 }
 
+// sfWalk walks l[from:to] the way the shell lexes it and answers two things
+// about the position `to`: the quote context still OPEN there (0 for none),
+// and whether an unquoted, top-level `;`, `|` or `&` was crossed on the way.
+// Both callers below read one of the two, and they share this walk because the
+// state machine is the hard part: quoting, `$( … )` and backtick nesting, and
+// the fact that a separator or a `(` inside a quoted string is neither.
+//
+// A `$( … )` or a backtick RESETS the quote context, because what is inside it
+// is a command again — that nesting is the shape every legitimate message fork
+// in the tree already has, and it is why a backtick cannot be treated as
+// ordinary text: a backquoted grep inside a double-quoted string —
+//
+//	x="a `grep -q y $f` b"
+//
+// runs a real grep, and blinding on the enclosing quotes alone would hide it.
+func sfWalk(l string, from, to int) (quote byte, sawSep bool) {
+	if to > len(l) {
+		to = len(l)
+	}
+	depth := 0
+	var stack []byte // quote context to restore when a `$( … )` or backtick closes
+	var btick []bool // and which of the two each open frame is
+	for i := from; i < to; i++ {
+		c := l[i]
+		if quote == '\'' {
+			if c == '\'' {
+				quote = 0
+			}
+			continue
+		}
+		if c == '\\' {
+			i++ // escapes one byte, in `"` and unquoted alike
+			continue
+		}
+		switch {
+		case c == '$' && i+1 < to && l[i+1] == '(':
+			stack, btick, quote, depth = append(stack, quote), append(btick, false), 0, depth+1
+			i++
+		case c == '`':
+			// Backticks do not nest without escaping, so the innermost open
+			// frame being a backtick is what closes it.
+			if depth > 0 && btick[depth-1] {
+				depth--
+				quote, stack, btick = stack[depth], stack[:depth], btick[:depth]
+			} else {
+				stack, btick, quote, depth = append(stack, quote), append(btick, true), 0, depth+1
+			}
+		case quote == '"':
+			if c == '"' {
+				quote = 0
+			}
+		case c == '\'' || c == '"':
+			quote = c
+		case c == '(':
+			stack, btick, depth = append(stack, quote), append(btick, false), depth+1
+		case c == ')':
+			if depth > 0 && !btick[depth-1] {
+				depth--
+				quote, stack, btick = stack[depth], stack[:depth], btick[:depth]
+			}
+		case depth == 0 && (c == ';' || c == '|' || c == '&'):
+			sawSep = true
+		}
+	}
+	return quote, sawSep
+}
+
 // sfMessageReaches reports whether a matcher whose match ends at `to` is still
 // inside the argument list of the helper call that starts at `from`. A message
 // role is earned only while the helper's own command is still being written:
 // an unquoted, top-level `;`, `|` or `&` ends it, and a matcher past that
 // decides a verdict of its own. Separators nested inside a `$( … )` or inside
-// a quoted string end nothing — that nesting is the shape every legitimate
-// message fork in the tree already has.
+// a quoted string end nothing.
 //
 // Before ranger-base-u2etb the role test was `startsMessage[0] < loc[1]`
 // alone, so `bad "checking"; if printf … | grep -q foo; then` read as a
 // message for all five helpers, and the same hole was inherited by every
 // `bad … \` continuation line.
 func sfMessageReaches(l string, from, to int) bool {
-	if to > len(l) {
-		to = len(l)
-	}
-	depth := 0
-	quote := byte(0)
-	var stack []byte // quote context to restore when a `$( … )` closes
-	for i := from; i < to; i++ {
-		c := l[i]
-		switch {
-		case quote == '\'':
-			if c == '\'' {
-				quote = 0
-			}
-		case c == '\\':
-			i++ // escapes one byte, in `"` and unquoted alike
-		case quote == '"':
-			switch {
-			case c == '"':
-				quote = 0
-			case c == '$' && i+1 < to && l[i+1] == '(':
-				stack, quote, depth = append(stack, quote), 0, depth+1
-				i++
-			}
-		case c == '\'' || c == '"':
-			quote = c
-		case c == '$' && i+1 < to && l[i+1] == '(':
-			stack, quote, depth = append(stack, quote), 0, depth+1
-			i++
-		case c == '(':
-			stack, depth = append(stack, quote), depth+1
-		case c == ')':
-			if depth > 0 {
-				depth--
-				quote, stack = stack[len(stack)-1], stack[:len(stack)-1]
-			}
-		case depth == 0 && (c == ';' || c == '|' || c == '&'):
-			return false
-		}
-	}
-	return true
+	_, sawSep := sfWalk(l, from, to)
+	return !sawSep
+}
+
+// sfIsText reports whether the tool name starting at `at` sits inside an open
+// '/" string that is not itself inside a `$( … )` or a backtick — so the shell
+// will never run it. It is PROSE: a tool named in a label, a message or a
+// usage line, not a call.
+//
+// This is the `tail=${rest#…}` class one spelling over, found by
+// ranger-base-mzzs1 while sweeping ranger-base-vf3pf's 16 arms:
+//
+//	lbl="BSD grep (/usr/bin/grep) LC_ALL=$loc"
+//
+// read as a VERDICT, because the `(` is the prefix group, `/usr/bin/` matches
+// the absolute-path group and `grep` is the tool. `msg="run (sed) now"` and
+// `echo "uses jq (/usr/bin/jq) here"` are the same shape, all MEASURED
+// 2026-10-03. The fix for a false positive is not optional: it teaches the
+// next reader to route around the scan, and this scan has exactly one route
+// (see THE SUBJECT READER above) that is meant to be taken on purpose.
+func sfIsText(l string, at int) bool {
+	quote, _ := sfWalk(l, 0, at)
+	return quote != 0
 }
 
 // sfQuoted reports whether s ends inside an open '/" string. Same escaping
-// rules as sfMessageReaches: backslash escapes one byte outside a
-// single-quoted context, and closes nothing inside one.
+// rules as sfWalk — backslash escapes one byte outside a single-quoted
+// context, and closes nothing inside one — but deliberately NOT the same
+// walk: this one asks only about the heredoc OPENER probe, where `$( … )` and
+// backtick nesting change no answer in scripts/ as it stands, and widening it
+// is a change to ranger-base-5hv8z's arm rather than to this one.
 func sfQuoted(s string) bool {
 	quote := byte(0)
 	for i := 0; i < len(s); i++ {
@@ -347,7 +465,18 @@ func sfScanLines(file string, lines []string, wholeFile bool) ([]sfHit, *sfHit) 
 		carried := inMessage
 		inMessage = (carried || startsMessage != nil) && continues
 
-		loc := sfMatcher.FindStringSubmatchIndex(l)
+		// EVERY match on the line, not the first one, and the first that is
+		// not prose wins. Before ranger-base-mzzs1 this was a single
+		// FindStringSubmatchIndex, so a tool NAMED in a quoted label earlier
+		// on the line was both a false positive in its own right and a
+		// blindfold over any real verdict after it on the same line.
+		var loc []int
+		for _, m := range sfMatcher.FindAllStringSubmatchIndex(l, -1) {
+			if !sfIsText(l, m[4]) {
+				loc = m
+				break
+			}
+		}
 		if loc == nil {
 			continue
 		}
@@ -543,6 +672,68 @@ func TestQATheForkedMatcherScanSeparatesTheThreeRoles(t *testing.T) {
 	hs := []string{`suspects=$(signal_suspects 505 <<<"$table")`, `if grep -q 'y' "$out"; then`}
 	if got, _ := sfScanLines("probe.sh", hs, true); len(got) != 1 || got[0].line != 2 {
 		t.Errorf("a here-string was read as opening a heredoc body, so everything after it goes unscanned: %+v", got)
+	}
+}
+
+// A tool NAMED in a quoted string is prose, and the scan reads past it to the
+// call that may follow on the same line (ranger-base-mzzs1, found sweeping
+// ranger-base-vf3pf's 16 arms). This is the `tail=${rest#…}` class — a name
+// that is not a call — one spelling over, and the same reason applies: a false
+// positive teaches the next reader to route around the scan, and this scan has
+// exactly one route (THE SUBJECT READER above) that is meant to be taken on
+// purpose.
+//
+// LATENT, and measured to be: 2026-10-03 at HEAD 65ee98c4 the fix changes no
+// classification over scripts/ — 57 occurrences, 38 fixture, 19 message, 0
+// verdict, before and after. The spelling that provoked it was at
+// scripts/verify-herdr-bob-rules.sh:363 in a revision of ranger-base-vf3pf's
+// work that never landed; the script itself is reverted off main (65ee98c4,
+// re-landing under ranger-base-rsgca) and its label reads differently now.
+// So this is here for the NEXT one, exactly as the three spellings listed at
+// sfMatcher are — and it does not loosen the pin: scanned with this walker,
+// all 16 arms ranger-base-vf3pf names in the reverted 763de34f still read as
+// verdicts.
+func TestQATheForkedMatcherScanReadsPastAToolNamedInAString(t *testing.T) {
+	// PROSE. The shapes that read as verdicts before the fix: the `(` is the
+	// prefix group, `/usr/bin/` the absolute-path group, and the tool name
+	// closes the match.
+	for _, l := range []string{
+		`lbl="BSD grep (/usr/bin/grep) LC_ALL=$loc"`,
+		`echo "uses jq (/usr/bin/jq) here"`,
+		`msg="run (sed) now"`,
+		`usage="usage: $0 [--self-test]  (awk, jq)"`,
+	} {
+		if got, _ := sfScanLines("probe.sh", []string{l}, true); len(got) != 0 {
+			t.Errorf("a tool NAMED in a quoted string reads as %q — the fix the scan demands cannot be written: %s", got[0].role, l)
+		}
+	}
+
+	// And the blindfold the single-match scan laid over the rest of the line:
+	// prose first, a real verdict after it, both on one line.
+	for _, l := range []string{
+		`lbl="(/usr/bin/grep)"; if grep -q y "$f"; then`,
+		`msg="run (sed) now"; n=$(printf '%s' "$out" | wc -l)`,
+	} {
+		got, _ := sfScanLines("probe.sh", []string{l}, true)
+		if len(got) != 1 || got[0].role != "verdict" {
+			t.Errorf("a tool named in a string earlier on the line hides the real verdict after it (%+v): %s", got, l)
+		}
+	}
+
+	// The shapes that must NOT be blinded by this, and the reason the rule is
+	// a shell walk and not a quote count. Inside a double-quoted string a
+	// `$( … )` or a BACKTICK is a command again, so the tool in it runs.
+	for _, c := range []struct{ want, line string }{
+		{"verdict", "x=\"a `grep -q y $f` b\""},
+		{"verdict", "if [ -n \"`grep -c x \"$f\"`\" ]; then"},
+		{"verdict", `if [ "$(tr '\n' ' ' < "$tmp/argv")" = "x " ]; then`},
+		{"message", `bad "budget not read: $(printf '%s' "$out" | grep 'package times')"`},
+		{"message", `bad "$arm14" "the holder never acquired: $(tr '\n' '|' <"$tmp/m18.log")"`},
+	} {
+		got, _ := sfScanLines("probe.sh", []string{c.line}, true)
+		if len(got) != 1 || got[0].role != c.want {
+			t.Errorf("a real fork nested inside a quoted string reads as %+v, want one %s: %s", got, c.want, c.line)
+		}
 	}
 }
 
