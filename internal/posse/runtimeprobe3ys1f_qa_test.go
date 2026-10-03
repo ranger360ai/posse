@@ -132,6 +132,12 @@ func TestQAProbeStalledPromptIsReadForTheTurnAndNotCalledUndelivered(t *testing.
 			// the pane — nothing was sent, there is no turn to wait for, and
 			// burning the budget on one would be patience for a prompt that
 			// does not exist.
+			//
+			// The turn is set to RUN here on purpose, which cannot happen in
+			// the field: it is what makes `pass: false` evidence rather than
+			// a tautology. The witness file is there, so a fall-through
+			// would find it and this arm would go green — the verdict can
+			// only stay red by not looking.
 			name: "agent_not_ready still means nothing was sent",
 			code: "agent_not_ready", turn: theTurnRuns,
 			pass: false, read: false,
