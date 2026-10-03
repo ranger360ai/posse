@@ -55,6 +55,15 @@ package posse
 // same code. It is the route with no herdr envelope behind it and no `agent
 // explain` to read the box back with, so it is the one where a hand-back on
 // an unobserved turn costs most.
+//
+// THE OTHER SITE THAT BRANCHES ON THIS CODE is landThePlane (relaunch.go),
+// which carried the same taxonomy error one layer up: a stall read there as
+// "a landing that could not be submitted at all" and the workspace was
+// closed mid-landing-turn. It stops now, on the reasoning above — an
+// unobserved turn is not an absent one — and the two sites spend the
+// verdict differently because what they protect differs: a claim here, a
+// turn running inside a workspace about to be closed there
+// (ranger-base-wjfnp).
 
 import (
 	"fmt"

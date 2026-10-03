@@ -725,7 +725,9 @@ func RecoverCommand(m *HerdrMeta) string {
 // never settled inside the bound — the caller stops there rather than
 // killing an agent that may be mid-commit. A session with no live agent has
 // nothing to land, and a blocked one cannot take a prompt: both are notes,
-// not failures.
+// not failures. A stalled prompt stops the caller too, and does it with an
+// error, because what the caller would otherwise print about it is false
+// (ranger-base-wjfnp, below).
 //
 // The prompt is the caller's, because the two callers are telling the agent
 // two different things about what happens next: a relaunch is a session
@@ -792,6 +794,36 @@ func (b *HerdrBackend) landThePlane(w io.Writer, m *HerdrMeta, timeout time.Dura
 	if _, err := b.H.AgentPrompt(target, prompt, true, remaining()); err != nil {
 		if IsHerdrCode(err, "timeout") {
 			return false, nil // the turn is running; that claim is about the wait, not the prompt
+		}
+		// agent_prompt_stalled is not a landing that failed to be submitted
+		// — it is an UNOBSERVED turn, and putting it on the other side of
+		// this line is the same taxonomy error ranger-base-uauvn fixed one
+		// layer down in dispatch (promptstall.go holds the three codes and
+		// herdr's own words for them). herdr ACCEPTED the submission, so
+		// the landing prompt WAS typed; what is missing is an observation
+		// of the turn starting inside herdr's own 5000ms. On this box that
+		// is a SLOW START far more often than a lost prompt — the
+		// generation that motivated ranger-base-uauvn logged a 1-minute
+		// loadavg of 94 — and the turn being discarded here is the
+		// memory-landing turn: ORDERS.md lessons, the work-in-progress
+		// commit, the bead comments. So it stops, exactly as the timeout
+		// above stops, on the rule that an unobserved turn is not evidence
+		// of an absent one and refusing is the direction that cannot lose
+		// work. Nothing is spent by refusing: the prompt has landed, so the
+		// next relaunch/kill meets the turn at the settle wait above and
+		// waits for it in the ordinary way.
+		//
+		// With its own sentence rather than the caller's, because the
+		// caller's names a flag that cannot help here: herdr owns those
+		// five seconds and 0.9.1 has no lever for them (`agent prompt
+		// --help` offers --wait, --until and --timeout and nothing else,
+		// re-measured on this box 2026-10-03), while "still working after
+		// 10m0s — or --timeout 20m0s" would be printed within five seconds
+		// of the prompt. --no-land is the override that is real.
+		if IsHerdrCode(err, "agent_prompt_stalled") {
+			return false, Die("%s was NOT closed: it took the landing prompt but herdr saw no turn start inside its own 5s window (%v).\n"+
+				"  the text WAS typed, so the landing turn may be starting — a slow start is the common case under load, and closing now would discard it.\n"+
+				"  give it a moment and try again, or --no-land to close it without the landing turn", m.Name, err)
 		}
 		// A landing that could not be submitted at all is worth saying out
 		// loud, but it is not a reason to keep a session the operator asked
