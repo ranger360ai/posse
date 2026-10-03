@@ -20,11 +20,17 @@ package posse
 //     TRACKS — refuses the launch rather than being replaced (ADR 0007's
 //     rule, one file over).
 //  3. THE TRUST CHECK SEES THE GLOB BOB READS. `.bob/plugins` is a repo→box
-//     channel (a mode carries a system prompt and a ten-group tool grant)
+//     channel (a mode carries a system prompt and a tool-group grant)
 //     and it was not on the declared list until D1.4 — but posse's own
 //     entry in it is not the repo's, so the exemption has to be by ENTRY.
 //  4. A PANE THAT FELL BACK GETS NO WORK PROMPT, and the refusal quotes the
 //     CLI rather than paraphrasing it.
+//  5. THE MODE GRANTS NO WAY OUT OF ITSELF. `mode` is the `switch_mode`
+//     tool, so a persona mode that declares that group hands the model one
+//     call that swaps the PID for the CLI's built-in role — silently, and
+//     into the footer D2 reads as "no PID". The group is absent, and this
+//     is the test that argues with the next reader who copies bob's agent
+//     mode wholesale.
 //
 // Every one of these runs on fixtures. No bob turn is spent here: that the
 // `roleDefinition` reaches the model as the persona is ASSUMED in ADR 0062's
@@ -105,10 +111,11 @@ func TestQAPersonaModeLineSelectsTheFileTheLaunchWrote(t *testing.T) {
 	for _, want := range []string{
 		"name: \"p\"",
 		"roleDefinition: |",
-		// The ten the built-in agent mode carries. An OMITTED groups is
-		// `[]` on 2.0.5 — a mode with no tools at all — so this is the one
-		// key that must never be left to a default (MEASURED, notes §1).
-		"groups: [read, edit, command, browser, mcp, skill, todo, artifact, subagent, mode]",
+		// The built-in agent mode's ten less `mode`, which is the
+		// `switch_mode` tool (fact 5 in the header). An OMITTED groups is `[]` on
+		// 2.0.5 — a mode with no tools at all — so this is the one key
+		// that must never be left to a default (MEASURED, notes §1).
+		"groups: [read, edit, command, browser, mcp, skill, todo, artifact, subagent]",
 		"hidden: true",
 	} {
 		if !strings.Contains(text, want) {
@@ -133,6 +140,71 @@ func TestQAPersonaModeLineSelectsTheFileTheLaunchWrote(t *testing.T) {
 	}
 	if strings.Contains(string(out), ".bob") {
 		t.Errorf("`git status` lists posse's own mode file:\n%s", out)
+	}
+}
+
+// Fact 5. `mode` is the `switch_mode` tool, and this mode IS the PID, so
+// the group that lets the model leave the mode is the group that lets it
+// leave the persona: `switch_mode`'s call is `changeMode`, the prompt's
+// `role_definition` section renders from the CURRENT mode's
+// `roleDefinition`, and one call therefore installs the CLI's built-in role
+// for the rest of the session — no refusal, no pane signal, and a footer
+// that then reads exactly the `Fallback` string D2's gate treats as "the
+// PID never arrived" (ranger-base-mkcsy; MEASURED 2026-10-03 off
+// ranger-base-4mrmc's billed turn, ADR 0062 claim 9).
+//
+// Asked of the DECLARATION and of the rendered FILE, because the harm is in
+// the file and the declaration is where the next reader will reach: this
+// list was chosen to match bob's built-in agent mode, and matching it again
+// is the one plausible way `mode` comes back. `hidden: true` is not a
+// second answer — claim 6 measured that it hides nothing, and `validate`
+// searches the unfiltered list, so a hidden mode is still a legal target.
+//
+// It does NOT pin the other nine: which tools a persona gets is a product
+// choice that may move. This one is a property of the channel.
+func TestQAPersonaModeGrantsNoToolForLeavingTheMode(t *testing.T) {
+	t.Parallel()
+	a := checkApp(t)
+	ag := loadTestAgent(t, personaModePID)
+	dir := personaModeRepo(t)
+
+	rt, err := a.LoadRuntime("bob")
+	if err != nil {
+		t.Fatalf("loading bob: %v", err)
+	}
+	if rt.PersonaMode == nil {
+		t.Fatal("bob declares no persona-mode channel — that is a different test's subject (the seam), and this one has nothing to read")
+	}
+	const banned = "mode"
+	for _, g := range rt.PersonaMode.Groups {
+		if g == banned {
+			t.Errorf("bob's persona mode declares the %q tool group, which IS `switch_mode` — one tool call then replaces this persona's roleDefinition with the CLI's built-in role for the rest of the session, and the footer reads %q, the string the launch gate treats as a PID that never arrived. Declared groups: %v",
+				banned, rt.PersonaMode.Fallback, rt.PersonaMode.Groups)
+		}
+	}
+
+	path, err := a.RenderPersonaModeFor(ag, rt, dir)
+	if err != nil {
+		t.Fatalf("the launch could not render the mode: %v", err)
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading what was written: %v", err)
+	}
+	// The rendered `groups:` line, not the file as a whole: the
+	// `roleDefinition` block carries a whole PID, and "mode" is an
+	// ordinary English word inside one.
+	for _, line := range strings.Split(string(b), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "groups:") {
+			continue
+		}
+		list := strings.Trim(strings.TrimSpace(strings.TrimPrefix(trimmed, "groups:")), "[]")
+		for _, g := range strings.Split(list, ",") {
+			if strings.TrimSpace(g) == banned {
+				t.Errorf("the rendered mode file grants the %q group: %s", banned, trimmed)
+			}
+		}
 	}
 }
 
@@ -272,7 +344,7 @@ func TestQAPersonaModeTrustSeesThePluginsGlobAndExemptsPosseAlone(t *testing.T) 
 		}
 	}
 	if !named {
-		t.Fatalf("bob's project-config scope does not name .bob/plugins — bob loads plugins/*/custom_modes.yaml from the workspace, so a repo can hand it a system prompt and a ten-group tool grant through a path the check does not look at (ADR 0062 D1.4): %v", rt.ProjectConfig)
+		t.Fatalf("bob's project-config scope does not name .bob/plugins — bob loads plugins/*/custom_modes.yaml from the workspace, so a repo can hand it a system prompt and a tool-group grant through a path the check does not look at (ADR 0062 D1.4): %v", rt.ProjectConfig)
 	}
 
 	// posse's own file alone: not the repo's, and degrading every bob

@@ -43,6 +43,13 @@ customModes:
     hidden: true
 ```
 
+> Annotated 2026-10-03 (ranger-base-mkcsy): the YAML above is what this probe
+> ran, verbatim, and stays that way. **It is not the shipped list any more.**
+> `mode` is the `switch_mode` tool, so a persona mode declaring it lets the
+> model swap the PID for bob's built-in role mid-session; posse ships the
+> nine without it (ADR 0062 D1.1 as amended, claim 9). Copy the list from
+> `bobPersonaMode.Groups`, not from here.
+
 ```
 herdr workspace create --label posse-f1ytb-probe-a --no-focus --cwd <scratch>/ws   → w2MZ:p1
 herdr pane run w2MZ:p1 "bob chat --accept-license --trust --auto-approve -w . --mode posse-f1ytb"

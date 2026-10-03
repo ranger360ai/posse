@@ -67,10 +67,12 @@ not helper names:
    writes `<session dir>/.bob/plugins/posse/custom_modes.yaml` holding
    exactly one mode: slug `posse-<persona>` (the persona name reduced to
    `[a-zA-Z0-9-]`, Bob's slug alphabet), `name` the persona's name,
-   `roleDefinition` the PID body verbatim, `groups` the ten the built-in
-   agent mode carries (`read edit command browser mcp skill todo artifact
-   subagent mode` — MEASURED by reading the bundle that an omitted
-   `groups` is `[]`, a mode with no tools), `hidden: true` — a declared
+   `roleDefinition` the PID body verbatim, `groups` the built-in agent
+   mode's ten LESS `mode` (`read edit command browser mcp skill todo
+   artifact subagent` — MEASURED by reading the bundle that an omitted
+   `groups` is `[]`, a mode with no tools; `mode` is the `switch_mode`
+   tool and granting it would let the model leave the PID mid-session,
+   claim 9 and the amendment below), `hidden: true` — a declared
    intent and NOT a boundary: MEASURED FALSE, claim 6, and the Ruling
    below is why the choice stands without it. The directory
    is excluded the way `.agents/skills` is (ADR 0007: `.git/info/exclude`,
@@ -222,6 +224,51 @@ out of every diff either way.
 the home wants a guard — ruled the same day, the other way: no guard
 (ranger-base-q114b, Consequences below); the two billed turns
 (ranger-base-x5xt6).
+
+## Amendment 2026-10-03 — D1.1 grants nine groups, not ten (ranger-base-mkcsy)
+
+**`mode` is the `switch_mode` tool, and the mode IS the PID, so that one
+group was a door out of this channel.** Claim 9 has the measurement; the
+decision is here, because D1.1 chose its group list by matching bob's
+built-in agent mode and that list was copied before anybody asked what each
+name grants.
+
+**D1.1 now reads: the nine, `mode` dropped.** `groups` is a free string
+array in bob's schema, so nine is as valid a mode as ten; the
+`command`→`execute` aliasing is untouched; nothing else about the channel
+moves.
+
+**The cost, stated: a bob persona cannot switch modes.** No PID asks for
+that, and the capability is the one thing this record exists to prevent —
+D1 is a mechanism for making the PID *arrive*, and D2 is a reading that
+refuses to type at a session where it did not. A grant that lets the model
+undo both after the gate has passed is not a feature of the channel with a
+price; it is the channel being optional at the model's discretion.
+
+**Why a drop and not a reading.** D2's shape — do not trust the flag, read
+the footer — does not generalize here. D2 reads once, before the first
+keystroke, because that is when the launch can still refuse to spend; a
+switch can happen at any later turn, so the equivalent reading would be a
+poll of every bob pane's footer for the life of the session, and its
+remedy at the moment it fired would be a session already running on the
+wrong role. `hidden: true` is not a reading either: claim 6 measured that
+it hides nothing, and claim 9 adds that `validate` searches the unfiltered
+list, so a hidden mode is a legal `switch_mode` target. Removing the tool
+is the only one of the three that is a gate.
+
+**What this does NOT claim.** Nobody measured a model electing to switch
+(claim 9's NOT MEASURED), and bob's own prompt discourages it. The drop is
+not priced against an observed loss — it is priced against ADR 0013 §1:
+the captured artifact says the door is open, and a disposition in a system
+prompt is not a gate. Closing it costs a capability no PID asked for.
+
+**Pinned**, because this list drifts back by being helpful: the group's
+absence is asserted of the declaration *and* of the rendered `groups:`
+line, in `TestQAPersonaModeGrantsNoToolForLeavingTheMode`, which names
+`switch_mode` in its failure so the next reader who re-copies the built-in's
+ten is argued with rather than merely reddened. The other nine are
+deliberately not pinned: which tools a persona gets is a product choice
+that may move, while this one is a property of the channel.
 
 ## Consequences
 
@@ -405,6 +452,33 @@ ranger-base-se81d):
    start, re-resolved only by `setSessionMode` on a by-hand switch. The
    Ruling's shared-checkout reading rests on this.
 
+**MEASURED 2026-10-03** (ranger-base-mkcsy, read off ranger-base-4mrmc's
+one authorized billed turn — its stored prompt in `~/.bob/db/bob.db`, task
+`82388f73d09c74e1344b8ced0cd57d5f` — no further spend):
+
+9. **The `mode` tool group is `switch_mode`, so D1's own group list let the
+   model leave the PID mid-session.** `switch_mode`'s call is `changeMode`
+   and the prompt's `role_definition` section renders from the CURRENT
+   mode's `roleDefinition`, so one tool call replaces the persona with
+   Agent Mode's "You are Bob, a highly skilled software engineer…" for the
+   rest of the session — no refusal, no pane signal, and a footer that then
+   reads `Agent Mode`, the exact string D2's gate treats as a PID that
+   never arrived. In that turn's own artifact: `switch_mode` was in
+   `availableTools`; the `available_modes` block (byte 15410) named agent,
+   plan and ask with their tool sets, under "You can switch between
+   different modes using the switch_mode tool"; `hidden: true` removed only
+   posse's OWN row from that block (claim 6's field, its one consumer) and
+   removed neither the built-ins nor the tool; `validate` searches the
+   UNFILTERED list (`this.availableModes.find(o => o.id === n)`), so even a
+   hidden mode is a legal target, and a wrong guess enumerates every id in
+   its error text; and the current mode id reaches the model anyway as
+   `environment_details/current_mode`. NOT MEASURED: whether a model elects
+   to switch. bob's prompt discourages it ("Stay in your current mode unless
+   there is an explicit, compelling reason to switch") — a disposition, not
+   a gate, and ADR 0013 §1 promotes the reader on the captured artifact,
+   which says the door is open and unlatched. **Acted on: see the
+   Amendment above, which drops the group.**
+
 **ASSUMED** (each a line for the instance side, ranger-base-6wqe's lane):
 1. The `roleDefinition` reaches the model as the persona — the footer
    says the mode is selected; that the model answers as the PID is one
@@ -424,8 +498,11 @@ ranger-base-se81d):
 
 1. `posse new --runtime bob -a <persona>` renders `--mode posse-<persona>`
    on the line and writes `<dir>/.bob/plugins/posse/custom_modes.yaml`
-   with the PID body as `roleDefinition` and ten groups; `git status` in
-   the session dir does not list it.
+   with the PID body as `roleDefinition` and NINE groups — bob's agent mode
+   less `mode`, asked of the declaration and of the rendered `groups:` line
+   both, so a reader who re-copies the built-in's ten reds (the pin is
+   `TestQAPersonaModeGrantsNoToolForLeavingTheMode`; ranger-base-mkcsy);
+   `git status` in the session dir does not list it.
 2. A dispatch onto a runtime whose template carries neither `{file}` nor
    `{mode}` creates nothing, claims nothing, and names both placeholders
    and the native-rulebook consequence; `posse new` on the same profile

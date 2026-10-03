@@ -120,9 +120,38 @@ var bobPersonaMode = &PersonaModeChannel{
 	GlobalRoot: ".bob",
 	Flag:       "--mode %s",
 	Prefix:     "posse-",
-	// The built-in agent mode's ten, read out of the bundle. `command` is
-	// the spelling the mode file takes; bob maps it to `execute` itself.
-	Groups:   []string{"read", "edit", "command", "browser", "mcp", "skill", "todo", "artifact", "subagent", "mode"},
+	// The built-in agent mode's ten MINUS `mode`, read out of the bundle.
+	// `command` is the spelling the mode file takes; bob maps it to
+	// `execute` itself.
+	//
+	// `mode` IS THE `switch_mode` TOOL, and this channel is the PID
+	// (ranger-base-mkcsy, off ranger-base-4mrmc's billed turn). Granting it
+	// hands the model the one tool that ends the thing the mode exists to
+	// deliver: `switch_mode`'s call is `changeMode`, while the prompt's
+	// `role_definition` section is rendered from the CURRENT mode's
+	// `roleDefinition` — so one call replaces the PID with Agent Mode's
+	// "You are Bob, a highly skilled software engineer…" for the rest of
+	// the session, with no refusal and no pane signal, leaving a footer
+	// that reads `Fallback` below: the exact string D2's gate treats as
+	// "the PID never arrived".
+	//
+	// MEASURED 2026-10-03, read off that turn's own stored prompt: the
+	// session's `availableTools` contained `switch_mode`; the
+	// `available_modes` block named agent, plan and ask with their tool
+	// sets, under "You can switch between different modes using the
+	// switch_mode tool"; `hidden` withholds only the advertisement, since
+	// `validate` searches the UNFILTERED list, so even a hidden mode is a
+	// legal target; and the current mode id reaches the model anyway, in
+	// `environment_details/current_mode`. bob's own prompt discourages
+	// switching ("Stay in your current mode unless there is an explicit,
+	// compelling reason to switch") — a disposition, not a gate, and ADR
+	// 0013 §1 promotes the reading on the captured artifact over the hope.
+	//
+	// The cost is named and paid: the persona cannot switch modes. No PID
+	// asks for that and this channel's whole purpose argues against it;
+	// `groups` is a free string array in bob's schema, so nine is as valid
+	// a mode as ten, and the `command`→`execute` aliasing is untouched.
+	Groups:   []string{"read", "edit", "command", "browser", "mcp", "skill", "todo", "artifact", "subagent"},
 	Footer:   "%s Mode",
 	Fallback: "Agent Mode",
 	// Quoted from the pane, 2026-10-03: `(ℹ) Unknown mode "nosuch-f1ytb".
