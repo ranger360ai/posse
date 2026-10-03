@@ -99,7 +99,7 @@ is the only thing posse does to these files.
 | grok | `Help improve Grok  [Opt out] [Opt in]` consent banner above the composer | `[privacy] privacy_banner_acked` in `~/.grok/config.toml` | the **operator**, clicking `[Opt out]` once in their own grok session. The value is an RFC3339 stamp, not a bool, and it records only *that* the banner was answered — never which way. In 1.0.5 the consent RPC has no server handler, so even an accidental `[Opt in]` cannot persist; that defense is version-verified and evaporates the day xAI ships the handler (`rangerhq-sz7u`). |
 | grok | New worktree / Resume session / Quit startup menu, plus the changelog line | `[cli] auto_update = false`, `maximum_version` in `~/.grok/config.toml` | **already applied** — the fleet pin, declared in `etc/grok/version-pin.toml`, kills the update check *and* the shared leader's mid-life self-update. `make verify-grok-pin`; runbook in *grok substrate* above. |
 | codex | `Update available! → 1. Update now  2. Skip  3. Skip until next version` | `check_for_update_on_startup = false` in `~/.codex/config.toml` (declared in `etc/codex/version-pin.toml`) | **nothing — already handled by the fleet pin**, which stops the menu being drawn at all. `make verify-codex-pin` asserts it, together with the `brew pin --cask codex` that makes `1. Update now` *fail* rather than upgrade. Without the pin there are two silences and both expire: picking **3. Skip until next version** (arrow **Down** twice, *verify the caret moved*, **then** Enter), which lasts exactly one release, and being at the latest release already, which lasts until the next one ships (ranger-base-cohw). |
-| claude | `Quick safety check: Is this a project you created or one you trust?` — full screen, `1. Yes, I trust this folder / 2. No, exit`, footed `Enter to confirm · Esc to cancel` | `projects["<session dir>"].hasTrustDialogAccepted` in `~/.claude.json` (or `$CLAUDE_CONFIG_DIR/.claude.json`, or the config dir's `.config.json` where that exists) | **the LAUNCH**, per session directory — the one exception, below. |
+| claude | `Accessing workspace: <cwd>` over `Quick safety check: Is this a project you created or one you trust?` — full screen, `1. Yes, I trust this folder / 2. No, exit`, footed `Enter to confirm · Esc to cancel` | `projects["<the enclosing repo's canonical root>"].hasTrustDialogAccepted` in `~/.claude.json` (or `$CLAUDE_CONFIG_DIR/.claude.json`, or the config dir's `.config.json` where that exists) | **the LAUNCH**, per repo — the one exception, below. |
 
 **The codex dismissal has a shelf life; the fleet pin does not
 (ranger-base-poj5).** `dismissed_version` silences one release: the menu
@@ -130,10 +130,10 @@ It stays honest the other way too: a codex that is not there, or will not say
 what it is, reads UNKNOWN and refuses nothing.
 
 **The one key the launch writes, and why it is not the same kind of key
-(rangerhq-w4uf).** Claude's directory-trust dialog is not a first-*run*
-dialog at all — it is a first-run-*here* dialog. It fires per session
-directory, so the fleet's long-lived checkouts never show it and every new
-repo, worktree, container HOME and scratch dir draws it again. There is
+(rangerhq-w4uf).** Claude's workspace-trust dialog is not a first-*run*
+dialog at all — it is a first-run-*here* dialog. It fires per **repo**, so
+the fleet's long-lived checkouts never show it and every new repo, container
+HOME and scratch dir draws it again. There is
 nothing an operator can answer once: MEASURED on claude 2.1.241, `claude
 --help` names no flag for it, `claude project` manages only `purge`,
 `--settings` takes no such key, and the single env that skips the check
@@ -141,17 +141,35 @@ nothing an operator can answer once: MEASURED on claude 2.1.241, `claude
 have. The CLI itself names the supported non-interactive path, in the error
 it prints when it drops a project's hooks for want of trust: *"Run Claude
 Code interactively here once and accept the trust dialog, or set
-projects[<dir>].hasTrustDialogAccepted: true in ~/.claude.json"*.
+projects[<dir>].hasTrustDialogAccepted: true in ~/.claude.json"* — and the
+`<dir>` it prints there is the KEY, not the cwd, which is how
+ranger-base-elf2v was finally measured (below).
 
 So the launch seeds it (`SeedClaudeTrust`, `internal/posse/trust.go`), which
 is the same grant posse already types on codex's line (`-c
 "projects={\"$PWD\"={trust_level=\"trusted\"}}"`, ADR 0002 §4) and the
 same one `SeedCageHome` already writes into a container HOME. What it does
-NOT do is bend the layer-2 rule: it is scoped to the one directory posse
+NOT do is bend the layer-2 rule: it is scoped to the one workspace posse
 launched in, merged into the operator's file and never rewritten from a
-template, skipped entirely when the directory is already trusted, and it
+template, skipped entirely when that workspace is already trusted, and it
 refuses the launch rather than replacing a config it cannot parse. Nothing
 here presses a key: the seed is written before the line is typed.
+
+**And the workspace is the REPO, which cost three seats to learn
+(ranger-base-elf2v).** posse keyed the session directory; claude keys a
+linked worktree on its **main repo**, so three dispatched seats in a new repo
+sat on the modal with the grant in the file, true and timestamped. MEASURED
+2026-10-03 on 2.1.288 by asking the CLI which key it wants — a dir in no repo
+keys on itself, a repo root and every subdir of it key on the repo root, a
+linked worktree keys on the main repo, a worktree of a *bare* repo keys on the
+bare repo dir, a submodule keys on itself, and a dir whose `.git` is a
+dangling symlink keys on the repo above. There is no upward walk: a key on a
+dir between the cwd and the repo root silences nothing, and neither does a key
+on the parent of a dir in no repo. `scripts/claude-trust-key.sh [DIR …]` is
+that probe — `claude config list` in a dir whose `.claude/settings.json`
+carries a `permissions.allow` entry prints the key in claude's own words, with
+no API turn, no TTY and no login, against a throwaway `CLAUDE_CONFIG_DIR`.
+Table, bundle source and recipe: `docs/notes.d/ranger-base-elf2v.md`.
 
 Measured on the pane, four herdr scratch panes, no API turn:
 
@@ -230,8 +248,18 @@ turn a classification error into a claim that no executable channel exists.
 same pass: with only a repo root carrying `hasTrustDialogAccepted`, a
 subdirectory of it and a `git worktree add` linked worktree of it both
 opened on a live composer, an untrusted sibling repo drew the dialog, and
-claude wrote no new `projects` entry for either. The fleet's per-worktree
-seed entries are belt, not load-bearing.
+claude wrote no new `projects` entry for either.
+
+This paragraph used to end *"the fleet's per-worktree seed entries are belt,
+not load-bearing"*, and that sentence is what ranger-base-elf2v cost three
+seats to delete. It read the measurement in the one direction where the error
+is free. The inverse case is the load-bearing one: a worktree of an
+**untrusted** main repo gets a per-worktree entry claude never reads, and
+three dispatched seats in a new repo sat on the modal with the grant in the
+file. The per-worktree entry was not belt — it was the only thing posse
+wrote, and it granted nothing. posse now writes the repo's key and only that
+(`ClaudeTrustKey`, `internal/posse/trust.go`), which is both correct and one
+key per repo instead of one per worktree.
 
 **What posse does NOT do, so nobody re-proposes it:** pre-answer the other
 runtimes' dialogs from the harness (write `privacy_banner_acked`, write

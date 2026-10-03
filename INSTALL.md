@@ -2129,7 +2129,7 @@ and a session that does meet it fails by name.
 | grok | `Help improve Grok  [Opt out] [Opt in]` consent banner | `[privacy] privacy_banner_acked` in `~/.grok/config.toml` | click **[Opt out]** once, in your own grok session. **Never [Opt in]** — it lets xAI retain prompts and traces from sessions working in your private repos. Grok records only that you answered, not which way. |
 | grok | New worktree / Resume session / Quit startup menu | `[cli] auto_update = false`, `maximum_version` in `~/.grok/config.toml` | already handled by the fleet pin, declared in `etc/grok/version-pin.toml`. `make verify-grok-pin` asserts it; NOTES.md *"grok substrate"* is the runbook for lifting it. |
 | codex | `Update available! → 1. Update now  2. Skip  3. Skip until next version` | `check_for_update_on_startup = false` in `~/.codex/config.toml` (declared in `etc/codex/version-pin.toml`) | **nothing — already handled by the fleet pin**, which stops the menu being drawn at all. `make verify-codex-pin` asserts it, together with the `brew pin --cask codex` that makes `1. Update now` *fail* rather than upgrade. Without the pin there are two silences and both expire: picking **3. Skip until next version** (arrow **Down** twice, *verify the caret moved*, **then** Enter), which lasts exactly one release, and simply being at the latest release already, which lasts until the next one ships. |
-| claude | `Quick safety check: Is this a project you created or one you trust?` | `projects["<session dir>"].hasTrustDialogAccepted` in `~/.claude.json` | **nothing — the launch seeds it**, per session directory, because this one fires in every new directory and has no flag to answer it with. See below. |
+| claude | `Accessing workspace: <cwd>` over `Quick safety check: Is this a project you created or one you trust?` | `projects["<the enclosing repo's canonical root>"].hasTrustDialogAccepted` in `~/.claude.json` | **nothing — the launch seeds it**, per repo, because this one fires in every repo claude has not run in and has no flag to answer it with. See below. |
 
 **The codex dismissal has a shelf life; the fleet pin does not.**
 `dismissed_version` silences one release — the menu returns as soon as
@@ -2149,23 +2149,37 @@ the pin refuses to *move* codex (the cask pin) and refuses to *offer* to
 `etc/codex/version-pin.toml` states that accepted risk, and so does every run
 of `make verify-codex-pin`.
 
-**The one posse answers for you: claude's directory trust.** Claude asks
+**The one posse answers for you: claude's workspace trust.** Claude asks
 *"Quick safety check: Is this a project you created or one you trust?"* the
-first time it runs **in a given directory** — so, unlike the rows above,
-there is no answer you can give once. Every new repo, worktree, container
-HOME and scratch dir asks again, and claude offers no flag and no settings
-key to answer it on the launch line (measured on 2.1.241). The launch
-therefore writes the key the CLI itself documents,
-`projects["<session dir>"].hasTrustDialogAccepted`, into your
-`~/.claude.json` — merged into the file, never rewritten from a template,
-only for the directory it is launching in, and only when that directory is
-not already trusted. It is the same grant posse already types on codex's
-line. A `~/.claude.json` posse cannot parse **refuses the launch** rather
-than being replaced; run `claude` in that directory once and accept the
-dialog by hand if you would rather answer it yourself.
+first time it runs **in a given workspace** — so, unlike the rows above,
+there is no answer you can give once. Every new repo, container HOME and
+scratch dir asks again, and claude offers no flag and no settings key to
+answer it on the launch line (measured on 2.1.241, re-measured on 2.1.288).
+The launch therefore writes the key the CLI itself documents,
+`projects["<key>"].hasTrustDialogAccepted`, into your `~/.claude.json` —
+merged into the file, never rewritten from a template, only for the
+workspace it is launching in, and only when that workspace is not already
+trusted. It is the same grant posse already types on codex's line. A
+`~/.claude.json` posse cannot parse **refuses the launch** rather than being
+replaced; run `claude` in that directory once and accept the dialog by hand
+if you would rather answer it yourself.
+
+**That key is the enclosing repo, not the directory**, and the difference is
+worth knowing because it is where posse got it wrong once
+(ranger-base-elf2v). MEASURED on 2.1.288: a dir in no repo keys on itself, a
+repo root and every subdir of it key on the repo root, and a **linked
+worktree keys on its MAIN repo** — so accepting the dialog once in
+`~/src/myrepo` covers every `git worktree` the fleet ever makes of it, while
+a key written for the worktree's own path grants nothing at all. Two shapes
+do not hop: a worktree of a **bare** repo keys on the bare repo dir, and a
+**submodule** keys on itself. `scripts/claude-trust-key.sh [DIR …]` asks the
+CLI which key it wants, with no API turn and no login, and
+`docs/notes.d/ranger-base-elf2v.md` has the full table and the rule read off
+the shipped bundle.
 
 `posse runtime check claude` prints this row too, and its probe tells you
-whether the directory you are standing in is already trusted.
+whether the workspace you are standing in is already trusted — naming the
+repo it turns on when that is not the directory itself.
 
 ---
 

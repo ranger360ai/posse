@@ -482,16 +482,19 @@ var CodexInterstitials = []Interstitial{{
 // after the coordinator answered a live one by hand). Both entries are the
 // table's declared exception: posse WRITES these keys at launch rather than
 // naming them and refusing, because neither has a spelling a launch can
-// type. Trust is per session directory, so every new repo, worktree and
-// scratch dir the fleet starts in draws the modal again; the outside-read
-// notice is per config dir, and the only settings key it names silences it
-// by refusing the read it was asking about. See trust.go for both
-// measurements and for what the trust grant hands the session dir.
+// type. Trust is per REPO — the key is the enclosing repo's canonical root,
+// so a new repo or a scratch dir outside one draws the modal again while a
+// subdir or a linked worktree of a repo already trusted does not
+// (ranger-base-elf2v: posse wrote the worktree's own path for three seats in
+// a new repo and claude read the main repo's, so all three sat on the modal).
+// The outside-read notice is per config dir, and the only settings key it
+// names silences it by refusing the read it was asking about. See trust.go
+// for both measurements and for what the trust grant hands the session.
 var ClaudeInterstitials = []Interstitial{{
-	Screen:  `"Quick safety check: Is this a project you created or one you trust?" — full-screen, "1. Yes, I trust this folder / 2. No, exit", footed "Enter to confirm · Esc to cancel". herdr reads it blocked (live_blocked_form), so dispatch waits it out rather than typing into it.`,
+	Screen:  `"Accessing workspace: <cwd>" over "Quick safety check: Is this a project you created or one you trust?" — full-screen, "1. Yes, I trust this folder / 2. No, exit", footed "Enter to confirm · Esc to cancel". The \"Accessing workspace:\" title is drawn over the body on 2.1.285, .287 and .288 (grepped off the installed bundles, 2026-10-03); the 2.1.241 recon recorded the body alone and did not say whether a title was there. herdr reads it blocked (live_blocked_form), so dispatch waits it out rather than typing into it.`,
 	Where:   "~/.claude.json (or $CLAUDE_CONFIG_DIR/.claude.json, or the config dir's .config.json when it exists)",
-	Key:     `projects["<session dir>"].hasTrustDialogAccepted`,
-	Silence: "the LAUNCH seeds it, per session dir, merged into the operator's file and only when the dir is not already trusted (SeedClaudeTrust) — the same grant posse types on codex's line, and the CLI's own documented alternative to answering the dialog by hand.",
+	Key:     `projects["<the session dir's canonical repo root>"].hasTrustDialogAccepted — the MAIN repo for a linked worktree, the repo root for a subdir, the dir itself outside a repo (ClaudeTrustKey)`,
+	Silence: "the LAUNCH seeds it, per repo, merged into the operator's file and only when that key is not already trusted (SeedClaudeTrust) — the same grant posse types on codex's line, and the CLI's own documented alternative to answering the dialog by hand.",
 	Seeded:  true,
 	Probe:   claudeTrustProbe,
 }, {
@@ -574,7 +577,7 @@ var BobInterstitials = []Interstitial{{
 	Screen:  "the folder-trust screen — bob refuses to run in an untrusted folder and names --trust as the way through",
 	Where:   "the launch line (BobCommand, runtime.go)",
 	Key:     "--trust",
-	Silence: "the LAUNCH carries --trust, per session directory. Same grant posse already types on codex's line (CodexFleetFlags' trust_level) and seeds on claude's (SeedClaudeTrust) — and the reason it is the launch's rather than the operator's is claude's: trust is per DIRECTORY, so a fleet that grows a new repo, worktree or scratch dir grows a new screen with it and no key answers it once.",
+	Silence: "the LAUNCH carries --trust, per session directory. Same grant posse already types on codex's line (CodexFleetFlags' trust_level) and seeds on claude's (SeedClaudeTrust) — and the reason it is the launch's rather than the operator's is that a fleet which grows a new repo or scratch dir grows a new screen with it and no key answers it once. bob's and codex's grants are per DIRECTORY; claude's is per repo, which is a difference worth keeping straight — a worktree needs its own grant here and not there (ranger-base-elf2v).",
 	Seeded:  true,
 	Probe:   bobFlagSilence("--trust"),
 }, {

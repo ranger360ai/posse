@@ -13,6 +13,7 @@ package posse
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -227,7 +228,12 @@ func TestSeedTrustWritesNothingWhenTheDirIsAlreadyTrusted(t *testing.T) {
 // Claude's own rule, and codex's: a trusted parent does NOT cover a repo
 // underneath it. Read it wrong in the permissive direction and the launch
 // skips a seed it needed, which is the dialog coming back.
-func TestTrustWalkStopsAtTheRepoRoot(t *testing.T) {
+//
+// It is one key per repo now rather than a walk (ranger-base-elf2v), so the
+// arms below are the same three questions asked of the KEY instead of the
+// lookup — plus the arm the old walk got wrong: claude 2.1.288 does not walk
+// past a dir that is in no repo either (MEASURED, ClaudeTrustKey's table).
+func TestTrustIsPerRepoAndNotPerAncestor(t *testing.T) {
 	t.Parallel()
 	parent := t.TempDir()
 	repo := filepath.Join(parent, "repo")
@@ -244,21 +250,281 @@ func TestTrustWalkStopsAtTheRepoRoot(t *testing.T) {
 	if ClaudeTrusted(trustedParent, inner) {
 		t.Error("a trusted parent must not cover a repo underneath it")
 	}
-	// Same config, a dir outside any repo: the walk runs past it.
+	// The arm that changed. A dir in NO repo keys on itself, so a trusted
+	// ancestor does not reach it — measured on 2.1.288, where the old walk
+	// read this as trusted and the launch then wrote nothing for a `posse
+	// new` scratch dir under a parent the operator once accepted by hand.
 	plain := filepath.Join(parent, "scratch")
 	if err := os.MkdirAll(plain, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if !ClaudeTrusted(trustedParent, plain) {
-		t.Error("outside a repo the walk must reach the trusted ancestor")
+	if ClaudeTrusted(trustedParent, plain) {
+		t.Error("outside a repo the key is the dir itself; a trusted ancestor must not cover it")
 	}
-	// Inside the repo, the repo root's own entry is what counts.
+	if !ClaudeTrusted(map[string]any{
+		"projects": map[string]any{ClaudeTrustKey(plain): map[string]any{"hasTrustDialogAccepted": true}},
+	}, plain) {
+		t.Error("outside a repo the dir's own entry must count")
+	}
+	// Inside the repo, the repo root's own entry is what counts — and it is
+	// the key for the subdir too, which is how a subdir is covered at all.
 	trustedRepo := map[string]any{
 		"projects": map[string]any{ClaudeTrustKey(repo): map[string]any{"hasTrustDialogAccepted": true}},
 	}
 	if !ClaudeTrusted(trustedRepo, inner) {
 		t.Error("the enclosing repo root's entry must cover a dir inside it")
 	}
+	if got := ClaudeTrustKey(inner); got != ClaudeTrustKey(repo) {
+		t.Errorf("a subdir must key on the repo root: got %q, want %q", got, ClaudeTrustKey(repo))
+	}
+	// There is no "intermediate key" left to get wrong: inside a repo every
+	// dir keys on the root, so a key planted on repo/pkg IS the repo's key.
+	// That is the line above, said the other way round, and it is why the
+	// walk had nothing left to do inside a repo.
+	if got, want := ClaudeTrustKey(filepath.Join(repo, "pkg")), ClaudeTrustKey(repo); got != want {
+		t.Errorf("a key on an intermediate dir must be the repo's: got %q, want %q", got, want)
+	}
+}
+
+// ranger-base-elf2v, the bead's own pin: a worktree of an UNTRUSTED main
+// repo seeds the main repo's key, and a worktree of a trusted one writes
+// nothing. The first half is the dead seat — three HCN seats opened on the
+// modal with projects[<worktree>] sitting in the config, true and
+// timestamped, because claude looks the worktree up under its main repo.
+func TestSeedTrustSeedsTheWorktreesMainRepo(t *testing.T) {
+	t.Parallel()
+	main, wt := qaLinkedWorktree(t)
+
+	cfg := filepath.Join(t.TempDir(), ".claude.json")
+	if _, err := SeedClaudeTrust(cfg, claudeRuntime(t), wt); err != nil {
+		t.Fatal(err)
+	}
+	projects, _ := readConfig(t, cfg)["projects"].(map[string]any)
+	mainKey := ClaudeTrustKey(main)
+	if e, _ := projects[mainKey].(map[string]any); e["hasTrustDialogAccepted"] != true {
+		t.Errorf("the main repo was not seeded: want key %q, got %v", mainKey, keysOf(projects))
+	}
+	// And only that one. A key on the worktree grants nothing (measured), so
+	// writing one is a line of the operator's config that means nothing and
+	// one more per session worktree the fleet ever makes.
+	if len(projects) != 1 {
+		t.Errorf("want exactly the main repo's key, got %v", keysOf(projects))
+	}
+
+	// The other half of the pin: the main repo already trusted, so there is
+	// nothing to write — which is also why this never showed up until a repo
+	// the fleet had not accepted by hand turned up (every control seat in
+	// ~/src/posse had no entry of its own and opened on a live composer).
+	cfg2 := filepath.Join(t.TempDir(), ".claude.json")
+	writeConfig(t, cfg2, map[string]any{
+		ClaudeOutsideReadSeenKey: true,
+		"projects": map[string]any{
+			mainKey: map[string]any{"hasTrustDialogAccepted": true},
+		},
+	})
+	before, err := os.ReadFile(cfg2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrote, err := SeedClaudeTrust(cfg2, claudeRuntime(t), wt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if wrote != "" {
+		t.Errorf("seed reported a write (%s) for a worktree of an already-trusted repo", wrote)
+	}
+	if after, _ := os.ReadFile(cfg2); string(after) != string(before) {
+		t.Error("a worktree of a trusted repo must write nothing")
+	}
+	if !ClaudeTrusted(readConfig(t, cfg2), wt) {
+		t.Error("a trusted main repo must read as trust for its worktree")
+	}
+}
+
+// The shapes claude does NOT hop on, each measured by asking the CLI which
+// key it wants (ClaudeTrustKey's table). These matter in both directions:
+// posse bailing where claude hops writes a key claude never reads, and posse
+// hopping where claude bails writes the main repo's key while claude asks
+// for the worktree's. Both are the same dead seat.
+func TestTrustKeyFollowsTheSamePointerChainClaudeDoes(t *testing.T) {
+	t.Parallel()
+	t.Run("a bare main repo keys on the bare repo dir", func(t *testing.T) {
+		t.Parallel()
+		root := qaEvalPath(t, t.TempDir())
+		bare := filepath.Join(root, "bare.git")
+		wt := filepath.Join(root, "wt")
+		qaWorktreePointers(t, wt, filepath.Join(bare, "worktrees", "wt"), "../..")
+		if got, want := ClaudeTrustKey(wt), bare; got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	})
+	t.Run("a submodule keys on itself", func(t *testing.T) {
+		t.Parallel()
+		root := qaEvalPath(t, t.TempDir())
+		mod := filepath.Join(root, "super", "mod")
+		// `modules`, not `worktrees`: the layout check is what refuses this.
+		qaWorktreePointers(t, mod, filepath.Join(root, "super", ".git", "modules", "mod"), "../..")
+		if got, want := ClaudeTrustKey(mod), mod; got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	})
+	t.Run("the key is the pointer's spelling, not a resolved one", func(t *testing.T) {
+		t.Parallel()
+		// The bead's case note: `bd` lists ~/src/hcn, the filesystem spells
+		// HCN, and claude's exact-string lookup only matches git's spelling.
+		// Claude derives the main repo from the pointer files and never
+		// realpaths the answer (MEASURED: its canonical-root function
+		// NFC-normalizes and nothing else), so posse must not either — a key
+		// posse "corrected" is a key claude never looks up.
+		root := qaEvalPath(t, t.TempDir())
+		real := filepath.Join(root, "Main")
+		link := filepath.Join(root, "main-link")
+		if err := os.MkdirAll(filepath.Join(real, ".git", "worktrees", "wt"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(real, link); err != nil {
+			t.Skipf("no symlinks here: %v", err)
+		}
+		wt := filepath.Join(root, "wt")
+		qaWorktreePointers(t, wt, filepath.Join(link, ".git", "worktrees", "wt"), "../..")
+		if got, want := ClaudeTrustKey(wt), link; got != want {
+			t.Errorf("got %q, want the pointer's own spelling %q", got, want)
+		}
+	})
+	t.Run("a pointer that does not round-trip keys on the worktree", func(t *testing.T) {
+		t.Parallel()
+		root := t.TempDir()
+		main, wt := qaLinkedWorktree(t)
+		stray := filepath.Join(root, "stray")
+		if err := os.MkdirAll(stray, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		// Somebody copied the `.git` file. The forward pointer resolves and
+		// the layout checks out; the main repo's back-pointer still names
+		// the real worktree, so neither posse nor claude follows it.
+		b, err := os.ReadFile(filepath.Join(wt, ".git"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(stray, ".git"), b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if got := ClaudeTrustKey(stray); got == ClaudeTrustKey(main) {
+			t.Errorf("a copied .git file must not borrow the main repo's key, got %q", got)
+		}
+		if got, want := ClaudeTrustKey(stray), qaEvalPath(t, stray); got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	})
+	t.Run("a dangling .git symlink is not a root", func(t *testing.T) {
+		t.Parallel()
+		// MEASURED: claude resolves the entry and takes file-or-directory, so
+		// it walks PAST this dir to the enclosing repo. posse stopping here
+		// would key a path claude never looks up.
+		root := qaEvalPath(t, t.TempDir())
+		repo, inner := filepath.Join(root, "repo"), filepath.Join(root, "repo", "dangle")
+		if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(inner, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(filepath.Join(root, "nope"), filepath.Join(inner, ".git")); err != nil {
+			t.Skipf("no symlinks here: %v", err)
+		}
+		if got, want := ClaudeTrustKey(inner), repo; got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	})
+	t.Run("a relative gitdir pointer resolves against the worktree", func(t *testing.T) {
+		t.Parallel()
+		root := t.TempDir()
+		main := filepath.Join(root, "main")
+		wt := filepath.Join(root, "wt")
+		// What `git worktree add --relative-paths` writes (git 2.48+).
+		qaWorktreePointers(t, wt, filepath.Join(main, ".git", "worktrees", "wt"), "../..")
+		if err := os.WriteFile(filepath.Join(wt, ".git"), []byte("gitdir: ../main/.git/worktrees/wt\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if got, want := ClaudeTrustKey(wt), ClaudeTrustKey(main); got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	})
+}
+
+func qaEvalPath(t *testing.T, dir string) string {
+	t.Helper()
+	real, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return filepath.Clean(real)
+}
+
+// qaWorktreePointers plants the three files git keeps in step for a linked
+// worktree — the `.git` file, the git dir's `commondir` and its `gitdir`
+// back-pointer — by hand rather than by `git worktree add`, so a test can
+// vary one of them. The worktree dir and the git dir are created.
+func qaWorktreePointers(t *testing.T, wt, gitdir, commondir string) {
+	t.Helper()
+	for _, d := range []string{wt, gitdir} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write := func(p, content string) {
+		if err := os.WriteFile(p, []byte(content+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(filepath.Join(wt, ".git"), "gitdir: "+gitdir)
+	write(filepath.Join(gitdir, "commondir"), commondir)
+	write(filepath.Join(gitdir, "gitdir"), filepath.Join(qaEvalPath(t, wt), ".git"))
+}
+
+// qaLinkedWorktree makes a real `git worktree add` worktree and returns the
+// main repo and the worktree. Real git and not planted files, because the
+// pointer layout is git's to define and this is the shape the fleet runs in.
+//
+// It SKIPS only when there is no git at all, and FAILS on anything else git
+// says. The tempting shape is a skip per command, and it is the wrong one
+// here: this fixture backs the pin for ranger-base-elf2v, a bug whose whole
+// cost was a check that said nothing, and a crew seat's PATH carries a `git`
+// shim that refuses an unqualified `git commit`. A fixture that skipped on
+// that would take the pin with it and still print ok.
+func qaLinkedWorktree(t *testing.T) (main, wt string) {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skipf("no git on PATH: %v", err)
+	}
+	// gitTempDir and not t.TempDir: a `git init` leaves read-only object
+	// files behind and TempDir's own cleanup reports the removal error
+	// (TestQAEveryGitInitInThePosseTestsSitsOnATolerantRoot is the pin, and
+	// it caught this fixture).
+	root := gitTempDir(t)
+	main = filepath.Join(root, "main")
+	wt = filepath.Join(root, "wt")
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=qa", "GIT_AUTHOR_EMAIL=qa@example.invalid",
+			"GIT_COMMITTER_NAME=qa", "GIT_COMMITTER_EMAIL=qa@example.invalid",
+			"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	run("init", "-q", "-b", "main", main)
+	run("-C", main, "commit", "-q", "--allow-empty", "-m", "init")
+	run("-C", main, "worktree", "add", "-q", wt, "-b", "wtbr")
+	// The pointer chain the hop reads has to actually be there: a `git
+	// worktree add` that "worked" on an unborn HEAD would leave this fixture
+	// half-built and the pin asserting about a plain directory.
+	if b, err := os.ReadFile(filepath.Join(wt, ".git")); err != nil || !strings.HasPrefix(string(b), "gitdir:") {
+		t.Fatalf("%s/.git is not a worktree pointer (%v): %q", wt, err, b)
+	}
+	return main, wt
 }
 
 // A config posse cannot parse is a config posse does not replace — and it

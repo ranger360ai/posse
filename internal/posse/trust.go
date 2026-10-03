@@ -76,6 +76,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -181,11 +182,54 @@ func fileExists(p string) bool {
 	return err == nil
 }
 
-// ClaudeTrustKey is the projects[] key for a session dir: the absolute
-// path with symlinks resolved. Resolved because the cwd claude reads is
-// the one the kernel hands it — on macOS a session dir under /tmp is
-// /private/tmp to claude — and a key written under a spelling claude never
-// looks up is a key that grants nothing.
+// gitEntryPresent is the one predicate claude applies to a `.git` it finds:
+// resolve the entry, then take it only if it is a regular file or a
+// directory. Symlinks are followed (Stat, not Lstat), which is why a
+// DANGLING `.git` symlink is not a repo to either of us, and a socket or a
+// fifo named `.git` is not one either. Shared by gitRootOf and by
+// claudeMainRepoOf's bare-repo bail so the two cannot drift: both are places
+// where answering differently from claude writes a key claude never reads.
+func gitEntryPresent(p string) bool {
+	st, err := os.Stat(p)
+	return err == nil && (st.Mode().IsRegular() || st.IsDir())
+}
+
+// ClaudeTrustKey is the projects[] key for a session dir, and it is NOT the
+// session dir: it is the key claude 2.1.288 looks that dir's trust up under,
+// which inside a git repo is the repo's CANONICAL root. Resolved first
+// because the cwd claude reads is the one the kernel hands it — on macOS a
+// session dir under /tmp is /private/tmp to claude — and a key written under
+// a spelling claude never looks up is a key that grants nothing.
+//
+// That is the whole bug of ranger-base-elf2v. posse wrote
+// projects[<worktree>] for three fresh seats in a NEW repo and claude read
+// projects[<main repo>], so all three opened on the modal with the grant
+// sitting in the file, true and timestamped. The hop was known and
+// deliberately not followed — the note here used to say a worktree of a
+// TRUSTED repo gets an entry it did not need, "belt, not load-bearing" —
+// which had the error running the safe way only because every repo the fleet
+// had ever launched in was already trusted. A worktree of an UNTRUSTED repo
+// is the inverse case, and it is a dead seat.
+//
+// MEASURED 2026-10-03, claude 2.1.288 darwin-arm64, by asking the CLI which
+// key it wants: `claude config list` in a dir holding a
+// .claude/settings.json with a permissions.allow entry prints "Ignoring 1
+// permissions.allow entry … set projects[<key>].hasTrustDialogAccepted:
+// true", naming the key in claude's own words, with no API turn and no TTY
+// (scripts/claude-trust-key.sh re-runs the table; docs/notes.d/ranger-base-elf2v.md
+// has it in full). Five shapes, five keys:
+//
+//	cwd                              key claude names
+//	──────────────────────────────── ────────────────────────────────
+//	a dir in no repo                 the dir
+//	a repo root or any subdir of it  the repo root
+//	a linked worktree                the MAIN repo (this hop)
+//	a worktree of a BARE repo        the bare repo dir itself
+//	a submodule (.git -> modules/x)  the submodule dir
+//
+// and, in the same run, which keys SILENCE it from inside a linked worktree:
+// the main repo's does, the worktree's own does not, the worktree's parent's
+// does not.
 func ClaudeTrustKey(dir string) string {
 	abs, err := filepath.Abs(dir)
 	if err != nil {
@@ -194,66 +238,179 @@ func ClaudeTrustKey(dir string) string {
 	if real, err := filepath.EvalSymlinks(abs); err == nil {
 		abs = real
 	}
-	return filepath.Clean(abs)
+	return claudeProjectKey(filepath.Clean(abs))
+}
+
+// claudeProjectKey is the hop alone, over a dir ALREADY spelled the way the
+// runtime's cwd will be. Separate from ClaudeTrustKey because the cage tier
+// must not resolve symlinks: a caged claude's cwd is the mount path, mounted
+// same-path in and out, and resolving it on the host would key macOS's
+// /var → /private/var into a config read inside a Linux container where
+// neither exists (cagehomelock_qa_test.go's "literal dir string" note).
+//
+// It mirrors claude's N0e: the canonical root of the enclosing git repo,
+// else the dir. Nothing here resolves a symlink and nothing normalizes
+// Unicode — claude NFC-normalizes the key it computes and posse deliberately
+// does not (ClaudeConfigDirIn has the same divergence and the same reason: a
+// path spelled with decomposed codepoints is one posse and the runtime could
+// disagree about on a filesystem that preserves the difference).
+func claudeProjectKey(dir string) string {
+	root := gitRootOf(dir)
+	if root == "" {
+		return dir
+	}
+	return claudeMainRepoOf(root)
+}
+
+// claudeMainRepoOf takes a git root and answers the canonical root: the main
+// repo for a linked worktree, and the root itself for everything else. It
+// mirrors claude 2.1.288's own function (`tn` in the shipped bundle, read
+// 2026-10-03) step for step, including every bail, because the two have to
+// agree on the ANSWER and not just on the happy path — posse bailing where
+// claude hops writes a key claude never reads, and posse hopping where
+// claude bails writes the main repo's key while claude asks for the
+// worktree's. Both are the dead seat this function exists to prevent, so
+// each `return root` below is a shape claude also keys on the root.
+//
+// The walk is the pointer chain git itself writes, and it never shells out,
+// for gitRootOf's reason: this runs on every launch.
+//
+//	<root>/.git                  "gitdir: <gitdir>"
+//	<gitdir>/commondir           the main repo's git dir, relative to <gitdir>
+//	<gitdir>/gitdir              back to "<root>/.git" — the pointer must round-trip
+//	dirname(<gitdir>)            must be "<commondir>/worktrees"
+//
+// and then the answer is the commondir's PARENT when the commondir is a
+// `.git` (an ordinary main repo), else the commondir itself (a bare one —
+// MEASURED: a worktree of /x/bare.git keys on /x/bare.git).
+func claudeMainRepoOf(root string) string {
+	// A `.git` DIRECTORY is not a linked worktree and never reaches the
+	// parse: ReadFile of a directory errors (EISDIR), which is the same
+	// `return root` as an unreadable or absent one.
+	b, err := os.ReadFile(filepath.Join(root, ".git"))
+	if err != nil {
+		return root
+	}
+	rest, ok := gitPointerPrefix(string(b), "gitdir:")
+	if !ok {
+		return root
+	}
+	gitdir := gitPointerPath(root, rest)
+	if gitdir == "" {
+		return root
+	}
+	cb, err := os.ReadFile(filepath.Join(gitdir, "commondir"))
+	if err != nil {
+		return root
+	}
+	common := gitPointerPath(gitdir, strings.TrimSpace(string(cb)))
+	if common == "" {
+		return root
+	}
+	// The layout check, and the reason a submodule does NOT hop: its gitdir
+	// is `<super>/.git/modules/<name>`, so the parent is `modules` and not
+	// `worktrees` (MEASURED — claude keys a submodule on the submodule dir).
+	if filepath.Dir(gitdir) != filepath.Join(common, "worktrees") {
+		return root
+	}
+	// And the back-pointer, which is what makes this a worktree OF this dir
+	// rather than a `.git` file somebody copied: git keeps the forward and
+	// reverse pointers in step, so a chain that does not round-trip is one
+	// neither posse nor claude follows.
+	gb, err := os.ReadFile(filepath.Join(gitdir, "gitdir"))
+	if err != nil {
+		return root
+	}
+	if back := gitPointerPath(gitdir, strings.TrimSpace(string(gb))); back != filepath.Join(root, ".git") {
+		return root
+	}
+	if filepath.Base(common) != ".git" {
+		// A bare main repo: the common dir IS the repo, unless it holds a
+		// `.git` of its own, in which case claude leaves it alone and so
+		// does this.
+		if gitEntryPresent(filepath.Join(common, ".git")) {
+			return root
+		}
+		return common
+	}
+	return filepath.Dir(common)
+}
+
+// gitPointerPrefix is `gitdir:` the way claude reads it: the whole file
+// trimmed, the prefix required at the front, and the remainder trimmed
+// again. A pointer file git wrote has one line and a newline.
+func gitPointerPrefix(s, prefix string) (string, bool) {
+	rest, ok := strings.CutPrefix(strings.TrimSpace(s), prefix)
+	if !ok {
+		return "", false
+	}
+	return strings.TrimSpace(rest), true
+}
+
+// gitPointerPath is claude's path.resolve for these pointer files: an
+// absolute path stands, a relative one is taken against the file's own
+// directory. `commondir` is relative in every worktree git writes ("../.."),
+// and `gitdir:` is relative in one written with --relative-paths (git 2.48).
+// "" for an empty pointer, which every caller reads as a bail.
+func gitPointerPath(base, p string) string {
+	if p == "" {
+		return ""
+	}
+	if !filepath.IsAbs(p) {
+		p = filepath.Join(base, p)
+	}
+	return filepath.Clean(p)
 }
 
 // ClaudeTrusted answers claude's own question — would this launch draw the
 // dialog? — against an already-parsed config, so the launch can leave the
 // operator's file alone when there is nothing to add to it.
 //
-// It mirrors claude 2.1.241's fallback walk: start at the session dir,
-// take any hasTrustDialogAccepted == true on the way up, and STOP at the
-// enclosing git repo root, because a trusted parent does not cover a repo
-// underneath it (the same rule codex's per-exact-path trust has, and the
-// reason ~/src being trusted does nothing for a repo inside it). Outside a
-// repo the walk runs to the filesystem root.
+// One exact key, ClaudeTrustKey's, and no walk. The walk this used to do —
+// start at the session dir, take any hasTrustDialogAccepted on the way up,
+// stop at the enclosing git repo root — is not claude 2.1.288's rule, and it
+// was wrong in the one direction that costs a seat: reporting trusted makes
+// the launch write NOTHING, so a false trusted is the dialog coming back in
+// a pane nobody is watching, while a false untrusted is one more idempotent
+// key in a file posse already merges.
 //
-// One hop is deliberately not followed: claude also keys the config on the
-// CANONICAL root, so a linked worktree resolves to its main repo and
-// inherits that repo's answer. MEASURED 2026-08-27 on 2.1.247
-// (ranger-base-i0s8): with only a repo root trusted, both a subdirectory
-// and a `git worktree add` linked worktree of it opened on a live
-// composer, while an untrusted sibling repo drew the dialog, and claude
-// added no projects entry for either. Following a `.git` file through its
-// commondir to decide whether to skip a write is more machinery than the
-// write is worth, so a fresh worktree of a trusted repo gets an entry it
-// did not strictly need — belt, not load-bearing. The error only ever runs
-// that way: nothing this reports trusted would have drawn the dialog.
+// MEASURED 2026-10-03 on 2.1.288 (the table in ClaudeTrustKey, same method):
+// a key on a dir BETWEEN the cwd and the repo root does not silence the
+// gate, and neither does a key on the parent of a dir in no repo. The old
+// walk read both as trusted. The second of those is a live fleet shape —
+// `posse new` into a fresh scratch dir under a parent the operator once
+// accepted by hand — and it had the launch skipping the seed it needed.
+//
+// What the walk got right it still gets right, because the KEY moved instead
+// of the lookup: a subdir of a repo is trusted by its repo root's entry (the
+// key for both is the repo root), and a trusted parent still does not cover
+// a repo underneath it (the repo's key is its own root, never the parent).
 func ClaudeTrusted(state map[string]any, dir string) bool {
 	projects, _ := state["projects"].(map[string]any)
 	if projects == nil {
 		return false
 	}
-	accepted := func(p string) bool {
-		e, _ := projects[p].(map[string]any)
-		v, _ := e["hasTrustDialogAccepted"].(bool)
-		return v
-	}
-	n := ClaudeTrustKey(dir)
-	root := gitRootOf(n)
-	for {
-		if accepted(n) {
-			return true
-		}
-		if n == root {
-			return false
-		}
-		parent := filepath.Dir(n)
-		if parent == n {
-			return false
-		}
-		n = parent
-	}
+	e, _ := projects[ClaudeTrustKey(dir)].(map[string]any)
+	v, _ := e["hasTrustDialogAccepted"].(bool)
+	return v
 }
 
-// gitRootOf is the boundary of the walk above and nothing more: the
-// nearest ancestor holding a `.git` (a directory in a checkout, a file in
-// a linked worktree), "" outside a repo. It never shells out — this runs
-// on every launch, and `git rev-parse` in a directory git dislikes is a
-// process spawned to learn nothing.
+// gitRootOf is claude's own find_git_root and nothing more: the nearest
+// ancestor holding a `.git` (a directory in a checkout, a file in a linked
+// worktree), "" outside a repo. It never shells out — this runs on every
+// launch, and `git rev-parse` in a directory git dislikes is a process
+// spawned to learn nothing.
+//
+// A `.git` that is neither a regular file nor a directory is not a root, and
+// that is claude's rule rather than a tidiness: a DANGLING `.git` symlink
+// makes claude walk past to the enclosing repo (MEASURED — it keys on the
+// repo above). gitEntryPresent is that rule, shared with the one other place
+// this file asks it; posse stopping at a dir claude walks past is a key
+// written under a path claude never looks up, which is the whole failure of
+// ranger-base-elf2v one hop earlier.
 func gitRootOf(dir string) string {
 	for d := dir; ; {
-		if _, err := os.Lstat(filepath.Join(d, ".git")); err == nil {
+		if gitEntryPresent(filepath.Join(d, ".git")) {
 			return d
 		}
 		p := filepath.Dir(d)
@@ -264,9 +421,12 @@ func gitRootOf(dir string) string {
 	}
 }
 
-// claudeSeedProject sets, under projects[dir], the keys that decide what a
-// fresh session dir draws. Shared with the cage's HOME seed (cage.go) so
-// there is one statement of what posse writes into a claude config.
+// claudeSeedProject sets, under projects[key], the keys that decide what a
+// fresh session draws. It takes the key already derived — ClaudeTrustKey on
+// the host, claudeProjectKey in a cage — because the two tiers disagree
+// about symlink resolution and agree about everything else. Shared with the
+// cage's HOME seed (cage.go) so there is one statement of what posse writes
+// into a claude config.
 //
 // Both keys are MEASURED, and they are not the same fact:
 //   - hasTrustDialogAccepted is the one that matters — without it the
@@ -278,18 +438,18 @@ func gitRootOf(dir string) string {
 //     anyway, because "harmless splash" is what grok's startup menu was
 //     called too, and every detection rule the fleet owns is anchored on
 //     the shape of a screen.
-func claudeSeedProject(state map[string]any, dir string) {
+func claudeSeedProject(state map[string]any, key string) {
 	projects, _ := state["projects"].(map[string]any)
 	if projects == nil {
 		projects = map[string]any{}
 	}
-	proj, _ := projects[dir].(map[string]any)
+	proj, _ := projects[key].(map[string]any)
 	if proj == nil {
 		proj = map[string]any{}
 	}
 	proj["hasTrustDialogAccepted"] = true
 	proj["hasCompletedProjectOnboarding"] = true
-	projects[dir] = proj
+	projects[key] = proj
 	state["projects"] = projects
 }
 
@@ -297,7 +457,9 @@ func claudeSeedProject(state map[string]any, dir string) {
 // about to type its command, and returns the config file it wrote — "" for
 // the launches with nothing to do: another runtime, or a directory claude
 // already trusts. Idempotent, so RelaunchAgent re-asserting it costs a
-// lock and a read.
+// lock and a read — and idempotent across a REPO and not just a dir, since
+// ClaudeTrustKey hops to the canonical root: the fleet's N session worktrees
+// of one repo write one key between them, not N (ranger-base-elf2v).
 //
 // It is the host counterpart of SeedCageHome: same key, same merge, a
 // different file, and the container tier calls that one instead because
@@ -494,11 +656,18 @@ func claudeTrustProbe() Silence {
 	if err != nil {
 		return Silence{Unknown: true, Why: "no cwd to ask about"}
 	}
-	key := ClaudeTrustKey(cwd)
-	if ClaudeTrusted(state, cwd) {
-		return Silence{Silenced: true, Why: key + " is already trusted in " + AbbrevHome(p) + " — this launch writes nothing"}
+	// The key and not the cwd, and said as "the key for <cwd>" when they
+	// differ: an onboarder standing in a linked worktree needs to see the
+	// MAIN repo's path here, because that is the row the answer turns on
+	// and seeing the worktree's instead is the whole of ranger-base-elf2v.
+	subject := ClaudeTrustKey(cwd)
+	if real, err := filepath.EvalSymlinks(cwd); err != nil || filepath.Clean(real) != subject {
+		subject += " (the repo this directory belongs to)"
 	}
-	return Silence{Why: key + " is not trusted in " + AbbrevHome(p) + " — the launch seeds it (a dir the operator has never run claude in draws the modal)"}
+	if ClaudeTrusted(state, cwd) {
+		return Silence{Silenced: true, Why: subject + " is already trusted in " + AbbrevHome(p) + " — this launch writes nothing"}
+	}
+	return Silence{Why: subject + " is not trusted in " + AbbrevHome(p) + " — the launch seeds it (a repo the operator has never run claude in draws the modal)"}
 }
 
 // ClaudeOutsideReadSeenKey is claude's record that the operator has already

@@ -1015,7 +1015,19 @@ func (a *App) SeedCageHome(ag *AgentFile, rt *Runtime, dir string) (string, erro
 	// notice bites this tier hardest: a cage HOME is fresh by construction,
 	// so it is a config dir that has never answered anything
 	// (ranger-base-d3fwo).
-	claudeSeedProject(state, dir)
+	//
+	// And the same KEY, which is claude's canonical repo root and not the
+	// workdir (ranger-base-elf2v). The hop is computed on the host and it
+	// is still the right answer inside the container: a linked worktree's
+	// `.git` file holds an absolute path into the main repo's git dir, and
+	// gitCommonDirOutside mounts that dir same-path in and out exactly so
+	// the pointer resolves to the thing it points at (cageinner.go) — so a
+	// caged claude walks the same chain to the same main repo path, and
+	// this tier had the same dead seat the host tier did. claudeProjectKey
+	// and not ClaudeTrustKey: the workdir string is the MOUNT path and must
+	// stay literal, since resolving macOS's /var → /private/var on the host
+	// names a directory the container does not have.
+	claudeSeedProject(state, claudeProjectKey(dir))
 	state[ClaudeOutsideReadSeenKey] = true
 	return home, writeJSONInPlace(p, state)
 }
