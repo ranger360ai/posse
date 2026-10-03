@@ -56,12 +56,15 @@ import (
 	"time"
 )
 
-// stageRig is a Refill Run with one ready bead and a leg that will not come
-// back inside this test's lifetime — drainLegMS, for its own reason: two
+// stageRig is a Run with one ready bead. `held` gives it a leg that will not
+// come back inside this test's lifetime — drainLegMS, for its own reason: two
 // orders of magnitude outside every window asserted here, so "the pass
 // returned at a boundary" and "the pass waited something out" cannot be
-// confused at any load.
-func stageRig(t *testing.T) (*Dispatcher, *syncBuf, string) {
+// confused at any load — and the Refill shape that carries it, which is the
+// only shape with a stop to honour at all. Without `held` it is the one-shot
+// shape `posse dispatch` has always had: no window, a gather that drains to
+// zero, and a nil stopCtx.
+func stageRig(t *testing.T, held bool) (*Dispatcher, *syncBuf, string) {
 	t.Helper()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
@@ -70,11 +73,11 @@ func stageRig(t *testing.T) (*Dispatcher, *syncBuf, string) {
 	writePersona(t, b.App, "ranger", "[go]")
 	agentPerLaunch(t, fake)
 	qaRepo(t, b.App, `[{"id":"a-1","title":"t","labels":["go"]}]`, "")
-	os.WriteFile(filepath.Join(fake, "prompt-delay-ms"), []byte(drainLegMS), 0o644)
-	// The loop's shape: a rolling Run with a window, which is the only shape
-	// that has a stop to honour at all.
-	d.Refill = true
-	d.GatherWindow = 20 * time.Millisecond
+	if held {
+		os.WriteFile(filepath.Join(fake, "prompt-delay-ms"), []byte(drainLegMS), 0o644)
+		d.Refill = true
+		d.GatherWindow = 20 * time.Millisecond
+	}
 	return d, out, fake
 }
 
@@ -83,7 +86,7 @@ func TestQAStopIsHonouredInsideThePassEpilogue(t *testing.T) {
 
 	t.Run("a stopping loop returns at the first boundary and hires nobody", func(t *testing.T) {
 		t.Parallel()
-		d, out, _ := stageRig(t)
+		d, out, _ := stageRig(t, true)
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel() // the operator's SIGTERM, already delivered
 		d.stopCtx = ctx
@@ -111,7 +114,7 @@ func TestQAStopIsHonouredInsideThePassEpilogue(t *testing.T) {
 
 	t.Run("control: the same fixture with a live context hires and gathers", func(t *testing.T) {
 		t.Parallel()
-		d, out, fake := stageRig(t)
+		d, out, fake := stageRig(t, true)
 		ctx, cancel := context.WithCancel(context.Background())
 		d.stopCtx = ctx
 		t.Cleanup(func() {
@@ -133,6 +136,34 @@ func TestQAStopIsHonouredInsideThePassEpilogue(t *testing.T) {
 			t.Errorf("the fixture must be able to HIRE, or the stopped arm above measures a dead fixture:\n%s", s)
 		}
 	})
+
+	// The one-shot shape, which is every `posse dispatch` an operator types
+	// and every direct Run in this package: stopCtx is nil, so there is no
+	// loop to stop and every boundary above must be invisible. "No loop to
+	// stop" is never "interrupt me" — stopping()'s own rule, and the only
+	// direction a seven-way early return may fail in.
+	//
+	// MUTATION: `stopping()` → `d.stopCtx == nil || d.stopCtx.Err() != nil`
+	// → this arm reds at the first boundary, and nothing else in this file
+	// does, because both arms above set a context.
+	t.Run("a one-shot Run has no stop to honour", func(t *testing.T) {
+		t.Parallel()
+		d, out, _ := stageRig(t, false)
+		if d.stopCtx != nil {
+			t.Fatal("premise: a one-shot Run carries no context — that is what makes it one-shot")
+		}
+
+		if _, err := d.Run("", "", 0); err != nil {
+			t.Fatalf("the one-shot pass failed: %v\n%s", err, out.String())
+		}
+		s := out.String()
+		if strings.Contains(s, "stop honoured") {
+			t.Errorf("a Run with no loop behind it honoured a stop nobody asked for:\n%s", s)
+		}
+		if !strings.Contains(s, "creating session") {
+			t.Errorf("the one-shot pass must run all the way to a hire, or this arm cannot see a spurious stop:\n%s", s)
+		}
+	})
 }
 
 // The epilogue's stages, in the order Run runs them. Each is a stage that
@@ -148,11 +179,18 @@ var epilogueStages = []string{
 	"VerifyAfter",
 	"CIWatch",
 	"WarnLostBeads",
+	// The queue read is a stage like the rest — a bd child per configured
+	// dir — and it is the last one before anything is spent, which is why
+	// the boundary after it is the one that keeps a stopping loop from
+	// hiring. "ReadyAll" is the loop's own call; "Ready" is the --dir arm
+	// beside it, and either may come first in source order.
+	"ReadyAll",
 }
 
-// The read that ends the epilogue and begins spending: `bd ready` per dir,
-// and then the fire loop.
-var epilogueEnd = []string{"Ready", "ReadyAll"}
+// What ends the epilogue: the fire loop, which creates a session, claims a
+// bead and prompts it. Everything above must have a stop check between it and
+// this call.
+var epilogueEnd = []string{"fireLoop"}
 
 // Every fork-bearing stage of Run's epilogue is followed by a stop check
 // before the next stage begins — and one stands between the last of them and
@@ -262,18 +300,11 @@ func TestQAEveryEpilogueStageIsFollowedByAStopCheck(t *testing.T) {
 				s, fset.Position(token.Pos(stageAt[s])), s)
 		}
 	}
-	// And the last one, before anything is hired.
-	last := stageAt[epilogueStages[len(epilogueStages)-1]]
-	hire := false
-	for _, at := range bounds {
-		if at > last && at < endAt {
-			hire = true
-			break
-		}
-	}
-	if !hire {
-		t.Errorf("no stop check between the last epilogue stage and the bd ready read at %s: a stopping loop would "+
-			"still create, claim and prompt a session nobody is left to gather", fset.Position(token.Pos(endAt)))
-	}
+	// No separate "before any hire" assertion: the last stage above IS the
+	// queue read and the end marker IS fireLoop, so that claim is the last
+	// iteration of the loop above rather than a second check in the same
+	// window. It was a second check once, over a window with no fork in it,
+	// and deleting it reddened nothing — which is what moved the boundary in
+	// dispatch.go to the far side of the read.
 	t.Logf("%d epilogue stage(s), %d stop check(s) in Run", len(epilogueStages), len(stops))
 }

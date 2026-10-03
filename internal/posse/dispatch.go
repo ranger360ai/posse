@@ -2535,16 +2535,6 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 	if paused.Present && !d.DryRun {
 		return 0, nil
 	}
-	// The last boundary before the pass spends anything: `bd ready` per dir
-	// and then the fire loop, which creates sessions and prompts them. A
-	// loop that is stopping must not hire — the session would be launched,
-	// claimed and prompted by a process on its way out, with nobody left to
-	// gather it. The refill arm has refused on this reading since ADR 0028
-	// §1 (judge); the FIRE pass never asked.
-	if d.stopHere("the pre-routing epilogue, before any hire") {
-		return 0, nil
-	}
-
 	var beads []RepoIssue
 	if dirFilter != "" {
 		single, err := d.Bd.Ready(dirFilter, "")
@@ -2628,6 +2618,24 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 	// lifetime and for the same reason — the count that decides "second
 	// failure" must span this loop's refires, or a seat whose CLI is broken
 	// pays a fresh startup wait on every refill.
+	// The last boundary, and the only one that is about SPENDING rather than
+	// about a fork (ranger-base-sqxo1). `bd ready` above is itself a child
+	// per configured dir, so a stop delivered while the queue was being read
+	// arrives here — and what follows is the fire loop, which creates a
+	// session, claims a bead and prompts it. A loop on its way out must not
+	// hire: nobody would be left to gather that leg, and its claim would be
+	// held by a process that no longer exists. The refill arm has refused on
+	// exactly this reading since ADR 0028 §1 (judge); the FIRE pass never
+	// asked until now.
+	//
+	// Placed AFTER the read and not before it on purpose. Before it, it sat
+	// in a window with no fork in it — the pause decline is a struct field —
+	// so it duplicated the lost-bead sweep's boundary and a pin could not
+	// tell the two apart. MEASURED by deleting it: nothing red.
+	if d.stopHere("the ready read, before any hire") {
+		return 0, nil
+	}
+
 	busy, sessFail := d.seatState()
 	var dispatched int
 	var pending []*pendingBead
