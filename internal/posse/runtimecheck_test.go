@@ -848,6 +848,30 @@ func TestByColumnCreditsTheYamlThatDeclaredDetectionOrStartupWait(t *testing.T) 
 		// spellings, and only the first belongs on this row.
 		want:     []string{"startup_wait: unset → the default"},
 		unwanted: []string{"(startup_wait:)", "startup_wait: unset in runtimes/mycli.yaml"},
+	}, {
+		// The THIRD conjunct of the promptable append, which the two rows
+		// above leave free: an ARGV runtime whose yaml declares the key.
+		// The ladder ignores the wait — the value is the argv sentence and
+		// carries no number — so crediting `startup_wait:` here names a
+		// declarer for a fact the row does not carry, which is the noise
+		// the append's own comment says it is conditional to avoid. Drop
+		// `rt.PromptMode() == PromptTyped` and only this row reds.
+		//
+		// `read` is the reachability half: the loaders parse `startup_wait:`
+		// as a duration and ask nothing about `prompt:` (runtime.go:1940,
+		// :2209), so the pair is a state an instance yaml can reach. If one
+		// ever refuses it, writeRuntime's LoadRuntime fatals here rather
+		// than leaving this row quietly vacuous.
+		name:     "startup_wait: declared in the yaml of an argv runtime",
+		row:      "promptable",
+		body:     "command: mycli {file}\nprompt: " + PromptArgv + "\nstartup_wait: 30s\n",
+		want:     []string{`argv — the work prompt is appended to the launch line`, "runtimes/mycli.yaml (prompt:)"},
+		unwanted: []string{"(startup_wait:)", "startup_wait: unset in runtimes/mycli.yaml"},
+		read: func(t *testing.T, rt *Runtime) {
+			if rt.PromptMode() != PromptArgv || rt.Wait() != 30*time.Second {
+				t.Fatalf("an argv runtime declaring startup_wait: 30s is the state under test: %q/%s", rt.PromptMode(), rt.Wait())
+			}
+		},
 	}} {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
