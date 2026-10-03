@@ -138,6 +138,20 @@ turn on the measured turns (see D4), and the model's reply to it is
 noise. Trigger to revisit: a system-level channel that is neither the
 session dir nor the operator's global settings.
 
+*Superseded 2026-10-03 (ranger-base-f1ytb, ADR 0062): the trigger fired
+and the premise was wrong twice. `-p` never delivered (measured
+ranger-base-5jjtn), and Bob does have a launch-time system channel —
+`bob chat --mode <slug>` selects a custom mode whose `roleDefinition` is
+the `role_definition` section of its own system prompt, and modes load
+from the WORKSPACE (`<ws>/.bob/{custom_modes.yaml,plugins/*/custom_modes.yaml}`,
+`-w .` being the session dir) as well as from the home. The rejection
+below priced only the home variant. ADR 0062 D1 renders the PID as a
+hidden mode under `<session dir>/.bob/plugins/posse/`, the skills tree's
+sibling (ADR 0007), and `BobCommand` carries `{mode}`; D2 reads the footer
+before typing, because an unknown slug falls back to Agent with one grey
+line (MEASURED). The price D3 stated — one Bob turn per launch spent on the
+PID — is gone with it.*
+
 **D4 — No cost adapter and no turn-outcome reader now; both triggers
 named.** The unit behind `tasks.costs.cost` and the pane footer is
 **Bobcoins** (the status screen labels it `Bobcoins:` with the `🅞`

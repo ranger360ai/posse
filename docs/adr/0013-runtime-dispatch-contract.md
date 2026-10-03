@@ -254,6 +254,25 @@ ranger-base-d8riq (dispatch and create) and ranger-base-enmu2 (the two
 relaunch arms, blocked on the first); `git log --grep ranger-base-i3q6g`
 on main is the record of what landed, this sentence is a snapshot.
 
+**The launch row's "PID delivered" is a reading too (amended 2026-10-03,
+ranger-base-f1ytb, ADR 0062).** It was a sentence: `runtime check` printed
+*PID delivered by the template* unconditionally, and the only check on any
+launch path was `PIDVoided`, which asks whether a FLAG voids the PID and
+never whether the template carries one. The fourth instance of the class
+this block names (danger, declared screen, detection, now the PID), found
+when ranger-base-5jjtn measured Bob's `-p` dead and removed `{file}` from
+its template — after which a dispatched Bob seat spent its worktree, pane
+and `startup_wait` on a session carrying every native rulebook and no
+persona, and the row still read *delivered*. The rule now: one function
+says which placeholder of the rendered-from template delivered the PID
+(`{file}`, or `{mode}` for a runtime whose system channel is a posse-rendered
+mode, ADR 0062 D1), and three surfaces read it — this row, `agent check` on
+a PID's own `command:`, and the launch, where a bead-carrying launch REFUSES
+by name beside `PIDVoided` and an interactive one warns (row 5 above: the
+probe renders a persona line and is how the instance side measures the
+channel that lifts the refusal). Cut under ranger-base-f1ytb; `git log
+--grep ranger-base-f1ytb` on main is the record, this paragraph a snapshot.
+
 **Settle's declared half (added 2026-08-28, ranger-base-02zr).** herdr's
 settle says the pane went quiet; it cannot say whether a model ever
 handled the prompt. Claude writes an allotment refusal as a synthetic
