@@ -1,4 +1,4 @@
-# ranger-base-wcy4s — the launch verify's cost, measured as work instead of wall clock
+## The launch verify's cost, measured as work instead of wall clock (ranger-base-wcy4s)
 
 `TestVerifyPromotedCostIsNegligible` (internal/posse/promote_test.go) is the
 measurement ADR 0015 asks for on the row "launch-time hashing of the promoted
