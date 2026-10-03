@@ -194,15 +194,67 @@ func TestQAAtTheHomeTheSkillsTreeIsWrittenAndTheModeFileRefuses(t *testing.T) {
 // global config root that covers `.agents/skills`. A runtime that did would
 // make the home write global, which is the mode file's case and wants the
 // mode file's refusal rather than this file's blessing.
+//
+// THE QUESTION IS ASKED WITH THE PRODUCTION PREDICATE, not with a first
+// segment (ranger-base-szxlx, verifying this file's close). What makes a
+// declared root cover this tree is the same arithmetic
+// refusePersonaModeGlobalWrite does — `underDir(filepath.Join(home,
+// GlobalRoot), …)` — and `filepath.Join` CLEANS, so four spellings resolve
+// onto `<home>/.agents` while their first segment is not `.agents` at all:
+// `/.agents`, `./.agents`, `.` (the home itself, which contains everything
+// under it) and `../<home>/.agents`. MEASURED 2026-10-03: all four cover the
+// tree under `underDir` and a `strings.Split(GlobalRoot, "/")[0] == seg`
+// test flags none of them. A root is a hand-typed table literal, so the
+// spelling is exactly the kind of thing that arrives by hand.
+//
+// The sweep therefore carries its own two halves, because a loop over a
+// table can go green by reaching nothing: the FLOOR (at least one runtime
+// declares a root at all, else the comparison below never runs) and the
+// CONTROL (the same predicate, over a planted root, must say yes).
 func TestQANoRuntimeDeclaresAGlobalRootOverTheAgentsSkillsTree(t *testing.T) {
 	t.Parallel()
-	// The tree's first segment is what a CLI config root would have to
-	// collide with, and it is read off the constant so a change to the
-	// surface cannot leave this arm testing a stale name.
-	seg := strings.Split(AgentsSkillsPath, "/")[0]
-	if seg == "" || seg == AgentsSkillsPath {
-		t.Fatalf("AgentsSkillsPath is %q — this arm needs a rooted relative path to take a first segment from", AgentsSkillsPath)
+	// The home is a real directory because `underDir` resolves symlinks over
+	// the deepest existing ancestor — on darwin a `/var` home is a link, and
+	// a textual test reads it as outside itself.
+	home := t.TempDir()
+	tree := AgentsSkillsDir(home)
+	if err := os.MkdirAll(tree, 0o755); err != nil {
+		t.Fatal(err)
 	}
+	if tree == home {
+		t.Fatalf("AgentsSkillsPath is %q — this arm needs a path under the session dir to ask containment about", AgentsSkillsPath)
+	}
+	// covers is refusePersonaModeGlobalWrite's own reading of a declared
+	// root, with the glob left out exactly as the production guard leaves it
+	// out: anywhere under `<home>/<GlobalRoot>` is inside.
+	covers := func(globalRoot string) bool {
+		if globalRoot == "" {
+			return false
+		}
+		return underDir(filepath.Join(home, filepath.FromSlash(globalRoot)), tree)
+	}
+
+	// CONTROL first: the predicate must say yes to a root that does cover
+	// the tree, in every spelling that resolves onto it. Without this the
+	// whole sweep is green over a predicate that answers no to everything.
+	for _, spelling := range []string{
+		AgentsSkillsPath,                               // `.agents/skills`
+		strings.Split(AgentsSkillsPath, "/")[0],        // `.agents`
+		"/" + strings.Split(AgentsSkillsPath, "/")[0],  // `/.agents`
+		"./" + strings.Split(AgentsSkillsPath, "/")[0], // `./.agents`
+		".", // the home itself
+		"../" + filepath.Base(home) + "/" + strings.Split(AgentsSkillsPath, "/")[0],
+	} {
+		if !covers(spelling) {
+			t.Errorf("control: a GlobalRoot of %q resolves onto %s and must read as covering it — this arm cannot catch what it is for", spelling, tree)
+		}
+	}
+	// And the negative half of the control, so `covers` is not a function
+	// that says yes to everything: bob's real root does not cover the tree.
+	if covers(".bob") {
+		t.Error("control: a GlobalRoot of \".bob\" must NOT read as covering the skills tree — the predicate is answering yes to everything")
+	}
+
 	// builtinRuntimes is the WHOLE set to sweep: `PersonaMode` has no yaml
 	// key at all, so a template runtime cannot declare a config root, and a
 	// built-in is the only place one can appear.
@@ -211,14 +263,25 @@ func TestQANoRuntimeDeclaresAGlobalRootOverTheAgentsSkillsTree(t *testing.T) {
 	// puts the table in cmd/testparallel's WRITTEN set, which makes every
 	// `t.Parallel` test that merely reads it uncleared — nine of them, and
 	// `make verify-parallel` names all nine for one `&` here.
+	declared := 0
 	for _, rt := range builtinRuntimes {
 		c := rt.PersonaMode
 		if c == nil || c.GlobalRoot == "" {
 			continue
 		}
-		root := strings.Split(c.GlobalRoot, "/")[0]
-		if root == seg {
+		declared++
+		if covers(c.GlobalRoot) {
 			t.Errorf("runtime %s declares %q as its GLOBAL config root, which covers %s — the skills tree at a session dir of $HOME is then a global write, and wants refusePersonaModeGlobalWrite's treatment rather than TestQASkillsTreeAtASessionDirThatIsTheHomeIsWrittenOnPurpose's blessing (ranger-base-q114b)", rt.Name, c.GlobalRoot, AgentsSkillsPath)
 		}
+	}
+	// FLOOR: the sweep above is a loop, and a loop that iterates over
+	// nothing is indistinguishable from a loop that found nothing. bob has
+	// declared `.bob` since ADR 0060; if no runtime declares a root any
+	// more, this arm has stopped asking the question rather than answering
+	// it — and the sibling that would notice,
+	// TestQAAtTheHomeTheSkillsTreeIsWrittenAndTheModeFileRefuses, notices
+	// only for the runtime its fixture uses.
+	if declared == 0 {
+		t.Errorf("no built-in runtime declares a PersonaMode.GlobalRoot, so the sweep above compared nothing — %s is unheld, not clear (ranger-base-q114b)", AgentsSkillsPath)
 	}
 }
