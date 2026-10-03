@@ -239,3 +239,52 @@ func TestStallGraceIsTheRuntimesStartupWait(t *testing.T) {
 		t.Errorf("a declared startup_wait is the grace, got %s", got)
 	}
 }
+
+// committedWork's three answers, pinned apart. The middle one is the design:
+// "could not be read" and "read, and there is nothing" decide opposite
+// things, and the suite above can only reach two of the three through a pass.
+func TestCommittedWorkIsATriState(t *testing.T) {
+	t.Parallel()
+	b, _ := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+
+	if n, read := d.committedWork(&pendingBead{session: "nosuchsession"}); read || n != 0 {
+		t.Errorf("no run record is ignorance, not an answer: got (%d, %v)", n, read)
+	}
+
+	// A session that shares the checkout: no branch of its own, so there is
+	// no such evidence to be had — and that is an ANSWER, the shape every
+	// session had before per-session worktrees landed.
+	mustCreate(t, b, NewSessionOpts{Name: "shared"})
+	if n, read := d.committedWork(&pendingBead{session: "shared"}); !read || n != 0 {
+		t.Errorf("a session with no branch reads zero, readably: got (%d, %v)", n, read)
+	}
+
+	// A record naming a tree and a branch that are not there. Two ways git
+	// says nothing and both keep the claim: no base to count against, and a
+	// head that cannot be read.
+	m, ok := b.readMeta("shared")
+	if !ok {
+		t.Fatal("no meta for shared")
+	}
+	gone := filepath.Join(t.TempDir(), "gone")
+	m.Repo, m.Dir, m.Branch = gone, gone, "posse/shared"
+	if err := b.writeMeta(m); err != nil {
+		t.Fatal(err)
+	}
+	if n, read := d.committedWork(&pendingBead{session: "shared"}); read || n != 0 {
+		t.Errorf("a repo that is not there has no base to count against: got (%d, %v)", n, read)
+	}
+	// A real repo (so the base falls back to its own branch) with the tree
+	// and the branch missing: this is the workHead arm.
+	m.Repo, m.Dir, m.Branch = wtRepo(t), gone, "posse/nope"
+	if err := b.writeMeta(m); err != nil {
+		t.Fatal(err)
+	}
+	if t2 := SessionTreeOf(m); t2 == nil || t2.Base == "" {
+		t.Fatalf("setup: this arm has to reach workHead, not the base check: %+v", t2)
+	}
+	if n, read := d.committedWork(&pendingBead{session: "shared"}); read || n != 0 {
+		t.Errorf("a head git will not name is ignorance: got (%d, %v)", n, read)
+	}
+}
