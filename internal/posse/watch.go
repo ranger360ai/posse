@@ -322,6 +322,12 @@ func (d *Dispatcher) Watch(ctx context.Context, dirFilter, personaFilter string,
 	// (ranger-base-3ryit): a loop that has not completed a pass yet is
 	// measured from its start, not from a zero.
 	d.notePass()
+	// …and for the third reading on that goroutine, the suspend witness
+	// (ranger-base-sqxo1, suspend.go). Seeded here for the same reason and
+	// one more: a box suspended inside the loop's first SuspendTick would
+	// otherwise be the one suspend nothing names, and a laptop started on a
+	// dying battery is exactly when that happens.
+	d.noteClock()
 	dogCtx, dogCancel := context.WithCancel(ctx)
 	dogDone := make(chan struct{})
 	defer func() {

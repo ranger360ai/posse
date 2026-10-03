@@ -150,17 +150,35 @@ func watchdogPassBudget(maxInterval, window time.Duration) time.Duration {
 // It ticks at `every` (the loop's base interval) rather than at the budget,
 // so the first report lands within one interval of the budget expiring and
 // the repeats read as a cadence an operator can time.
+//
+// The SUSPEND witness rides this goroutine on a ticker of its own
+// (suspend.go, ranger-base-sqxo1): same shape, same stream, and the reading
+// that finally answers the question both readings above are built to decline
+// — was the box awake for the silence? It is on a separate ticker because its
+// cadence is not this loop's (SuspendTick), and outside the budget guard
+// below because it is armed by neither budget: a caller with no cadence at
+// all still runs on a box that can be suspended, and the two incidents this
+// witness exists for both read as hangs while every budgeted reading here was
+// correctly silent.
 func (d *Dispatcher) watchdogLoop(ctx context.Context, every, budget, passBudget time.Duration) {
-	if every <= 0 || (budget <= 0 && passBudget <= 0) {
-		return
+	clock := time.NewTicker(suspendEvery(every))
+	defer clock.Stop()
+	// The budgeted half, armed only when there is a budget to break. nil
+	// stays nil in a select, so a caller with neither budget gets the suspend
+	// witness and no watchdog, which is what it asked for.
+	var dog <-chan time.Time
+	if every > 0 && (budget > 0 || passBudget > 0) {
+		ticker := time.NewTicker(every)
+		defer ticker.Stop()
+		dog = ticker.C
 	}
-	ticker := time.NewTicker(every)
-	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
+		case <-clock.C:
+			d.suspendTick()
+		case <-dog:
 			d.watchdogTick(budget)
 			d.passStallTick(passBudget)
 		}

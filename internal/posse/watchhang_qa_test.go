@@ -984,7 +984,7 @@ func TestQAWatchStreamWritesGoThroughTheDispatcher(t *testing.T) {
 // passing over nothing.
 func TestQAClockFilesUseOnlyTheQuietPair(t *testing.T) {
 	t.Parallel()
-	for _, file := range []string{"pulse.go", "watchdog.go", "guardclock.go", "backuploop.go"} {
+	for _, file := range []string{"pulse.go", "watchdog.go", "guardclock.go", "backuploop.go", "suspend.go"} {
 		t.Run(file, func(t *testing.T) {
 			t.Parallel()
 			src, err := os.ReadFile(file)

@@ -186,6 +186,19 @@ type Dispatcher struct {
 	// Now is the clock the blind window is measured against; nil = time.Now.
 	// Tests age the clock instead of sleeping ten minutes.
 	Now func() time.Time
+	// Clocks is the suspend witness's single reading of BOTH clocks — the
+	// box's wall clock and a monotonic elapsed (suspend.go); nil = the real
+	// pair, time.Now() and monoSince().
+	//
+	// Deliberately not Now. The witness's subject is the BOX, where Now is
+	// this Dispatcher's view of the shop, and the fixtures that age Now age
+	// it by hours or run it at 10000x to reach a budget — which is exactly
+	// the wall-against-monotonic divergence a suspend makes, so reading Now
+	// here would print a suspend line into every one of them. One seam
+	// returning both readings rather than two is also what makes the skew
+	// argument in suspend.go's head true: a test cannot move one of the pair
+	// without the other being read in the same call.
+	Clocks func() (time.Time, time.Duration)
 
 	mu         sync.Mutex
 	lastPrompt map[string]time.Time // session → when this process last prompted it
@@ -206,6 +219,13 @@ type Dispatcher struct {
 	// watchdog's finding about it to one line per stall (watchdog.go).
 	lastPass      time.Time
 	passStallSaid bool
+
+	// The suspend witness's previous reading of the two clocks (suspend.go):
+	// the gap that opens between them over one tick is the time the box spent
+	// suspended, which is the one thing no other clock in this process can
+	// see and the reading two incidents were triaged as hangs for want of.
+	clockWall time.Time
+	clockMono time.Duration
 
 	// lastWrite is when this Dispatcher last wrote a line, guarded by outMu
 	// because every writer already holds it. See LastWrite and watchdog.go.
