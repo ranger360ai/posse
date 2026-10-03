@@ -257,10 +257,36 @@ func TestQAOneThrottleADeadWatchLoopRefillsNothing(t *testing.T) {
 				t.Fatal(err)
 			}
 			out := dispatcherOut(d)
-			// The first bead is the fixture's witness: it fires either way,
-			// because it is the Run's own fire pass and not a refill.
-			if !strings.Contains(out, "· a-1            creating session") {
-				t.Fatalf("fixture: the Run never fired at all, so the arm below measures nothing:\n%s", out)
+			if tc.dead {
+				// "The loop is gone, so nothing fires" — this test's own doc
+				// above, and ADR 0028 §5 observable 2 ("watch process killed
+				// → zero new launches"). Since ranger-base-sqxo1 the code
+				// finally says it: the pass reads the stop at every boundary
+				// of its pre-routing epilogue and returns before the fire
+				// loop, so the throttle is no longer only the refill's
+				// refusal — the pass offers no seat at all.
+				//
+				// The premise guard is therefore the STOP LINE and not a
+				// launch. It is positive evidence of WHY nothing fired, which
+				// is exactly what the old guard ("a-1 fires either way") was
+				// reaching for — by a route that required the pass to run on
+				// past a cancelled context, which was the defect
+				// ranger-base-sqxo1's second occurrence was.
+				// The behavioural claim first, and non-fatally, so a failure
+				// reports what was actually observed. Asking for the stop
+				// line first would print "nothing fired" over a run that
+				// fired — which is exactly what it did when this was checked
+				// against a Run with the stop checks removed.
+				if strings.Contains(out, "creating session") {
+					t.Errorf("a Run whose loop is gone must invite no work at all, not merely decline the refill (ADR 0028 §4, §5 obs.2):\n%s", out)
+				}
+				if !strings.Contains(out, "stop honoured") {
+					t.Fatalf("fixture: the pass does not say a stop is why it ended, so a zero above could be an unrelated failure:\n%s", out)
+				}
+			} else if !strings.Contains(out, "· a-1            creating session") {
+				// The live arm's own witness: the rig can launch. It is what
+				// keeps the dead arm's zero from reading as a broken fixture.
+				t.Fatalf("fixture: the live Run never fired at all, so neither arm measures anything:\n%s", out)
 			}
 			got := strings.Contains(out, "· a-2            creating session")
 			if got != tc.want2 {

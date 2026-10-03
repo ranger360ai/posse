@@ -205,8 +205,17 @@ func TestWatchNamesAFailedScanAndKeepsLooping(t *testing.T) {
 	writePersona(t, b.App, "ranger", "[go]")
 	scanConfig(t, b.App, scanRepo(t, ""), scanRepo(t, ""))
 
+	// Two numbers, and they must not be the same one (ranger-base-sqxo1).
+	// wantPasses is the CLAIM — how many failed passes must be named — and
+	// the tap's number is the TERMINATOR, the header whose arrival cancels
+	// the loop. They were both 2, so the cancel landed on the header of the
+	// very pass being asserted, and this fixture only passed because a
+	// cancelled context did not reach the pass. It does now: the pass reads
+	// the stop at every boundary of its epilogue and returns at the first
+	// one, so a pass cancelled at its header never reaches the ready scan it
+	// is here to name. Cancel one pass LATER and the claim is unchanged.
 	const wantPasses = 2
-	tap := newPassTap(wantPasses)
+	tap := newPassTap(wantPasses + 1)
 	d.Out = tap
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -225,7 +234,7 @@ func TestWatchNamesAFailedScanAndKeepsLooping(t *testing.T) {
 	select {
 	case passes = <-done:
 	case <-time.After(30 * time.Second):
-		t.Fatalf("watch never returned, though cancel fired on pass %d's header:\n%s", wantPasses, tap.String())
+		t.Fatalf("watch never returned, though cancel fired on pass %d's header:\n%s", wantPasses+1, tap.String())
 	}
 	out := tap.String()
 	if passes < wantPasses {
