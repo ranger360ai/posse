@@ -373,9 +373,16 @@ func TestTrustKeyFollowsTheSamePointerChainClaudeDoes(t *testing.T) {
 		// The bead's case note: `bd` lists ~/src/hcn, the filesystem spells
 		// HCN, and claude's exact-string lookup only matches git's spelling.
 		// Claude derives the main repo from the pointer files and never
-		// realpaths the answer (MEASURED: its canonical-root function
-		// NFC-normalizes and nothing else), so posse must not either — a key
-		// posse "corrected" is a key claude never looks up.
+		// realpaths the answer, so posse must not either — a key posse
+		// "corrected" is a key claude never looks up.
+		//
+		// SYMLINKS and CASE, and nothing wider than that. This comment used
+		// to generalize from "NFC-normalizes and nothing else" to "so posse
+		// must not either", which was true of realpath and of case and false
+		// of Unicode: claude's key is NFC in every shape, posse's was the
+		// bytes as handed, and a decomposed codepoint anywhere in the path
+		// was a grant claude never read (ranger-base-d88rp — the normalization
+		// axis is pinned by TestTrustKeyIsNFCWhereClaudesIs below).
 		root := qaEvalPath(t, t.TempDir())
 		real := filepath.Join(root, "Main")
 		link := filepath.Join(root, "main-link")
@@ -449,6 +456,120 @@ func TestTrustKeyFollowsTheSamePointerChainClaudeDoes(t *testing.T) {
 		if got, want := ClaudeTrustKey(wt), ClaudeTrustKey(main); got != want {
 			t.Errorf("got %q, want %q", got, want)
 		}
+	})
+}
+
+// The normalization axis, which nothing pinned until ranger-base-d88rp: the
+// projects[] key claude looks a directory up under is NFC, and posse's was
+// the bytes it was handed, so a repo whose path carried a DECOMPOSED
+// codepoint got a grant written under a key claude never reads — the seat
+// opens on the trust dialog and never takes its prompt, which is
+// ranger-base-elf2v's failure one spelling axis over.
+//
+// MEASURED 2026-10-03, claude 2.1.288 darwin-arm64, by asking the CLI which
+// key it wants (scripts/claude-trust-key.sh) over a directory named
+// "re" U+0301 "po": COMPOSED in all five shapes the table above enumerates,
+// bails included, and composed when the decomposed codepoint sits in a
+// parent component rather than the leaf. End to end in the same run: a
+// scratch CLAUDE_CONFIG_DIR holding the composed key silences
+// `claude config list`'s untrusted-workspace line and one holding the
+// decomposed key does not.
+//
+// The fixtures write their pointer files in the DECOMPOSED spelling on
+// purpose, because that is what the fleet hands posse: git stores path bytes
+// and normalizes nothing, so a worktree of a decomposed main repo carries a
+// decomposed `gitdir:` and the hop lands on the decomposed path.
+func TestTrustKeyIsNFCWhereClaudesIs(t *testing.T) {
+	t.Parallel()
+	// Written as explicit codepoints rather than through x/text, so the
+	// expectation is a literal and not a second call to the code under test.
+	const (
+		nfd = "re\u0301po" // "re" + U+0301 COMBINING ACUTE ACCENT
+		nfc = "r\u00e9po"  // U+00E9 LATIN SMALL LETTER E WITH ACUTE
+	)
+	mkdirs := func(t *testing.T, paths ...string) {
+		t.Helper()
+		for _, d := range paths {
+			if err := os.MkdirAll(d, 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	check := func(t *testing.T, dir, want, why string) {
+		t.Helper()
+		if got := ClaudeTrustKey(dir); got != want {
+			t.Errorf("ClaudeTrustKey(% x)\n got %q (% x)\nwant %q (% x)\n%s", dir, got, got, want, want, why)
+		}
+	}
+	t.Run("a repo root spelled decomposed keys composed", func(t *testing.T) {
+		t.Parallel()
+		root := qaEvalPath(t, t.TempDir())
+		repo := filepath.Join(root, nfd)
+		mkdirs(t, filepath.Join(repo, ".git"))
+		check(t, repo, filepath.Join(root, nfc),
+			"a `.git` DIRECTORY is one of claude's bail arms — the bundle's `tn` returns the root unnormalized there and the CLI still named the composed key, so the normalization is over the whole key")
+	})
+	t.Run("a linked worktree of a decomposed main repo keys on its composed path", func(t *testing.T) {
+		t.Parallel()
+		root := qaEvalPath(t, t.TempDir())
+		main := filepath.Join(root, nfd)
+		wt := filepath.Join(root, "wt")
+		qaWorktreePointers(t, wt, filepath.Join(main, ".git", "worktrees", "wt"), "../..")
+		check(t, wt, filepath.Join(root, nfc),
+			"the fleet shape: the hop answers the pointer's decomposed spelling and the key claude reads is the composed one")
+	})
+	t.Run("a decomposed codepoint in a parent component normalizes too", func(t *testing.T) {
+		t.Parallel()
+		root := qaEvalPath(t, t.TempDir())
+		repo := filepath.Join(root, nfd, "leaf")
+		mkdirs(t, filepath.Join(repo, ".git"))
+		check(t, repo, filepath.Join(root, nfc, "leaf"),
+			"claude normalizes the key STRING, not its last component (MEASURED over an ASCII leaf under a decomposed parent)")
+	})
+	t.Run("a dir in no repo keys composed", func(t *testing.T) {
+		t.Parallel()
+		root := qaEvalPath(t, t.TempDir())
+		dir := filepath.Join(root, nfd)
+		mkdirs(t, dir)
+		check(t, dir, filepath.Join(root, nfc),
+			"the no-repo arm is the one the bundle normalizes visibly (`cB(Nn(Xe(n)))`), and it is also the arm a `posse new` scratch dir outside a repo takes")
+	})
+	t.Run("an already-composed path is handed back unchanged", func(t *testing.T) {
+		t.Parallel()
+		root := qaEvalPath(t, t.TempDir())
+		repo := filepath.Join(root, nfc)
+		mkdirs(t, filepath.Join(repo, ".git"))
+		check(t, repo, repo,
+			"NFC is idempotent, and the live fleet is this arm: normalizing must not move a key that was already the one claude reads")
+	})
+	t.Run("an ASCII path is untouched byte for byte", func(t *testing.T) {
+		t.Parallel()
+		root := qaEvalPath(t, t.TempDir())
+		repo := filepath.Join(root, "ascii-repo")
+		mkdirs(t, filepath.Join(repo, ".git"))
+		check(t, repo, repo,
+			"every repo on this box today is ASCII, where NFC is the identity — this arm is what says the fix changed nothing for them")
+	})
+	t.Run("case is still not corrected", func(t *testing.T) {
+		t.Parallel()
+		// The axis next door, and deliberately left diverging: claude keys
+		// on the kernel's cwd so it gets the on-disk spelling, while posse
+		// keeps the spelling it was handed. MEASURED by QA on the same
+		// build and recorded in ranger-base-d88rp: `lab/caserepo` over an
+		// on-disk `CASEREPO` gives posse `caserepo` and claude `CASEREPO`,
+		// and the lowercase key does NOT silence the gate. No fleet path
+		// reaches it — git writes the worktree pointer in the on-disk
+		// spelling and posse creates its own session dirs — and correcting
+		// it would break the case note the pointer-spelling arm above holds
+		// (~/src/hcn over an on-disk HCN).
+		root := qaEvalPath(t, t.TempDir())
+		mkdirs(t, filepath.Join(root, "CASEREPO", ".git"))
+		asked := filepath.Join(root, "caserepo")
+		if _, err := os.Stat(filepath.Join(asked, ".git")); err != nil {
+			t.Skipf("case-sensitive filesystem: %v", err)
+		}
+		check(t, asked, asked,
+			"the key is the spelling posse was handed; a case-corrected key is the HCN note's dead seat")
 	})
 }
 

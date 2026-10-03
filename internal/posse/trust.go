@@ -79,6 +79,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"golang.org/x/text/unicode/norm"
 )
 
 // ClaudeConfigFile is the file claude keeps its `projects` map in,
@@ -153,9 +155,17 @@ func ClaudeConfigFile() string {
 // launched in — where this treats empty as unset; mirroring that would have
 // posse stat a relative path, which is a worse answer than ~/.claude to a
 // misconfiguration neither of us should have. And `.normalize("NFC")` is
-// Unicode normalization posse does not do: a config dir spelled with
-// decomposed codepoints is one posse and the runtime could disagree about
-// on a filesystem that preserves the difference.
+// Unicode normalization posse does not do HERE — the opposite of the answer
+// for the trust KEY, and for the reason that distinguishes the two
+// (ranger-base-d88rp): this function answers a path posse OPENS, and on a
+// filesystem that preserves the difference the composed spelling of a
+// decomposed directory is a path that is not there, so mirroring the
+// runtime would draw a credential wall over a file nothing uses.
+// claudeProjectKey's answer is a JSON map key posse never stats, so there
+// the runtime's spelling is the only one worth writing. What is left
+// standing here is the runtime's own to carry: it opens the composed form
+// of a decomposed directory, and posse cannot make that file appear by
+// renaming its guess.
 //
 // REVISITED, ranger-base-e9xba: this is the answer for credentialDir, which
 // this same empty arm feeds and where the divergence bites — a wall drawn
@@ -249,17 +259,54 @@ func ClaudeTrustKey(dir string) string {
 // neither exists (cagehomelock_qa_test.go's "literal dir string" note).
 //
 // It mirrors claude's N0e: the canonical root of the enclosing git repo,
-// else the dir. Nothing here resolves a symlink and nothing normalizes
-// Unicode — claude NFC-normalizes the key it computes and posse deliberately
-// does not (ClaudeConfigDirIn has the same divergence and the same reason: a
-// path spelled with decomposed codepoints is one posse and the runtime could
-// disagree about on a filesystem that preserves the difference).
+// else the dir — and then NFC, which is the one transform posse applies to
+// the answer. Nothing here resolves a symlink and nothing corrects CASE.
+//
+// The Unicode normalization is what this comment used to argue AGAINST, and
+// the divergence it argued for was a dead seat (ranger-base-d88rp, escaped
+// the ranger-base-elf2v close). claude's `N0e` ends in `cB`, and `cB`
+// NFC-normalizes: so for a repo whose path carried a DECOMPOSED codepoint,
+// posse wrote projects[<the NFD spelling>] while claude read
+// projects[<the NFC spelling>] — different JSON keys, and the grant inert,
+// which is ranger-base-elf2v's failure one spelling axis over.
+//
+// MEASURED 2026-10-03, claude 2.1.288 darwin-arm64, by asking the CLI which
+// key it wants (scripts/claude-trust-key.sh) over a directory named
+// "re" U+0301 "po": the key comes back COMPOSED in every shape — a repo
+// root, a linked worktree, a worktree of a bare repo, a dir in no repo, and
+// a `.git` pointer that does not round-trip — and also when the decomposed
+// codepoint sits in a PARENT component rather than the leaf. So the
+// normalization is over the whole key and not over `tn`'s hop arms, which
+// is where the shipped bundle spells `Nn` and where reading that source
+// alone would have put it: docs/notes.d/ranger-base-elf2v.md:85-101
+// transcribes `tn` returning `Nn(u)`, and every `return e` bail in it is
+// unnormalized — all of them still measured composed.
+//
+// On the KEY and on nothing else. This value is a JSON map key — posse
+// never stats it (ClaudeTrustKey, ClaudeTrusted and claudeSeedProject are
+// its only callers, and all three index `projects`), so normalizing it
+// cannot name a directory that is not there. ClaudeConfigDirIn keeps the
+// spelling it was handed for that same reason reversed: it answers a path
+// posse opens.
+//
+// CASE is a different question and stays uncorrected. claude keys on the
+// kernel's cwd, so it gets the on-disk spelling for free; posse keeps the
+// spelling it was handed. MEASURED by QA on the same build and recorded in
+// ranger-base-d88rp: `lab/caserepo` over an on-disk `CASEREPO` gives posse
+// `caserepo` and claude `CASEREPO`, and the lowercase key does not silence
+// the gate. No fleet path reaches it — git writes the worktree pointer in
+// the on-disk spelling (MEASURED there too: a `git worktree add` under
+// `caserepo` wrote `gitdir: .../CASEREPO/.git/worktrees/...`) and posse
+// creates its own session dirs — and "correcting" it would break what the
+// pointer-spelling pin holds: `bd` lists ~/src/hcn where the filesystem
+// spells HCN, and claude's lookup is an exact string match against git's
+// spelling.
 func claudeProjectKey(dir string) string {
-	root := gitRootOf(dir)
-	if root == "" {
-		return dir
+	key := dir
+	if root := gitRootOf(dir); root != "" {
+		key = claudeMainRepoOf(root)
 	}
-	return claudeMainRepoOf(root)
+	return norm.NFC.String(key)
 }
 
 // claudeMainRepoOf takes a git root and answers the canonical root: the main

@@ -106,6 +106,15 @@ spelling. `internal/posse/trust.go`'s `claudeMainRepoOf` mirrors `tn` bail for
 bail, and `TestTrustKeyFollowsTheSamePointerChainClaudeDoes` pins the three
 bails plus the pointer-spelling rule.
 
+> **CORRECTED, ranger-base-d88rp.** "must not correct it" is true of realpath
+> and true of CASE and **false of Unicode**. `tn` is the hop, not the whole
+> key: `N0e` wraps it in `cB`, and the key claude asks for is NFC on *every*
+> arm, `tn`'s unnormalized `return e` bails included (MEASURED 2026-10-03 on
+> the same build, six shapes). So posse writing the bytes as handed was a
+> `projects[]` key claude never reads for any repo path carrying a decomposed
+> codepoint — this bead's own failure, one spelling axis over. The key is
+> NFC-normalized now; see docs/notes.d/ranger-base-d88rp.md.
+
 One row above is a step earlier than `tn` and cost `gitRootOf` its `Lstat`:
 claude's find_git_root probe resolves the `.git` entry and takes
 `isFile() || isDirectory()`, so a dangling `.git` symlink is **not** a root
