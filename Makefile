@@ -703,16 +703,23 @@ verify-detection:
 #
 # verify-herdr-bob proves the patch against COPIES of the installed checkout
 # under a fake herdr, with a control arm on the pristine tree that must fail
-# the same four ways — nothing in it reaches the live server. It is NOT a
-# prerequisite of `make test`: it needs the plugin installed, which is an
-# instance fact, and it spends ~45s in sleeps watching a 1s poll loop.
+# the same four ways, and a third arm on the installer's own roots — nothing in
+# it reaches the live server. The copies are staged from the PINNED COMMIT, not
+# from the working tree, because `cp -R` of an installed checkout stops being a
+# control the day the patch is applied to it (and then hangs rather than fails).
+# ~17s. NOT a prerequisite of `make test`: it needs the plugin installed, which
+# is an instance fact.
 verify-herdr-bob:
 	scripts/verify-herdr-bob.sh
 
 # install-herdr-bob writes to the LIVE herdr: --start hands the watcher a
 # standing licence to label any unclaimed pane whose foreground process is
 # Bob. Operator-gated, per persona; `scripts/herdr-bob-install.sh --check` is
-# the read-only half and reports pin, patch state and watcher state.
+# the read-only half and reports pin, patch state, the resolved roots and
+# watcher state. --start exports the HERDR_PLUGIN_* roots herdr's own
+# [[startup]] hook sets and prints them, because a --start without them starts
+# the watcher on the FALLBACK roots, reading rules nobody proved, where the
+# plugin's own `stop` cannot see it (ranger-base-mz8ud).
 install-herdr-bob:
 	scripts/herdr-bob-install.sh --apply
 	scripts/herdr-bob-install.sh --start

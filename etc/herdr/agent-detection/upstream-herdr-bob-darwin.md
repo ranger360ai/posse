@@ -39,6 +39,16 @@ running to ask it.
 
 Four bugs, in the order they bite. A patch for all four is attached below.
 
+**Since 2026-10-03 the patch is applied and the watcher is running on this
+box**, which turns the rest of this report from a reading into a measurement:
+with the four fixes in place, a `bob chat` started by hand in a fresh pane with
+**nothing typed** was adopted and labelled in **5 seconds** — on the live herdr
+0.9.1 server at the watcher's own defaults (`interval 2s`, adoption every 3rd
+tick), `agent=bob`, `agent_status=idle`, `display_agent` set, and
+`2026-10-03T17:06:45-04:00 adopted hand-started bob in w2PK:p2` in the log. The
+same pane was released on close. The adoption path works; it had simply never
+been reached.
+
 ### 1. `setsid` is util-linux and does not exist on darwin — and nothing retries
 
 `bin/bob-watchctl`, `start`:
@@ -166,22 +176,57 @@ dialog, and neither is reachable by the rules as written. posse's draft herdr
 manifest for Bob (`etc/herdr/agent-detection/upstream/bob/bob.toml`, filed
 separately in `upstream-bob.md`) keys on exactly those two.
 
+### 6. Not a bug, but it cost an operator an hour: the fallback roots diverge in silence
+
+`lib/common.sh`'s `state_root()` and `config_root()` fall back to
+`~/.local/state/herdr-bob` and `~/.config/herdr-bob` when `HERDR_PLUGIN_STATE_DIR`
+and `HERDR_PLUGIN_CONFIG_DIR` are unset. That is reasonable for `bob-hook`,
+which Bob runs and which is told its state dir on the command line. It is a trap
+for `bob-watchctl`, because the obvious way to start the watcher once by hand —
+`bash bin/bob-watchctl start`, which is what the manifest's `[[startup]]` hook
+runs — resolves *different* roots from the hook's, and says nothing about it.
+MEASURED on this box, 2026-10-03: a hand-started watcher wrote its pidfile and
+log under `~/.local/state/herdr-bob`, seeded and read
+`~/.config/herdr-bob/rules.json` instead of the reviewed copy in the plugin
+config dir, and — the part that is hard to recover from — was **invisible to
+`bob-watchctl stop` run under the plugin roots**, because `stop` reads the
+pidfile under whichever root it is given. The result is two watchers reporting
+into one server, one of them on rules nobody chose.
+
+Two cheap things would close it: have `start` and `status` print the roots they
+resolved (`status` already prints `state:` and `config:` — `start` does not), and
+have `start` notice a live `watch.pid` under the *other* root and say so rather
+than add a second watcher. posse's wrapper does both, because it had to.
+
 ## The patch
 
 `etc/herdr/herdr-bob/darwin-portability.patch` in the posse repo, cut against
 `e53bd475`. It is applied to this box's checkout by
 `scripts/herdr-bob-install.sh --apply` and proved by
-`scripts/verify-herdr-bob.sh`, which runs two arms — the pristine tree, which
-must fail all four ways, and the patched tree, which must adopt an unclaimed
-Bob pane, report `blocked` once and clear it once, and read a fresh heartbeat as
-fresh. Both arms run against copies under a fake `herdr`; neither touches a
-live server.
+`scripts/verify-herdr-bob.sh`, which runs three arms — the pristine tree, which
+must fail all four ways; the patched tree, which must adopt an unclaimed Bob
+pane, report `blocked` once and clear it once, and read a fresh heartbeat as
+fresh; and the installer, which must hand `bob-watchctl` the same roots the
+`[[startup]]` hook does. Every arm runs against copies under a fake `herdr`;
+none touches a live server.
+
+One note for anyone running that verify against an installed checkout: it stages
+its copies from the **pinned commit**, not from the working tree, and then
+requires that the patch still applies to the copy. Staging from the working tree
+seems equivalent and is not — the day the patch is applied to the install, the
+control arm quietly becomes a second copy of the patched tree, and because a
+patched `bob-watch` no longer dies where the control expects it to, the arm
+*hangs* rather than fails.
 
 ## What posse does in the meantime
 
-Nothing that pretends this works. `runtimes/bob.yaml` declares `detection:
-reported`, and until the watcher runs that is a declaration nothing can honour,
-so the probe's own reading says so and names `herdr plugin list` first —
-**because "enabled" is not "running"**, and on this box `herdr plugin list` said
-`enabled` for the entire life of an install whose watcher had never started.
-That distinction is the finding posse keeps from this (ADR 0061).
+`runtimes/bob.yaml` declares `detection: reported`, and while the watcher was
+not running that was a declaration nothing could honour — so the probe's own
+reading says so and names `herdr plugin list` first, **because "enabled" is not
+"running"**: on this box `herdr plugin list` said `enabled` for the entire life
+of an install whose watcher had never started. That distinction is the finding
+posse keeps from this (ADR 0061), and it survives the fix, because the install
+is still a one-shot `[[startup]]` hook with no retry and no signal. The patch
+makes the start work; nothing yet makes a later death visible. Supervising the
+watcher — or at minimum logging a failed start — is the ask posse would value
+most after the four fixes.

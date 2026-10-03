@@ -100,7 +100,7 @@ resolution recorded in writing.
 
 ## How it is verified
 
-`scripts/verify-herdr-bob.sh` — `make verify-herdr-bob`, ~45s. It copies the
+`scripts/verify-herdr-bob.sh` — `make verify-herdr-bob`, ~17s. It copies the
 installed checkout twice into a temp dir and drives both copies under a fake
 `herdr` with scratch state and config dirs. **Nothing in it reaches the live
 server, the live plugin state, or a real Bob.**
@@ -130,12 +130,23 @@ patched (+ etc/herdr/herdr-bob/darwin-portability.patch):
   ok   bug 3: a stale heartbeat read as STALE, so the watcher falls back to idle
   ok   release: a vanished pane is released and forgotten
   ok   stop: the watcher stopped
+installer (scripts/herdr-bob-install.sh, scratch XDG):
+  ok   control: with no HERDR_PLUGIN_*, the plugin resolves the fallback roots (herdr-bob)
+  ok   --check reports the PLUGIN state root, read-only
+  ok   --check reports the PLUGIN config root
+  ok   --start left the pidfile under the PLUGIN state root (pid 19460), not the fallback
+  ok   --start wrote nothing under the fallback root .../xdg-state/herdr-bob
+  ok   --start's watcher logged the PLUGIN config root's rules, so it reads the installed override
+  ok   --start PRINTS the three roots it chose (a root chosen in silence is this bead's shape)
+  ok   --check warns about a fallback-root watcher and names the stop command
+  ok   --start REFUSES rather than make a second watcher
 verify-herdr-bob: ok
 ```
 
-The fake `herdr`'s `pane process-info` answers with the two argv shapes measured
-on a live pane, so the adoption predicate is exercised against the real thing it
-has to match. It skips, loudly, when the plugin is not installed or when the
+Every verdict decides without forking a matcher — see "What a branch owes the
+tree it was away from" below — and the fake `herdr`'s `pane process-info` answers
+with the two argv shapes measured on a live pane, so the adoption predicate is
+exercised against the real thing it has to match. It skips, loudly, when the plugin is not installed or when the
 checkout has moved off `e53bd475` — the fork-point contract `verify-detection`
 already uses.
 
@@ -152,15 +163,177 @@ keeping:
   flipped the screen back to idle before the watcher ever read it. Waits count
   occurrences now, not presence.
 
+And a third, found on 2026-10-03 the first time the verify ran *after* the live
+apply, which is the one worth carrying furthest:
+
+- **the control arm stopped being a control the moment the fix was installed.**
+  `prepare` staged both copies with `cp -R "$SRC"`, and `$SRC` is the LIVE
+  checkout — so once `install-herdr-bob --apply` had patched it, the "pristine"
+  copy carried the patch. The fork-point check did not notice, because
+  `git rev-parse HEAD` is still `e53bd475`: the patch is in the working tree,
+  not in a commit. And it did not *fail*, it **hung** — a patched `bob-watch`
+  no longer dies at the first screen read, so the foreground run the control arm
+  expects to exit ran the watch loop instead: 300s, two live watchers, and no
+  output at all, because the arm's assertions are all downstream of a process
+  that was supposed to be dead. `prepare` now stages from the pinned COMMIT
+  (`git checkout --force $PINNED_SHA -- .`) and then *proves* the copy is
+  pristine by requiring that the patch still applies to it, and the control's
+  foreground run is bounded at 10s so that a regression here fails loudly rather
+  than hanging silently. The general shape: **a control arm staged from the live
+  tree expires the day the fix lands**, and it expires without saying so.
+
+## The live install, and the roots a `--start` must hand the watcher
+
+Applied and started on 2026-10-03 by the operator, under ruling A on
+ranger-base-knikn (apply + start + rules). MEASURED, this box:
+
+```
+$ scripts/herdr-bob-install.sh --check
+commit:   e53bd475…  (the pinned one)
+patch:    applied=yes appliable=no
+state:    ~/.local/state/herdr/plugins/mloeper.herdr-bob
+config:   ~/.config/herdr/plugins/config/mloeper.herdr-bob
+watcher:  running (pid 45226)
+```
+
+and the first `watch started` line in the whole life of the install:
+
+```
+2026-10-03T15:03:13-04:00 watch started (interval 2s, rules …/plugins/config/mloeper.herdr-bob/rules.json)
+```
+
+**The operator's finding, and the second half of this bead's work.** The first
+`--start` ran `bob-watchctl` with no `HERDR_PLUGIN_CONFIG_DIR`,
+`HERDR_PLUGIN_STATE_DIR` or `HERDR_BIN_PATH` in its environment. The plugin's
+`lib/common.sh` resolves those with fallbacks — `~/.local/state/herdr-bob` and
+`~/.config/herdr-bob` — so the watcher started on the FALLBACK roots: a
+different pidfile, a different log, and *upstream's* `rules.json` rather than
+the override `scripts/herdr-bob-rules.sh` installs. Both halves of that cost
+real money:
+
+- the wrong rules are the ones ranger-base-0sa5a proved **false-positive** on
+  Bob's `/` picker, and a wrong `blocked` is acted on — it stops every wait on
+  the pane — while a missed one merely falls back to the hook's state;
+- and because `bob-watchctl stop` reads the pidfile under whichever root it is
+  *given*, the wrong-root watcher is invisible to a stop run under the right
+  one. The operator hit exactly that: two watchers, and the plugin's own stop
+  could not see one of them.
+
+`scripts/herdr-bob-install.sh` now resolves the three, exports them, and
+**prints** them — in `--start` and in read-only `--check` both. The printing is
+not decoration: this entire bead is one failure that reported nothing, and a
+root chosen in silence is the same shape. `--check` additionally warns when a
+watcher is running under the fallback root, naming the stop command that can
+reach it, and `--start` refuses outright rather than make the box's second
+watcher.
+
+How each is resolved:
+
+| var | from | kind |
+|---|---|---|
+| `HERDR_PLUGIN_CONFIG_DIR` | `herdr plugin config-dir mloeper.herdr-bob`, else the `herdr plugin list` spelling `scripts/herdr-bob-rules.sh` already uses, else the XDG default | asked |
+| `HERDR_PLUGIN_STATE_DIR` | `${XDG_STATE_HOME:-~/.local/state}/herdr/plugins/<plugin-id>` | derived |
+| `HERDR_BIN_PATH` | `command -v herdr`, absolute because the watcher outlives the shell that started it | asked |
+
+The state dir is the one with no herdr verb behind it, so it is **ASSUMED
+2026-10-03** and corroborated two ways: all four plugins on this box keep their
+state at `<state>/herdr/plugins/<plugin-id>`, and the watcher herdr's own
+`[[startup]]` hook started wrote its pidfile and its log exactly there. The
+installer arm of `verify-herdr-bob` pins all of it behaviourally — where the
+pidfile landed and which rules path the watcher logged — rather than by grepping
+the script, with a control that shows the fallbacks are what an unexported
+`--start` would have got.
+
+## Adoption labels a pane in 5s of a 45s `startup_wait` — ADR 0061 ASSUMED 1, discharged
+
+MEASURED 2026-10-03 17:06 EDT, on the LIVE herdr 0.9.1 server at the watcher's
+default settings (`interval 2s`, `BOB_ADOPT_EVERY=3`, i.e. an adoption sweep
+every 6s) — not the 1s/every-tick harness the arms above use.
+
+A pane split off this session's own pane, `bob chat` run in it, and **nothing
+typed**:
+
+```
+t0      herdr pane split … --no-focus     agent at birth: null
+t0      herdr pane run w2PK:p2 bob chat
+t+5s    agent=bob  agent_status=idle  display_agent="⬡ Bob"
+        2026-10-03T17:06:45-04:00 adopted hand-started bob in w2PK:p2
+```
+
+5s against posse's 45s `DefaultStartupWait`, which `runtimes/bob.yaml` does not
+override. The pane row carried `agent`, `agent_status` and `display_agent`, and
+`herdr agent get` answered with the agent rather than `agent_not_found` — the
+reading that had never once been true on this box. `pane process-info` on it
+showed the two argv shapes the predicate was written against
+(`…/node …/bob chat` and `node …/bob chat`).
+
+Two further things that only a live run could say:
+
+- **the bash 3.2 fix holds in production.** The pane stayed registered for ~2
+  minutes with the watcher reading its screen every 2s — on the pristine tree
+  that read is what killed the process — and the watcher was still alive
+  (pid 45226) afterwards.
+- **the installed rules do not false-positive on Bob's welcome screen**:
+  `agent_status` held `idle` throughout, never `blocked`.
+
+And the lifecycle closes: on `herdr pane close`, `pane w2PK:p2 gone -> released`
+at t+25s, the pane file forgotten, the watcher alive, and no other pane on the
+box touched.
+
+## What a branch owes the tree it was away from
+
+This bead's work was committed on 2026-10-03 and `main` moved 50 commits before
+it landed, which is worth recording because two of those commits were **new
+obligations on files this branch already held**, and neither is reachable from
+the doors AGENTS.md sends you to after a filtered run:
+
+- `internal/treepins/selftestforkarm_qa_test.go` sweeps every `scripts/verify-*.sh`
+  whole, and **in an assertion arm the matcher must not fork** (ranger-base-t07yx,
+  ranger-base-7hx87). `verify-herdr-bob.sh` had 24 verdicts deciding through
+  `grep`/`sed`/`cat`, which is what it was written with before that pin existed.
+  All 24 are swept: the script now carries the `has` / `file_has` / `line_has2` /
+  `count_lines` / `iso_lines` / `text_line_is` block the sibling
+  `verify-herdr-bob-rules.sh` carries, and decides with `case` and `${...}` over
+  bytes already in a variable. The tools *under test* still fork — the plugin's
+  own `bob-watch` greps its rules and the fake herdr runs `jq` — because that
+  fork is the measurement. What is gone is every fork between the bytes and the
+  verdict, including the ones inside `ok`/`bad` *messages*, which can be emptied
+  by the very failure the arm is reporting.
+- `internal/treepins/boxcheck_qa_test.go` requires every `verify-*` target in the
+  Makefile to appear in `scripts/verify-box.sh`'s ROSTER or its EXCLUDED table.
+  `verify-herdr-bob` is EXCLUDED, with the reason: it skips with exit 0 when the
+  plugin is absent or off `e53bd475`, so on a clock it would print green over a
+  box it did not measure — and it starts and kills real `bob-watch` processes.
+  The live half is `scripts/herdr-bob-install.sh --check`, which is read-only.
+
+**Neither `make tree-check` nor a `-run` filter reaches either of them.**
+`tree-check` is four named tests in `internal/posse`; these two live in
+`internal/treepins`, which is arm 1 (`go test ./...`). So the door for "my branch
+has been away a while" is `go test ./internal/treepins`, and on a 240s package
+that is cheap next to what it catches. Both failures were in files this branch
+had not touched since the pins landed, and both would have reached `main` green
+by every check the close was otherwise going to run.
+
 ## What this does NOT discharge
 
-Whether adoption labels a pane **within `startup_wait`** on a box where the
-watcher can run. That is ADR 0061 ASSUMED 1's surviving half and it stays a line
-on ranger-base-6wqe's live probe. This record measures that adoption fires and
-labels — against a fake herdr, on a 1s poll with `BOB_ADOPT_EVERY=1`, i.e. under
-settings chosen to make it fire fast. It says nothing about the latency of the
-real thing on the real server at its default 2s interval and every-3rd-tick
-adoption.
+Adoption-within-`startup_wait` **is** discharged now, above, on the live server
+at default settings. What is not:
+
+- **a dispatched Bob seat, end to end.** The 5s above is a pane this session
+  split by hand and a `bob chat` it ran by hand. posse's own launch path — its
+  workspace, its built-in launch line, its readiness gate reading the label it
+  now can get — has not been run since the watcher started, and the other
+  independent cause behind ranger-base-5jjtn (the PID channel, ranger-base-f1ytb)
+  is a separate fix. That measurement stays a line on ranger-base-6wqe's live
+  probe.
+- **whether the watcher survives a herdr server restart in the hands of the
+  `[[startup]]` hook.** Fixing `setsid` is what makes the hook's one-shot start
+  work, and the hook is now the only thing that starts it on a fresh server —
+  but no server restart has happened since the apply, so that path is reasoned,
+  not measured.
+- **supervision.** Still a one-shot hook with no retry. The patch makes the
+  start *work*; it does not make a later death visible, and the upstream filing
+  carries that as the third ask.
 
 ## The reading that generalizes
 
