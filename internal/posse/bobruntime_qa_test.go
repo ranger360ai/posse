@@ -22,6 +22,12 @@ package posse
 //     inverted: no `-p`, no `$(cat …)`, and the line says so in BobCommand.
 //     The swallowing is still why every other flag on the line is asserted
 //     — a misspelling is accepted and ignored rather than refused.
+//     AND THE OTHER HALF, since ADR 0062 D1: the line carries `{mode}`,
+//     which selects a custom mode posse renders into the session tree from
+//     the PID itself. So the pin is no longer only an absence — a line with
+//     no `-p` AND no `--mode` is a dispatched seat opening with no persona
+//     in it, which is exactly what 5jjtn left behind and what ADR 0062 D3
+//     refuses on.
 //  2. the LAUNCH ROW refusing by name. herdr 0.8.2 has no `bob` kind, so a
 //     dispatched bob session is agent_not_found. ADR 0060 D1's whole claim
 //     is that the profile says so out loud and `runtime check` exits 1 —
@@ -146,6 +152,28 @@ func TestQABobLaunchLineCarriesNoPromptFlagBecauseNoneDelivers(t *testing.T) {
 		// no tier may smuggle a model flag onto the line.
 		if strings.Contains(got, "--model") || strings.Contains(got, "{") {
 			t.Errorf("%s: the rendered line carries a model flag or an unrendered placeholder:\n%s", tier, got)
+		}
+		// AND THE CHANNEL THAT REPLACED `-p` (ADR 0062 D1). The absence
+		// above is only half the fact: bob delivers a PID again, through
+		// a custom mode posse renders into the session tree, and `{mode}`
+		// is what selects it. A line with neither `-p` nor `--mode` is
+		// the shape ranger-base-5jjtn left behind — a dispatched seat
+		// spending a worktree and a startup_wait on a session with no
+		// persona in it — and it is what pidchannel.go now refuses on.
+		if !strings.Contains(got, " --mode posse-p ") {
+			t.Errorf("%s: the line selects no persona mode. bob has no launch-time system FLAG, so {mode} is the whole PID channel (ADR 0062 D1):\n%s", tier, got)
+		}
+		if n := strings.Index(got, " --mode "); n < 0 || n > strings.Index(got, " --accept-license") {
+			t.Errorf("%s: --mode is not among the chat subcommand's own options:\n%s", tier, got)
+		}
+		// Through the declared seam and never through the runtime's name
+		// (ADR 0017 §3): the materializer is what {mode} renders off, and
+		// what the launch writes the file from.
+		if rt.PersonaMode == nil {
+			t.Errorf("bob declares no persona-mode materializer — {mode} would render to nothing and the line would deliver no PID at all")
+		}
+		if len(rt.PIDChannels(ag.LaunchTemplate(rt, "claude"))) == 0 {
+			t.Errorf("%s: the PID-channel reading says bob's template delivers no PID — the three surfaces that read it would refuse a dispatch this runtime can now take (ADR 0062 D3)", tier)
 		}
 	}
 }
@@ -273,8 +301,12 @@ func TestQABobGridDeclaresEveryRow(t *testing.T) {
 		"bob.ibm.com", "iam.cloud.ibm.com",
 		// the container credential, by NAME
 		BobCageCred,
-		// the repo→box channel the launch checks before any turn
-		".bob/settings", ".bob/mcp.json", ".bob/hooks", ".bob/custom_modes.yaml",
+		// the repo→box channel the launch checks before any turn. The
+		// plugins glob joined the list under ADR 0062 D1.4, and it is the
+		// one that was MISSING: bob loads plugins/*/custom_modes.yaml out
+		// of the workspace, so a repo could hand it a system prompt and a
+		// ten-group tool grant through a path the check never looked at.
+		".bob/settings", ".bob/mcp.json", ".bob/hooks", ".bob/custom_modes.yaml", ".bob/plugins",
 		// the other voice in the session
 		"AGENTS.md", "CLAUDE.md", ".bob/rules-agent/AGENTS.md",
 		".bob/rules-plan/AGENTS.md", ".bob/rules-ask/AGENTS.md",

@@ -483,7 +483,10 @@ func (a *App) sweepDeadSkillLinks(dir string) {
 
 // excludeFromGit adds rel to the repo's .git/info/exclude — never the
 // repo's own .gitignore, which is the operator's file and shows in a diff
-// (ADR 0007's alternatives). Best effort: a dir that is not a repo has
+// (ADR 0007's alternatives). Two trees go through it now: this file's
+// `.agents/skills`, and the persona-mode channel's own dir
+// (personamode.go, ADR 0062 D1) — same rule, same reason, so the note it
+// writes names neither of them in particular. Best effort: a dir that is not a repo has
 // nothing to pollute. The pattern is anchored at the repo root, so a
 // session started in a subdirectory excludes its own path and not another
 // one that happens to share the name. git's own --show-prefix does that
@@ -519,7 +522,7 @@ func excludeFromGit(dir, rel string) {
 		return
 	}
 	defer f.Close()
-	fmt.Fprintf(f, "\n# posse: skills bound into this session (ADR 0007) — session-local, not the repo's\n%s\n", pattern)
+	fmt.Fprintf(f, "\n# posse: a tree bound into this session (ADR 0007) — session-local, not the repo's\n%s\n", pattern)
 }
 
 // RenderSkillsFor materializes the PID's skills for the runtime it is

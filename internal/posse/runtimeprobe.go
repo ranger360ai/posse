@@ -668,6 +668,14 @@ func (a *App) RuntimeProbe(rt *Runtime, h Herdr, o ProbeOpts) (*ProbeRecord, err
 		return nil, err
 	}
 
+	// ADR 0062 D1's write, on the third path that renders a persona line.
+	// The probe is the surface the instance side measures this channel WITH
+	// (ranger-base-4mrmc), so a probe pane that opened without the mode file
+	// would measure the fallback and call it the channel. Nothing on a
+	// runtime that declares no such channel.
+	if _, err := a.RenderPersonaModeFor(ag, rt, dir); err != nil {
+		return nil, err
+	}
 	// Render the wall the probe is measuring, and remember where the log
 	// stood: refusals.log is kept across renders, so only the delta is this
 	// probe's evidence.

@@ -45,7 +45,9 @@ import (
 // WallRenderSources are the tracked paths whose commits can change a wall
 // this binary renders: the seatbelt profile, the gate shims and gate shell,
 // the L3 hook bodies, the cage's mounts and launcher, the egress allowlist,
-// the pane line, the session skills binding, and the renderer stamp itself.
+// the pane line, the session skills binding, the persona-mode channel that
+// carries the PID on a CLI with no launch-time system flag, and the renderer
+// stamp itself.
 //
 // A FLOOR, and read as one. internal/treepins' pin holds the derived half —
 // every internal/posse file that renders a `do not edit` header must be
@@ -69,6 +71,7 @@ var WallRenderSources = []string{
 	"internal/posse/paneline.go",
 	"internal/posse/hooksredirect.go",
 	"internal/posse/skills.go",
+	"internal/posse/personamode.go",
 	"internal/posse/renderstamp.go",
 }
 

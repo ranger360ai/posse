@@ -58,14 +58,14 @@ not green. Declared facts (MEASURED unless marked):
 
 | key | value | note |
 |---|---|---|
-| command | `bob chat --accept-license --trust --auto-approve -w . {allow} {deny}` | `-w .` because the pane's cwd is the session dir. The `-p "$(cat {file})"` D3 put at the head of this line is GONE — measured not to deliver, see Claims/ASSUMED 1 and ranger-base-5jjtn |
+| command | `bob chat {mode} --accept-license --trust --auto-approve -w . {allow} {deny}` | `-w .` because the pane's cwd is the session dir. The `-p "$(cat {file})"` D3 put at the head of this line is GONE — measured not to deliver, see Claims/ASSUMED 1 and ranger-base-5jjtn. `{mode}` replaced it (ADR 0062 D1, landed ranger-base-qllt8): it renders `--mode posse-<persona>` and selects the custom mode posse writes into the session tree from the PID itself |
 | unattended | `--auto-approve` | "approve all tool executions without prompting" |
-| prompt | `typed` | 20s to a composer signed in (recon); see D3 |
+| prompt | `typed` | 20s to a composer signed in (recon); see D3. Since ADR 0062 D2 the launch also reads the pane's footer BEFORE the first keystroke and refuses to type at a Bob that fell back to Agent Mode — an unknown mode slug is one grey line and a persona-less session, not a refusal |
 | record | `untrusted` | `bd` runs inside a Bob shell tool; no dispatched close yet |
 | self_sandbox | false | `sandbox-exec` wraps it |
 | skills | cwd-discovery | reads `.agents/skills` from cwd — the tree posse already materializes, no flag |
 | native_rules | `AGENTS.md`, `CLAUDE.md`, `.bob/rules-{agent,plan,ask}/AGENTS.md` | read from the workspace |
-| project_config | `.bob/settings`, `.bob/mcp.json`, `.bob/hooks`, `.bob/custom_modes.yaml` | read from the session dir unconditionally; keys ASSUMED, the trust check stays whole-file |
+| project_config | `.bob/settings`, `.bob/mcp.json`, `.bob/hooks`, `.bob/custom_modes.yaml`, `.bob/plugins` | read from the session dir unconditionally; keys ASSUMED, the trust check stays whole-file. `.bob/plugins` joined under ADR 0062 D1.4 — Bob loads `plugins/*/custom_modes.yaml` from the workspace, so a repo shipping one hands Bob a system prompt and a ten-group tool grant through a path this list did not name; posse's own `plugins/posse/` entry is exempt by entry, nothing else is |
 | state_dir | `~/.bob` | settings, db, logs, skills |
 | egress | `bob.ibm.com`, `iam.cloud.ibm.com` | live: one connection to a Cloudflare edge for bob.ibm.com; the others from the bundle |
 | cage_cred | the API-key env name `bob run` demands (spelled in the built-in) | that `bob chat` honours it in a container is ASSUMED |

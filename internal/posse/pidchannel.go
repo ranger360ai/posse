@@ -41,13 +41,16 @@ import (
 // rules flag the CLI reads at launch (`--append-system-prompt "$(cat …)"`,
 // `-c developer_instructions=…`, `--rules=…`).
 //
-// `{mode}` is ADR 0062 D1's: a runtime whose CLI has NO launch-time system
-// flag at all, where the PID arrives as a posse-rendered custom mode in the
-// session tree and the line selects it. It is named here, in the reading, so
-// D1's bead (ranger-base-qllt8) has somewhere to land — and until it does
-// nothing renders `{mode}`, so no built-in template carries one and a
-// hand-written profile that carries it alone is a profile written against a
-// decision that has not landed. `posse runtime check` is where that is read.
+// `{mode}` is ADR 0062 D1's, landed by ranger-base-qllt8: a runtime whose
+// CLI has NO launch-time system flag at all, where the PID arrives as a
+// posse-rendered custom mode in the session tree (personamode.go) and the
+// line selects it. bob is the one built-in that carries it.
+//
+// It renders ONLY on a runtime declaring a persona-mode materializer, so a
+// hand-written profile that spells it elsewhere delivers nothing — the
+// placeholder vanishes with its space and the launch reads as no channel at
+// all. PIDChannels below is where that is decided and the door is where it
+// is said; `posse runtime check` is where an operator reads it.
 const (
 	PIDChannelFile = "{file}"
 	PIDChannelMode = "{mode}"
@@ -74,19 +77,30 @@ var PIDChannelPlaceholders = []string{PIDChannelFile, PIDChannelMode}
 // RenderCommandForModel renders that same expression, so the two cannot
 // answer about different templates.
 //
-// A method on Runtime, with the receiver unread today, because WHICH
-// channels a runtime can deliver through is about to become a property of
-// the runtime: ADR 0062 D1's `{mode}` renders to `--mode posse-<persona>` on
-// a runtime that declares a persona-mode materializer and to nothing on one
-// that does not (the `{skills}`/`{allow}` seam shape, ADR 0012 D4). This is
-// where that seam is read, and keeping the reading on the Runtime is what
-// stops D1 from growing a second one somewhere else.
+// A method on Runtime because WHICH channels a runtime can deliver through
+// is a property of the runtime, and since ADR 0062 D1 landed the receiver is
+// READ: `{mode}` renders to `--mode posse-<persona>` on a runtime that
+// declares a persona-mode materializer and to NOTHING on one that does not
+// (the `{skills}`/`{allow}` seam shape, ADR 0012 D4). So a template spelling
+// `{mode}` on a runtime with no such seam carries a placeholder that
+// vanishes with its space, and crediting it with a channel would be this
+// file's own defect pointing the other way — a sentence with no reading
+// behind it. That template reads as NO channel, and the door below says why
+// rather than claiming the placeholder is absent.
+//
+// Keeping the reading on the Runtime is what stopped D1 from growing a
+// second one somewhere else: this is the only place the seam decides what a
+// template means.
 func (rt *Runtime) PIDChannels(tmpl string) []string {
 	var out []string
 	for _, ph := range PIDChannelPlaceholders {
-		if strings.Contains(tmpl, ph) {
-			out = append(out, ph)
+		if !strings.Contains(tmpl, ph) {
+			continue
 		}
+		if ph == PIDChannelMode && rt.PersonaMode == nil {
+			continue
+		}
+		out = append(out, ph)
 	}
 	return out
 }
@@ -157,17 +171,23 @@ func runtimeTemplateWhere(rt *Runtime) string {
 // block). A door that sent that reader to re-add the measured-dead flag
 // would be this bead's own defect class, one layer down.
 //
-// So both routes are offered and WHICH ONE APPLIES is named as what it is: a
-// measured fact about the CLI, not something this sentence can decide. The
-// declaration that will decide it in code is ADR 0062 D1's persona-mode
-// materializer seam, and this paragraph is what stands in for it until that
-// lands.
-func PIDChannelDoor(where string) string {
-	return "the door is one of two, and which one is a MEASURED fact about this CLI: " +
-		PIDChannelFile + " in " + where +
-		" — the PID's path, shell-quoted into a launch-time system-prompt or rules flag this CLI really reads" +
-		"; or, where that flag has been measured NOT to exist (the case on this box is in runtime.go's own template comment and ranger-base-5jjtn — the flag parses, is ignored, and must not be put back), the PID arrives as a posse-rendered mode the line selects with " +
-		PIDChannelMode + " instead, which is ADR 0062 D1 and has not landed"
+// SO THE RUNTIME DECIDES WHICH DOOR IS OFFERED, and since ADR 0062 D1 it can:
+// a runtime declaring a persona-mode materializer is one whose CLI has been
+// MEASURED to have no launch-time system flag, so `{mode}` is its only door
+// and `{file}` is the wrong one. Everything else gets `{file}`, and is told
+// that `{mode}` is not a door it has — because a placeholder no seam renders
+// is a literal on the launch line, which is the loudest way to be wrong and
+// still the wrong advice to give.
+func PIDChannelDoor(rt *Runtime, where string) string {
+	if rt.PersonaMode != nil {
+		return "the door is " + PIDChannelMode + " in " + where +
+			" — this CLI has no launch-time system-prompt or rules flag (MEASURED; see its own template comment in runtime.go), so the PID arrives as the custom mode posse renders into the session tree and the line selects it with that placeholder (ADR 0062 D1). " +
+			PIDChannelFile + " is NOT the door here: there is no flag to put it in, and a `-p` that parses and is ignored is what ranger-base-5jjtn cost"
+	}
+	return "the door is " + PIDChannelFile + " in " + where +
+		" — the PID's path, shell-quoted into a launch-time system-prompt or rules flag this CLI really reads. " +
+		PIDChannelMode + " is NOT a door on " + rt.Name +
+		": it renders only on a runtime declaring a persona-mode materializer (ADR 0062 D1), so a template that spells it here delivers nothing and the placeholder reaches the shell as a literal"
 }
 
 // PIDChannelRow is the launch row's PID clause (surface 1).
@@ -194,7 +214,7 @@ const PIDChannelGapName = "pid"
 func PIDChannelGapLine(rt *Runtime) string {
 	where := runtimeTemplateWhere(rt)
 	return fmt.Sprintf("%s has neither %s, so this template delivers no PID: a dispatched session here would open carrying every native rulebook and no persona at all, and the launch refuses by name (ADR 0062 D3). %s",
-		where, pidChannelNames(), PIDChannelDoor(where))
+		where, pidChannelNames(), PIDChannelDoor(rt, where))
 }
 
 // PIDChannelFinding is `agent check`'s finding (surface 2) — the `{model}`
@@ -210,7 +230,7 @@ func PIDChannelFinding(rt *Runtime, where string) string {
 	return "command: has no PID channel — neither " + pidChannelNames() +
 		", so this PID's own runtime would launch carrying every native rulebook and no persona at all (ADR 0062 D3). " +
 		"Dropping command: renders " + rt.Name + "'s own template instead, and `posse runtime check " + rt.Name +
-		"` says whether THAT delivers a PID; to keep this one, " + PIDChannelDoor(where)
+		"` says whether THAT delivers a PID; to keep this one, " + PIDChannelDoor(rt, where)
 }
 
 // PIDChannelRefusal is the launch refusal (surface 3), shared by dispatch's
@@ -230,7 +250,7 @@ func PIDChannelRefusal(agent string, rt *Runtime, where string) error {
 		"  ADR 0062 D3: the session would open carrying every native rulebook and no persona at all — PIDVoided's harm (ranger-base-64qx), reached by a template that names no flag to refuse on\n"+
 		"  %s\n"+
 		"  the whole grid, with what this box reads today: posse runtime check %s",
-		agent, rt.Name, where, pidChannelNames(), PIDChannelDoor(where), rt.Name)
+		agent, rt.Name, where, pidChannelNames(), PIDChannelDoor(rt, where), rt.Name)
 }
 
 // PIDChannelRetypeRefusal is the re-type arm's refusal — the third path that
@@ -246,7 +266,7 @@ func PIDChannelRefusal(agent string, rt *Runtime, where string) error {
 func PIDChannelRetypeRefusal(agent string, rt *Runtime, session, where string) error {
 	return Die("%s: refusing to retype the %s launch line in %s — %s carries neither %s, so the revived session would carry every native rulebook and no persona at all (ADR 0062 D3)\n"+
 		"  %s",
-		agent, rt.Name, session, where, pidChannelNames(), PIDChannelDoor(where))
+		agent, rt.Name, session, where, pidChannelNames(), PIDChannelDoor(rt, where))
 }
 
 // PIDChannelDegraded is the interactive warn — ADR 0013 §1 property 5 and
@@ -258,5 +278,5 @@ func PIDChannelRetypeRefusal(agent string, rt *Runtime, session, where string) e
 func PIDChannelDegraded(rt *Runtime, where string) string {
 	return fmt.Sprintf("DEGRADED — the rendered %s launch line delivers no PID: %s carries neither %s, so this session opens carrying every native rulebook and no persona at all; "+
 		"an interactive launch proceeds because your own keyboard can paste the PID, and because the probe renders a persona line and is how the channel that lifts this gets measured (ADR 0062 D3, ADR 0015 §3). %s",
-		rt.Name, where, pidChannelNames(), PIDChannelDoor(where))
+		rt.Name, where, pidChannelNames(), PIDChannelDoor(rt, where))
 }

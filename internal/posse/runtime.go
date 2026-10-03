@@ -270,6 +270,20 @@ type Runtime struct {
 	// and the parity check refuses the launch. nil reads as "no surface"
 	// (noSkills) — a template-only runtime without `skills_flag:`.
 	Skills func(dir string, names []string) (flag string, ok bool)
+	// PersonaMode declares that this runtime's PID channel is a CUSTOM MODE
+	// posse renders into the session's working directory, selected on the
+	// line by `{mode}` (ADR 0062 D1, personamode.go). nil — every runtime
+	// but bob — means the runtime has no such channel, `{mode}` renders to
+	// nothing, and nothing is written.
+	//
+	// It is one declaration with four readers, which is what keeps it from
+	// becoming four: agents.go renders `{mode}` through PersonaModeText,
+	// the launch paths write the file through RenderPersonaModeFor,
+	// parity.go exempts posse's own entry from the project-config trust
+	// check through it, and dispatch.go reads the pane's footer back
+	// through it before typing a work prompt. No caller asks which runtime
+	// this is (ADR 0017 §3).
+	PersonaMode *PersonaModeChannel
 	// SkillsCwd: this runtime discovers skills from the session's *working
 	// directory* rather than from a flag, so the launch materializes
 	// <cwd>/.agents/skills/<name> and {skills} renders nothing (codex and
@@ -1484,9 +1498,22 @@ var (
 // 2026-09-28 unless a comment says ASSUMED. The bench is
 // docs/notes.d/ranger-base-v1yrt.md; the record is ADR 0060.
 
-// BobCommand is the launch template, and what is MEASURED about it now is
-// an absence: there is no `-p` on it, because no argv shape on bob 2.0.5
-// opens the TUI with a prompt already submitted.
+// BobCommand is the launch template. Two things are MEASURED about it, and
+// one of them is an absence: there is no `-p` on it, because no argv shape
+// on bob 2.0.5 opens the TUI with a prompt already submitted — and the PID
+// arrives anyway, through `{mode}`, because bob's custom modes are a
+// launch-time system channel reached through the filesystem rather than
+// through argv (ADR 0062 D1, personamode.go).
+//
+// `{mode}` renders to `--mode posse-<persona>` here and to NOTHING on every
+// other runtime, because it is rendered off a declared seam (PersonaMode
+// below) and not off this runtime's name — the `{skills}`/`{allow}` shape
+// (ADR 0012 D4, ADR 0017 §3). The file it selects is written into the
+// session tree beside `.agents/skills`, by the same call sites, before the
+// line is typed. And because an unknown slug FALLS BACK on bob rather than
+// refusing (one grey line and a session with no persona), the launch reads
+// the pane's own footer before it types a work prompt — ADR 0062 D2, also
+// personamode.go.
 //
 // ADR 0060 D3 put the PID on `-p` BEFORE `chat`, reasoning from the two help
 // screens and from the program being built with `.enablePositionalOptions()`
@@ -1520,16 +1547,22 @@ var (
 // bobProjectConfig below) or from the operator's own
 // ~/.bob/settings/custom_modes.yaml. Both remaining routes (the PID typed as
 // the first message; the PID materialized as a workspace mode/rules file)
-// are priced in ADR 0060's rejected alternatives and choosing between them
-// amends D3, so it is filed rather than guessed here — ranger-base-f1ytb,
-// which also carries the second half of that decision: whether a dispatched
-// launch onto a runtime that can deliver no PID should refuse rather than
-// spend a seat. Until it lands, a bob session opens with no persona, and
-// nothing pretends otherwise.
+// were priced in ADR 0060's rejected alternatives, and ranger-base-f1ytb
+// chose the SECOND: ADR 0062 D1, the `{mode}` above. The workspace glob bob
+// actually reads is `.bob/{custom_modes.yaml,plugins/*/custom_modes.yaml}`
+// (MEASURED off the 2.0.5 bundle), and `plugins/posse/` is a namespace in it
+// that neither the repo nor the operator has a reason to use — so posse
+// writes there and overwrites nothing of anybody's. The typed-first-message
+// route stays rejected: a user turn whose precedence is the model's mood, a
+// billed turn per launch, and a sequencing rule that needs the pane labelled
+// first, which on darwin nothing does yet (ranger-base-mz8ud).
 //
-// DO NOT PUT `-p` BACK while this stands. It parses, it is accepted, it is
-// silently ignored, and a reader checking "does bob deliver a PID?" by
-// reading this template would answer yes.
+// DO NOT PUT `-p` BACK, and `{mode}` landing does not soften that one bit.
+// It parses, it is accepted, it is silently ignored, and a reader checking
+// "does bob deliver a PID?" by reading this template would answer yes for
+// the wrong reason — which, now that the answer IS yes, is worse rather
+// than better: a `{file}` on this line would make the PID-channel reading
+// (pidchannel.go) name a channel bob does not have.
 //
 // The three flags after `chat` are all `bob chat` options on 2.0.5 — read
 // off `bob chat --help`, which matters here more than elsewhere because
@@ -1554,7 +1587,7 @@ var (
 // template-only runtime) and every gate goes to the wall — gates.go, ADR
 // 0002 §3, which is safe by construction. The placeholders stay on the line
 // so the day a realizer is measured it has somewhere to render.
-const BobCommand = `bob chat --accept-license --trust --auto-approve -w . {allow} {deny}`
+const BobCommand = `bob chat {mode} --accept-license --trust --auto-approve -w . {allow} {deny}`
 
 // bobNativeRules — the rulebooks bob discovers and loads by itself, ahead
 // of anything posse types (ADR 0013 §4, declared and never rewritten).
@@ -1570,13 +1603,26 @@ var bobNativeRules = []string{"AGENTS.md", "CLAUDE.md",
 // ProjectConfigTrust (parity.go) and opted into with trust_project_config:.
 //
 // ProjectConfigKeys stays EMPTY on purpose, so the check keeps its
-// whole-file presence predicate. Two of these are DIRECTORIES (.bob/settings
-// holds custom_modes.yaml and friends; .bob/hooks is a tree) and the key
-// names inside the other two are ASSUMED — nobody has read their shapes.
-// project_config_keys: is the one declarable key that LOOSENS a safety
-// check, and loosening it on a guess is the failure mode the field's own
-// doc names.
-var bobProjectConfig = []string{".bob/settings", ".bob/mcp.json", ".bob/hooks", ".bob/custom_modes.yaml"}
+// whole-file presence predicate. Three of these are DIRECTORIES
+// (.bob/settings holds custom_modes.yaml and friends; .bob/hooks is a tree;
+// .bob/plugins is the glob below) and the key names inside the other two are
+// ASSUMED — nobody has read their shapes. project_config_keys: is the one
+// declarable key that LOOSENS a safety check, and loosening it on a guess is
+// the failure mode the field's own doc names.
+//
+// `.bob/plugins` was MISSING until ADR 0062 D1.4, and that was the hole this
+// whole channel was found through: bob loads
+// `plugins/*/custom_modes.yaml` from the WORKSPACE (MEASURED off the 2.0.5
+// bundle, docs/notes.d/ranger-base-f1ytb.md §1), so a repo shipping
+// `.bob/plugins/<anything>/custom_modes.yaml` hands bob a system prompt and
+// a ten-group tool grant through a path the check did not look at. It is
+// declared here as a whole-directory presence, exactly like `.bob/settings`.
+//
+// posse's own `plugins/posse/` entry is EXEMPT, and the exemption is read
+// off the PersonaMode channel rather than spelled a second time here
+// (ProjectConfigTrust, parity.go): posse's file is not the repo's, and a
+// check that refused on it would refuse every bob launch posse makes.
+var bobProjectConfig = []string{".bob/settings", ".bob/mcp.json", ".bob/hooks", ".bob/custom_modes.yaml", ".bob/plugins"}
 
 // BobCageCred is the env var name `bob run` demands, quoted from its own
 // refusal on 2.0.5: "Bob API key is required. Set BOB_API_KEY environment
@@ -1717,6 +1763,11 @@ var builtinRuntimes = []Runtime{
 	// line carries no `-p` and so delivers no PID at all — the part a reader
 	// is most likely to get wrong, and now the part that is measured.
 	{Name: "bob", Builtin: true, Skills: skillsCwd, SkillsCwd: true, Unattended: "--auto-approve",
+		// The PID channel (ADR 0062 D1): bob is the one built-in whose CLI
+		// has no launch-time system FLAG, and the one that declares a
+		// persona-mode channel. {mode} renders off this and the launch
+		// writes the file it names — personamode.go.
+		PersonaMode: bobPersonaMode,
 		// The ONE built-in posse carries an upstream filing for, because it
 		// is the one whose detection upstream does not ship: ADR 0060 D2's
 		// draft manifest, its five redacted fixtures and the covering note.
@@ -1753,14 +1804,17 @@ var builtinRuntimes = []Runtime{
 		// close (ADR 0060 D4's trigger).
 		Prompt: PromptTyped, Record: RecordUntrusted,
 		NativeRules: bobNativeRules, Interstitials: BobInterstitials,
-		// rules_precedence: MOOT for now, and it used to be UNMEASURED. It
-		// read "Bob reads AGENTS.md and CLAUDE.md out of the shared checkout
-		// and takes the PID as its first user turn; which one the model
-		// follows on a collision is a billed turn nobody has spent"
-		// (ranger-base-6rcv's shape). There is no collision to measure while
-		// the PID never arrives at all (BobCommand): every bob session today
-		// carries the native rulebooks and nothing else. The question comes
-		// back the day a PID channel does.
+		// rules_precedence: UNMEASURED again, which is where it started. It
+		// went MOOT under ranger-base-5jjtn for one honest reason — there is
+		// no collision to measure while the PID never arrives at all — and
+		// ADR 0062 D1 is the day the PID channel came back, so the question
+		// came with it. Bob reads AGENTS.md and CLAUDE.md out of the
+		// workspace and now takes the PID as its mode's `roleDefinition`,
+		// which is the `role_definition` section of its own system prompt;
+		// which one the model follows on a collision is a billed turn nobody
+		// has spent (ranger-base-6rcv's shape, filed as ranger-base-4mrmc).
+		// Left unset, which is the loud default: the grid prints UNMEASURED
+		// rather than a value that would read as a measurement.
 		ProjectConfig: bobProjectConfig,
 		// ProjectConfigKeys stays empty — see bobProjectConfig.
 		//

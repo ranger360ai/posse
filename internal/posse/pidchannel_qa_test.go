@@ -90,7 +90,10 @@ func pidChannelFixture(t *testing.T, b *HerdrBackend, prompt, ready, cmd string)
 // rendered line, so a reading taken there is a reading that is green forever.
 func TestQAPIDChannelIsReadFromTheTemplateAndNamesBothPlaceholders(t *testing.T) {
 	t.Parallel()
-	rt := &Runtime{Name: "mycli"}
+	// Two runtimes, because since ADR 0062 D1 what a template MEANS depends
+	// on the runtime reading it: `{mode}` renders only where a persona-mode
+	// materializer is declared, and to nothing everywhere else.
+	rt := &Runtime{Name: "mycli", PersonaMode: bobPersonaMode}
 	for _, tc := range []struct {
 		tmpl string
 		want []string
@@ -124,23 +127,43 @@ func TestQAPIDChannelIsReadFromTheTemplateAndNamesBothPlaceholders(t *testing.T)
 		t.Errorf("the rendered line must read as NO channel: the placeholder is gone by then, so a reading taken here is green on every launch forever:\n%s", line)
 	}
 
-	// {mode} IS named by the reading and is rendered by NOTHING yet: it is
-	// ADR 0062 D1's placeholder, and this bead names it so D1 has somewhere
-	// to land. No shipping template carries one, and a hand-written profile
-	// that does gets the literal text on its launch line — which is a loud
-	// failure, and the reason the renderer was NOT given a `{mode}` → ""
-	// arm here. That arm would delete the channel the reading had just
-	// credited, which is this bead's own defect: a sentence with no reading
-	// behind it, pointing the other way.
+	// {mode} AND THE SEAM, which is the half this pin was written to meet.
+	// It used to assert the opposite — that nothing rendered `{mode}` and
+	// that a template spelling it was credited anyway — with a note saying
+	// the assertion inverts the day ADR 0062 D1 lands. It landed
+	// (ranger-base-qllt8), so the reading asks the RUNTIME and not only the
+	// template, and the inversion is this:
 	//
-	// WHEN D1 LANDS this assertion inverts, and that is the point of
-	// writing it down: whoever lands the materializer meets this line.
-	modeOnly := &Runtime{Name: "mycli", Command: "mycli chat {mode} -w ."}
+	//   - a runtime that declares a persona-mode materializer renders the
+	//     flag, and its template's `{mode}` is a real channel;
+	//   - a runtime that declares none renders the placeholder away, so a
+	//     template spelling `{mode}` there delivers nothing and must NOT be
+	//     credited. Crediting it would be this file's own defect pointing
+	//     the other way: a sentence with no reading behind it.
+	modeOnly := &Runtime{Name: "mycli", Command: "mycli chat {mode} -w .", PersonaMode: bobPersonaMode}
 	if len(modeOnly.PIDChannels(modeOnly.Command)) != 1 {
-		t.Error("the reading must name {mode} as a channel — D1's bead has nowhere to land otherwise")
+		t.Error("the reading does not name {mode} as a channel on a runtime that declares the materializer")
 	}
-	if !strings.Contains(ag.RenderCommandFor(modeOnly, "mycli", DefaultTier), PIDChannelMode) {
-		t.Error("something now renders {mode}: ADR 0062 D1 has landed, so the reading must start asking the runtime whether it can deliver through that channel instead of only whether the template spells it")
+	if line := ag.RenderCommandFor(modeOnly, "mycli", DefaultTier); !strings.Contains(line, "--mode posse-p") || strings.Contains(line, PIDChannelMode) {
+		t.Errorf("the declared materializer did not render the flag:\n%s", line)
+	}
+	inert := &Runtime{Name: "mycli", Command: "mycli chat {mode} -w ."}
+	if got := inert.PIDChannels(inert.Command); len(got) != 0 {
+		t.Errorf("a template spelling {mode} at a runtime with NO materializer was credited with %v — that placeholder renders to nothing there, so the launch would open with no persona in it while every surface said PID delivered", got)
+	}
+	if line := ag.RenderCommandFor(inert, "mycli", DefaultTier); strings.Contains(line, PIDChannelMode) || strings.Contains(line, "--mode") {
+		t.Errorf("{mode} did not vanish on a runtime that declares no materializer:\n%s", line)
+	}
+	// And the door the operator is sent to is the one that exists on THEIR
+	// runtime: `{file}` where there is a flag to put it in, `{mode}` where
+	// the CLI has been measured to have none. A door that sent a bob
+	// onboarder to re-add the measured-dead `-p` is the defect class this
+	// whole file is about, one layer down (ranger-base-ecchw).
+	if d := PIDChannelDoor(inert, "x.yaml's command:"); !strings.Contains(d, PIDChannelFile) || !strings.Contains(d, "NOT a door on mycli") {
+		t.Errorf("the door on a runtime with no materializer does not send the operator to {file}, or does not say {mode} is unavailable there: %s", d)
+	}
+	if d := PIDChannelDoor(modeOnly, "x.yaml's command:"); !strings.Contains(d, PIDChannelMode) || strings.Contains(d, "shell-quoted") {
+		t.Errorf("the door on a runtime whose CLI has no system flag still offers {file}: %s", d)
 	}
 
 	// LaunchTemplate is the one expression for "which template", shared with

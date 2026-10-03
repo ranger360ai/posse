@@ -420,11 +420,55 @@ func ProjectConfigTrust(rt *Runtime, ag *AgentFile, dir string) string {
 	// because one file is enough to refuse the launch, and the operator's next
 	// move (remove it, or opt the PID in) is the same either way.
 	for _, rel := range rt.ProjectConfig {
+		if personaModeOwnsAll(rt, dir, rel) {
+			continue
+		}
 		if why := projectConfigTrustFile(rt, filepath.Join(dir, rel)); why != "" {
 			return why
 		}
 	}
 	return ""
+}
+
+// personaModeOwnsAll answers the one exemption this check has (ADR 0062
+// D1.4): the project-config entry is the directory posse's OWN persona-mode
+// file lives under, and the only thing in it is posse's own subdirectory.
+//
+// It exists because the two facts collided. `.bob/plugins` IS a repo→box
+// executable channel — bob loads `plugins/*/custom_modes.yaml` out of the
+// workspace and a mode carries a system prompt and a tool-group grant — so
+// it belongs on the declared list. And posse writes `plugins/posse/` there
+// itself, on every bob launch, which would then degrade every bob launch on
+// posse's own file.
+//
+// So the exemption is by ENTRY and never by the whole directory: anything
+// beside posse's own subdirectory makes the entry present again and the
+// check says what it has always said. A repo shipping
+// `.bob/plugins/other/custom_modes.yaml` trips it whether or not posse's
+// file is there too.
+//
+// Read off the runtime's declared PersonaMode channel rather than spelled
+// here, so the path posse WRITES and the path this check forgives cannot
+// drift apart.
+func personaModeOwnsAll(rt *Runtime, dir, rel string) bool {
+	c := rt.PersonaMode
+	if c == nil || c.Trusted == "" || rel != c.Trusted {
+		return false
+	}
+	ours := strings.TrimPrefix(strings.TrimPrefix(c.Dir, c.Trusted), "/")
+	if ours == "" {
+		return false // the channel IS the declared entry; nothing to forgive
+	}
+	ents, err := os.ReadDir(filepath.Join(dir, filepath.FromSlash(rel)))
+	if err != nil {
+		return false // not there, or unreadable — the file check classifies it
+	}
+	for _, e := range ents {
+		if e.Name() != ours {
+			return false
+		}
+	}
+	return true
 }
 
 // projectConfigTrustFile classifies one file of the runtime's project scope.

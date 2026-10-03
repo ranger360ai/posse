@@ -4525,7 +4525,7 @@ func (d *Dispatcher) launchSession(is RepoIssue, persona, session, runtime, tier
 	// The persona CLI needs a moment to start before it can take a prompt —
 	// this launch's own runtime's patience, not necessarily the pass's
 	// default (runtimeWait, ranger-base-p84).
-	target, err := d.awaitAgent(is.ID, session, runtime, d.runtimeWait(runtime))
+	target, err := d.awaitAgent(is.ID, persona, session, runtime, d.runtimeWait(runtime))
 	if err != nil {
 		// ADR 0013 §2's busy-key split: a CLI that never came up, never
 		// became promptable, or sat behind a screen posse does not know is
@@ -5056,7 +5056,7 @@ func (d *Dispatcher) awaitDelivered(id, session, runtime string, wait time.Durat
 	}
 }
 
-func (d *Dispatcher) awaitAgent(id, session, runtime string, wait time.Duration) (string, error) {
+func (d *Dispatcher) awaitAgent(id, persona, session, runtime string, wait time.Duration) (string, error) {
 	deadline := time.Now().Add(wait)
 	target, err := d.awaitTarget(session, runtime, deadline, wait)
 	if err != nil {
@@ -5085,6 +5085,37 @@ func (d *Dispatcher) awaitAgent(id, session, runtime string, wait time.Duration)
 	}
 	if status != "idle" && status != "done" {
 		return "", Die("agent in %s never settled idle (status %q) — check the session (posse peek %s)", session, status, session)
+	}
+	// ADR 0062 D2, and the LAST thing between a launch and a keystroke. On
+	// a runtime whose PID arrives as a custom mode the launch wrote, an
+	// unknown slug is a FALLBACK and not a refusal — bob prints one grey
+	// line and opens in its built-in mode, MEASURED 2026-10-03 — so the
+	// flag being accepted is no evidence that the file was read. The pane's
+	// own footer is.
+	//
+	// Here, rather than beside the AgentPrompt call, for two reasons that
+	// are the same reason twice: this is above the CLAIM, so a fallback
+	// costs no bead, and this is the one place on the typed path where the
+	// pane is up, settled and still untouched. A fallback is a fact about
+	// THIS pane and not about the persona — a relaunch may well take the
+	// mode — so it rides back as the sessionFailure the caller already
+	// wraps every error from here in.
+	//
+	// Bounded by this launch's own patience, exactly like the settle above
+	// it (ADR 0061 D2, ADR 0062 D2) — and on the measured runtime the
+	// footer is on screen at the splash, so the ordinary read returns on
+	// the first poll and the bound is never reached.
+	//
+	// Nothing at all on a runtime with no persona-mode channel: no read, no
+	// wait, no line.
+	if rt, err := d.App.LoadRuntime(runtime); err == nil && rt.PersonaMode != nil {
+		note, err := AwaitPersonaMode(d.HB.H, rt, persona, session, target, wait, d.Poll)
+		if err != nil {
+			return "", err
+		}
+		if note != "" {
+			d.printf("! %-14s %s\n", id, note)
+		}
 	}
 	return target, nil
 }

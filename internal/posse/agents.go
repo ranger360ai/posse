@@ -186,7 +186,7 @@ func ClaudeFleetSettingsJSON() string {
 type AgentFile struct {
 	Name        string
 	Description string
-	Command     string   // template for the PID's own runtime; may contain {file} {memory} {allow} {deny} {skills}
+	Command     string   // template for the PID's own runtime; may contain {file} {memory} {allow} {deny} {skills} {mode}
 	Runtime     string   // launch profile name (ADR 0002); "" = default (config default_runtime, else claude)
 	Tier        string   // strong|standard|fast (ADR 0003); "" = config default_tier, else strong
 	TierFloor   string   // lowest tier this persona may run at; enforced by the parity check (rangerhq-2uq)
@@ -384,7 +384,10 @@ func renderPlaceholder(cmd, placeholder, text string) string {
 // gate goes to the wall), {model} to the runtime's model flag for the tier
 // (ADR 0003; empty when unmapped), {skills} to the flag pointing at the
 // rendered skills tree (ADR 0007; empty when the PID binds none or the
-// runtime has no surface — the parity check has already ruled on that).
+// runtime has no surface — the parity check has already ruled on that),
+// {mode} to the flag selecting the custom mode the launch rendered this
+// PID into (ADR 0062 D1; empty on every runtime that declares no such
+// channel).
 // ownRuntime is what the PID would run on with no override (ADR 0002 §1).
 func (ag *AgentFile) RenderCommandFor(rt *Runtime, ownRuntime, tier string, writable ...string) string {
 	return ag.RenderCommandForModel(rt, ownRuntime, tier, "", writable...)
@@ -418,6 +421,19 @@ func (ag *AgentFile) RenderCommandForModel(rt *Runtime, ownRuntime, tier, model 
 	skills, _ := rt.SkillsText(ag.SkillsStateDir, ag.Skills)
 	out = renderPlaceholder(out, "{settings}", rt.FleetSettingsText())
 	out = renderPlaceholder(out, "{skills}", skills)
+	// {mode} is the PID channel for a CLI with no launch-time system flag:
+	// it selects the custom mode the launch rendered into the session tree
+	// from this very PID (ADR 0062 D1, personamode.go). Rendered off the
+	// runtime's declared PersonaMode seam and so empty — placeholder and
+	// preceding space both gone — on every runtime that declares none.
+	//
+	// Beside {skills} because it is the same shape one channel over: the
+	// text here only POINTS at something, and the launch materializing it
+	// is what makes the pointer true. The difference is what a stale
+	// pointer costs — a missing skill is a degraded persona, a mode file
+	// that was never written is no persona at all, which is why that write
+	// refuses the launch and this render cannot.
+	out = renderPlaceholder(out, PIDChannelMode, rt.PersonaModeText(ag.Name))
 	out = renderPlaceholder(out, "{allow}", r.Allow)
 	out = renderPlaceholder(out, "{deny}", r.Deny)
 	// The unattended mode is a launch guarantee, not a template detail: a

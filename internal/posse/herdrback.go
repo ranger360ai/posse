@@ -2344,6 +2344,17 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 		if _, err := a.RenderSkillsFor(ag, rt, dir); err != nil {
 			return nil, err
 		}
+		// The PID channel, on a runtime whose CLI has no launch-time system
+		// flag at all (ADR 0062 D1): the persona arrives as a custom mode
+		// posse renders into the same session tree, and the `{mode}`
+		// rendered below selects it. The skills tree's sibling in every
+		// way that matters here — written before the line is typed, by the
+		// same paths, refusing rather than overwriting a file posse did
+		// not write — and nothing at all on a runtime that declares no
+		// such channel.
+		if _, err := a.RenderPersonaModeFor(ag, rt, dir); err != nil {
+			return nil, err
+		}
 		// Directory trust (rangerhq-w4uf): on claude the session dir has to
 		// be trusted BEFORE the command is typed, or the CLI opens on a
 		// modal instead of a composer and the launch is over — the same
@@ -2957,6 +2968,14 @@ func (b *HerdrBackend) RelaunchAgent(name string, grace time.Duration) (bool, er
 		tier = b.App.ResolveTier("", ag)
 	}
 	if _, err := b.App.RenderSkillsFor(ag, rt, m.Dir); err != nil {
+		return false, err
+	}
+	// ADR 0062 D1 on the one other path that renders a persona line, and
+	// re-rendered rather than trusted for the reason everything else here
+	// is: this re-types a full persona command into a live pane, the PID is
+	// re-read from disk, and a mode file carrying the PID as it was two
+	// days ago would revive the session as a persona nobody edited.
+	if _, err := b.App.RenderPersonaModeFor(ag, rt, m.Dir); err != nil {
 		return false, err
 	}
 	// Same reason as the launch, and the same reason RelaunchAgent renders
