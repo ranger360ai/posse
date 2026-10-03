@@ -622,8 +622,22 @@ func (a *App) RuntimeProbe(rt *Runtime, h Herdr, o ProbeOpts) (*ProbeRecord, err
 	}
 	// The preflight's blocking gaps are the ones that make a launch
 	// impossible rather than degraded; there is nothing to measure past one.
+	//
+	// EXCEPT the PID channel, by name (ADR 0062 D3): a template that
+	// delivers no PID blocks DISPATCH — the session would open with no
+	// persona in it — and blocks nothing this command measures. The probe's
+	// four observables are taken on the WALL (the gates dir, the canary's
+	// precedence, the session's own PATH) and on herdr's detection, none of
+	// which arrives through the PID, and the probe is the surface the
+	// instance side measures the channel that LIFTS this refusal with. A
+	// probe that refused here could never measure its way out.
+	//
+	// Exempted by gap name rather than by making the gap non-blocking,
+	// because `runtime check`'s exit code is an onboarding gate and this
+	// runtime genuinely cannot take dispatched work. It warns below instead,
+	// in the same words an interactive launch warns in.
 	for _, g := range a.RuntimeGaps(rt, h) {
-		if g.Blocking {
+		if g.Blocking && g.Name != PIDChannelGapName {
 			return nil, Die("runtime %s cannot be probed: %s — %s", rt.Name, g.Name, g.Line)
 		}
 	}
@@ -658,6 +672,16 @@ func (a *App) RuntimeProbe(rt *Runtime, h Herdr, o ProbeOpts) (*ProbeRecord, err
 	// stood: refusals.log is kept across renders, so only the delta is this
 	// probe's evidence.
 	inner := ag.RenderCommandFor(rt, rt.Name, DefaultTier)
+	// The PID channel WARNS here and never refuses (ADR 0062 D3, and the
+	// exemption above says why). The scratch PID carries no `command:` of
+	// its own, so the template is this runtime's own and the reading is the
+	// one `runtime check` prints — said again on the probe's own screen
+	// because this pane is about to open with no persona in it, and a reader
+	// comparing the four observables to a real session's should know that
+	// much about the one they are looking at.
+	if len(rt.PIDChannels(ag.LaunchTemplate(rt, rt.Name))) == 0 {
+		fmt.Fprintf(out, "  %s\n", PIDChannelDegraded(rt, runtimeTemplateWhere(rt)))
+	}
 	if f := rt.PIDVoided(inner); f != "" {
 		return nil, Die("the rendered %s line names %s, which makes %s discard the PID — the probe would measure a session carrying no deny at all (ranger-base-64qx)", rt.Name, f, rt.Name)
 	}

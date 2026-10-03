@@ -2408,6 +2408,43 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 		if err := writableRootRefusal(o.Agent, rt, cmd); err != nil {
 			return nil, err
 		}
+		// PIDVoided's sibling, and the gap between them is a whole launch
+		// (ADR 0062 D3): PIDVoided asks whether a FLAG on the line makes
+		// this CLI discard the PID, and never whether the template carried
+		// one at all. ranger-base-5jjtn measured bob's `-p` dead and removed
+		// {file} from its template, after which a dispatched seat spent a
+		// worktree, a pane and a startup_wait on a session with every native
+		// rulebook and no persona — the same harm, through a template that
+		// names no flag to refuse on.
+		//
+		// Asked of the TEMPLATE and not of `cmd`, because by here the
+		// placeholder is gone and the PID's absence has no shape on a
+		// rendered line (pidchannel.go says why at length).
+		//
+		// DISPATCHED REFUSES, INTERACTIVE WARNS (ADR 0013 §1 property 5, ADR
+		// 0015 §3) — unlike PIDVoided below, which refuses both. The
+		// difference is whose file the remedy is in: PIDVoided asks about a
+		// flag the operator wrote into their own PID, and this asks about a
+		// template the operator may not own. Interactive proceeds because
+		// the keyboard can paste the PID, and because `posse runtime probe`
+		// renders a persona line and is how the channel that lifts this gets
+		// measured.
+		//
+		// A RECREATE is NOT on the refusing side here, which is where this
+		// parts company with the detection arm above (ranger-base-enmu2).
+		// There a recreate buys a session posse cannot read with one that is
+		// alive, and the screens it closes are the fixtures the manifest is
+		// written from. This reading is a fact about a TEMPLATE: it is
+		// identical before and after the refresh, so refusing would strand
+		// an operator mid-session on a runtime they are driving by hand and
+		// buy nothing.
+		if len(rt.PIDChannels(ag.LaunchTemplate(rt, own))) == 0 {
+			where := ag.LaunchTemplateWhere(rt, own)
+			if o.Bead != "" {
+				return nil, PIDChannelRefusal(o.Agent, rt, where)
+			}
+			b.warn("posse: %s\n", PIDChannelDegraded(rt, where))
+		}
 		if f := rt.PIDVoided(cmd); f != "" {
 			return nil, Die("%s: the rendered %s launch line names %s, which makes %s discard the PID this line delivers — the session would open carrying every native rulebook and no persona at all (measured, ranger-base-64qx; docs/adr/0013-rules-precedence-probe.md)\n"+
 				"  drop %s from this PID's command:, or fold the PID into the override text yourself — that replaces the runtime's own system prompt, which is a decision, not a default",
@@ -2962,6 +2999,17 @@ func (b *HerdrBackend) RelaunchAgent(name string, grace time.Duration) (bool, er
 	// create was refused: a PID edited after its session opened is
 	// re-rendered here, and this path retypes into a LIVE pane, so without
 	// it a crashed CLI comes back as a session with no persona in it.
+	// PIDVoided's sibling on this path too (ADR 0062 D3): the template
+	// carrying no channel at all, rather than the line naming a flag that
+	// voids one. Reachable for the same reason — the PID and the runtime
+	// file are both re-read from disk, so a {file} edited out of either
+	// since the session opened arrives here — and unconditional for the
+	// reason the detection re-type refusal is: this path has one caller and
+	// it is the unattended one, so there is no interactive arm to hold ADR
+	// 0015 §3's asymmetry open.
+	if own := b.App.ResolveRuntime("", ag); len(rt.PIDChannels(ag.LaunchTemplate(rt, own))) == 0 {
+		return false, PIDChannelRetypeRefusal(m.Agent, rt, name, ag.LaunchTemplateWhere(rt, own))
+	}
 	if f := rt.PIDVoided(inner); f != "" {
 		return false, Die("%s: the rendered %s line names %s, which makes %s discard the PID — refusing to retype a persona session that would carry none (ranger-base-64qx)", m.Agent, rt.Name, f, rt.Name)
 	}

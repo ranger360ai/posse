@@ -171,10 +171,17 @@ func (a *App) CheckAgent(name string) (findings, warnings []string, err error) {
 			}
 		}
 	}
-	if ag.Runtime != "" {
-		if _, err := a.LoadRuntime(ag.Runtime); err != nil {
-			add("runtime: %v", err)
-		}
+	// The PID's OWN runtime (ADR 0002 §1's resolution: the PID's `runtime:`,
+	// else this instance's default), kept rather than discarded — it is the
+	// runtime whose template this PID's `command:` stands in for, and the
+	// one the PID-channel reading below is taken on (ADR 0062 D3).
+	//
+	// A `runtime:` that does not load is the finding it always was, and it
+	// leaves own nil: the readers below then ask nothing, because a second
+	// line about the same typo is not a second finding.
+	own, ownErr := a.LoadRuntime(a.ResolveRuntime("", ag))
+	if ag.Runtime != "" && ownErr != nil {
+		add("runtime: %v", ownErr)
 	}
 	if ag.Tier != "" && !ValidTier(ag.Tier) {
 		add("tier: %q is not strong | standard | fast", ag.Tier)
@@ -293,6 +300,20 @@ func (a *App) CheckAgent(name string) (findings, warnings []string, err error) {
 	}
 	if len(ag.Skills) > 0 && ag.Command != "" && !strings.Contains(ag.Command, "{skills}") {
 		add("command: has no {skills} while skills: names %s — this PID's own runtime would launch without them (add {skills} or drop command: for the built-in template)", strings.Join(ag.Skills, ", "))
+	}
+	// The PID CHANNEL (ADR 0062 D3, surface 2): the {model} finding's
+	// sibling one placeholder over, and the costliest of the three — a
+	// template with no {model} opens on the tier's own model, a template
+	// with no PID channel opens with no persona in it at all.
+	//
+	// Read through the same function the grid and the launch read
+	// (pidchannel.go), so this finding and the refusal a dispatch meets are
+	// the same fact asked once. Asked of ag.Command alone because that is
+	// the only template this PID OWNS — a PID with no `command:` renders the
+	// runtime's, and `posse runtime check <name>` is where that reader is
+	// standing (the tier/runtime warning above draws the same line).
+	if own != nil && ag.Command != "" && len(own.PIDChannels(ag.Command)) == 0 {
+		add("%s", PIDChannelFinding(own, ag.LaunchTemplateWhere(own, own.Name)))
 	}
 	if ag.Command != "" && !strings.Contains(ag.Command, "{model}") {
 		add("command: has no {model} — the tier will not select a model on this PID's own runtime (add {model} or drop command: for the built-in template)")

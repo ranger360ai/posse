@@ -4457,6 +4457,30 @@ func (d *Dispatcher) launchSession(is RepoIssue, persona, session, runtime, tier
 			if det := ReadDetection(d.HB.H, rt); det.Refuses() {
 				return launched{}, DetectionRefusal(rt, det)
 			}
+			// ADR 0062 D3's third surface, at the same placement and for the
+			// same reason as the two above it: the template this launch would
+			// render from carries no PID channel, so the session would open
+			// carrying every native rulebook and no persona at all, and
+			// planLaunch cannot refuse EARLY enough for this path — the argv
+			// ladder claims the bead before it creates the session, and the
+			// bead is what dispatch must leave untouched (ranger-base-9r33).
+			//
+			// Same busy-key arm (a plain error benches the slot: every bead
+			// routed to this persona on this runtime renders the same
+			// template) and the same create-only condition. A live CLI
+			// already carries whatever PID it opened with, and the re-type
+			// arm below has its own refusal.
+			//
+			// planLaunch asks it again inside the create, which is the
+			// backstop for every launch path that is not this one — the same
+			// shape as the danger and detection readings, and a reading off
+			// two files rather than a question put to herdr, so the second
+			// ask costs nothing.
+			if ag, err := d.App.LoadAgent(persona); err == nil {
+				if own := d.App.ResolveRuntime("", ag); len(rt.PIDChannels(ag.LaunchTemplate(rt, own))) == 0 {
+					return launched{}, PIDChannelRefusal(persona, rt, ag.LaunchTemplateWhere(rt, own))
+				}
+			}
 		}
 	}
 	// ADR 0013 §2, and the whole reason this function grew a `prompt`

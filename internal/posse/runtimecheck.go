@@ -310,6 +310,18 @@ func (a *App) launchRow(rt *Runtime, h Herdr) stageRow {
 	// itself (detection.go): this row saying "does NOT recognize" and a
 	// bead-carrying launch refusing are the same fact asked once.
 	seen := DetectionRow(ReadDetection(h, rt))
+	// The PID clause, and since ADR 0062 D3 it is a READING: which
+	// placeholder of this profile's own template delivers the PID, or that
+	// it carries none. ONE reading, shared with the blocking `pid` gap below
+	// and with the launch refusal itself (pidchannel.go) — this row saying
+	// "NO PID channel" and a bead-carrying launch refusing are the same fact
+	// asked once, which is what stops the grid promising a refusal the
+	// launcher does not make.
+	//
+	// Asked about rt.Command because `runtime check` is asked about a
+	// PROFILE: a PID's own `command:` is a template this reader cannot see,
+	// and `agent check` is where that one is standing.
+	pid := PIDChannelRow(rt.PIDChannels(rt.Command))
 	un := "unattended flag " + rt.Unattended + " on the line"
 	if rt.Unattended == "" {
 		un = "NO unattended flag known — a tool call may sit unapproved with nobody watching"
@@ -329,7 +341,7 @@ func (a *App) launchRow(rt *Runtime, h Herdr) stageRow {
 	}
 	return stageRow{
 		stage:   "launch",
-		value:   seen + "; PID delivered by the template; " + un,
+		value:   seen + "; " + pid + "; " + un,
 		by:      by,
 		missing: "refuse the launch",
 	}

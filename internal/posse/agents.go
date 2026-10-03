@@ -400,11 +400,11 @@ func (ag *AgentFile) RenderCommandFor(rt *Runtime, ownRuntime, tier string, writ
 // model == "" is every ordinary launch and renders byte-for-byte what it
 // rendered before this existed.
 func (ag *AgentFile) RenderCommandForModel(rt *Runtime, ownRuntime, tier, model string, writable ...string) string {
-	tmpl := rt.Command
-	if rt.Name == ownRuntime && ag.Command != "" {
-		tmpl = ag.Command
-	}
-	out := strings.ReplaceAll(tmpl, "{file}", shellQuote(ag.Path))
+	// The one expression for "which template" — shared with the PID-channel
+	// reading (pidchannel.go), because a reading taken from a template no
+	// launch renders is a reading about nothing (ADR 0062 D3).
+	tmpl := ag.LaunchTemplate(rt, ownRuntime)
+	out := strings.ReplaceAll(tmpl, PIDChannelFile, shellQuote(ag.Path))
 	out = strings.ReplaceAll(out, "{memory}", shellQuote(ag.MemoryDir))
 	modelText := rt.ModelText(tier)
 	if model != "" {

@@ -188,6 +188,19 @@ func (a *App) RuntimeGaps(rt *Runtime, h Herdr) []RuntimeGap {
 		add("detection", "herdr could not be asked (not on PATH, or its output changed shape) — whether it recognizes "+exe+" is UNKNOWN here, not no", false)
 	}
 
+	// pid — the PID channel (ADR 0062 D3). ONE reading, shared with the
+	// launch row above and with every launch that refuses on it
+	// (pidchannel.go): this gap being Blocking and a bead-carrying launch
+	// refusing are the same fact asked once, the ranger-base-9r33 rule.
+	//
+	// `exe != ""` for the same reason the detection arm carries it: an empty
+	// `command:` already has its own blocking gap, and a template that
+	// renders no executable at all delivering no PID is not a second finding
+	// — it is the first one said twice.
+	if exe != "" && len(rt.PIDChannels(rt.Command)) == 0 {
+		add(PIDChannelGapName, PIDChannelGapLine(rt), true)
+	}
+
 	// yaml — keys nothing reads. A launch WARNS and proceeds on these
 	// (warnUnknownRuntimeKeys, and deliberately so: the file is the
 	// operator's own config root). `runtime check` is the stricter surface,
