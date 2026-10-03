@@ -164,6 +164,25 @@ func govIn(t *testing.T, b *HerdrBackend) GovInputs {
 // govNow is a fixed clock, so an age assertion is not a stopwatch race.
 var govNow = time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
 
+// govSuspended is a GovInputs.Suspended for one witnessed sleep: the box came
+// back at `back` having been gone for `slept`, so the hole it left in wall
+// time is [back-slept, back] and the answer for a window is the OVERLAP —
+// which is the ledger's own arithmetic (suspend.go suspendSpan,
+// suspendedSince), written here rather than driven through the real witness so
+// a governance pin does not need a running loop to state a suspend.
+func govSuspended(back time.Time, slept time.Duration) func(time.Time) time.Duration {
+	return func(since time.Time) time.Duration {
+		lo, hi := back.Add(-slept), back
+		if since.After(lo) {
+			lo = since
+		}
+		if hi.After(lo) {
+			return hi.Sub(lo)
+		}
+		return 0
+	}
+}
+
 func find(set GovSet, id string) *GovCondition {
 	for i := range set {
 		if set[i].ID == id {
@@ -501,6 +520,53 @@ func TestGovG5InsideTheBudgetIsNotACondition(t *testing.T) {
 	in.Plan = &fakePlanReader{err: Die("usage endpoint: 429")}
 	if g := find(shopSet(t, in), "G5"); g != nil {
 		t.Errorf("5m blind against a 1h budget is quiet tolerance: %+v", *g)
+	}
+}
+
+// A blind window the box was ASLEEP for is not a blind guard (ADR 0064
+// D1-D2). `plan_guard_blind_max` bounds how long the shop may HIRE without a
+// reading and a suspended box hires nothing, so the budget was always awake
+// time and only the reading was wall. This is the 2026-10-01 wake in
+// miniature: 45m since the last snapshot, 40m of it a witnessed sleep, 5m of
+// awake blindness against a 10m budget.
+//
+// Both arms, because the discount is the whole content of the row and an arm
+// that only ever saw a cleared row would stay green if blindPast returned a
+// constant.
+//
+// MUTATION: drop the `- slept` from blindPast → the first arm reds. Drop the
+// `+suspendDiscount(...)` from G5's add → the second reds.
+func TestGovG5SuspendedWindowIsNotBlindness(t *testing.T) {
+	b, _ := newTestBackend(t)
+	appendConfig(t, b.App, govGuardCfg+"plan_guard_blind_max: 10m\n")
+	seedPlanSnapshot(t, b.App, govNow.Add(-45*time.Minute))
+
+	// The control first: the same fixture with no witness is the row as it
+	// fired on the night this was filed, so the arm below is the subtraction
+	// doing the work and not a fixture that was never blind.
+	in := govIn(t, b)
+	in.Plan = &fakePlanReader{err: Die("usage endpoint: 429")}
+	if g := find(shopSet(t, in), "G5"); g == nil || g.Key != "guard-blind:0h" {
+		t.Fatalf("premise: a witnessless 45m blind window against a 10m budget must be G5, got %+v", g)
+	}
+
+	in.Suspended = govSuspended(govNow, 40*time.Minute)
+	if g := find(shopSet(t, in), "G5"); g != nil {
+		t.Errorf("5m of awake blindness against a 10m budget is not a condition, whatever the wall says: %+v", *g)
+	}
+
+	// And a window the sleep only partly covers still fires — deferred, never
+	// lost — naming both numbers, because `pmset -g log` is the reader's next
+	// step and the awake age alone cannot be reconciled with the snapshot.
+	in.Suspended = govSuspended(govNow, 20*time.Minute)
+	g := find(shopSet(t, in), "G5")
+	if g == nil || g.Key != "guard-blind:0h" || g.Class != GovUrgent {
+		t.Fatalf("25m of awake blindness past a 10m budget is still G5, got %+v", g)
+	}
+	for _, want := range []string{"blind 25m", "awake for 25m", "20m", "pmset -g log"} {
+		if !strings.Contains(g.Detail, want) {
+			t.Errorf("a discounted row must name %q: %q", want, g.Detail)
+		}
 	}
 }
 
@@ -884,6 +950,162 @@ func TestGovG7MuteThresholdFollowsTheConfiguredCap(t *testing.T) {
 	writeWatchLog(t, c.App, govNow.Add(-2*time.Hour))
 	if g := find(shopSet(t, govIn(t, c)), "G7"); g == nil || g.Key != "loop-mute" {
 		t.Fatalf("the same 2h quiet under the default cap must be mute, got %+v", g)
+	}
+}
+
+// A log the box was ASLEEP past its budget for is not a mute loop (ADR 0064
+// D1-D2). The threshold is the watchdog's own guarantee and the watchdog's
+// clock is Go monotonic, which on darwin does not advance across a suspend
+// (suspend.go's head) — so a wall age compared to it was two quantities, and
+// on 2026-10-01 a box that slept 5h30m woke to `loop-mute` URGENT and a loop
+// that had done nothing wrong.
+//
+// Same key, same class, same threshold: what moved is the reading.
+//
+// MUTATION: drop the `- slept` from watchLogRow → the second arm reds. Drop
+// the suspendDiscount from its detail → the third reds.
+func TestGovG7SuspendedWindowIsNotAMuteLoop(t *testing.T) {
+	b, _ := newTestBackend(t)
+	appendConfig(t, b.App, "autostart_interval: 5m\n")
+	lock, held, err := lockWatch(b.App)
+	if err != nil || held {
+		t.Fatalf("could not take the watch lock: held=%v err=%v", held, err)
+	}
+	defer lock.Release()
+	// The incident's own shape at the stale-log fixture's age: a live loop, a
+	// log 72h untouched, and a 5m/40m arm whose budget is 85m.
+	writeWatchLog(t, b.App, govNow.Add(-72*time.Hour))
+
+	// The control: no witness, the row as it has always fired.
+	in := govIn(t, b)
+	if g := find(shopSet(t, in), "G7"); g == nil || g.Key != "loop-mute" {
+		t.Fatalf("premise: a witnessless 72h quiet must be loop-mute, got %+v", g)
+	}
+
+	// The whole window asleep: zero awake quiet, so there is nothing to
+	// report. The loop's next pass is still due on the interval it was
+	// waiting out, because its own timers did not advance either.
+	in.Suspended = govSuspended(govNow, 72*time.Hour)
+	if g := find(shopSet(t, in), "G7"); g != nil {
+		t.Errorf("a loop that was frozen with the box is not a loop that stopped writing: %+v", *g)
+	}
+
+	// Part of it awake, and still past the budget: the row fires. The signal
+	// is deferred by a sleep and never hidden by one — which is the whole
+	// reason this is a subtraction and not a wake grace.
+	in.Suspended = govSuspended(govNow, 70*time.Hour)
+	g := find(shopSet(t, in), "G7")
+	if g == nil || g.Key != "loop-mute" || g.Class != GovUrgent {
+		t.Fatalf("2h of awake quiet past an 85m budget is still loop-mute, got %+v", g)
+	}
+	// The wall age stays, because that is what the file's mtime says and a
+	// row an operator cannot reconcile with `ls -l` is worse than no row;
+	// the awake age and the discounted span arrive beside it.
+	for _, want := range []string{"written 72h00m ago", "awake for 2h00m", "70h00m", "pmset -g log"} {
+		if !strings.Contains(g.Detail, want) {
+			t.Errorf("a discounted mute row must name %q: %q", want, g.Detail)
+		}
+	}
+}
+
+// ─── the suspend reading itself ──────────────────────────────────────────────
+
+// The reading is clipped to the window it is about, and the clip is load
+// bearing rather than decoration: the ledger's `now` is the WITNESS's pair
+// seam (suspend.go, deliberately not d.now()) while the subtraction's is
+// in.now(), so the two ends of this window come from two clocks. A sleep
+// recorded by the witness goroutine between the moment ShopCheck took `now`
+// and the moment the row is built has a span ending AFTER that now, and every
+// fixture in this package freezes one clock and not the other. Unclipped, a
+// discount longer than the window is a negative age — which BlindFor renders
+// as "0s" and a threshold compare reads as a cleared row, so the row would be
+// cleared by arithmetic rather than by the box having been asleep.
+//
+// MUTATION: delete the `slept > window` clip → the second arm reds. Delete the
+// nil guard → the first panics.
+// No t.Parallel: this reads govNow, the file's clock, and cmd/testparallel
+// does not clear that package var for a parallel test (`go run
+// ./cmd/testparallel ./internal/posse extra` names it). The alternative was
+// clearing govNow in parallelOK, which is a statement about every test in this
+// file and not about this one — and the run is 0.00s, so the slot buys nothing.
+func TestGovSuspendedReadingIsClippedToItsWindow(t *testing.T) {
+	since := govNow.Add(-time.Hour)
+	in := GovInputs{Now: func() time.Time { return govNow }}
+
+	if got := in.suspended(since, govNow); got != 0 {
+		t.Errorf("no witness must read as no discount, got %s — a process that did not see the sleep may not "+
+			"subtract one (ADR 0064 D4)", got)
+	}
+
+	in.Suspended = func(time.Time) time.Duration { return 9 * time.Hour }
+	if got, want := in.suspended(since, govNow), time.Hour; got != want {
+		t.Errorf("a 9h discount inside a 1h window read as %s, want %s clipped: an age minus this is the AWAKE "+
+			"age and must land in [0, age]", got, want)
+	}
+
+	in.Suspended = func(time.Time) time.Duration { return -time.Hour }
+	if got := in.suspended(since, govNow); got != 0 {
+		t.Errorf("a negative discount read as %s: nothing adds to a wall age, because a backward clock step is "+
+			"reported and never corrected (ADR 0064 D6)", got)
+	}
+
+	in.Suspended = func(time.Time) time.Duration { return time.Hour }
+	if got := in.suspended(time.Time{}, govNow); got != 0 {
+		t.Errorf("a zero since is no window and read as %s: the caller with no timestamp to measure from — an "+
+			"absent log, a guard that never had a reading — has no age to subtract from either", got)
+	}
+}
+
+// ─── the suspend reading's two ends (ADR 0064 D2, D4) ────────────────────────
+
+// The pulse wires the witness in; a one-shot process does not, and the
+// absence is the design rather than an omission (ADR 0064 D4). Pinned by
+// READING the struct, because a comment saying "deliberately absent" is green
+// in both worlds — the same way GuardTrippedSince's absence is pinned here.
+//
+// `posse status` and the cockpit are separate processes with no ledger to ask,
+// so their wall-clock rows keep the wall reading: the exposure is one witness
+// tick of `loop-mute` after a wake and `guard-blind` until the first
+// successful plan read, both bounded, measured and accepted in D4. The store
+// that would close it is named there and waits on a bead nobody has filed.
+func TestGovStatusInputsCarriesNeitherWatchProcessReading(t *testing.T) {
+	t.Parallel()
+	b, _ := newTestBackend(t)
+	in := StatusInputs(b.App, b, new(bytes.Buffer))
+	if in.Suspended != nil {
+		t.Error("StatusInputs carries a suspend witness: a one-shot process did not see the sleep, and a " +
+			"reading invented from no ledger would subtract a suspend that is not known to have happened " +
+			"(ADR 0064 D4 — the wall reading is the accepted cost, and a store is the first build)")
+	}
+	if !in.GuardTrippedSince.IsZero() {
+		t.Error("StatusInputs carries a guard streak: a fresh shell has no streak and must report no G4")
+	}
+}
+
+// The other end: the pulse's inputs DO carry it, which is what makes the
+// subtraction reachable at all. The witness runs in this process and
+// pulseOnce has already read the pair for this tick (ADR 0064 D3), so a
+// govInputs that left the field nil would be a ledger nobody asks.
+//
+// MUTATION: delete `Suspended: d.suspendedSince` from govInputs → this reds.
+func TestPulseGovInputsCarryTheSuspendWitness(t *testing.T) {
+	b, _ := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+	in := d.govInputs(PulseConfig{Armed: true, Persona: "coordinator"})
+	if in.Suspended == nil {
+		t.Fatal("the pulse's inputs carry no suspend witness: the ledger is in this process and nothing else " +
+			"can subtract it, so every wall-clock row after a long sleep is a fault the shop did not have " +
+			"(ADR 0064 D2)")
+	}
+	// Wired to the LEDGER and not to a zero: a field set to a func that
+	// always answers zero would pass the nil check and subtract nothing.
+	back := govNow
+	d.mu.Lock()
+	d.suspends = []suspendSpan{{back: back, slept: time.Hour}}
+	d.mu.Unlock()
+	if got := in.Suspended(back.Add(-2 * time.Hour)); got != time.Hour {
+		t.Errorf("the pulse's Suspended answered %s for a window holding a 1h span: it is not reading the "+
+			"witness's ledger", got)
 	}
 }
 

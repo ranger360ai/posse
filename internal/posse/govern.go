@@ -130,6 +130,26 @@ type GovInputs struct {
 	// self-healing — and only a sustained one is a governance condition).
 	GuardTrippedSince time.Time
 
+	// Suspended is how much of the window from since to now THIS process
+	// witnessed the box suspended (suspend.go suspendedSince, ADR 0064 D2).
+	//
+	// The second watch-process-only reading, and here for the same reason as
+	// the first above: a wall-clock shop condition is a statement about AWAKE
+	// time (ADR 0064 D1), so G5's blind clock and G7's log age subtract this
+	// before the threshold compare and the `guard-blind:Nh` bucket is the
+	// awake age. Same keys, same classes, same thresholds — a row fires
+	// exactly when the shop was awake and quiet past its budget, which is
+	// what both thresholds always meant and what G4 already does by
+	// construction.
+	//
+	// nil reads as zero, which is every process that did not witness the
+	// sleep: `posse status` and the cockpit are separate processes with no
+	// witness and keep the wall reading, and the cost of that is NAMED in
+	// ADR 0064 D4 rather than paid for with a store nobody has filed a bead
+	// on. It never corrects in the other direction either — a backward wall
+	// step is reported by the witness and subtracted by nothing (D6).
+	Suspended func(since time.Time) time.Duration
+
 	// Spend is the cost scan behind G6; nil = ScanCosts. Injected so a test
 	// never reads the operator's live ledger — and so a caller that runs
 	// this check on a TIMER can hand in a scanner with a memory, rather than
@@ -174,6 +194,62 @@ func (in GovInputs) errw() io.Writer {
 		return in.Errw
 	}
 	return io.Discard
+}
+
+// suspended is the Suspended reading, clipped to the window it is about: how
+// much of [since, now] this process witnessed the box asleep, never negative
+// and never longer than the window itself. So a caller subtracting it from an
+// age it measured over the SAME window lands in [0, age], and no row can be
+// cleared by arithmetic rather than by the box having been asleep.
+//
+// The clip is belt-and-braces rather than a fix — suspendedSince already
+// clips every span to both ends. It is here because the two ends come from
+// different clocks: the ledger's `now` is the witness's own pair seam
+// (suspend.go, and deliberately not d.now()), while this one is in.now(),
+// which the fixtures in this package freeze and age by hours. A caller that
+// moves one and not the other must read as "no discount" and never as a
+// negative age.
+//
+// A nil field is zero, and so is a zero since: the caller with no timestamp
+// to measure from — an absent log, a guard that has never had a reading — has
+// no age to subtract from either.
+func (in GovInputs) suspended(since, now time.Time) time.Duration {
+	if in.Suspended == nil || since.IsZero() {
+		return 0
+	}
+	window := now.Sub(since)
+	if window <= 0 {
+		return 0
+	}
+	slept := in.Suspended(since)
+	if slept <= 0 {
+		return 0
+	}
+	if slept > window {
+		return window
+	}
+	return slept
+}
+
+// suspendDiscount is the clause a wall-clock row carries when it fired ANYWAY
+// after a non-zero subtraction (ADR 0064 D2). The condition is real — the
+// shop was awake and quiet past its budget — and part of the wall window the
+// row was read over was a sleep.
+//
+// Both numbers, because the row is only checkable with both: the awake age is
+// what the threshold saw, and the discounted span is what the operator finds
+// in `pmset -g log`, which is the next thing anyone does with this line. A
+// reader handed one of them alone cannot reconcile the row with the file's own
+// mtime.
+//
+// Empty for a zero discount, so every row on a box that did not sleep is
+// byte-for-byte what it was before this reading existed.
+func suspendDiscount(awake, slept time.Duration) string {
+	if slept <= 0 {
+		return ""
+	}
+	return fmt.Sprintf(" · awake for %s of that window — the other %s was a witnessed SUSPEND and is not "+
+		"counted (ADR 0064 D1); `pmset -g log` names the sleep", BlindFor(awake), BlindFor(slept))
 }
 
 // AttnQuestionAge is how long a question/risk bead may sit open before G3.
@@ -319,10 +395,10 @@ func ShopCheck(in GovInputs) (GovSet, []error) {
 	// machine that has simply never been logged in. The guard's own pass
 	// says the true one, once (dispatch.go planUnconfigured).
 	if planErr != nil && NoSourceReason(planErr) == nil {
-		blindFor, past := in.blindPast(now)
+		blindFor, slept, past := in.blindPast(now)
 		if past {
 			key, detail := guardBlindRow(blindFor, planErr)
-			add("G5", GovUrgent, key, detail)
+			add("G5", GovUrgent, key, detail+suspendDiscount(blindFor, slept))
 		}
 	}
 
@@ -420,7 +496,7 @@ func ShopCheck(in GovInputs) (GovSet, []error) {
 				// seats, kills and load readings unreconstructable, and
 				// every surface that asked only "is it running" reporting
 				// health the whole time.
-				if key, detail := watchLogRow(in.App, interval, now); key != "" {
+				if key, detail := watchLogRow(in.App, interval, now, in.suspended); key != "" {
 					add("G7", GovUrgent, key, detail)
 				}
 			}
@@ -906,8 +982,9 @@ func guardBlindRow(blindFor time.Duration, err error) (key, detail string) {
 		fmt.Sprintf("plan guard blind %s (%v) — monitoring itself is broken", BlindFor(blindFor), err)
 }
 
-// blindPast is how long the instance has been without a reading, and whether
-// that is past `plan_guard_blind_max:`.
+// blindPast is how long the instance has been AWAKE without a reading,
+// whether that is past `plan_guard_blind_max:`, and the suspend it discounted
+// getting there.
 //
 // The clock is the shared snapshot's own timestamp — the moment the last
 // successful reading was TAKEN — not a per-process variable. That is what
@@ -915,20 +992,32 @@ func guardBlindRow(blindFor time.Duration, err error) (key, detail string) {
 // window is a fact about the instance, and the instance writes it down every
 // time a reading succeeds. `plan_guard_blind_max: 0` is the documented
 // escape hatch (never fail on blindness) and disarms this row with it.
-func (in GovInputs) blindPast(now time.Time) (time.Duration, bool) {
+//
+// The subtraction is ADR 0064 D1-D2: `plan_guard_blind_max` bounds how long
+// the shop may HIRE without a reading, and a suspended box hires nothing, so
+// the budget was always awake-denominated and only the reading was not. The
+// 2026-10-01 wake read 5h30m blind one second after the box came back and
+// delivered `guard-blind:5h` URGENT; the awake reading was one second. A
+// process with no witness subtracts zero and keeps the wall reading (D4).
+//
+// The discount is returned rather than folded in because a row that still
+// fires has to NAME it — the awake age alone cannot be reconciled with the
+// snapshot's timestamp (suspendDiscount).
+func (in GovInputs) blindPast(now time.Time) (blind, slept time.Duration, past bool) {
 	budget := in.App.PlanGuardBlindMax(in.errw())
 	if budget <= 0 {
-		return 0, false
+		return 0, 0, false
 	}
 	at, ok := in.App.PlanCache(in.caller()).LastReadAt()
 	if !ok {
 		// No snapshot has ever been written on this machine. That is a
 		// guard that has never had a reading, not one that lost one, and
 		// there is no clock to be past.
-		return 0, false
+		return 0, 0, false
 	}
-	blind := now.Sub(at)
-	return blind, blind > budget
+	slept = in.suspended(at, now)
+	blind = now.Sub(at) - slept
+	return blind, slept, blind > budget
 }
 
 // overThresholdWindow is the guard's verdict on a reading that succeeded:
@@ -985,11 +1074,15 @@ func (in GovInputs) dialE(now time.Time, plan PlanUsage) BudgetState {
 // StatusInputs is what a one-shot process — `posse status`, the cockpit —
 // hands ShopCheck.
 //
-// GuardTrippedSince is deliberately absent: this process is not the watch
-// loop and has no streak, so it reports no G4 rather than inventing one from
-// a single reading. Everything else is read live, which is the point — the
-// view does not depend on the loop, and a killed loop is a condition it
-// reports (G7) rather than a reason it cannot answer.
+// GuardTrippedSince and Suspended are deliberately absent, the two readings
+// that only the loop's own memory holds. No streak, so it reports no G4
+// rather than inventing one from a single reading. No suspend witness either,
+// so its wall-clock rows (G5, G7) compare a WALL age and may name a sleep as
+// a condition for as long as a wake takes to clear — bounded, measured and
+// accepted in ADR 0064 D4, which also names the store that would fix it and
+// the bead that would justify building one. Everything else is read live,
+// which is the point — the view does not depend on the loop, and a killed
+// loop is a condition it reports (G7) rather than a reason it cannot answer.
 //
 // errw takes the config-typo lines: a human asked, so a threshold that does
 // not parse gets said out loud exactly once, here.
@@ -1082,7 +1175,19 @@ func GovSummary(s GovSet) string {
 // standing the reading down. WatchLogStaleAfter turns the pair into the
 // longest silence a healthy loop can have, and names what that reading
 // cannot see.
-func watchLogRow(a *App, interval string, now time.Time) (string, string) {
+//
+// suspended is GovInputs.suspended — the witnessed sleep inside the window,
+// zero for every process that has no witness — and the age compared to the
+// threshold is the log's wall age MINUS it (ADR 0064 D1-D2). The threshold is
+// the watchdog's budget and the watchdog's clock is Go monotonic, which on
+// darwin does not advance across a suspend (suspend.go's head), so comparing
+// it to a wall age was comparing two different quantities: on 2026-10-01 a
+// box that slept 5h30m woke with a log that old, a loop that had done nothing
+// wrong, and `loop-mute` URGENT in the first pulse after the wake. The
+// detail still names the WALL age, because that is what the file's mtime
+// says and a row the operator cannot reconcile with `ls -l` is worse than no
+// row; the awake age and the discount arrive beside it.
+func watchLogRow(a *App, interval string, now time.Time, suspended func(since, now time.Time) time.Duration) (string, string) {
 	base, err := ParseInterval(interval)
 	if err != nil {
 		// Unreachable from ShopCheck (the arm-broken arm above caught it),
@@ -1102,9 +1207,11 @@ func watchLogRow(a *App, interval string, now time.Time) (string, string) {
 			AbbrevHome(WatchLockPath(a)), AbbrevHome(path))
 	}
 	after := WatchLogStaleAfter(base, maxInterval)
-	if age := now.Sub(mt); age > after {
-		return "loop-mute", fmt.Sprintf("a watch loop is running but %s was last written %s ago, past the %s a live loop can be quiet — its output is going somewhere else and no window can be reconstructed",
-			AbbrevHome(path), BlindFor(age), BlindFor(after))
+	wall := now.Sub(mt)
+	slept := suspended(mt, now)
+	if age := wall - slept; age > after {
+		return "loop-mute", fmt.Sprintf("a watch loop is running but %s was last written %s ago, past the %s a live loop can be quiet — its output is going somewhere else and no window can be reconstructed%s",
+			AbbrevHome(path), BlindFor(wall), BlindFor(after), suspendDiscount(age, slept))
 	}
 	return "", ""
 }

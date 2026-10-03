@@ -276,10 +276,17 @@ func (d *Dispatcher) pulseOnce(cfg PulseConfig) {
 	}
 }
 
-// govInputs is the pulse tick's view of the shop check: the watch process's
-// own guard streak (G4 lives nowhere else) and its cost-scan seam, with the
-// pulse persona marked live so the `no-live:` carry-over keeps meaning what
-// it meant before the widening.
+// govInputs is the pulse tick's view of the shop check: the two readings that
+// live nowhere but this process's memory — the guard streak (G4) and the
+// suspend ledger (ADR 0064 D2) — and its cost-scan seam, with the pulse
+// persona marked live so the `no-live:` carry-over keeps meaning what it meant
+// before the widening.
+//
+// Suspended is why this tick's wall-clock rows are awake-denominated and
+// `posse status`'s are not: the witness that can prove the box was asleep runs
+// here (suspend.go), and pulseOnce has already read the pair for this tick
+// before building the set, so a wake that beat the witness's own ticker is
+// still subtracted (D3).
 //
 // Errw is left nil on purpose. A config typo is worth one line where a human
 // asked (`posse status`, dispatch's own passes) and is noise written every
@@ -294,6 +301,7 @@ func (d *Dispatcher) govInputs(cfg PulseConfig) GovInputs {
 		PulsePersona:      cfg.Persona,
 		Pulsing:           true,
 		GuardTrippedSince: d.guardStreak(),
+		Suspended:         d.suspendedSince,
 		Spend:             d.Spend,
 		Plan:              d.Plan,
 	}

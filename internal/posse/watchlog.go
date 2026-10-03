@@ -202,13 +202,21 @@ func WatchLogMtime(path string) (time.Time, bool) {
 // out of the config describing a different launch, and it is named here
 // rather than papered over with slack.
 //
-// It is also blind to a SLEEP, and deliberately. The watchdog measures awake
-// silence (its own "WHAT IT CANNOT SEE"), and this file's mtime is wall
-// time, so a box asleep for longer than the budget wakes with a log older
-// than this threshold and a loop that did nothing wrong. The loop's next
-// pass timer fires within one base interval of the wake and the file goes
-// fresh again, so the window is one interval wide and transient — a cost
-// worth naming, not one worth a second clock.
+// The number is blind to a SLEEP and still is. The watchdog measures awake
+// silence (its own "WHAT IT CANNOT SEE"), and this file's mtime is wall time,
+// so a box asleep for longer than the budget wakes with a log older than this
+// threshold and a loop that did nothing wrong.
+//
+// What changed is who COMPARES it. "The window is one interval wide and
+// transient — a cost worth naming, not one worth a second clock" was the right
+// call while there was no second clock, and it is re-ruled by ADR 0064 D5: the
+// clock exists now (suspend.go, ranger-base-sqxo1), the window was tested on
+// 2026-10-01 and cost a P1 and an evening, and the price of using it here is
+// one field and one subtraction. The WATCH process subtracts the suspend it
+// witnessed from this file's age before the compare, so the row fires on AWAKE
+// quiet (govern.go watchLogRow, GovInputs.Suspended, ADR 0064 D1-D2). A
+// process with no witness — `posse status`, the cockpit — still compares the
+// wall age; what that leaves exposed is bounded and named in ADR 0064 D4.
 func WatchLogStaleAfter(base, maxInterval time.Duration) time.Duration {
 	if maxInterval < base {
 		maxInterval = base
