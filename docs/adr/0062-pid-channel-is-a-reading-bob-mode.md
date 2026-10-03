@@ -525,12 +525,20 @@ one authorized billed turn — its stored prompt in `~/.bob/db/bob.db`, task
    (ranger-base-ie68e F1; before it the guard returned nil there and the PID
    was written, readable at the in-root path all the same — so the sentence
    this row used to carry, "anything under `$HOME/.bob` refuses", was
-   MEASURED FALSE from the day it landed). `$HOME/.bobbish` and an ordinary dir under the
+   MEASURED FALSE from the day it landed). **And the mirror of it**: a
+   session dir OUTSIDE the root whose own `.bob/plugins` is a symlink to
+   `~/.bob/plugins` is refused too — there the spelling is outside the root
+   and the inode inside, so it is the resolved question and not the spelled
+   one that answers, and the bytes would otherwise land on bob's global
+   modes glob exactly (ranger-base-4w7rk, verifying ranger-base-ie68e: the
+   two questions were both asked from the day F1 landed, but only one of
+   them had an arm, so the other could be deleted with the package green).
+   `$HOME/.bobbish` and an ordinary dir under the
    home do not refuse, and a runtime with no persona-mode channel does not
    refuse at `$HOME` either, because it writes nothing there to refuse.
-   (ranger-base-se81d, ranger-base-ie68e; the pin is
+   (ranger-base-se81d, ranger-base-ie68e, ranger-base-4w7rk; the pin is
    `TestQAPersonaModeRefusesAWriteIntoTheCLIsGlobalConfigRoot`, and it reds
-   on all six of: the guard call deleted, `underDir` downgraded to a
+   on all seven of: the guard call deleted, `underDir` downgraded to a
    string prefix, `Dir` moved out from under `GlobalRoot`, the spelling arm
-   deleted, the root left unresolved for the spelling test, and the spelling
-   test resolving the leaf too.)
+   deleted, the root left unresolved for the spelling test, the spelling
+   test resolving the leaf too, and the resolved arm deleted.)
