@@ -361,41 +361,6 @@ Two notes for whoever does the move:
   rangerhq-uglc named. It is shipped for the screen, not the assertion; the
   foot of `bob.toml` says why.
 
-### The same captures, replayed against the herdr-bob plugin (ranger-base-0sa5a)
-
-These six snapshots have a second reader, and it is not herdr. The
-**herdr-bob plugin** (`mloeper.herdr-bob`, installed on this box) carries its
-own screen-rule file, `rules.json`, which is the whole of its `blocked`
-reporting — Bob has no approval hook event, so a permission prompt can only be
-read off the pane. MEASURED 2026-10-03: the shipped file matches **none** of
-the three blocked captures, and **does** match `idle-command-picker.txt`,
-because the picker lists `/permissions - View and change this folder's trust
-level` and that one line satisfies `trust_folder_prompt`'s `all` and `any`
-together. A false `blocked` is the serious direction — it is acted on, and it
-stops every wait on the pane.
-
-`etc/herdr/herdr-bob/rules.json` is posse's fork, and its two added rules are
-ports of `upstream/bob/bob.toml`'s `signin` and `execute_command` anchors: the
-patterns already existed here, in a file herdr cannot evaluate. The override
-needs no patch to the managed checkout, because `bob-watch` seeds its rules
-into `config_root()` once and prefers that copy thereafter —
-`scripts/herdr-bob-rules.sh --check` reports what is installed there, and
-`--install` writes it (operator-gated, ranger-base-knikn).
-
-`make verify-herdr-bob-rules` is the arm, and it exists because
-`verify-detection` structurally cannot cover this: it globs
-`etc/herdr/agent-detection/*.toml` at one level, and `rules.json` is neither a
-`.toml` nor at that level. It replays all six captures through the plugin's own
-`match_rules`, lifted verbatim out of the installed `bin/bob-watch`, with a
-control arm on the shipped file that must reproduce both upstream failures
-before the fork's arm is allowed to pass. The filing is
-`upstream-herdr-bob-rules.md`.
-
-Note for whoever moves these fixtures into `testdata/bob/`: the move does not
-retire any of this. herdr evaluating a `bob` kind and the plugin reading
-`rules.json` are two different readers of the same screens, and the plugin's
-copy is the one that reports `blocked` today.
-
 ## Working on this
 
 ```sh
