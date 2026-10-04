@@ -900,9 +900,6 @@ func TestSeedConfigDocumentedDurationDefaultsAreTheConstants(t *testing.T) {
 	if scanned < 20 {
 		t.Fatalf("parsed %d non-test .go files under %s — the walk found no tree, so the census below measures nothing", scanned, root)
 	}
-	if len(keys) < 10 {
-		t.Fatalf("derived %d duration key/constant pairings from %d files, want at least 10 — the two reader rules in seedDurationReaderDecl have stopped matching the tree, so this pin holds almost nothing", len(keys), scanned)
-	}
 	t.Logf("parsed %d non-test .go files, derived %d duration key/constant pairings through %d call-site reader(s) (%s) and %d body-form reader(s) (%s)",
 		scanned, len(keys), len(c.resolvers), strings.Join(c.resolvers, ", "), len(c.readers), strings.Join(c.readers, ", "))
 
@@ -973,6 +970,15 @@ func TestSeedConfigDocumentedDurationDefaultsAreTheConstants(t *testing.T) {
 		if !unpairedKeys[key] {
 			t.Errorf("seedDurationDefaultNotAConstant names %q, which no duration reader reads with a non-constant default any more — either it has a constant now (drop the entry, the census will pair it) or the key is gone", key)
 		}
+	}
+
+	// The floor, below the totality checks on purpose: when a whole reader
+	// rule stops matching, the three blocks above name each table entry that
+	// no longer resolves and this says how much of the census went with it.
+	// A Fatalf, because every comparison below a census this thin is
+	// vacuous.
+	if len(keys) < 10 {
+		t.Fatalf("derived %d duration key/constant pairings from %d files, want at least 10 — the two reader rules in seedDurationReaderDecl have stopped matching the tree, so this pin holds almost nothing", len(keys), scanned)
 	}
 
 	// One key, one default. Two call sites agreeing is normal
