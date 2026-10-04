@@ -86,8 +86,16 @@ a session holding this bead would be called this; the record is what
 dispatch wrote when it created the session.)* Columns: `id · p · holder · holder-state · age · title · repo`,
 where holder-state is the session's herdr status or `no session` and age
 is since `updated_at` (`3m`, `2h`, `1d`). Ready rows drop in_progress
-beads (today `bd ready` may include them; the cockpit filters — a bead
-appears in one section only).
+beads (the cockpit filters — a bead appears in one section only).
+*(Amended 2026-10-03, ranger-base-eh1kr: "today `bd ready` may include
+them" is retired. It does not, on either store class — MEASURED, bd 0.50.3,
+the shop's SQLite queue and a `no-db: true` JSONL store, one binary and the
+same argv; bd's own help says "Excludes in_progress, blocked, deferred, and
+hooked issues". So the filter above is a no-op, and kept as one: it is the
+cheap half of a two-section invariant. The expensive half is that DISPATCH
+read the same query for its queue, which made every in_progress branch of
+its fire loop unreachable from the store — see `internal/posse/interrupted.go`
+and docs/notes.d/ranger-base-eh1kr.md.)*
 
 **3. Keys per section.** Unchanged for sessions and ready. On an
 in-progress row: `enter` focuses the holder's session, `p` prompts it,

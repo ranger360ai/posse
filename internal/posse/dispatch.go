@@ -2607,6 +2607,13 @@ func (d *Dispatcher) Run(dirFilter, personaFilter string, max int) (int, error) 
 			return 0, Die("ready scan failed in all %d beads repo(s) — the queue is unknown, not empty", len(failed))
 		}
 	}
+	// The other half of the queue (interrupted.go, ranger-base-eh1kr): the
+	// interrupted runs `bd ready` excludes by definition, which is every
+	// bead a killed, reaped or crashed holder left claimed. Appended here,
+	// ABOVE the empty-queue return, because an interrupted run is the whole
+	// queue on a shop with no ready work — the shape that printed "no ready
+	// work" over a stranded claim every pass.
+	beads = append(beads, d.interruptedRuns(dirFilter, beads)...)
 	if len(beads) == 0 {
 		// The start-of-pass sweep above already reaped for this pass; a
 		// quiet pass needs no epilogue reap of its own.
@@ -3292,6 +3299,11 @@ func (d *Dispatcher) refire(seat, settled, personaFilter, dirFilter string, max 
 			d.printf("✗ ready scan failed: %v\n", err)
 		}
 	}
+	// A refill reads the whole queue and not the settle's hint, so it reads
+	// the claimed half too (interrupted.go): a seat that frees while a
+	// stranded claim is waiting is exactly the moment to relaunch it, and a
+	// rolling Run under --watch may never return to the fire pass above.
+	beads = append(beads, d.interruptedRuns(dirFilter, beads)...)
 	if len(beads) == 0 {
 		return nil, 0, nil
 	}
