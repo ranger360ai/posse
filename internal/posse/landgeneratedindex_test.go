@@ -575,3 +575,99 @@ func TestLandingRefusalRemovesAGeneratedFileHEADNeverHad(t *testing.T) {
 		t.Errorf("a refused landing left the generator's new file in the tree: %q", left)
 	}
 }
+
+// THE GUARD THE REMOVE SITS BEHIND — the condition this fix INTRODUCED, and
+// the arm nothing reached (ranger-base-rkva0, verifying ranger-base-jqe3b).
+//
+// restoreGeneratedIndex falls through to os.Remove only when git's own answer
+// is `??`. Take that guard away and every landing pin above stays green
+// (MEASURED 2026-10-04, `-run 'TestLanding|TestTheLanding'` ok) while a
+// restore that failed for any OTHER reason deletes a TRACKED file whose
+// content git was never asked to put back — turning an `M` the next pass
+// abstains on into a `D` it abstains on just the same, with the bytes gone.
+//
+// The other reason is reachable, and this is what it answers. MEASURED
+// 2026-10-04, git 2.50.1, darwin 25.4.0, with `.git/index.lock` present:
+// `restore --source=HEAD --staged --worktree` exits 128 writing nothing
+// ("Unable to create ... index.lock: File exists"), while `status --porcelain
+// --untracked-files=all` still exits 0 and answers ` M`. So the guard is
+// handed a tracked path and a failed restore in the same breath, which is
+// exactly the pair it has to tell apart.
+//
+// Three arms, because the two that already work are what make the third
+// evidence rather than a sticker: a tracked modification is RESTORED, an
+// untracked leftover is REMOVED (ranger-base-jqe3b's own half, here directly
+// on the function rather than through a landing), and a tracked modification
+// under a locked index is LEFT EXACTLY AS IT WAS.
+func TestQARestoreGeneratedIndexDeletesNothingWhenTheRestoreFailedForAnotherReason(t *testing.T) {
+	t.Parallel()
+	const half = "half an index\n"
+	// The committed body, read once from the fixture so the restored arm is
+	// compared against what HEAD actually has rather than a retyped copy.
+	_, probe := notesRepo(t)
+	committed, err := os.ReadFile(filepath.Join(probe, notesIndexPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(committed) == 0 || string(committed) == half {
+		t.Fatalf("fixture: main's index is not a body this arm can tell from a half-written one (%d bytes)", len(committed))
+	}
+
+	for _, c := range []struct {
+		name    string
+		tracked bool // the generated file is in HEAD
+		lock    bool // a .git/index.lock stands in the way of `git restore`
+		want    string
+	}{
+		{name: "tracked, restored", tracked: true, want: string(committed)},
+		{name: "untracked, removed", tracked: false, want: ""},
+		// The arm the guard exists for. A deletion here is unrecoverable:
+		// `restore` never ran, so nothing put HEAD's bytes anywhere.
+		{name: "tracked, restore refused for another reason, left alone", tracked: true, lock: true, want: half},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			_, repo := notesRepo(t)
+			if !c.tracked {
+				mustGit(t, repo, "rm", "-q", "--", notesIndexPath)
+				mustGit(t, repo, "commit", "-q", "-m", "main: no committed index at all", "--", notesIndexPath)
+			}
+			write(t, filepath.Join(repo, notesIndexPath), half)
+			if c.lock {
+				gitDir := mustGit(t, repo, "rev-parse", "--absolute-git-dir")
+				lock := filepath.Join(gitDir, "index.lock")
+				if err := os.WriteFile(lock, nil, 0o644); err != nil {
+					t.Fatal(err)
+				}
+				// The premise, asserted rather than assumed: the restore must
+				// FAIL, and `status` must still answer, and it must NOT say
+				// `??`. Without all three this arm grades nothing.
+				if _, err := git(repo, "restore", "--source=HEAD", "--staged", "--worktree", "--", notesIndexPath); err == nil {
+					t.Fatal("fixture: git restore succeeded under a held index.lock, so the guard's other-reason arm was never reached")
+				}
+				st, err := git(repo, "status", "--porcelain", "--untracked-files=all", "--", notesIndexPath)
+				if err != nil {
+					t.Fatalf("fixture: git status cannot answer under a held index.lock either (%v), so `??` is not what the guard is reading", err)
+				}
+				if strings.HasPrefix(strings.TrimSpace(st), "??") {
+					t.Fatalf("fixture: status says %q — this arm needs a TRACKED path, or it is the untracked arm again", st)
+				}
+				t.Cleanup(func() { _ = os.Remove(lock) })
+			}
+
+			restoreGeneratedIndex(repo, notesIndexPath)
+
+			got, err := os.ReadFile(filepath.Join(repo, notesIndexPath))
+			switch {
+			case c.want == "":
+				if !os.IsNotExist(err) {
+					t.Errorf("an untracked leftover survived the restore (%v): %q", err, got)
+				}
+			case err != nil:
+				t.Errorf("the generated file is gone, and `git restore` never ran — nothing put HEAD's bytes anywhere: %v", err)
+			case string(got) != c.want:
+				t.Errorf("body = %q, want %q", got, c.want)
+			}
+		})
+	}
+}

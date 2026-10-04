@@ -1646,3 +1646,44 @@ func TestGovCarryOverHasNoRowName(t *testing.T) {
 		t.Errorf("Row() = %q, want the em dash", got)
 	}
 }
+
+// ONE ROW PER FORGOTTEN PARK, because the park row REPLACES the ordinary one
+// rather than joining it (ranger-base-rkva0, verifying ranger-base-pm5zo).
+//
+// Both rows are reachable for the SAME bead and nothing but one `continue`
+// keeps the second from being added: a dateless park past attn_parked_age is
+// necessarily also a question past attn_question_age, because Updated is never
+// before Created. Cut that `continue` and the pulse line reads
+// "parked:bd-q; question:bd-q", the second row saying "open 2376h00m
+// unanswered" about a bead `bd list` shows ❄ DEFERRED with no date — which is
+// verbatim the rendering the park row's own sentence exists to replace, and
+// which a reader would take for ranger-base-nkjjg come back.
+//
+// No other arm here could see it: every one of them reads the FIRST G3 row
+// (`find`), so the whole park family stayed green over the cut. MEASURED
+// 2026-10-04 with the `continue` removed — 2 G3 rows, both keys on the line,
+// `-run 'TestGovG3|TestGovPulseLine'` ok.
+func TestGovG3AForgottenParkIsOneRowAndNotTwo(t *testing.T) {
+	b, _ := newTestBackend(t)
+	dir := govRepo(t, b)
+	writeJSON(t, dir, "fake-list-labeled.json", []map[string]any{datelessPark("bd-q", 40*parkDay)})
+	set := shopSet(t, govIn(t, b))
+	var rows []GovCondition
+	for _, c := range set {
+		if c.ID == "G3" {
+			rows = append(rows, c)
+		}
+	}
+	if len(rows) != 1 {
+		t.Fatalf("one forgotten park is one condition, got %d G3 row(s): %+v", len(rows), rows)
+	}
+	// And it is the PARK row that survived, not the ordinary one: the whole
+	// reason for replacing it is that "open 32d unanswered" is unreadable
+	// about a bead that is parked.
+	if rows[0].Key != "parked:bd-q" {
+		t.Errorf("Key = %q, want parked:bd-q", rows[0].Key)
+	}
+	if line := GovLines(set); strings.Contains(line, "question:bd-q") {
+		t.Errorf("the ordinary unanswered row reached the pulse line beside the park row: %q", line)
+	}
+}
