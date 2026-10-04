@@ -199,7 +199,7 @@ translation, offered without a number.
 
 ## 6. Questions for the operator discussion
 
-Filed as one question bead so the discussion has a home; one decision — accept,
+Filed as one question bead, ranger-base-w6zpo, so the discussion has a home; one decision — accept,
 amend or reject ADR 0067 — with these sub-points to rule on:
 
 1. **Register for the free PDF?** Requires name, country, organisation, field of
