@@ -64,7 +64,7 @@ shared-working-tree history is cited in the table below as private records.
 | `make test-arm1` | Run the default package tree, tree checks and silent-revert audit. |
 | `make test-arm2` / `make test-arm3` | Type-check the partition and run the corresponding tagged `internal/posse` tests. |
 | `make tree-check` | Run formatting and the tree-wide QA checks; use it after a focused test run. |
-| `go test -timeout 25m -run '<name>' ./internal/treepins` | Run selected tests whose subject is the repository tree. |
+| `go test -timeout 25m -run '<name>' ./internal/treepins` | Run selected tree pins — tests whose subject is the repository tree, elsewhere called architecture fitness functions. Defined below. |
 | `make treepins` | Run every tree-wide pin unfiltered, with a suite-lock slot and a 25m timeout; type it when you add one. |
 | `make verify-box` | Check the local installation; this is distinct from hermetic fixture tests. |
 
@@ -72,6 +72,17 @@ A bare `go test ./...` compiles only the default arm of `internal/posse`.
 It omits the other two build-tag partitions, the suite wrapper and its
 box-wide queue, and the Makefile's additional checks. For a focused test in
 another arm, pass `-tags posse_arm2` or `-tags posse_arm3` explicitly.
+
+**Tree pins.** Some tests in this repository have the repository itself as
+their fixture. They read the tree — source, docs, Makefile, the ADRs — and
+fail when a decision we wrote down has stopped being true: the notes index
+lists every fragment, every ADR that names a source file names one that
+exists, no shipped file names a person where it should name a role. Elsewhere
+these are called *architecture fitness functions* or *architecture tests*
+(ArchUnit is the usual example; Go's own `deps_test.go` is an older one).
+[internal/treepins/README.md](internal/treepins/README.md) carries the rest
+of the definition and lists every door;
+[CONTRIBUTING.md](CONTRIBUTING.md) is the first-contributor version.
 
 Run the tree pins with a `-run` filter, as the table does. An unfiltered run
 of that package type-checks and vets all three arms and costs what a full

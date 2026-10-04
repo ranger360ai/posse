@@ -131,6 +131,22 @@ stops). Like `make install`, it is a human's: every shipped PID denies
 never touches `envs/` (gitignored secret values — no commit to promote
 from), `state/`, or `personas/`.
 
+## Testing
+
+**Tree pins.** Some tests in this repository have the repository itself as
+their fixture. They read the tree — source, docs, Makefile, the ADRs — and
+fail when a decision we wrote down has stopped being true: the notes index
+lists every fragment, every ADR that names a source file names one that
+exists, no shipped file names a person where it should name a role. Elsewhere
+these are called *architecture fitness functions* or *architecture tests*
+(ArchUnit is the usual example; Go's own `deps_test.go` is an older one).
+
+`make tree-check` runs every one of their fast doors in about a minute and
+`make test` is the whole suite. [CONTRIBUTING.md](CONTRIBUTING.md) is the
+first-contributor path and says what the suite costs;
+[internal/treepins/README.md](internal/treepins/README.md) describes the
+pins and lists the doors.
+
 ---
 
 The original Ghostty + tmux session manager lives on the **tmux-reference**

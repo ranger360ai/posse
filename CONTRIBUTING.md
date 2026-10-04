@@ -20,14 +20,28 @@ go build ./... && go vet ./... && make tree-check
 ```
 
 Under a minute warm, and `tree-check` is nearly all of it — and the part that
-is easy to skip and should not be. Some of this repo's checks are pins whose
-subject is the *tree* — is it gofmt-clean, does the shipped tree name a role
-rather than a person, does the notes index list every fragment — and they live
-inside two long packages that a focused `go test -run` never compiles. No
-`-run` filter has ever named them, because formatting is nobody's subject.
-`make tree-check` is all of them in one command; `make fmt` fixes what the
-formatting half reports, and each door is also runnable on its own when you
-know which part you touched.
+is easy to skip and should not be.
+
+**Tree pins.** Some tests in this repository have the repository itself as
+their fixture. They read the tree — source, docs, Makefile, the ADRs — and
+fail when a decision we wrote down has stopped being true: the notes index
+lists every fragment, every ADR that names a source file names one that
+exists, no shipped file names a person where it should name a role. Elsewhere
+these are called *architecture fitness functions* or *architecture tests*
+(ArchUnit is the usual example; Go's own `deps_test.go` is an older one).
+Ours differ in two ways. Each pin cites the ADR or issue that made the rule,
+so a red test tells you which decision you are about to reverse, not just
+which line. And each has a fast door — `make fmt-check`, `make notes-check`,
+`make adr-check` … — because the package they live in takes minutes and a
+`-run` filter never names a test that is nobody's subject; `make tree-check`
+runs every door in about a minute. They live in `internal/treepins` and
+`internal/posse`. A tree pin is not a *pinning test* in the
+characterization-test sense: it asserts a rule we chose, not the behaviour we
+happen to have.
+
+`make fmt` fixes what the formatting half reports, and each door is also
+runnable on its own when you know which part you touched.
+[internal/treepins/README.md](internal/treepins/README.md) lists them all.
 
 ## Before you open the pull request
 
