@@ -75,6 +75,18 @@ package treepins
 //	                                              make seed-check
 //	                                              (ranger-base-nn33e)
 //
+// and two more, folded into seed-check's door for the same reason the row
+// above was: their subject is examples/config.yaml. The pin derives the
+// seed's documented duration defaults from the call sites that pair a config
+// key with its Default* constant, and the second holds the register that
+// silences it for a key documented at something other than its default:
+//
+//	TestSeedConfigDocumentedDurationDefaultsAreTheConstants
+//	                                              make seed-check
+//	TestSeedConfigDocumentedDefaultRegisterIsNotStale
+//	                                              make seed-check
+//	                                              (both ranger-base-vofbl)
+//
 // and one more, folded into doc-check's own door for the same reason — it
 // is a prose pin over two shipped documents, which is that door's subject:
 //
@@ -146,24 +158,30 @@ package treepins
 // are the one exemption from the two-way check, listed with their reasons in
 // twdDoorHolders.)
 //
-// and `make tree-check` is all of them — 46.5-77.2s on this box over three
-// warm runs at forty-nine pins and fourteen doors — which is the command a
+// and `make tree-check` is all of them — 44-46s on this box over three
+// warm runs at fifty-one pins and fourteen doors — which is the command a
 // seat types after a filtered run. (It was 14.9-16.5s over twenty-three pins
 // behind eight doors, before ranger-base-g6sb1 found a second package;
 // 15-43s at twenty-two, 12-27s under
 // ranger-base-8dnuy, and 40-46s at a smaller class before that. Re-measured
 // whenever the class changes — under ranger-base-xrdb0, and again under
-// ranger-base-ecchw — because the sentence a seat prices the command from
+// ranger-base-ecchw, and again under ranger-base-vofbl — because the
+// sentence a seat prices the command from
 // should not quote a run of a class it did not run; and stated without a
 // second numeral, deliberately: a historical count in this comment is
 // invisible to arm 4's one-claim rule, which is ranger-base-erqvh row 2. The
 // seconds are NOT pinned — an elapsed-seconds red belongs to the box, per
 // the `test` target's own note, and a warm build cache is most of this
-// spread — but they are measured, not carried. The 2026-10-04 spread is
-// the box and not the cache: all three runs were warm, and the one-minute
-// load average went 8.9 -> 23.8 across them with a sibling seat holding a
-// suite slot throughout. Cold, with internal/treepins' test binary to
-// compile as well as internal/posse's, the same command read 92.6s.)
+// spread — but they are measured, not carried. BOTH 2026-10-04 readings say
+// the spread is the box and not the cache. ranger-base-g6sb1 read 46.5-77.2s
+// over three warm runs at forty-nine pins, the one-minute load average going
+// 8.9 -> 23.8 across them with a sibling seat holding a suite slot
+// throughout; ranger-base-vofbl re-read the same command at fifty-one, three
+// warm runs later the same day with no sibling suite and a load of 5.4-7.1,
+// and got 44-46s. The two pins it added cost 0.06s between them, so what
+// moved between the two readings was the box. Cold, with internal/treepins'
+// test binary to compile as well as internal/posse's, the same command read
+// 92.6s.)
 //
 // THAT SENTENCE IS THE ONLY LIVE COUNT IN THIS FILE, and arm 4 holds it to
 // the Makefile, both numerals and the enumeration above it. It read seventeen
