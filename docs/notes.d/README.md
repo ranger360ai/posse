@@ -7,6 +7,7 @@ references), not inferred publication dates. Undated fragments sort last.
 ## 2026-10
 
 - [ranger-base-khqvr](ranger-base-khqvr.md) — A derived census narrowed by a hand list of two names reached 4 of 10 keys (ranger-base-khqvr) — 2026-10-04
+- [ranger-base-jyuid](ranger-base-jyuid.md) — Is a tree pin anyone else's practice? A survey of the field, and the public wording (ranger-base-jyuid) — 2026-10-04
 - [ranger-base-g6sb1](ranger-base-g6sb1.md) — The tree-wide door register was blind to a whole package, and what the second key had to be (ranger-base-g6sb1) — 2026-10-04
 - [ranger-base-dpvlh](ranger-base-dpvlh.md) — ranger-base-dpvlh — a merge-back of a DERIVED gate has to re-run the gate — 2026-10-04
 - [ranger-base-7zng1](ranger-base-7zng1.md) — The heaviest named-package run on the box took no suite slot (ranger-base-7zng1) — 2026-10-04
