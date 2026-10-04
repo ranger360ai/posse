@@ -158,6 +158,58 @@ func TestMergeBackDoesNotPairAnAmbiguousReplayKey(t *testing.T) {
 	}
 }
 
+// ALL OR NOTHING over a MULTI-COMMIT branch, which is the half of the rule
+// every fixture above leaves untested: they each put one commit on the
+// branch, so `return nil` on the first unaccounted-for commit and "return
+// what paired so far" cannot be told apart by any of them.
+//
+// A replayer reads this rule before deciding how many commits to write.
+// ranger-base-eawjq's two-commit merge-back decided on TWO twins rather than
+// one collapsed landing because of it, and ranger-base-aza46's three-commit
+// one wrote three; both say so on the bead. If the loop ever returned the
+// partial list, a collapse would read as LANDED — MEASURED 2026-10-04 by
+// planting `continue` in place of that `return nil`: this fixture's
+// MergeSessionWork flipped to blocked=false and named the one twin as the
+// equivalence, so the branch's second commit would be dropped from main with
+// a green word over it. The honest answer is the strand: the block re-files,
+// and a person looks.
+func TestMergeBackPairsNothingWhenOnlySomeOfABranchLanded(t *testing.T) {
+	t.Parallel()
+	a := wtApp(t)
+	repo := wtRepo(t)
+	commitIn(t, repo, "shared.mk", "PHONY := build test\n", "seed the makefile")
+	tr, err := a.EnsureSessionTree(repo, "s-1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The shape of a two-commit merge-back: two subjects, two AUTHOR dates.
+	const subjA = "the first half (ranger-base-bwp7h)"
+	const subjB = "the second half (ranger-base-bwp7h)"
+	commitAtIn(t, tr.Path, "shared.mk", "PHONY := build test a\n", subjA, "2026-10-03T22:41:58-04:00")
+	commitAtIn(t, tr.Path, "shared.mk", "PHONY := build test a b\n", subjB, "2026-10-04T16:37:43-04:00")
+
+	// The collapse: ONE landing on main, carrying both commits' content under
+	// the first commit's identity. All the work is there; only one of the two
+	// keys is.
+	commitIn(t, repo, "other.txt", "main moved on\n", "a sibling bead")
+	commitAtIn(t, repo, "shared.mk", "PHONY := build test verify-x a b\n", subjA, "2026-10-03T22:41:58-04:00")
+
+	if eq := equivalentOnBase(repo, "main", tr.Branch); len(eq) != 0 {
+		t.Fatalf("one of two commits paired and the pairing was still returned: %+v\n"+
+			"A partial pairing is not an equivalence — MergeSessionWork would call the branch landed and the unpaired commit would be lost.", eq)
+	}
+	o, err := MergeSessionWork(a, tr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !o.Blocked() {
+		t.Fatalf("a branch whose second commit reached main under no key was reported as landed: %+v", o)
+	}
+	if len(o.Equivalent) != 0 {
+		t.Errorf("a strand must claim no equivalence: %+v", o.Equivalent)
+	}
+}
+
 // A replay pairing is an inference about somebody's resolution, not a
 // measurement of content — so it must move the REPORTING half and nothing
 // else. RemoveSessionTree still refuses, and the refusal names the evidence
