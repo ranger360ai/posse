@@ -954,6 +954,15 @@ func CageCredential(rt *Runtime) string {
 // without it the cage starts a session that cannot do anything, and the
 // ADR says to refuse with the reason rather than spend the launch.
 func CheckCageCredential(rt *Runtime, names []string) error {
+	// The money line first: a runtime whose declared credential IS metered
+	// spending is refused for THAT, whatever the env sets carry. Asked here
+	// and not in the loop below because the loop's question — is the name
+	// present — answers yes for a metered name that is present, which is
+	// how a `cage_cred: ANTHROPIC_API_KEY` was admitted until
+	// ranger-base-41zyo (MEASURED; meteredcred.go has the reading).
+	if err := CheckMeteredSessionCredential(rt); err != nil {
+		return err
+	}
 	want := CageCredential(rt)
 	if want == "" {
 		return Die("cage container: no container credential is decided for runtime %s — %s and %s keep plain auth.json files and rangerhq-kiz left their container shape open; decide it (and set cage_cred: for a template-only runtime) before caging %s",

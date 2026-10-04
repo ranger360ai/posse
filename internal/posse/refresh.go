@@ -70,18 +70,10 @@ const (
 	expiresStamp = "# expires="
 )
 
-// meteredCredentialNames are credentials that are metered spending. A
-// persona is never the one who decides to spend (rangerhq-kiz), and neither
-// is a command that writes a file without one in the room: refresh will not
-// write one under any name and will not write one it recognizes by shape.
-var meteredCredentialNames = map[string]bool{"ANTHROPIC_API_KEY": true}
-
-// meteredKeyPrefix is the prefix Anthropic's metered API keys carry, as
-// against a setup-token's `sk-ant-oat…`. It is a shape check and not an
-// authority: a key that has been renamed slips past it. It is here because
-// the failure it catches — a metered key pasted into the session variable —
-// is silent, spends money, and looks exactly like success.
-const meteredKeyPrefix = "sk-ant-api"
+// The metered-credential refusal this file leans on twice — the NAME set and
+// the VALUE shape — lives in meteredcred.go, which owns the class and is
+// also what the ADMISSION preconditions ask (ADR 0019 D7, ranger-base-41zyo).
+// It was defined here when the write path was its only reader.
 
 // runtimeMint is the runtime's OWN mint command, per runtime. claude's is
 // `claude setup-token`, whose browser flow is the human gate ADR 0019 D4
@@ -436,7 +428,7 @@ func (a *App) refreshSession(w io.Writer, rt *Runtime, o RefreshOpts) error {
 	if key == "" {
 		return Die("runtime %s has no session credential name decided — codex and grok keep plain auth.json files and rangerhq-kiz left their container shape open; set cage_cred: in runtimes/%s.yaml before refreshing it", rt.Name, rt.Name)
 	}
-	if meteredCredentialNames[key] {
+	if IsMeteredCredentialName(key) {
 		return Die("%s is metered spending and posse does not write it (rangerhq-kiz, ADR 0019 D4): refusing", key)
 	}
 	expires, err := parseStampDate(o.Expires)

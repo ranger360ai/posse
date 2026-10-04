@@ -1136,6 +1136,14 @@ func CredGateCollision(rt *Runtime, deny []string, binDir string) string {
 // precondition asks it (CheckCageCredential, cage.go) — same question, same
 // key, one tier down.
 func CheckCredGate(persona string, rt *Runtime, deny []string, binDir string, names []string) error {
+	// Before the collision: the metered class is refused for what the
+	// RUNTIME declares, not for what the PID shims, so it is not this
+	// gate's `rule == ""` to escape through. A metered `cage_cred:` refuses
+	// an uncaged launch whose PID shims nothing — the money line does not
+	// depend on ADR 0042's precondition being in play (ranger-base-41zyo).
+	if err := CheckMeteredSessionCredential(rt); err != nil {
+		return err
+	}
 	rule := CredGateCollision(rt, deny, binDir)
 	if rule == "" {
 		return nil

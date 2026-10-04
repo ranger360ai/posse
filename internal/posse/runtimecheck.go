@@ -739,6 +739,15 @@ func cageCredRow(rt *Runtime) stageRow {
 		}
 		r.note = append(r.note, note)
 	}
+	if IsMeteredCredentialName(CageCredential(rt)) {
+		// The note below has claimed this since the row was written, and
+		// until ranger-base-41zyo the admission preconditions did not
+		// perform it — so a row printing a metered name as this runtime's
+		// credential was a grid describing a check nobody ran. It launches
+		// nothing now, and the row says which refusal holds.
+		r.value = CageCredential(rt) + " — REFUSED: that is metered spending, so no launch of this runtime is admitted at any tier (meteredcred.go CheckMeteredSessionCredential, ADR 0019 D7, rangerhq-kiz). Edit cage_cred: in the yaml; a persona is never the one who decides to spend"
+		r.missing = "every launch of this runtime REFUSES, caged or not, naming the money line — not the container's credential alone"
+	}
 	r.note = append(r.note, "a METERED api key is not accepted as this credential — that is spending, and a persona is never the one who decides to spend. Mint it by hand, keep it in an env set (mode 600, never in the repo), and name that set in the PID's envs:.")
 	return r
 }

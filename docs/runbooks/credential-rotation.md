@@ -84,6 +84,16 @@ above it. That is the `kiz` flow the instance ADR named; `posse refresh` is
 the same flow with the perms, the stamps and the money-line check done for
 you.
 
+A `cage_cred:` that names a metered credential refuses too, and it refuses at
+LAUNCH rather than at the write — every tier, caged or not, not waivable by
+`--allow-degraded` (this repo's ADR 0019 D7, `ranger-base-41zyo`; the instance
+ADR 0019 has a D7 of its own, move 3 below, about where the mint may live —
+the two numbering spaces are the two documents named at the top of this page).
+That route is a line in a promoted runtime yaml, which `posse refresh` never
+sees; the admission check reads the variable NAME only, so a metered key
+pasted by hand under the mint's own name is still the write path's to catch,
+which is what this command is for.
+
 codex and grok have no session credential decided (`cage_cred:` unset). A
 caged launch on them refuses with that reason rather than starting a session
 that cannot do anything. bob does have one decided, and is still not caged by
