@@ -225,7 +225,15 @@ func TestDispatchResumeLeavesCoordinatorHeldBeadAlone(t *testing.T) {
 	writeCoordinatorPID(t, b.App, "coordinator")
 	idleClaude(t, fake)
 
-	repo := qaRepo(t, b.App, `[{"id":"g9md","title":"queue hygiene","priority":1,"labels":["hygiene"],"assignee":"coordinator","status":"in_progress"}]`, "")
+	// The claimed half of the queue, which is where an in_progress row can
+	// come from (ranger-base-bknod): `bd ready` excludes it. interruptedRuns
+	// is the first thing to decline it — ADR 0033 §2's coordinator is not a
+	// lane of one at its own holder, so heldLane drops it before the loop —
+	// and the fire loop's own refusal (the leg above, over a READY bead
+	// routed to the coordinator) is the second. Both answers are "left
+	// alone", which is what the Consequences promise.
+	repo := claimedRepo(t, b.App, `[]`,
+		`[{"id":"g9md","title":"queue hygiene","priority":1,"labels":["hygiene"],"assignee":"coordinator","status":"in_progress"}]`, "")
 	cfg(t, b.App, "coordinator: coordinator\nbeads:\n  - "+repo+"\n")
 
 	n, err := d.Run("", "", 0)

@@ -26,6 +26,36 @@ func qaRepo(t *testing.T, a *App, ready, show string) string {
 	return repo
 }
 
+// claimedRepo is qaRepo for a pass whose queue has a CLAIMED half: `ready`
+// is what `bd ready` answers (open rows, and the fake now serves nothing
+// else — fakeBdReadyOpenOnly, ranger-base-bknod), `list` is what `bd list
+// --status in_progress` answers, and `show` is what `bd show` answers. Three
+// queries, three bodies, because they are three different questions about
+// one store and the fixtures that matter are exactly the ones where the
+// answers disagree.
+//
+// It is the drop-in for every `qaRepo(t, a, <an in_progress row>, <show>)`
+// the suite used to carry: the row moves out of the ready file, where real
+// bd can never put it, and into the claimed one, where it arrives through
+// the scan ranger-base-eh1kr built for it (interrupted.go). What changes
+// with it is the GATE the row comes through — interruptedRuns subtracts `bd
+// blocked`, drops a defer in the future, and offers only a claim whose
+// assignee is a lane of one at its own holder — so a fixture whose bead is
+// none of those is no longer in the queue at all. That is the honest answer
+// and it was the whole defect.
+//
+// A bead the pass claims for ITSELF needs no entry here: the fake's
+// `update --claim` writes the row into the claimed listing as real bd does
+// (fakeBdRecordStatus), so a second pass over the same repo finds it there.
+func claimedRepo(t *testing.T, a *App, ready, list, show string) string {
+	t.Helper()
+	repo := qaRepo(t, a, ready, show)
+	if err := os.WriteFile(filepath.Join(repo, "fake-list.json"), []byte(list), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return repo
+}
+
 func idleClaude(t *testing.T, fake string) {
 	t.Helper()
 	os.WriteFile(filepath.Join(fake, "agents.json"),

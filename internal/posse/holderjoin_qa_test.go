@@ -344,7 +344,7 @@ func TestDispatchResumeCrewSlotDoesNotMaskDialFHolder(t *testing.T) {
 	d := newTestDispatcher(t, b)
 	d.Resume = true
 	writePersona(t, b.App, "ranger", "[go]")
-	repo := qaRepo(t, b.App,
+	repo := claimedRepo(t, b.App, `[]`,
 		`[{"id":"a-1","title":"t","labels":["go"],"assignee":"ranger","status":"in_progress"}]`,
 		`[{"id":"a-1","title":"t","status":"in_progress","assignee":"ranger"}]`)
 	slot := SessionFor("ranger", repo)
@@ -390,7 +390,7 @@ func TestDispatchSkipsAgentlessCrewHolderUnderResume(t *testing.T) {
 	d := newTestDispatcher(t, b)
 	d.Resume = true
 	writePersona(t, b.App, "ranger", "[go]")
-	repo := qaRepo(t, b.App,
+	repo := claimedRepo(t, b.App, `[]`,
 		`[{"id":"a-1","title":"t","labels":["go"],"assignee":"ranger","status":"in_progress"}]`,
 		`[{"id":"a-1","title":"t","status":"in_progress","assignee":"ranger"}]`)
 	// The operator's own session, holding the bead by the run record, with
@@ -427,7 +427,7 @@ func TestDispatchResumeSlotHeldIdleDoesNotCreateTwin(t *testing.T) {
 	d := newTestDispatcher(t, b)
 	d.Resume = true
 	writePersona(t, b.App, "ranger", "[go]")
-	repo := qaRepo(t, b.App,
+	repo := claimedRepo(t, b.App, `[]`,
 		`[{"id":"a-1","title":"t","labels":["go"],"assignee":"ranger","status":"in_progress"}]`,
 		`[{"id":"a-1","title":"t","status":"closed","assignee":"ranger"}]`)
 	slot := SessionFor("ranger", repo)
@@ -494,7 +494,7 @@ func TestDispatchResumeSlotAgentGoneDoesNotCreateTwin(t *testing.T) {
 			d := newTestDispatcher(t, b)
 			d.Resume = leg.resume
 			writePersona(t, b.App, "ranger", "[go]")
-			repo := qaRepo(t, b.App,
+			repo := claimedRepo(t, b.App, `[]`,
 				`[{"id":"a-1","title":"t","labels":["go"],"assignee":"ranger","status":"in_progress"}]`,
 				`[{"id":"a-1","title":"t","status":"closed","assignee":"ranger"}]`)
 			slot := SessionFor("ranger", repo)
@@ -554,7 +554,7 @@ func TestDispatchResumeDryRunNamesTheHolderNotATwin(t *testing.T) {
 	d.Resume = true
 	d.DryRun = true
 	writePersona(t, b.App, "ranger", "[go]")
-	repo := qaRepo(t, b.App,
+	repo := claimedRepo(t, b.App, `[]`,
 		`[{"id":"a-1","title":"t","labels":["go"],"assignee":"ranger","status":"in_progress"}]`,
 		`[{"id":"a-1","title":"t","status":"in_progress","assignee":"ranger"}]`)
 	slot := SessionFor("ranger", repo)
@@ -587,18 +587,31 @@ func TestDispatchResumeDryRunNamesTheHolderNotATwin(t *testing.T) {
 // rangerhq-v330 class one naming scheme further out.
 func TestRunRecordHolderIsJoinedUnderAnyName(t *testing.T) {
 	t.Parallel()
+	// The two legs are graded differently and the reason is
+	// ranger-base-eh1kr (found by ranger-base-bknod). Under --resume the
+	// record's holder is RE-PROMPTED and the line names it, which is the
+	// join's answer in the output. A normal pass does not re-prompt a
+	// settled holder at all — interruptedRuns never offers it — so there is
+	// no line to read and the join's answer is the ABSENCE of a twin: delete
+	// the record arm and interruptedRun finds no holder for a-1, the pass
+	// offers it as an interrupted run, and a Dial F session is created
+	// beside the live holder. The want is "" for that leg and the twin
+	// assertion below is what holds it; `dispatched` is the third witness,
+	// because a pass that creates nothing because it dispatched nothing at
+	// all would satisfy the twin check on its own.
 	for _, leg := range []struct {
-		name   string
-		resume bool
-		want   string
+		name       string
+		resume     bool
+		want       string
+		dispatched int
 	}{
-		{"normal pass", false, "held by ranger, ranger-staffing idle"},
-		{"--resume", true, "→ ranger-staffing"},
+		{"normal pass", false, "", 0},
+		{"--resume", true, "→ ranger-staffing", 1},
 	} {
 		t.Run(leg.name, func(t *testing.T) {
 			b, fake := newTestBackend(t)
 			writePersona(t, b.App, "ranger", "[go]")
-			repo := qaRepo(t, b.App,
+			repo := claimedRepo(t, b.App, `[]`,
 				`[{"id":"a-1","title":"t","labels":["go"],"assignee":"ranger","status":"in_progress"}]`,
 				// Still open at the gather: a bead that reads closed would have
 				// the end-of-pass reaper kill the holder before it is measured.
@@ -611,12 +624,16 @@ func TestRunRecordHolderIsJoinedUnderAnyName(t *testing.T) {
 
 			d := newTestDispatcher(t, b)
 			d.Resume = leg.resume
-			if _, err := d.Run("", "", 0); err != nil {
+			n, err := d.Run("", "", 0)
+			if err != nil {
 				t.Fatal(err)
 			}
 			out := dispatcherOut(d)
-			if !strings.Contains(out, leg.want) {
+			if leg.want != "" && !strings.Contains(out, leg.want) {
 				t.Errorf("want %q, got:\n%s", leg.want, out)
+			}
+			if n != leg.dispatched {
+				t.Errorf("want %d dispatched, got n=%d:\n%s", leg.dispatched, n, out)
 			}
 			if log := calls(t, fake); strings.Contains(log, "workspace create --label "+SessionForBead("ranger", repo, "a-1")) {
 				t.Errorf("a twin was created beside the record's holder:\n%s", log)

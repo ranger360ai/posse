@@ -176,7 +176,7 @@ func TestArgvResumeIntoALiveSessionStaysTyped(t *testing.T) {
 	d := newTestDispatcher(t, b)
 	d.Resume = true
 	argvPersona(t, b.App, "ranger", "[go]")
-	repo := qaRepo(t, b.App,
+	repo := claimedRepo(t, b.App, `[]`,
 		`[{"id":"a-1","title":"t","labels":["go"],"status":"in_progress","assignee":"ranger"}]`,
 		`[{"id":"a-1","title":"t","status":"closed"}]`)
 	session := SessionForBead("ranger", repo, "a-1")

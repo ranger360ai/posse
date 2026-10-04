@@ -291,18 +291,24 @@ func TestCrewSessionDoesNotStallTheFleet(t *testing.T) {
 // is what LaunchBead already joins on — the pass must ask the same question.
 func TestDispatchSkipsCrewSessionHoldingTheBeadUnderAnyName(t *testing.T) {
 	t.Parallel()
+	// Two legs, two halves of the queue: the hand-claimed bead is in
+	// `bd list --status in_progress` because `bd ready` never carries an
+	// in_progress row (ranger-base-bknod), and the fresh one is in `ready`.
+	// The crew shield has to answer the same way whichever door the bead
+	// came through, which is the thing this table is for.
 	for _, leg := range []struct {
 		name   string
 		ready  string
+		list   string
 		resume bool
 	}{
-		{"--resume over a hand-claimed bead", `[{"id":"a-1","title":"t","labels":["go"],"assignee":"ranger","status":"in_progress"}]`, true},
-		{"fresh routing", `[{"id":"a-1","title":"t","labels":["go"]}]`, false},
+		{"--resume over a hand-claimed bead", `[]`, `[{"id":"a-1","title":"t","labels":["go"],"assignee":"ranger","status":"in_progress"}]`, true},
+		{"fresh routing", `[{"id":"a-1","title":"t","labels":["go"]}]`, `[]`, false},
 	} {
 		t.Run(leg.name, func(t *testing.T) {
 			b, fake := newTestBackend(t)
 			writePersona(t, b.App, "ranger", "[go]")
-			repo := qaRepo(t, b.App, leg.ready,
+			repo := claimedRepo(t, b.App, leg.ready, leg.list,
 				`[{"id":"a-1","title":"t","status":"in_progress","assignee":"ranger"}]`)
 			// The operator's own session: `posse new ranger-staffing`, then the
 			// bead handed to it by hand. Neither Dial F name, and crew-marked.

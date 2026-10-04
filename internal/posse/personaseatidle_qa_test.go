@@ -44,9 +44,14 @@ func TestQAIdleHolderWithLiveBeadIsNotAFreeSeat(t *testing.T) {
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "scout", "[qa]")
 	writePersona(t, b.App, "verifier", "[qa]")
-	repo := qaRepo(t, b.App,
-		`[{"id":"a-1","title":"t","labels":["qa"],"assignee":"verifier","status":"in_progress"},`+
-			`{"id":"a-2","title":"u","labels":["qa"]}]`,
+	// a-1 is CLAIMED, so it is in the claimed listing and not in `ready`
+	// (ranger-base-bknod); a-2 is the second, ready bead whose seat this is
+	// about. The bead's own measured shape needs both: personaActive reads
+	// verifier's own in_progress bead through `show` either way, and the
+	// seat question is only asked because a SECOND bead is in the queue.
+	repo := claimedRepo(t, b.App,
+		`[{"id":"a-2","title":"u","labels":["qa"]}]`,
+		`[{"id":"a-1","title":"t","labels":["qa"],"assignee":"verifier","status":"in_progress"}]`,
 		`[{"id":"a-1","title":"t","status":"in_progress","assignee":"verifier"}]`)
 	agentPerLaunch(t, fake)
 

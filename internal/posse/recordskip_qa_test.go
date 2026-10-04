@@ -113,12 +113,31 @@ func TestResumeRePromptsAnUntrustedSettleWithoutClose(t *testing.T) {
 	// A second pass, over the same live idle session and the same open bead.
 	// Without --resume it is left alone on purpose (rangerhq-zom): a persona
 	// that stopped and said so is not re-prompted every pass.
+	//
+	// LEFT ALONE SILENTLY, and that is the contract since ranger-base-eh1kr
+	// (ranger-base-bknod found the pin). A claimed bead reaches a pass
+	// through interruptedRuns now, and a holder herdr calls settled is not
+	// in that population unless `--resume` asks for it — so the fire loop's
+	// settled skip never runs and its line ("held by …, … idle — stopped on
+	// purpose? (--resume re-prompts)", dispatch.go) is not printed. This arm
+	// used to assert that line, and it could only ever have come from a
+	// fixture: it needs an in_progress row in `bd ready`, which no store
+	// answers with. What reports a holder that stopped without closing is
+	// the governance surface's G2 row (`settled:<bead>`, govern.go), on its
+	// own cadence rather than once per pass — the trade eh1kr named.
+	//
+	// Counted on the HERDR CALL LOG and taken either side of the pass. The
+	// pass transcript is the wrong stream to ask — `agent prompt` is a call
+	// herdr makes, not a line a pass prints, so a Contains over
+	// dispatcherOut is satisfied by any pass at all.
+	before := strings.Count(calls(t, fake), "agent prompt")
 	quiet := newTestDispatcher(t, b)
 	if _, err := quiet.Run("", "", 0); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(dispatcherOut(quiet), "--resume re-prompts") {
-		t.Errorf("an unattended pass without --resume must say what would retry it:\n%s", dispatcherOut(quiet))
+	if got := strings.Count(calls(t, fake), "agent prompt"); got != before {
+		t.Errorf("an unattended pass re-prompted the settled holder (%d → %d):\n%s",
+			before, got, dispatcherOut(quiet))
 	}
 
 	again := newTestDispatcher(t, b)
@@ -129,6 +148,12 @@ func TestResumeRePromptsAnUntrustedSettleWithoutClose(t *testing.T) {
 	out := dispatcherOut(again)
 	if !strings.Contains(out, session) {
 		t.Fatalf("--resume did not reach the holding session %s:\n%s", session, out)
+	}
+	// ...and the silence above was this pass's to break: the count moves
+	// now. Without this arm the unchanged count is satisfied by a rig that
+	// cannot prompt at all.
+	if after := strings.Count(calls(t, fake), "agent prompt"); after <= before {
+		t.Errorf("--resume added no prompt (before %d, after %d) — the silence above pins nothing", before, after)
 	}
 	// Re-prompt means THIS session (ADR 0004 §3), not a fresh Dial F one
 	// beside it, and a resume into a live CLI is typed — the launch line

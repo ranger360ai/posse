@@ -1212,12 +1212,26 @@ func TestQAFakeBdReadyDropsABeadItHasShownClosed(t *testing.T) {
 	if got := ids(t, "claimed and shown closed"); len(got) != 1 || got[0] != "a-2" {
 		t.Errorf("a claimed bead whose show says closed must leave the queue, got %v", got)
 	}
-	// Live, not latched: the same bead un-closed by the fixture comes back,
-	// which is what keeps a two-pass test able to say "and then it was not
-	// closed after all".
+	// Un-closing it in `show` is NOT enough to bring it back, and that is
+	// the honest answer rather than a second drop filter: the bead is
+	// CLAIMED, and `bd ready` serves open rows only — on every store class,
+	// measured (fakeBdReadyOpenOnly, ranger-base-bknod). This arm used to
+	// assert the opposite and it was the fake's second impossible queue.
 	os.WriteFile(filepath.Join(repo, "fake-show.json"), []byte(`[{"id":"a-1","status":"in_progress"}]`), 0o644)
-	if got := ids(t, "shown open again"); len(got) != 2 {
-		t.Errorf("the drop must follow the store, not latch, got %v", got)
+	if got := ids(t, "shown in_progress again, still claimed"); len(got) != 1 || got[0] != "a-2" {
+		t.Errorf("a CLAIMED bead is not ready work whatever show says, got %v", got)
+	}
+	// Live, not latched — through the write that really reverses a claim.
+	// Unclaim is `update --status open` plus a cleared assignee (Bd.Unclaim),
+	// which is what a store needs to put the row back in `bd ready`, and
+	// after it the queue is whole again. Without this arm the two drops
+	// above are satisfied by a filter that latches on the first sight of a
+	// bead and never lets it go.
+	if err := bd.Unclaim(repo, "a-1", "ranger", false); err != nil {
+		t.Fatal(err)
+	}
+	if got := ids(t, "unclaimed"); len(got) != 2 {
+		t.Errorf("the drop must follow the store, not latch: an unclaimed bead is ready work again, got %v", got)
 	}
 }
 
@@ -1376,7 +1390,7 @@ func TestDispatchHeldBeadNotReprompted(t *testing.T) {
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
-	repo := qaRepo(t, b.App,
+	repo := claimedRepo(t, b.App, `[]`,
 		`[{"id":"a-1","title":"t","labels":["go"],"assignee":"ranger","status":"in_progress"}]`,
 		`[{"id":"a-1","title":"t","status":"in_progress","assignee":"ranger"}]`)
 	os.WriteFile(filepath.Join(repo, "fake-claim-fail"), nil, 0o644)
@@ -1391,9 +1405,19 @@ func TestDispatchHeldBeadNotReprompted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// SILENTLY left alone, and that is the contract (ranger-base-eh1kr; the
+	// pin found by ranger-base-bknod). A claimed bead reaches a pass through
+	// interruptedRuns, which does not offer a holder herdr calls settled
+	// unless `--resume` asks for it, so the fire loop's settled skip never
+	// runs and its line — "held by …, … idle — stopped on purpose?
+	// (--resume re-prompts)", dispatch.go — is not printed. This arm used to
+	// require that line and only a fixture could produce it: it needs an
+	// in_progress row in `bd ready`, which no store answers with. The
+	// surface that reports a holder which stopped without closing is the
+	// governance surface's G2 row (`settled:<bead>`, govern.go).
 	out := dispatcherOut(d)
-	if n != 0 || !strings.Contains(out, "held by ranger") || !strings.Contains(out, "stopped on purpose") {
-		t.Errorf("held bead must be skipped with a note, got n=%d:\n%s", n, out)
+	if n != 0 {
+		t.Errorf("held bead must be skipped, got n=%d:\n%s", n, out)
 	}
 	if strings.Contains(calls(t, fake), "agent prompt") {
 		t.Error("held bead was re-prompted")
@@ -1632,8 +1656,18 @@ func TestDispatchAssigneeRoutedBeadReachesInProgress(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// SILENTLY left alone, and that is the contract (ranger-base-eh1kr; the
+	// pin found by ranger-base-bknod). A claimed bead reaches a pass through
+	// interruptedRuns, which does not offer a holder herdr calls settled
+	// unless `--resume` asks for it, so the fire loop's settled skip never
+	// runs and its line — "held by …, … idle — stopped on purpose?
+	// (--resume re-prompts)", dispatch.go — is not printed. This arm used to
+	// require that line and only a fixture could produce it: it needs an
+	// in_progress row in `bd ready`, which no store answers with. The
+	// surface that reports a holder which stopped without closing is the
+	// governance surface's G2 row (`settled:<bead>`, govern.go).
 	out2 := dispatcherOut(d2)
-	if n2 != 0 || !strings.Contains(out2, "held by ranger") || !strings.Contains(out2, "stopped on purpose") {
+	if n2 != 0 {
 		t.Errorf("a held assignee-routed bead must not be re-prompted, got n=%d:\n%s", n2, out2)
 	}
 	if got := strings.Count(calls(t, fake), "agent prompt"); got != prompts {
@@ -1712,9 +1746,14 @@ func TestDispatchResumePrefersInProgressBead(t *testing.T) {
 	d := newTestDispatcher(t, b)
 	d.Resume = true
 	writePersona(t, b.App, "ranger", "[go]")
-	repo := qaRepo(t, b.App,
-		`[{"id":"a-2","title":"fresh","priority":1,"labels":["go"]},
-		  {"id":"a-1","title":"held","priority":3,"labels":["go"],"assignee":"ranger","status":"in_progress"}]`,
+	// Both halves of a real queue in one fixture: a-2 is what `bd ready`
+	// answers, a-1 what `bd list --status in_progress` does. OrderBeads puts
+	// the claimed one first under --resume, which is the thing being pinned,
+	// and it has to do so across the JOIN of the two reads — ready first,
+	// interrupted appended (dispatch.go) — not inside one list.
+	repo := claimedRepo(t, b.App,
+		`[{"id":"a-2","title":"fresh","priority":1,"labels":["go"]}]`,
+		`[{"id":"a-1","title":"held","priority":3,"labels":["go"],"assignee":"ranger","status":"in_progress"}]`,
 		`[{"id":"a-1","title":"held","status":"closed","assignee":"ranger"}]`)
 	os.WriteFile(filepath.Join(repo, "fake-claim-fail"), nil, 0o644)
 	// The held bead's session is alive and its agent idle: it stopped.

@@ -35,7 +35,7 @@ func TestDispatchParksOrphanedClaimUnderTheTypedRoute(t *testing.T) {
 		t.Run(leg.name, func(t *testing.T) {
 			b, fake := newTestBackend(t)
 			writePersona(t, b.App, "ranger", "[go]")
-			repo := qaRepo(t, b.App,
+			repo := claimedRepo(t, b.App, `[]`,
 				`[{"id":"a-1","title":"t","labels":["go"],"assignee":"ranger","status":"in_progress"}]`,
 				`[{"id":"a-1","title":"t","status":"in_progress","assignee":"ranger"}]`)
 			// `posse new ranger-adhoc`, then the bead claimed and worked by
@@ -84,7 +84,7 @@ func TestDispatchParksACrashedRunWhileAssigneesCrewSessionIsLive(t *testing.T) {
 	t.Parallel()
 	b, fake := newTestBackend(t)
 	writePersona(t, b.App, "ranger", "[go]")
-	repo := qaRepo(t, b.App,
+	repo := claimedRepo(t, b.App, `[]`,
 		`[{"id":"a-1","title":"t","labels":["go"],"assignee":"ranger","status":"in_progress"}]`,
 		`[{"id":"a-1","title":"t","status":"in_progress","assignee":"ranger"}]`)
 	// No Dial F session and no slot survive the crash; the operator's own

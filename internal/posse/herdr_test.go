@@ -261,7 +261,11 @@ func fakeBd(args []string) int {
 			return 1
 		}
 		if b, err := os.ReadFile("fake-ready.json"); err == nil {
-			fmt.Print(fakeBdReadyDropClosed(fakeBdApplyState(string(b))))
+			// THREE filters, composed, the way the `list` case composes its
+			// own — and the order is the contract: the state overlay first,
+			// so a claim this pass made is what the status filter reads
+			// (ranger-base-bknod).
+			fmt.Print(fakeBdReadyOpenOnly(fakeBdReadyDropClosed(fakeBdApplyState(string(b)))))
 		} else {
 			fmt.Print("[]")
 		}
@@ -1065,6 +1069,140 @@ func fakeBdHolder(id string) string {
 	return fakeBdState()[id].assignee()
 }
 
+// fakeBdRecordStatus is the write half of every `update` that moves a bead's
+// STATUS: the claimed LISTING follows it, so `bd list --status in_progress`
+// answers with the bead this fake just handed out and stops answering with
+// one that was handed back.
+//
+// Both writes reach it. `update --claim` is one; the OTHER is the
+// assignee-routed resume, where bd refuses the claim on a bead already
+// assigned to the actor and Bd.Claim finishes the job with `update <id>
+// --status in_progress` (beads.go) — a bead that is just as claimed, by a
+// path no `--claim` appears in. Bd.Unclaim is the same verb going back:
+// `--status open`, and the row leaves the claimed query.
+//
+// It is fakeBdAppendCreated's and fakeBdMarkClosed's own rule — a write lands
+// in the listings a later query reads, because real bd's does — and `--claim`
+// was the one write that did not keep it. That did not show while `ready`
+// served its file whole: a bead claimed in pass 1 came back from `ready` in
+// pass 2 carrying the state overlay's `in_progress`, so the claimed half of
+// the queue never had to exist. With `ready` honest (fakeBdReadyOpenOnly,
+// ranger-base-bknod) a claimed bead is in NEITHER query unless this lands,
+// and a two-pass fixture would have had to declare the row in fake-list.json
+// from the start — a store saying one bead is both ready-open and
+// in_progress-claimed, which is the same class of impossible queue the
+// honest `ready` filter exists to stop serving.
+//
+// The row is taken from the fixture's own declaration of that bead
+// (fake-ready.json, else fake-show.json) so the claimed listing carries the
+// title, labels and priority the bead really has rather than a stub; only
+// status and assignee are the write's to set.
+//
+// A row the listing does not already carry is ADDED only when the new status
+// is in_progress — the one status that puts a bead into a query a pass reads
+// (`bd list --status in_progress`). Every other status updates a row that is
+// there and adds none, which is fakeBdMarkClosed's own rule ("rows the files
+// do not name are left alone") and keeps a fixture from growing beads it
+// never declared.
+//
+// AND IT WRITES NOTHING AT ALL for a bead this repo's `show` already answers
+// CLOSED. That is fakeBdReadyDropClosed's rule applied at the write rather
+// than at a read: fake-show.json is the fixture's declared END state,
+// written before the pass because the fake has no event for "the persona
+// closed it", so a bead declared closed there is finished work and no write
+// of this fake's may put it back into a queue. Without the clause, six
+// fixtures across the reap and refill families became stores that answered
+// `show` with closed and `list --status in_progress` with the same bead:
+// each pass reaped the session for a closed bead and then RELAUNCHED that
+// bead out of the claimed listing, in the same pass (ranger-base-bknod,
+// MEASURED — TestAutoReapRetiresAWorktreeSessionsTreeAndBranch,
+// TestAutoReapCommitsThePersonaMemoryAndSpendsNoTurn,
+// TestAutoReapSkipsASessionJustPrompted, and the three refill pins).
+//
+// It is asked of `show` and never of fake-list.json's own row, so a row the
+// FIXTURE declared — in_progress in the listing, closed in `show`, which is
+// TestQAListAndReadyFakesAreNotOneFake's whole discriminator — is left
+// exactly as the fixture wrote it. This clause only declines to write.
+//
+// TWO files it deliberately does NOT write:
+//   - fake-show.json is the fixture's declared answer to `show`, written
+//     before the pass as the END state (fakeBdReadyDropClosed's comment), and
+//     every claim-lost and resume arm in the suite is driven by making `show`
+//     disagree with the claim (Bd.Claim falls back to it). Writing it here
+//     would silence those.
+//   - fake-list-labeled.json has an empty default on purpose, so a fixture
+//     does not grow beads it never declared (the `list` case's comment).
+func fakeBdRecordStatus(id, status string, assignee *string) {
+	if id == "" || status == "" {
+		return
+	}
+	if fakeBdShownStatus()[id] == "closed" {
+		return
+	}
+	const f = "fake-list.json"
+	var list []map[string]any
+	if b, err := os.ReadFile(f); err == nil {
+		json.Unmarshal(b, &list)
+	}
+	for _, is := range list {
+		if s, _ := is["id"].(string); s == id {
+			is["status"] = status
+			if assignee != nil {
+				is["assignee"] = *assignee
+			}
+			if nb, err := json.Marshal(list); err == nil {
+				os.WriteFile(f, nb, 0o644)
+			}
+			return
+		}
+	}
+	if status != "in_progress" {
+		return
+	}
+	// ADDING a row means CREATING fake-list.json where a fixture declared
+	// none, and bd's cwd is not always a fixture repo: a test whose config
+	// carries no `beads:` falls back to the PROCESS cwd, which for a test
+	// binary is the package directory — so the first version of this wrote
+	// `internal/posse/fake-list.json` into the source tree, where every
+	// later run with that same fallback would have read it as a store
+	// (ranger-base-bknod, caught by `git status`). A fixture repo always
+	// carries fake-ready.json, because qaRepo and every hand-built repo in
+	// the suite write one; nothing else does.
+	if _, err := os.Stat("fake-ready.json"); err != nil {
+		return
+	}
+	row := map[string]any{"id": id, "title": "t"}
+	for _, src := range []string{"fake-ready.json", "fake-show.json"} {
+		var rows []map[string]any
+		b, err := os.ReadFile(src)
+		if err != nil || json.Unmarshal(b, &rows) != nil {
+			continue
+		}
+		found := false
+		for _, is := range rows {
+			if s, _ := is["id"].(string); s != id {
+				continue
+			}
+			row = map[string]any{}
+			for k, v := range is {
+				row[k] = v
+			}
+			found = true
+			break
+		}
+		if found {
+			break
+		}
+	}
+	row["status"] = status
+	if assignee != nil {
+		row["assignee"] = *assignee
+	}
+	list = append(list, row)
+	if nb, err := json.Marshal(list); err == nil {
+		os.WriteFile(f, nb, 0o644)
+	}
+}
 func fakeBdUpdate(args []string) int {
 	id := fakeBdID(args, "update")
 	actor, _ := fakeBdFlag(args, "--actor")
@@ -1091,6 +1229,7 @@ func fakeBdUpdate(args []string) int {
 		cur.ID, cur.Assignee, cur.Status = id, &actor, "in_progress"
 		st[id] = cur
 		fakeBdSaveState(st)
+		fakeBdRecordStatus(id, "in_progress", &actor)
 		fmt.Printf(`[{"id":%q,"title":"t","status":"in_progress","assignee":%q}]`, id, actor)
 		return 0
 	}
@@ -1104,6 +1243,16 @@ func fakeBdUpdate(args []string) int {
 	}
 	st[id] = cur
 	fakeBdSaveState(st)
+	// ...and the claimed listing moves with it (fakeBdRecordStatus): a bead
+	// this verb puts in_progress is in `bd list --status in_progress`, and
+	// one it hands back to open is not.
+	if v, ok := fakeBdFlag(args, "--status"); ok {
+		var who *string
+		if a, ok := fakeBdFlag(args, "--assignee"); ok {
+			who = &a
+		}
+		fakeBdRecordStatus(id, v, who)
+	}
 	// `-d` lands in the LISTINGS, on fakeBdAppendCreated's rule: real bd
 	// answers the next `list` with the description it was just given, and a
 	// mechanism that reads its own bead's body back (blockStillStands, via
@@ -1208,6 +1357,75 @@ func fakeBdReadyDropClosed(list string) string {
 		status, _ := is["status"].(string)
 		claimed := st[id].assignee() != ""
 		if status == "closed" || (claimed && shown[id] == "closed") {
+			continue
+		}
+		open = append(open, is)
+	}
+	if len(open) == len(issues) {
+		return list
+	}
+	b, err := json.Marshal(open)
+	if err != nil {
+		return list
+	}
+	return string(b)
+}
+
+// fakeBdReadyOpenOnly is bd's `ready` query itself, which this fake did not
+// have at all: `bd ready` serves OPEN rows and nothing else, so a row whose
+// status says in_progress, blocked or deferred is not in the answer on any
+// store class.
+//
+// MEASURED 2026-10-03, bd 0.50.3, both store classes, one binary, the same
+// argv (`ready --json --limit 0`): the shop's SQLite queue answered with its
+// open rows alone — 10 of them, the in_progress bead of the moment absent —
+// and a hand-written `no-db: true` JSONL store holding one open and one
+// in_progress bead answered with the open one. bd's own help says it too:
+// "Excludes in_progress, blocked, deferred, and hooked issues."
+//
+// The fake served fake-ready.json WHOLE, in_progress rows included, so a
+// fixture could put a claimed bead in the ready queue and 49 test files did
+// — which made every in_progress branch of the fire loop (the holder join of
+// ADR 0004 §2, ADR 0008's crew shield, ADR 0030's orphaned-claim tiebreak,
+// rangerhq-zom's settled skip, `--resume`'s override) green against a queue
+// real bd cannot produce. ranger-base-eh1kr is what that cost: dispatch read
+// `bd ready` for its whole queue, so none of those branches was reachable
+// from the store, and two stranded claims (ranger-base-4mrmc,
+// ranger-base-mz8ud) were invisible to every pass while the pins stayed
+// green. A claimed bead reaches the loop through `bd list --status
+// in_progress` now (interrupted.go), and a fixture that wants one in the
+// pass declares fake-list.json — heldRepo (interruptedrun_qa_test.go) is
+// the shape.
+//
+// A row with NO status field is OPEN, which is the convention every fixture
+// in the suite already writes and the one fakeBdDropClosed keeps on the
+// other side ("anything the fixture did not give a status is kept"). Real bd
+// always renders the field; the fixtures omit it to mean open, and reading
+// the omission as "some other status" would empty every ready queue in the
+// package rather than pin anything.
+//
+// THE THIRD filter of a composed three, and none of them is another's
+// superset:
+//   - this one is the STORE's query, read off the row's own status field.
+//   - fakeBdReadyDropClosed above is DISPATCH's half: a bead this fake
+//     handed out whose `show` now answers closed (ranger-base-y3x6n). It is
+//     not subsumed, and `Bd.Unclaim` is why — it writes `--status open` and,
+//     with keepAssignee, leaves the assignee standing, so the state this
+//     filter reads says `open` for a row the fake has handed out and whose
+//     show says closed. This one keeps that row; that one drops it.
+//   - fakeBdApplyState before both is what makes the pair read the claim
+//     this pass made rather than only the canned file.
+//
+// The reader that holds all three apart is TestQAListAndReadyFakesAreNotOneFake
+// and TestQAReadyFakeCannotServeAClaimedRow (listreadyfakes_qa_test.go).
+func fakeBdReadyOpenOnly(list string) string {
+	var issues []map[string]any
+	if json.Unmarshal([]byte(list), &issues) != nil {
+		return list
+	}
+	open := make([]map[string]any, 0, len(issues))
+	for _, is := range issues {
+		if status, _ := is["status"].(string); status != "" && status != "open" {
 			continue
 		}
 		open = append(open, is)
@@ -3020,7 +3238,13 @@ func TestDispatchResume(t *testing.T) {
 	writePersona(t, b.App, "ranger", "[go]")
 
 	repo := t.TempDir()
-	os.WriteFile(filepath.Join(repo, "fake-ready.json"),
+	// The bead is CLAIMED, so it is in the claimed listing and not in
+	// `ready` — `bd ready` excludes in_progress on every store class, and
+	// this fake does too (fakeBdReadyOpenOnly, ranger-base-bknod). It
+	// reaches the pass through the scan ranger-base-eh1kr built for exactly
+	// this row (interrupted.go).
+	os.WriteFile(filepath.Join(repo, "fake-ready.json"), []byte(`[]`), 0o644)
+	os.WriteFile(filepath.Join(repo, "fake-list.json"),
 		[]byte(`[{"id":"a-1","title":"t","labels":["go"],"assignee":"ranger","status":"in_progress"}]`), 0o644)
 	// Claim fails (already held) but the holder is this persona → resume.
 	os.WriteFile(filepath.Join(repo, "fake-claim-fail"), nil, 0o644)
@@ -3039,11 +3263,19 @@ func TestDispatchResume(t *testing.T) {
 		t.Errorf("want resume dispatch, got n=%d:\n%s", n, out)
 	}
 
-	// A different holder is a real conflict — no prompt. (ready and show
-	// agree on the holder, as real bd does; the held-bead skip of
-	// rangerhq-zom only applies to this persona's own in_progress beads.)
+	// A different holder is a real conflict — no prompt. The bead is OPEN
+	// here, which is the only way a pass can MEET that conflict: `show` is
+	// what Bd.Claim falls back to when the claim does not come back, and it
+	// names somebody else (ranger-base-bknod). The old fixture put an
+	// in_progress row assigned to someone-else in `ready`, which no store
+	// answers that way, and which the claimed scan drops before the loop
+	// anyway — its assignee is not a lane of one at its own holder
+	// (interrupted.go's heldLane), so it is not an interrupted run of
+	// ANYBODY this app can launch. The claimed listing is emptied with it: a
+	// store that says a-1 is open does not also list it as claimed.
 	os.WriteFile(filepath.Join(repo, "fake-ready.json"),
-		[]byte(`[{"id":"a-1","title":"t","labels":["go"],"assignee":"someone-else","status":"in_progress"}]`), 0o644)
+		[]byte(`[{"id":"a-1","title":"t","labels":["go"],"assignee":"someone-else"}]`), 0o644)
+	os.WriteFile(filepath.Join(repo, "fake-list.json"), []byte(`[]`), 0o644)
 	os.WriteFile(filepath.Join(repo, "fake-show.json"),
 		[]byte(`[{"id":"a-1","title":"t","status":"in_progress","assignee":"someone-else"}]`), 0o644)
 	d2 := newTestDispatcher(t, b)
