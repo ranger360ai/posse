@@ -42,7 +42,7 @@ FMT_ROOTS := cmd internal *.go
 BUILD_STAMP := $(shell $(GOBIN) run ./cmd/buildstamp)
 LDFLAGS     := -X github.com/ranger360ai/posse/internal/posse.Build=$(BUILD_STAMP)
 
-.PHONY: build release install deploy test test-arm1 test-arm2 test-arm3 test-race test-reuse treepins fmt-check crew-check seed-check history-check doc-check identity-check ops-check execwrite-check tree-check verify-test-times verify-suite-lock verify-pattern-kill-census verify-silent-reverts verify-shell-syntax verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-herdr-bob install-herdr-bob verify-herdr-bob-rules install-herdr-bob-rules verify-prune-guard verify-id-recycle verify-self-close verify-govern-honesty verify-grok-pin verify-codex-pin verify-credential-paths verify-policy-pins verify-hook-freshness verify-bd-pin verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk verify-box verify-box-self-test prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
+.PHONY: build release install deploy test test-arm1 test-arm2 test-arm3 test-race test-reuse treepins fmt-check crew-check seed-check history-check doc-check identity-check ops-check execwrite-check notes-check adr-check corpus-check register-check scripts-check pid-check tree-check verify-test-times verify-suite-lock verify-pattern-kill-census verify-silent-reverts verify-shell-syntax verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-herdr-bob install-herdr-bob verify-herdr-bob-rules install-herdr-bob-rules verify-prune-guard verify-id-recycle verify-self-close verify-govern-honesty verify-grok-pin verify-codex-pin verify-credential-paths verify-policy-pins verify-hook-freshness verify-bd-pin verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk verify-box verify-box-self-test prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
 
 build:
 	$(GOBIN) build -ldflags '$(LDFLAGS)' -o bin/posse-go ./cmd/posse
@@ -552,6 +552,38 @@ QA_IDENTITY_PINS  := TestQAIdentityLiteralsNeverAppearInATrackedPath|TestIdentit
 QA_OPS_PINS       := TestQAEveryOpsHitInTrackedMarkdownIsRuled|TestQAOpsShapeTableCanStillSayNo|TestInstancePathFormNeverAppearsInTrackedContentUndispositioned|TestQAInstancePathCensusCanStillSayNo
 QA_EXECWRITE_PINS := TestQATreeGoFilesWriteExecutablesUnderTheForkLock
 
+# The SECOND package in the class (ranger-base-g6sb1). internal/treepins is
+# 589.965s whole — the same wall internal/posse is, one package over — so a
+# tree-wide pin living there is just as unreachable, and until this bead
+# nothing derived one. The register could not SEE them: it keyed on a body
+# calling qibRepoRoot, and internal/treepins' TestMain (configdirfence_test.go)
+# chdirs the whole binary to the repo root before any test runs, so a pin
+# there reads the tree through plain relative paths and names no root helper
+# at all. TestNotesFragmentIndexIsCurrent was the one that got out: adding one
+# docs/notes.d fragment landed a commit that fmt-check, all eight tree-check
+# doors and a whole `-tags posse_arm2 ./internal/posse` called clean, and only
+# the 589.965s arm-1 run said `stale index`.
+#
+# MEASURED 2026-10-04: of internal/treepins' 362 tests, 291 name a path the
+# tree holds — so "reads a tree path" is 80% of the package and cannot be the
+# key. What IS the key is ENUMERATION: a reading whose file SET is not spelled
+# in the test, so a file an unrelated bead adds joins it. 20 tests enumerate a
+# relative tree directory (directly or through a helper), and one more —
+# TestNotesFragmentIndexIsCurrent — delegates the enumeration to a tracked
+# script, which no Go rule can see. treewidedoor_qa_test.go's arm 2b derives
+# the first twenty and dispositions the script callers for the twenty-first.
+#
+# One variable per door, and the doors run ./internal/treepins rather than
+# ./internal/posse. notes-check is the exception and runs no `go test` at all:
+# its pin's whole body is `python3 scripts/notes-index.py --check`, so the
+# door re-runs the TOOL the way fmt-check does, and the two cannot disagree.
+QA_NOTES_PINS     := TestNotesFragmentIndexIsCurrent
+QA_ADR_PINS       := TestADRCitedGoFilesResolveOrAreDeclared|TestADRCitationCheckCanFail|TestADRCitationDeclarationsExemptOnlyWhatTheyDeclare|TestADRCitationCorpusReadsTheExecutableSupplements|TestADR0015NamesTheHookCommitPinAndItDoesWhatItSays
+QA_CORPUS_PINS    := TestQAFixtureRuntimeExesResolveToNothingOnThisBox|TestQATheGofmtDoorReachesEveryGoFile|TestQAEveryGitInitInThePosseTestsSitsOnATolerantRoot|TestQATheTolerantTempDirWrapperCompilesInEveryArm|TestQANoMakefilePrereqLineReadAsBytesOutsideMkPrereqs|TestQAParallelClearanceDoesNotWaiveAReasonNobodyCleared|TestNoUnswappedInternalRhqCommentsOutsideFrozenRecords|TestRhqLeftoverExemptionsStillNameRealLines
+QA_REGISTER_PINS  := TestQAEveryTreeWidePinHasADoor|TestQAOneRepoRootHelperInTheTestPackage|TestQATheTreeWideDoorsReportRealDrift|TestQAMakeTestOpensTheTreeWideDoors|TestQAEveryTrackedProgramATreePinRunsIsDispositioned|TestQATheTreepinsEnumerationRuleMatchesWhatItClaims|TestQAEveryTreepinsDoorFilterNamesItsPins|TestQATheHeadCommentsPinAndDoorCountsAreTheMakefiles
+QA_SCRIPTS_PINS   := TestQABoxCheckCensusCoversEveryVerifyScript|TestQANoAssertionArmDecidesThroughAForkedMatcher
+QA_PID_PINS       := TestShippedPIDsCarryTheNarrowedHookRows|TestShippedPIDsLetBeadsOwnHooksRun
+
 # The crew-name trio, one door between them because they are one question —
 # does the shipped tree name this instance's crew (ADR 0012 App.A 5) — asked
 # of raw lines, of shipped string literals, and of the escapes in the test
@@ -639,12 +671,76 @@ execwrite-check:
 ops-check:
 	$(GOBIN) test ./internal/posse -timeout 15m -count=1 -run '^($(QA_OPS_PINS))$$'
 
-# The whole class, one command: every tree-wide pin in internal/posse — 21-41s
-# over four runs at seventeen pins. No recipe of its own — the doors are its prerequisites, so `make -n
-# tree-check` prints exactly what a seat would otherwise have to type. It is a
+# The six doors into internal/treepins (ranger-base-g6sb1). Same class, same
+# reason, one package over: internal/treepins is 589.965s whole, so a seat
+# runs a `-run` filter there too and a tree-wide pin in it is nobody's
+# subject. These run ./internal/treepins; the eight above run ./internal/posse.
+
+# The notes-fragment index. The ONE door here that is a tool rather than a
+# filter, and it earns that the way fmt-check does: the pin's entire body is
+# `python3 scripts/notes-index.py --check`, so re-running the command cannot
+# disagree with it — there is no second implementation to keep in sync. 0.13s,
+# read-only: `--check` never writes, and the fix it names is the same script
+# without the flag, which is what the pin's own failure message prints.
+# This is the drift that filed the bead: a docs/notes.d/<bead>.md fragment
+# added with no entry in docs/notes.d/README.md, which EVERY bead on this box
+# can land and which nothing under 589.965s reported.
+# Type it whenever you add or rename a docs/notes.d fragment.
+notes-check:
+	@python3 scripts/notes-index.py --check
+
+# The ADR citation corpus: every .go file in the tree indexed, every ADR in
+# docs/adr/ read, and the two held to each other — a cited file that moved,
+# an exemption that names nothing, the executable supplements. ~1.5s.
+# Type it when you add or move an ADR, or add a .go file an ADR cites.
+adr-check:
+	$(GOBIN) test ./internal/treepins -timeout 15m -count=1 -run '^($(QA_ADR_PINS))$$'
+
+# The pins whose corpus is this repo's own sources: the fixture-exe census and
+# the gofmt door's reach over every .go file in the tree, the git-init and
+# tolerant-TempDir censuses over internal/posse's test files, the Makefile
+# prereq-byte census over internal/treepins', the parallel-clearance census
+# over internal/posse's package files, and the retired-harness-name census
+# over the root directory and the notes fragments. ~4s.
+# Type it when you add or edit any .go file, or add a docs/notes.d fragment.
+corpus-check:
+	$(GOBIN) test ./internal/treepins -timeout 15m -count=1 -run '^($(QA_CORPUS_PINS))$$'
+
+# The register's own arms — the thing that says every tree-wide pin has a
+# door. Most of them are themselves tree-wide (they parse whole packages, and
+# the drift arm copies the working tree), so they are in the class they
+# derive; the two that only read the Makefile are the one declared exemption
+# from that, listed in treewidedoor_qa_test.go's twdDoorHolders. Their own
+# door, not folded into corpus-check, because of what they cost: ~20s, nearly
+# all of it the drift arm running four of the doors above for real against a
+# scratch copy of the tree. That number should be visible on its own line
+# rather than buried in someone else's door.
+register-check:
+	$(GOBIN) test ./internal/treepins -timeout 15m -count=1 -run '^($(QA_REGISTER_PINS))$$'
+
+# scripts/: the box-check census over every verify-*.sh, and the self-test
+# fork-arm census over every *.sh. ~0.9s.
+# Type it when you add or rename anything under scripts/.
+scripts-check:
+	$(GOBIN) test ./internal/treepins -timeout 15m -count=1 -run '^($(QA_SCRIPTS_PINS))$$'
+
+# The shipped PIDs under examples/agents/, read as a directory rather than by
+# name: the narrowed hook rows, and beads' own hooks still allowed to run.
+# ~10s (it launches posse against fixture homes).
+# Type it when you add, rename or edit a shipped PID.
+pid-check:
+	$(GOBIN) test ./internal/treepins -timeout 15m -count=1 -run '^($(QA_PID_PINS))$$'
+
+# The whole class, one command: every tree-wide pin in both packages. No
+# recipe of its own — the doors are its prerequisites, so `make -n tree-check`
+# prints exactly what a seat would otherwise have to type. It is a
 # prerequisite of `make test` for rulbl's reason: a full run fails on it in
-# seconds instead of at ~950.
-tree-check: fmt-check crew-check seed-check history-check doc-check identity-check ops-check execwrite-check
+# seconds instead of at ~950 for internal/posse and 589.965s for
+# internal/treepins. The live count of pins and doors is NOT written here —
+# treewidedoor_qa_test.go's head comment says it once, derived from this
+# file by its arm 4, and a second copy here would be the second place to
+# drift.
+tree-check: fmt-check crew-check seed-check history-check doc-check identity-check ops-check execwrite-check notes-check adr-check corpus-check register-check scripts-check pid-check
 
 # THE UNFILTERED TREE-PIN RUN, THROUGH THE WRAPPER SO IT QUEUES
 # (ranger-base-1a0hi). `tree-check` above is the doors a seat types after a

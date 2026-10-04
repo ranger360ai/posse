@@ -6,6 +6,7 @@ references), not inferred publication dates. Undated fragments sort last.
 
 ## 2026-10
 
+- [ranger-base-g6sb1](ranger-base-g6sb1.md) — The tree-wide door register was blind to a whole package, and what the second key had to be (ranger-base-g6sb1) — 2026-10-04
 - [ranger-base-7zng1](ranger-base-7zng1.md) — The heaviest named-package run on the box took no suite slot (ranger-base-7zng1) — 2026-10-04
 - [ranger-base-rb05v](ranger-base-rb05v.md) — How long a healthy pass takes, and what every long one was (ranger-base-rb05v) — 2026-10-03
 - [ranger-base-q114b](ranger-base-q114b.md) — The skills tree at a session dir of `$HOME` is accepted, and the mode file beside it is not (ranger-base-q114b) — 2026-10-03

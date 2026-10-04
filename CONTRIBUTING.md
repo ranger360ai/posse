@@ -19,13 +19,15 @@ Go. Set up a fleet only when you want to *use* the thing (INSTALL.md).
 go build ./... && go vet ./... && make tree-check
 ```
 
-Seconds, not minutes, and `tree-check` is the part that is easy to skip and
-should not be. Some of this repo's checks are pins whose subject is the *tree*
-— is it gofmt-clean, does the shipped tree name a role rather than a person —
-and they live inside a long package that a focused `go test -run` never
-compiles. No `-run` filter has ever named them, because formatting is nobody's
-subject. `make tree-check` is all of them in one command, and `make fmt` fixes
-what the formatting half reports.
+Under a minute warm, and `tree-check` is nearly all of it — and the part that
+is easy to skip and should not be. Some of this repo's checks are pins whose
+subject is the *tree* — is it gofmt-clean, does the shipped tree name a role
+rather than a person, does the notes index list every fragment — and they live
+inside two long packages that a focused `go test -run` never compiles. No
+`-run` filter has ever named them, because formatting is nobody's subject.
+`make tree-check` is all of them in one command; `make fmt` fixes what the
+formatting half reports, and each door is also runnable on its own when you
+know which part you touched.
 
 ## Before you open the pull request
 

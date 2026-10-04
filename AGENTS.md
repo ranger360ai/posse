@@ -299,32 +299,62 @@ bd sync               # Sync with git
   you commit.** `make fmt` is the fix it names, and the two now read one
   `$(FMT_ROOTS)`, so the advice works on every file the check reports.
   The class is "a QA test whose subject is the TREE, living inside a package
-  nobody runs whole", and gofmt is one of four in internal/posse today:
+  nobody runs whole", and there are two such packages: internal/posse at
+  ~950s and **internal/treepins at 589.965s** (ranger-base-g6sb1). Forty-nine
+  pins across the two, behind fourteen doors:
 
   ```
-  TestTreeIsGofmtClean                     make fmt-check       ~1.5s
-  TestShippedTreeNamesRolesNotThisCrew     make crew-check      ~2.5s
-  TestShippedStringsNameRolesNotThisCrew   make crew-check
-  TestTestCorpusHidesNoCrewNameBehindAnEscape  make crew-check
+  make fmt-check       ~1.5s   gofmt over the whole tree (a TOOL, not a filter)
+  make crew-check      ~2.5s   does the shipped tree name this instance's crew
+  make seed-check      ~0.2s   the published seed surface and examples/config.yaml
+  make history-check   ~3s     this repo's publication history
+  make doc-check       ~0.1s   prose pins over shipped code and docs
+  make identity-check  ~0.5s   this box's identity literals, in paths and content
+  make ops-check       ~2s     ops residue and live instance paths in tracked files
+  make execwrite-check ~0.2s   executable writes routed through WriteExecutable
+  make notes-check     ~0.3s   docs/notes.d/README.md lists every fragment (a TOOL)
+  make adr-check       ~1.5s   ADR citations resolve, exemptions name real files
+  make corpus-check      ~4s   censuses over this repo's own .go and test sources
+  make register-check   ~20s   the register itself: every tree-wide pin has a door
+  make scripts-check   ~0.9s   censuses over scripts/
+  make pid-check        ~10s   the shipped PIDs under examples/agents/
   ```
 
-  **`make tree-check` is all four, 5.1s warm and ~16s cold** (the cold half
-  is compiling internal/posse's test binary; ranger-base-ik44f) — that is
-  the one command to type after a filtered run, and it is a prerequisite of
-  `make test` for the same reason `fmt-check` is. The other two doors are
-  worth knowing by name: `make crew-check` when your change touched `cmd/`,
-  `internal/`, `etc/`, `examples/` or any `*_test.go`. `crew-check`
-  replaces the hand-composed `grep -rn '<every crew name>' cmd etc examples
-  internal *_test.go` that standing orders used to carry: it prints path,
-  line and the offending name, and it IS the pin, so it cannot disagree with
-  the suite.
+  **`make tree-check` is all fourteen, 46.5-77.2s warm over three runs and
+  92.6s cold** (MEASURED 2026-10-04, ranger-base-g6sb1; the spread is the box,
+  not the cache — the load average went 8.9 to 23.8 across the three with a
+  sibling seat holding a suite slot. It was 14.9-16.5s before
+  internal/treepins joined, and 5.1s at four pins when ranger-base-ik44f wrote
+  this line) — that is the one
+  command to type after a filtered run, and it is a prerequisite of `make
+  test` for the same reason `fmt-check` is. Two doors are worth typing on
+  their own: `make crew-check` when your change touched `cmd/`, `internal/`,
+  `etc/`, `examples/` or any `*_test.go`, and **`make notes-check` whenever
+  you add a `docs/notes.d/<bead-id>.md` fragment** — which is most beads, and
+  which is why that one escaped for as long as it did. `crew-check` replaces
+  the hand-composed `grep -rn '<every crew name>' cmd etc examples internal
+  *_test.go` that standing orders used to carry: it prints path, line and the
+  offending name, and it IS the pin, so it cannot disagree with the suite.
 
-  These doors run the pin under a `-run` filter rather than
-  reimplementing it in shell, which is the difference from `fmt-check`
-  (gofmt is a tool; a `gofmt -l` cannot disagree with `go/format`). A shell
-  rewrite of an ast parse would be a second implementation to keep in sync
-  by hand — a door that goes narrower than the pin while both look green.
-  **A tree-wide pin added tomorrow needs a door here**: the class is derived
-  mechanically (the tests in `internal/posse` that call `qibRepoRoot`) and
-  `treewidedoor_qa_test.go` reds until every member is named by a Makefile
-  door variable.
+  Most of these doors run the pin under a `-run` filter rather than
+  reimplementing it in shell, which is the difference from `fmt-check` and
+  `notes-check` (gofmt is a tool and a `gofmt -l` cannot disagree with
+  `go/format`; the notes pin's whole body is `python3 scripts/notes-index.py
+  --check`, so the door re-runs that same command). A shell rewrite of an ast
+  parse would be a second implementation to keep in sync by hand — a door
+  that goes narrower than the pin while both look green.
+  **A tree-wide pin added tomorrow needs a door here**, and the class is
+  derived mechanically — but by TWO rules, because the two packages reach the
+  tree in ways with no spelling in common. In internal/posse `go test` runs
+  with the PACKAGE directory as cwd, so reading the tree costs a climb and
+  the key is the one repo-root helper (`qibRepoRoot`). In internal/treepins
+  the `TestMain` chdirs the binary to the repo root first, so a pin there
+  reads the tree through a plain relative path and names no helper at all —
+  the key there is a directory ENUMERATION (`WalkDir`/`Walk`/`ReadDir`/`Glob`)
+  rooted at a relative path, because a reading whose file set is not spelled
+  in the test is a reading an unrelated bead can red. (Not "reads a tree
+  path": MEASURED 2026-10-04, 291 of that package's 362 tests do that.) One
+  member is registered by hand rather than derived — the notes pin, whose
+  enumeration is a line of Python inside `scripts/notes-index.py` — and
+  `treewidedoor_qa_test.go` reds until every member of either half is named
+  by a Makefile door variable.

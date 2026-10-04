@@ -91,9 +91,66 @@ package treepins
 //	                                              make doc-check
 //	                                              (ranger-base-ecchw)
 //
-// and `make tree-check` is all of them — 14.9-16.5s on this box over three
-// runs at twenty-three pins and eight doors — which is the command a seat
-// types after a filtered run. (It was 15-43s at twenty-two, 12-27s under
+// and then a whole SECOND PACKAGE, which the register could not see at all
+// until ranger-base-g6sb1. internal/treepins is 589.965s whole — the same
+// wall internal/posse is, one directory over — and every rule above keys on
+// a test COMPUTING the repo root, which a test in that package never does:
+// its TestMain chdirs the binary to the root before anything runs, so a pin
+// there reads the tree through a plain relative path. Twenty-three are
+// derived from a second rule (an enumeration rooted at a relative tree path;
+// see "The internal/treepins half of the class" below), and one more is
+// registered by hand because its enumeration is a line of Python:
+//
+//	TestNotesFragmentIndexIsCurrent               make notes-check  ~0.3s
+//	TestADRCitedGoFilesResolveOrAreDeclared       make adr-check    ~1.5s
+//	TestADRCitationCheckCanFail                   make adr-check
+//	TestADRCitationDeclarationsExemptOnlyWhatTheyDeclare
+//	                                              make adr-check
+//	TestADRCitationCorpusReadsTheExecutableSupplements
+//	                                              make adr-check
+//	TestADR0015NamesTheHookCommitPinAndItDoesWhatItSays
+//	                                              make adr-check
+//	TestQAFixtureRuntimeExesResolveToNothingOnThisBox
+//	                                              make corpus-check   ~4s
+//	TestQATheGofmtDoorReachesEveryGoFile          make corpus-check
+//	TestQAEveryGitInitInThePosseTestsSitsOnATolerantRoot
+//	                                              make corpus-check
+//	TestQATheTolerantTempDirWrapperCompilesInEveryArm
+//	                                              make corpus-check
+//	TestQANoMakefilePrereqLineReadAsBytesOutsideMkPrereqs
+//	                                              make corpus-check
+//	TestQAParallelClearanceDoesNotWaiveAReasonNobodyCleared
+//	                                              make corpus-check
+//	TestNoUnswappedInternalRhqCommentsOutsideFrozenRecords
+//	                                              make corpus-check
+//	TestRhqLeftoverExemptionsStillNameRealLines   make corpus-check
+//	TestQAEveryTreeWidePinHasADoor                make register-check ~20s
+//	TestQAOneRepoRootHelperInTheTestPackage       make register-check
+//	TestQATheTreeWideDoorsReportRealDrift         make register-check
+//	TestQAMakeTestOpensTheTreeWideDoors           make register-check
+//	TestQAEveryTrackedProgramATreePinRunsIsDispositioned
+//	                                              make register-check
+//	TestQATheTreepinsEnumerationRuleMatchesWhatItClaims
+//	                                              make register-check
+//	TestQAEveryTreepinsDoorFilterNamesItsPins     make register-check
+//	TestQATheHeadCommentsPinAndDoorCountsAreTheMakefiles
+//	                                              make register-check
+//	TestQABoxCheckCensusCoversEveryVerifyScript   make scripts-check ~0.9s
+//	TestQANoAssertionArmDecidesThroughAForkedMatcher
+//	                                              make scripts-check
+//	TestShippedPIDsCarryTheNarrowedHookRows       make pid-check      ~10s
+//	TestShippedPIDsLetBeadsOwnHooksRun            make pid-check
+//
+// (The last two rows of register-check are the register's own arms, which no
+// rule derives because they read the Makefile rather than the tree — they
+// are the one exemption from the two-way check, listed with their reasons in
+// twdDoorHolders.)
+//
+// and `make tree-check` is all of them — 46.5-77.2s on this box over three
+// warm runs at forty-nine pins and fourteen doors — which is the command a
+// seat types after a filtered run. (It was 14.9-16.5s over twenty-three pins
+// behind eight doors, before ranger-base-g6sb1 found a second package;
+// 15-43s at twenty-two, 12-27s under
 // ranger-base-8dnuy, and 40-46s at a smaller class before that. Re-measured
 // whenever the class changes — under ranger-base-xrdb0, and again under
 // ranger-base-ecchw — because the sentence a seat prices the command from
@@ -102,7 +159,11 @@ package treepins
 // invisible to arm 4's one-claim rule, which is ranger-base-erqvh row 2. The
 // seconds are NOT pinned — an elapsed-seconds red belongs to the box, per
 // the `test` target's own note, and a warm build cache is most of this
-// spread — but they are measured, not carried.)
+// spread — but they are measured, not carried. The 2026-10-04 spread is
+// the box and not the cache: all three runs were warm, and the one-minute
+// load average went 8.9 -> 23.8 across them with a sibling seat holding a
+// suite slot throughout. Cold, with internal/treepins' test binary to
+// compile as well as internal/posse's, the same command read 92.6s.)
 //
 // THAT SENTENCE IS THE ONLY LIVE COUNT IN THIS FILE, and arm 4 holds it to
 // the Makefile, both numerals and the enumeration above it. It read seventeen
@@ -188,10 +249,61 @@ import (
 	"testing"
 )
 
-// The Makefile variables that hold the class. One per door, plus the pin
+// The two packages in the class. internal/posse is ~950s whole and
+// internal/treepins 589.965s, so a seat runs a `-run` filter in both and a
+// tree-wide pin in either is nobody's subject.
+const (
+	twdPossePkg    = "internal/posse"
+	twdTreepinsPkg = "internal/treepins"
+)
+
+// twdDoor is one Makefile door: the variable that holds its `-run` filter,
+// the target that reads it, and the package its pins live in. The package is
+// not decoration — arm 2 is two-way, and "this name is not a tree-wide test"
+// is only answerable against the package the door actually runs.
+type twdDoor struct {
+	variable string
+	target   string
+	pkg      string
+	// tool: the door re-runs the TOOL the pin runs rather than running the
+	// pin under a `-run` filter. Allowed only where the pin's whole body IS
+	// that tool invocation, so the two cannot disagree — gofmt for
+	// fmt-check, scripts/notes-index.py for notes-check. Anywhere else it
+	// would be a second implementation that can go narrower than the pin
+	// while both look green.
+	tool bool
+}
+
+// The Makefile variables that hold the class. One per door, plus the pins
 // whose door is a tool rather than a filter — the union is what arm 2
-// measures against the tree.
-var twdPinVars = []string{"QA_CREW_PINS", "QA_TOOL_PINS", "QA_SEED_PINS", "QA_HISTORY_PINS", "QA_DOC_PINS", "QA_IDENTITY_PINS", "QA_OPS_PINS", "QA_EXECWRITE_PINS"}
+// measures against the two packages.
+var twdDoors = []twdDoor{
+	{"QA_CREW_PINS", "crew-check", twdPossePkg, false},
+	{"QA_TOOL_PINS", "fmt-check", twdPossePkg, true},
+	{"QA_SEED_PINS", "seed-check", twdPossePkg, false},
+	{"QA_HISTORY_PINS", "history-check", twdPossePkg, false},
+	{"QA_DOC_PINS", "doc-check", twdPossePkg, false},
+	{"QA_IDENTITY_PINS", "identity-check", twdPossePkg, false},
+	{"QA_OPS_PINS", "ops-check", twdPossePkg, false},
+	{"QA_EXECWRITE_PINS", "execwrite-check", twdPossePkg, false},
+	// internal/treepins (ranger-base-g6sb1).
+	{"QA_NOTES_PINS", "notes-check", twdTreepinsPkg, true},
+	{"QA_ADR_PINS", "adr-check", twdTreepinsPkg, false},
+	{"QA_CORPUS_PINS", "corpus-check", twdTreepinsPkg, false},
+	{"QA_REGISTER_PINS", "register-check", twdTreepinsPkg, false},
+	{"QA_SCRIPTS_PINS", "scripts-check", twdTreepinsPkg, false},
+	{"QA_PID_PINS", "pid-check", twdTreepinsPkg, false},
+}
+
+// twdPinVars is the variable names alone, derived so the two lists cannot
+// drift apart.
+var twdPinVars = func() []string {
+	var out []string
+	for _, d := range twdDoors {
+		out = append(out, d.variable)
+	}
+	return out
+}()
 
 // twdRootHelper is the ONE repo-root helper internal/posse's tests may use.
 // It is a single identifier on purpose — the class below is derived from it,
@@ -260,7 +372,12 @@ func TestQAMakeTestOpensTheTreeWideDoors(t *testing.T) {
 	// reader did not, and every `strings.Contains` below still found its
 	// door's name sitting on the line.
 	treeLine, tree := mkPrereqs(t, src, "tree-check")
-	doors := []string{"fmt-check", "crew-check", "seed-check", "history-check", "doc-check", "identity-check", "ops-check", "execwrite-check"}
+	// Derived from twdDoors, not spelled: a door added to the register and
+	// forgotten here would be a door this arm never checks the wiring of.
+	var doors []string
+	for _, d := range twdDoors {
+		doors = append(doors, d.target)
+	}
 	for _, door := range doors {
 		if !mkRuns(tree, door) {
 			t.Errorf("`make tree-check` no longer reaches `%s`, so one tree-wide pin is back to being ~950s away: %q", door, treeLine)
@@ -287,9 +404,14 @@ func TestQAMakeTestOpensTheTreeWideDoors(t *testing.T) {
 		}
 	}
 
-	for _, door := range []struct{ target, variable string }{
-		{"crew-check", "QA_CREW_PINS"},
-	} {
+	for _, door := range twdDoors {
+		if door.tool {
+			// A tool door runs no `go test`, so none of the shape below
+			// applies to it. fmt-check is held open by
+			// gofmtdoor_qa_test.go; notes-check is held open just under
+			// this loop, against the pin's own argv.
+			continue
+		}
 		rawRecipe := makeRecipe(src, door.target)
 		if len(rawRecipe) == 0 {
 			t.Errorf("the Makefile has no `%s` target", door.target)
@@ -311,8 +433,8 @@ func TestQAMakeTestOpensTheTreeWideDoors(t *testing.T) {
 		if !strings.Contains(recipe, "'^($("+door.variable+"))$$'") {
 			t.Errorf("`make %s` no longer runs exactly $(%s), anchored — the door and the pin it stands in for can now name different tests:\n%s", door.target, door.variable, recipe)
 		}
-		if !strings.Contains(recipe, "./internal/posse") {
-			t.Errorf("`make %s` no longer names ./internal/posse — a package-tree run is the ~950s this door exists to avoid:\n%s", door.target, recipe)
+		if !strings.Contains(recipe, "./"+door.pkg) {
+			t.Errorf("`make %s` no longer names ./%s — a package-tree run of it is the wall this door exists to avoid:\n%s", door.target, door.pkg, recipe)
 		}
 		if strings.Contains(recipe, "./...") {
 			t.Errorf("`make %s` runs the package tree, which is the wall it is a door through:\n%s", door.target, recipe)
@@ -327,6 +449,84 @@ func TestQAMakeTestOpensTheTreeWideDoors(t *testing.T) {
 			t.Errorf("`make %s` writes — the point of a door is that a seat can ask the question without changing the tree:\n%s", door.target, recipe)
 		}
 	}
+
+	// notes-check, the second TOOL door (ranger-base-g6sb1). It is allowed
+	// to be a tool door for fmt-check's reason and no other: the pin's whole
+	// body is one exec.Command, so re-running that command is not a second
+	// implementation of anything. What has to hold is that the recipe runs
+	// the SAME command — so the argv is read out of the pin rather than
+	// spelled here, and a flag added to either side without the other reds.
+	argv := twdExecArgv(t, twdTreepinsPkg, "TestNotesFragmentIndexIsCurrent")
+	if len(argv) < 2 {
+		t.Errorf("TestNotesFragmentIndexIsCurrent no longer runs a single literal command (%v) — notes-check is a TOOL door, which is only honest while the pin's whole body is the command the door re-runs. If the pin has grown a reading of its own, the door has to become a `-run` filter.", argv)
+	} else {
+		rawNotes := makeRecipe(src, "notes-check")
+		notes := strings.Join(mkRecipeCode(rawNotes), "\n")
+		if notes == "" {
+			t.Errorf("`make notes-check`'s recipe is all comments — make hands the shell a no-op and the door is dark: %q", rawNotes)
+		}
+		for _, word := range argv {
+			if !strings.Contains(notes, word) {
+				t.Errorf("`make notes-check` does not run %q, which TestNotesFragmentIndexIsCurrent does — the door and the pin it stands in for are now asking different questions:\n  pin:  %v\n  door: %s", word, argv, notes)
+			}
+		}
+		if !strings.Contains(notes, "--check") {
+			t.Errorf("`make notes-check` no longer passes --check, so it REGENERATES the index instead of reporting a stale one — a door that fixes the drift silently is a door that never reports it:\n%s", notes)
+		}
+	}
+}
+
+// twdExecArgv returns the literal argv of the one exec.Command in a named
+// test, or nil if the test makes none or makes more than one. Used to read a
+// tool door's command out of the pin rather than spelling it twice.
+func twdExecArgv(t *testing.T, pkg, test string) []string {
+	t.Helper()
+	paths := twdTestFiles(t, pkg)
+	fset := token.NewFileSet()
+	var found [][]string
+	for _, path := range paths {
+		file, err := parser.ParseFile(fset, path, nil, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", path, err)
+		}
+		for _, decl := range file.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Recv != nil || fn.Body == nil || fn.Name.Name != test {
+				continue
+			}
+			ast.Inspect(fn.Body, func(n ast.Node) bool {
+				call, ok := n.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				sel, ok := call.Fun.(*ast.SelectorExpr)
+				if !ok || (sel.Sel.Name != "Command" && sel.Sel.Name != "CommandContext") {
+					return true
+				}
+				if x, ok := sel.X.(*ast.Ident); !ok || x.Name != "exec" {
+					return true
+				}
+				var argv []string
+				for _, a := range call.Args {
+					lit, ok := a.(*ast.BasicLit)
+					if !ok || lit.Kind != token.STRING {
+						return true // not a literal argv; not this shape
+					}
+					v, err := strconv.Unquote(lit.Value)
+					if err != nil {
+						return true
+					}
+					argv = append(argv, v)
+				}
+				found = append(found, argv)
+				return true
+			})
+		}
+	}
+	if len(found) != 1 {
+		return nil
+	}
+	return found[0]
 }
 
 // mkRecipeCode returns a recipe's lines (as makeRecipe reads them) with any
@@ -450,6 +650,18 @@ type twdFunc struct {
 	// root reached by a hand-rolled climb — not one reached through
 	// qibRepoRoot, and not a subdirectory of it.
 	handRolledTreeWalk bool
+	// relEnum: the body ENUMERATES a directory at a relative tree path —
+	// a WalkDir/Walk/ReadDir/Glob whose root is a literal relative path, or
+	// a filepath.Join of literals starting at one. This is the
+	// internal/treepins half of the class (ranger-base-g6sb1): that
+	// package's TestMain chdirs the whole binary to the repo root, so a
+	// relative path IS a tree path and no root helper is ever named.
+	relEnum []string
+	// execTree: relative literals naming a tracked regular file that this
+	// body hands to exec.Command — this repo's own programs, run on the
+	// tree. What they read is outside Go, so they are dispositioned rather
+	// than derived (twdIndirect, twdExecDispositions).
+	execTree []string
 	// shellRoot: the body asks GIT for this repo's root —
 	// `exec.Command("git", "rev-parse", "--show-toplevel").Output()` — and
 	// keeps the answer. A third spelling of the root, invisible to every
@@ -584,13 +796,57 @@ func twdRootExprs(body *ast.BlockStmt) func(ast.Expr) bool {
 	return isRoot
 }
 
+// twdTestFiles lists one package's test files.
+//
+// THE GLOBS ARE SPELLED OUT, one literal per package, rather than composed
+// from `pkg` — deliberately, and this file is the evidence. Composing the
+// root from the parameter made the rule blind to its own parser:
+// twdRelTreePath cannot read a variable, so every test that reaches
+// twdParseDir stopped being derived as tree-wide, and arm 2 immediately red
+// with two doors it could no longer justify (MEASURED 2026-10-04, on this
+// file, by that red — the register caught the refactor that broke it, which
+// is the only reason this comment exists). A tree reading in this package is
+// written in a spelling the rule can see, the same way internal/posse's
+// tests are held to ONE repo-root helper. The alternative — teaching
+// twdRelTreePath to follow constants and parameters — is interprocedural
+// constant propagation, a second thing to be wrong about, to buy back a
+// spelling nobody needs.
+func twdTestFiles(t *testing.T, pkg string) []string {
+	t.Helper()
+	var paths []string
+	var err error
+	switch pkg {
+	case twdPossePkg:
+		paths, err = filepath.Glob(filepath.Join("internal", "posse", "*_test.go"))
+	case twdTreepinsPkg:
+		paths, err = filepath.Glob(filepath.Join("internal", "treepins", "*_test.go"))
+	default:
+		t.Fatalf("no test-file glob for package %q — the class cannot be derived for a package this file does not name", pkg)
+	}
+	if err != nil || len(paths) == 0 {
+		t.Fatalf("no test files found under %s: %v", pkg, err)
+	}
+	return paths
+}
+
 // twdParse reads every function declared in internal/posse/*_test.go.
 func twdParse(t *testing.T) (map[string]*twdFunc, int) {
 	t.Helper()
-	paths, err := filepath.Glob(filepath.Join("internal", "posse", "*_test.go"))
-	if err != nil || len(paths) == 0 {
-		t.Fatalf("no test files found under internal/posse: %v", err)
-	}
+	return twdParseDir(t, twdPossePkg)
+}
+
+// twdParseTreepins reads every function declared in
+// internal/treepins/*_test.go — this file among them, which is the point:
+// the register's own arms are in the class they derive.
+func twdParseTreepins(t *testing.T) (map[string]*twdFunc, int) {
+	t.Helper()
+	return twdParseDir(t, twdTreepinsPkg)
+}
+
+// twdParseDir reads every function declared in one package's *_test.go.
+func twdParseDir(t *testing.T, pkg string) (map[string]*twdFunc, int) {
+	t.Helper()
+	paths := twdTestFiles(t, pkg)
 	fset := token.NewFileSet()
 	out := map[string]*twdFunc{}
 	tests := 0
@@ -604,72 +860,94 @@ func twdParse(t *testing.T) (map[string]*twdFunc, int) {
 			if !ok || fn.Recv != nil || fn.Body == nil {
 				continue
 			}
-			f := &twdFunc{
-				name:  fn.Name.Name,
-				where: fmt.Sprintf("%s:%d", path, fset.Position(fn.Pos()).Line),
-				test:  strings.HasPrefix(fn.Name.Name, "Test"),
-				calls: map[string]bool{},
-			}
+			f := twdAnalyze(fn, fmt.Sprintf("%s:%d", path, fset.Position(fn.Pos()).Line))
 			if f.test {
 				tests++
-			}
-			ast.Inspect(fn.Body, func(n ast.Node) bool {
-				if lit, ok := n.(*ast.BasicLit); ok && lit.Kind == token.STRING {
-					if v, err := strconv.Unquote(lit.Value); err == nil {
-						switch filepath.ToSlash(v) {
-						case "../..", "../../":
-							f.ascent = true
-						}
-					}
-				}
-				call, ok := n.(*ast.CallExpr)
-				if !ok {
-					return true
-				}
-				if twdJoinsTwoDotDots(call.Args) {
-					f.ascent = true
-				}
-				if twdAsksGitForTheRoot(call) {
-					f.shellRoot = true
-				}
-				switch fun := call.Fun.(type) {
-				case *ast.Ident:
-					f.calls[fun.Name] = true
-					if fun.Name == twdRootHelper {
-						f.root = true
-					}
-				case *ast.SelectorExpr:
-					if twdWalkers[fun.Sel.Name] {
-						f.walk = true
-					}
-					if x, ok := fun.X.(*ast.Ident); ok && x.Name == "runtime" && fun.Sel.Name == "Caller" {
-						f.caller = true
-					}
-				}
-				return true
-			})
-			f.rootedWalk = f.root && f.walk
-			if !f.root {
-				isRoot := twdRootExprs(fn.Body)
-				ast.Inspect(fn.Body, func(n ast.Node) bool {
-					call, ok := n.(*ast.CallExpr)
-					if !ok || len(call.Args) == 0 {
-						return true
-					}
-					sel, ok := call.Fun.(*ast.SelectorExpr)
-					if !ok || !twdWalkers[sel.Sel.Name] {
-						return true
-					}
-					if isRoot(call.Args[0]) {
-						f.handRolledTreeWalk = true
-					}
-					return true
-				})
 			}
 			out[f.name] = f
 		}
 	}
 	return out, tests
+}
+
+// twdAnalyze reads ONE function declaration: who it calls, and every way its
+// body reaches outside its own package. Every rule in this file is in here,
+// so the fixture-driven mutation check below drives the same code the tree is
+// derived with — a second copy of the rule, written to be easy to test, is a
+// copy that can agree with the fixture and disagree with the tree.
+func twdAnalyze(fn *ast.FuncDecl, where string) *twdFunc {
+	f := &twdFunc{
+		name:  fn.Name.Name,
+		where: where,
+		test:  strings.HasPrefix(fn.Name.Name, "Test"),
+		calls: map[string]bool{},
+	}
+	ast.Inspect(fn.Body, func(n ast.Node) bool {
+		if lit, ok := n.(*ast.BasicLit); ok && lit.Kind == token.STRING {
+			if v, err := strconv.Unquote(lit.Value); err == nil {
+				switch filepath.ToSlash(v) {
+				case "../..", "../../":
+					f.ascent = true
+				}
+			}
+		}
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		if twdJoinsTwoDotDots(call.Args) {
+			f.ascent = true
+		}
+		if twdAsksGitForTheRoot(call) {
+			f.shellRoot = true
+		}
+		switch fun := call.Fun.(type) {
+		case *ast.Ident:
+			f.calls[fun.Name] = true
+			if fun.Name == twdRootHelper {
+				f.root = true
+			}
+		case *ast.SelectorExpr:
+			if twdWalkers[fun.Sel.Name] {
+				f.walk = true
+				if len(call.Args) > 0 {
+					if rel, ok := twdRelTreePath(call.Args[0]); ok {
+						f.relEnum = append(f.relEnum, fun.Sel.Name+"("+rel+")")
+					}
+				}
+			}
+			if x, ok := fun.X.(*ast.Ident); ok && x.Name == "runtime" && fun.Sel.Name == "Caller" {
+				f.caller = true
+			}
+			if x, ok := fun.X.(*ast.Ident); ok && x.Name == "exec" && (fun.Sel.Name == "Command" || fun.Sel.Name == "CommandContext") {
+				for _, a := range call.Args {
+					if prog, ok := twdTrackedProgram(a); ok {
+						f.execTree = append(f.execTree, prog)
+					}
+				}
+			}
+		}
+		return true
+	})
+	f.rootedWalk = f.root && f.walk
+	if !f.root {
+		isRoot := twdRootExprs(fn.Body)
+		ast.Inspect(fn.Body, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok || len(call.Args) == 0 {
+				return true
+			}
+			sel, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok || !twdWalkers[sel.Sel.Name] {
+				return true
+			}
+			if isRoot(call.Args[0]) {
+				f.handRolledTreeWalk = true
+			}
+			return true
+		})
+	}
+	return f
 }
 
 // twdTreeWideTests returns the tests whose subject is the TREE. Two rules,
@@ -701,9 +979,167 @@ func twdTreeWideTests(t *testing.T) (names []string, funcs int) {
 	all, funcs := twdParse(t)
 
 	// Seed the reach with the rooted walkers, then close it over callers.
+	reaches := twdReach(all, func(f *twdFunc) bool { return f.rootedWalk })
+
+	for name, f := range all {
+		if f.test && (f.root || reaches[name]) {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	return names, funcs
+}
+
+// ---------------------------------------------------------------------------
+// The internal/treepins half of the class (ranger-base-g6sb1).
+//
+// WHY A SECOND RULE AT ALL. Everything above keys, one way or another, on a
+// test COMPUTING the repo root: it calls qibRepoRoot, or it reaches a helper
+// that walks from a root, or it asks git for one. That key exists because
+// `go test` runs internal/posse's binary with the PACKAGE directory as its
+// working directory, so reading the tree costs an explicit climb. It does not
+// exist here. internal/treepins' TestMain (configdirfence_test.go) chdirs the
+// whole binary to the repo root before any test runs, so a pin in this
+// package reads the tree through a plain relative path — "scripts/notes-
+// index.py", "docs/adr" — and never names a root helper at all. Every rule
+// above is blind to this package by construction, and this package is
+// 589.965s whole: the same wall, one directory over.
+//
+// TestNotesFragmentIndexIsCurrent is what got out. Adding one
+// docs/notes.d/<bead>.md fragment landed a commit that `make fmt-check`,
+// `make tree-check` (all eight doors as it then stood) and a full
+// `go test -tags posse_arm2 ./internal/posse` all called clean; the 589.965s
+// arm-1 run said `notesindex_qa_test.go:13: docs/notes.d/README.md: stale
+// index`. The pin was right, its remediation line was exact, and nothing a
+// seat could type in under ten minutes would ever have asked it.
+//
+// THE KEY, and why it is not the obvious one. "A test in a package whose
+// TestMain chdirs to the repo root, that reads a tree path" is the honest
+// description of the blind spot, but it is not a usable key: MEASURED
+// 2026-10-04, 291 of internal/treepins' 362 tests name a path the tree holds.
+// Four fifths of a package is not a class. What actually separates a pin that
+// an unrelated bead can red from one it cannot is whether the reading
+// ENUMERATES — whether the set of files read is spelled in the test, or
+// discovered. A test that reads "Makefile" reds when somebody edits the
+// Makefile, which is the bead that edited it. A test that globs
+// "docs/notes.d/*.md" reds when ANY bead writes its fragment there. So the
+// key is a WalkDir/Walk/ReadDir/Glob rooted at a relative tree path. It found
+// twenty tests in the package as it stood before this bead — and that number
+// is frozen prose, like every other count in this comment: the live one is
+// in the `make tree-check` sentence above, which arm 4 derives.
+//
+// THAT IS WIDER THAN THE POSSE RULE, deliberately. Over there a walk rooted
+// at a SUBDIRECTORY is excluded — detectionRig ReadDirs
+// `<root>/etc/herdr/agent-detection` and reds only when that one directory
+// changes, and nine tests do that shape. The exclusion is defensible there
+// and would be the bug here: docs/notes.d is a subdirectory, and it is the
+// subdirectory every bead on this box writes into. Drawing the line at the
+// repo root would have reproduced exactly the blind spot this bead was filed
+// for — it finds nine of those twenty, and not the one that escaped.
+//
+// AND IT STILL DOES NOT FIND THE ONE THAT ESCAPED. TestNotesFragmentIndexIsCurrent
+// enumerates nothing in Go: it runs `python3 scripts/notes-index.py --check`
+// and the glob is a line of Python. No rule over Go source can see it, and a
+// shell/Python source scanner would be a second implementation of "does this
+// program read a directory" — the narrower-than-the-pin door this file's head
+// comment refuses. So that half is REGISTERED by hand (twdIndirect), held
+// honest by a pin that re-reads the program and the directory each entry
+// claims, and fenced by a dispositioned census of every tracked program a
+// test in this package hands to exec.Command (twdExecDispositions).
+
+// twdRelTreePath returns the relative tree path an expression spells, if it
+// spells one: a string literal, or a filepath.Join of string literals whose
+// first element is one. An absolute path, a `..` climb, or anything carrying
+// a variable is NOT one — a Join with a t.TempDir() in it is a scratch
+// directory, and that distinction is most of this rule's precision.
+func twdRelTreePath(e ast.Expr) (string, bool) {
+	switch v := e.(type) {
+	case *ast.BasicLit:
+		if v.Kind != token.STRING {
+			return "", false
+		}
+		str, err := strconv.Unquote(v.Value)
+		if err != nil || str == "" {
+			return "", false
+		}
+		slash := filepath.ToSlash(str)
+		if filepath.IsAbs(str) || slash == ".." || strings.HasPrefix(slash, "../") {
+			return "", false
+		}
+		return slash, true
+	case *ast.CallExpr:
+		sel, ok := v.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return "", false
+		}
+		if x, ok := sel.X.(*ast.Ident); !ok || x.Name != "filepath" {
+			return "", false
+		}
+		switch sel.Sel.Name {
+		case "Clean", "ToSlash", "FromSlash":
+			if len(v.Args) == 1 {
+				return twdRelTreePath(v.Args[0])
+			}
+		case "Join":
+			if len(v.Args) == 0 {
+				return "", false
+			}
+			first, ok := twdRelTreePath(v.Args[0])
+			if !ok {
+				return "", false
+			}
+			parts := []string{first}
+			for _, a := range v.Args[1:] {
+				lit, ok := a.(*ast.BasicLit)
+				if !ok || lit.Kind != token.STRING {
+					// A variable element: the root is no longer a tree path
+					// this rule can claim to know.
+					return "", false
+				}
+				str, err := strconv.Unquote(lit.Value)
+				if err != nil {
+					return "", false
+				}
+				parts = append(parts, filepath.ToSlash(str))
+			}
+			return strings.Join(parts, "/"), true
+		}
+	}
+	return "", false
+}
+
+// twdTrackedProgram reports the relative path of a tracked REGULAR file an
+// expression names — one of this repo's own programs, handed to exec.Command.
+//
+// Regular file, not a directory, on purpose: `go run ./cmd/testparallel` and
+// `go test ./internal/treepins` name package paths, not readings, and the Go
+// in them is source the rules above read directly. The residual is said out
+// loud in twdExecDispositions.
+func twdTrackedProgram(e ast.Expr) (string, bool) {
+	rel, ok := twdRelTreePath(e)
+	if !ok {
+		return "", false
+	}
+	rel = strings.TrimPrefix(rel, "./")
+	if !strings.Contains(rel, "/") {
+		// A bare word: `sh`, `python3`, `make`. Even if the tree happens to
+		// hold a file of that name, exec resolves it on PATH.
+		return "", false
+	}
+	info, err := os.Lstat(filepath.FromSlash(rel))
+	if err != nil || !info.Mode().IsRegular() {
+		return "", false
+	}
+	return rel, true
+}
+
+// twdReach closes a seed set over the call graph: every function that calls a
+// seeded function, transitively. Both halves of the class propagate the same
+// way, so there is one closure and three seeds, not three closures.
+func twdReach(all map[string]*twdFunc, seeded func(*twdFunc) bool) map[string]bool {
 	reaches := map[string]bool{}
 	for name, f := range all {
-		if f.rootedWalk {
+		if seeded(f) {
 			reaches[name] = true
 		}
 	}
@@ -722,14 +1158,277 @@ func twdTreeWideTests(t *testing.T) (names []string, funcs int) {
 			}
 		}
 	}
+	return reaches
+}
 
+// twdIndirect is the half of the internal/treepins class that no rule over Go
+// source can derive: a pin whose enumeration happens inside one of this
+// repo's own programs. Hand-registered, and held honest by
+// TestQAEveryTrackedProgramATreePinRunsIsDispositioned below, which re-reads
+// both the test and the program rather than trusting the row.
+//
+// One entry. It is the entry this bead exists for.
+var twdIndirect = []struct {
+	test string // the pin, in internal/treepins
+	prog string // the tracked program it runs
+	dir  string // the tree directory that program enumerates
+	why  string // what the Go body shows, and what it does not
+}{
+	{
+		test: "TestNotesFragmentIndexIsCurrent",
+		prog: "scripts/notes-index.py",
+		dir:  "docs/notes.d",
+		why: "the pin's whole body is `python3 scripts/notes-index.py --check`; " +
+			"the enumeration is that script's own `directory.glob(\"*.md\")` over " +
+			"docs/notes.d, so every bead that writes a fragment there is in this " +
+			"pin's reach and no rule over Go source can see it",
+	},
+}
+
+// twdExecDispositions is the fence around the register above: every tracked
+// program a test in internal/treepins hands to exec.Command must be here or
+// in twdIndirect. The value says what the program reads INSTEAD of a tracked
+// directory — checked by hand when the row was written, and re-asked of every
+// new row by the pin that reds on an undispositioned program.
+//
+// RESIDUAL, said out loud. This matches a relative literal naming a tracked
+// regular file in an exec.Command argv — what every call site below writes,
+// and what the next one would. A program path assembled from a variable, or
+// carried into exec.Command inside a []string, is not matched: the second
+// arm of notesindex_qa_test.go builds its argv that way, which is correct
+// here (it points the script at a t.TempDir()) and would not be correct for
+// a future pin spelled the same way. Nothing in Go can bound what a
+// subprocess reads. What bounds this is that the census defaults to
+// INCLUSION — an enumerating program makes its callers members — and that
+// the list of programs is short enough to have been read.
+var twdExecDispositions = map[string]string{
+	"scripts/bd-argv-gate.sh":        "parses one command line out of its argv and stdin; it opens no directory at all",
+	"scripts/gotest.sh":              "`find`s only $CACHE and its own scratch tree, never a tracked path",
+	"scripts/macos-install-probe.sh": "probes a scratch install root under $D; the only tracked file it reads is the formula it is handed",
+	"scripts/path-warning.sh":        "reads the PATH string it is given",
+	"scripts/tap-formula.sh":         "renders a formula from the --checksums file named on its command line",
+	"scripts/test-linux.sh":          "assembles a docker invocation; it lists nothing",
+	"scripts/test-times.sh":          "runs `go test` and parses its output; the one `ls` in it is inside an advice string it prints",
+}
+
+// twdDoorHolders are tests a door variable may name although no class rule
+// derives them: the arms that hold the register itself open. They read the
+// Makefile and run `make -n`, which is not a reading of the tree, so nothing
+// in this file can find them — and they live in the same 589.965s package as
+// the pins they guard, so left out of a door the register's own floor is as
+// unreachable as the pins were.
+//
+// This is the ONE way into a door variable that does not go through the
+// derivation, which is why it is a list with reasons rather than a flag: it
+// is exactly the shape of parking spot this file keeps warning about. Arm 2
+// holds each row to being a real test in the package its door runs, and two
+// rows is what it should stay near. A pin put here to dodge the two-way
+// check would be a pin whose membership nothing derived and whose door
+// nothing justified.
+var twdDoorHolders = map[string]string{
+	"TestQAEveryTreepinsDoorFilterNamesItsPins":            "asks what make's expansion of each internal/treepins door filter selects; it reads the Makefile and runs `go test -list`",
+	"TestQATheHeadCommentsPinAndDoorCountsAreTheMakefiles": "arm 4 — holds this file's head comment to the Makefile's own pin and door counts; it reads the Makefile and this file",
+}
+
+// twdTreepinsTreeWideTests returns the tests in internal/treepins whose
+// subject is the TREE: the derived twenty, plus the registered indirect ones.
+func twdTreepinsTreeWideTests(t *testing.T) (names []string, derived []string, funcs int) {
+	t.Helper()
+	all, funcs := twdParseTreepins(t)
+	reaches := twdReach(all, func(f *twdFunc) bool { return len(f.relEnum) > 0 })
 	for name, f := range all {
-		if f.test && (f.root || reaches[name]) {
-			names = append(names, name)
+		if f.test && reaches[name] {
+			derived = append(derived, name)
+		}
+	}
+	sort.Strings(derived)
+	names = append(names, derived...)
+	for _, row := range twdIndirect {
+		if !slices.Contains(names, row.test) {
+			names = append(names, row.test)
 		}
 	}
 	sort.Strings(names)
-	return names, funcs
+	return names, derived, funcs
+}
+
+// twdClassOf returns one package's tree-wide tests, for the two-way check
+// below. Two packages, two rules, because the two packages reach the tree in
+// ways that have no spelling in common.
+func twdClassOf(t *testing.T, pkg string) []string {
+	t.Helper()
+	switch pkg {
+	case twdPossePkg:
+		names, _ := twdTreeWideTests(t)
+		return names
+	case twdTreepinsPkg:
+		names, _, _ := twdTreepinsTreeWideTests(t)
+		return names
+	}
+	t.Fatalf("no class rule for package %q — a door variable was given a package this file cannot derive, so its membership is checked against nothing", pkg)
+	return nil
+}
+
+// The fence on the indirect register: every row still names a real pin
+// running a real program over the directory it claims, and every tracked
+// program a test in this package execs is dispositioned.
+//
+// The directory check is not decoration. If scripts/notes-index.py is pointed
+// at another directory tomorrow, the row above becomes a claim about a
+// reading that no longer happens — and the door would keep passing while the
+// pin's subject moved out from under it.
+func TestQAEveryTrackedProgramATreePinRunsIsDispositioned(t *testing.T) {
+	t.Parallel()
+	all, funcs := twdParseTreepins(t)
+	if funcs < 200 {
+		t.Fatalf("only %d test functions parsed under %s — the walk this pin reads is finding nothing", funcs, twdTreepinsPkg)
+	}
+
+	registered := map[string]bool{}
+	for _, row := range twdIndirect {
+		registered[row.prog] = true
+		f, ok := all[row.test]
+		if !ok || !f.test {
+			t.Errorf("twdIndirect registers %s, which is not a test in %s — the indirect half of the class names a pin that is gone, and arm 2 is holding a door open for nothing", row.test, twdTreepinsPkg)
+			continue
+		}
+		if !slices.Contains(f.execTree, row.prog) {
+			t.Errorf("twdIndirect says %s runs %s, and its body does not (%s runs %v) — the row is a claim about a reading that no longer happens, so the pin's subject has moved out from under its door. The row's reason was: %s", row.test, row.prog, f.where, f.execTree, row.why)
+			continue
+		}
+		body, err := os.ReadFile(filepath.FromSlash(row.prog))
+		if err != nil {
+			t.Errorf("twdIndirect registers %s and the tree does not hold it: %v", row.prog, err)
+			continue
+		}
+		if !strings.Contains(string(body), row.dir) {
+			t.Errorf("twdIndirect says %s enumerates %s, and that path does not appear in the program at all — either the program was pointed somewhere else, in which case this pin's reach and its door have silently diverged, or the row was wrong when it was written", row.prog, row.dir)
+		}
+	}
+
+	var undispositioned []string
+	for name, f := range all {
+		if !f.test {
+			continue
+		}
+		for _, prog := range f.execTree {
+			if registered[prog] {
+				continue
+			}
+			if _, ok := twdExecDispositions[prog]; ok {
+				continue
+			}
+			undispositioned = append(undispositioned, f.where+" "+name+" runs "+prog)
+		}
+	}
+	sort.Strings(undispositioned)
+	for _, u := range undispositioned {
+		t.Errorf("%s — a tracked program of this repo's own, run by a test in %s, and nothing here says what it reads. If it enumerates a tracked directory, its callers are tree-wide pins and belong in twdIndirect with a door; if it reads only what it is handed, say so in twdExecDispositions. Undispositioned is the one answer this census does not take, because a program's reading is outside Go and the default has to be inclusion.", u, twdTreepinsPkg)
+	}
+
+	// Two-way, so the disposition list cannot keep rows for programs nothing
+	// runs any more — a dead row is a reader's reason to believe a question
+	// was asked that nobody asks.
+	execed := map[string]bool{}
+	for _, f := range all {
+		for _, prog := range f.execTree {
+			execed[prog] = true
+		}
+	}
+	var dead []string
+	for prog := range twdExecDispositions {
+		if !execed[prog] {
+			dead = append(dead, prog)
+		}
+	}
+	sort.Strings(dead)
+	for _, d := range dead {
+		t.Errorf("twdExecDispositions carries %s (%q), which no test in %s hands to exec.Command any more — drop the row rather than leave a disposition for a reading that does not happen", d, twdExecDispositions[d], twdTreepinsPkg)
+	}
+}
+
+// The mutation check the derivation needs, because the thing being derived is
+// a RULE and a rule that stops matching leaves a green register over a class
+// it no longer finds. The floors in arm 2 catch a collapse; this catches the
+// rule being quietly wrong at the edges, which is how both earlier widenings
+// of the posse half were needed.
+//
+// Driven over source text rather than over the tree: a fixture says what the
+// rule must and must not match, so a change to the rule reds here with the
+// case it broke rather than reddening arm 2 with a number.
+func TestQATheTreepinsEnumerationRuleMatchesWhatItClaims(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		name string
+		src  string
+		want bool
+	}{
+		{"glob of a tree subdirectory", `func TestX(t *testing.T) { filepath.Glob("docs/notes.d/*.md") }`, true},
+		{"walk of the repo root", `func TestX(t *testing.T) { filepath.WalkDir(".", nil) }`, true},
+		{"ReadDir of a tree directory", `func TestX(t *testing.T) { os.ReadDir("docs/adr") }`, true},
+		{"Join of literals", `func TestX(t *testing.T) { filepath.Glob(filepath.Join("internal", "posse", "*_test.go")) }`, true},
+		{"reading one named file is not enumeration", `func TestX(t *testing.T) { os.ReadFile("Makefile") }`, false},
+		{"a scratch directory is not a tree path", `func TestX(t *testing.T) { dir := t.TempDir(); os.ReadDir(dir) }`, false},
+		{"a Join carrying a variable is not a tree path", `func TestX(t *testing.T) { dir := t.TempDir(); filepath.Glob(filepath.Join(dir, "*.md")) }`, false},
+		{"an absolute path is not a tree path", `func TestX(t *testing.T) { os.ReadDir("/etc") }`, false},
+		{"a climb out of the tree is not a tree path", `func TestX(t *testing.T) { os.ReadDir("../..") }`, false},
+		{"through a helper", `func helper() { filepath.WalkDir("scripts", nil) }
+func TestX(t *testing.T) { helper() }`, true},
+		{"through two helpers", `func inner() { os.ReadDir("examples/agents") }
+func outer() { inner() }
+func TestX(t *testing.T) { outer() }`, true},
+		{"a helper that enumerates nothing", `func helper() { os.ReadFile("go.mod") }
+func TestX(t *testing.T) { helper() }`, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if got := twdFixtureEnumerates(t, c.src); got != c.want {
+				t.Errorf("the enumeration rule says %v for this source, want %v — the key the internal/treepins half of the class is derived from no longer means what this file says it means:\n%s", got, c.want, c.src)
+			}
+		})
+	}
+
+	// And the rule is load-bearing over the real tree: with the enumerator
+	// set emptied, nothing matches. A rule that would answer the same with
+	// its key removed is not deriving anything.
+	all, _ := twdParseTreepins(t)
+	live := twdReach(all, func(f *twdFunc) bool { return len(f.relEnum) > 0 })
+	n := 0
+	for name, f := range all {
+		if f.test && live[name] {
+			n++
+		}
+	}
+	if n < 14 {
+		t.Fatalf("the enumeration rule finds %d tree-wide tests in %s (23 on 2026-10-04) — the key has stopped matching and the register is deriving a class that is missing members", n, twdTreepinsPkg)
+	}
+	dead := twdReach(all, func(f *twdFunc) bool { return false })
+	if len(dead) != 0 {
+		t.Fatalf("the reach closure returns %d functions from an empty seed — it is matching something other than its key, so the count above says nothing", len(dead))
+	}
+}
+
+// twdFixtureEnumerates runs the internal/treepins rule over one snippet of
+// source and reports whether its TestX is a member. It goes through
+// twdAnalyze — the same function twdParseDir reads the tree with — so a
+// fixture that passes here cannot be passing against a second, friendlier
+// copy of the rule.
+func twdFixtureEnumerates(t *testing.T, src string) bool {
+	t.Helper()
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "fixture_test.go", "package treepins\n"+src+"\n", 0)
+	if err != nil {
+		t.Fatalf("parse fixture: %v\n%s", err, src)
+	}
+	all := map[string]*twdFunc{}
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || fn.Body == nil {
+			continue
+		}
+		f := twdAnalyze(fn, "fixture")
+		all[f.name] = f
+	}
+	return twdReach(all, func(f *twdFunc) bool { return len(f.relEnum) > 0 })["TestX"]
 }
 
 // Arm 2: every tree-wide pin has a door, and every door names a real one.
@@ -744,13 +1443,13 @@ func TestQAEveryTreeWidePinHasADoor(t *testing.T) {
 	}
 	src := string(b)
 
-	doored := map[string]string{}
-	for _, v := range twdPinVars {
-		for _, name := range twdVar(t, src, v) {
+	doored := map[string]twdDoor{}
+	for _, d := range twdDoors {
+		for _, name := range twdVar(t, src, d.variable) {
 			if prev, dup := doored[name]; dup {
-				t.Errorf("%s is named by both $(%s) and $(%s) — one pin, two doors, and the two can drift apart", name, prev, v)
+				t.Errorf("%s is named by both $(%s) and $(%s) — one pin, two doors, and the two can drift apart", name, prev.variable, d.variable)
 			}
-			doored[name] = v
+			doored[name] = d
 		}
 	}
 
@@ -833,6 +1532,19 @@ func TestQAEveryTreeWidePinHasADoor(t *testing.T) {
 		t.Errorf("$(QA_OPS_PINS) = %v, want exactly %v — the ops-residue census over every tracked markdown file, the instance path-form census over every tracked file, and the control beside each that says it can still say no. Both censuses read the tree with git, so arm 3 cannot plant drift for them in a copied tree; a new entry needs its own arm.", got, wantOps)
 	}
 
+	// The second package's named membership, for the same reason the four
+	// above are named: $(QA_NOTES_PINS) is the only door variable in the
+	// register whose pin is NOT derived from source — the enumeration it
+	// stands on happens inside scripts/notes-index.py, which no rule over
+	// Go can read. It is carried by twdIndirect and fenced by
+	// TestQAEveryTrackedProgramATreePinRunsIsDispositioned; naming it here
+	// as well keeps it from becoming the quiet place to park a pin whose
+	// membership nothing derived.
+	wantNotes := []string{"TestNotesFragmentIndexIsCurrent"}
+	if got := twdVar(t, src, "QA_NOTES_PINS"); !twdSameSet(got, wantNotes) {
+		t.Errorf("$(QA_NOTES_PINS) = %v, want exactly %v — that variable holds the one pin in the class whose enumeration is a line of Python rather than a line of Go, so nothing here derives its membership. A second entry needs a row in twdIndirect and a reason; a pin moved here to quiet the check below has no door at all.", got, wantNotes)
+	}
+
 	names, funcs := twdTreeWideTests(t)
 	// A pin over a derived set is satisfied by deriving nothing: say how
 	// many test functions were actually parsed, and fail a walk that found
@@ -857,18 +1569,90 @@ func TestQAEveryTreeWidePinHasADoor(t *testing.T) {
 	}
 	t.Logf("parsed %d test functions under internal/posse, %d of them tree-wide", funcs, len(names))
 
-	found := map[string]bool{}
-	for _, name := range names {
-		found[name] = true
-		if doored[name] == "" {
-			t.Errorf("%s reads the repo root and no Makefile door names it — it is reachable only by a `-run` filter that happens to spell it, which is ranger-base-ik44f arriving again. Add it to $(QA_CREW_PINS) or a new door.", name)
+	// The second package (ranger-base-g6sb1). Its own floors, because the
+	// two rules fail apart and a collapse on one side must not be covered
+	// by the other side's health.
+	tpNames, tpDerived, tpFuncs := twdTreepinsTreeWideTests(t)
+	if tpFuncs < 200 {
+		t.Fatalf("only %d test functions parsed under %s — the walk this arm derives the second half of the class from found nothing", tpFuncs, twdTreepinsPkg)
+	}
+	if len(tpDerived) < 14 {
+		t.Fatalf("only %d tree-wide tests derived in %s (23 on 2026-10-04, of which 20 predate ranger-base-g6sb1's own arms) — the enumeration rule has stopped matching, and this arm is now deriving a class that is missing members: %v", len(tpDerived), twdTreepinsPkg, tpDerived)
+	}
+	t.Logf("parsed %d test functions under %s, %d of them tree-wide (%d derived, %d registered indirect)", tpFuncs, twdTreepinsPkg, len(tpNames), len(tpDerived), len(twdIndirect))
+
+	// Both ways, per package. Both directions are the bug: a pin with no
+	// door is ranger-base-ik44f arriving again, and a door naming a test
+	// that is not in its package's class is a `-run` filter matching
+	// nothing, which passes in silence.
+	for _, class := range []struct {
+		pkg   string
+		names []string
+	}{
+		{twdPossePkg, names},
+		{twdTreepinsPkg, tpNames},
+	} {
+		found := map[string]bool{}
+		for _, name := range class.names {
+			found[name] = true
+			d, ok := doored[name]
+			if !ok {
+				t.Errorf("%s (%s) reads the tree and no Makefile door names it — it is reachable only by a `-run` filter that happens to spell it, which is ranger-base-ik44f arriving again. Give it a door, or add it to one whose subject it shares.", name, class.pkg)
+				continue
+			}
+			if d.pkg != class.pkg {
+				t.Errorf("%s is a tree-wide test in %s and $(%s) doors it with `go test ./%s` — the door runs a package the pin does not live in, so its filter matches nothing and it passes in silence", name, class.pkg, d.variable, d.pkg)
+			}
+		}
+		members := twdTestNames(t, class.pkg)
+		for name, d := range doored {
+			if d.pkg != class.pkg || found[name] {
+				continue
+			}
+			if _, holder := twdDoorHolders[name]; holder {
+				if !members[name] {
+					t.Errorf("twdDoorHolders registers %s and %s declares no such test — the one exemption from the derivation is holding a door open for a name that is not there", name, class.pkg)
+				}
+				continue
+			}
+			if members[name] {
+				// The test is there; the DERIVATION stopped calling it
+				// tree-wide. That is the more interesting of the two
+				// failures and it has a usual cause, so name it: the rule
+				// reads a spelling, and a reading rewritten into a
+				// spelling it cannot see goes quiet without the pin
+				// changing at all. This arm found exactly that on
+				// 2026-10-04, when twdTestFiles' glob was briefly composed
+				// from a parameter.
+				t.Errorf("$(%s) names %s, which IS a test in %s and is no longer derived as tree-wide. Either it stopped reading the tree, in which case drop it from the door — or its reading was rewritten into a spelling the rule cannot see, which is the usual cause: an enumeration root composed from a variable instead of spelled as a literal. The door still passes; the pin is back to being a package-tree run away.", d.variable, name, class.pkg)
+				continue
+			}
+			t.Errorf("$(%s) names %s, which is not a test in %s at all — the door's `-run` filter matches nothing there and passes in silence", d.variable, name, class.pkg)
 		}
 	}
-	for name, v := range doored {
-		if !found[name] {
-			t.Errorf("$(%s) names %s, which is not a tree-wide test in internal/posse — the door's `-run` filter matches nothing there and passes in silence", v, name)
+
+	// And the exemption list cannot keep rows no door uses: a door-holder
+	// nothing doors is a reason recorded for a decision nobody took.
+	for name := range twdDoorHolders {
+		if _, ok := doored[name]; !ok {
+			t.Errorf("twdDoorHolders registers %s and no Makefile door names it — drop the row, or give it the door the row says it needs", name)
 		}
 	}
+}
+
+// twdTestNames is the set of test functions one package declares, used to
+// tell "this door names a test that is no longer derived" from "this door
+// names nothing at all".
+func twdTestNames(t *testing.T, pkg string) map[string]bool {
+	t.Helper()
+	all, _ := twdParseDir(t, pkg)
+	out := map[string]bool{}
+	for name, f := range all {
+		if f.test {
+			out[name] = true
+		}
+	}
+	return out
 }
 
 // twdWalkReachingTests is the walk-reaching half of the class on its own:
@@ -877,27 +1661,7 @@ func TestQAEveryTreeWidePinHasADoor(t *testing.T) {
 func twdWalkReachingTests(t *testing.T) []string {
 	t.Helper()
 	all, _ := twdParse(t)
-	reaches := map[string]bool{}
-	for name, f := range all {
-		if f.rootedWalk {
-			reaches[name] = true
-		}
-	}
-	for changed := true; changed; {
-		changed = false
-		for name, f := range all {
-			if reaches[name] {
-				continue
-			}
-			for callee := range f.calls {
-				if reaches[callee] {
-					reaches[name] = true
-					changed = true
-					break
-				}
-			}
-		}
-	}
+	reaches := twdReach(all, func(f *twdFunc) bool { return f.rootedWalk })
 	var out []string
 	for name, f := range all {
 		if f.test && reaches[name] && !f.root {
@@ -1082,6 +1846,7 @@ func TestQATheTreeWideDoorsReportRealDrift(t *testing.T) {
 	crew := twdExpand(t, "crew-check")
 	seed := twdExpand(t, "seed-check")
 	doc := twdExpand(t, "doc-check")
+	notes := twdExpand(t, "notes-check")
 	dir := twdSeedTree(t)
 
 	run := func(recipe string) (string, error) {
@@ -1093,7 +1858,7 @@ func TestQATheTreeWideDoorsReportRealDrift(t *testing.T) {
 
 	// The clean arm first, both doors: a door that always fails detects
 	// nothing, and a filter that matches nothing passes in silence.
-	for _, door := range []struct{ name, recipe string }{{"crew-check", crew}, {"seed-check", seed}, {"doc-check", doc}} {
+	for _, door := range []struct{ name, recipe string }{{"crew-check", crew}, {"seed-check", seed}, {"doc-check", doc}, {"notes-check", notes}} {
 		got, err := run(door.recipe)
 		if err != nil {
 			t.Fatalf("`make %s` failed on a clean copy of this tree — it reports drift that is not there:\n%s", door.name, got)
@@ -1182,6 +1947,90 @@ func TestQATheTreeWideDoorsReportRealDrift(t *testing.T) {
 	}
 	if err := os.Remove(filepath.Join(dir, docProbe)); err != nil {
 		t.Fatal(err)
+	}
+
+	// The notes door's drift, and the one this bead was filed for
+	// (ranger-base-g6sb1): a docs/notes.d fragment with no entry in that
+	// directory's generated index. Every bead on this box writes one of
+	// these, which is why it is the drift that got out — `make fmt-check`,
+	// all eight doors as they then stood and a whole
+	// `-tags posse_arm2 ./internal/posse` called the commit clean, and only
+	// the 589.965s arm-1 run of internal/treepins said `stale index`.
+	//
+	// Not assembled, unlike the three probes above: a notes fragment is
+	// data in a directory nothing in this package scans for content, so
+	// there is no walk for this file's own bytes to turn up in.
+	notesProbe := filepath.Join("docs", "notes.d", "twd-drift-probe.md")
+	if err := os.WriteFile(filepath.Join(dir, notesProbe), []byte("# A fragment no index knows about\n2026-10-04\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err = run(notes)
+	if err == nil {
+		t.Fatalf("`make notes-check` passed a tree holding a notes fragment the index does not list — the door reads nothing, and the drift that filed ranger-base-g6sb1 is undetected again:\n%s", got)
+	}
+	for _, want := range []string{"README.md", "stale index", "scripts/notes-index.py"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("`make notes-check` failed without naming %q, so it says the index is wrong and not what to run:\n%s", want, got)
+		}
+	}
+	if err := os.Remove(filepath.Join(dir, notesProbe)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// The other half of arm 3 for the internal/treepins doors: that make's own
+// expansion of each `-run` filter NAMES the pins its variable holds.
+//
+// WHY NOT THE DRIFT PLANT. The four doors above are exercised against a
+// scratch copy of the tree, which is the strongest thing this file does. It
+// is not available here, for three reasons that each hold on their own: the
+// copy has no .git, and several of these pins read the tree through git; a
+// `go test ./internal/treepins` in the copy is a cold build of the module
+// rather than a door's worth of seconds; and register-check's own pins
+// include THIS test, so arm 3 running it would be arm 3 running arm 3.
+//
+// What is left is the half a filter actually gets wrong. `-run` is a regex,
+// it is assembled by make out of a variable and a `$$`, and a filter that
+// matches nothing exits 0 and prints `ok`. Arm 2 proves the NAMES are real
+// tree-wide tests in the right package; this proves that make's expansion of
+// them, run by go, selects exactly those tests. It uses `-list` in place of
+// `-run` — one substitution on make's own text, which is why the regex under
+// test is still make's and not a copy of it — so it selects without running:
+// ~0.3s per door against the ~31s of running them.
+func TestQAEveryTreepinsDoorFilterNamesItsPins(t *testing.T) {
+	t.Parallel()
+	b, err := os.ReadFile("Makefile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(b)
+
+	for _, door := range twdDoors {
+		if door.pkg != twdTreepinsPkg || door.tool {
+			continue
+		}
+		recipe := twdExpand(t, door.target)
+		listing := strings.Replace(recipe, "-run ", "-list ", 1)
+		if listing == recipe {
+			t.Errorf("`make %s` has no `-run ` to read as a `-list `, so this arm cannot ask what its filter selects:\n%s", door.target, recipe)
+			continue
+		}
+		cmd := exec.Command("sh", "-c", listing)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Errorf("listing `make %s`'s filter failed: %v\n%s", door.target, err, out)
+			continue
+		}
+		var listed []string
+		for _, line := range strings.Split(string(out), "\n") {
+			if strings.HasPrefix(line, "Test") {
+				listed = append(listed, strings.TrimSpace(line))
+			}
+		}
+		want := twdVar(t, src, door.variable)
+		if !twdSameSet(listed, want) {
+			t.Errorf("`make %s`'s filter selects %v, and $(%s) names %v — the regex make assembles and the pins the variable holds are not the same set, so the door runs fewer tests than its own membership says and still prints `ok`:\n%s", door.target, listed, door.variable, want, listing)
+		}
 	}
 }
 
