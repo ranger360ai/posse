@@ -272,6 +272,22 @@ func TestTheKeychainItemNameIsDerivedFromTheConfigDirEnvironment(t *testing.T) {
 			why:       "composed is already NFC, so normalizing is the identity here and this digit is the one the runtime derives — it was also posse's answer before ranger-base-4ch00, which is why this arm alone cannot tell the two rules apart. The decomposed arm below is the one that can",
 		},
 		{
+			// U+FB01 LATIN SMALL LIGATURE FI, which is not a canonical
+			// decomposition of "fi" but a COMPATIBILITY one: NFC leaves it
+			// alone and NFKC folds it to the two letters. The two arms
+			// above cannot tell those apart — composed/decomposed cafe
+			// derives the same digit under either form — so until this row
+			// existed, norm.NFKC.String in keychainItem passed every pin in
+			// the tree (MEASURED 2026-10-04, ranger-base-2vynj). The
+			// runtime's form is NFC verbatim, `.normalize("NFC")` in the
+			// bundle credentialDir quotes, and NFKC here would ask for
+			// -b4196449 against an item written under this digit.
+			name:      "a non-ASCII directory holding a COMPATIBILITY character",
+			configDir: strPtr("/tmp/of\ufb01ce"),
+			want:      KeychainService + "-964d50c1",
+			why:       "NFC is a canonical normalization and nothing else: the ligature stays one rune, and the digit is sha256 over the string with it still there. A compatibility form (NFKC, NFKD) would fold it to `office` and derive an item the runtime never wrote — the same defect ranger-base-4ch00 measured for the decomposed arm, one normalization axis over",
+		},
+		{
 			name:      "a non-ASCII directory, NFC decomposed",
 			configDir: strPtr("/tmp/cafe\u0301"),
 			want:      KeychainService + "-0873cca0",
@@ -536,6 +552,106 @@ func TestTheStoreNameNamesTheItemTheRuntimeWroteForANonASCIIDirectory(t *testing
 	}
 	if strings.Contains(name, "NFC") {
 		t.Errorf("the store name %q still carries the normalization note — posse and the runtime now derive the same name, so the note's two halves are the same string and it would name a suspect that cannot be the culprit", name)
+	}
+}
+
+// ADR 0019 D2's last clause is TWO rules pointing opposite ways, and only
+// one of them was held. NFC is applied to the item NAME; the directory posse
+// OPENS, WALLS and prints keeps the spelling it was handed
+// (docs/notes.d/ranger-base-d88rp.md). keychainItem's own comment asserts the
+// second half in prose and so does ranger-base-snrur's commit message, and
+// nothing in the tree measured it: normalizing credentialDirNamed's two
+// returns leaves the credential, trust, seatbelt and wall surface green
+// (MEASURED 2026-10-04, ranger-base-2vynj, `-run
+// Keychain|StoreName|CredentialsFile|Cred|Normaliz|Trust|Seatbelt|Wall`, ok
+// 17.0s). It is invisible from the item's side by construction: NFC of an
+// already-NFC name is itself, so the two pins above cannot move while the
+// path moves under them.
+//
+// Why this pin exists (ADR 0006 V7): on a filesystem that preserves the
+// difference, the composed spelling of a decomposed directory is a path that
+// is NOT THERE. The read would miss a credentials file sitting right where
+// the operator put it, and the seatbelt's credential wall — rendered from
+// credentialFileCandidates, which is CredentialsFile plus the home — would be
+// drawn over a path nothing uses while the real file stayed readable: a deny
+// that reports as applied and protects nothing.
+//
+// Both resolver returns are covered because they are separate assignments:
+// the secure-storage branch answers its value verbatim, and the config-dir
+// branch answers ClaudeConfigDirIn's. The runtime normalizes its own
+// directory string in the first of those (`.normalize("NFC")`, verbatim in
+// credentialDir's quote of the bundle) and posse deliberately does not — that
+// divergence is d88rp's, left standing on purpose, and this is where it is
+// written down as a decision rather than an accident.
+func TestTheCredentialDirectoryKeepsItsSpellingWhileTheItemNameIsNormalized(t *testing.T) {
+	const (
+		nfd = "/tmp/cafe\u0301" // "cafe" + U+0301 COMBINING ACUTE ACCENT
+		nfc = "/tmp/caf\u00e9"  // U+00E9 LATIN SMALL LETTER E WITH ACUTE
+	)
+	if nfd == nfc {
+		t.Fatal("the two spellings are the same string, so this test cannot tell the two rules apart")
+	}
+
+	for _, tc := range []struct {
+		name string
+		// The variable that names the decomposed directory. One per
+		// resolver return: credentialDirNamed answers the secure-storage
+		// value verbatim, and ClaudeConfigDirIn's answer for the other.
+		env string
+	}{
+		{name: "named by CLAUDE_CONFIG_DIR", env: "CLAUDE_CONFIG_DIR"},
+		{name: "named by CLAUDE_SECURESTORAGE_CONFIG_DIR", env: "CLAUDE_SECURESTORAGE_CONFIG_DIR"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("HOME", "/tmp/home")
+			for _, k := range []string{"CLAUDE_CONFIG_DIR", "CLAUDE_SECURESTORAGE_CONFIG_DIR"} {
+				unsetenvForTest(t, k)
+			}
+			t.Setenv(tc.env, nfd)
+
+			// The PATH half: as spelled, everywhere a path is answered.
+			// Every failure below prints %+q and not %q: the two spellings
+			// are the same glyphs in a terminal, and a diff a reader cannot
+			// see is a diff they will spend an hour on.
+			dir, err := credentialDir()
+			if err != nil {
+				t.Fatalf("%v", err)
+			}
+			if dir != nfd {
+				t.Errorf("credentialDir() = %+q, want %+q as spelled — the resolver answers a directory posse OPENS and walls, and the composed spelling of a decomposed directory can be a path that is not there (ranger-base-d88rp)", dir, nfd)
+			}
+			file, err := CredentialsFile()
+			if err != nil {
+				t.Fatalf("%v", err)
+			}
+			if want := filepath.Join(nfd, ".credentials.json"); file != want {
+				t.Errorf("CredentialsFile() = %+q, want %+q — NFC is the item NAME's rule and never the file path's (ADR 0019 D2)", file, want)
+			}
+			if strings.Contains(file, nfc) {
+				t.Errorf("CredentialsFile() = %+q carries the COMPOSED spelling — posse would open, and wall, a path the operator never named", file)
+			}
+			// The wall is rendered from this list, so the deny's own
+			// subject has to be the as-spelled file too.
+			var walled bool
+			for _, p := range credentialFileCandidates() {
+				if p == filepath.Join(nfd, ".credentials.json") {
+					walled = true
+				}
+				if strings.Contains(p, nfc) {
+					t.Errorf("credentialFileCandidates() names %+q — the seatbelt credential wall is rendered from this list, and a deny over the composed spelling protects nothing while the real file stays readable", p)
+				}
+			}
+			if !walled {
+				t.Errorf("credentialFileCandidates() = %+q, which does not name the as-spelled credentials file — the wall and the read must have the same subject", credentialFileCandidates())
+			}
+
+			// And the NAME half, here rather than in a second test: the two
+			// rules are one sentence in ADR 0019 D2, and a pin that holds
+			// either one alone is the pin that was already green.
+			if item := keychainItem(); item != KeychainService+"-0873cca0" {
+				t.Errorf("keychainItem() = %q, want %q — the item name IS normalized, which is the other half of the same clause (ranger-base-snrur)", item, KeychainService+"-0873cca0")
+			}
+		})
 	}
 }
 

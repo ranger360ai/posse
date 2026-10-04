@@ -303,6 +303,96 @@ func TestTheRunbookOnlyNamesMakeTargetsThatExist(t *testing.T) {
 // future session to make this edit) and now watches the opposite claim: a
 // revert of the deny, or a runbook that reverts to the old wording, trips
 // it either way.
+// crSiblingCalls derives the walled credential siblings from seatbelt.go
+// itself: every `sibling("<state dir>", "<file>", …)` call in the
+// read-deny's own renderer, as "<state dir>/<file>". The set is DISCOVERED
+// and not listed here on purpose — a hand list in this file would go stale
+// on the same day the page does, which is the whole defect below.
+func crSiblingCalls(src string) []string {
+	var out []string
+	for _, m := range crSibling.FindAllStringSubmatch(src, -1) {
+		out = append(out, m[1]+"/"+m[2])
+	}
+	return out
+}
+
+var crSibling = regexp.MustCompile(`\bsibling\(\s*"([^"]+)"\s*,\s*"([^"]+)"`)
+
+// crSiblingsMissingFrom reports the derived siblings the page does not name.
+// Taking the page as an argument is what lets the control below drive the
+// same matcher over a planted source, so "it can still say no" is measured
+// rather than asserted: a probe with no failing wrong arm pins nothing.
+func crSiblingsMissingFrom(src, page string) []string {
+	var missing []string
+	for _, p := range crSiblingCalls(src) {
+		if !strings.Contains(page, p) {
+			missing = append(missing, p)
+		}
+	}
+	return missing
+}
+
+// The runbook's sibling list is a COPY of the set seatbelt.go walls, and
+// nothing held the pair. That is not hypothetical: ranger-base-prjck landed
+// the fourth credential literal (bob's, which is also the only NESTED one)
+// and the page kept saying there were two siblings for six days, in three
+// separate sentences, until ranger-base-rhfe3 wrote them in by hand. The
+// fifth runtime with a token store on disk would do it again — the page is
+// prose and the renderer is code, and the suite was green throughout
+// (MEASURED 2026-10-04, ranger-base-2vynj: no pin in either package reads
+// both files).
+//
+// So this is the N-1 edge. The sweep SECTION is deliberately not the
+// subject — what the matcher sweeps is the runbook's own decision and the
+// page argues it per runtime — only that a file posse walls for read is a
+// file this page names SOMEWHERE, which is the claim a reader of any of its
+// four moves relies on.
+func TestTheRunbookNamesEveryCredentialSiblingTheWallDenies(t *testing.T) {
+	t.Parallel()
+	b, err := os.ReadFile(filepath.Join("..", "..", "internal", "posse", "seatbelt.go"))
+	if err != nil {
+		b, err = os.ReadFile("seatbelt.go")
+	}
+	if err != nil {
+		t.Skipf("seatbelt.go not readable from here: %v", err)
+	}
+	src := string(b)
+
+	// The positive witness, same rule as the arm above: a renderer that lost
+	// its sibling calls would satisfy the loop below by having nothing in it.
+	got := crSiblingCalls(src)
+	if len(got) < 3 {
+		t.Fatalf("derived %d sibling credential paths from seatbelt.go (%v) — the deny renderer no longer spells them this way, so this pin holds nothing", len(got), got)
+	}
+
+	page := crRunbook(t)
+	if missing := crSiblingsMissingFrom(src, page); len(missing) > 0 {
+		t.Errorf("seatbelt.go walls %v for read and the runbook does not name %v — "+
+			"the page is the operator's map of this seam, and a walled store missing from it reads as a store that is not walled (the ranger-base-prjck → ranger-base-rhfe3 shape, one runtime later)", got, missing)
+	}
+	t.Logf("%d walled siblings, all named by the page", len(got))
+}
+
+// The control. Without it the arm above passes on a page that happens to
+// contain whatever the regexp happens to find, and an emptied matcher reads
+// exactly like a page in good order.
+func TestTheRunbookSiblingCheckCanStillSayNo(t *testing.T) {
+	t.Parallel()
+	page := crRunbook(t)
+	// A fifth runtime, spelled the way the renderer spells one. Nothing in
+	// the tree carries this name, so the page cannot accidentally name it.
+	planted := "\tsibling(\"~/.notarealruntime\", \"auth.json\", notARealRuntimeHomeIn)\n"
+	missing := crSiblingsMissingFrom(planted, page)
+	if len(missing) != 1 || missing[0] != "~/.notarealruntime/auth.json" {
+		t.Errorf("crSiblingsMissingFrom over a planted sibling call = %v, want exactly the planted path — the matcher cannot report a drift it does not see", missing)
+	}
+	// And the other direction: a call shape the renderer does not use must
+	// not be read as a sibling, or every refactor of seatbelt.go reds this.
+	if n := len(crSiblingCalls("\tsiblingOf(x, y)\n\t// sibling(\"~/.quoted\", \"auth.json\", h)\n")); n != 1 {
+		t.Errorf("crSiblingCalls read %d siblings out of a non-call and a commented call, want 1 (the commented one is still a spelling of the call and is counted on purpose; the renamed function is not)", n)
+	}
+}
+
 func TestTheSeatbeltClaimInTheRunbookIsStillTrue(t *testing.T) {
 	t.Parallel()
 	b, err := os.ReadFile(filepath.Join("..", "..", "internal", "posse", "seatbelt.go"))
