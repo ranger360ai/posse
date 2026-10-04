@@ -42,7 +42,7 @@ FMT_ROOTS := cmd internal *.go
 BUILD_STAMP := $(shell $(GOBIN) run ./cmd/buildstamp)
 LDFLAGS     := -X github.com/ranger360ai/posse/internal/posse.Build=$(BUILD_STAMP)
 
-.PHONY: build release install deploy test test-arm1 test-arm2 test-arm3 test-race test-reuse fmt-check crew-check seed-check history-check doc-check identity-check ops-check execwrite-check tree-check verify-test-times verify-suite-lock verify-pattern-kill-census verify-silent-reverts verify-shell-syntax verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-herdr-bob install-herdr-bob verify-herdr-bob-rules install-herdr-bob-rules verify-prune-guard verify-id-recycle verify-self-close verify-govern-honesty verify-grok-pin verify-codex-pin verify-credential-paths verify-policy-pins verify-hook-freshness verify-bd-pin verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk verify-box verify-box-self-test prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
+.PHONY: build release install deploy test test-arm1 test-arm2 test-arm3 test-race test-reuse treepins fmt-check crew-check seed-check history-check doc-check identity-check ops-check execwrite-check tree-check verify-test-times verify-suite-lock verify-pattern-kill-census verify-silent-reverts verify-shell-syntax verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-herdr-bob install-herdr-bob verify-herdr-bob-rules install-herdr-bob-rules verify-prune-guard verify-id-recycle verify-self-close verify-govern-honesty verify-grok-pin verify-codex-pin verify-credential-paths verify-policy-pins verify-hook-freshness verify-bd-pin verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk verify-box verify-box-self-test prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
 
 build:
 	$(GOBIN) build -ldflags '$(LDFLAGS)' -o bin/posse-go ./cmd/posse
@@ -645,6 +645,34 @@ ops-check:
 # prerequisite of `make test` for rulbl's reason: a full run fails on it in
 # seconds instead of at ~950.
 tree-check: fmt-check crew-check seed-check history-check doc-check identity-check ops-check execwrite-check
+
+# THE UNFILTERED TREE-PIN RUN, THROUGH THE WRAPPER SO IT QUEUES
+# (ranger-base-1a0hi). `tree-check` above is the doors a seat types after a
+# FILTERED run; this is the whole package, which is what you type when you ADD
+# a tree-wide pin — a `-run` filter runs only the tests it names, and
+# ranger-base-rulbl's lesson is that this class has members no filter names.
+# It costs what a suite arm costs: a median of 393.5s over 327 wall readings
+# at or above 60s, 679.1s with the arm builds cold, 1501.6s at the longest
+# (MEASURED 2026-10-04, ranger-base-7zng1), which is why -timeout 25m and not
+# the 15m the filtered doors carry.
+#
+# WHY THERE IS A TARGET AT ALL. `suite_lock_wanted` has named this package
+# since ranger-base-7zng1, and until this line nothing in the tree could
+# reach the rule: that function is a shell function sourced by
+# scripts/gotest.sh and scripts/test-times.sh alone, there is no `go` shim on
+# this box, and the Makefile's only other treepins lines are the arm-tags
+# door, filtered. So the rule queued nothing — MEASURED 2026-10-04 over 1,125
+# session transcripts, 122 unfiltered `go test ./internal/treepins` segments
+# from 48 sessions and 65 `go vet` over the same package, every one of them a
+# bare `go` and NONE through a wrapper (ranger-base-1a0hi). This is the
+# spelling that queues, and AGENTS.md and NOTES.md name it; a bare `go test`
+# over this package escapes the lock exactly as a bare `go test ./...` does.
+#
+# NOT a prerequisite of anything: `make test` already reaches this package
+# through `./...`, and a door that costs ~400s belongs where a person is
+# waiting for its answer (test-race's reasoning).
+treepins:
+	scripts/test-times.sh $(GOBIN) test ./internal/treepins -timeout 25m -count=1
 
 # Register the cockpit plugin with the running herdr (local dev link).
 # The manifest runs ./bin/posse relative to the plugin root; that is a symlink

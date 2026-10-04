@@ -217,16 +217,25 @@ bd sync               # Sync with git
   `~/.cache/posse`) before they start: a third full run waits, and its first
   line names the worktree it is waiting on. A `-run` filter or a named
   package takes no slot — type those as freely as you ever did, with ONE
-  measured exception: `go test ./internal/treepins` DOES take a slot
-  (ranger-base-7zng1). That package's pins have the tree as their subject and
-  one of them vets all three arms, so an unfiltered run of it costs what a
-  queued arm costs — 363.2s with a warm build cache, 679.1s cold, a median of
-  393.5s over 327 wall readings at or above 60s — and unqueued it was
-  invisible to the runs that queue and made nobody else queue. One beside a
-  `make test` on 2026-10-03 put arm 3 at 1459.6s against 424.1s unloaded and
-  reddened two watch tests that need 0.9s of the 30s they blew through. A
-  `-run` filter over the same package still takes no slot, so `make
-  tree-check` and every focused pin run are unchanged.
+  measured exception: an unfiltered `./internal/treepins` is a full suite by
+  cost, and **`make treepins` is the spelling that queues it**
+  (ranger-base-7zng1, ranger-base-1a0hi). That package's pins have the tree as
+  their subject and one of them vets all three arms, so an unfiltered run of
+  it costs what a queued arm costs — 363.2s with a warm build cache, 679.1s
+  cold, a median of 393.5s over 327 wall readings at or above 60s — and
+  unqueued it is invisible to the runs that queue and makes nobody else
+  queue. One beside a `make test` on 2026-10-03 put arm 3 at 1459.6s against
+  424.1s unloaded and reddened two watch tests that need 0.9s of the 30s they
+  blew through. **A bare `go test ./internal/treepins` takes no slot**, for
+  the reason the `./...` paragraph below gives and not a different one: the
+  rule is a shell function `scripts/gotest.sh` and `scripts/test-times.sh`
+  source, and nothing on this box shims `go`. MEASURED 2026-10-04 over 1,125
+  session transcripts: 122 unfiltered `go test ./internal/treepins` segments
+  from 48 sessions, plus 65 `go vet` over the same package, and NONE of the
+  187 through a wrapper — so until `make treepins` existed the rule queued
+  nothing it was written for. A `-run` filter over the same package takes no
+  slot by design, so `make tree-check` and every focused pin run are
+  unchanged.
   `scripts/suite-lock.sh --status` says who holds the slots;
   `POSSE_SUITE_SLOTS` changes how many there are and `POSSE_SUITE_LOCK=0`
   opts a run out loudly. A seat whose cage cannot OPEN the slot files —

@@ -143,10 +143,21 @@ func TestPromptContext(t *testing.T) {
 // parked row on both store classes — a hand-written `no-db: true` JSONL
 // store with one deferred and one open row answers with the open one, and
 // `bd blocked` lists the deferred one besides — so real bd should not hand
-// this loop a parked bead at all. The fake serves fake-ready.json whole,
-// which is how the fixture can. Keeping the check here is the same judgment
-// OpenLabeledAny makes about closed rows: what this surface promises is this
-// surface's to enforce, not bd's.
+// this loop a parked bead at all. Keeping the check here is the same
+// judgment OpenLabeledAny makes about closed rows: what this surface
+// promises is this surface's to enforce, not bd's.
+//
+// A DATED park is the half this arm can still deliver through `bd ready`,
+// and the dateless one is the arm below (ranger-base-1a0hi). A row carrying
+// `defer_until` and NO status is an open row to fakeBdReadyOpenOnly
+// (ranger-base-bknod, herdr_test.go), so q-dated arrives at the fire loop
+// and the absence asserted below is deferredNow's. A `status: "deferred"`
+// row is dropped by that same fake before the loop sees it, so the
+// dateless fixture this arm used to carry was satisfied by the fake rather
+// than by the fix — MEASURED 2026-10-04: with the pre-change date-only
+// predicate restored it stayed green. The sentence that justified it here,
+// "the fake serves fake-ready.json whole, which is how the fixture can",
+// stopped being true at ac90d2e0.
 func TestDispatchQuestionSkipLineOmitsParkedBeads(t *testing.T) {
 	t.Parallel()
 	b, fake := newTestBackend(t)
@@ -156,7 +167,6 @@ func TestDispatchQuestionSkipLineOmitsParkedBeads(t *testing.T) {
 	writePersona(t, b.App, "ranger", "[go]")
 	qaRepo(t, b.App,
 		`[{"id":"q-dated","title":"parked to a date","labels":["question"],"defer_until":"2026-10-09T00:00:00Z"},`+
-			`{"id":"q-status","title":"parked, date dropped by the store","status":"deferred","labels":["question"]},`+
 			`{"id":"q-live","title":"nobody parked this","labels":["question"]},`+
 			`{"id":"q-expired","title":"the park ran out","labels":["question"],"defer_until":"2026-10-01T00:00:00Z"},`+
 			`{"id":"a-1","title":"work","labels":["go"]}]`,
@@ -174,14 +184,64 @@ func TestDispatchQuestionSkipLineOmitsParkedBeads(t *testing.T) {
 			t.Errorf("%s is unanswered and must still be reported:\n%s", id, out)
 		}
 	}
-	for _, id := range []string{"q-dated", "q-status"} {
-		if strings.Contains(out, id) {
-			t.Errorf("%s is parked and must cost no line:\n%s", id, out)
-		}
+	if strings.Contains(out, "q-dated") {
+		t.Errorf("q-dated is parked and must cost no line:\n%s", out)
 	}
 	// Parked or not, a question is never claimed.
 	if c := bdCalls(t, fake); strings.Contains(c, "update q-") {
 		t.Errorf("no question bead may be claimed:\n%s", c)
+	}
+}
+
+// The DATELESS park costs no routing line either, and this arm hands the row
+// to the fire loop DIRECTLY, because `bd ready` is a door it cannot come
+// through (ranger-base-1a0hi).
+//
+// WHY NOT THROUGH THE READY FIXTURE. fakeBdReadyOpenOnly (ranger-base-bknod,
+// herdr_test.go) drops every row whose own status is set and not "open" from
+// the fake's `ready` answer, which is what real bd does on both store
+// classes. "deferred" is such a status, so a dateless park written into
+// fake-ready.json never reaches the fire loop and an assertion about its
+// absence there is the fixture's rather than deferredNow's.
+//
+// AND NO OTHER LISTING DELIVERS ONE. The other half of the queue is
+// interruptedRuns (interrupted.go), which subtracts `deferredNow` itself
+// before the fire loop is handed anything. So the loop's own guard — kept
+// for the reason the arm above gives, this surface's promise being this
+// surface's to enforce — is reachable only from a queue its caller built,
+// and that is where it has to be pinned. A fire pass over a queue of two is
+// what Run does at its head and what every refire does (seatFire,
+// seatphantom_qa_test.go, is the same shape).
+//
+// MUTATION: `deferredNow` (beads.go) back to the date-only predicate —
+// `return false` for the nil-date case — and q-park draws a routing line,
+// which reds the second assertion below. MEASURED 2026-10-04 under that
+// mutant: red here, green on the ready-fixture arm above, which is the whole
+// reason this arm exists.
+func TestDispatchQuestionSkipLineOmitsADatelessPark(t *testing.T) {
+	t.Parallel()
+	b, _ := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+	now := time.Date(2026, 10, 3, 15, 0, 0, 0, time.UTC)
+	d.Now = func() time.Time { return now }
+	// No ready fixture on purpose: the queue below IS the input, and nothing
+	// in this arm reads fake-ready.json.
+	dir := t.TempDir()
+	beads := []RepoIssue{
+		{BdIssue: BdIssue{ID: "q-park", Title: "parked, date dropped by the store", Status: "deferred", Labels: []string{"question"}}, Dir: dir},
+		{BdIssue: BdIssue{ID: "q-live", Title: "nobody parked this", Labels: []string{"question"}}, Dir: dir},
+	}
+	if _, _, _, err := d.fireLoop(beads, "", 0, map[string]string{}, map[string]int{}); err != nil {
+		t.Fatal(err)
+	}
+	out := dispatcherOut(d)
+	// The control, in the same pass and through the same branch: a question
+	// nobody parked still names itself.
+	if !strings.Contains(out, "q-live ") || !strings.Contains(out, "for the operator (question)") {
+		t.Errorf("q-live is unanswered and must still be reported:\n%s", out)
+	}
+	if strings.Contains(out, "q-park") {
+		t.Errorf("q-park is parked with no date and must cost no line:\n%s", out)
 	}
 }
 

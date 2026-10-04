@@ -18,8 +18,11 @@ package treepins
 // (2026-08-31) is no load testing on this box, and the ambient numbers above
 // are the measurement.
 //
-// FIVE ARMS, because the queue can be lost four ways and there are two
-// wrappers that can lose it the fourth way:
+// THE ARMS BELOW, one per way the queue can be lost. Four ways were the
+// original enumeration, two wrappers can lose it the fourth way, and two more
+// arrived with the defects they are named for: arm 6, a slot dir only one of
+// the two resolvers names (ranger-base-r3czg), and arm 7, a rule nothing in
+// the tree can reach (ranger-base-1a0hi).
 //
 //  1. the Makefile stops running the self-test, at which point the crew's
 //     only re-measuring artifact is gone. Arm 1 pins the recipe.
@@ -34,6 +37,11 @@ package treepins
 //     the only slot from this process and require a real
 //     scripts/test-times.sh and a real scripts/gotest.sh to queue behind it
 //     and then run — by execution, not by grep.
+//  5. the library and both wrappers keep working and NOTHING IN THE TREE
+//     hands them the argv the rule names. That is what happened to the
+//     named-package rule (arm 7, ranger-base-1a0hi): the rule was right, its
+//     self-test arm was honest, and no target, door or recipe reached it, so
+//     it queued nothing while every pin here stayed green.
 //
 // What this does NOT claim, and no close should: that two slots is a measured
 // optimum. Two is the number ranger-base-uvzjk asked for. What is measured is
@@ -453,5 +461,118 @@ func TestQATheSuiteQueueSlotDirHasOneSpelling(t *testing.T) {
 			t.Errorf("%s: posse grants %q and the script opens slot files in %q — a seat caged out of the second gets a grant on the first and queues against slots it cannot open (ranger-base-r3czg)",
 				c.what, got, want)
 		}
+	}
+}
+
+// Arm 7 (ranger-base-1a0hi): the ROUTE. A rule nothing can reach queues
+// nothing, and for one release that was the state of the named-package rule
+// arm 5c pins.
+//
+// `suite_lock_wanted` is a shell function inside scripts/suite-lock.sh,
+// sourced by scripts/gotest.sh and scripts/test-times.sh and by nothing else;
+// there is no `go` shim on this box; and the Makefile's only treepins lines
+// were the arm-tags door in `test`, `test-arm2` and `test-arm3`, all three
+// FILTERED — and a filtered argv returns from suite_lock_wanted's first loop
+// before the rule. So no target, door or recipe in the tree ever handed the
+// rule an unfiltered `./internal/treepins`, while AGENTS.md and NOTES.md both
+// said a bare `go test` over that package took a slot. MEASURED 2026-10-04
+// over 1,125 session transcripts: 122 unfiltered `go test ./internal/treepins`
+// segments from 48 sessions and 65 `go vet` over the same package, every one
+// of them a bare `go`, and NONE through a wrapper
+// (docs/notes.d/ranger-base-7zng1.md, "Reach").
+//
+// Every pin above stayed green through all of it, because none of them asks
+// who can reach the rule: arm 5c asks the FUNCTION, arms 4 and 5 ask the two
+// WRAPPERS over `./...`, and the gap was the `make` line between them. This
+// arm is that question. The recipe is taken FROM the Makefile rather than
+// written here, so a target that is deleted, renamed or rewritten to a bare
+// `go test` reds instead of going quiet, and the run is driven with the only
+// slot held, so the verdict is the queue's behaviour and not a grep over the
+// recipe's text.
+//
+// `$(GOBIN)` is substituted with a stub for arm 4's reason: the arm measures
+// the queue, and the run behind this argv costs ~400s (a median of 393.5s
+// over 327 wall readings, ranger-base-7zng1).
+func TestQAMakeTreepinsQueuesBehindAHeldSlot(t *testing.T) {
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("no bash")
+	}
+	makefile, err := os.ReadFile("Makefile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	recipe := makeRecipe(string(makefile), "treepins")
+	if len(recipe) != 1 {
+		t.Fatalf("`make treepins` must be the one unfiltered tree-pin run, got %d recipe line(s): %q\nwithout it nothing in the tree hands suite_lock_wanted an unfiltered ./internal/treepins (ranger-base-1a0hi)", len(recipe), recipe)
+	}
+	argv := strings.Fields(strings.TrimPrefix(strings.TrimSpace(recipe[0]), "@"))
+	if len(argv) == 0 {
+		t.Fatal("`treepins:` has an empty recipe line")
+	}
+	// The wrapper by NAME, because the queue is a shell function and these
+	// two files are the only callers that source it. A recipe that invokes
+	// `go` directly cannot reach the rule however it is spelled, and the
+	// held-slot drive below would read the same as this check — but it would
+	// read it as "printed no waiting line", which names the symptom and not
+	// the cause.
+	switch filepath.Base(argv[0]) {
+	case "test-times.sh", "gotest.sh":
+	default:
+		t.Fatalf("`make treepins` runs %q, which does not source %s — the suite queue is a shell function, and only scripts/test-times.sh and scripts/gotest.sh call it (ranger-base-1a0hi)", argv[0], suiteLockScript)
+	}
+
+	dir := t.TempDir()
+	free := holdTheOnlySlot(t, dir)
+
+	ran := filepath.Join(dir, "it-ran")
+	stub := filepath.Join(dir, "faketest")
+	if err := WriteExecutable(stub, []byte("#!/usr/bin/env bash\ntouch "+ran+"\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	args := make([]string, 0, len(argv))
+	swapped := false
+	for _, a := range argv {
+		if a == "$(GOBIN)" {
+			a = stub
+			swapped = true
+		}
+		args = append(args, a)
+	}
+	if !swapped {
+		t.Fatalf("`make treepins` names no $(GOBIN) to stub: %q — this arm would run the real ~400s suite", recipe[0])
+	}
+
+	cmd := exec.Command("bash", args...)
+	cmd.Env = queueEnv(dir)
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = cmd.Process.Kill() }()
+
+	awaitWaitingLine(t, "`make treepins`", stderr)
+
+	if _, err := os.Stat(ran); err == nil {
+		t.Fatal("`make treepins` ran the command while the only slot was held")
+	}
+
+	// The control, as in arms 4 and 5: "it did not run" is equally green
+	// over a recipe that never runs anything.
+	free()
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("`make treepins` failed after the slot was freed: %v", err)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("`make treepins` never started after the slot was freed — the queue does not drain")
+	}
+	if _, err := os.Stat(ran); err != nil {
+		t.Errorf("the slot was freed and the command still never ran: %v", err)
 	}
 }

@@ -65,6 +65,7 @@ shared-working-tree history is cited in the table below as private records.
 | `make test-arm2` / `make test-arm3` | Type-check the partition and run the corresponding tagged `internal/posse` tests. |
 | `make tree-check` | Run formatting and the tree-wide QA checks; use it after a focused test run. |
 | `go test -timeout 25m -run '<name>' ./internal/treepins` | Run selected tests whose subject is the repository tree. |
+| `make treepins` | Run every tree-wide pin unfiltered, with a suite-lock slot and a 25m timeout; type it when you add one. |
 | `make verify-box` | Check the local installation; this is distinct from hermetic fixture tests. |
 
 A bare `go test ./...` compiles only the default arm of `internal/posse`.
@@ -72,11 +73,14 @@ It omits the other two build-tag partitions, the suite wrapper and its
 box-wide queue, and the Makefile's additional checks. For a focused test in
 another arm, pass `-tags posse_arm2` or `-tags posse_arm3` explicitly.
 
-Run the tree pins with a `-run` filter, as the table does. An unfiltered
-`go test ./internal/treepins` type-checks and vets all three arms and costs
-what a full suite arm costs, so it takes a suite-lock slot
-([ranger-base-7zng1](docs/notes.d/ranger-base-7zng1.md)); a filtered run of
-the same package takes none.
+Run the tree pins with a `-run` filter, as the table does. An unfiltered run
+of that package type-checks and vets all three arms and costs what a full
+suite arm costs, so run it as `make treepins`, which goes through the suite
+wrapper and takes a suite-lock slot
+([ranger-base-7zng1](docs/notes.d/ranger-base-7zng1.md)). A bare `go test
+./internal/treepins` reaches no wrapper and therefore no slot, exactly as a
+bare `go test ./...` reaches none; a filtered run of the package takes none
+either way.
 [Testing history](docs/notes.d/notes-testing.md) records why these entry points exist.
 The [Makefile](Makefile) is the executable source of their current recipes.
 

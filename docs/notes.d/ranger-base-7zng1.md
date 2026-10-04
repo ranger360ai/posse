@@ -112,3 +112,97 @@ would have been filing the next flake rather than fixing this one.
 The pair are not a budget in the other direction either: the tests end on
 their own evidence (a tap line, a pass count, a released park), never on the
 timer, so a slower box spends no extra wall clock for the wider ceiling.
+
+## Reach: the rule queued nothing, and what it took to fix (ranger-base-1a0hi)
+
+2026-10-04, found by the verify lane under ranger-base-l3035 and ruled here.
+The rule above is right and its pin is honest; the gap was that nothing in the
+tree could ASK it, while AGENTS.md and NOTES.md both said a bare
+`go test ./internal/treepins` took a slot.
+
+`suite_lock_wanted` is a shell function inside `scripts/suite-lock.sh`, which
+is sourced by exactly two callers — `scripts/gotest.sh` and
+`scripts/test-times.sh` — and reached from `make`. There is no `go` shim:
+`which -a go` answers `/opt/homebrew/bin/go` and nothing else, and the gates
+bin holds five shims (bd, git, killall, pkill, posse, security) and no `go`.
+And no target routed this package through a caller: at the parent HEAD the
+only treepins lines in the Makefile were the arm-tags door in `test`,
+`test-arm2` and `test-arm3`, all three filtered, and a filtered run returns
+from `suite_lock_wanted`'s first loop before the rule.
+
+### The callers, measured
+
+| reading | value | environment |
+| --- | --- | --- |
+| unfiltered `go test ./internal/treepins` segments, bare `go` | **122**, from **48 sessions** (09-10=1, 09-11=28, 09-20=6, 09-28=23, 09-29=7, 10-03=43, 10-04=14) | 2026-10-04, 1,125 transcripts under `~/.claude/projects` |
+| `go vet ./internal/treepins`, unfiltered, bare `go` | **65** | same corpus |
+| the same, through `make`, `scripts/gotest.sh` or `scripts/test-times.sh` | **0** | same corpus |
+
+So the exposure the rule was written for was 100% the one spelling the rule
+cannot see. (The filing read this as 203 of 206 with a wider verb set and a
+different prose filter; the headline — no run reaches a wrapper — is the same
+on both readings.)
+
+The by-door census is `scripts/suite-entry-census.py`'s reader with one
+predicate changed, because a NAMED package is not a `./...` tree and
+`is_full_suite()` is blind to exactly the run this counts. Re-run it; the
+corpus grows:
+
+```python
+import collections, glob, importlib.util, json, os, re
+spec = importlib.util.spec_from_file_location("sec", "scripts/suite-entry-census.py")
+sec = importlib.util.module_from_spec(spec); spec.loader.exec_module(sec)
+PKG = re.compile(r"(?:^|\s)[\w./@-]*internal/treepins/?(?:\s|$)")
+rows = []
+for path in glob.glob(os.path.expanduser("~/.claude/projects/*/*.jsonl")):
+    for line in open(path, encoding="utf-8", errors="replace"):
+        if "internal/treepins" not in line:
+            continue
+        try:
+            rec = json.loads(line)
+        except Exception:
+            continue
+        for blk in (rec.get("message") or {}).get("content") or []:
+            if not isinstance(blk, dict) or blk.get("type") != "tool_use" or blk.get("name") != "Bash":
+                continue
+            for s in sec.segments((blk.get("input") or {}).get("command") or ""):
+                # the HEAD WORD decides the door, so a bd body quoting a
+                # command is not a run — the trap that made the pattern-kill
+                # census read text as kills (ranger-base-zbg8o).
+                if not PKG.search(s) or sec.FILTER.search(s):
+                    continue
+                head = s.split()[0].rsplit("/", 1)[-1]
+                rows.append((head, s.split()[1:2], path))
+print(collections.Counter((h, tuple(v)) for h, v, _ in rows))
+```
+
+It is conservative in the bare direction: a run whose segment begins with an
+inline `PATH=$(...)` rather than a command falls out of the count, and one
+such `go test ./internal/treepins/` is in the corpus.
+
+### Ruled
+
+**A route, and the honest sentence — both, because neither is complete
+alone.** `make treepins` is the route: `scripts/test-times.sh $(GOBIN) test
+./internal/treepins -timeout 25m -count=1`, which hands the rule the argv it
+names. PROVED BY EXECUTION 2026-10-04 (one slot, already held, a stub `go` so
+no suite ran): `make treepins` printed `suite-lock: waiting for suite lock
+held by another worktree`, then `slot 1 of 1 acquired after 25s`. Not a
+prerequisite of anything — `make test` reaches the package through `./...`
+already, and a ~400s door belongs where a person is waiting for its answer,
+which is `test-race`'s reasoning.
+
+**And the documents say what is true.** AGENTS.md and NOTES.md name
+`make treepins` as the spelling that queues, and say that a bare
+`go test ./internal/treepins` escapes the lock exactly as a bare
+`go test ./...` does. That is the same sentence the `./...` paragraph three
+below has carried since ranger-base-uvzjk, and before this the one bullet
+carried both claims about one lock: a seat reading the new one would not
+route the run and would believe it was queued, which is the false comfort
+ranger-base-7zng1 was filed against.
+
+**Not withdrawn, and not widened.** The `-run` exemption is untouched, so
+`make tree-check` and every focused pin run are as unqueued as they were. The
+sibling candidate — a bare `go test ./internal/posse`, arm 1 of a ~950s
+package — is still deliberately left alone for the reason the section above
+gives.
