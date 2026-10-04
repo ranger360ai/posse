@@ -44,8 +44,6 @@ package posse
 // `bd blocked` when that list is non-empty — 0.13-0.17s each against the
 // 1551-bead queue db, the grain `Bd.Ready` already pays twice.
 
-import "time"
-
 // interruptedRuns is the claimed half of the queue: the in_progress beads of
 // every scanned repo that no live AGENT is working, deduped against the
 // ready half the caller already read.
@@ -95,9 +93,12 @@ import "time"
 //     `bd blocked` lists in_progress rows — the live queue has one as this
 //     was written). Dispatch does not hand a persona blocked work; mz8ud's
 //     own dep closed at 15:0x, and from that moment this scan offers it.
-//   - DEFERRED past now: a defer is an answer somebody already gave, and
-//     the date is the answer (ranger-base-5aln). `bd ready` excludes
-//     deferred rows and so does this.
+//   - PARKED right now: a defer is an answer somebody already gave — the
+//     answer is a date, or "not now" (ranger-base-5aln, ranger-base-nkjjg).
+//     `bd ready` excludes a parked row and so does this, through the one
+//     reader of which signal to believe (deferredNow, beads.go: the date
+//     when there is one, else the status, because one store class writes no
+//     date and the other does not always move the status).
 //   - a claim whose assignee is not a lane of ONE at its own holder — no
 //     assignee, an assignee that loads no PID, or the coordinator (ADR 0033
 //     §2). laneFor is asked rather than CanonAgent so the rule is routing's
@@ -201,11 +202,4 @@ func (d *Dispatcher) interruptedRun(is RepoIssue, persona string) bool {
 		return true // the flag's own population
 	}
 	return false
-}
-
-// deferredNow reads DeferUntil and never the status string, on
-// ranger-base-5aln's measurement: on bd 0.50.3 a deferred bead reads back
-// with a date and whatever status it had.
-func deferredNow(is BdIssue, now time.Time) bool {
-	return is.DeferUntil != nil && is.DeferUntil.After(now)
 }

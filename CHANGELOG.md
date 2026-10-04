@@ -11,7 +11,22 @@ being cut is a precondition of the tag; see `docs/runbooks/release.md`.
 
 ## Unreleased
 
-(nothing yet — this section fills as commits land after v0.5.0)
+**A question bead deferred on a `no-db: true` beads store stops paging the
+coordinator.** Governance row G3 — and the `question:<id>` pulse key and the
+cockpit panel derived from it — treated a defer as an answer only when it
+could read a `defer_until` date. MEASURED on bd 0.50.3, a JSONL-only store
+accepts `bd defer <id> --until <date>`, reports success, sets the status to
+`deferred` and writes **no date anywhere**: not the JSONL record, not `bd
+list --json`, not `bd show --json`. So every question the operator parked in
+such a store kept being reported as unanswered, every tick, forever. The rule
+is now the date when there is one and otherwise the status, which is the only
+signal each store class offers; a dateless `deferred` is an indefinite park
+("not now"), and a date in the past still means the park expired and nobody
+revisited it. `docs/notes.d/ranger-base-nkjjg.md` has the measurement.
+
+If you relied on a dateless `bd defer` leaving a question bead on the
+governance surface, it no longer does — reopen it with `bd update <id>
+--status open` instead.
 
 ## v0.5.0
 

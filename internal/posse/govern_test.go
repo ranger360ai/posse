@@ -362,12 +362,19 @@ func TestGovG3NonOpenBlockedBeadDoesNotPromote(t *testing.T) {
 	}
 }
 
-// deferStatuses are the two status strings a deferred bead is seen with.
-// "open" is the live one — `bd defer` writes defer_until and leaves status
-// alone, so on 0.50.3 every deferred question bead in the real store reads
-// back "open" (ranger-base-03ada). "deferred" is kept beside it so the
-// guard is pinned status-blind in both directions.
+// deferStatuses are the two status strings a dated defer is seen with.
+// "open" is one of them — `bd defer --until` does not always move the
+// status, so a deferred question bead can read back "open" with a date
+// (ranger-base-03ada). "deferred" is kept beside it so the dated arms are
+// pinned status-blind in both directions: ONCE THERE IS A DATE, THE DATE
+// DECIDES (deferredNow).
 var deferStatuses = []string{"open", "deferred"}
+
+// notParkedStatuses are the statuses that are not themselves a park, so a
+// bead carrying one and no date at all is silence rather than an answer.
+// Deliberately omits "deferred", which IS the park when no date survived —
+// its own arm is below (ranger-base-nkjjg).
+var notParkedStatuses = []string{"open", "in_progress", "blocked"}
 
 // A defer with a future date is an answer — the answer is a date
 // (ranger-base-5aln). `bd list` still returns a deferred bead (unlike `bd
@@ -409,12 +416,12 @@ func TestGovG3DeferredUntilPastStillNags(t *testing.T) {
 	}
 }
 
-// No date at all is silence, not a park: the aging question still nags
-// whatever its status. This is the arm that keeps the nil check honest —
-// without it, a guard that skipped every question bead would pass the two
-// above.
+// No date and a status that is not itself a park is silence: the aging
+// question still nags. This is the arm that keeps the guard honest — without
+// it, a reader that skipped every question bead would pass every other arm
+// here.
 func TestGovG3NoDeferUntilStillNags(t *testing.T) {
-	for _, status := range deferStatuses {
+	for _, status := range notParkedStatuses {
 		t.Run(status, func(t *testing.T) {
 			b, _ := newTestBackend(t)
 			dir := govRepo(t, b)
@@ -427,6 +434,76 @@ func TestGovG3NoDeferUntilStillNags(t *testing.T) {
 				t.Fatalf("G3 = %+v, want question:bd-q with no defer date at all", g)
 			}
 		})
+	}
+}
+
+// Status "deferred" with NO date is the park bd leaves on a `no-db: true`
+// JSONL store, and it is the shape this row was nagging through.
+//
+// MEASURED 2026-10-03, bd 0.50.3, on a hand-written no-db store and on the
+// shop's own ~/src/hcn: `bd defer <id> --until 2026-10-16`, `bd defer <id>
+// --until=tomorrow` and `bd update <id> --defer 2026-10-16` each print
+// success, set status "deferred", and write no defer_until anywhere — not
+// the JSONL record, not `bd list --json`, not `bd show --json`. So the date
+// the operator typed does not exist to be read, and a reader that demanded
+// one paged the coordinator about four questions she had already parked
+// (hcn-4, hcn-7, hcn-11, hcn-12 — ranger-base-nkjjg).
+//
+// Indefinite is still an answer: `bd defer <id>` with no --until is bd's own
+// status-based defer, documented as "deliberately set aside", and "not now"
+// is a decision somebody made.
+func TestGovG3StatusDeferredWithNoDateIsNotACondition(t *testing.T) {
+	b, _ := newTestBackend(t)
+	dir := govRepo(t, b)
+	writeJSON(t, dir, "fake-list-labeled.json", []map[string]any{
+		{"id": "bd-q", "status": "deferred", "title": "ask", "labels": []string{"question"},
+			"created_at": govNow.Add(-9 * time.Hour)},
+	})
+	if g := find(shopSet(t, govIn(t, b)), "G3"); g != nil {
+		t.Errorf("status deferred with no date is a park with no end date, not silence: %+v", *g)
+	}
+}
+
+// The reported symptom, end to end: the PULSE LINE. Four parked question
+// beads in one store — two dated, two carrying only status "deferred" —
+// beside one that nobody parked. The line the coordinator is paged with must
+// name the fifth and nothing else; the bead was filed because it read
+// `question:q-a; question:q-b; question:q-c; question:q-d` every tick with
+// all four already answered (ranger-base-nkjjg).
+//
+// GovLines over the same GovSet the pulse fingerprints (set.Keys(),
+// pulse.go) rather than a re-derivation, so this cannot pass while the
+// delivered line differs.
+func TestGovPulseLineOmitsParkedQuestions(t *testing.T) {
+	b, _ := newTestBackend(t)
+	dir := govRepo(t, b)
+	old := govNow.Add(-9 * time.Hour)
+	writeJSON(t, dir, "fake-list-labeled.json", []map[string]any{
+		// Parked with a date, status unmoved — the SQLite shape.
+		{"id": "q-a", "status": "open", "title": "ask a", "labels": []string{"question"},
+			"created_at": old, "defer_until": govNow.Add(6 * 24 * time.Hour)},
+		// Parked with a date and the status moved too.
+		{"id": "q-b", "status": "deferred", "title": "ask b", "labels": []string{"question"},
+			"created_at": old, "defer_until": govNow.Add(13 * 24 * time.Hour)},
+		// Parked, date discarded by the store — the no-db JSONL shape, and
+		// hcn-4/7/11/12's own.
+		{"id": "q-c", "status": "deferred", "title": "ask c", "labels": []string{"question"},
+			"created_at": old},
+		{"id": "q-d", "status": "deferred", "title": "ask d", "labels": []string{"question"},
+			"created_at": old},
+		// Nobody parked this one. It is the control: a guard that went
+		// quiet about every question would pass without it.
+		{"id": "q-e", "status": "open", "title": "ask e", "labels": []string{"question"},
+			"created_at": old},
+	})
+	line := GovLines(shopSet(t, govIn(t, b)))
+	if !strings.Contains(line, "question:q-e") {
+		t.Errorf("the one unparked question must still page: %q", line)
+	}
+	for _, id := range []string{"q-a", "q-b", "q-c", "q-d"} {
+		if strings.Contains(line, "question:"+id) {
+			t.Errorf("%s is parked and must not page: %q", id, line)
+		}
 	}
 }
 

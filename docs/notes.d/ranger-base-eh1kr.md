@@ -103,8 +103,9 @@ Not offered, and each for a reason:
   rows: the live queue had ranger-base-4mrmc in it as this was written,
   blocked on an open authorization question. mz8ud sat there until 15:0x and
   is offered from that moment;
-- deferred past now (`DeferUntil`, read as a date and never as a status —
-  ranger-base-5aln);
+- deferred past now (`deferredNow`: the date when there is one, else the
+  status — ranger-base-5aln, amended by ranger-base-nkjjg, which measured a
+  store class that discards the date `bd defer --until` is given);
 - a claim whose assignee is not a lane of ONE at its own holder: no
   assignee, an assignee that loads no PID, or the coordinator (ADR 0033 §2).
   `laneFor` is asked rather than `CanonAgent` so the rule is routing's own.

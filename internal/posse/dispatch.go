@@ -2907,8 +2907,18 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 		// is not this persona's business either: under --persona, only a
 		// question addressed to that persona is worth a line, and the line
 		// costs no attempt in any case (rangerhq-1r2).
+		//
+		// A PARKED question is not waiting on anybody, so it gets no line:
+		// the operator already answered it with a date or with "not now"
+		// (deferredNow, beads.go), and this line's whole job is to name what
+		// is waiting on them. `bd ready` excludes a parked bead on both
+		// store classes — MEASURED 2026-10-03, bd 0.50.3 — so the queue
+		// should not hand one over; that exclusion is bd's promise and not
+		// this loop's, which is the same reason OpenLabeledAny filters
+		// closed rows itself, and the shape ranger-base-nkjjg was filed on
+		// is a store class that silently drops the date bd was given.
 		if hasLabel(is.Labels, "question") {
-			if personaFilter == "" || is.Assignee == personaFilter {
+			if (personaFilter == "" || is.Assignee == personaFilter) && !deferredNow(is.BdIssue, d.now()) {
 				d.skipf(skipQuestion, "– %-14s for the operator (question) — not dispatched\n", is.ID)
 			}
 			continue

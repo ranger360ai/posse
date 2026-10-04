@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 )
 
 // ADR 0005 §1: skeleton + Context (only non-empty lines) + ladder + Done +
@@ -128,6 +129,59 @@ func TestPromptContext(t *testing.T) {
 	ctx = b.App.promptContext(bd, is, "claude", "strong", "", nil)
 	if ctx.HasComments || len(ctx.From)+len(ctx.Unblockers) != 0 || len(ctx.Designs) != 1 {
 		t.Errorf("degraded bd: %+v", ctx)
+	}
+}
+
+// A PARKED question bead gets no routing line. The line's job is to name
+// what is waiting on the operator, and a parked question is one they already
+// answered — with a date, or with "not now" (deferredNow, beads.go). The
+// bead was filed on a pass that printed one of these per parked question per
+// tick, four of them, beside the same four in the pulse (ranger-base-nkjjg).
+//
+// This arm is a GUARD rather than a reproduction, and the difference is
+// worth naming: MEASURED 2026-10-03 on bd 0.50.3, `bd ready` excludes a
+// parked row on both store classes — a hand-written `no-db: true` JSONL
+// store with one deferred and one open row answers with the open one, and
+// `bd blocked` lists the deferred one besides — so real bd should not hand
+// this loop a parked bead at all. The fake serves fake-ready.json whole,
+// which is how the fixture can. Keeping the check here is the same judgment
+// OpenLabeledAny makes about closed rows: what this surface promises is this
+// surface's to enforce, not bd's.
+func TestDispatchQuestionSkipLineOmitsParkedBeads(t *testing.T) {
+	t.Parallel()
+	b, fake := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+	now := time.Date(2026, 10, 3, 15, 0, 0, 0, time.UTC)
+	d.Now = func() time.Time { return now }
+	writePersona(t, b.App, "ranger", "[go]")
+	qaRepo(t, b.App,
+		`[{"id":"q-dated","title":"parked to a date","labels":["question"],"defer_until":"2026-10-09T00:00:00Z"},`+
+			`{"id":"q-status","title":"parked, date dropped by the store","status":"deferred","labels":["question"]},`+
+			`{"id":"q-live","title":"nobody parked this","labels":["question"]},`+
+			`{"id":"q-expired","title":"the park ran out","labels":["question"],"defer_until":"2026-10-01T00:00:00Z"},`+
+			`{"id":"a-1","title":"work","labels":["go"]}]`,
+		`[{"id":"a-1","status":"closed"}]`)
+	agentPerLaunch(t, fake)
+
+	if _, err := d.Run("", "", 0); err != nil {
+		t.Fatal(err)
+	}
+	out := dispatcherOut(d)
+	// The control, in both directions: an unparked question still asks, and
+	// so does one whose park has expired with nobody revisiting it.
+	for _, id := range []string{"q-live", "q-expired"} {
+		if !strings.Contains(out, id+" ") || !strings.Contains(out, "for the operator (question)") {
+			t.Errorf("%s is unanswered and must still be reported:\n%s", id, out)
+		}
+	}
+	for _, id := range []string{"q-dated", "q-status"} {
+		if strings.Contains(out, id) {
+			t.Errorf("%s is parked and must cost no line:\n%s", id, out)
+		}
+	}
+	// Parked or not, a question is never claimed.
+	if c := bdCalls(t, fake); strings.Contains(c, "update q-") {
+		t.Errorf("no question bead may be claimed:\n%s", c)
 	}
 }
 

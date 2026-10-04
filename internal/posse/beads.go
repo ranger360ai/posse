@@ -388,11 +388,51 @@ type BdIssue struct {
 	// (ranger-base-5aln): a defer with a future date is an answer someone
 	// already gave — the answer is a date — not silence.
 	//
-	// It is orthogonal to Status, which `bd defer` does not touch
-	// (ranger-base-03ada): on 0.50.3 a deferred bead reads back status
-	// "open" with a date, and a status "deferred" bead can carry no date
-	// at all. Read this field alone; never gate it on the status string.
+	// It is orthogonal to Status, which `bd defer --until` does not always
+	// touch (ranger-base-03ada): on 0.50.3 a deferred bead can read back
+	// status "open" with a date, and a status "deferred" bead can carry no
+	// date at all. NIL IS NOT "NOT DEFERRED" — ask deferredNow, which reads
+	// this field and the status together and says why.
 	DeferUntil *time.Time `json:"defer_until"`
+}
+
+// deferredNow is the one reader of "this bead is parked right now", for every
+// surface that treats a defer as an answer: governance G3's unanswered-question
+// row and the pulse key derived from it (govern.go), and the claimed half of
+// the dispatch queue (interrupted.go).
+//
+// THE DATE DECIDES WHEN THERE IS ONE; OTHERWISE THE STATUS DOES. Both halves
+// are measurements, not a preference, and each is the only signal its store
+// class offers:
+//
+//   - A DATE, whatever the status. `bd defer --until` writes defer_until and
+//     does not reliably move the status (ranger-base-03ada: a deferred bead
+//     reading back status "open" with a date), so a reader that gated the date
+//     on a status string would miss the park. A date in the PAST is the park
+//     expired with nobody revisiting it — unanswered again, and still the
+//     status's answer is not consulted, which is why this returns on the date
+//     alone once it is present.
+//   - NO DATE, status "deferred". MEASURED 2026-10-03, bd 0.50.3, on a
+//     `no-db: true` JSONL store (hand-written scratch store, and the shop's
+//     own ~/src/hcn): `bd defer <id> --until 2026-10-16`, `bd defer <id>
+//     --until=tomorrow` and `bd update <id> --defer 2026-10-16` all print
+//     success, set status "deferred", and write NO defer_until — not into
+//     .beads/issues.jsonl, not into `bd list --json`, not into `bd show
+//     --json`, and `bd show`'s human frame prints ❄ DEFERRED with no date
+//     line. The date the operator typed is discarded by that store class, so
+//     there is no date to read and the status is the whole signal. This is
+//     what kept hcn-4/7/11/12 paging the coordinator every tick after the
+//     operator had parked all four (ranger-base-nkjjg).
+//
+// So nil-and-"deferred" is a park with no end date — `bd defer <id>` with no
+// --until is bd's own status-based defer, and an indefinite park is still an
+// answer ("not now"). Nil-and-anything-else is silence, which is what the
+// aging-question row exists to report.
+func deferredNow(is BdIssue, now time.Time) bool {
+	if is.DeferUntil != nil {
+		return is.DeferUntil.After(now)
+	}
+	return is.Status == "deferred"
 }
 
 // ─── the work class (ADR 0006 §1, amended 2026-09-02) ────────────────────────

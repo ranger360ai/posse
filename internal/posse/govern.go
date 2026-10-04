@@ -761,20 +761,20 @@ func (in GovInputs) beadConditions(now time.Time, sessions []HerdrSession, add f
 			if is.Created.IsZero() || now.Sub(is.Created) < maxAge {
 				continue
 			}
-			// A defer with a future date is an answer — the answer is a
-			// date (ranger-base-5aln). `bd list` still returns a deferred
-			// bead (unlike `bd ready`), so this reader has to make the
-			// same call bd's own queue already made. Once the date is
-			// past, the park has expired and nobody revisited it: that is
-			// unanswered again.
+			// A defer is an answer — the answer is a date, or "not now"
+			// (ranger-base-5aln). `bd list` still returns a parked bead
+			// (unlike `bd ready`), so this reader has to make the same
+			// call bd's own queue already made. Once the date is past, the
+			// park has expired and nobody revisited it: that is unanswered
+			// again, and it is the row below that says so.
 			//
-			// The date alone decides, whatever the status says
-			// (ranger-base-03ada). `bd defer` writes defer_until and
-			// leaves status alone: measured on 0.50.3, every deferred
-			// question bead in this store is status "open", and the one
-			// bead that is status "deferred" carries a null date. bd's own
-			// queue keys `bd ready` on the date, so this reader does too.
-			if is.DeferUntil != nil && is.DeferUntil.After(now) {
+			// deferredNow (beads.go) owns which signal to read, because
+			// the answer differs by store class and neither field alone is
+			// it: a date whatever the status, else status "deferred" — the
+			// no-db JSONL store discards the date the operator typed and
+			// leaves the status as the only evidence a park happened
+			// (ranger-base-nkjjg).
+			if deferredNow(is, now) {
 				continue
 			}
 			age := now.Sub(is.Created)
