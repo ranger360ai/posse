@@ -524,9 +524,10 @@ func TestGovG5InsideTheBudgetIsNotACondition(t *testing.T) {
 }
 
 // A blind window the box was ASLEEP for is not a blind guard (ADR 0064
-// D1-D2). `plan_guard_blind_max` bounds how long the shop may HIRE without a
-// reading and a suspended box hires nothing, so the budget was always awake
-// time and only the reading was wall. This is the 2026-10-01 wake in
+// D1-D2). The row says this shop's monitoring has been down, and a box with
+// the lid shut is not a shop with broken monitoring, so the hours it counts
+// are awake hours. (The hiring GATE over the same budget keeps WALL age on
+// purpose — ADR 0065 — and is not under test here.) This is the 2026-10-01 wake in
 // miniature: 45m since the last snapshot, 40m of it a witnessed sleep, 5m of
 // awake blindness against a 10m budget.
 //

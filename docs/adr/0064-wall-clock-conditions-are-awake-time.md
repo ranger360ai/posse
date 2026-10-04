@@ -5,7 +5,10 @@ ranger-base-brt3x (from ranger-base-sqxo1) · sits under ADR 0029 (the
 condition view and its scopes) and ADR 0027 (delivery) · re-rules the
 "one interval wide and transient" clause of `WatchLogStaleAfter`'s doc
 (watchlog.go) · amends nothing in ADR 0063, which decided what a loop may
-DO; this page decides what the shop may SAY*
+DO; this page decides what the shop may SAY · amended 2026-10-03
+(ranger-base-cxcv1): the Context's justification for `guard-blind` argued
+from the hiring gate, which this page never ruled on; ADR 0065 rules the
+gate's clock WALL, and the row's reason is restated below as the row's own*
 
 ## Context
 
@@ -15,8 +18,14 @@ snapshot past `plan_guard_blind_max`). Both thresholds are derived from
 **awake** guarantees — `WatchLogStaleAfter` is the watchdog's budget, and the
 watchdog's clock is Go monotonic, which on darwin is `mach_absolute_time` and
 does not advance across a suspend (suspend.go's head, MEASURED 2026-10-03);
-`plan_guard_blind_max` bounds how long the shop may *hire* without a reading,
-and a suspended box hires nothing. The third age-based row, G4
+and `guard-blind` is G5's statement that THIS shop's monitoring has been
+down, which a box with the lid shut is not *(amended 2026-10-03,
+ranger-base-cxcv1: this sentence first read "`plan_guard_blind_max` bounds
+how long the shop may hire without a reading, and a suspended box hires
+nothing" — an argument about the hiring gate, which measures the age of
+evidence about an account other spenders move while the box sleeps, and is
+ruled WALL by ADR 0065; the row and the gate share the threshold and diverge
+across a sleep on purpose, see 0065 D3)*. The third age-based row, G4
 `guard-stuck`, is already awake-denominated by construction: its streak clock
 is an in-process `time.Time`, so `now.Sub(GuardTrippedSince)` is a monotonic
 difference. G5 and G7 compare an awake threshold to a wall reading; G4 does

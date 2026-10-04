@@ -6,7 +6,8 @@ not on main at this stamp — `git log --grep ranger-base-6xx37` on main is the
 record of whether it landed, this sentence is a dated snapshot (ADR 0038
 shape, ranger-base-w5xu7) · §5's table amended 2026-09-10
 (ranger-base-vq5zz): the last reading is asked before the blind grace, not
-after it · owner: architect.*
+after it · §5 amended 2026-10-03 (ranger-base-cxcv1): the blind limit is
+wall age of the evidence, ADR 0065 · owner: architect.*
 
 ## Context
 
@@ -69,6 +70,12 @@ is tolerance for a pass that knows nothing, and it has nothing to buy where
 a reading is in hand. Attended fail-open and `blind_max: 0` are deliberately
 NOT covered by that move: the first has a human witness (now told the stale
 number), the second is the operator's own written sentence.
+
+"Past `plan_guard_blind_max`" in the rows above is WALL age (ADR 0065,
+2026-10-03): the limit is the maximum age of evidence the guard will hire on
+without a fresh reading, and a witnessed suspend is not subtracted from it —
+unlike G5's `guard-blind` row, which measures this shop's awake blindness
+(ADR 0064) and may therefore stay silent over a pass these rows brake.
 
 Thresholds precede the braking-band test and use adapter window order.
 The reading is evidence about the past: never extrapolate it, age it into

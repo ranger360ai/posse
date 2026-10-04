@@ -993,12 +993,21 @@ func guardBlindRow(blindFor time.Duration, err error) (key, detail string) {
 // time a reading succeeds. `plan_guard_blind_max: 0` is the documented
 // escape hatch (never fail on blindness) and disarms this row with it.
 //
-// The subtraction is ADR 0064 D1-D2: `plan_guard_blind_max` bounds how long
-// the shop may HIRE without a reading, and a suspended box hires nothing, so
-// the budget was always awake-denominated and only the reading was not. The
-// 2026-10-01 wake read 5h30m blind one second after the box came back and
-// delivered `guard-blind:5h` URGENT; the awake reading was one second. A
-// process with no witness subtracts zero and keeps the wall reading (D4).
+// The subtraction is ADR 0064 D1-D2: this row says THIS shop's monitoring
+// has been down for N hours, and a box with the lid shut is not a shop with
+// broken monitoring, so the hours it counts are awake hours. The 2026-10-01
+// wake read 5h30m blind one second after the box came back and delivered
+// `guard-blind:5h` URGENT; the awake reading was one second. A process with
+// no witness subtracts zero and keeps the wall reading (D4).
+//
+// The hiring GATE over the same timestamp and the same budget
+// (dispatch.go blindGuard) subtracts nothing, on purpose (ADR 0065): its
+// budget is the maximum age of evidence it will hire on, and the evidence is
+// a reading of an account other spenders move while this box sleeps. So
+// across a sleep the two diverge for the sleep's length — the gate may brake
+// a pass this row is silent about — and that silence is ruled, not missed
+// (0065 D4): the key that used to arrive beside such a pass is the false
+// positive above.
 //
 // The discount is returned rather than folded in because a row that still
 // fires has to NAME it — the awake age alone cannot be reconciled with the
