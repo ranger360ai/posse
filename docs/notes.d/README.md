@@ -15,6 +15,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-elf2v](ranger-base-elf2v.md) — Which `projects[]` key does claude read? (ranger-base-elf2v) — 2026-10-03
 - [ranger-base-eh1kr](ranger-base-eh1kr.md) — `bd ready` excludes `in_progress`, so dispatch could not see an interrupted run (ranger-base-eh1kr) — 2026-10-03
 - [ranger-base-d88rp](ranger-base-d88rp.md) — ranger-base-d88rp — the trust key is NFC, and posse's was not — 2026-10-03
+- [ranger-base-bknod](ranger-base-bknod.md) — ranger-base-bknod — the fake bd's `ready` serves open rows, and nothing else — 2026-10-03
 - [ranger-base-b96nx](ranger-base-b96nx.md) — The ordered matrix cannot see a shadowed rule, so five of the override's stated properties were unasserted (ranger-base-b96nx) — 2026-10-03
 - [ranger-base-99gww](ranger-base-99gww.md) — A path-keyed config lookup compared spellings, and one repo had two (ranger-base-99gww) — 2026-10-03
 - [ranger-base-7h8k4](ranger-base-7h8k4.md) — A generated file is reproduced at landing, never replayed (ranger-base-7h8k4) — 2026-10-03
