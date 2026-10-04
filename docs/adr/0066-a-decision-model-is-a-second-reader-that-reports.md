@@ -1,6 +1,6 @@
 # ADR 0066 — A typed-decision model, if posse ever carries one, is a second reader that reports and never acts; the readings log comes first
 
-*Status: accepted 2026-10-04 — operator ruling A on ranger-base-our1e's recommendations: D1 the readings log (code bead filed), D2 report-only, D3 first seams gated on the corpus (spike bead filed, any model call is an operator spend ruling) · owner: architect · source
+*Status: accepted 2026-10-04 — operator ruling A on ranger-base-our1e's recommendations: D1 the readings log (code bead filed), D2 report-only, D3 first seams gated on the corpus (spike bead filed, any model call is an operator spend ruling) · D3 defined, measured offline and amended 2026-10-04 (ranger-base-qk9tr: the input clause reversed, a heading reader recommended as the report, the model parked) · owner: architect · source
 bead ranger-base-our1e (spike, recommendation only) · sits under ADR 0057
 (no guard branches on a display reading), ADR 0060 D2 (detection is herdr's
 to ship), ADR 0061 D3 (a label is identity, not liveness) and ADR 0063 D1
@@ -61,6 +61,29 @@ over the known interstitials plus **none of these**, with confidence, over
 the regions herdr already extracted (never the whole screen). The composer
 hold follows only as a tie-breaker that can move a hold toward *waiting*,
 never toward *clear* — the ghost reading's existing posture.
+
+*Amended 2026-10-04 (ranger-base-qk9tr, spike, offline, no model call;
+measurement in `docs/notes.d/ranger-base-qk9tr.md`).* **The question is
+defined**: a `choice` over the eight known screens posse owns a capture of,
+plus *none of these* (`scripts/d3-reader-eval.py --question`). **The clause
+"over the regions herdr already extracted" is reversed by measurement**:
+`agent explain` emits a 243-character PREVIEW of each region, that preview is
+all a D3 record holds, and for 9 of the 15 labelled screens the heading is
+outside it — a reader of any kind fed that record reads logo art. Over the
+full capture a deterministic heading reader (the screens' own words, ~70 µs,
+no spend, no egress) names 11 of 11 residue cases on the three measured
+incident classes (caret codepoint, footer reword, extra rows) with 0 false
+positives on the idle screens; over the previews, 5 of 11. So: **(a)** D1's
+D3 record carries a fixture-shaped pane capture (`PaneRead`, the source the
+fixtures were captured from, ceiling-redacted) — the architect's own D1
+amendment, code bead ranger-base-76gc4; **(b)** the recommended D3 report is
+that heading reader, SET-valued because 3 of 15 screens show two true screens
+and a `choice` returns one — the operator's ruling, ranger-base-gy3io, with
+ranger-base-6uokf filed behind it; **(c)** a model on D3 is not recommended
+now: its only territory is a reworded heading, a class with zero incidents
+in the record. The question and a `--corpus` scorer are committed so a D4
+ruling can run it unchanged. The real corpus is empty today — the fleet
+binary predates the log — and the composer-hold seam is untouched.
 
 **D4 — Local first; hosted only under two operator rulings.** The reader
 runs against a box-local System One server (Kev) with no credential, spend
@@ -133,8 +156,14 @@ once a client exists); a pulse pre-filter; anything numeric.
 
 ## Verification (the closer's observables, when the operator rules)
 
-- `grep -m1 '^\*Status' docs/adr/0066-*.md` reads `proposed` until ruled.
+- `grep -m1 '^\*Status' docs/adr/0066-*.md` reads `accepted` (it read
+  `proposed` until the 2026-10-04 ruling).
 - A D1 bead exists with the census script named; a D3 bead, if any, names
-  the config key and the "empty is off" default.
+  the config key and the "empty is off" default — or, under the D3
+  amendment, names no key at all, because the recommended reader is
+  in-process.
+- `python3 scripts/d3-reader-eval.py` prints `kw full on residue` equal to
+  its denominator on the `caret`, `footer` and `depth` rows and `0` under
+  `kw prev FP` (MEASURED 2026-10-04: 2/2, 2/2, 7/7, 0).
 - No PID carries a TypeSafe or OpenRouter credential line before the §7
   rulings are recorded on a bead.
