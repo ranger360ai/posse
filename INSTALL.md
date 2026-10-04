@@ -39,7 +39,7 @@ Install these first. Versions matter; two of them are pinned on purpose.
 | **herdr** | ≥ 0.8 | the presentation layer; posse talks to its CLI/socket | typed below |
 | **bd** (beads) | **0.50.3 exactly** | v0.51.0 replaced the SQLite backend with embedded Dolt and does not read `.beads/beads.db` at all — anything ≥ 0.51 silently forks your queue. See NOTES.md, *beads (bd) substrate*. | typed below |
 | **git** | any current | bd stores the queue in a git repo | — |
-| an **agent CLI** | at least one | the labor. `claude`, `codex`, or `grok`. | vendor |
+| an **agent CLI** | at least one | the labor. `claude`, `codex`, `grok`, or `bob` — bob launches by hand today and dispatches only once step 8's detection authority is installed. | vendor |
 
 If you install `grok`, pin it: the fleet runs **1.0.5** and grok
 self-updates by default (`etc/grok/version-pin.toml`, `make
@@ -93,7 +93,10 @@ $ go version && herdr --version && bd version && git --version
 ```
 **Verify:** Go ≥ 1.26, herdr ≥ 0.8.0, `bd version 0.50.3`. If `bd version`
 says 1.2.x, stop and install 0.50.3 before going further — the rest of this
-runbook will appear to work and will not.
+runbook will appear to work and will not. herdr ≥ **0.9.0** if any runtime
+will declare `detection: reported` (bob through the herdr-bob watcher is the
+one that does, step 8): older herdr has no `pane report-agent`, and posse
+refuses that launch rather than guess.
 
 Order matters in that `PATH` line. If Homebrew ever installs `beads` — on its
 own or as a dependency of something else — `/opt/homebrew/bin` typically
@@ -129,7 +132,7 @@ $ brew tap ranger360ai/tap                       # clone the tap
 $ brew trust --formula ranger360ai/tap/posse     # read the next paragraph before running this
 $ brew install ranger360ai/tap/posse             # a release binary, no Go needed
 ```
-**Verify:** `posse version` prints `0.5.0+<sha>`, where the sha is the
+**Verify:** `posse version` prints `0.5.1+<sha>`, where the sha is the
 commit the release was cut from, and `which posse` answers
 `/opt/homebrew/bin/posse` (`/home/linuxbrew/.linuxbrew/bin/posse` on Linux).
 
@@ -238,7 +241,7 @@ So: **`brew update` and re-run first.** If you are on macOS 13 Ventura, 12
 Monterey or 11 Big Sur, that is the whole fix — nothing is wrong on your
 machine, v0.4.0 simply had no bottle that far down. If it persists you are
 below the floor: **macOS 10.15 Catalina**, Intel only, which no release of
-ours bottles and which Homebrew itself stops supporting from September 2026.
+ours bottles and which Homebrew itself stopped supporting in September 2026.
 Update the Command Line Tools (Software Update, or `sudo xcode-select
 --install`) and re-run, or take the checkout path, which does not go through
 brew at all.
@@ -259,7 +262,7 @@ $ brew --version                                 # 6.0.14 or newer is fine
 $ brew info ranger360ai/tap/posse | head -1
 ```
 
-The second line must name this page's version — `0.5.0`. If it reads
+The second line must name this page's version — `0.5.1`. If it reads
 `stable 64`, that is the scan, and it is the same string the 404 will carry.
 
 Releases cut after 2026-08-29 state the version in the formula, so brew has
@@ -301,7 +304,7 @@ never touches the live binary.
 ```sh
 $ ./bin/posse-go version
 ```
-**Verify:** `0.5.0+<sha>` (a `-dirty` suffix just means the tree has
+**Verify:** `0.5.1+<sha>` (a `-dirty` suffix just means the tree has
 uncommitted edits; on a fresh clone it will not).
 
 ---
@@ -364,11 +367,11 @@ shell profile, not just this shell.
 
 That build carries the seed tree (`examples/`) embedded, so `posse init`
 works with no repo beside it. `@latest` installs the newest release tag —
-currently `v0.5.0`, which trails `main`.
+currently `v0.5.1`, which trails `main`.
 
-**Verify:** `posse version` prints `0.5.0` — the tag, with no `+<sha>`,
+**Verify:** `posse version` prints `0.5.1` — the tag, with no `+<sha>`,
 which is how a release install reads. Installed off a later commit
-(`@main`, or once the tag moves) it prints `0.5.0+<sha>` instead, naming
+(`@main`, or once the tag moves) it prints `0.5.1+<sha>` instead, naming
 that commit out of the binary's own build info (ranger-base-bzu).
 
 It is not the promotion path a fleet should use: the tag lags, and the fleet
@@ -413,6 +416,14 @@ runs `verify-detection --check-install` without complaint — every fixture OK,
 and an `<agent> install: matches the checkout` line for each override. The
 fixtures are replayed against the manifests in the checkout, so that
 `install:` line is the part that speaks to what you just installed.
+
+`install-detection` covers codex and grok. **bob is detected by none of
+these manifests** — herdr has no `bob` kind — so a dispatched launch onto
+it refuses by name until the herdr-bob watcher labels its panes: `make
+verify-herdr-bob`, then `make install-herdr-bob` and `make
+install-herdr-bob-rules` (both write to the live herdr, both operator-gated),
+on herdr ≥ 0.9.0, followed by `detection: reported` in `runtimes/bob.yaml`
+(step 8). `posse runtime check bob` names the gap until then.
 
 Everything in this section is **machine-global** and shared by every
 instance on the machine: one binary, one plugin registration, one detection
@@ -578,7 +589,7 @@ beads:
 operator: <your-bd-actor-name>
 
 # Launch defaults for personas that name none.
-default_runtime: claude          # claude | codex | grok | runtimes/<name>.yaml
+default_runtime: claude          # claude | codex | grok | bob | runtimes/<name>.yaml
 default_tier: standard           # strong | standard | fast  (ADR 0003)
 ```
 
@@ -781,7 +792,7 @@ has no `## Work prompt` section. Fix findings before dispatching — a PID
 that fails the lint launches, it just does not do what you think it does.
 
 A persona whose `runtime:` names anything other than the built-ins
-(`claude`, `codex`, `grok`) fails this Verify with `unknown runtime` until
+(`claude`, `codex`, `grok`, `bob`) fails this Verify with `unknown runtime` until
 step 8 creates that profile — that is a forward reference, not a lie in
 this step. Leave `runtime:` unset (default `claude`) or pointed at a
 built-in until you get there.
@@ -888,9 +899,13 @@ step there is this line with a Verify under it.
 
 ## 8. A launch profile of your own
 
-The three built-in runtimes (`claude`, `codex`, `grok`) each carry a
-command template *and* a native realizer that turns a PID's `allow:`/`deny:`
-into that CLI's own flags. **Your instance can define its own**, which is
+The four built-in runtimes (`claude`, `codex`, `grok`, `bob`) each carry a
+command template, and the first three also carry a native realizer that
+turns a PID's `allow:`/`deny:` into that CLI's own flags (bob has none: its
+gates all go to the seatbelt wall, and herdr detects it only through the
+herdr-bob watcher — `make verify-herdr-bob`, `make install-herdr-bob`,
+`make install-herdr-bob-rules`, then `detection: reported` in
+`runtimes/bob.yaml`; CHANGELOG.md v0.5.1 and ADR 0060–0062 are the record). **Your instance can define its own**, which is
 how an engine that posse has never heard of gets used without touching
 harness source.
 
@@ -1033,10 +1048,12 @@ Four things about template profiles that will bite you if nobody says them:
    `<cli> --some-unattended-flag "$(cat {file})"` dies with
    `error: unexpected argument '---…'` before a session ever exists — and
    on grok so does the *separated* flag form, `--rules "$(cat {file})"`;
-   only `--rules="$(cat {file})"` binds. The three built-ins are the three
-   dialects that work: claude `--append-system-prompt "$(cat {file})"`,
+   only `--rules="$(cat {file})"` binds. Three of the four built-ins show
+   the three flag dialects that work:
+   claude `--append-system-prompt "$(cat {file})"`,
    codex `-c developer_instructions="$(cat {file})"`, grok
-   `--rules="$(cat {file})"`. **Probe your CLI before trusting it** — this
+   `--rules="$(cat {file})"` (bob takes no system flag at all — its PID goes
+   in as a persona-mode file, ADR 0062). **Probe your CLI before trusting it** — this
    costs no API turn, because the parser fails or the help prints first.
    Run it as a **pair**: your real flag, and a control flag you know is
    bogus.
@@ -1840,7 +1857,7 @@ a session, and it ran a `prepare-commit-msg` without the constitution-path arm
 for hours after that arm shipped.
 
 So `posse promote` and the `posse dispatch --watch` preamble each sweep every
-repo `beads_visibility:` names (step 5) and print the ones whose hooks are not
+repo `beads_visibility:` names (the key is documented in `examples/config.yaml`) and print the ones whose hooks are not
 that binary's render, naming the repo and the command that fixes it. They
 report only — re-render each one yourself with `posse gates install-hooks
 <repo>`. `make verify-hook-freshness` in a posse checkout asks the same
@@ -2172,7 +2189,8 @@ worktree keys on its MAIN repo** — so accepting the dialog once in
 `~/src/myrepo` covers every `git worktree` the fleet ever makes of it, while
 a key written for the worktree's own path grants nothing at all. Two shapes
 do not hop: a worktree of a **bare** repo keys on the bare repo dir, and a
-**submodule** keys on itself. `scripts/claude-trust-key.sh [DIR …]` asks the
+**submodule** keys on itself. The key is the NFC spelling of that path —
+claude normalizes it, and so does posse (ranger-base-d88rp). `scripts/claude-trust-key.sh [DIR …]` asks the
 CLI which key it wants, with no API turn and no login, and
 `docs/notes.d/ranger-base-elf2v.md` has the full table and the rule read off
 the shipped bundle.
@@ -2340,7 +2358,8 @@ is a route to you, not a second thing to watch.
 **Set `plan_guard_5h:` / `plan_guard_7d:` before you arm anything.** They
 are what keep an unattended loop off your plan's rate windows; under
 `--watch` the guard also fails *closed* after `plan_guard_blind_max:` (10m
-default) with no successful reading, so passes park rather than run blind.
+default, wall-clock: time the box spends asleep counts, ADR 0065) with no
+successful reading, so passes park rather than run blind.
 Arming without the guard is arming a token loop nobody is watching.
 
 With `budget_pass:`/`budget_day:` armed a blind pass runs under the ledger
@@ -2473,7 +2492,7 @@ one budget and the caps become conservative, not wrong.
 | `posse init` prints `(seed: <dir>/examples)` where you expected `(seed: embedded)` | a real seed tree — `config.yaml` with `agents/`, `recipes/` and `envs/` — sits one level above the binary and wins over the embed: right in a dev build, wrong anywhere else | move that directory aside and re-run `posse init`; it overwrites nothing, so the files the wrong seed missed fill in. Find the line that names what happened — not by position, `retireExamplePIDs` can print lines of its own first — and go by which sentence it is: `filled <n> missing seed file(s) and re-stamped ... (seeded)` means the manifest followed the fill-in and the home launches. `nothing missing: ... was already fully seeded ...` means the wrong seed had already written every filename the embed would have — this run changed nothing, and any file it wrote with the wrong content is still wrong; `copyIfMissing` never overwrites, so fix that file's content by hand (or delete it and re-run init to have the embed fill it in). If init **refused** instead — `refuses to write ...: it carries a promoted constitution` — this home is **promoted**, not seeded, and no seed may be laid over it: `posse promote` is the only thing that writes here (`ranger-base-39jnl`; before it, init copied the files, said nothing, and every *dispatched* launch refused from then on — `ranger-base-pith`). Any of the three sentences above can be followed by one more, and it is the one that decides whether the home launches: a line naming what `does not match its manifest` and ending `every dispatched launch will refuse until you run posse promote`. That is `VerifyPromoted`'s own verdict on the home this run left, printed on the way out (`ranger-base-pith`) — do not read its ABSENCE as anything, and do not read a promoted home off a silence: init names every case it leaves by name now (`ranger-base-8devq`, `ranger-base-b22vq`) |
 | `posse init` prints `ignored <dir>: not a seed tree` | a directory named `examples/` sits one level above the binary — `~/go/bin/posse` reads `~/go/examples`, and a project with its own `bin/` reads its own `examples/` — so init looked at it, found it was not a seed, and used the embed | nothing: the embed seeded the instance and it is whole. If that directory *was* meant to be the seed, give it a `config.yaml` and `agents/`, `recipes/`, `envs/` |
 | `posse` writes to the wrong place | `RHQ_HOME` not exported in this shell | export it; put it in your shell profile |
-| `posse list` shows `unknown` instead of an agent state | herdr did not detect the CLI | `make install-detection`; check the CLI is on PATH |
+| `posse list` shows `unknown` instead of an agent state | herdr did not detect the CLI | `make install-detection`; check the CLI is on PATH. For bob: `make install-herdr-bob install-herdr-bob-rules` on herdr ≥ 0.9.0, then `detection: reported` in `runtimes/bob.yaml` (`posse runtime check bob` names the gap) |
 | launch refuses with a `DEGRADED` list | the wall cannot realize a PID gate on this runtime × cage | `posse gates <persona>` and fix the cause; `--allow-degraded` only knowingly |
 | a persona with `skills:` refuses to launch | the runtime has no skill surface (template profile with neither `skills_flag:` nor `skills_cwd:`) | add whichever your CLI has, or drop the binding |
 | session sits forever on a permission dialog | template runtime whose `command:` names no unattended flag | add the CLI's own unattended flag to `command:` (step 8) |

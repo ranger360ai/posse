@@ -31,7 +31,7 @@
 default_dir: ~
 default_env: default        # envs/default.env for plain sessions with no --env-file; persona sessions get only their PID envs: (+ explicit env-files)
 default_emoji: ⚙️
-# default_runtime: claude   # launch profile for PIDs that name none (claude | codex | grok | runtimes/<name>.yaml)
+# default_runtime: claude   # launch profile for PIDs that name none (claude | codex | grok | bob | runtimes/<name>.yaml)
 # default_engine: docker    # container engine for cage: container (built-in docker; or cages/<name>.yaml)
 # cage_image: posse-cage:latest  # the image `posse cage build` writes and a caged launch runs
 

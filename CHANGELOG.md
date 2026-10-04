@@ -11,6 +11,51 @@ being cut is a precondition of the tag; see `docs/runbooks/release.md`.
 
 ## Unreleased
 
+(nothing yet — this section fills as commits land after v0.5.1)
+
+## v0.5.1
+
+*2026-10-04. A patch release three weeks after v0.5.0: 152 commits on `main`
+(cf85bc94), cut so that a release binary carries the Bob runtime.*
+
+**What this release is.** v0.5.0 was the harness that could run a crew
+unattended; v0.5.1 is the same harness with a fourth engine in it and a
+month of its own incidents paid for. IBM Bob (`bob`) joins claude, codex and
+grok as a built-in: a persona launches on it by hand today, and dispatches
+onto it on an instance that installs the herdr-bob watcher and says so in
+`runtimes/bob.yaml` (ADR 0060–0062). The rest is dispatch telling the truth
+more often. A slow first screen under load is no longer read as a lost
+prompt; a bead left claimed by a dead session is found and resumed instead
+of being invisible to every pass; a landing regenerates the notes index
+instead of conflicting on it; a parked question goes loud again after a
+fortnight; a laptop that slept is told apart from a loop that hung; and
+every line a launch says now lands in the watch log rather than on a stderr
+nobody holds. Nothing is removed from `config.yaml`, no promoted path
+changed shape, and the install is `make install` alone. Upgrade if you run
+Bob, run a crew on a machine that sleeps, or have ever found a finished
+branch on an open bead.
+
+### Upgrading
+
+**`make install`, and nothing else is required.** No config key is retired
+and nothing needs re-promoting. What changes on the first pass with the new
+binary:
+
+**The first pass reads the claimed half of the queue.** `bd ready` excludes
+`in_progress` rows — MEASURED 2026-10-03 on bd 0.50.3, both store classes —
+so until now a bead left claimed by a killed, reaped or crashed session was
+invisible to every pass: no relaunch, no "held by", no skip, not even under
+`--resume`. Dispatch now reads `bd list --status in_progress` beside the
+ready scan and offers each claim that has no live session under it back to
+its own holder, spelled exactly — never re-laned by label, never across a
+case fold. The consequence on your first pass is that every stale claim your
+queue has accumulated becomes a relaunch candidate at once. Run `bd list
+--status in_progress` before you arm `--watch`, and close or `bd update <id>
+--status open` whatever should not come back. Verified against real bd: the
+same fixture answers "no ready work" on the v0.5.0 binary and offers the
+claim on this one. `docs/notes.d/ranger-base-eh1kr.md` has the measurement
+and the accepted reach of `--resume`.
+
 **An indefinite park is loud again after a fortnight, instead of silent
 forever.** A question or risk bead parked with NO end date — `bd defer <id>`
 with no `--until`, and every park at all on a store class that discards the
@@ -44,6 +89,245 @@ revisited it. `docs/notes.d/ranger-base-nkjjg.md` has the measurement.
 If you relied on a dateless `bd defer` leaving a question bead on the
 governance surface, it no longer does — reopen it with `bd update <id>
 --status open` instead.
+
+**Two new runtime-yaml keys, `detection:` and `detection_why:`.** Both are
+instance facts and neither is set on any built-in: `detection: reported`
+says an authority on THIS box labels that runtime's panes through `herdr
+pane report-agent`, and the why names it. Present-but-wrong refuses the
+load, and `reported` with no why refuses naming both keys. The Bob section
+below is the only reason to write them today.
+
+### Bob, the fourth built-in runtime (ADR 0060, 0061, 0062)
+
+**What works.** `runtime: bob` on a PID, `default_runtime: bob`, or `posse
+new <session> --runtime bob --agent <persona>` launches `bob chat` in the
+session dir with `--auto-approve`, the license and folder-trust
+interstitials pre-answered, and the PID delivered as a **custom mode** posse
+renders into the session tree: `<session dir>/.bob/plugins/posse/
+custom_modes.yaml`, slug `posse-<persona>`, selected by `--mode`, kept out
+of git through `.git/info/exclude`. The launch reads Bob's footer before the
+first keystroke and refuses to type at a Bob that came up as `Agent Mode`
+instead of `<persona> Mode`. MEASURED on bob 2.0.5 (ranger-base-4mrmc,
+2026-10-03/04, one billed turn): the model answers **as the persona** — a
+call sign that existed only in the loaded PID came back in the reply, with
+the re-rendered file's call sign absent — and on a collision between the PID
+and the workspace's AGENTS.md Bob follows the PID on three of three
+decidable rules, the same `rules_precedence: pid` codex and grok measured.
+The persona mode is granted nine tool groups, not Bob's ten: `mode` is the
+`switch_mode` tool, and with it the model could replace the PID with Agent
+Mode's own role in one call (ranger-base-mkcsy).
+
+**What does not.** `hidden: true` on the mode hides nothing — MEASURED FALSE:
+the persona mode is the fourth Shift+Tab stop and 4/4 in `/mode`, and `Tab`
+prints the whole PID, deny list included. Bob takes no per-launch model, so
+tiers are UNMAPPED and the model is a setting on Bob's side; there is no
+cost adapter (Bob's unit is Bobcoins), so Bob sessions are UNCOUNTED and
+`uncounted_cap_bob:` is the only brake; there is no turn-outcome reader, so a
+refused turn and a settle look alike; `record: untrusted` until a dispatched
+Bob close exists; and no `{allow}`/`{deny}` realizer, so every PID gate goes
+to the seatbelt wall. `rules_precedence` on the built-in still prints
+UNMEASURED in this binary: the measurement above is in the record, and
+promoting it onto the declaration is ranger-base-uqyoz. A `posse new` whose
+session dir is your `$HOME` refuses to write the mode file, because
+`~/.bob/plugins/*/custom_modes.yaml` is Bob's global modes glob and a PID
+written there is loaded by every Bob session on the box (ranger-base-se81d,
+-ie68e).
+
+**Dispatch onto Bob needs an instance fact.** herdr ships no `bob` detection
+manifest, so a dispatched launch onto a runtime herdr cannot name — and a
+`posse relaunch` of one — now **refuses by name** instead of spending a
+worktree, a pane and a `startup_wait` on a session that would be
+`agent_not_found` forever and then having the next pass type the launch line
+into its live composer (ADR 0013 §1, ranger-base-d8riq, -enmu2). `posse new`
+still opens one, with a warning. The route around it is the herdr-bob plugin
+(MartinLoeper/herdr-bob), which labels Bob panes through `herdr pane
+report-agent` on herdr ≥ 0.9.0. On this instance it needed four darwin
+patches (`setsid`, `date -Is`, `stat -c`, bash 3.2's `declare -A` — the
+watcher had never once run here) and a rules file that reads Bob's real
+approval, sign-in and command dialogs rather than firing on its `/` picker:
+`make verify-herdr-bob` / `make install-herdr-bob` and `make
+verify-herdr-bob-rules` / `make install-herdr-bob-rules` are the proven
+copies, operator-gated, neither a prerequisite of `make test`. With the
+watcher running, a `bob chat` pane with nothing typed was labelled in 5s
+against a 45s `startup_wait` (MEASURED 2026-10-03, herdr 0.9.1). Then
+declare it:
+
+```yaml
+# $RHQ_HOME/runtimes/bob.yaml
+detection: reported
+detection_why: herdr-bob watcher, patched and started by make install-herdr-bob
+```
+
+A reported label is **identity** and herdr's `pane process-info` is the
+**liveness** (ADR 0061): the label outlives its process, so posse reads
+whether the pane's foreground is still the CLI before it trusts the label.
+Typed prompts reach such a pane by `pane send-text`, because herdr's `agent
+prompt` refuses an agent it did not detect itself (ranger-base-8eqaa).
+Upstream's own `bob` manifest remains the right fix; the filing is
+`etc/herdr/agent-detection/upstream-bob.md`, and a pin goes red the day
+herdr evaluates it.
+
+A caged seat on any other runtime can no longer read
+`~/.bob/settings/auth-secrets.json` (ranger-base-prjck) — the fourth
+credential-store deny beside claude's, codex's and grok's.
+
+### Dispatch fixes an operator feels
+
+**A stalled prompt is an unobserved turn, not an undelivered one.** herdr's
+`agent_prompt_stalled` is what an ACCEPTED submission returns when no working
+or blocked state is seen inside herdr's own five seconds; posse read it as
+"the prompt never arrived" in three places. Dispatch unclaimed the bead
+(MEASURED 2026-10-02 under loadavg 94: a seat whose first screen change took
+longer than 5s was unclaimed, then edited five files and committed — a
+finished branch on an OPEN bead); `posse kill --land` printed "landing prompt
+failed … relaunching anyway" and closed the workspace mid-landing-turn; and
+`posse runtime probe` recorded a working runtime as one whose prompt does
+not land. All three now take a second reading — `agent wait` on the
+runtime's own `startup_wait`, then the branch's own commits — and only "no
+turn and nothing committed" hands a claim back; when a pass does unclaim,
+the bead says so, naming the session and herdr's code (ranger-base-uauvn,
+-wjfnp, -3ys1f).
+
+**A landing reproduces the generated notes index instead of fighting over
+it.** `docs/notes.d/README.md` is generated, and in one day three landings
+put a fragment on main with no index line and five branches could not
+fast-forward because their index edit met main's. The landing now regenerates
+the index on the branch before each fast-forward and continues a replay
+stopped on nothing but that file; an index that cannot be reproduced is one
+refusal naming the command, with the generated file restored on EVERY
+refusal path so the next pass never reads the launcher's own leftover as the
+persona's uncommitted work (ranger-base-7h8k4, -jqe3b).
+
+**The lines a launch says reach the record.** The `--watch` loop has fd 0, 1
+AND 2 on `/dev/null` (MEASURED 2026-10-03) and writes its record by teeing
+its own streams into `dispatch-watch.log` — and every warning a launch, the
+herdr backend, or a process-level notice wrote to `os.Stderr` was discarded:
+the stale-wall re-stamp line, a world-readable credential store, five
+listing abstentions, a kill that could not note unlanded work. All of it now
+goes through the pass's stream, and the cockpit collects the same lines
+instead of drawing over its own frame (ranger-base-lcode, -ws20a, -wgzu7,
+-2vhqo).
+
+**A machine that sleeps is told apart from a loop that hung.** On
+2026-10-01 a box that slept 5h30m woke to `pulse: guard-blind:5h; loop-mute`
+one second later — both keys literally true, neither the cause, a P1 filed
+as a six-hour hang. The watch process now witnesses a suspend, names it as
+one, keeps a ledger of slept spans, and the wall-clock shop conditions
+subtract it (ADR 0064); the hiring gate's `plan_guard_blind_max:` does NOT
+subtract it, because the evidence it ages is a reading of an account that
+kept moving while the box slept (ADR 0065); and a stop requested during a
+pass's epilogue is honoured between its stages and before the queue read,
+where it can still stop a hire (ranger-base-sqxo1, -szzoj, -m154u).
+
+**Smaller, each one a line you will stop seeing or start seeing:** the
+per-pass "settled holder, skipping" line is gone — the governance surface's
+G2 row reports a settled holder once, the branch that skips one stays
+(ranger-base-9c5bh); the merge-back-blocked bead tells the seat to REPLAY,
+never to rebase in a session worktree (-vh2o8, -xea2y), and its P1 body is
+one readable line rather than one with git's carriage returns in it
+(-bq2jl); a launch into a repo created seconds earlier by `git init` no
+longer reports a "foreign hook" over an empty slot (-gw9o5); every wall a
+seat launches behind names the binary that rendered it, and `posse promote`
+reads that renderer back (-vso72); `posse kill --land` says what it is about
+to do, and a landing refusal that points at a retire names the uncommitted
+work the retire refuses over (-vy6hc).
+
+### Claude seats: the trust seed and the keychain
+
+**A dispatched seat in a repo you never opened by hand no longer sits on the
+folder-trust dialog.** posse seeded `projects["<the session worktree>"]` in
+`~/.claude.json`; claude (MEASURED 2026-10-03, 2.1.288) looks a linked
+worktree's trust up under its MAIN repo, so three seats in a new repo opened
+on the modal with posse's grant sitting there, true and timestamped. The key
+is now the canonical repo root — a worktree seeds its main repo and nothing
+else, a bare repo's worktree its bare dir, a submodule itself — in the NFC
+spelling claude reads it under, both on the host and in the cage.
+`scripts/claude-trust-key.sh` asks the CLI which key it wants with no API
+turn and no login (ranger-base-elf2v, -d88rp). The keychain mirror is
+tightened the same way: posse derives the item name over the NFC form of the
+credential directory, as the runtime does (ADR 0019 D2 amended,
+ranger-base-snrur), and asks `security` for the runtime's ACCOUNT as well
+as its service, so a box holding the service under two accounts answers
+with the runtime's row (-tghn5). A cleared refresh field in the stored
+credential stops being reported as a refresh (-58qr8).
+
+### Config and credentials
+
+**A repo miscased in `beads_visibility:` is still that repo.** The key was
+matched by string; on the APFS default a key typed `~/src/myrepo` never met
+the directory git spells `~/src/MyRepo`, so the repo fell through to "unmarked is
+public", and the two writers of the shared `prepare-commit-msg` hook —
+install-hooks reading config, the next launch reading git — stamped it
+private, public, private in one morning. Path keys are matched by filesystem
+identity now, which also keeps two case-distinct directories apart on a
+case-sensitive volume, where a case fold would have merged them
+(ranger-base-99gww).
+
+**A metered credential is a CLASS, refused where a session is admitted (ADR
+0019 D7).** The metered API-key variable was refused by `posse refresh`
+alone; a runtime yaml whose `cage_cred:` named it was admitted at launch,
+caged or not (MEASURED 2026-10-04). One definition of the name set and the
+value shape is now asked at the write and at both admission preconditions:
+a runtime declaring a metered session credential launches nothing, at any
+tier, and `--allow-degraded` does not waive it. The ask that prompted it — a
+capped metered class — is answered as not realizable as a hard cap (every
+brake posse holds refuses to HIRE and nothing stops an in-flight turn); the
+shape that could carry a real cap is a decision filed for the operator
+(ranger-base-41zyo).
+
+**A `data_ceiling_patterns:` value that matches its own definition line is
+named at stamp time, never refused and never exempted** (ADR 0050 D6,
+ranger-base-3gdqv); `scripts/ceiling-fill.sh` arms the key from typed
+answers.
+
+### For a tree you build and test yourself
+
+- **`make treepins`** is the spelling that queues an unfiltered
+  `internal/treepins` run behind a suite slot: that package is a full suite
+  by cost — 363s warm, 679s cold, MEASURED 2026-10-04 — and a bare `go test
+  ./internal/treepins` takes no slot, exactly as a bare `go test ./...`
+  does not (ranger-base-7zng1, -1a0hi).
+- **`make tree-check` is fourteen doors**, now over both packages whose
+  pins have the tree as their subject; the notes-index pin has a door, after
+  one fragment landed a commit every other door called clean
+  (ranger-base-g6sb1).
+- **`go run ./cmd/checkorphans` runs from a caged seat**: it reads the
+  process table through `sysctl` instead of exec'ing the setuid `/bin/ps`
+  that seatbelt refuses (ranger-base-yxmwx). A suite-lock sweep names an
+  unopenable slot once per acquire, not once per poll (-xgseo).
+- **The release machinery**, for maintainers: the draft is created without
+  `--target` and without `--latest` (both refused after the tag is pushed —
+  v0.5.0's runs died on each), and `release-notes.sh` keeps whole
+  subsections under a 60,000-character cap, because GitHub refuses a release
+  body over 125,000 only after the number is spent (ranger-base-597lo).
+
+### Decisions recorded since v0.5.0 (ADR 0063–0067)
+
+- **ADR 0063** — a stalled pass is reported and never acted on. 697 passes
+  censused across both watch-log generations: zero awake passes failed to
+  come round; every long one was a sleep or a box over the load line, and
+  the load guard is the only brake worth having.
+- **ADR 0064** — a wall-clock shop condition (`loop-mute`, `guard-blind`)
+  is a statement about awake time; the process that witnessed a suspend
+  subtracts it.
+- **ADR 0065** — the hiring gate ages its evidence on the wall clock:
+  `plan_guard_blind_max:` has one meaning, the maximum age of the reading
+  the guard will hire on, and a sleep never extends a hire on a stale one.
+- **ADR 0066** — a typed-decision model, if posse ever carries one, is a
+  second reader that reports and never acts; the readings log comes first.
+  That log — every pane-state, dialog, unknown-screen and composer-hold
+  reading that ends in a refusal, hand-back, settle-open, retirement or
+  hold, recorded with the bytes it read — is coming as ranger-base-3xt9y
+  and is not in this release.
+- **ADR 0067** — the harness's house words become a posse dictionary in the
+  shape of ASD-STE100's; the standard itself is not adopted. The appendix is
+  seeded.
+
+ADR 0062 is amended twice in this tree (D1 stands with `hidden` measured
+inert; D1.1 grants nine groups), ADR 0013 §1's launch row gains the
+detection refusal and its launch path, ADR 0004 §2's "today `bd ready` may
+include them" is retired, and ADR 0019 carries both the NFC amendment and
+D7.
 
 ## v0.5.0
 
