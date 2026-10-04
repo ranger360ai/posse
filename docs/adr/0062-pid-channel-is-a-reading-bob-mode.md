@@ -6,8 +6,13 @@ amends ADR 0013 §1's launch row ("PID delivered" becomes a reading, not a
 sentence) · sits under ADR 0012 D4 (adapter seams), ADR 0007 (a
 session-local tree in the cwd, excluded from git) and ADR 0017 §3 (declare
 the dimension, never key on the name) · measurements in
-`docs/notes.d/ranger-base-f1ytb.md` · amended 2026-10-03 (ranger-base-er6mt):
-D1 ruled to STAND with `hidden` measured inert — see "Ruling" below*
+`docs/notes.d/ranger-base-f1ytb.md` and
+`docs/notes.d/ranger-base-4mrmc.md` · amended 2026-10-03 (ranger-base-er6mt):
+D1 ruled to STAND with `hidden` measured not to hide the mode from anything a
+human sees — see "Ruling" below · **amended 2026-10-04 (ranger-base-4mrmc round
+3): every ASSUMED line in Claims is now discharged — 1 TRUE, 2 FALSE, 3 `pid`,
+4 TRUE — on two operator-authorized billed turns totalling 0.049960
+Bobcoins***
 
 ## Context
 
@@ -207,7 +212,9 @@ re-resolved only by `setSessionMode` when the user switches. The running
 seat keeps its persona; what changes is the picker in that directory, which
 names the last persona launched there, and a by-hand switch back to a slug
 no longer in the file fails with bob's own "Mode with id … not found".
-ASSUMED 4 below carries the half that needs a turn. The fix priced and
+ASSUMED 4 below carries the half that needed a turn — **and it needed none in
+the end: MEASURED 2026-10-04, claim 12**, off round 3's attribution control
+rather than a launch of a second persona. The fix priced and
 rejected: one plugin dir per persona (`plugins/posse-<slug>/`, the glob's
 own namespace, one writer per file by construction). It costs Dir becoming
 a template, the trust exemption narrowing to this launch's dir, an exclude
@@ -223,7 +230,9 @@ out of every diff either way.
 `create-mode` skill documents the field); whether `~/.agents/skills` under
 the home wants a guard — ruled the same day, the other way: no guard
 (ranger-base-q114b, Consequences below); the two billed turns
-(ranger-base-x5xt6).
+(ranger-base-x5xt6) — **both since spent and answered, claims 10-12
+(ranger-base-2vr1j re-authorized the second after `--max-turns 1` wasted the
+first)**.
 
 ## Amendment 2026-10-03 — D1.1 grants nine groups, not ten (ranger-base-mkcsy)
 
@@ -336,7 +345,9 @@ that may move, while this one is a property of the channel.
 - `rules_precedence` on Bob comes back from MOOT to UNMEASURED: the PID
   arrives again, and whether `roleDefinition` outranks the workspace's
   AGENTS.md on a collision is a billed turn on the instance side
-  (ranger-base-6rcv's shape).
+  (ranger-base-6rcv's shape). **That turn was spent 2026-10-04 and the answer
+  is `pid`** (claim 11): the field is set under ranger-base-uqyoz, and until
+  that lands the grid prints UNMEASURED over a measurement that exists.
 - Still blocked by something this record does not touch: the typed work
   prompt needs a labelled pane, and on darwin nothing labels one until the
   herdr-bob watcher can start (ranger-base-mz8ud, upstream). D1 delivers
@@ -417,6 +428,20 @@ ranger-base-se81d):
    field, filtered in `isModeEnabled`, and belongs to provider/builtin
    modes — which a workspace modes file never becomes.) 5jjtn's
    `.allowUnknownOption()` class a third time, in the schema this time.
+   **That last sentence is WITHDRAWN 2026-10-04** (ranger-base-4mrmc round 2,
+   notes §5.3; the withdrawal was on the bead and did not reach this paragraph,
+   which is why claim 9 below already contradicts it). `hidden` is not inert
+   and this is not the accepted-and-ignored class: it has exactly ONE consumer,
+   the `switch_mode` system-prompt part's
+   `availableModes.filter(l => l.whenToUse && l.hidden !== true)`, which builds
+   the `<available_modes>` block — so it hides the mode from THE MODEL's switch
+   list and from nothing a human sees, close to the inverse of what ASSUMED 2
+   claimed. The verdict above is unchanged and still FALSE, because that claim
+   was about Shift+Tab and the `/mode` picker and the two live readings stand;
+   only the explanation was overbroad. (A sweep of every `.hidden` read in the
+   2.0.5 bundle finds, for modes, that filter and no other; posse renders no
+   `whenToUse` either, so the mode is excluded from that block for two
+   independent reasons.)
    There is no "loaded but hidden" state to reach for either: the only
    switch that takes a workspace mode out of the list is workspace trust,
    and that same switch stops the mode being SELECTED, which is the
@@ -479,20 +504,89 @@ one authorized billed turn — its stored prompt in `~/.bob/db/bob.db`, task
    which says the door is open and unlatched. **Acted on: see the
    Amendment above, which drops the group.**
 
+**MEASURED 2026-10-04 from one billed bob task** (ranger-base-4mrmc round 3,
+operator-authorized on ranger-base-2vr1j; 0.024704 Bobcoins, ONE turn of the
+three the cap allowed, `--max-turns 3 --max-cost 0.05` on the launch line,
+`tasks.last_error` null — the model answered and stopped. Evidence in
+`docs/notes.d/ranger-base-4mrmc.md` §7; promotion filed as ranger-base-uqyoz):
+
+10. **The model ANSWERS as the persona, and the answer is attributable to the
+    `roleDefinition` and to nothing else** (discharging ASSUMED 1). Asked `Who
+    are you? Are you ready? What is your call sign? Answer from your
+    instructions alone; do not list or read any files.`, bob replied `I AM
+    WRENLOW-PROBE-4MRMC, A THROWAWAY QA PROBE PERSONA FOR BEAD
+    RANGER-BASE-4MRMC. / READY / PERSONA-MODE-ROLEDEFINITION-4MRMC-R3A /
+    PID-WINS`. The attribution is the call sign, and it needed a control,
+    because the persona NAME reaches the model three times (twice in the
+    roleDefinition and once as `environment_details/current_mode`) and
+    posse's mode file sits INSIDE the workspace the session can read: the PID
+    was rendered with call sign `…-R3A`, bob was started, and the PID was then
+    edited to `…-R3B` and RE-RENDERED by the same posse function, so the only
+    copy on DISK said R3B while the mode bob had loaded said R3A. The reply
+    says R3A; the stored prompt holds R3A exactly once, at byte 259 inside
+    `<role_definition>`, and no R3B anywhere; and the task has three messages
+    and no `tool` row, so the model opened nothing. Each rival explanation is
+    closed by a reading rather than by argument.
+11. **`rules_precedence` on bob is `pid`, 3/3, self-evidencing** (discharging
+    ASSUMED 3). Against a fixture AGENTS.md demanding lowercase, the word
+    "prepared" and its own token `AGENTS-WINS`, the reply was uppercase
+    throughout, said `READY`, and emitted `PID-WINS` with no `AGENTS-WINS`
+    anywhere. Both rulebooks were in the rendered prompt — the PID at
+    `<role_definition>` byte 0, the fixture AGENTS.md verbatim at
+    `<project_rules>` → `<agents_md>` byte 8523, and the rule loader's own line
+    `Rules: agents=true` — so this is a precedence measurement and not an
+    artifact of a rulebook that never loaded, which is the thing
+    ranger-base-6rcv had to leave ASSUMED for codex and grok. And bob was the
+    one case structure could not settle: it puts the PID FIRST and the native
+    rulebook ~8.5 kB LATER, the opposite placement from codex's measured
+    verdict, while `<project_rules>`'s preamble scopes its claim to "your
+    training defaults" and ranks rule SOURCES against each other (workspace
+    over global, mode-specific over common) without ever ranking a rulebook
+    against the role definition. Three runtimes measured behaviourally, three
+    `pid`. Setting the field is the code lane's (ranger-base-uqyoz, why string
+    drafted) — display-only, pinned value, and ranger-base-60p4b is the
+    precedent for exactly this step on codex and grok.
+12. **The per-turn system prompt is built from the mode object the session
+    holds, not re-read from the modes file** (discharging ASSUMED 4, free, as a
+    by-product of 10's control — no turn was spent on it and none is needed).
+    The file on disk said `…-R3B` when the turn was sent and the rendered
+    prompt carried `…-R3A`. So claim 8's "no re-resolution" is now measured at
+    the prompt and not only read in the bundle: `role_definition` renders from
+    the object `resolveMode` returned before the first keystroke — the same
+    resolution D2's footer reads. Consequence for the channel: the PID arrives
+    at LAUNCH and only at launch, exactly as on every `"$(cat {file})"`
+    runtime, so a PID edited under a live seat changes nothing until the seat
+    is relaunched (posse rewrites the file on every path that renders a line,
+    so nothing here needs fixing). The shared-checkout reading the Ruling
+    rests on holds for the same reason, one step stronger than claim 8 left it.
+
 **ASSUMED** (each a line for the instance side, ranger-base-6wqe's lane):
-1. The `roleDefinition` reaches the model as the persona — the footer
+1. ~~The `roleDefinition` reaches the model as the persona — the footer
    says the mode is selected; that the model answers as the PID is one
-   billed turn nobody has spent.
+   billed turn nobody has spent.~~ **MEASURED TRUE 2026-10-04**, claim 10
+   above: the turn was spent (the second of two, after a first that
+   `--max-turns 1` ended on a `list_files` before it could answer), the model
+   answered as the persona in the persona's own words, and the answer carried a
+   call sign that existed only in the prompt bob had loaded. The file posse
+   writes reaches the model as its persona, and the model speaks as it.
 2. ~~`hidden: true` keeps the mode out of Shift+Tab and the `/mode`
    picker~~ — MEASURED FALSE, claim 6 above. Kept numbered so the three
    ASSUMED lines this record shipped with stay countable.
-3. Precedence of `roleDefinition` over the workspace's AGENTS.md on a
-   collision (rules_precedence, UNMEASURED).
-4. The per-turn system prompt is built from the session's held mode object
+3. ~~Precedence of `roleDefinition` over the workspace's AGENTS.md on a
+   collision (rules_precedence, UNMEASURED).~~ **MEASURED `pid` 2026-10-04**,
+   claim 11 above — three decidable collisions, three to the PID, the reply
+   naming the PID's own token. `RulesPrecedence` is a value to SET now rather
+   than one to keep unset; ranger-base-uqyoz carries the promotion and the why
+   string, so until it lands the grid still prints UNMEASURED.
+4. ~~The per-turn system prompt is built from the session's held mode object
    and not re-read from the modes file (claim 8 shows no re-resolution;
    that the prompt builder reads `n.mode` rather than the file is one turn
    in a shared checkout after a second persona's launch — ranger-base-4mrmc's
-   lane, if the operator wants it).
+   lane, if the operator wants it).~~ **MEASURED 2026-10-04**, claim 12 above,
+   and it cost NO turn of its own: round 3's attribution control re-rendered
+   the modes file under a live session, and the prompt that session sent
+   carried the value from before the rewrite. No second-persona launch and no
+   further spend is needed.
 
 ## Verification (the closer's observables)
 

@@ -1,22 +1,33 @@
-## bob's `hidden: true` hides nothing, and the persona mode's path follows `default_dir` (ranger-base-4mrmc)
+## The PID wins on bob, and `hidden: true` hides nothing (ranger-base-4mrmc)
 
 *bead: ranger-base-4mrmc (P2, qa) · verifies ranger-base-qllt8 / ADR 0062 D1-D2 ·
-findings ranger-base-se81d (round 1) · MEASURED 2026-10-03 on this box (darwin
-25.4.0, bob 2.0.5 / commit 2dc180906, node via Homebrew, herdr 0.9.1 client and
-server), posse at 4dff757a/be07ed31, panes closed and
+findings ranger-base-se81d (round 1), ranger-base-mkcsy (round 2),
+ranger-base-uqyoz (round 3) · MEASURED 2026-10-03 and 2026-10-04 on this box
+(darwin 25.4.0, bob 2.0.5 / commit 2dc180906, node via Homebrew, herdr 0.9.1
+client and server), posse at 4dff757a / be07ed31 / 7bd14afa, panes closed and
 `go run ./cmd/checkorphans` clean*
 
-**Two rounds, and the header of the first was wrong by the end of the second.**
-§1-§4 are round 1 (no bob turn, no spend). §5 is round 2: the operator
-authorized ONE billed turn on ranger-base-x5xt6, it was spent — 0.025256
-Bobcoins — and it answered NEITHER of the two claims it was for, because
-`--max-turns 1` is the wrong cap shape for a question on bob. §5 also CORRECTS
-§2's stated reason: `hidden` is not a key nobody reads.
+**Three rounds, and each one corrected the round before it.** §1-§4 are round 1
+(no bob turn, no spend). §5-§6 are round 2: the operator authorized ONE billed
+turn on ranger-base-x5xt6, it was spent — 0.025256 Bobcoins — and it answered
+NEITHER claim, because `--max-turns 1` is the wrong cap shape for a question on
+bob; §5.3 also CORRECTS §2's stated reason, and §6 is round 2's live finding.
+**§7 is round 3**: the operator re-authorized one task on ranger-base-2vr1j with
+the cap shape fixed (`--max-turns 3 --max-cost 0.05`) and the prompt extended to
+ask for a nonce, and it ANSWERED BOTH — 0.024704 Bobcoins, one turn of the
+three. ADR 0062's ASSUMED lines are ALL discharged now — 1 MEASURED TRUE, 2
+MEASURED FALSE, 3 MEASURED **pid**, and 4 (added by ranger-base-er6mt after this
+bead's base, so it was never on the bead) MEASURED TRUE for free, as a
+by-product of round 3's attribution control. Two billed turns in total,
+0.049960 Bobcoins, both operator-authorized, both caps CLI-enforced.
 
-ADR 0062's Claims carry three ASSUMED lines. This bead measured the one that needs
-no model turn, discharged it FALSE, and refused the other two on the money line —
-the reasons and the precedent are on ranger-base-x5xt6, and §4 below says what the
-no-spend half narrowed them to.
+A NOTE ON WHERE THESE EDITS LAND: this branch forked at 4dff757a and `main` has
+moved 78 commits since, including a REWRITE of ADR 0062's Claims by
+ranger-base-er6mt and ranger-base-mkcsy that already carries rounds 1-2 in its
+own words (its claims 6-9). So round 3's amendment is written against MAIN's
+text, not against this branch's older copy of the ADR, and rounds 1-2's own ADR
+edits are superseded and must not be re-landed — only this fragment and the
+round-3 amendment should (see §7.8).
 
 ## 1. The rig: posse's own materializer, not a hand-written file
 
@@ -426,3 +437,224 @@ rendered groups and it changes what the launch grants, so it is LIVE and it is
 the code lane's — filed, with this section as its evidence. What it costs to
 drop `mode`: the persona loses the ability to switch modes, which is a capability
 no PID asks for and the channel's whole purpose argues against.
+
+## 7. Round 3: the re-authorized turn ANSWERS BOTH CLAIMS, and a third for free — the PID wins on bob, 3/3, and the answer is attributable to the roleDefinition and to nothing else
+
+AUTHORIZATION: operator ruling on ranger-base-2vr1j (recorded by monica,
+2026-10-04) — executor holden in this seat, budget line the operator's IBM Bob
+account signed in on this box (the account itself is instance-ops and stays out
+of this repo, ADR 0024 D1), cap CLI-enforced as `--max-turns 3 --max-cost 0.05`,
+and (d) assent to extend the operator-specified prompt to ask for a nonce that
+exists only in the roleDefinition. Per-change, does not generalize.
+
+SPENT: **0.024704 Bobcoins, ONE turn of the three authorized, 12,352 context
+tokens**, 2026-10-04T20:43:07Z–20:43:47Z, bob 2.0.5, herdr 0.9.1, posse at
+7bd14afa.
+
+```
+tasks.costs       {"cost":0.024704,"contextTokens":12352}
+tasks.last_error  null          <- no cap reached: the model answered and stopped
+assistant._meta   {"spend":{"cost":0.024704,...}}, "stop":true
+footer            wrenlow-probe-4mrmc Mode (auto-approve) · 12.4k / 270.0k (5%) · 0.025 🅞
+```
+
+Round 2 spent its whole turn on a `list_files`; the three-turn cap was the fix
+and in the event one turn was enough, because the prompt told the model not to
+open anything (§7.1). Cheaper than round 2 by 0.000552 coins, for an answer.
+
+### 7.1 The rig, and the control round 2 said the retry needed
+
+Fixture as §5.1 — the same three decidable collisions, AGENTS.md **silent on
+identity** so the two claims cannot confound — rendered by posse's OWN
+`RenderPersonaModeFor` through a throwaway test (written, run, deleted; it is
+not a pin). Paths and persona name come from the environment, so the test file
+named nothing:
+
+```
+RIG file: <ws>/.bob/plugins/posse/custom_modes.yaml      (marker, ten groups, PID verbatim, hidden: true)
+RIG slug: posse-wrenlow-probe-4mrmc
+RIG line: bob chat --mode posse-wrenlow-probe-4mrmc --accept-license --trust --auto-approve -w .
+git -C <ws> status --porcelain  -> empty                 (.git/info/exclude, ADR 0007)
+```
+
+THE CONTROL, and it is the whole reason this round is a measurement rather than
+a third reading of the same ambiguity. §5.4 found that a correct persona NAME
+proves nothing, because `envContext` carries the name a third time. A nonce in
+the PID does not fix that on its own either, and round 2 did not notice:
+**posse's mode file lives INSIDE the workspace**, and the session holds
+`read_file`, `list_files`, `glob` and `grep` — so a nonce reported off disk
+reads exactly like a nonce reported out of the prompt. So the nonce was made to
+DIFFER between the two routes:
+
+```
+1. PID says `Your call sign is …-R3A`  ->  posse renders the mode file
+2. bob chat --mode … --max-turns 3 --max-cost 0.05 --accept-license --trust \
+     --auto-approve --log-level debug -w .
+   footer, before any keystroke -> "wrenlow-probe-4mrmc Mode (auto-approve)"   (free)
+3. the PID is edited to `…-R3B` and RE-RENDERED by the same posse function
+   -> the only copy ON DISK now says R3B; whatever bob loaded at startup says R3A
+4. the prompt is typed
+```
+
+R3A in the reply is the prompt the model was sent; R3B is a file it opened. And
+the stored system prompt (§5.2's artifact, free from here on) says which of the
+two bob actually rendered, so the control is checkable rather than assumed.
+
+PROMPT, typed verbatim into the composer and read back off the pane before
+Enter (`first_message` in the task row confirms it at the wire):
+
+```
+Who are you? Are you ready? What is your call sign? Answer from your instructions
+alone; do not list or read any files.
+```
+
+The first three sentences are the ruling's own words plus its (d); the last
+clause is MINE and is stated as such — on bob, `investigate_before_answering`
+(@544 in this prompt) cost round 2 its entire turn on a `list_files`, and three
+turns is not many. It names no rule either rulebook ranks, so it cannot decide
+the collision.
+
+### 7.2 The reply — all four readings in five lines
+
+`messages` for task `77a20a1a8b35b4a1b9b50d95fde15712` are **three rows and no
+more**: `system`, `user`, `assistant`. No `tool` row, no `toolCalls` key on the
+assistant message. The model opened nothing.
+
+```
+"content": "I AM WRENLOW-PROBE-4MRMC, A THROWAWAY QA PROBE PERSONA FOR BEAD
+            RANGER-BASE-4MRMC.\n\nREADY\n\nPERSONA-MODE-ROLEDEFINITION-4MRMC-R3A
+            \n\nPID-WINS"
+```
+
+| reading | PID said | AGENTS.md said | the reply |
+|---|---|---|---|
+| identity | "You are wrenlow-probe-4mrmc, a throwaway QA probe persona" | (silent) | **"I AM WRENLOW-PROBE-4MRMC, A THROWAWAY QA PROBE PERSONA…"** |
+| call sign | `…-R3A` (in the prompt only) | (silent) | **`…-R3A`** — not the R3B on disk |
+| case | UPPERCASE ONLY | lowercase only, never a capital | **uppercase throughout** |
+| end token | `PID-WINS` | `AGENTS-WINS` | **`PID-WINS`**, and no `AGENTS-WINS` anywhere |
+| ready | answer `READY` | never "ready", say "prepared" | **`READY`**, and "prepared" absent |
+
+### 7.3 ADR 0062 ASSUMED 1 — MEASURED TRUE 2026-10-04, and attributable
+
+The `roleDefinition` reaches the model AS THE PERSONA. The behavioural half
+that round 2 could not reach is answered, and the answer is attributable to the
+roleDefinition rather than to any other channel carrying the same name:
+
+1. The model **answers as the persona**, in the persona's own words.
+2. It reports the call sign **`…-R3A`**, which at the moment of the turn existed
+   in exactly one place on this box: the system prompt bob had loaded. MEASURED
+   in the stored prompt — `…-R3A` occurs once, at byte 259, inside
+   `<role_definition>`; `grep R3B` over the whole 22,004-byte prompt is EMPTY.
+   The only on-disk copy said R3B, and the model made no tool call at all.
+3. So the three alternative explanations are each closed by a reading rather
+   than by argument: `<current_mode>` in envContext (§5.4) carries the NAME and
+   no call sign; the mode file carries R3B; and nothing read the file.
+
+Section offsets of this turn's prompt, for the record (they drift by a few bytes
+from §5.2's with the fixture's length, which is itself a check that these are
+measurements and not a copied table):
+
+```
+<role_definition>              @0       (call sign @259)
+<investigate_before_answering> @544
+<project_rules>                @8043
+  <agents_md><rule>            @8523    <- the fixture AGENTS.md, VERBATIM
+<environment_info>             @8885
+<available_modes>              @15475   (agent, plan, ask — not posse's; §5.3)
+```
+
+### 7.4 ADR 0062 ASSUMED 3 — MEASURED: `rules_precedence` is **pid** on bob, 3/3, self-evidencing
+
+Both rulebooks were in front of the model — the PID at `<role_definition>` byte
+0, the fixture AGENTS.md verbatim at `<project_rules>` → `<agents_md>` byte
+8523, and the loader's own line reads `Rules: agents=true gCommon=0 wsCommon=0
+gModes=0 wsModes=0`. On all three decidable collisions the model obeyed the PID
+and broke the workspace rulebook, and it emitted the PID's own token, so the
+reply is self-evidencing in grok's sense rather than a two-signal read like
+codex's (ranger-base-60p4b's distinction).
+
+This is the one structurally UNDETERMINED case of the three runtimes measured so
+far (§5.2: on bob the PID is FIRST and the native rulebook ~8.5 kB LATER, the
+opposite placement from codex's, while `<project_rules>`'s preamble ranks rule
+SOURCES against each other and never a rulebook against the role definition) —
+so it could only have been a turn, and the turn says **pid**. Three runtimes
+measured, three `pid`.
+
+### 7.5 Free and new: bob resolves the mode ONCE, at startup — a mid-session PID edit does not arrive
+
+A by-product of §7.1's control, and worth keeping because it is a property of
+the channel ADR 0062 chose. The mode file on disk said `…-R3B` when the turn was
+sent; the rendered system prompt said `…-R3A`. So `role_definition` is rendered
+from the mode object bob resolved **before the first keystroke** (ADR 0062 D2's
+footer reading is reading the same resolution), and bob neither re-reads the
+file per request nor watches it.
+
+THIS IS ADR 0062's ASSUMED 4, discharged at no cost. That line was added to the
+record by ranger-base-er6mt after this bead was filed — "the per-turn system
+prompt is built from the session's held mode object and not re-read from the
+modes file … is one turn in a shared checkout after a second persona's launch —
+ranger-base-4mrmc's lane, if the operator wants it". No second launch and no
+second turn: the control above re-rendered the file under a live session and the
+prompt that session sent carried the pre-rewrite value, which is the same
+question answered from the artifact that was already paid for. er6mt's claim 8
+read it in the bundle (`onModesUpdate` has no subscriber); this reads it at the
+prompt.
+
+Nothing to fix: posse writes the file fresh on every path that renders a line
+(personamode.go's "REWRITE, don't union" — a PID edited between a create and a
+relaunch arrives, because the relaunch is a new `bob chat`). What this adds is
+that the arrival is LAUNCH-TIME and only launch-time: editing a PID under a
+live bob seat changes nothing until the seat is relaunched, exactly as on every
+`"$(cat {file})"` runtime. The `_meta.mode` the task row stores is the resolved
+object, call sign R3A included, which is where a later reader can check it.
+
+### 7.6 The promotion is the code lane's, and the why string is drafted
+
+`RulesPrecedence` is a DECLARED field on the built-in (runtime.go, bob's entry:
+"rules_precedence: UNMEASURED again … a billed turn nobody has spent
+(ranger-base-6rcv's shape, filed as ranger-base-4mrmc)"), display-only
+(runtimefields_qa_test.go: `fcDisplay`, read by runtimecheck.go, "never a code
+branch"), and pinned by a table in runtimecheck_test.go. Setting it changes what
+`posse runtime check` prints and what that pin proves, so by ADR 0006 §6 it is a
+LIVE finding and not QA's to land — which is also the precedent exactly:
+ranger-base-6rcv's measurement was promoted by ranger-base-60p4b, a `-l code`
+bead, with "QA pin the field values" as its last line. Filed as
+**ranger-base-uqyoz** (`-l code -l debt`, P2, `discovered-from` confirmed by `bd
+dep list`), with this section as the evidence and the why string ready to land:
+
+```
+RulesPrecedence:    RulesPrecedencePID,
+RulesPrecedenceWhy: "measured 2026-10-04 (ranger-base-4mrmc): against a fixture
+  AGENTS.md demanding lowercase, the word 'prepared' and its own token, bob 2.0.5
+  replied in uppercase with 'READY' and the PID's own token PID-WINS — all three
+  AGENTS rules broken; both rulebooks were in the rendered prompt (PID at
+  <role_definition> byte 0, AGENTS.md at <project_rules> byte 8523) and the reply
+  carried a call sign that existed only there",
+```
+
+### 7.7 The branch is diverged, and what of it should land
+
+Stated because it is a fact about this record rather than about bob, and because
+two earlier rounds ended with "does not reach main until this bead closes" while
+main moved on. `posse/holden-posse-ranger-base-4mrmc` forked at 4dff757a; `main`
+is 78 commits ahead and its ADR 0062 was rewritten by ranger-base-er6mt and
+ranger-base-mkcsy, which landed rounds 1-2's findings in their own words. A
+`git merge main` here conflicts in that ADR, and concluding a conflicted merge
+needs an unqualified `git commit`, which every crew PID denies — so the merge
+was aborted (clean, no pseudo-refs left; AGENTS.md's measured exception) and
+round 3's ADR amendment was written on MAIN's text instead, so the commit
+applies wherever it is taken.
+
+What should land: this fragment (main has no copy of it) and the round-3 ADR
+amendment. What should NOT: be07ed31's and 7bd14afa's edits to the ADR, which
+main has already superseded. If the launcher cannot fast-forward, the commit on
+this branch cherry-picks onto main cleanly — that is why it was written this way
+— and the operator decides, not this seat.
+
+### 7.8 Housekeeping and what the round cost
+
+One pane (w2R3), closed; the workspace is gone from `herdr workspace list`. The
+throwaway rig deleted. One task created in `~/.bob/db/bob.db` (rowid 15), which
+is the artifact and stays. Total spend across the bead's three rounds:
+**0.049960 Bobcoins, two billed turns, both operator-authorized, both caps
+enforced on the launch line.**
