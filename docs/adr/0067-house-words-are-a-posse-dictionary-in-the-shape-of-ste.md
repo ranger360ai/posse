@@ -1,6 +1,6 @@
 # ADR 0067 — The harness's house words are a posse dictionary in the shape of ASD-STE100's; the standard itself is not adopted
 
-*Status: proposed — operator discussion pending · owner: architect · source
+*Status: accepted 2026-10-04 — operator ruling on ranger-base-w6zpo, the six sub-points at their recommended defaults (no STE registration; dictionary lives in this appendix; ARGUED is a label; WIP gets a not-approved row; the three line rules apply to new lines, the existing clause is a P3 bead; Vale later) · owner: architect · source
 bead ranger-base-4wwy5 (spike, recommendation only) · evidence, the surface
 map and the prior-art table in `docs/notes.d/ranger-base-4wwy5.md` · sits
 beside ADR 0005 (the rung words it seeds from), ADR 0006 §7 (no prose pin
