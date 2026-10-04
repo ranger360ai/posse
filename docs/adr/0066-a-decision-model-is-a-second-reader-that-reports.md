@@ -92,6 +92,28 @@ once a client exists); a pulse pre-filter; anything numeric.
 - The regex and TOML readers stay the readers. Their failures remain
   replayable at the codepoint, which is the property a model does not have
   and the reason they keep the decision.
+- *Amended 2026-10-04 (ranger-base-3xt9y, code): D1 is BUILT —
+  `internal/posse/readingslog.go`, ten consequence sites, the data-ceiling
+  redaction, and `scripts/readings-census.py` for the per-day census and the
+  replay corpus. Three things the decision did not say, now measured and
+  written down in `docs/notes.d/ranger-base-3xt9y.md`.* **(a)** The log goes in
+  the session tree's own git DIR, not its working tree: `git status
+  --porcelain` counts untracked files and six callers act on that count (ADR
+  0041's closed-dirty comment, `RemoveSessionTree`, the retire guard, the land
+  sweep, the reap guard), so a log one directory over would make every close a
+  dirty close — and `lastTreeWrite` skips the log by name, or a tree that ever
+  took a reading could never be retired. **(b)** "Never under $HOME" is read as
+  "the log's lifetime is the TREE's, not the instance's", because `WorktreeRoot`
+  refuses a worktree root outside `$HOME` on purpose; the enforced spelling is
+  that a path in the instance's own stores is refused and a session with no
+  tree gets NO log rather than a fallback. **(c)** The five consequences are
+  five ways of NOT acting, so **a false IDLE is invisible to this log** — it
+  types, and there is no refusal to key a record on. rangerhq-7ia, the incident
+  in the bead's own measure list, is captured only in the sub-case where the
+  reword drops herdr to its idle fallback. Closing that needs a SAMPLED record
+  of non-consequential D1 readings, which changes the census's denominator and
+  is this record's own call to make; the rate it would be priced against is now
+  takeable for the first time.
 
 ## Alternatives rejected
 

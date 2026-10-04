@@ -169,6 +169,23 @@ func (d *Dispatcher) noteSettleOpen(p *pendingBead, settled, status string) {
 			before++
 		}
 	}
+	// ADR 0066 D1: a settle-open is one of the five consequences a reading
+	// can spend, and the reading behind it is D6 — what the runtime's own
+	// record said about the turn (p.turnRead, taken in gather). Logged here
+	// rather than at the call site so the record and the comment are
+	// written under the same two conditions: not --dry-run, and --resume.
+	// The count rides in the verdict because "the first one" and "the
+	// seventh in a row" are the two things this rung distinguishes and the
+	// only pair a census can tell the loop from the nudge by.
+	d.logReading(p.session, Reading{
+		Decision:    DecisionTurnDelivered,
+		Verdict:     fmt.Sprintf("settled %q, bead %q, prior %d", settled, status, before),
+		Consequence: ConsequenceSettleOpen,
+		Rule:        RuleSettleOpen,
+		Bead:        p.is.ID,
+		Runtime:     p.runtime,
+		Herdr:       p.turnRead,
+	})
 	if before == 0 {
 		if err := d.Bd.Comment(p.is.Dir, p.is.ID, settleOpenComment(status, p.session, settled), VerifyActor); err != nil {
 			d.eprintf("posse: %s settle-open not recorded (%v) — the next one counts as the first\n", p.is.ID, err)

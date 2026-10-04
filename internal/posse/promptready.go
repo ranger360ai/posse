@@ -163,6 +163,7 @@ func (b *HerdrBackend) AwaitPromptable(session, target string) (AgentDetection, 
 	// word, and either it says nothing useful or the pane it describes has
 	// gone back to its shell. ReportedNotSeen is the one copy of that clause.
 	if why := lastGuess.ReportedNotSeen(); why != "" {
+		b.logUnrecognized(session, lastGuess, "reported-not-seen: "+why)
 		return lastGuess, "", Die("nothing was sent: %s is labelled by something other than herdr's own detection, and %s "+
 			"(ranger-base-3p0). Prompt again once it has settled, look first (posse peek %s), or send it anyway with --now.%s",
 			session, why, session, lastGuess.WhatHerdrSaw(b.reportedWhy(session)))
@@ -171,6 +172,7 @@ func (b *HerdrBackend) AwaitPromptable(session, target string) (AgentDetection, 
 	if reason == "" {
 		reason = "no rule matched"
 	}
+	b.logUnrecognized(session, lastGuess, "unrecognized screen: "+lastGuess.State+" ("+reason+")")
 	return lastGuess, "", Die("nothing was sent: herdr has not recognized a screen in %s within %s — it reports %q with %s, "+
 		"which is what a CLI that has not taken the keyboard yet looks like, and text typed there lands in whatever has it "+
 		"(ranger-base-3p0). Prompt again once it has settled, look first (posse peek %s), or send it anyway with --now.%s",

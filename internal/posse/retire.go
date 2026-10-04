@@ -440,6 +440,15 @@ func treeQuietFor(t *SessionTree) (time.Duration, bool) {
 // the shared checkout onto this branch, or a `branch -f` that moved it, does
 // not touch this directory at all. removalTips is the same list fact 2 asks
 // about, so what the grace covers and what the refusal protects cannot drift.
+//
+// AND NOT POSSE'S OWN NOTES ABOUT THE TREE (ADR 0066 D1). The readings log
+// lives in this directory, for the three properties readingslog.go's header
+// names, and it is the one file in here that posse writes rather than git: a
+// reading of a settled seat is appended on every pass that holds it, which
+// is exactly the tree a retire is for. Counting it would make a tree that
+// ever took a reading unretirable — the same shape as `git status`'s index
+// refresh holding the clock open (ranger-base-9u5zy, -a8tqz), one instrument
+// later. skipsReadingsLog is that skip, spelled beside the name it skips.
 func lastTreeWrite(t *SessionTree) (time.Time, bool) {
 	gd, err := git(t.Path, "rev-parse", "--absolute-git-dir")
 	if err != nil || gd == "" {
@@ -448,7 +457,7 @@ func lastTreeWrite(t *SessionTree) (time.Time, bool) {
 	newest := time.Time{}
 	files := 0
 	filepath.WalkDir(gd, func(_ string, e fs.DirEntry, err error) error {
-		if err != nil || e.IsDir() {
+		if err != nil || e.IsDir() || skipsReadingsLog(e) {
 			return nil
 		}
 		fi, err := e.Info()

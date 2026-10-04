@@ -112,6 +112,13 @@ const (
 	// footerSep separates the footer's parts. claude joins them with a
 	// middle dot; nothing else in the line uses one.
 	footerSep = "·"
+
+	// composerANSIRegion is what the readings log calls the ONE line
+	// ghostbox.go decides on: the last composer line of an `agent read
+	// --format ansi`, escapes intact. It is posse's own name and not
+	// herdr's — herdr has no region for it, which is the whole reason that
+	// second read exists — so it is spelled apart from the two above.
+	composerANSIRegion = "prompt_box_ansi_line"
 )
 
 // backgroundTaskCount matches one counted entry of claude's task summary —
@@ -161,6 +168,18 @@ type PaneHold struct {
 	// keystroke into one. ghostbox.go's note carries both halves and the
 	// command that finishes them.
 	Ghost string
+	// Read is what this hold was read OFF — herdr's own verdict and the
+	// exact region bytes the readings above decided on, carried out of the
+	// reading so the caller that spends it can write it down (ADR 0066 D1,
+	// readingslog.go).
+	//
+	// It rides on the hold rather than being re-read at the consequence
+	// site because the consequence sites do not have a pane: they have a
+	// holder's session name, a bead and a verdict, and a second `agent
+	// explain` taken to log the first one would be a different screen. The
+	// zero value is "nothing was read", which is what every failure arm in
+	// this file answers with.
+	Read ReadingEvidence
 }
 
 // Waiting reports whether this pane's idle is a wait rather than a settle.
@@ -305,6 +324,7 @@ func (b *HerdrBackend) PaneHolding(target string) PaneHold {
 		return PaneHold{}
 	}
 	hold := det.Hold()
+	hold.Read = ReadingEvidenceOf(det)
 	if hold.Typed == "" {
 		return hold
 	}
@@ -337,8 +357,23 @@ func (b *HerdrBackend) PaneHolding(target string) PaneHold {
 	// it). One `agent read` per settled holder whose box has text no store
 	// claims, which is the grain the two calls above already work at; an
 	// empty box still costs one `explain` and nothing else.
-	if ansi, err := b.H.AgentReadANSI(target); err == nil && composerIsGhost(ansi, hold.Typed) {
-		hold.Ghost, hold.Typed = hold.Typed, ""
+	if ansi, err := b.H.AgentReadANSI(target); err == nil {
+		ghost, read := composerGhostRead(ansi, hold.Typed)
+		// The ansi composer line is recorded whether or not it retired the
+		// claim: a ghost retirement and a box this reading declined to
+		// retire are the two halves of ranger-base-6o7wm's missing
+		// measurement, and a log that kept only the first half could never
+		// close it (ADR 0066 D1).
+		if read != "" {
+			hold.Read.Regions = append(hold.Read.Regions, ReadingRegion{
+				Name:  composerANSIRegion,
+				Bytes: len(read),
+				Text:  read,
+			})
+		}
+		if ghost {
+			hold.Ghost, hold.Typed = hold.Typed, ""
+		}
 	}
 	return hold
 }

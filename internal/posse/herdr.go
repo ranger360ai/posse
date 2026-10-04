@@ -219,6 +219,20 @@ func IsHerdrCode(err error, code string) bool {
 	return errors.As(err, &he) && he.Code == code
 }
 
+// HerdrCodeOf is the code itself, for the one caller that has to RECORD
+// which refusal this was rather than branch on a code it already named: the
+// readings log, whose Rule field is "the rule id or code path that produced
+// the verdict" (ADR 0066 D1) and whose reader is a census, not a switch.
+// "" for an error that is not a herdr envelope at all, which reads in a
+// record as what it is — a failure with no code behind it.
+func HerdrCodeOf(err error) string {
+	var he HerdrAPIError
+	if errors.As(err, &he) {
+		return he.Code
+	}
+	return ""
+}
+
 type herdrEnvelope struct {
 	Result json.RawMessage `json:"result"`
 	Error  *herdrError     `json:"error"`

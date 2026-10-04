@@ -1426,3 +1426,60 @@ func exampleConfigDefault(key string) (string, bool) {
 func guardLiteralERE(key, value string) string {
 	return identityLiteralERE(key) + `[[:space:]]*[:=]?[[:space:]]*` + identityLiteralERE(value)
 }
+
+// ─── redacting a reading before it is written down (ADR 0066 D1) ────────────
+
+// RedactCeiling replaces every data-ceiling match in text with a marker
+// naming the class that took it, and returns the classes it took, in
+// Ceiling's own order. Text carrying no ceiling class comes back unchanged
+// with a nil list, so a caller can log the result unconditionally.
+//
+// WHY THE CEILING AND NOT THE VISIBILITY LIST. The readings log is a LOCAL
+// FILE (readingslog.go), and local files are exactly the question the
+// ceiling answers and the visibility list does not: "may this exist here at
+// all" against "may this be public" (ADR 0050, the epigraph). A reading's
+// region bytes are a screen capture of somebody's terminal, so the ceiling
+// is the right wall and the only one — scanning All() here would strip a
+// dollar figure out of a diagnostic that never leaves the box, which is
+// friction bought with nothing.
+//
+// THE MARKER NAMES THE CLASS AND NEVER THE TEXT, which is the ceiling's own
+// rule for everything it renders (ADR 0050 D2, "always class-only"): the
+// text is the thing that must not exist in a local file, and a log line
+// quoting what it removed would breach the ceiling by the redactor's own
+// hand. What the class buys the reader is the one thing a hole cannot say —
+// that something was there, and which vocabulary it belonged to.
+//
+// A redacted reading is a reading that can no longer be replayed byte for
+// byte, and that is the trade this makes deliberately: the census still
+// counts it, the corpus still carries its shape, and the bytes that would
+// have reproduced it are the bytes that may not be kept.
+func (s OpsPatternSet) RedactCeiling(text string) (string, []string) {
+	var classes []string
+	for _, p := range s.Ceiling {
+		if !p.Match(text) {
+			continue
+		}
+		text = p.Redact(text)
+		classes = append(classes, p.Class)
+	}
+	return text, classes
+}
+
+// Redact replaces every match of this class in s with its class marker. One
+// marker per match rather than one per line: a region preview is one string
+// with newlines in it, and collapsing two hits into one would under-report
+// what was taken.
+//
+// ReplaceAllLiteralString, not ReplaceAllString: a class name cannot carry a
+// `$` (NewOpsPattern refuses one) so the expanding form is safe today, and
+// a replacement that cannot be re-interpreted is one fewer thing for the
+// next person who widens the class grammar to have to notice.
+func (p OpsPattern) Redact(s string) string {
+	return p.re.ReplaceAllLiteralString(s, "["+RedactedMark+":"+p.Class+"]")
+}
+
+// RedactedMark is the word a redaction marker leads with, so a census can
+// count redacted readings with one grep and a reader of a corpus case knows
+// at a glance that the bytes are not the bytes that were read.
+const RedactedMark = "redacted"

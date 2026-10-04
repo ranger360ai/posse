@@ -92,18 +92,41 @@ import (
 // a multi-line prompt, a `❯` that turns out to be somewhere else on the
 // screen: all of them fail the join and answer false.
 func composerIsGhost(ansi, plain string) bool {
+	ghost, _ := composerGhostRead(ansi, plain)
+	return ghost
+}
+
+// composerGhostRead is composerIsGhost plus the bytes it read: the last
+// composer line of the ansi read, escapes and all, which is the EXACT region
+// this reading decided on.
+//
+// It exists because the readings log records the bytes a verdict was taken
+// from (ADR 0066 D1) and the whole-screen read is the wrong grain for that —
+// a screen is kilobytes of scrollback, of which one line is the evidence.
+// Returned even when the answer is false, so a record of a reading that did
+// NOT retire a claim carries what it looked at; empty when there was no
+// composer on the screen to look at.
+//
+// The bytes come back FROM THE MARK, mark included, which makes them a
+// composer line a later reader can hand straight back to this function —
+// the corpus's cases replay through the same door the live reading took,
+// rather than through a second entry point written for the replay. What is
+// dropped is only whatever box border stood to the left of the mark, which
+// no rule here reads.
+func composerGhostRead(ansi, plain string) (ghost bool, read string) {
 	if plain == "" {
-		return false
+		return false, ""
 	}
 	line, ok := lastComposerLine(ansi)
 	if !ok {
-		return false
+		return false, ""
 	}
+	read = composerMark + line
 	text, dim, any := scanSGRDim(line)
 	if !any || !dim {
-		return false
+		return false, read
 	}
-	return strings.TrimSpace(text) == plain
+	return strings.TrimSpace(text) == plain, read
 }
 
 // lastComposerLine returns everything after the prompt mark on the LAST line

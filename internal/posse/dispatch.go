@@ -3171,6 +3171,14 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 			hold := d.HB.sessionHolding(holder)
 			switch {
 			case hold.Waiting():
+				d.logReading(holder, Reading{
+					Decision:    DecisionComposerHold,
+					Verdict:     hold.Why(),
+					Consequence: ConsequenceHold,
+					Rule:        RuleComposerHold,
+					Bead:        is.ID,
+					Herdr:       hold.Read,
+				})
 				d.skipf(skipWaiting, "– %-14s held by %s, %s idle with %s — waiting, not re-prompted\n",
 					is.ID, persona, holder, hold.Why())
 				continue
@@ -3190,6 +3198,14 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 				// `scripts/verify-ghost-composer.sh` from an UNCAGED shell,
 				// whose arm A types a marker into a scratch claude and never
 				// submits it.
+				d.logReading(holder, Reading{
+					Decision:    DecisionComposerHold,
+					Verdict:     "ghost: " + ellipsis(hold.Ghost, 60),
+					Consequence: ConsequenceGhostRetired,
+					Rule:        RuleComposerGhost,
+					Bead:        is.ID,
+					Herdr:       hold.Read,
+				})
 				d.skipf(skipGhostBox, "– %-14s held by %s, %s idle, box previewing claude's own suggestion (%s) — not re-prompted: a TYPED line has not been measured undimmed (ranger-base-6o7wm)\n",
 					is.ID, persona, holder, ellipsis(hold.Ghost, 60))
 				continue
@@ -3562,6 +3578,14 @@ type pendingBead struct {
 	// has — the wait math and the seat ledger both mean "when the work
 	// started", and that is still the prompt.
 	launched time.Time
+	// turnRead is the D6 reading gather took of this settle — what the
+	// runtime's own turn-outcome record said, or that it said nothing
+	// (ADR 0066 D1, readingslog.go). It rides here because the consequence
+	// of that reading is written one function away, in noteSettleOpen, and
+	// a second read taken there would be a different reading of a different
+	// instant. Zero value = no reading was taken, which is every path that
+	// never reached the reader.
+	turnRead ReadingEvidence
 }
 
 type promptResult struct {
@@ -3809,6 +3833,7 @@ wait:
 			}
 		}
 		if !IsHerdrCode(r.err, "timeout") && !p.delivered {
+			d.logPromptHandBack(p.session, p.is.ID, p.runtime, p.target, r.err)
 			return false, d.unclaimAfterPromptFailure(p.is, p.persona, p.session, p.resumed, r.err)
 		}
 		if d.stopping() {
@@ -3882,6 +3907,7 @@ wait:
 		if find != nil {
 			outcome, observed = find(d.sessionCwd(p), p.is.ID, p.launched)
 		}
+		p.turnRead = turnReading(find, observed, outcome)
 		if observed {
 			if err := d.HB.MarkTurnFailure(p.session, outcome.Message); err != nil {
 				d.eprintf("posse: %s turn outcome could not be recorded in session meta (%v)\n", p.session, err)
@@ -3901,6 +3927,28 @@ wait:
 				// on the other side of the line telling the operator nothing
 				// happened. Which arm prints is the runtime's own record's to
 				// say (TurnOutcome.Worked), never this function's guess.
+				// ADR 0066 D1: the one reading in the map whose rule is a
+				// `Contains` over three literal phrasings of somebody
+				// else's refusal wording (turnfailure.go), which is the
+				// drift the spike priced — so the MESSAGE is the region
+				// bytes here, and the corpus is what would show the day a
+				// vendor rewords it.
+				d.logReading(p.session, Reading{
+					Decision:    DecisionTurnDelivered,
+					Verdict:     "refused",
+					Consequence: ConsequenceRefusal,
+					Rule:        RuleTurnOutcome,
+					Bead:        p.is.ID,
+					Runtime:     runtimeName(p.runtime),
+					Herdr: ReadingEvidence{
+						State: settled,
+						Regions: []ReadingRegion{{
+							Name:  TurnOutcomeRegion,
+							Bytes: len(outcome.Message),
+							Text:  outcome.Message,
+						}},
+					},
+				})
 				if work := turnWork(outcome); work != "" {
 					d.printf("⛔ %-14s %s refused the turn mid-flight: %s — the turn had already run (%s), so work may exist: posse peek %s and check the worktree before relaunching at another tier\n",
 						p.is.ID, runtimeName(p.runtime), outcome.Message, work, p.session)
@@ -3941,6 +3989,15 @@ wait:
 		// gets: the claim is kept and the bead is not judged this pass, so
 		// the seat is not refilled and the settle is not counted.
 		if hold := d.HB.PaneHolding(p.target); hold.Waiting() {
+			d.logReading(p.session, Reading{
+				Decision:    DecisionComposerHold,
+				Verdict:     hold.Why(),
+				Consequence: ConsequenceHold,
+				Rule:        RuleComposerHold,
+				Bead:        p.is.ID,
+				Runtime:     p.runtime,
+				Herdr:       hold.Read,
+			})
 			d.printf("◷ %-14s settled %q in %s with %s — waiting, not judged this pass (posse peek %s)\n",
 				p.is.ID, settled, p.session, hold.Why(), p.session)
 			return true, nil
@@ -5211,6 +5268,7 @@ func (d *Dispatcher) LaunchBead(is RepoIssue) (session string, err error) {
 	}
 	if !l.delivered {
 		if _, err := d.HB.H.AgentPrompt(l.target, prompt(), false, 0); err != nil {
+			d.logPromptHandBack(session, is.ID, launchRuntime, l.target, err)
 			return "", d.unclaimAfterPromptFailure(is, persona, session, l.resumed, err)
 		}
 	}
@@ -5337,6 +5395,20 @@ func (d *Dispatcher) awaitDelivered(id, session, runtime string, wait time.Durat
 			lastWhy, lastGuess = fmt.Sprintf("only %q (%s)", det.State, reason), det
 		}
 		if !time.Now().Add(poll).Before(deadline) {
+			// ADR 0066 D1: a HOLD and not a refusal. The prompt is already
+			// with the CLI (it rode in on the launch line), so nothing was
+			// refused — what this spends is the claim, kept, and the bead,
+			// not judged this pass. Same evidence, different consequence,
+			// and the census has to be able to tell them apart.
+			d.logReading(session, Reading{
+				Decision:    DecisionUnknownScreen,
+				Verdict:     "delivered but unrecognized: " + lastWhy,
+				Consequence: ConsequenceHold,
+				Rule:        RulePromptReady,
+				Bead:        id,
+				Runtime:     runtime,
+				Herdr:       ReadingEvidenceOf(lastGuess),
+			})
 			d.printf("◷ %-14s work prompt delivered on %s's launch line, but herdr never recognized a screen there within %s — %s%s\n",
 				id, session, wait, lastWhy, lastGuess.WhatHerdrSaw(d.detectionWhy(runtime)))
 			return target, false, nil
@@ -5544,6 +5616,14 @@ func (d *Dispatcher) awaitSettled(id, session, target string, until []string, de
 			// which is what the sentence above needs; threading a runtime
 			// through four callers to quote one more clause would be paying
 			// for a sentence the operator can read off `posse runtime check`.
+			d.logReading(session, Reading{
+				Decision:    DecisionUnknownScreen,
+				Verdict:     "never promptable: " + lastWhy,
+				Consequence: ConsequenceRefusal,
+				Rule:        RulePromptReady,
+				Bead:        id,
+				Herdr:       ReadingEvidenceOf(lastGuess),
+			})
 			return "", AgentDetection{}, Die("agent in %s never became promptable within %s — %s; check the session (posse peek %s)%s", session, wait, lastWhy, session, lastGuess.WhatHerdrSaw(""))
 		}
 		time.Sleep(poll)

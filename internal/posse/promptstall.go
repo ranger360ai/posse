@@ -133,32 +133,67 @@ func (d *Dispatcher) judgeStall(p *pendingBead) stallVerdict {
 	d.printf("◷ %-14s herdr typed the prompt into %s and saw no turn start inside its own 5s window — re-reading for up to %s before anything is judged (ranger-base-uauvn)\n",
 		p.is.ID, p.session, grace)
 	st, why := d.afterStall(p, grace)
+	// ADR 0066 D1: the D5 record is written on the verdict, below, and the
+	// evidence is what this reading actually read — herdr's answer to the
+	// re-asked wait and, on the arm that gets that far, git's commit count.
+	// NO REGIONS, and that is not an omission: this decision reads no
+	// screen at all (the spike's §3 D5 row), so a record here carrying a
+	// footer would be carrying a reading somebody else took.
+	read := ReadingEvidence{State: st, Seen: st != stallUnreadable}
 	switch st {
 	case "working":
 		d.printf("◷ %-14s a turn is under way in %s after all (the stall was a slow start, not a lost prompt) — claim kept, waiting again\n",
 			p.is.ID, p.session)
 		return stallRewait
 	case "blocked":
+		d.logStall(p, stallKeep, "blocked — an operator's to clear", read)
 		d.printf("⛔ %-14s blocked in %s — intervene (posse attach %s); claim kept\n", p.is.ID, p.session, p.session)
 		return stallKeep
 	case stallUnreadable:
+		d.logStall(p, stallKeep, why, read)
 		d.printf("◷ %-14s %s — claim kept, not judged this pass (posse peek %s)\n", p.is.ID, why, p.session)
 		return stallKeep
 	}
 	// st is stallNoTurn: herdr watched the grace out and no turn started in
 	// it. The second reading decides, and only a git that ANSWERED
 	// "nothing" reaches the hand-back.
-	switch n, read := d.committedWork(p); {
-	case !read:
+	switch n, answered := d.committedWork(p); {
+	case !answered:
+		d.logStall(p, stallKeep, why+", and the commit count could not be read", read)
 		d.printf("◷ %-14s %s, and whether %s has committed anything cannot be read — claim kept, not judged this pass (posse peek %s)\n",
 			p.is.ID, why, p.session, p.session)
 		return stallKeep
 	case n > 0:
+		d.logStall(p, stallKeep, fmt.Sprintf("%s, but %d commit(s) on the branch", why, n), read)
 		d.printf("◷ %-14s %s, but %s has %d commit(s) on its own branch — the prompt landed; claim kept, not judged this pass (posse peek %s)\n",
 			p.is.ID, why, p.session, n, p.session)
 		return stallKeep
 	}
+	d.logStall(p, stallHandBack, why+", and no commit on the branch", read)
 	return stallHandBack
+}
+
+// logStall writes the D5 record (ADR 0066 D1). Two of the three verdicts
+// reach it: a hand-back, and a keep — the claim stayed and the bead was not
+// judged this pass, which is the "hold" consequence the ADR names. A rewait
+// is not logged, for the reason readingslog.go's header gives: a reading
+// that found a turn under way and carried on has never been the thing
+// anybody had to diagnose.
+func (d *Dispatcher) logStall(p *pendingBead, v stallVerdict, why string, read ReadingEvidence) {
+	cons := ConsequenceHold
+	verdict := "keep: " + why
+	if v == stallHandBack {
+		cons, verdict = ConsequenceHandBack, "hand back: "+why
+	}
+	d.logReading(p.session, Reading{
+		Decision:    DecisionStallVerdict,
+		Verdict:     verdict,
+		Consequence: cons,
+		Rule:        RuleStallVerdict,
+		Bead:        p.is.ID,
+		Runtime:     p.runtime,
+		Herdr:       read,
+	})
 }
 
 // stallGrace is how long posse watches for the turn herdr did not see.
