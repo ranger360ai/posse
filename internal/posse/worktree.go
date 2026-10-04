@@ -1328,10 +1328,21 @@ func refreshGeneratedIndex(t *SessionTree) ([]string, string) {
 		// is made only when git can see something to commit.
 		return nil, ""
 	} else if err := commitGeneratedIndex(t, notesIndexPath); err != nil {
-		restoreGeneratedIndex(t.Path, notesIndexPath)
 		cause = gitSaid(err)
 	}
 	if cause != "" {
+		// EVERY refusal restores, and the arm that needs it most is the one
+		// above it (ranger-base-jqe3b). A generator that WROTE and then failed
+		// — killed at generatorTimeout with `Path.write_text` past its
+		// truncate, or any write error after it — leaves a short file in the
+		// session tree, and the restore used to hang off the commit arm alone.
+		// What that costs is worse than the dirt: the NEXT pass reads its own
+		// leftover at `differsFromHEAD` above, abstains as if the file were the
+		// persona's uncommitted work, and fast-forwards a stale index onto main
+		// — the defect ranger-base-7h8k4 was filed to stop, produced by its own
+		// fix. MEASURED by TestLandingRefusalDirtLandsAStaleIndex, which was
+		// red over the old placement in both of its halves.
+		restoreGeneratedIndex(t.Path, notesIndexPath)
 		return nil, fmt.Sprintf("%s is generated from %s/ and this landing could not reproduce it (%s) — nothing was landed; run `%s` in %s, commit it path-limited, and `posse worktrees --land`",
 			notesIndexPath, notesFragmentDir, cause, notesIndexCommand, AbbrevHome(t.Path))
 	}

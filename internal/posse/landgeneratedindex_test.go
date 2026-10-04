@@ -476,3 +476,102 @@ func TestTheLandingCommitSkipsTheFlushHookAndNotTheWall(t *testing.T) {
 		t.Error("the landing commit did not run prepare-commit-msg — that is where posse's commit wall lives, and `--no-verify` must not have dodged it")
 	}
 }
+
+// halfWritingGenerator is the generator failure the shipped pin above cannot
+// have: it takes the real program's `--directory` contract, answers `--check`
+// the way a stale index does, then WRITES the file and dies. The fixture
+// brokenGeneratorTree uses writes nothing at all, so its "nothing is left in
+// the tree" assertion passed over the restore and over its absence alike
+// (ranger-base-jqe3b). Production reaches this shape through the kill at
+// generatorTimeout — `Path.write_text` truncates on open, so a kill between
+// the truncate and the close leaves a short file — and through any write
+// error after that truncate, ENOSPC being the ordinary one.
+const halfWritingGenerator = "import sys\n" +
+	"import argparse\n" +
+	"from pathlib import Path\n" +
+	"p = argparse.ArgumentParser()\n" +
+	"p.add_argument('--check', action='store_true')\n" +
+	"p.add_argument('--directory', type=Path)\n" +
+	"a = p.parse_args()\n" +
+	"if a.check:\n" +
+	"    sys.exit(1)\n" +
+	"(a.directory / 'README.md').write_text('half an index\\n')\n" +
+	"sys.exit('the generator is broken')\n"
+
+// THE REFUSAL LEAVES NO DIRT, AND THE COST OF DIRT IS A STALE INDEX ON MAIN
+// (ranger-base-jqe3b, escaped from ranger-base-7h8k4). Two passes over one
+// session tree: the first refuses with the generator half-writing, the second
+// runs a whole one over the same unindexed fragment. The second pass is the
+// point — refreshGeneratedIndex abstains at `differsFromHEAD` on an
+// uncommitted index, which is the right rule for a persona's edit and the
+// wrong one for the launcher's own leftovers, so a refusal that left dirt
+// turned the gate off and fast-forwarded a stale index onto main. That is the
+// defect ranger-base-7h8k4 was filed to stop, produced by its own fix.
+//
+// Observed RED before the restore moved, in both halves: pass one left
+// `M docs/notes.d/README.md`, and pass two came back merged=true
+// regenerated=[] with main's index naming only the fragment main already had.
+func TestLandingRefusalDirtLandsAStaleIndex(t *testing.T) {
+	t.Parallel()
+	a, repo := notesRepo(t)
+	real := string(notesGenerator(t))
+	commitIn(t, repo, notesIndexGenerator, halfWritingGenerator,
+		"main: a generator that writes and then dies")
+	tr := fragmentBranch(t, a, repo, "s-1", "ranger-base-pppp", "a fragment", false)
+
+	o, err := MergeSessionWork(a, tr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if o.Merged {
+		t.Fatal("pass one landed over an index nothing reproduced")
+	}
+	if left := strings.TrimSpace(mustGit(t, tr.Path, "status", "--porcelain", "--untracked-files=all")); left != "" {
+		t.Errorf("a refused landing left the session tree dirty: %q", left)
+	}
+
+	// The generator is whole again in BOTH copies, so the licence to run it
+	// holds (generatorIsTheTreesOwn). Nothing else about the branch changed.
+	write(t, filepath.Join(repo, notesIndexGenerator), real)
+	write(t, filepath.Join(tr.Path, notesIndexGenerator), real)
+
+	o2, err := MergeSessionWork(a, tr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !o2.Merged {
+		t.Fatalf("pass two refused a landing nothing is wrong with: %s", o2.Reason)
+	}
+	landedIndexNames(t, repo, "ranger-base-aaaa", "ranger-base-pppp")
+}
+
+// THE HALF `git restore` CANNOT EXPRESS: the generated file is not in HEAD at
+// all, so putting it back the way the last commit has it means removing it
+// (restoreGeneratedIndex's own measurement). Reached by a branch that brings
+// the fragment directory whole — here, main with the index deleted — where the
+// generator CREATES the file instead of rewriting one. An untracked leftover
+// costs exactly what a modified one does: `differsFromHEAD` counts untracked
+// (its own header says so), so the next pass abstains and lands stale.
+func TestLandingRefusalRemovesAGeneratedFileHEADNeverHad(t *testing.T) {
+	t.Parallel()
+	a, repo := notesRepo(t)
+	mustGit(t, repo, "rm", "-q", "--", notesIndexPath)
+	mustGit(t, repo, "commit", "-q", "-m", "main: no committed index at all", "--", notesIndexPath)
+	commitIn(t, repo, notesIndexGenerator, halfWritingGenerator,
+		"main: a generator that writes and then dies")
+	tr := fragmentBranch(t, a, repo, "s-1", "ranger-base-qqqq", "a fragment", false)
+	if _, err := os.Stat(filepath.Join(tr.Path, notesIndexPath)); !os.IsNotExist(err) {
+		t.Fatalf("fixture: the session tree has a committed index, so the generator would rewrite one (%v)", err)
+	}
+
+	o, err := MergeSessionWork(a, tr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if o.Merged {
+		t.Fatal("the landing proceeded over an index nothing could reproduce")
+	}
+	if left := strings.TrimSpace(mustGit(t, tr.Path, "status", "--porcelain", "--untracked-files=all")); left != "" {
+		t.Errorf("a refused landing left the generator's new file in the tree: %q", left)
+	}
+}

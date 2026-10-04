@@ -231,8 +231,27 @@ func commitGeneratedIndex(t *SessionTree, path string) error {
 // pass to read as their uncommitted work (ADR 0041 §1–§2) — path-limited and
 // through `git restore`, which is the undo AGENTS.md prescribes for exactly
 // this, never a reset.
+//
+// AND "THE WAY THE LAST COMMIT HAS IT" IS SOMETIMES ABSENT, which `restore`
+// has no spelling for (ranger-base-jqe3b). A branch that brings the fragment
+// directory whole brings no committed index with it, so the generator CREATES
+// the file — and MEASURED 2026-10-03, git 2.50.1, darwin 25.4.0: over a path
+// in neither HEAD nor the index, `restore --source=HEAD --staged --worktree`
+// answers `pathspec did not match any file(s) known to git`, exits 1 and
+// writes nothing, leaving the half-written file in the tree as `??`. (Over a
+// path the `add` in commitGeneratedIndex staged, the same command removes it
+// from both and exits 0 — that half needs nothing.) So an untracked leftover
+// is removed outright, guarded on git's own answer that the path IS untracked
+// so that a restore which failed for any other reason — a locked index — still
+// deletes nothing.
 func restoreGeneratedIndex(tree, path string) {
-	_, _ = git(tree, "restore", "--source=HEAD", "--staged", "--worktree", "--", path)
+	if _, err := git(tree, "restore", "--source=HEAD", "--staged", "--worktree", "--", path); err == nil {
+		return
+	}
+	if out, err := git(tree, "status", "--porcelain", "--untracked-files=all", "--", path); err == nil &&
+		strings.HasPrefix(strings.TrimSpace(out), "??") {
+		_ = os.Remove(filepath.Join(tree, path))
+	}
 }
 
 // conflictedPaths is what a stopped replay is waiting on: the unmerged entries
