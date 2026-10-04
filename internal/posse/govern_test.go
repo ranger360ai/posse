@@ -522,12 +522,19 @@ const parkDay = 24 * time.Hour
 // datelessPark is a question bead in the shape one store class leaves behind:
 // status "deferred", NO defer_until, and an updated_at that is when the park
 // happened (MEASURED 2026-10-03, bd 0.50.3 — `bd defer` stamps it and writes
-// no date). created_at is deliberately far older than the park, which is the
-// live shape and the reason Created cannot be this row's clock.
+// no date).
+//
+// created_at is pinned FAR past the horizon on every arm, including the arms
+// that must stay quiet, and that is the fixture's whole point: it is the one
+// condition under which the two available clocks disagree. A reader keyed on
+// Created passes every arm here if the two are close together, and it is
+// wrong — MEASURED 2026-10-03, the five live dateless parks were created
+// between 5h28m and 23m before the park that is the thing being dated, and a
+// question bead parked, revisited and re-parked is older still.
 func datelessPark(id string, parkedAgo time.Duration) map[string]any {
 	return map[string]any{
 		"id": id, "status": "deferred", "title": "ask " + id, "labels": []string{"question"},
-		"created_at": govNow.Add(-parkedAgo - 9*time.Hour),
+		"created_at": govNow.Add(-99 * parkDay),
 		"updated_at": govNow.Add(-parkedAgo),
 	}
 }
