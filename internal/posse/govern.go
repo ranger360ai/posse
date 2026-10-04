@@ -698,9 +698,17 @@ func (in GovInputs) beadConditions(now time.Time, sessions []HerdrSession, add f
 	for _, dir := range in.App.BeadsDirs() {
 		// ── G2 · settled-but-holding ─────────────────────────────────────
 		// The zom skip made visible. dispatch already declines to re-prompt
-		// a bead whose holder settled — "stopped on purpose? (--resume
-		// re-prompts)" — and that skip is exactly the state nobody was told
-		// about: the bead stays in_progress forever and the queue looks busy.
+		// a bead whose holder settled — interruptedRuns does not offer one
+		// to the fire loop without --resume (interrupted.go), and the loop's
+		// own settled skip catches the holder that settles under the scan —
+		// and that decline is exactly the state nobody was told about: the
+		// bead stays in_progress forever and the queue looks busy.
+		//
+		// This row is the ONLY surface that says so. It used to quote the
+		// skip's own per-bead line here ("stopped on purpose? (--resume
+		// re-prompts)"); that line stopped being printed with
+		// ranger-base-9c5bh, which is when the decline became silent and
+		// this row became the whole of what the operator hears.
 		held, err := in.Bd.InProgress(dir)
 		if err != nil {
 			failed = append(failed, ScanError{Dir: dir, Err: err})

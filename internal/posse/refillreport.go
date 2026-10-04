@@ -32,6 +32,14 @@ import (
 // because they are counted rather than read one at a time — the per-bead
 // line still says the whole thing outside a refill, and `posse dispatch
 // --dry-run` prints that enumeration on demand.
+//
+// Every one of them is a reason some site REPORTS: a reason reaches this
+// table by being passed to skipf/skipNf and leaves it when its last caller
+// does. `skipSettled` ("held, agent settled") outlived its line here
+// (ranger-base-9c5bh) — dispatch's settled skip stopped printing when
+// ranger-base-eh1kr left it with no store-driven caller, and a refill went
+// on carrying a tally nothing could add to. Pinned by
+// TestQAEveryCountedSkipReasonHasAReportingSite (settledrace_qa_test.go).
 const (
 	skipBadID      = "bad bead id"
 	skipQuestion   = "for the operator"
@@ -40,7 +48,6 @@ const (
 	skipCrewHeld   = "held by a crew session"
 	skipOrphaned   = "orphaned claim, assignee's crew session live"
 	skipForeign    = "held by another posse"
-	skipSettled    = "held, agent settled"
 	skipWaiting    = "held, agent waiting on its own background work"
 	skipGhostBox   = "held, box previewing claude's own suggestion"
 	skipGrace      = "inside another launcher's prompt grace"

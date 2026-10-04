@@ -144,9 +144,11 @@ func settleStuckSource(title string) string {
 // just judged a settle against a bead that is not closed.
 //
 // It runs only under --resume, because --resume is what makes the retry
-// infinite: without it the next pass prints "stopped on purpose?" and moves
-// on, which is already a bounded answer, and escalating there would file
-// question beads for a loop that is not running. --dry-run writes nothing,
+// infinite: without it the next pass leaves the settled holder alone and
+// moves on, which is already a bounded answer, and escalating there would
+// file question beads for a loop that is not running. (That pass used to say
+// so per bead — "stopped on purpose?"; the line went with ranger-base-9c5bh,
+// the silence did not.) --dry-run writes nothing,
 // for the reason every writer in this package refuses to (seatidle.go): a
 // pass that acted on nothing must not leave state a later pass counts.
 func (d *Dispatcher) noteSettleOpen(p *pendingBead, settled, status string) {

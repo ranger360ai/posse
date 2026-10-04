@@ -19,6 +19,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-d88rp](ranger-base-d88rp.md) — ranger-base-d88rp — the trust key is NFC, and posse's was not — 2026-10-03
 - [ranger-base-bknod](ranger-base-bknod.md) — ranger-base-bknod — the fake bd's `ready` serves open rows, and nothing else — 2026-10-03
 - [ranger-base-b96nx](ranger-base-b96nx.md) — The ordered matrix cannot see a shadowed rule, so five of the override's stated properties were unasserted (ranger-base-b96nx) — 2026-10-03
+- [ranger-base-9c5bh](ranger-base-9c5bh.md) — ranger-base-9c5bh — the settled skip keeps its branch and loses its line — 2026-10-03
 - [ranger-base-99gww](ranger-base-99gww.md) — A path-keyed config lookup compared spellings, and one repo had two (ranger-base-99gww) — 2026-10-03
 - [ranger-base-7h8k4](ranger-base-7h8k4.md) — A generated file is reproduced at landing, never replayed (ranger-base-7h8k4) — 2026-10-03
 - [ranger-base-5no4s](ranger-base-5no4s.md) — The plan-guard blind gate has no clock of its own: it inherits one from the snapshot's provenance (ranger-base-5no4s) — 2026-10-03

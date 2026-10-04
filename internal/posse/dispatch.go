@@ -3023,6 +3023,30 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 		if s, ok := d.HB.RunHolder(is.Dir, persona, is.ID); ok {
 			runHolder = s
 		}
+		// THE SHAPE OF THE THREE `is.Status == "in_progress" && is.Assignee
+		// == persona` CONJUNCTIONS BELOW, before anybody mutates one
+		// (ranger-base-9c5bh, found by ranger-base-bknod). In a store-driven
+		// pass both halves are now guaranteed upstream: `bd ready` carries no
+		// in_progress row on any store class, and the claimed half reaches
+		// here only through interruptedRuns, which offers only a claim whose
+		// assignee is a lane of ONE at its own holder with the canon name
+		// equal to the assignee as written (heldLane, interrupted.go) — and
+		// this loop's persona is that lane's seat. They are kept because
+		// nothing here may assume its caller: a bead handed in by a store
+		// class that answers `ready` differently, or by a scan rewritten
+		// without heldLane's rule, would reach the holder join on somebody
+		// else's claim. What they are NOT any more is killable from a
+		// dispatch pass: a mutant that drops any of the three leaves every
+		// pin in this package green.
+		//
+		// The cockpit's `d` is the copy that still is load-bearing, and the
+		// one to mutate when you want this conjunction tested: LaunchBead
+		// takes the row the IN PROGRESS section displays — Bd.InProgressAll,
+		// which is `bd list --status in_progress` whole, unassigned rows
+		// included — so its own copies below (the slot name in the join, and
+		// ADR 0030's tiebreak) are reached with no upstream filter in front
+		// of them (TestQAOrphanedClaimDoesNotParkAClaimThisPersonaDoesNotHold).
+		//
 		// ADR 0008: a bead whose own session is the operator's — the session
 		// the run record names, this bead's Dial F name, or, when this bead
 		// would resume into it, the pre-Dial-F slot — is left alone. No
@@ -3098,8 +3122,34 @@ func (d *Dispatcher) fireLoop(beads []RepoIssue, personaFilter string, max int, 
 		// — so a holder had to have an agent to be a holder at all — is what
 		// left the retarget below blind to a bare slot shell and the pass
 		// creating a Dial F twin beside it (ranger-base-6bu).
+		//
+		// AND IT HAS NO STORE-DRIVEN CALLER LEFT, which is why it says
+		// nothing (ranger-base-9c5bh, found by ranger-base-bknod).
+		// `holder` is non-empty only for an in_progress bead assigned to
+		// this persona, `bd ready` carries no in_progress row on any store
+		// class (MEASURED 2026-10-03, bd 0.50.3, both classes:
+		// interrupted.go), and since ranger-base-eh1kr such a bead reaches
+		// this loop only through interruptedRuns — which declines a settled
+		// holder itself unless --resume asked for it (interruptedRun), and
+		// under --resume this branch's own `!d.Resume` is false. So the one
+		// path left is a holder that SETTLES BETWEEN the scan's heldSession
+		// walk and this one, or a bare shell the scan offered that has an
+		// agent in it by now.
+		//
+		// It stays, because that race is the shape the skip was written for:
+		// fall through and an unattended pass re-prompts a persona that
+		// stopped, which is rangerhq-zom's own token loop one pass later.
+		// It prints nothing, because a per-pass report would describe a race
+		// as routine — four pins asserted the line and every one of them
+		// could only reach it through a fixture's impossible ready queue
+		// (docs/notes.d/ranger-base-bknod.md) — and the surface that reports
+		// a holder which stopped without closing is the governance surface's
+		// G2 row (`settled:<bead>`, govern.go), once per finding rather than
+		// once per pass. Pinned by TestQASettledHolderRacingTheScanIsSkipped
+		// (settledrace_qa_test.go), which is the only caller that can reach
+		// it; `skipSettled` is gone from the counted-reason table with the
+		// line, because a reason no site reports cannot be tallied.
 		if holder != "" && holderStatus != "" && !d.Resume {
-			d.skipf(skipSettled, "– %-14s held by %s, %s idle — stopped on purpose? (--resume re-prompts)\n", is.ID, persona, holder)
 			continue
 		}
 		// ranger-base-htafy. --resume overrides a persona that STOPPED, and

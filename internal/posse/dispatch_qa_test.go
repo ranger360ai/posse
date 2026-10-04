@@ -1415,6 +1415,11 @@ func TestDispatchHeldBeadNotReprompted(t *testing.T) {
 	// in_progress row in `bd ready`, which no store answers with. The
 	// surface that reports a holder which stopped without closing is the
 	// governance surface's G2 row (`settled:<bead>`, govern.go).
+	//
+	// ranger-base-9c5bh took the line out of dispatch.go altogether, for the
+	// same measurement: the branch that printed it has no store-driven caller
+	// left, only a holder that settles under the scan, and that race is
+	// pinned by TestQASettledHolderRacingTheScanIsSkipped.
 	out := dispatcherOut(d)
 	if n != 0 {
 		t.Errorf("held bead must be skipped, got n=%d:\n%s", n, out)
@@ -1666,6 +1671,11 @@ func TestDispatchAssigneeRoutedBeadReachesInProgress(t *testing.T) {
 	// in_progress row in `bd ready`, which no store answers with. The
 	// surface that reports a holder which stopped without closing is the
 	// governance surface's G2 row (`settled:<bead>`, govern.go).
+	//
+	// ranger-base-9c5bh took the line out of dispatch.go altogether, for the
+	// same measurement: the branch that printed it has no store-driven caller
+	// left, only a holder that settles under the scan, and that race is
+	// pinned by TestQASettledHolderRacingTheScanIsSkipped.
 	out2 := dispatcherOut(d2)
 	if n2 != 0 {
 		t.Errorf("a held assignee-routed bead must not be re-prompted, got n=%d:\n%s", n2, out2)
