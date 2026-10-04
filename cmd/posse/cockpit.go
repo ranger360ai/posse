@@ -867,6 +867,20 @@ func newCockpit(a *posse.App, hb *posse.HerdrBackend, out io.Writer) *cockpit {
 	if hb != nil {
 		hb.Warn = c.notices
 	}
+	// AND THE DISPATCHER'S OWN ERROR STREAM, which is the fourth slice of the
+	// same writer and the one that was still on the frame (ranger-base-jqe3b,
+	// escaped from ranger-base-2vhqo). Dispatcher.Err is assigned in exactly
+	// one other place in non-test code — watch.go's own tee — and a cockpit
+	// never calls Watch, so `errw()` here resolved to os.Stderr for every
+	// d.eprintf and d.equietf site in internal/posse. Reached from this
+	// screen at one keypress: `d` -> c.disp.LaunchBead -> d.budget ->
+	// "budget: N transcript(s) unreadable … the ledger counts less than was
+	// spent", painted over the frame and gone at the next redraw. Not
+	// Progress, for the same reason the backend's warnings are not: c.note
+	// DROPS what will not fit. The three streams a cockpit's dispatcher has
+	// are now all off the glass — Out to io.Discard, Progress to the status
+	// line, Err here.
+	c.disp.Err = c.notices
 	return c
 }
 

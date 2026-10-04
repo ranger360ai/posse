@@ -157,7 +157,12 @@ func (n *cockpitNotices) noticeRow() string {
 	if c == 0 {
 		return ""
 	}
-	return fmt.Sprintf("%d backend notice(s) — a listing withheld or a kill refused; w reads them", c)
+	// The three sources named in the order an operator meets them, and the
+	// dispatch one is why this sentence changed (ranger-base-jqe3b): the
+	// cockpit's dispatcher writes its errors here too, so a hint naming only
+	// the listing and the kill sent a reader looking in the wrong place. Still
+	// inside 80 columns, which is what this row has to survive.
+	return fmt.Sprintf("%d backend notice(s) — a listing, a kill or a dispatch said so; w reads them", c)
 }
 
 // flush hands the notices back to stderr, where they were going before this

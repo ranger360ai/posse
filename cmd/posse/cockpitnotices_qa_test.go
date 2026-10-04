@@ -33,6 +33,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -391,5 +392,52 @@ func TestQACockpitNoticesGoBackToStderrOnTheWayOut(t *testing.T) {
 		t.Error("runCockpit no longer enters the alt screen — the premise of this whole bead is gone, re-read it")
 	case flush > alt:
 		t.Error("the flush is deferred BELOW the alt screen's restore, so LIFO runs it while the screen is still up and the lines land in a frame that is then thrown away")
+	}
+}
+
+// Arm 7: ALL THREE of the dispatcher's streams are off the glass
+// (ranger-base-jqe3b, escaped from this bead). The cockpit routed the
+// backend's warn stream above and the package's unowned notices in
+// runCockpit, and left its own DISPATCHER's error stream unassigned — and
+// Dispatcher.Err's nil IS os.Stderr (dispatch.go's errw()), which under the
+// alt screen is the frame. One keypress reaches it: `d` -> LaunchBead ->
+// d.budget -> "budget: N transcript(s) unreadable", painted over the frame and
+// gone at the next redraw. Only the watch loop's own tee ever assigned that
+// field, and a cockpit never calls Watch.
+//
+// Read as FIELDS off the real constructor rather than as source, which is
+// stronger here than a grep: the defect was an assignment that was missing,
+// and the thing that has to be true is what newCockpit leaves behind.
+func TestQACockpitDispatcherWritesNoStreamToTheFrame(t *testing.T) {
+	t.Parallel()
+	c, stderrish, _ := cnCockpit(t)
+
+	// Err: the notices sink, asserted by WRITING the line the budget check
+	// prints rather than by comparing pointers — what matters is where a
+	// d.eprintf ends up, and quietErrWriter (the writer
+	// RouteBackendWarnings and RouteProcessNotices route to) resolves through
+	// the same field.
+	if c.disp.Err == nil {
+		t.Fatal("the cockpit's dispatcher has Err == nil, so every d.eprintf resolves to os.Stderr — the alt screen (LaunchBead -> budget -> eprintf)")
+	}
+	const budget = "budget: 3 transcript(s) unreadable — the ledger counts less than was spent\n"
+	if _, err := c.disp.Err.Write([]byte(budget)); err != nil {
+		t.Fatal(err)
+	}
+	if c.notices.count() != 1 || !strings.Contains(c.notices.text(), "transcript(s) unreadable") {
+		t.Errorf("a dispatcher error did not land in the notices this screen can read: %d line(s), %q", c.notices.count(), c.notices.text())
+	}
+	if stderrish.Len() != 0 {
+		t.Errorf("a dispatcher error reached the writer standing in for the frame:\n%s", stderrish.String())
+	}
+
+	// Out: io.Discard, because a line written straight to this screen is
+	// garbage on the frame; the one line a blocked launch owes the operator
+	// comes back through Progress instead (rangerhq-ecl2).
+	if c.disp.Out != io.Discard {
+		t.Errorf("the cockpit's dispatcher writes Out to %T, not io.Discard — a dispatch line on the frame is garbage on the frame", c.disp.Out)
+	}
+	if c.disp.Progress == nil {
+		t.Error("the cockpit's dispatcher has no Progress, so the blocked-launch line ADR 0011 §1 owes the operator has nowhere to go")
 	}
 }
