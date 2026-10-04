@@ -86,7 +86,10 @@ you.
 
 codex and grok have no session credential decided (`cage_cred:` unset). A
 caged launch on them refuses with that reason rather than starting a session
-that cannot do anything.
+that cannot do anything. bob does have one decided, and is still not caged by
+it: bob's launch row is unmet — herdr 0.8.2 has no `bob` kind — so dispatch
+refuses by name before any credential is asked for (ADR 0060 D1,
+`ranger-base-ymmiv`).
 
 ---
 
@@ -239,12 +242,13 @@ way) — always, on darwin, even for a claude-launched session: the deny
 protects the fallback file exactly in S3, at the accepted cost that a
 seatbelt-caged claude session cannot authenticate through it until the
 operator unlocks or re-grants the keychain, then `/login` — running `claude`
-once on its own performs no keychain write. (The codex and grok auth files
-are denied the same way, minus whichever one belongs to the runtime a session
-is actually launching on — a runtime still needs to read its own credential.
-GOOS-shaped throughout: off darwin this file is the store of record and stays
-readable. `ranger-base-hw18`.) So a session below the container tier can no
-longer read this file. This check stays the
+once on its own performs no keychain write. (The codex, grok and bob auth
+files are denied the same way, minus whichever one belongs to the runtime a
+session is actually launching on — a runtime still needs to read its own
+credential. bob's literal is `~/.bob/settings/auth-secrets.json`, the fourth,
+landed under `ranger-base-prjck`. GOOS-shaped throughout: off darwin this file
+is the store of record and stays readable. `ranger-base-hw18`.) So a session
+below the container tier can no longer read this file. This check stays the
 detective half regardless — a deny that stops a read proves nothing about a
 fallback file that keeps regenerating whenever the keychain write fails, and
 `posse gates <persona>` is where an operator reads the deny off a live
@@ -299,8 +303,25 @@ does not print it, and "opened once, never since" cannot be read off it.
 
 `~/.codex/auth.json` and `~/.grok/auth.json` are deliberately out of scope. For
 those runtimes the file **is** the store, not a leftover, so the same matcher
-would print a finding that is not one. They come into scope when those lanes
-reach the cage tier and their `cage_cred:` is decided.
+would print a finding that is not one. bob's
+`~/.bob/settings/auth-secrets.json` is the third and the newest, out of scope
+for exactly that reason: a fourth declared built-in since ADR 0060 D1, with a
+real token set measured at that path on 2026-09-28 (`ranger-base-9k9ff`), and
+walled for READ beside the other two (`ranger-base-prjck`) — being walled is
+not being swept, and this section is about the sweep.
+
+They come into scope when those lanes reach the cage tier and their
+`cage_cred:` is decided, and **both halves are load-bearing: bob satisfies the
+second and not the first.** bob's container credential is decided
+(`BobCageCred`, `internal/posse/runtime.go` — spelled in Go and deliberately
+nowhere in prose, because the ops-residue scan reads a credential env name in
+prose as a finding), and bob still cannot be caged at all, for the reason move
+1 gives: the launch row is unmet, so dispatch refuses by name and no bob
+session has ever run at this tier. So a declared `cage_cred:` is not on its
+own the trigger. What would put one of these files in scope is a caged session
+that authenticates from that env name — that is the day the on-disk file stops
+being the store of record for the caged tier, and a copy left sitting beside
+it becomes the leftover this matcher exists to print.
 
 ---
 
