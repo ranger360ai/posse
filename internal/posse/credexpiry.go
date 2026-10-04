@@ -133,6 +133,13 @@ func (e CredExpiry) Brief(now time.Time) string {
 //
 // It truncates, like expiryIn — an age reported short is the direction that
 // errs towards "look again", never towards "you have time".
+//
+// Its third caller is not a credential: governance G3's indefinite-park row
+// (govern.go, ranger-base-pm5zo), whose age is a fortnight and up. It is
+// here rather than BlindFor for the reason BlindFor's own doc gives — that
+// one renders a BLIND duration for a log line and the cockpit header, a
+// minutes-to-hours quantity, and it has no day arm, so a 14-day park reads
+// "336h00m". Same question, same units, one function.
 func expiryAgo(d time.Duration) string {
 	if d < time.Hour {
 		if d < time.Minute {

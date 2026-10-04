@@ -452,12 +452,16 @@ func TestGovG3NoDeferUntilStillNags(t *testing.T) {
 // Indefinite is still an answer: `bd defer <id>` with no --until is bd's own
 // status-based defer, documented as "deliberately set aside", and "not now"
 // is a decision somebody made.
+// The updated_at stamp is explicit and FRESH, because it is the park's own
+// clock since ranger-base-pm5zo: an indefinite park is quiet for
+// attn_parked_age and loud after. Without it this fixture would pass through
+// the zero-clock branch instead of the one it means to pin.
 func TestGovG3StatusDeferredWithNoDateIsNotACondition(t *testing.T) {
 	b, _ := newTestBackend(t)
 	dir := govRepo(t, b)
 	writeJSON(t, dir, "fake-list-labeled.json", []map[string]any{
 		{"id": "bd-q", "status": "deferred", "title": "ask", "labels": []string{"question"},
-			"created_at": govNow.Add(-9 * time.Hour)},
+			"created_at": govNow.Add(-9 * time.Hour), "updated_at": govNow.Add(-1 * time.Hour)},
 	})
 	if g := find(shopSet(t, govIn(t, b)), "G3"); g != nil {
 		t.Errorf("status deferred with no date is a park with no end date, not silence: %+v", *g)
@@ -486,11 +490,13 @@ func TestGovPulseLineOmitsParkedQuestions(t *testing.T) {
 		{"id": "q-b", "status": "deferred", "title": "ask b", "labels": []string{"question"},
 			"created_at": old, "defer_until": govNow.Add(13 * 24 * time.Hour)},
 		// Parked, date discarded by the store — the no-db JSONL shape, and
-		// hcn-4/7/11/12's own.
+		// hcn-4/7/11/12's own. updated_at is the park's own clock since
+		// ranger-base-pm5zo and these two are freshly parked, said out loud
+		// rather than left to the zero-clock branch.
 		{"id": "q-c", "status": "deferred", "title": "ask c", "labels": []string{"question"},
-			"created_at": old},
+			"created_at": old, "updated_at": govNow.Add(-1 * time.Hour)},
 		{"id": "q-d", "status": "deferred", "title": "ask d", "labels": []string{"question"},
-			"created_at": old},
+			"created_at": old, "updated_at": govNow.Add(-1 * time.Hour)},
 		// Nobody parked this one. It is the control: a guard that went
 		// quiet about every question would pass without it.
 		{"id": "q-e", "status": "open", "title": "ask e", "labels": []string{"question"},
@@ -504,6 +510,226 @@ func TestGovPulseLineOmitsParkedQuestions(t *testing.T) {
 		if strings.Contains(line, "question:"+id) {
 			t.Errorf("%s is parked and must not page: %q", id, line)
 		}
+	}
+}
+
+// ─── G3 · a park with no end date, past its horizon (ranger-base-pm5zo) ──────
+
+// parkDay is one day of the indefinite-park horizon, so an arm below reads in
+// the unit DefaultAttnParkedAge is written in.
+const parkDay = 24 * time.Hour
+
+// datelessPark is a question bead in the shape one store class leaves behind:
+// status "deferred", NO defer_until, and an updated_at that is when the park
+// happened (MEASURED 2026-10-03, bd 0.50.3 — `bd defer` stamps it and writes
+// no date). created_at is deliberately far older than the park, which is the
+// live shape and the reason Created cannot be this row's clock.
+func datelessPark(id string, parkedAgo time.Duration) map[string]any {
+	return map[string]any{
+		"id": id, "status": "deferred", "title": "ask " + id, "labels": []string{"question"},
+		"created_at": govNow.Add(-parkedAgo - 9*time.Hour),
+		"updated_at": govNow.Add(-parkedAgo),
+	}
+}
+
+// An indefinite park goes quiet, and then it goes LOUD AGAIN. This is the
+// whole bead: ranger-base-nkjjg stopped a dateless park paging every tick,
+// and nothing else in the shop re-surfaces one — MEASURED 2026-10-03, bd
+// 0.50.3, on both store classes: a defer date four weeks past is still absent
+// from `bd ready`. So without this arm "quiet" means "silent forever".
+//
+// The boundary is pinned on both sides rather than asserted once, because the
+// number is the deliverable here (14d, argued at DefaultAttnParkedAge) and an
+// off-by-a-day in either direction is the failure this row is trying to avoid
+// — early is ranger-base-nkjjg come back, late is a question rotting.
+func TestGovG3IndefiniteParkGoesLoudAgainPastItsHorizon(t *testing.T) {
+	for _, c := range []struct {
+		name      string
+		parkedAgo time.Duration
+		loud      bool
+	}{
+		{"a day under", 13 * parkDay, false},
+		{"an hour under", 14*parkDay - time.Hour, false},
+		{"exactly the horizon", 14 * parkDay, true},
+		{"a day over", 15 * parkDay, true},
+		{"a month over", 45 * parkDay, true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			b, _ := newTestBackend(t)
+			dir := govRepo(t, b)
+			writeJSON(t, dir, "fake-list-labeled.json", []map[string]any{datelessPark("bd-q", c.parkedAgo)})
+			g := find(shopSet(t, govIn(t, b)), "G3")
+			if !c.loud {
+				if g != nil {
+					t.Fatalf("a park %s old is inside the 14d default: %+v", c.parkedAgo, *g)
+				}
+				return
+			}
+			if g == nil {
+				t.Fatal("a park nobody came back to must be loud again — nothing else re-surfaces one")
+			}
+			// Its own key, because a stale park and a never-answered
+			// question are different conditions with different remedies and
+			// the pulse fingerprints these.
+			if g.Key != "parked:bd-q" {
+				t.Errorf("Key = %q, want parked:bd-q", g.Key)
+			}
+			// Its own sentence. The ordinary row would say "open 32d
+			// unanswered" about a bead `bd list` shows ❄ DEFERRED, and the
+			// operator would read that as ranger-base-nkjjg come back.
+			for _, want := range []string{"bd-q", "no end date", "nobody came back", "ask bd-q"} {
+				if !strings.Contains(g.Detail, want) {
+					t.Errorf("Detail = %q, must contain %q", g.Detail, want)
+				}
+			}
+			// In days, not BlindFor's hours: a fortnight-and-up age told as
+			// "336h00m" is the answer erased.
+			if !strings.Contains(g.Detail, fmt.Sprintf("%dd ago", int(c.parkedAgo.Hours()/24))) {
+				t.Errorf("Detail = %q, must say how long ago in days", g.Detail)
+			}
+		})
+	}
+}
+
+// The horizon must never reach a DATED park, on either side of its date.
+// That is this bead's own pin, and it is the thing a reader keyed on "any
+// deferred bead that has not been touched in a fortnight" would get wrong: a
+// park the operator deliberately set a month out would be reported as
+// forgotten at the fortnight, which is a row that cannot be cleared except
+// by un-parking the bead.
+func TestGovG3DatedParkIsOutOfTheParkHorizonsReach(t *testing.T) {
+	for _, c := range []struct {
+		name    string
+		defer_  time.Duration
+		wantKey string
+	}{
+		// 30 days out and last touched 60 days ago: well past the park
+		// horizon, and still answered — by its date.
+		{"future date, long untouched", 30 * parkDay, ""},
+		// Past its date, so the park expired and nobody revisited it:
+		// unanswered again, and it is the ORDINARY row that says so, not
+		// the park row. Unchanged from before this bead.
+		{"past date, long untouched", -1 * parkDay, "question:bd-q"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			for _, status := range deferStatuses {
+				t.Run(status, func(t *testing.T) {
+					b, _ := newTestBackend(t)
+					dir := govRepo(t, b)
+					writeJSON(t, dir, "fake-list-labeled.json", []map[string]any{
+						{"id": "bd-q", "status": status, "title": "ask", "labels": []string{"question"},
+							"created_at":  govNow.Add(-70 * parkDay),
+							"updated_at":  govNow.Add(-60 * parkDay),
+							"defer_until": govNow.Add(c.defer_)},
+					})
+					g := find(shopSet(t, govIn(t, b)), "G3")
+					if c.wantKey == "" {
+						if g != nil {
+							t.Fatalf("the date decides for a dated park, whatever the park horizon says: %+v", *g)
+						}
+						return
+					}
+					if g == nil || g.Key != c.wantKey {
+						t.Fatalf("G3 = %+v, want %s", g, c.wantKey)
+					}
+				})
+			}
+		})
+	}
+}
+
+// A park with no clock to read stays quiet, matching what the loop does three
+// lines above with a zero created_at. A clock that cannot be read does not
+// date a park, and a row nobody could ever clear is the defect this row
+// exists to avoid.
+//
+// MEASURED 2026-10-03/04, bd 0.50.3: no live record is in this shape. Every
+// record in both of the shop's stores carries updated_at, in the JSONL and in
+// `bd list --json`. This arm names the safe direction, not a population.
+func TestGovG3IndefiniteParkWithNoClockStaysQuiet(t *testing.T) {
+	b, _ := newTestBackend(t)
+	dir := govRepo(t, b)
+	writeJSON(t, dir, "fake-list-labeled.json", []map[string]any{
+		{"id": "bd-q", "status": "deferred", "title": "ask", "labels": []string{"question"},
+			"created_at": govNow.Add(-99 * parkDay)},
+	})
+	if g := find(shopSet(t, govIn(t, b)), "G3"); g != nil {
+		t.Errorf("no updated_at is no park date, not a forgotten park: %+v", *g)
+	}
+}
+
+// The horizon is a config key with the same grammar as the other two, and
+// zero means every tick — which puts the pre-ranger-base-nkjjg noise back for
+// an instance that wants it, deliberately spellable rather than reachable
+// only by editing the binary.
+func TestGovG3ConfigurableParkedAge(t *testing.T) {
+	for _, c := range []struct {
+		cfg  string
+		loud bool
+	}{
+		{"attn_parked_age: 48h\n", true},
+		{"attn_parked_age: 0\n", true},
+		{"attn_parked_age: 30d\n", false}, // not Go duration grammar: a typo
+		{"", false},
+	} {
+		t.Run(strings.TrimSpace(c.cfg), func(t *testing.T) {
+			b, _ := newTestBackend(t)
+			dir := govRepo(t, b)
+			if c.cfg != "" {
+				appendConfig(t, b.App, c.cfg)
+			}
+			writeJSON(t, dir, "fake-list-labeled.json", []map[string]any{datelessPark("bd-q", 72*time.Hour)})
+			g := find(shopSet(t, govIn(t, b)), "G3")
+			if c.loud && (g == nil || g.Key != "parked:bd-q") {
+				t.Fatalf("G3 = %+v, want parked:bd-q under %q", g, c.cfg)
+			}
+			if !c.loud && g != nil {
+				t.Fatalf("a 3d-old park is inside the horizon under %q: %+v", c.cfg, *g)
+			}
+		})
+	}
+}
+
+// A forgotten park that dep-blocks work is graded by the same rule the
+// unanswered row is graded by, because it is the same fact: the shop is
+// stopped behind a sentence nobody wrote, and here nobody even wrote down
+// when they meant to come back to it.
+func TestGovG3IndefiniteParkIsUrgentWhenItBlocksOpenWork(t *testing.T) {
+	b, _ := newTestBackend(t)
+	dir := govRepo(t, b)
+	writeJSON(t, dir, "fake-list-labeled.json", []map[string]any{datelessPark("bd-q", 20*parkDay)})
+	writeJSON(t, dir, "fake-blocked.json", []map[string]any{
+		{"id": "bd-2", "status": "open", "blocked_by": []string{"bd-q"}},
+	})
+	g := find(shopSet(t, govIn(t, b)), "G3")
+	if g == nil || g.Key != "parked:bd-q" || g.Class != GovUrgent {
+		t.Fatalf("G3 = %+v, want parked:bd-q URGENT", g)
+	}
+	if !strings.Contains(g.Detail, "blocking 1 bead") {
+		t.Errorf("the line must say what it holds: %q", g.Detail)
+	}
+}
+
+// End to end, the way the coordinator actually meets this: the PULSE LINE,
+// over the same GovSet the pulse fingerprints (set.Keys(), pulse.go) rather
+// than a re-derivation, so it cannot pass while the delivered line differs.
+//
+// One park inside the horizon and one past it. The fresh one is the control —
+// a row that went loud about every dateless park would pass without it, and
+// that row is exactly what ranger-base-nkjjg was filed to remove.
+func TestGovPulseLineNamesOnlyTheForgottenPark(t *testing.T) {
+	b, _ := newTestBackend(t)
+	dir := govRepo(t, b)
+	writeJSON(t, dir, "fake-list-labeled.json", []map[string]any{
+		datelessPark("q-fresh", 2*parkDay),
+		datelessPark("q-forgotten", 40*parkDay),
+	})
+	line := GovLines(shopSet(t, govIn(t, b)))
+	if !strings.Contains(line, "parked:q-forgotten") {
+		t.Errorf("a park nobody came back to must reach the pulse line: %q", line)
+	}
+	if strings.Contains(line, "q-fresh") {
+		t.Errorf("a park inside its horizon is an answer and must not page: %q", line)
 	}
 }
 

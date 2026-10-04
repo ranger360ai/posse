@@ -49,13 +49,51 @@ const (
 	GovLane   = "LANE"
 )
 
-// Default ages for the two conditions that need one. Code defaults, config
-// keys optional (`attn_question_age:`, `attn_guard_stuck:`); no new arm key
-// — the surface is always on, because a surface you have to arm is one more
-// thing that can be off when it is needed.
+// Default ages for the three conditions that need one. Code defaults, config
+// keys optional (`attn_question_age:`, `attn_guard_stuck:`,
+// `attn_parked_age:`); no new arm key — the surface is always on, because a
+// surface you have to arm is one more thing that can be off when it is
+// needed.
+//
+// DefaultAttnParkedAge is how long an INDEFINITE park stays quiet: a
+// question bead parked with no defer_until at all, which is the only park
+// one store class can express (ranger-base-nkjjg). A dated park is
+// re-surfaced by its own date and this value never reaches it.
+//
+// 14 days, and the number is argued rather than inherited (ranger-base-pm5zo
+// asked for exactly that):
+//
+//   - MEASURED 2026-10-03/04, bd 0.50.3, darwin 25.4.0, over every park
+//     either of the shop's two stores can account for: the horizons the
+//     operator has actually asked for are 5, 6, 6, 6, 6, 13, 14 and 30 days
+//     from the park. The five in the middle are the `no-db` store's — the
+//     dates bd accepted and discarded, recovered from the typing session's
+//     own argv on ranger-base-bwp7h — and they are the population THIS row
+//     exists for, because they are the parks that arrive dateless. 13 days
+//     is the longest of them, so 14 is the smallest whole-day horizon that
+//     fires strictly after every intent in that population, and more than
+//     twice the shortest.
+//   - It coins no new period: 14 days is already this shop's unit for a
+//     reading gone stale (RefreshExpiryWindow) and for a close that stuck
+//     (the closed-no-reopen metric).
+//   - ASSUMED, and this half is policy rather than measurement: that a
+//     deliberate `bd defer <id>` with no --until — an indefinite park, whose
+//     intent is unmeasurable by construction — wants reviewing fortnightly.
+//     `attn_parked_age:` is the dial, and zero means "every tick", which is
+//     the behaviour before ranger-base-nkjjg.
+//
+// REJECTED: attn_question_age (4h), which is the shortest honest floor and
+// was the shape first suggested — "a dateless park no quieter than a
+// question nobody deferred at all". MEASURED consequence: the five parked
+// questions in that store would have gone loud again the same afternoon they
+// were parked, ~4h later, and then every pulse_renag (30m) until somebody
+// closed them. That is ranger-base-nkjjg's reported symptom with a four-hour
+// delay. A park IS an answer for as long as it was meant to last, and what
+// the operator typed said days.
 const (
 	DefaultAttnQuestionAge = 4 * time.Hour
 	DefaultAttnGuardStuck  = 2 * time.Hour
+	DefaultAttnParkedAge   = 14 * 24 * time.Hour
 )
 
 // GovCondition is one row of the condition set, computed live.
@@ -264,6 +302,14 @@ func (a *App) AttnGuardStuck(errw io.Writer) time.Duration {
 	return a.attnAge("attn_guard_stuck", DefaultAttnGuardStuck, errw)
 }
 
+// AttnParkedAge is how long a park with NO end date stays quiet before G3
+// says so again. Same grammar as the other two; zero is meaningful and means
+// "every tick", so the key can also put the pre-ranger-base-nkjjg noise back
+// if an instance wants it.
+func (a *App) AttnParkedAge(errw io.Writer) time.Duration {
+	return a.attnAge("attn_parked_age", DefaultAttnParkedAge, errw)
+}
+
 func (a *App) attnAge(key string, def time.Duration, errw io.Writer) time.Duration {
 	raw := strings.TrimSpace(YamlGet(a.ConfigPath, key))
 	if raw == "" {
@@ -322,6 +368,7 @@ func ReadPause(path string) Pause {
 //	G1 session blocked on an approval          herdr agent status  LANE
 //	G2 settled-but-holding (the zom skip)       bd + herdr          LANE
 //	G3 question/risk bead past attn_question_age  bd                LANE/URGENT
+//	   · or parked with no end date past attn_parked_age
 //	G4 plan guard skipping past attn_guard_stuck  the guard + clock  URGENT
 //	G5 guard blind past plan_guard_blind_max      the plan endpoint  URGENT
 //	G6 Dial E stop / budget >= 100%               cost scan vs caps  URGENT
@@ -640,6 +687,7 @@ func (in GovInputs) beadConditions(now time.Time, sessions []HerdrSession, add f
 	var failed []error
 	coord := in.App.Coordinator()
 	maxAge := in.App.AttnQuestionAge(in.errw())
+	parkAge := in.App.AttnParkedAge(in.errw())
 
 	for _, dir := range in.App.BeadsDirs() {
 		// ── G2 · settled-but-holding ─────────────────────────────────────
@@ -774,19 +822,52 @@ func (in GovInputs) beadConditions(now time.Time, sessions []HerdrSession, add f
 			// no-db JSONL store discards the date the operator typed and
 			// leaves the status as the only evidence a park happened
 			// (ranger-base-nkjjg).
-			if deferredNow(is, now) {
+			if deferredNow(is, now) && !staleIndefinitePark(is, now, parkAge) {
 				continue
 			}
-			age := now.Sub(is.Created)
 			class, blocks := GovLane, ""
 			// URGENT if it dep-blocks work: an unanswered question that
 			// only costs its own bead is a lane stopped; one that holds
 			// other beads out of `bd ready` is the shop stopped behind a
-			// sentence nobody wrote.
+			// sentence nobody wrote. The same rule grades the park row
+			// below — a park nobody revisited that is holding beads out of
+			// `bd ready` is the shop stopped just as surely, and a second
+			// copy of this judgement is a second thing to keep in sync.
 			if n := holding[is.ID]; n > 0 {
 				class = GovUrgent
 				blocks = fmt.Sprintf(", blocking %d bead(s)", n)
 			}
+			// An INDEFINITE park that outlived attn_parked_age gets its own
+			// key and its own sentence, and both differences are the design
+			// (ranger-base-pm5zo).
+			//
+			// Its own KEY, because Key is the whole identity to a machine
+			// reader and must change when a different instance appears: "no
+			// answer has ever been given" and "somebody parked this and
+			// nobody came back" are different conditions with different
+			// remedies, and the pulse fingerprints these.
+			//
+			// Its own SENTENCE, because the ordinary row is unreadable here.
+			// It would say "open 32d unanswered" about a bead `bd list`
+			// shows ❄ DEFERRED with no date beside it — so the operator
+			// would read the row as ranger-base-nkjjg come back rather than
+			// as the finding it is. The row has to name the park and the
+			// missing date, or it cannot be acted on.
+			//
+			// And it has an EXIT on both store classes, which is what the
+			// row ranger-base-nkjjg rejected did not: `bd defer <id>` again
+			// re-stamps updated_at (MEASURED 2026-10-03, bd 0.50.3, on a
+			// no-db store), buying another attn_parked_age, and on a store
+			// that keeps the date the re-park leaves one and the dated arm
+			// above takes over. Answering or closing the bead clears it the
+			// way it clears any G3 row.
+			if deferredNow(is, now) {
+				add("G3", class, "parked:"+is.ID,
+					fmt.Sprintf("%s parked with no end date %s and nobody came back%s — %s",
+						is.ID, expiryAgo(now.Sub(is.Updated)), blocks, is.Title))
+				continue
+			}
+			age := now.Sub(is.Created)
 			add("G3", class, "question:"+is.ID,
 				fmt.Sprintf("%s open %s unanswered%s — %s", is.ID, BlindFor(age), blocks, is.Title))
 		}

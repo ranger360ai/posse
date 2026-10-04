@@ -435,6 +435,63 @@ func deferredNow(is BdIssue, now time.Time) bool {
 	return is.Status == "deferred"
 }
 
+// staleIndefinitePark reports whether a park with NO end date has outlived
+// `max`. It is the complement of deferredNow and only exists because of what
+// that function conceded: a dateless `deferred` is an answer ("not now"), and
+// an answer with no end date, read by a surface that re-surfaces nothing,
+// is silence forever (ranger-base-pm5zo).
+//
+// NOTHING ELSE RE-SURFACES ONE. MEASURED 2026-10-03, bd 0.50.3, both store
+// classes: a bead whose defer_until is four weeks past is still absent from
+// `bd ready`, on the SQLite queue and on a no-db store with a hand-written
+// past date alike. The only thing that has ever made a park loud again is
+// governance's own reader — and it keys on the date, which is exactly the
+// field one store class discards (ranger-base-bwp7h). So a dateless park had
+// no clock at all.
+//
+// THE CLOCK IS Updated, because it is the only one that dates the PARK.
+// MEASURED 2026-10-03/04, bd 0.50.3, darwin 25.4.0:
+//
+//   - `bd defer <id> --until <date>` and `bd defer <id>` both stamp
+//     updated_at at the moment of the park on a no-db store, while writing no
+//     defer_until. The live store that prompted this agrees: five dateless
+//     parks whose updated_at falls inside the 43 minutes the operator spent
+//     parking them, over created_at values spanning the five and a half hours
+//     before that.
+//   - So Created is the WRONG clock, and not marginally: the earliest of
+//     those five was created 5h28m before it was parked, and this row's
+//     caller has already required the bead to be older than
+//     attn_question_age. Keyed on Created, every one of them would be loud
+//     the instant it was parked — ranger-base-nkjjg un-fixed.
+//   - `bd comments add` does NOT move updated_at on that store class, so
+//     writing a note on a parked question does not buy it another window.
+//     `bd update --priority` and `--assignee` DO. That is this reading's one
+//     imprecision, and it is in the safe direction: the row can be LATE,
+//     never early, and what postpones it is somebody writing to this very
+//     bead. A row that fires early is the symptom ranger-base-nkjjg was
+//     filed on; a row that fires late is this one, a fortnight later.
+//
+// A ZERO Updated is quiet, matching what the caller does three lines above
+// with a zero Created, and for the same reason: a clock that cannot be read
+// does not date a park, and a row nobody can clear is the defect this
+// predicate exists to avoid — fail quiet on a destructive-to-attention row,
+// and say which ids are on the old path. MEASURED: there are none. Every
+// record in both of the shop's stores carries updated_at, in the JSONL and in
+// `bd list --json`; bd writes it on every create and every update.
+func staleIndefinitePark(is BdIssue, now time.Time, max time.Duration) bool {
+	if is.DeferUntil != nil {
+		// A dated park is re-surfaced by its own date (deferredNow), on
+		// both sides of it. This horizon must never reach one, or a park
+		// the operator deliberately set a month out would be reported as
+		// forgotten at the fortnight.
+		return false
+	}
+	if is.Status != "deferred" || is.Updated.IsZero() {
+		return false
+	}
+	return now.Sub(is.Updated) >= max
+}
+
 // ─── the work class (ADR 0006 §1, amended 2026-09-02) ────────────────────────
 //
 // One reader for one rule, because three surfaces answer with it and a
