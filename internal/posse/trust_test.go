@@ -542,6 +542,31 @@ func TestTrustKeyIsNFCWhereClaudesIs(t *testing.T) {
 		check(t, repo, repo,
 			"NFC is idempotent, and the live fleet is this arm: normalizing must not move a key that was already the one claude reads")
 	})
+	t.Run("a compatibility character is NOT folded", func(t *testing.T) {
+		t.Parallel()
+		// U+FB01 LATIN SMALL LIGATURE FI is not a canonical decomposition of
+		// "fi" but a COMPATIBILITY one: NFC leaves it alone and NFKC folds it
+		// to the two letters. Every other fixture in this test is canonical
+		// — `re`+U+0301 and U+00E9 — and a compatibility form agrees with
+		// NFC on all of them, so `norm.NFKC.String` in claudeProjectKey
+		// passed this whole test and every other pin in the package until
+		// this arm existed (MEASURED 2026-10-04 at f0d768bb, -run
+		// 'Trust|NFC|Normaliz|ClaudeTrustKey' ok 0.991s with the mutant in;
+		// ranger-base-2vynj finding 2, the twin of the keychain row
+		// credseam_test.go landed under the same bead).
+		//
+		// The runtime's form is NFC verbatim — `.normalize("NFC")` in the
+		// bundle credentialDir quotes — so a compatibility form here would
+		// derive a key the CLI never wrote for a repo path holding one of
+		// these runes: a folder posse believes it trusted and the seat asks
+		// about again, which is ranger-base-elf2v's dead seat one spelling
+		// axis over.
+		root := qaEvalPath(t, t.TempDir())
+		repo := filepath.Join(root, "o\ufb01ce")
+		mkdirs(t, filepath.Join(repo, ".git"))
+		check(t, repo, repo,
+			"NFC is a canonical normalization and nothing else: the ligature stays one rune. NFKC or NFKD would fold it to `office` and name a key claude never wrote")
+	})
 	t.Run("an ASCII path is untouched byte for byte", func(t *testing.T) {
 		t.Parallel()
 		root := qaEvalPath(t, t.TempDir())

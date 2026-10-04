@@ -266,41 +266,112 @@ func TestSeedConfigLiveKeysAreRead(t *testing.T) {
 // `budget_pass: 30`, `grok_guard_week: 85`), and only the prose says which
 // is which, so a key->constant map would be a hand list with a silent hole
 // for the next key to fall into. But the harness already states the pairing
-// where it cannot drift: a duration key is read at exactly one call site
-// that names its key literal AND its Default* constant in the same argument
-// list — `a.attnAge("attn_parked_age", DefaultAttnParkedAge, errw)`. So the
-// set is parsed out of the tree, and the only hand-maintained part is the
-// constant NAME -> value table below, which the derivation makes total: a
-// new duration key reds this pin until it is in it.
+// where it cannot drift, in one of exactly two shapes, and the census is
+// parsed out of both:
 //
-// THE REGISTER is seedDocumentedOnPurposeNotTheDefault, for a key the file
-// documents at something other than its default on purpose. It is empty
-// today, and its stale half is as loud as an undocumented key: an entry
-// whose key is no longer a duration key, is no longer documented, or whose
-// documented value has quietly become the default again, fails.
+//   - the CALL-SITE form. A duration key read through a shared reader names
+//     its key literal and its Default* constant in the same argument list:
+//     `a.attnAge("attn_parked_age", DefaultAttnParkedAge, errw)`.
+//   - the BODY form. A duration key with a reader of its own spells both in
+//     that reader's body: `YamlGet(a.ConfigPath, "plan_usage_ttl")` one line
+//     and `return PlanUsageTTLDefault` the next. Six of the ten duration
+//     keys the seed documents are read this way, and the census missed all
+//     six until ranger-base-khqvr — the rule was a hand-written list of two
+//     reader NAMES, which is the shape the paragraph above warns about, one
+//     level up (ranger-base-2vynj finding 1; MEASURED there, one mutant per
+//     documented line, all six SURVIVED against two derived controls that
+//     died).
+//
+// Both shapes are derived structurally, and the three hand-written tables
+// below are each made TOTAL by the derivation — a reader, a constant or an
+// unpairable key the tree has and a table does not reds this pin by name,
+// which is the property the old rule did not have:
+//
+//   - seedDurationResolvers: call-site readers, because a test cannot call
+//     an unexported method it only parsed.
+//   - seedDurationBodyReaders: body-form readers, same reason.
+//   - seedDurationDefaults: constant NAME -> value, because a test cannot
+//     evaluate a constant it only parsed. For a body-form reader the value
+//     is cross-checked against what the reader itself answers over a config
+//     with the key absent, so a mis-parsed pairing cannot sit there green.
+//
+// A CONSTANT IS `Default*` OR `*Default`. Both spellings are live in this
+// tree — `DefaultAttnParkedAge` and `PlanUsageTTLDefault` — and the prefix
+// test alone was the second half of the escape above: four of the six keys
+// name their constant with the suffix, so they failed both halves of the old
+// rule at once.
+//
+// THE REGISTERS are two, and each silences one key for a stated reason:
+//
+//   - seedDocumentedOnPurposeNotTheDefault, for a key the file documents at
+//     something other than its default on purpose. Empty today.
+//   - seedDurationDefaultNotAConstant, for a key whose default is a RULE and
+//     not a constant, which this pin cannot compare against anything.
+//     `backup_max_age` is the one (ADR 0036 §6). Such a key must also stay
+//     UNDOCUMENTED in the seed, because a documented line for it would be a
+//     claim nothing here can hold.
+//
+// Each register's stale half is as loud as its live half: an entry whose key
+// is no longer a duration key, is no longer documented, or whose documented
+// value has quietly become the default again, fails.
+//
+// WHAT IS STILL OUTSIDE, on purpose. `autostart_interval` has no default at
+// all — its presence is the arm switch and absent means off (govern.go) —
+// and `autostart_max_interval` defaults to 8x the base rather than to a
+// constant. Neither is read through a reader of this shape, so neither is
+// derived, and neither should be: a register row for a key with no constant
+// to drift from is the wrong answer. MEASURED 2026-10-04: the body-form rule
+// scans `YamlGet` and `CfgGet` key literals alike and the two keys above are
+// read through neither inside a duration reader, so widening the key source
+// adds no member and closes the escape a future CfgGet-based reader would
+// otherwise have.
 
-// seedDurationResolvers are the config readers whose second argument is the
-// default: the functions whose grammar decides what a documented value
-// MEANS. The pin resolves through the real function rather than
-// reimplementing either grammar, so `336h` vs `1209600` vs `14d` is settled
-// by the code the instance runs and not by a second parser in a test.
+// seedDurationResolvers are the config readers that take the key and the
+// default as ARGUMENTS: the functions whose grammar decides what a
+// documented value MEANS. The pin resolves through the real function rather
+// than reimplementing either grammar, so `336h` vs `1209600` vs `14d` is
+// settled by the code the instance runs and not by a second parser in a
+// test. Made total by seedDurationKeyCensus, which derives the same set from
+// the tree's function signatures and fails on one this map does not name.
 var seedDurationResolvers = map[string]func(*App, string, time.Duration, io.Writer) time.Duration{
 	"attnAge":    (*App).attnAge,
 	"graceAfter": (*App).graceAfter,
 }
 
-// seedDurationDefaults is the Default* constant NAME -> its value. Hand
-// written, because a test cannot evaluate a constant it only parsed — and
-// made total by the derivation in seedDurationKeySites, which fails on a
-// constant it finds at a call site and cannot find here.
+// seedDurationBodyReaders are the config readers that spell their key and
+// their default in their OWN body — one `YamlGet`/`CfgGet` key literal, one
+// `Default`-shaped constant returned. Resolving through them is the same
+// claim as resolving through a call-site reader: the duration a fresh
+// instance would get for the documented text, computed by the instance's own
+// code. Made total the same way.
+var seedDurationBodyReaders = map[string]func(*App, io.Writer) time.Duration{
+	"DispatchEpoch":       (*App).DispatchEpoch,
+	"ModelProbeTTL":       (*App).ModelProbeTTL,
+	"PlanGuardBlindMax":   (*App).PlanGuardBlindMax,
+	"PlanUsageStaleAfter": (*App).PlanUsageStaleAfter,
+	"PlanUsageTTL":        (*App).PlanUsageTTL,
+	"verifyBatchAge":      (*App).verifyBatchAge,
+}
+
+// seedDurationDefaults is the Default-shaped constant NAME -> its value.
+// Hand written, because a test cannot evaluate a constant it only parsed —
+// and made total by the derivation in seedDurationKeyCensus, which fails on
+// a constant it finds at a reader and cannot find here, and on an entry here
+// no reader names any more.
 var seedDurationDefaults = map[string]time.Duration{
-	"DefaultAttnQuestionAge":    DefaultAttnQuestionAge,
-	"DefaultAttnGuardStuck":     DefaultAttnGuardStuck,
-	"DefaultAttnParkedAge":      DefaultAttnParkedAge,
-	"DefaultVerifyBoxMaxAge":    DefaultVerifyBoxMaxAge,
-	"DefaultCrewReapAfter":      DefaultCrewReapAfter,
-	"DefaultUnpointedReapAfter": DefaultUnpointedReapAfter,
-	"DefaultRetireTreeAfter":    DefaultRetireTreeAfter,
+	"DefaultAttnQuestionAge":     DefaultAttnQuestionAge,
+	"DefaultAttnGuardStuck":      DefaultAttnGuardStuck,
+	"DefaultAttnParkedAge":       DefaultAttnParkedAge,
+	"DefaultVerifyBoxMaxAge":     DefaultVerifyBoxMaxAge,
+	"DefaultCrewReapAfter":       DefaultCrewReapAfter,
+	"DefaultUnpointedReapAfter":  DefaultUnpointedReapAfter,
+	"DefaultRetireTreeAfter":     DefaultRetireTreeAfter,
+	"DefaultVerifyBatchAge":      DefaultVerifyBatchAge,
+	"DefaultDispatchEpoch":       DefaultDispatchEpoch,
+	"ModelProbeTTLDefault":       ModelProbeTTLDefault,
+	"PlanGuardBlindMaxDefault":   PlanGuardBlindMaxDefault,
+	"PlanUsageTTLDefault":        PlanUsageTTLDefault,
+	"PlanUsageStaleAfterDefault": PlanUsageStaleAfterDefault,
 }
 
 // seedDocumentedOnPurposeNotTheDefault records a duration key that
@@ -313,23 +384,283 @@ var seedDurationDefaults = map[string]time.Duration{
 // TestSeedConfigDocumentedDefaultRegisterIsNotStale holds both.
 var seedDocumentedOnPurposeNotTheDefault = map[string]string{}
 
-// seedDurationKey is one derived pairing: a config key, the Default*
+// seedDurationDefaultNotAConstant records a duration key whose default is a
+// RULE and not a constant, so there is no number for a documented line to
+// agree with. Key -> why.
+//
+// Without this register such a key drops out of the census in silence, which
+// is the third way `backup_max_age` was invisible to the old rule
+// (ranger-base-2vynj finding 1): its key literal is there, but the default
+// argument is a CALL. The entry makes the drop deliberate and keeps the
+// stronger half available — a key in here must stay UNDOCUMENTED in the
+// seed, because a documented line for it would be a claim this pin cannot
+// hold.
+var seedDurationDefaultNotAConstant = map[string]string{
+	"backup_max_age": "ADR 0036 §6 makes the default a rule rather than a number — 2x the scheduled " +
+		"backup interval, falling back to DefaultBackupMaxAge only for an instance with no schedule " +
+		"(defaultBackupMaxAge) — so there is no single constant a documented line could name",
+}
+
+// seedReaderForm is which of the two shapes a pairing was derived from.
+type seedReaderForm int
+
+const (
+	// seedFormCallSite: the key literal and the Default-shaped constant are
+	// the first two arguments of a call to a seedDurationResolvers reader.
+	seedFormCallSite seedReaderForm = iota
+	// seedFormBody: they are a YamlGet/CfgGet key literal and a returned
+	// Default-shaped identifier inside one seedDurationBodyReaders function.
+	seedFormBody
+)
+
+func (f seedReaderForm) String() string {
+	if f == seedFormBody {
+		return "body-form reader"
+	}
+	return "call site"
+}
+
+// seedDurationKey is one derived pairing: a config key, the Default-shaped
 // constant it falls back to, and the reader whose grammar resolves it.
 type seedDurationKey struct {
 	key      string
 	constant string
-	resolver string
+	reader   string
+	form     seedReaderForm
 	site     string
 }
 
-// seedDurationKeySites parses the pairing out of the tree. A call to one of
-// seedDurationResolvers whose first argument is a string literal and whose
-// second is an identifier named Default* states "this key defaults to this
-// constant" in one expression, which is the only place in the harness where
-// the two are written down together.
-func seedDurationKeySites(t *testing.T, root string) (keys []seedDurationKey, scanned int) {
+// seedUnpairedKey is a duration key the tree reads but this pin cannot pair
+// with a constant — the default is a call, a computation, or absent. It is
+// reported rather than skipped, because a silent skip is the defect
+// ranger-base-khqvr was filed for.
+type seedUnpairedKey struct {
+	key  string
+	site string
+	why  string
+}
+
+// seedDurationCensus is everything the tree says about duration config keys.
+// The three name slices are what make the hand tables total.
+type seedDurationCensus struct {
+	keys      []seedDurationKey // derived pairings, sorted by key
+	resolvers []string          // call-site reader names found in the tree
+	readers   []string          // body-form reader names found in the tree
+	unpaired  []seedUnpairedKey // key sites with no constant to compare
+	scanned   int
+}
+
+// seedIsTimeDuration reports whether an AST type expression is time.Duration.
+func seedIsTimeDuration(e ast.Expr) bool { return seedIsQualified(e, "time", "Duration") }
+
+// seedIsIOWriter reports whether an AST type expression is io.Writer.
+func seedIsIOWriter(e ast.Expr) bool { return seedIsQualified(e, "io", "Writer") }
+
+func seedIsQualified(e ast.Expr, pkg, name string) bool {
+	s, ok := e.(*ast.SelectorExpr)
+	if !ok {
+		return false
+	}
+	x, ok := s.X.(*ast.Ident)
+	return ok && x.Name == pkg && s.Sel.Name == name
+}
+
+func seedIsIdent(e ast.Expr, name string) bool {
+	id, ok := e.(*ast.Ident)
+	return ok && id.Name == name
+}
+
+// seedDefaultShaped is the constant-name rule: a prefix OR a suffix, because
+// both spellings are live in this tree and the prefix alone hid four keys
+// (ranger-base-2vynj finding 1 (b)).
+func seedDefaultShaped(name string) bool {
+	return strings.HasPrefix(name, "Default") || strings.HasSuffix(name, "Default")
+}
+
+// seedFieldTypes flattens a parameter or result list to one type per name,
+// so `(a, b string)` counts as two.
+func seedFieldTypes(fl *ast.FieldList) []ast.Expr {
+	var out []ast.Expr
+	if fl == nil {
+		return out
+	}
+	for _, f := range fl.List {
+		n := len(f.Names)
+		if n == 0 {
+			n = 1
+		}
+		for i := 0; i < n; i++ {
+			out = append(out, f.Type)
+		}
+	}
+	return out
+}
+
+// seedFirstParamName is the name of a function's first parameter, or "".
+func seedFirstParamName(fl *ast.FieldList) string {
+	if fl == nil || len(fl.List) == 0 || len(fl.List[0].Names) == 0 {
+		return ""
+	}
+	return fl.List[0].Names[0].Name
+}
+
+// seedRecvIsApp reports whether a FuncDecl is a method on App or *App.
+func seedRecvIsApp(fd *ast.FuncDecl) bool {
+	if fd.Recv == nil || len(fd.Recv.List) != 1 {
+		return false
+	}
+	if st, ok := fd.Recv.List[0].Type.(*ast.StarExpr); ok {
+		return seedIsIdent(st.X, "App")
+	}
+	return seedIsIdent(fd.Recv.List[0].Type, "App")
+}
+
+// seedCalleeName is the bare function or method name a call expression names.
+func seedCalleeName(e ast.Expr) string {
+	switch f := e.(type) {
+	case *ast.Ident:
+		return f.Name
+	case *ast.SelectorExpr:
+		return f.Sel.Name
+	}
+	return ""
+}
+
+// seedConfigKeyArg is the index of the config KEY argument for the two flat
+// YAML readers, and -1 for anything else. The two disagree about position —
+// `YamlGet(path, key)` and `a.CfgGet(key, fallback)` — which is exactly the
+// kind of detail a rule stated in prose gets wrong.
+func seedConfigKeyArg(callee string) int {
+	switch callee {
+	case "YamlGet":
+		return 1
+	case "CfgGet":
+		return 0
+	}
+	return -1
+}
+
+// seedUniqSorted dedupes and sorts, so a census reports the same list twice
+// running.
+func seedUniqSorted(in []string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(in))
+	for _, s := range in {
+		if !seen[s] {
+			seen[s] = true
+			out = append(out, s)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// seedDurationReaderDecl reads one function declaration and says which of
+// the two reader shapes it is, if either.
+//
+// Split out from the walk so TestSeedDurationDerivationCanStillSayNo can
+// drive it over planted source: a derivation whose near-misses are never
+// exercised is a derivation nobody has seen refuse anything.
+func seedDurationReaderDecl(fd *ast.FuncDecl) (callSiteResolver bool, body []seedDurationKey, unpaired []seedUnpairedKey) {
+	if fd.Body == nil || !seedRecvIsApp(fd) {
+		return false, nil, nil
+	}
+	res := seedFieldTypes(fd.Type.Results)
+	if len(res) != 1 || !seedIsTimeDuration(res[0]) {
+		return false, nil, nil
+	}
+	params := seedFieldTypes(fd.Type.Params)
+
+	// What the body does with config: the key literals it reads, and the
+	// parameter names it passes to a reader instead.
+	var litKeys, paramKeys, retDefaults []string
+	ast.Inspect(fd.Body, func(n ast.Node) bool {
+		switch node := n.(type) {
+		case *ast.CallExpr:
+			ki := seedConfigKeyArg(seedCalleeName(node.Fun))
+			if ki < 0 || len(node.Args) != 2 {
+				return true
+			}
+			switch a := node.Args[ki].(type) {
+			case *ast.BasicLit:
+				if a.Kind == token.STRING {
+					if s, err := strconv.Unquote(a.Value); err == nil && s != "" {
+						litKeys = append(litKeys, s)
+					}
+				}
+			case *ast.Ident:
+				paramKeys = append(paramKeys, a.Name)
+			}
+		case *ast.ReturnStmt:
+			for _, r := range node.Results {
+				if id, ok := r.(*ast.Ident); ok && seedDefaultShaped(id.Name) {
+					retDefaults = append(retDefaults, id.Name)
+				}
+			}
+		}
+		return true
+	})
+	litKeys, paramKeys, retDefaults = seedUniqSorted(litKeys), seedUniqSorted(paramKeys), seedUniqSorted(retDefaults)
+
+	// The call-site form: (key string, def time.Duration, errw io.Writer),
+	// reading the key it was HANDED. Its own keys live at its call sites.
+	if len(params) == 3 && seedIsIdent(params[0], "string") && seedIsTimeDuration(params[1]) && seedIsIOWriter(params[2]) {
+		for _, pk := range paramKeys {
+			if pk == seedFirstParamName(fd.Type.Params) {
+				return true, nil, nil
+			}
+		}
+		return false, nil, nil
+	}
+
+	// The body form: (errw io.Writer), spelling its own key and default.
+	if len(params) != 1 || !seedIsIOWriter(params[0]) {
+		return false, nil, nil
+	}
+	switch {
+	case len(litKeys) == 0:
+		// Not a config reader at all, or a thin wrapper that delegates to a
+		// call-site reader (AttnParkedAge, VerifyBoxMaxAge, BackupMaxAge).
+		// The delegation names the key at the call site, where the other
+		// half of the census reads it.
+		return false, nil, nil
+	case len(litKeys) > 1:
+		for _, k := range litKeys {
+			unpaired = append(unpaired, seedUnpairedKey{key: k, why: fmt.Sprintf(
+				"%s reads %d config keys (%s), so no one constant is its default",
+				fd.Name.Name, len(litKeys), strings.Join(litKeys, ", "))})
+		}
+		return false, nil, unpaired
+	case len(retDefaults) != 1:
+		named := "none"
+		if len(retDefaults) > 0 {
+			named = strings.Join(retDefaults, ", ")
+		}
+		return false, nil, []seedUnpairedKey{{key: litKeys[0], why: fmt.Sprintf(
+			"%s reads %s but returns %d Default-shaped constants (%s), so the pairing is not stated in one place",
+			fd.Name.Name, litKeys[0], len(retDefaults), named)}}
+	}
+	return false, []seedDurationKey{{
+		key:      litKeys[0],
+		constant: retDefaults[0],
+		reader:   fd.Name.Name,
+		form:     seedFormBody,
+	}}, nil
+}
+
+// seedDurationKeyCensus parses both pairing shapes out of the tree.
+//
+// Two passes over one parse, because the call-site pass needs the resolver
+// set the declaration pass derives: matching call sites against the DERIVED
+// set rather than against seedDurationResolvers is what makes that map total
+// instead of a filter with a hole in it.
+func seedDurationKeyCensus(t *testing.T, root string) seedDurationCensus {
 	t.Helper()
 	fset := token.NewFileSet()
+	var files []*ast.File
+	var rels []string
+	census := seedDurationCensus{}
+
 	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -349,20 +680,58 @@ func seedDurationKeySites(t *testing.T, root string) (keys []seedDurationKey, sc
 			// build says so louder. Skip rather than fail on it.
 			return nil
 		}
-		scanned++
+		rel, rerr := filepath.Rel(root, p)
+		if rerr != nil {
+			rel = p
+		}
+		files = append(files, file)
+		rels = append(rels, filepath.ToSlash(rel))
+		census.scanned++
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Pass 1: the readers themselves.
+	resolvers := map[string]bool{}
+	for i, file := range files {
+		for _, decl := range file.Decls {
+			fd, ok := decl.(*ast.FuncDecl)
+			if !ok {
+				continue
+			}
+			at := fmt.Sprintf("%s:%d", rels[i], fset.Position(fd.Pos()).Line)
+			isResolver, body, unpaired := seedDurationReaderDecl(fd)
+			if isResolver {
+				resolvers[fd.Name.Name] = true
+			}
+			for _, k := range body {
+				k.site = at
+				census.keys = append(census.keys, k)
+				census.readers = append(census.readers, k.reader)
+			}
+			for _, u := range unpaired {
+				u.site = at
+				census.unpaired = append(census.unpaired, u)
+			}
+		}
+	}
+	census.resolvers = seedSortedKeys(resolvers)
+	census.readers = seedUniqSorted(census.readers)
+
+	// Pass 2: the call sites of every derived call-site reader. A call whose
+	// key is a literal states a pairing; one whose default is not a
+	// Default-shaped identifier states a key with no constant, which is
+	// reported and not dropped.
+	for i, file := range files {
 		ast.Inspect(file, func(n ast.Node) bool {
 			call, ok := n.(*ast.CallExpr)
 			if !ok || len(call.Args) < 2 {
 				return true
 			}
-			var fn string
-			switch f := call.Fun.(type) {
-			case *ast.Ident:
-				fn = f.Name
-			case *ast.SelectorExpr:
-				fn = f.Sel.Name
-			}
-			if _, ok := seedDurationResolvers[fn]; !ok {
+			fn := seedCalleeName(call.Fun)
+			if !resolvers[fn] {
 				return true
 			}
 			lit, ok := call.Args[0].(*ast.BasicLit)
@@ -373,29 +742,65 @@ func seedDurationKeySites(t *testing.T, root string) (keys []seedDurationKey, sc
 			if uerr != nil || key == "" {
 				return true
 			}
+			at := fmt.Sprintf("%s:%d", rels[i], fset.Position(call.Pos()).Line)
 			id, ok := call.Args[1].(*ast.Ident)
-			if !ok || !strings.HasPrefix(id.Name, "Default") {
+			if !ok || !seedDefaultShaped(id.Name) {
+				census.unpaired = append(census.unpaired, seedUnpairedKey{key: key, site: at, why: fmt.Sprintf(
+					"the default argument at the %s call site is not a Default-shaped constant", fn)})
 				return true
 			}
-			rel, rerr := filepath.Rel(root, p)
-			if rerr != nil {
-				rel = p
-			}
-			keys = append(keys, seedDurationKey{
+			census.keys = append(census.keys, seedDurationKey{
 				key:      key,
 				constant: id.Name,
-				resolver: fn,
-				site:     fmt.Sprintf("%s:%d", filepath.ToSlash(rel), fset.Position(call.Pos()).Line),
+				reader:   fn,
+				form:     seedFormCallSite,
+				site:     at,
 			})
 			return true
 		})
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
 	}
-	sort.Slice(keys, func(i, j int) bool { return keys[i].key < keys[j].key })
-	return keys, scanned
+
+	sort.Slice(census.keys, func(i, j int) bool {
+		if census.keys[i].key != census.keys[j].key {
+			return census.keys[i].key < census.keys[j].key
+		}
+		return census.keys[i].site < census.keys[j].site
+	})
+	sort.Slice(census.unpaired, func(i, j int) bool {
+		if census.unpaired[i].key != census.unpaired[j].key {
+			return census.unpaired[i].key < census.unpaired[j].key
+		}
+		return census.unpaired[i].site < census.unpaired[j].site
+	})
+	return census
+}
+
+// seedDurationKeySites is the census's pairings alone, for the register
+// staleness pin, which asks only "is this key still a duration key".
+func seedDurationKeySites(t *testing.T, root string) (keys []seedDurationKey, scanned int) {
+	t.Helper()
+	c := seedDurationKeyCensus(t, root)
+	return c.keys, c.scanned
+}
+
+// seedResolveFor is the production read of one pairing: a closure that
+// answers what a fresh instance would get for a config file, computed by the
+// instance's own reader. One closure for both forms, so the drift check has
+// a single code path and the grammar is never a test's.
+func seedResolveFor(t *testing.T, k seedDurationKey, def time.Duration) func(cfgPath string, errw io.Writer) time.Duration {
+	t.Helper()
+	if k.form == seedFormBody {
+		fn, ok := seedDurationBodyReaders[k.reader]
+		if !ok {
+			t.Fatalf("no body-form reader %q in seedDurationBodyReaders", k.reader)
+		}
+		return func(p string, w io.Writer) time.Duration { return fn(&App{ConfigPath: p}, w) }
+	}
+	fn, ok := seedDurationResolvers[k.reader]
+	if !ok {
+		t.Fatalf("no resolver %q in seedDurationResolvers", k.reader)
+	}
+	return func(p string, w io.Writer) time.Duration { return fn(&App{ConfigPath: p}, k.key, def, w) }
 }
 
 // seedSortedKeys is the map's keys in order, so a failing census reports the
@@ -450,24 +855,24 @@ func seedDocumentedValue(cfgText, key string) (value string, lines int) {
 // instance calls. That is what makes the comparison a duration comparison
 // — `1209600` and `336h` reach the same time.Duration, which no text
 // compare can see — and it is why the reader's stderr is checked too. A
-// value that does not parse makes attnAge name it and return the default,
+// value that does not parse makes the reader name it and return the default,
 // so a text that is not a duration at all would otherwise pass this pin by
 // landing on the very number it was supposed to prove.
-func seedDefaultDrift(t *testing.T, resolver, key, text string, def time.Duration) (time.Duration, string) {
+//
+// `resolve` is the pairing's own reader, from seedResolveFor: both reader
+// forms reach here through one closure, so a body-form key is held by the
+// same comparison and the same stderr rule as a call-site one.
+func seedDefaultDrift(t *testing.T, resolve func(cfgPath string, errw io.Writer) time.Duration, key, text string, def time.Duration) (time.Duration, string) {
 	t.Helper()
 	if text == "" {
 		return 0, "the line carries no value, so it documents nothing"
-	}
-	fn, ok := seedDurationResolvers[resolver]
-	if !ok {
-		t.Fatalf("no resolver %q", resolver)
 	}
 	cfg := filepath.Join(t.TempDir(), "config.yaml")
 	if err := os.WriteFile(cfg, []byte(key+": "+text+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	var errw strings.Builder
-	got := fn(&App{ConfigPath: cfg}, key, def, &errw)
+	got := resolve(cfg, &errw)
 	if s := strings.TrimSpace(errw.String()); s != "" {
 		return got, fmt.Sprintf("%s does not parse as a duration, so the default stands and the line proves nothing: %s", text, s)
 	}
@@ -487,17 +892,88 @@ func TestSeedConfigDocumentedDurationDefaultsAreTheConstants(t *testing.T) {
 	// (ranger-base-sx2dq), and a pin outside the class gets no door.
 	root := qibRepoRoot(t)
 
-	keys, scanned := seedDurationKeySites(t, root)
+	c := seedDurationKeyCensus(t, root)
+	keys, scanned := c.keys, c.scanned
 	// Positive witnesses: a pin over a derived set is satisfied by deriving
 	// nothing, so say what was measured and fail a walk that measured too
 	// little to mean anything.
 	if scanned < 20 {
 		t.Fatalf("parsed %d non-test .go files under %s — the walk found no tree, so the census below measures nothing", scanned, root)
 	}
-	if len(keys) < 4 {
-		t.Fatalf("derived %d duration key/constant pairings from %d files, want at least 4 — the call-site rule in seedDurationKeySites has stopped matching the tree, so this pin holds nothing", len(keys), scanned)
+	if len(keys) < 10 {
+		t.Fatalf("derived %d duration key/constant pairings from %d files, want at least 10 — the two reader rules in seedDurationReaderDecl have stopped matching the tree, so this pin holds almost nothing", len(keys), scanned)
 	}
-	t.Logf("parsed %d non-test .go files, derived %d duration key/constant pairings", scanned, len(keys))
+	t.Logf("parsed %d non-test .go files, derived %d duration key/constant pairings through %d call-site reader(s) (%s) and %d body-form reader(s) (%s)",
+		scanned, len(keys), len(c.resolvers), strings.Join(c.resolvers, ", "), len(c.readers), strings.Join(c.readers, ", "))
+
+	// THE THREE TABLES ARE TOTAL, which is the property the hand-written
+	// two-name resolver list did not have: the escape ranger-base-khqvr was
+	// filed for was six keys read by a reader nothing named, dropping out in
+	// silence. A reader the tree has and a table does not is now a failure
+	// that names the reader.
+	for _, got := range []struct {
+		kind  string
+		found []string
+		named []string
+		table string
+	}{
+		{"call-site", c.resolvers, seedSortedKeys(seedDurationResolvers), "seedDurationResolvers"},
+		{"body-form", c.readers, seedSortedKeys(seedDurationBodyReaders), "seedDurationBodyReaders"},
+	} {
+		named := map[string]bool{}
+		for _, n := range got.named {
+			named[n] = true
+		}
+		found := map[string]bool{}
+		for _, n := range got.found {
+			found[n] = true
+			if !named[n] {
+				t.Errorf("the tree has a %s duration reader %s does not name: %s — add `%q: (*App).%s,` to it, or this pin reads every key that reader owns as undocumented and holds nothing about them (ranger-base-khqvr)",
+					got.kind, got.table, n, n, n)
+			}
+		}
+		for _, n := range got.named {
+			if !found[n] {
+				t.Errorf("%s names %s, which is no longer a %s duration reader in the tree — the entry resolves nothing; drop it", got.table, n, got.kind)
+			}
+		}
+	}
+
+	// The constant table, from the other side: an entry no reader names any
+	// more is a value this pin can no longer be wrong about.
+	namedConstants := map[string]bool{}
+	for _, k := range keys {
+		namedConstants[k.constant] = true
+	}
+	for _, name := range seedSortedKeys(seedDurationDefaults) {
+		if !namedConstants[name] {
+			t.Errorf("seedDurationDefaults names %s, which no duration reader falls back to any more — the row holds nothing; drop it", name)
+		}
+	}
+
+	// A key whose default is not a constant cannot be compared with
+	// anything, so it is registered with a reason or it is a failure — never
+	// a silent drop, which is how backup_max_age left the census
+	// (ranger-base-2vynj finding 1).
+	unpairedKeys := map[string]bool{}
+	for _, u := range c.unpaired {
+		unpairedKeys[u.key] = true
+		why, registered := seedDurationDefaultNotAConstant[u.key]
+		if !registered {
+			t.Errorf("%s (%s) is a duration key this pin cannot pair with a constant: %s — give it a constant default, or add it to seedDurationDefaultNotAConstant with the reason, so the drop is on the record instead of silent",
+				u.key, u.site, u.why)
+			continue
+		}
+		if strings.TrimSpace(why) == "" {
+			t.Errorf("seedDurationDefaultNotAConstant[%q] carries no reason — the entry drops a key out of this census, so the why IS the entry", u.key)
+		}
+		t.Logf("%s: %s — registered as having no constant default (%s)", u.key, u.why, u.site)
+	}
+	for _, key := range seedSortedKeys(seedDurationDefaultNotAConstant) {
+		if !unpairedKeys[key] {
+			t.Errorf("seedDurationDefaultNotAConstant names %q, which no duration reader reads with a non-constant default any more — either it has a constant now (drop the entry, the census will pair it) or the key is gone", key)
+		}
+	}
 
 	// One key, one default. Two call sites agreeing is normal
 	// (retire_tree_after is read from two); two naming DIFFERENT constants
@@ -513,12 +989,48 @@ func TestSeedConfigDocumentedDurationDefaultsAreTheConstants(t *testing.T) {
 		byKey[k.key] = k
 	}
 
+	// The constant table's VALUES are cross-checked where the tree lets them
+	// be. A body-form reader handed a config with its own key absent returns
+	// its own default, so a pairing the parse got wrong — the right key
+	// against the wrong constant — cannot sit in seedDurationDefaults green.
+	// A call-site reader cannot be checked this way: its default is the
+	// argument, so it answers whatever a test hands it.
+	absent := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(absent, []byte("# every key commented out\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range keys {
+		if k.form != seedFormBody {
+			continue
+		}
+		def, known := seedDurationDefaults[k.constant]
+		if !known {
+			continue // already reported below
+		}
+		var errw strings.Builder
+		if got := seedResolveFor(t, k, def)(absent, &errw); got != def {
+			t.Errorf("%s over a config with %s absent returns %s, but seedDurationDefaults says %s is %s (%s) — the derivation paired the key with the wrong constant, so every comparison it feeds is against the wrong number",
+				k.reader, k.key, got, k.constant, def, k.site)
+		}
+	}
+
 	cfg := seedConfigPath(t)
 	b, err := os.ReadFile(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
 	text := string(b)
+
+	// The stronger half of seedDurationDefaultNotAConstant: a key with no
+	// constant default must also stay UNDOCUMENTED in the seed, because a
+	// documented line for it is a claim nothing here can hold — the exact
+	// stale-for-free shape this whole block exists to prevent.
+	for _, key := range seedSortedKeys(seedDurationDefaultNotAConstant) {
+		if value, lines := seedDocumentedValue(text, key); lines > 0 {
+			t.Errorf("examples/config.yaml documents %s as %q, and seedDurationDefaultNotAConstant says its default is a rule and not a constant (%s) — so that line is a number this pin cannot hold. Drop the documented value, or give the key a constant default",
+				key, value, seedDurationDefaultNotAConstant[key])
+		}
+	}
 
 	compared := 0
 	for _, key := range seedSortedKeys(byKey) {
@@ -536,7 +1048,7 @@ func TestSeedConfigDocumentedDurationDefaultsAreTheConstants(t *testing.T) {
 		// seedDocumentedValue reads comment lines, so it would find nothing
 		// and skip in silence.
 		if yamlHasKey(cfg, k.key) {
-			t.Errorf("seed config declares %s: live — a duration key must ship commented out (attnAge reads the file, so arming it changes every instance), and an armed key is invisible to this pin", k.key)
+			t.Errorf("seed config declares %s: live — a duration key must ship commented out (%s reads the live file, so arming it changes every instance), and an armed key is invisible to this pin", k.key, k.reader)
 			continue
 		}
 
@@ -553,7 +1065,7 @@ func TestSeedConfigDocumentedDurationDefaultsAreTheConstants(t *testing.T) {
 		}
 
 		compared++
-		got, drift := seedDefaultDrift(t, k.resolver, k.key, value, def)
+		got, drift := seedDefaultDrift(t, seedResolveFor(t, k, def), k.key, value, def)
 		if why, deliberate := seedDocumentedOnPurposeNotTheDefault[k.key]; deliberate {
 			// The register's live half: the entry says this line is NOT the
 			// default, so the line matching the default makes the entry a
@@ -570,11 +1082,18 @@ func TestSeedConfigDocumentedDurationDefaultsAreTheConstants(t *testing.T) {
 				k.key, k.site, drift)
 			continue
 		}
-		t.Logf("%s: documented %q resolves to %s = %s", k.key, value, got, k.constant)
+		t.Logf("%s: documented %q resolves to %s = %s (%s %s)", k.key, value, got, k.constant, k.reader, k.form)
 	}
 
-	if compared < 3 {
-		t.Errorf("compared %d documented duration defaults, want at least 3 — the seed documents attn_question_age, attn_guard_stuck, attn_parked_age and verify_box_max_age, so a census that found fewer stopped reading the file", compared)
+	// The floor, and the one assertion that fails at HEAD without this
+	// bead's widening: the seed documents TEN duration keys with a value and
+	// the old rule reached four of them. Ten is the measured population
+	// (ranger-base-2vynj finding 1, "THE POPULATION"), and the two keys it
+	// leaves out — autostart_interval, which has no default, and
+	// autostart_max_interval, which defaults to 8x the base — are correctly
+	// outside it and must stay outside.
+	if compared < 10 {
+		t.Errorf("compared %d documented duration defaults, want at least 10 — the seed documents attn_guard_stuck, attn_parked_age, attn_question_age, dispatch_epoch, model_probe_ttl, plan_guard_blind_max, plan_usage_stale_after, plan_usage_ttl, verify_batch_age and verify_box_max_age with a value, so a census that found fewer stopped reading the file", compared)
 	}
 }
 
@@ -626,7 +1145,7 @@ func TestSeedConfigDocumentedDefaultRegisterIsNotStale(t *testing.T) {
 			t.Errorf("seedDocumentedOnPurposeNotTheDefault names %q, whose constant %s is not in seedDurationDefaults", key, k.constant)
 			continue
 		}
-		if _, drift := seedDefaultDrift(t, k.resolver, key, value, def); strings.Contains(drift, "does not parse") || strings.Contains(drift, "no value") {
+		if _, drift := seedDefaultDrift(t, seedResolveFor(t, k, def), key, value, def); strings.Contains(drift, "does not parse") || strings.Contains(drift, "no value") {
 			t.Errorf("examples/config.yaml documents %s at %q, and the register says that is deliberate — but %s: a value documented on purpose still has to be a value an instance could type", key, value, drift)
 		}
 	}
@@ -663,7 +1182,8 @@ func TestSeedDocumentedDefaultDriftCheckCanStillSayNo(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			_, drift := seedDefaultDrift(t, "attnAge", "attn_parked_age", tc.text, def)
+			k := seedDurationKey{key: "attn_parked_age", constant: "DefaultAttnParkedAge", reader: "attnAge", form: seedFormCallSite}
+			_, drift := seedDefaultDrift(t, seedResolveFor(t, k, def), k.key, tc.text, def)
 			if got := drift != ""; got != tc.drift {
 				t.Errorf("seedDefaultDrift(%q) drift=%v (%q), want drift=%v", tc.text, got, drift, tc.drift)
 			}
@@ -681,5 +1201,236 @@ func TestSeedDocumentedDefaultDriftCheckCanStillSayNo(t *testing.T) {
 	}
 	if v, n := seedDocumentedValue("# attn_guard_stuck: 2h\n# attn_guard_stuck: 4h\n", "attn_guard_stuck"); n != 2 {
 		t.Errorf("seedDocumentedValue = (%q, %d) over two documented lines, want 2 — the pin cannot report a second documented value it does not count", v, n)
+	}
+
+	// The same matcher through a BODY-form reader, which is the half the pin
+	// gained in ranger-base-khqvr and the half whose six mutants all survived
+	// before it. seedResolveFor hands the reader a config and nothing else,
+	// so the grammar here is PlanUsageTTL's own: bare seconds are the same
+	// five minutes, and a text it refuses leaves the default standing.
+	body := seedDurationKey{key: "plan_usage_ttl", constant: "PlanUsageTTLDefault", reader: "PlanUsageTTL", form: seedFormBody}
+	for _, tc := range []struct {
+		name  string
+		text  string
+		drift bool
+	}{
+		{"the spelled default", "5m", false},
+		{"the same default in bare seconds", "300", false},
+		{"the mutant the bead measured", "50m", true},
+		{"zero, which this reader accepts and means no sharing", "0", true},
+		{"prose where a value should be", "five minutes", true},
+	} {
+		t.Run("body-form/"+tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, drift := seedDefaultDrift(t, seedResolveFor(t, body, PlanUsageTTLDefault), body.key, tc.text, PlanUsageTTLDefault)
+			if got := drift != ""; got != tc.drift {
+				t.Errorf("seedDefaultDrift(%q) through %s drift=%v (%q), want drift=%v", tc.text, body.reader, got, drift, tc.drift)
+			}
+		})
+	}
+}
+
+// The derivation has to be able to say no, and to say it about each of the
+// four near-misses, or the pin above is a rule nobody has watched refuse
+// anything — which is exactly how six keys sat outside the census for six
+// weeks (ranger-base-khqvr). Drives the whole census, both passes, over a
+// PLANTED tree rather than the repo, so it is not itself a tree-wide pin and
+// a change to the harness's own readers cannot move its subject.
+func TestSeedDurationDerivationCanStillSayNo(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+
+	// A miniature of the two shapes and of everything that looks like them.
+	// It only has to PARSE: the census reads the syntax and calls nothing.
+	const planted = `package planted
+
+import (
+	"io"
+	"time"
+)
+
+type App struct{ ConfigPath string }
+
+func YamlGet(path, key string) string { return "" }
+
+func (a *App) CfgGet(key, def string) string { return def }
+
+const (
+	PlantedTTLDefault       = time.Minute
+	DefaultPlantedGrace     = time.Hour
+	PlantedViaCfgGetDefault = 2 * time.Hour
+	DefaultPlantedParked    = 4 * time.Hour
+	plantedBareConstant     = 3 * time.Hour
+)
+
+// A body-form reader naming its constant with the SUFFIX spelling, which the
+// prefix-only rule missed for four live keys.
+func (a *App) PlantedTTL(errw io.Writer) time.Duration {
+	if YamlGet(a.ConfigPath, "planted_ttl") == "" {
+		return PlantedTTLDefault
+	}
+	return PlantedTTLDefault
+}
+
+// The same shape with the PREFIX spelling: both are live in the real tree.
+func (a *App) PlantedGrace(errw io.Writer) time.Duration {
+	_ = YamlGet(a.ConfigPath, "planted_grace")
+	return DefaultPlantedGrace
+}
+
+// Keyed through CfgGet, whose key is its FIRST argument where YamlGet's is
+// its second.
+func (a *App) PlantedViaCfgGet(errw io.Writer) time.Duration {
+	_ = a.CfgGet("planted_via_cfgget", "")
+	return PlantedViaCfgGetDefault
+}
+
+// Near-miss 1: the default is a rule, not a constant (backup_max_age).
+func (a *App) PlantedRuleDefault(errw io.Writer) time.Duration {
+	_ = YamlGet(a.ConfigPath, "planted_rule_default")
+	return a.plantedRule()
+}
+
+func (a *App) plantedRule() time.Duration { return time.Hour }
+
+// Near-miss 2: one reader, two keys — no single constant is its default.
+func (a *App) PlantedTwoKeys(errw io.Writer) time.Duration {
+	if YamlGet(a.ConfigPath, "planted_first") != "" {
+		return PlantedTTLDefault
+	}
+	_ = YamlGet(a.ConfigPath, "planted_second")
+	return PlantedTTLDefault
+}
+
+// Near-miss 3: the fallback is not Default-shaped at all.
+func (a *App) PlantedNoConstant(errw io.Writer) time.Duration {
+	_ = YamlGet(a.ConfigPath, "planted_no_constant")
+	return plantedBareConstant
+}
+
+// A call-site reader: it reads the key it was HANDED, so its keys live at
+// its call sites and not here.
+func (a *App) plantedAge(key string, def time.Duration, errw io.Writer) time.Duration {
+	_ = YamlGet(a.ConfigPath, key)
+	return def
+}
+
+// A thin wrapper, which is how the real attn_* keys are spelled: no key of
+// its own, and the pairing is one line down at the call.
+func (a *App) PlantedParked(errw io.Writer) time.Duration {
+	return a.plantedAge("planted_parked", DefaultPlantedParked, errw)
+}
+
+// Near-miss 4: a call site whose default argument is a call.
+func (a *App) PlantedCallSiteRule(errw io.Writer) time.Duration {
+	return a.plantedAge("planted_call_rule", a.plantedRule(), errw)
+}
+
+// Not a method on App.
+func plantedFree(errw io.Writer) time.Duration {
+	_ = YamlGet("", "planted_free")
+	return PlantedTTLDefault
+}
+
+// Not a duration.
+func (a *App) PlantedCount(errw io.Writer) int {
+	_ = YamlGet(a.ConfigPath, "planted_count")
+	return 1
+}
+`
+	// A reader in a _test.go file is not the harness, and a file that does
+	// not parse is the build's finding and not this pin's: both are skipped,
+	// and the scanned count is what says so.
+	const plantedTest = `package planted
+
+import (
+	"io"
+	"time"
+)
+
+func (a *App) PlantedInATestFile(errw io.Writer) time.Duration {
+	_ = YamlGet(a.ConfigPath, "planted_in_a_test_file")
+	return PlantedTTLDefault
+}
+`
+	for name, body := range map[string]string{
+		"planted.go":      planted,
+		"planted_test.go": plantedTest,
+		"broken.go":       "package planted\n\nfunc (((\n",
+	} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	c := seedDurationKeyCensus(t, root)
+	if c.scanned != 1 {
+		t.Errorf("scanned %d files of the planted tree, want 1 — the walk read the _test.go file or the file that does not parse", c.scanned)
+	}
+
+	if got, want := strings.Join(c.resolvers, ","), "plantedAge"; got != want {
+		t.Errorf("derived call-site readers %q, want %q", got, want)
+	}
+	if got, want := strings.Join(c.readers, ","), "PlantedGrace,PlantedTTL,PlantedViaCfgGet"; got != want {
+		t.Errorf("derived body-form readers %q, want %q", got, want)
+	}
+
+	gotPairs := map[string]string{}
+	for _, k := range c.keys {
+		gotPairs[k.key] = k.constant + " via " + k.reader + " (" + k.form.String() + ")"
+		if k.site == "" {
+			t.Errorf("pairing for %s carries no site — a census that cannot say WHERE cannot be acted on", k.key)
+		}
+	}
+	for key, want := range map[string]string{
+		"planted_ttl":        "PlantedTTLDefault via PlantedTTL (body-form reader)",
+		"planted_grace":      "DefaultPlantedGrace via PlantedGrace (body-form reader)",
+		"planted_via_cfgget": "PlantedViaCfgGetDefault via PlantedViaCfgGet (body-form reader)",
+		"planted_parked":     "DefaultPlantedParked via plantedAge (call site)",
+	} {
+		if got := gotPairs[key]; got != want {
+			t.Errorf("pairing for %s = %q, want %q", key, got, want)
+		}
+		delete(gotPairs, key)
+	}
+	for key, got := range gotPairs {
+		t.Errorf("the derivation paired %s as %s, and nothing in the planted tree states that pairing", key, got)
+	}
+
+	gotUnpaired := map[string]string{}
+	for _, u := range c.unpaired {
+		gotUnpaired[u.key] = u.why
+		if u.site == "" {
+			t.Errorf("unpaired key %s carries no site", u.key)
+		}
+	}
+	for _, key := range []string{
+		// each of the four near-misses, reported rather than dropped
+		"planted_rule_default", "planted_first", "planted_second",
+		"planted_no_constant", "planted_call_rule",
+	} {
+		if why, ok := gotUnpaired[key]; !ok {
+			t.Errorf("the derivation dropped %s in silence — an unpairable key must be REPORTED, which is the whole finding of ranger-base-khqvr", key)
+		} else if strings.TrimSpace(why) == "" {
+			t.Errorf("unpaired key %s carries no why", key)
+		}
+		delete(gotUnpaired, key)
+	}
+	for key, why := range gotUnpaired {
+		t.Errorf("the derivation called %s unpairable (%s), and it is not one of the planted near-misses", key, why)
+	}
+
+	// And the keys nothing should have seen at all: a free function, a
+	// non-duration reader, a test file, and the key a wrapper never reads
+	// itself.
+	for _, key := range []string{"planted_free", "planted_count", "planted_in_a_test_file"} {
+		if _, paired := gotPairs[key]; paired {
+			t.Errorf("%s was paired; it is not a duration reader on App", key)
+		}
+		for _, u := range c.unpaired {
+			if u.key == key {
+				t.Errorf("%s was reported unpairable; it is not a duration reader on App at all, so the rule has widened past its subject", key)
+			}
+		}
 	}
 }
