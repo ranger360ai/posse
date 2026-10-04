@@ -310,7 +310,15 @@ func TestQABobGridDeclaresEveryRow(t *testing.T) {
 		// the other voice in the session
 		"AGENTS.md", "CLAUDE.md", ".bob/rules-agent/AGENTS.md",
 		".bob/rules-plan/AGENTS.md", ".bob/rules-ask/AGENTS.md",
-		"precedence UNMEASURED",
+		// precedence: pid, MEASURED 2026-10-04 by ranger-base-4mrmc's one
+		// billed turn and promoted on the built-in by ranger-base-uqyoz.
+		// Anchored on the VALUE and on bob's OWN measurement bead, not on
+		// the word "measured": the cell sat UNMEASURED for the whole life of
+		// this runtime and the failure this row exists to catch is a why
+		// borrowed from codex's and grok's turn (ranger-base-6rcv), which
+		// would print a sentence about another CLI's reply here.
+		"precedence: pid — measured 2026-10-04 (ranger-base-4mrmc)",
+		"bob 2.0.5 replied in uppercase with 'READY' and the PID's own token PID-WINS",
 		// the three first-run screens
 		"--accept-license", "--trust", "Complete sign-in in your browser",
 		// The four rows below were declared by ranger-base-ymmiv and asserted
@@ -354,6 +362,12 @@ func TestQABobGridDeclaresEveryRow(t *testing.T) {
 	// then run another CLI's transcript reader over a bob session — which is
 	// what ADR 0013 §1's promotion rule forbids for a refusal artifact nobody
 	// has captured.
+	// And the half the promotion retired: the grid must no longer print the
+	// loud default beside a measured value, which is the one way a reader
+	// would be told the turn had not been spent after it had.
+	if strings.Contains(flat, "precedence UNMEASURED") {
+		t.Errorf("the bob grid still prints precedence UNMEASURED beside a measured value (ranger-base-4mrmc's turn, promoted on ranger-base-uqyoz):\n%s", b.String())
+	}
 	if strings.Contains(flat, "turn outcome: READ by the") {
 		t.Errorf("the settle row credits bob with a turn-outcome reader — no bob refusal artifact has been captured, so there is nothing for an adapter to read (ADR 0013 §1, ADR 0060 D4):\n%s", b.String())
 	}

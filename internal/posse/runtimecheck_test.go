@@ -152,17 +152,29 @@ func TestBuiltinContractDeclarations(t *testing.T) {
 		name, prompt, record string
 		// precedence is the ADR 0017 §5 value: "" is UNMEASURED and loud.
 		// codex and grok carry ranger-base-6rcv's behavioural measurement
-		// (2026-09-01, one billed turn each); claude was not authorized a
-		// turn, so its cell stays empty — see the loop body.
+		// (2026-09-01, one billed turn each) and bob ranger-base-4mrmc's
+		// (2026-10-04, one more); claude was not authorized a turn, so its
+		// cell stays empty — see the loop body.
 		precedence string
+		// bead is the measurement bead the why must name. Per-runtime, not
+		// one literal: bob's turn was a different bead from codex's and
+		// grok's, so a single id would make bob's why WRONG rather than
+		// missing (ranger-base-uqyoz F2).
+		bead string
 		// read/priced are the account stage's two facts since
 		// ranger-base-0lg6, and they come apart on codex: its rollout
 		// scanner counts turns and tokens and prices none of them.
 		read, priced bool
 	}{
-		{"claude", PromptTyped, RecordTrusted, "", true, true},
-		{"codex", PromptArgv, RecordUntrusted, RulesPrecedencePID, true, false},
-		{"grok", PromptArgv, RecordTrusted, RulesPrecedencePID, true, true},
+		{"claude", PromptTyped, RecordTrusted, "", "", true, true},
+		{"codex", PromptArgv, RecordUntrusted, RulesPrecedencePID, "ranger-base-6rcv", true, false},
+		{"grok", PromptArgv, RecordTrusted, RulesPrecedencePID, "ranger-base-6rcv", true, true},
+		// bob is the fourth built-in (ADR 0060, ADR 0062). Its account row
+		// is UNCOUNTED — no cost adapter is registered for it and its unit
+		// is Bobcoins, not dollars — so read and priced are both false, and
+		// the CostReading cross-check below reads that as "nothing names a
+		// reading", which is the honest degrade and not a $0 claim.
+		{"bob", PromptTyped, RecordUntrusted, RulesPrecedencePID, "ranger-base-4mrmc", false, false},
 	} {
 		rt, err := a.LoadRuntime(c.name)
 		if err != nil {
@@ -187,22 +199,34 @@ func TestBuiltinContractDeclarations(t *testing.T) {
 			t.Errorf("%s is trusted with no measurement named", c.name)
 		}
 		if len(rt.NativeRules) == 0 {
-			t.Errorf("%s declares no native rulebooks; all three CLIs have them", c.name)
+			t.Errorf("%s declares no native rulebooks; all four CLIs have them", c.name)
 		}
 		// ADR 0017 §5: NativeRules only says what a runtime READS; who WINS
 		// on a collision with the PID is a MEASUREMENT, and only a billed
 		// turn can make it — ranger-base-xaev's structural probe left all
-		// three UNMEASURED on purpose, and ranger-base-6rcv's two turns
-		// (2026-09-01) filled codex and grok. claude is the one that stays
-		// empty, because no turn was authorized on it, and this cell is
-		// what stops the other two answers being quietly generalized to it.
+		// three UNMEASURED on purpose, ranger-base-6rcv's two turns
+		// (2026-09-01) filled codex and grok, and ranger-base-4mrmc's one
+		// (2026-10-04) filled bob, whose cell had come back from MOOT to
+		// UNMEASURED when ADR 0062 D1 restored the PID channel. claude is the
+		// one that stays empty, because no turn was authorized on it, and
+		// this cell is what stops the other three answers being quietly
+		// generalized to it.
 		if rt.RulesPrecedence != c.precedence {
 			t.Errorf("%s: rules_precedence %q want %q — a value here is a behavioural measurement, never an inference from another runtime's", c.name, rt.RulesPrecedence, c.precedence)
 		}
 		// A non-zero value with no why is a guess wearing a measurement's
-		// clothes; the why must name the bead that spent the turn.
-		if c.precedence != "" && !strings.Contains(rt.RulesPrecedenceWhy, "ranger-base-6rcv") {
-			t.Errorf("%s: rules_precedence: %s must name its measurement bead in rules_precedence_why:, got %q", c.name, c.precedence, rt.RulesPrecedenceWhy)
+		// clothes; the why must name the bead that spent the turn — ITS OWN,
+		// which is the widening bob's row forced: keyed to one literal
+		// (`ranger-base-6rcv`), this passed a why that cited somebody else's
+		// turn and red a correct one.
+		if c.precedence != "" && !strings.Contains(rt.RulesPrecedenceWhy, c.bead) {
+			t.Errorf("%s: rules_precedence: %s must name its own measurement bead %s in rules_precedence_why:, got %q", c.name, c.precedence, c.bead, rt.RulesPrecedenceWhy)
+		}
+		// And the key must be a bead, not an empty string that matches
+		// everything: an unmeasured runtime names none and a measured one
+		// must.
+		if (c.bead != "") != (c.precedence != "") {
+			t.Errorf("%s: precedence %q and measurement bead %q disagree — a measured cell names the turn that made it, an unmeasured one names none", c.name, c.precedence, c.bead)
 		}
 		var b bytes.Buffer
 		a.RuntimeCheck(rt, Herdr{Bin: "no-such-herdr-binary"}, &b)

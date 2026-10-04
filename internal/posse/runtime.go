@@ -1804,18 +1804,27 @@ var builtinRuntimes = []Runtime{
 		// close (ADR 0060 D4's trigger).
 		Prompt: PromptTyped, Record: RecordUntrusted,
 		NativeRules: bobNativeRules, Interstitials: BobInterstitials,
-		// rules_precedence: UNMEASURED again, which is where it started. It
-		// went MOOT under ranger-base-5jjtn for one honest reason — there is
-		// no collision to measure while the PID never arrives at all — and
-		// ADR 0062 D1 is the day the PID channel came back, so the question
-		// came with it. Bob reads AGENTS.md and CLAUDE.md out of the
-		// workspace and now takes the PID as its mode's `roleDefinition`,
-		// which is the `role_definition` section of its own system prompt;
-		// which one the model follows on a collision is a billed turn nobody
-		// has spent (ranger-base-6rcv's shape, filed as ranger-base-4mrmc).
-		// Left unset, which is the loud default: the grid prints UNMEASURED
-		// rather than a value that would read as a measurement.
-		ProjectConfig: bobProjectConfig,
+		// rules_precedence: pid — MEASURED behaviourally on 2026-10-04
+		// (ranger-base-4mrmc, one billed turn under the operator's
+		// authorization on ranger-base-2vr1j: bob 2.0.5, 0.024704 Bobcoins),
+		// which is the measurement this field was deliberately left unset
+		// waiting for (ADR 0062 ASSUMED 3). It went MOOT under
+		// ranger-base-5jjtn for one honest reason — there is no collision to
+		// measure while the PID never arrives at all — and ADR 0062 D1 is the
+		// day the PID channel came back, so the question came with it. Bob
+		// reads AGENTS.md and CLAUDE.md out of the workspace and now takes the
+		// PID as its mode's `roleDefinition`, which is the `role_definition`
+		// section of its own system prompt; the probe put both rulebooks in
+		// the ONE rendered prompt, so the answer is a precedence reading and
+		// not an artifact of a rulebook that never loaded. Bob's reply emitted
+		// the PID's own token and none of the fixture's, so the verdict is
+		// self-evidencing in grok's sense rather than a two-signal read like
+		// codex's. The probe's artifact stays on disk: bob task
+		// 77a20a1a8b35b4a1b9b50d95fde15712 in ~/.bob/db/bob.db, where reading
+		// it costs nothing.
+		RulesPrecedence:    RulesPrecedencePID,
+		RulesPrecedenceWhy: "measured 2026-10-04 (ranger-base-4mrmc): against a fixture AGENTS.md demanding lowercase, the word 'prepared' and its own token, bob 2.0.5 replied in uppercase with 'READY' and the PID's own token PID-WINS — all three AGENTS rules broken; both rulebooks were in the rendered prompt (PID at <role_definition> byte 0, AGENTS.md at <project_rules>/<agents_md> byte 8523) and the reply carried a call sign that existed only there",
+		ProjectConfig:      bobProjectConfig,
 		// ProjectConfigKeys stays empty — see bobProjectConfig.
 		//
 		// SelfSandbox false: bob does not wrap its own child commands, so
