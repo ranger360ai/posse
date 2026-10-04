@@ -17,6 +17,33 @@ import (
 	"time"
 )
 
+// pulseHangGuard is every "it never happened" deadline in this file: a HANG
+// GUARD, not a budget. The distinction is hookwallsweep_qa_test.go's
+// (ranger-base-isq3) and the number is its number — a ceiling ~100x the real
+// cost turns a wedged Watch into a tap dump naming the line instead of a
+// package-wide `go test -timeout` panic, and is no longer a number a loaded
+// box can reach.
+//
+// It was 30s at five sites, and 30s was reachable (ranger-base-7zng1). Two of
+// these blew through it on 2026-10-03 while one unqueued `go test
+// ./internal/treepins` saturated this box beside a `make test`:
+// TestWatchPulseArmedLogsBlockedSession failed "watch never returned after
+// cancel" at 135.11s elapsed and TestWatchPulseUnarmedNoTicker failed "watch
+// never returned", in an arm 3 that took 1459.6s against 424.1s unloaded.
+// Alone under their tag the same two pass in 0.93s and 0.55s — 3% of the
+// deadline they blew through, so what they measured was the scheduler, not
+// the loop. Every reading is in docs/notes.d/ranger-base-7zng1.md.
+//
+// Nothing here spends the wider ceiling: each of these waits ends on its own
+// evidence — a tap line, a pass count, a released park — and the timer only
+// turns a wedged Watch into the tap dump beside it instead of a package-wide
+// `go test -timeout` panic naming no test.
+//
+// One name for all five, so the next widening moves one line rather than
+// finding five of them (the ranger-base-q8ejb corollary: point at the prose,
+// do not restate it).
+const pulseHangGuard = 90 * time.Second
+
 func TestLoadPulseConfigUnarmedByDefault(t *testing.T) {
 	t.Parallel()
 	a := wtApp(t)
@@ -285,7 +312,7 @@ func TestWatchPulseArmedLogsBlockedSession(t *testing.T) {
 	done := make(chan int, 1)
 	go func() { p, _ := d.Watch(ctx, "", "", 0, 20*time.Millisecond, 40*time.Millisecond); done <- p }()
 
-	deadline := time.After(30 * time.Second)
+	deadline := time.After(pulseHangGuard)
 	for {
 		if strings.Contains(tap.String(), "pulse: blocked:coordinator-shop") {
 			break
@@ -299,7 +326,7 @@ func TestWatchPulseArmedLogsBlockedSession(t *testing.T) {
 	cancel()
 	select {
 	case <-done:
-	case <-time.After(30 * time.Second):
+	case <-time.After(pulseHangGuard):
 		t.Fatal("watch never returned after cancel")
 	}
 
@@ -370,7 +397,7 @@ func TestWatchPulseUnarmedNoTicker(t *testing.T) {
 
 	select {
 	case <-done:
-	case <-time.After(30 * time.Second):
+	case <-time.After(pulseHangGuard):
 		t.Fatal("watch never returned")
 	}
 
@@ -462,7 +489,7 @@ func TestWatchWaitsForAPulseTickInFlight(t *testing.T) {
 
 	select {
 	case <-tap.parked:
-	case <-time.After(30 * time.Second):
+	case <-time.After(pulseHangGuard):
 		t.Fatalf("the pulse never logged a condition to park on:\n%s", tap.String())
 	}
 
@@ -476,7 +503,7 @@ func TestWatchWaitsForAPulseTickInFlight(t *testing.T) {
 	tap.let()
 	select {
 	case <-done:
-	case <-time.After(30 * time.Second):
+	case <-time.After(pulseHangGuard):
 		t.Fatal("Watch never returned after the parked pulse tick was released")
 	}
 }

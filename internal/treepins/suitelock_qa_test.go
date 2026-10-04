@@ -113,6 +113,15 @@ var suiteLockArms = []string{
 	// path, more than 1 is the repeat, and its control is arm 15's log,
 	// where every slot must still be named exactly once.
 	"sandbox: an unopenable slot is named once per acquire, not once per poll",
+	// ranger-base-7zng1: the named-package exemption, measured. `go test
+	// ./internal/treepins` is one package and no filter — arm 5's rule
+	// exactly — and it costs what a queued arm costs: 363.2s with a warm
+	// build cache, 679.1s cold, a median of 393.5s over 327 wall readings at
+	// or above 60s. Unqueued it was invisible to the runs that queue and made
+	// nobody else queue, and one of them beside a `make test` put arm 3 at
+	// 1459.6s against 424.1s unloaded. Arm 5 above is this arm's control: the
+	// rule must still let a named `./internal/posse` through.
+	"queue: the named package that costs a full suite takes a slot",
 }
 
 // Arm 1: `make test` still runs the queue's self-test, and `make

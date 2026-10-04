@@ -216,7 +216,17 @@ bd sync               # Sync with git
   of two box-wide slots (`scripts/suite-lock.sh`, an flock under
   `~/.cache/posse`) before they start: a third full run waits, and its first
   line names the worktree it is waiting on. A `-run` filter or a named
-  package takes no slot — type those as freely as you ever did.
+  package takes no slot — type those as freely as you ever did, with ONE
+  measured exception: `go test ./internal/treepins` DOES take a slot
+  (ranger-base-7zng1). That package's pins have the tree as their subject and
+  one of them vets all three arms, so an unfiltered run of it costs what a
+  queued arm costs — 363.2s with a warm build cache, 679.1s cold, a median of
+  393.5s over 327 wall readings at or above 60s — and unqueued it was
+  invisible to the runs that queue and made nobody else queue. One beside a
+  `make test` on 2026-10-03 put arm 3 at 1459.6s against 424.1s unloaded and
+  reddened two watch tests that need 0.9s of the 30s they blew through. A
+  `-run` filter over the same package still takes no slot, so `make
+  tree-check` and every focused pin run are unchanged.
   `scripts/suite-lock.sh --status` says who holds the slots;
   `POSSE_SUITE_SLOTS` changes how many there are and `POSSE_SUITE_LOCK=0`
   opts a run out loudly. A seat whose cage cannot OPEN the slot files —

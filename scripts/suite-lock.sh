@@ -53,6 +53,15 @@
 # thinking, they are seconds long, and queueing them behind a 20-minute suite
 # would make the guard's own cure the thing that stops work.
 #
+# With ONE named exception, and it is an exception by measurement rather than
+# by class: `go test ./internal/treepins` is not seconds long. Its pins have
+# the tree as their subject and one of them vets all three of internal/posse's
+# arms, so the run costs what a tagged arm that does queue costs — 363.2s
+# measured here with a warm build cache, 679.1s cold, and over 327 wall
+# readings at or above 60s a median of 393.5s and a longest of 1501.6s
+# (MEASURED 2026-10-04, ranger-base-7zng1). suite_lock_wanted names it and
+# says why.
+#
 # flock(2), and never a pidfile or a lock DIRECTORY. This is the launcher
 # lock's argument (internal/posse/launchlock.go, ADR 0011 §1) applied to a
 # second resource: an flock is held by the open file description, so the
@@ -194,8 +203,9 @@ else
 fi
 
 # suite_lock_wanted <command...> — is this argv a FULL, unfiltered package
-# tree? Reads the same argv the wrapper was handed, so it is the command that
-# will actually run that decides, never a caller's claim about it.
+# tree, or the one named package measured to cost as much as one? Reads the
+# same argv the wrapper was handed, so it is the command that will actually
+# run that decides, never a caller's claim about it.
 #
 # `go test` argv puts a flag's VALUE in its own word, so `-run TestFoo` and
 # `-run=TestFoo` are both filters and both have to be seen (this is the same
@@ -231,6 +241,52 @@ suite_lock_wanted() {
 		# two arm walls taken that way are not comparable. Take both with
 		# POSSE_SUITE_LOCK=0, or both through make.
 		posse_arm* | -tags=posse_arm* | --tags=posse_arm*) tree=1 ;;
+		# AND SO IS ONE NAMED PACKAGE, BY MEASUREMENT (ranger-base-7zng1).
+		# internal/treepins is the paragraph above wearing the exemption's
+		# clothes: its subject is the TREE, so its pins fork `go build`,
+		# `go vet`, `git` and the gate scripts over the whole repository, and
+		# TestQAEverySuiteArmTypeChecks alone type-checks and vets all three
+		# of internal/posse's arms — compiling that package three times over.
+		# A `./...` run reaches it and is queued; `go test ./internal/treepins`
+		# names one package, costs what a tagged arm that queues costs — the
+		# `make test` that verified this landing read 376.0s for it beside
+		# 335.4s, 272.5s and 361.9s for the three internal/posse arms — and
+		# until this line it took no slot and made nobody else queue.
+		#
+		# MEASURED 2026-10-04 over every session transcript on this box
+		# (the one-liner is in docs/notes.d/ranger-base-7zng1.md; re-run it,
+		# the corpus grows): 140 unfiltered `go test ./internal/treepins`
+		# runs from 52 sessions over 7 days, and 5 minutes in which two
+		# different seats each started one. Of 327 wall readings for this
+		# package at or above 60s, the median is 393.5s and the longest
+		# 1501.6s; 274 are at or above 300s, which is test-times' own line
+		# for a slow package. The incident that filed this: one unqueued run
+		# beside a `make test` put arm 3 at 1459.6s against 424.1s unloaded
+		# and reddened two 30s hang guards in pulse_test.go, 3% of which the
+		# same two tests need when they run alone.
+		#
+		# THE EXEMPTION ABOVE IS NOT WITHDRAWN. A `-run` filter returns from
+		# the first loop and never reaches here, so every `make tree-check`
+		# door, the arm-tags door in `make test`'s own recipe (4.2s real with
+		# a warm build cache, MEASURED 2026-10-04) and any focused run a person
+		# types while thinking are as unqueued as they were — which is also
+		# why no nested acquire appears: nothing that runs inside a held slot
+		# reaches this rule.
+		#
+		# ONE PACKAGE, NAMED, NOT A COST HEURISTIC. argv cannot be asked what
+		# a run will cost, and this run's cost moves: 363.2s over 639 green
+		# pins with a warm build cache (MEASURED 2026-10-04, this box,
+		# go1.26.5, -count=1, one sibling treepins run alongside) against
+		# 679.1s uncontended the day before, when the three arm builds were
+		# cold. Both are full-suite-sized and no pattern can read the build
+		# cache, so the rule is the NAME: a measured name is a claim somebody
+		# can check, and a guess at cost is not. The sibling candidate is
+		# `go test ./internal/posse` — arm 1 of a ~950s package, unqueued for
+		# the reason the asymmetry paragraph above gives — and flipping that
+		# reverses a deliberate ranger-base-qp1hm decision about the run a
+		# person does while thinking, so it stays the architect's call and
+		# not a line added here.
+		*internal/treepins | *internal/treepins/) tree=1 ;;
 		esac
 	done
 	[ "$tree" = 1 ]
@@ -1046,6 +1102,35 @@ ORPHANER
 	rm -f "$tmp/hold5b"
 	kill "$h5b" 2>/dev/null
 	wait "$h5b" 2>/dev/null
+
+	# ARM 5c: and so is the one NAMED package measured to cost a full suite
+	# (ranger-base-7zng1). `go test ./internal/treepins` is arm 5's rule
+	# exactly — one package, no filter — and it is the run that reddened two
+	# pulse hang guards by saturating this box beside a `make test`: 363.2s
+	# warm, 679.1s cold, a median of 393.5s over 327 readings at or above
+	# 60s. Arm 5 and this arm are each other's control: the rule has to let
+	# `./internal/posse` through and hold this one, or it is either a
+	# withdrawn exemption or no rule at all.
+	#
+	# Queued means the marker does NOT appear while both slots are held,
+	# read after the holder has spoken — arm 5b's evidence, for arm 5b's
+	# reason: an unqueued run writes its marker at once and says `none`, and
+	# a fork that has not been scheduled has written nothing either.
+	touch "$tmp/hold5c"
+	"$tmp/holder.sh" "$SUITE_LOCK_LIB" "$tmp/m5c" "$tmp/hold5c" go test -timeout 25m -count=1 ./internal/treepins &
+	h5c=$!
+	if wait_answer "$tmp/m5c" "$fork_s" && [ ! -e "$tmp/m5c" ]; then
+		ok 'queue: the named package that costs a full suite takes a slot'
+	elif [ -e "$tmp/m5c" ]; then
+		bad 'queue: the named package that costs a full suite takes a slot' \
+			"it ran unqueued with both slots held: $(answer_of "$tmp/m5c" "$fork_s")"
+	else
+		bad 'queue: the named package that costs a full suite takes a slot' \
+			"with both slots held, $(answer_of "$tmp/m5c" "$fork_s")"
+	fi
+	rm -f "$tmp/hold5c"
+	kill "$h5c" 2>/dev/null
+	wait "$h5c" 2>/dev/null
 
 	# ARM 6: the queue drains. A holder finishes, and the waiter that arm 2
 	# left queued takes the freed slot — which is also the proof that arm

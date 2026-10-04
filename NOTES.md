@@ -71,6 +71,12 @@ A bare `go test ./...` compiles only the default arm of `internal/posse`.
 It omits the other two build-tag partitions, the suite wrapper and its
 box-wide queue, and the Makefile's additional checks. For a focused test in
 another arm, pass `-tags posse_arm2` or `-tags posse_arm3` explicitly.
+
+Run the tree pins with a `-run` filter, as the table does. An unfiltered
+`go test ./internal/treepins` type-checks and vets all three arms and costs
+what a full suite arm costs, so it takes a suite-lock slot
+([ranger-base-7zng1](docs/notes.d/ranger-base-7zng1.md)); a filtered run of
+the same package takes none.
 [Testing history](docs/notes.d/notes-testing.md) records why these entry points exist.
 The [Makefile](Makefile) is the executable source of their current recipes.
 
