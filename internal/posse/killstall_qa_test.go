@@ -93,6 +93,22 @@ func TestQAStalledKillLandingPromptDoesNotCloseTheWorkspace(t *testing.T) {
 				if hadMeta {
 					t.Errorf("%s: a kill that closed the workspace must remove the meta", tc.code)
 				}
+				// ranger-base-wgzu7 finding 2: this arm is the one that
+				// PROCEEDS, and what it proceeds to is CloseWorkspace, the
+				// meta's removal and DropPaneLine — asserted above. The
+				// line the operator reads said "relaunching anyway", the
+				// opposite, on the one reachable path that destroys a
+				// session. The word is the caller's now (landThePlane's
+				// `next`).
+				if !strings.Contains(out.String(), "landing prompt failed") {
+					t.Errorf("%s: a refused submission is said out loud:\n%s", tc.code, out.String())
+				}
+				if strings.Contains(out.String(), "relaunching") {
+					t.Errorf("%s: a kill that closed the workspace and removed the meta told the operator it was relaunching:\n%s", tc.code, out.String())
+				}
+				if !strings.Contains(out.String(), "closing anyway") {
+					t.Errorf("%s: the note does not say what the kill is about to do:\n%s", tc.code, out.String())
+				}
 				return
 			}
 

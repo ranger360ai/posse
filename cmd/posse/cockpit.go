@@ -872,6 +872,16 @@ func newCockpit(a *posse.App, hb *posse.HerdrBackend, out io.Writer) *cockpit {
 
 func runCockpit(a *posse.App, hb *posse.HerdrBackend, out io.Writer) error {
 	c := newCockpit(a, hb, out)
+	// The package's UNOWNED notices — a blown git/bd/herdr deadline, a
+	// runtime's dropped-key line, a perm drift, the cwd fallback — into the
+	// same sink, and for a sharper reason than the loop's /dev/null: with
+	// the alt screen up a line on stderr lands ON the frame being drawn and
+	// is gone with the next redraw (ranger-base-wgzu7, ranger-base-2vhqo).
+	// NOT d.RouteProcessNotices(), which would route them through c.disp's
+	// io.Discard; and here rather than in newCockpit, because these writers
+	// are PROCESS state and a constructor every cmd/posse test calls would
+	// leave the whole package writing into a sink of a cockpit that is gone.
+	posse.RouteProcessNotices(c.notices)
 	// The backend's notices go back to stderr on the way out
 	// (ranger-base-2vhqo), which is where they went before this screen
 	// collected them. Deferred HERE, above the alt screen's own defers, so

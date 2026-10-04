@@ -107,7 +107,7 @@ func (a *App) EnvSetVars(name string) ([]EnvVar, error) {
 	if err != nil {
 		return nil, err
 	}
-	a.TightenEnvPerms(os.Stderr)
+	a.TightenEnvPerms(processNotices())
 	b, err := os.ReadFile(f)
 	if err != nil {
 		return nil, err

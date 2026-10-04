@@ -174,7 +174,7 @@ func (b *HerdrBackend) RelaunchSession(w io.Writer, o RelaunchOpts) error {
 	}
 
 	if !o.NoLand {
-		settled, err := b.landThePlane(w, m, timeout, LandingPrompt(m))
+		settled, err := b.landThePlane(w, m, timeout, LandingPrompt(m), "relaunching anyway")
 		if err != nil {
 			return err
 		}
@@ -732,10 +732,22 @@ func RecoverCommand(m *HerdrMeta) string {
 // The prompt is the caller's, because the two callers are telling the agent
 // two different things about what happens next: a relaunch is a session
 // starting over (LandingPrompt), a kill is a session ending (KillLandingPrompt,
-// ranger-base-qxvh). Everything else about the turn — the settle wait, the
-// bound, the blocked arm, the "landing prompt failed" note — is the same
-// mechanism and stays here.
-func (b *HerdrBackend) landThePlane(w io.Writer, m *HerdrMeta, timeout time.Duration, prompt string) (bool, error) {
+// ranger-base-qxvh).
+//
+// `next` is that same fact in the OPERATOR's voice, and it is the caller's
+// for the same reason (ranger-base-wgzu7 finding 2). The give-up note below
+// used to say "relaunching anyway" on both paths, and on `posse kill --land`
+// nothing is relaunched — the next things that happen are CloseWorkspace,
+// the meta's removal and DropPaneLine. So on the one reachable path that
+// DESTROYS a session, the line the operator read said the opposite of what
+// was about to happen. ranger-base-wjfnp is why it was visible: it moved
+// agent_prompt_stalled off that arm, leaving the codes that mean herdr
+// refused before sending anything — correct to proceed, wrong to say
+// "relaunching".
+//
+// Everything else about the turn — the settle wait, the bound, the blocked
+// arm, the give-up note itself — is the same mechanism and stays here.
+func (b *HerdrBackend) landThePlane(w io.Writer, m *HerdrMeta, timeout time.Duration, prompt, next string) (bool, error) {
 	target, err := b.AgentTarget(m.Name)
 	if err != nil {
 		fmt.Fprintf(w, "no agent in %s — nothing to land\n", m.Name)
@@ -827,8 +839,11 @@ func (b *HerdrBackend) landThePlane(w io.Writer, m *HerdrMeta, timeout time.Dura
 		}
 		// A landing that could not be submitted at all is worth saying out
 		// loud, but it is not a reason to keep a session the operator asked
-		// to refresh — nothing of ours is running in there.
-		fmt.Fprintf(w, "landing prompt failed (%v) — relaunching anyway\n", err)
+		// to refresh — or to end — because nothing of ours is running in
+		// there. What happens next is the CALLER's word (`next`, see the
+		// doc): this arm proceeds on both paths and they proceed to
+		// opposite things.
+		fmt.Fprintf(w, "landing prompt failed (%v) — %s\n", err, next)
 	}
 	return true, nil
 }

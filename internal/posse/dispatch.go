@@ -651,6 +651,28 @@ func (d *Dispatcher) launchWarns() io.Writer { return dispatcherLaunchWarn{d} }
 // this bead is about — gets them either way.
 func (d *Dispatcher) RouteBackendWarnings() { d.HB.Warn = d.quietErrWriter() }
 
+// RouteProcessNotices is RouteBackendWarnings' third slice: the notices that
+// go through no backend at all — a blown git, bd or herdr deadline, a
+// runtime's dropped-key line, the two perm-drift notices and BeadsDirs'
+// cwd fallback (processnotices.go, ranger-base-wgzu7). They are PACKAGE
+// state and per-value fields on types built fresh at a dozen call sites, so
+// there is no field a launcher can hand down and no resolver a backend owns:
+// what the owning process can do is say once where its stream is.
+//
+// Same writer as the backend's, for both of its reasons. QUIET, because a
+// blown herdr deadline is written on whatever goroutine blew it — the pulse
+// clock calls Sessions() every tick — and a clock's line must not refresh
+// the watchdog's silence input (LastWrite, ranger-base-0fz98 finding 3).
+// errw() and not Out, because these are warnings and the loop tees both
+// into its record anyway.
+//
+// Called by the CALLER and before any goroutine of this dispatcher exists,
+// for RouteBackendWarnings' reason and with one more edge: these writers are
+// process-wide, so the cockpit — which shares this dispatcher's backend and
+// discards its Out — must route them to its OWN sink and never through
+// here. It does (cmd/posse/cockpit.go, cmd/posse/cockpitnotices.go).
+func (d *Dispatcher) RouteProcessNotices() { RouteProcessNotices(d.quietErrWriter()) }
+
 // planGuard takes this pass's shared plan reading (rangerhq-jgm). The plan's
 // own rate windows are the real budget; `plan_guard_<window>:` (percent) are
 // the thresholds and none is set by default — with none set the guard

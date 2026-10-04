@@ -737,6 +737,12 @@ func main() {
 		// own, and before any goroutine of d exists because the pulse clock
 		// reads the field it sets — both in RouteBackendWarnings' doc.
 		d.RouteBackendWarnings()
+		// And the lines that go through no backend at all — a blown git, bd or
+		// herdr deadline, a runtime's dropped-key notice, a perm drift, the
+		// cwd fallback. Package state with one consumer per process, so the
+		// process says once where its stream is (ranger-base-wgzu7). Same two
+		// placement reasons as the line above.
+		d.RouteProcessNotices()
 		dirF, personaF, maxN := "", "", 0
 		var watch, watchMax time.Duration
 		watchStatus := false

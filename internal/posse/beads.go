@@ -29,7 +29,10 @@ type Bd struct {
 
 	// The child deadline (ranger-base-wj7e9), zero in production and set
 	// only by the pin — see BdTimeout and runOnce. Hangw takes the one line
-	// a blown deadline writes; nil = os.Stderr.
+	// a blown deadline writes; nil is the process's unowned-notice stream,
+	// which is the operator's stderr unless the process routed it
+	// (processnotices.go — a Bd is built fresh at a dozen call sites, so
+	// this field is nobody's to assign and the default is the whole of it).
 	Timeout time.Duration // 0 = BdTimeout
 	Hangw   io.Writer
 }
@@ -189,7 +192,7 @@ func (b Bd) hangw() io.Writer {
 	if b.Hangw != nil {
 		return b.Hangw
 	}
-	return os.Stderr
+	return processNotices()
 }
 
 func (b Bd) timeout() time.Duration {

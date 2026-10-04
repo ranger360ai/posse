@@ -92,6 +92,13 @@ func TestQAStalledLandingPromptDoesNotCloseTheSession(t *testing.T) {
 				if !strings.Contains(out.String(), "landing prompt failed") {
 					t.Errorf("%s: a refused submission is said out loud:\n%s", tc.code, out.String())
 				}
+				// And it says what happens next, which on THIS caller is a
+				// relaunch (ranger-base-wgzu7 finding 2: the word is the
+				// caller's now, because the kill caller's is "closing" —
+				// see killstall_qa_test.go, arm 2).
+				if !strings.Contains(out.String(), "relaunching anyway") {
+					t.Errorf("%s: the note does not say what the relaunch is about to do:\n%s", tc.code, out.String())
+				}
 				if !hadMeta || m2.Workspace == m1.Workspace {
 					t.Errorf("%s: the session must be recreated: %+v", tc.code, m2)
 				}

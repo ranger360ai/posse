@@ -75,7 +75,7 @@ func (a *App) SecretVars(name string) ([]EnvVar, error) {
 	if err != nil {
 		return nil, err
 	}
-	a.TightenSecretPerms(os.Stderr)
+	a.TightenSecretPerms(processNotices())
 	b, err := os.ReadFile(f)
 	if err != nil {
 		return nil, err

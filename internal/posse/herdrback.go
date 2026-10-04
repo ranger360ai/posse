@@ -3597,7 +3597,7 @@ func (b *HerdrBackend) killAndLand(name string, opts KillOpts) (*KillLanding, er
 		if w == nil {
 			w = io.Discard
 		}
-		settled, err := b.landThePlane(w, m, timeout, KillLandingPrompt(m))
+		settled, err := b.landThePlane(w, m, timeout, KillLandingPrompt(m), "closing anyway")
 		if err != nil {
 			return nil, err
 		}

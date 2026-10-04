@@ -33,9 +33,12 @@ type Herdr struct {
 	ControlTimeout time.Duration // 0 = HerdrControlTimeout
 	WaitGrace      time.Duration // 0 = HerdrWaitGrace
 
-	// Hangw takes the one line a blown deadline writes; nil = os.Stderr,
-	// which for the --watch loop IS its log (nothing sets Dispatcher.Err in
-	// production, so every other posse warning lands there too). It is
+	// Hangw takes the one line a blown deadline writes; nil is the
+	// process's unowned-notice stream (processnotices.go), which is the
+	// operator's stderr unless the process routed it — and a --watch loop
+	// routes it, because that loop has fd 2 on /dev/null and this line was
+	// going there (ranger-base-wgzu7; the claim this doc used to make, that
+	// stderr under the loop IS its log, was measured false). It is
 	// written HERE rather than left to the caller because most callers of a
 	// herdr read swallow the error by design — personaActive turns one
 	// into a seat verdict rather than a returned error (it HOLDS the seat,
@@ -313,7 +316,7 @@ func (h Herdr) hangw() io.Writer {
 	if h.Hangw != nil {
 		return h.Hangw
 	}
-	return os.Stderr
+	return processNotices()
 }
 
 // callDeadline sizes one call's deadline from its own argv — see the block
