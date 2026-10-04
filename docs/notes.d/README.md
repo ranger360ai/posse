@@ -10,6 +10,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-khqvr](ranger-base-khqvr.md) — A derived census narrowed by a hand list of two names reached 4 of 10 keys (ranger-base-khqvr) — 2026-10-04
 - [ranger-base-jyuid](ranger-base-jyuid.md) — Is a tree pin anyone else's practice? A survey of the field, and the public wording (ranger-base-jyuid) — 2026-10-04
 - [ranger-base-g6sb1](ranger-base-g6sb1.md) — The tree-wide door register was blind to a whole package, and what the second key had to be (ranger-base-g6sb1) — 2026-10-04
+- [ranger-base-eawjq](ranger-base-eawjq.md) — Replaying a TWO-commit merge-back: every commit needs its own twin (ranger-base-eawjq) — 2026-10-04
 - [ranger-base-dpvlh](ranger-base-dpvlh.md) — ranger-base-dpvlh — a merge-back of a DERIVED gate has to re-run the gate — 2026-10-04
 - [ranger-base-7zng1](ranger-base-7zng1.md) — The heaviest named-package run on the box took no suite slot (ranger-base-7zng1) — 2026-10-04
 - [ranger-base-4wwy5](ranger-base-4wwy5.md) — ASD-STE100 for the harness's own English: what the standard mandates, where posse's English failed this week, and what a controlled language would buy (ranger-base-4wwy5) — 2026-10-04
@@ -24,6 +25,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-elf2v](ranger-base-elf2v.md) — Which `projects[]` key does claude read? (ranger-base-elf2v) — 2026-10-03
 - [ranger-base-eh1kr](ranger-base-eh1kr.md) — `bd ready` excludes `in_progress`, so dispatch could not see an interrupted run (ranger-base-eh1kr) — 2026-10-03
 - [ranger-base-d88rp](ranger-base-d88rp.md) — ranger-base-d88rp — the trust key is NFC, and posse's was not — 2026-10-03
+- [ranger-base-bwp7h](ranger-base-bwp7h.md) — A `no-db: true` beads store drops every defer date (ranger-base-bwp7h) — 2026-10-03
 - [ranger-base-bknod](ranger-base-bknod.md) — ranger-base-bknod — the fake bd's `ready` serves open rows, and nothing else — 2026-10-03
 - [ranger-base-b96nx](ranger-base-b96nx.md) — The ordered matrix cannot see a shadowed rule, so five of the override's stated properties were unasserted (ranger-base-b96nx) — 2026-10-03
 - [ranger-base-9c5bh](ranger-base-9c5bh.md) — ranger-base-9c5bh — the settled skip keeps its branch and loses its line — 2026-10-03
