@@ -38,6 +38,29 @@ func promptReadySession(t *testing.T, b *HerdrBackend, name, wait string) {
 	}
 }
 
+// promptExplains is how many times the gate asked herdr, counted off the
+// fake's own call log.
+//
+// A COUNT, because the thing two arms below are about is whether the gate
+// LOOPED, and a wall clock cannot see that on a loaded box: one `agent
+// explain` is a fork and an exec of this test binary, and under load one of
+// them takes longer than the 250ms poll all by itself. AwaitPromptable says
+// so in its own words — "News is a second `agent explain`, not a slow first
+// one" (ranger-base-vstc) — and then returned a note that proves it, while
+// the two arms went on asserting the clock.
+//
+// MEASURED 2026-10-04 (ranger-base-ghcx3 finding 4): both reddened `make
+// test` arm 3 at clean main on a box at a 15-minute load average of 27 —
+// 1.04s and 4.11s against a 250ms ceiling — and both were green 3 of 3 at the
+// same commit, 4.6s each, when the package was re-run filtered. Nothing was
+// wrong with the gate on either run. This is the same substitution
+// fakeExplainErrorArmed's comment already made for the other direction: each
+// fake call is its own process, so the count lives in a file.
+func promptExplains(t *testing.T, fake string) int {
+	t.Helper()
+	return strings.Count(calls(t, fake), "agent explain")
+}
+
 // The bug itself. A pane herdr never recognizes is not promptable, and the
 // gate says so with nothing typed — the opposite of the incident, where the
 // text went in and the call returned success.
@@ -84,10 +107,9 @@ func TestPromptGateRefusesAPaneHerdrOnlyGuessesAt(t *testing.T) {
 // test above measured the guess and not the mechanism.
 func TestPromptGatePassesAPaneHerdrHasSeen(t *testing.T) {
 	t.Parallel()
-	b, _ := newTestBackend(t)
+	b, fake := newTestBackend(t)
 	promptReadySession(t, b, "live", "400ms")
 
-	start := time.Now()
 	_, note, err := b.AwaitPromptable("live", "w1:p1")
 	if err != nil {
 		t.Fatalf("a seen screen must be promptable: %v", err)
@@ -95,8 +117,10 @@ func TestPromptGatePassesAPaneHerdrHasSeen(t *testing.T) {
 	if note != "" {
 		t.Errorf("a prompt that waited for nothing has nothing to report: %q", note)
 	}
-	if waited := time.Since(start); waited >= promptReadyPoll {
-		t.Errorf("an established session paid %s for the gate — it must cost one explain", waited)
+	// One explain and no poll: the cost, read off the calls the gate actually
+	// made rather than off the clock it made them on (promptExplains).
+	if n := promptExplains(t, fake); n != 1 {
+		t.Errorf("an established session paid %d `agent explain` calls for the gate — it must cost one:\n%s", n, calls(t, fake))
 	}
 }
 
@@ -112,12 +136,18 @@ func TestPromptGateDoesNotWaitForIdle(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	start := time.Now()
-	if _, _, err := b.AwaitPromptable("busy", "w1:p1"); err != nil {
+	_, note, err := b.AwaitPromptable("busy", "w1:p1")
+	if err != nil {
 		t.Fatalf("a working agent herdr can see must still take a prompt: %v", err)
 	}
-	if waited := time.Since(start); waited >= promptReadyPoll {
-		t.Errorf("the gate held a working session for %s — it waits for a seen screen, not for idle", waited)
+	// HELD is a second explain, not a slow first one. Two readings of the
+	// same fact, neither a clock: the call count, and the note the gate
+	// itself only writes when it looped (AwaitPromptable, attempts > 1).
+	if n := promptExplains(t, fake); n != 1 {
+		t.Errorf("the gate held a working session for %d `agent explain` calls — it waits for a seen screen, not for idle:\n%s", n, calls(t, fake))
+	}
+	if note != "" {
+		t.Errorf("the gate reports having waited on a working session it should have passed at once: %q", note)
 	}
 }
 

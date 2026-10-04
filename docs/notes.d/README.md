@@ -11,6 +11,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-lyjbt](ranger-base-lyjbt.md) — ranger-base-lyjbt — verifying four closes at the v0.5.1 gate — 2026-10-04
 - [ranger-base-khqvr](ranger-base-khqvr.md) — A derived census narrowed by a hand list of two names reached 4 of 10 keys (ranger-base-khqvr) — 2026-10-04
 - [ranger-base-jyuid](ranger-base-jyuid.md) — Is a tree pin anyone else's practice? A survey of the field, and the public wording (ranger-base-jyuid) — 2026-10-04
+- [ranger-base-ghcx3](ranger-base-ghcx3.md) — A derivation total over its readers was not total over its inputs, and two wall-clock pins became call counts (ranger-base-ghcx3) — 2026-10-04
 - [ranger-base-g6sb1](ranger-base-g6sb1.md) — The tree-wide door register was blind to a whole package, and what the second key had to be (ranger-base-g6sb1) — 2026-10-04
 - [ranger-base-eawjq](ranger-base-eawjq.md) — Replaying a TWO-commit merge-back: every commit needs its own twin (ranger-base-eawjq) — 2026-10-04
 - [ranger-base-dpvlh](ranger-base-dpvlh.md) — ranger-base-dpvlh — a merge-back of a DERIVED gate has to re-run the gate — 2026-10-04

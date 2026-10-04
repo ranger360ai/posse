@@ -32,6 +32,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -301,7 +302,7 @@ func TestSeedConfigLiveKeysAreRead(t *testing.T) {
 // name their constant with the suffix, so they failed both halves of the old
 // rule at once.
 //
-// THE REGISTERS are two, and each silences one key for a stated reason:
+// THE REGISTERS are three, and each silences one key for a stated reason:
 //
 //   - seedDocumentedOnPurposeNotTheDefault, for a key the file documents at
 //     something other than its default on purpose. Empty today.
@@ -310,21 +311,46 @@ func TestSeedConfigLiveKeysAreRead(t *testing.T) {
 //     `backup_max_age` is the one (ADR 0036 §6). Such a key must also stay
 //     UNDOCUMENTED in the seed, because a documented line for it would be a
 //     claim nothing here can hold.
+//   - seedDocumentedDurationOutsideTheCensus, for a duration-valued line in
+//     the seed whose key the derivation reaches no reader for, because there
+//     is no constant for the line to drift from. Two members, both named in
+//     the paragraph below.
 //
 // Each register's stale half is as loud as its live half: an entry whose key
 // is no longer a duration key, is no longer documented, or whose documented
 // value has quietly become the default again, fails.
+//
+// AND THE CENSUS IS TOTAL FROM THE SEED'S SIDE TOO, which it was not until
+// ranger-base-ghcx3 finding 1. Everything above walks the TREE's readers and
+// then asks the seed about each key it found; nothing walked the SEED and
+// asked whether each documented duration line had been reached. A documented
+// key whose reader matches neither derived shape was never compared, never
+// registered and never reported — `compared` stayed at ten, the floor passed,
+// and the operator-facing spec could name a default ten times the real one in
+// silence, which is the exact sentence ranger-base-2vynj finding 1 was filed
+// for. MEASURED 2026-10-04 with a planted third-shape reader (a body-form
+// reader with one extra parameter) documented at 10x its default: these pins
+// were green, and the same reader one parameter closer to the body form
+// reddened two of them. So seedDocumentedDurations enumerates the seed's own
+// duration-valued lines and each one must be accounted for in exactly one of
+// three ways — compared, in seedDurationDefaultNotAConstant, or in the
+// register above. That turns the `compared < 10` floor into a SET, which is
+// the whole difference: deleting a documented line reds at `compared 9`, and
+// adding one is invisible to any count.
 //
 // WHAT IS STILL OUTSIDE, on purpose. `autostart_interval` has no default at
 // all — its presence is the arm switch and absent means off (govern.go) —
 // and `autostart_max_interval` defaults to 8x the base rather than to a
 // constant. Neither is read through a reader of this shape, so neither is
 // derived, and neither should be: a register row for a key with no constant
-// to drift from is the wrong answer. MEASURED 2026-10-04: the body-form rule
-// scans `YamlGet` and `CfgGet` key literals alike and the two keys above are
-// read through neither inside a duration reader, so widening the key source
-// adds no member and closes the escape a future CfgGet-based reader would
-// otherwise have.
+// to drift from is the wrong answer to the DRIFT question. It is the right
+// answer to the COVERAGE one, and that is what the third register is: the two
+// are named there with the reason, so the seed-side enumeration accounts for
+// them instead of either comparing them against nothing or skipping them in
+// silence. MEASURED 2026-10-04: the body-form rule scans `YamlGet` and
+// `CfgGet` key literals alike and the two keys above are read through neither
+// inside a duration reader, so widening the key source adds no member and
+// closes the escape a future CfgGet-based reader would otherwise have.
 
 // seedDurationResolvers are the config readers that take the key and the
 // default as ARGUMENTS: the functions whose grammar decides what a
@@ -399,6 +425,100 @@ var seedDurationDefaultNotAConstant = map[string]string{
 	"backup_max_age": "ADR 0036 §6 makes the default a rule rather than a number — 2x the scheduled " +
 		"backup interval, falling back to DefaultBackupMaxAge only for an instance with no schedule " +
 		"(defaultBackupMaxAge) — so there is no single constant a documented line could name",
+}
+
+// seedDocumentedDurationOutsideTheCensus records a duration-valued line in
+// examples/config.yaml whose key the derivation reaches no reader for, so
+// there is no constant a documented value could drift from. Key -> why.
+//
+// It is the third of the three ways a documented duration line can be
+// accounted for, and the only one that admits a line at all: the other two
+// either compare it or require it to be absent. Without it, such a line is
+// invisible — which is ranger-base-ghcx3 finding 1 — and with it as a BARE
+// LIST it would be a hole the next key falls into, so the staleness half in
+// the pin below is what keeps each row describing something: a key here that
+// the seed no longer documents with a duration, or that the census has since
+// learned to compare, fails.
+var seedDocumentedDurationOutsideTheCensus = map[string]string{
+	"autostart_interval": "its presence IS the arm switch — absent means autostart is off (govern.go) — so " +
+		"there is no default for the documented 5m to be a statement about, and a constant would have to " +
+		"stand for \"off\"",
+	"autostart_max_interval": "the ceiling defaults to 8x the base interval rather than to a constant " +
+		"(govern.go), so the documented 40m is a statement about THE LINE ABOVE IT and not about a number " +
+		"this pin could hold",
+}
+
+// seedDocumentedDuration is one commented `key: <duration>` line in
+// examples/config.yaml: the seed-side half of the census.
+type seedDocumentedDuration struct {
+	key   string
+	value string
+	line  int
+}
+
+// seedLooksLikeDuration is the discriminator the seed-side enumeration needs
+// and the one place its LIMIT lives: a value with a unit, and never a bare
+// number.
+//
+// Bare numbers are the limit, and it is a real one stated rather than
+// papered over. attnAge's grammar accepts bare SECONDS (govern.go), so
+// `attn_parked_age: 1209600` is a documented duration — and nothing in the
+// text of such a line distinguishes it from `load_guard: 25`, which is a
+// load average, or `grok_guard_week: 85`, which is a percentage. MEASURED
+// 2026-10-04: examples/config.yaml has ten commented bare-number lines and
+// not one of them is a duration, so reading them as durations would mean ten
+// register rows saying "this is a percentage" — noise that would bury the one
+// row that ever means anything. The uncovered case is therefore a NEW
+// duration key documented in bare seconds; every documented duration line in
+// the file today, and every spelling an operator would reach for, carries its
+// unit.
+func seedLooksLikeDuration(v string) bool {
+	if v == "" {
+		return false
+	}
+	if c := v[len(v)-1]; (c >= '0' && c <= '9') || c == '.' {
+		return false
+	}
+	_, err := time.ParseDuration(v)
+	return err == nil
+}
+
+// seedDocumentedDurations enumerates every commented `key: <duration>` line
+// in the seed, in file order.
+//
+// The line rule is seedDocumentedValue's, said once more over an unknown key
+// rather than a known one: `#` at column 0, optional blank, then `key:`. The
+// two matchers agreeing is not assumed — the pin below fails when a key it
+// compared is not in this enumeration, which is what would catch them
+// drifting apart.
+func seedDocumentedDurations(cfgText string) []seedDocumentedDuration {
+	var out []seedDocumentedDuration
+	for i, ln := range strings.Split(cfgText, "\n") {
+		if !strings.HasPrefix(ln, "#") {
+			continue
+		}
+		rest := strings.TrimLeft(ln[1:], " \t")
+		c := strings.Index(rest, ":")
+		if c <= 0 {
+			continue
+		}
+		key := rest[:c]
+		if strings.IndexFunc(key, func(r rune) bool {
+			return !(r == '_' || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9'))
+		}) >= 0 {
+			continue
+		}
+		v := rest[c+1:]
+		if j := strings.Index(v, "#"); j >= 0 {
+			v = v[:j]
+		}
+		v = strings.TrimSpace(v)
+		if !seedLooksLikeDuration(v) {
+			continue
+		}
+		out = append(out, seedDocumentedDuration{key: key, value: v, line: i + 1})
+	}
+	return out
 }
 
 // seedReaderForm is which of the two shapes a pairing was derived from.
@@ -1039,6 +1159,7 @@ func TestSeedConfigDocumentedDurationDefaultsAreTheConstants(t *testing.T) {
 	}
 
 	compared := 0
+	comparedKeys := map[string]bool{}
 	for _, key := range seedSortedKeys(byKey) {
 		k := byKey[key]
 		def, known := seedDurationDefaults[k.constant]
@@ -1071,6 +1192,7 @@ func TestSeedConfigDocumentedDurationDefaultsAreTheConstants(t *testing.T) {
 		}
 
 		compared++
+		comparedKeys[k.key] = true
 		got, drift := seedDefaultDrift(t, seedResolveFor(t, k, def), k.key, value, def)
 		if why, deliberate := seedDocumentedOnPurposeNotTheDefault[k.key]; deliberate {
 			// The register's live half: the entry says this line is NOT the
@@ -1091,13 +1213,74 @@ func TestSeedConfigDocumentedDurationDefaultsAreTheConstants(t *testing.T) {
 		t.Logf("%s: documented %q resolves to %s = %s (%s %s)", k.key, value, got, k.constant, k.reader, k.form)
 	}
 
-	// The floor, and the one assertion that fails at HEAD without this
-	// bead's widening: the seed documents TEN duration keys with a value and
-	// the old rule reached four of them. Ten is the measured population
-	// (ranger-base-2vynj finding 1, "THE POPULATION"), and the two keys it
-	// leaves out — autostart_interval, which has no default, and
-	// autostart_max_interval, which defaults to 8x the base — are correctly
-	// outside it and must stay outside.
+	// THE DIRECTION THAT HURTS (ranger-base-ghcx3 finding 1). Everything
+	// above walks the tree's readers and asks the seed about each key it
+	// found. This walks the SEED and asks whether each duration-valued line
+	// it ships was reached — the input-side check the notes fragment for
+	// ranger-base-khqvr states the rule for one input short of this one
+	// ("a derivation is only total up to its own hand-written inputs, and
+	// each one needs a check in the direction that hurts"). The seed file is
+	// an input of this census, and the direction that hurts is: the seed
+	// documents a duration key the census does not reach.
+	documented := seedDocumentedDurations(text)
+	documentedKeys := map[string]bool{}
+	for _, d := range documented {
+		documentedKeys[d.key] = true
+	}
+
+	// The two matchers must agree about what a documented line IS, or the set
+	// check below is a set over the wrong lines. Derived rather than counted:
+	// every key the loop above COMPARED has to be one this enumeration found,
+	// which needs no number and fails the moment the two parsers drift.
+	for _, key := range seedSortedKeys(comparedKeys) {
+		if !documentedKeys[key] {
+			t.Errorf("this pin compared a documented value for %s, and seedDocumentedDurations did not find that line — the two line matchers disagree, so the coverage check below is reading a different file than the comparison above",
+				key)
+		}
+	}
+
+	for _, d := range documented {
+		switch {
+		case comparedKeys[d.key]:
+			// Reached, compared, held.
+		case seedDurationDefaultNotAConstant[d.key] != "":
+			// Registered as having no constant to compare against. The
+			// stronger half above is what fails on the line existing at all,
+			// so this is not a second complaint about the same row.
+		case seedDocumentedDurationOutsideTheCensus[d.key] != "":
+			t.Logf("examples/config.yaml:%d documents %s as %s — registered as outside the census (%s)",
+				d.line, d.key, d.value, seedDocumentedDurationOutsideTheCensus[d.key])
+		default:
+			t.Errorf("examples/config.yaml:%d documents %s as %s, and this census never reached that key: a fresh instance reads that line as a statement about the harness and nothing holds it, so the number can be wrong by any factor in silence (ranger-base-ghcx3).\n"+
+				"  three ways out, and they are not interchangeable: give the key a reader of one of the two derived shapes (a call-site reader, or `(errw io.Writer) time.Duration` naming its key and returning one Default-shaped constant) so this pin COMPARES it; or add it to seedDurationDefaultNotAConstant if its default is a rule, which also means dropping the documented value; or add it to seedDocumentedDurationOutsideTheCensus with the reason there is no constant for the line to drift from",
+				d.line, d.key, d.value)
+		}
+	}
+
+	// The third register's stale half, as loud as the other two's. A row here
+	// admits a documented line nothing compares, so each of the two ways it
+	// can stop describing anything is a failure.
+	for _, key := range seedSortedKeys(seedDocumentedDurationOutsideTheCensus) {
+		why := seedDocumentedDurationOutsideTheCensus[key]
+		if strings.TrimSpace(why) == "" {
+			t.Errorf("seedDocumentedDurationOutsideTheCensus[%q] carries no reason — the row admits a documented duration nothing holds, so the why IS the row", key)
+		}
+		if !documentedKeys[key] {
+			t.Errorf("seedDocumentedDurationOutsideTheCensus names %q, which examples/config.yaml no longer documents with a duration value — the row admits a line that is not there; drop it", key)
+		}
+		if comparedKeys[key] {
+			t.Errorf("seedDocumentedDurationOutsideTheCensus names %q, which this pin now COMPARES against %s — the key has a constant after all, so the row is excusing a line that is already held; drop it and let the comparison be what holds it", key, byKey[key].constant)
+		}
+	}
+
+	// The floor, and the one assertion that failed at HEAD before
+	// ranger-base-khqvr's widening: the seed documents TEN duration keys the
+	// census reaches and the old rule reached four of them. Ten is the
+	// measured population (ranger-base-2vynj finding 1, "THE POPULATION").
+	// It is kept beside the set check above and not replaced by it, because
+	// the two fail in opposite directions: this one catches a documented line
+	// that LEFT (deleting one reds at `compared 9`), and the set catches one
+	// that ARRIVED, which no count can see.
 	if compared < 10 {
 		t.Errorf("compared %d documented duration defaults, want at least 10 — the seed documents attn_guard_stuck, attn_parked_age, attn_question_age, dispatch_epoch, model_probe_ttl, plan_guard_blind_max, plan_usage_stale_after, plan_usage_ttl, verify_batch_age and verify_box_max_age with a value, so a census that found fewer stopped reading the file", compared)
 	}
@@ -1207,6 +1390,45 @@ func TestSeedDocumentedDefaultDriftCheckCanStillSayNo(t *testing.T) {
 	}
 	if v, n := seedDocumentedValue("# attn_guard_stuck: 2h\n# attn_guard_stuck: 4h\n", "attn_guard_stuck"); n != 2 {
 		t.Errorf("seedDocumentedValue = (%q, %d) over two documented lines, want 2 — the pin cannot report a second documented value it does not count", v, n)
+	}
+
+	// And the SEED-SIDE enumeration, over planted text for the same reason:
+	// it is the half that fails on a documented duration the census never
+	// reached (ranger-base-ghcx3 finding 1), so a rule nobody has watched
+	// refuse anything is a rule that will admit the next key. Every row here
+	// is a line that is NOT a documented duration and the reasons differ,
+	// which is the point — one matcher saying no four ways.
+	enum := "# model_probe_ttl: 1h        # the default\n" +
+		"# load_guard: 25             # a load average, and attnAge would read it as 25 seconds\n" +
+		"# grok_pool_usd_per_point: 0.50\n" +
+		"# budget_day: 250\n" +
+		"# `plan_usage_ttl:` is the key the plan guard reads\n" +
+		"  # verify_batch_age: 24h\n" +
+		"# attn_parked_age: two weeks\n" +
+		"# dispatch_epoch: 1h\n" +
+		"model_probe_ttl: 9h\n"
+	got := seedDocumentedDurations(enum)
+	var names []string
+	for _, d := range got {
+		names = append(names, fmt.Sprintf("%s=%s@%d", d.key, d.value, d.line))
+	}
+	if want := []string{"model_probe_ttl=1h@1", "dispatch_epoch=1h@8"}; !slices.Equal(names, want) {
+		t.Errorf("seedDocumentedDurations found %v, want %v — it must read the value before the trailing comment and refuse a bare number, prose, a key merely NAMED in prose, an indented line and a LIVE key",
+			names, want)
+	}
+	// The bare-number limit is stated in seedLooksLikeDuration's comment and
+	// held here, so the next reader meets it as a decision and not a bug.
+	for _, tc := range []struct {
+		text string
+		dur  bool
+	}{
+		{"336h", true}, {"1h30m", true}, {"5m", true}, {"250ms", true}, {"0s", true},
+		{"1209600", false}, {"25", false}, {"0.50", false}, {"0", false}, {"", false},
+		{"two weeks", false}, {"14d", false}, {"true", false},
+	} {
+		if seedLooksLikeDuration(tc.text) != tc.dur {
+			t.Errorf("seedLooksLikeDuration(%q) = %v, want %v", tc.text, !tc.dur, tc.dur)
+		}
 	}
 
 	// The same matcher through a BODY-form reader, which is the half the pin

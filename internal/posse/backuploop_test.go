@@ -301,7 +301,21 @@ func TestBackupLoopRestartMakesNoSecondArchiveInsideTheInterval(t *testing.T) {
 	// minutes long, so it is set from the control rather than generously:
 	// arm 2's write became visible in `took`, and the assertion below is
 	// what refuses to let this shrink under it.
-	const grace = 2 * time.Second
+	//
+	// DERIVED FROM THE CONTROL and no longer a constant (ranger-base-ghcx3
+	// finding 4). A fixed 2s was a bet on an unloaded box, and the bet lost:
+	// MEASURED 2026-10-04 at clean main, `make test` arm 3 on a box at a
+	// 15-minute load average of 27, the control write took 13.9s and this
+	// pin refused — correctly, since 2s of absence proves nothing about a
+	// write that needs 13.9s, but at the cost of a red that names no defect
+	// and is indistinguishable at a glance from one somebody's diff caused.
+	// The pin's refusal is kept exactly as it was; what changes is that the
+	// window is now measured instead of guessed, so it is only reached when
+	// the ceiling below is the binding one. A WIDER absence window is a
+	// STRONGER assertion — there is more time for an archive this loop must
+	// not write to appear — so scaling it up cannot make the arm vacuous.
+	grace := backupAbsenceGrace(took)
+	t.Logf("the control write became visible in %s; each absence arm waits %s", took, grace)
 	for i := 0; i < 2; i++ {
 		runBackupLoop(t, d, a, cfg, 3, grace)
 	}
@@ -309,9 +323,93 @@ func TestBackupLoopRestartMakesNoSecondArchiveInsideTheInterval(t *testing.T) {
 		t.Fatalf("two restarts inside the interval wrote %d archives (%v), want the two from before", len(got), got)
 	}
 	if took >= grace {
-		t.Fatalf("the control write took %s and the absence arms waited %s — the absence arms measured nothing", took, grace)
+		t.Fatalf("the control write took %s and the absence arms waited %s (the %s ceiling) — the absence arms measured nothing. This box is slower than any window this pin will spend, so the arm is honestly unmeasurable here rather than green: re-run it off the loaded box (ranger-base-ghcx3 finding 4)",
+			took, grace, backupAbsenceGraceMax)
 	}
 }
+
+// backupAbsenceGrace is the absence window for a control that became visible
+// in `control`: the factor, the floor and the ceiling in one place, so the
+// rule is a function the suite can hold rather than three lines inside an arm
+// that only a loaded box exercises. The load this was filed for cannot be
+// synthesized on this box (standing rule), so the arithmetic is pinned
+// directly instead — TestBackupAbsenceGraceScalesWithTheControl.
+func backupAbsenceGrace(control time.Duration) time.Duration {
+	grace := backupAbsenceGraceFactor * control
+	if grace < backupAbsenceGraceMin {
+		return backupAbsenceGraceMin
+	}
+	if grace > backupAbsenceGraceMax {
+		return backupAbsenceGraceMax
+	}
+	return grace
+}
+
+// The budget rule, at the three values that decide it and at the one the
+// incident measured. Without this the derivation is only ever exercised at
+// whatever the box of the day hands it — which on every box this shop has is
+// the floor, the single branch that behaves exactly as the constant it
+// replaced (ranger-base-ghcx3 finding 4).
+func TestBackupAbsenceGraceScalesWithTheControl(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name            string
+		control, window time.Duration
+	}{
+		{"an idle box, where the floor binds and nothing has changed", 116 * time.Millisecond, backupAbsenceGraceMin},
+		{"the last control the floor still covers", backupAbsenceGraceMin / backupAbsenceGraceFactor, backupAbsenceGraceMin},
+		{"the loaded box this was filed for", 13925 * time.Millisecond, backupAbsenceGraceMax},
+		{"between the two, where the factor binds", 2 * time.Second, 8 * time.Second},
+		{"past the ceiling, where the arm refuses instead", 40 * time.Second, backupAbsenceGraceMax},
+	} {
+		if got := backupAbsenceGrace(tc.control); got != tc.window {
+			t.Errorf("%s: backupAbsenceGrace(%s) = %s, want %s", tc.name, tc.control, got, tc.window)
+		}
+	}
+	// The property the arm depends on, said as a property: the window is past
+	// the control for every control the ceiling covers, so the absence arms
+	// always get a window a write could have landed in — and past it, and
+	// only past it, the arm's own refusal is reachable.
+	for _, control := range []time.Duration{
+		0, time.Millisecond, 100 * time.Millisecond, time.Second, 5 * time.Second,
+		backupAbsenceGraceMax / backupAbsenceGraceFactor, 20 * time.Second,
+	} {
+		if g := backupAbsenceGrace(control); g <= control {
+			t.Errorf("a control of %s buys a window of %s — the absence arms would measure nothing and the arm would refuse", control, g)
+		}
+	}
+	if g := backupAbsenceGrace(backupAbsenceGraceMax + time.Second); g > backupAbsenceGraceMax {
+		t.Errorf("the ceiling does not bind: a control of %s bought %s", backupAbsenceGraceMax+time.Second, g)
+	}
+}
+
+const (
+	// backupAbsenceGraceFactor is how many times the measured control an
+	// absence arm waits. Four, so the window is comfortably past the one
+	// instant a write is known to have needed in this rig rather than equal
+	// to it — an absence over exactly the control's own wall is a coin toss
+	// about scheduling, not a measurement.
+	backupAbsenceGraceFactor = 4
+
+	// backupAbsenceGraceMin keeps an instant control from buying a window so
+	// short that the loop's 5ms poll is most of it. It is the constant this
+	// arm used to carry outright, and on an unloaded box it is still the
+	// binding one.
+	backupAbsenceGraceMin = 2 * time.Second
+
+	// backupAbsenceGraceMax is what this arm will spend, twice, on waiting
+	// for nothing — and it is set so the assertion above stays REACHABLE,
+	// which is the one thing a derived budget can quietly cost. The factor
+	// alone can never fire it (4x a number is always past that number), so
+	// the ceiling is what fires it, at a control past 30s. Arm 2 gives up at
+	// 60s and fails on the archive count there, so the live window for that
+	// refusal is a control of 30-60s: slow enough that 30s of absence proves
+	// nothing, fast enough that arm 2 still got its write. Twice the worst
+	// control this shop has measured (13.9s, ranger-base-ghcx3 finding 4),
+	// and a cap at all because a pin that grew its own window until the
+	// package timed out would be the worse diagnosis.
+	backupAbsenceGraceMax = 30 * time.Second
+)
 
 // A failing run is a line and a next tick, never a stopped loop: this is a
 // timer, and a store that could not be read at 03:15 is not a reason to

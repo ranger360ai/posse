@@ -30,7 +30,9 @@ package posse
 //  3. the shim precondition (CheckCredGate) refuses it with no shim in play
 //     at all — the money line does not route through ADR 0042's collision.
 //  4. the write path still refuses it, by name and by shape, and now reads
-//     the same one definition the two above read.
+//     the same one definition the two above read. BOTH halves are exercised
+//     since ranger-base-ghcx3 — the shape through checkSessionToken, the
+//     name through refreshSession itself.
 //  5. the shipped runtimes are unaffected: claude's decided credential
 //     still admits, and codex/grok still refuse for being undecided, which
 //     is a different refusal with a different next move.
@@ -41,9 +43,12 @@ package posse
 // call from cage.go reds arm 2 alone; dropping it from gates.go reds arm 3
 // alone; making IsMeteredCredentialName fold case or match an `API_KEY`
 // substring reds arm 1 alone; reverting the runtimecheck row reds arm 6
-// alone.
+// alone; and, since ranger-base-ghcx3, disabling the
+// IsMeteredCredentialName guard in refreshSession reds arm 4 alone — which
+// before that bead reddened nothing in the tree.
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -152,6 +157,17 @@ func TestQAMeteredCredentialRefusedWithNoShimCollision(t *testing.T) {
 // Arm 4 — the write path reads the same definition and still refuses both
 // ways. The sentences stay its own: a write refusal and an admission
 // refusal have different next moves.
+//
+// BOTH WAYS IS TWO HALVES, and until ranger-base-ghcx3 this arm had one of
+// them. `checkSessionToken` is the SHAPE — a value that looks like a metered
+// key, whatever variable it was offered for — and the NAME refusal is a
+// different line in a different function (refreshSession, refresh.go), which
+// nothing in this tree held: MEASURED 2026-10-04, `if false &&
+// IsMeteredCredentialName(key)` survived this arm, survived a
+// Cage|Cred|Refresh|Metered|Launch|Wrap|Mint|Token|Session|Runtime|Gate
+// filter over the whole package (61.2s) and survived the UNFILTERED package
+// (257.9s). An arm whose header claims a refusal the body never reaches is
+// worse than no arm: it is the reason nobody wrote the real one.
 func TestQAMeteredCredentialStillRefusedAtTheWrite(t *testing.T) {
 	t.Parallel()
 	if err := checkSessionToken(meteredKeyPrefix+"03-"+strings.Repeat("A", 32), "CLAUDE_CODE_OAUTH_TOKEN"); err == nil {
@@ -161,6 +177,46 @@ func TestQAMeteredCredentialStillRefusedAtTheWrite(t *testing.T) {
 	}
 	if err := checkSessionToken("sk-ant-oat01-"+strings.Repeat("B", 32), "CLAUDE_CODE_OAUTH_TOKEN"); err != nil {
 		t.Errorf("a setup-token shape must be accepted: %v", err)
+	}
+
+	// The NAME half, through the one function that would do the writing. The
+	// route is the same promoted-config line arm 2 uses, because that is how
+	// a metered name reaches `posse refresh` at all: the operator types
+	// `posse refresh <runtime>`, and what names the variable is the runtime
+	// profile, not the argument.
+	a := cageApp(t)
+	rt := meteredRuntime(t, a, "meteredwrite", "ANTHROPIC_API_KEY")
+	var w strings.Builder
+	err := a.refreshSession(&w, rt, RefreshOpts{})
+	if err == nil {
+		t.Fatal("refreshSession minted into an env set for a runtime whose declared credential is metered spending")
+	}
+	// It must be THE WRITE SENTENCE and not merely an error. An undecided
+	// runtime fails two lines earlier (refresh.go, the empty cage_cred
+	// branch), so an arm that asserted only `err != nil` would pass against
+	// a tree that had lost this refusal entirely — the metered name would
+	// simply be read as a name posse does not know.
+	for _, want := range []string{"ANTHROPIC_API_KEY", "does not write it", "metered spending", "rangerhq-kiz", "ADR 0019 D4"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the write refusal does not name %q: %v", want, err)
+		}
+	}
+	if strings.Contains(err.Error(), "no session credential name decided") {
+		t.Errorf("the refusal is the UNDECIDED one, so this arm reached the wrong branch: %v", err)
+	}
+	// Nothing was written on the way to the refusal: the refusal is upstream
+	// of resolveRefreshSet and of the mint, so there is no env set to read
+	// back and no token to leak into one.
+	if s := w.String(); s != "" {
+		t.Errorf("the refused write still said something to the operator: %q", s)
+	}
+	// The control, so this is a refusal of the NAME and not of the route: the
+	// same call shape on a non-metered declared credential gets past this
+	// line and fails further in, where the mint is.
+	ok := meteredRuntime(t, a, "okwrite", "OWN_TOKEN")
+	err = a.refreshSession(io.Discard, ok, RefreshOpts{})
+	if err != nil && strings.Contains(err.Error(), "metered spending") {
+		t.Errorf("a non-metered declared credential was refused by the money line: %v", err)
 	}
 }
 
