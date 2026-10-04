@@ -1,6 +1,6 @@
 # ADR 0066 — A typed-decision model, if posse ever carries one, is a second reader that reports and never acts; the readings log comes first
 
-*Status: proposed — operator discussion pending · owner: architect · source
+*Status: accepted 2026-10-04 — operator ruling A on ranger-base-our1e's recommendations: D1 the readings log (code bead filed), D2 report-only, D3 first seams gated on the corpus (spike bead filed, any model call is an operator spend ruling) · owner: architect · source
 bead ranger-base-our1e (spike, recommendation only) · sits under ADR 0057
 (no guard branches on a display reading), ADR 0060 D2 (detection is herdr's
 to ship), ADR 0061 D3 (a label is identity, not liveness) and ADR 0063 D1
