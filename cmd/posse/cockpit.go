@@ -17,6 +17,11 @@ package main
 //                                                                  claim, prompt
 //   j/k or arrows move · tab cycles sections · r refresh · q quit
 //   ctrl-d/ctrl-u page · g/G top/bottom
+//   w reads the backend's own notices, when the row above SESSIONS counts
+//   any (ranger-base-2vhqo): a listing that withheld a session meta, or a
+//   kill that could not fold its refusals or note unlanded work. They are
+//   collected rather than printed because the process's stderr is this
+//   screen's own frame.
 //
 // v2 (ADR 0004 §1, §4, §5): refresh() builds a flat row model; render(w,h)
 // draws it to the terminal's size — columns are fixed, flex or droppable, and
@@ -51,7 +56,7 @@ const (
 	modeNormal  cockpitMode = iota
 	modePrompt              // typing a prompt for the selected session
 	modeConfirm             // y/n confirmation (kill a session, unclaim a bead)
-	modePeek                // showing a terminal tail; any key returns
+	modePeek                // showing a terminal tail or the backend's notices; any key returns
 )
 
 // What a modeConfirm y answers. Two destructive keys share the mode, and
@@ -112,6 +117,19 @@ type cockpit struct {
 	dispatching bool        // a launch goroutine is in flight (one at a time)
 	results     chan string // launch goroutine → event loop status line
 	progress    chan string // launch goroutine → event loop, while it is still in flight
+
+	// peekTitle is what the peek banner names; "" = "peek", which is the
+	// `v` path's own subject and the banner every frame had before `w`
+	// existed (ranger-base-2vhqo).
+	peekTitle string
+	// notices is the SHARED backend's own diagnostic stream, collected
+	// rather than printed. HerdrBackend.Warn is nil until newCockpit sets
+	// it, and nil is the process's stderr — which under the alt screen is
+	// the frame this cockpit is drawing. cockpitnotices.go carries the
+	// whole decision (ranger-base-2vhqo); nil here is the pre-fix
+	// behaviour, and every method on it is nil-safe, which is what leaves
+	// this package's literal-built cockpits exactly as they were.
+	notices *cockpitNotices
 
 	// The `p` path's own pair (ranger-base-k99a). A hand prompt talks to
 	// herdr three times and waits for a screen herdr has SEEN, which is a
@@ -833,11 +851,35 @@ func newCockpit(a *posse.App, hb *posse.HerdrBackend, out io.Writer) *cockpit {
 	// sits on "dispatching <id>…" for as long as the pass holds the lock,
 	// with nothing saying why (rangerhq-ecl2).
 	c.disp.Progress = c.note
+	// And the SHARED backend's own diagnostic lines — the ones no single
+	// launch owns — go to a sink of their own rather than to that same
+	// status line (ranger-base-2vhqo). Not Progress, because c.note DROPS
+	// what will not fit, and not the process's stderr, which under the alt
+	// screen is this frame; cockpitnotices.go carries the decision.
+	//
+	// Here and not in NewHerdrBackend: the field's nil IS the operator's
+	// terminal, which is the right place for `posse list`, `posse new` and
+	// `posse kill` and wrong only for the two commands that take the whole
+	// screen or nobody's attention. Assigned before any goroutine of this
+	// cockpit exists, for RouteBackendWarnings' reason — a launch runs off
+	// the event loop and reads this field there.
+	c.notices = new(cockpitNotices)
+	if hb != nil {
+		hb.Warn = c.notices
+	}
 	return c
 }
 
 func runCockpit(a *posse.App, hb *posse.HerdrBackend, out io.Writer) error {
 	c := newCockpit(a, hb, out)
+	// The backend's notices go back to stderr on the way out
+	// (ranger-base-2vhqo), which is where they went before this screen
+	// collected them. Deferred HERE, above the alt screen's own defers, so
+	// it runs LAST — after the screen is restored, with the lines landing
+	// in the terminal's scrollback instead of in a frame that is about to
+	// be overwritten. It covers the displayOnly path below for free, where
+	// it is simply the place these lines always went.
+	defer c.notices.flush(os.Stderr)
 	fd := int(os.Stdin.Fd())
 	if !term.IsTerminal(fd) {
 		return c.displayOnly()
@@ -1630,9 +1672,20 @@ func (c *cockpit) handleKey(k []byte) (quit bool, err error) {
 				c.status = err.Error()
 				break
 			}
-			c.peekText = text
+			c.peekText, c.peekTitle = text, ""
 			c.mode = modePeek
 		}
+	case key == "w":
+		// The backend's own notices, in the one surface here that can hold
+		// a two-line repair recipe (ranger-base-2vhqo). No cursor item is
+		// involved: these are the SHOP's lines, not a row's, which is also
+		// why the row that reports them is filler.
+		if c.notices.count() == 0 {
+			c.status = "no backend notices"
+			break
+		}
+		c.peekText, c.peekTitle = c.notices.text(), "notices"
+		c.mode = modePeek
 	case key == "c":
 		if c.claiming {
 			c.status = "a claim is already in flight"
@@ -2439,6 +2492,17 @@ func (c *cockpit) buildRows() {
 			cols: []col{{kind: colFlex, text: c.planStale, ansi: aRed}}})
 		rows = append(rows, row{kind: rowFiller, sec: secSessions})
 	}
+	// The backend's own notices (ranger-base-2vhqo): a COUNT, on
+	// costUnread's reasoning, and the text behind `w` — the five listing
+	// abstentions carry a two-line repair recipe and this is one line.
+	// Filler, like the rows above: not in cursor space, so tab, reselect
+	// and every key below are untouched. Yellow, not red: a withheld meta
+	// is something to look at and never the shop on fire.
+	if line := c.notices.noticeRow(); line != "" {
+		rows = append(rows, row{kind: rowFiller, sec: secSessions,
+			cols: []col{{kind: colFlex, text: line, ansi: aYlw}}})
+		rows = append(rows, row{kind: rowFiller, sec: secSessions})
+	}
 	if len(c.gov) > 0 || c.govFailed > 0 {
 		rows = append(rows, heading(fmt.Sprintf("GOVERNANCE (%s)", c.govHeading()), secSessions))
 		for _, g := range posse.GovOrdered(c.gov) {
@@ -2838,10 +2902,17 @@ func (c *cockpit) bodyLines(w, vh int) []string {
 	return fitLines(out, vh)
 }
 
-// peekLines shows the tail of a pane inside the same viewport, clipped to it
-// rather than appended below the list (ADR 0004 §4).
+// peekLines shows the tail of a pane — or the backend's own notices, which
+// is the `w` key's half of ranger-base-2vhqo — inside the same viewport,
+// clipped to it rather than appended below the list (ADR 0004 §4). It keeps
+// the TAIL when the body is longer than the viewport, which is the newest
+// end of both subjects.
 func (c *cockpit) peekLines(w, vh int) []string {
-	out := []string{paint(truncCells("── peek (any key to return) ──", w), aDim)}
+	title := c.peekTitle
+	if title == "" {
+		title = "peek"
+	}
+	out := []string{paint(truncCells("── "+title+" (any key to return) ──", w), aDim)}
 	if vh == minViewport {
 		// One line: spend it on the pane. The footer already says "any key
 		// returns", so the banner is the redundant half of the pair.

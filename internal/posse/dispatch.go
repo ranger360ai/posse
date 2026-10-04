@@ -622,9 +622,11 @@ func (d *Dispatcher) launchWarns() io.Writer { return dispatcherLaunchWarn{d} }
 // So a constructor that set the field would push a listing's five
 // abstentions and their repair recipes through a surface that shows one at a
 // time and discards the rest, and the thing that did it would be the
-// constructor. Where a cockpit should show them is a surface decision and a
-// bead of its own (ranger-base-2vhqo); here the cockpit is left exactly as
-// it was.
+// constructor. Where a cockpit should show them was a surface decision and a
+// bead of its own: ranger-base-2vhqo answered it with a sink of the
+// cockpit's own — a counted row and the text behind `w`
+// (cmd/posse/cockpitnotices.go) — which is why the cockpit sets
+// HerdrBackend.Warn itself and still must not call this method.
 //
 // Called by the CALLER rather than by Run or Watch, for a second reason: the
 // field is READ on goroutines that outlive a pass. The pulse clock calls

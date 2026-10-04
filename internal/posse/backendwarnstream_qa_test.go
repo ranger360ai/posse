@@ -226,17 +226,22 @@ func TestQADispatchCommandRoutesTheBackendsWarnings(t *testing.T) {
 	}
 	// And NOT in the cockpit, which is the one other surface holding this
 	// same backend (cmd/posse/cockpit.go: c.hb beside a c.disp of its own).
-	// Routing it there would put a listing's two-line repair recipe and a
-	// kill's refusals through Progress, a one-field status line — a surface
-	// decision and ranger-base-2vhqo's to make, not a side effect of this
-	// plumbing. Only the cockpit is named: another command that grows a pass
-	// of its own SHOULD route it, exactly as `dispatch` does.
+	// Routing it THERE would put a listing's two-line repair recipe and a
+	// kill's refusals through Progress, a one-field status line that DROPS
+	// what will not fit — which is why the cockpit sets HerdrBackend.Warn
+	// to a sink of its own instead (ranger-base-2vhqo, a counted row and
+	// the text behind `w`: cmd/posse/cockpitnotices.go, pinned in
+	// cmd/posse/cockpitnotices_qa_test.go). So this arm is still exactly
+	// what it was — the cockpit must not take the DISPATCHER's writer —
+	// and it is now also the pin that the two fixes stayed separate. Only
+	// the cockpit is named: another command that grows a pass of its own
+	// SHOULD route it, exactly as `dispatch` does.
 	ck, err := os.ReadFile(filepath.Join("..", "..", "cmd", "posse", "cockpit.go"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(string(ck), "RouteBackendWarnings()") {
-		t.Error("the cockpit routes the shared backend's warnings onto its own stream; where a TUI shows a five-line listing abstention is ranger-base-2vhqo's decision")
+		t.Error("the cockpit takes the dispatcher's writer for the shared backend's warnings: its Out is io.Discard and its Progress drops, which is why ranger-base-2vhqo gave the cockpit a sink of its own (cmd/posse/cockpitnotices.go)")
 	}
 	if n := strings.Count(string(src), "RouteBackendWarnings()"); n != 1 {
 		t.Errorf("main.go calls RouteBackendWarnings %d times, want exactly 1 (the `dispatch` case)", n)

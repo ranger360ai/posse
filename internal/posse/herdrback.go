@@ -43,8 +43,14 @@ type HerdrBackend struct {
 	// that case was stderr too — /dev/null in a watch loop, whose record is a
 	// file the loop opens and tees Out and Err into (watchlog.go). The
 	// dispatch command now hands its own writer down:
-	// Dispatcher.RouteBackendWarnings(), whose doc carries the measurement
-	// and the reason the cockpit's backend is deliberately left on stderr.
+	// Dispatcher.RouteBackendWarnings(), whose doc carries the measurement.
+	//
+	// `posse cockpit` is the other case, and it is not a writer handed down
+	// by a dispatcher: with the alt screen up, the process's stderr IS the
+	// frame the cockpit is drawing, so a line printed there corrupts the one
+	// surface the operator is reading and is gone with the next redraw. It
+	// sets this field to a sink that collects the lines for a row and a key
+	// instead (cmd/posse/cockpitnotices.go, ranger-base-2vhqo).
 	Warn io.Writer
 	// ClaudeConfig is the claude config the launch seeds directory trust
 	// into (trust.go, rangerhq-w4uf) — the ONE file a launch writes that
