@@ -473,69 +473,10 @@ const (
 
 // ─── the log's own lifecycle ────────────────────────────────────────────────
 
-// ReadingsLogsUnder finds every readings log reachable from a worktree root:
-// one per session tree, resolved through each tree's own `.git` file the way
-// git resolves it. For `posse` commands and for the census script's Go-side
-// twin; the script does the same walk in Python so a census needs no binary.
-//
-// A tree whose git dir cannot be resolved is skipped silently — it is a
-// directory under the root that is not a worktree, which is every stray
-// file an operator ever left there.
-func ReadingsLogsUnder(root string) []string {
-	var out []string
-	entries, err := os.ReadDir(root)
-	if err != nil {
-		return nil
-	}
-	for _, repo := range entries {
-		if !repo.IsDir() {
-			continue
-		}
-		trees, err := os.ReadDir(filepath.Join(root, repo.Name()))
-		if err != nil {
-			continue
-		}
-		for _, tree := range trees {
-			if !tree.IsDir() {
-				continue
-			}
-			gd, err := git(filepath.Join(root, repo.Name(), tree.Name()), "rev-parse", "--absolute-git-dir")
-			if err != nil || gd == "" {
-				continue
-			}
-			p := filepath.Join(gd, ReadingsLogName)
-			if _, err := os.Stat(p); err == nil {
-				out = append(out, p)
-			}
-		}
-	}
-	return out
-}
-
 // skipsReadingsLog is lastTreeWrite's half of the placement rule, kept here
 // beside the name so the two cannot drift: the quiet-tree clock must not
 // count posse's own notes about the tree.
 func skipsReadingsLog(e fs.DirEntry) bool { return e.Name() == ReadingsLogName }
-
-// ReadingsLogSummary counts a log by decision and consequence, for the one
-// line `posse` surfaces print and for the pins. The census script is the
-// instrument; this is the same arithmetic where a Go caller needs it.
-func ReadingsLogSummary(rs []Reading) map[string]int {
-	out := map[string]int{}
-	for _, r := range rs {
-		out[string(r.Decision)]++
-		out[string(r.Consequence)]++
-		out[string(r.Decision)+"/"+string(r.Consequence)]++
-	}
-	return out
-}
-
-// String renders one record the way a failure line quotes it: enough to
-// recognize the reading, never the whole of its bytes.
-func (r Reading) String() string {
-	return fmt.Sprintf("%s %s %s=%q rule=%s (%d region(s))",
-		r.At.Format(time.RFC3339), r.Decision, r.Consequence, r.Verdict, r.Rule, len(r.Herdr.Regions))
-}
 
 // ─── the callers' spelling ──────────────────────────────────────────────────
 
