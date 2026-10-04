@@ -5514,6 +5514,12 @@ func (d *Dispatcher) mergeBack(is RepoIssue, persona, session string) {
 		// called from the one arm where bd answered "closed".
 		noteClosedDirty(d.Bd, is.Dir, is.ID, persona, t, o, d.printf, d.eprintf)
 	}
+	// The launcher's own commit, said out loud where it was made
+	// (ranger-base-7h8k4, worktree.go's refreshGeneratedIndex): a generated
+	// file is reproduced at landing, and nobody in the session typed it.
+	if note := o.RegeneratedNote(); note != "" {
+		d.printf("⟳ %-14s %s\n", is.ID, note)
+	}
 	switch {
 	case len(o.Equivalent) > 0:
 		d.printf("≡ %-14s %s\n", is.ID, o.EquivalentNote())

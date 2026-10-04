@@ -1181,6 +1181,14 @@ type MergeOutcome struct {
 	// is a patch-id measurement, which is the only evidence that can say
 	// nothing here is unlanded.
 	Unmeasured string
+
+	// Regenerated names the generated files this landing REPRODUCED rather
+	// than replayed (ranger-base-7h8k4, generatedindex.go) — committed on the
+	// branch before the fast-forward, or staged into a replayed commit that
+	// had conflicted in nothing else. Said out loud because a commit the
+	// launcher wrote on a persona's behalf is one nobody will otherwise
+	// expect to find in `git log`, the same reason a memory landing says so.
+	Regenerated []string
 }
 
 // EquivalentNote is the sentence that tells an already-landed branch apart
@@ -1232,6 +1240,102 @@ func (o MergeOutcome) EquivalentNote() string {
 // did, which is the invariant MergeOutcome.Reason's own comment states.
 func (o MergeOutcome) Blocked() bool {
 	return !o.Merged && o.Reason != ""
+}
+
+// RegeneratedNote is the one sentence a reproduced generated file is worth
+// saying out loud, and "" when the landing reproduced nothing. It names the
+// branch, because the commit is on the branch and that is where a reader goes
+// looking for a commit they did not write.
+func (o MergeOutcome) RegeneratedNote() string {
+	if len(o.Regenerated) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%s reproduced on %s at landing — generated file(s), regenerated rather than replayed (`%s`)",
+		strings.Join(o.Regenerated, " "), o.Branch, notesIndexCommand)
+}
+
+// refreshGeneratedIndex reproduces the generated notes index on the branch
+// that is about to fast-forward, and commits it there — so the base takes a
+// tip whose generated file matches its own inputs, and the tree pin on main
+// stays green over a landing nobody watched (ranger-base-7h8k4;
+// generatedindex.go has the measurement and the whole of the reasoning).
+//
+// It returns the generated paths it committed, and — when the index could not
+// be reproduced at all — the refusal to report instead of landing. "" and
+// nothing committed is the ordinary answer: this repo ships no generator, the
+// branch changed none of the inputs, the seat already ran the generator
+// itself, the branch carries a generator of its own, or the generated file is
+// the persona's uncommitted work and therefore not this function's to
+// overwrite (ADR 0041 §1–§2).
+//
+// GATED ON THE FAST-FORWARD BEING THE NEXT STEP, which is what `reaches` asks:
+// a commit minted on a branch that still has to be REPLAYED would be one more
+// hunk against the generated file for the replay to conflict on — this
+// function's own defect, handed to the rebase. So it answers "nothing to do"
+// until the branch is where a fast-forward can take it, and MergeSessionWork
+// asks it again on the far side of the replay.
+//
+// THE COMMIT IS ON THE BRANCH OR NOWHERE. A session launched at the container
+// tier works on a detached HEAD on purpose (PrepareSessionHead), and a commit
+// made in that tree lands on no ref at all — so a tree whose HEAD is not this
+// branch is left exactly as it is, and its fragment lands with whatever index
+// the seat committed. Named as a residual rather than fixed here: putting the
+// work back on the branch is spliceDetachedWork's, it has already run by the
+// time anything reaches this line, and what it moves is the BRANCH and never
+// the worktree's HEAD.
+func refreshGeneratedIndex(t *SessionTree) ([]string, string) {
+	// The generator in the base's checkout, the inputs in the session tree,
+	// and the fast-forward as the next step — any of the three missing is
+	// "nothing to do" and not a refusal. The inputs are asked for because a
+	// branch that removed the directory outright removed the generated file
+	// with it, and a generator pointed at a directory that is not there would
+	// fail in the one shape that reads as a broken generator.
+	if !generatorShipped(t.Repo) || !isDirPath(filepath.Join(t.Path, notesFragmentDir)) {
+		return nil, ""
+	}
+	if !reaches(t.Repo, t.Branch, t.Base) {
+		return nil, ""
+	}
+	if cur, err := git(t.Path, "symbolic-ref", "--short", "HEAD"); err != nil || cur != t.Branch {
+		return nil, ""
+	}
+	touched, ok := branchChangedIndexInputs(t)
+	switch {
+	case !ok || !touched:
+		return nil, ""
+	case !generatorIsTheTreesOwn(t.Repo, t.Path):
+		// THE PROGRAM IN HAND IS NOT THIS TREE'S, so there is nothing honest
+		// to run: the branch carries a generator of its own, or the operator
+		// is mid-edit on theirs. The index lands as the seat committed it, and
+		// generatedindex.go's "whose generator runs" says why that is not a
+		// gap — but a seat that closed over a red suite lands a stale index
+		// here, as it did before any of this existed.
+		return nil, ""
+	case differsFromHEAD(t.Path, notesIndexPath):
+		return nil, "" // uncommitted, and therefore the persona's
+	case notesIndexCurrent(t.Repo, t.Path):
+		return nil, "" // the seat ran the generator: nothing to reproduce
+	}
+	// gitSaid for a child that is not git: what it does is flatten the
+	// complaint to one line, drop the hint block and bound the length, and
+	// this sentence is embedded verbatim in a bead for the same reason every
+	// other one here is.
+	cause := ""
+	if err := regenerateNotesIndex(t.Repo, t.Path); err != nil {
+		cause = gitSaid(err)
+	} else if !differsFromHEAD(t.Path, notesIndexPath) {
+		// The belt behind `--check`: whatever the generator says, the commit
+		// is made only when git can see something to commit.
+		return nil, ""
+	} else if err := commitGeneratedIndex(t, notesIndexPath); err != nil {
+		restoreGeneratedIndex(t.Path, notesIndexPath)
+		cause = gitSaid(err)
+	}
+	if cause != "" {
+		return nil, fmt.Sprintf("%s is generated from %s/ and this landing could not reproduce it (%s) — nothing was landed; run `%s` in %s, commit it path-limited, and `posse worktrees --land`",
+			notesIndexPath, notesFragmentDir, cause, notesIndexCommand, AbbrevHome(t.Path))
+	}
+	return []string{notesIndexPath}, ""
 }
 
 // MergeSessionWork is the launcher's half of ADR-0011-§1-serialized option A
@@ -1353,6 +1457,19 @@ func MergeSessionWork(a *App, t *SessionTree) (MergeOutcome, error) {
 		o.Reason = constitutionLandRefusal(a, t, hit)
 		return o, nil
 	}
+	// A GENERATED FILE IS REPRODUCED, NEVER REPLAYED (ranger-base-7h8k4). The
+	// fast-forward below is the whole of the landing for a branch the base has
+	// not moved under, and three such landings in one day put a fragment on
+	// main whose generated index did not name it — so the index is reproduced
+	// on the branch HERE, where the tip the base is about to take is the tip
+	// this reads. Nothing to reproduce is the ordinary answer and costs one
+	// ancestry read; refreshGeneratedIndex's own header has the rest.
+	if regen, why := refreshGeneratedIndex(t); why != "" {
+		o.Reason = why
+		return o, nil
+	} else if len(regen) > 0 {
+		o.Regenerated, o.Commits = addPath(o.Regenerated, regen...), o.Commits+len(regen)
+	}
 	if _, err := git(t.Repo, "merge", "--ff-only", t.Branch); err == nil {
 		return landed(o, t), nil
 	} else if IsGitHang(err) {
@@ -1459,22 +1576,34 @@ func MergeSessionWork(a *App, t *SessionTree) (MergeOutcome, error) {
 			// real cause and it was being thrown away.
 			stopped := rebaseStopped(t.Path)
 			said := gitSaid(err)
-			_, _ = git(t.Path, "rebase", "--abort")
-			// "the rebase was aborted" and not "the branch is untouched and
-			// still holds the work" (ranger-base-m3195). The reason is
-			// printed once by the pass, where either reading is true, and
-			// then embedded VERBATIM in a merge-back bead that a seat opens
-			// some unbounded time later — by which point the branch may have
-			// been retired out from under it, and the old wording was a
-			// promise about that future rather than a report of what this
-			// attempt did. What this attempt did is abort, and that stays
-			// true forever.
-			if stopped {
-				o.Reason = fmt.Sprintf("%s moved on and replaying %s onto it conflicts — the rebase was aborted, so this attempt changed nothing (git: %s)", t.Base, t.Branch, said)
+			// A STOPPED REPLAY WHOSE ONLY CONFLICT IS A GENERATED FILE IS NOT
+			// A CONFLICT A PERSON HAS TO READ (ranger-base-7h8k4). Five
+			// branches in one day could not fast-forward because their own
+			// docs/notes.d index edit met main's, and every one of them was
+			// landed by hand with the same regenerate-then-continue. So that
+			// is done here, bounded by the guard that it is the generated file
+			// and nothing else; a resolution that cannot be made falls through
+			// to the abort and the sentence below, exactly as before.
+			if stopped && continuePastGeneratedIndex(t) {
+				o.Regenerated = addPath(o.Regenerated, notesIndexPath)
 			} else {
-				o.Reason = fmt.Sprintf("%s moved on and replaying %s onto it failed before any merge — git said: %s — so there are no conflicts to resolve, and the rebase was aborted", t.Base, t.Branch, said)
+				_, _ = git(t.Path, "rebase", "--abort")
+				// "the rebase was aborted" and not "the branch is untouched and
+				// still holds the work" (ranger-base-m3195). The reason is
+				// printed once by the pass, where either reading is true, and
+				// then embedded VERBATIM in a merge-back bead that a seat opens
+				// some unbounded time later — by which point the branch may have
+				// been retired out from under it, and the old wording was a
+				// promise about that future rather than a report of what this
+				// attempt did. What this attempt did is abort, and that stays
+				// true forever.
+				if stopped {
+					o.Reason = fmt.Sprintf("%s moved on and replaying %s onto it conflicts — the rebase was aborted, so this attempt changed nothing (git: %s)", t.Base, t.Branch, said)
+				} else {
+					o.Reason = fmt.Sprintf("%s moved on and replaying %s onto it failed before any merge — git said: %s — so there are no conflicts to resolve, and the rebase was aborted", t.Base, t.Branch, said)
+				}
+				return o, nil
 			}
-			return o, nil
 		}
 		o.Rebased = true
 		// The rebase is the slow half, and the operator can switch branches
@@ -1482,6 +1611,17 @@ func MergeSessionWork(a *App, t *SessionTree) (MergeOutcome, error) {
 		if why := notOnBase(t); why != "" {
 			o.Reason = why
 			return o, nil
+		}
+		// And the replay's own tip is asked the generated-file question again:
+		// the conflict resolved above was one REPLAYED COMMIT's, and a later
+		// commit that adds a fragment without touching the index leaves the
+		// rebased tip stale all the same. This is the site that answers for the
+		// tip the fast-forward below actually takes.
+		if regen, why := refreshGeneratedIndex(t); why != "" {
+			o.Reason = why
+			return o, nil
+		} else if len(regen) > 0 {
+			o.Regenerated, o.Commits = addPath(o.Regenerated, regen...), o.Commits+len(regen)
 		}
 		_, err := git(t.Repo, "merge", "--ff-only", t.Branch)
 		if err == nil {
@@ -3343,6 +3483,9 @@ func LandSessionTrees(w io.Writer, a *App, dirs []string, force bool) error {
 			fmt.Fprintf(w, "⤴ %s %d commit(s) onto %s\n", t.Branch, o.Commits, t.Base)
 		default:
 			fmt.Fprintf(w, "⚠ %s did NOT reach %s: %s\n", t.Branch, orDetached(t.Base), o.Reason)
+		}
+		if note := o.RegeneratedNote(); note != "" {
+			fmt.Fprintf(w, "⟳ %s\n", note)
 		}
 		if len(o.Dirty) > 0 {
 			fmt.Fprintf(w, "  %d uncommitted path(s) stay in %s\n", len(o.Dirty), AbbrevHome(t.Path))

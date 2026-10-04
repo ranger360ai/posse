@@ -3717,6 +3717,15 @@ func (l *KillLanding) Lines() []string {
 	if ln := l.Memory.Line(); ln != "" {
 		out = append(out, ln)
 	}
+	// And a THIRD, for the same reason there is a second: a kill-time landing
+	// may reproduce a generated file and commit it on the branch
+	// (ranger-base-7h8k4, worktree.go's refreshGeneratedIndex), and a commit
+	// nobody in the session typed is one the kill owes a sentence about. In
+	// the order it happened — the memory, then the merge, then what became of
+	// the tree.
+	if ln := l.Merge.RegeneratedNote(); ln != "" {
+		out = append(out, ln)
+	}
 	if ln := l.Line(); ln != "" {
 		out = append(out, ln)
 	}

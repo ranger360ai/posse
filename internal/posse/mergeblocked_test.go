@@ -800,6 +800,20 @@ func mergeBlockedCases() []mergeBlockedCase {
 			},
 		},
 		{
+			// worktree.go's refreshGeneratedIndex (ranger-base-7h8k4): a
+			// generated file is reproduced at landing rather than replayed,
+			// and an index nothing can reproduce is a refusal — never a
+			// landing that takes whatever the seat committed. The fixture is
+			// in landgeneratedindex_test.go, where the rest of the class is
+			// pinned.
+			name: "the generated index could not be reproduced",
+			arm:  "could not reproduce it",
+			reason: func(t *testing.T) string {
+				a, tr := brokenGeneratorTree(t)
+				return mergeBlockedReason(t, a, tr)
+			},
+		},
+		{
 			name: "the replay conflicts and is aborted",
 			arm:  "the rebase was aborted, so this attempt changed nothing",
 			reason: func(t *testing.T) string {

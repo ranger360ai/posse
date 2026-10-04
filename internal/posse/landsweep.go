@@ -286,6 +286,16 @@ func (d *Dispatcher) landClosedTrees(dirFilter string) {
 				// records no close actor (verifyCloser).
 				noteMergeBlocked(d.Bd, t.Repo, id, verifyCloser(is), t, o, d.printf, d.eprintf)
 			}
+			// A commit the launcher wrote on the persona's behalf, said out
+			// loud on the pass that wrote it (ranger-base-7h8k4): the
+			// generated notes index is reproduced at landing rather than
+			// replayed, and `git log` on main will otherwise show a commit
+			// nobody in the session typed. Printed after the switch because
+			// it is true of a landing and of a refusal alike — the replay can
+			// resolve the index and then lose the fast-forward race.
+			if note := o.RegeneratedNote(); note != "" {
+				d.printf("⟳ %-14s %s\n", id, note)
+			}
 			if len(o.Dirty) > 0 {
 				d.printf("◑ %-14s %d uncommitted path(s) left in %s — closed, and this part did not land\n",
 					id, len(o.Dirty), AbbrevHome(t.Path))
