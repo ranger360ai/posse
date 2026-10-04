@@ -138,9 +138,44 @@ so the only coordinator-facing signal for a braking pass is gone. That is a
 cost under (a) *and* under (b) — under (a) the brake also stops, under (b) it
 brakes silently — and whichever is ruled, something has to say so out loud.
 
-## Status
+## Status: ruled (b), built
 
-The build half is one call in internal/posse and is gated on the ruling; the
-ruling is architecture's, because ADR 0064 scoped itself out of the gate on
-purpose. Filed for the lane with this fragment as its material. Nothing in
-dispatch.go changed under this bead.
+ranger-base-cxcv1 ruled **(b)** on 2026-10-03 — ADR 0065, "the blind gate ages
+its evidence on the wall clock": the budget is the maximum *age of the
+evidence* the guard will hire on, a witnessed suspend is never subtracted from
+it, and the denomination is made structural over `UnixNano` rather than
+inherited from the snapshot's provenance (D2). The row stays awake (ADR 0064)
+for the row's own reason, and D4 rules that a braking pass inside the awake
+budget after a wake owes the coordinator no pulse key — the key that used to
+arrive beside it is the measured false positive 0064 removed.
+
+The build landed on this bead: `blindWall` in dispatch.go, read by both
+`blindGuard` and `planGuard`'s "reading restored after %s blind" line, so the
+two numbers a reader sees for one blind window are the same number; the doc
+paragraphs on `blindGuard` and `blindFork`; and the arm in
+`internal/posse/blindwall_test.go` (arm 2).
+
+### What the arm holds, and what it cannot — MEASURED 2026-10-03, go1.26.5
+
+The arm is blindGuard on a Dispatcher whose `suspends` ledger covers the blind
+window: 45m since the seed, 40m of it witnessed sleep, a 10m budget,
+unattended, probe failing — the row's own fixture numbers, where
+`TestGovG5SuspendedWindowIsNotBlindness` produces no G5. It asserts
+`suspendedSince(d.blindSince) == 40m` first, so the subtraction the gate
+declines is demonstrably in hand rather than an empty ledger, and then that
+both sides of `blindFork` are reached and name `blind 45m`.
+
+Two mutants, run against it:
+
+| mutant | result |
+|---|---|
+| resolution (a): `- d.suspendedSince(d.blindSince)` on the return | **red**, all three tests — park dispatches 1, degrade and the restored line both drift to the awake age |
+| `now.Sub(d.blindSince)` instead of the `UnixNano` difference | **green** |
+
+The second is the blind spot this fragment opened with, now confirmed from the
+other end: the fixture clock is a `time.Date` constant and carries no
+monotonic reading, so `Sub` is a wall difference inside every test and no
+fixture can distinguish the two spellings. The hand-driven clock pins the
+*subtraction*; `UnixNano` having no monotonic variant is what pins the
+*denomination*, exactly suspend.go's split, and the test says so in its own
+comment rather than scanning source text for the spelling.

@@ -753,8 +753,11 @@ func (d *Dispatcher) planGuard() {
 	}
 	// The first successful reading clears the clock and this same pass
 	// proceeds — no manual reset, no sticky state, no operator action.
+	//
+	// blindWall and not Sub, so this number and the brake's are the same
+	// number for one window (ADR 0065 D2).
 	if d.blindFailed {
-		d.eprintf("plan guard: reading restored after %s blind\n", BlindFor(now.Sub(d.blindSince)))
+		d.eprintf("plan guard: reading restored after %s blind\n", BlindFor(d.blindWall(now)))
 	}
 	// The clock counts from when the reading was TAKEN, not from now: a
 	// shared reading five minutes old leaves five minutes of blind budget,
@@ -983,6 +986,31 @@ func (d *Dispatcher) unmatchedThresholds(th map[string]float64, u PlanUsage) {
 // the operator's explicit choice, on the PID or `--runtime`.
 func (d *Dispatcher) overThreshold(reason string) { d.planTrip = reason }
 
+// blindWall is the age of the evidence the guard would hire on: the gap
+// between now and the instant the last good reading was TAKEN, on the wall
+// clock, with no suspend subtracted (ADR 0065 D1-D2).
+//
+// UnixNano and not Sub, for suspend.go's reason and with a sharper edge than
+// there. `now.Sub(d.blindSince)` is a WALL difference only when the seed
+// carries no monotonic reading, and `d.blindSince` is seeded from `readAt`,
+// which is `c.now()` on a fresh read (monotonic: the subtraction silently
+// becomes AWAKE) and `e.At` parsed off the shared snapshot's JSON on a cache
+// hit (none: WALL). So with Sub the gate's denomination was inherited from
+// whether the last reading was its own or the cockpit's, frozen for the whole
+// blind window, and no fixture could see it — every blindGuard test drives a
+// `time.Date` clock, which carries no monotonic reading either, so every test
+// took the wall path (MEASURED 2026-10-03, go1.26.5;
+// docs/notes.d/ranger-base-5no4s.md). UnixNano has no monotonic variant, so
+// the class is impossible at the source rather than guarded by a line a pin
+// cannot hold.
+//
+// One function and not the expression twice, because both readers of this
+// window — the brake's line and planGuard's "reading restored after %s
+// blind" — must print the same number for it (D2).
+func (d *Dispatcher) blindWall(now time.Time) time.Duration {
+	return time.Duration(now.UnixNano() - d.blindSince.UnixNano())
+}
+
 // blindGuard is the guard with no reading to make a decision on.
 //
 // …which is not the same as a guard with nothing to say. THE LAST GOOD
@@ -1004,6 +1032,27 @@ func (d *Dispatcher) overThreshold(reason string) { d.planTrip = reason }
 // still launch (ADR 0013 §3). The knob does not bound the degrade: no amount
 // of wall-clock is a reason to run, and none is a reason to stop.
 //
+// AND THE CLOCK IS WALL, deliberately (ADR 0065 D1-D2, blindWall). The budget
+// is the maximum AGE OF THE EVIDENCE this guard will hire on, and the
+// evidence is a reading of an account other spenders move while this box
+// sleeps — planusage.go's "the operator's interactive headroom". So a
+// witnessed suspend is not subtracted here: the first unattended pass after a
+// wake past the budget forks exactly as a pass that was awake and blind the
+// whole time. Awake-denominating it would be the paused lease holder renewing
+// its own lease, and ADR 0018 already refused to let time heal a reading in
+// the other direction.
+//
+// G5's row over the same key and the same timestamp DOES subtract it
+// (govern.go blindPast, ADR 0064), for the row's own reason: `guard-blind` is
+// a statement about THIS shop's monitoring being down, and a box with the lid
+// shut is not a shop with broken monitoring. The two measure different
+// quantities and diverge for the length of a sleep, each conservative on its
+// own side (0065 D3). The named cost is that across a wake this gate may
+// brake a pass the pulse is silent about — ruled in 0065 D4, which is why the
+// brake pays its own way instead: the park line per bead and the degraded
+// line on d.Out, every pass, naming the wall age, with the witness's own
+// SUSPENDED line in the same watch log within a SuspendTick.
+//
 // The log-noise rule (rangerhq-6h1): a --watch loop that is blind for a
 // weekend must not write the same line 500 times into a log nobody reads.
 // Say it when the reading first fails, and at most once an hour after that.
@@ -1012,7 +1061,7 @@ func (d *Dispatcher) overThreshold(reason string) { d.planTrip = reason }
 // parks work, each affected bead names why. A pass with only parked beads
 // still dispatches zero, so --watch backs off toward --max-interval.
 func (d *Dispatcher) blindGuard(now time.Time, err error) {
-	blind := now.Sub(d.blindSince)
+	blind := d.blindWall(now)
 	errw := d.errw()
 	if d.blindWarned {
 		errw = io.Discard // a malformed budget is a typo, named once, not once a pass
@@ -1091,6 +1140,13 @@ func (d *Dispatcher) staleGate(now time.Time, budget time.Duration) string {
 // applied per bead by the loop that has always applied them. The degrade is
 // bounded by MONEY and never by wall-clock: run while something is still
 // counting, never because the clock ran out.
+//
+// Which is about the clock that would CLOSE a degrade, and no clock of any
+// denomination closes one — the ledger's dollars do, or a fresh reading. The
+// clock that OPENS this fork is a different thing and it is wall, sleep
+// included (blindWall, ADR 0065 D1): `blind` arrives here already measured as
+// the age of the evidence, so the duration in the lines below may be longer
+// than this loop has been awake.
 //
 // …and never by a cap alone. 2026-08-31 (ranger-base-c3vqe) ran nineteen
 // hours on that arm while the weekly plan window climbed 89% → 96% behind a
