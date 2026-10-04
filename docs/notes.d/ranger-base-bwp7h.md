@@ -5,10 +5,11 @@ the store's own mode, which no reader can reach.
 
 Everything below is MEASURED 2026-10-03 on darwin 25.4.0 with the pinned bd —
 `bd version 0.50.3 (bd25acbc)`, `etc/bd/version-pin.toml` — unless it says
-ASSUMED. The live store the symptom was found in is a **private** repo's
-(`no-db: true`); its bead ids and the two dates are on ranger-base-bwp7h in
-the queue store, which is private, and are deliberately not repeated here,
-because this repo is stamped `public`.
+ASSUMED. The live store the symptom was found in is a **private** repo's; it
+was `no-db: true` when this was measured and is not any more (§6). Its bead
+ids and the two dates are on ranger-base-bwp7h in the queue store, which is
+private, and are deliberately not repeated here, because this repo is stamped
+`public`.
 
 Re-measure, don't quote: `make verify-nodb-defer`
 (`scripts/verify-nodb-defer.py`, `--self-test` for its own arms).
@@ -94,6 +95,15 @@ in a no-db store makes another dateless park.
 - With no store named, arm B exits **2** and says so. Finding nothing over
   zero stores is the shape that reads green while a failed producer hands the
   check nothing.
+- `--arm-a-only` runs A and not B. That is what `make verify-nodb-defer` uses
+  when `POSSE_NODB_STORES` is unset, which is every checkout of this repo:
+  nothing public can name a private store, so without it the door was exit 2
+  every single time it was typed — a door that cannot go green teaches the
+  next seat to stop reading it. It prints that no store was read, it does not
+  mask arm A's own alarm (defect gone, mode gone and arm-A-unusable still exit
+  1, 1 and 2), and handed a store on argv or in the environment it is REFUSED
+  rather than skipping it. Arm B's zero-stores rule is unchanged: the flag is
+  a door that asks a smaller question, not a quieter answer to the same one.
 
 `--self-test` runs arm A against a stub bd that drops the date, one that writes
 it and one that refuses the store, and requires a different verdict from each;
@@ -125,7 +135,33 @@ there, so in a no-db store the date is written into the record:
   again — not bd and not posse — and in a no-db store every `bd defer` keeps
   producing one. It has to pick the N in "quiet for N days, then loud" on the
   record; nobody has measured one.
-- ranger-base-6ulbg is the operator's, and is both halves of what this lane
-  cannot do: the one command that re-enters the dates (the write was refused
-  at the session's permission layer — a live store is a shared resource), and
-  the ruling on whether the store keeps `no-db: true`, given §2.
+- ranger-base-6ulbg was the operator's, and was both halves of what this lane
+  could not do: the one command that re-enters the dates (the write was
+  refused at the session's permission layer — a live store is a shared
+  resource), and the ruling on whether the store keeps `no-db: true`, given
+  §2. Both landed on 2026-10-04; §6.
+
+## 6 · The ruling, and what is left of the defect
+
+Operator ruling 2026-10-04 (ranger-base-6ulbg), both parts, and both VERIFIED
+here by reading the result rather than the report:
+
+- the five dates were re-entered with `scripts/nodb-set-defer.py` and read
+  back through `bd show --json` — five deferred records, five dates, matching
+  the recovered table on the bead;
+- the store was taken **off** `no-db: true` (shape 1 of the three on the
+  bead): `no-db: false`, a SQLite `.beads/beads.db` at the current pin, the
+  JSONL unchanged as the shared record, the db gitignored (`*.db`, `*.db-wal`,
+  `*.db-shm` were already there), and the store's own tree clean.
+
+So the symptom is gone from the only store that had it, and `bd defer --until`
+works there now like it does on the queue store. What is NOT gone is the
+defect: MEASURED again 2026-10-04 at the same pin, arm A still reports a
+dropped date on a throwaway `no-db: true` store. It is a property of the
+binary. §4's recipe stays live for any `no-db: true` store anybody writes
+next, and §2 still says there is no version to wait for.
+
+The practical shape of that today: this box has no known no-db store left, so
+arm B has nothing to read and `make verify-nodb-defer` is arm A alone unless
+someone names a store. The door reports the binary; it does not claim a
+store is clean, and it says which it did.

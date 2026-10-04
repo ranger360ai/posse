@@ -74,9 +74,18 @@
 #     verdict over zero stores is the shape that reads green while a failed
 #     producer hands it nothing.
 #
+#     `--arm-a-only` runs A and not B, for the door in a checkout that has no
+#     store to name — the stores on this box are private and this repo is
+#     stamped public, so `make verify-nodb-defer` would otherwise be exit 2
+#     every time it was typed. It says in its own output that no store was
+#     read. Handed a store anyway, on argv or in the environment, it is
+#     REFUSED (exit 2) rather than skipping it: a flag that can quietly drop
+#     a store is the zero-stores trap wearing a different hat.
+#
 # Read-only except for its own temp dir. It defers nothing anybody owns: arm A
 # builds its store from scratch and removes it, arm B only reads.
 
+import contextlib
 import json
 import os
 import shutil
@@ -341,7 +350,8 @@ def self_test(out):
         check("arm B over a store that is not there reads 0 stores", (len(f), len(g), s, n), (0, 0, 0, 0))
 
         # A store whose config.yaml is unreadable must read as no-db, which is
-        # the loud direction: the quiet one would file hcn's parks as icebox.
+        # the loud direction: the quiet one would file a real dateless
+        # park as icebox.
         unk = plant("unknown-mode", [rec("d-1", "deferred")])
         os.remove(os.path.join(unk, ".beads", "config.yaml"))
         f, g, s, n = arm_b([unk], devnull)
@@ -358,6 +368,36 @@ def self_test(out):
         check("a dateless park in a db store alone is exit 0", rc, 0)
         rc = gate_verdict(DEFECT_GONE, [], 1, devnull)
         check("the defect going away is exit 1", rc, 1)
+
+        # --arm-a-only: a pass on the BINARY alone, and it must still carry
+        # arm A's alarm, must never claim a store, and must refuse to be the
+        # thing that skipped one.
+        rc = gate_verdict(DEFECT_PRESENT, [], 0, devnull, (), True)
+        check("--arm-a-only with the defect present is exit 0", rc, 0)
+        rc = gate_verdict(DEFECT_GONE, [], 0, devnull, (), True)
+        check("--arm-a-only does NOT mask the defect going away", rc, 1)
+        rc = gate_verdict(MODE_GONE, [], 0, devnull, (), True)
+        check("--arm-a-only does NOT mask the mode going away", rc, 1)
+        rc = gate_verdict(UNUSABLE, [], 0, devnull, (), True)
+        check("--arm-a-only over an unusable arm A is exit 2", rc, 2)
+
+        # the refusal, at the main() level, because it must happen before arm
+        # A runs: on argv, and via the environment the door reads.
+        # main() writes to stdout; the self-test's own frame owns that.
+        with contextlib.redirect_stdout(devnull):
+            rc = main(["x", "--arm-a-only", os.path.join(d, "all-dated")])
+        check("--arm-a-only WITH a store named on argv is refused", rc, 2)
+        prev = os.environ.get("POSSE_NODB_STORES")
+        os.environ["POSSE_NODB_STORES"] = os.path.join(d, "all-dated")
+        try:
+            with contextlib.redirect_stdout(devnull):
+                rc = main(["x", "--arm-a-only"])
+        finally:
+            if prev is None:
+                del os.environ["POSSE_NODB_STORES"]
+            else:
+                os.environ["POSSE_NODB_STORES"] = prev
+        check("--arm-a-only with POSSE_NODB_STORES set is refused", rc, 2)
     finally:
         devnull.close()
         shutil.rmtree(d, ignore_errors=True)
@@ -372,7 +412,8 @@ def self_test(out):
 
 # ─── verdict ────────────────────────────────────────────────────────────────
 
-def gate_verdict(verdict, findings, stores_read, out, db_findings=()):
+def gate_verdict(verdict, findings, stores_read, out, db_findings=(),
+                 arm_a_only=False):
     if verdict == UNUSABLE:
         print("verify-nodb-defer: arm A could not run — defect status UNKNOWN, "
               "which is not 'fixed'.", file=out)
@@ -394,6 +435,15 @@ def gate_verdict(verdict, findings, stores_read, out, db_findings=()):
               "operator's: `make verify-bd-pin`.", file=out)
         return 1
     # DEFECT_PRESENT
+    if arm_a_only:
+        print("verify-nodb-defer: the defect is still present in the pinned bd "
+              "(arm A). Arm B did NOT run.", file=out)
+        print("  This door checks the BINARY, not any store: it is the half that "
+              "needs no path, so it can pass in a checkout with no private store "
+              "on it. Nothing here says a store is clean. To check real stores: "
+              "`POSSE_NODB_STORES=<colon-separated> make verify-nodb-defer`, or "
+              "`scripts/verify-nodb-defer.py <repo-or-.beads-dir> ...`.", file=out)
+        return 0
     if stores_read == 0:
         print("verify-nodb-defer: the defect is still present in the pinned bd — "
               "a no-db store drops every defer date.", file=out)
@@ -420,8 +470,9 @@ def gate_verdict(verdict, findings, stores_read, out, db_findings=()):
               file=out)
         return 1
     print("verify-nodb-defer: the defect is still present in the pinned bd (arm A), "
-          "and every deferred record in %d store(s) in no-db mode carries a date "
-          "(arm B)." % stores_read, file=out)
+          "and none of the %d store(s) read has a dateless park in no-db mode "
+          "(arm B) — the per-store lines above say which class each one is."
+          % stores_read, file=out)
     return 0
 
 
@@ -430,7 +481,7 @@ def main(argv):
     args = [a for a in argv[1:] if not a.startswith("--")]
     flags = [a for a in argv[1:] if a.startswith("--")]
     for f in flags:
-        if f not in ("--self-test",):
+        if f not in ("--self-test", "--arm-a-only"):
             print("verify-nodb-defer: unknown flag %s" % f, file=out)
             return 2
     if "--self-test" in flags:
@@ -441,15 +492,31 @@ def main(argv):
         env = os.environ.get("POSSE_NODB_STORES", "")
         args = [s for s in env.split(":") if s]
 
+    # --arm-a-only is for the door that has no store to name. Handed one
+    # anyway, it would read as a pass over a store it never opened — which is
+    # the exact shape the zero-stores guard exists to refuse. Refuse it here,
+    # before arm A spends a `bd defer`.
+    arm_a_only = "--arm-a-only" in flags
+    if arm_a_only and args:
+        print("verify-nodb-defer: --arm-a-only was given WITH %d store(s) to "
+              "check (%s). That combination would skip them and exit 0, so it "
+              "is refused: drop the flag to check them, or drop the stores."
+              % (len(args), ", ".join(args)), file=out)
+        return 2
+
     print("verify-nodb-defer: bd=%s" % (shutil.which(bd) or bd), file=out)
     rc, o = run([bd, "version"])
     print("  version: %s" % (o.strip().split("\n")[0] if o.strip() else "(silent)"), file=out)
     verdict = arm_a(bd, out)
-    findings, db_findings, stores_read, records = arm_b(args, out)
-    if args:
-        print("  arm B: %d store(s) read, %d record(s)" % (stores_read, records), file=out)
+    if arm_a_only:
+        findings, db_findings, stores_read = [], [], 0
+    else:
+        findings, db_findings, stores_read, records = arm_b(args, out)
+        if args:
+            print("  arm B: %d store(s) read, %d record(s)" % (stores_read, records), file=out)
     print(file=out)
-    return gate_verdict(verdict, findings, stores_read, out, db_findings)
+    return gate_verdict(verdict, findings, stores_read, out, db_findings,
+                        arm_a_only)
 
 
 if __name__ == "__main__":

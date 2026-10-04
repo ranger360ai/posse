@@ -1079,9 +1079,16 @@ verify-bd-pin:
 # one spelling works for both doors: POSSE_NODB_STORES is colon-separated and
 # the script reads it itself, while a hand run takes paths as arguments —
 # `scripts/verify-nodb-defer.py <repo-or-.beads-dir> ...`.
+# With none set the door runs arm A ALONE (`--arm-a-only`), and says so in its
+# own output. Without that it was exit 2 every time it was typed, because
+# nothing in a public repo can name a private store and nothing here sets the
+# variable — a door that cannot go green is read as breakage by the next seat
+# (ranger-base-bwp7h, 2026-10-04). The flag is refused if a store IS named, so
+# it can never be the reason one was skipped; arm B's zero-stores rule is
+# untouched.
 verify-nodb-defer:
 	@scripts/verify-nodb-defer.py --self-test
-	scripts/verify-nodb-defer.py
+	scripts/verify-nodb-defer.py $(if $(POSSE_NODB_STORES),,--arm-a-only)
 
 # The bd argv gate's two halves must agree (ranger-base-hthx). The sh wrapper
 # decides, in a shell builtin, whether to start the parser at all, and that

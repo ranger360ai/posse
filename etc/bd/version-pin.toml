@@ -60,13 +60,20 @@
 # and `bd list --json` and survives later bd writes — which is what the
 # workaround rests on, and re-parking in such a store is therefore a JSONL
 # edit, never a `bd defer`.
-# It cost four parked question beads in a private no-db store their dates on
+# It cost FIVE parked question beads in a private no-db store their dates on
 # 2026-10-03: posse's readers key a park on the DATE and never on the status
 # string, and bd re-surfaces a past-dated park in NEITHER store class, so
 # dateless is indefinite.
+# That store was taken off `no-db: true` by operator ruling on 2026-10-04
+# (ranger-base-6ulbg) and its five dates were re-entered and read back through
+# `bd show`, so the box has no known no-db store left and no live exposure —
+# but the DEFECT is a property of this binary, not of that store, and the next
+# `no-db: true` store anybody writes has it on the first `bd defer`.
 # `make verify-nodb-defer` re-measures it rather than trusting this paragraph,
 # and exits 1 if it is ever GONE — that would mean the pin moved or something
-# else is answering as `bd`, and this paragraph would be the stale thing.
+# else is answering as `bd`, and this paragraph would be the stale thing. That
+# door runs arm A alone (the binary) unless POSSE_NODB_STORES names stores to
+# read; nothing in this public repo can name a private one.
 # WHY IT DOES NOT ARGUE FOR A LIFT: there is no bd that gets this right and
 # still has the mode. 0.50.3 is the last 0.50.x; 0.51.0's own changelog removes
 # the JSONL sync layer (phase 5) and the SQLite backend (phase 6) outright, and
