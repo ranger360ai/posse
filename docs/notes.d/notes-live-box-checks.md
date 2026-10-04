@@ -22,7 +22,7 @@ A one-shot remediation of a condition that **regenerates** is not a control;
 only a recurring detective check is.
 
 ```
-make verify-box              # the seven live-box checks, ~40s, read-only
+make verify-box              # every check on the roster, ~40s, read-only
 make verify-box-self-test    # ten arms proving the aggregate can still fail
 ```
 
@@ -54,6 +54,14 @@ exclusions are load-bearing rather than housekeeping:
   (`--live`, `--settings`) are off the target on purpose, and `--live` answers
   `1` whenever a session is mid-bead behind a PID edit — correct, and a
   nuisance generator on a clock.
+- `verify-nodb-defer` is the door for a check whose two ARMS belong on
+  different sides of the line (ranger-base-d1hax). Arm A asserts the installed
+  bd and is rostered as its own target, `verify-nodb-defer-capability`, whose
+  recipe is exactly the one line the roster runs; arm B reads only the stores
+  named in `POSSE_NODB_STORES`, nothing public can name a private store, and
+  this box has no known no-db store left to name — not-measured every run,
+  forever. One script, two flag sets, two targets, one of them on the clock,
+  which is `verify-bd-dep-safety` beside `verify-bd-no-relate-pairs` again.
 
 **And the census is over `scripts/` too** (ranger-base-bbl6r, which is this
 section's own defect in the one shape its guard could not see). Both lists

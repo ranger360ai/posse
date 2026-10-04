@@ -172,6 +172,16 @@ esac
 #                                finding is a finding.
 #   verify-bd-no-relate-pairs    the drift detector for the symmetric-pair
 #                                landmine, against the live store.
+#   verify-nodb-defer-capability arm A of the no-db defer check: does the bd
+#                                this box resolves still throw away a defer
+#                                DATE in a `no-db: true` store. The subject is
+#                                the installed binary, so the answer moves with
+#                                the pin, and the finding is the GOOD news --
+#                                exit 1 means the defect is gone and the
+#                                hand-written dates can be retired
+#                                (ranger-base-bwp7h section 4). The two-arm
+#                                door `verify-nodb-defer` is excluded below:
+#                                its arm B needs a store path.
 # The key is the MAKEFILE TARGET NAME, not a short label. There was a second
 # list here mapping short keys back to targets, and it was a silent-drift path
 # of exactly the kind this script exists for: dropping a roster row and leaving
@@ -186,6 +196,7 @@ verify-policy-pins	scripts/verify-policy-pins.sh
 verify-hook-freshness	scripts/verify-hook-freshness.sh
 verify-gate-freshness	scripts/verify-gate-freshness.sh
 verify-bd-no-relate-pairs	scripts/verify-bd-dep-safety.sh --gate
+verify-nodb-defer-capability	scripts/verify-nodb-defer.py --arm-a-only
 ROSTER_EOF
 )
 
@@ -214,6 +225,7 @@ verify-govern-honesty	promote-time probe; kills its own scratch watch loop with 
 verify-bd-argv-gate	tree check of the gate SOURCE in this checkout; ~23s and it measures no box state. verify-gate-freshness is the box half and is on the roster
 verify-pid-deny-set	the TARGET reads HOME_DIR=examples, i.e. this repo own seed PIDs -- a tree check. Its live readers --live and --settings are off the target on purpose (Makefile): --live answers 2 on an idle box and 1 whenever a session is mid-bead behind a PID edit, both correct, so on a clock it is a nuisance generator rather than a control. Whether this box wants an advisory tier for checks like that is asked on ranger-base-51z8j
 verify-bd-dep-safety	the reporting half of the same script; verify-bd-no-relate-pairs is its --gate and is on the roster as no-relate-pairs
+verify-nodb-defer	the two-arm door a person types, and the two arms are classified apart (ranger-base-d1hax). Arm A asserts this box and is rostered above as verify-nodb-defer-capability, whose recipe is exactly the invocation the roster runs. This TARGET is not that invocation: it prepends the scripts own --self-test, and its second recipe line is `$(if $(POSSE_NODB_STORES),,--arm-a-only)`, a make function that the eval in run_roster would read as command substitution. Arm B is off the clock by design -- it reads only the stores named on argv or in POSSE_NODB_STORES, nothing public can name a private store, and with none named it exits 2 saying that a verdict over zero stores is not a pass. Today this box has no known no-db store at all (ranger-base-bwp7h section 6: the one that had the symptom was taken off no-db mode), so on a clock arm B would be not-measured every run forever. Name a store and type the door
 verify-runtime-walk	SPENDS A REAL TURN on the runtime under test. Event-triggered by design -- before switching a lane back onto a runtime, and after a version bump. A schedule would spend money on a clock, which crosses crew guardrail 1
 verify-box	this script -- the aggregate itself
 verify-box-self-test	the arms of the aggregate itself; a tree check, and putting it on the roster would have verify-box run itself
@@ -311,7 +323,7 @@ run_roster() {
   while IFS=$'\t' read -r name cmd; do
     [ -n "$name" ] || continue
     if [ ! -x "$root/${cmd%% *}" ]; then
-      lines+=$(printf '  %-26s %s' "$name" "ERROR    ${cmd%% *} is missing or not executable")
+      lines+=$(printf '  %-29s %s' "$name" "ERROR    ${cmd%% *} is missing or not executable")
       lines+=$'\n'
       error=$((error + 1))
       checks+="  $name: error"$'\n'
@@ -325,13 +337,13 @@ run_roster() {
     # four VerifyBox* constants), so the tokens and the human column are set
     # in one `case` and cannot come to mean different things.
     case $rc in
-      0) ok=$((ok + 1));           lines+=$(printf '  %-26s %s' "$name" "ok")
+      0) ok=$((ok + 1));           lines+=$(printf '  %-29s %s' "$name" "ok")
          checks+="  $name: ok"$'\n' ;;
-      1) finding=$((finding + 1)); lines+=$(printf '  %-26s %s' "$name" "FINDING")
+      1) finding=$((finding + 1)); lines+=$(printf '  %-29s %s' "$name" "FINDING")
          checks+="  $name: finding"$'\n' ;;
-      2) nothing=$((nothing + 1)); lines+=$(printf '  %-26s %s' "$name" "not measured")
+      2) nothing=$((nothing + 1)); lines+=$(printf '  %-29s %s' "$name" "not measured")
          checks+="  $name: not-measured"$'\n' ;;
-      *) error=$((error + 1));     lines+=$(printf '  %-26s %s' "$name" "ERROR    exit $rc")
+      *) error=$((error + 1));     lines+=$(printf '  %-29s %s' "$name" "ERROR    exit $rc")
          checks+="  $name: error"$'\n' ;;
     esac
     lines+=$'\n'

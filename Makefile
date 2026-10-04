@@ -42,7 +42,7 @@ FMT_ROOTS := cmd internal *.go
 BUILD_STAMP := $(shell $(GOBIN) run ./cmd/buildstamp)
 LDFLAGS     := -X github.com/ranger360ai/posse/internal/posse.Build=$(BUILD_STAMP)
 
-.PHONY: build release install deploy test test-arm1 test-arm2 test-arm3 test-race test-reuse treepins fmt-check crew-check seed-check history-check doc-check identity-check ops-check execwrite-check notes-check adr-check corpus-check register-check scripts-check pid-check tree-check verify-test-times verify-suite-lock verify-pattern-kill-census verify-silent-reverts verify-shell-syntax verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-herdr-bob install-herdr-bob verify-herdr-bob-rules install-herdr-bob-rules verify-prune-guard verify-id-recycle verify-self-close verify-govern-honesty verify-grok-pin verify-codex-pin verify-credential-paths verify-policy-pins verify-hook-freshness verify-bd-pin verify-nodb-defer verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk verify-box verify-box-self-test prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
+.PHONY: build release install deploy test test-arm1 test-arm2 test-arm3 test-race test-reuse treepins fmt-check crew-check seed-check history-check doc-check identity-check ops-check execwrite-check notes-check adr-check corpus-check register-check scripts-check pid-check tree-check verify-test-times verify-suite-lock verify-pattern-kill-census verify-silent-reverts verify-shell-syntax verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-herdr-bob install-herdr-bob verify-herdr-bob-rules install-herdr-bob-rules verify-prune-guard verify-id-recycle verify-self-close verify-govern-honesty verify-grok-pin verify-codex-pin verify-credential-paths verify-policy-pins verify-hook-freshness verify-bd-pin verify-nodb-defer verify-nodb-defer-capability verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk verify-box verify-box-self-test prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
 
 build:
 	$(GOBIN) build -ldflags '$(LDFLAGS)' -o bin/posse-go ./cmd/posse
@@ -1089,6 +1089,35 @@ verify-bd-pin:
 verify-nodb-defer:
 	@scripts/verify-nodb-defer.py --self-test
 	scripts/verify-nodb-defer.py $(if $(POSSE_NODB_STORES),,--arm-a-only)
+
+# The ROSTERED half of the door above (ranger-base-d1hax): arm A alone, which
+# is the half that asserts THIS MACHINE. It builds a throwaway `no-db: true`
+# store, defers a record in it with the bd this box resolves, and reads the
+# JSONL back, so its subject is the INSTALLED BINARY and its condition
+# REGENERATES with every pin move -- which is the roster's membership rule
+# (scripts/verify-box.sh, "A check earns a place here by asserting the state of
+# THIS MACHINE"). 0 the defect is still present, so the hand-written dates and
+# the JSONL recipe in docs/notes.d/ranger-base-bwp7h.md section 4 are still
+# load-bearing; 1 it is GONE, or the no-db MODE is, and the workaround can be
+# retired; 2 the arm could not run. ~1s, read-only outside its own temp dir.
+#
+# A SECOND TARGET RATHER THAN THE ROSTER POINTED AT THE ONE ABOVE, for a
+# mechanical reason worth writing down: verify-box.sh runs a roster command
+# with `eval`, and boxcheck_qa_test.go's
+# TestQABoxCheckRosterCommandsAreTheirTargetsRecipe requires the row to BE the
+# target's one recipe line. `verify-nodb-defer` has two, and the second carries
+# a `$(if ...)` make function that `eval` would read as command substitution.
+# So the arm that belongs on a clock gets a target whose recipe is exactly what
+# the clock runs. It is the same split as verify-bd-dep-safety (the report, a
+# person types it) and verify-bd-no-relate-pairs (its --gate, rostered) below:
+# one script, two flag sets, two targets, one of them on the clock.
+#
+# One honest edge: --arm-a-only is REFUSED (exit 2) when a store IS named, so
+# if POSSE_NODB_STORES is ever exported box-wide this row reads "not measured"
+# with its reason printed rather than passing quietly -- and the answer then is
+# to roster arm B as well, not to loosen the flag.
+verify-nodb-defer-capability:
+	scripts/verify-nodb-defer.py --arm-a-only
 
 # The bd argv gate's two halves must agree (ranger-base-hthx). The sh wrapper
 # decides, in a shell builtin, whether to start the parser at all, and that
