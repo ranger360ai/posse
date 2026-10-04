@@ -119,7 +119,7 @@ func newCredShimRig(t *testing.T) credShimRig {
 	}
 	// The read's argv comes from the one place production builds it, so the
 	// pin cannot drift from the read it claims to be about.
-	item, _ := keychainItem()
+	item := keychainItem()
 	return credShimRig{rt: rt, rule: rule, shim: filepath.Join(binDir, rt.CredBin), argv: keychainCmd(rt.CredBin, item, keychainAccount()).Args[1:], leak: leak}
 }
 

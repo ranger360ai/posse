@@ -226,7 +226,6 @@ func TestTheKeychainItemNameIsDerivedFromTheConfigDirEnvironment(t *testing.T) {
 		// different input from a pointer to "" (the shadow arm below).
 		secureStorage, configDir *string
 		want                     string
-		wantNote                 bool
 		why                      string
 	}{
 		{
@@ -270,15 +269,13 @@ func TestTheKeychainItemNameIsDerivedFromTheConfigDirEnvironment(t *testing.T) {
 			name:      "a non-ASCII directory, NFC composed",
 			configDir: strPtr("/tmp/caf\u00e9"),
 			want:      KeychainService + "-0873cca0",
-			wantNote:  true,
-			why:       "posse hashes the bytes as spelled. Composed is already NFC, so this digit is also what the runtime derives",
+			why:       "composed is already NFC, so normalizing is the identity here and this digit is the one the runtime derives — it was also posse's answer before ranger-base-4ch00, which is why this arm alone cannot tell the two rules apart. The decomposed arm below is the one that can",
 		},
 		{
 			name:      "a non-ASCII directory, NFC decomposed",
 			configDir: strPtr("/tmp/cafe\u0301"),
-			want:      KeychainService + "-16eb4464",
-			wantNote:  true,
-			why:       "the same path to a human, a different string to sha256 — and posse does not normalize (Go's standard library has no NFC and ADR 0019 declines x/text), so it hashes what it was given and the note says so. This is the arm the note exists for: an item not found under -16eb4464 may be sitting under the composed -0873cca0",
+			want:      KeychainService + "-0873cca0",
+			why:       "the same path to a human, a different string to sha256 — so posse normalizes to NFC first, as the runtime does, and both sides ask for the composed digit. This arm derived -16eb4464 until ADR 0019 D2 was amended under ranger-base-4ch00: an item the runtime never wrote, which posse would have asked for and read `item not found` over a credential sitting right there under -0873cca0",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -293,17 +290,8 @@ func TestTheKeychainItemNameIsDerivedFromTheConfigDirEnvironment(t *testing.T) {
 				}
 				t.Setenv(k, *v)
 			}
-			got, note := keychainItem()
-			if got != tc.want {
+			if got := keychainItem(); got != tc.want {
 				t.Errorf("keychainItem() = %q, want %q — %s", got, tc.want, tc.why)
-			}
-			switch {
-			case tc.wantNote && note == "":
-				t.Errorf("a non-ASCII directory derived %q with no note — the operator who reads `item not found` there is owed its first suspect (%s)", got, tc.why)
-			case !tc.wantNote && note != "":
-				t.Errorf("an ASCII directory carried the normalization note %q, which is false here: NFC is the identity on ASCII", note)
-			case tc.wantNote && !(strings.Contains(note, "as spelled") && strings.Contains(note, "NFC")):
-				t.Errorf("the note must say both halves — posse hashed it as spelled, the runtime hashes its NFC form: %q", note)
 			}
 		})
 	}
@@ -424,7 +412,7 @@ func TestTheKeychainAccountFollowsTheRuntimesOwnRule(t *testing.T) {
 			name: "a non-ASCII letter is rejected",
 			user: strptr("josé"),
 			want: keychainAccountFallback,
-			why:  "the class is ASCII, and this is the arm where the account rule and the item rule differ: the item HASHES a non-ASCII directory as spelled and carries a note, the account refuses one outright",
+			why:  "the class is ASCII, and this is the arm where the account rule and the item rule differ: the item normalizes a non-ASCII directory to NFC and hashes it, the account refuses one outright",
 		},
 		{
 			name: "an embedded newline is rejected",
@@ -519,26 +507,35 @@ func TestTheKeychainReadAsksAsTheRuntimesAccountAndTheSentencesNameIt(t *testing
 
 func strptr(s string) *string { return &s }
 
-// The note rides on the STORE's name, which is where an operator meets it:
+// The item rides on the STORE's name, which is where an operator meets it:
 // the refresh report's source column, the seam's Source and the shape
-// diagnosis all print that string (ADR 0019 D2 store 1).
-func TestTheStoreNameCarriesTheNormalizationNoteForANonASCIIDirectory(t *testing.T) {
+// diagnosis all print that string (ADR 0019 D2 store 1). So the store names
+// the item the runtime wrote, and it carries no normalization clause beside
+// it — there is no longer a difference to disclose.
+//
+// Why this pin exists (ADR 0006 V7): delete the norm.NFC.String call in
+// keychainItem and this reds on the digit, -16eb4464 against -0873cca0.
+// That is posse asking the keychain for an item the runtime never wrote,
+// and reading `item not found` over a credential sitting right there under
+// the composed name (ranger-base-4ch00, which reversed the as-spelled
+// decline ADR 0019 D2 carried until 2026-10-03).
+func TestTheStoreNameNamesTheItemTheRuntimeWroteForANonASCIIDirectory(t *testing.T) {
 	t.Setenv("HOME", "/tmp/home")
 	unsetenvForTest(t, "CLAUDE_SECURESTORAGE_CONFIG_DIR")
 
 	t.Setenv("CLAUDE_CONFIG_DIR", "/tmp/cfg")
 	ascii := keychainStore().Name
 	if strings.Contains(ascii, "NFC") {
-		t.Errorf("an ASCII directory's store name carries the normalization note: %q — NFC is the identity here and the note would be false", ascii)
+		t.Errorf("an ASCII directory's store name talks about normalization: %q — NFC is the identity here and there is nothing to say", ascii)
 	}
 
 	t.Setenv("CLAUDE_CONFIG_DIR", "/tmp/cafe\u0301")
 	name := keychainStore().Name
-	if !strings.Contains(name, KeychainService+"-16eb4464") {
-		t.Errorf("the store must name the item it will ask for: %q", name)
+	if !strings.Contains(name, KeychainService+"-0873cca0") {
+		t.Errorf("the store must name the item it will ask for, which is the runtime's own: %q. -16eb4464 here is the as-spelled hash of the decomposed string, an item no keychain was ever written under", name)
 	}
-	if !strings.Contains(name, "NFC") {
-		t.Errorf("the store name %q says nothing about normalization — this is the one arm where posse's name and the runtime's can differ, and the note is what keeps an `item not found` there from reading as an empty keychain", name)
+	if strings.Contains(name, "NFC") {
+		t.Errorf("the store name %q still carries the normalization note — posse and the runtime now derive the same name, so the note's two halves are the same string and it would name a suspect that cannot be the culprit", name)
 	}
 }
 

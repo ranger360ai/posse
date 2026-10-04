@@ -120,7 +120,7 @@ func TestTheRunbookQuotesTheSentencesTheCodeActuallyEmits(t *testing.T) {
 	// runtime's rule (ranger-base-tghn5), so it is derived the same way and
 	// for the same reason. This arm measures the sentence THAT box gets;
 	// pageSubject is what the page quotes, where neither is a constant.
-	item, _ := keychainItem()
+	item := keychainItem()
 	subject := keychainSubject(item, keychainAccount())
 	const pageSubject = `keychain item "Claude Code-credentials" (account "<account>")`
 	const unreadableTail = " unreadable — this binary's keychain ACL " +
@@ -219,7 +219,7 @@ func TestTheRunbookSaysWhenTheKeychainItemNameGrowsASuffix(t *testing.T) {
 	t.Setenv("HOME", "/tmp/home")
 	unsetenvForTest(t, "CLAUDE_SECURESTORAGE_CONFIG_DIR")
 	t.Setenv("CLAUDE_CONFIG_DIR", "/tmp/cfg")
-	name, _ := keychainItem()
+	name := keychainItem()
 	if name != KeychainService+"-519e587f" {
 		t.Fatalf("keychainItem() = %q under a set CLAUDE_CONFIG_DIR — the runbook's suffix sentence describes something this code does not do", name)
 	}
@@ -230,7 +230,7 @@ func TestTheRunbookSaysWhenTheKeychainItemNameGrowsASuffix(t *testing.T) {
 	// The control: with no variable set the page's "default spelling" claim
 	// has to be true too, or the row above is quoting a name nothing emits.
 	unsetenvForTest(t, "CLAUDE_CONFIG_DIR")
-	if name, _ := keychainItem(); name != KeychainService {
+	if name := keychainItem(); name != KeychainService {
 		t.Errorf("with neither variable set the item is %q — the runbook's rows all quote %q", name, KeychainService)
 	}
 }

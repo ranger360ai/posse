@@ -118,7 +118,7 @@ func liveKeychainStoreAt(t *testing.T, bin string) runtimeStore {
 	if operatorHome == "" {
 		t.Fatal("TestMain recorded no operator $HOME, so there is no login keychain to point `security` at — this pin cannot run from a binary started without HOME")
 	}
-	item, _ := keychainItem()
+	item := keychainItem()
 	account := keychainAccount()
 	subject := keychainSubject(item, account)
 	store := keychainStoreAt(bin)

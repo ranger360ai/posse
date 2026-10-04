@@ -420,7 +420,7 @@ func TestDarwinCompositeExitFortyFourWithNoFileIsBlindAndNamesEveryCause(t *test
 	}
 	// The derived item name is in the sentence, so an operator with a
 	// suffixed item knows which one to look for in Keychain Access (V12).
-	item, _ := keychainItem()
+	item := keychainItem()
 	if !strings.Contains(cu.Store, item) {
 		t.Errorf("the sentence must name the item posse actually asked for: Store %q, item %q", cu.Store, item)
 	}

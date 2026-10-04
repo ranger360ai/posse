@@ -202,7 +202,7 @@ func TestQAThePinHoldsThePaneToTheWalledCredentialDir(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			wantItem, _ := keychainItem()
+			wantItem := keychainItem()
 			if !walls(deny, wantFile) {
 				t.Fatalf("the read-deny %v does not name %s, the file the LAUNCHER's own environment resolves — the wall and the resolver have come apart before the pane is even in the picture (ranger-base-x5f6p)", deny, wantFile)
 			}
@@ -240,7 +240,7 @@ func TestQAThePinHoldsThePaneToTheWalledCredentialDir(t *testing.T) {
 			// keychain-first and the item's name carries a hash of the
 			// directory, so a pin that landed the FILE correctly and renamed
 			// the item would read as an empty keychain (ranger-base-ig4op).
-			if gotItem, _ := keychainItem(); gotItem != wantItem {
+			if gotItem := keychainItem(); gotItem != wantItem {
 				t.Errorf("with the pin applied the pane's keychain item is %q, want %q — the operator's login is under the second name", gotItem, wantItem)
 			}
 		})

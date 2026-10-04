@@ -55,6 +55,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"golang.org/x/text/unicode/norm"
 )
 
 // CredPurpose is what a credential is FOR, which is what decides where it is
@@ -661,8 +663,7 @@ func readStore(store runtimeStore) (string, CredMeta, error) {
 // constant survives as the spelling, not as the read.
 const KeychainService = "Claude Code-credentials"
 
-// keychainItem is the name posse asks the keychain for, and the one clause a
-// derived name may have to carry with it.
+// keychainItem is the name posse asks the keychain for.
 //
 // MEASURED 2026-09-02 off the same darwin-arm64 2.1.258 bundle credentialDir
 // was transcribed from, one statement after it (ADR 0019 D2 store 1,
@@ -679,36 +680,32 @@ const KeychainService = "Claude Code-credentials"
 //     never the path. So the answer is credentialDirNamed's bool, and never
 //     a comparison of dir against the home — that comparison is the mutant
 //     V11 exists to kill.
-//   - The hash is over the string as the variable SPELLS it: a trailing
-//     slash hashes as typed, and it is the DIRECTORY, never the file path
-//     CredentialsFile builds out of it (a different string, and a name no
-//     keychain ever held).
-//   - posse does not normalize. The runtime NFC-normalizes the value; Go's
-//     standard library has no NFC and ADR 0019 prices x/text and declines
-//     it. For an ASCII value NFC is the identity (MEASURED), so the derived
-//     name is exact wherever the operator typed an ASCII path. For anything
-//     else posse hashes the bytes as spelled and the note says so, so an
-//     item that is not found there names its first suspect instead of
-//     reading as an empty keychain.
+//   - Nothing else about the string is cleaned: a trailing slash hashes as
+//     typed, there is no path cleaning and no case folding, and it is the
+//     DIRECTORY, never the file path CredentialsFile builds out of it (a
+//     different string, and a name no keychain ever held).
+//   - posse normalizes to NFC before it hashes, exactly as the runtime
+//     does (ADR 0019 D2 as amended 2026-10-03, ranger-base-4ch00). NFC is
+//     the identity on ASCII (MEASURED), so nothing moves for the ASCII
+//     paths every box here types; for a decomposed non-ASCII directory it
+//     is the difference between the runtime's item and one it never wrote.
+//     This is the item NAME only: the string credentialDirNamed returns is
+//     handed on unchanged to CredentialsFile and to the credential wall,
+//     which OPEN a path, where the composed spelling of a decomposed
+//     directory can be a path that is not there (ranger-base-d88rp).
 //
 // A resolver error is the constant: a box with no home and no secure-storage
 // override has no directory string to hash, and the default spelling is the
 // honest answer. That arm also swallows a CLAUDE_CONFIG_DIR set on a
 // homeless box — credentialDir already errors rather than answering there,
 // and this follows the resolver rather than growing a second one.
-func keychainItem() (name, note string) {
+func keychainItem() string {
 	dir, named, err := credentialDirNamed()
 	if err != nil || !named {
-		return KeychainService, ""
+		return KeychainService
 	}
-	sum := sha256.Sum256([]byte(dir))
-	name = KeychainService + "-" + hex.EncodeToString(sum[:])[:8]
-	for i := 0; i < len(dir); i++ {
-		if dir[i] >= 0x80 {
-			return name, " (non-ASCII directory: posse hashed it as spelled and the runtime hashes its NFC form, so an item not found here may be that difference rather than an empty keychain)"
-		}
-	}
-	return name, ""
+	sum := sha256.Sum256([]byte(norm.NFC.String(dir)))
+	return KeychainService + "-" + hex.EncodeToString(sum[:])[:8]
 }
 
 // keychainAccountFallback is the literal the runtime falls back to when it
@@ -907,11 +904,11 @@ func keychainStoreAt(bin string) runtimeStore {
 	// row. An operator with a suffixed item sees the suffix to match in
 	// Keychain Access, and a second derivation is how the read and the
 	// sentence about it would come to disagree (ADR 0019 D2 store 1).
-	item, note := keychainItem()
+	item := keychainItem()
 	account := keychainAccount()
 	subject := keychainSubject(item, account)
 	s := runtimeStore{
-		Name: subject + note,
+		Name: subject,
 		Fix:  keychainACLFix,
 		Read: func() ([]byte, error) {
 			return keychainRun(bin, subject, keychainCmd(bin, item, account))

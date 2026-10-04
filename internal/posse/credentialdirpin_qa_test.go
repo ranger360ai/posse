@@ -103,7 +103,7 @@ func TestQACredentialDirPinIsWhatThisEnvironmentAlreadyResolvesTo(t *testing.T) 
 			// and still rename the item out from under the operator's
 			// login, so the name is checked on its own.
 			wantFile, ferr := CredentialsFile()
-			wantItem, _ := keychainItem()
+			wantItem := keychainItem()
 			for _, v := range pin {
 				t.Setenv(v.Key, v.Value)
 			}
@@ -111,7 +111,7 @@ func TestQACredentialDirPinIsWhatThisEnvironmentAlreadyResolvesTo(t *testing.T) 
 			if (ferr == nil) != (gerr == nil) || (ferr == nil && gotFile != wantFile) {
 				t.Errorf("the pin moved the credentials file: %q (%v) -> %q (%v). The read-deny is rendered from the unpinned environment, so the wall and the runtime would disagree about where the file is", wantFile, ferr, gotFile, gerr)
 			}
-			if gotItem, _ := keychainItem(); gotItem != wantItem {
+			if gotItem := keychainItem(); gotItem != wantItem {
 				t.Errorf("the pin renamed the keychain item: %q -> %q. The operator's login is under the first name; a session pinned to the second reads an empty keychain", wantItem, gotItem)
 			}
 		})
