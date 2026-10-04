@@ -15,6 +15,7 @@ the vocabulary is closed at nine or that every process has identical inputs.
 | G1 / blocked session | Current Herdr agent status | LANE |
 | G2 / settled-but-holding | bd claim joined with current session; protocol comment prefix may subtype it | LANE |
 | G3 / aged question or risk | bd creation/status and blocked-work graph; `attn_question_age`, default 4h | LANE; URGENT when holding ready work |
+| G3 / forgotten park (`parked:<id>`) | The same bd read: a question or risk bead parked with NO end date, past `attn_parked_age`, default 14d. The clock is `updated_at`, which is when the park happened; a DATED park is re-surfaced by its own date and this horizon never reaches one (ranger-base-pm5zo) | LANE; URGENT when holding ready work |
 | G4 / sustained guard skips | Current guard plus watch-local `GuardTrippedSince`; `attn_guard_stuck`, default 2h | URGENT |
 | G5 / blind guard | Current failed plan observation and guard blind-window state | URGENT |
 | G6 / exhausted cap | Cost scan against armed day, epoch and plan caps | URGENT |
@@ -90,6 +91,21 @@ parsing is not added; existing session/claim observations and logs carry those
 symptoms. Do not create a bead for every self-healing condition or mirror
 current facts into a durable attention file. Pause intent is a separate fact
 and therefore legitimately durable.
+
+A park with no end date is re-surfaced by a horizon, not by its date, and
+that is a widening of G3 rather than a tenth row (ranger-base-pm5zo). The
+condition is the same one G3 already owns — a question or risk bead nobody has
+answered — and only the clock differs: `updated_at`, which is when the park
+happened, because the date the park would otherwise be read from is the field
+one store class discards (ranger-base-bwp7h, ranger-base-nkjjg). MEASURED
+2026-10-03, bd 0.50.3: `bd ready` excludes a park whose date is four weeks
+past on both store classes, so this surface is the only thing that re-surfaces
+any park at all, and before the horizon an indefinite one was silent forever.
+The row carries its own key (`parked:<id>`) because the pulse fingerprints
+keys and the two conditions have different remedies; it reuses G3's URGENT
+rule unchanged, because a park holding beads out of `bd ready` stops the shop
+the same way. `attn_parked_age:`, default 14 days, argued against every park
+horizon the shop has expressed in `docs/notes.d/ranger-base-pm5zo.md`.
 
 Dated evidence: the original expanded view cost 5.6s/30 bd calls; replacing
 per-finding dependency reads with one blocked-graph read measured 1.95s/7

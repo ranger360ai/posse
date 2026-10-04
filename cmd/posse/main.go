@@ -2630,6 +2630,15 @@ governance:
                                  guard may skip before a skip becomes a condition
                                  (the streak is the --watch loop's own; a fresh
                                  shell has none and reports no G4)
+                               config attn_parked_age: (336h = 14d) how long a
+                                 question or risk bead parked with NO END DATE
+                                 stays quiet before G3 reports it forgotten.
+                                 Nothing in bd re-surfaces such a park on any
+                                 store class, so this is the only thing that
+                                 makes an indefinite one loud again; a DATED
+                                 park is re-surfaced by its date and this
+                                 never reaches it. Go's grammar has no day
+                                 unit, so 14d is a typo. 0 means every tick
   posse backup [--to <dir>]      archive the store of record (the queue repo's
                                  git history as a bundle, its beads db staged
                                  through sqlite's online backup API, and the

@@ -82,6 +82,12 @@ const (
 //     `attn_parked_age:` is the dial, and zero means "every tick", which is
 //     the behaviour before ranger-base-nkjjg.
 //
+// Written here in days because that is the unit it was argued in; the CONFIG
+// key cannot be, because attnAge's grammar is Go's and Go has no day unit.
+// `attn_parked_age: 14d` is a typo — named on stderr, default standing, like
+// any other typo in these keys — and a fortnight is spelled `336h`.
+// examples/config.yaml says so on the line itself for that reason.
+//
 // REJECTED: attn_question_age (4h), which is the shortest honest floor and
 // was the shape first suggested — "a dateless park no quieter than a
 // question nobody deferred at all". MEASURED consequence: the five parked

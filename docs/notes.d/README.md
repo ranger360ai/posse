@@ -9,6 +9,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-7zng1](ranger-base-7zng1.md) — The heaviest named-package run on the box took no suite slot (ranger-base-7zng1) — 2026-10-04
 - [ranger-base-rb05v](ranger-base-rb05v.md) — How long a healthy pass takes, and what every long one was (ranger-base-rb05v) — 2026-10-03
 - [ranger-base-q114b](ranger-base-q114b.md) — The skills tree at a session dir of `$HOME` is accepted, and the mode file beside it is not (ranger-base-q114b) — 2026-10-03
+- [ranger-base-pm5zo](ranger-base-pm5zo.md) — An indefinite park went silent forever, and 14 days is why it no longer does (ranger-base-pm5zo) — 2026-10-03
 - [ranger-base-nkjjg](ranger-base-nkjjg.md) — A `no-db: true` store discards the defer date, so a parked question kept paging (ranger-base-nkjjg) — 2026-10-03
 - [ranger-base-mz8ud](ranger-base-mz8ud.md) — "Enabled" is not "running": the herdr-bob watcher had never started on this box (ranger-base-mz8ud) — 2026-10-03
 - [ranger-base-knux2](ranger-base-knux2.md) — A stale hook wall named four guards and had lost one (ranger-base-knux2) — 2026-10-03

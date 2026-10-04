@@ -669,15 +669,29 @@ func TestGovG3IndefiniteParkWithNoClockStaysQuiet(t *testing.T) {
 // zero means every tick — which puts the pre-ranger-base-nkjjg noise back for
 // an instance that wants it, deliberately spellable rather than reachable
 // only by editing the binary.
+// Every arm uses a park THREE DAYS old, which is inside the 14d default and
+// outside every value typed below. So a quiet arm means "the default stood"
+// and a loud arm means "the typed value was read" — the two cannot be
+// confused, which a value on the same side of the default as the typo would
+// not distinguish.
 func TestGovG3ConfigurableParkedAge(t *testing.T) {
 	for _, c := range []struct {
-		cfg  string
-		loud bool
+		cfg   string
+		loud  bool
+		named bool // the typo line on stderr
 	}{
-		{"attn_parked_age: 48h\n", true},
-		{"attn_parked_age: 0\n", true},
-		{"attn_parked_age: 30d\n", false}, // not Go duration grammar: a typo
-		{"", false},
+		{cfg: "attn_parked_age: 48h\n", loud: true},
+		{cfg: "attn_parked_age: 172800\n", loud: true}, // bare seconds = 2d
+		{cfg: "attn_parked_age: 0\n", loud: true},      // every tick
+		// `2d` is not Go's grammar — Go has no day unit — so it is a TYPO,
+		// and a typo is named and the DEFAULT stands. A parsed `2d` would
+		// have made this 3d-old park loud; the default keeps it quiet, so
+		// this arm distinguishes the two outcomes rather than agreeing with
+		// both. The trap is worth an arm because the horizon's own natural
+		// unit is days and `14d` is the first thing anyone will type —
+		// examples/config.yaml ships `336h` and says why.
+		{cfg: "attn_parked_age: 2d\n", loud: false, named: true},
+		{cfg: "", loud: false},
 	} {
 		t.Run(strings.TrimSpace(c.cfg), func(t *testing.T) {
 			b, _ := newTestBackend(t)
@@ -685,13 +699,24 @@ func TestGovG3ConfigurableParkedAge(t *testing.T) {
 			if c.cfg != "" {
 				appendConfig(t, b.App, c.cfg)
 			}
-			writeJSON(t, dir, "fake-list-labeled.json", []map[string]any{datelessPark("bd-q", 72*time.Hour)})
-			g := find(shopSet(t, govIn(t, b)), "G3")
+			writeJSON(t, dir, "fake-list-labeled.json", []map[string]any{datelessPark("bd-q", 3*parkDay)})
+			var errw strings.Builder
+			in := govIn(t, b)
+			in.Errw = &errw
+			g := find(shopSet(t, in), "G3")
 			if c.loud && (g == nil || g.Key != "parked:bd-q") {
 				t.Fatalf("G3 = %+v, want parked:bd-q under %q", g, c.cfg)
 			}
 			if !c.loud && g != nil {
 				t.Fatalf("a 3d-old park is inside the horizon under %q: %+v", c.cfg, *g)
+			}
+			// A threshold nobody can see is worse than a wrong one: the
+			// typo is named, and silence about it would leave an operator
+			// believing a value the surface never read.
+			said := strings.Contains(errw.String(), "attn_parked_age") &&
+				strings.Contains(errw.String(), "is not a duration")
+			if said != c.named {
+				t.Errorf("typo named on stderr = %v, want %v: %q", said, c.named, errw.String())
 			}
 		})
 	}

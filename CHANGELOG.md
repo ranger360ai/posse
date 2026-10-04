@@ -11,6 +11,23 @@ being cut is a precondition of the tag; see `docs/runbooks/release.md`.
 
 ## Unreleased
 
+**An indefinite park is loud again after a fortnight, instead of silent
+forever.** A question or risk bead parked with NO end date — `bd defer <id>`
+with no `--until`, and every park at all on a store class that discards the
+date it is given — now raises a new G3 row, `parked:<id>`, once the park is
+older than `attn_parked_age:` (default 14 days). Before this, the fix below
+made such a park quiet and nothing ever made it loud again: MEASURED on bd
+0.50.3, `bd ready` excludes a park whose date is four weeks past on BOTH store
+classes, so the only thing that has ever re-surfaced one is this surface, and
+it keyed on the date. The clock is `updated_at`, which is when the park
+happened; a DATED park is still re-surfaced by its own date and this horizon
+never reaches one. `bd defer <id>` again buys another window.
+
+The key is Go's duration grammar, which has no day unit, so a fortnight is
+`336h` and `14d` is a typo (named on stderr, default standing). `0` means
+every tick. `docs/notes.d/ranger-base-pm5zo.md` argues the 14 days against
+every park horizon the shop has actually asked for.
+
 **A question bead deferred on a `no-db: true` beads store stops paging the
 coordinator.** Governance row G3 — and the `question:<id>` pulse key and the
 cockpit panel derived from it — treated a defer as an answer only when it

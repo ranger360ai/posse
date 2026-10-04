@@ -758,8 +758,24 @@ default_emoji: ⚙️
 # streak lives in the --watch loop's own memory, so a `posse status` run
 # from a terminal never reports it. A guard that trips is a SKIP —
 # automatic, self-healing — and only a sustained one is a condition.
+#
+# `attn_parked_age:` is the third key, and the only one whose default is
+# not comfortably spellable: the grammar is Go's and Go has no day unit, so
+# a fortnight is `336h`. `14d` would be a typo — named on stderr, with the
+# default standing, like any other typo in these keys — which is why the
+# line below says 336h and not what it means.
+#
+# It governs a park with NO END DATE: `bd defer <id>` with no `--until`, and
+# every park at all on a store class that discards the date it is given
+# (ranger-base-bwp7h). Such a park is an answer ("not now"), and nothing in
+# bd re-surfaces one on any store class — so without this horizon it is an
+# answer nobody ever revisits. A DATED park is re-surfaced by its own date
+# and this value never reaches it. `0` means every tick, which is the
+# behaviour before ranger-base-nkjjg.
 # attn_question_age: 4h      # how long a -l question / -l risk bead may sit open
 # attn_guard_stuck: 2h       # how long the plan guard may skip before it is a condition
+# attn_parked_age: 336h      # = 14d, the default: how long a park with NO end date
+#                            # stays quiet before G3 reports it as forgotten
 
 # G10 is the live-box row: the verdict scripts/verify-box.sh writes to
 # state/verify-box.yaml, which is where this box's own version pins, credential
