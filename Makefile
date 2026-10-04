@@ -42,7 +42,7 @@ FMT_ROOTS := cmd internal *.go
 BUILD_STAMP := $(shell $(GOBIN) run ./cmd/buildstamp)
 LDFLAGS     := -X github.com/ranger360ai/posse/internal/posse.Build=$(BUILD_STAMP)
 
-.PHONY: build release install deploy test test-arm1 test-arm2 test-arm3 test-race test-reuse treepins fmt-check crew-check seed-check history-check doc-check identity-check ops-check execwrite-check notes-check adr-check corpus-check register-check scripts-check pid-check tree-check verify-test-times verify-suite-lock verify-pattern-kill-census verify-silent-reverts verify-shell-syntax verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-herdr-bob install-herdr-bob verify-herdr-bob-rules install-herdr-bob-rules verify-prune-guard verify-id-recycle verify-self-close verify-govern-honesty verify-grok-pin verify-codex-pin verify-credential-paths verify-policy-pins verify-hook-freshness verify-bd-pin verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk verify-box verify-box-self-test prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
+.PHONY: build release install deploy test test-arm1 test-arm2 test-arm3 test-race test-reuse treepins fmt-check crew-check seed-check history-check doc-check identity-check ops-check execwrite-check notes-check adr-check corpus-check register-check scripts-check pid-check tree-check verify-test-times verify-suite-lock verify-pattern-kill-census verify-silent-reverts verify-shell-syntax verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-herdr-bob install-herdr-bob verify-herdr-bob-rules install-herdr-bob-rules verify-prune-guard verify-id-recycle verify-self-close verify-govern-honesty verify-grok-pin verify-codex-pin verify-credential-paths verify-policy-pins verify-hook-freshness verify-bd-pin verify-nodb-defer verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk verify-box verify-box-self-test prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
 
 build:
 	$(GOBIN) build -ldflags '$(LDFLAGS)' -o bin/posse-go ./cmd/posse
@@ -1050,6 +1050,38 @@ verify-hook-freshness:
 # (`Bash(bd daemon:*)` is denied fleet-wide); remediation is the operator's.
 verify-bd-pin:
 	scripts/verify-bd-pin.sh
+
+# A known DEFECT of the pinned bd, re-measured rather than remembered
+# (ranger-base-bwp7h). On a store configured `no-db: true`, `bd defer <id>
+# --until <date>` sets the status to "deferred", prints `* Deferred <id>` and
+# writes NO date — the value is accepted, reported as success and dropped, and
+# `bd update --defer` does the same. posse's readers key a park on the DATE and
+# never on the status string (beads.go BdIssue.DeferUntil, govern.go's G3 arm,
+# interrupted.go deferredNow), and bd itself re-surfaces a past-dated park in
+# neither store class, so dateless means indefinite: silent on the day it was
+# meant to come back, and silent after.
+#
+# Two arms. A re-runs the defect against a throwaway no-db store and exits 1 if
+# it is GONE — the pin moved, or something that is not the pinned binary is
+# answering as `bd`, and every hand-written date and the note about it can be
+# retired. B reads the stores named on the command line (or
+# POSSE_NODB_STORES=<colon-separated>) and fails on a dateless park in a no-db
+# store, while merely REPORTING one in a store with a database, where
+# `bd defer` with no `--until` is the icebox and means what it says. It names
+# no store itself: the ones on this box are private and this repo is stamped
+# public. With no store named, arm B exits 2 and says that finding nothing over
+# zero stores is not a pass.
+#
+# NOT in `make test` and not a gate: arm A spends a `bd defer` and arm B needs
+# a path only the operator can supply. Read-only outside its own temp dir, ~1s.
+# docs/notes.d/ranger-base-bwp7h.md has the measurements.
+# The stores come from the ENVIRONMENT and not from a make variable, so that
+# one spelling works for both doors: POSSE_NODB_STORES is colon-separated and
+# the script reads it itself, while a hand run takes paths as arguments —
+# `scripts/verify-nodb-defer.py <repo-or-.beads-dir> ...`.
+verify-nodb-defer:
+	@scripts/verify-nodb-defer.py --self-test
+	scripts/verify-nodb-defer.py
 
 # The bd argv gate's two halves must agree (ranger-base-hthx). The sh wrapper
 # decides, in a shell builtin, whether to start the parser at all, and that

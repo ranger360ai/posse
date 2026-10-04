@@ -48,6 +48,33 @@
 # The `dep add` cycle-check CTE is byte-identical on
 # 0.50.3 (ranger-base-pkqn tooling stays valid).
 #
+# KNOWN DEFECT OF THIS VERSION, and it is not a reason to lift
+# (ranger-base-bwp7h, measured 2026-10-03). On a store configured
+# `no-db: true` — JSONL as the source of truth, no database — the defer WRITER
+# is blind: `bd defer <id> --until <date>` sets the status to "deferred",
+# prints `* Deferred <id>` and writes no `defer_until`, and `bd update <id>
+# --defer <date>` does the same. The value is accepted, reported as success and
+# dropped; re-deferring a record that already carries a date leaves the OLD
+# date in place and still reports success. The reader is whole, so a date
+# written into the JSONL by hand is read back by `bd show`, `bd show --json`
+# and `bd list --json` and survives later bd writes — which is what the
+# workaround rests on, and re-parking in such a store is therefore a JSONL
+# edit, never a `bd defer`.
+# It cost four parked question beads in a private no-db store their dates on
+# 2026-10-03: posse's readers key a park on the DATE and never on the status
+# string, and bd re-surfaces a past-dated park in NEITHER store class, so
+# dateless is indefinite.
+# `make verify-nodb-defer` re-measures it rather than trusting this paragraph,
+# and exits 1 if it is ever GONE — that would mean the pin moved or something
+# else is answering as `bd`, and this paragraph would be the stale thing.
+# WHY IT DOES NOT ARGUE FOR A LIFT: there is no bd that gets this right and
+# still has the mode. 0.50.3 is the last 0.50.x; 0.51.0's own changelog removes
+# the JSONL sync layer (phase 5) and the SQLite backend (phase 6) outright, and
+# MEASURED on the unlinked 1.2.2 keg, a 1.x binary has no `--no-db` flag and
+# answers `defer` on such a store with `Error: no beads database found`. So
+# fixing the mode and leaving it are the same migration, which is the line
+# below. docs/notes.d/ranger-base-bwp7h.md has the measurements.
+#
 # LIFTING THE PIN is the operator's, and 1.x is a migration, not a version
 # bump: 0.51.0 Phase 2 replaced the SQLite backend with embedded Dolt and does
 # not read .beads/beads.db at all. HOLD at 0.50.3 stands.
