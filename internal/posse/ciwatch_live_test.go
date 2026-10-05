@@ -59,6 +59,7 @@ package posse
 // in place this pin PASSES rather than skipping.
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -368,4 +369,110 @@ func ciOpenAdopted(t *testing.T, bd Bd, repo string) *BdIssue {
 		return nil
 	}
 	return &is[0]
+}
+
+// ─── the job-level vet, against the real GitHub (ranger-base-rdi79) ──────────
+
+// What only the real endpoint can answer: that ciJobsPage parses the payload
+// GitHub actually sends, and that the rule says "the queue" over the episode
+// it was written for and "a real red" over a run that really failed. The
+// fakes pin the rule; they cannot pin the shape of a page nobody here wrote.
+//
+//	RHQ_LIVE_GH=1 GH_TOKEN="$(gh auth token)" \
+//	  go test -count=1 -tags posse_arm3 ./internal/posse/ -run TestLiveCIJobsVet -v
+//
+// GH_TOKEN and -count=1 are both load-bearing. TestMain gives the whole test
+// binary a temp $HOME, so the operator's `gh` config — and the keyring entry
+// `gh auth status` reads — is invisible to any child this execs, and gh
+// answers "please run gh auth login" (exit 4) rather than reaching GitHub;
+// the pin SKIPS on that, which is indistinguishable from the skip one line
+// down. And go's test cache keys on the env a test READS through os.Getenv,
+// which GH_TOKEN never is, so a run that skipped for want of a token is
+// replayed from cache over a command that now has one. MEASURED 2026-10-05:
+// both arms skip without the token, both PASS with it, and the second
+// invocation printed the first one's skips under `(cached)`.
+//
+// Both run ids are FIXED, because both are historical facts rather than
+// current state — a live pin keyed on "whatever is red right now" asserts
+// nothing on the day main is green, which is most days. If GitHub has aged
+// either run out, this skips rather than failing: the subject is the parse
+// and the rule, and a run that is gone is not evidence against either.
+//
+//   - 37362765576 ATTEMPT 1 is the episode (2026-10-05, bab60e51): five green
+//     jobs and `test (ubuntu-latest, 3)`, fifteen minutes queued and then
+//     cancelled with zero steps and no runner. The attempt path is used only
+//     to reach it — the shipped ghRunJobs asks for the LATEST attempt and
+//     that run was re-run green, which is exactly why it has to be spelled
+//     out here (ghRunJobs's own note on filter=all).
+//   - 34632088265 (2026-09-11, 904059b2) is an ordinary red: two jobs with
+//     conclusion `failure` and 11 executed steps each, read through the
+//     SHIPPED path with no attempt pinning at all.
+func TestLiveCIJobsVet(t *testing.T) {
+	t.Parallel()
+	if os.Getenv("RHQ_LIVE_GH") == "" {
+		t.Skip("set RHQ_LIVE_GH=1 (asks the real GitHub through the real gh)")
+	}
+	bin, err := exec.LookPath(ghBin(""))
+	if err != nil {
+		t.Skip("no gh on PATH")
+	}
+	const slug = "ranger360ai/posse"
+	dir := t.TempDir()
+
+	parse := func(t *testing.T, raw []byte) ciJobsPage {
+		t.Helper()
+		var p ciJobsPage
+		if jerr := json.Unmarshal(trimToJSON(raw), &p); jerr != nil {
+			t.Fatalf("the real payload is not the JSON ciJobsPage declares: %v\n%s", jerr, raw)
+		}
+		if len(p.Jobs) == 0 {
+			t.Fatalf("parsed 0 jobs out of %d bytes — the field names have moved", len(raw))
+		}
+		if p.TotalCount != len(p.Jobs) {
+			t.Fatalf("total_count %d over %d rows: this page is paginated, and the rule's completeness check would (correctly) decline it", p.TotalCount, len(p.Jobs))
+		}
+		return p
+	}
+
+	t.Run("the episode is the queue", func(t *testing.T) {
+		t.Parallel()
+		cmd := exec.Command(bin, "api", "repos/"+slug+"/actions/runs/37362765576/attempts/1/jobs?per_page=100")
+		cmd.Dir = dir
+		out, cerr := cmd.Output()
+		if cerr != nil {
+			t.Skipf("gh could not reach attempt 1 of run 37362765576: %v", cerr)
+		}
+		p := parse(t, out)
+		why, queueOnly := ciJobsSayQueue(p)
+		if !queueOnly {
+			t.Fatalf("the episode's own jobs page did not read as the queue (%d jobs): %+v", len(p.Jobs), p.Jobs)
+		}
+		if !strings.Contains(why, "test (ubuntu-latest, 3)") || !strings.Contains(why, "never started") {
+			t.Errorf("why = %q, want it to name the job that never started", why)
+		}
+	})
+
+	t.Run("an ordinary red is a verdict", func(t *testing.T) {
+		t.Parallel()
+		raw, rerr := ghRunJobs(dir, bin, slug, "34632088265")
+		if rerr != nil {
+			t.Skipf("gh could not reach run 34632088265: %v", rerr)
+		}
+		p := parse(t, raw)
+		if why, queueOnly := ciJobsSayQueue(p); queueOnly {
+			t.Fatalf("a run with two failed jobs was set aside: %q", why)
+		}
+		failed := 0
+		for _, j := range p.Jobs {
+			if j.Conclusion == "failure" {
+				failed++
+				if len(j.Steps) == 0 {
+					t.Errorf("job %q failed with zero steps parsed — `steps` is the discriminator and it did not survive the parse", j.Name)
+				}
+			}
+		}
+		if failed == 0 {
+			t.Errorf("no job of run 34632088265 parsed as failed, but its conclusion is failure: the parse is wrong or the run is not the one this pin names")
+		}
+	})
 }

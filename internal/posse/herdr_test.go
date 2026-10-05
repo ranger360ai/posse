@@ -67,10 +67,12 @@ func TestMain(m *testing.M) {
 		case len(args) > 0 && (args[0] == "workspace" || args[0] == "pane" || args[0] == "agent"):
 			os.Exit(fakeHerdr(args))
 		// …and the third substrate, on the same rule: the VERB, not
-		// argv[0]. `run` is gh's (ci-watch's only network call is `gh run
-		// list`, ciwatch.go) and bd has no such verb, so the three fakes
-		// stay disjoint without anyone reading a link name.
-		case len(args) > 0 && args[0] == "run":
+		// argv[0]. `run` and `api` are gh's — `gh run list` is ci-watch's
+		// reading, `gh run view --log-failed` is its causes, and `gh api
+		// .../runs/<id>/jobs` is the job-level vet (ciwatch.go) — and bd has
+		// neither verb, so the three fakes stay disjoint without anyone
+		// reading a link name.
+		case len(args) > 0 && (args[0] == "run" || args[0] == "api"):
 			os.Exit(fakeGh(args))
 		default:
 			os.Exit(fakeBd(args))

@@ -109,6 +109,21 @@ package posse
 // verdict in either direction. That const carries the measurement and why a
 // wall-clock bound cannot do the job.
 //
+// AND A RED RUN IS ONLY RED IF SOMETHING OF IT ACTUALLY FAILED
+// (ciJobsSayQueue, ranger-base-rdi79). The rule two paragraphs up — a run
+// GitHub STOPPED is about the queue and gets no verdict — was written at the
+// run level and GitHub applies `cancelled` at the JOB level too: a run whose
+// six jobs are five greens and one job that never got a runner concludes
+// `failure`, and on 2026-10-05 that filed a P1 and dispatched a session over
+// `bab60e51`, which nothing was wrong with (a re-run of the one job was green
+// in 123s). So a `failure` about to become the verdict is checked against its
+// own jobs, one extra `gh api` on a reading that is about to FILE: any job
+// that failed, timed out or could not start is a real red and nothing
+// changes, while a run whose only non-success job never started is set aside
+// exactly as a cancelled run is and the next run down answers. Demotion takes
+// positive evidence and every other answer leaves the run red, because this
+// is the one guard here whose failure mode is the founding incident itself.
+//
 // WHAT RIDES INTO THE BEAD: shas, run URLs, conclusions and timestamps.
 // Deliberately NOT the run's displayTitle, which is the commit message —
 // nothing this mechanism writes into a bead comes from anywhere but
@@ -226,6 +241,27 @@ const (
 	// this bound is the most one clear can cost, and a clear is not read on
 	// the hot path drumbeat and dedupe are.
 	ciCauseReadTimeout = 10 * time.Second
+
+	// ciJobsVetCap bounds how many runs ONE reading will ask the jobs
+	// endpoint about (ranger-base-rdi79, the job-level vet below). The call
+	// is made only for a run whose conclusion is `failure` and which is
+	// about to BE the verdict — 55 of this gate's last 300 runs, at most one
+	// of them per pass — so a green pass pays nothing and an ordinary red
+	// pass pays one child. The cap is what the pathological page costs: a
+	// queue broken for everybody tops the list with phantom failure after
+	// phantom failure, and walking 100 of those would put 100 children on a
+	// dispatch pass. 3 because the class is 1 run in 300 and three in a row
+	// is already a fact about GitHub rather than about this branch. Past the
+	// cap the run stands as gh reported it, which is the reading this file
+	// took before the vet existed — the same direction every other failure
+	// here falls.
+	ciJobsVetCap = 3
+
+	// ciJobsReadTimeout bounds one jobs call. Shorter than ciReadTimeout
+	// because it is spent on the hot path of a RED reading, after the list
+	// call has already had its own 30s, and because running out is not an
+	// abstention: a jobs page that did not answer leaves the run red.
+	ciJobsReadTimeout = 10 * time.Second
 
 	// ciFreshMaxBehind is how far behind the branch the newest
 	// verdict-bearing run in a reading may be before the reading is unusable
@@ -385,6 +421,15 @@ type CIState struct {
 	// Both are still abstentions: neither files, neither closes, and neither
 	// is ever read as green.
 	NoGate bool
+	// QueueOnly is what this reading SET ASIDE at the head of the page:
+	// runs whose conclusion is `failure` but whose only non-success job
+	// never started, which is a statement about GitHub's queue and not
+	// about the branch (ciJobsSayQueue, ranger-base-rdi79). They are not
+	// verdicts — they are absent from Latest, Since, Streak and
+	// PriorRedRuns, exactly as a cancelled RUN is — and they are kept
+	// because a reading that drops a red run has to be able to name which
+	// one and say why. Empty on every ordinary pass, red or green.
+	QueueOnly []CIQueueOnly
 	// PriorRedRuns is the immediately preceding red streak, set only when
 	// Red is false: the runs ciClear is about to say nothing went wrong in,
 	// unless something reads them (ranger-base-d6zyu finding 3). Free of
@@ -392,6 +437,15 @@ type CIState struct {
 	// and Since, just not thrown away — and bounded the same way Streak is,
 	// by ciScanLimit.
 	PriorRedRuns []CIRun
+}
+
+// CIQueueOnly is one run a reading set aside, with the evidence that said
+// so — the Why is the sentence ciJobsSayQueue built out of the jobs page,
+// kept rather than recomputed because the page it was read from is gone by
+// the time anybody asks.
+type CIQueueOnly struct {
+	Run CIRun
+	Why string
 }
 
 // Known is whether Red means anything.
@@ -413,6 +467,14 @@ func (s CIState) Known() bool { return s.Why == "" }
 // gate that cannot start is exactly as failed as one that ran and failed.
 // Everything else — `neutral`, `skipped`, `action_required`, `stale` — is no
 // verdict, on the same rule as cancelled.
+//
+// IT IS THE RUN LEVEL AND NOTHING ELSE, which is the gap ranger-base-rdi79
+// closed one level down. A run's conclusion is `failure` as soon as one job
+// of it is not `success` — including a job GitHub CANCELLED because it never
+// got a runner, which is the queue speaking in the exact words this function
+// exists to ignore, and this function cannot see the difference because the
+// difference is not in the two strings it is handed. ciJobsSayQueue is the
+// other half, asked only of a `failure` about to become a verdict.
 func ciVerdict(status, conclusion string) (red, ok bool) {
 	if status != "completed" {
 		return false, false
@@ -425,6 +487,166 @@ func ciVerdict(status, conclusion string) (red, ok bool) {
 	default:
 		return false, false
 	}
+}
+
+// ciJob is one job of one run, reduced to what the job-level rule reads.
+// The field names are GitHub's own for /actions/runs/<id>/jobs.
+type ciJob struct {
+	Name       string            `json:"name"`
+	Status     string            `json:"status"`
+	Conclusion string            `json:"conclusion"`
+	RunnerName string            `json:"runner_name"`
+	Steps      []json.RawMessage `json:"steps"`
+}
+
+// ciJobsPage is that endpoint's envelope. TotalCount is read rather than
+// dropped: it is how a page that was PAGINATED says so, and a reading that
+// cannot see every job must conclude nothing about the ones it did not get.
+type ciJobsPage struct {
+	TotalCount int     `json:"total_count"`
+	Jobs       []ciJob `json:"jobs"`
+}
+
+// ciJobsSayQueue is the job-level half of the verdict (ranger-base-rdi79):
+// the empty string unless this run's `failure` is about GitHub's QUEUE
+// rather than about the code, in which case it is the sentence naming the
+// evidence.
+//
+// THE EPISODE. ci-watch filed a P1 at 2026-10-05T19:21Z over `bab60e51` and
+// dispatched a session onto it. Run 37362765576 had six jobs: five green,
+// and `test (ubuntu-latest, 3)` which sat fifteen minutes in the queue and
+// was then CANCELLED one second after the last running job finished —
+// conclusion `cancelled`, zero steps, empty `runner_name`, no log blob at
+// all (`BlobNotFound`, HTTP 404), so `gh run view --log-failed` — the first
+// move the filed bead's own Reproduce block prints — answered with an empty
+// string. The run-level conclusion is `failure` because one job of six is
+// not `success`, ciVerdict reads that as red, and nothing was wrong with the
+// commit: a re-run of that one job was green in 123s. A cancelled RUN was
+// already no verdict; a cancelled JOB that reddens an otherwise-green run
+// was a verdict, and should not have been. docs/notes.d/ranger-base-94grm.md
+// holds the per-job table and the forensics.
+//
+// DEMOTION TAKES POSITIVE EVIDENCE, and every other answer leaves the run
+// red. That direction is the whole safety of this: ci-watch's founding
+// incident is 191 reds over five days that nobody saw (the file header), and
+// a rule that suppressed a genuine red would recreate it with no trace
+// anywhere — no bead, no stderr, nothing in `posse status`. A false P1 costs
+// one dispatched session and leaves a bead behind saying so. So an
+// unreadable page, a paginated page, an empty page, an unknown job
+// conclusion, a job still running, or a `failure` no job accounts for all
+// read as RED, unchanged.
+//
+// THE RULE, over the jobs of the run's LATEST attempt:
+//
+//   - `failure`, `timed_out`, `startup_failure` on any job — a real red, and
+//     the answer is no. These are the job-level spellings of ciVerdict's own
+//     red list, for the same reason.
+//   - `success`, `skipped`, `neutral` — not the cause of the run's failure;
+//     ignored.
+//   - `cancelled` WITH zero steps and no `runner_name` — a job that never
+//     started. The queue.
+//   - `cancelled` that DID run steps or DID hold a runner — a job that was
+//     stopped after doing work, which this does not claim to understand, so
+//     it is no and the run stays red.
+//   - anything else, including a job not `completed` — no.
+//
+// At least one queue-only job is required, so a run that says `failure` over
+// jobs that all succeeded is not demoted: that is a disagreement with GitHub
+// about its own run, and the honest reading of a disagreement is the one that
+// does not suppress.
+//
+// ZERO STEPS is the discriminator and `runner_name` corroborates it. MEASURED
+// 2026-10-05 over ci.yml on main, the 300 runs gh serves (2026-09-06T14:56:19Z
+// to 2026-10-05T19:21:00Z): 244 success, 55 failure, 1 in flight. All 55
+// failures carried a job with conclusion `failure` — 109 such jobs, 100 with
+// 11 executed steps and 9 with 9 — so this rule demotes NONE of them and the
+// red half of the gate is untouched. Across all 302 jobs of those 55 runs the
+// only two conclusions in the window are `success` (193) and `failure` (109),
+// every page was complete (TotalCount == len(Jobs), no pagination), and the
+// episode above is the first of its class in 300 runs. Re-run it: the census
+// commands are in docs/notes.d/ranger-base-rdi79.md.
+func ciJobsSayQueue(p ciJobsPage) (string, bool) {
+	// An empty page proves nothing, and a page gh paginated is a page whose
+	// missing jobs could each be the red one.
+	if len(p.Jobs) == 0 || p.TotalCount != len(p.Jobs) {
+		return "", false
+	}
+	var queue []string
+	for _, j := range p.Jobs {
+		switch j.Conclusion {
+		case "success", "skipped", "neutral":
+			continue
+		case "cancelled":
+			if j.Status == "completed" && len(j.Steps) == 0 && strings.TrimSpace(j.RunnerName) == "" {
+				queue = append(queue, j.Name)
+				continue
+			}
+			return "", false
+		default:
+			return "", false
+		}
+	}
+	if len(queue) == 0 {
+		return "", false
+	}
+	return fmt.Sprintf("the run says failure but no job failed: %s never started (zero steps, no runner assigned) and the other %d of %d did not fail",
+		strings.Join(queue, ", "), len(p.Jobs)-len(queue), len(p.Jobs)), true
+}
+
+// ciRunIsQueueOnly asks GitHub about one run's jobs and applies
+// ciJobsSayQueue to the answer. Every failure on the way — no run id in the
+// URL, a gh that did not answer, JSON that did not parse — returns no, so a
+// run this cannot read stands exactly as `gh run list` reported it.
+func ciRunIsQueueOnly(dir, bin, slug string, r CIRun) (string, bool) {
+	id := ciRunID(r.URL)
+	if id == "" {
+		return "", false
+	}
+	out, err := ghRunJobs(dir, bin, slug, id)
+	if err != nil {
+		return "", false
+	}
+	var p ciJobsPage
+	if jerr := json.Unmarshal(trimToJSON(out), &p); jerr != nil {
+		return "", false
+	}
+	return ciJobsSayQueue(p)
+}
+
+// ghRunJobs is the second network call, and the one that is not made on a
+// green pass. `gh api` rather than `gh run view --json jobs`, because the
+// per-job `steps` and `runner_name` this needs are on the REST resource and
+// not in gh's own run view; `per_page=100` because 100 is that endpoint's
+// maximum page and a run with more jobs than that must read as paginated
+// rather than as partially green.
+//
+// NO `filter=all`, which is deliberate and is where the forensics in
+// ranger-base-94grm's notes differ from the shipped reading. The default is
+// `filter=latest`, the jobs of the run's latest ATTEMPT, and the latest
+// attempt is what the run's conclusion is about: MEASURED 2026-10-05, run
+// 37362765576 after its re-run answers six jobs all `success` under the
+// default and twelve under `filter=all`, the six cancelled-and-failed rows
+// of attempt 1 among them. `filter=all` would hold a re-run run red on the
+// strength of the attempt it was re-run to replace.
+func ghRunJobs(dir, bin, slug, runID string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), ciJobsReadTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, bin, "api",
+		"repos/"+slug+"/actions/runs/"+runID+"/jobs?per_page=100")
+	cmd.Dir = dir
+	var out, errb strings.Builder
+	cmd.Stdout, cmd.Stderr = &out, &errb
+	if err := cmd.Run(); err != nil {
+		msg := strings.TrimSpace(errb.String())
+		if msg == "" {
+			msg = err.Error()
+		}
+		if ctx.Err() != nil {
+			msg = "timed out after " + ciJobsReadTimeout.String() + ": " + msg
+		}
+		return nil, Die("%s", msg)
+	}
+	return []byte(out.String()), nil
 }
 
 // ghSlugRe pulls owner/name out of the spellings git remotes come in:
@@ -537,9 +759,39 @@ func ReadCI(q CIQuery) CIState {
 		verdicts = append(verdicts, r)
 		reds = append(reds, red)
 	}
+	// THE JOB-LEVEL VET, at the HEAD of the page and nowhere else
+	// (ranger-base-rdi79). A `failure` that is only a job which never
+	// started is the queue speaking, so it is set aside exactly as a
+	// cancelled RUN is and the next run down answers. Scoped to the head
+	// because the head is the only run about to BE a verdict, and that is
+	// what makes the extra call affordable: none on a green pass, one on an
+	// ordinary red one, ciJobsVetCap at the worst. The cap counts CALLS and
+	// not demotions, because the call is the cost — the run that ends the
+	// loop by standing is one of them.
+	//
+	// The runs BELOW the head keep their conclusions as gh reported them,
+	// so a phantom failure buried inside a red streak still counts toward
+	// Streak and can still be Since. That is a number slightly too large on
+	// a bead that was going to be filed anyway, against one gh child per
+	// run of the streak to fix — the incident's own streak was 191. The
+	// false P1 this bead is about is a reading, not a count.
+	for vetted := 0; vetted < ciJobsVetCap && len(verdicts) > 0 && reds[0] && verdicts[0].Conclusion == "failure"; vetted++ {
+		why, queueOnly := ciRunIsQueueOnly(dir, ghBin(q.GhBin), slug, verdicts[0])
+		if !queueOnly {
+			break
+		}
+		s.QueueOnly = append(s.QueueOnly, CIQueueOnly{Run: verdicts[0], Why: why})
+		verdicts, reds = verdicts[1:], reds[1:]
+	}
 	if len(verdicts) == 0 {
 		s.Why = "no completed run of " + q.Workflow + " on " + s.Branch + " in " + slug +
 			" carries a verdict (looked at the last " + strconv.Itoa(ciScanLimit) + ")"
+		if n := len(s.QueueOnly); n > 0 {
+			// Which is a could-not-READ abstention and not a green pass: the
+			// window held nothing but runs that never ran, and the next
+			// completed run clears it.
+			s.Why += "; " + strconv.Itoa(n) + " failed run(s) set aside — " + s.QueueOnly[0].Why
+		}
 		return s
 	}
 	s.Red, s.Latest = reds[0], verdicts[0]
@@ -874,6 +1126,18 @@ func (s CIState) Description() string {
 	}
 	fmt.Fprintf(&b, "  red now      %s  %s  %s\n", s.Latest.Short(), s.Latest.Created.UTC().Format(time.RFC3339), s.Latest.URL)
 	fmt.Fprintf(&b, "  %s %s  %s  %s\n\n", since, s.Since.Short(), s.Since.Created.UTC().Format(time.RFC3339), s.Since.URL)
+	// The set-aside runs, when there are any, because the Reproduce block
+	// below tells a seat to run `gh run list` and that listing is topped by
+	// them: a newer `failure` than the one this bead names, which a reader
+	// would otherwise take as this bead being out of date
+	// (ranger-base-rdi79).
+	if n := len(s.QueueOnly); n > 0 {
+		fmt.Fprintf(&b, "SET ASIDE (%d), newer than the run above and not a verdict: their failure is GitHub's queue and not this branch, so `gh run list` is topped by a red run this bead is deliberately not about.\n\n", n)
+		for _, qo := range s.QueueOnly {
+			fmt.Fprintf(&b, "  %s  %s  %s\n      %s\n", qo.Run.Short(), qo.Run.Created.UTC().Format(time.RFC3339), qo.Run.URL, qo.Why)
+		}
+		b.WriteString("\n")
+	}
 	fmt.Fprintf(&b, "Reproduce:\n\n  gh run list --repo %s --workflow=%s --branch %s --limit %d --json conclusion,status,createdAt,headSha,url\n  gh run view %s --repo %s --log-failed\n\n",
 		s.Slug, s.Workflow, s.Branch, ciScanLimit, s.Latest.Short(), s.Slug)
 	b.WriteString("DONE WHEN: " + s.Workflow + " is green on " + s.Branch + " again. Filed by the dispatch pass (ci-watch, ranger-base-x9e34), which will COMMENT here naming the run that clears the gate — including where the fix lands under some other bead. If NOBODY HAS CLAIMED this bead by then it closes it too, which is the one exception ADR 0013 §4 admits (ranger-base-8fr2j): nobody's record is graded by a bead nobody was dispatched onto. Once you claim it the close is yours again, and finding that comment already here means the work is done and closing this bead is the whole of what is left.\n")

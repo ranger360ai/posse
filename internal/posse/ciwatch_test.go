@@ -60,6 +60,22 @@ func fakeGh(args []string) int {
 		fmt.Print(string(b))
 		return 0
 	}
+	// `api repos/<slug>/actions/runs/<id>/jobs?...` is the third call, the
+	// job-level vet's (ciJobsSayQueue, ranger-base-rdi79), answered from a
+	// per-id fixture (fake-gh-jobs-<id>.json) for the same reason the log
+	// fixture is per-id. Missing is a page gh could not be asked for —
+	// exit 1 — which must leave the run RED rather than set it aside, so
+	// every reading test in this file that names a `failure` with no jobs
+	// fixture goes on reading red.
+	if len(args) >= 2 && args[0] == "api" {
+		b, err := os.ReadFile(filepath.Join(fakeDir(), "fake-gh-jobs-"+ciRunID(args[1])+".json"))
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "no jobs fixture for %s", args[1])
+			return 1
+		}
+		fmt.Print(string(b))
+		return 0
+	}
 	if b, err := os.ReadFile(filepath.Join(fakeDir(), "fake-gh-runs.json")); err == nil {
 		fmt.Print(string(b))
 	} else {
@@ -81,6 +97,46 @@ func ciRunJSON(sha, status, conclusion string, at time.Time) string {
 func ciRunJSONID(sha, status, conclusion string, at time.Time, id string) string {
 	return fmt.Sprintf(`{"headSha":%q,"status":%q,"conclusion":%q,"createdAt":%q,"url":"https://github.com/o/n/actions/runs/%s"}`,
 		sha, status, conclusion, at.UTC().Format(time.RFC3339), id)
+}
+
+// writeGhJobs plants the fixture fakeGh serves for the job-level vet's
+// `gh api .../runs/<id>/jobs` — the whole envelope, so a test can drive a
+// PAGINATED page (total_count past the rows) as easily as a complete one.
+func writeGhJobs(t *testing.T, id, body string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(fakeDirOf(t), "fake-gh-jobs-"+id+".json"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// ciJobJSON is one row of that page: name, conclusion, how many steps it
+// executed, and the runner it held. Zero steps and an empty runner is a job
+// that never started, which is the whole discriminator.
+func ciJobJSON(name, conclusion string, steps int, runner string) string {
+	st := make([]string, steps)
+	for i := range st {
+		st[i] = fmt.Sprintf(`{"number":%d,"conclusion":"success"}`, i+1)
+	}
+	return fmt.Sprintf(`{"name":%q,"status":"completed","conclusion":%q,"runner_name":%q,"steps":[%s]}`,
+		name, conclusion, runner, strings.Join(st, ","))
+}
+
+// ciJobsJSON wraps rows in the envelope with an honest total_count.
+func ciJobsJSON(jobs ...string) string {
+	return fmt.Sprintf(`{"total_count":%d,"jobs":[%s]}`, len(jobs), strings.Join(jobs, ","))
+}
+
+// ciPhantomJobsJSON is the incident's own run (37362765576): five greens
+// that ran eleven steps each, and one job that never got a runner.
+func ciPhantomJobsJSON() string {
+	return ciJobsJSON(
+		ciJobJSON("test (macos-latest, 1)", "success", 11, "GitHub Actions 1"),
+		ciJobJSON("test (macos-latest, 2)", "success", 11, "GitHub Actions 2"),
+		ciJobJSON("test (macos-latest, 3)", "success", 11, "GitHub Actions 3"),
+		ciJobJSON("test (ubuntu-latest, 1)", "success", 11, "GitHub Actions 4"),
+		ciJobJSON("test (ubuntu-latest, 2)", "success", 11, "GitHub Actions 5"),
+		ciJobJSON("test (ubuntu-latest, 3)", "cancelled", 0, ""),
+	)
 }
 
 // ghRepo builds a checkout ReadCI will accept — a git repo with a github.com
@@ -124,6 +180,21 @@ func ghRepo(t *testing.T, workflow string, runs ...string) (dir, ghbin string) {
 	return dir, ghbin
 }
 
+// ghJobsCalls counts the job-level vet's children. The verb is matched at
+// the HEAD of the logged argv line and not as a bare substring: `api` is
+// three letters that also sit inside the repo slug and inside the query
+// string, and a substring count of it read 0 where the log held three.
+func ghJobsCalls(t *testing.T) int {
+	t.Helper()
+	n := 0
+	for _, l := range strings.Split(ghCalls(t), "\n") {
+		if strings.HasPrefix(l, "api ") {
+			n++
+		}
+	}
+	return n
+}
+
 func ghCalls(t *testing.T) string {
 	t.Helper()
 	b, _ := os.ReadFile(filepath.Join(fakeDirOf(t), "gh-calls.log"))
@@ -156,6 +227,298 @@ func TestCIVerdictSkipsEverythingThatIsNotAStatementAboutTheBranch(t *testing.T)
 		red, ok := ciVerdict(c.status, c.conclusion)
 		if red != c.red || ok != c.ok {
 			t.Errorf("ciVerdict(%q,%q) = (%v,%v), want (%v,%v)", c.status, c.conclusion, red, ok, c.red, c.ok)
+		}
+	}
+}
+
+// ─── the job-level vet (ranger-base-rdi79) ───────────────────────────────────
+
+// THE RULE, as a table over jobs pages. A `failure` is demoted to "not a
+// verdict" only on POSITIVE evidence that nothing of it ran, and every other
+// answer leaves the run red — the direction that matters, because a
+// suppressed genuine red is this file's founding incident (191 reds over
+// five days, nobody looked) and leaves no trace anywhere, while a false P1
+// leaves a bead behind saying so.
+func TestCIJobsSayQueueDemandsPositiveEvidence(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		name string
+		page string
+		want bool
+	}{
+		// The episode itself: five greens and one job that never got a
+		// runner (run 37362765576, 2026-10-05).
+		{"the incident's own run", ciPhantomJobsJSON(), true},
+		// A real red, which is all 55 failures in the measured window.
+		{"a job that failed", ciJobsJSON(
+			ciJobJSON("test (ubuntu-latest, 3)", "failure", 11, "GitHub Actions 1"),
+			ciJobJSON("test (macos-latest, 1)", "success", 11, "GitHub Actions 2"),
+		), false},
+		// A real red beside a phantom: something DID fail, so the run is a
+		// verdict whatever else is on the page.
+		{"a job that failed beside one that never started", ciJobsJSON(
+			ciJobJSON("test (ubuntu-latest, 3)", "failure", 11, "GitHub Actions 1"),
+			ciJobJSON("test (macos-latest, 1)", "cancelled", 0, ""),
+		), false},
+		{"a job that timed out", ciJobsJSON(
+			ciJobJSON("test", "timed_out", 7, "GitHub Actions 1"),
+			ciJobJSON("other", "cancelled", 0, ""),
+		), false},
+		{"a job that could not start", ciJobsJSON(
+			ciJobJSON("test", "startup_failure", 0, ""),
+			ciJobJSON("other", "cancelled", 0, ""),
+		), false},
+		// Cancelled, but it was RUNNING: stopped after doing work is not a
+		// job that never started, and this rule does not claim to know what
+		// it means.
+		{"cancelled with steps behind it", ciJobsJSON(
+			ciJobJSON("test (macos-latest, 1)", "success", 11, "GitHub Actions 1"),
+			ciJobJSON("test (ubuntu-latest, 3)", "cancelled", 4, "GitHub Actions 2"),
+		), false},
+		{"cancelled holding a runner", ciJobsJSON(
+			ciJobJSON("test (macos-latest, 1)", "success", 11, "GitHub Actions 1"),
+			ciJobJSON("test (ubuntu-latest, 3)", "cancelled", 0, "GitHub Actions 2"),
+		), false},
+		// A skipped job is nobody's cause, and a phantom beside it still
+		// demotes.
+		{"skipped beside one that never started", ciJobsJSON(
+			ciJobJSON("lint", "skipped", 0, ""),
+			ciJobJSON("test (ubuntu-latest, 3)", "cancelled", 0, ""),
+		), true},
+		// The run says failure and no job accounts for it. That is a
+		// disagreement with GitHub about its own run, and the reading that
+		// does not suppress is the honest one.
+		{"a failure no job accounts for", ciJobsJSON(
+			ciJobJSON("test (macos-latest, 1)", "success", 11, "GitHub Actions 1"),
+		), false},
+		{"an empty page", `{"total_count":0,"jobs":[]}`, false},
+		{"junk", `{}`, false},
+		// Paginated: the jobs this did not get could each be the red one.
+		{"a page gh paginated", `{"total_count":7,"jobs":[` +
+			ciJobJSON("test (ubuntu-latest, 3)", "cancelled", 0, "") + `]}`, false},
+		// Still running, so nothing about it is concluded yet.
+		{"a job that has not finished", `{"total_count":2,"jobs":[` +
+			ciJobJSON("test (macos-latest, 1)", "success", 11, "GitHub Actions 1") + `,` +
+			`{"name":"test (ubuntu-latest, 3)","status":"in_progress","conclusion":null,"runner_name":"","steps":[]}]}`, false},
+		{"a conclusion nobody here has seen", ciJobsJSON(
+			ciJobJSON("test", "action_required", 0, ""),
+		), false},
+	} {
+		var page ciJobsPage
+		if err := json.Unmarshal([]byte(c.page), &page); err != nil {
+			t.Fatalf("%s: fixture is not JSON: %v", c.name, err)
+		}
+		why, got := ciJobsSayQueue(page)
+		if got != c.want {
+			t.Errorf("%s: ciJobsSayQueue = %v (%q), want %v", c.name, got, why, c.want)
+		}
+		if got && why == "" {
+			t.Errorf("%s: set aside with no evidence stated", c.name)
+		}
+		if !got && why != "" {
+			t.Errorf("%s: not set aside but said %q", c.name, why)
+		}
+	}
+}
+
+// THE EPISODE, end to end through the shipped argv: a page topped by the
+// run that filed the false P1 reads GREEN, because the newest run with a
+// verdict is the success under it.
+func TestReadCISetsAsideAFailedRunWhoseRedJobNeverRan(t *testing.T) {
+	t.Parallel()
+	base := time.Date(2026, 10, 5, 19, 21, 0, 0, time.UTC)
+	dir, bin := ghRepo(t, "ci.yml",
+		ciRunJSONID("bab60e51", "completed", "failure", base, "9001"),
+		ciRunJSONID("f5ccb1a8", "completed", "success", base.Add(-time.Hour), "9000"),
+	)
+	writeGhJobs(t, "9001", ciPhantomJobsJSON())
+	st := ReadCI(CIQuery{Dir: dir, Workflow: "ci.yml", GhBin: bin})
+	if !st.Known() {
+		t.Fatalf("not read: %s", st.Why)
+	}
+	if st.Red {
+		t.Errorf("red off a run whose only non-success job never started — latest %q", st.Latest.Short())
+	}
+	if st.Latest.Short() != "f5ccb1a8" {
+		t.Errorf("latest = %q, want the newest run that actually carries a verdict", st.Latest.Short())
+	}
+	if len(st.QueueOnly) != 1 || st.QueueOnly[0].Run.Short() != "bab60e51" {
+		t.Fatalf("QueueOnly = %+v, want the one run it set aside", st.QueueOnly)
+	}
+	if why := st.QueueOnly[0].Why; !strings.Contains(why, "never started") || !strings.Contains(why, "test (ubuntu-latest, 3)") {
+		t.Errorf("the set-aside reason does not name the job or the evidence: %q", why)
+	}
+	// A run it set aside is not a verdict, so it is not in the streak it
+	// was never part of.
+	if st.Streak != 1 {
+		t.Errorf("streak = %d, want 1", st.Streak)
+	}
+	// And the argv is the documented one.
+	if got := ghCalls(t); !strings.Contains(got, "api repos/ranger360ai/posse/actions/runs/9001/jobs?per_page=100") {
+		t.Errorf("gh argv did not ask the documented jobs query:\n%s", got)
+	}
+	if got := ghCalls(t); strings.Contains(got, "filter=all") {
+		t.Errorf("asked for every attempt's jobs, not the latest run attempt's:\n%s", got)
+	}
+}
+
+// And a run that really did fail is untouched — which is all 55 failures in
+// the measured 300-run window, so the red half of this gate reads exactly
+// as it did before the vet existed.
+func TestReadCIKeepsAFailedRunWhoseJobActuallyFailed(t *testing.T) {
+	t.Parallel()
+	base := time.Date(2026, 10, 5, 19, 21, 0, 0, time.UTC)
+	dir, bin := ghRepo(t, "ci.yml",
+		ciRunJSONID("bab60e51", "completed", "failure", base, "9001"),
+		ciRunJSONID("f5ccb1a8", "completed", "success", base.Add(-time.Hour), "9000"),
+	)
+	writeGhJobs(t, "9001", ciJobsJSON(
+		ciJobJSON("test (ubuntu-latest, 3)", "failure", 11, "GitHub Actions 1"),
+		ciJobJSON("test (macos-latest, 1)", "success", 11, "GitHub Actions 2"),
+	))
+	st := ReadCI(CIQuery{Dir: dir, Workflow: "ci.yml", GhBin: bin})
+	if !st.Known() {
+		t.Fatalf("not read: %s", st.Why)
+	}
+	if !st.Red || st.Latest.Short() != "bab60e51" {
+		t.Errorf("red=%v latest=%q, want the failure to stand", st.Red, st.Latest.Short())
+	}
+	if len(st.QueueOnly) != 0 {
+		t.Errorf("set aside a real red: %+v", st.QueueOnly)
+	}
+}
+
+// A jobs page this could not read leaves the run RED. The vet only ever
+// demotes on evidence, so no network, no auth and no such run all read as
+// the reading this file took before it existed.
+func TestReadCIKeepsTheRedWhenTheJobsPageCannotBeRead(t *testing.T) {
+	t.Parallel()
+	base := time.Date(2026, 10, 5, 19, 21, 0, 0, time.UTC)
+	for _, c := range []struct{ name, jobs string }{
+		{"no answer at all", ""}, // no fixture: the fake gh exits 1
+		{"not the JSON asked for", "<html>404</html>"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			dir, bin := ghRepo(t, "ci.yml",
+				ciRunJSONID("bab60e51", "completed", "failure", base, "9001"),
+				ciRunJSONID("f5ccb1a8", "completed", "success", base.Add(-time.Hour), "9000"),
+			)
+			if c.jobs != "" {
+				writeGhJobs(t, "9001", c.jobs)
+			}
+			st := ReadCI(CIQuery{Dir: dir, Workflow: "ci.yml", GhBin: bin})
+			if !st.Known() {
+				t.Fatalf("not read: %s", st.Why)
+			}
+			if !st.Red || len(st.QueueOnly) != 0 {
+				t.Errorf("red=%v queueOnly=%+v, want the failure to stand", st.Red, st.QueueOnly)
+			}
+		})
+	}
+}
+
+// THE COST, which is the reason the vet sits at the head of the page: a
+// green pass forks no second child, and neither does a run GitHub stopped —
+// the extra call is paid only by a reading that is about to FILE.
+func TestReadCIAsksForJobsOnlyWhenAFailureIsAboutToBeTheVerdict(t *testing.T) {
+	t.Parallel()
+	base := time.Date(2026, 10, 5, 19, 21, 0, 0, time.UTC)
+	for _, c := range []struct{ name, conclusion string }{
+		{"a green pass", "success"},
+		{"a run GitHub stopped", "cancelled"},
+		{"a run that timed out", "timed_out"},
+		{"a run that could not start", "startup_failure"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			dir, bin := ghRepo(t, "ci.yml",
+				ciRunJSONID("bab60e51", "completed", c.conclusion, base, "9001"),
+				ciRunJSONID("f5ccb1a8", "completed", "success", base.Add(-time.Hour), "9000"),
+			)
+			ReadCI(CIQuery{Dir: dir, Workflow: "ci.yml", GhBin: bin})
+			if n := ghJobsCalls(t); n != 0 {
+				t.Errorf("%d jobs calls over %s:\n%s", n, c.name, ghCalls(t))
+			}
+		})
+	}
+}
+
+// AND IT IS BOUNDED. A page topped by phantom after phantom is a queue
+// broken for everybody, not a fact about this branch, and it must not put
+// one gh child per run of the window on a dispatch pass. Past ciJobsVetCap
+// the run stands as gh reported it — and the cap counts the CALLS, which is
+// what costs, so a page of nothing but phantoms forks exactly as many
+// children as a page whose first unvetted run stands.
+func TestReadCIVetsAtMostTheCapAndOnlyAtTheHead(t *testing.T) {
+	t.Parallel()
+	base := time.Date(2026, 10, 5, 19, 21, 0, 0, time.UTC)
+	var rows []string
+	for i := 0; i <= ciJobsVetCap; i++ {
+		rows = append(rows, ciRunJSONID(fmt.Sprintf("sha%05d", i), "completed", "failure",
+			base.Add(-time.Duration(i)*time.Hour), strconv.Itoa(9000+i)))
+	}
+	rows = append(rows, ciRunJSONID("green000", "completed", "success", base.Add(-100*time.Hour), "8999"))
+	dir, bin := ghRepo(t, "ci.yml", rows...)
+	for i := 0; i <= ciJobsVetCap; i++ {
+		writeGhJobs(t, strconv.Itoa(9000+i), ciPhantomJobsJSON())
+	}
+	st := ReadCI(CIQuery{Dir: dir, Workflow: "ci.yml", GhBin: bin})
+	if !st.Known() {
+		t.Fatalf("not read: %s", st.Why)
+	}
+	if n := ghJobsCalls(t); n != ciJobsVetCap {
+		t.Errorf("%d jobs calls, want ciJobsVetCap=%d:\n%s", n, ciJobsVetCap, ghCalls(t))
+	}
+	if len(st.QueueOnly) != ciJobsVetCap {
+		t.Errorf("set aside %d, want ciJobsVetCap=%d", len(st.QueueOnly), ciJobsVetCap)
+	}
+	if !st.Red {
+		t.Errorf("green past the cap: the run that was never vetted must stand as gh reported it")
+	}
+	if want := fmt.Sprintf("sha%05d", ciJobsVetCap); st.Latest.Short() != want {
+		t.Errorf("latest = %q, want %q — the first run past the cap", st.Latest.Short(), want)
+	}
+}
+
+// A window holding NOTHING but runs that never ran is the could-not-READ
+// abstention, not a green pass: there is no verdict in it either way, and
+// the next completed run clears it.
+func TestReadCIAbstainsWhenEveryRunItCanSeeNeverRan(t *testing.T) {
+	t.Parallel()
+	base := time.Date(2026, 10, 5, 19, 21, 0, 0, time.UTC)
+	dir, bin := ghRepo(t, "ci.yml", ciRunJSONID("bab60e51", "completed", "failure", base, "9001"))
+	writeGhJobs(t, "9001", ciPhantomJobsJSON())
+	st := ReadCI(CIQuery{Dir: dir, Workflow: "ci.yml", GhBin: bin})
+	if st.Known() {
+		t.Fatalf("read a verdict off a window with none in it: red=%v latest=%q", st.Red, st.Latest.Short())
+	}
+	if !strings.Contains(st.Why, "set aside") || !strings.Contains(st.Why, "never started") {
+		t.Errorf("why = %q, want it to name what it set aside and why", st.Why)
+	}
+	if st.NoGate {
+		t.Error("NoGate: this repo HAS a gate, and a pass that cannot read one says so")
+	}
+}
+
+// A bead filed while a phantom sits ABOVE the verdict names it, because the
+// bead's own Reproduce block sends a seat to a `gh run list` topped by a red
+// run the bead is deliberately not about.
+func TestCIDescriptionNamesTheRunsItSetAside(t *testing.T) {
+	t.Parallel()
+	st := redState(1)
+	if d := st.Description(); strings.Contains(d, "SET ASIDE") {
+		t.Fatalf("an ordinary bead carries the set-aside block:\n%s", d)
+	}
+	st.QueueOnly = []CIQueueOnly{{
+		Run: CIRun{Sha: "bab60e51c0", URL: "https://x/9001", Conclusion: "failure",
+			Created: time.Date(2026, 10, 5, 19, 21, 0, 0, time.UTC)},
+		Why: "the run says failure but no job failed: test (ubuntu-latest, 3) never started",
+	}}
+	d := st.Description()
+	for _, want := range []string{"SET ASIDE (1)", "bab60e51", "https://x/9001", "never started"} {
+		if !strings.Contains(d, want) {
+			t.Errorf("description missing %q:\n%s", want, d)
 		}
 	}
 }
@@ -862,6 +1225,56 @@ func TestCIWatchFilesNothingOffAStalePageAndStillFilesOffACurrentOne(t *testing.
 	}
 	if !strings.Contains(out, "ci red ·") {
 		t.Errorf("the filing pass said %q", out)
+	}
+	if n := cwCount(t, "create"); n != 1 {
+		t.Errorf("%d creates, want 1", n)
+	}
+}
+
+// THE WHOLE COST OF THE EPISODE, at the pass: no bead, no dispatched
+// session, nothing on stderr — and then a real red through the same path
+// files one. The vet lives in the READING, so a pinned CIState would pin
+// nothing about it (the stale-page pin's rule).
+func TestCIWatchFilesNothingOverAFailureWhoseRedJobNeverRanAndStillFilesARealOne(t *testing.T) {
+	t.Parallel()
+	b, _ := newTestBackend(t)
+	a := b.App
+	dir, bin := ghRepo(t, "ci.yml")
+	if err := os.WriteFile(a.ConfigPath, []byte("beads:\n  - "+dir+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	a.CIRead = func(q CIQuery) CIState { q.GhBin = bin; return ReadCI(q) }
+	bd := testBd(t)
+	at := time.Date(2026, 10, 5, 19, 21, 0, 0, time.UTC)
+
+	// The episode: one `failure` whose only non-success job never started,
+	// over a green run. This filed ranger-base-94grm at P1.
+	ciPage(t,
+		ciRunJSONID("bab60e51", "completed", "failure", at, "9001"),
+		ciRunJSONID("f5ccb1a8", "completed", "success", at.Add(-time.Hour), "9000"),
+	)
+	writeGhJobs(t, "9001", ciPhantomJobsJSON())
+	acted, out, errs := cwRun(t, a, bd)
+	if acted != 0 || cwSay(out) != "" {
+		t.Fatalf("acted %d and said %q over a job that never ran, want neither", acted, cwSay(out))
+	}
+	if n := cwCount(t, "create"); n != 0 {
+		t.Fatalf("%d beads filed over a run nothing failed in, want 0", n)
+	}
+	if errs != "" {
+		// A run with no verdict is skipped, exactly as a cancelled run is,
+		// and a skipped run has never printed anything.
+		t.Errorf("stderr = %q over a green branch, want silence", errs)
+	}
+
+	// Same page, same run id, but the job really failed: the bead is filed.
+	writeGhJobs(t, "9001", ciJobsJSON(
+		ciJobJSON("test (ubuntu-latest, 3)", "failure", 11, "GitHub Actions 1"),
+		ciJobJSON("test (macos-latest, 1)", "success", 11, "GitHub Actions 2"),
+	))
+	acted, out, errs = cwRun(t, a, bd)
+	if acted != 1 {
+		t.Fatalf("a REAL red acted %d, want 1 — stdout %q stderr %q", acted, out, errs)
 	}
 	if n := cwCount(t, "create"); n != 1 {
 		t.Errorf("%d creates, want 1", n)
