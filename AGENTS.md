@@ -316,7 +316,7 @@ bd sync               # Sync with git
   make adr-check       ~1.5s   ADR citations resolve, exemptions name real files
   make corpus-check      ~4s   censuses over this repo's own .go and test sources
   make register-check   ~20s   the register itself: every tree-wide pin has a door
-  make scripts-check   ~0.9s   censuses over scripts/
+  make scripts-check   ~0.9s   censuses over scripts/, and verify-* targets vs the box roster
   make pid-check        ~10s   the shipped PIDs under examples/agents/
   ```
 

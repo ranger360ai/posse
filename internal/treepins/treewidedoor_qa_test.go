@@ -159,30 +159,44 @@ package treepins
 //	TestQABoxCheckCensusCoversEveryVerifyScript   make scripts-check ~0.9s
 //	TestQANoAssertionArmDecidesThroughAForkedMatcher
 //	                                              make scripts-check
+//	TestQABoxCheckCensusCoversEveryVerifyTarget   make scripts-check
+//	                                              (ranger-base-hrf47)
 //	TestShippedPIDsCarryTheNarrowedHookRows       make pid-check      ~10s
 //	TestShippedPIDsLetBeadsOwnHooksRun            make pid-check
 //
-// (The last two rows of register-check are the register's own arms, which no
-// rule derives because they read the Makefile rather than the tree — they
-// are the one exemption from the two-way check, listed with their reasons in
-// twdDoorHolders.)
+// (Three of those rows are exempt from the two-way check, listed with their
+// reasons in twdDoorHolders, all three for the same cause: they read the
+// MAKEFILE by name rather than enumerating the tree, and
+// `os.ReadFile("Makefile")` is the enumeration rule's own negative case. Two
+// are the last two rows of register-check — the register's own arms. The
+// third is the scripts-check row ranger-base-hrf47 added, and it is the one
+// worth reading, because it is not this register inspecting itself: it
+// censuses the Makefile's verify-* targets against the roster and EXCLUDED
+// table of scripts/verify-box.sh. Nothing about reading two files by name
+// makes a pin reachable — an unrelated bead adding a verify-* target reds it
+// just as a tree walk would, and for as long as it sat behind no door the
+// only thing that said so was an unfiltered 589.965s run of this package.
+// Its derived sibling three rows up globs scripts/, so scripts-check was
+// green over it the whole time. A pin whose file set is spelled is not the
+// same as a pin only its own bead can red, and the door is what closes that
+// gap — not the rule.)
 //
-// and `make tree-check` is all of them — 53-75s on this box over three
-// warm runs at fifty-two pins and fourteen doors — which is the command a
+// and `make tree-check` is all of them — 46-51s on this box over three
+// warm runs at fifty-three pins and fourteen doors — which is the command a
 // seat types after a filtered run. (It was 14.9-16.5s over twenty-three pins
 // behind eight doors, before ranger-base-g6sb1 found a second package;
 // 15-43s at twenty-two, 12-27s under
 // ranger-base-8dnuy, and 40-46s at a smaller class before that. Re-measured
 // whenever the class changes — under ranger-base-xrdb0, and again under
 // ranger-base-ecchw, and again under ranger-base-vofbl, and again under
-// ranger-base-nnnf1 — because the
+// ranger-base-nnnf1, and again under ranger-base-yrag8 — because the
 // sentence a seat prices the command from
 // should not quote a run of a class it did not run; and stated without a
 // second numeral, deliberately: a historical count in this comment is
 // invisible to arm 4's one-claim rule, which is ranger-base-erqvh row 2. The
 // seconds are NOT pinned — an elapsed-seconds red belongs to the box, per
 // the `test` target's own note, and a warm build cache is most of this
-// spread — but they are measured, not carried. ALL THREE 2026-10-04 readings
+// spread — but they are measured, not carried. ALL FOUR 2026-10-04 readings
 // say the spread is the box and not the cache. ranger-base-g6sb1 read 46.5-77.2s
 // over three warm runs at forty-nine pins, the one-minute load average going
 // 8.9 -> 23.8 across them with a sibling seat holding a suite slot
@@ -192,9 +206,21 @@ package treepins
 // moved between the two readings was the box. ranger-base-nnnf1 read 53-75s
 // at fifty-two, three warm runs with the one-minute load average falling
 // 24.2 -> 8.6 across them and the slowest run the one at the top of that
-// fall; the pin it added costs 0.07s. Cold, with internal/treepins' test
-// binary to compile as well as internal/posse's, the same command read
-// 92.6s.)
+// fall; the pin it added costs 0.07s. ranger-base-hrf47 read 55.34s, 99.78s
+// and 69.69s at the same count on the same day — it and nnnf1 each added one
+// row to this enumeration in parallel and neither saw the other's — at a
+// one-minute load average of 9.11, 8.36 and 25.06, with a sibling seat
+// holding one of the two suite slots throughout; its one added pin costs
+// 0.03s. The live seconds are ranger-base-yrag8's, which merged those two
+// rows back together and re-read the command over the class they make: 51s,
+// 46s and 48s, three warm runs with BOTH suite slots free throughout and a
+// one-minute load average of 4.4 before the first and 9.1, 7.5 and 6.6 after
+// each. That is the quiet end of every range above, read at the largest class
+// yet, which is the same conclusion from the other side: the readings that
+// ran wide ran beside somebody. So a seat pricing the command from the low end
+// of any of these is reading a quiet box, and the high end is what it costs
+// beside someone else's suite. Cold, with internal/treepins' test binary to
+// compile as well as internal/posse's, the same command read 92.6s.)
 //
 // THAT SENTENCE IS THE ONLY LIVE COUNT IN THIS FILE, and arm 4 holds it to
 // the Makefile, both numerals and the enumeration above it. It read seventeen
@@ -1259,6 +1285,19 @@ var twdExecDispositions = map[string]string{
 var twdDoorHolders = map[string]string{
 	"TestQAEveryTreepinsDoorFilterNamesItsPins":            "asks what make's expansion of each internal/treepins door filter selects; it reads the Makefile and runs `go test -list`",
 	"TestQATheHeadCommentsPinAndDoorCountsAreTheMakefiles": "arm 4 — holds this file's head comment to the Makefile's own pin and door counts; it reads the Makefile and this file",
+	// ranger-base-hrf47. The third exemption, and the first that is not one of
+	// this register's own arms: it censuses every verify-* target in the
+	// Makefile against the roster and EXCLUDED table of scripts/verify-box.sh,
+	// reading those two files BY NAME. So the enumeration rule cannot see it
+	// (`os.ReadFile("Makefile")` is the rule's own negative case — see
+	// TestQATheTreepinsEnumerationRuleMatchesWhatItClaims), while the thing
+	// that makes it tree-wide in the sense the class means is unaffected: an
+	// unrelated bead adding a verify-* target reds it, and until this row
+	// existed nothing but an unfiltered 589.965s package run would say so. Its
+	// sibling in the same file IS derived, because that one globs scripts/ —
+	// so scripts-check went green over this one for as long as both existed
+	// (the escape ranger-base-hrf47 was filed for).
+	"TestQABoxCheckCensusCoversEveryVerifyTarget": "censuses the Makefile's verify-* targets against the roster and EXCLUDED table of scripts/verify-box.sh; it reads those two files by name and enumerates nothing",
 }
 
 // twdTreepinsTreeWideTests returns the tests in internal/treepins whose

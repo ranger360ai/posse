@@ -581,7 +581,7 @@ QA_NOTES_PINS     := TestNotesFragmentIndexIsCurrent
 QA_ADR_PINS       := TestADRCitedGoFilesResolveOrAreDeclared|TestADRCitationCheckCanFail|TestADRCitationDeclarationsExemptOnlyWhatTheyDeclare|TestADRCitationCorpusReadsTheExecutableSupplements|TestADR0015NamesTheHookCommitPinAndItDoesWhatItSays
 QA_CORPUS_PINS    := TestQAFixtureRuntimeExesResolveToNothingOnThisBox|TestQATheGofmtDoorReachesEveryGoFile|TestQAEveryGitInitInThePosseTestsSitsOnATolerantRoot|TestQATheTolerantTempDirWrapperCompilesInEveryArm|TestQANoMakefilePrereqLineReadAsBytesOutsideMkPrereqs|TestQAParallelClearanceDoesNotWaiveAReasonNobodyCleared|TestNoUnswappedInternalRhqCommentsOutsideFrozenRecords|TestRhqLeftoverExemptionsStillNameRealLines
 QA_REGISTER_PINS  := TestQAEveryTreeWidePinHasADoor|TestQAOneRepoRootHelperInTheTestPackage|TestQATheTreeWideDoorsReportRealDrift|TestQAMakeTestOpensTheTreeWideDoors|TestQAEveryTrackedProgramATreePinRunsIsDispositioned|TestQATheTreepinsEnumerationRuleMatchesWhatItClaims|TestQAEveryTreepinsDoorFilterNamesItsPins|TestQATheHeadCommentsPinAndDoorCountsAreTheMakefiles
-QA_SCRIPTS_PINS   := TestQABoxCheckCensusCoversEveryVerifyScript|TestQANoAssertionArmDecidesThroughAForkedMatcher
+QA_SCRIPTS_PINS   := TestQABoxCheckCensusCoversEveryVerifyTarget|TestQABoxCheckCensusCoversEveryVerifyScript|TestQANoAssertionArmDecidesThroughAForkedMatcher
 QA_PID_PINS       := TestShippedPIDsCarryTheNarrowedHookRows|TestShippedPIDsLetBeadsOwnHooksRun
 
 # The crew-name trio, one door between them because they are one question —
@@ -723,7 +723,17 @@ register-check:
 
 # scripts/: the box-check census over every verify-*.sh, and the self-test
 # fork-arm census over every *.sh. ~0.9s.
-# Type it when you add or rename anything under scripts/.
+# Type it when you add or rename anything under scripts/ -- AND when you add or
+# rename a verify-* TARGET in this file, which is the third pin here
+# (ranger-base-hrf47). That one censuses the other direction of the same
+# question: every verify-* target in this Makefile is on the roster of
+# scripts/verify-box.sh or in its EXCLUDED table with a reason. It reads two
+# files by name and enumerates nothing, so no class rule derives it and it sat
+# behind no door for as long as it existed -- a target added without its row
+# reddened only an unfiltered 589.965s run of ./internal/treepins, which is the
+# gap ranger-base-rulbl named (that bead wrote no fragment -- its prose is the
+# AGENTS.md bullet "A `-run` filter cannot reach a tree-wide pin"). Its
+# door-holder row and its reason are in twdDoorHolders.
 scripts-check:
 	$(GOBIN) test ./internal/treepins -timeout 15m -count=1 -run '^($(QA_SCRIPTS_PINS))$$'
 
