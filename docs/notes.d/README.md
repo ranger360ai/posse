@@ -20,6 +20,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-eawjq](ranger-base-eawjq.md) — Replaying a TWO-commit merge-back: every commit needs its own twin (ranger-base-eawjq) — 2026-10-04
 - [ranger-base-dpvlh](ranger-base-dpvlh.md) — ranger-base-dpvlh — a merge-back of a DERIVED gate has to re-run the gate — 2026-10-04
 - [ranger-base-d1hax](ranger-base-d1hax.md) — A door with two arms needed two classifications, and the roster can only hold a one-line recipe (ranger-base-d1hax) — 2026-10-04
+- [ranger-base-cu0zg](ranger-base-cu0zg.md) — A pin on a helper is not a pin on its call sites (ranger-base-cu0zg) — 2026-10-04
 - [ranger-base-aza46](ranger-base-aza46.md) — A three-commit merge-back where two twins land no part of the conflicted file (ranger-base-aza46) — 2026-10-04
 - [ranger-base-7zng1](ranger-base-7zng1.md) — The heaviest named-package run on the box took no suite slot (ranger-base-7zng1) — 2026-10-04
 - [ranger-base-76gc4](ranger-base-76gc4.md) — The D3 record carries the screen now, and three things the design named had to be re-measured (ranger-base-76gc4) — 2026-10-04
