@@ -23,6 +23,11 @@ package posse
 // construction, and arm 1 fails outright rather than passing if that stops
 // being true.
 //
+// ARMS 6 AND 7 ARE ranger-base-h9925, the escape ranger-base-cu0zg's verify
+// found in this file: arms 1-5 pin the capture's HELPER and neither of the two
+// dispatch call sites that take it. They are at the bottom, under their own
+// banner, and the same fixture serves all seven.
+//
 // NOT PINNED HERE, deliberately: the ceiling. redactRegions is keyed on no
 // region name at all, and TestQAReadingsLogRedactsCeilingContentBeforeWrite
 // already measures it over the regions a record carries — a second copy
@@ -358,5 +363,125 @@ func TestQAD3ADryRunPassSpendsNoCaptureItWillNotWrite(t *testing.T) {
 	shot, ok := Reading{Herdr: ev}.ReadingRegionOf(PaneCaptureRegion)
 	if !ok || !strings.Contains(shot.Text, d3Heading) {
 		t.Fatalf("a live pass took no capture (ok=%v) — the dry-run arm above measures nothing if this does not read", ok)
+	}
+}
+
+// ─── ranger-base-h9925: the two DISPATCH sites, not the helper ───────────────
+
+// Arms 6 and 7 pin the WIRING, which arms 1-5 do not reach: arms 1-4 drive
+// the HAND path (AwaitPromptable, logUnrecognized) and arm 5 calls
+// d3Evidence directly, so the helper was pinned four ways and its two
+// dispatch call sites no ways at all. MEASURED 2026-10-04 (ranger-base-cu0zg,
+// docs/notes.d/ranger-base-cu0zg.md): either site reverted to
+// `ReadingEvidenceOf(lastGuess)` left all five arms green, and BOTH reverted
+// at once — zero d3Evidence callers left in dispatch.go — reddened nothing in
+// the tree.
+//
+// These are the sites that fire under `--watch`, where nobody is reading the
+// refusal line and the record is the only reader there will ever be. One arm
+// per site, each driving the real consequence rather than the helper, so each
+// one reds on its own site alone.
+
+// d3Pane makes the session addressable the way a launch leaves it: a
+// workspace row under the label and an agent in its pane, which is what
+// awaitTarget polls for. Arms 1-5 take a target as an argument and never
+// needed it.
+func d3Pane(t *testing.T, fake, session string) {
+	t.Helper()
+	saveWSTo(t, fake, []fakeWS{{WorkspaceID: "w1", Label: session, AgentStatus: "idle"}})
+	write(t, filepath.Join(fake, "agents.json"),
+		`[{"agent":"claude","agent_status":"idle","pane_id":"w1:p1","workspace_id":"w1"}]`)
+}
+
+// Arm 6, dispatch's REFUSAL site (awaitSettled, ConsequenceRefusal). A
+// readiness gate that never saw a screen writes the record the operator is
+// not there to read, and that record has to carry the screen.
+func TestQAD3TheSettleRefusalRecordCarriesTheScreen(t *testing.T) {
+	t.Parallel()
+	b, fake := newTestBackend(t)
+	log := d3Session(t, b, "nevers")
+	d3Unrecognized(t, fake)
+	d := newTestDispatcher(t, b)
+
+	// The fixture's own precondition, as arm 1 states it: a heading inside
+	// the cap would make this pin unable to tell a capture from a preview.
+	if strings.Contains(d3Preview(), d3Heading) {
+		t.Fatalf("the fixture's heading is inside the 243-character preview — this pin can no longer tell a capture from a preview:\n%s", d3Preview())
+	}
+
+	// NO WALL CLOCK IN THE ASSERTION: the first poll's explain is the answer
+	// this record is built from, and the deadline check runs at the END of an
+	// iteration — so the window's size changes how many guesses are served
+	// and nothing about what is written.
+	wait := 200 * time.Millisecond
+	if _, _, err := d.awaitSettled("qa-h9925", "nevers", "w1:p1",
+		[]string{"idle", "done", "blocked"}, time.Now().Add(wait), wait); err == nil {
+		t.Fatal("the gate opened on a screen herdr only guessed at")
+	}
+
+	r := d3OneRecord(t, log)
+	if r.Decision != DecisionUnknownScreen || r.Consequence != ConsequenceRefusal {
+		t.Fatalf("want a D3 refusal, got %s/%s", r.Decision, r.Consequence)
+	}
+	if !strings.HasPrefix(r.Verdict, "never promptable") {
+		t.Errorf("this is awaitSettled's record and no other site writes it, so the verdict names it: %q", r.Verdict)
+	}
+	d3CarriesTheScreen(t, r, "the dispatch refusal site (awaitSettled)")
+}
+
+// Arm 7, dispatch's HOLD site (awaitDelivered, ConsequenceHold). Same
+// evidence, different consequence — the prompt rode in on the launch line, so
+// nothing was refused and the claim is kept (ADR 0066 D1) — and the capture
+// is wired at both. A census that could tell a hold from a refusal but found
+// no screen on the hold would be reading the half that was never pinned.
+func TestQAD3TheDeliveredHoldRecordCarriesTheScreen(t *testing.T) {
+	t.Parallel()
+	b, fake := newTestBackend(t)
+	log := d3Session(t, b, "held")
+	d3Unrecognized(t, fake)
+	d3Pane(t, fake, "held")
+	d := newTestDispatcher(t, b)
+
+	target, seen, err := d.awaitDelivered("qa-h9925", "held", "fastcli", 200*time.Millisecond)
+	if err != nil {
+		t.Fatalf("a pane with an agent in it is delivered, recognized or not: %v", err)
+	}
+	if seen {
+		t.Fatal("herdr recognized nothing here — seen=true would make this the happy path, which writes no record")
+	}
+	if target != "w1:p1" {
+		t.Fatalf("awaitDelivered resolved %q, not the session's pane — the capture is taken at that target", target)
+	}
+
+	r := d3OneRecord(t, log)
+	if r.Decision != DecisionUnknownScreen || r.Consequence != ConsequenceHold {
+		t.Fatalf("want a D3 hold, got %s/%s — the prompt was delivered, so nothing was refused", r.Decision, r.Consequence)
+	}
+	if !strings.HasPrefix(r.Verdict, "delivered but unrecognized") {
+		t.Errorf("this is awaitDelivered's record and no other site writes it, so the verdict names it: %q", r.Verdict)
+	}
+	d3CarriesTheScreen(t, r, "the dispatch hold site (awaitDelivered)")
+}
+
+// d3CarriesTheScreen is arms 6 and 7's shared assertion: the record holds the
+// capture, and the capture holds the one line in the bytes that names the
+// screen. The heading is the half that keeps this a measurement — a region of
+// the right NAME filled with a preview would pass the presence check and
+// reproduce nothing.
+func d3CarriesTheScreen(t *testing.T, r Reading, site string) {
+	t.Helper()
+	shot, ok := r.ReadingRegionOf(PaneCaptureRegion)
+	if !ok {
+		var had []string
+		for _, reg := range r.Herdr.Regions {
+			had = append(had, reg.Name)
+		}
+		t.Fatalf("%s wrote a record with no %q region — it holds only %v, every one of them a preview of the top of the screen, so the capture is wired at the helper and not at this site", site, PaneCaptureRegion, had)
+	}
+	if !strings.Contains(shot.Text, d3Heading) {
+		t.Errorf("%s took a capture that does not carry the screen's own heading %q:\n%s", site, d3Heading, shot.Text)
+	}
+	if shot.Truncated {
+		t.Errorf("%s marked the capture truncated — Truncated is how a replay knows the bytes are not the bytes", site)
 	}
 }
