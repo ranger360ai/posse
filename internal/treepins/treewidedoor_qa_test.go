@@ -288,7 +288,12 @@ package treepins
 //  4. the head comment's COUNT is the Makefile's — both numerals derived,
 //     and every name in a door variable named up there, so the enumeration
 //     the count rests on cannot go short while the count stays green
-//     (ranger-base-4jogv).
+//     (ranger-base-4jogv) — AND the package README's door table is the same
+//     list in the same order (ranger-base-r5546). That table is a second
+//     copy of `tree-check`'s prerequisites in a page people outside this
+//     file read; it was correct the day it shipped and nothing said so
+//     after. The Makefile declines to write the door COUNT twice on
+//     purpose, which is the same refusal one directory over.
 
 import (
 	"fmt"
@@ -1284,7 +1289,7 @@ var twdExecDispositions = map[string]string{
 // nothing justified.
 var twdDoorHolders = map[string]string{
 	"TestQAEveryTreepinsDoorFilterNamesItsPins":            "asks what make's expansion of each internal/treepins door filter selects; it reads the Makefile and runs `go test -list`",
-	"TestQATheHeadCommentsPinAndDoorCountsAreTheMakefiles": "arm 4 — holds this file's head comment to the Makefile's own pin and door counts; it reads the Makefile and this file",
+	"TestQATheHeadCommentsPinAndDoorCountsAreTheMakefiles": "arm 4 — holds this file's head comment and the treepins README's door table to the Makefile's own pin and door counts; it reads the Makefile, this file and that README",
 	// ranger-base-hrf47. The third exemption, and the first that is not one of
 	// this register's own arms: it censuses every verify-* target in the
 	// Makefile against the roster and EXCLUDED table of scripts/verify-box.sh,
@@ -2181,6 +2186,17 @@ var twdCountClaim = regexp.MustCompile(`([a-z]+(?:-[a-z]+)?) pins and ([a-z]+(?:
 // in a door variable must be named up there. One-way on purpose — the head
 // also names tests that are NOT members (TestQAOneRepoRootHelperInTheTestPackage
 // is the fence, not a pin), and a two-way rule would red on those.
+//
+// AND THE README's DOOR TABLE, for the same reason one page further out
+// (ranger-base-r5546). internal/treepins/README.md carries the fourteen
+// doors as a table, one row per door with its subject — more useful than a
+// bare list, and the part that can drift. It was 14/14 correct the day it
+// shipped and nothing would have said so when it stopped being: a door
+// renamed, added or removed edits the Makefile and this file's enumeration,
+// both of which are pinned, and leaves the public page saying what used to
+// be true. Order too, not just membership — the table reads as the order
+// `make tree-check` runs them, and a reader pricing a partial run from it
+// is owed that.
 func TestQATheHeadCommentsPinAndDoorCountsAreTheMakefiles(t *testing.T) {
 	t.Parallel()
 	b, err := os.ReadFile("Makefile")
@@ -2244,6 +2260,41 @@ func TestQATheHeadCommentsPinAndDoorCountsAreTheMakefiles(t *testing.T) {
 			t.Errorf("$(%s) door variable names %s, and this file's head comment does not — the enumeration the count sentence rests on is short by at least one, so the next reader counts a smaller class than `make tree-check` runs", twdVarOf(t, src, name), name)
 		}
 	}
+
+	// And the README's table of the same doors, membership AND order.
+	readme := filepath.Join(twdTreepinsPkg, "README.md")
+	table := twdReadmeDoors(t, readme)
+	if !slices.Equal(table, doors) {
+		t.Errorf("%s lists the doors as\n  %v\nand `make tree-check`'s prerequisites are\n  %v\n"+
+			"That table is a second copy of this list in a page read outside this package, and nothing but this arm would ever say it had gone stale. Fix the table, not this test.", readme, table, doors)
+	}
+}
+
+// twdReadmeDoors reads the door names out of the README's door table: the
+// rows of the one table whose first column is a `make <door>` in backticks,
+// in the order they appear.
+//
+// Shaped rather than grepped, and deliberately narrow about what a row is —
+// the file names `make tree-check`, `make crew-check` and `make notes-check`
+// in its PROSE as well, and a reader that took those would be reading the
+// page's advice as if it were the list.
+func twdReadmeDoors(t *testing.T, path string) []string {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("%s: %v — the package page carries the door table this arm holds to the Makefile", path, err)
+	}
+	row := regexp.MustCompile("^\\|\\s*`make ([a-z0-9-]+)`\\s*\\|")
+	var out []string
+	for _, line := range strings.Split(string(b), "\n") {
+		if m := row.FindStringSubmatch(line); m != nil {
+			out = append(out, m[1])
+		}
+	}
+	if len(out) == 0 {
+		t.Fatalf("%s has no door table — a row is a table line whose first cell is a backticked `make <door>`, and a page that lost them is a page that stopped saying what `make tree-check` runs", path)
+	}
+	return out
 }
 
 // twdVarOf names the door variable that carries a test, for the message above.

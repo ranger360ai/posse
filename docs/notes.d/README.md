@@ -7,6 +7,7 @@ references), not inferred publication dates. Undated fragments sort last.
 ## 2026-10
 
 - [ranger-base-yrag8](ranger-base-yrag8.md) — Replaying a merge-back whose conflict was a COUNT, and the red neither side could see (ranger-base-yrag8) — 2026-10-04
+- [ranger-base-r5546](ranger-base-r5546.md) — A quality column that counted the lossy case, and three pins that could not fail (ranger-base-r5546) — 2026-10-04
 - [ranger-base-qk9tr](ranger-base-qk9tr.md) — ADR 0066 D3 offline: the unknown-screen reader's input is 243 characters, and that — not the reader — is where the diagnosis fails (ranger-base-qk9tr) — 2026-10-04
 - [ranger-base-our1e](ranger-base-our1e.md) — Jev as a harness component: where posse decides fast, and whether a typed-decision model belongs there (ranger-base-our1e) — 2026-10-04
 - [ranger-base-o1aoi](ranger-base-o1aoi.md) — A false IDLE is an act, so the record is keyed on the act and not sampled from the readings (ranger-base-o1aoi) — 2026-10-04

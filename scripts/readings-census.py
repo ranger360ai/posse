@@ -149,6 +149,22 @@ def day_of(rec: dict) -> str:
     return at[:10] if len(at) >= 10 else "unknown"
 
 
+def truncated_regions(regs: list) -> list[str]:
+    """The names of the regions herdr cut down, in the order they were read.
+
+    THE RECORD'S OWN FLAG, never a comparison of `bytes` against the text.
+    Two things stand between the two numbers after the writer has taken the
+    flag, and both would make a derived answer wrong in a direction nobody
+    could see: the data ceiling rewrites the text AFTER the flag is set
+    (internal/posse/readingslog.go, AppendReading), so a redacted region's
+    text no longer has the length the flag was taken from; and `bytes` is
+    herdr's count of BYTES while a Python `len` over the same string counts
+    characters, so every region carrying a `·` or a `→` — which is most of
+    them — would read as truncated by one or two.
+    """
+    return [str(reg.get("region", "?")) for reg in regs if reg.get("truncated")]
+
+
 def group_key(rec: dict, by: str) -> str:
     if by == "decision":
         return str(rec.get("decision", "?"))
@@ -169,6 +185,7 @@ def census(records: list[dict], by: str) -> dict:
     verdicts: dict[str, Counter] = defaultdict(Counter)
     regions: Counter = Counter()
     redacted = 0
+    truncated = 0
     replayable = 0
     for rec in records:
         day = day_of(rec)
@@ -184,12 +201,23 @@ def census(records: list[dict], by: str) -> dict:
         regs = herdr.get("regions") or []
         for reg in regs:
             regions[str(reg.get("region", "?"))] += 1
+        cut = truncated_regions(regs)
+        if cut:
+            truncated += 1
         # "Replayable" is the one quality claim a census may make about a
-        # case: it carries region bytes, and no data-ceiling class was taken
-        # out of them. A redacted case still counts in every rate above —
-        # it happened — and cannot reproduce a verdict byte for byte, which
+        # case: it carries region bytes, none of them was cut down on the
+        # way in, and no data-ceiling class was taken out of them. Both
+        # lossy cases still count in every rate above — they happened —
+        # and neither can reproduce a verdict byte for byte.
+        #
+        # TRUNCATION IS THE COMMON ONE, and it was counted as replayable
+        # until ranger-base-r5546. herdr previews a region at 243
+        # characters (internal/posse/panework.go), and `whole_recent` is in
+        # the shipped manifests, so the richest records in the log — a D3
+        # that evaluated every region — routinely carry a few per cent of
+        # the bytes of their biggest region. Redaction is the rarer one and
         # is the trade ADR 0050 makes on purpose.
-        if regs and not rec.get("redacted"):
+        if regs and not cut and not rec.get("redacted"):
             replayable += 1
     return {
         "readings": len(records),
@@ -198,13 +226,15 @@ def census(records: list[dict], by: str) -> dict:
         "verdicts": {d: dict(c) for d, c in sorted(verdicts.items())},
         "regions": dict(regions.most_common()),
         "redacted": redacted,
+        "truncated": truncated,
         "replayable": replayable,
     }
 
 
 def print_table(c: dict, by: str, logs: list[Path], torn: int) -> None:
     print(f"readings: {c['readings']} in {len(logs)} log(s)"
-          f" · {c['replayable']} replayable · {c['redacted']} redacted")
+          f" · {c['replayable']} replayable · {c['truncated']} truncated"
+          f" · {c['redacted']} redacted")
     if c["readings"] == 0:
         print("  (no consequential readings logged — see ADR 0066 D1 for what is recorded)")
         return
@@ -270,11 +300,15 @@ def export_corpus(records: list[dict], out: Path) -> tuple[int, int]:
                           rules (herdr's TOML manifest, not Go) get re-run
                           over a case at all.
 
-    A REDACTED CASE IS EXPORTED AND MARKED. It is still a labelled reading
-    and still counts, and a corpus that silently dropped it would make the
-    rates and the corpus disagree about the same fleet. What it cannot do
-    is prove a rule right or wrong byte for byte, and `redacted` on the
-    case says so.
+    A LOSSY CASE IS EXPORTED AND MARKED, in both the ways a case can be
+    lossy. It is still a labelled reading and still counts, and a corpus
+    that silently dropped it would make the rates and the corpus disagree
+    about the same fleet. What it cannot do is prove a rule right or wrong
+    byte for byte, and the case's two quality fields say which half is
+    missing: `redacted` names the data-ceiling classes taken out of it
+    (ADR 0050), and `truncated` names the regions herdr handed over cut
+    down — the common one, since a preview is capped at 243 characters and
+    `whole_recent` is in the shipped manifests.
     """
     out.mkdir(parents=True, exist_ok=True)
     regions_root = out / "regions"
@@ -293,6 +327,7 @@ def export_corpus(records: list[dict], out: Path) -> tuple[int, int]:
                 "rule": rec.get("rule"),
                 "posse": rec.get("posse"),
                 "redacted": rec.get("redacted") or [],
+                "truncated": truncated_regions(herdr.get("regions") or []),
                 "herdr": {
                     "state": herdr.get("state"),
                     "matched_rule": herdr.get("matched_rule"),

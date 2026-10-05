@@ -2505,6 +2505,16 @@ func fakeProbeLaunchLock() {
 //
 // The lever is `unhide-when-locked` holding the lock path; it fires once and
 // takes `hidden-from-list` with it, so the world it reveals is settled.
+//
+// `unhide-after-bd` BESIDE IT HOLDS IT SHUT until the pass has reached a
+// named phase (ranger-base-r5546): its contents are a substring of a bd
+// command line, and the lever will not fire until that line is in
+// bd-calls.log. "The lock is held" is a statement about the destructive
+// TAIL and not about which phase of the pass is running, and a pass takes
+// the lock in more than one of them — the reap and the land sweep both run
+// before the ready scan and both can list workspaces under it. A fixture
+// that needs the world to change between two particular phases has to say
+// which, or it inherits whichever order the box gave it that run.
 func fakeUnhideWhenLocked() {
 	p := filepath.Join(fakeDir(), "unhide-when-locked")
 	b, err := os.ReadFile(p)
@@ -2520,8 +2530,30 @@ func fakeUnhideWhenLocked() {
 		syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
 		return // free: the pass is still in its preflight
 	}
+	if !fakeBdLogHas(filepath.Join(fakeDir(), "unhide-after-bd")) {
+		return // held: but the pass has not reached the phase this plant is about
+	}
 	os.Remove(p)
 	os.Remove(filepath.Join(fakeDir(), "hidden-from-list"))
+}
+
+// fakeBdLogHas is the `unhide-after-bd` gate: true when there is no such
+// plant, or when the bd command line it names is already in bd-calls.log.
+//
+// Checked AFTER the lock verdict, so it narrows the window rather than
+// replacing it: the lever still fires only under the lock, and now only
+// under a lock taken past the phase the plant names.
+func fakeBdLogHas(plant string) bool {
+	b, err := os.ReadFile(plant)
+	if err != nil {
+		return true
+	}
+	want := strings.TrimSpace(string(b))
+	if want == "" {
+		return true
+	}
+	log, _ := os.ReadFile(filepath.Join(fakeDir(), "bd-calls.log"))
+	return strings.Contains(string(log), want)
 }
 
 // fakeNextWSID hands out w1, w2, … per fake dir, monotonically.

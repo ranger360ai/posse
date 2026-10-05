@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -32,6 +33,33 @@ func rlTree(t *testing.T) (*App, string, *SessionTree) {
 		t.Fatalf("EnsureSessionTree: %v (tree=%v)", err, tree)
 	}
 	return a, repo, tree
+}
+
+// appendRawReading writes one record to the log the way AppendReading
+// would, bypassing the writer's own decisions about it. The one record a
+// pin cannot otherwise stage is a REDACTED one: `Redacted` is set by
+// AppendReading from the instance's data ceiling and never by its caller,
+// so an App with no ceiling configured cannot be made to write one. The
+// line is still json.Marshal of the real type, so nothing here invents a
+// shape the writer could not produce.
+func appendRawReading(t *testing.T, a *App, treePath string, r Reading) {
+	t.Helper()
+	path, err := a.ReadingsLogPath(treePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	line, err := json.Marshal(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if _, err := f.Write(append(line, '\n')); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // TestQAReadingsLogLivesUnderTheSessionTreeAndNeverTheHome is ADR 0066 D1's
@@ -88,21 +116,64 @@ func TestQAReadingsLogLivesUnderTheSessionTreeAndNeverTheHome(t *testing.T) {
 	}
 
 	// ARM 4 — and a git dir that DOES land in one of the instance's own
-	// stores is refused, measured against a real repo made inside the state
-	// dir rather than against a string. This is the arm that fails if the
+	// stores is refused, measured against a real repo made inside each one
+	// rather than against a string. These are the arms that fail if the
 	// bound check is deleted; arms 1-3 would all still pass.
-	if err := os.MkdirAll(a.StateDir, 0o755); err != nil {
+	//
+	// ALL THREE BOUNDS, one repo each (ranger-base-r5546). readingsLogOutOfBounds
+	// carries three and this arm used to make a repo in one of them — and
+	// because the state dir is UNDER the harness home, that one repo was
+	// refused by the first row whichever of the other two was deleted:
+	// dropping the `a.Home` row and dropping the `~/.claude` row were both
+	// SURVIVORS across all six readings pins (MEASURED 2026-10-04, M10 and
+	// M11 on ranger-base-qr0as). The home arm's shape is a session tree
+	// that is a standalone repo rather than a linked worktree; the
+	// `~/.claude` one is the runtime's own per-user dir, which is not
+	// posse's to write a log into at all.
+	// The third one is made with MkdirTemp: `~/.claude` is the one bound
+	// that is not per-App — it is this test BINARY's temp home, shared with
+	// every other test in the package — so a fixed name would be two live
+	// tests' under `-count=2`, which is how this shop measures a flake rate.
+	claudeDir := filepath.Join(ExpandTilde("~"), ".claude")
+	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	inState := filepath.Join(a.StateDir, "repo")
-	if err := os.MkdirAll(inState, 0o755); err != nil {
+	inClaude, err := os.MkdirTemp(claudeDir, "rl-repo-")
+	if err != nil {
 		t.Fatal(err)
 	}
-	mustGit(t, inState, "init", "-q", "-b", "main", ".")
-	if p, err := a.ReadingsLogPath(inState); err == nil {
-		t.Errorf("ReadingsLogPath resolved %s, inside the instance's own state dir — that store outlives every session, so nothing in it is rotated with a tree", p)
-	} else if !strings.Contains(err.Error(), "ADR 0066 D1") {
-		t.Errorf("the refusal does not name the rule it is enforcing: %v", err)
+	// Tolerantly, and by hand: this root is not gitTempDir's, because the
+	// bound under test IS `~/.claude` and no helper allocates there. A git
+	// repo's own index can still be open for a beat after the command that
+	// wrote it returned (commitwall_qa_test.go).
+	t.Cleanup(func() { removeAllTolerant(t, inClaude) })
+	// EACH ARM ASKS FOR ITS OWN ROW'S REASON, not just for a refusal. The
+	// state dir is UNDER the harness home, so its row is unreachable by
+	// outcome alone — delete it and the home row refuses the same path,
+	// green. What the row carries that the home row does not is why: a
+	// store that outlives every session is a different fact about the same
+	// path from a fifth store ADR 0011 refuses, and the operator reading
+	// the refusal is owed the one that applies.
+	for _, bound := range []struct{ what, dir, why string }{
+		{"the instance's own state dir", filepath.Join(a.StateDir, "repo"), "the state dir outlives every session"},
+		{"the harness home, outside the state dir", filepath.Join(a.Home, "repo"), "ADR 0011 refuses"},
+		{"the runtime's own per-user dir", inClaude, "not posse's to write a log into"},
+	} {
+		if err := os.MkdirAll(bound.dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		mustGit(t, bound.dir, "init", "-q", "-b", "main", ".")
+		p, err := a.ReadingsLogPath(bound.dir)
+		if err == nil {
+			t.Errorf("ReadingsLogPath resolved %s, inside %s — that store outlives every session, so nothing in it is rotated with a tree", p, bound.what)
+			continue
+		}
+		if !strings.Contains(err.Error(), "ADR 0066 D1") {
+			t.Errorf("the refusal for %s does not name the rule it is enforcing: %v", bound.what, err)
+		}
+		if !strings.Contains(err.Error(), bound.why) {
+			t.Errorf("a log under %s was refused for the wrong reason: %v\n  wanted the refusal to say %q — %s is a bound of its own, and a path it catches must be told why by ITS row and not by whichever row happens to contain it", bound.what, err, bound.why, bound.what)
+		}
 	}
 }
 
@@ -408,6 +479,58 @@ func TestQAReadingsLogReplaysThisWeekendsIncidents(t *testing.T) {
 	}
 }
 
+// TestQAReadingEvidenceMarksARegionHerdrCutDown is the writer's half of the
+// census's quality column (ranger-base-r5546).
+//
+// herdr hands over a PREVIEW and the region's real size beside it, and the
+// two disagree exactly when the preview was cut — the 243-character cap in
+// panework.go. ReadingEvidenceOf takes that disagreement down as
+// `truncated`, and until this pin the field was written by one line and
+// read by nothing: replacing that line with `Truncated: false` left every
+// readings pin green (MEASURED 2026-10-04, M5 on ranger-base-qr0as).
+//
+// It is the WRITER's statement and not a thing a reader can derive later:
+// the data ceiling rewrites the text after this runs, so by the time a
+// record is on disk its region's length is no longer the length the flag
+// was taken from.
+func TestQAReadingEvidenceMarksARegionHerdrCutDown(t *testing.T) {
+	t.Parallel()
+	whole := "⏵⏵ auto mode on · 1 shell"
+	preview := strings.Repeat("x", 243)
+	var det AgentDetection
+	det.State = "idle"
+	det.EvaluatedRules = []EvaluatedRule{
+		{ID: "live_prompt_box", Region: footerRegion},
+		{ID: "live_prompt_box", Region: "whole_recent"},
+	}
+	det.EvaluatedRules[0].Evidence.RegionPreview = whole
+	det.EvaluatedRules[0].Evidence.RegionBytes = len(whole)
+	det.EvaluatedRules[1].Evidence.RegionPreview = preview
+	det.EvaluatedRules[1].Evidence.RegionBytes = 4949
+
+	ev := ReadingEvidenceOf(det)
+	if len(ev.Regions) != 2 {
+		t.Fatalf("ReadingEvidenceOf carried %d regions, want 2 — the evidence is every region herdr evaluated", len(ev.Regions))
+	}
+	for _, reg := range ev.Regions {
+		switch reg.Name {
+		case footerRegion:
+			if reg.Truncated {
+				t.Errorf("a region herdr handed over whole (%d bytes, %d of text) was recorded as cut down", reg.Bytes, len(reg.Text))
+			}
+		case "whole_recent":
+			if !reg.Truncated {
+				t.Errorf("a 243-character preview of a %d-byte region was recorded as complete — a census reading this record counts it as reproducible and it carries 5%% of the bytes", reg.Bytes)
+			}
+			if reg.Bytes != 4949 {
+				t.Errorf("the region's real size was recorded as %d, want 4949 — the count is herdr's and is what the preview is short OF", reg.Bytes)
+			}
+		default:
+			t.Errorf("unexpected region %q", reg.Name)
+		}
+	}
+}
+
 // TestQAReadingsCensusCountsByDayAndExportsTheCorpus runs the real
 // instrument over a real log: the script ADR 0066 D1 names, the two things
 // it has to produce (readings per day by decision and verdict, and a replay
@@ -437,17 +560,41 @@ func TestQAReadingsCensusCountsByDayAndExportsTheCorpus(t *testing.T) {
 		}
 		return r
 	}
+	// THE TWO LOSSY CASES go on their own day so the per-day arms below
+	// keep measuring what they were written to measure. Each carries
+	// bytes, so neither is excluded by the clause the other one tests —
+	// which is the whole point of having both (ranger-base-r5546): with
+	// only one of them in the fixture, `replayable` answers correctly
+	// with the other clause deleted.
+	//
+	// The truncated one is the shape herdr hands over all day: a region
+	// whose `bytes` is the WHOLE region and whose text is the 243
+	// characters that arrived (panework.go).
+	cut := rec("2026-10-04", DecisionDialog, ConsequenceHandBack, "whole_recent", strings.Repeat("x", 243))
+	cut.Herdr.Regions[0].Bytes = 4949
+	cut.Herdr.Regions[0].Truncated = true
 	for _, r := range []Reading{
 		rec("2026-10-02", DecisionComposerHold, ConsequenceHold, footerRegion, "⏵⏵ auto mode on · 1 shell"),
 		rec("2026-10-02", DecisionComposerHold, ConsequenceGhostRetired, composerANSIRegion, "\x1b[2mx\x1b[0m"),
 		rec("2026-10-03", DecisionDialog, ConsequenceHandBack, "whole_recent", "proceed? → 1. Yes"),
 		rec("2026-10-03", DecisionStallVerdict, ConsequenceHandBack, "", ""),
 		rec("2026-10-03", DecisionUnknownScreen, ConsequenceRefusal, "osc_title", ""),
+		cut,
 	} {
 		if err := a.AppendReading(tree.Path, r); err != nil {
 			t.Fatalf("AppendReading: %v", err)
 		}
 	}
+	// And the redacted one, marshalled from the same type but appended by
+	// hand: AppendReading decides `Redacted` itself from the instance's
+	// ceiling, and this App has none configured. The redactor is pinned
+	// where it belongs, by TestQAReadingsLogRedactsCeilingContentBeforeWrite;
+	// what this fixture needs is a record of that SHAPE for the census to
+	// read.
+	red := rec("2026-10-04", DecisionDialog, ConsequenceHandBack, "whole_recent", "proceed? → ["+RedactedMark+":token]")
+	red.Posse = VersionString()
+	red.Redacted = []string{"token"}
+	appendRawReading(t, a, tree.Path, red)
 	log, err := a.ReadingsLogPath(tree.Path)
 	if err != nil {
 		t.Fatal(err)
@@ -475,12 +622,14 @@ func TestQAReadingsCensusCountsByDayAndExportsTheCorpus(t *testing.T) {
 		Verdicts    map[string]map[string]int `json:"verdicts"`
 		Regions     map[string]int            `json:"regions"`
 		Replayable  int                       `json:"replayable"`
+		Truncated   int                       `json:"truncated"`
+		Redacted    int                       `json:"redacted"`
 	}
 	if err := json.Unmarshal(out, &c); err != nil {
 		t.Fatalf("census --json is not json: %v\n%s", err, out)
 	}
-	if c.Readings != 5 {
-		t.Errorf("census counted %d readings, want 5 (the torn line must be skipped, not fatal and not counted)", c.Readings)
+	if c.Readings != 7 {
+		t.Errorf("census counted %d readings, want 7 (the torn line must be skipped, not fatal and not counted)", c.Readings)
 	}
 	if got := c.PerDay["2026-10-02"]["total"]; got != 2 {
 		t.Errorf("2026-10-02 counted %d, want 2 — readings PER DAY is the denominator ADR 0066 D1 exists for", got)
@@ -500,10 +649,19 @@ func TestQAReadingsCensusCountsByDayAndExportsTheCorpus(t *testing.T) {
 	if c.Regions[footerRegion] != 1 || c.Regions[composerANSIRegion] != 1 {
 		t.Errorf("the census does not count which regions were read: %v", c.Regions)
 	}
-	// Four of the five carry bytes; the D5 record carries none by design,
-	// so "replayable" must be 4 and not 5.
+	// THE QUALITY COLUMN, and it has three clauses that must each be able
+	// to fail on their own (ranger-base-r5546). Six of the seven carry
+	// bytes — the D5 record carries none by design — and two of those six
+	// carry bytes that are not the bytes that were read: one region herdr
+	// cut down, one record the ceiling took a class out of. So four.
 	if c.Replayable != 4 {
-		t.Errorf("census says %d replayable cases, want 4 — a record with no region bytes reproduces nothing and must not be counted as if it did", c.Replayable)
+		t.Errorf("census says %d replayable cases, want 4 — a case reproduces a verdict byte for byte only if it carries region bytes, all of them, and the ones that were read", c.Replayable)
+	}
+	if c.Truncated != 1 {
+		t.Errorf("census says %d truncated cases, want 1 — herdr previews a region at 243 characters, so a census that cannot see truncation over-counts its own quality column by construction", c.Truncated)
+	}
+	if c.Redacted != 1 {
+		t.Errorf("census says %d redacted cases, want 1", c.Redacted)
 	}
 
 	// THE CORPUS. The bytes and the verdict, in both shapes: the jsonl a
@@ -519,17 +677,20 @@ func TestQAReadingsCensusCountsByDayAndExportsTheCorpus(t *testing.T) {
 		t.Fatalf("no corpus.jsonl: %v", err)
 	}
 	lines := strings.Split(strings.TrimSpace(string(body)), "\n")
-	if len(lines) != 5 {
-		t.Errorf("corpus has %d cases, want 5", len(lines))
+	if len(lines) != 7 {
+		t.Errorf("corpus has %d cases, want 7", len(lines))
 	}
-	var seen int
+	var seen, cutCases int
 	for _, ln := range lines {
 		var one struct {
-			ID      string `json:"id"`
-			Verdict string `json:"verdict"`
-			Regions []struct {
-				Region string `json:"region"`
-				Text   string `json:"text"`
+			ID        string   `json:"id"`
+			Verdict   string   `json:"verdict"`
+			Truncated []string `json:"truncated"`
+			Redacted  []string `json:"redacted"`
+			Regions   []struct {
+				Region    string `json:"region"`
+				Text      string `json:"text"`
+				Truncated bool   `json:"truncated"`
 			} `json:"regions"`
 		}
 		if err := json.Unmarshal([]byte(ln), &one); err != nil {
@@ -538,8 +699,18 @@ func TestQAReadingsCensusCountsByDayAndExportsTheCorpus(t *testing.T) {
 		if one.ID == "" || one.Verdict == "" {
 			t.Errorf("a corpus case carries no id or no verdict — the verdict is the LABEL, and a corpus without it evaluates nothing: %s", ln)
 		}
+		if len(one.Truncated) > 0 {
+			cutCases++
+		}
 		for _, reg := range one.Regions {
 			seen++
+			// The case's quality fields are what an offline evaluation
+			// reads to know whether a miss is the reader's fault or the
+			// capture's, so a cut region has to be named at the CASE and
+			// not only inside the region it happened to.
+			if reg.Truncated && !slices.Contains(one.Truncated, reg.Region) {
+				t.Errorf("corpus case %s carries a region herdr cut down (%s) and its `truncated` field does not name it: %s", one.ID, reg.Region, ln)
+			}
 			p := filepath.Join(dir, "regions", one.ID, reg.Region+".txt")
 			got, err := os.ReadFile(p)
 			if err != nil {
@@ -551,8 +722,11 @@ func TestQAReadingsCensusCountsByDayAndExportsTheCorpus(t *testing.T) {
 			}
 		}
 	}
-	if seen != 4 {
-		t.Errorf("the corpus exported %d region files, want 4", seen)
+	if seen != 6 {
+		t.Errorf("the corpus exported %d region files, want 6", seen)
+	}
+	if cutCases != 1 {
+		t.Errorf("%d corpus cases name a truncated region, want 1 — a case whose bytes are a 243-character preview of a 4949-byte region must say so, or an evaluation scores a reader against a capture it never had", cutCases)
 	}
 }
 

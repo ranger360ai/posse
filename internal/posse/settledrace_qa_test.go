@@ -44,6 +44,18 @@ import (
 // The scan runs before fireLoop takes that lock, so it reads a listing
 // without the holder; everything from reconcileSeats down reads one with it.
 //
+// AND HELD SHUT UNTIL THE SCAN HAS RUN (`unhide-after-bd`,
+// ranger-base-r5546). The lock alone does not name a phase: the reap sweep
+// and the land sweep both run ahead of the ready scan and both can list
+// workspaces while holding it, and when one of them did, the holder was
+// already visible by the time interruptedRuns asked — interruptedRuns
+// declined it, as it documents it will without `--resume`, the queue read
+// empty, and the arm fatalled on "no ready work" having measured nothing.
+// Seen once in a full `make test` at 1f672164 and not reproducible solo
+// (25/25 PASS at load 43.4), which is what an order this fixture inherited
+// rather than arranged looks like. So the plant now names the scan's own
+// bd query and the world cannot change before it.
+//
 // Two guards keep this from being a sticker, because the branch's whole
 // output is silence and so is a pass that never reached it: the lever must
 // have FIRED (a listing was taken under the lock, so the holder really did
@@ -86,8 +98,21 @@ func TestQASettledHolderRacingTheScanIsSkipped(t *testing.T) {
 		[]byte(LaunchLockPath(b.App)), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	// Everything the setup itself said to herdr is not this pass's doing.
+	// The claimed scan's own query (Bd.InProgress), and it is the pass's
+	// only one: the other two callers of it are the cockpit's display and
+	// the governance surface, neither of which a dispatch pass runs.
+	if err := os.WriteFile(filepath.Join(fake, "unhide-after-bd"),
+		[]byte("list --status in_progress"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Everything the setup itself said to herdr is not this pass's doing —
+	// and neither is anything it said to bd, which the plant above now
+	// reads: a setup call matching the gate would open it before the pass
+	// began.
 	if err := os.Remove(filepath.Join(fake, "calls.log")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(fake, "bd-calls.log")); err != nil && !os.IsNotExist(err) {
 		t.Fatal(err)
 	}
 
@@ -103,6 +128,11 @@ func TestQASettledHolderRacingTheScanIsSkipped(t *testing.T) {
 	if strings.Contains(out, "no ready work") {
 		t.Fatalf("the queue was empty, so the bead never reached the fire loop and the branch under test was not the reason for the silence:\n%s", out)
 	}
+	// Both guards are ARRANGED now, not inherited: the plant above cannot
+	// fire before the scan's query, so the two cannot be satisfied in the
+	// wrong order. If this one ever fatals again, the order changed — the
+	// scan stopped asking `bd list --status in_progress`, or a phase ahead
+	// of it started to — and the fixture needs re-staging, not a retry.
 	if n != 0 {
 		t.Errorf("a holder that settled under the scan must not be fired into on a pass with no --resume, got n=%d:\n%s", n, out)
 	}
