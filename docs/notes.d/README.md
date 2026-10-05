@@ -63,6 +63,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-m46kr](ranger-base-m46kr.md) — The freshness guard on ci-watch's reading, and the number behind it (ranger-base-m46kr) — 2026-10
 - [ranger-base-hxcqe](ranger-base-hxcqe.md) — The red gate was a GitHub outage, and the third run was the tell (ranger-base-hxcqe) — 2026-10
 - [ranger-base-94grm](ranger-base-94grm.md) — A red gate whose red job never ran (ranger-base-94grm) — 2026-10
+- [ranger-base-6pnab](ranger-base-6pnab.md) — The gate had been green for an hour and fifty-two minutes when this bead was filed, and the filer was 101 commits behind (ranger-base-6pnab) — 2026-10
 
 ## 2026-09
 
