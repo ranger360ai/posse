@@ -9,6 +9,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-yrag8](ranger-base-yrag8.md) — Replaying a merge-back whose conflict was a COUNT, and the red neither side could see (ranger-base-yrag8) — 2026-10-04
 - [ranger-base-qk9tr](ranger-base-qk9tr.md) — ADR 0066 D3 offline: the unknown-screen reader's input is 243 characters, and that — not the reader — is where the diagnosis fails (ranger-base-qk9tr) — 2026-10-04
 - [ranger-base-our1e](ranger-base-our1e.md) — Jev as a harness component: where posse decides fast, and whether a typed-decision model belongs there (ranger-base-our1e) — 2026-10-04
+- [ranger-base-o1aoi](ranger-base-o1aoi.md) — A false IDLE is an act, so the record is keyed on the act and not sampled from the readings (ranger-base-o1aoi) — 2026-10-04
 - [ranger-base-nnnf1](ranger-base-nnnf1.md) — An evidence pointer that resolved to nothing, and the door that reads one now (ranger-base-nnnf1) — 2026-10-04
 - [ranger-base-lyjbt](ranger-base-lyjbt.md) — ranger-base-lyjbt — verifying four closes at the v0.5.1 gate — 2026-10-04
 - [ranger-base-khqvr](ranger-base-khqvr.md) — A derived census narrowed by a hand list of two names reached 4 of 10 keys (ranger-base-khqvr) — 2026-10-04

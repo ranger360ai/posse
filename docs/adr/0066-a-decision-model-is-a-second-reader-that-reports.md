@@ -1,6 +1,6 @@
 # ADR 0066 — A typed-decision model, if posse ever carries one, is a second reader that reports and never acts; the readings log comes first
 
-*Status: accepted 2026-10-04 — operator ruling A on ranger-base-our1e's recommendations: D1 the readings log (code bead filed), D2 report-only, D3 first seams gated on the corpus (spike bead filed, any model call is an operator spend ruling) · D3 defined, measured offline and amended 2026-10-04 (ranger-base-qk9tr: the input clause reversed, a heading reader recommended as the report, the model parked) · owner: architect · source
+*Status: accepted 2026-10-04 — operator ruling A on ranger-base-our1e's recommendations: D1 the readings log (code bead filed), D2 report-only, D3 first seams gated on the corpus (spike bead filed, any model call is an operator spend ruling) · D3 defined, measured offline and amended 2026-10-04 (ranger-base-qk9tr: the input clause reversed, a heading reader recommended as the report, the model parked) · D1 amended 2026-10-04 (ranger-base-o1aoi: the false-IDLE gap is closed by a capture at the act written on the stall, not by sampling; code bead filed) · owner: architect · source
 bead ranger-base-our1e (spike, recommendation only) · sits under ADR 0057
 (no guard branches on a display reading), ADR 0060 D2 (detection is herdr's
 to ship), ADR 0061 D3 (a label is identity, not liveness) and ADR 0063 D1
@@ -46,6 +46,32 @@ settle-open, ghost retirement or hold is recorded with the region bytes it
 read, under the session tree; a census script yields readings per day and a
 replay corpus. This is a bead on its own, worth filing whether or not any
 model follows.
+
+*Amended 2026-10-04 (ranger-base-o1aoi, architecture; measurement and the
+priced alternatives in `docs/notes.d/ranger-base-o1aoi.md`).* **The five
+consequences stand, and a false IDLE is reached through the one of them it
+already produces.** A pane-state reading that says *idle* over a dialog, a
+splash or a shell is the reading that TYPES, and typed text that starts no
+turn ends in the D5 stall verdict — hold or hand-back — which this log
+already records. So the typed work-prompt path carries the detection the
+settle gate opened on, takes one pane capture immediately before the
+keystrokes, holds both in memory on the in-flight bead, and writes them
+only if the prompt stalls: the D5 record then carries the gate's D1 reading
+as its own evidence block, the screen at type time and the screen at stall
+time, and the census counts D5 records whose gate reading was seen-idle as
+the false-IDLE candidates. **Sampling is rejected**, in both shapes the
+finding offered: one-in-N is priced against the TOTAL reading rate, which
+this log does not count and fourteen days of census would not have
+supplied; one-per-seat-per-pass writes the reading at the wrong instant for
+the one measured incident of the class (rangerhq-37c, a transient splash)
+and makes readings-per-day a function of the pass interval. A sixth
+consequence written on every typed prompt is rejected for now: its extra
+territory is a prompt ACCEPTED as a turn on a misread screen, a class with
+no incident, and its largest writer would be the pulse, whose target's log
+lives in the shared checkout's git dir and never rotates. The pulse, the
+cockpit's resume and relaunch's landing turn are outside this amendment;
+the reopen conditions are in the note's §5. Code bead: see the bead's close
+comment.
 
 **D2 — A decision model is a second reader whose output is a report.** Its
 reading prints beside herdr's verdict in the failure line and on the bead.
@@ -136,7 +162,10 @@ once a client exists); a pulse pre-filter; anything numeric.
   reword drops herdr to its idle fallback. Closing that needs a SAMPLED record
   of non-consequential D1 readings, which changes the census's denominator and
   is this record's own call to make; the rate it would be priced against is now
-  takeable for the first time.
+  takeable for the first time. *Ruled 2026-10-04 (ranger-base-o1aoi): not by
+  sampling — the D5 stall record carries the gate's reading and a capture from
+  each side of the keystrokes; D1's amendment above has the decision and the
+  note has the prices.*
 
 ## Alternatives rejected
 
