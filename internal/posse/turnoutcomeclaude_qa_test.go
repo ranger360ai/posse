@@ -25,7 +25,7 @@ package posse
 //	carry a transcript is the slash-only mangling of the `cwd` its own first
 //	record names unless that cwd has no "." in it (43 of 1349).
 //
-// The defect was LOUD — turnOutcomeClause prints "looked for a turn outcome
+// The defect was LOUD — turnOutcomeLines prints "looked for a turn outcome
 // and found none this pass" for (no outcome, false) — but loud about the one
 // runtime posse was supposed to be able to read.
 //

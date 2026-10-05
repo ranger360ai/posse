@@ -91,7 +91,7 @@ const TurnOutcomeGrokSessionStore = "grok-session-store"
 //
 // observed distinguishes a first turn that settled normally (no message,
 // true) from a store this pass could not read an outcome out of (no message,
-// false) — the third state turnOutcomeClause prints, and the only honest
+// false) — the third state turnOutcomeLines prints, and the only honest
 // answer when grok's store says a turn errored but carries no message with
 // it. A refusal also carries how much of the turn had already run when it
 // landed (TurnOutcome, ranger-base-qcu4c).

@@ -144,7 +144,7 @@ func TestQAParityAccountRefusalIsNamedOnEveryRuntime(t *testing.T) {
 			}
 			for _, want := range []string{
 				"posse reads no turn outcome on " + c.runtime,
-				"an account that refused the turn settles exactly like this",
+				"if the account refused the turn, a seat settles exactly like this",
 				"posse peek " + session,
 			} {
 				if !strings.Contains(out, want) {
@@ -244,8 +244,15 @@ func TestQARefusalAfterWorkDoesNotClaimNoWorkRan(t *testing.T) {
 
 // codex is both `record: untrusted` and turn-outcome blind, and the two say
 // different things: one is the declared degrade (nothing was lost, --resume
-// retries), the other is a fact posse does not have. The line carries both,
-// in one parenthesis, and neither swallows the other.
+// retries), the other is a fact posse does not have. The pass carries both
+// and neither swallows the other.
+//
+// WHERE each one goes changed with ranger-base-zt45t and the claim did not.
+// The degrade is the settle line's one parenthesis — a line with two trailing
+// parentheses is two answers to one question and reads as an afterthought.
+// The turn-outcome fact is no longer in it: it is a fact, a condition and an
+// instruction, which is two lines of its own under ADR 0067 D5, written
+// beneath the settle line in the same write (turnOutcomeLines).
 func TestQABlindAndUntrustedBothLandOnTheSettleLine(t *testing.T) {
 	t.Parallel()
 	b, fake := newTestBackend(t)
@@ -269,10 +276,26 @@ func TestQABlindAndUntrustedBothLandOnTheSettleLine(t *testing.T) {
 			t.Errorf("the settle line must carry %q:\n%s", want, out)
 		}
 	}
-	// One parenthesis, both clauses — a line with two trailing parentheses is
-	// two answers to one question and reads as an afterthought.
+	// One parenthesis, one clause in it.
 	if strings.Count(out, "(codex is record: untrusted") != 1 || strings.Contains(out, ") (") {
-		t.Errorf("the clauses must join into one parenthesis:\n%s", out)
+		t.Errorf("the degrade must be the settle line's one parenthesis:\n%s", out)
+	}
+	// And the turn-outcome fact beneath it rather than inside it: on the
+	// settle line it was the tail of a 36-word sentence, which is the one
+	// line ADR 0067 D5 measured as breaking all three of its rules.
+	at := strings.Index(out, "\u25d1 a-1")
+	if at < 0 {
+		t.Fatalf("want a settle-without-close line for a-1:\n%s", out)
+	}
+	settle, rest, found := strings.Cut(out[at:], "\n")
+	if !found {
+		t.Fatalf("the settle line was never terminated:\n%s", out)
+	}
+	if strings.Contains(settle, "turn outcome") {
+		t.Errorf("the turn-outcome fact must not ride in the settle line:\n%s", settle)
+	}
+	if !strings.HasPrefix(rest, "  \u21b3 ") || !strings.Contains(rest, "posse reads no turn outcome on codex") {
+		t.Errorf("want the turn-outcome fact on its own continuation line beneath the settle line:\n%s", out)
 	}
 
 	// The other half: `record: trusted` does not buy a reader. A trusted
@@ -398,7 +421,7 @@ func TestQAUnobservedTurnOutcomeSettleLineIsNamed(t *testing.T) {
 	}
 	for _, want := range []string{
 		"posse looked for a turn outcome on claude and found none this pass",
-		"an account that refused the turn can settle exactly like this",
+		"if the account refused the turn, a seat settles exactly like this",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the settle line must say the read came back unobserved (%q):\n%s", want, out)

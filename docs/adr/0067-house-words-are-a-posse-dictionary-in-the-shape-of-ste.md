@@ -1,6 +1,8 @@
 # ADR 0067 — The harness's house words are a posse dictionary in the shape of ASD-STE100's; the standard itself is not adopted
 
-*Status: accepted 2026-10-04 — operator ruling on ranger-base-w6zpo, the six sub-points at their recommended defaults (no STE registration; dictionary lives in this appendix; ARGUED is a label; WIP gets a not-approved row; the three line rules apply to new lines, the existing clause is a P3 bead; Vale later) · amended 2026-10-04 (ranger-base-mdg3d: appendix seeded in Part 2 row shape — labels, house words, not-approved words, line rules) · owner: architect · source
+*Status: accepted 2026-10-04 — operator ruling on ranger-base-w6zpo, the six sub-points at their recommended defaults (no STE registration; dictionary lives in this appendix; ARGUED is a label; WIP gets a not-approved row; the three line rules apply to new lines, the existing clause is a P3 bead; Vale later) · amended 2026-10-04 (ranger-base-mdg3d: appendix seeded in Part 2 row shape — labels, house words, not-approved words, line rules) · amended
+2026-10-04 (ranger-base-zt45t: D5's one measured offender is rewritten to the
+A4 shape and pinned where it renders) · owner: architect · source
 bead ranger-base-4wwy5 (spike, recommendation only) · evidence, the surface
 map and the prior-art table in `docs/notes.d/ranger-base-4wwy5.md` · sits
 beside ADR 0005 (the rung words it seeds from), ADR 0006 §7 (no prose pin
@@ -90,6 +92,15 @@ rows to need a machine. Exit hatch: the rows are a table; any script reads it.
   measured D5 offender (`turnOutcomeClause` in `internal/posse/dispatch.go`,
   36 words, fact and instruction joined by a dash) is the P3 code bead
   ranger-base-zt45t; Vale, if ever, as a warning-level door (D6).
+- That offender is rewritten (ranger-base-zt45t, 2026-10-04): the clause left
+  the settle line's parenthesis, because a fact, its condition and an
+  instruction are three things and no clause inside another line can hold
+  them one per line. It is `turnOutcomeLines` now and renders two
+  continuation lines beneath the settle line, in that line's own write — a
+  dated fact of 8 or 14 words, and a condition-first instruction of 23 or 24
+  (MEASURED 2026-10-04 by the pin). No behaviour changed and no line lost a
+  fact. `internal/posse/turnoutcomelines_qa_test.go` is the D5 pin: it reads
+  that function's return value and no file, so nothing here became a fixture.
 
 ## Alternatives rejected
 
@@ -200,8 +211,9 @@ no way to ask back.
    the line's own, not the pass's, in the format its neighbours already use.
 
 A new line over 25 words is split. The rules bind lines written after
-2026-10-04; the one measured offender before it is ranger-base-zt45t
-(`turnOutcomeClause`, 36 words). Each rule is checked where the line is
-rendered, by the rendering function's own unit test, which names its process
-(ADR 0006 §7); no tree-wide pin reads prose for this, and this appendix is
-not a fixture.
+2026-10-04; the one measured offender before it was `turnOutcomeClause` at 36
+words, rewritten to this shape under ranger-base-zt45t and pinned there
+(`turnOutcomeLines`, `internal/posse/turnoutcomelines_qa_test.go`). Each rule
+is checked where the line is rendered, by the rendering function's own unit
+test, which names its process (ADR 0006 §7); no tree-wide pin reads prose for
+this, and this appendix is not a fixture.

@@ -3971,8 +3971,9 @@ wait:
 		// The ✓ is the BEAD's to give (ADR 0011, ADR 0013 §4) and bd did not
 		// answer, so there is none. An unreadable store of record is
 		// settle-without-record until it reads.
-		d.printf("◑ %-14s settled %q and bd could not say what the issue is (%v) — review %s%s\n",
-			p.is.ID, settled, showErr, p.session, d.settleClause(p.runtime, p.session, find, observed))
+		d.printf("◑ %-14s settled %q and bd could not say what the issue is (%v) — review %s%s\n%s",
+			p.is.ID, settled, showErr, p.session, d.settleClause(p.runtime),
+			turnOutcomeLines(find, p.runtime, p.session, observed, d.now()))
 	default:
 		// ranger-base-htafy, before any of this is called a settle-open. An
 		// agent that went idle behind its own suite run, and one whose
@@ -4002,8 +4003,9 @@ wait:
 				p.is.ID, settled, p.session, hold.Why(), p.session)
 			return true, nil
 		}
-		d.printf("◑ %-14s settled %q but issue is %q — review %s%s\n",
-			p.is.ID, settled, after.Status, p.session, d.settleClause(p.runtime, p.session, find, observed))
+		d.printf("◑ %-14s settled %q but issue is %q — review %s%s\n%s",
+			p.is.ID, settled, after.Status, p.session, d.settleClause(p.runtime),
+			turnOutcomeLines(find, p.runtime, p.session, observed, d.now()))
 		// The second time this exact disagreement happens, the re-prompt
 		// stops being a nudge and becomes an infinite polite retry
 		// (settleopen.go, ranger-base-9hm). Only this branch: bd answered,
@@ -4026,7 +4028,7 @@ wait:
 // the day the bead was filed: 1301 of the 1354 project directories under ~/.claude/projects are
 // worktree paths and every one carries a dispatch transcript, so handing the
 // reader the repo made it answer "nothing readable" for every worktree
-// dispatch there is — loudly (turnOutcomeClause's "looked and found none"),
+// dispatch there is — loudly (turnOutcomeLines's "looked and found none"),
 // but blind on the one runtime posse can actually read.
 //
 // The RECORD and not a derivation: `dir:` in the session meta is the path
@@ -4066,33 +4068,52 @@ func (d *Dispatcher) turnOutcomeReader(runtime string) TurnOutcomeReader {
 	return TurnOutcomeReaderFor(rt)
 }
 
-// settleClause is everything a settle-without-close on THIS runtime needs
-// beside the bare disagreement: the declared record degrade (below), and
-// the turn-outcome fact this pass has — or does not have (turnOutcomeClause).
-// Both are per-runtime declarations, both can be true at once, and they read
-// as one parenthesis because they are one answer to one question — how much
-// of this line is news?
-func (d *Dispatcher) settleClause(runtime, session string, find TurnOutcomeReader, observed bool) string {
-	var parts []string
-	for _, c := range []string{d.recordClause(runtime), turnOutcomeClause(find, runtime, session, observed)} {
-		if c != "" {
-			parts = append(parts, c)
-		}
-	}
-	if len(parts) == 0 {
+// settleClause is the declared record degrade, parenthesised onto a
+// settle-without-close line: how much of that line is news on THIS runtime
+// (recordClause, below).
+//
+// The turn-outcome fact used to join it in the same parenthesis, as one
+// answer to one question. It does not since ranger-base-zt45t: it is a fact
+// and an instruction, which ADR 0067 D5 puts on a line each, and no clause
+// inside somebody else's line can be two lines (turnOutcomeLines). What is
+// left here is one clause, and the parenthesis stays one parenthesis.
+func (d *Dispatcher) settleClause(runtime string) string {
+	c := d.recordClause(runtime)
+	if c == "" {
 		return ""
 	}
-	return " (" + strings.Join(parts, "; ") + ")"
+	return " (" + c + ")"
 }
 
-// turnOutcomeClause is the per-bead half of the account-degraded report (ADR
+// turnOutcomeLines is the per-bead half of the account-degraded report (ADR
 // 0013 §5). It names whichever of the two facts posse does NOT have — never
 // the reassuring one it does — because a settle line that only fits one
 // explanation is the harness guessing where it just admitted it cannot see.
 //
+// Its OWN lines, beneath the settle line, since ranger-base-zt45t; it was
+// `turnOutcomeClause`, one 36-word sentence inside that line's parenthesis.
+// One sentence was three things joined by a dash — the fact, the condition
+// that makes the fact matter, and the instruction — and ADR 0067 D5 measured
+// it as the one line on this surface breaking all three of its rules. The
+// appendix's A4 shape instead: the fact on one line, dated; the instruction
+// on the next with its condition first; each under the 25-word cap, and no
+// dash between a fact and an instruction anywhere. turnoutcomelines_qa_test.go
+// is the pin, where D5 says to put it.
+//
+// One printf and not two, at both call sites: gather runs concurrently with
+// Run and with itself (ADR 0028 §1), and outMu serializes a WRITE — so a
+// continuation line printed separately is one that another seat's settle can
+// land between. Hence the leading "  ↳" and the trailing newline here rather
+// than a second d.printf there.
+//
+// The date is on the FACT and not on the instruction. D5's third rule is
+// there because a line read hours later cannot be placed in time
+// (ranger-base-sqxo1: a pulse line read as 5h45m old because only pass
+// headers carried a clock); an instruction has no time to be wrong about.
+//
 // find == nil is the declared blindness ranger-base-02zr fixed: on a
-// runtime posse reads no turn outcome for, this exact line is ALSO what an
-// exhausted account looks like — no model handled the prompt, the CLI
+// runtime posse reads no turn outcome for, these exact lines are ALSO what
+// an exhausted account looks like — no model handled the prompt, the CLI
 // settled anyway. MEASURED the same day that bead was filed: grok's account
 // was returning `402 Payment Required` while a pass called it an ordinary
 // settle.
@@ -4101,17 +4122,35 @@ func (d *Dispatcher) settleClause(runtime, session string, find TurnOutcomeReade
 // looked and the transcript was not readable yet (cage moved, project dir
 // name did not round-trip, not flushed) — the third state
 // FindClaudeTurnOutcome deliberately distinguishes from ("", true). Without
-// this clause that settle line was byte-identical to a reader that looked
+// these lines that settle line was byte-identical to a reader that looked
 // and saw a healthy first turn, on the one runtime posse can actually read.
-func turnOutcomeClause(find TurnOutcomeReader, runtime, session string, observed bool) string {
-	if find == nil {
-		return fmt.Sprintf("posse reads no turn outcome on %s — an account that refused the turn settles exactly like this, so posse peek %s before reading it as work that ran", runtimeName(runtime), session)
+//
+// Which fact each arm states is the two arms' own pins, on the line an
+// operator reads (TestQABlindAndUntrustedBothLandOnTheSettleLine,
+// TestQAUnobservedTurnOutcomeSettleLineIsNamed); the rules are this one's.
+func turnOutcomeLines(find TurnOutcomeReader, runtime, session string, observed bool, at time.Time) string {
+	// fact is what posse does not have; misread is what the settle above
+	// would otherwise be taken for. Both arms share one instruction, because
+	// the instruction is the same instruction — the condition the reader has
+	// to rule out is the same account refusing the same turn.
+	var fact, misread string
+	switch {
+	case find == nil:
+		fact, misread = "posse reads no turn outcome on "+runtimeName(runtime), "work that ran"
+	case !observed:
+		fact, misread = "posse looked for a turn outcome on "+runtimeName(runtime)+" and found none this pass", "a healthy first turn"
+	default:
+		return ""
 	}
-	if !observed {
-		return fmt.Sprintf("posse looked for a turn outcome on %s and found none this pass — an account that refused the turn can settle exactly like this, so posse peek %s before reading it as a healthy first turn", runtimeName(runtime), session)
-	}
-	return ""
+	return fmt.Sprintf("  ↳ %s %s\n  ↳ if the account refused the turn, a seat settles exactly like this, so posse peek %s before reading this as %s\n",
+		at.Local().Format(turnOutcomeStamp), fact, session, misread)
 }
+
+// turnOutcomeStamp is the clock format the dispatcher's own neighbours use —
+// the pass header (watch.go) and the seat-idle report (seatidle.go) — which
+// is what ADR 0067 D5's third rule asks for: the line's own timestamp, "in
+// the format its neighbours already use".
+const turnOutcomeStamp = "15:04:05"
 
 // turnWork is how much of a refused turn had already run, in the units the
 // operator decides in — empty when the runtime's own record says nothing ran,

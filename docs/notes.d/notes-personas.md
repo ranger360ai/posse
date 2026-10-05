@@ -317,19 +317,24 @@ A runtime that declares no reader now says so on the bead's own line:
 
 ```
 ◑ a-1   settled "idle" but issue is "in_progress" — review ranger-posse-a-1
-        (codex is record: untrusted — the claim is kept and --resume re-prompts it;
-         posse reads no turn outcome on codex — an account that refused the turn
-         settles exactly like this, so posse peek ranger-posse-a-1 before reading
-         it as work that ran)
+        (codex is record: untrusted — the claim is kept and --resume re-prompts it)
+  ↳ 14:03:22 posse reads no turn outcome on codex
+  ↳ if the account refused the turn, a seat settles exactly like this, so posse
+    peek ranger-posse-a-1 before reading this as work that ran
 ```
 
-Both clauses can be true at once and they say different things: the first
-is a **declared degrade** (nothing was lost, `--resume` retries), the
-second is a **fact posse does not have**. Neither is a verdict — the two
-causes are still one `posse peek` apart, and a harness that guessed here
-would be guessing exactly where it just admitted it cannot see. The
-per-pass half of the same honesty is the account-degraded report (ADR 0013
-§5); this is its per-bead half.
+Both facts can be true at once and they say different things: the
+parenthesis is a **declared degrade** (nothing was lost, `--resume`
+retries), the `↳` lines are a **fact posse does not have**. Neither is a
+verdict — the two causes are still one `posse peek` apart, and a harness
+that guessed here would be guessing exactly where it just admitted it
+cannot see. The per-pass half of the same honesty is the account-degraded
+report (ADR 0013 §5); this is its per-bead half.
+
+The second fact has its own lines, dated, since `ranger-base-zt45t`: it was
+one 36-word sentence in that parenthesis, and ADR 0067 D5 asks one fact per
+line, the instruction's condition first, and a clock on anything a human may
+read hours later (`turnOutcomeLines`, `internal/posse/dispatch.go`).
 
 grok's reader was built once the artifact behind it was captured
 (`ranger-base-e123`'s probe, then `ranger-base-fc8go`): grok does NOT write

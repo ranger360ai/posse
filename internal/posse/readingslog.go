@@ -584,7 +584,7 @@ const TurnOutcomeRegion = "turn_outcome_message"
 // turnReading is the D6 reading as a record's evidence: which of the three
 // states the turn-outcome reader was in, and the message if there was one.
 //
-// The THREE states are kept apart exactly as turnOutcomeClause keeps them,
+// The THREE states are kept apart exactly as turnOutcomeLines keeps them,
 // because they are the difference between "this settle is news" and "this
 // settle is what posse cannot see" (ranger-base-02zr, ranger-base-1mei):
 //

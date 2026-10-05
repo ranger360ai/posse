@@ -369,7 +369,7 @@ func TestQAGrokTurnOutcomePrefersTheSessionRunInThisDir(t *testing.T) {
 }
 
 // A store that is not there is not a refusal, and neither is one that cannot
-// be read: both are ("", false), the rung turnOutcomeClause prints as "looked
+// be read: both are ("", false), the rung turnOutcomeLines prints as "looked
 // and found none this pass".
 func TestQAGrokTurnOutcomeUnreadableStoreIsNotHealth(t *testing.T) {
 	home := qaGrokHome(t)

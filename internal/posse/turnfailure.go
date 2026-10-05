@@ -199,7 +199,7 @@ func FindClaudeTurnOutcome(cwd, bead string, since time.Time) (out TurnOutcome, 
 //
 // If claude ever changes the encoding this goes blind LOUDLY rather than
 // wrong: no directory matches, the reader returns (no outcome, false), and
-// the settle line prints turnOutcomeClause's "looked and found none this
+// the settle line prints turnOutcomeLines's "looked and found none this
 // pass".
 func claudeProjectDir(cwd string) string {
 	cleaned := filepath.ToSlash(filepath.Clean(cwd))
