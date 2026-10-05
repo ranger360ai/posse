@@ -43,11 +43,20 @@ curl -sS https://www.githubstatus.com/api/v2/summary.json
 | 19:11:58 | — | — | incident opens | — |
 | 19:21:00 | [37362765576](https://github.com/ranger360ai/posse/actions/runs/37362765576) | `bab60e51` | 1 of 6 | 15m00s |
 | 20:08:21 | [37367869180](https://github.com/ranger360ai/posse/actions/runs/37367869180) | `eebe9737` | 3 of 6 | 15m03s |
-| 20:50:06 | [37372180663](https://github.com/ranger360ai/posse/actions/runs/37372180663) | `64f18288` | see below | — |
+| 20:50:06 | [37372180663](https://github.com/ranger360ai/posse/actions/runs/37372180663) | `64f18288` | 4 of 6 | 15m03s |
 
-Two cuts at fifteen minutes to the second is a mechanism rather than a
+Three cuts at fifteen minutes to the second is a mechanism rather than a
 coincidence, and it is GitHub's. Nothing was wrong with `bab60e51`,
-`eebe9737` or `64f18288`.
+`eebe9737` or `64f18288` — and the starvation got WORSE across the three,
+1 job then 3 then 4, which is why the first run's "thin margin" remedy did
+not transfer to the second.
+
+Main's tip run is the clearest of the three, because only the two jobs that
+got runners inside the first six minutes ever ran: macos 1 (20:50:27) and
+macos 2 (20:55:46) are `success` with 11 steps; ubuntu 1, ubuntu 2, ubuntu 3
+and macos 3 all sat from `created_at` 20:50:06Z and were cancelled together
+at 21:05:09Z with zero steps. **Every `ubuntu-latest` job in the run
+starved.**
 
 ## Run 37367869180, the one this bead names
 
@@ -92,6 +101,12 @@ came free. The tip is the run the bead's DONE WHEN turns on. **Inside a
 declared Actions incident the move is to wait for the incident and then
 re-run**, not to re-run into it.
 
+The tip run settled that by itself: it starved four of six without any help
+from a re-run, so three extra jobs queued against it would have been three
+more cancellations and one less chance for the tip. Waiting costs nothing —
+`main` is fast-forward-only, so the commit's content is covered at the next
+green tip either way.
+
 ## What this exposed in the reading
 
 ranger-base-rdi79's `ciJobsSayQueue` landed at `64f18288` — pushed at
@@ -107,8 +122,24 @@ list with phantom failure after phantom failure" — then lets the 4th
 consecutive phantom STAND as the verdict, which asserts the opposite of the
 sentence that justifies the cap ("three in a row is already a fact about
 GitHub rather than about this branch"). rdi79's census sized the class at 1
-run in 300; inside the outage it was 2 of the next 2. Filed as
+run in 300; inside the outage it was 3 of the next 3. Filed as
 **ranger-base-r5ksj**.
+
+Two things make that bead cheap, and both are already in the tree. The
+abstention it wants exists and is tested —
+`TestReadCIAbstainsWhenEveryRunItCanSeeNeverRan`, the `len(verdicts) == 0`
+branch, which is a could-not-READ and explicitly `!st.NoGate`. And the
+behavior it disputes is PINNED, by
+`TestReadCIVetsAtMostTheCapAndOnlyAtTheHead`, which asserts both `st.Red`
+past the cap and `st.Latest` = the first unvetted run. That second assertion
+is the sharpest form of the complaint: past the cap the bead names a run
+**nobody looked at**. So the fix changes a named test deliberately instead of
+discovering it, which is the difference between a half-hour and an argument.
+
+The cap did not bite in this episode, and by one run. At 21:05 the head of
+the page held two consecutive queue-only runs — 37372180663 then
+37367869180 — with 37362765576 green beneath them under `filter=latest`.
+Two demotions against a cap of three.
 
 Not filed, because `ci.yml` already answers it: a run set aside on an
 otherwise-GREEN gate leaves no trace anywhere — `CIState.QueueOnly` is read
