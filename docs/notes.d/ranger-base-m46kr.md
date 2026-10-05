@@ -104,12 +104,82 @@ as current. Both pages actually observed were 2.3x and 3.4x past it.
 
 ### Plain `rev-list --count`, not `--first-parent`
 
-19 of those 689 run head shas are reachable from `origin/main` but not on its
-first-parent chain. `--first-parent` never reaches them, so it walks the whole
-chain and answers ~1,415 for a run that is current — a false abstention on
-2.8% of readings. On every sha that IS on the chain the two spellings answer
-identically (MEASURED 2026-10-05 across the sampled pairs), so the robust
-spelling costs nothing.
+**CORRECTED 2026-10-05 by ranger-base-1ump9 F1.** Both halves of what this
+section first said were wrong, and the shipped spelling is still the right one
+for a different and better reason.
+
+The reason is the ON-chain shas, not the off-chain ones. Plain counts the
+side-branch commits a merge brought in and `--first-parent` does not, so plain
+never UNDERCOUNTS how far behind the page is — and undercounting is the
+fail-open direction this guard exists to refuse, since a stale page read as
+current leaves no trace at all.
+
+**MEASURED 2026-10-05** over this repo's whole first-parent chain, at
+`origin/main` = `540cc22c`, git 2.50.1 (Apple Git-155), by
+`git rev-list --count <sha>..refs/remotes/origin/main` with and without
+`--first-parent` for all 1,985 on-chain shas. This is the reading to re-run: it
+needs no `gh` page at all.
+
+| | |
+|---|---|
+| on-chain shas | 1,985 |
+| the two spellings agree | 731 |
+| they disagree | **1,254** |
+| plain smaller than `--first-parent` | **0** |
+| gap sizes (plain − first-parent) | 2, 4, 6, 7, 9, 14, 19, 22, 30, 31, 42, 44, 45, 47, **53** |
+| shas with `--first-parent` ≤ 64 < plain | **0** |
+| merges on the chain | 15, newest 730 commits back (`f9e50bbf`, 2026-09-05) |
+
+A gap of 53 against a bound of 64 is a page whose true distance is outside the
+bound and whose `--first-parent` distance is inside it. That no such straddle
+exists today is a DISTANCE and not a property: every sha shallower than the
+newest merge agrees under both spellings, the newest merge is 730 back, so
+nothing within 64 of the tip disagrees. The fail-open is therefore
+CONSTRUCTIBLE rather than present — which is why F1 was a debt line and not a
+P1 — and it is one merge away, not one era away. Fifteen of these commits are
+merges, each a `merge main into <branch>` taken so a bead could fast-forward
+(read their subjects), and the next one puts the following 64 commits' worth of
+readings inside the gap.
+
+The gh side says the same thing, and is where F1 measured it first: over the
+672 run head shas of `ci.yml` that are on the chain, 409 agree and **263 do
+not**, gaps of 4, 6, 7, 9, 42 and 53. Prefer the chain census when re-checking.
+A sample only 700 commits deep reads **zero** disagreements here — the nearest
+merge is 730 back — which is the same trap as the unstable `gh` pagination
+recorded further down: assert the corpus depth before trusting the answer.
+
+What this section first claimed, and why each half is wrong:
+
+| claim | verdict |
+|---|---|
+| `--first-parent` "never reaches" the off-chain shas, "so it walks the whole chain and answers ~1,415 for a run that is current" | wrong about the mechanism. `--first-parent A..B` limits the NEGATIVE traversal to first parents too, so `A`'s own first-parent ancestry is still excluded and the walk is not the whole chain. Of the 19 off-chain shas, the two spellings AGREE for 17 against the tip of their own time — the only ref that bears on "a run that is current" — and differ by 2 and by 10 for the other two; in **0 of 19** would `--first-parent` have abstained where plain would not. The ~1,415 is what `--first-parent` answers for those 19 against TODAY's ref, where plain answers 1,409-1,468 for the same shas: both enormous because all 19 are a month old, and `--first-parent` is SMALLER than plain in every one of the 19, never larger. |
+| "On every sha that IS on the chain the two spellings answer identically" | false as counted: 263 of 672 disagree, per the measurement above. |
+
+Until F1 this rested on nothing the suite could check: swapping the shipped
+line for `--first-parent` **red nothing**, because every fixture in
+ciwatch_test.go was a chain `ciChain` built — one `-p` per commit — and two
+spellings of a first-parent walk cannot differ on a chain that has only first
+parents. The pin is now
+`TestCIFreshnessCountsEveryCommitBehindAndNotTheFirstParentChainAlone`
+(ciwatch_test.go), on a fixture `ciMergeChain` builds:
+
+```
+b0 ─ b1 ──────── M        refs/remotes/origin/main = M
+ \              /
+  s1 ─ … ─ s68
+```
+
+`b1` is ON the first-parent chain with the merge between it and the ref, so
+plain answers 69 and `--first-parent` answers 1 — opposite sides of the bound,
+which is the arm that kills the mutant (MEASURED: it reds with "a page 69
+commits behind origin/main produced a verdict", and nothing else in the file
+moves). `s68` is off that chain and BOTH spellings answer 2 for it, which is
+the row that says "off the first-parent chain" was the wrong discriminator to
+have written the arm on. The straddle itself is asserted rather than commented:
+a linear chain of the same depth would pass the ReadCI arm for the wrong reason
+— plain is over the bound there too — so the pin fatals if the fixture ever
+stops being able to tell the two spellings apart (MEASURED: `ciMergeChain(t,
+dir, 2)` reds with "the fixture no longer straddles the bound").
 
 ### It assumes the workflow runs on every push to the branch
 

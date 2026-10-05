@@ -43,6 +43,20 @@ package posse
 // of which belongs in a hermetic suite. Everything happens inside t.TempDir
 // — the `bd init` is the throwaway-database case, never a repo anybody
 // keeps, and nothing here can see the shop's own store.
+//
+// THAT LAST CLAUSE IS TRUE OF THE DIRECT bd CALLS ONLY SINCE
+// ranger-base-1ump9 (F2), and it is the reason this pin had never once run.
+// Every session posse launches carries BEADS_DIR naming the store of record
+// (ADR 0055) and bd resolves it ahead of cmd.Dir, so the `sh` closure's
+// calls — the `init` among them — went to the LIVE graph while every Go-side
+// call went to <repo>/.beads; the store the rest of this test assumes was
+// never created, and the pin reported that by SKIPPING, which is what it
+// does when it is not asked to run at all. See the closure for the one-line
+// binding and why it is the shipped bdStoreEnv rather than an append.
+// MEASURED 2026-10-05: `bd --no-daemon where` from a fresh throwaway repo
+// answers the live store under the inherited environment and "no beads
+// database found" under bdStoreEnv(os.Environ(), repo), and with the binding
+// in place this pin PASSES rather than skipping.
 
 import (
 	"os"
@@ -71,9 +85,27 @@ func TestLiveCIWatchFiresOnceAndClears(t *testing.T) {
 	if err := WriteExecutable(wrapper, []byte("#!/bin/sh\nexec "+bdbin+" --no-daemon \"$@\"\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	// cmd.Env, and the SHIPPED binder rather than a hand-written
+	// `BEADS_DIR=` append (ranger-base-1ump9 F2). Every session posse
+	// launches carries BEADS_DIR naming the store of record (ADR 0055), and
+	// bd resolves it ahead of cmd.Dir — so without this the `init` below and
+	// the two direct writes after it are aimed at the live graph, while
+	// every GO-side call is bound to <repo>/.beads by Bd.runOnce
+	// (bdStoreEnv, beads.go; beadsstorebind_test.go). The store the next
+	// sixty lines assume was then never created, and the pin SKIPS, which is
+	// indistinguishable from the skip it already has one line down.
+	//
+	// bdStoreEnv is correct in both phases, which is what the append is not:
+	// it sheds every inherited store-repointing variable unconditionally and
+	// only SETS BEADS_DIR `if isDirPath(home)`. For the `init` call, before
+	// <repo>/.beads exists, it sheds the session's value and sets nothing, so
+	// bd falls to $cwd/.beads with cmd.Dir already repo — which is where the
+	// store belongs; for every call after it, it names the store the init
+	// made.
 	sh := func(args ...string) (string, error) {
 		cmd := exec.Command(wrapper, args...)
 		cmd.Dir = repo
+		cmd.Env = bdStoreEnv(os.Environ(), repo)
 		out, err := cmd.CombinedOutput()
 		return string(out), err
 	}

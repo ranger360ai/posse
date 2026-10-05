@@ -549,12 +549,68 @@ func ciChain(t *testing.T, dir string, n int) []string {
 	return shas
 }
 
-// ciSaneBound keeps the two pins below from building a commit per unit of a
-// bound somebody raised to make them pass. Both fixtures are a chain as deep
-// as ciFreshMaxBehind, so the pin's own cost IS the bound — and a bound this
-// far past the census in its doc comment (max 57 legitimate, over 1,357
-// reconstructed instants of this gate's history) is not a bound. Failing here
-// in a second beats a suite that hangs building a hundred thousand commits.
+// ciMergeChain builds the smallest chain that can tell `rev-list --count`
+// from `rev-list --count --first-parent`, and hands back one sha of each
+// kind. side is how many commits the merge brings in from off the
+// first-parent chain.
+//
+//	b0 ─ b1 ──────── M        refs/remotes/origin/main = M
+//	 \              /
+//	  s1 ─ … ─ sside
+//
+// onChain is b1, which IS on origin/main's first-parent chain with the merge
+// between it and the ref: the plain count is side+1 (M and every s) and the
+// --first-parent count is 1 (M alone), because --first-parent drops the
+// side-branch commits the merge brought in. offChain is sside, which is not
+// on that chain at all and which BOTH spellings answer 2 for.
+//
+// That pair is the whole point of the fixture (ranger-base-1ump9 F1): "off
+// the first-parent chain" is the wrong discriminator to write this arm on —
+// it is the on-chain sha the two spellings disagree about. ciChain is a
+// LINEAR chain, one -p per commit, so nothing built from it can separate
+// them and the --first-parent mutant survived every pin in this file.
+//
+// commit-tree and update-ref for the same reason ciChain uses them: no
+// index, no working tree, no hook, and no unqualified commit.
+func ciMergeChain(t *testing.T, dir string, side int) (onChain, offChain string) {
+	t.Helper()
+	tree, err := git(dir, "hash-object", "-t", "tree", "-w", os.DevNull)
+	if err != nil {
+		t.Fatalf("hash-object: %v %s", err, tree)
+	}
+	tree = strings.TrimSpace(tree)
+	commit := func(msg string, parents ...string) string {
+		t.Helper()
+		args := []string{"commit-tree", tree, "-m", msg}
+		for _, p := range parents {
+			args = append(args, "-p", p)
+		}
+		sha, cerr := git(dir, args...)
+		if cerr != nil {
+			t.Fatalf("commit-tree %s: %v %s", msg, cerr, sha)
+		}
+		return strings.TrimSpace(sha)
+	}
+	b0 := commit("b0")
+	onChain = commit("b1", b0)
+	offChain = b0
+	for i := 0; i < side; i++ {
+		offChain = commit("s"+strconv.Itoa(i+1), offChain)
+	}
+	merge := commit("merge", onChain, offChain)
+	if out, uerr := git(dir, "update-ref", "refs/remotes/origin/main", merge); uerr != nil {
+		t.Fatalf("update-ref: %v %s", uerr, out)
+	}
+	return onChain, offChain
+}
+
+// ciSaneBound keeps the three pins below from building a commit per unit of a
+// bound somebody raised to make them pass. Every one of their fixtures is as
+// deep as ciFreshMaxBehind — a chain for two of them and a side branch for
+// the third — so the pin's own cost IS the bound, and a bound this far past
+// the census in its doc comment (max 57 legitimate, over 1,357 reconstructed
+// instants of this gate's history) is not a bound. Failing here in a second
+// beats a suite that hangs building a hundred thousand commits.
 func ciSaneBound(t *testing.T) {
 	t.Helper()
 	if ciFreshMaxBehind > 512 {
@@ -669,6 +725,94 @@ func TestReadCIAbstainsOnARunListPageTheIndexServedFromBehind(t *testing.T) {
 	}
 	if st.NoGate {
 		t.Error("a checkout with no origin/main is not a repo with no gate: the gate is there and went unread")
+	}
+}
+
+// THE SPELLING OF THE COUNT, which the whole guard rests on: plain
+// `rev-list --count` and NOT --first-parent (ciFreshness's own paragraph).
+// ranger-base-1ump9 F1: swapping the shipped line for --first-parent reds
+// NOTHING else in this file, because every other fixture here is a chain
+// ciChain built — one -p per commit — and two spellings of a first-parent
+// walk cannot differ on a chain that has only first parents.
+//
+// Plain never UNDERCOUNTS the distance, and undercounting is the fail-open
+// direction this guard exists to refuse: a stale page read as current leaves
+// no trace at all, which is this file's founding incident. MEASURED
+// 2026-10-05 over this repo's whole first-parent chain (1,985 commits, git
+// 2.50.1), 1,254 shas answer differently under the two spellings and plain
+// is never the smaller — gaps up to 53 commits, because plain counts the
+// side-branch commits a merge brought in and --first-parent does not.
+// Against a bound of 64 a gap of 53 is a page whose true distance is outside
+// the bound and whose --first-parent distance is inside it.
+//
+// No sha within the bound disagrees TODAY, for a reason that is a distance
+// and not a property: the newest merge on the chain is 730 commits back, so
+// the exposure is CONSTRUCTIBLE rather than present and the next `merge main
+// into <branch>` before a fast-forward brings it back. This is the fixture
+// that constructs it, and the straddle is asserted below rather than assumed
+// — see ciFreshness's own paragraph and
+// docs/notes.d/ranger-base-m46kr.md for the census.
+func TestCIFreshnessCountsEveryCommitBehindAndNotTheFirstParentChainAlone(t *testing.T) {
+	t.Parallel()
+	ciSaneBound(t)
+	dir, bin := ghRepo(t, "ci.yml")
+	// One merge bringing in more commits than the bound, which is what puts
+	// the two spellings on OPPOSITE sides of it.
+	onChain, offChain := ciMergeChain(t, dir, ciFreshMaxBehind+4)
+	count := func(sha string, args ...string) int {
+		t.Helper()
+		args = append(append([]string{"rev-list", "--count"}, args...), sha+"..refs/remotes/origin/main")
+		out, err := git(dir, args...)
+		if err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+		n, cerr := strconv.Atoi(strings.TrimSpace(out))
+		if cerr != nil {
+			t.Fatalf("git %v answered %q", args, out)
+		}
+		return n
+	}
+
+	// THE FIXTURE'S SEPARATING PROPERTY IS AN ASSERTION, not a comment: a
+	// linear chain of the same depth passes the ReadCI arm below for the
+	// wrong reason — plain is over the bound there too — and would pin
+	// nothing about the spelling. This is the row that says the fixture can
+	// still tell the two apart.
+	plain, fp := count(onChain), count(onChain, "--first-parent")
+	if !(fp <= ciFreshMaxBehind && plain > ciFreshMaxBehind) {
+		t.Fatalf("the fixture no longer straddles the bound: %s is plain %d / --first-parent %d against ciFreshMaxBehind %d, so the arm below cannot tell the two spellings apart",
+			onChain[:8], plain, fp, ciFreshMaxBehind)
+	}
+	// AND "OFF THE FIRST-PARENT CHAIN" IS THE WRONG DISCRIMINATOR to have
+	// written the arm on, which is the half of ciFreshness's old paragraph
+	// that was wrong about its mechanism: `--first-parent A..B` limits the
+	// NEGATIVE traversal to first parents too, so A's own first-parent
+	// ancestry is still excluded and the walk is not the whole chain. An
+	// off-chain sha one merge below the ref answers the SAME small number
+	// under both spellings.
+	if p, f := count(offChain), count(offChain, "--first-parent"); p != f {
+		t.Errorf("%s is off the first-parent chain and the two spellings answer %d and %d: the disagreement this guard cares about is the ON-chain one", offChain[:8], p, f)
+	}
+
+	read := func(sha string) CIState {
+		t.Helper()
+		ciPage(t, ciRunJSON(sha, "completed", "success", time.Date(2026, 9, 11, 8, 59, 43, 0, time.UTC)))
+		return ReadCI(CIQuery{Dir: dir, Workflow: "ci.yml", GhBin: bin})
+	}
+
+	// THE KILL. A page topped by a sha that is ON the chain, with a merge
+	// between it and the ref, is `plain` commits behind — past the bound, so
+	// it is not a reading. Under --first-parent it is `fp` commits behind,
+	// inside the bound, and a stale GREEN page would read as an all-clear
+	// with nothing anywhere saying so.
+	if st := read(onChain); st.Known() {
+		t.Errorf("a page %d commits behind origin/main produced a verdict (red=%v, why=%q): the count must be every commit behind, not the %d the first-parent chain alone answers",
+			plain, st.Red, st.Why, fp)
+	}
+	// And the guard has not just been turned up: the off-chain sha, which
+	// both spellings put at the same small distance, still reads.
+	if st := read(offChain); !st.Known() {
+		t.Errorf("a page %d commits behind origin/main abstained (why=%q) — merges do not make a current reading stale", count(offChain), st.Why)
 	}
 }
 

@@ -604,12 +604,50 @@ func ReadCI(q CIQuery) CIState {
 // letting the reading through rather than suppressing it. The one direction
 // that matters is kept: what this can prove, it refuses to act on.
 //
-// Plain `rev-list --count` and NOT --first-parent: 19 of the 689 run head
-// shas in this gate's own history are reachable from origin/main but not on
-// its first-parent chain, and --first-parent never reaches those, so it
-// walks the whole chain and answers ~1,415 for a run that is current. The
-// plain count answers the same number as --first-parent on every sha that IS
-// on the chain (MEASURED 2026-10-05), so the robust spelling costs nothing.
+// Plain `rev-list --count` and NOT --first-parent, and the reason is the
+// ON-chain shas rather than the off-chain ones. Plain counts the side-branch
+// commits a merge brought in and --first-parent does not, so plain never
+// UNDERCOUNTS how far behind the page is — and undercounting is the
+// fail-open direction this guard exists to refuse, since a stale page read
+// as current leaves no trace at all.
+//
+// MEASURED 2026-10-05 over this repo's whole first-parent chain (1,985
+// commits, git 2.50.1), which needs no gh page and so is the reading to
+// re-run: 731 shas answer the same under both spellings and 1,254 do not,
+// plain the larger in every one and never smaller. The gaps are 2, 4, 6, 7,
+// 9, 14, 19, 22, 30, 31, 42, 44, 45, 47 and 53 commits, and against this
+// bound of 64 a gap of 53 is a page whose true distance is outside the bound
+// and whose --first-parent distance is inside it.
+//
+// NO SUCH STRADDLE EXISTS TODAY, and the reason is a distance and not a
+// property: the newest merge on the chain sits 730 commits back
+// (2026-09-05), every sha shallower than it agrees under both spellings, and
+// so no sha within 64 of the tip disagrees at all (measured: 0 shas with
+// --first-parent <= 64 < plain). The fail-open is therefore CONSTRUCTIBLE
+// rather than present — and it is one merge away, not one era away: 15 of
+// these 1,985 commits are merges, each a `merge main into <branch>` taken so
+// a bead could fast-forward, and the first one of those to land again puts
+// the following 64 commits' worth of readings inside the gap. That is why
+// the spelling is pinned rather than just explained
+// (TestCIFreshnessCountsEveryCommitBehindAndNotTheFirstParentChainAlone,
+// ranger-base-1ump9 F1).
+//
+// The run head shas say the same thing from the gh side, which is where F1
+// measured it: over the 672 run head shas of this workflow that are on the
+// chain, 409 agree and 263 do not, gaps of 4, 6, 7, 9, 42 and 53. Prefer the
+// chain census above when re-checking — gh's own pagination on this repo is
+// unstable in exactly the direction that costs a census its denominator
+// (ranger-base-m46kr's notes fragment), and a sample only 700 commits deep
+// sees zero disagreements here because the nearest merge is 730 back.
+//
+// The off-chain shas are NOT the reason, and a previous version of this
+// paragraph had the mechanism wrong: `--first-parent A..B` limits the
+// NEGATIVE traversal to first parents too, so A's own first-parent ancestry
+// is still excluded and the walk is not the whole chain. Of the 19 run head
+// shas here that are reachable from origin/main but off its first-parent
+// chain, the two spellings agree for 17 against the tip of their own time
+// and differ by 2 and by 10 for the other two, and in 0 of 19 would
+// --first-parent have abstained where plain would not.
 //
 // IT ASSUMES THE WATCHED WORKFLOW RUNS ON EVERY PUSH to the branch, which is
 // what makes a commit distance mean anything — ci.yml does (`on: push:
