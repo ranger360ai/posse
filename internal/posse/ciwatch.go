@@ -251,10 +251,20 @@ const (
 	// queue broken for everybody tops the list with phantom failure after
 	// phantom failure, and walking 100 of those would put 100 children on a
 	// dispatch pass. 3 because the class is 1 run in 300 and three in a row
-	// is already a fact about GitHub rather than about this branch. Past the
-	// cap the run stands as gh reported it, which is the reading this file
-	// took before the vet existed — the same direction every other failure
-	// here falls.
+	// is already a fact about GitHub rather than about this branch.
+	//
+	// AND THAT SENTENCE DECIDES WHAT HAPPENS PAST THE CAP (ranger-base-r5ksj).
+	// It used to end "past the cap the run stands as gh reported it", which
+	// is the direction every other failure in this file falls — and it was
+	// wrong here, because it is the only one that contradicts its own
+	// premise: if three in a row is already a fact about GitHub rather than
+	// about this branch, the 4th is more of that fact and not less, so the
+	// reading that let it stand filed a P1 naming a run whose jobs page it
+	// had deliberately declined to fetch. The cap keeps bounding CALLS,
+	// which is the cost and the reason it exists; it no longer flips the
+	// verdict's DIRECTION at its own boundary. The loop below abstains when
+	// the cap is the only thing that stopped it, and a run that STOOD
+	// inside the cap is untouched — that is positive evidence of a real red.
 	ciJobsVetCap = 3
 
 	// ciJobsReadTimeout bounds one jobs call. Shorter than ciReadTimeout
@@ -775,7 +785,8 @@ func ReadCI(q CIQuery) CIState {
 	// a bead that was going to be filed anyway, against one gh child per
 	// run of the streak to fix — the incident's own streak was 191. The
 	// false P1 this bead is about is a reading, not a count.
-	for vetted := 0; vetted < ciJobsVetCap && len(verdicts) > 0 && reds[0] && verdicts[0].Conclusion == "failure"; vetted++ {
+	vetted := 0
+	for ; vetted < ciJobsVetCap && len(verdicts) > 0 && reds[0] && verdicts[0].Conclusion == "failure"; vetted++ {
 		why, queueOnly := ciRunIsQueueOnly(dir, ghBin(q.GhBin), slug, verdicts[0])
 		if !queueOnly {
 			break
@@ -783,13 +794,54 @@ func ReadCI(q CIQuery) CIState {
 		s.QueueOnly = append(s.QueueOnly, CIQueueOnly{Run: verdicts[0], Why: why})
 		verdicts, reds = verdicts[1:], reds[1:]
 	}
-	if len(verdicts) == 0 {
-		s.Why = "no completed run of " + q.Workflow + " on " + s.Branch + " in " + slug +
-			" carries a verdict (looked at the last " + strconv.Itoa(ciScanLimit) + ")"
+	// THE CAP BOUNDS CALLS AND NOT THE VERDICT'S DIRECTION (ranger-base-r5ksj).
+	// `cappedOut` is "the cap, and only the cap, stopped that loop", and it
+	// is spelled as the loop's own continuation conditions with the counter
+	// AT the cap instead of below it — because every other way of stopping
+	// already reaches the right answer and must keep it. A `success` under
+	// the phantoms is a verdict that was read, and is read; an empty window
+	// is the branch just below; and a run that STOOD is positive evidence of
+	// a real red, which ends the loop on its own merits.
+	//
+	// That last one needs no term of its own, and the reason is the `break`:
+	// it fires before the post statement, so a loop that stopped on a run
+	// that stood leaves `vetted` at most ciJobsVetCap-1 and can never read
+	// as a cap-out — which is an invariant of this loop's shape rather than
+	// of its conditions, so it is pinned
+	// (TestReadCIStillReadsAVerdictWhenTheCapsBudgetRanOutOnOne) rather than
+	// restated as a redundant `!stood` that would look load-bearing.
+	//
+	// So the only reading that changes is the uninspected run past a full
+	// budget of demotions, and it stops being a verdict about a page nobody
+	// fetched.
+	cappedOut := vetted == ciJobsVetCap &&
+		len(verdicts) > 0 && reds[0] && verdicts[0].Conclusion == "failure"
+	if len(verdicts) == 0 || cappedOut {
+		// Both are the same could-not-READ abstention and not a green pass —
+		// NoGate stays false, because this repo HAS a gate — and both clear
+		// on the next completed run. They differ only in what they can
+		// claim: an empty window looked at everything there was, while the
+		// capped one deliberately did not look at the run it is declining to
+		// convict, and says which run that is so a reader can look.
+		//
+		// Naming that run puts a SHA in the Why, and ciAbstained keys its
+		// say-it-once on dir+Why — so unlike every other abstention here,
+		// this one prints again when the tip moves. That is the behavior
+		// wanted and not a leak: during the outage that produced this, each
+		// new push is a new run starved by the queue, and a line per starved
+		// tip is the only trace those commits get (a run set aside leaves
+		// none anywhere else). The empty-window Why carries no sha and still
+		// says itself once.
+		if cappedOut {
+			s.Why = "the newest " + strconv.Itoa(ciJobsVetCap) + " failed runs of " + q.Workflow +
+				" on " + s.Branch + " in " + slug + " are runs that never ran, which is the queue" +
+				" and not this branch; the jobs-call cap stops the reading above " +
+				verdicts[0].Short() + ", so no verdict was read"
+		} else {
+			s.Why = "no completed run of " + q.Workflow + " on " + s.Branch + " in " + slug +
+				" carries a verdict (looked at the last " + strconv.Itoa(ciScanLimit) + ")"
+		}
 		if n := len(s.QueueOnly); n > 0 {
-			// Which is a could-not-READ abstention and not a green pass: the
-			// window held nothing but runs that never ran, and the next
-			// completed run clears it.
 			s.Why += "; " + strconv.Itoa(n) + " failed run(s) set aside — " + s.QueueOnly[0].Why
 		}
 		return s

@@ -463,12 +463,30 @@ func TestReadCIAsksForJobsOnlyWhenAFailureIsAboutToBeTheVerdict(t *testing.T) {
 	}
 }
 
-// AND IT IS BOUNDED. A page topped by phantom after phantom is a queue
+// AND IT IS BOUNDED — IN CALLS, AND NOT IN THE VERDICT'S DIRECTION
+// (ranger-base-r5ksj). A page topped by phantom after phantom is a queue
 // broken for everybody, not a fact about this branch, and it must not put
-// one gh child per run of the window on a dispatch pass. Past ciJobsVetCap
-// the run stands as gh reported it — and the cap counts the CALLS, which is
-// what costs, so a page of nothing but phantoms forks exactly as many
-// children as a page whose first unvetted run stands.
+// one gh child per run of the window on a dispatch pass. So the cap counts
+// CALLS, which is what costs: a page of nothing but phantoms forks exactly
+// ciJobsVetCap children whatever is under them.
+//
+// What the cap must NOT do is decide the case it was sized for. This test
+// asserted the opposite until 2026-10-05 — "the run that was never vetted
+// must stand as gh reported it", with st.Latest = the first run past the
+// cap — which made a 4th consecutive phantom a P1 naming a run whose jobs
+// page the reading had deliberately declined to fetch. That is the sharpest
+// form of the bug: not a red that might be a phantom, but a verdict
+// attributed to a page nobody looked at, on exactly the pathological page
+// the cap's doc comment imagines and then argues is a fact about GitHub
+// rather than about this branch.
+//
+// So past the cap the reading ABSTAINS, through the same could-not-READ
+// branch an all-phantom window already used
+// (TestReadCIAbstainsWhenEveryRunItCanSeeNeverRan): Known() false, NoGate
+// false — this repo HAS a gate — and the next completed run clears it. The
+// green run at the bottom of this page is NOT the answer either, and that is
+// deliberate: the reading cannot see past the cap in either direction, so it
+// claims nothing rather than claiming the wrong thing cheaply.
 func TestReadCIVetsAtMostTheCapAndOnlyAtTheHead(t *testing.T) {
 	t.Parallel()
 	base := time.Date(2026, 10, 5, 19, 21, 0, 0, time.UTC)
@@ -483,21 +501,124 @@ func TestReadCIVetsAtMostTheCapAndOnlyAtTheHead(t *testing.T) {
 		writeGhJobs(t, strconv.Itoa(9000+i), ciPhantomJobsJSON())
 	}
 	st := ReadCI(CIQuery{Dir: dir, Workflow: "ci.yml", GhBin: bin})
-	if !st.Known() {
-		t.Fatalf("not read: %s", st.Why)
-	}
+	// THE COST, unchanged by the direction: one child per call the cap
+	// allows, and the run past it is never asked about.
 	if n := ghJobsCalls(t); n != ciJobsVetCap {
 		t.Errorf("%d jobs calls, want ciJobsVetCap=%d:\n%s", n, ciJobsVetCap, ghCalls(t))
+	}
+	unvetted := fmt.Sprintf("sha%05d", ciJobsVetCap)
+	if got := ghCalls(t); strings.Contains(got, strconv.Itoa(9000+ciJobsVetCap)+"/jobs") {
+		t.Errorf("asked the jobs endpoint about %s, which is past the cap:\n%s", unvetted, got)
 	}
 	if len(st.QueueOnly) != ciJobsVetCap {
 		t.Errorf("set aside %d, want ciJobsVetCap=%d", len(st.QueueOnly), ciJobsVetCap)
 	}
-	if !st.Red {
-		t.Errorf("green past the cap: the run that was never vetted must stand as gh reported it")
+	// THE DIRECTION. This is the assertion ranger-base-r5ksj reversed.
+	if st.Known() {
+		t.Fatalf("a verdict past the cap: red=%v latest=%q — %s was never looked at",
+			st.Red, st.Latest.Short(), unvetted)
 	}
-	if want := fmt.Sprintf("sha%05d", ciJobsVetCap); st.Latest.Short() != want {
-		t.Errorf("latest = %q, want %q — the first run past the cap", st.Latest.Short(), want)
+	if st.NoGate {
+		t.Error("NoGate: this repo HAS a gate, and a pass that could not read one says so")
 	}
+	if st.Latest.Short() != "" {
+		t.Errorf("latest = %q: an abstention names no run as the verdict", st.Latest.Short())
+	}
+	// And the Why has to be actionable, which means naming the run it is
+	// declining to convict as well as the evidence it did gather.
+	for _, want := range []string{unvetted, "set aside", "never started"} {
+		if !strings.Contains(st.Why, want) {
+			t.Errorf("why = %q, want it to name %q", st.Why, want)
+		}
+	}
+}
+
+// THE TWO CASES THE CAP-EXIT ABSTENTION MUST NOT SWALLOW (ranger-base-r5ksj).
+// `cappedOut` is spelled as the vet loop's continuation conditions with the
+// counter AT the cap, and this is why each of the other terms is there: both
+// of these pages spend the cap's whole budget exactly as the abstaining one
+// does, and both still carry a verdict that was READ rather than declined.
+//
+// Without them the fix would be a worse bug than the one it fixes — a gate
+// that can neither go red nor go green during an outage — and neither is
+// caught by any other test here, because every other cap test tops the page
+// with nothing but phantoms.
+func TestReadCIStillReadsAVerdictWhenTheCapsBudgetRanOutOnOne(t *testing.T) {
+	t.Parallel()
+	base := time.Date(2026, 10, 5, 19, 21, 0, 0, time.UTC)
+	phantoms := func(n int) (rows []string) {
+		for i := 0; i < n; i++ {
+			rows = append(rows, ciRunJSONID(fmt.Sprintf("sha%05d", i), "completed", "failure",
+				base.Add(-time.Duration(i)*time.Hour), strconv.Itoa(9000+i)))
+		}
+		return rows
+	}
+
+	// A REAL RED ON THE LAST CALL THE CAP ALLOWS. The loop stops because a
+	// run STOOD — positive evidence of a red, which ends it on its own
+	// merits — and that it stood on the cap-th call rather than the first
+	// changes nothing. There is no `!stood` term in `cappedOut` guarding
+	// this: the `break` fires before the post statement, so a stand leaves
+	// the counter below the cap. That is an invariant of the loop's SHAPE,
+	// which no condition states, so this subtest is where it is pinned.
+	t.Run("a run that stood on the last call the cap allows", func(t *testing.T) {
+		t.Parallel()
+		rows := phantoms(ciJobsVetCap - 1)
+		rows = append(rows,
+			ciRunJSONID("realred0", "completed", "failure", base.Add(-50*time.Hour), "9500"),
+			ciRunJSONID("green000", "completed", "success", base.Add(-100*time.Hour), "8999"))
+		dir, bin := ghRepo(t, "ci.yml", rows...)
+		for i := 0; i < ciJobsVetCap-1; i++ {
+			writeGhJobs(t, strconv.Itoa(9000+i), ciPhantomJobsJSON())
+		}
+		writeGhJobs(t, "9500", ciJobsJSON(
+			ciJobJSON("test (ubuntu-latest, 3)", "failure", 11, "GitHub Actions 1"),
+			ciJobJSON("test (macos-latest, 1)", "success", 11, "GitHub Actions 2"),
+		))
+		st := ReadCI(CIQuery{Dir: dir, Workflow: "ci.yml", GhBin: bin})
+		if !st.Known() {
+			t.Fatalf("abstained over a red a job of its own accounts for: %s", st.Why)
+		}
+		if !st.Red || st.Latest.Short() != "realred0" {
+			t.Errorf("red=%v latest=%q, want realred0 to stand", st.Red, st.Latest.Short())
+		}
+		if len(st.QueueOnly) != ciJobsVetCap-1 {
+			t.Errorf("set aside %d, want %d", len(st.QueueOnly), ciJobsVetCap-1)
+		}
+		if n := ghJobsCalls(t); n != ciJobsVetCap {
+			t.Errorf("%d jobs calls, want ciJobsVetCap=%d:\n%s", n, ciJobsVetCap, ghCalls(t))
+		}
+	})
+
+	// EXACTLY THE CAP IN PHANTOMS, AND A GREEN UNDER THEM — the `reds[0]` and
+	// `Conclusion == "failure"` terms. The budget is spent to the last
+	// call, so `vetted == ciJobsVetCap` holds and the cap's own condition is
+	// what ends the loop; but the run under them carries a verdict the loop
+	// would never have asked about anyway, and it is GREEN. Abstaining here
+	// would mean an outage of exactly cap runs hides the gate clearing,
+	// which is this file's founding incident in miniature.
+	t.Run("exactly the cap in phantoms over a green", func(t *testing.T) {
+		t.Parallel()
+		rows := append(phantoms(ciJobsVetCap),
+			ciRunJSONID("green000", "completed", "success", base.Add(-100*time.Hour), "8999"))
+		dir, bin := ghRepo(t, "ci.yml", rows...)
+		for i := 0; i < ciJobsVetCap; i++ {
+			writeGhJobs(t, strconv.Itoa(9000+i), ciPhantomJobsJSON())
+		}
+		st := ReadCI(CIQuery{Dir: dir, Workflow: "ci.yml", GhBin: bin})
+		if !st.Known() {
+			t.Fatalf("abstained with a green run in plain sight under the phantoms: %s", st.Why)
+		}
+		if st.Red || st.Latest.Short() != "green000" {
+			t.Errorf("red=%v latest=%q, want the green under the phantoms", st.Red, st.Latest.Short())
+		}
+		if len(st.QueueOnly) != ciJobsVetCap {
+			t.Errorf("set aside %d, want ciJobsVetCap=%d", len(st.QueueOnly), ciJobsVetCap)
+		}
+		if n := ghJobsCalls(t); n != ciJobsVetCap {
+			t.Errorf("%d jobs calls, want ciJobsVetCap=%d:\n%s", n, ciJobsVetCap, ghCalls(t))
+		}
+	})
 }
 
 // TWO PHANTOMS IN A ROW, over the payloads GitHub actually served
