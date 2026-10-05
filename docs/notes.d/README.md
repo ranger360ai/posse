@@ -21,6 +21,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-g6sb1](ranger-base-g6sb1.md) — The tree-wide door register was blind to a whole package, and what the second key had to be (ranger-base-g6sb1) — 2026-10-04
 - [ranger-base-eawjq](ranger-base-eawjq.md) — Replaying a TWO-commit merge-back: every commit needs its own twin (ranger-base-eawjq) — 2026-10-04
 - [ranger-base-dpvlh](ranger-base-dpvlh.md) — ranger-base-dpvlh — a merge-back of a DERIVED gate has to re-run the gate — 2026-10-04
+- [ranger-base-dckhf](ranger-base-dckhf.md) — The reading that typed now rides on the record its keystrokes produced (ranger-base-dckhf) — 2026-10-04
 - [ranger-base-d1hax](ranger-base-d1hax.md) — A door with two arms needed two classifications, and the roster can only hold a one-line recipe (ranger-base-d1hax) — 2026-10-04
 - [ranger-base-cu0zg](ranger-base-cu0zg.md) — A pin on a helper is not a pin on its call sites (ranger-base-cu0zg) — 2026-10-04
 - [ranger-base-aza46](ranger-base-aza46.md) — A three-commit merge-back where two twins land no part of the conflicted file (ranger-base-aza46) — 2026-10-04

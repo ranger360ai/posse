@@ -189,10 +189,34 @@ type Reading struct {
 	Bead        string             `json:"bead,omitempty"`
 	Runtime     string             `json:"runtime,omitempty"`
 	Herdr       ReadingEvidence    `json:"herdr"`
+	// Gate is a SECOND reading, carried only where the record is about
+	// keystrokes posse sent: the pane-state reading that opened the settle
+	// gate and therefore TYPED (ADR 0066 D1 as amended 2026-10-04,
+	// ranger-base-o1aoi; prices in docs/notes.d/ranger-base-o1aoi.md §4).
+	//
+	// IT IS A SEPARATE FIELD AND NOT A WIDER `Herdr`, because the two are
+	// different readings by different readers at different instants and a
+	// census must not add them up. Herdr above stays what it has always
+	// been — on a D5 record, the stall verdict's own two halves, which read
+	// no screen at all (promptstall.go). This one is herdr's D1 reading,
+	// labelled as the gate's, with the screen from each side of the
+	// keystrokes in its regions: PaneCaptureAtPromptRegion is what the pane
+	// held the instant before the text went in, PaneCaptureRegion what it
+	// held when the stall was judged. Either may be absent — both are best
+	// effort — and the pair is the evidence a false IDLE is diagnosed from
+	// (the note's §3: one alone says "idle" or "empty", the two together
+	// say "eaten").
+	//
+	// A nil Gate is every record that is not about a keystroke posse typed,
+	// which is every decision but D5 and, within D5, the launch-line path:
+	// nothing is typed there, so there is no reading that typed.
+	Gate *ReadingEvidence `json:"gate,omitempty"`
 	// Redacted names the data-ceiling classes taken out of the regions
 	// before this line was written (ADR 0050 D2, class only). Non-empty
 	// means the bytes are not the bytes that were read, so a replay over
-	// them proves nothing.
+	// them proves nothing. BOTH blocks' regions go through the ceiling and
+	// both blocks' classes land here: a capture is a capture of somebody's
+	// terminal whichever reading carried it.
 	Redacted []string `json:"redacted,omitempty"`
 	// Posse is the version that took the reading. A corpus outlives the
 	// rules it was read by, and a case whose verdict disagrees with today's
@@ -315,6 +339,21 @@ func (a *App) AppendReading(treePath string, r Reading) error {
 		r.Posse = VersionString()
 	}
 	r.Herdr.Regions, r.Redacted = a.redactRegions(r.Herdr.Regions)
+	// The gate block's regions are a pane capture of somebody's terminal
+	// exactly like the rest (ranger-base-dckhf), so they go through the
+	// same ceiling and their classes join the same list. COPIED first: Gate
+	// is a pointer, and this function takes its Reading by value — so
+	// redacting through the pointer would reach back into the caller's own
+	// in-flight state and leave the pendingBead holding redacted bytes.
+	if r.Gate != nil {
+		g := *r.Gate
+		var took []string
+		g.Regions, took = a.redactRegions(g.Regions)
+		r.Gate = &g
+		if len(took) > 0 {
+			r.Redacted = dedupeStrings(append(r.Redacted, took...))
+		}
+	}
 	line, err := json.Marshal(r)
 	if err != nil {
 		return err
@@ -468,11 +507,24 @@ func (r Reading) ReplayHold() PaneHold {
 	return r.AsDetection().Hold()
 }
 
-// ReadingRegionOf returns the recorded bytes of one region, and whether the
-// record carried it. For a census and for a pin that has to assert the
-// bytes a verdict was reproducible from are actually there.
+// ReadingRegionOf returns the recorded bytes of one region of the record's
+// OWN reading, and whether it carried it. For a census and for a pin that
+// has to assert the bytes a verdict was reproducible from are actually
+// there.
+//
+// `Herdr` and not `Gate`: a record's own reading is the one its verdict came
+// from, and a reader that meant the gate's asks the gate's block for it
+// (RegionOf below). Two blocks reachable through one lookup would make
+// "the record carries this region" an ambiguous sentence.
 func (r Reading) ReadingRegionOf(name string) (ReadingRegion, bool) {
-	for _, reg := range r.Herdr.Regions {
+	return r.Herdr.RegionOf(name)
+}
+
+// RegionOf is the same lookup over any one evidence block, which is what
+// makes the gate's captures readable by the same means as herdr's own
+// regions rather than by a second loop somebody writes again.
+func (e ReadingEvidence) RegionOf(name string) (ReadingRegion, bool) {
+	for _, reg := range e.Regions {
 		if reg.Name == name {
 			return reg, true
 		}
@@ -571,6 +623,33 @@ func (d *Dispatcher) d3Evidence(target string, det AgentDetection) ReadingEviden
 		return ev
 	}
 	return d.HB.withPaneCapture(target, ev)
+}
+
+// gateReading is the evidence a typed prompt carries into its own judgment:
+// the settle gate's D1 reading, plus the screen as it was the instant before
+// the keystrokes (ADR 0066 D1 as amended, ranger-base-o1aoi §3).
+//
+// IT IS BUILT AT TYPE TIME AND WRITTEN LATER, OR NEVER. fire holds the
+// result on the pendingBead and logStall writes it if — and only if — the
+// prompt stalls; a turn that starts drops it. That is the whole shape of the
+// amendment: the reading posse wants a record of has no consequence of its
+// own to key on (it types, and typing is not one of ADR 0066 D1's five), so
+// the record is keyed on the consequence it PRODUCES, which is the D5 stall
+// verdict the log already counts. Nothing new is written per prompt and no
+// sixth consequence is coined.
+//
+// ALWAYS NON-NIL on the typed path, even when herdr said nothing worth
+// carrying and the capture came back empty: the block then says the gate
+// opened on a reading with no rule and no bytes, which is itself the finding
+// for a reword that dropped herdr to its idle fallback (rangerhq-7ia). An
+// absent block would be indistinguishable from the launch-line path, which
+// is a different fact.
+//
+// It is a Dispatcher method for the backend, not for a dry-run guard: fire
+// is unreachable on a dry pass, and that is argued where the call is.
+func (d *Dispatcher) gateReading(det AgentDetection, target string) *ReadingEvidence {
+	ev := d.HB.withPaneCaptureNamed(target, PaneCaptureAtPromptRegion, ReadingEvidenceOf(det))
+	return &ev
 }
 
 // TurnOutcomeRegion is what the readings log calls D6's evidence: the
@@ -694,6 +773,24 @@ func herdrRefusalRule(promptErr error, ev ReadingEvidence) string {
 // So the record carries the screen once, whole, in the shape a fixture is.
 const PaneCaptureRegion = "pane_capture"
 
+// PaneCaptureAtPromptRegion is the OTHER instant, and only a record with a
+// Gate block carries it: the screen as it was immediately before posse
+// pressed the keys (ADR 0066 D1 as amended, ranger-base-o1aoi §3).
+//
+// WHY A SECOND NAME RATHER THAN A SECOND REGION CALLED pane_capture. The
+// pair is the evidence, and a reader of the record has to be able to tell
+// which side of the keystrokes each half is from: for rangerhq-37c — a
+// transient splash read as a seen screen — the type-time capture is the
+// splash with its banner and the stall-time one is a composer with the text
+// gone, and it is exactly that ORDER that says "eaten" where either alone
+// says "idle" or "empty". Two regions under one name would also collide in
+// the census's corpus export, which writes one file per region name
+// (scripts/readings-census.py).
+//
+// Named apart from herdr's manifest vocabulary for PaneCaptureRegion's own
+// reason: nothing in `etc/herdr/agent-detection/*.toml` answers to it.
+const PaneCaptureAtPromptRegion = "pane_capture_at_prompt"
+
 // withPaneCapture adds that capture to a D3 record's evidence: one
 // `pane read --source detection` of the pane the refusal was about.
 //
@@ -724,6 +821,27 @@ const PaneCaptureRegion = "pane_capture"
 //     record that says what herdr saw and nothing else is the record there
 //     has always been.
 func (b *HerdrBackend) withPaneCapture(target string, ev ReadingEvidence) ReadingEvidence {
+	return b.withPaneCaptureNamed(target, PaneCaptureRegion, ev)
+}
+
+// withPaneCaptureNamed is the same read under a region name the caller
+// picks, and it is the whole of the mechanism — withPaneCapture above is
+// this at PaneCaptureRegion.
+//
+// ONE IMPLEMENTATION, because the second caller (the settle gate's capture
+// at type time, dispatch.go's gateReading) differs from the D3 one in the
+// region name and in NOTHING else: the same herdr verb, the same three
+// silent ways of adding nothing, the same ceiling on the way into the log.
+// A second copy would be the same bargain struck twice and kept in sync by
+// hand.
+//
+// The three silences are the ones the comment above names, and the REPORTED
+// one carries over unchanged for the same reason it was written: a pane
+// herdr does not address is a pane posse may not read a screen off, and
+// that is as true the instant before a keystroke as it is after a refusal.
+// A reported-route gate therefore carries its evidence with no capture on
+// either side — which the record says by holding neither region.
+func (b *HerdrBackend) withPaneCaptureNamed(target, region string, ev ReadingEvidence) ReadingEvidence {
 	if b == nil || target == "" || ev.Reported != "" {
 		return ev
 	}
@@ -734,7 +852,7 @@ func (b *HerdrBackend) withPaneCapture(target string, ev ReadingEvidence) Readin
 	// Appended, so herdr's own regions keep herdr's own order, and
 	// Truncated is false because this one is not a preview of anything.
 	ev.Regions = append(ev.Regions, ReadingRegion{
-		Name:  PaneCaptureRegion,
+		Name:  region,
 		Bytes: len(text),
 		Text:  text,
 	})

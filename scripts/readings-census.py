@@ -9,6 +9,7 @@ another. This turns the log into the two things that fixes:
 
     readings per day, by decision and by verdict     the denominator
     a replay corpus (the bytes + the verdict)        the labelled cases
+    D5 records whose settle gate read seen-idle      the false-IDLE rate
 
 NO MODEL, NO NETWORK, NO BINARY. It reads JSONL files and writes JSONL
 files. It does not shell out to `posse` and it does not import anything
@@ -66,6 +67,58 @@ DECISIONS = {
 # and a sixth value is either a new decision nobody wrote down or a log
 # from a newer posse than this script.
 CONSEQUENCES = ["refusal", "hand-back", "settle-open", "ghost-retirement", "hold"]
+
+# THE FALSE-IDLE COUNT (ADR 0066 D1 as amended 2026-10-04, ranger-base-o1aoi;
+# the prices and the rejected alternatives are in
+# docs/notes.d/ranger-base-o1aoi.md).
+#
+# The five consequences above are five ways of NOT acting, so the reading
+# that TYPES leaves none of them and was invisible to this census. It is not
+# invisible to the log: typed text that starts no turn ends in the D5 stall
+# verdict, which is already counted here, and since that amendment a D5
+# record carries a second evidence block — `gate` — holding the pane-state
+# reading the settle gate opened on, plus a pane capture from each side of
+# the keystrokes.
+#
+# A CANDIDATE is a D5 record whose gate reading was SEEN and IDLE: herdr
+# said it recognized a settled screen, posse typed on that, and no turn
+# started. That is the shape of a false IDLE and the numerator ADR 0066
+# opened with as UNKNOWN; the denominator is the typed-prompt count, which
+# this log does not hold and the watch log does.
+#
+# It is NOT a sixth consequence and not a new record kind. The D5 row counts
+# exactly what it counted before and carries more, so every rate above is
+# unchanged — which is the one property the amendment promised.
+#
+# `idle` ALONE, and the other states are visible rather than counted. The
+# settle gate accepts `done` as well (awaitSettled's `until`), so a gate that
+# read a rule-matched `done` over the wrong screen is the same class and is
+# NOT in this numerator — it is in the `d5` and `with_gate` figures the line
+# prints beside it, which is why both are printed. The rule is the
+# amendment's own words ("seen and idle") and widening it is a decision for
+# the record that reads the first fourteen days, not for this script: a
+# numerator nobody decided would price the error rate of a reading that was
+# never named.
+GATE_SEEN_IDLE_STATES = ["idle"]
+
+
+def gate_of(rec: dict) -> dict:
+    """The gate evidence block, or {} for a record that typed nothing.
+
+    Absent on every decision but D5, and within D5 on the launch-line path:
+    the work prompt rode in as argv there, so there is no reading that
+    typed (ADR 0013 §2).
+    """
+    g = rec.get("gate")
+    return g if isinstance(g, dict) else {}
+
+
+def is_false_idle_candidate(rec: dict) -> bool:
+    """A D5 record whose settle gate read a screen it had SEEN, as idle."""
+    if str(rec.get("decision", "")) != "D5":
+        return False
+    g = gate_of(rec)
+    return bool(g.get("seen")) and str(g.get("state", "")) in GATE_SEEN_IDLE_STATES
 
 
 def git_dir_of(tree: Path) -> Path | None:
@@ -187,6 +240,9 @@ def census(records: list[dict], by: str) -> dict:
     redacted = 0
     truncated = 0
     replayable = 0
+    d5 = 0
+    gated = 0
+    candidates = 0
     for rec in records:
         day = day_of(rec)
         cons = str(rec.get("consequence", "?"))
@@ -201,6 +257,19 @@ def census(records: list[dict], by: str) -> dict:
         regs = herdr.get("regions") or []
         for reg in regs:
             regions[str(reg.get("region", "?"))] += 1
+        # The gate block's regions are regions the record carries, so they
+        # are counted in the regions table like every other — which is how
+        # a reader sees that the two captures are really there, under the
+        # two names the writer gives them.
+        gate = gate_of(rec)
+        for reg in gate.get("regions") or []:
+            regions[str(reg.get("region", "?"))] += 1
+        if str(rec.get("decision", "")) == "D5":
+            d5 += 1
+            if gate:
+                gated += 1
+            if is_false_idle_candidate(rec):
+                candidates += 1
         cut = truncated_regions(regs)
         if cut:
             truncated += 1
@@ -217,6 +286,15 @@ def census(records: list[dict], by: str) -> dict:
         # that evaluated every region — routinely carry a few per cent of
         # the bytes of their biggest region. Redaction is the rarer one and
         # is the trade ADR 0050 makes on purpose.
+        #
+        # KEYED ON `herdr` ALONE, and the gate block does not make a case
+        # replayable. The claim is that THIS record's verdict can be
+        # re-decided from the bytes it carries, and a D5 verdict cannot: it
+        # is a reading of a herdr wait and a commit count, and the gate's
+        # captures are two screens some OTHER reader looked at. Counting
+        # them here would turn the one quality number into a count of
+        # records that happen to hold bytes. `cut` is read over `regs`
+        # alone for the same reason.
         if regs and not cut and not rec.get("redacted"):
             replayable += 1
     return {
@@ -228,6 +306,7 @@ def census(records: list[dict], by: str) -> dict:
         "redacted": redacted,
         "truncated": truncated,
         "replayable": replayable,
+        "false_idle": {"d5": d5, "with_gate": gated, "candidates": candidates},
     }
 
 
@@ -263,10 +342,34 @@ def print_table(c: dict, by: str, logs: list[Path], torn: int) -> None:
         rows.append([label, str(counts.get("total", 0))] +
                     [str(counts.get(k, 0)) for k in CONSEQUENCES])
     print_rows(head, rows)
+    print_false_idle(c)
 
     print("\nregions read")
     for name, n in c["regions"].items():
         print(f"  {n:6d}  {name}")
+
+
+def print_false_idle(c: dict) -> None:
+    """The one line ADR 0066 D1's amendment exists to make a number.
+
+    Printed BESIDE THE D5 ROW rather than as a table of its own, because it
+    is a reading OF that row: the same records, counted by what their gate
+    block says. Both figures are given — the candidates and how many D5
+    records carry a gate block at all — so the residual is visible rather
+    than folded in: a D5 record with no gate block is a prompt that was
+    never typed (it rode in on a launch line), and one whose gate was NOT
+    seen-idle is a stall the gate cannot be blamed for.
+
+    Silent where there are no D5 records at all. A zero over zero is not a
+    rate, and an empty census already says so once.
+    """
+    f = c.get("false_idle") or {}
+    if not f.get("d5"):
+        return
+    print(f"\n  false-IDLE candidates: {f.get('candidates', 0)} of {f.get('d5', 0)} D5 record(s)"
+          f" ({f.get('with_gate', 0)} carrying a settle-gate reading)")
+    print("    a candidate is a stalled prompt whose gate read a screen it had SEEN, as idle")
+    print("    — the screen from each side of the keystrokes is in its gate regions (ADR 0066 D1)")
 
 
 def print_rows(head: list[str], rows: list[list[str]]) -> None:
@@ -308,7 +411,16 @@ def export_corpus(records: list[dict], out: Path) -> tuple[int, int]:
     missing: `redacted` names the data-ceiling classes taken out of it
     (ADR 0050), and `truncated` names the regions herdr handed over cut
     down — the common one, since a preview is capped at 243 characters and
-    `whole_recent` is in the shipped manifests.
+    `whole_recent` is in the shipped manifests. Both fields are read over
+    `herdr`'s regions, the way `replayable` is.
+
+    THE GATE BLOCK IS EXPORTED THE SAME WAY, because its captures are the
+    ones a false IDLE is diagnosed from and `herdr agent explain --file` is
+    what they are diagnosed with (ADR 0066 D1 as amended, ranger-base-o1aoi).
+    So a D5 case carries `gate` beside `herdr`, and both blocks' regions
+    land in `regions/<id>/<region>.txt` — no collision, because the writer
+    names the gate's two captures apart from each other and from herdr's
+    manifest vocabulary (`pane_capture_at_prompt`, `pane_capture`).
     """
     out.mkdir(parents=True, exist_ok=True)
     regions_root = out / "regions"
@@ -318,6 +430,7 @@ def export_corpus(records: list[dict], out: Path) -> tuple[int, int]:
         for i, rec in enumerate(records):
             case_id = f"{day_of(rec)}-{i:05d}-{rec.get('decision', 'D?')}"
             herdr = rec.get("herdr") or {}
+            gate = gate_of(rec)
             case = {
                 "id": case_id,
                 "at": rec.get("at"),
@@ -337,9 +450,22 @@ def export_corpus(records: list[dict], out: Path) -> tuple[int, int]:
                 },
                 "regions": herdr.get("regions") or [],
             }
+            if gate:
+                case["gate"] = {
+                    "state": gate.get("state"),
+                    "matched_rule": gate.get("matched_rule"),
+                    "fallback_reason": gate.get("fallback_reason"),
+                    "reported": gate.get("reported"),
+                    "seen": gate.get("seen"),
+                    "regions": gate.get("regions") or [],
+                    "false_idle_candidate": is_false_idle_candidate(rec),
+                }
             jf.write(json.dumps(case, ensure_ascii=False, sort_keys=True) + "\n")
             cases += 1
-            for reg in case["regions"]:
+            regs = list(case["regions"])
+            if gate:
+                regs += list(case["gate"]["regions"])
+            for reg in regs:
                 name = str(reg.get("region", "region"))
                 safe = "".join(ch if ch.isalnum() or ch in "-_." else "_" for ch in name)
                 d = regions_root / case_id

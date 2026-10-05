@@ -179,6 +179,16 @@ func (d *Dispatcher) judgeStall(p *pendingBead) stallVerdict {
 // is not logged, for the reason readingslog.go's header gives: a reading
 // that found a turn under way and carried on has never been the thing
 // anybody had to diagnose.
+//
+// SINCE ranger-base-o1aoi IT CARRIES A SECOND EVIDENCE BLOCK, and the two
+// are kept apart on purpose. `Herdr` is this verdict's own reading and
+// nothing else — the re-asked wait and, on the arm that gets that far,
+// git's commit count, with NO REGIONS because D5 reads no screen (the
+// comment in judgeStall says why that is not an omission). `Gate` is the
+// reading that TYPED: herdr's D1 answer at the settle gate, labelled as the
+// gate's, with a capture from each side of the keystrokes. A false IDLE is
+// a reading of the first kind diagnosed from the second, and a record that
+// merged them would be a D5 verdict wearing somebody else's screen.
 func (d *Dispatcher) logStall(p *pendingBead, v stallVerdict, why string, read ReadingEvidence) {
 	cons := ConsequenceHold
 	verdict := "keep: " + why
@@ -193,7 +203,46 @@ func (d *Dispatcher) logStall(p *pendingBead, v stallVerdict, why string, read R
 		Bead:        p.is.ID,
 		Runtime:     p.runtime,
 		Herdr:       read,
+		Gate:        d.stallGate(p),
 	})
+}
+
+// stallGate completes the gate block at the moment of the verdict: the
+// evidence fire held since the keystrokes, plus one more capture of the pane
+// as it is NOW (withPaneCapture — the same call a D3 record makes, under the
+// same region name).
+//
+// THE PAIR IS THE FINDING, not either capture (docs/notes.d/ranger-base-o1aoi.md
+// §3). For a transient splash read as a seen screen — rangerhq-37c, the one
+// measured incident of this class — the type-time capture is the splash with
+// its banner and this one is a composer with the text gone; either alone
+// reads as "idle" or "empty". For a modal dialog read idle, the type-time
+// capture IS the candidate herdr fixture and this one shows the text sitting
+// in the dialog. For a shell, this one shows the shell's answer.
+//
+// A COPY OF THE HELD REGIONS, so a second stall judgment on the same bead
+// appends its own capture to its own record rather than growing the one
+// fire is holding. A pass can reach this twice: a rewait writes nothing and
+// waits the leg again, and a leg that stalls a second time is judged again.
+//
+// Nil in, nil out, which is the launch-line path and every other way of
+// having typed nothing.
+//
+// A herdr CALL in an argument to logReading, which d3Evidence says is the
+// shape to be careful of: a Go argument is evaluated before the function
+// that would discard it, so a dry pass there would fork a `pane read` for a
+// record it then refuses to write. Safe here, for a reason and not by luck
+// — this is reachable only through a pendingBead, fireLoop returns before
+// fire on a dry pass, and a dry pass therefore types nothing and judges no
+// stall. A guard would be dead code implying a path that does not exist.
+func (d *Dispatcher) stallGate(p *pendingBead) *ReadingEvidence {
+	if p.gate == nil {
+		return nil
+	}
+	g := *p.gate
+	g.Regions = append([]ReadingRegion(nil), g.Regions...)
+	g = d.HB.withPaneCapture(p.target, g)
+	return &g
 }
 
 // stallGrace is how long posse watches for the turn herdr did not see.

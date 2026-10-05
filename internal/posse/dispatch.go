@@ -3586,6 +3586,22 @@ type pendingBead struct {
 	// instant. Zero value = no reading was taken, which is every path that
 	// never reached the reader.
 	turnRead ReadingEvidence
+	// gate is the D1 evidence of the reading that TYPED this prompt, with
+	// the screen it was taken over: herdr's state, rule, fallback and
+	// previews from the settle gate, plus one pane capture from the instant
+	// before the keystrokes (ADR 0066 D1 as amended, ranger-base-o1aoi).
+	// Nil on every path that typed nothing — the launch line, an unseen
+	// session — and nil is what a record with no gate block is written
+	// from.
+	//
+	// IN MEMORY, AND NOTHING IS WRITTEN AT TYPE TIME. The watch process
+	// that fires a prompt is the one that judges it: a prompt "carried into
+	// the next pass" stays in this process's own gather, so the evidence
+	// needs no store and gets none. If the turn starts, this is dropped
+	// with the rest of the bead's in-flight state, exactly as a rewait's
+	// leg is — a reading that found a working agent has never been the
+	// thing anybody had to diagnose (readingslog.go's header).
+	gate *ReadingEvidence
 }
 
 type promptResult struct {
@@ -3668,6 +3684,23 @@ func (d *Dispatcher) fire(is RepoIssue, persona, session, runtime, tier, tierWhy
 		}()
 	default:
 		text := prompt()
+		// ADR 0066 D1 as amended (ranger-base-o1aoi): the last thing before
+		// the keystrokes, and the only new herdr call this amendment buys —
+		// one `pane read` per typed work prompt, ~75/day in the current
+		// generation at 28.7 ms a read (the note's §4, ASSUMED from
+		// ranger-base-qk9tr's `agent explain` mean).
+		//
+		// HERE AND NOT EARLIER: a capture taken before prompt() would be
+		// the screen before a bd read of unbounded length, and the claim
+		// this evidence makes is about the instant the text went in.
+		//
+		// NO --dry-run BRANCH, and that is checked rather than assumed:
+		// fireLoop returns before fire on a dry pass (the `if d.DryRun`
+		// arm above `tierRefusal`'s), so nothing is typed, no pendingBead
+		// exists, and this call is unreachable. d3Evidence needs its own
+		// guard because holds and refusals DO happen in a dry pass; a
+		// keystroke does not.
+		p.gate = d.gateReading(l.gate, l.target)
 		go func() {
 			res, err := d.HB.H.AgentPrompt(l.target, text, true, d.PromptWaitMS)
 			p.result <- promptResult{res: res, err: err, at: time.Now()}
@@ -4903,7 +4936,7 @@ func (d *Dispatcher) launchSession(is RepoIssue, persona, session, runtime, tier
 	// The persona CLI needs a moment to start before it can take a prompt —
 	// this launch's own runtime's patience, not necessarily the pass's
 	// default (runtimeWait, ranger-base-p84).
-	target, err := d.awaitAgent(is.ID, persona, session, runtime, d.runtimeWait(runtime))
+	target, gate, err := d.awaitAgent(is.ID, persona, session, runtime, d.runtimeWait(runtime))
 	if err != nil {
 		// ADR 0013 §2's busy-key split: a CLI that never came up, never
 		// became promptable, or sat behind a screen posse does not know is
@@ -4921,7 +4954,7 @@ func (d *Dispatcher) launchSession(is RepoIssue, persona, session, runtime, tier
 	if err != nil {
 		return launched{}, err
 	}
-	return launched{target: target, resumed: resumed}, nil
+	return launched{target: target, resumed: resumed, gate: gate}, nil
 }
 
 // launched is what the front half of a dispatch hands back: the pane to
@@ -4937,6 +4970,20 @@ type launched struct {
 	// either way — what is missing is the observation, so the bead keeps
 	// its claim and is not judged this pass.
 	unseen bool
+	// gate is the pane-state reading the settle gate opened on — the
+	// reading that lets posse TYPE, and therefore the reading a false IDLE
+	// is made of (ADR 0066 D1 as amended, ranger-base-o1aoi §3).
+	// awaitSettled has returned it all along for the live test to assert
+	// on; this is the production reader, and what it buys is that the
+	// record written if the prompt stalls can name the reading that typed
+	// instead of re-reading the pane later and asking a different question.
+	//
+	// ZERO ON THE ARGV PATH, by construction and not by a check: nothing is
+	// typed there (ADR 0013 §2), launchWithPrompt never asks a settle gate,
+	// and awaitDelivered's read is about work STARTING rather than about a
+	// screen it is safe to type at. A launch-line record therefore carries
+	// no gate block, which is what the amendment's exclusion says.
+	gate AgentDetection
 }
 
 // launchWithPrompt is the argv delivery path, ADR 0013 §2, in the order the
@@ -5456,11 +5503,26 @@ func (d *Dispatcher) awaitDelivered(id, session, runtime string, wait time.Durat
 	}
 }
 
-func (d *Dispatcher) awaitAgent(id, persona, session, runtime string, wait time.Duration) (string, error) {
+// awaitAgent holds a launch until the pane is one posse may type at, and
+// returns the pane AND the reading that said so.
+//
+// THE DETECTION IS A RETURN VALUE because it is the reading that TYPES (ADR
+// 0066 D1 as amended, ranger-base-o1aoi): the keystrokes that follow are
+// this reading's consequence, so a record about them has to be able to name
+// it — the rule or the chrome that said idle — and no later read can. The
+// settle gate and `agent prompt` are two instants with a screen change
+// possible between them, which is the whole reason the gate exists
+// (awaitSettled's comment), so a re-read taken at the stall would be a
+// different reading of a different screen and would hide exactly the case
+// this evidence is for.
+//
+// A caller that wants only the pane ignores it, which is every caller but
+// launchSession's typed path.
+func (d *Dispatcher) awaitAgent(id, persona, session, runtime string, wait time.Duration) (string, AgentDetection, error) {
 	deadline := time.Now().Add(wait)
 	target, err := d.awaitTarget(session, runtime, deadline, wait)
 	if err != nil {
-		return "", err
+		return "", AgentDetection{}, err
 	}
 
 	// Detection is not readiness: the first live dispatch raced claude's
@@ -5479,12 +5541,12 @@ func (d *Dispatcher) awaitAgent(id, persona, session, runtime string, wait time.
 	// `blocked` is the operator's alone — a permission prompt, claude's trust
 	// dialog — and the launcher may never answer one (rangerhq-4mzt).
 	settle := time.Now().Add(wait)
-	status, _, err := d.awaitSettled(id, session, target, []string{"idle", "done", "blocked"}, settle, wait)
+	status, gate, err := d.awaitSettled(id, session, target, []string{"idle", "done", "blocked"}, settle, wait)
 	if err != nil {
-		return "", err
+		return "", AgentDetection{}, err
 	}
 	if status != "idle" && status != "done" {
-		return "", Die("agent in %s never settled idle (status %q) — check the session (posse peek %s)", session, status, session)
+		return "", AgentDetection{}, Die("agent in %s never settled idle (status %q) — check the session (posse peek %s)", session, status, session)
 	}
 	// ADR 0062 D2, and the LAST thing between a launch and a keystroke. On
 	// a runtime whose PID arrives as a custom mode the launch wrote, an
@@ -5511,13 +5573,13 @@ func (d *Dispatcher) awaitAgent(id, persona, session, runtime string, wait time.
 	if rt, err := d.App.LoadRuntime(runtime); err == nil && rt.PersonaMode != nil {
 		note, err := AwaitPersonaMode(d.HB.H, rt, persona, session, target, wait, d.Poll)
 		if err != nil {
-			return "", err
+			return "", AgentDetection{}, err
 		}
 		if note != "" {
 			d.printf("! %-14s %s\n", id, note)
 		}
 	}
-	return target, nil
+	return target, gate, nil
 }
 
 // awaitSettled waits for a settled state herdr can SEE, and never returns on

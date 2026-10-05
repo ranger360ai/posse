@@ -70,8 +70,23 @@ territory is a prompt ACCEPTED as a turn on a misread screen, a class with
 no incident, and its largest writer would be the pulse, whose target's log
 lives in the shared checkout's git dir and never rotates. The pulse, the
 cockpit's resume and relaunch's landing turn are outside this amendment;
-the reopen conditions are in the note's §5. Code bead: see the bead's close
-comment.
+the reopen conditions are in the note's §5.
+
+*Built 2026-10-04 (ranger-base-dckhf, code;
+`docs/notes.d/ranger-base-dckhf.md`).* `Reading.Gate` is the second evidence
+block (`internal/posse/readingslog.go`), the typed path carries the gate's
+detection out of `awaitAgent` and takes one capture before the keystrokes
+(`internal/posse/dispatch.go`), `logStall` writes the pair with a second
+capture at the verdict (`internal/posse/promptstall.go`), and
+`scripts/readings-census.py` prints the candidate count beside the D5 row.
+Three things the decision did not say, now written down in the note: the
+data ceiling was keyed on the record's own `herdr` field and had to be
+taught the second block (§2a); the block is COPIED before it is redacted,
+because it is a pointer into a bead still in flight (§2b); and the
+exclusions need no check — the launch line asks no settle gate, so it
+carries no reading that typed (§3). No `--dry-run` branch was added and
+none is needed: `fireLoop` returns before `fire` on a dry pass, so nothing
+is typed and neither capture is reachable (§4).
 
 **D2 — A decision model is a second reader whose output is a report.** Its
 reading prints beside herdr's verdict in the failure line and on the bead.

@@ -1895,8 +1895,23 @@ func fakeHerdr(args []string) int {
 		// one file for the board: a listing that reads three panes has to be
 		// able to get three different answers, which is the whole shape of
 		// the three-valued field.
+		//
+		// And pane-text/<key>-<n> is what the n-th read of that pane
+		// answers, where there is one (ranger-base-dckhf). A reading whose
+		// claim is about TWO INSTANTS — the gate's captures from each side
+		// of the keystrokes — is measured by nothing if both reads of the
+		// pane serve one file: a writer that captured the same screen twice,
+		// or stored one capture and copied it, would be green. Numbered
+		// files win over the plain one, the count is per pane and lives in
+		// the file (each fake call is its own process), and a read past the
+		// last numbered file falls back to the plain one.
 		if len(args) > 2 {
-			if b, err := os.ReadFile(filepath.Join(fakeDir(), "pane-text", strings.ReplaceAll(args[2], ":", "_"))); err == nil {
+			key := strings.ReplaceAll(args[2], ":", "_")
+			if b, err := os.ReadFile(filepath.Join(fakeDir(), "pane-text", key+"-"+strconv.Itoa(fakePaneReadNth(key)))); err == nil {
+				fmt.Print(string(b))
+				return 0
+			}
+			if b, err := os.ReadFile(filepath.Join(fakeDir(), "pane-text", key)); err == nil {
 				fmt.Print(string(b))
 				return 0
 			}
@@ -2338,6 +2353,26 @@ func fakeExplainErrorArmed() bool {
 	}
 	os.WriteFile(p, []byte(strconv.Itoa(n-1)), 0o644)
 	return false
+}
+
+// fakePaneReadNth is how many times this pane has been read, counting the
+// call being served: 1 for the first, 2 for the second. The count is kept in
+// a file for the reason every other fake countdown is — each fake call is a
+// separate process, so there is nowhere else to put it — and it is bumped on
+// every `pane read` whether or not a numbered fixture exists, so a test that
+// arms one mid-run still gets the real ordinal.
+func fakePaneReadNth(key string) int {
+	p := filepath.Join(fakeDir(), "pane-read-nth", key)
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		return 1
+	}
+	n := 0
+	if b, err := os.ReadFile(p); err == nil {
+		n, _ = strconv.Atoi(strings.TrimSpace(string(b)))
+	}
+	n++
+	os.WriteFile(p, []byte(strconv.Itoa(n)), 0o644)
+	return n
 }
 
 // fakeExplainAgentArg returns the --agent value on an `agent explain` call,

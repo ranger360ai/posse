@@ -98,13 +98,24 @@ func TestLiveAwaitAgentAcceptsAStartupScreen(t *testing.T) {
 	// runs in the pane. This test asserts the wait succeeds, so the line is
 	// never rendered; naming the wrong runtime here would be invisible, which
 	// is why it is named to match the recipe rather than left blank.
-	target, err := d.awaitAgent("live-7sbo", "developer", "qalive", "grok", d.StartupWait)
-	t.Logf("awaitAgent: %s target=%q err=%v\n%s", time.Since(start), target, err, out.String())
+	target, gate, err := d.awaitAgent("live-7sbo", "developer", "qalive", "grok", d.StartupWait)
+	t.Logf("awaitAgent: %s target=%q gate=%q/%q seen=%v err=%v\n%s",
+		time.Since(start), target, gate.State, gate.Rule.ID, gate.Seen(), err, out.String())
 	if err != nil {
 		t.Fatalf("awaitAgent refused a live pane herdr calls %q/%q: %v", before.State, before.Rule.ID, err)
 	}
 	if target != pane {
 		t.Fatalf("target %q != %q", target, pane)
+	}
+	// The gate's own reading, against a real herdr (ADR 0066 D1 as amended,
+	// ranger-base-o1aoi). It is the reading that TYPES, and it is what a D5
+	// record names if this prompt goes on to stall — so the one thing worth
+	// asserting here is that what came back is the reading this gate
+	// ACCEPTED and not a zero value: seen, and in a settled state. A fake
+	// herdr cannot pin that; this is the only reader of a real one.
+	if !gate.Seen() || (gate.State != "idle" && gate.State != "done") {
+		t.Errorf("the gate opened on state=%q rule=%q seen=%v — a launch that typed on this reading must hand it back as the reading it typed on",
+			gate.State, gate.Rule.ID, gate.Seen())
 	}
 
 	// A settled agent — splash drawn or not — is prompted, never typed at.
