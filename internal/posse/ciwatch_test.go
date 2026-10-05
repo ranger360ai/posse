@@ -279,6 +279,25 @@ func TestCIJobsSayQueueDemandsPositiveEvidence(t *testing.T) {
 			ciJobJSON("test (macos-latest, 1)", "success", 11, "GitHub Actions 1"),
 			ciJobJSON("test (ubuntu-latest, 3)", "cancelled", 0, "GitHub Actions 2"),
 		), false},
+		// THE OTHER TWO CONJUNCTS OF THE SAME `if`, one row each
+		// (ranger-base-7g7hx). Both rows above carry `cancelled` with steps
+		// AND a runner name, so both conjuncts are false for one reason and
+		// neither row can say which one is doing the work: dropping
+		// `len(j.Steps) == 0` — the one ciJobsSayQueue's own comment calls
+		// THE discriminator — survived every test in the tree, in the
+		// suppress-a-genuine-red direction. MEASURED 2026-10-05: each row
+		// below reds for exactly one mutant, by its own name.
+		{"cancelled with steps behind it and no runner", ciJobsJSON(
+			ciJobJSON("test (macos-latest, 1)", "success", 11, "GitHub Actions 1"),
+			ciJobJSON("test (ubuntu-latest, 3)", "cancelled", 4, ""),
+		), false},
+		// And `j.Status == "completed"`. GitHub fills `conclusion` only when
+		// a job completes, so this page may not be constructible there — the
+		// conjunct stays because the rule is written over a payload this
+		// code does not author, and this row is what says so.
+		{"cancelled on a job that is not completed", `{"total_count":2,"jobs":[` +
+			ciJobJSON("test (macos-latest, 1)", "success", 11, "GitHub Actions 1") + `,` +
+			`{"name":"test (ubuntu-latest, 3)","status":"in_progress","conclusion":"cancelled","runner_name":"","steps":[]}]}`, false},
 		// A skipped job is nobody's cause, and a phantom beside it still
 		// demotes.
 		{"skipped beside one that never started", ciJobsJSON(
