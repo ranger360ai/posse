@@ -126,6 +126,13 @@ make fmt-check verify-test-times verify-parallel verify-suite-lock \
 
 The Go half is not re-run at `aab26b76`: those two commits are a triage line in
 `scripts/silent-reverts.allow` and one `internal/posse` test file, and the arms
-above are the ones a new Markdown file plus a moved base can actually move —
-`docs/notes.d/ranger-base-fm23s.md`'s rule, and the gap is stated rather than
-hidden.
+above are the ones a new Markdown file plus a moved base can actually move,
+and the gap is stated rather than hidden.
+
+That is the rule `ranger-base-fm23s` closed under: on a base that moves under a
+finished suite, re-run the arms the new commits can actually reach — the
+tree-scanning pins that read the files `main` just added — rather than the
+whole suite again, and say in as many words which arms were not re-run. That
+bead wrote no fragment, so its own close is the only place the rule is
+recorded; this paragraph states it instead of pointing at a path that resolves
+to nothing (`ranger-base-nnnf1`).

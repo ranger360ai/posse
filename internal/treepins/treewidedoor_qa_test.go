@@ -103,6 +103,15 @@ package treepins
 //	                                              make doc-check
 //	                                              (ranger-base-ecchw)
 //
+// and one more into that same door, the SECOND prose pin whose subject is a
+// path: a docs/notes.d citation in any markdown file in the tree has to
+// resolve to a fragment the tree holds. v0.5.1 was cut over an ADR citing one
+// that was stranded on the branch that wrote it, and nothing was red — the
+// citation is prose and the fragment's absence is a missing file:
+//
+//	TestQAEveryNotesFragmentCitationResolves      make doc-check
+//	                                              (ranger-base-nnnf1)
+//
 // and then a whole SECOND PACKAGE, which the register could not see at all
 // until ranger-base-g6sb1. internal/treepins is 589.965s whole — the same
 // wall internal/posse is, one directory over — and every rule above keys on
@@ -158,29 +167,33 @@ package treepins
 // are the one exemption from the two-way check, listed with their reasons in
 // twdDoorHolders.)
 //
-// and `make tree-check` is all of them — 44-46s on this box over three
-// warm runs at fifty-one pins and fourteen doors — which is the command a
+// and `make tree-check` is all of them — 53-75s on this box over three
+// warm runs at fifty-two pins and fourteen doors — which is the command a
 // seat types after a filtered run. (It was 14.9-16.5s over twenty-three pins
 // behind eight doors, before ranger-base-g6sb1 found a second package;
 // 15-43s at twenty-two, 12-27s under
 // ranger-base-8dnuy, and 40-46s at a smaller class before that. Re-measured
 // whenever the class changes — under ranger-base-xrdb0, and again under
-// ranger-base-ecchw, and again under ranger-base-vofbl — because the
+// ranger-base-ecchw, and again under ranger-base-vofbl, and again under
+// ranger-base-nnnf1 — because the
 // sentence a seat prices the command from
 // should not quote a run of a class it did not run; and stated without a
 // second numeral, deliberately: a historical count in this comment is
 // invisible to arm 4's one-claim rule, which is ranger-base-erqvh row 2. The
 // seconds are NOT pinned — an elapsed-seconds red belongs to the box, per
 // the `test` target's own note, and a warm build cache is most of this
-// spread — but they are measured, not carried. BOTH 2026-10-04 readings say
-// the spread is the box and not the cache. ranger-base-g6sb1 read 46.5-77.2s
+// spread — but they are measured, not carried. ALL THREE 2026-10-04 readings
+// say the spread is the box and not the cache. ranger-base-g6sb1 read 46.5-77.2s
 // over three warm runs at forty-nine pins, the one-minute load average going
 // 8.9 -> 23.8 across them with a sibling seat holding a suite slot
 // throughout; ranger-base-vofbl re-read the same command at fifty-one, three
 // warm runs later the same day with no sibling suite and a load of 5.4-7.1,
 // and got 44-46s. The two pins it added cost 0.06s between them, so what
-// moved between the two readings was the box. Cold, with internal/treepins'
-// test binary to compile as well as internal/posse's, the same command read
+// moved between the two readings was the box. ranger-base-nnnf1 read 53-75s
+// at fifty-two, three warm runs with the one-minute load average falling
+// 24.2 -> 8.6 across them and the slowest run the one at the top of that
+// fall; the pin it added costs 0.07s. Cold, with internal/treepins' test
+// binary to compile as well as internal/posse's, the same command read
 // 92.6s.)
 //
 // THAT SENTENCE IS THE ONLY LIVE COUNT IN THIS FILE, and arm 4 holds it to

@@ -547,7 +547,7 @@ QA_CREW_PINS      := TestShippedTreeNamesRolesNotThisCrew|TestShippedStringsName
 QA_TOOL_PINS      := TestTreeIsGofmtClean
 QA_SEED_PINS      := TestSeedSurfaceNameCountIsZero|TestSeedConfigLiveKeysAreRead|TestQAExampleConfigConstitutionBlockNamesTheWholePromotedSet|TestSeedConfigDocumentedDurationDefaultsAreTheConstants|TestSeedConfigDocumentedDefaultRegisterIsNotStale
 QA_HISTORY_PINS   := TestPublicationRootCommitOmitsExcludedPaths|TestPublicationRootCommitADRsCarryProvenance|TestPublicationHistoryNeverCarriesTheSeedScript|TestShippedExampleTableCoversEveryVersionInGitHistory
-QA_DOC_PINS       := TestQANoCodeStringCallsTheDarwinCredentialsFileAStaleLeftover|TestQACageCredDocDoesNotCallTheOnDiskCredentialStale|TestQAADR0035PaneModeSurfaceClaimIsBuilt|TestQAShippedLaunchLinesParseAsThePersonaLaunch|TestQADetectionDoorCitesAFilingThatExists
+QA_DOC_PINS       := TestQANoCodeStringCallsTheDarwinCredentialsFileAStaleLeftover|TestQACageCredDocDoesNotCallTheOnDiskCredentialStale|TestQAADR0035PaneModeSurfaceClaimIsBuilt|TestQAShippedLaunchLinesParseAsThePersonaLaunch|TestQADetectionDoorCitesAFilingThatExists|TestQAEveryNotesFragmentCitationResolves
 QA_IDENTITY_PINS  := TestQAIdentityLiteralsNeverAppearInATrackedPath|TestIdentityLiteralsNeverAppearInTheHarnessRepoUndispositioned
 QA_OPS_PINS       := TestQAEveryOpsHitInTrackedMarkdownIsRuled|TestQAOpsShapeTableCanStillSayNo|TestInstancePathFormNeverAppearsInTrackedContentUndispositioned|TestQAInstancePathCensusCanStillSayNo
 QA_EXECWRITE_PINS := TestQATreeGoFilesWriteExecutablesUnderTheForkLock
@@ -623,11 +623,14 @@ history-check:
 # status-line row, and ADR 0035 §3's claim that a session's pane mode is read
 # and surfaced — which is coupled to the shipped reader rather than asserted,
 # so it is green whether the clause stands or is reworded (ranger-base-vwgt).
-# Plus the one prose pin whose subject is a PATH: a detection refusal's door
+# Plus the two prose pins whose subject is a PATH: a detection refusal's door
 # has to name a filing the tree holds, not one rendered from the runtime's
-# name (ranger-base-ecchw). Type it when you touch a doc comment in
-# internal/posse, a row in docs/adr/, or a sentence that hands the operator a
-# path.
+# name (ranger-base-ecchw), and a docs/notes.d citation in any markdown file
+# in the tree has to resolve to a fragment the tree HOLDS — v0.5.1 was cut
+# over an ADR citing one that was stranded on the branch that wrote it, and
+# nothing was red (ranger-base-nnnf1). Type it when you touch a doc comment in
+# internal/posse, a row in docs/adr/, or a sentence — in code or in
+# markdown — that hands a reader a path.
 doc-check:
 	$(GOBIN) test ./internal/posse -timeout 15m -count=1 -run '^($(QA_DOC_PINS))$$'
 
