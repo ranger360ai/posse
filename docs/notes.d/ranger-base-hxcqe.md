@@ -107,6 +107,59 @@ more cancellations and one less chance for the tip. Waiting costs nothing —
 `main` is fast-forward-only, so the commit's content is covered at the next
 green tip either way.
 
+## The trigger to wait for is CONTENTION, not the status string
+
+`operational` never arrived while this bead was open, and waiting on it would
+have idled through a pool that had already recovered. Two cheap checks
+licensed the re-run instead, at 21:32:19Z:
+
+- Nothing of ours in flight anywhere in the repo
+  (`gh api "repos/<slug>/actions/runs?per_page=10"` — every `ci` and
+  `release` run `completed`), and `main` still at `64f18288`, so no sibling's
+  run was queued behind it either. **The contention was gone.**
+- GitHub's incident BODY, not its component colour, said the queue was
+  draining. The component read `degraded_performance` and the incident was
+  still `investigating`, but the 21:32:31Z update said "Queued jobs are
+  clearing, new jobs are not delayed".
+
+And re-run **the tip's** run, not the older phantom. Both were red; only
+37372180663 is `main`'s tip, so only a green attempt there moves the gate to
+where a ci-red bead's DONE WHEN reads. Re-running 37367869180 would have
+retired a phantom ciwatch already demotes and left the tip exactly as it was.
+
+```
+gh run rerun 37372180663 --repo ranger360ai/posse --failed
+```
+
+## What recovery looked like
+
+MEASURED 2026-10-05, attempt 2 of run 37372180663 — all six jobs `success`
+with 11 executed steps, read from `/actions/runs/37372180663` directly and
+not off a list page:
+
+| job | started | completed | wall |
+|---|---|---|---|
+| test (ubuntu-latest, 3) | 21:32:37 | 21:34:37 | 120s |
+| test (ubuntu-latest, 2) | 21:32:40 | 21:34:45 | 125s |
+| test (ubuntu-latest, 1) | 21:32:38 | 21:37:26 | 288s |
+| test (macos-latest, 3) | 21:32:42 | 21:38:51 | 369s |
+| test (macos-latest, 1) | 20:50:27 | 21:01:23 | 656s (attempt 1) |
+| test (macos-latest, 2) | 20:55:46 | 21:00:24 | 278s (attempt 1) |
+
+**The four jobs that had starved for 15m03s got runners in about thirty
+seconds**, and `head_sha` is `64f1828866d79fd740f4549fafbc0c723275e46e`,
+byte-for-byte `main`'s tip. Arm 3 has now run on both platforms at this
+commit, and `ubuntu-latest` arm 1 — the job carrying the gates and the
+silent-revert audit — is green there too. Nothing in the content was ever
+at fault, in any of the three runs.
+
+One last thing the day handed over: while checking the recovery, the
+**githubstatus API itself served from behind**, oscillating between the
+21:32:31Z update and the older 21:31:18Z one as "latest" across consecutive
+polls. Same class as [ranger-base-m46kr](ranger-base-m46kr.md)'s
+`gh run list` index lag, in a different index. If the status page seems to
+regress, poll it twice before believing it.
+
 ## What this exposed in the reading
 
 ranger-base-rdi79's `ciJobsSayQueue` landed at `64f18288` — pushed at
