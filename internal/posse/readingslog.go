@@ -269,13 +269,38 @@ func (a *App) readingsLogOutOfBounds(path string) string {
 //
 // ONE WRITE PER RECORD, O_APPEND. Several posse processes can be reading the
 // same fleet at once — a watch loop, an operator's `posse status`, a
-// persona's `posse pulse` — and O_APPEND plus a single write of a record
-// that fits in a page is the cheapest arrangement under which two of them
-// cannot interleave a line. A record is bounded by the regions it carries
-// (a footer is ~100 bytes, a composer preview ≤243, an ansi composer line a
-// few hundred), so this is a property of the shape and not a hope; a record
-// that somehow grows past a page tears a line a census will drop rather
-// than corrupting a line it keeps.
+// persona's `posse pulse` — and O_APPEND plus a SINGLE `write(2)` of the
+// whole record is the cheapest arrangement under which two of them cannot
+// interleave a line.
+//
+// THE BOUND IS THE CALL, NOT A PAGE, and this comment used to say a page
+// (ranger-base-76gc4). The page was never the mechanism, and since the D3
+// record carries a whole pane capture (PaneCaptureRegion) it is not even
+// true of the shape. MEASURED 2026-10-04 on this box (darwin 25.4.0, APFS,
+// go1.26.5), six and sixteen concurrent processes each appending
+// fixed-size records to one file, every line checked for length and for a
+// single writer's bytes: 0 torn lines at 512, 4096, 4097, 8192, 16384,
+// 65536 and 131072 bytes. The kernel holds the inode across the call, so
+// what keeps a line whole is that there is one call — which is why this
+// marshals first and writes once, and why a second Write here would be the
+// bug however small the record.
+//
+// WHAT A RECORD ACTUALLY COSTS, MEASURED the same day: six truncated
+// previews and no capture, 2,218 bytes; the same six plus the tallest
+// fixture posse owns (grok/idle-startup-splash-wide-boxed.txt, 3,969
+// bytes), 6,297; plus a 60x200 screen of box-drawing glyphs — three bytes a
+// column, and the worst shape a `--source detection` read can hand us —
+// 38,388. All three are one write and all three measured clean above.
+//
+// WHAT TEARS, since something must be named. Not concurrency, at any size
+// tried: a SHORT write. `os.File.Write` does not retry — it returns
+// io.ErrShortWrite when the syscall took fewer bytes than it was given — so
+// a full disk or a signalled partial write leaves a fragment and returns an
+// error this function hands back and every caller in a pass swallows
+// (LogReading). ReadReadings then skips the unparseable line and
+// `scripts/readings-census.py` counts it torn, which costs one reading and
+// not the corpus. That is the same failure the old comment described; the
+// trigger is the disk, never the page.
 func (a *App) AppendReading(treePath string, r Reading) error {
 	path, err := a.ReadingsLogPath(treePath)
 	if err != nil {
@@ -527,6 +552,27 @@ func (d *Dispatcher) logReading(session string, r Reading) {
 	d.HB.LogReading(session, r)
 }
 
+// d3Evidence is a dispatch D3 record's herdr half: what herdr saw, plus the
+// pane capture where there is one to take (withPaneCapture).
+//
+// IT CARRIES logReading's --dry-run RULE ONE STEP EARLIER, and that is the
+// whole reason it exists rather than two inline calls. The capture is a
+// herdr CALL, and a Go argument is evaluated before the function that would
+// have discarded it — so wrapping the evidence at the call site would make
+// every dry-run hold and refusal fork a `pane read` whose only consumer is
+// a record the dry run then refuses to write.
+//
+// The HAND path (AwaitPromptable, logUnrecognized) has no dry run to honour
+// and takes its capture unconditionally: `posse prompt` either refused or
+// it did not.
+func (d *Dispatcher) d3Evidence(target string, det AgentDetection) ReadingEvidence {
+	ev := ReadingEvidenceOf(det)
+	if d.DryRun {
+		return ev
+	}
+	return d.HB.withPaneCapture(target, ev)
+}
+
 // TurnOutcomeRegion is what the readings log calls D6's evidence: the
 // refusal message the runtime's own record carried (turnfailure.go). It is
 // not a screen region and is named apart from herdr's manifest vocabulary
@@ -626,6 +672,75 @@ func herdrRefusalRule(promptErr error, ev ReadingEvidence) string {
 	return "herdr:" + HerdrCodeOf(promptErr)
 }
 
+// PaneCaptureRegion is the one region on a D3 record that is not herdr's.
+// It is named apart from herdr's manifest vocabulary for TurnOutcomeRegion's
+// reason — nothing in `etc/herdr/agent-detection/*.toml` answers to it, and
+// a census grouping by region name has to be able to tell posse's own read
+// from a rule's.
+//
+// WHAT IT IS, AND WHY A D3 RECORD NEEDS IT (ADR 0066 D3 as amended by
+// ranger-base-qk9tr, measured in docs/notes.d/ranger-base-qk9tr.md §5).
+// `agent explain` emits a PREVIEW of each region, capped at 243 characters,
+// and ReadingEvidenceOf carries exactly that. Every top-anchored region
+// starts at the top of the screen, and on codex the top of the screen is
+// 15-16 rows of ASCII logo — so for 9 of the 15 labelled screens posse owns
+// a capture of, the screen's OWN HEADING ("Sign in with ChatGPT", "Select
+// Model and Effort", "Help improve Grok") sits below every preview in the
+// record. A reader of any kind handed that record is handed logo art: over
+// the full capture a heading reader names 11 of 11 residue cases on the
+// three measured incident classes, over the previews 5 of 11. The input was
+// the bottleneck, not the reader.
+//
+// So the record carries the screen once, whole, in the shape a fixture is.
+const PaneCaptureRegion = "pane_capture"
+
+// withPaneCapture adds that capture to a D3 record's evidence: one
+// `pane read --source detection` of the pane the refusal was about.
+//
+// ONE CALL, ON THE REFUSAL AND HOLD PATHS ONLY — the same bargain
+// logPromptHandBack already strikes one paragraph down. D3 fires when herdr
+// recognized nothing, which is rare and already costs a refused launch or a
+// parked seat; one more herdr read there buys a record that IS a candidate
+// `etc/herdr/agent-detection/testdata/<agent>/<state>-<what>.txt`, and
+// capture → fixture → rule is how every real D3 so far was closed
+// (rangerhq-7ia, rangerhq-9py0, ranger-base-n6s2u, ranger-base-3j8).
+// `scripts/readings-census.py --export-corpus` writes every region to
+// `regions/<id>/<region>.txt` already, so the capture lands on disk as a
+// file `herdr agent explain --file` can be pointed at with no new surface.
+//
+// IT IS NOT A SECOND READER. Nothing decides on these bytes; they are
+// written down. The redaction is the ceiling's, like every other region
+// (AppendReading), and the classes taken ride on the record.
+//
+// THREE WAYS IT ADDS NOTHING, each silent:
+//
+//   - the REPORTED route (ADR 0061 D3.3, Reported != ""). There is no screen
+//     herdr failed to recognize there — what there is, is another authority's
+//     word about a pane herdr does not address — so a capture would be posse
+//     reading a screen its own detection has declared out of scope. Skipped,
+//     as today.
+//   - no target. awaitTarget can fail before any pane is known.
+//   - a read that errors or comes back empty. The log is best effort, and a
+//     record that says what herdr saw and nothing else is the record there
+//     has always been.
+func (b *HerdrBackend) withPaneCapture(target string, ev ReadingEvidence) ReadingEvidence {
+	if b == nil || target == "" || ev.Reported != "" {
+		return ev
+	}
+	text, err := b.H.PaneReadDetection(target)
+	if err != nil || text == "" {
+		return ev
+	}
+	// Appended, so herdr's own regions keep herdr's own order, and
+	// Truncated is false because this one is not a preview of anything.
+	ev.Regions = append(ev.Regions, ReadingRegion{
+		Name:  PaneCaptureRegion,
+		Bytes: len(text),
+		Text:  text,
+	})
+	return ev
+}
+
 // logUnrecognized writes the D3 record: a readiness gate that refused
 // because herdr recognized nothing on the screen (ADR 0066 D1).
 //
@@ -638,14 +753,18 @@ func herdrRefusalRule(promptErr error, ev ReadingEvidence) string {
 // fixes, and the only reason anybody could tell them apart was a hand-launch
 // and a `posse peek`.
 //
+// IT TAKES THE PANE AS WELL AS THE SESSION, for withPaneCapture above: the
+// 243-character previews herdr's working is made of are the one thing in
+// this record that cannot reproduce the screen (ranger-base-76gc4).
+//
 // Both callers refuse with NOTHING TYPED, so the consequence is a refusal in
 // ADR 0066 D1's sense and not a hold: the launch did not happen.
-func (b *HerdrBackend) logUnrecognized(session string, d AgentDetection, verdict string) {
+func (b *HerdrBackend) logUnrecognized(session, target string, d AgentDetection, verdict string) {
 	b.LogReading(session, Reading{
 		Decision:    DecisionUnknownScreen,
 		Verdict:     verdict,
 		Consequence: ConsequenceRefusal,
 		Rule:        RulePromptReady,
-		Herdr:       ReadingEvidenceOf(d),
+		Herdr:       b.withPaneCapture(target, ReadingEvidenceOf(d)),
 	})
 }

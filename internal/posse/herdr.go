@@ -644,6 +644,43 @@ func (h Herdr) PaneRead(paneID string, lines int) (string, error) {
 	return text, nil
 }
 
+// PaneReadDetection returns the pane's screen in the shape a detection
+// fixture is: `--source detection`, plain text, WHOLE — no client-side tail.
+//
+// It is PaneRead's sibling and not a flag on it because the two answer
+// different questions. PaneRead is a reader's snippet: `--source recent` (the
+// CLI's default) and a tail of N rows, which is all the permission-mode and
+// persona-mode readers want. This is a CAPTURE, and the only thing that makes
+// a capture worth writing down is that `herdr agent explain --file` reads it
+// back the same way (ADR 0066 D3, ranger-base-76gc4) — which is the source
+// `etc/herdr/agent-detection/testdata/` was captured with and the source
+// `scripts/verify-detection.sh` replays.
+//
+// BOTH HALVES ARE MEASURED, 2026-10-04, herdr 0.9.1, five live panes on this
+// box, and both differ from `PaneRead(target, 40)`:
+//
+//   - THE SOURCE IS NOT A SYNONYM. On four of the five panes `recent` and
+//     `detection` were byte-identical; on the fifth — a quiet pane with
+//     scrollback — `recent` returned 80 lines / 4,205 bytes against
+//     `detection`'s 50 / 2,670, stable over three paired reads. `recent`
+//     reaches back above the screen; a fixture is the screen.
+//   - THE TAIL CUTS THE WRONG END. A client-side tail keeps the LAST N rows,
+//     and what a D3 record is missing is the FIRST ones: the screen's own
+//     heading, under 15-16 rows of ASCII logo (docs/notes.d/ranger-base-qk9tr.md
+//     §5). The tallest fixture posse owns is 51 lines, so a 40-row tail of it
+//     drops 11 rows off the top — exactly the bytes this capture exists for.
+//
+// Unbounded by design, therefore, and bounded in fact by the pane's geometry:
+// `detection` is a screen, not a scrollback. AppendReading's comment carries
+// what that costs a record.
+func (h Herdr) PaneReadDetection(paneID string) (string, error) {
+	res, err := h.RunText("pane", "read", paneID, "--source", "detection", "--format", "text")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimRight(res, "\n\t "), nil
+}
+
 // AgentReadANSI returns the pane's terminal output with the escape sequences
 // left in — the same screen `agent explain` previews a region of, read once
 // more with the attributes on it.

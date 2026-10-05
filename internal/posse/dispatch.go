@@ -5407,7 +5407,7 @@ func (d *Dispatcher) awaitDelivered(id, session, runtime string, wait time.Durat
 				Rule:        RulePromptReady,
 				Bead:        id,
 				Runtime:     runtime,
-				Herdr:       ReadingEvidenceOf(lastGuess),
+				Herdr:       d.d3Evidence(target, lastGuess),
 			})
 			d.printf("◷ %-14s work prompt delivered on %s's launch line, but herdr never recognized a screen there within %s — %s%s\n",
 				id, session, wait, lastWhy, lastGuess.WhatHerdrSaw(d.detectionWhy(runtime)))
@@ -5622,7 +5622,7 @@ func (d *Dispatcher) awaitSettled(id, session, target string, until []string, de
 				Consequence: ConsequenceRefusal,
 				Rule:        RulePromptReady,
 				Bead:        id,
-				Herdr:       ReadingEvidenceOf(lastGuess),
+				Herdr:       d.d3Evidence(target, lastGuess),
 			})
 			return "", AgentDetection{}, Die("agent in %s never became promptable within %s — %s; check the session (posse peek %s)%s", session, wait, lastWhy, session, lastGuess.WhatHerdrSaw(""))
 		}

@@ -21,6 +21,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-d1hax](ranger-base-d1hax.md) — A door with two arms needed two classifications, and the roster can only hold a one-line recipe (ranger-base-d1hax) — 2026-10-04
 - [ranger-base-aza46](ranger-base-aza46.md) — A three-commit merge-back where two twins land no part of the conflicted file (ranger-base-aza46) — 2026-10-04
 - [ranger-base-7zng1](ranger-base-7zng1.md) — The heaviest named-package run on the box took no suite slot (ranger-base-7zng1) — 2026-10-04
+- [ranger-base-76gc4](ranger-base-76gc4.md) — The D3 record carries the screen now, and three things the design named had to be re-measured (ranger-base-76gc4) — 2026-10-04
 - [ranger-base-4wwy5](ranger-base-4wwy5.md) — ASD-STE100 for the harness's own English: what the standard mandates, where posse's English failed this week, and what a controlled language would buy (ranger-base-4wwy5) — 2026-10-04
 - [ranger-base-41zyo](ranger-base-41zyo.md) — ranger-base-41zyo — the money line was spelled three times and enforced once, and a metered credential cannot carry a cap posse holds — 2026-10-04
 - [ranger-base-3xt9y](ranger-base-3xt9y.md) — The readings log, and the one incident class a consequence-keyed log cannot see (ranger-base-3xt9y) — 2026-10-04
