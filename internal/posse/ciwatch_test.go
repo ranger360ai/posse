@@ -481,6 +481,130 @@ func TestReadCIVetsAtMostTheCapAndOnlyAtTheHead(t *testing.T) {
 	}
 }
 
+// TWO PHANTOMS IN A ROW, over the payloads GitHub actually served
+// (ranger-base-hxcqe). The tests above drive one demotion and the cap's
+// boundary, both from synthetic pages. This is the walk in between, and
+// until 2026-10-05 it had never existed: a page topped by two consecutive
+// queue-only runs with a real verdict beneath them, which is what an Actions
+// OUTAGE produces rather than a one-in-300 phantom.
+//
+// MEASURED 2026-10-05 from /actions/runs/<id>/jobs?per_page=100 during
+// GitHub's "Incident with Actions" (component major_outage, opened
+// 19:11:58Z). Both runs carry a `failure` conclusion that no job of theirs
+// accounts for, and the starvation is not the same shape twice — which is
+// the point of using the real rows: 37372180663 lost every ubuntu job and
+// kept both macos ones, 37367869180 kept ubuntu 2 and lost ubuntu 1. A
+// fixture that repeated one page twice would not have told them apart.
+//
+//   - 37372180663 (64f18288, 20:50:06Z): macos 1 and macos 2 success with
+//     11 steps; macos 3, ubuntu 1, ubuntu 2, ubuntu 3 all cancelled at zero
+//     steps, cut together at 21:05:09Z after 15m03s queued.
+//   - 37367869180 (eebe9737, 20:08:21Z): macos 1, macos 2, ubuntu 2 success
+//     with 11 steps; macos 3, ubuntu 1, ubuntu 3 cancelled at zero steps,
+//     15m03s.
+//   - 37362765576 (bab60e51, 19:21:00Z) is the verdict: ranger-base-94grm's
+//     own run, success under the default filter once its one starved job was
+//     re-run green.
+//
+// What this pins that the single-demotion test cannot: the loop ADVANCES.
+// It must take the second run from the top as the next candidate, ask its
+// jobs page too, and land on the third — two gh children, two set-asides in
+// page order, and a gate that reads GREEN over two red runs in a row.
+func TestReadCIWalksPastTwoConsecutivePhantomsToTheVerdict(t *testing.T) {
+	t.Parallel()
+	phantom := func(cancelled ...string) map[string]bool {
+		m := map[string]bool{}
+		for _, n := range cancelled {
+			m[n] = true
+		}
+		return m
+	}
+	page := func(cancelled map[string]bool, runners map[string]string) string {
+		var rows []string
+		for _, n := range []string{
+			"test (macos-latest, 1)", "test (macos-latest, 2)", "test (macos-latest, 3)",
+			"test (ubuntu-latest, 1)", "test (ubuntu-latest, 2)", "test (ubuntu-latest, 3)",
+		} {
+			if cancelled[n] {
+				rows = append(rows, ciJobJSON(n, "cancelled", 0, ""))
+				continue
+			}
+			rows = append(rows, ciJobJSON(n, "success", 11, runners[n]))
+		}
+		return ciJobsJSON(rows...)
+	}
+
+	tip := time.Date(2026, 10, 5, 20, 50, 6, 0, time.UTC)
+	dir, bin := ghRepo(t, "ci.yml",
+		ciRunJSONID("64f18288", "completed", "failure", tip, "37372180663"),
+		ciRunJSONID("eebe9737", "completed", "failure", tip.Add(-41*time.Minute-45*time.Second), "37367869180"),
+		ciRunJSONID("bab60e51", "completed", "success", tip.Add(-89*time.Minute-6*time.Second), "37362765576"),
+	)
+	writeGhJobs(t, "37372180663", page(
+		phantom("test (macos-latest, 3)", "test (ubuntu-latest, 1)", "test (ubuntu-latest, 2)", "test (ubuntu-latest, 3)"),
+		map[string]string{
+			"test (macos-latest, 1)": "GitHub Actions 1000002509",
+			"test (macos-latest, 2)": "GitHub Actions 1000002516",
+		}))
+	writeGhJobs(t, "37367869180", page(
+		phantom("test (macos-latest, 3)", "test (ubuntu-latest, 1)", "test (ubuntu-latest, 3)"),
+		map[string]string{
+			"test (macos-latest, 1)":  "GitHub Actions 1000002497",
+			"test (macos-latest, 2)":  "GitHub Actions 1000002496",
+			"test (ubuntu-latest, 2)": "GitHub Actions 1000002501",
+		}))
+
+	st := ReadCI(CIQuery{Dir: dir, Workflow: "ci.yml", GhBin: bin})
+	if !st.Known() {
+		t.Fatalf("not read: %s", st.Why)
+	}
+	// The whole point: two red runs at the head of the page, and the gate is
+	// not red. A P1 filed here would name a commit nothing was wrong with,
+	// twice over.
+	if st.Red {
+		t.Errorf("red over two runs whose only non-success jobs never started — latest %q", st.Latest.Short())
+	}
+	if st.Latest.Short() != "bab60e51" {
+		t.Errorf("latest = %q, want bab60e51 — the newest run that carries a verdict", st.Latest.Short())
+	}
+	if len(st.QueueOnly) != 2 {
+		t.Fatalf("set aside %d, want 2: the loop did not advance past the first phantom (%+v)", len(st.QueueOnly), st.QueueOnly)
+	}
+	// In PAGE order, newest first, because the bead's SET ASIDE block prints
+	// them in the order it found them and a reader matches them against
+	// `gh run list`.
+	if got := []string{st.QueueOnly[0].Run.Short(), st.QueueOnly[1].Run.Short()}; got[0] != "64f18288" || got[1] != "eebe9737" {
+		t.Errorf("set aside %v, want [64f18288 eebe9737] in page order", got)
+	}
+	// Each reason is built from its OWN page, so they must not be the same
+	// sentence: the tip lost ubuntu 2 and eebe9737 kept it.
+	tipWhy, prevWhy := st.QueueOnly[0].Why, st.QueueOnly[1].Why
+	if !strings.Contains(tipWhy, "test (ubuntu-latest, 2)") {
+		t.Errorf("the tip's reason does not name ubuntu 2, which starved in it: %q", tipWhy)
+	}
+	if strings.Contains(prevWhy, "test (ubuntu-latest, 2)") {
+		t.Errorf("eebe9737's reason names ubuntu 2, which SUCCEEDED in it — the reasons are not read per-run: %q", prevWhy)
+	}
+	for i, why := range []string{tipWhy, prevWhy} {
+		if !strings.Contains(why, "never started") {
+			t.Errorf("set aside[%d] states no evidence: %q", i, why)
+		}
+	}
+	// One child per demotion and not one per run of the window, and the last
+	// run is never asked about because it is not a failure.
+	if n := ghJobsCalls(t); n != 2 {
+		t.Errorf("%d jobs calls, want 2:\n%s", n, ghCalls(t))
+	}
+	if got := ghCalls(t); strings.Contains(got, "37362765576/jobs") {
+		t.Errorf("asked the jobs endpoint about a run that already carried a verdict:\n%s", got)
+	}
+	// A run set aside was never a verdict, so neither phantom is in the
+	// streak — and a green gate's streak is the green one.
+	if st.Streak != 1 {
+		t.Errorf("streak = %d, want 1: a set-aside run counted toward it", st.Streak)
+	}
+}
+
 // A window holding NOTHING but runs that never ran is the could-not-READ
 // abstention, not a green pass: there is no verdict in it either way, and
 // the next completed run clears it.
