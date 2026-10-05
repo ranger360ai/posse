@@ -60,6 +60,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-26y03](ranger-base-26y03.md) — A nesting refusal wears the setuid refusal's face, and one seat can see both after all (ranger-base-26y03) — 2026-10-01
 - [ranger-base-rkva0](ranger-base-rkva0.md) — ranger-base-rkva0 — verifying four closes, and the two arms their mutants could not reach — 2026-10
 - [ranger-base-m46kr](ranger-base-m46kr.md) — The freshness guard on ci-watch's reading, and the number behind it (ranger-base-m46kr) — 2026-10
+- [ranger-base-hxcqe](ranger-base-hxcqe.md) — The red gate was a GitHub outage, and the third run was the tell (ranger-base-hxcqe) — 2026-10
 - [ranger-base-94grm](ranger-base-94grm.md) — A red gate whose red job never ran (ranger-base-94grm) — 2026-10
 
 ## 2026-09
