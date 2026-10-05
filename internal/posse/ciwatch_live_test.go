@@ -60,6 +60,7 @@ package posse
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -378,19 +379,30 @@ func ciOpenAdopted(t *testing.T, bd Bd, repo string) *BdIssue {
 // it was written for and "a real red" over a run that really failed. The
 // fakes pin the rule; they cannot pin the shape of a page nobody here wrote.
 //
-//	RHQ_LIVE_GH=1 GH_TOKEN="$(gh auth token)" \
-//	  go test -count=1 -tags posse_arm3 ./internal/posse/ -run TestLiveCIJobsVet -v
+//	RHQ_LIVE_GH=1 go test -count=1 -tags posse_arm3 ./internal/posse/ \
+//	  -run TestLiveCIJobsVet -v
 //
-// GH_TOKEN and -count=1 are both load-bearing. TestMain gives the whole test
-// binary a temp $HOME, so the operator's `gh` config — and the keyring entry
-// `gh auth status` reads — is invisible to any child this execs, and gh
-// answers "please run gh auth login" (exit 4) rather than reaching GitHub;
-// the pin SKIPS on that, which is indistinguishable from the skip one line
-// down. And go's test cache keys on the env a test READS through os.Getenv,
-// which GH_TOKEN never is, so a run that skipped for want of a token is
-// replayed from cache over a command that now has one. MEASURED 2026-10-05:
-// both arms skip without the token, both PASS with it, and the second
-// invocation printed the first one's skips under `(cached)`.
+// No GH_TOKEN on that line, and that absence is ranger-base-jql54. TestMain
+// gives the whole test binary a temp $HOME, so the operator's `gh` config —
+// and, on this box, the keyring the token is actually kept in — is invisible
+// to every child this execs: gh answers "please run gh auth login" (exit 4)
+// rather than reaching GitHub, both arms t.Skipf on that, and the pin reports
+// PASS in 0.00s having asked GitHub nothing. MEASURED 2026-10-05 in the
+// bead's own transcript, and again by hand: the same `gh api .../jobs` call
+// answers 6 jobs under the operator's HOME and exit 4 under a tempdir.
+//
+// Handing the token in through GH_TOKEN was the first reading of that, and it
+// is a workaround with two edges — a secret on a command line, and go's test
+// cache keys on the env a test READS through os.Getenv, which GH_TOKEN never
+// is, so a run that skipped for want of a token is replayed from cache over a
+// command that now has one. ghAtOperatorHome is the fix instead: the child
+// gets the $HOME it would have had outside this binary, and the operator
+// types nothing. `-count=1` stays load-bearing for the other half of that
+// cache reason — nothing about a network answer is in the key.
+//
+// And the auth skip is gone: RHQ_LIVE_GH=1 means "I expect this to run", so
+// the only failure these arms still skip on is the one the next paragraph
+// promises to skip on. ghLiveNotRun is where that line is drawn.
 //
 // Both run ids are FIXED, because both are historical facts rather than
 // current state — a live pin keyed on "whatever is red right now" asserts
@@ -412,10 +424,13 @@ func TestLiveCIJobsVet(t *testing.T) {
 	if os.Getenv("RHQ_LIVE_GH") == "" {
 		t.Skip("set RHQ_LIVE_GH=1 (asks the real GitHub through the real gh)")
 	}
-	bin, err := exec.LookPath(ghBin(""))
+	real, err := exec.LookPath(ghBin(""))
 	if err != nil {
 		t.Skip("no gh on PATH")
 	}
+	// Not `real` directly: the binary's $HOME is a tempdir, and gh reads its
+	// auth under the operator's (ghAtOperatorHome).
+	bin := ghAtOperatorHome(t, real)
 	const slug = "ranger360ai/posse"
 	dir := t.TempDir()
 
@@ -440,7 +455,7 @@ func TestLiveCIJobsVet(t *testing.T) {
 		cmd.Dir = dir
 		out, cerr := cmd.Output()
 		if cerr != nil {
-			t.Skipf("gh could not reach attempt 1 of run 37362765576: %v", cerr)
+			ghLiveNotRun(t, "attempt 1 of run 37362765576", cerr)
 		}
 		p := parse(t, out)
 		why, queueOnly := ciJobsSayQueue(p)
@@ -456,7 +471,7 @@ func TestLiveCIJobsVet(t *testing.T) {
 		t.Parallel()
 		raw, rerr := ghRunJobs(dir, bin, slug, "34632088265")
 		if rerr != nil {
-			t.Skipf("gh could not reach run 34632088265: %v", rerr)
+			ghLiveNotRun(t, "run 34632088265", rerr)
 		}
 		p := parse(t, raw)
 		if why, queueOnly := ciJobsSayQueue(p); queueOnly {
@@ -475,4 +490,118 @@ func TestLiveCIJobsVet(t *testing.T) {
 			t.Errorf("no job of run 34632088265 parsed as failed, but its conclusion is failure: the parse is wrong or the run is not the one this pin names")
 		}
 	})
+}
+
+// ghAtOperatorHome is the real `gh` with exactly one thing changed: the
+// child's $HOME. It writes a two-line wrapper and hands back its path, so
+// both arms above reach GitHub through the SHIPPED argv — arm 2 goes through
+// ghRunJobs, which sets no cmd.Env at all and must not start to. In
+// production the inherited environment is already the operator's; the only
+// process on this box that lies to a child about $HOME is this test binary,
+// and the lie is deliberate (herdr_test.go's TestMain, "HOME: one temp home
+// for the whole binary").
+//
+// A wrapper rather than cmd.Env for the same reason the keychain pin replaces
+// a closure rather than the process's environment (liveKeychainStoreAt,
+// credentialaccount_live_test.go): os.Setenv/t.Setenv here would hand the
+// operator's live home to every test running in parallel beside this one, and
+// nearly every test in this package is one.
+//
+// HOME alone is enough. MEASURED 2026-10-05 on this box: `gh auth status`
+// reports the github.com token under `(keyring)`, and the keyring is the
+// login keychain under $HOME/Library/Keychains — the same reason the
+// credential pin has to do this for `security`. GH_CONFIG_DIR needs no
+// mention because TestMain does not clear it (it clears CLAUDE_CONFIG_DIR,
+// CODEX_HOME and GROK_HOME), so an operator who exported one already has it
+// in os.Environ and the wrapper passes it through untouched.
+func ghAtOperatorHome(t *testing.T, bin string) string {
+	t.Helper()
+	if operatorHome == "" {
+		t.Fatal("TestMain recorded no operator $HOME, so there is no gh config and no keyring to point the child at — this pin cannot run from a binary started without HOME")
+	}
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("no sh")
+	}
+	p := filepath.Join(gitTempDir(t), "gh")
+	script := "#!/bin/sh\nHOME=" + shellQuote(operatorHome) + "\nexport HOME\nexec " + shellQuote(bin) + " \"$@\"\n"
+	if err := WriteExecutable(p, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+// ghLiveNotRun says what a gh child that did not answer costs, and it is the
+// other half of ranger-base-jql54. RHQ_LIVE_GH=1 is an operator saying "I
+// expect this to run", so the only failure this pin may SKIP on is the one
+// its header promises to skip on — a run GitHub has aged out, which is not
+// evidence against the parse or the rule. Everything else is a rig failure,
+// and a rig failure that skips is a PASS with zero evidence: that is exactly
+// how exit 4 hid here for as long as it did, printed as a t.Logf line under a
+// green PASS that nobody reads twice.
+//
+// The classification reads the message rather than only the code because the
+// two arms lose different halves of the failure. Arm 1 uses cmd.Output, so
+// the exit code is on the *exec.ExitError and gh's sentence is in .Stderr;
+// arm 2 goes through the shipped ghRunJobs, which keeps gh's stderr text and
+// drops the code (Die, ciwatch.go). Both spellings of "not logged in" carry
+// the words.
+func ghLiveNotRun(t *testing.T, what string, err error) {
+	t.Helper()
+	msg := err.Error()
+	code := -1
+	var ee *exec.ExitError
+	if errors.As(err, &ee) {
+		code = ee.ExitCode()
+		if se := strings.TrimSpace(string(ee.Stderr)); se != "" {
+			msg += ": " + se
+		}
+	}
+	switch {
+	case strings.Contains(msg, "HTTP 404"), strings.Contains(msg, "HTTP 410"), strings.Contains(msg, "Not Found"):
+		t.Skipf("GitHub no longer serves %s (%s) — the subject here is the parse and the rule, and a run that is gone is not evidence against either", what, msg)
+	case code == 4, strings.Contains(msg, "gh auth login"), strings.Contains(msg, "GH_TOKEN"):
+		t.Fatalf("gh could not authenticate for %s (%s) — this is the rig, not GitHub: see ghAtOperatorHome, and check `gh auth status` in the shell that started this", what, msg)
+	default:
+		t.Fatalf("gh could not reach %s (%s) — RHQ_LIVE_GH=1 says this run is expected to ask GitHub, so this is a failure and not a skip", what, msg)
+	}
+}
+
+// The guard for the pin above, and the one test in this file that always
+// runs: it asks a STUB `gh` what $HOME it was handed, through the shipped
+// ghRunJobs and the shipped parse, so it needs no token, no keyring, no
+// network and no darwin.
+//
+// It exists because the defect it pins was invisible (ranger-base-jql54).
+// Both arms read the right runs, named them in their skip lines and reported
+// PASS in 0.00s, and the first reading of that output was that GitHub had
+// aged the runs out. A pin the operator can only run by hand, on a box
+// nobody else has, is exactly the kind that rots unobserved — so the thing it
+// depends on is pinned by a test the suite runs, the way the keychain pin's
+// is (TestQALiveKeychainReadHandsTheChildTheOperatorHome).
+func TestQALiveCIJobsVetHandsGhTheOperatorHome(t *testing.T) {
+	t.Parallel()
+	// One job whose NAME is the child's own $HOME, so the assert reads what
+	// gh itself would have read, back out of ciJobsPage.
+	stub := filepath.Join(gitTempDir(t), "gh-stub")
+	if err := WriteExecutable(stub, []byte("#!/bin/sh\nprintf '{\"total_count\":1,\"jobs\":[{\"name\":\"%s\"}]}\\n' \"$HOME\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := ghRunJobs(gitTempDir(t), ghAtOperatorHome(t, stub), "o/n", "1")
+	if err != nil {
+		t.Fatalf("the stubbed read must answer: %v", err)
+	}
+	var p ciJobsPage
+	if jerr := json.Unmarshal(trimToJSON(raw), &p); jerr != nil {
+		t.Fatalf("the stub's payload did not parse: %v\n%s", jerr, raw)
+	}
+	if len(p.Jobs) != 1 {
+		t.Fatalf("parsed %d jobs out of %q, want the stub's one", len(p.Jobs), raw)
+	}
+	if p.Jobs[0].Name != operatorHome {
+		t.Errorf("the gh child was handed HOME=%q, want the operator's %q — with the package's temp HOME the real gh exits 4 on a keyring it cannot see, and the two arms above can only skip", p.Jobs[0].Name, operatorHome)
+	}
+	// And the temp HOME really is different, or the assert above is vacuous.
+	if operatorHome == os.Getenv("HOME") {
+		t.Errorf("TestMain did not replace HOME (%q) — this guard proves nothing while the two are equal", operatorHome)
+	}
 }
