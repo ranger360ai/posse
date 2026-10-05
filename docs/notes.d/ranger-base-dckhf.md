@@ -69,6 +69,19 @@ it needed none:
   `delivered` arm sets no `pendingBead.gate`, and `stallGate` returns nil
   for a bead that holds none. It could not reach a D5 record anyway:
   `gather` asks `judgeStall` only for `!p.delivered`.
+
+  CORRECTED 2026-10-05 (ranger-base-sua3t's verify, built in
+  ranger-base-9k2s1). "Needed no decision" was true of the code and was
+  read here as covering the pins too, and it did not: §5's arm 3 pins the
+  two ENDS of that chain and not the link between them, because its
+  `stallGate` half is driven over a hand-built `pendingBead`. MEASURED:
+  `p.gate = d.gateReading(l.gate, l.target)` inserted into `fire`'s
+  `delivered` arm reddened nothing in the tree. Arm 6 of
+  `falseidle_qa_test.go` drives `fire` itself on the argv path and asserts
+  both halves at that site — `p.gate` nil, and no pane read spent. An
+  exclusion that needs no runtime check still needs a pin, because what it
+  excludes is a COST: one unpriced `pane read` per `prompt: argv` dispatch,
+  against an amendment that buys exactly one per typed prompt.
 - **The cockpit's `d`** calls `launchSession` and therefore receives the
   gate reading, and spends nothing on it: it takes no capture, holds no
   pendingBead and writes no record. The field it ignores costs one struct

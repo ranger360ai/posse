@@ -31,11 +31,11 @@ package posse
 //  2. The turn-starts arm asserts a capture WAS taken and still nothing was
 //     written. Without the first half it would pass against a fire that
 //     never took one.
-//  3. The launch-line arm pins both ends — the launch carries no gate
+//  3. The launch-line arm pins both ENDS — the launch carries no gate
 //     reading, and the writer handed no gate writes no block and spends no
 //     pane read — with the typed path on the same fixture as its control,
 //     because a pin on a zero value measures nothing unless something
-//     fills it in.
+//     fills it in. It does not reach the link BETWEEN them, which is arm 6.
 //  4. The census arm runs the real script, and asserts the count is 0 over a
 //     log of records with no gate block — the shape every D5 record had
 //     before this bead — as well as 1 over one that has them.
@@ -44,6 +44,10 @@ package posse
 //     would be green against a parsed read of the first one; and its second
 //     half reads the evidence the pass is still holding, which is the one
 //     place this change could have corrupted a bead mid-judgment.
+//  6. The launch-line arm's missing middle (ranger-base-9k2s1): it drives
+//     fire itself, so the exclusion is asserted at the call site that
+//     enforces it rather than on a pendingBead a test filled in. Under its
+//     own banner at the bottom, on arm 3's fixture.
 
 import (
 	"encoding/json"
@@ -52,6 +56,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The two screens, one per side of the keystrokes. Shaped like the measured
@@ -264,47 +269,21 @@ func TestQATypedPromptWhoseTurnStartsWritesNoStallRecord(t *testing.T) {
 // ARM 3. The launch-line path carries no gate block, pinned at both ends.
 //
 // It cannot be driven to a stall record at all — gather asks judgeStall only
-// for `!p.delivered` — so the two halves of the exclusion are pinned where
+// for `!p.delivered` — so the two ENDS of the exclusion are pinned where
 // they live: the launch hands back no gate reading, and the writer handed no
 // gate writes no block.
+//
+// THE LINK BETWEEN THEM IS NOT HERE and this arm used to claim it was:
+// fire's `delivered` arm setting no pendingBead.gate is what joins the two,
+// and the writer's half below is driven over a pendingBead this test builds
+// by hand. Arm 6 drives fire for it (ranger-base-9k2s1).
 func TestQALaunchLinePromptCarriesNoGateReading(t *testing.T) {
 	t.Parallel()
-	// The SHIPPED runtimes, and their declarations are read rather than
-	// written here: `grok` declares prompt: argv and `claude` does not
-	// (dispatchparity_qa_test.go's table). A hand-written pair would pin
-	// this arm to a fixture, and the exclusion it is about is a property of
-	// the two real paths.
-	//
-	// A BACKEND EACH, because one fake herdr serves one board: the second
-	// session of a shared fake opens a workspace its agents.json does not
-	// list, and the launch then fails on "no agent detected" — a fixture
-	// collision that would read as a product refusal (hermetic's own note
-	// on repeat runs).
-	for _, tc := range []struct {
-		runtime string
-		argv    bool
-	}{
-		{runtime: "grok", argv: true},
-		{runtime: DefaultRuntime, argv: false},
-	} {
+	for _, tc := range fiShippedPromptModes {
 		t.Run(tc.runtime, func(t *testing.T) {
 			t.Parallel()
-			b, fake := newTestBackend(t)
-			d := newTestDispatcher(t, b)
-			dispatcherErr(t, d)
-			writePersona(t, b.App, "ranger", "[go]")
-			repo := wtqaRepo(t, b.App, `[{"id":"a-1","title":"t","labels":["go"]}]`, "")
-			idleClaude(t, fake)
+			d, fake, is := fiLaunchSeat(t, tc.runtime, tc.argv)
 
-			rt, err := b.App.LoadRuntime(tc.runtime)
-			if err != nil {
-				t.Fatalf("LoadRuntime(%s): %v", tc.runtime, err)
-			}
-			if got := rt.PromptMode() == PromptArgv; got != tc.argv {
-				t.Fatalf("%s declares prompt: argv = %v, this arm needs %v — one of them moved", tc.runtime, got, tc.argv)
-			}
-
-			is := RepoIssue{Dir: repo, BdIssue: BdIssue{ID: "a-1", Title: "t"}}
 			l, err := d.launchSession(is, "ranger", "seat", tc.runtime, "fast", func() string { return "work" }, nil, false)
 			if err != nil {
 				t.Fatalf("launchSession on %s: %v\n%s", tc.runtime, err, dispatcherOut(d))
@@ -596,4 +575,166 @@ func fiCensus(t *testing.T, script, log string) struct {
 		t.Fatalf("census --json is not json: %v\n%s", err, out)
 	}
 	return c
+}
+
+// ─── ranger-base-9k2s1: fire's own `delivered` arm, not a hand-built bead ───
+
+// ARM 6 pins the SITE the exclusion is enforced at. Arm 3 holds the two
+// ENDS — launchSession hands back the zero detection, and stallGate neither
+// invents a block nor spends a pane read for a bead that holds none — and
+// the link that joins them, fire's `case l.delivered:` arm setting no
+// pendingBead.gate, is pinned by neither: arm 3 builds its pendingBead by
+// hand, which is a pin on stallGate and not on the path into it (the class
+// docs/notes.d/ranger-base-cu0zg.md names).
+//
+// MEASURED 2026-10-05 (ranger-base-sua3t's verify of ranger-base-dckhf,
+// mutant D7): `p.gate = d.gateReading(l.gate, l.target)` inserted into that
+// arm left all three suite arms green — 902 tests over
+// `Gate|Stall|Launch|Deliver|Pane|Capture|Idle|Typed|Prompt|Reading|Fire|Argv`,
+// arm 3 among them — and reddened nothing else in the tree.
+//
+// WHAT THAT MUTANT COSTS, which is why this is a pin and not a note. ADR 0066
+// D1 as amended buys exactly ONE new herdr call, a `pane read` per TYPED
+// prompt, and names the launch line as excluded: a gate reading built there
+// spends one unpriced read on every `prompt: argv` dispatch, forever, in
+// silence. The record half is held today by one condition in gather
+// (`!p.delivered`), which this arm does not pin and the amendment does not
+// own — so the day that condition moves, a D5 record starts carrying a gate
+// block built from a ZERO detection: a reading that typed nothing, labelled
+// as the reading that typed.
+//
+// It drives fire, so both halves are asserted at the site rather than over a
+// struct a test filled in, and it keeps arm 3's shape where that shape is
+// the measurement: both shipped runtimes off their own declarations, and the
+// typed one on the same fixture as the control, because a pin on a nil field
+// measures nothing unless something fills it in.
+func TestQAFireHoldsNoGateReadingOnTheLaunchLine(t *testing.T) {
+	t.Parallel()
+	for _, tc := range fiShippedPromptModes {
+		t.Run(tc.runtime, func(t *testing.T) {
+			t.Parallel()
+			d, fake, is := fiLaunchSeat(t, tc.runtime, tc.argv)
+			// The screen the control types at. The capture is asserted by
+			// CONTENT and not by presence: the fake serves a default shell
+			// screen to any pane read, so a region of the right name would
+			// be satisfied by a writer that read some other pane.
+			write(t, filepath.Join(fake, "pane-text", "w1_p1"), fiTypedScreen)
+
+			session := SessionForBead("ranger", is.Dir, is.ID)
+			p, err := d.fire(is, "ranger", session, tc.runtime, "fast", "qa", nil)
+			if err != nil {
+				t.Fatalf("fire on %s: %v\n%s", tc.runtime, err, dispatcherOut(d))
+			}
+			// The wait leg fire left in flight, joined before the fixture is
+			// torn out from under the fake process it re-execs. Both arms
+			// below send exactly one result (dispatch.go's switch), so this
+			// read cannot outlive the goroutine that answers it.
+			defer func() {
+				select {
+				case <-p.result:
+				case <-time.After(30 * time.Second):
+					t.Error("fire's wait leg never answered — the goroutine it left behind is still holding the fixture")
+				}
+			}()
+
+			// THE PREMISE, and it is the one that would make this arm
+			// vacuous: `unseen` is the FIRST case of fire's switch, so a
+			// herdr that named no agent skips both paths below and leaves
+			// p.gate nil for a reason that has nothing to do with the
+			// exclusion.
+			if p.unseen {
+				t.Fatalf("herdr named no agent, so fire took its unseen arm and neither path below ran:\n%s", dispatcherOut(d))
+			}
+			if p.delivered != tc.argv {
+				t.Fatalf("%s took the %s path, which is not the one this case is about", tc.runtime, map[bool]string{true: "launch-line", false: "typed"}[p.delivered])
+			}
+
+			reads := func() int {
+				b, _ := os.ReadFile(filepath.Join(fake, "pane-read-log"))
+				return strings.Count(string(b), "w1:p1")
+			}
+			if tc.argv {
+				if p.gate != nil {
+					t.Errorf("the launch-line prompt is holding a gate reading %+v — nothing was typed here, so this is a reading that typed nothing labelled as the reading that typed (ADR 0066 D1 as amended excludes this path)", *p.gate)
+				}
+				if got := reads(); got != 0 {
+					t.Errorf("the launch-line prompt spent %d pane read(s) on w1:p1, want 0 — the amendment prices one per TYPED prompt and this path types nothing", got)
+				}
+				return
+			}
+			// The CONTROL, on the same fixture: the typed path fills in the
+			// field and spends the read the amendment priced, which is what
+			// makes the two assertions above measurements rather than claims
+			// about a zero value nobody ever writes.
+			if p.gate == nil {
+				t.Fatalf("the typed path holds no gate reading, so the case above is a pin on a field nothing fills in:\n%s", dispatcherOut(d))
+			}
+			if !p.gate.Seen || p.gate.State != "idle" {
+				t.Errorf("the typed path's gate reading says state=%q seen=%v, want the seen idle reading its settle gate opened on", p.gate.State, p.gate.Seen)
+			}
+			at, ok := p.gate.RegionOf(PaneCaptureAtPromptRegion)
+			if !ok {
+				t.Errorf("the typed path holds no %q region — the capture is taken at this site and nowhere else before the verdict", PaneCaptureAtPromptRegion)
+			} else if !strings.Contains(at.Text, fiTypedHeading) {
+				t.Errorf("the type-time capture does not carry the heading of the screen the keys went into (%q):\n%s", fiTypedHeading, at.Text)
+			}
+			if got := reads(); got != 1 {
+				t.Errorf("the typed path spent %d pane read(s) on w1:p1, want 1 — one per typed prompt is the whole of what the amendment buys", got)
+			}
+		})
+	}
+}
+
+// fiTypedScreen is the screen the control's keystrokes go into, and
+// fiTypedHeading is the line of it the capture is asserted by: the heading
+// belongs to no other screen in this file and to none of the fake's
+// defaults, so a region of the right NAME holding some other pane's bytes
+// cannot satisfy it. The heading and not the whole screen, because
+// PaneReadDetection answers with what herdr's CLI printed and a comparison
+// against the fixture file's bytes would be pinning that trailing
+// whitespace rather than the capture.
+const (
+	fiTypedHeading = "── composer ──"
+	fiTypedScreen  = fiTypedHeading + "\n❯ \n\n  ? for shortcuts\n"
+)
+
+// fiShippedPromptModes is the pair arms 3 and 6 run over: the two SHIPPED
+// runtimes, whose prompt-mode declarations fiLaunchSeat reads rather than
+// writes. A hand-written pair would pin both arms to a fixture, and the
+// exclusion they are about is a property of the two real paths.
+var fiShippedPromptModes = []struct {
+	runtime string
+	argv    bool
+}{
+	{runtime: "grok", argv: true},
+	{runtime: DefaultRuntime, argv: false},
+}
+
+// fiLaunchSeat is the launch fixture arms 3 and 6 share: a persona that
+// takes the bead, a real repo with one ready `go` bead, an idle claude in
+// w1:p1 for the settle gate to open on, and the runtime's own prompt-mode
+// declaration checked against what the case needs (`grok` declares
+// prompt: argv and `claude` does not — dispatchparity_qa_test.go's table).
+//
+// A BACKEND EACH, because one fake herdr serves one board: the second
+// session of a shared fake opens a workspace its agents.json does not list,
+// and the launch then fails on "no agent detected" — a fixture collision
+// that would read as a product refusal (hermetic's own note on repeat runs).
+func fiLaunchSeat(t *testing.T, runtime string, argv bool) (*Dispatcher, string, RepoIssue) {
+	t.Helper()
+	b, fake := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+	dispatcherErr(t, d)
+	writePersona(t, b.App, "ranger", "[go]")
+	repo := wtqaRepo(t, b.App, `[{"id":"a-1","title":"t","labels":["go"]}]`, "")
+	idleClaude(t, fake)
+
+	rt, err := b.App.LoadRuntime(runtime)
+	if err != nil {
+		t.Fatalf("LoadRuntime(%s): %v", runtime, err)
+	}
+	if got := rt.PromptMode() == PromptArgv; got != argv {
+		t.Fatalf("%s declares prompt: argv = %v, this arm needs %v — one of them moved", runtime, got, argv)
+	}
+	return d, fake, RepoIssue{Dir: repo, BdIssue: BdIssue{ID: "a-1", Title: "t"}}
 }
