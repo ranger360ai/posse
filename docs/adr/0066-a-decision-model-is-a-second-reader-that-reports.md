@@ -1,6 +1,6 @@
 # ADR 0066 — A typed-decision model, if posse ever carries one, is a second reader that reports and never acts; the readings log comes first
 
-*Status: accepted 2026-10-04 — operator ruling A on ranger-base-our1e's recommendations: D1 the readings log (code bead filed), D2 report-only, D3 first seams gated on the corpus (spike bead filed, any model call is an operator spend ruling) · D3 defined, measured offline and amended 2026-10-04 (ranger-base-qk9tr: the input clause reversed, a heading reader recommended as the report, the model parked) · D1 amended 2026-10-04 (ranger-base-o1aoi: the false-IDLE gap is closed by a capture at the act written on the stall, not by sampling; code bead filed) · owner: architect · source
+*Status: accepted 2026-10-04 — operator ruling A on ranger-base-our1e's recommendations: D1 the readings log (code bead filed), D2 report-only, D3 first seams gated on the corpus (spike bead filed, any model call is an operator spend ruling) · D3 defined, measured offline and amended 2026-10-04 (ranger-base-qk9tr: the input clause reversed, a heading reader recommended as the report, the model parked), ruled 2026-10-05 (ranger-base-gy3io: option B, the deterministic reader) and BUILT 2026-10-05 (ranger-base-6uokf) · D1 amended 2026-10-04 (ranger-base-o1aoi: the false-IDLE gap is closed by a capture at the act written on the stall, not by sampling; code bead filed) · owner: architect · source
 bead ranger-base-our1e (spike, recommendation only) · sits under ADR 0057
 (no guard branches on a display reading), ADR 0060 D2 (detection is herdr's
 to ship), ADR 0061 D3 (a label is identity, not liveness) and ADR 0063 D1
@@ -126,6 +126,53 @@ in the record. The question and a `--corpus` scorer are committed so a D4
 ruling can run it unchanged. The real corpus is empty today — the fleet
 binary predates the log — and the composer-hold seam is untouched.
 
+*Ruled 2026-10-05 (ranger-base-gy3io: option B, the deterministic reader) and
+built the same day (ranger-base-6uokf, code;
+`docs/notes.d/ranger-base-6uokf.md`).* The reader is
+`internal/posse/knownscreen.go` — a table of the eight screens posse owns a
+capture of, keyed by the herdr rule ids that name each one today, carrying
+the screen's own heading phrase(s) as its markers; `KnownScreensIn` returns
+the SET of screens whose heading is in the region texts it is handed.
+`ReadingEvidence.LooksLike` runs it over a record's regions, the whole-pane
+capture included, and the answer rides in two places and no others:
+`WhatHerdrSaw` appends one row, `looks like: <screen>[, <screen>]`, after
+herdr's working and never in place of it (`internal/posse/unrecognized.go`),
+and the D3 record carries it as `looks_like`
+(`internal/posse/readingslog.go`). **D2 holds verbatim**: no guard, launch
+eligibility, hand-back, kill, hire or keystroke reads either.
+
+**THE ONE DESIGN CHOICE WAS WHERE THE MARKERS LIVE, and it is not the
+interstitial registry.** Three reasons, in the order they decide it. The
+registry is read by a GUARD — `DangerUnsilenced` walks it and
+`DangerRefusal` turns the answer into a launch refusal on three surfaces
+(ADR 0013 §2) — so markers there would put this reader's table inside the
+one table a refusal is derived from, and D2's "no guard reads it" would hold
+by care rather than by construction. Its subject is also narrower than
+"known screen": every row carries `Where`, `Key`, `Silence` and a `Probe`,
+and three of the eight screens (codex's hooks review, trust directory and
+model picker) have no silence key, nothing for an operator to have done
+first and nothing for a probe to read — three rows that would also grow
+three permanently-unknown rows in `posse runtime check`'s grid. And the two
+sets disagree in both directions and on their keys: the registry carries
+claude's two screens and bob's three, which posse owns no capture of, and is
+keyed per runtime by a prose `Screen` sentence. The known-screen table is
+keyed by rule id, which is the axis `scripts/d3-reader-eval.py`'s OPTIONS
+already uses and the axis a census groups by. The registry is untouched and
+the markers live in one place.
+
+**THE SAVING IS COUNTABLE, which the acceptance asked for because it was not
+measurable.** The readings log held 0 records in 0 logs on 2026-10-05, so the
+live rate of unknown-screen refusals is UNKNOWN and the reader could not be
+priced against it. A D3 record exists only because herdr recognized nothing,
+so a non-empty `looks_like` on one is by construction a screen herdr's rules
+did not name and this reader did: `scripts/readings-census.py` prints
+`unknown screens NAMED by the heading reader: M of N D3 record(s)` beside the
+D3 row, breaks it down per screen, groups by the set under `--by screen`, and
+exports it on every corpus case. After a few weeks of fleet that line is "N
+unknown-screen incidents named without a human peek", against the per-event
+cost ranger-base-3j8 measured — one hand-launch plus one `posse peek`. No
+model, no network, no config key, no spend.
+
 **D4 — Local first; hosted only under two operator rulings.** The reader
 runs against a box-local System One server (Kev) with no credential, spend
 or egress. Jev is admitted only if (a) the operator rules once on metered
@@ -209,5 +256,10 @@ once a client exists); a pulse pre-filter; anything numeric.
 - `python3 scripts/d3-reader-eval.py` prints `kw full on residue` equal to
   its denominator on the `caret`, `footer` and `depth` rows and `0` under
   `kw prev FP` (MEASURED 2026-10-04: 2/2, 2/2, 7/7, 0).
+- the shipped reader and that script are one table, and the shipped reader is
+  exact on all fifteen fixtures: `go test -run
+  'KnownScreen|LooksLike|UnknownScreenFailureLine' ./internal/posse`
+  (`internal/posse/d3knownscreen_qa_test.go`, five arms, each mutation-checked
+  in `docs/notes.d/ranger-base-6uokf.md`).
 - No PID carries a TypeSafe or OpenRouter credential line before the §7
   rulings are recorded on a bead.

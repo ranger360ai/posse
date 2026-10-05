@@ -54,8 +54,11 @@ const whatHerdrSawRules = 3
 // diagnostic gets skimmed past.
 //
 // It returns "" when there is nothing to add: an older herdr that does not
-// emit `evaluated_rules`, or a detection that has none. The caller's
-// message must stand on its own without this.
+// emit `evaluated_rules`, or a detection that has none, and no D3 report
+// either. The caller's message must stand on its own without this. The two
+// halves are independent — a capture can name a screen for a detection that
+// evaluated no rules at all, and that is the richest thing this block ever
+// says about the shape rangerhq-7ia was.
 //
 // ON A REPORTED READING there is no working to print — herdr evaluated no
 // rules, because it read no screen — so it prints the REPORTER's word
@@ -70,7 +73,43 @@ const whatHerdrSawRules = 3
 // something only the profile can say. Every caller therefore decides whether
 // it has one, which is what ADR 0061 D3.3's "where the runtime is in hand"
 // means.
-func (d AgentDetection) WhatHerdrSaw(why string) string {
+//
+// `looksLike` IS THE SAME SHAPE OF ARGUMENT, one reading later (ADR 0066 D3,
+// ranger-base-6uokf). It is the set of known screens the heading reader
+// named in the bytes the D3 RECORD carries — herdr's previews plus the
+// whole-pane capture (knownscreen.go, ReadingEvidence.LooksLike) — and it
+// cannot be computed from a detection, because the capture is not on one.
+// Over the previews alone the same reader names 5 of 11 residue cases
+// instead of 11, which is why the caller that built the record passes its
+// answer in rather than this function taking a second, worse reading of its
+// own. An EMPTY set means no row at all, and every caller that has no record
+// to hand passes nil.
+//
+// IT IS APPENDED, NEVER SUBSTITUTED. herdr's working stays the whole of the
+// block above it: this reader has no rule, no codepoint and no replay, so a
+// line that displaced the verdict would be trading the diagnostic that can
+// be chased for the one that cannot (ADR 0066 D2 — it reports BESIDE the
+// verdict). It is also the last row on purpose; a reader who stops at the
+// regions has lost nothing.
+func (d AgentDetection) WhatHerdrSaw(why string, looksLike []string) string {
+	return d.whatHerdrSawBody(why) + looksLikeRow(looksLike)
+}
+
+// looksLikeRow is the appended row, indented as a sibling of "What it was
+// reading:" rather than of the per-region rows under it — it is a reading of
+// the whole screen and not of one region.
+func looksLikeRow(looksLike []string) string {
+	line := LooksLikeLine(looksLike)
+	if line == "" {
+		return ""
+	}
+	return "\n    " + line
+}
+
+// whatHerdrSawBody is WhatHerdrSaw without the D3 report: the block as it
+// stood before ranger-base-6uokf, which is still the whole of what a reader
+// can chase to a rule.
+func (d AgentDetection) whatHerdrSawBody(why string) string {
 	if d.Reported != "" {
 		return d.whatTheReporterSaid(why)
 	}

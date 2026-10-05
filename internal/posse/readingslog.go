@@ -211,6 +211,34 @@ type Reading struct {
 	// which is every decision but D5 and, within D5, the launch-line path:
 	// nothing is typed there, so there is no reading that typed.
 	Gate *ReadingEvidence `json:"gate,omitempty"`
+	// LooksLike is the D3 report: the SET of known screens whose own heading
+	// the heading reader found in this record's region texts, the pane
+	// capture included (knownscreen.go, ADR 0066 D3 as amended
+	// ranger-base-qk9tr and ruled ranger-base-gy3io).
+	//
+	// IT IS A SECOND READER'S OUTPUT AND NOTHING ACTS ON IT (ADR 0066 D2).
+	// It is on the record for one reason: so the saving can be counted.
+	// Every D3 record carrying a non-empty set is one unknown-screen
+	// incident that was NAMED without the hand-launch and `posse peek` the
+	// per-event cost has been since ranger-base-3j8 — and
+	// `scripts/readings-census.py` prints that count beside the D3 row and
+	// groups by the set under `--by screen`. The live rate was unmeasurable
+	// when this was written (0 records in 0 logs, 2026-10-05), which is the
+	// whole reason the field exists rather than the line alone.
+	//
+	// A FIELD AND NOT A DERIVATION AT CENSUS TIME, because the bytes the
+	// reader read are not always the bytes the record keeps: the regions go
+	// through the data ceiling on the way in (ADR 0050), and a census
+	// re-reading a redacted region would report a reader that never ran. The
+	// set is taken before the write, from what the gate actually read, and a
+	// `redacted` record then says plainly that its own bytes cannot
+	// reproduce it.
+	//
+	// EMPTY ON EVERY DECISION BUT D3, and empty on most D3 records too: an
+	// unrecognized screen is usually not one of the eight posse owns a
+	// capture of. `omitempty`, so a record with nothing to report carries
+	// no field rather than an empty list.
+	LooksLike []string `json:"looks_like,omitempty"`
 	// Redacted names the data-ceiling classes taken out of the regions
 	// before this line was written (ADR 0050 D2, class only). Non-empty
 	// means the bytes are not the bytes that were read, so a replay over
@@ -459,6 +487,40 @@ func ReadingEvidenceOf(d AgentDetection) ReadingEvidence {
 		})
 	}
 	return ev
+}
+
+// LooksLike runs the known-screen heading reader over every region this
+// evidence block carries and returns the set of screens it names
+// (knownscreen.go, ADR 0066 D3).
+//
+// EVERY REGION, in the order the block holds them, which is herdr's own
+// order with the whole-pane capture appended (withPaneCaptureNamed). The
+// capture is the region that makes the reading worth taking: over herdr's
+// 243-character previews alone the same reader names 5 of 11 residue cases
+// instead of 11, because for 9 of the 15 labelled screens the heading is
+// outside the preview (ranger-base-qk9tr, and ranger-base-76gc4 is the bead
+// that put the capture here).
+//
+// A METHOD ON THE EVIDENCE AND NOT ON THE DETECTION, because the capture is
+// not on the detection: `AgentDetection` is what herdr answered, and herdr
+// has never heard of a pane read posse took beside it. A reader that keyed
+// on the detection would be the preview-only reader, measured and rejected.
+//
+// IT TAKES NO VIEW OF WHAT THE REGIONS ARE. A reported-route block carries
+// no capture at all by design — a pane herdr does not address is a pane
+// posse may not read a screen off (withPaneCaptureNamed) — and no rules
+// either, so this returns nil there. That is the honest answer and not a
+// gap: the evidence on that route is an outside authority's word, which is
+// what whatTheReporterSaid prints.
+func (ev ReadingEvidence) LooksLike() []string {
+	if len(ev.Regions) == 0 {
+		return nil
+	}
+	texts := make([]string, 0, len(ev.Regions))
+	for _, reg := range ev.Regions {
+		texts = append(texts, reg.Text)
+	}
+	return KnownScreensIn(texts)
 }
 
 // AsDetection rebuilds the detection a record was taken from, as far as its
@@ -877,12 +939,31 @@ func (b *HerdrBackend) withPaneCaptureNamed(target, region string, ev ReadingEvi
 //
 // Both callers refuse with NOTHING TYPED, so the consequence is a refusal in
 // ADR 0066 D1's sense and not a hold: the launch did not happen.
-func (b *HerdrBackend) logUnrecognized(session, target string, d AgentDetection, verdict string) {
+//
+// IT RETURNS THE D3 REPORT, so the failure line and the record carry the
+// same reading (ADR 0066 D3, ranger-base-6uokf). The evidence is built here
+// and the capture is taken here, so this is the only place in the hand path
+// that HAS the bytes the heading reader needs — a caller recomputing it off
+// the detection would get the preview-only reading, which names 5 of 11
+// residue cases instead of 11. Nil when the reader names nothing, which is
+// the ordinary answer.
+//
+// THE SET IS RETURNED EVEN WHERE NO RECORD IS WRITTEN, and that is not an
+// oversight: a nil backend or a session with no meta takes no capture and
+// appends no line, but the failure line is still printed and the previews
+// are still a reading. So the caller gets the best reading the evidence it
+// has supports — the preview-only one in those cases — rather than a blank
+// row that would read as "not one of the eight".
+func (b *HerdrBackend) logUnrecognized(session, target string, d AgentDetection, verdict string) []string {
+	ev := b.withPaneCapture(target, ReadingEvidenceOf(d))
+	looksLike := ev.LooksLike()
 	b.LogReading(session, Reading{
 		Decision:    DecisionUnknownScreen,
 		Verdict:     verdict,
 		Consequence: ConsequenceRefusal,
 		Rule:        RulePromptReady,
-		Herdr:       b.withPaneCapture(target, ReadingEvidenceOf(d)),
+		Herdr:       ev,
+		LooksLike:   looksLike,
 	})
+	return looksLike
 }

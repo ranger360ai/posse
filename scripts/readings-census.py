@@ -10,6 +10,7 @@ another. This turns the log into the two things that fixes:
     readings per day, by decision and by verdict     the denominator
     a replay corpus (the bytes + the verdict)        the labelled cases
     D5 records whose settle gate read seen-idle      the false-IDLE rate
+    D3 records the heading reader NAMED a screen on  the D3 report's saving
 
 NO MODEL, NO NETWORK, NO BINARY. It reads JSONL files and writes JSONL
 files. It does not shell out to `posse` and it does not import anything
@@ -28,6 +29,7 @@ without either calling the other.
     scripts/readings-census.py --repo ~/src/posse    a shared checkout too
     scripts/readings-census.py --log PATH            one log, named outright
     scripts/readings-census.py --by rule             group the table by rule
+    scripts/readings-census.py --by screen           group by the screen named
     scripts/readings-census.py --export-corpus DIR   write the replay corpus
     scripts/readings-census.py --json                the table as JSON
 
@@ -119,6 +121,56 @@ def is_false_idle_candidate(rec: dict) -> bool:
         return False
     g = gate_of(rec)
     return bool(g.get("seen")) and str(g.get("state", "")) in GATE_SEEN_IDLE_STATES
+
+
+# THE D3 REPORT'S SAVING (ADR 0066 D3 as amended 2026-10-04,
+# ranger-base-qk9tr, ruled 2026-10-05 ranger-base-gy3io, built
+# ranger-base-6uokf; the reader is internal/posse/knownscreen.go).
+#
+# A D3 record exists because herdr recognized NOTHING on the screen — that
+# is the whole of what makes the reading consequential. Since the heading
+# reader landed, such a record also carries `looks_like`: the set of known
+# screens whose own heading was in the bytes it read, the whole-pane capture
+# included. So a non-empty set on a D3 record is, by construction, a screen
+# that herdr's rules did not name and something did.
+#
+# THAT IS THE COUNTED EVENT, and it is counted because the saving was
+# unmeasurable when the reader was built: the log held 0 records in 0 logs on
+# 2026-10-05, so the live rate of unknown-screen refusals was UNKNOWN and no
+# reader could be priced. The per-event human cost is the one
+# ranger-base-3j8 measured and ranger-base-6uokf's acceptance restates — one
+# hand-launch plus one `posse peek` per screen — so after a few weeks of
+# fleet this line reads "N unknown-screen incidents named without a human
+# peek", which is a number and not an argument.
+#
+# BOTH FIGURES, like the false-IDLE line above: the named count AND the D3
+# total. A record with an empty set is an unknown screen that is genuinely
+# not one of the eight posse owns a capture of, which is the ordinary case
+# and not a miss — and a rate printed without its denominator would read as
+# one.
+#
+# NOT A QUALITY CLAIM. This counts what the reader SAID, never whether it was
+# right: nothing in a record labels the screen. Scoring the reader against
+# labels is `scripts/d3-reader-eval.py --corpus <dir> --labels <file>` over
+# the corpus this script exports, which is why the corpus case carries
+# `looks_like` too.
+
+
+def looks_like_of(rec: dict) -> list[str]:
+    """The screens the heading reader named on this record, as a sorted list.
+
+    DEFENSIVE ABOUT THE SHAPE because this script reads logs written by
+    every posse that ever ran against this fleet: the field is absent on
+    every record written before the reader landed, and a census that treated
+    absent as a parse error would lose the whole denominator it exists to
+    report. Anything that is not a list of strings is read as no screens
+    named, which is what a record from a newer writer with a wider field
+    would be honestly counted as here.
+    """
+    v = rec.get("looks_like")
+    if not isinstance(v, list):
+        return []
+    return sorted(str(x) for x in v if isinstance(x, str) and x)
 
 
 def git_dir_of(tree: Path) -> Path | None:
@@ -229,6 +281,18 @@ def group_key(rec: dict, by: str) -> str:
         return str(rec.get("runtime", "?"))
     if by == "posse":
         return str(rec.get("posse", "?"))
+    if by == "screen":
+        # The SET as one key, joined, because two screens on one pane is one
+        # reading and not two (three of the fifteen labelled fixtures are
+        # that shape: a splash with the consent banner over it). A row per
+        # member would double-count those records against the totals every
+        # other table prints.
+        #
+        # `-` for the empty set rather than the key being dropped: a D3
+        # record the reader named nothing on is the ordinary case, and the
+        # row that says how many there were is the denominator of the line
+        # print_named prints.
+        return ",".join(looks_like_of(rec)) or "-"
     return str(rec.get("decision", "?"))
 
 
@@ -243,6 +307,9 @@ def census(records: list[dict], by: str) -> dict:
     d5 = 0
     gated = 0
     candidates = 0
+    d3 = 0
+    named = 0
+    screens: Counter = Counter()
     for rec in records:
         day = day_of(rec)
         cons = str(rec.get("consequence", "?"))
@@ -270,6 +337,18 @@ def census(records: list[dict], by: str) -> dict:
                 gated += 1
             if is_false_idle_candidate(rec):
                 candidates += 1
+        if str(rec.get("decision", "")) == "D3":
+            d3 += 1
+            seen_screens = looks_like_of(rec)
+            if seen_screens:
+                named += 1
+                # Per SCREEN here, unlike the --by screen table: this
+                # breakdown answers "which screens keep arriving
+                # unrecognized", and a record showing two of them is a
+                # reading about both. The record count is `named` beside it,
+                # so neither number has to carry the other's meaning.
+                for screen in seen_screens:
+                    screens[screen] += 1
         cut = truncated_regions(regs)
         if cut:
             truncated += 1
@@ -307,6 +386,7 @@ def census(records: list[dict], by: str) -> dict:
         "truncated": truncated,
         "replayable": replayable,
         "false_idle": {"d5": d5, "with_gate": gated, "candidates": candidates},
+        "named_screens": {"d3": d3, "named": named, "screens": dict(screens.most_common())},
     }
 
 
@@ -343,6 +423,7 @@ def print_table(c: dict, by: str, logs: list[Path], torn: int) -> None:
                     [str(counts.get(k, 0)) for k in CONSEQUENCES])
     print_rows(head, rows)
     print_false_idle(c)
+    print_named(c)
 
     print("\nregions read")
     for name, n in c["regions"].items():
@@ -370,6 +451,29 @@ def print_false_idle(c: dict) -> None:
           f" ({f.get('with_gate', 0)} carrying a settle-gate reading)")
     print("    a candidate is a stalled prompt whose gate read a screen it had SEEN, as idle")
     print("    — the screen from each side of the keystrokes is in its gate regions (ADR 0066 D1)")
+
+
+def print_named(c: dict) -> None:
+    """The one line ADR 0066 D3's report exists to make a number.
+
+    Printed beside the D3 row for print_false_idle's reason: it is a reading
+    OF that row — the same records, counted by whether the heading reader
+    named a screen on them. Both figures are given, so the residual is
+    visible rather than folded in: a D3 record with an empty set is an
+    unknown screen that really is not one of the eight posse owns a capture
+    of, which is the ordinary case.
+
+    Silent where there are no D3 records at all. A zero over zero is not a
+    rate, and an empty census already says so once.
+    """
+    n = c.get("named_screens") or {}
+    if not n.get("d3"):
+        return
+    print(f"\n  unknown screens NAMED by the heading reader: {n.get('named', 0)} of {n.get('d3', 0)} D3 record(s)")
+    print("    each one is an unknown-screen refusal diagnosed without the hand-launch and `posse peek`")
+    print("    it used to cost (ADR 0066 D3, ranger-base-3j8) — a report only: no guard read it")
+    for screen, k in (n.get("screens") or {}).items():
+        print(f"      {k:6d}  {screen}")
 
 
 def print_rows(head: list[str], rows: list[list[str]]) -> None:
@@ -441,6 +545,11 @@ def export_corpus(records: list[dict], out: Path) -> tuple[int, int]:
                 "posse": rec.get("posse"),
                 "redacted": rec.get("redacted") or [],
                 "truncated": truncated_regions(herdr.get("regions") or []),
+                # The D3 report as the record carried it (ADR 0066 D3), so
+                # `scripts/d3-reader-eval.py --corpus` can score the reader
+                # against labels rather than re-deriving it from bytes the
+                # data ceiling may have rewritten.
+                "looks_like": looks_like_of(rec),
                 "herdr": {
                     "state": herdr.get("state"),
                     "matched_rule": herdr.get("matched_rule"),
@@ -486,7 +595,7 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--log", action="append", default=[],
                     help="a log file to read outright, skipping discovery; repeatable")
     ap.add_argument("--by", default="decision",
-                    choices=["decision", "rule", "session", "runtime", "posse"],
+                    choices=["decision", "rule", "session", "runtime", "posse", "screen"],
                     help="what the second table groups by (default: decision)")
     ap.add_argument("--since", default="",
                     help="keep readings on or after this UTC day (YYYY-MM-DD)")

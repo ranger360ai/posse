@@ -43,7 +43,7 @@ func TestWhatHerdrSawGroupsByRegionAndNamesTheRules(t *testing.T) {
 	if err := json.Unmarshal([]byte(raw), &det); err != nil {
 		t.Fatal(err)
 	}
-	got := det.WhatHerdrSaw("")
+	got := det.WhatHerdrSaw("", nil)
 	// One row per region, in herdr's own evaluation order — not one per
 	// rule, which is four repeats of the same empty osc_title.
 	if n := strings.Count(got, "\n      "); n != 3 {
@@ -86,7 +86,7 @@ func TestWhatHerdrSawIsEmptyWithoutHerdrsWorking(t *testing.T) {
 	  "fallback_reason":"default_known_agent_idle_fallback"}`), &det); err != nil {
 		t.Fatal(err)
 	}
-	if got := det.WhatHerdrSaw(""); got != "" {
+	if got := det.WhatHerdrSaw("", nil); got != "" {
 		t.Errorf("no working to report must render nothing, got %q", got)
 	}
 }
@@ -99,7 +99,7 @@ func TestWhatHerdrSawTruncatesOnRuneBoundaries(t *testing.T) {
 	det.EvaluatedRules = []EvaluatedRule{{ID: "r", Region: "whole_recent"}}
 	det.EvaluatedRules[0].Evidence.RegionBytes = 4000
 	det.EvaluatedRules[0].Evidence.RegionPreview = strings.Repeat("╰─╯", 200)
-	got := det.WhatHerdrSaw("")
+	got := det.WhatHerdrSaw("", nil)
 	if strings.ContainsRune(got, '\uFFFD') {
 		t.Errorf("truncation split a rune:%s", got)
 	}
@@ -119,7 +119,7 @@ func TestWhatHerdrSawSpendsThePreviewOnTextNotBorders(t *testing.T) {
 	det.EvaluatedRules = []EvaluatedRule{{ID: "prompt_hints_idle", Region: "bottom_non_empty_lines(2)"}}
 	det.EvaluatedRules[0].Evidence.RegionBytes = 601
 	det.EvaluatedRules[0].Evidence.RegionPreview = "╰" + strings.Repeat("─", 60) + " Grok 4.6 (high) ─╯" + "\n\n  [stable]"
-	got := det.WhatHerdrSaw("")
+	got := det.WhatHerdrSaw("", nil)
 	if !strings.Contains(got, "Grok 4.6 (high)") || !strings.Contains(got, "[stable]") {
 		t.Errorf("the text between the borders is the diagnosis and must survive:%s", got)
 	}
@@ -179,7 +179,7 @@ func TestQAWhatHerdrSawOnARealFallbackCapture(t *testing.T) {
 			"re-check whether the posse override is still needed, and pick "+
 			"another fallback capture for this test", det.Rule.ID)
 	}
-	got := det.WhatHerdrSaw("")
+	got := det.WhatHerdrSaw("", nil)
 	if got == "" {
 		t.Fatalf("a real herdr's `evaluated_rules` did not decode — the field names moved:\n%s", out)
 	}

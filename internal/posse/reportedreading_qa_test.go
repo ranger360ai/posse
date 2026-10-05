@@ -321,7 +321,7 @@ func TestQAAReportedFailureLineQuotesTheDeclarationAndNotHerdrsWorking(t *testin
 	det := AgentDetection{State: "idle", Reported: "plugged", ShellForeground: true}
 	why := "herdr-bob plugin MartinLoeper/herdr-bob, installed 2026-09-28"
 
-	with := det.WhatHerdrSaw(why)
+	with := det.WhatHerdrSaw(why, nil)
 	for _, want := range []string{`label "plugged"`, "reported state idle", "SHELL", "STALE", "detection_why: " + why, "herdr plugin list"} {
 		if !strings.Contains(with, want) {
 			t.Errorf("the block must carry %q:\n%s", want, with)
@@ -335,7 +335,7 @@ func TestQAAReportedFailureLineQuotesTheDeclarationAndNotHerdrsWorking(t *testin
 	}
 	// And a caller with no profile in hand says less rather than guessing: the
 	// declaration is the operator's sentence, and posse may not invent one.
-	without := det.WhatHerdrSaw("")
+	without := det.WhatHerdrSaw("", nil)
 	if strings.Contains(without, "detection_why") {
 		t.Errorf("with no runtime in hand there is no declaration to quote:\n%s", without)
 	}
@@ -348,7 +348,7 @@ func TestQAAReportedFailureLineQuotesTheDeclarationAndNotHerdrsWorking(t *testin
 	// prints herdr's working, and the declaration argument changes nothing
 	// about it.
 	screen := AgentDetection{State: "idle", EvaluatedRules: []EvaluatedRule{{ID: "osc_title", Region: "osc_title"}}}
-	if got := screen.WhatHerdrSaw(why); !strings.Contains(got, "evaluated 1 rules") || strings.Contains(got, "detection_why") {
+	if got := screen.WhatHerdrSaw(why, nil); !strings.Contains(got, "evaluated 1 rules") || strings.Contains(got, "detection_why") {
 		t.Errorf("a detected reading's block is herdr's working and nothing else:\n%s", got)
 	}
 }

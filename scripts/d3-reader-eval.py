@@ -18,7 +18,15 @@ TWO READERS ARE RUN, and a third is described but never called:
                does the text carry the screen's own heading? Runs over the
                region PREVIEWS (what a D3 record holds — herdr caps every
                preview at 243 characters, MEASURED herdr 0.9.1) and, for
-               comparison, over the full screen.
+               comparison, over the full screen. THIS READER SHIPPED, over
+               the full capture, as `internal/posse/KnownScreensIn`
+               (ranger-base-6uokf, on the operator's ruling
+               ranger-base-gy3io): OPTIONS below and the Go table are held
+               to each other by
+               internal/posse/d3knownscreen_qa_test.go, which imports this
+               module rather than parsing it — so this script stays the
+               reference an evaluation scores with and is not a second copy
+               kept in sync by hand.
     model      a typed-decision model (Jev / Kev). NOT called here. Any live
                call is an operator spend ruling (ADR 0066 D4, ADR 0019);
                the question it would be asked is printed by --question so
@@ -76,9 +84,18 @@ FIXTURES = REPO / "etc" / "herdr" / "agent-detection"
 # it must be present; a bare string means that phrase alone suffices.
 #
 # Taken from the fixtures and from internal/posse/interstitial.go's four
-# registries; `registered` says whether the Go registry knows the screen,
-# because the two sets are not the same and a shipped reader would have to
-# live on one of them.
+# registries; `registered` says whether that INTERSTITIAL registry knows the
+# screen, because the two sets are not the same.
+#
+# THE QUESTION `registered` WAS ASKED FOR IS DECIDED and the field is kept as
+# its evidence. A shipped reader had to live on one of the two tables, and
+# ranger-base-6uokf put it on neither: the interstitial registry is read by a
+# launch guard (DangerUnsilenced), its subject is an operator-silenceable
+# screen, and three of the eight rows here have no silence key at all — so
+# the markers live in `internal/posse/knownscreen.go`, keyed by rule id, and
+# the registry is untouched. The three `registered: False` rows are what that
+# argument rests on; `KnownScreens` carries no such field, which is why the
+# pin compares names, rules and markers and not this one.
 OPTIONS = {
     "codex.update_menu": {"rules": ["update_menu", "startup_update"],
                           "markers": ["update available"], "registered": True},

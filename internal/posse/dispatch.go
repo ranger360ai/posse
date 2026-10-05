@@ -5486,6 +5486,18 @@ func (d *Dispatcher) awaitDelivered(id, session, runtime string, wait time.Durat
 			// refused — what this spends is the claim, kept, and the bead,
 			// not judged this pass. Same evidence, different consequence,
 			// and the census has to be able to tell them apart.
+			//
+			// THE EVIDENCE IS BUILT ONCE AND READ TWICE (ADR 0066 D3,
+			// ranger-base-6uokf). The D3 report is a reading of the bytes
+			// this block carries — herdr's previews plus the pane capture —
+			// so binding it here is what makes the record and the printed
+			// line say the same thing without a second `pane read` to say
+			// it. On a dry pass d3Evidence takes no capture by design, so
+			// the printed row is the preview-only reading (5 of 11 residue
+			// cases rather than 11) while no record is written at all; that
+			// is the dry run's own bargain and not a second rule.
+			ev := d.d3Evidence(target, lastGuess)
+			looksLike := ev.LooksLike()
 			d.logReading(session, Reading{
 				Decision:    DecisionUnknownScreen,
 				Verdict:     "delivered but unrecognized: " + lastWhy,
@@ -5493,10 +5505,11 @@ func (d *Dispatcher) awaitDelivered(id, session, runtime string, wait time.Durat
 				Rule:        RulePromptReady,
 				Bead:        id,
 				Runtime:     runtime,
-				Herdr:       d.d3Evidence(target, lastGuess),
+				Herdr:       ev,
+				LooksLike:   looksLike,
 			})
 			d.printf("◷ %-14s work prompt delivered on %s's launch line, but herdr never recognized a screen there within %s — %s%s\n",
-				id, session, wait, lastWhy, lastGuess.WhatHerdrSaw(d.detectionWhy(runtime)))
+				id, session, wait, lastWhy, lastGuess.WhatHerdrSaw(d.detectionWhy(runtime), looksLike))
 			return target, false, nil
 		}
 		time.Sleep(poll)
@@ -5717,15 +5730,18 @@ func (d *Dispatcher) awaitSettled(id, session, target string, until []string, de
 			// which is what the sentence above needs; threading a runtime
 			// through four callers to quote one more clause would be paying
 			// for a sentence the operator can read off `posse runtime check`.
+			ev := d.d3Evidence(target, lastGuess)
+			looksLike := ev.LooksLike()
 			d.logReading(session, Reading{
 				Decision:    DecisionUnknownScreen,
 				Verdict:     "never promptable: " + lastWhy,
 				Consequence: ConsequenceRefusal,
 				Rule:        RulePromptReady,
 				Bead:        id,
-				Herdr:       d.d3Evidence(target, lastGuess),
+				Herdr:       ev,
+				LooksLike:   looksLike,
 			})
-			return "", AgentDetection{}, Die("agent in %s never became promptable within %s — %s; check the session (posse peek %s)%s", session, wait, lastWhy, session, lastGuess.WhatHerdrSaw(""))
+			return "", AgentDetection{}, Die("agent in %s never became promptable within %s — %s; check the session (posse peek %s)%s", session, wait, lastWhy, session, lastGuess.WhatHerdrSaw("", looksLike))
 		}
 		time.Sleep(poll)
 	}

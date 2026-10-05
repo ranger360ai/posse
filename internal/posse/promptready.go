@@ -163,20 +163,27 @@ func (b *HerdrBackend) AwaitPromptable(session, target string) (AgentDetection, 
 	// word, and either it says nothing useful or the pane it describes has
 	// gone back to its shell. ReportedNotSeen is the one copy of that clause.
 	if why := lastGuess.ReportedNotSeen(); why != "" {
-		b.logUnrecognized(session, target, lastGuess, "reported-not-seen: "+why)
+		// The D3 report is nil here by construction and the call is made
+		// anyway: a reported route carries no capture (withPaneCaptureNamed
+		// refuses one — a pane herdr does not address is a pane posse may
+		// not read a screen off) and no evaluated rules, so the reader has
+		// nothing to read. Threading the return value rather than passing
+		// nil keeps that a property of the evidence instead of a claim this
+		// call site makes about it.
+		looksLike := b.logUnrecognized(session, target, lastGuess, "reported-not-seen: "+why)
 		return lastGuess, "", Die("nothing was sent: %s is labelled by something other than herdr's own detection, and %s "+
 			"(ranger-base-3p0). Prompt again once it has settled, look first (posse peek %s), or send it anyway with --now.%s",
-			session, why, session, lastGuess.WhatHerdrSaw(b.reportedWhy(session)))
+			session, why, session, lastGuess.WhatHerdrSaw(b.reportedWhy(session), looksLike))
 	}
 	reason := lastGuess.FallbackReason
 	if reason == "" {
 		reason = "no rule matched"
 	}
-	b.logUnrecognized(session, target, lastGuess, "unrecognized screen: "+lastGuess.State+" ("+reason+")")
+	looksLike := b.logUnrecognized(session, target, lastGuess, "unrecognized screen: "+lastGuess.State+" ("+reason+")")
 	return lastGuess, "", Die("nothing was sent: herdr has not recognized a screen in %s within %s — it reports %q with %s, "+
 		"which is what a CLI that has not taken the keyboard yet looks like, and text typed there lands in whatever has it "+
 		"(ranger-base-3p0). Prompt again once it has settled, look first (posse peek %s), or send it anyway with --now.%s",
-		session, wait, lastGuess.State, reason, session, lastGuess.WhatHerdrSaw(""))
+		session, wait, lastGuess.State, reason, session, lastGuess.WhatHerdrSaw("", looksLike))
 }
 
 // reportedWhy is the DECLARATION behind a reported pane's label — the
