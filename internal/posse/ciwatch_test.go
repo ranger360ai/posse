@@ -96,6 +96,18 @@ func ghRepo(t *testing.T, workflow string, runs ...string) (dir, ghbin string) {
 	}
 	run("init", "-b", "main")
 	run("remote", "add", "origin", "https://github.com/ranger360ai/posse.git")
+	// An identity and ONE commit with refs/remotes/origin/main on it,
+	// because the freshness guard (ciFreshness) checks the page it was
+	// handed against that ref and a checkout without one is an abstention
+	// rather than a reading. A real beads repo has the ref; the first cut of
+	// this fixture did not, and every reading test in this file went red
+	// saying so. The run shas these tests name are still fakes the object
+	// store has never heard of, which the guard reads as a page AHEAD of the
+	// local view rather than behind it — the freshness pins below are the
+	// ones that put real commits under real shas.
+	run("config", "user.email", "t@example.com")
+	run("config", "user.name", "t")
+	ciChain(t, dir, 1)
 	if workflow != "" {
 		if err := os.MkdirAll(filepath.Join(dir, ".github", "workflows"), 0o755); err != nil {
 			t.Fatal(err)
@@ -497,6 +509,218 @@ func TestCIRunIDPullsTheNumericIDOffTheURL(t *testing.T) {
 	}
 	if got := ciRunID("not a url"); got != "" {
 		t.Errorf("ciRunID(%q) = %q, want empty", "not a url", got)
+	}
+}
+
+// ─── the freshness of the reading ────────────────────────────────────────────
+
+// ciChain writes n empty commits into dir's object store, points
+// refs/remotes/origin/main at the newest, and returns every sha OLDEST
+// FIRST.
+//
+// commit-tree and update-ref rather than `git commit --allow-empty`: every
+// crew PID denies an unqualified commit in every tree (adrcensusrepo_qa_test
+// builds its own fixture the same way), and this needs no index, no working
+// tree and no hook either way.
+func ciChain(t *testing.T, dir string, n int) []string {
+	t.Helper()
+	tree, err := git(dir, "hash-object", "-t", "tree", "-w", os.DevNull)
+	if err != nil {
+		t.Fatalf("hash-object: %v %s", err, tree)
+	}
+	tree = strings.TrimSpace(tree)
+	shas := make([]string, 0, n)
+	parent := ""
+	for i := 0; i < n; i++ {
+		args := []string{"commit-tree", tree, "-m", "c" + strconv.Itoa(i)}
+		if parent != "" {
+			args = append(args, "-p", parent)
+		}
+		sha, cerr := git(dir, args...)
+		if cerr != nil {
+			t.Fatalf("commit-tree %d: %v %s", i, cerr, sha)
+		}
+		parent = strings.TrimSpace(sha)
+		shas = append(shas, parent)
+	}
+	if out, uerr := git(dir, "update-ref", "refs/remotes/origin/main", parent); uerr != nil {
+		t.Fatalf("update-ref: %v %s", uerr, out)
+	}
+	return shas
+}
+
+// ciSaneBound keeps the two pins below from building a commit per unit of a
+// bound somebody raised to make them pass. Both fixtures are a chain as deep
+// as ciFreshMaxBehind, so the pin's own cost IS the bound — and a bound this
+// far past the census in its doc comment (max 57 legitimate, over 1,357
+// reconstructed instants of this gate's history) is not a bound. Failing here
+// in a second beats a suite that hangs building a hundred thousand commits.
+func ciSaneBound(t *testing.T) {
+	t.Helper()
+	if ciFreshMaxBehind > 512 {
+		t.Fatalf("ciFreshMaxBehind = %d: a page that far behind is every page, so the guard is off — re-read the census in its doc comment before moving it", ciFreshMaxBehind)
+	}
+}
+
+// ciPage rewrites what the fake gh will answer with.
+func ciPage(t *testing.T, runs ...string) {
+	t.Helper()
+	body := "[" + strings.Join(runs, ",") + "]"
+	if err := os.WriteFile(filepath.Join(fakeDirOf(t), "fake-gh-runs.json"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// THE READING IS ONLY A READING IF IT IS CURRENT (ciFreshness,
+// ranger-base-m46kr). GitHub's run-list index hands out PAST pages: on
+// 2026-10-05 this gate filed ranger-base-17jhu at P1 off a page topped
+// 2026-09-11, 24 days and 220 commits behind a main that was green in all
+// six jobs at its tip.
+//
+// Both directions are pinned, because only one of them leaves a trace. A
+// stale page topped RED files a false bead someone reads; a stale page topped
+// GREEN is byte-identical to a clean pass and hides a red main for as long as
+// the index does — this file's founding incident, 191 reds over five days.
+// Neither may produce a verdict.
+func TestReadCIAbstainsOnARunListPageTheIndexServedFromBehind(t *testing.T) {
+	t.Parallel()
+	ciSaneBound(t)
+	dir, bin := ghRepo(t, "ci.yml")
+	// Deep enough to sit either side of the bound, and the bound is read
+	// from the const rather than spelled again: a pin that restates the
+	// number cannot tell anyone the number moved.
+	chain := ciChain(t, dir, ciFreshMaxBehind+8)
+	behind := func(k int) string { return chain[len(chain)-1-k] }
+	read := func() CIState { return ReadCI(CIQuery{Dir: dir, Workflow: "ci.yml", GhBin: bin}) }
+
+	// The episode as it happened: the page the index served, topped at the
+	// 2026-09-11 run whose streak ranger-base-17jhu went on to name.
+	stale := time.Date(2026, 9, 11, 8, 59, 43, 0, time.UTC)
+	for _, conclusion := range []string{"failure", "success"} {
+		ciPage(t,
+			ciRunJSON(behind(ciFreshMaxBehind+5), "completed", conclusion, stale),
+			ciRunJSON(behind(ciFreshMaxBehind+6), "completed", conclusion, stale.Add(-4*time.Minute)),
+		)
+		st := read()
+		if st.Known() {
+			t.Fatalf("a %s page %d commits behind origin/main produced a verdict (red=%v): the index serves past pages and this one is not about the branch it names",
+				conclusion, ciFreshMaxBehind+5, st.Red)
+		}
+		if !strings.Contains(st.Why, "not current") || !strings.Contains(st.Why, strconv.Itoa(ciFreshMaxBehind)) {
+			t.Errorf("why = %q, want the staleness and the bound named", st.Why)
+		}
+		if st.NoGate {
+			t.Error("a stale page is NOT NoGate: there is a gate and this pass could not read it, which is the kind that must be SAID (ciAbstain)")
+		}
+		if st.Latest.Sha != behind(ciFreshMaxBehind+5) {
+			t.Errorf("latest = %q; the rejected reading is kept as measured so a reader can re-run the count the Why names", st.Latest.Short())
+		}
+	}
+
+	// THE BOUNDARY IS THE MEASURED NUMBER, both sides of it. ciFreshMaxBehind
+	// carries the census: legitimate readings reach 57 commits behind over
+	// 1,357 reconstructed instants of this gate's own history, and the two
+	// stale pages actually observed were 150 and 220.
+	for _, c := range []struct {
+		k     int
+		known bool
+	}{
+		{0, true}, // the tip itself
+		// 5 is the census's p99, and it is here as a LITERAL rather than off
+		// the const: a run in flight carries no verdict (ciVerdict), so every
+		// commit pushed while CI runs sits ahead of the newest run that has
+		// one, and a guard strict enough to reject that abstains in the
+		// ordinary mid-flight state — which is the sha-equality shape the
+		// measurement rejected. Without this row a bound of 0 passes every
+		// other row in this test.
+		{5, true},
+		{ciFreshMaxBehind, true},      // exactly the bound, still a reading
+		{ciFreshMaxBehind + 1, false}, // one past it, no longer one
+	} {
+		ciPage(t, ciRunJSON(behind(c.k), "completed", "failure", stale))
+		st := read()
+		if st.Known() != c.known {
+			t.Errorf("%d commits behind: known = %v, want %v (why: %s)", c.k, st.Known(), c.known, st.Why)
+		}
+		if c.known && !st.Red {
+			t.Errorf("%d commits behind: a red run inside the bound must still read red", c.k)
+		}
+	}
+
+	// A sha this checkout has never heard of is the page AHEAD of the local
+	// view, not behind it — nothing in a dispatch pass fetches, so the ref
+	// this counts against can only lag what GitHub has. Every other test in
+	// this file rests on it.
+	ciPage(t, ciRunJSON("beefbeefbeefbeefbeefbeefbeefbeefbeefbeef", "completed", "failure", stale))
+	if st := read(); !st.Known() || !st.Red {
+		t.Errorf("a run on a commit this checkout does not have must still read: known=%v why=%q", st.Known(), st.Why)
+	}
+
+	// And no local reference point at all is an abstention rather than a
+	// reading taken on trust: a checkout that stops fetching would otherwise
+	// lose the guard with nothing anywhere saying so.
+	if out, err := git(dir, "update-ref", "-d", "refs/remotes/origin/main"); err != nil {
+		t.Fatalf("update-ref -d: %v %s", err, out)
+	}
+	ciPage(t, ciRunJSON(behind(0), "completed", "failure", stale))
+	st := read()
+	if st.Known() || !strings.Contains(st.Why, "refs/remotes/origin/main") {
+		t.Errorf("no remote-tracking ref: known=%v why=%q", st.Known(), st.Why)
+	}
+	if st.NoGate {
+		t.Error("a checkout with no origin/main is not a repo with no gate: the gate is there and went unread")
+	}
+}
+
+// The property that must not regress, over the real pass rather than over
+// ReadCI alone: a stale page files NOTHING and says why once, and a current
+// red page still files on the FIRST red. The second half is the whole reason
+// this mechanism exists, and a freshness guard that bought silence with it
+// would be worse than the bead it prevents.
+func TestCIWatchFilesNothingOffAStalePageAndStillFilesOffACurrentOne(t *testing.T) {
+	t.Parallel()
+	b, _ := newTestBackend(t)
+	a := b.App
+	ciSaneBound(t)
+	dir, bin := ghRepo(t, "ci.yml")
+	chain := ciChain(t, dir, ciFreshMaxBehind+3)
+	if err := os.WriteFile(a.ConfigPath, []byte("beads:\n  - "+dir+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// The real ReadCI, driven through the fake gh — the guard is in the
+	// reading, so a pinned CIState would pin nothing about it.
+	a.CIRead = func(q CIQuery) CIState { q.GhBin = bin; return ReadCI(q) }
+	bd := testBd(t)
+
+	at := time.Date(2026, 9, 11, 8, 59, 43, 0, time.UTC)
+	ciPage(t, ciRunJSON(chain[0], "completed", "failure", at))
+	acted, out, errs := cwRun(t, a, bd)
+	if acted != 0 || cwSay(out) != "" {
+		t.Fatalf("a stale page acted %d and said %q, want neither", acted, cwSay(out))
+	}
+	if n := cwCount(t, "create"); n != 0 {
+		t.Fatalf("%d beads filed off a page %d commits behind origin/main, want 0", n, len(chain)-1)
+	}
+	if !strings.Contains(errs, "ci-watch:") || !strings.Contains(errs, "not current") {
+		t.Errorf("stderr = %q, want the could-not-READ notice: silence is what an all-clear looks like", errs)
+	}
+	// Once per process, like every other abstention here: a condition that
+	// recurs must not be re-announced every pass.
+	if _, _, errs2 := cwRun(t, a, bd); errs2 != "" {
+		t.Errorf("the second pass over the same stale reading said %q", errs2)
+	}
+
+	// Current page, same red run: the bead gets filed.
+	ciPage(t, ciRunJSON(chain[len(chain)-1], "completed", "failure", at))
+	acted, out, errs = cwRun(t, a, bd)
+	if acted != 1 {
+		t.Fatalf("a CURRENT red page acted %d, want 1 — stdout %q stderr %q", acted, out, errs)
+	}
+	if !strings.Contains(out, "ci red ·") {
+		t.Errorf("the filing pass said %q", out)
+	}
+	if n := cwCount(t, "create"); n != 1 {
+		t.Errorf("%d creates, want 1", n)
 	}
 }
 

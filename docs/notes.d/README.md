@@ -57,6 +57,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-5jjtn](ranger-base-5jjtn.md) — Bob's launch line delivers no PID, and its pane is never labelled: two independent causes (ranger-base-5jjtn) — 2026-10-01
 - [ranger-base-26y03](ranger-base-26y03.md) — A nesting refusal wears the setuid refusal's face, and one seat can see both after all (ranger-base-26y03) — 2026-10-01
 - [ranger-base-rkva0](ranger-base-rkva0.md) — ranger-base-rkva0 — verifying four closes, and the two arms their mutants could not reach — 2026-10
+- [ranger-base-m46kr](ranger-base-m46kr.md) — The freshness guard on ci-watch's reading, and the number behind it (ranger-base-m46kr) — 2026-10
 
 ## 2026-09
 

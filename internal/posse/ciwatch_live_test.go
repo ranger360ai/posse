@@ -93,6 +93,16 @@ func TestLiveCIWatchFiresOnceAndClears(t *testing.T) {
 		gitRun("init", "-b", "main")
 	}
 	gitRun("remote", "add", "origin", "https://github.com/ranger360ai/posse.git")
+	// An identity and one commit with refs/remotes/origin/main on it. The
+	// SHIPPED reading checks the page it was handed against that ref
+	// (ciFreshness, ranger-base-m46kr) and a checkout without one abstains
+	// rather than reads — which, in a pin this file SKIPS by default, is a
+	// break nobody would see until they ran it. The run shas below are fakes
+	// the object store has never heard of, which the guard reads as a page
+	// ahead of the local view rather than behind it.
+	gitRun("config", "user.email", "t@example.com")
+	gitRun("config", "user.name", "t")
+	ciChain(t, repo, 1)
 	if err := os.MkdirAll(filepath.Join(repo, ".github", "workflows"), 0o755); err != nil {
 		t.Fatal(err)
 	}

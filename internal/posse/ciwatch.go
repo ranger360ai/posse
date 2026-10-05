@@ -94,6 +94,21 @@ package posse
 // cut said both, and 22 dispatch and plan-guard pins went red asserting that
 // a clean pass writes nothing to stderr (CIState.NoGate).
 //
+// AND A READING IS ONLY A READING IF IT IS CURRENT (ciFreshness,
+// ranger-base-m46kr). `gh run list` is served from an index that hands out
+// PAST pages, and nothing above asks whether the page it sorted is one of
+// them: on 2026-10-05 this filed ranger-base-17jhu at P1 off a page topped
+// 24 days back, naming an episode fixed at 7b35b24b the same hour it was
+// found. The dedupe cannot cover it — all three arms read the STORE, never
+// the clock — and the mirror failure, a stale page topped GREEN while main
+// is red, is the five-day silence this file exists to end, with nothing in
+// the store, stderr or `posse status` to tell it from a clean pass. So the
+// newest verdict-bearing run is checked against the LOCAL
+// refs/remotes/origin/<branch>, and a page more than ciFreshMaxBehind
+// commits behind it is the could-not-READ abstention above rather than a
+// verdict in either direction. That const carries the measurement and why a
+// wall-clock bound cannot do the job.
+//
 // WHAT RIDES INTO THE BEAD: shas, run URLs, conclusions and timestamps.
 // Deliberately NOT the run's displayTitle, which is the commit message —
 // nothing this mechanism writes into a bead comes from anywhere but
@@ -211,6 +226,65 @@ const (
 	// this bound is the most one clear can cost, and a clear is not read on
 	// the hot path drumbeat and dedupe are.
 	ciCauseReadTimeout = 10 * time.Second
+
+	// ciFreshMaxBehind is how far behind the branch the newest
+	// verdict-bearing run in a reading may be before the reading is unusable
+	// — the freshness guard's one number (ranger-base-m46kr).
+	//
+	// GitHub's run-list endpoint is served from an index, and that index
+	// hands out PAST pages. MEASURED 2026-10-05, 38 hand readings of this
+	// gate's identical query on this box with gh 2.98.0: 1 was topped 150
+	// commits behind the branch and 37 were current, and ci-watch's own
+	// reading two minutes earlier had been a THIRD and deeper snapshot, 220
+	// behind — an index settling, not a fixed cache, with its depth bounded
+	// by nothing. The deeper one was topped 24 days back and cost a
+	// dispatched session on a P1 bead with a green gate behind it
+	// (ranger-base-17jhu).
+	//
+	// A WALL-CLOCK bound on the newest run's age cannot do this job, and that
+	// is a measurement rather than a preference: the longest legitimately
+	// quiet stretch between two runs here is 8.80 days (211.2h, 2026-09-11 to
+	// 2026-09-20, over 689 runs), while one of the two stale pages observed
+	// above was topped only 7 days back. The legitimate quiet overlaps the
+	// staleness, so no age bound separates them — and a bound long enough to
+	// avoid false abstention on a quiet weekend is longer than the staleness
+	// it is meant to catch.
+	//
+	// COMMIT DISTANCE does separate them, because it reads 0 over a quiet
+	// repo however long the quiet lasts. The number is how many commits can
+	// legitimately sit on the branch ahead of the newest run that has a
+	// VERDICT — which is not zero and is not one: a run in flight is not a
+	// verdict (ciVerdict), so every commit pushed while CI is running counts,
+	// and one push can carry a batch.
+	//
+	// MEASURED 2026-10-05 over ranger360ai/posse's whole ci.yml history on
+	// main, 689 runs across 38 days (2026-08-28..10-05), reconstructed at
+	// every instant a run was created or completed — 1,357 breakpoints, by
+	// `git rev-list --count <newest verdict-bearing run>..origin/main` as
+	// this function spells it:
+	//
+	//	median 0 · p95 3 · p99 5 · max 57
+	//	the deepest are all 2026-08-30..09-06, the era when pushes to main
+	//	shared a concurrency group and 20 runs were CANCELLED — a cancelled
+	//	run carries no verdict, so a superseded batch accumulates. Since
+	//	ranger-base-sfb3 keyed main's group on the commit the max is 17
+	//	(524 breakpoints, 2026-09-07..10-05, 0 cancelled).
+	//	the two stale pages above: 150 and 220 commits behind.
+	//
+	// 64 is the measured legitimate maximum (57) rounded up — zero false
+	// abstentions across all 1,357 breakpoints — and 2.3x inside the
+	// shallower of the two stale readings. Erring LOW is the cheap direction:
+	// too low costs one loud abstention that the next completed run clears,
+	// and too high costs a P1 bead filed off a page that was never about the
+	// branch it names.
+	//
+	// It is a BOUND and not a proof. A page stale by fewer commits than this
+	// reads as current, and nothing here would catch it; both pages actually
+	// observed were 2.3x and 3.4x past it. And it is a bound on a distance
+	// that only means something for a workflow which runs on every push to
+	// the branch — ciFreshness carries what the other two workflows in this
+	// repo measure at.
+	ciFreshMaxBehind = 64
 
 	// ciMarkerPrefix opens every ci-red bead's description and is the dedupe
 	// of record: which repo, which workflow and which branch this bead is
@@ -483,7 +557,116 @@ func ReadCI(q CIQuery) CIState {
 	for i := s.Streak; i < len(reds) && reds[i]; i++ {
 		s.PriorRedRuns = append(s.PriorRedRuns, verdicts[i])
 	}
+	// LAST, and out of the cost order the rest of this function keeps: the
+	// freshness guard is a local git read, but it needs the verdict it is
+	// checking, so it cannot run before the network call that produces one.
+	// Every field above stays as measured — a Why does not erase the reading
+	// it rejects, because the reading is what a reader has to see to agree.
+	if why := ciFreshness(dir, s.Branch, s.Workflow, s.Latest); why != "" {
+		s.Why = why
+	}
 	return s
+}
+
+// ciFreshness is the guard on the READING ITSELF: the empty string when the
+// page gh handed back can be acted on, otherwise why it cannot
+// (ranger-base-m46kr). Everything else in this file asks what the runs SAY;
+// this asks whether they are the current runs at all.
+//
+// It exists because the answer "no" is invisible in both directions, and
+// only one of them leaves a trace. A stale page topped by a RED run files a
+// false P1 bead — ranger-base-17jhu, filed 2026-10-05 off a page topped
+// 2026-09-11, naming an episode diagnosed and fixed 24 days earlier at
+// 7b35b24b. A stale page topped by a GREEN run says NOTHING while the branch
+// is red, and that is this mechanism's founding incident exactly (the file
+// header: 191 consecutive reds over five days, nobody looked), because the
+// pass "says something only when it ACTS" and a stale green pass is
+// byte-identical to a current one. So this returns a Why and ReadCI makes it
+// an ABSTENTION — the "there IS a gate and it could not be READ" kind, said
+// once per process — rather than a verdict in either direction. Red is left
+// on the state as measured; Known() is false, so nothing reads it.
+//
+// THE DEDUPE CANNOT COVER THIS, which is why the guard is here and not
+// there. All three of its arms (ciOpenBeads, ciDupeFiled, ciAlreadyCleared)
+// read the STORE, never the clock, and a stale reading walks past every one:
+// MEASURED 2026-10-05 over all 37 closed ci-red beads in this store, 20 of
+// those episodes would have refiled on the FIRST stale pass and the other 17
+// on the second consecutive one.
+//
+// THE REFERENCE POINT IS LOCAL, and it is the remote-tracking ref rather
+// than the branch: refs/remotes/origin/<branch> moves when something PUSHES,
+// which is the same event that creates the run, while a local `main` carries
+// commits that were never pushed and so has no run to expect (this box's
+// own main is routinely ahead of origin/main by the merge-backs the operator
+// has not pushed yet). Nothing in a dispatch pass fetches, so that ref can
+// only lag what GitHub actually has — which makes this count a LOWER bound
+// on how far behind the page is, and every error here therefore falls toward
+// letting the reading through rather than suppressing it. The one direction
+// that matters is kept: what this can prove, it refuses to act on.
+//
+// Plain `rev-list --count` and NOT --first-parent: 19 of the 689 run head
+// shas in this gate's own history are reachable from origin/main but not on
+// its first-parent chain, and --first-parent never reaches those, so it
+// walks the whole chain and answers ~1,415 for a run that is current. The
+// plain count answers the same number as --first-parent on every sha that IS
+// on the chain (MEASURED 2026-10-05), so the robust spelling costs nothing.
+//
+// IT ASSUMES THE WATCHED WORKFLOW RUNS ON EVERY PUSH to the branch, which is
+// what makes a commit distance mean anything — ci.yml does (`on: push:
+// branches: [main]`, no path filter), and the file header's whole argument is
+// that it is the ONLY gate a commit on main passes. MEASURED 2026-10-05
+// against the live repo through the shipped path, with `ci_workflow:` pointed
+// at this repo's other two workflows: pages.yml abstains (newest
+// verdict-bearing run 2026-09-11, 100+ commits back) and so does release.yml
+// (2026-09-20), because neither runs on an ordinary push to main. That
+// abstention is honest — a gate whose newest verdict is 100 commits old is
+// not a statement about the tip either — but it is a CONFIGURATION answer and
+// not a staleness one, it holds on every pass forever, and it is why the
+// notice names both readings rather than blaming the index.
+//
+// A sha this checkout has never heard of is NOT stale: it is a run about a
+// commit newer than anything local, so the page is ahead of the local view
+// rather than behind it, and the reading stands. The cost of that reading is
+// a SHALLOW clone, where the old commits a stale page is topped by are also
+// absent and the guard goes quiet; the beads repos are working checkouts,
+// which is why that is a documented edge and not a check.
+func ciFreshness(dir, branch, workflow string, latest CIRun) string {
+	ref := "refs/remotes/origin/" + branch
+	cannot := "the reading cannot be checked for freshness: "
+	if out, err := git(dir, "rev-parse", "--verify", "--quiet", ref); err != nil || strings.TrimSpace(out) == "" {
+		// No local view at all, so nothing can be proved either way — and
+		// unlike a stale page this is a FACT ABOUT THE CHECKOUT that holds on
+		// every pass until somebody fetches, so saying it once per process is
+		// the whole of what it costs. Letting the reading through instead
+		// would leave the guard silently absent, which is the one outcome
+		// this bead was filed about.
+		return cannot + AbbrevHome(dir) + " has no " + ref + " to compare the newest run against (git fetch origin " + branch + ")"
+	}
+	if strings.TrimSpace(latest.Sha) == "" {
+		return cannot + "gh's newest verdict-bearing run of " + branch + " carries no head sha"
+	}
+	if _, err := git(dir, "cat-file", "-e", latest.Sha+"^{commit}"); err != nil {
+		return "" // ahead of the local view, not behind it
+	}
+	out, err := git(dir, "rev-list", "--count", latest.Sha+".."+ref)
+	if err != nil {
+		return cannot + "git could not count " + latest.Short() + ".." + ref + " in " + AbbrevHome(dir) + " (" + errText(err) + ")"
+	}
+	behind, cerr := strconv.Atoi(strings.TrimSpace(out))
+	if cerr != nil {
+		return cannot + "git rev-list --count " + latest.Short() + ".." + ref + " answered " + strconv.Quote(strings.TrimSpace(out))
+	}
+	if behind <= ciFreshMaxBehind {
+		return ""
+	}
+	// The count itself is deliberately NOT in this sentence, and the bound
+	// is. ciAbstain keys its once-per-process notice on the Why text, so a
+	// moving number would re-announce the same fact on every pass that moved
+	// it — a gate whose runs have stopped entirely gains a commit a day
+	// forever — and that is how a visible line becomes an invisible one
+	// (launcherlag.go's rule). The recipe gives the reader the exact number.
+	return fmt.Sprintf("the reading is not current: the newest verdict-bearing run on %s is %s at %s (%s), more than %d commits behind %s. Either GitHub's run-list index served a PAST page (ranger-base-17jhu) or %s does not run on every push to %s — neither is a verdict about what is on the branch now, in either direction. Count it: git -C %s rev-list --count %s..%s",
+		branch, latest.Short(), latest.Created.UTC().Format(time.RFC3339), latest.URL, ciFreshMaxBehind, ref, workflow, branch, AbbrevHome(dir), latest.Short(), ref)
 }
 
 // ghRunList is the one network call. `--repo` is passed explicitly and is
