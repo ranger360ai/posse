@@ -11,6 +11,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-x0wc5](ranger-base-x0wc5.md) — The same count, in the record that defines the word (ranger-base-x0wc5) — 2026-10-05
 - [ranger-base-rdi79](ranger-base-rdi79.md) — A cancelled JOB is the queue too (ranger-base-rdi79) — 2026-10-05
 - [ranger-base-r5ksj](ranger-base-r5ksj.md) — A cost cap that also decided the case it was sized for (ranger-base-r5ksj) — 2026-10-05
+- [ranger-base-p9qve](ranger-base-p9qve.md) — ranger-base-p9qve — the seed documented-default census gets a NUMBER half — 2026-10-05
 - [ranger-base-m9mwc](ranger-base-m9mwc.md) — A default that lived in shell, and the two copies of it nothing compared (ranger-base-m9mwc) — 2026-10-05
 - [ranger-base-6uokf](ranger-base-6uokf.md) — ranger-base-6uokf — the ADR 0066 D3 report: the failure line and the D3 record name the known screen(s) — 2026-10-05
 - [ranger-base-2xez0](ranger-base-2xez0.md) — ranger-base-2xez0 — a merge-back whose stalest file was a number in prose — 2026-10-05

@@ -1740,14 +1740,24 @@ func (a *App) PlantedInATestFile(errw io.Writer) time.Duration {
 // result is a time.Duration, so a key read as an int, a float64 or a uint64
 // was outside it however many bare numbers the seed documented.
 //
-// Ten commented bare-number lines ship in examples/config.yaml today
+// Eleven commented bare-number lines ship in examples/config.yaml today
 // (MEASURED 2026-10-05: autostart_max_beads, budget_day, budget_pass,
-// grok_guard_week, grok_pool_usd_per_point, load_guard, plan_guard_5h,
-// plan_guard_7d, uncounted_cap_codex, verify_batch) and nothing compared any
-// of them to anything. The cost is the one ranger-base-ghcx3 named for the
-// duration half: a fresh instance reads a documented number as a statement
-// about the harness, nothing holds it, and the number can be wrong by any
-// factor in silence.
+// grok_guard_week, grok_pool_usd_per_point, launcher_behind_max, load_guard,
+// plan_guard_5h, plan_guard_7d, uncounted_cap_codex, verify_batch) and
+// nothing compared any of them to anything. The cost is the one
+// ranger-base-ghcx3 named for the duration half: a fresh instance reads a
+// documented number as a statement about the harness, nothing holds it, and
+// the number can be wrong by any factor in silence.
+//
+// launcher_behind_max is the key this bead was filed beside and the one that
+// proves the derivation works on arrivals rather than on a list: it did not
+// exist when this half was written. ranger-base-y13h7 landed it mid-bead with
+// a reader of exactly the body form below — `(errw io.Writer) int`, one
+// CfgGet key literal, one Default-shaped constant — and the pin met it on the
+// merge, named the two table rows it needed, and then compared the seed's 16
+// against DefaultLauncherBehindMax. It carries a MEASURED threshold
+// (docs/notes.d/ranger-base-y13h7.md), so a drifting seed line there would
+// misquote a measurement.
 //
 // ONE MECHANISM, TWO PREDICATES. This is a WIDENING of the census above and
 // not a second one beside it, which is the distinction the bead was filed on:
@@ -1770,8 +1780,8 @@ func (a *App) PlantedInATestFile(errw io.Writer) time.Duration {
 //
 // WHAT IS COMPARED, AND IN WHAT TYPE. The carrier is float64, because the
 // tree's number readers answer in three different types — `int`
-// (verifyBatch, BackupKeep), `float64` (LoadGuard) and `uint64`
-// (BackupMinFree) — and one comparison type is what keeps the drift check a
+// (verifyBatch, BackupKeep, LauncherBehindMax), `float64` (LoadGuard) and
+// `uint64` (BackupMinFree) — and one comparison type keeps the drift check a
 // single code path. float64 holds every integer below 2^53 exactly, so every
 // count, percent, dollar figure and megabyte ceiling this config can carry
 // resolves exactly and the comparison is `==` rather than a tolerance nobody
@@ -1785,11 +1795,12 @@ func (a *App) PlantedInATestFile(errw io.Writer) time.Duration {
 // the default — which would otherwise let a line that proves nothing pass by
 // landing on the very number it was supposed to prove.
 //
-// WHAT THE SEED'S TEN LINES TURN OUT TO BE, and it is lopsided. Three of the
-// tree's number keys pair a key literal with one Default-shaped constant —
-// backup_keep, load_guard, verify_batch — and the seed documents only two of
-// those three. So of the ten documented lines: TWO are compared (load_guard
-// agrees with LoadGuardDefault; verify_batch is documented at four times
+// WHAT THE SEED'S ELEVEN LINES TURN OUT TO BE, and it is lopsided. Four of
+// the tree's number keys pair a key literal with one Default-shaped constant
+// — backup_keep, launcher_behind_max, load_guard, verify_batch — and the seed
+// documents three of those four. So of the eleven documented lines: THREE are
+// compared (load_guard agrees with LoadGuardDefault, launcher_behind_max with
+// DefaultLauncherBehindMax; verify_batch is documented at four times
 // DefaultVerifyBatch on purpose and is registered for it), ONE the derivation
 // reaches and cannot pair (grok_guard_week), and SEVEN it reaches no reader
 // for at all. backup_keep and backup_min_free_mb run the other way: tree keys
@@ -1849,9 +1860,10 @@ var seedNumberResolvers = map[string]func(*App, string, float64, io.Writer) floa
 // the answer to be seedNumberDefaults' value for the constant the
 // derivation paired it with, so a mis-wired closure reds by name.
 var seedNumberBodyReaders = map[string]func(*App, io.Writer) float64{
-	"BackupKeep":  func(a *App, w io.Writer) float64 { return float64(a.BackupKeep(w)) },
-	"LoadGuard":   func(a *App, w io.Writer) float64 { return a.LoadGuard(w) },
-	"verifyBatch": func(a *App, w io.Writer) float64 { return float64(a.verifyBatch(w)) },
+	"BackupKeep":        func(a *App, w io.Writer) float64 { return float64(a.BackupKeep(w)) },
+	"LauncherBehindMax": func(a *App, w io.Writer) float64 { return float64(a.LauncherBehindMax(w)) },
+	"LoadGuard":         func(a *App, w io.Writer) float64 { return a.LoadGuard(w) },
+	"verifyBatch":       func(a *App, w io.Writer) float64 { return float64(a.verifyBatch(w)) },
 }
 
 // seedNumberDefaults is the Default-shaped constant NAME -> its value, the
@@ -1860,9 +1872,10 @@ var seedNumberBodyReaders = map[string]func(*App, io.Writer) float64{
 // derivation, which fails on a constant it finds at a reader and cannot find
 // here, and on an entry here no reader names any more.
 var seedNumberDefaults = map[string]float64{
-	"DefaultBackupKeep":  DefaultBackupKeep,
-	"DefaultVerifyBatch": DefaultVerifyBatch,
-	"LoadGuardDefault":   LoadGuardDefault,
+	"DefaultBackupKeep":        DefaultBackupKeep,
+	"DefaultLauncherBehindMax": DefaultLauncherBehindMax,
+	"DefaultVerifyBatch":       DefaultVerifyBatch,
+	"LoadGuardDefault":         LoadGuardDefault,
 }
 
 // seedDocumentedNumberOnPurposeNotTheDefault records a number key that
@@ -1914,9 +1927,12 @@ var seedNumberDefaultNotAConstant = map[string]string{
 var seedDocumentedNumberOutsideTheCensus = map[string]string{
 	"autostart_max_beads": "its default is a SHELL literal: plugin/autostart.sh reads the key and falls " +
 		"back to 3 in a `case`, so no Go reader of either derived shape reads it and there is no Go " +
-		"constant for an AST census over Go sources to compare. The seed's 3 and the script's 3 are two " +
-		"copies with no edge between them — a real uncovered drift, filed as ranger-base-m9mwc rather than " +
-		"papered over here, because closing it needs a shell-side census and not a row in this map",
+		"constant for an AST census over Go sources to compare — outside this census by construction and " +
+		"not by omission. It is NOT unheld: ranger-base-m9mwc, filed from this bead, compares the seed " +
+		"line to the fallback the script actually applies, derived on both sides and parsing no shell " +
+		"(TestAutostartShellFallbacksAreTheSeedsDocumentedValues in autostart_test.go). This row is why " +
+		"that pin exists, so a reader who finds the line here goes there rather than concluding nothing " +
+		"holds it",
 	"budget_day": "budgetDollars is `(key string, errw io.Writer) float64` — the call-site shape with no " +
 		"DEFAULT argument, because unset is no cap at all — so neither derived shape reaches it, and the " +
 		"seed's own line reads `suggested:`",
@@ -2107,14 +2123,15 @@ func TestSeedConfigDocumentedNumberDefaultsAreTheConstants(t *testing.T) {
 	// longer resolves and this says how much of the census went with it. A
 	// Fatalf, because every comparison below a census this thin is vacuous.
 	//
-	// Three is the measured population (MEASURED 2026-10-05): backup_keep
-	// through BackupKeep, load_guard through LoadGuard, verify_batch through
-	// verifyBatch. It is deliberately not ten — the duration half's figure —
-	// because the house vocabulary for a number key is "unset means off" and
-	// most of this file's numbers have no constant at all; the section header
-	// has the reason and the third register has the rows.
-	if len(keys) < 3 {
-		t.Fatalf("derived %d number key/constant pairings from %d files, want at least 3 — the two reader rules in seedReaderDecl have stopped matching the tree's number readers, so this pin holds almost nothing", len(keys), scanned)
+	// Four is the measured population (MEASURED 2026-10-05): backup_keep
+	// through BackupKeep, launcher_behind_max through LauncherBehindMax,
+	// load_guard through LoadGuard, verify_batch through verifyBatch. It is
+	// deliberately not eleven — the count of documented lines — because the
+	// house vocabulary for a number key is "unset means off" and most of this
+	// file's numbers have no constant at all; the section header has the
+	// reason and the third register has the rows.
+	if len(keys) < 4 {
+		t.Fatalf("derived %d number key/constant pairings from %d files, want at least 4 — the two reader rules in seedReaderDecl have stopped matching the tree's number readers, so this pin holds almost nothing", len(keys), scanned)
 	}
 
 	// One key, one default.
@@ -2296,8 +2313,8 @@ func TestSeedConfigDocumentedNumberDefaultsAreTheConstants(t *testing.T) {
 	if len(durationLines) < 10 {
 		t.Errorf("seedDocumentedDurations found %d documented duration lines in the seed, want at least 10 (the measured population — ranger-base-2vynj finding 1) — the number half's disjointness check below is reading one empty side", len(durationLines))
 	}
-	if len(documented) < 10 {
-		t.Errorf("seedDocumentedNumbers found %d documented number lines in the seed, want at least 10 (MEASURED 2026-10-05 — ranger-base-p9qve)", len(documented))
+	if len(documented) < 11 {
+		t.Errorf("seedDocumentedNumbers found %d documented number lines in the seed, want at least 11 (MEASURED 2026-10-05 — ranger-base-p9qve, the eleventh being launcher_behind_max from ranger-base-y13h7)", len(documented))
 	}
 	t.Logf("the seed documents %d duration-valued and %d bare-number commented lines", len(durationLines), len(documented))
 	for _, d := range durationLines {
@@ -2312,11 +2329,12 @@ func TestSeedConfigDocumentedNumberDefaultsAreTheConstants(t *testing.T) {
 	// documented line that LEFT (deleting one reds at `compared 1`), and the
 	// set catches one that ARRIVED, which no count can see.
 	//
-	// Two is the measured population (MEASURED 2026-10-05): the seed
-	// documents load_guard and verify_batch with a number the census
-	// reaches, and backup_keep — the third pairing — not at all.
-	if compared < 2 {
-		t.Errorf("compared %d documented number defaults, want at least 2 — the seed documents load_guard and verify_batch with a value this census reaches, so a census that found fewer stopped reading the file", compared)
+	// Three is the measured population (MEASURED 2026-10-05): the seed
+	// documents launcher_behind_max, load_guard and verify_batch with a
+	// number the census reaches, and backup_keep — the fourth pairing — not
+	// at all.
+	if compared < 3 {
+		t.Errorf("compared %d documented number defaults, want at least 3 — the seed documents launcher_behind_max, load_guard and verify_batch with a value this census reaches, so a census that found fewer stopped reading the file", compared)
 	}
 }
 

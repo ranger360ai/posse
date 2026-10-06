@@ -8,7 +8,7 @@ many bare numbers `examples/config.yaml` documented.
 
 ## MEASURED 2026-10-05 — what the seed actually documents
 
-Ten commented bare-number lines ship in `examples/config.yaml`:
+Eleven commented bare-number lines ship in `examples/config.yaml`:
 
 | line | key | value | what holds it, before |
 |---|---|---|---|
@@ -21,14 +21,16 @@ Ten commented bare-number lines ship in `examples/config.yaml`:
 | 664 | `grok_guard_week` | 85 | nothing |
 | 666 | `grok_pool_usd_per_point` | 0.50 | nothing |
 | 733 | `load_guard` | 25 | nothing |
-| 846 | `autostart_max_beads` | 3 | nothing |
+| 822 | `launcher_behind_max` | 16 | nothing |
+| 868 | `autostart_max_beads` | 3 | nothing |
 
-And three of the tree's number keys pair a key literal with one
+And four of the tree's number keys pair a key literal with one
 `Default`-shaped constant through a reader of a derived shape:
 
 | key | reader | constant | value |
 |---|---|---|---|
 | `backup_keep` | `BackupKeep` (`int`) | `DefaultBackupKeep` | 3 |
+| `launcher_behind_max` | `LauncherBehindMax` (`int`) | `DefaultLauncherBehindMax` | 16 |
 | `load_guard` | `LoadGuard` (`float64`) | `LoadGuardDefault` | 25.0 |
 | `verify_batch` | `verifyBatch` (`int`) | `DefaultVerifyBatch` | 1 |
 
@@ -38,10 +40,57 @@ Zero numeric CALL-SITE readers: no method on `App` has the shape
 `(key string, errw io.Writer) float64` — the shape with no default parameter
 at all, because unset is no cap and no guard rather than a number.
 
-**So only `load_guard` is a documented number that agrees with a constant,
-and `verify_batch: 4` is documented at four times its default on purpose.**
+**So `load_guard` and `launcher_behind_max` are the documented numbers that
+agree with a constant, and `verify_batch: 4` is documented at four times its
+default on purpose.** `backup_keep` pairs but is undocumented, so it makes no
+claim that can go stale.
 
-## Why seven of the ten have no constant to drift from
+## The seventh key arrived mid-bead, and that is the point
+
+`launcher_behind_max` is the key this bead was filed beside, and it did not
+exist when the number half was written — `grep -rn launcher_behind_max` over
+the whole tree found nothing at base `0298327c`. So the census was written to
+reach it **prospectively**, by shape rather than by name, and mutant M9 below
+planted a reader of that shape to prove it.
+
+Then `ranger-base-y13h7` landed it for real while this bead's suites were
+running, with a reader of exactly the body form the derivation looks for:
+
+```go
+const DefaultLauncherBehindMax = 16
+
+func (a *App) LauncherBehindMax(errw io.Writer) int {
+	raw := strings.TrimSpace(a.CfgGet("launcher_behind_max", ""))
+	if raw == "" {
+		return DefaultLauncherBehindMax
+	}
+	...
+}
+```
+
+On the merge, `make seed-check` failed exactly as M9 predicted and named the
+two rows it needed:
+
+```
+launcher_behind_max (internal/posse/launcherlag.go:436) falls back to
+DefaultLauncherBehindMax, which seedNumberDefaults does not name — add
+`"DefaultLauncherBehindMax": DefaultLauncherBehindMax,` to it ...
+examples/config.yaml:822 documents launcher_behind_max as 16, and this census
+never reached that key ...
+```
+
+and with the rows added it now reads
+
+```
+launcher_behind_max: documented "16" resolves to 16 = DefaultLauncherBehindMax
+                     (LauncherBehindMax body-form reader)
+```
+
+That threshold is MEASURED (docs/notes.d/ranger-base-y13h7.md), so a seed line
+drifting from it would misquote a measurement — which is the sentence the bead
+was filed on, now held.
+
+## Why seven of the eleven have no constant to drift from
 
 The house vocabulary for a number key is overwhelmingly "unset means OFF":
 `budget_pass:`/`budget_day:` unset is no cap, `plan_guard_<window>:` unset is
@@ -154,7 +203,7 @@ M10 is the only exercise the number half's call-site arm gets outside
 numeric call-site reader anyone adds is a named failure instead of a key that
 quietly resolves nothing.
 
-## Out of scope, filed
+## Out of scope, filed — and closed before this bead was
 
 `autostart_max_beads`'s default `3` is a SHELL literal:
 `plugin/autostart.sh` reads the key and falls back in a `case`, twice. There
@@ -162,7 +211,18 @@ is no Go constant, so an AST census over Go sources cannot reach it by
 construction. The seed's `3` and the script's two `3`s are three copies with
 no edge between them, and `internal/posse/autostart_test.go` pins the
 script's BEHAVIOUR rather than the seed line against it. Registered with that
-reason and filed as **ranger-base-m9mwc**.
+reason and filed as **ranger-base-m9mwc** — which another seat picked up and
+landed (4faa5c62) before this bead's own merge. It compares the seed line to
+the fallback the script actually applies, derived on both sides and parsing no
+shell, and its own header cites this bead as the reason an AST census over Go
+sources cannot reach a shell default. The register row here was updated to
+name that pin, so a reader who finds the line goes there instead of concluding
+nothing holds it.
+
+`AGENTS.md`'s second, unheld copy of the tree-wide pin count was filed as
+**ranger-base-xed72** and also landed before this merge (5d80c36e, with
+ranger-base-x0wc5 widening the count census to more than one spelling).
+Standing orders no longer name a count.
 
 ## The door
 
