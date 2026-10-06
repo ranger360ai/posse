@@ -65,6 +65,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-sqxo1](ranger-base-sqxo1.md) — 2026-10-01 and 2026-10-02: two long sessions, two hung-looking passes, two different causes (ranger-base-sqxo1) — 2026-10-01
 - [ranger-base-5jjtn](ranger-base-5jjtn.md) — Bob's launch line delivers no PID, and its pane is never labelled: two independent causes (ranger-base-5jjtn) — 2026-10-01
 - [ranger-base-26y03](ranger-base-26y03.md) — A nesting refusal wears the setuid refusal's face, and one seat can see both after all (ranger-base-26y03) — 2026-10-01
+- [ranger-base-ut512](ranger-base-ut512.md) — The page this bead was filed off was topped 25 days and 243 commits back, and it was topped with a real red (ranger-base-ut512) — 2026-10
 - [ranger-base-rkva0](ranger-base-rkva0.md) — ranger-base-rkva0 — verifying four closes, and the two arms their mutants could not reach — 2026-10
 - [ranger-base-m46kr](ranger-base-m46kr.md) — The freshness guard on ci-watch's reading, and the number behind it (ranger-base-m46kr) — 2026-10
 - [ranger-base-hxcqe](ranger-base-hxcqe.md) — The red gate was a GitHub outage, and the third run was the tell (ranger-base-hxcqe) — 2026-10
