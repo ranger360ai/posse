@@ -145,13 +145,21 @@ func (w *hookWorld) killRefuses(t *testing.T) {
 	}
 }
 
-func (w *hookWorld) run(t *testing.T, args ...string) hookRun {
+// autostartHookPath is plugin/autostart.sh, the one subject of this file —
+// named once so a test that READS the script and a world that RUNS it cannot
+// end up looking at two different files (ranger-base-m9mwc).
+func autostartHookPath(t *testing.T) string {
 	t.Helper()
 	hook, err := filepath.Abs(filepath.Join("..", "..", "plugin", "autostart.sh"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command("bash", append([]string{hook}, args...)...)
+	return hook
+}
+
+func (w *hookWorld) run(t *testing.T, args ...string) hookRun {
+	t.Helper()
+	cmd := exec.Command("bash", append([]string{autostartHookPath(t)}, args...)...)
 	cmd.Env = append(os.Environ(),
 		"RHQ_HOME="+w.home,
 		"RHQ_BIN="+filepath.Join(w.home, "posse"),
@@ -276,11 +284,7 @@ func newHomeWorld(t *testing.T, homes map[string]string) *homeWorld {
 // is none.
 func (w *homeWorld) run(t *testing.T) hookRun {
 	t.Helper()
-	hook, err := filepath.Abs(filepath.Join("..", "..", "plugin", "autostart.sh"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	cmd := exec.Command("bash", hook, "--startup")
+	cmd := exec.Command("bash", autostartHookPath(t), "--startup")
 	cmd.Env = []string{
 		"HOME=" + w.user,
 		"PATH=" + os.Getenv("PATH"),
