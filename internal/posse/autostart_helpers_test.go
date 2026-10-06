@@ -180,6 +180,26 @@ func (w *hookWorld) run(t *testing.T, args ...string) hookRun {
 
 const armed = "autostart_interval: 30s\n"
 
+// configWithout is one config with one key's line taken out: the per-key
+// ABSENT case, built from a config that is known to arm rather than written
+// out by hand. What a stand-down over it measures is therefore the removal
+// of that one key — a key the script falls back for still arms, carrying the
+// fallback, because that is what a fallback is (ranger-base-orq4e).
+//
+// A key the config does not name comes back unchanged on purpose: "the
+// config without it" and "the config" are the same file, and it is the run
+// that says whether leaving the key out armed anything.
+func configWithout(config, key string) string {
+	var keep []string
+	for _, ln := range strings.Split(config, "\n") {
+		if k, _, ok := strings.Cut(ln, ":"); ok && strings.TrimSpace(k) == key {
+			continue
+		}
+		keep = append(keep, ln)
+	}
+	return strings.Join(keep, "\n")
+}
+
 // runArgv runs the hook over one config and returns everything it asked of
 // posse, with the world's own temp paths folded away so two worlds are
 // comparable. The hook must have armed something: a stand-down would compare

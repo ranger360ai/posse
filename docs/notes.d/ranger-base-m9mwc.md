@@ -103,3 +103,12 @@ ranger-base-p9qve's register row for `autostart_max_beads` **stays**: the key
 is still outside the Go-constant census, held here instead. The bead's
 alternative — source the script's default from a Go constant, which would let
 that row be dropped — was not taken, for the (b) reason above.
+
+**One of the three register kinds was not checkable after all**, and the
+"every register row's kind is CHECKED, not believed" bullet above names the
+two that were. `seedShellNoFallback`'s arm asserted a global fact about an
+empty config and named no key, so the seven mutations measured above
+never included the eighth: register any key at all under that kind and
+both halves of the census stay green, which is how a seed line can go back to documenting a cap
+the script does not apply. Found by ranger-base-5xfzy verifying this close,
+fixed under ranger-base-orq4e — see docs/notes.d/ranger-base-orq4e.md.
