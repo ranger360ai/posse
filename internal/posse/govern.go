@@ -207,6 +207,13 @@ type GovInputs struct {
 	// whole instance still makes at most one request per TTL.
 	Plan PlanReader
 
+	// Lag is the launcher-lag reading behind G11 (launcherlag.go); nil = the
+	// instance's own, taken over its CONFIGURED checkouts. A seam for the
+	// reason dispatch.Lag is one: the reading keys off VersionString(), a
+	// TEST binary carries no vcs stamp at all, and every pin in this package
+	// would otherwise see the same "+dev" abstention.
+	Lag func() LauncherLag
+
 	// Caller is the name a plan-endpoint request lands under in
 	// $StateDir/plan-usage.log ("status", "pulse", "cockpit"); "" reads as
 	// "govern". The log is only evidence if it says who asked — that is
@@ -238,6 +245,47 @@ func (in GovInputs) errw() io.Writer {
 		return in.Errw
 	}
 	return io.Discard
+}
+
+// lag is the launcher reading G11 is computed from.
+//
+// The default counts against the instance's CONFIGURED checkouts (BeadsDirs)
+// and deliberately NOT, as App.Launcher() does, against those plus the
+// process's working directory. Two reasons, both about what the row claims.
+//
+// A governance condition is a statement about the fleet THIS INSTANCE
+// dispatches, and that fleet is its configured repos; a reading that resolved
+// only through the cwd is a statement about the directory whoever typed the
+// command happens to be standing in. The cwd candidate exists so `posse
+// status` typed inside a posse checkout still prints a LINE on a box whose
+// `beads:` names none (App.Launcher's own header) — a line is owed to
+// whoever typed the command, a condition is owed to the fleet.
+//
+// And it keeps this surface's own pins off the operator's live lag. A test
+// binary built from a worktree of THIS repo carries that worktree's stamp, and
+// cwd in a test is the package directory, whose MainCheckout is the operator's
+// real checkout — so a reading that fell through to cwd would count every
+// `posse status` pin in the tree against the operator's `main` and go red per
+// HOUR rather than per commit, the class ranger-base-rp2y cost a day to.
+//
+// THE COST, because the cockpit ticks this: the default is one go.mod read
+// and three `git` calls — `cat-file -e` for the stamp, `rev-parse` for the
+// branch, `rev-list --count` for the number — in the first configured
+// checkout that holds the commit, and nothing at all on a box with none. That
+// is the same order as the `unpushed:` carry-over below, which already forks
+// one `git` per configured repo on every tick.
+//
+// THE GAP THIS LEAVES, said here so nobody re-derives it: on a box whose
+// `beads:` names no posse checkout the status LINE speaks and this row
+// abstains. Such a box has no configured copy of the launcher's own repo, so
+// there is nothing the surface can call the fleet's; `posse status` still
+// prints the number, and naming the gap is cheaper than a second config key
+// for it.
+func (in GovInputs) lag() LauncherLag {
+	if in.Lag != nil {
+		return in.Lag()
+	}
+	return in.App.LauncherOverFleet()
 }
 
 // suspended is the Suspended reading, clipped to the window it is about: how
@@ -382,6 +430,7 @@ func ReadPause(path string) Pause {
 //	G8 paused                                     state/pause.yaml   URGENT
 //	G9 ready bead routed to the coordinator       bd + config        LANE
 //	G10 live-box checks stale, red or blind       verify-box.yaml    LANE
+//	G11 the launcher is behind past the depth     the build stamp    LANE
 //
 // plus the two conditions the pulse's own first cut shipped and this
 // widening deliberately does not drop — unpushed commits on a beads repo,
@@ -587,6 +636,45 @@ func ShopCheck(in GovInputs) (GovSet, []error) {
 			failed = append(failed, fmt.Errorf("verify-box verdict %s: %w — G10 unknown", AbbrevHome(vb.Path), vb.Err))
 		}
 		for _, c := range vb.GovRows() {
+			add(c.ID, c.Class, c.Key, c.Detail)
+		}
+	}
+
+	// ── G11 · the launcher is behind its own repo, past a measured depth ─
+	//
+	// The one row whose remedy is an INSTALL, and the reason it has to be a
+	// row at all: launcherlag.go has printed this number on every status view
+	// and at every doubling of a watch pass since ranger-base-z3hx6, and no
+	// governance condition read it — so for four days `posse status` printed
+	// a sentence ending "only installing closes it" and `nothing needs a
+	// human` two lines under it, in the same view, while the binary went from
+	// current to 101 commits behind (ranger-base-y13h7).
+	//
+	// A reading is not a control and a condition is not one either: this row
+	// gates nothing, declines nothing and installs nothing. It says a human
+	// is needed, which is the one thing the surface it joins is for.
+	//
+	// LANE, not URGENT, on backup-stale's rule below: ADR 0029 defines URGENT
+	// as "the shop is stopped", and a stale launcher stops nothing — it keeps
+	// running, with the defects its own repo fixed hours ago. LANE still
+	// exits `posse status` non-zero, still draws in the cockpit's GOVERNANCE
+	// block and still counts in the header, which is the whole of what this
+	// bead needed. Making the one class that means stop-everything also mean
+	// "an install is overdue" would cost the pulse the distinction it
+	// escalates on.
+	//
+	// AN ABSTENTION IS NOT A PARTIAL SET, and this is the one place in this
+	// function that declines to treat an unanswerable reading as unknown.
+	// "Names no commit" is the ordinary shape of a checkout build — a `go
+	// run`, or a plain `go build` from a linked worktree — so filing it in
+	// `failed` would make every operator's `go run ./cmd/posse status` exit
+	// non-zero over a build working exactly as designed. The rule it would
+	// otherwise fall under is satisfied elsewhere and unconditionally: both
+	// surfaces that own this reading say the abstention out loud rather than
+	// rendering it as silence (`posse status` prints Line() in every case;
+	// the watch preamble says it once).
+	if rows := in.lag().GovRows(in.App.LauncherBehindMax(in.errw())); len(rows) > 0 {
+		for _, c := range rows {
 			add(c.ID, c.Class, c.Key, c.Detail)
 		}
 	}
@@ -1177,6 +1265,9 @@ func (in GovInputs) dialE(now time.Time, plan PlanUsage) BudgetState {
 
 // StatusInputs is what a one-shot process — `posse status`, the cockpit —
 // hands ShopCheck.
+//
+// Lag is left nil like every other seam here, so G11 reads this process's own
+// launcher over the instance's configured checkouts (lag() above).
 //
 // GuardTrippedSince and Suspended are deliberately absent, the two readings
 // that only the loop's own memory holds. No streak, so it reports no G4

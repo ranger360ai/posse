@@ -308,6 +308,17 @@ package treepins
 //     file read; it was correct the day it shipped and nothing said so
 //     after. The Makefile declines to write the door COUNT twice on
 //     purpose, which is the same refusal one directory over.
+//
+//     AND AGENTS.md's DOOR BLOCK, one page further out again
+//     (ranger-base-xed72) — the same list in the same order, in the page
+//     every seat reads at session start. Standing orders carried a second
+//     copy of the PIN count as well, held by nobody: it said four fewer than
+//     the Makefile had, through two beads that doored a pin, corrected the
+//     sentence above, and had no reason to read a crew-wide page. That page
+//     states no count of this class at all now and points here instead, and
+//     this arm holds both halves of that — the block against `tree-check`'s
+//     prerequisites, and the absence of a numeral against the same spellings
+//     twdSpelled writes.
 
 import (
 	"fmt"
@@ -2202,8 +2213,8 @@ var twdCountClaim = regexp.MustCompile(`([a-z]+(?:-[a-z]+)?) pins and ([a-z]+(?:
 // is the fence, not a pin), and a two-way rule would red on those.
 //
 // AND THE README's DOOR TABLE, for the same reason one page further out
-// (ranger-base-r5546). internal/treepins/README.md carries the fourteen
-// doors as a table, one row per door with its subject — more useful than a
+// (ranger-base-r5546). internal/treepins/README.md carries the doors as a
+// table, one row per door with its subject — more useful than a
 // bare list, and the part that can drift. It was 14/14 correct the day it
 // shipped and nothing would have said so when it stopped being: a door
 // renamed, added or removed edits the Makefile and this file's enumeration,
@@ -2211,6 +2222,35 @@ var twdCountClaim = regexp.MustCompile(`([a-z]+(?:-[a-z]+)?) pins and ([a-z]+(?:
 // be true. Order too, not just membership — the table reads as the order
 // `make tree-check` runs them, and a reader pricing a partial run from it
 // is owed that.
+//
+// AND AGENTS.md's DOOR BLOCK AND ITS ABSENT COUNT (ranger-base-xed72). The
+// crew-wide page carried the door list a third time and the PIN count a
+// second time, and the count is the one that had already gone wrong: four
+// short of the sentence above, because a bead that doors a pin corrects the
+// file it edits and standing orders are nobody's subject. The sentence's own
+// failure text says why that cannot be fixed by typing the right number —
+// "two places drift apart and the reader cannot tell which is stale" — so
+// the page states no count at all now, names this file instead, and this arm
+// holds all three of those: the block against `tree-check`'s prerequisites
+// (membership and order, like the README's), the pointer, and the absence of
+// a numeral.
+//
+// AND ADR 0067's TWO (ranger-base-x0wc5). The record that writes this shop's
+// dictionary down spelled the door count twice more — D1's "`check` is a verb
+// and the name of fourteen Makefile doors" and the appendix row for `check` —
+// both live, both held by nothing, and both now say it without the numeral.
+// The record is worth holding for the same reason AGENTS.md is and one step
+// stronger: it is the page that defines what `door` and `pin` MEAN, so a
+// count of the class written there reads as the definition of the class.
+//
+// It also found the hole in the rule xed72 shipped. twdProseCount matched a
+// numeral IMMEDIATELY before `pins`/`doors`, which is how AGENTS.md happened
+// to spell it; "fourteen Makefile doors" has a word in between and went
+// straight through. So the numeral may now be up to two plain words from its
+// noun, and the noun must be PLURAL — singular prose is description, not a
+// count ("a Makefile target that runs one tree-wide pin" is the `door` row,
+// and it is true). MEASURED 2026-10-05: over this record and that bullet the
+// widened rule matches nothing, and over D1's old sentence it matches.
 func TestQATheHeadCommentsPinAndDoorCountsAreTheMakefiles(t *testing.T) {
 	t.Parallel()
 	b, err := os.ReadFile("Makefile")
@@ -2282,6 +2322,32 @@ func TestQATheHeadCommentsPinAndDoorCountsAreTheMakefiles(t *testing.T) {
 		t.Errorf("%s lists the doors as\n  %v\nand `make tree-check`'s prerequisites are\n  %v\n"+
 			"That table is a second copy of this list in a page read outside this package, and nothing but this arm would ever say it had gone stale. Fix the table, not this test.", readme, table, doors)
 	}
+
+	// And AGENTS.md's door block, held the same way — plus the count that
+	// page is no longer allowed to write (ranger-base-xed72).
+	agents := twdAgentsSection(t)
+	block := twdAgentsDoors(t, agents)
+	if !slices.Equal(block, doors) {
+		t.Errorf("%s's tree-wide-pin bullet lists the doors as\n  %v\nand `make tree-check`'s prerequisites are\n  %v\n"+
+			"That block is the door list every seat reads at session start, and nothing but this arm would ever say it had gone stale. Fix the block, not this test.", twdAgentsPath, block, doors)
+	}
+	flowed := strings.Join(agents, " ")
+	if counts := twdProseCount().FindAllString(flowed, -1); len(counts) > 0 {
+		t.Errorf("%s's tree-wide-pin bullet counts this class in prose (%q), and nothing holds that numeral — which is how it came to say four fewer pins than the Makefile had. Say it without the count (`all of them`, `two of them`): the one place a count of this class is written is this file's head comment, derived from the Makefile above.", twdAgentsPath, counts)
+	}
+	if !strings.Contains(flowed, "treewidedoor_qa_test.go") {
+		t.Errorf("%s's tree-wide-pin bullet no longer names treewidedoor_qa_test.go — that page states no count of this class on purpose and points at the file that does, so a reader who loses the pointer has nowhere left to get the number.", twdAgentsPath)
+	}
+
+	// And the dictionary record, which is allowed to say what a door IS and
+	// not how many there are (ranger-base-x0wc5).
+	count := twdProseCount()
+	for _, para := range twdADRParagraphs(t) {
+		if counts := count.FindAllString(para, -1); len(counts) > 0 {
+			t.Errorf("%s counts this class in prose (%q), and nothing holds that numeral:\n  %s\n"+
+				"That record defines `pin` and `door`, so a count written there reads as part of the definition — and it is the copy that stayed wrong while AGENTS.md was being fixed. Say it without the count (`the Makefile doors`, `runs them all`): the one place a count of this class is written is this file's head comment, derived from the Makefile above.", twdADRPath, counts, para)
+		}
+	}
 }
 
 // twdReadmeDoors reads the door names out of the README's door table: the
@@ -2309,6 +2375,155 @@ func twdReadmeDoors(t *testing.T, path string) []string {
 		t.Fatalf("%s has no door table — a row is a table line whose first cell is a backticked `make <door>`, and a page that lost them is a page that stopped saying what `make tree-check` runs", path)
 	}
 	return out
+}
+
+// twdAgentsPath is the crew-wide page that carries the third copy of the door
+// list. Read by NAME, like the Makefile and the README: that is the
+// enumeration rule's own negative case, so this arm stays a door-holder
+// rather than becoming a derived member of the class (twdDoorHolders).
+const twdAgentsPath = "AGENTS.md"
+
+// twdAgentsSection returns the lines of AGENTS.md's tree-wide-pin bullet,
+// trimmed: from the bullet that opens "A `-run` filter cannot reach a
+// tree-wide pin" to the next top-level bullet or the end of the file.
+//
+// Scoped to the one bullet and not the page, because the rest of AGENTS.md
+// counts its own things honestly — "121 pattern kills from 63 seats", "three
+// binaries now" — and a page-wide count census would red on prose that is
+// true. The bullet is found by its own sentence rather than a line number,
+// and a page that has lost that sentence fails here rather than passing over
+// nothing.
+func twdAgentsSection(t *testing.T) []string {
+	t.Helper()
+	b, err := os.ReadFile(twdAgentsPath)
+	if err != nil {
+		t.Fatalf("%s: %v — the crew-wide page carries the door block this arm holds to the Makefile", twdAgentsPath, err)
+	}
+	lines := strings.Split(string(b), "\n")
+	start := -1
+	for i, l := range lines {
+		if strings.Contains(l, "filter cannot reach a tree-wide pin") {
+			start = i
+			break
+		}
+	}
+	if start < 0 {
+		t.Fatalf("%s has no `-run filter cannot reach a tree-wide pin` bullet — that bullet is where a seat learns these doors exist at all, and this arm cannot hold a block it cannot find", twdAgentsPath)
+	}
+	out := []string{strings.TrimSpace(lines[start])}
+	for _, l := range lines[start+1:] {
+		if strings.HasPrefix(l, "- ") { // the next top-level bullet
+			break
+		}
+		out = append(out, strings.TrimSpace(l))
+	}
+	return out
+}
+
+// twdAgentsDoors reads the door names out of the fenced block in that bullet:
+// a line whose first token is `make <door>`, inside the fence.
+//
+// Fenced, and shaped rather than grepped, for the reason twdReadmeDoors is:
+// the bullet names `make fmt-check`, `make tree-check`, `make crew-check` and
+// `make notes-check` in its PROSE as advice, and a reader that took those
+// would be reading the advice as if it were the list.
+func twdAgentsDoors(t *testing.T, section []string) []string {
+	t.Helper()
+	row := regexp.MustCompile(`^make ([a-z0-9-]+)\s`)
+	var out []string
+	fenced := false
+	for _, l := range section {
+		if strings.HasPrefix(l, "```") {
+			fenced = !fenced
+			continue
+		}
+		if !fenced {
+			continue
+		}
+		if m := row.FindStringSubmatch(l); m != nil {
+			out = append(out, m[1])
+		}
+	}
+	if len(out) == 0 {
+		t.Fatalf("%s's tree-wide-pin bullet has no door block — a row is a fenced line whose first token is `make <door>`, and a page that lost them is a page that stopped saying what `make tree-check` runs", twdAgentsPath)
+	}
+	return out
+}
+
+// twdADRPath is the record that writes this shop's dictionary down, and so
+// the fourth page to carry a count of this class. Read by NAME, like the
+// Makefile, the README and AGENTS.md, and for the same reason: a
+// `filepath.Glob("docs/adr/0067-*.md")` would be a rooted enumeration, which
+// is exactly the key twdTreeWideTests derives membership of this class from —
+// this arm would become a member of the class it doors.
+const twdADRPath = "docs/adr/0067-house-words-are-a-posse-dictionary-in-the-shape-of-ste.md"
+
+// twdADRParagraphs returns that record's blank-line-separated paragraphs,
+// each flowed to one line.
+//
+// Flowed because the claim this holds WRAPS — D1 said "the name of fourteen
+// Makefile" and "doors)" on two lines, so a per-line scan was blind to the
+// very sentence this bead was filed for. Per PARAGRAPH and not per file
+// because flowing the whole record lets a numeral ending one paragraph reach
+// a `pins` opening the next, and a red for a sentence pair nobody wrote is a
+// red the next reader cannot act on. A table row is one line, so the
+// appendix is covered either way.
+func twdADRParagraphs(t *testing.T) []string {
+	t.Helper()
+	b, err := os.ReadFile(twdADRPath)
+	if err != nil {
+		t.Fatalf("%s: %v — that record is the dictionary this shop's door and pin words are defined in, and this arm holds it to stating no count of the class", twdADRPath, err)
+	}
+	var out []string
+	for _, para := range strings.Split(string(b), "\n\n") {
+		var fields []string
+		for _, l := range strings.Split(para, "\n") {
+			if l = strings.TrimSpace(l); l != "" {
+				fields = append(fields, l)
+			}
+		}
+		if len(fields) > 0 {
+			out = append(out, strings.Join(fields, " "))
+		}
+	}
+	if len(out) == 0 {
+		t.Fatalf("%s is empty — the dictionary record cannot have lost its prose", twdADRPath)
+	}
+	return out
+}
+
+// twdProseCount matches a count of this class written in prose: one of this
+// shop's spelled numerals (or digits) before a PLURAL `pins` or `doors`, and
+// the `all <n>` form the door count was also written in. The numerals come
+// from twdSpelled rather than being retyped, so this rule and the derivation
+// above cannot disagree about what a count looks like.
+//
+// Narrow on purpose, the same way twdCountClaim is: it catches the spellings
+// these pages actually carried — "forty-nine pins across the two, behind
+// fourteen doors" and "`make tree-check` is all fourteen" in AGENTS.md,
+// "the name of fourteen Makefile doors" in ADR 0067 — and leaves prose that
+// counts something else alone.
+//
+// TWO BOUNDS, each paid for by a real sentence (ranger-base-x0wc5). The
+// numeral may sit up to two plain words from its noun, because the ADR's
+// spelling put one there and the adjacent-only rule read straight past it —
+// the rule shipped to hold three pages matched the spelling of exactly one.
+// The noun must be plural, which is what keeps the widened gap honest: the
+// same record's `door` row says "a Makefile target that runs one tree-wide
+// pin", and every nearby "D5 pin", "no prose pin" and "by the pin" would
+// have reddened a gap rule that took the singular. A count of a class with
+// one member is not a sentence this class has ever written.
+func twdProseCount() *regexp.Regexp {
+	alts := make([]string, 0, 101)
+	for n := 99; n >= 0; n-- { // descending, so `forty-nine` is tried before `forty`
+		alts = append(alts, regexp.QuoteMeta(twdSpelled(n)))
+	}
+	alts = append(alts, `\d+`)
+	num := `(?:` + strings.Join(alts, "|") + `)`
+	// Plain words only in the gap: a token carrying `.` or `|` would let the
+	// match cross a sentence end or a table cell wall.
+	gap := `(?:\s+[A-Za-z][A-Za-z'-]*){0,2}`
+	return regexp.MustCompile(`(?i)\b(?:` + num + gap + `\s+(?:pins|doors)|all\s+` + num + `)\b`)
 }
 
 // twdVarOf names the door variable that carries a test, for the message above.

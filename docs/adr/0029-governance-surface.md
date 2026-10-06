@@ -28,6 +28,7 @@ the vocabulary is closed at nine or that every process has identical inputs.
 | G10 / `verify-box-unmeasured` | A fresh verdict in which every check answered "nothing measured" | LANE |
 | G10 / `verify-box:<checks>` | Checks the fresh verdict reports as finding or error; the key names them, and `verify_box_accepted` adds the tracking bead id to the detail without removing the check | LANE |
 | G10 / `verify-box-accept-stale:<check>` | A `verify_box_accepted` entry whose check is not red in the fresh verdict | LANE |
+| G11 / `launcher-behind:<depth>` | The running launcher's own build stamp counted against the branch of the configured checkout that holds it, past `launcher_behind_max` (default 16); the key carries the doubling step, so a deepening lag re-prompts at 16, 32, 64 and nowhere between. An unreadable stamp raises nothing and is not a partial view | LANE |
 | `unpushed:<repo>:<n>` | Local git upstream comparison for configured bead repositories; no upstream yields no finding | Existing carry-over, no G id |
 | `no-live:<persona>` | Missing delivery target, only when pulse is armed and a target exists | Existing carry-over, no G id |
 | `backup-stale` | Armed backup policy and archive observation under ADR 0036; no archive is stale | LANE, no G id |
@@ -49,6 +50,31 @@ LaunchAgent's `StandardOutPath`/`StandardErrorPath` are `state/verify-box.log`
 red check tracked by an open bead is named with that bead id on the row and is
 not removed from it; automatic bead filing was considered and refused in the
 same ruling.
+
+G11 is the second row added under that bar (bead ranger-base-y13h7, from
+ranger-base-6pnab). Its predicate is `LauncherLag.Behind >= launcher_behind_max`
+with the reading known; its owner is the running binary's build stamp, counted
+in whichever configured checkout holds that commit (`launcherlag.go`); its
+scope is the instance's `beads:` checkouts and deliberately not the process's
+working directory, because the condition is about the fleet this instance
+dispatches rather than the directory a command was typed in; its class is LANE,
+on the backup-stale rule — a stale launcher stops nothing, it keeps running
+with the defects its own repo fixed. The reading itself is older (ADR 0029 is
+not its design; `launcherlag.go` and bead ranger-base-z3hx6 are) and it was
+printed on every status view and at every doubling of a watch pass for a month
+without any condition reading it: for four days `posse status` printed a lag
+sentence ending "only installing closes it" and `nothing needs a human` two
+lines beneath it, in the same view, while the binary reached 101 commits
+behind. A READING IS NOT A CONTROL AND NEITHER IS THIS ROW — it gates nothing,
+declines no launch and installs nothing; installing over a binary that is
+dispatching a live fleet remains the operator's (guardrail 3), and the row's
+only claim is that a human is needed. The threshold is argued from this box's
+own install history rather than inherited, in
+`docs/notes.d/ranger-base-y13h7.md` and in the constant's own doc comment: 13
+reconstructed install episodes with a median depth of 48, against two traced
+costs at depths 34 and 93 — so the box's cadence cannot bound it, and 16 is the
+largest doubling step below 21, the shallowest depth at which a fix the fleet
+needed was already on main.
 
 G4's streak is process-local and resets on restart. A fresh status process
 cannot infer two hours of skips from one reading and reports no G4. G7 is

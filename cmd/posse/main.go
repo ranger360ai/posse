@@ -919,11 +919,30 @@ func main() {
 		// who typed a command is owed a sentence, and an abstention
 		// rendered as silence reads as an all-clear.
 		//
-		// A reading, not a condition: it does not join the governance set
-		// below and does not move this command's exit code. Only the
-		// operator can install over a binary that is dispatching a live
-		// fleet (guardrail 3), so this is the signal and not the remedy —
-		// possebinary.go's rule, one line down from where it is stated.
+		// Printed in every case, and the governance set below carries the
+		// LOUD half — G11, once the count is past `launcher_behind_max:`.
+		// The same split as the backup and live-box lines further down, and
+		// it was the whole of ranger-base-y13h7: this line said "only
+		// installing closes it" for four days while the summary two lines
+		// under it said nothing needed a human, because no condition read
+		// it. The quiet half still belongs here, because a shop check prints
+		// CONDITIONS and "the launcher is the tip of main" is not one — and
+		// neither is an abstention, which the set declines to report and
+		// this line states out loud.
+		//
+		// Still a signal and not a remedy: only the operator can install
+		// over a binary that is dispatching a live fleet (guardrail 3), and
+		// a condition gates nothing — possebinary.go's rule, one line down
+		// from where it is stated.
+		//
+		// Two readings, deliberately. This one counts over the configured
+		// checkouts PLUS this process's cwd, so a `posse status` typed
+		// inside a posse checkout answers on a box whose `beads:` names
+		// none; G11's counts over the configured checkouts alone, because
+		// the condition is about the fleet this instance dispatches
+		// (govern.go lag()). On a box whose `beads:` names a posse checkout
+		// — which is the configuration this row exists for — they are the
+		// same reading.
 		fmt.Fprintln(out, a.Launcher().Line())
 		set, failed := posse.ShopCheck(posse.StatusInputs(a, hb, os.Stderr))
 		fmt.Fprintf(out, "shop check · %s · %s\n", posse.GovSummary(set), posse.AbbrevHome(a.Home))

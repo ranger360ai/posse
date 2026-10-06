@@ -300,8 +300,15 @@ bd sync               # Sync with git
   `$(FMT_ROOTS)`, so the advice works on every file the check reports.
   The class is "a QA test whose subject is the TREE, living inside a package
   nobody runs whole", and there are two such packages: internal/posse at
-  ~950s and **internal/treepins at 589.965s** (ranger-base-g6sb1). Forty-nine
-  pins across the two, behind fourteen doors:
+  ~950s and **internal/treepins at 589.965s** (ranger-base-g6sb1). This page
+  names no count of that class, on purpose: the number is said in ONE place —
+  `internal/treepins/treewidedoor_qa_test.go`'s head comment, derived from the
+  Makefile by its arm 4 — because two places drift and the reader cannot tell
+  which is stale. The copy that used to sit here did: it went four short
+  through two beads that added a pin, updated the pinned sentence and left
+  this one (ranger-base-xed72). The DOORS are held here instead, membership
+  and order, by that same arm reading the block below against what
+  `tree-check` actually depends on:
 
   ```
   make fmt-check       ~1.5s   gofmt over the whole tree (a TOOL, not a filter)
@@ -320,14 +327,14 @@ bd sync               # Sync with git
   make pid-check        ~10s   the shipped PIDs under examples/agents/
   ```
 
-  **`make tree-check` is all fourteen, 46.5-77.2s warm over three runs and
+  **`make tree-check` is all of them, 46.5-77.2s warm over three runs and
   92.6s cold** (MEASURED 2026-10-04, ranger-base-g6sb1; the spread is the box,
   not the cache — the load average went 8.9 to 23.8 across the three with a
   sibling seat holding a suite slot. It was 14.9-16.5s before
-  internal/treepins joined, and 5.1s at four pins when ranger-base-ik44f wrote
-  this line) — that is the one
+  internal/treepins joined, and 5.1s over a small fraction of today's class
+  when ranger-base-ik44f wrote this line) — that is the one
   command to type after a filtered run, and it is a prerequisite of `make
-  test` for the same reason `fmt-check` is. Two doors are worth typing on
+  test` for the same reason `fmt-check` is. Two of them are worth typing on
   their own: `make crew-check` when your change touched `cmd/`, `internal/`,
   `etc/`, `examples/` or any `*_test.go`, and **`make notes-check` whenever
   you add a `docs/notes.d/<bead-id>.md` fragment** — which is most beads, and

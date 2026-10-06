@@ -799,6 +799,28 @@ default_emoji: ⚙️
 # verify_box_accepted:
 #   verify-codex-pin: ranger-base-femsg
 
+# G11 is the launcher row: how many landed commits the binary RUNNING this
+# fleet is missing, counted from its own build stamp against the branch of the
+# `beads:` checkout that holds that commit. A stale launcher does not fail — it
+# dispatches, merges back and files beads exactly as designed, with the defects
+# its own repo fixed hours ago — so the only tell is the number, and `posse
+# status` prints it whether or not it is a condition.
+#
+# The default is argued from measurement rather than picked. On the box this
+# harness is developed on: 13 reconstructed install episodes, median 48 commits
+# deep, against two costs traced to depths 34 and 93 — a session re-deriving a
+# verdict two landed commits already held, and a false ci-red P1. An install
+# cadence whose median is already past the cheaper of those two cannot bound
+# anything, so the number comes off the cost: 16 is the largest doubling step
+# below 21, the shallowest depth at which a fix the fleet needed was already on
+# main. Expect to move it on an instance that lands commits faster or slower.
+#
+# The remedy is an INSTALL and it is the operator's alone: installing over a
+# binary that is dispatching a live fleet is a live change (guardrail 3). The
+# row gates nothing — it says a human is needed. `0` means any lag at all is
+# one, which is what an instance that installs from the tip every time wants.
+# launcher_behind_max: 16   # commits behind before the lag is a condition
+
 # ─── scheduled dispatch (autostart) ──────────────────────────────────────────
 # The unattended loop: herdr's [[startup]] hook (plugin/autostart.sh) runs
 # `posse dispatch --watch` in a workspace, once per herdr server start. The

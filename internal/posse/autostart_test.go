@@ -3,9 +3,12 @@
 package posse
 
 import (
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -1343,5 +1346,250 @@ func TestAutostartRotatesTheLogItTeesInto(t *testing.T) {
 	}
 	if _, err := os.Stat(log + ".1"); err != nil {
 		t.Errorf("a log past 5 MiB was not rotated: %v", err)
+	}
+}
+
+// ─── the seed line and the fallback the script applies (ranger-base-m9mwc) ──
+//
+// examples/config.yaml documents a value beside every autostart key, and for
+// two of them that value is a claim about a default that lives in SHELL:
+// `autostart_max_beads: 3` ("A cap is ALWAYS present: absent key = 3") and
+// `autostart_session: dispatch` ("default: dispatch"). plugin/autostart.sh
+// holds both — the first twice, in the absent-key arm and in the
+// not-a-count arm that quotes it — and no Go constant sits between them, so
+// the seed's documented-default census cannot reach either: it is an AST walk
+// over Go sources (ranger-base-p9qve), and a shell default is outside it by
+// construction, not by omission.
+//
+// The behaviour pins above hold the SCRIPT, totally. What nothing held is the
+// SEED LINE against it: edit the script's 3s, make
+// TestAutostartMaxBeadsAlwaysPresent green again by editing its wantN with
+// them, and a fresh instance's spec names the old number — the stale-for-free
+// shape ranger-base-vofbl was filed for, one language over.
+//
+// DERIVED ON BOTH SIDES, so this adds no third copy of the number. The seed
+// side is exampleConfigDefault, the production reader of the EMBEDDED seed
+// that ADR 0024 D2 check 3 already decides with. The script side is the
+// script: the documented value is written into a config as a LIVE key, and
+// the argv the hook builds from it is compared to the argv the hook builds
+// with the key ABSENT. Equal means the fallback the script applies IS the
+// documented one. That is a comparison and not a spelling — the measurement
+// TestAutostartNullValuesReadLikeAnAbsentKey makes, with the documented text
+// in place of `null` — and it parses no shell, which a grep of the `case` arm
+// would have to, going narrower than the script while both looked green.
+
+// seedShellDefaultCompared names the keys whose seed line documents the
+// default plugin/autostart.sh itself applies.
+//
+// `other` is a value of the same shape that is NOT that default: the control
+// that proves the key reaches the argv at all. Without it an equal
+// comparison proves nothing — a key the hook stopped passing would compare
+// equal to itself forever.
+//
+// `bad` is a value the script names on stderr and replaces, or "" for a key
+// with no such arm (any string is a session name). That arm is the script's
+// SECOND copy of the number, in the sentence it prints, and it is held here
+// rather than in a table of expected words.
+var seedShellDefaultCompared = map[string]struct{ other, bad string }{
+	"autostart_max_beads": {other: "7", bad: "three"},
+	"autostart_session":   {other: "dispatch-qa"},
+}
+
+// seedShellKind is why a registered key's seed line is not a claim about a
+// fallback. Each kind is checkable, so the register cannot be prose: a row
+// that stops being true reds the pin that holds it.
+type seedShellKind string
+
+const (
+	// The key has no fallback to document: absent is a disarm and an
+	// unreadable value is a broken arm, so nothing is defaulted.
+	seedShellNoFallback seedShellKind = "the key has no fallback"
+	// The seed documents something OTHER than the fallback, deliberately —
+	// an opt-in, an opt-out, or a worked example. Writing it live must
+	// therefore arm a different loop than leaving the key out; if it ever
+	// arms the same one, the line has become a claim about the fallback and
+	// the key belongs in seedShellDefaultCompared.
+	seedShellNotTheFallback seedShellKind = "the seed documents the non-default on purpose"
+	// The seed line carries no value for exampleConfigDefault to read, so
+	// there is no documented text to compare.
+	seedShellNoDocumentedValue seedShellKind = "the seed line documents no value"
+)
+
+// seedShellDefaultRegister is the other half of the total table: every key
+// the hook reads whose seed line is not a claim about the script's fallback,
+// with the reason. Between the two tables every `cfg`/`haskey` call site in
+// plugin/autostart.sh is accounted for, which is what keeps a key added
+// tomorrow from arriving unheld.
+var seedShellDefaultRegister = map[string]struct {
+	kind seedShellKind
+	why  string
+}{
+	"autostart_interval": {seedShellNoFallback,
+		"THE ARM SWITCH. Absent is a disarm and a value it cannot read is a " +
+			"broken arm — `posse dispatch --watch` has no default interval to " +
+			"fall back on — so the seed's 5m is a worked example and not a " +
+			"claim about anything the script applies (ranger-base-7rt5)"},
+	"autostart_max_interval": {seedShellNotTheFallback,
+		"the fallback is posse's own 8x the base interval, computed in " +
+			"cmd/posse/main.go when the flag is omitted and never written in " +
+			"shell at all; the seed's 40m is a worked example (ranger-base-x8y8)"},
+	"autostart_dry_run": {seedShellNotTheFallback,
+		"the seed documents the opt-IN (`true`); absent is off, and off is " +
+			"the absence of a flag rather than a default value"},
+	"autostart_resume": {seedShellNotTheFallback,
+		"the one key here that defaults ON, so the seed documents the " +
+			"opt-OUT (`false`) — the line is deliberately the non-default " +
+			"(ranger-base-f0g)"},
+	"autostart_dir": {seedShellNoDocumentedValue,
+		"`autostart_dir: ~` is YAML's unset, shown to document the shape; the " +
+			"fallback is $HOME, which is an absolute path no seed line may " +
+			"name (TestSeedConfigNamesNoMachine)"},
+}
+
+// autostartConfigKeys is every config key plugin/autostart.sh reads, taken
+// from its `cfg <key>` and `haskey <key>` call sites with comments stripped.
+//
+// An enumeration of KEYS and not of defaults, which is the whole difference
+// from grepping the `case` arms: a key is the one thing in that script
+// spelled unambiguously, and what each one FALLS BACK to is left to the
+// script to demonstrate by running.
+func autostartConfigKeys(t *testing.T) []string {
+	t.Helper()
+	b, err := os.ReadFile(autostartHookPath(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := regexp.MustCompile(`\b(?:cfg|haskey) ([a-z][a-z0-9_]*)`)
+	seen := map[string]bool{}
+	for _, ln := range strings.Split(string(b), "\n") {
+		if i := strings.Index(ln, "#"); i >= 0 {
+			ln = ln[:i]
+		}
+		for _, m := range call.FindAllStringSubmatch(ln, -1) {
+			seen[m[1]] = true
+		}
+	}
+	return slices.Sorted(maps.Keys(seen))
+}
+
+// The pin. For every key whose seed line documents the script's own
+// fallback, the documented text must arm exactly the loop an absent key
+// arms.
+func TestAutostartShellFallbacksAreTheSeedsDocumentedValues(t *testing.T) {
+	t.Parallel()
+	absent := runArgv(t, armed)
+	for _, key := range slices.Sorted(maps.Keys(seedShellDefaultCompared)) {
+		c := seedShellDefaultCompared[key]
+		t.Run(key, func(t *testing.T) {
+			def, ok := exampleConfigDefault(key)
+			if !ok {
+				t.Fatalf("the embedded seed documents no value for %s — the hook falls back for it in shell and nothing else says what to, so the seed line is the spec and it has gone missing", key)
+			}
+			if def == c.other {
+				t.Fatalf("the control value for %s is the documented default (%q), so it controls nothing — pick another", key, def)
+			}
+			// The control: the key has to reach the argv, or the comparison
+			// below is a comparison of two runs that never read it.
+			if got := runArgv(t, armed+key+": "+c.other+"\n"); got == absent {
+				t.Fatalf("%s: %s armed the same loop as leaving the key out, so this pin cannot see the fallback at all:\n%s", key, c.other, got)
+			}
+			if got := runArgv(t, armed+key+": "+def+"\n"); got != absent {
+				t.Errorf("the seed documents %s: %s and the hook falls back to something else\ndocumented: %s\nabsent key: %s\n\nexamples/config.yaml is what `posse init` copies into every fresh instance, so the line is that instance's spec. Change the script and the seed line together, or document the value the script applies.",
+					key, def, got, absent)
+			}
+		})
+	}
+}
+
+// The script's second copy of the number: the arm that names a value it
+// cannot read and replaces it. A malformed count must land on the documented
+// default too — reaching `-n` as Atoi's 0 would be unbounded, the one thing
+// the default exists to prevent (rangerhq-v83) — and the sentence it prints
+// must quote that same number, because the sentence is what the deployer
+// reads instead of the config they typed.
+func TestAutostartNamedAndReplacedArmQuotesTheSeedsDocumentedValue(t *testing.T) {
+	t.Parallel()
+	absent := runArgv(t, armed)
+	for _, key := range slices.Sorted(maps.Keys(seedShellDefaultCompared)) {
+		c := seedShellDefaultCompared[key]
+		if c.bad == "" {
+			continue
+		}
+		t.Run(key, func(t *testing.T) {
+			def, ok := exampleConfigDefault(key)
+			if !ok {
+				t.Fatalf("the embedded seed documents no value for %s", key)
+			}
+			r := runStandDown(t, armed+key+": "+c.bad+"\n")
+			if r.code != 0 {
+				t.Fatalf("exit %d — a value it cannot read is named and replaced, not refused:\n%s", r.code, r.out)
+			}
+			if r.calls != absent {
+				t.Errorf("%s: %s did not fall back to what an absent key falls back to\nreplaced: %s\nabsent:   %s", key, c.bad, r.calls, absent)
+			}
+			if !strings.Contains(r.out, "using "+def) {
+				t.Errorf("the hook replaced an unreadable %s without quoting the seed's documented %s — the deployer reads this line instead of the value they typed:\n%s", key, def, r.out)
+			}
+		})
+	}
+}
+
+// The total-table rule, both ways. Every key the hook reads is compared or
+// registered, every row names a key the hook still reads, and each register
+// row's own reason is checked rather than believed.
+func TestAutostartShellDefaultRegisterIsTotalAndNotStale(t *testing.T) {
+	t.Parallel()
+	read := autostartConfigKeys(t)
+	if len(read) < 5 {
+		t.Fatalf("only %d config keys found in plugin/autostart.sh — the census this pin derives from is reading almost nothing: %v", len(read), read)
+	}
+	for _, key := range read {
+		_, compared := seedShellDefaultCompared[key]
+		_, registered := seedShellDefaultRegister[key]
+		switch {
+		case compared && registered:
+			t.Errorf("%s is in both tables — a seed line is either a claim about the script's fallback or it is not", key)
+		case !compared && !registered:
+			t.Errorf("plugin/autostart.sh reads %s and neither table names it. If examples/config.yaml documents the fallback the script applies, add it to seedShellDefaultCompared with a control value; if the line documents something else, register it with the reason.", key)
+		}
+	}
+	for _, key := range slices.Sorted(maps.Keys(seedShellDefaultCompared)) {
+		if !slices.Contains(read, key) {
+			t.Errorf("seedShellDefaultCompared names %s and plugin/autostart.sh no longer reads it", key)
+		}
+	}
+	for _, key := range slices.Sorted(maps.Keys(seedShellDefaultRegister)) {
+		if !slices.Contains(read, key) {
+			t.Errorf("seedShellDefaultRegister names %s and plugin/autostart.sh no longer reads it", key)
+		}
+	}
+
+	absent := runArgv(t, armed)
+	for _, key := range slices.Sorted(maps.Keys(seedShellDefaultRegister)) {
+		r := seedShellDefaultRegister[key]
+		t.Run(key, func(t *testing.T) {
+			def, documented := exampleConfigDefault(key)
+			switch r.kind {
+			case seedShellNoDocumentedValue:
+				if documented {
+					t.Errorf("%s is registered as %q (%s) and the seed now documents %q — there is something to compare, so move it to seedShellDefaultCompared", key, r.kind, r.why, def)
+				}
+			case seedShellNotTheFallback:
+				if !documented {
+					t.Fatalf("%s is registered as %q (%s) and the seed documents no value at all — the row has gone stale in the other direction", key, r.kind, r.why)
+				}
+				if got := runArgv(t, armed+key+": "+def+"\n"); got == absent {
+					t.Errorf("%s is registered as %q (%s), but the seed's %s arms exactly what an absent key arms — the line HAS become a claim about the fallback, so move it to seedShellDefaultCompared:\n%s", key, r.kind, r.why, def, got)
+				}
+			case seedShellNoFallback:
+				// Nothing is defaulted, so the proof is that leaving the key
+				// out arms nothing at all rather than falling back.
+				if got := runStandDown(t, ""); got.calls != "" {
+					t.Errorf("%s is registered as %q (%s), but a config without it armed something:\n%s", key, r.kind, r.why, got.calls)
+				}
+			default:
+				t.Errorf("%s carries an unknown register kind %q", key, r.kind)
+			}
+		})
 	}
 }

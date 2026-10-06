@@ -6,8 +6,12 @@ references), not inferred publication dates. Undated fragments sort last.
 
 ## 2026-10
 
+- [ranger-base-y13h7](ranger-base-y13h7.md) — ranger-base-y13h7 — at what depth does a lagging launcher need a human? — 2026-10-05
+- [ranger-base-xed72](ranger-base-xed72.md) — A second copy of the pin count, in the page nobody's bead edits (ranger-base-xed72) — 2026-10-05
+- [ranger-base-x0wc5](ranger-base-x0wc5.md) — The same count, in the record that defines the word (ranger-base-x0wc5) — 2026-10-05
 - [ranger-base-rdi79](ranger-base-rdi79.md) — A cancelled JOB is the queue too (ranger-base-rdi79) — 2026-10-05
 - [ranger-base-r5ksj](ranger-base-r5ksj.md) — A cost cap that also decided the case it was sized for (ranger-base-r5ksj) — 2026-10-05
+- [ranger-base-m9mwc](ranger-base-m9mwc.md) — A default that lived in shell, and the two copies of it nothing compared (ranger-base-m9mwc) — 2026-10-05
 - [ranger-base-6uokf](ranger-base-6uokf.md) — ranger-base-6uokf — the ADR 0066 D3 report: the failure line and the D3 record name the known screen(s) — 2026-10-05
 - [ranger-base-2xez0](ranger-base-2xez0.md) — ranger-base-2xez0 — a merge-back whose stalest file was a number in prose — 2026-10-05
 - [ranger-base-17jhu](ranger-base-17jhu.md) — A red-gate bead filed from a 24-day-old reading (ranger-base-17jhu) — 2026-10-05
