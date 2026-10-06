@@ -75,17 +75,28 @@ package treepins
 //	                                              make seed-check
 //	                                              (ranger-base-nn33e)
 //
-// and two more, folded into seed-check's door for the same reason the row
-// above was: their subject is examples/config.yaml. The pin derives the
-// seed's documented duration defaults from the call sites that pair a config
-// key with its Default* constant, and the second holds the register that
-// silences it for a key documented at something other than its default:
+// and four more, folded into seed-check's door for the same reason the row
+// above was: their subject is examples/config.yaml. Two pairs, one census.
+// The first pin derives the seed's documented duration defaults from the
+// call sites that pair a config key with its Default* constant, and its
+// partner holds the register that silences it for a key documented at
+// something other than its default:
 //
 //	TestSeedConfigDocumentedDurationDefaultsAreTheConstants
 //	                                              make seed-check
 //	TestSeedConfigDocumentedDefaultRegisterIsNotStale
 //	                                              make seed-check
 //	                                              (both ranger-base-vofbl)
+//
+// and the same pair one value type over, from the widening that gave that
+// census a NUMBER half — bare-number lines against the int, float64 and
+// uint64 readers the duration rule could not see:
+//
+//	TestSeedConfigDocumentedNumberDefaultsAreTheConstants
+//	                                              make seed-check
+//	TestSeedConfigDocumentedNumberRegisterIsNotStale
+//	                                              make seed-check
+//	                                              (both ranger-base-p9qve)
 //
 // and one more, folded into doc-check's own door for the same reason — it
 // is a prose pin over two shipped documents, which is that door's subject:
@@ -181,9 +192,12 @@ package treepins
 // same as a pin only its own bead can red, and the door is what closes that
 // gap — not the rule.)
 //
-// and `make tree-check` is all of them — 46-51s on this box over three
-// warm runs at fifty-three pins and fourteen doors — which is the command a
-// seat types after a filtered run. (It was 14.9-16.5s over twenty-three pins
+// and `make tree-check` is all of them — 48.4-51.5s on this box over three
+// warm runs at fifty-five pins and fourteen doors (MEASURED 2026-10-05,
+// ranger-base-p9qve, load average 9.6 to 36.5 across the three with a
+// sibling seat holding a suite slot) — which is the command a
+// seat types after a filtered run. (It was 46-51s at fifty-three pins;
+// 14.9-16.5s over twenty-three pins
 // behind eight doors, before ranger-base-g6sb1 found a second package;
 // 15-43s at twenty-two, 12-27s under
 // ranger-base-8dnuy, and 40-46s at a smaller class before that. Re-measured

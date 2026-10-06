@@ -21,7 +21,12 @@ package posse
 //     commented line carrying a number is a claim about a constant, and a
 //     claim nothing reads goes stale for free — change the constant, keep
 //     the suite green, and a fresh instance's spec names the old number
-//     (ranger-base-vofbl). See the block at the foot of this file.
+//     (ranger-base-vofbl). Two halves, one derivation, at the foot of this
+//     file: the DOCUMENTED DEFAULTS over duration-valued lines, and the
+//     DOCUMENTED NUMBERS over bare-number ones (ranger-base-p9qve). They
+//     share seedReaderDecl and seedDocumentedLines and differ only in the
+//     two predicates those take, so neither can go narrower than the other
+//     while both look green.
 
 import (
 	"fmt"
@@ -448,9 +453,9 @@ var seedDocumentedDurationOutsideTheCensus = map[string]string{
 		"this pin could hold",
 }
 
-// seedDocumentedDuration is one commented `key: <duration>` line in
-// examples/config.yaml: the seed-side half of the census.
-type seedDocumentedDuration struct {
+// seedDocumentedLine is one commented `key: <value>` line in
+// examples/config.yaml: the seed-side half of a census.
+type seedDocumentedLine struct {
 	key   string
 	value string
 	line  int
@@ -483,16 +488,22 @@ func seedLooksLikeDuration(v string) bool {
 	return err == nil
 }
 
-// seedDocumentedDurations enumerates every commented `key: <duration>` line
-// in the seed, in file order.
+// seedDocumentedLines enumerates every commented `key: <value>` line in the
+// seed whose value `looksLike` accepts, in file order.
 //
 // The line rule is seedDocumentedValue's, said once more over an unknown key
 // rather than a known one: `#` at column 0, optional blank, then `key:`. The
-// two matchers agreeing is not assumed — the pin below fails when a key it
-// compared is not in this enumeration, which is what would catch them
-// drifting apart.
-func seedDocumentedDurations(cfgText string) []seedDocumentedDuration {
-	var out []seedDocumentedDuration
+// two matchers agreeing is not assumed — the pins below fail when a key one
+// of them compared is not in this enumeration, which is what would catch
+// them drifting apart.
+//
+// `looksLike` is the only thing the duration half and the number half
+// disagree about here, for the same reason seedReaderDecl takes `isValue`:
+// one line matcher, two discriminators, so the half added by
+// ranger-base-p9qve cannot read a different file than the half it was added
+// beside.
+func seedDocumentedLines(cfgText string, looksLike func(string) bool) []seedDocumentedLine {
+	var out []seedDocumentedLine
 	for i, ln := range strings.Split(cfgText, "\n") {
 		if !strings.HasPrefix(ln, "#") {
 			continue
@@ -513,12 +524,22 @@ func seedDocumentedDurations(cfgText string) []seedDocumentedDuration {
 			v = v[:j]
 		}
 		v = strings.TrimSpace(v)
-		if !seedLooksLikeDuration(v) {
+		if !looksLike(v) {
 			continue
 		}
-		out = append(out, seedDocumentedDuration{key: key, value: v, line: i + 1})
+		out = append(out, seedDocumentedLine{key: key, value: v, line: i + 1})
 	}
 	return out
+}
+
+// seedDocumentedDurations and seedDocumentedNumbers are the two
+// discriminators applied: a value with a UNIT, and a bare decimal number.
+func seedDocumentedDurations(cfgText string) []seedDocumentedLine {
+	return seedDocumentedLines(cfgText, seedLooksLikeDuration)
+}
+
+func seedDocumentedNumbers(cfgText string) []seedDocumentedLine {
+	return seedDocumentedLines(cfgText, seedLooksLikeNumber)
 }
 
 // seedReaderForm is which of the two shapes a pairing was derived from.
@@ -540,9 +561,9 @@ func (f seedReaderForm) String() string {
 	return "call site"
 }
 
-// seedDurationKey is one derived pairing: a config key, the Default-shaped
+// seedPairing is one derived pairing: a config key, the Default-shaped
 // constant it falls back to, and the reader whose grammar resolves it.
-type seedDurationKey struct {
+type seedPairing struct {
 	key      string
 	constant string
 	reader   string
@@ -550,7 +571,7 @@ type seedDurationKey struct {
 	site     string
 }
 
-// seedUnpairedKey is a duration key the tree reads but this pin cannot pair
+// seedUnpairedKey is a config key the tree reads but this pin cannot pair
 // with a constant — the default is a call, a computation, or absent. It is
 // reported rather than skipped, because a silent skip is the defect
 // ranger-base-khqvr was filed for.
@@ -560,10 +581,10 @@ type seedUnpairedKey struct {
 	why  string
 }
 
-// seedDurationCensus is everything the tree says about duration config keys.
-// The three name slices are what make the hand tables total.
-type seedDurationCensus struct {
-	keys      []seedDurationKey // derived pairings, sorted by key
+// seedCensus is everything the tree says about config keys of one value
+// type. The three name slices are what make the hand tables total.
+type seedCensus struct {
+	keys      []seedPairing     // derived pairings, sorted by key
 	resolvers []string          // call-site reader names found in the tree
 	readers   []string          // body-form reader names found in the tree
 	unpaired  []seedUnpairedKey // key sites with no constant to compare
@@ -575,6 +596,27 @@ func seedIsTimeDuration(e ast.Expr) bool { return seedIsQualified(e, "time", "Du
 
 // seedIsIOWriter reports whether an AST type expression is io.Writer.
 func seedIsIOWriter(e ast.Expr) bool { return seedIsQualified(e, "io", "Writer") }
+
+// seedNumericTypes are the result types that make a config reader a NUMBER
+// reader, and the list is the tree's own: `int` (verifyBatch, BackupKeep),
+// `float64` (LoadGuard, GrokGuardWeek) and `uint64` (BackupMinFree) are live
+// today, and the rest of Go's numeric basics are here so a reader added in
+// one of them is derived rather than invisible. `bool` and `string` are not
+// numbers and a documented one is not a number claim.
+var seedNumericTypes = map[string]bool{
+	"int": true, "int8": true, "int16": true, "int32": true, "int64": true,
+	"uint": true, "uint8": true, "uint16": true, "uint32": true, "uint64": true,
+	"float32": true, "float64": true,
+}
+
+// seedIsNumeric reports whether an AST type expression is one of Go's
+// numeric basic types, by NAME. A name is all the syntax says — this census
+// does not type-check — and a local alias shadowing `int` would fool it,
+// which is a shape this tree does not have and would be visible in review.
+func seedIsNumeric(e ast.Expr) bool {
+	id, ok := e.(*ast.Ident)
+	return ok && seedNumericTypes[id.Name]
+}
 
 func seedIsQualified(e ast.Expr, pkg, name string) bool {
 	s, ok := e.(*ast.SelectorExpr)
@@ -675,18 +717,28 @@ func seedUniqSorted(in []string) []string {
 	return out
 }
 
-// seedDurationReaderDecl reads one function declaration and says which of
-// the two reader shapes it is, if either.
+// seedReaderDecl reads one function declaration and says which of the two
+// reader shapes it is, if either.
 //
-// Split out from the walk so TestSeedDurationDerivationCanStillSayNo can
-// drive it over planted source: a derivation whose near-misses are never
-// exercised is a derivation nobody has seen refuse anything.
-func seedDurationReaderDecl(fd *ast.FuncDecl) (callSiteResolver bool, body []seedDurationKey, unpaired []seedUnpairedKey) {
+// `isValue` is the ONE thing the duration half and the number half disagree
+// about: which result type makes a method a config reader at all
+// (seedIsTimeDuration, seedIsNumeric). Everything else — the two shapes, the
+// key-literal rule, the Default-shaped-constant rule, the four near-misses
+// and the reporting of an unpairable key — is said once here and shared, so
+// the number half is a WIDENING of this derivation and not a second,
+// narrower copy of it (ranger-base-p9qve; the shape seedconfig_test.go's own
+// header argues against).
+//
+// Split out from the walk so TestSeedDurationDerivationCanStillSayNo and
+// TestSeedNumberDerivationCanStillSayNo can drive it over planted source: a
+// derivation whose near-misses are never exercised is a derivation nobody
+// has seen refuse anything.
+func seedReaderDecl(fd *ast.FuncDecl, isValue func(ast.Expr) bool) (callSiteResolver bool, body []seedPairing, unpaired []seedUnpairedKey) {
 	if fd.Body == nil || !seedRecvIsApp(fd) {
 		return false, nil, nil
 	}
 	res := seedFieldTypes(fd.Type.Results)
-	if len(res) != 1 || !seedIsTimeDuration(res[0]) {
+	if len(res) != 1 || !isValue(res[0]) {
 		return false, nil, nil
 	}
 	params := seedFieldTypes(fd.Type.Params)
@@ -722,9 +774,9 @@ func seedDurationReaderDecl(fd *ast.FuncDecl) (callSiteResolver bool, body []see
 	})
 	litKeys, paramKeys, retDefaults = seedUniqSorted(litKeys), seedUniqSorted(paramKeys), seedUniqSorted(retDefaults)
 
-	// The call-site form: (key string, def time.Duration, errw io.Writer),
-	// reading the key it was HANDED. Its own keys live at its call sites.
-	if len(params) == 3 && seedIsIdent(params[0], "string") && seedIsTimeDuration(params[1]) && seedIsIOWriter(params[2]) {
+	// The call-site form: (key string, def <value>, errw io.Writer), reading
+	// the key it was HANDED. Its own keys live at its call sites.
+	if len(params) == 3 && seedIsIdent(params[0], "string") && isValue(params[1]) && seedIsIOWriter(params[2]) {
 		for _, pk := range paramKeys {
 			if pk == seedFirstParamName(fd.Type.Params) {
 				return true, nil, nil
@@ -760,7 +812,7 @@ func seedDurationReaderDecl(fd *ast.FuncDecl) (callSiteResolver bool, body []see
 			"%s reads %s but returns %d Default-shaped constants (%s), so the pairing is not stated in one place",
 			fd.Name.Name, litKeys[0], len(retDefaults), named)}}
 	}
-	return false, []seedDurationKey{{
+	return false, []seedPairing{{
 		key:      litKeys[0],
 		constant: retDefaults[0],
 		reader:   fd.Name.Name,
@@ -768,18 +820,20 @@ func seedDurationReaderDecl(fd *ast.FuncDecl) (callSiteResolver bool, body []see
 	}}, nil
 }
 
-// seedDurationKeyCensus parses both pairing shapes out of the tree.
+// seedCensusOf parses both pairing shapes out of the tree, for whichever
+// value type `isValue` names.
 //
 // Two passes over one parse, because the call-site pass needs the resolver
 // set the declaration pass derives: matching call sites against the DERIVED
-// set rather than against seedDurationResolvers is what makes that map total
+// set rather than against the half's hand-written resolver table
+// (seedDurationResolvers, seedNumberResolvers) is what makes that table total
 // instead of a filter with a hole in it.
-func seedDurationKeyCensus(t *testing.T, root string) seedDurationCensus {
+func seedCensusOf(t *testing.T, root string, isValue func(ast.Expr) bool) seedCensus {
 	t.Helper()
 	fset := token.NewFileSet()
 	var files []*ast.File
 	var rels []string
-	census := seedDurationCensus{}
+	census := seedCensus{}
 
 	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -822,7 +876,7 @@ func seedDurationKeyCensus(t *testing.T, root string) seedDurationCensus {
 				continue
 			}
 			at := fmt.Sprintf("%s:%d", rels[i], fset.Position(fd.Pos()).Line)
-			isResolver, body, unpaired := seedDurationReaderDecl(fd)
+			isResolver, body, unpaired := seedReaderDecl(fd, isValue)
 			if isResolver {
 				resolvers[fd.Name.Name] = true
 			}
@@ -869,7 +923,7 @@ func seedDurationKeyCensus(t *testing.T, root string) seedDurationCensus {
 					"the default argument at the %s call site is not a Default-shaped constant", fn)})
 				return true
 			}
-			census.keys = append(census.keys, seedDurationKey{
+			census.keys = append(census.keys, seedPairing{
 				key:      key,
 				constant: id.Name,
 				reader:   fn,
@@ -895,9 +949,24 @@ func seedDurationKeyCensus(t *testing.T, root string) seedDurationCensus {
 	return census
 }
 
-// seedDurationKeySites is the census's pairings alone, for the register
-// staleness pin, which asks only "is this key still a duration key".
-func seedDurationKeySites(t *testing.T, root string) (keys []seedDurationKey, scanned int) {
+// seedDurationKeyCensus is seedCensusOf over time.Duration readers: the
+// duration half's entry point, unchanged in behaviour by the widening.
+func seedDurationKeyCensus(t *testing.T, root string) seedCensus {
+	t.Helper()
+	return seedCensusOf(t, root, seedIsTimeDuration)
+}
+
+// seedNumberKeyCensus is seedCensusOf over NUMERIC readers: the number
+// half's entry point (ranger-base-p9qve).
+func seedNumberKeyCensus(t *testing.T, root string) seedCensus {
+	t.Helper()
+	return seedCensusOf(t, root, seedIsNumeric)
+}
+
+// seedDurationKeySites is the duration census's pairings alone, for the
+// register staleness pin, which asks only "is this key still a duration
+// key".
+func seedDurationKeySites(t *testing.T, root string) (keys []seedPairing, scanned int) {
 	t.Helper()
 	c := seedDurationKeyCensus(t, root)
 	return c.keys, c.scanned
@@ -907,7 +976,7 @@ func seedDurationKeySites(t *testing.T, root string) (keys []seedDurationKey, sc
 // answers what a fresh instance would get for a config file, computed by the
 // instance's own reader. One closure for both forms, so the drift check has
 // a single code path and the grammar is never a test's.
-func seedResolveFor(t *testing.T, k seedDurationKey, def time.Duration) func(cfgPath string, errw io.Writer) time.Duration {
+func seedResolveFor(t *testing.T, k seedPairing, def time.Duration) func(cfgPath string, errw io.Writer) time.Duration {
 	t.Helper()
 	if k.form == seedFormBody {
 		fn, ok := seedDurationBodyReaders[k.reader]
@@ -1105,7 +1174,7 @@ func TestSeedConfigDocumentedDurationDefaultsAreTheConstants(t *testing.T) {
 	// (retire_tree_after is read from two); two naming DIFFERENT constants
 	// is a key whose default depends on who asks, and no documented line
 	// could be right about both.
-	byKey := map[string]seedDurationKey{}
+	byKey := map[string]seedPairing{}
 	for _, k := range keys {
 		if prev, dup := byKey[k.key]; dup && prev.constant != k.constant {
 			t.Errorf("%s falls back to %s at %s and to %s at %s — one key with two defaults, so no documented value can be right about it",
@@ -1305,7 +1374,7 @@ func TestSeedConfigDocumentedDefaultRegisterIsNotStale(t *testing.T) {
 	}
 	root := qibRepoRoot(t)
 	keys, _ := seedDurationKeySites(t, root)
-	byKey := map[string]seedDurationKey{}
+	byKey := map[string]seedPairing{}
 	for _, k := range keys {
 		byKey[k.key] = k
 	}
@@ -1371,7 +1440,7 @@ func TestSeedDocumentedDefaultDriftCheckCanStillSayNo(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			k := seedDurationKey{key: "attn_parked_age", constant: "DefaultAttnParkedAge", reader: "attnAge", form: seedFormCallSite}
+			k := seedPairing{key: "attn_parked_age", constant: "DefaultAttnParkedAge", reader: "attnAge", form: seedFormCallSite}
 			_, drift := seedDefaultDrift(t, seedResolveFor(t, k, def), k.key, tc.text, def)
 			if got := drift != ""; got != tc.drift {
 				t.Errorf("seedDefaultDrift(%q) drift=%v (%q), want drift=%v", tc.text, got, drift, tc.drift)
@@ -1436,7 +1505,7 @@ func TestSeedDocumentedDefaultDriftCheckCanStillSayNo(t *testing.T) {
 	// before it. seedResolveFor hands the reader a config and nothing else,
 	// so the grammar here is PlanUsageTTL's own: bare seconds are the same
 	// five minutes, and a text it refuses leaves the default standing.
-	body := seedDurationKey{key: "plan_usage_ttl", constant: "PlanUsageTTLDefault", reader: "PlanUsageTTL", form: seedFormBody}
+	body := seedPairing{key: "plan_usage_ttl", constant: "PlanUsageTTLDefault", reader: "PlanUsageTTL", form: seedFormBody}
 	for _, tc := range []struct {
 		name  string
 		text  string
@@ -1660,5 +1729,1015 @@ func (a *App) PlantedInATestFile(errw io.Writer) time.Duration {
 				t.Errorf("%s was reported unpairable; it is not a duration reader on App at all, so the rule has widened past its subject", key)
 			}
 		}
+	}
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// The DOCUMENTED NUMBERS (ranger-base-p9qve).
+//
+// Property 4's other half, and the half the duration census could not see BY
+// CONSTRUCTION rather than by omission: its derivation keys on readers whose
+// result is a time.Duration, so a key read as an int, a float64 or a uint64
+// was outside it however many bare numbers the seed documented.
+//
+// Ten commented bare-number lines ship in examples/config.yaml today
+// (MEASURED 2026-10-05: autostart_max_beads, budget_day, budget_pass,
+// grok_guard_week, grok_pool_usd_per_point, load_guard, plan_guard_5h,
+// plan_guard_7d, uncounted_cap_codex, verify_batch) and nothing compared any
+// of them to anything. The cost is the one ranger-base-ghcx3 named for the
+// duration half: a fresh instance reads a documented number as a statement
+// about the harness, nothing holds it, and the number can be wrong by any
+// factor in silence.
+//
+// ONE MECHANISM, TWO PREDICATES. This is a WIDENING of the census above and
+// not a second one beside it, which is the distinction the bead was filed on:
+// a one-off pin for a seventh key would be a second implementation going
+// narrower than the derived one while both looked green. Everything
+// structural is shared and said once —
+//
+//   - seedReaderDecl derives both reader shapes, takes `isValue`, and gets
+//     seedIsTimeDuration from one half and seedIsNumeric from the other.
+//   - seedDocumentedLines enumerates the seed's own commented `key: value`
+//     lines, takes `looksLike`, and gets seedLooksLikeDuration from one half
+//     and seedLooksLikeNumber from the other.
+//   - seedDocumentedValue, seedDefaultShaped, seedConfigKeyArg and the
+//     four near-miss rules are not restated at all.
+//
+// — so what this half adds is three hand tables, three registers, and the
+// comparison in the right type. A reader shape that stops matching stops
+// matching for both halves at once, which is the property a parallel copy
+// would not have.
+//
+// WHAT IS COMPARED, AND IN WHAT TYPE. The carrier is float64, because the
+// tree's number readers answer in three different types — `int`
+// (verifyBatch, BackupKeep), `float64` (LoadGuard) and `uint64`
+// (BackupMinFree) — and one comparison type is what keeps the drift check a
+// single code path. float64 holds every integer below 2^53 exactly, so every
+// count, percent, dollar figure and megabyte ceiling this config can carry
+// resolves exactly and the comparison is `==` rather than a tolerance nobody
+// measured. A default above 2^53 would be outside this pin; the tree has
+// none and a new one would be visible in review.
+//
+// It is still a read through the PRODUCTION reader and never a text compare,
+// for the duration half's reason one type over: `25` and `25.0` and ` 25 `
+// are the same load average and `twenty-five` is not a load average at all,
+// and a value the reader refuses makes it name the value on errw and return
+// the default — which would otherwise let a line that proves nothing pass by
+// landing on the very number it was supposed to prove.
+//
+// WHAT THE SEED'S TEN LINES TURN OUT TO BE, and it is lopsided. Three of the
+// tree's number keys pair a key literal with one Default-shaped constant —
+// backup_keep, load_guard, verify_batch — and the seed documents only two of
+// those three. So of the ten documented lines: TWO are compared (load_guard
+// agrees with LoadGuardDefault; verify_batch is documented at four times
+// DefaultVerifyBatch on purpose and is registered for it), ONE the derivation
+// reaches and cannot pair (grok_guard_week), and SEVEN it reaches no reader
+// for at all. backup_keep and backup_min_free_mb run the other way: tree keys
+// the seed says nothing about, so they make no claim that can go stale.
+//
+// The reason the seven are seven is the house vocabulary for a number key,
+// which is overwhelmingly "unset means OFF": budget_pass:/budget_day: unset
+// is no cap, plan_guard_<window>: unset is no guard, uncounted_cap_<runtime>:
+// unset is unlimited, and grok_guard_week: unset is the pool meter off. A
+// line beside such a key is a SUGGESTED SETTING and not a claim about a
+// default, and the seed says so in its own prose ("suggested:", "shapes, not
+// recommendations", "ARBITRARY SHAPES chosen to be obviously not anyone's").
+// That is why this half's third register is larger than the duration half's
+// and why it is not a hole: each row names the reason there is no constant
+// for its line to drift from, and each row's staleness half fails when it
+// stops describing anything.
+//
+// THE ONE DIFFERENCE FROM THE DURATION HALF, stated rather than quietly
+// taken: seedDurationDefaultNotAConstant carries a STRONGER half — a key in
+// it must also stay UNDOCUMENTED, because its one member's default is a rule
+// with no number at all, so a documented line for it would be a claim about
+// nothing. seedNumberDefaultNotAConstant carries no such half. Its two
+// members both have something a reader can state — BackupMinFree's default
+// is DefaultBackupMinFreeMB scaled to bytes, GrokGuardWeek's is an explicit
+// "off" — so a documented line beside either is a suggestion rather than a
+// false claim, and refusing it would mean deleting a live seed line the
+// operator uses to see what shape the setting takes. What keeps the drop on
+// the record instead is the row's reason plus the seed-side accounting
+// below, which logs the line by name and by file position every run.
+
+// seedNumberResolvers are the number readers that take the key and the
+// default as ARGUMENTS, the duration half's seedDurationResolvers one type
+// over. Made total by seedNumberKeyCensus, which derives the same set from
+// the tree's function signatures and fails on one this map does not name.
+//
+// EMPTY TODAY, and that is a measurement and not a stub: no method on App
+// has the shape `(key string, def <numeric>, errw io.Writer) <numeric>`
+// (MEASURED 2026-10-05 by the census below — `derived 0 call-site
+// reader(s)`). budgetDollars and planPercent are the near misses, and they
+// miss for the same reason: both are `(key string, errw io.Writer) float64`
+// with no default parameter at all, because unset is no cap and no guard
+// rather than a number. The map stays because the ARM stays — the
+// derivation's call-site pass runs over numeric readers exactly as it does
+// over duration ones, so the first numeric call-site reader anyone adds is a
+// named failure here instead of a key that quietly resolves nothing.
+var seedNumberResolvers = map[string]func(*App, string, float64, io.Writer) float64{}
+
+// seedNumberBodyReaders are the number readers that spell their key and
+// their default in their OWN body — one `YamlGet`/`CfgGet` key literal, one
+// `Default`-shaped constant returned.
+//
+// The closure is where the three result types become one, and the
+// conversion is hand written, which is a place a mistake could hide: wiring
+// a key to the wrong reader, or widening a uint64 wrongly, would feed every
+// comparison the wrong number. It cannot sit there green — the pin below
+// hands each body-form reader a config with its own key ABSENT and requires
+// the answer to be seedNumberDefaults' value for the constant the
+// derivation paired it with, so a mis-wired closure reds by name.
+var seedNumberBodyReaders = map[string]func(*App, io.Writer) float64{
+	"BackupKeep":  func(a *App, w io.Writer) float64 { return float64(a.BackupKeep(w)) },
+	"LoadGuard":   func(a *App, w io.Writer) float64 { return a.LoadGuard(w) },
+	"verifyBatch": func(a *App, w io.Writer) float64 { return float64(a.verifyBatch(w)) },
+}
+
+// seedNumberDefaults is the Default-shaped constant NAME -> its value, the
+// duration half's seedDurationDefaults one type over. Hand written, because
+// a test cannot evaluate a constant it only parsed — and made total by the
+// derivation, which fails on a constant it finds at a reader and cannot find
+// here, and on an entry here no reader names any more.
+var seedNumberDefaults = map[string]float64{
+	"DefaultBackupKeep":  DefaultBackupKeep,
+	"DefaultVerifyBatch": DefaultVerifyBatch,
+	"LoadGuardDefault":   LoadGuardDefault,
+}
+
+// seedDocumentedNumberOnPurposeNotTheDefault records a number key that
+// examples/config.yaml documents at a value that is deliberately NOT the
+// code default — a suggested setting rather than a statement about the
+// harness. Key -> why, and the why is the whole point of the entry.
+//
+// Unlike its duration twin, this one has a live member, so its arm is a
+// check that runs rather than one a future entry would be the first to meet.
+var seedDocumentedNumberOnPurposeNotTheDefault = map[string]string{
+	"verify_batch": "DefaultVerifyBatch is 1 — one verify bead per close — and the seed documents 4 as a " +
+		"shape to copy for a queue whose branching factor is above 1.0, with its own paragraph saying so " +
+		"(verifyafter.go's header makes the same argument). The 4 is a suggestion, so this pin must not " +
+		"read it as a claim about the default; what it holds instead is that the two still differ",
+}
+
+// seedNumberDefaultNotAConstant records a number key the derivation REACHES
+// and cannot pair with one constant, so there is no single value a
+// documented line could be compared against. Key -> why.
+//
+// Without it such a key drops out of the census in silence, which is the
+// shape ranger-base-2vynj finding 1 was filed for. It carries no "must stay
+// undocumented" half — see the section header for why that half is the
+// duration twin's and not this one's.
+var seedNumberDefaultNotAConstant = map[string]string{
+	"backup_min_free_mb": "BackupMinFree answers BYTES where the key is in MB — it returns " +
+		"`DefaultBackupMinFreeMB << 20`, not the constant — so the unset answer is 402653184 against a " +
+		"constant of 384. The default exists and the two are a unit apart, and this census compares the " +
+		"reader's own answer, so there is no one number for a documented line to agree with. Undocumented " +
+		"in the seed today, so nothing is admitted by this row",
+	"grok_guard_week": "unset IS the guard off and GrokGuardWeek returns a bare 0 rather than a constant " +
+		"(the plan_guard_<window>: rule, for the reason that file's header gives), so there is no default " +
+		"for the documented 85 to drift from — and the seed's own paragraph calls the three grok numbers " +
+		"ARBITRARY SHAPES chosen to be obviously not anyone's",
+}
+
+// seedDocumentedNumberOutsideTheCensus records a bare-number line in
+// examples/config.yaml whose key the derivation reaches NO reader of either
+// shape for, so there is no constant a documented value could drift from.
+// Key -> why.
+//
+// It is the third of the three ways a documented number line can be
+// accounted for, and the only one that admits a line nothing holds. As a
+// BARE LIST it would be the hole the next key falls into, so the staleness
+// half in the pin below is what keeps each row describing something: a key
+// here that the seed no longer documents with a number, that the census has
+// since learned to compare, or that the derivation now REACHES (which makes
+// it the other register's row, not this one's), fails.
+var seedDocumentedNumberOutsideTheCensus = map[string]string{
+	"autostart_max_beads": "its default is a SHELL literal: plugin/autostart.sh reads the key and falls " +
+		"back to 3 in a `case`, so no Go reader of either derived shape reads it and there is no Go " +
+		"constant for an AST census over Go sources to compare. The seed's 3 and the script's 3 are two " +
+		"copies with no edge between them — a real uncovered drift, filed as ranger-base-m9mwc rather than " +
+		"papered over here, because closing it needs a shell-side census and not a row in this map",
+	"budget_day": "budgetDollars is `(key string, errw io.Writer) float64` — the call-site shape with no " +
+		"DEFAULT argument, because unset is no cap at all — so neither derived shape reaches it, and the " +
+		"seed's own line reads `suggested:`",
+	"budget_pass": "budgetDollars, as budget_day: above — no default argument because unset is no cap, and " +
+		"the seed's own line reads `suggested:`",
+	"grok_pool_usd_per_point": "posse ships NO value for it on purpose: the factor is empirical, derived " +
+		"from the operator's own calibration bracket, and it drifts the day xAI reprices " +
+		"(GrokPoolUSDPerPoint's header), so it is config rather than a constant and there is nothing in " +
+		"the tree for the documented 0.50 to drift from. Its reader also returns `(float64, bool)`, which " +
+		"is not a reader shape at all",
+	"plan_guard_5h": "read by PlanGuardThresholds' prefix scan over `plan_guard_<window>:`, where the " +
+		"window names belong to whichever provider adapter is installed and no key literal exists for the " +
+		"derivation to find. No key set is the guard off, so there is no default percent, and the seed " +
+		"calls these numbers shapes rather than recommendations",
+	"plan_guard_7d": "PlanGuardThresholds' prefix scan, as plan_guard_5h: above — a window name, no key " +
+		"literal, and unset is the guard off",
+	"uncounted_cap_codex": "the key is per-runtime and composed at the read (`\"uncounted_cap_\"+runtime`), " +
+		"so there is no key literal for the derivation to find; unset is unlimited rather than a constant " +
+		"(ADR 0013 §5), and the documented 20 is a suggested cap for one runtime this instance happens to " +
+		"name",
+}
+
+// seedLooksLikeNumber is the number half's discriminator: a bare decimal
+// number, with at most the two decorations the tree's own readers strip.
+//
+// The decorations are derived from the tree and not invented: `$` is
+// stripped by budgetDollars and GrokPoolUSDPerPoint, `%` by planPercent and
+// GrokGuardWeek, and nothing else is stripped by any numeric reader
+// (MEASURED 2026-10-05, every TrimPrefix/TrimSuffix over a raw config value
+// in internal/posse). Accepting them is what keeps a documented `$30` or
+// `85%` inside the enumeration instead of in a silent hole — the shape this
+// bead is about.
+//
+// It is disjoint from seedLooksLikeDuration by construction: that one
+// requires a trailing unit letter and refuses a value ending in a digit or a
+// dot, and this one requires the whole value to parse as a float once the
+// two decorations are off, which `336h` and `5m` do not. The pin below
+// asserts the disjointness over the real seed rather than trusting the
+// argument.
+func seedLooksLikeNumber(v string) bool {
+	if v == "" {
+		return false
+	}
+	v = strings.TrimSuffix(strings.TrimPrefix(v, "$"), "%")
+	if v == "" {
+		return false
+	}
+	_, err := strconv.ParseFloat(v, 64)
+	return err == nil
+}
+
+// seedResolveNumberFor is the production read of one number pairing: a
+// closure that answers what a fresh instance would get for a config file,
+// computed by the instance's own reader. One closure for both forms, so the
+// drift check has a single code path and the grammar is never a test's.
+func seedResolveNumberFor(t *testing.T, k seedPairing, def float64) func(cfgPath string, errw io.Writer) float64 {
+	t.Helper()
+	if k.form == seedFormBody {
+		fn, ok := seedNumberBodyReaders[k.reader]
+		if !ok {
+			t.Fatalf("no body-form reader %q in seedNumberBodyReaders", k.reader)
+		}
+		return func(p string, w io.Writer) float64 { return fn(&App{ConfigPath: p}, w) }
+	}
+	fn, ok := seedNumberResolvers[k.reader]
+	if !ok {
+		t.Fatalf("no resolver %q in seedNumberResolvers", k.reader)
+	}
+	return func(p string, w io.Writer) float64 { return fn(&App{ConfigPath: p}, k.key, def, w) }
+}
+
+// seedNumberDrift resolves the text a documented line carries through the
+// production reader and says what is wrong with it, or "" when the file and
+// the constant agree. seedDefaultDrift's argument, one type over — see that
+// function's comment for why the resolution is a real read of a real config
+// file and why the reader's stderr is checked too.
+func seedNumberDrift(t *testing.T, resolve func(cfgPath string, errw io.Writer) float64, key, text string, def float64) (float64, string) {
+	t.Helper()
+	if text == "" {
+		return 0, "the line carries no value, so it documents nothing"
+	}
+	cfg := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(cfg, []byte(key+": "+text+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var errw strings.Builder
+	got := resolve(cfg, &errw)
+	if s := strings.TrimSpace(errw.String()); s != "" {
+		return got, fmt.Sprintf("%s is not a value this reader accepts, so the default stands and the line proves nothing: %s", text, s)
+	}
+	if got != def {
+		return got, fmt.Sprintf("documents %s (= %v), the constant is %v", text, got, def)
+	}
+	return got, ""
+}
+
+// Property 4, the number half: every number key examples/config.yaml
+// documents is documented at its own default, compared as a number through
+// the harness's own reader (ranger-base-p9qve).
+func TestSeedConfigDocumentedNumberDefaultsAreTheConstants(t *testing.T) {
+	t.Parallel()
+	// qibRepoRoot, not a hand-rolled climb: the tree-wide door census in
+	// internal/treepins derives this pin's class from that one helper
+	// (ranger-base-sx2dq), and a pin outside the class gets no door.
+	root := qibRepoRoot(t)
+
+	c := seedNumberKeyCensus(t, root)
+	keys, scanned := c.keys, c.scanned
+	// Positive witnesses: a pin over a derived set is satisfied by deriving
+	// nothing, so say what was measured and fail a walk that measured too
+	// little to mean anything.
+	if scanned < 20 {
+		t.Fatalf("parsed %d non-test .go files under %s — the walk found no tree, so the census below measures nothing", scanned, root)
+	}
+	t.Logf("parsed %d non-test .go files, derived %d number key/constant pairings through %d call-site reader(s) (%s) and %d body-form reader(s) (%s)",
+		scanned, len(keys), len(c.resolvers), strings.Join(c.resolvers, ", "), len(c.readers), strings.Join(c.readers, ", "))
+
+	// THE THREE TABLES ARE TOTAL, the duration half's rule said over the
+	// number half's tables: a reader the tree has and a table does not is a
+	// failure that names the reader, because the alternative is every key
+	// that reader owns reading as undocumented and nothing held about them
+	// (ranger-base-khqvr).
+	for _, got := range []struct {
+		kind  string
+		found []string
+		named []string
+		table string
+	}{
+		{"call-site", c.resolvers, seedSortedKeys(seedNumberResolvers), "seedNumberResolvers"},
+		{"body-form", c.readers, seedSortedKeys(seedNumberBodyReaders), "seedNumberBodyReaders"},
+	} {
+		named := map[string]bool{}
+		for _, n := range got.named {
+			named[n] = true
+		}
+		found := map[string]bool{}
+		for _, n := range got.found {
+			found[n] = true
+			if !named[n] {
+				t.Errorf("the tree has a %s number reader %s does not name: %s — add an entry for it, converting its result to float64, or this pin reads every key that reader owns as undocumented and holds nothing about them (ranger-base-khqvr)",
+					got.kind, got.table, n)
+			}
+		}
+		for _, n := range got.named {
+			if !found[n] {
+				t.Errorf("%s names %s, which is no longer a %s number reader in the tree — the entry resolves nothing; drop it", got.table, n, got.kind)
+			}
+		}
+	}
+
+	// The constant table, from the other side: an entry no reader names any
+	// more is a value this pin can no longer be wrong about.
+	namedConstants := map[string]bool{}
+	for _, k := range keys {
+		namedConstants[k.constant] = true
+	}
+	for _, name := range seedSortedKeys(seedNumberDefaults) {
+		if !namedConstants[name] {
+			t.Errorf("seedNumberDefaults names %s, which no number reader falls back to any more — the row holds nothing; drop it", name)
+		}
+	}
+
+	// A key whose default is not a constant cannot be compared with
+	// anything, so it is registered with a reason or it is a failure — never
+	// a silent drop.
+	unpairedKeys := map[string]bool{}
+	for _, u := range c.unpaired {
+		unpairedKeys[u.key] = true
+		why, registered := seedNumberDefaultNotAConstant[u.key]
+		if !registered {
+			t.Errorf("%s (%s) is a number key this pin cannot pair with a constant: %s — give it a constant default, or add it to seedNumberDefaultNotAConstant with the reason, so the drop is on the record instead of silent",
+				u.key, u.site, u.why)
+			continue
+		}
+		if strings.TrimSpace(why) == "" {
+			t.Errorf("seedNumberDefaultNotAConstant[%q] carries no reason — the entry drops a key out of this census, so the why IS the entry", u.key)
+		}
+		t.Logf("%s: %s — registered as having no constant default (%s)", u.key, u.why, u.site)
+	}
+	for _, key := range seedSortedKeys(seedNumberDefaultNotAConstant) {
+		if !unpairedKeys[key] {
+			t.Errorf("seedNumberDefaultNotAConstant names %q, which no number reader reads with a non-constant default any more — either it has a constant now (drop the entry, the census will pair it) or the key is gone", key)
+		}
+	}
+
+	// The floor, below the totality checks on purpose: when a whole reader
+	// rule stops matching, the blocks above name each table entry that no
+	// longer resolves and this says how much of the census went with it. A
+	// Fatalf, because every comparison below a census this thin is vacuous.
+	//
+	// Three is the measured population (MEASURED 2026-10-05): backup_keep
+	// through BackupKeep, load_guard through LoadGuard, verify_batch through
+	// verifyBatch. It is deliberately not ten — the duration half's figure —
+	// because the house vocabulary for a number key is "unset means off" and
+	// most of this file's numbers have no constant at all; the section header
+	// has the reason and the third register has the rows.
+	if len(keys) < 3 {
+		t.Fatalf("derived %d number key/constant pairings from %d files, want at least 3 — the two reader rules in seedReaderDecl have stopped matching the tree's number readers, so this pin holds almost nothing", len(keys), scanned)
+	}
+
+	// One key, one default.
+	byKey := map[string]seedPairing{}
+	for _, k := range keys {
+		if prev, dup := byKey[k.key]; dup && prev.constant != k.constant {
+			t.Errorf("%s falls back to %s at %s and to %s at %s — one key with two defaults, so no documented value can be right about it",
+				k.key, prev.constant, prev.site, k.constant, k.site)
+			continue
+		}
+		byKey[k.key] = k
+	}
+
+	// The constant table's VALUES, and the hand-written float64 conversion in
+	// seedNumberBodyReaders, cross-checked where the tree lets them be. A
+	// body-form reader handed a config with its own key absent returns its
+	// own default, so a pairing the parse got wrong — or a closure wired to
+	// the wrong reader, or a widening that lost or scaled the value — cannot
+	// sit here green. backup_min_free_mb is the case that proves it bites:
+	// its reader answers bytes, and that is why it is registered as
+	// unpairable rather than compared.
+	absent := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(absent, []byte("# every key commented out\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range keys {
+		if k.form != seedFormBody {
+			continue
+		}
+		def, known := seedNumberDefaults[k.constant]
+		if !known {
+			continue // already reported below
+		}
+		var errw strings.Builder
+		if got := seedResolveNumberFor(t, k, def)(absent, &errw); got != def {
+			t.Errorf("%s over a config with %s absent returns %v, but seedNumberDefaults says %s is %v (%s) — either the derivation paired the key with the wrong constant or the seedNumberBodyReaders closure is wired wrong, so every comparison it feeds is against the wrong number",
+				k.reader, k.key, got, k.constant, def, k.site)
+		}
+	}
+
+	cfg := seedConfigPath(t)
+	b, err := os.ReadFile(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(b)
+
+	compared := 0
+	comparedKeys := map[string]bool{}
+	for _, key := range seedSortedKeys(byKey) {
+		k := byKey[key]
+		def, known := seedNumberDefaults[k.constant]
+		if !known {
+			t.Errorf("%s (%s) falls back to %s, which seedNumberDefaults does not name — add `%q: %s,` to it so this pin can compare the seed's documented value against it",
+				k.key, k.site, k.constant, k.constant, k.constant)
+			continue
+		}
+
+		// The key must still be COMMENTED in the seed, for the duration
+		// half's reason: seedDocumentedValue reads comment lines, so an
+		// armed key would make THIS pin vacuous for it — it would find
+		// nothing and skip in silence.
+		if yamlHasKey(cfg, k.key) {
+			t.Errorf("seed config declares %s: live — a number key must ship commented out (%s reads the live file, so arming it changes every instance), and an armed key is invisible to this pin", k.key, k.reader)
+			continue
+		}
+
+		value, lines := seedDocumentedValue(text, k.key)
+		switch {
+		case lines == 0:
+			// Undocumented is allowed: a key the seed says nothing about
+			// makes no claim that can go stale. Logged, not failed.
+			t.Logf("%s: undocumented in examples/config.yaml (default %v) — nothing to hold", k.key, def)
+			continue
+		case lines > 1:
+			t.Errorf("examples/config.yaml documents %s on %d commented lines — two documented values for one key, and a reader cannot tell which is the default", k.key, lines)
+			continue
+		}
+
+		compared++
+		comparedKeys[k.key] = true
+		got, drift := seedNumberDrift(t, seedResolveNumberFor(t, k, def), k.key, value, def)
+		if why, deliberate := seedDocumentedNumberOnPurposeNotTheDefault[k.key]; deliberate {
+			// The register's live half: the entry says this line is NOT the
+			// default, so the line matching the default makes the entry a
+			// lie, and the next reader believes the wrong one.
+			if drift == "" {
+				t.Errorf("examples/config.yaml documents %s at %s, which IS %s (%v) — but seedDocumentedNumberOnPurposeNotTheDefault says it is deliberately not the default (%q). Drop the register entry, or restore the value it describes",
+					k.key, value, k.constant, def, why)
+			} else {
+				t.Logf("%s: documented %q is deliberately not the default (%s = %v): %s", k.key, value, k.constant, def, drift)
+			}
+			continue
+		}
+		if drift != "" {
+			t.Errorf("examples/config.yaml documents %s as the default and %s says otherwise: %s.\n"+
+				"  the line is a claim a fresh instance reads; fix the line, or — if the value is documented at something other than its default on purpose — say so in seedDocumentedNumberOnPurposeNotTheDefault",
+				k.key, k.site, drift)
+			continue
+		}
+		t.Logf("%s: documented %q resolves to %v = %s (%s %s)", k.key, value, got, k.constant, k.reader, k.form)
+	}
+
+	// THE DIRECTION THAT HURTS (ranger-base-ghcx3 finding 1, said over
+	// numbers). Everything above walks the tree's readers and asks the seed
+	// about each key it found. This walks the SEED and asks whether each
+	// bare-number line it ships was reached — which is the direction the
+	// whole of this bead is: six of the seven keys ranger-base-p9qve named
+	// are reached by no number reader at all, so a census that only asked
+	// the tree would have held one line and reported nothing about the rest.
+	documented := seedDocumentedNumbers(text)
+	documentedKeys := map[string]bool{}
+	for _, d := range documented {
+		documentedKeys[d.key] = true
+	}
+
+	// The two matchers must agree about what a documented line IS, or the set
+	// check below is a set over the wrong lines. Derived rather than counted:
+	// every key the loop above COMPARED has to be one this enumeration found.
+	for _, key := range seedSortedKeys(comparedKeys) {
+		if !documentedKeys[key] {
+			t.Errorf("this pin compared a documented value for %s, and seedDocumentedNumbers did not find that line — the two line matchers disagree, so the coverage check below is reading a different file than the comparison above",
+				key)
+		}
+	}
+
+	for _, d := range documented {
+		switch {
+		case comparedKeys[d.key]:
+			// Reached, compared, held.
+		case seedNumberDefaultNotAConstant[d.key] != "":
+			t.Logf("examples/config.yaml:%d documents %s as %s — the derivation reaches the key and cannot pair it, so the line is a suggested setting and not a claim about a default (%s)",
+				d.line, d.key, d.value, seedNumberDefaultNotAConstant[d.key])
+		case seedDocumentedNumberOutsideTheCensus[d.key] != "":
+			t.Logf("examples/config.yaml:%d documents %s as %s — registered as outside the census (%s)",
+				d.line, d.key, d.value, seedDocumentedNumberOutsideTheCensus[d.key])
+		default:
+			t.Errorf("examples/config.yaml:%d documents %s as %s, and this census never reached that key: a fresh instance reads that line as a statement about the harness and nothing holds it, so the number can be wrong by any factor in silence (ranger-base-p9qve).\n"+
+				"  three ways out, and they are not interchangeable: give the key a reader of one of the two derived shapes (a call-site reader, or `(errw io.Writer) <numeric>` naming its key and returning one Default-shaped constant) so this pin COMPARES it; or add it to seedNumberDefaultNotAConstant if the derivation reaches it and cannot pair it; or add it to seedDocumentedNumberOutsideTheCensus with the reason there is no constant for the line to drift from",
+				d.line, d.key, d.value)
+		}
+	}
+
+	// The third register's stale half, as loud as the other two's. A row here
+	// admits a documented line nothing compares, so each of the ways it can
+	// stop describing anything is a failure — the last of them being what
+	// keeps this register and seedNumberDefaultNotAConstant from both
+	// claiming the same key: the discriminator is whether the derivation
+	// REACHES it, which is mechanical and not prose.
+	for _, key := range seedSortedKeys(seedDocumentedNumberOutsideTheCensus) {
+		why := seedDocumentedNumberOutsideTheCensus[key]
+		if strings.TrimSpace(why) == "" {
+			t.Errorf("seedDocumentedNumberOutsideTheCensus[%q] carries no reason — the row admits a documented number nothing holds, so the why IS the row", key)
+		}
+		if !documentedKeys[key] {
+			t.Errorf("seedDocumentedNumberOutsideTheCensus names %q, which examples/config.yaml no longer documents with a number value — the row admits a line that is not there; drop it", key)
+		}
+		if comparedKeys[key] {
+			t.Errorf("seedDocumentedNumberOutsideTheCensus names %q, which this pin now COMPARES against %s — the key has a constant after all, so the row is excusing a line that is already held; drop it and let the comparison be what holds it", key, byKey[key].constant)
+		}
+		if unpairedKeys[key] {
+			t.Errorf("seedDocumentedNumberOutsideTheCensus names %q, which the derivation now REACHES through a reader it cannot pair — that is seedNumberDefaultNotAConstant's row and not this one's, and two registers claiming one key is how each stops being read", key)
+		}
+	}
+
+	// THE TWO SEED-SIDE ENUMERATIONS MUST NOT BOTH CLAIM ONE LINE, or a key
+	// is accounted for in one half's registers while the other half's set
+	// check demands it too — and two registers over one line is how each
+	// stops being read. The claim lives here, in the pin the widening gave a
+	// door, rather than in a test of its own: a pin over this ONE tracked
+	// file is not the tree-wide class (treewidedoor_qa_test.go is explicit
+	// that a reading of one path at the root is not), so a test of its own
+	// would get no door and would be a ~950s package run away, which is the
+	// gap the doors exist to close.
+	//
+	// The floors are the positive witnesses that stop it passing by finding
+	// nothing on one side.
+	durationLines := seedDocumentedDurations(text)
+	if len(durationLines) < 10 {
+		t.Errorf("seedDocumentedDurations found %d documented duration lines in the seed, want at least 10 (the measured population — ranger-base-2vynj finding 1) — the number half's disjointness check below is reading one empty side", len(durationLines))
+	}
+	if len(documented) < 10 {
+		t.Errorf("seedDocumentedNumbers found %d documented number lines in the seed, want at least 10 (MEASURED 2026-10-05 — ranger-base-p9qve)", len(documented))
+	}
+	t.Logf("the seed documents %d duration-valued and %d bare-number commented lines", len(durationLines), len(documented))
+	for _, d := range durationLines {
+		if !documentedKeys[d.key] {
+			continue
+		}
+		t.Errorf("%s is enumerated as a duration (examples/config.yaml:%d) and as a number — the two discriminators overlap, so both halves demand an accounting for one line and a register row in either one looks stale from the other", d.key, d.line)
+	}
+
+	// The floor, kept beside the set check above and not replaced by it,
+	// because the two fail in opposite directions: this one catches a
+	// documented line that LEFT (deleting one reds at `compared 1`), and the
+	// set catches one that ARRIVED, which no count can see.
+	//
+	// Two is the measured population (MEASURED 2026-10-05): the seed
+	// documents load_guard and verify_batch with a number the census
+	// reaches, and backup_keep — the third pairing — not at all.
+	if compared < 2 {
+		t.Errorf("compared %d documented number defaults, want at least 2 — the seed documents load_guard and verify_batch with a value this census reaches, so a census that found fewer stopped reading the file", compared)
+	}
+}
+
+// The number register's stale half, as loud as an undocumented key. An entry
+// in seedDocumentedNumberOnPurposeNotTheDefault silences the drift complaint
+// for one key, so each of the three ways it can quietly stop describing
+// anything is a failure: the key is no longer a number key, the seed no
+// longer documents it, or the value it describes no longer parses.
+//
+// (The fourth way — the documented value has become the default again — is
+// held in the pin above, where the comparison already is.)
+func TestSeedConfigDocumentedNumberRegisterIsNotStale(t *testing.T) {
+	t.Parallel()
+	if len(seedDocumentedNumberOnPurposeNotTheDefault) == 0 {
+		t.Log("seedDocumentedNumberOnPurposeNotTheDefault is empty — every number key the seed documents is documented at its own default")
+		return
+	}
+	root := qibRepoRoot(t)
+	byKey := map[string]seedPairing{}
+	for _, k := range seedNumberKeyCensus(t, root).keys {
+		byKey[k.key] = k
+	}
+	cfg := seedConfigPath(t)
+	b, err := os.ReadFile(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range seedSortedKeys(seedDocumentedNumberOnPurposeNotTheDefault) {
+		why := seedDocumentedNumberOnPurposeNotTheDefault[key]
+		if strings.TrimSpace(why) == "" {
+			t.Errorf("seedDocumentedNumberOnPurposeNotTheDefault[%q] carries no reason — an entry here silences the documented-default pin for that key, so the why IS the entry", key)
+		}
+		k, derived := byKey[key]
+		if !derived {
+			t.Errorf("seedDocumentedNumberOnPurposeNotTheDefault names %q, which no number reader pairs with a constant any more — the key, or the reader, is gone, and the entry now excuses nothing", key)
+			continue
+		}
+		value, lines := seedDocumentedValue(string(b), key)
+		if lines != 1 {
+			t.Errorf("seedDocumentedNumberOnPurposeNotTheDefault names %q, and examples/config.yaml documents it on %d commented lines — an entry describing a line that is not there is stale; drop it", key, lines)
+			continue
+		}
+		def, known := seedNumberDefaults[k.constant]
+		if !known {
+			t.Errorf("seedDocumentedNumberOnPurposeNotTheDefault names %q, whose constant %s is not in seedNumberDefaults", key, k.constant)
+			continue
+		}
+		_, drift := seedNumberDrift(t, seedResolveNumberFor(t, k, def), key, value, def)
+		if strings.Contains(drift, "is not a value this reader accepts") || strings.Contains(drift, "no value") {
+			t.Errorf("examples/config.yaml documents %s at %q, and the register says that is deliberate — but %s: a value documented on purpose still has to be a value an instance could type", key, value, drift)
+		}
+	}
+}
+
+// The number matcher has to be able to say no, or the pin above is a
+// spelling exercise. Drives seedNumberDrift over planted texts rather than
+// the tree, so it is not itself a tree-wide pin.
+//
+// Two readers, on purpose. The carrier is float64 for both, but the GRAMMAR
+// is each reader's own — LoadGuard parses a float and accepts 0 as its
+// documented escape hatch, verifyBatch parses an int and refuses 0 — so the
+// same text is drift through one and not the other, which is the whole
+// reason this resolves through the production reader instead of comparing
+// numbers a test parsed itself.
+func TestSeedDocumentedNumberDriftCheckCanStillSayNo(t *testing.T) {
+	t.Parallel()
+
+	// LoadGuardDefault, said locally so a change to the constant does not
+	// move this control's subject.
+	const loadDef = 25.0
+	load := seedPairing{key: "load_guard", constant: "LoadGuardDefault", reader: "LoadGuard", form: seedFormBody}
+	for _, tc := range []struct {
+		name  string
+		text  string
+		drift bool
+	}{
+		{"the spelled default", "25", false},
+		// Compared as a NUMBER, not as text: these three are the same load
+		// average and a text compare would call two of them drift.
+		{"the same default with a decimal point", "25.0", false},
+		{"the same default with padding the reader trims", " 25 ", false},
+		{"a different ceiling", "50", true},
+		{"zero, which LoadGuard accepts and means the guard off", "0", true},
+		{"negative, which it refuses", "-1", true},
+		{"a documented line with no value at all", "", true},
+		{"prose where a value should be", "twenty-five", true},
+		// A duration where a number belongs: the reader refuses it, which is
+		// what keeps a line that proves nothing from passing by landing on
+		// the very number it was supposed to prove.
+		{"a duration where a number belongs", "25h", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, drift := seedNumberDrift(t, seedResolveNumberFor(t, load, loadDef), load.key, tc.text, loadDef)
+			if got := drift != ""; got != tc.drift {
+				t.Errorf("seedNumberDrift(%q) through LoadGuard drift=%v (%q), want drift=%v", tc.text, got, drift, tc.drift)
+			}
+		})
+	}
+
+	// And through an INT reader, which is the half the duration census could
+	// not have at all. `1.5` is the row that matters: it is a number, so a
+	// float64 compare against the default would have had an opinion about
+	// it, and verifyBatch's own grammar refuses it — the line proves nothing.
+	const batchDef = 1.0 // DefaultVerifyBatch
+	batch := seedPairing{key: "verify_batch", constant: "DefaultVerifyBatch", reader: "verifyBatch", form: seedFormBody}
+	for _, tc := range []struct {
+		name  string
+		text  string
+		drift bool
+	}{
+		{"the spelled default", "1", false},
+		{"the value the seed suggests", "4", true},
+		{"a float where a count belongs", "1.5", true},
+		{"zero, which this reader refuses", "0", true},
+		{"prose where a value should be", "one", true},
+	} {
+		t.Run("int-reader/"+tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, drift := seedNumberDrift(t, seedResolveNumberFor(t, batch, batchDef), batch.key, tc.text, batchDef)
+			if got := drift != ""; got != tc.drift {
+				t.Errorf("seedNumberDrift(%q) through verifyBatch drift=%v (%q), want drift=%v", tc.text, got, drift, tc.drift)
+			}
+		})
+	}
+
+	// The discriminator, including the two decorations the tree's own
+	// readers strip and every spelling that is NOT a bare number — so the
+	// next reader meets the rule as a decision and not a bug.
+	for _, tc := range []struct {
+		text string
+		num  bool
+	}{
+		{"25", true}, {"0", true}, {"384", true}, {"1209600", true},
+		{"0.50", true}, {"-1", true}, {"$30", true}, {"85%", true},
+		{"", false}, {"$", false}, {"%", false},
+		{"336h", false}, {"5m", false}, {"0s", false}, {"14d", false},
+		{"two weeks", false}, {"true", false}, {"wed 14:30", false},
+	} {
+		if seedLooksLikeNumber(tc.text) != tc.num {
+			t.Errorf("seedLooksLikeNumber(%q) = %v, want %v", tc.text, !tc.num, tc.num)
+		}
+	}
+
+	// And the SEED-SIDE enumeration, over planted text: it is the half that
+	// fails on a documented number the census never reached, so a rule nobody
+	// has watched refuse anything is a rule that will admit the next key.
+	enum := "# load_guard: 25            # a load average\n" +
+		"# budget_pass: $30           # the dollar spelling budgetDollars strips\n" +
+		"# grok_guard_week: 85%       # the percent spelling GrokGuardWeek strips\n" +
+		"# model_probe_ttl: 1h        # a duration, which is the OTHER half's line\n" +
+		"# grok_pool_reset: wed 14:30\n" +
+		"# autostart_dry_run: false\n" +
+		"# `verify_batch:` is the key the gate reads\n" +
+		"  # backup_keep: 3\n" +
+		"# attn_parked_age: two weeks\n" +
+		"verify_batch: 9\n"
+	var names []string
+	for _, d := range seedDocumentedNumbers(enum) {
+		names = append(names, fmt.Sprintf("%s=%s@%d", d.key, d.value, d.line))
+	}
+	if want := []string{"load_guard=25@1", "budget_pass=$30@2", "grok_guard_week=85%@3"}; !slices.Equal(names, want) {
+		t.Errorf("seedDocumentedNumbers found %v, want %v — it must read the value before the trailing comment, take the $ and %% spellings, and refuse a duration, a time, a boolean, prose, a key merely NAMED in prose, an indented line and a LIVE key",
+			names, want)
+	}
+}
+
+// The number derivation has to be able to say no, and to say it about each
+// near-miss, or the pin above is a rule nobody has watched refuse anything —
+// which is exactly how six duration keys sat outside the duration census for
+// six weeks (ranger-base-khqvr). Drives the whole census, both passes, over a
+// PLANTED tree rather than the repo, so it is not itself a tree-wide pin and
+// a change to the harness's own readers cannot move its subject.
+//
+// Three of its rows exist only on this side of the widening:
+//
+//   - the CALL-SITE arm, which has no live member at all
+//     (seedNumberResolvers is empty today), so this planted tree is the only
+//     place the number half's call-site pass is ever exercised;
+//   - the SCALED constant (`DefaultPlantedShift << 20`), which is
+//     BackupMinFree's real shape — a default that exists and is returned
+//     through an expression, so the pairing is not stated in one place and
+//     the key must be REPORTED rather than paired against a number the
+//     reader does not answer;
+//   - a time.Duration reader, which must be invisible here exactly as a
+//     numeric one is invisible to the duration half. The two halves share
+//     one derivation and differ only in `isValue`, so a leak either way
+//     would make one half's registers stale from the other's side.
+func TestSeedNumberDerivationCanStillSayNo(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+
+	// A miniature of the two shapes and of everything that looks like them.
+	// It only has to PARSE: the census reads the syntax and calls nothing.
+	const planted = `package planted
+
+import (
+	"io"
+	"time"
+)
+
+type App struct{ ConfigPath string }
+
+func YamlGet(path, key string) string { return "" }
+
+func (a *App) CfgGet(key, def string) string { return def }
+
+const (
+	PlantedKeepDefault       = 3
+	DefaultPlantedCeiling    = 25.0
+	PlantedViaCfgGetDefault  = 7
+	DefaultPlantedCap        = 12
+	DefaultPlantedShift      = 384
+	plantedBareConstant      = 9
+	DefaultPlantedGrace      = time.Hour
+)
+
+// A body-form int reader naming its constant with the SUFFIX spelling.
+func (a *App) PlantedKeep(errw io.Writer) int {
+	if YamlGet(a.ConfigPath, "planted_keep") == "" {
+		return PlantedKeepDefault
+	}
+	return PlantedKeepDefault
+}
+
+// The same shape in float64 with the PREFIX spelling: both are live in the
+// real tree, and the result types differ between real readers too.
+func (a *App) PlantedCeiling(errw io.Writer) float64 {
+	_ = YamlGet(a.ConfigPath, "planted_ceiling")
+	return DefaultPlantedCeiling
+}
+
+// uint64 through CfgGet, whose key is its FIRST argument where YamlGet's is
+// its second.
+func (a *App) PlantedViaCfgGet(errw io.Writer) uint64 {
+	_ = a.CfgGet("planted_via_cfgget", "")
+	return PlantedViaCfgGetDefault
+}
+
+// Near-miss 1: the default is a rule, not a constant.
+func (a *App) PlantedRuleDefault(errw io.Writer) int {
+	_ = YamlGet(a.ConfigPath, "planted_rule_default")
+	return a.plantedRule()
+}
+
+func (a *App) plantedRule() int { return 1 }
+
+// Near-miss 2: one reader, two keys — no single constant is its default.
+func (a *App) PlantedTwoKeys(errw io.Writer) int {
+	if YamlGet(a.ConfigPath, "planted_first") != "" {
+		return PlantedKeepDefault
+	}
+	_ = YamlGet(a.ConfigPath, "planted_second")
+	return PlantedKeepDefault
+}
+
+// Near-miss 3: the fallback is not Default-shaped at all.
+func (a *App) PlantedNoConstant(errw io.Writer) int {
+	_ = YamlGet(a.ConfigPath, "planted_no_constant")
+	return plantedBareConstant
+}
+
+// Near-miss 5, this half's own: the default is SCALED on the way out
+// (BackupMinFree's shape — MB in the key, bytes in the answer), so the
+// constant is not what the reader returns and the pairing is not stated in
+// one place.
+func (a *App) PlantedShifted(errw io.Writer) uint64 {
+	_ = YamlGet(a.ConfigPath, "planted_shifted")
+	return DefaultPlantedShift << 20
+}
+
+// A call-site reader: it reads the key it was HANDED, so its keys live at
+// its call sites and not here. The number half has no live member of this
+// shape, which is why it is planted.
+func (a *App) plantedCap(key string, def int, errw io.Writer) int {
+	_ = YamlGet(a.ConfigPath, key)
+	return def
+}
+
+// A thin wrapper: no key of its own, and the pairing is one line down.
+func (a *App) PlantedCapped(errw io.Writer) int {
+	return a.plantedCap("planted_capped", DefaultPlantedCap, errw)
+}
+
+// Near-miss 4: a call site whose default argument is a call.
+func (a *App) PlantedCallSiteRule(errw io.Writer) int {
+	return a.plantedCap("planted_call_rule", a.plantedRule(), errw)
+}
+
+// Not a method on App.
+func plantedFree(errw io.Writer) int {
+	_ = YamlGet("", "planted_free")
+	return PlantedKeepDefault
+}
+
+// A DURATION reader: the other half's subject, and invisible to this one.
+func (a *App) PlantedGrace(errw io.Writer) time.Duration {
+	_ = YamlGet(a.ConfigPath, "planted_grace")
+	return DefaultPlantedGrace
+}
+
+// Neither half's subject: a bool and a string are not numbers, and a
+// documented one is not a number claim.
+func (a *App) PlantedFlag(errw io.Writer) bool {
+	_ = YamlGet(a.ConfigPath, "planted_flag")
+	return false
+}
+
+func (a *App) PlantedName(errw io.Writer) string {
+	_ = YamlGet(a.ConfigPath, "planted_name")
+	return "x"
+}
+`
+	// A reader in a _test.go file is not the harness, and a file that does
+	// not parse is the build's finding and not this pin's: both are skipped,
+	// and the scanned count is what says so.
+	const plantedTest = `package planted
+
+import "io"
+
+func (a *App) PlantedInATestFile(errw io.Writer) int {
+	_ = YamlGet(a.ConfigPath, "planted_in_a_test_file")
+	return PlantedKeepDefault
+}
+`
+	for name, body := range map[string]string{
+		"planted.go":      planted,
+		"planted_test.go": plantedTest,
+		"broken.go":       "package planted\n\nfunc (((\n",
+	} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	c := seedNumberKeyCensus(t, root)
+	if c.scanned != 1 {
+		t.Errorf("scanned %d files of the planted tree, want 1 — the walk read the _test.go file or the file that does not parse", c.scanned)
+	}
+
+	if got, want := strings.Join(c.resolvers, ","), "plantedCap"; got != want {
+		t.Errorf("derived call-site readers %q, want %q", got, want)
+	}
+	if got, want := strings.Join(c.readers, ","), "PlantedCeiling,PlantedKeep,PlantedViaCfgGet"; got != want {
+		t.Errorf("derived body-form readers %q, want %q", got, want)
+	}
+
+	gotPairs := map[string]string{}
+	for _, k := range c.keys {
+		gotPairs[k.key] = k.constant + " via " + k.reader + " (" + k.form.String() + ")"
+		if k.site == "" {
+			t.Errorf("pairing for %s carries no site — a census that cannot say WHERE cannot be acted on", k.key)
+		}
+	}
+	for key, want := range map[string]string{
+		"planted_keep":       "PlantedKeepDefault via PlantedKeep (body-form reader)",
+		"planted_ceiling":    "DefaultPlantedCeiling via PlantedCeiling (body-form reader)",
+		"planted_via_cfgget": "PlantedViaCfgGetDefault via PlantedViaCfgGet (body-form reader)",
+		"planted_capped":     "DefaultPlantedCap via plantedCap (call site)",
+	} {
+		if got := gotPairs[key]; got != want {
+			t.Errorf("pairing for %s = %q, want %q", key, got, want)
+		}
+		delete(gotPairs, key)
+	}
+	for key, got := range gotPairs {
+		t.Errorf("the derivation paired %s as %s, and nothing in the planted tree states that pairing", key, got)
+	}
+
+	gotUnpaired := map[string]string{}
+	for _, u := range c.unpaired {
+		gotUnpaired[u.key] = u.why
+		if u.site == "" {
+			t.Errorf("unpaired key %s carries no site", u.key)
+		}
+	}
+	for _, key := range []string{
+		// each near-miss, reported rather than dropped
+		"planted_rule_default", "planted_first", "planted_second",
+		"planted_no_constant", "planted_shifted", "planted_call_rule",
+	} {
+		if why, ok := gotUnpaired[key]; !ok {
+			t.Errorf("the derivation dropped %s in silence — an unpairable key must be REPORTED, which is the whole finding of ranger-base-khqvr", key)
+		} else if strings.TrimSpace(why) == "" {
+			t.Errorf("unpaired key %s carries no why", key)
+		}
+		delete(gotUnpaired, key)
+	}
+	for key, why := range gotUnpaired {
+		t.Errorf("the derivation called %s unpairable (%s), and it is not one of the planted near-misses", key, why)
+	}
+
+	// And the keys nothing should have seen at all: a free function, the
+	// OTHER half's duration reader, a bool, a string, a test file, and the
+	// key a wrapper never reads itself.
+	for _, key := range []string{
+		"planted_free", "planted_grace", "planted_flag", "planted_name", "planted_in_a_test_file",
+	} {
+		if got, paired := gotPairs[key]; paired {
+			t.Errorf("%s was paired as %s; it is not a number reader on App", key, got)
+		}
+		for _, u := range c.unpaired {
+			if u.key == key {
+				t.Errorf("%s was reported unpairable; it is not a number reader on App at all, so the rule has widened past its subject", key)
+			}
+		}
+	}
+
+	// The other direction of the same leak, over the same planted tree: the
+	// DURATION half must see planted_grace and nothing numeric. One
+	// derivation, two predicates — this is the assertion that they are two.
+	d := seedDurationKeyCensus(t, root)
+	gotDur := map[string]string{}
+	for _, k := range d.keys {
+		gotDur[k.key] = k.constant
+	}
+	if got, want := gotDur["planted_grace"], "DefaultPlantedGrace"; got != want {
+		t.Errorf("the duration half paired planted_grace with %q, want %q — the shared derivation has stopped reaching duration readers", got, want)
+	}
+	delete(gotDur, "planted_grace")
+	for key, constant := range gotDur {
+		t.Errorf("the duration half paired %s with %s over the number half's planted tree — isValue is leaking, so each half's registers look stale from the other's side", key, constant)
 	}
 }
