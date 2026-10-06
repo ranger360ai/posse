@@ -6,6 +6,7 @@ references), not inferred publication dates. Undated fragments sort last.
 
 ## 2026-10
 
+- [ranger-base-y13h7](ranger-base-y13h7.md) — ranger-base-y13h7 — at what depth does a lagging launcher need a human? — 2026-10-05
 - [ranger-base-rdi79](ranger-base-rdi79.md) — A cancelled JOB is the queue too (ranger-base-rdi79) — 2026-10-05
 - [ranger-base-r5ksj](ranger-base-r5ksj.md) — A cost cap that also decided the case it was sized for (ranger-base-r5ksj) — 2026-10-05
 - [ranger-base-6uokf](ranger-base-6uokf.md) — ranger-base-6uokf — the ADR 0066 D3 report: the failure line and the D3 record name the known screen(s) — 2026-10-05

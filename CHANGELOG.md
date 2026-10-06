@@ -11,7 +11,27 @@ being cut is a precondition of the tag; see `docs/runbooks/release.md`.
 
 ## Unreleased
 
-(nothing yet — this section fills as commits land after v0.5.1)
+**A launcher that is behind its own repo is a condition, not just a line.**
+`posse status` has printed how many landed commits the running binary is
+missing since v0.5.0 — a sentence ending "only installing closes it" — and
+nothing on the governance surface read it, so the same view could print that
+sentence and `nothing needs a human` two lines beneath it, every pass, for as
+long as nobody installed. There is now a governance row for it: **G11**, class
+LANE, key `launcher-behind:<depth>`, raised once the count passes
+`launcher_behind_max:` (default 16 commits). It draws in the cockpit's
+GOVERNANCE block, counts in the header, exits `posse status` non-zero, and
+reaches the coordinator through the pulse like any other row — re-prompting on
+a doubling (16, 32, 64) rather than on every commit that lands.
+
+It remains a signal and not a remedy: the row gates nothing, declines no
+launch and installs nothing, because installing over a binary that is
+dispatching a live fleet is a live change and stays the operator's. A binary
+whose stamp names no commit — a `go run`, or a plain `go build` from a linked
+worktree — raises nothing and does not make the view partial; `posse status`
+says so in a line, as it always has. The count is taken over the checkouts
+`beads:` names, so an instance that dispatches no copy of posse's own repo is
+unaffected. The default is argued from measurement rather than picked, and
+`0` means any lag at all is a condition.
 
 ## v0.5.1
 

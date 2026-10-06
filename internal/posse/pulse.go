@@ -291,6 +291,11 @@ func (d *Dispatcher) pulseOnce(cfg PulseConfig) {
 // Errw is left nil on purpose. A config typo is worth one line where a human
 // asked (`posse status`, dispatch's own passes) and is noise written every
 // two minutes forever here.
+//
+// Lag is the loop's own launcher-lag seam, passed through rather than
+// resolved: nil in every real loop, so G11 takes the instance's reading
+// (govern.go's lag()), and a pin that drives the loop with a planted repo and
+// a real stamp gets the same reading in the pulse's set as in the pass line.
 func (d *Dispatcher) govInputs(cfg PulseConfig) GovInputs {
 	return GovInputs{
 		App:               d.App,
@@ -304,6 +309,7 @@ func (d *Dispatcher) govInputs(cfg PulseConfig) GovInputs {
 		Suspended:         d.suspendedSince,
 		Spend:             d.Spend,
 		Plan:              d.Plan,
+		Lag:               d.Lag,
 	}
 }
 

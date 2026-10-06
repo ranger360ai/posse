@@ -35,9 +35,22 @@ package posse
 // and it decides nothing. Installing over a binary that is dispatching a
 // live fleet is a live change and stays the operator's (guardrail 3); this
 // file is the signal, not the remedy.
+//
+// AND, SINCE ranger-base-y13h7, A GOVERNANCE CONDITION — which is not a
+// control, and the two hold at once. A condition gates nothing: it stops no
+// pass, declines no launch and installs nothing. It puts the fact on the one
+// surface whose whole question is "does anything need a human", and the
+// absence of it was a four-day silence of a particular kind: `posse status`
+// printed the sentence below — ending "only installing closes it" — and
+// `nothing needs a human` two lines under it, in the same view, on every
+// pass, while ~/.local/bin/posse went from current to 101 commits behind.
+// The remedy is unchanged and still the operator's. What changed is that the
+// surface which answers "is anybody needed" now reads this one. The row is
+// G11, LANE, and it is the last section of this file.
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -275,11 +288,39 @@ func (l LauncherLag) behindSentence() string {
 // working directory — the second so `posse status` typed inside a posse
 // checkout answers even on a box whose `beads:` never names one.
 func (a *App) Launcher() LauncherLag {
+	return FindLauncher(VersionString(), a.launcherCandidates(true))
+}
+
+// LauncherOverFleet is the same reading taken over the instance's CONFIGURED
+// checkouts alone, and it is what G11 is computed from (govern.go lag()).
+//
+// The difference from Launcher is one candidate and it is the difference
+// between a line and a condition. A line is owed to whoever typed the
+// command, so it answers about the checkout they are standing in; a condition
+// is owed to the fleet, and the fleet is `beads:`. The second half of the
+// reason is in govern.go's lag(), where the row is raised.
+func (a *App) LauncherOverFleet() LauncherLag {
+	return FindLauncher(VersionString(), a.launcherCandidates(false))
+}
+
+// launcherCandidates is the list a reading is taken over, with withCwd the
+// only difference between the two readings above.
+//
+// Its own function because that difference is the whole of what distinguishes
+// them and is otherwise unpinnable: both readings go through VersionString(),
+// a test binary carries no vcs stamp at all (cagestale.go's header), so every
+// end-to-end reading in this package abstains before the candidate scan is
+// even reached — which is why dispatch.Lag and GovInputs.Lag are seams. The
+// candidate list is the part a pin can hold.
+func (a *App) launcherCandidates(withCwd bool) []string {
 	c := a.BeadsDirs()
+	if !withCwd {
+		return c
+	}
 	if cwd, err := os.Getwd(); err == nil {
 		c = append(c, cwd)
 	}
-	return FindLauncher(VersionString(), c)
+	return c
 }
 
 // lagDrumbeat is the cadence rule: say the number when it has DOUBLED since
@@ -309,4 +350,148 @@ func (d *lagDrumbeat) say(behind int) bool {
 	}
 	d.nextAt = behind * 2
 	return true
+}
+
+// ─── G11 · past a measured depth the reading is a condition ──────────────────
+
+// DefaultLauncherBehindMax is the depth past which a lagging launcher stops
+// being a reading and becomes a governance condition (ranger-base-y13h7).
+//
+// 0 IS WRONG, and that is the one end of this that was already measured: a
+// binary is built from the tip and the next commit lands minutes later — this
+// file's header has it twice, 1m47s and 0 commits behind at the instant of
+// the build — so a threshold of zero fires on every install within the hour
+// and says nothing about whether anyone is minding it.
+//
+// WHAT WAS MEASURED FOR THE OTHER END. MEASURED 2026-10-05, darwin 25.4.0, in
+// ~/src/posse. Every install of ~/.local/bin/posse this box can still account
+// for: the loop-start preambles in `$StateDir/dispatch-watch.log{,.1}`, which
+// print the running binary at every loop start (possebinary.go), plus the
+// `posse binary ·` lines in `~/.claude/projects/*/*.jsonl`. 14 installs,
+// 2026-09-03..10-03, so 13 CLOSED episodes, each one's depth being
+// `git rev-list --count <stamp_i>..<stamp_i+1>` — the lag the running binary
+// had reached when the next install replaced it:
+//
+//	9 · 20 · 26 · 34 · 42 · 46 · 48 · 51 · 52 · 79 · 105 · 165 · 180
+//	median 48. The open episode when this bead was filed was 101.
+//	reach >= 8: 13/13 · >= 16: 12/13 · >= 32: 10/13 · >= 64: 4/13
+//	EXCLUDED, as fixtures and not installs: the three readings of
+//	0.5.0+02dd122 at 40, 42 and 40 behind on three separate days — a
+//	non-monotonic depth for one stamp, and the string is quoted verbatim in
+//	docs/notes.d/ranger-base-vso72.md.
+//	The install set is a FLOOR: an install whose stamp reached neither a
+//	preamble nor a transcript is invisible, which makes every distance above
+//	an upper bound and cuts toward a SHALLOWER threshold, not a deeper one.
+//
+// So the box's own cadence is not the bound. Its median episode (48) is
+// already past the depth at which this lag has twice cost a session, which
+// means no threshold can be derived from "deeper than normal" — normal is the
+// defect. The number has to come off the COST, and both costs are traceable
+// commit by commit:
+//
+//	ranger-base-z3hx6/tvorm · c592683, installed 2026-09-03 23:54. The first
+//	fix the fleet was then missing (67effd0, ranger-base-emgdb) landed at
+//	depth 21; the second (c3ab918, ranger-base-j8qmj) at depth 31; the cost —
+//	a merge-back block filed a FOURTH time, one dispatched session re-deriving
+//	a do-not-land verdict two commits on main already held — at depth 34.
+//	ranger-base-6pnab/xxgp3 · 193c8782, installed 2026-10-03 15:28. The first
+//	of the four ci-watch fixes it was missing (540cc22c, ranger-base-m46kr)
+//	landed at depth 90; the false ci-red P1 was filed at depth 93; the reading
+//	in the bead said 101.
+//
+// 16 IS THE LARGEST DRUMBEAT STEP STRICTLY BELOW 21 — the shallowest depth at
+// which a fix the fleet needed was already on main. That is the property
+// being bought: at 16 the row is up BEFORE the fleet is missing anything, so
+// an operator who acts on it is installing a current binary rather than
+// closing a hole. The steps are the drumbeat's own (lagDrumbeat), because the
+// key below re-prompts on them.
+//
+// REJECTED, with what each costs:
+//
+//	8 · 13/13 episodes, and it buys nothing — no incident's first missing fix
+//	  was shallower than 21 — while spending the one episode (9) where the
+//	  operator installed promptly, which is the behaviour the row wants.
+//	32 · 10/13. In the shallower incident the row would first rise after BOTH
+//	  missing fixes were already on main (21 and 31), two commits before the
+//	  cost landed: a report of an existing hole, not a warning.
+//	64 · 4/13, and SILENT through the whole of that incident, which reached 34.
+//	  Excluded by measurement rather than by taste.
+//
+// AND IT IS A FLOOR, NOT A PROOF. 13 episodes, 2 with a cost traced to them;
+// nothing here establishes that the other 11 cost nothing, because a stale
+// launcher does not fail (this file's header) and the absence of a filed bead
+// is not the absence of a cost. Erring LOW is the cheap direction: a row that
+// rises early costs one install the shop wanted anyway, and it clears itself
+// the moment the install lands; a row that rises late costs a dispatched
+// session, twice measured. `launcher_behind_max:` is the dial, and 0 means
+// "any lag at all".
+const DefaultLauncherBehindMax = 16
+
+// LauncherBehindMax is the configured depth (`launcher_behind_max:`). Same
+// typo handling as every other threshold key: a value that is not a count is
+// named on stderr and the default stands, because a threshold nobody can see
+// is worse than a wrong one. Zero is meaningful and kept — it means every
+// non-zero lag is a condition, which is the shape an instance that installs
+// from the tip every time would want.
+func (a *App) LauncherBehindMax(errw io.Writer) int {
+	raw := strings.TrimSpace(a.CfgGet("launcher_behind_max", ""))
+	if raw == "" {
+		return DefaultLauncherBehindMax
+	}
+	if n, err := strconv.Atoi(raw); err == nil && n >= 0 {
+		return n
+	}
+	fmt.Fprintf(errw, "governance: config launcher_behind_max: %q is not a commit count — using %d\n",
+		raw, DefaultLauncherBehindMax)
+	return DefaultLauncherBehindMax
+}
+
+// GovRows is G11: the governance rendering of this same reading, past max.
+//
+// It takes the threshold rather than reading it, on VerifyBoxReading.GovRows's
+// rule one file over: a reading carries what it was judged against, so two
+// renderings of one reading cannot disagree about where the line was.
+//
+// An ABSTENTION raises nothing. "Cannot be counted" is the ordinary shape of
+// a checkout build — a `go run`, or a plain `go build` from a linked worktree,
+// names no commit at all — and it is already said out loud and unconditionally
+// by the two surfaces that own this reading (`posse status` prints Line() in
+// every case; the watch preamble says it once). It is not an unreadable store
+// either, and ShopCheck says why where it declines to report one.
+func (l LauncherLag) GovRows(max int) []GovCondition {
+	if !l.Known() || l.Behind <= 0 || l.Behind < max {
+		return nil
+	}
+	return []GovCondition{{
+		ID:    "G11",
+		Class: GovLane,
+		Key:   fmt.Sprintf("launcher-behind:%d", lagBucket(l.Behind, max)),
+		// "the launcher" first, because a GOVERNANCE row is read in a list of
+		// other rows and a detail that opens with a version string makes the
+		// reader work out what it is about. Line() has the same word in the
+		// same place, so one grep finds the row and the reading.
+		Detail: "the launcher " + l.behindSentence() + fmt.Sprintf(
+			" · past launcher_behind_max: %d, which is what makes this a condition and not just a reading — the install itself is still the operator's, because installing over a binary that is dispatching a live fleet is a live change (guardrail 3)",
+			max),
+	}}
+}
+
+// lagBucket is the drumbeat step a depth falls in: the threshold, doubled
+// while another doubling would still fit under the number. It is what the Key
+// carries, and the Key is what the pulse fingerprints — so a lag that keeps
+// deepening re-prompts at 16, 32, 64, 128 and nowhere in between, which is
+// log2 prompts over an episode rather than one per tick.
+//
+// The same rule lagDrumbeat uses for the watch log, and deliberately the same
+// numbers: the pass line and the governance row escalate together, so an
+// operator reading the log back sees one cadence and not two.
+func lagBucket(behind, max int) int {
+	b := max
+	if b < 1 {
+		b = 1
+	}
+	for b*2 <= behind {
+		b *= 2
+	}
+	return b
 }

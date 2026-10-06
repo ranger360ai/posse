@@ -393,14 +393,14 @@ func main() {
 	// here, per test and never per file, because a clearance is an argument
 	// about ONE test's body and does not survive being generalised:
 	//
-	//   - "reads <clock>": blindT, lpouiT, pulseNow and catalogAt are package-level
-	//     time.Time fixtures declared once and never assigned. The only
-	//     "write" the filter sees is `.Add`, which on a time.Time returns a
-	//     new value and mutates nothing — the over-read the writeMeth comment
-	//     above describes. NOT fixed by exempting the three vars: MEASURED,
-	//     that frees 64 further tests, so `check` would then demand
-	//     t.Parallel on 64 tests nobody has read. That is a sweep, and this
-	//     is not it.
+	//   - "reads <clock>": blindT, lpouiT, pulseNow, catalogAt, ddivoT and
+	//     govNow are package-level time.Time fixtures declared once and never
+	//     assigned. The only "write" the filter sees is `.Add`, which on a
+	//     time.Time returns a new value and mutates nothing — the over-read
+	//     the writeMeth comment above describes. NOT fixed by exempting the
+	//     vars: MEASURED, exempting the first three frees 64 further tests, so
+	//     `check` would then demand t.Parallel on 64 tests nobody has read.
+	//     That is a sweep, and this is not it.
 	//   - "reads OpsPatterns": the shipped table is written once, by init(),
 	//     compiling each ERE — before any test runs. Every test here ranges
 	//     it read-only.
@@ -473,6 +473,18 @@ func main() {
 		"TestQAStaleLineNamesTheUnarmedGuardInsteadOfTheHeadroomRule": "reads ddivoT",
 		"TestQAUnarmedGuardStillAsksWhileTheShopSpends":               "reads ddivoT",
 		"TestQAWatchLoopRunningUnmutesTheMeter":                       "reads ddivoT",
+		// govNow (7): the frozen instant the governance fixtures date their
+		// set at, so an age assertion is not a stopwatch race
+		// (govern_test.go). Read only — every use is `govNow.Add(…)`, which
+		// returns a new time.Time and mutates nothing — and each test's own
+		// state is a t.TempDir and a scratch herdr it alone holds.
+		"TestG11AbstainsOnAStampThatNamesNoCommit":               "reads govNow",
+		"TestG11FiresAtTheThresholdAndNotBelowIt":                "reads govNow",
+		"TestG11IsSilentForACurrentLauncher":                     "reads govNow",
+		"TestG11KeyCarriesTheDoublingStep":                       "reads govNow",
+		"TestLauncherBehindMaxIsConfigurable":                    "reads govNow",
+		"TestShopCheckDefaultsToThisInstancesOwnLauncherReading": "reads govNow",
+		"TestTheAllClearCannotPrintBeneathALaggingLauncher":      "reads govNow",
 		// OpsPatterns (2)
 		"TestQAEveryOpsHitInTrackedMarkdownIsRuled": "reads OpsPatterns",
 		"TestQAOpsShapeTableCanStillSayNo":          "reads OpsPatterns",
