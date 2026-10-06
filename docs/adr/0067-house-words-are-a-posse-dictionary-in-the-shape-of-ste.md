@@ -2,7 +2,10 @@
 
 *Status: accepted 2026-10-04 — operator ruling on ranger-base-w6zpo, the six sub-points at their recommended defaults (no STE registration; dictionary lives in this appendix; ARGUED is a label; WIP gets a not-approved row; the three line rules apply to new lines, the existing clause is a P3 bead; Vale later) · amended 2026-10-04 (ranger-base-mdg3d: appendix seeded in Part 2 row shape — labels, house words, not-approved words, line rules) · amended
 2026-10-04 (ranger-base-zt45t: D5's one measured offender is rewritten to the
-A4 shape and pinned where it renders) · owner: architect · source
+A4 shape and pinned where it renders) · amended 2026-10-05
+(ranger-base-x0wc5: D1 and the `check` row state no count of the tree-wide
+door class, which `internal/treepins/treewidedoor_qa_test.go` now holds)
+· owner: architect · source
 bead ranger-base-4wwy5 (spike, recommendation only) · evidence, the surface
 map and the prior-art table in `docs/notes.d/ranger-base-4wwy5.md` · sits
 beside ADR 0005 (the rung words it seeds from), ADR 0006 §7 (no prose pin
@@ -36,7 +39,7 @@ with their one meaning each. The incidents are the words outside it.
 
 **D1. ASD-STE100 is not adopted** — neither its rules nor its dictionary, on
 any surface. Its approved meanings collide with the shop's central verbs
-(`close` is `bd close`; `check` is a verb and the name of fourteen Makefile
+(`close` is `bd close`; `check` is a verb and the name of the Makefile
 doors); its sentence caps would cut what the shop values in a close comment;
 and the dictionary may not be reproduced, so nothing in a public tree can
 check against it.
@@ -161,7 +164,7 @@ the standard: in this shop they mean what the rows say.
 | term | pos | meaning | defined in | not approved → use |
 |---|---|---|---|---|
 | close | verb | `bd close <id>`: the bead's own acceptance is met and the close comment carries the labels above; nothing else is "closed" (STE's *close* — shut — is not this word) | AGENTS.md; ADR 0006 | *finish*, *complete*, *wrap up* a bead → close; *done* as the verb → close, with VERIFIED or MEASURED on the comment |
-| check | verb; name | as a verb, run a door or a pin and read it; as a name, the fourteen Makefile doors are spelled `make <x>-check` and `make tree-check` runs them all. The noun form is a door's spelling only | AGENTS.md "Landing the plane", `make tree-check`; Makefile | *a check* for a pin or a test → pin, door; *checked* for a claim nobody ran → ARGUED or MEASURED |
+| check | verb; name | as a verb, run a door or a pin and read it; as a name, the Makefile doors are spelled `make <x>-check` and `make tree-check` runs them all. The noun form is a door's spelling only | AGENTS.md "Landing the plane", `make tree-check`; Makefile | *a check* for a pin or a test → pin, door; *checked* for a claim nobody ran → ARGUED or MEASURED |
 | NOTE, ASSUME, SPIKE, ASK, HANDOFF, REFUSE | rung | the escalation rungs of the work prompt, in that order of cost; each has one comment prefix and one stop/continue | ADR 0005 (the procedure); ADR 0026 (SPIKE) | *escalate*, *flag*, *raise* without a rung → the rung's name |
 | BLOCKED | rung outcome | a question bead holds this bead out of `bd ready` until it is answered; comment `BLOCKED: <need> → <qid>` | ADR 0005 (ASK) | *waiting on*, *stuck*, *pending* → BLOCKED + the question bead |
 | REFUSED | rung outcome | a hard risk line or an unrealizable gate stopped the work; comment `REFUSED: <line> — <what would be needed>` | ADR 0005 (REFUSE) | *declined*, *won't*, *skipped* for a risk line → REFUSED + the line |
