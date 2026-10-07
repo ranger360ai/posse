@@ -3,6 +3,7 @@
 package posse
 
 import (
+	"fmt"
 	"maps"
 	"os"
 	"os/exec"
@@ -1541,6 +1542,63 @@ func TestAutostartNamedAndReplacedArmQuotesTheSeedsDocumentedValue(t *testing.T)
 	}
 }
 
+// seedShellNoFallbackComplaint is the seedShellNoFallback arm's whole
+// verdict over one baseline run: the sentence the pin prints, or "" when the
+// baseline was a clean stand-down.
+//
+// It is a function rather than two branches inside the loop so that the
+// REFUSAL half can have a witness. Every registered member's baseline stands
+// down quietly today, so no row — present or plausible — reaches that half,
+// and deleting it left the pin green (ranger-base-p1hen, from
+// ranger-base-orq4e). A mutation nobody has shown a branch able to catch is a
+// mutation it has not been shown to catch;
+// TestSeedShellNoFallbackArmTellsARefusalFromADisarm is the showing.
+func seedShellNoFallbackComplaint(key string, kind seedShellKind, why string, got hookRun) string {
+	switch {
+	case got.calls != "":
+		return fmt.Sprintf("%s is registered as %q (%s), but the baseline with %s left out still armed a loop:\n%s\nSo absent is not a disarm for this key — the script falls back for it, and the fallback is in that argv. If examples/config.yaml documents that value, move the key to seedShellDefaultCompared with a control value; otherwise register the reason that is true.", key, kind, why, key, got.calls)
+	case got.code != 0:
+		return fmt.Sprintf("%s is registered as %q (%s), and the baseline with %s left out armed nothing — but it REFUSED (exit %d) rather than standing down:\n%s\nAbsent is a disarm, which is quiet and exit 0; a key whose absence is an error is not this kind.", key, kind, why, key, got.code, got.out)
+	}
+	return ""
+}
+
+// The witness for that refusal half. The kind's claim is that absent is a
+// DISARM — armed nothing, said nothing, exit 0 — and not an error, and the
+// two cases are indistinguishable on argv alone: both leave calls.log empty.
+// So the exit code is the only thing that tells them apart, and the register
+// cannot show it doing so, because a member whose absence refused would not
+// be a member. Both runs here are real hook runs over configs the script is
+// already pinned on.
+func TestSeedShellNoFallbackArmTellsARefusalFromADisarm(t *testing.T) {
+	t.Parallel()
+	const key, why = "autostart_interval", "the arm switch — the register's own row"
+
+	// A disarm: the arm switch left out, which IS the baseline every
+	// seedShellNoFallback row is checked over.
+	disarm := runStandDown(t, configWithout(armed, key))
+	if disarm.code != 0 || disarm.calls != "" {
+		t.Fatalf("premise: the config without %s stands down quietly, got exit %d and calls %q:\n%s", key, disarm.code, disarm.calls, disarm.out)
+	}
+	if msg := seedShellNoFallbackComplaint(key, seedShellNoFallback, why, disarm); msg != "" {
+		t.Errorf("a quiet stand-down is this kind's pass and the arm complained anyway:\n%s", msg)
+	}
+
+	// A refusal that arms nothing either: the bare key, pinned by
+	// TestAutostartBareIntervalIsRefusedNotDisarmed.
+	refused := runStandDown(t, key+":\n")
+	if refused.code == 0 || refused.calls != "" {
+		t.Fatalf("premise: a bare %s: is refused and arms nothing, got exit %d and calls %q:\n%s", key, refused.code, refused.calls, refused.out)
+	}
+	msg := seedShellNoFallbackComplaint(key, seedShellNoFallback, why, refused)
+	if msg == "" {
+		t.Fatalf("the arm passed a baseline that REFUSED (exit %d) — a key whose absence is an error is not this kind, and on argv alone this run is identical to the disarm above:\n%s", refused.code, refused.out)
+	}
+	if !strings.Contains(msg, "REFUSED") || !strings.Contains(msg, key) {
+		t.Errorf("the complaint does not say the baseline refused, or does not name the key it is about:\n%s", msg)
+	}
+}
+
 // The total-table rule, both ways. Every key the hook reads is compared or
 // registered, every row names a key the hook still reads, and each register
 // row's own reason is checked rather than believed.
@@ -1571,14 +1629,13 @@ func TestAutostartShellDefaultRegisterIsTotalAndNotStale(t *testing.T) {
 		}
 	}
 
-	absent := runArgv(t, armed)
 	for _, key := range slices.Sorted(maps.Keys(seedShellDefaultRegister)) {
 		r := seedShellDefaultRegister[key]
 		t.Run(key, func(t *testing.T) {
 			def, documented := exampleConfigDefault(key)
-			// The baseline with THIS key left out. `absent` above is the
-			// argv it arms, so the removal is the only change between the
-			// two runs — and for every key but the arm switch it removes
+			// The baseline with THIS key left out, and the subject of both
+			// arms below — so the removal is the only change between any
+			// two runs here. For every key but the arm switch it removes
 			// nothing, which is the arm below reading the config it already
 			// had rather than a config invented for it.
 			base := configWithout(armed, key)
@@ -1591,7 +1648,25 @@ func TestAutostartShellDefaultRegisterIsTotalAndNotStale(t *testing.T) {
 				if !documented {
 					t.Fatalf("%s is registered as %q (%s) and the seed documents no value at all — the row has gone stale in the other direction", key, r.kind, r.why)
 				}
-				if got := runArgv(t, base+key+": "+def+"\n"); got == absent {
+				// Against THIS key's baseline, never a shared one. The
+				// comparison used to be against the whole register's
+				// `absent := runArgv(t, armed)`, and for the arm switch that
+				// config NAMES the key — so the arm compared 5m against 30s,
+				// two explicit values that can never be equal, and the row
+				// went vacuous the moment anyone moved it to this kind
+				// (ranger-base-p1hen, from ranger-base-orq4e).
+				//
+				// That the baseline arms at all is this kind's missing
+				// control: "the seed documents the non-default" is a claim
+				// about a fallback, and a key whose removal disarms has no
+				// fallback for it to be about.
+				baseline := runStandDown(t, base)
+				if baseline.code != 0 || baseline.calls == "" {
+					t.Fatalf("%s is registered as %q (%s), but the baseline with %s left out armed nothing (exit %d) — so there is no absent argv for the seed's %s to differ FROM, and this kind cannot be checked for this key at all. A key whose removal disarms has no fallback for its seed line to be the non-default of: register it as %q instead.\n%s", key, r.kind, r.why, key, baseline.code, def, seedShellNoFallback, baseline.out)
+				}
+				// runStandDown folds the world's paths exactly as runArgv
+				// does, so the two are comparable as they stand.
+				if got := runArgv(t, base+key+": "+def+"\n"); got == baseline.calls {
 					t.Errorf("%s is registered as %q (%s), but the seed's %s arms exactly what an absent key arms — the line HAS become a claim about the fallback, so move it to seedShellDefaultCompared:\n%s", key, r.kind, r.why, def, got)
 				}
 			case seedShellNoFallback:
@@ -1603,11 +1678,8 @@ func TestAutostartShellDefaultRegisterIsTotalAndNotStale(t *testing.T) {
 				// claim about the script's fallback could be registered here
 				// and escape the comparison entirely (ranger-base-orq4e,
 				// from ranger-base-5xfzy).
-				got := runStandDown(t, base)
-				if got.calls != "" {
-					t.Errorf("%s is registered as %q (%s), but the baseline with %s left out still armed a loop:\n%s\nSo absent is not a disarm for this key — the script falls back for it, and the fallback is in that argv. If examples/config.yaml documents that value, move the key to seedShellDefaultCompared with a control value; otherwise register the reason that is true.", key, r.kind, r.why, key, got.calls)
-				} else if got.code != 0 {
-					t.Errorf("%s is registered as %q (%s), and the baseline with %s left out armed nothing — but it REFUSED (exit %d) rather than standing down:\n%s\nAbsent is a disarm, which is quiet and exit 0; a key whose absence is an error is not this kind.", key, r.kind, r.why, key, got.code, got.out)
+				if msg := seedShellNoFallbackComplaint(key, r.kind, r.why, runStandDown(t, base)); msg != "" {
+					t.Error(msg)
 				}
 			default:
 				t.Errorf("%s carries an unknown register kind %q", key, r.kind)
