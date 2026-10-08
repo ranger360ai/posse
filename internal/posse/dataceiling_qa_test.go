@@ -35,26 +35,37 @@ import (
 )
 
 // PIN (a): a PRIVATE-stamped repo refuses an added line that trips the
-// ceiling, in a .go, a .md and a .beads/*.jsonl file — the three artifact
-// classes ADR 0050 D5 names, and the repo the visibility wall stands down
-// in. CONTROL: the same bytes with the same ERE under
-// beads_visibility_patterns: ONLY commit clean in the private repo — the
-// pre-0050 shape, which is what says this pin measured the ceiling's scope
-// and not the pattern.
+// ceiling, in a .go and a .md file — two of the three artifact classes ADR
+// 0050 D5 names, and the repo the visibility wall stands down in. CONTROL:
+// the same bytes with the same ERE under beads_visibility_patterns: ONLY
+// commit clean in the private repo — the pre-0050 shape, which is what says
+// this pin measured the ceiling's scope and not the pattern.
 //
-// MUTATION-CHECKED (runs on ranger-base-nfg8l):
+// THE THIRD CLASS, `.beads/*.jsonl`, MOVED OUT OF THIS PIN'S REFUSING LIST
+// (ADR 0068 D1). It was an arm here until 2026-10-08, asserting a refusal;
+// the ceiling now REPORTS over that file and lets the commit through,
+// because bd's pre-commit stages it into every commit and no committer can
+// take the line back out — one such record refused every commit in a repo
+// (github.com/ranger360ai/posse/issues/1). The arm is kept, retargeted to
+// the new exit, so the split is visible at the place the old assertion
+// stood; what the report CONTAINS is
+// TestQADataCeilingReportsOverTheBeadsJsonl's.
+//
+// MUTATION-CHECKED (runs on ranger-base-nfg8l, re-run on ranger-base-qvy0n):
 //   - M1, the ceiling block rendered INSIDE the visibility gate (after the
 //     `if`): every private-repo arm here goes red — the commit lands — and
 //     the control stays green. PIN (c)'s public arm stays green, which is
 //     why (a) and (c) are two pins.
 //   - M4, the ceiling rendered with plain posse_check calls: this pin
 //     stays green (a refusal is a refusal) and PIN (d) reds.
+//   - N1, the refusing reader rendered with no exclusion pathspec (ADR
+//     0068 D1 undone): the retargeted jsonl arm reds — the commit is
+//     refused again — and the two refusing arms stay green.
 func TestQADataCeilingRefusesAddedLinesInAPrivateRepo(t *testing.T) {
 	w := qaCeilingWall(t, "")
 	arms := []struct{ rel, body string }{
 		{"internal/posse/notes.go", "package posse\n\n// the " + qaCeilingHit + " export from tuesday\n"},
 		{"docs/notes.d/handoff.md", "# handoff\n\n" + qaCeilingHit + " — do not forward\n"},
-		{".beads/issues.jsonl", `{"id":"x-1","title":"triage","description":"pasted: ` + qaCeilingHit + ` header"}` + "\n"},
 	}
 	for _, arm := range arms {
 		t.Run(arm.rel, func(t *testing.T) {
@@ -91,6 +102,26 @@ func TestQADataCeilingRefusesAddedLinesInAPrivateRepo(t *testing.T) {
 			w.unstage(t, w.priv, arm.rel)
 		})
 	}
+
+	// THE THIRD ARTIFACT CLASS, at the new exit: the same bytes in
+	// .beads/issues.jsonl LAND, and the report says so (ADR 0068 D1). The
+	// report is asserted by its label alone here — this pin is about which
+	// exit each artifact class gets.
+	t.Run(".beads/issues.jsonl (reported, not refused)", func(t *testing.T) {
+		const rel = ".beads/issues.jsonl"
+		body := `{"id":"x-1","title":"triage","description":"pasted: ` + qaCeilingHit + ` header"}` + "\n"
+		w.stage(t, w.priv, rel, body)
+		out, err := w.git(w.priv, w.persona, "commit", "-m", "x", "--", rel)
+		if err != nil {
+			t.Fatalf("ADR 0068 D1: the ceiling must REPORT over .beads/*.jsonl and let the commit through: %v\n%s", err, out)
+		}
+		if !strings.Contains(out, dataCeilingScanLabel+" REPORTED") {
+			t.Errorf("the commit landed, but nothing was reported — a silent exclusion is the hole ADR 0068 rejected:\n%s", out)
+		}
+		if strings.Contains(out, "refused by posse gate") {
+			t.Errorf("a report must not be worded as a refusal:\n%s", out)
+		}
+	})
 
 	// THE CONTROL: same bytes, same ERE, same private repo — the ERE under
 	// beads_visibility_patterns: alone. That wall is inside the stamp gate,
@@ -385,8 +416,8 @@ func TestQADataCeilingSharesOneClassNamespace(t *testing.T) {
 			t.Errorf("the private repo's hook must carry %q:\n%s", want, hook)
 		}
 	}
-	if n := strings.Count(hook, "posse_check '"+qaCeilingClass+"'"); n != 3 {
-		t.Errorf("the ceiling class must be stamped exactly three times (content arm, path arm, commit-message arm), got %d", n)
+	if n := strings.Count(hook, "posse_check '"+qaCeilingClass+"'"); n != 4 {
+		t.Errorf("the ceiling class must be stamped exactly four times (the refusing content arm, the path arm, the commit-message arm, and the REPORTING reader over .beads/*.jsonl — ADR 0068 D1), got %d", n)
 	}
 	if strings.Contains(hook, qaCeilingWord+"-twin") || strings.Contains(hook, qaCeilingWord+"[0-9]+") {
 		t.Error("the hook recorded a REFUSED entry's value — the class is the record")
@@ -465,8 +496,34 @@ func TestQADataCeilingRendersAboveTheGateUnderEveryStamp(t *testing.T) {
 		if msgArm := strings.Index(hook, `posse_msg=$(cat "$1"`); msgArm < message || msgArm > gate {
 			t.Errorf("%s: the message arm must read $1 between its own banner and the gate, got %d (banner=%d gate=%d)", vis, msgArm, message, gate)
 		}
-		if strings.Count(hook, "posse_check '"+qaCeilingClass+"' '"+qaCeilingERE+"' "+opsClassOnlyArg) != 3 {
-			t.Errorf("%s: the ceiling must render class-only at all three arms", vis)
+		// FOUR sites since ADR 0068 D1, not three: the refusing content
+		// arm, the path arm, the message arm, and the REPORTING reader over
+		// .beads/*.jsonl. The report is class-only for the same reason the
+		// refusals are and one reason more — it prints on a commit that
+		// LANDS, so it is read more often than any of them.
+		if strings.Count(hook, "posse_check '"+qaCeilingClass+"' '"+qaCeilingERE+"' "+opsClassOnlyArg) != 4 {
+			t.Errorf("%s: the ceiling must render class-only at all four arms", vis)
+		}
+		// The REPORTING reader is the fourth arm, below the other three and
+		// still above the gate (ADR 0068 D1): a report that rendered inside
+		// the stamp gate would be silent in exactly the private bead repo
+		// the ceiling exists for, and one that rendered BEFORE a refusal
+		// would print a remedy for a commit that is not landing.
+		report := strings.Index(hook, "REPORTING reader: .beads/*.jsonl")
+		if report < 0 {
+			t.Fatalf("%s: the reporting reader's banner is missing", vis)
+		}
+		if !(message < report && report < gate) {
+			t.Errorf("%s: want message < report < gate, got message=%d report=%d gate=%d", vis, message, report, gate)
+		}
+		// The two readers' subjects, read off the stamped text: the one that
+		// refuses excludes the beads jsonl and the one that reports is the
+		// only reader of it, so the classes are scanned exactly once.
+		if !strings.Contains(hook, `"$posse_base" -- `+ceilingRefusePathspec+` 2>/dev/null`) {
+			t.Errorf("%s: the refusing reader must exclude .beads/*.jsonl (%s)", vis, ceilingRefusePathspec)
+		}
+		if !strings.Contains(hook, `"$posse_base" -- `+ceilingReportPathspec+` 2>/dev/null`) {
+			t.Errorf("%s: the reporting reader must read .beads/*.jsonl alone (%s)", vis, ceilingReportPathspec)
 		}
 		// The head comment's COUNT is the assertion, not the word "Five":
 		// it went to four when ADR 0051's citation arm was removed
@@ -479,8 +536,9 @@ func TestQADataCeilingRendersAboveTheGateUnderEveryStamp(t *testing.T) {
 	}
 	if hook := CommitGuardHook(VisibilityPrivate, OpsPatternSet{}); strings.Contains(hook, dataCeilingScanLabel) ||
 		strings.Contains(hook, "─── the data ceiling") || strings.Contains(hook, "third arm: the commit MESSAGE") ||
+		strings.Contains(hook, "REPORTING reader: .beads/*.jsonl") ||
 		strings.Contains(hook, `posse_msg=$(cat "$1"`) {
-		t.Error("an empty ceiling list must render no block at all — the message arm included: an instance with no ceiling pays for no read")
+		t.Error("an empty ceiling list must render no block at all — the message arm and the REPORTING reader included: an instance with no ceiling pays for no read")
 	}
 }
 
@@ -1293,4 +1351,196 @@ func TestQACeilingFillReadsTheValueTheHookReads(t *testing.T) {
 			}
 		})
 	}
+}
+
+// ─── ADR 0068 D1: the ceiling REPORTS over .beads/*.jsonl ─────────────────
+
+// PIN (n): the issue's own repro. bd's pre-commit flushes the beads db and
+// `git add`s it into the FALSE index git hands the hooks, so a path-limited
+// commit that named `docs/a.md` and nothing else carries the jsonl in its
+// tree anyway (ADR 0068 Context). Until ADR 0068 the ceiling's content arm
+// read that entry and refused — and nothing a committer could type removed
+// the line, so ONE bead record above the ceiling refused every commit in
+// the repo: persona memory landings at reap, the loop's queue commit, the
+// operator's own, until a human typed the override
+// (github.com/ranger360ai/posse/issues/1).
+//
+// The four cells are ADR 0068's Verification 1, 2, 4 and 6. 3 (the commit
+// MESSAGE) is unchanged and pinned by
+// TestQADataCeilingRefusesTheCommitMessage; 5 (committed from a
+// subdirectory) is a property of the `:(top)` pathspecs and is MEASURED at
+// ceilingRefusePathspec rather than pinned — the hook's cwd is git's to
+// choose and a test that chdirs the COMMIT does not move the HOOK.
+//
+// THE FIXTURE IS bd's SHIM, not bd: a three-line `pre-commit` that rewrites
+// `.beads/issues.jsonl` and stages it. What the pin needs from bd is the
+// one behaviour ADR 0068 turns on — a hook staging a path the committer did
+// not name — and bd is not on the box a suite runs on.
+//
+// MUTATION-CHECKED (runs on ranger-base-qvy0n, 2026-10-08):
+//   - N1, the refusing reader rendered with no exclusion pathspec
+//     (contentPathspec "" for the ceiling, which is ADR 0068 D1 undone):
+//     cells 1 and 4 red at exit 1 — the lockout itself — and cell 6 reds
+//     too, because the refusing arm DOES consult the override and so the
+//     commit lands with an OVERRIDDEN line where it should have landed with
+//     a report. Cell 2 stays green, and so does the namespace pin: the
+//     class is still stamped four times.
+//   - N2, dataCeilingReport returning "" (the rejected "exclude it
+//     silently" alternative, exactly): cells 1, 4 and 6 red — the commits
+//     land and nothing is reported, refusals.log empty — and cell 2 stays
+//     green. N1 and N2 are the two halves of D1 and no single assertion
+//     tells them apart, which is why both the EXIT and the REPORT are
+//     asserted in the same cell.
+//   - N4, the report's `record id(s)` block dropped: cells 1 and 4 red on
+//     the id and on nothing else. The id is the whole citation every remedy
+//     step takes, so it is pinned apart from the class and the count.
+//   - N5, the report's posse_check calls rendered plain (classOnly=false):
+//     cells 1 and 4 red on the count AND on the withholding — the ERE and
+//     the matched text appear in a report, which is itself a local file,
+//     and which prints on a commit that LANDS.
+func TestQADataCeilingReportsOverTheBeadsJsonl(t *testing.T) {
+	const (
+		named = "docs/a.md"
+		jsonl = ".beads/issues.jsonl"
+		recID = "rb-2"
+	)
+	// The record the fixture's shim flushes: a classed line carrying an
+	// "id", which is the one thing about it a report may print.
+	row := `{"id":"` + recID + `","title":"triage","description":"pasted: ` + qaCeilingHit + ` header"}` + "\n"
+
+	// bdShim is what makes this pin the issue's repro rather than a test of
+	// a pathspec: it writes the jsonl and stages it from INSIDE pre-commit,
+	// against the false index, exactly as bd's own shim does.
+	bdShim := func(t *testing.T, w *visWall, repo string) {
+		t.Helper()
+		dir, err := hooksDir(repo)
+		if err != nil {
+			t.Fatal(err)
+		}
+		script := "#!/bin/sh\nprintf '%s' " + shQuote(row) + " > .beads/issues.jsonl\n" +
+			"git add -- .beads/issues.jsonl\n"
+		// WriteExecutable and not os.WriteFile: the ETXTBSY window
+		// (golang/go#22315) is exactly what this fixture would hit — git
+		// execs the hook moments after it is written — and the execwrite
+		// door over this tree is the pin that says so.
+		if err := WriteExecutable(filepath.Join(dir, "pre-commit"), []byte(script), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// VERIFICATION 1: the commit names docs/a.md; bd's shim puts the classed
+	// record in the tree; the commit LANDS and the report names the class,
+	// the count and the id, and never the text.
+	t.Run("1: hook-staged jsonl, an unrelated path-limited commit", func(t *testing.T) {
+		w := qaCeilingWall(t, "")
+		bdShim(t, w, w.priv)
+		w.stage(t, w.priv, named, "# a\n\nnothing above the ceiling here\n")
+		out, err := w.git(w.priv, w.persona, "commit", "-m", "x", "--", named)
+		if err != nil {
+			t.Fatalf("ADR 0068 D1: a commit that named %s must not be refused for what bd staged: %v\n%s", named, err, out)
+		}
+		for _, want := range []string{
+			dataCeilingScanLabel + " REPORTED: " + dataCeilingReportHeader,
+			DataCeilingConfigKey + ":", // the rule, and where the operator changes it
+			qaCeilingClass + ": 1 hit(s)",
+			ceilingReportMatched,
+			recID, // the sanctioned citation, which every remedy step takes
+			"bd close <id> -r 'data ceiling: content above the ceiling; succeeded by",
+			"never comment on <id> again",
+			"stamped: " + VisibilityPrivate,
+		} {
+			if !strings.Contains(out, want) {
+				t.Errorf("the report must carry %q:\n%s", want, out)
+			}
+		}
+		// A report is a local file too, so it withholds exactly what a
+		// refusal withholds: the ERE and the matched text.
+		qaNoCeilingVocabulary(t, "the report", out)
+		qaNoCeilingVocabulary(t, "refusals.log", w.log(t))
+		if strings.Contains(out, "refused by posse gate") {
+			t.Errorf("nothing was refused, so nothing may be worded as a refusal:\n%s", out)
+		}
+		// Exactly one log line, under the REPORTED label and the beads-jsonl
+		// tail: a reader counting ceiling REFUSALS must not count this.
+		log := w.log(t)
+		wantLine := dataCeilingScanLabel + " REPORTED [prepare-commit-msg hook] (stamp: " + VisibilityPrivate + ", beads jsonl)"
+		if n := strings.Count(log, wantLine); n != 1 {
+			t.Errorf("want exactly 1 %q line in refusals.log, got %d:\n%s", wantLine, n, log)
+		}
+		if strings.Count(log, dataCeilingScanLabel) != 1 {
+			t.Errorf("the ceiling may write no other line here — a report is not a refusal:\n%s", log)
+		}
+		// And the record really is in the commit, which is the premise the
+		// whole ADR rests on: the line entered history whatever the wall did.
+		if tree, err := w.git(w.priv, nil, "show", "--stat", "--format=", "HEAD"); err != nil ||
+			!strings.Contains(tree, jsonl) {
+			t.Errorf("fixture premise: bd's shim must put %s in the commit's tree: %v\n%s", jsonl, err, tree)
+		}
+	})
+
+	// VERIFICATION 2: the same class in the file the committer NAMED is
+	// refused exactly as before, and writes no report line. This is the
+	// cell that says D1 narrowed the refusing reader by SUBJECT and did not
+	// turn it off.
+	t.Run("2: the same class in the named doc still refuses", func(t *testing.T) {
+		w := qaCeilingWall(t, "")
+		w.stage(t, w.priv, named, "# a\n\n"+qaCeilingHit+" — pasted\n")
+		out, err := w.git(w.priv, w.persona, "commit", "-m", "x", "--", named)
+		if err == nil {
+			t.Fatalf("the ceiling must still refuse a classed line in the path the committer named:\n%s", out)
+		}
+		if !strings.Contains(out, "refused by posse gate: data-ceiling content in a staged file") {
+			t.Errorf("refused, but not by the ceiling's content arm:\n%s", out)
+		}
+		if strings.Contains(out, "REPORTED") {
+			t.Errorf("a refusal exits before the report arm, so nothing may be reported:\n%s", out)
+		}
+		if log := w.log(t); !strings.Contains(log, dataCeilingScanLabel+" [prepare-commit-msg hook]") ||
+			strings.Contains(log, "REPORTED") {
+			t.Errorf("refusals.log must carry the refusal and no report line:\n%s", log)
+		}
+	})
+
+	// VERIFICATION 4: the loop's queue commit shape — the committer NAMES
+	// the jsonl. Still reported, not refused: the subject decides the exit,
+	// not who named it. This is the cell the rejected alternative (b),
+	// "scan only what the committer named", would have left refusing.
+	t.Run("4: the commit names the jsonl itself", func(t *testing.T) {
+		w := qaCeilingWall(t, "")
+		w.stage(t, w.priv, jsonl, row)
+		out, err := w.git(w.priv, w.persona, "commit", "-m", "x", "--", jsonl)
+		if err != nil {
+			t.Fatalf("ADR 0068 D1: naming the jsonl must not change the exit: %v\n%s", err, out)
+		}
+		for _, want := range []string{dataCeilingScanLabel + " REPORTED", qaCeilingClass + ": 1 hit(s)", recID} {
+			if !strings.Contains(out, want) {
+				t.Errorf("the report must carry %q:\n%s", want, out)
+			}
+		}
+		qaNoCeilingVocabulary(t, "the report", out)
+	})
+
+	// VERIFICATION 6: the override is not CONSULTED. There is nothing to
+	// override — the commit was going to land either way — so the env
+	// changes neither the exit nor the words, and it writes no OVERRIDDEN
+	// line. An OVERRIDDEN line here would tell a reader of refusals.log
+	// that a human decided something they were never asked about.
+	t.Run("6: the override is not consulted", func(t *testing.T) {
+		w := qaCeilingWall(t, "")
+		env := append(append([]string(nil), w.persona...), VisibilityOverrideEnv+"="+VisibilityOverrideValue)
+		w.stage(t, w.priv, jsonl, row)
+		out, err := w.git(w.priv, env, "commit", "-m", "x", "--", jsonl)
+		if err != nil {
+			t.Fatalf("the override must not change a landing commit: %v\n%s", err, out)
+		}
+		if !strings.Contains(out, dataCeilingScanLabel+" REPORTED") {
+			t.Errorf("the report is not an override's to silence:\n%s", out)
+		}
+		if strings.Contains(out, "OVERRIDDEN") {
+			t.Errorf("the reporting reader must not consult the override:\n%s", out)
+		}
+		if log := w.log(t); strings.Contains(log, "OVERRIDDEN") {
+			t.Errorf("refusals.log must carry no OVERRIDDEN line for a report:\n%s", log)
+		}
+	})
 }

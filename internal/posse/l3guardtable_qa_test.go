@@ -46,6 +46,13 @@ import (
 var qaCommitGuardArms = []string{
 	"─── the data ceiling, second arm:",
 	"─── the data ceiling, third arm:",
+	// The ceiling's fourth block and its second `git diff` (ADR 0068 D1):
+	// the same classes over `.beads/*.jsonl` alone, which REPORTS and
+	// continues where the other three refuse. It is an arm of the ceiling
+	// and not a guard of its own — it renders only when the ceiling does,
+	// it reads the same configured list, and a stale body that lost it has
+	// lost the ceiling with it, which is what l3GuardGap already reports.
+	"─── the data ceiling, REPORTING reader:",
 }
 
 // qaScanCommitBanners grades one render: how many unindented banners it holds,

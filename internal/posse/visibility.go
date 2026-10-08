@@ -512,22 +512,76 @@ posse gates install-hooks.`
 // the pattern came from, nothing about what it is for.
 const dataCeilingConfigWhy = "a data-ceiling class (config " + DataCeilingConfigKey + ":)"
 
-// DataCeilingRule is what a ceiling refusal names. Its scope is check 3's
-// two arms (the ADDED lines of every staged file, and the ADDED staged
-// paths) plus a THIRD subject of the ceiling's own, the commit MESSAGE (ADR
-// 0050 D2 as amended 2026-09-03, ranger-base-pqlxr), and its gate is NONE:
-// it runs above the visibility stamp, in every hooked repo, because the
-// question it asks is not about where the repo goes. The enumeration below
-// is the one a writer reads in the refusal, so it says three subjects: a
-// rule that named two while the wall scanned three would send the reader
-// looking for a staged line that is not there.
+// DataCeilingRule is what a ceiling refusal names, and what its REPORT
+// names too (ADR 0068 D1 — same classes, same matcher, one rule text).
+// Its scope is check 3's two arms (the ADDED lines of every staged file,
+// and the ADDED staged paths) plus a THIRD subject of the ceiling's own,
+// the commit MESSAGE (ADR 0050 D2 as amended 2026-09-03,
+// ranger-base-pqlxr), and its gate is NONE: it runs above the visibility
+// stamp, in every hooked repo, because the question it asks is not about
+// where the repo goes. The enumeration below is the one a writer reads in
+// the refusal, so it says three subjects: a rule that named two while the
+// wall scanned three would send the reader looking for a staged line that
+// is not there.
+//
+// AND IT CARRIES THE EXCEPTION IN THE SAME BREATH AS THE SCOPE (ADR 0068
+// D2). Since ADR 0068 the content arm refuses over every staged file
+// EXCEPT `.beads/*.jsonl` and reports over that one, and a rule text that
+// still said "every staged file" would be the drift ADR 0050's
+// Consequences already paid for once (ranger-base-2bijx): a writer reading
+// this in a report would go looking for the refusal it promises. One
+// sentence, both exits.
 const DataCeilingRule = `ADR 0050 D2: a data-ceiling class (config ` + DataCeilingConfigKey + `:) names content
 that may not exist in a local file on this instance at all — not in a bead,
 a doc, a memory file, a source comment or a commit message, whatever the
 repo's visibility stamp. The system of record's id is the sanctioned
 citation. The ceiling is scanned over the ADDED lines of every staged file,
-code included, over the ADDED staged paths, and over every line of the
-commit MESSAGE, in every repo this instance hooks.`
+code included — except .beads/*.jsonl, the beads db and its deletion
+ledger, which are scanned by a reader that REPORTS the class and the record
+id and lets the commit through, because bd stages that file into every
+commit and no committer can take the line back out (ADR 0068 D1) — over the
+ADDED staged paths, and over every line of the commit MESSAGE, in every repo
+this instance hooks.`
+
+// DataCeilingReportedWhy is the paragraph a REPORT carries where a refusal
+// carries nothing: why this one did not refuse. A reader who has only ever
+// seen this wall say no needs to be told that the difference is the remedy
+// and not the verdict — the content IS above the ceiling, and it is going
+// into history either way.
+const DataCeilingReportedWhy = `why this is a report and not a refusal: the content is already in the beads
+db, the jsonl is already written, and bd's own pre-commit flushes and stages
+.beads/*.jsonl into EVERY commit in this repo — including a path-limited
+commit that named something else entirely. So from the moment the record was
+written the line was going to enter history, and nothing a committer can
+type removes it: bd comments has no edit and no delete, and bd delete moves
+the whole record into .beads/deletions.jsonl, which is this same subject. A
+wall whose remedy the committer cannot perform is a lockout and not a gate,
+and this one locked every commit in a repo once — persona memory landings,
+the loop's queue commit, the operator's own — until a human typed the
+override (ADR 0068, github.com/ranger360ai/posse/issues/1). Nothing is let
+in that was being kept out: a refusal with no remedy kept nothing out.`
+
+// DataCeilingFreezeRemedy is ADR 0068 D2's three steps, printed where they
+// are needed. Rule of the text: the content is already in the db and will
+// be in history; what stops it RE-entering every diff is that the record
+// never changes again. Step (3) is the one that is counter-intuitive and
+// the one that ends the report line per commit, so it says why.
+//
+// Written once and read twice: this constant is what the hook prints, and
+// the same three steps go into INSTALL.md's ceiling paragraph and NOTES.md
+// "Privacy model" (ADR 0068 D2; filed as ranger-base-b88us, which is the
+// docs lane's and blocks on this bead).
+const DataCeilingFreezeRemedy = `the way through — FREEZE AND SUCCEED, three steps (ADR 0068 D2). There is
+no private db to re-file this into and no edit that removes the line; what
+you can do is stop the record changing, because only a change re-stages it:
+  1. bd close <id> -r 'data ceiling: content above the ceiling; succeeded by
+     <new-id>' — one last change to the record, and one last report line.
+  2. file the successor citing <id> and carrying the system of record's id,
+     never the content behind it.
+  3. never comment on <id> again: bd comments cannot be edited or deleted,
+     so every comment re-lands the line (reported, not refused).
+If the pattern itself is wrong, only the operator can change it (config ` + DataCeilingConfigKey + `:)
+and re-run posse gates install-hooks.`
 
 // DataCeilingWayThrough is the ceiling's remedy, and it differs from every
 // visibility remedy at one point: there is no private db to re-file into.

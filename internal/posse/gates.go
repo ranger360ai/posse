@@ -3238,8 +3238,11 @@ exit 1
 const commitGuardHead = `#!/bin/sh
 ` + sharedIndexMarker + ` — installed by posse gates install-hooks. Four walls
 # in one slot: the data ceiling (ADR 0050 — this instance's config
-# ` + DataCeilingConfigKey + `: over every staged file, every added path
-# and the commit message, under EVERY visibility stamp), the beads
+# ` + DataCeilingConfigKey + `: over every staged file except
+# .beads/*.jsonl, every added path and the commit message, under EVERY
+# visibility stamp; the beads jsonl is scanned by a reader that REPORTS
+# and does not refuse, because bd stages that file into every commit and
+# no committer can take the line back out — ADR 0068 D1), the beads
 # visibility guard (rangerhq-hrz, extended by ADR 0024 D2 checks 1+2+3 to a
 # docs-genre allowlist, an OpsPatterns scan over staged markdown, and a scan
 # for this box's own identity literals and this instance's config patterns
@@ -3817,6 +3820,16 @@ type visScanSource struct {
 // above it); title names the block in the second arm's banner; head is the
 // first arm's own comment, already rendered at ind.
 //
+// contentPathspec narrows the FIRST arm's reader, and "" — check 3's, and
+// every scan's until ADR 0068 — is "every staged path". The ceiling passes
+// an exclusion (ceilingRefusePathspec) because its content arm is the arm
+// that REFUSES and `.beads/*.jsonl` is the one subject whose refusal has no
+// remedy the committer can perform (ADR 0068 D1); the reporting reader over
+// that same file is dataCeilingReport, a separate `git diff` and not a
+// third arm here, because it does not refuse and so shares neither the
+// override branch nor the exit. The PATH arm is deliberately untouched: a
+// path is the committer's own, and bd stages no new path.
+//
 // TWO SOURCES, ONE SCAN, TWO REFUSALS — the rule for check 3 and the
 // reason this is a list: every source runs over the SAME $posse_added and
 // the same per-path loop — one `git diff`, one listing — but each
@@ -3831,7 +3844,7 @@ type visScanSource struct {
 // the offending path in the refusal — which is what distinguishes a path
 // hit from a content hit for the reader — is to run the same matcher over
 // one path at a time.
-func twoArmScan(ind, title, head string, sources []visScanSource) string {
+func twoArmScan(ind, title, head, contentPathspec string, sources []visScanSource) string {
 	i1, i2 := ind+"  ", ind+"    "
 	var content, loop, pathRefusals, pathInit strings.Builder
 	for _, s := range sources {
@@ -3872,7 +3885,7 @@ judged a markdown file with captured output appended to it, and said
 nothing. --text restores the lines; -a stops grep collapsing the
 NUL-bearing stream to "Binary file (standard input) matches". The
 $(...) capture strips the NULs, so nothing downstream sees one.`) +
-			ind + `posse_added=$(git diff --cached -U0 ` + diffReaderShape + ` "$posse_base" 2>/dev/null |
+			ind + `posse_added=$(git diff --cached -U0 ` + diffReaderShape + ` "$posse_base"` + contentPathspecArgs(contentPathspec) + ` 2>/dev/null |
 ` + i1 + `grep -a '^+' | grep -av '^+++')
 ` + ind + `if [ -n "$posse_added" ]; then
 ` + content.String() + ind + `fi
@@ -3931,6 +3944,161 @@ func shComment(ind, text string) string {
 	return b.String()
 }
 
+// The two pathspecs ADR 0068 D1 splits the ceiling's CONTENT subject by.
+// Both carry `:(top)` because a pathspec without it is resolved against the
+// process's cwd, and the hook must not assume what that is. MEASURED
+// 2026-10-08 (git 2.50.1) in a scratch repo with a classed line staged in
+// both `docs/a.md` and `.beads/issues.jsonl`: read from the worktree root,
+// `. ':(top,exclude).beads/*.jsonl'` and `':(top)' ':(top,exclude)...'` both
+// give the docs line alone; read from `sub/deep`, the `.` form gives NOTHING
+// AT ALL — `.` is the subdirectory, which holds no staged path — while the
+// `:(top)` form is unchanged. The two differ only where the wall would fail
+// OPEN, so the positive pathspec is `:(top)` and not `.`.
+const (
+	// ceilingRefusePathspec is the arm that still refuses: every staged
+	// path EXCEPT the beads jsonl. Everything here is content a committer
+	// can take out of the commit, which is what makes a refusal a gate.
+	ceilingRefusePathspec = `':(top)' ':(top,exclude).beads/*.jsonl'`
+	// ceilingReportPathspec is the arm that reports: the beads jsonl alone
+	// — the db and the deletion ledger beside it (rangerhq-fuom), the same
+	// two files check 0 reads. bd's pre-commit flushes and `git add`s this
+	// file into EVERY commit's tree, including a path-limited commit that
+	// named something else entirely (ADR 0068 Context), so a refusal here
+	// refuses commits nobody is typing at and removes nothing.
+	ceilingReportPathspec = `':(top).beads/*.jsonl'`
+)
+
+// contentPathspecArgs is twoArmScan's content-arm pathspec rendered as the
+// operands of its `git diff`, or "" for a scan that reads every staged path.
+// Already-quoted spellings in, because a pathspec carrying `:(...)` has to
+// reach git past the shell with its parentheses intact — the same reason
+// markdownPathspecArgs quotes check 2's (ranger-base-4b1z4).
+func contentPathspecArgs(pathspec string) string {
+	if pathspec == "" {
+		return ""
+	}
+	return " -- " + pathspec
+}
+
+// dataCeilingReport renders the ceiling's SECOND content reader (ADR 0068
+// D1): the same configured classes, class-only as always, over
+// `.beads/*.jsonl` alone — and on a hit it REPORTS and continues. No
+// override branch, no exit, and RHQ_VISIBILITY_OVERRIDE is not consulted:
+// there is nothing to override, because nothing is being refused.
+//
+// WHY A REPORT AND NOT A WALL. A gate's bargain is that the committer who
+// is refused can clear the refusal. For a bead record carrying ceiling
+// content none of that holds: the content is already in the db, the jsonl
+// is already written, `bd comments` has no edit and no delete, and bd's own
+// pre-commit re-exports and re-stages the file into every later commit —
+// so from the moment the record is written the line WILL enter history, and
+// the refusal decides only who types the override first. MEASURED once on
+// the work box (github.com/ranger360ai/posse/issues/1): ONE such record
+// refused every commit in the repo — persona memory landings at reap, the
+// loop's queue commit, the operator's own — until an override committed it.
+// A refusal with no remedy keeps nothing out, so reporting lets nothing in
+// that was kept out before (ADR 0068, "What this is not").
+//
+// WHY IT IS NOT SILENT. Excluding the file from the ceiling with a pathspec
+// alone is one token cheaper and tells the operator nothing: nobody learns
+// the record exists, nobody is sent to freeze it, and ADR 0050's trigger for
+// the write-time layer — a line in refusals.log — never fires. The report is
+// the difference between a hole and a decision (ADR 0068, Alternatives).
+//
+// WHAT IT PRINTS. The class and the hit count, from the same class-only
+// posse_check every other ceiling arm calls, and then the `"id"` of each
+// matching record. The id is the one thing about a record above the ceiling
+// that a refusal may print (ADR 0050 Context: the system of record's id is
+// the sanctioned citation), and it is exactly what the remedy needs — every
+// one of D2's three steps takes an id. The matched TEXT is never printed,
+// here least of all: a report is itself a local file.
+//
+// A matching line with no `"id"` field — a jsonl this instance did not
+// write, a record shape bd has not got — makes the sed print nothing, and
+// the block says so rather than printing an empty list and looking like it
+// found a record it could not name.
+func dataCeilingReport(ceiling []OpsPattern) string {
+	if len(ceiling) == 0 {
+		return ""
+	}
+	var checks, eres strings.Builder
+	for _, p := range ceiling {
+		checks.WriteString(opsCheckCall("  ", p.Class, p.ERE, true))
+		// One -e per class rather than a `|`-joined ERE: the values are the
+		// operator's own and joining them would rewrite them. grep reads
+		// the union, which is exactly the set of lines posse_check counted.
+		eres.WriteString(" -e " + shQuote(p.ERE))
+	}
+	return "\n" + shComment("", `─── the data ceiling, REPORTING reader: .beads/*.jsonl (ADR 0068 D1) ──
+Same classes, same matcher, same class-only disclosure as the refusing
+reader above — and a different exit: this one says what it found and
+CONTINUES. bd's pre-commit flushes the beads db to this file and git-adds
+it into every commit's tree, so the line is in the commit whatever the
+committer named, and no `+"`bd`"+` verb can take it back out. A wall whose
+remedy the committer cannot perform is a lockout and not a gate, and it
+locked the whole repo once (ADR 0068, issue #1).
+The REFUSING reader excludes this file; this one is the only reader of it,
+so the classes are scanned exactly once either way. Check 0 below still
+refuses over these same two files for the VISIBILITY classes, in a public
+repo only — unchanged by ADR 0068, which is about the ceiling's remedy and
+not about check 0's (ADR 0068 Consequences names the deferral).`) +
+		`posse_added=$(git diff --cached -U0 ` + diffReaderShape + ` "$posse_base" -- ` + ceilingReportPathspec + ` 2>/dev/null |
+  grep -a '^+' | grep -av '^+++')
+if [ -n "$posse_added" ]; then
+  posse_bad=''
+` + checks.String() + `  if [ -n "$posse_bad" ]; then
+    posse_dcids=$(printf '%s\n' "$posse_added" |
+      grep -aE` + eres.String() + ` 2>/dev/null |
+      sed -n 's/.*"id":"\([^"]*\)".*/\1/p' | sort -u)
+    {
+      echo "posse gate: ` + dataCeilingScanLabel + ` REPORTED: ` + dataCeilingReportHeader + ` — prepare-commit-msg hook, session ${RHQ_PERSONA:-?}"
+      echo ` + shQuote(DataCeilingRule) + `
+      echo "` + ceilingReportMatched + `"
+      printf '%s' "$posse_bad"
+      if [ -n "$posse_dcids" ]; then
+        echo "  record id(s) — the sanctioned citation, and what every step below takes:"
+        printf '%s\n' "$posse_dcids" | sed 's/^/    /'
+      else
+        echo ` + shQuote(ceilingReportNoID) + `
+      fi
+      echo ` + shQuote(DataCeilingReportedWhy) + `
+      echo ` + shQuote(DataCeilingFreezeRemedy) + `
+      echo "  ` + ceilingFooter[0] + `"
+      echo "  ` + ceilingFooter[1] + `"
+    } >&2
+    if [ -n "$RHQ_GATES_DIR" ]; then
+      echo "$(posse_stamp) ` + dataCeilingScanLabel + ` REPORTED [prepare-commit-msg hook] (` + dataCeilingStampTail + `, beads jsonl)" >> "$RHQ_GATES_DIR/refusals.log" 2>/dev/null
+    fi
+  fi
+fi
+`
+}
+
+// ceilingReportMatched introduces the class/count block of a REPORT, where
+// stagedLineMatched introduces a refusal's. Its own words because the
+// subject is narrower than "the staged additions" and the reader has to
+// know which file this is about: the one they did not name.
+const ceilingReportMatched = "reported in the staged additions to .beads/*.jsonl (the beads db and its deletion ledger):"
+
+// ceilingReportNoID is what the block says instead of an id list when the
+// matching line carries no `"id"` field at all.
+const ceilingReportNoID = `  record id(s): none — no "id" field on the matching line(s), so this report
+  cannot name the record. The content is still above the ceiling: grep your
+  own staged .beads/*.jsonl for what the class names and freeze the record
+  it belongs to.`
+
+// dataCeilingReportHeader is the clause after "REPORTED:" on the report's first
+// line — what happened, in the same voice the refusals use for their own.
+const dataCeilingReportHeader = "data-ceiling content in a staged .beads/*.jsonl record"
+
+// ceilingFooter is the two stamp lines every ceiling arm prints, refusals
+// and the report alike: the wall runs under every stamp, so it names the
+// one this repo carries rather than asserting "public" (ADR 0050 D2).
+var ceilingFooter = [2]string{
+	"this wall runs under every visibility stamp — this repo's beads db is stamped: $posse_beads_visibility",
+	"(stamped by posse gates install-hooks from config beads_visibility:; the ceiling did not read it)",
+}
+
 // dataCeilingCheck renders the data ceiling's block (ADR 0050 D2): this
 // instance's config data_ceiling_patterns: over the ADDED lines of every
 // staged file, the ADDED staged paths, and every line of the commit
@@ -3963,10 +4131,7 @@ func dataCeilingCheck(ceiling []OpsPattern) string {
 		}
 		return b.String()
 	}
-	footer := [2]string{
-		"this wall runs under every visibility stamp — this repo's beads db is stamped: $posse_beads_visibility",
-		"(stamped by posse gates install-hooks from config beads_visibility:; the ceiling did not read it)",
-	}
+	footer := ceilingFooter
 	src := visScanSource{
 		checks:  checks,
 		pathVar: "posse_dbad",
@@ -4029,7 +4194,15 @@ refused with the stricter remedy — there is no private db to re-file it in.`)
 		footer:       footer,
 	}
 	src.message = msg
-	return twoArmScan("", "the data ceiling", head, []visScanSource{src}) + messageArm("", ceilingMessageHead, []visScanSource{src})
+	// Order: the three arms that REFUSE, then the one that reports. A commit
+	// that trips both prints the refusal and exits, and the report is never
+	// reached — which is honest, because nothing landed and there is nothing
+	// yet to freeze. The report's own `git diff` is the extra process ADR
+	// 0068's Consequences priced (~0.1 s, ASSUMED from ADR 0050's 0.12 s
+	// figure for the reader itself).
+	return twoArmScan("", "the data ceiling", head, ceilingRefusePathspec, []visScanSource{src}) +
+		messageArm("", ceilingMessageHead, []visScanSource{src}) +
+		dataCeilingReport(ceiling)
 }
 
 // messageArm renders the THIRD arm both walls have: the commit MESSAGE,
@@ -4833,7 +5006,7 @@ vocabulary — fixture figures, blessed defaults, documented key values —
 and a message has no shape table to disposition the residue by
 (ranger-base-1nbtn, pinned by TestQAShippedPatternsDoNotScanTheCommit-
 Message).`)
-	return twoArmScan("  ", "check 3", head, sources) +
+	return twoArmScan("  ", "check 3", head, "", sources) +
 		messageArm("  ", checkThreeMessageHead, sources)
 }
 

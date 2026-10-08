@@ -812,18 +812,21 @@ func TestInstanceOpsPatternGuardsAPublicRepo(t *testing.T) {
 	// census-backed half of the same decision (pinned by
 	// TestQAShippedPatternsDoNotScanTheCommitMessage).
 	//
-	// PLUS THREE since ADR 0050 (ranger-base-nfg8l, third arm in
-	// ranger-base-o2v6n): the data ceiling renders its own block above the
-	// visibility gate with check 3's two arms — added LINES and added PATHS
-	// — and with a third over every line of the commit MESSAGE, so the one
-	// ceiling pattern configured above is stamped three times. Eight call
-	// sites now, not four.
+	// PLUS FOUR since ADR 0050 (ranger-base-nfg8l, third arm in
+	// ranger-base-o2v6n; fourth in ranger-base-qvy0n): the data ceiling
+	// renders its own block above the visibility gate with check 3's two
+	// arms — added LINES and added PATHS — with a third over every line of
+	// the commit MESSAGE, and since ADR 0068 D1 with a FOURTH reader over
+	// `.beads/*.jsonl` alone, which reports and does not refuse. The one
+	// ceiling pattern configured above is therefore stamped four times, and
+	// the refusing content arm excludes the file the fourth one reads, so
+	// nothing is scanned twice. Nine call sites now, not four.
 	identityCalls := 3 * len(testIdentity(t, pub))
-	if want, got := 2*len(OpsPatterns)+4+identityCalls+3, strings.Count(hook, "posse_check "); got != want {
-		t.Errorf("want the shipped list twice, the instance's pattern four times, the ceiling's three times and %d identity checks (%d), got %d", identityCalls, want, got)
+	if want, got := 2*len(OpsPatterns)+4+identityCalls+4, strings.Count(hook, "posse_check "); got != want {
+		t.Errorf("want the shipped list twice, the instance's pattern four times, the ceiling's four times and %d identity checks (%d), got %d", identityCalls, want, got)
 	}
-	if n := strings.Count(hook, "posse_check 'restricted-banner'"); n != 3 {
-		t.Errorf("the ceiling pattern must be stamped at exactly its three arms, got %d", n)
+	if n := strings.Count(hook, "posse_check 'restricted-banner'"); n != 4 {
+		t.Errorf("the ceiling pattern must be stamped at exactly its four arms (three refusing, one reporting — ADR 0068 D1), got %d", n)
 	}
 	// And the instance's pattern is NOT stamped into check 2's markdown
 	// scan any more: check 3 below already reads every staged file,
