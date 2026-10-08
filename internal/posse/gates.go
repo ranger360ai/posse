@@ -926,9 +926,13 @@ func (a *App) RenderGates(persona string, deny []string) (gatesDir, binDir, shel
 	// The refusal path's own `date`, resolved exactly the way each shimmed
 	// binary is — see refusalTimestamp for why a bare name is not safe here.
 	dateBin := resolveOutside("date", binDir)
+	// Read once, outside the loop: the bd shim's ADR 0069 arm and every
+	// other renderer that reads OpsPatternSet() must never disagree about
+	// which ceiling classes are in force this render.
+	ceiling := a.OpsPatternSet().Ceiling
 	for _, c := range cmds {
 		real := resolveOutside(c, binDir)
-		script := renderShim(persona, c, real, log, dateBin, rules[c])
+		script := renderShim(persona, c, real, log, dateBin, rules[c], ceiling)
 		if err := WriteExecutable(filepath.Join(binDir, c), []byte(script), 0o755); err != nil {
 			return "", "", "", err
 		}
@@ -1289,8 +1293,12 @@ func quotedStamp(dateBin string) string {
 	return strings.ReplaceAll(refusalTimestamp(dateBin), "$", `\$`)
 }
 
-// renderShim writes the POSIX sh shim for one command.
-func renderShim(persona, cmd, real, log, dateBin string, rules []shimRule) string {
+// renderShim writes the POSIX sh shim for one command. ceiling is this
+// instance's data_ceiling_patterns: list (ADR 0069) — read by
+// renderDataCeilingArgvGuard, which renders nothing for any cmd but "bd"
+// and nothing at all when ceiling is empty, so passing it here for every
+// command costs no caller a second read of config.
+func renderShim(persona, cmd, real, log, dateBin string, rules []shimRule, ceiling []OpsPattern) string {
 	var b strings.Builder
 	// The marker stays on line 2 and stays where gateShimTarget and
 	// scripts/verify-bd-pin.sh read it (`head -2`); the renderer clause is
@@ -1369,6 +1377,7 @@ func renderShim(persona, cmd, real, log, dateBin string, rules []shimRule) strin
 		b.WriteString("if [ -n \"$RHQ_GATE_RULE\" ]; then posse_refuse \"$@\"; fi\n")
 	}
 	b.WriteString(renderSequencerAudit(cmd, real, dateBin))
+	b.WriteString(renderDataCeilingArgvGuard(cmd, ceiling, dateBin))
 	if real != "" {
 		fmt.Fprintf(&b, "exec %s \"$@\"\n", shQuote(real))
 	} else {
@@ -1573,6 +1582,120 @@ func renderSequencerAudit(cmd, real, dateBin string) string {
 	b.WriteString("      echo \"  Touch nothing in the SHARED git dir: a stray packed-refs.lock there is the operator's to remove, never yours (ADR 0059 D3). Say so on your bead.\" >&2\n")
 	fmt.Fprintf(&b, "      echo \"%s git $* exited 0 leaving$posse_sleft (alarm: ranger-base-71g2f)\" >> \"$RHQ_GATE_LOG\" 2>/dev/null\n", refusalTimestamp(dateBin))
 	b.WriteString("      exit 1\n    fi\n  fi\n  exit $posse_src\nfi\n")
+	return b.String()
+}
+
+// ─── The data-ceiling argv arm (ADR 0069) ────────────────────────────────────
+
+// dataCeilingArgvWayThrough is ADR 0069 D4's remedy, printed by the bd
+// shim's own ceiling refusal below — not DataCeilingWayThrough, which talks
+// about a STAGED file. Nothing is staged here: bd has not run yet, so the
+// fix is to retype the command rather than edit a tree.
+const dataCeilingArgvWayThrough = `the way through: retype the bd command with the system of record's id in
+place of the paste; for a -f/--file/--body-file file, remove the paste from
+the file first. There is no private db to re-file this into: the ceiling is
+about whether it may exist here at all, not about where it may go. The
+refusal gives the class and a hit count and never the text it matched — a
+refusal is itself a local file (the terminal, the transcript, refusals.log),
+and printing the match would breach the ceiling by the wall's own hand.`
+
+// dataCeilingArgvFooter is ADR 0069 D4's footer line. It is not
+// ceilingFooter (the commit hook's): that one names the REPO's visibility
+// stamp, which this shim never reads — it is rendered once per persona,
+// outside any one repo, and runs the same whichever repo bd is pointed at.
+const dataCeilingArgvFooter = "this wall runs under every visibility stamp; the commit hook stands behind it and REPORTS what reaches the db (ADR 0068)."
+
+// renderDataCeilingArgvGuard is the bd shim's ADR 0069 arm: every argv word
+// bd was about to see, plus the content of every REGULAR file named by
+// -f/--file/--body-file (either spelling), judged by the SAME posse_check
+// the commit hook's own ceiling arms use (posseCheckFunc), class-only
+// always, with its own refusal function — never posse_refuse, which echoes
+// $* to stderr and to refusals.log and would breach the ceiling by the
+// wall's own hand (D4). No override (D5): the writer is the one typing, and
+// the remedy is always performable.
+//
+// "" for any cmd but "bd", and "" when the instance configured no ceiling —
+// the bd shim then renders exactly as it did before this arm existed
+// (ADR 0069 D1, Verification 5).
+//
+// STDIN IS NEVER OPENED (D2, measured): a file value of "-" or a path
+// beginning /dev/ or /proc/ is skipped by the case arm below before `cat`
+// ever runs, so /dev/stdin backed by a regular redirect is never consumed
+// out from under bd — the shim reads a copy by name, never bd's own stream.
+// `bd close -f` is `--force`: the word after it is an id or a flag, not a
+// file, and if a regular file of that name happens to exist in the cwd the
+// arm reads it — a read, not a change to what bd does with it (D2).
+func renderDataCeilingArgvGuard(cmd string, ceiling []OpsPattern, dateBin string) string {
+	if cmd != "bd" || len(ceiling) == 0 {
+		return ""
+	}
+	var checks strings.Builder
+	for _, p := range ceiling {
+		checks.WriteString(opsCheckCall("", p.Class, p.ERE, true))
+	}
+	var b strings.Builder
+	b.WriteString(shComment("", `─── ADR 0069: the data ceiling's write-time arm, over bd argv ──────────
+Every argv word bd was about to see, one per line, plus the content of
+every REGULAR file named by -f/--file/--body-file (separate or '=' form) —
+read only when its value is not '-' and does not begin /dev/ or /proc/, so
+bd's stdin is never opened out from under it (D2, measured). Same classes,
+same posse_check, same class-only disclosure as the commit hook's own
+ceiling arms (D3) — one dialect, not two. Its own refusal below, never
+posse_refuse, which echoes $* and would breach the ceiling by the wall's
+own hand (D4). No override (D5): the writer is the one typing, and the
+remedy is always performable.`))
+	b.WriteString(posseCheckFunc)
+	b.WriteString(`posse_bd_ceiling_files() {
+  posse_bd_cf=
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -f|--file|--body-file)
+        shift
+        [ $# -gt 0 ] && posse_bd_cf="$posse_bd_cf
+$1"
+        ;;
+      -f=*|--file=*|--body-file=*)
+        posse_bd_cf="$posse_bd_cf
+${1#*=}"
+        ;;
+    esac
+    shift
+  done
+}
+posse_bd_ceiling_files "$@"
+posse_added=$(printf '%s\n' "$@")
+if [ -n "$posse_bd_cf" ]; then
+  posse_bd_cifs=$IFS
+  IFS='
+'
+  for posse_bd_cp in $posse_bd_cf; do
+    IFS=$posse_bd_cifs
+    case "$posse_bd_cp" in
+      ''|-|/dev/*|/proc/*) continue ;;
+    esac
+    if [ -f "$posse_bd_cp" ]; then
+      posse_added="$posse_added
+$(cat -- "$posse_bd_cp" 2>/dev/null)"
+    fi
+  done
+  IFS=$posse_bd_cifs
+fi
+posse_bad=''
+`)
+	b.WriteString(checks.String())
+	b.WriteString(`if [ -n "$posse_bad" ]; then
+  {
+    echo "refused by posse gate: bd argv carries data-ceiling content — bd shim, session ${RHQ_PERSONA:-?}"
+    printf '%s' "$posse_bad"
+    echo ` + shQuote(DataCeilingRule) + `
+    echo ` + shQuote(dataCeilingArgvWayThrough) + `
+    echo "  ` + dataCeilingArgvFooter + `"
+  } >&2
+`)
+	fmt.Fprintf(&b, "  echo \"%s %s [bd shim] (bd argv) session ${RHQ_PERSONA:-?}\" >> \"$RHQ_GATE_LOG\" 2>/dev/null\n", refusalTimestamp(dateBin), dataCeilingScanLabel)
+	b.WriteString(`  exit 1
+fi
+`)
 	return b.String()
 }
 
@@ -3283,6 +3406,31 @@ func markdownPathspecArgs() string {
 // and — always, for the reason ADR 0050 gives — a data-ceiling pattern.
 const opsClassOnlyArg = "class-only"
 
+// posseCheckFunc is the `posse_check` shell function, factored out so every
+// renderer that embeds it — the commit hook's visibilityGuardBody and the
+// bd shim's ADR 0069 ceiling arm (renderDataCeilingArgvGuard) — carries the
+// byte-identical function rather than two hand-kept copies that can drift
+// into two dialects of the one judge the wall is supposed to be (ADR 0069
+// D3). $3 is the disclosure switch (ADR 0048 D2, ranger-base-8114t): set,
+// it accumulates a class and a hit count into $posse_bad and withholds the
+// pattern and the matched text; unset, it accumulates the pattern and up to
+// three matches. Every ceiling call renders it set.
+const posseCheckFunc = `posse_check() {
+  if [ -n "$3" ]; then
+    posse_n=$(printf '%s\n' "$posse_added" | grep -cE "$2" 2>/dev/null)
+    [ "${posse_n:-0}" -gt 0 ] || return 0
+    posse_bad="$posse_bad  $1: $posse_n hit(s) — pattern and matched text withheld: a configured class's value is the thing being kept out, so the refusal carries the class alone (ADR 0048 D2, ADR 0050 D2)
+"
+    return 0
+  fi
+  posse_m=$(printf '%s\n' "$posse_added" | grep -oE "$2" 2>/dev/null | head -3 | tr '\n' ' ')
+  [ -n "$posse_m" ] || return 0
+  posse_bad="$posse_bad  $1: $2
+    matched: $posse_m
+"
+}
+`
+
 // opsCheckCall renders one posse_check call. classOnly is true for a pattern
 // that came from config beads_visibility_patterns:, whose value is one
 // deployment's confidential vocabulary, and for every pattern from config
@@ -3491,21 +3639,7 @@ if git rev-parse --verify -q HEAD >/dev/null 2>&1; then posse_base=HEAD; fi
 # the wall says WHICH class was hit and HOW OFTEN and nothing else; the
 # words that tripped it stay in the staged tree of whoever wrote them, where
 # they already are.
-posse_check() {
-  if [ -n "$3" ]; then
-    posse_n=$(printf '%s\n' "$posse_added" | grep -cE "$2" 2>/dev/null)
-    [ "${posse_n:-0}" -gt 0 ] || return 0
-    posse_bad="$posse_bad  $1: $posse_n hit(s) — pattern and matched text withheld: a configured class's value is the thing being kept out, so the refusal carries the class alone (ADR 0048 D2, ADR 0050 D2)
-"
-    return 0
-  fi
-  posse_m=$(printf '%s\n' "$posse_added" | grep -oE "$2" 2>/dev/null | head -3 | tr '\n' ' ')
-  [ -n "$posse_m" ] || return 0
-  posse_bad="$posse_bad  $1: $2
-    matched: $posse_m
-"
-}
-` + dataCeilingCheck(set.Ceiling) + `
+` + posseCheckFunc + dataCeilingCheck(set.Ceiling) + `
 if [ "$posse_beads_visibility" = ` + shQuote(VisibilityPublic) + ` ]; then
   # ─── check 0: the beads db (rangerhq-hrz) ───────────────────────────────
   # ADDED lines only, and every .beads jsonl: the db and the deletion ledger

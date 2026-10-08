@@ -59,7 +59,7 @@ func TestSeatbeltHeaderNamesTheBinaryThatRenderedIt(t *testing.T) {
 func TestGateShimHeaderNamesTheBinaryThatRenderedIt(t *testing.T) {
 	t.Parallel()
 	body := renderShim("bob", "git", "/usr/bin/git", "/tmp/refusals.log", "/bin/date",
-		ParseShimRules([]string{"Bash(git push:*)"})["git"])
+		ParseShimRules([]string{"Bash(git push:*)"})["git"], nil)
 	for _, want := range renderedBySubstrings(t) {
 		if !strings.Contains(body, want) {
 			t.Fatalf("shim header does not name the renderer (%q):\n%s", want, body)

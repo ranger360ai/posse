@@ -273,7 +273,7 @@ func TestQAGateShimIsNotAShadow(t *testing.T) {
 	}
 	shim := filepath.Join(shimDir, "posse")
 	body := renderShim("testpersona", "posse", running, filepath.Join(dir, "refusals.log"), "/bin/date",
-		ParseShimRules([]string{"Bash(posse promote:*)"})["posse"])
+		ParseShimRules([]string{"Bash(posse promote:*)"})["posse"], nil)
 	if err := WriteExecutable(shim, []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -299,7 +299,7 @@ func TestQAGateShimIsNotAShadow(t *testing.T) {
 	}
 	stale := filepath.Join(shimDir, "stale-posse")
 	staleBody := renderShim("testpersona", "posse", other, filepath.Join(dir, "refusals.log"), "/bin/date",
-		ParseShimRules([]string{"Bash(posse promote:*)"})["posse"])
+		ParseShimRules([]string{"Bash(posse promote:*)"})["posse"], nil)
 	if err := WriteExecutable(stale, []byte(staleBody), 0o755); err != nil {
 		t.Fatal(err)
 	}
