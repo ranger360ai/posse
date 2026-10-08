@@ -1661,7 +1661,12 @@ confidential vocabulary to the lint without it ever entering this repo.
 Its sibling `data_ceiling_patterns:` (same shape, one class namespace
 across both) is scanned in every hooked repo whatever its stamp, above the
 visibility gate: visibility says where content may go, the ceiling says
-whether it may exist in a local file here at all (ADR 0050). Both walls
+whether it may exist in a local file here at all (ADR 0050). That same
+pattern set is also rendered into every persona's `bd` shim at launch,
+refusing a write carrying a ceiling class, class-only, with the
+retype-with-the-cite remedy before it reaches the db — a key added to
+`data_ceiling_patterns:` reaches the next session with no install step,
+because shims are re-rendered at every launch (ADR 0069). Both walls
 have the same three arms: added lines, added paths, and every line of the
 COMMIT MESSAGE — a message replicates with the branch, so a paste in one is
 as durable as a paste in a file (ADR 0050 D2 for the ceiling, ADR 0024 D2

@@ -264,6 +264,9 @@ default_emoji: ⚙️
 # into every commit and a bead record has no remedy a committer can perform
 # (ADR 0068) — the report names the class, hit count and record id, and the
 # way through is freeze-and-succeed: close the record citing a successor.
+# Also scanned over every bd argv word and -f/--file/--body-file regular
+# file at the persona's bd shim, refused class-only before the write
+# reaches the db (ADR 0069).
 # data_ceiling_patterns:
 #   restricted-banner: [[:upper:]]+-RESTRICTED
 #   export-name: export-[0-9]{8}\.(csv|xlsx)

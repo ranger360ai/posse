@@ -134,7 +134,11 @@ a lockout, not a gate (ADR 0068): the way through is freeze-and-succeed —
 close the record citing a successor, file the successor against the system
 of record's id and never the content, and never comment on the closed record
 again, since a comment cannot be edited or deleted and would only re-land the
-line.
+line. A persona's `bd` write carrying a ceiling class is refused at the bd
+shim itself, class-only, with the remedy retype-with-the-cite; what reaches
+the db anyway — stdin forms, the operator's own shell, `bd sync` — is
+REPORTED at the commit with the record's id as above
+([ADR 0069](docs/adr/0069-ceiling-write-time-layer-is-an-arm-of-the-bd-shim.md)).
 
 ## Decisions still made by hand
 
