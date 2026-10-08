@@ -23,7 +23,11 @@ content arm REPORTS — class, hit count, record id — and the commit lands;
 it refuses everywhere else. A bead record has no remedy a committer can
 perform, so the refusal only chose who typed the override — ADR 0068,
 ranger-base-6pisf, from github issue #1; the second layer this record
-deferred is triggered and filed there).*
+deferred is triggered and filed there) · amended 2026-10-08 (Alternatives:
+that second layer is decided — ADR 0069, ranger-base-km9jt: an arm of the bd
+shim over argv and the regular files bd is told to read, the hook's own
+`grep -E`, class-only, no override; not the PreToolUse gate, for the echo
+and dialect reasons measured there).*
 
 > An instance that holds someone else's data has two different questions
 > to ask of a staged line. *May this be public?* is visibility, and ADR
@@ -412,7 +416,10 @@ alternatives priced.*
   script that the harness's own hook-gate logging can echo. It is a
   legitimate SECOND layer; the trigger for filing it is the first ceiling
   refusal in refusals.log on the work box, which is the measurement that
-  the class exists in practice.
+  the class exists in practice. *(2026-10-08: that refusal is github issue
+  #1, and the layer is ADR 0069 — hosted in the L1 bd shim, not in the
+  PreToolUse gate, whose refusal echoes the matched segment and whose
+  Python `re` judges the shipped example value wrong; both MEASURED there.)*
 - **Reuse check 0's bead-shaped remedy.** A ceiling hit in the jsonl has
   no private db to be re-filed into; sending the writer there is the wrong
   door.
