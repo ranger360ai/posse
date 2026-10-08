@@ -260,6 +260,44 @@ func TestQABdCeilingTwentyCallsFastEnough(t *testing.T) {
 	}
 }
 
+// ranger-base-vjb32: a trailing/dangling -f, --file or --body-file — the
+// flag named with nothing after it, e.g. bd's own --force spelling of -f —
+// must pass through to bd, not abort the shim. posse_bd_ceiling_files's
+// case arm shifts once to consume the flag itself; when the flag is the
+// last positional param that leaves $#==0, and the while loop's own
+// unconditional trailing `shift` then ran against an empty list. Under
+// dash (the real POSIX /bin/sh on Debian/Ubuntu and many containers), a
+// failing `shift` — a POSIX "special builtin" — terminates the whole
+// script in a non-interactive shell; bash's /bin/sh (this box's default)
+// swallows the failure silently, which is why this must run under dash
+// specifically rather than through qaBdCeilingRun.
+func TestQABdCeilingDanglingFileFlagPassesThroughUnderDash(t *testing.T) {
+	dashPath, err := exec.LookPath("dash")
+	if err != nil {
+		t.Skip("dash not installed on this box")
+	}
+	shim, _, execd := qaBdCeilingShim(t, true)
+	for _, flag := range []string{"-f", "--file", "--body-file"} {
+		t.Run(flag, func(t *testing.T) {
+			cmd := exec.Command(dashPath, shim, "comments", "add", "x-1", flag)
+			var out, errb strings.Builder
+			cmd.Stdout, cmd.Stderr = &out, &errb
+			if err := cmd.Run(); err != nil {
+				t.Fatalf("must pass through to bd, not abort: %v\nstderr=%s", err, errb.String())
+			}
+			if !strings.Contains(out.String(), "real bd comments add x-1 "+flag) {
+				t.Errorf("bd must have been exec'd with the dangling flag intact: out=%q", out.String())
+			}
+			if strings.Contains(errb.String(), "shift") {
+				t.Errorf("must not hit the shift failure: stderr=%q", errb.String())
+			}
+		})
+	}
+	if execd() == "" {
+		t.Error("the real bd must have been exec'd for each dangling-flag call")
+	}
+}
+
 // A clean call with no ceiling hit anywhere passes straight through to bd,
 // exactly as it did before this arm existed.
 func TestQABdCeilingCleanCallPassesThrough(t *testing.T) {

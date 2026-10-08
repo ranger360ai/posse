@@ -1659,7 +1659,7 @@ $1"
 ${1#*=}"
         ;;
     esac
-    shift
+    [ $# -gt 0 ] && shift
   done
 }
 posse_bd_ceiling_files "$@"
