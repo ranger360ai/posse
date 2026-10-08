@@ -18,7 +18,12 @@ never exempted — ranger-base-3gdqv, from monica's work-box measurement
 2026-09-27; builds in the code bead named on that bead) · amended
 2026-09-28 (D6: the printed remedy names the LINE, not the value alone,
 because the check reads the line — ranger-base-l2569, from
-ranger-base-tl0mg).*
+ranger-base-tl0mg) · amended 2026-10-08 (D2, D5: over `.beads/*.jsonl` the
+content arm REPORTS — class, hit count, record id — and the commit lands;
+it refuses everywhere else. A bead record has no remedy a committer can
+perform, so the refusal only chose who typed the override — ADR 0068,
+ranger-base-6pisf, from github issue #1; the second layer this record
+deferred is triggered and filed there).*
 
 > An instance that holds someone else's data has two different questions
 > to ask of a staged line. *May this be public?* is visibility, and ADR
@@ -326,6 +331,18 @@ the stamp report in FULL rather than `tail -1 | cut -c1-72`, and refuses to
 commit on the hook's own warning; `TestQACeilingFillReadsTheValueTheHookReads`
 runs the script's own extractor against `YamlMapPairsRaw` so the two cannot
 drift apart again.*
+
+*Amended 2026-10-08 (ranger-base-6pisf, ADR 0068): D2's content arm and D5's
+"guards the durable, replicated copy: the beads jsonl" hold for every staged
+path EXCEPT `.beads/*.jsonl`. For a bead record the copy is durable before the
+commit (the db), bd's pre-commit re-stages the file into every commit, and
+`bd comments` has no edit or delete — so a refusal there removed nothing and
+locked every committer in the repo (MEASURED, work box 2026-10-08). Over the
+db and the deletion ledger the same classes now REPORT, class-only plus the
+record's id, and the commit continues; the report's remedy is
+freeze-and-succeed, and the write-time layer the Alternatives below deferred
+is filed as its own design bead. ADR 0068 has the measurements and the
+alternatives priced.*
 
 ## Consequences
 
