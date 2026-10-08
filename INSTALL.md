@@ -1654,7 +1654,7 @@ you. And a clean census is not a landing claim either — that is ADR 0006's
 block, not this one's.
 
 If this instance holds someone else's data — a work laptop, a client
-engagement — read NOTES.md, *"When an instance holds someone else's data"*
+engagement — read NOTES.md, *"Privacy model"*
 first: every one of its repos is marked `private`, and config
 `beads_visibility_patterns:` (class → ERE) adds that instance's own
 confidential vocabulary to the lint without it ever entering this repo.
@@ -1668,7 +1668,21 @@ as durable as a paste in a file (ADR 0050 D2 for the ceiling, ADR 0024 D2
 check 3 and ADR 0048 D2 for the visibility patterns and this box's derived
 identity literals, all as amended 2026-09-03). What differs is the gate and
 the remedy: the ceiling refuses in every repo and first, the visibility
-arms only in a public-stamped one. A ceiling value that matches its own
+arms only in a public-stamped one. One exception to "refuses": the content
+arm REPORTS rather than refuses over `.beads/*.jsonl` — the beads db and its
+deletion ledger — and the commit lands, because `bd`'s pre-commit flushes
+and stages that file into every commit and no committer can take the line
+back out once it is written: `bd comments` has no edit and no delete, and
+`bd delete` only moves the record into that same file (ADR 0068 D1). A wall
+whose remedy the committer cannot perform is a lockout, not a gate, so the
+report names the class, the hit count and the matching record's id and the
+way through is FREEZE AND SUCCEED, three steps (ADR 0068 D2): (1) `bd close
+<id> -r 'data ceiling: content above the ceiling; succeeded by <new-id>'` —
+one last change to the record, and one last report line; (2) file the
+successor citing `<id>` and carrying the system of record's id, never the
+content; (3) never comment on `<id>` again — a comment cannot be edited or
+deleted, so every later one re-lands the line, reported rather than
+refused. A ceiling value that matches its own
 definition line — every plain literal does — refuses the commit of the
 config that defines it, class-only; what is judged is the whole raw line,
 key and value and any trailing comment, so write one character in brackets

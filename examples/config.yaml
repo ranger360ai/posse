@@ -239,8 +239,7 @@ default_emoji: ⚙️
 # you are willing to read in a terminal.
 #
 # Still a lint, not a boundary: a confidential name nobody thought to add is
-# exactly the case a pattern list cannot see. See NOTES.md, "Privacy model",
-# "When an instance holds someone else's data".
+# exactly the case a pattern list cannot see. See NOTES.md, "Privacy model".
 # beads_visibility_patterns:
 #   client-acme: Acme[[:space:]]*(Corp|Holdings)
 #   codename: (BLUEBIRD|REDSHIFT)
@@ -260,6 +259,11 @@ default_emoji: ⚙️
 # a message reused by `--amend` are scanned; one typed in your EDITOR is not
 # — the hook runs before the editor opens (ADR 0050 D5). A refused message
 # stays in `.git/COMMIT_EDITMSG` until the next commit overwrites it.
+# One exception: `.beads/*.jsonl` (the beads db and its deletion ledger) is
+# REPORTED rather than refused, because bd's own pre-commit stages that file
+# into every commit and a bead record has no remedy a committer can perform
+# (ADR 0068) — the report names the class, hit count and record id, and the
+# way through is freeze-and-succeed: close the record citing a successor.
 # data_ceiling_patterns:
 #   restricted-banner: [[:upper:]]+-RESTRICTED
 #   export-name: export-[0-9]{8}\.(csv|xlsx)

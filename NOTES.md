@@ -124,6 +124,18 @@ visibility lint helps catch mistakes; the routing rule and repository audience
 remain the boundary. See [ADR 0024](docs/adr/0024-work-product-routing.md)
 for the routing decision and the private privacy-model record cited below.
 
+The data ceiling (`data_ceiling_patterns:`, ADR 0050) is the same lint over a
+narrower question — not where content may go, but whether it may exist in a
+local file on this instance at all — and it refuses over every staged path
+except `.beads/*.jsonl`, where a bead record has no remedy a committer can
+perform, so it REPORTS the class, the hit count and the record's id and lets
+the commit land instead. A wall whose remedy the committer cannot perform is
+a lockout, not a gate (ADR 0068): the way through is freeze-and-succeed —
+close the record citing a successor, file the successor against the system
+of record's id and never the content, and never comment on the closed record
+again, since a comment cannot be edited or deleted and would only re-land the
+line.
+
 ## Decisions still made by hand
 
 The operator approves spending, publication and promotion to a live install;
