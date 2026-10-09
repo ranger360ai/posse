@@ -234,6 +234,65 @@ func TestASettleWithNoReflogClaimsNeither(t *testing.T) {
 	}
 }
 
+// The case branchEverMoved's `case 1` exists for, which nothing reached
+// (ranger-base-cwsjw, verifying ranger-base-n73bx). git keeps the NEWEST
+// reflog entries, so a branch whose creation entry has expired out from
+// under it is a landing with one `commit:` entry left — and a count alone
+// reads that as the never-committed close, which is the original defect with
+// the alarming sentence back. Only the entry's MESSAGE separates them, and
+// until this pin the message test was decoration: dropping it for a flat
+// `return false, true` left the three n73bx pins green.
+//
+// `reflog delete …@{1}` is the whole fixture, and it is the real shape and
+// not a contrivance — `gc.reflogExpire` is what does it in the field, to the
+// oldest entry first.
+func TestASettleReadsAnExpiredCreationEntryAsALanding(t *testing.T) {
+	t.Parallel()
+	d, repo, _ := wtqaPassWithWork(t, nil)
+	branch := SessionBranch(SessionForBead("ranger", repo, "a-1"))
+	mustGit(t, repo, "reflog", "delete", branch+"@{1}")
+	if n := len(strings.Fields(mustGit(t, repo, "reflog", "show", "--format=%gd", "refs/heads/"+branch))); n != 1 {
+		t.Fatalf("the fixture is not the one-entry reflog it claims to be (%d entries left)", n)
+	}
+
+	var out strings.Builder
+	again := &Dispatcher{App: d.App, HB: d.HB, Out: &out}
+	again.mergeBack(RepoIssue{BdIssue: BdIssue{ID: "a-1", Title: "t"}, Dir: repo}, "ranger", SessionForBead("ranger", repo, "a-1"))
+
+	if strings.Contains(out.String(), "closed with no commit") {
+		t.Errorf("an expired creation entry was read as a close that committed nothing:\n%s", out.String())
+	}
+	if !strings.Contains(out.String(), "already landed") {
+		t.Errorf("the landing behind the one surviving entry is not reported:\n%s", out.String())
+	}
+}
+
+// The other half of "unreadable", and the half `reflog expire` cannot reach:
+// a branch that is GONE answers with git's exit 128 rather than with an
+// empty reflog, so it leaves branchEverMoved through its error return and
+// not through `case 0`. Retiring a landed tree takes the branch with it
+// (retiresweep), so this is the state a settle after a retirement meets.
+// Without this pin an error return of `false, true` — "the reflog is
+// unreadable, so call it never-committed" — stayed green.
+func TestASettleWithTheBranchGoneClaimsNeither(t *testing.T) {
+	t.Parallel()
+	d, repo, tree := wtqaPassWithWork(t, nil)
+	branch := SessionBranch(SessionForBead("ranger", repo, "a-1"))
+	mustGit(t, repo, "worktree", "remove", "--force", tree)
+	mustGit(t, repo, "branch", "-D", branch)
+
+	var out strings.Builder
+	again := &Dispatcher{App: d.App, HB: d.HB, Out: &out}
+	again.mergeBack(RepoIssue{BdIssue: BdIssue{ID: "a-1", Title: "t"}, Dir: repo}, "ranger", SessionForBead("ranger", repo, "a-1"))
+
+	if strings.Contains(out.String(), "closed with no commit") || strings.Contains(out.String(), "already landed") {
+		t.Errorf("a branch that is gone was read as an answer about what it committed:\n%s", out.String())
+	}
+	if !strings.Contains(out.String(), "does not say whether a commit landed") {
+		t.Errorf("a gone branch's unreadable reflog is not reported as one:\n%s", out.String())
+	}
+}
+
 func TestUncommittedWorkIsNamedAndNotLost(t *testing.T) {
 	t.Parallel()
 	d, _, tree := wtqaPassWithWork(t, func(_, tree string) {
