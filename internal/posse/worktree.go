@@ -122,8 +122,12 @@ package posse
 //     database exists yet — an existing zero-row `beads.db` is opened
 //     read-only by a read verb and the import dies `set config: sqlite3:
 //     attempt to write a readonly database`, exit 0, `[]` under `--json`
-//     with nothing on either stream. The repair is `bd import`, denied to
-//     every persona PID. docs/notes.d/ranger-base-a5st4.md has the table.
+//     with nothing on either stream. Posse's own list readers no longer
+//     serve that as an answer: an empty list is checked against `bd info`'s
+//     own `issue_count` and refused as `BdStoreUnreadError` (ADR 0071,
+//     `emptyIsReadable` in beads.go), so the queue reads unknown rather
+//     than empty. The repair is `bd import`, denied to every persona PID.
+//     docs/notes.d/ranger-base-a5st4.md has the table.
 //     THE FIX IS THE LAUNCH ENV, not this file (ADR 0055 D1): every session
 //     posse launches carries `BEADS_DIR=beadsHome(dir)` (planLaunch,
 //     herdrback.go), forwarded into the container by name (CageEnvNames).

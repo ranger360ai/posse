@@ -93,6 +93,16 @@ cockpit's queue view, `posse dispatch` — is handed an empty graph, exit 0, and
 no signal whatsoever. "The queue is empty" and "the queue could not be read"
 are the same bytes.
 
+**The posse-side answer is ADR 0071**: every reader of a bd issue LIST goes
+through one wrapper, and an empty parsed list is now a QUESTION rather than an
+answer — the wrapper asks bd its own `issue_count` (`bd info --json`) and, if
+that is zero while this census carries a record, returns `BdStoreUnreadError`
+naming the store and the operator's command below. So the `--json` row above no
+longer reaches a caller as `[]`; it reaches it as "the queue is unknown, not
+empty". Nothing is repaired by posse, for the reason the next section gives.
+The live pin over this very rig is `internal/posse/bdemptyunreadlive_test.go`
+(ranger-base-dkrwi); the offline arms are `bdemptyunread_qa_test.go`.
+
 ### The repair is the operator's, and that is not a style preference
 
 No persona-runnable verb gets out of it. Over the failing state a write verb
