@@ -6,6 +6,11 @@
 #        scripts/prune-bd-relates-to.sh --apply      # record + remove the pairs
 #        BEADS_DB=/path/to/beads.db scripts/prune-bd-relates-to.sh [--apply]
 #
+# BEADS_DB may name a store in ANOTHER repository; the writes are still made
+# from inside the repo that owns it, never with a store-selecting flag from
+# here (store_owner below, github issue 9 / ranger-base-9mjxb). A store whose
+# owning repo cannot be named is refused rather than written to.
+#
 # WHY. bd writes a `relates-to` link as two rows, one per direction, so every
 # one is a 2-cycle. bd's `AddDependency` cycle check is a `UNION ALL` recursive
 # CTE with no visited set, depth 100, following every edge type — it enumerates
@@ -35,6 +40,8 @@
 # symmetric pair (two rows per pair) and adds two comments per pair. It touches
 # no issue, no status, and no `blocks` / `discovered-from` / `blocked-by` edge.
 # Reversible: the removed rows are in the git history of .beads/issues.jsonl.
+# Every one of those writes is made with the working directory inside the repo
+# that owns the store, and with no store-selecting flag on the argv.
 set -euo pipefail
 
 APPLY=0
@@ -60,6 +67,75 @@ find_db() {
 DB=$(find_db)
 [ -f "$DB" ] || { echo "prune-bd-relates-to: no beads db at $DB" >&2; exit 2; }
 command -v sqlite3 >/dev/null || { echo "prune-bd-relates-to: sqlite3 not on PATH" >&2; exit 2; }
+
+# ABSOLUTE from here on. find_db returns `.beads/beads.db` by default, every
+# bd call below is made from a DIFFERENT working directory (see store_owner),
+# and a relative path would then name a store that is not the one measured.
+DB=$(cd "$(dirname "$DB")" && pwd -P)/$(basename "$DB")
+
+# THE OWNING REPO, and why every bd call below is made from inside it
+# (github.com/ranger360ai/posse issue 9, ranger-base-9mjxb). The operator
+# measured bd auto-importing the CWD repo's `issues.jsonl` into the database
+# named by an explicit `--db` -- a read verb writing another repository's
+# records into the named store. We are pinned at 0.50.3 and will not file
+# upstream (standing ruling 2026-10-08), so the posse-side answer is to stop
+# handing bd a `--db` that points outside the working directory at all: name
+# the repo that OWNS the store, chdir into it, and let bd resolve its own.
+#
+# `store_owner <db>` prints that repo, or fails. Three conditions, all of
+# them load-bearing, because a chdir to the wrong directory silently reads a
+# DIFFERENT database than the one the SQL above measured:
+#
+#   1. the db sits in a `.beads` directory          -> its parent is the repo
+#   2. that parent is a git work tree's TOPLEVEL    -> bd resolves from there
+#   3. that repo's own `.beads` resolves BACK to this store, one redirect hop
+#      included -- this is the condition the redirect shape needs, since
+#      `<repo>/.beads/redirect` can name a store in another repo entirely.
+#
+# Both sides of 2 and 3 are canonicalised with `pwd -P`: on darwin
+# `/tmp/x` and `/private/tmp/x` are the same directory spelled two ways, and
+# a string compare of the two refuses a store that is perfectly fine.
+store_owner() {
+	_so_db=$1
+	_so_store=$(dirname "$_so_db")
+	[ "$(basename "$_so_store")" = ".beads" ] || return 1
+	_so_owner=$(dirname "$_so_store")
+	[ -d "$_so_owner" ] || return 1
+	_so_owner=$(cd "$_so_owner" && pwd -P) || return 1
+	_so_top=$(git -C "$_so_owner" rev-parse --show-toplevel 2>/dev/null) || return 1
+	[ -n "$_so_top" ] || return 1
+	_so_top=$(cd "$_so_top" && pwd -P) || return 1
+	[ "$_so_top" = "$_so_owner" ] || return 1
+	_so_resolved=$_so_owner/.beads
+	if [ -f "$_so_resolved/redirect" ]; then
+		_so_resolved=$(tr -d '[:space:]' <"$_so_resolved/redirect")
+	fi
+	[ -d "$_so_resolved" ] || return 1
+	_so_resolved=$(cd "$_so_resolved" && pwd -P) || return 1
+	[ "$_so_resolved" = "$(cd "$_so_store" && pwd -P)" ] || return 1
+	printf '%s\n' "$_so_owner"
+}
+
+# Resolved once, before the plan is printed, so a dry run says what --apply
+# would do rather than leaving the operator to find out at the write. The
+# safe failure direction differs between the two: a dry run writes nothing,
+# so it says so and carries on; --apply refuses, because the only way to
+# make those writes without an owning repo is the `--db` this exists to
+# avoid.
+OWNER=$(store_owner "$DB" || true)
+if [ -z "$OWNER" ]; then
+	echo "prune-bd-relates-to: cannot name the repo that owns $DB" >&2
+	echo "  A store is <repo>/.beads/beads.db where <repo> is a git work tree's" >&2
+	echo "  toplevel and <repo>/.beads resolves back to that store. Without one," >&2
+	echo "  the only way to write it is a store-selecting flag from somewhere" >&2
+	echo "  else, which is what auto-imports the cwd repo's own records into" >&2
+	echo "  it, so it is refused here (github issue 9)." >&2
+	echo "  Re-run from inside the owning repo, or prune it by hand there." >&2
+	if [ "$APPLY" = 1 ]; then
+		exit 2
+	fi
+	echo "  dry run continues: nothing below runs bd." >&2
+fi
 
 # Reading a beads db read-only is not always possible: a WAL-mode db whose
 # `-shm` file is gone (no live writer) cannot be opened with `mode=ro` at all —
@@ -126,15 +202,18 @@ NOTE_WHY="bd 0.49.1's cycle check diverges on symmetric pairs; the relation is t
 while read -r _type x y; do
 	[ -n "${x:-}" ] || continue
 	if [ "$APPLY" = 1 ]; then
-		bd --db "$DB" comments add "$x" "relates-to $y — $NOTE_TAG: $NOTE_WHY" >/dev/null
-		bd --db "$DB" comments add "$y" "relates-to $x — $NOTE_TAG: $NOTE_WHY" >/dev/null
-		bd --db "$DB" dep unrelate "$x" "$y" >/dev/null
+		# cwd = the owning repo, and no --db: see store_owner above.
+		# --no-daemon is the house form for every bd argv (ADR 0015) and
+		# keeps this from leaving a daemon behind (ranger-base-42mv).
+		(cd "$OWNER" && bd --no-daemon comments add "$x" "relates-to $y — $NOTE_TAG: $NOTE_WHY") >/dev/null
+		(cd "$OWNER" && bd --no-daemon comments add "$y" "relates-to $x — $NOTE_TAG: $NOTE_WHY") >/dev/null
+		(cd "$OWNER" && bd --no-daemon dep unrelate "$x" "$y") >/dev/null
 		echo "pruned $x <-> $y (recorded as a comment on both)"
 	else
-		echo "would run:"
-		echo "  bd comments add $x \"relates-to $y — $NOTE_TAG: $NOTE_WHY\""
-		echo "  bd comments add $y \"relates-to $x — $NOTE_TAG: $NOTE_WHY\""
-		echo "  bd dep unrelate $x $y"
+		echo "would run (cwd ${OWNER:-<no owning repo>}):"
+		echo "  bd --no-daemon comments add $x \"relates-to $y — $NOTE_TAG: $NOTE_WHY\""
+		echo "  bd --no-daemon comments add $y \"relates-to $x — $NOTE_TAG: $NOTE_WHY\""
+		echo "  bd --no-daemon dep unrelate $x $y"
 	fi
 done <<EOF
 $pairs
