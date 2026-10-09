@@ -373,6 +373,36 @@ func fakeBd(args []string) int {
 			fmt.Print("[]")
 		}
 		return 0
+	case "info":
+		// ADR 0071's discriminator: bd's own issue_count, which every list
+		// reader asks when its list came back EMPTY — because on the pinned
+		// 0.50.3 a zero-row database over a census holding rows answers
+		// every --json read verb with `[]`, exit 0, both streams empty.
+		//
+		// Served from ./fake-info.json so a fixture can say 0 (the
+		// zero-row database) — and, with no such file, `{"issue_count": 1}`,
+		// so every fixture written before this existed keeps meaning what
+		// it meant: a genuinely empty queue, not an unreadable store. A
+		// fixture repo with no .beads/issues.jsonl never reaches this case
+		// at all, which is the cheapest-first order of the check itself.
+		body := `{"issue_count": 1}`
+		if b, err := os.ReadFile("fake-info.json"); err == nil {
+			body = strings.TrimSpace(string(b))
+		}
+		fmt.Print(body)
+		// bd's --json error shape, which is how a store that cannot answer
+		// the count at all answers: an `error` key on STDOUT with exit 1
+		// and stderr empty (rangerhq-aas, the marker at the head of this
+		// fake). Held here too, keyed off the payload rather than a second
+		// marker file, so one fixture spells both "bd holds zero" and "bd
+		// could not say" — the two the check must never collapse.
+		var probe map[string]json.RawMessage
+		if json.Unmarshal([]byte(body), &probe) == nil {
+			if _, bad := probe["error"]; bad {
+				return 1
+			}
+		}
+		return 0
 	case "dep": // dep list <id> [--direction=up] --json → fake-deps.json / fake-dependents.json
 		// `dep add <id> <blocker>` writes the edge into the same file the
 		// list serves, because the caller that files one reads the graph

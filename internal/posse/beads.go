@@ -10,6 +10,7 @@ package posse
 // is the routing surface the dispatch loop selects work with.
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -18,6 +19,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -563,14 +565,194 @@ func (b Bd) Flush(dir string) error {
 	return err
 }
 
-// ListAll returns every issue in the repo, closed included (bd list --all,
-// no limit) — the scorecard's raw material.
-func (b Bd) ListAll(dir string) ([]BdIssue, error) {
-	out, err := b.run(dir, "list", "--all", "--json", "--limit", "0")
+// ─── an empty list is a question (ADR 0071) ──────────────────────────────────
+//
+// On the pinned bd 0.50.3 a store whose database holds ZERO issues over a
+// `.beads/issues.jsonl` that holds N answers every `--json` read verb with
+// `[]`, exit 0, nothing on either stream (MEASURED 2026-10-09; the
+// eight-fixture table that reaches the state, and the two ways in — a read
+// over an uncommitted jsonl, and a read-only import that failed — are in
+// docs/notes.d/ranger-base-a5st4.md). Every reader posse ships then printed
+// "no ready work" over a queue it could not read: an unreadable queue and an
+// empty one were the same bytes, on every stream the pass can see.
+//
+// So every reader of a bd issue LIST goes through listIssues below, and an
+// empty parsed list is not an answer until bd's own count agrees with it.
+// Posse reports and does not repair (ADR 0071 D4): the one verb that works
+// is the operator's, and the two repairs differ in what they keep.
+
+// listIssues runs a list verb, parses the rows, and asks emptyIsReadable
+// before it serves an empty list as an answer. A non-empty answer is
+// returned exactly as it was before this existed — no second call, no cost
+// on a read that found anything.
+func (b Bd) listIssues(dir string, args ...string) ([]BdIssue, error) {
+	out, err := b.run(dir, args...)
 	if err != nil {
 		return nil, err
 	}
-	return parseBdIssues(out)
+	issues, err := parseBdIssues(out)
+	if err != nil {
+		return nil, err
+	}
+	if len(issues) == 0 {
+		if err := b.emptyIsReadable(dir); err != nil {
+			return nil, err
+		}
+		return nil, nil
+	}
+	return issues, nil
+}
+
+// emptyIsReadable answers whether an empty list read is the store's honest
+// answer. Two reads, cheapest first, and both compare against ZERO only
+// (ADR 0071 D2):
+//
+//   - the census, beadsHome(dir)/issues.jsonl. No file, or no record in it,
+//     and there is no census to contradict bd with — a brand-new store
+//     before its first bead, or a repo that is not a queue. No fork.
+//   - bd's own `issue_count`, asked of the same store through its own front
+//     door. Non-zero means the graph is there and this list was empty on its
+//     own terms.
+//
+// NEVER equality, never a threshold. MEASURED 2026-10-09 on the live store
+// of record: 2950 distinct ids in the jsonl against 2948 in bd — three
+// tombstone rows `--all` does not list, and one id bd holds that 0.50.x has
+// not flushed. The two counts drift on every busy day, so a reader that
+// tried to reconcile them would be a second resolver over one fact; bd's
+// count is the authority and the census is consulted only for "is there
+// anything at all". Zero against a census holding a record is the only
+// reading that is a defect by construction: a database holding no issue at
+// all over a projection holding one is a database that never imported.
+//
+// The stale-past-zero class (two rows under a HEAD with three, a5st4
+// finding 4) is deliberately NOT detected here — that is the lost-bead
+// sweep's domain (beadloss.go) and bd's own flush discipline.
+//
+// An `info` that cannot answer (non-zero exit, missing field, unparseable)
+// is the store being unreadable by a second route, and is returned as THAT
+// error rather than swallowed into nil, nil: the whole of this record is
+// that an unanswerable question does not read as "empty".
+func (b Bd) emptyIsReadable(dir string) error {
+	store := beadsHome(dir)
+	if !censusHasRecord(filepath.Join(store, beadsJSONL)) {
+		return nil
+	}
+	n, err := b.issueCount(dir)
+	if err != nil {
+		return err
+	}
+	if n > 0 {
+		return nil
+	}
+	return &BdStoreUnreadError{Dir: dir, Store: store}
+}
+
+// censusHasRecord reports whether path holds at least one JSONL record — a
+// line beginning `{`. It reads to the FIRST one and stops: the live census
+// is 22.7 MB and the question is "at least one", never "how many".
+//
+// ReadSlice and not a Scanner, because a bead description makes a line of no
+// bounded length: a record longer than the buffer comes back as
+// ErrBufferFull with its HEAD in hand, which is all the first byte needs,
+// and the rest of that line is skipped without allocating it.
+func censusHasRecord(path string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	r := bufio.NewReaderSize(f, 4096)
+	for {
+		line, err := r.ReadSlice('\n')
+		if t := bytes.TrimSpace(line); len(t) > 0 && t[0] == '{' {
+			return true
+		}
+		for err == bufio.ErrBufferFull {
+			_, err = r.ReadSlice('\n')
+		}
+		if err != nil {
+			return false
+		}
+	}
+}
+
+// bdInfo is the sliver of `bd info --json` this package reads. The count is
+// a POINTER so a payload WITHOUT the field is told apart from one answering
+// zero — and zero is the whole discriminator, so the two must never collapse
+// (ADR 0071 D2, third bullet).
+type bdInfo struct {
+	IssueCount *int `json:"issue_count"`
+}
+
+// issueCount asks bd how many issues its store holds. `bd info` is a
+// documented verb with a documented field, whose own help says it exists to
+// "debug issues where bd is using an unexpected database" — which is why it
+// is the discriminator here and not bd's `auto-import failed` warning
+// sentence, a pinned binary's prose that is absent over half the fixtures
+// anyway (ADR 0071, Alternatives rejected).
+//
+// Through runOnce and not run: the staleness self-heal `run` carries fires
+// `sync --import-only`, which over this very state MEASURED exit 1
+// (`import failed: ... issue_prefix config is missing`, 0 rows after, over
+// both zero-row fixtures), so a retry here would buy nothing on the one
+// store it would ever be asked about.
+//
+// Cost MEASURED 2026-10-09 on the live store of record, three runs: 0.49s,
+// 0.54s, 0.68s, against 0.31-0.32s for `ready --json --limit 0`. It is paid
+// only on an empty list read over a repo that has a census.
+func (b Bd) issueCount(dir string) (int, error) {
+	out, err := b.runOnce(dir, "info", "--json")
+	if err != nil {
+		return 0, err
+	}
+	var info bdInfo
+	if jerr := json.Unmarshal(bytes.TrimSpace(out), &info); jerr != nil {
+		return 0, Die("bd info --json: bad JSON output: %v", jerr)
+	}
+	if info.IssueCount == nil {
+		return 0, Die("bd info --json: no issue_count field — the store cannot answer its own count")
+	}
+	return *info.IssueCount, nil
+}
+
+// BdStoreUnreadError is bd answering an empty list over a census that
+// carries rows while holding zero issues itself: the store is unreadable,
+// not empty. Typed and errors.As-able for the same reason BdHangError is —
+// "the queue is empty" and "the queue could not be read" are different
+// facts, and only the second one names a repair.
+//
+// Every caller already carries it honestly (ADR 0071 D5): ReadyAll returns
+// it as a ScanError, dispatch prints `✗ ready scan failed` per repo and dies
+// "the queue is unknown, not empty" when nothing was readable, `posse ready`
+// dies the same way, governance collects it, and retire keeps "unreadable"
+// apart from "no such bead" by name. The silent shape existed only because
+// `[]` never reached those paths.
+type BdStoreUnreadError struct {
+	Dir   string // the repo the read was made from
+	Store string // the beads dir bd is actually reading (beadsHome, redirect resolved)
+}
+
+// Error names the repair as the OPERATOR's and names the REPO to type it in,
+// because on this instance the store of record is reached through a
+// `.beads/redirect` and the repo a persona is sitting in is not the repo that
+// owns the store (AGENTS.md, "Reading ANOTHER repo's queue": bd reads the
+// DIRECTORY, so the chdir is the whole of it).
+func (e *BdStoreUnreadError) Error() string {
+	return fmt.Sprintf("bd store unreadable: %s holds 0 issues over a census (%s) that carries rows — bd 0.50.3's zero-row database (a read over an uncommitted jsonl, or a read-only import that failed — ADR 0071); posse does not repair it, the operator runs `bd import -i .beads/issues.jsonl` from %s, the repo that owns the store",
+		e.Store, filepath.Join(e.Store, beadsJSONL), filepath.Dir(e.Store))
+}
+
+// IsBdStoreUnread reports whether err is bd's zero-row database over a
+// census that holds rows.
+func IsBdStoreUnread(err error) bool {
+	var se *BdStoreUnreadError
+	return errors.As(err, &se)
+}
+
+// ListAll returns every issue in the repo, closed included (bd list --all,
+// no limit) — the scorecard's raw material.
+func (b Bd) ListAll(dir string) ([]BdIssue, error) {
+	return b.listIssues(dir, "list", "--all", "--json", "--limit", "0")
 }
 
 // Ready lists unblocked open work in the repo at dir, optionally filtered to
@@ -615,11 +797,7 @@ func (b Bd) Ready(dir, assignee string) ([]BdIssue, error) {
 	if assignee != "" {
 		args = append(args, "--assignee", assignee)
 	}
-	out, err := b.run(dir, args...)
-	if err != nil {
-		return nil, err
-	}
-	issues, err := parseBdIssues(out)
+	issues, err := b.listIssues(dir, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -650,11 +828,7 @@ func (b Bd) Ready(dir, assignee string) ([]BdIssue, error) {
 // carries it (rangerhq-47v) — the cockpit must see every held bead, not the
 // first page.
 func (b Bd) InProgress(dir string) ([]BdIssue, error) {
-	out, err := b.run(dir, "list", "--status", "in_progress", "--json", "--limit", "0")
-	if err != nil {
-		return nil, err
-	}
-	return parseBdIssues(out)
+	return b.listIssues(dir, "list", "--status", "in_progress", "--json", "--limit", "0")
 }
 
 // OpenLabeledAny lists the repo's OPEN issues carrying at least one of the
@@ -690,11 +864,7 @@ func (b Bd) OpenLabeledAny(dir string, labels ...string) ([]BdIssue, error) {
 	if len(labels) == 0 {
 		return nil, nil
 	}
-	out, err := b.run(dir, "list", "--label-any", strings.Join(labels, ","), "--json", "--limit", "0")
-	if err != nil {
-		return nil, err
-	}
-	issues, err := parseBdIssues(out)
+	issues, err := b.listIssues(dir, "list", "--label-any", strings.Join(labels, ","), "--json", "--limit", "0")
 	if err != nil {
 		return nil, err
 	}
@@ -728,11 +898,7 @@ func (b Bd) AllLabeledAny(dir string, labels ...string) ([]BdIssue, error) {
 	if len(labels) == 0 {
 		return nil, nil
 	}
-	out, err := b.run(dir, "list", "--all", "--label-any", strings.Join(labels, ","), "--json", "--limit", "0")
-	if err != nil {
-		return nil, err
-	}
-	return parseBdIssues(out)
+	return b.listIssues(dir, "list", "--all", "--label-any", strings.Join(labels, ","), "--json", "--limit", "0")
 }
 
 // BdBlocked is one row of `bd blocked --json`: an issue that is not in

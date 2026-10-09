@@ -264,7 +264,18 @@ REPORTED, not measured here: `bd import -i .beads/issues.jsonl` repairs the
 state (issue #5, the operator; a5st4 records the verb's deny status at every
 persona seat, which is why this seat could not re-run it).
 
-ASSUMED: the per-pass count of empty list reads on a quiet pass (the first
-code bead measures it); that no caller of the five readers treats
+MEASURED 2026-10-09 by the first code bead (ranger-base-i00xh,
+docs/notes.d/ranger-base-i00xh.md): the per-pass count of empty list reads,
+which the Consequences above left ASSUMED. `posse dispatch --dry-run` under
+a pass-through logging bd shim makes 14 bd calls over this instance's two
+beads repos and **no empty list read at all** — the ready set is read whole
+and routed in Go, so a pass that finds work pays nothing. The quiet-shop
+worst case is two empty reads per repo (`ready` and `list --status
+in_progress`; `list --all` over a live store is never empty, and an `--all`
+that IS empty over a census with rows is the defect), so 4 `info` calls at
+0.49-0.63s — 2.0-2.7s, under the five-second line, so the memo alternative
+stays rejected and unfiled.
+
+ASSUMED: that no caller of the five readers treats
 `nil, nil` and an error differently in a way this record did not read —
 every call site named in Context was read, and each carries an error path.

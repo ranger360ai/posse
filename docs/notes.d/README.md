@@ -11,6 +11,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-rjfec](ranger-base-rjfec.md) — A rule stated for every verb and realized in one helper (ranger-base-rjfec) — 2026-10-09
 - [ranger-base-mhv7j](ranger-base-mhv7j.md) — The release carried the refusal and not the way out of it (ranger-base-mhv7j) — 2026-10-09
 - [ranger-base-lw0s5](ranger-base-lw0s5.md) — ranger-base-lw0s5 — a merge-back whose only textual conflict was the easy one — 2026-10-09
+- [ranger-base-i00xh](ranger-base-i00xh.md) — What ADR 0071's check actually costs a pass: 0 extra bd calls on a live pass, 2.7s worst case on a quiet one (ranger-base-i00xh) — 2026-10-09
 - [ranger-base-dmp4x](ranger-base-dmp4x.md) — ranger-base-dmp4x — the second recurring add/add site in a merge-back: `## Unreleased` — 2026-10-09
 - [ranger-base-c768n](ranger-base-c768n.md) — Three documented couplings nothing compared (ranger-base-c768n) — 2026-10-09
 - [ranger-base-7ebv6](ranger-base-7ebv6.md) — A chdir that bound nothing, a path pasted into a pattern, and five arguments nothing could fail (ranger-base-7ebv6) — 2026-10-09
