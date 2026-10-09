@@ -11,6 +11,23 @@ being cut is a precondition of the tag; see `docs/runbooks/release.md`.
 
 ## Unreleased
 
+**The crew's keychain refusals are documented as the design.** Every claude
+session start logs two refusals of the keychain CLI into
+`state/gates/<persona>/refusals.log`: that is the runtime reading its OWN
+credential, refused because the shim in front of that read is what keeps the
+operator's store of record single-writer (ADR 0019 §3). Correct, and nowhere
+an operator reads — the decision sat in a superseded ADR's body and one
+sentence of its successor, so the lines looked like the wall catching a
+persona reaching for keys. INSTALL.md §7 now says what they are inside the
+`posse gates <persona>` step, where the operator meets `refusals.log (last
+10)`, and §14 carries the symptom row. No tag is coming and the page says
+why: the shim reads argv and never the caller, so it cannot tell the
+runtime's read from a persona typing the same read, and an `expected:` tag
+would mark a real reach as expected the moment it asked for the same item
+(ADR 0042 D4). Reading that log is a subtraction instead, and §7 gives the
+one-liner and a Verify. No behaviour changed; the re-measurement behind the
+prose is in `docs/notes.d/ranger-base-xko4n.md`.
+
 **The backup keys are documented where you would look for them.** Backups of
 the store of record have been a built verb since 0036, and the only prose that
 named their config keys was that ADR: `examples/config.yaml` — the file `posse

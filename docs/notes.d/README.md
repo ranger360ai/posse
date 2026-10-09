@@ -13,6 +13,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-c768n](ranger-base-c768n.md) — Three documented couplings nothing compared (ranger-base-c768n) — 2026-10-09
 - [ranger-base-7ebv6](ranger-base-7ebv6.md) — A chdir that bound nothing, a path pasted into a pattern, and five arguments nothing could fail (ranger-base-7ebv6) — 2026-10-09
 - [ranger-base-00a5l](ranger-base-00a5l.md) — ranger-base-00a5l — the three findings ranger-base-5ayqc's verify left live — 2026-10-09
+- [ranger-base-xko4n](ranger-base-xko4n.md) — Two refusals a launch that are the CLI reading its own credential (ranger-base-xko4n) — 2026-10-08
 - [ranger-base-wmaf9](ranger-base-wmaf9.md) — Four facts this harness printed and its governance surface denied (ranger-base-wmaf9) — 2026-10-08
 - [ranger-base-sl5sg](ranger-base-sl5sg.md) — The one launch precondition the PID lint could read and did not (ranger-base-sl5sg) — 2026-10-08
 - [ranger-base-qvy0n](ranger-base-qvy0n.md) — The ceiling's two readers: why the positive pathspec is `:(top)` and not `.` (ranger-base-qvy0n) — 2026-10-08

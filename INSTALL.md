@@ -849,6 +849,48 @@ not launch on and a wall of green over them is not clearance
 (rangerhq-qz51). Before step 8 creates the profile this is the same
 forward reference as the lint above.
 
+**The keychain deny also stands in front of the runtime's own credential
+read, and those refusals are expected.** The last thing the output above
+prints is `refusals.log (last 10)`, and on a live claude persona nearly all
+ten of them are the runtime asking the keychain CLI for its own token and
+being refused. That is the design, not a persona caught reaching. The gates
+dir is prepended on the typed line, so it leads the PATH of the runtime
+**process** and not only of the persona's tool shells (ADR 0002 §3), and
+claude's credential path execs that CLI by bare name — so the crew's
+`Bash(security:*)` shims the runtime's own read. That shim is what keeps the
+operator's store of record single-writer, and it is why a PID carrying the
+rule refuses to launch with no session mint among the sets its `envs:` names
+(§6; `posse agent check` warns about it before you get that far). A crew
+runtime authenticates with that mint and never with the operator's rotating
+pair — ADR 0019 §3, "mint before runtime".
+
+Two land as the CLI starts — the runtime's own keychain item and its
+legacy-named twin (MEASURED on a real install, 2026-10-08, issue #8) — and
+the read goes on landing at about twice an hour for as long as the session
+lives (MEASURED over thirteen gate dirs, ADR 0042). **Nothing tags them and
+nothing is going to.** The shim reads argv and never the caller, so it
+cannot tell the runtime's read from a persona typing the same read; an
+`expected:` tag would mark a real persona reach as expected the moment it
+asked for the same item, and ADR 0019 §3 settles that — a second
+caller-classified log cannot prove its classification. Reading this log is a
+**subtraction** instead: the runtime's read forms come off first, and what is
+left is persona-shaped.
+
+```sh
+$ awk '$2 == "security" {print $3}' \
+    "$RHQ_HOME/state/gates/<persona>/refusals.log" | sort | uniq -c | sort -rn
+```
+**Verify:** one row — the `find` verb, the read — carrying a count in the
+thousands on a persona that has been dispatched for weeks, and every other
+row smaller by two orders of magnitude or more. The big row is the runtime,
+and it is the one this step exists to tell you to ignore. The small rows are
+keychain verbs *somebody typed*, which is what the rule was written for: on
+the reference box, seven weeks of crew logs left 36 of those against 9,814
+lines the runtime itself made (MEASURED 2026-10-09,
+[`docs/notes.d/ranger-base-xko4n.md`](docs/notes.d/ranger-base-xko4n.md)).
+A persona that reads nothing from the keychain contributes no row but the
+runtime's.
+
 **Path-scoped writes** (ADR 0014). `deny: [Edit, Write]` is still the
 whole-repo wall (the reviewer/security skeletons). A parametrized rule
 `Edit(docs/adr/**)` / `Write(docs/adr/**)` is a **subtree file-write
@@ -2679,6 +2721,7 @@ one budget and the caps become conservative, not wrong.
 | `posse init` prints `(seed: <dir>/examples)` where you expected `(seed: embedded)` | a real seed tree — `config.yaml` with `agents/`, `recipes/` and `envs/` — sits one level above the binary and wins over the embed: right in a dev build, wrong anywhere else | move that directory aside and re-run `posse init`; it overwrites nothing, so the files the wrong seed missed fill in. Find the line that names what happened — not by position, `retireExamplePIDs` can print lines of its own first — and go by which sentence it is: `filled <n> missing seed file(s) and re-stamped ... (seeded)` means the manifest followed the fill-in and the home launches. `nothing missing: ... was already fully seeded ...` means the wrong seed had already written every filename the embed would have — this run changed nothing, and any file it wrote with the wrong content is still wrong; `copyIfMissing` never overwrites, so fix that file's content by hand (or delete it and re-run init to have the embed fill it in). If init **refused** instead — `refuses to write ...: it carries a promoted constitution` — this home is **promoted**, not seeded, and no seed may be laid over it: `posse promote` is the only thing that writes here (`ranger-base-39jnl`; before it, init copied the files, said nothing, and every *dispatched* launch refused from then on — `ranger-base-pith`). Any of the three sentences above can be followed by one more, and it is the one that decides whether the home launches: a line naming what `does not match its manifest` and ending `every dispatched launch will refuse until you run posse promote`. That is `VerifyPromoted`'s own verdict on the home this run left, printed on the way out (`ranger-base-pith`) — do not read its ABSENCE as anything, and do not read a promoted home off a silence: init names every case it leaves by name now (`ranger-base-8devq`, `ranger-base-b22vq`) |
 | `posse init` prints `ignored <dir>: not a seed tree` | a directory named `examples/` sits one level above the binary — `~/go/bin/posse` reads `~/go/examples`, and a project with its own `bin/` reads its own `examples/` — so init looked at it, found it was not a seed, and used the embed | nothing: the embed seeded the instance and it is whole. If that directory *was* meant to be the seed, give it a `config.yaml` and `agents/`, `recipes/`, `envs/` |
 | `posse` writes to the wrong place | `RHQ_HOME` not exported in this shell | export it; put it in your shell profile |
+| `refusals.log` is almost all `security` lines, two of them at every launch | the crew's `Bash(security:*)` shims the runtime's OWN credential read as well as the persona's, and claude's credential path execs that CLI by bare name at startup — the refusal is correct and the session comes up on the mint posse injects (ADR 0019 §3) | nothing. It is the design, the rule stays, and no tag is coming: the shim reads argv and not the caller, so it cannot tell the runtime's read from a persona typing the same read. Read the log by subtraction instead — §7, "The keychain deny also stands in front of the runtime's own credential read" |
 | `posse list` shows `unknown` instead of an agent state | herdr did not detect the CLI | `make install-detection`; check the CLI is on PATH. For bob: `make install-herdr-bob install-herdr-bob-rules` on herdr ≥ 0.9.0, then `detection: reported` in `runtimes/bob.yaml` (`posse runtime check bob` names the gap) |
 | launch refuses with a `DEGRADED` list | the wall cannot realize a PID gate on this runtime × cage | `posse gates <persona>` and fix the cause; `--allow-degraded` only knowingly |
 | a persona with `skills:` refuses to launch | the runtime has no skill surface (template profile with neither `skills_flag:` nor `skills_cwd:`) | add whichever your CLI has, or drop the binding |
