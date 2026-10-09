@@ -93,6 +93,23 @@ func TestLiveClaudeSettingsPinRefusesACredentialDirRedirect(t *testing.T) {
 	t.Setenv("CLAUDE_CONFIG_DIR", own)
 	unsetenvForTest(t, "CLAUDE_SECURESTORAGE_CONFIG_DIR")
 
+	// WARM THE CONFIG DIRECTORY, because the FIRST claude ever run against
+	// a fresh one reads loggedIn=false whatever the settings say
+	// (ranger-base-yglkp). That run finds no `.claude.json` under the
+	// configured directory, writes a fresh one, and says so on stderr
+	// ("Claude configuration file not found at: …"); the credential store
+	// answers nothing on the way through. MEASURED 2026-10-09, claude
+	// 2.1.295, three fresh directories: call one false, calls two and
+	// three true, with the same files on disk and the same settings. It is
+	// the one-off cost of the directory not existing yet, so one throwaway
+	// readout pays it — pre-creating `.claude.json` does NOT stand in for
+	// it (measured empty, `{}`, and with onboarding keys: all still
+	// false). Without this the FIRST arm below fails its own control while
+	// the later arms, running against the now-warm directory, pass, which
+	// is exactly the shape yglkp was filed for: a red that is about the
+	// rig and says nothing about the wall.
+	claudeLoggedIn(t, home)
+
 	// What a caged persona can write: the cage grants ~/.claude whole (ADR
 	// 0012 D4), and a user-scope settings.json `env` block is applied to
 	// process.env of every claude that starts on the box afterwards.

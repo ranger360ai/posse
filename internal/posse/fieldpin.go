@@ -98,6 +98,26 @@ import "encoding/json"
 //	against the real reader; mutating this table's statusLine row back to a
 //	bare "" turns it red, which is how the hazard is kept visible.
 //
+//	WHERE THAT CANARY RUNS NOW, because the venue moved and the reason is
+//	worth having here (ranger-base-yglkp). The scope-order arm above is
+//	UNREPEATABLE on a box carrying this repo's own policy drop-in:
+//	etc/claude/managed-settings.d/20-posse-field-pin.json puts
+//	`apiKeyHelper: ""` at policySettings, the last source in the fold, so
+//	nothing below policy can arm an apiKeyHelper there — a planted
+//	project-scope helper reads "not in force" with no pin on the line at
+//	all, and the three-arm shape collapses because its attack arm cannot
+//	fire. MEASURED 2026-10-09, claude 2.1.288 through 2.1.295: not in force
+//	from user, project or flag scope, and a `-p` run never executed the
+//	planted helper. That is the guarantee arriving above the arm, not the
+//	measurement failing — the launch pin is redundant on such a box and
+//	load-bearing on every box without the drop-in, which is why both ship.
+//	The live pin keeps the arm and requires an OS-admin file to explain a
+//	control that does not fire, and it moves the TYPE canary to `--bare`,
+//	which resolves this field from `me("flagSettings")` directly and so
+//	reaches past the policy row. It also plants the helper INSIDE the
+//	rendered payload rather than in a one-row payload beside it, so the
+//	canary now grades every row of what the launcher actually ships.
+//
 //	WHERE THE FLAG GOES, which cost an hour on ranger-base-rflee: on
 //	2.1.261 `--settings` is a GLOBAL option and must precede the
 //	subcommand. `claude auth status --settings X` is "unknown option";
