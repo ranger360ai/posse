@@ -1532,6 +1532,16 @@ $ cat >> AGENTS.md <<'EOF'
   you genuinely need ANOTHER repo's graph for one call, shed it for that
   call — `env -u BEADS_DIR bd <...>` — rather than exporting a new value,
   which would silently move every later bd in the session.
+- **Reading ANOTHER repo's queue: with the cwd inside that repo, never with a
+  store-selecting flag from here.** On the pinned bd, a call made from a cwd
+  inside repo A that names repo B's database with bd's explicit store flag was
+  measured auto-importing A's `.beads/issues.jsonl` — discovered from the
+  cwd's git repo — into B's store. A READ verb, writing one repository's
+  records into another's database, silently and past the import line. There is
+  no flag that makes that safe, so the control is to never pass one: `cd` into
+  the repo that owns the store, shed `BEADS_DIR` for the call as the bullet
+  above says, and let bd resolve its own store. It matters as soon as an
+  instance has a second store, and a `.beads/redirect` counts as one.
 - **Never push, and never merge to `main` yourself. The operator pushes and
   the launcher merges.** Every persona's PID denies `Bash(git push:*)` and
   this repo's `pre-push` gate refuses it, so a push is a refused turn, not a
