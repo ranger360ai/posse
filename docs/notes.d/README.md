@@ -6,6 +6,7 @@ references), not inferred publication dates. Undated fragments sort last.
 
 ## 2026-10
 
+- [ranger-base-x8bv0](ranger-base-x8bv0.md) — A page to read is a URL; material to send is an embed (ranger-base-x8bv0) — 2026-10-09
 - [ranger-base-mhv7j](ranger-base-mhv7j.md) — The release carried the refusal and not the way out of it (ranger-base-mhv7j) — 2026-10-09
 - [ranger-base-dmp4x](ranger-base-dmp4x.md) — ranger-base-dmp4x — the second recurring add/add site in a merge-back: `## Unreleased` — 2026-10-09
 - [ranger-base-wmaf9](ranger-base-wmaf9.md) — Four facts this harness printed and its governance surface denied (ranger-base-wmaf9) — 2026-10-08

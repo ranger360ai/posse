@@ -37,7 +37,16 @@ import (
 // detectionDoc is the authoring page a detection gap points at. Named here
 // because the gap line is the only place an onboarder is told the doc
 // exists, and a path that drifts is a dead end at the worst moment.
-const detectionDoc = "agent-detection-manifest.md"
+//
+// detectionDocPath is the repo-relative path, and it reaches a sentence only
+// through publicDoc (publicdoc.go) — a detection gap is read on a box that
+// may have no checkout, and a bare `docs/runbooks/...` there is a dead end
+// of exactly the ranger-base-mhv7j shape (ranger-base-x8bv0). The basename
+// stays its own const because that is the part a rename changes.
+const (
+	detectionDoc     = "agent-detection-manifest.md"
+	detectionDocPath = "docs/runbooks/" + detectionDoc
+)
 
 // MissingEnv returns the names from rt.EnvRequired that a session receiving
 // vars would not get. It looks in the env sets the launch resolved first,

@@ -71,6 +71,11 @@ import (
 // for. Named as the door for a built-in posse carries NO filing for, because
 // there the operator is not sending something that exists; they are deciding
 // whether one has to be written at all (ADR 0060 D2).
+//
+// The repo-relative PATH, and it reaches a sentence only through publicDoc
+// (publicdoc.go): this is a page to read and the reader of this door is on a
+// box with no checkout, so the path alone was the ranger-base-mhv7j defect
+// one layer out (ranger-base-x8bv0).
 const detectionFilingDoc = "etc/herdr/agent-detection/README.md"
 
 // ManifestState is herdr's answer about one agent label, in the three shapes
@@ -439,13 +444,13 @@ func DetectionDoor(rt *Runtime) string {
 	if rt.Builtin {
 		if rt.DetectionFiling == "" {
 			return "detection for a built-in is upstream's to ship, not yours to author — this argv0 is posse's own, and posse carries no filing for " +
-				rt.Name + ": check `herdr --version` first, because a current herdr may already carry this manifest and an old or trimmed one is the usual cause; if it does not, the filing has to be written and sent (" + detectionFilingDoc + ", ADR 0060 D2)"
+				rt.Name + ": check `herdr --version` first, because a current herdr may already carry this manifest and an old or trimmed one is the usual cause; if it does not, the filing has to be written and sent (" + publicDoc(detectionFilingDoc) + ", ADR 0060 D2)"
 		}
 		return "detection for a built-in is upstream's to ship, not yours to author: posse CARRIES the filing — `posse runtime filing " +
 			rt.Name + "` prints it and `--out <dir>` writes it with its draft manifest and pane snapshots (" +
 			rt.DetectionFiling + " in a checkout) — and the operator sends it (ADR 0060 D2)"
 	}
-	return "author a detection manifest, or alias " + rt.Exe() + " onto one that exists: docs/runbooks/" + detectionDoc
+	return "author a detection manifest, or alias " + rt.Exe() + " onto one that exists: " + publicDoc(detectionDocPath)
 }
 
 // DetectionRefusal is the launch refusal itself — the ADR 0013 §1 property

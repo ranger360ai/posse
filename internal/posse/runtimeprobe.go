@@ -558,7 +558,7 @@ func evalProbe(r probeReading) []ProbeObservable {
 				" A dispatched seat here would wait out its startup_wait and prompt on nothing"})
 	case r.AgentKind == "":
 		obs = append(obs, ProbeObservable{4, "herdr-detection", false,
-			"herdr saw no agent in the probe pane — agent_not_found, so a dispatched session here could not be addressed at all. Author a detection manifest (docs/runbooks/" + detectionDoc + ")"})
+			"herdr saw no agent in the probe pane — agent_not_found, so a dispatched session here could not be addressed at all. Author a detection manifest (" + publicDoc(detectionDocPath) + ")"})
 	case r.AgentKind != r.Exe:
 		obs = append(obs, ProbeObservable{4, "herdr-detection", false,
 			"herdr named the pane " + r.AgentKind + ", not " + r.Exe + " — dispatch would address it as another agent's kind"})

@@ -184,8 +184,11 @@ func TestProbeHerdrDetectionRejectsTheIdleFallback(t *testing.T) {
 
 	r = passingReading(bin)
 	r.AgentKind = ""
-	if o := obs(t, r, 4); o.OK || !strings.Contains(o.Detail, detectionDoc) {
-		t.Errorf("agent_not_found must fail and point at the manifest doc: ok=%v %q", o.OK, o.Detail)
+	// The URL and not the bare path: this observable is read by whoever ran
+	// `posse runtime probe` on the box they are onboarding, which on a brew
+	// install is a box with no checkout (ranger-base-x8bv0).
+	if o := obs(t, r, 4); o.OK || !strings.Contains(o.Detail, publicDoc(detectionDocPath)) {
+		t.Errorf("agent_not_found must fail and point at the manifest doc as a URL a box with no checkout can open: ok=%v %q", o.OK, o.Detail)
 	}
 
 	r = passingReading(bin)
