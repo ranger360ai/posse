@@ -828,6 +828,69 @@ default_emoji: ⚙️
 # one, which is what an instance that installs from the tip every time wants.
 # launcher_behind_max: 16   # commits behind before the lag is a condition
 
+# ─── backups of the store of record (ADR 0036) ───────────────────────────────
+# `posse backup` writes ONE on-box archive: the queue repo's git history as a
+# bundle, its beads database staged through sqlite's online backup API, the
+# JSONL projections beside it, and the promoted constitution home. `envs/`
+# and `secrets/` are NEVER archived. The archive is re-opened and checked
+# against its own manifest before it is named, so a published archive is a
+# verified one — and pruning only ever runs after a NEWER archive has
+# verified, so a failed run never deletes the last good copy.
+#
+# ON-BOX ONLY, and nothing here lifts it: a URL, an scp-style host:path, a
+# UNC path and any volume the kernel does not report as local are refused
+# (ADR 0036 §3). `--to <dir>` picks WHICH on-box directory, never a remote
+# one. The limitation that follows is the preserved one — losing the whole
+# disk loses the source and the archive together.
+#
+# ARMED BY WRITING ANY `backup_*` KEY — the four with values below, or
+# `backup_max_age:`; `queue_repo:` is not one of them. An instance that has
+# written none of them and has no archive on disk reports nothing at all:
+# installing a posse that knows how to back up must not start telling you
+# your backups are late. Once one is set, `posse status` carries
+# the age of the newest archive, and past the max it is a LANE carry-over row
+# (`backup-stale`) there and in the cockpit's GOVERNANCE block — a fact on
+# the surface and not a G-row (ADR 0029). `posse backup status` prints the
+# same reading by hand, on any box, with no watch loop and no herdr socket.
+#
+# `queue_repo:` IS THE SUBJECT, and it is not one of the arming keys: it
+# names the checkout whose `.beads` is this instance's store of record
+# (ADR 0015 §4). The verb refuses while it is unset — the store has not moved
+# out yet, so there is nothing to archive — which is why an armed instance
+# with no `queue_repo:` gets a row naming that key and the two ways out of it
+# in the same sentence the verb returns: set `queue_repo:`, or remove the
+# `backup_*` keys to disarm the row. Every scheduled tick refuses the same
+# way, and the schedule line says so.
+# queue_repo: ~/src/<your-queue-repo>
+#
+# THE SCHEDULE IS `backup_interval:`, and its PRESENCE is the arm switch, the
+# way `autostart_interval:`'s is below. It arms a ticker inside the `posse
+# dispatch --watch` loop: once at startup and then every interval, the loop
+# asks how old the newest archive is and writes one only when there is no
+# usable archive or its age has reached the interval. That is level-triggered,
+# so restarting the loop inside the interval does nothing, and `posse pause`
+# stops new dispatch and not this. Absent starts no clock at all; a malformed
+# value disarms the clock with a diagnostic. Without a watch loop there is no
+# schedule — the hand verb and `posse backup status` still work.
+# backup_interval: 24h       # how often the watch loop checks the age
+# backup_dir: ~/.config/posse/state/backup   # state/backup under the home is
+#                            # the default. A tilde is expanded; $RHQ_HOME is
+#                            # NOT, so spell the path. Archives are 0600 files
+#                            # in a 0700 directory, and a target that is not on
+#                            # this box is refused at every use
+# backup_keep: 3             # archives kept on box; prune runs after a newer
+#                            # archive has verified, never before
+# backup_min_free_mb: 384    # staging floor: refuse rather than fill the disk
+#
+# The fifth key is the one with no number to document. `backup_max_age:` is
+# when the newest archive becomes a condition, and its default is a RULE
+# rather than a constant (ADR 0036 §6): twice a valid `backup_interval:`,
+# falling back to 48h on an instance with no schedule. An explicit value wins
+# over both. Armed with no usable archive is stale; no configuration and no
+# archive is inert. Freshness is read off the timestamps in the published
+# archive names — there is no success-stamp file — so an archive stamped in
+# the future is undatable and excluded from the clock rather than deleted.
+
 # ─── scheduled dispatch (autostart) ──────────────────────────────────────────
 # The unattended loop: herdr's [[startup]] hook (plugin/autostart.sh) runs
 # `posse dispatch --watch` in a workspace, once per herdr server start. The

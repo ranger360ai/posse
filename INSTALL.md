@@ -2165,6 +2165,83 @@ match no persona — `posse ready` shows the queue, `posse dispatch --dry-run`
 > `verify_labels:` / `verify_assignee:`). Set `verify_labels: []` to turn
 > it off.
 
+### Backups of the store of record — and the row that asks for them
+
+`posse backup` writes one **on-box** archive: the queue repo's git history
+as a bundle, its beads database staged through sqlite's online backup API,
+the JSONL projections beside it, and the promoted constitution home.
+`envs/` and `secrets/` are never archived, every archive is re-opened and
+checked against its own manifest before it is named, and pruning only ever
+runs after a *newer* archive has verified — so a failed run never deletes
+the last good copy (ADR 0036). A remote target is refused outright: a URL,
+an scp-style `host:path`, a UNC path, or any volume the kernel does not
+report as local, with no flag that lifts it. The limitation that follows is
+deliberate and is the operator's trade — losing this disk loses the source
+and the archive together.
+
+**Its subject is `queue_repo:`, and a cold instance does not have one.**
+That key names the dedicated repo whose `.beads` is the store of record
+(ADR 0015 §4) — the tree every other repo reaches through a
+`.beads/redirect`. Until you cut the queue over into its own tree the key
+is unset, which is every instance that has not cut over, and `posse backup`
+refuses while it is: pointing it at your work repo instead would be a
+different decision about what the store of record *is*, and ADR 0036
+deliberately does not take it. So on a cold install the right state is **all
+of these keys absent**, and the backup reading stays inert — a posse that
+knows how to back up must not start telling you your backups are late.
+
+**Arming is writing a key.** Once any `backup_*` key is set — or an archive
+exists in the directory — `posse status` carries the age of the newest one,
+and past the max it is a LANE carry-over row (`backup-stale`) there and in
+the cockpit's GOVERNANCE block:
+
+```
+LANE        no backup of the store of record on this box — ~/.config/posse/state/backup is empty (config backup_max_age: 48h00m)
+```
+
+Armed with `queue_repo:` still unset is the same condition for the other
+reason, and the row says which: `backups are armed and the store has not
+moved yet (ADR 0015 §4) — … : set queue_repo:, or remove the backup_* keys
+from config.yaml to disarm this row`. Both ways out are in the sentence.
+
+Once the queue has its own tree, these are the keys and their defaults
+(`examples/config.yaml` ships the same block commented out, with the
+reasoning):
+
+```yaml
+queue_repo: ~/src/<your-queue-repo>        # the store of record (ADR 0015 §4)
+backup_interval: 24h                       # PRESENCE arms the clock (below)
+backup_dir: ~/.config/posse/state/backup   # the default; must be on this box
+backup_keep: 3                             # the default: archives kept on box
+backup_min_free_mb: 384                    # the default: staging floor, in MB
+```
+
+`backup_interval:`'s **presence** is that arm switch, the way
+`autostart_interval:`'s is in step 12. It adds a level-triggered check to
+the `posse dispatch --watch` loop: once at startup and then every interval,
+the loop asks how old the newest archive is and writes one only when there
+is no usable archive or its age has reached the interval. Restarting the
+loop inside the interval therefore does nothing, and `posse pause` stops new
+dispatch and not this. With no watch loop there is no schedule at all; the
+hand verb and `posse backup status` still work anywhere.
+
+The fifth key is `backup_max_age:`, and it is the one with no number to
+copy: unset, it is twice a valid `backup_interval:`, falling back to 48h on
+an instance with no schedule. Set it only to say something those two do not.
+
+Arming it is a one-time check — take the first archive by hand before you
+trust any clock to:
+
+```sh
+$ posse backup && posse backup status
+```
+**Verify:** `backup status` names an archive, its age, the directory it is
+in, and whether anything is scheduled to write the next one. A **non-zero
+exit here is the reading, not a crash** — armed with no archive, or a newest
+archive past `backup_max_age:`. `posse backup verify` re-opens the newest
+archive and checks every member against the manifest it carries, extracting
+nothing.
+
 ---
 
 ## 10. First launch, by hand

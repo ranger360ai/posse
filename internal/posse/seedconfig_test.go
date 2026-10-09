@@ -318,8 +318,8 @@ func TestSeedConfigLiveKeysAreRead(t *testing.T) {
 //     claim nothing here can hold.
 //   - seedDocumentedDurationOutsideTheCensus, for a duration-valued line in
 //     the seed whose key the derivation reaches no reader for, because there
-//     is no constant for the line to drift from. Two members, both named in
-//     the paragraph below.
+//     is no constant for the line to drift from. Three members, all named
+//     in the paragraph below.
 //
 // Each register's stale half is as loud as its live half: an entry whose key
 // is no longer a duration key, is no longer documented, or whose documented
@@ -346,16 +346,23 @@ func TestSeedConfigLiveKeysAreRead(t *testing.T) {
 // WHAT IS STILL OUTSIDE, on purpose. `autostart_interval` has no default at
 // all — its presence is the arm switch and absent means off (govern.go) —
 // and `autostart_max_interval` defaults to 8x the base rather than to a
-// constant. Neither is read through a reader of this shape, so neither is
-// derived, and neither should be: a register row for a key with no constant
-// to drift from is the wrong answer to the DRIFT question. It is the right
-// answer to the COVERAGE one, and that is what the third register is: the two
-// are named there with the reason, so the seed-side enumeration accounts for
-// them instead of either comparing them against nothing or skipping them in
-// silence. MEASURED 2026-10-04: the body-form rule scans `YamlGet` and
-// `CfgGet` key literals alike and the two keys above are read through neither
-// inside a duration reader, so widening the key source adds no member and
-// closes the escape a future CfgGet-based reader would otherwise have.
+// constant. `backup_interval` is the first key's shape one surface over
+// (ranger-base-s1dmh): its presence arms the backup clock and absent starts
+// no clock at all (backuploop.go), so there is no default for its documented
+// line to be a statement about either. None of the three is read through a
+// reader of this shape, so none is derived, and none should be: a register
+// row for a key with no constant to drift from is the wrong answer to the
+// DRIFT question. It is the right answer to the COVERAGE one, and that is
+// what the third register is: the three are named there with the reason, so
+// the seed-side enumeration accounts for them instead of either comparing
+// them against nothing or skipping them in silence. MEASURED 2026-10-04: the
+// body-form rule scans `YamlGet` and `CfgGet` key literals alike and the
+// first two keys above are read through neither inside a duration reader, so
+// widening the key source adds no member and closes the escape a future
+// CfgGet-based reader would otherwise have. `backup_interval` is the case
+// that widening would not have caught anyway: LoadBackupConfig does read it
+// through `CfgGet`, but it returns a BackupConfig and an error rather than a
+// duration, so it is not a reader of either shape (MEASURED 2026-10-09).
 
 // seedDurationResolvers are the config readers that take the key and the
 // default as ARGUMENTS: the functions whose grammar decides what a
@@ -451,6 +458,12 @@ var seedDocumentedDurationOutsideTheCensus = map[string]string{
 	"autostart_max_interval": "the ceiling defaults to 8x the base interval rather than to a constant " +
 		"(govern.go), so the documented 40m is a statement about THE LINE ABOVE IT and not about a number " +
 		"this pin could hold",
+	"backup_interval": "its presence IS the backup clock's arm switch — absent starts no ticker at all " +
+		"(LoadBackupConfig, backuploop.go) — so the documented 24h is a shape for the interval and not a " +
+		"statement about a default. The key IS read through CfgGet, but inside a reader that answers a " +
+		"BackupConfig and an error rather than a duration, so neither derived shape reaches it; the one " +
+		"backup duration with a default is backup_max_age:, whose default is a rule and which is " +
+		"therefore in seedDurationDefaultNotAConstant and must stay undocumented (ranger-base-s1dmh)",
 }
 
 // seedDocumentedLine is one commented `key: <value>` line in
@@ -1795,16 +1808,17 @@ func (a *App) PlantedInATestFile(errw io.Writer) time.Duration {
 // the default — which would otherwise let a line that proves nothing pass by
 // landing on the very number it was supposed to prove.
 //
-// WHAT THE SEED'S ELEVEN LINES TURN OUT TO BE, and it is lopsided. Four of
+// WHAT THE SEED'S THIRTEEN LINES TURN OUT TO BE, and it is lopsided. Four of
 // the tree's number keys pair a key literal with one Default-shaped constant
 // — backup_keep, launcher_behind_max, load_guard, verify_batch — and the seed
-// documents three of those four. So of the eleven documented lines: THREE are
-// compared (load_guard agrees with LoadGuardDefault, launcher_behind_max with
-// DefaultLauncherBehindMax; verify_batch is documented at four times
-// DefaultVerifyBatch on purpose and is registered for it), ONE the derivation
-// reaches and cannot pair (grok_guard_week), and SEVEN it reaches no reader
-// for at all. backup_keep and backup_min_free_mb run the other way: tree keys
-// the seed says nothing about, so they make no claim that can go stale.
+// documents all four of them (it documented three until ranger-base-s1dmh
+// gave the backup keys a block of their own). So of the thirteen documented
+// lines: FOUR are compared (load_guard agrees with LoadGuardDefault,
+// launcher_behind_max with DefaultLauncherBehindMax, backup_keep with
+// DefaultBackupKeep; verify_batch is documented at four times
+// DefaultVerifyBatch on purpose and is registered for it), TWO the derivation
+// reaches and cannot pair (grok_guard_week and backup_min_free_mb), and SEVEN
+// it reaches no reader for at all.
 //
 // The reason the seven are seven is the house vocabulary for a number key,
 // which is overwhelmingly "unset means OFF": budget_pass:/budget_day: unset
@@ -1904,8 +1918,10 @@ var seedNumberDefaultNotAConstant = map[string]string{
 	"backup_min_free_mb": "BackupMinFree answers BYTES where the key is in MB — it returns " +
 		"`DefaultBackupMinFreeMB << 20`, not the constant — so the unset answer is 402653184 against a " +
 		"constant of 384. The default exists and the two are a unit apart, and this census compares the " +
-		"reader's own answer, so there is no one number for a documented line to agree with. Undocumented " +
-		"in the seed today, so nothing is admitted by this row",
+		"reader's own answer, so there is no one number for a documented line to agree with. The seed " +
+		"documents it at 384 since ranger-base-s1dmh — the number an operator types, in the unit the key " +
+		"is named for — so this row is what admits that line, and the seed-side accounting below logs it " +
+		"by name and by file position on every run",
 	"grok_guard_week": "unset IS the guard off and GrokGuardWeek returns a bare 0 rather than a constant " +
 		"(the plan_guard_<window>: rule, for the reason that file's header gives), so there is no default " +
 		"for the documented 85 to drift from — and the seed's own paragraph calls the three grok numbers " +
@@ -2310,11 +2326,11 @@ func TestSeedConfigDocumentedNumberDefaultsAreTheConstants(t *testing.T) {
 	// The floors are the positive witnesses that stop it passing by finding
 	// nothing on one side.
 	durationLines := seedDocumentedDurations(text)
-	if len(durationLines) < 10 {
-		t.Errorf("seedDocumentedDurations found %d documented duration lines in the seed, want at least 10 (the measured population — ranger-base-2vynj finding 1) — the number half's disjointness check below is reading one empty side", len(durationLines))
+	if len(durationLines) < 13 {
+		t.Errorf("seedDocumentedDurations found %d documented duration lines in the seed, want at least 13 (MEASURED 2026-10-09 — twelve, plus backup_interval from ranger-base-s1dmh) — the number half's disjointness check below is reading one empty side", len(durationLines))
 	}
-	if len(documented) < 11 {
-		t.Errorf("seedDocumentedNumbers found %d documented number lines in the seed, want at least 11 (MEASURED 2026-10-05 — ranger-base-p9qve, the eleventh being launcher_behind_max from ranger-base-y13h7)", len(documented))
+	if len(documented) < 13 {
+		t.Errorf("seedDocumentedNumbers found %d documented number lines in the seed, want at least 13 (MEASURED 2026-10-09 — eleven as of ranger-base-p9qve and ranger-base-y13h7, plus backup_keep and backup_min_free_mb from ranger-base-s1dmh)", len(documented))
 	}
 	t.Logf("the seed documents %d duration-valued and %d bare-number commented lines", len(durationLines), len(documented))
 	for _, d := range durationLines {
@@ -2326,15 +2342,16 @@ func TestSeedConfigDocumentedNumberDefaultsAreTheConstants(t *testing.T) {
 
 	// The floor, kept beside the set check above and not replaced by it,
 	// because the two fail in opposite directions: this one catches a
-	// documented line that LEFT (deleting one reds at `compared 1`), and the
+	// documented line that LEFT (deleting one reds at `compared 3`), and the
 	// set catches one that ARRIVED, which no count can see.
 	//
-	// Three is the measured population (MEASURED 2026-10-05): the seed
-	// documents launcher_behind_max, load_guard and verify_batch with a
-	// number the census reaches, and backup_keep — the fourth pairing — not
-	// at all.
-	if compared < 3 {
-		t.Errorf("compared %d documented number defaults, want at least 3 — the seed documents launcher_behind_max, load_guard and verify_batch with a value this census reaches, so a census that found fewer stopped reading the file", compared)
+	// Four is the measured population (MEASURED 2026-10-09): the seed
+	// documents launcher_behind_max, load_guard, verify_batch and — since
+	// ranger-base-s1dmh gave the backup keys a block — backup_keep with a
+	// number the census reaches. It was three until that bead, with
+	// backup_keep the one pairing the seed said nothing about.
+	if compared < 4 {
+		t.Errorf("compared %d documented number defaults, want at least 4 — the seed documents backup_keep, launcher_behind_max, load_guard and verify_batch with a value this census reaches, so a census that found fewer stopped reading the file", compared)
 	}
 }
 

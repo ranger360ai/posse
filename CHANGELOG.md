@@ -11,6 +11,20 @@ being cut is a precondition of the tag; see `docs/runbooks/release.md`.
 
 ## Unreleased
 
+**The backup keys are documented where you would look for them.** Backups of
+the store of record have been a built verb since 0036, and the only prose that
+named their config keys was that ADR: `examples/config.yaml` — the file `posse
+init` copies into every fresh instance — carried none of `queue_repo:`,
+`backup_interval:`, `backup_dir:`, `backup_keep:`, `backup_min_free_mb:` or
+`backup_max_age:`, and neither did INSTALL.md. So an operator who got the LANE
+row `no backup of the store of record on this box` had no documented way to
+answer it short of reading an ADR. The seed now ships a commented backup block
+with each key, each default and the on-box-only refusal, and INSTALL.md §9 has
+the operator's half: what the row means, that its subject is `queue_repo:` and
+a cold instance has none, and that writing no key at all is the right state
+until the queue is cut over into its own tree. No behaviour changed — the keys,
+the defaults and the row are the ones the binary already read.
+
 **Four more facts the governance surface used to deny.** `posse status` ends
 with `nothing needs a human`, and that sentence is simply the rendering of an
 empty condition set — so anything the surface does not read, it denies. Four

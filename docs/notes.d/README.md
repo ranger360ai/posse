@@ -15,6 +15,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-e01op](ranger-base-e01op.md) — The launcher's own scaffolding, read as the seat's unlanded work (ranger-base-e01op) — 2026-10-08
 - [ranger-base-9mjxb](ranger-base-9mjxb.md) — ranger-base-9mjxb — bd's store-selecting flag writes across repositories — 2026-10-08
 - [ranger-base-2msgj](ranger-base-2msgj.md) — A gate that was never overwritten, never deleted, and never ran again (ranger-base-2msgj) — 2026-10-08
+- [ranger-base-s1dmh](ranger-base-s1dmh.md) — Documenting a key the seed's own census forbids documenting (ranger-base-s1dmh) — 2026-10-07
 - [ranger-base-0q7rp](ranger-base-0q7rp.md) — ranger-base-0q7rp — the backup row and the backup verb disagreed about whether a store exists — 2026-10-07
 - [ranger-base-orq4e](ranger-base-orq4e.md) — The one register kind that named no key, so the row's own truth went unread (ranger-base-orq4e) — 2026-10-06
 - [ranger-base-y13h7](ranger-base-y13h7.md) — ranger-base-y13h7 — at what depth does a lagging launcher need a human? — 2026-10-05
