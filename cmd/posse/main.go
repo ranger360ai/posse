@@ -1233,16 +1233,40 @@ func main() {
 		rest := args
 		for len(rest) > 0 {
 			switch {
-			// -h/--help, on every form, printing the catalog's backup
-			// block and exiting 0 (ranger-base-cse63). This verb takes no
-			// <name>, so it never reached need()'s reading of a leading
-			// flag (main.go's `-h / --help` rule) and fell through to the
-			// one-line grammar below with exit 1 — asking for help was an
-			// error, and the answer carried none of the keys. Read here
-			// rather than before `sub`, so `--to --help` still names a
-			// directory and only a -h/--help in a FLAG position answers.
+			// -h/--help, on every form, exiting 0 (ranger-base-cse63).
+			// This verb takes no <name>, so it never reached need()'s
+			// reading of a leading flag (main.go's `-h / --help` rule) and
+			// fell through to the one-line grammar below with exit 1 —
+			// asking for help was an error, and the answer carried none of
+			// the keys. Read here rather than before `sub`, so `--to
+			// --help` still names a directory and only a -h/--help in a
+			// FLAG position answers.
+			//
+			// The ANSWER is catalogHelp's, asked for the path this arm is
+			// on (ranger-base-xqtn0). catalogHelp reads the argument after
+			// the longest literal catalog path, so a help flag sitting
+			// behind a flag PAIR — `backup verify --archive <p> --help` —
+			// is not a help request to it and arrives here instead; when
+			// this arm answered backupHelp() directly, that form printed
+			// the whole block where `backup verify --help` printed the
+			// verify entry, and the same question had two answers
+			// depending on argument order. Going back through catalogHelp
+			// keeps ONE reading: `backup` widens to backupHelp() via
+			// verbOwnHelp, and a sub-verb answers with its own entry,
+			// whichever order the flags came in.
 			case rest[0] == "-h" || rest[0] == "--help":
-				fmt.Fprint(out, backupHelp())
+				path := []string{"backup"}
+				if sub != "" {
+					path = append(path, sub)
+				}
+				block, ok := catalogHelp(append(path, "--help"))
+				if !ok {
+					// A sub-verb the catalog has stopped naming: the
+					// verb's own block is still an answer, and exit 0 is
+					// the claim cse63 bought.
+					block = backupHelp()
+				}
+				fmt.Fprint(out, block)
 				os.Exit(0)
 			case rest[0] == "--to" && len(rest) > 1 && sub == "":
 				to, rest = rest[1], rest[2:]

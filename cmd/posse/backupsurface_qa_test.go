@@ -467,3 +467,76 @@ func TestBackupHelpIsTheCatalogBlockItself(t *testing.T) {
 		t.Errorf("`posse help` no longer contains backupHelp() verbatim — the verb's help and the catalog have become two copies:\n%s", block)
 	}
 }
+
+// One question, one answer, whatever order the flags came in
+// (ranger-base-xqtn0, from ranger-base-f9g3c).
+//
+// The verb has two help readings that can both fire: catalogHelp, ahead of
+// main's switch, and this arm's own flag loop, kept so `--to --help` still
+// names a directory. catalogHelp reads the argument AFTER the longest
+// literal catalog path, so a help flag sitting behind a flag PAIR is not a
+// help request to it and falls through to the arm — and while the arm
+// answered backupHelp() directly, `posse backup verify --archive <p>
+// --help` printed the whole 53-line block where `posse backup verify
+// --help` printed the 4-line verify entry. Same question, two answers,
+// chosen by argument order; MEASURED on 7d862489.
+//
+// So the claim is the PAIR AGREEING and not a line count: a line count
+// would pass the day both readings go wide together, which is exactly the
+// state this inconsistency arrived from (on main before the resolution,
+// every backup help form printed the whole block). Each row is a path and a
+// flag position that reaches the other reading, and the two answers must be
+// byte-identical. The `backup` rows are the control that keeps the fix from
+// being "narrow everything": verbOwnHelp widens the VERB's own answer on
+// purpose, so there the agreed answer must be the wide one — the keys an
+// operator came for — and the comment protecting `--to --help` stays true.
+func TestBackupHelpDoesNotDependOnArgumentOrder(t *testing.T) {
+	bin := buildRhq(t)
+	home := backupHome(t, "runtime: claude\n")
+	for _, c := range []struct {
+		// direct is the help flag straight after the path; behind is the
+		// same flag behind a legitimate flag pair of that form.
+		direct, behind []string
+		// want is a line the agreed answer must carry, so a pin over two
+		// empty answers cannot read green.
+		want string
+	}{
+		{
+			direct: []string{"backup", "verify", "--help"},
+			behind: []string{"backup", "verify", "--archive", "/x/a.tar", "--help"},
+			want:   "posse backup verify [--archive <path>]",
+		},
+		{
+			direct: []string{"backup", "verify", "-h"},
+			behind: []string{"backup", "verify", "--archive", "/x/a.tar", "-h"},
+			want:   "posse backup verify [--archive <path>]",
+		},
+		{
+			direct: []string{"backup", "--help"},
+			behind: []string{"backup", "--to", "/x", "--help"},
+			want:   "config backup_min_free_mb:",
+		},
+		{
+			direct: []string{"backup", "-h"},
+			behind: []string{"backup", "--to", "/x", "-h"},
+			want:   "config backup_min_free_mb:",
+		},
+	} {
+		t.Run(strings.Join(c.behind, " "), func(t *testing.T) {
+			dcode, dout := runBackupPosse(t, bin, home, c.direct...)
+			bcode, bout := runBackupPosse(t, bin, home, c.behind...)
+			if dcode != 0 || bcode != 0 {
+				t.Errorf("exit %d and %d — asking for help is not an error", dcode, bcode)
+			}
+			if dout != bout {
+				t.Errorf("`posse %s` and `posse %s` answer the same question differently — the answer is being chosen by argument order:\n--- %s (%d lines) ---\n%s\n--- %s (%d lines) ---\n%s",
+					strings.Join(c.direct, " "), strings.Join(c.behind, " "),
+					strings.Join(c.direct, " "), strings.Count(dout, "\n"), dout,
+					strings.Join(c.behind, " "), strings.Count(bout, "\n"), bout)
+			}
+			if !strings.Contains(dout, c.want) {
+				t.Errorf("the agreed answer does not carry %q, so this row is pinning the wrong text:\n%s", c.want, dout)
+			}
+		})
+	}
+}
