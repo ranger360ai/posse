@@ -417,6 +417,19 @@ func DetectionReportedNote(rt *Runtime, r ManifestReading) string {
 // older herdr, a trimmed manifest set — which is the one moment the sentence
 // is the whole remedy.
 //
+// THE VERB COMES BEFORE THE PATH, and that is the second escape, found on
+// the work box the day a brew-installed posse first refused a bob seat
+// (ranger-base-mhv7j, github issue #4). "posse ships the filing at <path>"
+// was true of the REPO and false of every release: the tarball and the
+// bottle carry the binary and two docs, so the operator was sent to a file
+// that did not exist on his machine — on the one box this door is read on,
+// with no checkout to fall back to, and `posse prompt` refusing the
+// unlabelled pane meanwhile. The filing is embedded now (embed.go,
+// internal/posse/filing.go) and the sentence leads with the command that
+// prints it, because that command is true everywhere the binary is. The
+// repo-relative path stays, in parentheses: it is what a persona standing in
+// a checkout wants, and it is the declaration the pin holds.
+//
 // So a built-in with a filing names it, and a built-in without one says the
 // true thing instead: nothing is carried, and an old herdr is the likely
 // cause before anybody writes a manifest. The version check comes first
@@ -428,8 +441,9 @@ func DetectionDoor(rt *Runtime) string {
 			return "detection for a built-in is upstream's to ship, not yours to author — this argv0 is posse's own, and posse carries no filing for " +
 				rt.Name + ": check `herdr --version` first, because a current herdr may already carry this manifest and an old or trimmed one is the usual cause; if it does not, the filing has to be written and sent (" + detectionFilingDoc + ", ADR 0060 D2)"
 		}
-		return "detection for a built-in is upstream's to ship, not yours to author: posse ships the filing at " +
-			rt.DetectionFiling + " and the operator sends it (ADR 0060 D2)"
+		return "detection for a built-in is upstream's to ship, not yours to author: posse CARRIES the filing — `posse runtime filing " +
+			rt.Name + "` prints it and `--out <dir>` writes it with its draft manifest and pane snapshots (" +
+			rt.DetectionFiling + " in a checkout) — and the operator sends it (ADR 0060 D2)"
 	}
 	return "author a detection manifest, or alias " + rt.Exe() + " onto one that exists: docs/runbooks/" + detectionDoc
 }

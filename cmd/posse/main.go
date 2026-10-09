@@ -1845,8 +1845,8 @@ func main() {
 		// The ADR 0013 dispatch-contract grid for ONE runtime — six stages,
 		// who declared each, and what a missing one costs. `posse runtimes`
 		// (plural) stays the catalog; this is the onboarding surface.
-		if len(args) < 2 || (args[0] != "check" && args[0] != "probe") {
-			die(posse.Die("usage: posse runtime check|probe <name> (launch profiles: %s)", strings.Join(a.ListRuntimes(), ", ")))
+		if len(args) < 2 || (args[0] != "check" && args[0] != "probe" && args[0] != "filing") {
+			die(posse.Die("usage: posse runtime check|probe|filing <name> (launch profiles: %s)", strings.Join(a.ListRuntimes(), ", ")))
 		}
 		rt, err := a.LoadRuntime(args[1])
 		if err != nil {
@@ -1854,6 +1854,31 @@ func main() {
 		}
 		if args[0] == "probe" {
 			runtimeProbe(a, rt, args[2:], out)
+			break
+		}
+		// `filing` is the verb that makes the detection door's claim true of
+		// a RELEASE BINARY and not only of a checkout (ranger-base-mhv7j):
+		// posse carries ADR 0060 D2's upstream filing embedded, so a
+		// brew-installed posse can hand the operator the thing its own
+		// refusal tells him to send. The note stream is stderr so the
+		// covering note composes down a pipe — internal/posse/filing.go.
+		if args[0] == "filing" {
+			filingOut := ""
+			rest := args[2:]
+			for len(rest) > 0 {
+				switch rest[0] {
+				case "--out":
+					if len(rest) < 2 {
+						die(posse.Die("usage: posse runtime filing <name> [--out <dir>] — --out needs a directory"))
+					}
+					filingOut, rest = rest[1], rest[2:]
+				default:
+					die(posse.Die("usage: posse runtime filing <name> [--out <dir>] (unknown argument: %s)", rest[0]))
+				}
+			}
+			if err := a.CmdRuntimeFiling(rt, filingOut, out, os.Stderr); err != nil {
+				die(err)
+			}
 			break
 		}
 		// The grid always prints; the exit status is the preflight's
@@ -2545,6 +2570,13 @@ catalog:
                                  recorded in state/runtimes/<name>/probe.json. Until it passes,
                                  Bash(...) denies on that runtime are "assumed, not measured" and
                                  degrade the launch. Exit 1 when it fails. --keep leaves the pane.
+  posse runtime filing <name>    print the upstream detection filing posse CARRIES for that
+             [--out <dir>]       profile — ADR 0060 D2's draft manifest, pane snapshots and
+                                 covering note, embedded in this binary, which is why the verb
+                                 works on a brew install with no checkout beside it
+                                 (ranger-base-mhv7j). Stdout is the note alone, so it pipes;
+                                 --out writes the whole package into an empty directory.
+                                 Nothing here is published — the operator sends it.
   posse skills                   list bound skills (RHQ_HOME/skills) and the PIDs that bind them
   posse gates <persona>          the persona's L1 gate shims (from deny:), the seatbelt
                                  writable set with ADR 0015 §2's constitution check

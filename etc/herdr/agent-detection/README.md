@@ -343,6 +343,31 @@ the only route is herdr compiling the kind in. `upstream-bob.md` is the filing;
 `upstream/bob/*.txt` are six snapshots named `<state>-<what>.txt` already, so
 the day the kind ships the move into `testdata/bob/` is a rename.
 
+### These files are IN THE BINARY, and `posse runtime filing` is how you get them (ranger-base-mhv7j)
+
+`upstream-*.md` and everything under `upstream/` are embedded (`embed.go`'s
+`Filings`, the mechanism ADR 0012 D5 gives `examples/`), and the local
+overrides and `testdata/` beside them deliberately are not — a release binary
+can use a filing and can do nothing with either of those.
+
+That is not a convenience. Every detection door posse prints named the
+repo-relative path above as the way out of the refusal, and the release tarball
+and the Homebrew bottle carry `posse`, README.md and INSTALL.md — nothing else.
+So on a `brew install` the operator was told to send a file that did not exist
+on his machine, while a dispatched bob seat sat `agent_not_found` and
+`posse prompt` refused the unlabelled pane (github issue #4, measured on the
+work box 2026-10-08).
+
+```
+posse runtime filing bob                # the covering note on stdout, alone, so it pipes
+posse runtime filing bob --out ./filing # the note plus the manifest and the snapshots
+```
+
+`--out` takes a directory that is absent, empty, or holds nothing but a
+previous run's own output, and there is no `--force`. A built-in posse carries
+no filing for answers with its door instead, which is a herdr upgrade and not
+a file (`internal/posse/filing.go`).
+
 `internal/posse/bobtripwire_qa_test.go` is what makes that day arrive. It
 asserts every one of those snapshots still comes back `unknown_agent` from the
 herdr binary, and reds when one does not — printing the move, the delete, the
@@ -467,4 +492,7 @@ pane labelled through `pane report-agent`) and
 `upstream-herdr-bob-darwin.md` (the **herdr-bob plugin**, not herdr: four
 darwin portability bugs that kept its watcher from ever starting on this box,
 plus the `rules.json` gap — ranger-base-mz8ud). None has been filed — filing
-them is the operator's call.
+them is the operator's call. `posse runtime filing <runtime>` hands over the
+one a runtime's detection door names; the other three are drafts no refusal
+points at, so they are read here or out of the binary with the verb a later
+declaration gives them.

@@ -425,6 +425,20 @@ install-herdr-bob-rules` (both write to the live herdr, both operator-gated),
 on herdr ≥ 0.9.0, followed by `detection: reported` in `runtimes/bob.yaml`
 (step 8). `posse runtime check bob` names the gap until then.
 
+The other half of that gap is upstream's: herdr has to compile the kind in,
+and posse carries the filing that asks for it (ADR 0060 D2). It is **embedded
+in the binary**, so this works on a `brew install` with no checkout anywhere
+near it — which is the point, because the path the refusal used to name was a
+repo path nobody on a poured install had (ranger-base-mhv7j):
+
+```sh
+$ posse runtime filing bob                 # the covering note, on stdout alone
+$ posse runtime filing bob --out ./filing  # plus the draft manifest and the pane snapshots
+```
+
+Nothing there has been filed, and posse never files it — sending it is the
+operator's call.
+
 Everything in this section is **machine-global** and shared by every
 instance on the machine: one binary, one plugin registration, one detection
 manifest set. That is by design (ADR 0015 D5) — version skew between two

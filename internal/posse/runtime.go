@@ -523,8 +523,16 @@ type Runtime struct {
 	// is the whole remedy: a herdr too old, or too trimmed, to carry the
 	// manifest (ranger-base-ecchw). Declared here rather than derived so
 	// that the sentence is a fact somebody wrote down, and so the pin can
-	// hold it: a filing named here must be IN the tree
-	// (detectiondoor_qa_test.go).
+	// hold it: a filing named here must be IN the tree AND carried by the
+	// binary (detectiondoor_qa_test.go).
+	//
+	// "In the tree" alone was not enough, and the day that cost something is
+	// ranger-base-mhv7j: the release carries `posse` plus two docs, so the
+	// repo-relative path this field holds names nothing on a `brew install`
+	// — the box the door is actually read on. The filings are embedded now
+	// (embed.go) and `posse runtime filing <name>` hands the package over
+	// (filing.go), so the path below has to be under FilingRoot and has to
+	// be inside the embed directives, both pinned.
 	//
 	// Built-in only, and not a yaml key: a DECLARED runtime's door is the
 	// manifest runbook — its author writes the toml on their own box — and
@@ -1770,9 +1778,11 @@ var builtinRuntimes = []Runtime{
 		PersonaMode: bobPersonaMode,
 		// The ONE built-in posse carries an upstream filing for, because it
 		// is the one whose detection upstream does not ship: ADR 0060 D2's
-		// draft manifest, its five redacted fixtures and the covering note.
+		// draft manifest, its redacted fixtures and the covering note.
 		// Every refusal's door names this path, so the path has to be there
-		// (ranger-base-ecchw).
+		// (ranger-base-ecchw) — and the BINARY has to carry it, because the
+		// door is read on a box that has no checkout (ranger-base-mhv7j).
+		// `posse runtime filing bob` is that route.
 		DetectionFiling: "etc/herdr/agent-detection/upstream-bob.md",
 		// Realize is nil, deliberately: no per-verb permission surface on
 		// bob has been measured, so {allow}/{deny} render to nothing and

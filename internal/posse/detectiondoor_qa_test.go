@@ -27,16 +27,33 @@ package posse
 // this door, and it reads the REAL functions over the REAL built-ins rather
 // than re-deriving the sentence: what a seat is handed is what is checked.
 //
+// THE SECOND ESCAPE, and why this pin grew a second reading
+// (ranger-base-mhv7j, github issue #4). "Is the filing in the tree" is the
+// right question in a checkout and the wrong one everywhere else: the
+// release tarball and the Homebrew bottle carry `posse` plus README.md and
+// INSTALL.md, so a brew-installed posse refused a dispatched bob seat and
+// named, as the whole remedy, a repo path that did not exist on that
+// machine. Green here the entire time — the file IS in the tree, and the
+// tree is not what the reader of this door has. So the filing is embedded
+// now and this pin reads BOTH: the checkout, because a persona standing in
+// one follows the path, and posse.Filings, because that is the copy every
+// release has. A filing in one and not the other is the defect.
+//
 // Doored as `make doc-check` ($(QA_DOC_PINS)) — a tree-wide pin living in a
 // package nobody runs whole, so no seat's `-run` filter would ever name it
 // (ranger-base-rulbl, ranger-base-ik44f).
 
 import (
+	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
+	"testing/fstest"
+
+	"github.com/ranger360ai/posse"
 )
 
 // dddFilingCite matches an agent-detection filing path as one of these
@@ -52,6 +69,27 @@ func dddMissing(root string, cites []string) []string {
 	var out []string
 	for _, c := range cites {
 		if st, err := os.Stat(filepath.Join(root, filepath.FromSlash(c))); err != nil || st.IsDir() {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// dddUncarried returns the cited paths the BINARY does not carry — the
+// reading the tree cannot answer. It takes the filesystem as an argument for
+// the reason dddMissing takes a root: the control below points it at a tree
+// where the answer is known.
+func dddUncarried(filings fs.FS, cites []string) []string {
+	var out []string
+	for _, c := range cites {
+		rel := strings.TrimPrefix(c, FilingRoot)
+		if rel == c {
+			// Not under the filings root at all, so no embed directive
+			// could be carrying it however it reads on disk.
+			out = append(out, c)
+			continue
+		}
+		if st, err := fs.Stat(filings, rel); err != nil || st.IsDir() {
 			out = append(out, c)
 		}
 	}
@@ -74,8 +112,25 @@ func TestQADetectionDoorCitesAFilingThatExists(t *testing.T) {
 			"DetectionGapLine":       DetectionGapLine(&rt, r),
 			"DetectionDegraded":      DetectionDegraded(&rt, r),
 		} {
-			for _, c := range dddMissing(root, dddFilingCite.FindAllString(line, -1)) {
+			cites := dddFilingCite.FindAllString(line, -1)
+			for _, c := range dddMissing(root, cites) {
 				t.Errorf("%s: %s hands the operator %s, which is NOT in the tree — and this door is only ever read on a box whose herdr lacks the manifest, where the sentence is the whole remedy (ranger-base-ecchw):\n%s",
+					rt.Name, surface, c, line)
+			}
+			// And the same path against the BINARY. A release has no
+			// checkout: the reader of this line typed `brew install posse`
+			// (ranger-base-mhv7j). README.md is not a filing and is not
+			// embedded — the no-filing branch cites it as the authoring
+			// page, so it is excluded by name rather than by letting the
+			// check go quiet on everything.
+			var carried []string
+			for _, c := range cites {
+				if path.Base(c) != "README.md" {
+					carried = append(carried, c)
+				}
+			}
+			for _, c := range dddUncarried(posse.Filings, carried) {
+				t.Errorf("%s: %s hands the operator %s, which THIS BINARY does not carry — on a brew install there is no checkout and that sentence is the whole remedy, which is the ranger-base-mhv7j defect:\n%s",
 					rt.Name, surface, c, line)
 			}
 		}
@@ -91,6 +146,22 @@ func TestQADetectionDoorCitesAFilingThatExists(t *testing.T) {
 			}
 			if m := dddMissing(root, []string{rt.DetectionFiling}); len(m) != 0 {
 				t.Errorf("%s declares DetectionFiling %q, which is not a file in the tree — the declaration is what makes the door true, so it is the thing that has to be real", rt.Name, rt.DetectionFiling)
+			}
+			// Carried, and reachable through the verb the door now names —
+			// the two halves of what a release binary can actually hand
+			// over (ranger-base-mhv7j). FilingFor is the production reader,
+			// so this is the real route and not a second implementation of
+			// it: a filing that is declared, in the tree, and absent from
+			// the embed directives fails HERE rather than on the operator's
+			// laptop.
+			if m := dddUncarried(posse.Filings, []string{rt.DetectionFiling}); len(m) != 0 {
+				t.Errorf("%s declares DetectionFiling %q and the binary does not carry it — add it to embed.go's filings directives, or the release that prints this door has no filing behind it (ranger-base-mhv7j)", rt.Name, rt.DetectionFiling)
+			}
+			if _, _, err := FilingFor(&rt); err != nil {
+				t.Errorf("%s declares DetectionFiling %q and `posse runtime filing %s` refuses it: %v", rt.Name, rt.DetectionFiling, rt.Name, err)
+			}
+			if verb := "posse runtime filing " + rt.Name; !strings.Contains(door, verb) {
+				t.Errorf("%s carries a filing and its door does not name %q — the PATH is only true in a checkout, so the command is the part a brew install can act on (ranger-base-mhv7j):\n%s", rt.Name, verb, door)
 			}
 		default:
 			// The escape itself, stated as the property rather than as the
@@ -145,5 +216,29 @@ func TestQADetectionDoorFilingCheckCanFail(t *testing.T) {
 	// would pass a tree where every upstream-*.md had been replaced by a dir.
 	if got := dddMissing(root, []string{"etc/herdr/agent-detection"}); len(got) != 1 {
 		t.Errorf("a directory reads as a filing: %q", got)
+	}
+
+	// The EMBEDDED reading needs its own control, and more than the other
+	// one does: it is the check whose green was the ranger-base-mhv7j
+	// defect. A fs.Stat that never fails, or a prefix trim that silently
+	// matched everything, reads exactly like a binary that carries the lot.
+	scratch := fstest.MapFS{
+		"upstream-no-such-runtime.md": {Data: []byte("x\n")},
+		"upstream/x/bob.toml":         {Data: []byte("x\n")},
+	}
+	if got := dddUncarried(scratch, []string{gone}); len(got) != 0 {
+		t.Errorf("a filing the filesystem DOES carry reads as uncarried: %q", got)
+	}
+	if got := dddUncarried(scratch, []string{"etc/herdr/agent-detection/upstream-absent.md"}); len(got) != 1 {
+		t.Errorf("a filing nothing carries reads as carried: %q", got)
+	}
+	// A path outside the filings root cannot be carried by any directive,
+	// however it reads on disk — that is the refusal FilingFor makes too.
+	if got := dddUncarried(scratch, []string{"docs/runbooks/agent-detection-manifest.md"}); len(got) != 1 {
+		t.Errorf("a path outside %s reads as carried: %q", FilingRoot, got)
+	}
+	// And a directory is not a filing here either.
+	if got := dddUncarried(scratch, []string{"etc/herdr/agent-detection/upstream"}); len(got) != 1 {
+		t.Errorf("a directory reads as a carried filing: %q", got)
 	}
 }

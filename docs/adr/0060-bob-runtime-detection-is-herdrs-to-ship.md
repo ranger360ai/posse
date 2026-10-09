@@ -120,6 +120,24 @@ plugin in `detection_why`. This built-in stays `detection: herdr` and
 keeps saying it has no detection; D2's tripwire and the upstream filing
 stand. ADR 0061 is the record.*
 
+*Snapshot 2026-10-09 (ranger-base-mhv7j, github issue #4): "posse ships the
+filing" was true of the REPO and false of every release.
+`scripts/release-artifacts.sh` tars `posse`, README.md and INSTALL.md, and
+the Homebrew bottle's keg is `bin/posse` plus those two docs — so on a
+`brew install` the path every detection door named,
+`etc/herdr/agent-detection/upstream-bob.md`, did not exist, and the operator
+could not send what he did not have. Measured on the work box 2026-10-08: a
+dispatched bob seat is `agent_not_found`, `posse prompt` refuses the
+unlabelled pane, and the one route out of the refusal was the one route the
+release did not carry. The filing packages are embedded now — `embed.go`'s
+`Filings`, the same mechanism ADR 0012 D5 gives examples/ — and
+`posse runtime filing <name>` prints the covering note (stdout alone, so it
+pipes) or writes the whole package with `--out <dir>`. D2 is unchanged in
+substance: posse carries the filing, the operator sends it. What changed is
+that "carries" is now a property of the binary rather than of the checkout,
+and the door leads with the command instead of the path. The pin reads both
+copies (`internal/posse/detectiondoor_qa_test.go`).*
+
 **D3 — The PID rides `-p` as the first user message; the work prompt is
 typed.** Bob has no launch-time system channel: no rules flag, no
 system-prompt flag. Its instruction files are all read from the

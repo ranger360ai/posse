@@ -11,6 +11,33 @@ being cut is a precondition of the tag; see `docs/runbooks/release.md`.
 
 ## Unreleased
 
+**`brew install posse` could not send the filing its own refusal named.**
+A dispatched Bob seat refuses by name — herdr has no `bob` kind — and the
+door that refusal prints ends "posse ships the filing at
+`etc/herdr/agent-detection/upstream-bob.md` and the operator sends it".
+The release tarball and the Homebrew bottle carry `posse`, README.md and
+INSTALL.md and nothing else, so on a poured install that path named no file
+on the box: the one route out of the refusal was the one route the release
+did not carry, and the operator could not send what he did not have
+(github issue #4). `go install` was the same story, for the same reason.
+
+The filings are **embedded in the binary** now — the mechanism `posse init`
+already used for `examples/` — and there is a verb that hands them over:
+
+```sh
+posse runtime filing bob                 # the covering note, stdout alone, so it pipes
+posse runtime filing bob --out ./filing  # plus the draft manifest and the pane snapshots
+```
+
+`--out` takes a directory that is absent, empty, or holds nothing but a
+previous run's own output, and there is no `--force`. Every detection door
+now leads with that command and keeps the repo path in parentheses, because
+the command is true on a checkout, a tarball, a bottle and a `go install`
+while the path is true on exactly one of them. A built-in posse carries no
+filing for is unchanged: its door is a `herdr --version` check, not a file.
+Nothing is published by any of this — ADR 0060 D2 is still "posse carries
+the filing, the operator sends it".
+
 **A launcher that is behind its own repo is a condition, not just a line.**
 `posse status` has printed how many landed commits the running binary is
 missing since v0.5.0 — a sentence ending "only installing closes it" — and
