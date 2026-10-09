@@ -271,3 +271,110 @@ func TestQAEnvSetKeyNamesReturnsNamesAndNeverValues(t *testing.T) {
 		}
 	}
 }
+
+// ─── the undecided-credential sentence (ranger-base-7ebv6) ───────────────────
+
+// CredGateLint has two sentences and the eight arms above reach one of them.
+// The other — "no session credential is decided for <runtime>" — is the arm
+// pidcheck.go selects with `if key := CageCredential(own); key == ""`, and
+// ranger-base-751ha found that mutating that guard to `false` survives all
+// eight: nothing in the package calls CredGateLint directly, so the sentence
+// was unwritten-about text.
+//
+// WHY THE MUTANT SURVIVES, MEASURED HERE RATHER THAN ARGUED: the guard is
+// unreachable at HEAD. CredGateCollision returns "" unless the runtime
+// declares a CredBin, exactly one runtime does (the claude built-in,
+// `security`), and its session credential is a const in cageCredential — so
+// `key` is never empty where the guard is asked, and the two branches are the
+// same branch. That is a no-op mutant and not an unheld property, which is a
+// different thing from the other four findings in that bead.
+//
+// So the two things that CAN fail are pinned instead: the sentence itself,
+// asked of the function with a runtime in that state, and the reachability
+// premise — the day a runtime declares a credential binary with no decided
+// credential, the arm goes live and wants a behavioural pin through
+// CheckAgent. The second test below says so in its failure message.
+func TestQACredGateLintSaysWhichPreconditionIsUnmet(t *testing.T) {
+	t.Parallel()
+	// Not LoadRuntime: the state under test is one no loadable runtime is in
+	// (see the test below), and that is the point — this pins the words the
+	// lint would use the day one is.
+	undecided := &Runtime{Name: "newcli", CredBin: "newcli-auth"}
+	got := CredGateLint(undecided, "Bash(newcli-auth:*)", "")
+	for _, want := range []string{
+		"Bash(newcli-auth:*)", "newcli-auth", "no session credential is decided for newcli",
+		"every launch of this PID refuses", "cage_cred:", "ADR 0042 D1/D2",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the undecided-credential line never names %q:\n%s", want, got)
+		}
+	}
+	// It must not print the OTHER sentence, whose shape needs a key name:
+	// with none decided, that one reads "launches only with  among the
+	// env-set names it injects" — a sentence with a hole in it, which is
+	// what the mutated guard produces.
+	if strings.Contains(got, "among the env-set names it injects") {
+		t.Errorf("the undecided state printed the key-name sentence, with no key to name:\n%s", got)
+	}
+	// And the decided state still gets that other sentence, naming the key:
+	// one function, two voices, and neither may answer for the other.
+	decided := &Runtime{Name: "newcli", CredBin: "newcli-auth", CageCred: "NEWCLI_TOKEN"}
+	other := CredGateLint(decided, "Bash(newcli-auth:*)", "it names no env set")
+	for _, want := range []string{"NEWCLI_TOKEN", "among the env-set names it injects", "it names no env set"} {
+		if !strings.Contains(other, want) {
+			t.Errorf("the decided line never names %q:\n%s", want, other)
+		}
+	}
+	if strings.Contains(other, "no session credential is decided") {
+		t.Errorf("a decided credential printed the undecided sentence:\n%s", other)
+	}
+}
+
+// The premise the paragraph above rests on, so it cannot rot in silence: no
+// runtime this box can load declares a credential binary without a decided
+// session credential. While that holds, pidcheck's `key == ""` arm is
+// unreachable and a mutation of its guard changes nothing. When it stops
+// holding, this test reds and names what the next hand owes.
+//
+// MEASURED 2026-10-09: one built-in declares a CredBin (claude), and a
+// template-only runtime cannot declare one at all — there is no `cred_bin:`
+// yaml key, and the arm below is what says so rather than a grep that
+// tomorrow's reader has to repeat.
+func TestQANoLoadableRuntimeDeclaresACredBinWithNoDecidedCredential(t *testing.T) {
+	t.Parallel()
+	const owed = "pidcheck.go's `key == \"\"` arm is LIVE now: give it a behavioural pin through CheckAgent (the warning text is TestQACredGateLintSaysWhichPreconditionIsUnmet's) instead of the no-op mutant ranger-base-751ha measured"
+	a := cglHome(t, "Bash(security:*)", "", "")
+
+	declaring := 0
+	for i := range builtinRuntimes {
+		rt := builtinRuntimes[i]
+		if rt.CredBin == "" {
+			continue
+		}
+		declaring++
+		if CageCredential(&rt) == "" {
+			t.Errorf("built-in runtime %s declares cred_bin %s and no session credential — %s", rt.Name, rt.CredBin, owed)
+		}
+	}
+	if declaring == 0 {
+		t.Fatalf("CONTROL: no built-in declares a credential binary at all, so this test measured nothing — and neither does the whole credential precondition (ADR 0042 D2)")
+	}
+
+	// A template-only runtime, declaring the key as an operator would if it
+	// existed. It does not, so CredBin stays empty and CredGateCollision
+	// short-circuits before the guard is ever asked.
+	if err := os.MkdirAll(a.RuntimesDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	yaml := "command: newcli {prompt}\ncred_bin: newcli-auth\n"
+	if err := os.WriteFile(filepath.Join(a.RuntimesDir(), "newcli.yaml"), []byte(yaml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rt, err := a.LoadRuntime("newcli")
+	if err != nil {
+		t.Fatalf("loading a template-only runtime: %v", err)
+	}
+	if rt.CredBin != "" {
+		t.Errorf("a runtime yaml can declare cred_bin: %s now, and this one decides no credential — %s", rt.CredBin, owed)
+	}
+}

@@ -971,9 +971,17 @@ func (a *App) MemoryUnlanded() []MemoryStrand {
 		}
 		paths[name] = append(paths[name], c.Path)
 	}
-	// Persona order, because the caller's rows are keyed on the persona and
-	// a map's iteration order would reorder a set whose keys had not
-	// changed — which is what the pulse fingerprints (ADR 0029).
+	// Persona order, because this is a SLICE a reader walks in order: it is
+	// printed, and it is compared row by row against MemoryDirtyPaths — the
+	// per-persona read it must agree with (govern_test.go). A map's
+	// iteration order would reshuffle a list whose personas had not changed.
+	//
+	// NOT for the pulse's fingerprint, which this line used to claim and
+	// cannot decide: ShopCheck sorts the whole governance set by Key before
+	// returning it (govern.go), and a G14 key is `memory-unlanded:<persona>`,
+	// so that order is settled downstream whatever this reading does
+	// (ranger-base-7ebv6; the claim went four weeks with nothing able to
+	// fail it, because no fixture had more than two dirty personas).
 	names := make([]string, 0, len(paths))
 	for name := range paths {
 		names = append(names, name)

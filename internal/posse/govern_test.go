@@ -1897,6 +1897,56 @@ func TestGovG13QueueRepoThatIsNotARepo(t *testing.T) {
 	}
 }
 
+// The mark is resolved with hookRepo, the spelling the install and the L3
+// probe use (ranger-base-7ebv6, from ranger-base-751ha). The two differ for
+// exactly one shape — a LINKED WORKTREE, whose own path no `beads_visibility:`
+// key can name, since the mark belongs to the repo and not to a tree that
+// shares its objects (ranger-base-up22) — and `queue_repo:` is a plain
+// checkout in every other fixture here, so nothing discriminated the two.
+//
+// A reader that asked `BeadsVisibility(q)` instead would call this marked
+// repo unmarked and raise a standing G13 instructing the operator to mark a
+// line that is already there.
+//
+// MUTATION RUN (reds this test): `a.BeadsVisibility(q)` in place of
+// `a.BeadsVisibility(hookRepo(q))` in QueueReady.
+func TestGovG13QueueRepoInALinkedWorktreeReadsTheReposMark(t *testing.T) {
+	t.Parallel()
+	b, _ := newTestBackend(t)
+	govRepo(t, b)
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git")
+	}
+	main := hwsRepo(t, gitTempDir(t), "queue")
+	// The worktree lands beside the checkout, never inside it: a linked
+	// worktree under the main checkout's own root would be untracked content
+	// in it, and the mark question is about the repo either way.
+	tree := filepath.Join(gitTempDir(t), "wt")
+	if out, err := exec.Command("git", "-C", main, "worktree", "add", "-q", "-b", "wt", tree).CombinedOutput(); err != nil {
+		t.Skipf("git worktree add: %v\n%s", err, out)
+	}
+	// Only the REPO is marked. That is the only thing an operator can mark.
+	appendConfig(t, b.App, "queue_repo: "+tree+"\nbeads_visibility:\n  "+main+": private\n")
+
+	// CONTROL: the two spellings really disagree here, or this pin is a
+	// second copy of TestGovG13MarkedQueueRepoClearsTheUnmarkedRow.
+	if hookRepo(tree) == tree {
+		t.Fatalf("CONTROL: hookRepo(%s) came back unchanged, so this fixture is not a linked worktree", tree)
+	}
+	if _, src := b.App.BeadsVisibility(tree); src != VisibilityUnmarkedSource {
+		t.Fatalf("CONTROL: the worktree path must be unmarked in config — it is the repo that is marked: %s", src)
+	}
+
+	if r := b.App.QueueReady(); r.Unmarked || r.NotARepo {
+		t.Errorf("QueueReady read the worktree path instead of the repo's mark: %+v", r)
+	}
+	for _, c := range shopSet(t, govIn(t, b)) {
+		if c.Key == "queue-unmarked" {
+			t.Errorf("a queue repo whose REPO is marked must not raise queue-unmarked: %+v", c)
+		}
+	}
+}
+
 // ─── G14 · a persona's memory nobody landed ──────────────────────────────────
 
 // govMemory makes the personas dir a git repo and leaves one uncommitted
@@ -2004,6 +2054,98 @@ func TestGovG14SweepAgreesWithThePerPersonaRead(t *testing.T) {
 		if strings.Join(s.Paths, " ") != strings.Join(want, " ") {
 			t.Errorf("%s: sweep %v, per-persona read %v", s.Persona, s.Paths, want)
 		}
+	}
+}
+
+// Persona order, and the same order every time (ranger-base-7ebv6, from
+// ranger-base-751ha). The sort at the foot of MemoryUnlanded was argued at
+// its own site as the pulse's fingerprint stability, and sixteen G12-G15 pins
+// held none of it: `_ = sort.Strings` survived them all, because no fixture
+// had more than two dirty personas and two sorted keys are two keys in
+// either order half the time.
+//
+// AND THE SITE'S OWN REASON WAS NOT THE RIGHT ONE, measured here: ShopCheck
+// sorts the whole set by Key before returning it (govern.go), and a G14 key is
+// `memory-unlanded:<persona>`, so the FINGERPRINT is sorted downstream whatever
+// this reading does. What the sort actually decides is the order of the
+// STRANDS — a slice `posse` prints, and the one MemoryDirtyPaths is compared
+// against row by row — so an unsorted reading is a list that reshuffles under
+// an unchanged set of personas. The comment at the site now says that instead.
+//
+// SIX dirty personas and twenty-five reads, deliberately: Go randomizes the
+// START of a map range, so a small map iterates as a random rotation of the
+// insertion order — which is git status's own, already sorted — and a single
+// read of a two-persona fixture comes back sorted by luck half the time. At
+// six keys in one bucket the sorted rotation is one of three admissible
+// starts, so twenty-five reads leave a mutant's chance of surviving at about
+// 2e-11 rather than 1 in 2.
+//
+// MUTATION RUN (reds this test): `_ = sort.Strings` in place of the call —
+// first read unsorted at the 2nd of 25 draws.
+func TestGovG14UnlandedMemoryReadsInPersonaOrderEveryTime(t *testing.T) {
+	t.Parallel()
+	b, _ := newTestBackend(t)
+	govRepo(t, b)
+	// Role words, never a crew name (ADR 0012 App.A), and not in sorted
+	// order here — what sorts them is the reading, not the writing.
+	for _, who := range []string{"tester", "architect", "developer", "scribe", "builder", "courier"} {
+		govMemory(t, b.App, who, "ORDERS.md")
+	}
+	want := []string{"architect", "builder", "courier", "developer", "scribe", "tester"}
+
+	for i := 0; i < 25; i++ {
+		strands := b.App.MemoryUnlanded()
+		var got []string
+		for _, s := range strands {
+			got = append(got, s.Persona)
+		}
+		if len(got) != len(want) {
+			t.Fatalf("read %d: MemoryUnlanded named %v, want the six dirty personas %v", i, got, want)
+		}
+		if strings.Join(got, " ") != strings.Join(want, " ") {
+			t.Fatalf("read %d of 25 came back out of persona order:\n got %v\nwant %v", i, got, want)
+		}
+	}
+}
+
+// A directory under `personas/` that is not a persona raises nothing
+// (ranger-base-7ebv6). `.cache`, a stray `old-notes copy`, anything an
+// operator or a tool drops there: G14's row names the dir and tells a human
+// to read it and commit it by hand as that persona's standing orders, and
+// posse has no business saying that about a directory no persona owns.
+//
+// Removing the ValidName guard survived all sixteen G12-G15 pins, because
+// every fixture's personas dir held nothing but personas.
+//
+// MUTATION RUN (reds this test): drop the `!ValidName(name)` continue.
+func TestGovG14ADirectoryThatIsNotAPersonaIsNotACondition(t *testing.T) {
+	t.Parallel()
+	b, _ := newTestBackend(t)
+	govRepo(t, b)
+	govMemory(t, b.App, "developer", "ORDERS.md")
+	// Dirty, under personas/, and not a name posse would accept anywhere it
+	// is typed back — a leading dash reads as a flag (app.go validNameRe).
+	root := b.App.PersonasDir()
+	write(t, filepath.Join(root, "-notes", "scratch.md"), "somebody dropped this here\n")
+
+	// CONTROL: the stray really is dirty in that repo, or the absence below
+	// is an absence of input.
+	if out := mustGit(t, root, "status", "--porcelain", "--untracked-files=all"); !strings.Contains(out, "-notes/scratch.md") {
+		t.Fatalf("CONTROL: the stray directory must be dirty in the personas repo: %q", out)
+	}
+	for _, s := range b.App.MemoryUnlanded() {
+		if !ValidName(s.Persona) {
+			t.Errorf("MemoryUnlanded raised a strand for %q, which is not a persona name: %+v", s.Persona, s)
+		}
+	}
+	set := shopSet(t, govIn(t, b))
+	// POSITIVE WITNESS: the real persona in the same fixture does raise its
+	// row, so this is a filter and not a silence.
+	if findKey(set, "memory-unlanded:developer") == nil {
+		t.Fatalf("the real persona's row is missing, so this fixture proves nothing: %v", set.Keys())
+	}
+	if g := findKey(set, "memory-unlanded:-notes"); g != nil {
+		t.Errorf("a directory that is not a persona raised a G14 row telling a human to land its memory: %+v", *g)
 	}
 }
 

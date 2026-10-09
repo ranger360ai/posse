@@ -473,15 +473,21 @@ func main() {
 		"TestQAStaleLineNamesTheUnarmedGuardInsteadOfTheHeadroomRule": "reads ddivoT",
 		"TestQAUnarmedGuardStillAsksWhileTheShopSpends":               "reads ddivoT",
 		"TestQAWatchLoopRunningUnmutesTheMeter":                       "reads ddivoT",
-		// govNow (7): the frozen instant the governance fixtures date their
+		// govNow (9): the frozen instant the governance fixtures date their
 		// set at, so an age assertion is not a stopwatch race
 		// (govern_test.go). Read only — every use is `govNow.Add(…)`, which
 		// returns a new time.Time and mutates nothing — and each test's own
 		// state is a t.TempDir and a scratch herdr it alone holds.
-		"TestG11AbstainsOnAStampThatNamesNoCommit":               "reads govNow",
-		"TestG11FiresAtTheThresholdAndNotBelowIt":                "reads govNow",
-		"TestG11IsSilentForACurrentLauncher":                     "reads govNow",
-		"TestG11KeyCarriesTheDoublingStep":                       "reads govNow",
+		"TestG11AbstainsOnAStampThatNamesNoCommit": "reads govNow",
+		"TestG11FiresAtTheThresholdAndNotBelowIt":  "reads govNow",
+		"TestG11IsSilentForACurrentLauncher":       "reads govNow",
+		"TestG11KeyCarriesTheDoublingStep":         "reads govNow",
+		// The last two arrived with ranger-base-7ebv6 and reach govNow the
+		// same way, through govIn: one declares a linked worktree as
+		// `queue_repo:` and one a stray directory under its own personas
+		// dir, both inside their own t.TempDir.
+		"TestGovG13QueueRepoInALinkedWorktreeReadsTheReposMark":  "reads govNow",
+		"TestGovG14ADirectoryThatIsNotAPersonaIsNotACondition":   "reads govNow",
 		"TestLauncherBehindMaxIsConfigurable":                    "reads govNow",
 		"TestShopCheckDefaultsToThisInstancesOwnLauncherReading": "reads govNow",
 		"TestTheAllClearCannotPrintBeneathALaggingLauncher":      "reads govNow",
