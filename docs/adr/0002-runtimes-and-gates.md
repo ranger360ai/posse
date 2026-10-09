@@ -1,6 +1,6 @@
 # ADR 0002 — Runtimes and gates: launch boundaries and what they prove
 
-*Status: accepted 2026-08-17; consolidated 2026-09-05 under the operator ruling; §3 L3 amended 2026-09-06 (ranger-base-g9xr5) · owner: architect.*
+*Status: accepted 2026-08-17; consolidated 2026-09-05 under the operator ruling; §3 L3 amended 2026-09-06 (ranger-base-g9xr5); §3 `allow:` under claude auto mode pointed at ADR 0070 2026-10-09 (ranger-base-dlouc) · owner: architect.*
 
 ## Context
 
@@ -32,6 +32,10 @@ Do not infer session facts from names or queue facts from a second store.
 **3. Render the wall from the PID at every launch.** `allow:` remains
 runtime-native friction; `deny:` selects the available boundaries below.
 `cage:` is the minimum requested tier. Generated artifacts are disposable.
+On claude under `--permission-mode auto`, friction means exactly this: a call
+whose every shell segment matches an allow rule skips the classifier, and
+nothing else is promised — the holes and the one exception posse renders are
+[ADR 0070](0070-allow-is-friction-under-auto-mode.md).
 
 | Layer | Mechanism and carrier | Reach |
 |---|---|---|
