@@ -579,7 +579,7 @@ QA_EXECWRITE_PINS := TestQATreeGoFilesWriteExecutablesUnderTheForkLock
 # door re-runs the TOOL the way fmt-check does, and the two cannot disagree.
 QA_NOTES_PINS     := TestNotesFragmentIndexIsCurrent
 QA_ADR_PINS       := TestADRCitedGoFilesResolveOrAreDeclared|TestADRCitationCheckCanFail|TestADRCitationDeclarationsExemptOnlyWhatTheyDeclare|TestADRCitationCorpusReadsTheExecutableSupplements|TestADR0015NamesTheHookCommitPinAndItDoesWhatItSays
-QA_CORPUS_PINS    := TestQAFixtureRuntimeExesResolveToNothingOnThisBox|TestQATheGofmtDoorReachesEveryGoFile|TestQAEveryGitInitInThePosseTestsSitsOnATolerantRoot|TestQATheTolerantTempDirWrapperCompilesInEveryArm|TestQANoMakefilePrereqLineReadAsBytesOutsideMkPrereqs|TestQAParallelClearanceDoesNotWaiveAReasonNobodyCleared|TestNoUnswappedInternalRhqCommentsOutsideFrozenRecords|TestRhqLeftoverExemptionsStillNameRealLines
+QA_CORPUS_PINS    := TestQAFixtureRuntimeExesResolveToNothingOnThisBox|TestQATheGofmtDoorReachesEveryGoFile|TestQAEveryGitInitInThePosseTestsSitsOnATolerantRoot|TestQATheTolerantTempDirWrapperCompilesInEveryArm|TestQANoMakefilePrereqLineReadAsBytesOutsideMkPrereqs|TestQAParallelClearanceDoesNotWaiveAReasonNobodyCleared|TestNoUnswappedInternalRhqCommentsOutsideFrozenRecords|TestRhqLeftoverExemptionsStillNameRealLines|TestQANoShippedPosseCallHandsBdAStoreSelectingFlag
 QA_REGISTER_PINS  := TestQAEveryTreeWidePinHasADoor|TestQAOneRepoRootHelperInTheTestPackage|TestQATheTreeWideDoorsReportRealDrift|TestQAMakeTestOpensTheTreeWideDoors|TestQAEveryTrackedProgramATreePinRunsIsDispositioned|TestQATheTreepinsEnumerationRuleMatchesWhatItClaims|TestQAEveryTreepinsDoorFilterNamesItsPins|TestQATheHeadCommentsPinAndDoorCountsAreTheMakefiles
 QA_SCRIPTS_PINS   := TestQABoxCheckCensusCoversEveryVerifyTarget|TestQABoxCheckCensusCoversEveryVerifyScript|TestQANoAssertionArmDecidesThroughAForkedMatcher
 QA_PID_PINS       := TestShippedPIDsCarryTheNarrowedHookRows|TestShippedPIDsLetBeadsOwnHooksRun
@@ -703,9 +703,12 @@ adr-check:
 # the gofmt door's reach over every .go file in the tree, the git-init and
 # tolerant-TempDir censuses over internal/posse's test files, the Makefile
 # prereq-byte census over internal/treepins', the parallel-clearance census
-# over internal/posse's package files, and the retired-harness-name census
-# over the root directory and the notes fragments. ~4s.
-# Type it when you add or edit any .go file, or add a docs/notes.d fragment.
+# over internal/posse's package files, the retired-harness-name census over
+# the root directory and the notes fragments, and the store-selecting-flag
+# census over every shipped script and every non-test .go under cmd/ and
+# internal/ (ranger-base-9mjxb). ~4s.
+# Type it when you add or edit any .go file, when you add or edit anything
+# under scripts/, or when you add a docs/notes.d fragment.
 corpus-check:
 	$(GOBIN) test ./internal/treepins -timeout 15m -count=1 -run '^($(QA_CORPUS_PINS))$$'
 

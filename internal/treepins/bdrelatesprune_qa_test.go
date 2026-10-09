@@ -344,8 +344,14 @@ func TestQAPruneRelatesToAppliesFromTheStoresOwnRepo(t *testing.T) {
 	log := prunFakeBd(t, &env)
 
 	out, code := prunRun(t, script, elsewhere, env, "--apply")
+	// Errorf, not Fatalf, and the argv assertions below run either way. A
+	// prune made from the wrong directory fails its OWN post-apply re-read
+	// of the real store, so a bad exit code and a wrong cwd arrive together
+	// — and the exit code alone would then be the only thing anyone saw,
+	// which is the rig talking and not this pin (checked 2026-10-09: with
+	// the chdir removed, exit 1 was the whole red).
 	if code != 0 {
-		t.Fatalf("--apply from another repo: exit %d\n%s", code, out)
+		t.Errorf("--apply from another repo: exit %d\n%s", code, out)
 	}
 
 	calls := prunCalls(t, log)

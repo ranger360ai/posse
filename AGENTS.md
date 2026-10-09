@@ -116,6 +116,28 @@ bd sync               # Sync with git
   you genuinely need ANOTHER repo's graph for one call, shed it for that
   call — `env -u BEADS_DIR bd <...>` — rather than exporting a new value,
   which would silently move every later bd in the session.
+- **Reading ANOTHER repo's queue: with the cwd inside that repo, never with a
+  store-selecting flag from here** (github issue 9, ranger-base-9mjxb). On the
+  pinned bd, a call made from a cwd inside repo A that names repo B's database
+  with bd's explicit store flag was MEASURED by the operator auto-importing
+  A's `.beads/issues.jsonl` — discovered from the cwd's git repo — into B's
+  store. A READ verb, writing one repository's records into another's
+  database, silently and past the import line. We are pinned at that version
+  and will not file upstream (standing ruling 2026-10-08), so the only control
+  is to never hand bd that flag: `cd` into the repo that owns the store (or
+  `git -C` nothing — bd reads the DIRECTORY, so the chdir is the whole of it),
+  shed `BEADS_DIR` for the call as the bullet above says, and let bd resolve
+  its own store. The same rule binds posse's own code and is pinned there:
+  `Bd.runOnce` binds a store with `cmd.Dir` plus `BEADS_DIR` and
+  `bdGlobalFlags` carries nothing else (internal/posse/beads.go), and
+  `TestQANoShippedPosseCallHandsBdAStoreSelectingFlag` censuses every shipped
+  script and every non-test `.go` under `cmd/` and `internal/` for a call that
+  reintroduces it (`make corpus-check`).
+  **This instance runs three stores**, two of them reached through a
+  `.beads/redirect`, so a cross-repository read here is one flag away from
+  writing the wrong one. `scripts/prune-bd-relates-to.sh`'s `store_owner` is
+  the worked example of doing it right: it names the repo that owns the store,
+  refuses when it cannot, and never guesses.
 - **Never push, and never merge to `main` yourself. The operator pushes and
   the launcher merges.** Every persona's PID denies `Bash(git push:*)` and
   this repo's `pre-push` gate refuses it, so a push is a refused turn, not a
@@ -321,7 +343,7 @@ bd sync               # Sync with git
   make execwrite-check ~0.2s   executable writes routed through WriteExecutable
   make notes-check     ~0.3s   docs/notes.d/README.md lists every fragment (a TOOL)
   make adr-check       ~1.5s   ADR citations resolve, exemptions name real files
-  make corpus-check      ~4s   censuses over this repo's own .go and test sources
+  make corpus-check      ~4s   censuses over this repo's own .go, test and script sources
   make register-check   ~20s   the register itself: every tree-wide pin has a door
   make scripts-check   ~0.9s   censuses over scripts/, and verify-* targets vs the box roster
   make pid-check        ~10s   the shipped PIDs under examples/agents/

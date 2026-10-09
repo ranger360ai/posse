@@ -156,6 +156,9 @@ package treepins
 //	TestNoUnswappedInternalRhqCommentsOutsideFrozenRecords
 //	                                              make corpus-check
 //	TestRhqLeftoverExemptionsStillNameRealLines   make corpus-check
+//	TestQANoShippedPosseCallHandsBdAStoreSelectingFlag
+//	                                              make corpus-check
+//	                                              (ranger-base-9mjxb)
 //	TestQAEveryTreeWidePinHasADoor                make register-check ~20s
 //	TestQAOneRepoRootHelperInTheTestPackage       make register-check
 //	TestQATheTreeWideDoorsReportRealDrift         make register-check
@@ -192,11 +195,15 @@ package treepins
 // same as a pin only its own bead can red, and the door is what closes that
 // gap — not the rule.)
 //
-// and `make tree-check` is all of them — 48.4-51.5s on this box over three
-// warm runs at fifty-five pins and fourteen doors (MEASURED 2026-10-05,
-// ranger-base-p9qve, load average 9.6 to 36.5 across the three with a
-// sibling seat holding a suite slot) — which is the command a
-// seat types after a filtered run. (It was 46-51s at fifty-three pins;
+// and `make tree-check` is all of them — 49-93s on this box over three warm
+// runs at fifty-six pins and fourteen doors (MEASURED 2026-10-09,
+// ranger-base-9mjxb, one-minute load average 128.0, 75.2 and 36.9 before the
+// three, with BOTH suite slots held by sibling seats throughout; 80s, 49s and
+// 93s in that order, so the slowest run was the one at the LOWEST load and
+// this spread is not a function of the load average either) — which is the
+// command a
+// seat types after a filtered run. (It was 48.4-51.5s at fifty-five pins,
+// at a load average of 9.6 to 36.5; 46-51s at fifty-three pins;
 // 14.9-16.5s over twenty-three pins
 // behind eight doors, before ranger-base-g6sb1 found a second package;
 // 15-43s at twenty-two, 12-27s under
