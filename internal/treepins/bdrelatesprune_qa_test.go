@@ -27,13 +27,21 @@ import (
 	"testing"
 )
 
-// prunRun runs a repo script with cwd=root and BEADS_DB stripped, like bdsRun.
+// prunRun runs a repo script with cwd=root and BEADS_DB and BEADS_DIR
+// stripped, like bdsRun.
 //
 // A key the caller supplies in env is dropped from the inherited copy rather
 // than appended behind it: a child shell handed two PATH rows reads whichever
 // its libc picks, so an override that only appends is an override that
 // sometimes does nothing (ranger-base-9mjxb, where the override puts a fake bd
 // in front of the real one).
+//
+// BEADS_DIR is stripped for a second reason, and it is the one
+// ranger-base-7ebv6 is about: posse sets it in EVERY session (ADR 0055), so a
+// run of this suite inherits a real one pointed at the live store. Left in, it
+// would reach the fake bd — which resolves it first, as the real bd does — and
+// every arm here would be measuring whatever store the box happened to name.
+// An arm about that variable sets it itself.
 func prunRun(t *testing.T, script, root string, env []string, args ...string) (string, int) {
 	t.Helper()
 	abs, err := filepath.Abs(script)
@@ -49,7 +57,7 @@ func prunRun(t *testing.T, script, root string, env []string, args ...string) (s
 	cmd := exec.Command(abs, args...)
 	cmd.Dir = root
 	for _, kv := range os.Environ() {
-		if strings.HasPrefix(kv, "BEADS_DB=") {
+		if strings.HasPrefix(kv, "BEADS_DB=") || strings.HasPrefix(kv, "BEADS_DIR=") {
 			continue
 		}
 		if i := strings.IndexByte(kv, '='); i > 0 && override[kv[:i]] {
@@ -267,22 +275,31 @@ func prunRepo(t *testing.T, seed string) string {
 // prunFakeBd puts a recording `bd` first on PATH, appends the override to
 // env, and returns the path its log will be written to.
 //
-// It records the directory it was CALLED in and its whole argv — the two
-// facts this bead is about — and it resolves the store the way the real bd
-// does when no store-selecting flag is given: from that directory. So a
-// chdir that put bd on the wrong store does not merely read wrong in the
-// log; the unrelate deletes nothing, and the script's own post-apply re-read
-// of the REAL store then reports the pairs still there. The assertion and
-// the rig fail in the same direction.
+// It records the directory it was CALLED in, the store it resolved and its
+// whole argv — the three facts this bead is about — and it resolves that store
+// the way the real bd does when no store-selecting flag is given: `$BEADS_DIR`
+// FIRST, and the calling directory only when that is unset (bd 0.50.3 in no-db
+// mode reads no redirect at all — ADR 0055, MEASURED 2026-10-09 over two
+// scratch repos holding a touched copy of a real beads.db). So a chdir that
+// put bd on the wrong store does not merely read wrong in the log; the
+// unrelate deletes nothing, and the script's own post-apply re-read of the
+// REAL store then reports the pairs still there. The assertion and the rig
+// fail in the same direction.
+//
+// The variable half is not decoration: a fake that read `$PWD/.beads` alone
+// asserted a property the real bd does not have under the environment every
+// posse session hands the script, and that is exactly how the chdir shipped
+// without the shed beside it (ranger-base-7ebv6).
 func prunFakeBd(t *testing.T, env *[]string) string {
 	t.Helper()
 	dir := t.TempDir()
 	log := filepath.Join(dir, "calls.log")
 	body := "#!/bin/sh\n" +
-		"printf 'cwd=%s argv=%s\\n' \"$(pwd -P)\" \"$*\" >> " + shQuote(log) + "\n" +
+		"store=${BEADS_DIR:-$PWD/.beads}\n" +
+		"printf 'cwd=%s store=%s argv=%s\\n' \"$(pwd -P)\" \"$store\" \"$*\" >> " + shQuote(log) + "\n" +
 		"for a in \"$@\"; do\n" +
 		"\tif [ \"$a\" = unrelate ]; then\n" +
-		"\t\tsqlite3 \"$PWD/.beads/beads.db\" \"DELETE FROM dependencies WHERE type='relates-to';\" || exit 1\n" +
+		"\t\tsqlite3 \"$store/beads.db\" \"DELETE FROM dependencies WHERE type='relates-to';\" || exit 1\n" +
 		"\tfi\n" +
 		"done\n" +
 		"exit 0\n"
@@ -332,15 +349,31 @@ func prunRelatesRows(t *testing.T, root string) string {
 }
 
 // --apply writes from inside the repo that owns the store, with no
-// store-selecting flag, whatever directory it was invoked from.
+// store-selecting flag and with BEADS_DIR shed, whatever directory it was
+// invoked from and whatever store that variable names.
+//
+// The environment is the one a real run has: posse sets BEADS_DIR in every
+// session (ADR 0055), pointed at the store of record for the directory the
+// session was launched into — which is not the store `BEADS_DB` names here,
+// and which bd resolves BEFORE the cwd. A chdir alone therefore binds nothing;
+// the three writes have to shed the variable as well, which is the remedy
+// AGENTS.md prescribes and the one bdStoreEnvShed already makes for the Go
+// runner. Pinned here with the variable aimed at `elsewhere`, so every
+// assertion below about "the repo we stood in" is also an assertion about the
+// store the environment named (ranger-base-7ebv6, from ranger-base-751ha).
 func TestQAPruneRelatesToAppliesFromTheStoresOwnRepo(t *testing.T) {
 	const script = "scripts/prune-bd-relates-to.sh"
 	store := prunRepo(t, prunPair)
 	// A DIFFERENT repo to stand in, with its own store and its own rows. If
-	// the script ran bd from here, every assertion below reads it.
+	// the script ran bd from here — or let BEADS_DIR decide — every assertion
+	// below reads it.
 	elsewhere := prunRepo(t, "INSERT INTO dependencies VALUES ('z','y','blocks');")
 
-	env := []string{"BEADS_DB=" + filepath.Join(store, ".beads", "beads.db")}
+	env := []string{
+		"BEADS_DB=" + filepath.Join(store, ".beads", "beads.db"),
+		// Exactly what posse puts in every session's environment.
+		"BEADS_DIR=" + filepath.Join(elsewhere, ".beads"),
+	}
 	log := prunFakeBd(t, &env)
 
 	out, code := prunRun(t, script, elsewhere, env, "--apply")
@@ -374,6 +407,12 @@ func TestQAPruneRelatesToAppliesFromTheStoresOwnRepo(t *testing.T) {
 		if strings.Contains(c, "cwd="+stranger+" ") {
 			t.Errorf("a bd call was made from the invoking repo, which is the defect: %q", c)
 		}
+		// And the store it RESOLVED, which is the half a chdir does not
+		// decide: with BEADS_DIR set and not shed, bd reads that variable
+		// and the right cwd buys nothing (ranger-base-7ebv6).
+		if !strings.Contains(c, " store="+filepath.Join(owner, ".beads")+" ") {
+			t.Errorf("a bd call resolved a store that is not the owning repo's %s: %q", filepath.Join(owner, ".beads"), c)
+		}
 		// The flag itself, in both spellings bd accepts. A chdir that is
 		// right and a flag that is still there is no fix at all: the flag is
 		// what bd reads.
@@ -398,6 +437,9 @@ func TestQAPruneRelatesToAppliesFromTheStoresOwnRepo(t *testing.T) {
 	if got := prunRelatesRows(t, elsewhere); got != "0" {
 		t.Errorf("the invoking repo's store gained %s relates-to row(s) — records crossed repositories", got)
 	}
+	// The same cross-repository write, reached the other way: that store is
+	// also the one BEADS_DIR named, so a count above zero here says the shed
+	// is gone whether or not the chdir is.
 	blocks, err := exec.Command("sqlite3", filepath.Join(elsewhere, ".beads", "beads.db"),
 		"SELECT count(*) FROM dependencies WHERE type='blocks';").Output()
 	if err != nil {

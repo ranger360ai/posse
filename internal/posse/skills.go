@@ -533,6 +533,56 @@ func excludeFromGit(dir, rel string) {
 	appendGitExcludes(dir, "a tree bound into this session (ADR 0007) — session-local, not the repo's", []string{rel + "/"})
 }
 
+// gitIgnoreLiteral spells a repo-relative PATH as a gitignore pattern that
+// matches that path and nothing else, and reports whether the path can be
+// spelled as one at all.
+//
+// THE DEFECT IT ENDS (ranger-base-7ebv6, from ranger-base-751ha's verification
+// of ranger-base-e01op). The path went in unescaped, so a glob metacharacter
+// in a declared `worktree_link:` became a PATTERN metacharacter: a declared
+// `cfg[1]` wrote `/cfg[1]`, a character class, which matches `cfg1` and not
+// `cfg[1]`. Both directions wrong from one line — the scaffolding it was
+// written for still read `?? cfg[1]`, so the spurious closed-dirty P1 survived
+// for that path, and a collateral `cfg1` the seat wrote went invisible to git,
+// which is the silent-loss direction seedScaffoldExcludes' own comment calls
+// the worse of the two. MEASURED 2026-10-09, git 2.50.1: with `\[`, `\*` and
+// `\?` written instead, the literally-named file is ignored and `cfg1`, `aXb`
+// and `qYz` still reach `git status`.
+//
+// FOUR BYTES CARRY MEANING in a gitignore pattern body: `*`, `?` and `[` are
+// wildmatch's metacharacters, and `\` is its escape, so it goes first. `]` is
+// literal unless a `[` opened a class, and no unescaped `[` reaches the file
+// any more. Two more have meaning only at the START of a line — `#` is a
+// comment and `!` is a negation — and neither can reach position 0: the caller
+// anchors every pattern with a leading `/`. A trailing space is stripped by
+// git unless it is escaped, so one is escaped here; `/` never is, which is
+// what keeps a caller's own directory suffix meaningful.
+//
+// AND ONE BYTE CANNOT BE SPELLED AT ALL: the file is line-oriented with no
+// quoting, so a path holding a newline or a carriage return has no pattern.
+// That path is refused (false) rather than written, because the line it would
+// write is a pattern for something else — in the operator's own file, which
+// this appends to and never rewrites.
+func gitIgnoreLiteral(path string) (string, bool) {
+	if strings.ContainsAny(path, "\n\r") {
+		return "", false
+	}
+	var b strings.Builder
+	b.Grow(len(path) + 4)
+	for _, r := range path {
+		switch r {
+		case '\\', '*', '?', '[':
+			b.WriteByte('\\')
+		}
+		b.WriteRune(r)
+	}
+	out := b.String()
+	if strings.HasSuffix(out, " ") {
+		out = out[:len(out)-1] + "\\ "
+	}
+	return out, true
+}
+
 // appendGitExcludes adds every pattern in pats that the repo's COMMON
 // .git/info/exclude does not already carry, under one `# posse: <note>`
 // line. Best effort: a dir that is not a repo has nothing to pollute.
@@ -545,6 +595,11 @@ func excludeFromGit(dir, rel string) {
 // read `?? .bob` and a clean seat collect a spurious closed-dirty P1
 // (ranger-base-e01op; MEASURED 2026-10-09, git 2.50.1). Slash-less is the
 // spelling for anything that may be a link.
+//
+// Everything else about a pat is a PATH, and a path is not a pattern:
+// gitIgnoreLiteral spells it as one that matches that path and nothing else
+// (ranger-base-7ebv6). The trailing slash survives it — `/` is not a
+// metacharacter — so the caller's own suffix still means what it meant.
 //
 // Each pattern is anchored at the repo root, so a session started in a
 // subdirectory excludes its own path and not another one that happens to
@@ -575,7 +630,13 @@ func appendGitExcludes(dir, note string, pats []string) {
 	}
 	want := make([]string, 0, len(pats))
 	for _, rel := range pats {
-		want = append(want, "/"+strings.TrimSpace(string(prefix))+rel)
+		// The prefix is a path too, and a session started in a subdirectory
+		// whose name holds a metacharacter has the same arithmetic to do.
+		pattern, ok := gitIgnoreLiteral(strings.TrimSpace(string(prefix)) + rel)
+		if !ok {
+			continue
+		}
+		want = append(want, "/"+pattern)
 	}
 	p := filepath.Join(gitDir, "info", "exclude")
 	if b, err := os.ReadFile(p); err == nil {

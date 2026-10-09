@@ -41,7 +41,9 @@
 # no issue, no status, and no `blocks` / `discovered-from` / `blocked-by` edge.
 # Reversible: the removed rows are in the git history of .beads/issues.jsonl.
 # Every one of those writes is made with the working directory inside the repo
-# that owns the store, and with no store-selecting flag on the argv.
+# that owns the store, with no store-selecting flag on the argv, and with
+# BEADS_DIR shed for the call — that variable outranks the cwd, so the chdir
+# does not bind the store while it is set (see THE OWNING REPO below).
 set -euo pipefail
 
 APPLY=0
@@ -81,6 +83,19 @@ DB=$(cd "$(dirname "$DB")" && pwd -P)/$(basename "$DB")
 # upstream (standing ruling 2026-10-08), so the posse-side answer is to stop
 # handing bd a `--db` that points outside the working directory at all: name
 # the repo that OWNS the store, chdir into it, and let bd resolve its own.
+#
+# THE CHDIR IS HALF OF IT. bd resolves `$BEADS_DIR` BEFORE the cwd, and in
+# no-db mode reads no redirect at all (ADR 0055), so a chdir binds nothing
+# while that variable is set — and posse sets it in every session it
+# launches, which is every session this script is ever typed in. MEASURED
+# 2026-10-09, pinned bd 0.50.3, two scratch git repos each holding a touched
+# copy of a real beads.db, controls both ways: with the variable shed each
+# cwd resolves its own store; with cwd=repoA and the variable naming repoB,
+# resolution AND the write go to repoB — a `comments add` from inside repoA
+# left repoA at 0 marker rows and put 1 in repoB. So every bd call below is
+# `env -u BEADS_DIR bd …`, which is the remedy AGENTS.md prescribes and the
+# same one internal/posse/beads.go's bdStoreEnvShed makes for the Go runner
+# (ranger-base-k45gn, ranger-base-7ebv6).
 #
 # `store_owner <db>` prints that repo, or fails. Three conditions, all of
 # them load-bearing, because a chdir to the wrong directory silently reads a
@@ -205,15 +220,18 @@ while read -r _type x y; do
 		# cwd = the owning repo, and no --db: see store_owner above.
 		# --no-daemon is the house form for every bd argv (ADR 0015) and
 		# keeps this from leaving a daemon behind (ranger-base-42mv).
-		(cd "$OWNER" && bd --no-daemon comments add "$x" "relates-to $y — $NOTE_TAG: $NOTE_WHY") >/dev/null
-		(cd "$OWNER" && bd --no-daemon comments add "$y" "relates-to $x — $NOTE_TAG: $NOTE_WHY") >/dev/null
-		(cd "$OWNER" && bd --no-daemon dep unrelate "$x" "$y") >/dev/null
+		# `env -u BEADS_DIR`: see THE OWNING REPO above — the chdir alone
+		# does not bind the store while that variable is set, and posse sets
+		# it in every session (ADR 0055).
+		(cd "$OWNER" && env -u BEADS_DIR bd --no-daemon comments add "$x" "relates-to $y — $NOTE_TAG: $NOTE_WHY") >/dev/null
+		(cd "$OWNER" && env -u BEADS_DIR bd --no-daemon comments add "$y" "relates-to $x — $NOTE_TAG: $NOTE_WHY") >/dev/null
+		(cd "$OWNER" && env -u BEADS_DIR bd --no-daemon dep unrelate "$x" "$y") >/dev/null
 		echo "pruned $x <-> $y (recorded as a comment on both)"
 	else
 		echo "would run (cwd ${OWNER:-<no owning repo>}):"
-		echo "  bd --no-daemon comments add $x \"relates-to $y — $NOTE_TAG: $NOTE_WHY\""
-		echo "  bd --no-daemon comments add $y \"relates-to $x — $NOTE_TAG: $NOTE_WHY\""
-		echo "  bd --no-daemon dep unrelate $x $y"
+		echo "  env -u BEADS_DIR bd --no-daemon comments add $x \"relates-to $y — $NOTE_TAG: $NOTE_WHY\""
+		echo "  env -u BEADS_DIR bd --no-daemon comments add $y \"relates-to $x — $NOTE_TAG: $NOTE_WHY\""
+		echo "  env -u BEADS_DIR bd --no-daemon dep unrelate $x $y"
 	fi
 done <<EOF
 $pairs

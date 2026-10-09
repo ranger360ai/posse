@@ -332,6 +332,95 @@ func TestSkillsParity(t *testing.T) {
 	}
 }
 
+// gitIgnoreLiteral spells a PATH as a pattern matching that path and nothing
+// else (ranger-base-7ebv6, from ranger-base-751ha's verification of
+// ranger-base-e01op). Every arm is asked of GIT, not of the function's own
+// output: the claim is about what git's wildmatch does with these bytes, and a
+// table comparing the escape against itself would go green over the wrong
+// escape character.
+//
+// MUTATIONS RUN (each reds this test): return the path unchanged; escape only
+// `[`; drop the backslash from the escape set; drop the newline refusal; drop
+// the trailing-space escape.
+func TestGitIgnoreLiteralSpellsAPathAndNotAPattern(t *testing.T) {
+	t.Parallel()
+	repo := gitTempDir(t)
+	if out, err := exec.Command("git", "-C", repo, "init", "-q").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v %s", err, out)
+	}
+	// Each pair is (the declared path, a DIFFERENT path the unescaped
+	// spelling would also match). `cfg[1]` is the reported one; the other
+	// three are the remaining bytes wildmatch reads.
+	pairs := [][2]string{
+		{"cfg[1]", "cfg1"},
+		{"a*b", "aXb"},
+		{"q?z", "qYz"},
+		{"back\\slash", "backXslash"},
+	}
+	var pats []string
+	for _, pr := range pairs {
+		pats = append(pats, pr[0])
+	}
+	// A path with a newline has no pattern at all — the file is line
+	// oriented and has no quoting — so it must be refused rather than
+	// written as two lines, the second of which would ignore `plain`.
+	pats = append(pats, "two\nplain")
+	appendGitExcludes(repo, "a pin", pats)
+
+	for _, pr := range pairs {
+		write(t, filepath.Join(repo, pr[0]), "declared\n")
+		write(t, filepath.Join(repo, pr[1]), "the seat wrote this\n")
+	}
+	write(t, filepath.Join(repo, "plain"), "the seat wrote this too\n")
+
+	// check-ignore and not `status --porcelain` for the per-path answers:
+	// git C-QUOTES a path holding a backslash in porcelain output
+	// (`?? "back\\slash"`), so a substring search for the path's own spelling
+	// reads a dirty file as a clean one — measured here, where it left the
+	// backslash arm green under a mutant that escapes only `[`.
+	ignored := func(rel string) bool {
+		return exec.Command("git", "-C", repo, "check-ignore", "-q", "--", rel).Run() == nil
+	}
+	for _, pr := range pairs {
+		if !ignored(pr[0]) {
+			t.Errorf("the declared path %q is not excluded — its own spelling is a pattern that does not match it", pr[0])
+		}
+		if ignored(pr[1]) {
+			t.Errorf("%q is hidden by the pattern for %q — a collateral file the seat wrote, which is the silent-loss direction", pr[1], pr[0])
+		}
+	}
+	// What the seat actually reads, over the same tree: the collateral files
+	// are there and the declared ones are not.
+	out := mustGit(t, repo, "status", "--porcelain", "--untracked-files=all")
+	for _, pr := range pairs {
+		if !strings.Contains(out, pr[1]) {
+			t.Errorf("%q must reach git status:\n%s", pr[1], out)
+		}
+	}
+	if !strings.Contains(out, "plain") {
+		t.Errorf("a path holding a newline wrote a second line into the operator's file and it ignores `plain`:\n%s", out)
+	}
+	// CONTROL: the rig really wrote patterns, so the absences above are not
+	// an empty file read four ways.
+	body, err := os.ReadFile(filepath.Join(repo, ".git", "info", "exclude"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(string(body), "\n/"); n != len(pairs) {
+		t.Fatalf("CONTROL: want %d anchored patterns in info/exclude, got %d:\n%s", len(pairs), n, body)
+	}
+	// A caller's own trailing slash still means "a directory and nothing
+	// else" — `/` is not escaped, which is what keeps excludeFromGit's
+	// spelling meaningful.
+	if got, ok := gitIgnoreLiteral("dir[1]/"); !ok || got != "dir\\[1]/" {
+		t.Errorf("gitIgnoreLiteral(\"dir[1]/\") = %q, %v — the caller's directory suffix must survive", got, ok)
+	}
+	// And a trailing space, which git strips unless it is escaped.
+	if got, ok := gitIgnoreLiteral("trail "); !ok || got != "trail\\ " {
+		t.Errorf("gitIgnoreLiteral(\"trail \") = %q, %v — git strips an unescaped trailing space", got, ok)
+	}
+}
+
 // §2 for codex and grok (rangerhq-1qd): the binding materializes as
 // symlinks in the session dir, never overwrites what posse did not write,
 // leaves another persona's links alone, and sweeps its own dead ones.

@@ -363,28 +363,45 @@ func TestWorktreeLinkRefusesToEscapeTheRepo(t *testing.T) {
 // `.beads/redirect`, which seedBeadsRedirect writes into a fresh `.beads`
 // that has none of bd's own `.beads/.gitignore`.
 //
+// A SECOND DECLARED LINK CARRIES A GLOB METACHARACTER (ranger-base-7ebv6).
+// `cfg[1]` is a path and `/cfg[1]` is a character class, so pasting the one
+// into the other wrote a pattern that matches `cfg1` and not `cfg[1]`: the
+// scaffolding stayed dirty AND a collateral `cfg1` went invisible, from one
+// line. Its ignore in the main checkout is spelled `cfg\[1]/`, which is what
+// an operator who wants that directory ignored has to type as well (MEASURED
+// 2026-10-09, git 2.50.1: `cfg[1]/` ignores `cfg1` and leaves `cfg[1]`
+// dirty) — and it is also what makes the main checkout's own reading, below,
+// the one that lets posse speak here at all.
+//
 // MUTATIONS RUN (each reds this test): drop the seedScaffoldExcludes call;
 // spell the patterns with excludeFromGit's trailing slash; write to
 // --git-dir instead of --git-common-dir; exclude only the redirect; exclude
-// only the links.
+// only the links; paste the path into the pattern unescaped (gitIgnoreLiteral
+// returning its argument unchanged).
 func TestFreshSessionTreeIsPorcelainCleanBeforeTheSeatTypes(t *testing.T) {
 	t.Parallel()
 	a := wtApp(t)
 	repo := wtRepo(t)
 	write(t, filepath.Join(repo, ".bob", "config.yaml"), "bob: yes\n")
-	commitIn(t, repo, ".gitignore", ".bob/\n", "ignore the bob config directory")
+	write(t, filepath.Join(repo, "cfg[1]", "config.yaml"), "one: yes\n")
+	commitIn(t, repo, ".gitignore", ".bob/\ncfg\\[1]/\n", "ignore the two config directories")
 	// Deliberately NOT ignored in the repo: `issues.jsonl` is tracked in
 	// repos that are not this one, so posse excludes `.beads/redirect` and
 	// never the directory. The main checkout stays dirty over this file and
 	// that is the operator's call — hence the control below is scoped to
 	// `.bob`.
 	write(t, filepath.Join(repo, ".beads", "issues.jsonl"), "")
-	write(t, a.ConfigPath, "worktree_link:\n  - .bob\n")
+	write(t, a.ConfigPath, "worktree_link:\n  - .bob\n  - cfg[1]\n")
 
 	// CONTROL: the operator's ignore is not the bug. Where the path is a
-	// directory — here — `.bob/` covers it and git says nothing.
-	if out := mustGit(t, repo, "status", "--porcelain", "--untracked-files=all", "--", ".bob"); strings.TrimSpace(out) != "" {
-		t.Fatalf("CONTROL: `.bob/` must already cover the main checkout's directory, else this fixture measures the wrong thing: %q", out)
+	// directory — both of these — their own patterns cover them and git says
+	// nothing. That is also the precondition for posse writing a pattern at
+	// all: a declared path the main checkout showed as ordinary dirt is one
+	// this withholds (TestWorktreeLinkTheMainCheckoutDoesNotIgnoreIsNotExcluded).
+	for _, rel := range []string{".bob", "cfg[1]"} {
+		if out := mustGit(t, repo, "status", "--porcelain", "--untracked-files=all", "--", rel); strings.TrimSpace(out) != "" {
+			t.Fatalf("CONTROL: the operator's own ignore must already cover %s in the main checkout, else this fixture measures the wrong thing: %q", rel, out)
+		}
 	}
 
 	tr, err := a.EnsureSessionTree(repo, "s-1", nil)
@@ -393,8 +410,10 @@ func TestFreshSessionTreeIsPorcelainCleanBeforeTheSeatTypes(t *testing.T) {
 	}
 	// CONTROL: both pieces of scaffolding are really in the tree. An empty
 	// status over a tree that was never seeded passes for the wrong reason.
-	if fi, err := os.Lstat(filepath.Join(tr.Path, ".bob")); err != nil || fi.Mode()&os.ModeSymlink == 0 {
-		t.Fatalf("CONTROL: .bob is not a symlink in the session tree, so nothing here is the reported shape: %v", err)
+	for _, rel := range []string{".bob", "cfg[1]"} {
+		if fi, err := os.Lstat(filepath.Join(tr.Path, rel)); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+			t.Fatalf("CONTROL: %s is not a symlink in the session tree, so nothing here is the reported shape: %v", rel, err)
+		}
 	}
 	readRedirect(t, tr.Path)
 
@@ -409,13 +428,18 @@ func TestFreshSessionTreeIsPorcelainCleanBeforeTheSeatTypes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the scaffolding must be excluded in the MAIN repo's info/exclude — git reads no other one: %v", err)
 	}
-	for _, want := range []string{"\n/.bob\n", "\n/.beads/redirect\n"} {
+	for _, want := range []string{"\n/.bob\n", "\n/.beads/redirect\n", "\n/cfg\\[1]\n"} {
 		if !strings.Contains(string(body), want) {
-			t.Errorf("info/exclude is missing %q — slash-less and anchored at the root:\n%s", want, body)
+			t.Errorf("info/exclude is missing %q — slash-less, anchored at the root, and spelled as a literal:\n%s", want, body)
 		}
 	}
 	if strings.Contains(string(body), "/.bob/") {
 		t.Errorf("`/.bob/` matches a directory and NOTHING else, which is the bug:\n%s", body)
+	}
+	// The metacharacter half: `/cfg[1]` is a character class, so the file
+	// must not carry the path's own spelling (ranger-base-7ebv6).
+	if strings.Contains(string(body), "\n/cfg[1]\n") {
+		t.Errorf("the declared path went in as a PATTERN — `[1]` is a class, so this matches cfg1 and not cfg[1]:\n%s", body)
 	}
 
 	// A relaunch into the tree writes no second copy — the dedupe is over
@@ -448,6 +472,76 @@ func TestFreshSessionTreeIsPorcelainCleanBeforeTheSeatTypes(t *testing.T) {
 	write(t, filepath.Join(tr.Path, "the-seat-wrote-this.md"), "work\n")
 	if out := mustGit(t, tr.Path, "status", "--porcelain", "--untracked-files=all"); !strings.Contains(out, "the-seat-wrote-this.md") {
 		t.Errorf("the seat's own untracked work must still reach git status: %q", out)
+	}
+	// And the collateral an unescaped pattern took with it: `cfg1` is the
+	// seat's own file and matches the CLASS `cfg[1]`, so an unescaped pattern
+	// hides it — the silent-loss direction, in a tree whose whole purpose is
+	// to be readable at close (ranger-base-7ebv6).
+	write(t, filepath.Join(tr.Path, "cfg1"), "the seat wrote this too\n")
+	if out := mustGit(t, tr.Path, "status", "--porcelain", "--untracked-files=all"); !strings.Contains(out, "cfg1\n") {
+		t.Errorf("a collateral cfg1 must reach git status — the pattern is for cfg[1] and nothing else: %q", out)
+	}
+}
+
+// A declared `worktree_link:` path the MAIN CHECKOUT holds untracked and
+// UN-ignored gets no pattern either (ranger-base-7ebv6, from
+// ranger-base-751ha's verification of ranger-base-e01op).
+//
+// info/exclude is the COMMON one, so every line written for a session tree is
+// read by the operator's own checkout. For a path that checkout already
+// ignores — the shape above, and what `worktree_link:` is documented for —
+// that costs it nothing. For one it shows as ordinary dirt, it is posse
+// deciding an ignore for the operator's file: MEASURED 2026-10-09 before the
+// fix, `?? .secrets/env` in the main checkout before seeding and `!! .secrets/env`
+// after, so a `git add -A` salvage there would have skipped it.
+//
+// The cost is pinned beside the rule rather than left to be rediscovered: the
+// session tree then keeps its own `??` line for that path. A visible file is
+// the half of this trade that loses nobody's work.
+//
+// MUTATIONS RUN (each reds this test): drop the ignoredInMainCheckout guard;
+// make it answer true whenever the path exists; ask it of the session tree
+// instead of the main checkout.
+func TestWorktreeLinkTheMainCheckoutDoesNotIgnoreIsNotExcluded(t *testing.T) {
+	t.Parallel()
+	a := wtApp(t)
+	repo := wtRepo(t)
+	// The operator's own untracked, UN-ignored path, named in worktree_link:
+	// — one line of .gitignore away from the documented shape, which is a
+	// local file somebody never bothered to ignore.
+	write(t, filepath.Join(repo, ".secrets", "env"), "K=v\n")
+	write(t, a.ConfigPath, "worktree_link:\n  - .secrets\n")
+
+	// CONTROL: git reports it in the main checkout before any tree is seeded.
+	before := mustGit(t, repo, "status", "--porcelain", "--untracked-files=all")
+	if !strings.Contains(before, ".secrets/env") {
+		t.Fatalf("CONTROL: the main checkout must report the un-ignored path first, else this measures nothing: %q", before)
+	}
+
+	tr, err := a.EnsureSessionTree(repo, "s-1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// CONTROL: the tree holds it as posse's own symlink, so the pattern was
+	// withheld on the main checkout's reading and not because there was
+	// nothing to name.
+	if fi, err := os.Lstat(filepath.Join(tr.Path, ".secrets")); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("CONTROL: the tree must hold .secrets as posse's own symlink: %v", err)
+	}
+
+	if after := mustGit(t, repo, "status", "--porcelain", "--untracked-files=all"); !strings.Contains(after, ".secrets/env") {
+		t.Errorf("seeding a session tree hid the operator's own un-ignored path in the MAIN checkout: before=%q after=%q", before, after)
+	}
+	if ign := mustGit(t, repo, "status", "--porcelain", "--untracked-files=all", "--ignored", "--", ".secrets"); strings.Contains(ign, "!!") {
+		t.Errorf("the path is IGNORED in the main checkout now, so a `git add -A` salvage there would skip it: %q", ign)
+	}
+	if b, _ := os.ReadFile(filepath.Join(repo, ".git", "info", "exclude")); strings.Contains(string(b), "\n/.secrets") {
+		t.Errorf("a declared path the main checkout does not ignore must get no pattern:\n%s", b)
+	}
+	// THE DISCLOSED COST, pinned so it is read as a decision and not as a
+	// second bug: the session tree keeps the `??` line for that path.
+	if out := mustGit(t, tr.Path, "status", "--porcelain", "--untracked-files=all"); !strings.Contains(out, ".secrets") {
+		t.Errorf("with the pattern withheld the session tree must still show the scaffolding — if it is clean, something else is hiding it and this pin no longer knows what: %q", out)
 	}
 }
 

@@ -1207,6 +1207,29 @@ func declaredWorktreeLinks(t *SessionTree, a *App) ([]string, error) {
 // bd's, `issues.jsonl` is tracked in repos that are not this one, and posse
 // does not get to decide that for them.
 //
+// AND NOT A PATTERN THE MAIN CHECKOUT WOULD FEEL (ranger-base-7ebv6, from
+// ranger-base-751ha). info/exclude is the COMMON one — git reads no other
+// (appendGitExcludes) — so the operator's own checkout reads every line
+// written here. A declared path that checkout holds untracked and UN-ignored
+// was therefore silently ignored THERE from the first session tree onward:
+// `?? .secrets/env` before seeding, nothing after, `!! .secrets/env` under
+// `--ignored`, so a `git add -A` salvage in the main checkout would skip it
+// (MEASURED 2026-10-09, git 2.50.1). That is posse deciding an ignore for the
+// operator's own file, which is the thing the paragraph above declines to do
+// for `.beads/` and for a tracked declared path.
+//
+// So a pattern is written only where it costs that checkout nothing: the path
+// is one the main checkout does not have at all, or one git there ALREADY
+// ignores (ignoredInMainCheckout). A tracked path answers "not ignored" and
+// is withheld too, which is the same rule the symlink test already reaches by
+// another road. What it gives up is said plainly: in a repo whose main
+// checkout shows the scaffolding path as ordinary dirt, the session tree keeps
+// its `??` line and ADR 0041's closed-dirty check can still raise it. That is
+// the under-exclude direction — a visible file, not a hidden one — and it is
+// the half of the trade that does not lose anybody's work. It costs this
+// instance nothing: `worktree_link:` is documented for gitignored paths, and
+// both live repos ignore `.beads/` in the checkout (MEASURED 2026-10-09).
+//
 // Best effort, and after the seeding rather than before: nothing reads the
 // tree's status in between, and a pattern for scaffolding that does not exist
 // is a line in the operator's file that says nothing. It is re-run on every
@@ -1220,9 +1243,14 @@ func seedScaffoldExcludes(t *SessionTree, a *App) {
 	}
 	defer root.Close()
 	var pats []string
+	keep := func(clean string) {
+		if ignoredInMainCheckout(t.Repo, clean) {
+			pats = append(pats, filepath.ToSlash(clean))
+		}
+	}
 	redirect := filepath.Join(".beads", "redirect")
 	if fi, err := root.Lstat(redirect); err == nil && fi.Mode().IsRegular() {
-		pats = append(pats, filepath.ToSlash(redirect))
+		keep(redirect)
 	}
 	links, err := declaredWorktreeLinks(t, a)
 	if err != nil {
@@ -1230,10 +1258,35 @@ func seedScaffoldExcludes(t *SessionTree, a *App) {
 	}
 	for _, clean := range links {
 		if fi, err := root.Lstat(clean); err == nil && fi.Mode()&os.ModeSymlink != 0 {
-			pats = append(pats, filepath.ToSlash(clean))
+			keep(clean)
 		}
 	}
 	appendGitExcludes(t.Path, "the launcher's own session-tree scaffolding (ranger-base-e01op) — not the seat's work", pats)
+}
+
+// ignoredInMainCheckout reports whether a pattern for rel is posse's to write:
+// true when the operator's main checkout does not have that path at all, and
+// true when git THERE already ignores it. See seedScaffoldExcludes.
+//
+// Asked of the main checkout and not of the session tree, because the file the
+// pattern lands in is the common one and the main checkout is the reader that
+// did not ask for it. Asked with `git check-ignore`, which is git's own answer
+// to this question rather than a second implementation of pattern matching:
+// MEASURED 2026-10-09, git 2.50.1, over a repo whose .gitignore says `.bob/` —
+// `check-ignore -q .bob` exits 0 for the bare directory name as well as for
+// `.bob/` and `.bob/x`, and exits 1 for a tracked path and for an untracked
+// un-ignored one. A tracked path is thus withheld, which is right for a second
+// reason: an ignore pattern does not reach a tracked file, so the line would
+// buy nothing and only widen what the operator's checkout hides.
+//
+// Any answer that is not a clean exit 0 withholds the pattern, which is the
+// safe direction — a `??` line somebody can see, rather than a file nobody
+// can.
+func ignoredInMainCheckout(repo, rel string) bool {
+	if _, err := os.Lstat(filepath.Join(repo, rel)); err != nil {
+		return true // nothing of the operator's there for a pattern to hide
+	}
+	return exec.Command("git", "-C", repo, "check-ignore", "-q", "--", rel).Run() == nil
 }
 
 // ─── merging a session's work back ───────────────────────────────────────────
