@@ -345,6 +345,144 @@ func TestWorktreeLinkRefusesToEscapeTheRepo(t *testing.T) {
 	}
 }
 
+// ─── the launcher's own scaffolding is not the seat's work ───────────────────
+
+// A fresh session tree must be `git status --porcelain`-clean before the seat
+// types anything (ranger-base-e01op, upstream issue #10). Five readers act on
+// that status — ADR 0041's closed-dirty check, `posse worktrees`, the reap
+// guard, RemoveSessionTree's refusal, and the persona's own eyes — and the
+// first of them files a P1 handoff at the closer over whatever it finds. So
+// scaffolding posse itself wrote reads as the seat's unlanded work: one
+// spurious P1 per close, and a reader trained to discount the one signal that
+// must never be discounted.
+//
+// The fixture is the reported shape exactly, and the point is the MISMATCH
+// between the two trees: the main checkout has `.bob` as a DIRECTORY, which
+// the operator's `.gitignore` spells `.bob/` and covers; the session tree has
+// it as a SYMLINK, which a directory pattern does not match at all. Plus
+// `.beads/redirect`, which seedBeadsRedirect writes into a fresh `.beads`
+// that has none of bd's own `.beads/.gitignore`.
+//
+// MUTATIONS RUN (each reds this test): drop the seedScaffoldExcludes call;
+// spell the patterns with excludeFromGit's trailing slash; write to
+// --git-dir instead of --git-common-dir; exclude only the redirect; exclude
+// only the links.
+func TestFreshSessionTreeIsPorcelainCleanBeforeTheSeatTypes(t *testing.T) {
+	t.Parallel()
+	a := wtApp(t)
+	repo := wtRepo(t)
+	write(t, filepath.Join(repo, ".bob", "config.yaml"), "bob: yes\n")
+	commitIn(t, repo, ".gitignore", ".bob/\n", "ignore the bob config directory")
+	// Deliberately NOT ignored in the repo: `issues.jsonl` is tracked in
+	// repos that are not this one, so posse excludes `.beads/redirect` and
+	// never the directory. The main checkout stays dirty over this file and
+	// that is the operator's call — hence the control below is scoped to
+	// `.bob`.
+	write(t, filepath.Join(repo, ".beads", "issues.jsonl"), "")
+	write(t, a.ConfigPath, "worktree_link:\n  - .bob\n")
+
+	// CONTROL: the operator's ignore is not the bug. Where the path is a
+	// directory — here — `.bob/` covers it and git says nothing.
+	if out := mustGit(t, repo, "status", "--porcelain", "--untracked-files=all", "--", ".bob"); strings.TrimSpace(out) != "" {
+		t.Fatalf("CONTROL: `.bob/` must already cover the main checkout's directory, else this fixture measures the wrong thing: %q", out)
+	}
+
+	tr, err := a.EnsureSessionTree(repo, "s-1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// CONTROL: both pieces of scaffolding are really in the tree. An empty
+	// status over a tree that was never seeded passes for the wrong reason.
+	if fi, err := os.Lstat(filepath.Join(tr.Path, ".bob")); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("CONTROL: .bob is not a symlink in the session tree, so nothing here is the reported shape: %v", err)
+	}
+	readRedirect(t, tr.Path)
+
+	if out := mustGit(t, tr.Path, "status", "--porcelain", "--untracked-files=all"); strings.TrimSpace(out) != "" {
+		t.Errorf("a fresh session tree must be porcelain-clean — ADR 0041 reads this as the closer's unlanded work and files a P1 at a clean seat:\n%s", out)
+	}
+
+	// The spelling is the fix. A trailing slash is what the operator's own
+	// `.gitignore` already had, and it is what missed the link.
+	ex := filepath.Join(repo, ".git", "info", "exclude")
+	body, err := os.ReadFile(ex)
+	if err != nil {
+		t.Fatalf("the scaffolding must be excluded in the MAIN repo's info/exclude — git reads no other one: %v", err)
+	}
+	for _, want := range []string{"\n/.bob\n", "\n/.beads/redirect\n"} {
+		if !strings.Contains(string(body), want) {
+			t.Errorf("info/exclude is missing %q — slash-less and anchored at the root:\n%s", want, body)
+		}
+	}
+	if strings.Contains(string(body), "/.bob/") {
+		t.Errorf("`/.bob/` matches a directory and NOTHING else, which is the bug:\n%s", body)
+	}
+
+	// A relaunch into the tree writes no second copy — the dedupe is over
+	// the file's own lines, so a tree relaunched twenty times carries one
+	// copy of each pattern.
+	if _, err := a.EnsureSessionTree(repo, "s-1", nil); err != nil {
+		t.Fatal(err)
+	}
+	again, err := os.ReadFile(ex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(again) != string(body) {
+		t.Errorf("a relaunch appended to info/exclude again:\nbefore:\n%s\nafter:\n%s", body, again)
+	}
+
+	// …and a relaunch REPAIRS one the operator wiped, the same way seedTree
+	// repairs a deleted redirect.
+	write(t, ex, "")
+	if _, err := a.EnsureSessionTree(repo, "s-1", nil); err != nil {
+		t.Fatal(err)
+	}
+	if out := mustGit(t, tr.Path, "status", "--porcelain", "--untracked-files=all"); strings.TrimSpace(out) != "" {
+		t.Errorf("a relaunch must repair an exclude the operator deleted:\n%s", out)
+	}
+
+	// The exclude is the LAUNCHER's scaffolding only. The seat's own
+	// untracked file still shows, or this traded a spurious P1 for a silent
+	// loss — which is the worse of the two.
+	write(t, filepath.Join(tr.Path, "the-seat-wrote-this.md"), "work\n")
+	if out := mustGit(t, tr.Path, "status", "--porcelain", "--untracked-files=all"); !strings.Contains(out, "the-seat-wrote-this.md") {
+		t.Errorf("the seat's own untracked work must still reach git status: %q", out)
+	}
+}
+
+// A declared `worktree_link:` path git CHECKED OUT is tracked, and gets no
+// exclude pattern. The operator who declares a tracked directory by mistake
+// must not then have the seat's new files under it go invisible — that is
+// the silent-loss mirror of ranger-base-e01op, and it is why
+// seedScaffoldExcludes names only what it rendered as a symlink.
+//
+// MUTATION RUN (reds this test): exclude every declared link, symlink or not.
+func TestWorktreeLinkOverATrackedPathIsNotExcluded(t *testing.T) {
+	t.Parallel()
+	a := wtApp(t)
+	repo := wtRepo(t)
+	commitIn(t, repo, filepath.Join("docs", "kept.md"), "tracked\n", "a tracked dir an operator might declare")
+	write(t, a.ConfigPath, "worktree_link:\n  - docs\n")
+
+	tr, err := a.EnsureSessionTree(repo, "s-1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// CONTROL: git checked it out, so nothing was linked — the case under
+	// test is the one seedWorktreeLinks skips.
+	if fi, err := os.Lstat(filepath.Join(tr.Path, "docs")); err != nil || !fi.IsDir() {
+		t.Fatalf("CONTROL: docs/ should be git's own checked-out directory: %v", err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(repo, ".git", "info", "exclude")); strings.Contains(string(b), "\n/docs") {
+		t.Errorf("a tracked declared path must get no exclude pattern:\n%s", b)
+	}
+	write(t, filepath.Join(tr.Path, "docs", "the-seat-wrote-this.md"), "work\n")
+	if out := mustGit(t, tr.Path, "status", "--porcelain", "--untracked-files=all"); !strings.Contains(out, "docs/the-seat-wrote-this.md") {
+		t.Errorf("the seat's new file under a declared tracked dir must still reach git status: %q", out)
+	}
+}
+
 // ─── merging back (option A, rangerhq-jbyr) ──────────────────────────────────
 
 func TestMergeSessionWorkFastForwards(t *testing.T) {

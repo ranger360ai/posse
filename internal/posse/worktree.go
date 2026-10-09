@@ -923,12 +923,19 @@ func existingTree(t *SessionTree) (bool, error) {
 // seedTree gives the fresh checkout the two things the main checkout has
 // that git does not carry: the beads redirect, so the work graph does not
 // fork, and whatever gitignored paths the operator declared in
-// `worktree_link:`.
+// `worktree_link:`. Then it hides both from git, because a thing the
+// LAUNCHER wrote is not the seat's uncommitted work and every reader of
+// `git status` in this package would otherwise call it that
+// (seedScaffoldExcludes, ranger-base-e01op).
 func seedTree(t *SessionTree, a *App) error {
 	if err := seedBeadsRedirect(t); err != nil {
 		return err
 	}
-	return seedWorktreeLinks(t, a)
+	if err := seedWorktreeLinks(t, a); err != nil {
+		return err
+	}
+	seedScaffoldExcludes(t, a)
+	return nil
 }
 
 // seedBeadsRedirect points the worktree's `.beads` at the ONE database the
@@ -1111,6 +1118,42 @@ func seedWorktreeLinks(t *SessionTree, a *App) error {
 		return Die("worktree_link: %v", err)
 	}
 	defer root.Close()
+	links, err := declaredWorktreeLinks(t, a)
+	if err != nil {
+		return err
+	}
+	for _, clean := range links {
+		if _, err := root.Lstat(clean); err == nil {
+			continue // git checked it out, or a previous launch linked it
+		}
+		if err := root.MkdirAll(filepath.Dir(clean), 0o755); err != nil {
+			return Die("worktree_link %s: %v", clean, err)
+		}
+		// The target is absolute — t.Repo joined on the line below — and
+		// becomes the symlink's TARGET STRING, not a path Root resolves:
+		// Root only walks the LINK's own name (clean), which is what stays
+		// inside the tree.
+		if err := root.Symlink(filepath.Join(t.Repo, clean), clean); err != nil {
+			return Die("worktree_link %s: %v", clean, err)
+		}
+	}
+	return nil
+}
+
+// declaredWorktreeLinks is the repo-relative paths `worktree_link:` declares
+// that the MAIN CHECKOUT actually has. A declared path the operator never
+// made is skipped, not invented; one that escapes the repo refuses the
+// launch rather than being dropped quietly, because a misconfiguration that
+// links nothing and says nothing is the worse of the two.
+//
+// A function rather than a loop body because it has two readers now
+// (ranger-base-e01op): seedWorktreeLinks makes the links, and
+// seedScaffoldExcludes hides the ones it made. One read of the config, one
+// escape check, one answer — two spellings of "which paths are declared"
+// would be two chances to disagree about what was linked and what was
+// excluded.
+func declaredWorktreeLinks(t *SessionTree, a *App) ([]string, error) {
+	var out []string
 	for _, rel := range YamlList(a.ConfigPath, "worktree_link") {
 		rel = strings.TrimSpace(rel)
 		if rel == "" {
@@ -1118,26 +1161,79 @@ func seedWorktreeLinks(t *SessionTree, a *App) error {
 		}
 		clean := filepath.Clean(rel)
 		if filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
-			return Die("worktree_link: %q must be a path inside the repo", rel)
+			return nil, Die("worktree_link: %q must be a path inside the repo", rel)
 		}
-		src := filepath.Join(t.Repo, clean)
-		if _, err := os.Lstat(src); err != nil {
+		if _, err := os.Lstat(filepath.Join(t.Repo, clean)); err != nil {
 			continue // the main checkout does not have it either
 		}
-		if _, err := root.Lstat(clean); err == nil {
-			continue // git checked it out, or a previous launch linked it
-		}
-		if err := root.MkdirAll(filepath.Dir(clean), 0o755); err != nil {
-			return Die("worktree_link %s: %v", clean, err)
-		}
-		// src is absolute (t.Repo joined above) and becomes the symlink's
-		// TARGET STRING, not a path Root resolves — Root only walks the
-		// LINK's own name (clean), which is what stays inside the tree.
-		if err := root.Symlink(src, clean); err != nil {
-			return Die("worktree_link %s: %v", clean, err)
+		out = append(out, clean)
+	}
+	return out, nil
+}
+
+// seedScaffoldExcludes hides the launcher's OWN scaffolding from git, so a
+// brand-new session tree is `git status --porcelain`-clean before the seat
+// types its first command (ranger-base-e01op, upstream issue #10).
+//
+// THE INCIDENT. Neither thing seedTree writes was excluded. `.beads/redirect`
+// is covered only by bd's own `.beads/.gitignore`, which the fresh `.beads`
+// seedBeadsRedirect makes — one directory holding one file — does not have;
+// and a `worktree_link:` path is a SYMLINK here where the main checkout has
+// the directory, so an operator `.gitignore` that spells it `.bob/` matches a
+// directory and misses the link (MEASURED 2026-10-09, git 2.50.1: the main
+// checkout is clean and the worktree reads `?? .bob`). So a clean seat's tree
+// read `?? .beads/redirect` and `?? .bob` before it had done anything, and at
+// close the closed-dirty check (ADR 0041) read those two as the persona's
+// unlanded work and filed a P1 handoff at it. The cost is one spurious P1 per
+// close and a reader trained to discount closed-dirty, which is the one
+// signal that must never be discounted.
+//
+// WHY AT THE SOURCE AND NOT A SUBTRACTION IN THAT CHECK. ADR 0041 is not the
+// only reader of this tree's status: `posse worktrees`, the reap guard
+// (reapguard.go) and RemoveSessionTree's refusal all read dirtyPaths, and the
+// persona reads `git status` with its own eyes. A scaffolding set subtracted
+// in one of them is still dirt in the other three, and the last reader is a
+// human who would be told the tree is clean by a tool while git says it is
+// not. An exclude makes it clean for all five, and the launcher's own
+// scaffolding is the one thing here posse is entitled to speak for.
+//
+// EXACT, NEVER A CLASS. Only a path the tree ACTUALLY holds as posse's own
+// render is named: `.beads/redirect` when it is a regular file, and a
+// declared link when it is a SYMLINK. A declared path git checked out is
+// tracked and gets no pattern — the operator who declares a tracked
+// directory by mistake must not then have the seat's NEW files under it go
+// invisible, which is the silent-loss mirror of the bug this closes. For the
+// same reason there is no `.beads/` and no glob here: the queue files are
+// bd's, `issues.jsonl` is tracked in repos that are not this one, and posse
+// does not get to decide that for them.
+//
+// Best effort, and after the seeding rather than before: nothing reads the
+// tree's status in between, and a pattern for scaffolding that does not exist
+// is a line in the operator's file that says nothing. It is re-run on every
+// launch into the tree for seedTree's own reason — an exclude the operator
+// deleted, or a link added to config since the tree was made, is repaired on
+// the next one.
+func seedScaffoldExcludes(t *SessionTree, a *App) {
+	root, err := os.OpenRoot(t.Path)
+	if err != nil {
+		return
+	}
+	defer root.Close()
+	var pats []string
+	redirect := filepath.Join(".beads", "redirect")
+	if fi, err := root.Lstat(redirect); err == nil && fi.Mode().IsRegular() {
+		pats = append(pats, filepath.ToSlash(redirect))
+	}
+	links, err := declaredWorktreeLinks(t, a)
+	if err != nil {
+		return // seedWorktreeLinks has already refused this launch over it
+	}
+	for _, clean := range links {
+		if fi, err := root.Lstat(clean); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+			pats = append(pats, filepath.ToSlash(clean))
 		}
 	}
-	return nil
+	appendGitExcludes(t.Path, "the launcher's own session-tree scaffolding (ranger-base-e01op) — not the seat's work", pats)
 }
 
 // ─── merging a session's work back ───────────────────────────────────────────

@@ -518,18 +518,49 @@ func (a *App) sweepDeadSkillLinks(dir string) {
 	}
 }
 
-// excludeFromGit adds rel to the repo's .git/info/exclude — never the
-// repo's own .gitignore, which is the operator's file and shows in a diff
-// (ADR 0007's alternatives). Two trees go through it now: this file's
-// `.agents/skills`, and the persona-mode channel's own dir
-// (personamode.go, ADR 0062 D1) — same rule, same reason, so the note it
-// writes names neither of them in particular. Best effort: a dir that is not a repo has
-// nothing to pollute. The pattern is anchored at the repo root, so a
-// session started in a subdirectory excludes its own path and not another
-// one that happens to share the name. git's own --show-prefix does that
-// arithmetic: filepath.Rel against --show-toplevel gets it wrong wherever
-// a path component is a symlink (on macOS, every /var/… temp dir).
+// excludeFromGit adds rel, as a DIRECTORY pattern, to the repo's
+// .git/info/exclude — never the repo's own .gitignore, which is the
+// operator's file and shows in a diff (ADR 0007's alternatives). Two trees
+// go through it now: this file's `.agents/skills`, and the persona-mode
+// channel's own dir (personamode.go, ADR 0062 D1) — same rule, same reason,
+// so the note it writes names neither of them in particular.
+//
+// The trailing slash is this caller's and not appendGitExcludes': both of
+// these ARE directories, and a directory pattern cannot swallow a namesake
+// file. A caller whose scaffolding may be a SYMLINK must not spell it this
+// way — see appendGitExcludes.
 func excludeFromGit(dir, rel string) {
+	appendGitExcludes(dir, "a tree bound into this session (ADR 0007) — session-local, not the repo's", []string{rel + "/"})
+}
+
+// appendGitExcludes adds every pattern in pats that the repo's COMMON
+// .git/info/exclude does not already carry, under one `# posse: <note>`
+// line. Best effort: a dir that is not a repo has nothing to pollute.
+//
+// pats are repo-relative and carry their OWN trailing slash or not, because
+// that suffix is the difference between the two callers and it is not a
+// detail. A pattern ending in `/` matches a directory and NOTHING else — so
+// `.bob/` misses a `.bob` SYMLINK, which is exactly what the launcher's own
+// `worktree_link:` scaffolding is, and is what made a brand-new session tree
+// read `?? .bob` and a clean seat collect a spurious closed-dirty P1
+// (ranger-base-e01op; MEASURED 2026-10-09, git 2.50.1). Slash-less is the
+// spelling for anything that may be a link.
+//
+// Each pattern is anchored at the repo root, so a session started in a
+// subdirectory excludes its own path and not another one that happens to
+// share the name. git's own --show-prefix does that arithmetic:
+// filepath.Rel against --show-toplevel gets it wrong wherever a path
+// component is a symlink (on macOS, every /var/… temp dir).
+//
+// --git-common-dir and never --git-dir: git reads the COMMON dir's
+// info/exclude and only that one. A linked worktree's own
+// `.git/worktrees/<name>/info/exclude` is a file git never opens (MEASURED
+// 2026-10-09: a `/.bob` written there left `?? .bob` in that worktree's
+// status), and every persona in this shop works from a linked worktree.
+func appendGitExcludes(dir, note string, pats []string) {
+	if len(pats) == 0 {
+		return
+	}
 	prefix, err := exec.Command("git", "-C", dir, "rev-parse", "--show-prefix").Output()
 	if err != nil {
 		return
@@ -542,24 +573,46 @@ func excludeFromGit(dir, rel string) {
 	if !filepath.IsAbs(gitDir) {
 		gitDir = filepath.Join(dir, gitDir)
 	}
-	pattern := "/" + strings.TrimSpace(string(prefix)) + rel + "/"
+	want := make([]string, 0, len(pats))
+	for _, rel := range pats {
+		want = append(want, "/"+strings.TrimSpace(string(prefix))+rel)
+	}
 	p := filepath.Join(gitDir, "info", "exclude")
 	if b, err := os.ReadFile(p); err == nil {
+		have := map[string]bool{}
 		for _, line := range strings.Split(string(b), "\n") {
-			if strings.TrimSpace(line) == pattern {
-				return
+			have[strings.TrimSpace(line)] = true
+		}
+		keep := want[:0:len(want)]
+		for _, pattern := range want {
+			if !have[pattern] {
+				keep = append(keep, pattern)
 			}
 		}
+		want = keep
+	}
+	if len(want) == 0 {
+		return
 	}
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		return
 	}
+	// O_APPEND, and the whole block in ONE Write: two launchers seeding two
+	// trees of the same repo reach this file concurrently, and an append
+	// under PIPE_BUF is not interleaved. A read-modify-write with a rename
+	// would be atomic per writer and would lose the other's lines — and the
+	// operator's own, if they were editing it.
 	f, err := os.OpenFile(p, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		return
 	}
 	defer f.Close()
-	fmt.Fprintf(f, "\n# posse: a tree bound into this session (ADR 0007) — session-local, not the repo's\n%s\n", pattern)
+	var b strings.Builder
+	fmt.Fprintf(&b, "\n# posse: %s\n", note)
+	for _, pattern := range want {
+		b.WriteString(pattern + "\n")
+	}
+	f.WriteString(b.String())
 }
 
 // RenderSkillsFor materializes the PID's skills for the runtime it is
