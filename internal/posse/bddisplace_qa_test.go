@@ -241,3 +241,85 @@ func TestQAInstallRefusalOverBdsShimNamesTheFlag(t *testing.T) {
 		}
 	}
 }
+
+// ─── LIVE DEFECT, recorded (bead ranger-base-5ayqc, escaped from this one) ──
+//
+// This pin ships GREEN over a hole, not over a fix: it asserts what posse
+// does TODAY on the SECOND bd install, which is the state INSTALL.md §9
+// names in as many words — "any later `bd init` (a re-init, `--from-jsonl`)
+// or `bd import` displaces the gates again" — and prescribes `--chain` for.
+//
+// MEASURED 2026-10-09 (this tree, d95b4b90..59ab5430): after the operator
+// follows that prescription once, posse's first chain leaves bd's shim at
+// `bd-<slot>`. A second bd install then takes the slot back, and
+// `chainBdShim` refuses outright — "bd-<slot> already exists — not
+// overwriting; chain by hand (INSTALL.md §9)" — so the ONE command both the
+// Degraded row and the install-hooks refusal prescribe does not run, and
+// both walls stay down. Which line the operator got first depends on a
+// suffix that is bd's to choose: with a fresh suffix the round-1 leftover
+// still carries the marker and the row reads l3Displaced over that STALE
+// file, while posse's live gate at `posse-<slot>` is named by nothing; with
+// bd's one suffix reused the dispatcher (no marker) lands beside the slot
+// and the row falls back to the anonymous foreign line.
+//
+// When this test FAILS, the hole is closed: `--chain` now takes over a slot
+// whose `bd-<slot>` neighbour already exists, or the prescription changed to
+// one that works twice. Delete this pin and assert the repair above instead.
+func TestQADisplacementRemedyRefusesOnTheSecondBdInstall(t *testing.T) {
+	t.Parallel()
+	for _, suffix := range []string{".backup", ".old"} {
+		t.Run("round 2 suffix "+suffix, func(t *testing.T) {
+			t.Parallel()
+			repo, hooks := qaHookRepo(t)
+			a := qaProbeApp(t)
+			qaInstallBothGates(t, repo)
+
+			// Round 1: bd displaces, the operator runs the prescription.
+			qaBdDisplace(t, hooks, "pre-push", ".backup")
+			qaBdDisplace(t, hooks, "prepare-commit-msg", ".backup")
+			if _, err := InstallPrePushHookChained(repo); err != nil {
+				t.Fatalf("premise: round-1 --chain over pre-push: %v", err)
+			}
+			if _, _, _, err := a.InstallCommitGuardHookChained(repo); err != nil {
+				t.Fatalf("premise: round-1 --chain over prepare-commit-msg: %v", err)
+			}
+			if got := a.probeL3Hooks(repo, true); !got.PrePush || !got.CommitGuard {
+				t.Fatalf("premise: round-1 --chain must hold both walls: %+v", got)
+			}
+
+			// Round 2: bd's install runs again, over the chained slots.
+			qaBdDisplace(t, hooks, "pre-push", suffix)
+			qaBdDisplace(t, hooks, "prepare-commit-msg", suffix)
+
+			down := a.probeL3Hooks(repo, true)
+			if down.PrePush || down.CommitGuard {
+				t.Fatalf("premise: a second bd install takes both slots: %+v", down)
+			}
+			// posse's gate is live, off the slot, and at a path neither
+			// line can name: `posse-<slot>` does not begin with the slot.
+			gate := filepath.Join(hooks, "posse-pre-push")
+			if b, err := os.ReadFile(gate); err != nil || !ownsHook(string(b), prePushMarker) {
+				t.Fatalf("premise: the chain's gate must be at posse-pre-push: %v", err)
+			}
+			if strings.Contains(down.PrePushDegraded, "posse-pre-push") {
+				t.Errorf("the row names the live gate now — the hole is closing, re-read this pin:\n%s", down.PrePushDegraded)
+			}
+
+			// THE HOLE: the prescribed command refuses.
+			_, err := InstallPrePushHookChained(repo)
+			if err == nil {
+				t.Fatalf("--chain SUCCEEDED on the second bd install — the hole this pin records is closed; assert the repair instead")
+			}
+			if !strings.Contains(err.Error(), "already exists") || !strings.Contains(err.Error(), "bd-pre-push") {
+				t.Errorf("the refusal changed shape; re-read this pin against it: %v", err)
+			}
+			if _, _, _, err := a.InstallCommitGuardHookChained(repo); err == nil {
+				t.Fatalf("--chain SUCCEEDED on the second bd install (commit slot) — the hole this pin records is closed")
+			}
+			// And the wall is still down afterwards, which is the cost.
+			if after := a.probeL3Hooks(repo, true); after.PrePush || after.CommitGuard {
+				t.Errorf("a wall came back without the prescription working: %+v", after)
+			}
+		})
+	}
+}

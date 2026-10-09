@@ -276,3 +276,78 @@ func TestBackupMaxAgeDefaultAndTypo(t *testing.T) {
 		t.Errorf("a malformed max age was swallowed: %q", say.String())
 	}
 }
+
+// ─── LIVE DEFECT, recorded (bead ranger-base-5ayqc, escaped from
+// ranger-base-0q7rp) ────────────────────────────────────────────────────────
+//
+// This pin ships GREEN over a hole, not over a fix. ranger-base-0q7rp's
+// complaint was general — "the governance row and the command disagree about
+// whether a store of record exists" — and the close keyed its whole fix on
+// ONE of the three store-of-record refusals `RunBackup` can make before it
+// writes anything: `queue_repo:` unset. The other two survive, one config
+// value over, and this is the state the close's OWN control fixtures sit in
+// (`queue_repo: `+t.TempDir() — a directory with no `.beads`).
+//
+// MEASURED 2026-10-09 against the shipped binary at d95b4b90: with
+// `queue_repo:` naming a path that is not a git checkout, or a checkout with
+// no beads store, `posse status` raises LANE "no backup of the store of
+// record on this box — <dir> is empty", whose remedy is `posse backup`, and
+// `posse backup` exits 1 with "<q> has no beads store at <q>/.beads". The
+// third surface is worse than before: `posse backup status` exits 1 and its
+// schedule line still promises "every 6h00m, from the dispatch --watch loop"
+// with no clause at all — the same line the bead named as the one that
+// "claimed a cadence nothing can keep".
+//
+// When this test FAILS, the hole is closed: the row, the verb and the
+// schedule line agree over a queue_repo: that names no store. Delete this
+// pin and assert that agreement in TestNoStoreOfRecordRowAgreesWithTheVerb.
+func TestQABackupRowStillDisagreesWhenQueueRepoNamesNoStore(t *testing.T) {
+	b, _ := newTestBackend(t)
+	q := t.TempDir() // a directory: not a git checkout, and no .beads
+	appendConfig(t, b.App, "backup_max_age: 12h\nbackup_interval: 6h\nqueue_repo: "+q+"\n")
+
+	f := b.App.BackupFreshness(govNow, os.Stderr)
+	if !f.Armed || !f.Stale {
+		t.Fatalf("premise: armed=%v stale=%v over an empty archive directory", f.Armed, f.Stale)
+	}
+	// NoStore is the close's own flag, keyed on the key being UNSET, so it
+	// is false here. If it ever reads true over a WRITTEN key, the fix
+	// widened past what it pinned and this pin's subject is gone.
+	if f.NoStore {
+		t.Fatalf("NoStore now covers a written queue_repo: that names no store — the hole this pin records is closed; assert the agreement instead")
+	}
+
+	// The verb refuses, for want of a store of record — the same subject the
+	// row is about.
+	_, err := b.App.RunBackup(BackupOpts{Now: func() time.Time { return govNow }})
+	if err == nil {
+		t.Fatalf("premise: posse backup must refuse over a queue_repo: that holds no beads store")
+	}
+	if !strings.Contains(err.Error(), "beads store") && !strings.Contains(err.Error(), "git repository") {
+		t.Fatalf("premise: the refusal is no longer about the store: %v", err)
+	}
+
+	var row *GovCondition
+	set := shopSet(t, govIn(t, b))
+	for i := range set {
+		if set[i].Key == "backup-stale" {
+			row = &set[i]
+		}
+	}
+	if row == nil {
+		t.Fatalf("premise: an armed arrangement with no archive raises the row: %v", set.Keys())
+	}
+
+	// THE HOLE: the row reports the empty directory and sends the operator
+	// to the verb that refuses, exactly as it did before ranger-base-0q7rp.
+	if !strings.Contains(row.Detail, "no backup of the store of record on this box") {
+		t.Fatalf("the row moved off the empty directory — the hole this pin records is closing, re-read it: %q", row.Detail)
+	}
+	if strings.Contains(row.Detail, "queue_repo") {
+		t.Errorf("the row names the key now — assert the agreement instead of this hole: %q", row.Detail)
+	}
+	// And the schedule line, the bead's third surface, is silent about it.
+	if sched := b.App.BackupScheduleLine(); strings.Contains(sched, "refuses") {
+		t.Errorf("the schedule line names the refusal now — the hole is closing: %q", sched)
+	}
+}
