@@ -321,6 +321,36 @@ func TestQADisplacementRemedyWorksOnTheSecondBdInstall(t *testing.T) {
 				}
 			}
 
+			// THE OTHER HALF OF THE SAME SENTENCE: the install refusal.
+			// The degraded row above is one of the two surfaces that word
+			// round 2 apart from round 1; this is the other, and it was
+			// reached and unpinned (ranger-base-c4uyj finding 1, escaped
+			// from ranger-base-00a5l). An install WITHOUT --chain in this
+			// state finds posse's own dispatcher member at `posse-<slot>`,
+			// not a file bd renamed, so the deletion advice is wrong here:
+			// `posse-<slot>` is the file the dispatcher execs FIRST, and
+			// removing it exits every push 127 and every commit the same
+			// (INSTALL.md:1399). Round 1 — where displacedPosseHook returns
+			// bd's `.backup` and the deletion advice is correct — is pinned
+			// by TestQAInstallRefusalOverBdsShimNamesTheFlag above, and
+			// nothing read this branch until here.
+			_, refusal := InstallPrePushHook(repo)
+			if refusal == nil {
+				t.Fatal("install-hooks without --chain must still refuse bd's shim on round 2")
+			}
+			for _, want := range []string{
+				AbbrevHome(filepath.Join(hooks, "posse-pre-push")),
+				"where posse's own chain put it",
+				"leave it where it is",
+			} {
+				if !strings.Contains(refusal.Error(), want) {
+					t.Errorf("the round-2 install refusal must say %q:\n%s", want, refusal)
+				}
+			}
+			if strings.Contains(refusal.Error(), "delete it") {
+				t.Errorf("that file is posse's own chain member and the dispatcher execs it first — telling the operator to delete it exits every push 127:\n%s", refusal)
+			}
+
 			// THE REMEDY, the second time: the prescribed command runs.
 			if _, err := InstallPrePushHookChained(repo); err != nil {
 				t.Fatalf("round-2 --chain over pre-push refused: %v", err)

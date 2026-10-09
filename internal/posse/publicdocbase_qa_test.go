@@ -2,6 +2,7 @@ package posse
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -32,9 +33,25 @@ import (
 // So this derives the base from the site, which is the other half of the
 // tree the header already named. It is a real derivation and not a second
 // literal: the hrefs in www/index.html are pinned verbatim, with their
-// INSTALL.md paths, by internal/treepins/quickstart_test.go, so the pair
-// cannot be made to agree by editing both — a rewrite of one reds here and a
-// rewrite of both reds there.
+// INSTALL.md paths, by internal/treepins/quickstart_test.go, so a rewrite of
+// one side reds here and a rewrite of both reds there.
+//
+// That last clause is true of the ORG and the REPO and was NOT true of the
+// REF, which is why the ref now gets its own reading below
+// (ranger-base-c4uyj finding 2, escaped from ranger-base-c768n).
+// quickstart_test.go's reader of the live page is `landingPageBrewPanelLink`,
+// and what it requires of an href is the org, `INSTALL.md` and the step-2
+// anchor — it never reads `blob/main`. MEASURED 2026-10-09, three arms:
+// rewriting `ranger360ai` on BOTH sides reds internal/treepins
+// (TestLandingPageBrewPanelLinksToInstallStep2 and
+// TestLandingPageCaptionLinksHerdrAndBeadsToInstallStep1), rewriting
+// `blob/main` -> `blob/no-such-branch` on ONE side reds the comparison here,
+// and rewriting it on BOTH sides left every pin in the tree green over a
+// base whose branch does not exist — the census found the ref spelled only
+// in publicdoc.go, in those two hrefs, and in hand-built fixture strings.
+// Two agreeing literals are not a reading, so the ref is asked of GIT: a
+// repository cannot be edited into having a branch by writing its name
+// twice.
 func TestQAPublicDocBaseIsTheSpellingTheSiteShips(t *testing.T) {
 	t.Parallel()
 	// qibRepoRoot, not a hand-rolled climb: the tree-wide door census in
@@ -95,4 +112,45 @@ func TestQAPublicDocBaseIsTheSpellingTheSiteShips(t *testing.T) {
 	if got := publicDoc(sample); !strings.HasPrefix(got, bases[0]) {
 		t.Errorf("publicDoc(%q) = %q, which does not begin with the base the site ships (%q) — publicDoc has stopped composing from publicDocBase, so holding that const holds nothing about the rendered URL", sample, got, bases[0])
 	}
+
+	// THE REF, asked of the repository. Everything above compares two
+	// spellings in the tree, and the header says why that holds the org and
+	// the repo but cannot hold this segment: both sides are files an edit can
+	// move together. `git rev-parse` is the one reader in this pin whose
+	// answer no edit to the site or the const can arrange.
+	ref := qaBlobRefSegment(t, publicDocBase)
+	qibSkipUnlessCheckout(t, root)
+	// Local first, then the remote-tracking copy: a clone that fetched only
+	// the branch it is on has `origin/main` and no `main`, and that is a
+	// checkout of a repository that HAS the ref, not a 404. `^{commit}` so a
+	// tag or a SHA in this segment — both legitimate things to publish a doc
+	// base from — resolves like a branch does.
+	tried := []string{ref, "origin/" + ref}
+	have := false
+	for _, cand := range tried {
+		if exec.Command("git", "-C", root, "rev-parse", "--verify", "--quiet", cand+"^{commit}").Run() == nil {
+			have = true
+			break
+		}
+	}
+	if have {
+		return
+	}
+	t.Errorf("publicDocBase is %q and its ref segment %q names nothing this checkout has (tried %s) — every page the detection doors cite renders a 404, and until this reading existed nothing in the tree said so (ranger-base-c4uyj finding 2).\n"+
+		"  the org and the repo are held by comparing two files; this segment cannot be, because an edit can move both files together and MEASURED 2026-10-09 one did, with every pin green.\n"+
+		"  if the default branch really was renamed, rename it here and in %s together — the comparison above is what makes that one edit instead of two.",
+		publicDocBase, ref, strings.Join(tried, ", "), rel)
+}
+
+// qaBlobRefSegment returns the ref segment of a `.../blob/<ref>/` base. It
+// fails rather than guessing: a base this pin cannot take a ref out of is a
+// base whose shape has changed, and a silent "" would make the git reading
+// that follows it ask about nothing.
+func qaBlobRefSegment(t *testing.T, base string) string {
+	t.Helper()
+	m := regexp.MustCompile(`/blob/([^/]+)/`).FindStringSubmatch(base)
+	if m == nil {
+		t.Fatalf("publicDocBase %q has no /blob/<ref>/ segment — this pin's shape rule has changed and the ref reading below would hold nothing", base)
+	}
+	return m[1]
 }
