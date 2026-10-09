@@ -242,30 +242,27 @@ func TestQAInstallRefusalOverBdsShimNamesTheFlag(t *testing.T) {
 	}
 }
 
-// ─── LIVE DEFECT, recorded (bead ranger-base-5ayqc, escaped from this one) ──
+// ─── the SECOND bd install (bead ranger-base-00a5l) ─────────────────────────
 //
-// This pin ships GREEN over a hole, not over a fix: it asserts what posse
-// does TODAY on the SECOND bd install, which is the state INSTALL.md §9
-// names in as many words — "any later `bd init` (a re-init, `--from-jsonl`)
-// or `bd import` displaces the gates again" — and prescribes `--chain` for.
+// The state INSTALL.md §9 names in as many words — "any later `bd init` (a
+// re-init, `--from-jsonl`) or `bd import` displaces the gates again" — which
+// is the recurring one, because the operator has by then followed posse's
+// prescription once and bd's install is still something `bd init` runs on its
+// own.
 //
-// MEASURED 2026-10-09 (this tree, d95b4b90..59ab5430): after the operator
-// follows that prescription once, posse's first chain leaves bd's shim at
-// `bd-<slot>`. A second bd install then takes the slot back, and
-// `chainBdShim` refuses outright — "bd-<slot> already exists — not
-// overwriting; chain by hand (INSTALL.md §9)" — so the ONE command both the
-// Degraded row and the install-hooks refusal prescribe does not run, and
-// both walls stay down. Which line the operator got first depends on a
-// suffix that is bd's to choose: with a fresh suffix the round-1 leftover
-// still carries the marker and the row reads l3Displaced over that STALE
-// file, while posse's live gate at `posse-<slot>` is named by nothing; with
-// bd's one suffix reused the dispatcher (no marker) lands beside the slot
-// and the row falls back to the anonymous foreign line.
+// It used to be the one state in which the ONE command all three new
+// surfaces prescribe REFUSED: posse's first chain parks bd's shim at
+// `bd-<slot>`, a second bd install takes the slot back, and `chainBdShim`
+// refused outright over that leftover — "bd-<slot> already exists — not
+// overwriting" — so both walls stayed down for as long as the operator
+// followed the instructions (ranger-base-5ayqc, finding 1; the pin that
+// recorded the hole lived here and these are its replacement).
 //
-// When this test FAILS, the hole is closed: `--chain` now takes over a slot
-// whose `bd-<slot>` neighbour already exists, or the prescription changed to
-// one that works twice. Delete this pin and assert the repair above instead.
-func TestQADisplacementRemedyRefusesOnTheSecondBdInstall(t *testing.T) {
+// Two claims now, and they are separate: the row NAMES the live gate at
+// `posse-<slot>` — the one file neither of bd's two renames can be read off
+// — and the prescription WORKS, over both of bd's suffixes, leaving bd's
+// shim reachable exactly as round 1 did.
+func TestQADisplacementRemedyWorksOnTheSecondBdInstall(t *testing.T) {
 	t.Parallel()
 	for _, suffix := range []string{".backup", ".old"} {
 		t.Run("round 2 suffix "+suffix, func(t *testing.T) {
@@ -295,31 +292,83 @@ func TestQADisplacementRemedyRefusesOnTheSecondBdInstall(t *testing.T) {
 			if down.PrePush || down.CommitGuard {
 				t.Fatalf("premise: a second bd install takes both slots: %+v", down)
 			}
-			// posse's gate is live, off the slot, and at a path neither
-			// line can name: `posse-<slot>` does not begin with the slot.
-			gate := filepath.Join(hooks, "posse-pre-push")
-			if b, err := os.ReadFile(gate); err != nil || !ownsHook(string(b), prePushMarker) {
-				t.Fatalf("premise: the chain's gate must be at posse-pre-push: %v", err)
+			if down.PrePushVerdict != l3Displaced || down.CommitGuardVerdict != l3Displaced {
+				t.Errorf("verdicts = %v/%v, want l3Displaced: the gate is live a filename away and one command puts it back",
+					down.PrePushVerdict, down.CommitGuardVerdict)
 			}
-			if strings.Contains(down.PrePushDegraded, "posse-pre-push") {
-				t.Errorf("the row names the live gate now — the hole is closing, re-read this pin:\n%s", down.PrePushDegraded)
+			// The line names the LIVE gate, not the round-1 leftover and
+			// not posse's own dispatcher: `posse-<slot>` does not begin
+			// with the slot, so no prefix scan over the hooks dir reaches
+			// it. And it does not claim bd moved a file posse wrote.
+			joined := down.PrePushDegraded + "\n" + down.CommitGuardDegraded
+			for _, want := range []string{
+				AbbrevHome(filepath.Join(hooks, "posse-pre-push")),
+				AbbrevHome(filepath.Join(hooks, "posse-prepare-commit-msg")),
+				"TAKEN BACK",
+				"posse gates install-hooks --chain",
+				"shared-index guards are not realized",
+			} {
+				if !strings.Contains(joined, want) {
+					t.Errorf("the second-install line must say %q:\n%s", want, joined)
+				}
+			}
+			if strings.Contains(joined, "MOVED ASIDE") {
+				t.Errorf("posse put that file there, not bd — the line must not report a rename nobody did:\n%s", joined)
+			}
+			for _, line := range []string{down.PrePushDegraded, down.CommitGuardDegraded} {
+				if strings.Contains(line, "\n") {
+					t.Errorf("a Degraded entry is ONE line: %q", line)
+				}
 			}
 
-			// THE HOLE: the prescribed command refuses.
-			_, err := InstallPrePushHookChained(repo)
-			if err == nil {
-				t.Fatalf("--chain SUCCEEDED on the second bd install — the hole this pin records is closed; assert the repair instead")
+			// THE REMEDY, the second time: the prescribed command runs.
+			if _, err := InstallPrePushHookChained(repo); err != nil {
+				t.Fatalf("round-2 --chain over pre-push refused: %v", err)
 			}
-			if !strings.Contains(err.Error(), "already exists") || !strings.Contains(err.Error(), "bd-pre-push") {
-				t.Errorf("the refusal changed shape; re-read this pin against it: %v", err)
+			if _, _, _, err := a.InstallCommitGuardHookChained(repo); err != nil {
+				t.Fatalf("round-2 --chain over prepare-commit-msg refused: %v", err)
 			}
-			if _, _, _, err := a.InstallCommitGuardHookChained(repo); err == nil {
-				t.Fatalf("--chain SUCCEEDED on the second bd install (commit slot) — the hole this pin records is closed")
+			if got := a.probeL3Hooks(repo, true); !got.PrePush || !got.CommitGuard {
+				t.Errorf("--chain must restore both walls on the second bd install too: %+v", got)
 			}
-			// And the wall is still down afterwards, which is the cost.
-			if after := a.probeL3Hooks(repo, true); after.PrePush || after.CommitGuard {
-				t.Errorf("a wall came back without the prescription working: %+v", after)
+			// And bd's hook is still reachable, which is the other half of
+			// the chain's promise on every round: posse took the slot, not
+			// bd's hook. The file at bd-<slot> is bd's own shim — the copy
+			// round 2 planted, replacing the copy round 1 parked.
+			for _, slot := range []string{"pre-push", "prepare-commit-msg"} {
+				b, err := os.ReadFile(filepath.Join(hooks, "bd-"+slot))
+				if err != nil || !isBdShim(string(b)) {
+					t.Errorf("bd's shim must survive round 2 at bd-%s: %v", slot, err)
+				}
 			}
 		})
+	}
+}
+
+// The refusal `bd-<slot>` still earns: a file there that is NOT bd's shim is
+// the operator's own, or another tool's chain, and posse's rename would
+// destroy it without a word. Overwriting one copy of bd's shim with another
+// is the one case that loses nothing, and it is the only one taken.
+func TestQAChainStillRefusesAForeignBdSlotNeighbour(t *testing.T) {
+	t.Parallel()
+	repo, hooks := qaHookRepo(t)
+	qaInstallBothGates(t, repo)
+	qaBdDisplace(t, hooks, "pre-push", ".backup")
+	mine := filepath.Join(hooks, "bd-pre-push")
+	if err := WriteExecutable(mine, []byte("#!/bin/sh\n# the operator's own\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := InstallPrePushHookChained(repo)
+	if err == nil {
+		t.Fatal("--chain must refuse to overwrite a bd-pre-push that is not bd's shim")
+	}
+	for _, want := range []string{AbbrevHome(mine), "not bd's shim", bdShimMarker, "INSTALL.md"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal must say %q:\n%s", want, err)
+		}
+	}
+	if b, readErr := os.ReadFile(mine); readErr != nil || !strings.Contains(string(b), "the operator's own") {
+		t.Errorf("the refusal must leave that file byte for byte: %v", readErr)
 	}
 }

@@ -153,11 +153,15 @@ func TestBackupMaxAgeDefaultsToTwiceTheInterval(t *testing.T) {
 func TestBackupScheduleLineNamesTheKey(t *testing.T) {
 	t.Parallel()
 	a := NewAppAt(t.TempDir())
-	write(t, a.ConfigPath, "queue_repo: /tmp/q\n")
+	// A REAL store of record for the two arms that must not read as
+	// refusing: a path that merely exists is a store-of-record gap too, and
+	// every tick over one refuses (backupStoreGap, bead ranger-base-00a5l).
+	q := backupClockQueue(t)
+	write(t, a.ConfigPath, "queue_repo: "+q+"\n")
 	if got := a.BackupScheduleLine(); !strings.Contains(got, "backup_interval:") || !strings.Contains(got, "none") {
 		t.Errorf("unarmed schedule line = %q, want it to name the unset key", got)
 	}
-	write(t, a.ConfigPath, "queue_repo: /tmp/q\nbackup_interval: 6h\n")
+	write(t, a.ConfigPath, "queue_repo: "+q+"\nbackup_interval: 6h\n")
 	if got := a.BackupScheduleLine(); !strings.Contains(got, "6h") || !strings.Contains(got, "watch") {
 		t.Errorf("armed schedule line = %q, want the cadence and where it runs", got)
 	}
@@ -169,11 +173,20 @@ func TestBackupScheduleLineNamesTheKey(t *testing.T) {
 	// line says so rather than describing a schedule that runs (bead
 	// ranger-base-0q7rp — `posse backup status` exits non-zero here, and
 	// this was the line that made the exit look like a late archive).
+	//
+	// Both kinds of gap, because keyed on the unset key alone this line was
+	// SILENT over a written `queue_repo:` that named no store — the state
+	// the row and the verb both reported, and the one the bead above named
+	// this very line for (bead ranger-base-00a5l).
+	for _, cfg := range []string{"backup_interval: 6h\n", "backup_interval: 6h\nqueue_repo: " + t.TempDir() + "\n"} {
+		write(t, a.ConfigPath, cfg)
+		got := a.BackupScheduleLine()
+		if !strings.Contains(got, "6h") || !strings.Contains(got, "refuses") || !strings.Contains(got, "queue_repo:") {
+			t.Errorf("armed schedule line over config %q = %q, want the cadence and the refusal", cfg, got)
+		}
+	}
 	write(t, a.ConfigPath, "backup_interval: 6h\n")
 	got := a.BackupScheduleLine()
-	if !strings.Contains(got, "6h") || !strings.Contains(got, "refuses") || !strings.Contains(got, "queue_repo:") {
-		t.Errorf("armed schedule line with no queue_repo: = %q, want the cadence and the refusal", got)
-	}
 	// The SHORT clause here, not the verb's whole sentence: the freshness
 	// line above it in `posse backup status` already carries that, and the
 	// two were printed one after the other.

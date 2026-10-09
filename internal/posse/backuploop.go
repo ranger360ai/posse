@@ -243,16 +243,24 @@ func (a *App) BackupScheduleLine() string {
 	case !cfg.Armed:
 		return "  schedule · none (config backup_interval: unset) — the verb runs when it is run"
 	default:
-		// An armed clock over an instance whose store has not moved yet is
-		// a cadence nothing can keep: every tick calls the verb and the
-		// verb refuses (bead ranger-base-0q7rp). The interval still goes
-		// out — it is what the operator configured. The clause is the
-		// short one on purpose: the freshness line directly above this one
-		// already carries the verb's whole sentence, and `posse backup
-		// status` prints the two together.
-		if a.QueueRepo() == "" {
-			return fmt.Sprintf("  schedule · every %s, from the dispatch --watch loop (config backup_interval:) — and every tick refuses while config queue_repo: is unset (ADR 0015 §4)",
-				BlindFor(cfg.Interval))
+		// An armed clock over an instance with no store of record is a
+		// cadence nothing can keep: every tick calls the verb and the verb
+		// refuses (bead ranger-base-0q7rp). The interval still goes out —
+		// it is what the operator configured. The clause is the short one
+		// on purpose: the freshness line directly above this one already
+		// carries the verb's whole sentence, and `posse backup status`
+		// prints the two together.
+		//
+		// Asked through backupStoreGap, which is all three of the verb's
+		// refusals and not just the unset key: keyed on the key alone, this
+		// line promised "every 6h00m, from the dispatch --watch loop" with
+		// no clause at all over a `queue_repo:` that named no store — worse
+		// than the state ranger-base-0q7rp filed, because that bead named
+		// this very line as the one claiming a cadence nothing can keep
+		// (bead ranger-base-00a5l).
+		if gap := a.backupStoreGap(); gap != "" {
+			return fmt.Sprintf("  schedule · every %s, from the dispatch --watch loop (config backup_interval:) — and every tick refuses: %s",
+				BlindFor(cfg.Interval), gap)
 		}
 		return fmt.Sprintf("  schedule · every %s, from the dispatch --watch loop (config backup_interval:)", BlindFor(cfg.Interval))
 	}

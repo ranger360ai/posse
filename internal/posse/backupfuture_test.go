@@ -211,10 +211,14 @@ func TestFreshnessFallsThroughToTheNewestDatableArchive(t *testing.T) {
 // and the one with no witness left over.
 func TestGovernanceRaisesStaleOnAnUndatableArchive(t *testing.T) {
 	b, _ := newTestBackend(t)
-	// A store of record that HAS moved (`queue_repo:`), because that is the
-	// premise of every reading in this file: with the key unset the row's
-	// subject is the key and not the stamp (bead ranger-base-0q7rp).
-	appendConfig(t, b.App, "backup_max_age: 12h\nqueue_repo: "+t.TempDir()+"\n")
+	// A store of record that HAS moved, because that is the premise of
+	// every reading in this file: with no store the row's subject is the
+	// store and not the stamp (beads ranger-base-0q7rp, ranger-base-00a5l).
+	// A REAL one — a plain directory is a store-of-record gap too, by all
+	// three of the verb's refusals (backupStoreGap), so the rig that used to
+	// read `queue_repo: `+t.TempDir() here was asserting this file's premise
+	// away.
+	appendConfig(t, b.App, "backup_max_age: 12h\nqueue_repo: "+freshQueue(t)+"\n")
 	plantBackup(t, b.App, govNow.Add(72*time.Hour))
 
 	if keys := shopKeys(t, govIn(t, b)); !containsStr(keys, "backup-stale") {

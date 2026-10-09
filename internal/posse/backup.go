@@ -388,15 +388,68 @@ func BackupHomePaths() []string {
 // reason).
 var BackupExcluded = []string{ConstitutionEnvsDir, "secrets", "state", "personas"}
 
-// backupNoStoreClause is the one sentence every surface says about an
-// instance whose store of record has not moved yet, and it is said in one
-// place because two of them disagreed: the freshness row told the operator
-// to take a backup and the verb answered that there was nothing to back up
-// (bead ranger-base-0q7rp). `queue_repo:` unset is not a backup that is
-// late, it is a duty that does not exist yet — the inertness rule ADR 0015
-// §4 keeps and ADR 0036 ("refuse an unset queue_repo") decided for the verb.
-func backupNoStoreClause() string {
-	return "config queue_repo: is unset — the store has not moved yet (ADR 0015 §4), so there is nothing to back up"
+// backupUnsetQueueGap and backupNoStoreTail are the two halves every
+// store-of-record sentence is composed of: the STATE, and the consequence
+// all three of them share. Said in one place because two surfaces
+// disagreed — the freshness row told the operator to take a backup and the
+// verb answered that there was nothing to back up (bead ranger-base-0q7rp).
+// `queue_repo:` unset is not a backup that is late, it is a duty that does
+// not exist yet: the inertness rule ADR 0015 §4 keeps, and the one ADR 0036
+// ("refuse an unset queue_repo") decided for the verb.
+//
+// The halves are apart because the surfaces have different room — `posse
+// backup` and the freshness line carry the whole sentence, and
+// BackupScheduleLine, printed directly under the freshness line, carries
+// the state alone rather than repeating it — and a short form cut out of
+// the long one by hand is a second wording to keep in sync.
+const (
+	backupUnsetQueueGap = "config queue_repo: is unset — the store has not moved yet (ADR 0015 §4)"
+	backupNoStoreTail   = ", so there is nothing to back up"
+)
+
+// backupStoreGap is the state that puts a store of record out of reach, in
+// the words the verb refuses with — or "" when there is one.
+//
+// It asks all three of RunBackup's store-of-record questions, in RunBackup's
+// own order, because ranger-base-0q7rp's complaint was general ("the
+// governance row and the command disagree about whether a store of record
+// exists") and its fix keyed on the first alone: with `queue_repo:` WRITTEN
+// over a path that is not a checkout, or a checkout with no `.beads`, the
+// row went back to reporting the empty archive directory and sending the
+// operator to a verb that refuses — the original symptom, one config value
+// over, and the state that close's own control fixtures sat in
+// (ranger-base-00a5l, escaped from ranger-base-0q7rp).
+//
+// It forks git, which BackupFreshness's other readings do not. That is the
+// price of the agreement: `rev-parse --git-dir` is the verb's own test, and
+// any cheaper stand-in (a `.git` beside the path) answers differently for a
+// subdirectory of a repo and for a worktree, which is a new disagreement in
+// place of the one being closed. The fork is reached only when the two cheap
+// questions pass, it is bounded like every other git call here (githang.go),
+// and every caller is a CLI invocation or a watch tick.
+func (a *App) backupStoreGap() string {
+	queue := a.QueueRepo()
+	if queue == "" {
+		return backupUnsetQueueGap
+	}
+	store := beadsHome(queue)
+	if st, err := os.Stat(store); err != nil || !st.IsDir() {
+		return fmt.Sprintf("config queue_repo: names %s, which has no beads store at %s (ADR 0015 §4)", AbbrevHome(queue), AbbrevHome(store))
+	}
+	if _, err := git(queue, "rev-parse", "--git-dir"); err != nil {
+		return fmt.Sprintf("config queue_repo: names %s, which is not a git repository — queue_repo: must name a checkout (ADR 0015 §4)", AbbrevHome(queue))
+	}
+	return ""
+}
+
+// backupNoStoreSentence is that state plus the consequence: the ONE sentence
+// `posse backup` refuses with and every row that has room reports.
+func (a *App) backupNoStoreSentence() string {
+	gap := a.backupStoreGap()
+	if gap == "" {
+		return ""
+	}
+	return gap + backupNoStoreTail
 }
 
 // RunBackup builds one archive and publishes it. Every refusal it can make
@@ -426,17 +479,14 @@ func (a *App) RunBackup(o BackupOpts) (BackupResult, error) {
 		return res, err
 	}
 
+	// All three store-of-record refusals, asked in the one place every row
+	// that reports them reads (backupStoreGap): the row and the verb cannot
+	// disagree about a state neither of them decides alone.
+	if gap := a.backupNoStoreSentence(); gap != "" {
+		return res, Die("%s", gap)
+	}
 	queue := a.QueueRepo()
-	if queue == "" {
-		return res, Die("%s", backupNoStoreClause())
-	}
 	store := beadsHome(queue)
-	if st, err := os.Stat(store); err != nil || !st.IsDir() {
-		return res, Die("%s has no beads store at %s", AbbrevHome(queue), AbbrevHome(store))
-	}
-	if _, err := git(queue, "rev-parse", "--git-dir"); err != nil {
-		return res, Die("%s is not a git repository — queue_repo: must name a checkout (ADR 0015 §4)", AbbrevHome(queue))
-	}
 	for _, tool := range []string{"git", "sqlite3"} {
 		if _, err := exec.LookPath(tool); err != nil {
 			return res, fmt.Errorf("%w: %s is not on PATH — posse backup needs it to stage the store (ADR 0036 §2)", ErrBackupTool, tool)
@@ -907,19 +957,33 @@ type BackupFreshness struct {
 	FutureNewest string
 	FutureAhead  time.Duration
 
-	// NoStore is `queue_repo:` unset — the store of record has not moved
-	// yet (ADR 0015 §4), so `posse backup` refuses and no archive can
-	// exist. Reported, never silent: an armed backup arrangement that
-	// cannot run is the predecessor's failure wearing a config key, and
-	// the row that used to carry it named the empty directory instead of
-	// the key, which sent the operator to a verb that refuses (bead
-	// ranger-base-0q7rp).
-	NoStore bool
+	// NoStore is "there is no store of record to archive", by every test
+	// `posse backup` makes before it writes anything: `queue_repo:` unset,
+	// the path it names not a git checkout, or that checkout holding no
+	// `.beads` (ADR 0015 §4). So the verb refuses and no archive can exist.
+	// Reported, never silent: an armed backup arrangement that cannot run
+	// is the predecessor's failure wearing a config key, and the row that
+	// used to carry it named the empty directory instead of the key, which
+	// sent the operator to a verb that refuses (bead ranger-base-0q7rp).
+	//
+	// NoStoreWhy is that reason in the verb's own words, and it is why the
+	// pair is read from backupStoreGap rather than from the key alone:
+	// keying on the unset key fixed one of the three and left the other two
+	// reproducing the original symptom (bead ranger-base-00a5l).
+	NoStore    bool
+	NoStoreWhy string
 }
 
 // BackupFreshness reads the archive directory. It never creates it, never
 // takes a lock, and never opens an archive: `posse status` and the cockpit
 // run this on every tick.
+//
+// It does ask backupStoreGap, which stats the store of record and, when that
+// stat passes, forks one bounded `git rev-parse --git-dir`. That is the one
+// child this reading has, and it is the price of the row agreeing with the
+// verb about all three of the verb's refusals rather than one of them (bead
+// ranger-base-00a5l; see backupStoreGap for why a cheaper test would be a
+// new disagreement).
 func (a *App) BackupFreshness(now time.Time, errw io.Writer) BackupFreshness {
 	f := BackupFreshness{Dir: a.BackupDir(), MaxAge: a.BackupMaxAge(errw)}
 	configured := a.BackupConfigured()
@@ -936,9 +1000,11 @@ func (a *App) BackupFreshness(now time.Time, errw io.Writer) BackupFreshness {
 	if !f.Armed {
 		return f
 	}
-	// Whether there is a store to archive at all, read from the same key
-	// the verb refuses on, so the row and the command cannot disagree.
-	f.NoStore = a.QueueRepo() == ""
+	// Whether there is a store to archive at all, read from the same
+	// question the verb refuses on, so the row and the command cannot
+	// disagree — about any of its three answers (bead ranger-base-00a5l).
+	f.NoStoreWhy = a.backupNoStoreSentence()
+	f.NoStore = f.NoStoreWhy != ""
 	// A stamp after now is not a reading (ADR 0036 §6, bead
 	// ranger-base-rgv61). Reported, never dated: BlindFor renders every
 	// negative age as "0s", so an archive from the future used to make
@@ -1033,7 +1099,7 @@ func (f BackupFreshness) noStoreSuffix() string {
 	if !f.NoStore {
 		return ""
 	}
-	return " · " + backupNoStoreClause()
+	return " · " + f.NoStoreWhy
 }
 
 // GovDetail is the governance surface's rendering of the same fact: one
@@ -1048,8 +1114,8 @@ func (f BackupFreshness) GovDetail() string {
 	// backup arrangement that cannot run is exactly the arrangement that
 	// was configured and never ran.
 	if f.NoStore {
-		return fmt.Sprintf("backups are armed and %s — %s: set queue_repo:, or remove the backup_* keys from config.yaml to disarm this row (config backup_max_age: %s)",
-			backupNoStoreClause(), f.storelessReading(), BlindFor(f.MaxAge))
+		return fmt.Sprintf("backups are armed and %s — %s: point queue_repo: at a checkout holding a beads store, or remove the backup_* keys from config.yaml to disarm this row (config backup_max_age: %s)",
+			f.NoStoreWhy, f.storelessReading(), BlindFor(f.MaxAge))
 	}
 	switch {
 	case f.Count == 0:

@@ -99,6 +99,23 @@ func TestBackupStatusExitsForOnBoxStalenessOnly(t *testing.T) {
 	}
 }
 
+// backupQueue is a store of record at the surface: a git checkout with a
+// `.beads` directory, which is every question `posse backup` asks of a
+// source before it writes anything. A plain directory is NOT one — that is
+// the state ranger-base-00a5l closed, and the control arm below used to sit
+// in it.
+func backupQueue(t *testing.T) string {
+	t.Helper()
+	q := filepath.Join(t.TempDir(), "queue")
+	if err := os.MkdirAll(filepath.Join(q, ".beads"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command("git", "-C", q, "init", "-q", "-b", "main").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, out)
+	}
+	return q
+}
+
 // One instance, no store of record, both verbs — the shakedown finding
 // (bead ranger-base-0q7rp). `posse backup status` exits non-zero and the
 // remedy that exit implies is `posse backup`, which refuses; so the two
@@ -106,40 +123,76 @@ func TestBackupStatusExitsForOnBoxStalenessOnly(t *testing.T) {
 // the exit has to be explained by the lines that go with it. ADR 0036
 // decides the verb's half ("refuse an unset queue_repo"), so the surface is
 // what moved.
+//
+// All THREE of the verb's store-of-record refusals, which is where this pin
+// escaped: ranger-base-0q7rp's fix keyed on `queue_repo:` unset alone, so
+// with the key WRITTEN over a path that holds no store the two surfaces went
+// back to disagreeing — and the schedule line went silent about it, which is
+// worse than the state the bead filed. This test's own control arm sat in
+// exactly that state (`queue_repo: `+t.TempDir()), which is why nothing
+// here caught it (bead ranger-base-00a5l, from ranger-base-5ayqc finding 2).
 func TestBackupSurfacesAgreeWhenTheStoreHasNotMoved(t *testing.T) {
 	bin := buildRhq(t)
-	home := backupHome(t, "runtime: claude\nbackup_interval: 6h\n")
-	const key = "config queue_repo: is unset"
+	for _, c := range []struct {
+		name  string
+		queue func(t *testing.T) string
+		// the clause BOTH surfaces must carry, beyond the shared tail
+		says string
+	}{
+		{"queue_repo: unset", func(t *testing.T) string { return "" }, "config queue_repo: is unset"},
+		{"queue_repo: names a path with no beads store", func(t *testing.T) string {
+			return t.TempDir()
+		}, "which has no beads store at"},
+		{"queue_repo: names a beads store that is not a checkout", func(t *testing.T) string {
+			q := filepath.Join(t.TempDir(), "queue")
+			if err := os.MkdirAll(filepath.Join(q, ".beads"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			return q
+		}, "which is not a git repository"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			cfg := "runtime: claude\nbackup_interval: 6h\n"
+			if q := c.queue(t); q != "" {
+				cfg += "queue_repo: " + q + "\n"
+			}
+			home := backupHome(t, cfg)
 
-	code, status := runBackupPosse(t, bin, home, "backup", "status")
-	if code == 0 {
-		t.Errorf("an armed instance that cannot archive exited 0:\n%s", status)
+			code, status := runBackupPosse(t, bin, home, "backup", "status")
+			if code == 0 {
+				t.Errorf("an armed instance that cannot archive exited 0:\n%s", status)
+			}
+			for _, want := range []string{c.says, "nothing to back up", "every tick refuses"} {
+				if !strings.Contains(status, want) {
+					t.Errorf("`posse backup status` is missing %q:\n%s", want, status)
+				}
+			}
+
+			vcode, verb := runBackupPosse(t, bin, home, "backup")
+			if vcode == 0 {
+				t.Errorf("`posse backup` with no store of record exited 0:\n%s", verb)
+			}
+			if !strings.Contains(verb, c.says) || !strings.Contains(verb, "nothing to back up") {
+				t.Errorf("`posse backup` no longer refuses in these words:\n%s", verb)
+			}
+		})
 	}
-	for _, want := range []string{key, "nothing to back up", "every tick refuses"} {
-		if !strings.Contains(status, want) {
-			t.Errorf("`posse backup status` is missing %q:\n%s", want, status)
+
+	// CONTROL: the same instance with a REAL store of record says none of
+	// those things about the store — it says the archive is missing, which
+	// is what `posse backup` is for.
+	t.Run("control: a real store of record", func(t *testing.T) {
+		home := backupHome(t, "runtime: claude\nbackup_interval: 6h\nqueue_repo: "+backupQueue(t)+"\n")
+		code, status := runBackupPosse(t, bin, home, "backup", "status")
+		if code == 0 || !strings.Contains(status, "NONE on box") {
+			t.Errorf("exit %d over an empty archive directory:\n%s", code, status)
 		}
-	}
-
-	vcode, verb := runBackupPosse(t, bin, home, "backup")
-	if vcode == 0 {
-		t.Errorf("`posse backup` with no queue_repo: exited 0:\n%s", verb)
-	}
-	if !strings.Contains(verb, key) || !strings.Contains(verb, "nothing to back up") {
-		t.Errorf("`posse backup` no longer refuses in these words:\n%s", verb)
-	}
-
-	// CONTROL: the same instance with the key written says neither of those
-	// things about the key — it says the archive is missing, which is what
-	// `posse backup` is for.
-	home2 := backupHome(t, "runtime: claude\nbackup_interval: 6h\nqueue_repo: "+t.TempDir()+"\n")
-	code2, status2 := runBackupPosse(t, bin, home2, "backup", "status")
-	if code2 == 0 || !strings.Contains(status2, "NONE on box") {
-		t.Errorf("exit %d over an empty archive directory:\n%s", code2, status2)
-	}
-	if strings.Contains(status2, key) || strings.Contains(status2, "refuses") {
-		t.Errorf("an instance WITH a store was told its store has not moved:\n%s", status2)
-	}
+		for _, absent := range []string{"queue_repo:", "nothing to back up", "refuses"} {
+			if strings.Contains(status, absent) {
+				t.Errorf("an instance WITH a store was told %q:\n%s", absent, status)
+			}
+		}
+	})
 }
 
 // The remote posture line is GONE from `posse backup status` (ADR 0049 as

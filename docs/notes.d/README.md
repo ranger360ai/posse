@@ -9,6 +9,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-x8bv0](ranger-base-x8bv0.md) — A page to read is a URL; material to send is an embed (ranger-base-x8bv0) — 2026-10-09
 - [ranger-base-mhv7j](ranger-base-mhv7j.md) — The release carried the refusal and not the way out of it (ranger-base-mhv7j) — 2026-10-09
 - [ranger-base-dmp4x](ranger-base-dmp4x.md) — ranger-base-dmp4x — the second recurring add/add site in a merge-back: `## Unreleased` — 2026-10-09
+- [ranger-base-00a5l](ranger-base-00a5l.md) — ranger-base-00a5l — the three findings ranger-base-5ayqc's verify left live — 2026-10-09
 - [ranger-base-wmaf9](ranger-base-wmaf9.md) — Four facts this harness printed and its governance surface denied (ranger-base-wmaf9) — 2026-10-08
 - [ranger-base-sl5sg](ranger-base-sl5sg.md) — The one launch precondition the PID lint could read and did not (ranger-base-sl5sg) — 2026-10-08
 - [ranger-base-qvy0n](ranger-base-qvy0n.md) — The ceiling's two readers: why the positive pathspec is `:(top)` and not `.` (ranger-base-qvy0n) — 2026-10-08

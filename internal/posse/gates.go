@@ -2654,7 +2654,17 @@ func installHook(dir, slot, marker, script string, chain bool) (string, error) {
 			// is the same block it always was.
 			moved := ""
 			if g := displacedPosseHook(hooks, slot, marker); g != "" {
-				moved = fmt.Sprintf("\nposse's own %s gate is at %s, where bd moved it; the chain does not read that file, so delete it once the slot is chained.", slot, AbbrevHome(g))
+				// Where the gate is, and whether that file is the chain's
+				// own member. `posse-<slot>` is read by the dispatcher
+				// `--chain` writes, so telling the operator to delete it
+				// would uninstall the wall they just rebuilt — the deletion
+				// advice belongs only to the file bd renamed
+				// (ranger-base-00a5l).
+				if filepath.Base(g) == "posse-"+slot {
+					moved = fmt.Sprintf("\nposse's own %s gate is still at %s, where posse's own chain put it; --chain refreshes that file and writes the dispatcher back over bd's shim, so leave it where it is.", slot, AbbrevHome(g))
+				} else {
+					moved = fmt.Sprintf("\nposse's own %s gate is at %s, where bd moved it; the chain does not read that file, so delete it once the slot is chained.", slot, AbbrevHome(g))
+				}
 			}
 			return "", Die("%s exists and is not a posse hook — it is bd's own shim (%s) — not overwriting.\nRe-run with --chain and posse builds the chain itself, no paste: bd's shim moves to bd-%s, the gate goes to posse-%s, and the slot gets the dispatcher below.%s\n\n%s",
 				AbbrevHome(p), bdShimMarker, slot, slot, moved, chainDispatcher(dir, hooks, slot))
@@ -2677,11 +2687,37 @@ func chainBdShim(hooks, slot, script string) (string, error) {
 	p := filepath.Join(hooks, slot)
 	neighbor := "bd-" + slot
 	bdPath := filepath.Join(hooks, neighbor)
-	if _, err := os.Stat(bdPath); err == nil {
-		// Already taken — by an earlier chain, or something else entirely.
-		// Guessing which is wrong often enough that refusing is the honest
-		// answer; the manual prescription (INSTALL.md §9) still applies.
-		return "", Die("%s already exists — not overwriting; chain by hand (INSTALL.md §9)", AbbrevHome(bdPath))
+	// Same rule as every other read in this file: a special file there is
+	// not bd's shim and opening a FIFO with no writer never returns
+	// (ranger-base-92n5p). This also keeps the ReadFile below from being the
+	// call that hangs install-hooks.
+	if err := refuseNonRegularHook(bdPath); err != nil {
+		return "", err
+	}
+	switch b, err := os.ReadFile(bdPath); {
+	case err == nil && isBdShim(string(b)):
+		// bd's shim is already parked here, which is the state posse's own
+		// prescription leaves behind and which a SECOND bd install walks
+		// straight back into: `bd init` and `bd import` run bd's hook
+		// install themselves (INSTALL.md §9), it takes the slot with
+		// another copy of this same shim, and the file we are about to move
+		// aside is the copy posse parked on the previous round.
+		//
+		// Refusing here refused the ONE command both the l3Displaced row
+		// and the install-hooks refusal prescribe, so following posse's own
+		// instructions left both walls down (ranger-base-00a5l, escaped
+		// from ranger-base-2msgj). Overwriting one copy of bd's shim with
+		// another loses nothing an operator could want: bd re-plants it on
+		// every install, and nothing on the dispatch path reads this file
+		// until the dispatcher we are about to write execs it.
+	case err == nil:
+		// Taken by something that is NOT bd's shim — a chain of some other
+		// tool, or the operator's own file. Guessing which is wrong often
+		// enough that refusing is the honest answer; the manual
+		// prescription (INSTALL.md §9) still applies.
+		return "", Die("%s already exists and is not bd's shim (%s) — not overwriting; chain by hand (INSTALL.md §9)", AbbrevHome(bdPath), bdShimMarker)
+	case !os.IsNotExist(err):
+		return "", err
 	}
 	if err := os.Rename(p, bdPath); err != nil {
 		return "", err
@@ -5962,10 +5998,26 @@ func l3Identity(hooks, slot, render, marker string) (l3Verdict, string) {
 // slot posse's own gate", which no renaming scheme gets past: a sibling whose
 // name begins with the slot's, that is a regular file, and whose body carries
 // the slot's ownership marker. git's own `<slot>.sample` carries no marker,
-// and `posse-<slot>` does not begin with the slot name, so neither is read as
-// a displacement. Entries come back sorted, so a dir holding several answers
-// the same way twice.
+// so it is not read as a displacement. Entries come back sorted, so a dir
+// holding several answers the same way twice.
+//
+// `posse-<slot>` is asked FIRST and separately, because it is the one
+// displacement bd leaves that no prefix scan can reach: after the operator
+// follows the prescription once, posse's gate lives there behind a
+// dispatcher, and a LATER `bd init` or `bd import` takes the slot back in
+// front of it (INSTALL.md §9). Both of the files a prefix scan can see are
+// then wrong — with a fresh suffix the round-1 leftover is a STALE copy of
+// the gate, and with bd's suffix reused the sibling is posse's own
+// dispatcher, which carries no marker and makes the whole verdict fall back
+// to the anonymous foreign line. The live gate is at `posse-<slot>` in both
+// (ranger-base-00a5l, escaped from ranger-base-2msgj).
 func displacedPosseHook(hooks, slot, marker string) string {
+	chained := filepath.Join(hooks, "posse-"+slot)
+	if isRegularFile(chained) {
+		if b, err := os.ReadFile(chained); err == nil && ownsHook(string(b), marker) {
+			return chained
+		}
+	}
 	ents, err := os.ReadDir(hooks)
 	if err != nil {
 		return ""
@@ -6234,6 +6286,18 @@ func l3DegradeLine(slot, path, consequence string, v l3Verdict) string {
 		// reader cannot get anywhere else: the wall was installed and
 		// correct, and is now sitting in that file instead of in the slot.
 		// The slot itself is its sibling, named right here.
+		//
+		// Two displacements, and WHO moved the gate differs: bd renamed it
+		// out of the slot, or posse's own chain put it at `posse-<slot>`
+		// and a later bd install took the slot back in front of it. Same
+		// verdict and same remedy — the gate is live, off the dispatch
+		// path, and one `--chain` rebuilds the chain — so the only thing
+		// that moves is the clause that says how it got there, because a
+		// line saying bd MOVED ASIDE a file posse wrote sends the operator
+		// looking for a rename nobody did (ranger-base-00a5l).
+		if filepath.Base(path) == "posse-"+slot {
+			return fmt.Sprintf("L3 %s hook — %s — posse's gate is here, behind a chain whose %s slot bd's own shim has TAKEN BACK: a later `bd hooks install` does this silently, and `bd init` and `bd import` run it themselves — run `posse gates install-hooks --chain` to rebuild the chain in front of bd's shim; %s", slot, AbbrevHome(path), slot, consequence)
+		}
 		return fmt.Sprintf("L3 %s hook — %s — posse's gate was MOVED ASIDE to this path and bd's own shim holds the %s slot beside it: `bd hooks install` does this silently, and `bd init` and `bd import` run it themselves — run `posse gates install-hooks --chain` to chain the gate back in front of bd's shim; %s", slot, AbbrevHome(path), slot, consequence)
 	default:
 		return fmt.Sprintf("L3 %s hook — %s — our own render did not refuse the operation (renderer regression); %s", slot, AbbrevHome(path), consequence)

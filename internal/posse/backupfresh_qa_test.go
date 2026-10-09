@@ -26,6 +26,7 @@ package posse
 // asked for the number.
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -40,17 +41,35 @@ import (
 func freshRig(t *testing.T, config string, ages ...time.Duration) *App {
 	t.Helper()
 	a := NewAppAt(t.TempDir())
-	// `queue_repo:` is part of the rig, not of any case: an instance whose
-	// store has not moved yet has nothing to archive and reads as such
-	// (bead ranger-base-0q7rp), so every AGE reading below presumes a store
-	// exists. The no-store arm has its own rig.
-	write(t, a.ConfigPath, config+"queue_repo: "+t.TempDir()+"\n")
+	// `queue_repo:` is part of the rig, not of any case: an instance with no
+	// store of record has nothing to archive and reads as such (beads
+	// ranger-base-0q7rp, ranger-base-00a5l), so every AGE reading below
+	// presumes a store exists. A real one: a path that merely EXISTS is a
+	// store-of-record gap too, which is the hole ranger-base-00a5l closed,
+	// and a rig built on one would carry a no-store clause into every age
+	// reading here. The no-store arms have their own rig.
+	write(t, a.ConfigPath, config+"queue_repo: "+freshQueue(t)+"\n")
 	dir := a.BackupDir()
 	for _, age := range ages {
 		name := backupPrefix + govNow.Add(-age).UTC().Format(backupStamp) + backupSuffix
 		write(t, filepath.Join(dir, name), "not a real archive, and this reader never opens one\n")
 	}
 	return a
+}
+
+// freshQueue is the cheapest thing that answers all three of RunBackup's
+// store-of-record questions (backupStoreGap): a git checkout with a `.beads`
+// directory. It holds no beads db, because nothing in this file runs a
+// backup to completion — that is backupClockQueue's job, and it needs
+// sqlite3 on the box.
+func freshQueue(t *testing.T) string {
+	t.Helper()
+	q := filepath.Join(gitTempDir(t), "queue")
+	if err := os.MkdirAll(filepath.Join(q, ".beads"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	mustGit(t, q, "init", "-q", "-b", "main", ".")
+	return q
 }
 
 // ─── the age, always ─────────────────────────────────────────────────────────
@@ -106,7 +125,7 @@ func TestBackupAgeIsTheStampNotTheMtime(t *testing.T) {
 // surface stop being read.
 func TestStaleBackupRaisesACarryOverNotATenthGRow(t *testing.T) {
 	b, _ := newTestBackend(t)
-	appendConfig(t, b.App, "backup_max_age: 12h\nqueue_repo: "+t.TempDir()+"\n")
+	appendConfig(t, b.App, "backup_max_age: 12h\nqueue_repo: "+freshQueue(t)+"\n")
 	stamp := govNow.Add(-30 * time.Hour).UTC().Format(backupStamp)
 	write(t, filepath.Join(b.App.BackupDir(), backupPrefix+stamp+backupSuffix), "x\n")
 
@@ -152,7 +171,7 @@ func TestStaleBackupRaisesACarryOverNotATenthGRow(t *testing.T) {
 // installed). It must not read as "nothing to report".
 func TestArmedWithNoArchiveIsStale(t *testing.T) {
 	b, _ := newTestBackend(t)
-	appendConfig(t, b.App, "backup_max_age: 12h\nqueue_repo: "+t.TempDir()+"\n")
+	appendConfig(t, b.App, "backup_max_age: 12h\nqueue_repo: "+freshQueue(t)+"\n")
 
 	f := b.App.BackupFreshness(govNow, os.Stderr)
 	if !f.Armed || !f.Stale || f.Count != 0 {
@@ -166,71 +185,173 @@ func TestArmedWithNoArchiveIsStale(t *testing.T) {
 	}
 }
 
-// ─── and the store the row is about (bead ranger-base-0q7rp) ────────────────
+// ─── and the store the row is about (beads ranger-base-0q7rp,
+// ranger-base-00a5l) ────────────────────────────────────────────────────────
 
-// Armed, empty, and `queue_repo:` UNSET — the shakedown instance. The row
-// used to say "no backup of the store of record on this box — <dir> is
-// empty", whose only remedy is `posse backup`, and that verb answers "there
-// is nothing to back up": two surfaces disagreeing about whether a store of
-// record exists, on the same config. ADR 0036 decides the verb's half
-// ("refuse an unset queue_repo"), so the ROW is what moves — it names the
-// key, and both say it in the same words, from one place.
+// Armed, empty, and NO STORE OF RECORD. The row used to say "no backup of
+// the store of record on this box — <dir> is empty", whose only remedy is
+// `posse backup`, and that verb answers that there is nothing to back up:
+// two surfaces disagreeing about whether a store of record exists, on the
+// same config. ADR 0036 decides the verb's half ("refuse an unset
+// queue_repo"), so the ROW is what moves — it names the state, and both say
+// it in the same words, from one place.
+//
+// All THREE of the verb's store-of-record refusals, which is
+// ranger-base-00a5l's half: ranger-base-0q7rp's complaint was general and
+// its fix keyed on the unset key alone, so the other two reproduced the
+// original symptom one config VALUE over — a `queue_repo:` naming a plain
+// directory, which is the state that close's own control fixtures sat in.
 func TestNoStoreOfRecordRowAgreesWithTheVerb(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		queue func(t *testing.T) string
+		// what the gap must be ABOUT, beyond the words both surfaces share
+		says string
+	}{
+		{"queue_repo: unset", func(t *testing.T) string { return "" }, "is unset"},
+		{"queue_repo: names a path with no beads store", func(t *testing.T) string {
+			return gitTempDir(t)
+		}, "has no beads store at"},
+		{"queue_repo: names a beads store that is not a checkout", func(t *testing.T) string {
+			q := filepath.Join(gitTempDir(t), "queue")
+			if err := os.MkdirAll(filepath.Join(q, ".beads"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			return q
+		}, "is not a git repository"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			b, _ := newTestBackend(t)
+			cfg := "backup_max_age: 12h\nbackup_interval: 6h\n"
+			if q := c.queue(t); q != "" {
+				cfg += "queue_repo: " + q + "\n"
+			}
+			appendConfig(t, b.App, cfg)
+
+			f := b.App.BackupFreshness(govNow, os.Stderr)
+			if !f.Armed || !f.NoStore || !f.Stale {
+				t.Fatalf("armed=%v nostore=%v stale=%v — an armed arrangement that cannot run is still a condition", f.Armed, f.NoStore, f.Stale)
+			}
+			if !strings.Contains(f.NoStoreWhy, c.says) {
+				t.Errorf("the reading does not say WHICH gap it is: %q, want %q in it", f.NoStoreWhy, c.says)
+			}
+			// The verb, on the same instance: the sentence the operator
+			// meets if they follow the row. Compared against the reading's
+			// own words, not against a constant — a constant can agree with
+			// one of the three and leave the others disagreeing, which is
+			// exactly how this escaped (bead ranger-base-00a5l).
+			_, err := b.App.RunBackup(BackupOpts{Now: func() time.Time { return govNow }})
+			if err == nil || !strings.Contains(err.Error(), f.NoStoreWhy) {
+				t.Fatalf("posse backup = %v, want the refusal the row reports (%q)", err, f.NoStoreWhy)
+			}
+			// The row says that same thing, and names a remedy that works.
+			var row *GovCondition
+			set := shopSet(t, govIn(t, b))
+			for i := range set {
+				if set[i].Key == "backup-stale" {
+					row = &set[i]
+				}
+			}
+			if row == nil {
+				t.Fatalf("an armed backup arrangement that cannot run raised nothing: %v", set.Keys())
+			}
+			if !strings.Contains(row.Detail, f.NoStoreWhy) {
+				t.Errorf("the row and the verb disagree.\nrow:  %s\nverb: %s", row.Detail, err)
+			}
+			if !strings.Contains(row.Detail, "queue_repo:") || !strings.Contains(row.Detail, "backup_*") {
+				t.Errorf("the row does not name a remedy that works: %q", row.Detail)
+			}
+			// And it no longer sends the operator to the verb that refuses.
+			if strings.Contains(row.Detail, "no backup of the store of record on this box") {
+				t.Errorf("the row still reports the empty directory as the condition: %q", row.Detail)
+			}
+			// The archive directory is still the EVIDENCE beside the
+			// subject (storelessReading). Pinned because nothing did:
+			// stubbing that helper to "" survived every test in the tree
+			// and left the row reading "…nothing to back up — : point
+			// queue_repo: …" (bead ranger-base-5ayqc, finding 3).
+			if !strings.Contains(row.Detail, AbbrevHome(f.Dir)+" holds no archive") {
+				t.Errorf("the row drops the directory evidence: %q", row.Detail)
+			}
+			// The quiet line carries the sentence too: `posse backup status`
+			// exits non-zero over this reading, and its other lines can
+			// both be silent about the state.
+			if !strings.Contains(f.Line(), f.NoStoreWhy) {
+				t.Errorf("the freshness line does not say why the directory is empty:\n%s", f.Line())
+			}
+			// And the third surface, the one this bead's finding 2 found
+			// WORSE than before: an armed clock whose every tick refuses
+			// must not promise a cadence it cannot keep.
+			sched := b.App.BackupScheduleLine()
+			if !strings.Contains(sched, "refuses") || !strings.Contains(sched, b.App.backupStoreGap()) {
+				t.Errorf("the schedule line promises a cadence nothing can keep: %q", sched)
+			}
+			// SHORT, not the whole sentence: the freshness line directly
+			// above it in `posse backup status` already carries that.
+			if strings.Contains(sched, "nothing to back up") {
+				t.Errorf("the schedule line repeats the freshness line's whole sentence:\n%s", sched)
+			}
+		})
+	}
+}
+
+// The CONTROL, with a real store of record and the directory still empty:
+// the condition goes back to being the missing archive, in its own words,
+// and the verb stops refusing for this reason. Without this arm a row
+// hard-wired to the no-store sentence passes everything above.
+func TestWithAStoreOfRecordTheRowIsAboutTheArchive(t *testing.T) {
 	b, _ := newTestBackend(t)
-	appendConfig(t, b.App, "backup_max_age: 12h\n")
+	appendConfig(t, b.App, "backup_max_age: 12h\nbackup_interval: 6h\nqueue_repo: "+freshQueue(t)+"\n")
 
-	f := b.App.BackupFreshness(govNow, os.Stderr)
-	if !f.Armed || !f.NoStore || !f.Stale {
-		t.Fatalf("armed=%v nostore=%v stale=%v — an armed arrangement that cannot run is still a condition", f.Armed, f.NoStore, f.Stale)
-	}
-	// The verb, on the same instance: the sentence the operator meets if
-	// they follow the row.
-	_, err := b.App.RunBackup(BackupOpts{Now: func() time.Time { return govNow }})
-	if err == nil || !strings.Contains(err.Error(), backupNoStoreClause()) {
-		t.Fatalf("posse backup on an instance with no queue_repo: = %v, want the no-store refusal", err)
-	}
-	// The row says that same thing, and names the two ways out of it.
-	var row *GovCondition
-	set := shopSet(t, govIn(t, b))
-	for i := range set {
-		if set[i].Key == "backup-stale" {
-			row = &set[i]
-		}
-	}
-	if row == nil {
-		t.Fatalf("an armed backup arrangement that cannot run raised nothing: %v", set.Keys())
-	}
-	if !strings.Contains(row.Detail, backupNoStoreClause()) {
-		t.Errorf("the row and the verb disagree.\nrow:  %s\nverb: %s", row.Detail, err)
-	}
-	if !strings.Contains(row.Detail, "set queue_repo:") || !strings.Contains(row.Detail, "backup_*") {
-		t.Errorf("the row does not name a remedy that works: %q", row.Detail)
-	}
-	// And it no longer sends the operator to the verb that refuses.
-	if strings.Contains(row.Detail, "no backup of the store of record on this box") {
-		t.Errorf("the row still reports the empty directory as the condition: %q", row.Detail)
-	}
-	// The quiet line carries it too: `posse backup status` exits non-zero
-	// over this reading, and its other lines can both be silent about the
-	// key.
-	if !strings.Contains(f.Line(), backupNoStoreClause()) {
-		t.Errorf("the freshness line does not say why the directory is empty:\n%s", f.Line())
-	}
-
-	// CONTROL, with the key written and the directory still empty: the
-	// condition goes back to being the missing archive, in its own words,
-	// and the verb stops refusing for this reason. Without this arm a row
-	// hard-wired to the no-store sentence passes everything above.
-	appendConfig(t, b.App, "queue_repo: "+t.TempDir()+"\n")
 	g := b.App.BackupFreshness(govNow, os.Stderr)
 	if g.NoStore || !g.Stale {
-		t.Fatalf("nostore=%v stale=%v with queue_repo: written over an empty directory", g.NoStore, g.Stale)
+		t.Fatalf("nostore=%v stale=%v with a real store over an empty directory", g.NoStore, g.Stale)
 	}
 	if d := g.GovDetail(); !strings.Contains(d, "is empty") || strings.Contains(d, "queue_repo") {
 		t.Errorf("the row on an instance WITH a store still talks about the key: %q", d)
 	}
-	if _, err := b.App.RunBackup(BackupOpts{Now: func() time.Time { return govNow }}); err == nil || strings.Contains(err.Error(), backupNoStoreClause()) {
+	if l := g.Line(); strings.Contains(l, "nothing to back up") {
+		t.Errorf("the quiet line carries a no-store clause over a real store:\n%s", l)
+	}
+	if s := b.App.BackupScheduleLine(); strings.Contains(s, "refuses") {
+		t.Errorf("an instance with a store was told its ticks refuse: %q", s)
+	}
+	if _, err := b.App.RunBackup(BackupOpts{Now: func() time.Time { return govNow }}); err == nil || strings.Contains(err.Error(), "nothing to back up") {
 		t.Errorf("the verb still refuses for want of a store it was given: %v", err)
+	}
+}
+
+// storelessReading's other two arms, which the row reaches through the same
+// branch and which no test named either (bead ranger-base-5ayqc, finding 3).
+// The `default` arm was suspected unreachable through GovDetail — the row
+// fires on Stale, and Stale over a DATABLE archive is a reachable state, so
+// it is reachable and this is the pin that says so.
+func TestTheNoStoreRowReportsWhateverTheArchiveDirectoryHolds(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		age  time.Duration // negative is a stamp AHEAD of the clock
+		want string
+	}{
+		{"nothing on disk", 0, "%s holds no archive"},
+		{"only a stamp ahead of the clock", -2 * time.Hour, "%s holds 1 archive(s), none of them a usable reading"},
+		{"a datable archive, past the max", 30 * time.Hour, "the newest archive in %s is 30h00m old"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			b, _ := newTestBackend(t)
+			appendConfig(t, b.App, "backup_max_age: 12h\n")
+			if c.age != 0 {
+				stamp := govNow.Add(-c.age).UTC().Format(backupStamp)
+				write(t, filepath.Join(b.App.BackupDir(), backupPrefix+stamp+backupSuffix), "x\n")
+			}
+			f := b.App.BackupFreshness(govNow, os.Stderr)
+			if !f.NoStore || !f.Stale {
+				t.Fatalf("nostore=%v stale=%v — the row must fire for this arm to be reachable at all", f.NoStore, f.Stale)
+			}
+			want := fmt.Sprintf(c.want, AbbrevHome(f.Dir))
+			if d := f.GovDetail(); !strings.Contains(d, want) {
+				t.Errorf("the row's evidence clause is missing %q:\n%s", want, d)
+			}
+		})
 	}
 }
 
@@ -277,77 +398,23 @@ func TestBackupMaxAgeDefaultAndTypo(t *testing.T) {
 	}
 }
 
-// ─── LIVE DEFECT, recorded (bead ranger-base-5ayqc, escaped from
-// ranger-base-0q7rp) ────────────────────────────────────────────────────────
+// ─── the second and third store-of-record refusals (bead ranger-base-00a5l)
+// ──────────────────────────────────────────────────────────────────────────
 //
-// This pin ships GREEN over a hole, not over a fix. ranger-base-0q7rp's
-// complaint was general — "the governance row and the command disagree about
-// whether a store of record exists" — and the close keyed its whole fix on
-// ONE of the three store-of-record refusals `RunBackup` can make before it
-// writes anything: `queue_repo:` unset. The other two survive, one config
-// value over, and this is the state the close's OWN control fixtures sit in
-// (`queue_repo: `+t.TempDir() — a directory with no `.beads`).
+// The pin that used to sit here shipped GREEN over a hole:
+// ranger-base-0q7rp's complaint was general — "the governance row and the
+// command disagree about whether a store of record exists" — and the close
+// keyed its whole fix on ONE of the three store-of-record refusals
+// `RunBackup` can make before it writes anything, `queue_repo:` unset. The
+// other two survived one config VALUE over, in the state the close's own
+// control fixtures sat in (`queue_repo: `+t.TempDir() — a directory with no
+// `.beads`), and the schedule line was WORSE than the state the bead filed:
+// it promised "every 6h00m, from the dispatch --watch loop" with no clause
+// at all.
 //
-// MEASURED 2026-10-09 against the shipped binary at d95b4b90: with
-// `queue_repo:` naming a path that is not a git checkout, or a checkout with
-// no beads store, `posse status` raises LANE "no backup of the store of
-// record on this box — <dir> is empty", whose remedy is `posse backup`, and
-// `posse backup` exits 1 with "<q> has no beads store at <q>/.beads". The
-// third surface is worse than before: `posse backup status` exits 1 and its
-// schedule line still promises "every 6h00m, from the dispatch --watch loop"
-// with no clause at all — the same line the bead named as the one that
-// "claimed a cadence nothing can keep".
-//
-// When this test FAILS, the hole is closed: the row, the verb and the
-// schedule line agree over a queue_repo: that names no store. Delete this
-// pin and assert that agreement in TestNoStoreOfRecordRowAgreesWithTheVerb.
-func TestQABackupRowStillDisagreesWhenQueueRepoNamesNoStore(t *testing.T) {
-	b, _ := newTestBackend(t)
-	q := t.TempDir() // a directory: not a git checkout, and no .beads
-	appendConfig(t, b.App, "backup_max_age: 12h\nbackup_interval: 6h\nqueue_repo: "+q+"\n")
-
-	f := b.App.BackupFreshness(govNow, os.Stderr)
-	if !f.Armed || !f.Stale {
-		t.Fatalf("premise: armed=%v stale=%v over an empty archive directory", f.Armed, f.Stale)
-	}
-	// NoStore is the close's own flag, keyed on the key being UNSET, so it
-	// is false here. If it ever reads true over a WRITTEN key, the fix
-	// widened past what it pinned and this pin's subject is gone.
-	if f.NoStore {
-		t.Fatalf("NoStore now covers a written queue_repo: that names no store — the hole this pin records is closed; assert the agreement instead")
-	}
-
-	// The verb refuses, for want of a store of record — the same subject the
-	// row is about.
-	_, err := b.App.RunBackup(BackupOpts{Now: func() time.Time { return govNow }})
-	if err == nil {
-		t.Fatalf("premise: posse backup must refuse over a queue_repo: that holds no beads store")
-	}
-	if !strings.Contains(err.Error(), "beads store") && !strings.Contains(err.Error(), "git repository") {
-		t.Fatalf("premise: the refusal is no longer about the store: %v", err)
-	}
-
-	var row *GovCondition
-	set := shopSet(t, govIn(t, b))
-	for i := range set {
-		if set[i].Key == "backup-stale" {
-			row = &set[i]
-		}
-	}
-	if row == nil {
-		t.Fatalf("premise: an armed arrangement with no archive raises the row: %v", set.Keys())
-	}
-
-	// THE HOLE: the row reports the empty directory and sends the operator
-	// to the verb that refuses, exactly as it did before ranger-base-0q7rp.
-	if !strings.Contains(row.Detail, "no backup of the store of record on this box") {
-		t.Fatalf("the row moved off the empty directory — the hole this pin records is closing, re-read it: %q", row.Detail)
-	}
-	if strings.Contains(row.Detail, "queue_repo") {
-		t.Errorf("the row names the key now — assert the agreement instead of this hole: %q", row.Detail)
-	}
-	// And the schedule line, the bead's third surface, is silent about it.
-	if sched := b.App.BackupScheduleLine(); strings.Contains(sched, "refuses") {
-		t.Errorf("the schedule line names the refusal now — the hole is closing: %q", sched)
-	}
-}
+// The agreement is asserted in TestNoStoreOfRecordRowAgreesWithTheVerb
+// above, which now runs all three refusals as its own table and compares the
+// row, the verb and the schedule line against the READING's words rather
+// than against a constant — the shape that let a one-of-three fix pass.
+// BackupFreshness.NoStore is backupStoreGap's answer, which is RunBackup's
+// own three questions in RunBackup's own order.

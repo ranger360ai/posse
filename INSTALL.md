@@ -1388,6 +1388,29 @@ thing. What bd moved aside stays where bd put it: the chain does not read
 that file and posse deletes nothing it did not write, so once the gate view
 is clean, `<slot>.backup` is yours to remove.
 
+**The `--chain` above is the step after *every* later `bd init` or `bd
+import`, not just the first.** Two files beside the slot are posse's own
+after a chain, and neither is `<slot>.backup`:
+
+| file | whose | yours to remove? |
+|---|---|---|
+| `<slot>` | posse's chain dispatcher | no — it *is* the wall |
+| `posse-<slot>` | posse's gate, run first by the dispatcher | no — removing it exits every push 127 |
+| `bd-<slot>` | bd's shim, parked here by the chain | no — the dispatcher execs it last |
+| `<slot>.backup`, `<slot>.old` | posse's gate, renamed by bd | yes, once the gate view is clean |
+
+A second bd install takes `<slot>` back and leaves the other two alone, so
+re-running the `--chain` is the whole repair: it refreshes `posse-<slot>`,
+parks bd's new shim over the old one at `bd-<slot>`, and writes the
+dispatcher back into the slot. Until ranger-base-00a5l it refused instead —
+`bd-pre-push already exists` — which made the one command every surface
+prescribes the one command that did not work in the recurring state
+(ranger-base-5ayqc, finding 1). It still refuses over a `bd-<slot>` that is
+*not* bd's shim, because that file is then the operator's and posse's rename
+would destroy it. The row in that second round names `posse-<slot>` — where
+the gate is live — and reads `TAKEN BACK` rather than `MOVED ASIDE`, since
+posse put the file there and bd only took the slot in front of it.
+
 ```sh
 $ grep beads .gitattributes ; git config --get merge.beads.driver
 ```
