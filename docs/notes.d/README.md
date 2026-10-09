@@ -16,6 +16,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-wmaf9](ranger-base-wmaf9.md) — Four facts this harness printed and its governance surface denied (ranger-base-wmaf9) — 2026-10-08
 - [ranger-base-sl5sg](ranger-base-sl5sg.md) — The one launch precondition the PID lint could read and did not (ranger-base-sl5sg) — 2026-10-08
 - [ranger-base-qvy0n](ranger-base-qvy0n.md) — The ceiling's two readers: why the positive pathspec is `:(top)` and not `.` (ranger-base-qvy0n) — 2026-10-08
+- [ranger-base-n73bx](ranger-base-n73bx.md) — Two true sentences that contradicted each other in one log (ranger-base-n73bx) — 2026-10-08
 - [ranger-base-e01op](ranger-base-e01op.md) — The launcher's own scaffolding, read as the seat's unlanded work (ranger-base-e01op) — 2026-10-08
 - [ranger-base-a5st4](ranger-base-a5st4.md) — bd builds the FILE, not the GRAPH — and the one repair is denied to every persona (ranger-base-a5st4) — 2026-10-08
 - [ranger-base-9mjxb](ranger-base-9mjxb.md) — ranger-base-9mjxb — bd's store-selecting flag writes across repositories — 2026-10-08

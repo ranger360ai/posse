@@ -5859,7 +5859,32 @@ func (d *Dispatcher) mergeBack(is RepoIssue, persona, session string) {
 	case len(o.Equivalent) > 0:
 		d.printf("≡ %-14s %s\n", is.ID, o.EquivalentNote())
 	case o.Merged && o.Commits == 0:
-		d.printf("◑ %-14s closed with no commit on %s — nothing to merge onto %s\n", is.ID, t.Branch, t.Base)
+		// Three sentences and not one, because "nothing to merge" has three
+		// meanings and the pass was printing the most alarming of them over
+		// all three (github issue 7, ranger-base-n73bx). A bead this pass has
+		// already fast-forwarded settles again — a relaunch, a re-prompt, a
+		// second judged close — and its branch then has nothing left above
+		// the base, which is what a close that committed NOTHING also looks
+		// like from here. The first reading is a landing and the second is
+		// ADR 0041's incident; printing the second over the first put
+		// "1 commit(s) fast-forwarded … onto main" and "closed with no commit
+		// … nothing to merge" in one log, about one bead, in that order.
+		// PriorLanding's own doc has why only the reflog can tell them apart.
+		switch o.Prior {
+		case PriorLanded:
+			d.printf("≡ %-14s already landed: %s holds %s at %s — nothing left to merge\n",
+				is.ID, t.Base, t.Branch, abbrevSHA(o.PriorTip))
+		case PriorUnread:
+			d.printf("◑ %-14s nothing to merge onto %s from %s — git's reflog for %s does not say whether a commit landed on an earlier pass or none was ever made\n",
+				is.ID, t.Base, t.Branch, t.Branch)
+		default:
+			// PriorNoCommit, and PriorUnasked with it: the measured
+			// never-committed close keeps ADR 0041's wording verbatim,
+			// because that document and closeddirty.go both quote this
+			// line, and a reading of this arm that was never asked is the
+			// same sentence the pass gave before any of this landed.
+			d.printf("◑ %-14s closed with no commit on %s — nothing to merge onto %s\n", is.ID, t.Branch, t.Base)
+		}
 	case o.Merged:
 		how := "fast-forwarded"
 		if o.Rebased {

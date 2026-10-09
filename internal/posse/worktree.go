@@ -1351,6 +1351,14 @@ type MergeOutcome struct {
 	// nothing here is unlanded.
 	Unmeasured string
 
+	// Prior is WHY an outcome that merged nothing had nothing to merge, and
+	// PriorTip the commit the base already holds — the one state whose two
+	// meanings the pass used to print as one sentence (github issue 7,
+	// ranger-base-n73bx). Set only when Merged is true and Commits is 0;
+	// PriorUnasked on every other outcome.
+	Prior    PriorLanding
+	PriorTip string
+
 	// Regenerated names the generated files this landing REPRODUCED rather
 	// than replayed (ranger-base-7h8k4, generatedindex.go) — committed on the
 	// branch before the fast-forward, or staged into a replayed commit that
@@ -1359,6 +1367,48 @@ type MergeOutcome struct {
 	// expect to find in `git log`, the same reason a memory landing says so.
 	Regenerated []string
 }
+
+// PriorLanding is the three answers to "there was nothing to merge, so what
+// was already there" — the question github issue 7 (ranger-base-n73bx) found
+// nobody asking. A seat closes with one commit, the pass fast-forwards it
+// ("1 commit(s) fast-forwarded … onto main"), and the NEXT settle of the same
+// bead printed "closed with no commit on posse/<branch> — nothing to merge":
+// both true in sequence, and the second contradicts the first in the one log
+// the operator reads to know whether work landed.
+//
+// Ancestry cannot tell the two apart, which is why this is a type and not an
+// `if`. A branch that never committed sits at the commit it was cut from; a
+// branch whose work was fast-forwarded sits at the commit the base was MOVED
+// to. Both are reachable from the base, both count zero ahead of it, and
+// neither a count nor a `merge-base` distinguishes them without the cut
+// point — which posse records nowhere. The branch's own REFLOG does
+// (branchEverMoved), and it is the instrument this shop already read for
+// exactly this question: ADR 0041's incident is reported as "the branch's
+// reflog is a single 'Created from main'".
+type PriorLanding string
+
+const (
+	// PriorUnasked is every outcome that merged something, or merged
+	// nothing because it could not merge at all. The question is only
+	// about Merged with Commits == 0.
+	PriorUnasked PriorLanding = ""
+
+	// PriorNoCommit is a branch git's reflog says never moved off the
+	// commit it was cut at: nothing was ever committed, so there was never
+	// anything to land. ADR 0041's shape, and the eight-of-twelve ordinary
+	// case its §5 measured — a design, question or verify close.
+	PriorNoCommit PriorLanding = "no-commit"
+
+	// PriorLanded is a branch that DID move and whose tip the base already
+	// holds: an earlier pass (or an earlier settle of this one) landed it,
+	// and this one has nothing left to do.
+	PriorLanded PriorLanding = "landed-earlier"
+
+	// PriorUnread is a reflog that answered neither — gone with the branch,
+	// expired, or switched off. Said as the unknown it is rather than
+	// collapsed into either neighbour, which is the whole defect above.
+	PriorUnread PriorLanding = "unread"
+)
 
 // EquivalentNote is the sentence that tells an already-landed branch apart
 // from a stranded one. Before it, both printed the same words (the strand's)
@@ -2109,10 +2159,12 @@ func landed(o MergeOutcome, t *SessionTree) MergeOutcome {
 		// can reach this having thrown work away — that is the operator's
 		// documented override, and it is loud where it is taken.)
 		o.Merged, o.Reason = true, ""
+		o.Prior = priorLanding(o, t)
 		return o
 	}
 	if reaches(t.Repo, t.Base, head) {
 		o.Merged, o.Reason = true, ""
+		o.Prior, o.PriorTip = priorLanding(o, t), head
 		return o
 	}
 	// Ahead by sha is not ahead by work HERE TOO (ranger-base-d8o6). The two
@@ -2160,6 +2212,76 @@ func landed(o MergeOutcome, t *SessionTree) MergeOutcome {
 	o.Reason = fmt.Sprintf("%s in %s is not on %s and no branch here reaches it — the work is unreferenced and a retire would lose it; `git -C %s branch -f %s HEAD` names it again",
 		abbrevSHA(head), AbbrevHome(t.Path), t.Base, AbbrevHome(t.Path), t.Branch)
 	return o
+}
+
+// priorLanding answers PriorLanding's question for an outcome that merged
+// NOTHING, and PriorUnasked for every other one — so landed() may set it on
+// every arm it returns Merged from, and the sentence that reads it
+// (mergeBack, dispatch.go) stays the only place that words any of them.
+//
+// It is asked of the branch's HISTORY and never of the tip the caller also
+// records: whether a commit of this session's ever existed is not a fact
+// about where the branch points now, which is the whole of why ancestry
+// could not answer it.
+func priorLanding(o MergeOutcome, t *SessionTree) PriorLanding {
+	if !o.Merged || o.Commits != 0 {
+		return PriorUnasked
+	}
+	moved, known := branchEverMoved(t.Repo, t.Branch)
+	switch {
+	case !known:
+		return PriorUnread
+	case moved:
+		return PriorLanded
+	default:
+		return PriorNoCommit
+	}
+}
+
+// branchEverMoved is whether a branch has moved since it was created, read
+// off its own reflog, and whether the reflog answered at all.
+//
+// EVERY ENTRY PAST THE CREATION IS A MOVEMENT, which is what makes this a
+// count and not a parse: a reflog entry is written per ref UPDATE, so a
+// branch with one entry has only ever been created and a branch with two has
+// been moved once, whatever moved it (a commit in the worktree, the splice's
+// `branch -f`, a replay). MEASURED 2026-10-09 (macOS 26.4.1 / darwin 25.4.0,
+// git 2.50.1), `worktree add -b` then one commit then `merge --ff-only`: one
+// entry `branch: Created from main` before, two after (`commit: work` above),
+// and both still there with `rev-list --count main..posse/s` at 0 — which is
+// the settle this bead is about.
+//
+// The message is read on the single-entry case alone, and only to tell a
+// creation from an update that EXPIRED down to one: git keeps the newest
+// entries, so a lone `commit:` is a branch whose creation entry is gone, not
+// a branch that was never moved. Every spelling that creates a branch —
+// `branch`, `checkout -b`, `switch -c`, `worktree add -b` — writes
+// "branch: Created from <start>" (MEASURED, same environment).
+//
+// Unreadable is its own answer and never "never moved": a branch that is gone
+// (exit 128, MEASURED), a reflog switched off, and `reflog expire
+// --expire=all` (exit 0 with no output, MEASURED) all come back false, false,
+// and PriorUnread says so in words rather than claiming the close committed
+// nothing.
+func branchEverMoved(repo, branch string) (moved, known bool) {
+	out, err := git(repo, "reflog", "show", "--format=%gs", "refs/heads/"+branch)
+	if err != nil {
+		return false, false
+	}
+	var entries []string
+	for _, ln := range strings.Split(out, "\n") {
+		if strings.TrimSpace(ln) != "" {
+			entries = append(entries, ln)
+		}
+	}
+	switch len(entries) {
+	case 0:
+		return false, false
+	case 1:
+		return !strings.HasPrefix(entries[0], "branch: Created from"), true
+	default:
+		return true, true
+	}
 }
 
 // workHead is the commit this session's work is ON, asked in the order the

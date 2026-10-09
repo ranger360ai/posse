@@ -177,6 +177,63 @@ func TestClosedBeadWithNoCommitSaysSo(t *testing.T) {
 	}
 }
 
+// github issue 7 (ranger-base-n73bx): the SECOND settle of a bead this pass
+// already landed. The fixture lands one commit, then settles the same bead
+// again with nothing having changed — a relaunch, a re-prompt, a second
+// judged close all reach mergeBack twice — and the branch then has nothing
+// above the base, which is also what a close that committed nothing looks
+// like from here. The pass printed the second reading over the first:
+// "1 commit(s) fast-forwarded … onto main" and then "closed with no commit …
+// nothing to merge", about one bead, in one log.
+//
+// Both halves are asserted, and the negative is the one that was failing: a
+// line that merely says something about the branch is not a fix if it still
+// says the work never landed. TestClosedBeadWithNoCommitSaysSo is the other
+// arm and the control — it closes with nothing committed and must still get
+// ADR 0041's sentence verbatim, so a branchEverMoved that answered "moved"
+// over every branch reds there rather than here.
+func TestASecondSettleSaysTheWorkAlreadyLanded(t *testing.T) {
+	t.Parallel()
+	d, repo, _ := wtqaPassWithWork(t, nil)
+	if first := dispatcherOut(d); !strings.Contains(first, "1 commit(s) fast-forwarded") {
+		t.Fatalf("the fixture landed nothing, so there is no second settle to measure:\n%s", first)
+	}
+
+	var out strings.Builder
+	again := &Dispatcher{App: d.App, HB: d.HB, Out: &out}
+	again.mergeBack(RepoIssue{BdIssue: BdIssue{ID: "a-1", Title: "t"}, Dir: repo}, "ranger", SessionForBead("ranger", repo, "a-1"))
+
+	if strings.Contains(out.String(), "closed with no commit") {
+		t.Errorf("the second settle contradicts the landing the first one reported:\n%s", out.String())
+	}
+	for _, want := range []string{"a-1", "already landed", "nothing left to merge"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("the second settle does not say %q:\n%s", want, out.String())
+		}
+	}
+}
+
+// The unknown, said as an unknown. The reflog is the only record that can
+// tell the two readings above apart, so a reflog that is gone — expired, or
+// taken with a deleted branch — leaves the question unanswerable, and the
+// defect this pin guards is answering it anyway in the alarming direction.
+func TestASettleWithNoReflogClaimsNeither(t *testing.T) {
+	t.Parallel()
+	d, repo, _ := wtqaPassWithWork(t, nil)
+	mustGit(t, repo, "reflog", "expire", "--expire=all", "refs/heads/"+SessionBranch(SessionForBead("ranger", repo, "a-1")))
+
+	var out strings.Builder
+	again := &Dispatcher{App: d.App, HB: d.HB, Out: &out}
+	again.mergeBack(RepoIssue{BdIssue: BdIssue{ID: "a-1", Title: "t"}, Dir: repo}, "ranger", SessionForBead("ranger", repo, "a-1"))
+
+	if strings.Contains(out.String(), "closed with no commit") || strings.Contains(out.String(), "already landed") {
+		t.Errorf("a reflog that says nothing was read as an answer:\n%s", out.String())
+	}
+	if !strings.Contains(out.String(), "does not say whether a commit landed") {
+		t.Errorf("the unreadable reflog is not reported as one:\n%s", out.String())
+	}
+}
+
 func TestUncommittedWorkIsNamedAndNotLost(t *testing.T) {
 	t.Parallel()
 	d, _, tree := wtqaPassWithWork(t, func(_, tree string) {
