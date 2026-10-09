@@ -11,6 +11,29 @@ being cut is a precondition of the tag; see `docs/runbooks/release.md`.
 
 ## Unreleased
 
+**`posse <verb> --help` answers, for every verb.** `posse help`'s preamble has
+always said a subcommand prints its own usage for `-h`/`--help`, and that rule
+was realized in one helper that only some verbs call — 25 of the 42 verb
+spellings, measured. The other seventeen read `--help` as whatever their own
+flag loop made of it: `posse cage --help` and `posse recipes --help` did their
+real work and reported, `posse scorecard --help` scanned bd for every persona,
+`posse list --help` reached for herdr, and the rest printed a usage line and
+exited 1. `posse agent new --help` scaffolded a persona called `--help` and
+opened it in `$EDITOR`. Every verb now prints its own entry from the usage
+catalog and exits 0, before its flag loop sees anything, and so does a
+sub-verb (`posse backup status --help`, `posse cage down --help`). The
+catalog is the only copy, so what you read a verb at a time is what you read
+whole. A literal `--` still ends the reading, so `posse kill -- --help` kills
+a session with that name, and free text is still text: `posse prompt <s>
+--help` sends `--help`. One verb answers with more than its entry, and says
+so in the code: `posse backup --help` carries the `backup_*` config keys and
+the `queue_repo:` they arm over, because those keys are what an operator asks
+that verb about — its sub-verbs (`posse backup status --help`) read like every
+other sub-verb's. What a verb prints has changed shape — the catalog
+entry, with its flags and their explanations, rather than a one-line usage —
+and `posse up --help` and `posse local --help` now describe create-or-focus
+instead of `posse attach`.
+
 **The crew's keychain refusals are documented as the design.** Every claude
 session start logs two refusals of the keychain CLI into
 `state/gates/<persona>/refusals.log`: that is the runtime reading its OWN

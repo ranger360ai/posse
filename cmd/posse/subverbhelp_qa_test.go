@@ -64,7 +64,6 @@ package main
 
 import (
 	"go/ast"
-	"go/parser"
 	"go/token"
 	"sort"
 	"strconv"
@@ -98,13 +97,13 @@ var subVerbAliases = map[string]string{
 // && args[0] == "x"`, and `args[0] != "x" && args[0] != "y"`.
 func subVerbs(t *testing.T) []string {
 	t.Helper()
-	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, "main.go", nil, parser.ParseComments)
-	if err != nil {
-		t.Fatalf("parse main.go: %v", err)
-	}
-
-	sw := mainVerbSwitch(t, f)
+	// mainVerbSwitch lives in verbhelp_qa_test.go: ranger-base-rjfec censuses
+	// the same switch for the same reason, and its copy parses main.go itself
+	// and also reports the switch's index in main's body, which that bead's
+	// ordering pin reads. Two readings of one switch in one package were two
+	// things to keep in step, so the merge-back of that bead kept one
+	// (ranger-base-lw0s5). The index is not this census's business.
+	sw, _ := mainVerbSwitch(t)
 	var found []string
 	for _, stmt := range sw.Body.List {
 		cc, ok := stmt.(*ast.CaseClause)
@@ -150,29 +149,6 @@ func subVerbs(t *testing.T) []string {
 		t.Fatal("censused no sub-verbs at all — this pin is reading nothing")
 	}
 	return found
-}
-
-// mainVerbSwitch finds main()'s `switch cmd` — the top-level verb dispatch.
-func mainVerbSwitch(t *testing.T, f *ast.File) *ast.SwitchStmt {
-	t.Helper()
-	var fn *ast.FuncDecl
-	for _, d := range f.Decls {
-		if d, ok := d.(*ast.FuncDecl); ok && d.Name.Name == "main" && d.Recv == nil {
-			fn = d
-		}
-	}
-	if fn == nil {
-		t.Fatal("cmd/posse/main.go has no main()")
-	}
-	for _, stmt := range fn.Body.List {
-		if sw, ok := stmt.(*ast.SwitchStmt); ok {
-			if id, ok := sw.Tag.(*ast.Ident); ok && id.Name == "cmd" {
-				return sw
-			}
-		}
-	}
-	t.Fatal("main() no longer dispatches on `switch cmd` — this pin is reading nothing")
-	return nil
 }
 
 // argZeroLits returns every string literal compared against args[0] — or

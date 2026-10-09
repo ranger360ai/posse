@@ -43,12 +43,23 @@ func TestArgLead(t *testing.T) {
 // The bead's regression test: usage on stdout, exit 0, and nothing left on
 // the host — no meta file, and no herdr call at all (RHQ_HERDR_BIN points
 // at a binary that fails loudly if anything reaches it).
+//
+// What a verb PRINTS for -h/--help is its own entry from the usage catalog
+// now, not a usage line of its own (ranger-base-rjfec): one copy, so the
+// catalog an operator reads whole is the one they read a verb at a time.
+// The claims this pin is here for — exit 0, on stdout, and nothing created
+// — are unchanged; the expected text follows the catalog.
 func TestNewHelpCreatesNothing(t *testing.T) {
 	bin := buildRhq(t)
 	home := t.TempDir()
 	env := append(os.Environ(),
 		"RHQ_HOME="+home,
 		"RHQ_HERDR_BIN="+filepath.Join(home, "herdr-must-not-run"),
+		// bd is pointed at a binary that does not exist for the same
+		// reason herdr is: `posse scorecard --help` used to scan bd for
+		// every persona (ranger-base-rjfec), and "it answers without
+		// asking bd" is a claim about the process.
+		"RHQ_BD_BIN="+filepath.Join(home, "bd-must-not-run"),
 	)
 
 	for _, c := range []struct {
@@ -56,19 +67,39 @@ func TestNewHelpCreatesNothing(t *testing.T) {
 		code int
 		want string
 	}{
-		{[]string{"new", "--help"}, 0, "usage: posse new <name>"},
-		{[]string{"new", "-h"}, 0, "usage: posse new <name>"},
+		{[]string{"new", "--help"}, 0, "posse new <name> [opts]"},
+		{[]string{"new", "-h"}, 0, "posse new <name> [opts]"},
 		{[]string{"new", "-x"}, 1, "bad session name '-x'"},
 		// The override the ownership refusal names has to exist where the
 		// refusal says it does (rangerhq-selx).
-		{[]string{"kill", "--help"}, 0, "usage: posse kill <name> [--force] [--foreign]"},
-		{[]string{"attach", "--help"}, 0, "usage: posse attach <name>"},
-		{[]string{"up", "--help"}, 0, "usage: posse attach <name>"},
-		{[]string{"local", "--help"}, 0, "usage: posse attach <name>"},
-		{[]string{"recipe", "--help"}, 0, "usage: posse recipe <name>"},
-		{[]string{"prompt", "--help"}, 0, `usage: posse prompt <name> "<text>"`},
-		{[]string{"relaunch", "--help"}, 0, "usage: posse relaunch <name>"},
-		{[]string{"crew", "--help"}, 0, "usage: posse crew <name>"},
+		{[]string{"kill", "--help"}, 0, "      --foreign                close a workspace"},
+		{[]string{"attach", "--help"}, 0, "posse attach <name>"},
+		// up and local answer with the `posse up` entry, not with attach's
+		// usage line, which is what they printed while need() was the only
+		// realization of the rule: they are create-or-focus and attach is
+		// not (ranger-base-rjfec).
+		{[]string{"up", "--help"}, 0, "posse up <name>                create-or-focus"},
+		{[]string{"local", "--help"}, 0, "posse up <name>                create-or-focus"},
+		{[]string{"recipe", "--help"}, 0, "posse recipe <name>"},
+		{[]string{"prompt", "--help"}, 0, `posse prompt <name> "<text>" [--wait]`},
+		{[]string{"relaunch", "--help"}, 0, "posse relaunch <name>"},
+		{[]string{"crew", "--help"}, 0, "posse crew <name> [--off]"},
+		// The six verbs the preamble's rule did not reach (ranger-base-rjfec,
+		// MEASURED 2026-10-09): they answered by doing their work, by
+		// scanning bd, by exiting 1, or by reaching for herdr. The herdr
+		// override above is a binary that does not exist, so a reading that
+		// still asks herdr fails loudly here rather than quietly.
+		{[]string{"list", "--help"}, 0, "posse list                     sessions with live agent state"},
+		{[]string{"cage", "--help"}, 0, "posse cage [<persona>]"},
+		{[]string{"recipes", "--help"}, 0, "posse recipes                  list recipes"},
+		{[]string{"scorecard", "--help"}, 0, "posse scorecard [<persona>]"},
+		{[]string{"skills", "--help"}, 0, "posse skills                   list bound skills"},
+		{[]string{"worktrees", "--help"}, 0, "posse worktrees [--dir <repo>]"},
+		// And the sub-verb half, which need() never reached at all: this one
+		// used to scaffold a persona called '--help' (the WalkDir below is
+		// what says it no longer writes one).
+		{[]string{"agent", "new", "--help"}, 0, "posse agent new <name>"},
+		{[]string{"backup", "status", "--help"}, 0, "posse backup status"},
 	} {
 		cmd := exec.Command(bin, c.args...)
 		cmd.Env = env

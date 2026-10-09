@@ -383,6 +383,18 @@ func TestBackupVerifyNamesWhyItCannotPickAnArchive(t *testing.T) {
 // Three parts, because each can be green while another is false: every form
 // EXITS 0, the answer CARRIES the keys, and it is not the grammar line the
 // bug printed. The fourth part is TestBackupHelpIsTheCatalogBlockItself.
+//
+// NARROWED, by ranger-base-lw0s5, from "every form carries the keys" to "the
+// VERB's own forms carry them". ranger-base-rjfec landed the same rule for
+// every verb and every sub-verb the catalog names, read once ahead of main's
+// switch, and under it a sub-verb answers with its OWN entry — `posse backup
+// status --help` prints the status entry, as `posse cage down --help` prints
+// cage down's. This bead's six forms predate that reading: they were six
+// because all six exited 1 with the grammar, and printing the whole block was
+// the only answer there was to give. The deliverable is intact — an operator
+// asking the CLI about backup's keys gets them, from `posse backup -h`, via
+// verbOwnHelp in main.go — and the sub-verb forms keep the two claims that
+// still hold for them, exit 0 and not the grammar line.
 func TestBackupHelpAnswersEveryFormWithTheKeys(t *testing.T) {
 	bin := buildRhq(t)
 	home := backupHome(t, "runtime: claude\n")
@@ -403,7 +415,7 @@ func TestBackupHelpAnswersEveryFormWithTheKeys(t *testing.T) {
 			// `queue_repo:` is in the list because it is the one the verb
 			// REFUSES without (ADR 0015 §4), and the section named it in
 			// prose only until this bead.
-			for _, want := range []string{
+			want := []string{
 				"posse backup [--to <dir>]",
 				"posse backup status",
 				"posse backup verify [--archive <path>]",
@@ -414,7 +426,13 @@ func TestBackupHelpAnswersEveryFormWithTheKeys(t *testing.T) {
 				"config backup_max_age:",
 				"config backup_keep:",
 				"config backup_min_free_mb:",
-			} {
+			}
+			if len(args) > 2 {
+				// A sub-verb's answer is its own entry, so the only line
+				// of the list above it owes is its own header.
+				want = []string{"posse backup " + args[1]}
+			}
+			for _, want := range want {
 				if !strings.Contains(out, want) {
 					t.Errorf("the answer does not carry %q:\n%s", want, out)
 				}

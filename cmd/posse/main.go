@@ -37,6 +37,11 @@ func die(err error) {
 //
 // It returns the args with the separator removed; callers read positionals
 // from the returned slice.
+//
+// catalogHelp reads -h/--help ahead of the switch now (ranger-base-rjfec),
+// so for a verb the catalog names this arm never fires. It stays as the
+// backstop: the catalog is prose, and a verb added without an entry in it
+// would otherwise take '--help' as its <name> again.
 func need(args []string, n int, usage string) []string {
 	args, help := argLead(args)
 	if help {
@@ -87,6 +92,173 @@ func argLead(args []string) (rest []string, help bool) {
 	return args, false
 }
 
+// What follows is the -h/--help rule read ONCE, for every verb, ahead of
+// every verb's own flag loop (ranger-base-rjfec). argLead above reaches only
+// the verbs that call it or need(), which MEASURED 2026-10-09 was 25 of the
+// 42 verb spellings main's switch accepts outside help/version. The other
+// seventeen read -h/--help as whatever their own flag loop made of it:
+// `posse cage --help` and `posse recipes --help` did their real work and
+// reported, `posse scorecard --help` went to bd for every persona, `posse
+// list --help` reached for herdr, and the rest printed a usage and exited 1.
+// Asking for help is neither an error nor a command.
+//
+// The usage catalog is the source: the entry an operator reads in `posse
+// help` IS what the verb prints for itself, so there is no second usage
+// string to go stale beside it. The catalog's own grammar supplies the
+// subcommand paths, which is how a sub-verb answers for itself too
+// (`posse backup status --help`, `posse agent new --help` — that one used
+// to scaffold a persona named '--help').
+
+// catalogWord reports whether a usage-catalog header word is a literal
+// subcommand name rather than grammar: `<name>`, `[dir]`, `--dry-run`,
+// `edit|rm` and `"<why>"` are all things the catalog spells out for a
+// reader, not words that select a verb.
+func catalogWord(w string) bool {
+	for i, r := range w {
+		if r >= 'a' && r <= 'z' {
+			continue
+		}
+		if r == '-' && i > 0 {
+			continue
+		}
+		return false
+	}
+	return w != ""
+}
+
+// catalogLead is the subcommand path a catalog header names: the literal
+// words of its grammar, up to the first that is not one. The grammar ends at
+// the description column, which is reached by a run of two or more spaces —
+// a header too wide for that column carries its description on the next line
+// and has no such run (`posse worktrees [--dir <repo>] ...`).
+func catalogLead(line string) []string {
+	rest, ok := strings.CutPrefix(line, catalogEntryIndent+"posse ")
+	if !ok {
+		return nil
+	}
+	if i := strings.Index(rest, "  "); i >= 0 {
+		rest = rest[:i]
+	}
+	var lead []string
+	for _, w := range strings.Fields(rest) {
+		if !catalogWord(w) {
+			break
+		}
+		lead = append(lead, w)
+	}
+	return lead
+}
+
+// What opens an entry in the catalog, and what ends one. Both indents are
+// hand-maintained (rangerhq-6izv pins the description column): a command
+// entry opens at catalogEntryIndent, a config key at catalogConfigLead, and
+// everything else indented is a continuation of whichever opened last.
+const (
+	catalogEntryIndent = "  "
+	catalogConfigLead  = "                               config "
+)
+
+// catalogBlock is the catalog's own text for a subcommand path: every entry
+// whose lead begins with path, and the continuation lines under each. An
+// entry ends at the next entry, at a `config <key>:` line — a verb's config
+// keys are not its grammar, and ranger-base-cse63 is the bead that prints
+// them — at a section header, or at a blank line.
+func catalogBlock(path []string) string {
+	var b strings.Builder
+	in := false
+	for _, ln := range strings.Split(usageCatalog(), "\n") {
+		switch {
+		case strings.HasPrefix(ln, catalogEntryIndent+"posse "):
+			in = leadHas(catalogLead(ln), path)
+		case strings.HasPrefix(ln, catalogConfigLead), strings.TrimSpace(ln) == "", !strings.HasPrefix(ln, " "):
+			in = false
+		}
+		if in {
+			b.WriteString(ln)
+			b.WriteString("\n")
+		}
+	}
+	return b.String()
+}
+
+// leadHas reports whether a catalog header's lead begins with path, so
+// `posse cage` answers with every cage entry and `posse cage down` with its
+// own. Word equality, not string prefix: `posse agents` is not an entry of
+// `posse agent`.
+func leadHas(lead, path []string) bool {
+	if len(lead) < len(path) {
+		return false
+	}
+	for i, w := range path {
+		if lead[i] != w {
+			return false
+		}
+	}
+	return true
+}
+
+// catalogAlias maps a verb spelling main's switch accepts to the catalog
+// entry that documents it. The catalog names these in prose — "(alias:
+// focus)" — rather than giving them headers of their own, and an operator
+// who types the alias still has to be answered. The census in
+// cmd/posse/verbhelp_qa_test.go is what keeps this table total.
+var catalogAlias = map[string]string{
+	"ls":     "list",
+	"local":  "up",
+	"focus":  "attach",
+	"orders": "memory",
+}
+
+// verbOwnHelp is the catalog paths whose -h/--help answer is WIDER than the
+// slice catalogBlock takes: a verb that also prints the config keys it reads.
+// catalogBlock stops at the first `config <key>:` line on purpose — keys sit
+// between entries at a shallower indent and are nobody's grammar, and
+// backup's are followed immediately by two verify_box_* keys that are no
+// verb's — so a verb whose keys ARE the thing an operator came for has to say
+// so here. `posse backup` is the one (ranger-base-cse63: the single place an
+// operator asks the CLI about backup_dir:, backup_interval: and the
+// queue_repo: they arm over was the one place that answered with none of
+// them). The path is the whole key, so this widens the VERB's own answer and
+// leaves `posse backup status --help` the house reading — its own entry, like
+// every other sub-verb. Each entry is checked against the catalog by
+// TestVerbOwnHelpWidensARealPath.
+var verbOwnHelp = map[string]func() string{
+	"backup": backupHelp,
+}
+
+// catalogHelp answers `posse <verb> [<sub>...] -h|--help` from the catalog.
+// It walks the longest subcommand path argv names literally and then asks
+// whether the NEXT argument is -h/--help — so a free-text argument is never
+// read as a help request (`posse pause "the box is on fire --help"`), and a
+// literal -- still ends the reading exactly as argLead has it (`posse kill
+// -- --help` kills a session called --help).
+func catalogHelp(argv []string) (string, bool) {
+	if len(argv) == 0 {
+		return "", false
+	}
+	if to, ok := catalogAlias[argv[0]]; ok {
+		argv = append([]string{to}, argv[1:]...)
+	}
+	n := 0
+	for i, w := range argv {
+		if !catalogWord(w) || catalogBlock(argv[:i+1]) == "" {
+			break
+		}
+		n = i + 1
+	}
+	if n == 0 || n >= len(argv) {
+		return "", false
+	}
+	switch argv[n] {
+	case "-h", "--help":
+		if own, ok := verbOwnHelp[strings.Join(argv[:n], " ")]; ok {
+			return own(), true
+		}
+		return catalogBlock(argv[:n]), true
+	}
+	return "", false
+}
+
 func main() {
 	// Second entry point (rangerhq-1k1): this binary is also the argv0
 	// launcher a caged pane runs. `state/cages/<persona>/bin/claude` is a
@@ -125,6 +297,16 @@ func main() {
 		cmd, args = args[0], args[1:]
 	}
 	out := os.Stdout
+
+	// The preamble's -h/--help rule, read before the switch so it reaches
+	// every verb and lands ahead of every verb's own flag loop — see
+	// catalogHelp. A verb the catalog does not name falls through to its own
+	// reading, and need()'s is the backstop that keeps rangerhq-qv5 from
+	// coming back on one.
+	if block, ok := catalogHelp(append([]string{cmd}, args...)); ok {
+		fmt.Fprint(out, block)
+		return
+	}
 
 	switch cmd {
 	case "list", "ls":
@@ -2311,11 +2493,17 @@ func versionOrUnknown(v string) string {
 	return v
 }
 
-func help() {
-	fmt.Print(`posse — the Ranger work-system harness (herdr-native)
+// usageCatalog is the text `posse help` prints — and, sliced per command by
+// catalogBlock, the text every `posse <verb> -h|--help` prints
+// (ranger-base-rjfec). One copy: the catalog an operator reads whole is the
+// catalog they read one verb at a time.
+func usageCatalog() string {
+	return `posse — the Ranger work-system harness (herdr-native)
 
-A subcommand that takes a <name> prints its own usage for -h/--help, and
-reads a literal -- as the end of flags (posse kill -- -oddly-named).
+Every subcommand prints its own entry from this catalog for -h/--help, and so
+does every sub-verb this catalog names (posse backup status --help). A literal
+-- ends that reading, so a dashed name is still reachable (posse kill --
+-oddly-named).
 
 sessions (herdr workspaces):
   posse list                     sessions with live agent state (working/blocked/idle)
@@ -2771,7 +2959,11 @@ environment:
   RHQ_PLAN_USAGE_URL  plan-usage endpoint override (testing; loopback hosts only —
                       asked without the account's credential, and its answer is
                       not shared with other posse processes)
-`)
+`
+}
+
+func help() {
+	fmt.Print(usageCatalog())
 }
 
 // backupHelp is the usage catalog's `posse backup` block: the three forms,
