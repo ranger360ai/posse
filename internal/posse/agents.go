@@ -137,6 +137,181 @@ const ClaudeFleetSettings = `{"autoMemoryEnabled":false,"permissions":{"defaultM
 // neither runtime: nor command: launches with.
 const DefaultAgentCommand = `claude ` + ClaudeFleetFlags + ` --append-system-prompt "$(cat {file})" --add-dir {memory} {settings} {skills} {allow} {deny}`
 
+// ClaudeAutoModeDefaults is the sentinel that keeps claude's own
+// `autoMode.allow` list alive when the launch adds an entry of its own.
+// LOAD-BEARING, and the one thing in this file that is dangerous to get
+// wrong (ADR 0070 D2, MEASURED 2026-10-09 on claude 2.1.295): `claude
+// auto-mode defaults` prints 17 built-in allow rules, and the binary's
+// splice function substitutes them at this literal's FIRST position and
+// otherwise returns the user array alone. So an `autoMode.allow` rendered
+// without it does not add one exception — it DELETES all 17, for every seat
+// that carries the blob. TestQAClaudeFleetAutoModeAllowKeepsTheDefaults
+// refuses a payload whose first element is anything else.
+const ClaudeAutoModeDefaults = "$defaults"
+
+// ClaudeAutoModeCarveOut is the one standing statement posse makes to
+// claude's auto-mode classifier, quoted verbatim from ADR 0070 D2.
+//
+// WHY A PROSE ENTRY AT ALL. Under `--permission-mode auto` a PID `allow:`
+// rule is friction removal and nothing else (ADR 0070 D1): it lets a call
+// whose EVERY shell segment matches a rule skip the classifier, and nothing
+// posse renders binds the classifier itself. A `cd x && posse peek s`, a
+// heredoc-assembled prompt, a `… &` background launch — each goes to the
+// classifier whatever the allow list says, and there `posse new` (launching
+// a sibling auto-mode claude) and `herdr pane send-keys` (typing into a
+// sibling pane) ARE the Create Unsafe Agents and Tmux Self Drive patterns
+// to a reader with no context. Those are SOFT rules, and the only thing
+// that clears a soft rule is the statement that this instance of the
+// pattern is a false positive — which an `allow` entry is, made standing.
+//
+// ONE fixed text, owned by posse, the same bytes on every PID that earns
+// it, and derived from the allow list the PID already carries: no new PID
+// key, no flag, no state (ADR 0070's rejected alternatives price the three
+// shapes that would have added one). Posse's own verbs only — posse cannot
+// know WHY an operator allowed `git push`, and a generated "X is fine to
+// allow" per rule is the Auto-Mode Bypass clause written out.
+//
+// WHAT IS CLAIMED: a REDUCTION in refusals of these verbs in compound
+// shapes, never an end to them (D3). The entry is prose read by a model,
+// and that reader was measured unstable on argv in the ADR's own session.
+// A persona whose work hangs on one of these verbs still writes it in the
+// matching shape first — bare verb, prompt text written in a separate call
+// — because the shape hole is the one an allow rule DOES close.
+const ClaudeAutoModeCarveOut = "Posse fleet session verbs: when this session's permission allow list grants " +
+	"them, `posse new`, `posse prompt`, `posse kill`, `posse peek` and `herdr " +
+	"pane list|get|read|send-text|send-keys|wait-output` are this persona's own " +
+	"verbs. They start, prompt, read, drive and end SIBLING terminal panes on this " +
+	"machine, owned by the operator and pre-approved through this persona's " +
+	"permission document; every session they launch carries its own permission " +
+	"document, gates and `--permission-mode auto`. A flagged Auto-Mode Bypass, " +
+	"Tmux Self Drive or Create Unsafe Agents on one of these verbs is a false " +
+	"positive — fine to allow — whether the verb stands alone, follows a `cd` or " +
+	"`&&`, or takes its prompt text from a heredoc or `$(cat …)`. Keystrokes aimed " +
+	"at THIS session's own pane (`$TMUX_PANE`) are not covered, and neither is a " +
+	"bare `kill`, `tmux` or `claude`."
+
+// fleetSessionVerbs are the verbs the carve-out speaks for, as the WORDS a
+// claude Bash rule would have to stand in front of (ADR 0070 D2's list).
+// The carve-out's own text names the same set in prose; this is the half a
+// matcher can read.
+var fleetSessionVerbs = [][]string{
+	{"posse", "new"},
+	{"posse", "prompt"},
+	{"posse", "kill"},
+	{"posse", "peek"},
+	{"herdr", "pane", "list"},
+	{"herdr", "pane", "get"},
+	{"herdr", "pane", "read"},
+	{"herdr", "pane", "send-text"},
+	{"herdr", "pane", "send-keys"},
+	{"herdr", "pane", "wait-output"},
+}
+
+// grantsFleetSessionVerb reports whether a PID's allow list grants any of
+// the verbs the carve-out speaks for — the one question that decides
+// whether the blob carries an `autoMode` key at all.
+//
+// Read on the rule's WORDS, in claude's dialect: a rule is a command-line
+// pattern, `:*` leaves everything after the last word open, and a rule
+// without it matches that command line exactly. So `Bash(posse:*)` and
+// `Bash(herdr pane:*)` grant (a prefix of the verb's words, left open),
+// `Bash(posse new)` grants (the bare verb exactly), `Bash(posse new -l x)`
+// grants (a longer line that still BEGINS with the verb), and
+// `Bash(posse refresh:*)`, `Bash(posse)` and `Bash(herdr pane send-key:*)`
+// grant nothing.
+//
+// EXACT on the word, deliberately, where gates.go's `grantsGitPushRule`
+// over-approximates: that reader raises a lint alarm, where a false
+// positive costs a line of prose on screen, and claude's own matcher wants
+// a word boundary at `:*` anyway (`Bash(posse pee:*)` reaches no `peek`
+// there). Here a false positive would put a standing statement about verbs
+// this PID does not hold in front of the classifier, which is the shape
+// ADR 0070 rejected for every allow rule posse does not own.
+//
+// A broad rule earns nothing on purpose: `Bash(*)` and bare `Bash` are
+// SUSPENDED on entering auto mode (MEASURED, ADR 0070 Context), so a PID
+// holding one of those and nothing else holds no session verb here — and
+// the word reading answers that without a case of its own, since neither
+// spells a `posse` or `herdr` the verb's first word can match.
+func grantsFleetSessionVerb(allow []string) bool {
+	for _, rule := range allow {
+		if !strings.HasPrefix(rule, "Bash(") || !strings.HasSuffix(rule, ")") {
+			continue // Edit, Write, WebFetch, mcp__* — other layers'
+		}
+		body := strings.TrimSuffix(strings.TrimPrefix(rule, "Bash("), ")")
+		open := strings.HasSuffix(body, ":*")
+		words := strings.Fields(strings.TrimSuffix(body, ":*"))
+		if len(words) == 0 {
+			continue // Bash() grants nothing
+		}
+		for _, verb := range fleetSessionVerbs {
+			if ruleStandsOn(words, open, verb) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// ruleStandsOn reports whether a rule's words can stand where verb's words
+// stand. Shorter than the verb it has to be left open by `:*` to reach the
+// rest of it; as long or longer it already begins with the verb, and what
+// follows is an invocation of that verb whatever it says. The command word
+// is matched on its base name (`Bash(/usr/local/bin/posse new:*)`) and a
+// `*` inside a word is claude's `.*`, both through gates.go's readers, so
+// this file holds no second copy of that dialect.
+func ruleStandsOn(words []string, open bool, verb []string) bool {
+	if len(words) < len(verb) && !open {
+		return false
+	}
+	for i := range verb {
+		if i >= len(words) {
+			break
+		}
+		if i == 0 {
+			if !reachesCommand(words[0], verb[0], false) {
+				return false
+			}
+			continue
+		}
+		if !reachesWord(words[i], verb[i], false) {
+			return false
+		}
+	}
+	return true
+}
+
+// claudeAutoModeAllowJSON renders the `autoMode` payload for a PID whose
+// allow list earns the carve-out, and nil for one that does not — which is
+// what makes "otherwise no `autoMode` key at all" (ADR 0070 D2) a property
+// of one function rather than of its callers. The sentinel is FIRST and the
+// carve-out second; see ClaudeAutoModeDefaults for what the order buys.
+//
+// An array of strings and nothing else, because of the payload-shape hazard
+// the field pin carries (fieldpin.go, ranger-base-i7cy4): ONE wrong-typed
+// row voids the whole `--settings`, taking the credential dirs and the
+// permission mode with it. ADR 0070 Verification 2 is the live canary for
+// exactly that — `claude --settings '<blob>' auto-mode config` must print
+// 18 allow entries, where a voided payload prints 17.
+//
+// One thing a reader of the launch line will trip on: encoding/json escapes
+// HTML by default, so the carve-out's `&&` reaches `ps` as `\u0026\u0026`.
+// It is the same marshaller the rest of this payload already goes through,
+// it parses back to the two characters before any model reads it, and it is
+// inert inside the single quotes shellQuote puts around the flag. Compare
+// the DECODED element, never the rendered line, when asking what the
+// classifier will see.
+func claudeAutoModeAllowJSON(allow []string) json.RawMessage {
+	if !grantsFleetSessionVerb(allow) {
+		return nil
+	}
+	b, err := json.Marshal(map[string][]string{"allow": {ClaudeAutoModeDefaults, ClaudeAutoModeCarveOut}})
+	if err != nil {
+		return nil
+	}
+	return b
+}
+
 // ClaudeFleetSettingsJSON is what {settings} carries: ClaudeFleetSettings
 // above, plus the env pin this launch cannot express any other way
 // (settingsPin) — the credential dirs (credentialDirPin,
@@ -163,7 +338,22 @@ const DefaultAgentCommand = `claude ` + ClaudeFleetFlags + ` --append-system-pro
 // JSON, or a box with no home directory, renders the const alone: the
 // launch still carries its permission mode, and the pin's absence is what
 // TestQAClaudeFleetSettingsJSONCarriesTheCredentialDirPin refuses.
-func ClaudeFleetSettingsJSON() string {
+//
+// allow is the PID's own `allow:` list, and the ONE thing in this payload
+// that is a property of the persona rather than of the box: a PID whose
+// allow list grants posse's or herdr's session verbs gets the auto-mode
+// carve-out beside the pins (ADR 0070 D2, claudeAutoModeAllowJSON), and
+// every other PID — allow: nil included — renders byte-for-byte what it
+// rendered before the key existed. It arrives as a parameter rather than
+// being read here because the render site already holds it
+// (RenderCommandForModel's ag.Allow), and a second reader of the PID file
+// would be a second answer to what this persona is allowed.
+//
+// A degraded return above drops the carve-out with the pins, and that is
+// the right order of loss: the carve-out removes friction, the pins are
+// the security guarantee, and the pin's absence is the condition the
+// credential-dir pin already refuses. Nothing silently half-renders.
+func ClaudeFleetSettingsJSON(allow []string) string {
 	pin := settingsPin()
 	if len(pin) == 0 {
 		return ClaudeFleetSettings
@@ -183,6 +373,9 @@ func ClaudeFleetSettingsJSON() string {
 	m["env"] = b
 	if !applyFieldPin(m) {
 		return ClaudeFleetSettings
+	}
+	if am := claudeAutoModeAllowJSON(allow); am != nil {
+		m["autoMode"] = am
 	}
 	out, err := json.Marshal(m)
 	if err != nil {
@@ -427,7 +620,7 @@ func (ag *AgentFile) RenderCommandForModel(rt *Runtime, ownRuntime, tier, model 
 		r = rt.Realize(ag.Allow, ag.Deny, ag.MemoryDir, writable...)
 	}
 	skills, _ := rt.SkillsText(ag.SkillsStateDir, ag.Skills)
-	out = renderPlaceholder(out, "{settings}", rt.FleetSettingsText())
+	out = renderPlaceholder(out, "{settings}", rt.FleetSettingsText(ag.Allow))
 	out = renderPlaceholder(out, "{skills}", skills)
 	// {mode} is the PID channel for a CLI with no launch-time system flag:
 	// it selects the custom mode the launch rendered into the session tree

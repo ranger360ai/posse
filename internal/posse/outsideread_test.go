@@ -192,7 +192,7 @@ func TestSeedCageHomeAnswersTheOutsideReadNotice(t *testing.T) {
 func TestFleetSettingsDoesNotShipTheReadBlockKey(t *testing.T) {
 	t.Parallel()
 	const key = "blockReadsOutsideWorkingDirectories"
-	for _, s := range []string{ClaudeFleetSettings, ClaudeFleetSettingsJSON(), DefaultAgentCommand} {
+	for _, s := range []string{ClaudeFleetSettings, ClaudeFleetSettingsJSON(nil), DefaultAgentCommand} {
 		if strings.Contains(s, key) {
 			t.Errorf("%s must not name %s — see ClaudeOutsideReadSeenKey (trust.go) for why neither value settles the notice:\n%s", key, key, s)
 		}

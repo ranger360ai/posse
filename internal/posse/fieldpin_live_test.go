@@ -105,8 +105,8 @@ func TestLiveClaudeFieldPinRefusesAPlantedCommandField(t *testing.T) {
 	}
 
 	t.Run("the launch payload takes it away", func(t *testing.T) {
-		if claudeAPIKeyHelperInForce(t, dir, "--settings", ClaudeFleetSettingsJSON()) {
-			t.Errorf("the planted apiKeyHelper survived the launch payload.\nEither the pin lost the precedence, or ONE ROW OF THE PAYLOAD IS WRONG-TYPED and the runtime discarded the whole thing — the credential dirs and every env row with it.\npayload: %s", ClaudeFleetSettingsJSON())
+		if claudeAPIKeyHelperInForce(t, dir, "--settings", ClaudeFleetSettingsJSON(nil)) {
+			t.Errorf("the planted apiKeyHelper survived the launch payload.\nEither the pin lost the precedence, or ONE ROW OF THE PAYLOAD IS WRONG-TYPED and the runtime discarded the whole thing — the credential dirs and every env row with it.\npayload: %s", ClaudeFleetSettingsJSON(nil))
 		}
 	})
 

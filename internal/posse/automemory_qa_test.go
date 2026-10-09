@@ -20,7 +20,7 @@ import (
 // ModeAuto gives: key order inside the blob is not the contract.
 //
 // BOTH forms are checked on purpose. The const is what a reader of the launch
-// line looks at; ClaudeFleetSettingsJSON() is what the line actually carries,
+// line looks at; ClaudeFleetSettingsJSON(nil) is what the line actually carries,
 // and it re-marshals the const through a map — a merge that drops or retypes
 // the key would leave the const green and ship the defect.
 func TestQAFleetSettingsDisableAutoMemory(t *testing.T) {
@@ -30,7 +30,7 @@ func TestQAFleetSettingsDisableAutoMemory(t *testing.T) {
 		payload string
 	}{
 		{"ClaudeFleetSettings", ClaudeFleetSettings},
-		{"ClaudeFleetSettingsJSON", ClaudeFleetSettingsJSON()},
+		{"ClaudeFleetSettingsJSON", ClaudeFleetSettingsJSON(nil)},
 	} {
 		var m map[string]any
 		if err := json.Unmarshal([]byte(tc.payload), &m); err != nil {
@@ -63,7 +63,7 @@ func TestQAFleetLaunchLineDisablesAutoMemory(t *testing.T) {
 	t.Parallel()
 	def := loadTestAgent(t, "---\nname: p\n---\nYou are p.\n")
 	got := def.RenderCommand()
-	if !strings.Contains(got, "--settings "+shellQuote(ClaudeFleetSettingsJSON())) {
+	if !strings.Contains(got, "--settings "+shellQuote(ClaudeFleetSettingsJSON(nil))) {
 		t.Fatalf("default claude command does not carry the fleet settings payload:\n%s", got)
 	}
 	if !strings.Contains(got, `"autoMemoryEnabled":false`) {

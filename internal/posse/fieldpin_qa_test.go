@@ -58,7 +58,7 @@ func fieldOf(t *testing.T, payload, key string) (string, bool) {
 // the transport inlets and left the exec-by-field ones open.
 func TestQAClaudeFleetSettingsJSONCarriesTheFieldPin(t *testing.T) {
 	t.Parallel()
-	got := ClaudeFleetSettingsJSON()
+	got := ClaudeFleetSettingsJSON(nil)
 	for key, want := range fieldPinWant {
 		g, ok := fieldOf(t, got, key)
 		if !ok {
@@ -158,7 +158,7 @@ func TestQAProcessWrapperIsNotPinnedEmpty(t *testing.T) {
 	for _, producer := range []struct {
 		name, payload string
 	}{
-		{"the launch payload", ClaudeFleetSettingsJSON()},
+		{"the launch payload", ClaudeFleetSettingsJSON(nil)},
 		{"the appended pin", credentialDirPinJSON()},
 	} {
 		got, ok := fieldOf(t, producer.payload, "processWrapper")

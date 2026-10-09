@@ -146,7 +146,7 @@ func TestFleetSettingsSurviveRendering(t *testing.T) {
 	// ({settings}, ranger-base-rq83c): it carries the credential-dir pin,
 	// whose values are a property of the box. What this pin is about is
 	// unchanged — whatever that payload is, it reaches the line whole.
-	want := "--settings " + shellQuote(ClaudeFleetSettingsJSON())
+	want := "--settings " + shellQuote(ClaudeFleetSettingsJSON(nil))
 	def := loadTestAgent(t, "---\nname: p\n---\nYou are p.\n")
 	if got := def.RenderCommand(); !strings.Contains(got, want) {
 		t.Errorf("default command lost fleet settings:\n got %q\nwant substring %q", got, want)

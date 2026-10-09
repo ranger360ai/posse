@@ -108,7 +108,7 @@ func TestLiveClaudeSettingsPinRefusesACredentialDirRedirect(t *testing.T) {
 			if !claudeLoggedIn(t, home) {
 				t.Fatalf("CONTROL: loggedIn=false with no pin on the line — the redirect did not happen, so this arm measures nothing. Either the runtime changed how it applies user-scope settings env, or the fake envelope is not where %s points", attack.env)
 			}
-			payload := ClaudeFleetSettingsJSON()
+			payload := ClaudeFleetSettingsJSON(nil)
 			if claudeLoggedIn(t, home, "--settings", payload) {
 				t.Errorf("loggedIn=true with the pin on the line — the persona's settings.json still moved the credential store.\npayload: %s", payload)
 			}
@@ -122,7 +122,7 @@ func TestLiveClaudeSettingsPinRefusesACredentialDirRedirect(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer os.Remove(filepath.Join(own, ".credentials.json"))
-		if !claudeLoggedIn(t, home, "--settings", ClaudeFleetSettingsJSON()) {
+		if !claudeLoggedIn(t, home, "--settings", ClaudeFleetSettingsJSON(nil)) {
 			t.Errorf("loggedIn=false with an envelope in %s, the directory the pin names — the pin points somewhere else", own)
 		}
 	})

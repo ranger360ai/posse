@@ -141,7 +141,7 @@ func TestQAClaudeFleetSettingsJSONCarriesTheInletPin(t *testing.T) {
 			DefaultMode string `json:"defaultMode"`
 		} `json:"permissions"`
 	}
-	payload := ClaudeFleetSettingsJSON()
+	payload := ClaudeFleetSettingsJSON(nil)
 	if err := json.Unmarshal([]byte(payload), &got); err != nil {
 		t.Fatalf("not valid JSON: %v\n%s", err, payload)
 	}

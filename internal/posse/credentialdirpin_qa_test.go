@@ -139,11 +139,11 @@ func TestQACredentialDirPinIsAbsentWithNoHome(t *testing.T) {
 			}
 		}
 	}
-	if got := ClaudeFleetSettingsJSON(); got == ClaudeFleetSettings {
+	if got := ClaudeFleetSettingsJSON(nil); got == ClaudeFleetSettings {
 		t.Errorf("ClaudeFleetSettingsJSON = the const alone with no home — the inlet pin does not depend on a home directory and must survive here")
 	}
-	if !strings.Contains(ClaudeFleetSettingsJSON(), "BASH_ENV") {
-		t.Errorf("ClaudeFleetSettingsJSON with no home does not carry the inlet pin:\n%s", ClaudeFleetSettingsJSON())
+	if !strings.Contains(ClaudeFleetSettingsJSON(nil), "BASH_ENV") {
+		t.Errorf("ClaudeFleetSettingsJSON with no home does not carry the inlet pin:\n%s", ClaudeFleetSettingsJSON(nil))
 	}
 }
 
@@ -163,7 +163,7 @@ func TestQAClaudeFleetSettingsJSONCarriesTheCredentialDirPin(t *testing.T) {
 		} `json:"permissions"`
 		SkillOverrides map[string]string `json:"skillOverrides"`
 	}
-	payload := ClaudeFleetSettingsJSON()
+	payload := ClaudeFleetSettingsJSON(nil)
 	if err := json.Unmarshal([]byte(payload), &got); err != nil {
 		t.Fatalf("ClaudeFleetSettingsJSON is not valid JSON: %v\n%s", err, payload)
 	}
@@ -184,7 +184,7 @@ func TestQAClaudeFleetSettingsJSONCarriesTheCredentialDirPin(t *testing.T) {
 	// Rendered twice, byte-identical: the pane line and the spilled launch
 	// script are compared against each other elsewhere, and a payload whose
 	// key order moved between renders would make every such comparison lie.
-	if again := ClaudeFleetSettingsJSON(); again != payload {
+	if again := ClaudeFleetSettingsJSON(nil); again != payload {
 		t.Errorf("two renders differ:\n%s\n%s", payload, again)
 	}
 }

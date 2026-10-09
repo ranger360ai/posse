@@ -355,7 +355,13 @@ type Runtime struct {
 	// (inletPin, ranger-base-rflee). Built-in only, and nil for every runtime but
 	// claude: no other CLI has a measured settings surface, and {settings}
 	// renders to nothing where it is nil.
-	FleetSettings func() string
+	//
+	// Takes the PID's own `allow:` list, for the one key in that payload
+	// that is a property of the PERSONA and not of the box: the auto-mode
+	// carve-out a PID holding posse's or herdr's session verbs earns
+	// (ADR 0070 D2, ClaudeAutoModeCarveOut). Every other PID renders what
+	// it rendered before the parameter existed.
+	FleetSettings func(allow []string) string
 	// SettingsPin is the SMALLER payload — the environment pin alone, with
 	// none of the fleet policy around it — that
 	// EnsureSettingsPin appends to a rendered line carrying no
@@ -747,11 +753,11 @@ func (rt *Runtime) EnsureUnattended(cmd string) string {
 // literal quotes in the template, because the payload now carries PATHS —
 // a home directory with an apostrophe in it would otherwise end the
 // literal and hand the shell the rest of the JSON as words.
-func (rt *Runtime) FleetSettingsText() string {
+func (rt *Runtime) FleetSettingsText(allow []string) string {
 	if rt.FleetSettings == nil {
 		return ""
 	}
-	return "--settings " + shellQuote(rt.FleetSettings())
+	return "--settings " + shellQuote(rt.FleetSettings(allow))
 }
 
 // EnsureSettingsPin guarantees the rendered line carries the credential-dir
