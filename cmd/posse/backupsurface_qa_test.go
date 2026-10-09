@@ -99,6 +99,49 @@ func TestBackupStatusExitsForOnBoxStalenessOnly(t *testing.T) {
 	}
 }
 
+// One instance, no store of record, both verbs — the shakedown finding
+// (bead ranger-base-0q7rp). `posse backup status` exits non-zero and the
+// remedy that exit implies is `posse backup`, which refuses; so the two
+// surfaces have to say the same thing about whether there is a store, and
+// the exit has to be explained by the lines that go with it. ADR 0036
+// decides the verb's half ("refuse an unset queue_repo"), so the surface is
+// what moved.
+func TestBackupSurfacesAgreeWhenTheStoreHasNotMoved(t *testing.T) {
+	bin := buildRhq(t)
+	home := backupHome(t, "runtime: claude\nbackup_interval: 6h\n")
+	const key = "config queue_repo: is unset"
+
+	code, status := runBackupPosse(t, bin, home, "backup", "status")
+	if code == 0 {
+		t.Errorf("an armed instance that cannot archive exited 0:\n%s", status)
+	}
+	for _, want := range []string{key, "nothing to back up", "every tick refuses"} {
+		if !strings.Contains(status, want) {
+			t.Errorf("`posse backup status` is missing %q:\n%s", want, status)
+		}
+	}
+
+	vcode, verb := runBackupPosse(t, bin, home, "backup")
+	if vcode == 0 {
+		t.Errorf("`posse backup` with no queue_repo: exited 0:\n%s", verb)
+	}
+	if !strings.Contains(verb, key) || !strings.Contains(verb, "nothing to back up") {
+		t.Errorf("`posse backup` no longer refuses in these words:\n%s", verb)
+	}
+
+	// CONTROL: the same instance with the key written says neither of those
+	// things about the key — it says the archive is missing, which is what
+	// `posse backup` is for.
+	home2 := backupHome(t, "runtime: claude\nbackup_interval: 6h\nqueue_repo: "+t.TempDir()+"\n")
+	code2, status2 := runBackupPosse(t, bin, home2, "backup", "status")
+	if code2 == 0 || !strings.Contains(status2, "NONE on box") {
+		t.Errorf("exit %d over an empty archive directory:\n%s", code2, status2)
+	}
+	if strings.Contains(status2, key) || strings.Contains(status2, "refuses") {
+		t.Errorf("an instance WITH a store was told its store has not moved:\n%s", status2)
+	}
+}
+
 // The remote posture line is GONE from `posse backup status` (ADR 0049 as
 // the operator's 2026-09-05 ruling simplifies it, ranger-base-gjbdl). It
 // used to print what the instance declared as its queue's sanctioned

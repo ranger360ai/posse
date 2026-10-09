@@ -157,9 +157,31 @@ func TestBackupScheduleLineNamesTheKey(t *testing.T) {
 	if got := a.BackupScheduleLine(); !strings.Contains(got, "backup_interval:") || !strings.Contains(got, "none") {
 		t.Errorf("unarmed schedule line = %q, want it to name the unset key", got)
 	}
-	write(t, a.ConfigPath, "backup_interval: 6h\n")
+	write(t, a.ConfigPath, "queue_repo: /tmp/q\nbackup_interval: 6h\n")
 	if got := a.BackupScheduleLine(); !strings.Contains(got, "6h") || !strings.Contains(got, "watch") {
 		t.Errorf("armed schedule line = %q, want the cadence and where it runs", got)
+	}
+	if got := a.BackupScheduleLine(); strings.Contains(got, "refuses") {
+		t.Errorf("an instance with a store was told its ticks refuse: %q", got)
+	}
+	// An armed clock with no store of record to archive: the cadence is
+	// configured and every tick of it calls a verb that refuses, so the
+	// line says so rather than describing a schedule that runs (bead
+	// ranger-base-0q7rp — `posse backup status` exits non-zero here, and
+	// this was the line that made the exit look like a late archive).
+	write(t, a.ConfigPath, "backup_interval: 6h\n")
+	got := a.BackupScheduleLine()
+	if !strings.Contains(got, "6h") || !strings.Contains(got, "refuses") || !strings.Contains(got, "queue_repo:") {
+		t.Errorf("armed schedule line with no queue_repo: = %q, want the cadence and the refusal", got)
+	}
+	// The SHORT clause here, not the verb's whole sentence: the freshness
+	// line above it in `posse backup status` already carries that, and the
+	// two were printed one after the other.
+	if strings.Contains(got, "nothing to back up") {
+		t.Errorf("the schedule line repeats the freshness line's whole sentence:\n%s", got)
+	}
+	if !strings.Contains(got, "ADR 0015") {
+		t.Errorf("the schedule line does not cite the rule the key keeps:\n%s", got)
 	}
 	write(t, a.ConfigPath, "backup_interval: nightly\n")
 	if got := a.BackupScheduleLine(); !strings.Contains(got, "nothing is scheduled") {

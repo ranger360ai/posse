@@ -7,6 +7,7 @@ references), not inferred publication dates. Undated fragments sort last.
 ## 2026-10
 
 - [ranger-base-qvy0n](ranger-base-qvy0n.md) — The ceiling's two readers: why the positive pathspec is `:(top)` and not `.` (ranger-base-qvy0n) — 2026-10-08
+- [ranger-base-0q7rp](ranger-base-0q7rp.md) — ranger-base-0q7rp — the backup row and the backup verb disagreed about whether a store exists — 2026-10-07
 - [ranger-base-orq4e](ranger-base-orq4e.md) — The one register kind that named no key, so the row's own truth went unread (ranger-base-orq4e) — 2026-10-06
 - [ranger-base-y13h7](ranger-base-y13h7.md) — ranger-base-y13h7 — at what depth does a lagging launcher need a human? — 2026-10-05
 - [ranger-base-xed72](ranger-base-xed72.md) — A second copy of the pin count, in the page nobody's bead edits (ranger-base-xed72) — 2026-10-05

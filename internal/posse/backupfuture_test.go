@@ -211,7 +211,10 @@ func TestFreshnessFallsThroughToTheNewestDatableArchive(t *testing.T) {
 // and the one with no witness left over.
 func TestGovernanceRaisesStaleOnAnUndatableArchive(t *testing.T) {
 	b, _ := newTestBackend(t)
-	appendConfig(t, b.App, "backup_max_age: 12h\n")
+	// A store of record that HAS moved (`queue_repo:`), because that is the
+	// premise of every reading in this file: with the key unset the row's
+	// subject is the key and not the stamp (bead ranger-base-0q7rp).
+	appendConfig(t, b.App, "backup_max_age: 12h\nqueue_repo: "+t.TempDir()+"\n")
 	plantBackup(t, b.App, govNow.Add(72*time.Hour))
 
 	if keys := shopKeys(t, govIn(t, b)); !containsStr(keys, "backup-stale") {

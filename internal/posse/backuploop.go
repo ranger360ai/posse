@@ -243,6 +243,17 @@ func (a *App) BackupScheduleLine() string {
 	case !cfg.Armed:
 		return "  schedule · none (config backup_interval: unset) — the verb runs when it is run"
 	default:
+		// An armed clock over an instance whose store has not moved yet is
+		// a cadence nothing can keep: every tick calls the verb and the
+		// verb refuses (bead ranger-base-0q7rp). The interval still goes
+		// out — it is what the operator configured. The clause is the
+		// short one on purpose: the freshness line directly above this one
+		// already carries the verb's whole sentence, and `posse backup
+		// status` prints the two together.
+		if a.QueueRepo() == "" {
+			return fmt.Sprintf("  schedule · every %s, from the dispatch --watch loop (config backup_interval:) — and every tick refuses while config queue_repo: is unset (ADR 0015 §4)",
+				BlindFor(cfg.Interval))
+		}
 		return fmt.Sprintf("  schedule · every %s, from the dispatch --watch loop (config backup_interval:)", BlindFor(cfg.Interval))
 	}
 }

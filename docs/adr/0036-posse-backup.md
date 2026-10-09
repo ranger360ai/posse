@@ -73,6 +73,16 @@ freshness view. Armed with no usable archive is stale; no configuration and
 no archive is inert. Report `backup-stale` as LANE through
 [ADR 0029](0029-governance-surface.md), with its existing key and no G id.
 
+Armed with `queue_repo:` unset is the same condition and not a different one,
+but its reason is the unset key and not the directory: the verb refuses here
+by the paragraph above, so the row names the key and the two ways out of it —
+set `queue_repo:`, or remove the `backup_*` keys — in the same sentence the
+verb returns, and the schedule line says its ticks refuse. One sentence from
+one place; same key, still no G id. Teaching the verb to archive a single-tree
+store instead would be a new decision about what the store of record is, and
+is not taken here (amended 2026-10-09, bead ranger-base-0q7rp;
+`docs/notes.d/ranger-base-0q7rp.md`).
+
 Both scheduler and status use `splitBackupsAt`: strictly future timestamps
 are undatable, named as such and excluded from the freshness clock, never
 deleted or renamed merely for being future. A datable older archive can be

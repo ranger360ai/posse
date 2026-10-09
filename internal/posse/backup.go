@@ -388,6 +388,17 @@ func BackupHomePaths() []string {
 // reason).
 var BackupExcluded = []string{ConstitutionEnvsDir, "secrets", "state", "personas"}
 
+// backupNoStoreClause is the one sentence every surface says about an
+// instance whose store of record has not moved yet, and it is said in one
+// place because two of them disagreed: the freshness row told the operator
+// to take a backup and the verb answered that there was nothing to back up
+// (bead ranger-base-0q7rp). `queue_repo:` unset is not a backup that is
+// late, it is a duty that does not exist yet — the inertness rule ADR 0015
+// §4 keeps and ADR 0036 ("refuse an unset queue_repo") decided for the verb.
+func backupNoStoreClause() string {
+	return "config queue_repo: is unset — the store has not moved yet (ADR 0015 §4), so there is nothing to back up"
+}
+
 // RunBackup builds one archive and publishes it. Every refusal it can make
 // happens before it writes anything, and the archive it writes is verified
 // before it is named.
@@ -417,7 +428,7 @@ func (a *App) RunBackup(o BackupOpts) (BackupResult, error) {
 
 	queue := a.QueueRepo()
 	if queue == "" {
-		return res, Die("config queue_repo: is unset — the store has not moved yet (ADR 0015 §4), so there is nothing to back up")
+		return res, Die("%s", backupNoStoreClause())
 	}
 	store := beadsHome(queue)
 	if st, err := os.Stat(store); err != nil || !st.IsDir() {
@@ -895,6 +906,15 @@ type BackupFreshness struct {
 	Future       int
 	FutureNewest string
 	FutureAhead  time.Duration
+
+	// NoStore is `queue_repo:` unset — the store of record has not moved
+	// yet (ADR 0015 §4), so `posse backup` refuses and no archive can
+	// exist. Reported, never silent: an armed backup arrangement that
+	// cannot run is the predecessor's failure wearing a config key, and
+	// the row that used to carry it named the empty directory instead of
+	// the key, which sent the operator to a verb that refuses (bead
+	// ranger-base-0q7rp).
+	NoStore bool
 }
 
 // BackupFreshness reads the archive directory. It never creates it, never
@@ -916,6 +936,9 @@ func (a *App) BackupFreshness(now time.Time, errw io.Writer) BackupFreshness {
 	if !f.Armed {
 		return f
 	}
+	// Whether there is a store to archive at all, read from the same key
+	// the verb refuses on, so the row and the command cannot disagree.
+	f.NoStore = a.QueueRepo() == ""
 	// A stamp after now is not a reading (ADR 0036 §6, bead
 	// ranger-base-rgv61). Reported, never dated: BlindFor renders every
 	// negative age as "0s", so an archive from the future used to make
@@ -952,20 +975,20 @@ func (f BackupFreshness) Line() string {
 	case f.Err != nil:
 		return fmt.Sprintf("backup · %s could not be read: %v", AbbrevHome(f.Dir), f.Err)
 	case f.Count == 0:
-		return fmt.Sprintf("backup · NONE on box · %s (max age %s)", AbbrevHome(f.Dir), BlindFor(f.MaxAge))
+		return fmt.Sprintf("backup · NONE on box · %s (max age %s)%s", AbbrevHome(f.Dir), BlindFor(f.MaxAge), f.noStoreSuffix())
 	case f.Newest == "":
 		// Files on the box, none of them a reading. The count still goes
 		// out, because "NONE on box" would be a second lie next to a
 		// directory that is not empty.
-		return fmt.Sprintf("backup · NO USABLE ARCHIVE · %s · %d on box · %s (max age %s)",
-			f.FutureClause(), f.Count, AbbrevHome(f.Dir), BlindFor(f.MaxAge))
+		return fmt.Sprintf("backup · NO USABLE ARCHIVE · %s · %d on box · %s (max age %s)%s",
+			f.FutureClause(), f.Count, AbbrevHome(f.Dir), BlindFor(f.MaxAge), f.noStoreSuffix())
 	default:
 		stale := ""
 		if f.Stale {
 			stale = fmt.Sprintf(" · STALE, older than %s", BlindFor(f.MaxAge))
 		}
-		return fmt.Sprintf("backup · %s ago · %s (%s) · %d on box · %s%s%s",
-			BlindFor(f.Age), f.Newest, humanBytes(f.Bytes), f.Count, AbbrevHome(f.Dir), stale, f.futureSuffix())
+		return fmt.Sprintf("backup · %s ago · %s (%s) · %d on box · %s%s%s%s",
+			BlindFor(f.Age), f.Newest, humanBytes(f.Bytes), f.Count, AbbrevHome(f.Dir), stale, f.futureSuffix(), f.noStoreSuffix())
 	}
 }
 
@@ -1000,10 +1023,34 @@ func (f BackupFreshness) futureSuffix() string {
 	return " · " + f.FutureClause()
 }
 
+// noStoreSuffix is the same fact on the quiet line. It rides every rendering
+// that reports a directory, because `posse backup status` exits non-zero
+// over this reading and its other two lines can both be silent about the
+// key: an unarmed schedule says "the verb runs when it is run", and an empty
+// directory says "NONE on box" — true, and neither of them is the reason
+// (bead ranger-base-0q7rp).
+func (f BackupFreshness) noStoreSuffix() string {
+	if !f.NoStore {
+		return ""
+	}
+	return " · " + backupNoStoreClause()
+}
+
 // GovDetail is the governance surface's rendering of the same fact: one
 // line, and it names the threshold so the row can be acted on without a
 // second command.
 func (f BackupFreshness) GovDetail() string {
+	// No store of record yet, which is the one case where the row's own
+	// remedy refuses: `posse backup` answers this same sentence. So the row
+	// names the key and the two ways out of it rather than the empty
+	// directory, which is a true reading and the wrong instruction (bead
+	// ranger-base-0q7rp). Still a condition, and still LANE: an armed
+	// backup arrangement that cannot run is exactly the arrangement that
+	// was configured and never ran.
+	if f.NoStore {
+		return fmt.Sprintf("backups are armed and %s — %s: set queue_repo:, or remove the backup_* keys from config.yaml to disarm this row (config backup_max_age: %s)",
+			backupNoStoreClause(), f.storelessReading(), BlindFor(f.MaxAge))
+	}
 	switch {
 	case f.Count == 0:
 		return fmt.Sprintf("no backup of the store of record on this box — %s is empty (config backup_max_age: %s)",
@@ -1014,6 +1061,20 @@ func (f BackupFreshness) GovDetail() string {
 	}
 	return fmt.Sprintf("the newest backup of the store of record is %s old, past backup_max_age: %s — %s%s",
 		BlindFor(f.Age), BlindFor(f.MaxAge), AbbrevHome(f.Dir), f.futureSuffix())
+}
+
+// storelessReading is what the archive directory says, in the one clause the
+// no-store row has room for: the row's subject is the unset key, and the
+// directory is the evidence beside it.
+func (f BackupFreshness) storelessReading() string {
+	switch {
+	case f.Count == 0:
+		return AbbrevHome(f.Dir) + " holds no archive"
+	case f.Newest == "":
+		return fmt.Sprintf("%s holds %d archive(s), none of them a usable reading", AbbrevHome(f.Dir), f.Count)
+	default:
+		return fmt.Sprintf("the newest archive in %s is %s old", AbbrevHome(f.Dir), BlindFor(f.Age))
+	}
 }
 
 // ─── the directory ───────────────────────────────────────────────────────────
