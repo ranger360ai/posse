@@ -1336,6 +1336,44 @@ about `core.hooksPath`. Installing or probing `.git/hooks` under a set
 whatever is already there. Run it **before** `posse gates install-hooks`,
 never after; the block below resolves the collision.
 
+It does not delete what it finds, which is the only mercy in it: bd 0.50.3
+renames the slot aside first — to `<slot>.backup`, or `<slot>.old` under
+bd's own chain mode — and prints nothing about that half either. So a posse
+gate bd displaces is intact, one filename away, and off the commit path: the
+data ceiling, beads visibility, constitution-path and shared-index guards
+leave with it, every `git commit` passes, and nothing says a word.
+
+**And "bd first, posse second" is not a step you can take once, because `bd
+init` and `bd import` run that install themselves.** The order above holds
+for this recipe, where the repo is new. Any later `bd init` (a re-init,
+`--from-jsonl`) or `bd import` displaces the gates again, on a repo that was
+already walled and whose operator had no reason to think about hooks. So the
+step after **any** of those three commands — `bd hooks install`, `bd init`,
+`bd import` — is to take the slots back:
+
+```sh
+$ cd ~/src/<your-work-repo>
+$ posse gates install-hooks ~/src/<your-work-repo> --chain
+$ posse gates <persona>
+```
+**Verify:** two `installed …` lines and no `not installed:` line — the paths
+read `posse-pre-push` and `posse-prepare-commit-msg` wherever a chain was
+built, since the slot itself goes to the dispatcher — then a persona block
+carrying no `✗ L3 … hook` row. The block `cd`s first because that row is computed for
+the shell's cwd: `posse gates <persona>` run anywhere else reports a
+different directory's wall.
+
+Since ranger-base-2msgj posse names this state rather than reporting an
+anonymous foreign hook: the row reads `posse's gate was MOVED ASIDE to
+<path> and bd's own shim holds the <slot> slot beside it`, names `bd init`
+and `bd import` as the commands that do it, and prescribes the `--chain`
+above. It is keyed on finding posse's own gate, by its marker, in a file
+beside the slot — not on either of bd's suffixes, which are bd's to change.
+`install-hooks` without `--chain` refuses the same state and says the same
+thing. What bd moved aside stays where bd put it: the chain does not read
+that file and posse deletes nothing it did not write, so once the gate view
+is clean, `<slot>.backup` is yours to remove.
+
 ```sh
 $ grep beads .gitattributes ; git config --get merge.beads.driver
 ```
@@ -1898,9 +1936,15 @@ posse may *replace* a hook, and they are still never enforcement evidence —
 identity is not a marker, it is the whole file checked against the whole
 file posse would have written.
 
-Re-running `bd hooks install` — after a `bd` upgrade, or in a second clone
-— overwrites both slots and takes the chain with them. Run the three probes
-again after any bd upgrade. Session create installs the two gates too, but
+Re-running `bd hooks install` — after a `bd` upgrade, in a second clone, or
+without typing it at all, because `bd init` and `bd import` run it
+themselves — takes both slots and the chain with them: whatever holds a slot
+is renamed aside (`<slot>.backup`, or `<slot>.old` in bd's own chain mode)
+and bd's shim replaces it, silently. Run the three probes again after any bd
+upgrade, any `bd init` and any `bd import`, and take the slots back with
+`posse gates install-hooks <repo> --chain`. Posse's degraded row names a gate
+in that state by the path bd moved it to and prescribes that command itself
+(ranger-base-2msgj, and §9's `bd hooks install` paragraph above). Session create installs the two gates too, but
 only into an empty or already-posse slot — which is why it leaves an intact
 chain alone, and also why it cannot build one. In a repo where `bd hooks
 install` got there first, both slots are bd's, so every install it attempts
@@ -2522,6 +2566,7 @@ one budget and the caps become conservative, not wrong.
 | bead never dispatches | no persona's `labels:` overlap it, or it is labelled `question` | `posse dispatch --dry-run`; `question` beads are for the operator and are never routed |
 | `posse new <name>` → "already exists" | a herdr workspace already wears the label this home would create under. Between instances that only happens when neither sets `instance:`, or when both set the same one — a *differently* tagged home's row is no longer in the way (ranger-base-rcwx). The refusal names the row by the name `posse list` prints, which under a tag is `<instance>/<session>` | `posse list`; if the row is another home's, give one of them a distinct `instance:` (§13) |
 | `posse gates install-hooks` prints `open /opt/<scanner>/hooks/pre-push: permission denied`, or a dispatched launch into that repo refuses `DEGRADED` naming both slots foreign, and `core.hooksPath` is an absolute, root-owned directory outside every repo | an employer-managed hooks path. Before ADR 0052 `installHook` fell through to the create, which is the write the box refuses; session create swallowed the same error, installed nothing, and the probe read the employer's hooks as foreign (ranger-base-yt6m0) | nothing to install. Since ranger-base-mhrta the path is classified before any write and the same command prints `L3: managed hooks path <dir> (owner <uid>, mode <perm>) — posse's wall is not installed there; realized by session redirect (ADR 0052)` and exits 0; the wall is rendered per session at `$RHQ_HOME/state/hooks/<session>` and the launch line says so (§9, "A managed hooks path"). If `permission denied` is still what you see, the path is not managed by that classification — a relative `core.hooksPath`, or a `.git/hooks` inside the repo with its write bit off — and the chain block in §9 applies |
+| `posse gates <persona>` reports an L3 slot foreign in a repo whose gates you installed yourself, and `.git/hooks/<slot>.backup` (or `.old`) is sitting beside the slot | bd's hook install displaced the gate and planted its own shim, printing nothing — and nobody need have typed `bd hooks install`, because `bd init` and `bd import` run it themselves (ranger-base-2msgj, issue #2) | `posse gates install-hooks <repo> --chain`: one command, no paste. Since ranger-base-2msgj the row says this itself — it names the file bd moved the gate to and the `--chain` that chains it back in front of bd's shim — and `install-hooks` without `--chain` refuses with the same words. What bd moved aside is left where it is; delete it once the gate view is clean |
 | every dispatched launch refuses with `a constitution nobody promoted` right after an ordinary `config.yaml` or PID edit, on a home you never promoted | a `posse init` from a posse older than `ranger-base-h7cd` stamped `promoted.json` over the constitution it found, arming ADR 0015 §3 on files nobody ratified — the edit is the trigger, not the cause | `posse promote <your constitution repo>` makes the anchor true. If this home has no constitution repo yet, `rm $RHQ_HOME/promoted.json` puts it back to unwatched, which is where it was; today's `init` will not re-stamp it |
 
 ---

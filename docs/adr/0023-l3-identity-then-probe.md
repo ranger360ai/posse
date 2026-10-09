@@ -121,6 +121,28 @@ the launch regardless of what the file would do:
   it, so the launch that used to claim it had "just silently re-stamped
   it" was describing a repair that never happened.*
 
+> *Amended 2026-10-09 (ranger-base-2msgj, from github.com/ranger360ai/posse
+> issue #2): one shape of foreign is not anonymous, and saying it was cost
+> the operator a wall. bd's hook install — run by `bd init` and `bd import`
+> themselves, not only typed — renames posse's gate out of the slot and
+> plants its own shim, printing nothing. The gate is intact, one filename
+> away, and nothing on the commit path. "posse cannot vouch for a hook it
+> did not write" is true of it and tells the reader to go build a chain by
+> hand for a wall that is already written:*
+
+- *bd's shim (`# bd-shim v1`) in the slot, with posse's own gate found
+  beside it by its marker → "posse's gate was MOVED ASIDE to `<path>` and
+  bd's own shim holds the `<slot>` slot beside it … run `posse gates
+  install-hooks --chain`". Still foreign in every way that matters —
+  nothing certifies, a launch repairs nothing (`reStamped` is false) — and
+  the remedy is a real one, which is why the verdict is scoped to the shim
+  shape `--chain` can actually take over (`rangerhq-mgdk`): a foreign hook
+  that is not bd's keeps the first bullet's wording even with a displaced
+  gate beside it, because `--chain` would refuse it. Keyed on the gate's
+  marker in a sibling file, never on bd's rename suffix — bd 0.50.3 has two
+  (`.backup`, `.old`) and posse is pinned against a tool whose spellings are
+  not its to hold (`displacedPosseHook`, gates.go).*
+
 **4. The pins invert — that failure is the signal.**
 `TestL3ProbeIsDefeatedByItsOwnSignature` must FAIL when this lands.
 Rewrite as two contracts: the discriminating hook is reported down on

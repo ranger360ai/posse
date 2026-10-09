@@ -2586,8 +2586,22 @@ func installHook(dir, slot, marker, script string, chain bool) (string, error) {
 		if owned, readErr := os.ReadFile(chained); readErr == nil && !ownsHook(string(owned), marker) {
 			return "", Die("%s exists and is not a posse hook, and neither is %s — not overwriting.\nChaining this slot puts posse's %s gate at %s: move that file aside yourself, then re-run install-hooks for the chain prescription.", AbbrevHome(p), AbbrevHome(chained), slot, AbbrevHome(chained))
 		}
-		if chain && isBdShim(string(b)) {
-			return chainBdShim(hooks, slot, script)
+		if isBdShim(string(b)) {
+			if chain {
+				return chainBdShim(hooks, slot, script)
+			}
+			// The one foreign hook posse recognizes gets the refusal that
+			// names it, and names the flag that ends it in one command
+			// (ranger-base-2msgj). The generic prescription follows
+			// unchanged — it is what the operator pastes if they would
+			// rather see every step — so a block pulled out of this refusal
+			// is the same block it always was.
+			moved := ""
+			if g := displacedPosseHook(hooks, slot, marker); g != "" {
+				moved = fmt.Sprintf("\nposse's own %s gate is at %s, where bd moved it; the chain does not read that file, so delete it once the slot is chained.", slot, AbbrevHome(g))
+			}
+			return "", Die("%s exists and is not a posse hook — it is bd's own shim (%s) — not overwriting.\nRe-run with --chain and posse builds the chain itself, no paste: bd's shim moves to bd-%s, the gate goes to posse-%s, and the slot gets the dispatcher below.%s\n\n%s",
+				AbbrevHome(p), bdShimMarker, slot, slot, moved, chainDispatcher(dir, hooks, slot))
 		}
 		return "", Die("%s exists and is not a posse hook — not overwriting.\n%s", AbbrevHome(p), chainDispatcher(dir, hooks, slot))
 	}
@@ -5799,6 +5813,16 @@ const (
 	// remedy is the launch. l3DegradeLineIn words this one itself, so it
 	// never reaches l3DegradeLine.
 	l3RedirectMismatch
+	// l3Displaced: bd's own shim (`# bd-shim v1`) holds the slot and posse's
+	// gate is sitting beside it, under a name bd moved it to. A foreign slot
+	// like any other — a launch does not repair it, and posse vouches for
+	// nothing in it — but it is the one foreign state with a name and a
+	// one-command remedy, so it is said as one rather than as "foreign hook"
+	// over a wall that was installed, correct, and taken off the commit path
+	// by a tool the operator ran for an unrelated reason (ranger-base-2msgj).
+	// Last in this block on purpose: these are compared, never persisted, and
+	// appending leaves every existing constant's value alone.
+	l3Displaced
 )
 
 // reStamped reports whether install rewrites, in place and without asking,
@@ -5854,7 +5878,59 @@ func l3Identity(hooks, slot, render, marker string) (l3Verdict, string) {
 			return l3Stale, top
 		}
 	}
+	// Foreign, and sometimes foreign for a reason posse can name: bd's shim
+	// in the slot with posse's own gate moved aside beside it. The verdict
+	// stays "posse does not hold this slot" either way; what changes is the
+	// line the operator reads, which can say WHERE the gate went and which
+	// one flag puts it back (ranger-base-2msgj).
+	if err == nil && isBdShim(string(body)) {
+		if moved := displacedPosseHook(hooks, slot, marker); moved != "" {
+			return l3Displaced, moved
+		}
+	}
 	return l3Foreign, top
+}
+
+// displacedPosseHook answers the question bd's shim in a slot raises: where
+// did posse's gate go. `bd hooks install` — which `bd init` and `bd import`
+// run themselves — renames whatever holds the slot aside before planting its
+// shim, and prints nothing about either half (bd 0.50.3, github.com/
+// ranger360ai/posse#2). It returns the path of posse's displaced gate, or ""
+// when there is none beside the slot.
+//
+// Asked by CONTENT, not by a suffix. bd 0.50.3 carries two spellings of the
+// rename — `.backup` in the default mode, `.old` in its own chain mode — and
+// which one a repo got is a detail of a tool posse is pinned against and does
+// not control (operator ruling on this bead: posse designs around bd, no
+// upstream ask). So the question is "is one of the files sitting beside this
+// slot posse's own gate", which no renaming scheme gets past: a sibling whose
+// name begins with the slot's, that is a regular file, and whose body carries
+// the slot's ownership marker. git's own `<slot>.sample` carries no marker,
+// and `posse-<slot>` does not begin with the slot name, so neither is read as
+// a displacement. Entries come back sorted, so a dir holding several answers
+// the same way twice.
+func displacedPosseHook(hooks, slot, marker string) string {
+	ents, err := os.ReadDir(hooks)
+	if err != nil {
+		return ""
+	}
+	for _, e := range ents {
+		name := e.Name()
+		if name == slot || !strings.HasPrefix(name, slot) {
+			continue
+		}
+		p := filepath.Join(hooks, name)
+		// Same rule as every other read in this file: a special file is not
+		// our gate, and opening a FIFO with no writer never returns
+		// (ranger-base-92n5p).
+		if !isRegularFile(p) {
+			continue
+		}
+		if b, err := os.ReadFile(p); err == nil && ownsHook(string(b), marker) {
+			return p
+		}
+	}
+	return ""
 }
 
 // hookSlotVerdict classifies a path that is not a regular file: nothing
@@ -6096,6 +6172,13 @@ func l3DegradeLine(slot, path, consequence string, v l3Verdict) string {
 		return fmt.Sprintf("L3 %s hook — %s — posse's chain dispatcher holds the slot and the member it runs first is missing — run `posse gates install-hooks`; %s", slot, AbbrevHome(path), consequence)
 	case l3Foreign:
 		return fmt.Sprintf("L3 %s hook — %s — foreign hook, posse cannot vouch for a hook it did not write; %s (run `posse gates install-hooks` to see the chain prescription)", slot, AbbrevHome(path), consequence)
+	case l3Displaced:
+		// path is the DISPLACED gate, not the dispatch path — the one fact
+		// this line has that the foreign line does not, and the one a
+		// reader cannot get anywhere else: the wall was installed and
+		// correct, and is now sitting in that file instead of in the slot.
+		// The slot itself is its sibling, named right here.
+		return fmt.Sprintf("L3 %s hook — %s — posse's gate was MOVED ASIDE to this path and bd's own shim holds the %s slot beside it: `bd hooks install` does this silently, and `bd init` and `bd import` run it themselves — run `posse gates install-hooks --chain` to chain the gate back in front of bd's shim; %s", slot, AbbrevHome(path), slot, consequence)
 	default:
 		return fmt.Sprintf("L3 %s hook — %s — our own render did not refuse the operation (renderer regression); %s", slot, AbbrevHome(path), consequence)
 	}
@@ -6168,6 +6251,11 @@ func commitGuardConsequence(path, render string, v l3Verdict) string {
 		// regression where identity held and behavior did not: no body of
 		// ours to compare, or nothing about the body to report. The static
 		// worst case is honest there and stays.
+		//
+		// l3Displaced too, and it is the one case where a body of ours IS
+		// readable — the displaced gate itself. Diffing it would answer the
+		// wrong question: nothing in that file is on the commit path, so
+		// every guard it carries is lost exactly as if it were not there.
 		return commitGuardWorstCase
 	}
 	return l3GuardGap(installed, render)
