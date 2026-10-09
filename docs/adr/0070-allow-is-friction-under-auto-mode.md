@@ -248,6 +248,17 @@ splice `"$defaults"` into `environment` from the blob (rejected below).
    '.allow | length'` prints 18 (17 defaults + 1) and `.allow[0]` is "Security
    Discussion…", against 17 with no blob — the splice kept the defaults and
    the payload merged (a voided payload prints 17 and is the fieldpin hazard).
+   DONE (ranger-base-j5b24), and it is a test rather than a hand command:
+   `RHQ_LIVE_CLAUDE=1 go test ./internal/posse -run TestLiveClaudeAutoMode`
+   (internal/posse/automodeallow_live_test.go, arm 3) runs four arms against
+   the real reader — control, pin, the blob with the sentinel removed, and the
+   blob plus one wrong-typed row. MEASURED 2026-10-09, claude 2.1.295, this
+   box: allow 17 shipped · 17 control · **18 pin**, the carve-out last and
+   "Security Discussion…" first · **1 attack**, the carve-out alone with all 17
+   deleted · **17 void**, the carve-out absent. soft_deny 72, hard_deny 1 and
+   environment 24 read the same in every arm, so the key's blast radius is the
+   one section. The counts are read against the CONTROL rather than against
+   zero, because the voided arm is what "non-empty" looks like.
 3. Work box, operator: with the supervisor PID relaunched on a build carrying
    D2, run the compound shape that was refused (`cd <dir> && posse peek <s>`
    or the heredoc-prompted `herdr pane send-keys`) ten times with and ten
