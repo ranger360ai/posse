@@ -576,12 +576,77 @@ func (f seedReaderForm) String() string {
 
 // seedPairing is one derived pairing: a config key, the Default-shaped
 // constant it falls back to, and the reader whose grammar resolves it.
+//
+// `shift` is the power of two the reader applies to that constant on the way
+// out, and 0 for the readers that return it as it stands. It exists because
+// one live reader answers in a different UNIT than its key is named for —
+// BackupMinFree returns `DefaultBackupMinFreeMB << 20`, bytes from a key in
+// MB — so the number a documented line has to agree with is the constant
+// times 2^shift, and without the shift there is no one number at all
+// (ranger-base-c768n finding 3).
 type seedPairing struct {
 	key      string
 	constant string
+	shift    uint
 	reader   string
 	form     seedReaderForm
 	site     string
+}
+
+// seedRetDefault is one Default-shaped constant a reader returns, with the
+// shift it is scaled by. The spelling is what the pairing rule counts, so a
+// reader returning one constant both bare and scaled reads as TWO returned
+// defaults and is reported unpairable rather than paired against whichever
+// came first.
+type seedRetDefault struct {
+	name  string
+	shift uint
+}
+
+func (d seedRetDefault) spelling() string {
+	if d.shift == 0 {
+		return d.name
+	}
+	return fmt.Sprintf("%s<<%d", d.name, d.shift)
+}
+
+// seedMaxShift is the largest shift this census will pair. float64 is the
+// number half's carrier (see that section's header), and it holds every
+// integer below 2^53 exactly, so a shift above 52 could not be compared with
+// `==` whatever the constant is. A larger one is REPORTED as unpairable
+// rather than paired against a number the comparison cannot represent; the
+// tree's one shift is 20.
+const seedMaxShift = 52
+
+// seedReturnedDefault reads one returned expression and says which
+// Default-shaped constant it hands back, scaled by what.
+//
+// Two shapes, and the second is the tree's: a bare identifier
+// (`return DefaultBackupKeep`), and that identifier shifted left by an
+// integer literal (`return DefaultBackupMinFreeMB << 20`). Anything else —
+// a sum, a product, a call, a bare literal — is not a stated pairing, and a
+// reader whose default is one of those is reported unpairable by the caller.
+func seedReturnedDefault(e ast.Expr) (seedRetDefault, bool) {
+	if id, ok := e.(*ast.Ident); ok && seedDefaultShaped(id.Name) {
+		return seedRetDefault{name: id.Name}, true
+	}
+	be, ok := e.(*ast.BinaryExpr)
+	if !ok || be.Op != token.SHL {
+		return seedRetDefault{}, false
+	}
+	id, ok := be.X.(*ast.Ident)
+	if !ok || !seedDefaultShaped(id.Name) {
+		return seedRetDefault{}, false
+	}
+	lit, ok := be.Y.(*ast.BasicLit)
+	if !ok || lit.Kind != token.INT {
+		return seedRetDefault{}, false
+	}
+	n, err := strconv.ParseUint(lit.Value, 0, 8)
+	if err != nil || n > seedMaxShift {
+		return seedRetDefault{}, false
+	}
+	return seedRetDefault{name: id.Name, shift: uint(n)}, true
 }
 
 // seedUnpairedKey is a config key the tree reads but this pin cannot pair
@@ -736,7 +801,8 @@ func seedUniqSorted(in []string) []string {
 // `isValue` is the ONE thing the duration half and the number half disagree
 // about: which result type makes a method a config reader at all
 // (seedIsTimeDuration, seedIsNumeric). Everything else — the two shapes, the
-// key-literal rule, the Default-shaped-constant rule, the four near-misses
+// key-literal rule, the Default-shaped-constant rule (seedReturnedDefault,
+// including the SCALE a reader applies on the way out), the near-misses
 // and the reporting of an unpairable key — is said once here and shared, so
 // the number half is a WIDENING of this derivation and not a second,
 // narrower copy of it (ranger-base-p9qve; the shape seedconfig_test.go's own
@@ -759,6 +825,10 @@ func seedReaderDecl(fd *ast.FuncDecl, isValue func(ast.Expr) bool) (callSiteReso
 	// What the body does with config: the key literals it reads, and the
 	// parameter names it passes to a reader instead.
 	var litKeys, paramKeys, retDefaults []string
+	// The returned constants by SPELLING, so the pairing rule below counts
+	// `DefaultX` and `DefaultX << 20` as two and the scale is carried
+	// through to the pairing rather than dropped.
+	retDefault := map[string]seedRetDefault{}
 	ast.Inspect(fd.Body, func(n ast.Node) bool {
 		switch node := n.(type) {
 		case *ast.CallExpr:
@@ -778,8 +848,9 @@ func seedReaderDecl(fd *ast.FuncDecl, isValue func(ast.Expr) bool) (callSiteReso
 			}
 		case *ast.ReturnStmt:
 			for _, r := range node.Results {
-				if id, ok := r.(*ast.Ident); ok && seedDefaultShaped(id.Name) {
-					retDefaults = append(retDefaults, id.Name)
+				if d, ok := seedReturnedDefault(r); ok {
+					retDefaults = append(retDefaults, d.spelling())
+					retDefault[d.spelling()] = d
 				}
 			}
 		}
@@ -825,9 +896,11 @@ func seedReaderDecl(fd *ast.FuncDecl, isValue func(ast.Expr) bool) (callSiteReso
 			"%s reads %s but returns %d Default-shaped constants (%s), so the pairing is not stated in one place",
 			fd.Name.Name, litKeys[0], len(retDefaults), named)}}
 	}
+	d := retDefault[retDefaults[0]]
 	return false, []seedPairing{{
 		key:      litKeys[0],
-		constant: retDefaults[0],
+		constant: d.name,
+		shift:    d.shift,
 		reader:   fd.Name.Name,
 		form:     seedFormBody,
 	}}, nil
@@ -930,15 +1003,19 @@ func seedCensusOf(t *testing.T, root string, isValue func(ast.Expr) bool) seedCe
 				return true
 			}
 			at := fmt.Sprintf("%s:%d", rels[i], fset.Position(call.Pos()).Line)
-			id, ok := call.Args[1].(*ast.Ident)
-			if !ok || !seedDefaultShaped(id.Name) {
+			// seedReturnedDefault, the same rule the body form reads its
+			// own return with: said once, so a scaled default states its
+			// pairing in both shapes or in neither.
+			d, ok := seedReturnedDefault(call.Args[1])
+			if !ok {
 				census.unpaired = append(census.unpaired, seedUnpairedKey{key: key, site: at, why: fmt.Sprintf(
 					"the default argument at the %s call site is not a Default-shaped constant", fn)})
 				return true
 			}
 			census.keys = append(census.keys, seedPairing{
 				key:      key,
-				constant: id.Name,
+				constant: d.name,
+				shift:    d.shift,
 				reader:   fn,
 				form:     seedFormCallSite,
 				site:     at,
@@ -1104,6 +1181,24 @@ func TestSeedConfigDocumentedDurationDefaultsAreTheConstants(t *testing.T) {
 	}
 	t.Logf("parsed %d non-test .go files, derived %d duration key/constant pairings through %d call-site reader(s) (%s) and %d body-form reader(s) (%s)",
 		scanned, len(keys), len(c.resolvers), strings.Join(c.resolvers, ", "), len(c.readers), strings.Join(c.readers, ", "))
+
+	// NO SCALED DEFAULT ON THIS SIDE. The shared derivation reads a default
+	// returned shifted as well as bare (seedReturnedDefault,
+	// ranger-base-c768n finding 3), and the number half APPLIES that scale
+	// before comparing. This half does not: a duration is already a scaled
+	// integer and nothing in the tree returns `Default<X> << n` as one
+	// (MEASURED 2026-10-09 — `<<` appears over a Default-shaped constant at
+	// exactly one site, BackupMinFree). So a scaled duration pairing arriving
+	// here would be compared against the UNSHIFTED constant and read as
+	// drift, or worse not read as drift at all; it is a named failure
+	// instead, and whoever writes that reader decides what the comparison
+	// should be.
+	for _, k := range keys {
+		if k.shift != 0 {
+			t.Errorf("%s pairs %s with %s scaled by << %d (%s) — the duration half compares the constant as it stands, so a reader that shifts its default on the way out is outside this comparison. Give this half the scale the number half has (seedNumberAnswerFor), or state why the shift does not belong in the comparison",
+				k.reader, k.key, k.constant, k.shift, k.site)
+		}
+	}
 
 	// THE THREE TABLES ARE TOTAL, which is the property the hand-written
 	// two-name resolver list did not have: the escape ranger-base-khqvr was
@@ -1799,7 +1894,29 @@ func (a *App) PlantedInATestFile(errw io.Writer) time.Duration {
 // count, percent, dollar figure and megabyte ceiling this config can carry
 // resolves exactly and the comparison is `==` rather than a tolerance nobody
 // measured. A default above 2^53 would be outside this pin; the tree has
-// none and a new one would be visible in review.
+// none and a new one would be visible in review. seedMaxShift is the same
+// line drawn over the scale below.
+//
+// AND IN WHOSE UNIT (ranger-base-c768n finding 3). One reader answers in a
+// unit its key is not named for: BackupMinFree returns
+// `DefaultBackupMinFreeMB << 20`, bytes from a key called
+// `backup_min_free_mb:`. That key was registered as having no constant
+// default for a release — the reasoning being that a census comparing the
+// reader's own answer has no single number to compare, since the constant is
+// 384 and the answer is 402653184 — and the seed documented a live 384 that
+// could drift by any factor in silence. The reasoning was about the
+// MECHANISM. The default is a constant, in the key's own unit, and the seed
+// documents it in that unit, so there is one number; what was missing is the
+// SCALE between them, which is stated in the reader's own return expression
+// and is now derived from it (seedReturnedDefault -> seedPairing.shift ->
+// seedNumberAnswerFor). Nothing about the resolution changes — the next
+// paragraph's rule still holds, the documented text still goes through the
+// instance's own method — only what the answer is held against: the
+// constant shifted by the shift the parse read, rather than the constant
+// bare. So a documented value, a moved constant and a changed scale each
+// red (MEASURED 2026-10-09, three mutants), and the body-form cross-check
+// below holds the derived shift against the binary's before any line is
+// compared at all.
 //
 // It is still a read through the PRODUCTION reader and never a text compare,
 // for the duration half's reason one type over: `25` and `25.0` and ` 25 `
@@ -1808,17 +1925,19 @@ func (a *App) PlantedInATestFile(errw io.Writer) time.Duration {
 // the default — which would otherwise let a line that proves nothing pass by
 // landing on the very number it was supposed to prove.
 //
-// WHAT THE SEED'S THIRTEEN LINES TURN OUT TO BE, and it is lopsided. Four of
+// WHAT THE SEED'S THIRTEEN LINES TURN OUT TO BE, and it is lopsided. Five of
 // the tree's number keys pair a key literal with one Default-shaped constant
-// — backup_keep, launcher_behind_max, load_guard, verify_batch — and the seed
-// documents all four of them (it documented three until ranger-base-s1dmh
-// gave the backup keys a block of their own). So of the thirteen documented
-// lines: FOUR are compared (load_guard agrees with LoadGuardDefault,
-// launcher_behind_max with DefaultLauncherBehindMax, backup_keep with
-// DefaultBackupKeep; verify_batch is documented at four times
-// DefaultVerifyBatch on purpose and is registered for it), TWO the derivation
-// reaches and cannot pair (grok_guard_week and backup_min_free_mb), and SEVEN
-// it reaches no reader for at all.
+// — backup_keep, backup_min_free_mb, launcher_behind_max, load_guard,
+// verify_batch — and the seed documents all five of them (it documented
+// three until ranger-base-s1dmh gave the backup keys a block of their own,
+// and backup_min_free_mb was unpairable until ranger-base-c768n gave the
+// derivation the scale). So of the thirteen documented lines: FIVE are
+// compared (load_guard agrees with LoadGuardDefault, launcher_behind_max
+// with DefaultLauncherBehindMax, backup_keep with DefaultBackupKeep,
+// backup_min_free_mb with DefaultBackupMinFreeMB shifted into bytes;
+// verify_batch is documented at four times DefaultVerifyBatch on purpose and
+// is registered for it), ONE the derivation reaches and cannot pair
+// (grok_guard_week), and SEVEN it reaches no reader for at all.
 //
 // The reason the seven are seven is the house vocabulary for a number key,
 // which is overwhelmingly "unset means OFF": budget_pass:/budget_day: unset
@@ -1836,14 +1955,21 @@ func (a *App) PlantedInATestFile(errw io.Writer) time.Duration {
 // taken: seedDurationDefaultNotAConstant carries a STRONGER half — a key in
 // it must also stay UNDOCUMENTED, because its one member's default is a rule
 // with no number at all, so a documented line for it would be a claim about
-// nothing. seedNumberDefaultNotAConstant carries no such half. Its two
-// members both have something a reader can state — BackupMinFree's default
-// is DefaultBackupMinFreeMB scaled to bytes, GrokGuardWeek's is an explicit
-// "off" — so a documented line beside either is a suggestion rather than a
-// false claim, and refusing it would mean deleting a live seed line the
-// operator uses to see what shape the setting takes. What keeps the drop on
-// the record instead is the row's reason plus the seed-side accounting
+// nothing. seedNumberDefaultNotAConstant carries no such half. Its one
+// member has something a reader can state — GrokGuardWeek's default is an
+// explicit "off" — so a documented line beside it is a suggestion rather
+// than a false claim, and refusing it would mean deleting a live seed line
+// the operator uses to see what shape the setting takes. What keeps the drop
+// on the record instead is the row's reason plus the seed-side accounting
 // below, which logs the line by name and by file position every run.
+//
+// It had a second member, and losing it is the distinction worth keeping:
+// backup_min_free_mb's default was never a non-constant, only a constant in
+// another unit, and "the census cannot pair it" is not the same claim as
+// "there is nothing to pair" (ranger-base-c768n finding 3). A register whose
+// rows are reasons the MECHANISM stopped short will accumulate live
+// documented numbers nothing holds; a row belongs here when the tree states
+// no single default, and the fix for anything else is the derivation.
 
 // seedNumberResolvers are the number readers that take the key and the
 // default as ARGUMENTS, the duration half's seedDurationResolvers one type
@@ -1874,7 +2000,13 @@ var seedNumberResolvers = map[string]func(*App, string, float64, io.Writer) floa
 // the answer to be seedNumberDefaults' value for the constant the
 // derivation paired it with, so a mis-wired closure reds by name.
 var seedNumberBodyReaders = map[string]func(*App, io.Writer) float64{
-	"BackupKeep":        func(a *App, w io.Writer) float64 { return float64(a.BackupKeep(w)) },
+	"BackupKeep": func(a *App, w io.Writer) float64 { return float64(a.BackupKeep(w)) },
+	// The one reader whose answer is not in its key's unit: MB in
+	// `backup_min_free_mb:`, bytes out. The widening above derives the << 20
+	// from the reader's own return and seedNumberAnswerFor applies it, so
+	// this closure stays the plain production read and the scale is stated
+	// in exactly one place — the binary's.
+	"BackupMinFree":     func(a *App, w io.Writer) float64 { return float64(a.BackupMinFree(w)) },
 	"LauncherBehindMax": func(a *App, w io.Writer) float64 { return float64(a.LauncherBehindMax(w)) },
 	"LoadGuard":         func(a *App, w io.Writer) float64 { return a.LoadGuard(w) },
 	"verifyBatch":       func(a *App, w io.Writer) float64 { return float64(a.verifyBatch(w)) },
@@ -1887,6 +2019,7 @@ var seedNumberBodyReaders = map[string]func(*App, io.Writer) float64{
 // here, and on an entry here no reader names any more.
 var seedNumberDefaults = map[string]float64{
 	"DefaultBackupKeep":        DefaultBackupKeep,
+	"DefaultBackupMinFreeMB":   DefaultBackupMinFreeMB,
 	"DefaultLauncherBehindMax": DefaultLauncherBehindMax,
 	"DefaultVerifyBatch":       DefaultVerifyBatch,
 	"LoadGuardDefault":         LoadGuardDefault,
@@ -1914,14 +2047,16 @@ var seedDocumentedNumberOnPurposeNotTheDefault = map[string]string{
 // shape ranger-base-2vynj finding 1 was filed for. It carries no "must stay
 // undocumented" half — see the section header for why that half is the
 // duration twin's and not this one's.
+//
+// It held backup_min_free_mb until ranger-base-c768n, on the reasoning that
+// a reader answering bytes from a key in MB leaves no one number to compare.
+// That reasoning was about the census MECHANISM and not about the fact: the
+// default IS a constant, in the key's own unit, and the seed documents it in
+// that unit, so the thing missing was the SCALE and not the number. The
+// derivation reads it now (seedReturnedDefault), the comparison applies it
+// (seedNumberAnswerFor), and the key is compared like any other — which is
+// why a key whose default is a constant no longer sits under this name.
 var seedNumberDefaultNotAConstant = map[string]string{
-	"backup_min_free_mb": "BackupMinFree answers BYTES where the key is in MB — it returns " +
-		"`DefaultBackupMinFreeMB << 20`, not the constant — so the unset answer is 402653184 against a " +
-		"constant of 384. The default exists and the two are a unit apart, and this census compares the " +
-		"reader's own answer, so there is no one number for a documented line to agree with. The seed " +
-		"documents it at 384 since ranger-base-s1dmh — the number an operator types, in the unit the key " +
-		"is named for — so this row is what admits that line, and the seed-side accounting below logs it " +
-		"by name and by file position on every run",
 	"grok_guard_week": "unset IS the guard off and GrokGuardWeek returns a bare 0 rather than a constant " +
 		"(the plan_guard_<window>: rule, for the reason that file's header gives), so there is no default " +
 		"for the documented 85 to drift from — and the seed's own paragraph calls the three grok numbers " +
@@ -2018,6 +2153,33 @@ func seedResolveNumberFor(t *testing.T, k seedPairing, def float64) func(cfgPath
 		t.Fatalf("no resolver %q in seedNumberResolvers", k.reader)
 	}
 	return func(p string, w io.Writer) float64 { return fn(&App{ConfigPath: p}, k.key, def, w) }
+}
+
+// seedNumberAnswerFor is the number a pairing's reader ANSWERS for its own
+// default: the constant, scaled by the power of two the reader applies on
+// the way out.
+//
+// For every reader but one it is the constant itself. BackupMinFree is the
+// one, and the reason this exists: its key is `backup_min_free_mb:` and its
+// answer is bytes, so the constant (384) and the reader's unset answer
+// (402653184) are a unit apart, and comparing a documented line against
+// either alone is comparing it against the wrong number. Scaled, there IS
+// one number — which is the whole of ranger-base-c768n finding 3, and the
+// scale is DERIVED from the reader's own return expression rather than
+// stated here, so a reader that stops shifting stops being compared that way
+// on the same parse.
+func seedNumberAnswerFor(k seedPairing, def float64) float64 {
+	return def * float64(uint64(1)<<k.shift)
+}
+
+// seedNumberUnit says how a pairing's answer relates to its constant, for a
+// failure message that has to name two numbers in two units without the
+// reader guessing which is which.
+func seedNumberUnit(k seedPairing) string {
+	if k.shift == 0 {
+		return ""
+	}
+	return fmt.Sprintf(" (the reader answers the constant << %d, so the key's own unit is 2^%d smaller than its answer)", k.shift, k.shift)
 }
 
 // seedNumberDrift resolves the text a documented line carries through the
@@ -2139,15 +2301,17 @@ func TestSeedConfigDocumentedNumberDefaultsAreTheConstants(t *testing.T) {
 	// longer resolves and this says how much of the census went with it. A
 	// Fatalf, because every comparison below a census this thin is vacuous.
 	//
-	// Four is the measured population (MEASURED 2026-10-05): backup_keep
-	// through BackupKeep, launcher_behind_max through LauncherBehindMax,
-	// load_guard through LoadGuard, verify_batch through verifyBatch. It is
-	// deliberately not eleven — the count of documented lines — because the
-	// house vocabulary for a number key is "unset means off" and most of this
+	// Five is the measured population (MEASURED 2026-10-09, four until
+	// ranger-base-c768n gave the scaled rule its member): backup_keep
+	// through BackupKeep, backup_min_free_mb through BackupMinFree,
+	// launcher_behind_max through LauncherBehindMax, load_guard through
+	// LoadGuard, verify_batch through verifyBatch. It is deliberately not
+	// thirteen — the count of documented lines — because the house
+	// vocabulary for a number key is "unset means off" and most of this
 	// file's numbers have no constant at all; the section header has the
 	// reason and the third register has the rows.
-	if len(keys) < 4 {
-		t.Fatalf("derived %d number key/constant pairings from %d files, want at least 4 — the two reader rules in seedReaderDecl have stopped matching the tree's number readers, so this pin holds almost nothing", len(keys), scanned)
+	if len(keys) < 5 {
+		t.Fatalf("derived %d number key/constant pairings from %d files, want at least 5 — the two reader rules in seedReaderDecl have stopped matching the tree's number readers, so this pin holds almost nothing", len(keys), scanned)
 	}
 
 	// One key, one default.
@@ -2161,14 +2325,19 @@ func TestSeedConfigDocumentedNumberDefaultsAreTheConstants(t *testing.T) {
 		byKey[k.key] = k
 	}
 
-	// The constant table's VALUES, and the hand-written float64 conversion in
-	// seedNumberBodyReaders, cross-checked where the tree lets them be. A
-	// body-form reader handed a config with its own key absent returns its
-	// own default, so a pairing the parse got wrong — or a closure wired to
-	// the wrong reader, or a widening that lost or scaled the value — cannot
-	// sit here green. backup_min_free_mb is the case that proves it bites:
-	// its reader answers bytes, and that is why it is registered as
-	// unpairable rather than compared.
+	// The constant table's VALUES, the hand-written float64 conversion in
+	// seedNumberBodyReaders, AND the derived scale, cross-checked where the
+	// tree lets them be. A body-form reader handed a config with its own key
+	// absent returns its own default, so a pairing the parse got wrong — or
+	// a closure wired to the wrong reader, or a widening that lost the value
+	// — cannot sit here green.
+	//
+	// backup_min_free_mb is the case that proves it bites, and it is now on
+	// this side of the line rather than registered as unpairable: its reader
+	// answers `DefaultBackupMinFreeMB << 20`, so this arm is what holds the
+	// 20 the parse read against the 20 the binary applies. A shift the
+	// derivation got wrong fails HERE, by name, before any documented line
+	// is compared against it (ranger-base-c768n finding 3).
 	absent := filepath.Join(t.TempDir(), "config.yaml")
 	if err := os.WriteFile(absent, []byte("# every key commented out\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -2182,9 +2351,10 @@ func TestSeedConfigDocumentedNumberDefaultsAreTheConstants(t *testing.T) {
 			continue // already reported below
 		}
 		var errw strings.Builder
-		if got := seedResolveNumberFor(t, k, def)(absent, &errw); got != def {
-			t.Errorf("%s over a config with %s absent returns %v, but seedNumberDefaults says %s is %v (%s) — either the derivation paired the key with the wrong constant or the seedNumberBodyReaders closure is wired wrong, so every comparison it feeds is against the wrong number",
-				k.reader, k.key, got, k.constant, def, k.site)
+		want := seedNumberAnswerFor(k, def)
+		if got := seedResolveNumberFor(t, k, want)(absent, &errw); got != want {
+			t.Errorf("%s over a config with %s absent returns %v, and %s (%v) scaled by the shift the derivation read (<< %d) is %v (%s) — either the derivation paired the key with the wrong constant, read the wrong scale, or the seedNumberBodyReaders closure is wired wrong, so every comparison it feeds is against the wrong number",
+				k.reader, k.key, got, k.constant, def, k.shift, want, k.site)
 		}
 	}
 
@@ -2229,26 +2399,32 @@ func TestSeedConfigDocumentedNumberDefaultsAreTheConstants(t *testing.T) {
 
 		compared++
 		comparedKeys[k.key] = true
-		got, drift := seedNumberDrift(t, seedResolveNumberFor(t, k, def), k.key, value, def)
+		// `want` and not `def`: for every reader but BackupMinFree they are
+		// the same number, and for that one the answer is the constant
+		// shifted — so this is the one line that turns "a default exists but
+		// in another unit" into "there is one number to compare"
+		// (ranger-base-c768n finding 3).
+		want := seedNumberAnswerFor(k, def)
+		got, drift := seedNumberDrift(t, seedResolveNumberFor(t, k, want), k.key, value, want)
 		if why, deliberate := seedDocumentedNumberOnPurposeNotTheDefault[k.key]; deliberate {
 			// The register's live half: the entry says this line is NOT the
 			// default, so the line matching the default makes the entry a
 			// lie, and the next reader believes the wrong one.
 			if drift == "" {
-				t.Errorf("examples/config.yaml documents %s at %s, which IS %s (%v) — but seedDocumentedNumberOnPurposeNotTheDefault says it is deliberately not the default (%q). Drop the register entry, or restore the value it describes",
-					k.key, value, k.constant, def, why)
+				t.Errorf("examples/config.yaml documents %s at %s, which IS %s (%v)%s — but seedDocumentedNumberOnPurposeNotTheDefault says it is deliberately not the default (%q). Drop the register entry, or restore the value it describes",
+					k.key, value, k.constant, def, seedNumberUnit(k), why)
 			} else {
 				t.Logf("%s: documented %q is deliberately not the default (%s = %v): %s", k.key, value, k.constant, def, drift)
 			}
 			continue
 		}
 		if drift != "" {
-			t.Errorf("examples/config.yaml documents %s as the default and %s says otherwise: %s.\n"+
+			t.Errorf("examples/config.yaml documents %s as the default and %s says otherwise: %s%s.\n"+
 				"  the line is a claim a fresh instance reads; fix the line, or — if the value is documented at something other than its default on purpose — say so in seedDocumentedNumberOnPurposeNotTheDefault",
-				k.key, k.site, drift)
+				k.key, k.site, drift, seedNumberUnit(k))
 			continue
 		}
-		t.Logf("%s: documented %q resolves to %v = %s (%s %s)", k.key, value, got, k.constant, k.reader, k.form)
+		t.Logf("%s: documented %q resolves to %v = %s (%s %s)%s", k.key, value, got, k.constant, k.reader, k.form, seedNumberUnit(k))
 	}
 
 	// THE DIRECTION THAT HURTS (ranger-base-ghcx3 finding 1, said over
@@ -2399,7 +2575,8 @@ func TestSeedConfigDocumentedNumberRegisterIsNotStale(t *testing.T) {
 			t.Errorf("seedDocumentedNumberOnPurposeNotTheDefault names %q, whose constant %s is not in seedNumberDefaults", key, k.constant)
 			continue
 		}
-		_, drift := seedNumberDrift(t, seedResolveNumberFor(t, k, def), key, value, def)
+		want := seedNumberAnswerFor(k, def)
+		_, drift := seedNumberDrift(t, seedResolveNumberFor(t, k, want), key, value, want)
 		if strings.Contains(drift, "is not a value this reader accepts") || strings.Contains(drift, "no value") {
 			t.Errorf("examples/config.yaml documents %s at %q, and the register says that is deliberate — but %s: a value documented on purpose still has to be a value an instance could type", key, value, drift)
 		}
@@ -2532,10 +2709,14 @@ func TestSeedDocumentedNumberDriftCheckCanStillSayNo(t *testing.T) {
 //     (seedNumberResolvers is empty today), so this planted tree is the only
 //     place the number half's call-site pass is ever exercised;
 //   - the SCALED constant (`DefaultPlantedShift << 20`), which is
-//     BackupMinFree's real shape — a default that exists and is returned
-//     through an expression, so the pairing is not stated in one place and
-//     the key must be REPORTED rather than paired against a number the
-//     reader does not answer;
+//     BackupMinFree's real shape — MB in the key, bytes in the answer. It
+//     was a NEAR-MISS until ranger-base-c768n, reported rather than paired,
+//     on the reasoning that a default returned through an expression states
+//     no single number; it is a PAIRING now, carrying the shift, because the
+//     constant is the number the key's own unit is in and the shift is what
+//     relates the two. Its near-miss moved one step along with it:
+//     `planted_two_scales` returns one constant both bare and shifted, which
+//     is two stated defaults and no single answer, and is still reported;
 //   - a time.Duration reader, which must be invisible here exactly as a
 //     numeric one is invisible to the duration half. The two halves share
 //     one derivation and differ only in `isValue`, so a leak either way
@@ -2614,12 +2795,22 @@ func (a *App) PlantedNoConstant(errw io.Writer) int {
 	return plantedBareConstant
 }
 
-// Near-miss 5, this half's own: the default is SCALED on the way out
-// (BackupMinFree's shape — MB in the key, bytes in the answer), so the
-// constant is not what the reader returns and the pairing is not stated in
-// one place.
+// The SCALED form, this half's own and BackupMinFree's shape: MB in the key,
+// bytes in the answer. A pairing with a shift of 20 (ranger-base-c768n).
 func (a *App) PlantedShifted(errw io.Writer) uint64 {
 	_ = YamlGet(a.ConfigPath, "planted_shifted")
+	return DefaultPlantedShift << 20
+}
+
+// Near-miss 5, this half's own: ONE constant returned at TWO scales, so the
+// reader states two defaults and no single answer. The scaled rule's own
+// negative case — without it the derivation would pair whichever spelling
+// the parse reached first and every comparison for the key would be against
+// a number the reader answers only half the time.
+func (a *App) PlantedTwoScales(errw io.Writer) uint64 {
+	if YamlGet(a.ConfigPath, "planted_two_scales") == "" {
+		return DefaultPlantedShift
+	}
 	return DefaultPlantedShift << 20
 }
 
@@ -2695,13 +2886,17 @@ func (a *App) PlantedInATestFile(errw io.Writer) int {
 	if got, want := strings.Join(c.resolvers, ","), "plantedCap"; got != want {
 		t.Errorf("derived call-site readers %q, want %q", got, want)
 	}
-	if got, want := strings.Join(c.readers, ","), "PlantedCeiling,PlantedKeep,PlantedViaCfgGet"; got != want {
+	if got, want := strings.Join(c.readers, ","), "PlantedCeiling,PlantedKeep,PlantedShifted,PlantedViaCfgGet"; got != want {
 		t.Errorf("derived body-form readers %q, want %q", got, want)
 	}
 
 	gotPairs := map[string]string{}
 	for _, k := range c.keys {
-		gotPairs[k.key] = k.constant + " via " + k.reader + " (" + k.form.String() + ")"
+		// The SHIFT is in the expectation, not just the constant: a
+		// derivation that found the right constant and dropped its scale
+		// would pair the key against a number the reader never answers
+		// (ranger-base-c768n finding 3).
+		gotPairs[k.key] = seedRetDefault{name: k.constant, shift: k.shift}.spelling() + " via " + k.reader + " (" + k.form.String() + ")"
 		if k.site == "" {
 			t.Errorf("pairing for %s carries no site — a census that cannot say WHERE cannot be acted on", k.key)
 		}
@@ -2710,6 +2905,7 @@ func (a *App) PlantedInATestFile(errw io.Writer) int {
 		"planted_keep":       "PlantedKeepDefault via PlantedKeep (body-form reader)",
 		"planted_ceiling":    "DefaultPlantedCeiling via PlantedCeiling (body-form reader)",
 		"planted_via_cfgget": "PlantedViaCfgGetDefault via PlantedViaCfgGet (body-form reader)",
+		"planted_shifted":    "DefaultPlantedShift<<20 via PlantedShifted (body-form reader)",
 		"planted_capped":     "DefaultPlantedCap via plantedCap (call site)",
 	} {
 		if got := gotPairs[key]; got != want {
@@ -2731,7 +2927,7 @@ func (a *App) PlantedInATestFile(errw io.Writer) int {
 	for _, key := range []string{
 		// each near-miss, reported rather than dropped
 		"planted_rule_default", "planted_first", "planted_second",
-		"planted_no_constant", "planted_shifted", "planted_call_rule",
+		"planted_no_constant", "planted_two_scales", "planted_call_rule",
 	} {
 		if why, ok := gotUnpaired[key]; !ok {
 			t.Errorf("the derivation dropped %s in silence — an unpairable key must be REPORTED, which is the whole finding of ranger-base-khqvr", key)

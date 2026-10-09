@@ -123,6 +123,20 @@ package treepins
 //	TestQAEveryNotesFragmentCitationResolves      make doc-check
 //	                                              (ranger-base-nnnf1)
 //
+// and two more into that same door, both of the SAME shape as those two and
+// each filed as a documented coupling nothing compared (ranger-base-c768n,
+// findings 1 and 2 of the ranger-base-qbbzz verify). One derives the base of
+// every URL the detection doors compose — host, org, repo and branch, an
+// unheld literal whose pin compared it with itself — from the hrefs
+// www/index.html already ships; the other holds the one const in agents.go
+// whose whole value is that a classifier reads exactly the text ADR 0070 D2
+// cleared, against that blockquote:
+//
+//	TestQAPublicDocBaseIsTheSpellingTheSiteShips  make doc-check
+//	TestQAClaudeAutoModeCarveOutIsADR0070D2Verbatim
+//	                                              make doc-check
+//	                                              (both ranger-base-c768n)
+//
 // and then a whole SECOND PACKAGE, which the register could not see at all
 // until ranger-base-g6sb1. internal/treepins is 589.965s whole — the same
 // wall internal/posse is, one directory over — and every rule above keys on
@@ -195,14 +209,24 @@ package treepins
 // same as a pin only its own bead can red, and the door is what closes that
 // gap — not the rule.)
 //
-// and `make tree-check` is all of them — 49-93s on this box over three warm
-// runs at fifty-six pins and fourteen doors (MEASURED 2026-10-09,
-// ranger-base-9mjxb, one-minute load average 128.0, 75.2 and 36.9 before the
-// three, with BOTH suite slots held by sibling seats throughout; 80s, 49s and
-// 93s in that order, so the slowest run was the one at the LOWEST load and
-// this spread is not a function of the load average either) — which is the
+// and `make tree-check` is all of them — 66-139s on this box over three warm
+// runs at fifty-eight pins and fourteen doors (MEASURED 2026-10-09,
+// ranger-base-c768n: 115.3s, 139.0s and 66.3s in that order, with a
+// one-minute load average of 9.3, 54.2 and 63.1 before the three and one
+// suite slot held by a sibling seat throughout — so the FASTEST run was the
+// one at the highest load, which is ranger-base-9mjxb's finding again and
+// NOT the "ran beside somebody" reading further down: this spread is not
+// ordered by the load average, and the two readings that say so are the two
+// widest ones. The two pins it added each report 0.00s, so what they cost is
+// below `go test`'s own per-test resolution and none of this spread is
+// theirs) — which is the
 // command a
-// seat types after a filtered run. (It was 48.4-51.5s at fifty-five pins,
+// seat types after a filtered run. (It was 49-93s at fifty-six pins, at a
+// one-minute load average of 128.0, 75.2 and 36.9 before the three runs with
+// BOTH suite slots held by sibling seats throughout — 80s, 49s and 93s in
+// that order, so the slowest run was the one at the LOWEST load and that
+// spread is not a function of the load average either;
+// 48.4-51.5s at fifty-five pins,
 // at a load average of 9.6 to 36.5; 46-51s at fifty-three pins;
 // 14.9-16.5s over twenty-three pins
 // behind eight doors, before ranger-base-g6sb1 found a second package;
