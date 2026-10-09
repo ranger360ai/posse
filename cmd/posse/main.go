@@ -2809,15 +2809,15 @@ catalog:
                                  a caged seat, where that dir is read-only, it reports
                                  what is on disk and says so instead of dying
   posse gates install-hooks [dir] [--chain]
-                                    L3: .git/hooks/pre-push refusing git push under RHQ_TOOLS_DENY,
-                                    and prepare-commit-msg refusing an unqualified commit from any shell
-                                    plus ops-class content added to .beads/*.jsonl in a repo that
-                                    config beads_visibility: does not mark private (unmarked = public).
-                                    Both slots are attempted even if one is foreign. --chain takes over
-                                    a slot occupied by bd's own shim (# bd-shim v1) instead of refusing:
-                                    bd's shim moves to bd-<slot>, ours goes to posse-<slot>, and the
-                                    real slot gets the process-and-status dispatcher (INSTALL.md §9).
-                                    A hook that is neither ours nor bd's is still refused.
+                                 L3: .git/hooks/pre-push refusing git push under RHQ_TOOLS_DENY,
+                                 and prepare-commit-msg refusing an unqualified commit from any shell
+                                 plus ops-class content added to .beads/*.jsonl in a repo that
+                                 config beads_visibility: does not mark private (unmarked = public).
+                                 Both slots are attempted even if one is foreign. --chain takes over
+                                 a slot occupied by bd's own shim (# bd-shim v1) instead of refusing:
+                                 bd's shim moves to bd-<slot>, ours goes to posse-<slot>, and the
+                                 real slot gets the process-and-status dispatcher (INSTALL.md §9).
+                                 A hook that is neither ours nor bd's is still refused.
   posse gates managed-hooks [dir]
                                  ADR 0052 D1's classification, read-only: is this repo's hook
                                  dispatch path one posse must not write in (absolute, outside the
