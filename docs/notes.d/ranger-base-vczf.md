@@ -26,7 +26,13 @@ else entirely, so that line is bd narrating a hop, not quoting the file.
 
 The "fresh clone" case does not fork either: with a tracked `issues.jsonl` and
 no database yet, bd builds `beads.db` in the **main checkout's** `.beads`, and
-the worktree reads it.
+the worktree reads it. That is the one fixture of its class that comes up with
+its ROWS, and it is worth naming as a fixture rather than as a rule: on 0.50.3
+an UNCOMMITTED `issues.jsonl` builds the same database with no rows in it and
+says nothing, and a tracked one over a `beads.db` that already exists cannot
+import at all (ranger-base-a5st4, MEASURED 2026-10-09). Neither changes this
+bead's finding — both are database mode, both resolve to the main checkout —
+but "bd builds the db" does not mean "the graph is there".
 
 **So what is the redirect for? posse.** `beadsHome` (beadloss.go) resolves it,
 and the seatbelt writable set and the codex launch line are built from what it

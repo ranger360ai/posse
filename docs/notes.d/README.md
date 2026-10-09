@@ -17,6 +17,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-sl5sg](ranger-base-sl5sg.md) — The one launch precondition the PID lint could read and did not (ranger-base-sl5sg) — 2026-10-08
 - [ranger-base-qvy0n](ranger-base-qvy0n.md) — The ceiling's two readers: why the positive pathspec is `:(top)` and not `.` (ranger-base-qvy0n) — 2026-10-08
 - [ranger-base-e01op](ranger-base-e01op.md) — The launcher's own scaffolding, read as the seat's unlanded work (ranger-base-e01op) — 2026-10-08
+- [ranger-base-a5st4](ranger-base-a5st4.md) — bd builds the FILE, not the GRAPH — and the one repair is denied to every persona (ranger-base-a5st4) — 2026-10-08
 - [ranger-base-9mjxb](ranger-base-9mjxb.md) — ranger-base-9mjxb — bd's store-selecting flag writes across repositories — 2026-10-08
 - [ranger-base-2msgj](ranger-base-2msgj.md) — A gate that was never overwritten, never deleted, and never ran again (ranger-base-2msgj) — 2026-10-08
 - [ranger-base-s1dmh](ranger-base-s1dmh.md) — Documenting a key the seed's own census forbids documenting (ranger-base-s1dmh) — 2026-10-07

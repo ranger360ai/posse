@@ -110,8 +110,20 @@ package posse
 //          is what 0.50.3's default `--backend dolt` does here (ASSUMED as a
 //          door; the other three are measured).
 //     A store that merely lacks a database is NOT a door: 0.50.3 builds a
-//     SQLite `beads.db` over a bare jsonl on the first plain read, so "jsonl
-//     only" is a transient state.
+//     SQLite `beads.db` on the first plain read, so "jsonl only" is a
+//     transient state. CORRECTED 2026-10-09 (ranger-base-a5st4, github issue
+//     #5), same binary: that read builds the FILE and not necessarily the
+//     GRAPH. The door conclusion stands — bd is in database mode either way
+//     — but this bullet used to read "over a bare jsonl", as if the rows came
+//     with it. The auto-import source is `git HEAD`, never the working-tree
+//     jsonl, and it fires only at ZERO rows in the database: over an
+//     UNCOMMITTED jsonl the database comes up empty with no import line, no
+//     warning and exit 0, and over a committed one it imports only while no
+//     database exists yet — an existing zero-row `beads.db` is opened
+//     read-only by a read verb and the import dies `set config: sqlite3:
+//     attempt to write a readonly database`, exit 0, `[]` under `--json`
+//     with nothing on either stream. The repair is `bd import`, denied to
+//     every persona PID. docs/notes.d/ranger-base-a5st4.md has the table.
 //     THE FIX IS THE LAUNCH ENV, not this file (ADR 0055 D1): every session
 //     posse launches carries `BEADS_DIR=beadsHome(dir)` (planLaunch,
 //     herdrback.go), forwarded into the container by name (CageEnvNames).

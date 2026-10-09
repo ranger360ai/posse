@@ -4,7 +4,9 @@
 fourth reader of the redirect: bd itself, through the env) · bead
 ranger-base-yijws, discovered from ranger-base-9lrzx · amended 2026-09-04
 (Consequences: a second loud refusal, the mixed-prefix store in no-db mode,
-and why its remedy has two halves; ranger-base-jl8q2)*
+and why its remedy has two halves; ranger-base-jl8q2) · corrected 2026-10-09
+(Context and Verification: a plain read builds the database FILE and not
+necessarily its ROWS; ranger-base-a5st4, github issue #5)*
 
 ## Context
 
@@ -53,8 +55,25 @@ No-db mode has four doors, and posse opens one of them itself:
    (the bead's claim; ASSUMED, not re-measured).
 
 A store that merely lacks a database is NOT a door: bd 0.50.3 builds a
-SQLite `beads.db` over a bare jsonl on the first plain read (measured), so
-"jsonl only" is a transient state, not a mode.
+SQLite `beads.db` on the first plain read (measured), so "jsonl only" is a
+transient state, not a mode.
+
+**CORRECTED 2026-10-09 (ranger-base-a5st4, github issue #5), on the same
+binary: that read builds the database FILE, and not necessarily the GRAPH.**
+The door conclusion is untouched — bd is in database mode either way, so this
+was never a no-db door — but the sentence used to read as "the store comes up
+with its rows", and it does not. bd's auto-import source is **`git HEAD`**,
+never the working-tree jsonl, and it fires only when the database holds ZERO
+issues. So: over a jsonl that is not committed, the database is built with no
+rows, no import line and no warning, exit 0 (gitignored or merely uncommitted
+alike); over a committed one it imports, UNLESS a zero-row `beads.db` already
+exists, because a read verb opens an existing database read-only and the
+import then dies `set config: sqlite3: attempt to write a readonly database`
+— still exit 0, still an empty answer, and under `--json` with the warning
+suppressed on both streams. The repair is the operator's `bd import`; both
+verbs that perform it are in every PID's deny set.
+`docs/notes.d/ranger-base-a5st4.md` has the fixture table, the exit codes and
+the runbook row.
 
 Also measured, and it is the lever: with `BEADS_DIR=<main .beads>` in the
 environment, the no-db create from the worktree lands in the MAIN store and
@@ -208,7 +227,11 @@ verb): the no-db fork with and without a redirect; `bd where --json`
 naming `redirected_from` while the write lands locally; `BEADS_DIR`
 routing the no-db write to the main store on both the `no-db: true` store
 and the `--no-db` invocation; `BD_NO_DB=true` as a third door; a plain read
-over a bare jsonl building `beads.db`. Read in bd 0.49.1's source:
+over a bare jsonl building `beads.db` — the file, which is all that claim ever
+carried: re-measured 2026-10-09 (ranger-base-a5st4), over an UNCOMMITTED jsonl
+the database it builds holds zero rows and the read says nothing, and over a
+committed one it imports only while no database exists yet. Read in bd
+0.49.1's source:
 `nodb.go` and `PersistentPostRun` resolve `BEADS_DIR` else `$cwd/.beads`;
 `unsafePrefixes`; `GetRedirectInfo`'s pre-set-`BEADS_DIR` branch.
 
