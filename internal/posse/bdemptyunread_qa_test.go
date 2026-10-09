@@ -179,22 +179,41 @@ func TestQANoCensusMakesAnEmptyAnswerHonestAndAsksBdNothing(t *testing.T) {
 
 // A census file that exists but holds no record — a touched file, a store
 // flushed before its first bead — is not a census carrying rows.
+//
+// ADR 0071 D2a is "absent, or no line beginning `{`", and the two halves
+// fail differently, so each needs a row (ranger-base-wjqeu, verifying this
+// bead's close). With only the blank-line row here, censusHasRecord's
+// `t[0] == '{'` was unpinned: MEASURED 2026-10-09, dropping it for a bare
+// `len(t) > 0` — any non-empty line is a record — left all twelve arms of
+// this file GREEN, while a census holding a line that is not a record would
+// then be weighed against bd's count and a HEALTHY empty read refused. The
+// rows below are the two ways that file comes about on this box.
 func TestQAAnEmptyCensusFileIsNotACensusWithRows(t *testing.T) {
 	t.Parallel()
 	_, fake := newTestBackend(t)
 	bd := Bd{Bin: fakeBinFor(t, "bd")}
-	dir := unreadRepo(t, `{"issue_count": 0}`, "\n\n")
-	os.Remove(filepath.Join(fake, "bd-calls.log"))
+	for _, c := range []struct {
+		why, census string
+	}{
+		{"blank lines — a touched file, or a store flushed before its first bead", "\n\n"},
+		{"a line that is not a record — a truncated write, or bd's own error text landing in the file", "Error: no beads database found\n"},
+		{"an empty `--json` answer redirected into the census, which is the very shape this record is about", "[\n]\n"},
+	} {
+		t.Run(c.census, func(t *testing.T) {
+			dir := unreadRepo(t, `{"issue_count": 0}`, c.census)
+			os.Remove(filepath.Join(fake, "bd-calls.log"))
 
-	issues, err := bd.Ready(dir, "")
-	if err != nil {
-		t.Fatalf("a census with no record is no census: %v", err)
-	}
-	if len(issues) != 0 {
-		t.Errorf("want the empty list served, got %+v", issues)
-	}
-	if calls := bdCallsAsking(t, fake, "ready"); strings.Contains(calls, "info") {
-		t.Errorf("a census holding no `{` line must never reach `info`: %s", calls)
+			issues, err := bd.Ready(dir, "")
+			if err != nil {
+				t.Fatalf("a census with no record is no census (%s): %v", c.why, err)
+			}
+			if len(issues) != 0 {
+				t.Errorf("want the empty list served, got %+v", issues)
+			}
+			if calls := bdCallsAsking(t, fake, "ready"); strings.Contains(calls, "info") {
+				t.Errorf("a census holding no `{` line must never reach `info` (%s): %s", c.why, calls)
+			}
+		})
 	}
 }
 

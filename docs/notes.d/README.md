@@ -8,6 +8,7 @@ references), not inferred publication dates. Undated fragments sort last.
 
 - [ranger-base-yglkp](ranger-base-yglkp.md) — Two live pins whose control arms stopped firing, for two unrelated reasons (ranger-base-yglkp) — 2026-10-09
 - [ranger-base-x8bv0](ranger-base-x8bv0.md) — A page to read is a URL; material to send is an embed (ranger-base-x8bv0) — 2026-10-09
+- [ranger-base-wjqeu](ranger-base-wjqeu.md) — ranger-base-wjqeu — verifying ADR 0071's check against the real bd, and the one arm it had not pinned — 2026-10-09
 - [ranger-base-rjfec](ranger-base-rjfec.md) — A rule stated for every verb and realized in one helper (ranger-base-rjfec) — 2026-10-09
 - [ranger-base-mhv7j](ranger-base-mhv7j.md) — The release carried the refusal and not the way out of it (ranger-base-mhv7j) — 2026-10-09
 - [ranger-base-lw0s5](ranger-base-lw0s5.md) — ranger-base-lw0s5 — a merge-back whose only textual conflict was the easy one — 2026-10-09
