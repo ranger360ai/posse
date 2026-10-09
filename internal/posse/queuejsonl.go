@@ -256,3 +256,118 @@ func (a *App) CommitQueueJSONL(bd Bd, dir, msg string) (QueueCommit, error) {
 	c.SHA = strings.TrimSpace(sha)
 	return c, nil
 }
+
+// ─── the governance reading (ADR 0029 G13) ───────────────────────────────────
+//
+// WHY A ROW AND NOT A PASS LINE. The pass already says `the queue jsonl did
+// NOT commit in <repo>: <err>` where the refusal happens (dispatch.go
+// commitQueue), and for four weeks that was the whole of what anyone heard:
+// retrospective, one line in a watch log, and `nothing needs a human` on the
+// governance surface the same minute (bead ranger-base-wmaf9, from
+// github.com/ranger360ai/posse/issues/3). A close whose projection never
+// reached git is a bead the loss census can never notice leaving
+// (beadloss.go), and every cause below is cleared by an operator editing one
+// config line — which is exactly what the all-clear claimed was unnecessary.
+//
+// WHY NOT "the projection is dirty". A governance condition is a checkable
+// fact computable twice with the same answer, and level-triggered so it
+// heals. "The projection differs from HEAD" is neither a condition nor rare:
+// `bd sync` re-exports the jsonl from any session, and the launcher commits
+// it only at a close it judges, so MEASURED 2026-10-09 on this instance the
+// queue repo's `issues.jsonl` was dirty at a moment nothing had been refused
+// at all. A row keyed on that would fire between every close and say nothing
+// about whether anything was wrong.
+//
+// So this reads the CAUSES that are facts about the configuration rather
+// than about the hour: the ones that make the NEXT close's commit fail too,
+// and that no amount of waiting clears. They are read from config and the
+// filesystem, with no exec and no hook body — the hook's own verdict is
+// G12's, swept over the same repo when `beads_visibility:` declares it.
+//
+// AND NOT "a configured store that does not resolve inside queue_repo",
+// which was the third cause this reading shipped with for one afternoon and
+// which a live `posse status` measured away (ranger-base-wmaf9). The
+// launcher does skip those closes — `<store> is not inside <repo>`, a skip,
+// so the pass prints `no queue commit` — but a `beads:` entry with its OWN
+// store is the ordinary multi-project shape and not a misconfiguration: on
+// this instance it named a client repo whose beads were never meant to live
+// in posse's queue repo, and the row was a standing instruction to move
+// them. ADR 0015 §4 moves THE STORE OF RECORD; it says nothing about every
+// other store an instance reads.
+
+// QueueReadiness is whether the queue repo can take the store's projection
+// at all. Every field is a fact about config, so a reader can be re-run and
+// agree with itself.
+type QueueReadiness struct {
+	// Repo is `queue_repo:` resolved, and "" when the key is unset — which
+	// is the shipped default and the absence of this whole condition: an
+	// instance that has not cut over commits nothing here and owes nothing.
+	Repo string
+	// NotARepo: `queue_repo:` names something git does not call a checkout,
+	// so CommitQueueJSONL refuses with "must name a checkout" on every close.
+	NotARepo bool
+	// Unmarked: Repo is a checkout and no `beads_visibility:` entry names
+	// it. Unmarked is PUBLIC (fail closed, visibility.go), and the commit
+	// guard's check 0 — the beads-jsonl visibility scan — runs in public
+	// repos only, so an unmarked queue repo is the one state in which the
+	// launcher's own commit of the store of record is scanned as a
+	// publication and refused. It is also ADR 0015 §4's cutover step 5,
+	// performed once by hand and recorded nowhere else.
+	Unmarked bool
+}
+
+// QueueReady is that reading. One `git rev-parse` for the repo question and
+// one config read for the mark; nothing here execs a hook or reads a jsonl.
+func (a *App) QueueReady() QueueReadiness {
+	q := a.QueueRepo()
+	if q == "" {
+		return QueueReadiness{}
+	}
+	r := QueueReadiness{Repo: q}
+	// The same question probeL3Hooks answers with its Repo field, asked
+	// without the render and the exec behind it: a dir git will name a
+	// hooks path for is a checkout, and one it will not is what
+	// CommitQueueJSONL reports as "must name a checkout".
+	if _, err := hooksDir(q); err != nil {
+		r.NotARepo = true
+		return r
+	}
+	// hookRepo, because that is the spelling the install and the probe
+	// resolve the mark with (gates.go) — a reader that asked a different
+	// one would call a marked repo unmarked whenever the two disagree.
+	if _, src := a.BeadsVisibility(hookRepo(q)); src == VisibilityUnmarkedSource {
+		r.Unmarked = true
+	}
+	return r
+}
+
+// GovRows is G13: the governance rendering of that reading, LANE on the
+// backup-stale rule — a queue that will not take the projection stops
+// nothing, the fleet keeps dispatching and closing, and what is lost is the
+// record (ADR 0029's URGENT means the shop is stopped).
+//
+// One row per cause, each with its own Key, because Key is the whole
+// identity a machine reader sees and the two have different remedies: one is
+// a path in `queue_repo:`, one is a line in `beads_visibility:`.
+func (r QueueReadiness) GovRows() []GovCondition {
+	if r.Repo == "" {
+		return nil
+	}
+	row := func(key, detail string) GovCondition {
+		return GovCondition{ID: "G13", Class: GovLane, Key: key, Detail: detail}
+	}
+	// NotARepo short-circuits: "is it marked" is unanswerable about a path
+	// that is not a checkout, and a second row there would be a second
+	// remedy for one broken config line.
+	if r.NotARepo {
+		return []GovCondition{row("queue-not-a-repo", fmt.Sprintf(
+			"config queue_repo: names %s, which is not a git checkout — the launcher's commit of the store of record's projection is refused at every close, so no closed bead reaches the queue repo's history and the bead-loss census goes blind (ADR 0015 §4)",
+			AbbrevHome(r.Repo)))}
+	}
+	if r.Unmarked {
+		return []GovCondition{row("queue-unmarked", fmt.Sprintf(
+			"config beads_visibility: names no entry for the queue repo %s, and unmarked is PUBLIC (fail closed) — the commit guard's beads-jsonl scan runs in public repos only, so the launcher's own commit of the store of record is scanned as a publication and refused at every close; mark it (ADR 0015 §4 cutover step 5: `%s: private`)",
+			AbbrevHome(r.Repo), AbbrevHome(r.Repo)))}
+	}
+	return nil
+}

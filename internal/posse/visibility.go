@@ -284,8 +284,16 @@ func (a *App) BeadsVisibility(dir string) (visibility, source string) {
 			return VisibilityPublic, fmt.Sprintf("config beads_visibility: says %q, which is neither public nor private — treated as public", v)
 		}
 	}
-	return VisibilityPublic, "unmarked in config beads_visibility: — unmarked is public (fail closed)"
+	return VisibilityPublic, VisibilityUnmarkedSource
 }
+
+// VisibilityUnmarkedSource is the `source` above for a repo config names
+// nowhere. A const rather than a literal because a second reader asks "is
+// this repo marked at all" and compares against it (queuejsonl.go
+// QueueReady): a prefix match on a sentence is not a predicate, and a second
+// walk of the same config block would be a second implementation of
+// samePath's question.
+const VisibilityUnmarkedSource = "unmarked in config beads_visibility: — unmarked is public (fail closed)"
 
 // samePath is how two spellings of one repo are compared — and the question
 // is "do these name the same directory", never "are these the same string".

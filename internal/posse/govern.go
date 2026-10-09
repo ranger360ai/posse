@@ -111,7 +111,7 @@ const (
 // it. ID is the design's row name; the two conditions carried over from the
 // pulse's own first cut have none and say so.
 type GovCondition struct {
-	ID     string // G1..G9, or "" for a pulse-era carry-over
+	ID     string // a G-row name, or "" for a pulse-era carry-over
 	Class  string // GovUrgent | GovLane
 	Key    string // stable fingerprint token
 	Detail string // one line, for a human
@@ -431,6 +431,10 @@ func ReadPause(path string) Pause {
 //	G9 ready bead routed to the coordinator       bd + config        LANE
 //	G10 live-box checks stale, red or blind       verify-box.yaml    LANE
 //	G11 the launcher is behind past the depth     the build stamp    LANE
+//	G12 an L3 hook wall is degraded               the hooks dirs     LANE
+//	G13 the queue repo cannot take the jsonl      config + git       LANE
+//	G14 a persona's memory is not landed          the personas dir   LANE
+//	G15 a live session is running degraded        the session meta   LANE
 //
 // plus the two conditions the pulse's own first cut shipped and this
 // widening deliberately does not drop — unpushed commits on a beads repo,
@@ -679,6 +683,134 @@ func ShopCheck(in GovInputs) (GovSet, []error) {
 		}
 	}
 
+	// ── G12 · an L3 hook wall is degraded ────────────────────────────────
+	//
+	// THE SILENCE THIS ENDS (bead ranger-base-wmaf9, from
+	// github.com/ranger360ai/posse/issues/3). The sweep already exists and
+	// already prints: `posse promote`'s epilogue and the watch loop's
+	// preamble both report it, and `posse gates` renders the same verdict
+	// for the launch wall. Both are ONE-SHOT — a promote nobody is running,
+	// a preamble that scrolled past hours ago — and neither is read by the
+	// surface whose whole question is "does anything need a human". So a
+	// foreign or stale prepare-commit-msg sat in a configured repo while
+	// `posse status` printed the all-clear, and every commit in that repo
+	// went through unguarded by the layer the hook is.
+	//
+	// It raises one row per DEGRADED SLOT and nothing for a repo whose wall
+	// is this binary's render. A SKIP is not a finding and never becomes
+	// one: config outliving a checkout is ordinary, and a managed hooks path
+	// is a repo posse deliberately does not write (ADR 0052 D1) — a row
+	// there would be a standing instruction to do the one thing that ADR
+	// forbids.
+	//
+	// LANE, on backup-stale's and G11's rule: ADR 0029 defines URGENT as
+	// "the shop is stopped", and a degraded wall stops nothing — the fleet
+	// keeps dispatching and committing, with one layer of the gate not
+	// holding. LANE still exits `posse status` non-zero, still draws in the
+	// cockpit's GOVERNANCE block and still ends the all-clear, which is the
+	// whole of what this bead needed.
+	//
+	// The DETAIL is the sweep's own line, byte for byte, so the row and the
+	// preamble cannot disagree about what is wrong or what fixes it. The
+	// queue repo gets one clause more, because what a stale wall costs
+	// THERE is a thing no other repo's wall costs: the launcher refuses to
+	// commit the store of record's projection against an unarmed stamp
+	// (queuejsonl.go), so every close's record stops reaching git.
+	queueRepo := in.App.QueueRepo()
+	// NO SEAM, unlike Spend/Plan/Lag above: the sweep reads the repos THIS
+	// INSTANCE's config declares, so a scratch home declares none and every
+	// pin in this package already costs nothing. A seam here would be a
+	// parameter with one value.
+	for _, r := range in.App.SweepHookWallIdentity().Repos {
+		isQueue := queueRepo != "" && samePath(r.Dir, queueRepo)
+		for _, f := range r.Findings() {
+			detail := f.Line
+			if isQueue {
+				detail += " — and this is config queue_repo:, so the launcher refuses to commit the store of record's projection here at all and the bead-loss census goes blind (ADR 0015 §4)"
+			}
+			add("G12", GovLane, fmt.Sprintf("hook-wall:%s:%s", f.Slot, r.Config), detail)
+		}
+	}
+
+	// ── G13 · the queue repo cannot take the store's projection ──────────
+	// queuejsonl.go QueueReady carries the predicate, the two causes, and
+	// the argument for the two shapes that are deliberately NOT causes: the
+	// projection's own dirtiness, and a `beads:` store that legitimately
+	// lives outside the queue repo.
+	for _, c := range in.App.QueueReady().GovRows() {
+		add(c.ID, c.Class, c.Key, c.Detail)
+	}
+
+	// ── G14 · a persona's memory is not landed ───────────────────────────
+	//
+	// Dirty memory with no live session left to land it. memoryland.go
+	// MemoryUnlanded carries the reading and the argument for the predicate;
+	// the LIVE half is here, because the session list is already taken and
+	// because "is anyone working" is this function's own fact rather than
+	// that file's.
+	//
+	// A persona that is working right now is appending lessons to ORDERS.md
+	// as designed (ADR 0015 §5), and its kill will land them. Only a
+	// persona with nothing running is one whose landing has already run and
+	// left the lines, or was refused — and persona memory has no second
+	// copy.
+	live := map[string]bool{}
+	for _, s := range sessions {
+		if !s.Foreign && s.Agent != "" {
+			live[s.Agent] = true
+		}
+	}
+	for _, strand := range in.App.MemoryUnlanded() {
+		if live[strand.Persona] {
+			continue
+		}
+		c := strand.GovRow(filepath.Join(in.App.PersonasDir(), strand.Persona))
+		add(c.ID, c.Class, c.Key, c.Detail)
+	}
+
+	// ── G15 · a live session is running degraded ─────────────────────────
+	//
+	// `posse ls` has marked these ⚠️degraded since the parity check shipped,
+	// and nothing read that mark: a session running with gates its wall does
+	// not realize is a persona whose PID is partly politeness, and the
+	// governance surface said `nothing needs a human` about it (bead
+	// ranger-base-wmaf9).
+	//
+	// REPORTED, NEVER ALARMED — G8's shape, and the reason it is not URGENT
+	// twice over: the shop is not stopped, and a human already said yes.
+	// Degradation is reachable only through `--allow-degraded` (herdrback
+	// CreateSession refuses otherwise, and ADR 0003 §3 does not offer it at
+	// tier fast at all). What makes it a condition anyway is that the
+	// consent does not stay where it was given: a relaunch inherits it from
+	// the meta (relaunch.go `AllowDegraded: m.Degraded != ""`), so one
+	// `--allow-degraded` typed days ago keeps re-arming itself, silently,
+	// for as long as the session keeps being rebuilt. The row is the
+	// standing reading of a waiver that has outlived its scrollback; the
+	// remedy — raise the cage, raise the tier, install the gate — is the
+	// operator's.
+	//
+	// The detail carries the gates themselves, because Degraded is already a
+	// one-line "; "-joined list in the meta (yamlflat.go) and naming them is
+	// the difference between a row an operator can act on and a label.
+	//
+	// IT CAN NAME THE SAME HOOK G12 DOES, and the overlap is deliberate
+	// rather than a double report: parity's degraded list includes the L3
+	// slots (parity.go probes them), so a foreign prepare-commit-msg in a
+	// repo a session launched into can reach both rows. They are different
+	// subjects with different remedies — G12 is a REPO's wall, true whether
+	// any session is there, cleared by `posse gates install-hooks`; G15 is
+	// one SESSION's waiver, cleared by ending or relaunching that session
+	// once the wall holds. Two keys, so one healing does not silence the
+	// other.
+	for _, s := range sessions {
+		if s.Foreign || s.Degraded == "" {
+			continue
+		}
+		add("G15", GovLane, "session-degraded:"+s.Name, fmt.Sprintf(
+			"%s (%s on %s @ %s) is running with gates its wall does not realize: %s — waived once with --allow-degraded and re-armed by every relaunch from its meta; raise the cage or the tier, or install the gate",
+			s.Name, s.Agent, s.Runtime, s.Cage, s.Degraded))
+	}
+
 	// ── carry-over · unpushed commits on a beads repo ────────────────────
 	seen := map[string]bool{}
 	for _, dir := range in.App.BeadsDirs() {
@@ -718,9 +850,10 @@ func ShopCheck(in GovInputs) (GovSet, []error) {
 	// The argument that settled it was "0029's table is closed at nine",
 	// and that argument is GONE — 0029's 2026-09-05 simplification retired
 	// the closed-nine claim, and G10 landed below under the bar it set
-	// instead. The ruling stands on its own remaining half, which is the
-	// one that was always load-bearing: 0036 asked for the fact, not for a
-	// number, and nothing has since asked for the number.
+	// instead (G11 through G15 after it). The ruling stands on its own
+	// remaining half, which is the one that was always load-bearing: 0036
+	// asked for the fact, not for a number, and nothing has since asked for
+	// the number.
 	//
 	// LANE, not URGENT, and the class is the honest one rather than the
 	// loud one: 0029 defines URGENT as "the shop is stopped", and a stale

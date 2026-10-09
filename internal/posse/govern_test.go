@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -181,6 +182,18 @@ func govSuspended(back time.Time, slept time.Duration) func(time.Time) time.Dura
 		}
 		return 0
 	}
+}
+
+// findKey is find by KEY, for the rows a repo can raise more than one of:
+// `find` answers with the first row of an id in key order, which for a
+// two-slot hook wall is whichever slot sorts first.
+func findKey(set GovSet, key string) *GovCondition {
+	for i := range set {
+		if set[i].Key == key {
+			return &set[i]
+		}
+	}
+	return nil
 }
 
 func find(set GovSet, id string) *GovCondition {
@@ -1685,5 +1698,386 @@ func TestGovG3AForgottenParkIsOneRowAndNotTwo(t *testing.T) {
 	}
 	if line := GovLines(set); strings.Contains(line, "question:bd-q") {
 		t.Errorf("the ordinary unanswered row reached the pulse line beside the park row: %q", line)
+	}
+}
+
+// ─── G12 · a degraded L3 hook wall ───────────────────────────────────────────
+//
+// ranger-base-wmaf9 (github.com/ranger360ai/posse/issues/3). The sweep and
+// `posse gates` have reported this verdict since ranger-base-ixv4 and the
+// governance surface read neither, so a foreign prepare-commit-msg sat in a
+// configured repo under `nothing needs a human`.
+//
+// The fixture is a REAL git repo with a real hook file, because identity is
+// byte-for-byte against this build's renderer: a pin that handed the row a
+// canned sweep would go green the day the sweep stopped agreeing with the
+// renderer, which is the one thing it is here to notice.
+
+// govHookRepo makes a git repo, declares it in the app's `beads_visibility:`
+// and returns its path. Nothing is installed in it, so the slots are
+// whatever the caller puts there.
+func govHookRepo(t *testing.T, a *App, vis string) string {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git")
+	}
+	dir := hwsRepo(t, gitTempDir(t), "repo")
+	appendConfig(t, a, "beads_visibility:\n  "+dir+": "+vis+"\n")
+	return dir
+}
+
+// govForeignHook plants a hook posse did not write at the dispatch path.
+func govForeignHook(t *testing.T, dir, slot string) {
+	t.Helper()
+	hooks, err := hooksDir(dir)
+	if err != nil {
+		t.Fatalf("hooks dir: %v", err)
+	}
+	if err := os.MkdirAll(hooks, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteExecutable(filepath.Join(hooks, slot), []byte("#!/bin/sh\n# somebody else's hook\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestGovG12ForeignCommitHookIsACondition(t *testing.T) {
+	b, _ := newTestBackend(t)
+	govRepo(t, b)
+	dir := govHookRepo(t, b.App, VisibilityPrivate)
+	govForeignHook(t, dir, "prepare-commit-msg")
+
+	set := shopSet(t, govIn(t, b))
+	g := findKey(set, "hook-wall:prepare-commit-msg:"+dir)
+	if g == nil {
+		t.Fatalf("no G12 for a foreign prepare-commit-msg: %v", set.Keys())
+	}
+	if g.ID != "G12" {
+		t.Errorf("ID = %q, want G12", g.ID)
+	}
+	if g.Class != GovLane {
+		t.Errorf("a degraded wall stops nothing — class = %s, want LANE", g.Class)
+	}
+	// The DETAIL is the sweep's own line, so the row and the watch preamble
+	// cannot disagree about what is wrong or what fixes it.
+	if !strings.Contains(g.Detail, "foreign hook") || !strings.Contains(g.Detail, "install-hooks") {
+		t.Errorf("Detail is not the sweep's line: %q", g.Detail)
+	}
+	// ONE ROW PER SLOT, keyed by slot: nothing is installed in this fixture,
+	// so the pre-push slot is degraded too and the two are different facts
+	// with the same remedy. A key that named only the repo would collapse
+	// them and the pulse would stop re-prompting when one of them healed.
+	if g2 := findKey(set, "hook-wall:pre-push:"+dir); g2 == nil {
+		t.Errorf("the pre-push slot got no row of its own: %v", set.Keys())
+	}
+}
+
+// The control. Without it the test above is a pin on a fixture: a row that
+// fired over an installed, current wall would be noise on every tick.
+func TestGovG12FreshWallIsNotACondition(t *testing.T) {
+	b, _ := newTestBackend(t)
+	govRepo(t, b)
+	dir := govHookRepo(t, b.App, VisibilityPrivate)
+	if _, _, _, err := b.App.InstallCommitGuardHook(dir); err != nil {
+		t.Fatalf("install commit guard: %v", err)
+	}
+	if _, err := InstallPrePushHook(dir); err != nil {
+		t.Fatalf("install pre-push: %v", err)
+	}
+	if g := find(shopSet(t, govIn(t, b)), "G12"); g != nil {
+		t.Errorf("a wall carrying this build's render must raise nothing: %+v", *g)
+	}
+}
+
+// An instance that declares no repo has made no claim for this row to check.
+func TestGovG12UndeclaredWallIsNotACondition(t *testing.T) {
+	b, _ := newTestBackend(t)
+	govRepo(t, b)
+	if g := find(shopSet(t, govIn(t, b)), "G12"); g != nil {
+		t.Errorf("no beads_visibility: block must raise no G12: %+v", *g)
+	}
+}
+
+// The queue repo's wall costs one thing no other repo's does: the launcher
+// refuses to commit the store of record's projection against an unarmed
+// stamp, so the clause is on the row rather than in a second one.
+func TestGovG12QueueRepoCarriesItsConsequence(t *testing.T) {
+	b, _ := newTestBackend(t)
+	govRepo(t, b)
+	dir := govHookRepo(t, b.App, VisibilityPrivate)
+	govForeignHook(t, dir, "prepare-commit-msg")
+	appendConfig(t, b.App, "queue_repo: "+dir+"\n")
+
+	g := findKey(shopSet(t, govIn(t, b)), "hook-wall:prepare-commit-msg:"+dir)
+	if g == nil {
+		t.Fatal("no G12 for a foreign hook in the queue repo")
+	}
+	if !strings.Contains(g.Detail, "queue_repo:") || !strings.Contains(g.Detail, "bead-loss census") {
+		t.Errorf("the queue consequence is not on the row: %q", g.Detail)
+	}
+}
+
+// ─── G13 · the queue repo cannot take the projection ─────────────────────────
+
+// Unset is the shipped default and the absence of the whole condition.
+func TestGovG13UnsetQueueRepoIsNotACondition(t *testing.T) {
+	b, _ := newTestBackend(t)
+	govRepo(t, b)
+	if g := find(shopSet(t, govIn(t, b)), "G13"); g != nil {
+		t.Errorf("an instance that has not cut over owes nothing here: %+v", *g)
+	}
+}
+
+// Unmarked is PUBLIC (fail closed), and the commit guard's beads-jsonl scan
+// runs in public repos only — so an unmarked queue repo is the one state in
+// which the launcher's own commit of the store of record is scanned as a
+// publication and refused.
+func TestGovG13UnmarkedQueueRepo(t *testing.T) {
+	b, _ := newTestBackend(t)
+	govRepo(t, b)
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git")
+	}
+	q := hwsRepo(t, gitTempDir(t), "queue")
+	appendConfig(t, b.App, "queue_repo: "+q+"\n")
+
+	set := shopSet(t, govIn(t, b))
+	if g := findKey(set, "queue-unmarked"); g == nil || g.ID != "G13" || g.Class != GovLane {
+		t.Fatalf("no G13 queue-unmarked LANE row for an undeclared queue repo: %v", set.Keys())
+	}
+	// And the store under `beads:` is a temp dir OUTSIDE the queue repo,
+	// which raises nothing: the launcher does skip that close's projection,
+	// but a `beads:` entry with its own store is the ordinary multi-project
+	// shape and not a misconfiguration (ranger-base-wmaf9 shipped a row for
+	// it and a live `posse status` measured it away — it named a client
+	// repo whose beads were never meant to live in posse's queue).
+	for _, c := range set {
+		if c.ID == "G13" && strings.HasPrefix(c.Key, "queue-store-outside") {
+			t.Errorf("a store outside the queue repo is not a condition: %+v", c)
+		}
+	}
+}
+
+// Marked clears the first cause and leaves the second: two causes, two keys,
+// so clearing one does not silence the other.
+func TestGovG13MarkedQueueRepoClearsTheUnmarkedRow(t *testing.T) {
+	b, _ := newTestBackend(t)
+	govRepo(t, b)
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git")
+	}
+	q := hwsRepo(t, gitTempDir(t), "queue")
+	appendConfig(t, b.App, "queue_repo: "+q+"\nbeads_visibility:\n  "+q+": private\n")
+	for _, c := range shopSet(t, govIn(t, b)) {
+		if c.Key == "queue-unmarked" {
+			t.Errorf("a marked queue repo must not raise queue-unmarked: %+v", c)
+		}
+	}
+}
+
+// `queue_repo:` naming something git does not call a checkout refuses every
+// close's commit, and it is the ONLY row: the two causes below it are
+// unanswerable about a path that is not a repo at all.
+func TestGovG13QueueRepoThatIsNotARepo(t *testing.T) {
+	b, _ := newTestBackend(t)
+	govRepo(t, b)
+	appendConfig(t, b.App, "queue_repo: "+t.TempDir()+"\n")
+
+	var rows []GovCondition
+	for _, c := range shopSet(t, govIn(t, b)) {
+		if c.ID == "G13" {
+			rows = append(rows, c)
+		}
+	}
+	if len(rows) != 1 || rows[0].Key != "queue-not-a-repo" {
+		t.Fatalf("G13 rows = %+v, want exactly queue-not-a-repo", rows)
+	}
+	if rows[0].Class != GovLane {
+		t.Errorf("class = %s, want LANE", rows[0].Class)
+	}
+}
+
+// ─── G14 · a persona's memory nobody landed ──────────────────────────────────
+
+// govMemory makes the personas dir a git repo and leaves one uncommitted
+// file in a persona's own directory — the shape LandPersonaMemory exists to
+// commit at a kill.
+func govMemory(t *testing.T, a *App, persona, name string) {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git")
+	}
+	root := a.PersonasDir()
+	if err := os.MkdirAll(filepath.Join(root, persona), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"init", "-q"}, {"config", "user.email", "pin@example.invalid"}, {"config", "user.name", "pin"}} {
+		if _, err := git(root, args...); err != nil {
+			t.Fatalf("git %v: %v", args, err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, persona, name), []byte("a lesson nobody committed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestGovG14UnlandedMemoryWithNoSession(t *testing.T) {
+	b, _ := newTestBackend(t)
+	govRepo(t, b)
+	govMemory(t, b.App, "developer", "ORDERS.md")
+
+	set := shopSet(t, govIn(t, b))
+	g := find(set, "G14")
+	if g == nil {
+		t.Fatalf("no G14 for memory nobody landed: %v", set.Keys())
+	}
+	if g.Key != "memory-unlanded:developer" || g.Class != GovLane {
+		t.Errorf("G14 = %+v, want key memory-unlanded:developer class LANE", *g)
+	}
+	if !strings.Contains(g.Detail, "ORDERS.md") || !strings.Contains(g.Detail, "no second copy") {
+		t.Errorf("Detail does not name the file or the stake: %q", g.Detail)
+	}
+}
+
+// A persona that is working right now is appending lessons as designed (ADR
+// 0015 §5) and its kill will land them. A row here would fire on nearly
+// every working session, which is the noise this predicate exists to avoid.
+func TestGovG14ALivePersonaIsNotACondition(t *testing.T) {
+	b, _ := newTestBackend(t)
+	dir := govRepo(t, b)
+	govMemory(t, b.App, "developer", "ORDERS.md")
+	writePersona(t, b.App, "developer", "code")
+	mustCreate(t, b, NewSessionOpts{Name: "developer-m", Agent: "developer", Dir: dir})
+
+	if g := find(shopSet(t, govIn(t, b)), "G14"); g != nil {
+		t.Errorf("a live persona's own typing is not a governance condition: %+v", *g)
+	}
+}
+
+// A home that keeps `personas/` outside git at all — the default install,
+// since posse must not require the operator to have made one a checkout.
+func TestGovG14NoPersonasCheckoutIsNotACondition(t *testing.T) {
+	b, _ := newTestBackend(t)
+	govRepo(t, b)
+	if g := find(shopSet(t, govIn(t, b)), "G14"); g != nil {
+		t.Errorf("a home with no personas checkout must raise nothing: %+v", *g)
+	}
+}
+
+// And the control the one above cannot be: a personas dir that IS a checkout,
+// with the memory committed. Without it the row could be silent because the
+// reading is broken rather than because the memory landed.
+func TestGovG14LandedMemoryIsNotACondition(t *testing.T) {
+	b, _ := newTestBackend(t)
+	govRepo(t, b)
+	govMemory(t, b.App, "developer", "ORDERS.md")
+	root := b.App.PersonasDir()
+	if _, err := git(root, "add", "--", "."); err != nil {
+		t.Fatalf("git add: %v", err)
+	}
+	if _, err := git(root, "commit", "-m", "memory: land it", "--", "."); err != nil {
+		t.Fatalf("git commit: %v", err)
+	}
+	if g := find(shopSet(t, govIn(t, b)), "G14"); g != nil {
+		t.Errorf("memory a commit already holds must raise nothing: %+v", *g)
+	}
+}
+
+// THE TWO READERS MUST AGREE. MemoryUnlanded is one `git status` over the
+// whole personas dir and MemoryDirtyPaths is one per persona (5x the wall,
+// measured on ranger-base-wmaf9) — two implementations of one question, and
+// the kill path and the governance row must never disagree about whether a
+// persona's memory is landed.
+func TestGovG14SweepAgreesWithThePerPersonaRead(t *testing.T) {
+	t.Parallel()
+	b, _ := newTestBackend(t)
+	govRepo(t, b)
+	govMemory(t, b.App, "developer", "ORDERS.md")
+	govMemory(t, b.App, "tester", "notes.md")
+
+	strands := b.App.MemoryUnlanded()
+	if len(strands) != 2 {
+		t.Fatalf("MemoryUnlanded = %+v, want two personas", strands)
+	}
+	for _, s := range strands {
+		want := b.App.MemoryDirtyPaths(s.Persona)
+		if strings.Join(s.Paths, " ") != strings.Join(want, " ") {
+			t.Errorf("%s: sweep %v, per-persona read %v", s.Persona, s.Paths, want)
+		}
+	}
+}
+
+// ─── G15 · a live session running degraded ───────────────────────────────────
+
+// govDegrade marks a created session's meta the way a launch
+// --allow-degraded does. Written rather than provoked, because what this row
+// reads is the META — the record a relaunch re-arms the waiver from
+// (relaunch.go) — and provoking a real parity failure would pin the row to
+// whichever gate this box happens not to realize.
+func govDegrade(t *testing.T, b *HerdrBackend, name, gates string) {
+	t.Helper()
+	m, ok := b.readMeta(name)
+	if !ok {
+		t.Fatalf("no meta for %s", name)
+	}
+	m.Degraded = gates
+	if err := b.writeMeta(m); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestGovG15DegradedSession(t *testing.T) {
+	b, _ := newTestBackend(t)
+	dir := govRepo(t, b)
+	writePersona(t, b.App, "developer", "code")
+	mustCreate(t, b, NewSessionOpts{Name: "developer-x", Agent: "developer", Dir: dir})
+	govDegrade(t, b, "developer-x", "Bash(git push:*) — needs cage: seatbelt")
+
+	set := shopSet(t, govIn(t, b))
+	g := find(set, "G15")
+	if g == nil {
+		t.Fatalf("no G15 for a session ls marks degraded: %v", set.Keys())
+	}
+	if g.Key != "session-degraded:developer-x" || g.Class != GovLane {
+		t.Errorf("G15 = %+v, want key session-degraded:developer-x class LANE", *g)
+	}
+	// The gates themselves, because a row that only says "degraded" is a
+	// label and the operator's remedy depends on which gate it is.
+	if !strings.Contains(g.Detail, "Bash(git push:*)") {
+		t.Errorf("Detail does not name the gate: %q", g.Detail)
+	}
+}
+
+func TestGovG15FullParitySessionIsNotACondition(t *testing.T) {
+	b, _ := newTestBackend(t)
+	dir := govRepo(t, b)
+	writePersona(t, b.App, "developer", "code")
+	mustCreate(t, b, NewSessionOpts{Name: "developer-x", Agent: "developer", Dir: dir})
+
+	if g := find(shopSet(t, govIn(t, b)), "G15"); g != nil {
+		t.Errorf("a session whose wall realizes every gate must raise nothing: %+v", *g)
+	}
+}
+
+// ─── the honesty the four rows were added for ────────────────────────────────
+//
+// GovReport's all-clear is its answer for an EMPTY set, so the whole of what
+// ranger-base-wmaf9 asked for is that each of these facts puts something IN
+// the set. Asserted on the RENDERING and not just the keys, because the
+// sentence the operator read is the defect.
+func TestGovNoAllClearOverADegradedWall(t *testing.T) {
+	b, _ := newTestBackend(t)
+	govRepo(t, b)
+	dir := govHookRepo(t, b.App, VisibilityPrivate)
+	govForeignHook(t, dir, "prepare-commit-msg")
+
+	var out bytes.Buffer
+	set, failed := ShopCheck(govIn(t, b))
+	GovReport(&out, set, failed)
+	if strings.Contains(out.String(), "nothing needs a human") {
+		t.Errorf("the all-clear over a foreign hook wall:\n%s", out.String())
+	}
+	if GovSummary(set) == "clear" {
+		t.Error("GovSummary says clear over a foreign hook wall")
 	}
 }

@@ -11,6 +11,38 @@ being cut is a precondition of the tag; see `docs/runbooks/release.md`.
 
 ## Unreleased
 
+**Four more facts the governance surface used to deny.** `posse status` ends
+with `nothing needs a human`, and that sentence is simply the rendering of an
+empty condition set — so anything the surface does not read, it denies. Four
+things it did not read: a foreign or stale L3 hook in a repo `beads_visibility:`
+declares (**G12**, `hook-wall:<slot>:<repo>`); a `queue_repo:` that is not a
+checkout, or is unmarked in `beads_visibility:` and so is scanned as public,
+either of which refuses every close's jsonl commit (**G13**); a persona's
+memory with lines no commit holds and no live session left to land them
+(**G14**, `memory-unlanded:<persona>`); and a session running
+with gates its wall does not realize, which `posse ls` has marked
+`⚠️degraded` all along (**G15**). All four are class LANE — none stops the
+shop — and all four end the all-clear, exit `posse status` non-zero, draw in
+the cockpit's GOVERNANCE block and reach the coordinator through the pulse.
+
+Each row names its own remedy, and every remedy is a human's: `posse gates
+install-hooks`, a line in `beads_visibility:`, reading a persona's ORDERS.md
+and committing it, raising a cage or a tier. The hook row asks the cheap half
+of the wall question on purpose — identity at the dispatch path, not a fresh
+exec of the render — because the pair costs 3.5s a sweep against 390ms and
+this surface recomputes every 30 seconds in the cockpit; what that gives up is
+written down rather than quietly dropped. G14 fires only when nothing of that
+persona is running, so a working session's own notes are never a condition.
+
+**Expect G12 right after an upgrade that changes the hook body.** The hooks
+are compiled into the binary and only two things re-render one — `posse gates
+install-hooks`, typed by hand, and a session create, which refreshes the one
+repo it was cut from. So a repo that holds no session carries the hooks of
+whichever binary last wrote them, and the first `posse status` after such an
+upgrade says so, per repo and per slot. That is the row doing its job: one
+`posse gates install-hooks <repo>` clears each, and before this release
+nothing but a promote epilogue or a watch preamble ever mentioned it.
+
 **`brew install posse` could not send the filing its own refusal named.**
 A dispatched Bob seat refuses by name — herdr has no `bob` kind — and the
 door that refusal prints ends "posse ships the filing at

@@ -1,6 +1,6 @@
 # ADR 0029 — Shared governance observations and explicit pause intent
 
-*Status: accepted; simplified 2026-09-05 · ADR simplification, operator ruling 2026-09-05 · descriptive consolidation, no required runtime removal.*
+*Status: accepted; simplified 2026-09-05 · ADR simplification, operator ruling 2026-09-05 · descriptive consolidation, no required runtime removal · amended 2026-10-09 for G12-G15 (bead ranger-base-wmaf9, from github.com/ranger360ai/posse/issues/3).*
 
 ## Decision
 
@@ -29,6 +29,10 @@ the vocabulary is closed at nine or that every process has identical inputs.
 | G10 / `verify-box:<checks>` | Checks the fresh verdict reports as finding or error; the key names them, and `verify_box_accepted` adds the tracking bead id to the detail without removing the check | LANE |
 | G10 / `verify-box-accept-stale:<check>` | A `verify_box_accepted` entry whose check is not red in the fresh verdict | LANE |
 | G11 / `launcher-behind:<depth>` | The running launcher's own build stamp counted against the branch of the configured checkout that holds it, past `launcher_behind_max` (default 16); the key carries the doubling step, so a deepening lag re-prompts at 16, 32, 64 and nowhere between. An unreadable stamp raises nothing and is not a partial view | LANE |
+| G12 / `hook-wall:<slot>:<repo>` | One row per degraded L3 slot in the repos `beads_visibility:` declares, from `SweepHookWallIdentity` — the sweep with ADR 0023's behavior half unasked; a skipped repo (absent, not git, managed hooks path per ADR 0052 D1) is never a finding. The detail is the sweep's own line, and the queue repo's carries one clause more | LANE |
+| G13 / `queue-not-a-repo` · `queue-unmarked` | Two config facts that make the launcher's commit of the store of record's projection fail at every close: `queue_repo:` is not a checkout; or it is unmarked in `beads_visibility:`, which is public, which is the one state where the commit guard's beads-jsonl scan runs over it. Not the projection's dirtiness, and not a `beads:` store that legitimately lives outside the queue repo — both are ordinary states | LANE |
+| G14 / `memory-unlanded:<persona>` | A persona memory dir holding lines no commit holds, with no live session for that persona — the landing runs at a kill (`memoryland.go`), so this is a landing that already ran and left them, or was refused. Owner: the personas checkout, read in one `git status` for the whole dir | LANE |
+| G15 / `session-degraded:<name>` | A live, non-foreign session whose meta carries `degraded:` — the gates its wall does not realize, which `posse ls` has marked ⚠️degraded since the parity check shipped. Reported, never alarmed: consent was given once with `--allow-degraded` and is re-armed by every relaunch from the meta | LANE |
 | `unpushed:<repo>:<n>` | Local git upstream comparison for configured bead repositories; no upstream yields no finding | Existing carry-over, no G id |
 | `no-live:<persona>` | Missing delivery target, only when pulse is armed and a target exists | Existing carry-over, no G id |
 | `backup-stale` | Armed backup policy and archive observation under ADR 0036; no archive is stale | LANE, no G id |
@@ -75,6 +79,78 @@ reconstructed install episodes with a median depth of 48, against two traced
 costs at depths 34 and 93 — so the box's cadence cannot bound it, and 16 is the
 largest doubling step below 21, the shallowest depth at which a fix the fleet
 needed was already on main.
+
+G12 through G15 are the next four rows added under that bar (bead
+ranger-base-wmaf9, from github.com/ranger360ai/posse/issues/3 — operator,
+work-box shakedown ranger-base-x4g3h). They share one defect and it is this
+page's own: each is a fact some other surface in this harness already printed,
+in a view nobody was reading, while `posse status` printed `nothing needs a
+human` the same minute. The all-clear is `GovReport`'s answer for an EMPTY
+set, so a fact that raises no condition is a fact the surface actively denies.
+All four are LANE on the backup-stale and G11 rule — URGENT means the shop is
+stopped, and none of these stops it; LANE still exits `posse status` non-zero,
+draws in the cockpit's GOVERNANCE block and ends the all-clear, which is the
+whole of what the bead asked for.
+
+- **G12** — predicate: `SweepHookWall` reports a degraded slot. Owner: the
+  hooks dir of each repo `beads_visibility:` declares, which is the same list
+  `scripts/verify-hook-freshness.sh` walks; scope is that list and
+  deliberately not "every repo on the box". The sweep itself is older (bead
+  ranger-base-ixv4) and fires at `posse promote`'s epilogue and once per watch
+  loop — both one-shot, both scrolled past. The row asks ADR 0023's IDENTITY
+  half only: MEASURED 2026-10-09, darwin 25.4.0, four declared repos, the pair
+  costs 3.41/3.54/3.62s a sweep against 375/396/393ms for identity alone,
+  because the behavior half execs the render once per repo. What the drop
+  gives up is named at `l3AskIdentity`: behavior catches a RENDERER
+  regression, which is a property of the binary and identical in every repo,
+  and is already asked at every launch and once per watch loop. One row per
+  SLOT, keyed by slot and repo, because two slots are two facts that heal
+  separately.
+- **G13** — predicate and owner in `queuejsonl.go` `QueueReady`, beside the
+  commit it is about. The two causes are the ones that make the NEXT close
+  fail too. "The projection differs from HEAD" is deliberately NOT one, and
+  the reason is measured: `bd sync` re-exports the jsonl from any session and
+  the launcher commits it only at a close it judges, so on 2026-10-09 this
+  instance's queue `issues.jsonl` was dirty at a moment nothing had been
+  refused. Nor is "a configured store that does not resolve inside
+  `queue_repo:`", which this reading shipped with for one afternoon and which
+  a live `posse status` measured away: the launcher does skip those closes,
+  but a `beads:` entry with its own store is the ordinary multi-project shape
+  — on this instance it named a client repo whose beads were never meant to
+  live in posse's queue — and this ADR's §4 reference moves THE STORE OF
+  RECORD, not every store an instance reads. `queue-unmarked` is the cause
+  that needs its chain said out loud:
+  unmarked is PUBLIC (fail closed, `visibility.go`), and the commit guard's
+  check 0 — the beads-jsonl visibility scan — runs in public repos only, so an
+  unmarked queue repo is exactly the state in which the launcher's own commit
+  of the store of record is scanned as a publication and refused. It is also
+  ADR 0015 §4's cutover step 5, performed once by hand and recorded nowhere
+  else.
+- **G14** — predicate: a persona memory dir holds changes no commit holds AND
+  no live session carries that persona. The second half is what keeps it a
+  condition rather than noise: ADR 0015 §5 leaves the memory WRITE live and
+  ungated, so a working persona's dirty ORDERS.md is this system functioning,
+  and only a persona with nothing running has a landing that already ran and
+  left the lines. Both of `LandPersonaMemory`'s refusal arms reach this row —
+  the credential-shape hold, which is level-triggered and refuses identically
+  forever, and the git failure, which is self-healing at the next kill and so
+  resolves itself off the row. Owner: the personas checkout, read in ONE `git
+  status` for the whole dir (MEASURED 2026-10-09: 38/35/34ms against
+  194/201ms for a call per persona over 11 personas, same answer), with a pin
+  that the sweep and the per-persona read agree.
+- **G15** — predicate: a live, non-foreign session whose meta carries
+  `degraded:`. Owner: the session meta, already in the listing this check
+  takes, so the row costs nothing. REPORTED, NEVER ALARMED, on G8's shape: the
+  shop is not stopped and a human already said yes. What makes it a condition
+  anyway is that the consent does not stay where it was given — a relaunch
+  inherits it from the meta (`relaunch.go`), so one `--allow-degraded` typed
+  days ago keeps re-arming itself for as long as the session is rebuilt. The
+  detail names the GATES, because the remedy depends on which one it is. It
+  can name the same hook G12 does — parity probes the L3 slots — and that
+  overlap is deliberate: G12 is a REPO's wall, true whether a session is
+  there, cleared by an install; G15 is one SESSION's waiver, cleared by ending
+  or relaunching that session once the wall holds. Two keys, so one healing
+  does not silence the other.
 
 G4's streak is process-local and resets on restart. A fresh status process
 cannot infer two hours of skips from one reading and reports no G4. G7 is
@@ -147,5 +223,6 @@ observation scopes prevents a fresh shell from inventing missing history.
 | 0029 and its G4/G6/G7/carry-over amendments | One computed view with explicit observation scopes |
 | Operator ruling 2026-09-05 | Existing conditions retained without closed-nine fiction |
 | Operator ruling 2026-09-06 (ranger-base-0x1wc) | G10 live-box verdict with a mandatory freshness rule and a named-bead suppression |
+| Issue #3 / ranger-base-wmaf9 (2026-10-08) | G12-G15: a degraded wall, a queue that cannot take the projection, unlanded persona memory and a degraded session are conditions, not readings somebody else prints |
 
 Prior tables and evidence: the page as it stood before this simplification is in git history, `git show c86a6b8:docs/adr/0029-governance-surface.md` (the dated copies were dropped by operator ruling 2026-09-05; git history is the record).

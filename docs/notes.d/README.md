@@ -7,6 +7,7 @@ references), not inferred publication dates. Undated fragments sort last.
 ## 2026-10
 
 - [ranger-base-mhv7j](ranger-base-mhv7j.md) — The release carried the refusal and not the way out of it (ranger-base-mhv7j) — 2026-10-09
+- [ranger-base-wmaf9](ranger-base-wmaf9.md) — Four facts this harness printed and its governance surface denied (ranger-base-wmaf9) — 2026-10-08
 - [ranger-base-sl5sg](ranger-base-sl5sg.md) — The one launch precondition the PID lint could read and did not (ranger-base-sl5sg) — 2026-10-08
 - [ranger-base-qvy0n](ranger-base-qvy0n.md) — The ceiling's two readers: why the positive pathspec is `:(top)` and not `.` (ranger-base-qvy0n) — 2026-10-08
 - [ranger-base-e01op](ranger-base-e01op.md) — The launcher's own scaffolding, read as the seat's unlanded work (ranger-base-e01op) — 2026-10-08

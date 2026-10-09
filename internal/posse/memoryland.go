@@ -58,6 +58,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -875,4 +876,131 @@ func firstCredShapeInDiff(diff string) (file string, line int, what string) {
 		}
 	}
 	return "", 0, ""
+}
+
+// ─── the governance reading (ADR 0029 G14) ───────────────────────────────────
+//
+// WHY A ROW. LandPersonaMemory says its one line where the landing happens —
+// a kill — and that line is retrospective: `<persona> memory NOT committed:
+// <why> — read it and land it by hand`, printed once, into a watch log or a
+// terminal nobody is reading, with `nothing needs a human` on the governance
+// surface the same minute (bead ranger-base-wmaf9, from
+// github.com/ranger360ai/posse/issues/3). Persona memory is the one artifact
+// with NO other copy (this file's header), and a refused landing leaves it
+// exactly where it was: on disk, in one place, until a hand commits it. The
+// 203 → 1419 → 1538 line backlog this feature was built for is what that
+// silence accumulates into.
+//
+// WHY "dirty AND no live session" IS THE PREDICATE, and not the refusal
+// itself. A refusal is an event and a condition has to be a level — a fact
+// any process can compute twice with the same answer, that heals when the
+// remedy lands (ADR 0029). Dirty memory ALONE is not it: a persona appending
+// lessons to ORDERS.md while it works is this system functioning as designed
+// (ADR 0015 §5 keeps that write live and ungated), and a row that fired on it
+// would fire on nearly every working session. What is not designed is dirty
+// memory with no session left to kill: the landing that would have taken
+// those lines has already run and left them, or never ran at all, and
+// nothing in the harness will try again until that persona is hired, worked
+// and killed. Both refusal arms land here — the credential-shape HOLD, which
+// is level-triggered and will refuse identically forever, and the git
+// failure, which is self-healing at the next kill and so resolves itself off
+// this row rather than needing a second one.
+//
+// WHAT IT COSTS. ONE `git status` over the whole personas dir, plus one
+// `rev-parse` for the prefix, whatever the persona count. MEASURED 2026-10-09,
+// darwin 25.4.0, 11 personas on this instance, same answer both ways:
+// 38/35/34ms for the sweep against 194/201ms for a MemoryDirtyPaths call per
+// persona. The surface this joins ticks every 30s in the cockpit, so the
+// per-persona loop was the wrong shape for it.
+
+// MemoryStrand is one persona's memory that no commit holds.
+type MemoryStrand struct {
+	Persona string
+	Paths   []string // repo-relative, as git spells them — the same strings MemoryDirtyPaths returns
+}
+
+// MemoryUnlanded is every persona whose memory dir holds lines no commit
+// holds, in persona order.
+//
+// Nil covers the same four shapes MemoryDirtyPaths's doc calls "nothing to
+// land", and for the same reason none of them is an error: no personas dir, a
+// clean one, a home that keeps `personas/` outside git at all (the default
+// install — posse must not require the operator to have made one a
+// checkout), or a git that could not answer.
+//
+// It is ONE git status over the whole dir rather than one per persona
+// (measured above), and it buckets by the first path segment under the
+// personas prefix. Paths outside that prefix and files sitting directly in
+// `personas/` are skipped: neither is any persona's memory, and the commit
+// that lands one is path-limited to a single persona's dir.
+//
+// ValidName is the same guard memoryChanges applies, asked here for the same
+// reason: a bucket LandPersonaMemory would refuse to commit is not a finding
+// anyone can act on through the mechanism this row points at.
+func (a *App) MemoryUnlanded() []MemoryStrand {
+	root := a.PersonasDir()
+	if st, err := os.Stat(root); err != nil || !st.IsDir() {
+		return nil
+	}
+	prefix, err := git(root, "rev-parse", "--show-prefix")
+	if err != nil {
+		return nil
+	}
+	out, err := gitRaw(root, "status", "--porcelain", "--untracked-files=all", "-z", "--", ".")
+	if err != nil {
+		return nil
+	}
+	// `-z` and `--untracked-files=all` for the two reasons memoryChanges
+	// gives: the default format QUOTES an odd byte and collapses an
+	// untracked directory to `dir/`, and a collapsed directory would bucket
+	// as a persona with no file named.
+	pfx := strings.TrimSpace(prefix)
+	paths := map[string][]string{}
+	for _, c := range porcelainZChanges(out) {
+		if pfx != "" && !strings.HasPrefix(c.Path, pfx) {
+			continue
+		}
+		rest := strings.TrimPrefix(c.Path, pfx)
+		i := strings.Index(rest, "/")
+		if i <= 0 {
+			continue
+		}
+		name := rest[:i]
+		if !ValidName(name) {
+			continue
+		}
+		paths[name] = append(paths[name], c.Path)
+	}
+	// Persona order, because the caller's rows are keyed on the persona and
+	// a map's iteration order would reorder a set whose keys had not
+	// changed — which is what the pulse fingerprints (ADR 0029).
+	names := make([]string, 0, len(paths))
+	for name := range paths {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	strands := make([]MemoryStrand, 0, len(names))
+	for _, name := range names {
+		strands = append(strands, MemoryStrand{Persona: name, Paths: paths[name]})
+	}
+	return strands
+}
+
+// GovRow is G14 for one strand: LANE on the backup-stale rule — memory
+// nobody has landed stops nothing, and what is at risk is a record with no
+// second copy (ADR 0029's URGENT means the shop is stopped).
+//
+// The key is the persona and not the path set, deliberately: the condition
+// is "this persona's memory is not landed", it persists while the operator
+// reads the file, and a key that moved every time a line was appended would
+// re-prompt the coordinator for the persona's own typing.
+func (s MemoryStrand) GovRow(dir string) GovCondition {
+	return GovCondition{
+		ID:    "G14",
+		Class: GovLane,
+		Key:   "memory-unlanded:" + s.Persona,
+		Detail: fmt.Sprintf(
+			"%s has %d path(s) in %s that no commit holds (%s) and no live session left to land them — the landing runs at a kill (ranger-base-qxvh), so this persona's has already run and left them or was refused; persona memory has no second copy, so read it and commit it by hand",
+			s.Persona, len(s.Paths), AbbrevHome(dir), dirtyList(s.Paths)),
+	}
 }

@@ -53,6 +53,36 @@ type HookWallRepo struct {
 	// Degraded holds ready-to-display lines, one per slot that does not
 	// count. Empty for a repo whose wall is this binary's render.
 	Degraded []string
+	// Slots names the slot each Degraded line is about, index for index.
+	// The governance row keys on (slot, repo) — Key is the whole identity a
+	// machine reader sees (ADR 0029) — and a slot name cannot be parsed back
+	// out of a sentence written for a human. Read it through Findings, not
+	// by index: the zip belongs at the data's own site.
+	Slots []string
+}
+
+// HookWallFinding is one degraded slot: the slot's name and the line to show.
+type HookWallFinding struct {
+	Slot string
+	Line string
+}
+
+// Findings joins Degraded with Slots. They are appended in lockstep by the
+// sweep, so this is a zip and not a lookup — it lives here because a caller
+// doing the index arithmetic itself is a caller that can key a row on the
+// wrong slot the day one of the two grows an entry the other does not.
+// A line with no slot beside it keeps the line and names no slot, which is
+// the honest rendering of that bug rather than a guess at which slot it was.
+func (r HookWallRepo) Findings() []HookWallFinding {
+	out := make([]HookWallFinding, 0, len(r.Degraded))
+	for i, line := range r.Degraded {
+		f := HookWallFinding{Line: line}
+		if i < len(r.Slots) {
+			f.Slot = r.Slots[i]
+		}
+		out = append(out, f)
+	}
+	return out
 }
 
 // HookWallSweep is what one pass over the configured repos found.
@@ -71,7 +101,15 @@ type HookWallSweep struct {
 // one wall) and reported in config order. A repo that is absent or is not a
 // git repository is recorded as skipped, never as a finding: config outliving
 // a checkout is an ordinary thing and not evidence about any wall.
-func (a *App) SweepHookWall() HookWallSweep {
+func (a *App) SweepHookWall() HookWallSweep { return a.sweepHookWall(l3AskBoth) }
+
+// SweepHookWallIdentity is the same sweep with ADR 0023's behavior half left
+// unasked — the reading a TICKER can afford. l3AskIdentity carries the
+// measurement and names what the drop gives up; the governance row (ADR 0029
+// G12) is its one caller.
+func (a *App) SweepHookWallIdentity() HookWallSweep { return a.sweepHookWall(l3AskIdentity) }
+
+func (a *App) sweepHookWall(ask l3Ask) HookWallSweep {
 	var s HookWallSweep
 	var seen []string
 	for _, kv := range YamlMapPairs(a.ConfigPath, "beads_visibility") {
@@ -112,7 +150,7 @@ func (a *App) SweepHookWall() HookWallSweep {
 			s.Repos = append(s.Repos, r)
 			continue
 		}
-		p := a.probeL3Hooks(dir, true)
+		p := a.probeL3HooksAsk(dir, true, nil, ask)
 		if !p.Repo {
 			r.Skip = "not a git repository"
 			s.Repos = append(s.Repos, r)
@@ -120,9 +158,11 @@ func (a *App) SweepHookWall() HookWallSweep {
 		}
 		s.Measured++
 		if !p.CommitGuard {
+			r.Slots = append(r.Slots, "prepare-commit-msg")
 			r.Degraded = append(r.Degraded, hookWallLine(p.HooksDir, "prepare-commit-msg", key, p.CommitGuardDegraded, p.CommitGuardVerdict))
 		}
 		if !p.PrePush {
+			r.Slots = append(r.Slots, "pre-push")
 			r.Degraded = append(r.Degraded, hookWallLine(p.HooksDir, "pre-push", key, p.PrePushDegraded, p.PrePushVerdict))
 		}
 		if len(r.Degraded) > 0 {

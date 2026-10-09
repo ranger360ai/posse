@@ -6370,6 +6370,37 @@ func (a *App) probeL3Hooks(dir string, wantPrePush bool) l3HookProbe {
 	return a.probeL3HooksIn(dir, wantPrePush, nil)
 }
 
+// l3Ask is how much of ADR 0023's question one probe asks.
+type l3Ask int
+
+const (
+	// l3AskBoth is the ADR's own pair and every caller that decides
+	// anything: identity at the dispatch path, then behavior — our own
+	// render, exec'd fresh, still refuses.
+	l3AskBoth l3Ask = iota
+	// l3AskIdentity drops the behavior half, for a reader that runs on a
+	// TICKER rather than at a launch.
+	//
+	// MEASURED 2026-10-09, darwin 25.4.0, this box, over the four repos its
+	// `beads_visibility:` declares: the pair costs 3.41/3.54/3.62s a sweep
+	// and identity alone costs 375/396/393ms, because the behavior half
+	// execs the render once per repo and that render runs git over the
+	// repo's own index. `posse status` pays it once, but the cockpit ticks
+	// its governance block every 30s and the pulse every two minutes, and
+	// 3.5s of hook execs per tick is not a price a reading may charge.
+	//
+	// WHAT THE DROP COSTS, said here so nobody reads the cheaper sweep as
+	// the same reading: the behavior half catches a RENDERER regression — a
+	// broken /bin/sh, a render that no longer refuses — which is a property
+	// of this BINARY and not of the box, identical in every repo, and it is
+	// already asked at every launch (herdrback) and once per watch loop
+	// (ReportHookWall). Identity alone is what catches the per-repo facts: a
+	// foreign hook holding the slot, ours gone stale, nothing installed at
+	// all. Those are the ones a governance row is about, and the ones no
+	// other reader asks on a schedule.
+	l3AskIdentity
+)
+
 // probeL3HooksIn is probeL3Hooks with ADR 0052 D3's redirect mode: red
 // non-nil says this launch's git does NOT dispatch from `git rev-parse
 // --git-path hooks` — the session env aims it at the dir posse rendered
@@ -6379,6 +6410,11 @@ func (a *App) probeL3Hooks(dir string, wantPrePush bool) l3HookProbe {
 // a private temp file and never the file at any dispatch path, so it has
 // nothing to learn from where git would have found one.
 func (a *App) probeL3HooksIn(dir string, wantPrePush bool, red *l3Redirect) l3HookProbe {
+	return a.probeL3HooksAsk(dir, wantPrePush, red, l3AskBoth)
+}
+
+// probeL3HooksAsk is probeL3HooksIn with the ask (l3Ask) made explicit.
+func (a *App) probeL3HooksAsk(dir string, wantPrePush bool, red *l3Redirect, ask l3Ask) l3HookProbe {
 	hooks, err := hooksDir(dir)
 	if err != nil {
 		return l3HookProbe{}
@@ -6411,7 +6447,14 @@ func (a *App) probeL3HooksIn(dir string, wantPrePush bool, red *l3Redirect) l3Ho
 	var commitPath string
 	r.CommitGuardVerdict, commitPath = l3IdentityIn(red, hooks, "prepare-commit-msg", commitRender, sharedIndexMarker)
 
-	prePushBehavior, commitBehavior := execOwnRenders(dir, wantPrePush, commitRender)
+	// An ask that skips the behavior half reads as "not asked" and never as
+	// "it failed": the verdict below is then identity's alone, and the
+	// renderer-regression arm of l3DegradeLine is unreachable — which is
+	// correct, because nothing looked.
+	prePushBehavior, commitBehavior := true, true
+	if ask == l3AskBoth {
+		prePushBehavior, commitBehavior = execOwnRenders(dir, wantPrePush, commitRender)
+	}
 
 	r.PrePush = !wantPrePush || (r.PrePushVerdict == l3Held && prePushBehavior)
 	r.CommitGuard = r.CommitGuardVerdict == l3Held && commitBehavior
