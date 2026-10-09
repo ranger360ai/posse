@@ -111,6 +111,16 @@ untracked un-ignored one. A tracked path is thus withheld, which is right
 twice over — an ignore pattern does not reach a tracked file, so the line
 would buy nothing and only widen what the operator's checkout hides.
 
+**Does withholding regress the incident it was written for?** No, and the
+reason is the incident's own asymmetry. Every store this instance reads
+ignores `.beads/redirect` in its MAIN checkout — two through a `.beads/` line
+in the operator's `.gitignore`, the third through bd's own
+`.beads/.gitignore`, whose line 25 is `redirect`. That third file is exactly
+what the fresh `.beads` `seedBeadsRedirect` makes does not have, which is the
+whole of ranger-base-e01op's second hole. So the path this gate was most
+likely to withhold is one it admits, in the shape the bug was reported in.
+`worktree_link:` declares nothing on this instance at all.
+
 **The disclosed cost, pinned beside the rule:** in a repo whose main checkout
 shows the scaffolding path as ordinary dirt, the session tree keeps its `??`
 line and ADR 0041's closed-dirty check can still raise it. That is the

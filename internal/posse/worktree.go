@@ -1226,9 +1226,17 @@ func declaredWorktreeLinks(t *SessionTree, a *App) ([]string, error) {
 // checkout shows the scaffolding path as ordinary dirt, the session tree keeps
 // its `??` line and ADR 0041's closed-dirty check can still raise it. That is
 // the under-exclude direction — a visible file, not a hidden one — and it is
-// the half of the trade that does not lose anybody's work. It costs this
-// instance nothing: `worktree_link:` is documented for gitignored paths, and
-// both live repos ignore `.beads/` in the checkout (MEASURED 2026-10-09).
+// the half of the trade that does not lose anybody's work.
+//
+// AND IT IS SATISFIED IN THE INCIDENT'S OWN SHAPE, which is the measurement
+// that matters here: every store this instance reads ignores `.beads/redirect`
+// in its MAIN checkout — two of them through a `.beads/` line in the
+// operator's `.gitignore`, the third through bd's own `.beads/.gitignore`,
+// which is precisely the file the fresh `.beads` seedBeadsRedirect makes does
+// NOT have. That asymmetry is the whole of ranger-base-e01op, so the one path
+// this gate was most likely to withhold is one it admits (MEASURED
+// 2026-10-09). `worktree_link:` declares nothing on this instance at all, and
+// is documented for gitignored paths where it does.
 //
 // Best effort, and after the seeding rather than before: nothing reads the
 // tree's status in between, and a pattern for scaffolding that does not exist
