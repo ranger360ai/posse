@@ -202,6 +202,18 @@ same. No runtime in the table needs it; claude has the mint.
 - **hoover's stake**: no exposure widens. Arm 3 is rejected; the
   persona's cooperative bypass of the shim is unchanged and already named
   in 0009 §3.
+- **The PID lint (amendment, ranger-base-sl5sg).** D2's question is
+  answerable off the file, and for the five weeks after this page landed
+  nothing asked it: a claude PID carrying the rule with no `envs:` linted
+  clean and met the refusal at its first dispatch (issue #6, MEASURED on a
+  real install 2026-10-08). `posse agent check` now warns — `CredGateLint` beside
+  `CredGateRefusal`, both reading the rule, the binary and the key off
+  `CredGateCollision` and `CageCredential` — and the scaffold's own `envs:`
+  comment names the key. A WARNING and not a finding: the env store is
+  machine-local and never in the repo, so a finding would red an instance
+  repo's CI over a correct PID, and `--env-file` reaches the same launch
+  without any PID naming a set. Silent on all eleven crew PIDs (MEASURED
+  2026-10-09); docs/notes.d/ranger-base-sl5sg.md has the reading.
 - **Docs**: 0002 §3, 0009 §3–4 and 0019 D1 are stamped in this commit;
   the memory that taught the PATH strip is rewritten to D5.
 

@@ -22,6 +22,14 @@ package posse
 //   ---
 //   You are the operations copilot of the crew.
 //
+// `envs` is not decoration on a claude PID. A PID whose `deny:` shims the
+// runtime's OWN credential binary — `Bash(security:*)`, the keychain-CLI
+// tripwire every crew PID carries — launches only with
+// CLAUDE_CODE_OAUTH_TOKEN among the env-set names it injects, and REFUSES
+// otherwise, unwaivably by `--allow-degraded` (ADR 0042 D2). The shim is the
+// design, so the fix is the mint and never dropping the rule; `posse agent
+// check` warns when a PID is in that state (ranger-base-sl5sg).
+//
 // `runtime` names the launch profile (runtime.go); the runtime's template
 // renders {file} (shell-quoted path of the .md, so the prompt body itself
 // is what the CLI receives), {memory}, and {allow}/{deny} via the runtime's
@@ -653,6 +661,13 @@ deny:
   - Bash(git commit unless --)
   # more permission rules removed regardless of any allowlist, e.g.
   # - Bash(git push:*)
+# envs: [crew]             # env sets this persona's sessions receive, by name
+# A deny over the RUNTIME's own credential binary (` + "`Bash(security:*)`" + ` on
+# claude) shims the runtime itself and not just the persona, so such a PID
+# launches ONLY with CLAUDE_CODE_OAUTH_TOKEN in one of these sets and refuses
+# otherwise, unwaivably (ADR 0042 D2). The shim is the design, so the fix is
+# the mint and never dropping the rule: mint it with ` + "`claude setup-token`" + `,
+# keep it in an env set (mode 600, never in the repo), name that set here.
 metrics:
   # metric-catalog ids (1–2), e.g.
   # - closed-no-reopen

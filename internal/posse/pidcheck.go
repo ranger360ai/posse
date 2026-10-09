@@ -213,6 +213,37 @@ func (a *App) CheckAgent(name string) (findings, warnings []string, err error) {
 	} else if len(ag.Sockets) > 0 && ResolveCage("", ag) != CageContainer {
 		add("sockets: %s is a container-tier key and this PID launches at %s — nothing is mounted (add cage: container or drop it)", strings.Join(ag.Sockets, ", "), ResolveCage("", ag))
 	}
+	// The credential precondition (ADR 0042 D2, ranger-base-sl5sg): a PID
+	// whose deny: shims its own runtime's credential binary launches only
+	// with that runtime's session mint among the env-set names it injects,
+	// and the launch REFUSES otherwise, unwaivably. Asked here because the
+	// answer is in the file plus the env store: the rule is this PID's, and
+	// the key either is or is not among the NAMES the sets it names carry.
+	//
+	// Through the launch's own CredGateCollision, so this line and the
+	// refusal a dispatch meets are one fact asked twice rather than two
+	// facts that can disagree. The bin dir is this persona's real gates dir
+	// — named, never rendered: a lint writes nothing, and the only thing
+	// CredGateCollision does with it is exclude it from the PATH it resolves
+	// the binary on, which is what keeps a `security` deny from warning on a
+	// box that has no such binary.
+	if own != nil && len(ag.Deny) > 0 {
+		if rule := CredGateCollision(own, ag.Deny, filepath.Join(a.GatesDir(name), "bin")); rule != "" {
+			if key := CageCredential(own); key == "" {
+				warn("%s", CredGateLint(own, rule, ""))
+			} else {
+				// The sets a launch of this PID would realize, asked through
+				// the launch's own selector so a `default_env` that a persona
+				// never receives (rangerhq-f2b) is not read in here either.
+				sets := a.LaunchEnvSets(nil, ag)
+				keys, unreadable := a.EnvSetKeyNames(sets)
+				if !containsString(keys, key) {
+					warn("%s", CredGateLint(own, rule, credGateWhere(sets, unreadable)))
+				}
+			}
+		}
+	}
+
 	// Path-scoped writes (ADR 0014). Four things the matrix will say at
 	// launch, said here where the PID is being written instead — and one
 	// (the redundant pair) that only ever costs a line of YAML.
@@ -372,4 +403,26 @@ func pathWithin(dir, p string) bool {
 		return false
 	}
 	return dir == p || strings.HasPrefix(p, dir+string(filepath.Separator))
+}
+
+// credGateWhere is the clause CredGateLint's reader needs in order to
+// act: where the missing key was looked for. Split by next move rather than
+// by count — a PID that names no set needs one named, a set that carries
+// other names needs the key added, and a set this box does not have is a
+// launch refusal of its own ("env set not found") that no amount of minting
+// fixes, so a reader told the key was absent would go mint for nothing.
+//
+// It names the SETS, which `posse envs` already prints, and never a key out
+// of one (rangerhq-f2b).
+func credGateWhere(sets, unreadable []string) string {
+	switch {
+	case len(sets) == 0:
+		return "this PID names no env set at all, so no launch taking its defaults can carry one"
+	case len(unreadable) == len(sets):
+		return "none of the env sets it names is on this box (" + strings.Join(unreadable, ", ") + "), which is a launch refusal of its own"
+	case len(unreadable) > 0:
+		return "no env set it names carries it (" + strings.Join(sets, ", ") + "), and " + strings.Join(unreadable, ", ") + " is not on this box at all"
+	default:
+		return "no env set it names carries it (" + strings.Join(sets, ", ") + ")"
+	}
 }

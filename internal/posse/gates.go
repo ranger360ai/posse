@@ -1158,6 +1158,23 @@ func CheckCredGate(persona string, rt *Runtime, deny []string, binDir string, na
 	return CredGateRefusal(persona, rt, rule)
 }
 
+// credMintDoor is the recipe the launch refusal and the PID lint both end
+// on, held in ONE place so the two cannot drift about where a mint comes
+// from (the PIDChannelDoor shape, one precondition over).
+//
+// Unconditional, and never keyed on the runtime's name. How a session
+// credential is minted is a DIMENSION — ADR 0017 §3: a `rt.Name == "claude"`
+// branch here would make the runtime grid scenery, and the pin says so
+// (TestNoNewShadowPredicate, which caught exactly that branch in
+// ranger-base-sl5sg's first cut). The one named verb is flagged as claude's
+// own in the prose instead, and the place a SECOND runtime's recipe belongs
+// is the declaration that names its key — `cage_cred:`, printed by
+// cageCredRow (runtimecheck.go), which is also where today's two undecided
+// runtimes say they are undecided.
+func credMintDoor() string {
+	return "Mint it once by hand (on claude: `claude setup-token`), put it in an env set (mode 600, never in the repo), and name that set in this PID's envs: or pass --env-file."
+}
+
 // CredGateRefusal is the sentence that refusal says. It names the four
 // things a reader needs to act: the rule in the PID's own spelling, the
 // binary it shims, the key that is missing, and how the key is minted.
@@ -1170,9 +1187,48 @@ func CredGateRefusal(persona string, rt *Runtime, rule string) error {
 	}
 	return Die("posse: %s launches on %s under %s, which shims `%s` — the binary %s reads AND WRITES its own credential with — and %s is in none of this session's env sets (ADR 0042 D2).\n"+
 		"  That shim is the design, not an accident: a crew runtime authenticates with the session mint posse injects and never with the operator's store of record, which keeps one writer (ADR 0042 D1). Without the mint this session opens logged out and cannot refresh at expiry, so posse refuses the launch rather than spending it.\n"+
-		"  Mint it once by hand (on claude: `claude setup-token`), put it in an env set (mode 600, never in the repo), and name that set in this PID's envs: or pass --env-file. ANTHROPIC_API_KEY is metered spending and is not the session credential.\n"+
+		"  %s ANTHROPIC_API_KEY is metered spending and is not the session credential.\n"+
 		"  Not waivable by --allow-degraded: this is not a gate the wall could not realize, it is a session that cannot authenticate.\n",
-		persona, rt.Name, rule, rt.CredBin, rt.Name, key)
+		persona, rt.Name, rule, rt.CredBin, rt.Name, key, credMintDoor())
+}
+
+// CredGateLint is the same precondition said by `posse agent check`, read
+// off the PID file instead of off a launch — the PIDChannelFinding /
+// PIDChannelRefusal pair's shape, one precondition over: the two derive the
+// rule, the binary and the key from the same functions and differ only in
+// voice, because a linter's line and a refusal are read in different rooms.
+// Named for the surface and not for pidcheck's finding/warning split, so the
+// name cannot go stale the way a resurrected `CredGateWarning` would read
+// (that one is the launch warning ADR 0042 D2 retired, and it stays retired).
+//
+// Why a line here at all. ADR 0042 D2's question is answerable from the
+// file: the rule is in the PID's own deny:, and the key is either among the
+// names of the env sets the PID itself names or it is not. Until
+// ranger-base-sl5sg nothing asked — a claude PID carrying the crew's
+// Bash(security:*) with no envs: linted clean, and the operator met the
+// refusal at its first dispatch instead (github.com/ranger360ai/posse
+// issue #6, MEASURED on a real install 2026-10-08).
+//
+// A WARNING and never a finding, which is the one thing this cannot be
+// talked into. The env store is machine-local (RHQ_HOME/envs, mode 700) and
+// never in the repo, so `posse agent check` run in an instance repo's CI has
+// no sets to read and every PID carrying the rule would red the build over a
+// file that is correct. The same launch is also reachable with --env-file,
+// which no PID can see.
+//
+// where is what was read, composed by the caller: the sets the PID names, or
+// that it names none. It says what is ABSENT and never what a set holds —
+// the one guarantee `envs:` makes is that a set's contents stay out of a
+// terminal (rangerhq-f2b), and the missing key is a name the PID was already
+// going to be told about.
+func CredGateLint(rt *Runtime, rule, where string) string {
+	key := CageCredential(rt)
+	if key == "" {
+		return fmt.Sprintf("deny: %s shims `%s`, the binary %s reads its own credential with, and no session credential is decided for %s — every launch of this PID refuses (ADR 0042 D1/D2, rangerhq-kiz). The rule stays: the operator's store of record keeps ONE writer and it is not a crew process; decide this runtime's session credential (`cage_cred:` for a template-only runtime) instead.",
+			rule, rt.CredBin, rt.Name, rt.Name)
+	}
+	return fmt.Sprintf("deny: %s shims `%s`, the binary %s reads AND WRITES its own credential with, so this PID launches only with %s among the env-set names it injects — and %s (ADR 0042 D2). Every launch of it refuses, and --allow-degraded cannot waive it: that shim is the design (ADR 0042 D1), so the fix is the mint and never dropping the rule. %s",
+		rule, rt.CredBin, rt.Name, key, where, credMintDoor())
 }
 
 // whereHint is that line, or "" when cmd is not one a human types himself.

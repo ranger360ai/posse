@@ -293,3 +293,29 @@ func (a *App) LaunchEnvSets(explicit []string, ag *AgentFile) []string {
 // and the launch asks for its own; the day the rule gains a term, a grep for
 // this name is the whole list of what changes.
 func (a *App) cockpitEnvSets() []string { return a.LaunchEnvSets(nil, nil) }
+
+// EnvSetKeyNames is what the given env sets carry, read for the KEY NAMES
+// and nothing else — the reader a check that must answer "is this name in
+// here" needs without ever holding a value (ranger-base-sl5sg). Alongside
+// them, the names of the sets that could not be read at all: a set the PID
+// names but this box does not have is a launch refusal of its own, and a
+// caller that folded it in with "the key is not there" would be reporting a
+// certainty it does not have.
+//
+// Values are dropped here rather than at the caller on purpose. The one
+// guarantee `envs:` makes is that a set's contents never reach a terminal
+// (rangerhq-f2b), and the way to keep it is for the question to be asked by
+// a function that never returns one.
+func (a *App) EnvSetKeyNames(names []string) (keys, unreadable []string) {
+	for _, n := range names {
+		vars, err := a.EnvSetVars(n)
+		if err != nil {
+			unreadable = append(unreadable, n)
+			continue
+		}
+		for _, v := range vars {
+			keys = append(keys, v.Key)
+		}
+	}
+	return dedupeStrings(keys), unreadable
+}
