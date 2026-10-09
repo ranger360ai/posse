@@ -6,7 +6,9 @@ ranger-base-yijws, discovered from ranger-base-9lrzx · amended 2026-09-04
 (Consequences: a second loud refusal, the mixed-prefix store in no-db mode,
 and why its remedy has two halves; ranger-base-jl8q2) · corrected 2026-10-09
 (Context and Verification: a plain read builds the database FILE and not
-necessarily its ROWS; ranger-base-a5st4, github issue #5)*
+necessarily its ROWS; ranger-base-a5st4, github issue #5) · amended 2026-10-09 (D3 refuses a MODE
+detector and nothing else: the check of an empty `--json` answer against
+bd's own `info` count and the census is ADR 0071; ranger-base-3xmt6)*
 
 ## Context
 
