@@ -2271,7 +2271,8 @@ from config.yaml to disarm this row`. Both ways out are in the sentence.
 
 Once the queue has its own tree, these are the keys and their defaults
 (`examples/config.yaml` ships the same block commented out, with the
-reasoning):
+reasoning, and `posse backup --help` prints the same six keys with their
+defaults from the CLI — ranger-base-cse63):
 
 ```yaml
 queue_repo: ~/src/<your-queue-repo>        # the store of record (ADR 0015 §4)

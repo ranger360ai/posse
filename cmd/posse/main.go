@@ -1051,6 +1051,17 @@ func main() {
 		rest := args
 		for len(rest) > 0 {
 			switch {
+			// -h/--help, on every form, printing the catalog's backup
+			// block and exiting 0 (ranger-base-cse63). This verb takes no
+			// <name>, so it never reached need()'s reading of a leading
+			// flag (main.go's `-h / --help` rule) and fell through to the
+			// one-line grammar below with exit 1 — asking for help was an
+			// error, and the answer carried none of the keys. Read here
+			// rather than before `sub`, so `--to --help` still names a
+			// directory and only a -h/--help in a FLAG position answers.
+			case rest[0] == "-h" || rest[0] == "--help":
+				fmt.Fprint(out, backupHelp())
+				os.Exit(0)
 			case rest[0] == "--to" && len(rest) > 1 && sub == "":
 				to, rest = rest[1], rest[2:]
 			case rest[0] == "--archive" && len(rest) > 1 && sub == "verify":
@@ -2690,51 +2701,7 @@ governance:
                                  park is re-surfaced by its date and this
                                  never reaches it. Go's grammar has no day
                                  unit, so 14d is a typo. 0 means every tick
-  posse backup [--to <dir>]      archive the store of record (the queue repo's
-                                 git history as a bundle, its beads db staged
-                                 through sqlite's online backup API, and the
-                                 jsonl projections) plus the constitution home
-                                 (` + posse.PromotedProse("and") + `, promoted.json).
-                                 envs/ and secrets/ are NEVER archived. The
-                                 archive is read back and verified BEFORE it is
-                                 named, so a published archive is a green one
-                                 ON-BOX ONLY: a URL, an scp-style host:path, a
-                                 UNC path, or any volume the kernel does not
-                                 report as local is refused, and there is no
-                                 flag that lifts that (ADR 0036 §3)
-      --to <dir>               write to this directory instead of backup_dir:
-  posse backup status            age of the newest on-box archive, how many
-                                 there are, where, and whether anything is
-                                 scheduled to write one. Non-zero when it is
-                                 older than backup_max_age: (or when backup is
-                                 armed and there is no archive at all)
-  posse backup verify [--archive <path>]
-                                 re-open an archive and check every member
-                                 against the manifest it carries (default: the
-                                 newest). Extracts nothing
-                               config backup_dir: (<home>/state/backup) where
-                                 archives go — refused unless it is on this box
-                               config backup_interval: (unset) arm a ticker
-                                 inside the "dispatch --watch" loop: every
-                                 interval it asks how old the newest archive
-                                 is, and backs up only if it is older than
-                                 that. Level-triggered, so restarting the loop
-                                 never double-runs; "posse pause" does not stop
-                                 it. Unset schedules nothing (ADR 0036 §4)
-                               config backup_max_age: (2x backup_interval:, or
-                                 48h with no schedule) when the newest archive
-                                 becomes a governance condition. The
-                                 age is a line in "posse status"; past the max
-                                 it is a LANE carry-over row there and in the
-                                 cockpit's GOVERNANCE block. Not a G-row: ADR
-                                 0036 §6 asked for the fact on the surface,
-                                 not for a number
-                               config backup_keep: (3) archives kept on box;
-                                 pruning only ever runs after a NEWER archive
-                                 has verified
-                               config backup_min_free_mb: (384) refuse rather
-                                 than fill the disk
-                               config verify_box_max_age: (26h) how old the
+` + backupHelp() + `                               config verify_box_max_age: (26h) how old the
                                  last scripts/verify-box.sh verdict may be
                                  before governance row G10 calls it STALE. A
                                  daily schedule plus two hours of slack;
@@ -2790,4 +2757,67 @@ environment:
                       asked without the account's credential, and its answer is
                       not shared with other posse processes)
 `)
+}
+
+// backupHelp is the usage catalog's `posse backup` block: the three forms,
+// `--to`, and every config key the verb reads with its default. It is a
+// function rather than text inside help() because `posse backup -h` prints
+// it too (ranger-base-cse63) — the one place an operator asks the CLI about
+// the backup keys was the one place that did not have them, and a second
+// copy of the block would be a second copy to keep true.
+func backupHelp() string {
+	return `  posse backup [--to <dir>]      archive the store of record (the queue repo's
+                                 git history as a bundle, its beads db staged
+                                 through sqlite's online backup API, and the
+                                 jsonl projections) plus the constitution home
+                                 (` + posse.PromotedProse("and") + `, promoted.json).
+                                 envs/ and secrets/ are NEVER archived. The
+                                 archive is read back and verified BEFORE it is
+                                 named, so a published archive is a green one
+                                 ON-BOX ONLY: a URL, an scp-style host:path, a
+                                 UNC path, or any volume the kernel does not
+                                 report as local is refused, and there is no
+                                 flag that lifts that (ADR 0036 §3)
+      --to <dir>               write to this directory instead of backup_dir:
+  posse backup status            age of the newest on-box archive, how many
+                                 there are, where, and whether anything is
+                                 scheduled to write one. Non-zero when it is
+                                 older than backup_max_age: (or when backup is
+                                 armed and there is no archive at all)
+  posse backup verify [--archive <path>]
+                                 re-open an archive and check every member
+                                 against the manifest it carries (default: the
+                                 newest). Extracts nothing
+                               config queue_repo: (unset) the store of
+                                 record this archives — a git checkout
+                                 holding a beads store (ADR 0015 §4). It is
+                                 the SUBJECT of the verb, not one of the
+                                 arming keys: with it unset, "posse backup"
+                                 refuses, "posse backup status" is non-zero
+                                 and names it, and every scheduled tick
+                                 refuses the same way. Set it, or remove the
+                                 backup_* keys to disarm the row
+                               config backup_dir: (<home>/state/backup) where
+                                 archives go — refused unless it is on this box
+                               config backup_interval: (unset) arm a ticker
+                                 inside the "dispatch --watch" loop: every
+                                 interval it asks how old the newest archive
+                                 is, and backs up only if it is older than
+                                 that. Level-triggered, so restarting the loop
+                                 never double-runs; "posse pause" does not stop
+                                 it. Unset schedules nothing (ADR 0036 §4)
+                               config backup_max_age: (2x backup_interval:, or
+                                 48h with no schedule) when the newest archive
+                                 becomes a governance condition. The
+                                 age is a line in "posse status"; past the max
+                                 it is a LANE carry-over row there and in the
+                                 cockpit's GOVERNANCE block. Not a G-row: ADR
+                                 0036 §6 asked for the fact on the surface,
+                                 not for a number
+                               config backup_keep: (3) archives kept on box;
+                                 pruning only ever runs after a NEWER archive
+                                 has verified
+                               config backup_min_free_mb: (384) refuse rather
+                                 than fill the disk
+`
 }

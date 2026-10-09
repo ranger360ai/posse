@@ -235,6 +235,10 @@ func TestBackupStatusPrintsNoRemotePosture(t *testing.T) {
 	}
 }
 
+// backupUsageLine is the grammar an unknown form gets, and the answer
+// `-h`/`--help` must NOT be (ranger-base-cse63).
+const backupUsageLine = "posse backup [--to <dir>] | posse backup status | posse backup verify [--archive <path>]"
+
 // The sub-ruling CUT `sweep`, `init`, `drill` and `restore`, and this is
 // that cut where an operator meets it: each one is refused, and the refusal
 // names the whole surviving surface. A verb that came back would land here
@@ -242,7 +246,7 @@ func TestBackupStatusPrintsNoRemotePosture(t *testing.T) {
 func TestCutBackupVerbsAreRefusedAtTheSurface(t *testing.T) {
 	bin := buildRhq(t)
 	home := backupHome(t, "runtime: claude\n")
-	const usage = "posse backup [--to <dir>] | posse backup status | posse backup verify [--archive <path>]"
+	const usage = backupUsageLine
 	for _, verb := range []string{"sweep", "init", "drill", "restore"} {
 		code, out := runBackupPosse(t, bin, home, "backup", verb)
 		if code != 1 || !strings.Contains(out, usage) {
@@ -364,4 +368,84 @@ func TestBackupVerifyNamesWhyItCannotPickAnArchive(t *testing.T) {
 			t.Errorf("a datable archive was on the box and the verb still refused: %q", out)
 		}
 	})
+}
+
+// `posse backup -h` (bead ranger-base-cse63, from ranger-base-s1dmh).
+//
+// The verb takes no <name>, so it never reached need()'s reading of a
+// leading flag — main.go's own rule, stated at the head of `posse help` —
+// and EVERY help form fell through the flag loop to the one-line grammar
+// with exit 1. So the one place an operator asks the CLI about
+// `backup_dir:`, `backup_interval:`, `backup_max_age:`, `backup_keep:`,
+// `backup_min_free_mb:` and the `queue_repo:` those keys arm over was the
+// one place that answered with none of them, non-zero.
+//
+// Three parts, because each can be green while another is false: every form
+// EXITS 0, the answer CARRIES the keys, and it is not the grammar line the
+// bug printed. The fourth part is TestBackupHelpIsTheCatalogBlockItself.
+func TestBackupHelpAnswersEveryFormWithTheKeys(t *testing.T) {
+	bin := buildRhq(t)
+	home := backupHome(t, "runtime: claude\n")
+	for _, args := range [][]string{
+		{"backup", "-h"},
+		{"backup", "--help"},
+		{"backup", "status", "--help"},
+		{"backup", "status", "-h"},
+		{"backup", "verify", "--help"},
+		{"backup", "verify", "-h"},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			code, out := runBackupPosse(t, bin, home, args...)
+			if code != 0 {
+				t.Errorf("exit %d — asking for help is not an error:\n%s", code, out)
+			}
+			// The three forms, `--to`, and every key the verb reads.
+			// `queue_repo:` is in the list because it is the one the verb
+			// REFUSES without (ADR 0015 §4), and the section named it in
+			// prose only until this bead.
+			for _, want := range []string{
+				"posse backup [--to <dir>]",
+				"posse backup status",
+				"posse backup verify [--archive <path>]",
+				"--to <dir>",
+				"config queue_repo:",
+				"config backup_dir:",
+				"config backup_interval:",
+				"config backup_max_age:",
+				"config backup_keep:",
+				"config backup_min_free_mb:",
+			} {
+				if !strings.Contains(out, want) {
+					t.Errorf("the answer does not carry %q:\n%s", want, out)
+				}
+			}
+			// The bug itself, exactly: the grammar line and nothing else.
+			// The forms above each appear in the help too, so only the
+			// whole joined line distinguishes the two answers.
+			if strings.Contains(out, backupUsageLine) {
+				t.Errorf("help answered with the one-line grammar:\n%s", out)
+			}
+		})
+	}
+
+	// CONTROL: a form that IS an error still is. Without it, a verb that
+	// printed the help block over every argv would pass above.
+	if code, out := runBackupPosse(t, bin, home, "backup", "sweep", "--help"); code != 1 || !strings.Contains(out, backupUsageLine) {
+		t.Errorf("posse backup sweep --help: exit %d, output %q; want exit 1 and the grammar", code, out)
+	}
+}
+
+// The no-second-copy half, and the reason backupHelp() is a function rather
+// than text inside help(): the verb's answer IS the catalog's `posse backup`
+// entry, so the two cannot drift. Re-inlining the block would leave two
+// copies to keep true by hand, and nothing but this would notice the day
+// one of them stopped being.
+func TestBackupHelpIsTheCatalogBlockItself(t *testing.T) {
+	block := backupHelp()
+	if !strings.Contains(block, "config backup_min_free_mb:") {
+		t.Fatalf("backupHelp() does not look like the backup block — this pin is reading nothing:\n%s", block)
+	}
+	if !strings.Contains(helpText(t), block) {
+		t.Errorf("`posse help` no longer contains backupHelp() verbatim — the verb's help and the catalog have become two copies:\n%s", block)
+	}
 }
