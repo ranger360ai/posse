@@ -2540,7 +2540,8 @@ dispatch (beads):
 
 catalog:
   posse envs                     list env sets (key names only)
-  posse env edit|rm <name>       manage an env set ($EDITOR; created if missing)
+  posse env edit <name>          open an env set in $EDITOR, creating it if missing (alias: new)
+  posse env rm <name>            remove an env set (alias: delete)
   posse refresh                  ADR 0019 D4 — credentials: what this box has, where
                                  each one lives, when it dies, and the fix. The one
                                  credential WRITE in posse, and the operator's own
@@ -2589,6 +2590,7 @@ catalog:
                                  --out writes the whole package into an empty directory.
                                  Nothing here is published — the operator sends it.
   posse skills                   list bound skills (RHQ_HOME/skills) and the PIDs that bind them
+  posse skills list              the same listing; the sub-verb is optional
   posse gates <persona>          the persona's L1 gate shims (from deny:), the seatbelt
                                  writable set with ADR 0015 §2's constitution check
                                  over it, and refusals.log. Re-renders the shims; from
@@ -2619,6 +2621,19 @@ catalog:
                                  exit 1 when R>0; judges nothing, and says so, when the main
                                  checkout is detached. Findings are review inputs: unjudged is not
                                  clean, and clean is not a landing claim.
+  posse gates wrap <persona> [` + posse.GatesWrapNoShell + `] [` + posse.GatesWrapProbe + `] -- <cmd>
+                                 L4's INNER command (ADR 0002 §3): rendered onto the engine's
+                                 line by the host and run by the image's own Linux posse, not
+                                 typed by hand. It renders gates/<persona>/ from RHQ_TOOLS_DENY
+                                 against the image's PATH and shell, then BECOMES the runtime
+                                 behind them — so on success it never returns. The two flags
+                                 are the host's to pass, and are named here because an
+                                 operator reading a rendered launch line meets them: ` + posse.GatesWrapProbe + `
+                                 renders nothing and prints the dir it would have rendered
+                                 into, which is how "posse cage" tells an image that knows
+                                 this entry point from one merely carrying some posse;
+                                 ` + posse.GatesWrapNoShell + ` says this runtime opts out of the
+                                 gate shell (ADR 0009 §2)
   posse cage [<persona>]         L4: the container engine, its image, and what a
                                  caged launch of that persona would mount and forward
   posse cage build [dir] [--runtimes "<npm pkgs>"]
