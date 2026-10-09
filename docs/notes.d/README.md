@@ -6,6 +6,7 @@ references), not inferred publication dates. Undated fragments sort last.
 
 ## 2026-10
 
+- [ranger-base-mhv7j](ranger-base-mhv7j.md) — The release carried the refusal and not the way out of it (ranger-base-mhv7j) — 2026-10-09
 - [ranger-base-qvy0n](ranger-base-qvy0n.md) — The ceiling's two readers: why the positive pathspec is `:(top)` and not `.` (ranger-base-qvy0n) — 2026-10-08
 - [ranger-base-2msgj](ranger-base-2msgj.md) — A gate that was never overwritten, never deleted, and never ran again (ranger-base-2msgj) — 2026-10-08
 - [ranger-base-0q7rp](ranger-base-0q7rp.md) — ranger-base-0q7rp — the backup row and the backup verb disagreed about whether a store exists — 2026-10-07
