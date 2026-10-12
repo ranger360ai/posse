@@ -68,6 +68,7 @@ var shippedExampleDigests = map[string][]string{
 		"340b490394cec6fb25ac3b147038e13aa41b7a71b42aa2a42de8838198b4d66e", // b0eae4d88f99 2026-09-03 pkill/killall enforced in every shipped PID: deny Bash(pkill:*) and Bash(killall:*) (ranger-base-jjx19)
 		"12a5ee283db360212a1f713abe456e77e41734a4b885ea9dbc479a38b8066dae", // ranger-base-29eei 2026-09-05 the verify section quotes the whole `## Intents` table when no done-when row matches (ADR 0006 §3, amended 2026-09-01)
 		"385cc8f80df8c95ac3ec90018fce5151fe5eec81c8e90f60c45c9f8dae96b677", // ranger-base-0ezn7 2026-09-06 the verify section points at the closed bead's own acceptance; no PID intent row is quoted (ADR 0006 §4, simplified 2026-09-05)
+		"158e15cba59c11de4fc13e3814112ac9f0e1634a42439244a10695a1aeb74bf4", // ranger-base-ihr4n 2026-10-12 read-back rule (ADR 0073 D4)
 	},
 	"agents/business-manager.md": {
 		"dac2a2a52ab880671783c6bf5a2a4559144abcf3e57ff5b6567144434367adbe", // 5668b76
@@ -81,6 +82,7 @@ var shippedExampleDigests = map[string][]string{
 		"6535e3d9cdbde33d80c0b16e118cfcee6eff7057ef46bf58396d8e1a1df08c52", // ranger-base-tpc41 2026-09-01 hand to the lane: template line drops -a, Hand-to rows name lanes (ADR 0006 §1)
 		"6534550b93ef0bb10249dcdf5ad808d6f587d632f0445409dee66c509caf34c8", // 0211551f35cc 2026-09-02 ADR 0006: class rows and every example PID's handoff line name the class (ranger-base-zbd51)
 		"8debf7e1a4ee5157d9978a25f6896d498ce95da22be5833d6a73e1c1b316c0a0", // b0eae4d88f99 2026-09-03 pkill/killall enforced in every shipped PID: deny Bash(pkill:*) and Bash(killall:*) (ranger-base-jjx19)
+		"3c7201bcc1dd93ac4636b9d287e0ff635164d72d6a1f995c23cdd4e858eaf214", // ranger-base-ihr4n 2026-10-12 read-back rule (ADR 0073 D4)
 	},
 	"agents/developer.md": {
 		"17e0db0cf3780cb6ba6e0ecd0b13d300f1b45d05b470be6df4d43575b43348de", // 5668b76
@@ -98,6 +100,7 @@ var shippedExampleDigests = map[string][]string{
 		"2c494b3d510ac662f4112081b30a492b1be7b5c690ecd6aacac812216e761ff5", // 0211551f35cc 2026-09-02 ADR 0006: class rows and every example PID's handoff line name the class (ranger-base-zbd51)
 		"93381d4e63794b65f3fd63bfee8a11d41b6a649947faed1f2002c15c14fc0a39", // b0eae4d88f99 2026-09-03 pkill/killall enforced in every shipped PID: deny Bash(pkill:*) and Bash(killall:*) (ranger-base-jjx19)
 		"afa67f5fdeb0bdd864c79a1704ac1f3bf30b94bfd34c121669a55cab639d11a7", // ranger-base-6xx37 2026-09-06 drop `overflow: false` — the PID opt-out went with automatic overflow (ADR 0010 §1)
+		"62f8b3d96195ed2298d6a2e47780fe32a5bb78348539171728b0a59b8180c09c", // ranger-base-ihr4n 2026-10-12 read-back rule (ADR 0073 D4)
 	},
 	"agents/devops.md": {
 		"a5882633fdf059352d0dfc1dc13386bd7488ff0f4fff56464730e439ff7b9d6c", // 5668b76
@@ -111,6 +114,7 @@ var shippedExampleDigests = map[string][]string{
 		"721cd9bb378719769520a96cc6c10e79bf532633eb842a1158796fc909b1aee3", // ranger-base-tpc41 2026-09-01 hand to the lane: template line drops -a, Hand-to rows name lanes (ADR 0006 §1)
 		"b31f637c693218e8a79e3e6ba62dbf2935ee3f4834a8e1aedfdc2cb130f0350c", // 0211551f35cc 2026-09-02 ADR 0006: class rows and every example PID's handoff line name the class (ranger-base-zbd51)
 		"c15c69015b794c410a544350a38d26ad7cbb418197168c6ec1be1085cc87ac89", // b0eae4d88f99 2026-09-03 pkill/killall enforced in every shipped PID: deny Bash(pkill:*) and Bash(killall:*) (ranger-base-jjx19)
+		"5756af55190de84e32bda25f25f9429f7a4e68bc7cf310d68dcd3beb5da25610", // ranger-base-ihr4n 2026-10-12 read-back rule (ADR 0073 D4)
 	},
 	"agents/ops.md": {
 		"7f0b4779b63fac5b004f2855b72d6f58c65e7b4819765b8c5ed5a4a1874d5a47", // rangerhq-o7y4 2026-08-29 ranger.md renamed to a role (ADR 0012 D2)
@@ -121,6 +125,7 @@ var shippedExampleDigests = map[string][]string{
 		"978afa246a4d436471eefaf2e4e747dae7c2891c48b621ccf06471d911e45510", // ranger-base-tpc41 2026-09-01 hand to the lane: template line drops -a, Hand-to rows name lanes (ADR 0006 §1)
 		"568c265753734cd5ba88ec287e71338892049b5d3d08d3fa683d6f4228142f9b", // 0211551f35cc 2026-09-02 ADR 0006: class rows and every example PID's handoff line name the class (ranger-base-zbd51)
 		"614e8606511ee531f1d3d8b6c5bf685fc92cd4072bef33dea045941a67c0170b", // b0eae4d88f99 2026-09-03 pkill/killall enforced in every shipped PID: deny Bash(pkill:*) and Bash(killall:*) (ranger-base-jjx19)
+		"719f02ae0154ed18fcb8ce478e52afedf95b1f68c8696a58da8a3e9337f75733", // ranger-base-ihr4n 2026-10-12 read-back rule (ADR 0073 D4)
 	},
 	"agents/product.md": {
 		"c9ce6781c6f3b0d3049ff424815993983fb04419272a17ec6ca8328877f426d6", // 5668b76
@@ -134,6 +139,7 @@ var shippedExampleDigests = map[string][]string{
 		"610f68c6e72987fc7fd1e7e57a08e19fd5bcd3d4c1174f20de627ea4f85c139d", // ranger-base-tpc41 2026-09-01 hand to the lane: template line drops -a, Hand-to rows name lanes (ADR 0006 §1)
 		"7fb3e0c8397d6352955b012a07641d61c9c8cfa0a969f531b6c7e4a54239fc89", // 0211551f35cc 2026-09-02 ADR 0006: class rows and every example PID's handoff line name the class (ranger-base-zbd51)
 		"37cf53f5b4d37613d1e538017536a1694208a4557605a549787b19397657ee4c", // b0eae4d88f99 2026-09-03 pkill/killall enforced in every shipped PID: deny Bash(pkill:*) and Bash(killall:*) (ranger-base-jjx19)
+		"020922317923dd55961a600ee3bf9bf2ab3100eaadc1b60f835f4ebb10b053a6", // ranger-base-ihr4n 2026-10-12 read-back rule (ADR 0073 D4)
 	},
 	"agents/qa.md": {
 		"65eeb0b68cda30bb9ed944c9789c4bd26d5e75f3b69a7d85f5c8eab7e4da832a", // 5668b76
@@ -151,6 +157,7 @@ var shippedExampleDigests = map[string][]string{
 		"cbf923c6dabf1f30b43f50d085eed350e6a72814392633f683da4a35d81ec446", // ranger-base-29eei 2026-09-05 the verify section quotes the whole `## Intents` table when no done-when row matches (ADR 0006 §3, amended 2026-09-01)
 		"f1b10a333f25ca6abb3b5dd1ce82b818d9b79971c0d7182b185f4e4bd0a2eafb", // ranger-base-0ezn7 2026-09-06 the verify section points at the closed bead's own acceptance; no PID intent row is quoted (ADR 0006 §4, simplified 2026-09-05)
 		"b29a3222bb8463f20439d7a558c82c49e61f6fdbf46ed3393ad36bcedca5190d", // ranger-base-l3jaq 2026-09-06 escape doctrine: a recorded finding files nothing, the bundle is for LIVE findings only (ADR 0006 §6, amended 2026-09-06)
+		"1abb66ce0f97853fe49fed961d208313efd78f37b98931e765fde1ac94b41785", // ranger-base-ihr4n 2026-10-12 read-back rule (ADR 0073 D4)
 	},
 	// agents/ranger.md is a RETIRED name: rangerhq-o7y4 renamed the example to
 	// agents/ops.md (ADR 0012 D2 — persona names become roles). The entries stay
@@ -176,6 +183,7 @@ var shippedExampleDigests = map[string][]string{
 		"c0a592eeae9bed4d36c70b5700db749963eaaf1f97e6304665388fc4d7fba296", // 0211551f35cc 2026-09-02 ADR 0006: class rows and every example PID's handoff line name the class (ranger-base-zbd51)
 		"aea5df56b529e08f057062e31a8bf35f703e1180375ff561202f5f49160830f2", // b0eae4d88f99 2026-09-03 pkill/killall enforced in every shipped PID: deny Bash(pkill:*) and Bash(killall:*) (ranger-base-jjx19)
 		"a1ad3158b83b45466e0d348a4123b942cb0716b19dda82ffe526e7a2dd1877a1", // ranger-base-kox69 2026-09-06 the reviewer's own `git diff` prescription states its format (--no-ext-diff)
+		"a96fdfbfd9b0a19f9abfecf17870a16ba272938976679ed3d676ad263cdbec10", // ranger-base-ihr4n 2026-10-12 read-back rule (ADR 0073 D4)
 	},
 	"agents/security.md": {
 		"d3d07f404ab3099e93525374c8ae94dbfb12f21ef20434d3777a295c050ad8be", // 5668b76
@@ -189,6 +197,7 @@ var shippedExampleDigests = map[string][]string{
 		"80d0aec4270ebd7e3bc93308425e7fdbb067f5e06af4877d4f60a3ea2fa99e7c", // ranger-base-tpc41 2026-09-01 hand to the lane: template line drops -a, Hand-to rows name lanes (ADR 0006 §1)
 		"1876d53b95c5f4766ce8e91249723c267a060e30ed5470328bc36fe37512f9a3", // 0211551f35cc 2026-09-02 ADR 0006: class rows and every example PID's handoff line name the class (ranger-base-zbd51)
 		"55d76e34f8c9b9ef27cdcb92ace167b96fdf4b797b08fd5fd45f88facb66fde3", // b0eae4d88f99 2026-09-03 pkill/killall enforced in every shipped PID: deny Bash(pkill:*) and Bash(killall:*) (ranger-base-jjx19)
+		"69c657966dc7d36aa2bb9fd3f72c2ae77b8b018fdb72baae8e75454190edb6a7", // ranger-base-ihr4n 2026-10-12 read-back rule (ADR 0073 D4)
 	},
 }
 
