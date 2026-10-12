@@ -61,9 +61,11 @@ func printfFlag(key, val string) (string, error) {
 }
 
 // runtimeBool reads a declared boolean. Absent is the zero value; only
-// `true` and `false` spell it. `skills_cwd: yes` refuses rather than
+// `true` and `false` spell it. `self_sandbox: yes` refuses rather than
 // reading as false, because a false read here is a launch that silently
-// binds no skills at all.
+// wraps a runtime whose own sandbox does not nest. skills_cwd: has its own
+// reader now (runtimeSkillsCwd) — true keeps its old meaning but any other
+// value is a path, not a typo this one would catch.
 func runtimeBool(path, key string) (bool, error) {
 	switch v := YamlGet(path, key); v {
 	case "":
@@ -74,6 +76,30 @@ func runtimeBool(path, key string) (bool, error) {
 		return false, nil
 	default:
 		return false, fmt.Errorf("%s: %q — want true or false", key, v)
+	}
+}
+
+// runtimeSkillsCwd reads `skills_cwd:` (ADR 0007 §6a). Absent is "", the
+// loud default of no cwd surface. The literal `true` keeps meaning
+// AgentsSkillsPath — the one root every yaml written against the old bool
+// already means, so an instance overlay still parses — and `false` is the
+// same "" an absent key would give, kept declarable so a template-only
+// profile can say "no cwd surface" explicitly rather than by omission.
+// Anything else is a path of its own, relative to the session dir, run
+// through runtimeRelPath's rules (no absolute, no ..): a runtime measured
+// to read a DIFFERENT root — bob's own posse-owned namespace, not the
+// shared one codex and grok read — could not be declared at all before
+// this, only hard-coded in Go (BobSkillsRoot).
+func runtimeSkillsCwd(path string) (string, error) {
+	switch v := YamlGet(path, "skills_cwd"); v {
+	case "":
+		return "", nil
+	case "true":
+		return AgentsSkillsPath, nil
+	case "false":
+		return "", nil
+	default:
+		return runtimeRelPath("skills_cwd", v)
 	}
 }
 
@@ -131,7 +157,7 @@ func runtimeYamlKeys() []string {
 	keys := []string{
 		"command",
 		"model_flag",
-		"skills_flag", "skills_cwd",
+		"skills_flag", "skills_cwd", "skills_verified",
 		"self_sandbox",
 		"project_config", "project_config_keys",
 		"unattended",

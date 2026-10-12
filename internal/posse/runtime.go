@@ -284,12 +284,32 @@ type Runtime struct {
 	// through it before typing a work prompt. No caller asks which runtime
 	// this is (ADR 0017 §3).
 	PersonaMode *PersonaModeChannel
-	// SkillsCwd: this runtime discovers skills from the session's *working
-	// directory* rather than from a flag, so the launch materializes
-	// <cwd>/.agents/skills/<name> and {skills} renders nothing (codex and
-	// grok — rangerhq-1qd). The binding is realized by those links being
+	// SkillsRoot: this runtime discovers skills from a path relative to the
+	// session's *working directory* rather than from a flag, so the launch
+	// materializes <cwd>/<SkillsRoot>/<name> and {skills} renders nothing.
+	// "" means this runtime has no cwd surface at all (it is either
+	// skills_flag: or no surface — ADR 0007 §2).
+	//
+	// Replaced the bool SkillsCwd (ADR 0007 §6a, ranger-base-q1w0h): a cwd
+	// root is a declared PATH now, not a yes/no, because the one hard-coded
+	// everywhere — AgentsSkillsPath, `.agents/skills` — turned out to be
+	// bob's wrong answer. codex and grok share AgentsSkillsPath (verified
+	// below); bob's is its own posse-owned namespace, BobSkillsRoot
+	// (`.bob/plugins/posse/skills`, ADR 0007 §6d) — a different root a bool
+	// could never have named. The binding is realized by those links being
 	// there, not by anything typed on the line.
-	SkillsCwd bool
+	SkillsRoot string
+	// SkillsVerified is the CLI's own `--version` line at the live
+	// measurement that proved SkillsRoot is actually read (ADR 0007 §6a).
+	// A non-empty SkillsRoot with an empty SkillsVerified is UNPROVEN:
+	// CheckParity degrades a `skills:` PID on this runtime and the launch
+	// refuses unless --allow-degraded (§6b) — that is bob today, by design,
+	// the honest state rather than a link into a path nobody watched it
+	// read. A later mismatch between this value and the CLI installed now
+	// is DRIFT, reported and never refused (§6c): ProbeCLIVersion
+	// (runtimeprobe.go) is the same reader the runtime probe's own drift
+	// check uses, reused rather than a second version parser.
+	SkillsVerified string
 	// SelfSandbox: the runtime wraps its own child commands in sandbox-exec
 	// (codex). macOS refuses to nest seatbelts (sandbox_apply: Operation not
 	// permitted — verified 2026-08-17), so our seatbelt tier cannot wrap it;
@@ -1712,7 +1732,7 @@ var builtinRuntimes = []Runtime{
 		// The only runtime with a reader today (ranger-base-02zr).
 		TurnOutcomeAdapter: TurnOutcomeClaudeTranscript,
 		Command:            `claude {model} ` + ClaudeFleetFlags + ` --append-system-prompt "$(cat {file})" --add-dir {memory} {settings} {skills} {allow} {deny}`},
-	{Name: "codex", Builtin: true, Realize: realizeCodex, Skills: skillsCwd, SkillsCwd: true, Models: codexModels, ModelFlag: "-c model=%s", SelfSandbox: true, ProjectConfig: []string{CodexProjectConfig}, Unattended: "-a never",
+	{Name: "codex", Builtin: true, Realize: realizeCodex, Skills: skillsCwd, SkillsRoot: AgentsSkillsPath, SkillsVerified: "codex-cli 0.147.0", Models: codexModels, ModelFlag: "-c model=%s", SelfSandbox: true, ProjectConfig: []string{CodexProjectConfig}, Unattended: "-a never",
 		Egress: []string{"chatgpt.com", "ab.chatgpt.com"}, StateDirs: []string{"~/.codex"},
 		// record: untrusted — MEASURED the other way: 3/3 dispatched codex
 		// sessions did the work and left the bead in_progress with no
@@ -1734,7 +1754,7 @@ var builtinRuntimes = []Runtime{
 		UnknownModel:    UnknownModelCarry,
 		UnknownModelWhy: "measured 2026-09-09 (ranger-base-jzm04) on codex-cli 0.150.1: a canary launched with -c model=gpt-6-astra came up with 'model: gpt-6-astra high' in its own banner — the typed id, not this box's default, so the id reaches the provider and its answer is the canary's",
 		Command:         `codex {model} {skills} {deny} -a never ` + CodexFleetFlags + ` -c developer_instructions="$(cat {file})"`},
-	{Name: "grok", Builtin: true, Realize: realizeGrok, Skills: skillsCwd, SkillsCwd: true, Models: grokModels, ModelFlag: "-m %s", Unattended: GrokFleetFlags,
+	{Name: "grok", Builtin: true, Realize: realizeGrok, Skills: skillsCwd, SkillsRoot: AgentsSkillsPath, SkillsVerified: "grok 1.0.5", Models: grokModels, ModelFlag: "-m %s", Unattended: GrokFleetFlags,
 		Egress: []string{"cli-chat-proxy.grok.com", "grok.com"}, StateDirs: []string{"~/.grok"},
 		// record: trusted — the qa lane on grok closed a bead properly on
 		// 2026-08-24, which is the measurement the promotion needs and the
@@ -1776,7 +1796,16 @@ var builtinRuntimes = []Runtime{
 	// exits 1 and dispatch refuses by name. See BobCommand above for why the
 	// line carries no `-p` and so delivers no PID at all — the part a reader
 	// is most likely to get wrong, and now the part that is measured.
-	{Name: "bob", Builtin: true, Skills: skillsCwd, SkillsCwd: true, Unattended: "--auto-approve",
+	// Skills: bob's root is its OWN posse-owned namespace, BobSkillsRoot
+	// (ADR 0007 §6d) — not AgentsSkillsPath, the shared surface codex and
+	// grok read. It carries no SkillsVerified: the operator's static read
+	// of bob 2.0.5's bundle (ADR 0007 Evidence) names a workspace root this
+	// IS one of, but nobody has measured live that bob actually discovers a
+	// skill linked there, so a `skills:` PID on bob is UNPROVEN (§6b) until
+	// the live probe lands (ranger-base-6r1rf) — the honest state, louder
+	// than the pre-ADR-0007-§6 claim that AgentsSkillsPath was bob's
+	// surface at all, which the operator's own measurement showed false.
+	{Name: "bob", Builtin: true, Skills: skillsCwd, SkillsRoot: BobSkillsRoot, Unattended: "--auto-approve",
 		// The PID channel (ADR 0062 D1): bob is the one built-in whose CLI
 		// has no launch-time system FLAG, and the one that declares a
 		// persona-mode channel. {mode} renders off this and the launch
@@ -1901,12 +1930,17 @@ func (a *App) LoadRuntime(name string) (*Runtime, error) {
 		}
 		rt.ModelFlag = form
 	}
-	// skills_cwd: this runtime discovers skills from the session's working
-	// directory instead of from a flag — the codex/grok shape, which a yaml
-	// runtime could not declare at all: it was skills_flag: or no surface.
-	// The launch materializes <cwd>/.agents/skills/<name> and {skills}
-	// renders nothing; the links ARE the realization (skills.go).
-	skillsCwdDecl, err := runtimeBool(p, "skills_cwd")
+	// skills_cwd: this runtime discovers skills from a path relative to the
+	// session's working directory instead of from a flag — the codex/grok
+	// shape, which a yaml runtime could not declare at all: it was
+	// skills_flag: or no surface. The literal `true` keeps meaning
+	// AgentsSkillsPath (`.agents/skills`), so an instance overlay written
+	// against the old bool still parses (ADR 0007 §6a); any other value is
+	// a path of its own, relative to the session dir, for a CLI measured to
+	// read a different root. The launch materializes <cwd>/<root>/<name>
+	// and {skills} renders nothing; the links ARE the realization
+	// (skills.go).
+	skillsRootDecl, err := runtimeSkillsCwd(p)
 	if err != nil {
 		return nil, Die("runtime %s: %s has %v", name, AbbrevHome(p), err)
 	}
@@ -1915,16 +1949,24 @@ func (a *App) LoadRuntime(name string) (*Runtime, error) {
 	// this runtime has no skill surface and a PID that binds skills cannot
 	// launch on it.
 	flagDecl := YamlGet(p, "skills_flag")
-	if flagDecl != "" && skillsCwdDecl {
+	if flagDecl != "" && skillsRootDecl != "" {
 		// Two half-bindings at once: the flag would point at the rendered
 		// plugin tree while the links point at the session dir, and neither
 		// the parity line nor `runtime check` could say which one the CLI
 		// actually read. ADR 0021 rejected the same shape for built-ins.
 		return nil, Die("runtime %s: %s declares both skills_flag: and skills_cwd: — a runtime has one skill surface; keep the one you measured", name, AbbrevHome(p))
 	}
+	// skills_verified: the CLI's own --version line at the live measurement
+	// that proved skills_cwd:'s root is actually read (ADR 0007 §6a-c). A
+	// declaration with no skills_cwd: has nothing to verify.
+	verifiedDecl := YamlGet(p, "skills_verified")
+	if verifiedDecl != "" && skillsRootDecl == "" {
+		return nil, Die("runtime %s: %s declares skills_verified: with no skills_cwd: — nothing here reads a cwd root to verify", name, AbbrevHome(p))
+	}
 	switch {
-	case skillsCwdDecl:
-		rt.SkillsCwd = true
+	case skillsRootDecl != "":
+		rt.SkillsRoot = skillsRootDecl
+		rt.SkillsVerified = verifiedDecl
 		rt.Skills = skillsCwd
 	case flagDecl != "":
 		form, err := printfFlag("skills_flag", flagDecl)
@@ -2216,11 +2258,18 @@ var builtinMechanismKeys = []struct{ key, why string }{
 	// 0002 §1); this file is not a second one.
 	{"command", "a built-in's launch mechanism is not overlayable"},
 	// The built-ins' skill surfaces are verified mechanisms (skillsClaude,
-	// SkillsCwd materialization — rangerhq-1qd measured that codex and grok
-	// have no flag at all), so either key here declares something measured
-	// false and would run two half-bindings at once.
+	// SkillsRoot materialization — rangerhq-1qd measured that codex and
+	// grok have no flag at all), so either key here declares something
+	// measured false and would run two half-bindings at once.
 	{"skills_flag", "a built-in's skill surface is a verified mechanism, not overlayable"},
 	{"skills_cwd", "a built-in's skill surface is a verified mechanism, not overlayable — declaring it here would point the links at the session dir while the built-in's flag points at the rendered tree, and no line could say which the CLI read"},
+	// skills_verified: is the live measurement behind a built-in's own
+	// SkillsRoot (ADR 0007 §6a-c) — codex's and grok's are Go source,
+	// pinned by the same bead that verified skills_cwd:, and bob's is
+	// deliberately unset. An overlay cannot supply a measurement this file
+	// did not take; it would either repeat a built-in's own verification
+	// under a different provenance or claim one for bob that nobody ran.
+	{"skills_verified", "a built-in's skill surface is a verified mechanism, not overlayable — the version string is the measurement behind SkillsRoot, and an overlay cannot supply a measurement this file did not take"},
 	// Whether a CLI sandboxes its own children is a property of the engine,
 	// not of this box: declared here it would drop the seatbelt wrap posse
 	// measured this built-in needs (or add a nesting refusal it does not).

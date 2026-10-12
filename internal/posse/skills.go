@@ -323,6 +323,17 @@ func copySkillFile(src, dst string, mode fs.FileMode) error {
 // so this is where the refusal would go, not a refusal that is coming.
 const AgentsSkillsPath = ".agents/skills"
 
+// BobSkillsRoot is bob's own cwd skill surface (ADR 0007 §6d) — a
+// posse-owned namespace under the plugin dir bob's workspace-scope reads,
+// the same one the persona-mode channel already writes its custom_modes.yaml
+// into (ADR 0062 D1, personamode.go's bobPersonaMode). Not AgentsSkillsPath:
+// the operator's static read of bob 2.0.5's bundle (ADR 0007 Evidence) found
+// no CLI read of `.agents/skills` at all, so claiming that root for bob was
+// the §6 bug — a declaration nobody had measured, standing in for a runtime
+// whose real surface a different root entirely. Carries no SkillsVerified
+// (runtime.go) until the live probe lands (ranger-base-6r1rf).
+const BobSkillsRoot = ".bob/plugins/posse/skills"
+
 // AgentsSkillsDir is AgentsSkillsPath under a session's cwd.
 func AgentsSkillsDir(cwd string) string {
 	return filepath.Join(cwd, filepath.FromSlash(AgentsSkillsPath))
@@ -336,8 +347,18 @@ func AgentsSkillsDir(cwd string) string {
 // and ignore git's ignore rules while doing it, so `.git/info/exclude`
 // hides the dir from `git status` without hiding it from the CLI.
 //
-// Three rules keep a shared repo honest, and they are why this is not just
-// RenderClaudeSkills with a different path:
+// A thin wrapper over renderSkillsCwd at AgentsSkillsPath — the shared
+// surface codex and grok both read. Kept as its own name because it is the
+// one most of this file's doc comments and most callers still mean.
+func (a *App) RenderAgentsSkills(cwd, persona string, names []string) (string, error) {
+	return a.renderSkillsCwd(cwd, AgentsSkillsPath, persona, names)
+}
+
+// renderSkillsCwd is RenderAgentsSkills generalized over the root (ADR 0007
+// §6a): AgentsSkillsPath for the surface codex and grok share, or a
+// runtime's own posse-owned root (bob's BobSkillsRoot, §6d) where nothing
+// else ever writes. Three rules keep either kind of root honest, and they
+// are why this is not just RenderClaudeSkills with a different path:
 //
 //   - Never clobber. An entry we did not write — the repo's own skill of
 //     that name, or anything not a symlink into RHQ_HOME/skills — refuses
@@ -345,21 +366,25 @@ func AgentsSkillsDir(cwd string) string {
 //     operator's repo here; it may only ever write its own links. The one
 //     exception is a DANGLING symlink: a link resolving to nothing binds
 //     nothing, so it is a relic rather than the operator's work and the
-//     launch replaces it (ranger-base-f6hiy).
-//   - Union, not replacement. The dir belongs to the *repo*, not to the
-//     persona (claude's tree is per-persona; this one cannot be), so a
-//     launch adds its own names and leaves other personas' links alone.
-//     Binding is additive anyway (ADR 0007 §4) — posse guarantees presence,
-//     not absence — but it does mean a name dropped from a PID keeps its
-//     link in a repo another persona still binds it in.
+//     launch replaces it (ranger-base-f6hiy). On a posse-owned root this
+//     rule holds trivially — nothing else has a reason to be there — but it
+//     is the same rule and not a different one, so a stray file still
+//     refuses rather than being silently annexed.
+//   - Union, not replacement. The dir belongs to the *repo* (or, for a
+//     posse-owned root, to posse's own namespace in it), not to the persona
+//     — claude's tree is per-persona; this one cannot be — so a launch adds
+//     its own names and leaves other personas' links alone. Binding is
+//     additive anyway (ADR 0007 §4) — posse guarantees presence, not
+//     absence — but it does mean a name dropped from a PID keeps its link
+//     in a repo another persona still binds it in.
 //   - Sweep the dead. A link of ours whose target has left
 //     RHQ_HOME/skills is removed: a dangling skill is the one failure the
 //     ADR spends a refusal on, and it must not survive in a repo.
-func (a *App) RenderAgentsSkills(cwd, persona string, names []string) (string, error) {
+func (a *App) renderSkillsCwd(cwd, root, persona string, names []string) (string, error) {
 	if len(names) == 0 {
 		return "", nil
 	}
-	dir := AgentsSkillsDir(cwd)
+	dir := filepath.Join(cwd, filepath.FromSlash(root))
 	paths, unknown := a.ResolveSkills(names)
 	if len(unknown) > 0 {
 		return "", Die("%s: skills: no such skill %s (looked in %s — a name resolves to <name>/SKILL.md there)",
@@ -388,7 +413,7 @@ func (a *App) RenderAgentsSkills(cwd, persona string, names []string) (string, e
 		}
 	}
 	a.sweepDeadSkillLinks(dir)
-	excludeFromGit(cwd, AgentsSkillsPath)
+	excludeFromGit(cwd, root)
 	return dir, nil
 }
 
@@ -685,11 +710,11 @@ func (a *App) RenderSkillsFor(ag *AgentFile, rt *Runtime, dir string) (string, e
 	if len(ag.Skills) == 0 || !rt.RealizesSkills(ag.Skills) {
 		return "", nil
 	}
-	if rt.SkillsCwd {
+	if rt.SkillsRoot != "" {
 		if dir == "" {
 			return "", Die("%s: skills: %s discovers skills from the session's working directory and this session has none", ag.Name, rt.Name)
 		}
-		return a.RenderAgentsSkills(dir, ag.Name, ag.Skills)
+		return a.renderSkillsCwd(dir, rt.SkillsRoot, ag.Name, ag.Skills)
 	}
 	return a.RenderClaudeSkills(ag.Name, ag.Skills)
 }

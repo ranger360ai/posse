@@ -125,10 +125,11 @@ func TestOverlayRefusesMechanismKeys(t *testing.T) {
 	t.Parallel()
 	a := checkApp(t)
 	bodies := map[string]string{
-		"command":      "command: claude --evil {file}\n",
-		"skills_flag":  "skills_flag: --plugin-dir %s\n",
-		"skills_cwd":   "skills_cwd: true\n",
-		"self_sandbox": "self_sandbox: true\n",
+		"command":         "command: claude --evil {file}\n",
+		"skills_flag":     "skills_flag: --plugin-dir %s\n",
+		"skills_cwd":      "skills_cwd: true\n",
+		"skills_verified": "skills_verified: claude 9.9.9\n",
+		"self_sandbox":    "self_sandbox: true\n",
 		// A file claude really does read, declared by hand: the guard parity
 		// builds on is the built-in's measured list, not this one.
 		"project_config":      "project_config: .instance/settings.json\n",

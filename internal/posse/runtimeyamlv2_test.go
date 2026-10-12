@@ -99,9 +99,12 @@ func TestSkillsCwdIsDeclarable(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(a.Home, "skills", "s1", "SKILL.md"), []byte("---\nname: s1\ndescription: d\n---\nbody\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	rt := writeRuntime(t, a, "cwdcli", "command: cwdcli {skills} --sys {file}\nskills_cwd: true\n")
-	if !rt.SkillsCwd {
-		t.Fatal("skills_cwd: true must set SkillsCwd")
+	rt := writeRuntime(t, a, "cwdcli", "command: cwdcli {skills} --sys {file}\nskills_cwd: true\nskills_verified: cwdcli 1.0\n")
+	if rt.SkillsRoot != AgentsSkillsPath {
+		t.Fatalf("skills_cwd: true must set SkillsRoot to %q, got %q", AgentsSkillsPath, rt.SkillsRoot)
+	}
+	if rt.SkillsVerified != "cwdcli 1.0" {
+		t.Fatalf("skills_verified: must set SkillsVerified, got %q", rt.SkillsVerified)
 	}
 	ag := yamlV2Agent(t, "skills: [s1]\n")
 
@@ -134,6 +137,107 @@ func TestSkillsCwdIsDeclarable(t *testing.T) {
 	if p := a.CheckParity(ag, none, CageShims, TierStrong); len(p.Degraded) == 0 ||
 		!strings.Contains(strings.Join(p.Degraded, "\n"), "no per-session skill surface") {
 		t.Errorf("a runtime with neither key must degrade a skills: PID: %+v", p)
+	}
+}
+
+// ADR 0007 §6a-c: the bool SkillsCwd became a declared root plus a
+// verified version. Three things a bool could never say: a cwd root OTHER
+// than AgentsSkillsPath, an UNPROVEN root that degrades a skills: PID
+// rather than claiming it, and the two keys refusing together exactly as
+// skills_flag:/skills_cwd: already did.
+func TestSkillsCwdPathFormAndVerification(t *testing.T) {
+	t.Parallel()
+	a := checkApp(t)
+	if err := os.MkdirAll(a.RuntimesDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ag := yamlV2Agent(t, "skills: [s1]\n")
+
+	// skills_cwd: <path> — a root of its own, not the literal true's
+	// AgentsSkillsPath default. bob's BobSkillsRoot is the production case
+	// (runtime.go); this is the same reader exercised from yaml.
+	custom := writeRuntime(t, a, "customroot", "command: customroot {skills} --sys {file}\nskills_cwd: .myroot/skills\nskills_verified: customroot 2.0\n")
+	if custom.SkillsRoot != filepath.FromSlash(".myroot/skills") {
+		t.Fatalf("skills_cwd: .myroot/skills must set SkillsRoot, got %q", custom.SkillsRoot)
+	}
+	if custom.SkillsVerified != "customroot 2.0" {
+		t.Fatalf("skills_verified: not read, got %q", custom.SkillsVerified)
+	}
+	if p := a.CheckParity(ag, custom, CageShims, TierStrong); len(p.Degraded) != 0 {
+		t.Errorf("a verified custom root must not degrade: %+v", p.Degraded)
+	}
+
+	// skills_cwd: true with no skills_verified: — ADR 0007 §6b. Declared
+	// means required; UNPROVEN is the honest reading, not a silent REALIZED
+	// over a link nobody has measured the CLI reading.
+	unproven := writeRuntime(t, a, "unverified", "command: unverified {skills} --sys {file}\nskills_cwd: true\n")
+	if unproven.SkillsRoot == "" || unproven.SkillsVerified != "" {
+		t.Fatalf("skills_cwd: true with no skills_verified: must set SkillsRoot and leave SkillsVerified empty: %+v", unproven)
+	}
+	p := a.CheckParity(ag, unproven, CageShims, TierStrong)
+	want := "skills: s1 — unverified's discovery root " + AgentsSkillsPath + " is UNPROVEN (never measured live)"
+	if len(p.Degraded) != 1 || p.Degraded[0] != want {
+		t.Errorf("an unverified cwd root must degrade with %q, got %v (realized: %+v)", want, p.Degraded, p.Realized)
+	}
+	if _, realized := p.Realized["skills: s1"]; realized {
+		t.Error("an UNPROVEN root must not also claim Realized — it is one or the other")
+	}
+
+	// skills_verified: with no skills_cwd: names nothing to verify.
+	if err := os.WriteFile(filepath.Join(a.RuntimesDir(), "strayverified.yaml"), []byte("command: strayverified --sys {file}\nskills_verified: x 1.0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.LoadRuntime("strayverified"); err == nil || !strings.Contains(err.Error(), "skills_verified") || !strings.Contains(err.Error(), "skills_cwd") {
+		t.Errorf("skills_verified: with no skills_cwd: must refuse, got %v", err)
+	}
+
+	// Both keys at once refuses at load — a runtime has one skill surface.
+	if err := os.WriteFile(filepath.Join(a.RuntimesDir(), "bothkeys.yaml"), []byte("command: bothkeys {skills} --sys {file}\nskills_flag: --plugin-dir %s\nskills_cwd: true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.LoadRuntime("bothkeys"); err == nil ||
+		!strings.Contains(err.Error(), "declares both skills_flag: and skills_cwd:") {
+		t.Errorf("declaring both keys must refuse at load, got %v", err)
+	}
+}
+
+// ADR 0007 §6c: a verified version that no longer matches the installed
+// CLI is reported, not refused. skillsDriftVersion is the hermetic seam —
+// the test must not depend on whatever CLI the box running it happens to
+// have on PATH.
+func TestSkillsVerifiedDriftIsReportedNotRefused(t *testing.T) {
+	a := checkApp(t)
+	if err := os.MkdirAll(a.RuntimesDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ag := yamlV2Agent(t, "skills: [s1]\n")
+	rt := writeRuntime(t, a, "driftcli", "command: driftcli {skills} --sys {file}\nskills_cwd: true\nskills_verified: driftcli 1.0\n")
+
+	prev := skillsDriftVersion
+	t.Cleanup(func() { skillsDriftVersion = prev })
+
+	skillsDriftVersion = func(string) string { return "driftcli 1.0" }
+	same := a.CheckParity(ag, rt, CageShims, TierStrong)
+	if len(same.Degraded) != 0 || strings.Contains(same.Realized["skills: s1"].Detail, "drift:") {
+		t.Errorf("a matching version must report no drift: %+v", same)
+	}
+
+	skillsDriftVersion = func(string) string { return "driftcli 2.0" }
+	moved := a.CheckParity(ag, rt, CageShims, TierStrong)
+	if len(moved.Degraded) != 0 {
+		t.Errorf("drift must not degrade the launch: %+v", moved.Degraded)
+	}
+	got := moved.Realized["skills: s1"].Detail
+	for _, want := range []string{"drift:", "driftcli 1.0", "driftcli 2.0"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("drift detail missing %q: %q", want, got)
+		}
+	}
+
+	skillsDriftVersion = func(string) string { return "" }
+	unknown := a.CheckParity(ag, rt, CageShims, TierStrong)
+	if strings.Contains(unknown.Realized["skills: s1"].Detail, "drift:") {
+		t.Errorf("an unreadable installed version must not be read as drift: %q", unknown.Realized["skills: s1"].Detail)
 	}
 }
 
@@ -244,7 +348,12 @@ func TestRuntimeYamlV2Refusals(t *testing.T) {
 		{"model_flag wrong verb", "command: e {model}\nmodel_flag: -c model=%d\n", "exactly one %s"},
 		{"model_flag two verbs", "command: e {model}\nmodel_flag: %s=%s\n", "exactly one %s"},
 		{"skills_flag wrong verb", "command: e {skills}\nskills_flag: --s=%v\n", "exactly one %s"},
-		{"skills_cwd not a bool", "command: e\nskills_cwd: yes\n", "want true or false"},
+		// skills_cwd: is a path now, not a bool (ADR 0007 §6a) — only an
+		// absolute path or one that escapes the session dir refuses; "yes"
+		// is a legal (if odd) relative path and is no longer one of these.
+		{"skills_cwd absolute", "command: e\nskills_cwd: /etc/passwd\n", "must be relative"},
+		{"skills_cwd escapes", "command: e\nskills_cwd: ../../etc/passwd\n", "no .. elements"},
+		{"skills_verified without skills_cwd", "command: e\nskills_verified: cli 1.0\n", "nothing here reads a cwd root"},
 		{"self_sandbox not a bool", "command: e\nself_sandbox: 1\n", "want true or false"},
 		{"both skill surfaces", "command: e\nskills_cwd: true\nskills_flag: --p\n", "one skill surface"},
 		{"project_config absolute", "command: e\nproject_config: /etc/passwd\n", "must be relative"},
@@ -321,12 +430,13 @@ func TestRuntimeYamlV2ScratchProfile(t *testing.T) {
 		"model_flag: -c model=%s",
 		"model_standard: sol",
 		"skills_cwd: true",
+		"skills_verified: testcli 1.0",
 		"self_sandbox: true",
 		"project_config: .testcli/config.toml",
 		"",
 	}, "\n"))
 
-	if rt.ModelFlag != "-c model=%s" || !rt.SkillsCwd || !rt.SelfSandbox ||
+	if rt.ModelFlag != "-c model=%s" || rt.SkillsRoot != AgentsSkillsPath || rt.SkillsVerified != "testcli 1.0" || !rt.SelfSandbox ||
 		len(rt.ProjectConfig) != 1 || rt.ProjectConfig[0] != filepath.FromSlash(".testcli/config.toml") {
 		t.Fatalf("scratch profile did not load all five: %+v", rt)
 	}

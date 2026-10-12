@@ -244,7 +244,7 @@ func TestSkillsPlaceholderRendering(t *testing.T) {
 		if strings.Contains(got, "{skills}") || strings.Contains(got, "--plugin-dir") || strings.Contains(got, tree) || strings.Contains(got, "  ") {
 			t.Errorf("%s renders no skills flag:\n%s", n, got)
 		}
-		if !rt.RealizesSkills(withSkills.Skills) || !rt.SkillsCwd {
+		if !rt.RealizesSkills(withSkills.Skills) || rt.SkillsRoot == "" {
 			t.Errorf("%s realizes skills from the session cwd", n)
 		}
 		if !rt.RealizesSkills(nil) {

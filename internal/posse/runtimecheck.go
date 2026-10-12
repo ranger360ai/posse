@@ -674,9 +674,19 @@ func (a *App) skillsRow(rt *Runtime) stageRow {
 		r.value = "NO SURFACE — UNDECLARED: neither skills_flag: nor skills_cwd:, so posse has nothing to point this CLI at for one session"
 		r.by = "nothing — neither skills_flag: nor skills_cwd: is set for " + rt.Name + ", so this is the loud default"
 		r.note = append(r.note, "declare the one you MEASURED: skills_flag: (the printf form {skills} renders, e.g. \"--plugin-dir %s\") or skills_cwd: true (the CLI walks "+AgentsSkillsPath+" under the session dir itself). Declaring BOTH refuses at load — a runtime has one skill surface, and two half-bindings is a grid that cannot say which one the CLI read.")
-	case rt.SkillsCwd:
-		r.value = "cwd-discovery — " + AgentsSkillsPath + " under the session dir, symlinked at launch and ADDITIVE; {skills} renders nothing and the LINKS are the binding"
+	case rt.SkillsRoot != "" && rt.SkillsVerified == "":
+		// ADR 0007 §6b: a cwd root declared with no live measurement behind
+		// it. CheckParity DEGRADES a `skills:` PID here — this row says why
+		// before the launch does.
+		r.value = "cwd-discovery — " + rt.SkillsRoot + " under the session dir, UNPROVEN (never measured live): a `skills:` PID here DEGRADES the launch and refuses without --allow-degraded (ADR 0007 §6b)"
 		r.by = rt.declaredBy("skills_cwd")
+		r.note = append(r.note, "declare skills_verified: <the CLI's own --version line> once a live session has proven "+rt.SkillsRoot+" is actually read — the honest state until then is UNPROVEN, not a silent REALIZED over a link the CLI may never walk.")
+	case rt.SkillsRoot != "":
+		r.value = "cwd-discovery — " + rt.SkillsRoot + " under the session dir, symlinked at launch and ADDITIVE; {skills} renders nothing and the LINKS are the binding (verified " + rt.SkillsVerified + ")"
+		r.by = rt.declaredBy("skills_cwd")
+		if drift := skillsVerifiedDrift(rt); drift != "" {
+			r.note = append(r.note, drift)
+		}
 		r.note = append(r.note, "the dir belongs to the REPO, not to the persona: posse adds its own links, refuses to overwrite an entry it did not write, and sweeps a link whose target has left RHQ_HOME/skills. It is hidden from `git status` through .git/info/exclude, which hides it from git and not from the CLI (measured rangerhq-1qd).")
 	default:
 		r.value = "flag — " + flag + ", pointed at the tree posse renders per persona (session-only, additive)"

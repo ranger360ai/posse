@@ -106,8 +106,10 @@ var qmSurfaces = []qmSurface{
 	// The cwd shape, declared in yaml. ADR 0017 §4 listed `skills_cwd:` as
 	// NOT declarable ("a yaml runtime is either skills_flag: or no
 	// surface"); it has since shipped, and a row is how that stops being
-	// prose (runtime.go's skillsCwdDecl branch).
-	{runtime: "tmplcwd", yaml: "command: tmpl --sys {file}\nskills_cwd: true\n", shape: "cwd"},
+	// prose (runtime.go's skillsRootDecl branch). skills_verified: is
+	// needed too (ADR 0007 §6b) — without it the binding is UNPROVEN and
+	// this row's "must be realizable" assertion below would degrade.
+	{runtime: "tmplcwd", yaml: "command: tmpl --sys {file}\nskills_cwd: true\nskills_verified: tmpl 1.0\n", shape: "cwd"},
 	// The same yaml with both keys left out: no surface at all.
 	{runtime: "tmplnone", yaml: "command: tmpl --sys {file}\n", shape: "none"},
 }

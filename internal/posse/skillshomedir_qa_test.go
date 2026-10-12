@@ -23,15 +23,14 @@ package posse
 //     mode in every bob session on the box — so the materializer refuses.
 //   - `~/.agents/skills/` lands on a surface read at the cwd ONLY. MEASURED
 //     2026-08-18 (ADR 0007 §2, codex-cli 0.147.0 and grok 1.0.5): discovery
-//     is at the cwd and does not climb — and bob's own row is cwd-discovery
-//     too (ADR 0060). No CLI reads `~/.agents` as a global root at all:
-//     each of the three has its own and it is a different path
-//     (`~/.codex/skills`, `~/.grok/skills`, `~/.bob/skills`). So the tree
-//     at the home is read by a
-//     cwd-at-home session, and that is exactly what the tree in any other
-//     directory is: ADR 0007 §4 already declares this surface additive,
-//     owned by the DIR rather than by the persona, and outliving the seat.
-//     `$HOME` is a directory under that contract, not an escalation of it.
+//     is at the cwd and does not climb. No CLI reads `~/.agents` as a
+//     global root at all: codex and grok each have their own, and it is a
+//     different path (`~/.codex/skills`, `~/.grok/skills`). So the tree at
+//     the home is read by a cwd-at-home session, and that is exactly what
+//     the tree in any other directory is: ADR 0007 §4 already declares
+//     this surface additive, owned by the DIR rather than by the persona,
+//     and outliving the seat. `$HOME` is a directory under that contract,
+//     not an escalation of it.
 //
 // And the seam, which is the second reason there is no guard here: FOUR
 // writes land inside the session dir — the pre-push and commit-guard hooks
@@ -52,6 +51,21 @@ package posse
 // `PersonaModeChannel.GlobalRoot` — or any config root covering this tree —
 // the write at the home becomes the mode file's case and wants the mode
 // file's refusal. That is a red test, not a silent drift.
+//
+// BOB NO LONGER READS THIS AT ALL (ADR 0007 §6d, ranger-base-q1w0h): its
+// surface was never `.agents/skills` — the operator's own live measurement
+// of what bob 2.0.5 actually reads showed that root false — and its
+// declared SkillsRoot is now BobSkillsRoot, `.bob/plugins/posse/skills`,
+// which sits INSIDE bob's own `PersonaModeChannel.GlobalRoot` (`.bob`) —
+// exactly the condition "what would flip it" describes, for bob and bob
+// alone. Arm 4 below still sweeps AgentsSkillsPath, which is unchanged for
+// codex and grok; it does not see bob's new root, and nothing here refuses
+// a bob skills render at the home yet — that guard, over whichever root a
+// runtime declares, is ranger-base-6i5tr (ADR 0007 §6e), filed and blocked
+// on this bead rather than folded into it. Arm 3 below is updated to the
+// new path and is NOT a claim that the write is fine at the home; it is
+// bob's SkillsVerified being empty (§6b) that keeps a real launch from
+// reaching this write at all unless --allow-degraded is typed.
 
 import (
 	"os"
@@ -135,7 +149,7 @@ func TestQASkillsTreeAtASessionDirThatIsTheHomeIsWrittenOnPurpose(t *testing.T) 
 		if err != nil {
 			t.Fatalf("%s is not a built-in: %v", name, err)
 		}
-		if !rt.SkillsCwd {
+		if rt.SkillsRoot == "" {
 			t.Fatalf("%s no longer discovers skills from the cwd — this arm is about the cwd surface", name)
 		}
 		got, err := a.RenderSkillsFor(ag, rt, home)
@@ -177,8 +191,8 @@ func TestQAAtTheHomeTheSkillsTreeIsWrittenAndTheModeFileRefuses(t *testing.T) {
 	if _, err := a.RenderSkillsFor(ag, rt, home); err != nil {
 		t.Errorf("bob's skills tree at a session dir of $HOME was refused: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(home, ".agents", "skills", "dataviz", "SKILL.md")); err != nil {
-		t.Errorf("bob's launch wrote no skills tree at the home: %v", err)
+	if _, err := os.Stat(filepath.Join(home, ".bob", "plugins", "posse", "skills", "dataviz", "SKILL.md")); err != nil {
+		t.Errorf("bob's launch wrote no skills tree at %s: %v", BobSkillsRoot, err)
 	}
 	// The sibling guard, at the identical input. Without this arm every
 	// green above is also consistent with ranger-base-se81d's refusal

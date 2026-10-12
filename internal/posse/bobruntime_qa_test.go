@@ -326,11 +326,14 @@ func TestQABobGridDeclaresEveryRow(t *testing.T) {
 		// tree green (MEASURED 2026-09-28, ranger-base-rg19l — `go test` over
 		// internal/posse, cmd/posse and internal/treepins for the skills one).
 		//
-		// skills: cwd-discovery, not a flag. Dropping SkillsCwd renders
-		// `skills flag — , pointed at the tree posse renders per persona` — an
-		// empty flag name and a dangling comma, a malformed row — and posse
-		// then points bob at a tree its CLI never walks.
-		"cwd-discovery — " + AgentsSkillsPath + " under the session dir",
+		// skills: cwd-discovery, not a flag, and UNPROVEN (ADR 0007 §6a-b):
+		// bob's root is its own posse-owned namespace, BobSkillsRoot, and
+		// carries no skills_verified — nobody has measured bob reading a
+		// skill linked there yet (ranger-base-6r1rf). Dropping SkillsRoot
+		// renders `skills flag — , pointed at the tree posse renders per
+		// persona` — an empty flag name and a dangling comma, a malformed
+		// row — and posse then points bob at a tree its CLI never walks.
+		"cwd-discovery — " + BobSkillsRoot + " under the session dir, UNPROVEN (never measured live)",
 		// sandbox: self_sandbox UNSET, so L2 is posse's seatbelt and not
 		// bob's own. Declaring it flips who enforces Edit/Write here on a CLI
 		// nobody has measured wrapping its own children.

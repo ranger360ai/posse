@@ -106,6 +106,33 @@ func (g RealizedGate) String() string {
 	return s
 }
 
+// skillsDriftVersion is the seam skillsVerifiedDrift reads through —
+// ProbeCLIVersion by default. A var, not a direct call, for the reason
+// interstitial.go's codexInstalledVersion is one: a hermetic test must not
+// spawn whatever CLI happens to be on the box's PATH to get a result.
+var skillsDriftVersion = ProbeCLIVersion
+
+// skillsVerifiedDrift reports whether rt's skills_verified: has moved away
+// from the CLI installed right now (ADR 0007 §6c). "" when there is nothing
+// to report: no SkillsVerified at all (the §6b UNPROVEN case, handled
+// before this is ever called), or the installed CLI will not answer
+// --version. ProbeCLIVersion is the SAME reader the runtime probe's own
+// drift check uses (runtimeprobe.go's probeStateWith) — reused rather than
+// a second version parser for the same fact.
+//
+// Reported, never refused: unlike the UNPROVEN case, a version mismatch
+// does not move this gate out of Realized. The remedy is a re-measurement,
+// not an --allow-degraded wall at every CLI upgrade (§6c's rejected
+// alternative).
+func skillsVerifiedDrift(rt *Runtime) string {
+	now := skillsDriftVersion(rt.Exe())
+	if now == "" || now == rt.SkillsVerified {
+		return ""
+	}
+	return fmt.Sprintf("drift: skills_verified: %q but %s reports %q — re-measure live discovery and update skills_verified: (ADR 0007 §6c)",
+		rt.SkillsVerified, rt.Name, now)
+}
+
 // Parity is the realization matrix for one launch.
 type Parity struct {
 	Runtime    string
@@ -377,11 +404,20 @@ func (a *App) CheckParity(ag *AgentFile, rt *Runtime, cage, tier string) Parity 
 		switch flag, ok := rt.SkillsText(ag.SkillsStateDir, ag.Skills); {
 		case !ok:
 			p.Degraded = append(p.Degraded, fmt.Sprintf("skills: %s — %s has no per-session skill surface", names, rt.Name))
-		case rt.SkillsCwd:
+		case rt.SkillsRoot != "" && rt.SkillsVerified == "":
+			// ADR 0007 §6b: an unverified cwd root is unrealizable — the
+			// honest reading of a binding nobody has measured live, louder
+			// than a link into a path the CLI may never walk.
+			p.Degraded = append(p.Degraded, fmt.Sprintf("skills: %s — %s's discovery root %s is UNPROVEN (never measured live)", names, rt.Name, rt.SkillsRoot))
+		case rt.SkillsRoot != "":
 			// No flag to show: the binding is the symlinks the launch writes
 			// into the session dir, which is as session-scoped as the cwd is.
 			// Class "": a skills binding is not an adversarial gate claim.
-			p.Realized["skills: "+names] = RealizedGate{Detail: rt.Name + " reads " + AgentsSkillsPath + " in the session dir (symlinked at launch, additive)"}
+			detail := rt.Name + " reads " + rt.SkillsRoot + " in the session dir (symlinked at launch, additive)"
+			if drift := skillsVerifiedDrift(rt); drift != "" {
+				detail += " — " + drift
+			}
+			p.Realized["skills: "+names] = RealizedGate{Detail: detail}
 		default:
 			p.Realized["skills: "+names] = RealizedGate{Detail: rt.Name + " " + flag + " (session-only, additive)"}
 		}
