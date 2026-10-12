@@ -310,6 +310,29 @@ type Runtime struct {
 	// (runtimeprobe.go) is the same reader the runtime probe's own drift
 	// check uses, reused rather than a second version parser.
 	SkillsVerified string
+	// SkillsGlobalRoots declares this runtime's measured GLOBAL skill roots
+	// (ADR 0007 §6e, ranger-base-6i5tr) — the reversal of ranger-base-q114b,
+	// beside PersonaModeChannel.GlobalRoot but at the Runtime itself: a
+	// runtime without a persona-mode channel (codex, grok) can still read a
+	// global skills root, and the two are unrelated surfaces of the same
+	// CLI. Each entry is home-relative and slash-separated, and a `*`
+	// SEGMENT matches any one directory name — the plugin namespace in
+	// `.bob/plugins/*/skills` — because the static read of the shipped
+	// bundle names the glob, not one resolved value of it.
+	//
+	// bob 2.0.5 (static bundle read, MEASURED 2026-10-12): `.bob/skills`,
+	// `.bob/plugins/*/skills`, `.agents/skills`, `.agents/plugins/*/skills`,
+	// `.claude/skills`, `.claude/plugins/*/skills` — {~/.bob, ~/.agents,
+	// ~/.claude} x {skills, plugins/*/skills}. codex and grok declare none:
+	// the binary strings were inconclusive on whether either reads
+	// `~/.agents/skills` globally (ADR 0007 Evidence), so neither is
+	// declared ahead of a measurement.
+	//
+	// refuseSkillsGlobalWrite (skills.go) sweeps EVERY built-in's list, not
+	// just the launching runtime's — bob reads `~/.agents/skills` whoever
+	// wrote it, so a codex or grok render at the home refuses on bob's
+	// declaration. Nothing here is per-runtime scoped the way SkillsRoot is.
+	SkillsGlobalRoots []string
 	// SelfSandbox: the runtime wraps its own child commands in sandbox-exec
 	// (codex). macOS refuses to nest seatbelts (sandbox_apply: Operation not
 	// permitted — verified 2026-08-17), so our seatbelt tier cannot wrap it;
@@ -1805,7 +1828,12 @@ var builtinRuntimes = []Runtime{
 	// the live probe lands (ranger-base-6r1rf) — the honest state, louder
 	// than the pre-ADR-0007-§6 claim that AgentsSkillsPath was bob's
 	// surface at all, which the operator's own measurement showed false.
-	{Name: "bob", Builtin: true, Skills: skillsCwd, SkillsRoot: BobSkillsRoot, Unattended: "--auto-approve",
+	// SkillsGlobalRoots is the same static read's other half (§6e): bob's
+	// OWN BobSkillsRoot (`.bob/plugins/posse/skills`) sits inside its own
+	// `.bob/plugins/*/skills` entry below, so bob's declaration refuses its
+	// own cwd-at-home render — not a gap the live probe closes, a fact the
+	// bundle already settles.
+	{Name: "bob", Builtin: true, Skills: skillsCwd, SkillsRoot: BobSkillsRoot, SkillsGlobalRoots: bobSkillsGlobalRoots, Unattended: "--auto-approve",
 		// The PID channel (ADR 0062 D1): bob is the one built-in whose CLI
 		// has no launch-time system FLAG, and the one that declares a
 		// persona-mode channel. {mode} renders off this and the launch

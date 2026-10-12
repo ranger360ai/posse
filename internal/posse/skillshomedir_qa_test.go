@@ -2,70 +2,61 @@
 
 package posse
 
-// ranger-base-q114b: the session dir that IS the operator's home, and the
-// DELIBERATE asymmetry between the two trees posse writes there.
+// ranger-base-q114b asked whether a session dir that IS the operator's home
+// is a special case for the skills tree, and answered no: `~/.agents/skills`
+// is read by a cwd-at-home session, which is the session that asked for it,
+// and (it said) no CLI reads `~/.agents` as a GLOBAL root — each of codex,
+// grok and bob has its own, and none of them was that path. That was the
+// measurement the blessing rested on.
 //
-// ranger-base-se81d guarded the persona-mode file against this exact input
-// and ADR 0062's Consequences left the sibling open: `posse new` has no
-// worktree option, its session dir is `--dir`, else `default_dir`, else
-// `$HOME` (herdrback.go's `CfgGet` fallback), so one interactive launch with
-// no `--dir` names the home as the workspace — and down that same default
-// `~/.agents/skills/` has ALREADY landed (created 2026-09-05,
-// ranger-base-4mrmc F2).
+// ranger-base-q1w0h's operator-run static read of bob 2.0.5's own bundle
+// (ADR 0007 §6, Evidence) found that measurement FALSE: bob reads
+// `~/.agents/skills` globally after all — and `~/.bob/plugins/*/skills`,
+// which is where bob's OWN posse-owned root (BobSkillsRoot,
+// `.bob/plugins/posse/skills`, §6d) sits. So the write this file used to
+// bless is, today, exactly the mode file's case one path over
+// (personamode.go's refusePersonaModeGlobalWrite): a session dir of `$HOME`
+// turns a session-local render into a write under a root bob reads in
+// EVERY bob session on the box, in every workspace, trusted or not,
+// outliving the seat. ADR 0007 §6e is the reversal, THIS FILE's new answer:
+// each built-in declares its measured global skill roots
+// (`Runtime.SkillsGlobalRoots`, runtime.go, beside
+// `PersonaModeChannel.GlobalRoot`), and a cwd render refuses before writing
+// when its target lies under ANY declared runtime's root — not only the
+// launching runtime's, because bob reads `~/.agents/skills` whoever wrote
+// it (refuseSkillsGlobalWrite, skills.go).
 //
-// THE ANSWER IS THAT THIS ONE IS FINE, and these pins are what makes that a
-// position rather than an omission. The two writes differ in the one way
-// that matters:
+// THE OLD PIN READ A DECLARATION NOBODY HAD MADE, so it stayed green while
+// the fact flipped under it: TestQANoRuntimeDeclaresAGlobalRootOverTheAgentsSkillsTree
+// swept `builtinRuntimes` for a `PersonaMode.GlobalRoot` covering
+// `.agents/skills` and found none, because the covering root was never a
+// *mode* channel's root — it was a *skills* channel's, a dimension that pin
+// never read. Its replacement below, TestQAEveryDeclaredSkillsGlobalRootRefusesTheCwdRender,
+// reads SkillsGlobalRoots instead, and is a positive assertion (the render
+// DOES refuse) rather than the old pin's negative one (no declaration
+// exists) — a positive pin cannot go quietly stale the way a "nothing found"
+// one did, because removing the declaration it depends on reds it instead
+// of leaving it green over nothing.
 //
-//   - `~/.bob/plugins/posse/custom_modes.yaml` lands in a glob bob reads
-//     GLOBALLY. The write means something at the home it does not mean in
-//     any other directory — one persona's whole PID becomes a selectable
-//     mode in every bob session on the box — so the materializer refuses.
-//   - `~/.agents/skills/` lands on a surface read at the cwd ONLY. MEASURED
-//     2026-08-18 (ADR 0007 §2, codex-cli 0.147.0 and grok 1.0.5): discovery
-//     is at the cwd and does not climb. No CLI reads `~/.agents` as a
-//     global root at all: codex and grok each have their own, and it is a
-//     different path (`~/.codex/skills`, `~/.grok/skills`). So the tree at
-//     the home is read by a cwd-at-home session, and that is exactly what
-//     the tree in any other directory is: ADR 0007 §4 already declares
-//     this surface additive, owned by the DIR rather than by the persona,
-//     and outliving the seat. `$HOME` is a directory under that contract,
-//     not an escalation of it.
+// ARM 3's ordering note moves with the fact: a bob launch at the home used
+// to write this tree and THEN refuse at the mode file (herdrback.go, skills
+// at 2405, mode at 2416) — which was why the already-landed
+// `~/.agents/skills` was not evidence of a stray write. Today the skills
+// render is the one that refuses, first, over its OWN declared root, and a
+// real launch never reaches the mode file at all. Arm 3 below pins that:
+// bob's skills render refuses, AND (independently, calling
+// RenderPersonaModeFor directly, the way herdrback.go never gets to) the
+// mode guard still refuses the identical input — two guards, either one
+// sufficient, so a landing that quietly dropped one would not go unnoticed
+// behind the other.
 //
-// And the seam, which is the second reason there is no guard here: FOUR
-// writes land inside the session dir — the pre-push and commit-guard hooks
-// under its `.git/hooks`, the skills tree (plus its `.git/info/exclude`
-// line), and the mode file — with two more keyed on the dir without writing
-// into it (the L3 hooks redirect's `core.hooksPath`, claude's directory
-// trust). If a session whose dir is the home should be refused, that is one
-// rule about the DIR, at the place the dir is resolved —
-// ranger-base-er6mt's root cause, giving `posse new` a tree of its own —
-// and not a refusal bolted into one of the four, which would stop the
-// skills render while the rest proceeded. Arm 3 below is that order,
-// pinned: a bob launch at the home installs the hooks, writes this tree,
-// and THEN refuses, which is why the already-landed `~/.agents/skills` is
-// not evidence of a stray write.
-//
-// WHAT WOULD FLIP IT is one fact, and arm 4 holds it: a CLI that reads
-// `~/.agents` as a global root. The day a runtime declares `.agents` as its
-// `PersonaModeChannel.GlobalRoot` — or any config root covering this tree —
-// the write at the home becomes the mode file's case and wants the mode
-// file's refusal. That is a red test, not a silent drift.
-//
-// BOB NO LONGER READS THIS AT ALL (ADR 0007 §6d, ranger-base-q1w0h): its
-// surface was never `.agents/skills` — the operator's own live measurement
-// of what bob 2.0.5 actually reads showed that root false — and its
-// declared SkillsRoot is now BobSkillsRoot, `.bob/plugins/posse/skills`,
-// which sits INSIDE bob's own `PersonaModeChannel.GlobalRoot` (`.bob`) —
-// exactly the condition "what would flip it" describes, for bob and bob
-// alone. Arm 4 below still sweeps AgentsSkillsPath, which is unchanged for
-// codex and grok; it does not see bob's new root, and nothing here refuses
-// a bob skills render at the home yet — that guard, over whichever root a
-// runtime declares, is ranger-base-6i5tr (ADR 0007 §6e), filed and blocked
-// on this bead rather than folded into it. Arm 3 below is updated to the
-// new path and is NOT a claim that the write is fine at the home; it is
-// bob's SkillsVerified being empty (§6b) that keeps a real launch from
-// reaching this write at all unless --allow-degraded is typed.
+// MEASURED 2026-10-12: `~/.agents/skills/distributed-systems` exists on the
+// operator's box, a posse link created 2026-09-05 (ranger-base-4mrmc F2) —
+// under this file's rule it sits inside a global bob skill root today. It
+// is the operator's home: reported in the ADR, not removed (the same
+// reasoning ranger-base-se81d gave for the mode-file sibling: deleting a
+// file posse cannot prove it wrote is a larger liberty than the write being
+// undone).
 
 import (
 	"os"
@@ -97,7 +88,11 @@ func skillsHomeNeedsGit(t *testing.T) {
 	}
 }
 
-func TestQASkillsTreeAtASessionDirThatIsTheHomeIsWrittenOnPurpose(t *testing.T) {
+// ARM 1: codex's and grok's shared surface, AgentsSkillsPath, rendered at a
+// session dir that IS `$HOME`. It refuses, naming the global root that
+// covers it — `.agents/skills`, bob's declaration and not codex's or
+// grok's own, which is the "any runtime" half of ADR 0007 §6e.
+func TestQASkillsTreeAtASessionDirThatIsTheHomeRefusesUnderADeclaredGlobalRoot(t *testing.T) {
 	// No t.Parallel: t.Setenv. And the home has to be the PROCESS's `$HOME`
 	// rather than a path that merely looks like one, because that is the
 	// input every other skills pin does NOT have — they hand the writer a
@@ -114,33 +109,28 @@ func TestQASkillsTreeAtASessionDirThatIsTheHomeIsWrittenOnPurpose(t *testing.T) 
 	home := gitTempDir(t)
 	t.Setenv("HOME", home)
 	// A home that is a git repo, because that is the real one: a dotfiles
-	// repo is the common shape, and it is the arm where posse appends to
-	// `~/.git/info/exclude`. The write is wanted — the tree must stay out
-	// of the operator's `git status` the way it does in any other repo.
+	// repo is the common shape. This arm asserts a REFUSAL, so there is
+	// nothing for `.git/info/exclude` to receive — the repo is here only to
+	// make the fixture the realistic one, not because this arm exercises it.
 	gitRun(t, home, "init", "-b", "main")
 
-	// ARM 1, THE MEASURED CASE: the session dir IS `$HOME`, and the tree is
-	// written. A refusal here is the change this file exists to stop
-	// without a reading to go with it.
-	dir, err := a.RenderAgentsSkills(home, "developer", []string{"dataviz"})
-	if err != nil {
-		t.Fatalf("a session dir that is $HOME was refused the skills tree: %v", err)
+	_, err := a.RenderAgentsSkills(home, "p", []string{"dataviz"})
+	if err == nil {
+		t.Fatal("a session dir that is $HOME was NOT refused the skills tree — ADR 0007 §6e reverses ranger-base-q114b's blessing exactly here")
 	}
-	if want := filepath.Join(home, ".agents", "skills"); dir != want {
-		t.Errorf("tree at %s, want %s", dir, want)
+	for _, want := range []string{"skills", AgentsSkillsPath, "bob", "GLOBAL"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("refusal %q does not name %q — the operator needs to see WHICH global root this tree fell under and WHICH runtime declared it", err, want)
+		}
 	}
-	// Bound through the link, which is the whole realization on this
-	// surface — there is no flag to check instead (ADR 0007 §2).
-	if _, err := os.Stat(filepath.Join(dir, "dataviz", "SKILL.md")); err != nil {
-		t.Errorf("the skill is not reachable through the tree: %v", err)
-	}
-	// And out of git's way, at the home as anywhere else.
-	out, err := exec.Command("git", "-C", home, "status", "--porcelain").Output()
-	if err != nil || strings.TrimSpace(string(out)) != "" {
-		t.Errorf("the tree at the home must stay out of git status: %q (%v)", out, err)
+	// And nothing was written: a refusal that still leaves the tree behind
+	// is the mode-file guard's own distinction (refuse, don't sweep) read
+	// backwards.
+	if _, statErr := os.Stat(AgentsSkillsDir(home)); statErr == nil {
+		t.Error("the render refused but the tree exists anyway — a refusal must mean no write, not a write it disclaims")
 	}
 
-	// ARM 2: the launch's own path, not just the writer's. RenderSkillsFor
+	// ARM 1b: the launch's own path, not just the writer's. RenderSkillsFor
 	// is what herdrback.go calls, and a guard added to EITHER layer would
 	// have to red something here.
 	ag := loadTestAgent(t, skillsHomePID)
@@ -152,24 +142,18 @@ func TestQASkillsTreeAtASessionDirThatIsTheHomeIsWrittenOnPurpose(t *testing.T) 
 		if rt.SkillsRoot == "" {
 			t.Fatalf("%s no longer discovers skills from the cwd — this arm is about the cwd surface", name)
 		}
-		got, err := a.RenderSkillsFor(ag, rt, home)
-		if err != nil {
-			t.Errorf("%s at a session dir of $HOME was refused: %v", name, err)
-			continue
-		}
-		if got != dir {
-			t.Errorf("%s rendered %q, want the home's tree %q", name, got, dir)
+		if _, err := a.RenderSkillsFor(ag, rt, home); err == nil {
+			t.Errorf("%s at a session dir of $HOME was NOT refused — RenderSkillsFor must reach the same guard RenderAgentsSkills does", name)
 		}
 	}
 }
 
-// ARM 3: the asymmetry in one place, and the ORDER that goes with it. bob
-// has both channels, so one runtime at one session dir exercises the pair:
-// the skills tree is written, the mode file refuses. The order is
-// herdrback.go's (skills at 2344, the mode at 2355) and it is the reason the
-// already-created `~/.agents/skills` proves nothing about a stray write —
-// a bob launch at the home leaves this tree behind on its way to refusing.
-func TestQAAtTheHomeTheSkillsTreeIsWrittenAndTheModeFileRefuses(t *testing.T) {
+// ARM 2: bob's OWN posse-owned root, BobSkillsRoot, at the identical input.
+// Unlike codex and grok, bob's declaration covers its own render directly —
+// `.bob/plugins/posse/skills` matches `.bob/plugins/*/skills` with `posse`
+// standing for the wildcard segment — so this is not the "any runtime"
+// clause, it is bob refusing itself.
+func TestQABobsSkillsTreeAtTheHomeRefusesUnderItsOwnGlobalRoot(t *testing.T) {
 	skillsHomeNeedsGit(t)
 	rhq := gitTempDir(t)
 	a := &App{Home: rhq, StateDir: filepath.Join(rhq, "state"), AgentsDir: filepath.Join(rhq, "agents")}
@@ -188,114 +172,75 @@ func TestQAAtTheHomeTheSkillsTreeIsWrittenAndTheModeFileRefuses(t *testing.T) {
 	rt := bobRuntime(t, a)
 	ag := loadTestAgent(t, skillsHomePID)
 
-	if _, err := a.RenderSkillsFor(ag, rt, home); err != nil {
-		t.Errorf("bob's skills tree at a session dir of $HOME was refused: %v", err)
+	if _, err := a.RenderSkillsFor(ag, rt, home); err == nil {
+		t.Error("bob's own skills tree at a session dir of $HOME was NOT refused — BobSkillsRoot sits inside bob's own declared .bob/plugins/*/skills")
 	}
-	if _, err := os.Stat(filepath.Join(home, ".bob", "plugins", "posse", "skills", "dataviz", "SKILL.md")); err != nil {
-		t.Errorf("bob's launch wrote no skills tree at %s: %v", BobSkillsRoot, err)
+	if _, statErr := os.Stat(filepath.Join(home, ".bob", "plugins", "posse", "skills", "dataviz", "SKILL.md")); statErr == nil {
+		t.Errorf("bob's launch wrote a skills tree at %s despite the refusal", BobSkillsRoot)
 	}
-	// The sibling guard, at the identical input. Without this arm every
-	// green above is also consistent with ranger-base-se81d's refusal
-	// having been dropped.
+	// The sibling guard, at the identical input, called the way herdrback.go
+	// never gets to call it now (the skills refusal above stops the launch
+	// first — herdrback.go's order is skills, then mode). Still pinned
+	// directly so a landing that dropped THIS guard would not hide behind
+	// the one above: either refusal is independently sufficient.
 	if _, err := a.RenderPersonaModeFor(ag, rt, home); err == nil {
-		t.Error("the mode file at a session dir of $HOME was written — ranger-base-se81d's guard is the half of this pair that refuses")
+		t.Error("the mode file at a session dir of $HOME was written — ranger-base-se81d's guard is the other half of this pair and must refuse on its own")
 	}
 }
 
-// ARM 4: the one fact the decision rests on, inside the tree. Nothing here
-// can measure what a CLI reads — that is ADR 0007 §2's 2026-08-18 run — but
-// the tree's own declarations can be held against it: no runtime names a
-// global config root that covers `.agents/skills`. A runtime that did would
-// make the home write global, which is the mode file's case and wants the
-// mode file's refusal rather than this file's blessing.
-//
-// THE QUESTION IS ASKED WITH THE PRODUCTION PREDICATE, not with a first
-// segment (ranger-base-szxlx, verifying this file's close). What makes a
-// declared root cover this tree is the same arithmetic
-// refusePersonaModeGlobalWrite does — `underDir(filepath.Join(home,
-// GlobalRoot), …)` — and `filepath.Join` CLEANS, so four spellings resolve
-// onto `<home>/.agents` while their first segment is not `.agents` at all:
-// `/.agents`, `./.agents`, `.` (the home itself, which contains everything
-// under it) and `../<home>/.agents`. MEASURED 2026-10-03: all four cover the
-// tree under `underDir` and a `strings.Split(GlobalRoot, "/")[0] == seg`
-// test flags none of them. A root is a hand-typed table literal, so the
-// spelling is exactly the kind of thing that arrives by hand.
-//
-// The sweep therefore carries its own two halves, because a loop over a
-// table can go green by reaching nothing: the FLOOR (at least one runtime
-// declares a root at all, else the comparison below never runs) and the
-// CONTROL (the same predicate, over a planted root, must say yes).
-func TestQANoRuntimeDeclaresAGlobalRootOverTheAgentsSkillsTree(t *testing.T) {
+// ARM 3: the one fact both refusals rest on, inside the tree, asked with
+// the PRODUCTION PREDICATE (ranger-base-szxlx's lesson, carried over from
+// the pin this replaces) — not a first segment or a hand-rolled prefix
+// test. Every entry any built-in declares in SkillsGlobalRoots must cover
+// SOME real render target (the FLOOR: a sweep over nothing is not an
+// answer), and skillsGlobalRootCovers — the function refuseSkillsGlobalWrite
+// actually calls — must say yes to it. The CONTROL is the negative half:
+// a path that is NOT under any declared root must not be refused, so this
+// arm cannot pass by reading every path as covered.
+func TestQAEveryDeclaredSkillsGlobalRootRefusesTheCwdRender(t *testing.T) {
 	t.Parallel()
-	// The home is a real directory because `underDir` resolves symlinks over
-	// the deepest existing ancestor — on darwin a `/var` home is a link, and
-	// a textual test reads it as outside itself.
+	// The home is a real directory because the resolution inside
+	// refuseSkillsGlobalWrite follows symlinks over the deepest existing
+	// ancestor — on darwin a `/var` home is a link, and a textual test reads
+	// it as outside itself.
 	home := t.TempDir()
-	tree := AgentsSkillsDir(home)
-	if err := os.MkdirAll(tree, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if tree == home {
-		t.Fatalf("AgentsSkillsPath is %q — this arm needs a path under the session dir to ask containment about", AgentsSkillsPath)
-	}
-	// covers is refusePersonaModeGlobalWrite's own reading of a declared
-	// root, with the glob left out exactly as the production guard leaves it
-	// out: anywhere under `<home>/<GlobalRoot>` is inside.
-	covers := func(globalRoot string) bool {
-		if globalRoot == "" {
-			return false
-		}
-		return underDir(filepath.Join(home, filepath.FromSlash(globalRoot)), tree)
-	}
 
-	// CONTROL first: the predicate must say yes to a root that does cover
-	// the tree, in every spelling that resolves onto it. Without this the
-	// whole sweep is green over a predicate that answers no to everything.
-	for _, spelling := range []string{
-		AgentsSkillsPath,                               // `.agents/skills`
-		strings.Split(AgentsSkillsPath, "/")[0],        // `.agents`
-		"/" + strings.Split(AgentsSkillsPath, "/")[0],  // `/.agents`
-		"./" + strings.Split(AgentsSkillsPath, "/")[0], // `./.agents`
-		".", // the home itself
-		"../" + filepath.Base(home) + "/" + strings.Split(AgentsSkillsPath, "/")[0],
-	} {
-		if !covers(spelling) {
-			t.Errorf("control: a GlobalRoot of %q resolves onto %s and must read as covering it — this arm cannot catch what it is for", spelling, tree)
-		}
-	}
-	// And the negative half of the control, so `covers` is not a function
-	// that says yes to everything: bob's real root does not cover the tree.
-	if covers(".bob") {
-		t.Error("control: a GlobalRoot of \".bob\" must NOT read as covering the skills tree — the predicate is answering yes to everything")
-	}
-
-	// builtinRuntimes is the WHOLE set to sweep: `PersonaMode` has no yaml
-	// key at all, so a template runtime cannot declare a config root, and a
-	// built-in is the only place one can appear.
-	//
 	// By VALUE, not `&builtinRuntimes[i]`: taking the address of an element
 	// puts the table in cmd/testparallel's WRITTEN set, which makes every
-	// `t.Parallel` test that merely reads it uncleared — nine of them, and
-	// `make verify-parallel` names all nine for one `&` here.
+	// `t.Parallel` test that merely reads it uncleared (ranger-base-q114b's
+	// own finding, the reason this loop is still shaped this way).
 	declared := 0
 	for _, rt := range builtinRuntimes {
-		c := rt.PersonaMode
-		if c == nil || c.GlobalRoot == "" {
-			continue
-		}
-		declared++
-		if covers(c.GlobalRoot) {
-			t.Errorf("runtime %s declares %q as its GLOBAL config root, which covers %s — the skills tree at a session dir of $HOME is then a global write, and wants refusePersonaModeGlobalWrite's treatment rather than TestQASkillsTreeAtASessionDirThatIsTheHomeIsWrittenOnPurpose's blessing (ranger-base-q114b)", rt.Name, c.GlobalRoot, AgentsSkillsPath)
+		for _, pattern := range rt.SkillsGlobalRoots {
+			declared++
+			// A render target that matches the pattern literally — a `*`
+			// segment stands for one directory, here spelled "x" — is the
+			// CONTROL: the predicate must say yes to the exact shape it was
+			// written for.
+			target := filepath.Join(home, filepath.FromSlash(strings.ReplaceAll(pattern, "*", "x")))
+			if !skillsGlobalRootCovers(home, pattern, target) {
+				t.Errorf("control: runtime %s declares %q, and %s does not read as covered by it — the sweep below cannot catch what it is for", rt.Name, pattern, AbbrevHome(target))
+				continue
+			}
+			if err := refuseSkillsGlobalWrite("p", home, strings.ReplaceAll(pattern, "*", "x"), home); err == nil {
+				t.Errorf("runtime %s declares %q as a GLOBAL skill root, and a cwd render whose root IS that path was not refused at a session dir of $HOME (ranger-base-6i5tr, ADR 0007 §6e)", rt.Name, pattern)
+			}
 		}
 	}
-	// FLOOR: the sweep above is a loop, and a loop that iterates over
-	// nothing is indistinguishable from a loop that found nothing. bob has
-	// declared `.bob` since ADR 0060; if no runtime declares a root any
-	// more, this arm has stopped asking the question rather than answering
-	// it — and the sibling that would notice,
-	// TestQAAtTheHomeTheSkillsTreeIsWrittenAndTheModeFileRefuses, notices
-	// only for the runtime its fixture uses.
 	if declared == 0 {
-		t.Errorf("no built-in runtime declares a PersonaMode.GlobalRoot, so the sweep above compared nothing — %s is unheld, not clear (ranger-base-q114b)", AgentsSkillsPath)
+		t.Fatal("no built-in runtime declares a SkillsGlobalRoots entry, so the sweep above compared nothing — bob has declared six since ADR 0007 §6e (ranger-base-6i5tr)")
+	}
+
+	// The negative half of the control: a root with no relation to any
+	// declared global root is not refused, so `refuseSkillsGlobalWrite` is
+	// not a function that says yes to everything.
+	if err := refuseSkillsGlobalWrite("p", home, "project/.agents/skills", home); err != nil {
+		t.Errorf("control: a cwd root of %q covers no declared global root and must NOT be refused — the guard is answering yes to everything: %v", "project/.agents/skills", err)
+	}
+	// And the ordinary case this whole file exists beside: a session dir
+	// that is NOT the home is never checked against a home-relative root at
+	// all, whatever the rendered root is named.
+	if err := refuseSkillsGlobalWrite("p", t.TempDir(), AgentsSkillsPath, home); err != nil {
+		t.Errorf("control: a session dir that is not $HOME must not be refused by a home-relative global root: %v", err)
 	}
 }

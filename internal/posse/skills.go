@@ -334,6 +334,23 @@ const AgentsSkillsPath = ".agents/skills"
 // (runtime.go) until the live probe lands (ranger-base-6r1rf).
 const BobSkillsRoot = ".bob/plugins/posse/skills"
 
+// bobSkillsGlobalRoots is bob's declared Runtime.SkillsGlobalRoots (ADR 0007
+// §6e): the GLOBAL skill roots bob 2.0.5's shipped bundle reads, home-relative,
+// MEASURED 2026-10-12 by a static read of
+// /opt/homebrew/lib/node_modules/bobshell/dist/bob.js (see the ADR's
+// Evidence for the grep recipe — the minified names move between builds,
+// the string literals do not). `~/.bob`, `~/.agents` and `~/.claude`, each
+// with `skills` and `plugins/*/skills` — six entries because the
+// measurement names the glob exactly, not a coarser directory that happens
+// to cover it: refuseSkillsGlobalWrite matches path SEGMENTS, with a `*`
+// segment standing for the plugin name, so each entry here is read
+// literally rather than truncated at its first wildcard.
+var bobSkillsGlobalRoots = []string{
+	".bob/skills", ".bob/plugins/*/skills",
+	".agents/skills", ".agents/plugins/*/skills",
+	".claude/skills", ".claude/plugins/*/skills",
+}
+
 // AgentsSkillsDir is AgentsSkillsPath under a session's cwd.
 func AgentsSkillsDir(cwd string) string {
 	return filepath.Join(cwd, filepath.FromSlash(AgentsSkillsPath))
@@ -352,6 +369,69 @@ func AgentsSkillsDir(cwd string) string {
 // one most of this file's doc comments and most callers still mean.
 func (a *App) RenderAgentsSkills(cwd, persona string, names []string) (string, error) {
 	return a.renderSkillsCwd(cwd, AgentsSkillsPath, persona, names)
+}
+
+// refuseSkillsGlobalWrite is ADR 0007 §6e: the reversal of
+// ranger-base-q114b. A cwd skills render refuses BEFORE writing when its
+// target lies under ANY built-in's declared SkillsGlobalRoots — not only
+// the launching runtime's, because bob reads `~/.agents/skills` whoever
+// wrote it (the static bundle read in runtime.go's doc comment). home == ""
+// (a scrubbed environment) has nothing to be inside of, the same shape as
+// refusePersonaModeGlobalWrite's identical guard one channel over.
+//
+// Asked twice, for the same reason that guard asks twice (ranger-base-ie68e
+// F1): where the bytes land (both sides resolved through symlinks) and
+// which path the glob matches (the root resolved, the render path spelled
+// lexically from the resolved session dir) — a symlinked session dir must
+// not let the second spelling escape a root the first one would have
+// caught, and a symlink INSIDE a declared root must not let the first
+// resolve the render path out from under it.
+func refuseSkillsGlobalWrite(persona, cwd, root, home string) error {
+	if home == "" {
+		return nil
+	}
+	resolvedHome := absResolve(home)
+	file := filepath.Join(cwd, filepath.FromSlash(root))
+	spelled := filepath.Join(absResolve(cwd), filepath.FromSlash(root))
+	for _, rt := range builtinRuntimes {
+		for _, pattern := range rt.SkillsGlobalRoots {
+			if skillsGlobalRootCovers(resolvedHome, pattern, absResolve(file)) ||
+				skillsGlobalRootCovers(resolvedHome, pattern, spelled) {
+				return Die("%s: skills: this session's directory is %s, so this tree would be written to %s — which is under %s, a GLOBAL skill root %s reads (ADR 0007 §6e). That tree would be read by every %s session on this box, in every workspace, and would outlive this seat. Give the session a directory of its own (`--dir <path>`), or point `default_dir` at one",
+					persona, AbbrevHome(cwd), AbbrevHome(file), filepath.Join(AbbrevHome(home), filepath.FromSlash(pattern)), rt.Name, rt.Name)
+			}
+		}
+	}
+	return nil
+}
+
+// skillsGlobalRootCovers reports whether target, once made relative to
+// home, lies at or under pattern — a Runtime.SkillsGlobalRoots entry whose
+// segments are literal except for a bare "*", which matches exactly one
+// path segment (the plugin namespace in `.bob/plugins/*/skills`). A target
+// outside home at all (".." anywhere in the relative path, or home itself)
+// never covers, the same floor refusePersonaModeGlobalWrite's underDir
+// gives its own root comparison.
+func skillsGlobalRootCovers(home, pattern, target string) bool {
+	rel, err := filepath.Rel(home, target)
+	if err != nil {
+		return false
+	}
+	rel = filepath.ToSlash(rel)
+	if rel == "." || rel == ".." || strings.HasPrefix(rel, "../") {
+		return false
+	}
+	patSegs := strings.Split(pattern, "/")
+	relSegs := strings.Split(rel, "/")
+	if len(relSegs) < len(patSegs) {
+		return false
+	}
+	for i, seg := range patSegs {
+		if seg != "*" && relSegs[i] != seg {
+			return false
+		}
+	}
+	return true
 }
 
 // renderSkillsCwd is RenderAgentsSkills generalized over the root (ADR 0007
@@ -383,6 +463,9 @@ func (a *App) RenderAgentsSkills(cwd, persona string, names []string) (string, e
 func (a *App) renderSkillsCwd(cwd, root, persona string, names []string) (string, error) {
 	if len(names) == 0 {
 		return "", nil
+	}
+	if err := refuseSkillsGlobalWrite(persona, cwd, root, os.Getenv("HOME")); err != nil {
+		return "", err
 	}
 	dir := filepath.Join(cwd, filepath.FromSlash(root))
 	paths, unknown := a.ResolveSkills(names)
