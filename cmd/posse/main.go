@@ -1597,7 +1597,7 @@ func main() {
 	case "gates":
 		// Inspect a persona's L1 gates (shims rendered from its deny: and
 		// the refusals log — state, not memory), or install the L3 hook.
-		args = need(args, 1, "posse gates <persona> | posse gates install-hooks [dir] [--chain] | posse gates managed-hooks [dir] | posse gates adr-census [files...] | posse gates wrap <persona> -- <cmd>")
+		args = need(args, 1, "posse gates <persona> | posse gates install-hooks [dir] [--chain] | posse gates managed-hooks [dir] | posse gates adr-census [files...] | posse gates wrap <persona> -- <cmd> | posse gates bd-line -- <bd argv>")
 		// The inner command of a container launch (ADR 0002 §3,
 		// rangerhq-6so): rendered onto the engine's line by the host and run
 		// by the image's own Linux posse, never typed by hand. It renders
@@ -1609,6 +1609,20 @@ func main() {
 			// host's parity check reads.
 			if err := posse.RunGatesWrap(args[1:], out); err != nil {
 				die(err)
+			}
+			return
+		}
+		if args[0] == "bd-line" {
+			// ADR 0072 D2 — called by the bd shim's own arm, never typed by
+			// hand: refused is this call's exit code, never a reason to
+			// die() and print a second message over the one RunGatesBdLine
+			// already wrote to stderr.
+			refused, berr := posse.RunGatesBdLine(args[1:], os.Stderr)
+			if berr != nil {
+				die(berr)
+			}
+			if refused {
+				os.Exit(1)
 			}
 			return
 		}
@@ -2846,6 +2860,14 @@ catalog:
                                  this entry point from one merely carrying some posse;
                                  ` + posse.GatesWrapNoShell + ` says this runtime opts out of the
                                  gate shell (ADR 0009 §2)
+  posse gates bd-line -- <bd argv>
+                                 ADR 0072 D2's write-time judge, called by the bd shim's own
+                                 arm before comments/update/create/close, never typed by hand.
+                                 Finds the store the way bd does ($BEADS_DIR, else beadsHome(cwd)),
+                                 projects the line the write would leave with ProjectBdWrite, and
+                                 refuses (exit 1, bd not run) only when it would cross bd's 64 KB
+                                 scanner limit. Silent exit 0 whenever it cannot judge — no store,
+                                 no exact id, text on stdin.
   posse cage [<persona>]         L4: the container engine, its image, and what a
                                  caged launch of that persona would mount and forward
   posse cage build [dir] [--runtimes "<npm pkgs>"]

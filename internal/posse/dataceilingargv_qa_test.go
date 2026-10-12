@@ -50,6 +50,15 @@ func qaBdCeilingShim(t *testing.T, ceiling bool) (shimPath, refusalsLog string, 
 	// refusal, which exits before this binary is ever reached.
 	WriteExecutable(filepath.Join(realBin, "bd"), []byte(
 		"#!/bin/sh\necho \"$@\" >> "+shQuote(execLogPath)+"\necho \"real bd $*\"\n"), 0o755)
+	// ranger-base-a0vdz (ADR 0072 D2): since B2 the bd shim also resolves
+	// "posse" (resolveOutside, the same walk it resolves "bd" with) for its
+	// line-cliff arm. Without a stub here that resolution reaches past
+	// realBin to whatever posse is actually installed on this host's PATH
+	// — a different build from the one under test, wrong for every pin in
+	// this file, none of which is about ADR 0072 at all. Always exits 0: a
+	// no-op pass, matching what the real subcommand does whenever these
+	// fixtures' bare `comments add` calls carry no census it can judge.
+	WriteExecutable(filepath.Join(realBin, "posse"), []byte("#!/bin/sh\nexit 0\n"), 0o755)
 	t.Setenv("PATH", realBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	gatesDir, binDir, _, err := a.RenderGates("ceilingpersona", []string{"Bash(bd sync:*)"})
 	if err != nil {

@@ -139,6 +139,10 @@ shim itself, class-only, with the remedy retype-with-the-cite; what reaches
 the db anyway — stdin forms, the operator's own shell, `bd sync` — is
 REPORTED at the commit with the record's id as above
 ([ADR 0069](docs/adr/0069-ceiling-write-time-layer-is-an-arm-of-the-bd-shim.md)).
+The same bd shim refuses, independent of any ceiling class, a write that
+would push one issue's line past the 64 KB a bd 0.50.3 store can be read
+back through at all
+([ADR 0072](docs/adr/0072-bd-line-cliff-is-judged-in-go-at-the-write-and-reported-at-the-read.md)).
 
 ## Decisions still made by hand
 

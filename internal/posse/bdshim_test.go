@@ -23,6 +23,23 @@ import (
 	"testing"
 )
 
+// writeNoopPosseStub plants a harmless "posse" in dir, ahead of whatever
+// posse is actually installed on this host's PATH (ranger-base-a0vdz,
+// ADR 0072 D2): the bd shim's own line-cliff arm resolves "posse" the same
+// way it resolves "bd" — resolveOutside, walking PATH — and every test in
+// this file already isolates "bd" into its own realBin for exactly this
+// reason. Without a matching "posse" stub here, that resolution reaches
+// PAST realBin to a live install (a different build from the one under
+// test) for every call these pins make, none of which is about ADR 0072.
+// Always exits 0: a no-op pass, matching the real subcommand whenever it
+// cannot judge a write (no census here at all).
+func writeNoopPosseStub(t *testing.T, dir string) {
+	t.Helper()
+	if err := WriteExecutable(filepath.Join(dir, "posse"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestBdShimResolvesTheVerbBehindGlobalOptions(t *testing.T) {
 	if _, err := exec.LookPath("sh"); err != nil {
 		t.Skip("no sh")
@@ -33,6 +50,7 @@ func TestBdShimResolvesTheVerbBehindGlobalOptions(t *testing.T) {
 	if err := WriteExecutable(filepath.Join(realBin, "bd"), []byte("#!/bin/sh\necho \"real bd $*\"\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	writeNoopPosseStub(t, realBin)
 	t.Setenv("PATH", realBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	_, binDir, _, err := a.RenderGates("devops", []string{"Bash(bd daemon:*)"})
 	if err != nil {
@@ -135,6 +153,7 @@ func TestBdSyncFullIsRefusedWhereverTheFlagSits(t *testing.T) {
 	if err := WriteExecutable(filepath.Join(realBin, "bd"), []byte("#!/bin/sh\necho \"real bd $*\"\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	writeNoopPosseStub(t, realBin)
 	t.Setenv("PATH", realBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	_, binDir, _, err := a.RenderGates("devops", []string{"Bash(bd sync --full:*)"})
 	if err != nil {
@@ -228,6 +247,7 @@ func TestBdRuleOnAValueTakingFlagStillRefuses(t *testing.T) {
 	if err := WriteExecutable(filepath.Join(realBin, "bd"), []byte("#!/bin/sh\necho \"real bd $*\"\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	writeNoopPosseStub(t, realBin)
 	t.Setenv("PATH", realBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	_, binDir, _, err := a.RenderGates("devops", []string{"Bash(bd sync --set-mode:*)"})
 	if err != nil {

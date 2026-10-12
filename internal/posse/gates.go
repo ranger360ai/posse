@@ -930,9 +930,18 @@ func (a *App) RenderGates(persona string, deny []string) (gatesDir, binDir, shel
 	// other renderer that reads OpsPatternSet() must never disagree about
 	// which ceiling classes are in force this render.
 	ceiling := a.OpsPatternSet().Ceiling
+	// Also read once: ADR 0072 D2's bd arm calls back into posse, resolved
+	// the SAME way every other shim's real binary is — resolveOutside,
+	// which already excludes this persona's own gates dir, so it cannot
+	// resolve back through a gate shim of posse itself (rangerhq-6so's own
+	// cage PATH is exactly what makes `posse gates wrap`'s cross-compiled
+	// posse findable this way there too). "" when nothing outside the
+	// gates dir answers to "posse" at all; the arm renders fail-open for
+	// that case.
+	posseBin := resolveOutside("posse", binDir)
 	for _, c := range cmds {
 		real := resolveOutside(c, binDir)
-		script := renderShim(persona, c, real, log, dateBin, rules[c], ceiling)
+		script := renderShim(persona, c, real, log, dateBin, rules[c], ceiling, posseBin)
 		if err := WriteExecutable(filepath.Join(binDir, c), []byte(script), 0o755); err != nil {
 			return "", "", "", err
 		}
@@ -1353,8 +1362,10 @@ func quotedStamp(dateBin string) string {
 // instance's data_ceiling_patterns: list (ADR 0069) — read by
 // renderDataCeilingArgvGuard, which renders nothing for any cmd but "bd"
 // and nothing at all when ceiling is empty, so passing it here for every
-// command costs no caller a second read of config.
-func renderShim(persona, cmd, real, log, dateBin string, rules []shimRule, ceiling []OpsPattern) string {
+// command costs no caller a second read of config. posseBin is the
+// absolute path renderBdLineArm (ADR 0072 D2) calls back into for the same
+// cmd=="bd" commands, resolved once per render rather than per shim.
+func renderShim(persona, cmd, real, log, dateBin string, rules []shimRule, ceiling []OpsPattern, posseBin string) string {
 	var b strings.Builder
 	// The marker stays on line 2 and stays where gateShimTarget and
 	// scripts/verify-bd-pin.sh read it (`head -2`); the renderer clause is
@@ -1434,6 +1445,7 @@ func renderShim(persona, cmd, real, log, dateBin string, rules []shimRule, ceili
 	}
 	b.WriteString(renderSequencerAudit(cmd, real, dateBin))
 	b.WriteString(renderDataCeilingArgvGuard(cmd, ceiling, dateBin))
+	b.WriteString(renderBdLineArm(cmd, posseBin))
 	if real != "" {
 		fmt.Fprintf(&b, "exec %s \"$@\"\n", shQuote(real))
 	} else {
@@ -1752,6 +1764,65 @@ posse_bad=''
 	b.WriteString(`  exit 1
 fi
 `)
+	return b.String()
+}
+
+// ─── The bd line-cliff write-time arm (ADR 0072 D2) ─────────────────────────
+
+// renderBdLineArm is the bd shim's ADR 0072 D2 arm: rendered for cmd=="bd"
+// on EVERY instance — unlike renderDataCeilingArgvGuard just above, it does
+// not wait on a configured ceiling, because every store carries bd's 64 KB
+// scanner limit whether or not this instance ever set data_ceiling_patterns.
+//
+// It skips bd's own global options the same walk posse_verb_match does
+// (globalValueOpts["bd"]'s pairs, then any other leading "-token" singly),
+// and calls `posse gates bd-line -- <the original argv>` only for the four
+// verbs ADR 0072 D1's judge knows how to project — comments, update, create,
+// close — so a read exec's nothing extra. $RHQ_GATE_LOG is passed through
+// explicitly: it is this script's own local assignment, not an exported
+// variable, and the subcommand is the one that writes the refusals.log line
+// (ADR 0072 D2's own spelling, not posse_refuse's, which echoes $* and this
+// arm never does).
+//
+// posseBin is posse's own absolute path, resolved once at render time
+// (RenderGates, via resolveOutside — the same resolver every other shim's
+// "real" binary goes through, which already excludes this persona's own
+// gates dir). A missing posseBin (nothing on PATH outside the gates dir
+// answers to "posse" at render time, or the file is gone by run time) is
+// one stderr line and the write goes through unjudged: a wall that blocks
+// every bd write because posse moved is worse than the gap, and ADR 0072
+// D4's read-time report is the backstop (fail-open, matching the ADR's own
+// stated posture).
+func renderBdLineArm(cmd, posseBin string) string {
+	if cmd != "bd" {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString(shComment("", `─── ADR 0072 D2: the bd line-cliff write-time arm ───────────────────
+Every store bd reads carries the same 64 KB bufio.Scanner limit, so this
+renders whether or not a data ceiling is configured. It skips bd's own
+global options, then calls posse's own judge (ProjectBdWrite, by way of
+'posse gates bd-line') only for the verbs that can grow a census line:
+comments, update, create, close. A read never pays for this.`))
+	fmt.Fprintf(&b, "posse_bl_bin=%s\n", shQuote(posseBin))
+	b.WriteString("posse_bdline_verb() {\n  posse_bl_verb=\n  while [ $# -gt 0 ]; do\n    case \"$1\" in\n")
+	if pairs := globalValueOpts[cmd]; len(pairs) > 0 {
+		quoted := make([]string, 0, len(pairs))
+		for _, o := range pairs {
+			quoted = append(quoted, shQuote(o))
+		}
+		fmt.Fprintf(&b, "      %s)\n        [ $# -ge 2 ] || return 0\n        shift 2 ;;\n", strings.Join(quoted, "|"))
+	}
+	b.WriteString("      -*) shift ;;\n      *) posse_bl_verb=$1; return 0 ;;\n    esac\n  done\n}\n")
+	b.WriteString("posse_bdline_verb \"$@\"\n")
+	b.WriteString("case \"$posse_bl_verb\" in\n  comments|update|create|close)\n")
+	b.WriteString("    if [ -n \"$posse_bl_bin\" ] && [ -x \"$posse_bl_bin\" ]; then\n")
+	b.WriteString("      RHQ_GATE_LOG=\"$RHQ_GATE_LOG\" \"$posse_bl_bin\" gates bd-line -- \"$@\"\n")
+	b.WriteString("      posse_bl_rc=$?\n")
+	b.WriteString("      [ $posse_bl_rc -eq 0 ] || exit $posse_bl_rc\n")
+	b.WriteString("    else\n")
+	b.WriteString("      echo \"posse gate: bd line-cliff check skipped — posse binary not found at render time (ADR 0072)\" >&2\n")
+	b.WriteString("    fi\n    ;;\nesac\n")
 	return b.String()
 }
 

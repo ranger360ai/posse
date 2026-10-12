@@ -194,14 +194,15 @@ func TestSubVerbsAnswerForThemselves(t *testing.T) {
 // typing `posse cage --help` wants, and the one that makes a sub-verb's
 // grammar discoverable without `posse help`.
 func TestAParentVerbAnswersWithEveryEntryUnderIt(t *testing.T) {
-	// MEASURED off the catalog. `gates` is 5 rather than the 4 this bead was
+	// MEASURED off the catalog. `gates` is 6 rather than the 4 this bead was
 	// written against: ranger-base-1jmtm gave `posse gates wrap` an entry
-	// while this one was in flight (ranger-base-lw0s5 merged the two). A
+	// while this one was in flight (ranger-base-lw0s5 merged the two), and
+	// ranger-base-a0vdz (ADR 0072 B2) gave `posse gates bd-line` one too. A
 	// count is the point — an entry that stops being reachable under its
 	// parent is what this pin exists to catch — so it is updated by hand
 	// when the catalog gains one, never derived from the thing under test.
 	for verb, want := range map[string]int{
-		"cage": 3, "runtime": 3, "agent": 3, "gates": 5, "backup": 3,
+		"cage": 3, "runtime": 3, "agent": 3, "gates": 6, "backup": 3,
 		"scorecard": 2, "cost": 2, "refresh": 2, "list": 1, "init": 1,
 	} {
 		block, ok := catalogHelp([]string{verb, "--help"})
