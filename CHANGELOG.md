@@ -9,7 +9,38 @@ that release's notes on GitHub, above the generated commit list —
 prints exactly what will be prepended. Renaming `## Unreleased` to the version
 being cut is a precondition of the tag; see `docs/runbooks/release.md`.
 
-## Unreleased
+## v0.5.2
+
+*2026-10-12. A patch release eight days after v0.5.1: 92 commits on `main`,
+cut from the operator's work-box shakedown (github issues #1-#11).*
+
+**What this release is.** v0.5.1 added the Bob runtime; v0.5.2 is the same
+harness with what running it on a real box, unattended, turned up. The data
+ceiling that walls a bead's content off a commit now REPORTS over
+`.beads/*.jsonl` instead of refusing every commit in the repo for one record
+nobody at the commit could clear, and gets a second, write-time arm inside
+the bd shim that refuses the write itself instead of the commit that follows
+it (ADR 0068, ADR 0069). `bd init`/`bd import` silently displacing posse's
+own pre-push and prepare-commit-msg hooks with bd's own — the gate renamed
+aside, intact, and off the commit path — is now a named Degraded condition
+with the `--chain` that puts it back (ranger-base-2msgj). An empty `bd
+--json` answer is checked against bd's own count before it is read as an
+empty queue, and refused instead of served as `[]` when the two disagree
+(ADR 0071). The governance surface gains four rows it had no way to print
+before — a foreign hook in the slot, a queue repo that cannot take a commit,
+a persona's memory with nothing left to land it, a session degraded by gates
+its own wall does not see (**G12**-**G15**, ADR 0029) — plus a fifth for a
+launcher running behind its own repo (**G11**). `posse <verb> --help` now
+answers from one usage catalog for every verb and sub-verb, where before
+seventeen of forty-two read `--help` as their own first argument. A poured
+brew install or a `go install` can now hand over the upstream-detection
+filings its own refusal names, embedded in the binary the way `examples/`
+already was (`posse runtime filing <kind>`). And under claude's
+`--permission-mode auto`, a PID's own session verbs are carried as a
+declared exception in the `--settings` blob rather than fought for at the
+classifier, which reads intent and never an allow rule (ADR 0070). Upgrade
+if you run posse under auto mode, read `posse status`'s governance block, or
+have ever watched a bead refuse a commit it had no way to unblock.
 
 **`posse <verb> --help` answers, for every verb.** `posse help`'s preamble has
 always said a subcommand prints its own usage for `-h`/`--help`, and that rule
