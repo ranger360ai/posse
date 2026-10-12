@@ -8,7 +8,11 @@ either CLI has, and it is the same one — §2) · amended 2026-08-28
 on codex and is a finding — §2) · amended 2026-09-05 (ranger-base-65rc:
 the claude plugin tree COPIES each skill in rather than symlinking to it
 — §2) · amended 2026-09-06 (Context: the two superseded runtime rows
-collapse into their verified answers — ranger-base-mppjc)*
+collapse into their verified answers — ranger-base-mppjc) · amended
+2026-10-12 (ranger-base-q1w0h, github issue 12: a cwd root is a declared,
+version-verified fact per runtime, or that runtime's skills are UNPROVEN;
+bob gets a posse-owned root; the `$HOME` position of ranger-base-q114b is
+reversed — §6)*
 
 > Restated from the private archive of the instance this harness was
 > developed in; incident citations reference that instance's history.
@@ -31,6 +35,7 @@ Facts checked on this machine (2026-08-18):
 | claude | `<name>/SKILL.md` dir | `~/.claude/skills/`, project `.claude/skills/`, plugins' `skills/` | **`--plugin-dir <dir>`** (repeatable, session-only; a dir with `.claude-plugin/plugin.json` + `skills/`). `--add-dir` is *CLAUDE.md dirs* — it does not load skills |
 | codex | `<name>/SKILL.md` dir | `~/.codex/skills/` (10 present) | **`<cwd>/.agents/skills/`, and no flag** — the `-c` candidate is a real config table with no root field, verified 2026-08-18 (§2) |
 | grok | `<name>/SKILL.md` dir | `~/.grok/skills/` (8 present) | **the same `<cwd>/.agents/skills/`, and no flag** — the `--agent` candidate carries no skill-path field, verified 2026-08-18 (§2) |
+| bob | `<name>/SKILL.md` dir | `~/.bob/skills/`, `~/.bob/plugins/*/skills/`, **and `~/.agents/skills/`, `~/.claude/skills/`** | no flag; the workspace's `.bob/skills/`, `.bob/plugins/*/skills/`, `.agents/skills/`, `.claude/skills/` — static read of 2.0.5, never measured live (§6) |
 
 *(Amended 2026-09-06, ranger-base-mppjc: the two rows above read
 "none verified: candidates …" until this date, and were then followed by a
@@ -73,7 +78,8 @@ to the tool realizer, and a new template placeholder **`{skills}`**:
 | claude | `RHQ_HOME/state/skills/<persona>/claude/` rendered fresh at launch (like gates): `.claude-plugin/plugin.json` `{"name":"posse-<persona>","description":"skills bound by posse"}` and `skills/<name>` — a real directory of files, COPIED from `RHQ_HOME/skills/<name>` (amended 2026-09-05, below) | `--plugin-dir <that dir>` |
 | codex | `<session dir>/.agents/skills/<name>` → symlink to `RHQ_HOME/skills/<name>`, excluded via `.git/info/exclude` (verified, rangerhq-1qd) | nothing — there is no flag |
 | grok | the same `.agents/skills/<name>` symlinks (verified, rangerhq-1qd) | nothing — there is no flag |
-| `runtimes/*.yaml` | optional `skills_flag:` (`--foo %s` given the rendered dir); absent → unrealizable | |
+| bob | UNPROVEN until §6's live probe lands; the declared target is `<session dir>/.bob/plugins/posse/skills/<name>`, posse's own namespace (§6) | nothing — there is no flag |
+| `runtimes/*.yaml` | optional `skills_flag:` (`--foo %s` given the rendered dir), or `skills_cwd: <root>` + `skills_verified: <version>` (§6); absent → unrealizable | |
 
 *Amended 2026-09-05 (ranger-base-65rc): the flag tree binds each skill by
 COPYING it in, not by symlinking to it. The symlink made this row's promise —
@@ -187,6 +193,91 @@ three.*
 `RHQ_HOME/skills` is fine; the container tier mounts it read-only. Skills
 that ship scripts run *inside* the cage like anything else.
 
+**6. A cwd root is a declared, version-verified fact — or the runtime's
+skills are UNPROVEN** (amended 2026-10-12, ranger-base-q1w0h, github
+issue 12). §2 hard-coded one root, `.agents/skills`, for every runtime with
+no flag, and bob inherited it from ADR 0060's recon row without a
+measurement. The operator then MEASURED on the work box that the bob there
+reads `.bob/skills/<name>/SKILL.md` and that `.agents/skills` was neither
+present nor read — so a bob PID naming a skill linked into a path that
+CLI may not read and parity called it realized: the grok shape of 65rc,
+arriving through a declaration nobody verified. A binding whose surface is
+the filesystem fails silently by construction; the only defence is to
+say, per runtime and per version, which root was measured.
+
+- **6a. Declaration.** The bool `SkillsCwd` / `skills_cwd: true` becomes a
+  root: `skills_cwd: <path relative to the session dir>` (the literal
+  `true` keeps meaning `.agents/skills`, so instance overlays parse) and
+  `skills_verified: <the CLI's --version line at the live measurement>`.
+  The built-ins carry: codex `.agents/skills` verified `codex-cli 0.147.0`;
+  grok `.agents/skills` verified `grok 1.0.5`; bob **no verified root**.
+- **6b. Unverified is UNPROVEN, and UNPROVEN is §3.** A cwd root with no
+  `skills_verified` is unrealizable: `CheckParity` adds `skills: <names> —
+  <runtime>'s discovery root <root> is UNPROVEN (never measured live)` and
+  the launch refuses unless `--allow-degraded`. That is bob today, by
+  design — the honest state, louder than a link into a dead path.
+- **6c. Drift is REPORTED, not refused.** `skills_verified` is compared to
+  the installed CLI by the same reader the runtime probe's drift check
+  already uses (`ProbeCLIVersion`, runtimeprobe.go); a mismatch is a line in
+  `posse runtime check` and at launch naming both versions and the probe to
+  re-run. It does not refuse: the remedy is a re-measurement, codex alone
+  moved 0.147.0 → 0.153.4 in eight weeks, and a wall at every brew upgrade
+  decides only who types `--allow-degraded`. Flag surfaces (`--plugin-dir`,
+  `skills_flag:`) carry no `skills_verified`: a removed flag fails the
+  launch loudly, which is the property a cwd root lacks.
+- **6d. Ownership.** Two kinds of root, declared by which the runtime reads:
+  - *posse-owned* — where the runtime reads a glob of namespaces, posse
+    writes only inside its own: bob's target is `.bob/plugins/posse/skills/`,
+    the namespace ADR 0062 D1 already gave posse's mode file (same exclude
+    line, same never-write-at-`GlobalRoot` guard). The repo's own
+    `.bob/skills/` and `.agents/skills/` are never touched, so nothing
+    shadows the team's skills and nothing of the team's is in posse's dir.
+  - *shared* — `.agents/skills` on codex and grok, the only surface they
+    have. The §2 rules stand and are now the whole contract: an entry is
+    posse's **iff it is a symlink whose target is under `RHQ_HOME/skills`**
+    (that target is the provenance, readable with `readlink`); posse adds
+    only; it never overwrites an entry that is not posse's (a team skill of
+    the same name refuses the launch — that is the collision rule, and it
+    runs in the direction that protects the repo); it replaces only a
+    dangling entry; it removes nothing. **Cleanup** is the seat's tree: a
+    dispatched worktree retires with its links; in a shared checkout they
+    persist under union semantics (§4) and that is declared, not leaked.
+    A same-named skill in the runtime's *global* root is the runtime's
+    precedence to resolve and is out of posse's contract (§4).
+- **6e. A home-level render is refused** — the reversal of ranger-base-q114b
+  (Consequences). The static read of bob 2.0.5's bundle on this box names
+  `~/.bob`, `~/.agents` and `~/.claude` as GLOBAL skill roots, each with
+  `skills/` and `plugins/*/skills`. So a cwd render at `$HOME` — by ANY
+  runtime — lands in a root bob reads in every session on the box: the
+  mode file's case exactly. Each runtime declares its measured global roots
+  (`SkillsGlobalRoots`, beside `PersonaModeChannel.GlobalRoot`), and the
+  cwd render refuses when its target lies under any declared runtime's
+  global root, before writing. The pin that held q114b's position read a
+  declaration nobody had made, so it stayed green while the fact flipped;
+  its replacement reads the declared roots, and a root reaches that
+  declaration only through a measurement with a version on it.
+
+**Evidence** (2026-10-12, this box, Darwin 25.4.0):
+- MEASURED (static — a read of the shipped bundle, not a session):
+  `/opt/homebrew/lib/node_modules/bobshell/dist/bob.js`, `bob --version`
+  2.0.5. Workspace roots `[".bob/skills", ".bob/plugins/*/skills",
+  ".agents/skills", ".claude/skills"]` joined under each workspace folder;
+  global roots `~/.bob`, `~/.agents`, `~/.claude` × `{skills,
+  plugins/*/skills}`. Recipe: `grep -o '.\{150\}rXo=.\{300\}'` and
+  `grep -o 'nXo=Afr.flatMap.\{200\}'` over that file; the minified names
+  move between builds, the string literals do not.
+- MEASURED: `~/.agents/skills/distributed-systems` exists on this box, a
+  posse link created 2026-09-05 — under 6e it is a global bob skill today.
+  It is the operator's home: reported, not removed.
+- MEASURED: installed codex-cli 0.153.4 and grok 1.0.5 against verified
+  0.147.0 and 1.0.5 — codex is in drift under 6c the day it ships.
+- ASSUMED: that bob reads `.bob/plugins/posse/skills/<name>` live, follows
+  a symlink out of it, and what the work box's bob version is. The static
+  read cannot prove a live discovery; the live probe is the bead that
+  turns bob from UNPROVEN to verified, and until it lands 6b refuses.
+- ASSUMED: whether codex 0.153.4 reads `~/.agents/skills` globally — the
+  binary's strings were inconclusive. Re-verified with the codex drift.
+
 ## Consequences
 
 - `runtime.go`: `Skills func(dir string, names []string) (flag string, ok bool)`
@@ -200,7 +291,10 @@ that ship scripts run *inside* the cage like anything else.
   (rangerhq-1qd — both landed on the `.agents/skills` surface; `skills.go`
   gained `RenderAgentsSkills` and `runtime.go` a `SkillsCwd` flag for the
   runtimes that discover from the cwd instead of from a flag).
-- **A session dir of `$HOME` renders this tree to `~/.agents/skills/`, and
+- **REVERSED 2026-10-12 by §6e (ranger-base-q1w0h)** — the paragraph below
+  rested on "no CLI reads `~/.agents` as a global root", and bob 2.0.5's own
+  bundle reads it. Kept as the record of what was believed and why.
+  **A session dir of `$HOME` renders this tree to `~/.agents/skills/`, and
   that is accepted** (ranger-base-q114b, 2026-10-03). `posse new` has no
   worktree option, so its dir is `--dir`, else `default_dir`, else `$HOME`,
   and one interactive launch with no `--dir` reaches it with nothing
@@ -245,3 +339,23 @@ that ship scripts run *inside* the cage like anything else.
   else exists, and then as a bead of their own.
 - **A posse skills registry, index, or marketplace.** Thin harness; the
   directory is the registry.
+- **(§6) A session-only tree for every runtime.** Issue 12's first ask, and
+  the right shape wherever it exists — it is claude's. codex and grok were
+  measured to have no flag, config overlay or agent-file field that adds a
+  root (§2); a home overlay is rejected above. Where a runtime reads only
+  from the cwd, declared ownership is the remaining honest answer.
+- **(§6) bob on `.bob/skills/`.** The one root both boxes agree bob reads,
+  and the cheapest flip. Rejected because it is the team's own bob skills
+  dir: posse's links would sit among them with provenance only in a link
+  target, the exact asymmetry the issue names. It is the fallback if the
+  live probe finds `.bob/plugins/posse/skills/` unread — under 6d's
+  *shared* rules, declared as such.
+- **(§6) Refuse a launch on version drift.** The clever wall: every
+  cwd-root launch proven against today's CLI. Priced at a refusal per
+  upgrade per runtime with a remedy (a live probe) most seats cannot run
+  themselves; the drift line carries the same information without
+  deciding who types the override (6c).
+- **(§6) Detect discovery after launch** (ask the CLI what it loaded).
+  bob has no non-interactive listing (`bob --help`: chat, run, mcp, acp)
+  and codex none either; it would be a per-runtime pane scrape on every
+  launch for a fact that changes only at an upgrade.
