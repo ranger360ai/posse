@@ -435,6 +435,7 @@ func ReadPause(path string) Pause {
 //	G13 the queue repo cannot take the jsonl      config + git       LANE
 //	G14 a persona's memory is not landed          the personas dir   LANE
 //	G15 a live session is running degraded        the session meta   LANE
+//	G16 a census line is near/over bd's 64 KB limit  the census         LANE/URGENT
 //
 // plus the two conditions the pulse's own first cut shipped and this
 // widening deliberately does not drop — unpushed commits on a beads repo,
@@ -809,6 +810,52 @@ func ShopCheck(in GovInputs) (GovSet, []error) {
 		add("G15", GovLane, "session-degraded:"+s.Name, fmt.Sprintf(
 			"%s (%s on %s @ %s) is running with gates its wall does not realize: %s — waived once with --allow-degraded and re-armed by every relaunch from its meta; raise the cage or the tier, or install the gate",
 			s.Name, s.Agent, s.Runtime, s.Cage, s.Degraded))
+	}
+
+	// ── G16 · a census line is near, or past, bd's 64 KB scanner limit ──
+	//
+	// ADR 0072 D5. The write-time judge (ProjectBdWrite, B1) and the
+	// shimmed refusal (B2) both catch a crossing at the moment someone
+	// types it; this is the one that catches what reached the census
+	// anyway — a residual the ADR names by kind (stdin, `bd edit`, a
+	// partial id, the operator's unshimmed shell, an unflushed DB write)
+	// and, in SQLite mode, a failure with no error path at all: the build
+	// serves stale rows at exit 0 once the census crosses the limit
+	// (Context, fourth bullet). G16 is the only signal for that one.
+	//
+	// Distinct beadsHome, not distinct dir: two configured BeadsDirs that
+	// resolve to the same store (a redirect, or the cwd fallback alongside
+	// an explicit ".") must give one row per id, not two.
+	seenHome := map[string]bool{}
+	for _, dir := range in.App.BeadsDirs() {
+		home := beadsHome(dir)
+		if seenHome[home] {
+			continue
+		}
+		seenHome[home] = true
+		census := filepath.Join(home, beadsJSONL)
+		lines, err := CensusLongLines(census, BdLineWarn)
+		if err != nil {
+			// Absent is not a condition — a repo with no store yet has not
+			// grown an oversized line. Anything else is a census this
+			// check could not read, so the set is PARTIAL rather than
+			// silently clear.
+			if !os.IsNotExist(err) {
+				failed = append(failed, fmt.Errorf("census %s: %w — G16 unknown", AbbrevHome(home), err))
+			}
+			continue
+		}
+		for _, l := range lines {
+			if l.Bytes > BdLineLimit {
+				add("G16", GovUrgent, "bd-line-cliff:"+l.ID, fmt.Sprintf(
+					"%s is %d B in %s: over bd's %d line limit — no-db and cage reads fail, imports stop silently",
+					l.ID, l.Bytes, census, BdLineLimit))
+				continue
+			}
+			add("G16", GovLane, "bd-line-warn:"+l.ID, fmt.Sprintf(
+				"%s is %d B of %d — move bulk out before the next comment",
+				l.ID, l.Bytes, BdLineLimit))
+		}
 	}
 
 	// ── carry-over · unpushed commits on a beads repo ────────────────────

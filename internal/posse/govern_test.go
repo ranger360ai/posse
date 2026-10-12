@@ -2201,6 +2201,113 @@ func TestGovG15FullParitySessionIsNotACondition(t *testing.T) {
 	}
 }
 
+// ─── G16 · a census line nears or crosses bd's 64 KB cliff ──────────────────
+
+// g16Row is one census line of an EXACT byte count (newline included) —
+// bdRow's own envelope (bdline_qa_test.go) padded out with description
+// filler — because the pin below is written against the byte thresholds
+// ADR 0072 D1 names, not against "about" them.
+func g16Row(t *testing.T, id string, bytes int) string {
+	t.Helper()
+	base := bdRow(id, "")
+	if bytes < len(base) {
+		t.Fatalf("g16Row: %d is smaller than %q's own empty-description row (%d)", bytes, id, len(base))
+	}
+	return bdRow(id, strings.Repeat("x", bytes-len(base)))
+}
+
+// writeG16Census writes rows to dir's own census — beadsHome's path
+// (dir/.beads/issues.jsonl) — the file G16 reads directly, never through
+// the fake bd binary govRepo wires up for the other rows.
+func writeG16Census(t *testing.T, dir string, rows ...string) {
+	t.Helper()
+	home := filepath.Join(dir, ".beads")
+	if err := os.MkdirAll(home, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, "issues.jsonl"), []byte(strings.Join(rows, "")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// The ADR's own pin (verification item 6, and the bead's "Pins" list): a
+// 50 KB line is a LANE row, a 70 KB line is URGENT, with the keys D5 names.
+func TestGovG16WarnAndCliffRows(t *testing.T) {
+	b, _ := newTestBackend(t)
+	dir := govRepo(t, b)
+	writeG16Census(t, dir,
+		g16Row(t, "t-1", 50*1024),
+		g16Row(t, "t-2", 70*1024),
+	)
+
+	set := shopSet(t, govIn(t, b))
+	lane := findKey(set, "bd-line-warn:t-1")
+	if lane == nil || lane.ID != "G16" || lane.Class != GovLane {
+		t.Fatalf("no G16 LANE row for the 50 KB line: %v", set.Keys())
+	}
+	if !strings.Contains(lane.Detail, "move bulk out before the next comment") {
+		t.Errorf("LANE detail = %q", lane.Detail)
+	}
+
+	urgent := findKey(set, "bd-line-cliff:t-2")
+	if urgent == nil || urgent.ID != "G16" || urgent.Class != GovUrgent {
+		t.Fatalf("no G16 URGENT row for the 70 KB line: %v", set.Keys())
+	}
+	if !strings.Contains(urgent.Detail, "no-db and cage reads fail, imports stop silently") {
+		t.Errorf("URGENT detail = %q", urgent.Detail)
+	}
+}
+
+func TestGovG16UnderTheWarnFloorIsNotACondition(t *testing.T) {
+	b, _ := newTestBackend(t)
+	dir := govRepo(t, b)
+	writeG16Census(t, dir, g16Row(t, "t-1", 40*1024))
+
+	if g := find(shopSet(t, govIn(t, b)), "G16"); g != nil {
+		t.Errorf("a 40 KB line is well under the warn floor: %+v", *g)
+	}
+}
+
+// Two configured BeadsDirs resolving to the same store (no redirect, just
+// the same path twice — the shape a config typo or a worktree/home alias
+// actually produces) must not double the row: the dedup is by beadsHome,
+// not by the configured string.
+func TestGovG16TwoBeadsDirsOnTheSameStoreGiveOneRow(t *testing.T) {
+	b, _ := newTestBackend(t)
+	dir := govRepo(t, b)
+	writeG16Census(t, dir, g16Row(t, "t-1", 50*1024))
+	if err := os.WriteFile(b.App.ConfigPath, []byte("beads:\n  - "+dir+"\n  - "+dir+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	set := shopSet(t, govIn(t, b))
+	var rows []GovCondition
+	for _, c := range set {
+		if c.ID == "G16" {
+			rows = append(rows, c)
+		}
+	}
+	if len(rows) != 1 {
+		t.Fatalf("G16 rows = %+v, want exactly one for the id shared by two BeadsDirs on the same store", rows)
+	}
+}
+
+// An absent census is the absence of the condition, not a failed read: a
+// repo with no store yet has grown no oversized line, and the set must not
+// come back PARTIAL over it.
+func TestGovG16NoCensusIsNotACondition(t *testing.T) {
+	b, _ := newTestBackend(t)
+	govRepo(t, b)
+
+	set, failed := ShopCheck(govIn(t, b))
+	for _, err := range failed {
+		t.Fatalf("an absent census must not make the set PARTIAL: %v", err)
+	}
+	if g := find(set, "G16"); g != nil {
+		t.Errorf("a repo with no issues.jsonl yet has grown no oversized line: %+v", *g)
+	}
+}
+
 // ─── the honesty the four rows were added for ────────────────────────────────
 //
 // GovReport's all-clear is its answer for an EMPTY set, so the whole of what
