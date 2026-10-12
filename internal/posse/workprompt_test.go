@@ -32,6 +32,11 @@ func TestWorkPromptAssembly(t *testing.T) {
 		"`bd comments add b-1 <note>`", "`bd create \"<question>\" -t task -l question`", "`bd dep add b-1 <qid>`", "--deps discovered-from:b-1", "`REFUSED: <line> — <what would be needed>`",
 		"`bd create \"spike: <question>\" -t task -l <runner's lane>` — no `--deps`", "`bd dep add b-1 <sid>`", "`SPIKE: <question> → <sid>`",
 		"`bd comments add <sid> \"discovered-from: b-1\"`",
+		// ADR 0073 D4: the read-back rule, rendered beside the Provenance
+		// caveat and before Done, on every dispatched seat.
+		"A bd write's exit 0 and its printed line are not the record.",
+		"`bd show <id>` after a create, close or update",
+		"never on an exit code alone.",
 		"Done: `bd comments add b-1 <what you did, paths, ids>` then `bd close b-1`."} {
 		if !strings.Contains(p, want) {
 			t.Errorf("missing %q in:\n%s", want, p)
@@ -40,7 +45,7 @@ func TestWorkPromptAssembly(t *testing.T) {
 	if !strings.Contains(p, "-l question`, then") {
 		t.Errorf("no operator → ASK bead unassigned:\n%s", p)
 	}
-	if n := strings.Count(p, "\n"); n > 12 {
+	if n := strings.Count(p, "\n"); n > 13 {
 		t.Errorf("bare prompt should be short, got %d lines", n)
 	}
 

@@ -113,7 +113,7 @@ Hand to
 ## Done
 The work is specced as beads others can pick up without asking you
 anything. Then `bd comments add <id> <summary + bead ids>` and
-`bd close <id>`.
+`bd close <id>`, then `bd show <id>` reads `closed`.
 
 ## Blocked
 Needs a human decision: state the decision, the options, and your

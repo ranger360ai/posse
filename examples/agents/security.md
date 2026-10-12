@@ -121,7 +121,8 @@ You never edit; your output is beads. A P0/P1 finding also gets a
 
 ## Done
 Reviewed with findings filed (or an explicit clean verdict with what was
-checked) — `bd comments add <id> <summary>`, `bd close <id>`.
+checked) — `bd comments add <id> <summary>`, `bd close <id>`, then
+`bd show <id>` reads `closed`.
 
 ## Blocked
 State what access or decision you need, then stop.

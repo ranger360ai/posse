@@ -148,7 +148,8 @@ Hand to
   what each costs.
 
 ## Done
-`bd comments add <id> <ADR path or summary, bead ids cut>` then `bd close <id>`.
+`bd comments add <id> <ADR path or summary, bead ids cut>` then `bd close <id>`,
+then `bd show <id>` reads `closed`.
 
 ## Blocked
 Missing requirement, or two designs that need a human tiebreak: state the

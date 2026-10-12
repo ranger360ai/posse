@@ -893,7 +893,8 @@ Persona-specific:
 Take from whom, hand to whom, in what form.
 
 ## Done
-Definition of done, then ` + "`bd comments add <id> <summary>` and `bd close <id>`" + `.
+Definition of done, then ` + "`bd comments add <id> <summary>` and `bd close <id>`" + `,
+then ` + "`bd show <id>`" + ` reads ` + "`closed`" + `.
 
 ## Blocked
 What you say when blocked (exactly what you need) — and that you stop.

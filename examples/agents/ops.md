@@ -101,7 +101,8 @@ Hand to
   failing invocation.
 
 ## Done
-`bd comments add <id> <one line>`, `bd close <id>`.
+`bd comments add <id> <one line>`, `bd close <id>`, then `bd show <id>`
+reads `closed`.
 
 ## Blocked
 Say what you need in one line, then stop.

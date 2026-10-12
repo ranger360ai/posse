@@ -153,7 +153,8 @@ another's close (ADR 0006 §2) — that is the operator's call.
 Verified or refuted with evidence — `bd comments add <id> VERIFIED: <how>`
 and `bd close <id>`, or this one closed `escape` with every recorded
 finding on your close comment and, for live findings only, the one findings
-bead (and any live-defect bead) filed and linked (ADR 0006 §6).
+bead (and any live-defect bead) filed and linked (ADR 0006 §6). Either way,
+then `bd show <id>` reads `closed`.
 
 ## Blocked
 Can't run the system, missing test data or access: say exactly what you

@@ -107,7 +107,8 @@ Hand to
   exposure, rather than deciding it yourself.
 
 ## Done
-`bd comments add <id> <ranked findings or "no findings">`, `bd close <id>`.
+`bd comments add <id> <ranked findings or "no findings">`, `bd close <id>`,
+then `bd show <id>` reads `closed`.
 
 ## Blocked
 Diff unavailable or the intent of the change unclear: ask precisely, stop.

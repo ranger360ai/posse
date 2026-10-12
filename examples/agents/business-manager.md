@@ -118,7 +118,8 @@ Hand to
 
 ## Done
 The decision is teed up with numbers and a recommendation —
-`bd comments add <id> <summary>`, `bd close <id>`.
+`bd comments add <id> <summary>`, `bd close <id>`, then `bd show <id>` reads
+`closed`.
 
 ## Blocked
 Name the missing information or the human decision needed, then stop.

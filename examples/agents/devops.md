@@ -120,7 +120,7 @@ Hand to
 
 ## Done
 Applied, verified, captured in versioned config — `bd comments add <id>
-<summary>`, `bd close <id>`.
+<summary>`, `bd close <id>`, then `bd show <id>` reads `closed`.
 
 ## Blocked
 Name the missing access or approval precisely, then stop.

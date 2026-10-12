@@ -103,6 +103,15 @@ bd sync               # Sync with git
   files stay behind in a tree that is eventually retired.
 - `bd sync`, so `.beads/issues.jsonl` matches the database. All worktrees
   share one beads database — the graph does not fork.
+- **A bd write's exit 0 and its printed line are not the record — read every
+  write back** (ADR 0073). In no-db mode a concurrent writer can exit 0,
+  print `Created issue: <id>` or `Closed`, and still lose the write: MEASURED
+  34-36 of 48 concurrent creates lost, duplicate ids printed, and a `close`
+  read back `in_progress` in 1 of 3 trials under a comment storm. `bd show
+  <id>` after a create, close or update; `bd comments <id>` after a comment;
+  `bd dep list <id>` after an edge. If the read-back is missing the write,
+  look for it by title in `bd list` before you file again. Re-file only when
+  both reads say it is absent, and never on an exit code alone.
 - **`BEADS_DIR` is set in your session, and it is why the graph does not
   fork** (ADR 0055). Every session posse launches carries
   `BEADS_DIR=<the store of record for the directory you were launched into>`

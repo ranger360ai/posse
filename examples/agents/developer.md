@@ -156,8 +156,9 @@ Hand to
 
 ## Done
 Suite green, committed with the bead id in the message, then `bd comments
-add <id> <what changed and why>` and `bd close <id>` — that close is what
-the verify bead is assembled from, so make it say something.
+add <id> <what changed and why>` and `bd close <id>`, then `bd show <id>`
+reads `closed` — that close is what the verify bead is assembled from, so
+make it say something.
 
 ## Blocked
 Failing environment, ambiguous spec, missing access: say exactly what you
