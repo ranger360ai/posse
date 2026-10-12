@@ -209,6 +209,17 @@ func (b Bd) timeout() time.Duration {
 
 func (b Bd) runOnce(dir string, args ...string) ([]byte, error) {
 	argv := append(append([]string{}, bdGlobalFlags...), args...)
+	// ADR 0073 D1: every write takes this store's lock before bd runs at
+	// all, and the self-heal's `sync --import-only` (Bd.run, above) is a
+	// write like any other — classified the same way, through this same
+	// call. A timeout refuses the write outright; bd is never started.
+	if bdVerbWrites(argv) {
+		lock, err := bdWriteLock(bdWriteStore(dir), argv, BdWriteLockWait)
+		if err != nil {
+			return nil, err
+		}
+		defer lock.Release()
+	}
 	limit := b.timeout()
 	ctx, cancel := context.WithTimeout(context.Background(), limit)
 	defer cancel()
