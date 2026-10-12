@@ -160,6 +160,12 @@ acceptance is an extra probe arm that routes its writers through
   through git. D3 and D4 are the backstop for those, and they detect a
   loss rather than prevent one. The mixed-mode erasure is a design
   problem of its own, filed as its own bead (see the bead comment).
+  *Amended 2026-10-12 by ADR 0074 (ranger-base-4jlcn):* the mixed-mode
+  erasure is not a race, and read-back does **not** detect it. A SQLite bd
+  never imports a caged `--no-db` write, and a caged read-back reads the
+  jsonl, which still holds the row until the host's next flush erases it.
+  ADR 0074 makes the container tier an unrealizable parity gate over a
+  SQLite store.
 - The exit hatch: remove the arm and the `runOnce` lock. Nothing is lost,
   because the lock files hold nothing. The day bd serializes its own no-db
   writes, D1 is redundant and can go. D3 and D4 should stay.
