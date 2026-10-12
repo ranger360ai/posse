@@ -566,10 +566,25 @@ func fakeBd(args []string) int {
 		// fakeBdState fallback's hardcoded "t" title, which the fallback
 		// below is kept for: ids like a claim's or an unclaim's that were
 		// never created through this fake at all.
+		// fake-show.json answers only the ids it NAMES (ADR 0073 B3, caught
+		// building this fallback): a fixture that files it to answer about
+		// one bead — or, as most of the suite's `qaRepo`/`claimedRepo` calls
+		// do, files a single unrelated placeholder row just so the file
+		// exists — must not turn every OTHER id's `show` into "no issue in
+		// response". Falling through below is exactly what happens when the
+		// file is absent; a present file that is silent about this id is the
+		// same case, not a different one.
 		id := fakeBdID(args, "show")
+		row := ""
 		if b, err := os.ReadFile("fake-show.json"); err == nil {
-			fmt.Print(fakeBdShowByID(string(b), id))
-		} else if row := fakeBdListRow("fake-list.json", id); row != "" {
+			if r := fakeBdShowByID(string(b), id); r != "[]" {
+				row = r
+			}
+		}
+		if row == "" {
+			row = fakeBdListRow("fake-list.json", id)
+		}
+		if row != "" {
 			fmt.Print(row)
 		} else if st, ok := fakeBdState()[id]; ok {
 			fmt.Printf(`[{"id":%q,"title":"t","status":%q,"assignee":%q}]`, st.ID, st.Status, st.assignee())
