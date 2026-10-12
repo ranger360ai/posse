@@ -222,7 +222,7 @@ func (a *App) RuntimeCheck(rt *Runtime, h Herdr, w io.Writer) bool {
 	}
 	fmt.Fprintln(w, "  startup_wait:, record: (+ record_why:), turn_outcome:, native_rules:,")
 	fmt.Fprintln(w, "  rules_precedence: (+ rules_precedence_why:), unknown_model: (+ unknown_model_why:),")
-	fmt.Fprintln(w, "  model_flag:/model_<tier>:, skills_flag: OR skills_cwd:, self_sandbox:, unattended:,")
+	fmt.Fprintln(w, "  model_flag:/model_<tier>:, skills_flag: OR skills_cwd: (+ skills_verified:), self_sandbox:, unattended:,")
 	fmt.Fprintln(w, "  project_config: (+ project_config_keys:), egress:, cage_cred:, gate_shell:,")
 	fmt.Fprintln(w, "  detection: (+ detection_why:), state_dir:, env_required:, interstitial_<name>:.")
 	fmt.Fprintln(w, "  Undeclared is loud, never silent — and a key none of these names is warned on")
