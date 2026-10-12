@@ -196,6 +196,11 @@ func (a *App) PrepareGatesWrap(persona string, deny []string, noGateShell bool, 
 // Without them bd spends ~5s per command trying and failing to start a
 // daemon on a socket the boundary cannot carry (rangerhq-6so's ENOTSUP).
 //
+// CORRECTED 2026-10-12: the daemon that imported those writes is gone since
+// bd 0.50 (ADR 0056), so "the host's daemon imports it" above describes
+// 0.49.1 only. On 0.50.3 nothing imports a caged no-db write, and the
+// host's next flush erases it instead (ADR 0074).
+//
 // `--sandbox` is the tidier spelling the bead offered and it is NOT this:
 // it disables the daemon and auto-sync, which leaves SQLite — the half that
 // does not work here. Two flags that were measured beat one that reads

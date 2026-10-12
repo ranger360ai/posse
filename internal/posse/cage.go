@@ -344,6 +344,13 @@ func (a *App) CageHome(persona string) string {
 // wrapper (cageinner.go) runs no-db, so this mount carries a file append and
 // the host's daemon imports it.
 //
+// CORRECTED 2026-10-12: that importer is gone. bd 0.50 deleted the daemon
+// (ADR 0056), and nothing on the host side takes in a no-db write anymore —
+// the next host flush (bd's pre-commit hook, any `bd sync`) rewrites the
+// jsonl from SQLite and erases it instead. See ADR 0074, which treats
+// "container tier over a store holding a SQLite database" as a gate
+// CheckParity cannot realize.
+//
 // **`.git` is the second carve-out** (ADR 0014 §4), and it is the same
 // sentence as the first: L2 grants a write-denying PID `cwd/.git` beside
 // `cwd/.beads` — index refresh, git's own locks, never a push, which L3

@@ -595,6 +595,11 @@ func (a *App) checkParityIn(ag *AgentFile, rt *Runtime, cage, tier, dir string, 
 	// concrete launch dir, not about a persona — and the dir is already in
 	// hand here (reachability.go, ranger-base-hxhb).
 	a.applyRecordReach(&p, ag, rt, dir)
+	// ADR 0074 D1: a container launch over a store holding a SQLite
+	// database is a gate this cage cannot realize, whatever record:
+	// reachability says about the mount — reachability judges whether the
+	// write lands, not whether it survives the host's next flush.
+	a.applyContainerSQLiteGate(&p, dir)
 	// The same shape for the other box-wide thing a caged session has to be
 	// able to reach: the suite queue's slot dir (ranger-base-r3czg). It
 	// never degrades — see applySuiteQueueReach — so it sits here for the
@@ -608,6 +613,53 @@ func (a *App) checkParityIn(ag *AgentFile, rt *Runtime, cage, tier, dir string, 
 	// also replace CheckParity's conservative NoGateShell verdict.
 	p.NoDegrade = p.Tier == TierFast && len(p.Degraded) > 0
 	return p
+}
+
+// applyContainerSQLiteGate is ADR 0074 D1: at `cage: container`, over a
+// store holding a SQLite database, the tier is a gate CheckParity cannot
+// realize. A caged bd there is `--no-db` (CageBdFlags), and nothing imports
+// its writes anymore — bd 0.50 deleted the daemon that once did (ADR 0056)
+// — so the host's next flush (its pre-commit hook, any `bd sync`) rewrites
+// the jsonl from SQLite and erases them. Degraded, not refused: the
+// existing --allow-degraded / dispatch-never-degrades machinery decides,
+// same as any other gate a launch cannot hold. Reads one fact —
+// sqliteStoreFile(beadsHome(dir)) — and nothing else about the store (ADR
+// 0055 D3 still holds everywhere else; config.yaml is not read).
+func (a *App) applyContainerSQLiteGate(p *Parity, dir string) {
+	if dir == "" || p.Cage != CageContainer || !a.cageAvailable(p.Cage) {
+		return
+	}
+	home := beadsHome(dir)
+	file, exists := sqliteStoreFile(home)
+	if !exists {
+		return
+	}
+	p.Degraded = append(p.Degraded, fmt.Sprintf(
+		"container tier: %s holds a SQLite database (%s); a caged bd is `--no-db`, and its writes are erased by the host's next flush (ADR 0074). Run this persona at `cage: seatbelt`, or the operator moves the store to no-db.",
+		AbbrevHome(home), file))
+}
+
+// sqliteStoreFile names the SQLite database file a store at home would
+// hold, and whether it exists right now: metadata.json's `"database"` name
+// when metadata.json names one AND that file exists, else `beads.db`. A
+// name metadata.json gives that is not actually there falls through to the
+// default rather than being reported missing on its own — the fact this
+// answers is "does a SQLite file sit here", not "does metadata.json's claim
+// resolve".
+func sqliteStoreFile(home string) (file string, exists bool) {
+	file = "beads.db"
+	if b, err := os.ReadFile(filepath.Join(home, "metadata.json")); err == nil {
+		var meta struct {
+			Database string `json:"database"`
+		}
+		if json.Unmarshal(b, &meta) == nil && meta.Database != "" {
+			if _, err := os.Stat(filepath.Join(home, meta.Database)); err == nil {
+				return meta.Database, true
+			}
+		}
+	}
+	_, err := os.Stat(filepath.Join(home, file))
+	return file, err == nil
 }
 
 // applyL3Probe adds a fact about this launch directory to CheckParity's
