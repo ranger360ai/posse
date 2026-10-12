@@ -132,7 +132,10 @@ func (b Bd) run(dir string, args ...string) ([]byte, error) {
 	// (e.g. "database is locked") must not itself be treated as a stale-db
 	// hit and retried, or a lock contest turns into a loop.
 	if _, ierr := b.runOnce(dir, "sync", "--import-only"); ierr != nil {
-		return nil, err
+		// err is still the raw staleness message (runOnce left it unwrapped
+		// for this exact check) — this is its FINAL return, so ADR 0072 D4's
+		// census check is applied here instead (beads.go runOnce).
+		return nil, b.checkLineCliff(dir, err)
 	}
 	return b.runOnce(dir, args...)
 }
@@ -235,7 +238,15 @@ func (b Bd) runOnce(dir string, args ...string) ([]byte, error) {
 		}
 		// The full argv, flags included: an operator who retypes the verb
 		// without them gets the daemon path, and possibly a different answer.
-		return nil, Die("bd %s: %s", strings.Join(argv, " "), msg)
+		rerr := Die("bd %s: %s", strings.Join(argv, " "), msg)
+		if strings.Contains(msg, staleDBMessage) {
+			// run's self-heal inspects THIS exact message to decide whether
+			// to retry; ADR 0072 D4's wrap must not stand in its way, so it
+			// is applied only where run returns this message as final
+			// (beads.go run, the self-heal-also-failed branch).
+			return nil, rerr
+		}
+		return nil, b.checkLineCliff(dir, rerr)
 	}
 	return out.Bytes(), nil
 }
@@ -1245,7 +1256,11 @@ func (b Bd) Close(dir, id, actor string) error {
 	if err := b.requireExactID(dir, "close", id); err != nil {
 		return err
 	}
-	out, err := b.run(dir, bdArgs(actor, "close", id, "--json")...)
+	argv := bdArgs(actor, "close", id, "--json")
+	if err := b.refuseIfCrossing(dir, argv); err != nil {
+		return err
+	}
+	out, err := b.run(dir, argv...)
 	if err != nil {
 		return err
 	}
@@ -1301,7 +1316,11 @@ func (b Bd) Create(dir string, n BdNew) (string, error) {
 	if n.Type != "" {
 		args = append(args, "-t", n.Type)
 	}
-	out, err := b.run(dir, bdArgs(n.Actor, args...)...)
+	argv := bdArgs(n.Actor, args...)
+	if err := b.refuseIfCrossing(dir, argv); err != nil {
+		return "", err
+	}
+	out, err := b.run(dir, argv...)
 	if err != nil {
 		return "", err
 	}
@@ -1343,13 +1362,21 @@ func (b Bd) SetDescription(dir, id, desc, actor string) error {
 	if err := b.requireExactID(dir, "update --description", id); err != nil {
 		return err
 	}
-	_, err := b.run(dir, bdArgs(actor, "update", id, "-d", desc, "--json")...)
+	argv := bdArgs(actor, "update", id, "-d", desc, "--json")
+	if err := b.refuseIfCrossing(dir, argv); err != nil {
+		return err
+	}
+	_, err := b.run(dir, argv...)
 	return err
 }
 
 // Comment adds a comment to an issue.
 func (b Bd) Comment(dir, id, text, actor string) error {
-	_, err := b.run(dir, bdArgs(actor, "comments", "add", id, text)...)
+	argv := bdArgs(actor, "comments", "add", id, text)
+	if err := b.refuseIfCrossing(dir, argv); err != nil {
+		return err
+	}
+	_, err := b.run(dir, argv...)
 	return err
 }
 
