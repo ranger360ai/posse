@@ -243,8 +243,8 @@ func TestQAReadyFakeCannotServeAClaimedRow(t *testing.T) {
 	}
 
 	// The fold guard. a-bare is claimed and its `show` now answers closed:
-	// the dispatch half drops it. Then it is UNCLAIMED with the assignee
-	// kept — Bd.Unclaim's `keepAssignee`, the resumed-bead handback — which
+	// the dispatch half drops it. Then it gets the write Bd.Unclaim's
+	// `keepAssignee` sends — the resumed-bead handback, assignee kept — which
 	// makes its status `open` again, so the status filter has nothing to say
 	// about it and only the dispatch half is left holding the line.
 	if _, err := bd.Claim(repo, "a-bare", "ranger"); err != nil {
@@ -254,7 +254,15 @@ func TestQAReadyFakeCannotServeAClaimedRow(t *testing.T) {
 	if got := ids(bd.Ready(repo, "")); got != "a-open" {
 		t.Errorf("a claimed bead its show answers closed must leave `ready`, got %v", got)
 	}
-	if err := bd.Unclaim(repo, "a-bare", "ranger", true); err != nil {
+	// The raw write, not bd.Unclaim: Bd.Unclaim now reads the bead back
+	// through Show after this exact write (ADR 0073 B3, ranger-base-lrlvz)
+	// and errors if Show disagrees — which `show` answering "closed" here
+	// always will, on purpose, since that disagreement is the fixture
+	// this arm exists to hold open (ranger-base-vj105). This test is about
+	// the FAKE's `ready` filters, not about Bd.Unclaim's own contract, so
+	// it sends the identical argv keepAssignee=true would without going
+	// through the method whose contract this fixture cannot satisfy.
+	if _, err := bd.run(repo, "--actor", "ranger", "update", "a-bare", "--status", "open", "--json"); err != nil {
 		t.Fatal(err)
 	}
 	if got := ids(bd.Ready(repo, "")); got != "a-open" {

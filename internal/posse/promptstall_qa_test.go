@@ -40,6 +40,23 @@ func stalledSeat(t *testing.T, code string) (*Dispatcher, string, string) {
 	return d, fake, repo
 }
 
+// clearFakeShow drops fake-show.json so `show` falls back to the live state
+// overlay (fakeBdState) rather than a stale declared answer. stalledSeat's
+// own "closed" is load-bearing for the arms that keep the claim and are
+// judged against `show` at settle time (arm 1's "closed by ranger"); an arm
+// that hands the bead back BEFORE any such judgement has no use for it, and
+// Bd.Unclaim now reads its own write back through Show (ADR 0073 B3) —
+// which a fixture's explicit, never-updated `show` answer is the suite's
+// own idiom for a write that did NOT land (TestBdUnclaimNotLandedWhenShowDisagrees's
+// comment, bdwriteback_test.go). Call this right after stalledSeat in every
+// arm that expects the unclaim itself to succeed (ranger-base-vj105).
+func clearFakeShow(t *testing.T, repo string) {
+	t.Helper()
+	if err := os.Remove(filepath.Join(repo, "fake-show.json")); err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+}
+
 // stallWait arms the answer herdr gives the SECOND reading — the `agent wait
 // --until working --until blocked` posse makes on its own clock. "code|msg"
 // is the refusal arm.
@@ -92,7 +109,8 @@ func TestStalledPromptWhoseTurnStartsLateKeepsItsClaim(t *testing.T) {
 // really did nothing still frees the bead.
 func TestStalledPromptWithNoTurnAndNoCommitStillHandsBack(t *testing.T) {
 	t.Parallel()
-	d, fake, _ := stalledSeat(t, "agent_prompt_stalled")
+	d, fake, repo := stalledSeat(t, "agent_prompt_stalled")
+	clearFakeShow(t, repo)
 	// No stall-wait lever: the fake answers the second reading `idle`, which
 	// is herdr saying "no turn" rather than refusing to say.
 
@@ -184,7 +202,8 @@ func TestStalledPromptWhoseBranchHoldsACommitKeepsItsClaim(t *testing.T) {
 // no second reading taken.
 func TestRefusedPromptHandsBackWithNoSecondReading(t *testing.T) {
 	t.Parallel()
-	d, fake, _ := stalledSeat(t, "agent_not_ready")
+	d, fake, repo := stalledSeat(t, "agent_not_ready")
+	clearFakeShow(t, repo)
 
 	if _, err := d.Run("", "", 0); err != nil {
 		t.Fatalf("a refused prompt must not abort the pass: %v", err)
@@ -226,7 +245,8 @@ func TestRefusedPromptHandsBackWithNoSecondReading(t *testing.T) {
 // reachable on the keep-the-claim side.
 func TestStalledPromptWhoseGraceExpiresWithNoTurnHandsBack(t *testing.T) {
 	t.Parallel()
-	d, fake, _ := stalledSeat(t, "agent_prompt_stalled")
+	d, fake, repo := stalledSeat(t, "agent_prompt_stalled")
+	clearFakeShow(t, repo)
 	// herdr accepted the submission, then watched posse's whole grace out
 	// without seeing a transition — its own `timeout`, not a named state.
 	stallWait(t, fake, "timeout|timed out waiting for agent status")
@@ -270,6 +290,7 @@ func TestStalledPromptWhoseGraceExpiresWithNoTurnHandsBack(t *testing.T) {
 func TestUnclaimSurvivesABeadThatWillNotTakeTheComment(t *testing.T) {
 	t.Parallel()
 	d, fake, repo := stalledSeat(t, "agent_not_ready")
+	clearFakeShow(t, repo)
 	write(t, filepath.Join(repo, "fake-comment-fail"), "database is locked")
 	errw := dispatcherErr(t, d)
 

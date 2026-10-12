@@ -811,7 +811,11 @@ func TestDispatchStderrAgentNotReadyStillUnclaims(t *testing.T) {
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
-	qaRepo(t, b.App, `[{"id":"a-1","title":"t","labels":["go"]}]`, `[{"id":"a-1","status":"in_progress","assignee":"ranger"}]`)
+	// No fake-show.json: this unclaims, and a declared `show` answer the
+	// write never updates is the suite's own idiom for a lost write
+	// (TestBdUnclaimNotLandedWhenShowDisagrees's comment, bdwriteback_test.go),
+	// not this test's intent (ranger-base-vj105).
+	qaRepo(t, b.App, `[{"id":"a-1","title":"t","labels":["go"]}]`, ``)
 	idleClaude(t, fake)
 	os.WriteFile(filepath.Join(fake, "error-on-stderr"), nil, 0o644)
 	os.WriteFile(filepath.Join(fake, "prompt-error"), []byte("agent_not_ready"), 0o644)
@@ -839,9 +843,16 @@ func TestDispatchStalledPromptBenchesSession(t *testing.T) {
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
+	// No fake-show.json: nothing here is testing what `show` answers, and
+	// the suite's "nothing to see" idiom (an unrelated id, e.g. "x") stopped
+	// being harmless once Bd.Unclaim started reading a-1 back through Show
+	// (ADR 0073 B3) — a declared file that never names a-1 answers "[]" for
+	// it, not the live state, and the read-back took that for a lost write
+	// (ranger-base-vj105). Omitting the file falls through to the live
+	// state overlay instead.
 	qaRepo(t, b.App,
 		`[{"id":"a-1","title":"t","labels":["go"]},{"id":"a-2","title":"u","labels":["go"]},{"id":"a-3","title":"v","labels":["go"]}]`,
-		`[{"id":"x","status":"closed"}]`)
+		``)
 	idleClaude(t, fake)
 	os.WriteFile(filepath.Join(fake, "prompt-error"), []byte("agent_prompt_stalled"), 0o644)
 
@@ -1227,6 +1238,15 @@ func TestQAFakeBdReadyDropsABeadItHasShownClosed(t *testing.T) {
 	// after it the queue is whole again. Without this arm the two drops
 	// above are satisfied by a filter that latches on the first sight of a
 	// bead and never lets it go.
+	//
+	// Unclaim now reads this exact write back through Show (ADR 0073 B3),
+	// and a declared, never-updated `show` answer is the suite's own idiom
+	// for a write that did NOT land (TestBdUnclaimNotLandedWhenShowDisagrees's
+	// comment, bdwriteback_test.go) — which the arm above needed and this one
+	// does not, so it is cleared first (ranger-base-vj105).
+	if err := os.Remove(filepath.Join(repo, "fake-show.json")); err != nil {
+		t.Fatal(err)
+	}
 	if err := bd.Unclaim(repo, "a-1", "ranger", false); err != nil {
 		t.Fatal(err)
 	}
@@ -1853,7 +1873,10 @@ func TestDispatchRewaitServerGoneHandsTheBeadBack(t *testing.T) {
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
-	qaRepo(t, b.App, `[{"id":"a-1","title":"t","labels":["go"]}]`, `[{"id":"a-1","status":"in_progress","assignee":"ranger"}]`)
+	// No fake-show.json — see TestDispatchStderrAgentNotReadyStillUnclaims'
+	// comment (ranger-base-vj105): this test unclaims, so a declared `show`
+	// answer would be read as a lost write, not this test's intent.
+	qaRepo(t, b.App, `[{"id":"a-1","title":"t","labels":["go"]}]`, ``)
 	workingClaude(t, fake)
 	os.WriteFile(filepath.Join(fake, "error-on-stderr"), nil, 0o644)
 	// The prompt lands, then its leg runs out: the agent is still working,
@@ -1896,7 +1919,10 @@ func TestDispatchPromptServerGoneUnclaims(t *testing.T) {
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
-	qaRepo(t, b.App, `[{"id":"a-1","title":"t","labels":["go"]}]`, `[{"id":"a-1","status":"in_progress","assignee":"ranger"}]`)
+	// No fake-show.json — see TestDispatchStderrAgentNotReadyStillUnclaims'
+	// comment (ranger-base-vj105): this test unclaims, so a declared `show`
+	// answer would be read as a lost write, not this test's intent.
+	qaRepo(t, b.App, `[{"id":"a-1","title":"t","labels":["go"]}]`, ``)
 	idleClaude(t, fake)
 	os.WriteFile(filepath.Join(fake, "error-on-stderr"), nil, 0o644)
 	os.WriteFile(filepath.Join(fake, "prompt-error"), []byte("server_not_running|no herdr server is running"), 0o644)
@@ -1936,7 +1962,10 @@ func TestDispatchPromptAgentBlockedUnclaims(t *testing.T) {
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
 	writePersona(t, b.App, "ranger", "[go]")
-	qaRepo(t, b.App, `[{"id":"a-1","title":"t","labels":["go"]}]`, `[{"id":"x","status":"closed"}]`)
+	// No fake-show.json — see the comment in TestDispatchStalledPromptBenchesSession
+	// (ranger-base-vj105): the "x" idiom used to be harmless here and
+	// stopped being once Bd.Unclaim started reading a-1 back through Show.
+	qaRepo(t, b.App, `[{"id":"a-1","title":"t","labels":["go"]}]`, ``)
 	idleClaude(t, fake)
 	os.WriteFile(filepath.Join(fake, "prompt-error"),
 		[]byte("agent_blocked|agent is at an approval dialog; no text was sent"), 0o644)

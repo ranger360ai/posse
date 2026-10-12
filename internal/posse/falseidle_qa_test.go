@@ -156,6 +156,14 @@ func fiD5(t *testing.T, rs []Reading) Reading {
 func TestQAStalledTypedPromptRecordsTheReadingThatTypedAndBothScreens(t *testing.T) {
 	t.Parallel()
 	d, fake, repo := fiSeat(t)
+	// This arm's prompt stalls and nothing says a turn ran, so the pass
+	// unclaims — and Bd.Unclaim reads that write back through Show (ADR
+	// 0073 B3). fiSeat's "closed" is a declared-answer idiom the suite uses
+	// to mean a write that never landed (TestBdUnclaimNotLandedWhenShowDisagrees's
+	// comment, bdwriteback_test.go), not this arm's intent, so it is cleared
+	// here (ranger-base-vj105); clearFakeShow is promptstall_qa_test.go's,
+	// same package and build tag.
+	clearFakeShow(t, repo)
 
 	if _, err := d.Run("", "", 0); err != nil {
 		t.Fatalf("a stalled prompt must not fail the pass: %v", err)
