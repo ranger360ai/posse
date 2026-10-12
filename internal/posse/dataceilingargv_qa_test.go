@@ -55,10 +55,28 @@ func qaBdCeilingShim(t *testing.T, ceiling bool) (shimPath, refusalsLog string, 
 	// line-cliff arm. Without a stub here that resolution reaches past
 	// realBin to whatever posse is actually installed on this host's PATH
 	// — a different build from the one under test, wrong for every pin in
-	// this file, none of which is about ADR 0072 at all. Always exits 0: a
-	// no-op pass, matching what the real subcommand does whenever these
-	// fixtures' bare `comments add` calls carry no census it can judge.
-	WriteExecutable(filepath.Join(realBin, "posse"), []byte("#!/bin/sh\nexit 0\n"), 0o755)
+	// this file, none of which is about ADR 0072 at all. `gates bd-write
+	// --real <bd> -- <argv>` forwards to <bd> (ranger-base-x0xct, ADR 0073
+	// D2: the bd shim now execs INTO posse for every write verb, so a stub
+	// that only exited 0 would silently swallow the call this fixture
+	// means to let through); every other call is a no-op pass, matching
+	// what the real subcommand does whenever these fixtures' bare
+	// `comments add` calls carry no census it can judge.
+	posseStub := "#!/bin/sh\n" +
+		"if [ \"$1\" = gates ] && [ \"$2\" = bd-write ]; then\n" +
+		"  shift 2\n" +
+		"  real=\n" +
+		"  while [ $# -gt 0 ]; do\n" +
+		"    case \"$1\" in\n" +
+		"      --real) real=$2; shift 2 ;;\n" +
+		"      --) shift; break ;;\n" +
+		"      *) shift ;;\n" +
+		"    esac\n" +
+		"  done\n" +
+		"  exec \"$real\" \"$@\"\n" +
+		"fi\n" +
+		"exit 0\n"
+	WriteExecutable(filepath.Join(realBin, "posse"), []byte(posseStub), 0o755)
 	t.Setenv("PATH", realBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	gatesDir, binDir, _, err := a.RenderGates("ceilingpersona", []string{"Bash(bd sync:*)"})
 	if err != nil {
@@ -235,10 +253,15 @@ func TestQABdCeilingKeyAbsentRendersNothing(t *testing.T) {
 	// Same render, modulo the persona name and the paths rendered into the
 	// header/RHQ_GATE_LOG lines (both shims are rendered under their own
 	// t.TempDir()) — the two bodies must diverge starting exactly where the
-	// ceiling arm begins and nowhere before it.
-	pIdx := strings.Index(string(plain), "exec '")
+	// ceiling arm begins and nowhere before it. The marker for "the exec
+	// line" is renderBdWriteTail's own final, unconditional line (ADR 0073
+	// D2) — cmd=="bd" no longer ends on a bare `exec '<real>' "$@"`, since
+	// a write verb's exec target is a variable the write-lock arm decided,
+	// not a literal baked in at the tail.
+	const execMarker = `exec "$posse_bd_real" "$@"`
+	pIdx := strings.Index(string(plain), execMarker)
 	lIdx := strings.Index(string(loaded), "ADR 0069")
-	if pIdx < 0 || lIdx < 0 || lIdx >= strings.Index(string(loaded), "exec '") {
+	if pIdx < 0 || lIdx < 0 || lIdx >= strings.Index(string(loaded), execMarker) {
 		t.Errorf("the ceiling arm must sit before the exec line in the loaded shim, and the plain shim must have no such marker at all")
 	}
 }

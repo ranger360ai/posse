@@ -28,6 +28,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 // BdWriteLockWait bounds D1's per-store lock: a write that cannot take it
@@ -99,6 +101,25 @@ func (l *BdWriteLock) Release() {
 	}
 	l.f.Close()
 	l.f = nil
+}
+
+// ClearCloseOnExec drops FD_CLOEXEC from l's fd, so that a later
+// syscall.Exec in THIS process hands the open file description to the
+// image it becomes rather than having the kernel close it at the exec
+// itself (ADR 0073 D2: "bd inherits the lock's open file description, so
+// the lock is held exactly as long as bd runs"). os.OpenFile has no
+// portable flag to open without CLOEXEC in the first place, so this is the
+// fcntl the ADR names as the alternative. Only the gates bd-write arm
+// calls this — every other holder (Bd.runOnce, the sync self-heal) never
+// execs, and CLOEXEC is exactly what it wants there: no bd child should
+// ever inherit one of this process's own lock fds. A nil receiver is a
+// no-op, matching Release.
+func (l *BdWriteLock) ClearCloseOnExec() error {
+	if l == nil || l.f == nil {
+		return nil
+	}
+	_, err := unix.FcntlInt(l.f.Fd(), unix.F_SETFD, 0)
+	return err
 }
 
 // BdWriteLockTimeoutError is D1's bounded wait running out: another bd write

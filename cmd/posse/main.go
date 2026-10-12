@@ -1597,7 +1597,7 @@ func main() {
 	case "gates":
 		// Inspect a persona's L1 gates (shims rendered from its deny: and
 		// the refusals log — state, not memory), or install the L3 hook.
-		args = need(args, 1, "posse gates <persona> | posse gates install-hooks [dir] [--chain] | posse gates managed-hooks [dir] | posse gates adr-census [files...] | posse gates wrap <persona> -- <cmd> | posse gates bd-line -- <bd argv>")
+		args = need(args, 1, "posse gates <persona> | posse gates install-hooks [dir] [--chain] | posse gates managed-hooks [dir] | posse gates adr-census [files...] | posse gates wrap <persona> -- <cmd> | posse gates bd-line -- <bd argv> | posse gates bd-write --real <bd> -- <bd argv>")
 		// The inner command of a container launch (ADR 0002 §3,
 		// rangerhq-6so): rendered onto the engine's line by the host and run
 		// by the image's own Linux posse, never typed by hand. It renders
@@ -1620,6 +1620,21 @@ func main() {
 			refused, berr := posse.RunGatesBdLine(args[1:], os.Stderr)
 			if berr != nil {
 				die(berr)
+			}
+			if refused {
+				os.Exit(1)
+			}
+			return
+		}
+		if args[0] == "bd-write" {
+			// ADR 0073 D2 — the bd shim's write-verb tail, never typed by
+			// hand: on success this call has already become bd (syscall.Exec
+			// never returns here), so only a refusal or a usage error comes
+			// back. refused is this call's exit code, for the same reason
+			// bd-line's is above.
+			refused, werr := posse.RunGatesBdWrite(args[1:], os.Stderr)
+			if werr != nil {
+				die(werr)
 			}
 			if refused {
 				os.Exit(1)
@@ -2861,13 +2876,24 @@ catalog:
                                  ` + posse.GatesWrapNoShell + ` says this runtime opts out of the
                                  gate shell (ADR 0009 §2)
   posse gates bd-line -- <bd argv>
-                                 ADR 0072 D2's write-time judge, called by the bd shim's own
-                                 arm before comments/update/create/close, never typed by hand.
-                                 Finds the store the way bd does ($BEADS_DIR, else beadsHome(cwd)),
-                                 projects the line the write would leave with ProjectBdWrite, and
-                                 refuses (exit 1, bd not run) only when it would cross bd's 64 KB
-                                 scanner limit. Silent exit 0 whenever it cannot judge — no store,
-                                 no exact id, text on stdin.
+                                 ADR 0072 D1's write-time judge on its own, kept for any future
+                                 caller that wants it unlocked; the bd shim's own arm calls
+                                 "gates bd-write" instead (below), which runs the same judge
+                                 under ADR 0073's lock. Finds the store the way bd does
+                                 ($BEADS_DIR, else beadsHome(cwd)), projects the line the write
+                                 would leave with ProjectBdWrite, and refuses (exit 1, bd not
+                                 run) only when it would cross bd's 64 KB scanner limit. Silent
+                                 exit 0 whenever it cannot judge — no store, no exact id, text
+                                 on stdin.
+  posse gates bd-write --real <bd> -- <bd argv>
+                                 ADR 0073 D2 — the bd shim's write-verb tail, exec'd for every
+                                 write verb instead of calling bd directly; never typed by hand.
+                                 Takes D1's per-store flock on an fd that survives the exec
+                                 below, runs the same line-cliff judge as "gates bd-line" under
+                                 that lock, then syscall.Exec's <bd> so it inherits the lock —
+                                 held for exactly as long as bd runs. On success this call has
+                                 become bd; it returns only on a refusal (exit 1: the lock timed
+                                 out, or the line cliff) or a usage error.
   posse cage [<persona>]         L4: the container engine, its image, and what a
                                  caged launch of that persona would mount and forward
   posse cage build [dir] [--runtimes "<npm pkgs>"]

@@ -1,12 +1,15 @@
 package posse
 
-// ADR 0072 D2 — the hidden `posse gates bd-line -- <bd argv>` subcommand the
-// bd shim's new arm (renderBdLineArm, gates.go) calls before letting a
-// comments/update/create/close call through. This is the persona-facing
-// half of the one judge bdline.go (B1) built: it finds the store the way bd
-// itself will, asks ProjectBdWrite, and either exits 0 silently or refuses
-// with the remedy and a refusals.log line — never bd's own `token too
-// long`, which this write has not happened yet to produce.
+// ADR 0072 D2 — the hidden `posse gates bd-line -- <bd argv>` subcommand.
+// It finds the store the way bd itself will, asks ProjectBdWrite, and
+// either exits 0 silently or refuses with the remedy and a refusals.log
+// line — never bd's own `token too long`, which this write has not
+// happened yet to produce. The bd shim's own arm no longer calls this
+// directly (ADR 0073 D2's `gates bd-write` calls the same judge under its
+// write lock instead, bdwriteshim.go); this stays wired as its own
+// subcommand for any future caller that wants the judge unlocked, and the
+// helpers below (bdLineGateRefusal, appendBdLineGateLog) are what
+// RunGatesBdWrite shares with it.
 
 import (
 	"fmt"
@@ -74,10 +77,13 @@ func appendBdLineGateLog(proj Projection) {
 	fmt.Fprintf(f, "%s bd line cliff [bd shim] %s %dB session %s\n", stamp, id, proj.After, persona)
 }
 
-// RunGatesBdLine is `posse gates bd-line -- <bd argv>`: the bd shim's
-// ADR 0072 D2 arm calls it only for the comments/update/create/close verbs,
-// so a read never reaches here. refused=true means the write must not run
-// — the shim exits with this call's own exit code and never execs bd.
+// RunGatesBdLine is `posse gates bd-line -- <bd argv>`, the judge on its
+// own: ADR 0073 D2's `gates bd-write` (bdwriteshim.go) now calls the same
+// logic in-process, under its write lock, instead of shelling out to this
+// subcommand — but the subcommand itself stays, for a caller that wants
+// the unlocked judge. refused=true means the write must not run; a caller
+// that execs this as the bd shim's old arm did would exit with this
+// call's own exit code and never exec bd.
 //
 // Every "cannot judge" path returns refused=false, err=nil: an absent
 // census (no store, or a store this persona's session has not been pointed

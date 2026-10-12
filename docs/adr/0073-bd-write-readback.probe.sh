@@ -129,3 +129,47 @@ n=1; while [ "$n" -le "$W" ]; do
 echo "  read through SQLite:"; census "$rig"
 echo "  read --no-db (what a cage seat sees):"
 (cd "$rig" && BEADS_DIR="$rig/.beads" bd --no-daemon --no-db list --all --json --limit 0 2>/dev/null) | python3 -c 'import json,sys; print("   rows", len(json.load(sys.stdin) or []))'
+
+echo "== ADR 0073 B2 acceptance: nodb concurrent creates through 'posse gates bd-write', 3 runs"
+repo_root=$(cd "$(dirname "$0")/../.." && pwd)
+posse_bin="$root/posse-bdwrite-probe"
+# The real bd, skipping any PATH component that is a persona's own gates
+# bin dir — the same exclusion resolveOutside makes at render time — so
+# --real names the binary the lock-and-exec arm is meant to reach, not a
+# second gate shim layered in front of it.
+bd_bin=
+bd_bin_ifs=$IFS; IFS=:
+for bd_bin_d in $PATH; do
+  case "$bd_bin_d" in */gates/*) continue ;; esac
+  if [ -x "$bd_bin_d/bd" ]; then bd_bin="$bd_bin_d/bd"; break; fi
+done
+IFS=$bd_bin_ifs
+if ! command -v go >/dev/null 2>&1; then
+  echo "  SKIPPED: no go toolchain to build posse"
+elif [ -z "$bd_bin" ]; then
+  echo "  SKIPPED: no bd on PATH"
+elif ! ( cd "$repo_root" && go build -o "$posse_bin" ./cmd/posse ) 2>"$root/posse-build.err"; then
+  echo "  SKIPPED: go build ./cmd/posse failed — see $root/posse-build.err"
+else
+  writer_gated() { # writer_gated <rig> <worktree> <tag>: K creates through the lock+judge+exec arm
+    rig=$1; wt=$2; tag=$3; i=0
+    while [ "$i" -lt "$K" ]; do
+      i=$((i + 1))
+      out=$(cd "$wt" && BEADS_DIR="$rig/.beads" XDG_CACHE_HOME="$root/cache" \
+        "$posse_bin" gates bd-write --real "$bd_bin" -- --no-daemon create "w$tag-$i" -d "gated writer $tag create $i" 2>&1); rc=$?
+      id=$(printf '%s\n' "$out" | sed -n 's/.*Created issue: \([^ ]*\).*/\1/p' | head -1)
+      echo "$rc ${id:--} w$tag-$i" >>"$root/$(basename "$rig").printed"
+    done
+  }
+  r=1
+  while [ "$r" -le 3 ]; do
+    echo "  -- run $r --"
+    rig="$root/nodb-gated$r"; mkrig "$rig" nodb
+    (cd "$rig" && BEADS_DIR="$rig/.beads" bd --no-daemon list --json >/dev/null 2>&1)
+    : >"$root/$(basename "$rig").printed"
+    n=1; while [ "$n" -le "$W" ]; do git -C "$rig" worktree add -q "$rig-wt$n" 2>/dev/null; n=$((n + 1)); done
+    n=1; while [ "$n" -le "$W" ]; do writer_gated "$rig" "$rig-wt$n" "$n" & n=$((n + 1)); done; wait
+    census "$rig"
+    r=$((r + 1))
+  done
+fi

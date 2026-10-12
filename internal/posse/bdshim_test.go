@@ -25,17 +25,37 @@ import (
 
 // writeNoopPosseStub plants a harmless "posse" in dir, ahead of whatever
 // posse is actually installed on this host's PATH (ranger-base-a0vdz,
-// ADR 0072 D2): the bd shim's own line-cliff arm resolves "posse" the same
-// way it resolves "bd" — resolveOutside, walking PATH — and every test in
-// this file already isolates "bd" into its own realBin for exactly this
-// reason. Without a matching "posse" stub here, that resolution reaches
-// PAST realBin to a live install (a different build from the one under
-// test) for every call these pins make, none of which is about ADR 0072.
-// Always exits 0: a no-op pass, matching the real subcommand whenever it
-// cannot judge a write (no census here at all).
+// ADR 0072 D2; ranger-base-x0xct, ADR 0073 D2): the bd shim's write-lock
+// arm resolves "posse" the same way it resolves "bd" — resolveOutside,
+// walking PATH — and every test in this file already isolates "bd" into
+// its own realBin for exactly this reason. Without a matching "posse"
+// stub here, that resolution reaches PAST realBin to a live install (a
+// different build from the one under test) for every call these pins
+// make, none of which is about either ADR.
+//
+// `gates bd-write --real <bd> -- <argv>` forwards to <bd> (unlike the old
+// line-cliff judge, D2's own arm now execs INTO posse for every write
+// verb, so a stub that only exited 0 would silently swallow one instead
+// of passing it through); every other call is a no-op pass, matching the
+// real subcommand whenever it cannot judge a write (no census here at
+// all).
 func writeNoopPosseStub(t *testing.T, dir string) {
 	t.Helper()
-	if err := WriteExecutable(filepath.Join(dir, "posse"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	script := "#!/bin/sh\n" +
+		"if [ \"$1\" = gates ] && [ \"$2\" = bd-write ]; then\n" +
+		"  shift 2\n" +
+		"  real=\n" +
+		"  while [ $# -gt 0 ]; do\n" +
+		"    case \"$1\" in\n" +
+		"      --real) real=$2; shift 2 ;;\n" +
+		"      --) shift; break ;;\n" +
+		"      *) shift ;;\n" +
+		"    esac\n" +
+		"  done\n" +
+		"  exec \"$real\" \"$@\"\n" +
+		"fi\n" +
+		"exit 0\n"
+	if err := WriteExecutable(filepath.Join(dir, "posse"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 }
