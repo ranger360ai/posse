@@ -6,6 +6,7 @@ references), not inferred publication dates. Undated fragments sort last.
 
 ## 2026-10
 
+- [ranger-base-bdias](ranger-base-bdias.md) — codex 0.153.4 re-measured: cwd root and symlinks hold, and it now reads `~/.agents/skills` as a global root (ranger-base-bdias) — 2026-10-12
 - [ranger-base-yglkp](ranger-base-yglkp.md) — Two live pins whose control arms stopped firing, for two unrelated reasons (ranger-base-yglkp) — 2026-10-09
 - [ranger-base-x8bv0](ranger-base-x8bv0.md) — A page to read is a URL; material to send is an embed (ranger-base-x8bv0) — 2026-10-09
 - [ranger-base-wjqeu](ranger-base-wjqeu.md) — ranger-base-wjqeu — verifying ADR 0071's check against the real bd, and the one arm it had not pinned — 2026-10-09

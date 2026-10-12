@@ -323,15 +323,21 @@ type Runtime struct {
 	// bob 2.0.5 (static bundle read, MEASURED 2026-10-12): `.bob/skills`,
 	// `.bob/plugins/*/skills`, `.agents/skills`, `.agents/plugins/*/skills`,
 	// `.claude/skills`, `.claude/plugins/*/skills` — {~/.bob, ~/.agents,
-	// ~/.claude} x {skills, plugins/*/skills}. codex and grok declare none:
-	// the binary strings were inconclusive on whether either reads
-	// `~/.agents/skills` globally (ADR 0007 Evidence), so neither is
-	// declared ahead of a measurement.
+	// ~/.claude} x {skills, plugins/*/skills}. codex (live probe, MEASURED
+	// 2026-10-12, codex-cli 0.153.4, ranger-base-bdias) declares `.agents/skills`
+	// too — the binary-strings read that left it ASSUMED turned out
+	// inconclusive, not false: `codex debug prompt-input` with HOME pointed
+	// at a fixture lists `$HOME/.agents/skills` as a skill root and loads a
+	// skill planted only there, alongside the cwd's own `.agents/skills`
+	// when one exists (union, not override). grok declares none still: its
+	// own live probe is a separate measurement (ADR 0007 Evidence) and
+	// stays ASSUMED until it runs.
 	//
 	// refuseSkillsGlobalWrite (skills.go) sweeps EVERY built-in's list, not
-	// just the launching runtime's — bob reads `~/.agents/skills` whoever
-	// wrote it, so a codex or grok render at the home refuses on bob's
-	// declaration. Nothing here is per-runtime scoped the way SkillsRoot is.
+	// just the launching runtime's — bob and codex both read
+	// `~/.agents/skills` whoever wrote it, so a codex, grok or bob render at
+	// the home refuses on whichever of their declarations the sweep reaches
+	// first. Nothing here is per-runtime scoped the way SkillsRoot is.
 	SkillsGlobalRoots []string
 	// SelfSandbox: the runtime wraps its own child commands in sandbox-exec
 	// (codex). macOS refuses to nest seatbelts (sandbox_apply: Operation not
@@ -1755,7 +1761,18 @@ var builtinRuntimes = []Runtime{
 		// The only runtime with a reader today (ranger-base-02zr).
 		TurnOutcomeAdapter: TurnOutcomeClaudeTranscript,
 		Command:            `claude {model} ` + ClaudeFleetFlags + ` --append-system-prompt "$(cat {file})" --add-dir {memory} {settings} {skills} {allow} {deny}`},
-	{Name: "codex", Builtin: true, Realize: realizeCodex, Skills: skillsCwd, SkillsRoot: AgentsSkillsPath, SkillsVerified: "codex-cli 0.147.0", Models: codexModels, ModelFlag: "-c model=%s", SelfSandbox: true, ProjectConfig: []string{CodexProjectConfig}, Unattended: "-a never",
+	// SkillsVerified: re-measured 2026-10-12 (ranger-base-bdias) against the
+	// installed 0.153.4 — still reads <cwd>/.agents/skills only, still
+	// follows a symlink out of the cwd (TestQALiveSkillDiscoveryPerRuntime,
+	// RHQ_PARITY_LIVE=1). SkillsGlobalRoots: the same re-measurement settled
+	// §6's ASSUMED — `codex debug prompt-input` with HOME pointed at a
+	// fixture and the cwd a bare unrelated repo lists a skill root
+	// `$HOME/.agents/skills` and loads a skill planted only there, with the
+	// cwd's OWN .agents/skills (when one exists) listed and read alongside
+	// it as a second root — union, not override, the same shape bob already
+	// declares. codex now joins bob as a SkillsGlobalRoots owner of this
+	// path; grok is untouched (out of this bead's scope, still ASSUMED).
+	{Name: "codex", Builtin: true, Realize: realizeCodex, Skills: skillsCwd, SkillsRoot: AgentsSkillsPath, SkillsVerified: "codex-cli 0.153.4", SkillsGlobalRoots: []string{AgentsSkillsPath}, Models: codexModels, ModelFlag: "-c model=%s", SelfSandbox: true, ProjectConfig: []string{CodexProjectConfig}, Unattended: "-a never",
 		Egress: []string{"chatgpt.com", "ab.chatgpt.com"}, StateDirs: []string{"~/.codex"},
 		// record: untrusted — MEASURED the other way: 3/3 dispatched codex
 		// sessions did the work and left the bead in_progress with no

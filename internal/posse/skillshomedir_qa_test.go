@@ -90,8 +90,17 @@ func skillsHomeNeedsGit(t *testing.T) {
 
 // ARM 1: codex's and grok's shared surface, AgentsSkillsPath, rendered at a
 // session dir that IS `$HOME`. It refuses, naming the global root that
-// covers it — `.agents/skills`, bob's declaration and not codex's or
-// grok's own, which is the "any runtime" half of ADR 0007 §6e.
+// covers it — `.agents/skills`. Until ranger-base-bdias this was read as
+// "bob's declaration, not codex's or grok's own" (the "any runtime" half of
+// ADR 0007 §6e); the live re-measurement there found codex-cli 0.153.4 DOES
+// read `~/.agents/skills` globally (union with the cwd root, not override),
+// so codex now declares it too (runtime.go). `builtinRuntimes` sweeps
+// claude, codex, grok, bob in that order and the guard returns on the FIRST
+// match, so codex's own declaration — not bob's — is the one the message
+// below names, for a codex render AND for a grok render (grok still
+// declares no root of its own; it is caught by codex's, the same "any
+// runtime" clause one owner over). grok's own live probe is a separate
+// measurement and stays ASSUMED.
 func TestQASkillsTreeAtASessionDirThatIsTheHomeRefusesUnderADeclaredGlobalRoot(t *testing.T) {
 	// No t.Parallel: t.Setenv. And the home has to be the PROCESS's `$HOME`
 	// rather than a path that merely looks like one, because that is the
@@ -118,7 +127,7 @@ func TestQASkillsTreeAtASessionDirThatIsTheHomeRefusesUnderADeclaredGlobalRoot(t
 	if err == nil {
 		t.Fatal("a session dir that is $HOME was NOT refused the skills tree — ADR 0007 §6e reverses ranger-base-q114b's blessing exactly here")
 	}
-	for _, want := range []string{"skills", AgentsSkillsPath, "bob", "GLOBAL"} {
+	for _, want := range []string{"skills", AgentsSkillsPath, "codex", "GLOBAL"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("refusal %q does not name %q — the operator needs to see WHICH global root this tree fell under and WHICH runtime declared it", err, want)
 		}

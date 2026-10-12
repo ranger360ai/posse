@@ -277,6 +277,25 @@ say, per runtime and per version, which root was measured.
   turns bob from UNPROVEN to verified, and until it lands 6b refuses.
 - ASSUMED: whether codex 0.153.4 reads `~/.agents/skills` globally — the
   binary's strings were inconclusive. Re-verified with the codex drift.
+- **RESOLVED 2026-10-12 (ranger-base-bdias):** both the drift and the
+  ASSUMED line above, by the same re-run. `TestQALiveSkillDiscoveryPerRuntime`
+  (RHQ_PARITY_LIVE=1) against the installed 0.153.4 still passes — the cwd
+  root and the symlink-out both hold, unchanged from 0.147.0 — so
+  `SkillsVerified` moves to `codex-cli 0.153.4` (6c's remedy is a
+  re-measurement, not a refusal). And codex 0.153.4 DOES read
+  `~/.agents/skills` as a global root: `codex debug prompt-input` with
+  `$HOME` pointed at a fixture and the cwd a bare, unrelated repo lists
+  `$HOME/.agents/skills` in its own skill-roots table and loads a skill
+  planted only there; with a skill at both `$HOME` and the cwd, both are
+  listed and both load — union, not override, the same shape 6e already
+  gives bob. codex's built-in now declares `SkillsGlobalRoots:
+  []string{AgentsSkillsPath}` (runtime.go) and joins bob as an owner of
+  this path under the "any runtime" sweep in `refuseSkillsGlobalWrite` —
+  which is exactly the fact the old Consequences paragraph below named as
+  the one that would red an arm in `skillshomedir_qa_test.go` rather than
+  drift quietly; it did, and that arm (ARM 1) is updated to match. grok is
+  untouched — out of this bead's scope, still ASSUMED. Full method and
+  recipe: `docs/notes.d/ranger-base-bdias.md`.
 
 ## Consequences
 
