@@ -444,6 +444,15 @@ func fakeBd(args []string) int {
 				return 0
 			}
 		}
+		// `fake-dep-list-fail` is the read half failing on its own — ADR
+		// 0073 B3's Bd.DepAdd re-reads the graph after its own add, and a
+		// caller must be able to tell "the add worked but the confirming
+		// read could not run" (BdWriteUnverifiedError) from either arm
+		// succeeding.
+		if _, err := os.Stat("fake-dep-list-fail"); err == nil {
+			fmt.Fprint(os.Stderr, "database is locked")
+			return 1
+		}
 		file := "fake-deps.json"
 		for _, a := range args {
 			if a == "--direction=up" {
@@ -513,10 +522,24 @@ func fakeBd(args []string) int {
 		// a fake that dropped it would make every pass look like the first.
 		for i, a := range args {
 			if a == "add" && i+2 < len(args) {
-				fakeBdAddComment(args[i+1], args[i+2])
+				// `fake-comment-lost` is ADR 0073's shape for this verb too:
+				// exit 0, nothing wrong on the wire, and the comment never
+				// actually lands — opt-in so Bd.Comment's read-back has
+				// something to disagree with.
+				if _, err := os.Stat("fake-comment-lost"); err != nil {
+					actor, _ := fakeBdFlag(args, "--actor")
+					fakeBdAddComment(args[i+1], args[i+2], actor)
+				}
 				fmt.Print("{}")
 				return 0
 			}
+		}
+		// `fake-comments-read-fail` fails the LIST half on its own — ADR
+		// 0073 B3's Bd.Comment re-reads the comments after its own add
+		// succeeds, and `fake-comment-fail` above only reaches the add.
+		if _, err := os.Stat("fake-comments-read-fail"); err == nil {
+			fmt.Fprint(os.Stderr, "database is locked")
+			return 1
 		}
 		if b, err := os.ReadFile("fake-comments.json"); err == nil {
 			fmt.Print(fakeBdCommentsFor(string(b), fakeBdID(args, "comments")))
@@ -525,9 +548,30 @@ func fakeBd(args []string) int {
 		}
 		return 0
 	case "show":
+		// `fake-show-fail` is the read-back's own failure arm (ADR 0073 B3):
+		// every write method below calls Show (or Comments/DepList) after
+		// its own write succeeds, and a caller must be able to tell "the
+		// write may have landed but the confirming read could not run"
+		// (BdWriteUnverifiedError) from a read that ran and disagreed.
+		if _, err := os.Stat("fake-show-fail"); err == nil {
+			fmt.Fprint(os.Stderr, "database is locked")
+			return 1
+		}
+		// ADR 0073 B3: Bd.Create and Bd.SetDescription now read a bead back
+		// through Show to confirm what they just wrote, and fake-list.json
+		// is where fakeBdAppendCreated and fakeBdSetDescription already keep
+		// that content — title, description, status — for exactly this id.
+		// A fixture that never bothered with fake-show.json (most of the
+		// suite, pre-dating B3) still gets an honest answer rather than the
+		// fakeBdState fallback's hardcoded "t" title, which the fallback
+		// below is kept for: ids like a claim's or an unclaim's that were
+		// never created through this fake at all.
+		id := fakeBdID(args, "show")
 		if b, err := os.ReadFile("fake-show.json"); err == nil {
-			fmt.Print(fakeBdShowByID(string(b), fakeBdID(args, "show")))
-		} else if st, ok := fakeBdState()[fakeBdID(args, "show")]; ok {
+			fmt.Print(fakeBdShowByID(string(b), id))
+		} else if row := fakeBdListRow("fake-list.json", id); row != "" {
+			fmt.Print(row)
+		} else if st, ok := fakeBdState()[id]; ok {
 			fmt.Printf(`[{"id":%q,"title":"t","status":%q,"assignee":%q}]`, st.ID, st.Status, st.assignee())
 		} else {
 			fmt.Print("[]")
@@ -545,6 +589,23 @@ func fakeBd(args []string) int {
 		// (ciwatch.go), so the file-close-file cycle would have been
 		// untestable.
 		//
+		// The WRITE follows the prefix, not only the answer
+		// (ranger-base-s92di): resolved and marked closed in the store
+		// BEFORE fake-close-answer.json is consulted, so that marker fakes
+		// only what bd ECHOES on the wire — never whether the close itself
+		// landed. A guard that PREVENTS the wrong close and a guard that
+		// merely reports it afterwards are otherwise indistinguishable,
+		// which is exactly what the codex review said the old pin proved;
+		// and a caller's own read-back (ADR 0073 D3's Bd.Close) must see
+		// the real close on the id actually asked for even when this
+		// marker prints a deliberately wrong echo for a different pin.
+		id := fakeBdResolvePrefix(fakeBdID(args, "close"))
+		// `fake-close-lost` is ADR 0073's own shape (the rig: exit 0 with
+		// the closed issue echoed back, and the store never moved) — opt-in
+		// so Bd.Close's read-back has something to disagree with.
+		if _, err := os.Stat("fake-close-lost"); err != nil {
+			fakeBdMarkClosed(id)
+		}
 		// fake-close-answer.json overrides the id it answers about,
 		// regardless of the id asked for — the fake's own version of the
 		// prefix resolution ranger-base-n7lod measured live for `bd close`
@@ -553,16 +614,6 @@ func fakeBd(args []string) int {
 			fmt.Print(string(b))
 			return 0
 		}
-		// The WRITE follows the prefix, not only the answer
-		// (ranger-base-s92di). fake-close-answer.json above fakes the
-		// answer alone, and against that fixture a guard that PREVENTS the
-		// wrong close and a guard that merely reports it afterwards are
-		// indistinguishable — which is exactly what the codex review said
-		// the old pin proved. Resolving here means the fake's own store
-		// really loses the longer bead when posse lets the call through,
-		// so reading that bead back is a survival assertion with teeth.
-		id := fakeBdResolvePrefix(fakeBdID(args, "close"))
-		fakeBdMarkClosed(id)
 		fmt.Printf(`[{"id":%q,"status":"closed"}]`, id)
 		return 0
 	case "sync":
@@ -681,6 +732,25 @@ func fakeBdAppendCreated(id string, args []string) {
 	if b, err := json.Marshal(labeled); err == nil {
 		os.WriteFile("fake-list-labeled.json", b, 0o644)
 	}
+	// And in fake-show.json, but ONLY when a fixture already set one up
+	// (ADR 0073 B3): Bd.Create reads the id it just filed back through
+	// Show, and a test that pins an explicit `show` fixture for ITS OWN
+	// ids — qaRepo's third argument, mainly — must still answer about one
+	// this call just created, or that read-back fails on an id the fixture
+	// never had reason to name. A test that sets no fake-show.json at all
+	// keeps getting fakeBdListRow's fallback instead (the `show` case),
+	// which is exactly the fixture shape the suite had before B3 existed —
+	// creating this file out of nothing here would hide a DIFFERENT id's
+	// intended fall-through to fakeBdState elsewhere in the same test.
+	if b, err := os.ReadFile("fake-show.json"); err == nil {
+		var shown []map[string]any
+		if json.Unmarshal(b, &shown) == nil {
+			shown = append(shown, row)
+			if nb, err := json.Marshal(shown); err == nil {
+				os.WriteFile("fake-show.json", nb, 0o644)
+			}
+		}
+	}
 }
 
 // fakeBdNextID hands out q-1, q-2, … so a test can assert on the id the
@@ -720,6 +790,17 @@ func fakeBdMarkClosed(id string) {
 	if id == "" {
 		return
 	}
+	// And in fakeBdState, which is `show`'s fallback when no fake-show.json
+	// exists (ADR 0073 B3): Bd.Close now reads the bead back through Show
+	// after bd's own close answer, and a fake that moved only the listing
+	// files left that fallback answering whatever `update --claim` last
+	// wrote — in_progress, forever — for a fixture that files no
+	// fake-show.json of its own (TestBdClaimClose, measured building B3).
+	st := fakeBdState()
+	cur := st[id]
+	cur.ID, cur.Status = id, "closed"
+	st[id] = cur
+	fakeBdSaveState(st)
 	// fake-show.json is in the list because `bd show` is how a caller asks
 	// whether one named bead survived a call (ranger-base-s92di); a fake
 	// whose close moved the listings but not the row itself answered "open"
@@ -818,6 +899,35 @@ func fakeBdShowByID(body, id string) string {
 		}
 	}
 	return "[]"
+}
+
+// fakeBdListRow finds a row by exact id in a `list`-shaped fixture file
+// (fake-list.json), rendered as `bd show` would — a one-element array — or
+// "" when the file is absent or holds no such row. No prefix resolution:
+// that is fake-show.json's own job (fakeBdShowByID), and this is only the
+// fallback for ids a test never bothered to put there (ADR 0073 B3's
+// Create/SetDescription read-back, over the content fakeBdAppendCreated and
+// fakeBdSetDescription already keep here).
+func fakeBdListRow(file, id string) string {
+	if id == "" {
+		return ""
+	}
+	b, err := os.ReadFile(file)
+	if err != nil {
+		return ""
+	}
+	var list []map[string]any
+	if json.Unmarshal(b, &list) != nil {
+		return ""
+	}
+	for _, is := range list {
+		if s, _ := is["id"].(string); s == id {
+			if nb, err := json.Marshal([]map[string]any{is}); err == nil {
+				return string(nb)
+			}
+		}
+	}
+	return ""
 }
 
 // fakeBdResolvePrefix is bd's live prefix resolution, applied to the id a
@@ -981,12 +1091,24 @@ func fakeBdRecordCreateDeps(id string, args []string) {
 // fakeBdAddComment appends a comment where `bd comments <id>` will read it
 // back. It carries its issue_id; fixtures written without one keep matching
 // every issue, which is what the suite's older fixtures assume.
-func fakeBdAddComment(id, text string) {
+// author defaults to "posse" — the fixture's long-standing default, kept for
+// every test written before this took one — when the call carried none.
+// created_at is stamped because ADR 0073 B3's Comment read-back refuses a
+// match whose created_at is before the write started, and a row with none
+// unmarshals to the zero time, which is always before: every comment this
+// fake ever added would fail that check (measured building B3).
+func fakeBdAddComment(id, text, actor string) {
+	if actor == "" {
+		actor = "posse"
+	}
 	var cs []map[string]any
 	if b, err := os.ReadFile("fake-comments.json"); err == nil {
 		json.Unmarshal(b, &cs)
 	}
-	cs = append(cs, map[string]any{"id": len(cs) + 1, "issue_id": id, "text": text, "author": "posse"})
+	cs = append(cs, map[string]any{
+		"id": len(cs) + 1, "issue_id": id, "text": text, "author": actor,
+		"created_at": time.Now().Format(time.RFC3339Nano),
+	})
 	if b, err := json.Marshal(cs); err == nil {
 		os.WriteFile("fake-comments.json", b, 0o644)
 	}
@@ -1292,8 +1414,14 @@ func fakeBdUpdate(args []string) int {
 	// this the restatement and a pass that merely says it restated are
 	// indistinguishable — which is exactly ranger-base-zyrr4's defect, in a
 	// fixture instead of production.
+	// `fake-setdesc-lost` is ADR 0073's shape for this verb: exit 0 with
+	// nothing wrong on the wire, and the description never actually moves —
+	// opt-in so Bd.SetDescription's read-back has something to disagree
+	// with.
 	if desc, ok := fakeBdFlag(args, "-d"); ok {
-		fakeBdSetDescription(id, desc)
+		if _, err := os.Stat("fake-setdesc-lost"); err != nil {
+			fakeBdSetDescription(id, desc)
+		}
 	}
 	fmt.Print("{}")
 	return 0

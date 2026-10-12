@@ -26,23 +26,31 @@ import (
 // over every call and records its argv, plus the claims channel runCockpit
 // makes. The fake resolves the verb PAST bd's global flags, because
 // posse.Bd.run leads every argv with --no-daemon (ranger-base-cwu7) and a
-// fake keyed on $1 answers the wrong thing to everything.
+// fake keyed on $1 answers the wrong thing to everything. It resolves the
+// id the same way, past the same flags, because ADR 0073 B3's Bd.Unclaim
+// now reads the bead back through `show` after `update` lands and needs an
+// honest answer about the id it actually asked for — not the "update"
+// case's canned "r-a", which only ever answers Claim's own fast path (it
+// matches because the aimed ready row really is r-a).
 func slowClaimCockpit(t *testing.T, pause string) (*cockpit, string) {
 	t.Helper()
 	dir := t.TempDir()
 	log := dir + "/bd.log"
 	bd := writeExec(t, dir, "bd", `#!/bin/sh
 echo "$@" >> `+log+`
-verb=""
+verb="" id=""
 for a in "$@"; do
   case "$a" in
-  -*) ;;
-  *) verb="$a"; break ;;
+  -*) continue ;;
   esac
+  if [ -z "$verb" ]; then verb="$a"
+  elif [ -z "$id" ]; then id="$a"; break
+  fi
 done
 sleep `+pause+`
 case "$verb" in
 update) printf '[{"id":"r-a","status":"in_progress"}]\n' ;;
+show) printf '[{"id":"%s","status":"open"}]\n' "$id" ;;
 *) printf '[]\n' ;;
 esac
 exit 0

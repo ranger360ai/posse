@@ -917,10 +917,29 @@ func qaUnclaimFixture(t *testing.T) (*cockpit, string) {
 	t.Helper()
 	dir := t.TempDir()
 	log := filepath.Join(dir, "bd.log")
+	// ADR 0073 B3: Bd.Unclaim now reads the bead back through `show` after
+	// its own `update` lands, so this fake has to find the real VERB
+	// (skipping `--no-daemon` and `--actor <name>`, the way cockpitclaimkey_
+	// test.go's own fake already does) rather than switching on "$1", which
+	// is always `--no-daemon` and never matched the old `update|--actor`
+	// case at all — invisible before this, because Bd.Unclaim only trusted
+	// the exit code. `show` answers "open" for whatever id was asked about,
+	// which is the only fact this fixture's tests need from it.
 	bd := writeExec(t, dir, "bd", `#!/bin/sh
 echo "$@" >> `+log+`
-case "$1" in
-update|--actor) printf '{}\n' ;;
+verb="" id="" skip=0
+for a in "$@"; do
+  if [ "$skip" = 1 ]; then skip=0; continue; fi
+  case "$a" in
+  --actor) skip=1; continue ;;
+  -*) continue ;;
+  esac
+  if [ -z "$verb" ]; then verb="$a"; continue; fi
+  if [ -z "$id" ]; then id="$a"; fi
+done
+case "$verb" in
+update) printf '{}\n' ;;
+show) printf '[{"id":"%s","status":"open"}]\n' "$id" ;;
 *) printf '[]\n' ;;
 esac
 exit 0

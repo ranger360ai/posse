@@ -771,6 +771,60 @@ func IsBdStoreUnread(err error) bool {
 	return errors.As(err, &se)
 }
 
+// BdWriteNotLandedError is a bd write that exited 0 and printed success, but
+// whose read-back disagrees (ADR 0073 D3): the record posse re-read does not
+// say what the write just claimed. Typed and errors.As-able for the same
+// reason BdStoreUnreadError is — "it printed success" and "it actually
+// landed" are different facts, and the rig this ADR is built on (34-36 of 48
+// concurrent creates lost in no-db mode, exit 0 every time) is why neither
+// may be inferred from the other. Never retried (ADR 0073 D3): a write whose
+// read-back disagrees may still have landed under a race with the read
+// itself, and a retry on top of a lost update races again.
+type BdWriteNotLandedError struct {
+	Verb string // the bd verb this write ran, e.g. "create", "close"
+	ID   string // the issue the write was about
+	Want string // what the write claimed — the title filed, the status set, the comment text, the blocker id, …
+	Got  string // what the read-back actually found there
+}
+
+func (e *BdWriteNotLandedError) Error() string {
+	return fmt.Sprintf("bd %s %s: exited 0 but the read-back disagrees — wanted %q, store holds %q (ADR 0073 D3, not retried)",
+		e.Verb, e.ID, e.Want, e.Got)
+}
+
+// IsBdWriteNotLanded reports whether err is a bd write whose read-back found
+// something other than what the write claimed.
+func IsBdWriteNotLanded(err error) bool {
+	var ne *BdWriteNotLandedError
+	return errors.As(err, &ne)
+}
+
+// BdWriteUnverifiedError is a bd write whose read-back could not be run at
+// all (ADR 0073 D3) — unlike BdWriteNotLandedError, this is silent about
+// whether the write landed; only that posse could not check. Wraps the
+// read's own error so Unwrap and errors.As both reach it alongside this
+// type. Never retried, for the same reason: the write may have landed fine
+// and a retry would duplicate it.
+type BdWriteUnverifiedError struct {
+	Verb string
+	ID   string
+	Err  error
+}
+
+func (e *BdWriteUnverifiedError) Error() string {
+	return fmt.Sprintf("bd %s %s: could not be read back to confirm it landed — %v (ADR 0073 D3, not retried: it may have landed anyway)",
+		e.Verb, e.ID, e.Err)
+}
+
+func (e *BdWriteUnverifiedError) Unwrap() error { return e.Err }
+
+// IsBdWriteUnverified reports whether err is a bd write whose read-back
+// itself could not be done.
+func IsBdWriteUnverified(err error) bool {
+	var ue *BdWriteUnverifiedError
+	return errors.As(err, &ue)
+}
+
 // ListAll returns every issue in the repo, closed included (bd list --all,
 // no limit) — the scorecard's raw material.
 func (b Bd) ListAll(dir string) ([]BdIssue, error) {
@@ -1089,6 +1143,9 @@ func bdArgs(actor string, rest ...string) []string {
 // keepAssignee leaves the assignee in place: the bead was resumed, not
 // claimed by this pass, so its routing was somebody else's decision (usually
 // the operator's) and clearing it would throw that away (rangerhq-kux).
+// It then reads the bead back (ADR 0073 D3): a write bd exits 0 for is not
+// the record on a store that loses concurrent writes, and "open" is cheap to
+// confirm against the same Show a caller would reach for anyway.
 func (b Bd) Unclaim(dir, id, actor string, keepAssignee bool) error {
 	if err := b.requireExactID(dir, "update --status open", id); err != nil {
 		return err
@@ -1097,8 +1154,17 @@ func (b Bd) Unclaim(dir, id, actor string, keepAssignee bool) error {
 	if !keepAssignee {
 		args = append(args, "--assignee", "")
 	}
-	_, err := b.run(dir, bdArgs(actor, append(args, "--json")...)...)
-	return err
+	if _, err := b.run(dir, bdArgs(actor, append(args, "--json")...)...); err != nil {
+		return err
+	}
+	issue, err := b.Show(dir, id)
+	if err != nil {
+		return &BdWriteUnverifiedError{Verb: "update --status open", ID: id, Err: err}
+	}
+	if issue.Status != "open" {
+		return &BdWriteNotLandedError{Verb: "update --status open", ID: id, Want: "open", Got: issue.Status}
+	}
+	return nil
 }
 
 // BdIDMismatchError is bd answering about a DIFFERENT id than the one asked
@@ -1199,12 +1265,45 @@ func (b Bd) DepList(dir, id string) ([]BdDep, error) {
 // is answered — and dispatch files one for a bead it has stopped
 // re-prompting (settleopen.go).
 //
-// The exit code is deliberately NOT the whole answer for callers: an edge
-// that is already there is a refusal with nothing wrong. Callers that care
-// read the graph back.
+// The exit code is deliberately NOT the whole answer: an edge that is
+// already there is a refusal with nothing wrong, and ADR 0073 D3 extends
+// that same rule to the write that lands cleanly and loses the race anyway —
+// so this reads the graph back itself rather than leaving it to callers, and
+// an edge DepList finds reads as landed whatever the add's own exit code
+// said. Only when the graph does not carry it does the add's own error (the
+// more specific of the two, when there is one) stand.
 func (b Bd) DepAdd(dir, id, blocker, actor string) error {
-	_, err := b.run(dir, bdArgs(actor, "dep", "add", id, blocker)...)
-	return err
+	_, addErr := b.run(dir, bdArgs(actor, "dep", "add", id, blocker)...)
+	deps, err := b.DepList(dir, id)
+	if err != nil {
+		if addErr != nil {
+			return addErr
+		}
+		return &BdWriteUnverifiedError{Verb: "dep add", ID: id, Err: err}
+	}
+	for _, d := range deps {
+		if d.ID == blocker {
+			return nil
+		}
+	}
+	if addErr != nil {
+		return addErr
+	}
+	return &BdWriteNotLandedError{Verb: "dep add", ID: id, Want: blocker, Got: bdDepIDs(deps)}
+}
+
+// bdDepIDs renders a dependency listing as BdWriteNotLandedError's Got: the
+// ids DepList actually found, so the sentence says what IS there rather than
+// only what is not.
+func bdDepIDs(deps []BdDep) string {
+	if len(deps) == 0 {
+		return "no dependencies"
+	}
+	ids := make([]string, len(deps))
+	for i, d := range deps {
+		ids[i] = d.ID
+	}
+	return strings.Join(ids, ", ")
 }
 
 // Dependents returns the issues that depend on this one — the child side of
@@ -1263,6 +1362,12 @@ func (b Bd) CommentCount(dir, id string) int {
 // The answer check stays as the second line: it is what catches a bd whose
 // resolution changes between the two calls, or a store that gained a
 // colliding id in between.
+//
+// A THIRD check follows, and it is ADR 0073 D3's: the two above read bd's
+// own answer on the wire, which is exactly what a lost update still prints
+// on its way out (exit 0, the closed issue echoed back) even when the write
+// never survives a concurrent one. So the bead is read back with a Show that
+// owes that answer nothing, and only that read decides landed.
 func (b Bd) Close(dir, id, actor string) error {
 	if err := b.requireExactID(dir, "close", id); err != nil {
 		return err
@@ -1281,6 +1386,13 @@ func (b Bd) Close(dir, id, actor string) error {
 	}
 	if issues[0].ID != id {
 		return BdIDMismatchError{Verb: "close", Asked: id, Answered: issues[0].ID}
+	}
+	issue, serr := b.Show(dir, id)
+	if serr != nil {
+		return &BdWriteUnverifiedError{Verb: "close", ID: id, Err: serr}
+	}
+	if issue.Status != "closed" {
+		return &BdWriteNotLandedError{Verb: "close", ID: id, Want: "closed", Got: issue.Status}
 	}
 	return nil
 }
@@ -1307,6 +1419,11 @@ type BdNew struct {
 // Create files a bead and returns its id. bd --json answers with the created
 // issue as an object; the array form and a bare id are both accepted so a bd
 // that changes its mind does not break the caller.
+//
+// The id this parses out of bd's own stdout is exactly what a lost update
+// still prints (ADR 0073's rig: 34-36 of 48 concurrent creates exited 0 with
+// a printed id and were gone), so it is not the answer — it is read back
+// with a Show, independent of this call, before Create reports success.
 func (b Bd) Create(dir string, n BdNew) (string, error) {
 	args := []string{"create", n.Title, "--json"}
 	if n.Description != "" {
@@ -1341,17 +1458,25 @@ func (b Bd) Create(dir string, n BdNew) (string, error) {
 	if i := bytes.IndexAny(trimmed, "{["); i > 0 {
 		trimmed = trimmed[i:]
 	}
+	id := ""
 	var one BdIssue
 	if json.Unmarshal(trimmed, &one) == nil && one.ID != "" {
-		return one.ID, nil
+		id = one.ID
+	} else if issues, perr := parseBdIssues(trimmed); perr == nil && len(issues) == 1 && issues[0].ID != "" {
+		id = issues[0].ID
+	} else if t := strings.TrimSpace(string(trimmed)); beadIDRe.MatchString(t) {
+		id = t
+	} else {
+		return "", Die("bd create: no issue id in response")
 	}
-	if issues, perr := parseBdIssues(trimmed); perr == nil && len(issues) == 1 && issues[0].ID != "" {
-		return issues[0].ID, nil
+	issue, serr := b.Show(dir, id)
+	if serr != nil {
+		return id, &BdWriteUnverifiedError{Verb: "create", ID: id, Err: serr}
 	}
-	if id := strings.TrimSpace(string(trimmed)); beadIDRe.MatchString(id) {
-		return id, nil
+	if issue.Title != n.Title {
+		return id, &BdWriteNotLandedError{Verb: "create", ID: id, Want: n.Title, Got: issue.Title}
 	}
-	return "", Die("bd create: no issue id in response")
+	return id, nil
 }
 
 // SetDescription REPLACES an issue's description. bd has no patch verb for
@@ -1369,6 +1494,9 @@ func (b Bd) Create(dir string, n BdNew) (string, error) {
 // Close and Unclaim resolve theirs: bd prefix-resolves this verb, and a
 // description written onto the wrong bead destroys whatever that bead said
 // (ranger-base-s92di).
+// It then reads the description back (ADR 0073 D3), for the same reason
+// Close and Create do: the exit code bd prints is not the record on a store
+// that can lose a concurrent write and say nothing about it.
 func (b Bd) SetDescription(dir, id, desc, actor string) error {
 	if err := b.requireExactID(dir, "update --description", id); err != nil {
 		return err
@@ -1377,18 +1505,73 @@ func (b Bd) SetDescription(dir, id, desc, actor string) error {
 	if err := b.refuseIfCrossing(dir, argv); err != nil {
 		return err
 	}
-	_, err := b.run(dir, argv...)
-	return err
+	if _, err := b.run(dir, argv...); err != nil {
+		return err
+	}
+	issue, serr := b.Show(dir, id)
+	if serr != nil {
+		return &BdWriteUnverifiedError{Verb: "update --description", ID: id, Err: serr}
+	}
+	if issue.Description != desc {
+		return &BdWriteNotLandedError{Verb: "update --description", ID: id, Want: desc, Got: issue.Description}
+	}
+	return nil
 }
 
-// Comment adds a comment to an issue.
+// Comment adds a comment to an issue, then reads the comment back (ADR 0073
+// D3): the match is exact text, the author when actor is set, and a
+// created_at not before this call started — truncated to the second, bd's
+// own stamping resolution — so a stale comment this same text already left
+// on an earlier pass is never mistaken for this write landing.
 func (b Bd) Comment(dir, id, text, actor string) error {
 	argv := bdArgs(actor, "comments", "add", id, text)
 	if err := b.refuseIfCrossing(dir, argv); err != nil {
 		return err
 	}
-	_, err := b.run(dir, argv...)
-	return err
+	start := time.Now()
+	if _, err := b.run(dir, argv...); err != nil {
+		return err
+	}
+	cs, err := b.Comments(dir, id)
+	if err != nil {
+		return &BdWriteUnverifiedError{Verb: "comments add", ID: id, Err: err}
+	}
+	if !bdCommentLanded(cs, text, actor, start) {
+		return &BdWriteNotLandedError{Verb: "comments add", ID: id, Want: text, Got: bdCommentsGot(cs)}
+	}
+	return nil
+}
+
+// bdCommentLanded is ADR 0073 D3's Comment row: an exact-text match, the
+// author too when actor was passed (an actor-less call stamps whatever bd's
+// own default resolves to, which this cannot predict), and a created_at that
+// is not BEFORE the write started — both truncated to the second, bd's own
+// timestamp resolution, so a write landing in the same wall-clock second it
+// started still counts.
+func bdCommentLanded(cs []BdComment, text, actor string, start time.Time) bool {
+	startSec := start.Truncate(time.Second)
+	for _, c := range cs {
+		if c.Text != text {
+			continue
+		}
+		if actor != "" && c.Author != actor {
+			continue
+		}
+		if c.Created.Truncate(time.Second).Before(startSec) {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+// bdCommentsGot renders BdWriteNotLandedError's Got for a comment write: not
+// the whole list, just whether there was anything there to miss by.
+func bdCommentsGot(cs []BdComment) string {
+	if len(cs) == 0 {
+		return "no comments"
+	}
+	return fmt.Sprintf("%d comment(s), none matching", len(cs))
 }
 
 // ─── multi-repo aggregation ──────────────────────────────────────────────────
