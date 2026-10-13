@@ -6,6 +6,7 @@ references), not inferred publication dates. Undated fragments sort last.
 
 ## 2026-10
 
+- [notes-grok](notes-grok.md) — grok substrate: pinned at 1.0.5, upgrades are a security re-audit (rangerhq-y7jr) — 2026-10-13
 - [ranger-base-bdias](ranger-base-bdias.md) — codex 0.153.4 re-measured: cwd root and symlinks hold, and it now reads `~/.agents/skills` as a global root (ranger-base-bdias) — 2026-10-12
 - [ranger-base-yglkp](ranger-base-yglkp.md) — Two live pins whose control arms stopped firing, for two unrelated reasons (ranger-base-yglkp) — 2026-10-09
 - [ranger-base-x8bv0](ranger-base-x8bv0.md) — A page to read is a URL; material to send is an embed (ranger-base-x8bv0) — 2026-10-09
@@ -205,7 +206,6 @@ references), not inferred publication dates. Undated fragments sort last.
 - [notes-cage-engine](notes-cage-engine.md) — Cage engine re-evaluation: still Docker (rangerhq-rli) — 2026-08-23
 - [rangerhq-ytyj](rangerhq-ytyj.md) — A 401 is a credential condition, not blind weather (rangerhq-ytyj) — 2026-08-22
 - [ranger-base-nor](ranger-base-nor.md) — A path-limited commit never reads the index, so the `git add` in front of it is not the suspect (ranger-base-nor) — 2026-08-22
-- [notes-grok](notes-grok.md) — grok substrate: pinned at 1.0.5, upgrades are a security re-audit (rangerhq-y7jr) — 2026-08-22
 - [ranger-base-lasj](ranger-base-lasj.md) — A corrupt ledger line is an unknown week, not a zero (ranger-base-lasj) — 2026-08
 
 ## Undated

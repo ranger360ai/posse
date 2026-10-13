@@ -20,13 +20,37 @@ restarts anything can still be on a new binary by lunchtime.
 **Why that is a security problem and not a version-hygiene problem.** Nearly
 everything the fleet knows about grok is version-VERIFIED, not contractual:
 
-- **Coding-data consent** (rangerhq-sz7u). The defense there is that in 1.0.5
-  the consent-record RPC `x.ai/consent/record` has **no server handler** —
-  the binary says so ("consent record not sent; no server handler yet";
-  "failed to persist consent answer; the notice will re-arm next launch") —
-  so even an accidental `[Opt in]` on the startup splash cannot persist. That
-  defense evaporates the day xAI ships the handler, and the splash is the
-  same screen that eats a dispatched Enter (rangerhq-37c). This is the
+- **Coding-data consent** (rangerhq-sz7u; **void from 1.0.52**,
+  ranger-base-ppzty / ranger-base-g4294). The 1.0.5 defense was that the
+  consent-record RPC `x.ai/consent/record` had no handler. The binary said so
+  ("consent record not sent; ..."), so an accidental `[Opt in]` on the startup
+  splash could not persist. **That defense is gone: on 1.0.52 consent is
+  server-persisted.** MEASURED 2026-10-13 with `strings -a` over
+  `/opt/homebrew/Caskroom/grok-build/1.0.52/grok-1.0.52-macos-aarch64`
+  (172,237,072 bytes). The 1.0.5 "not sent" message appears 0 times. Present:
+  - `"/consent/accept"` with header `x-grok-client-identifier`, plus
+    `"consent record rejected"`. The record goes out over HTTP.
+  - `x.ai/privacy/setCodingDataRetention` → `"/privacy/coding-data-retention"`
+    with field `codingDataRetentionOptOut`, and `coding_data_retention_opt_out`
+    in the user profile. This is a second, account-level path that sz7u never
+    covered. The user-facing door to it is `/privacy`.
+  - `"consent gate not armed; failing open"`. The gate is a remote setting.
+
+  **The next re-audit greps for `/consent/accept` and
+  `/privacy/coding-data-retention`. Do not look for the 1.0.5 message again.**
+  Whether xAI keeps what it receives is not visible from here. Exercising the
+  live RPC to find out was refused (hoover, ranger-base-ppzty), and the
+  client-side evidence already decides the question fail-closed. The splash
+  is the same screen that eats a dispatched Enter (rangerhq-37c), so on 1.0.52
+  splash detection is the **only** layer left; before, there were two.
+  **Lift gate for any pin ≥ 1.0.52:** prove that a dispatched Enter cannot
+  select `[Opt in]`. That means `make verify-detection` holds **and** the
+  splash's default focus is not `[Opt in]`, read from a pane capture with no
+  key sent, on an account the operator designates. Until then, no grok seat
+  is declared. **Recommended (the operator's call):** set the account to Opt
+  out through `/privacy` before any grok seat exists. An accidental opt-in is
+  then a visible change from a known value instead of a first answer. Data
+  retained between an opt-in and its reversal is not recoverable. This is the
   operator's data line.
 - **Permission-mode precedence** (rangerhq-vjl). CLI
   `--permission-mode` beats `[ui] permission_mode` in config.toml
@@ -122,8 +146,9 @@ make verify-grok-pin                       # prints the re-audit list when upstr
 cp -a ~/.grok/config.toml ~/.grok/config.toml.before   # grok rewrites this file itself
 cp -a ~/.grok/downloads/grok-1.0.5-macos-aarch64 /tmp/ # THE rollback binary
 # --- the security persona re-audits the new build FIRST: consent-record
-#     handler (sz7u), --permission-mode precedence (vjl), rule dialect,
-#     splash detection ---
+#     (sz7u; server-persisted from 1.0.52, so the g4294 lift gate: a
+#     dispatched Enter provably cannot select [Opt in]), --permission-mode
+#     precedence (vjl), rule dialect, splash detection ---
 grok update --check --json                 # confirm the target
 grok update --version <new>                # explicit; allowed above the ceiling
 # then raise ALL THREE in etc/grok/version-pin.toml and ~/.grok/config.toml:

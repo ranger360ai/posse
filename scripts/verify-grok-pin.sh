@@ -295,11 +295,18 @@ EOF
   fi
   cat <<EOF
 
-  1. Coding-data consent (rangerhq-sz7u, security). In 1.0.5 the consent-record
-     RPC x.ai/consent/record has NO server handler, so even an accidental
-     [Opt in] on the startup splash cannot persist. Re-check whether $upstream
-     ships the handler; if it does, the accidental-opt-in question is live again
-     and a dispatched Enter must be proven not to land on [Opt in].
+  1. Coding-data consent (rangerhq-sz7u, ranger-base-g4294, security). The
+     sz7u defense is VOID from 1.0.52 on: consent is server-persisted. The
+     x.ai/consent/record answer now goes out over HTTP ("/consent/accept"),
+     and a second, account-level path sets retention server-side
+     ("/privacy/coding-data-retention", field codingDataRetentionOptOut).
+     Re-audit $upstream by grepping for those strings, not for the 1.0.5
+     "not sent" message. Splash detection is now the ONLY layer between a
+     dispatched Enter and [Opt in]. LIFT GATE for any pin at or above 1.0.52:
+     prove that a dispatched Enter cannot select [Opt in]. That means
+     detection holds AND the splash's default focus is not [Opt in], read
+     from a pane capture with no key sent, on an account the operator
+     designates. Until that is proven, no grok seat is declared.
   2. Permission-mode precedence (rangerhq-vjl, ranger-base-ejd, security). CLI
      --permission-mode beats [ui] permission_mode in config.toml
      (runtime.go:361-369). This is the ONLY thing keeping fleet grok launches

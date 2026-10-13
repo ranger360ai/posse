@@ -268,6 +268,7 @@ func TestQAGrokPinScriptPrintsReauditWhenUpstreamMoves(t *testing.T) {
 	for _, want := range []string{
 		"rangerhq-sz7u",
 		"x.ai/consent/record",
+		"/privacy/coding-data-retention",
 		"rangerhq-vjl",
 		"--permission-mode",
 		"make verify-detection",
@@ -276,6 +277,11 @@ func TestQAGrokPinScriptPrintsReauditWhenUpstreamMoves(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("re-audit list missing %q:\n%s", want, out)
 		}
+	}
+	// ranger-base-g4294: the 1.0.5 premise is void from 1.0.52 and must not
+	// come back as a present-tense defense.
+	if strings.Contains(out, "has NO server handler") {
+		t.Errorf("re-audit list restates the void sz7u no-handler defense:\n%s", out)
 	}
 }
 
@@ -321,9 +327,19 @@ func TestQAGrokPinReAuditTextSaysWhetherTheBoxItselfHasMoved(t *testing.T) {
 
 	// The re-audit list is the same work on every box: a branch that dropped
 	// it on a moved box would leave the operator with a verdict and no list.
+	//
+	// Item 1's premise was rewritten under ranger-base-g4294: the 1.0.5
+	// no-handler defense is void from 1.0.52, so the list must name the
+	// strings the next re-audit greps for, and the lift gate.
 	reaudit := []string{
-		"1. Coding-data consent (rangerhq-sz7u, security)",
+		"1. Coding-data consent (rangerhq-sz7u, ranger-base-g4294, security)",
 		"x.ai/consent/record",
+		"VOID from 1.0.52",
+		"\"/consent/accept\"",
+		"\"/privacy/coding-data-retention\"",
+		"cannot select [Opt in]",
+		"default focus is not [Opt in]",
+		"with no key sent",
 		"2. Permission-mode precedence (rangerhq-vjl, ranger-base-ejd, security)",
 		"3. The rule dialect and launcher contract",
 		"4. The startup-splash detection override",

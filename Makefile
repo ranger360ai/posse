@@ -986,8 +986,9 @@ verify-box-self-test:
 # The grok version pin (rangerhq-y7jr). grok ships `[cli] auto_update = true`
 # and a leader process that downloads a new binary and relaunches itself
 # mid-life, so the fleet runtime can roll forward with no review — retiring
-# version-verified findings (consent-record has no server handler in 1.0.5;
-# CLI --permission-mode beats config permission_mode) that fleet safety rests
+# version-verified findings (the 1.0.5 consent-record no-handler defense,
+# void from 1.0.52 per ranger-base-g4294; CLI --permission-mode beats config
+# permission_mode) that fleet safety rests
 # on. etc/grok/version-pin.toml is the declaration; this asserts the live
 # ~/.grok/config.toml still matches it, and prints the security re-audit list
 # when upstream stable moves past the pin. Lifting the pin is the operator's.
