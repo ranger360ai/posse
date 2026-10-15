@@ -5,9 +5,28 @@ had `[cli] auto_update = true` with `installer = "internal"`, and
 `which grok` resolves to `~/.grok/bin/grok` → a symlink into
 `~/.grok/downloads/` — i.e. **the managed install**, which is exactly the one
 the updater is allowed to touch (`stdio auto-update skipped: not the managed
-install` is the negative case, and it does not apply here). Three binaries are already
+install` is the negative case, and it did not apply then). Three binaries were
 stacked in `downloads/` — the June install, 1.0.0 (Aug 8) and 1.0.5 (Aug 18) —
-so this has happened before, unattended.
+so this had happened before, unattended.
+
+> **That paragraph is history, not this box.** MEASURED 2026-10-15
+> (ranger-base-bttb1) — the install route changed under it on 2026-10-12, and
+> every rollback command below assumed the route it describes. `which grok` →
+> `/opt/homebrew/bin/grok` →
+> `/opt/homebrew/Caskroom/grok-build/1.0.52/grok-1.0.52-macos-aarch64`; the cask
+> is `grok-build` 1.0.52, installed on request; **`~/.grok/bin/` and
+> `~/.grok/downloads/` do not exist at all**, and the Caskroom holds 1.0.52 and
+> nothing else. So there is no cached 1.0.5 on this box and no managed symlink
+> to repoint — **the symlink rollback below cannot run here, and rolling back is
+> a network re-fetch whose availability and sha nobody has verified.** Two
+> things follow in opposite directions: the original threat is structurally
+> weaker (the binary skips self-update when it is not running from
+> `$GROK_HOME/bin/grok`), and the documented ~2-minute recovery is not available
+> as configured today. Which route the pin should GOVERN is the operator's open
+> call — **ranger-base-yq1ar** — and until it is answered, read every
+> `downloads/` command below as applying to the managed install only.
+> `scripts/verify-grok-pin.sh` no longer promises that cache: it counts
+> `$GROK_HOME/downloads/` and prints whichever rollback paragraph is true.
 
 **The vector is the leader, not the launch.** `grok` runs a long-lived leader
 process shared by every session (`cli.use_leader`), and the leader updates
@@ -116,14 +135,19 @@ Install an approved version through your organization's approved method …
 **Only the agent path is gated**: `--version`, `update`, `inspect`, `doctor` and
 `models` all run normally above the ceiling, so an out-of-range install stays
 diagnosable and recoverable (`grok update --version 1.0.5` is allowed above a
-ceiling by design, and the old binary is still in `downloads/`). So the failure
-is loud, self-describing — grok names the ceiling in the refusal — and about two
-minutes to undo.
+ceiling by design). So the failure is loud and self-describing — grok names the
+ceiling in the refusal. **"About two minutes to undo" held while the old binary
+was still in `downloads/`; on the cask route it is not measured** — there is no
+local artifact, so the undo is a re-fetch (see the note at the top, and
+ranger-base-yq1ar).
 
 **Know the blast radius before you raise the binary**: the moment grok is out of
 range, every dispatched grok pane *and* the operator's own interactive grok stop
 starting, at once. That is the gate working. Recovery is
-`grok update --version 1.0.5`, or the symlink rollback below.
+`grok update --version 1.0.5` — a re-fetch — or, **on the managed install
+only**, the symlink rollback below. On this box, as measured 2026-10-15, the
+symlink route does not exist and whether `grok update --version` works at all
+from a cask-run binary is untested (ranger-base-yq1ar).
 
 Bounds resolve across layers by tightening only (floor takes the highest,
 ceiling the lowest), the `GROK_*_VERSION` env overrides can only tighten
@@ -144,7 +168,15 @@ unpinned — the config pin covers every entry point, including the leader.
 ```
 make verify-grok-pin                       # prints the re-audit list when upstream has moved
 cp -a ~/.grok/config.toml ~/.grok/config.toml.before   # grok rewrites this file itself
-cp -a ~/.grok/downloads/grok-1.0.5-macos-aarch64 /tmp/ # THE rollback binary
+# Save a rollback binary first — which command that is depends on the route,
+# and on this box (2026-10-15) it is the second one:
+#   managed install: the pinned build is already cached, so save that —
+cp -a ~/.grok/downloads/grok-1.0.5-macos-aarch64 /tmp/
+#   cask: nothing older is cached, so the only local undo target is the build
+#   you are about to replace. That gets you back to what is installed NOW, not
+#   to the pin. Going back to the PIN from here is a re-fetch; confirm the
+#   target is still fetchable before you raise anything —
+cp -a "$(brew --prefix)/Caskroom/grok-build/"*/grok-*-macos-* /tmp/
 # --- the security persona re-audits the new build FIRST: consent-record
 #     (sz7u; server-persisted from 1.0.52, so the g4294 lift gate: a
 #     dispatched Enter provably cannot select [Opt in]), --permission-mode
@@ -156,10 +188,24 @@ grok update --version <new>                # explicit; allowed above the ceiling
 # (raise required_maximum_version FIRST or grok will not start on the new build)
 make verify-grok-pin && make verify-detection
 ```
-Rollback is `ln -sfn ../downloads/grok-1.0.5-macos-aarch64 ~/.grok/bin/grok`
-(and `bin/agent`) — unlike `herdr update`, grok keeps the old binaries in
-`downloads/`, so there is a rollback target without a re-fetch. Keep it that
-way: do not prune `downloads/`. `grok du` reports it as the largest thing in the
-grok home and is pure temptation — it only reports, and `grok worktree gc` does
-not touch it, so nothing prunes those binaries but a person.
+**Rollback, on the managed install only**, is
+`ln -sfn ../downloads/grok-1.0.5-macos-aarch64 ~/.grok/bin/grok` (and
+`bin/agent`) — unlike `herdr update`, grok keeps the old binaries in
+`downloads/`, so a rollback target exists there without a re-fetch. Keep it
+that way where it exists: do not prune `downloads/`. `grok du` reports it as the
+largest thing in the grok home and is pure temptation — it only reports, and
+`grok worktree gc` does not touch it, so nothing prunes those binaries but a
+person.
+
+**On the cask route there is no such target**, and nothing pruned it — the cache
+was never created, because the updater that fills `downloads/` is not what
+installed this binary. MEASURED 2026-10-15: `~/.grok/downloads/` absent,
+`~/.grok/bin/` absent, `/opt/homebrew/Caskroom/grok-build/` holding 1.0.52 only.
+A cask rollback would need the old cask definition out of homebrew-cask's git
+history plus the upstream artifact it points at, or `grok update --version
+1.0.5`, which re-fetches and recreates the managed install — diverging from the
+brew-managed binary rather than restoring it. None of those three is verified.
+Do not write one of them into this runbook as settled until ranger-base-yq1ar
+answers which route the pin governs; `scripts/verify-grok-pin.sh` prints the
+re-fetch warning in the meantime rather than a promise it cannot keep.
 

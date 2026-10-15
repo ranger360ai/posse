@@ -127,12 +127,17 @@ path = "~/.codex/config.toml"
 check_for_update_on_startup = false
 
 [rollback]
-# grok keeps every build it has ever run in ~/.grok/downloads/, so rolling
-# back is `grok update --version <old>`. A Homebrew cask keeps ONE: the
-# Caskroom holds only the installed version and homebrew-cask carries no
-# version history. `brew cleanup` after any upgrade takes the only copy on the
-# box — which is exactly what happened to 0.150.1 between the pin landing and
-# ranger-base-k4lza finding the box three minor versions past it.
+# The managed-install grok kept every build it had ever run in
+# ~/.grok/downloads/, so rolling back there was a local symlink swap. That is
+# no longer the contrast it was: grok moved to a Homebrew cask on 2026-10-12
+# and now has this problem too (ranger-base-bttb1, ranger-base-yq1ar), which
+# makes the reasoning below the general case rather than codex's special one.
+#
+# A Homebrew cask keeps ONE: the Caskroom holds only the installed version and
+# homebrew-cask carries no version history. `brew cleanup` after any upgrade
+# takes the only copy on the box — which is exactly what happened to 0.150.1
+# between the pin landing and ranger-base-k4lza finding the box three minor
+# versions past it.
 #
 # So the rollback target is asserted, not assumed: verify-codex-pin.sh fails
 # if the Caskroom directory for the pinned version stops existing.

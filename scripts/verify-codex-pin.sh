@@ -20,9 +20,12 @@
 #      startup menu whose default-selected option is "1. Update now" is never
 #      drawn. Permanent, where `dismissed_version` silences one release.
 #   3. A rollback target that still exists. A cask keeps exactly one version
-#      and `brew cleanup` takes the old one; grok's ~/.grok/downloads/ has no
-#      equivalent here, so the Caskroom directory is asserted rather than
-#      assumed.
+#      and `brew cleanup` takes the old one, so the Caskroom directory is
+#      asserted rather than assumed. grok's ~/.grok/downloads/ used to be the
+#      contrast that made this codex's problem alone; grok is a cask now too
+#      (ranger-base-bttb1), so verify-grok-pin.sh counts that directory instead
+#      of promising it, and whether it should assert a Caskroom dir the way
+#      this script does is ranger-base-yq1ar's call.
 #
 # ACCEPTED RISK, stated every run: a codex above the pin still STARTS. Nothing
 # available on this runtime refuses to run an un-re-audited build.

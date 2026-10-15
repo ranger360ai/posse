@@ -40,13 +40,21 @@ maximum_version = "1.0.5"
 #
 # The cost is real and was measured before it was accepted: every dispatched
 # grok pane AND the operator's own interactive grok stop starting at once, the
-# moment the binary is out of range. Recovery is ~2 minutes and the failure is
-# self-describing — grok names the ceiling in the refusal, and --version,
-# update, inspect, doctor and models all keep working above it, so
-# `grok update --version 1.0.5` (old binary still in ~/.grok/downloads/) undoes
-# it. OPERATOR RULING 2026-08-28, rangerhq-iy3y: set it — same philosophy as
-# the bd pin, an unreviewed upgrade must refuse to start rather than run
-# silently. Raise it only with the re-audit done.
+# moment the binary is out of range. The failure is self-describing — grok names
+# the ceiling in the refusal, and --version, update, inspect, doctor and models
+# all keep working above it, so `grok update --version 1.0.5` undoes it.
+# RECOVERY IS NO LONGER ~2 MINUTES, and that number was load-bearing when this
+# risk was accepted: it assumed the old binary was still cached in
+# ~/.grok/downloads/, a local symlink swap. MEASURED 2026-10-15
+# (ranger-base-bttb1): this box runs the Homebrew cask grok-build 1.0.52,
+# ~/.grok/downloads/ and ~/.grok/bin/ do not exist, and the Caskroom holds
+# 1.0.52 only — so the undo is a network re-fetch of unverified availability,
+# not a swap. Which route this pin should govern is the operator's open call,
+# ranger-base-yq1ar.
+#
+# OPERATOR RULING 2026-08-28, rangerhq-iy3y: set it — same philosophy as the bd
+# pin, an unreviewed upgrade must refuse to start rather than run silently.
+# Raise it only with the re-audit done.
 required_maximum_version = "1.0.5"
 
 # Deliberately NOT set: minimum_version / required_minimum_version. Those are

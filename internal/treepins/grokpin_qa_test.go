@@ -94,6 +94,25 @@ func gpCfg(t *testing.T, body string) string {
 	return home
 }
 
+// gpDownloads plants per-version binaries in $GROK_HOME/downloads/ — the
+// managed install's rollback cache (ranger-base-bttb1). The default fixture
+// home has no downloads/ at all, which is the cask-route shape this box is in.
+func gpDownloads(t *testing.T, grokHome string, names ...string) {
+	t.Helper()
+	dir := filepath.Join(grokHome, "downloads")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range names {
+		// WriteExecutable, not os.WriteFile: a real downloads/ holds
+		// executables, and the tree routes every executable write through it
+		// (ETXTBSY window, golang/go#22315 — execwrite-check is the door).
+		if err := WriteExecutable(filepath.Join(dir, n), []byte("stub binary\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func gpRun(t *testing.T, root, grokHome, binDir string) (string, int) {
 	t.Helper()
 	cmd := exec.Command(filepath.Join(root, "scripts", "verify-grok-pin.sh"))
@@ -280,7 +299,19 @@ func TestQAGrokPinScriptPrintsReauditWhenUpstreamMoves(t *testing.T) {
 	}
 	// ranger-base-g4294: the 1.0.5 premise is void from 1.0.52 and must not
 	// come back as a present-tense defense.
-	if strings.Contains(out, "has NO server handler") {
+	//
+	// ranger-base-bttb1: match the PHRASE, case-folded, not the one spelling
+	// the pre-fix script happened to use. MEASURED 2026-10-15, five
+	// restatements planted into item 1 one at a time: the old
+	// `Contains(out, "has NO server handler")` caught 1 of 5 — "has no server
+	// handler", the binary's own "consent record not sent; no server handler
+	// yet" and notes-grok.md's "has **no server handler**" all shipped green.
+	// Case-folding the haystack and dropping "has " catches 4 of the 5; the
+	// fifth ("cannot persist: there is no handler") no literal grep catches,
+	// and the live item 1 text contains the phrase nowhere, so this is not a
+	// false positive. Any `-run` of this test needs -count=1: the cache does
+	// not see an edit to the shell script gpRoot copies.
+	if strings.Contains(strings.ToLower(out), "no server handler") {
 		t.Errorf("re-audit list restates the void sz7u no-handler defense:\n%s", out)
 	}
 }
@@ -389,13 +420,72 @@ func TestQAGrokPinReAuditTextSaysWhetherTheBoxItselfHasMoved(t *testing.T) {
 		}
 		for _, want := range append([]string{
 			"THE PIN IS NOT HOLDING: this box runs " + past + ", not 1.0.5.",
-			"old binaries in ~/.grok/downloads/, one file per version",
+			// ranger-base-bttb1: the rollback sentence is MEASURED now, and
+			// this fixture's GROK_HOME holds no downloads/ — which is this
+			// box's own shape (the Homebrew-cask route: ~/.grok/downloads/
+			// and ~/.grok/bin/ both absent, the Caskroom holding only the
+			// installed version). What used to print here was a flat promise
+			// that putting the pin back "needs no re-fetch", naming a
+			// directory that is gone, at the one moment this block fires.
+			"THERE IS NO LOCAL ROLLBACK ARTIFACT",
+			"is therefore a\nRE-FETCH over the network, not a symlink swap",
+			"ranger-base-yq1ar",
 			"AND THE FLEET IS STOPPED RIGHT NOW: " + past + " is above the hard ceiling",
 			"config required_maximum_version = 1.0.5",
 		}, reaudit...) {
 			if !strings.Contains(out, want) {
 				t.Errorf("a box already running %s must be told %q:\n%s", past, want, out)
 			}
+		}
+		if strings.Contains(out, "needs no re-fetch") {
+			t.Errorf("a box with no downloads/ was promised a local rollback:\n%s", out)
+		}
+	})
+
+	// The other half of that measurement, and the control on it: a box that
+	// DOES still have the managed install's per-version cache gets the
+	// original promise, because there it is true. Without this arm the
+	// no-artifact assert above would pass over a script that had simply
+	// dropped the rollback paragraph.
+	t.Run("a moved box that still has downloads/ is told the rollback is local", func(t *testing.T) {
+		root := gpRoot(t)
+		bin := t.TempDir()
+		gpStubGrok(t, bin, past, moved)
+		home := gpCfg(t, gpGoodCfg)
+		gpDownloads(t, home, "grok-1.0.5-macos-aarch64", "grok-1.0.0-macos-aarch64")
+		out, code := gpRun(t, root, home, bin)
+		if code != 1 {
+			t.Fatalf("exit %d, want 1\n%s", code, out)
+		}
+		for _, want := range []string{
+			"THE PIN IS NOT HOLDING: this box runs " + past + ", not 1.0.5.",
+			"needs no re-fetch",
+			"2 grok binaries, one file per version",
+			"no sha to re-verify",
+		} {
+			if !strings.Contains(out, want) {
+				t.Errorf("a box with 2 cached binaries must be told %q:\n%s", want, out)
+			}
+		}
+		if strings.Contains(out, "THERE IS NO LOCAL ROLLBACK ARTIFACT") {
+			t.Errorf("a box with 2 cached binaries was told it has none:\n%s", out)
+		}
+	})
+
+	// One cached binary, for the plural the count is printed with: "1 grok
+	// binaries" is the shape a reader stops trusting.
+	t.Run("one cached binary reads as one binary", func(t *testing.T) {
+		root := gpRoot(t)
+		bin := t.TempDir()
+		gpStubGrok(t, bin, past, moved)
+		home := gpCfg(t, gpGoodCfg)
+		gpDownloads(t, home, "grok-1.0.5-macos-aarch64")
+		out, code := gpRun(t, root, home, bin)
+		if code != 1 {
+			t.Fatalf("exit %d, want 1\n%s", code, out)
+		}
+		if !strings.Contains(out, "1 grok binary, one file per version") {
+			t.Errorf("one cached binary must read as a singular:\n%s", out)
 		}
 	})
 

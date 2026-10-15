@@ -24,7 +24,8 @@ set -uo pipefail
 
 cd "$(dirname "$0")/.."
 pin=etc/grok/version-pin.toml
-cfg=${GROK_HOME:-$HOME/.grok}/config.toml
+grok_home=${GROK_HOME:-$HOME/.grok}
+cfg=$grok_home/config.toml
 fail=0
 
 command -v grok >/dev/null || { echo "verify-grok-pin: grok not on PATH"; exit 2; }
@@ -246,12 +247,38 @@ echo
 # is a fleet outage the operator is standing in right now. The ceiling that
 # actually gates startup is the one in the operator's CONFIG, so that is what
 # is read here — its row above says whether it matches the declaration.
-# There is no rollback-artifact arm either: `brew cleanup` has no grok
-# equivalent and ~/.grok/downloads/ keeps one binary per version (NOTES.md
-# "grok substrate" — do not prune it), which is why verify-codex-pin.sh asserts
-# a Caskroom directory and this script has nothing to assert. The rollback
-# itself is not restated here: NOTES.md carries it beside the lift, and one
-# copy of a command that must be right is enough.
+# There IS a rollback-artifact arm, and it is measured rather than promised
+# (ranger-base-bttb1). This block used to tell the operator flatly that putting
+# the pin back "needs no re-fetch: grok keeps the old binaries in
+# ~/.grok/downloads/, one file per version, so there is no single artifact to
+# have lost and no sha to re-verify" — a statement about a directory the script
+# had never looked at. It is false on this box: MEASURED 2026-10-15, the live
+# grok is the Homebrew cask (`which grok` -> /opt/homebrew/bin/grok ->
+# /opt/homebrew/Caskroom/grok-build/1.0.52/...), `$GROK_HOME/downloads/` and
+# `$GROK_HOME/bin/` do not exist at all, and the Caskroom holds 1.0.52 ONLY.
+# The one rollback route the script named is gone, and this block fires on this
+# box right now (3 FAIL rows, the pin says 1.0.5), so the operator was being
+# told there was nothing to have lost at exactly the moment it was all lost.
+# `brew cleanup` has no grok equivalent, but the cask route caches no
+# per-version binary to begin with, so neither does the box — which is why
+# verify-codex-pin.sh asserts a Caskroom directory and this one COUNTS
+# downloads/ instead of assuming it. Which install route the pin should govern
+# is an open operator question (ranger-base-yq1ar); until that is answered this
+# script only reports what it can see. The rollback COMMANDS are still not
+# restated here: NOTES.md carries them beside the lift, and one copy of a
+# command that must be right is enough.
+#
+# rb_n — how many `grok-*` rollback binaries $grok_home/downloads/ actually
+# holds. A glob and a `[ -f ]`, no fork: this decides an arm, and per the
+# extractor note at the top of this file a matcher that is signalled or cannot
+# be exec'd must not read as "the directory is empty". An unmatched glob stays
+# literal under bash's default nullglob and fails `[ -f ]`, so a missing
+# directory and an empty one both land on 0 — the same answer for the operator
+# either way.
+rb_n=0
+for rb_f in "$grok_home"/downloads/grok-*; do
+  [ -f "$rb_f" ] && rb_n=$((rb_n + 1))
+done
 if [ -n "$upstream" ] && ver_gt "$upstream" "$want_ver"; then
   cat <<EOF
 UPSTREAM MOVED: grok stable is $upstream; the fleet is pinned at $want_ver.
@@ -271,11 +298,33 @@ THE PIN IS NOT HOLDING: this box runs ${live_ver:-an unreadable grok}, not $want
 The failing version row above is that measurement, and this is no longer a
 question of whether to LIFT the pin — the box is already off it. The choice is
 to put $want_ver back, or to re-audit what is installed and move the pin
-deliberately. Putting it back is local and needs no re-fetch: grok keeps the
-old binaries in ~/.grok/downloads/, one file per version, so there is no single
-artifact to have lost and no sha to re-verify. The rollback line sits beside
-the lift runbook cited at the end of this list, under the same heading.
+deliberately.
 EOF
+    if [ "$rb_n" -gt 0 ]; then
+      rb_word=binaries
+      [ "$rb_n" -eq 1 ] && rb_word=binary
+      cat <<EOF
+
+Putting it back is local and needs no re-fetch: $grok_home/downloads/ holds
+$rb_n grok $rb_word, one file per version, so there is no single artifact to
+have lost and no sha to re-verify. The rollback line sits beside the lift
+runbook cited at the end of this list, under the same heading.
+EOF
+    else
+      cat <<EOF
+
+THERE IS NO LOCAL ROLLBACK ARTIFACT: $grok_home/downloads/ holds no grok binary
+(on the Homebrew-cask route it does not exist at all, and the Caskroom keeps
+only the version that is installed). Putting $want_ver back is therefore a
+RE-FETCH over the network, not a symlink swap, and nothing here has verified
+that $want_ver is still fetchable or what sha it would arrive with. Do not read
+the rollback line beside the lift runbook as a two-minute undo on this box:
+which install route the pin governs, and whether \`grok update --version
+$want_ver\` works at all from a cask-run binary, are open operator questions
+(ranger-base-yq1ar). Re-auditing what is installed and moving the pin
+deliberately may be the only route that exists.
+EOF
+    fi
     if [ -n "$live_ver" ] && [ -n "$cfg_req" ] && ver_gt "$live_ver" "$cfg_req"; then
       cat <<EOF
 
