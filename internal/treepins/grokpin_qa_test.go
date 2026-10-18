@@ -137,7 +137,52 @@ func gpRun(t *testing.T, root, grokHome, binDir string) (string, int) {
 			t.Fatalf("verify-grok-pin.sh: %v\n%s", err, out)
 		}
 	}
+	gpRefuseVoidSz7uDefense(t, string(out))
 	return string(out), code
+}
+
+// gpRefuseVoidSz7uDefense: the void sz7u no-handler premise must not come back
+// as a present-tense defense in ANY block this script prints.
+//
+// ranger-base-g4294 voided the premise: the 1.0.5 claim that the consent record
+// has no server handler is false from 1.0.52 on, where consent is
+// server-persisted. ranger-base-bttb1 fixed the SPELLING the assert matched.
+// ranger-base-hnddx is the SCOPE: the assert lived in the body of
+// TestQAGrokPinScriptPrintsReauditWhenUpstreamMoves, so it governed the text
+// THAT one arm prints — the shared re-audit list and the "pin is holding"
+// paragraph — and the script's other blocks shipped the restatement green.
+// The three it missed are the three THIS BOX PRINTS: verify-grok-pin.sh here
+// exits 1 with 3 FAIL rows and takes the NOT-HOLDING + hard-ceiling +
+// no-rollback-artifact path, so the blocks an operator reads during a live pin
+// break were the uncovered ones. Asserted in gpRun it covers every call site
+// at its source, so a block added to the script later is governed the day it
+// is added rather than when someone remembers to re-assert it.
+//
+// Match the PHRASE, case-folded, not the one spelling the pre-fix script
+// happened to use. MEASURED 2026-10-15 (ranger-base-bttb1), five restatements
+// planted into re-audit item 1 one at a time: the old
+// `Contains(out, "has NO server handler")` caught 1 of 5 — "has no server
+// handler", the binary's own "consent record not sent; no server handler yet"
+// and notes-grok.md's "has **no server handler**" all shipped green.
+// Case-folding the haystack and dropping "has " catches 4 of the 5; the fifth
+// ("cannot persist: there is no handler") no literal grep catches.
+//
+// No false positive to answer for: `grep -ic "server handler"
+// scripts/verify-grok-pin.sh` is 0, so the live script contains the phrase
+// nowhere, in any block.
+//
+// MEASURED 2026-10-17 (ranger-base-hnddx), this worktree, the sentence "Note:
+// the consent record has no server handler, so this drift sent nothing."
+// planted into scripts/verify-grok-pin.sh one block at a time and the package
+// run with -count=1: THE PIN IS NOT HOLDING, AND THE FLEET IS STOPPED and
+// THERE IS NO LOCAL ROLLBACK ARTIFACT each SURVIVED before this move and are
+// each CAUGHT after it. Any `-run` of a test here needs -count=1: the cache
+// does not see an edit to the shell script gpRoot copies.
+func gpRefuseVoidSz7uDefense(t *testing.T, out string) {
+	t.Helper()
+	if strings.Contains(strings.ToLower(out), "no server handler") {
+		t.Errorf("verify-grok-pin.sh restates the void sz7u no-handler defense:\n%s", out)
+	}
 }
 
 // gpRowFailed: did THIS row fail, on its own line?
@@ -297,23 +342,11 @@ func TestQAGrokPinScriptPrintsReauditWhenUpstreamMoves(t *testing.T) {
 			t.Errorf("re-audit list missing %q:\n%s", want, out)
 		}
 	}
-	// ranger-base-g4294: the 1.0.5 premise is void from 1.0.52 and must not
-	// come back as a present-tense defense.
-	//
-	// ranger-base-bttb1: match the PHRASE, case-folded, not the one spelling
-	// the pre-fix script happened to use. MEASURED 2026-10-15, five
-	// restatements planted into item 1 one at a time: the old
-	// `Contains(out, "has NO server handler")` caught 1 of 5 — "has no server
-	// handler", the binary's own "consent record not sent; no server handler
-	// yet" and notes-grok.md's "has **no server handler**" all shipped green.
-	// Case-folding the haystack and dropping "has " catches 4 of the 5; the
-	// fifth ("cannot persist: there is no handler") no literal grep catches,
-	// and the live item 1 text contains the phrase nowhere, so this is not a
-	// false positive. Any `-run` of this test needs -count=1: the cache does
-	// not see an edit to the shell script gpRoot copies.
-	if strings.Contains(strings.ToLower(out), "no server handler") {
-		t.Errorf("re-audit list restates the void sz7u no-handler defense:\n%s", out)
-	}
+	// The void sz7u no-handler negative is NOT asserted here (ranger-base-hnddx).
+	// Asserted in this arm's body it governed only the text this arm prints, and
+	// the three blocks it missed are the three this box prints during a live pin
+	// break. It lives in gpRun now — gpRefuseVoidSz7uDefense — which runs it over
+	// every call site's output, this one included.
 }
 
 // gpStubGrokNoVersion: a grok that is on PATH and answers `update --check`
