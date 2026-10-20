@@ -155,8 +155,17 @@ func gpRun(t *testing.T, root, grokHome, binDir string) (string, int) {
 // exits 1 with 3 FAIL rows and takes the NOT-HOLDING + hard-ceiling +
 // no-rollback-artifact path, so the blocks an operator reads during a live pin
 // break were the uncovered ones. Asserted in gpRun it covers every call site
-// at its source, so a block added to the script later is governed the day it
-// is added rather than when someone remembers to re-assert it.
+// at its source — all 28 — so no arm has to remember to re-assert it.
+//
+// What that does and does not reach, MEASURED 2026-10-19 (ranger-base-su3qt),
+// the sentence below planted into each of the script's 20 printed blocks one
+// at a time: 19 CAUGHT, 1 SURVIVED. Coverage is every block some fixture
+// REACHES, which is not the same as every block the script HAS — the survivor
+// was the `missing $pin` guard (verify-grok-pin.sh:32), unreachable because
+// gpRoot writes the pin into every fake root. It is reached now, by
+// TestQAGrokPinScriptMissingPinFileExits2RatherThanReportingDrift, so the
+// census is 20 of 20; a block added later under a scenario no fixture sets up
+// would again not be governed until one does.
 //
 // Match the PHRASE, case-folded, not the one spelling the pre-fix script
 // happened to use. MEASURED 2026-10-15 (ranger-base-bttb1), five restatements
@@ -588,6 +597,50 @@ func TestQAGrokPinScriptMissingGrokOrConfigExits2(t *testing.T) {
 	}
 	if !strings.Contains(out, "missing") {
 		t.Errorf("want missing-config diagnostic:\n%s", out)
+	}
+}
+
+// A missing PIN FILE exits 2, rather than reporting the box as drifted
+// (ranger-base-su3qt). This is the third of the script's three exit-2 guards
+// and the one no arm reached: gpRoot writes the pin into every fake root, so
+// scripts/verify-grok-pin.sh:32 was unreachable from all 28 gpRun call sites.
+//
+// What behaves differently if this arm is deleted (ADR 0006 section 7): with
+// the guard regressed the script does not say the declaration is gone — every
+// want_* reads EMPTY, so the version/ceiling rows FAIL against "", and it
+// prints the full drift report over them. MEASURED 2026-10-19, this worktree,
+// the guard's line removed and the pin file absent: "UPSTREAM MOVED: ... the
+// fleet is pinned at ." and "THE PIN IS NOT HOLDING: this box runs 1.0.5,
+// not ." with the whole re-audit list, exit 1. So the operator is told the
+// BOX moved off the pin when in fact the pin file is missing, and the caller
+// gets exit 1 (the pin is broken) where exit 2 (this cannot run) is the
+// routing it asked for. Asserting the diagnostic alone would not catch that;
+// the negatives below are the arm.
+func TestQAGrokPinScriptMissingPinFileExits2RatherThanReportingDrift(t *testing.T) {
+	root := gpRoot(t)
+	bin := t.TempDir()
+	gpStubGrok(t, bin, "1.0.5", gpCompactOK)
+	if err := os.Remove(filepath.Join(root, "etc", "grok", "version-pin.toml")); err != nil {
+		t.Fatal(err)
+	}
+	out, code := gpRun(t, root, gpCfg(t, gpGoodCfg), bin)
+	if code != 2 {
+		t.Fatalf("missing pin file: exit %d, want 2\n%s", code, out)
+	}
+	if !strings.Contains(out, "missing etc/grok/version-pin.toml") {
+		t.Errorf("want a diagnostic naming the absent pin file:\n%s", out)
+	}
+	// The guard must fire BEFORE any reporting: these are the sentences the
+	// regressed script printed, and each names an empty pinned version.
+	for _, refuse := range []string{
+		"UPSTREAM MOVED",
+		"THE PIN IS NOT HOLDING",
+		"Coding-data consent",
+		"verify-grok-pin: pin intact",
+	} {
+		if strings.Contains(out, refuse) {
+			t.Errorf("missing pin file must not report %q — the declaration is gone, not the box:\n%s", refuse, out)
+		}
 	}
 }
 
