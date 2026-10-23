@@ -9,6 +9,46 @@ that release's notes on GitHub, above the generated commit list —
 prints exactly what will be prepended. Renaming `## Unreleased` to the version
 being cut is a precondition of the tag; see `docs/runbooks/release.md`.
 
+## v0.5.3
+
+*2026-10-22. A security and patch release ten days after v0.5.2: 26 commits
+on `main`, led by the toolchain fix, with the bd-store fixes behind github
+issues #12-#14 from the operator's work box.*
+
+**Upgrade: every earlier binary carries known Go vulnerabilities.** v0.5.2
+and everything before it were built on Go 1.26.5. `govulncheck` finds 16
+vulnerabilities reachable from posse's own code: 15 in that standard library
+(`net/http`, `crypto/tls`, `crypto/x509`, `net/url`, `net/textproto`,
+`encoding/asn1`, `os`), fixed across Go 1.26.6-1.26.10, and two in
+`golang.org/x/text` v0.33.0. v0.5.3 builds on Go 1.26.10 with
+`golang.org/x/text` v0.43.0, and the same scan reports none
+(ranger-base-sigtb). Nothing else about the toolchain changes: `go.mod`
+still carries no `toolchain` line, and CI and the release build from it.
+
+**bd writes that report success now have to have happened.** A `--no-db` bd
+store lost concurrent writes and printed a success line for each (#13; on
+the rig, 34-36 of 48 creates lost): every posse bd write now takes a
+per-store lock, reads its record back, and the read-back rule ships in the
+work prompt and the seed PIDs (ADR 0073). One issue over bd's 64 KB line
+limit made the whole store unreadable (#14): the crossing write is now
+judged once, by bd's own encoder, refused at the shim, and `posse status`
+warns at 48 KB and goes urgent past the limit as **G16** (ADR 0072). A caged
+`--no-db` write into a SQLite store was never imported and the next host
+flush erased it, so the container tier refuses that store shape rather than
+lose the write (ADR 0074).
+
+**Skill roots are declared, not assumed** (#12). Where posse renders a
+runtime's skills into the working directory, that root is now a declared,
+version-verified fact or `UNPROVEN`, an unproven render refuses, drift from
+the declaration is reported, and a render under any runtime's declared
+global skill root is refused (ADR 0007 §6). Bob gets posse's own root, and
+`skills_verified:` is named in the onboarding footer.
+
+**grok.** From grok 1.0.52 the coding-data consent is persisted
+server-side, so the pin's no-handler defense is void and the lift gate is
+stated instead; `scripts/verify-grok-pin.sh` now reports a missing pin file
+as exit 2 rather than as the box drifting off the pin.
+
 ## v0.5.2
 
 *2026-10-12. A patch release eight days after v0.5.1: 92 commits on `main`,
