@@ -11,9 +11,9 @@ being cut is a precondition of the tag; see `docs/runbooks/release.md`.
 
 ## v0.5.3
 
-*2026-10-22. A security and patch release ten days after v0.5.2: 26 commits
-on `main`, led by the toolchain fix, with the bd-store fixes behind github
-issues #12-#14 from the operator's work box.*
+*2026-10-22. A security and patch release ten days after v0.5.2, led by the
+toolchain fix, with the bd-store fixes behind github issues #12-#14 from the
+operator's work box.*
 
 **Upgrade: every earlier binary carries known Go vulnerabilities.** v0.5.2
 and everything before it were built on Go 1.26.5. `govulncheck` finds 16
