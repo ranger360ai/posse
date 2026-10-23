@@ -133,6 +133,7 @@ import random
 import re
 import sys
 import tempfile
+import warnings
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
@@ -662,8 +663,8 @@ def self_test():
     # -byte, with either clause removed). Inert is not the same as idle: they
     # are the difference between reading the shell's syntax and reading its
     # characters, and an arm is what keeps a later cut of this walk honest.
-    check(kill_patterns("echo a\;pkill -f teau") == [],
-          "an ESCAPED separator is not a separator — `a\;pkill` is one word "
+    check(kill_patterns(r"echo a\;pkill -f teau") == [],
+          r"an ESCAPED separator is not a separator — `a\;pkill` is one word "
           "to echo, so the verb after it is argument text and not a command "
           "(the walk-back requires a separator that is itself CODE; without "
           "that clause this reads as a kill that ran)")
@@ -677,6 +678,28 @@ def self_test():
           "a reading of code rather than a prefix strip")
     check(kill_patterns("echo 'sudo pkill -f x'") == [],
           "...and that is the second half of the pair")
+
+    # --- this file still COMPILES clean (ranger-base-cyx1z) ----------------
+    # The two arms above carry `a\;pkill` as shell text, and `"\;"` is not a
+    # Python escape: before this arm they were plain strings, so python3 kept
+    # the backslash, did the right thing, and printed a SyntaxWarning saying
+    # the sequence "will not work in the future" on every run of the census
+    # and of `make test`. Homebrew's python3 went to 3.15 on 2026-10-22
+    # (ranger-base-sigtb), which is where the warning started being seen; the
+    # literals are raw now. A warning is not an exit code, so nothing here
+    # would have failed on it — hence an arm, over the file's OWN source,
+    # rather than a comment telling the next writer to use r"...".
+    with open(__file__, encoding="utf-8") as fh:
+        own_source = fh.read()
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        compile(own_source, __file__, "exec")
+    syntaxy = [w for w in caught if issubclass(w.category, SyntaxWarning)]
+    check(not syntaxy,
+          "no SyntaxWarning from this script's own source"
+          + (f" (got {syntaxy[0].message} at line {syntaxy[0].lineno})"
+             if syntaxy else ""))
+
     check(bool(UNIQUE_HINT.search("/private/tmp/claude-501/x/scratchpad/load.sh")),
           "a scratchpad path is session-unique")
     check(not UNIQUE_HINT.search("go test -timeout 25m"),
