@@ -42,7 +42,7 @@ FMT_ROOTS := cmd internal *.go
 BUILD_STAMP := $(shell $(GOBIN) run ./cmd/buildstamp)
 LDFLAGS     := -X github.com/ranger360ai/posse/internal/posse.Build=$(BUILD_STAMP)
 
-.PHONY: build release install deploy test test-arm1 test-arm2 test-arm3 test-race test-reuse treepins fmt-check crew-check seed-check history-check doc-check identity-check ops-check execwrite-check notes-check adr-check corpus-check register-check scripts-check pid-check tree-check verify-test-times verify-suite-lock verify-pattern-kill-census verify-silent-reverts verify-shell-syntax verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-herdr-bob install-herdr-bob verify-herdr-bob-rules install-herdr-bob-rules verify-prune-guard verify-id-recycle verify-self-close verify-govern-honesty verify-grok-pin verify-codex-pin verify-credential-paths verify-policy-pins verify-hook-freshness verify-bd-pin verify-nodb-defer verify-nodb-defer-capability verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk verify-box verify-box-self-test prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
+.PHONY: build release install deploy test test-arm1 test-arm2 test-arm3 test-race test-reuse treepins fmt-check crew-check seed-check history-check doc-check identity-check ops-check execwrite-check notes-check adr-check corpus-check register-check scripts-check pid-check tree-check verify-test-times verify-suite-lock verify-pattern-kill-census verify-silent-reverts verify-shell-syntax verify-python-syntax verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-herdr-bob install-herdr-bob verify-herdr-bob-rules install-herdr-bob-rules verify-prune-guard verify-id-recycle verify-self-close verify-govern-honesty verify-grok-pin verify-codex-pin verify-credential-paths verify-policy-pins verify-hook-freshness verify-bd-pin verify-nodb-defer verify-nodb-defer-capability verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk verify-box verify-box-self-test prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
 
 build:
 	$(GOBIN) build -ldflags '$(LDFLAGS)' -o bin/posse-go ./cmd/posse
@@ -269,7 +269,7 @@ release-notes:
 # and the arm2/arm3 tagged lines are exactly the ones an untagged arm-tags
 # mistake can fail to *compile*, which would abort the recipe before the
 # door ever ran.
-test: fmt-check verify-test-times verify-parallel verify-suite-lock verify-pattern-kill-census verify-silent-reverts verify-shell-syntax tree-check
+test: fmt-check verify-test-times verify-parallel verify-suite-lock verify-pattern-kill-census verify-silent-reverts verify-shell-syntax verify-python-syntax tree-check
 	scripts/test-times.sh $(GOBIN) test ./internal/treepins -timeout 15m -count=1 -run '^TestQAEverySuiteArmTypeChecks$$'
 	scripts/test-times.sh $(GOBIN) test -timeout 25m ./...
 	scripts/test-times.sh $(GOBIN) test -timeout 25m -tags posse_arm2 ./internal/posse
@@ -278,7 +278,7 @@ test: fmt-check verify-test-times verify-parallel verify-suite-lock verify-patte
 
 # One arm each, for CI, which runs them as three jobs. A seat wanting the
 # whole thing types `make test`.
-test-arm1: fmt-check verify-test-times verify-parallel verify-suite-lock verify-pattern-kill-census verify-silent-reverts verify-shell-syntax tree-check
+test-arm1: fmt-check verify-test-times verify-parallel verify-suite-lock verify-pattern-kill-census verify-silent-reverts verify-shell-syntax verify-python-syntax tree-check
 	scripts/test-times.sh $(GOBIN) test -timeout 25m ./...
 	@scripts/audit-silent-reverts.sh --quiet
 
@@ -420,6 +420,25 @@ verify-silent-reverts:
 verify-shell-syntax:
 	@scripts/shell-syntax.sh --self-test
 	@scripts/shell-syntax.sh
+
+# The python half of the same question, and it asks a different one of the
+# language (ranger-base-66xfe). A shell script either parses or it does not;
+# a python file with an invalid escape sequence COMPILES, prints a
+# SyntaxWarning on stderr and keeps exit 0 -- so the gate that runs it stays
+# green and the only reader is whoever happens to be watching stderr. The
+# self-test runs first here too. ~1.3s for both halves on darwin (13 files,
+# MEASURED 2026-10-22), no go build, no suite.
+#
+# THE DEFECT. scripts/pattern-kill-census.py carried two "\;" literals from
+# the day those arms were written, invisible until homebrew python3 went to
+# 3.15 on 2026-10-22 (ranger-base-sigtb) and started printing them on every
+# run of make test. The warning text is the reason this target reds rather
+# than notes: such sequences "will not work in the future", and the future is
+# a version bump that turns a green verify-* into a hard red for every seat on
+# the box, arriving with nothing to connect it to.
+verify-python-syntax:
+	@scripts/python-syntax.py --self-test
+	@scripts/python-syntax.py
 
 # The suite through the reusing wrapper (ranger-base-nw9zg). NOT a faster
 # `make test` and not a replacement for it: measured on 40 invocations against
