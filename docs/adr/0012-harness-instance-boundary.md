@@ -1,6 +1,6 @@
 # ADR 0012 — Public harness, private instance
 
-*Status: accepted 2026-08-20; publication executed 2026-08-22; simplified 2026-09-05 by operator ruling · owner: architect.*
+*Status: accepted 2026-08-20; publication executed 2026-08-22; simplified 2026-09-05 by operator ruling; D4's pane sentence names the multiplexer slot, not herdr, 2026-10-24 (ADR 0075, ranger-base-99a7u) · owner: architect.*
 
 ## Context
 
@@ -61,7 +61,8 @@ already reading the local store.
 
 ## Decision 4 — runtime and provider seams
 
-A runtime remains a CLI in a pane that herdr recognizes. Named declarations
+A runtime remains a CLI in a pane that the multiplexer occupant recognizes
+(herdr today; the slot rule is [0075](0075-posse-is-a-thin-meta-harness-five-slots-over-one-foundation.md)). Named declarations
 and validated overlays are the extension surface; no plugin ABI or internal
 inference loop. The sole executable contract/checklist, including argv-first
 dispatch, safe unattended delivery and launcher-versus-pane PATH, is

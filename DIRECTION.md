@@ -1,7 +1,8 @@
 # DIRECTION — where posse is going
 
 *Status: architecture settled 2026-08-11; all three sequencing phases
-below have landed (last refreshed 2026-08-17). The
+below have landed (last refreshed 2026-08-17); the stack redrawn as slots
+over a foundation 2026-10-24 (ADR 0075, ranger-base-99a7u). The
 tmux/Ghostty implementation lives on the tmux-reference
 branch (last commit 2026-08-11). Nothing here is a promise with a date on
 it; dates below are history, not plans.*
@@ -19,19 +20,54 @@ essay. Two of his conclusions shaped this plan: harnesses end up **bespoke**
 reason), while the substrates underneath are **shared**. posse is the
 operator's bespoke harness. Everything below it is adopted, not built.
 
+## Design philosophy: a thin meta-harness
+
+*Operator direction, 2026-10-24. The decision is ADR 0075; the landscape
+it was weighed against, sourced and dated, is
+`docs/notes.d/ranger-base-99a7u.md`.*
+
+posse aims for **extreme swappability, fast motion, and staying as thin as
+possible.** Meta-harnesses are in rapid development and posse will not try
+to keep up with them. It stays thin and uses what others build at every
+layer below it:
+
+- **Multiplexer** — stay thin; herdr today, and Rex, tmux and others may
+  follow. In the end an agent runs in a shell.
+- **Sandbox** — local or remote; stay thin and use existing technology.
+- **Runtimes** — claude, codex, grok, bob, and others. Many runtimes,
+  IBM Bob among them, is a hard requirement.
+- **Connectors / MCP** — they could be pushed down into the runtime layer,
+  but are likely better at the meta-harness layer. Either way, swappable.
+- **Tasks** — beads today. The hardest one to move, but in principle
+  swappable.
+
+**What stays is intent, and it stays with the user:** a persistent team of
+agents with memory and orders. The PID, from the DISCOVER framework
+(ADR 0001), is the foundation. Everything else is a slot.
+
+Two rules keep this thin (ADR 0075 §2). A slot holds no posse state
+hostage: what lasts lives in the foundation or the task store. And a slot
+becomes code (an interface) only when a bead is building its second real
+occupant. Naming who may fill a slot commits posse to building none of them.
+
 ## The stack
 
 ```
-posse        the business harness (bespoke, this repo)
-             personas · env sets · skills · dispatch · launcher UI
+posse — the foundation (bespoke, this repo; NOT a slot)
+        PIDs · personas (a task-store assignee) · memory · orders ·
+        constitution · dispatch loop
   │
-  ├─ beads   work substrate — dependency-aware task graph, agent mail,
-  │          project memory        github.com/steveyegge/beads (MIT)
-  │
-  ├─ herdr   presentation & oversight — panes, layout, live agent state
-  │          (working/blocked/idle), remote     github.com/herdrdev/herdr (Apache-2.0)
-  │
-  └─ agent runtimes — claude code, codex, … (interchangeable labor)
+  ├─ tasks         slot · beads (bd)                 github.com/steveyegge/beads (MIT)
+  │                durable work graph, claim, mail, project memory
+  ├─ multiplexer   slot · herdr                      github.com/herdrdev/herdr (Apache-2.0)
+  │                panes, layout, live agent state (working/blocked/idle)
+  ├─ runtimes      slot · claude · codex · grok · bob
+  │                interchangeable labor; a PID-rendered argv in a shell (ADR 0013)
+  ├─ sandbox       slot · seatbelt (L2) with the L1/L3 shims (ADR 0002)
+  │                no local Docker (2026-08-30); a remote occupant goes off-laptop
+  └─ connectors    slot · none yet
+                   when needed: the PID names it, the launch binds it into the
+                   runtime's own MCP config (ADR 0075 §5)
 ```
 
 Each layer has a clean job:
@@ -53,18 +89,24 @@ Each layer has a clean job:
 The tmux implementation was not thrown away, but it did not become a
 second backend either: main is herdr-native, and the tmux/Ghostty version
 (bash script, bubbletea launcher, 2×2 grid) is frozen on the
-tmux-reference branch as of 2026-08-11. The exit hatch DIRECTION originally
-promised — a backend seam — turned out to be cheaper as data than as code:
-everything posse knows about a session is a flat meta file under
-`state/herdr/`, and all durable state lives in beads, never in the
-multiplexer. If a better multiplexer ships (Superlogical's
-libghostty-based one is still the obvious candidate), the rewrite is the
-herdr client (`herdr.go`, `herdrback.go`), not the harness — not one file:
-13 non-test files name that seam today (MEASURED 2026-09-10).
+tmux-reference branch as of 2026-08-11.
 **Decided 2026-08-17:** tmux-reference is retired — a dead-end reference,
 kept but not maintained. It is not a fallback and there is no bead to keep
-it building; the exit hatch is the meta-file design above, not a second
-backend.
+it building.
+
+**Reconciled 2026-10-24 (ADR 0075).** The 2026-08-17 rule survives and is
+now the rule for every slot: no second backend is built ahead of a second
+occupant. Its premise did not survive. It said the rewrite for a new
+multiplexer would be the herdr client (`herdr.go`, `herdrback.go`), and
+13 non-test files named that seam (MEASURED 2026-09-10, method not
+recorded). On 2026-10-24, 21 of 150 non-test files hold or build a herdr
+client or backend, 32 name a herdr type, and 73 mention herdr (MEASURED).
+The meta-file design under `state/herdr/` still keeps session state out of
+the multiplexer. But the code seam is wider than one client now. Rex
+(Superlogical's libghostty-based multiplexer) is the second occupant. The
+interface is extracted when it starts, not before: ranger-base-lcxr3, gated
+on Rex GA (ranger-base-jusig). tmux is eligible for the slot and is not
+being built.
 
 ## The four pillars, and who owns what
 
@@ -94,7 +136,10 @@ Building a posse project-memory feature would triple-implement what the
 substrate already does. Resist.
 
 **Tasks** — adopt `bd` outright. posse never grows an issue tracker; it
-grows a *dispatcher* over one.
+grows a *dispatcher* over one. bd is a slot, not the floor: a second
+tracker would have to provide what ADR 0075 §4 lists (ready-with-deps,
+claim, close, comments, edges, its own count, one writer and read-back, a
+store bound by env). Nothing builds one.
 
 **Skills** — the agent runtimes own skill loading; posse owns the
 cross-agent, cross-project **binding**: persona X gets these skills and this
@@ -160,5 +205,6 @@ Ordered so every phase pays for itself even if the next never happens:
   attractive nuisance.
 - Yegge reports ~20–25% of all work going to harness upkeep. Budgeted.
 - herdr is young (2026) and fast-moving; beads drags in Dolt. Both are
-  acceptable because neither holds posse state hostage — the exit from
-  any substrate is a backend shim, by construction.
+  acceptable because neither holds posse state hostage. The exit from any
+  slot is a second occupant plus the interface the two need (ADR 0075 §2),
+  not a shim kept ready ahead of time.
