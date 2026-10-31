@@ -138,11 +138,12 @@ type DirTrust struct {
 //
 // Resolved and PATH-scrubbed through the same two helpers readCLIVersionAt
 // uses, for the same reason: a gates-dir shim is posse's own wrapper and
-// never the CLI whose answer is wanted. The timeout is this file's own
-// addition — ProbeCLIVersion has none and is memoized once per process, while
-// this runs per launch over a session directory that may sit on a slow or
-// stale mount, and a launch that hangs on a diagnostic read is worse than one
-// that reports UNKNOWN. 5s against a measured 0.061s.
+// never the CLI whose answer is wanted. The timeout is the same 5s
+// cliVersionTimeout carries, for the same reason — a launch that hangs on a
+// diagnostic read is worse than one that reports UNKNOWN. 5s against a
+// measured 0.061s. (It was this file's own addition when ProbeCLIVersion had
+// no deadline at all; that was fixed under ranger-base-fnn1o, where the
+// number is measured and argued.)
 var grokInspectOutput = func(dir string) (string, error) {
 	path := resolveOutside("grok", "")
 	if path == "" {

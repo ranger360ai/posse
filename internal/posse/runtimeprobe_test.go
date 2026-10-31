@@ -607,6 +607,68 @@ func TestReadCLIVersionAtDoesNotReResolveTheName(t *testing.T) {
 	}
 }
 
+// A `--version` with no upper bound on its own wall time (ranger-base-fnn1o).
+// Every reader of §6c drift blocks for as long as the CLI wants to, and the
+// reader that makes that a defect is unattended: `posse runtime drift` on
+// scripts/verify-box.sh's ROSTER runs under launchd, so a wedged `--version`
+// wedges the whole daily run rather than one person's launch.
+//
+// Two bodies, because two different things hold this call open and the
+// deadline alone ends only the first. `sh -c` with ONE command execs it, so
+// the process the context kills IS the sleeper and its pipes close with it;
+// put anything ahead of the sleep and the shell forks it instead, which is
+// the self-updater shape — the shell dies on the kill and the GRANDCHILD
+// still holds stdout, which os/exec's Wait does not return from at all
+// (herdrWaitDelay's block). MEASURED 2026-10-31, with these bodies' sleep at
+// 120s and `cmd.WaitDelay` dropped: arm 1 still passed in 0.20s and arm 2
+// waited the whole 120.16s. The sleep is 25s here — still far past `bound`,
+// and cheap to re-measure.
+//
+// Arm 2 is also the truncation arm: bytes DID arrive before the deadline,
+// and the read must still be "" — a truncated version line is not unknown to
+// §6c, it is a release move, so returning it would file a false drift
+// finding beside the real ones.
+func TestReadCLIVersionGivesUpOnACLIThatWillNotAnswer(t *testing.T) {
+	t.Parallel()
+	const limit = 200 * time.Millisecond
+	// Far enough past limit+WaitDelay that a leaked wait cannot be read as
+	// a loaded box, and far short of the sleeps below.
+	const bound = 10 * time.Second
+	for _, tc := range []struct{ name, body string }{
+		{"says nothing and never exits", "sleep 25\n"},
+		{"prints a line, then leaves a grandchild on its pipes", "echo 'sleepycli 9.9.9'\nsleep 25\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			sleeper := filepath.Join(t.TempDir(), "sleepycli")
+			if err := WriteExecutable(sleeper, []byte("#!/bin/sh\n"+tc.body), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			started := time.Now()
+			got := readCLIVersionWithin(sleeper, limit)
+			waited := time.Since(started)
+
+			if waited > bound {
+				t.Fatalf("the read waited %s under a %s deadline — this call has no upper bound on wall time, and its first unattended reader runs under launchd", waited, limit)
+			}
+			if got != "" {
+				t.Errorf("a `--version` that blew its deadline read %q; past the deadline the version is UNKNOWN, and a truncated line is drift", got)
+			}
+		})
+	}
+}
+
+// The two-way half of the pin above: the same helper reads a CLI that
+// answers, so the arms there are not passing because readCLIVersionWithin
+// returns "" for everything.
+func TestReadCLIVersionWithinReadsACLIThatAnswersInTime(t *testing.T) {
+	t.Parallel()
+	exe := probeFakeCLI(t, t.TempDir(), "promptcli", "promptcli 3.1.4")
+	if got := readCLIVersionWithin(exe, cliVersionTimeout); got != "promptcli 3.1.4" {
+		t.Errorf("readCLIVersionWithin = %q, want the CLI's own line", got)
+	}
+}
+
 // A record written before the probe read the session's own resolution
 // carries a cli_path from the launcher's side, over observables measured on
 // the pane's. It cannot be told which of the two it holds, so it is not

@@ -35,6 +35,7 @@ package posse
 // `project_config:` in the yaml, answered per engine by a human.
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -350,8 +351,8 @@ func probeCLIPath(exe string) string {
 
 // ProbeCLIVersion reads a CLI's own version string — its first non-empty
 // output line, trimmed. "" when the exe is not there, will not answer, or
-// takes too long: an unknown version is reported as unknown, never as
-// unchanged.
+// takes longer than cliVersionTimeout: an unknown version is reported as
+// unknown, never as unchanged.
 //
 // `--version` and not `--help`: a commander CLI answers --help before it
 // parses anything, so --help proves the binary runs and nothing else
@@ -376,12 +377,59 @@ func readCLIVersion(exe string) string {
 // to state a version it never read from the binary it measured
 // (ranger-base-385x).
 func readCLIVersionAt(path string) string {
+	return readCLIVersionWithin(path, cliVersionTimeout)
+}
+
+// cliVersionTimeout bounds one `--version` child. Until ranger-base-fnn1o
+// this read had no deadline at all, and what made that worth fixing is that
+// it finally has an UNATTENDED reader: `posse runtime drift` on
+// scripts/verify-box.sh's ROSTER (ranger-base-gf0ln) runs under launchd,
+// where no second instance starts — so a CLI that blocks on `--version`
+// wedges the whole daily run, the verdict file is never rewritten, and G10
+// goes STALE-red a day later. That degradation is correct by design; a
+// detective control with no upper bound on its own wall time is not.
+//
+// 5s, which is grokInspectOutput's number and modelProbeTimeout's, quoted
+// rather than a third one coined: all three are diagnostic reads sitting in
+// front of a launch, and a launcher that hangs longer than that on a
+// diagnostic has traded the problem for a worse one. MEASURED 2026-10-31 on
+// this box, the four installed CLIs: grok 0.01s, claude 0.01-0.02s, codex
+// 0.05s, bob 0.66-0.71s over six runs — so this is seven times the slowest
+// `--version` here. NOT OBSERVED: no hang has been seen. The shapes it is
+// for are a `--version` that reaches the network (grok and bob both carry
+// self-updaters), one that prompts, and a binary on a stalled mount.
+const cliVersionTimeout = 5 * time.Second
+
+// readCLIVersionWithin is the same read under a deadline the caller names,
+// so the deadline arm is testable with a planted sleeper instead of a
+// five-second test (probeSessionExe's rule).
+//
+// PAST THE DEADLINE IT IS "" EVEN WHEN BYTES ARRIVED, which is the one
+// judgement in here. A killed child's stdout can hold a TRUNCATED first
+// line, and a truncated version line is not unknown to §6c — it is a
+// release move, because skillsVersionRelease compares what it is given. So
+// returning the bytes would file a false drift finding beside the real ones,
+// which is worse than the Skip "" already produces ("an unknown version is
+// unknown, never unchanged", skillsdrift.go).
+//
+// WaitDelay as well as the context, for herdrWaitDelay's reason: os/exec's
+// Wait does not return while a grandchild still holds the child's pipes, so
+// killing the child does not on its own bound this call — and a `--version`
+// that forks a self-updater is exactly that shape. One duration for both,
+// which bounds the whole call at twice it.
+func readCLIVersionWithin(path string, limit time.Duration) string {
 	if path == "" {
 		return ""
 	}
-	cmd := exec.Command(path, "--version")
+	ctx, cancel := context.WithTimeout(context.Background(), limit)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, path, "--version")
+	cmd.WaitDelay = limit
 	cmd.Env = append(os.Environ(), "PATH="+PathOutsideGates(""))
 	out, err := cmd.Output()
+	if ctx.Err() != nil {
+		return ""
+	}
 	if err != nil && len(out) == 0 {
 		return ""
 	}

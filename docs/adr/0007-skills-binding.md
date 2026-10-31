@@ -241,6 +241,14 @@ say, per runtime and per version, which root was measured.
   decides only who types `--allow-degraded`. Flag surfaces (`--plugin-dir`,
   `skills_flag:`) carry no `skills_verified`: a removed flag fails the
   launch loudly, which is the property a cwd root lacks.
+  **The read is BOUNDED** (ranger-base-fnn1o): `ProbeCLIVersion` gives the
+  `--version` child `cliVersionTimeout` (5s) and reads `""` past it, which
+  §6c already disposes of — an unknown version is a Skip, never an unchanged
+  one. It had no deadline at all until the first UNATTENDED reader arrived:
+  `posse runtime drift` on `scripts/verify-box.sh`'s ROSTER
+  (ranger-base-gf0ln) runs under launchd, where no second instance starts, so
+  a CLI that blocks on `--version` wedges the whole daily run rather than one
+  person's launch.
   **The compare is on the RELEASE, not the raw line** (ranger-base-3a5z7):
   `skillsVersionRelease` (parity.go) drops a trailing bracketed field from
   each side first, because one CLI's `--version` line carries a field that
