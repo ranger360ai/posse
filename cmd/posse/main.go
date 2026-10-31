@@ -2092,11 +2092,25 @@ func main() {
 			posse.AbbrevHome(a.CageLauncher(ag.Name, rt.Exe())), e.Binary(), rt.Exe())
 
 	case "runtime":
+		// `drift` is the one sub-verb here that takes NO name, and that is
+		// the point of it (ranger-base-f5jbs): skillsVerifiedDrift already
+		// has two per-runtime readers and both of them only print, so what
+		// was missing is a box-wide reading with an exit code. A name would
+		// make it a third display surface.
+		if len(args) > 0 && args[0] == "drift" {
+			if len(args) > 1 {
+				die(posse.Die("usage: posse runtime drift — it takes no name: the walk is every launch profile this box has (%s)", strings.Join(a.ListRuntimes(), ", ")))
+			}
+			if st := a.ReportSkillsDrift(out); st != 0 {
+				os.Exit(st)
+			}
+			break
+		}
 		// The ADR 0013 dispatch-contract grid for ONE runtime — six stages,
 		// who declared each, and what a missing one costs. `posse runtimes`
 		// (plural) stays the catalog; this is the onboarding surface.
 		if len(args) < 2 || (args[0] != "check" && args[0] != "probe" && args[0] != "filing") {
-			die(posse.Die("usage: posse runtime check|probe|filing <name> (launch profiles: %s)", strings.Join(a.ListRuntimes(), ", ")))
+			die(posse.Die("usage: posse runtime check|probe|filing <name> | drift (launch profiles: %s)", strings.Join(a.ListRuntimes(), ", ")))
 		}
 		rt, err := a.LoadRuntime(args[1])
 		if err != nil {
@@ -2218,6 +2232,11 @@ func main() {
 		// conditional: a template profile's Bash(...) denies do not count
 		// until a live probe says they do (ADR 0032 §1).
 		fmt.Fprintln(out, "`posse runtime probe <name>` — the live wall probe a template-only profile needs before its Bash(...) denies count")
+		// The one reading in this family that is box-wide and carries an
+		// exit code. Named here because discoverability is the defect it
+		// closes: the drift line was correct and unread for as long as
+		// nothing pointed at it (ranger-base-f5jbs).
+		fmt.Fprintln(out, "`posse runtime drift` — every profile's skills_verified: against the CLI installed now; exits nonzero on a drift")
 		if refused {
 			os.Exit(1)
 		}
@@ -2827,6 +2846,14 @@ catalog:
                                  recorded in state/runtimes/<name>/probe.json. Until it passes,
                                  Bash(...) denies on that runtime are "assumed, not measured" and
                                  degrade the launch. Exit 1 when it fails. --keep leaves the pane.
+  posse runtime drift            every launch profile's skills_verified: against the CLI
+                                 installed right now (ADR 0007 §6c) — one line each, and an
+                                 EXIT CODE: 0 clean, 1 a drift (or a profile that will not
+                                 load), 2 nothing could be measured. Takes no name: the two
+                                 per-runtime readers of this fact are both display and both
+                                 exit 0, which is how bob's 2.0.5 → 2.0.7 was found by an
+                                 mtime instead (ranger-base-f5jbs). Changes no launch — §6c
+                                 still reports and never refuses one.
   posse runtime filing <name>    print the upstream detection filing posse CARRIES for that
              [--out <dir>]       profile — ADR 0060 D2's draft manifest, pane snapshots and
                                  covering note, embedded in this binary, which is why the verb

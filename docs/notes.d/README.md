@@ -7,6 +7,7 @@ references), not inferred publication dates. Undated fragments sort last.
 ## 2026-10
 
 - [ranger-base-lf6it](ranger-base-lf6it.md) — bob self-updated under the probe, 60 seconds in — and the probe still measured 2.0.5 (ranger-base-lf6it) — 2026-10-31
+- [ranger-base-f5jbs](ranger-base-f5jbs.md) — `posse runtime drift` — giving skillsVerifiedDrift an exit code — 2026-10-31
 - [ranger-base-et7bs](ranger-base-et7bs.md) — The read verb that did not auto-update, and the one footprint it does leave (ranger-base-et7bs) — 2026-10-31
 - [ranger-base-esz16](ranger-base-esz16.md) — The second footprint, and the one that leaves the box (ranger-base-esz16) — 2026-10-31
 - [ranger-base-csnzn](ranger-base-csnzn.md) — Extracting the multiplexer slot: four places the interface is not ADR 0076 §2's table (ranger-base-csnzn) — 2026-10-31
