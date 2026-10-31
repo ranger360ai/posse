@@ -1678,9 +1678,9 @@ var (
 //     today is a key it may honour tomorrow, and the launch check fires on
 //     content rather than on which of the CLI's own gates is holding.
 //
-// `.mcp.json` IS inside this detector here, and ADR 0002's line that it
-// "retains its separate runtime approval boundary and is outside this
-// detector" is CLAUDE's reading, not a general one: claude keeps that file
+// `.mcp.json` IS inside this detector here. ADR 0002 ("Project
+// configuration is a launch input") scopes its exclusion per runtime since
+// ranger-base-gdzmr; it was CLAUDE's reading, not a general one: claude keeps that file
 // behind its own "Pending approval" gate, which reads identically trusted
 // and untrusted (trust.go's measurement). Grok has no such gate — 1.0.52
 // SPAWNED the server under folder trust alone — so the reason for the

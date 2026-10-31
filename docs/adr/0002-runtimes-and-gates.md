@@ -171,8 +171,16 @@ project file triggers on presence. Claude's project and local settings files
 both trigger on top-level `hooks` or `mcpServers`, regardless of value;
 missing files or a valid object without the keys are clean. An unreadable,
 nonregular, malformed or non-object keyed file degrades. Name the first
-offending file in declaration order. `.mcp.json` retains its separate
-runtime approval boundary and is outside this detector. A PID's
+offending file in declaration order. An MCP file is excluded per
+runtime, and only where that runtime itself gates it: claude's
+`.mcp.json` sits behind claude's own "Pending approval" gate, which reads
+identically trusted and untrusted (MEASURED, `trust.go`), so it stays
+outside claude's list. That reason is a property of claude's engine, not
+of the file, and does not transfer: grok 1.0.52 spawned a `.mcp.json`
+server under folder trust alone (MEASURED 2026-10-31, ranger-base-l12j9),
+so grok's list names it, and bob's names `.bob/mcp.json`. Removing an MCP
+file from a runtime's list needs a measurement of that runtime's own gate,
+never this paragraph (amended 2026-10-31, ranger-base-gdzmr). A PID's
 `trust_project_config: true` opts in; otherwise §4 applies on every launch.
 The retained key list describes a declared channel, not a claim that every
 runtime version executes every key. Headless and interactive trust differ;
