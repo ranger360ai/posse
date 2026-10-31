@@ -168,24 +168,26 @@ func (b *HerdrBackend) manifests() ManifestReader {
 	return muxNoManifest{}
 }
 
-// workspaces and workspaceGet are the other two §4 reads with a door of
-// their own: herdr's raw listing and its per-id query, which the meta rule's
-// two halves ask because telling "ours" from "a stranger wearing our id"
-// needs herdr's label and server GENERATION and nothing a seat's state can
-// give (HerdrMux.Workspaces carries why Rex has no such question).
+// workspaceGet is the other §4 read with a door of its own: herdr's per-id
+// query, which both halves of the meta rule ask (idEvidence) because telling
+// "ours" from "a stranger wearing our id" needs herdr's label and server
+// GENERATION and nothing a seat's state can give. Rex has no such question — its ids are
+// UUIDs and are never reissued, so a seat is dead when it is absent from a
+// fresh listing (ADR 0076 §5, seatEvidence), and idEvidence branches to
+// that before it reaches this door.
 //
-// The error both return when the slot is not herdr's lands on the arm every
+// There was a `workspaces()` door beside it — herdr's RAW listing, for the
+// two readers in relaunch.go whose question was the label — and there is
+// not any more: both read the slot's one listing now, which carries the
+// session id and the label on every occupant, so a relaunch aims or refuses
+// on a Rex instance exactly as it does on herdr (ranger-base-nc91t,
+// holdsRecorded). Nothing in ADR 0076 §4's own list moved: `workspace list`
+// was never on it.
+//
+// The error this returns when the slot is not herdr's lands on the arm every
 // caller already has for a server that did not answer — "silence is never
 // death" (ADR 0011 §2) — so a slot posse cannot ask keeps metas and refuses
 // writes, which is the safe direction on both sides.
-func (b *HerdrBackend) workspaces() ([]HerdrWorkspace, error) {
-	hm, ok := b.herdrMux()
-	if !ok {
-		return nil, muxNotHerdr("workspace list")
-	}
-	return hm.Workspaces()
-}
-
 func (b *HerdrBackend) workspaceGet(id string) (HerdrWorkspace, bool, error) {
 	hm, ok := b.herdrMux()
 	if !ok {

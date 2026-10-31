@@ -18,19 +18,6 @@ import (
 	"testing"
 )
 
-// hermeticGen names a socket path that is not there, which makes
-// ServerGen() unknown for the whole test. Two reasons, and both matter:
-// the default path is the operator's own live herdr, so a test that let it
-// through would read machine state and be red per-box; and an unknown
-// generation is the board on which notOurWorkspace's LABEL arm is the only
-// fence there is. A test run under a generation that matched would pass
-// whatever the label said (the rename arm short-circuits it) and pin
-// nothing.
-func hermeticGen(t *testing.T) {
-	t.Helper()
-	t.Setenv("HERDR_SOCKET_PATH", filepath.Join(t.TempDir(), "herdr.sock"))
-}
-
 // setInstance writes just the key, which is all these tests configure.
 func setInstance(t *testing.T, b *HerdrBackend, tag string) {
 	t.Helper()

@@ -569,22 +569,54 @@ func (b *HerdrBackend) closeRecorded(m *HerdrMeta, held *LaunchLock) error {
 	return nil
 }
 
-// holdsRecorded reports whether this herdr's listing holds the workspace m
-// names, as m's own. It is the aiming question — which workspace is this
+// holdsRecorded reports whether the OCCUPANT's listing holds the seat m
+// names, as m's own. It is the aiming question — which seat is this
 // session's — and never a liveness proof: absence from a listing is a
 // snapshot, and what that permits is mustNotOrphan's to say.
+//
+// THE SLOT'S LISTING, NOT HERDR'S RAW ONE (ADR 0076 §5, ranger-base-nc91t).
+// It used to read b.workspaces(), herdr's own `workspace list` behind §4's
+// door, which on a non-herdr instance does not answer at all: the error fell
+// to clearDeadMeta, mustNotOrphan refused honestly on its mux arm, and a
+// relaunch on a Rex instance was refused with nothing damaged and nothing
+// refreshed either — worse than herdr for a reason nobody chose
+// (ranger-base-q5gc2's notes §5 named it and left it open).
+//
+// It reads the two fields SeatInfo and HerdrWorkspace both carry — the
+// session id and the label — so herdr's answer is the same answer. What the
+// join adds on herdr is `agent list`'s failure as a second way to get no
+// listing at all, and no listing REFUSES here (closeRecorded hands an error
+// to clearDeadMeta, which proves death or says it cannot), which is this
+// function's own direction. That is sessionGone's trade verbatim, two
+// callers over, and it is the whole reason the conversion is free: the only
+// behaviour a herdr instance can notice is a refusal where it already
+// refuses for the other half of the same listing.
+//
+// THE FENCE STAYS, AND STAYS HERDR'S. notOurWorkspace reads the label and
+// the server GENERATION, and answers "" for a non-herdr record because
+// Rex's ids are UUIDs and are never reissued — a present id IS the seat the
+// record meant, and the label half alone would read a rename as a recycle
+// and aim a relaunch at nothing (that predicate's own doc, ADR 0076 §5).
+// The generation is asked of the OCCUPANT (MuxServer.Gen) and not of
+// ServerGen(), which resolves a herdr socket: on a Rex instance that
+// package function stamps a herdr path's device/inode onto a question about
+// a Rex seat, which is ranger-base-q5gc2 §1's bug one reader over. It
+// cannot change an answer today — the fence returns "" for a non-herdr
+// record before it looks at either anchor — so this is the construction and
+// not the fix.
 func (b *HerdrBackend) holdsRecorded(m *HerdrMeta) (bool, error) {
 	if m.Workspace == "" {
 		return false, nil // a kept recipe names none (rangerhq-v52t)
 	}
-	wss, err := b.workspaces()
+	mux := b.Mux()
+	seats, err := mux.List()
 	if err != nil {
 		return false, err
 	}
-	gen := ServerGen()
-	for _, ws := range wss {
-		if ws.WorkspaceID == m.Workspace {
-			return b.notOurWorkspace(m, ws.Label, gen) == "", nil
+	gen := mux.Server().Gen
+	for _, s := range seats {
+		if s.Session == m.Workspace {
+			return b.notOurWorkspace(m, s.Label, gen) == "", nil
 		}
 	}
 	return false, nil
@@ -613,8 +645,19 @@ func (b *HerdrBackend) holdsRecorded(m *HerdrMeta) (bool, error) {
 // — never a stranger's agent. And the refusal names the workspace in the
 // way, which the orphan guard's own message cannot: it would send the
 // operator to `posse attach <name>`, which resolves to that same stranger.
+//
+// The listing is the SLOT's, for holdsRecorded's reason and in the same
+// words (ADR 0076 §5, ranger-base-nc91t). This is the other half of the
+// relaunch's reading, and it is the one that fires FIRST: it is asked in the
+// preflight, before the landing turn, so on a non-herdr instance it was the
+// refusal an operator actually met — "this herdr did not list its
+// workspaces" — and holdsRecorded's conversion alone would have moved the
+// same refusal four lines down. The question is a label collision and not
+// herdr's id arithmetic, so there is nothing herdr-only in it: every
+// occupant labels the seats posse creates (Mux.Create takes the label), and
+// SeatInfo carries the label back.
 func (b *HerdrBackend) nameWornElsewhere(m *HerdrMeta) (id, label string, err error) {
-	wss, err := b.workspaces()
+	seats, err := b.Mux().List()
 	if err != nil {
 		return "", "", err
 	}
@@ -634,9 +677,9 @@ func (b *HerdrBackend) nameWornElsewhere(m *HerdrMeta) (id, label string, err er
 	// theirs to touch. Our own pre-tag workspace is spared by the id skip
 	// below, which is what that tolerance was ever needed for here.
 	want := b.App.WorkspaceLabel(m.Name)
-	for _, ws := range wss {
-		if ws.Label == want && ws.WorkspaceID != m.Workspace {
-			return ws.WorkspaceID, ws.Label, nil
+	for _, s := range seats {
+		if s.Label == want && s.Session != m.Workspace {
+			return s.Session, s.Label, nil
 		}
 	}
 	return "", "", nil
@@ -652,17 +695,20 @@ func (b *HerdrBackend) nameWornElsewhere(m *HerdrMeta) (id, label string, err er
 func (b *HerdrBackend) provenNameTakeable(m *HerdrMeta) error {
 	other, label, err := b.nameWornElsewhere(m)
 	if err != nil {
-		return Die("%s was NOT closed: this herdr did not list its workspaces (%v)", m.Name, err)
+		// The occupant by name, because the refusal is about a listing it
+		// did not give and an operator cannot act on the wrong tool's name
+		// (ADR 0076 §5).
+		return Die("%s was NOT closed: this %s did not list its seats (%v)", m.Name, b.Mux().Server().Name, err)
 	}
 	if other == "" {
 		return nil
 	}
-	// The obstacle's OWN label, not the session name: that is the string
-	// `herdr workspace list` prints, and under an instance tag the two
+	// The obstacle's OWN label, not the session name: that is the string the
+	// occupant's one shared list prints, and under an instance tag the two
 	// differ (rangerhq-ouf9).
-	return Die("%s cannot be recreated as it stands, so it was NOT closed: herdr workspace %s is also labelled '%s' and posse did not create it, so the recreate could not take the name back.\n"+
-		"  rename or close %s in herdr (herdr workspace list), then relaunch again",
-		m.Name, other, label, other)
+	return Die("%s cannot be recreated as it stands, so it was NOT closed: %s seat %s is also labelled '%s' and posse did not create it, so the recreate could not take the name back.\n"+
+		"  rename or close %s there (posse list shows it as foreign), then relaunch again",
+		m.Name, b.Mux().Server().Name, other, label, other)
 }
 
 // describePlan is the preflight's receipt: what the recreate resolved to,

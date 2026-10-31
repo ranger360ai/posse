@@ -259,18 +259,16 @@ func (m HerdrMux) PaneAgentSession(s Seat) (string, error) {
 	return m.H.PaneAgentSession(s.Pane)
 }
 
-// Workspaces is herdr's raw workspace listing, for the three readers whose
-// question is herdr's own id arithmetic and not a seat's state: a workspace
-// id identifies nothing across a server restart or a handoff, so telling
-// "ours" from "a stranger wearing our id" needs the label and the server
-// GENERATION beside it (rangerhq-6bg7, notOurWorkspace). Rex has no such
-// question — its ids are UUIDs and are never reissued, so a seat is dead
-// when its id is missing from the listing (ADR 0076 §5) — and that is why
-// this is here rather than on Mux.
-//
-// It is also what keeps those readers at one herdr call. List joins `agent
-// list` onto this, which none of them has any use for.
-func (m HerdrMux) Workspaces() ([]HerdrWorkspace, error) { return m.H.Workspaces() }
+// THERE IS NO RAW WORKSPACE-LISTING VERB HERE, and there was: `Workspaces`,
+// herdr's own `workspace list`, for the readers whose question was the LABEL
+// rather than a seat's state. The last two were relaunch.go's aiming and
+// name questions, and both read the slot's List() now — which carries the
+// session id and the label on every occupant, so a relaunch aims or refuses
+// on a non-herdr instance exactly as it does here (ranger-base-nc91t). What
+// the raw verb bought those readers was one herdr call instead of two; what
+// it cost was the whole command on any other occupant. herdr's client still
+// has the verb and List below still calls it; nothing reaches it through the
+// slot.
 
 // Agents is herdr's raw agent listing — the argv `posse probe` measures its
 // detection observable through (ADR 0013 §1's `launch` stage, observable 4 of
