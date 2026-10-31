@@ -1794,7 +1794,28 @@ var builtinRuntimes = []Runtime{
 		UnknownModel:    UnknownModelCarry,
 		UnknownModelWhy: "measured 2026-09-09 (ranger-base-jzm04) on codex-cli 0.150.1: a canary launched with -c model=gpt-6-astra came up with 'model: gpt-6-astra high' in its own banner — the typed id, not this box's default, so the id reaches the provider and its answer is the canary's",
 		Command:         `codex {model} {skills} {deny} -a never ` + CodexFleetFlags + ` -c developer_instructions="$(cat {file})"`},
-	{Name: "grok", Builtin: true, Realize: realizeGrok, Skills: skillsCwd, SkillsRoot: AgentsSkillsPath, SkillsVerified: "grok 1.0.5", Models: grokModels, ModelFlag: "-m %s", Unattended: GrokFleetFlags,
+	// SkillsVerified: re-measured 2026-10-31 (ranger-base-9f2o6) against the
+	// installed 1.0.52, after `posse runtime drift`'s first run found the
+	// declaration one minor version behind — still reads
+	// `<cwd>/.agents/skills/<name>/SKILL.md` as `project` scope, still
+	// follows a symlink whose target is outside the repo, still ignores a
+	// skill the PID never bound (TestQALiveSkillDiscoveryPerRuntime,
+	// RHQ_PARITY_LIVE=1). The string is the VERBATIM first stdout line of
+	// `grok --version`, which is what ProbeCLIVersion compares against: the
+	// old `grok 1.0.5` could never have matched a 1.0.52 that prints a build
+	// hash and a channel, so it would have kept the §6c clock red whatever
+	// the measurement said.
+	//
+	// The re-measurement also found a precondition nothing here declares:
+	// the cwd root is read ONLY in a folder `~/.grok/trusted_folders.toml`
+	// marks trusted. Untrusted, `grok inspect` prints `Skills (None)` and
+	// nothing says why, so the realized `skills:` binding is silently empty.
+	// A session worktree inherits its main checkout's trust, which is why
+	// every grok launch on this box gets its skills today — and posse seeds
+	// no trust of its own (it types codex's on the line and grok's not at
+	// all), so a box whose operator has never trusted the checkout would
+	// degrade quietly. Filed for the code lane as ranger-base-kwbh1.
+	{Name: "grok", Builtin: true, Realize: realizeGrok, Skills: skillsCwd, SkillsRoot: AgentsSkillsPath, SkillsVerified: "grok 1.0.52 (0920c8169e27) [stable]", Models: grokModels, ModelFlag: "-m %s", Unattended: GrokFleetFlags,
 		Egress: []string{"cli-chat-proxy.grok.com", "grok.com"}, StateDirs: []string{"~/.grok"},
 		// record: trusted — the qa lane on grok closed a bead properly on
 		// 2026-08-24, which is the measurement the promotion needs and the

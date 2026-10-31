@@ -54,6 +54,7 @@ package posse
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -61,6 +62,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 )
 
 // qmSkill writes an Agent-Skills dir whose BODY carries a token no prompt
@@ -801,6 +803,37 @@ func qmDiscovered(t *testing.T, runtime, repo string) ([]string, string) {
 	return loaded, got
 }
 
+// qmTrustedGrokHome returns a fresh $HOME whose `.grok/trusted_folders.toml`
+// marks repo trusted. grok gates PROJECT-scope skill discovery on that file
+// (ranger-base-9f2o6, MEASURED 2026-10-31 on grok 1.0.52), so a live probe
+// that does not seed it reads an empty skill list whatever the binding did.
+func qmTrustedGrokHome(t *testing.T, repo string) string {
+	t.Helper()
+	home := gitTempDir(t)
+	dir := filepath.Join(home, ".grok")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// The real file grok writes when the operator accepts the trust prompt.
+	// The key must be the path grok RESOLVES: a t.TempDir() repo lives under
+	// /var/folders, grok reports it as /private/var/folders, and an entry
+	// written with the unresolved spelling matches nothing and reads exactly
+	// like no entry at all (`Project trusted: no`). Both spellings go in, so
+	// the fixture does not depend on which one grok canonicalizes to.
+	keys := []string{repo}
+	if real, err := filepath.EvalSymlinks(repo); err == nil && real != repo {
+		keys = append(keys, real)
+	}
+	var toml strings.Builder
+	for _, k := range keys {
+		fmt.Fprintf(&toml, "[folders.%q]\ntrusted = true\ndecided_at = %d\n\n", k, time.Now().Unix())
+	}
+	if err := os.WriteFile(filepath.Join(dir, "trusted_folders.toml"), []byte(toml.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return home
+}
+
 // §5 — LIVE skills. The binding is materialized by PRODUCTION and the CLI
 // is asked what it sees. rangerhq-74c6's evidence was one skill; this is
 // two, plus a registry entry the PID does not name.
@@ -827,24 +860,62 @@ func TestQALiveSkillDiscoveryPerRuntime(t *testing.T) {
 		if _, err := a.RenderAgentsSkills(repo, "prober", bound); err != nil {
 			t.Fatal(err)
 		}
-		for _, probe := range [][]string{{"codex", "debug", "prompt-input", "hi"}, {"grok", "inspect"}} {
-			if _, err := exec.LookPath(probe[0]); err != nil {
-				t.Skipf("no %s on PATH", probe[0])
+		// grok's HOME is redirected to a fixture that TRUSTS this repo, and
+		// that is a precondition of the binding, not fixture hygiene
+		// (ranger-base-9f2o6). MEASURED 2026-10-31 on grok 1.0.52: the cwd
+		// root is read as `project` scope — a real SKILL.md and a symlink
+		// whose target is outside the repo alike — but ONLY in a folder
+		// `~/.grok/trusted_folders.toml` marks trusted. In an untrusted one
+		// `grok inspect` prints `Skills (None)` and says nothing about why,
+		// and `session/new`'s own setup trace carries a `folder_trust` phase.
+		// A t.TempDir() repo is untrusted by construction, so this arm
+		// measured grok's TRUST STATE and not its discovery until the
+		// redirect landed. The negative arm below holds the precondition
+		// itself on a clock.
+		for _, probe := range []struct {
+			argv []string
+			env  []string
+		}{
+			{argv: []string{"codex", "debug", "prompt-input", "hi"}},
+			{argv: []string{"grok", "inspect"}, env: []string{"HOME=" + qmTrustedGrokHome(t, repo)}},
+		} {
+			if _, err := exec.LookPath(probe.argv[0]); err != nil {
+				t.Skipf("no %s on PATH", probe.argv[0])
 			}
-			cmd := exec.Command(probe[0], probe[1:]...)
+			cmd := exec.Command(probe.argv[0], probe.argv[1:]...)
 			cmd.Dir = repo
+			cmd.Env = append(os.Environ(), probe.env...)
 			out, err := cmd.CombinedOutput()
 			if err != nil {
-				t.Fatalf("%s: %v\n%s", probe[0], err, out)
+				t.Fatalf("%s: %v\n%s", probe.argv[0], err, out)
 			}
 			got := string(out)
 			for _, n := range bound {
 				if !strings.Contains(got, n) {
-					t.Errorf("%s does not see %s:\n%s", probe[0], n, got)
+					t.Errorf("%s does not see %s:\n%s", probe.argv[0], n, got)
 				}
 			}
 			if strings.Contains(got, "qm-unbound") {
-				t.Errorf("%s sees a skill the PID never bound", probe[0])
+				t.Errorf("%s sees a skill the PID never bound", probe.argv[0])
+			}
+		}
+		// The precondition, measured in its own right: strip the trust and
+		// the SAME realized binding binds nothing. This reds if grok ever
+		// stops gating project scope on folder trust — which would be good
+		// news and still a re-measurement, since the arm above would then be
+		// passing for a reason it no longer states.
+		if _, err := exec.LookPath("grok"); err == nil {
+			cmd := exec.Command("grok", "inspect")
+			cmd.Dir = repo
+			cmd.Env = append(os.Environ(), "HOME="+gitTempDir(t))
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("grok inspect (untrusted): %v\n%s", err, out)
+			}
+			for _, n := range bound {
+				if strings.Contains(string(out), n) {
+					t.Errorf("grok reads %s in an UNTRUSTED folder — the trust precondition this arm pins is gone, so re-measure what gates the binding (ADR 0007 §6c):\n%s", n, out)
+				}
 			}
 		}
 		// The links must stay out of the operator's diff (ADR 0007).
