@@ -1039,8 +1039,10 @@ func TestQABdPinExits2WhenItCannotCheck(t *testing.T) {
 
 // The twin of TestQAGrokPinScriptDoesNotLetBrewAutoUpdate, filed as
 // ranger-base-et7bs: this gate reads brew too, and verify-box.sh runs it
-// beside the other two off one Homebrew API cache. Reasoning and measurement
-// in brewguard_qa_test.go's head comment.
+// beside the other two off one Homebrew API cache. It also demands
+// HOMEBREW_NO_ANALYTICS=1 (ranger-base-esz16) — an unguarded brew read reports
+// itself to Homebrew's InfluxDB. Reasoning and measurement in
+// brewguard_qa_test.go's head comment.
 func TestQABdPinScriptDoesNotLetBrewAutoUpdate(t *testing.T) {
 	bgAssertBrewReadsAreGuarded(t, "scripts/verify-bd-pin.sh")
 }

@@ -59,8 +59,18 @@ set -uo pipefail
 # typed beside them. Both arms, and the mechanism that IS real, are in
 # docs/notes.d/ranger-base-et7bs.md.
 #
+# The ANALYTICS kill is the second footprint, and it leaves the box
+# (ranger-base-w2bha, ranger-base-esz16): analytics are ON for brew on this box
+# — `homebrew.analyticsdisabled` is unset in HOMEBREW_REPOSITORY's git config,
+# MEASURED 2026-10-31, which is brew's default — so with the variable unset
+# every brew read below POSTs a command_run event to Homebrew's InfluxDB. The
+# source audience of a crew-run check is this box; that endpoint is wider, and
+# nothing here rules the wider one acceptable, so it does not move (crew hard
+# risk line 4). The box's own `brew analytics` setting is the operator's, for
+# his own brew use, and no gate changes it.
+#
 # The ENV_HINTS kill is cosmetic: it keeps brew's advice block out of the rows.
-export HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_ENV_HINTS=1
+export HOMEBREW_NO_ANALYTICS=1 HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_ENV_HINTS=1
 
 cd "$(dirname "$0")/.."
 pin=etc/bd/version-pin.toml

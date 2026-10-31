@@ -1609,11 +1609,14 @@ func TestQAGrokPinTapAtThePinIsNotAMove(t *testing.T) {
 	}
 }
 
-// A gate must not change the box it reads. The reasoning, and the correction
-// of the mechanism this comment used to claim — brew's auto-update is not what
-// `brew info` does; the API-cache re-download is — are in
-// brewguard_qa_test.go's head comment (ranger-base-et7bs), stated once for all
-// three pin gates.
+// A gate must not change the box it reads, and must not report what it read
+// off the box: the helper demands HOMEBREW_NO_AUTO_UPDATE=1 and
+// HOMEBREW_NO_ANALYTICS=1 both, above every brew read. The reasoning, the
+// analytics-egress ruling (ranger-base-w2bha, applied under
+// ranger-base-esz16), and the correction of the mechanism this comment used to
+// claim — brew's auto-update is not what `brew info` does; the API-cache
+// re-download is — are in brewguard_qa_test.go's head comment, stated once for
+// all three pin gates.
 func TestQAGrokPinScriptDoesNotLetBrewAutoUpdate(t *testing.T) {
 	bgAssertBrewReadsAreGuarded(t, "scripts/verify-grok-pin.sh")
 }
