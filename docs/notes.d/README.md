@@ -22,6 +22,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-csnzn](ranger-base-csnzn.md) — Extracting the multiplexer slot: four places the interface is not ADR 0076 §2's table (ranger-base-csnzn) — 2026-10-31
 - [ranger-base-c33j6](ranger-base-c33j6.md) — The Rex positive pass, and the three readings that take the launcher's environment for the seat's (ranger-base-c33j6) — 2026-10-31
 - [ranger-base-bs49e](ranger-base-bs49e.md) — The re-measurement did not clear the clock, and that is the honest outcome (ranger-base-bs49e) — 2026-10-31
+- [ranger-base-atvd4](ranger-base-atvd4.md) — A launch-time CHECK is install-gated exactly like a wall, and nothing counted that category (ranger-base-atvd4) — 2026-10-31
 - [ranger-base-9f2o6](ranger-base-9f2o6.md) — grok 1.0.52 re-measured: the cwd root is still read, and it has a precondition nobody declared (ranger-base-9f2o6) — 2026-10-31
 - [ranger-base-8u8n8](ranger-base-8u8n8.md) — Two pinned spellings of one seam, and the gate between them (ranger-base-8u8n8) — 2026-10-31
 - [ranger-base-80zqb](ranger-base-80zqb.md) — The two brackets were backwards, and the reader was never going to close the class (ranger-base-80zqb) — 2026-10-31

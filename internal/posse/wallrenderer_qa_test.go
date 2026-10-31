@@ -103,7 +103,7 @@ func TestWallRendererAtTheTipSaysTheWallsAreCurrent(t *testing.T) {
 		t.Fatalf("behind = %d known = %v (%s)", w.Lag.Behind, w.Lag.Known(), w.Lag.Why)
 	}
 	got := strings.Join(w.Lines("gates"), "\n")
-	if !strings.Contains(got, "is the tip of main") || !strings.Contains(got, "walls it renders at every launch are current") {
+	if !strings.Contains(got, "is the tip of main") || !strings.Contains(got, "walls it renders and the launch-time checks it decides at every launch are current") {
 		t.Fatalf("line = %s", got)
 	}
 	// No git log was needed, so none may be printed: a command that lists
@@ -224,6 +224,210 @@ func TestPromoteReadsTheRendererItRecords(t *testing.T) {
 		// a real one the operator reads the diff and this together.
 		if at, act := strings.Index(b.String(), prefix), strings.Index(b.String(), "files from "); dry && act >= 0 && at > act {
 			t.Fatalf("the reading came after the dry run's verdict:\n%s", b.String())
+		}
+	}
+}
+
+// ─── the launch-check half (ranger-base-atvd4) ───────────────────────────────
+//
+// A launch-time CHECK is install-gated for exactly the reason a wall is — the
+// installed binary decides it — but it renders no file, so the wall class
+// (keyed on a `do not edit` header a render writes about itself) cannot see
+// it. MEASURED 2026-10-31 over ranger-base-qr7me's own exposure window,
+// installed fe3b8036 against main at d4d105d2, 29 commits: 2 rendering a
+// wall, 8 deciding a launch-time check — two of those eight being the grok
+// project-config detector that was measurably guarding no seat. The operator
+// read the 2 and nothing named the category the detector was in.
+
+// bothRig is wallRig plus a launch-check source already in history, so a
+// later commit to either is a CHANGE rather than an addition.
+func bothRig(t *testing.T) (repo, stamp string) {
+	t.Helper()
+	repo, _ = posseRig(t, posseModule)
+	commitIn(t, repo, WallRenderSources[0], "package posse // v1\n", "a wall render, before")
+	commitIn(t, repo, LaunchCheckSources[0], "package posse // v1\n", "a launch check, before")
+	return repo, mustGit(t, repo, "rev-parse", "--short=7", "HEAD")
+}
+
+// The reading this bead is about: a lag whose commits decide a launch-time
+// check and render NO wall. The wall count is honestly 0 and the line must
+// still name what is stale — the old reading stopped at "none of them
+// touching a path posse renders a wall from" and said nothing else.
+func TestWallRendererNamesTheLaggingLaunchCheckCommits(t *testing.T) {
+	t.Parallel()
+	repo, stamp := bothRig(t)
+	landCommits(t, repo, 3)
+	commitIn(t, repo, LaunchCheckSources[0], "package posse // v2\n", "ranger-base-l12j9: grok declares its project-config channel")
+
+	w := ReadWallRenderer(FindLauncher("0.5.0+"+stamp, []string{repo}))
+	if !w.Lag.Known() || w.Lag.Behind != 4 {
+		t.Fatalf("behind = %d known = %v (%s)", w.Lag.Behind, w.Lag.Known(), w.Lag.Why)
+	}
+	if len(w.Commits) != 0 || w.Why != "" {
+		t.Fatalf("wall half = %v / %q; want an empty, read answer", w.Commits, w.Why)
+	}
+	if w.CheckWhy != "" {
+		t.Fatalf("the launch-check half abstained: %s", w.CheckWhy)
+	}
+	if len(w.CheckCommits) != 1 || !strings.Contains(w.CheckCommits[0], "ranger-base-l12j9") {
+		t.Fatalf("launch-check commits = %v, want the one l12j9 commit", w.CheckCommits)
+	}
+	got := strings.Join(w.Lines("gates"), "\n")
+	for _, want := range []string{
+		"4 commit(s) behind main",
+		// BOTH counts, always — a category said only when it is nonzero is a
+		// category whose zero cannot be told from a reading that never ran.
+		"0 of them rendering a wall",
+		"1 of them deciding a launch-time check",
+		// The consequence, in the words that distinguish it from a wall's:
+		// the check is REPORTED, so the seat reads a clean verdict.
+		"the landed fix guards nobody",
+		"ranger-base-qr7me",
+		"make install",
+		"ranger-base-l12j9",
+		"log --oneline " + stamp + "..main -- " + LaunchCheckSources[0],
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("line missing %q:\n%s", want, got)
+		}
+	}
+	// The wall half has nothing to list, so it prints no block and no
+	// command: an operator who runs one for an empty answer stops trusting
+	// the surface (the tip arm's own rule, applied per category).
+	if strings.Contains(got, WallRenderSources[0]) {
+		t.Fatalf("the empty wall half printed its pathspecs:\n%s", got)
+	}
+}
+
+// One lag, two categories, counted separately and never collapsed: the whole
+// shape the bead asked for ("29 behind: 0 wall, 2 launch-check"), with each
+// category's own commits under its own consequence.
+func TestWallRendererCountsTheTwoCategoriesSeparately(t *testing.T) {
+	t.Parallel()
+	repo, stamp := bothRig(t)
+	commitIn(t, repo, WallRenderSources[0], "package posse // v2\n", "ranger-base-prjck: a fourth credential read-deny")
+	commitIn(t, repo, LaunchCheckSources[0], "package posse // v2\n", "ranger-base-2zkcy: grok declares .grok/lsp.json")
+
+	w := ReadWallRenderer(FindLauncher("0.5.0+"+stamp, []string{repo}))
+	if len(w.Commits) != 1 || len(w.CheckCommits) != 1 {
+		t.Fatalf("wall = %v, check = %v; want one each", w.Commits, w.CheckCommits)
+	}
+	got := strings.Join(w.Lines("promote"), "\n")
+	for _, want := range []string{
+		"1 of them rendering a wall, 1 of them deciding a launch-time check",
+		"renders the OLD seatbelt",
+		"ranger-base-prjck",
+		"OLD parity matrix and the OLD runtime declarations",
+		"ranger-base-2zkcy",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("line missing %q:\n%s", want, got)
+		}
+	}
+	// Each commit sits under its own category's consequence, in list order
+	// (wall first), so a reader cannot attribute one to the other.
+	wallAt, checkAt := strings.Index(got, "ranger-base-prjck"), strings.Index(got, "ranger-base-2zkcy")
+	wallCost, checkCost := strings.Index(got, "renders the OLD seatbelt"), strings.Index(got, "OLD parity matrix")
+	if !(wallCost < wallAt && wallAt < checkCost && checkCost < checkAt) {
+		t.Fatalf("the two categories' blocks are interleaved:\n%s", got)
+	}
+}
+
+// Neither count is an all-clear, and the line says so naming BOTH lists.
+// Each is a floor — the wall list by the render-header class it derives
+// from, the launch-check list by its two clauses — so "no commit in either"
+// may never render as "nothing to install".
+func TestWallRendererWithNeitherCategoryTouchedIsStillNotAnAllClear(t *testing.T) {
+	t.Parallel()
+	repo, stamp := bothRig(t)
+	landCommits(t, repo, 6)
+
+	w := ReadWallRenderer(FindLauncher("0.5.0+"+stamp, []string{repo}))
+	if len(w.Commits) != 0 || len(w.CheckCommits) != 0 || w.Why != "" || w.CheckWhy != "" {
+		t.Fatalf("wall = %v/%q check = %v/%q; want two empty, read answers", w.Commits, w.Why, w.CheckCommits, w.CheckWhy)
+	}
+	got := strings.Join(w.Lines("gates"), "\n")
+	for _, want := range []string{
+		"6 commit(s) behind main",
+		"0 of them rendering a wall",
+		"0 of them deciding a launch-time check",
+		"are a FLOOR",
+		"WallRenderSources",
+		"LaunchCheckSources",
+		"make install",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("line missing %q:\n%s", want, got)
+		}
+	}
+	if len(w.Lines("gates")) != 1 {
+		t.Fatalf("a lag touching neither list is one sentence, not a block:\n%s", got)
+	}
+}
+
+// LaunchCheckSources must be paths in THIS repo, spelled slash-first and
+// relative — they are handed to `git log -- <pathspec>` in whatever checkout
+// the stamp resolved to, and an absolute or ./-prefixed spelling silently
+// matches nothing there. The sibling arm for WallRenderSources, against the
+// second list, because the failure is silent in exactly the same way.
+func TestLaunchCheckSourcesAreRelativeRepoPaths(t *testing.T) {
+	t.Parallel()
+	if len(LaunchCheckSources) == 0 {
+		t.Fatal("no launch check sources")
+	}
+	for _, p := range LaunchCheckSources {
+		if filepath.IsAbs(p) || strings.HasPrefix(p, "./") || strings.Contains(p, "\\") {
+			t.Errorf("%q is not a repo-relative slash path", p)
+		}
+		if !strings.HasSuffix(p, ".go") {
+			t.Errorf("%q is not a Go source file", p)
+		}
+	}
+}
+
+// A subset that cannot be READ is UNKNOWN per category, never a zero. This
+// is the arm the bead's own rule asks for ("UNKNOWN, never OK") applied one
+// level down: a `git log` that fails over one pathspec list must not render
+// as "0 of them", because 0 is the answer an operator acts on by doing
+// nothing. Reached by handing the reading a Repo that is not a git checkout
+// while the lag itself is counted — the shape a moved or pruned checkout
+// takes between the count and the narrowing.
+func TestWallRendererSaysUNKNOWNPerCategoryWhenASubsetCannotBeRead(t *testing.T) {
+	t.Parallel()
+	notARepo := t.TempDir()
+	w := ReadWallRenderer(LauncherLag{
+		Version: "0.5.0+abc1234", Rev: "abc1234", Base: "main", Repo: notARepo, Behind: 7,
+	})
+	if !w.Lag.Known() || w.Lag.Behind != 7 {
+		t.Fatalf("the lag itself must still be counted: behind = %d, why = %q", w.Lag.Behind, w.Lag.Why)
+	}
+	if w.Why == "" || w.CheckWhy == "" {
+		t.Fatalf("a subset that could not be read reported no reason: why = %q, checkWhy = %q", w.Why, w.CheckWhy)
+	}
+	if len(w.Commits) != 0 || len(w.CheckCommits) != 0 {
+		t.Fatalf("an unreadable subset invented commits: %v / %v", w.Commits, w.CheckCommits)
+	}
+	// Each abstention names its OWN category, so a reader can tell which
+	// question went unanswered rather than mistrusting both.
+	if !strings.Contains(w.Why, "wall-rendering") || !strings.Contains(w.CheckWhy, "launch-check") {
+		t.Fatalf("the two abstentions do not name their categories: %q / %q", w.Why, w.CheckWhy)
+	}
+	got := strings.Join(w.Lines("gates"), "\n")
+	for _, want := range []string{
+		"7 commit(s) behind main",
+		"UNKNOWN how many of them render a wall",
+		"UNKNOWN how many of them decide a launch-time check",
+		"make install",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("line missing %q:\n%s", want, got)
+		}
+	}
+	// The one reading that would be a lie: an unread subset rendered as a
+	// count of zero.
+	for _, never := range []string{"0 of them rendering a wall", "0 of them deciding a launch-time check", "are current"} {
+		if strings.Contains(got, never) {
+			t.Fatalf("an unreadable subset rendered as %q:\n%s", never, got)
 		}
 	}
 }
