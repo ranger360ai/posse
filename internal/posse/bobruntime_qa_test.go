@@ -326,14 +326,21 @@ func TestQABobGridDeclaresEveryRow(t *testing.T) {
 		// tree green (MEASURED 2026-09-28, ranger-base-rg19l — `go test` over
 		// internal/posse, cmd/posse and internal/treepins for the skills one).
 		//
-		// skills: cwd-discovery, not a flag, and UNPROVEN (ADR 0007 §6a-b):
-		// bob's root is its own posse-owned namespace, BobSkillsRoot, and
-		// carries no skills_verified — nobody has measured bob reading a
-		// skill linked there yet (ranger-base-6r1rf). Dropping SkillsRoot
-		// renders `skills flag — , pointed at the tree posse renders per
-		// persona` — an empty flag name and a dangling comma, a malformed
-		// row — and posse then points bob at a tree its CLI never walks.
-		"cwd-discovery — " + BobSkillsRoot + " under the session dir, UNPROVEN (never measured live)",
+		// skills: cwd-discovery, not a flag, and VERIFIED since
+		// ranger-base-6r1rf (ADR 0007 §6a): bob's root is its own
+		// posse-owned namespace, BobSkillsRoot, and skills_verified names
+		// the bob the operator MEASURED listing a skill there live on
+		// 2026-10-31 — both as a real dir and as a symlink out of the
+		// workspace. Dropping SkillsRoot renders `skills flag — , pointed
+		// at the tree posse renders per persona` — an empty flag name and a
+		// dangling comma, a malformed row — and posse then points bob at a
+		// tree its CLI never walks. Anchored on the VERSION as well as the
+		// root: the row read UNPROVEN for the whole life of this runtime,
+		// and the failure this half exists to catch is the field going empty
+		// again, which silently re-degrades every `skills:` PID on bob
+		// (§6b) while the row still names the right path.
+		"cwd-discovery — " + BobSkillsRoot + " under the session dir, symlinked at launch and ADDITIVE",
+		"the LINKS are the binding (verified 2.0.5)",
 		// sandbox: self_sandbox UNSET, so L2 is posse's seatbelt and not
 		// bob's own. Declaring it flips who enforces Edit/Write here on a CLI
 		// nobody has measured wrapping its own children.

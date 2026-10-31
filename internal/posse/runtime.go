@@ -1838,19 +1838,31 @@ var builtinRuntimes = []Runtime{
 	// is most likely to get wrong, and now the part that is measured.
 	// Skills: bob's root is its OWN posse-owned namespace, BobSkillsRoot
 	// (ADR 0007 §6d) — not AgentsSkillsPath, the shared surface codex and
-	// grok read. It carries no SkillsVerified: the operator's static read
-	// of bob 2.0.5's bundle (ADR 0007 Evidence) names a workspace root this
-	// IS one of, but nobody has measured live that bob actually discovers a
-	// skill linked there, so a `skills:` PID on bob is UNPROVEN (§6b) until
-	// the live probe lands (ranger-base-6r1rf) — the honest state, louder
-	// than the pre-ADR-0007-§6 claim that AgentsSkillsPath was bob's
-	// surface at all, which the operator's own measurement showed false.
+	// grok read. SkillsVerified is `2.0.5`, MEASURED LIVE 2026-10-31 by the
+	// operator (ranger-base-6r1rf, through ranger-base-lfk7t: this cage can
+	// neither write ~/.bob nor complete bob's browser sign-in): `bob chat
+	// --workspace <probe> --trust` in a scratch workspace, read off the
+	// TUI's own `/skills` listing with no turn sent, listed a skill planted
+	// at `<ws>/.bob/plugins/posse/skills/<name>/SKILL.md` BOTH as a real dir
+	// and as a symlink whose target is outside the workspace — the two
+	// facts §6's Evidence had ASSUMED, and the pair the binding needs, since
+	// posse renders this root as symlinks into RHQ_HOME/skills. So a
+	// `skills:` PID on bob is no longer §6b-UNPROVEN.
+	// The value is BARE on purpose: `skills_verified` is compared verbatim
+	// against ProbeCLIVersion's read (§6c), and `bob --version` prints the
+	// number alone — `2.0.5`, with `commit: <sha>` on a second line the
+	// reader drops — where codex prints `codex-cli 0.153.4`. Writing
+	// `bob 2.0.5` here would be permanent false drift against every bob.
+	// This box's installed bob is 2.0.7 (`commit: e1a2a9f87`, MEASURED
+	// 2026-10-31), so this declaration IS in drift today — reported in the
+	// grid and at launch, never refused, and the remedy is a re-measurement
+	// (§6c, ranger-base-bs49e).
 	// SkillsGlobalRoots is the same static read's other half (§6e): bob's
 	// OWN BobSkillsRoot (`.bob/plugins/posse/skills`) sits inside its own
 	// `.bob/plugins/*/skills` entry below, so bob's declaration refuses its
 	// own cwd-at-home render — not a gap the live probe closes, a fact the
 	// bundle already settles.
-	{Name: "bob", Builtin: true, Skills: skillsCwd, SkillsRoot: BobSkillsRoot, SkillsGlobalRoots: bobSkillsGlobalRoots, Unattended: "--auto-approve",
+	{Name: "bob", Builtin: true, Skills: skillsCwd, SkillsRoot: BobSkillsRoot, SkillsVerified: "2.0.5", SkillsGlobalRoots: bobSkillsGlobalRoots, Unattended: "--auto-approve",
 		// The PID channel (ADR 0062 D1): bob is the one built-in whose CLI
 		// has no launch-time system FLAG, and the one that declares a
 		// persona-mode channel. {mode} renders off this and the launch

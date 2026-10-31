@@ -6,6 +6,7 @@ references), not inferred publication dates. Undated fragments sort last.
 
 ## 2026-10
 
+- [ranger-base-6r1rf](ranger-base-6r1rf.md) — bob reads the posse namespace, symlinks and all — and is in drift the day it ships (ranger-base-6r1rf) — 2026-10-31
 - [ranger-base-99a7u](ranger-base-99a7u.md) — The meta-harness landscape, 2026-10-24, and where posse sits in it (ranger-base-99a7u) — 2026-10-24
 - [notes-grok](notes-grok.md) — grok substrate: pinned at 1.0.5, upgrades are a security re-audit (rangerhq-y7jr) — 2026-10-15
 - [ranger-base-bdias](ranger-base-bdias.md) — codex 0.153.4 re-measured: cwd root and symlinks hold, and it now reads `~/.agents/skills` as a global root (ranger-base-bdias) — 2026-10-12

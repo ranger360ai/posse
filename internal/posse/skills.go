@@ -330,8 +330,10 @@ const AgentsSkillsPath = ".agents/skills"
 // the operator's static read of bob 2.0.5's bundle (ADR 0007 Evidence) found
 // no CLI read of `.agents/skills` at all, so claiming that root for bob was
 // the §6 bug — a declaration nobody had measured, standing in for a runtime
-// whose real surface a different root entirely. Carries no SkillsVerified
-// (runtime.go) until the live probe lands (ranger-base-6r1rf).
+// whose real surface a different root entirely. MEASURED LIVE 2026-10-31 on
+// bob 2.0.5 (ranger-base-6r1rf): bob's `/skills` listing carries a skill
+// planted here as a real dir AND as a symlink out of the workspace, so the
+// root is verified and runtime.go now declares SkillsVerified for it.
 const BobSkillsRoot = ".bob/plugins/posse/skills"
 
 // bobSkillsGlobalRoots is bob's declared Runtime.SkillsGlobalRoots (ADR 0007
