@@ -198,7 +198,7 @@ func TestQABoxCheckCensusCoversEveryVerifyTarget(t *testing.T) {
 
 // The roster's membership rule, stated as the specific targets that must be on
 // it. A census alone cannot catch someone moving a live-box check into
-// EXCLUDED with a plausible sentence — these seven assert this machine and the
+// EXCLUDED with a plausible sentence — these eight assert this machine and the
 // reason each one exists is that its condition REGENERATES.
 func TestQABoxCheckRostersTheLiveBoxChecks(t *testing.T) {
 	roster, excluded, _ := bcCensus(t)
@@ -210,6 +210,14 @@ func TestQABoxCheckRostersTheLiveBoxChecks(t *testing.T) {
 		"verify-hook-freshness",     // every hook on the box is a COPY
 		"verify-gate-freshness",     // the gate copy is operator-owned, not rendered
 		"verify-bd-no-relate-pairs", // one verb plants a pair, any day
+		// ranger-base-gf0ln. A runtime that updates itself moves away from
+		// the version its skill discovery was MEASURED on, and the detector
+		// for that (ADR 0007 §6c) had two readers, both display, both exit 0
+		// over a drift — so bob's 2.0.5 → 2.0.7 reached the tree as an mtime
+		// a pulse happened to read (ranger-base-lf6it). The condition
+		// regenerates in the strongest sense on this roster: the CLI
+		// regenerates itself.
+		"verify-skills-drift",
 	} {
 		if !bcIn(roster, want) {
 			t.Errorf("%s is a live-box check and must be on the %s roster (its EXCLUDED reason, if any: %q)", want, bcScript, excluded[want])
@@ -244,7 +252,9 @@ func TestQABoxCheckExcludesTheTwoThatMustNotBeScheduled(t *testing.T) {
 	}
 }
 
-// The aggregate's own self-test, run for real. Ten arms with controls; ~1s.
+// The aggregate's own self-test, run for real. Arms with controls, ~1s; the
+// floor asserted below is ten, deliberately a floor and not a count — the
+// count moves whenever an arm is added and two places holding it would drift.
 // Without this the roster could be perfect and the runner could still stop at
 // the first red, or score "nothing measured" as a pass — which is the exact
 // silence the bead is about, rebuilt inside its own fix.
@@ -260,13 +270,19 @@ func TestQABoxCheckSelfTestStillFires(t *testing.T) {
 	s := string(out)
 	// A self-test that ran no arms exits 0 too. Count them.
 	if n := strings.Count(s, "  ok   "); n < 10 {
-		t.Fatalf("%s --self-test reported only %d passing arm(s); it has ten:\n%s", bcScript, n, s)
+		t.Fatalf("%s --self-test reported only %d passing arm(s); the floor is ten:\n%s", bcScript, n, s)
 	}
-	// Two arms by name, because these are the two verdicts an aggregate gets
-	// wrong: it stops at the first red, and it calls "nothing measured" a pass.
+	// Three arms by name. The first two are the verdicts an aggregate gets
+	// wrong: it stops at the first red, and it calls "nothing measured" a
+	// pass. The third is load-bearing for a ROSTER ROW rather than for the
+	// runner's arithmetic (ranger-base-gf0ln): verify-skills-drift's program
+	// is an installed binary, so it is resolved on PATH, and deleting that
+	// arm would leave the count above well clear of its floor while the one
+	// row of that shape went unmeasured.
 	for _, want := range []string{
 		"a finding in the middle does not stop the run",
 		"all-2 is NOTHING MEASURED, not a pass",
+		"a bare command is resolved on PATH, not under the repo root",
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("%s --self-test no longer runs the arm %q:\n%s", bcScript, want, s)
@@ -408,6 +424,64 @@ func TestQABoxCheckCensusCoversEveryVerifyScript(t *testing.T) {
 		if _, err := os.Stat(filepath.Join("scripts", name)); err != nil {
 			t.Errorf("%s lists %s as untargeted, and there is no such script: %v", bcScript, name, err)
 		}
+	}
+}
+
+// The roster's PROGRAM SHAPE: the first word of a roster command is one of the
+// two things the runner's cannot_run can resolve, and nothing else
+// (ranger-base-gf0ln).
+//
+//	a REPO-RELATIVE PATH — every scripts/verify-*.sh row. The subject is the
+//	box; the apparatus is this checkout, so it is resolved against the repo
+//	root and must be executable there.
+//
+//	a BARE COMMAND NAME — a row whose program IS an installed binary, resolved
+//	on PATH. `posse runtime drift` is the first, and the schedule's plist
+//	populates PATH for exactly these rows.
+//
+// An ABSOLUTE path is the shape that looks like it must work and does not:
+// cannot_run reads anything containing a slash through the repo-root branch,
+// so /opt/homebrew/bin/foo is looked for at <root>/opt/homebrew/bin/foo and
+// the row ERRORs on a box that has the binary. A relative path that is not
+// executable here is the same failure one spelling over. Both are findings a
+// person reads as "the box is wrong" when the ROSTER is wrong, which is worse
+// than a check that does not run — and neither is visible until the clock
+// fires, because the runner is the only other thing that resolves these.
+func TestQABoxCheckRosterProgramsAreAShapeTheRunnerResolves(t *testing.T) {
+	roster, _, _ := bcCensus(t)
+	bare := 0
+	for tgt, cmd := range roster {
+		fields := strings.Fields(cmd)
+		if len(fields) == 0 {
+			// bcCensus already refuses an empty second field; this is the
+			// reader saying so rather than indexing into nothing.
+			t.Errorf("%s rosters %s with no command at all", bcScript, tgt)
+			continue
+		}
+		prog := fields[0]
+		switch {
+		case strings.HasPrefix(prog, "/"):
+			t.Errorf("the %s roster runs %q for %s, whose program is an ABSOLUTE path.\n"+
+				"run_roster resolves anything with a slash against the repo root, so this row looks for %s under the checkout and ERRORs on a box that has the binary.\n"+
+				"Name it bare and let PATH resolve it, or ship a script in this checkout.", bcScript, cmd, tgt, prog)
+		case strings.Contains(prog, "/"):
+			info, err := os.Stat(prog)
+			if err != nil {
+				t.Errorf("the %s roster runs %q for %s and there is no %s in this checkout: %v", bcScript, cmd, tgt, prog, err)
+				continue
+			}
+			if info.Mode().Perm()&0o111 == 0 {
+				t.Errorf("the %s roster runs %q for %s and %s is not executable — the runner scores that ERROR every run", bcScript, cmd, tgt, prog)
+			}
+		default:
+			bare++
+		}
+	}
+	// The reader again, in the direction that would make this test vacuous:
+	// with no bare-name row on the roster, the branch above is never taken
+	// and the arm says nothing about the shape it was written for.
+	if bare == 0 {
+		t.Errorf("no roster row names a bare command, so the PATH branch of run_roster's cannot_run is measured by nothing here (verify-skills-drift was the first such row)")
 	}
 }
 

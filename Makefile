@@ -42,7 +42,7 @@ FMT_ROOTS := cmd internal *.go
 BUILD_STAMP := $(shell $(GOBIN) run ./cmd/buildstamp)
 LDFLAGS     := -X github.com/ranger360ai/posse/internal/posse.Build=$(BUILD_STAMP)
 
-.PHONY: build release install deploy test test-arm1 test-arm2 test-arm3 test-race test-reuse treepins fmt-check crew-check seed-check history-check doc-check identity-check ops-check execwrite-check notes-check adr-check corpus-check register-check scripts-check pid-check tree-check verify-test-times verify-suite-lock verify-pattern-kill-census verify-silent-reverts verify-shell-syntax verify-python-syntax verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-herdr-bob install-herdr-bob verify-herdr-bob-rules install-herdr-bob-rules verify-prune-guard verify-id-recycle verify-self-close verify-govern-honesty verify-grok-pin verify-codex-pin verify-credential-paths verify-policy-pins verify-hook-freshness verify-bd-pin verify-nodb-defer verify-nodb-defer-capability verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk verify-box verify-box-self-test prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
+.PHONY: build release install deploy test test-arm1 test-arm2 test-arm3 test-race test-reuse treepins fmt-check crew-check seed-check history-check doc-check identity-check ops-check execwrite-check notes-check adr-check corpus-check register-check scripts-check pid-check tree-check verify-test-times verify-suite-lock verify-pattern-kill-census verify-silent-reverts verify-shell-syntax verify-python-syntax verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-herdr-bob install-herdr-bob verify-herdr-bob-rules install-herdr-bob-rules verify-prune-guard verify-id-recycle verify-self-close verify-govern-honesty verify-grok-pin verify-codex-pin verify-skills-drift verify-credential-paths verify-policy-pins verify-hook-freshness verify-bd-pin verify-nodb-defer verify-nodb-defer-capability verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk verify-box verify-box-self-test prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
 
 build:
 	$(GOBIN) build -ldflags '$(LDFLAGS)' -o bin/posse-go ./cmd/posse
@@ -1028,6 +1028,47 @@ verify-grok-pin:
 # re-audit list when the tap moves. Lifting the pin is the operator's.
 verify-codex-pin:
 	scripts/verify-codex-pin.sh
+
+# The skills_verified: clock (ranger-base-f5jbs, put on the clock by
+# ranger-base-gf0ln). The two pins above assert a CLI's VERSION against its own
+# declaration file; this asserts the same box against a different declaration
+# -- the version each launch profile says its live skill discovery was MEASURED
+# on (ADR 0007 section 6c's `skills_verified:`). `posse runtime drift` walks
+# every profile this box has, built-ins and runtimes/*.yaml alike, and compares
+# that against what the CLI installed HERE answers to --version now.
+#
+# WHY IT NEEDED A TARGET AT ALL. skillsVerifiedDrift has said the right
+# sentence since section 6c landed and said it to nobody on a clock: its other
+# two readers are DISPLAY -- a launch's Realized detail and `posse runtime
+# check` -- and both exit 0 over a drift, correctly, because section 6c reports
+# and never refuses a launch. So when bob updated itself 2.0.5 -> 2.0.7 the
+# tree found out from an mtime a pulse happened to read (ranger-base-lf6it) and
+# not from the detector that was already right and already installed. It covers
+# bob, codex and grok on one mechanism rather than bob alone.
+#
+# THE SUBJECT IS THE INSTALLED BINARY, which is what makes this a live-box
+# check and not a tree one: the fact is which version of each CLI is on THIS
+# machine, against the version posse measured. It is on the
+# scripts/verify-box.sh roster, where it is the one row whose program is a
+# binary rather than a script in this checkout -- so the installed posse being
+# older than the `drift` verb is itself a finding there (exit 1, the usage
+# line), and `make install` is the repair.
+#
+# The recipe is the BARE COMMAND and not `$(POSSE) runtime drift`: verify-box's
+# runner evals a roster command in a shell, where `$(POSSE)` would be command
+# substitution -- the same trap that keeps verify-nodb-defer's two-line recipe
+# off the roster. A bare name resolves on PATH, which the schedule's plist
+# populates for exactly these rows.
+#
+# Read-only, and it spends NO TURN: it reads each profile's yaml and asks each
+# CLI for --version. It starts nothing it has to kill and remediates nothing --
+# a finding prints the re-measurement to run, and that probe (RHQ_PARITY_LIVE=1)
+# does spend a real turn, so it stays the operator's per-run call.
+# Exit 1 = a drift, or a profile posse cannot read at all. Exit 2 = no profile
+# here both declares a skills_verified: and has a CLI that answers --version,
+# i.e. nothing measured, which is not a pass.
+verify-skills-drift:
+	posse runtime drift
 
 # ADR 0019 "path 3": a credential file in the Claude Code config directory
 # (ranger-base-zzc, escaped as ranger-base-m6cm). The operator deleted the file

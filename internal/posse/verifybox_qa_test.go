@@ -675,6 +675,13 @@ func TestTheTwoPathsAreUnderTheInstancesStateDir(t *testing.T) {
 // against a scratch RHQ_HOME, and reads the file back with VerifyBoxFreshness.
 // The roster is planted so all four statuses appear in one run: the three a
 // check defines, plus the ERROR the runner assigns a check it cannot run.
+//
+// AND IT PLANTS BOTH ROSTER SHAPES, because since ranger-base-gf0ln there are
+// two: a repo-relative script in the checkout, and a BARE COMMAND NAME
+// resolved on PATH, which is what a row whose program is an installed binary
+// needs (`posse runtime drift`). The row's status reaches this reader through
+// the same tokens either way — that is the claim — and a PATH-resolved row
+// scored ERROR by the runner would arrive here as a red nobody could place.
 func TestTheScriptWritesWhatThisReaderParses(t *testing.T) {
 	t.Parallel()
 	script, err := filepath.Abs("../../scripts/verify-box.sh")
@@ -702,16 +709,28 @@ func TestTheScriptWritesWhatThisReaderParses(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// The bare-name fixture gets a directory of its own, prepended to PATH:
+	// under $dir/scripts it would be reachable as a repo-relative path too,
+	// and then this row would not be measuring the branch it is here for.
+	bin := filepath.Join(dir, "bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteExecutable(filepath.Join(bin, "vbonpath"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	home := filepath.Join(dir, "home")
 	roster := strings.Join([]string{
 		"green\tscripts/arm0.sh",
 		"red\tscripts/arm1.sh",
 		"blind\tscripts/arm2.sh",
 		"broken\tscripts/gone.sh",
+		"onpath\tvbonpath",
 	}, "\n") + "\n"
 
 	cmd := exec.Command(copied, "--self-test-run")
-	cmd.Env = append(os.Environ(), "ROSTER_OVERRIDE="+roster, "RHQ_HOME="+home)
+	cmd.Env = append(os.Environ(), "ROSTER_OVERRIDE="+roster, "RHQ_HOME="+home,
+		"PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	out, runErr := cmd.CombinedOutput()
 	// A roster with a finding in it exits 1 by design; what is under test is
 	// the file it left behind.
@@ -739,14 +758,15 @@ func TestTheScriptWritesWhatThisReaderParses(t *testing.T) {
 		"red":    VerifyBoxFinding,
 		"blind":  VerifyBoxUnmeasured,
 		"broken": VerifyBoxError,
+		"onpath": VerifyBoxOK,
 	} {
 		if got[name] != want {
 			t.Errorf("the script wrote %q for %s and this reader wants %q\nfile:\n%s", got[name], name, want, mustRead(t, VerifyBoxStatePath(a)))
 		}
 	}
 	ok, red, unmeasured := r.Counts()
-	if ok != 1 || red != 2 || unmeasured != 1 {
-		t.Errorf("counts = %d ok / %d red / %d not measured, want 1/2/1 — a token this reader does not know is counted nowhere", ok, red, unmeasured)
+	if ok != 2 || red != 2 || unmeasured != 1 {
+		t.Errorf("counts = %d ok / %d red / %d not measured, want 2/2/1 — a token this reader does not know is counted nowhere", ok, red, unmeasured)
 	}
 	if row := vbRow(r, "verify-box:"); row == nil || !strings.Contains(row.Key, "red") {
 		t.Errorf("a real run with a finding in it raises no row: %v", vbKeys(r))

@@ -23,7 +23,9 @@ only a recurring detective check is.
 
 ```
 make verify-box              # every check on the roster, ~40s, read-only
-make verify-box-self-test    # ten arms proving the aggregate can still fail
+make verify-box-self-test    # the arms proving the aggregate can still fail
+                             # (it prints its own count; nothing holds a
+                             #  second copy of it)
 ```
 
 **Why it is not a `for` loop over `&&`.** Each of these scripts already
@@ -62,6 +64,25 @@ exclusions are load-bearing rather than housekeeping:
   this box has no known no-db store left to name — not-measured every run,
   forever. One script, two flag sets, two targets, one of them on the clock,
   which is `verify-bd-dep-safety` beside `verify-bd-no-relate-pairs` again.
+
+**A row's program can be an INSTALLED BINARY, and exactly one is**
+(ranger-base-gf0ln). `verify-skills-drift` runs `posse runtime drift` — ADR
+0007 §6c's `skills_verified:` clock, every launch profile's declared
+measurement version against what the CLI installed *here* answers to
+`--version` now. The detector was right and installed long before it was
+scheduled: its other two readers are *display*, and both exit 0 over a drift,
+correctly, because §6c reports and never refuses a launch. So bob's
+`2.0.5 → 2.0.7` reached the tree as an mtime a pulse happened to read
+(ranger-base-lf6it, ranger-base-f5jbs).
+
+That row made `run_roster` resolve a roster program two ways instead of one: a
+**repo-relative path** against the checkout (every `verify-*.sh` row), or a
+**bare name** on `PATH` via the `command -v` builtin. An *absolute* path is the
+shape that looks like it must work and does not — it has a slash, so it is
+looked for under the repo root — and a pin refuses one. The schedule's plist
+already populates `PATH` for exactly these rows. The recipe stays the bare
+command: the runner `eval`s it, so `$(POSSE)` would be command substitution,
+and `make <target>` would collapse every nonzero status to make's own 2.
 
 **And the census is over `scripts/` too** (ranger-base-bbl6r, which is this
 section's own defect in the one shape its guard could not see). Both lists

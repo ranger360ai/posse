@@ -182,6 +182,26 @@ esac
 #                                (ranger-base-bwp7h section 4). The two-arm
 #                                door `verify-nodb-defer` is excluded below:
 #                                its arm B needs a store path.
+#   verify-skills-drift          ADR 0007 section 6c's skills_verified: clock,
+#                                with an exit code (ranger-base-f5jbs). Every
+#                                launch profile declares the CLI version its
+#                                live skill discovery was MEASURED on; this
+#                                walks every profile and compares that against
+#                                what the CLI installed HERE answers to
+#                                --version now. bob updates itself, and the
+#                                tree learned of 2.0.5 -> 2.0.7 from an mtime a
+#                                pulse happened to read (ranger-base-lf6it) and
+#                                not from the detector that was already right
+#                                and already installed -- because section 6c
+#                                reports and never refuses a LAUNCH, so both of
+#                                its other readers are display and exit 0. It
+#                                covers bob, codex and grok on one mechanism.
+#                                THE ONLY ROW WHOSE PROGRAM IS AN INSTALLED
+#                                BINARY rather than a script in this checkout,
+#                                which is the resolution branch run_roster
+#                                grew for it -- and it is therefore also the
+#                                row that reds when the posse installed on this
+#                                box is older than the verb itself.
 # The key is the MAKEFILE TARGET NAME, not a short label. There was a second
 # list here mapping short keys back to targets, and it was a silent-drift path
 # of exactly the kind this script exists for: dropping a roster row and leaving
@@ -197,6 +217,7 @@ verify-hook-freshness	scripts/verify-hook-freshness.sh
 verify-gate-freshness	scripts/verify-gate-freshness.sh
 verify-bd-no-relate-pairs	scripts/verify-bd-dep-safety.sh --gate
 verify-nodb-defer-capability	scripts/verify-nodb-defer.py --arm-a-only
+verify-skills-drift	posse runtime drift
 ROSTER_EOF
 )
 
@@ -306,9 +327,39 @@ write_state() { # write_state <stamp> <rc> <checks-block>
   return 0
 }
 
+# cannot_run is true when a roster row's PROGRAM is not runnable on this box,
+# and it is the one place that knows a roster command's first word can be
+# either of two things:
+#
+#   a REPO-RELATIVE PATH -- every scripts/verify-*.sh row. The subject is the
+#   box, but the apparatus is this checkout, so it is resolved against $root
+#   and must be executable there.
+#
+#   a BARE COMMAND NAME on PATH -- a row whose program IS an installed binary
+#   (`posse runtime drift`, ranger-base-gf0ln). Resolving that against $root
+#   is how the old one-branch guard would have scored the row: an ERROR
+#   reading `posse is missing or not executable` on a box where posse is
+#   installed and the check runs fine. The schedule's plist populates PATH for
+#   exactly these rows ("posse, bd, brew, grok, codex" -- its own comment).
+#
+# `command -v` is a shell BUILTIN and cannot fail to exec, which is the same
+# reason the self-test's matcher is a `case` and its reader a `read` loop: an
+# apparatus that answers nothing must not be able to make a check report
+# something about the box.
+#
+# Either way the answer is ERROR and never silence -- self-test arms 5 and 6
+# are the pair, because a check that cannot run is the one shape that would
+# let someone delete a check and keep a green board.
+cannot_run() {
+  case "$1" in
+    */*) [ ! -x "$root/$1" ] ;;
+    *)   ! command -v "$1" >/dev/null 2>&1 ;;
+  esac
+}
+
 run_roster() {
   local ok=0 finding=0 nothing=0 error=0 lines="" detail="" checks=""
-  local name cmd rc out started
+  local name cmd prog where rc out started
   # ONE stamp for the whole run, taken before the first check and used by the
   # start line, the report header and the state file alike. The header used to
   # take its own `date` at report time; two stamps for one run is two answers
@@ -323,12 +374,22 @@ run_roster() {
   echo "$self: run started $started"
   while IFS=$'\t' read -r name cmd; do
     [ -n "$name" ] || continue
-    if [ ! -x "$root/${cmd%% *}" ]; then
-      lines+=$(printf '  %-29s %s' "$name" "ERROR    ${cmd%% *} is missing or not executable")
+    prog=${cmd%% *}
+    if cannot_run "$prog"; then
+      # The SHORT line's wording is the same for both branches -- the state
+      # file's token is `error` either way and posse's reader keys on that --
+      # while the detail says where this run actually looked, because "posse
+      # is missing" and "$root/scripts/x.sh is missing" send a reader to
+      # different places.
+      case "$prog" in
+        */*) where="$root/$prog is missing or not executable" ;;
+        *)   where="$prog is not on PATH -- this row's program is an INSTALLED binary and this box does not have one" ;;
+      esac
+      lines+=$(printf '  %-29s %s' "$name" "ERROR    $prog is missing or not executable")
       lines+=$'\n'
       error=$((error + 1))
       checks+="  $name: error"$'\n'
-      detail+="--- $name (could not run)"$'\n'"$root/${cmd%% *} is missing or not executable"$'\n\n'
+      detail+="--- $name (could not run)"$'\n'"$where"$'\n\n'
       continue
     fi
     out=$( cd "$root" && eval "$cmd" 2>&1 )
@@ -410,6 +471,10 @@ run_roster() {
 #   5. a missing or non-executable script is scored silently rather than as an
 #      ERROR -- the shape that would let someone delete a check and keep a
 #      green board.
+#   6. a row whose program is an INSTALLED BINARY -- a bare command name, not
+#      a path -- is looked for under the repo root, so a check that runs fine
+#      on this box is scored ERROR, and a bare name on no PATH is scored
+#      something other than ERROR. Both halves of cannot_run, one arm each.
 #
 # Each arm has a control that must come out the other way; a rig that only
 # ever produces the verdict it is looking for measures nothing.
@@ -432,6 +497,17 @@ self_test() {
   chmod 0644 "$tmp/scripts/notexec.sh"
   cp "$0" "$tmp/scripts/$self"
   chmod 0755 "$tmp/scripts/$self"
+
+  # The PATH fixture for arm 6: a roster program that is a BARE COMMAND NAME
+  # and not a path. It gets a directory of its OWN, prepended to PATH, because
+  # every other fixture here is reached as a repo-relative path under
+  # $tmp/scripts -- a fixture both branches of cannot_run could find would
+  # pass arm 6 on the branch arm 6 is not measuring.
+  mkdir -p "$tmp/bin"
+  printf '#!/bin/sh\necho "boxcheck-onpath speaking"\nexit 0\n' > "$tmp/bin/boxcheck-onpath-fixture"
+  chmod 0755 "$tmp/bin/boxcheck-onpath-fixture"
+  PATH="$tmp/bin:$PATH"
+  export PATH
 
   # EVERY ARM RUNS AGAINST A SCRATCH RHQ_HOME. run_roster now WRITES -- one
   # state file, the verdict G10 reads -- so an arm inheriting the operator's
@@ -516,8 +592,23 @@ self_test() {
       "a"$'\t'"scripts/notexec.sh"
   arm 'control: the same shape made executable is ok' 0 'ok' \
       "a"$'\t'"scripts/arm0.sh"
+  # 6 and its control: a row whose PROGRAM is an installed binary -- a bare
+  # command NAME, resolved on PATH and never under $root. The only rostered
+  # row of that shape today is verify-skills-drift (`posse runtime drift`,
+  # ranger-base-gf0ln), and the one-branch guard this replaced scored it ERROR
+  # on a box where it runs perfectly well, because it looked for $root/posse.
+  #
+  # The witness is the fixture's own OUTPUT and not the exit status: a runner
+  # that skipped an unresolvable row silently would also exit 0 here, and only
+  # the line the program printed says it ran. The control is the other half of
+  # the same branch -- a bare name on no PATH is an ERROR, which is arm 5's
+  # rule in the one shape arm 5 cannot express.
+  arm 'a bare command is resolved on PATH, not under the repo root' 0 'boxcheck-onpath speaking' \
+      "a"$'\t'"boxcheck-onpath-fixture"
+  arm 'control: a bare command on no PATH is ERROR' 1 'is missing or not executable' \
+      "a"$'\t'"boxcheck-nosuch-fixture"
 
-  # 6 and its controls: the run RECORDS its verdict where G10 reads it.
+  # 7 and its controls: the run RECORDS its verdict where G10 reads it.
   #
   # The record is the whole reason a scheduled run is worth anything -- the
   # summary goes to a log nobody opens, the verdict goes to the surface -- and
