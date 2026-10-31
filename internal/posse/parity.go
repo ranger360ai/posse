@@ -417,9 +417,9 @@ func (a *App) CheckParity(ag *AgentFile, rt *Runtime, cage, tier string) Parity 
 			if drift := skillsVerifiedDrift(rt); drift != "" {
 				detail += " — " + drift
 			}
-			p.Realized["skills: "+names] = RealizedGate{Detail: detail}
+			p.Realized[skillsGateKey(ag)] = RealizedGate{Detail: detail}
 		default:
-			p.Realized["skills: "+names] = RealizedGate{Detail: rt.Name + " " + flag + " (session-only, additive)"}
+			p.Realized[skillsGateKey(ag)] = RealizedGate{Detail: rt.Name + " " + flag + " (session-only, additive)"}
 		}
 	}
 	// ADR 0003 §3, the security review's caveat made a rule: at fast the model behind
@@ -605,6 +605,13 @@ func (a *App) checkParityIn(ag *AgentFile, rt *Runtime, cage, tier, dir string, 
 	// never degrades — see applySuiteQueueReach — so it sits here for the
 	// printing, not for the verdict.
 	a.applySuiteQueueReach(&p, ag, rt, dir)
+	// ADR 0007 §6f: the cwd skills root's precondition on the session
+	// directory. Directory-aware for ProjectConfigTrust's reason — whether
+	// grok trusts this folder is a fact about a concrete launch dir and not
+	// about a persona — and it is the only arm here that can take a row OUT
+	// of Realized, because a root the CLI will not read is not a realized
+	// binding (skillsdirtrust.go).
+	a.applySkillsDirTrust(&p, ag, rt, dir)
 	if why := ProjectConfigTrust(rt, ag, dir); why != "" {
 		p.Degraded = append(p.Degraded, why)
 	}

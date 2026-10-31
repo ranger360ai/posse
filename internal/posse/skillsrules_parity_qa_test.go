@@ -61,6 +61,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -199,6 +200,16 @@ func TestQASkillSurfacePerRuntimeDeclaration(t *testing.T) {
 			dir := gitTempDir(t)
 			if out, err := exec.Command("git", "-C", dir, "init", "-q").CombinedOutput(); err != nil {
 				t.Fatalf("git init: %v %s", err, out)
+			}
+			// ADR 0007 §6f: a runtime whose cwd root has a directory
+			// precondition needs it GRANTED before the launch below, or the
+			// launch correctly refuses — grok reads .agents/skills only in a
+			// folder it trusts, and a t.TempDir() is untrusted by
+			// construction. Granted for every declaring runtime rather than
+			// for grok by name, so the next one arrives driven; a runtime
+			// with no precondition is untouched.
+			if rt.SkillsDirTrust != nil {
+				qmTrustGrokDir(t, dir)
 			}
 			written, err := a.RenderSkillsFor(ag, rt, dir)
 			if err != nil {
@@ -834,6 +845,69 @@ func qmTrustedGrokHome(t *testing.T, repo string) string {
 	return home
 }
 
+// qmTrustGrokMu serializes the one shared file the helper below writes.
+var qmTrustGrokMu sync.Mutex
+
+// qmTrustGrokDir seeds grok's folder trust for dir in the TEST BINARY's own
+// $HOME, so a hermetic launch on grok reaches a directory grok will actually
+// read its skills root in (ADR 0007 §6f).
+//
+// It exists because of how the two homes stack. A test binary here runs under
+// a redirected $HOME (ADR 0047), which has no grok config at all — so
+// posse's own production probe, which runs `grok inspect` with the process
+// environment exactly as a launch would, correctly reads
+// `Project trusted: no` for EVERY t.TempDir() and degrades the launch. That
+// is the mechanism working: an untrusted directory binds nothing. A hermetic
+// test that wants to drive the SUCCESS path therefore has to grant the
+// precondition, the same way the live arm below redirects grok's $HOME to a
+// fixture that trusts its repo and for the same reason (ranger-base-9f2o6:
+// without it the arm measured grok's trust state and not its discovery).
+//
+// Why not t.Setenv: the tests here are t.Parallel(), so there is no per-test
+// environment to set — the grant has to go in the one home they share, which
+// is why this MERGES rather than writes. Two parallel rows seeding two
+// different dirs must both end up trusted.
+//
+// Harmless where grok is absent: with no CLI to ask, the probe reads UNKNOWN
+// and degrades nothing, so this is a no-op rather than a false green.
+func qmTrustGrokDir(t *testing.T, dir string) {
+	t.Helper()
+	home := os.Getenv("HOME")
+	if home == "" {
+		t.Fatal("no $HOME to seed grok's trust in — a test binary here runs under a redirected home (ADR 0047), so an empty one is a harness fault and not a skip")
+	}
+	// Both spellings, for qmTrustedGrokHome's reason: grok matches the path
+	// it RESOLVES, and a t.TempDir() under /var/folders is reported as
+	// /private/var/folders — an entry written with the unresolved spelling
+	// matches nothing and reads exactly like no entry at all.
+	keys := []string{dir}
+	if real, err := filepath.EvalSymlinks(dir); err == nil && real != dir {
+		keys = append(keys, real)
+	}
+	qmTrustGrokMu.Lock()
+	defer qmTrustGrokMu.Unlock()
+	grokDir := filepath.Join(home, ".grok")
+	if err := os.MkdirAll(grokDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(grokDir, "trusted_folders.toml")
+	have, _ := os.ReadFile(path)
+	var add strings.Builder
+	for _, k := range keys {
+		entry := fmt.Sprintf("[folders.%q]", k)
+		if strings.Contains(string(have), entry) {
+			continue
+		}
+		fmt.Fprintf(&add, "%s\ntrusted = true\ndecided_at = %d\n\n", entry, time.Now().Unix())
+	}
+	if add.Len() == 0 {
+		return
+	}
+	if err := os.WriteFile(path, append(have, add.String()...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // §5 — LIVE skills. The binding is materialized by PRODUCTION and the CLI
 // is asked what it sees. rangerhq-74c6's evidence was one skill; this is
 // two, plus a registry entry the PID does not name.
@@ -898,6 +972,20 @@ func TestQALiveSkillDiscoveryPerRuntime(t *testing.T) {
 			if strings.Contains(got, "qm-unbound") {
 				t.Errorf("%s sees a skill the PID never bound", probe.argv[0])
 			}
+			// ADR 0007 §6f: POSSE's own reading of the same bytes, in the
+			// one place where grok's answer and posse's parse can be
+			// compared. The parse is handed the output this arm already
+			// captured rather than re-execing, because a probe pinned
+			// against a fixture string the test wrote is pinned against
+			// nothing (ranger-base-kwbh1). This reds if grok renames or
+			// rewords `Project trusted:` — which costs the fleet a
+			// permanent UNKNOWN, not a wrong "no", and is still a
+			// re-measurement.
+			if probe.argv[0] == "grok" {
+				if d := grokDirTrustFrom(repo, got, nil); !d.Trusted {
+					t.Errorf("grok sees this repo's skills but posse cannot read the precondition that let it: %s\n%s", d.Why, got)
+				}
+			}
 		}
 		// The precondition, measured in its own right: strip the trust and
 		// the SAME realized binding binds nothing. This reds if grok ever
@@ -916,6 +1004,14 @@ func TestQALiveSkillDiscoveryPerRuntime(t *testing.T) {
 				if strings.Contains(string(out), n) {
 					t.Errorf("grok reads %s in an UNTRUSTED folder — the trust precondition this arm pins is gone, so re-measure what gates the binding (ADR 0007 §6c):\n%s", n, out)
 				}
+			}
+			// And posse's parse must call this folder untrusted, over the
+			// very bytes grok printed for it. A probe that reads "trusted"
+			// here is the one failure direction that matters: the launch
+			// would realize a binding grok has just been measured not
+			// reading (ADR 0007 §6f).
+			if d := grokDirTrustFrom(repo, string(out), nil); d.Trusted || d.Unknown {
+				t.Errorf("posse must read THIS folder as untrusted (trusted=%v unknown=%v): %s\n%s", d.Trusted, d.Unknown, d.Why, out)
 			}
 		}
 		// The links must stay out of the operator's diff (ADR 0007).

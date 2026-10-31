@@ -339,6 +339,23 @@ type Runtime struct {
 	// the home refuses on whichever of their declarations the sweep reaches
 	// first. Nothing here is per-runtime scoped the way SkillsRoot is.
 	SkillsGlobalRoots []string
+	// SkillsDirTrust declares a precondition on the SESSION DIRECTORY that
+	// has to hold before SkillsRoot is read at all (ADR 0007 §6f,
+	// ranger-base-kwbh1) — a third dimension beside §6a's root and §6c's
+	// version, and grok's alone today: MEASURED 2026-10-31 on grok 1.0.52,
+	// `<cwd>/.agents/skills` is read only where `grok inspect` reports
+	// `Project trusted: yes`, and an untrusted folder reads none of the
+	// links the launch wrote while saying nothing about why.
+	//
+	// nil = this runtime's root is read wherever the session starts, which is
+	// the measured answer for codex and the UNMEASURED one for bob (its own
+	// probe needs a `--trust` of its own, ADR 0007 Evidence). The reading is
+	// per DIRECTORY, so it is consumed where the dir is — applySkillsDirTrust
+	// in the dir-aware parity layer, beside ProjectConfigTrust — and the
+	// built-in-only declaration is what `posse runtime check` prints.
+	// skillsdirtrust.go holds the measurement and why posse does not seed
+	// the grant.
+	SkillsDirTrust *SkillsDirTrust
 	// SelfSandbox: the runtime wraps its own child commands in sandbox-exec
 	// (codex). macOS refuses to nest seatbelts (sandbox_apply: Operation not
 	// permitted — verified 2026-08-17), so our seatbelt tier cannot wrap it;
@@ -1814,8 +1831,16 @@ var builtinRuntimes = []Runtime{
 	// every grok launch on this box gets its skills today — and posse seeds
 	// no trust of its own (it types codex's on the line and grok's not at
 	// all), so a box whose operator has never trusted the checkout would
-	// degrade quietly. Filed for the code lane as ranger-base-kwbh1.
-	{Name: "grok", Builtin: true, Realize: realizeGrok, Skills: skillsCwd, SkillsRoot: AgentsSkillsPath, SkillsVerified: "grok 1.0.52 (0920c8169e27) [stable]", Models: grokModels, ModelFlag: "-m %s", Unattended: GrokFleetFlags,
+	// degrade quietly.
+	//
+	// DECLARED since ranger-base-kwbh1: `SkillsDirTrust` below is that
+	// precondition, ADR 0007 §6f. It is read by asking grok (`grok inspect`'s
+	// own `Project trusted:` line) and never by modelling its trust table,
+	// an untrusted directory DEGRADES a `skills:` launch instead of
+	// realizing a binding the CLI will not read, and posse still does not
+	// write the grant — skillsdirtrust.go has the two-arm measurement and
+	// the three reasons.
+	{Name: "grok", Builtin: true, Realize: realizeGrok, Skills: skillsCwd, SkillsRoot: AgentsSkillsPath, SkillsVerified: "grok 1.0.52 (0920c8169e27) [stable]", SkillsDirTrust: GrokSkillsDirTrust, Models: grokModels, ModelFlag: "-m %s", Unattended: GrokFleetFlags,
 		Egress: []string{"cli-chat-proxy.grok.com", "grok.com"}, StateDirs: []string{"~/.grok"},
 		// record: trusted — the qa lane on grok closed a bead properly on
 		// 2026-08-24, which is the measurement the promotion needs and the

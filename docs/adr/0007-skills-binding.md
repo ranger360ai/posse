@@ -13,7 +13,9 @@ collapse into their verified answers — ranger-base-mppjc) · amended
 version-verified fact per runtime, or that runtime's skills are UNPROVEN;
 bob gets a posse-owned root; the `$HOME` position of ranger-base-q114b is
 reversed — §6) · amended 2026-10-31 (ranger-base-6r1rf: bob's root is
-MEASURED live and no longer UNPROVEN — §6a, Evidence)*
+MEASURED live and no longer UNPROVEN — §6a, Evidence) · amended 2026-10-31 (ranger-base-kwbh1: a cwd root may
+also be a fact per DIRECTORY — grok's is gated on folder trust, declared and
+probed rather than seeded — §6f)*
 
 > Restated from the private archive of the instance this harness was
 > developed in; incident citations reference that instance's history.
@@ -266,6 +268,89 @@ say, per runtime and per version, which root was measured.
   its replacement reads the declared roots, and a root reaches that
   declaration only through a measurement with a version on it.
 
+**6f. A cwd root may carry a declared PRECONDITION on the session
+  directory — asked of the CLI, never modelled, and never seeded**
+  (amended 2026-10-31, ranger-base-kwbh1, from ranger-base-9f2o6). 6a–6c make
+  a cwd root a fact per RUNTIME and per CLI VERSION. grok's is also a fact per
+  DIRECTORY, and nothing here declared that.
+
+  MEASURED 2026-10-31, grok 1.0.52 (0920c8169e27), darwin 25.6.0, two scratch
+  git repos with IDENTICAL content under ONE fixture `$HOME` whose
+  `trusted_folders.toml` named only the first, so the arms differ in the trust
+  entry alone:
+
+  | | trusted repo | untrusted repo |
+  |---|---|---|
+  | `Project trusted:` | yes | no |
+  | `Skills` | `(1) qm-alpha project` | `(None)` |
+  | Permissions `Source` | `<repo>/.claude/settings.json` | `(none)` |
+  | Permissions loaded | 2 | 0 |
+
+  So an untrusted session directory reads NONE of the links the launch wrote,
+  says nothing about why, and leaves the realized `skills:` binding silently
+  empty: §3's refusal arriving through the accepted path, which is
+  ranger-base-65rc's defect with a different cause (there the plugin root was
+  unreadable; here the root is right and the folder is not trusted). A session
+  worktree and a subdirectory both inherit the enclosing checkout's grant, which
+  is why every grok launch on this box has had its skills all along, and why
+  nobody found this from a red.
+
+  - **Declared.** `SkillsDirTrust` on the Runtime (What · Where · Grant ·
+    Probe). Built-in only, with no `runtimes/*.yaml` key: a declaration
+    without a probe is a permanent UNKNOWN, UNKNOWN degrades nothing (below),
+    so the key would buy an onboarder a sentence that reads like a guarantee
+    and changes no launch. It is worth adding the day a second runtime has
+    both a measured precondition and a probe posse can write.
+  - **Probed by ASKING the CLI.** `grok inspect` — "Show the configuration
+    Grok discovers for this directory" — prints `Project trusted: yes|no`, and
+    MEASURED on this box: 0.061s, exit 0, no network, `~/.grok` byte-identical
+    before and after. Reading `trusted_folders.toml` and deciding here was
+    rejected on a measurement and not on taste: in a subdirectory of a linked
+    worktree, with no entry for that path and no trusted ancestor of it in the
+    table, grok answers `yes` — it resolves the GIT ROOT and then the main
+    checkout, which is what the table names — and the key must be the path
+    grok RESOLVES (`/private/var/...`, never `/var/...`), where the unresolved
+    spelling matches nothing and reads exactly like no entry at all. A second
+    implementation of that rule would disagree silently and in the direction
+    that matters: reading "trusted" over a folder the CLI will not read.
+  - **NOT MET degrades; UNKNOWN never does.** An untrusted directory takes the
+    skills row OUT of `Realized` and adds a `Degraded` line, because a
+    Realized row over a root the CLI will not read IS the lie 65rc landed on.
+    Degraded and never Unrealized, like every other skills arm — nothing here
+    is a wall claim. UNKNOWN (no CLI, a cage, a release that reworded its own
+    line) leaves the verdict alone and prints the reading: posse refuses on a
+    reading, never on ignorance (ranger-base-9r33, the rule DangerUnsilenced's
+    UNKNOWN exclusion already settled). §6b outranks §6f — an UNPROVEN root
+    has already degraded the launch with the louder sentence.
+  - **POSSE DOES NOT SEED THE GRANT**, and that is the decision rather than
+    the gap. The three sibling grants are the contrast: codex's `trust_level`
+    and bob's `--trust` are ARGV — per directory, session-scoped, visible in
+    `ps`, nothing written to the operator's box — and claude's
+    `hasTrustDialogAccepted` is written because without it the session parks on
+    a modal and never becomes promptable, so that seed buys the LAUNCH and
+    claude offers no line to type it on (ADR 0002 §4 amendment, trust.go).
+    grok has neither shape: no flag and no overlay (§2 measured the
+    GROK_CONFIG overlay allowlisted to four tables, unable to add a discovery
+    source), so the only channel is a PERSISTENT, box-wide entry in the
+    operator's own file that outlives every session wanting it; the launch it
+    would buy is not dead, only skill-less; and the grant is **not scoped to
+    skills** — the same two-arm run measured folder trust also deciding
+    whether grok reads the repo's OWN `.claude/settings.json` as a permissions
+    source, a repo→box authority channel grok's built-in declares nothing
+    about (`ProjectConfig` is nil, which `projectConfigRow`'s own `missing:`
+    line calls the silent one). Writing a grant on the operator's box that
+    opens a channel nobody has measured is not posse's to do before somebody
+    measures it; filed as **ranger-base-1g8gf** (P1, security lane). So the
+    remedy is the OPERATOR's, once per checkout, and the degrade line says so.
+  - **Where it is READ, and where it is not.** The reading is per DIRECTORY,
+    so it lives at the dir-aware parity layer beside `ProjectConfigTrust` —
+    the launch and `posse gates` in the session dir. `posse runtime check`
+    prints the DECLARATION and not a reading, because that grid is a runtime ×
+    box statement that never invents a cwd (CheckParity's own rule), and
+    `posse runtime drift` is untouched: its subject is the CLI VERSION and its
+    exit codes are a box roster row (ADR 0007 §6c, ranger-base-f5jbs), while a
+    directory is not a property of the box.
+
 **Evidence** (2026-10-12, this box, Darwin 25.4.0):
 - MEASURED (static — a read of the shipped bundle, not a session):
   `/opt/homebrew/lib/node_modules/bobshell/dist/bob.js`, `bob --version`
@@ -303,6 +388,24 @@ say, per runtime and per version, which root was measured.
   under 6c the day it ships — the codex case again, reported and never
   refused. Re-measurement filed for the operator as ranger-base-bs49e,
   because this cage cannot run the probe at all.
+- MEASURED 2026-10-31 (ranger-base-kwbh1), this box, darwin 25.6.0, grok
+  **1.0.52 (0920c8169e27)**: §6f's two-arm table above, plus three readings
+  that shaped the mechanism. (1) `grok inspect` costs 0.061s, exits 0, reaches
+  no network and leaves `~/.grok` byte-identical (a stat census over every file
+  under it, before and after) — cheap enough for the launch path. (2) In
+  `<a linked worktree>/.tmp/deep`, with no `trusted_folders.toml` entry for
+  that path and no trusted ancestor of it, grok answers `Project trusted: yes`
+  and names the WORKTREE as its git root: trust resolves through the git root
+  to the main checkout, so one acceptance per repo covers every seat posse
+  opens in it — and modelling that rule here would be a second implementation
+  that disagrees silently. (3) `grok --version`'s trailing channel suffix is a
+  function of `$HOME`, not of the binary — `grok 1.0.52 (0920c8169e27)
+  [stable]` under the operator's home and `grok 1.0.52 (0920c8169e27)` under
+  any fresh one — so grok's own `skills_verified:` declaration reports §6c
+  drift forever on a fresh-`$HOME` seat (a container tier, a second box).
+  Filed as ranger-base-3a5z7; §6c reports and never refuses, so the cost is a
+  permanently red detective-tier row beside the real findings.
+  Method, full output and the mutation checks: `docs/notes.d/ranger-base-kwbh1.md`.
 - ASSUMED: whether codex 0.153.4 reads `~/.agents/skills` globally — the
   binary's strings were inconclusive. Re-verified with the codex drift.
 - **RESOLVED 2026-10-12 (ranger-base-bdias):** both the drift and the
@@ -361,6 +464,16 @@ say, per runtime and per version, which root was measured.
   wanted, belongs where the dir is resolved (ranger-base-er6mt): four writes
   land inside the session dir — the pre-push and commit-guard hooks, this
   tree, the mode file — and a guard in one of them stops one.
+- **(§6f)** `runtime.go`: `SkillsDirTrust` on the Runtime, declared for grok.
+  `skillsdirtrust.go` (new): the declaration and reading types, grok's probe
+  over `grok inspect`, `applySkillsDirTrust` at the dir-aware parity layer, and
+  `skillsGateKey` — one spelling of the skills row's key, because two layers
+  write it now and two spellings would make the removal a silent no-op.
+  `parity.go`: one call in `checkParityIn`. `runtimecheck.go`: the declaration
+  in the skills row. Pins in `skillsdirtrust_qa_test.go` (five mutations
+  checked) and a live agreement arm in `skillsrules_parity_qa_test.go`, which
+  hands posse's parse the bytes grok actually printed under both fixture homes
+  rather than a string the test wrote.
 - `posse skills list` (names, and which PIDs bind each) — read-only.
 - Instance: the operator populates the instance repo's `RHQ_HOME/skills/`
   (symlinks to what already exists in `~/.claude/skills`, `~/.codex/skills`)
@@ -404,6 +517,34 @@ say, per runtime and per version, which root was measured.
   upgrade per runtime with a remedy (a live probe) most seats cannot run
   themselves; the drift line carries the same information without
   deciding who types the override (6c).
+- **(§6f) SEED grok's folder trust at launch**, the way posse seeds claude's
+  dialog key and types codex's `trust_level`. The obvious fix, and the one the
+  finding asked for first. Rejected for three reasons, in ascending order of
+  weight: the channel is a PERSISTENT, box-wide entry in the operator's own
+  `~/.grok/trusted_folders.toml` rather than a session-scoped flag, so it
+  outlives every session that wanted it; the launch it buys is not a dead one,
+  only a skill-less one, where claude's seed is the difference between a
+  session and a modal nobody answers; and the grant is **not scoped to
+  skills** — the same measurement found it also opening a repo→box permissions
+  channel posse declares nothing about (§6f, ranger-base-1g8gf). The first two
+  are arguments about shape; the third is the one that decides it, and it
+  reopens the day somebody measures what grok's trust buys in full.
+- **(§6f) Read `~/.grok/trusted_folders.toml` and decide in posse.** Cheaper
+  than a subprocess and the shape the two interstitial probes already use for
+  that same file's neighbour. Rejected on a measurement: trust resolves
+  through the git root to a linked worktree's MAIN checkout, and the key must
+  be the path grok RESOLVES — so the rule is a multi-step resolution, and a
+  second implementation of it would disagree with grok silently and in the
+  direction that matters (reading "trusted" over a folder grok will not read).
+  `grok inspect` is grok's own answer at 0.061s. The two interstitial probes
+  stay a file read because each is one unique key with no resolution rule
+  (`tomlFlag`, interstitial.go).
+- **(§6f) Carry the precondition on `posse runtime drift`'s exit code.** It is
+  the surface with a clock and a roster row, which is why the finding named it.
+  Rejected because that walk's subject is the CLI VERSION and its exit codes
+  are a per-box check (ranger-base-f5jbs): a directory is not a property of the
+  box, the walk takes no dir, and giving it one would make `0 of N measured`
+  mean two different things. The launch and `posse gates` have the dir.
 - **(§6) Detect discovery after launch** (ask the CLI what it loaded).
   bob has no non-interactive listing (`bob --help`: chat, run, mcp, acp)
   and codex none either; it would be a per-runtime pane scrape on every

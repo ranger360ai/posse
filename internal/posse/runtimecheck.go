@@ -688,6 +688,17 @@ func (a *App) skillsRow(rt *Runtime) stageRow {
 			r.note = append(r.note, drift)
 		}
 		r.note = append(r.note, "the dir belongs to the REPO, not to the persona: posse adds its own links, refuses to overwrite an entry it did not write, and sweeps a link whose target has left RHQ_HOME/skills. It is hidden from `git status` through .git/info/exclude, which hides it from git and not from the CLI (measured rangerhq-1qd).")
+		if t := rt.SkillsDirTrust; t != nil {
+			// ADR 0007 §6f. The DECLARATION prints here and the READING does
+			// not, deliberately: the precondition is per DIRECTORY, and this
+			// grid is a runtime × box statement that never invents a cwd
+			// (CheckParity's own rule). The dir-aware surfaces say what this
+			// directory reads — `posse gates` in the session dir, and the
+			// launch itself, through applySkillsDirTrust.
+			r.note = append(r.note, "PRECONDITION on the session directory (ADR 0007 §6f): "+t.What+
+				". Held in "+t.Where+". It is granted this way: "+t.Grant+
+				". posse reads it by ASKING "+rt.Name+" rather than by modelling that file, and an untrusted directory DEGRADES a `skills:` launch instead of realizing a binding the CLI will not read — a reading per directory, so `posse gates` in the session dir and the launch itself print it, and this row is the declaration.")
+		}
 	default:
 		r.value = "flag — " + flag + ", pointed at the tree posse renders per persona (session-only, additive)"
 		r.note = append(r.note, "that tree binds each skill as a real DIRECTORY OF FILES, copied out of RHQ_HOME/skills at every launch, so this CLI does not have to follow a symlink out of a plugin root to read one — it used to bind them as symlinks, and grok validated the very same tree, installed it, and surfaced ZERO skills while this row said `flag` (measured both ways on grok 1.0.5, ranger-base-65rc). The dir's basename is the literal `claude` (ADR 0017 §3 notes and accepts the leak), and grok's on-disk store keys the unpacked copy `claude-<hash>` from that basename — but grok names the installed plugin `posse-<persona>` from the plugin.json on every surface a person or config touches (`grok inspect`, `grok plugin install`, and `.grok/config.toml`'s `enabled = [...]` all say `posse-<persona>`; only `installed-plugins/registry.json`'s key and the unpacked dir name are `claude-<hash>`), measured 2026-09-05 on grok 1.0.5.")

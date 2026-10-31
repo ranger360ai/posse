@@ -700,6 +700,18 @@ func TestSeedTrustRefusesAnUnparseableConfigWithoutTouchingIt(t *testing.T) {
 // inventing a config for a CLI whose dialogs it has not measured; the
 // empty-path one is what keeps every test backend out of the operator's
 // real ~/.claude.json.
+//
+// The assertion's own sentence used to read "posse types codex's trust on the
+// line and grok needs none", and the second half was false (ranger-base-9f2o6,
+// corrected here by ranger-base-kwbh1): grok DOES need a directory trust —
+// MEASURED 2026-10-31 on grok 1.0.52, it reads `<cwd>/.agents/skills` only in
+// a folder `~/.grok/trusted_folders.toml` marks trusted, and an untrusted one
+// reads none of the links a launch wrote. What is true is the thing this test
+// actually proves, and it is now what it says: posse does not SEED that grant,
+// deliberately and for three reasons (skillsdirtrust.go) rather than for want
+// of a measurement. The precondition is DECLARED instead, on the runtime —
+// ADR 0007 §6f, `SkillsDirTrust` — and an untrusted directory degrades the
+// launch rather than realizing a binding grok will not read.
 func TestSeedTrustOnlySeedsClaudeAndOnlyWhereItWasPointed(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -710,7 +722,7 @@ func TestSeedTrustOnlySeedsClaudeAndOnlyWhereItWasPointed(t *testing.T) {
 		}
 		cfg := filepath.Join(t.TempDir(), ".claude.json")
 		if wrote, err := SeedClaudeTrust(cfg, rt, dir); err != nil || wrote != "" {
-			t.Errorf("%s: seeded %q (%v) — posse types codex's trust on the line and grok needs none", name, wrote, err)
+			t.Errorf("%s: seeded %q (%v) — codex's trust is TYPED on the line and grok's is the operator's to grant, never written from here (ADR 0007 §6f)", name, wrote, err)
 		}
 		if fileExists(cfg) {
 			t.Errorf("%s: a claude config was created for another runtime", name)
