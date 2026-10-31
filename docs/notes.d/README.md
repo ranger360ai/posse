@@ -9,6 +9,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-zf8pf](ranger-base-zf8pf.md) — `brew info --cask` has a third exit arm, and a caged seat can land in it (ranger-base-zf8pf) — 2026-10-31
 - [ranger-base-v3tt4](ranger-base-v3tt4.md) — ranger-base-v3tt4 — a merge-back whose conflict was a pinned COUNT — 2026-10-31
 - [ranger-base-t03st](ranger-base-t03st.md) — The commit wall's every-repo class was a criterion enumerated for one runtime (ranger-base-t03st) — 2026-10-31
+- [ranger-base-sczjy](ranger-base-sczjy.md) — A relative runtime home is made absolute at the one read (ranger-base-sczjy) — 2026-10-31
 - [ranger-base-qlxb5](ranger-base-qlxb5.md) — Rex in the multiplexer slot: four decisions ADR 0076 §2 left to the occupant (ranger-base-qlxb5) — 2026-10-31
 - [ranger-base-q5gc2](ranger-base-q5gc2.md) — The session record names its multiplexer, and one method ADR 0076 §2 does not list (ranger-base-q5gc2) — 2026-10-31
 - [ranger-base-phq39](ranger-base-phq39.md) — Selecting Rex: one instance key, two gates, and what the live run measured (ranger-base-phq39) — 2026-10-31

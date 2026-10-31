@@ -28,6 +28,7 @@ package posse
 
 import (
 	"os"
+	"path/filepath"
 )
 
 // The variable NAMES, one constant each. They are spelled here rather than
@@ -46,8 +47,43 @@ const (
 )
 
 // runtimeHomeOverride is THE read of one of those variables, and the whole
-// of the rule both directions share: the value VERBATIM when the variable is
-// in force, and whether it is in force at all.
+// of the rule both directions share: the value, made ABSOLUTE, when the
+// variable is in force, and whether it is in force at all.
+//
+// ABSOLUTE, and that is this function's whole second job. A VERBATIM value
+// keeps the pin's guarantee only for an absolute one: posse resolves the
+// value against ITS cwd and the seat resolves the same string against the
+// SESSION dir, so a relative value makes posse seed one file and the seat
+// open another — ranger-base-c33j6's shape exactly, surviving the fix built
+// to end it (ranger-base-sczjy). MEASURED 2026-10-31 before this line, with
+// CLAUDE_CONFIG_DIR=relcfg: the seed landed at <launcher cwd>/relcfg/.claude.json,
+// the typed pin read `CLAUDE_CONFIG_DIR='relcfg' `, and the seat resolved
+// <session dir>/relcfg/.claude.json, which was not there — a launch that
+// completes, a pin that asserts true, a grant that is written, and no trust
+// dialog suppressed.
+//
+// It is made absolute HERE, at the one read, and not refused at each
+// consumer, because that is what makes "the seat reads what posse read" true
+// by construction instead of true whenever the operator's shell happens to
+// hold an absolute path. Both directions take the same string afterwards,
+// and there is no second site to keep in step.
+//
+// An ALREADY-ABSOLUTE value is returned byte-identical — not Cleaned, not
+// symlink-resolved. filepath.IsAbs gates the call for that reason and not
+// for speed: `shQuote(v)` has to hand the seat the operator's own spelling
+// (six hostile values measured through /bin/sh on the rendered fragment —
+// spaces, an embedded quote, a tab, a semicolon, a command substitution and
+// a newline — all arrive verbatim), and resolving symlinks would make posse
+// name a path the operator never typed. IsAbs is also credentialDenyable's
+// predicate (seatbelt.go), which closed this same class for a relative
+// CODEX_HOME/GROK_HOME one rung down (ranger-base-o05yg); that predicate
+// stays as the backstop for the shapes no variable can carry — "" and an
+// unexpanded `~/…`.
+//
+// A failing os.Getwd leaves the value verbatim, which is the pre-fix answer
+// and the only honest one: the cwd a relative path is relative to does not
+// exist, so there is no absolute path to name. It is reachable essentially
+// only where posse's own working directory has been removed under it.
 //
 // In force means SET AND NON-EMPTY, which is posse's rule and not uniformly
 // the runtimes' (ClaudeConfigDirIn's doc has the measured divergence: claude
@@ -65,7 +101,15 @@ const (
 // property.
 func runtimeHomeOverride(name string) (string, bool) {
 	v := os.Getenv(name)
-	return v, v != ""
+	if v == "" {
+		return "", false
+	}
+	if !filepath.IsAbs(v) {
+		if abs, err := filepath.Abs(v); err == nil {
+			v = abs
+		}
+	}
+	return v, true
 }
 
 // RuntimeHomePin is this runtime's home variable as posse's own environment
@@ -77,7 +121,9 @@ func runtimeHomeOverride(name string) (string, bool) {
 //
 //   - in force → `K='<the value posse used>' `, an ordinary POSIX prefix
 //     assignment, so the seat resolves the very file SeedClaudeTrust wrote
-//     and the very directory credential.go walled.
+//     and the very directory credential.go walled. The value posse used is
+//     ABSOLUTE whatever the operator typed (runtimeHomeOverride), which is
+//     what makes that sentence true from a cwd the seat does not share.
 //   - not in force → `/usr/bin/env -u K `, which UNSETS it for the seat.
 //     Never the empty value: an empty value is a third state both this and the runtime
 //     read differently from unset (runtimeHomeOverride above), and typing it

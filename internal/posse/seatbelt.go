@@ -1139,11 +1139,11 @@ func credentialReadDenyLiterals(goos string, stateDirs []string) []string {
 // Several routes reach that and one predicate closes all of them, which is
 // why it is a predicate and not a guard at each: "" is no candidate at all;
 // `~/…` is ExpandTilde handing its literal back because there is no HOME to
-// expand against (ExpandTilde's own note, app.go); a RELATIVE $CODEX_HOME or
-// $GROK_HOME is codexHomeIn returning the variable verbatim
-// (interstitial.go) for filepath.Join to hang the file name off; and the
-// same relative value in CLAUDE_CONFIG_DIR reaches credentialFileCandidates,
-// which shares this predicate for that reason.
+// expand against (ExpandTilde's own note, app.go); and a RELATIVE
+// $CODEX_HOME or $GROK_HOME used to be codexHomeIn returning the variable
+// verbatim (interstitial.go) for filepath.Join to hang the file name off,
+// with the same relative value in CLAUDE_CONFIG_DIR reaching
+// credentialFileCandidates, which shares this predicate for that reason.
 //
 // The first two were closed by spelling, each at its own site. The third
 // reached the same place through the variable and was invisible to both,
@@ -1151,6 +1151,19 @@ func credentialReadDenyLiterals(goos string, stateDirs []string) []string {
 // (`h != ""`) and a relative home is not empty (ranger-base-o05yg, measured
 // before the fix: CODEX_HOME=mycodex denied "mycodex/auth.json", resolving
 // inside the session's own directory).
+//
+// SINCE ranger-base-sczjy THE THIRD ROUTE NO LONGER ARRIVES HERE, and the
+// predicate's answer to it has inverted for the right reason rather than
+// gone away. runtimeHomeOverride (runtimehome.go) makes a relative value
+// absolute at the ONE read of these variables, because the typed line hands
+// the SEAT that same value and the seat resolves it against a different cwd.
+// So `CODEX_HOME=mycodex` now yields the candidate
+// `<posse's cwd>/mycodex/auth.json`, this predicate ADMITS it, and admitting
+// it is correct: RuntimeHomePin types that same absolute value, so the
+// directory walled and the directory the seat's CLI writes are one
+// directory. What the relative value used to buy was no wall at all over a
+// real credential file, which is the worse half of decision 3's sentence.
+// The predicate stays for the two shapes no variable can carry.
 //
 // It stays a wall over an ABSOLUTE $CODEX_HOME — that is the arm the control
 // in TestQACredentialReadDenyNamesNothingUnderTheCwdWithNoHome keeps honest.

@@ -431,3 +431,175 @@ func TestTheTrustSeedsWriteRefusalClaimsNoCageForANonPermissionFailure(t *testin
 		t.Errorf("a non-permission failure must not be diagnosed as a cage:\n%s", msg)
 	}
 }
+
+// ─── surface 1's RELATIVE arm (ranger-base-sczjy, from ranger-base-49iga) ────
+
+// Arm 4: a relative value in a runtime-home variable is made ABSOLUTE at the
+// one read, so both directions carry one path.
+//
+// WHY EVERY ARM ABOVE MISSES THIS. They are not wrong about what they
+// measure; they measure the ABSOLUTE arm, because every fixture on this path
+// names its directory with t.TempDir(). A verbatim value keeps the pin's
+// guarantee there and inverts it for a relative one: the launcher resolves
+// the value against ITS cwd and the seat resolves the same string against
+// the session dir, so posse seeds one file and the seat opens another —
+// ranger-base-c33j6's own shape, surviving the fix built to end it.
+//
+// MEASURED 2026-10-31 before the fix, by a QA seat verifying
+// ranger-base-49v2h at 8077fef3, with CLAUDE_CONFIG_DIR=relcfg:
+//
+//	ClaudeConfigFile()  = "relcfg/.claude.json"   (IsAbs=false)
+//	the seed LANDED at    <launcher cwd>/relcfg/.claude.json
+//	typed pin           = "CLAUDE_CONFIG_DIR='relcfg' "
+//	the seat resolved     <session dir>/relcfg/.claude.json   exists=false
+//
+// A launch that completes, a line correct by the pin's own assertion, a
+// grant that is written, and no trust dialog suppressed.
+//
+// All THREE runtimes, because runtimeHomeOverride is one function and
+// codexHomeIn/grokHomeIn took the same value verbatim — which is also where
+// this class was last paid for one rung down, as a relative
+// CODEX_HOME/GROK_HOME reaching the credential wall (ranger-base-o05yg,
+// credentialDenyable).
+func TestARelativeRuntimeHomeIsMadeAbsoluteAtTheOneRead(t *testing.T) {
+	launcherCwd := t.TempDir()
+	t.Chdir(launcherCwd)
+	// os.Getwd and not launcherCwd: on darwin a path under $TMPDIR has a
+	// /private prefix in its resolved spelling, and what filepath.Abs joins
+	// onto is whatever Getwd answers — so this is the cwd posse itself
+	// resolves against, asked rather than assumed.
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	home := t.TempDir()
+
+	for _, tc := range homeVarRuntimes(t) {
+		rt := loadRuntimeForTest(t, tc.runtime)
+
+		// The spellings a shell export actually takes, including the two
+		// that Clean changes and the one it does not.
+		for _, rel := range []string{"relcfg", "./relcfg", "a/b", "relcfg/"} {
+			t.Setenv(tc.v, rel)
+			want := filepath.Join(wd, rel)
+
+			got := tc.resolve(home)
+			if !filepath.IsAbs(got) {
+				t.Errorf("%s with %s=%q: the resolver answered the RELATIVE path %q — posse joins a file name onto this and then types the variable onto a seat with a different cwd", tc.runtime, tc.v, rel, got)
+			}
+			if got != want {
+				t.Errorf("%s with %s=%q: the resolver answered %q, want %q (the value resolved against the LAUNCHER's cwd, which is the one posse read it in)", tc.runtime, tc.v, rel, got, want)
+			}
+
+			pin := RuntimeHomePin(rt)
+			if w := tc.v + "=" + shQuote(want) + " "; pin != w {
+				t.Errorf("%s with %s=%q: pin = %q, want %q", tc.runtime, tc.v, rel, pin, w)
+			}
+			// Said the other way round too, so the failure names the bug
+			// rather than an arithmetic mismatch: the relative string the
+			// operator exported must not be what reaches the seat.
+			if pin == tc.v+"="+shQuote(rel)+" " {
+				t.Errorf("%s: the pin types %s=%q VERBATIM — the seat resolves that against the SESSION dir, so posse seeds one file and the seat opens another (ranger-base-c33j6's shape, ranger-base-sczjy)", tc.runtime, tc.v, rel)
+			}
+			// The whole claim, in the form the two directions have to agree
+			// in: one path, from the resolver and from the line.
+			if pin != tc.v+"="+shQuote(got)+" " {
+				t.Errorf("%s with %s=%q: the resolver reads %q and the line types %q — one variable, two answers", tc.runtime, tc.v, rel, got, pin)
+			}
+		}
+
+		// CONTROL: an ABSOLUTE value is handed on BYTE-IDENTICAL — not
+		// Cleaned, not symlink-resolved. That is the arm the whole pin rests
+		// on (the operator's own spelling is what the seat must receive, and
+		// shQuote already carries six hostile values through /bin/sh
+		// unchanged), and it is why the fix is gated on filepath.IsAbs
+		// rather than calling filepath.Abs unconditionally.
+		for _, abs := range []string{
+			filepath.Join(t.TempDir(), "named-root"),
+			filepath.Join(t.TempDir(), "named-root") + "/",
+			filepath.Join(t.TempDir(), "named-root") + "/./sub",
+			filepath.Join(t.TempDir(), "two words"),
+		} {
+			t.Setenv(tc.v, abs)
+			if got := tc.resolve(home); got != abs {
+				t.Errorf("%s with an ABSOLUTE %s=%q: the resolver answered %q — an absolute value is the operator's own spelling and posse must not rewrite it", tc.runtime, tc.v, abs, got)
+			}
+			if got, want := RuntimeHomePin(rt), tc.v+"="+shQuote(abs)+" "; got != want {
+				t.Errorf("%s with an ABSOLUTE %s=%q: pin = %q, want %q", tc.runtime, tc.v, abs, got, want)
+			}
+		}
+	}
+}
+
+// Arm 5: the same thing end to end, which is the observable the bead was
+// filed for — a seat whose cwd is its session dir opens the very file the
+// launch seeded, with a relative CLAUDE_CONFIG_DIR in the launcher's
+// environment.
+//
+// This is that QA probe with the logs turned into assertions, plus one
+// thing it did not do: the relative directory is NOT pre-created here, so
+// the arm also covers the bead's second outcome. writeJSONInPlace MkdirAll's
+// the config file's directory, and before the fix the directory it created
+// was `<launcher cwd>/relcfg` while the typed line sent the seat looking
+// under `<session dir>/relcfg` — and where the launcher could not create it,
+// claudeTrustWriteRefusal's remedy ("set CLAUDE_CONFIG_DIR to a directory
+// this launcher can write") was advice a relative value satisfies while
+// reproducing the divergence.
+//
+// The seat's half is asked and not spelled: the pin fragment is RUN, over a
+// decoy value, and ClaudeConfigFile() is then called from the SESSION dir —
+// the two things that differ between the launcher and the seat, environment
+// and cwd, both taken from the line.
+func TestTheTrustSeedLandsWhereASeatWithARelativeConfigDirResolvesIt(t *testing.T) {
+	launcherCwd := t.TempDir()
+	t.Chdir(launcherCwd)
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv(ClaudeConfigDirVar, "relcfg")
+
+	b, fake := newTestBackend(t)
+	a := b.App
+	b.ClaudeConfig = ClaudeConfigFile()
+	if !filepath.IsAbs(b.ClaudeConfig) {
+		t.Fatalf("ClaudeConfigFile() = %q under a RELATIVE %s — every path posse joins onto this is relative to whatever cwd the reader has, and posse and the seat do not share one", b.ClaudeConfig, ClaudeConfigDirVar)
+	}
+	os.MkdirAll(a.AgentsDir, 0o755)
+	os.WriteFile(filepath.Join(a.AgentsDir, "developer.md"),
+		[]byte("---\nname: developer\ndeny: [Bash(git push:*)]\n---\nYou are developer.\n"), 0o644)
+
+	dir := t.TempDir() // the SEAT's cwd: its session dir
+	mustCreate(t, b, NewSessionOpts{Name: "d1", Agent: "developer", Dir: dir})
+	if _, err := os.Stat(b.ClaudeConfig); err != nil {
+		t.Fatalf("the launch seeded no file at %s: %v", b.ClaudeConfig, err)
+	}
+	if !ClaudeTrusted(readConfig(t, b.ClaudeConfig), dir) {
+		t.Fatalf("fixture: the launch seeded nothing for %s into %s", dir, b.ClaudeConfig)
+	}
+
+	rt := loadRuntimeForTest(t, "claude")
+	pin := RuntimeHomePin(rt)
+	launched := rawCalls(t, fake) + spilled(t, a, "d1")
+	if !strings.Contains(launched, pin) {
+		t.Fatalf("the launch line must carry the home pin %q:\n%s", pin, launched)
+	}
+
+	// The seat's environment, built by actually running the fragment against
+	// a decoy — the only way to tell an effective assignment from a string
+	// that looks like one.
+	out, err := runWithEnv(t, pin+"printenv "+ClaudeConfigDirVar,
+		ClaudeConfigDirVar+"="+filepath.Join(t.TempDir(), "the-servers-answer"))
+	if err != nil {
+		t.Fatalf("the pin did not run: %v (%s)", err, out)
+	}
+	t.Setenv(ClaudeConfigDirVar, strings.TrimSpace(out))
+	t.Chdir(dir) // and the seat's cwd, which is the half that diverged
+
+	got := ClaudeConfigFile()
+	if got != b.ClaudeConfig {
+		t.Errorf("from the session dir %s, under the environment the typed line builds, claude's config file resolves to %q — posse seeded %q. That gap IS ranger-base-sczjy: a grant written into a file the seat never opens, with the launch green and the line correct by the pin's own assertion.", dir, got, b.ClaudeConfig)
+	}
+	if _, err := os.Stat(got); err != nil {
+		t.Errorf("the seat resolves %q and there is no file there: %v", got, err)
+	} else if !ClaudeTrusted(readConfig(t, got), dir) {
+		t.Errorf("the seat resolves %q, which holds no grant for %s — the trust dialog it was seeded to suppress is the observable", got, dir)
+	}
+}
