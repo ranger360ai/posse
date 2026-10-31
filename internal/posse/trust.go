@@ -519,6 +519,38 @@ func claudeSeedProject(state map[string]any, key string) {
 // write nothing rather than reach into the operator's real config. Hence
 // the empty case is a no-op and not a fallback.
 //
+// AND THE FILE IT SEEDS IS THE ONE *THIS PROCESS* RESOLVES, WHICH IS NOT
+// ALWAYS THE ONE THE SEAT READS (ranger-base-c33j6). ClaudeConfigFile
+// honours the LAUNCHER's CLAUDE_CONFIG_DIR; the seat's claude is started by
+// the MULTIPLEXER SERVER and resolves in THAT server's environment, which is
+// fixed when the server starts and is a child of no launch. The two agree
+// for an operator shell — neither sets the var, so both answer
+// ~/.claude.json — and they disagree when the launcher is itself a claude
+// seat, because the runtime exports CLAUDE_CONFIG_DIR to its children. So
+// this is an artifact of dispatching from a seat and not a defect a clean
+// shell can reach, which is the question ranger-base-c33j6 was sent to
+// settle.
+//
+// MEASURED 2026-10-31, a scratch `multiplexer: rex` home dispatched from a
+// claude seat (claude 2.1.316, Rex CLI 0.0.1793377904): posse wrote
+// projects[<repo root>].hasTrustDialogAccepted into
+// $CLAUDE_CONFIG_DIR/.claude.json, it was ABSENT from ~/.claude.json, a
+// probe of a `rex new … -- /bin/sh -c` session read CLAUDE_CONFIG_DIR as
+// UNSET there, and the seat opened on the trust dialog — so it wrote no
+// program_status record and ADR 0076 D2's first-report gate refused the
+// launch with nothing typed. Accepting that one dialog by hand (the remedy
+// the errors below already name) let the same seat read idle, take the
+// prompt and close its bead. The KEY was right throughout —
+// scripts/claude-trust-key.sh over the session tree answers the repo root,
+// which is what posse wrote — so this is the FILE and never the key.
+//
+// NOT fixed here, and not Rex-specific: a herdr pane is a child of the herdr
+// server the same way. posse cannot read another process's environment, and
+// a launch that writes a file nobody named is what the paragraph above
+// refuses — so which file a seat's trust belongs in is a decision, not a
+// resolution, and it is filed rather than guessed at here:
+// ranger-base-u6c3u, which carries the other two surfaces of the same root.
+//
 // THE MERGE IS THE WHOLE POINT. The file holds the operator's entire
 // claude state — every project they have opened, their theme, their
 // onboarding — so it is read, amended and written back through a temp file

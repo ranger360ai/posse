@@ -144,6 +144,20 @@ reading `idle`, taking the prompt, reading `working` then settling, closing
 the bead and posse landing the branch. Filed as ranger-base-c33j6 with the
 recipe.
 
+> **MEASURED 2026-10-31 under ranger-base-c33j6, and the diagnosis below is
+> wrong.** The positive pass ran from an ordinary gated crew seat — bead
+> closed, branch fast-forwarded, Rex session retired — so no seat outside
+> this box's wall was needed. "Not logged in" was a CHILD shell's view, not
+> the seat's: posse injects the session mint and claude does not pass it to
+> the shells it spawns, so a working seat answers that too (ADR 0042 D1
+> working as designed, and `posse gates` prints no credential refusal at
+> all). What actually refused the launch was the trust-file defect this
+> section files three paragraphs down as "one narrow defect found and not
+> fixed" — the seat sat on claude's trust dialog and so wrote no
+> program_status record. docs/notes.d/ranger-base-c33j6.md has the reading.
+> Leave the paragraphs below as they stand; they are the record of what was
+> believed, and the correction is here rather than in them.
+
 The cause is not Rex and it is not new. It is ranger-base-eupf's finding,
 already MEASURED and already written down in gates.go: **the launching
 persona's gates dir leads its PATH and the child inherits it**, so a claude
