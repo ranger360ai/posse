@@ -1742,19 +1742,33 @@ which way it stamped each repo.
 
 And a third wall in the same slot: the **constitution-path guard**. A
 commit made from a persona session — one carrying `RHQ_PERSONA`, which your
-own shell does not — is refused when it touches `.claude/settings.json` or
-`.claude/settings.local.json` in ANY hooked repo, and, in your constitution
-repo (the one whose top level has `posse/agents`), when it touches
-`posse/agents`, `posse/config.yaml`, `posse/recipes`, `posse/runtimes`,
-`posse/skills` or `posse/envs`. ADR 0015 §2/§3
-is the rule: personas *draft* the constitution and you put it in force with
-`posse promote`, and the settings file is where the deny list fencing a
-persona's own destructive verbs lives (ranger-base-az93) — a session that can
-commit it un-fences itself. Your own commits to those paths are untouched.
-The refusal names the paths and tells the persona to stage its intended diff
-somewhere outside the class for you to apply. It is the shim tier, so `env -i`
-scrubs the marker; the launcher will not land a session branch touching those
-paths either, and that half runs in your process, not the session's.
+own shell does not — is refused when it touches a repo-to-box configuration
+channel in ANY hooked repo, and, in your constitution repo (the one whose top
+level has `posse/agents`), when it touches `posse/agents`,
+`posse/config.yaml`, `posse/recipes`, `posse/runtimes`, `posse/skills` or
+`posse/envs`.
+
+The every-repo half is every file or directory a built-in runtime reads out
+of its session directory before the first model turn, and posse derives it
+from those runtimes' own declarations rather than keeping a list beside them:
+`.bob/custom_modes.yaml`, `.bob/hooks`, `.bob/mcp.json`, `.bob/plugins`,
+`.bob/settings`, `.claude/plugins`, `.claude/settings.json`,
+`.claude/settings.local.json`, `.codex/config.toml`, `.cursor/hooks.json`,
+`.cursor/mcp.json`, `.grok/config.toml`, `.grok/hooks`, `.grok/lsp.json`,
+`.grok/plugins` and `.mcp.json`. A commit to one of those lands on your main
+branch when the bead closes, and every later seat of that runtime in the repo
+then reads it — which is why it is refused on the same terms as the law
+itself, whatever the repo.
+
+ADR 0015 §2/§3 is the rule: personas *draft* the constitution and you put it
+in force with `posse promote`, and the settings file is where the deny list
+fencing a persona's own destructive verbs lives (ranger-base-az93) — a
+session that can commit it un-fences itself. Your own commits to those paths
+are untouched. The refusal names the paths and tells the persona to stage its
+intended diff somewhere outside the class for you to apply. It is the shim
+tier, so `env -i` scrubs the marker; the launcher will not land a session
+branch touching those paths either, and that half runs in your process, not
+the session's.
 
 There is **no fourth wall for ADR citations**, and that is a decision rather
 than an omission (ADR 0051, operator ruling 2026-09-05). One briefly existed:

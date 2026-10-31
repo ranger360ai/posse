@@ -231,12 +231,31 @@ func TestQAConstitutionClassMatchesExactlyOrAsAPrefix(t *testing.T) {
 // TestQAConstitutionClassInReadsTheRepo pins the detector both ways round, so
 // the belt's class and the hook's are answering the same question about the
 // same tree.
+//
+// The no-constitution arm asks "and NO promoted path", not "and exactly
+// these two strings" (ranger-base-t03st): the every-repo half is derived from
+// the built-in runtimes now, so a literal here would be the hand list the
+// bead removed, and comparing it against ConstitutionEveryRepoPaths would
+// make the arm tautological. What the arm is actually for is the SCOPING —
+// a repo with no marker gets the every-repo channels and none of ADR 0015
+// §1's law — and that is what is measured.
 func TestQAConstitutionClassInReadsTheRepo(t *testing.T) {
 	t.Parallel()
 	plain := t.TempDir()
-	if got := strings.Join(ConstitutionClassIn(plain), " "); got != ClaudeProjectConfig+" "+ClaudeProjectConfigLocal {
-		t.Errorf("a repo with no constitution gets the settings files only, got %q", got)
+	noPromoted := func(what string, class []string) {
+		t.Helper()
+		for _, m := range class {
+			if strings.HasPrefix(m, ConstitutionSourceDir+"/") {
+				t.Errorf("%s gets the every-repo channels only, and its class carries the promoted path %q: %v", what, m, class)
+			}
+		}
+		for _, want := range []string{ClaudeProjectConfig, ClaudeProjectConfigLocal} {
+			if InConstitutionClass(class, want) != want {
+				t.Errorf("%s must still carry %q (ranger-base-az93): %v", what, want, class)
+			}
+		}
 	}
+	noPromoted("a repo with no constitution", ConstitutionClassIn(plain))
 	con := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(con, ConstitutionRepoMarker), 0o755); err != nil {
 		t.Fatal(err)
@@ -257,9 +276,7 @@ func TestQAConstitutionClassInReadsTheRepo(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(file, filepath.FromSlash(ConstitutionRepoMarker)), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if len(ConstitutionClassIn(file)) != 2 {
-		t.Errorf("a file at the marker path must not make a repo the constitution: %v", ConstitutionClassIn(file))
-	}
+	noPromoted("a file at the marker path", ConstitutionClassIn(file))
 }
 
 // TestQAConstitutionLandPrescribesPromoteOnlyForPromotedPaths is a small

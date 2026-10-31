@@ -186,6 +186,20 @@ The retained key list describes a declared channel, not a claim that every
 runtime version executes every key. Headless and interactive trust differ;
 the historical probes do not establish behavior of a new binary.
 
+A declared channel is also a COMMIT-time path class, not only a launch
+input *(added 2026-10-31, ranger-base-t03st, from ranger-base-ihda8)*. The
+commit wall's every-repo arm refuses a persona commit touching any built-in
+runtime's `ProjectConfig` paths, in every hooked repo, derived from these
+declarations rather than listed beside them — see
+[ADR 0015](0015-constitution-promotion.md) §3 "Third" and
+`ConstitutionEveryRepoPaths` (`internal/posse/promote.go`). The two readings
+are deliberately different in shape: the launch check is key-narrowed and
+per-file, because it decides whether a session degrades on a file that is
+already there; the wall is exact-or-directory-prefix over the whole path,
+because a commit is what puts the file there for every later seat, and the
+rendered `sh` cannot parse JSON keys faithfully. So a path leaving
+`ProjectConfigKeys` narrows the launch check and does not narrow the wall.
+
 **5. PID additions.** `runtime:`, `cage:`, `writable:`, `egress:`,
 `sockets:` and `trust_project_config:` retain their current meanings above
 and in their owning contracts. Unsupported requirements are visible. No

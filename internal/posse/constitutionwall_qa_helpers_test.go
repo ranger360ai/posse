@@ -11,10 +11,32 @@ import (
 	"testing"
 )
 
-// constitutionClassSpec is the class ranger-base-ak3e specifies, spelled out
-// so these pins have something to measure the code AGAINST. Adding a path to
-// PromotedPaths widens the wall automatically and reds the spec pin below;
-// the fix is to add it here too, having decided it belongs.
+// constitutionClassSpec is the HAND-SPELLED half of the class, so these pins
+// have something to measure the code AGAINST. Adding a path to PromotedPaths
+// widens the wall automatically and reds the spec pin; the fix is to add it
+// here too, having decided it belongs.
+//
+// It is a half and not the whole class since ranger-base-t03st, and the
+// split is by reason rather than by convenience. What is spelled here is
+// what someone DECIDED path by path: ADR 0015 §1's promoted set, plus
+// az93's two claude settings files, whose reason is the deny list they carry
+// and not the exec channel they are. The rest of the every-repo half —
+// grok's, codex's and bob's project-config channels, and `.claude/plugins` —
+// is DERIVED from the built-in runtimes' own declarations
+// (ConstitutionEveryRepoPaths, promote.go), so there is nothing to decide
+// here: a runtime that declares a repo→box exec channel is a channel the
+// wall refuses, and spelling those out again would be the third copy of a
+// list the bead exists to stop copying.
+//
+// The behavioural matrices below iterate THIS list, which is why it is worth
+// keeping finite. The derived half's membership is pinned exactly
+// (TestQAConstitutionClassIsTheSpecifiedSet, which reads the runtime table as
+// its other source, and
+// TestQAConstitutionWallRenderNamesEveryBuiltinProjectConfig), and its
+// BEHAVIOUR is measured over ranger-base-ihda8's own two shapes
+// (TestQAConstitutionWallRefusesAnotherRuntimesProjectConfig) rather than
+// over a 16-member cross product of git fixtures that would say the same
+// thing sixteen times.
 var constitutionClassSpec = []string{
 	ConstitutionSourceDir + "/agents",
 	ConstitutionSourceDir + "/config.yaml",

@@ -415,15 +415,21 @@ the same way twice:
   `RHQ_PERSONA` is set — the same marker promote's own refusal reads —
   a commit whose to-be-committed set touches `posse/<p>` for each §1
   promoted-set entry plus `posse/envs` (in the constitution repo), or
-  `.claude/settings.json` / `.claude/settings.local.json` (in every
-  hooked repo — not this ADR's promoted set, but the same class by
-  blast radius: az93's deny list lives there, and a persona that can
-  commit it un-fences itself), is refused with the paths named and the
-  way through prescribed. The class is rendered FROM `PromotedPaths`
-  at hook-render time, so widening §1's list widens this wall in the
-  same edit. Cooperative class (ADR 0025): `env -i` scrubs the marker
-  and the arm stands down, the same residual promote's own env check
-  carries — it is a wall against the ordinary path, not a cage.
+  any repo→box executable configuration channel (in every hooked repo
+  — not this ADR's promoted set, but the same class by blast radius:
+  az93's deny list lives in `.claude/settings.json`, and a persona
+  that can commit it un-fences itself), is refused with the paths
+  named and the way through prescribed. Both halves of the class are
+  DERIVED and neither is listed at the wall: the promoted half from
+  `PromotedPaths`, so widening §1's list widens this wall in the same
+  edit, and the every-repo half from the built-in runtimes'
+  `Runtime.ProjectConfig` declarations
+  ([ADR 0002](0002-runtimes-and-gates.md), "Project configuration is
+  a launch input"), so a runtime that declares a channel is a
+  channel this wall refuses. Cooperative class (ADR 0025): `env -i`
+  scrubs the marker and the arm stands down, the same residual
+  promote's own env check carries — it is a wall against the ordinary
+  path, not a cage.
 
   *Amended 2026-09-01 (ranger-base-dmsbu, from ranger-base-qdxe and
   ranger-base-jex3, both measured).* Two ways the arm stood down that
@@ -458,6 +464,51 @@ the same way twice:
   predates the marker (`notOnBase`, ranger-base-dybv). The wall's own
   comment (`constitutionGuardBody`, `internal/posse/gates.go`) carries
   this residual now instead of claiming the arm closed.
+
+  *Amended 2026-10-31 (ranger-base-t03st, from ranger-base-ihda8,
+  measured).* The every-repo half's CRITERION was always blast radius
+  — this paragraph and `constitutionGuardBody`'s own header both said
+  so — and its ENUMERATION was a hand literal of the two
+  `.claude/settings*.json` files, written when claude was the only
+  runtime. So a persona commit was refused on those two and landed, at
+  exit 0, on every other built-in project-config entry: grok's
+  `.mcp.json`, `.cursor/mcp.json`, `.cursor/hooks.json`,
+  `.claude/plugins`, `.grok/config.toml`, `.grok/hooks`,
+  `.grok/lsp.json` and `.grok/plugins`; codex's `.codex/config.toml`;
+  and bob's `.bob/settings`, `.bob/mcp.json`, `.bob/hooks`,
+  `.bob/custom_modes.yaml` and `.bob/plugins`. The launcher
+  fast-forwards such a commit onto `main` when the bead closes, and
+  every later seat of that runtime in the repo then degrades on it
+  (`ProjectConfigTrust`, ADR 0002, "Project configuration is a launch
+  input") until someone removes it — or runs it, under
+  `--allow-degraded` or a `trust_project_config: true` PID. The
+  enumeration is now the sorted union of the BUILT-IN runtimes'
+  `Runtime.ProjectConfig` (`ConstitutionEveryRepoPaths`,
+  `internal/posse/promote.go`), read by the hook render and the land
+  belt both, so the two cannot drift.
+  Widening the enumeration of a criterion both texts already carried
+  needed no ruling; it refused no commit shape that existed — across
+  every git repo on the instance, nothing tracked any newly covered
+  path (MEASURED 2026-10-31).
+
+  Three decisions inside that, recorded because each is a place the
+  obvious reading is wrong. **`.claude/settings.json` and its `.local`
+  sibling are still named explicitly** inside the derived union: az93's
+  reason for them is the deny list, which is *permissions*, and the
+  launch check's exec-channel key narrowing deliberately leaves
+  `permissions` out — two different reasons for the same two paths, and
+  naming them keeps the result identical if claude's declaration ever
+  changes. **The BUILT-INS only**, not the `runtimes/<name>.yaml`
+  overlay (ADR 0021) and not a template runtime's `project_config:`:
+  the hook is rendered at install and the belt runs at close, and an
+  overlay can differ between those two moments, which would break the
+  one property the shared function exists for. A template runtime's
+  declared channel stays covered where it is read, at the launch check
+  (ASSUMED acceptable). **Matched by path, never by key**: the wall
+  keeps its exact-or-directory-prefix rule, because a permissions-only
+  edit to `.claude/settings.json` is already refused on az93's terms
+  and the rendered `sh` cannot parse JSON keys faithfully anyway. The
+  key narrowing is a launch concern and stays one.
 
   *Fourth — the launcher's land-path belt*
   (`MergeSessionWork`, `internal/posse/worktree.go`). The launcher

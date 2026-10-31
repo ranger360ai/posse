@@ -7,6 +7,7 @@ references), not inferred publication dates. Undated fragments sort last.
 ## 2026-10
 
 - [ranger-base-zf8pf](ranger-base-zf8pf.md) — `brew info --cask` has a third exit arm, and a caged seat can land in it (ranger-base-zf8pf) — 2026-10-31
+- [ranger-base-t03st](ranger-base-t03st.md) — The commit wall's every-repo class was a criterion enumerated for one runtime (ranger-base-t03st) — 2026-10-31
 - [ranger-base-qlxb5](ranger-base-qlxb5.md) — Rex in the multiplexer slot: four decisions ADR 0076 §2 left to the occupant (ranger-base-qlxb5) — 2026-10-31
 - [ranger-base-q5gc2](ranger-base-q5gc2.md) — The session record names its multiplexer, and one method ADR 0076 §2 does not list (ranger-base-q5gc2) — 2026-10-31
 - [ranger-base-nc91t](ranger-base-nc91t.md) — Relaunch's two readings are the slot's listing, and the second one is why holdsRecorded alone was not the fix (ranger-base-nc91t) — 2026-10-31

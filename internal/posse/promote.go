@@ -138,6 +138,73 @@ func ConstitutionRepoPaths() []string {
 	return append(out, path.Join(ConstitutionSourceDir, ConstitutionEnvsDir))
 }
 
+// ConstitutionEveryRepoPaths is the EVERY-REPO half of the commit wall's
+// class, and it is derived rather than listed: the sorted, deduplicated
+// union of Runtime.ProjectConfig over the BUILT-IN runtimes, with
+// ClaudeProjectConfig and ClaudeProjectConfigLocal named explicitly as
+// well.
+//
+// WHAT THE CLASS IS, now that it is derived. A Runtime.ProjectConfig entry
+// is a repo→box executable configuration channel: the hook, MCP, plugin and
+// settings declarations a runtime reads out of its session DIRECTORY before
+// any model turn (ADR 0002 "Project configuration is a launch input"). The
+// wall's every-repo arm has always been exactly that class — ADR 0015 §3's
+// "Third" paragraph and constitutionGuardBody's own header both say
+// `.claude/settings*.json` is "not this ADR's promoted set, but the same
+// class by blast radius". It then enumerated the criterion BY HAND for the
+// one runtime that existed, so a persona commit was refused on claude's two
+// files and landed on `.grok/hooks`, `.mcp.json`, `.codex/config.toml` and
+// bob's five — and the launcher fast-forwards such a commit onto main at
+// close, after which every later seat of that runtime in the repo degrades
+// on it (ProjectConfigTrust, parity.go) until someone removes it
+// (ranger-base-ihda8, measured 2026-10-31: 6 grok entries, 1 codex, 5 bob,
+// uncovered). Deriving the list widens the enumeration and leaves the
+// criterion where it already was, which is why this needed no operator
+// ruling.
+//
+// THE TWO CLAUDE FILES ARE NAMED ANYWAY, and that is not belt-and-braces.
+// ranger-base-az93's reason for them is the DENY LIST, which is
+// permissions — and the launch check's exec-channel keys deliberately leave
+// `permissions` out (grokProjectConfigKeys, runtime.go: posse's own
+// `.claude/settings.json` is permissions-only and has to stay a clean grok
+// launch). Two different reasons for the same two paths. Today the union
+// already contains them; naming them keeps that true if claude's
+// declaration ever changes.
+//
+// BUILT-INS ONLY — not the `runtimes/<name>.yaml` overlay (ADR 0021) and
+// not a template runtime's `project_config:`. The hook is rendered at
+// install and the land belt runs at close, and an overlay can differ
+// between those two moments, so reading it here would break the one
+// property this function exists for: two readers, one list. A template
+// runtime's declared channel is still covered where it is read — the launch
+// check (ProjectConfigTrust), which reads the overlaid Runtime. ASSUMED
+// acceptable (ranger-base-t03st, recorded in ADR 0015 §3).
+//
+// MATCHED BY PATH, never by key. The wall keeps its exact-or-directory-
+// prefix rule, so `ProjectConfigKeys`' narrowing does not reach here: a
+// permissions-only edit to `.claude/settings.json` is already refused
+// (az93), and the rendered sh cannot parse JSON keys faithfully anyway.
+func ConstitutionEveryRepoPaths() []string {
+	seen := make(map[string]bool, 16)
+	out := make([]string, 0, 16)
+	add := func(p string) {
+		if p == "" || seen[p] {
+			return
+		}
+		seen[p] = true
+		out = append(out, p)
+	}
+	add(ClaudeProjectConfig)
+	add(ClaudeProjectConfigLocal)
+	for i := range builtinRuntimes {
+		for _, p := range builtinRuntimes[i].ProjectConfig {
+			add(p)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
 // ConstitutionRepoMarker is how a hook decides, at commit time, that the
 // repo it is in IS the constitution repo: its top level has this directory.
 // `posse/agents` and not the whole promoted set, because it is the one member
@@ -148,8 +215,8 @@ const ConstitutionRepoMarker = ConstitutionSourceDir + "/agents"
 
 // ConstitutionClassIn is the class as the repo at top spells it, and is the
 // GO reading of exactly what the commit wall's constitution arm renders into
-// sh (gates.go constitutionGuardBody): the two settings files in every repo,
-// plus ConstitutionRepoPaths in a repo whose top level carries
+// sh (gates.go constitutionGuardBody): ConstitutionEveryRepoPaths in every
+// repo, plus ConstitutionRepoPaths in a repo whose top level carries
 // ConstitutionRepoMarker.
 //
 // Two readers, one list, on purpose (ranger-base-ak3e). The hook is the L3
@@ -158,7 +225,7 @@ const ConstitutionRepoMarker = ConstitutionSourceDir + "/agents"
 // is judging. A belt spelled from a second list is a belt that drifts, and
 // the day it drifts is the day the shim tier is the only one holding.
 func ConstitutionClassIn(top string) []string {
-	class := []string{ClaudeProjectConfig, ClaudeProjectConfigLocal}
+	class := ConstitutionEveryRepoPaths()
 	if fi, err := os.Stat(filepath.Join(top, filepath.FromSlash(ConstitutionRepoMarker))); err == nil && fi.IsDir() {
 		class = append(class, ConstitutionRepoPaths()...)
 	}

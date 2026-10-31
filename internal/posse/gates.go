@@ -5574,12 +5574,31 @@ $posse_bad"
 //	    rendered FROM PromotedPaths at hook-render time so a path added to
 //	    the promoted set widens this wall in the same edit rather than in a
 //	    later bead.
-//	(b) in EVERY hooked repo — `.claude/settings.json` and its `.local`
-//	    sibling. ranger-base-az93 is why: the deny list that fences a
-//	    persona's destructive verbs lives in that file, so a persona that can
-//	    commit it un-fences itself, in any repo it is dispatched into. It is
-//	    not "the constitution" by ADR 0015's list; it is the same class of
-//	    thing by blast radius, which is what a wall is allowed to care about.
+//	(b) in EVERY hooked repo — every ConstitutionEveryRepoPaths entry: the
+//	    repo→box executable configuration channels, DERIVED from the
+//	    built-in runtimes' Runtime.ProjectConfig declarations (ADR 0002
+//	    "Project configuration is a launch input") rather than listed here.
+//	    ranger-base-az93 is the original why, for claude's two settings
+//	    files: the deny list that fences a persona's destructive verbs lives
+//	    in that file, so a persona that can commit it un-fences itself, in
+//	    any repo it is dispatched into. It is not "the constitution" by ADR
+//	    0015's list; it is the same class of thing by blast radius, which is
+//	    what a wall is allowed to care about.
+//
+//	    THE ENUMERATION WAS NARROWER THAN THE CRITERION until
+//	    ranger-base-t03st. Blast radius was already the criterion in both
+//	    texts, and it was enumerated by hand for the one runtime that
+//	    existed, so a persona commit was refused on `.claude/settings*.json`
+//	    and LANDED on `.grok/hooks`, `.mcp.json`, `.codex/config.toml`,
+//	    `.cursor/hooks.json` and bob's five (ranger-base-ihda8, measured
+//	    2026-10-31: 6 grok entries, 1 codex, 5 bob). The launcher
+//	    fast-forwards such a commit onto main at close, and every later seat
+//	    of that runtime in the repo then degrades on it (ProjectConfigTrust,
+//	    parity.go) until someone removes it. The list is one function now,
+//	    read by this render and by the land belt — see
+//	    ConstitutionEveryRepoPaths (promote.go) for why it reads the
+//	    BUILT-INS only and why claude's two files are still named explicitly
+//	    inside it.
 //
 // A class member matches a staged path exactly or as a directory prefix, so
 // one rule covers `posse/config.yaml` (a file) and `posse/agents` (a tree).
@@ -5643,9 +5662,12 @@ func constitutionGuardBody() string {
 # that arm stands down in a linked worktree and mid-merge, and a dispatched
 # worktree is exactly where a persona's constitution commit comes from.
 if [ -n "${` + EnvPersona + `:-}" ]; then
-  # Every hooked repo: the file that carries this session's own deny list
-  # (ranger-base-az93). Then, in the constitution repo only, the promoted set.
-  posse_cls='` + class([]string{ClaudeProjectConfig, ClaudeProjectConfigLocal}) + `'
+  # Every hooked repo: the repo→box executable configuration channels the
+  # built-in runtimes declare — the file that carries this session's own deny
+  # list (ranger-base-az93) among them, and derived from those declarations
+  # rather than listed here (ranger-base-t03st). Then, in the constitution
+  # repo only, the promoted set.
+  posse_cls='` + class(ConstitutionEveryRepoPaths()) + `'
   posse_cls_top=$(git rev-parse --show-toplevel 2>/dev/null)
   # The index the COMMIT will use, which is the one git handed this hook —
   # a path-limited commit's own next-index included. Empty tree when there is
@@ -5706,9 +5728,15 @@ if [ -n "${` + EnvPersona + `:-}" ]; then
       echo "ADR 0015 §2/§3: a persona DRAFTS the constitution; the operator puts it"
       echo "in force (posse promote). These paths are the law this session runs"
       echo "under — the ` + PromotedProse("and") + ` a promote copies into the home,"
-      echo "the env files beside them, and the settings file carrying this session's"
-      echo "own deny list (ranger-base-az93: a persona that can commit that file"
-      echo "un-fences itself)."
+      echo "the env files beside them, and every repo-to-box executable"
+      echo "configuration channel a runtime reads out of its session directory"
+      echo "before the first model turn (ADR 0002, project configuration is a"
+      echo "launch input): the settings file carrying this session's own deny list"
+      echo "(ranger-base-az93: a persona that can commit that file un-fences"
+      echo "itself), and the hook, MCP and plugin declarations every built-in"
+      echo "runtime loads from a trusted session directory. A commit lands those"
+      echo "on main when this bead closes, and every later seat of that runtime"
+      echo "in this repo reads them before its first turn."
       echo "staged now, and in the class:"
       printf '%s' "$posse_cls_hit"
       echo "the way through — stage the intended diff, the operator applies it:"

@@ -9,3 +9,12 @@
 # python bytecode, e.g. from verify-bd-argv-gate.sh importing the parser
 __pycache__/
 *.pyc
+
+# posse's OWN write into a bob session directory (personaModeOwnsAll,
+# ADR 0062): the PID rides a bob custom mode under `.bob/plugins/posse/`,
+# which for a crew session is this repo's own top level. It is session
+# state, never content. `.bob/plugins` is in the commit wall's class as of
+# ranger-base-t03st, so a bob persona that NAMES that path in a commit is
+# refused — correctly, because it must never be committed. Ignored here so
+# nobody stages it by accident and meets that refusal instead.
+/.bob/plugins/posse/

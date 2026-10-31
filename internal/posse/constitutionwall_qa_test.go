@@ -44,17 +44,50 @@ import (
 	"testing"
 )
 
-// TestQAConstitutionClassIsTheSpecifiedSet is the join between the written
-// class and the computed one. It fails in both directions on purpose: a
-// member dropped from ConstitutionRepoPaths is the wall narrowing, and a
-// member added is a widening nobody wrote down.
+// TestQAConstitutionClassIsTheSpecifiedSet is the join between the class the
+// code computes and a reading of it taken from somewhere else. It fails in
+// both directions on purpose: a member dropped from the class is the wall
+// narrowing, and a member added is a widening nobody wrote down.
+//
+// The other reading is TWO sources, because the class has two halves with
+// two different reasons (ranger-base-t03st):
+//
+//   - constitutionClassSpec — hand-spelled. The promoted half, which ADR
+//     0015 §1 decides, plus az93's two claude settings files, whose reason
+//     is the deny list and not the exec channel.
+//   - every built-in runtime's own Runtime.ProjectConfig declaration — the
+//     repo→box executable channels (ADR 0002). This is the source
+//     ConstitutionEveryRepoPaths derives FROM, read here through the
+//     runtime table rather than through that function, so dropping a member
+//     out of the derivation still reds this.
+//
+// Compared as a SET: the class is everyRepo-then-repo and the two sources
+// here are in neither order, and an order this pin fixed would be an order
+// the wall could not change without a bead.
 func TestQAConstitutionClassIsTheSpecifiedSet(t *testing.T) {
 	t.Parallel()
-	got := append(ConstitutionRepoPaths(), ClaudeProjectConfig, ClaudeProjectConfigLocal)
-	if strings.Join(got, " ") != strings.Join(constitutionClassSpec, " ") {
-		t.Errorf("the commit wall's class is\n  %v\nand ranger-base-ak3e specifies\n  %v\n"+
-			"— if the promoted set legitimately grew, widen constitutionClassSpec in the same edit",
-			got, constitutionClassSpec)
+	want := map[string]bool{}
+	for _, m := range constitutionClassSpec {
+		want[m] = true
+	}
+	for i := range builtinRuntimes {
+		for _, p := range builtinRuntimes[i].ProjectConfig {
+			want[p] = true
+		}
+	}
+	got := map[string]bool{}
+	for _, m := range ConstitutionClassIn(constitutionRepoTop(t)) {
+		got[m] = true
+	}
+	for m := range want {
+		if !got[m] {
+			t.Errorf("the commit wall's class is missing %q — it is specified by constitutionClassSpec or declared by a built-in runtime's ProjectConfig, and the wall narrowed", m)
+		}
+	}
+	for m := range got {
+		if !want[m] {
+			t.Errorf("the commit wall's class carries %q, which no built-in runtime declares and constitutionClassSpec does not name — a widening nobody wrote down; if it is right, write it down in the same edit", m)
+		}
 	}
 }
 
@@ -236,6 +269,94 @@ func TestQAConstitutionWallRenderNamesEveryPromotedPath(t *testing.T) {
 	}
 }
 
+// TestQAConstitutionWallRenderNamesEveryBuiltinProjectConfig is the same
+// property for the every-repo half, which is derived rather than listed
+// since ranger-base-t03st: every path a BUILT-IN runtime declares as its
+// repo→box executable configuration channel (ADR 0002 "Project
+// configuration is a launch input") is in the class and is a whole line of
+// the rendered hook.
+//
+// It reads the runtime table, not ConstitutionEveryRepoPaths, for the reason
+// the file's preamble gives about case lists that shrink with the wall: a
+// pin generated from the function under test is green the moment the
+// function drops a member. The declaration is the independent source — a
+// runtime that declares a channel and a wall that does not refuse it is
+// exactly ranger-base-ihda8, which this bead closes.
+//
+// ONLY THE BUILT-INS. ConstitutionEveryRepoPaths says why at length: the
+// hook is rendered at install and the land belt runs at close, and the
+// `runtimes/<name>.yaml` overlay can differ between those two moments. A
+// template runtime's project_config is covered where it is read, at the
+// launch check.
+func TestQAConstitutionWallRenderNamesEveryBuiltinProjectConfig(t *testing.T) {
+	t.Parallel()
+	render := CommitGuardHook(VisibilityPublic, OpsPatternSet{})
+	class := ConstitutionClassIn(constitutionRepoTop(t))
+	plain := ConstitutionClassIn(t.TempDir())
+	for i := range builtinRuntimes {
+		rt := builtinRuntimes[i]
+		for _, p := range rt.ProjectConfig {
+			t.Run(rt.Name+"/"+p, func(t *testing.T) {
+				if got := InConstitutionClass(class, p); got != p {
+					t.Errorf("%s declares %s as a project-config channel; ConstitutionClassIn puts it under %q, want %q (ranger-base-ihda8)", rt.Name, p, got, p)
+				}
+				// EVERY hooked repo, not only the constitution's: a grok
+				// seat reads its session directory wherever it is
+				// dispatched.
+				if got := InConstitutionClass(plain, p); got != p {
+					t.Errorf("%s's %s is out of the class in a repo that is not the constitution, which is every repo the fleet is dispatched into", rt.Name, p)
+				}
+				if !strings.Contains(render, "\n"+p+"\n") {
+					t.Errorf("the rendered hook must name %q as a whole line of the class; the runtime table and the wall have drifted", p)
+				}
+			})
+		}
+	}
+}
+
+// TestQAConstitutionWallRefusesAnotherRuntimesProjectConfig is the every-repo
+// widening MEASURED through a real commit rather than read off the render,
+// and it is ranger-base-ihda8's own two shapes: before this bead both landed
+// at exit 0, in any repo, and the launcher fast-forwarded them onto main at
+// close.
+//
+// `.grok/hooks/x.json` is the directory-prefix shape and `.mcp.json` the
+// exact-path one, which between them exercise both halves of the hook's one
+// `case` rule over a class member that is NOT claude's.
+//
+// Neither repo carries the constitution marker: the point of this half of the
+// class is that it holds in every hooked repo, and a fixture with the marker
+// would be satisfied by a wall that only ever had the promoted set.
+//
+// The CONTROL is the same commit with no RHQ_PERSONA, and it is not
+// decoration: ADR 0015 §2/§3 splits drafting from ratification by ACTOR, and
+// an operator who cannot write a hook or an MCP server into their own repo
+// has had a tool taken away rather than a wall put up.
+func TestQAConstitutionWallRefusesAnotherRuntimesProjectConfig(t *testing.T) {
+	t.Parallel()
+	for _, rel := range []string{".grok/hooks/x.json", ".mcp.json"} {
+		t.Run(rel, func(t *testing.T) {
+			t.Run("a persona is refused", func(t *testing.T) {
+				repo, git, persona := constitutionWallRepo(t, false)
+				stageAt(t, repo, git, persona, rel, "{}\n")
+				out, err := git(persona, "commit", "-m", "land a channel every later seat reads", "--", rel)
+				assertConstitutionRefusal(t, out, err, rel, gatesDirOf(persona))
+			})
+			t.Run("CONTROL the operator's identical commit lands", func(t *testing.T) {
+				repo, git, _ := constitutionWallRepo(t, false)
+				stageAt(t, repo, git, nil, rel, "{}\n")
+				if out, err := git(nil, "commit", "-m", "operator configures the repo", "--", rel); err != nil {
+					t.Fatalf("the operator's own commit of %s must land: %v\n%s", rel, err, out)
+				}
+				out, err := git(nil, "log", "-1", "--name-only", "--format=")
+				if err != nil || !strings.Contains(out, rel) {
+					t.Fatalf("the commit must hold %s, got %q (%v)", rel, out, err)
+				}
+			})
+		})
+	}
+}
+
 // TestQAConstitutionWallSitsAboveTheSharedIndexArm pins the one ordering
 // fact the file's comment calls load-bearing. The shared-index arm exits 0
 // in a linked worktree and mid-merge; a dispatched worktree is where a
@@ -295,7 +416,15 @@ func TestQAConstitutionWallInstallDocNamesTheWholeClass(t *testing.T) {
 		t.Fatal("the constitution-path guard paragraph has no end — the pin is reading the wrong span")
 	}
 	para := string(body)[start : start+end]
-	for _, m := range constitutionClassSpec {
+	// Both halves of the class, and the derived half from the same source
+	// the other pins read it from — the operator reading this paragraph has
+	// just hit the refusal and needs the whole list, not the half somebody
+	// spelled out by hand (ranger-base-t03st).
+	named := append([]string(nil), constitutionClassSpec...)
+	for i := range builtinRuntimes {
+		named = append(named, builtinRuntimes[i].ProjectConfig...)
+	}
+	for _, m := range named {
 		if !strings.Contains(para, "`"+m+"`") {
 			t.Errorf("INSTALL.md's constitution-path paragraph does not name %q — the wall widened and the doc did not", m)
 		}
