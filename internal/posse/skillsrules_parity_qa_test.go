@@ -261,9 +261,29 @@ func TestQASkillSurfacePerRuntimeDeclaration(t *testing.T) {
 			// proceeds. So the hatch is driven on bob for real, and the
 			// warning lands in the captured stream rather than on stderr.
 			mustCreate(t, b, NewSessionOpts{Name: "qm-" + s.runtime, Agent: "prober", Runtime: s.runtime, Dir: dir})
+			// THIS ROW'S launch line, not the whole log. `calls` reads the
+			// fake's cumulative calls.log and every subtest here appends to
+			// one fake, so a substring taken over all of it is satisfied by
+			// whoever put it there first — row 1, claude — and the six rows
+			// after it assert nothing. MEASURED 2026-10-31
+			// (ranger-base-5t7g3): a one-line mutant stripping RHQ_SKILLS
+			// from bob's launches alone survived the whole-table run and
+			// only reddened under `-run .../bob`, so the ADR 0007 §2 hatch
+			// could be dropped for a runtime with the suite green. The cut
+			// is the label the fixture already writes — one launch per row,
+			// `qm-<runtime>` — so the reading is per-row without the
+			// subtests having to truncate shared state.
 			log := calls(t, fake)
-			if !strings.Contains(log, "--env RHQ_SKILLS=qm-alpha") {
-				t.Errorf("RHQ_SKILLS must ride:\n%s", log)
+			at := strings.Index(log, "workspace create --label qm-"+s.runtime+" ")
+			if at < 0 {
+				t.Fatalf("%s's own launch must be in the log:\n%s", s.runtime, log)
+			}
+			line := log[at:]
+			if next := strings.Index(line, "\nworkspace create "); next >= 0 {
+				line = line[:next]
+			}
+			if !strings.Contains(line, "--env RHQ_SKILLS=qm-alpha") {
+				t.Errorf("RHQ_SKILLS must ride %s's launch:\n%s", s.runtime, line)
 			}
 		})
 	}
