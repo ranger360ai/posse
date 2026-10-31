@@ -18,6 +18,13 @@ package posse
 // `<workspace>/.bob/{custom_modes.yaml,plugins/*/custom_modes.yaml}`, `--mode
 // <slug>` selects one, the slug alphabet is `^[a-zA-Z0-9-]+$`, an omitted
 // `groups` is `[]` (a mode with NO tools), and `hidden` is a schema field.
+// RE-MEASURED UNCHANGED 2026-10-31 on bob 2.0.9 (ranger-base-kf9ou §2): all
+// five, off the bundle — the glob and its global counterpart, the `--mode`
+// option with its `agent` default, the slug regex verbatim in the zod
+// schema, `groups: GROUPS.optional()` with no default beside a loader that
+// iterates `m.groups || []`, and `hidden: z.boolean().optional()`. What is
+// NOT re-measured is what `hidden` DOES (§3) — that was read off a billed
+// turn's stored prompt and stays as-of-2.0.5.
 //
 // SO THE PID IS A FILE posse writes into the session tree, and the line
 // selects it. That tree is where `.agents/skills` already lives (ADR 0007),
@@ -39,7 +46,15 @@ package posse
 // AND THE TAKING IS AN OBSERVABLE (D2). `--mode <unknown>` is NOT a refusal
 // on bob 2.0.5: it prints `(ℹ) Unknown mode "<slug>". Falling back to
 // "agent" mode.` and opens in Agent Mode — one grey line and a session with
-// no persona in it (MEASURED, notes §2). That is 5jjtn's `.allowUnknownOption()`
+// no persona in it (MEASURED, notes §2). RE-MEASURED UNCHANGED on bob 2.0.9,
+// 2026-10-31 (ranger-base-kf9ou §2), and this is the pair D2's gate reads,
+// so it is worth saying how: the sentence is verbatim in the bundle
+// (`Unknown mode "{{modeId}}". Falling back to "agent" mode.`), and the
+// FOOTER is composed — `<mode.name>`, then a dim `" Mode"`, then
+// `" (auto-approve)"` under `--auto-approve` — with the built-in agent mode
+// declared `{id:"agent", name:"Agent"}`. So Footer and Fallback below are
+// right, and a grep of the bundle for the literal "Agent Mode" answers zero
+// and means nothing. That is 5jjtn's `.allowUnknownOption()`
 // class one layer up, so the launch does not trust the flag it typed: it
 // reads the pane's own footer before the work prompt, and refuses to type at
 // a bob that fell back.

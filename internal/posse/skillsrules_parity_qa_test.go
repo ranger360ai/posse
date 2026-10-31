@@ -109,7 +109,12 @@ var qmSurfaces = []qmSurface{
 	// realizable and an unverified root degrades by design; ranger-base-6r1rf
 	// measured bob 2.0.5 discovering a skill linked there and set
 	// skills_verified, so the realizable path is now reachable and this is
-	// what drives it end to end (ranger-base-xzgz3).
+	// what drives it end to end (ranger-base-xzgz3). That discovery reading
+	// is AS-OF the last LIVE probe — 2.0.7, re-run by the operator on
+	// 2026-10-31 (ranger-base-bs49e), with the 2.0.9 arm still filed as
+	// ranger-base-0q45n because it needs a TUI — while the root's membership
+	// in bob's workspace globs re-measured unchanged on 2.0.9 by a bundle
+	// read (ranger-base-kf9ou).
 	{runtime: "bob", shape: "cwd"},
 	// A template-only runtime pointed at the SAME rendered tree claude
 	// gets. ADR 0007's first shape: what sits inside it is the universal

@@ -42,8 +42,9 @@ func TestCredentialReadDenyLiteralsIsRuntimeAwareAndGOOSShaped(t *testing.T) {
 	grokFile := filepath.Join(home, ".grok", "auth.json")
 	// ranger-base-prjck: bob's store is NESTED under its state dir and is
 	// not named auth.json — `~/.bob/settings/auth-secrets.json`, the fixed
-	// path bobshell 2.0.5's bundle joins (bobHomeIn's own measurement). No
-	// variable to unset beside it: bob declares no home override.
+	// path bobshell 2.0.5's bundle joins (bobHomeIn's own measurement), and
+	// RE-MEASURED unchanged off bob 2.0.9's, 2026-10-31 (ranger-base-kf9ou).
+	// No variable to unset beside it: bob declares no home override.
 	bobFile := filepath.Join(home, ".bob", "settings", "auth-secrets.json")
 	t.Setenv("HOME", home)
 	// ranger-base-x5f6p: the claude expectation below is the HOME spelling,

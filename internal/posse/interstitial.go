@@ -97,7 +97,10 @@ func codexHomeIn(home string) string {
 // with NO env branch: bob has no home override to honour.
 //
 // MEASURED 2026-09-28, bobshell 2.0.5,
-// /opt/homebrew/lib/node_modules/bobshell/dist/bob.js, read and not run: the
+// /opt/homebrew/lib/node_modules/bobshell/dist/bob.js, read and not run, and
+// RE-MEASURED UNCHANGED 2026-10-31 on bob 2.0.9 at
+// /opt/homebrew/lib/node_modules/@ibm/bob/dist/bob.js (ranger-base-kf9ou —
+// the package rename moved that path and retired the old one): the
 // credential store is a fixed `path.join(os.homedir(), ".bob", "settings",
 // "auth-secrets.json")`, and of the 25 distinct BOB_* names in the bundle
 // none is a home or config-dir override — they are the gateway, web-login,
@@ -545,7 +548,14 @@ func bobSignInSilence() Silence {
 }
 
 // BobInterstitials — the three first-run screens bobshell 2.0.5 draws
-// (ADR 0060 D1, bench in docs/notes.d/ranger-base-v1yrt.md). None carries a
+// (ADR 0060 D1, bench in docs/notes.d/ranger-base-v1yrt.md), RE-MEASURED
+// 2026-10-31 on bob 2.0.9 by a bundle read (ranger-base-kf9ou §2): all
+// three still there and every quoted string below still verbatim — the
+// license screen's "if you have reviewed the license" naming
+// `--accept-license`, the folder-trust screen (`Do you trust this folder?`,
+// which names `--trust`), and the sign-in screen's
+// `Complete sign-in in your browser…` / `Press ESC or Ctrl+C to exit`.
+// None carries a
 // `danger:`: no default action on any of them mutates the machine, so none
 // of them is the ADR 0013 §2 launch-refuse class, and DangerUnsilenced
 // yields nothing for bob.

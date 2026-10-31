@@ -457,6 +457,20 @@ say, per runtime and per version, which root was measured.
   `bobShell.autoUpdate: false` does not gate (set 09:37, before the probe —
   ranger-base-zneyv said so in its own blast radius) and which cannot fire
   twice.
+- MEASURED 2026-10-31 (ranger-base-kf9ou), this box, independently of the
+  bullet above and reaching the same numbers: `bob --version` **2.0.9**
+  (`commit: 9690f20b0`), the bundle at
+  `/opt/homebrew/lib/node_modules/@ibm/bob/dist/bob.js` because the
+  `bobshell` → `@ibm/bob` rename has fired, and §6e's static half unchanged
+  there — same three homes, same two globs, and the WORKSPACE list still the
+  same four (`.bob/skills`, `.bob/plugins/*/skills`, `.agents/skills`,
+  `.claude/skills`: `.agents` and `.claude` get no plugins glob at workspace
+  scope, where all three do at home scope). Two bullets read the same bundle
+  without each other, which is as close to a replicated static reading as
+  this ADR has. That bead's wider pass — every 2.0.5-dated claim in this
+  tree, split into what a bundle re-measures for free and what still costs a
+  sign-in or a billed turn, with one declaration coming back FALSE —
+  is `docs/notes.d/ranger-base-kf9ou.md`.
 - MEASURED 2026-10-31 (ranger-base-kwbh1), this box, darwin 25.6.0, grok
   **1.0.52 (0920c8169e27)**: §6f's two-arm table above, plus three readings
   that shaped the mechanism. (1) `grok inspect` costs 0.061s, exits 0, reaches

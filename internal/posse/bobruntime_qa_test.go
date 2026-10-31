@@ -12,6 +12,7 @@ package posse
 //  1. THE ABSENCE OF `-p`. This used to read "argv ORDER: `bob -p … chat …`,
 //     never `bob chat … -p …`", because bobshell 2.0.5 is built with
 //     .enablePositionalOptions().allowExcessArguments().allowUnknownOption()
+//     — still all three on bob 2.0.9, 2026-10-31, ranger-base-kf9ou —
 //     and a `-p` after the subcommand is an unknown option the program
 //     SWALLOWS. True about order, and the wrong question: MEASURED
 //     2026-10-01 (ranger-base-5jjtn), `bob chat` reads the program-level
@@ -112,7 +113,15 @@ func bobRuntime(t *testing.T, a *App) *Runtime {
 // used to assert `-p` BEFORE `chat`, from ADR 0060 D3 — which reasoned
 // correctly about argv ORDER from the two help screens, over an ASSUMED
 // claim that a `-p` value is submitted as a turn at all. MEASURED 2026-10-01
-// on bob 2.0.5: it is not. `bob -p '<text>' chat …` parses, is accepted, and
+// on bob 2.0.5: it is not, and that live reading is still AS-OF-2.0.5 —
+// re-measuring it needs the pane watched again at 5/10/20/30/45s, which
+// ranger-base-kf9ou would not spend. What that bead CAN say about 2.0.9 is
+// consistent with it and with nothing else: `initialPrompt`, `args.prompt`
+// and `args?.prompt` appear ZERO times in the bundle, the chat executor
+// hands the whole args object to the TUI with no first-message path, and the
+// top-level program is still built the three ways below (what moved is that
+// `chat` now calls allowExcessArguments(false) for itself).
+// `bob -p '<text>' chat …` parses, is accepted, and
 // delivers nothing — splash plus an empty composer at 45s, no reply, no
 // lifecycle hook — and top-level `-p` without `chat` is headless and
 // key-gated. So the old pin defended the one spelling that looks like it
@@ -307,9 +316,18 @@ func TestQABobGridDeclaresEveryRow(t *testing.T) {
 		// of the workspace, so a repo could hand it a system prompt and a
 		// ten-group tool grant through a path the check never looked at.
 		".bob/settings", ".bob/mcp.json", ".bob/hooks", ".bob/custom_modes.yaml", ".bob/plugins",
-		// the other voice in the session
-		"AGENTS.md", "CLAUDE.md", ".bob/rules-agent/AGENTS.md",
-		".bob/rules-plan/AGENTS.md", ".bob/rules-ask/AGENTS.md",
+		// the other voice in the session. RE-MEASURED 2026-10-31 on bob
+		// 2.0.9 (ranger-base-kf9ou): `CLAUDE.md` is NOT read — its three
+		// bundle occurrences are prose in bob's own "author an AGENTS.md"
+		// skill — and the mode arm is `rules-<any slug>` with a common, a
+		// plugins and a global arm beside it. The three rows below are the
+		// ones a silent drop would cost most: the workspace root file, the
+		// plugins arm (the glob posse's own persona-mode file and skills
+		// root live in, so a repo writing there talks to the model through
+		// a path this row is the only notice of), and the global arm.
+		// (the matching absence, CLAUDE.md, is asserted below — this loop
+		// only reads presence.)
+		"AGENTS.md", ".bob/plugins/*/rules-*/*", "~/.bob/rules/*",
 		// precedence: pid, MEASURED 2026-10-04 by ranger-base-4mrmc's one
 		// billed turn and promoted on the built-in by ranger-base-uqyoz.
 		// Anchored on the VALUE and on bob's OWN measurement bead, not on
@@ -381,6 +399,18 @@ func TestQABobGridDeclaresEveryRow(t *testing.T) {
 	// would be told the turn had not been spent after it had.
 	if strings.Contains(flat, "precedence UNMEASURED") {
 		t.Errorf("the bob grid still prints precedence UNMEASURED beside a measured value (ranger-base-4mrmc's turn, promoted on ranger-base-uqyoz):\n%s", b.String())
+	}
+	// The rulebooks row must not name CLAUDE.md. RE-MEASURED 2026-10-31 on
+	// bob 2.0.9 (ranger-base-kf9ou): bob's RuleLoader reads exactly one
+	// single file, `<workspace>/AGENTS.md`, and every other arm is a
+	// DIRECTORY tree; CLAUDE.md appears in the bundle three times and all
+	// three are prose in bob's own "author an AGENTS.md" skill, advising the
+	// MODEL to fold Claude Code's rules into the file it writes. Stated as an
+	// absence, because the failure is the easy one in this direction: a row
+	// that over-declares is a reader told another CLI's rulebook is live on
+	// this one, and it costs nothing to print, so nothing notices.
+	if strings.Contains(flat, "CLAUDE.md") {
+		t.Errorf("bob's grid names CLAUDE.md as a rulebook — the 2.0.9 bundle reads no such file (ranger-base-kf9ou, docs/notes.d/ranger-base-kf9ou.md §4):\n%s", b.String())
 	}
 	if strings.Contains(flat, "turn outcome: READ by the") {
 		t.Errorf("the settle row credits bob with a turn-outcome reader — no bob refusal artifact has been captured, so there is nothing for an adapter to read (ADR 0013 §1, ADR 0060 D4):\n%s", b.String())

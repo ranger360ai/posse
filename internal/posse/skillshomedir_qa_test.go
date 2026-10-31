@@ -10,7 +10,9 @@ package posse
 // measurement the blessing rested on.
 //
 // ranger-base-q1w0h's operator-run static read of bob 2.0.5's own bundle
-// (ADR 0007 §6, Evidence) found that measurement FALSE: bob reads
+// (ADR 0007 §6, Evidence) found that measurement FALSE, and a re-read of
+// bob 2.0.9's bundle on 2026-10-31 found the same six roots unchanged
+// (ranger-base-kf9ou §2): bob reads
 // `~/.agents/skills` globally after all — and `~/.bob/plugins/*/skills`,
 // which is where bob's OWN posse-owned root (BobSkillsRoot,
 // `.bob/plugins/posse/skills`, §6d) sits. So the write this file used to

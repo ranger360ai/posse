@@ -104,7 +104,12 @@ func TestAgentsListingShowsTheDisplayTier(t *testing.T) {
 //
 // bob is the row that reads UNMAPPED now, and it is not a regression to
 // rangerhq-jp6's state: bobshell 2.0.5 takes no per-launch model on `chat`
-// or `run` at all, so there is nothing for a tier to map to and ADR 0060 D1
+// or `run` at all (RE-MEASURED on bob 2.0.9, 2026-10-31, ranger-base-kf9ou:
+// `-m/--model` IS in the shared chat/run option builder and is added only
+// when the bundle's own isDev() holds, which needs a build flag AND
+// $BOB_DEV_KEY equal to a literal in the bundle — so the flag exists and
+// this box's bob cannot be handed it), so there is nothing for a tier to
+// map to and ADR 0060 D1
 // declares the gap as a DECLARED DIFFERENCE rather than papering it with an
 // invented flag. So the blanket "no built-in says UNMAPPED" became "exactly
 // one does, and it is bob" — which still reds if claude, codex or grok ever

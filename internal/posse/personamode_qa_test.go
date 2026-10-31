@@ -114,7 +114,10 @@ func TestQAPersonaModeLineSelectsTheFileTheLaunchWrote(t *testing.T) {
 		// The built-in agent mode's ten less `mode`, which is the
 		// `switch_mode` tool (fact 5 in the header). An OMITTED groups is `[]` on
 		// 2.0.5 — a mode with no tools at all — so this is the one key
-		// that must never be left to a default (MEASURED, notes §1).
+		// that must never be left to a default (MEASURED, notes §1;
+		// RE-MEASURED unchanged on bob 2.0.9, ranger-base-kf9ou: the schema is
+		// `groups: GROUPS.optional()` with no default and the workspace loader
+		// iterates `m.groups || []`).
 		"groups: [read, edit, command, browser, mcp, skill, todo, artifact, subagent]",
 		"hidden: true",
 	} {
@@ -497,7 +500,9 @@ func TestQAPersonaModeReadingNeverGuessesTowardsTyping(t *testing.T) {
 }
 
 // The slug alphabet is the CLI's (`^[a-zA-Z0-9-]+$`, MEASURED off the 2.0.5
-// schema) and posse's persona names are not — `_` is legal in one and not
+// schema and RE-MEASURED verbatim off bob 2.0.9's, 2026-10-31,
+// ranger-base-kf9ou — "Slug must contain only letters numbers and dashes")
+// and posse's persona names are not — `_` is legal in one and not
 // the other. A slug the CLI rejects is a mode that never loads, which is
 // the silent fallback again.
 func TestQAPersonaModeSlugStaysInsideTheCLIsAlphabet(t *testing.T) {

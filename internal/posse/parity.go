@@ -131,10 +131,12 @@ var skillsDriftVersion = ProbeCLIVersion
 // exit code exists to keep away from the real ones (ranger-base-f5jbs).
 //
 // ONE rule, not a per-runtime parser, and nothing but grok pays for it: codex
-// prints `codex-cli 0.153.4` and bob prints a bare `2.0.7`, neither of which
-// carries a bracketed field, so for them this returns the raw line byte for
-// byte. A real release move still reds — the version and the build hash are
-// both ahead of the bracket, so 1.0.52 → 1.0.53 or a changed hash mismatches
+// prints `codex-cli 0.153.4` and bob prints a bare version — `2.0.5` when
+// this was written, `2.0.9` on this box since 2026-10-31, and bare either
+// way (ranger-base-kf9ou) — neither of which carries a bracketed field, so
+// for them this returns the raw line byte for byte. A real release move
+// still reds — the version and the build hash are both ahead of the
+// bracket, so 1.0.52 → 1.0.53 or a changed hash mismatches
 // with the suffix present or absent. What stops being drift is a channel
 // change alone, and the declaration was never keyed on the channel: §6's
 // subject is the RELEASE whose skill discovery was measured.

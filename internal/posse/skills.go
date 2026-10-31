@@ -336,19 +336,29 @@ const AgentsSkillsPath = ".agents/skills"
 // symlink out of the workspace, so the root is verified and runtime.go now
 // declares SkillsVerified for it. Both arms, both versions, against the
 // `.bob/skills` control — docs/notes.d/ranger-base-6r1rf.md has the table.
+//
+// The STATIC half holds on 2.0.9 as well: ranger-base-kf9ou re-read that
+// bundle and this path is still inside bob's own `.bob/plugins/*/skills`
+// workspace root. What is AS-OF the last LIVE probe, and can only be, is
+// the listing and the symlink-follow — a TUI reading — which is why
+// SkillsVerified names a version a probe produced and the drift row against
+// an installed 2.0.9 still fires.
 const BobSkillsRoot = ".bob/plugins/posse/skills"
 
 // bobSkillsGlobalRoots is bob's declared Runtime.SkillsGlobalRoots (ADR 0007
 // §6e): the GLOBAL skill roots bob's shipped bundle reads, home-relative,
 // MEASURED 2026-10-12 by a static read of bob 2.0.5's
 // /opt/homebrew/lib/node_modules/bobshell/dist/bob.js, and RE-READ unchanged
-// on 2.0.9 at 2026-10-31 (ranger-base-bs49e) — where the package is `@ibm/bob`
-// and the path is /opt/homebrew/lib/node_modules/@ibm/bob/dist/bob.js, the
-// `bobshell` global having migrated under it (ranger-base-lf6it §5). The
-// minified names moved exactly as the ADR's Evidence warns they would — the
-// 2.0.5 recipe's `rXo=` and `nXo=Afr.flatMap` are `xds=` and `Sds=Cmr.flatMap`
-// on 2.0.9, where `NA=".bob"` and `tJ="plugins"` — and the string literals did
-// not. `~/.bob`, `~/.agents` and `~/.claude`, each
+// on 2.0.9 at 2026-10-31 — TWICE, by ranger-base-bs49e and independently by
+// ranger-base-kf9ou §1, which is as close to a replicated bundle read as
+// this tree has. The package is `@ibm/bob` now and the path is
+// /opt/homebrew/lib/node_modules/@ibm/bob/dist/bob.js, the `bobshell` global
+// having migrated under it (ranger-base-lf6it §5) and the old path no longer
+// existing — so every `node_modules/bobshell/...` spelling left in this tree
+// is dead. The minified names moved exactly as the ADR's Evidence warns they
+// would — the 2.0.5 recipe's `rXo=` and `nXo=Afr.flatMap` are `xds=` and
+// `Sds=Cmr.flatMap` on 2.0.9, where `NA=".bob"` and `tJ="plugins"` — and the
+// string literals did not. `~/.bob`, `~/.agents` and `~/.claude`, each
 // with `skills` and `plugins/*/skills` — six entries because the
 // measurement names the glob exactly, not a coarser directory that happens
 // to cover it: refuseSkillsGlobalWrite matches path SEGMENTS, with a `*`

@@ -323,7 +323,13 @@ type Runtime struct {
 	// bob 2.0.5 (static bundle read, MEASURED 2026-10-12): `.bob/skills`,
 	// `.bob/plugins/*/skills`, `.agents/skills`, `.agents/plugins/*/skills`,
 	// `.claude/skills`, `.claude/plugins/*/skills` — {~/.bob, ~/.agents,
-	// ~/.claude} x {skills, plugins/*/skills}. codex (live probe, MEASURED
+	// ~/.claude} x {skills, plugins/*/skills}. RE-MEASURED unchanged on bob
+	// 2.0.9, 2026-10-31 (ranger-base-kf9ou): same three homes, same two
+	// globs, and the WORKSPACE list beside it is still the same four
+	// (`.bob/skills`, `.bob/plugins/*/skills`, `.agents/skills`,
+	// `.claude/skills` — note that `.agents` and `.claude` get no plugins
+	// glob at workspace scope, where all three do at home scope).
+	// codex (live probe, MEASURED
 	// 2026-10-12, codex-cli 0.153.4, ranger-base-bdias) declares `.agents/skills`
 	// too — the binary-strings read that left it ASSUMED turned out
 	// inconclusive, not false: `codex debug prompt-input` with HOME pointed
@@ -1815,6 +1821,18 @@ var grokProjectConfigKeys = []string{"hooks", "mcpServers"}
 // Everything here is MEASURED on bobshell 2.0.5 (Homebrew, node 25.2.1) on
 // 2026-09-28 unless a comment says ASSUMED. The bench is
 // docs/notes.d/ranger-base-v1yrt.md; the record is ADR 0060.
+//
+// RE-CHECKED 2026-10-31 against bob 2.0.9, after bob self-updated twice in
+// one day (ranger-base-lf6it, ranger-base-zneyv, ranger-base-kf9ou). Read
+// docs/notes.d/ranger-base-kf9ou.md before trusting a 2.0.5 date below: it
+// splits every claim in this block into the ones a bundle read re-measured
+// for free and the ones that still name 2.0.5 because re-measuring them
+// costs a browser sign-in or a billed turn. One came back FALSE
+// (bobNativeRules' `CLAUDE.md`) and is corrected there. Two notes for
+// anyone re-reading the bundle: the package is `@ibm/bob` now, not
+// `bobshell`, so every path spelled `node_modules/bobshell/...` in this
+// tree is dead; and the minified identifiers move between builds, so find
+// a cluster by its string literals, which do not.
 
 // BobCommand is the launch template. Two things are MEASURED about it, and
 // one of them is an absence: there is no `-p` on it, because no argv shape
@@ -1875,6 +1893,17 @@ var grokProjectConfigKeys = []string{"hooks", "mcpServers"}
 // billed turn per launch, and a sequencing rule that needs the pane labelled
 // first, which on darwin nothing does yet (ranger-base-mz8ud).
 //
+// AS-OF-2.0.5 on the DELIVERY, corroborated on 2.0.9 (ranger-base-kf9ou §3):
+// re-measuring "parses and delivers nothing" needs the pane watched again at
+// 5/10/20/30/45s, so the live reading above still names 2.0.5. What a bundle
+// read says about 2.0.9 is consistent with it and with nothing else:
+// `initialPrompt`, `args.prompt` and `args?.prompt` appear ZERO times, and
+// the chat executor hands the whole args object to the TUI with no
+// first-message path anywhere in it. The top-level program is still built
+// `.enablePositionalOptions().allowExcessArguments().allowUnknownOption()`,
+// so ADR 0060 D3's reasoning about ORDER still holds; the one change is that
+// `chat` now calls `allowExcessArguments(false)` for itself.
+//
 // DO NOT PUT `-p` BACK, and `{mode}` landing does not soften that one bit.
 // It parses, it is accepted, it is silently ignored, and a reader checking
 // "does bob deliver a PID?" by reading this template would answer yes for
@@ -1909,12 +1938,49 @@ const BobCommand = `bob chat {mode} --accept-license --trust --auto-approve -w .
 
 // bobNativeRules — the rulebooks bob discovers and loads by itself, ahead
 // of anything posse types (ADR 0013 §4, declared and never rewritten).
-// Read out of the 2.0.5 bundle rather than from a live discovery turn,
+// Read out of the shipped bundle rather than from a live discovery turn,
 // which is why bob is NOT in qmRulebookTruth: that table's contract is
 // "what TestQALiveNativeRulesDiscovery measured", and nobody has spent a
 // bob turn on it. The live probe is the instance side's (ranger-base-6wqe).
-var bobNativeRules = []string{"AGENTS.md", "CLAUDE.md",
-	".bob/rules-agent/AGENTS.md", ".bob/rules-plan/AGENTS.md", ".bob/rules-ask/AGENTS.md"}
+//
+// RE-MEASURED 2026-10-31 on bob 2.0.9 (ranger-base-kf9ou, static read of
+// /opt/homebrew/lib/node_modules/@ibm/bob/dist/bob.js — note the path, the
+// `bobshell` → `@ibm/bob` rename has fired), and the 2.0.5 declaration was
+// wrong in three ways. From the `La("RuleLoader")` cluster:
+//
+//   - `AGENTS.md` IS the only single file, at the workspace root — and
+//     **`CLAUDE.md` IS NOT READ**. All three `CLAUDE.md` strings in the
+//     bundle are prose inside bob's own built-in "author an AGENTS.md"
+//     skill, telling the MODEL to fold Claude Code's and Cursor's rules
+//     into the file it writes. A grep for the string finds it; a grep for
+//     the loader does not, and the 2.0.5 reading took the first for the
+//     second.
+//   - the mode arm is `rules-<ANY slug>`, not `rules-{agent,plan,ask}`:
+//     the loader takes every directory under `.bob` whose name starts with
+//     `rules-` and uses the remainder as the slug. That matters here more
+//     than it would elsewhere, because posse's own PID channel launches
+//     `--mode posse-<persona>` (bobPersonaMode), so
+//     `.bob/rules-posse-<persona>/` is a rulebook dir for posse's OWN
+//     sessions.
+//   - there is a COMMON arm (`.bob/rules/`), a PLUGINS arm
+//     (`.bob/plugins/*/rules{,-<slug>}/`, the same glob the persona-mode
+//     file and the skills root live in) and a GLOBAL arm (all four again
+//     under `~/.bob`). Every filename in them, five directories deep,
+//     following symlinks, skipping only `.DS_Store`, `Thumbs.db`,
+//     `.gitkeep`, `.gitignore` and `.bobignore` — so the `/*` below
+//     understates the recursion and names the root honestly instead of
+//     inventing a `**` spelling no other runtime's row uses.
+//
+// Whether that is drift since 2.0.5 or an incomplete reading at 2.0.5 is
+// NOT determinable on this box: the 2.0.5 bundle is gone with the rename,
+// and the migration left no copy to diff (docs/notes.d/ranger-base-kf9ou.md
+// §4). So this list says what 2.0.9 was measured to read, and nothing about
+// what 2.0.5 did.
+var bobNativeRules = []string{"AGENTS.md",
+	".bob/rules/*", ".bob/rules-*/*",
+	".bob/plugins/*/rules/*", ".bob/plugins/*/rules-*/*",
+	"~/.bob/rules/*", "~/.bob/rules-*/*",
+	"~/.bob/plugins/*/rules/*", "~/.bob/plugins/*/rules-*/*"}
 
 // bobProjectConfig is what a trusted session directory hands bob before any
 // model turn — the repo→box channel no PID sits in front of, guarded by
@@ -2173,16 +2239,28 @@ var builtinRuntimes = []Runtime{
 	// one the box happens to carry: bob replaced itself AGAIN at 09:39, one
 	// minute after that probe exited, so this box runs 2.0.9 (`commit:
 	// 9690f20b0`, `@ibm/bob`) and this declaration IS in drift today —
-	// reported in the grid and at launch, never refused (§6c). The remedy is
+	// reported in the grid and at launch, never refused (§6c). THREE
+	// releases in one day with nobody typing an upgrade: 2.0.5 at 00:26,
+	// 2.0.7 by 00:27, 2.0.9 by 09:39 (ranger-base-kf9ou, which re-read the
+	// installed binary independently and agrees on the number and the
+	// commit). The remedy is
 	// one more operator probe, ranger-base-0q45n, and it is narrow: a STATIC
 	// read of 2.0.9's bundle finds BobSkillsRoot and every
 	// SkillsGlobalRoots entry below unchanged, so what is unmeasured on
-	// 2.0.9 is the symlink arm and the listing, never the roots.
+	// 2.0.9 is the symlink arm and the listing, never the roots. Nor has
+	// anything started a 2.0.9 session to measure: `bobShell.lastRunVersion`
+	// still reads `2.0.7`, and bob writes that on the first start of a new
+	// version (ranger-base-kf9ou). So advancing this field off the bundle
+	// read alone would retire the drift row by asserting the one thing a
+	// bundle cannot show.
 	// The second move was the `bobshell` → `@ibm/bob` package MIGRATION,
 	// which `bobShell.autoUpdate: false` does not gate (in that file since
 	// 09:37, ranger-base-zneyv, whose own blast-radius note said so) — so a
 	// reader here must not take the off-switch as a reason to trust the
-	// number. docs/notes.d/ranger-base-bs49e.md carries both readings.
+	// number. The route is closed on 2.0.9 either way: the migration worker
+	// is absent from that bundle (ranger-base-kf9ou §1).
+	// docs/notes.d/ranger-base-bs49e.md carries both readings and
+	// docs/notes.d/ranger-base-kf9ou.md the re-read beside them.
 	// SkillsGlobalRoots is the same static read's other half (§6e): bob's
 	// OWN BobSkillsRoot (`.bob/plugins/posse/skills`) sits inside its own
 	// `.bob/plugins/*/skills` entry below, so bob's declaration refuses its
@@ -2215,6 +2293,14 @@ var builtinRuntimes = []Runtime{
 		// neither `chat` nor `run` takes a per-launch model on 2.0.5, so
 		// TIERS ARE UNMAPPED and the grid says so as a DECLARED DIFFERENCE.
 		// The model is an instance setting on bob, not a launch argument.
+		// RE-MEASURED UNCHANGED on 2.0.9, 2026-10-31 (ranger-base-kf9ou §2),
+		// now with the mechanism named rather than just the absence:
+		// `-m/--model`, `--provider` and `--reasoning-effort` ARE in the
+		// shared `chat`/`run` option builder, added only when the bundle's
+		// own `isDev()` is true — and `isDev()` is a build flag AND
+		// `process.env.BOB_DEV_KEY` equal to a literal in the bundle. So the
+		// flags exist and this box's bob cannot be handed them, which is a
+		// firmer reason for UNMAPPED than "there is no such flag".
 		//
 		// UnknownModel stays unset — UNMEASURED, the loud default. With no
 		// model flag there is no id to hand this CLI, so the ADR 0053 canary
@@ -2243,8 +2329,10 @@ var builtinRuntimes = []Runtime{
 		// ranger-base-5jjtn for one honest reason — there is no collision to
 		// measure while the PID never arrives at all — and ADR 0062 D1 is the
 		// day the PID channel came back, so the question came with it. Bob
-		// reads AGENTS.md and CLAUDE.md out of the workspace and now takes the
-		// PID as its mode's `roleDefinition`, which is the `role_definition`
+		// reads AGENTS.md out of the workspace (and NOT CLAUDE.md — that half
+		// of the sentence was measured false on 2.0.9, bobNativeRules above)
+		// and now takes the PID as its mode's `roleDefinition`, which is the
+		// `role_definition`
 		// section of its own system prompt; the probe put both rulebooks in
 		// the ONE rendered prompt, so the answer is a precedence reading and
 		// not an artifact of a rulebook that never loaded. Bob's reply emitted
