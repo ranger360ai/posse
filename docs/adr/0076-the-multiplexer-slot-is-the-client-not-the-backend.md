@@ -1,6 +1,6 @@
 # ADR 0076 — the multiplexer slot is the client, not the backend: ten verbs, herdr and Rex behind them, and on Rex the runtime reports its own state
 
-*Status: accepted 2026-10-31 (ranger-base-lcxr3, operator direction 2026-10-24) · owner: architect · applies ADR 0075 §2 (the slot rule) to its first slot · probe: `docs/adr/0076-multiplexer-slot.probe.sh` · spike ranger-base-ch2rb: `docs/adr/0076-hook-route.probe.sh`, see "Spike" below*
+*Status: accepted 2026-10-31 (ranger-base-lcxr3, operator direction 2026-10-24) · owner: architect · applies ADR 0075 §2 (the slot rule) to its first slot · probe: `docs/adr/0076-multiplexer-slot.probe.sh` · spike ranger-base-ch2rb: `docs/adr/0076-hook-route.probe.sh`, see "Spike" below · amended 2026-10-31 (ranger-base-zkeik): §3 admission is decided before the claim and confirmed by the delivery mode; codex and grok stay refused, see "Amendment" below · probe: `docs/adr/0076-argv-admission.probe.sh`*
 
 ## Context
 
@@ -102,7 +102,10 @@ running on herdr. (grok was "probably admitted" here until the spike
 below measured no launch record.) A record's `owner` is checked by
 pid and name (Rex warns that pids are reused), and `owner` must not be the
 pane's shell. That is the Rex form of herdr's `Seen()`: positive evidence
-that the runtime has the keyboard.
+that the runtime has the keyboard. *(Amended by ranger-base-zkeik, below: which
+runtimes may launch on Rex is a declared, measured fact read before the
+claim, and the wait for the first record is its confirmation, keyed on
+the runtime's `prompt:` column.)*
 
 **4. Verbs only herdr has stay herdr's.** They are reached by type
 assertion on the herdr `Mux`: the `EvaluatedRules` diagnostics, the
@@ -252,3 +255,134 @@ during a turn. Each needs a model turn or a permission prompt, and this
 spike spent none. In 1 of 3 scripted codex runs, the keystrokes after the
 blocked prompt were lost (cause not found); the other two and the hand runs
 were clean.
+
+## Amendment: what admits a runtime that reports only after its first prompt (ranger-base-zkeik, 2026-10-31)
+
+The spike above left one question: §3 admits on a launch record, and only
+claude writes one. Is there an admission rule that is still positive
+evidence (ADR 0013 §1) for a runtime that reports only once it has a
+prompt? And is codex on Rex worth posse owning a hook layer?
+
+**The fact that reframes it.** posse does not type codex's or grok's
+work prompt. Both are `prompt: argv` (ADR 0013 §2): the prompt rides on
+the launch line, so the launch *is* the first prompt. herdr already
+lives with this shape for grok: `awaitDelivered` waits for a screen
+after an argv launch, because "detectability is a property of having
+been prompted" (dispatch.go). So the question for an argv runtime is not
+"does it report before a prompt" but "does it report after an argv
+launch". The probe measured that.
+
+**MEASURED 2026-10-31**, Rex CLI 0.0.1793377904, codex-cli 0.153.4,
+grok 1.0.52, `docs/adr/0076-argv-admission.probe.sh`. No model turn was
+possible: every CLI ran under `sandbox-exec (deny network*)`, in a scratch
+home with a synthetic key, and codex's UserPromptSubmit hook exits 2.
+
+| arm | first record | owner |
+|---|---|---|
+| grok, argv prompt, `program_status` auto | **none** at 2, 5, 10, 20 s while its turn was live (`Retrying…`) | — |
+| grok, argv prompt, forced `on` in `.grok/config.toml` | **none** at 2 s through **131 s**, turn still live | — |
+| codex, argv prompt, hooks declared but not trusted | **none**: the "Hooks need review" dialog holds the prompt | — |
+| codex, argv prompt, hook trust seeded in that home | **`working` by t+2 s** (SessionStart → idle, then UserPromptSubmit → working) | `{pid, "codex"}` |
+
+Also MEASURED: grok's composer again held `n,auth` (the tail of Rex's
+`7501;?` reply) in both grok arms. grok reads the reply and keeps part of
+it as input, so a broken parse of that reply is a plausible reason its
+`auto` never turns on. That cause is UNPROVEN, and "forced on" did not
+help either. codex keys project trust by the resolved path
+(`/private/var/…`, not `/var/…`); an unresolved key draws the
+directory-trust dialog instead. The trust table's `trusted_hash` matched
+none of seven obvious serializations of the declaration, so posse could
+not compute it in this session. It is derivable from codex's source, but
+nobody documents it.
+
+**Decision.**
+
+**D1. Rex admission is a declared fact, read before the claim.** The
+builtin runtime table carries one builtin-only bool, `ReportsOnRex`. It
+is set on claude alone and is never declarable in a runtime yaml. On a
+`multiplexer: rex` instance, dispatch refuses a runtime without it
+before the claim and before any worktree or session exists. That sits
+beside the `danger:` refusal, with the same busy-key arm (ADR 0013 §1
+rule 4) and the herdr message. This is ADR 0013 §1 rule 3, "before
+anything is spent", which a try-and-see refusal would break for argv
+runtimes (rejected below). It mirrors herdr's launch row, where the
+manifest is the declaration that the runtime can be read. Interactive
+`posse new` warns and proceeds instead (§1 rule 5): the operator is at
+the keyboard, and `State` reads `unknown` until a record arrives.
+
+**D2. The first-record wait confirms the declaration, keyed on
+`prompt:`.**
+- `typed`: wait for a record *before* typing, as §3 says today. No record
+  within the bound means a refusal with nothing typed. claude is
+  MEASURED here.
+- `argv`: wait for a record of any state *after* the launch, with the
+  owner check from §3. No record within the bound is a **HOLD**, not a
+  refusal (ADR 0066 D1, the `awaitDelivered` consequence). The prompt is
+  already with the CLI, so the claim is kept and the bead is not judged
+  this pass.
+Positive evidence is the same in both cases: a record whose owner is the
+runtime and not the shell.
+
+**D3. grok is refused on Rex (MEASURED).** No record in 131 s of a live
+argv turn. The reason is UNPROVEN, and the fix is upstream. Re-admit
+when the probe's `grok` and `grokon` arms show a record within the
+bound on a new version, then set `ReportsOnRex` and re-run the first-turn
+leak check. The `n,auth` leak also lands in the composer that a later
+typed prompt (a re-prompt, `--resume`) would use. It has to be gone
+before grok is admitted.
+
+**D4. codex is refused on Rex by price, not by mechanism.** The hook
+route works: an argv launch with seeded trust reports `working` in 2 s
+under codex's own owner (MEASURED). But admitting codex means posse owns
+these:
+1. a 7501 hook script and a `hooks.json` declaration per launch;
+2. trust seeding. Trust lives in `$CODEX_HOME/config.toml`, and posse
+   runs codex against the operator's own `~/.codex`. So seeding means
+   writing the operator's global config, which posse never does (§
+   Alternatives, `rex skill setup`). The other way is a per-seat
+   `CODEX_HOME`, which moves codex's credential file, the session rollouts the cost
+   adapter and plan hints read (`cost_codex.go`, `planhint_codex.go`) and
+   the interstitial silences (`interstitial.go`);
+3. an undocumented hash keyed by absolute path, which has to be
+   re-audited on every codex bump;
+4. dropping `--disable hooks` from `CodexFleetFlags`. That turns the
+   operator's global hooks back on in fleet seats (today one:
+   herdr's `herdr-agent-state.sh` SessionStart);
+5. `blocked`, which is still UNPROVEN live for codex.
+All of that buys a capability no seat uses. MEASURED 2026-10-31,
+`grep -rh '^runtime:' ~/.config/posse --include='*.md' | sort | uniq -c`:
+20 of 20 PIDs run claude. The `multiplexer` key is per instance (§6), and
+codex runs on herdr unchanged. **Reopen when** a PID that runs codex is
+wanted on a Rex instance. The four rows above are then the slices, the
+probe's `codex` arm is the acceptance test, and deriving the hash from
+codex's source comes first.
+
+**D5. bob stays refused.** It is `prompt: typed` with no launch record,
+so D2's typed arm refuses it. It also has no `blocked` (spike, STATIC).
+
+**Consequences.** ranger-base-phq39's refusal of codex and grok is the D1
+refusal before the claim, not a timed-out wait. On an all-claude
+instance, the only effect today is that a Rex instance cannot strand a
+claim on a runtime it can never read. Nothing else is cut.
+
+**Alternatives rejected.**
+- **Owner-of-foreground plus `process.name`, no record.** It proves the
+  process exists, not that its state can be read. `State` would read
+  `unknown` for the whole seat, so dispatch could never settle it. That is
+  herdr's idle-fallback guess in a new form, which is what ADR 0013 §1's
+  settle row refuses.
+- **A first-prompt handshake** (posse types a throwaway prompt to provoke
+  a record). It spends a turn on every launch and types into a composer
+  posse cannot see is ready, which the promptable row refuses. For argv
+  runtimes it is unnecessary.
+- **Try-and-see for argv runtimes** (launch, wait, refuse on silence).
+  The evidence arrives after the prompt is delivered, so the refusal
+  comes after a claim, a worktree and a live turn. On grok that is a real
+  billed turn that nobody observes. This breaks ADR 0013 §1 rule 3, which
+  is why D1 reads a declaration first.
+- **The codex hook layer now** (the clever one, again). It works, and it
+  is priced in D4. It is deferred on demand, not on doubt.
+- **`--dangerously-bypass-hook-trust`** instead of seeding. It trusts
+  every hook in reach, including a `.codex/hooks.json` committed in the
+  worktree the seat runs in, and hooks run outside codex's sandbox. Any
+  repo could plant code that the fleet then runs unsandboxed.
