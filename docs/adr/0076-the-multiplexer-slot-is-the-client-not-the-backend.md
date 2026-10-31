@@ -120,7 +120,10 @@ and launch planning. The meta file gains a `Mux` key, and an absent key
 means herdr, so every file on disk reads unchanged. `Socket` holds the Rex
 server address. `Gen` stays empty on Rex. herdr needs a generation to tell
 a reused workspace id apart; Rex's UUIDs are never reused, so a seat is
-dead when its session id is missing from `session.list` on that server.
+dead when its seat is missing from a fresh `List()` of the occupant on
+that server. That is the occupant's listing, not rex's `session.list`
+method: a Rex session outlives its blocks, so the raw method never drops
+a finished seat. *(Corrected by ranger-base-p7mwt, below.)*
 
 **6. Rex is opt-in per instance: `multiplexer: rex`.** The default stays
 herdr, and herdr's code paths do not change. This is not a fork. Rex is
@@ -386,3 +389,52 @@ claim on a runtime it can never read. Nothing else is cut.
   every hook in reach, including a `.codex/hooks.json` committed in the
   worktree the seat runs in, and hooks run outside codex's sandbox. Any
   repo could plant code that the fleet then runs unsandboxed.
+
+## Correction: §5's liveness rule reads the occupant's `List()`, not `session.list` (ranger-base-p7mwt, 2026-10-31)
+
+**Context.** §5 said a Rex seat is dead "when its session id is missing
+from `session.list` on that server". Read literally, that never fires.
+MEASURED 2026-10-31 on this box (Rex CLI 0.0.1793377904,
+ranger-base-qlxb5, whose notes fragment §4 has the method):
+when a terminal block's program exits, the block closes but the session
+stays in `rex ls` indefinitely. `rex session inspect` shows `windows: 0`.
+Every landed seat would be immortal, and no prune could ever settle its
+claim.
+
+**Decision.** The listing in §5 is the occupant's `List()`, the verb in
+§2's table. On Rex, `List()` does not return a session that holds no
+terminal block. A seat is dead when it is absent from a **fresh**
+`List()` on its recorded server. The fresh read is the confirmation, since
+the ten verbs have no per-id query (ranger-base-q5gc2 notes §4). This is
+what both implementations already do. Nothing in the code changes.
+
+This keeps ADR 0011 §2's rule. A missing block is positive evidence that
+the program in it ended. It is not absence read as death. The rule
+covers three cases:
+
+- A listing that **fails**, because the server is unreachable or rex
+  errors, is unknown. It is not "absent" and kills nothing.
+- Reads pass `--autostart=false`. An autostarted server holds no
+  sessions, so one autostarted read would make every recorded seat
+  look absent (ranger-base-qlxb5).
+- The zero-window session id stays addressable, so `Close` still runs
+  `session.destroy` on it.
+
+**Alternatives rejected.**
+- **Leave the prose as it was and rely on the code.** The next occupant,
+  or a rewrite of this one, implements the sentence it reads. That is
+  the bug this bead names.
+- **`--keep-open` on the block**, so the session and the block share a
+  lifetime. That is the wrong direction: the block outlives its program,
+  and the seat never ends at all.
+- **Have `Close`, or a reaper, destroy a session when its block exits.**
+  That could look like the fix, since `session.list` would then mean
+  what §5 said. It adds a second writer to the session's lifetime, and
+  it races `List()` in the window between the exit and the destroy. A
+  crash in the reaper brings the immortal seats back. The occupant
+  already reads the block, which is the fact itself, so no reaper is
+  needed.
+- **Judge by the root block's `process` liveness, not by its presence.**
+  That is §2's `State` verb, and it answers a different question: is the
+  runtime alive inside a seat that exists? Liveness of the SEAT stays a
+  matter of listing.
