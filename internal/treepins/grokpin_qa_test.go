@@ -110,6 +110,12 @@ func gpStubGrok(t *testing.T, binDir, version, checkJSON string) {
 // move gets caught instead of absorbed.
 const gpPinnedVer = "1.0.52"
 
+// gpMovedVer is a tap ABOVE the pin, which is the shape that makes the
+// re-audit block print. "1.1.0" is the literal the arms in this file already
+// use for it; this names it so an assertion can compare against the same
+// thing the stub was handed.
+const gpMovedVer = "1.1.0"
+
 // gpCask is the cask the pin governs, and gpBrewMarkerNoBrew is how an arm
 // says "leave brew OFF this PATH" — see gpRun, which otherwise plants a
 // healthy brew stub for every call site that does not ask for a sick one.
@@ -126,6 +132,7 @@ type gpBrew struct {
 	tap       string // the version in the `brew info --cask` header; default gpPinnedVer, "none" = a header with no version in it
 	unpinned  bool   // leave the cask out of `brew list --pinned`
 	infoExit  int    // `brew info --cask` exit code; default 0
+	noInfo    bool   // `brew info --cask` prints NOTHING (the unknown-cask shape)
 	noRoom    bool   // do not create Caskroom/<cask>/<roomVer> at all
 	roomVer   string // the Caskroom version segment; default gpPinnedVer
 	roomElse  bool   // create that directory EMPTY instead of pointing it at binDir
@@ -188,8 +195,18 @@ func gpStubBrew(t *testing.T, binDir string, b gpBrew) {
 		// gate — the same rule latestVersion got under ranger-base-phxj.
 		header = "==> " + gpCask + " (Grok Build): latest"
 	}
+	// The exit code and the header are INDEPENDENT knobs, because on a real
+	// box they are independent facts and this fixture used to tie them
+	// (ranger-base-zf8pf). It rendered every non-zero exit as `exit 1` with
+	// no header, which made "brew failed" and "there was nothing to read"
+	// the same arm -- so the case that actually happens on this box, a
+	// non-zero exit WITH a readable header, had no arm at all and the script
+	// could throw that header away unnoticed for as long as it liked. It
+	// did. `noInfo` is now the only way to ask for silence, and it is the
+	// unknown-cask shape: brew says its piece on stderr and prints no
+	// header, whatever the exit code beside it.
 	info := "cat <<'HDR'\n" + header + "\nHDR\nexit " + itoa(b.infoExit)
-	if b.infoExit != 0 {
+	if b.noInfo {
 		info = "exit " + itoa(b.infoExit)
 	}
 
@@ -366,6 +383,27 @@ func gpRefuseVoidSz7uDefense(t *testing.T, out string) {
 // A bare Contains(out, "FAIL") is satisfied by any other failing row, so once a
 // fixture can fail more than one check the whole-output form stops naming which.
 // Every row assertion here goes through this.
+// gpRow is the row's VALUE, where gpRowFailed below is its verdict: the first
+// field after the label, which is the middle column of every row this script
+// prints. The codex twin has carried one of these (cpRow) since
+// ranger-base-k4lza, for the same reason it is needed here -- "the row is not
+// red" and "the row holds the version brew named" are different assertions,
+// and a gate that discards a reading can satisfy the first (ranger-base-zf8pf).
+func gpRow(out, label string) string {
+	for _, line := range strings.Split(out, "\n") {
+		i := strings.Index(line, label)
+		if i < 0 {
+			continue
+		}
+		f := strings.Fields(line[i+len(label):])
+		if len(f) == 0 {
+			return ""
+		}
+		return f[0]
+	}
+	return ""
+}
+
 func gpRowFailed(out, label string) bool {
 	for _, line := range strings.Split(out, "\n") {
 		if strings.Contains(line, label) && strings.Contains(line, "FAIL") {
@@ -1555,18 +1593,25 @@ func TestQAGrokPinFailsWhenCaskroomDirNamesNoVersion(t *testing.T) {
 	}
 }
 
-// The tap read gets the same three arms the JSON fields do, and for the same
-// reason (ranger-base-phxj, ranger-base-7qey3): it is the ONLY input to the
-// re-audit gate now, so a reader that answers nothing is a gate that is
-// silently off. `brew info --cask` exits 0 on success and 1 on an unknown
-// cask, so a non-zero exit and a header with no version are both failures
-// rather than silence.
+// The tap read gets the same arms the JSON fields do, and for the same reason
+// (ranger-base-phxj, ranger-base-7qey3): it is the ONLY input to the re-audit
+// gate now, so a reader that answers nothing is a gate that is silently off.
+// The subject is NO VERSION TO READ, in each of the shapes it comes in -- the
+// unknown cask that prints no header at all (with and without the non-zero
+// exit that accompanies it on a real box), and the `version :latest` cask
+// that prints a header with no version-shaped token in it.
+//
+// What is NOT in this table, and used to be: "brew exited non-zero". That is
+// not a shape of having nothing to read, and asserting it here is what let
+// the script discard a header it had already read -- see the sibling test
+// below, which is the arm that was missing (ranger-base-zf8pf).
 func TestQAGrokPinUnreadableTapVersionFailsInsteadOfSilence(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		brew gpBrew
 	}{
-		{"brew info exits non-zero", gpBrew{infoExit: 1}},
+		{"brew info prints no header", gpBrew{noInfo: true}},
+		{"brew info prints no header and exits non-zero", gpBrew{noInfo: true, infoExit: 1}},
 		{"header carries no version", gpBrew{tap: "none"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1585,6 +1630,44 @@ func TestQAGrokPinUnreadableTapVersionFailsInsteadOfSilence(t *testing.T) {
 				t.Errorf("a gate that cannot read upstream is not an intact pin:\n%s", out)
 			}
 		})
+	}
+}
+
+// The arm the table above used to swallow, and the one a caged seat lands in
+// (ranger-base-j1eeh, ranger-base-zf8pf): `brew info --cask` prints the
+// header out of its API cache and THEN exits non-zero because it could not
+// refresh that cache -- it needs
+// /opt/homebrew/var/homebrew/locks/<cask>.json.download.lock for write, and
+// six of the eleven live PIDs declare `cage: seatbelt` over an allowlist that
+// names no /opt/homebrew. MEASURED 2026-10-31: exit 1, and
+// `==> grok-build (Grok Build): 1.0.52 -> 1.0.70` on stdout.
+//
+// A version that was READ must be USED. The old row required exit 0 and threw
+// that header away, so the gate the operator's lift ruling asked to be loud
+// was red on a cage artifact from the majority of seats -- and nothing here
+// could see it, because the fixture made every non-zero exit silent.
+func TestQAGrokPinNonZeroBrewWithAReadableHeaderStillReadsTheTap(t *testing.T) {
+	root := gpRoot(t)
+	bin := t.TempDir()
+	gpStubGrok(t, bin, gpPinnedVer, gpCompactOK)
+	gpStubBrew(t, bin, gpBrew{tap: gpMovedVer, infoExit: 1})
+	out, code := gpRun(t, root, gpCfg(t, gpGoodCfg), bin)
+	if code != 0 {
+		t.Fatalf("exit %d, want 0 -- the tap version was printed and read; brew's exit code is not the question\n%s", code, out)
+	}
+	if got := gpRow(out, "tap version"); got != gpMovedVer {
+		t.Errorf("tap version row = %q, want %q -- a header brew printed was discarded over its exit code\n%s", got, gpMovedVer, out)
+	}
+	if gpRowFailed(out, "tap version") {
+		t.Errorf("the tap was read; the row must not be red:\n%s", out)
+	}
+	if !strings.Contains(out, "UPSTREAM MOVED") {
+		t.Errorf("tap above the pin: the re-audit list is the whole point of reading it\n%s", out)
+	}
+	// Green, but not silent about it: a reader must be able to tell this row
+	// from one brew was happy to answer.
+	if !strings.Contains(out, "brew exited 1") {
+		t.Errorf("want the non-zero brew named on the row it annotates:\n%s", out)
 	}
 }
 

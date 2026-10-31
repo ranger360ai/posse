@@ -155,17 +155,28 @@ func (b *cpBox) brew(t *testing.T, pinState, installed, tap string, infoRC int) 
 
 // brewRaw is brew with the info header written out, for the arms where the
 // header is the thing under test rather than the version pair in it.
+//
+// An EMPTY header is the unknown-cask shape: brew says its piece on stderr
+// and prints nothing at all on stdout. It is spelled separately from infoRC
+// because the two are independent facts on a real box and this fixture's grok
+// twin used to tie them -- which is how the script came to discard a header
+// it had already read (ranger-base-zf8pf). Here the knobs were already
+// independent; what was missing was an arm that set them that way.
 func (b *cpBox) brewRaw(t *testing.T, pinState, header string, infoRC int) {
 	t.Helper()
 	pinned := ""
 	if pinState == "pinned" {
 		pinned = "codex"
 	}
+	info := "exit " + strconv.Itoa(infoRC)
+	if header != "" {
+		info = "echo '" + header + "'; echo 'https://github.com/openai/codex'; " + info
+	}
 	body := "#!/bin/bash\n" +
 		"case \"$1\" in\n" +
 		"  --prefix) echo '" + b.prefix + "'; exit 0 ;;\n" +
 		"  list) echo '" + pinned + "'; exit 0 ;;\n" +
-		"  info) echo '" + header + "'; echo 'https://github.com/openai/codex'; exit " + strconv.Itoa(infoRC) + " ;;\n" +
+		"  info) " + info + " ;;\n" +
 		"esac\nexit 99\n"
 	if err := WriteExecutable(filepath.Join(b.bin, "brew"), []byte(body), 0o755); err != nil {
 		t.Fatal(err)
@@ -545,6 +556,42 @@ func TestQACodexPinUnreadableTapFailsTheRow(t *testing.T) {
 	}
 }
 
+// And the other side of that line, which is where the row was WRONG rather
+// than merely untested (ranger-base-j1eeh, ranger-base-zf8pf): a brew that
+// printed the tap version and THEN exited non-zero. That is not a failure to
+// read -- the version is on stdout -- and it is the arm every `cage:
+// seatbelt` seat lands in, because `brew info --cask` refreshes its API cache
+// through /opt/homebrew/var/homebrew/locks/<cask>.json.download.lock and no
+// cage profile on this box grants /opt/homebrew for write. MEASURED
+// 2026-10-31: exit 1, `==> codex (Codex): 0.153.4 -> 0.166.0` on stdout, and
+// the old row answered `tap version ? <-- FAIL (brew info --cask codex exited
+// 1)` with the ten rows around it green.
+//
+// Six of the eleven live PIDs declare that cage, so the loudest gate on the
+// box was crying wolf on the majority of the seats that would type it.
+func TestQACodexPinNonZeroBrewWithAReadableHeaderStillReadsTheTap(t *testing.T) {
+	b := cpNewBox(t)
+	b.brew(t, "pinned", cpPinnedVer, cpPastVer, 1)
+	out, code := b.run(t)
+	if code != 0 {
+		t.Fatalf("exit %d, want 0 -- the tap was printed and read; brew's exit code is not the question\n%s", code, out)
+	}
+	if got := cpRow(out, "tap version"); got != cpPastVer {
+		t.Errorf("tap version row = %q, want %q -- a header brew printed was discarded over its exit code\n%s", got, cpPastVer, out)
+	}
+	if cpRowFailed(out, "tap version") {
+		t.Errorf("the tap was read; the row must not be red:\n%s", out)
+	}
+	if !strings.Contains(out, "UPSTREAM MOVED") {
+		t.Errorf("tap above the pin: the re-audit list is the whole point of reading it\n%s", out)
+	}
+	// Green, and not silent about it: a reader must be able to tell this row
+	// from one brew was happy to answer.
+	if !strings.Contains(out, "brew exited 1") {
+		t.Errorf("want the non-zero brew named on the row it annotates:\n%s", out)
+	}
+}
+
 // Every row fails on its own, and only its own. Written as a table because
 // the interesting property is the ISOLATION: one broken thing must red one
 // row, or a green run stops being evidence about the other four.
@@ -584,8 +631,15 @@ func TestQACodexPinEachRowFailsAlone(t *testing.T) {
 		{"another channel won PATH", func(t *testing.T, b *cpBox) {
 			b.installCodex(t, cpPinnedVer, false)
 		}, "codex resolves into the pin", nil},
+		// "could not answer" is the point, and until ranger-base-zf8pf this
+		// arm did not say it: it handed the script a brew that printed a
+		// perfectly readable header and exited 2, and demanded the row go
+		// red. That is what pinned the defect in place -- the version was
+		// read and thrown away, and the gate reddened on every `cage:
+		// seatbelt` seat, where a non-zero `brew info` is routine. A brew
+		// that answers NOTHING is the unknown cask, and it prints no header.
 		{"brew could not answer", func(t *testing.T, b *cpBox) {
-			b.brew(t, "pinned", cpPinnedVer, cpPinnedVer, 2)
+			b.brewRaw(t, "pinned", "", 2)
 		}, "tap version", nil},
 	}
 	for _, tc := range cases {

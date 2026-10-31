@@ -6,6 +6,7 @@ references), not inferred publication dates. Undated fragments sort last.
 
 ## 2026-10
 
+- [ranger-base-zf8pf](ranger-base-zf8pf.md) — `brew info --cask` has a third exit arm, and a caged seat can land in it (ranger-base-zf8pf) — 2026-10-31
 - [ranger-base-qlxb5](ranger-base-qlxb5.md) — Rex in the multiplexer slot: four decisions ADR 0076 §2 left to the occupant (ranger-base-qlxb5) — 2026-10-31
 - [ranger-base-q5gc2](ranger-base-q5gc2.md) — The session record names its multiplexer, and one method ADR 0076 §2 does not list (ranger-base-q5gc2) — 2026-10-31
 - [ranger-base-lf6it](ranger-base-lf6it.md) — bob self-updated under the probe, 60 seconds in — and the probe still measured 2.0.5 (ranger-base-lf6it) — 2026-10-31

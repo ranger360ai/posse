@@ -240,18 +240,60 @@ fi
 # the fork.
 #
 # `brew info --cask` names the tap version whatever is installed, so there is
-# nothing left to fall back TO, and both ways of not getting an answer fail
-# the row: a non-zero brew, and a header with no version in it. Unlike the
-# per-package `brew outdated --cask codex` form (which exits 1 when that cask
-# IS outdated), `brew info --cask codex` exits 0 on success and 1 on an
-# unknown cask, so this one requires 0.
+# nothing left to fall back TO, and the one way of not getting an answer
+# fails the row: a header with no version in it. Unlike the per-package
+# `brew outdated --cask codex` form (which exits 1 when that cask IS
+# outdated), `brew info --cask codex` exits 0 on success and 1 on an unknown
+# cask -- and non-zero in a third case, below.
+#
+# THE EXIT CODE IS NOT THE QUESTION, and requiring 0 here cost this gate the
+# caged seats (ranger-base-zf8pf). `brew info --cask` has a THIRD arm beside
+# "success" and "unknown cask": it prints the header out of the API cache and
+# THEN exits non-zero because it could not REFRESH that cache. That re-download
+# is the mechanism brewguard_qa_test.go's head comment names, and it opens
+# /opt/homebrew/var/homebrew/locks/<cask>.json.download.lock for write. Six of
+# the eleven live PIDs declare `cage: seatbelt` (dinesh, gwart, holden, hoover,
+# jian-yang, laurie) and seatbelt.go's allowlist names no /opt/homebrew, so
+# from those seats that write is DENIED and the gate reds on a cage artifact —
+# on the seats most likely to type it, and it is itself the loud lift-gate the
+# 2026-10-31 operator ruling asked for. Found by ranger-base-j1eeh.
+#
+# CAN, not always: whether brew ATTEMPTS the refresh on a given call is
+# brew-internal state nobody here controls, and the guards above happened to
+# suppress it in four same-minute probes (the table is in
+# docs/notes.d/ranger-base-zf8pf.md). The fix does not depend on which way it
+# falls — a version that was read must be used either way — which is the only
+# reason that uncertainty is tolerable in a gate.
+#
+#   MEASURED 2026-10-31, gilfoyle seat under a hand-rendered profile of the
+#   same shape ((allow default)(deny file-write*) with no /opt/homebrew),
+#   Homebrew 7.0.11-75-gfcdfa04, macOS 26.7.1 arm64:
+#
+#     brew info --cask codex  ->  exit 1, and on STDOUT, first line:
+#       ==> codex (Codex): 0.153.4 -> 0.166.0
+#     ...with only this on stderr:
+#       Error: Operation not permitted @ rb_sysopen -
+#       /opt/homebrew/var/homebrew/locks/codex.json.download.lock
+#
+# So the version was there to be read and the row threw it away. Read the
+# header whatever the exit code is and fail only when there is no version in
+# it; the unknown-cask arm still fails, because an unknown cask prints no
+# header at all. The exit code keeps one job, the one it can do: it tells the
+# reader WHY there was nothing to read, and it annotates a row that was read
+# off a cache brew could not refresh.
 info=$(brew info --cask "$want_cask" 2>/dev/null); brc=$?
-upstream=""
-[ "$brc" -eq 0 ] && upstream=$(lastver "$info")
-if [ -n "$upstream" ]; then
+upstream=$(lastver "$info")
+if [ -n "$upstream" ] && [ "$brc" -eq 0 ]; then
   printf '  %-30s %-12s read\n' "tap version" "$upstream"
+elif [ -n "$upstream" ]; then
+  # Green, and annotated rather than silent: the version is the tap's, read
+  # out of brew's API cache, and brew was unhappy about something downstream
+  # of printing it. The word FAIL stays off this line on purpose -- it is how
+  # every reader of this table, the QA row matchers included, tell a red row
+  # from a green one.
+  printf '  %-30s %-12s read (brew exited %s; header read from its API cache)\n' "tap version" "$upstream" "$brc"
 elif [ "$brc" -ne 0 ]; then
-  printf '  %-30s %-12s <-- FAIL (brew info --cask %s exited %s)\n' "tap version" "?" "$want_cask" "$brc"
+  printf '  %-30s %-12s <-- FAIL (brew info --cask %s exited %s and printed no version)\n' "tap version" "?" "$want_cask" "$brc"
   fail=$((fail + 1))
 else
   printf '  %-30s %-12s <-- FAIL (no version in: %s)\n' "tap version" "?" "${info%%$'\n'*}"
