@@ -1,6 +1,6 @@
 # ADR 0076 — the multiplexer slot is the client, not the backend: ten verbs, herdr and Rex behind them, and on Rex the runtime reports its own state
 
-*Status: accepted 2026-10-31 (ranger-base-lcxr3, operator direction 2026-10-24) · owner: architect · applies ADR 0075 §2 (the slot rule) to its first slot · probe: `docs/adr/0076-multiplexer-slot.probe.sh`*
+*Status: accepted 2026-10-31 (ranger-base-lcxr3, operator direction 2026-10-24) · owner: architect · applies ADR 0075 §2 (the slot rule) to its first slot · probe: `docs/adr/0076-multiplexer-slot.probe.sh` · spike ranger-base-ch2rb: `docs/adr/0076-hook-route.probe.sh`, see "Spike" below*
 
 ## Context
 
@@ -41,13 +41,16 @@ revision 8), part 2 of the probe and by hand:
 - **grok-build 1.0.52 reports it natively.** This is STATIC: the binary
   holds `]7501;state=…:kind=permission:app=grok-build:msg=`, the `7501;?`
   feature probe and a `[ui.notifications] program_status` setting. It was
-  not run in Rex.
+  not run in Rex. *(Spike, MEASURED: launched in Rex it writes no record
+  before a prompt, so §3 refuses it. See "Spike" below.)*
 - **codex 0.153.4 and bob (bobshell) carry no `7501;` string.** Also
   STATIC. Neither reports state on Rex.
 - **The hook route needs a controlling tty.** A child process with its
   stdout redirected that writes the report to `/dev/tty` lands, as
   record E shows. A `setsid` child gets `ENXIO` and lands nothing. A
-  record written this way has no `owner`. A probe SessionStart hook passed
+  record written this way has no `owner`. *(Spike, MEASURED: that holds
+  only when the shell is in the foreground. Rex stamps the tty's
+  foreground program, so a codex hook's record carries `codex`.)* A probe SessionStart hook passed
   to claude through `--settings` never fired, and I did not find why, so
   the hook route is UNPROVEN for every runtime.
 - Rex ids are UUIDs (`session:01a1902c-…`). Terminal blocks take
@@ -94,8 +97,9 @@ Rex and no posse-written hooks. The launch-stage rule of ADR 0013 §1
 (no detection means no dispatch) applies here as: a Rex launch waits a
 bounded time for the first record. If none arrives, it fails with a
 message that names herdr as the way to run that runtime. Today that admits
-claude (MEASURED). grok is probably admitted (STATIC). codex and bob are
-refused on Rex and keep running on herdr. A record's `owner` is checked by
+claude (MEASURED). grok, codex and bob are refused on Rex and keep
+running on herdr. (grok was "probably admitted" here until the spike
+below measured no launch record.) A record's `owner` is checked by
 pid and name (Rex warns that pids are reused), and `owner` must not be the
 pane's shell. That is the Rex form of herdr's `Seen()`: positive evidence
 that the runtime has the keyboard.
@@ -162,3 +166,89 @@ reason to diverge from that.
 - **A posse fork for Rex** (the operator's "posse under Rex native", read
   literally). ADR 0075 §2 already answers it, and nothing measured here
   argues for a fork.
+
+## Spike: the hook route, and grok at launch (ranger-base-ch2rb, 2026-10-31)
+
+The question was: can a codex or bob hook report OSC 7501 on Rex, and does
+grok report at launch? The probe is `docs/adr/0076-hook-route.probe.sh`.
+It ran against Rex CLI 0.0.1793377904 (API revision 8), codex-cli 0.153.4,
+bobshell 2.0.7 and grok 1.0.52, on this box. No model turn was spent: every
+UserPromptSubmit hook exits 2 (both CLIs block the prompt before any
+request), codex's only provider is a dead loopback port, and grok was never
+prompted.
+
+**Answers, MEASURED:**
+
+| runtime | launch record | hook reaches `/dev/tty` | record `owner` |
+|---|---|---|---|
+| grok 1.0.52 | **no**, at 3, 6 and 12 s, with `program_status` `auto` and again forced `on` in a project `.grok/config.toml` that `grok inspect` lists | n/a | n/a |
+| codex 0.153.4 | **no**. SessionStart fires on the first prompt, not at launch | **yes**: the hook runs in the pane's session (own process group), and the record lands | `{pid, "codex"}` |
+| bob 2.0.7 | **no**. SessionStart fires on the first prompt (`onTurnInput`) | **yes**: the hook runs in bob's process group, and the record lands | `{pid, "node"}` |
+
+Rex sets `owner` to the tty's foreground process, whoever writes the
+report. When the same hook is run from the bare shell, the record has no
+owner (shell in the foreground) or names `bash`. That is the case §3's
+"not the shell" rule exists to catch.
+
+**Event mapping**, as the probe's hook reported it:
+
+- codex: SessionStart → idle, UserPromptSubmit → working (MEASURED),
+  **Interrupt → idle** (MEASURED: Esc on a running turn) and
+  **SessionEnd → `state=clear`** (MEASURED: `/quit` removed the record).
+  PreToolUse and PostToolUse → working, PermissionRequest →
+  `blocked:kind=permission` and Stop → idle are STATIC: they need a model
+  turn. One gap is MEASURED: a prompt that a hook blocks fires no Stop and
+  no Interrupt, so the record stays `working`.
+- bob: SessionStart → idle and UserPromptSubmit → working (MEASURED).
+  Pre/PostToolUse → working and Stop → idle are STATIC. bob 2.0.7 has
+  **no** permission, interrupt or session-end event (STATIC, bundle event
+  list), so a bob hook can never report `blocked`, and a cancelled turn
+  keeps `working` until bob exits.
+  This matches the mapping herdr-bob's `bob-hook` already uses.
+
+**What it costs to turn on (MEASURED):**
+
+- codex opens a "Hooks need review" dialog before any hook runs. Its
+  default action is review, and posse launches with `--disable hooks`
+  today. "Trust all" writes `hooks.state."<hooks.json>:<event>:<i>:<j>".trusted_hash = "sha256:…"`
+  into the config of the home codex was given. The hash covers the
+  declaration, not the script body: editing the script needed no re-trust.
+  A per-invocation `--dangerously-bypass-hook-trust` exists; this probe did
+  not use it.
+- A fresh `CODEX_HOME` also draws the update menu, whose default runs
+  `brew upgrade --cask codex`. The probe's first draft typed Enter into it.
+  The upgrade was refused only because the cask is pinned.
+  `check_for_update_on_startup = false` (posse's fleet pin) prevents the
+  menu.
+- A hook's last `idle` **outlives the runtime**. Rex drops only `working`
+  and `blocked` at exit, so after a `/quit` without a SessionEnd hook the
+  record stayed `idle`, with a dead owner pid. A State reader that skips
+  the pid-liveness check reads a dead seat as idle.
+- bob merges workspace hooks with the operator's global ones (herdr-bob's
+  five fire too) and runs them only under `--trust` (STATIC). Behind a dead proxy it
+  never leaves "Initializing…", so it cannot be fenced off the network the
+  way codex can.
+
+**grok's support query leaks into its composer (MEASURED 3 of 3).** Rex
+answers `7501;?` with
+`ESC]7501;?:states=idle,working,done,blocked,error:kinds=permission,question,auth ESC\`.
+grok 1.0.52 shows the last six bytes, `n,auth`, as typed input. The first
+prompt posse typed would be `n,auth<prompt>`.
+
+**What this changes:** §3's launch rule, "wait for the first record",
+admits claude alone. grok is refused, not "probably admitted". The hook
+route works mechanically for codex (every state except a measured
+`blocked`) and only partly for bob (no `blocked`, no clear-on-exit). But no
+hook writes a record before the first prompt, so even with hooks codex and
+bob fail §3 as written. The hook route stays rejected for now (Alternatives,
+above). Reopening it is a design question, not a slice: what admits a
+runtime that reports only after its first prompt. It is filed as its own
+bead. One more case for the Rex State reader: a record whose owner pid is
+dead is `unknown`, never its last state.
+
+UNPROVEN still: why claude's `--settings` SessionStart hook did not fire
+in the 0076 probe, `blocked` from any runtime live, and grok's reports
+during a turn. Each needs a model turn or a permission prompt, and this
+spike spent none. In 1 of 3 scripted codex runs, the keystrokes after the
+blocked prompt were lost (cause not found); the other two and the hand runs
+were clean.
