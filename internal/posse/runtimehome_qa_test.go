@@ -24,10 +24,15 @@ package posse
 
 import (
 	"errors"
+	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -601,5 +606,255 @@ func TestTheTrustSeedLandsWhereASeatWithARelativeConfigDirResolvesIt(t *testing.
 		t.Errorf("the seat resolves %q and there is no file there: %v", got, err)
 	} else if !ClaudeTrusted(readConfig(t, got), dir) {
 		t.Errorf("the seat resolves %q, which holds no grant for %s — the trust dialog it was seeded to suppress is the observable", got, dir)
+	}
+}
+
+// ─── the BIT, not only the value: ranger-base-uz4cs ──────────────────────────
+
+// claudeHistoryPath (sentline.go) is a CONSUMER of the one read, and until
+// this bead it took half of it: the VALUE came from ClaudeConfigDirIn and
+// the in-force BIT was spelled by hand beside it, as a bare
+// os.Getenv("CLAUDE_CONFIG_DIR") == "". Both answers were `v != ""`, so no
+// input made them disagree — what a second spelling costs is not a wrong
+// answer, it is the coupling: a mutant that broke the in-force test inside
+// runtimeHomeOverride left this function answering correctly regardless,
+// because it never called it to find out (ranger-base-api7c's shape inside
+// ClaudeConfigFile, one site over).
+//
+// SO THE WANT IS A LITERAL "" AND NOT ClaudeConfigDirIn's answer. That is
+// the whole difference from TestClaudeHistoryPathAgreesWithClaudeConfigDirIn
+// (ghostcomposer_qa_test.go, arm 2), which is the AGREEMENT half and is
+// green under that mutant by construction: it derives its want from the same
+// function it is testing through, so a mutant moves both sides together.
+// Here the no-home arms name the answer outright, and a mutant reporting
+// "in force" for an unset variable is read back as a history file under
+// whatever cwd the caller happens to have — govern's G2 tick, dispatch's
+// settle judgment (ranger-base-58b5's shape). That is also why every arm
+// asserts the answer is "" or ABSOLUTE and never anything between.
+//
+// MEASURED 2026-10-31, this worktree, go1.26.5 darwin/arm64, with the
+// `v == ""` bail deleted from runtimeHomeOverride:
+//
+//   - the PRE-FIX line SURVIVES that mutant — `ok`, which is the whole
+//     defect this bead is about. It answers "" from its own os.Getenv and
+//     never asks the function the mutant broke.
+//   - the line as it stands REDS on it, on both no-variable arms, with
+//     claudeHistoryPath() = <cwd>/history.jsonl. Not the bare relative
+//     `history.jsonl`: the empty value the mutant now calls "in force" is
+//     not absolute either, so the one read's OTHER job resolves it against
+//     the launcher's cwd on the way through. Same store in a directory
+//     nobody named, one filepath.Abs further along.
+func TestClaudeHistoryPathTakesItsInForceBitFromTheOneRead(t *testing.T) {
+	absDir := filepath.Join(t.TempDir(), "named-cfg")
+	relCwd := t.TempDir()
+	t.Chdir(relCwd)
+	wd, err := os.Getwd() // $TMPDIR's /private prefix: ask, don't assume
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, c := range []struct {
+		what      string
+		configDir string // "" means UNSET, which is not the empty value
+		set       bool
+		want      string
+	}{
+		// The two arms a bare `os.Getenv(…) == ""` also got right, kept
+		// because they are posse's in-force RULE (set AND non-empty) and a
+		// fix that moved the bit must not have moved the rule with it.
+		{what: "no home, no variable", want: ""},
+		{what: "no home, the variable present but EMPTY", configDir: "", set: true, want: ""},
+		// And the arms that say "no home" alone does not silence the reader:
+		// the variable names a store, so there is one.
+		{what: "no home, an absolute variable", configDir: absDir, set: true,
+			want: filepath.Join(absDir, claudeHistoryFile)},
+		// The one read's other job reaches this consumer too: a relative
+		// value is absolute by the time a path is joined onto it.
+		{what: "no home, a RELATIVE variable", configDir: "relcfg", set: true,
+			want: filepath.Join(wd, "relcfg", claudeHistoryFile)},
+	} {
+		// No home at all, which is the arm the hand-spelled bit guarded and
+		// the only one where the two halves of the condition both matter.
+		// os.UserHomeDir IS $HOME on unix, so this is the error branch.
+		t.Setenv("HOME", "")
+		if c.set {
+			t.Setenv(ClaudeConfigDirVar, c.configDir)
+		} else {
+			unsetenvForTest(t, ClaudeConfigDirVar)
+		}
+
+		got := claudeHistoryPath()
+		if got != c.want {
+			t.Errorf("%s: claudeHistoryPath() = %q, want %q", c.what, got, c.want)
+		}
+		if got != "" && !filepath.IsAbs(got) {
+			t.Errorf("%s: claudeHistoryPath() = %q, a RELATIVE store of record — lastSubmitted stats it from whatever cwd the caller has (govern's G2 tick, dispatch's settle judgment), so this is a history file in a directory nobody named", c.what, got)
+		}
+	}
+}
+
+// hvHomeVarNames is the three names as a census target: the string literals
+// AND the constants that hold them, because a second read spelled either way
+// is the same second read.
+var hvHomeVarNames = map[string]bool{
+	ClaudeConfigDirVar: true, CodexHomeVar: true, GrokHomeVar: true,
+	"ClaudeConfigDirVar": true, "CodexHomeVar": true, "GrokHomeVar": true,
+}
+
+// hvEnvReadsOfAHomeVar reports every environment READ in one parsed file
+// whose argument NAMES one of the runtime-home variables, as
+// "<line>: <callee>(<arg>)".
+//
+// It matches the read and not the name: this package's prose says
+// CLAUDE_CONFIG_DIR some seventy times and several launch paths pass the
+// name to a message (noHomeSilence("CLAUDE_CONFIG_DIR", …), interstitial.go)
+// or carry it in a list of names to ASK about rather than read
+// (credentialDirVars, credential.go — a second spelling that is deliberate,
+// documented and pinned, because it reads no value at all). None of those is
+// a second answer to "which file is in play"; a Getenv is.
+//
+// runtimeHomeOverride itself is not an exemption and does not need to be: it
+// takes the name as a PARAMETER, so `os.Getenv(name)` names nothing and this
+// finds nothing there. That is why the census's expected answer is zero
+// sites rather than one, and why the matcher below is pinned against
+// synthetic sources — a census that must find nothing passes just as well
+// broken.
+func hvEnvReadsOfAHomeVar(t *testing.T, path string) []string {
+	t.Helper()
+	// Mode 0: comments are not retained, so prose naming the variable cannot
+	// be read as a call (planMeterCalls, planmeteronce_qa_test.go).
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, path, nil, 0)
+	if err != nil {
+		t.Fatalf("parse %s: %v", path, err)
+	}
+	return hvEnvReadsIn(fset, file)
+}
+
+func hvEnvReadsIn(fset *token.FileSet, file *ast.File) []string {
+	var out []string
+	ast.Inspect(file, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok || len(call.Args) != 1 {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		pkg, ok := sel.X.(*ast.Ident)
+		if !ok || (pkg.Name != "os" && pkg.Name != "syscall") {
+			return true
+		}
+		if sel.Sel.Name != "Getenv" && sel.Sel.Name != "LookupEnv" {
+			return true
+		}
+		arg := ""
+		switch a := call.Args[0].(type) {
+		case *ast.BasicLit:
+			if a.Kind == token.STRING {
+				if v, err := strconv.Unquote(a.Value); err == nil {
+					arg = v
+				}
+			}
+		case *ast.Ident:
+			arg = a.Name
+		}
+		if !hvHomeVarNames[arg] {
+			return true
+		}
+		pos := fset.Position(call.Pos())
+		out = append(out, fmt.Sprintf("%s:%d: %s.%s(%s)",
+			filepath.Base(pos.Filename), pos.Line, pkg.Name, sel.Sel.Name, arg))
+		return true
+	})
+	return out
+}
+
+// THE CENSUS. ADR 0077 D1's rule is "one read of these names", and the
+// reason it is a rule rather than a preference is that since the pin these
+// names travel in two directions — posse resolves its own view of a CLI's
+// state root through them and TYPES them onto the seat it hires. A name
+// spelled twice is how those two come to name different files: the class
+// cost ranger-base-x5f6p, ranger-base-wd4be and ranger-base-api7c before
+// this bead, and ranger-base-uz4cs was the fourth, surviving inside the
+// function whose own doc already recorded the third.
+//
+// Prose has held this rule three times and lost three times, so it is
+// derived here instead. SCOPE, stated rather than implied: this package's
+// own non-test .go files, which is where every posse-side reader of these
+// variables lives (cmd/ carries none, measured by the same grep this
+// replaces). Reaching cmd/ would mean climbing to the repo root, which puts
+// a pin in the tree-wide class and wants a Makefile door (AGENTS.md's
+// register); this one reads its own directory and stays out of it.
+func TestNoSecondReadOfARuntimeHomeVariable(t *testing.T) {
+	t.Parallel() // a parse of this directory's sources: no env, no cwd move
+	ents, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found, scanned int
+	for _, e := range ents {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		scanned++
+		for _, hit := range hvEnvReadsOfAHomeVar(t, name) {
+			found++
+			t.Errorf("%s reads a runtime-home variable's name directly — a SECOND answer to \"which file is in play\", beside runtimeHomeOverride (runtimehome.go), which is the one read both directions share. Ask it instead: the value for a path, the bit for in-force-ness. (ADR 0077 D1; the class is ranger-base-x5f6p / -wd4be / -api7c / -uz4cs.)", hit)
+		}
+	}
+	if scanned < 50 {
+		t.Fatalf("the census scanned %d non-test .go files in this package — it is reading the wrong directory, and a census that reads nothing passes", scanned)
+	}
+	if found == 0 && testing.Verbose() {
+		t.Logf("census clean over %d files", scanned)
+	}
+}
+
+// The matcher, against sources that cannot drift: the census above must find
+// NOTHING in a clean tree, which is exactly the state a broken matcher also
+// reports. These arms are what distinguishes the two, and the first of them
+// is the line ranger-base-uz4cs removed, verbatim.
+func TestTheRuntimeHomeReadCensusMatchesTheReadAndNotTheName(t *testing.T) {
+	t.Parallel() // sources in memory, nothing shared
+	for _, c := range []struct {
+		what string
+		src  string
+		hit  bool
+	}{
+		{"the line this bead removed", `package p
+func f() { if (err != nil || home == "") && os.Getenv("CLAUDE_CONFIG_DIR") == "" { return } }`, true},
+		{"the same read spelled with the constant", `package p
+func f() { _ = os.Getenv(ClaudeConfigDirVar) }`, true},
+		{"LookupEnv, the other spelling of the same question", `package p
+func f() { _, ok := os.LookupEnv("CODEX_HOME"); _ = ok }`, true},
+		{"syscall, below os", `package p
+func f() { _ = syscall.Getenv("GROK_HOME") }`, true},
+		{"prose naming the variable is not a read", `package p
+// CLAUDE_CONFIG_DIR moves the config dir, and os.Getenv("CLAUDE_CONFIG_DIR")
+// is how this used to ask.
+func f() {}`, false},
+		{"the name passed to a message is not a read", `package p
+func f() { _ = noHomeSilence("CLAUDE_CONFIG_DIR", "cannot tell") }`, false},
+		{"a list of names to ask ABOUT is not a read", `package p
+var credentialDirVars = []string{"CLAUDE_SECURESTORAGE_CONFIG_DIR", "CLAUDE_CONFIG_DIR"}`, false},
+		{"the one read itself: the name is a parameter", `package p
+func runtimeHomeOverride(name string) (string, bool) { v := os.Getenv(name); return v, v != "" }`, false},
+		{"another variable entirely", `package p
+func f() { _ = os.Getenv("RHQ_CAGE") }`, false},
+		{"a different package's Getenv", `package p
+func f() { _ = cfg.Getenv("CLAUDE_CONFIG_DIR") }`, false},
+	} {
+		fset := token.NewFileSet()
+		file, err := parser.ParseFile(fset, "scratch.go", c.src, 0)
+		if err != nil {
+			t.Fatalf("%s: fixture does not parse: %v", c.what, err)
+		}
+		got := len(hvEnvReadsIn(fset, file)) > 0
+		if got != c.hit {
+			t.Errorf("%s: matcher says hit=%v, want %v — the census over a clean package answers zero either way, so this table is the only thing that says it is still looking", c.what, got, c.hit)
+		}
 	}
 }

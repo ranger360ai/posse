@@ -123,9 +123,26 @@ type submittedRow struct {
 // rule, rather than a second spelling here: an earlier version TrimSpaced
 // CLAUDE_CONFIG_DIR where ClaudeConfigDirIn does not, so a whitespace-only
 // value made the two disagree.
+//
+// The IN-FORCE BIT is runtimeHomeOverride's (runtimehome.go) for the same
+// reason, and it is the half that drift left behind (ranger-base-uz4cs):
+// when the value was routed through ClaudeConfigDirIn, this line went on
+// spelling "is the variable in force" by hand, as a bare
+// os.Getenv("CLAUDE_CONFIG_DIR") == "" — the name spelled twice beside the
+// one read that answers it. Both answers were `v != ""`, so they agreed for
+// every value and nothing was wrong HERE; what a hand-spelled copy costs is
+// the coupling. A mutant that deletes the in-force check inside
+// runtimeHomeOverride left this function answering correctly regardless,
+// because it never called it to find out — the same survival
+// ranger-base-api7c closed inside ClaudeConfigFile (trust.go), which asks
+// exactly as credentialDirNamed asks for the bit alone (credential.go).
+// Pinned, against a LITERAL "", by
+// TestClaudeHistoryPathTakesItsInForceBitFromTheOneRead
+// (runtimehome_qa_test.go), beside the census that says no second read of
+// these names grows back.
 func claudeHistoryPath() string {
 	home, err := os.UserHomeDir()
-	if (err != nil || home == "") && os.Getenv("CLAUDE_CONFIG_DIR") == "" {
+	if _, named := runtimeHomeOverride(ClaudeConfigDirVar); (err != nil || home == "") && !named {
 		return ""
 	}
 	return filepath.Join(ClaudeConfigDirIn(home), claudeHistoryFile)
