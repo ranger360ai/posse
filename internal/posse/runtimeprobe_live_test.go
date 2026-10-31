@@ -136,7 +136,7 @@ func TestLiveRuntimeProbe(t *testing.T) {
 		t.Fatalf("an unprobed template profile must degrade a Bash deny: %+v", p)
 	}
 
-	rec, err := a.RuntimeProbe(rt, h, ProbeOpts{Timeout: 5 * time.Minute, Out: os.Stderr})
+	rec, err := a.RuntimeProbe(rt, HerdrMux{H: h}, ProbeOpts{Timeout: 5 * time.Minute, Out: os.Stderr})
 	if err != nil {
 		t.Fatalf("probe could not run: %v", err)
 	}

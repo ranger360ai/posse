@@ -66,7 +66,6 @@ package posse
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -3618,7 +3617,10 @@ type pendingBead struct {
 }
 
 type promptResult struct {
-	res json.RawMessage
+	// res is the occupant's reading of the leg (ADR 0076 §2): what `agent
+	// prompt --wait` / `agent wait` settled on, decoded by the occupant
+	// rather than by this file.
+	res MuxReading
 	err error
 	// at is when herdr's wait RETURNED, stamped in the waiting goroutine
 	// rather than read off the clock in gather. The pass gathers its
@@ -3692,7 +3694,7 @@ func (d *Dispatcher) fire(is RepoIssue, persona, session, runtime, tier, tierWhy
 		// Same wait leg the typed path gets from `agent prompt --wait`,
 		// asked for directly — there is no prompt call to hang it off.
 		go func() {
-			res, err := d.HB.H.AgentWait(l.target, []string{"idle", "done", "blocked"}, d.PromptWaitMS)
+			res, err := d.HB.Mux().Wait(paneSeat(l.target), []string{"idle", "done", "blocked"}, d.PromptWaitMS)
 			p.result <- promptResult{res: res, err: err, at: time.Now()}
 		}()
 	default:
@@ -3715,7 +3717,7 @@ func (d *Dispatcher) fire(is RepoIssue, persona, session, runtime, tier, tierWhy
 		// keystroke does not.
 		p.gate = d.gateReading(l.gate, l.target)
 		go func() {
-			res, err := d.HB.H.AgentPrompt(l.target, text, true, d.PromptWaitMS)
+			res, err := d.HB.Mux().Prompt(paneSeat(l.target), text, true, d.PromptWaitMS)
 			p.result <- promptResult{res: res, err: err, at: time.Now()}
 		}()
 	}
@@ -3841,7 +3843,7 @@ wait:
 			}
 		}
 		if r.err == nil {
-			settled, settledAt = agentStatusFromResult(r.res), r.at
+			settled, settledAt = r.res.State, r.at
 			break
 		}
 		// A --wait that ran out of time is not a failed prompt: herdr took
@@ -4264,7 +4266,7 @@ func (d *Dispatcher) recordClause(runtime string) string {
 // rewait watches the same agent for another leg after a --wait timeout.
 func (d *Dispatcher) rewait(p *pendingBead) {
 	go func() {
-		res, err := d.HB.H.AgentWait(p.target, []string{"idle", "done", "blocked"}, d.PromptWaitMS)
+		res, err := d.HB.Mux().Wait(paneSeat(p.target), []string{"idle", "done", "blocked"}, d.PromptWaitMS)
 		p.result <- promptResult{res: res, err: err, at: time.Now()}
 	}()
 }
@@ -4877,7 +4879,7 @@ func (d *Dispatcher) launchSession(is RepoIssue, persona, session, runtime, tier
 			// whose herdr HAS the verb is not a refusal at all: it proceeds,
 			// and planLaunch prints the one line that says detection here is
 			// by report.
-			if det := ReadDetection(d.HB.H, rt); det.Refuses() {
+			if det := ReadDetection(d.HB.manifests(), rt); det.Refuses() {
 				return launched{}, DetectionRefusal(rt, det)
 			}
 			// ADR 0062 D3's third surface, at the same placement and for the
@@ -5366,7 +5368,7 @@ func (d *Dispatcher) LaunchBead(is RepoIssue) (session string, err error) {
 		launchRuntime, tier = rt, tr
 	}
 	if !l.delivered {
-		if _, err := d.HB.H.AgentPrompt(l.target, prompt(), false, 0); err != nil {
+		if _, err := d.HB.Mux().Prompt(paneSeat(l.target), prompt(), false, 0); err != nil {
 			d.logPromptHandBack(session, is.ID, launchRuntime, l.target, err)
 			return "", d.unclaimAfterPromptFailure(is, persona, session, l.resumed, err)
 		}
@@ -5415,7 +5417,7 @@ func (d *Dispatcher) noAgentLine(session, runtime string, wait time.Duration) st
 	if err != nil {
 		return NoAgentLine(ManifestReading{}, session, wait)
 	}
-	return NoAgentLine(ReadDetection(d.HB.H, rt), session, wait)
+	return NoAgentLine(ReadDetection(d.HB.manifests(), rt), session, wait)
 }
 
 // detectionWhy is the launching profile's `detection_why:` — the authority a
@@ -5467,7 +5469,7 @@ func (d *Dispatcher) awaitDelivered(id, session, runtime string, wait time.Durat
 	var lastWhy string
 	var lastGuess AgentDetection // herdr's working behind lastWhy — see awaitSettled
 	for {
-		det, derr := d.HB.H.AgentExplain(target)
+		det, derr := d.HB.explain(paneSeat(target))
 		switch {
 		case derr != nil:
 			// The same concession awaitSettled makes: a diagnostic call
@@ -5597,7 +5599,7 @@ func (d *Dispatcher) awaitAgent(id, persona, session, runtime string, wait time.
 	// Nothing at all on a runtime with no persona-mode channel: no read, no
 	// wait, no line.
 	if rt, err := d.App.LoadRuntime(runtime); err == nil && rt.PersonaMode != nil {
-		note, err := AwaitPersonaMode(d.HB.H, rt, persona, session, target, wait, d.Poll)
+		note, err := AwaitPersonaMode(d.HB.Mux(), rt, persona, session, target, wait, d.Poll)
 		if err != nil {
 			return "", AgentDetection{}, err
 		}
@@ -5661,11 +5663,11 @@ func (d *Dispatcher) awaitSettled(id, session, target string, until []string, de
 		if ms < 1 {
 			ms = 1
 		}
-		res, err := d.HB.H.AgentWait(target, until, ms)
+		res, err := d.HB.Mux().Wait(paneSeat(target), until, ms)
 		if err != nil {
 			return "", AgentDetection{}, err
 		}
-		status := agentStatusFromResult(res)
+		status := res.State
 		if status != "idle" && status != "done" {
 			// A blocker is never a guess, so it is reported as herdr gave
 			// it, for the caller to refuse by name.
@@ -5677,7 +5679,7 @@ func (d *Dispatcher) awaitSettled(id, session, target string, until []string, de
 		// for real — a fresh claude drew its trust dialog in the 30ms
 		// between the two calls, and prompting a dialog is the failure this
 		// gate exists to prevent, not a launch worth saving.
-		det, err := d.HB.H.AgentExplain(target)
+		det, err := d.HB.explain(paneSeat(target))
 		switch {
 		case err != nil:
 			// lastWhy/lastGuess are left alone: an error here is not
@@ -5758,24 +5760,6 @@ func (d *Dispatcher) awaitSettled(id, session, target string, until []string, de
 		}
 		time.Sleep(poll)
 	}
-}
-
-// agentStatusFromResult digs the settled state out of an agent.prompt/wait
-// result ({"type":"agent_prompted","agent":{"agent_status":...}}).
-func agentStatusFromResult(raw []byte) string {
-	var payload struct {
-		Status string `json:"status"`
-		Agent  struct {
-			AgentStatus string `json:"agent_status"`
-		} `json:"agent"`
-	}
-	if err := json.Unmarshal(raw, &payload); err != nil {
-		return ""
-	}
-	if payload.Agent.AgentStatus != "" {
-		return payload.Agent.AgentStatus
-	}
-	return payload.Status
 }
 
 // ─── per-session worktrees: telling, and landing (rangerhq-09o2) ─────────────

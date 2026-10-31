@@ -192,7 +192,7 @@ func (r ManifestReading) Refuses() bool { return r.Undetectable() || r.NoReportS
 // would have made every call site look the declaration up for itself — five
 // places deciding separately what `reported` means, which is the drift this
 // file was created to end.
-func ReadDetection(h Herdr, rt *Runtime) ManifestReading {
+func ReadDetection(h ManifestReader, rt *Runtime) ManifestReading {
 	exe := rt.Exe()
 	r := ManifestReading{Argv0: exe, Declared: rt.DetectionMode(), Why: rt.DetectionWhy}
 	if r.Declared != DetectionReported {
@@ -234,7 +234,7 @@ func ReadDetection(h Herdr, rt *Runtime) ManifestReading {
 // no launch depends on. On an INERT declaration it decides nothing either:
 // herdr's detection wins whether or not this binary can carry a report, and
 // asking would let a 0.8.2 box turn a "drop this key" note into a refusal.
-func (r ManifestReading) withReportSurface(h Herdr) ManifestReading {
+func (r ManifestReading) withReportSurface(h ManifestReader) ManifestReading {
 	if !r.Reported() {
 		return r
 	}

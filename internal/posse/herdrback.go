@@ -82,6 +82,116 @@ type HerdrBackend struct {
 	// PaneModeUnread, which every renderer shows as an unknown rather than as
 	// a blank.
 	PaneModes bool
+	// Slot is the multiplexer slot's occupant (ADR 0075 §2, ADR 0076 §1) —
+	// the ten verbs this backend drives a seat with, in place of the H
+	// client it used to reach for directly.
+	//
+	// NIL IS HERDR OVER H, not an error. The occupant is chosen per
+	// instance (`multiplexer: rex`, ADR 0076 §6) and the default is herdr,
+	// so a backend built before this field existed — NewHerdrBackend's own,
+	// and every test backend that sets only H — runs on herdr exactly as it
+	// did. Read it through Mux(), never directly.
+	Slot Mux
+}
+
+// Mux is the occupant of this backend's multiplexer slot: herdr over H
+// unless an instance put something else there.
+func (b *HerdrBackend) Mux() Mux {
+	if b.Slot != nil {
+		return b.Slot
+	}
+	return HerdrMux{H: b.H}
+}
+
+// herdrMux is the occupant when it is herdr's, and the door to the verbs
+// only herdr has (ADR 0076 §4). false is "not available" and never "no":
+// every caller of a §4 verb already has the arm for a reading it could not
+// take, because a diagnostic that will not answer has never been evidence
+// here (promptready.go, "a prompt refused because a diagnostic call failed
+// is worse than the race it guards").
+//
+// Unexported, and so is every door below it: a §4 verb is reached through
+// the door that names it, never by a call site taking the assertion for
+// itself and deciding on its own what "not herdr" means.
+func (b *HerdrBackend) herdrMux() (HerdrMux, bool) {
+	hm, ok := b.Mux().(HerdrMux)
+	return hm, ok
+}
+
+// explain is §4's detection read taken through the occupant: herdr's full
+// working when herdr is in the slot, and the "not available" error every
+// caller of it already concedes on otherwise.
+//
+// One door, like AgentExplain itself, so that no call site learns which
+// multiplexer it is talking to in order to ask.
+func (b *HerdrBackend) explain(s Seat) (AgentDetection, error) {
+	hm, ok := b.herdrMux()
+	if !ok {
+		return AgentDetection{}, muxNotHerdr("agent explain")
+	}
+	return hm.Explain(s)
+}
+
+// paneAgentSession is §4's runtime-session read: the id the RUNTIME itself
+// gives the conversation in the pane, which is the join that tells a
+// composer holding a prompt from one echoing a prompt already submitted
+// (ranger-base-2hvtv). Its caller asks the store first and treats every
+// failure here as "not an echo", so a slot that cannot answer costs the
+// reading and nothing else.
+func (b *HerdrBackend) paneAgentSession(target string) (string, error) {
+	hm, ok := b.herdrMux()
+	if !ok {
+		return "", muxNotHerdr("pane get agent_session")
+	}
+	return hm.PaneAgentSession(paneSeat(target))
+}
+
+// paneReadDetection is §4's CAPTURE: the screen in the shape a detection
+// fixture is, which is the shape `agent explain --file` reads back (ADR 0066
+// D3). A record whose capture could not be taken holds no region for it,
+// which is what its caller already does for the three silences it knows.
+func (b *HerdrBackend) paneReadDetection(target string) (string, error) {
+	hm, ok := b.herdrMux()
+	if !ok {
+		return "", muxNotHerdr("pane read --source detection")
+	}
+	return hm.PaneReadDetection(paneSeat(target))
+}
+
+// manifests is §4's detection preflight through the occupant: herdr's own
+// three answers, or UNKNOWN for all of them when the slot holds something
+// else (muxNoManifest). Never a "no" either way.
+func (b *HerdrBackend) manifests() ManifestReader {
+	if hm, ok := b.herdrMux(); ok {
+		return hm
+	}
+	return muxNoManifest{}
+}
+
+// workspaces and workspaceGet are the other two §4 reads with a door of
+// their own: herdr's raw listing and its per-id query, which the meta rule's
+// two halves ask because telling "ours" from "a stranger wearing our id"
+// needs herdr's label and server GENERATION and nothing a seat's state can
+// give (HerdrMux.Workspaces carries why Rex has no such question).
+//
+// The error both return when the slot is not herdr's lands on the arm every
+// caller already has for a server that did not answer — "silence is never
+// death" (ADR 0011 §2) — so a slot posse cannot ask keeps metas and refuses
+// writes, which is the safe direction on both sides.
+func (b *HerdrBackend) workspaces() ([]HerdrWorkspace, error) {
+	hm, ok := b.herdrMux()
+	if !ok {
+		return nil, muxNotHerdr("workspace list")
+	}
+	return hm.Workspaces()
+}
+
+func (b *HerdrBackend) workspaceGet(id string) (HerdrWorkspace, bool, error) {
+	hm, ok := b.herdrMux()
+	if !ok {
+		return HerdrWorkspace{}, false, muxNotHerdr("workspace get")
+	}
+	return hm.WorkspaceGet(id)
 }
 
 func (b *HerdrBackend) warn(format string, args ...any) {
@@ -964,6 +1074,18 @@ type HerdrSession struct {
 	PermissionMode PaneMode
 }
 
+// Seat is the multiplexer handle for this session's workspace and pane (ADR
+// 0076 §2). The meta still records the two ids under their herdr names —
+// moving the FILE to a Seat is ranger-base-q5gc2's bead — so this is the one
+// place that pairing is spelled, rather than at every verb's call site.
+func (s *HerdrSession) Seat() Seat {
+	return Seat{Session: s.WorkspaceID, Pane: s.PaneID}
+}
+
+// paneSeat is a seat addressed by its pane alone — what every caller holding
+// a `target` from AgentTarget has, and all the typing and reading verbs need.
+func paneSeat(pane string) Seat { return Seat{Pane: pane} }
+
 // Sessions merges herdr's live workspace list with the meta files. Meta
 // files pointing at dead workspaces are pruned; foreign workspaces are
 // listed under their label so the cockpit shows the whole herd.
@@ -1005,30 +1127,19 @@ func (b *HerdrBackend) Sessions() ([]HerdrSession, error) {
 // stale meta. Callers that only want "did this listing abstain at all"
 // take len().
 func (b *HerdrBackend) listSessions() ([]HerdrSession, []string, error) {
-	wss, err := b.H.Workspaces()
+	// The slot's one listing, which is the multiplexer's two (ADR 0076 §2):
+	// the seats, and the runtime the occupant detects in each. The rule that
+	// used to be spelled here — a status is only a status when a runtime was
+	// detected in the workspace, because herdr answers "unknown" for a plain
+	// shell — moved into the occupant that has the quirk (HerdrMux.List), so
+	// a row's State is already "" when there is nothing there.
+	wss, err := b.Mux().List()
 	if err != nil {
 		return nil, nil, err
 	}
-	byID := map[string]HerdrWorkspace{}
+	byID := map[string]SeatInfo{}
 	for _, ws := range wss {
-		byID[ws.WorkspaceID] = ws
-	}
-
-	// herdr reports workspace agent_status "unknown" even for plain shells;
-	// only show a status when herdr actually detects an agent in there.
-	agents, err := b.H.Agents()
-	if err != nil {
-		return nil, nil, err
-	}
-	hasAgent := map[string]bool{}
-	for _, ag := range agents {
-		hasAgent[ag.WorkspaceID] = true
-	}
-	status := func(ws HerdrWorkspace) string {
-		if !hasAgent[ws.WorkspaceID] {
-			return ""
-		}
-		return ws.AgentStatus
+		byID[ws.Session] = ws
 	}
 
 	// Pruning is destructive and unrecoverable: the meta file is everything
@@ -1119,7 +1230,7 @@ func (b *HerdrBackend) listSessions() ([]HerdrSession, []string, error) {
 		// (rangerhq-yt1p). The id is left unclaimed, so the workspace itself
 		// is still listed — under its own meta, or as foreign.
 		if live {
-			if why := b.notOurWorkspace(m, ws, gen); why != "" {
+			if why := b.notOurWorkspace(m, ws.Label, gen); why != "" {
 				strangers = append(strangers, fmt.Sprintf("%s: %s", name, why))
 				withheld = append(withheld, name)
 				continue
@@ -1153,25 +1264,25 @@ func (b *HerdrBackend) listSessions() ([]HerdrSession, []string, error) {
 			continue
 		}
 		claimed[m.Workspace] = true
-		b.backfillServer(m, ws, sock, gen)
+		b.backfillServer(m, ws.Label, sock, gen)
 		out = append(out, HerdrSession{
 			Name: name, WorkspaceID: m.Workspace, PaneID: m.Pane,
 			Emoji: m.Emoji, Envs: m.Envs, Agent: m.Agent, Runtime: m.Runtime, Tier: m.Tier, Model: m.Model,
 			Cage: m.Cage, Sockets: m.Sockets, Degraded: m.Degraded, TurnFailure: m.TurnFailure, Bead: m.Bead, Crew: m.Crew, Dir: m.Dir,
-			Repo: m.Repo, Status: status(ws), Focused: ws.Focused,
+			Repo: m.Repo, Status: ws.State, Focused: ws.Focused,
 		})
 	}
 	for _, ws := range wss {
-		if claimed[ws.WorkspaceID] {
+		if claimed[ws.Session] {
 			continue
 		}
 		name := ws.Label
 		if name == "" {
-			name = ws.WorkspaceID
+			name = ws.Session
 		}
 		out = append(out, HerdrSession{
-			Name: name, WorkspaceID: ws.WorkspaceID,
-			Emoji: FallbackEmoji, Status: status(ws),
+			Name: name, WorkspaceID: ws.Session,
+			Emoji: FallbackEmoji, Status: ws.State,
 			Focused: ws.Focused, Foreign: true,
 		})
 	}
@@ -1237,7 +1348,7 @@ func (b *HerdrBackend) fillPaneModes(out []HerdrSession) {
 		case s.PaneID == "":
 			s.PermissionMode = PaneMode{Why: "this session records no pane, so there is no screen to read"}
 		default:
-			text, err := b.H.PaneRead(s.PaneID, paneModeReadLines)
+			text, err := b.Mux().Read(paneSeat(s.PaneID), paneModeReadLines, false)
 			if err != nil {
 				s.PermissionMode = PaneMode{Why: fmt.Sprintf("pane read failed: %v", err)}
 				break
@@ -1376,15 +1487,15 @@ func emptyBoard(sock string, listed int) string {
 // herdr that stopped reporting labels would otherwise turn the entire fleet
 // into strangers in one release, and unlabelled workspaces are not the ones
 // posse's own creates hand out.
-func (b *HerdrBackend) notOurWorkspace(m *HerdrMeta, ws HerdrWorkspace, gen string) string {
-	if ws.Label == "" || b.App.labelWearsName(ws.Label, m.Name) {
+func (b *HerdrBackend) notOurWorkspace(m *HerdrMeta, label, gen string) string {
+	if label == "" || b.App.labelWearsName(label, m.Name) {
 		return ""
 	}
 	if gen != "" && m.Gen == gen {
 		return "" // same server generation: ids are not re-issued, so this is a rename
 	}
 	return fmt.Sprintf("workspace %s is labelled %q, not %q, and %s — herdr re-issues workspace ids across a server restart or handoff (rangerhq-6bg7)",
-		m.Workspace, ws.Label, b.App.WorkspaceLabel(m.Name), genLabel(m.Gen, gen))
+		m.Workspace, label, b.App.WorkspaceLabel(m.Name), genLabel(m.Gen, gen))
 }
 
 // genLabel says how much the fence knows, in the voice of a warning line.
@@ -1418,14 +1529,14 @@ func (b *HerdrBackend) idEvidence(m *HerdrMeta, gen string) (dead bool, why stri
 	if m.Workspace == "" {
 		return false, "it names no workspace, and absence of a name is not death"
 	}
-	ws, found, err := b.H.WorkspaceGet(m.Workspace)
+	ws, found, err := b.workspaceGet(m.Workspace)
 	if err != nil {
 		return false, fmt.Sprintf("herdr did not answer for workspace %s (%v), and silence is not evidence", m.Workspace, err)
 	}
 	if !found {
 		return true, ""
 	}
-	if stranger := b.notOurWorkspace(m, ws, gen); stranger != "" {
+	if stranger := b.notOurWorkspace(m, ws.Label, gen); stranger != "" {
 		return false, stranger
 	}
 	return false, fmt.Sprintf("workspace %s is alive", m.Workspace)
@@ -1489,7 +1600,7 @@ func (b *HerdrBackend) sessionGone(name string) (dead bool, why string) {
 	if name == "" {
 		return false, "it has no session name to ask about"
 	}
-	wss, err := b.H.Workspaces()
+	wss, err := b.workspaces()
 	if err != nil {
 		return false, fmt.Sprintf("herdr did not answer for the workspace list (%v), and silence is not evidence", err)
 	}
@@ -1523,7 +1634,7 @@ func (b *HerdrBackend) sessionGone(name string) (dead bool, why string) {
 	}
 	for _, ws := range wss {
 		if ws.WorkspaceID == m.Workspace {
-			if stranger := b.notOurWorkspace(m, ws, gen); stranger != "" {
+			if stranger := b.notOurWorkspace(m, ws.Label, gen); stranger != "" {
 				return false, stranger
 			}
 			return false, fmt.Sprintf("workspace %s is alive", m.Workspace)
@@ -1629,9 +1740,9 @@ func (b *HerdrBackend) reclaim(name, sock, gen string) string {
 // an absent one: it would make the next generation trust a recycled id.
 // Best effort, like the socket half: a listing must never fail over a
 // bookkeeping write.
-func (b *HerdrBackend) backfillServer(m *HerdrMeta, ws HerdrWorkspace, sock, gen string) {
+func (b *HerdrBackend) backfillServer(m *HerdrMeta, label, sock, gen string) {
 	stampSock := m.Socket == "" && sock != ""
-	stampGen := gen != "" && m.Gen != gen && ws.Label == m.Name
+	stampGen := gen != "" && m.Gen != gen && label == m.Name
 	if !stampSock && !stampGen {
 		return
 	}
@@ -2257,7 +2368,7 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 		// launch, and `runtime check` is where an operator is told to drop a
 		// key. A launch that printed it would be a line on every pane of a
 		// runtime that works perfectly.
-		det := ReadDetection(b.H, rt)
+		det := ReadDetection(b.manifests(), rt)
 		switch {
 		case det.Refuses():
 			if o.Bead != "" || o.Recreate {
@@ -2824,10 +2935,11 @@ func (b *HerdrBackend) startPlanned(o NewSessionOpts, p *launchPlan) (string, er
 	// what herdr's one shared list shows, the name is what posse addresses.
 	// planLaunch has already refused a malformed tag, so nothing here can
 	// create a workspace under a label this home would not recognise.
-	wsID, rootPane, err := b.H.CreateWorkspace(b.App.WorkspaceLabel(o.Name), p.Dir, p.Vars)
+	seat, err := b.Mux().Create(b.App.WorkspaceLabel(o.Name), p.Dir, p.Vars)
 	if err != nil {
 		return "", err
 	}
+	wsID, rootPane := seat.Session, seat.Pane
 	meta := &HerdrMeta{
 		Name: o.Name, Workspace: wsID, Pane: rootPane,
 		Emoji: p.Emoji, Envs: strings.Join(p.Envs, "+"), Agent: o.Agent, Runtime: p.Runtime, Tier: p.Tier, Model: p.Model,
@@ -2859,7 +2971,7 @@ func (b *HerdrBackend) startPlanned(o NewSessionOpts, p *launchPlan) (string, er
 		if err != nil {
 			return wsID, err
 		}
-		if err := b.H.PaneRun(rootPane, line); err != nil {
+		if err := b.Mux().Start(seat, line); err != nil {
 			return wsID, err
 		}
 	}
@@ -3017,7 +3129,7 @@ func (b *HerdrBackend) RelaunchAgent(name string, grace time.Duration) (bool, er
 	// reason to believe a CLI died — a live pane its reporter has not
 	// labelled reads identically. The refusal's wording says which of the two
 	// it is; the predicate does not care.
-	if det := ReadDetection(b.H, rt); det.NoManifest() {
+	if det := ReadDetection(b.manifests(), rt); det.NoManifest() {
 		return false, DetectionRetypeRefusal(rt, det, name)
 	}
 	m.Launched = time.Now()
@@ -3187,7 +3299,7 @@ func (b *HerdrBackend) RelaunchAgent(name string, grace time.Duration) (bool, er
 	if err != nil {
 		return false, err
 	}
-	if err := b.H.PaneRun(s.PaneID, line); err != nil {
+	if err := b.Mux().Start(s.Seat(), line); err != nil {
 		return false, err
 	}
 	return true, nil
@@ -3607,7 +3719,7 @@ func (b *HerdrBackend) killAndLand(name string, opts KillOpts) (*KillLanding, er
 		}
 	}
 
-	if err := b.H.CloseWorkspace(s.WorkspaceID); err != nil {
+	if err := b.Mux().Close(s.Seat()); err != nil {
 		return nil, err
 	}
 	if !s.Foreign {
@@ -3772,31 +3884,42 @@ func (b *HerdrBackend) FocusSession(name string) error {
 	if err != nil {
 		return err
 	}
-	return b.H.FocusWorkspace(s.WorkspaceID)
+	return b.Mux().Focus(s.Seat())
 }
 
 // AgentTarget picks the promptable target for a session: the pane of the
 // agent herdr has detected inside its workspace (root pane preferred, for
 // sessions with several agents). This is the dispatch loop's addressing.
+//
+// Through the slot's own listing (ADR 0076 §2) and not herdr's `agent list`
+// alone, because "which pane holds a runtime" is a question every occupant
+// must answer and the pane this returns is what every later verb addresses —
+// a herdr-only answer here would make dispatch herdr-only. It costs one
+// `workspace list` on top of the `agent list` this used to make: the poll
+// loop that calls it (awaitTarget) already pays both through Resolve above,
+// so the measured count of `agent list` calls per poll — the countable the
+// startup-wait pin reads — is unchanged at two.
 func (b *HerdrBackend) AgentTarget(name string) (string, error) {
 	s, err := b.Resolve(name)
 	if err != nil {
 		return "", err
 	}
-	agents, err := b.H.Agents()
+	seats, err := b.Mux().List()
 	if err != nil {
 		return "", err
 	}
 	var first string
-	for _, ag := range agents {
-		if ag.WorkspaceID != s.WorkspaceID {
+	for _, seat := range seats {
+		if seat.Session != s.WorkspaceID {
 			continue
 		}
-		if s.PaneID != "" && ag.PaneID == s.PaneID {
-			return ag.PaneID, nil
-		}
-		if first == "" {
-			first = ag.PaneID
+		for _, p := range seat.Panes {
+			if s.PaneID != "" && p.Pane == s.PaneID {
+				return p.Pane, nil
+			}
+			if first == "" {
+				first = p.Pane
+			}
 		}
 	}
 	if first == "" {

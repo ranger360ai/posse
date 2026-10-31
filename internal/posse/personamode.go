@@ -616,10 +616,10 @@ func PersonaModeFellBackRefusal(rt *Runtime, persona, session, quoted string) er
 		session, rt.Name, rt.PersonaModeText(persona), persona, line, rt.PersonaMode.Dir+"/"+rt.PersonaMode.File)
 }
 
-// PaneReader is the one thing AwaitPersonaMode needs from herdr, named so
-// the gate can be exercised without one.
+// PaneReader is the one thing AwaitPersonaMode needs from the multiplexer
+// slot (ADR 0076 §2's Read), named so the gate can be exercised without one.
 type PaneReader interface {
-	PaneRead(paneID string, lines int) (string, error)
+	Read(s Seat, lines int, ansi bool) (string, error)
 }
 
 // personaModeReadLines bounds the snapshot. The footer is the pane's last
@@ -661,7 +661,7 @@ func AwaitPersonaMode(h PaneReader, rt *Runtime, persona, session, pane string, 
 	var lastErr error
 	var screen string
 	for {
-		text, err := h.PaneRead(pane, personaModeReadLines)
+		text, err := h.Read(Seat{Pane: pane}, personaModeReadLines, false)
 		if err != nil {
 			lastErr = err
 		} else {

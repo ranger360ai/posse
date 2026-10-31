@@ -383,8 +383,8 @@ func TestQAPersonaModeTrustSeesThePluginsGlobAndExemptsPosseAlone(t *testing.T) 
 	}
 }
 
-// fakePane answers PaneRead from a script, one entry per read; the last
-// entry repeats. An entry with err set is a read that failed.
+// fakePane answers the slot's Read from a script, one entry per read; the
+// last entry repeats. An entry with err set is a read that failed.
 type fakePane struct {
 	reads []fakePaneRead
 	n     int
@@ -395,7 +395,7 @@ type fakePaneRead struct {
 	err  error
 }
 
-func (f *fakePane) PaneRead(string, int) (string, error) {
+func (f *fakePane) Read(Seat, int, bool) (string, error) {
 	r := f.reads[min(f.n, len(f.reads)-1)]
 	f.n++
 	return r.text, r.err

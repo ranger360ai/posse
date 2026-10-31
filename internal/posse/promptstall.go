@@ -286,14 +286,14 @@ func (d *Dispatcher) afterStall(p *pendingBead, grace time.Duration) (state, why
 	if ms < 1 {
 		ms = 1
 	}
-	res, err := d.HB.H.AgentWait(p.target, []string{"working", "blocked"}, ms)
+	res, err := d.HB.Mux().Wait(paneSeat(p.target), []string{"working", "blocked"}, ms)
 	switch {
 	case IsHerdrCode(err, "timeout"):
 		return stallNoTurn, fmt.Sprintf("no turn started in %s either", grace)
 	case err != nil:
 		return stallUnreadable, fmt.Sprintf("herdr could not say what %s is doing (%v)", p.session, err)
 	}
-	switch st := agentStatusFromResult(res); st {
+	switch st := res.State; st {
 	case "working", "blocked":
 		return st, ""
 	case stallUnreadable:

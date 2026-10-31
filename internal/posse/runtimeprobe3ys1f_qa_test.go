@@ -170,7 +170,7 @@ func TestQAProbeStalledPromptIsReadForTheTurnAndNotCalledUndelivered(t *testing.
 
 			h, log := probeStallHerdr(t, srv, tc.code, tc.turn)
 			var screen bytes.Buffer
-			rec, err := a.RuntimeProbe(rt, h, ProbeOpts{Timeout: 2 * time.Second, Out: &screen})
+			rec, err := a.RuntimeProbe(rt, HerdrMux{H: h}, ProbeOpts{Timeout: 2 * time.Second, Out: &screen})
 			if err != nil {
 				t.Fatalf("the probe could not run: %v", err)
 			}

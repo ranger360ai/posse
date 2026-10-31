@@ -546,7 +546,7 @@ func main() {
 				fmt.Fprintf(out, "warning: %s already has %s — this text is typed after it\n", name, det.Hold().Why())
 			}
 		}
-		res, err := hb.H.AgentPrompt(target, text, wait, timeout)
+		res, err := hb.Mux().Prompt(posse.Seat{Pane: target}, text, wait, timeout)
 		if err != nil {
 			die(err)
 		}
@@ -562,7 +562,9 @@ func main() {
 		// unless this stamps it — autoReapPass skips s.Bead=="" forever
 		// (ranger-base-v674). Only a work-prompt-shaped text matches.
 		hb.NoteBeadFromPrompt(name, text)
-		fmt.Fprintf(out, "%s\n", res)
+		// The occupant's evidence verbatim — on herdr the API envelope,
+		// which is what this printed before the slot was extracted.
+		fmt.Fprintf(out, "%s\n", res.Evidence)
 		// ...and last, the read-back the same bead asked for: herdr
 		// answers agent_prompted for a prompt it typed and did not submit,
 		// so the return value above is not evidence the turn started.
@@ -623,11 +625,13 @@ func main() {
 		if err != nil {
 			die(err)
 		}
-		res, err := hb.H.AgentWait(target, until, timeout)
+		res, err := hb.Mux().Wait(posse.Seat{Pane: target}, until, timeout)
 		if err != nil {
 			die(err)
 		}
-		fmt.Fprintf(out, "%s\n", res)
+		// The occupant's evidence verbatim — on herdr the API envelope,
+		// which is what this printed before the slot was extracted.
+		fmt.Fprintf(out, "%s\n", res.Evidence)
 
 	case "peek":
 		args = need(args, 1, "posse peek <name> [<lines>]")
@@ -652,7 +656,7 @@ func main() {
 		if s.PaneID == "" {
 			die(posse.Die("session %s has no recorded pane (created outside posse)", args[0]))
 		}
-		text, err := hb.H.PaneRead(s.PaneID, lines)
+		text, err := hb.Mux().Read(posse.Seat{Pane: s.PaneID}, lines, false)
 		if err != nil {
 			die(err)
 		}
@@ -2131,7 +2135,7 @@ func main() {
 		// (ADR 0012 D4). A `check` that reported an uninstalled CLI and then
 		// exited 0 would be the class of green-while-broken this command was
 		// filed to end (rangerhq-tr8k and the note on it).
-		if !a.RuntimeCheck(rt, posse.NewHerdr(), out) {
+		if !a.RuntimeCheck(rt, posse.NewHerdrMux(), out) {
 			os.Exit(1)
 		}
 
@@ -2514,7 +2518,7 @@ func runtimeProbe(a *posse.App, rt *posse.Runtime, args []string, out io.Writer)
 		fmt.Fprintln(out, "      evidence, and this is how the same CLI redeclared as a template profile is checked.")
 		fmt.Fprintln(out)
 	}
-	rec, err := a.RuntimeProbe(rt, posse.NewHerdr(), o)
+	rec, err := a.RuntimeProbe(rt, posse.NewHerdrMux(), o)
 	if err != nil {
 		die(err)
 	}

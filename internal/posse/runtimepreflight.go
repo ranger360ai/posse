@@ -113,7 +113,7 @@ type RuntimeGap struct {
 // list; a herdr that cannot be read yields the UNKNOWN reading (a
 // non-blocking gap), never a wrong "no" — the same rule KnownAgentKinds
 // applies to parsing --help.
-func (a *App) RuntimeGaps(rt *Runtime, h Herdr) []RuntimeGap {
+func (a *App) RuntimeGaps(rt *Runtime, h ManifestReader) []RuntimeGap {
 	var gaps []RuntimeGap
 	add := func(name, line string, blocking bool) {
 		gaps = append(gaps, RuntimeGap{Name: name, Line: line, Blocking: blocking})

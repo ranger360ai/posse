@@ -133,7 +133,7 @@ func (rt *Runtime) declaredByList(key string) string {
 // reported by name. It returns whether the preflight is CLEAN — no blocking
 // gap — so the command can exit non-zero, which is what makes this usable
 // as an onboarding gate rather than as a thing to read and nod at.
-func (a *App) RuntimeCheck(rt *Runtime, h Herdr, w io.Writer) bool {
+func (a *App) RuntimeCheck(rt *Runtime, h ManifestReader, w io.Writer) bool {
 	kind := "template-only (no native realizer; every gate goes to the wall)"
 	if rt.Builtin {
 		kind = "built-in"
@@ -236,7 +236,7 @@ func (a *App) RuntimeCheck(rt *Runtime, h Herdr, w io.Writer) bool {
 // declares. The two are separate on purpose — a profile can be perfectly
 // authored and still be unlaunchable here because the CLI is not installed,
 // and an operator debugging one of those needs to know which half is wrong.
-func (a *App) writePreflight(rt *Runtime, h Herdr, w io.Writer) bool {
+func (a *App) writePreflight(rt *Runtime, h ManifestReader, w io.Writer) bool {
 	fmt.Fprintln(w)
 	// state_dir and env_required are declarations, so they print whether or
 	// not they are a gap — an onboarder reading this grid has to be able to
@@ -302,7 +302,7 @@ func (a *App) writePreflight(rt *Runtime, h Herdr, w io.Writer) bool {
 	return clean
 }
 
-func (a *App) launchRow(rt *Runtime, h Herdr) stageRow {
+func (a *App) launchRow(rt *Runtime, h ManifestReader) stageRow {
 	// Asked the way herdr resolves it — a manifest reached through another
 	// agent's `aliases = [...]` counts, and on herdr 0.8.0 that is the only
 	// route a CLI it was not built with has (Herdr.AgentManifest). ONE

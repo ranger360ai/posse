@@ -192,6 +192,17 @@ package treepins
 //	TestShippedPIDsCarryTheNarrowedHookRows       make pid-check      ~10s
 //	TestShippedPIDsLetBeadsOwnHooksRun            make pid-check
 //
+// and two more, folded into corpus-check's own door because its subject is
+// exactly theirs — a census over this repo's own .go sources. They are the
+// two arms that keep the multiplexer slot a slot: which production files may
+// hold the herdr client, and whether every file the roster still names still
+// holds it (ADR 0076 §1/§4):
+//
+//	TestQATheMultiplexerSlotIsTheOnlyRouteToTheHerdrClient
+//	                                              make corpus-check
+//	TestQAEveryHerdrClientHolderStillHoldsIt      make corpus-check
+//	                                              (both ranger-base-csnzn)
+//
 // (Three of those rows are exempt from the two-way check, listed with their
 // reasons in twdDoorHolders, all three for the same cause: they read the
 // MAKEFILE by name rather than enumerating the tree, and
@@ -210,7 +221,7 @@ package treepins
 // gap — not the rule.)
 //
 // and `make tree-check` is all of them — 66-139s on this box over three warm
-// runs at fifty-eight pins and fourteen doors (MEASURED 2026-10-09,
+// runs at sixty pins and fourteen doors (MEASURED 2026-10-09,
 // ranger-base-c768n: 115.3s, 139.0s and 66.3s in that order, with a
 // one-minute load average of 9.3, 54.2 and 63.1 before the three and one
 // suite slot held by a sibling seat throughout — so the FASTEST run was the

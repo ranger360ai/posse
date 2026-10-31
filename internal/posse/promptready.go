@@ -129,7 +129,7 @@ func (b *HerdrBackend) AwaitPromptable(session, target string) (AgentDetection, 
 	var lastErr string
 	for {
 		attempts++
-		det, err := b.H.AgentExplain(target)
+		det, err := b.explain(paneSeat(target))
 		switch {
 		case err != nil:
 			lastErr = err.Error()

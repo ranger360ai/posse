@@ -291,7 +291,7 @@ func TestProbeRefusesToOverwriteALivePersonasGates(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(a.AgentsDir, persona+".md"), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, err := a.RuntimeProbe(carol, Herdr{Bin: filepath.Join(t.TempDir(), "no-herdr")}, ProbeOpts{})
+	_, err := a.RuntimeProbe(carol, HerdrMux{H: Herdr{Bin: filepath.Join(t.TempDir(), "no-herdr")}}, ProbeOpts{})
 	if err == nil || !strings.Contains(err.Error(), "would overwrite its wall") {
 		t.Fatalf("the probe must refuse a name collision with a real PID: %v", err)
 	}
@@ -303,7 +303,7 @@ func TestProbeRefusesToOverwriteALivePersonasGates(t *testing.T) {
 func TestProbeRefusesWithoutHerdr(t *testing.T) {
 	t.Parallel()
 	a, carol := probeParityApp(t)
-	rec, err := a.RuntimeProbe(carol, Herdr{Bin: filepath.Join(t.TempDir(), "definitely-not-herdr")}, ProbeOpts{})
+	rec, err := a.RuntimeProbe(carol, HerdrMux{H: Herdr{Bin: filepath.Join(t.TempDir(), "definitely-not-herdr")}}, ProbeOpts{})
 	if err == nil || !strings.Contains(err.Error(), "herdr") {
 		t.Fatalf("no herdr, no probe: %v %v", rec, err)
 	}

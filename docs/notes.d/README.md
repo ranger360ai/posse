@@ -9,6 +9,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-lf6it](ranger-base-lf6it.md) — bob self-updated under the probe, 60 seconds in — and the probe still measured 2.0.5 (ranger-base-lf6it) — 2026-10-31
 - [ranger-base-et7bs](ranger-base-et7bs.md) — The read verb that did not auto-update, and the one footprint it does leave (ranger-base-et7bs) — 2026-10-31
 - [ranger-base-esz16](ranger-base-esz16.md) — The second footprint, and the one that leaves the box (ranger-base-esz16) — 2026-10-31
+- [ranger-base-csnzn](ranger-base-csnzn.md) — Extracting the multiplexer slot: four places the interface is not ADR 0076 §2's table (ranger-base-csnzn) — 2026-10-31
 - [ranger-base-6r1rf](ranger-base-6r1rf.md) — bob reads the posse namespace, symlinks and all — and is in drift the day it ships (ranger-base-6r1rf) — 2026-10-31
 - [notes-grok](notes-grok.md) — grok substrate: pinned at 1.0.52 (Homebrew cask `grok-build`), upgrades are a security re-audit (rangerhq-y7jr) — 2026-10-31
 - [ranger-base-99a7u](ranger-base-99a7u.md) — The meta-harness landscape, 2026-10-24, and where posse sits in it (ranger-base-99a7u) — 2026-10-24

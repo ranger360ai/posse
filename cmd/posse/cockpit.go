@@ -1691,7 +1691,7 @@ func (c *cockpit) handleKey(k []byte) (quit bool, err error) {
 			break
 		}
 		if s.PaneID != "" {
-			text, err := c.hb.H.PaneRead(s.PaneID, 15)
+			text, err := c.hb.Mux().Read(posse.Seat{Pane: s.PaneID}, 15, false)
 			if err != nil {
 				c.status = err.Error()
 				break
@@ -1880,7 +1880,7 @@ func (c *cockpit) promptSession(name, text string) {
 			// progress channel rather than replacing the result.
 			c.note(note)
 		}
-		if _, err := c.hb.H.AgentPrompt(target, text, false, 0); err != nil {
+		if _, err := c.hb.Mux().Prompt(posse.Seat{Pane: target}, text, false, 0); err != nil {
 			c.prompts <- err.Error()
 			return
 		}

@@ -787,7 +787,7 @@ func (d *Dispatcher) logPromptHandBack(session, bead, runtime, target string, pr
 	}
 	ev := ReadingEvidence{}
 	if target != "" {
-		if det, err := d.HB.H.AgentExplain(target); err == nil {
+		if det, err := d.HB.explain(paneSeat(target)); err == nil {
 			ev = ReadingEvidenceOf(det)
 		}
 	}
@@ -907,7 +907,7 @@ func (b *HerdrBackend) withPaneCaptureNamed(target, region string, ev ReadingEvi
 	if b == nil || target == "" || ev.Reported != "" {
 		return ev
 	}
-	text, err := b.H.PaneReadDetection(target)
+	text, err := b.paneReadDetection(target)
 	if err != nil || text == "" {
 		return ev
 	}

@@ -491,7 +491,7 @@ func TestQAPIDChannelGapBlocksTheGridAndNotTheProbe(t *testing.T) {
 	// The probe refuses here for a different reason — no herdr, so observable
 	// 4 cannot be read — and that is the point: whatever stops it, it must
 	// never be the gap it exists to measure its way out of.
-	_, err = a.RuntimeProbe(rt, h, ProbeOpts{Timeout: time.Second})
+	_, err = a.RuntimeProbe(rt, HerdrMux{H: h}, ProbeOpts{Timeout: time.Second})
 	if err == nil {
 		t.Fatal("this arm needs the probe to stop somewhere, so the sentence can be read")
 	}

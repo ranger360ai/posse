@@ -456,7 +456,7 @@ func (d *Dispatcher) deliverPulse(cfg PulseConfig, tick pulseTick, state *PulseS
 	}
 
 	text := pulsePromptText(tick.Conditions)
-	if _, err := d.HB.H.AgentPrompt(pane, text, false, 0); err != nil {
+	if _, err := d.HB.Mux().Prompt(paneSeat(pane), text, false, 0); err != nil {
 		d.equietf("pulse: prompt failed for %s: %v\n", name, err)
 		return
 	}

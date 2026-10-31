@@ -548,7 +548,7 @@ func (b *HerdrBackend) closeRecorded(m *HerdrMeta, held *LaunchLock) error {
 		// guard asks again and turns it into the refusal that says so.
 		return b.clearDeadMeta(m.Name, held)
 	}
-	if err := b.H.CloseWorkspace(m.Workspace); err != nil {
+	if err := b.Mux().Close(Seat{Session: m.Workspace}); err != nil {
 		return err
 	}
 	// Both of ADR 0025 §4's remaining fold points meet here: this is the
@@ -573,14 +573,14 @@ func (b *HerdrBackend) holdsRecorded(m *HerdrMeta) (bool, error) {
 	if m.Workspace == "" {
 		return false, nil // a kept recipe names none (rangerhq-v52t)
 	}
-	wss, err := b.H.Workspaces()
+	wss, err := b.workspaces()
 	if err != nil {
 		return false, err
 	}
 	gen := ServerGen()
 	for _, ws := range wss {
 		if ws.WorkspaceID == m.Workspace {
-			return b.notOurWorkspace(m, ws, gen) == "", nil
+			return b.notOurWorkspace(m, ws.Label, gen) == "", nil
 		}
 	}
 	return false, nil
@@ -610,7 +610,7 @@ func (b *HerdrBackend) holdsRecorded(m *HerdrMeta) (bool, error) {
 // way, which the orphan guard's own message cannot: it would send the
 // operator to `posse attach <name>`, which resolves to that same stranger.
 func (b *HerdrBackend) nameWornElsewhere(m *HerdrMeta) (id, label string, err error) {
-	wss, err := b.H.Workspaces()
+	wss, err := b.workspaces()
 	if err != nil {
 		return "", "", err
 	}
@@ -766,14 +766,14 @@ func (b *HerdrBackend) landThePlane(w io.Writer, m *HerdrMeta, timeout time.Dura
 	// not track turns, so the text would land inside whatever is on screen.
 	// "blocked" settles too: an agent stuck on its own dialog is a common
 	// reason to relaunch, and waiting for it to go idle never ends.
-	res, err := b.H.AgentWait(target, []string{"idle", "done", "blocked"}, remaining())
+	res, err := b.Mux().Wait(paneSeat(target), []string{"idle", "done", "blocked"}, remaining())
 	if err != nil {
 		if IsHerdrCode(err, "timeout") {
 			return false, nil
 		}
 		return false, err
 	}
-	switch agentStatusFromResult(res) {
+	switch res.State {
 	case "idle", "done":
 	case "blocked":
 		fmt.Fprintf(w, "%s is blocked awaiting input — skipping the landing turn\n", m.Name)
@@ -803,7 +803,7 @@ func (b *HerdrBackend) landThePlane(w io.Writer, m *HerdrMeta, timeout time.Dura
 	// this call branchless rather than building an argv landing path on
 	// the strength of a failure that was never there.
 	fmt.Fprintf(w, "landing %s (up to %s)…\n", m.Name, timeout)
-	if _, err := b.H.AgentPrompt(target, prompt, true, remaining()); err != nil {
+	if _, err := b.Mux().Prompt(paneSeat(target), prompt, true, remaining()); err != nil {
 		if IsHerdrCode(err, "timeout") {
 			return false, nil // the turn is running; that claim is about the wait, not the prompt
 		}

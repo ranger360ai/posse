@@ -68,7 +68,7 @@ func TestQAProbeIsNotRefusedByThePIDChannelGapWithAHerdrPresent(t *testing.T) {
 	if noHerdr.Available() {
 		t.Fatal("the no-herdr control resolved a herdr — it would reach the gap loop and stop being a control")
 	}
-	_, errNo := a.RuntimeProbe(rt, noHerdr, ProbeOpts{Timeout: time.Second})
+	_, errNo := a.RuntimeProbe(rt, HerdrMux{H: noHerdr}, ProbeOpts{Timeout: time.Second})
 	if errNo == nil || !strings.Contains(errNo.Error(), "herdr is not on PATH") {
 		t.Errorf("the no-herdr fixture no longer stops above the blocking-gap loop, so a pin written against it can no longer be assumed blind to the exemption — re-read TestQAPIDChannelGapBlocksTheGridAndNotTheProbe: %v", errNo)
 	}
@@ -84,7 +84,7 @@ func TestQAProbeIsNotRefusedByThePIDChannelGapWithAHerdrPresent(t *testing.T) {
 	if !h.Available() {
 		t.Fatal("the fake herdr is not Available — this arm would measure nothing")
 	}
-	_, err = a.RuntimeProbe(rt, h, ProbeOpts{Timeout: time.Second})
+	_, err = a.RuntimeProbe(rt, HerdrMux{H: h}, ProbeOpts{Timeout: time.Second})
 	if err == nil {
 		t.Fatal("this arm needs the probe to stop somewhere past the gap loop, so the sentence can be read")
 	}
@@ -158,7 +158,7 @@ func TestQAProbeWarnsOnThePIDChannelInTheWordsAnInteractiveLaunchUses(t *testing
 			t.Fatal(err)
 		}
 		var out bytes.Buffer
-		_, perr := a.RuntimeProbe(rt, h, ProbeOpts{Timeout: time.Second, Out: &out})
+		_, perr := a.RuntimeProbe(rt, HerdrMux{H: h}, ProbeOpts{Timeout: time.Second, Out: &out})
 		return rt, out.String(), perr
 	}
 

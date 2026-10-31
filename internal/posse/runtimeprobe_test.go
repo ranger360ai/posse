@@ -484,7 +484,7 @@ func TestProbeSessionExeIsThePanesAnswerAndNotTheLaunchers(t *testing.T) {
 
 	h := fakeProbeHerdr(t, `[ "$1" = pane ] && [ "$2" = run ] || exit 0
 PATH="`+srv+`:$PATH" /bin/sh -c "$4"`)
-	got, err := probeSessionExe(h, "%1", bin, "carol", filepath.Join(dir, "cli.txt"), 10*time.Second)
+	got, err := probeSessionExe(HerdrMux{H: h}, "%1", bin, "carol", filepath.Join(dir, "cli.txt"), 10*time.Second)
 	if err != nil {
 		t.Fatalf("the pane would not answer: %v", err)
 	}
@@ -514,7 +514,7 @@ func TestProbeSessionExeSeesThroughTheGatePrefix(t *testing.T) {
 	shim := probeFakeCLI(t, bin, "carol", "the shim")
 	h := fakeProbeHerdr(t, `[ "$1" = pane ] && [ "$2" = run ] || exit 0
 PATH="`+srv+`:$PATH" /bin/sh -c "$4"`)
-	got, err := probeSessionExe(h, "%1", bin, "carol", filepath.Join(dir, "cli.txt"), 10*time.Second)
+	got, err := probeSessionExe(HerdrMux{H: h}, "%1", bin, "carol", filepath.Join(dir, "cli.txt"), 10*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -553,7 +553,7 @@ func TestProbeSessionExeRefusesWhatItCannotName(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 			h := fakeProbeHerdr(t, tc.body)
-			got, err := probeSessionExe(h, "%1", filepath.Join(dir, "bin"), probeFixtureExe, filepath.Join(dir, "cli.txt"), 300*time.Millisecond)
+			got, err := probeSessionExe(HerdrMux{H: h}, "%1", filepath.Join(dir, "bin"), probeFixtureExe, filepath.Join(dir, "cli.txt"), 300*time.Millisecond)
 			if err == nil {
 				t.Fatalf("a probe that cannot name its binary must refuse; got %q", got)
 			}
@@ -744,7 +744,7 @@ func TestRuntimeProbeRecordsTheBinaryTheSessionResolved(t *testing.T) {
 *) echo '{"id":"f","result":{}}' ;;
 esac`)
 
-	rec, err := a.RuntimeProbe(rt, h, ProbeOpts{Timeout: 2 * time.Second})
+	rec, err := a.RuntimeProbe(rt, HerdrMux{H: h}, ProbeOpts{Timeout: 2 * time.Second})
 	if err != nil {
 		t.Fatalf("the probe could not run: %v", err)
 	}
@@ -793,7 +793,7 @@ func TestRuntimeProbeAsksTheCredentialPreconditionTooBeforeItLaunches(t *testing
 *) echo '{"id":"f","result":{}}' ;;
 esac`)
 
-	_, err := a.RuntimeProbe(rt, h, ProbeOpts{Timeout: 2 * time.Second})
+	_, err := a.RuntimeProbe(rt, HerdrMux{H: h}, ProbeOpts{Timeout: 2 * time.Second})
 	if err == nil {
 		t.Fatal("RuntimeProbe launched a runtime whose CredBin collides with its own probe canary — it should have refused before opening a session that cannot authenticate (ADR 0042 D2)")
 	}

@@ -319,7 +319,7 @@ func (d AgentDetection) Hold() PaneHold {
 // fails, or a herdr with no explain at all, answers the empty hold — see
 // the note at the top of this file for why that is the only safe direction.
 func (b *HerdrBackend) PaneHolding(target string) PaneHold {
-	det, err := b.H.AgentExplain(target)
+	det, err := b.explain(paneSeat(target))
 	if err != nil {
 		return PaneHold{}
 	}
@@ -341,7 +341,7 @@ func (b *HerdrBackend) PaneHolding(target string) PaneHold {
 	// copy of a fact that store owns), where the reading below is the same
 	// derived copy read a second way — so where both could speak, the one
 	// with a store behind it does.
-	if sess, err := b.H.PaneAgentSession(target); err == nil {
+	if sess, err := b.paneAgentSession(target); err == nil {
 		if sent, ok := lastSubmitted(b.ClaudeHistory, sess); ok && submittedEcho(hold.Typed, sent, det.ComposerTruncated()) {
 			hold.Sent, hold.Typed = sent, ""
 			return hold
@@ -357,7 +357,7 @@ func (b *HerdrBackend) PaneHolding(target string) PaneHold {
 	// it). One `agent read` per settled holder whose box has text no store
 	// claims, which is the grain the two calls above already work at; an
 	// empty box still costs one `explain` and nothing else.
-	if ansi, err := b.H.AgentReadANSI(target); err == nil {
+	if ansi, err := b.Mux().Read(paneSeat(target), 0, true); err == nil {
 		ghost, read := composerGhostRead(ansi, hold.Typed)
 		// The ansi composer line is recorded whether or not it retired the
 		// claim: a ghost retirement and a box this reading declined to
@@ -429,7 +429,7 @@ const (
 func (b *HerdrBackend) ConfirmSubmitted(target string) string {
 	deadline := time.Now().Add(promptSubmitWait)
 	for {
-		det, err := b.H.AgentExplain(target)
+		det, err := b.explain(paneSeat(target))
 		if err != nil {
 			// The same concession every reading in this file makes: a
 			// diagnostic that will not answer is not evidence of a lost
@@ -449,7 +449,7 @@ func (b *HerdrBackend) ConfirmSubmitted(target string) string {
 			// "typed but not submitted". One ansi read, on the path that was
 			// about to warn and nowhere else; a dim box warns nothing, and
 			// every failure of the reading warns exactly as it did before.
-			if ansi, err := b.H.AgentReadANSI(target); err == nil && composerIsGhost(ansi, typed) {
+			if ansi, err := b.Mux().Read(paneSeat(target), 0, true); err == nil && composerIsGhost(ansi, typed) {
 				return ""
 			}
 			return typed
