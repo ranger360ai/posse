@@ -346,7 +346,7 @@ bd sync               # Sync with git
   make crew-check      ~2.5s   does the shipped tree name this instance's crew
   make seed-check      ~0.2s   the published seed surface and examples/config.yaml
   make history-check   ~3s     this repo's publication history
-  make doc-check       ~0.1s   prose pins over shipped code and docs
+  make doc-check       ~1.2s   prose pins over shipped code and docs
   make identity-check  ~0.5s   this box's identity literals, in paths and content
   make ops-check       ~2s     ops residue and live instance paths in tracked files
   make execwrite-check ~0.2s   executable writes routed through WriteExecutable

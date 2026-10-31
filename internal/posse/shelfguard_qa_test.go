@@ -3,7 +3,8 @@ package posse
 // ranger-base-r0dp. Three sites globbed examples/agents and then did
 // `if len(names) < 9 { t.Skipf(...) }`: TestExampleAgentsArePIDs and
 // TestExampleAgentsHandoffsAreShapes (agents_test.go), and
-// TestShelfPIDsLintCleanAsASet (pidcheck_test.go). The guard sits ON the
+// TestShelfPIDsLintCleanAsASet (pidcheck_test.go then,
+// shelfpidlint_qa_test.go since ranger-base-nt0pi). The guard sits ON the
 // shelf's actual size (nine), so retiring or renaming any one shelf PID
 // turned every invariant those three pins hold into a silent pass instead
 // of a red build.

@@ -26,7 +26,7 @@ package treepins
 //	TestPublicationRootCommitADRsCarryProvenance  make history-check
 //	TestPublicationHistoryNeverCarriesTheSeedScript make history-check
 //	TestQANoCodeStringCallsTheDarwinCredentialsFileAStaleLeftover
-//	                                              make doc-check     ~0.1s
+//	                                              make doc-check     ~1.2s
 //	TestQACageCredDocDoesNotCallTheOnDiskCredentialStale   make doc-check
 //
 // (seven rows under a count of eight: the eighth was
@@ -377,6 +377,54 @@ package treepins
 //	                                              make corpus-check
 //	                                              (both ranger-base-bm6j8)
 //
+// and THREE more, which are the first members of this class that computed no
+// root AT ALL (ranger-base-nt0pi). Every rule for the internal/posse half
+// keys on a body that reaches the repo root — qibRepoRoot, a hand-rolled
+// climb, git — because `go test` runs that package's binary with the PACKAGE
+// directory as cwd, so reading the tree costs a climb. It costs a climb; it
+// does not cost a ROOT. `filepath.Glob("../../docs/notes.d/notes-*.md")`
+// reads the tree with no helper, no runtime.Caller and no subprocess, so
+// there was nothing for either rule or for the fence to see, and three pins
+// whose subject is the tree on any reading sat behind the ~950s package run.
+// Their climbs take the root from qibRepoRoot now, which is the whole of
+// what makes them derived — the register's own lesson read a third time:
+// the class is not bounded by how a test spells its root, it is bounded by
+// there being ONE:
+//
+//	TestQAPrescribedGitDiffChecksStateTheirFormat make doc-check
+//	TestQAPrescribedGitDiffChecksRunUnderADiffDriver
+//	                                              make doc-check
+//	                                              (both read AGENTS.md and
+//	                                              NOTES.md by name and glob
+//	                                              docs/notes.d/notes-*.md,
+//	                                              which is this door's own
+//	                                              subject: prose over
+//	                                              shipped code and docs)
+//	TestShelfPIDsLintCleanAsASet                  make seed-check
+//	                                              (globbed
+//	                                              examples/skills/*, and
+//	                                              reads the shelf through
+//	                                              shelfPIDs — the seed
+//	                                              surface, which is that
+//	                                              door's subject)
+//	                                              (all three
+//	                                              ranger-base-nt0pi)
+//
+// 1.26s between the three (0.00s, 1.21s and 0.05s, at a one-minute load
+// average of 97.58). The shelf pin also MOVED ARM to get its door: it was in
+// posse_arm2, a door's `-run` takes no `-tags`, and a filter that matches
+// nothing exits 0 — so it is in internal/posse/shelfpidlint_qa_test.go, arm
+// 1, rather than teaching one door to pass a tag. That tag question is open
+// for seven other pins and is ranger-base-m94g2's to answer; nothing here
+// prejudges it, because one test moving files is not a mechanism.
+//
+// AND THE SPELLING IS FENCED, not merely fixed: a climbing literal at a
+// WalkDir/Walk/ReadDir/Glob is the fourth arm of
+// TestQAOneRepoRootHelperInTheTestPackage (twdClimbRoot), with its own
+// fixture control, because this arm's live answer is zero by construction
+// and a prohibition nothing violates cannot be told from a broken detector.
+// Its own residual is said out loud below.
+//
 // (The spellings that are still unread, said out loud so the next reader
 // does not have to census them again. A root parsed out of the Makefile is
 // unread (gofmtdoor_qa_test.go) and costs nothing: that test also walks ".",
@@ -385,13 +433,22 @@ package treepins
 // literal two call sites away — is unread by the hop and by the rule that
 // finds the pairs, identically and on purpose; that one would be the
 // propagation, and nothing in the package is spelled that way. And two
-// fixture roots are correctly unseen.)
+// fixture roots are correctly unseen. In internal/posse, a climb that
+// arrives at the walker through an IDENTIFIER is unread by the fence —
+// `const dir = "../../etc/claude/managed-settings.d"; os.ReadDir(dir)`,
+// which policyhooks_qa_test.go spells today — and that one is filed rather
+// than fenced here (ranger-base-nt0pi), because closing it adds a class
+// member and this bead's three were a defect, not a decision.)
 //
-// and `make tree-check` is all of them — 81-89s on this box over three warm
-// runs at eighty-three pins and fourteen doors (MEASURED 2026-10-31,
-// ranger-base-3e68k: 87s, 81s and 89s in that order, with a one-minute load
-// average of 25.12, 27.90 and 26.08 before the three, both suite slots held
-// by sibling seats for the first two and one for the third. This is the
+// and `make tree-check` is all of them — eighty-six pins and fourteen doors,
+// 59s warm at the full eighty-six (MEASURED 2026-10-31, ranger-base-nt0pi:
+// one warm run at a one-minute load average of 5.62, the quietest box this
+// command has been read on, and the first reading taken over the whole
+// class), and 81-89s over three warm runs taken at eighty-three of those
+// pins (MEASURED 2026-10-31, ranger-base-3e68k: 87s, 81s and 89s in that
+// order, with a one-minute load average of 25.12, 27.90 and 26.08 before the
+// three, both suite slots held by sibling seats for the first two and one
+// for the third. This is the
 // merge-back that landed ranger-base-pyl22's five onto a main that had
 // meanwhile landed ranger-base-bm6j8's two, so it is the first reading of
 // the class at its real size.
@@ -1017,6 +1074,60 @@ func twdJoinsTwoDotDots(args []ast.Expr) bool {
 	return true
 }
 
+// twdClimbRoot reports whether an expression spells a relative path that
+// climbs OUT of the package it is written in: a `..` literal, a literal
+// beginning `../`, or a filepath.Join whose first element is one.
+//
+// It is deliberately not twdRelTreePath's negative case. That rule refuses a
+// climb because in internal/treepins a climb leaves the tree; here a climb
+// is how a test in internal/posse reaches the tree, and the point is that
+// doing so computes no root, so neither rule in this file can see the
+// reading. Only the FIRST element is read: whatever follows, the path starts
+// outside the package.
+//
+// What it does not read is a climb that arrives through an identifier —
+// `const dir = "../../etc/claude/managed-settings.d"; os.ReadDir(dir)`,
+// which is live in internal/posse today (policyhooks_qa_test.go) and filed
+// rather than fenced here (ranger-base-nt0pi). The fence is as wide as the
+// three spellings that carried a pin, and no wider, for the same reason
+// twdAsksGitForTheRoot states: nothing here can enumerate every way to name
+// a directory, and what bounds the class is there being one helper. So this
+// is as wide as the spelling that actually carried pins, and no wider.
+func twdClimbRoot(e ast.Expr) bool {
+	climbs := func(x ast.Expr) bool {
+		lit, ok := x.(*ast.BasicLit)
+		if !ok || lit.Kind != token.STRING {
+			return false
+		}
+		v, err := strconv.Unquote(lit.Value)
+		if err != nil {
+			return false
+		}
+		v = filepath.ToSlash(v)
+		return v == ".." || strings.HasPrefix(v, "../")
+	}
+	switch v := e.(type) {
+	case *ast.BasicLit:
+		return climbs(v)
+	case *ast.CallExpr:
+		sel, ok := v.Fun.(*ast.SelectorExpr)
+		if !ok || len(v.Args) == 0 {
+			return false
+		}
+		x, ok := sel.X.(*ast.Ident)
+		if !ok || x.Name != "filepath" {
+			return false
+		}
+		switch sel.Sel.Name {
+		case "Join":
+			return climbs(v.Args[0])
+		case "Clean", "ToSlash":
+			return twdClimbRoot(v.Args[0])
+		}
+	}
+	return false
+}
+
 // twdWalkers are the calls that turn a repo root into a reading of the whole
 // tree. A function that computes the root AND makes one of these is walking
 // from the root, and every file in the tree is then its subject.
@@ -1074,6 +1185,15 @@ type twdFunc struct {
 	// spelling a twin of it would be written in — internal/treepins'
 	// equivalent of `caller && ascent` next door.
 	getwdClimb bool
+	// climbEnum: the body ENUMERATES through a relative literal that climbs
+	// OUT of its package — `filepath.Glob("../../docs/notes.d/notes-*.md")`,
+	// `filepath.Glob(filepath.Join("..", "..", "examples", "skills", "*"))`.
+	// In internal/posse that is a reading of the tree which computes no
+	// root at all, so every rule in this file is blind to it: three
+	// tree-wide pins were spelled that way and had no door
+	// (ranger-base-nt0pi). It is the FOURTH spelling the fence below
+	// refuses, beside a twin helper, a hand-rolled climb and git.
+	climbEnum bool
 	// shellRoot: the body asks GIT for this repo's root —
 	// `exec.Command("git", "rev-parse", "--show-toplevel").Output()` — and
 	// keeps the answer. A third spelling of the root, invisible to every
@@ -1679,6 +1799,9 @@ func twdAnalyze(fn *ast.FuncDecl, where string, pkg *twdRelEnv, hops map[string]
 				if len(call.Args) > 0 {
 					for _, rel := range twdRelTreePaths(call.Args[0], env) {
 						f.relEnum = append(f.relEnum, fun.Sel.Name+"("+rel+")")
+					}
+					if twdClimbRoot(call.Args[0]) {
+						f.climbEnum = true
 					}
 				}
 			}
@@ -2290,6 +2413,30 @@ func twdFixtureEnumerates(t *testing.T, src string) bool {
 	return twdReach(all, func(f *twdFunc) bool { return len(f.relEnum) > 0 })["TestX"]
 }
 
+// twdFixtureClimbs runs the climbing-enumeration rule over one snippet of
+// source and reports whether its TestX trips it. Like twdFixtureEnumerates
+// it goes through twdAnalyze, so a fixture cannot pass against a second,
+// friendlier copy of the rule.
+func twdFixtureClimbs(t *testing.T, src string) bool {
+	t.Helper()
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "fixture_test.go", "package posse\n"+src+"\n", 0)
+	if err != nil {
+		t.Fatalf("parse fixture: %v\n%s", err, src)
+	}
+	env := twdPkgRelEnv([]*ast.File{file})
+	_, hops := rpParamRootedWalkers(fset, map[string]*ast.File{"fixture_test.go": file})
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || fn.Body == nil || fn.Name.Name != "TestX" {
+			continue
+		}
+		return twdAnalyze(fn, "fixture", env, hops).climbEnum
+	}
+	t.Fatalf("fixture declares no TestX:\n%s", src)
+	return false
+}
+
 // Arm 2: every tree-wide pin has a door, and every door names a real one.
 // Two-way, because both directions are the bug: a pin with no door is
 // ranger-base-ik44f arriving again, and a door naming a test that no longer
@@ -2617,6 +2764,50 @@ func TestQAOneRepoRootHelperInTheTestPackage(t *testing.T) {
 	}
 	for _, h := range hidden {
 		t.Errorf("%s walks a tree from a hand-rolled climb to the repo root — a tree-wide pin no identifier match can reach, which is how TestSeedConfigLiveKeysAreRead went undoored. Take the root from %s.", h, twdRootHelper)
+	}
+
+	// THE FOURTH SPELLING (ranger-base-nt0pi): no root at all. A relative
+	// literal that climbs out of the package reaches the tree directly,
+	// because `go test` runs internal/posse's binary with the package
+	// directory as cwd — so there is nothing for the twin, climb or git
+	// arms above to catch, and the enumeration is as wide as any walk from
+	// the root. Three pins were spelled that way and had no door:
+	// TestQAPrescribedGitDiffChecksStateTheirFormat and its partner globbed
+	// `../../docs/notes.d/notes-*.md`, and TestShelfPIDsLintCleanAsASet
+	// globbed `../../examples/skills/*`.
+	//
+	// THE CONTROL FIRST, because this arm's live answer is zero by
+	// construction once those three are fixed, and a prohibition nothing
+	// violates is a prohibition nobody can tell from a broken detector. The
+	// fixtures go through twdAnalyze, the same function that reads the
+	// tree.
+	for _, c := range []struct {
+		name string
+		src  string
+		want bool
+	}{
+		{"a glob through a climbing literal", `func TestX(t *testing.T) { filepath.Glob("../../docs/notes.d/notes-*.md") }`, true},
+		{"a ReadDir of the climb itself", `func TestX(t *testing.T) { os.ReadDir("../..") }`, true},
+		{"a Join whose first element climbs", `func TestX(t *testing.T) { filepath.Glob(filepath.Join("..", "..", "examples", "skills", "*")) }`, true},
+		{"a Clean around the same Join", `func TestX(t *testing.T) { os.ReadDir(filepath.Clean(filepath.Join("..", "..", "examples"))) }`, true},
+		{"reading one named file through a climb is not an enumeration", `func TestX(t *testing.T) { os.ReadFile("../../AGENTS.md") }`, false},
+		{"an enumeration that does not climb is the package's own directory", `func TestX(t *testing.T) { os.ReadDir(".") }`, false},
+		{"a climb that arrives through an identifier is unread", `func TestX(t *testing.T) { dir := "../../etc"; os.ReadDir(dir) }`, false},
+	} {
+		if got := twdFixtureClimbs(t, c.src); got != c.want {
+			t.Errorf("the climbing-enumeration rule says %v for this source, want %v (%s) — the fence below is then measuring something other than what this comment says, and its zero is not evidence:\n%s", got, c.want, c.name, c.src)
+		}
+	}
+
+	var climbed []string
+	for name, f := range all {
+		if f.climbEnum && !f.root {
+			climbed = append(climbed, f.where+" "+name)
+		}
+	}
+	sort.Strings(climbed)
+	for _, c := range climbed {
+		t.Errorf("%s enumerates a directory through a relative literal that climbs out of the package — a reading of the TREE that computes no root, so no rule in this file can see it, the pin gets no door and nothing says so. Take the root from %s and join onto it. (ranger-base-nt0pi: three pins were spelled this way, one of them a census of every `git diff` prescription this repo ships.)", c, twdRootHelper)
 	}
 
 	var shelled []string

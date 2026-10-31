@@ -564,9 +564,9 @@ fmt-check:
 # new tree-wide pin fails that check until it is given a door here.
 QA_CREW_PINS      := TestShippedTreeNamesRolesNotThisCrew|TestShippedStringsNameRolesNotThisCrew|TestTestCorpusHidesNoCrewNameBehindAnEscape
 QA_TOOL_PINS      := TestTreeIsGofmtClean
-QA_SEED_PINS      := TestSeedSurfaceNameCountIsZero|TestSeedConfigLiveKeysAreRead|TestQAExampleConfigConstitutionBlockNamesTheWholePromotedSet|TestSeedConfigDocumentedDurationDefaultsAreTheConstants|TestSeedConfigDocumentedDefaultRegisterIsNotStale|TestSeedConfigDocumentedNumberDefaultsAreTheConstants|TestSeedConfigDocumentedNumberRegisterIsNotStale
+QA_SEED_PINS      := TestShelfPIDsLintCleanAsASet|TestSeedSurfaceNameCountIsZero|TestSeedConfigLiveKeysAreRead|TestQAExampleConfigConstitutionBlockNamesTheWholePromotedSet|TestSeedConfigDocumentedDurationDefaultsAreTheConstants|TestSeedConfigDocumentedDefaultRegisterIsNotStale|TestSeedConfigDocumentedNumberDefaultsAreTheConstants|TestSeedConfigDocumentedNumberRegisterIsNotStale
 QA_HISTORY_PINS   := TestPublicationRootCommitOmitsExcludedPaths|TestPublicationRootCommitADRsCarryProvenance|TestPublicationHistoryNeverCarriesTheSeedScript|TestShippedExampleTableCoversEveryVersionInGitHistory
-QA_DOC_PINS       := TestQANoCodeStringCallsTheDarwinCredentialsFileAStaleLeftover|TestQACageCredDocDoesNotCallTheOnDiskCredentialStale|TestQAADR0035PaneModeSurfaceClaimIsBuilt|TestQAShippedLaunchLinesParseAsThePersonaLaunch|TestQADetectionDoorCitesAFilingThatExists|TestQAEveryNotesFragmentCitationResolves|TestQAPublicDocBaseIsTheSpellingTheSiteShips|TestQAClaudeAutoModeCarveOutIsADR0070D2Verbatim
+QA_DOC_PINS       := TestQANoCodeStringCallsTheDarwinCredentialsFileAStaleLeftover|TestQACageCredDocDoesNotCallTheOnDiskCredentialStale|TestQAADR0035PaneModeSurfaceClaimIsBuilt|TestQAShippedLaunchLinesParseAsThePersonaLaunch|TestQADetectionDoorCitesAFilingThatExists|TestQAEveryNotesFragmentCitationResolves|TestQAPublicDocBaseIsTheSpellingTheSiteShips|TestQAClaudeAutoModeCarveOutIsADR0070D2Verbatim|TestQAPrescribedGitDiffChecksStateTheirFormat|TestQAPrescribedGitDiffChecksRunUnderADiffDriver
 QA_IDENTITY_PINS  := TestQAIdentityLiteralsNeverAppearInATrackedPath|TestIdentityLiteralsNeverAppearInTheHarnessRepoUndispositioned
 QA_OPS_PINS       := TestQAEveryOpsHitInTrackedMarkdownIsRuled|TestQAOpsShapeTableCanStillSayNo|TestInstancePathFormNeverAppearsInTrackedContentUndispositioned|TestQAInstancePathCensusCanStillSayNo
 QA_EXECWRITE_PINS := TestQATreeGoFilesWriteExecutablesUnderTheForkLock
@@ -623,8 +623,12 @@ crew-check:
 # found. ~0.8s of tests between both doors.
 #
 # The publication surface, walked: the retired harness name anywhere in the
-# tree, and every seed key that ships armed with no reader. Type it when you
-# touch examples/ or anything the published tree ships.
+# tree, and every seed key that ships armed with no reader. Plus the SHELF
+# itself (ranger-base-nt0pi): every examples/agents PID lints clean as a set
+# in a home seeded from examples/skills, which is this door's subject on any
+# reading and was behind `//go:build posse_arm2` — where a door, which takes
+# no tags, could not have reached it. Type it when you touch examples/ or
+# anything the published tree ships.
 seed-check:
 	$(GOBIN) test ./internal/posse -timeout 15m -count=1 -run '^($(QA_SEED_PINS))$$'
 
@@ -650,6 +654,14 @@ history-check:
 # nothing was red (ranger-base-nnnf1). Type it when you touch a doc comment in
 # internal/posse, a row in docs/adr/, or a sentence — in code or in
 # markdown — that hands a reader a path.
+#
+# And the two `git diff` prescription pins (ranger-base-nt0pi): every
+# backticked `git diff` in AGENTS.md, NOTES.md, a docs/notes.d section or a
+# seed PID states its format, and the ones a human is told to run DO run
+# under a configured external diff driver. Their population is exactly this
+# door's — prose over shipped code and docs — and they reached it through a
+# `../..` literal, which the class derivation cannot see, so they had no
+# door. Type it when you write a `git diff` into any of those pages.
 doc-check:
 	$(GOBIN) test ./internal/posse -timeout 15m -count=1 -run '^($(QA_DOC_PINS))$$'
 

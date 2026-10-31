@@ -551,7 +551,7 @@ func TestQAPrescribedGitDiffChecksStateTheirFormat(t *testing.T) {
 	// The exemptions must still describe something in the tree. A stale one
 	// is a hole nobody can see: the sentence it named is gone, so the span
 	// it covered would be graded by a rule nobody re-read.
-	notes := extDiffReadDoc(t, "../../docs/notes.d/notes-testing.md")
+	notes := extDiffReadDoc(t, filepath.Join(qibRepoRoot(t), "docs", "notes.d", "notes-testing.md"))
 	for sentence, why := range extDiffDocExempt {
 		if !strings.Contains(notes, sentence) {
 			t.Errorf("docs/notes.d/notes-testing.md no longer carries the exempted sentence %q (%s) — delete the exemption or re-anchor it; until then that span is ungraded", sentence, why)
@@ -672,15 +672,25 @@ type extDiffSurface struct {
 // PID the seed ships.
 func extDiffSurfaces(t *testing.T) []extDiffSurface {
 	t.Helper()
+	// The root comes from qibRepoRoot, not from a `../..` literal, and that
+	// is a class membership rather than a style (ranger-base-nt0pi). The
+	// tree-wide class in internal/treepins/treewidedoor_qa_test.go is
+	// derived from THIS helper; a climb spelled as a relative literal reads
+	// the same files and is invisible to it, so the two pins over these
+	// surfaces had no Makefile door and no route but the ~950s package run.
+	// Their subject is the tree: any bead that writes a `git diff`
+	// prescription into AGENTS.md, NOTES.md or a docs/notes.d section reds
+	// them. The glob below is why one more file in notes.d is enough.
+	root := qibRepoRoot(t)
 	out := []extDiffSurface{
 		{name: "the prepare-commit-msg hook render", text: CommitGuardHook(VisibilityPublic, OpsPatternSet{})},
 		{name: "the pre-push hook render", text: PrePushHook},
-		{name: "AGENTS.md", text: extDiffReadDoc(t, "../../AGENTS.md"), markdown: true},
-		{name: "NOTES.md", text: extDiffReadDoc(t, "../../NOTES.md"), markdown: true},
+		{name: "AGENTS.md", text: extDiffReadDoc(t, filepath.Join(root, "AGENTS.md")), markdown: true},
+		{name: "NOTES.md", text: extDiffReadDoc(t, filepath.Join(root, "NOTES.md")), markdown: true},
 	}
 	// Census the public NOTES.md sections. Private instance records are
 	// outside this repository and must not be read by its tests.
-	paths, err := filepath.Glob("../../docs/notes.d/notes-*.md")
+	paths, err := filepath.Glob(filepath.Join(root, "docs", "notes.d", "notes-*.md"))
 	if err != nil || len(paths) == 0 {
 		t.Fatalf("notes sections: %v, %v", paths, err)
 	}

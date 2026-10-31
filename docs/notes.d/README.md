@@ -15,6 +15,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-q5gc2](ranger-base-q5gc2.md) — The session record names its multiplexer, and one method ADR 0076 §2 does not list (ranger-base-q5gc2) — 2026-10-31
 - [ranger-base-pyl22](ranger-base-pyl22.md) — The sixth spelling of a walk root: one hop at the call site, not a third hand register (ranger-base-pyl22) — 2026-10-31
 - [ranger-base-phq39](ranger-base-phq39.md) — Selecting Rex: one instance key, two gates, and what the live run measured (ranger-base-phq39) — 2026-10-31
+- [ranger-base-nt0pi](ranger-base-nt0pi.md) — The fourth spelling of a tree reading: no root at all (ranger-base-nt0pi) — 2026-10-31
 - [ranger-base-nc91t](ranger-base-nc91t.md) — Relaunch's two readings are the slot's listing, and the second one is why holdsRecorded alone was not the fix (ranger-base-nc91t) — 2026-10-31
 - [ranger-base-m94g2](ranger-base-m94g2.md) — A one-package census IS in the tree-wide class, and what it costs to admit one (ranger-base-m94g2) — 2026-10-31
 - [ranger-base-lf6it](ranger-base-lf6it.md) — bob self-updated under the probe, 60 seconds in — and the probe still measured 2.0.5 (ranger-base-lf6it) — 2026-10-31
