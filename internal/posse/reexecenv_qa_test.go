@@ -25,14 +25,20 @@ package posse
 // So this pin is a scanner over the package's own test sources rather than a
 // list: a sixth site added later is covered by it, and by nothing else.
 //
-// AND IT IS THE PACKAGE'S OWN SOURCES, which is a decision nobody has made
-// yet: ranger-base-m94g2 holds whether a one-package census belongs in the
-// tree-wide class the Makefile doors (this pin is one of fourteen in
-// internal/posse, MEASURED 2026-10-31). Two things make it a question rather
-// than a row to add — a door variable may only name a test
-// treewidedoor_qa_test.go DERIVES, and a door's `-run` carries no `-tags`,
-// which this file's `posse_arm2` build tag puts it outside of. Evidence and
-// the census: docs/notes.d/ranger-base-kkneb.md.
+// AND IT IS THE PACKAGE'S OWN SOURCES, which ranger-base-m94g2 decided is in
+// the tree-wide class the Makefile doors: a census discovers its file set, so
+// a bead that adds a re-exec site here reds this pin without having read it,
+// and the ~950s arm run is its only route. This pin is one of fourteen in
+// internal/posse, MEASURED 2026-10-31.
+//
+// It is not doored yet, and the two reasons are mechanism rather than doubt. A
+// door variable may only name a test treewidedoor_qa_test.go DERIVES, and the
+// posse half of that derivation keys on a test COMPUTING the repo root, which
+// a census does not; and a door's `-run` carries no `-tags`, which this file's
+// `posse_arm2` build line puts it outside of. Both changes are
+// ranger-base-na4rm. The decision and the measured cost:
+// docs/notes.d/ranger-base-m94g2.md. The census and the population:
+// docs/notes.d/ranger-base-kkneb.md.
 
 import (
 	"os"

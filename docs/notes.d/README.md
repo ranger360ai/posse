@@ -15,6 +15,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-pyl22](ranger-base-pyl22.md) — The sixth spelling of a walk root: one hop at the call site, not a third hand register (ranger-base-pyl22) — 2026-10-31
 - [ranger-base-phq39](ranger-base-phq39.md) — Selecting Rex: one instance key, two gates, and what the live run measured (ranger-base-phq39) — 2026-10-31
 - [ranger-base-nc91t](ranger-base-nc91t.md) — Relaunch's two readings are the slot's listing, and the second one is why holdsRecorded alone was not the fix (ranger-base-nc91t) — 2026-10-31
+- [ranger-base-m94g2](ranger-base-m94g2.md) — A one-package census IS in the tree-wide class, and what it costs to admit one (ranger-base-m94g2) — 2026-10-31
 - [ranger-base-lf6it](ranger-base-lf6it.md) — bob self-updated under the probe, 60 seconds in — and the probe still measured 2.0.5 (ranger-base-lf6it) — 2026-10-31
 - [ranger-base-l12j9](ranger-base-l12j9.md) — grok's project-config channel: declared on a measurement (ranger-base-l12j9) — 2026-10-31
 - [ranger-base-kwbh1](ranger-base-kwbh1.md) — grok's cwd skills root has a precondition on the DIRECTORY: declared, probed, not seeded (ranger-base-kwbh1) — 2026-10-31

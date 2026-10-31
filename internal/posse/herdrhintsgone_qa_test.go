@@ -19,16 +19,23 @@ package posse
 // subject and needs a Makefile door (treewidedoor_qa_test.go), and the two
 // packages that held the mechanism are the two that can grow it back.
 //
-// THAT SCOPING IS ITSELF A DECISION THAT IS STILL OPEN, and it is
-// ranger-base-m94g2's — whether a one-package census (this pin among fourteen
-// in internal/posse, MEASURED 2026-10-31) is in the tree-wide class after
-// all. What keeps it a live question rather than a settled one is
-// reachability, which is the half the paragraph above does not answer: a door
-// is what it declines, and an unrelated landing that adds a file to this
-// package can red this pin with the ~950s package run as its only route.
-// ranger-base-8wxbn recorded the decision and scoped it out; ranger-base-49iga
-// found it had no live carrier once that bead closed. Evidence and the
-// census: docs/notes.d/ranger-base-kkneb.md.
+// THAT SCOPING WAS THE WRONG ANSWER, and ranger-base-m94g2 decided so: a
+// one-package census — this pin among fourteen in internal/posse, MEASURED
+// 2026-10-31 — IS in the tree-wide class, and the door it declines above is
+// one it should have. The paragraph above answers "is this pin's subject the
+// whole tree" (no); the class's operative key, which the register adopted in
+// as many words for its internal/treepins half, is whether the reading
+// ENUMERATES — whether the file set is spelled in the test or discovered. This
+// one is discovered, so a bead that adds a file to this package, having never
+// read this pin, reds it, and the ~950s arm run is its only route.
+//
+// It is not doored yet, and the reason is mechanism, not doubt: the posse half
+// of the derivation keys on a test COMPUTING the repo root and a census
+// computes none, and seven of the fourteen carry an arm tag that a door's
+// `-run` does not. Both changes are ranger-base-na4rm. The decision, both
+// sides of it and the measured cost of the three doors:
+// docs/notes.d/ranger-base-m94g2.md. The census and the population:
+// docs/notes.d/ranger-base-kkneb.md.
 //
 // MUTATION, each restored: name any banned symbol in a non-test file here
 // and the census arm reds naming path, line and symbol; delete the
