@@ -13,12 +13,21 @@ package posse
 // holding the lock but posse.
 //
 // MUTATION-CHECKED, each against the one arm it should red:
-//   - runOnce exec'ing `b.Bin` again instead of `b.bin()` reds the first test
-//     with the live refusal verbatim ("bd write lock was held for 2s — a bd
-//     write is still running against it; nothing was written (ADR 0073)"),
-//     which is ranger-base-c33j6's line with the fixture's wait in it.
+//   - runOnce exec'ing `b.Bin` again instead of the name `bin()` resolved
+//     reds the first test with the live refusal verbatim ("bd write lock was
+//     held for 2s — a bd write is still running against it; nothing was
+//     written (ADR 0073)"), which is ranger-base-c33j6's line with the
+//     fixture's wait in it. Since ranger-base-cwsi8 that mutant does not
+//     compile on its own — `bin` goes unused — which is a stronger kill than
+//     a red test and the reason the resolution happens in a named variable
+//     rather than inline in the exec call. Re-check it by adding `_ = bin`.
 //   - bdChildEnv returning env unchanged (no PATH) reds the first test's last
 //     arm alone, on the gates dir handed to the child.
+//   - bin() handing the bare name back — the fallback ranger-base-cwsi8
+//     removed — reds all three arms of TestBdBinUnresolvableOutsideTheGates-
+//     IsAnError and nothing else, reproducing to the wall the measurement QA
+//     took on the bead: the shim ran with posse's own argv, after 2.013s,
+//     refused on posse's own store lock.
 //   - gatesPathSplit judging the spelling only, not the resolution, reds the
 //     third test's three arms and nothing else.
 
@@ -106,19 +115,96 @@ func TestBdRunsOutsideTheLaunchersGatesDir(t *testing.T) {
 // RHQ_BD_BIN keeps precedence: a Bin that names a path is an answer, not a
 // search, and D3's resolution must not take it away — every fixture on the
 // box points that variable at a binary and expects it run.
+//
+// Parallel since ranger-base-cwsi8: the arm that licensed the bare-name
+// fallback lived here and needed `t.Setenv("PATH", "")`, which this test's
+// own claim never did. That arm is now
+// TestBdBinUnresolvableOutsideTheGatesIsAnError, which sets PATH and stays
+// serial for it; what is left here touches no process-wide state.
 func TestBdBinNamedExplicitlyIsNotReResolved(t *testing.T) {
+	t.Parallel()
 	named := filepath.Join(t.TempDir(), "state", "gates", "p", "bin", "bd")
 	if err := os.MkdirAll(filepath.Dir(named), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if got := (Bd{Bin: named}).bin(); got != named {
+	got, err := (Bd{Bin: named}).bin()
+	if err != nil {
+		t.Fatalf("bin() = %v, want the named path back", err)
+	}
+	if got != named {
 		t.Errorf("bin() = %q, want the named path %q — even inside a gates dir", got, named)
 	}
-	// A bare name nothing outside the gates answers goes to exec as it is,
-	// so exec reports it the way it always has.
-	t.Setenv("PATH", "")
-	if got := (Bd{Bin: "bd"}).bin(); got != "bd" {
-		t.Errorf("bin() = %q, want the bare name back when nothing answers it", got)
+}
+
+// ranger-base-cwsi8: a bare name nothing outside the gates answers is an
+// ERROR, and never the bare name back. This arm used to assert the opposite —
+// `bin()` returning "bd" under PATH="" — on the strength of a doc comment
+// saying the bare name "goes to exec unresolved so that exec reports it the
+// way it always has". It does not: exec resolves a bare name with
+// exec.LookPath over THIS process's $PATH, the gated one, so it lands on the
+// launcher's `bd` shim. The shim takes ADR 0073's per-store write lock,
+// runOnce is already holding it, and posse refuses its own write — which is
+// ranger-base-c33j6's measured deadlock, reinstated by the one branch of D3's
+// fix that nothing reached.
+//
+// Three assertions, because the unit answer and its consequence are
+// different claims: bin() errors; runOnce refuses without ever running the
+// shim; and what it refuses with is the missing binary, not posse's own held
+// lock.
+//
+// MUTATION-CHECKED: restoring `return b.Bin, nil` as the fallback reds all
+// three — bin() = "bd", the shim ran with posse's own argv after 2.013s, and
+// the refusal is ranger-base-c33j6's lock line verbatim.
+func TestBdBinUnresolvableOutsideTheGatesIsAnError(t *testing.T) {
+	// A gates bin dir on PATH holding a `bd`, and NOT ONE non-gates element
+	// that answers: the production spelling then has nothing to resolve to.
+	gatesBin := filepath.Join(t.TempDir(), "state", "gates", "launcher", "bin")
+	if err := os.MkdirAll(gatesBin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(exe, filepath.Join(gatesBin, "bd")); err != nil {
+		t.Fatal(err)
+	}
+	empty := filepath.Join(t.TempDir(), "bin") // an ordinary dir, holding no bd
+	if err := os.MkdirAll(empty, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sep := string(os.PathListSeparator)
+	t.Setenv("PATH", gatesBin+sep+empty)
+
+	if got, err := (Bd{Bin: "bd"}).bin(); err == nil {
+		t.Errorf("bin() = %q, nil — want an error: handing a bare name to exec resolves it on the GATED PATH, onto %s (ADR 0077 D3)", got, gatesBin)
+	}
+
+	// And the consequence, end to end: a write verb, so runOnce would take
+	// ADR 0073's lock the shim then collides with. It must refuse before
+	// that, so the shim never runs and the lock is never contended.
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".beads"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mark := filepath.Join(t.TempDir(), "shim-ran")
+	t.Setenv("RHQ_FAKE_GATED_BD_STORE", bdWriteStore(dir))
+	t.Setenv("RHQ_FAKE_GATED_BD_MARK", mark)
+
+	started := time.Now()
+	out, err := (Bd{Bin: "bd"}).runOnce(dir, "update", "x-1", "--status", "in_progress")
+	waited := time.Since(started).Round(time.Millisecond)
+	if err == nil {
+		t.Errorf("runOnce = %q, nil — want a refusal: there is no bd outside the gates to run", string(out))
+	}
+	if got, _ := os.ReadFile(mark); got != nil {
+		t.Errorf("the gates-dir bd shim ran: %q (after %s) — posse resolved its own bare name onto the launcher's shim and deadlocked on its own store lock (ranger-base-c33j6, ranger-base-cwsi8)", got, waited)
+	}
+	// The error says which binary it could not find, not that a lock was
+	// held: posse refusing its own write is the symptom this removes, and a
+	// reader who sees that message again is looking at a regression.
+	if err != nil && strings.Contains(err.Error(), "write lock was held") {
+		t.Errorf("runOnce refused on the store lock: %v — that is posse waiting on itself, not a missing binary", err)
 	}
 }
 

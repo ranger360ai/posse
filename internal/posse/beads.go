@@ -209,21 +209,28 @@ func (b Bd) timeout() time.Duration {
 
 func (b Bd) runOnce(dir string, args ...string) ([]byte, error) {
 	argv := append(append([]string{}, bdGlobalFlags...), args...)
+	// Before the lock, not after: a binary we cannot resolve is an answer
+	// already, and taking a store lock to find that out would hold the
+	// store shut for nothing (ranger-base-cwsi8).
+	bin, err := b.bin()
+	if err != nil {
+		return nil, err
+	}
 	// ADR 0073 D1: every write takes this store's lock before bd runs at
 	// all, and the self-heal's `sync --import-only` (Bd.run, above) is a
 	// write like any other — classified the same way, through this same
 	// call. A timeout refuses the write outright; bd is never started.
 	if bdVerbWrites(argv) {
-		lock, err := bdWriteLock(bdWriteStore(dir), argv, BdWriteLockWait)
-		if err != nil {
-			return nil, err
+		lock, lerr := bdWriteLock(bdWriteStore(dir), argv, BdWriteLockWait)
+		if lerr != nil {
+			return nil, lerr
 		}
 		defer lock.Release()
 	}
 	limit := b.timeout()
 	ctx, cancel := context.WithTimeout(context.Background(), limit)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, b.bin(), argv...)
+	cmd := exec.CommandContext(ctx, bin, argv...)
 	cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
 	cmd.WaitDelay = bdKillGrace
 	if dir != "" {
@@ -233,7 +240,7 @@ func (b Bd) runOnce(dir string, args ...string) ([]byte, error) {
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	started := time.Now()
-	err := cmd.Run()
+	err = cmd.Run()
 	if ctx.Err() != nil {
 		hang := &BdHangError{Argv: append([]string{b.Bin}, argv...), Dir: dir, Limit: limit, Waited: time.Since(started)}
 		fmt.Fprintf(b.hangw(), "◷ %s\n", hang.Error())
@@ -277,16 +284,42 @@ func (b Bd) runOnce(dir string, args ...string) ([]byte, error) {
 //
 // A Bin that NAMES a path — `RHQ_BD_BIN`, a fixture's symlink — keeps
 // precedence and is handed to exec exactly as given: an explicit binary is an
-// answer, not a search. So is a bare name nothing outside the gates answers,
-// which goes to exec unresolved so that exec reports it the way it always has.
-func (b Bd) bin() string {
+// answer, not a search.
+//
+// A bare name nothing outside the gates answers is an ERROR, and that is the
+// whole of the branch (ranger-base-cwsi8). It used to hand the bare name back
+// "so that exec reports it the way it always has", which is the one thing
+// exec does not do with it: exec.CommandContext resolves a bare name with
+// Go's own exec.LookPath, which reads THIS process's $PATH — the gated one,
+// the premise stated twice above — so the name lands on the launcher's `bd`
+// shim, the shim takes ADR 0073's per-store write lock that runOnce is
+// holding, and posse refuses its own write after BdWriteLockWait. The
+// fallback meant to be inert was ranger-base-c33j6's deadlock, reinstated on
+// the production spelling: NewBd's Bin is the literal "bd", so every posse bd
+// call outside a fixture arrives here as a bare name.
+//
+// MEASURED 2026-10-31 (the verifying seat of ranger-base-nqy1h, its own
+// worktree at main 1f8b81e2, darwin 25.6.0),
+// TestBdRunsOutsideTheLaunchersGatesDir's
+// fixture with the real bd behind the shim taken away and one ordinary
+// non-gates PATH entry holding nothing called bd: bin() = "bd", the shim ran
+// with posse's own argv, and runOnce came back after 2.011s refused on its
+// own lock (2s because the fixture shim waits 2s; a live seat pays
+// BdWriteLockWait's thirty). That is pinned both ways now —
+// TestBdBinUnresolvableOutsideTheGatesIsAnError.
+//
+// WHY IT HAS NOT FIRED on this box: a real bd sits at ~/.local/bin/bd, on
+// PATH and outside every gates dir, so resolveOutside answers and the branch
+// is unreachable. There is no bd in /opt/homebrew/bin, /usr/local/bin,
+// /usr/bin or /bin — that one PATH entry was the entire margin.
+func (b Bd) bin() (string, error) {
 	if strings.ContainsRune(b.Bin, filepath.Separator) {
-		return b.Bin
+		return b.Bin, nil
 	}
 	if real := resolveOutside(b.Bin, ""); real != "" {
-		return real
+		return real, nil
 	}
-	return b.Bin
+	return "", Die("%s: executable file not found outside posse's gates dirs — posse's own children are resolved against the gates-free PATH and never handed to exec as a bare name (ADR 0077 D3, ranger-base-cwsi8)", b.Bin)
 }
 
 // bdChildEnv is the environment one bd child runs with: the store binding
