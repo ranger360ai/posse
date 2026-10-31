@@ -36,6 +36,10 @@
 # script never has to report that it did not run, because not running is
 # exactly what an ageing file says.
 #
+# AND NOT EVERY RUN MAKES THAT WRITE (ranger-base-4dhcw). It used to: the call
+# was unconditional, so whoever ran last owned the box's recorded verdict. The
+# gate is beside `record=` below and the reasoning with it.
+#
 # AND A RUN THAT DIES BEFORE ITS VERDICT STILL LEAVES A LINE. The first thing
 # a run prints is a start line carrying the same stamp it will write, and the
 # plist points StandardOutPath/StandardErrorPath at
@@ -132,6 +136,51 @@ if [ -z "$home" ]; then
   [ -d "$home" ] || { [ -d "$HOME/.config/rhq" ] && home="$HOME/.config/rhq"; }
 fi
 state_file="$home/state/verify-box.yaml"
+
+# WHO MAY RECORD A VERDICT, and why it is not everyone who can type the
+# command (ranger-base-4dhcw).
+#
+# write_state replaces that file WHOLE -- its own header says so -- and G10
+# reads it, so until this gate existed the last run to finish owned the box's
+# recorded verdict whoever typed it and from wherever. That is right for the
+# schedule and right for the operator. It is wrong for a DISPATCHED CREW SEAT,
+# for two reasons that have nothing to do with intent:
+#
+#   THE CAGE IS IN THE WAY. 6 of the 11 live PIDs declare `cage: seatbelt`,
+#   and a caged roster check can come back red about the CAGE rather than
+#   about the box. That is measured and not hypothetical: on ranger-base-zf8pf
+#   `brew info --cask` exits non-zero under a seatbelt profile, and
+#   verify-grok-pin.sh read that as a finding about the box. The write is
+#   reachable from exactly those seats -- App.SeatbeltWritable adds a.StateDir
+#   to every caged seat's writable list (internal/posse/seatbelt.go, "posse's
+#   own state, derived from the home") and this file sits directly under it.
+#
+#   THE CHECKOUT IS NOT THE BOX'S. A seat runs in its own worktree on its own
+#   branch, and verify-policy-pins, verify-gate-freshness and
+#   verify-hook-freshness each compare the live box against HEAD OF THE
+#   CHECKOUT THEY ARE IN. A seat's red can be an unlanded branch, and a seat's
+#   green can be a branch that has not landed the thing the box is missing.
+#
+# So a dispatched seat RUNS every check and PRINTS every verdict -- seeing the
+# answer is the whole point of typing it -- and records nothing. This file is
+# the one surface a run can reach that outlives the terminal, and a run that
+# cannot speak for the box must not be the thing the box is judged by.
+#
+# RHQ_PERSONA IS THE DISCRIMINATOR AND IT FAILS OPEN TOWARD THE SCHEDULE.
+# posse sets it on every dispatched seat and nothing else sets it
+# (`const EnvPersona = "RHQ_PERSONA"`, internal/posse/herdrback.go; the git
+# shim scripts/audit-silent-reverts.sh sheds already reads it the same way),
+# while the schedule's job carries exactly PATH and RHQ_HOME -- MEASURED
+# 2026-10-31 against com.posse.verify-box.plist as installed. So the launchd
+# run and the operator's own `make verify-box` are both unchanged, and a box
+# where this gate somehow misfired ages past verify_box_max_age and says so on
+# G10 within the day. That is the direction a judgement about who may write
+# has to fail in: a wrong answer here must make the surface louder, never
+# quieter.
+record=1
+if [ -n "${RHQ_PERSONA:-}" ]; then
+  record=0
+fi
 
 quiet=0
 selftest=0
@@ -311,6 +360,22 @@ fi
 # the same thing G10 will report either way.
 write_state() { # write_state <stamp> <rc> <checks-block>
   local stamp=$1 rc=$2 checks=$3 tmp
+  # A RUN THAT CANNOT SPEAK FOR THE BOX DOES NOT RECORD WHAT THE BOX IS
+  # (ranger-base-4dhcw; the reasoning is beside `record=` above). The gate is
+  # here and not at the call site so that there stays exactly one place that
+  # knows whether a verdict was recorded, and so the self-test's re-exec takes
+  # the same path the box run does.
+  #
+  # It says so on STDOUT, beside the verdict it has just printed, and not on
+  # stderr: this is not a failure of anything. The run worked, the answer is
+  # on the screen, and the line is there because "where did my verdict go" is
+  # the next question -- a seat that silently wrote nothing would be the same
+  # kind of unobservable as the seat that silently wrote everything.
+  if [ "$record" -ne 1 ]; then
+    echo "$self: verdict NOT recorded -- a dispatched seat (RHQ_PERSONA=${RHQ_PERSONA:-}) does not write $state_file"
+    echo "$self: that file is the box's own verdict, written by the schedule and by the operator; this run's answer is above"
+    return 0
+  fi
   tmp="$state_file.new"
   mkdir -p "$(dirname "$state_file")" 2>/dev/null || {
     echo "$self: cannot create $(dirname "$state_file") -- no verdict recorded" >&2; return 0; }
@@ -513,6 +578,16 @@ self_test() {
   # state file, the verdict G10 reads -- so an arm inheriting the operator's
   # home would publish a fixture's verdict as this box's own, and the surface
   # would report a planted red or a two-check roster as the live-box answer.
+  #
+  # AND WITH RHQ_PERSONA SHED, for the mirror-image reason (ranger-base-4dhcw).
+  # The seat most likely to type `--self-test` is a dispatched one, and a
+  # dispatched run records nothing -- so without this every state arm below
+  # would read an absent file and fail from the seat, and pass from the
+  # operator's terminal. The one arm that WANTS the gate sets the variable for
+  # its own child, which is the honest way round: the arms assert the gate by
+  # turning it on, not by depending on who ran them.
+  unset RHQ_PERSONA
+
   local state state_text
   mkdir -p "$tmp/home/state"
   state="$tmp/home/state/verify-box.yaml"
@@ -683,6 +758,48 @@ self_test() {
            fails=$((fails + 1)) ;;
       esac
     fi
+  fi
+
+  # 8 and its control: A DISPATCHED SEAT RECORDS NOTHING (ranger-base-4dhcw).
+  #
+  # The write is reachable from a caged seat -- App.SeatbeltWritable grants
+  # a.StateDir to every one of them -- so the gate is the only thing standing
+  # between a cage artifact and the operator's recorded verdict. Three
+  # properties, because a gate that gets any one of them wrong is worse than
+  # no gate: the file is NOT written, the run still EXITS with its real
+  # verdict, and the run SAYS so rather than going quiet about it.
+  #
+  # The control is the same roster with the variable shed, and it is the arm
+  # that keeps this from passing on a script that stopped writing at all --
+  # which would read as a clean suite and an unarmed G10.
+  rm -f "$state"
+  out=$( RHQ_PERSONA=fixture-seat ROSTER_OVERRIDE="red"$'\t'"scripts/arm1.sh"$'\n' \
+         RHQ_HOME="$tmp/home" "$tmp/scripts/$self" --self-test-run 2>&1 ); got=$?
+  if [ -f "$state" ]; then
+    read_state
+    echo "  FAIL a dispatched seat recorded a verdict over the box's -- $state was written"; indent "$state_text"
+    fails=$((fails + 1))
+  else
+    echo "  ok   a dispatched seat records no verdict"
+  fi
+  if [ "$got" -ne 1 ]; then
+    echo "  FAIL a dispatched seat's run exited $got, want 1 -- the gate must silence the WRITE, not the verdict"; indent "$out"
+    fails=$((fails + 1))
+  else
+    echo "  ok   a dispatched seat still exits with the run's real verdict"
+  fi
+  case "$out" in
+    *"verdict NOT recorded"*) echo "  ok   a dispatched seat says its verdict went nowhere" ;;
+    *) echo "  FAIL a dispatched seat wrote nothing and said nothing -- the next question is where the verdict went"; indent "$out"
+       fails=$((fails + 1)) ;;
+  esac
+  out=$( ROSTER_OVERRIDE="red"$'\t'"scripts/arm1.sh"$'\n' RHQ_HOME="$tmp/home" \
+         "$tmp/scripts/$self" --self-test-run 2>&1 )
+  if [ -f "$state" ]; then
+    echo "  ok   control: with RHQ_PERSONA shed, the same roster is recorded"
+  else
+    echo "  FAIL control: with RHQ_PERSONA shed, the same roster recorded nothing either -- the arm above measures a script that never writes"; indent "$out"
+    fails=$((fails + 1))
   fi
 
   # A CHECKLESS ROSTER IS NOTHING MEASURED, NOT A PASS (ranger-base-lvzm7

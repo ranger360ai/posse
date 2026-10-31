@@ -231,6 +231,16 @@ func (a *App) VerifyBoxFreshness(now time.Time, errw io.Writer) VerifyBoxReading
 	}
 	// A file exists, so this instance is running the control however it was
 	// arranged — by a schedule, or by a person typing `make verify-box`.
+	//
+	// A PERSON, and since ranger-base-4dhcw that is the whole of the other
+	// writer. A dispatched crew seat runs every check and records none of
+	// them: scripts/verify-box.sh gates write_state on RHQ_PERSONA, because
+	// a caged seat's red can be about the cage (ranger-base-zf8pf) and a
+	// seat's checkout is a branch, while a.StateDir is on every caged seat's
+	// writable list. Nothing here has to know that — the reader's contract
+	// is unchanged and it is still one file with one meaning — but the
+	// sentence above was the licence the unconditional write was read
+	// against, so it says which runs it covers.
 	r.Armed = true
 
 	raw := strings.TrimSpace(YamlGet(r.Path, "at"))

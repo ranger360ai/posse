@@ -272,17 +272,27 @@ func TestQABoxCheckSelfTestStillFires(t *testing.T) {
 	if n := strings.Count(s, "  ok   "); n < 10 {
 		t.Fatalf("%s --self-test reported only %d passing arm(s); the floor is ten:\n%s", bcScript, n, s)
 	}
-	// Three arms by name. The first two are the verdicts an aggregate gets
+	// Four arms by name. The first two are the verdicts an aggregate gets
 	// wrong: it stops at the first red, and it calls "nothing measured" a
 	// pass. The third is load-bearing for a ROSTER ROW rather than for the
 	// runner's arithmetic (ranger-base-gf0ln): verify-skills-drift's program
 	// is an installed binary, so it is resolved on PATH, and deleting that
 	// arm would leave the count above well clear of its floor while the one
 	// row of that shape went unmeasured.
+	//
+	// The fourth is load-bearing for the STATE FILE (ranger-base-4dhcw).
+	// write_state replaces the operator's verdict whole and SeatbeltWritable
+	// grants a.StateDir to every caged seat, so the gate that keeps a
+	// dispatched seat from recording is the only thing between a cage
+	// artifact and the verdict G10 reads. Its arm is the only place that
+	// behaviour is executed — and a deleted gate leaves the suite green,
+	// because every OTHER arm here runs with RHQ_PERSONA shed and so takes
+	// the recording path either way.
 	for _, want := range []string{
 		"a finding in the middle does not stop the run",
 		"all-2 is NOTHING MEASURED, not a pass",
 		"a bare command is resolved on PATH, not under the repo root",
+		"a dispatched seat records no verdict",
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("%s --self-test no longer runs the arm %q:\n%s", bcScript, want, s)

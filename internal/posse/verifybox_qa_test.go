@@ -729,7 +729,17 @@ func TestTheScriptWritesWhatThisReaderParses(t *testing.T) {
 	}, "\n") + "\n"
 
 	cmd := exec.Command(copied, "--self-test-run")
+	// RHQ_PERSONA IS SHED, and it has to be named here rather than inherited
+	// (ranger-base-4dhcw). Since that bead the script records a verdict only
+	// when it is not a dispatched seat, and this suite is most often run from
+	// one — so an inherited RHQ_PERSONA would leave no file to read and this
+	// pin would fail from a seat and pass from the operator's terminal, which
+	// is the worst of the three outcomes. The gate itself is pinned by the
+	// script's own --self-test arm (treepins/boxcheck_qa_test.go names it),
+	// with a control; what this test is for is the FORMAT join, so it asks
+	// for the recording path on purpose.
 	cmd.Env = append(os.Environ(), "ROSTER_OVERRIDE="+roster, "RHQ_HOME="+home,
+		EnvPersona+"=",
 		"PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	out, runErr := cmd.CombinedOutput()
 	// A roster with a finding in it exits 1 by design; what is under test is
@@ -778,5 +788,49 @@ func TestTheScriptWritesWhatThisReaderParses(t *testing.T) {
 	// as legible as one with both.
 	if !strings.Contains(string(out), "run started "+r.At.Format(time.RFC3339)) {
 		t.Errorf("the start line does not carry the stamp the record was written with (%s):\n%s", r.At.Format(time.RFC3339), out)
+	}
+}
+
+// ─── who may record a verdict ────────────────────────────────────────────────
+
+// The two halves of ranger-base-4dhcw's gate, held in the two places they can
+// drift apart.
+//
+// THE DEFECT. scripts/verify-box.sh called write_state unconditionally, and
+// write_state replaces this file WHOLE. So any seat that typed `make
+// verify-box` by hand recorded its own verdict as the box's — over the
+// scheduled run's, refreshing the freshness clock with it. The write is
+// reachable from exactly the seats whose answer is least trustworthy:
+// SeatbeltWritable adds a.StateDir to every caged seat's writable list, and a
+// caged roster check can come back red about the CAGE rather than about the
+// box (ranger-base-zf8pf's `brew info --cask`, which exits non-zero under a
+// seatbelt profile and read as a finding).
+//
+// The gate is `RHQ_PERSONA set ⇒ record nothing`, and the SCRIPT's behaviour
+// is pinned by its own --self-test arm, with a control, named from
+// treepins/boxcheck_qa_test.go so it cannot be deleted quietly. What that arm
+// cannot hold is the JOIN: it spells the variable as a literal, so a rename
+// of EnvPersona on this side would leave the script reading an environment
+// posse no longer sets — the gate open, every arm still green, and nothing on
+// either side wrong enough to notice. This is that join, and it is the whole
+// of what this test adds.
+func TestTheRecordingGateNamesTheVariablePosseActuallySets(t *testing.T) {
+	t.Parallel()
+	script, err := filepath.Abs("../../scripts/verify-box.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(script)
+	if err != nil {
+		t.Skipf("no %s to read: %v", script, err)
+	}
+	// The gate's own line, not a mention in the prose above it: the script
+	// would still carry the name in a comment long after the test stopped
+	// reading it, which is the drift this is here to catch.
+	want := `if [ -n "${` + EnvPersona + `:-}" ]; then`
+	if !strings.Contains(string(body), want) {
+		t.Errorf("scripts/verify-box.sh does not gate its verdict on %s — looked for %q.\n"+
+			"posse sets that name on every dispatched seat (EnvPersona); if it was renamed here, rename it there in the same commit, "+
+			"or the script records a caged seat's verdict as this box's again.", EnvPersona, want)
 	}
 }

@@ -20,6 +20,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-9f2o6](ranger-base-9f2o6.md) — grok 1.0.52 re-measured: the cwd root is still read, and it has a precondition nobody declared (ranger-base-9f2o6) — 2026-10-31
 - [ranger-base-8u8n8](ranger-base-8u8n8.md) — Two pinned spellings of one seam, and the gate between them (ranger-base-8u8n8) — 2026-10-31
 - [ranger-base-6r1rf](ranger-base-6r1rf.md) — bob reads the posse namespace, symlinks and all — and is in drift the day it ships (ranger-base-6r1rf) — 2026-10-31
+- [ranger-base-4dhcw](ranger-base-4dhcw.md) — The verdict file has one subject, and not every run can speak for it (ranger-base-4dhcw) — 2026-10-31
 - [ranger-base-3a5z7](ranger-base-3a5z7.md) — The channel suffix is grok's update-check cache, so §6c compares the release (ranger-base-3a5z7) — 2026-10-31
 - [notes-grok](notes-grok.md) — grok substrate: pinned at 1.0.52 (Homebrew cask `grok-build`), upgrades are a security re-audit (rangerhq-y7jr) — 2026-10-31
 - [ranger-base-99a7u](ranger-base-99a7u.md) — The meta-harness landscape, 2026-10-24, and where posse sits in it (ranger-base-99a7u) — 2026-10-24
