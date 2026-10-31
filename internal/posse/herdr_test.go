@@ -59,6 +59,20 @@ func TestMain(m *testing.M) {
 		fmt.Println(line)
 		os.Exit(0)
 	}
+	// And as the `bd` SHIM a persona's gates dir renders, for ADR 0077 D3's
+	// pin (ranger-base-rzjie, TestBdRunsOutsideTheLaunchersGatesDir). A
+	// symlink to this binary planted in a fake gates bin dir takes ADR
+	// 0073's per-store write lock exactly as the rendered `gates bd-write`
+	// arm does, so a posse bd child that reaches it refuses on the lock
+	// posse itself is already holding — the deadlock MEASURED twice on
+	// ranger-base-c33j6. Keyed on this variable and not on argv[0], because
+	// a bare-name exec hands the child argv[0] = "bd" whatever path it
+	// resolved: the shim cannot see where it was found. Only the test that
+	// sets it has it, and the real `bd` beside it on PATH is a shell script
+	// that ignores the whole environment.
+	if store := os.Getenv("RHQ_FAKE_GATED_BD_STORE"); store != "" {
+		os.Exit(fakeGatedBd(store, os.Args[1:]))
+	}
 	// The test binary doubles as both fake substrates; dispatch on the verb
 	// (herdr verbs are workspace/pane/agent; everything else is bd).
 	if os.Getenv("RHQ_FAKE_HERDR") == "1" {
@@ -206,6 +220,31 @@ func TestMain(m *testing.M) {
 
 // fakeBd logs argv to bd-calls.log and serves `ready` from ./fake-ready.json
 // in its working directory (bd is per-repo, so cwd is part of the contract).
+// fakeGatedBd is the gates-dir `bd` shim TestMain dispatches to. It records
+// that it ran at all (RHQ_FAKE_GATED_BD_MARK), then answers the way the real
+// bd-write arm does when the store lock is already held: a refusal, never a
+// pass-through.
+//
+// Two fixture simplifications, neither of them the subject: the store is
+// handed over rather than resolved from the cwd (bdLineCensusHome, the real
+// arm's route), because this pin is about WHICH binary posse execs and not
+// about store resolution; and the wait is two seconds rather than
+// BdWriteLockWait, so the arm that is red before ADR 0077 D3 costs the suite
+// seconds instead of the thirty a live seat paid.
+func fakeGatedBd(store string, args []string) int {
+	if mark := os.Getenv("RHQ_FAKE_GATED_BD_MARK"); mark != "" {
+		os.WriteFile(mark, []byte(strings.Join(args, " ")), 0o644)
+	}
+	lock, err := bdWriteLock(store, args, 2*time.Second)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "refused by posse gate: %v\n", err)
+		return 1
+	}
+	defer lock.Release()
+	fmt.Println("{}")
+	return 0
+}
+
 func fakeBd(args []string) int {
 	f, _ := os.OpenFile(filepath.Join(fakeDir(), "bd-calls.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if f != nil {

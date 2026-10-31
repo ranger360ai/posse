@@ -103,20 +103,16 @@ func qaInstallHooks(t *testing.T, bin, home string, args ...string) (string, int
 // operator's commit. Red for every persona, green for the operator, and about
 // neither the hook nor the chain.
 //
-// PathOutsideGates is the literal half of the rule, and a caller that only
-// EXECS the answer needs no more than that. A caller that hands the answer's
-// DIRECTORY to a child as $PATH needs the other half too (ranger-base-ebhdx,
-// skillsrefusalexit_test.go): the child is judged by ForeignGatesElements,
-// which resolves symlinks, so a dir that merely ALIASES another seat's shims
-// reads as foreign there while spelling nothing PathOutsideGates can match.
-// Both halves here, so the answer is safe to hand on either way.
+// PathOutsideGates is both halves of the rule since ADR 0077 D2: it drops an
+// element that RESOLVES into a gates dir as well as one that spells it, which
+// is what a caller handing the answer's DIRECTORY to a child as $PATH needs
+// (ranger-base-ebhdx, skillsrefusalexit_test.go — a dir that merely ALIASES
+// another seat's shims spells nothing a literal match catches). The alias
+// walk this helper used to carry by hand is that function's now, so the
+// answer is safe to hand on either way.
 func gitOutsideGates(t *testing.T) string {
 	t.Helper()
-	gatesPart := string(filepath.Separator) + "gates" + string(filepath.Separator)
 	for _, dir := range filepath.SplitList(posse.PathOutsideGates("")) {
-		if real, err := filepath.EvalSymlinks(dir); err == nil && strings.Contains(real, gatesPart) {
-			continue
-		}
 		p := filepath.Join(dir, "git")
 		if fi, err := os.Stat(p); err == nil && !fi.IsDir() && fi.Mode()&0o111 != 0 {
 			return p

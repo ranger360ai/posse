@@ -969,49 +969,80 @@ func (a *App) RenderGates(persona string, deny []string) (gatesDir, binDir, shel
 // test suite runs inside a persona pane, and its git-push tests were being
 // answered by that session's own L1 shim instead of by the code under test
 // (rangerhq-8sd). Pass "" when there is no shim dir of one's own to drop.
+//
+// Since ADR 0077 D2 this drops an element that RESOLVES into a gates dir as
+// well as one that spells it, because gatesPathSplit is now the one test
+// both halves read — see there.
 func PathOutsideGates(binDir string) string {
-	var keep []string
-	for _, p := range filepath.SplitList(os.Getenv("PATH")) {
-		if p == "" || p == binDir || strings.Contains(p, string(filepath.Separator)+"gates"+string(filepath.Separator)) {
-			continue
-		}
-		keep = append(keep, p)
-	}
-	return strings.Join(keep, string(os.PathListSeparator))
+	outside, _ := gatesPathSplit(binDir)
+	return strings.Join(outside, string(os.PathListSeparator))
 }
 
-// ForeignGatesElements is the spelling-independent half PathOutsideGates
-// cannot be: it names every $PATH element that REACHES a posse gates bin
-// dir other than ownBinDir, resolving symlinks first. A path element whose
-// own name never spells "gates" (a symlink alias pointed at another
-// persona's shim dir, for instance) still reads as foreign here, because
-// what matters is what the element resolves to, not how it is written
-// (ranger-base-z51g — the gate shell's own PRE guard, and PathOutsideGates
-// it copies the test from, must stay a cheap literal match inside a shell
-// one-liner and so cannot make this promise; this is the check that can
-// afford to call the filesystem).
+// ForeignGatesElements names every $PATH element that reaches a posse gates
+// bin dir other than ownBinDir — the other half of gatesPathSplit's answer,
+// for a caller that has to NAME what it found rather than route around it
+// (parity.go).
 func ForeignGatesElements(ownBinDir string) []string {
-	own := ownBinDir
-	if r, err := filepath.EvalSymlinks(ownBinDir); err == nil {
-		own = r
+	_, foreign := gatesPathSplit(ownBinDir)
+	return foreign
+}
+
+// gatesPathSplit is the ONE test PathOutsideGates and ForeignGatesElements
+// share (ADR 0077 D2: "the two become one function"). It walks $PATH once
+// and sorts every element into the two halves of the same judgement:
+// `outside` is what a posse child may safely be given, `foreign` is every
+// element that reaches somebody's gates bin dir.
+//
+// An element is judged by what it RESOLVES to as well as by how it is
+// written, which is the half PathOutsideGates used not to have: a symlink
+// alias pointed at another persona's shim dir spells nothing a literal match
+// can catch, and until the two tests were one, PathOutsideGates handed that
+// dir on to a child while ForeignGatesElements — looking at the same PATH —
+// called it foreign (ranger-base-z51g for the alias, ranger-base-c33j6 for
+// what it cost: posse's own `bd` resolving into the launcher's shim dir and
+// deadlocking on ADR 0073's store lock). Both spellings, not just the
+// resolved one: an element that spells "/gates/" has always been dropped,
+// and a symlink OUT of a gates dir is still that dir's by name.
+//
+// ownBinDir, and anything resolving to it, is in NEITHER half. For
+// ForeignGatesElements that is the whole of "other than mine". For
+// PathOutsideGates it is D2's rule that the caller's own shim dir goes with
+// the rest: a seat's walls are its own PID's (ADR 0017), and the launcher's
+// shims behind them were a parity violation, not extra safety. It is dropped
+// whether or not it is gates-shaped, so a caller that names a plain shim dir
+// of its own still sheds it.
+//
+// The gate shell's PRE guard (renderGateShell) keeps the literal half alone
+// and cannot read this one: it runs as a shell one-liner before any Go code
+// and has no filesystem to call. That asymmetry is what parity's row is for.
+func gatesPathSplit(ownBinDir string) (outside, foreign []string) {
+	ownReal := ""
+	if ownBinDir != "" {
+		ownReal = resolveLinks(ownBinDir)
 	}
-	var foreign []string
 	for _, p := range filepath.SplitList(os.Getenv("PATH")) {
 		if p == "" || p == ownBinDir {
 			continue
 		}
-		real := p
-		if r, err := filepath.EvalSymlinks(p); err == nil {
-			real = r
-		}
-		if real == own {
+		real := resolveLinks(p)
+		if ownReal != "" && real == ownReal {
 			continue
 		}
-		if strings.Contains(real, string(filepath.Separator)+"gates"+string(filepath.Separator)) {
+		if isGatesPath(p) || isGatesPath(real) {
 			foreign = append(foreign, p)
+			continue
 		}
+		outside = append(outside, p)
 	}
-	return foreign
+	return outside, foreign
+}
+
+// isGatesPath is how posse spells "ours" in a path: a 'gates' path ELEMENT,
+// so /opt/gateskeeper/bin is not ours. The gate shell's PRE guard and
+// hookStampFunc's walk carry the same test in shell, which is why it stays
+// this cheap.
+func isGatesPath(p string) bool {
+	return strings.Contains(p, string(filepath.Separator)+"gates"+string(filepath.Separator))
 }
 
 // resolveOutside finds cmd on PATH ignoring binDir (and any other posse

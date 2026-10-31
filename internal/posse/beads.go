@@ -223,13 +223,13 @@ func (b Bd) runOnce(dir string, args ...string) ([]byte, error) {
 	limit := b.timeout()
 	ctx, cancel := context.WithTimeout(context.Background(), limit)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, b.Bin, argv...)
+	cmd := exec.CommandContext(ctx, b.bin(), argv...)
 	cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
 	cmd.WaitDelay = bdKillGrace
 	if dir != "" {
 		cmd.Dir = dir
-		cmd.Env = bdStoreEnv(os.Environ(), dir)
 	}
+	cmd.Env = bdChildEnv(os.Environ(), dir)
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	started := time.Now()
@@ -260,6 +260,54 @@ func (b Bd) runOnce(dir string, args ...string) ([]byte, error) {
 		return nil, b.checkLineCliff(dir, rerr)
 	}
 	return out.Bytes(), nil
+}
+
+// bin is the binary this runner execs. ADR 0077 D3: posse's own children run
+// outside every gates dir, so a bare name is resolved against the gates-free
+// PATH rather than left to Go's exec.LookPath, which searches THIS process's
+// $PATH and nothing else — not even the cmd.Env we are about to set.
+//
+// This is the measured half of D3 (ranger-base-c33j6, twice): a dispatch from
+// a gated seat has the launching persona's gates bin leading its PATH, posse
+// takes ADR 0073's per-store write lock and then execs `bd`, the bare name
+// lands on that dir's `bd` shim, and the shim takes the SAME lock on a new
+// open file description. posse waited BdWriteLockWait on itself and refused
+// the write, every time. The walls bind what a persona TYPES (ADR 0009);
+// posse's own calls are posse's, and ADR 0073 already serializes them in Go.
+//
+// A Bin that NAMES a path — `RHQ_BD_BIN`, a fixture's symlink — keeps
+// precedence and is handed to exec exactly as given: an explicit binary is an
+// answer, not a search. So is a bare name nothing outside the gates answers,
+// which goes to exec unresolved so that exec reports it the way it always has.
+func (b Bd) bin() string {
+	if strings.ContainsRune(b.Bin, filepath.Separator) {
+		return b.Bin
+	}
+	if real := resolveOutside(b.Bin, ""); real != "" {
+		return real
+	}
+	return b.Bin
+}
+
+// bdChildEnv is the environment one bd child runs with: the store binding
+// bdStoreEnv builds (below, and only for a call that NAMED a directory), and
+// ADR 0077 D3's gates-free PATH over both arms.
+//
+// The PATH is set and not merely resolved past, which bin() above would be
+// enough for on its own. bd's own git hooks call `bd` by name, and a hook
+// child inheriting the launcher's PATH would reach the shim and deadlock the
+// same way the direct call did (ASSUMED — the measured deadlock was the
+// direct call, ranger-base-c33j6).
+//
+// It is therefore the one thing posse does type onto a dir == "" call, whose
+// environment bdStoreEnv deliberately leaves alone: that call names no
+// directory, so the session's own store binding IS the requested store — but
+// no call of posse's own wants the session's shims in front of its binaries.
+func bdChildEnv(env []string, dir string) []string {
+	if dir != "" {
+		env = bdStoreEnv(env, dir)
+	}
+	return envPut(env, "PATH", PathOutsideGates(""))
 }
 
 // bdStoreEnvShed names every environment variable MEASURED to repoint bd
