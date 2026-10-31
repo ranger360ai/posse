@@ -2,8 +2,10 @@ package treepins
 
 // QA pin for ranger-base-l12j9, over THIS repo's own files.
 //
-// ranger-base-l12j9 declared grok's repo→box project-config channel (eight
-// entries, keys `hooks` and `mcpServers` — grokProjectConfig in
+// ranger-base-l12j9 declared grok's repo→box project-config channel, and
+// ranger-base-2zkcy added `.grok/lsp.json` and `.claude/plugins` to it (keys
+// `hooks` and `mcpServers`, with `.grok/lsp.json` exempt from that
+// narrowing — grokProjectConfig in
 // internal/posse/runtime.go carries the 2026-10-31 measurement on grok 1.0.52
 // that each entry came from). Declaring a channel makes every launch over it
 // DEGRADE, which is the point — and it means a key list drawn one notch wider
@@ -25,8 +27,8 @@ package treepins
 //     reason, which is exactly the thing an operator should be told at the
 //     commit and not at the launch.
 //
-// It reads eight paths BY NAME and enumerates nothing, so it is not in the
-// tree-wide pin class and carries no Makefile door of its own (the
+// It reads the declared paths BY NAME and enumerates nothing, so it is not in
+// the tree-wide pin class and carries no Makefile door of its own (the
 // enumeration rule's negative case — see treewidedoor_qa_test.go).
 
 import (
@@ -93,9 +95,12 @@ func TestQAThisRepoKeepsAGrokLaunchCleanOfProjectConfig(t *testing.T) {
 		}
 	}
 
-	// And the other direction: of grok's eight entries this repo carries
+	// And the other direction: of grok's declared entries this repo carries
 	// exactly the one above, so the clean verdict is a fact about the files
-	// and not about a check that stopped looking.
+	// and not about a check that stopped looking. `.grok/lsp.json` is the one
+	// that would now bite hardest if it appeared — it is exempt from the key
+	// narrowing (ranger-base-2zkcy), so its mere PRESENCE here would degrade
+	// every grok seat in this checkout.
 	var present []string
 	for _, rel := range grok.ProjectConfig {
 		if _, err := os.Lstat(filepath.FromSlash(rel)); err == nil {

@@ -1,4 +1,4 @@
-# grok's project-config channel: eight entries, declared on a measurement (ranger-base-l12j9)
+# grok's project-config channel: declared on a measurement (ranger-base-l12j9)
 
 grok's built-in declared **no** `ProjectConfig` until this bead. That is the
 state `runtimecheck.go`'s `projectConfigRow` calls *the silent one*:
@@ -7,6 +7,13 @@ unguarded repo→box channel read as a **CLEAN launch**. A claude seat over a
 repo's `.claude/settings.json` hooks degraded; a grok seat over the **same
 file** said nothing. That asymmetry is the ADR 0017 §2 / ADR 0002 hole
 ranger-base-1g8gf found, and closing it is the whole of this bead.
+
+**Superseded in two places by ranger-base-2zkcy** (same day, same rig, same
+grok 1.0.52). That bead added two entries this one's list does not name —
+`.grok/lsp.json` and `.claude/plugins` — and **measured** `.grok/plugins`,
+which is the one row below that was ASSUMED here. See
+`docs/notes.d/ranger-base-2zkcy.md`; the declaration itself is
+`grokProjectConfig` either way.
 
 ## MEASURED 2026-10-31, grok 1.0.52 (0920c8169e27), darwin 25.6.0
 
@@ -31,7 +38,7 @@ reading.
 | `.grok/hooks/*.json` | `hooks` | **RAN** | nothing |
 | `.cursor/mcp.json` | `mcpServers` | **SPAWNED** | not spawned\* |
 | `.cursor/hooks.json` | `hooks` | loaded, **REFUSED** by 1.0.52 | nothing |
-| `.grok/plugins/` | (directory) | **NOT MEASURED** — ASSUMED | — |
+| `.grok/plugins/` | (directory) | see ranger-base-2zkcy | nothing |
 
 \* `grok inspect` **LISTS** the untrusted repo's MCP servers anyway. That
 listing is display only: nothing was spawned. Do not read inspect's MCP
@@ -40,9 +47,13 @@ section as the trust verdict.
 `.cursor/hooks.json`'s refusal is in grok's own words: *"this Cursor hook
 won't run until Grok reads Cursor hook replies"* — dormant, and declared
 anyway, because the file is already being read and the refusal is a version's
-rather than a design's. `.grok/plugins/` is **ASSUMED** off grok's own docs
-(`09-plugins.md`: a project plugin there requires trust and carries hooks, MCP
-and skills), not off a marker.
+rather than a design's. `.grok/plugins/` was **ASSUMED** here off grok's own
+docs (`09-plugins.md`: a project plugin there requires trust and carries hooks,
+MCP and skills), and ranger-base-2zkcy measured it: under folder trust alone it
+loads as "project, enabled" and does **not** run, and it RUNS when the plugin's
+name shadows one the operator installed and trusted. Declaring it was the right
+call for the wrong reason — the channel is real and latent, not live on folder
+trust.
 
 Stop/SessionEnd did not fire because the turn failed. That narrows nothing —
 SessionStart alone runs code before any turn.
@@ -65,6 +76,9 @@ skills root.
                    .mcp.json, .cursor/mcp.json, .cursor/hooks.json,
                    .grok/config.toml, .grok/hooks, .grok/plugins
     ProjectConfigKeys: hooks, mcpServers
+
+(ranger-base-2zkcy added `.claude/plugins` and `.grok/lsp.json`, and the one
+exemption `ProjectConfigWholeFile` — the live list is in the source.)
 
 Four things about those two lines that are decisions and not transcription.
 
@@ -151,11 +165,11 @@ fixed here.
   **this repo's real files**: posse's own `.claude/settings.json` keeps a clean
   launch on all four built-ins, it is still the shape that makes that a fact
   (readable JSON, `permissions`, neither exec key), and it is still the only
-  one of grok's eight entries this checkout carries. Eight paths read **by
-  name**, nothing enumerated, so it is outside the tree-wide pin class and
-  needs no Makefile door.
+  one of grok's declared entries this checkout carries. The declared paths are
+  read **by name**, nothing enumerated, so it is outside the tree-wide pin
+  class and needs no Makefile door.
 - `internal/posse/runtimecheck_test.go` — grok was the grid's "none" arm, which
-  is precisely what this bead found. The arm now asserts the eight-entry keyed
+  is precisely what this bead found. The arm now asserts the keyed
   row; the "none" reading is still held, over a template-only yaml, by
   `TestUndeclaredDimensionsAreLoudNotBlank` — a runtime that really has
   nothing.
@@ -165,4 +179,6 @@ fixed here.
 A future grok version re-runs the table above, in full, with that version's
 `$HOME` fixture. `.cursor/hooks.json` is the row expected to change — the
 release that implements the Cursor reply path opens that channel with no edit
-to the declaration. `.grok/plugins/` is the row still owed a marker.
+to the declaration. `.grok/plugins/` got its marker in ranger-base-2zkcy, and
+the two plugin rows are the ones whose reading changes the day an operator runs
+`grok plugin install --trust`.

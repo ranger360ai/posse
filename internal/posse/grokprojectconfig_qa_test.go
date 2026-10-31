@@ -3,8 +3,10 @@
 package posse
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -32,6 +34,15 @@ import (
 // tightening and is not (`permissions`). Arms 2-4 are the DONE WHEN of the
 // bead: a fixture per entry degrades, a permissions-only settings file does
 // not, and the PID opt-in clears all of it.
+//
+// ranger-base-2zkcy added TWO entries the l12j9 list did not name, measured on
+// the same rig and the same grok 1.0.52: `.grok/lsp.json` (LSP servers grok
+// SPAWNS under folder trust alone) and `.claude/plugins` (grok's documented
+// equivalent of `.grok/plugins`, which RUNS when the plugin's name shadows an
+// installed and trusted one). It also replaced the ASSUMED `.grok/plugins` row
+// with a measured one. `.grok/lsp.json` brought the key list's one exemption
+// with it — its top level is server NAMES, so no key can describe it and the
+// keyed arm would call it clean — which arm 6 is about.
 
 // grokProjectConfigFixture is one entry of the declared list and the body
 // that makes it live, with the finding projectConfigTrustFile should reach.
@@ -41,17 +52,22 @@ type grokProjectConfigFixture struct {
 	want  string // the finding clause, as projectConfigVerdict strips it
 }
 
-// The eight declared entries, in declaration order, each with the shape the
-// measurement found on it. The three verdicts are the three paths through
+// Every declared entry, in declaration order, each with the shape the
+// measurement found on it. No count is written here on purpose: arm 1 spells
+// the list and arm 2 refuses a declaration this table does not cover, so the
+// one place a number can go stale is the one place it is enforced. The four verdicts are the four paths through
 // projectConfigTrustFile, which is why they are asserted by name:
 //
-//   - a key match, for everything grok reads as JSON;
+//   - a key match, for everything grok reads as JSON under one of the keys;
+//   - "project config is present", for the one entry the keys do not reach
+//     (.grok/lsp.json, grokProjectConfigWholeFile) — the whole-file predicate
+//     every entry had before the keys narrowed any of them;
 //   - "invalid JSON", for .grok/config.toml — TOML parsed by a JSON
 //     classifier. The RIGHT verdict (that file contributes mcp_servers,
 //     permissions and plugins) reached by a misleading reason, which is the
 //     declared design note and not a defect to fix here;
-//   - "a directory, not a regular file", for the two directory entries, which
-//     is the same fail-closed arm a FIFO or a dangling link takes.
+//   - "a directory, not a regular file", for the three directory entries,
+//     which is the same fail-closed arm a FIFO or a dangling link takes.
 var grokProjectConfigFixtures = []grokProjectConfigFixture{
 	{entry: ClaudeProjectConfig,
 		body: `{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"touch marker"}]}]}}`,
@@ -59,6 +75,14 @@ var grokProjectConfigFixtures = []grokProjectConfigFixture{
 	{entry: ClaudeProjectConfigLocal,
 		body: `{"hooks":{"UserPromptSubmit":[{"hooks":[{"type":"command","command":"touch marker"}]}]}}`,
 		want: "matched top-level project config keys: hooks"},
+	// grok's documented equivalent of .grok/plugins, and measured to behave
+	// identically (ranger-base-2zkcy): under folder trust alone the plugin
+	// loads as "project, enabled" and does NOT run; where its NAME shadows a
+	// plugin the operator installed and trusted, the hook RAN and the MCP
+	// server SPAWNED, with the repo's copy replacing the operator's. Latent on
+	// this box — nothing is installed to shadow — and the first
+	// `grok plugin install --trust` opens it.
+	{entry: ".claude/plugins", want: "project config classification failed: unreadable: a directory, not a regular file"},
 	{entry: ".mcp.json",
 		body: `{"mcpServers":{"probe":{"command":"/bin/sh","args":["-c","touch marker"]}}}`,
 		want: "matched top-level project config keys: mcpServers"},
@@ -79,8 +103,22 @@ var grokProjectConfigFixtures = []grokProjectConfigFixture{
 		want: "project config classification failed: invalid JSON",
 	},
 	{entry: ".grok/hooks", want: "project config classification failed: unreadable: a directory, not a regular file"},
+	// The exemption's entry, and the only fixture here whose body carries
+	// NEITHER key on purpose: this is the measured shape (grok SPAWNED it in a
+	// trusted dir, headless, with no file edited), and a key list is blind to
+	// it. Hence the whole-file verdict — see arm 6 for why that is not an
+	// accident of this body.
+	{entry: ".grok/lsp.json",
+		body: grokLspJSONBody,
+		want: "project config is present"},
 	{entry: ".grok/plugins", want: "project config classification failed: unreadable: a directory, not a regular file"},
 }
+
+// grokLspJSONBody is the MEASURED .grok/lsp.json shape: a map of LSP SERVER
+// NAMES, each with the `command` grok spawns. Its top level names neither
+// `hooks` nor `mcpServers`, which is the whole reason the entry is exempt
+// from the key narrowing.
+const grokLspJSONBody = `{"probe":{"command":"sh","args":["-c","touch marker"],"extensionToLanguage":{".zz":"zz"}}}`
 
 // plantGrokProjectConfig writes one fixture into a fresh session dir.
 func plantGrokProjectConfig(t *testing.T, dir string, f grokProjectConfigFixture) {
@@ -117,12 +155,12 @@ func TestQAGrokDeclaresItsProjectConfigChannel(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []string{
-		".claude/settings.json", ".claude/settings.local.json",
+		".claude/settings.json", ".claude/settings.local.json", ".claude/plugins",
 		".mcp.json", ".cursor/mcp.json", ".cursor/hooks.json",
-		".grok/config.toml", ".grok/hooks", ".grok/plugins",
+		".grok/config.toml", ".grok/hooks", ".grok/lsp.json", ".grok/plugins",
 	}
 	if strings.Join(grok.ProjectConfig, " ") != strings.Join(want, " ") {
-		t.Fatalf("grok's project-config channel is not the measured list (ranger-base-l12j9): got %v, want %v", grok.ProjectConfig, want)
+		t.Fatalf("grok's project-config channel is not the measured list (ranger-base-l12j9 + ranger-base-2zkcy): got %v, want %v", grok.ProjectConfig, want)
 	}
 	// The two settings paths come from the shared constants, so claude's
 	// list and grok's cannot drift apart over the same two files.
@@ -148,6 +186,18 @@ func TestQAGrokDeclaresItsProjectConfigChannel(t *testing.T) {
 	// the shape that would degrade every launch in this very repo.
 	if len(grok.ProjectConfigKeys) == 0 {
 		t.Error("an empty key list turns this declaration into the whole-file predicate")
+	}
+	// And the exemption, spelled out for the same reason the list is: an
+	// entry quietly added here is an entry the keys stop narrowing, which
+	// would degrade every launch that has it for a reason nobody declared;
+	// an entry quietly REMOVED is .grok/lsp.json reading clean again.
+	if strings.Join(grok.ProjectConfigWholeFile, " ") != ".grok/lsp.json" {
+		t.Fatalf("the key narrowing's exemption is .grok/lsp.json and nothing else (ranger-base-2zkcy): %v", grok.ProjectConfigWholeFile)
+	}
+	for _, rel := range grok.ProjectConfigWholeFile {
+		if !slices.Contains(grok.ProjectConfig, rel) {
+			t.Errorf("%s is exempted from the key narrowing and is not on the declared list, so nothing checks it at all", rel)
+		}
 	}
 }
 
@@ -335,5 +385,104 @@ func TestQAProjectConfigHooksDegradeEveryRuntimeThatReadsThem(t *testing.T) {
 	codex, _ := b.App.LoadRuntime("codex")
 	if why := ProjectConfigTrust(codex, dev, repo); why != "" {
 		t.Errorf("codex does not read .claude/settings.json; the control arm must be clean: %q", why)
+	}
+}
+
+// Arm 6, ranger-base-2zkcy's own DONE WHEN: `.grok/lsp.json` is checked on
+// PRESENCE, and the pin's job is to show that the verdict comes from the
+// exemption and not from something about this body.
+//
+// Why it needs an arm of its own. The key narrowing is the one thing in this
+// check that LOOSENS it, and `.grok/lsp.json` is the entry no key can
+// describe: its top level is LSP server names, each carrying a `command` grok
+// SPAWNED under folder trust alone (MEASURED 2026-10-31, grok 1.0.52
+// (0920c8169e27), headless, no file edited, no model response; untrusted,
+// nothing). Under `hooks, mcpServers` that file parses cleanly, matches
+// nothing, and the launch reads CLEAN over a live channel — a WRONG verdict,
+// unlike `.grok/config.toml`'s right-verdict-wrong-reason. The three arms
+// below are the three ways that could silently come back: the exemption
+// dropped from the runtime, the entry dropped from the exemption, or the whole
+// narrowing quietly reaching it again.
+func TestQAGrokLspJSONIsWholeFileAndNotKeyNarrowed(t *testing.T) {
+	t.Parallel()
+	b, _ := newTestBackend(t)
+	os.MkdirAll(b.App.AgentsDir, 0o755)
+	os.WriteFile(filepath.Join(b.App.AgentsDir, "dev.md"),
+		[]byte("---\nname: dev\ndeny: [Bash(git push:*)]\n---\nYou are dev.\n"), 0o644)
+	dev, _ := b.App.LoadAgent("dev")
+	grok, _ := b.App.LoadRuntime("grok")
+
+	// The body carries neither key. That is the measured shape and the whole
+	// difficulty, so it is asserted rather than left to the reader.
+	for _, k := range grok.ProjectConfigKeys {
+		if strings.Contains(grokLspJSONBody, `"`+k+`"`) {
+			t.Fatalf("the lsp.json fixture names %q, so this arm would pass through the key match and measure nothing", k)
+		}
+	}
+
+	repo := t.TempDir()
+	os.MkdirAll(filepath.Join(repo, ".grok"), 0o755)
+	if err := os.WriteFile(filepath.Join(repo, ".grok", "lsp.json"), []byte(grokLspJSONBody), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := projectConfigVerdict(t, ProjectConfigTrust(grok, dev, repo)); got != "project config is present" {
+		t.Fatalf("an lsp.json naming no declared key must degrade on PRESENCE — grok spawns it under folder trust alone: %q", got)
+	}
+	// The launch refuses, names the file, and offers the two ways out.
+	err := b.CreateSession(NewSessionOpts{Name: "gk-lsp", Agent: "dev", Runtime: "grok", Dir: repo})
+	if err == nil || !strings.Contains(err.Error(), ".grok/lsp.json") ||
+		!strings.Contains(err.Error(), "project config is present") ||
+		!strings.Contains(err.Error(), "trust_project_config: true") {
+		t.Fatalf("a grok launch over .grok/lsp.json must refuse, naming the file and the finding: %v", err)
+	}
+
+	// THE FALSIFIER: the same runtime with the exemption removed reads the
+	// same directory CLEAN. That is the state before this bead, and it is the
+	// only arm here that would notice grokProjectConfigWholeFile going nil
+	// while every other assertion above still passed by some other route.
+	narrowed := *grok
+	narrowed.ProjectConfigWholeFile = nil
+	if why := ProjectConfigTrust(&narrowed, dev, repo); why != "" {
+		t.Errorf("under the keys alone this file is expected to read clean — if it no longer does, the exemption is being carried by something else and this arm is measuring the wrong mechanism: %q", why)
+	}
+
+	// And the exemption is per ENTRY, not a switch on the whole list: the
+	// same body at a KEYED entry still reads clean, so nothing here has
+	// quietly turned grok's declaration back into a whole-file predicate.
+	keyed := t.TempDir()
+	if err := os.WriteFile(filepath.Join(keyed, ".mcp.json"), []byte(grokLspJSONBody), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if why := ProjectConfigTrust(grok, dev, keyed); why != "" {
+		t.Errorf(".mcp.json is key-narrowed and this body names no key, so it must stay clean — a finding here means the exemption leaked to every entry: %q", why)
+	}
+
+	// Not grok's alone: the field is built-in only, so this is the whole
+	// population, and an exempt entry that is not on the runtime's declared
+	// list is an entry NOTHING checks — the one way to use this field to
+	// make a channel quieter rather than louder.
+	for _, name := range []string{"claude", "codex", "grok", "bob"} {
+		rt, err := b.App.LoadRuntime(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, rel := range rt.ProjectConfigWholeFile {
+			if !slices.Contains(rt.ProjectConfig, rel) {
+				t.Errorf("%s exempts %s from the key narrowing and does not declare it as a project-config entry, so no launch check looks at it at all", name, rel)
+			}
+		}
+	}
+
+	// The grid says so too, beside the keys it does not reach: an exception
+	// an onboarder cannot read off `posse runtime check` is a check nobody
+	// can account for (ADR 0017 §2).
+	var grid bytes.Buffer
+	b.App.RuntimeCheck(grok, Herdr{Bin: "no-such-herdr-binary"}, &grid)
+	row := gridRow(t, grid.String(), "project_cfg")
+	for _, w := range []string{".grok/lsp.json", "the narrowing does NOT reach", "under no top-level key"} {
+		if !strings.Contains(row, w) {
+			t.Errorf("grok's project_cfg row must carry %q:\n%s", w, row)
+		}
 	}
 }

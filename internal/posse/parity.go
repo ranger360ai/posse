@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -480,6 +481,11 @@ func (a *App) CheckParity(ag *AgentFile, rt *Runtime, cage, tier string) Parity 
 // JSON settings to the top-level keys made live by the trust grant; an empty
 // list preserves the original whole-file predicate. A keyed file fails closed
 // when it exists but cannot be proved to be a readable top-level JSON object.
+// Runtime.ProjectConfigWholeFile takes named entries back OUT of that
+// narrowing, one entry at a time, for a channel whose executable content is
+// not under a top-level key at all (grok's `.grok/lsp.json`, whose top level
+// is server names) — the narrowing is what LOOSENS this check, so an entry no
+// key can describe has to be exempt from it or it reads clean.
 //
 // Returns "" when there is nothing to say: no such runtime surface, no
 // such file, or the PID opted in with trust_project_config: true. It is a
@@ -500,7 +506,7 @@ func ProjectConfigTrust(rt *Runtime, ag *AgentFile, dir string) string {
 		if personaModeOwnsAll(rt, dir, rel) {
 			continue
 		}
-		if why := projectConfigTrustFile(rt, filepath.Join(dir, rel)); why != "" {
+		if why := projectConfigTrustFile(rt, rel, filepath.Join(dir, rel)); why != "" {
 			return why
 		}
 	}
@@ -549,8 +555,11 @@ func personaModeOwnsAll(rt *Runtime, dir, rel string) bool {
 }
 
 // projectConfigTrustFile classifies one file of the runtime's project scope.
-func projectConfigTrustFile(rt *Runtime, p string) string {
-	if len(rt.ProjectConfigKeys) == 0 {
+// `rel` is the entry as the runtime DECLARED it, which is the only thing that
+// can answer whether the key narrowing applies to this one; `p` is that entry
+// resolved against the session dir.
+func projectConfigTrustFile(rt *Runtime, rel, p string) string {
+	if len(rt.ProjectConfigKeys) == 0 || slices.Contains(rt.ProjectConfigWholeFile, rel) {
 		if _, err := os.Stat(p); err != nil {
 			return ""
 		}

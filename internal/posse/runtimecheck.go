@@ -792,6 +792,13 @@ func projectConfigRow(rt *Runtime) stageRow {
 	if len(rt.ProjectConfigKeys) > 0 {
 		r.note = append(r.note, "narrowed to top-level JSON keys: "+strings.Join(rt.ProjectConfigKeys, ", ")+" — only a file naming one of them degrades the launch. The floor holds either way: a keyed file that cannot be proved a readable top-level JSON object FAILS CLOSED, so keys declared over a TOML config degrade every launch instead of narrowing nothing quietly.")
 		r.note = append(r.note, "declared by: "+rt.declaredByList("project_config_keys"))
+		if len(rt.ProjectConfigWholeFile) > 0 {
+			// Said on the row because the narrowing is printed on the row:
+			// an entry the keys do not reach is a reader's exception to the
+			// line above, and an unprinted exception is a check nobody can
+			// read off the grid (ADR 0017 §2).
+			r.note = append(r.note, "the narrowing does NOT reach "+strings.Join(rt.ProjectConfigWholeFile, ", ")+" — presence alone degrades the launch there, because that entry's executable content sits under no top-level key the narrowing could name (grok's .grok/lsp.json is keyed by LSP server name). Built-in only; no yaml declares it.")
+		}
 	} else {
 		r.note = append(r.note, "the WHOLE FILE is the predicate: its mere presence degrades the launch. That is the conservative side, and where project_config_keys: is unset it is where this stays.")
 	}

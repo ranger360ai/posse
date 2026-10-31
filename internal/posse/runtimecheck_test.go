@@ -998,7 +998,7 @@ func TestBuiltinDimensionRowsSpeakTheVerdictVocabulary(t *testing.T) {
 			t.Errorf("%s has no decided container credential; the row must say so:\n%s", n, row)
 		}
 	}
-	// grok's eight-entry keyed surface and codex's one with no key
+	// grok's keyed surface and codex's one with no key
 	// narrowing — the two arms claude's keyed row does not reach. grok used
 	// to be the "none" arm here, and that is exactly what ranger-base-l12j9
 	// found: an undeclared channel that grok DOES read (hooks RAN, MCP
@@ -1008,8 +1008,12 @@ func TestBuiltinDimensionRowsSpeakTheVerdictVocabulary(t *testing.T) {
 	if row := gridRow(t, grid("grok"), "project_cfg"); !strings.Contains(row, ".grok/config.toml") ||
 		!strings.Contains(row, ".cursor/mcp.json") ||
 		!strings.Contains(row, "narrowed to top-level JSON keys: hooks, mcpServers") ||
+		// ranger-base-2zkcy: the narrowing has one exemption, and an
+		// exemption an onboarder cannot read off this row is a check nobody
+		// can account for.
+		!strings.Contains(row, "the narrowing does NOT reach .grok/lsp.json") ||
 		strings.Contains(row, "none — no repo→box config surface") {
-		t.Errorf("grok's project-config surface must be on the row, key-narrowed:\n%s", row)
+		t.Errorf("grok's project-config surface must be on the row, key-narrowed, with its one exemption named:\n%s", row)
 	}
 	if row := gridRow(t, grid("codex"), "project_cfg"); !strings.Contains(row, ".codex/config.toml") ||
 		!strings.Contains(row, "the WHOLE FILE is the predicate") {

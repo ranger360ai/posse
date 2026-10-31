@@ -389,6 +389,27 @@ type Runtime struct {
 	// see trust.go). Naming a key the runtime ignores this release is the
 	// conservative side of that.
 	ProjectConfigKeys []string
+	// ProjectConfigWholeFile names the ProjectConfig entries the key
+	// narrowing does NOT reach: presence alone is the finding, exactly as
+	// if ProjectConfigKeys were empty, and for exactly one reason — the
+	// entry's executable content is not under a top-level key.
+	//
+	// grok's `.grok/lsp.json` is the whole of it today: its top level is
+	// LSP SERVER NAMES, each carrying a `command` grok spawns under folder
+	// trust (MEASURED 2026-10-31, see grokProjectConfig). It names neither
+	// `hooks` nor `mcpServers`, so as a plain keyed entry it would read
+	// CLEAN — not the misleading-reason case ranger-base-l12j9 accepted for
+	// `.grok/config.toml`, but the WRONG verdict over a live channel.
+	//
+	// Built-in only, and per ENTRY rather than per-entry key lists (which
+	// is the P3 ranger-base-l12j9 deferred): this is the smaller shape that
+	// closes the correctness case, it moves the check in the TIGHTENING
+	// direction only, and it cannot be declared from a yaml — so no
+	// onboarder can use it to argue a channel out of the narrowing.
+	// An entry here that ProjectConfig does not name is checked by nothing
+	// at all, which the declaration pin refuses
+	// (grokprojectconfig_qa_test.go arm 1).
+	ProjectConfigWholeFile []string
 	// Unattended is the flag that makes this runtime approve a tool call
 	// with nobody watching, and it is a launch GUARANTEE, not a template
 	// detail (rangerhq-qs5r): every built-in template already carries it,
@@ -1598,23 +1619,59 @@ var (
 //	.cursor/hooks.json           hooks           loaded, REFUSED    nothing
 //	.grok/config.toml            [mcp_servers]   SPAWNED            not spawned
 //	.grok/hooks/*.json           hooks           RAN                nothing
-//	.grok/plugins/               (directory)     NOT MEASURED — ASSUMED
+//	.grok/lsp.json               server names    SPAWNED            nothing
+//	.grok/plugins/               (directory)     see PLUGINS below  nothing
+//	.claude/plugins/             (directory)     see PLUGINS below  nothing
+//
+// The last three rows are ranger-base-2zkcy's, measured 2026-10-31 on the
+// same grok 1.0.52 and the same rig (the ranger-base-1g8gf fixture HOME; every
+// command `touch <marker>`), and the `.grok/plugins` one REPLACES the ASSUMED
+// row this comment used to carry.
 //
 // Stop/SessionEnd did not fire because the turn failed, which narrows
 // nothing: SessionStart alone runs code before any turn.
 //
-// THREE ENTRIES WHOSE ROW IS NOT A PLAIN "RAN", each declared anyway:
+// `.grok/lsp.json` is an LSP server definition map — `{"<name>":{"command":
+// "sh","args":[...],"extensionToLanguage":{...}}}`. In a TRUSTED dir grok
+// SPAWNED it in a headless session with no file edited and no model response;
+// untrusted, nothing. `grok inspect` lists it as "LSP Servers ... project",
+// and grok's docs call it project-scoped config while saying nothing about
+// trust ("Having an lsp.json file is enough for passive diagnostics"). Folder
+// trust is the whole of its precondition, which makes it the most reachable
+// entry on this list.
+//
+// PLUGINS — the two directory entries, and why they are LATENT rather than
+// live. `.claude/plugins/<p>/` (hooks/hooks.json + .mcp.json + plugin.json)
+// and `.grok/plugins/<p>/` behave identically:
+//
+//   - folder trust alone: loaded as "project, enabled", NOT run;
+//   - a project `.grok/config.toml` [plugins] enabled=[...] + paths=[an
+//     in-repo dir]: still NOT run;
+//   - a trusted folder where the plugin's NAME shadows a plugin the operator
+//     has INSTALLED and TRUSTED: the hook RAN and the MCP server SPAWNED, and
+//     the repo's copy replaced the operator's in the listing;
+//   - untrusted, same content: nothing.
+//
+// Positive control, so "nothing ran" is the trust gate and not a broken
+// fixture: the same plugin shape installed with `grok plugin install <path>
+// --trust` into the fixture HOME RAN and SPAWNED.
+//
+// So the plugin half needs an installed, trusted plugin name to shadow. This
+// box has none today (no ~/.grok/plugins, no installed-plugins registry), and
+// the first `grok plugin install --trust` an operator runs opens it — which is
+// why both are declared now rather than when that happens. Docs drift, no
+// action: a hand-placed ~/.grok/plugins/<p> is documented as auto-trusted and
+// on 1.0.52 did NOT run.
+//
+// THE ENTRIES WHOSE ROW IS NOT A PLAIN "RAN", each declared anyway:
 //
 //   - `.cursor/hooks.json` is DORMANT on 1.0.52 — loaded, then refused in
 //     grok's own words ("this Cursor hook won't run until Grok reads Cursor
 //     hook replies"). A dormant channel is a declared one: the file is read,
 //     the refusal is a version's and not a design's, and the next release
 //     that implements the reply path opens it with no edit here.
-//   - `.grok/plugins/` is ASSUMED, off grok's own docs (09-plugins.md: a
-//     project plugin there requires trust and carries hooks, MCP and
-//     skills), not off a marker. Declared on the docs because the
-//     conservative side of an unmeasured channel is to name it; the day
-//     somebody runs the fixture, the row above is what they replace.
+//   - the two `plugins/` trees are LATENT, per the block above: measured, and
+//     waiting on a name to shadow rather than on folder trust alone.
 //   - `.claude/settings.json`'s `mcpServers` was NOT read by grok at all —
 //     the same inert key claude has (trust.go). It stays in the KEY list
 //     anyway, for the reason claude's comment gives: a key the CLI ignores
@@ -1663,17 +1720,49 @@ var (
 // ONE KEY LIST OVER MIXED FILE TYPES, deliberately. ProjectConfigKeys is per
 // runtime and projectConfigTrustFile parses every declared entry as JSON once
 // keys are set, so `.grok/config.toml` degrades as "invalid JSON" and
-// `.grok/hooks` and `.grok/plugins` degrade as "not a regular file". Both are
-// the RIGHT verdict — any such file or tree IS a channel; config.toml alone
-// contributes mcp_servers, permissions and plugins — reached by a misleading
-// reason. Accepted as is (the finding's own design note). If the message
-// misleads in practice, per-entry keys are a P3 follow-up and not this list's
-// business.
+// `.grok/hooks`, `.grok/plugins` and `.claude/plugins` degrade as "not a
+// regular file". Both are the RIGHT verdict — any such file or tree IS a
+// channel; config.toml alone contributes mcp_servers, permissions and plugins
+// — reached by a misleading reason. Accepted as is (the finding's own design
+// note). If the message misleads in practice, per-entry keys are a P3
+// follow-up and not this list's business.
+//
+// ONE EXCEPTION, and it is a WRONG VERDICT rather than a misleading reason.
+// `.grok/lsp.json` names neither `hooks` nor `mcpServers` — its top level is
+// server names — so as a plain keyed entry it parses fine, matches nothing,
+// and reads CLEAN over a channel grok spawns under folder trust alone. That is
+// the one case the paragraph above does not cover, so the entry is listed in
+// grokProjectConfigWholeFile and checked on presence. Deliberately the SMALLER
+// of the two shapes the finding offered: per-entry key lists would reach the
+// same verdict and are five more touch points plus a new declarable surface,
+// and nothing else on this list needs them (ranger-base-2zkcy; per-entry keys
+// stay the P3 ranger-base-l12j9 deferred).
+//
+// RE-AUDIT, on any grok bump: re-run this whole table against the new
+// version, with that version's $HOME fixture, and replace the rows rather
+// than adding to them. Two rows are expected to move, and neither moves on
+// its own. `.cursor/hooks.json` opens the release that implements the Cursor
+// reply path. The two `plugins/` trees open the day an operator runs
+// `grok plugin install --trust` — a change to the BOX and not to grok, so no
+// version bump announces that one at all. The notes fragments
+// (docs/notes.d/ranger-base-l12j9.md, ranger-base-2zkcy.md) carry the rigs.
 var grokProjectConfig = []string{
-	ClaudeProjectConfig, ClaudeProjectConfigLocal,
+	ClaudeProjectConfig, ClaudeProjectConfigLocal, ".claude/plugins",
 	".mcp.json", ".cursor/mcp.json", ".cursor/hooks.json",
-	".grok/config.toml", ".grok/hooks", ".grok/plugins",
+	".grok/config.toml", ".grok/hooks", ".grok/lsp.json", ".grok/plugins",
 }
+
+// grokProjectConfigWholeFile is the key narrowing's one exemption, for the one
+// reason Runtime.ProjectConfigWholeFile exists: `.grok/lsp.json` carries its
+// executable content under SERVER NAMES, so no top-level key names it and the
+// keyed arm would call a live channel clean. Presence is the predicate here,
+// which is what every entry had before claude's keys narrowed any of them.
+//
+// Nothing else belongs here. `.grok/config.toml` and the three directory
+// entries already degrade under the keys, by a reason that names the wrong
+// thing and a verdict that is right — the design note above, and not a
+// correctness case.
+var grokProjectConfigWholeFile = []string{".grok/lsp.json"}
 
 // grokProjectConfigKeys is claude's key list, for claude's reason: the
 // executable half of a settings file is `hooks` and `mcpServers`, and
@@ -1983,6 +2072,7 @@ var builtinRuntimes = []Runtime{
 		// the measurement table and why each entry is on it: see
 		// grokProjectConfig above.
 		ProjectConfig: grokProjectConfig, ProjectConfigKeys: grokProjectConfigKeys,
+		ProjectConfigWholeFile: grokProjectConfigWholeFile,
 		// record: trusted — the qa lane on grok closed a bead properly on
 		// 2026-08-24, which is the measurement the promotion needs and the
 		// only reason grok and codex differ in this column.
