@@ -27,11 +27,18 @@ package treepins
 // — an arm that reports a hole has to be read beside the arms that report
 // none, or it is measuring a reader that resolves nothing.
 //
-// NOT REACHED BY ANY SITE IN THE TREE TODAY. At this commit the census
-// reads 15 exec.CommandContext sites, 12 naming a grace and 3 ruled exempt,
-// and no shipped function holds two of them. So this is a hole in the pin
-// and not a live unbounded call; the day a landing merges two bounded
-// children into one function, the second one stops being censused.
+// NOT REACHED BY ANY SITE IN THE TREE TODAY, and the margin is one
+// identifier wide. At this commit the census reads 15 exec.CommandContext
+// sites, 12 naming a grace and 3 ruled exempt. ONE shipped function already
+// holds two of them — internal/posse/worktree.go:2966 and :2967, the
+// `git log` and `git patch-id` halves of patchIDsVerbatimWithin — and it is
+// safe only because they are bound to DISTINCT identifiers (logCmd, idCmd)
+// and each is handed to bindGitDeadline separately. Give both the name
+// `cmd`, or add a third child to any of the twelve functions and reuse its
+// variable, and the extra site stops being censused while the pin stays
+// green. So this is a hole in the pin rather than a live unbounded call,
+// and it is not a hypothetical shape: the tree is already one rename away
+// from it.
 
 import (
 	"go/ast"
