@@ -331,17 +331,24 @@ const AgentsSkillsPath = ".agents/skills"
 // no CLI read of `.agents/skills` at all, so claiming that root for bob was
 // the §6 bug — a declaration nobody had measured, standing in for a runtime
 // whose real surface a different root entirely. MEASURED LIVE 2026-10-31 on
-// bob 2.0.5 (ranger-base-6r1rf): bob's `/skills` listing carries a skill
-// planted here as a real dir AND as a symlink out of the workspace, so the
-// root is verified and runtime.go now declares SkillsVerified for it.
+// bob 2.0.5 (ranger-base-6r1rf) and again on bob 2.0.7 (ranger-base-bs49e):
+// bob's `/skills` listing carries a skill planted here as a real dir AND as a
+// symlink out of the workspace, so the root is verified and runtime.go now
+// declares SkillsVerified for it. Both arms, both versions, against the
+// `.bob/skills` control — docs/notes.d/ranger-base-6r1rf.md has the table.
 const BobSkillsRoot = ".bob/plugins/posse/skills"
 
 // bobSkillsGlobalRoots is bob's declared Runtime.SkillsGlobalRoots (ADR 0007
-// §6e): the GLOBAL skill roots bob 2.0.5's shipped bundle reads, home-relative,
-// MEASURED 2026-10-12 by a static read of
-// /opt/homebrew/lib/node_modules/bobshell/dist/bob.js (see the ADR's
-// Evidence for the grep recipe — the minified names move between builds,
-// the string literals do not). `~/.bob`, `~/.agents` and `~/.claude`, each
+// §6e): the GLOBAL skill roots bob's shipped bundle reads, home-relative,
+// MEASURED 2026-10-12 by a static read of bob 2.0.5's
+// /opt/homebrew/lib/node_modules/bobshell/dist/bob.js, and RE-READ unchanged
+// on 2.0.9 at 2026-10-31 (ranger-base-bs49e) — where the package is `@ibm/bob`
+// and the path is /opt/homebrew/lib/node_modules/@ibm/bob/dist/bob.js, the
+// `bobshell` global having migrated under it (ranger-base-lf6it §5). The
+// minified names moved exactly as the ADR's Evidence warns they would — the
+// 2.0.5 recipe's `rXo=` and `nXo=Afr.flatMap` are `xds=` and `Sds=Cmr.flatMap`
+// on 2.0.9, where `NA=".bob"` and `tJ="plugins"` — and the string literals did
+// not. `~/.bob`, `~/.agents` and `~/.claude`, each
 // with `skills` and `plugins/*/skills` — six entries because the
 // measurement names the glob exactly, not a coarser directory that happens
 // to cover it: refuseSkillsGlobalWrite matches path SEGMENTS, with a `*`

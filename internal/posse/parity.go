@@ -131,7 +131,7 @@ var skillsDriftVersion = ProbeCLIVersion
 // exit code exists to keep away from the real ones (ranger-base-f5jbs).
 //
 // ONE rule, not a per-runtime parser, and nothing but grok pays for it: codex
-// prints `codex-cli 0.153.4` and bob prints a bare `2.0.5`, neither of which
+// prints `codex-cli 0.153.4` and bob prints a bare `2.0.7`, neither of which
 // carries a bracketed field, so for them this returns the raw line byte for
 // byte. A real release move still reds — the version and the build hash are
 // both ahead of the bracket, so 1.0.52 → 1.0.53 or a changed hash mismatches

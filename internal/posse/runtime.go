@@ -2149,11 +2149,15 @@ var builtinRuntimes = []Runtime{
 	// is most likely to get wrong, and now the part that is measured.
 	// Skills: bob's root is its OWN posse-owned namespace, BobSkillsRoot
 	// (ADR 0007 §6d) — not AgentsSkillsPath, the shared surface codex and
-	// grok read. SkillsVerified is `2.0.5`, MEASURED LIVE 2026-10-31 by the
-	// operator (ranger-base-6r1rf, through ranger-base-lfk7t: this cage can
-	// neither write ~/.bob nor complete bob's browser sign-in): `bob chat
-	// --workspace <probe> --trust` in a scratch workspace, read off the
-	// TUI's own `/skills` listing with no turn sent, listed a skill planted
+	// grok read. SkillsVerified is `2.0.7`, MEASURED LIVE TWICE by the
+	// operator, because this cage cannot run the probe at all — it can
+	// neither write ~/.bob nor complete bob's browser sign-in
+	// (ranger-base-lfk7t): on 2.0.5 at 2026-10-31 00:25 (ranger-base-6r1rf)
+	// and re-run on the installed 2.0.7 at 2026-10-31 09:38
+	// (ranger-base-bs49e, §6c's remedy for the drift the first reading
+	// shipped in). Both runs: `bob chat --workspace
+	// <probe> --trust` in a scratch workspace, read off the TUI's own
+	// `/skills` listing with no turn sent, and both listed a skill planted
 	// at `<ws>/.bob/plugins/posse/skills/<name>/SKILL.md` BOTH as a real dir
 	// and as a symlink whose target is outside the workspace — the two
 	// facts §6's Evidence had ASSUMED, and the pair the binding needs, since
@@ -2161,19 +2165,33 @@ var builtinRuntimes = []Runtime{
 	// `skills:` PID on bob is no longer §6b-UNPROVEN.
 	// The value is BARE on purpose: `skills_verified` is compared verbatim
 	// against ProbeCLIVersion's read (§6c), and `bob --version` prints the
-	// number alone — `2.0.5`, with `commit: <sha>` on a second line the
+	// number alone — `2.0.7`, with `commit: <sha>` on a second line the
 	// reader drops — where codex prints `codex-cli 0.153.4`. Writing
-	// `bob 2.0.5` here would be permanent false drift against every bob.
-	// This box's installed bob is 2.0.7 (`commit: e1a2a9f87`, MEASURED
-	// 2026-10-31), so this declaration IS in drift today — reported in the
-	// grid and at launch, never refused, and the remedy is a re-measurement
-	// (§6c, ranger-base-bs49e).
+	// `bob 2.0.7` here would be permanent false drift against every bob.
+	// It is 2.0.7 and NOT the version installed right now, because §6's
+	// subject is the release whose LIVE discovery was measured and not the
+	// one the box happens to carry: bob replaced itself AGAIN at 09:39, one
+	// minute after that probe exited, so this box runs 2.0.9 (`commit:
+	// 9690f20b0`, `@ibm/bob`) and this declaration IS in drift today —
+	// reported in the grid and at launch, never refused (§6c). The remedy is
+	// one more operator probe, ranger-base-0q45n, and it is narrow: a STATIC
+	// read of 2.0.9's bundle finds BobSkillsRoot and every
+	// SkillsGlobalRoots entry below unchanged, so what is unmeasured on
+	// 2.0.9 is the symlink arm and the listing, never the roots.
+	// The second move was the `bobshell` → `@ibm/bob` package MIGRATION,
+	// which `bobShell.autoUpdate: false` does not gate (in that file since
+	// 09:37, ranger-base-zneyv, whose own blast-radius note said so) — so a
+	// reader here must not take the off-switch as a reason to trust the
+	// number. docs/notes.d/ranger-base-bs49e.md carries both readings.
 	// SkillsGlobalRoots is the same static read's other half (§6e): bob's
 	// OWN BobSkillsRoot (`.bob/plugins/posse/skills`) sits inside its own
 	// `.bob/plugins/*/skills` entry below, so bob's declaration refuses its
 	// own cwd-at-home render — not a gap the live probe closes, a fact the
-	// bundle already settles.
-	{Name: "bob", Builtin: true, Skills: skillsCwd, SkillsRoot: BobSkillsRoot, SkillsVerified: "2.0.5", SkillsGlobalRoots: bobSkillsGlobalRoots, Unattended: "--auto-approve",
+	// bundle already settles. Re-read on 2.0.9's bundle (MEASURED
+	// 2026-10-31, ranger-base-bs49e): the six entries are unchanged, and so
+	// are the four workspace roots — see bobSkillsGlobalRoots in skills.go
+	// for the current path and the minified names.
+	{Name: "bob", Builtin: true, Skills: skillsCwd, SkillsRoot: BobSkillsRoot, SkillsVerified: "2.0.7", SkillsGlobalRoots: bobSkillsGlobalRoots, Unattended: "--auto-approve",
 		// The PID channel (ADR 0062 D1): bob is the one built-in whose CLI
 		// has no launch-time system FLAG, and the one that declares a
 		// persona-mode channel. {mode} renders off this and the launch

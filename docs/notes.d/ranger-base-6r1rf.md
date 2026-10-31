@@ -38,6 +38,30 @@ one root both boxes already agreed bob reads (§6's rejected-alternatives
 entry), so a listing that named only the control would have said the probe
 worked and the posse namespace did not.
 
+### Re-run on 2.0.7 — all three arms again (ranger-base-bs49e)
+
+The reading above shipped in drift: the box's installed bob was already 2.0.7
+when it landed ("Drift, immediately" below), and §6c's remedy for a drift is a
+re-measurement. ranger-base-bs49e is that re-run.
+
+**MEASURED 2026-10-31 09:38 local by the operator (Dave), monica-verified.**
+`bob --version` → `2.0.7` / `commit: e1a2a9f87`; session log
+`~/.bob/logs/shell/bob-shell-20261031T093849.log`, cwd the same three-arm
+scratch workspace, same fixture layout, same method — TUI `/skills` listing
+only, **no chat turn sent**.
+
+| arm | fixture | result on 2.0.5 | result on 2.0.7 |
+|---|---|---|---|
+| a. real dir | `<ws>/.bob/plugins/posse/skills/probe-a-realdir/SKILL.md` | **LISTED**, `local` | **LISTED**, `local` |
+| b. symlink out | same path, `probe-b-symlink` → a dir OUTSIDE the workspace | **LISTED**, `local` | **LISTED**, `local` |
+| c. control | `<ws>/.bob/skills/probe-c-control/SKILL.md` | **LISTED**, `local` | **LISTED**, `local` |
+
+So `SkillsVerified` moves **2.0.5 → "2.0.7"** in runtime.go's bob built-in.
+It does not move to the version installed right now, and that is not an
+oversight — see `docs/notes.d/ranger-base-bs49e.md`, which carries why the
+re-run did not clear the §6c clock, what replaced bob sixty seconds after this
+session exited, and what is left for the next probe to establish.
+
 **Why the operator ran it and not this seat** (ranger-base-lfk7t carries the
 recipe verbatim). A `cage: seatbelt` seat cannot run `bob chat` at all, by
 two different walls:
@@ -91,12 +115,19 @@ is a re-measurement, so:
   one a probe produced, never the one the box happens to have installed;
 - `posse runtime check bob`'s skills row and a launch's Realized detail both
   carry the drift line, naming both versions;
-- **ranger-base-bs49e** is filed for the operator to re-run the three arms on
-  2.0.7, since this cage cannot.
+- **ranger-base-bs49e** was filed for the operator to re-run the three arms on
+  2.0.7, since this cage cannot. It ran the same day — the section above — and
+  the field now reads `2.0.7`. The clock did not clear: bob was 2.0.9 by the
+  time that re-run landed, which is `docs/notes.d/ranger-base-bs49e.md`'s
+  subject and ranger-base-0q45n's.
 
-Whether 2.0.5 and 2.0.7 differ here is unknown and deliberately unasserted:
-a version is the only thing a cwd-root declaration can honestly key on,
-which is the whole of §6.
+Whether 2.0.5 and 2.0.7 differ here was unknown and deliberately unasserted
+when this fragment landed: a version is the only thing a cwd-root declaration
+can honestly key on, which is the whole of §6. **Answered the same day** by
+the re-run above — for these three arms they do not differ, every one listed
+on both. That is a reading, not a reason to stop keying on the version: what
+the re-run establishes is 2.0.7's behaviour, and 2.0.9's is unmeasured on
+exactly the same terms.
 
 ### Changes
 
