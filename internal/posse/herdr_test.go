@@ -74,6 +74,17 @@ func TestMain(m *testing.M) {
 		// reading a link name.
 		case len(args) > 0 && (args[0] == "run" || args[0] == "api"):
 			os.Exit(fakeGh(args))
+		// …and the fourth, on the same rule once more (ranger-base-qlxb5).
+		// Rex's verbs lead with GLOBAL FLAGS (`--color never
+		// --autostart=false …`), so the verb is the first non-flag word
+		// rather than args[0] — rexFakeVerb finds it. The set is disjoint
+		// from the three above by construction: rex's reading of `api call`
+		// is spelled `block call` here precisely so that `api` stays gh's
+		// (Rex.ProgramStatus says so), and bd has none of `new`, `ls`,
+		// `kill`, `send`, `send-key`, `capture`, `focus`, `block` or
+		// `whoami`.
+		case rexFakeVerb(args) != "":
+			os.Exit(fakeRex(args))
 		default:
 			os.Exit(fakeBd(args))
 		}
