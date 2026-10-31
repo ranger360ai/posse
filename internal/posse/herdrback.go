@@ -118,6 +118,21 @@ func (b *HerdrBackend) herdrMux() (HerdrMux, bool) {
 	return hm, ok
 }
 
+// rexMux is the occupant when it is Rex's, and the door to the one verb only
+// REX has: the first-report wait of ADR 0076 §3. It is §4's type assertion
+// pointed the other way, and it reads the same: false is "this occupant does
+// not report its own state", which is herdr — whose launch row is its
+// detection manifest and is asked elsewhere (ReadDetection), not a silence
+// anything here has to interpret.
+//
+// Unexported for §4's reason: the door names the verb, and no call site
+// takes the assertion for itself and decides on its own what "not herdr"
+// means.
+func (b *HerdrBackend) rexMux() (RexMux, bool) {
+	rm, ok := b.Mux().(RexMux)
+	return rm, ok
+}
+
 // explain is §4's detection read taken through the occupant: herdr's full
 // working when herdr is in the slot, and the "not available" error every
 // caller of it already concedes on otherwise.
@@ -327,8 +342,24 @@ type NewSessionOpts struct {
 }
 
 func NewHerdrBackend(a *App) *HerdrBackend {
-	return &HerdrBackend{App: a, H: NewHerdr(), ClaudeConfig: ClaudeConfigFile(),
+	b := &HerdrBackend{App: a, H: NewHerdr(), ClaudeConfig: ClaudeConfigFile(),
 		ClaudeHistory: claudeHistoryPath(), Bd: NewBd()}
+	// WHICH OCCUPANT HOLDS THIS INSTANCE'S SEATS (ADR 0076 §6). The Slot is
+	// filled for a NON-herdr occupant only, and that asymmetry is the
+	// mechanical form of "the default stays herdr and herdr's code paths do
+	// not change": a herdr home leaves the field nil and Mux() builds
+	// HerdrMux over this backend's own H, which is byte-identical to what
+	// every backend did before the key existed — including a test backend
+	// that sets H and nothing else.
+	//
+	// A malformed value reads as herdr here (MultiplexerName) and is refused
+	// at the launch instead (planLaunch), which is App.Instance's rule: a
+	// listing must keep working, and the launch is the one place where a
+	// guess costs something.
+	if b.App.MultiplexerName() == MuxRex {
+		b.Slot = NewRexMux(a)
+	}
+	return b
 }
 
 // ─── meta files ──────────────────────────────────────────────────────────────
@@ -2277,6 +2308,17 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 	if _, err := a.Instance(); err != nil {
 		return nil, err
 	}
+	// And the other key that names a server rather than configuring one:
+	// which multiplexer holds this instance's seats (ADR 0076 §6). A value
+	// that is neither occupant is refused here for the instance tag's exact
+	// reason — the fallback is herdr, so an instance that believed it was on
+	// Rex would open a herdr workspace and stamp the record with whatever
+	// the backend really is. Every create plans first, so this gates them
+	// all; the read paths treat the same value as herdr and keep working
+	// (App.MultiplexerName).
+	if _, err := a.Multiplexer(); err != nil {
+		return nil, err
+	}
 
 	// ADR 0015 §3, the launch verify: the promoted constitution is hashed
 	// against its manifest before anything is launched with it. A DISPATCHED
@@ -2476,6 +2518,35 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 				return nil, DangerRefusal(rt, line)
 			}
 			warn("posse: DEGRADED — %s launch opens on %s; an interactive launch proceeds because answering that screen is what you would open a session to do (ADR 0013 §2)\n", rt.Name, line)
+		}
+		// ADR 0076 D1, beside the danger refusal and with the same
+		// asymmetry: on a `multiplexer: rex` instance, a runtime that does
+		// not write its own OSC 7501 record cannot be read there at all, so
+		// a seat of it is refused before one is opened.
+		//
+		// IT IS READ OFF THE RUNTIME TABLE AND NEVER OFF A LAUNCH. The two
+		// runtimes refused today are both `prompt: argv`, where the work
+		// prompt rides the launch line — so a try-and-see refusal would
+		// arrive after a claim, a worktree and a live billed turn, which is
+		// what ADR 0013 §1 rule 3 forbids. confirmReports' wait after the
+		// launch is the confirmation of this declaration, not its substitute.
+		//
+		// This is the backstop for every bead-carrying path that is not the
+		// dispatch loop — a cockpit `d` on a session it must create, a
+		// recipe, a recreate — the same role this function plays for the
+		// danger and detection readings above, and for the same reason:
+		// launchSession refuses above the claim, because the argv ladder has
+		// taken the bead by the time a launch is being planned (dispatch.go).
+		//
+		// Interactive warns and proceeds (ADR 0013 §1 rule 5, ADR 0076 D1's
+		// last line): the operator is at the keyboard, State reads unknown
+		// until a record arrives, and looking at the screen is how a runtime
+		// nobody has measured on Rex gets measured.
+		if a.MultiplexerName() == MuxRex && !RexAdmits(rt) {
+			if o.Bead != "" || o.Recreate {
+				return nil, RexRuntimeRefusal(rt)
+			}
+			warn("posse: %s\n", RexRuntimeDegraded(rt))
 		}
 		// ADR 0013 §1's launch row, on the same rung and with the same
 		// asymmetry (ranger-base-d8riq, from ranger-base-i3q6g). herdr has no
@@ -3146,8 +3217,92 @@ func (b *HerdrBackend) startPlanned(o NewSessionOpts, p *launchPlan) (string, er
 		if err := mux.Start(seat, line); err != nil {
 			return wsID, err
 		}
+		if err := b.confirmReports(o, p, seat); err != nil {
+			return wsID, err
+		}
 	}
 	return wsID, nil
+}
+
+// confirmReports is ADR 0076 §3's launch rule: on a Rex instance, a launch
+// that typed a runtime's line waits a bounded time for that runtime's first
+// program_status record, and a launch with nothing to read does not proceed
+// to a prompt.
+//
+// HERE, AND NOT IN planLaunch, because this is the first instant the question
+// has an answer: the record is written by a process that does not exist until
+// the line above has been typed. That is also why it is a CONFIRMATION and
+// never the admission — admission is decided from the runtime table before
+// the claim (ADR 0076 D1, RexAdmits), precisely so that this wait is never
+// the thing a refusal rests on for a runtime whose prompt rode its launch
+// line.
+//
+// NOTHING AT ALL ON HERDR. The door is the type assertion, and a false
+// answer there is "this occupant does not report its own state" — herdr,
+// whose launch row is the detection manifest planLaunch already read off a
+// file. So a herdr launch takes no extra call, waits no extra second, and
+// reaches none of the lines below.
+//
+// THE BOUND IS THE RUNTIME'S OWN STARTUP PATIENCE (rt.Wait(), `startup_wait:`
+// — 45s by default), not a second number coined here. It is the same
+// patience the typed ladder gives a composer to appear, it is per runtime
+// and MEASURED where anybody has measured it, and a box slow enough to need
+// longer needs longer for both.
+//
+// WHAT THE WAIT COSTS, named because it is spent under the launcher lock
+// (ADR 0011 §1) and so is spent by every other launch too. On the happy path
+// it is ONE poll: claude's record is there within a second or two (MEASURED,
+// ADR 0076 §3), so the first sample usually answers and the lock is held no
+// longer than a herdr create holds it. On the failing path it is the whole
+// bound once — and only once, because the refusal is a plain error, which
+// benches the persona/runtime slot rather than being paid again per bead
+// (ADR 0013 §2 property 4). Moving the wait outside the lock would mean a
+// second call site holding a seat whose meta is already on disk, which is
+// the orphan window mustNotOrphan exists to keep shut.
+//
+// A RUNTIME THAT WILL NOT LOAD WAITS FOR NOTHING. planLaunch already refused
+// every launch whose runtime cannot be read; reaching this with an
+// unloadable one would mean asking for a report with no `prompt:` column to
+// decide what a miss costs, and guessing that is the one thing D2 is about.
+func (b *HerdrBackend) confirmReports(o NewSessionOpts, p *launchPlan, seat Seat) error {
+	rm, ok := b.rexMux()
+	if !ok {
+		return nil
+	}
+	rt, err := b.App.LoadRuntime(p.Runtime)
+	if err != nil {
+		return nil
+	}
+	read, reported, err := rm.AwaitFirstReport(seat, rt.Wait())
+	if reported {
+		return nil
+	}
+	if err != nil {
+		// Rex could not be asked. Unknown is never no (ADR 0013 §1): a seat
+		// is not refused over a server that did not answer, and the launch
+		// keeps whatever it already has. Said out loud, because a silent
+		// skip here is a gate that stood down without telling anybody.
+		fmt.Fprintf(b.warnWriterFor(o.Warn), "posse: %s launch in %s could not be confirmed — rex would not answer the program_status read (%v); the session is kept and its state reads unknown until a record arrives (ADR 0076 §3; unknown is not no)\n", rt.Name, o.Name, err)
+		return nil
+	}
+	// The argv arm first, because it refuses nothing: the prompt rode the
+	// launch line, so this pass knows less than it did and judges no less
+	// carefully (ADR 0076 D2, ADR 0066 D1). Unreachable today — D1 admits no
+	// argv runtime on Rex — and it is the arm a future admission lands on.
+	if rt.PromptMode() == PromptArgv {
+		fmt.Fprintf(b.warnWriterFor(o.Warn), "posse: %s\n", RexNoReportHold(rt, o.Name, rt.Wait(), read))
+		return nil
+	}
+	// The typed arm. The dispatched/interactive asymmetry is the one the
+	// danger and detection readings above already use (ADR 0013 §1 rule 5):
+	// a launch nobody is watching refuses, and the operator's own is told
+	// what it has and left to decide — which here is also the only way a
+	// runtime's report gets looked at on this box.
+	if o.Bead != "" || o.Recreate {
+		return RexNoReportRefusal(rt, o.Name, rt.Wait(), read)
+	}
+	fmt.Fprintf(b.warnWriterFor(o.Warn), "posse: %s\n", RexNoReportDegraded(rt, o.Name, rt.Wait(), read))
+	return nil
 }
 
 // CreateSession mirrors the tmux CreateSession contract (defaults, env sets,
@@ -4114,7 +4269,18 @@ func (b *HerdrBackend) CmdList(w interface{ Write([]byte) (int, error) }) error 
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(w, "HERDR SESSIONS\n")
+	// WHICH MULTIPLEXER THIS INSTANCE RUNS (ADR 0076 §6), in the one word
+	// that was already here: the header has said HERDR since before the slot
+	// existed, and on a herdr home it still says exactly that, to the byte.
+	// A Rex home says REX, and gets the sentence under it — which is the
+	// asymmetry §6 asks for everywhere: the default prints what it always
+	// printed, and the occupant that is NOT the default is the one that has
+	// to announce itself.
+	mux := b.App.MultiplexerName()
+	fmt.Fprintf(w, "%s SESSIONS\n", strings.ToUpper(mux))
+	if mux != MuxHerdr {
+		fmt.Fprintf(w, "  %s\n", b.App.MultiplexerLine())
+	}
 	if len(sessions) == 0 {
 		fmt.Fprintf(w, "  (none)\n")
 		return nil
@@ -4158,7 +4324,11 @@ func (b *HerdrBackend) CmdList(w interface{ Write([]byte) (int, error) }) error 
 			line += "  🔑" + s.Envs // names only — never values
 		}
 		if s.Foreign {
-			line += "  (herdr)"
+			// A row this home does not own, tagged with the occupant that
+			// DOES hold it — on herdr the literal this line has always
+			// printed, on Rex the occupant that actually answered. The tag
+			// is the whole point of the marker: it says where to go ask.
+			line += "  (" + mux + ")"
 		}
 		fmt.Fprintf(w, "%s\n", line)
 	}

@@ -449,6 +449,59 @@ func (m RexMux) Prompt(s Seat, text string, wait bool, timeoutMS int) (MuxReadin
 	return m.Wait(s, []string{MuxIdle, MuxDone, MuxBlocked}, left())
 }
 
+// ─── the launch-stage first-report check (ADR 0076 §3, D2) ───────────────────
+
+// AwaitFirstReport waits up to `within` for this seat to hold a record that
+// is a READING — one whose owner is the runtime and not the block's shell,
+// and whose owner is still alive (reading's four not-a-state cases). It is
+// ADR 0076 §3's launch rule, which is ADR 0013 §1's launch row applied to
+// this occupant: no detection means no dispatch, and on Rex "detection" is
+// the runtime's own report.
+//
+// IT IS NOT ONE OF §2'S TEN VERBS, and it is not on the Mux interface. It is
+// §4's type assertion pointed the other way — a verb only THIS occupant has,
+// reached through HerdrBackend.rexMux — because on herdr the same question
+// has a different answer (the detection manifest, read off a file before
+// anything is created) and an interface method would make every occupant
+// pretend to answer a question only one of them has.
+//
+// THREE OUTCOMES, NOT TWO, and the third is why this does not return Wait's
+// timeout error. `reported` false with a nil error is "the bound ran out with
+// nothing to read", which is the launch refusal. A non-nil error is "rex
+// could not be asked", which is ignorance and never a refusal — ADR 0013
+// §1's unknown-is-not-no rule, and the direction that costs a kept session
+// rather than a seat refused over a server hiccup. Wait's caller branches on
+// an API code and so cannot tell those apart; this one must.
+//
+// The last reading rides back either way, so the caller's line can say what
+// WAS there — "no program_status record" is a different sentence from a
+// record the block's own shell wrote, and an operator reading a refusal needs
+// to know which.
+//
+// The first sample is taken before the first sleep, for Wait's reason: a
+// runtime that has already reported by the time this is called has answered
+// the question, and a poller that slept first would spend a second proving it.
+func (m RexMux) AwaitFirstReport(s Seat, within time.Duration) (MuxReading, bool, error) {
+	deadline := time.Now().Add(within)
+	for {
+		read, err := m.State(s)
+		if err != nil {
+			return MuxReading{}, false, err
+		}
+		if read.Seen {
+			return read, true, nil
+		}
+		left := time.Until(deadline)
+		if left <= 0 {
+			return read, false, nil
+		}
+		if p := m.poll(); left > p {
+			left = p
+		}
+		time.Sleep(left)
+	}
+}
+
 // ─── who is answering (ADR 0076 §5) ──────────────────────────────────────────
 
 // Server is Rex's answer to the provenance triple every session record

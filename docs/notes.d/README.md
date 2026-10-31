@@ -10,6 +10,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-t03st](ranger-base-t03st.md) — The commit wall's every-repo class was a criterion enumerated for one runtime (ranger-base-t03st) — 2026-10-31
 - [ranger-base-qlxb5](ranger-base-qlxb5.md) — Rex in the multiplexer slot: four decisions ADR 0076 §2 left to the occupant (ranger-base-qlxb5) — 2026-10-31
 - [ranger-base-q5gc2](ranger-base-q5gc2.md) — The session record names its multiplexer, and one method ADR 0076 §2 does not list (ranger-base-q5gc2) — 2026-10-31
+- [ranger-base-phq39](ranger-base-phq39.md) — Selecting Rex: one instance key, two gates, and what the live run measured (ranger-base-phq39) — 2026-10-31
 - [ranger-base-nc91t](ranger-base-nc91t.md) — Relaunch's two readings are the slot's listing, and the second one is why holdsRecorded alone was not the fix (ranger-base-nc91t) — 2026-10-31
 - [ranger-base-lf6it](ranger-base-lf6it.md) — bob self-updated under the probe, 60 seconds in — and the probe still measured 2.0.5 (ranger-base-lf6it) — 2026-10-31
 - [ranger-base-l12j9](ranger-base-l12j9.md) — grok's project-config channel: declared on a measurement (ranger-base-l12j9) — 2026-10-31

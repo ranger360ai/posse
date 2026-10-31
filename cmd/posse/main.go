@@ -386,7 +386,14 @@ func main() {
 		if err := hb.CreateSession(o); err != nil {
 			die(err)
 		}
-		fmt.Fprintf(out, "created %s (herdr workspace, background)\n", o.Name)
+		// The occupant names itself, because on a Rex instance "herdr
+		// workspace" was a lie about where the seat is (ADR 0076 §6). A
+		// herdr home prints the sentence it always printed.
+		if a.MultiplexerName() == posse.MuxRex {
+			fmt.Fprintf(out, "created %s (rex session, background)\n", o.Name)
+		} else {
+			fmt.Fprintf(out, "created %s (herdr workspace, background)\n", o.Name)
+		}
 
 	case "attach", "up", "local", "focus":
 		args = need(args, 1, "posse attach <name>")
@@ -1813,6 +1820,29 @@ func main() {
 		// before the matrix and in every case, UNKNOWN included; it moves no
 		// exit code.
 		a.ReportWallRenderer(out, "gates", cwd)
+		// WHICH MULTIPLEXER THIS INSTANCE RUNS (ADR 0076 §6), above the
+		// parity table because on a Rex instance it decides which rows of
+		// that table can launch at all: Rex has no screen rules and no
+		// posse-written hooks, so a runtime that does not write its own
+		// program_status record is refused there whatever its parity says
+		// (ADR 0076 §3/D1). A herdr instance reads the one line and moves on.
+		fmt.Fprintf(out, "%s\n", a.MultiplexerLine())
+		if a.MultiplexerName() == posse.MuxRex {
+			var admits, refuses []string
+			for _, rn := range a.ListRuntimes() {
+				rt, err := a.LoadRuntime(rn)
+				if err != nil {
+					continue
+				}
+				if posse.RexAdmits(rt) {
+					admits = append(admits, rn)
+				} else {
+					refuses = append(refuses, rn)
+				}
+			}
+			fmt.Fprintf(out, "  launches here: %s\n", runtimeSet(admits))
+			fmt.Fprintf(out, "  REFUSED here, before the claim — run them on a herdr instance: %s\n", runtimeSet(refuses))
+		}
 		fmt.Fprintf(out, "parity (ADR 0002 §4, ADR 0003 §3) — what the wall realizes per runtime at cage shims, tier %s, launching in this shell's cwd %s:\n", tier, posse.AbbrevHome(cwd))
 		// The persona's OWN runtime, before the table. The loop below walks
 		// the CATALOG, so a `runtime:` naming neither a built-in nor a
@@ -3130,4 +3160,15 @@ func backupHelp() string {
                                config backup_min_free_mb: (384) refuse rather
                                  than fill the disk
 `
+}
+
+// runtimeSet renders one side of the gates report's Rex admission split.
+// "(none)" rather than a blank, because an empty list is an answer — on a
+// Rex instance with no admitted runtime, every launch is refused, and a
+// trailing colon with nothing after it reads as a bug in the report.
+func runtimeSet(names []string) string {
+	if len(names) == 0 {
+		return "(none)"
+	}
+	return strings.Join(names, " ")
 }

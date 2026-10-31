@@ -4871,6 +4871,37 @@ func (d *Dispatcher) launchSession(is RepoIssue, persona, session, runtime, tier
 			if line := DangerLine(rt); line != "" {
 				return launched{}, DangerRefusal(rt, line)
 			}
+			// ADR 0076 D1, on the same rung as the danger reading and for
+			// the same three reasons: above BOTH launch branches, above the
+			// claim, and create-only. On a `multiplexer: rex` instance a
+			// runtime that writes no OSC 7501 record is unreadable from its
+			// first keystroke — there are no screen rules on Rex and no
+			// posse-written hooks (ADR 0076 §3) — so the prompt, the settle
+			// and the turn's own outcome would each be a guess.
+			//
+			// THIS PLACEMENT IS THE DECISION, not an optimisation of it. The
+			// two runtimes refused today are both `prompt: argv`: their work
+			// prompt rides the launch line, so the evidence a try-and-see
+			// would wait for arrives only after the prompt has been
+			// delivered, and the refusal would land on the far side of a
+			// claim, a worktree, a Rex session and a billed turn nobody
+			// observes (ADR 0013 §1 rule 3, "before anything is spent"; ADR
+			// 0076's "Alternatives rejected", try-and-see). So the fact is
+			// read off the runtime table — a measurement, not a yaml
+			// declaration (Runtime.ReportsOnRex) — and confirmReports' wait
+			// after the launch only confirms it.
+			//
+			// A plain error, so fireLoop's busy-key split reads it as the
+			// persona/runtime arm and benches the slot: every bead routed to
+			// this persona on this runtime meets the same silence.
+			//
+			// planLaunch asks it again inside the create, which is the
+			// backstop for every launch path that is not this one — the same
+			// shape as the readings around it, and a read of one bool off a
+			// table already in memory, so the second ask costs nothing.
+			if d.App.MultiplexerName() == MuxRex && !RexAdmits(rt) {
+				return launched{}, RexRuntimeRefusal(rt)
+			}
 			// Refuses(), not Undetectable(): ADR 0061 D2 gives this row a
 			// SECOND refusing state — a runtime declaring `detection:
 			// reported` on a herdr with no `pane report-agent` verb — and

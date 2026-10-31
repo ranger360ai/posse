@@ -93,6 +93,36 @@ default_emoji: ⚙️
 # `autostart_session:` — the herdr startup hook arms one home per server.
 # instance: <short tag>
 
+# ─── the multiplexer (ADR 0076) ──────────────────────────────────────────────
+# WHICH multiplexer holds this instance's seats. Default herdr; `rex` runs
+# them as Rex sessions instead. It is per INSTANCE, not per persona: every
+# seat this home opens goes to the one named here, and a second home on the
+# same box may name the other.
+#
+# What changes on `rex`, and it is one thing: WHERE AGENT STATE COMES FROM.
+# On herdr, herdr watches the screen and tells posse what it sees. On Rex the
+# RUNTIME reports its own state, through Rex's OSC 7501 program_status
+# protocol, and posse reads that report and invents nothing — there are no
+# screen rules on Rex and no posse-written hooks.
+#
+# So a runtime that does not write that record cannot be read there at all,
+# and posse refuses to launch one: MEASURED 2026-10-31 on Rex Beta 0.1.0,
+# claude 2.1.314 reports (idle at launch, working then done across a prompt)
+# and grok 1.0.52, codex 0.153.4 and bob do not. A dispatched launch of one of
+# those is refused before the bead is claimed and before any session exists,
+# with a line that says to run it on herdr; an interactive `posse new` warns
+# and opens it anyway, because you are at the keyboard. `posse gates <persona>`
+# prints both lists for this instance.
+#
+# Everything else is unchanged: session names, meta files, worktrees, gates,
+# the bd queue, kill-and-land. `posse list` says which one you are on.
+#
+# The rex CLI is not on PATH. posse looks for it where the Rex server keeps
+# it under $HOME; set rex_bin: if yours lives somewhere else (RHQ_REX_BIN
+# overrides both, the way RHQ_HERDR_BIN does for herdr).
+# multiplexer: herdr
+# rex_bin: ~/path/to/rex
+
 # ─── routing ─────────────────────────────────────────────────────────────────
 # Dispatch picks a persona per bead: explicit assignee > label match against
 # each PID's `labels:` > this. Unset means an unroutable bead is reported and

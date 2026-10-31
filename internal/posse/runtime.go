@@ -685,6 +685,33 @@ type Runtime struct {
 	// declaration on this struct could only drift, and did (0lg6). Ask
 	// CostRead/CostPriced/CostReading below.
 	TurnOutcomeAdapter string
+	// ReportsOnRex is whether this runtime writes its OWN OSC 7501
+	// program_status record when it runs in a Rex block — the one fact that
+	// decides whether a seat of it may be opened on a `multiplexer: rex`
+	// instance at all (ADR 0076 §3, amendment D1; read as RexAdmits).
+	//
+	// BUILT-IN ONLY, AND DELIBERATELY NOT A YAML KEY, which is the half of
+	// D1 a declarable version would lose. Every other admission fact here is
+	// an INSTANCE fact — whether THIS box installed a reporter (Detection),
+	// whether THIS account serves a model — and this one is not: whether a
+	// CLI emits OSC 7501 is a property of the BINARY, measurable only by
+	// launching it in Rex and reading the record back. A yaml key would let
+	// a profile claim it without that measurement, and the cost of a wrong
+	// claim is the exact failure D1 exists to prevent: a claim, a worktree
+	// and a billed turn spent on a seat whose every state is unknown.
+	// DetectionFiling is builtin-only for the same shape of reason.
+	//
+	// MEASURED 2026-10-31 (ADR 0076, its "Spike" and its "Amendment"), Rex
+	// CLI 0.0.1793377904, this box. claude 2.1.314 is the only yes: launched
+	// in a Rex block with no hooks its record read `idle`,
+	// `app=claude-code`, `owner={pid,"2.1.314"}`, and one prompt turned it
+	// `working` then `done`. grok 1.0.52 wrote NO record at 2 s through
+	// 131 s of a live argv turn, with program_status `auto` and again forced
+	// `on`; codex 0.153.4 and bob carry no `7501;` string at all and report
+	// only through a hook layer ADR 0076 D4 priced and deferred. So the
+	// false here is three measurements and not three omissions, and D3/D4/D5
+	// name what each would take to flip.
+	ReportsOnRex bool
 }
 
 // PromptMode is how dispatch delivers the work prompt here. The zero value
@@ -1988,7 +2015,14 @@ var builtinRuntimes = []Runtime{
 		// message, so a pass can tell an exhausted account from a settle.
 		// The only runtime with a reader today (ranger-base-02zr).
 		TurnOutcomeAdapter: TurnOutcomeClaudeTranscript,
-		Command:            `claude {model} ` + ClaudeFleetFlags + ` --append-system-prompt "$(cat {file})" --add-dir {memory} {settings} {skills} {allow} {deny}`},
+		// reports_on_rex: the only built-in that does, MEASURED 2026-10-31
+		// in a Rex block with no hooks (ADR 0076 §3) — idle at launch,
+		// working then done across one prompt, owner={pid,"2.1.314"}. It is
+		// what lets a `multiplexer: rex` instance launch claude at all
+		// (RexAdmits); every other runtime is refused there and keeps
+		// running on herdr.
+		ReportsOnRex: true,
+		Command:      `claude {model} ` + ClaudeFleetFlags + ` --append-system-prompt "$(cat {file})" --add-dir {memory} {settings} {skills} {allow} {deny}`},
 	// SkillsVerified: re-measured 2026-10-12 (ranger-base-bdias) against the
 	// installed 0.153.4 — still reads <cwd>/.agents/skills only, still
 	// follows a symlink out of the cwd (TestQALiveSkillDiscoveryPerRuntime,
