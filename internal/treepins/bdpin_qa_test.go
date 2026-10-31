@@ -1036,3 +1036,11 @@ func TestQABdPinExits2WhenItCannotCheck(t *testing.T) {
 		t.Errorf("want the missing-declaration diagnostic:\n%s", out)
 	}
 }
+
+// The twin of TestQAGrokPinScriptDoesNotLetBrewAutoUpdate, filed as
+// ranger-base-et7bs: this gate reads brew too, and verify-box.sh runs it
+// beside the other two off one Homebrew API cache. Reasoning and measurement
+// in brewguard_qa_test.go's head comment.
+func TestQABdPinScriptDoesNotLetBrewAutoUpdate(t *testing.T) {
+	bgAssertBrewReadsAreGuarded(t, "scripts/verify-bd-pin.sh")
+}

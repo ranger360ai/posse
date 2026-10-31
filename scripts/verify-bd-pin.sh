@@ -45,6 +45,23 @@
 # dispatch pass, which is the number this incident actually cost.
 set -uo pipefail
 
+# A gate must not change the box it is reading, and a `brew` read has a
+# footprint unless it is told not to: with the variable unset, an answer that
+# comes from Homebrew's cached package JSON re-downloads that file (~16 MB)
+# when the cached copy is over 7 days old, mid-gate. scripts/verify-box.sh
+# runs verify-grok-pin.sh, verify-codex-pin.sh and verify-bd-pin.sh back to
+# back off that ONE cache, so an unguarded read in the first can move the data
+# the next two read.
+#
+# `brew info` and `brew list` do NOT auto-update Homebrew and do NOT re-fetch
+# taps — they are not in Homebrew's auto-update command set, MEASURED, and the
+# banner that first suggested otherwise belonged to a `brew upgrade --cask`
+# typed beside them. Both arms, and the mechanism that IS real, are in
+# docs/notes.d/ranger-base-et7bs.md.
+#
+# The ENV_HINTS kill is cosmetic: it keeps brew's advice block out of the rows.
+export HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_ENV_HINTS=1
+
 cd "$(dirname "$0")/.."
 pin=etc/bd/version-pin.toml
 fail=0

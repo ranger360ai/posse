@@ -1609,18 +1609,11 @@ func TestQAGrokPinTapAtThePinIsNotAMove(t *testing.T) {
 	}
 }
 
-// A gate must not change the box it reads. `brew info` and `brew list` are
-// auto-update-able commands: MEASURED 2026-10-31, a `brew` call in this bead's
-// session pulled Homebrew 7.0.10 → 7.0.11 and re-fetched three taps before
-// answering the question asked of it. A verify run that upgrades Homebrew as a
-// side effect is a gate with a footprint, and on a box where the next thing
-// read is another pin it is a gate that can change that pin's answer.
+// A gate must not change the box it reads. The reasoning, and the correction
+// of the mechanism this comment used to claim — brew's auto-update is not what
+// `brew info` does; the API-cache re-download is — are in
+// brewguard_qa_test.go's head comment (ranger-base-et7bs), stated once for all
+// three pin gates.
 func TestQAGrokPinScriptDoesNotLetBrewAutoUpdate(t *testing.T) {
-	body, err := os.ReadFile("scripts/verify-grok-pin.sh")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(body), "export HOMEBREW_NO_AUTO_UPDATE=1") {
-		t.Error("verify-grok-pin.sh must export HOMEBREW_NO_AUTO_UPDATE=1 — a read must not upgrade Homebrew")
-	}
+	bgAssertBrewReadsAreGuarded(t, "scripts/verify-grok-pin.sh")
 }

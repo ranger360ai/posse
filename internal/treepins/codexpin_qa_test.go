@@ -688,3 +688,11 @@ func TestQACodexPinExitsTwoWhenNothingToMeasure(t *testing.T) {
 		})
 	}
 }
+
+// The twin of TestQAGrokPinScriptDoesNotLetBrewAutoUpdate, filed as
+// ranger-base-et7bs: this gate reads brew too, and verify-box.sh runs it
+// beside the other two off one Homebrew API cache. Reasoning and measurement
+// in brewguard_qa_test.go's head comment.
+func TestQACodexPinScriptDoesNotLetBrewAutoUpdate(t *testing.T) {
+	bgAssertBrewReadsAreGuarded(t, "scripts/verify-codex-pin.sh")
+}
