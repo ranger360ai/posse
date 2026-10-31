@@ -225,6 +225,17 @@ const (
 	// and an unreachable GitHub is an abstention like any other.
 	ciReadTimeout = 30 * time.Second
 
+	// ciKillGrace is the second half of every deadline in this block, for
+	// the reason herdrWaitDelay's doc gives: os/exec's Wait does not return
+	// until the goroutines copying the child's stdout and stderr are done,
+	// and a GRANDCHILD that inherited those pipes keeps them open after the
+	// child is killed. So the context bounds gh's life and not this call's
+	// — and gh is not a leaf: it shells `git` of its own accord, which is
+	// the shape that hangs. Five seconds, herdrWaitDelay's number for the
+	// same shape of call, and generous because reaching it at all means a
+	// descendant outlived the kill (ranger-base-2cttm).
+	ciKillGrace = 5 * time.Second
+
 	// ciCauseScanCap bounds how many of a cleared streak's own red runs
 	// ciCauses will fork a `gh run view --log-failed` for — a second,
 	// independent cost from ciScanLimit's one `run list` call, one child
@@ -644,6 +655,7 @@ func ghRunJobs(dir, bin, slug, runID string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, bin, "api",
 		"repos/"+slug+"/actions/runs/"+runID+"/jobs?per_page=100")
 	cmd.Dir = dir
+	cmd.WaitDelay = ciKillGrace
 	var out, errb strings.Builder
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	if err := cmd.Run(); err != nil {
@@ -1024,6 +1036,7 @@ func ghRunList(dir, bin, slug, workflow, branch string) ([]byte, error) {
 		"--limit", strconv.Itoa(ciScanLimit),
 		"--json", "conclusion,status,createdAt,headSha,url")
 	cmd.Dir = dir
+	cmd.WaitDelay = ciKillGrace
 	var out, errb strings.Builder
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	if err := cmd.Run(); err != nil {
@@ -1096,6 +1109,7 @@ func ciCauses(dir, bin, slug string, runs []CIRun) []string {
 		ctx, cancel := context.WithTimeout(context.Background(), ciCauseReadTimeout)
 		cmd := exec.CommandContext(ctx, bin, "run", "view", id, "--repo", slug, "--log-failed")
 		cmd.Dir = dir
+		cmd.WaitDelay = ciKillGrace
 		out, err := cmd.Output()
 		cancel()
 		if err != nil {

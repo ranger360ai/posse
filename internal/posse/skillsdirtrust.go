@@ -95,6 +95,12 @@ import (
 // launch resolves on either (ranger-base-385x).
 var errGrokNotResolved = errors.New("grok does not resolve on this PATH, outside the gates dirs")
 
+// grokInspectTimeout bounds the one child this file starts — the deadline
+// AND the WaitDelay, for the reasons grokInspectOutput's doc gives. A
+// constant rather than a literal because it is now written twice, and two
+// literals for one number is how the second one goes stale.
+const grokInspectTimeout = 5 * time.Second
+
 // SkillsDirTrust declares that a runtime's SkillsRoot is read only in a
 // session directory the CLI itself considers trusted (ADR 0007 §6f).
 //
@@ -138,21 +144,31 @@ type DirTrust struct {
 //
 // Resolved and PATH-scrubbed through the same two helpers readCLIVersionAt
 // uses, for the same reason: a gates-dir shim is posse's own wrapper and
-// never the CLI whose answer is wanted. The timeout is the same 5s
-// cliVersionTimeout carries, for the same reason — a launch that hangs on a
-// diagnostic read is worse than one that reports UNKNOWN. 5s against a
-// measured 0.061s. (It was this file's own addition when ProbeCLIVersion had
-// no deadline at all; that was fixed under ranger-base-fnn1o, where the
-// number is measured and argued.)
+// never the CLI whose answer is wanted. The timeout is grokInspectTimeout,
+// the same 5s cliVersionTimeout carries, for the same reason — a launch that
+// hangs on a diagnostic read is worse than one that reports UNKNOWN. 5s
+// against a measured 0.061s. (It was this file's own addition when
+// ProbeCLIVersion had no deadline at all; that was fixed under
+// ranger-base-fnn1o, where the number is measured and argued.)
+//
+// WaitDelay as well as the context, readCLIVersionWithin's rule and for its
+// reason: os/exec's Wait does not return while a GRANDCHILD still holds the
+// child's pipes, so killing grok does not on its own bound this call. That
+// is not a hypothetical here — grok carries a self-updater, this read sits
+// in FRONT of a launch, and the measured shape of the hang is a CLI that
+// prints a line and leaves a forked child on stdout (ranger-base-fnn1o's
+// fixture, ranger-base-2cttm). One duration for both, which bounds the whole
+// call at twice it.
 var grokInspectOutput = func(dir string) (string, error) {
 	path := resolveOutside("grok", "")
 	if path == "" {
 		return "", errGrokNotResolved
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), grokInspectTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, path, "inspect")
 	cmd.Dir = dir
+	cmd.WaitDelay = grokInspectTimeout
 	cmd.Env = append(os.Environ(), "PATH="+PathOutsideGates(""))
 	out, err := cmd.Output()
 	if err != nil && len(out) == 0 {

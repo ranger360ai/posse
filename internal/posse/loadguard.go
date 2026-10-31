@@ -309,6 +309,13 @@ func SysTopCPU() ([]Proc, error) {
 // for which of them get their argv read; on darwin the self-check reads the
 // table through sysctl instead and this stays the CPU census's alone.
 func sysProcTable(ctx context.Context) ([]Proc, error) {
+	// NO cmd.WaitDelay here, and it is a ruling rather than an omission
+	// (ranger-base-2cttm). WaitDelay is the second half of a kill because
+	// os/exec's Wait does not return while a GRANDCHILD holds the killed
+	// child's pipes — and `ps` forks nothing: it reads the kernel's table
+	// and exits, so the process the context kills IS the only holder of
+	// this pipe and the deadline bounds the whole call on its own. Held
+	// mechanically beside the rule, in internal/treepins' ewdExemptBinaries.
 	out, err := exec.CommandContext(ctx, "ps", "-axo", "pid=,ppid=,pcpu=,etime=,comm=").Output()
 	if err != nil {
 		return nil, err
@@ -339,6 +346,8 @@ func fillArgsForPIDs(ctx context.Context, procs []Proc, ids []string) {
 	}
 	// args is the only column and so the last one: whole on both platforms,
 	// with -ww asking procps not to cut it to a screen width either.
+	// `ps` forks nothing, so the deadline bounds this call on its own —
+	// sysProcTable's ruling (ranger-base-2cttm).
 	out, err := exec.CommandContext(ctx, "ps", "-ww", "-o", "pid=,args=", "-p", strings.Join(ids, ",")).Output()
 	if err != nil {
 		return

@@ -222,23 +222,42 @@ package treepins
 // same as a pin only its own bead can red, and the door is what closes that
 // gap — not the rule.)
 //
-// and `make tree-check` is all of them — 66-139s on this box over three warm
-// runs at sixty-one pins and fourteen doors (MEASURED 2026-10-09,
-// ranger-base-c768n: 115.3s, 139.0s and 66.3s in that order, with a
+// and one more into corpus-check's door for that same reason — a census over
+// this repo's own shipped .go, holding every bounded child to naming its
+// WaitDelay. os/exec's Wait does not return while a grandchild holds the
+// killed child's pipes, so a context deadline alone bounds the child's life
+// and not the call; the rule was written out in three doc comments and
+// honoured at five of fifteen sites (ranger-base-2cttm). Its two-way control
+// is deliberately NOT doored: it reads planted fixtures rather than the tree,
+// so no unrelated bead can red it and nothing derives it:
+//
+//	TestQAEveryBoundedChildNamesItsWaitDelay      make corpus-check
+//	                                              (ranger-base-2cttm)
+//
+// and `make tree-check` is all of them — 76-82s on this box over three warm
+// runs at sixty-two pins and fourteen doors (MEASURED 2026-10-31,
+// ranger-base-2cttm: 82s, 81s and 76s in that order, with a one-minute load
+// average of 15.86, 10.32 and 11.91 before the three and no sibling suite
+// slot held — the tightest spread any reading of this command has produced,
+// and the run at the top of that load was the slowest by six seconds, which
+// is as close as these readings come to being ordered by the box at all. The
+// pin it added reports 0.17s, so none of this is its cost) — which is the
+// command a
+// seat types after a filtered run. (It was 66-139s at sixty-one pins
+// (ranger-base-c768n: 115.3s, 139.0s and 66.3s in that order, with a
 // one-minute load average of 9.3, 54.2 and 63.1 before the three and one
 // suite slot held by a sibling seat throughout — so the FASTEST run was the
 // one at the highest load, which is ranger-base-9mjxb's finding again and
-// NOT the "ran beside somebody" reading further down: this spread is not
+// NOT the "ran beside somebody" reading further down: that spread is not
 // ordered by the load average, and the two readings that say so are the two
 // widest ones. The two pins it added each report 0.00s, so what they cost is
-// below `go test`'s own per-test resolution and none of this spread is
+// below `go test`'s own per-test resolution and none of that spread is
 // theirs; the brew-caller census ranger-base-mk6gw added reads every file
 // under scripts/ rather than three named ones, and reports 0.08-0.19s over
 // four runs — the one pin here whose cost is readable at all — and a whole
 // `make tree-check` with it in measured 62.9s on 2026-10-31 at a one-minute
-// load average of 19.7, inside the spread above) — which is the
-// command a
-// seat types after a filtered run. (It was 49-93s at fifty-six pins, at a
+// load average of 19.7, inside that spread);
+// 49-93s at fifty-six pins, at a
 // one-minute load average of 128.0, 75.2 and 36.9 before the three runs with
 // BOTH suite slots held by sibling seats throughout — 80s, 49s and 93s in
 // that order, so the slowest run was the one at the LOWEST load and that

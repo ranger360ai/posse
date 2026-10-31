@@ -252,6 +252,8 @@ func killVerify(ctx context.Context, targets []Proc, out map[int]string) map[int
 	// args is the last column and so untruncated, the same reason
 	// fillArgsForPIDs reads it alone; ppid rides ahead of it because that
 	// half of the predicate can go stale too.
+	// `ps` forks nothing, so the deadline bounds this call on its own —
+	// sysProcTable's ruling (ranger-base-2cttm).
 	raw, err := exec.CommandContext(ctx, "ps", "-ww", "-o", "pid=,ppid=,args=", "-p", strings.Join(ids, ",")).Output()
 	if err != nil {
 		// `ps` refusing — and the box this runs on is a box that cannot

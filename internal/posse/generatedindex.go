@@ -94,6 +94,18 @@ const (
 // rather than holding the launcher lock on it.
 const generatorTimeout = 2 * time.Minute
 
+// generatorKillGrace is the second half of that bound, for the reason
+// herdrWaitDelay's doc gives: os/exec's Wait does not return until the
+// goroutines copying the child's stderr are done, and a GRANDCHILD that
+// inherited that pipe keeps it open after the child is killed — so
+// generatorTimeout bounds python3's life and not this call's. The generator
+// shells nothing today; the rule is held at the call site anyway, because
+// "this script does not subprocess" is a property of a file in another
+// language that no reader of this one can check (ranger-base-2cttm). Five
+// seconds, herdrWaitDelay's number, against a generatorTimeout of two
+// minutes: reaching it means a descendant outlived the kill.
+const generatorKillGrace = 5 * time.Second
+
 // notesIndexContinues bounds the replay-resolution loop below. Each turn
 // resolves ONE replayed commit's conflict, so the bound is a claim about how
 // many of a branch's commits may conflict in the generated file alone before
@@ -116,6 +128,7 @@ func runNotesIndex(repo, tree string, args ...string) error {
 	}, args...)
 	cmd := exec.CommandContext(ctx, "python3", argv...)
 	cmd.Dir = tree
+	cmd.WaitDelay = generatorKillGrace
 	var errb bytes.Buffer
 	cmd.Stderr = &errb
 	if err := cmd.Run(); err != nil {

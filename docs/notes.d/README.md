@@ -23,6 +23,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-6r1rf](ranger-base-6r1rf.md) — bob reads the posse namespace, symlinks and all — and is in drift the day it ships (ranger-base-6r1rf) — 2026-10-31
 - [ranger-base-4dhcw](ranger-base-4dhcw.md) — The verdict file has one subject, and not every run can speak for it (ranger-base-4dhcw) — 2026-10-31
 - [ranger-base-3a5z7](ranger-base-3a5z7.md) — The channel suffix is grok's update-check cache, so §6c compares the release (ranger-base-3a5z7) — 2026-10-31
+- [ranger-base-2cttm](ranger-base-2cttm.md) — A context deadline is half a bound: the WaitDelay census, the ruling, and the pin (ranger-base-2cttm) — 2026-10-31
 - [notes-grok](notes-grok.md) — grok substrate: pinned at 1.0.52 (Homebrew cask `grok-build`), upgrades are a security re-audit (rangerhq-y7jr) — 2026-10-31
 - [ranger-base-99a7u](ranger-base-99a7u.md) — The meta-harness landscape, 2026-10-24, and where posse sits in it (ranger-base-99a7u) — 2026-10-24
 - [ranger-base-bdias](ranger-base-bdias.md) — codex 0.153.4 re-measured: cwd root and symlinks hold, and it now reads `~/.agents/skills` as a global root (ranger-base-bdias) — 2026-10-12
