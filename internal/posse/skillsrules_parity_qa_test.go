@@ -10,12 +10,14 @@ package posse
 // Two halves, and they are instrumented differently on purpose:
 //
 //   - The HERMETIC half drives production (RenderSkillsFor, CheckParity,
-//     CreateSession) once per runtime DECLARATION — the three built-ins
+//     CreateSession) once per runtime DECLARATION — the four built-ins
 //     plus both template-only shapes — because the whole class of bug the
 //     parity track keeps finding is a pin that drives one runtime and
 //     reads as if it covered all of them (ranger-base-unzn's busy-key
-//     split, ranger-base-ntsz's third arm). A fourth runtime is onboarded
-//     here by adding a row.
+//     split, ranger-base-ntsz's third arm). The NEXT runtime is onboarded
+//     here by adding a row, and a row carries no root of its own: the cwd
+//     branch reads rt.SkillsRoot, which is what let bob in at a root that
+//     is not the shared one (ranger-base-xzgz3).
 //
 //   - The LIVE half asks the installed CLIs what they actually loaded, and
 //     is gated on RHQ_PARITY_LIVE=1 because it needs codex, grok and
@@ -98,6 +100,14 @@ var qmSurfaces = []qmSurface{
 	{runtime: "claude", shape: "flag", flag: "--plugin-dir"},
 	{runtime: "codex", shape: "cwd"},
 	{runtime: "grok", shape: "cwd"},
+	// bob — the cwd shape over a root that is NOT the shared one: its own
+	// posse-owned BobSkillsRoot (ADR 0007 §6d). It could not be a row while
+	// it was UNPROVEN (§6b), because every cwd row asserts the binding is
+	// realizable and an unverified root degrades by design; ranger-base-6r1rf
+	// measured bob 2.0.5 discovering a skill linked there and set
+	// skills_verified, so the realizable path is now reachable and this is
+	// what drives it end to end (ranger-base-xzgz3).
+	{runtime: "bob", shape: "cwd"},
 	// A template-only runtime pointed at the SAME rendered tree claude
 	// gets. ADR 0007's first shape: what sits inside it is the universal
 	// Agent-Skills layout, the plugin.json is inert to anything that does
@@ -148,6 +158,11 @@ func TestQASkillSurfacePerRuntimeDeclaration(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Which root each cwd row actually declared, read back after the loop:
+	// the branch below is generic over rt.SkillsRoot, and generic code is
+	// only driven while the table holds a root that is not the shared one.
+	cwdRoots := map[string]string{}
+
 	for _, s := range qmSurfaces {
 		t.Run(s.runtime, func(t *testing.T) {
 			if s.yaml != "" {
@@ -190,12 +205,23 @@ func TestQASkillSurfacePerRuntimeDeclaration(t *testing.T) {
 			var root string
 			switch s.shape {
 			case "cwd":
-				root = AgentsSkillsDir(dir)
-				if written != root {
-					t.Errorf("cwd surface must land in the session dir: %s", written)
+				// The root is the DECLARATION's, not AgentsSkillsPath. The
+				// hardcoding here is what kept bob out of this table: bob's
+				// root is its own posse-owned BobSkillsRoot (ADR 0007 §6d),
+				// so a branch that reads one constant could only ever drive
+				// the shared surface (ranger-base-xzgz3). Reading
+				// rt.SkillsRoot is also what makes the NEXT posse-owned root
+				// arrive driven rather than passing under another's name.
+				if rt.SkillsRoot == "" {
+					t.Fatalf("a cwd row's surface is its declared SkillsRoot, and %s declares none", s.runtime)
 				}
-				if !strings.Contains(p.Realized[key].Detail, AgentsSkillsPath) {
-					t.Errorf("parity must name the cwd surface: %q", p.Realized[key].Detail)
+				cwdRoots[s.runtime] = rt.SkillsRoot
+				root = filepath.Join(dir, filepath.FromSlash(rt.SkillsRoot))
+				if written != root {
+					t.Errorf("cwd surface must land at %s under the session dir: %s", rt.SkillsRoot, written)
+				}
+				if !strings.Contains(p.Realized[key].Detail, rt.SkillsRoot) {
+					t.Errorf("parity must name the cwd surface %s: %q", rt.SkillsRoot, p.Realized[key].Detail)
 				}
 				if flag, _ := rt.SkillsText(ag.SkillsStateDir, ag.Skills); flag != "" {
 					t.Errorf("a cwd runtime types no skills flag, got %q", flag)
@@ -225,12 +251,44 @@ func TestQASkillSurfacePerRuntimeDeclaration(t *testing.T) {
 			// The env exit hatch rides on every runtime, surface or not
 			// (ADR 0007 §2): it is what a persona reads when the flag is
 			// not there.
+			//
+			// bob reaches this with no exemption, which was worth checking
+			// rather than assuming: bob's detection gap is BLOCKING in
+			// RuntimeGaps, so `posse runtime check bob` exits 1 and a
+			// bead-carrying launch refuses by name — but the refusal is
+			// asymmetric (herdrback.go), and an opts with no Bead and no
+			// Recreate is the `posse new` side of it, which warns and
+			// proceeds. So the hatch is driven on bob for real, and the
+			// warning lands in the captured stream rather than on stderr.
 			mustCreate(t, b, NewSessionOpts{Name: "qm-" + s.runtime, Agent: "prober", Runtime: s.runtime, Dir: dir})
 			log := calls(t, fake)
 			if !strings.Contains(log, "--env RHQ_SKILLS=qm-alpha") {
 				t.Errorf("RHQ_SKILLS must ride:\n%s", log)
 			}
 		})
+	}
+
+	// The cwd branch above is generic over rt.SkillsRoot, and nothing proves
+	// a generic branch except a root that differs. Two distinct roots in the
+	// table is what keeps it honest: without one, the branch could go back to
+	// AgentsSkillsPath and stay green over three runtimes that share it.
+	wantCwd := 0
+	for _, s := range qmSurfaces {
+		if s.shape == "cwd" {
+			wantCwd++
+		}
+	}
+	// Only over the WHOLE table: `-run .../bob` selects one subtest, and a
+	// table-wide reading taken over one row is noise rather than a finding.
+	if len(cwdRoots) == wantCwd {
+		own := map[string]bool{}
+		for _, r := range cwdRoots {
+			own[r] = true
+		}
+		if !own[AgentsSkillsPath] || len(own) < 2 {
+			t.Errorf("the cwd rows must cover the shared root AND at least one posse-owned root (bob's %s), got %v",
+				BobSkillsRoot, cwdRoots)
+		}
 	}
 }
 
