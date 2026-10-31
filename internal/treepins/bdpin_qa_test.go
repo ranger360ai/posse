@@ -34,6 +34,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ranger360ai/posse/internal/posse"
 )
 
 // bpPinnedVer is what etc/bd/version-pin.toml declares. It is a literal on
@@ -1045,4 +1047,259 @@ func TestQABdPinExits2WhenItCannotCheck(t *testing.T) {
 // brewguard_qa_test.go's head comment.
 func TestQABdPinScriptDoesNotLetBrewAutoUpdate(t *testing.T) {
 	bgAssertBrewReadsAreGuarded(t, "scripts/verify-bd-pin.sh")
+}
+
+// ─── The render seam: every shape posse puts in front of bd (ranger-base-8u8n8)
+
+// bpGateShimHeader is the fixed half of the header renderShim stamps on every
+// shim, and the whole of what is_gate_shim reads. The persona name is a
+// fixture's; rangerhq-9ha is the part that is there regardless of persona.
+const bpGateShimHeader = "#!/bin/sh\n" +
+	"# posse gate for testpersona — rendered from the PID's deny: at launch; do not edit (rangerhq-9ha)\n"
+
+// bpShimDeferredBody is renderBdWriteTail's `real == ""` branch, copied from
+// internal/posse/gates.go: posse was rendered on a box where bd was not on
+// PATH, so the shim froze no target and searches $PATH at run time instead.
+//
+// It is the shape most likely to be misread, because it WRITES the variable
+// the bd shape's target is read out of — twice, and neither write is a frozen
+// target: the column-0 one is empty and unquoted, the in-loop one is indented
+// and double-quoted. A reader that took either would compare the pin against
+// nothing, or against `$d/bd`, and say FAIL for the wrong reason.
+const bpShimDeferredBody = `self=$(cd "$(dirname "$0")" && pwd)
+IFS=:
+posse_bd_real=
+for d in $PATH; do
+  [ "$d" = "$self" ] && continue
+  if [ -x "$d/bd" ]; then posse_bd_real="$d/bd"; break; fi
+done
+unset IFS
+if [ -z "$posse_bd_real" ]; then
+  echo "posse gate: bd: real binary not found" >&2
+  exit 127
+fi
+exec "$posse_bd_real" "$@"
+`
+
+// bpShimShapes — every shape a bd shim can carry, and the resolution row
+// verify-bd-pin.sh has to print for each.
+//
+// The control, in brewguard_qa_test.go's sense: three arms that pass tell a
+// reader nothing about what the gate would catch, and the shape that broke it
+// was one nobody had a fixture for. So each shape that CAN be read gets one,
+// each shape that cannot gets one too, and the two unreadable shapes are
+// distinguished BY NAME — deferred and unknown are different facts with
+// different remedies, and the single "unparseable" message that covered both
+// is what let the live shape sit unnamed through a release.
+//
+// bodies are hand-written here, deliberately: this table is about the
+// READER's edges. That posse still renders these shapes and no others is the
+// other half, and no table can assert it — TestQABdPinReadsTheShimPosseActuallyRenders
+// below renders through posse's own RenderGates instead.
+var bpShimShapes = []struct {
+	name     string
+	body     func(target string) string
+	wantCode int
+	wantRow  []string // substrings the `command -v bd` row must carry
+	denyRow  []string // substrings it must NOT
+}{
+	{
+		// renderShim's own tail — what git, pkill, posse and security carry
+		// on this box today, and what bd carried before ADR 0073 D2.
+		name:     "the generic tail: a literal exec",
+		body:     func(t string) string { return bpGateShimHeader + "exec '" + t + "' \"$@\"\n" },
+		wantCode: 0,
+		wantRow:  []string{"GATED"},
+		denyRow:  []string{"FAIL"},
+	},
+	{
+		// renderBdWriteTail (ADR 0073 D2) — THE shape every persona's bd
+		// shim has, and the one shim_target could not read
+		// (ranger-base-8u8n8). The write arm is abridged to the two lines
+		// that carry the target; the live render is asserted whole below.
+		name: "the bd tail: a posse_bd_real assignment, exec'd through the variable",
+		body: func(t string) string {
+			return bpGateShimHeader + "posse_bd_real='" + t + "'\n" +
+				"if [ \"$posse_bw_write\" = 1 ]; then\n  exec \"$posse_bw_bin\" gates bd-write --real \"$posse_bd_real\" -- \"$@\"\nfi\n" +
+				"exec \"$posse_bd_real\" \"$@\"\n"
+		},
+		wantCode: 0,
+		wantRow:  []string{"GATED"},
+		denyRow:  []string{"FAIL"},
+	},
+	{
+		name:     "deferred: rendered where bd was not on PATH, so it froze no target",
+		body:     func(string) string { return bpGateShimHeader + bpShimDeferredBody },
+		wantCode: 1,
+		wantRow:  []string{"FAIL", "RUN time"},
+		denyRow:  []string{"GATED", "cannot read"},
+	},
+	{
+		// The fourth shape. Nothing renders this; the point is that when
+		// something does, the row says so in those words and sends the
+		// reader to this gate's own reader rather than to the box.
+		name:     "a shape no renderer writes",
+		body:     func(string) string { return bpGateShimHeader + "exec \"$POSSE_BD_WHATEVER\" \"$@\"\n" },
+		wantCode: 1,
+		wantRow:  []string{"FAIL", "cannot read"},
+		denyRow:  []string{"GATED", "RUN time"},
+	},
+}
+
+// bpBdShape names the row of bpShimShapes that is the shape every persona's
+// bd shim actually has, so an arm about THAT shape cannot drift onto another
+// one when the table is reordered.
+const bpBdShape = "the bd tail"
+
+// bpShapeBody is the named shape's body builder. It Fatals rather than
+// returning nil: a renamed row would otherwise leave an arm testing a shape
+// chosen by accident, which is this bead's own failure mode one level up.
+func bpShapeBody(t *testing.T, name string) func(string) string {
+	t.Helper()
+	for _, sh := range bpShimShapes {
+		if strings.HasPrefix(sh.name, name) {
+			return sh.body
+		}
+	}
+	t.Fatalf("no shape in bpShimShapes named %q — the table was renamed and an arm is now about nothing", name)
+	return nil
+}
+
+// bpRowFor returns the `command -v bd` resolution row out of the script's
+// output. The assertions below are made against that ONE line, not against
+// the whole run: "the output contains FAIL" is also true when some other row
+// failed, and a gate that passes for the wrong reason is this bead's subject.
+func bpRowFor(t *testing.T, out string) string {
+	t.Helper()
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, "command -v bd") {
+			return line
+		}
+	}
+	t.Fatalf("no `command -v bd` row in the output at all:\n%s", out)
+	return ""
+}
+
+// Each shape, read by the live script.
+func TestQABdPinReadsEveryShimShapePosseRenders(t *testing.T) {
+	for _, sh := range bpShimShapes {
+		t.Run(sh.name, func(t *testing.T) {
+			root, home, stubs, _ := bpFixture(t, "unlinked", nil)
+			target := filepath.Join(home, ".local", "bin", "bd")
+			shadow := t.TempDir()
+			if err := WriteExecutable(filepath.Join(shadow, "bd"), []byte(sh.body(target)), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			out, code := bpRun(t, root, home, stubs, shadow)
+			if code != sh.wantCode {
+				t.Fatalf("exit %d, want %d\n%s", code, sh.wantCode, out)
+			}
+			row := bpRowFor(t, out)
+			for _, want := range sh.wantRow {
+				if !strings.Contains(row, want) {
+					t.Errorf("row must carry %q:\n  %s", want, row)
+				}
+			}
+			for _, deny := range sh.denyRow {
+				if strings.Contains(row, deny) {
+					t.Errorf("row must NOT carry %q:\n  %s", deny, row)
+				}
+			}
+		})
+	}
+}
+
+// bpRenderBdShim renders a persona's gates with posse's OWN renderer and
+// returns the bin dir holding the bd shim. renderPATH is the PATH the render
+// resolves the real binary on: a dir holding the pinned bd gives the frozen
+// shape, a dir holding nothing gives the deferred one.
+func bpRenderBdShim(t *testing.T, renderPATH string) string {
+	t.Helper()
+	t.Setenv("PATH", renderPATH)
+	app := &posse.App{StateDir: filepath.Join(t.TempDir(), "state")}
+	_, binDir, _, err := app.RenderGates("bdpinqa", []string{"Bash(bd daemon:*)"})
+	if err != nil {
+		t.Fatalf("RenderGates: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(binDir, "bd")); err != nil {
+		t.Fatalf("no bd shim rendered: %v", err)
+	}
+	return binDir
+}
+
+// THE SEAM. The arms above read shapes written by hand in this file, and the
+// hand-written one is exactly what went stale: `exec '<path>' "$@"` was a
+// faithful fixture of a shim posse had stopped rendering for bd. Both sides
+// were pinned — internal/posse/dataceilingargv_qa_test.go pins
+// `exec "$posse_bd_real" "$@"` on the renderer, this file pinned the literal
+// form on the reader — and nothing compared them, so the gate FAILed on every
+// persona seat against a correctly pinned box and both pins stayed green.
+//
+// This one renders the shim through posse's own RenderGates and hands it to
+// the live script. No spelling is written down twice, so a render change that
+// the reader has not been taught reds HERE, in the suite, instead of on a
+// seat that then stops reading verify-box.sh.
+func TestQABdPinReadsTheShimPosseActuallyRenders(t *testing.T) {
+	root, home, stubs, _ := bpFixture(t, "unlinked", nil)
+	pinnedBin := filepath.Join(home, ".local", "bin")
+	// The render resolves `bd` on THIS PATH, so the fixture's pinned binary
+	// is what the shim freezes in — ahead of the box's own bd, which would
+	// make the row fail for a reason this test is not about.
+	binDir := bpRenderBdShim(t, pinnedBin+string(os.PathListSeparator)+posse.PathOutsideGates(""))
+
+	out, code := bpRun(t, root, home, stubs, binDir)
+	row := bpRowFor(t, out)
+	if code != 0 || !strings.Contains(row, "GATED") {
+		shim, _ := os.ReadFile(filepath.Join(binDir, "bd"))
+		t.Fatalf("exit %d and row %q — posse renders a bd shim this gate cannot read.\nTeach shim_target in scripts/verify-bd-pin.sh the shape posse renders NOW, and give it a case in bpShimShapes.\n--- the shim posse rendered ---\n%s\n--- the gate said ---\n%s",
+			code, row, shim, out)
+	}
+	if !strings.Contains(row, filepath.Join(pinnedBin, "bd")) {
+		t.Errorf("the row must name the target the shim froze in, so a stale shim is legible:\n  %s", row)
+	}
+}
+
+// The same seam for the deferred shape: rendered where bd is not on PATH, the
+// real renderer writes a run-time $PATH search and freezes nothing. That must
+// FAIL — there is no target to compare against the pin — and it must say so
+// in its own words, because the remedy is to re-render the gates on a box
+// whose PATH has the pinned binary, not to touch the pin or this script.
+func TestQABdPinNamesTheDeferredShimPosseRendersWithNoBdOnPath(t *testing.T) {
+	root, home, stubs, _ := bpFixture(t, "unlinked", nil)
+	binDir := bpRenderBdShim(t, t.TempDir()) // a PATH with no bd on it at all
+
+	out, code := bpRun(t, root, home, stubs, binDir)
+	row := bpRowFor(t, out)
+	if code != 1 {
+		t.Fatalf("exit %d, want 1 — a shim that froze no target cannot witness the pin\n%s", code, out)
+	}
+	if !strings.Contains(row, "RUN time") || strings.Contains(row, "cannot read") {
+		shim, _ := os.ReadFile(filepath.Join(binDir, "bd"))
+		t.Errorf("the deferred render must be named as deferred, not as a shape this gate cannot read:\n  %s\n--- the shim posse rendered ---\n%s", row, shim)
+	}
+}
+
+// The operational drift, in the live shape: a bd shim rendered before a pin
+// bump still freezes the OLD binary, and `command -v bd` resolving to it is
+// exactly the 08-16 shape one layer up. The target is what is asserted, not
+// the shape — TestQABdPinFailsWhenAGateShimExecsSomethingElse says this for
+// the generic shape, and said it for bd too until bd stopped being rendered
+// that way, at which point it was saying it about nothing on the box.
+func TestQABdPinFailsWhenTheBdShimsAssignmentNamesSomethingElse(t *testing.T) {
+	root, home, stubs, _ := bpFixture(t, "unlinked", nil)
+	wrong := filepath.Join(t.TempDir(), "bd")
+	bpStubBD(t, wrong, bpPinnedVer) // the SAME version: only the path is wrong
+	shadow := t.TempDir()
+	body := bpShapeBody(t, bpBdShape)(wrong) // the live shape, by the table above
+	if err := WriteExecutable(filepath.Join(shadow, "bd"), []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	out, code := bpRun(t, root, home, stubs, shadow)
+	if code != 1 {
+		t.Fatalf("exit %d, want 1 — the shim freezes a binary that is not the pin\n%s", code, out)
+	}
+	row := bpRowFor(t, out)
+	if !strings.Contains(row, "FAIL") || !strings.Contains(row, wrong) {
+		t.Errorf("the row must FAIL and name the target the shim actually froze:\n  %s", row)
+	}
 }

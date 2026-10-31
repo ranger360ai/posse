@@ -13,13 +13,15 @@
 # So this asserts four things (etc/bd/version-pin.toml is the declaration):
 #   1. `bd version` is the pinned version, exactly.
 #   2. `bd` on PATH resolves to the pinned binary — or, inside a persona
-#      session, to a posse gate shim (internal/rhq/gates.go) whose own exec
+#      session, to a posse gate shim (internal/posse/gates.go) whose own exec
 #      line targets it. The gate shim dir leads every persona's PATH ahead
 #      of ~/.local/bin by design (ADR 0009 §1), so row 2 comparing raw paths
 #      failed in EVERY persona session on a box whose pin was intact
 #      (ranger-base-43v1) — the shim is recognised by the header renderShim
 #      stamps on it, and what it actually execs is read out of the shim
-#      file itself, not re-derived from today's PATH.
+#      file itself, not re-derived from today's PATH — in any of the THREE
+#      shapes posse renders it in, which is the part that drifted next
+#      (ranger-base-8u8n8): shim_target's own comment has them.
 #   3. homebrew's beads keg is unlinked, or brew-pinned. Either holds; LINKED
 #      is the 08-16 outage re-armed.
 #   4. every live `bd daemon` process is running the pinned binary, and started
@@ -155,7 +157,7 @@ chk_row() { # label want got
 	else printf '  %-24s %-34s <-- FAIL (want %s)\n' "$1" "${3:-?}" "$2"; fail=$((fail + 1)); fi
 }
 
-# A posse gate shim (internal/rhq/gates.go renderShim) is the header it
+# A posse gate shim (internal/posse/gates.go renderShim) is the header it
 # stamps on itself, not the path it lives at — a persona name in the path
 # would need reproducing here and drift the day gates move. rangerhq-9ha
 # is the fixed half of that header, present regardless of persona.
@@ -174,16 +176,62 @@ is_gate_shim() {
 	return 1
 }
 
-# What the shim actually execs, read out of its OWN last line — the target
+# What the shim actually execs, read out of the shim FILE — the target
 # renderShim froze in at render time — never re-derived from today's PATH,
 # which can drift out from under a shim nobody re-rendered since.
+#
+# posse renders THREE shapes (internal/posse/gates.go), and this reader has
+# to know all three because `command -v bd` in a persona session resolves to
+# one of them and nothing says which:
+#
+#   generic   `exec '<path>' "$@"`            renderShim's own tail — what
+#                                             git, pkill, posse and security
+#                                             carry on this box today.
+#   bd        `posse_bd_real='<path>'`        renderBdWriteTail, ADR 0073 D2.
+#                                             A write verb execs `posse gates
+#                                             bd-write --real "$posse_bd_real"`
+#                                             instead of bd, so the write-lock
+#                                             arm is what picks the exec
+#                                             target: the path is an
+#                                             ASSIGNMENT near the top and the
+#                                             tail is `exec "$posse_bd_real"
+#                                             "$@"`. THE ONLY SHAPE A bd SHIM
+#                                             HAS, so this is the shape that
+#                                             matters most here.
+#   deferred  a `for d in $PATH` search       the `real == ""` branch of
+#                                             either renderer: posse was
+#                                             rendered on a box where the real
+#                                             binary was not on PATH, so the
+#                                             shim carries NO frozen target
+#                                             and resolves at run time.
+#
+# Only the bd shape was missing, and it was the live one: shim_target matched
+# nothing, the row took its "" arm, and this gate FAILed in EVERY persona
+# session on a correctly pinned box — ranger-base-43v1's own defect, back
+# through a render change. It was silent because each spelling is pinned on
+# its own side of the seam and nothing compared them: the posse side pins
+# `exec "$posse_bd_real" "$@"` (internal/posse/dataceilingargv_qa_test.go),
+# this side pinned the literal form, both green
+# (ranger-base-8u8n8). internal/treepins/bdpin_qa_test.go now renders a real
+# shim through posse's own RenderGates and reads it with the function below,
+# so a FOURTH shape reds a pin instead of printing a row nobody believes.
 shim_target() {
-	# The BRE this replaces was greedy, so the LAST `' "$@"` on the line ended
-	# the capture; `%` strips the shortest suffix, which is the same one.
 	local line rest
 	[ -r "$1" ] || return 0
 	while IFS= read -r line || [ -n "$line" ]; do
 		case $line in
+		# shQuote single-quotes the path, so the unquoting is the literal
+		# arm's. Anchored at column 0 and requiring the quote, so neither of
+		# the deferred render's own two writes of this variable is read as a
+		# frozen target: its `posse_bd_real=` is empty and unquoted, and its
+		# `posse_bd_real="$d/bd"` is indented and double-quoted.
+		"posse_bd_real='"*"'")
+			rest=${line#posse_bd_real=\'}
+			printf '%s' "${rest%\'}"
+			return 0
+			;;
+		# The BRE this arm replaces was greedy, so the LAST `' "$@"` on the
+		# line ended the capture; `%` strips the shortest suffix, the same one.
 		"exec '"*"' \"\$@\"")
 			rest=${line#exec \'}
 			printf '%s' "${rest%\' \"\$@\"}"
@@ -191,6 +239,24 @@ shim_target() {
 			;;
 		esac
 	done <"$1"
+}
+
+# The deferred shape, told apart from a shim this reader simply cannot parse.
+# Both have no target to compare against the pin, but they are different facts
+# about the box and have different remedies: deferred means the gates were
+# rendered where bd was absent and the fix is a re-render, while unparseable
+# means posse renders a shape nothing here knows and the fix is in this file.
+# Printing one message for both is how the live shape went unnamed for as long
+# as it did. Structural marker, not the advice string beside it: the search
+# loop is what both renderers write, and it is rendered by the real renderer
+# in this gate's own pin.
+shim_defers_to_path() {
+	local line
+	[ -r "$1" ] || return 1
+	while IFS= read -r line || [ -n "$line" ]; do
+		case $line in 'for d in $PATH; do') return 0 ;; esac
+	done <"$1"
+	return 1
 }
 
 echo "bd version pin — $pin"
@@ -202,7 +268,11 @@ if is_gate_shim "$live_bin"; then
 		printf '  %-24s %-34s GATED (execs %s)\n' "command -v bd" "$live_bin" "$want_bin"
 		;;
 	"")
-		printf '  %-24s %-34s <-- FAIL (gate shim, exec target unparseable)\n' "command -v bd" "$live_bin"
+		if shim_defers_to_path "$live_bin"; then
+			printf '  %-24s %-34s <-- FAIL (gate shim resolves bd on $PATH at RUN time — rendered where bd was absent, so it froze no target; re-render this persona'"'"'s gates on a box whose PATH has %s)\n' "command -v bd" "$live_bin" "$want_bin"
+		else
+			printf '  %-24s %-34s <-- FAIL (gate shim of a render shape this gate cannot read — neither a posse_bd_real='"'"'<path>'"'"' assignment nor an exec '"'"'<path>'"'"' "$@" tail; teach shim_target in %s)\n' "command -v bd" "$live_bin" "$0"
+		fi
 		fail=$((fail + 1))
 		;;
 	*)
