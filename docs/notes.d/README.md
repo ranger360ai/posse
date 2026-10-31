@@ -6,6 +6,7 @@ references), not inferred publication dates. Undated fragments sort last.
 
 ## 2026-10
 
+- [ranger-base-q5gc2](ranger-base-q5gc2.md) — The session record names its multiplexer, and one method ADR 0076 §2 does not list (ranger-base-q5gc2) — 2026-10-31
 - [ranger-base-lf6it](ranger-base-lf6it.md) — bob self-updated under the probe, 60 seconds in — and the probe still measured 2.0.5 (ranger-base-lf6it) — 2026-10-31
 - [ranger-base-f5jbs](ranger-base-f5jbs.md) — `posse runtime drift` — giving skillsVerifiedDrift an exit code — 2026-10-31
 - [ranger-base-et7bs](ranger-base-et7bs.md) — The read verb that did not auto-update, and the one footprint it does leave (ranger-base-et7bs) — 2026-10-31

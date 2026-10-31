@@ -332,9 +332,25 @@ func NewHerdrBackend(a *App) *HerdrBackend {
 // ─── meta files ──────────────────────────────────────────────────────────────
 
 type HerdrMeta struct {
-	Name        string
-	Workspace   string
-	Pane        string // root pane at creation — where the command was typed
+	Name string
+	// Workspace and Pane are the two halves of this session's Seat, in the
+	// occupant's own ids (ADR 0076 §5, Seat below): herdr's workspace and
+	// its root pane, Rex's session UUID and its block. posse reads neither
+	// — it hands them back to the Mux that issued them — and the two YAML
+	// keys keep herdr's spelling because every record on disk carries them
+	// and a record has one reader, this one.
+	Workspace string
+	Pane      string // root pane/block at creation — where the command was typed
+	// Mux is the occupant that holds the seat, and "" is MuxHerdr (ADR 0076
+	// §5, HerdrMeta.MuxName). An absent key is the default because every
+	// record written before this field existed is herdr's, so they read
+	// unchanged and are rewritten byte-identical — writeMeta emits the key
+	// for a non-herdr occupant only.
+	//
+	// It is the FIRST thing a reader of one of these records asks, because
+	// the two fields above are opaque ids and the two below are facts about
+	// a server that only this occupant can be asked about.
+	Mux         string
 	Emoji       string
 	Envs        string // env-set names ("a+b") — names only, never values
 	Agent       string
@@ -351,8 +367,8 @@ type HerdrMeta struct {
 	TurnFailure string    // provider refused the dispatch turn before model work began ("" = none observed)
 	Bead        string    // the bead dispatch launched this session to work (ADR 0013 §4; "" = not a dispatched bead session)
 	Crew        bool      // the operator's own session — dispatch treats it as if it did not exist (ADR 0008)
-	Socket      string    // the herdr server this session was created against (see SocketID)
-	Gen         string    // the herdr server *generation* that issued Workspace (see ServerGen); "" = unknown
+	Socket      string    // the Mux server this session was created against (MuxServer.Addr; herdr's is SocketID)
+	Gen         string    // the Mux server *generation* that issued Workspace (MuxServer.Gen); "" = unknown, and empty on an occupant whose ids are never reused
 	Launched    time.Time // when the persona/recipe command was last typed into Pane
 	// Prompted is when a work prompt was last SENT to this session — the run
 	// record's half of PromptGrace (ADR 0011 §3). It was per-process memory
@@ -388,6 +404,36 @@ type HerdrMeta struct {
 	// live session's unreadable meta with `recipe` — which is deliberately
 	// not withheld — and the seat reads free.
 	Unreadable bool
+}
+
+// MuxName is the multiplexer that holds this session's seat, with the absent
+// key read as herdr (ADR 0076 §5).
+//
+// EVERY READER ASKS THIS AND NEVER THE FIELD. The record's two spellings of
+// herdr — "" for the hundreds of records written before the key existed, and
+// the name itself for anything that ever writes it — are one answer here, so
+// no caller has to know that an empty string is a multiplexer. The symmetry
+// is writeMeta's, which emits no key for either (see there).
+func (m *HerdrMeta) MuxName() string {
+	if m == nil || m.Mux == "" {
+		return MuxHerdr
+	}
+	return m.Mux
+}
+
+// Seat is the multiplexer handle this record names: the pairing of its two
+// opaque ids (ADR 0076 §2), spelled once here rather than at every verb's
+// call site.
+//
+// A record naming no seat hands back the zero Seat, which every verb refuses
+// on its own ground — the record's own readers ask `Workspace == ""` first,
+// because "names no seat" is a recipe a relaunch left behind and not a
+// session to address (rangerhq-v52t, listSessions' `recipes`).
+func (m *HerdrMeta) Seat() Seat {
+	if m == nil {
+		return Seat{}
+	}
+	return Seat{Session: m.Workspace, Pane: m.Pane}
 }
 
 // SocketID names the herdr server a session belongs to: the resolved path of
@@ -502,6 +548,16 @@ const EnvWorkspace = "HERDR_WORKSPACE_ID"
 // update, which is exactly when a long session is being refreshed.
 func CallerRunsInside(m *HerdrMeta) bool {
 	if m == nil || m.Workspace == "" || m.Socket == "" {
+		return false
+	}
+	// Both halves below are herdr's own: the env name herdr injects into
+	// every pane it opens, and a herdr api socket path. A seat on another
+	// occupant answers neither — Rex's blocks take no env at all (ADR 0076
+	// §2), so nothing can tell posse it is sitting in one — and a comparison
+	// that cannot be true must not be spelled as one that happens not to be.
+	// Not self, which is this function's own asymmetry: nothing is proven
+	// ours, so nothing is claimed.
+	if m.MuxName() != MuxHerdr {
 		return false
 	}
 	if os.Getenv(EnvWorkspace) != m.Workspace {
@@ -642,6 +698,7 @@ func (b *HerdrBackend) readMeta(name string) (*HerdrMeta, bool) {
 		Unreadable:   yamlGetLines(lines, "name") == "",
 		Workspace:    yamlGetLines(lines, "workspace"),
 		Pane:         yamlGetLines(lines, "pane"),
+		Mux:          yamlGetLines(lines, "mux"),
 		Emoji:        yamlGetLines(lines, "emoji"),
 		Envs:         yamlGetLines(lines, "envs"),
 		Agent:        yamlGetLines(lines, "agent"),
@@ -780,6 +837,15 @@ func (b *HerdrBackend) writeMeta(m *HerdrMeta) error {
 	}
 	if m.Crew {
 		fmt.Fprintf(&s, "crew: true\n")
+	}
+	// ADR 0076 §5's one new key, and it is written for a non-herdr occupant
+	// ONLY. Both spellings of herdr — the empty field a pre-key record reads
+	// back as, and the name itself — emit nothing, so a herdr record is
+	// byte-for-byte what it was before this field existed and a record
+	// rewritten by a backfill or a relaunch does not grow a line nobody
+	// asked for. MuxName() is the reader that makes the two one answer.
+	if m.Mux != "" && m.Mux != MuxHerdr {
+		fmt.Fprintf(&s, "mux: %s\n", m.Mux)
 	}
 	if m.Socket != "" {
 		fmt.Fprintf(&s, "socket: %s\n", m.Socket)
@@ -1169,7 +1235,11 @@ func (b *HerdrBackend) listSessions() ([]HerdrSession, []string, error) {
 	// Past the socket guards, absence from the listing is still only a
 	// snapshot, and prunable() makes it prove death before any delete
 	// (ADR 0011 §2, rangerhq-9nso).
-	sock, gen := SocketID(), ServerGen()
+	// Which occupant, which server of it, which generation — asked once, of
+	// the slot, and compared against what each record stamped (ADR 0076 §5,
+	// MuxServer). On herdr these are SocketID() and ServerGen(), the two
+	// calls this line used to make itself.
+	srv := b.Mux().Server()
 	kept := 0
 	var withheld []string   // every meta the guards below left out, by name (metaNames order: os.ReadDir sorts)
 	var spared []string     // missing from the listing, but not proven dead — with why
@@ -1230,7 +1300,7 @@ func (b *HerdrBackend) listSessions() ([]HerdrSession, []string, error) {
 		// (rangerhq-yt1p). The id is left unclaimed, so the workspace itself
 		// is still listed — under its own meta, or as foreign.
 		if live {
-			if why := b.notOurWorkspace(m, ws.Label, gen); why != "" {
+			if why := b.notOurWorkspace(m, ws.Label, srv.Gen); why != "" {
 				strangers = append(strangers, fmt.Sprintf("%s: %s", name, why))
 				withheld = append(withheld, name)
 				continue
@@ -1242,12 +1312,12 @@ func (b *HerdrBackend) listSessions() ([]HerdrSession, []string, error) {
 			// the board it covers. The write cannot pay it — see mustNotOrphan
 			// (rangerhq-7dn4). The unstamped and wrong-server arms are
 			// cannotAnswerFor's, and both halves ask them (rangerhq-y4z).
-			if emptyBoard(sock, len(wss)) != "" || cannotAnswerFor(m, sock) != "" {
+			if emptyBoard(srv, len(wss)) != "" || cannotAnswerFor(m, srv) != "" {
 				kept++
 				withheld = append(withheld, name)
 				continue
 			}
-			dead, why := b.prunable(m, gen)
+			dead, why := b.prunable(m, srv)
 			if !dead {
 				spared = append(spared, fmt.Sprintf("%s: %s", name, why))
 				withheld = append(withheld, name)
@@ -1257,14 +1327,14 @@ func (b *HerdrBackend) listSessions() ([]HerdrSession, []string, error) {
 			// which is a fact about the instant it was read and not about
 			// the instant the unlink lands (rangerhq-3a5t). reclaim re-proves
 			// it under the lock, where no create can be in flight.
-			if why := b.reclaim(name, sock, gen); why != "" {
+			if why := b.reclaim(name, srv); why != "" {
 				spared = append(spared, fmt.Sprintf("%s: %s", name, why))
 				withheld = append(withheld, name)
 			}
 			continue
 		}
 		claimed[m.Workspace] = true
-		b.backfillServer(m, ws.Label, sock, gen)
+		b.backfillServer(m, ws.Label, srv)
 		out = append(out, HerdrSession{
 			Name: name, WorkspaceID: m.Workspace, PaneID: m.Pane,
 			Emoji: m.Emoji, Envs: m.Envs, Agent: m.Agent, Runtime: m.Runtime, Tier: m.Tier, Model: m.Model,
@@ -1287,8 +1357,8 @@ func (b *HerdrBackend) listSessions() ([]HerdrSession, []string, error) {
 		})
 	}
 	if kept > 0 {
-		b.warn("posse: %d session meta file(s) kept, not listed: this herdr (%s) does not hold their workspaces\n",
-			kept, socketLabel(sock))
+		b.warn("posse: %d session meta file(s) kept, not listed: this %s (%s) does not hold their workspaces\n",
+			kept, srv.Name, socketLabel(srv.Addr))
 	}
 	if len(spared) > 0 {
 		b.warn("posse: %d session meta file(s) kept, not listed: missing from this listing but not dead (rangerhq-9nso) — %s\n",
@@ -1404,12 +1474,23 @@ const PruneGrace = 5 * time.Minute
 // server ever held that workspace, and absence of evidence that it lived here
 // is not evidence that it died — nor that it is free (rangerhq-8fq,
 // rangerhq-jeu2). One predicate, both halves, no arm left to drift.
-func cannotAnswerFor(m *HerdrMeta, sock string) string {
+func cannotAnswerFor(m *HerdrMeta, srv MuxServer) string {
+	// The MULTIPLEXER first, and it is the same question one layer out
+	// (ADR 0076 §5). A record's socket is an address in its own occupant's
+	// spelling — a herdr api socket path, a Rex server address — so two
+	// occupants' addresses are not comparable at all, and comparing them
+	// would answer "a different server" where the truth is "a different
+	// kind of server, whose listings say nothing about this seat either
+	// way". Same outcome, honest reason: this pass is not the one that
+	// would know.
+	if m.MuxName() != srv.Name {
+		return fmt.Sprintf("the meta was written by %s and this pass is talking to %s", m.MuxName(), srv.Name)
+	}
 	if m.Socket == "" {
 		return "it records no socket, and nothing on disk says this server ever held it"
 	}
-	if m.Socket != sock {
-		return fmt.Sprintf("the meta was written against %s and this pass is talking to %s", socketLabel(m.Socket), socketLabel(sock))
+	if m.Socket != srv.Addr {
+		return fmt.Sprintf("the meta was written against %s and this pass is talking to %s", socketLabel(m.Socket), socketLabel(srv.Addr))
 	}
 	return ""
 }
@@ -1440,9 +1521,17 @@ func cannotAnswerFor(m *HerdrMeta, sock string) string {
 // So the write asks the socket comparison and then the per-id query, which
 // is the strong evidence anyway: only herdr's own workspace_not_found, from
 // the server the meta names, opens a name (ADR 0011 §2).
-func emptyBoard(sock string, listed int) string {
+//
+// The occupant's NAME is interpolated where the word "herdr" was a literal,
+// so herdr's own line is unchanged to the byte and another occupant's names
+// itself. The reading it protects against is the occupant's to disprove:
+// herdr restores workspaces across a restart (measured, rangerhq-snd), and
+// an occupant that does not would still be answered the same way, because
+// the cost of the refusal — one kept file — is what makes the belt worth
+// wearing on a board nobody can tell apart.
+func emptyBoard(srv MuxServer, listed int) string {
 	if listed == 0 {
-		return fmt.Sprintf("this herdr (%s) lists no workspaces at all — a server that just came up, or one that never held this session (rangerhq-snd)", socketLabel(sock))
+		return fmt.Sprintf("this %s (%s) lists no workspaces at all — a server that just came up, or one that never held this session (rangerhq-snd)", srv.Name, socketLabel(srv.Addr))
 	}
 	return ""
 }
@@ -1488,6 +1577,23 @@ func emptyBoard(sock string, listed int) string {
 // into strangers in one release, and unlabelled workspaces are not the ones
 // posse's own creates hand out.
 func (b *HerdrBackend) notOurWorkspace(m *HerdrMeta, label, gen string) string {
+	// THE FENCE IS HERDR'S, because its second anchor is (ADR 0076 §5). A
+	// seat id that is never re-issued cannot be a stranger's: Rex's are
+	// UUIDs, so an id that answers is the seat the record meant, and the
+	// generation Rex has none of is the generation it does not need. With
+	// no fence to ask, the LABEL half must not be asked either — alone it
+	// is exactly the reading this function's own doc rejects, a rename read
+	// as a recycle, and here it would cost worse than a kept file: a live
+	// session withheld from its own name for as long as its seat is
+	// renamed, with nothing that can ever clear it.
+	//
+	// An occupant that DOES recycle ids needs a fence of its own and has to
+	// say so here, in its own terms. None does today, and "" is the answer
+	// that claims nothing: it says only that nothing here disproves the
+	// record, which is all this predicate ever returns.
+	if m.MuxName() != MuxHerdr {
+		return ""
+	}
 	if label == "" || b.App.labelWearsName(label, m.Name) {
 		return ""
 	}
@@ -1525,9 +1631,15 @@ func genLabel(metaGen, gen string) string {
 //   - not dead: why says what the answer proved instead — alive and ours,
 //     alive and a stranger's, or no answer at all. Silence is never death
 //     (ADR 0011 §2).
-func (b *HerdrBackend) idEvidence(m *HerdrMeta, gen string) (dead bool, why string) {
+func (b *HerdrBackend) idEvidence(m *HerdrMeta, srv MuxServer) (dead bool, why string) {
 	if m.Workspace == "" {
 		return false, "it names no workspace, and absence of a name is not death"
+	}
+	// A seat on another occupant is answered by that occupant's listing
+	// (seatEvidence) rather than by herdr's per-id query, which is §4's and
+	// would refuse this call outright.
+	if m.MuxName() != MuxHerdr {
+		return b.seatEvidence(m)
 	}
 	ws, found, err := b.workspaceGet(m.Workspace)
 	if err != nil {
@@ -1536,10 +1648,47 @@ func (b *HerdrBackend) idEvidence(m *HerdrMeta, gen string) (dead bool, why stri
 	if !found {
 		return true, ""
 	}
-	if stranger := b.notOurWorkspace(m, ws.Label, gen); stranger != "" {
+	if stranger := b.notOurWorkspace(m, ws.Label, srv.Gen); stranger != "" {
 		return false, stranger
 	}
 	return false, fmt.Sprintf("workspace %s is alive", m.Workspace)
+}
+
+// seatEvidence is idEvidence for a seat this backend's occupant is not herdr
+// for: ADR 0076 §5's liveness rule, which is one listing and no fence.
+//
+//   - dead: the recorded session id is absent from a listing taken NOW. §5
+//     earns that from the ids themselves — Rex's are UUIDs and are never
+//     reused — so absence is not "an id nobody holds at the moment" the way
+//     it would be on herdr's recycling allocator, and a present id is the
+//     seat the record meant without anything further being asked
+//     (notOurWorkspace carries why the fence is herdr's).
+//   - not dead: a listing this occupant would not give, or one with nothing
+//     in it. Silence is never death (ADR 0011 §2), and an empty listing is
+//     the belt the prune wears on every occupant (emptyBoard).
+//
+// IT TAKES ITS OWN LISTING RATHER THAN THE CALLER'S. Both callers hold one —
+// listSessions read it a moment ago, reclaim is re-proving under the lock —
+// and that is exactly the snapshot rangerhq-9nso says may not be read as a
+// fact about another store. herdr's half confirms by per-id query; §2's ten
+// verbs have no per-id query, so the confirmation is a fresh List(). It is
+// paid once per meta the listing is missing, which is the population the
+// prune exists for and not the ordinary pass.
+func (b *HerdrBackend) seatEvidence(m *HerdrMeta) (dead bool, why string) {
+	mux := b.Mux()
+	seats, err := mux.List()
+	if err != nil {
+		return false, fmt.Sprintf("%s did not answer for its seat listing (%v), and silence is not evidence", m.MuxName(), err)
+	}
+	if why := emptyBoard(mux.Server(), len(seats)); why != "" {
+		return false, why
+	}
+	for _, s := range seats {
+		if s.Session == m.Workspace {
+			return false, fmt.Sprintf("seat %s is alive", m.Workspace)
+		}
+	}
+	return true, ""
 }
 
 // The listing is a snapshot, and rangerhq-9nso is what happens when a
@@ -1566,11 +1715,11 @@ func (b *HerdrBackend) idEvidence(m *HerdrMeta, gen string) (dead bool, why stri
 // A workspace that answers keeps the file whether it is ours or a stranger
 // squatting a recycled id; the reason is carried out so the listing's
 // warning can say which, since only one of the two is repairable.
-func (b *HerdrBackend) prunable(m *HerdrMeta, gen string) (dead bool, why string) {
+func (b *HerdrBackend) prunable(m *HerdrMeta, srv MuxServer) (dead bool, why string) {
 	if time.Since(m.Launched) < PruneGrace {
 		return false, fmt.Sprintf("its meta is younger than the %s prune grace", PruneGrace)
 	}
-	return b.idEvidence(m, gen)
+	return b.idEvidence(m, srv)
 }
 
 // sessionGone says whether THIS herdr server can prove the session named
@@ -1600,16 +1749,23 @@ func (b *HerdrBackend) sessionGone(name string) (dead bool, why string) {
 	if name == "" {
 		return false, "it has no session name to ask about"
 	}
-	wss, err := b.workspaces()
+	// The SLOT's listing, not herdr's raw one (ADR 0076 §5): this is the
+	// liveness question, and liveness has one rule per occupant and not one
+	// per multiplexer posse happens to know the verbs of. It reads the two
+	// fields SeatInfo and HerdrWorkspace both carry — the session id and the
+	// label — so herdr's answer is the same answer; what it adds on herdr is
+	// `agent list`'s failure as a second way to get no listing at all, and
+	// no listing keeps the tree, which is this function's own direction.
+	srv := b.Mux().Server()
+	wss, err := b.Mux().List()
 	if err != nil {
-		return false, fmt.Sprintf("herdr did not answer for the workspace list (%v), and silence is not evidence", err)
+		return false, fmt.Sprintf("%s did not answer for the seat list (%v), and silence is not evidence", srv.Name, err)
 	}
-	sock, gen := SocketID(), ServerGen()
 	// The prune's own belt, and for the same reason: an empty listing looks
 	// exactly like "everything died" and is also what a server that just
 	// came up looks like (rangerhq-snd). Asked before the meta, because it
 	// is a fact about the SERVER and holds whether or not a meta survives.
-	if why := emptyBoard(sock, len(wss)); why != "" {
+	if why := emptyBoard(srv, len(wss)); why != "" {
 		return false, why
 	}
 	m, ok := b.readMeta(name)
@@ -1622,7 +1778,7 @@ func (b *HerdrBackend) sessionGone(name string) (dead bool, why string) {
 			// (ranger-base-rcwx) was a create and a relaunch being blocked.
 			// Any row wearing this name, however spelled, keeps the tree.
 			if b.App.labelWearsName(ws.Label, name) {
-				return false, fmt.Sprintf("workspace %s is listed under this name with no meta of its own", ws.WorkspaceID)
+				return false, fmt.Sprintf("workspace %s is listed under this name with no meta of its own", ws.Session)
 			}
 		}
 		return true, ""
@@ -1633,17 +1789,17 @@ func (b *HerdrBackend) sessionGone(name string) (dead bool, why string) {
 		return false, "its meta carries no readable record, and unreadable is not gone"
 	}
 	for _, ws := range wss {
-		if ws.WorkspaceID == m.Workspace {
-			if stranger := b.notOurWorkspace(m, ws.Label, gen); stranger != "" {
+		if ws.Session == m.Workspace {
+			if stranger := b.notOurWorkspace(m, ws.Label, srv.Gen); stranger != "" {
 				return false, stranger
 			}
 			return false, fmt.Sprintf("workspace %s is alive", m.Workspace)
 		}
 	}
-	if why := cannotAnswerFor(m, sock); why != "" {
+	if why := cannotAnswerFor(m, srv); why != "" {
 		return false, why
 	}
-	return b.prunable(m, gen)
+	return b.prunable(m, srv)
 }
 
 // reclaim is the unlink itself: the only line in posse that destroys a
@@ -1680,7 +1836,7 @@ func (b *HerdrBackend) sessionGone(name string) (dead bool, why string) {
 // It returns why the file was kept, "" when it was pruned — or when the
 // re-read finds nothing there at all, which is not a sparing: somebody else
 // already did the delete this pass had proved.
-func (b *HerdrBackend) reclaim(name, sock, gen string) string {
+func (b *HerdrBackend) reclaim(name string, srv MuxServer) string {
 	lock, why := tryLockLaunches(b.App)
 	if lock == nil {
 		// The reason is carried, not fixed: a lock this pass could not even
@@ -1704,10 +1860,10 @@ func (b *HerdrBackend) reclaim(name, sock, gen string) string {
 	if m.Workspace == "" {
 		return "it now names no workspace: a relaunch left its recipe here while this pass was proving the old workspace dead"
 	}
-	if why := cannotAnswerFor(m, sock); why != "" {
+	if why := cannotAnswerFor(m, srv); why != "" {
 		return why
 	}
-	if dead, why := b.prunable(m, gen); !dead {
+	if dead, why := b.prunable(m, srv); !dead {
 		return why
 	}
 	os.Remove(b.metaPath(name)) // workspace died — stale meta
@@ -1740,17 +1896,24 @@ func (b *HerdrBackend) reclaim(name, sock, gen string) string {
 // an absent one: it would make the next generation trust a recycled id.
 // Best effort, like the socket half: a listing must never fail over a
 // bookkeeping write.
-func (b *HerdrBackend) backfillServer(m *HerdrMeta, label, sock, gen string) {
-	stampSock := m.Socket == "" && sock != ""
-	stampGen := gen != "" && m.Gen != gen && label == m.Name
+//
+// `mux:` is deliberately NOT backfilled, and there is nothing to backfill:
+// a record with no key reads as herdr (MuxName) and every record written
+// before the key existed is herdr's, so the absent key is already the right
+// answer. Stamping it would rewrite the whole fleet's records to say what
+// they already say — and writeMeta would drop the line anyway, since herdr
+// is the one name it never writes.
+func (b *HerdrBackend) backfillServer(m *HerdrMeta, label string, srv MuxServer) {
+	stampSock := m.Socket == "" && srv.Addr != ""
+	stampGen := srv.Gen != "" && m.Gen != srv.Gen && label == m.Name
 	if !stampSock && !stampGen {
 		return
 	}
 	if stampSock {
-		m.Socket = sock
+		m.Socket = srv.Addr
 	}
 	if stampGen {
-		m.Gen = gen
+		m.Gen = srv.Gen
 	}
 	_ = b.writeMeta(m)
 }
@@ -1895,8 +2058,8 @@ func (b *HerdrBackend) mustNotOrphan(name string) error {
 	// listing, and its failure branch was a weaker copy of the per-id query
 	// below: if herdr will not answer, the query errors too, and silence on
 	// the write side is already a refusal.
-	sock := SocketID()
-	if why := cannotAnswerFor(m, sock); why != "" {
+	srv := b.Mux().Server()
+	if why := cannotAnswerFor(m, srv); why != "" {
 		return Die("session '%s' has a meta naming workspace %s and %s — refusing to overwrite the only record of a session that may be alive on another herdr; the prune keeps this same file for the same reason (rangerhq-8fq). Point posse at the herdr that holds it, or remove %s by hand.", name, m.Workspace, why, b.metaPath(name))
 	}
 	// The per-id query, through the predicate the prune asks — including its
@@ -1913,7 +2076,7 @@ func (b *HerdrBackend) mustNotOrphan(name string) error {
 	// exists; the operator's post-flight repair (NOTES) stays a deliberate,
 	// visible act, and a refusal costs a retry where a wrong repair would
 	// point the name at a workspace nobody proved was the session's.
-	dead, why := b.idEvidence(m, ServerGen())
+	dead, why := b.idEvidence(m, srv)
 	if dead {
 		return nil
 	}
@@ -2935,21 +3098,28 @@ func (b *HerdrBackend) startPlanned(o NewSessionOpts, p *launchPlan) (string, er
 	// what herdr's one shared list shows, the name is what posse addresses.
 	// planLaunch has already refused a malformed tag, so nothing here can
 	// create a workspace under a label this home would not recognise.
-	seat, err := b.Mux().Create(b.App.WorkspaceLabel(o.Name), p.Dir, p.Vars)
+	mux := b.Mux()
+	seat, err := mux.Create(b.App.WorkspaceLabel(o.Name), p.Dir, p.Vars)
 	if err != nil {
 		return "", err
 	}
 	wsID, rootPane := seat.Session, seat.Pane
+	srv := mux.Server()
 	meta := &HerdrMeta{
 		Name: o.Name, Workspace: wsID, Pane: rootPane,
 		Emoji: p.Emoji, Envs: strings.Join(p.Envs, "+"), Agent: o.Agent, Runtime: p.Runtime, Tier: p.Tier, Model: p.Model,
 		Dir: p.Dir, Repo: p.Repo, Branch: p.Branch,
 		Cage: p.Cage, Sockets: p.Sockets, Degraded: p.Degraded, Bead: o.Bead, Crew: o.Crew,
 		HooksMode: p.HooksMode, ManagedHooks: p.ManagedHooks,
-		// Which server, and which generation of it, issued this workspace
-		// id — the id alone identifies nothing across a restart or a
-		// handoff (rangerhq-yt1p).
-		Socket: SocketID(), Gen: ServerGen(),
+		// WHICH OCCUPANT, which server of it, and which generation of that
+		// server issued the seat above — the id alone identifies nothing
+		// across a restart or a handoff (rangerhq-yt1p), and on a box
+		// running two multiplexers it does not even name one kind of
+		// server (ADR 0076 §5, MuxServer). Asked of the slot that just
+		// created the seat, so the record and the seat cannot disagree
+		// about who holds it; `mux: herdr` writes no line, which is what
+		// keeps a herdr record byte-identical to the ones already on disk.
+		Mux: srv.Name, Socket: srv.Addr, Gen: srv.Gen,
 	}
 	if o.Agent == "" {
 		// A persona's line is re-rendered from the PID at every launch; a
@@ -2971,7 +3141,7 @@ func (b *HerdrBackend) startPlanned(o NewSessionOpts, p *launchPlan) (string, er
 		if err != nil {
 			return wsID, err
 		}
-		if err := b.Mux().Start(seat, line); err != nil {
+		if err := mux.Start(seat, line); err != nil {
 			return wsID, err
 		}
 	}

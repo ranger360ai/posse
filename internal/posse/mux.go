@@ -98,6 +98,54 @@ const (
 	MuxUnknown = "unknown"
 )
 
+// MuxHerdr is herdr's name in the slot, and the name a session record means
+// when it carries no `mux:` key at all (ADR 0076 §5). The absent key is the
+// default on purpose: every meta file on this box was written before the key
+// existed, and all of them are herdr's.
+//
+// There is no constant for the second occupant here. A name belongs to the
+// occupant that answers for it (HerdrMux.Server), so Rex's lands with Rex's
+// own file rather than as a string this package already knows.
+const MuxHerdr = "herdr"
+
+// MuxServer is the provenance of a seat: which occupant holds it, which
+// server of that occupant, and which generation of that server issued the
+// ids. It is the triple a session record carries — `mux:`, `socket:`,
+// `gen:` — and the occupant is the only thing that can answer it.
+//
+// IT IS NOT ONE OF ADR 0076 §2'S VERBS, and it is here because §5 is not
+// satisfiable without it. §5 gives the meta file a Mux key, puts the Rex
+// server address in `socket:` and leaves `gen:` empty on Rex — three facts
+// about the occupant that the posse-owned record has to write down and the
+// prune has to compare against. posse read them as `SocketID()` and
+// `ServerGen()`, two package functions that resolve a HERDR socket path, so
+// a record written on a Rex instance would have carried a herdr socket it
+// was never created against, and the prune would have compared the wrong
+// pair forever. Asking the occupant is the only answer that stays true when
+// the occupant changes (docs/notes.d/ranger-base-q5gc2.md).
+type MuxServer struct {
+	// Name is the occupant's own name — MuxHerdr, or another occupant's.
+	// It is what `mux:` records, and an empty `mux:` reads back as
+	// MuxHerdr rather than as "".
+	Name string
+	// Addr is the server this occupant is talking to, in whatever spelling
+	// identifies one: herdr's resolved api socket path, Rex's server
+	// address. "" is "this pass cannot name its server", which is never
+	// read as a match (cannotAnswerFor).
+	Addr string
+	// Gen is the server GENERATION that issued the seat ids — the fence
+	// that tells a reused id apart from the one a record meant. "" is "not
+	// recorded, or this occupant has no such thing", and it is never read
+	// as a match either.
+	//
+	// herdr needs it: its allocator is max(live id)+1, recomputed at every
+	// server process start, so a dead workspace id is reissued to a
+	// stranger (ServerGen, notOurWorkspace). Rex's ids are UUIDs and are
+	// never reused, so Rex answers "" and §5 says so — which is also why a
+	// non-herdr seat needs no identity fence at all.
+	Gen string
+}
+
 // MuxReading is what an occupant says about the runtime in one seat.
 //
 // THE EMPTY STATE IS AN ANSWER AND NOT AN ERROR. An occupant that was asked,
@@ -192,4 +240,10 @@ type Mux interface {
 	// Prompt submits text to the runtime. wait blocks until the first
 	// settled idle|done|blocked state.
 	Prompt(s Seat, text string, wait bool, timeoutMS int) (MuxReading, error)
+
+	// Server is not a verb: it is who is answering them (see MuxServer).
+	// Every session record posse writes stamps this triple, and every
+	// prune compares the record's against the live one before it may act
+	// on the seat (ADR 0076 §5).
+	Server() MuxServer
 }

@@ -209,6 +209,22 @@ func agentStatusFromResult(raw []byte) string {
 	return payload.Status
 }
 
+// ─── who is answering (ADR 0076 §5) ──────────────────────────────────────────
+
+// Server is herdr's answer to the provenance triple every session record
+// stamps: this occupant's name, the api socket it is talking to, and the
+// generation of that server (MuxServer carries what each is for).
+//
+// The two resolvers were read directly by the backend until this landed, and
+// they stay exactly where they are: SocketID() and ServerGen() are herdr's
+// own — a socket path, and the device/inode/bind-time of that path — and a
+// record stamped on a non-herdr instance must not carry either. So the resolvers are herdr's to call and this is where that is
+// said. The values are unchanged, which is why nothing about a herdr
+// instance's records or prune moved.
+func (m HerdrMux) Server() MuxServer {
+	return MuxServer{Name: MuxHerdr, Addr: SocketID(), Gen: ServerGen()}
+}
+
 // ─── herdr's own verbs (ADR 0076 §4) ─────────────────────────────────────────
 //
 // Reached through HerdrBackend.HerdrMux, whose false answer is the "not

@@ -548,7 +548,11 @@ func (b *HerdrBackend) closeRecorded(m *HerdrMeta, held *LaunchLock) error {
 		// guard asks again and turns it into the refusal that says so.
 		return b.clearDeadMeta(m.Name, held)
 	}
-	if err := b.Mux().Close(Seat{Session: m.Workspace}); err != nil {
+	// The seat THIS record names (HerdrMeta.Seat, ADR 0076 §5), not a
+	// session id lifted out of it: the record is what the whole function is
+	// aimed by, and the one place its two ids are paired is the record's own
+	// accessor.
+	if err := b.Mux().Close(m.Seat()); err != nil {
 		return err
 	}
 	// Both of ADR 0025 §4's remaining fold points meet here: this is the
