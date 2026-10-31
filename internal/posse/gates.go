@@ -2251,6 +2251,21 @@ func GatePrefix(binDir, shell string) string {
 // the gate shell's path. The wrapper is rendered whatever the runtime; rt
 // only decides whether the typed line points SHELL/GROK_SHELL at it
 // (Runtime.NoGateShell drops them — ADR 0009 §2). rt may be nil.
+//
+// AND IT IS WHERE ADR 0077 D1's RUNTIME-HOME PIN GOES, beside the gate
+// prefix and after it: RuntimeHomePin (runtimehome.go) types this runtime's
+// home variable onto the line in the arm posse's own environment is in, so
+// the seat resolves the file posse seeded rather than the one the
+// multiplexer server's frozen environment happens to name.
+//
+// HERE AND NOT AT THE CALL SITES, because there are three of them and they
+// must not drift: planLaunch, RelaunchAgent (herdrback.go — the bead asks
+// for that line explicitly) and the runtime probe (runtimeprobe.go), whose
+// whole job is to measure what a seat does. All three already take the gate
+// prefix from this one function for that reason, and the pin belongs to the
+// same prefix. The container tier reaches none of them — it takes WrapInCage
+// and its own cage HOME (SeedCageHome), which ADR 0077 D1 leaves out of
+// scope.
 func (a *App) WrapWithGates(persona string, rt *Runtime, deny []string, cmd string) (wrapped, gatesDir, shell string, err error) {
 	gatesDir, binDir, shell, err := a.RenderGates(persona, deny)
 	if err != nil {
@@ -2260,7 +2275,7 @@ func (a *App) WrapWithGates(persona string, rt *Runtime, deny []string, cmd stri
 	if rt != nil && rt.NoGateShell {
 		typed = ""
 	}
-	return GatePrefix(binDir, typed) + cmd, gatesDir, shell, nil
+	return GatePrefix(binDir, typed) + RuntimeHomePin(rt) + cmd, gatesDir, shell, nil
 }
 
 // ─── L3: git pre-push hook ───────────────────────────────────────────────────

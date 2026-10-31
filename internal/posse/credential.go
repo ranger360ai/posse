@@ -1155,8 +1155,12 @@ func credentialDirNamed() (dir string, named bool, err error) {
 	// The value comes from ClaudeConfigDirIn — one spelling of the config-dir
 	// rule, trust.go's — and only the named-ness reads the variable, because
 	// there is nothing in the directory it returns that says whether an
-	// operator typed it.
-	return ClaudeConfigDirIn(home), os.Getenv("CLAUDE_CONFIG_DIR") != "", nil
+	// operator typed it. That read is runtimeHomeOverride's bit
+	// (runtimehome.go), the same one ClaudeConfigDirIn's own env branch
+	// takes: one rule for "in force", now that ADR 0077 D1 types this
+	// variable onto the seat as well as resolving through it here.
+	_, named = runtimeHomeOverride(ClaudeConfigDirVar)
+	return ClaudeConfigDirIn(home), named, nil
 }
 
 // credentialFileCandidates names every path this process's environment says
@@ -1899,7 +1903,7 @@ func credentialDirPin() []EnvVar {
 	}
 	return []EnvVar{
 		{Key: "CLAUDE_SECURESTORAGE_CONFIG_DIR", Value: sec},
-		{Key: "CLAUDE_CONFIG_DIR", Value: ClaudeConfigDirIn(home)},
+		{Key: ClaudeConfigDirVar, Value: ClaudeConfigDirIn(home)},
 	}
 }
 

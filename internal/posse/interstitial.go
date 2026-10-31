@@ -73,8 +73,16 @@ func codexHome() string { return codexHomeIn(os.Getenv("HOME")) }
 // their home from os.UserHomeDir() and return its error before calling
 // here, so "no home at all" is an uncounted line there rather than a
 // relative ".grok/sessions" to walk (ranger-base-58b5 × ranger-base-z65xu).
+//
+// The env branch is runtimeHomeOverride's (runtimehome.go), which is the
+// ONE read of these variables since ADR 0077 D1 gave them a second
+// direction to travel in: posse resolves this root through them, and posse
+// TYPES them onto the seat it hires. Asked through that function rather than
+// spelled here so the resolver and the pin cannot come to disagree about
+// which value is in force — the two-spellings-of-one-rule class
+// ranger-base-api7c already fixed inside ClaudeConfigFile, one variable over.
 func grokHomeIn(home string) string {
-	if v := os.Getenv("GROK_HOME"); v != "" {
+	if v, ok := runtimeHomeOverride(GrokHomeVar); ok {
 		return v
 	}
 	if home == "" {
@@ -84,7 +92,7 @@ func grokHomeIn(home string) string {
 }
 
 func codexHomeIn(home string) string {
-	if v := os.Getenv("CODEX_HOME"); v != "" {
+	if v, ok := runtimeHomeOverride(CodexHomeVar); ok {
 		return v
 	}
 	if home == "" {

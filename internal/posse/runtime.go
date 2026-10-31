@@ -662,6 +662,35 @@ type Runtime struct {
 	// (SeatbeltSiblings, ranger-base-cypy1). Declared runtimes get that for
 	// free; it is not a claude special case.
 	StateDirs []string
+	// HomeVar is the environment variable that moves this CLI's own state
+	// root — CLAUDE_CONFIG_DIR, CODEX_HOME, GROK_HOME — and it is DECLARED
+	// here because posse now reads it in two directions (ADR 0077 D1).
+	//
+	// posse resolves its own view of that root through it: the trust file
+	// (ClaudeConfigFile), the credential dir and its seatbelt wall
+	// (credentialDirNamed), the interstitial probes and the cost adapters.
+	// And posse TYPES it onto the seat it hires, in both arms —
+	// `K=<the value posse used>` when it is in force, `/usr/bin/env -u K`
+	// when it is not — because a seat is a child of the multiplexer SERVER
+	// and resolves in an environment posse cannot read. Without the pin the
+	// two answers diverge the moment a launcher is itself a seat, which is
+	// one claude session writing a grant into the file the next one does not
+	// open (MEASURED, ranger-base-c33j6). RuntimeHomePin (runtimehome.go) is
+	// the renderer; the variable NAMES are constants beside it.
+	//
+	// "" is the honest answer for a CLI with no such variable (bob — 25
+	// distinct BOB_* names in the bundle and none a home, bobHomeIn) and
+	// nothing is typed for it.
+	//
+	// BUILT-IN ONLY, AND DELIBERATELY NOT A YAML KEY, for ReportsOnRex's
+	// reason one axis over: the pin's whole guarantee is "the seat reads
+	// what posse read", and posse reads a CLI's home through a RESOLVER it
+	// ships (one per CLI, ranger-base-x5cbz's rule). A declared runtime can
+	// name a variable; it cannot give posse the resolver that makes the pin
+	// mean anything, so the key would let a profile pin a name on the line
+	// while every posse-side reading of that CLI still went to $HOME — a
+	// lever that reads as connected and is not (ADR 0017 §1).
+	HomeVar string
 	// EnvRequired are the environment variable NAMES a session on this
 	// runtime cannot work without — the Bedrock/Vertex shape, where the CLI
 	// is installed and on PATH and every launch is a dead pane because
@@ -2057,6 +2086,11 @@ var builtinRuntimes = []Runtime{
 		// directory — the same grant either way, and both were literals in
 		// SeatbeltWritable until ADR 0012 D4 made the key declarable.
 		StateDirs: []string{"~/.claude", "~/.claude.json"},
+		// home_var: the one variable that moves BOTH of those — the config
+		// dir and the `.claude.json` beside it — so it is the one pinned onto
+		// the seat's line (ADR 0077 D1). Both candidate files are live on
+		// this box; which one a seat reads is this variable's answer.
+		HomeVar: ClaudeConfigDirVar,
 		// record: trusted — dispatched claude sessions close their beads;
 		// that is the shape every other runtime is measured against.
 		// account: nothing to declare — the adapter registry is the whole
@@ -2102,6 +2136,11 @@ var builtinRuntimes = []Runtime{
 	// path; grok is untouched (out of this bead's scope, still ASSUMED).
 	{Name: "codex", Builtin: true, Realize: realizeCodex, Skills: skillsCwd, SkillsRoot: AgentsSkillsPath, SkillsVerified: "codex-cli 0.153.4", SkillsGlobalRoots: []string{AgentsSkillsPath}, Models: codexModels, ModelFlag: "-c model=%s", SelfSandbox: true, ProjectConfig: []string{CodexProjectConfig}, Unattended: "-a never",
 		Egress: []string{"chatgpt.com", "ab.chatgpt.com"}, StateDirs: []string{"~/.codex"},
+		// home_var: codexHomeIn's variable (interstitial.go) — the one the
+		// update-menu probe, the turn-outcome reader and the cost adapter all
+		// resolve this CLI's store through, pinned onto the seat's line so
+		// the seat's codex reads the store posse read (ADR 0077 D1).
+		HomeVar: CodexHomeVar,
 		// record: untrusted — MEASURED the other way: 3/3 dispatched codex
 		// sessions did the work and left the bead in_progress with no
 		// comment, one of them on a dirty shared checkout (ranger-base-0fb).
@@ -2166,6 +2205,11 @@ var builtinRuntimes = []Runtime{
 	// the three reasons.
 	{Name: "grok", Builtin: true, Realize: realizeGrok, Skills: skillsCwd, SkillsRoot: AgentsSkillsPath, SkillsVerified: "grok 1.0.52 (0920c8169e27)", SkillsDirTrust: GrokSkillsDirTrust, Models: grokModels, ModelFlag: "-m %s", Unattended: GrokFleetFlags,
 		Egress: []string{"cli-chat-proxy.grok.com", "grok.com"}, StateDirs: []string{"~/.grok"},
+		// home_var: grokHomeIn's variable (interstitial.go), pinned for the
+		// same reason codex's is — the privacy-banner and auto-update probes
+		// read config.toml under it, and a seat reading a different home is a
+		// seat whose answers posse measured somewhere else (ADR 0077 D1).
+		HomeVar: GrokHomeVar,
 		// project_config: the repo→box channel that was UNDECLARED here
 		// until ranger-base-l12j9 — eight entries and claude's two keys,
 		// MEASURED on grok 1.0.52 (0920c8169e27) on 2026-10-31. The list,
@@ -2306,6 +2350,13 @@ var builtinRuntimes = []Runtime{
 		// model flag there is no id to hand this CLI, so the ADR 0053 canary
 		// has no launch to make here; a value either way would be a guess.
 		Egress: []string{"bob.ibm.com", "iam.cloud.ibm.com"}, StateDirs: []string{"~/.bob"},
+		// home_var: NONE, and measured so rather than skipped. bobHomeIn is
+		// the one of the three resolvers with no env branch at all — of the
+		// 25 distinct BOB_* names in the bundle none is a home or config-dir
+		// override (ranger-base-9k9ff, re-read on 2.0.9 under
+		// ranger-base-kf9ou) — so $HOME is the only mover and there is
+		// nothing for ADR 0077 D1 to pin. $HOME is not pinned (ASSUMED equal:
+		// launcher and server run as the same user on the host).
 		CageCred: BobCageCred,
 		// prompt: typed, and StartupWait deliberately UNSET so the built-in
 		// runs on DefaultStartupWait. The recon watched one launch reach a

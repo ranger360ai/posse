@@ -29,6 +29,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-80zqb](ranger-base-80zqb.md) — The two brackets were backwards, and the reader was never going to close the class (ranger-base-80zqb) — 2026-10-31
 - [ranger-base-6r1rf](ranger-base-6r1rf.md) — bob reads the posse namespace, symlinks and all — and is in drift the day it ships (ranger-base-6r1rf) — 2026-10-31
 - [ranger-base-4dhcw](ranger-base-4dhcw.md) — The verdict file has one subject, and not every run can speak for it (ranger-base-4dhcw) — 2026-10-31
+- [ranger-base-49v2h](ranger-base-49v2h.md) — The typed line pins the runtime-home var, and the refused write was never the lock (ranger-base-49v2h) — 2026-10-31
 - [ranger-base-3a5z7](ranger-base-3a5z7.md) — The channel suffix is grok's update-check cache, so §6c compares the release (ranger-base-3a5z7) — 2026-10-31
 - [ranger-base-2zkcy](ranger-base-2zkcy.md) — Two more grok project-config channels, and the one entry no key can describe (ranger-base-2zkcy) — 2026-10-31
 - [ranger-base-2cttm](ranger-base-2cttm.md) — A context deadline is half a bound: the WaitDelay census, the ruling, and the pin (ranger-base-2cttm) — 2026-10-31

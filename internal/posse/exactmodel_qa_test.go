@@ -411,11 +411,32 @@ func TestExactModelRecordListingAndRecovery(t *testing.T) {
 
 	// Relaunch retypes the canary, not the tier's model (D4: killing is what
 	// ends the override, not a crash).
+	//
+	// THE LAUNCH IS READ FIRST AND THE TWO ARE ASSERTED SEPARATELY, where
+	// this used to count two occurrences in one reading. That count was only
+	// available while the line FIT: over PaneLineMax the line is spilled to
+	// state/launch/<session>.sh and the pane runs `. <path>`, and that script
+	// is REWRITTEN at each launch (paneline.go) — so by the time the
+	// relaunch's copy is read the launch's is gone, and a count of 2 sees 1
+	// over a relaunch that did exactly what it should. It is the same cliff
+	// ranger-base-rq83c moved verifyesa0j_qa_test.go's fixture across, and
+	// ADR 0077 D1's 27-byte home pin is what moved this fixture over it
+	// (ranger-base-49v2h) — a fact about the line's LENGTH and nothing about
+	// the model, which is why the remedy is to stop counting rather than to
+	// shorten anything.
+	launched := launchLog(t, b.App, fake)
+	if !strings.Contains(launched, "-c model='"+astraID+"'") {
+		t.Fatalf("fixture: the LAUNCH did not carry the exact model, so the relaunch arm below would measure nothing:\n%s", launched)
+	}
+	typedBefore := strings.Count(rawCalls(t, fake), "pane run ")
 	if _, err := b.RelaunchAgent("architect-astra", 0); err != nil {
 		t.Fatalf("RelaunchAgent: %v", err)
 	}
 	log := launchLog(t, b.App, fake)
-	if strings.Count(log, "-c model='"+astraID+"'") < 2 {
+	if strings.Count(rawCalls(t, fake), "pane run ") <= typedBefore {
+		t.Fatalf("fixture: the relaunch typed nothing new, so neither assertion below is about a relaunch:\n%s", log)
+	}
+	if !strings.Contains(log, "-c model='"+astraID+"'") {
 		t.Errorf("the relaunch did not retype the exact model:\n%s", log)
 	}
 	if strings.Contains(log, codexModels[TierStrong]) {

@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -2991,10 +2992,42 @@ func warnBuf(t *testing.T, b *HerdrBackend) *syncBuf {
 	return buf
 }
 
-// gatePrefixRe is the L1 prefix on every typed persona line: ADR 0002 §3's
-// PATH=<gates bin>, and ADR 0009 §2's SHELL/GROK_SHELL pointing at the gate
-// shell (absent only for a Runtime.NoGateShell runtime).
-var gatePrefixRe = regexp.MustCompile(`PATH='[^']*':"\$PATH" (SHELL='[^']*' GROK_SHELL='[^']*' )?`)
+// gatePrefixRe is the WHOLE prefix posse types in front of a persona
+// command: ADR 0002 §3's PATH=<gates bin>, ADR 0009 §2's SHELL/GROK_SHELL
+// pointing at the gate shell (absent only for a Runtime.NoGateShell
+// runtime), and ADR 0077 D1's runtime-home pin (absent only for a runtime
+// with no HomeVar — bob).
+//
+// The home pin is folded in here rather than spelled at each assertion for
+// the reason the `GATES ` marker exists at all. WHICH ARM it renders is a
+// fact about the LAUNCHER's environment — set gives `K='<value>' `, unset
+// gives `/usr/bin/env -u K ` — so an assertion naming the persona command
+// after it would otherwise depend on a variable this box happens to export
+// (it exports CLAUDE_CONFIG_DIR; TestMain clears all three, which is a
+// fixture decision and not a property of the shape being asserted). The
+// pin's own two arms are pinned against measured inputs in
+// runtimehome_qa_test.go, which reads the RAW line through rawCalls/spilled
+// and is not collapsed by this.
+//
+// The variable names come from the built-ins' own declarations, so a fourth
+// runtime-home pin cannot leave this expression behind.
+var gatePrefixRe = regexp.MustCompile(
+	`PATH='[^']*':"\$PATH" (SHELL='[^']*' GROK_SHELL='[^']*' )?` +
+		`((` + declaredHomeVars() + `)='[^']*' |/usr/bin/env -u (` + declaredHomeVars() + `) )?`)
+
+// declaredHomeVars is the alternation of every built-in's HomeVar, sorted so
+// the expression is stable. Read off the declarations and not listed here,
+// for gatePrefixRe's last paragraph.
+func declaredHomeVars() string {
+	var names []string
+	for _, rt := range builtinRuntimes {
+		if rt.HomeVar != "" {
+			names = append(names, regexp.QuoteMeta(rt.HomeVar))
+		}
+	}
+	sort.Strings(names)
+	return strings.Join(names, "|")
+}
 
 // calls returns the fake herdr's call log with each gate prefix collapsed
 // to the marker `GATES `, so assertions can name the persona command that

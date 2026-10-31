@@ -74,6 +74,8 @@ package posse
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -105,7 +107,7 @@ func ClaudeConfigFile() string {
 	// os.UserHomeDir() is no second source — on unix it IS $HOME (measured,
 	// go1.26.5: `env -i` gives err="$HOME is not defined").
 	home := os.Getenv("HOME")
-	if home == "" && os.Getenv("CLAUDE_CONFIG_DIR") == "" {
+	if _, named := runtimeHomeOverride(ClaudeConfigDirVar); home == "" && !named {
 		return ""
 	}
 	cfgDir := ClaudeConfigDirIn(home)
@@ -180,8 +182,14 @@ func ClaudeConfigFile() string {
 // and today's answer — is the one a misconfigured box should get. Pinned:
 // TestCredentialsFileFollowsTheRuntimesOwnDirectoryResolution's
 // "CLAUDE_CONFIG_DIR present but EMPTY, alone" arm (credseam_test.go).
+//
+// The env branch is runtimeHomeOverride's (runtimehome.go) — the ONE read of
+// these variables, and the reason it is one is that since ADR 0077 D1 posse
+// both resolves through this variable and TYPES it onto the seat it hires. A
+// second spelling of "in force" is how those two answers come to name
+// different files, which is the whole of surface 1.
 func ClaudeConfigDirIn(home string) string {
-	if d := os.Getenv("CLAUDE_CONFIG_DIR"); d != "" {
+	if d, ok := runtimeHomeOverride(ClaudeConfigDirVar); ok {
 		return d
 	}
 	return filepath.Join(home, ".claude")
@@ -611,7 +619,70 @@ func SeedClaudeTrust(cfg string, rt *Runtime, dir string) (string, error) {
 		claudeSeedProject(state, ClaudeTrustKey(dir))
 	}
 	state[ClaudeOutsideReadSeenKey] = true
-	return p, writeJSONInPlace(p, state)
+	if err := writeJSONInPlace(p, state); err != nil {
+		return "", claudeTrustWriteRefusal(p, dir, err)
+	}
+	return p, nil
+}
+
+// claudeTrustWriteRefusal is what a seed that could not WRITE says, and it
+// exists because the bare error is `operation not permitted` on a path
+// nobody asked about (ADR 0077 D1, surface 1's second half).
+//
+// The refused write is not the config file: writeJSONInPlace replaces it
+// through a temp file in its own DIRECTORY and a rename (it has to — a
+// half-written ~/.claude.json costs the operator every project they have
+// ever opened), so every arm of it needs that DIRECTORY, and the one that
+// fails first is the `.posse-seed-*` create. An operator reading `open
+// <home>/.posse-seed-1234: operation not permitted` is looking at a filename
+// posse invented, in a directory they did not name, from a launch that
+// mentioned neither.
+//
+// And it is the write and not the LOCK, which is the one thing about this
+// that a reader would get backwards. SeedClaudeTrust locks `<cfg>.posse-lock`
+// before it writes, so on an arbitrary unwritable directory the lock's
+// O_CREATE is what fails first — but in a caged SEAT it cannot be, because
+// the L2 profile grants `<p>.` plus anything for every declared state FILE
+// (SeatbeltSiblings, ranger-base-cypy1) and `~/.claude.json` is one. The
+// sidecar is inside the grant by construction; `$HOME/.posse-seed-*` is a
+// name in the config's directory rather than beside its file, and is in
+// nobody's. That asymmetry is what the fixture has to reproduce, and
+// docs/notes.d/ranger-base-49v2h.md records it.
+//
+// MEASURED 2026-10-31 (ranger-base-c33j6's first attempt): dispatching from
+// a `cage: seatbelt` seat with CLAUDE_CONFIG_DIR unset, so posse targeted
+// $HOME/.claude.json — the temp file in $HOME is outside that seat's
+// writable set and the seatbelt refused it. D1 makes the common case go
+// away, since every claude seat HAS the variable set and a seatbelt seat can
+// write the directory it names; this is the refusal that remains, for a
+// caged launcher that has it unset.
+//
+// THE CAGE SENTENCE IS CONDITIONAL ON BOTH FACTS IT CLAIMS, because a
+// confident wrong diagnosis is worse than the bare errno. It needs a
+// PERMISSION error (fs.ErrPermission — EPERM is what seatbelt denies with)
+// and an RHQ_CAGE in this process's own environment, which is the launch env
+// posse writes onto a seat (planLaunch) and therefore present exactly when
+// the launcher IS one. A disk-full or a read-only volume gets the paths and
+// the remedies without being told it is a cage; a cage posse cannot see is
+// not asserted.
+//
+// Reading RHQ_CAGE from posse's OWN environment is right here and is not the
+// mistake ADR 0077 names. That mistake is reading the launcher's environment
+// to decide something about the SEAT; this decides something about the
+// launcher — which process just had a write refused — and the launcher's
+// environment is the only place that fact lives.
+func claudeTrustWriteRefusal(cfg, dir string, err error) error {
+	cage := ""
+	if errors.Is(err, fs.ErrPermission) {
+		if c := os.Getenv("RHQ_CAGE"); c != "" {
+			cage = fmt.Sprintf(" This launcher is itself a caged seat — RHQ_CAGE=%s, persona %s — and %s is outside its writable set: a `cage: seatbelt` session may write its own session dir, RHQ_HOME and the runtime's declared state dirs, and nothing else (ADR 0012 D4, seatbelt.go).",
+				c, os.Getenv(EnvPersona), AbbrevHome(filepath.Dir(cfg)))
+		}
+	}
+	return Die("claude directory trust: cannot write %s (%v) — posse replaces that file through a `.posse-seed-*` temp file in %s and a rename, so what was refused is a write to that DIRECTORY and not to the config file itself.%s\n"+
+		"  two ways out: set CLAUDE_CONFIG_DIR to a directory this launcher can write, and the seat posse opens reads the file posse seeds there ($CLAUDE_CONFIG_DIR/.claude.json) because the launch types that same variable onto its line (ADR 0077 D1); or dispatch from an uncaged shell, where $HOME is writable and both resolve ~/.claude.json\n"+
+		"  or, as with every other failure of this seed, run `claude` in %s once and accept the dialog by hand",
+		AbbrevHome(cfg), err, AbbrevHome(filepath.Dir(cfg)), cage, dir)
 }
 
 // writeJSONInPlace replaces a JSON file through a temp file in its own
