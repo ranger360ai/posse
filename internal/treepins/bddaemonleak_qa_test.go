@@ -52,11 +52,42 @@ package treepins
 // file's own prose and fixtures now scan to nothing because of what they ARE,
 // which is what the zero-witness arm at the foot of the file now proves.
 //
-// RESIDUAL, said out loud: a call whose binary name is not a literal —
-// `exec.Command(bdPath, …)`, `exec.Command("bd"+suffix, …)` — is not seen,
-// and never was. What bounds the class is that every real-bd call site in the
-// corpus spells the name, and the positive witness fires if the census ever
-// stops seeing them.
+// AND SO IS WHAT CLEARS A FILE (ranger-base-q82lc). The census stopped
+// reading text on 2026-10-31; the half that decides whether a carrying file
+// is EXCUSED kept reading it — a `strings.Contains` over the whole file body
+// for the two tokens. That is the same defect pointed the other way, and the
+// dangerous way round: a file that shells the real bd with no flag and no
+// cleanup was cleared by a SENTENCE anywhere in it that happened to name
+// `--no-daemon`, or by any text holding `.beads/daemon.pid`. A false GREEN
+// over a real daemon leak, where the census defect was only a false red over
+// a clean file — and the remedy the message prints ("pass `--no-daemon`")
+// would already have appeared to be satisfied. So the clearing half is handed
+// the file's parsed string LITERALS as well, the shape bddbflag_qa_test.go's
+// Go arm uses, and the control below plants the leaky shape with each token
+// present only as prose and asserts it is still flagged.
+//
+// It is a no-op on today's tree, which is why it is its own bead and not part
+// of 9ojr5: MEASURED 2026-10-31 at 9ojr5's commit, 9 real-bd call sites in 7
+// files, and every one of the 7 carries its token as a real string literal in
+// code. A change to which files the rule JUDGES clean earns its own control
+// arms rather than riding in on a matcher fix.
+//
+// RESIDUAL, said out loud, on both halves. A call whose binary name is not a
+// literal — `exec.Command(bdPath, …)`, `exec.Command("bd"+suffix, …)` — is
+// not seen, and never was. What bounds the class is that every real-bd call
+// site in the corpus spells the name, and the positive witness fires if the
+// census ever stops seeing them.
+//
+// And a token that is a literal but not a GUARD still clears its file: a Go
+// string holding `.beads/daemon.pid` excuses the file whether or not anything
+// SIGTERMs that pid, and a `"--no-daemon"` in an unrelated slice excuses it
+// whether or not it reaches a bd. That is the floor of per-file granularity
+// and not a thing this parse can lift — the cleanup's own handle IS a Go
+// string literal, named far from the call it answers for, so no rule that can
+// see the cleanup can refuse a string that merely looks like it. Per-file is
+// the granularity ranger-base-42mv chose, because it is the one at which the
+// two honest answers above are legible. What the parse does buy is that PROSE
+// is no longer an alibi, which is the half that could be bought.
 //
 // This is the prevention half of the bead. The detection half — naming a
 // daemon whose working directory is gone or throwaway, on the live box — is
@@ -68,6 +99,7 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -120,12 +152,14 @@ func bdRealBdCallName(call *ast.CallExpr) bool {
 	return err == nil && v == "bd"
 }
 
-// scanRealBdCallSites returns every real-bd call site under root, and the
-// files that hold them. Errors are returned rather than swallowed: a walk
+// scanRealBdCallSites returns every real-bd call site under root, and for
+// each file that holds one, the string LITERALS parsed out of that file —
+// which is what the clearing half judges, in place of the file's bytes
+// (ranger-base-q82lc). Errors are returned rather than swallowed: a walk
 // that reads nothing must not look like a tree with nothing in it, and a file
 // that does not parse must not look like a file with no calls in it.
-func scanRealBdCallSites(root string) (sites []bdCallSite, files map[string]string, err error) {
-	files = map[string]string{}
+func scanRealBdCallSites(root string) (sites []bdCallSite, files map[string][]string, err error) {
+	files = map[string][]string{}
 	fset := token.NewFileSet()
 	err = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -149,30 +183,56 @@ func scanRealBdCallSites(root string) (sites []bdCallSite, files map[string]stri
 			return err
 		}
 		rel, _ := filepath.Rel(root, path)
+		var found []bdCallSite
+		var lits []string
 		ast.Inspect(f, func(n ast.Node) bool {
-			call, ok := n.(*ast.CallExpr)
-			if !ok || !bdRealBdCallName(call) {
-				return true
+			switch n := n.(type) {
+			case *ast.CallExpr:
+				if bdRealBdCallName(n) {
+					found = append(found, bdCallSite{file: rel, line: fset.Position(n.Pos()).Line})
+				}
+			case *ast.BasicLit:
+				if n.Kind == token.STRING {
+					if v, err := strconv.Unquote(n.Value); err == nil {
+						lits = append(lits, v)
+					}
+				}
 			}
-			sites = append(sites, bdCallSite{file: rel, line: fset.Position(call.Pos()).Line})
-			files[rel] = string(b)
 			return true
 		})
+		// Only a file that actually shells bd is a candidate for the rule, so
+		// only such a file's literals are kept — a file that names the call in
+		// prose is not judged at all.
+		if len(found) == 0 {
+			return nil
+		}
+		sites = append(sites, found...)
+		files[rel] = lits
 		return nil
 	})
 	return sites, files, err
 }
 
 // leakyBdTestFiles names the files that shell the real bd and neither pass
-// `--no-daemon` nor stop the daemon they started.
-func leakyBdTestFiles(files map[string]string) []string {
+// `--no-daemon` nor stop the daemon they started. It reads the file's parsed
+// string literals, never its bytes: a comment naming either token is prose,
+// and prose excuses nothing (ranger-base-q82lc). Sorted, so a failure names
+// the same files in the same order twice running.
+func leakyBdTestFiles(files map[string][]string) []string {
 	var bad []string
-	for rel, body := range files {
-		if strings.Contains(body, "--no-daemon") || strings.Contains(body, "daemon.pid") {
-			continue
+	for rel, lits := range files {
+		cleared := false
+		for _, v := range lits {
+			if strings.Contains(v, "--no-daemon") || strings.Contains(v, "daemon.pid") {
+				cleared = true
+				break
+			}
 		}
-		bad = append(bad, rel)
+		if !cleared {
+			bad = append(bad, rel)
+		}
 	}
+	sort.Strings(bad)
 	return bad
 }
 
@@ -245,6 +305,67 @@ func TestQABdDaemonGuardCatchesALeakyFile(t *testing.T) {
 	}
 	if bad := leakyBdTestFiles(files); len(bad) != 0 {
 		t.Fatalf("a daemon.pid cleanup must clear the file, got %v", bad)
+	}
+}
+
+// The clearing control (ranger-base-q82lc), and the reason the EXCUSE is
+// parsed too. Each case is the leaky shape — a real bd call, no flag, no
+// cleanup — with one of the two tokens present only as prose, which is
+// exactly what the byte matcher accepted as an alibi. Each asserts first that
+// the old matcher WOULD have cleared the file (the token is in the bytes), so
+// a typo in a fixture cannot pass this test for the wrong reason, and then
+// that the rule flags it anyway. The without-arm is TestQABdDaemonGuardCatches…
+// above, which proves the same token as a real literal still clears.
+func TestQABdDaemonGuardProseDoesNotClearALeakyFile(t *testing.T) {
+	const call = "\nfunc f() { cmd := exec.Command(\"bd\", \"list\"); _ = cmd }\n"
+	for _, tc := range []struct {
+		name  string
+		alibi string
+		token string
+	}{
+		{
+			name:  "flag named in a line comment",
+			alibi: "// This fixture deliberately does not pass --no-daemon.\n",
+			token: "--no-daemon",
+		},
+		{
+			name:  "flag named in a block comment",
+			alibi: "/*\nThe flag --no-daemon is named here, in prose, and nowhere else.\n*/\n",
+			token: "--no-daemon",
+		},
+		{
+			name:  "pid handle named in a line comment",
+			alibi: "// Nothing below SIGTERMs the pid in .beads/daemon.pid.\n",
+			token: "daemon.pid",
+		},
+		{
+			name:  "flag named in a doc comment on the call itself",
+			alibi: "// f shells bd. It should pass --no-daemon and does not.\n",
+			token: "--no-daemon",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			body := "package x\n\n" + tc.alibi + call
+			if !strings.Contains(body, tc.token) {
+				t.Fatalf("the fixture does not carry %q in its bytes, so it is not the "+
+					"shape the byte matcher cleared — the fixture, not the rule, is what failed", tc.token)
+			}
+			if err := os.WriteFile(filepath.Join(root, "leaky_test.go"), []byte(body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			sites, files, err := scanRealBdCallSites(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(sites) != 1 {
+				t.Fatalf("the planted call site was not seen: %d sites — the scan, not the rule, is what failed", len(sites))
+			}
+			if bad := leakyBdTestFiles(files); len(bad) != 1 || bad[0] != "leaky_test.go" {
+				t.Fatalf("a %q that is only prose must not clear a file that shells real bd "+
+					"with neither guard, got %v (ranger-base-q82lc)", tc.token, bad)
+			}
+		})
 	}
 }
 
