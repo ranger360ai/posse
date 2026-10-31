@@ -1564,6 +1564,128 @@ var (
 		".claude/CLAUDE.md", ".grok/rules/*.md", ".claude/rules/*.md", ".cursor/rules/*.md", "~/.grok/rules/*.md"}
 )
 
+// grokProjectConfig is the repo→box configuration channel a TRUSTED session
+// directory hands grok before any model turn: hooks grok RUNS and MCP
+// servers grok SPAWNS, itself, with the whole session env, before the work
+// prompt and with no PID and no tool gate in front of them. Guarded by
+// ProjectConfigTrust (parity.go) and opted into with trust_project_config:
+// on the PID, exactly like claude's, codex's and bob's lists.
+//
+// Grok declared NOTHING here until ranger-base-l12j9, and that is the state
+// runtimecheck.go's projectConfigRow calls the silent one: ProjectConfigTrust
+// skips a channel nobody declared, so an unguarded repo→box channel read as a
+// CLEAN launch. The hole was the ASYMMETRY (ADR 0017 §2; ADR 0002 "Project
+// configuration is a launch input"): a claude seat over a repo's
+// `.claude/settings.json` hooks degraded, and a grok seat over the SAME file
+// said nothing at all.
+//
+// MEASURED 2026-10-31 by the security lane under ranger-base-1g8gf, grok 1.0.52
+// (0920c8169e27), darwin 25.6.0. A fixture $HOME whose trusted_folders.toml
+// named only the trusted arm, identical repo content in both arms, a junk
+// XAI_API_KEY and every *_PROXY pointed at 127.0.0.1:9 — so the session
+// initialised and every model request died locally (`api.x.ai/v1/responses
+// ... tunnel ... Connection refused`; nothing left the box). Each hook and
+// MCP command was `touch <marker>`, and the marker is the reading:
+//
+//	file                         key / entry     trusted            untrusted
+//	.claude/settings.json        hooks           RAN (SessionStart, nothing
+//	                                             UserPromptSubmit)
+//	.claude/settings.local.json  hooks           RAN (same two)     nothing
+//	.claude/settings*.json       permissions     loaded (2 + 1)     0 loaded
+//	.claude/settings.json        mcpServers      NOT read — not listed, not spawned
+//	.mcp.json                    mcpServers      SPAWNED            not spawned
+//	.cursor/mcp.json             mcpServers      SPAWNED            not spawned
+//	.cursor/hooks.json           hooks           loaded, REFUSED    nothing
+//	.grok/config.toml            [mcp_servers]   SPAWNED            not spawned
+//	.grok/hooks/*.json           hooks           RAN                nothing
+//	.grok/plugins/               (directory)     NOT MEASURED — ASSUMED
+//
+// Stop/SessionEnd did not fire because the turn failed, which narrows
+// nothing: SessionStart alone runs code before any turn.
+//
+// THREE ENTRIES WHOSE ROW IS NOT A PLAIN "RAN", each declared anyway:
+//
+//   - `.cursor/hooks.json` is DORMANT on 1.0.52 — loaded, then refused in
+//     grok's own words ("this Cursor hook won't run until Grok reads Cursor
+//     hook replies"). A dormant channel is a declared one: the file is read,
+//     the refusal is a version's and not a design's, and the next release
+//     that implements the reply path opens it with no edit here.
+//   - `.grok/plugins/` is ASSUMED, off grok's own docs (09-plugins.md: a
+//     project plugin there requires trust and carries hooks, MCP and
+//     skills), not off a marker. Declared on the docs because the
+//     conservative side of an unmeasured channel is to name it; the day
+//     somebody runs the fixture, the row above is what they replace.
+//   - `.claude/settings.json`'s `mcpServers` was NOT read by grok at all —
+//     the same inert key claude has (trust.go). It stays in the KEY list
+//     anyway, for the reason claude's comment gives: a key the CLI ignores
+//     today is a key it may honour tomorrow, and the launch check fires on
+//     content rather than on which of the CLI's own gates is holding.
+//
+// `.mcp.json` IS inside this detector here, and ADR 0002's line that it
+// "retains its separate runtime approval boundary and is outside this
+// detector" is CLAUDE's reading, not a general one: claude keeps that file
+// behind its own "Pending approval" gate, which reads identically trusted
+// and untrusted (trust.go's measurement). Grok has no such gate — 1.0.52
+// SPAWNED the server under folder trust alone — so the reason for the
+// exclusion is absent and the file is a channel like the rest.
+//
+// Do NOT read `grok inspect` as the trust verdict for MCP: it LISTS an
+// untrusted repo's servers anyway (MEASURED, same rig). That listing is
+// display only; nothing was spawned.
+//
+// WORKTREE INHERITANCE, and why this reaches every seat on the box. A `git
+// worktree add` of a trusted repo at a path OUTSIDE the trusted folder reads
+// `Project trusted: yes` and runs its `.grok/hooks` (MEASURED 2026-10-31
+// here; the same resolve-through-the-git-root reading ranger-base-kwbh1 took
+// for the skills root). So every posse worktree of a trusted checkout
+// inherits the grant, and posse sets no GROK_FOLDER_TRUST and no
+// [folder_trust] anywhere.
+//
+// Which is also why this check does not CONSULT grok's folder trust, though
+// grok's built-in already carries a probe for it (GrokSkillsDirTrust): an
+// untrusted directory closes this channel, but trust resolves through the
+// git root and every tree posse opens inherits it, so the conservative
+// reading is the accurate one here too — and ADR 0002 §4 wants a file the
+// launch cannot prove safe to DEGRADE, not a launch that argues about it.
+//
+// LAUNCH DIR. Grok reads `<project>` as every directory from the git root
+// down to the cwd; ProjectConfigTrust checks ONE. That is complete for every
+// launch posse makes today, which is the thing to re-confirm rather than to
+// assume: a dispatched session's dir IS the session tree's root
+// (herdrback.go sets `dir` from SessionTree.Path before anything path-scoped
+// reads it), and a worktree root is that worktree's git toplevel; a crew
+// session's dir is the checkout root, which is the toplevel too. The one
+// shape outside that is a hand-typed `posse new --dir <subdir>`, where a
+// config file in an ancestor inside the same repo is above the dir this
+// check stats — the reach every runtime's list has, not grok's, and not
+// something this declaration narrows.
+//
+// ONE KEY LIST OVER MIXED FILE TYPES, deliberately. ProjectConfigKeys is per
+// runtime and projectConfigTrustFile parses every declared entry as JSON once
+// keys are set, so `.grok/config.toml` degrades as "invalid JSON" and
+// `.grok/hooks` and `.grok/plugins` degrade as "not a regular file". Both are
+// the RIGHT verdict — any such file or tree IS a channel; config.toml alone
+// contributes mcp_servers, permissions and plugins — reached by a misleading
+// reason. Accepted as is (the finding's own design note). If the message
+// misleads in practice, per-entry keys are a P3 follow-up and not this list's
+// business.
+var grokProjectConfig = []string{
+	ClaudeProjectConfig, ClaudeProjectConfigLocal,
+	".mcp.json", ".cursor/mcp.json", ".cursor/hooks.json",
+	".grok/config.toml", ".grok/hooks", ".grok/plugins",
+}
+
+// grokProjectConfigKeys is claude's key list, for claude's reason: the
+// executable half of a settings file is `hooks` and `mcpServers`, and
+// `permissions` is NOT here. Grok loads a repo's `permissions` under trust
+// (MEASURED above: 2 + 1 entries, against 0 untrusted), and that is the same
+// posture claude's declaration already takes — a permission grant is not an
+// exec channel, and posse's OWN .claude/settings.json is permissions-only and
+// has to stay a clean grok launch for every crew seat in this repo. Adding
+// `permissions` would degrade every one of them, which is the one change to
+// this value that looks like tightening and is not.
+var grokProjectConfigKeys = []string{"hooks", "mcpServers"}
+
 // ─── bob (IBM Bob Shell), ADR 0060 D1 ────────────────────────────────────────
 //
 // The fourth built-in, and the only one whose LAUNCH row is unmet: herdr
@@ -1855,6 +1977,12 @@ var builtinRuntimes = []Runtime{
 	// the three reasons.
 	{Name: "grok", Builtin: true, Realize: realizeGrok, Skills: skillsCwd, SkillsRoot: AgentsSkillsPath, SkillsVerified: "grok 1.0.52 (0920c8169e27)", SkillsDirTrust: GrokSkillsDirTrust, Models: grokModels, ModelFlag: "-m %s", Unattended: GrokFleetFlags,
 		Egress: []string{"cli-chat-proxy.grok.com", "grok.com"}, StateDirs: []string{"~/.grok"},
+		// project_config: the repo→box channel that was UNDECLARED here
+		// until ranger-base-l12j9 — eight entries and claude's two keys,
+		// MEASURED on grok 1.0.52 (0920c8169e27) on 2026-10-31. The list,
+		// the measurement table and why each entry is on it: see
+		// grokProjectConfig above.
+		ProjectConfig: grokProjectConfig, ProjectConfigKeys: grokProjectConfigKeys,
 		// record: trusted — the qa lane on grok closed a bead properly on
 		// 2026-08-24, which is the measurement the promotion needs and the
 		// only reason grok and codex differ in this column.
