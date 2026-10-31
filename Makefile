@@ -600,7 +600,7 @@ QA_NOTES_PINS     := TestNotesFragmentIndexIsCurrent
 QA_ADR_PINS       := TestADRCitedGoFilesResolveOrAreDeclared|TestADRCitationCheckCanFail|TestADRCitationDeclarationsExemptOnlyWhatTheyDeclare|TestADRCitationCorpusReadsTheExecutableSupplements|TestADR0015NamesTheHookCommitPinAndItDoesWhatItSays
 QA_CORPUS_PINS    := TestQATheMultiplexerSlotIsTheOnlyRouteToTheHerdrClient|TestQAEveryHerdrClientHolderStillHoldsIt|TestQAFixtureRuntimeExesResolveToNothingOnThisBox|TestQATheGofmtDoorReachesEveryGoFile|TestQAEveryGitInitInThePosseTestsSitsOnATolerantRoot|TestQATheTolerantTempDirWrapperCompilesInEveryArm|TestQANoMakefilePrereqLineReadAsBytesOutsideMkPrereqs|TestQAParallelClearanceDoesNotWaiveAReasonNobodyCleared|TestNoUnswappedInternalRhqCommentsOutsideFrozenRecords|TestRhqLeftoverExemptionsStillNameRealLines|TestQANoShippedPosseCallHandsBdAStoreSelectingFlag
 QA_REGISTER_PINS  := TestQAEveryTreeWidePinHasADoor|TestQAOneRepoRootHelperInTheTestPackage|TestQATheTreeWideDoorsReportRealDrift|TestQAMakeTestOpensTheTreeWideDoors|TestQAEveryTrackedProgramATreePinRunsIsDispositioned|TestQATheTreepinsEnumerationRuleMatchesWhatItClaims|TestQAEveryTreepinsDoorFilterNamesItsPins|TestQATheHeadCommentsPinAndDoorCountsAreTheMakefiles
-QA_SCRIPTS_PINS   := TestQABoxCheckCensusCoversEveryVerifyTarget|TestQABoxCheckCensusCoversEveryVerifyScript|TestQANoAssertionArmDecidesThroughAForkedMatcher
+QA_SCRIPTS_PINS   := TestQABoxCheckCensusCoversEveryVerifyTarget|TestQABoxCheckCensusCoversEveryVerifyScript|TestQANoAssertionArmDecidesThroughAForkedMatcher|TestQAEveryBrewNamingScriptIsRosteredOrExempt
 QA_PID_PINS       := TestShippedPIDsCarryTheNarrowedHookRows|TestShippedPIDsLetBeadsOwnHooksRun
 
 # The crew-name trio, one door between them because they are one question —
@@ -743,8 +743,10 @@ corpus-check:
 register-check:
 	$(GOBIN) test ./internal/treepins -timeout 15m -count=1 -run '^($(QA_REGISTER_PINS))$$'
 
-# scripts/: the box-check census over every verify-*.sh, and the self-test
-# fork-arm census over every *.sh. ~0.9s.
+# scripts/: the box-check census over every verify-*.sh, the self-test
+# fork-arm census over every *.sh, and the brew-guard census over every file
+# that names brew. ~1s (0.99-1.16s over three warm runs, MEASURED 2026-10-31
+# at a one-minute load average of 22; it was ~0.9s before the brew census).
 # Type it when you add or rename anything under scripts/ -- AND when you add or
 # rename a verify-* TARGET in this file, which is the third pin here
 # (ranger-base-hrf47). That one censuses the other direction of the same
@@ -756,6 +758,14 @@ register-check:
 # gap ranger-base-rulbl named (that bead wrote no fragment -- its prose is the
 # AGENTS.md bullet "A `-run` filter cannot reach a tree-wide pin"). Its
 # door-holder row and its reason are in twdDoorHolders.
+#
+# The fourth pin is the brew-guard census (ranger-base-mk6gw): a file under
+# scripts/ that names brew on a runnable line is on bgRoster -- and then has to
+# export every HOMEBREW_NO_* guard above its first read -- or in bgExempt with
+# the reason brew is only named there. Its subject is the SET of brew callers,
+# which three hand-typed paths in three arms were not: the fourth caller,
+# scripts/macos-install-probe.sh, read the operator's own brew unguarded in
+# `paths` mode and nothing in the suite was red.
 scripts-check:
 	$(GOBIN) test ./internal/treepins -timeout 15m -count=1 -run '^($(QA_SCRIPTS_PINS))$$'
 

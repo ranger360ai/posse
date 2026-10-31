@@ -189,6 +189,8 @@ package treepins
 //	                                              make scripts-check
 //	TestQABoxCheckCensusCoversEveryVerifyTarget   make scripts-check
 //	                                              (ranger-base-hrf47)
+//	TestQAEveryBrewNamingScriptIsRosteredOrExempt make scripts-check
+//	                                              (ranger-base-mk6gw)
 //	TestShippedPIDsCarryTheNarrowedHookRows       make pid-check      ~10s
 //	TestShippedPIDsLetBeadsOwnHooksRun            make pid-check
 //
@@ -221,7 +223,7 @@ package treepins
 // gap — not the rule.)
 //
 // and `make tree-check` is all of them — 66-139s on this box over three warm
-// runs at sixty pins and fourteen doors (MEASURED 2026-10-09,
+// runs at sixty-one pins and fourteen doors (MEASURED 2026-10-09,
 // ranger-base-c768n: 115.3s, 139.0s and 66.3s in that order, with a
 // one-minute load average of 9.3, 54.2 and 63.1 before the three and one
 // suite slot held by a sibling seat throughout — so the FASTEST run was the
@@ -230,7 +232,11 @@ package treepins
 // ordered by the load average, and the two readings that say so are the two
 // widest ones. The two pins it added each report 0.00s, so what they cost is
 // below `go test`'s own per-test resolution and none of this spread is
-// theirs) — which is the
+// theirs; the brew-caller census ranger-base-mk6gw added reads every file
+// under scripts/ rather than three named ones, and reports 0.08-0.19s over
+// four runs — the one pin here whose cost is readable at all — and a whole
+// `make tree-check` with it in measured 62.9s on 2026-10-31 at a one-minute
+// load average of 19.7, inside the spread above) — which is the
 // command a
 // seat types after a filtered run. (It was 49-93s at fifty-six pins, at a
 // one-minute load average of 128.0, 75.2 and 36.9 before the three runs with

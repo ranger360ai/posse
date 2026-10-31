@@ -295,8 +295,33 @@ func TestQASkillSurfacePerRuntimeDeclaration(t *testing.T) {
 			if next := strings.Index(line, "\nworkspace create "); next >= 0 {
 				line = line[:next]
 			}
-			if !strings.Contains(line, "--env RHQ_SKILLS=qm-alpha") {
-				t.Errorf("RHQ_SKILLS must ride %s's launch:\n%s", s.runtime, line)
+			// THE WHOLE VALUE, not a prefix of it (ranger-base-mk6gw).
+			// RHQ_SKILLS is newline-joined — herdrback.go:
+			// EnvVar{"RHQ_SKILLS", strings.Join(ag.Skills, "\n")} — and this
+			// PID names two skills, so `Contains(line, "...=qm-alpha")` was
+			// satisfied by the first one and said nothing about the second.
+			// MEASURED 2026-10-31, whole-table run: narrowing the value to
+			// ag.Skills[0] SURVIVED, while re-spelling the key reddened 7
+			// subtests — so the ADR 0007 §2 hatch was pinned for the first
+			// skill a PID names and for no other. The sibling reading twelve
+			// lines up demands MULTIPLE bound directories; this is the same
+			// demand on the same list, one surface over.
+			//
+			// WHERE THE VALUE ENDS CANNOT BE READ HERE, and this says so
+			// rather than pretend: the fake logs argv space-joined, one call
+			// per line (herdr_test.go fakeHerdr), so the value's own
+			// separator IS the log's record separator and no cut can tell
+			// "end of the list" from "end of the record". What is pinned is
+			// that every skill the PID named rides this launch, in the order
+			// it named them. The other half — nothing rides that the PID did
+			// NOT name — is the qm-unbound reading above, which is why it is
+			// not asserted twice.
+			want := "--env RHQ_SKILLS=" + strings.Join([]string{"qm-alpha", "qm-beta"}, "\n")
+			if !strings.Contains(line, want) {
+				t.Errorf("%s's launch must carry every skill the PID named, newline-joined (%q):\n%s", s.runtime, want, line)
+			}
+			if n := strings.Count(line, "--env RHQ_SKILLS="); n != 1 {
+				t.Errorf("RHQ_SKILLS must ride %s's launch exactly once, got %d — this row's own launch line is what is being read, so a second one here is a cut that took in somebody else's:\n%s", s.runtime, n, line)
 			}
 		})
 	}

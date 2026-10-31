@@ -69,6 +69,23 @@
 # green result cannot come from a box that would have installed either way.
 set -uo pipefail
 
+# A check must not change the box it reads, and must not report what it read.
+# This probe reads the OPERATOR's own brew in `paths` mode (`brew --prefix`,
+# below) and its scratch brew everywhere else, so the guards ride HERE, at top
+# level, rather than once per mode. Analytics are on for brew on this box, so
+# an unguarded read POSTs a command_run event to Homebrew's InfluxDB, and a
+# crew-run check's data does not move to an audience wider than the box it came
+# from (crew hard risk line 4; ranger-base-w2bha, ranger-base-esz16).
+# NO_AUTO_UPDATE stops a read whose cached package JSON is over 7 days old
+# re-downloading ~16 MB of it (ranger-base-et7bs).
+#
+# They used to sit inside probe_brew and probe_bottle, which guarded those two
+# modes and left `paths` reading the live brew unguarded. The pin over this
+# class read export LINES and not reachability, so an export inside a function
+# counted; it reads reachability now and this script is on its roster
+# (internal/treepins/brewguard_qa_test.go, ranger-base-mk6gw).
+export HOMEBREW_NO_ANALYTICS=1 HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_ENV_HINTS=1
+
 VERSION=v0.4.0
 KEEP=0
 STUB_CLT=0
@@ -518,7 +535,8 @@ probe_brew() {
 
 	export HOME="$B/home" XDG_CONFIG_HOME="$B/cfg"
 	export HOMEBREW_CACHE="$B/cache" HOMEBREW_LOGS="$B/logs" HOMEBREW_TEMP="$B/tmp"
-	export HOMEBREW_NO_ANALYTICS=1 HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_ENV_HINTS=1
+	# The three HOMEBREW_NO_* guards are exported at the top of this file, for
+	# every mode including the one that reads the live brew.
 	local brew=$B/prefix/bin/brew
 	note "scratch brew: $("$brew" --version 2>/dev/null | head -1)"
 
@@ -814,7 +832,8 @@ probe_bottle() {
 
 	export HOME="$B/home" XDG_CONFIG_HOME="$B/cfg"
 	export HOMEBREW_CACHE="$B/cache" HOMEBREW_LOGS="$B/logs" HOMEBREW_TEMP="$B/tmp"
-	export HOMEBREW_NO_ANALYTICS=1 HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_ENV_HINTS=1
+	# The three HOMEBREW_NO_* guards are exported at the top of this file, for
+	# every mode including the one that reads the live brew.
 	local brew=$B/prefix/bin/brew
 	note "scratch brew: $("$brew" --version 2>/dev/null | head -1)"
 	note "this box: macOS $(sw_vers -productVersion) $(uname -m), CLT $(pkgutil --pkg-info=com.apple.pkg.CLTools_Executables 2>/dev/null | sed -n 's/^version: //p')"
