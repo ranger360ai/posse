@@ -101,7 +101,7 @@ func liveSandboxApplyRefusal() string {
 		if !SeatbeltAvailable() {
 			return
 		}
-		out, err := exec.Command("sandbox-exec", "-p", sandboxApplyProbeProfile, "/usr/bin/true").CombinedOutput()
+		out, err := protocolCmd(exec.Command("sandbox-exec", "-p", sandboxApplyProbeProfile, "/usr/bin/true")).CombinedOutput()
 		if err == nil {
 			return
 		}
@@ -1315,7 +1315,7 @@ func sessionWorktreeIdentityFiles(cwd string) []string {
 // cannot answer — a bare repo, or no repo at all — and the caller then
 // names no pointer file rather than guessing at one.
 func worktreeTop(dir string) string {
-	out, err := exec.Command("git", "-C", dir, "rev-parse", "--show-toplevel").Output()
+	out, err := protocolCmd(exec.Command("git", "-C", dir, "rev-parse", "--show-toplevel")).Output()
 	if err != nil {
 		return ""
 	}
@@ -1508,7 +1508,7 @@ func beadsGitDirs(home string) []string {
 	root := filepath.Dir(home)
 	out := []string{filepath.Join(root, ".git")}
 	for _, flag := range []string{"--git-dir", "--git-common-dir"} {
-		b, err := exec.Command("git", "-C", root, "rev-parse", flag).Output()
+		b, err := protocolCmd(exec.Command("git", "-C", root, "rev-parse", flag)).Output()
 		if err != nil {
 			continue
 		}

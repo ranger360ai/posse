@@ -633,7 +633,7 @@ func (a *App) stageBackup(out io.Writer, stage, queue, store string, at time.Tim
 		return man, Die("staging the beads db: %v", err)
 	}
 	defer cleanup()
-	cmd := exec.Command("sqlite3", src, ".backup 'beads.db'")
+	cmd := protocolCmd(exec.Command("sqlite3", src, ".backup 'beads.db'"))
 	// cwd is the staging dir and the target is a bare literal, so no
 	// operator-configured path is ever handed to sqlite's dot-command
 	// tokenizer to quote.

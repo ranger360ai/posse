@@ -224,8 +224,8 @@ func seatbeltReachRow(profile string, targets []string) (why, unmeasured string)
 
 func seatbeltReachProbe(profile, target string) (string, error) {
 	f := shellQuote(filepath.Join(target, fmt.Sprintf("%s.%d", reachProbeFile, os.Getpid())))
-	out, err := exec.Command("sandbox-exec", "-f", profile, "/bin/sh", "-c",
-		": > "+f+" && rm -f "+f).CombinedOutput()
+	out, err := protocolCmd(exec.Command("sandbox-exec", "-f", profile, "/bin/sh", "-c",
+		": > "+f+" && rm -f "+f)).CombinedOutput()
 	return string(out), err
 }
 

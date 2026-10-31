@@ -1194,7 +1194,7 @@ func (a *App) CageImageBuilt(e *Engine, image string) bool {
 	if len(f) == 0 {
 		return true
 	}
-	return exec.Command(f[0], f[1:]...).Run() == nil
+	return protocolCmd(exec.Command(f[0], f[1:]...)).Run() == nil
 }
 
 // CageEngineLive reports whether the engine ANSWERS. It is the other half
@@ -1215,7 +1215,7 @@ func (a *App) CageEngineLive(e *Engine) bool {
 	if len(f) == 0 {
 		return true
 	}
-	return exec.Command(f[0], f[1:]...).Run() == nil
+	return protocolCmd(exec.Command(f[0], f[1:]...)).Run() == nil
 }
 
 // cageDeadEngine is the sentence for an engine that is installed and not
@@ -1316,9 +1316,24 @@ func (a *App) WrapInCage(ag *AgentFile, rt *Runtime, session, dir, inner string,
 	if err != nil {
 		return "", err
 	}
-	engine, err := exec.LookPath(e.Binary())
-	if err != nil {
-		return "", Die("cage container: engine %s needs %q on PATH", e.Name, e.Binary())
+	// Resolved OUTSIDE every gates dir, through protocolBin and not
+	// exec.LookPath, because this answer is written into the launch plan and
+	// exec'd by the SEAT (cagelauncher.go, plan.Path). A gates bin dir
+	// leading THIS process's PATH — the launching persona's, routinely not
+	// the hired seat's (ADR 0077 D2) — would bake that persona's engine shim
+	// into the plan, and the seat would then exec it with the launcher's
+	// rules and the launcher's refusals log. The exec is the seat's; the
+	// RESOLUTION is posse's, which is the half ADR 0077 D3 names ("and its
+	// binary is resolved against it"). UNMEASURED here: no PID on this box
+	// denies a container engine, so nothing renders an engine shim to be
+	// found — which is the same margin ranger-base-cwsi8 measured for `bd`
+	// and exactly as thin.
+	//
+	// The sentence stays this file's, because it names the engine and the
+	// `engine:` key an operator would fix; protocolBin's names the binary.
+	engine, berr := protocolBin(e.Binary())
+	if berr != nil {
+		return "", Die("cage container: engine %s needs %q on PATH outside posse's gates dirs", e.Name, e.Binary())
 	}
 	if err := CheckCageCredential(rt, env); err != nil {
 		return "", err
@@ -1436,9 +1451,9 @@ func (a *App) BuildCageImage(src, runtimes string, out *os.File) error {
 	// the image says "+dev", which reads as unclear rather than as fresh.
 	stamp := SourceBuildStamp(src)
 	fmt.Fprintf(out, "cross-building linux/%s posse from %s (%s)\n", arch, AbbrevHome(src), VersionOrDev(stamp))
-	build := exec.Command("go", cagePosseBuildArgv(filepath.Join(bin, "posse"), stamp)...)
+	build := protocolCmd(exec.Command("go", cagePosseBuildArgv(filepath.Join(bin, "posse"), stamp)...))
 	build.Dir, build.Stdout, build.Stderr = src, out, out
-	build.Env = append(os.Environ(), "CGO_ENABLED=0", "GOOS=linux", "GOARCH="+arch, "GOBIN=")
+	build.Env = protocolEnv(append(os.Environ(), "CGO_ENABLED=0", "GOOS=linux", "GOARCH="+arch, "GOBIN="))
 	if err := build.Run(); err != nil {
 		return Die("building linux posse: %v", err)
 	}
@@ -1447,14 +1462,18 @@ func (a *App) BuildCageImage(src, runtimes string, out *os.File) error {
 	// bin/<goos>_<goarch>/ (verified on go1.26).
 	fmt.Fprintf(out, "cross-building linux/%s bd %s\n", arch, CageBdVersion)
 	gopath := filepath.Join(stage, "gopath")
-	inst := exec.Command("go", "install", CageBdPackage+"@"+CageBdVersion)
+	inst := protocolCmd(exec.Command("go", "install", CageBdPackage+"@"+CageBdVersion))
 	inst.Dir, inst.Stdout, inst.Stderr = stage, out, out
-	inst.Env = append(os.Environ(), "CGO_ENABLED=0", "GOOS=linux", "GOARCH="+arch, "GOPATH="+gopath, "GOBIN=")
+	inst.Env = protocolEnv(append(os.Environ(), "CGO_ENABLED=0", "GOOS=linux", "GOARCH="+arch, "GOPATH="+gopath, "GOBIN="))
 	// The staged GOPATH exists only to catch the cross-compiled binary;
 	// point the module cache back at the machine's own so a build does not
 	// leave a few hundred MB of duplicated modules under state/.
-	if mc, err := exec.Command("go", "env", "GOMODCACHE").Output(); err == nil && len(strings.TrimSpace(string(mc))) > 0 {
-		inst.Env = append(inst.Env, "GOMODCACHE="+strings.TrimSpace(string(mc)))
+	if mc, err := protocolCmd(exec.Command("go", "env", "GOMODCACHE")).Output(); err == nil && len(strings.TrimSpace(string(mc))) > 0 {
+		// Through protocolEnv again, not because appending a GOMODCACHE row
+		// could lose the PATH above — it cannot — but so that this
+		// assignment says on its own line which environment it is handing
+		// the child, the way the census reads every other one.
+		inst.Env = protocolEnv(append(inst.Env, "GOMODCACHE="+strings.TrimSpace(string(mc))))
 	}
 	if err := inst.Run(); err != nil {
 		return Die("building linux bd %s: %v", CageBdVersion, err)
@@ -1482,7 +1501,7 @@ func (a *App) BuildCageImage(src, runtimes string, out *os.File) error {
 		f = append(f, "--build-arg", "RUNTIMES="+runtimes)
 	}
 	fmt.Fprintf(out, "%s\n", strings.Join(f, " "))
-	eng := exec.Command(f[0], f[1:]...)
+	eng := protocolCmd(exec.Command(f[0], f[1:]...))
 	eng.Stdout, eng.Stderr = out, out
 	if err := eng.Run(); err != nil {
 		return Die("%s: %v", e.Name, err)

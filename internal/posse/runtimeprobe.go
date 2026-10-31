@@ -439,9 +439,8 @@ func readCLIVersionWithin(path string, limit time.Duration) string {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), limit)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, path, "--version")
+	cmd := protocolCmd(exec.CommandContext(ctx, path, "--version"))
 	cmd.WaitDelay = limit
-	cmd.Env = append(os.Environ(), "PATH="+PathOutsideGates(""))
 	out, err := cmd.Output()
 	return cliVersionFrom(out, err, ctx.Err())
 }

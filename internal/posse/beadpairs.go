@@ -85,7 +85,7 @@ func PairCheck(dir string) ([]SymmetricPair, error) {
 		return nil, PairCheckUnavailableError{Dir: dir, Err: err}
 	}
 	defer cleanup()
-	out, err := exec.Command("sqlite3", read, cycleNodesSQL).Output()
+	out, err := protocolCmd(exec.Command("sqlite3", read, cycleNodesSQL)).Output()
 	if err != nil {
 		return nil, PairCheckUnavailableError{Dir: dir, Err: runErr(err)}
 	}
@@ -116,7 +116,7 @@ func runErr(err error) error {
 // removes the copy, if one was made; it is always safe to call.
 func pairCheckReader(db string) (source string, cleanup func(), err error) {
 	noop := func() {}
-	probe := exec.Command("sqlite3", "file:"+db+"?mode=ro", "SELECT 1;")
+	probe := protocolCmd(exec.Command("sqlite3", "file:"+db+"?mode=ro", "SELECT 1;"))
 	probe.Stderr = io.Discard
 	if probe.Run() == nil {
 		return "file:" + db + "?mode=ro", noop, nil

@@ -192,8 +192,8 @@ func TestQATheWaitDelayCensusResolvesByNameAndFunction(t *testing.T) {
 			if err != nil {
 				t.Fatalf("parsing the fixture: %v", err)
 			}
-			binders := ewdBinders(map[string]*ast.File{path: f})
-			sites, _ := ewdScan(fset, "x.go", f, binders)
+			files := map[string]*ast.File{path: f}
+			sites, _ := ewdScan(fset, "x.go", f, ewdBinders(files), ewdPassThrough(files))
 			if len(sites) == 0 {
 				t.Fatalf("the scan found no exec.CommandContext site in this fixture — it is reading neither the hole nor the control")
 			}

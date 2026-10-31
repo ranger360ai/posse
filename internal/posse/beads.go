@@ -230,7 +230,7 @@ func (b Bd) runOnce(dir string, args ...string) ([]byte, error) {
 	limit := b.timeout()
 	ctx, cancel := context.WithTimeout(context.Background(), limit)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, bin, argv...)
+	cmd := protocolCmd(exec.CommandContext(ctx, bin, argv...))
 	cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
 	cmd.WaitDelay = bdKillGrace
 	if dir != "" {
@@ -282,57 +282,31 @@ func (b Bd) runOnce(dir string, args ...string) ([]byte, error) {
 // the write, every time. The walls bind what a persona TYPES (ADR 0009);
 // posse's own calls are posse's, and ADR 0073 already serializes them in Go.
 //
-// A Bin that NAMES a path — `RHQ_BD_BIN`, a fixture's symlink — keeps
-// precedence and is handed to exec exactly as given: an explicit binary is an
-// answer, not a search.
+// SINCE ranger-base-bm6j8 THE RULE ITSELF LIVES IN protocolBin
+// (protocolchild.go), and so does ranger-base-cwsi8's correction to it: what
+// an explicit path does, what a bare name resolveOutside answers does, and
+// why a bare name nothing outside the gates answers is an ERROR rather than
+// something handed to exec. Every other binary posse execs as part of its own
+// protocol reads that same one function, so a second copy of the rule here
+// would be the copy that goes stale — the measurement and the "why it has not
+// fired on this box" margin are recorded there with it.
 //
-// A bare name nothing outside the gates answers is an ERROR, and that is the
-// whole of the branch (ranger-base-cwsi8). It used to hand the bare name back
-// "so that exec reports it the way it always has", which is the one thing
-// exec does not do with it: exec.CommandContext resolves a bare name with
-// Go's own exec.LookPath, which reads THIS process's $PATH — the gated one,
-// the premise stated twice above — so the name lands on the launcher's `bd`
-// shim, the shim takes ADR 0073's per-store write lock that runOnce is
-// holding, and posse refuses its own write after BdWriteLockWait. The
-// fallback meant to be inert was ranger-base-c33j6's deadlock, reinstated on
-// the production spelling: NewBd's Bin is the literal "bd", so every posse bd
-// call outside a fixture arrives here as a bare name.
-//
-// MEASURED 2026-10-31 (the verifying seat of ranger-base-nqy1h, its own
-// worktree at main 1f8b81e2, darwin 25.6.0),
-// TestBdRunsOutsideTheLaunchersGatesDir's
-// fixture with the real bd behind the shim taken away and one ordinary
-// non-gates PATH entry holding nothing called bd: bin() = "bd", the shim ran
-// with posse's own argv, and runOnce came back after 2.011s refused on its
-// own lock (2s because the fixture shim waits 2s; a live seat pays
-// BdWriteLockWait's thirty). That is pinned both ways now —
-// TestBdBinUnresolvableOutsideTheGatesIsAnError.
-//
-// WHY IT HAS NOT FIRED on this box: a real bd sits at ~/.local/bin/bd, on
-// PATH and outside every gates dir, so resolveOutside answers and the branch
-// is unreachable. There is no bd in /opt/homebrew/bin, /usr/local/bin,
-// /usr/bin or /bin — that one PATH entry was the entire margin.
-func (b Bd) bin() (string, error) {
-	if strings.ContainsRune(b.Bin, filepath.Separator) {
-		return b.Bin, nil
-	}
-	if real := resolveOutside(b.Bin, ""); real != "" {
-		return real, nil
-	}
-	return "", Die("%s: executable file not found outside posse's gates dirs — posse's own children are resolved against the gates-free PATH and never handed to exec as a bare name (ADR 0077 D3, ranger-base-cwsi8)", b.Bin)
-}
+// This is that one call, kept as a method because runOnce's error text and
+// Bd's fixtures both name b.Bin. The error reaches the caller from here and
+// not from exec, which is what lets runOnce resolve BEFORE taking the store
+// lock (above, ranger-base-cwsi8).
+func (b Bd) bin() (string, error) { return protocolBin(b.Bin) }
 
 // bdChildEnv is the environment one bd child runs with: the store binding
 // bdStoreEnv builds (below, and only for a call that NAMED a directory), and
 // ADR 0077 D3's gates-free PATH over both arms.
 //
-// The PATH is set and not merely resolved past, which bin() above would be
-// enough for on its own. bd's own git hooks call `bd` by name, and a hook
-// child inheriting the launcher's PATH would reach the shim and deadlock the
-// same way the direct call did (ASSUMED — the measured deadlock was the
-// direct call, ranger-base-c33j6).
+// The PATH is protocolEnv's, which is also where the argument for setting it
+// rather than merely resolving past it is written — bd's own git hooks call
+// `bd` by name, so the hazard reaches a grandchild bin() cannot speak for
+// (ASSUMED; the measured deadlock was the direct call, ranger-base-c33j6).
 //
-// It is therefore the one thing posse does type onto a dir == "" call, whose
+// It is the one thing posse does type onto a dir == "" call, whose
 // environment bdStoreEnv deliberately leaves alone: that call names no
 // directory, so the session's own store binding IS the requested store — but
 // no call of posse's own wants the session's shims in front of its binaries.
@@ -340,7 +314,7 @@ func bdChildEnv(env []string, dir string) []string {
 	if dir != "" {
 		env = bdStoreEnv(env, dir)
 	}
-	return envPut(env, "PATH", PathOutsideGates(""))
+	return protocolEnv(env)
 }
 
 // bdStoreEnvShed names every environment variable MEASURED to repoint bd

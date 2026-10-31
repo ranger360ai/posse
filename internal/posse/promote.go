@@ -1229,7 +1229,7 @@ func gitCatBlobs(repo string, oids []string) (map[string][]byte, error) {
 			seen[o], want = true, append(want, o)
 		}
 	}
-	cmd := exec.Command("git", "-C", repo, "cat-file", "--batch")
+	cmd := protocolCmd(exec.Command("git", "-C", repo, "cat-file", "--batch"))
 	cmd.Stdin = strings.NewReader(strings.Join(want, "\n") + "\n")
 	var errb strings.Builder
 	cmd.Stderr = &errb

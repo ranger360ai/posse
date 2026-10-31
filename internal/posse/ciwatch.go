@@ -652,8 +652,8 @@ func ciRunIsQueueOnly(dir, bin, slug string, r CIRun) (string, bool) {
 func ghRunJobs(dir, bin, slug, runID string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), ciJobsReadTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, bin, "api",
-		"repos/"+slug+"/actions/runs/"+runID+"/jobs?per_page=100")
+	cmd := protocolCmd(exec.CommandContext(ctx, bin, "api",
+		"repos/"+slug+"/actions/runs/"+runID+"/jobs?per_page=100"))
 	cmd.Dir = dir
 	cmd.WaitDelay = ciKillGrace
 	var out, errb strings.Builder
@@ -1029,12 +1029,12 @@ func ciFreshness(dir, branch, workflow string, latest CIRun) string {
 func ghRunList(dir, bin, slug, workflow, branch string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), ciReadTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, bin, "run", "list",
+	cmd := protocolCmd(exec.CommandContext(ctx, bin, "run", "list",
 		"--repo", slug,
 		"--workflow", workflow,
 		"--branch", branch,
 		"--limit", strconv.Itoa(ciScanLimit),
-		"--json", "conclusion,status,createdAt,headSha,url")
+		"--json", "conclusion,status,createdAt,headSha,url"))
 	cmd.Dir = dir
 	cmd.WaitDelay = ciKillGrace
 	var out, errb strings.Builder
@@ -1107,7 +1107,7 @@ func ciCauses(dir, bin, slug string, runs []CIRun) []string {
 			continue
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), ciCauseReadTimeout)
-		cmd := exec.CommandContext(ctx, bin, "run", "view", id, "--repo", slug, "--log-failed")
+		cmd := protocolCmd(exec.CommandContext(ctx, bin, "run", "view", id, "--repo", slug, "--log-failed"))
 		cmd.Dir = dir
 		cmd.WaitDelay = ciKillGrace
 		out, err := cmd.Output()

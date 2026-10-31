@@ -316,7 +316,7 @@ func sysProcTable(ctx context.Context) ([]Proc, error) {
 	// and exits, so the process the context kills IS the only holder of
 	// this pipe and the deadline bounds the whole call on its own. Held
 	// mechanically beside the rule, in internal/treepins' ewdExemptBinaries.
-	out, err := exec.CommandContext(ctx, "ps", "-axo", "pid=,ppid=,pcpu=,etime=,comm=").Output()
+	out, err := protocolCmd(exec.CommandContext(ctx, "ps", "-axo", "pid=,ppid=,pcpu=,etime=,comm=")).Output()
 	if err != nil {
 		return nil, err
 	}
@@ -348,7 +348,7 @@ func fillArgsForPIDs(ctx context.Context, procs []Proc, ids []string) {
 	// with -ww asking procps not to cut it to a screen width either.
 	// `ps` forks nothing, so the deadline bounds this call on its own —
 	// sysProcTable's ruling (ranger-base-2cttm).
-	out, err := exec.CommandContext(ctx, "ps", "-ww", "-o", "pid=,args=", "-p", strings.Join(ids, ",")).Output()
+	out, err := protocolCmd(exec.CommandContext(ctx, "ps", "-ww", "-o", "pid=,args=", "-p", strings.Join(ids, ","))).Output()
 	if err != nil {
 		return
 	}

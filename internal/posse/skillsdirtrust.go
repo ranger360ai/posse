@@ -83,7 +83,6 @@ package posse
 import (
 	"context"
 	"errors"
-	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -166,10 +165,9 @@ var grokInspectOutput = func(dir string) (string, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), grokInspectTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, path, "inspect")
+	cmd := protocolCmd(exec.CommandContext(ctx, path, "inspect"))
 	cmd.Dir = dir
 	cmd.WaitDelay = grokInspectTimeout
-	cmd.Env = append(os.Environ(), "PATH="+PathOutsideGates(""))
 	out, err := cmd.Output()
 	if err != nil && len(out) == 0 {
 		return "", err

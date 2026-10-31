@@ -148,7 +148,7 @@ func (a *App) CageImagePosse(e *Engine, image string) string {
 	}
 	v := ""
 	if argv := e.stepArgv(e.Inner, CageRender{Image: image, Inner: []string{"posse", "version"}}); len(argv) > 0 {
-		if out, err := exec.Command(argv[0], argv[1:]...).Output(); err == nil {
+		if out, err := protocolCmd(exec.Command(argv[0], argv[1:]...)).Output(); err == nil {
 			v = posseVersionWord(string(out))
 		}
 	}

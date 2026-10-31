@@ -938,8 +938,8 @@ func gitCommitsFor(dir, id string) ([]string, error) {
 	if dir == "" {
 		dir = "."
 	}
-	out, err := exec.Command("git", "-C", dir, "log", "--grep", id,
-		"--format=%h %s", "-n", strconv.Itoa(verifyCommitLimit)).Output()
+	out, err := protocolCmd(exec.Command("git", "-C", dir, "log", "--grep", id,
+		"--format=%h %s", "-n", strconv.Itoa(verifyCommitLimit))).Output()
 	if err != nil {
 		return nil, err
 	}

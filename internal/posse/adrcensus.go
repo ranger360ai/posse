@@ -302,12 +302,17 @@ func RunAdrCensus(dir string, files []string, stdout, stderr io.Writer) (refused
 }
 
 // runAdrCensus is RunAdrCensus with the child's environment as a parameter:
-// nil inherits, which is what the command does; a fixture passes the same
-// walled PATH and HOME its git runner uses, so the census it measures reads
-// the fixture's config and not the box's.
+// nil is this process's own, which is what the command passes; a fixture
+// passes the same walled PATH and HOME its git runner uses, so the census it
+// measures reads the fixture's config and not the box's.
+//
+// Either way it goes through protocolEnv, so the `sh` this starts — and the
+// `git` that predicate drives — resolve outside every gates dir (ADR 0077
+// D3). The fixture already named that same PATH, so nothing of its control
+// moves; what changes is that the COMMAND no longer inherits a seat's shims.
 func runAdrCensus(dir string, files []string, env []string, stdout, stderr io.Writer) (refused bool, err error) {
 	if len(files) == 0 {
-		top, terr := exec.Command("git", "-C", dir, "rev-parse", "--show-toplevel").Output()
+		top, terr := protocolCmd(exec.Command("git", "-C", dir, "rev-parse", "--show-toplevel")).Output()
 		if terr != nil {
 			return false, fmt.Errorf("adr-census: %s is not inside a git repository", dir)
 		}
@@ -332,9 +337,9 @@ func runAdrCensus(dir string, files []string, env []string, stdout, stderr io.Wr
 			files = append(files, filepath.ToSlash(rel))
 		}
 	}
-	cmd := exec.Command("sh", append([]string{"-c", AdrCensusScript(), "posse-gates-adr-census"}, files...)...)
+	cmd := protocolCmd(exec.Command("sh", append([]string{"-c", AdrCensusScript(), "posse-gates-adr-census"}, files...)...))
 	cmd.Dir = dir
-	cmd.Env = env
+	cmd.Env = protocolEnv(env)
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	if err := cmd.Run(); err != nil {

@@ -347,7 +347,7 @@ func bindGitDeadline(ctx context.Context, cmd *exec.Cmd) {
 func gitCapture(limit time.Duration, dir string, args []string) ([]byte, string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), limit)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
+	cmd := protocolCmd(exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...))
 	bindGitDeadline(ctx, cmd)
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb

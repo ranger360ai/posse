@@ -336,27 +336,53 @@ package treepins
 // nothing: that test also walks ".", so it is derived and doored on that.
 // And two fixture roots are correctly unseen.)
 //
-// and `make tree-check` is all of them — 57.0-57.7s on this box over three
-// warm runs at seventy-six pins and fourteen doors (MEASURED 2026-10-31,
-// ranger-base-v3tt4: 57.6s, 57.0s and 57.7s in that order, with a one-minute
-// load average of 31.41, 13.93 and 10.10 before the three and one suite slot
-// held by a sibling seat throughout. This is the merge-back that landed the
-// twelve above onto a main that had meanwhile landed the two before them, so
-// it is the first reading of the class at its real size — and a 0.7s spread
-// read across a threefold move in the load average, which is the tightest
-// any reading of this command has produced and says from the other side what
-// the three wide readings below say: the box moved and the wall did not, so a
-// spread, when there is one, is not that number. ranger-base-8wxbn measured
-// the twelve on its own branch, at seventy-four, and read 56-112s there;
-// what that reading is still good for is their COST, because the pins are
-// the same twelve. Eleven of them report 0.70s between them, and the
-// twelfth, TestQAEverySuiteArmTypeChecks, reports 0.14s on its own line
-// because its three parallel subtests build one suite arm each — measured
-// alone it is 2.44s, 2.50s and 2.72s of parallel subtest, so about 2.7s of
-// wall. Three seconds of this command is the twelve new pins and the rest is
-// the box)
+// and two more into corpus-check's door, whose subject is this repo's own
+// sources: the census that every binary posse execs from a LAUNCHER process
+// is resolved and run outside every gates dir (ADR 0077 D3), and the
+// derivation of the env binders its second arm reads. Both walk cmd/ and
+// internal/ through ewdGoFiles, a relative literal, which is the first rule
+// above and not the widened one. The census's own fixture arm is undoored
+// for the reason the rows above give — it drives the rule over planted
+// sources, so nothing derives it:
+//
+//	TestQAEveryProtocolChildRunsOutsideTheGates
+//	                                              make corpus-check
+//	TestQATheEnvBinderDerivationFindsThisTreesBinders
+//	                                              make corpus-check
+//	                                              (both ranger-base-bm6j8)
+//
+// and `make tree-check` is all of them — 60-82s on this box over three warm
+// runs at seventy-eight pins and fourteen doors (MEASURED 2026-10-31,
+// ranger-base-bm6j8: 60.3s, 71.9s and 82.3s in that order, with a one-minute
+// load average of 8.05, 11.10 and 8.97 before the three and NO suite slot
+// held by anyone — the first reading of this command ever taken here on an
+// idle box, which is why it is worth saying that the 22s spread is the
+// SECOND widest in this list. The load average moved by three across the
+// three runs and the wall moved by twenty-two, monotonically upward, in the
+// order they were run and in no order of the load: that is the "ordered by
+// nothing in it" finding of ranger-base-0ckgm and ranger-base-c768n
+// arriving from the quiet end, where there is no sibling suite to blame it
+// on. Price this command at a minute and expect ninety. The two pins this
+// bead added report 0.24s and 0.21s, so none of the spread is theirs)
 // — which is the command a
-// seat types after a filtered run. (It was 73-132s at sixty-four pins
+// seat types after a filtered run. (It was 57.0-57.7s at seventy-six pins
+// (ranger-base-v3tt4: 57.6s, 57.0s and 57.7s in that order, with a one-minute
+// load average of 31.41, 13.93 and 10.10 before the three and one suite slot
+// held by a sibling seat throughout — the merge-back that landed the twelve
+// above onto a main that had meanwhile landed the two before them, so the
+// first reading of the class at its real size. A 0.7s spread read across a
+// threefold move in the load average, the tightest any reading of this
+// command has produced, which says from the other side what the three wide
+// readings below say: the box moved and the wall did not, so a spread, when
+// there is one, is not that number. ranger-base-8wxbn measured the twelve on
+// its own branch, at seventy-four, and read 56-112s there; what that reading
+// is still good for is their COST, because the pins are the same twelve.
+// Eleven of them report 0.70s between them, and the twelfth,
+// TestQAEverySuiteArmTypeChecks, reports 0.14s on its own line because its
+// three parallel subtests build one suite arm each — measured alone it is
+// 2.44s, 2.50s and 2.72s of parallel subtest, so about 2.7s of wall. Three
+// seconds of that command was the twelve new pins and the rest was the box);
+// 73-132s at sixty-four pins
 // (ranger-base-0ckgm: 73.4s, 105.8s and 131.9s in that order, with a
 // one-minute load average of 45.88, 19.41 and 31.54 before the three and
 // BOTH suite slots held by sibling seats throughout — a 58s spread read

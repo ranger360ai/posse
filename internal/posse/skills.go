@@ -743,11 +743,11 @@ func appendGitExcludes(dir, note string, pats []string) {
 	if len(pats) == 0 {
 		return
 	}
-	prefix, err := exec.Command("git", "-C", dir, "rev-parse", "--show-prefix").Output()
+	prefix, err := protocolCmd(exec.Command("git", "-C", dir, "rev-parse", "--show-prefix")).Output()
 	if err != nil {
 		return
 	}
-	common, err := exec.Command("git", "-C", dir, "rev-parse", "--git-common-dir").Output()
+	common, err := protocolCmd(exec.Command("git", "-C", dir, "rev-parse", "--git-common-dir")).Output()
 	if err != nil {
 		return
 	}

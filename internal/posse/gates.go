@@ -1150,7 +1150,7 @@ func posseSupportsBdWrite(bin string) bool {
 	if err != nil {
 		return false
 	}
-	return exec.Command(bin, "gates", "bd-write", "--real", trueBin, "--").Run() == nil
+	return protocolCmd(exec.Command(bin, "gates", "bd-write", "--real", trueBin, "--")).Run() == nil
 }
 
 // absLookPath is exec.LookPath on a path that already names a directory,
@@ -2431,7 +2431,7 @@ func gitPath(dir, name string) (string, error) {
 // operator wrote out in full). Everything else wants the joined form and
 // should keep calling gitPath.
 func gitPathRaw(dir, name string) (string, error) {
-	out, err := exec.Command("git", "-C", dir, "rev-parse", "--git-path", name).Output()
+	out, err := protocolCmd(exec.Command("git", "-C", dir, "rev-parse", "--git-path", name)).Output()
 	if err != nil {
 		return "", Die("%s is not a git repository", dir)
 	}
@@ -6504,7 +6504,7 @@ func execOwnRenders(dir string, wantPrePush bool, commitRender string) (prePushO
 		return false, false
 	}
 
-	cmd := exec.Command("sh", "-c", l3HookProbeScript, "posse-hook-probe", pushTemp, commitTemp, msgPath)
+	cmd := protocolCmd(exec.Command("sh", "-c", l3HookProbeScript, "posse-hook-probe", pushTemp, commitTemp, msgPath))
 	// The probe runs in the MAIN checkout, not in dir, since per-session
 	// worktrees (rangerhq-09o2). The shared-index arm deliberately stands
 	// down in a linked worktree — that tree's index is private and there is

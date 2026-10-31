@@ -364,7 +364,7 @@ func parseCommitStamp(s string) (string, time.Time) {
 // lets the census walk a redirect target's history without first working out
 // where that repo starts.
 func gitBead(home string, args ...string) ([]byte, error) {
-	return exec.Command("git", append([]string{"-C", home}, args...)...).Output()
+	return protocolCmd(exec.Command("git", append([]string{"-C", home}, args...)...)).Output()
 }
 
 // beadsHome is the .beads directory bd actually reads for dir, following

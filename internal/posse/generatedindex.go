@@ -126,7 +126,7 @@ func runNotesIndex(repo, tree string, args ...string) error {
 		filepath.Join(repo, notesIndexGenerator),
 		"--directory", filepath.Join(tree, notesFragmentDir),
 	}, args...)
-	cmd := exec.CommandContext(ctx, "python3", argv...)
+	cmd := protocolCmd(exec.CommandContext(ctx, "python3", argv...))
 	cmd.Dir = tree
 	cmd.WaitDelay = generatorKillGrace
 	var errb bytes.Buffer

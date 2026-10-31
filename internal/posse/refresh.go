@@ -530,11 +530,18 @@ func runRuntimeMint(w io.Writer, rt *Runtime) error {
 	if !ok {
 		return Die("posse knows no mint command for runtime %s", rt.Name)
 	}
-	bin, err := exec.LookPath(argv[0])
-	if err != nil {
-		return Die("%s is not on PATH, so its own mint cannot be run here — mint on a box that has it and bring the token over with --paste", argv[0])
+	// Resolved outside every gates dir, like every other binary posse execs
+	// as part of its own protocol (ADR 0077 D3): a shim is posse's own
+	// wrapper and never the runtime whose mint is wanted. Through protocolBin
+	// and not exec.LookPath, which reads the gated PATH this is routing
+	// around (ranger-base-cwsi8). The sentence stays this file's because it
+	// names the way out an operator has — a shim answering on PATH is not the
+	// CLI being asked for, and --paste is.
+	bin, berr := protocolBin(argv[0])
+	if berr != nil {
+		return Die("%s is not on PATH outside posse's gates dirs, so its own mint cannot be run here — mint on a box that has it and bring the token over with --paste", argv[0])
 	}
-	cmd := exec.Command(bin, argv[1:]...)
+	cmd := protocolCmd(exec.Command(bin, argv[1:]...))
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	if err := cmd.Run(); err != nil {
 		return Die("%s exited without minting (%v) — nothing was written", strings.Join(argv, " "), err)

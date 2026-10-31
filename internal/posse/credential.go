@@ -1014,7 +1014,7 @@ func keychainFallbackStore(p string) runtimeStore {
 // wearing one item name. The flags are in the runtime's own order so the
 // line above and this one can be compared by eye.
 func keychainCmd(bin, item, account string) *exec.Cmd {
-	return exec.Command(bin, "find-generic-password", "-a", account, "-w", "-s", item)
+	return protocolCmd(exec.Command(bin, "find-generic-password", "-a", account, "-w", "-s", item))
 }
 
 // keychainRun runs that read and turns a failure into the error that says

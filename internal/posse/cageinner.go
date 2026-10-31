@@ -353,7 +353,7 @@ func (a *App) CageInnerGatesReady(e *Engine, image string) bool {
 	argv := e.stepArgv(e.Inner, CageRender{
 		Image: image, Inner: []string{"posse", "gates", "wrap", GatesWrapProbe},
 	})
-	v := len(argv) > 0 && exec.Command(argv[0], argv[1:]...).Run() == nil
+	v := len(argv) > 0 && protocolCmd(exec.Command(argv[0], argv[1:]...)).Run() == nil
 	innerProbe[key] = v
 	return v
 }

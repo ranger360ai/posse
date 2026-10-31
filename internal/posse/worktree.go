@@ -1310,7 +1310,7 @@ func ignoredInMainCheckout(repo, rel string) bool {
 	if _, err := os.Lstat(filepath.Join(repo, rel)); err != nil {
 		return true // nothing of the operator's there for a pattern to hide
 	}
-	return exec.Command("git", "-C", repo, "check-ignore", "-q", "--", rel).Run() == nil
+	return protocolCmd(exec.Command("git", "-C", repo, "check-ignore", "-q", "--", rel)).Run() == nil
 }
 
 // ─── merging a session's work back ───────────────────────────────────────────
@@ -2963,8 +2963,8 @@ func patchIDsVerbatimWithin(limit time.Duration, repo, rng string) (map[string]s
 	defer pr.Close()
 	defer pw.Close()
 
-	logCmd := exec.CommandContext(ctx, "git", append([]string{"-C", repo}, args...)...)
-	idCmd := exec.CommandContext(ctx, "git", "-C", repo, "patch-id", "--verbatim")
+	logCmd := protocolCmd(exec.CommandContext(ctx, "git", append([]string{"-C", repo}, args...)...))
+	idCmd := protocolCmd(exec.CommandContext(ctx, "git", "-C", repo, "patch-id", "--verbatim"))
 	bindGitDeadline(ctx, logCmd)
 	bindGitDeadline(ctx, idCmd)
 	var logErr, idErr, out strings.Builder

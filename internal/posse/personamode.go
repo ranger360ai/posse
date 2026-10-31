@@ -454,7 +454,7 @@ func (a *App) refusePersonaModeClobber(ag *AgentFile, rt *Runtime, dir, path str
 // output's emptiness — `ls-files` prints nothing both for an untracked path
 // and for a pathspec git declined to walk.
 func gitTracks(dir, rel string) bool {
-	return exec.Command("git", "-C", dir, "ls-files", "--error-unmatch", "--", rel).Run() == nil
+	return protocolCmd(exec.Command("git", "-C", dir, "ls-files", "--error-unmatch", "--", rel)).Run() == nil
 }
 
 // personaModeYAML renders the one-mode file.

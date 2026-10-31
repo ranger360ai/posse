@@ -182,7 +182,7 @@ func (r Rex) capture(args []string) (stdout []byte, stderr string, runErr error)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), limit)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, r.Bin, args...)
+	cmd := protocolCmd(exec.CommandContext(ctx, r.Bin, args...))
 	cmd.WaitDelay = rexWaitDelay
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb

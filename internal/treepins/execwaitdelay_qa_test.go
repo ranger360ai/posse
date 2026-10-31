@@ -244,6 +244,52 @@ func ewdBinders(files map[string]*ast.File) map[string]bool {
 	return out
 }
 
+// ewdPassThrough names the helpers that take an *exec.Cmd and hand the SAME
+// child back — DERIVED, never listed, on ewdBinders' own reasoning. A roster
+// here would be the second place that fact is written and the one that goes
+// stale.
+//
+// It exists because `cmd := protocolCmd(exec.CommandContext(…))` binds exactly
+// the child `cmd := exec.CommandContext(…)` bound, and without one unwrap the
+// scan reads every wrapped site as CHAINED — which is "no variable to set
+// cmd.WaitDelay on", an unsatisfiable finding about a site that sets it on the
+// next line. MEASURED 2026-10-31 (ranger-base-bm6j8, the landing that put ADR
+// 0077 D3's choke point in front of every exec site in the tree): twelve
+// sites at once, and this pin's own "not one site was read as naming its
+// grace" arm beside them.
+//
+// Taking the *exec.Cmd back out is the whole of the rule. A helper that takes
+// one and returns a bool or an error has not handed the caller a child to set
+// anything on, so it binds nothing — which is the shape the two-way arm
+// plants.
+func ewdPassThrough(files map[string]*ast.File) map[string]bool {
+	out := map[string]bool{}
+	for _, f := range files {
+		for _, d := range f.Decls {
+			fn, ok := d.(*ast.FuncDecl)
+			if !ok || fn.Body == nil || fn.Type.Params == nil || fn.Type.Results == nil {
+				continue
+			}
+			takes := false
+			for _, p := range fn.Type.Params.List {
+				if star, ok := p.Type.(*ast.StarExpr); ok && ewdIsSel(star.X, "exec", "Cmd") {
+					takes = true
+				}
+			}
+			gives := false
+			for _, r := range fn.Type.Results.List {
+				if star, ok := r.Type.(*ast.StarExpr); ok && ewdIsSel(star.X, "exec", "Cmd") {
+					gives = true
+				}
+			}
+			if takes && gives {
+				out[fn.Name.Name] = true
+			}
+		}
+	}
+	return out
+}
+
 // ewdAssignsWaitDelay reports whether body holds `<ident>.WaitDelay = …`.
 func ewdAssignsWaitDelay(body ast.Node, ident string) bool {
 	found := false
@@ -263,7 +309,7 @@ func ewdAssignsWaitDelay(body ast.Node, ident string) bool {
 }
 
 // ewdScan reads one parsed file for sites and satisfiers.
-func ewdScan(fset *token.FileSet, rel string, f *ast.File, binders map[string]bool) ([]ewdSite, []ewdSat) {
+func ewdScan(fset *token.FileSet, rel string, f *ast.File, binders, through map[string]bool) ([]ewdSite, []ewdSat) {
 	ranges := ewdFuncRanges(f)
 	whole := [2]token.Pos{f.Pos(), f.End()}
 
@@ -277,8 +323,22 @@ func ewdScan(fset *token.FileSet, rel string, f *ast.File, binders map[string]bo
 		}
 		for i, rhs := range as.Rhs {
 			call, ok := rhs.(*ast.CallExpr)
-			if !ok || !ewdIsSel(call.Fun, "exec", "CommandContext") {
+			if !ok {
 				continue
+			}
+			if !ewdIsSel(call.Fun, "exec", "CommandContext") {
+				// One unwrap through a pass-through helper, and one only:
+				// `cmd := protocolCmd(exec.CommandContext(…))` is the same
+				// binding, and nothing deeper is a shape this tree has.
+				id, ok := call.Fun.(*ast.Ident)
+				if !ok || !through[id.Name] || len(call.Args) == 0 {
+					continue
+				}
+				inner, ok := call.Args[0].(*ast.CallExpr)
+				if !ok || !ewdIsSel(inner.Fun, "exec", "CommandContext") {
+					continue
+				}
+				call = inner
 			}
 			if id, ok := as.Lhs[i].(*ast.Ident); ok {
 				bound[call] = id.Name
@@ -394,6 +454,11 @@ func TestQAEveryBoundedChildNamesItsWaitDelay(t *testing.T) {
 	}
 
 	binders := ewdBinders(files)
+	through := ewdPassThrough(files)
+	if len(through) == 0 {
+		t.Error("no function in the shipped tree takes an *exec.Cmd and returns one.\n" +
+			"  internal/posse/protocolchild.go's protocolCmd is that shape and every exec site in the tree is wrapped in it (ADR 0077 D3), so a derivation that finds nothing has stopped reading — every wrapped site would then be read as CHAINED and reported for a grace it sets on the next line.")
+	}
 	if len(binders) == 0 {
 		t.Error("no function in the shipped tree takes an *exec.Cmd and sets WaitDelay on it.\n" +
 			"  internal/posse/githang.go's bindGitDeadline is that shape and three call sites depend on it, so a derivation that finds nothing has stopped reading rather than found a tree without binders — a site satisfied through a helper would now read as a bare one.")
@@ -401,7 +466,7 @@ func TestQAEveryBoundedChildNamesItsWaitDelay(t *testing.T) {
 
 	var all []ewdSite
 	for _, rel := range rels {
-		sites, _ := ewdScan(fset, rel, files[rel], binders)
+		sites, _ := ewdScan(fset, rel, files[rel], binders, through)
 		all = append(all, sites...)
 	}
 	if len(all) < 10 {
@@ -491,6 +556,21 @@ import ("context"; "os/exec"; "time")
 func g(ctx context.Context) { cmd := exec.CommandContext(ctx, "gh", "api"); cmd.WaitDelay = time.Second; _ = cmd }
 func f(ctx context.Context) { cmd := exec.CommandContext(ctx, "gh", "run", "list"); _, _ = cmd.Output() }
 `, true},
+		{"through a pass-through wrapper, grace on the result", `package x
+import ("context"; "os/exec"; "time")
+func protocolCmd(c *exec.Cmd) *exec.Cmd { return c }
+func f(ctx context.Context) { cmd := protocolCmd(exec.CommandContext(ctx, "gh", "api")); cmd.WaitDelay = time.Second; _, _ = cmd.Output() }
+`, false},
+		{"through a pass-through wrapper, no grace", `package x
+import ("context"; "os/exec")
+func protocolCmd(c *exec.Cmd) *exec.Cmd { return c }
+func f(ctx context.Context) { cmd := protocolCmd(exec.CommandContext(ctx, "gh", "api")); _, _ = cmd.Output() }
+`, true},
+		{"a helper that does not hand the child back is not a pass-through", `package x
+import ("context"; "os/exec"; "time")
+func okCmd(c *exec.Cmd) bool { return c != nil }
+func f(ctx context.Context) { ok := okCmd(exec.CommandContext(ctx, "gh", "api")); _ = ok; var cmd exec.Cmd; cmd.WaitDelay = time.Second }
+`, true},
 		{"set inside a closure the site is in", `package x
 import ("context"; "os/exec"; "time")
 var f = func(ctx context.Context) { cmd := exec.CommandContext(ctx, "gh", "api"); cmd.WaitDelay = time.Second; _, _ = cmd.Output() }
@@ -508,8 +588,8 @@ var f = func(ctx context.Context) { cmd := exec.CommandContext(ctx, "gh", "api")
 			if err != nil {
 				t.Fatalf("parsing the fixture: %v", err)
 			}
-			binders := ewdBinders(map[string]*ast.File{path: f})
-			sites, _ := ewdScan(fset, "x.go", f, binders)
+			files := map[string]*ast.File{path: f}
+			sites, _ := ewdScan(fset, "x.go", f, ewdBinders(files), ewdPassThrough(files))
 			var unmet int
 			for _, s := range sites {
 				if s.satBy == "" {

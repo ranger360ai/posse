@@ -377,7 +377,7 @@ func (h Herdr) capture(args []string) (stdout []byte, stderr string, runErr erro
 	limit := h.callDeadline(args)
 	ctx, cancel := context.WithTimeout(context.Background(), limit)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, h.Bin, args...)
+	cmd := protocolCmd(exec.CommandContext(ctx, h.Bin, args...))
 	// SIGKILL on expiry (CommandContext's default), deliberately: the
 	// deadline WAS the grace, and a child that has already ignored the
 	// timeout it was handed has not earned a politer one.
