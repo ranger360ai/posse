@@ -17,6 +17,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-lf6it](ranger-base-lf6it.md) — bob self-updated under the probe, 60 seconds in — and the probe still measured 2.0.5 (ranger-base-lf6it) — 2026-10-31
 - [ranger-base-l12j9](ranger-base-l12j9.md) — grok's project-config channel: declared on a measurement (ranger-base-l12j9) — 2026-10-31
 - [ranger-base-kwbh1](ranger-base-kwbh1.md) — grok's cwd skills root has a precondition on the DIRECTORY: declared, probed, not seeded (ranger-base-kwbh1) — 2026-10-31
+- [ranger-base-kkneb](ranger-base-kkneb.md) — The ordering pin ranger-base-cwsi8 left in a comment, and seventeen internal/posse censuses nothing derives (ranger-base-kkneb) — 2026-10-31
 - [ranger-base-kf9ou](ranger-base-kf9ou.md) — bob 2.0.5 → 2.0.9: what a bundle read re-measures for free, and what stays as-of-2.0.5 (ranger-base-kf9ou) — 2026-10-31
 - [ranger-base-gf0ln](ranger-base-gf0ln.md) — 'posse runtime drift' on the clock: the verify-box ROSTER row (ranger-base-gf0ln) — 2026-10-31
 - [ranger-base-f5jbs](ranger-base-f5jbs.md) — `posse runtime drift` — giving skillsVerifiedDrift an exit code — 2026-10-31

@@ -19,6 +19,17 @@ package posse
 // subject and needs a Makefile door (treewidedoor_qa_test.go), and the two
 // packages that held the mechanism are the two that can grow it back.
 //
+// THAT SCOPING IS ITSELF A DECISION THAT IS STILL OPEN, and it is
+// ranger-base-m94g2's — whether a one-package census (this pin among fourteen
+// in internal/posse, MEASURED 2026-10-31) is in the tree-wide class after
+// all. What keeps it a live question rather than a settled one is
+// reachability, which is the half the paragraph above does not answer: a door
+// is what it declines, and an unrelated landing that adds a file to this
+// package can red this pin with the ~950s package run as its only route.
+// ranger-base-8wxbn recorded the decision and scoped it out; ranger-base-49iga
+// found it had no live carrier once that bead closed. Evidence and the
+// census: docs/notes.d/ranger-base-kkneb.md.
+//
 // MUTATION, each restored: name any banned symbol in a non-test file here
 // and the census arm reds naming path, line and symbol; delete the
 // `case <-d.settled()` arm from Watch's timer select and the wake arm reds

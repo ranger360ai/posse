@@ -30,6 +30,15 @@ package posse
 //     refused on posse's own store lock.
 //   - gatesPathSplit judging the spelling only, not the resolution, reds the
 //     third test's three arms and nothing else.
+//   - moving `bin, err := b.bin()` from above the `if bdVerbWrites(argv)`
+//     block to just before `limit := b.timeout()` — the ordering
+//     ranger-base-cwsi8 claimed in a comment and pinned nowhere — reds
+//     TestBdBinUnresolvableRefusesWithoutWaitingOnTheStoreLock alone, on all
+//     three of its arms, after the whole of BdWriteLockWait (MEASURED
+//     30.002s, 2026-10-31, ranger-base-kkneb). The four tests above it stay
+//     green: no fixture of theirs holds a contending lock, so the reversed
+//     order costs them nothing — which is why that pin had to be added
+//     rather than an assertion widened.
 
 import (
 	"os"
@@ -251,5 +260,109 @@ func TestPathOutsideGatesStripsASymlinkAliasToAGatesDir(t *testing.T) {
 	want := []string{alias, gatesBin}
 	if got := ForeignGatesElements(ownBin); len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
 		t.Errorf("ForeignGatesElements(own) = %v, want %v", got, want)
+	}
+}
+
+// ranger-base-kkneb (FINDING 1 of the ranger-base-49iga verify) — the
+// ORDERING, not just the resolution: runOnce resolves the binary BEFORE it
+// takes ADR 0073's per-store write lock, and the test above cannot say so.
+//
+// The claim ranger-base-cwsi8 left as a code comment ("Before the lock, not
+// after: a binary we cannot resolve is an answer already, and taking a store
+// lock to find that out would hold the store shut for nothing") was unpinned:
+// MEASURED 2026-10-31, moving `bin, err := b.bin()` from above the
+// `if bdVerbWrites(argv)` block to just before `limit := b.timeout()` left
+// all four pins in this file green, exit 0, 0.998s. The fixture above has no
+// contending holder, so its third assertion — "the error says which binary it
+// could not find, not that a lock was held" — cannot fire on that mutant.
+//
+// This one supplies the holder. With the store lock already held, the
+// reversed order spends BdWriteLockWait (thirty seconds on a live seat) and
+// then reports "<store>'s bd write lock was held for 30s", which is
+// ranger-base-c33j6's sentence with posse waiting on itself at both ends —
+// the exact misleading diagnosis the comment exists to prevent. Two
+// assertions, because "what it says" and "how long it took to say it" are
+// different claims and the mutant fails both.
+//
+// MUTATION-CHECKED: the move described above reds this test on both arms —
+// the refusal is the lock line and the call takes BdWriteLockWait — and reds
+// nothing else in the file. Restored and re-run green.
+func TestBdBinUnresolvableRefusesWithoutWaitingOnTheStoreLock(t *testing.T) {
+	// Our own lock dir, so the lock taken below is this test's and never the
+	// box's (bdWriteLockDir honours XDG_CACHE_HOME).
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+
+	// The same wall as the test above: a gates bin dir holding a `bd`, and
+	// not one non-gates element that answers — so the production spelling has
+	// nothing to resolve to. The planted bd is a script that marks itself
+	// rather than a symlink to this binary: nothing should run it, and a
+	// floor that says so costs one file.
+	gatesBin := filepath.Join(t.TempDir(), "state", "gates", "launcher", "bin")
+	if err := os.MkdirAll(gatesBin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mark := filepath.Join(t.TempDir(), "gates-bd-ran")
+	script := "#!/bin/sh\n: > " + mark + "\necho '{}'\n"
+	if err := WriteExecutable(filepath.Join(gatesBin, "bd"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	empty := filepath.Join(t.TempDir(), "bin") // an ordinary dir, holding no bd
+	if err := os.MkdirAll(empty, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", gatesBin+string(os.PathListSeparator)+empty)
+
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".beads"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	store := bdWriteStore(dir)
+
+	// The holder the fixture above has not got: this store's write lock, held
+	// across the call.
+	held, err := bdWriteLock(store, []string{"close", "x-1"}, 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if held == nil {
+		t.Fatal("the control lock degraded to unlocked — this pin needs the store lock actually held")
+	}
+	defer held.Release()
+	// And a control that it is the lock runOnce would take, keyed on the same
+	// store: a second attempt against it has to time out, or everything below
+	// is green because nothing contends.
+	if probe, perr := bdWriteLock(store, []string{"update", "x-1"}, 150*time.Millisecond); !IsBdWriteLockTimeout(perr) {
+		if probe != nil {
+			probe.Release()
+		}
+		t.Fatalf("a second attempt on %s took the lock (%v) — the lock this test holds is not the one runOnce takes", store, perr)
+	}
+
+	started := time.Now()
+	out, err := (Bd{Bin: "bd"}).runOnce(dir, "update", "x-1", "--status", "in_progress")
+	waited := time.Since(started)
+	if err == nil {
+		t.Fatalf("runOnce = %q, nil — want a refusal: there is no bd outside the gates to run", string(out))
+	}
+	// (a) What it refuses with: the missing binary. A reader who sees the lock
+	// line here is looking at posse waiting on itself (ranger-base-c33j6).
+	if strings.Contains(err.Error(), "write lock was held") || IsBdWriteLockTimeout(err) {
+		t.Errorf("runOnce refused on the store lock: %v — the binary is unresolvable, which is an answer BEFORE the lock (ranger-base-cwsi8)", err)
+	}
+	if !strings.Contains(err.Error(), "executable file not found outside posse's gates dirs") {
+		t.Errorf("runOnce refusal does not name the unresolvable binary: %v", err)
+	}
+	// (b) And how long it took: well inside the bound a contended write pays.
+	// A sixth of it, because the honest answer is a PATH lookup and the margin
+	// is for the box, not for a lock wait that would be a whole order of
+	// magnitude over this.
+	if budget := BdWriteLockWait / 6; waited > budget {
+		t.Errorf("runOnce took %s with the store lock held (budget %s, BdWriteLockWait %s) — the binary is resolved AFTER the lock, so an unresolvable bd waits out a write it never needed",
+			waited.Round(time.Millisecond), budget, BdWriteLockWait)
+	}
+	if _, serr := os.Stat(mark); serr == nil {
+		t.Errorf("the gates-dir bd ran — posse's own children run outside every gates dir (ADR 0077 D3)")
+	} else if !os.IsNotExist(serr) {
+		t.Fatal(serr)
 	}
 }
