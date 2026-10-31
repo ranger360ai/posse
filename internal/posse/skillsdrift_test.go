@@ -156,3 +156,131 @@ func TestSkillsDriftNamesEveryProfileItWalked(t *testing.T) {
 		t.Errorf("a flag-surface profile must say it is not this clock's subject:\n%s", b.String())
 	}
 }
+
+// ─── the channel suffix (ranger-base-3a5z7) ──────────────────────────────────
+//
+// §6c's compare is on skillsVersionRelease of each side, not on the raw
+// --version lines, because one CLI's line carries a field that is BOX STATE:
+// grok 1.0.52 prints `grok 1.0.52 (0920c8169e27) [stable]` under the
+// operator's $HOME and `grok 1.0.52 (0920c8169e27)` under a fresh one, the
+// same binary both times, and the suffix comes from `~/.grok/version.json` —
+// grok's own update-check cache (MEASURED 2026-10-31, bisected one file at a
+// time; docs/notes.d/ranger-base-3a5z7.md). An exact compare has no right
+// answer there: declaring the suffix reds every fresh-$HOME seat forever and
+// dropping it reds the box that runs scripts/verify-box.sh, and no
+// re-measurement clears either.
+
+// Each case is here because it is the only one that can answer one guard in
+// skillsVersionRelease: drop a trailing bracketed field, and NOTHING else.
+func TestSkillsVersionReleaseDropsTheChannelFieldAndNothingElse(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct{ in, want, why string }{
+		{"grok 1.0.52 (0920c8169e27) [stable]", "grok 1.0.52 (0920c8169e27)",
+			"the live case: the trailing channel field is dropped"},
+		{"grok 1.0.52 (0920c8169e27)", "grok 1.0.52 (0920c8169e27)",
+			"the same binary under a fresh $HOME is already the release"},
+		{"codex-cli 0.153.4", "codex-cli 0.153.4",
+			"codex carries no bracketed field, so its line is returned byte for byte"},
+		{"2.0.5", "2.0.5",
+			"bob's bare number is returned byte for byte"},
+		{"cli [1.0] stable", "cli [1.0] stable",
+			"a bracket that is not TRAILING is release identity"},
+		{"cli 1.0 [stable", "cli 1.0 [stable",
+			"an UNCLOSED bracket: the only case the HasSuffix guard alone can answer, since the inner-] check covers the closed-but-not-trailing one above and the slice arithmetic below is only in bounds because the line ends in ]"},
+		{"[stable]", "[stable]",
+			"a line that is nothing BUT the field keeps it — the i < 0 guard; dropping it would return \"\", which compares equal to every other empty read"},
+		{"cli 1.0 [a] b]", "cli 1.0 [a] b]",
+			"a stray ] after a field is not a field — without the inner-] guard this would swallow \" b]\" too"},
+		{"cli 1.0 [a] [b]", "cli 1.0 [a]",
+			"two fields: the trailing one goes, the one before it is not this rule's business"},
+		{"grok 1.0.52 (0920c8169e27) [stable]  ", "grok 1.0.52 (0920c8169e27)",
+			"ProbeCLIVersion trims, and so does this, so a trailing blank cannot decide a drift"},
+	} {
+		if got := skillsVersionRelease(c.in); got != c.want {
+			t.Errorf("skillsVersionRelease(%q) = %q, want %q — %s", c.in, got, c.want, c.why)
+		}
+	}
+}
+
+// The walk, both directions, plus the part that must still red. A declaration
+// and an installed line that differ ONLY by a trailing bracketed field are one
+// release; anything ahead of the bracket moving is drift with the field
+// present or absent.
+func TestSkillsDriftReadsThroughTheChannelSuffixAndStillRedsOnTheRelease(t *testing.T) {
+	a := checkApp(t)
+	writeRuntime(t, a, "driftcli", "command: driftcli {skills} --sys {file}\nskills_cwd: true\nskills_verified: driftcli 1.0\n")
+
+	prev := skillsDriftVersion
+	t.Cleanup(func() { skillsDriftVersion = prev })
+
+	// The grok case as it reads on the operator's box: the declaration is
+	// bare and the CLI adds the field. Clean — and the tick has to name
+	// BOTH strings, because "reports the same" over two different lines is
+	// the reader being told something false.
+	skillsDriftVersion = driftOnly("driftcli", "driftcli 1.0 [stable]")
+	var b bytes.Buffer
+	if st := a.ReportSkillsDrift(&b); st != SkillsDriftClean {
+		t.Errorf("a trailing [field] on the installed line is box state, not drift: want exit %d, got %d:\n%s", SkillsDriftClean, st, b.String())
+	}
+	for _, want := range []string{"✓ driftcli", "driftcli 1.0", "driftcli 1.0 [stable]", "the same release", "box state"} {
+		if !strings.Contains(b.String(), want) {
+			t.Errorf("the clean-but-not-identical tick must carry %q:\n%s", want, b.String())
+		}
+	}
+	if strings.Contains(b.String(), "reports the same") {
+		t.Errorf("two different strings must not be reported as the same line:\n%s", b.String())
+	}
+
+	// And the other direction, which is the state a seat lands in when a
+	// declaration was taken on a box that HAD the field: declared with it,
+	// installed without. Also clean, so an old declaration does not red a
+	// container tier.
+	writeRuntime(t, a, "driftcli", "command: driftcli {skills} --sys {file}\nskills_cwd: true\nskills_verified: driftcli 1.0 [stable]\n")
+	skillsDriftVersion = driftOnly("driftcli", "driftcli 1.0")
+	b.Reset()
+	if st := a.ReportSkillsDrift(&b); st != SkillsDriftClean {
+		t.Errorf("a declaration carrying the field must not red a seat whose CLI omits it: want exit %d, got %d:\n%s", SkillsDriftClean, st, b.String())
+	}
+
+	// THE PART THAT MUST STILL RED, and the reason this is not just a
+	// loosened compare: the release moved, and the suffix is along for the
+	// ride on both sides. §6c's clock is unchanged for the only thing it was
+	// built to catch.
+	writeRuntime(t, a, "driftcli", "command: driftcli {skills} --sys {file}\nskills_cwd: true\nskills_verified: driftcli 1.0\n")
+	for _, now := range []string{"driftcli 2.0 [stable]", "driftcli 2.0", "driftcli 1.0.1 [stable]"} {
+		skillsDriftVersion = driftOnly("driftcli", now)
+		b.Reset()
+		if st := a.ReportSkillsDrift(&b); st != SkillsDriftFound {
+			t.Errorf("installed %q against declared %q is a real release move: want exit %d, got %d:\n%s", now, "driftcli 1.0", SkillsDriftFound, st, b.String())
+		}
+		if got := b.String(); !strings.Contains(got, "drift:") || !strings.Contains(got, now) {
+			t.Errorf("the drift sentence must name what the box actually printed (%q):\n%s", now, got)
+		}
+	}
+}
+
+// The declaration side of the same rule, swept over every built-in rather
+// than pinned on grok: a `skills_verified:` is the release whose skill
+// discovery was measured, so it may not carry a trailing bracketed field at
+// all. grok's did (landed 2026-10-31 by ranger-base-9f2o6, found the same
+// day), and the next `skills_cwd:` built-in someone declares off a live
+// `--version` line is where it bites again.
+func TestNoBuiltinDeclaresASkillsVerifiedCarryingBoxState(t *testing.T) {
+	t.Parallel()
+	declared := 0
+	for _, rt := range builtinRuntimes {
+		if rt.SkillsVerified == "" {
+			continue
+		}
+		declared++
+		if release := skillsVersionRelease(rt.SkillsVerified); release != rt.SkillsVerified {
+			t.Errorf("%s declares skills_verified: %q — the trailing bracketed field is box state, not the release (%q). Declare the release; §6c's compare drops the field from the INSTALLED line on its own (ranger-base-3a5z7).",
+				rt.Name, rt.SkillsVerified, release)
+		}
+	}
+	// A positive witness that the sweep had subjects: an absence claim over
+	// an empty walk is no claim (three built-ins declare one today).
+	if declared < 3 {
+		t.Fatalf("this sweep read %d declarations, so it cannot have measured the built-ins that carry one", declared)
+	}
+}

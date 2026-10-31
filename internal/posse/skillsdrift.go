@@ -134,6 +134,14 @@ func (a *App) ReportSkillsDrift(w io.Writer) int {
 			fmt.Fprintf(w, "  ✗ %-8s %s\n", r.Runtime, r.Drift)
 		case r.Skip != "":
 			fmt.Fprintf(w, "  · %-8s %s\n", r.Runtime, r.Skip)
+		case r.Installed != r.Declared:
+			// Clean, but not identical: the installed line carries a
+			// trailing bracketed field the declaration deliberately does
+			// not, so the tick would otherwise claim the box "reports the
+			// same" over two different strings (ranger-base-3a5z7). Say
+			// both and say why they are one release.
+			fmt.Fprintf(w, "  ✓ %-8s skills_verified: %q and %s reports %q — the same release, the trailing [field] is box state and not the binary (ADR 0007 §6c)\n",
+				r.Runtime, r.Declared, r.Runtime, r.Installed)
 		default:
 			fmt.Fprintf(w, "  ✓ %-8s skills_verified: %q and %s reports the same\n", r.Runtime, r.Declared, r.Runtime)
 		}

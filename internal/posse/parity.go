@@ -112,6 +112,43 @@ func (g RealizedGate) String() string {
 // spawn whatever CLI happens to be on the box's PATH to get a result.
 var skillsDriftVersion = ProbeCLIVersion
 
+// skillsVersionRelease is the comparable part of a CLI's --version line: the
+// line with a trailing bracketed field dropped (ADR 0007 §6c). That field is
+// BOX STATE, not release identity, and comparing it is how a declaration
+// reports drift forever against a binary that never moved.
+//
+// MEASURED 2026-10-31 (ranger-base-3a5z7), one grok 1.0.52 binary, three
+// $HOMEs: the real HOME prints `grok 1.0.52 (0920c8169e27) [stable]` and a
+// fresh one prints `grok 1.0.52 (0920c8169e27)`. Bisected one file at a time,
+// the suffix comes from `~/.grok/version.json` — grok's own UPDATE-CHECK
+// CACHE, whose contents name the channel's newest release and not the binary
+// that printed the line. So it is not merely HOME-dependent: deleting that one
+// file changes this box's own string with no binary change, and a seat whose
+// grok has never run an update check never has it. Either way, a declaration
+// carrying it reads as drift on half the box's seats and a re-measurement
+// cannot clear it, which is the exact false finding `posse runtime drift`'s
+// exit code exists to keep away from the real ones (ranger-base-f5jbs).
+//
+// ONE rule, not a per-runtime parser, and nothing but grok pays for it: codex
+// prints `codex-cli 0.153.4` and bob prints a bare `2.0.5`, neither of which
+// carries a bracketed field, so for them this returns the raw line byte for
+// byte. A real release move still reds — the version and the build hash are
+// both ahead of the bracket, so 1.0.52 → 1.0.53 or a changed hash mismatches
+// with the suffix present or absent. What stops being drift is a channel
+// change alone, and the declaration was never keyed on the channel: §6's
+// subject is the RELEASE whose skill discovery was measured.
+func skillsVersionRelease(v string) string {
+	v = strings.TrimSpace(v)
+	if !strings.HasSuffix(v, "]") {
+		return v
+	}
+	i := strings.LastIndex(v, " [")
+	if i < 0 || strings.Contains(v[i+2:len(v)-1], "]") {
+		return v
+	}
+	return strings.TrimSpace(v[:i])
+}
+
 // skillsVerifiedDrift reports whether rt's skills_verified: has moved away
 // from the CLI installed right now (ADR 0007 §6c). "" when there is nothing
 // to report: no SkillsVerified at all (the §6b UNPROVEN case, handled
@@ -120,13 +157,17 @@ var skillsDriftVersion = ProbeCLIVersion
 // drift check uses (runtimeprobe.go's probeStateWith) — reused rather than
 // a second version parser for the same fact.
 //
+// The compare is on skillsVersionRelease of each side rather than the raw
+// lines; the MESSAGE names both raw readings, because what a reader has to
+// act on is what the box actually printed.
+//
 // Reported, never refused: unlike the UNPROVEN case, a version mismatch
 // does not move this gate out of Realized. The remedy is a re-measurement,
 // not an --allow-degraded wall at every CLI upgrade (§6c's rejected
 // alternative).
 func skillsVerifiedDrift(rt *Runtime) string {
 	now := skillsDriftVersion(rt.Exe())
-	if now == "" || now == rt.SkillsVerified {
+	if now == "" || skillsVersionRelease(now) == skillsVersionRelease(rt.SkillsVerified) {
 		return ""
 	}
 	return fmt.Sprintf("drift: skills_verified: %q but %s reports %q — re-measure live discovery and update skills_verified: (ADR 0007 §6c)",

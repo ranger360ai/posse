@@ -1817,11 +1817,24 @@ var builtinRuntimes = []Runtime{
 	// `<cwd>/.agents/skills/<name>/SKILL.md` as `project` scope, still
 	// follows a symlink whose target is outside the repo, still ignores a
 	// skill the PID never bound (TestQALiveSkillDiscoveryPerRuntime,
-	// RHQ_PARITY_LIVE=1). The string is the VERBATIM first stdout line of
-	// `grok --version`, which is what ProbeCLIVersion compares against: the
-	// old `grok 1.0.5` could never have matched a 1.0.52 that prints a build
-	// hash and a channel, so it would have kept the §6c clock red whatever
-	// the measurement said.
+	// RHQ_PARITY_LIVE=1). The old `grok 1.0.5` could never have matched a
+	// 1.0.52 that prints a build hash, so it would have kept the §6c clock
+	// red whatever the measurement said.
+	//
+	// The value is the `grok --version` line MINUS its trailing ` [stable]`,
+	// and that omission is the declaration, not a typo (ranger-base-3a5z7).
+	// The suffix is BOX STATE: MEASURED 2026-10-31, one binary and three
+	// $HOMEs, it comes from `~/.grok/version.json` — grok's own update-check
+	// cache, which names the channel's newest release (1.0.70 here) and not
+	// the 1.0.52 that printed the line. A fresh $HOME has no such file and
+	// prints no suffix, so a container tier (ADR 0002) and every fixture-HOME
+	// test that reaches the drift walk read the bare line; so would a second
+	// machine whose grok has never checked for an update. Declaring the
+	// suffix made those seats report drift forever with no re-measurement
+	// able to clear it. skillsVersionRelease (parity.go) drops a trailing
+	// bracketed field from BOTH sides of §6c's compare, so this box — which
+	// does print `[stable]` — stays clean on the same declaration, and a real
+	// release move still reds either way.
 	//
 	// The re-measurement also found a precondition nothing here declares:
 	// the cwd root is read ONLY in a folder `~/.grok/trusted_folders.toml`
@@ -1840,7 +1853,7 @@ var builtinRuntimes = []Runtime{
 	// realizing a binding the CLI will not read, and posse still does not
 	// write the grant — skillsdirtrust.go has the two-arm measurement and
 	// the three reasons.
-	{Name: "grok", Builtin: true, Realize: realizeGrok, Skills: skillsCwd, SkillsRoot: AgentsSkillsPath, SkillsVerified: "grok 1.0.52 (0920c8169e27) [stable]", SkillsDirTrust: GrokSkillsDirTrust, Models: grokModels, ModelFlag: "-m %s", Unattended: GrokFleetFlags,
+	{Name: "grok", Builtin: true, Realize: realizeGrok, Skills: skillsCwd, SkillsRoot: AgentsSkillsPath, SkillsVerified: "grok 1.0.52 (0920c8169e27)", SkillsDirTrust: GrokSkillsDirTrust, Models: grokModels, ModelFlag: "-m %s", Unattended: GrokFleetFlags,
 		Egress: []string{"cli-chat-proxy.grok.com", "grok.com"}, StateDirs: []string{"~/.grok"},
 		// record: trusted — the qa lane on grok closed a bead properly on
 		// 2026-08-24, which is the measurement the promotion needs and the

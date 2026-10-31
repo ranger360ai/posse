@@ -216,8 +216,13 @@ say, per runtime and per version, which root was measured.
   (moved to `0.153.4` by ranger-base-bdias); grok `.agents/skills` verified
   `grok 1.0.5`; bob `.bob/plugins/posse/skills` verified **`2.0.5`**
   (ranger-base-6r1rf, 2026-10-31 — it read **no verified root** until then).
-  The value is the CLI's own line VERBATIM, because §6c compares it
-  verbatim: bob's is the bare number, where codex's carries a program name.
+  The value is the CLI's own line, the way that CLI prints it — bob's is the
+  bare number, where codex's carries a program name — **minus any trailing
+  bracketed field, which is box state and not the release** (ranger-base-3a5z7,
+  2026-10-31). grok's is the one that has one: `grok 1.0.52 (0920c8169e27)`,
+  where this box's `grok --version` says `... [stable]`. §6c drops that field
+  from both sides of its compare, so the declaration is the release and the
+  box's own channel cache cannot decide a drift.
 - **6b. Unverified is UNPROVEN, and UNPROVEN is §3.** A cwd root with no
   `skills_verified` is unrealizable: `CheckParity` adds `skills: <names> —
   <runtime>'s discovery root <root> is UNPROVEN (never measured live)` and
@@ -236,6 +241,25 @@ say, per runtime and per version, which root was measured.
   decides only who types `--allow-degraded`. Flag surfaces (`--plugin-dir`,
   `skills_flag:`) carry no `skills_verified`: a removed flag fails the
   launch loudly, which is the property a cwd root lacks.
+  **The compare is on the RELEASE, not the raw line** (ranger-base-3a5z7):
+  `skillsVersionRelease` (parity.go) drops a trailing bracketed field from
+  each side first, because one CLI's `--version` line carries a field that
+  belongs to the box and not to the binary — grok prints `[stable]` under a
+  $HOME whose `~/.grok/version.json` exists and nothing under a fresh one,
+  the same 1.0.52 both times (MEASURED 2026-10-31, bisected file by file;
+  `docs/notes.d/ranger-base-3a5z7.md`). Comparing raw had no right answer:
+  declaring the field reds every container tier and fixture-HOME seat forever,
+  dropping it reds the box that runs `scripts/verify-box.sh`, and no
+  re-measurement clears either — a permanent false finding standing beside the
+  real ones, which is the failure the exit code was built to avoid
+  (ranger-base-f5jbs). It is one rule, not a per-runtime parser: codex's
+  `codex-cli 0.153.4` and bob's `2.0.5` have no bracketed field, so their
+  canonical form is the raw line byte for byte, and a release move still reds
+  with the field present or absent — the version and the build hash are both
+  ahead of the bracket. What stops being drift is a channel change alone,
+  which §6 was never keyed on. A declaration may not carry the field at all
+  (`TestNoBuiltinDeclaresASkillsVerifiedCarryingBoxState`), so the rule is
+  enforced on both sides and not only on the read.
 - **6d. Ownership.** Two kinds of root, declared by which the runtime reads:
   - *posse-owned* — where the runtime reads a glob of namespaces, posse
     writes only inside its own: bob's target is `.bob/plugins/posse/skills/`,
@@ -406,6 +430,24 @@ say, per runtime and per version, which root was measured.
   Filed as ranger-base-3a5z7; §6c reports and never refuses, so the cost is a
   permanently red detective-tier row beside the real findings.
   Method, full output and the mutation checks: `docs/notes.d/ranger-base-kwbh1.md`.
+- **RESOLVED 2026-10-31 (ranger-base-3a5z7):** reading (3) above — which file
+  under `~/.grok` supplies the channel suffix, and what §6c should do about it.
+  Bisected one file at a time into an empty `$HOME/.grok` against the same
+  binary, it is **`~/.grok/version.json`**, grok's own update-check cache, here
+  `{"version":"1.0.70","stable_version":"1.0.70","checked_at":...}` — a record
+  of the channel's newest release and not of the 1.0.52 that printed the line
+  (`config.toml` pins `maximum_version = "1.0.52"`, and `config.toml` alone
+  produces no suffix). So the field is not merely `$HOME`-dependent but *cache*-
+  dependent: deleting that one file changes this box's own string with no binary
+  change, and grok rewrites it on its next check. kwbh1 recommended dropping the
+  suffix from the declaration alone; MEASURED against `posse runtime drift`
+  before the change, that would have moved the permanent red off a container
+  tier and onto the box that runs `scripts/verify-box.sh`, where grok was the
+  one green cwd-root row — an exact compare has no value that is right for both
+  populations. So §6a and §6c above both key on the RELEASE, and both arms are
+  now verified end to end on the same binary: grok ticks under the operator's
+  HOME (the tick naming both strings) and under a fresh HOME (identical lines).
+  Method, the bisect and the mutation checks: `docs/notes.d/ranger-base-3a5z7.md`.
 - ASSUMED: whether codex 0.153.4 reads `~/.agents/skills` globally — the
   binary's strings were inconclusive. Re-verified with the codex drift.
 - **RESOLVED 2026-10-12 (ranger-base-bdias):** both the drift and the
