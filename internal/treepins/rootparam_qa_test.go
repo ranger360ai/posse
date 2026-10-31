@@ -1,19 +1,18 @@
 package treepins
 
-// QA pin for ranger-base-0ckgm: in this package, a tree walk SPELLS ITS ROOT.
+// QA pin for ranger-base-0ckgm, widened by ranger-base-pyl22: in this
+// package, a tree path handed to a walking helper THROUGH A PARAMETER is a
+// tree path the register derives.
 //
-// WHY THIS IS A RULE ABOUT A SPELLING. The Makefile's tree-wide doors are
-// derived, not listed (treewidedoor_qa_test.go, arm 2): the internal/treepins
-// half of the class is every test that reaches a directory ENUMERATION rooted
-// at a relative literal — `twdRelTreePath` over `twdWalkers` — and
-// twdRelTreePath reads a literal and cannot read a variable. That is a
-// deliberate refusal: following a root through a parameter is interprocedural
-// constant propagation, a second thing to be wrong about. The price of the
-// refusal is that the class is bounded by a SPELLING, and a tree reading
-// written in another spelling is not in the class, is never asked for a door,
-// and is reachable only by an unfiltered 589.965s package run. Nothing said
-// so when it happened, because every signal is green: the pin passes, the
-// register passes, the doors pass.
+// WHY THERE IS A PIN HERE AT ALL. The Makefile's tree-wide doors are derived,
+// not listed (treewidedoor_qa_test.go, arm 2): the internal/treepins half of
+// the class is every test that reaches a directory ENUMERATION rooted at a
+// relative tree path. For as long as that rule read a literal and nothing
+// else, the class was bounded by a SPELLING — a tree reading written another
+// way was not in the class, was never asked for a door, and was reachable
+// only by an unfiltered 589.965s package run. Nothing said so when it
+// happened, because every signal is green: the pin passes, the register
+// passes, the doors pass.
 //
 // It happened. ranger-base-42mv's daemon-leak census
 // (TestQANoTestShellsRealBdWithoutStoppingItsDaemon, bddaemonleak_qa_test.go)
@@ -24,14 +23,32 @@ package treepins
 // spelled at the walk now, which is the whole fix; this pin is what keeps the
 // next one from arriving the same way.
 //
-// THE RULE: a function in this package's test sources that roots a walk at
-// one of its OWN PARAMETERS — directly, `Walk(root)`, or through a local
-// assigned from it, `p := filepath.Join(root, d); Walk(p)` — must not be
-// handed a path INSIDE THE TREE by any call site here. A fixture root is
+// WHAT CHANGED, AND WHY THIS PIN IS NOW A COUPLING (ranger-base-pyl22). The
+// escape above was closed by respelling one helper's root, and this pin was
+// the rule that kept the next one from arriving: a param-rooted walk handed a
+// tree path was reported as a defect, with the two helpers it could not
+// respell — arParse and cgScan, both genuinely polymorphic — carried in a
+// waiver that named the hole. That waiver is gone, because the derivation
+// reads the pair now. twdParamHops resolves ONE argument at ONE call site,
+// against the walker table rpParamRootedWalkers builds BELOW, and the five
+// pins that sat behind those two helpers are derived and doored
+// ($(QA_CORPUS_PINS)).
+//
+// So the pair is no longer a defect and the pin is no longer a prohibition.
+// THE RULE NOW: every pair this file finds — a function that roots a walk at
+// one of its OWN PARAMETERS, directly or through a local assigned from it,
+// and a call site handing it a path INSIDE THE TREE — must be a pair the
+// register's hop READ, as evidence in the caller's relEnum. A fixture root is
 // fine and is most of them: a helper that walks a t.TempDir is not a reading
-// of the tree and no door is owed. What is flagged is the pair — the
-// parameter and the tree path that reaches it — because that pair is exactly
-// a tree reading the derivation cannot see.
+// of the tree and no door is owed.
+//
+// It is a coupling and it is written down as one. rpScan resolves the call
+// site's argument with twdRelTreePath and the hop with twdRelTreePaths, which
+// is a superset today, so the live answer is that every pair is read — and
+// the day somebody narrows the hop (to one walker, to argument zero, to a
+// bare identifier) this reds with the pair it dropped, instead of five pins
+// quietly leaving the class the way they quietly sat outside it. That is the
+// same thing arm 2 does for doors, one level down: the rule is wide enough.
 //
 // THE CENSUS THIS RESTS ON (MEASURED 2026-10-31, this worktree, by the
 // program kept at docs/notes.d/ranger-base-0ckgm.md). Over
@@ -40,7 +57,10 @@ package treepins
 // them a tree path — `scanRealBdCallSites(".")`, the one this bead fixed, and
 // two in internal/posse, `assertNoHintVocabulary(t, ".")` and
 // `scanReExecSites(".")`. So the shape is rare, which is why a rule about it
-// can be a rule and not a register.
+// can be a rule and not a register. (That census counted the pairs it
+// reported as NEWS. The arm below counts every pair it finds, waiving
+// nothing, which in this package is six: arParse at four call sites and
+// cgScan at two.)
 //
 // WHY internal/posse IS NOT HELD HERE. The two call sites there root at the
 // PACKAGE directory — internal/posse's tests run with their own package as
@@ -49,33 +69,37 @@ package treepins
 // half of the class is derived from the climb rather than from the root. Those two are a different question (is a census of one package's own
 // sources in the class?), filed rather than decided here.
 //
-// THE RESIDUAL, said out loud, because it is bigger than what this pin
-// holds. A parameter is one of several spellings the derivation cannot read,
-// and the same census found the others live in this package today: a local
-// variable assigned a literal one line above the walk
-// (`dir := filepath.Join("docs", "adr"); os.ReadDir(dir)`), a named constant
-// (`os.ReadDir(armPkgDir)`), a range variable over a package-level list of
-// literals (`for _, d := range arRoots`), and a root returned by a helper
-// (`root, _ := repoRoot()`). SEVENTEEN tests in internal/treepins read the
-// tree through one of those and are neither derived nor doored, against the
-// thirty that are. That is a derivation to widen, not more spellings to pin —
-// intraprocedural assignment tracking, which this package already does for
-// the other half of the class (`twdRootExprs`) — and it is filed with the
-// list, as ranger-base-8wxbn. The two rows in rpWaived below are that bead's, named
-// here so the hole is counted rather than silent.
+// THE RESIDUAL, said out loud, because it is what is left after three
+// widenings rather than what one of them missed. The other five spellings
+// this census found — a local assigned a literal one line above the walk, a
+// package const, a range variable over a literal list, a root returned by
+// repoRoot(), and the parameter — are all read now (ranger-base-8wxbn for
+// the first four, this bead for the last). What neither this rule nor the
+// hop reads is a CHAIN: a helper that takes a root as its own parameter and
+// hands it on to a param-rooted walker, with the literal two call sites away.
+// Both stop at one hop, deliberately and identically, so neither can be
+// green over something the other would catch — and the thing that keeps the
+// chain from being written is this pin's floor plus the fact that nothing in
+// the package is spelled that way (MEASURED 2026-10-31). Following it would
+// be the transitive propagation twdRelEnv's head comment refuses, and the
+// refusal stands: what was revisited here is the ONE-step resolution, which
+// is not propagation and which rpScan had already shipped under a fixture
+// arm.
 
 import (
 	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
 )
 
 // rpRootWalker is one (function, parameter) pair that roots a walk at that
-// parameter: the spelling the register cannot read.
+// parameter: the spelling the register reads one hop later, at the call site,
+// and not from the body in front of it.
 type rpRootWalker struct {
 	fn    string
 	param string
@@ -85,34 +109,18 @@ type rpRootWalker struct {
 }
 
 // rpHandoff is one call site that hands such a function a path inside the
-// tree — a reading of the tree in a spelling no door can be derived for.
+// tree — a reading of the tree whose door can only be derived through the
+// hop, which is what the arm below holds.
 type rpHandoff struct {
 	caller string
 	helper string
 	param  string
-	path   string
-	where  string
-}
-
-// rpWaived are the param-rooted helpers this pin reports as known rather
-// than as news, keyed by helper name. One row per helper, not per call site:
-// the question is about the helper's root, and a second call site with the
-// same tree path says nothing new.
-//
-// A row here is a DEFECT RECORDED, never a shape blessed: both of these are
-// real tree readings that no Makefile door names, and both are listed on
-// ranger-base-8wxbn, which widens the derivation to reach them and takes
-// these rows out when it lands. They are here so that the hole is a number
-// this file prints rather than a silence — and so that a NEW pair reds,
-// which is the whole point of a rule whose live answer is zero.
-var rpWaived = map[string]string{
-	"arParse": "absencerules_qa_test.go: joins its `root` parameter with each entry of the " +
-		"package-level arRoots (`internal`, `cmd`) and walks every non-test .go file under " +
-		"them; four pins call it with `.` and are tree-wide and undoored (ranger-base-8wxbn)",
-	"cgScan": "credentialgate_qa_test.go: joins its `root` parameter with each of " +
-		"cgScannedDirs (`scripts`, `plugin`, `etc`, `docs`) and walks every runnable file " +
-		"under them; TestNoShippedScriptAcquiresACredential passes `.` at two call " +
-		"sites, and that pin is tree-wide and undoored (ranger-base-8wxbn)",
+	// walk is the walker the helper roots at that parameter (Walk, WalkDir,
+	// ReadDir, Glob). It is here because the register's parameter hop names
+	// it in the evidence it records, and the pin below compares the two.
+	walk  string
+	path  string
+	where string
 }
 
 // rpParamIndex maps each named parameter of a function to its position in the
@@ -206,16 +214,17 @@ func rpCarriers(body *ast.BlockStmt, params map[string]int) map[string]string {
 	return carries
 }
 
-// rpScan is the rule, over parsed sources: the param-rooted walkers, and the
-// call sites that hand one of them a tree path. The fixture arm below drives
-// THIS function, so a fixture that passes cannot be passing against a
-// second, friendlier copy of the rule.
-func rpScan(fset *token.FileSet, files map[string]*ast.File) (walkers []rpRootWalker, handoffs []rpHandoff) {
-	type decl struct {
-		fd    *ast.FuncDecl
-		where string
-	}
-	var decls []decl
+// rpDecl is one function declaration of the parsed sources, with the
+// file:line its name sits on.
+type rpDecl struct {
+	fd    *ast.FuncDecl
+	where string
+}
+
+// rpDecls flattens the parsed files into declarations, in filename order so
+// that two runs over the same sources report in the same order.
+func rpDecls(fset *token.FileSet, files map[string]*ast.File) []rpDecl {
+	var decls []rpDecl
 	names := make([]string, 0, len(files))
 	for name := range files {
 		names = append(names, name)
@@ -227,12 +236,25 @@ func rpScan(fset *token.FileSet, files map[string]*ast.File) (walkers []rpRootWa
 			if !ok || fd.Recv != nil || fd.Body == nil {
 				continue
 			}
-			decls = append(decls, decl{fd, fmt.Sprintf("%s:%d", name, fset.Position(fd.Pos()).Line)})
+			decls = append(decls, rpDecl{fd, fmt.Sprintf("%s:%d", name, fset.Position(fd.Pos()).Line)})
 		}
 	}
+	return decls
+}
 
-	byName := map[string][]rpRootWalker{}
-	for _, d := range decls {
+// rpParamRootedWalkers finds every (function, parameter) pair that roots a
+// walk at that parameter — directly, or through a local assigned from it.
+//
+// IT IS THE REGISTER'S WALKER TABLE TOO, which is why it is a function of
+// its own rather than a loop inside rpScan (ranger-base-pyl22). The
+// derivation in treewidedoor_qa_test.go resolves such a parameter ONE STEP,
+// at the call site, and it reads the pairs from here — so the pin below and
+// the derivation cannot disagree about what a param-rooted walk is. A second
+// copy of this loop, written to be easy to read from over there, is a copy
+// that can go narrower than this one while both look green.
+func rpParamRootedWalkers(fset *token.FileSet, files map[string]*ast.File) (walkers []rpRootWalker, byName map[string][]rpRootWalker) {
+	byName = map[string][]rpRootWalker{}
+	for _, d := range rpDecls(fset, files) {
 		params := rpParamIndex(d.fd)
 		if len(params) == 0 {
 			continue
@@ -269,8 +291,16 @@ func rpScan(fset *token.FileSet, files map[string]*ast.File) (walkers []rpRootWa
 			return true
 		})
 	}
+	return walkers, byName
+}
 
-	for _, d := range decls {
+// rpScan is the rule, over parsed sources: the param-rooted walkers, and the
+// call sites that hand one of them a tree path. The fixture arm below drives
+// THIS function, so a fixture that passes cannot be passing against a
+// second, friendlier copy of the rule.
+func rpScan(fset *token.FileSet, files map[string]*ast.File) (walkers []rpRootWalker, handoffs []rpHandoff) {
+	walkers, byName := rpParamRootedWalkers(fset, files)
+	for _, d := range rpDecls(fset, files) {
 		ast.Inspect(d.fd.Body, func(n ast.Node) bool {
 			call, ok := n.(*ast.CallExpr)
 			if !ok {
@@ -292,6 +322,7 @@ func rpScan(fset *token.FileSet, files map[string]*ast.File) (walkers []rpRootWa
 					caller: d.fd.Name.Name,
 					helper: w.fn,
 					param:  w.param,
+					walk:   w.walk,
 					path:   rel,
 					where:  fmt.Sprintf("%s:%d", strings.SplitN(d.where, ":", 2)[0], fset.Position(call.Pos()).Line),
 				})
@@ -319,50 +350,55 @@ func rpPackageSources(t *testing.T) (*token.FileSet, map[string]*ast.File) {
 	return fset, files
 }
 
-func TestQANoTreeWalkingHelperIsHandedATreePathThroughAParameter(t *testing.T) {
+// TestQAEveryTreePathHandedThroughAParameterIsDerived is the coupling the
+// head comment describes: every param-rooted walker handed a tree path here
+// is a pair twdParamHops read, recorded as evidence in the caller's relEnum.
+//
+// Both halves come from the same sources and the same walker table, so what
+// can differ between them is the resolution of the call site's ARGUMENT —
+// twdRelTreePath here, twdRelTreePaths there — and that is exactly the thing
+// a narrowing of the hop would change. The door this buys is arm 2's: once
+// the hop has read the pair, the caller is in the derived class and
+// TestQAEveryTreeWidePinHasADoor asks the Makefile for a door. This arm does
+// not re-ask that question; it holds the step before it.
+func TestQAEveryTreePathHandedThroughAParameterIsDerived(t *testing.T) {
 	t.Parallel()
 	fset, files := rpPackageSources(t)
 	walkers, handoffs := rpScan(fset, files)
 
-	// The positive witness. This pin's live answer is zero handoffs, and an
-	// assertion of absence is satisfied by a rule that matched nothing at
-	// all — a renamed walker set, a parse that read no bodies. So say what
-	// was read, and fail a scan that found no param-rooted walker anywhere:
-	// there were 6 in this package on 2026-10-31, and a package with this
-	// many fixture helpers will always have some.
+	// The positive witness, both ways. An assertion about pairs is satisfied
+	// by a rule that matched no pair at all — a renamed walker set, a parse
+	// that read no bodies — and by 2026-10-31 this package held 6
+	// param-rooted walks and 6 handoffs over two helpers (arParse at four
+	// call sites, cgScan at two). A package with this many fixture helpers
+	// will always have some of the first; the second is what the coupling is
+	// about, so a scan that finds none of those is reporting nothing.
 	if len(walkers) == 0 {
 		t.Fatal("no walk in this package is rooted at a parameter at all (6 were on 2026-10-31) — this rule is matching nothing, not passing")
 	}
+	if len(handoffs) == 0 {
+		t.Fatal("no call site in this package hands a param-rooted walker a tree path (6 did on 2026-10-31, over arParse and cgScan) — so this arm is comparing an empty set with the register's hop and would pass however narrow that hop became")
+	}
 	t.Logf("read %d param-rooted walks in %s, %d of them handed a tree path", len(walkers), twdTreepinsPkg, len(handoffs))
 
-	waivedSeen := map[string]bool{}
+	all, _ := twdParseTreepins(t)
 	for _, h := range handoffs {
-		if reason, ok := rpWaived[h.helper]; ok {
-			waivedSeen[h.helper] = true
-			t.Logf("known, and recorded rather than reported: %s(%q) at %s — %s", h.helper, h.path, h.where, reason)
+		f := all[h.caller]
+		if f == nil {
+			t.Errorf("%s hands %s the tree path %q at %s, and the register's own parse of this package declares no function of that name — the two readings have come apart, so nothing here can say whether the hop saw this pair", h.caller, h.helper, h.path, h.where)
 			continue
 		}
-		t.Errorf("%s hands %s the tree path %q, and %s roots a walk at that very parameter (%s) — "+
-			"so this is a reading of the tree in the one spelling the register's derivation cannot see, "+
-			"which means no Makefile door will ever be asked for and %s is reachable only by an "+
-			"unfiltered %s run. Spell the root at the walk, the way scanRealBdCallSites does "+
-			"(bddaemonleak_qa_test.go, ranger-base-0ckgm), and give the pin a door.",
-			h.caller, h.helper, h.path, h.helper, h.param, h.caller, twdTreepinsPkg)
-	}
-
-	// And the waiver cannot keep rows for pairs that are gone: a recorded
-	// defect that has been fixed is a reason carried for a decision nobody
-	// has to take any more, and the next reader cannot tell it from a live
-	// one.
-	var dead []string
-	for helper := range rpWaived {
-		if !waivedSeen[helper] {
-			dead = append(dead, helper)
+		want := twdHopEntry(rpRootWalker{fn: h.helper, walk: h.walk}, h.path)
+		if slices.Contains(f.relEnum, want) {
+			continue
 		}
-	}
-	sort.Strings(dead)
-	for _, helper := range dead {
-		t.Errorf("rpWaived records %s and nothing in %s hands it a tree path any more — drop the row rather than leave a waiver for a reading that does not happen", helper, twdTreepinsPkg)
+		t.Errorf("%s hands %s the tree path %q at %s, and %s roots a %s at that very parameter (%s) — "+
+			"so this is a reading of the tree, and the register's parameter hop did not record it "+
+			"(%s's enumerations are %v, wanted one of them to be %q). Until it does, no Makefile door "+
+			"will ever be asked for and %s is reachable only by an unfiltered %s run. Either widen the "+
+			"hop in treewidedoor_qa_test.go to read this spelling, or spell the root at the walk the way "+
+			"scanRealBdCallSites does (bddaemonleak_qa_test.go, ranger-base-0ckgm).",
+			h.caller, h.helper, h.path, h.where, h.helper, h.walk, h.param, h.caller, f.relEnum, want, h.caller, twdTreepinsPkg)
 	}
 }
 
@@ -372,6 +408,13 @@ func TestQANoTreeWalkingHelperIsHandedATreePathThroughAParameter(t *testing.T) {
 // rpScan the live arm uses. Both directions, because either is the bug: a
 // rule that matches nothing passes over the escape, and a rule that matches
 // everything makes every fixture helper in the package a false red.
+//
+// rpScan is unchanged by ranger-base-pyl22 and so is every case below — what
+// changed is the VERDICT the live arm reaches on a pair, and the register
+// reading the same pairs rather than nothing. The hop's own edges are typed
+// on the other side of the coupling, in
+// TestQATheTreepinsEnumerationRuleMatchesWhatItClaims, where the parameter
+// case flipped from false to true.
 func TestQATheRootParameterRuleMatchesWhatItClaims(t *testing.T) {
 	t.Parallel()
 	for _, c := range []struct {

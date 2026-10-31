@@ -46,7 +46,7 @@ pin.
 | `make execwrite-check` | executable writes routed through `WriteExecutable` |
 | `make notes-check` | `docs/notes.d/README.md` lists every fragment (a tool) |
 | `make adr-check` | ADR citations resolve, exemptions name real files |
-| `make corpus-check` | censuses over this repository's own Go and test sources |
+| `make corpus-check` | censuses over this repository's own Go, test and shipped-runnable sources |
 | `make register-check` | the register itself: every tree-wide pin has a door |
 | `make scripts-check` | censuses over `scripts/` |
 | `make pid-check` | the shipped PIDs under `examples/agents/` |

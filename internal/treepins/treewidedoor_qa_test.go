@@ -252,17 +252,20 @@ package treepins
 //	                                              (ranger-base-0ckgm)
 //
 // and one more into register-check's door, because what it holds is THIS
-// FILE's derivation rather than the tree: a walk in internal/treepins must
-// spell its root, so the escape above cannot be written back in by a
-// refactor. Its rule is the pair — a walk rooted at one of its own
-// function's parameters, and a call site handing that parameter a tree path
-// — and its live answer is zero, with the two helpers still spelled that way
-// recorded in rpWaived beside the bead that widens the derivation to reach
-// them. Its fixture arm is undoored for the same reason the three above are:
+// FILE's derivation rather than the tree. Its rule is the pair — a walk
+// rooted at one of its own function's parameters, and a call site handing
+// that parameter a tree path — and it was a PROHIBITION with a live answer of
+// zero and a two-row waiver naming the hole. The derivation reads that pair
+// now (ranger-base-pyl22, twdParamHops), so the waiver is gone and the pin is
+// the coupling that keeps the hop as wide as the rule which finds the pairs.
+// Its fixture arm is undoored for the same reason the three above are:
 //
-//	TestQANoTreeWalkingHelperIsHandedATreePathThroughAParameter
+//	TestQAEveryTreePathHandedThroughAParameterIsDerived
 //	                                              make register-check
-//	                                              (ranger-base-0ckgm)
+//	                                              (ranger-base-0ckgm, turned
+//	                                              into a coupling by
+//	                                              ranger-base-pyl22 — see
+//	                                              the five rows below)
 //
 // and TWELVE more, which arrived in one landing because the DERIVATION was
 // widened rather than a spelling pinned (ranger-base-8wxbn). Of the 39
@@ -325,19 +328,42 @@ package treepins
 //	                                              the module root reds it,
 //	                                              which is nobody's bead)
 //
-// (The spellings that are still unread, said out loud so the next reader
-// does not have to census them again. A walk root that arrives as a
-// PARAMETER — arParse, cgScan, scanRealBdCallSites — is refused on purpose:
-// following it would be the interprocedural constant propagation
-// twdTestFiles' head comment turns down, and ranger-base-0ckgm pins that
-// spelling where it is written instead. Five pins over arParse and cgScan
-// are undoored behind it today, which is ranger-base-pyl22. A root parsed
-// out of the Makefile is unread too (gofmtdoor_qa_test.go) and costs
-// nothing: that test also walks ".", so it is derived and doored on that.
-// And two fixture roots are correctly unseen.)
+// and FIVE more, which is the sixth spelling and the last of the six
+// (ranger-base-pyl22). A walk root that arrives as a PARAMETER was refused
+// on purpose through all of the above, and the refusal was read too wide: the
+// thing twdTestFiles turns down is interprocedural constant PROPAGATION, and
+// one argument resolved at one call site is not that. twdParamHops does that
+// one step, against the walker table rootparam_qa_test.go already builds, so
+// no new mechanism is coined and no second copy of "what is a param-rooted
+// walk" exists to drift. The alternative was a third hand register beside
+// twdIndirect and twdDoorHolders, and neither of their reasons reaches these
+// — twdIndirect is for an enumeration no rule over Go source can derive, and
+// one derives these today, one file over, under a fixture arm.
 //
-// and two more into corpus-check's door, whose subject is this repo's own
-// sources: the census that every binary posse execs from a LAUNCHER process
+//	TestOneCredentialAcquirerAndNoOther           make corpus-check
+//	TestNoNewShadowPredicate                      make corpus-check
+//	TestNoBdCloseVerbReachableFromDispatch        make corpus-check
+//	TestPaneModeReadingDecidesNothing             make corpus-check
+//	                                              (all four hand arParse `.`,
+//	                                              which walks every non-test
+//	                                              .go under internal/ and
+//	                                              cmd/)
+//	TestNoShippedScriptAcquiresACredential        make corpus-check
+//	                                              (hands cgScan `.`, which
+//	                                              walks every runnable file
+//	                                              under scripts/, plugin/,
+//	                                              etc/ and docs/)
+//	                                              (all five ranger-base-pyl22)
+//
+// Both helpers are genuinely polymorphic — eight more tests hand arParse a
+// fixture root — so neither root could be respelled at the walk the way
+// scanRealBdCallSites' was (ranger-base-0ckgm). 0.43s between the five.
+//
+// and TWO more into that same door, which landed on main while the five
+// above were being measured on their own branch, so this comment is the
+// merge of the two (ranger-base-bm6j8 and ranger-base-pyl22, both
+// 2026-10-31). Their subject is this repo's own sources too: the census
+// that every binary posse execs from a LAUNCHER process
 // is resolved and run outside every gates dir (ADR 0077 D3), and the
 // derivation of the env binders its second arm reads. Both walk cmd/ and
 // internal/ through ewdGoFiles, a relative literal, which is the first rule
@@ -351,37 +377,84 @@ package treepins
 //	                                              make corpus-check
 //	                                              (both ranger-base-bm6j8)
 //
-// and `make tree-check` is all of them — 60-82s on this box over three warm
-// runs at seventy-eight pins and fourteen doors (MEASURED 2026-10-31,
-// ranger-base-bm6j8: 60.3s, 71.9s and 82.3s in that order, with a one-minute
+// (The spellings that are still unread, said out loud so the next reader
+// does not have to census them again. A root parsed out of the Makefile is
+// unread (gofmtdoor_qa_test.go) and costs nothing: that test also walks ".",
+// so it is derived and doored on that. A CHAIN — a helper taking a root as
+// its own parameter and handing it on to a param-rooted walker, with the
+// literal two call sites away — is unread by the hop and by the rule that
+// finds the pairs, identically and on purpose; that one would be the
+// propagation, and nothing in the package is spelled that way. And two
+// fixture roots are correctly unseen.)
+//
+// and `make tree-check` is all of them — 81-89s on this box over three warm
+// runs at eighty-three pins and fourteen doors (MEASURED 2026-10-31,
+// ranger-base-3e68k: 87s, 81s and 89s in that order, with a one-minute load
+// average of 25.12, 27.90 and 26.08 before the three, both suite slots held
+// by sibling seats for the first two and one for the third. This is the
+// merge-back that landed ranger-base-pyl22's five onto a main that had
+// meanwhile landed ranger-base-bm6j8's two, so it is the first reading of
+// the class at its real size.
+//
+// AND IT WAS READ TWICE, an hour apart, over the same code — the second time
+// because an AGENTS.md line written between the two reds arm 4, and a
+// reading taken on a tree whose suite is red is not a reading of this tree.
+// That accident is the most useful thing in this entry. The earlier three
+// were 62s, 127s and 146s at a one-minute load of 23.45, 13.98 and 91.60: an
+// 84s spread. These three are 8s apart at a load that never left 25-28. Same
+// class, same doors, same box, one hour. So what this command's spread
+// tracks is the MOVEMENT of the load and not its level — which is what every
+// "ordered by nothing in it" reading below has been saying with only one
+// reading's worth of evidence to say it with, and this is the pair that says
+// it directly. Price the command at ninety seconds when the box is steady,
+// whatever level it is steady AT, and expect two and a half minutes when it
+// is not. What the seven new pins cost is known from their own beads and is
+// in neither spread: 0.43s between ranger-base-pyl22's five, 0.24s and 0.21s
+// for ranger-base-bm6j8's two)
+// — which is the command a seat types after a filtered run. (It was
+// 74.5-172.1s at eighty-one pins (ranger-base-pyl22: 172.1s, 164.7s and
+// 74.5s in that order, with a
+// one-minute load average of 57.34, 57.89 and 94.79 before the three and one
+// suite slot held by a sibling seat throughout for the first two and BOTH
+// held for the third. The widest reading this command has produced, on the
+// busiest box it has been read on, and ordered by nothing in that load: the
+// FASTEST run is the one
+// at the highest load average and with both suite slots gone, which is
+// ranger-base-9mjxb's finding for the third time and the fourth wide reading
+// to say it. The five pins this bead adds report 0.43s between them,
+// measured alone, so none of a 98s spread is theirs — price the command from
+// the quiet end of these ranges and read the high end as what it costs
+// beside other people's suites);
+// 60-82s at seventy-eight pins
+// (ranger-base-bm6j8: 60.3s, 71.9s and 82.3s in that order, with a one-minute
 // load average of 8.05, 11.10 and 8.97 before the three and NO suite slot
 // held by anyone — the first reading of this command ever taken here on an
-// idle box, which is why it is worth saying that the 22s spread is the
-// SECOND widest in this list. The load average moved by three across the
+// idle box, which is why its 22s spread is worth saying at all: there was no
+// sibling suite to blame it on. The load average moved by three across the
 // three runs and the wall moved by twenty-two, monotonically upward, in the
 // order they were run and in no order of the load: that is the "ordered by
 // nothing in it" finding of ranger-base-0ckgm and ranger-base-c768n
 // arriving from the quiet end, where there is no sibling suite to blame it
 // on. Price this command at a minute and expect ninety. The two pins this
-// bead added report 0.24s and 0.21s, so none of the spread is theirs)
-// — which is the command a
-// seat types after a filtered run. (It was 57.0-57.7s at seventy-six pins
-// (ranger-base-v3tt4: 57.6s, 57.0s and 57.7s in that order, with a one-minute
-// load average of 31.41, 13.93 and 10.10 before the three and one suite slot
-// held by a sibling seat throughout — the merge-back that landed the twelve
-// above onto a main that had meanwhile landed the two before them, so the
-// first reading of the class at its real size. A 0.7s spread read across a
-// threefold move in the load average, the tightest any reading of this
-// command has produced, which says from the other side what the three wide
-// readings below say: the box moved and the wall did not, so a spread, when
-// there is one, is not that number. ranger-base-8wxbn measured the twelve on
-// its own branch, at seventy-four, and read 56-112s there; what that reading
-// is still good for is their COST, because the pins are the same twelve.
-// Eleven of them report 0.70s between them, and the twelfth,
-// TestQAEverySuiteArmTypeChecks, reports 0.14s on its own line because its
-// three parallel subtests build one suite arm each — measured alone it is
-// 2.44s, 2.50s and 2.72s of parallel subtest, so about 2.7s of wall. Three
-// seconds of that command was the twelve new pins and the rest was the box);
+// bead added report 0.24s and 0.21s, so none of the spread is theirs);
+// 57.0-57.7s at seventy-six pins
+// (ranger-base-v3tt4: 57.6s, 57.0s and 57.7s in that order, with a
+// one-minute load average of 31.41, 13.93 and 10.10 before the three and one
+// suite slot held by a sibling seat throughout. That was the merge-back that
+// landed ranger-base-8wxbn's twelve onto a main that had meanwhile landed the
+// two before them, so it was the first reading of the class at its real size
+// — and a 0.7s spread read across a threefold move in the load average,
+// which is the tightest any reading of this command has produced and says
+// from the other side what the three wide readings below say: the box moved
+// and the wall did not, so a spread, when there is one, is not that number.
+// ranger-base-8wxbn measured its twelve on its own branch, at seventy-four,
+// and read 56-112s there; what that reading is still good for is their COST,
+// because the pins are the same twelve. Eleven of them report 0.70s between
+// them, and the twelfth, TestQAEverySuiteArmTypeChecks, reports 0.14s on its
+// own line because its three parallel subtests build one suite arm each —
+// measured alone it is 2.44s, 2.50s and 2.72s of parallel subtest, so about
+// 2.7s of wall. Three seconds of that command was those twelve pins and the
+// rest was the box);
 // 73-132s at sixty-four pins
 // (ranger-base-0ckgm: 73.4s, 105.8s and 131.9s in that order, with a
 // one-minute load average of 45.88, 19.41 and 31.54 before the three and
@@ -979,6 +1052,12 @@ type twdFunc struct {
 	// internal/treepins half of the class (ranger-base-g6sb1): that
 	// package's TestMain chdirs the whole binary to the repo root, so a
 	// relative path IS a tree path and no root helper is ever named.
+	//
+	// It also carries the PARAMETER HOP (ranger-base-pyl22): a call handing
+	// a relative tree path to a helper that roots a walk at that very
+	// parameter enumerates the tree just as plainly, and the entry says so
+	// — `Walk(.)@arParse` rather than `Walk(docs/adr)`. One step, at the
+	// call site; see twdParamHops.
 	relEnum []string
 	// execTree: relative literals naming a tracked regular file that this
 	// body hands to exec.Command — this repo's own programs, run on the
@@ -1136,10 +1215,14 @@ func twdRootExprs(body *ast.BlockStmt) func(ast.Expr) bool {
 // WHY THIS EXISTS, AND WHAT IT DELIBERATELY IS NOT. twdRelTreePath below
 // reads a literal and nothing else, and twdTestFiles' head comment says why:
 // following a root into another function is interprocedural constant
-// propagation, a second thing to be wrong about. That refusal stands.
-// Nothing here crosses a function boundary, and a walk rooted at a PARAMETER
-// is still invisible to this rule by design — ranger-base-0ckgm owns that
-// spelling and pins it where it is written.
+// propagation, a second thing to be wrong about. That refusal stands and
+// nothing HERE crosses a function boundary: a walk rooted at a PARAMETER is
+// invisible to this rule, whatever its callers pass.
+//
+// The class is not, since ranger-base-pyl22 — but by a separate rule and not
+// by a wider env. twdParamHops resolves one argument at one call site, so the
+// hop is written where it can be read as one step rather than hidden inside
+// this map, where it would have to be a value flowing across a boundary.
 //
 // What it buys is the three spellings that never leave the body. MEASURED
 // 2026-10-31 (ranger-base-8wxbn): of the 39 walker calls in
@@ -1152,10 +1235,11 @@ func twdRootExprs(body *ast.BlockStmt) func(ast.Expr) bool {
 //	for _, d := range arRoots                              over a literal list
 //
 // — eight of those sixteen, carrying eight tree-wide pins that had no door.
-// The rest are a parameter (ranger-base-0ckgm's), a root parsed out of the
-// Makefile (gofmtdoor_qa_test.go, whose test also walks "." and is derived
-// and doored on that), the repo-root helper below, and two fixture roots
-// that are correctly unseen.
+// The rest are a parameter (read one step later, by twdParamHops rather than
+// by this map — ranger-base-pyl22), a root parsed out of the Makefile
+// (gofmtdoor_qa_test.go, whose test also walks "." and is derived and doored
+// on that), the repo-root helper below, and two fixture roots that are
+// correctly unseen.
 type twdRelEnv struct {
 	// val: an identifier -> every relative tree path it can hold.
 	val map[string][]string
@@ -1331,8 +1415,13 @@ func twdPkgRelEnv(files []*ast.File) *twdRelEnv {
 // makes two: `dir := ...` before the walk and after it both bind.
 //
 // It stays inside the body. A parameter is never bound — that is the one
-// spelling this rule refuses to read, and refusing it is what keeps
-// arParse(t, root, dirs) out of the class whatever its callers pass.
+// spelling this rule refuses to read, so arParse(t, root, dirs) enumerates
+// nothing as far as THIS map is concerned, whatever its callers pass. What
+// puts its callers in the class is twdParamHops, which reads the call site's
+// argument rather than the helper's body (ranger-base-pyl22). The two are
+// kept apart on purpose: one hop at a named place is reviewable, and a
+// parameter quietly bound here would be a value crossing a boundary with
+// nothing to say so.
 func twdBodyRelEnv(body *ast.BlockStmt, pkg *twdRelEnv) *twdRelEnv {
 	env := pkg.clone()
 	for i := 0; i < 2; i++ {
@@ -1379,6 +1468,59 @@ func twdBodyRelEnv(body *ast.BlockStmt, pkg *twdRelEnv) *twdRelEnv {
 	return env
 }
 
+// twdParamHops is the walker table the PARAMETER HOP resolves against: the
+// (function, parameter, walker) triples that root a walk at one of the
+// function's own parameters, read by rootparam_qa_test.go's rpScan and not
+// by a second copy of that loop.
+//
+// WHY THIS EXISTS, AND WHY IT IS NOT THE REFUSAL ABOVE (ranger-base-pyl22).
+// twdRelEnv's head comment refuses to follow a root into another function,
+// and twdTestFiles' refuses interprocedural constant propagation. Both
+// refusals stand and this is neither of them: it resolves ONE argument at
+// ONE call site, with twdRelTreePaths, and propagates no value anywhere. A
+// chain — a helper handing its own parameter on to a param-rooted walker —
+// is still unread, by both this and rpScan, and is said out loud as the
+// residual in the head comment.
+//
+// WHAT IT BUYS, and why the alternative was worse. Five tree-wide pins sat
+// behind two param-rooted helpers — arParse (absencerules_qa_test.go) and
+// cgScan (credentialgate_qa_test.go), both `filepath.Join(root, d)` over a
+// package-level list of literals — and both are genuinely polymorphic: eight
+// more tests hand arParse a fixture root, so the parameter cannot be
+// replaced with a literal the way scanRealBdCallSites' was
+// (ranger-base-0ckgm). The alternative was a third hand register beside
+// twdIndirect and twdDoorHolders, and neither of their reasons covers these:
+// twdIndirect is for an enumeration no rule over GO source can derive, and
+// rpScan derives this one today, one file over, under a fixture arm. A
+// hand-written row for a pin a shipped rule already finds is the parking
+// spot this file keeps warning about — a second list to keep in sync by
+// hand, which is how the spelling got here in the first place.
+//
+// It is built for BOTH packages, because twdParseDir is one function; only
+// the internal/treepins rule reads relEnum. A relative literal in
+// internal/posse is that package's own directory and not a tree path at all
+// (rootparam_qa_test.go's head comment says why), so the two entries it
+// produces there — assertNoHintVocabulary(t, ".") and scanReExecSites(".")
+// — are carried and unused, and the question of whether a census of one
+// package's own sources is in the class stays where ranger-base-0ckgm filed
+// it.
+func twdParamHops(t *testing.T, paths []string, fset *token.FileSet, files []*ast.File) map[string][]rpRootWalker {
+	t.Helper()
+	byPath := map[string]*ast.File{}
+	for i, f := range files {
+		byPath[paths[i]] = f
+	}
+	_, byName := rpParamRootedWalkers(fset, byPath)
+	return byName
+}
+
+// twdHopEntry renders one resolved hop as relEnum evidence. Spelled once, so
+// that the pin which holds the derivation and rpScan together compares the
+// same bytes the derivation wrote.
+func twdHopEntry(w rpRootWalker, rel string) string {
+	return w.walk + "(" + rel + ")@" + w.fn
+}
+
 // twdTestFiles lists one package's test files.
 //
 // THE GLOBS ARE SPELLED OUT, one literal per package, rather than composed
@@ -1394,6 +1536,15 @@ func twdBodyRelEnv(body *ast.BlockStmt, pkg *twdRelEnv) *twdRelEnv {
 // twdRelTreePath to follow constants and parameters — is interprocedural
 // constant propagation, a second thing to be wrong about, to buy back a
 // spelling nobody needs.
+//
+// READ PRECISELY, because this paragraph was read too wide once
+// (ranger-base-pyl22). What it refuses is a VALUE FOLLOWED across boundaries:
+// twdRelTreePath staying literal-only, and this glob staying spelled. It does
+// not refuse resolving one argument at one call site, which is what
+// twdParamHops does for a walk root that arrives as a parameter, and what
+// rootparam_qa_test.go's rule had already been doing for two months when the
+// refusal was quoted against it. Five tree-wide pins sat undoored in that
+// gap.
 func twdTestFiles(t *testing.T, pkg string) []string {
 	t.Helper()
 	var paths []string
@@ -1443,6 +1594,11 @@ func twdParseDir(t *testing.T, pkg string) (map[string]*twdFunc, int) {
 	// declared in one file roots a walk in another (armPkgDir does), so this
 	// cannot be built one file at a time.
 	env := twdPkgRelEnv(files)
+	// And the walker table the parameter hop resolves against, over every
+	// file for the same reason the env is: the helper and its call site are
+	// routinely in different files (cgScan is called from its own, arParse
+	// from four tests in its own).
+	hops := twdParamHops(t, paths, fset, files)
 	out := map[string]*twdFunc{}
 	tests := 0
 	for i, file := range files {
@@ -1451,7 +1607,7 @@ func twdParseDir(t *testing.T, pkg string) (map[string]*twdFunc, int) {
 			if !ok || fn.Recv != nil || fn.Body == nil {
 				continue
 			}
-			f := twdAnalyze(fn, fmt.Sprintf("%s:%d", paths[i], fset.Position(fn.Pos()).Line), env)
+			f := twdAnalyze(fn, fmt.Sprintf("%s:%d", paths[i], fset.Position(fn.Pos()).Line), env, hops)
 			if f.test {
 				tests++
 			}
@@ -1466,7 +1622,7 @@ func twdParseDir(t *testing.T, pkg string) (map[string]*twdFunc, int) {
 // so the fixture-driven mutation check below drives the same code the tree is
 // derived with — a second copy of the rule, written to be easy to test, is a
 // copy that can agree with the fixture and disagree with the tree.
-func twdAnalyze(fn *ast.FuncDecl, where string, pkg *twdRelEnv) *twdFunc {
+func twdAnalyze(fn *ast.FuncDecl, where string, pkg *twdRelEnv, hops map[string][]rpRootWalker) *twdFunc {
 	f := &twdFunc{
 		name:  fn.Name.Name,
 		where: where,
@@ -1504,6 +1660,18 @@ func twdAnalyze(fn *ast.FuncDecl, where string, pkg *twdRelEnv) *twdFunc {
 			}
 			if fun.Name == twdTreepinsRootHelper {
 				f.treeRoot = true
+			}
+			// The parameter hop: this call hands a helper that walks one of
+			// its own parameters a relative tree path, at that parameter's
+			// own position. The reading is the tree, so the enumeration is
+			// this body's (ranger-base-pyl22, twdParamHops).
+			for _, w := range hops[fun.Name] {
+				if len(call.Args) <= w.idx {
+					continue
+				}
+				for _, rel := range twdRelTreePaths(call.Args[w.idx], env) {
+					f.relEnum = append(f.relEnum, twdHopEntry(w, rel))
+				}
 			}
 		case *ast.SelectorExpr:
 			if twdWalkers[fun.Sel.Name] {
@@ -1855,9 +2023,13 @@ var twdDoorHolders = map[string]string{
 // half's second did (ranger-base-8wxbn). ENUMERATION is the first: a
 // walker rooted at a relative tree path, now read through twdRelEnv so a
 // local, a package const and a range variable over a literal list count as
-// spelling one. The second is the ROOT HELPER: a test that reaches
-// repoRoot() AND reaches a walker is reading the tree through an absolute
-// root, which the first rule cannot see at all.
+// spelling one — and, since ranger-base-pyl22, through twdParamHops, so a
+// tree path HANDED to a helper that walks that very parameter counts too.
+// (Both feed the same relEnum and the same reach, because both are the one
+// question "does this body enumerate the tree": a second seed would be a
+// second closure saying the same thing.) The second rule is the ROOT HELPER:
+// a test that reaches repoRoot() AND reaches a walker is reading the tree
+// through an absolute root, which the first cannot see at all.
 //
 // Two reaches INTERSECTED rather than one flag, because here the root and
 // the walk are in different functions: the test takes the root, and the
@@ -2030,12 +2202,32 @@ func TestX(t *testing.T) { os.ReadDir(filepath.Join("docs", adr)) }`, true},
 		{"a range variable over a package-level literal list", `var roots = []string{"internal", "cmd"}
 func TestX(t *testing.T) { for _, root := range roots { filepath.Walk(root, nil) } }`, true},
 		{"a range variable over a list of Joins", `func TestX(t *testing.T) { for _, g := range []string{filepath.Join("scripts", "*.sh")} { filepath.Glob(g) } }`, true},
-		// A walk root that arrives as a PARAMETER stays unread, which is
-		// the refusal twdTestFiles' head comment records and the spelling
-		// ranger-base-0ckgm pins where it is written. The literal at the
-		// call site is deliberately not followed.
-		{"a walk root that arrives as a parameter is not read", `func helper(root string) { filepath.Walk(root, nil) }
-func TestX(t *testing.T) { helper(".") }`, false},
+		// The PARAMETER HOP (ranger-base-pyl22). A walk root that arrives
+		// as a parameter is read through the ONE argument at the call site —
+		// which is the case directly below, and it read false until this
+		// bead. What is still refused is anything that needs the value
+		// followed further than that: see the chain case at the end.
+		{"a walk root that arrives as a parameter, handed a tree path", `func helper(root string) { filepath.Walk(root, nil) }
+func TestX(t *testing.T) { helper(".") }`, true},
+		{"a parameter root reached through a local join, handed a tree path", `func helper(root string, dirs []string) {
+	for _, d := range dirs {
+		filepath.Walk(filepath.Join(root, d), nil)
+	}
+}
+func TestX(t *testing.T) { helper(".", nil) }`, true},
+		{"a parameter root handed a tree path through a local the env knows", `func helper(root string) { filepath.Walk(root, nil) }
+func TestX(t *testing.T) { dir := filepath.Join("docs", "adr"); helper(dir) }`, true},
+		{"a parameter root handed a scratch directory", `func helper(root string) { filepath.Walk(root, nil) }
+func TestX(t *testing.T) { helper(t.TempDir()) }`, false},
+		{"a parameter root handed a climb out of the tree", `func helper(root string) { filepath.Walk(root, nil) }
+func TestX(t *testing.T) { helper("../..") }`, false},
+		{"a tree path at a position that is not the walked parameter", `func helper(name string, root string) { filepath.Walk(root, nil) }
+func TestX(t *testing.T) { helper("docs", t.TempDir()) }`, false},
+		{"a parameter that roots no walk", `func helper(root string) { os.ReadFile(root) }
+func TestX(t *testing.T) { helper("Makefile") }`, false},
+		{"a chain of two parameters is still unread", `func inner(root string) { filepath.Walk(root, nil) }
+func outer(root string) { inner(root) }
+func TestX(t *testing.T) { outer(".") }`, false},
 		{"a range variable over a list carrying a variable", `func TestX(t *testing.T) { d := t.TempDir(); for _, root := range []string{"cmd", d} { filepath.WalkDir(root, nil) } }`, false},
 		// Why val and list are two maps: ranging a STRING yields its runes,
 		// so a range variable may only be bound from a slice of paths.
@@ -2064,7 +2256,7 @@ func TestX(t *testing.T) { dir := root(); os.ReadDir(dir) }`, false},
 		}
 	}
 	if n < 25 {
-		t.Fatalf("the enumeration rule finds %d tree-wide tests in %s (35 on 2026-10-31, 23 on 2026-10-04) — the key has stopped matching and the register is deriving a class that is missing members", n, twdTreepinsPkg)
+		t.Fatalf("the enumeration rule finds %d tree-wide tests in %s (42 on 2026-10-31 with the parameter hop, 35 without it, 23 on 2026-10-04) — the key has stopped matching and the register is deriving a class that is missing members", n, twdTreepinsPkg)
 	}
 	dead := twdReach(all, func(f *twdFunc) bool { return false })
 	if len(dead) != 0 {
@@ -2085,13 +2277,14 @@ func twdFixtureEnumerates(t *testing.T, src string) bool {
 		t.Fatalf("parse fixture: %v\n%s", err, src)
 	}
 	env := twdPkgRelEnv([]*ast.File{file})
+	_, hops := rpParamRootedWalkers(fset, map[string]*ast.File{"fixture_test.go": file})
 	all := map[string]*twdFunc{}
 	for _, decl := range file.Decls {
 		fn, ok := decl.(*ast.FuncDecl)
 		if !ok || fn.Body == nil {
 			continue
 		}
-		f := twdAnalyze(fn, "fixture", env)
+		f := twdAnalyze(fn, "fixture", env, hops)
 		all[f.name] = f
 	}
 	return twdReach(all, func(f *twdFunc) bool { return len(f.relEnum) > 0 })["TestX"]

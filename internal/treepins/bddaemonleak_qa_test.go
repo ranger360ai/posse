@@ -289,12 +289,12 @@ func scanRealBdCallSites() (sites []bdCallSite, files map[string][]string, err e
 }
 
 // scanBdCallSitesUnder is the same scan over a planted FIXTURE tree, for the
-// control arms below. Its root IS a parameter — the spelling the register
-// cannot read — which is correct here and only here: nothing hands it a tree
-// path, so it is not a reading of the tree hiding from the doors. That
-// distinction is held over this whole package, mechanically, by
-// TestQANoTreeWalkingHelperIsHandedATreePathThroughAParameter
-// (rootparam_qa_test.go).
+// control arms below. Its root IS a parameter, which is correct here: nothing
+// hands it a tree path, so it is not a reading of the tree at all and no door
+// is owed. A parameter handed a tree path is read by the register's hop now
+// (twdParamHops, ranger-base-pyl22) and so would be doored rather than
+// hidden; what holds that over this whole package, mechanically, is
+// TestQAEveryTreePathHandedThroughAParameterIsDerived (rootparam_qa_test.go).
 func scanBdCallSitesUnder(root string) (sites []bdCallSite, files map[string][]string, err error) {
 	files = map[string][]string{}
 	err = filepath.Walk(root, bdScanVisitor(root, token.NewFileSet(), &sites, files))

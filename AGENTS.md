@@ -358,13 +358,22 @@ bd sync               # Sync with git
   make pid-check        ~10s   the shipped PIDs under examples/agents/
   ```
 
-  **`make tree-check` is all of them, 57.0-57.7s warm over three runs and
-  92.6s cold** (MEASURED 2026-10-31, ranger-base-v3tt4: 57.6s, 57.0s and
-  57.7s in that order, at a one-minute load average of 31.41, 13.93 and 10.10
-  with one suite slot held by a sibling seat throughout — a 0.7s spread read
-  across a threefold move in the load average, which is as plainly as these
-  readings have ever said that the spread, when there is one, is not that
-  number. The cold reading is
+  **`make tree-check` is all of them, 81-89s warm over three runs and
+  92.6s cold** (MEASURED 2026-10-31, ranger-base-3e68k: 87s, 81s and 89s in
+  that order, at a one-minute load average of 25.12, 27.90 and 26.08 with
+  both suite slots held by sibling seats for the first two runs and one for
+  the third — the merge-back that landed ranger-base-pyl22's new pins onto a
+  main that had meanwhile landed ranger-base-bm6j8's, so the first reading of
+  the class at its real size. The same command, same code, an hour earlier
+  read 62s, 127s and 146s at a load of 23.45, 13.98 and 91.60 — an 84s
+  spread against this 8s one, so what the spread tracks is how much the load
+  MOVES and not how high it is. Price it at ninety seconds when the box is
+  steady, whatever level it is steady at, and expect two and a half minutes
+  when it is not; the pins those two beads added cost under a second between
+  them, so neither spread is theirs. Earlier the same day the command read
+  74.5-172.1s at a load of 57-95 (ranger-base-pyl22) and 57.0-57.7s at a load
+  of 10-31 (ranger-base-v3tt4), over classes smaller by what those two beads
+  added. The cold reading is
   ranger-base-g6sb1's, 2026-10-04, when the same command read 46.5-77.2s
   warm; it was 14.9-16.5s before internal/treepins joined, and 5.1s over a
   small fraction of today's class when ranger-base-ik44f wrote this line.

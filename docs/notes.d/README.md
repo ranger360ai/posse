@@ -12,6 +12,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-sczjy](ranger-base-sczjy.md) — A relative runtime home is made absolute at the one read (ranger-base-sczjy) — 2026-10-31
 - [ranger-base-qlxb5](ranger-base-qlxb5.md) — Rex in the multiplexer slot: four decisions ADR 0076 §2 left to the occupant (ranger-base-qlxb5) — 2026-10-31
 - [ranger-base-q5gc2](ranger-base-q5gc2.md) — The session record names its multiplexer, and one method ADR 0076 §2 does not list (ranger-base-q5gc2) — 2026-10-31
+- [ranger-base-pyl22](ranger-base-pyl22.md) — The sixth spelling of a walk root: one hop at the call site, not a third hand register (ranger-base-pyl22) — 2026-10-31
 - [ranger-base-phq39](ranger-base-phq39.md) — Selecting Rex: one instance key, two gates, and what the live run measured (ranger-base-phq39) — 2026-10-31
 - [ranger-base-nc91t](ranger-base-nc91t.md) — Relaunch's two readings are the slot's listing, and the second one is why holdsRecorded alone was not the fix (ranger-base-nc91t) — 2026-10-31
 - [ranger-base-lf6it](ranger-base-lf6it.md) — bob self-updated under the probe, 60 seconds in — and the probe still measured 2.0.5 (ranger-base-lf6it) — 2026-10-31
@@ -35,6 +36,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-6r1rf](ranger-base-6r1rf.md) — bob reads the posse namespace, symlinks and all — and is in drift the day it ships (ranger-base-6r1rf) — 2026-10-31
 - [ranger-base-4dhcw](ranger-base-4dhcw.md) — The verdict file has one subject, and not every run can speak for it (ranger-base-4dhcw) — 2026-10-31
 - [ranger-base-49v2h](ranger-base-49v2h.md) — The typed line pins the runtime-home var, and the refused write was never the lock (ranger-base-49v2h) — 2026-10-31
+- [ranger-base-3e68k](ranger-base-3e68k.md) — ranger-base-3e68k — merging two beads that both appended to the door register's head comment — 2026-10-31
 - [ranger-base-3a5z7](ranger-base-3a5z7.md) — The channel suffix is grok's update-check cache, so §6c compares the release (ranger-base-3a5z7) — 2026-10-31
 - [ranger-base-2zkcy](ranger-base-2zkcy.md) — Two more grok project-config channels, and the one entry no key can describe (ranger-base-2zkcy) — 2026-10-31
 - [ranger-base-2cttm](ranger-base-2cttm.md) — A context deadline is half a bound: the WaitDelay census, the ruling, and the pin (ranger-base-2cttm) — 2026-10-31
