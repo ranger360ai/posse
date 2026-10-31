@@ -264,18 +264,108 @@ package treepins
 //	                                              make register-check
 //	                                              (ranger-base-0ckgm)
 //
-// and `make tree-check` is all of them — 73-132s on this box over three warm
-// runs at sixty-four pins and fourteen doors (MEASURED 2026-10-31,
-// ranger-base-0ckgm: 73.4s, 105.8s and 131.9s in that order, with a
+// and TWELVE more, which arrived in one landing because the DERIVATION was
+// widened rather than a spelling pinned (ranger-base-8wxbn). Of the 39
+// walker calls in internal/treepins' tests, MEASURED 2026-10-31, 23 rooted
+// at a relative literal the rule read and 16 did not — and twelve tree-wide
+// pins were sitting behind four of those spellings, undoored, reachable only
+// by the 589.965s package run. Three of the four are a root that never
+// leaves the function body (a local, a package const, a range variable over
+// a literal list) and twdRelEnv now reads all three; the fourth takes the
+// root as an ABSOLUTE path from repoRoot() and hands it to a helper that
+// walks a subtree of it, which is a second rule and a second fence
+// (twdTreepinsRootHelper). No new door: every one of the twelve went into
+// the door whose subject it already shared.
+//
+//	TestADRRecordsNameTheLivePackageDirectory     make adr-check
+//	TestADRSweptRecordsStillCiteTheLiveDirectory  make adr-check
+//	                                              (both read every record in
+//	                                              docs/adr through a LOCAL
+//	                                              assigned filepath.Join of
+//	                                              literals)
+//	TestKeychainReadIsExecdFromExactlyOneFile     make corpus-check
+//	                                              (a RANGE VARIABLE over
+//	                                              []string{"internal","cmd"},
+//	                                              in the test body)
+//	TestQAEveryPosseTestFileIsSharedOrInANamedArm make corpus-check
+//	TestQAEveryMakefileDoorPinIsReachableInTheDefaultArm
+//	                                              make corpus-check
+//	TestQAEverySuiteArmTypeChecks                 make corpus-check
+//	                                              (all three read every test
+//	                                              file in internal/posse
+//	                                              through the package CONST
+//	                                              armPkgDir)
+//	TestQANoEntryPointRunsGoTestOnTheDefaultTimeout
+//	                                              make scripts-check
+//	                                              (a range variable over a
+//	                                              literal list of Joins —
+//	                                              scripts/*.sh and
+//	                                              .github/workflows/*.yml)
+//	TestWallRenderSourcesNameEveryRenderedDoNotEditSite
+//	                                              make corpus-check
+//	TestEveryRenderedDoNotEditSiteNamesItsRenderer
+//	                                              make corpus-check
+//	TestLaunchCheckSourcesNameEveryParityDeciderAndRuntimeDeclarer
+//	                                              make corpus-check
+//	TestLaunchCheckSourcesHoldNothingTheDerivationCannotSee
+//	                                              make corpus-check
+//	                                              (all four take the root
+//	                                              from repoRoot() and walk
+//	                                              internal/posse's sources
+//	                                              through it)
+//	TestTreePinsRunFromModuleRoot                 make register-check
+//	                                              (the marginal one, and the
+//	                                              register's own floor: its
+//	                                              subject is the cwd
+//	                                              TestMain installs, which
+//	                                              is what makes every
+//	                                              relative literal in this
+//	                                              package a TREE path — and
+//	                                              a _test.go file added at
+//	                                              the module root reds it,
+//	                                              which is nobody's bead)
+//
+// (The spellings that are still unread, said out loud so the next reader
+// does not have to census them again. A walk root that arrives as a
+// PARAMETER — arParse, cgScan, scanRealBdCallSites — is refused on purpose:
+// following it would be the interprocedural constant propagation
+// twdTestFiles' head comment turns down, and ranger-base-0ckgm pins that
+// spelling where it is written instead. Five pins over arParse and cgScan
+// are undoored behind it today, which is ranger-base-pyl22. A root parsed
+// out of the Makefile is unread too (gofmtdoor_qa_test.go) and costs
+// nothing: that test also walks ".", so it is derived and doored on that.
+// And two fixture roots are correctly unseen.)
+//
+// and `make tree-check` is all of them — 57.0-57.7s on this box over three
+// warm runs at seventy-six pins and fourteen doors (MEASURED 2026-10-31,
+// ranger-base-v3tt4: 57.6s, 57.0s and 57.7s in that order, with a one-minute
+// load average of 31.41, 13.93 and 10.10 before the three and one suite slot
+// held by a sibling seat throughout. This is the merge-back that landed the
+// twelve above onto a main that had meanwhile landed the two before them, so
+// it is the first reading of the class at its real size — and a 0.7s spread
+// read across a threefold move in the load average, which is the tightest
+// any reading of this command has produced and says from the other side what
+// the three wide readings below say: the box moved and the wall did not, so a
+// spread, when there is one, is not that number. ranger-base-8wxbn measured
+// the twelve on its own branch, at seventy-four, and read 56-112s there;
+// what that reading is still good for is their COST, because the pins are
+// the same twelve. Eleven of them report 0.70s between them, and the
+// twelfth, TestQAEverySuiteArmTypeChecks, reports 0.14s on its own line
+// because its three parallel subtests build one suite arm each — measured
+// alone it is 2.44s, 2.50s and 2.72s of parallel subtest, so about 2.7s of
+// wall. Three seconds of this command is the twelve new pins and the rest is
+// the box)
+// — which is the command a
+// seat types after a filtered run. (It was 73-132s at sixty-four pins
+// (ranger-base-0ckgm: 73.4s, 105.8s and 131.9s in that order, with a
 // one-minute load average of 45.88, 19.41 and 31.54 before the three and
 // BOTH suite slots held by sibling seats throughout — a 58s spread read
 // with the load average never below 19, and ordered by nothing in it: the
 // fastest run is the one at the HIGHEST load and the slowest the one in the
 // middle, which is the same conclusion the two other wide readings below
-// reached from the other side. The two pins this bead added report
-// 0.03s and 0.27s, so none of that spread is theirs) — which is the
-// command a
-// seat types after a filtered run. (It was 76-82s at sixty-two pins
+// reached from the other side. The two pins it added report 0.03s and 0.27s,
+// so none of that spread is theirs);
+// 76-82s at sixty-two pins
 // (ranger-base-2cttm: 82s, 81s and 76s in that order, with a one-minute load
 // average of 15.86, 10.32 and 11.91 before the three and no sibling suite
 // slot held — the tightest spread any reading of this command has produced,
@@ -504,6 +594,20 @@ var twdPinVars = func() []string {
 // see. That is not hypothetical: the tree carried qspRepoRoot, byte-for-byte
 // identical, and three tree-wide pins hid behind it (ranger-base-sx2dq).
 const twdRootHelper = "qibRepoRoot"
+
+// twdTreepinsRootHelper is the ONE repo-root helper internal/treepins' tests
+// may use. Same fence as twdRootHelper, one package over, and it is here for
+// a reason the posse half does not have: this package's TestMain chdirs the
+// binary to the repo root, so a pin that needs the root as an ABSOLUTE path
+// — to hand to a helper that walks a subtree of it — takes it from
+// repoRoot(), and the walk is then rooted at that helper's PARAMETER, which
+// the relative-literal rule cannot read. Four pins are spelled exactly that
+// way (launchchecksources_qa_test.go, wallrendersources_qa_test.go) and sat
+// outside the class for as long as the rule was literals only
+// (ranger-base-8wxbn). So the derivation reads the HELPER CALL rather than
+// the root's value — which is bounded only as long as there is one helper,
+// the same bargain ranger-base-sx2dq struck next door.
+const twdTreepinsRootHelper = "repoRoot"
 
 // twdVar returns the `|`-separated test names a Makefile variable holds.
 func twdVar(t *testing.T, makefile, name string) []string {
@@ -855,6 +959,16 @@ type twdFunc struct {
 	// tree. What they read is outside Go, so they are dispositioned rather
 	// than derived (twdIndirect, twdExecDispositions).
 	execTree []string
+	// treeRoot: the body calls repoRoot, internal/treepins' ONE repo-root
+	// helper. Over there the root is an absolute path handed to a walking
+	// helper, so the CALL is the evidence and not the value — see
+	// twdTreepinsRootHelper.
+	treeRoot bool
+	// getwdClimb: the body climbs from os.Getwd() looking for go.mod. That
+	// is the spelling repoRoot itself is written in, and therefore the
+	// spelling a twin of it would be written in — internal/treepins'
+	// equivalent of `caller && ascent` next door.
+	getwdClimb bool
 	// shellRoot: the body asks GIT for this repo's root —
 	// `exec.Command("git", "rev-parse", "--show-toplevel").Output()` — and
 	// keeps the answer. A third spelling of the root, invisible to every
@@ -989,6 +1103,256 @@ func twdRootExprs(body *ast.BlockStmt) func(ast.Expr) bool {
 	return isRoot
 }
 
+// twdRelEnv is what an identifier naming a relative tree path can be read
+// THROUGH: the names, in one package and one function body, that hold such a
+// path or a []string of them.
+//
+// WHY THIS EXISTS, AND WHAT IT DELIBERATELY IS NOT. twdRelTreePath below
+// reads a literal and nothing else, and twdTestFiles' head comment says why:
+// following a root into another function is interprocedural constant
+// propagation, a second thing to be wrong about. That refusal stands.
+// Nothing here crosses a function boundary, and a walk rooted at a PARAMETER
+// is still invisible to this rule by design — ranger-base-0ckgm owns that
+// spelling and pins it where it is written.
+//
+// What it buys is the three spellings that never leave the body. MEASURED
+// 2026-10-31 (ranger-base-8wxbn): of the 39 walker calls in
+// internal/treepins/*_test.go, 23 rooted at a literal the old rule read and
+// 16 did not —
+//
+//	dir := filepath.Join("docs", "adr"); os.ReadDir(dir)   a local
+//	const armPkgDir = "internal/posse"; os.ReadDir(...)    a package const
+//	for _, root := range []string{"cmd", "internal"}       a range variable
+//	for _, d := range arRoots                              over a literal list
+//
+// — eight of those sixteen, carrying eight tree-wide pins that had no door.
+// The rest are a parameter (ranger-base-0ckgm's), a root parsed out of the
+// Makefile (gofmtdoor_qa_test.go, whose test also walks "." and is derived
+// and doored on that), the repo-root helper below, and two fixture roots
+// that are correctly unseen.
+type twdRelEnv struct {
+	// val: an identifier -> every relative tree path it can hold.
+	val map[string][]string
+	// list: an identifier -> the element paths of the []string it holds.
+	// Separate from val on purpose: `for _, c := range "docs"` ranges over
+	// a string's RUNES, so a range variable may only be bound from
+	// something this rule knows is a slice of paths.
+	list map[string][]string
+}
+
+func twdNewRelEnv() *twdRelEnv {
+	return &twdRelEnv{val: map[string][]string{}, list: map[string][]string{}}
+}
+
+func (e *twdRelEnv) clone() *twdRelEnv {
+	out := twdNewRelEnv()
+	for k, v := range e.val {
+		out.val[k] = v
+	}
+	for k, v := range e.list {
+		out.list[k] = v
+	}
+	return out
+}
+
+// twdRelTreePaths returns every relative tree path an expression can
+// evaluate to, reading identifiers through env. A literal resolves exactly as
+// twdRelTreePath resolves it; anything env cannot name resolves to nothing,
+// which is what keeps a parameter, a t.TempDir() and a `..` climb out.
+func twdRelTreePaths(e ast.Expr, env *twdRelEnv) []string {
+	switch v := e.(type) {
+	case *ast.Ident:
+		return env.val[v.Name]
+	case *ast.CallExpr:
+		sel, ok := v.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return nil
+		}
+		if x, ok := sel.X.(*ast.Ident); !ok || x.Name != "filepath" {
+			return nil
+		}
+		switch sel.Sel.Name {
+		case "Clean", "ToSlash", "FromSlash":
+			if len(v.Args) == 1 {
+				return twdRelTreePaths(v.Args[0], env)
+			}
+		case "Join":
+			if len(v.Args) == 0 {
+				return nil
+			}
+			firsts := twdRelTreePaths(v.Args[0], env)
+			if len(firsts) == 0 {
+				return nil
+			}
+			// The trailing elements are read exactly as twdRelTreePath reads
+			// them — a string literal, taken as written — plus an identifier
+			// env knows holds exactly one path. A variable it does not know
+			// is the whole of this rule's precision: the root is then no
+			// longer a tree path it can claim to know, which is what keeps
+			// filepath.Join(root, d) out.
+			var tail []string
+			for _, a := range v.Args[1:] {
+				if lit, ok := a.(*ast.BasicLit); ok && lit.Kind == token.STRING {
+					str, err := strconv.Unquote(lit.Value)
+					if err != nil {
+						return nil
+					}
+					tail = append(tail, filepath.ToSlash(str))
+					continue
+				}
+				id, ok := a.(*ast.Ident)
+				if !ok || len(env.val[id.Name]) != 1 {
+					return nil
+				}
+				tail = append(tail, env.val[id.Name][0])
+			}
+			var out []string
+			for _, f := range firsts {
+				out = append(out, strings.Join(append([]string{f}, tail...), "/"))
+			}
+			return out
+		}
+		return nil
+	}
+	if rel, ok := twdRelTreePath(e); ok {
+		return []string{rel}
+	}
+	return nil
+}
+
+// twdRelTreeList returns the element paths of a []string of relative tree
+// paths: a `[]string{...}` composite literal, or an identifier env knows
+// holds one.
+//
+// One unreadable element makes the whole list unknown, rather than the
+// readable ones standing for it — a range over that list walks the element
+// the rule could not read too, so claiming the list would be claiming a root
+// this file does not know.
+func twdRelTreeList(e ast.Expr, env *twdRelEnv) []string {
+	switch v := e.(type) {
+	case *ast.Ident:
+		return env.list[v.Name]
+	case *ast.CompositeLit:
+		at, ok := v.Type.(*ast.ArrayType)
+		if !ok || at.Len != nil {
+			return nil
+		}
+		if id, ok := at.Elt.(*ast.Ident); !ok || id.Name != "string" {
+			return nil
+		}
+		var out []string
+		for _, el := range v.Elts {
+			paths := twdRelTreePaths(el, env)
+			if len(paths) == 0 {
+				return nil
+			}
+			out = append(out, paths...)
+		}
+		return out
+	}
+	return nil
+}
+
+// twdBindRel binds one identifier to whatever relative tree paths an
+// expression spells — as a value, and, if it spells a []string of them, as a
+// list.
+func twdBindRel(env *twdRelEnv, name string, rhs ast.Expr) {
+	if name == "_" {
+		return
+	}
+	if paths := twdRelTreePaths(rhs, env); len(paths) > 0 {
+		env.val[name] = paths
+	}
+	if elems := twdRelTreeList(rhs, env); len(elems) > 0 {
+		env.list[name] = elems
+	}
+}
+
+// twdPkgRelEnv reads one package's FILE-SCOPE consts and vars for relative
+// tree paths: `const armPkgDir = "internal/posse"`, `var arRoots =
+// []string{"internal", "cmd"}`. Both spellings root a walk in this package
+// today, and neither is a function boundary — the declaration and its value
+// are in a file the rule is already parsing. It is built over every file at
+// once because a const in one file roots a walk in another, which armPkgDir
+// does.
+func twdPkgRelEnv(files []*ast.File) *twdRelEnv {
+	env := twdNewRelEnv()
+	// Two passes, so a declaration that reads one written below it binds.
+	for i := 0; i < 2; i++ {
+		for _, file := range files {
+			for _, decl := range file.Decls {
+				gd, ok := decl.(*ast.GenDecl)
+				if !ok || (gd.Tok != token.CONST && gd.Tok != token.VAR) {
+					continue
+				}
+				for _, spec := range gd.Specs {
+					vs, ok := spec.(*ast.ValueSpec)
+					if !ok || len(vs.Names) != len(vs.Values) {
+						continue
+					}
+					for j, name := range vs.Names {
+						twdBindRel(env, name.Name, vs.Values[j])
+					}
+				}
+			}
+		}
+	}
+	return env
+}
+
+// twdBodyRelEnv extends the package-scope env with ONE function body's own
+// locals and range variables. Two passes, for the same reason twdRootExprs
+// makes two: `dir := ...` before the walk and after it both bind.
+//
+// It stays inside the body. A parameter is never bound — that is the one
+// spelling this rule refuses to read, and refusing it is what keeps
+// arParse(t, root, dirs) out of the class whatever its callers pass.
+func twdBodyRelEnv(body *ast.BlockStmt, pkg *twdRelEnv) *twdRelEnv {
+	env := pkg.clone()
+	for i := 0; i < 2; i++ {
+		ast.Inspect(body, func(n ast.Node) bool {
+			switch st := n.(type) {
+			case *ast.AssignStmt:
+				// `x := expr` and `x, err := expr` both bind x, the same
+				// shape twdRootExprs reads.
+				if len(st.Rhs) == 1 && len(st.Lhs) >= 1 {
+					if id, ok := st.Lhs[0].(*ast.Ident); ok {
+						twdBindRel(env, id.Name, st.Rhs[0])
+					}
+					return true
+				}
+				if len(st.Lhs) != len(st.Rhs) {
+					return true
+				}
+				for j, l := range st.Lhs {
+					if id, ok := l.(*ast.Ident); ok {
+						twdBindRel(env, id.Name, st.Rhs[j])
+					}
+				}
+			case *ast.ValueSpec:
+				if len(st.Names) != len(st.Values) {
+					return true
+				}
+				for j, name := range st.Names {
+					twdBindRel(env, name.Name, st.Values[j])
+				}
+			case *ast.RangeStmt:
+				// The VALUE of a range over a []string of tree paths — not
+				// the Key, which is an index.
+				id, ok := st.Value.(*ast.Ident)
+				if !ok {
+					return true
+				}
+				if elems := twdRelTreeList(st.X, env); len(elems) > 0 {
+					env.val[id.Name] = elems
+				}
+			}
+			return true
+		})
+	}
+	return env
+}
+
 // twdTestFiles lists one package's test files.
 //
 // THE GLOBS ARE SPELLED OUT, one literal per package, rather than composed
@@ -1041,19 +1405,27 @@ func twdParseDir(t *testing.T, pkg string) (map[string]*twdFunc, int) {
 	t.Helper()
 	paths := twdTestFiles(t, pkg)
 	fset := token.NewFileSet()
-	out := map[string]*twdFunc{}
-	tests := 0
+	files := make([]*ast.File, 0, len(paths))
 	for _, path := range paths {
 		file, err := parser.ParseFile(fset, path, nil, 0)
 		if err != nil {
 			t.Fatalf("parse %s: %v", path, err)
 		}
+		files = append(files, file)
+	}
+	// The file-scope env over EVERY file before any body is read: a const
+	// declared in one file roots a walk in another (armPkgDir does), so this
+	// cannot be built one file at a time.
+	env := twdPkgRelEnv(files)
+	out := map[string]*twdFunc{}
+	tests := 0
+	for i, file := range files {
 		for _, decl := range file.Decls {
 			fn, ok := decl.(*ast.FuncDecl)
 			if !ok || fn.Recv != nil || fn.Body == nil {
 				continue
 			}
-			f := twdAnalyze(fn, fmt.Sprintf("%s:%d", path, fset.Position(fn.Pos()).Line))
+			f := twdAnalyze(fn, fmt.Sprintf("%s:%d", paths[i], fset.Position(fn.Pos()).Line), env)
 			if f.test {
 				tests++
 			}
@@ -1068,19 +1440,23 @@ func twdParseDir(t *testing.T, pkg string) (map[string]*twdFunc, int) {
 // so the fixture-driven mutation check below drives the same code the tree is
 // derived with — a second copy of the rule, written to be easy to test, is a
 // copy that can agree with the fixture and disagree with the tree.
-func twdAnalyze(fn *ast.FuncDecl, where string) *twdFunc {
+func twdAnalyze(fn *ast.FuncDecl, where string, pkg *twdRelEnv) *twdFunc {
 	f := &twdFunc{
 		name:  fn.Name.Name,
 		where: where,
 		test:  strings.HasPrefix(fn.Name.Name, "Test"),
 		calls: map[string]bool{},
 	}
+	env := twdBodyRelEnv(fn.Body, pkg)
+	var getwd, dirCall, goMod bool
 	ast.Inspect(fn.Body, func(n ast.Node) bool {
 		if lit, ok := n.(*ast.BasicLit); ok && lit.Kind == token.STRING {
 			if v, err := strconv.Unquote(lit.Value); err == nil {
 				switch filepath.ToSlash(v) {
 				case "../..", "../../":
 					f.ascent = true
+				case "go.mod":
+					goMod = true
 				}
 			}
 		}
@@ -1100,14 +1476,23 @@ func twdAnalyze(fn *ast.FuncDecl, where string) *twdFunc {
 			if fun.Name == twdRootHelper {
 				f.root = true
 			}
+			if fun.Name == twdTreepinsRootHelper {
+				f.treeRoot = true
+			}
 		case *ast.SelectorExpr:
 			if twdWalkers[fun.Sel.Name] {
 				f.walk = true
 				if len(call.Args) > 0 {
-					if rel, ok := twdRelTreePath(call.Args[0]); ok {
+					for _, rel := range twdRelTreePaths(call.Args[0], env) {
 						f.relEnum = append(f.relEnum, fun.Sel.Name+"("+rel+")")
 					}
 				}
+			}
+			if x, ok := fun.X.(*ast.Ident); ok && x.Name == "os" && fun.Sel.Name == "Getwd" {
+				getwd = true
+			}
+			if x, ok := fun.X.(*ast.Ident); ok && x.Name == "filepath" && fun.Sel.Name == "Dir" {
+				dirCall = true
 			}
 			if x, ok := fun.X.(*ast.Ident); ok && x.Name == "runtime" && fun.Sel.Name == "Caller" {
 				f.caller = true
@@ -1123,6 +1508,7 @@ func twdAnalyze(fn *ast.FuncDecl, where string) *twdFunc {
 		return true
 	})
 	f.rootedWalk = f.root && f.walk
+	f.getwdClimb = getwd && dirCall && goMod
 	if !f.root {
 		isRoot := twdRootExprs(fn.Body)
 		ast.Inspect(fn.Body, func(n ast.Node) bool {
@@ -1437,13 +1823,34 @@ var twdDoorHolders = map[string]string{
 }
 
 // twdTreepinsTreeWideTests returns the tests in internal/treepins whose
-// subject is the TREE: the derived twenty, plus the registered indirect ones.
+// subject is the TREE: the derived ones, plus the registered indirect ones.
+//
+// TWO RULES HERE TOO, and the second one arrived the same way the posse
+// half's second did (ranger-base-8wxbn). ENUMERATION is the first: a
+// walker rooted at a relative tree path, now read through twdRelEnv so a
+// local, a package const and a range variable over a literal list count as
+// spelling one. The second is the ROOT HELPER: a test that reaches
+// repoRoot() AND reaches a walker is reading the tree through an absolute
+// root, which the first rule cannot see at all.
+//
+// Two reaches INTERSECTED rather than one flag, because here the root and
+// the walk are in different functions: the test takes the root, and the
+// helper it hands it to does the walking (lcsSources, wrsRenderSites). That
+// is also the residual, said out loud — a test that took the root for one
+// purpose and separately called something that walks a FIXTURE would be a
+// false member. MEASURED 2026-10-31: no test in the package is in that
+// shape, the two that call repoRoot() without reaching a walker
+// (TestLaunchCheckSourcesAllExist, TestWallRenderSourcesAllExist) stay out,
+// and what bounds the rule is the fence — one repo-root helper, held by
+// TestQAOneRepoRootHelperInTheTestPackage.
 func twdTreepinsTreeWideTests(t *testing.T) (names []string, derived []string, funcs int) {
 	t.Helper()
 	all, funcs := twdParseTreepins(t)
 	reaches := twdReach(all, func(f *twdFunc) bool { return len(f.relEnum) > 0 })
+	rootReach := twdReach(all, func(f *twdFunc) bool { return f.treeRoot })
+	walkReach := twdReach(all, func(f *twdFunc) bool { return f.walk })
 	for name, f := range all {
-		if f.test && reaches[name] {
+		if f.test && (reaches[name] || (rootReach[name] && walkReach[name])) {
 			derived = append(derived, name)
 		}
 	}
@@ -1585,6 +1992,32 @@ func outer() { inner() }
 func TestX(t *testing.T) { outer() }`, true},
 		{"a helper that enumerates nothing", `func helper() { os.ReadFile("go.mod") }
 func TestX(t *testing.T) { helper() }`, false},
+		// The three spellings twdRelEnv reads (ranger-base-8wxbn), and the
+		// ones it must still refuse beside them.
+		{"a local assigned a Join of literals", `func TestX(t *testing.T) { dir := filepath.Join("docs", "adr"); os.ReadDir(dir) }`, true},
+		{"a local assigned a literal, walked before the assignment is read", `func TestX(t *testing.T) { os.ReadDir(dir); dir := "scripts" }`, true},
+		{"a package const", `const pkgDir = "internal/posse"
+func TestX(t *testing.T) { os.ReadDir(pkgDir) }`, true},
+		{"a Join through a const element", `const adr = "adr"
+func TestX(t *testing.T) { os.ReadDir(filepath.Join("docs", adr)) }`, true},
+		{"a range variable over an inline literal list", `func TestX(t *testing.T) { for _, root := range []string{"cmd", "internal"} { filepath.WalkDir(root, nil) } }`, true},
+		{"a range variable over a package-level literal list", `var roots = []string{"internal", "cmd"}
+func TestX(t *testing.T) { for _, root := range roots { filepath.Walk(root, nil) } }`, true},
+		{"a range variable over a list of Joins", `func TestX(t *testing.T) { for _, g := range []string{filepath.Join("scripts", "*.sh")} { filepath.Glob(g) } }`, true},
+		// A walk root that arrives as a PARAMETER stays unread, which is
+		// the refusal twdTestFiles' head comment records and the spelling
+		// ranger-base-0ckgm pins where it is written. The literal at the
+		// call site is deliberately not followed.
+		{"a walk root that arrives as a parameter is not read", `func helper(root string) { filepath.Walk(root, nil) }
+func TestX(t *testing.T) { helper(".") }`, false},
+		{"a range variable over a list carrying a variable", `func TestX(t *testing.T) { d := t.TempDir(); for _, root := range []string{"cmd", d} { filepath.WalkDir(root, nil) } }`, false},
+		// Why val and list are two maps: ranging a STRING yields its runes,
+		// so a range variable may only be bound from a slice of paths.
+		{"a range variable over a string literal is not a tree path", `func TestX(t *testing.T) { for _, root := range "docs" { filepath.WalkDir(root, nil) } }`, false},
+		{"a local assigned a scratch directory", `func TestX(t *testing.T) { dir := t.TempDir(); os.ReadDir(dir) }`, false},
+		{"a local assigned a climb out of the tree", `func TestX(t *testing.T) { dir := filepath.Join("..", ".."); os.ReadDir(dir) }`, false},
+		{"a local assigned from a helper's return", `func root() string { return "." }
+func TestX(t *testing.T) { dir := root(); os.ReadDir(dir) }`, false},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			if got := twdFixtureEnumerates(t, c.src); got != c.want {
@@ -1604,8 +2037,8 @@ func TestX(t *testing.T) { helper() }`, false},
 			n++
 		}
 	}
-	if n < 14 {
-		t.Fatalf("the enumeration rule finds %d tree-wide tests in %s (23 on 2026-10-04) — the key has stopped matching and the register is deriving a class that is missing members", n, twdTreepinsPkg)
+	if n < 25 {
+		t.Fatalf("the enumeration rule finds %d tree-wide tests in %s (35 on 2026-10-31, 23 on 2026-10-04) — the key has stopped matching and the register is deriving a class that is missing members", n, twdTreepinsPkg)
 	}
 	dead := twdReach(all, func(f *twdFunc) bool { return false })
 	if len(dead) != 0 {
@@ -1625,13 +2058,14 @@ func twdFixtureEnumerates(t *testing.T, src string) bool {
 	if err != nil {
 		t.Fatalf("parse fixture: %v\n%s", err, src)
 	}
+	env := twdPkgRelEnv([]*ast.File{file})
 	all := map[string]*twdFunc{}
 	for _, decl := range file.Decls {
 		fn, ok := decl.(*ast.FuncDecl)
 		if !ok || fn.Body == nil {
 			continue
 		}
-		f := twdAnalyze(fn, "fixture")
+		f := twdAnalyze(fn, "fixture", env)
 		all[f.name] = f
 	}
 	return twdReach(all, func(f *twdFunc) bool { return len(f.relEnum) > 0 })["TestX"]
@@ -1782,8 +2216,15 @@ func TestQAEveryTreeWidePinHasADoor(t *testing.T) {
 	if tpFuncs < 200 {
 		t.Fatalf("only %d test functions parsed under %s — the walk this arm derives the second half of the class from found nothing", tpFuncs, twdTreepinsPkg)
 	}
-	if len(tpDerived) < 14 {
-		t.Fatalf("only %d tree-wide tests derived in %s (23 on 2026-10-04, of which 20 predate ranger-base-g6sb1's own arms) — the enumeration rule has stopped matching, and this arm is now deriving a class that is missing members: %v", len(tpDerived), twdTreepinsPkg, tpDerived)
+	if len(tpDerived) < 30 {
+		t.Fatalf("only %d tree-wide tests derived in %s (40 on 2026-10-31, 23 on 2026-10-04 of which 20 predate ranger-base-g6sb1's own arms) — the enumeration rule has stopped matching, and this arm is now deriving a class that is missing members: %v", len(tpDerived), twdTreepinsPkg, tpDerived)
+	}
+	// And the root-helper half on its own, for the reason the posse half has
+	// the same check one screen up: the two rules fail apart, and a union
+	// floor stays green on the enumeration half alone while every pin that
+	// takes its root from repoRoot() goes quiet (ranger-base-8wxbn).
+	if rootOnly := twdTreepinsRootOnlyTests(t); len(rootOnly) < 1 {
+		t.Errorf("no test in %s is a member only by reaching %s and a walker (five were on 2026-10-31: root_test.go's own arm, and the two pairs over internal/posse's sources) — half the second package's class rule is matching nothing", twdTreepinsPkg, twdTreepinsRootHelper)
 	}
 	t.Logf("parsed %d test functions under %s, %d of them tree-wide (%d derived, %d registered indirect)", tpFuncs, twdTreepinsPkg, len(tpNames), len(tpDerived), len(twdIndirect))
 
@@ -1858,6 +2299,26 @@ func twdTestNames(t *testing.T, pkg string) map[string]bool {
 			out[name] = true
 		}
 	}
+	return out
+}
+
+// twdTreepinsRootOnlyTests is the root-helper half of the internal/treepins
+// class on its own: tests that are members ONLY because they reach
+// repoRoot() and a walker, with no relative-literal enumeration anywhere in
+// their reach.
+func twdTreepinsRootOnlyTests(t *testing.T) []string {
+	t.Helper()
+	all, _ := twdParseTreepins(t)
+	enum := twdReach(all, func(f *twdFunc) bool { return len(f.relEnum) > 0 })
+	rootReach := twdReach(all, func(f *twdFunc) bool { return f.treeRoot })
+	walkReach := twdReach(all, func(f *twdFunc) bool { return f.walk })
+	var out []string
+	for name, f := range all {
+		if f.test && !enum[name] && rootReach[name] && walkReach[name] {
+			out = append(out, name)
+		}
+	}
+	sort.Strings(out)
 	return out
 }
 
@@ -1948,6 +2409,49 @@ func TestQAOneRepoRootHelperInTheTestPackage(t *testing.T) {
 	sort.Strings(shelled)
 	for _, sh := range shelled {
 		t.Errorf("%s asks git for this repo's root and keeps the answer — `exec.Command(\"git\", \"rev-parse\", \"--show-toplevel\").Output()` is a root no rule in this file can see, so a pin spelled with it is outside the tree-wide class and gets no door. Take the root from %s and, if the reading needs a checkout, skip with qibSkipUnlessCheckout. (ranger-base-xndgk FINDING 5: four pins were spelled this way, one of them a census of every tracked path in the repository.)", sh, twdRootHelper)
+	}
+
+	// AND THE SAME FENCE ONE PACKAGE OVER (ranger-base-8wxbn). Most pins in
+	// internal/treepins read a relative literal and name no helper at all,
+	// because that package's TestMain chdirs the binary to the repo root.
+	// Five do not: they take the root as an ABSOLUTE path from repoRoot()
+	// and hand it to a helper that walks a subtree of it, and the
+	// derivation finds them by reading that CALL. So a second repo-root
+	// helper there is a class member nothing can see — exactly what
+	// qspRepoRoot was next door, and the reason this pin exists at all.
+	tp, tpFuncs := twdParseTreepins(t)
+	if tpFuncs < 200 {
+		t.Fatalf("only %d test functions parsed under %s — the walk the second half of this pin reads is finding nothing", tpFuncs, twdTreepinsPkg)
+	}
+	if _, ok := tp[twdTreepinsRootHelper]; !ok {
+		t.Fatalf("%s's tests no longer declare %s — half that package's class is derived from the call to it, so every pin spelled with it is now outside the class, gets no door, and nothing says so", twdTreepinsPkg, twdTreepinsRootHelper)
+	}
+	var tpTwins, tpHidden, tpShelled []string
+	for name, f := range tp {
+		if name == twdTreepinsRootHelper {
+			continue
+		}
+		if f.getwdClimb {
+			tpTwins = append(tpTwins, f.where+" "+name)
+		}
+		if f.handRolledTreeWalk {
+			tpHidden = append(tpHidden, f.where+" "+name)
+		}
+		if f.shellRoot {
+			tpShelled = append(tpShelled, f.where+" "+name)
+		}
+	}
+	sort.Strings(tpTwins)
+	sort.Strings(tpHidden)
+	sort.Strings(tpShelled)
+	for _, w := range tpTwins {
+		t.Errorf("%s climbs from os.Getwd() looking for go.mod — that is a second %s under another name, and every pin in %s spelled with it is outside the tree-wide class, so it gets no door and nothing says so. Call %s instead.", w, twdTreepinsRootHelper, twdTreepinsPkg, twdTreepinsRootHelper)
+	}
+	for _, h := range tpHidden {
+		t.Errorf("%s walks a tree from a hand-rolled climb to the repo root. In %s that is never needed — TestMain chdirs the binary to the root, so a relative literal IS a tree path — and a pin spelled that way is outside both rules of that package's class. Walk the relative path, or take the root from %s.", h, twdTreepinsPkg, twdTreepinsRootHelper)
+	}
+	for _, sh := range tpShelled {
+		t.Errorf("%s asks git for this repo's root and keeps the answer, in %s — stdout from a subprocess, which neither rule of that package's class can see, so the pin gets no door. Take the root from %s, or walk the relative path TestMain already put you at.", sh, twdTreepinsPkg, twdTreepinsRootHelper)
 	}
 }
 
