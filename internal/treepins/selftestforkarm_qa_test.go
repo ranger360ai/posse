@@ -253,13 +253,19 @@ var (
 )
 
 // sfUnswept — scripts whose assertion arms still decide through an exec'd
-// matcher. EMPTY since ranger-base-s8b4g swept the last thirteen: the shape
-// is now enforced everywhere in scripts/, so a new violation anywhere reds
-// this test without anybody editing anything. Do not add a row to it; the
-// fix is the one the failure message spells.
+// matcher, keyed by path relative to scripts/ like sfHit.file. EMPTY since
+// ranger-base-s8b4g swept the last thirteen: the shape is now enforced
+// everywhere in scripts/, so a new violation anywhere reds this test without
+// anybody editing anything. Do not add a row to it; the fix is the one the
+// failure message spells.
 var sfUnswept = map[string]string{}
 
 type sfHit struct {
+	// file is the script's path RELATIVE TO scripts/ — "verify-box.sh" for a
+	// top-level script, "lib/foo.sh" for one a directory down (ranger-base-qrjt2).
+	// It was filepath.Base, which collides between two directories; every
+	// message that prints it composes "scripts/%s", so both spellings read as a
+	// path. The controls below drive sfScanLines directly and pass "probe.sh".
 	file, text string
 	line       int
 	role       string // "verdict" (a violation), "message", "fixture", "heredoc"
@@ -511,25 +517,68 @@ func sfScanLines(file string, lines []string, wholeFile bool) ([]sfHit, *sfHit) 
 	return hits, opener
 }
 
+// sfScanScripts scans every *.sh under scripts/, at ANY depth, and keys each
+// hit by its path relative to scripts/.
+//
+// A WALK, not filepath.Glob("scripts/*.sh") (ranger-base-qrjt2, the same defect
+// ranger-base-80zqb fixed in a third census of this class). Two things were
+// wrong with the glob and only one of them was blindness. A glob pattern reads
+// ONE directory level, so a scripts/<dir>/foo.sh was scanned by nothing and its
+// forked matcher reddened nothing — and every hit was keyed by
+// filepath.Base(f), so two files of the same basename in different directories
+// would have COLLIDED in the result and in sfUnswept rather than merely been
+// missed. So the key moves to the relative path at the same time as the walk,
+// which is the whole of why the two changes are one: a walk alone would have
+// INTRODUCED the collision. For a flat scripts/ the two spellings are the same
+// bytes, and every "scripts/%s" message below still reads as a path.
+//
+// scripts/ is flat today — 56 entries, 0 of them directories, MEASURED
+// 2026-10-31 — so this is a claim made true about a directory shape nothing
+// pins, not a live miss. And deliberately NOT the other way of making it true:
+// an assertion that scripts/ holds no subdirectory is a layout ruling a QA pin
+// has no business making, and it reds on the first legitimate scripts/lib/.
+//
+// The whole-file decision stays keyed on the BASENAME, because it is about the
+// script's SHAPE and not its address: a verify-*.sh is assertions top to bottom
+// wherever in scripts/ it sits.
 func sfScanScripts(t *testing.T) []sfHit {
 	t.Helper()
-	files, err := filepath.Glob("scripts/*.sh")
-	if err != nil || len(files) < 20 {
-		t.Fatalf("globbed %d scripts (%v) — the scan is reading almost nothing, so a clean result is not evidence", len(files), err)
+	var files []string
+	// WalkDir walks in lexical order, which is the order Glob returned, so the
+	// floor message below and every census over the result read the same as they
+	// did.
+	if err := filepath.WalkDir("scripts", func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || !strings.HasSuffix(d.Name(), ".sh") {
+			return nil
+		}
+		rel, err := filepath.Rel("scripts", path)
+		if err != nil {
+			return err
+		}
+		files = append(files, rel)
+		return nil
+	}); err != nil {
+		t.Fatalf("walk scripts/: %v", err)
+	}
+	if len(files) < 20 {
+		t.Fatalf("walked %d script(s) under scripts/ (%v) — the scan is reading almost nothing, so a clean result is not evidence", len(files), files)
 	}
 	var all []sfHit
-	for _, f := range files {
-		base := filepath.Base(f)
-		b, err := os.ReadFile(f)
+	for _, rel := range files {
+		b, err := os.ReadFile(filepath.Join("scripts", rel))
 		if err != nil {
-			t.Fatalf("read %s: %v", f, err)
+			t.Fatalf("read scripts/%s: %v", rel, err)
 		}
 		// A verify-*.sh is assertions from top to bottom; cleanroom.sh is a
 		// preflight prober with the same shape and no --self-test to scope to.
+		base := filepath.Base(rel)
 		whole := strings.HasPrefix(base, "verify-") || base == "cleanroom.sh"
-		hits, open := sfScanLines(base, strings.Split(string(b), "\n"), whole)
+		hits, open := sfScanLines(rel, strings.Split(string(b), "\n"), whole)
 		if open != nil {
-			t.Errorf("scripts/%s:%d opens a heredoc that never closes, so the scan skipped every line after it and a clean result below is not evidence — either the line is not a redirection and the opener probe must be blinded to it, or the script is malformed:\n  %s", base, open.line, open.text)
+			t.Errorf("scripts/%s:%d opens a heredoc that never closes, so the scan skipped every line after it and a clean result below is not evidence — either the line is not a redirection and the opener probe must be blinded to it, or the script is malformed:\n  %s", rel, open.line, open.text)
 		}
 		all = append(all, hits...)
 	}

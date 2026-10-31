@@ -375,9 +375,20 @@ func TestQABoxCheckRemediatesNothing(t *testing.T) {
 // tab-indented lines are read: a mention in a Makefile comment is a mention,
 // not an invocation, and reading one as a target's recipe is how a script goes
 // on looking wired while nothing runs it.
-var bcRecipeScriptRe = regexp.MustCompile(`scripts/(verify-[a-z0-9-]+\.sh)`)
+//
+// The capture is the path RELATIVE TO scripts/, directory components and all,
+// because the census below walks the directory rather than reading its top
+// level (ranger-base-qrjt2). The two halves of a two-way census have to be
+// keyed alike: a scripts/<dir>/verify-foo.sh that some recipe DOES run would
+// otherwise be found by the walk, missed by a scan that only ever matched
+// `scripts/verify-…`, and reported as a check nothing invokes. A directory
+// component may not START with a dot, so `scripts/../verify-x.sh` captures no
+// climb as a component.
+var bcRecipeScriptRe = regexp.MustCompile(`scripts/((?:[A-Za-z0-9_-][A-Za-z0-9._-]*/)*verify-[a-z0-9-]+\.sh)`)
 
-// bcRecipeScripts is every verify-* script some Makefile recipe actually runs.
+// bcRecipeScripts is every verify-* script some Makefile recipe actually runs,
+// keyed by its path relative to scripts/ — the same key bcVerifyScripts
+// returns.
 func bcRecipeScripts(t *testing.T) map[string]bool {
 	t.Helper()
 	mk, err := os.ReadFile("Makefile")
@@ -396,21 +407,60 @@ func bcRecipeScripts(t *testing.T) map[string]bool {
 	return named
 }
 
+// bcVerifyScripts is every verify-*.sh under scripts/, at ANY depth, keyed by
+// its path relative to scripts/ — the same key bcRecipeScriptRe captures.
+//
+// A WALK, not filepath.Glob("scripts/verify-*.sh") (ranger-base-qrjt2, the
+// same defect ranger-base-80zqb fixed in the third census of this class). A
+// glob pattern reads ONE directory level, so the census below — whose whole
+// subject is "a check shipped as a script that no target invokes" — could not
+// see one shipped a directory down: on neither the recipe scan nor UNTARGETED,
+// and red nowhere, which is this test's own defect one level in.
+//
+// scripts/ is flat today — 56 entries, 0 of them directories, MEASURED
+// 2026-10-31 — so this is a claim made true about a directory shape nothing
+// pins, not a live miss. And deliberately NOT the other way of making it true:
+// an assertion that scripts/ holds no subdirectory is a layout ruling a QA pin
+// has no business making, and it reds on the first legitimate scripts/lib/.
+func bcVerifyScripts(t *testing.T) []string {
+	t.Helper()
+	var out []string
+	err := filepath.WalkDir("scripts", func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if name := d.Name(); !strings.HasPrefix(name, "verify-") || !strings.HasSuffix(name, ".sh") {
+			return nil
+		}
+		rel, err := filepath.Rel("scripts", path)
+		if err != nil {
+			return err
+		}
+		out = append(out, rel)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk scripts/: %v", err)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // The census over the DIRECTORY, which is the half a target-keyed reader
 // cannot do (ranger-base-bbl6r finding 1). Every scripts/verify-*.sh is either
 // some Makefile recipe's invocation, or listed in UNTARGETED with the reason
 // it has no target. Two-way: an UNTARGETED row for a script that does not
 // exist, or that a recipe does run, is a stale sentence nobody will delete.
 func TestQABoxCheckCensusCoversEveryVerifyScript(t *testing.T) {
-	scripts, err := filepath.Glob("scripts/verify-*.sh")
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Reader sanity before the arms trust it, in both directions: a glob that
-	// matched nothing and a recipe scan that matched nothing each make every
+	scripts := bcVerifyScripts(t)
+	// Reader sanity before the arms trust it, in both directions: a walk that
+	// found nothing and a recipe scan that matched nothing each make every
 	// arm below vacuous, and each is silent about it.
 	if len(scripts) < 15 {
-		t.Fatalf("only %d scripts/verify-*.sh found — the glob is broken, not the tree: %v", len(scripts), scripts)
+		t.Fatalf("only %d verify-*.sh found under scripts/ — the walk is broken, not the tree: %v", len(scripts), scripts)
 	}
 	named := bcRecipeScripts(t)
 	if len(named) < 12 {
@@ -419,15 +469,14 @@ func TestQABoxCheckCensusCoversEveryVerifyScript(t *testing.T) {
 
 	_, _, untargeted := bcCensus(t)
 
-	for _, path := range scripts {
-		base := filepath.Base(path)
+	for _, name := range scripts {
 		switch {
-		case named[base] && bcIn(untargeted, base):
-			t.Errorf("%s is run by a Makefile recipe AND listed in the UNTARGETED table of %s — one place, one answer", base, bcScript)
-		case !named[base] && !bcIn(untargeted, base):
+		case named[name] && bcIn(untargeted, name):
+			t.Errorf("%s is run by a Makefile recipe AND listed in the UNTARGETED table of %s — one place, one answer", name, bcScript)
+		case !named[name] && !bcIn(untargeted, name):
 			t.Errorf("scripts/%s is a verify-* check that no Makefile recipe runs and %s does not list in UNTARGETED.\n"+
 				"That is the defect this file exists for in the one shape a target-keyed census cannot see: a check nothing invokes, with a green board over it.\n"+
-				"Give it a target (and then classify the target in ROSTER or EXCLUDED), or list it in UNTARGETED with the reason it cannot have one.", base, bcScript)
+				"Give it a target (and then classify the target in ROSTER or EXCLUDED), or list it in UNTARGETED with the reason it cannot have one.", name, bcScript)
 		}
 	}
 	for name := range untargeted {
