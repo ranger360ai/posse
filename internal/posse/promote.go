@@ -233,26 +233,88 @@ func ConstitutionClassIn(top string) []string {
 }
 
 // InConstitutionClass names the class member a repo-relative, slash-separated
-// path falls under, "" when none. Exact match or directory prefix — one rule,
-// so `posse/config.yaml` (a file) and `posse/agents` (a tree) need no second
-// case. This is the Go spelling of the hook's `case "$p" in "$m"|"$m"/*)`
-// arm.
+// path falls under, "" when none. It is the Go spelling of the hook's
+// `case` arms (gates.go constitutionGuardBody); constitutionClassMatch says
+// which rule matched.
 func InConstitutionClass(class []string, p string) string {
+	m, _ := constitutionClassMatch(class, p)
+	return m
+}
+
+// constitutionClassMatch is the class rule, made RESOLUTION-equivalent on
+// this box (ranger-base-g55ah, fixing ranger-base-y52v6). The thing the wall
+// defends is what the filesystem resolves, and the staged name is only a
+// proxy for it, so two rules sit on top of the old exact-or-under match:
+//
+//   - ANCESTOR (above == true): a staged path that some member lies under.
+//     `ln -s vendorcfg .claude` stages ".claude" alone, mode 120000, and
+//     `.claude/settings.json` then resolves into it. Deliberately NOT keyed on
+//     the mode: a gitlink (160000) or a plain file at `.claude` is the same
+//     shape and refusing it costs nothing.
+//   - FOLD: names are compared component by component under
+//     strings.EqualFold, because APFS case-insensitive folds by Unicode —
+//     `.Claude/settings.json` and `.claude/ſettings.json` (U+017F) both open
+//     the canonical file. Never a byte-length prefix (ſ is two bytes, s is
+//     one) and never strings.ToLower, which leaves ſ alone.
+//
+// Every member is ASCII and its own fold (pinned), so the only non-ASCII
+// runes that can EqualFold a member's byte are the closed set in
+// constitutionFoldRunes, which is all the sh arm has to fold.
+func constitutionClassMatch(class []string, p string) (member string, above bool) {
+	if p == "" {
+		return "", false
+	}
+	pc := strings.Split(p, "/")
 	for _, m := range class {
-		if p == m || strings.HasPrefix(p, m+"/") {
-			return m
+		mc := strings.Split(m, "/")
+		switch {
+		case len(pc) >= len(mc) && foldPrefix(mc, pc):
+			return m, false
+		case len(pc) < len(mc) && foldPrefix(pc, mc):
+			return m, true
 		}
 	}
-	return ""
+	return "", false
+}
+
+// foldPrefix reports whether every component of a EqualFolds the component
+// of b at the same index; len(a) <= len(b) is the caller's.
+func foldPrefix(a, b []string) bool {
+	for i := range a {
+		if !strings.EqualFold(a[i], b[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+// constitutionFoldRunes is the CLOSED set of non-ASCII runes whose
+// unicode.SimpleFold orbit reaches ASCII, with the ASCII letter each folds
+// to. The sh arm folds exactly these (its sed line is rendered from this
+// table) and then ASCII case; TestQAConstitutionFoldRunesAreTheClosedSet
+// enumerates every rune and reds when a Unicode table bump adds one, rather
+// than quietly reopening the sh arm.
+var constitutionFoldRunes = []struct {
+	R     rune
+	ASCII byte
+}{
+	{0x017F, 's'}, // LATIN SMALL LETTER LONG S, bytes c5 bf
+	{0x212A, 'k'}, // KELVIN SIGN, bytes e2 84 aa
 }
 
 // ConstitutionTouched names every (path, class member) pair in paths, in the
 // order the paths came, each rendered as the refusal prints it. Empty is the
-// ordinary case and the only one that lands.
+// ordinary case and the only one that lands. The path is printed as STAGED,
+// never folded, so the reader sees the spelling they typed.
 func ConstitutionTouched(class, paths []string) []string {
 	var out []string
 	for _, p := range paths {
-		if m := InConstitutionClass(class, p); m != "" {
+		m, above := constitutionClassMatch(class, p)
+		switch {
+		case m == "":
+		case above:
+			out = append(out, p+" (a path above class member "+m+" (symlink, submodule or file))")
+		default:
 			out = append(out, p+" (class: "+m+")")
 		}
 	}

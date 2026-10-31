@@ -39,7 +39,10 @@ commit-wall claim that "the L3 arm now holds on its own" overstated the
 as surely as the worktree, so an orphan checkout or a checkout predating
 the marker defeats it at the same L3 tier as `env -i` and
 `core.hooksPath`, caught by the land belt rather than the wall
-(ranger-base-5smxb, measured)*
+(ranger-base-5smxb, measured) · amended 2026-10-31: §3's commit-wall
+class match is resolution-equivalent — a staged path above a member, and
+names compared under APFS's Unicode case fold (ranger-base-g55ah, from
+ranger-base-y52v6, measured)*
 
 > The operator asked for the constitution to be clearly separated from
 > project work. The instance tree currently holds three kinds of thing
@@ -505,10 +508,41 @@ the same way twice:
   one property the shared function exists for. A template runtime's
   declared channel stays covered where it is read, at the launch check
   (ASSUMED acceptable). **Matched by path, never by key**: the wall
-  keeps its exact-or-directory-prefix rule, because a permissions-only
+  keeps a path rule (exact-or-directory-prefix then; resolution-equivalent
+  since ranger-base-g55ah, below), because a permissions-only
   edit to `.claude/settings.json` is already refused on az93's terms
   and the rendered `sh` cannot parse JSON keys faithfully anyway. The
   key narrowing is a launch concern and stays one.
+
+  *Amended 2026-10-31 (ranger-base-g55ah, from ranger-base-y52v6,
+  measured).* **The wall is a NAME check, made resolution-equivalent for
+  this box.** Both readers matched the staged name exactly or as a
+  prefix, and what they defend is what the filesystem resolves: on APFS
+  case-insensitive (Darwin 25.6, MEASURED in the security review) `ln -s vendorcfg
+  .claude`, `.Claude/settings.json` and `.claude/ſettings.json` (U+017F)
+  each landed at exit 0 and read back at the canonical path. Two rules
+  close it in both readers (`constitutionClassMatch`,
+  `internal/posse/promote.go`, and the `posse_cls_scan` arm of
+  `constitutionGuardBody`). **Ancestor:** a staged path some member lies
+  under is in the class — a symlink, gitlink or file at `.claude`, not
+  keyed on the mode, since refusing all three costs nothing. **Fold:**
+  names are compared component by component under `strings.EqualFold`
+  (never a byte-length prefix, never `ToLower`, which leaves ſ alone);
+  the sh arm folds exactly the two non-ASCII runes whose
+  `unicode.SimpleFold` orbit reaches ASCII — U+017F and U+212A, a closed
+  set pinned over every rune (`constitutionFoldRunes`) — then ASCII
+  case, which suffices because every member is ASCII and its own fold
+  (pinned). NFD resolves to NFC and APFS ignores no zero-width or
+  format character (MEASURED), so the HFS+ class behind CVE-2014-9390
+  does not apply. Over a TRACKED member git's own ignorecase stages
+  nothing for a fold spelling, and that control is pinned too.
+  **ProjectConfigTrust is the belt behind it** (ADR 0002, "Project
+  configuration is a launch input"), and the residual is named: a
+  class-ancestor symlink that is ALREADY on `main` — operator-landed —
+  lets a later persona commit edit its TARGET, a path outside the class
+  by name. That is out of the wall's reach by design (the wall reads
+  names, not the tree's resolution) and inside the launch check's,
+  which reads what the session directory resolves at launch.
 
   *Fourth — the launcher's land-path belt*
   (`MergeSessionWork`, `internal/posse/worktree.go`). The launcher

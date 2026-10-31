@@ -5602,6 +5602,9 @@ $posse_bad"
 //
 // A class member matches a staged path exactly or as a directory prefix, so
 // one rule covers `posse/config.yaml` (a file) and `posse/agents` (a tree).
+// Since ranger-base-g55ah it also matches a staged path ABOVE a member (a
+// symlink at `.claude`), and both sides are compared under APFS's Unicode
+// case fold — see constitutionClassMatch (promote.go) for the rules.
 //
 // WHAT IT DOES NOT DO: it does not reset, unstage or otherwise touch the
 // tree. The shared-index arm below already says why in its own words — a hook
@@ -5637,6 +5640,21 @@ $posse_bad"
 // operator-lane. A nested `.claude/settings.json` — `sub/.claude/…` rather
 // than the repo root's — is outside the class as written, and outside what
 // any runtime reads for a session dispatched at a repo root.
+// constitutionFoldSed renders the sh arm's fold of constitutionFoldRunes as
+// sed -e arguments, each rune's UTF-8 bytes spelled through printf octal so
+// the hook source stays ASCII and LC_ALL=C matches them as bytes.
+func constitutionFoldSed() string {
+	var b strings.Builder
+	for _, f := range constitutionFoldRunes {
+		b.WriteString(` -e "s/$(printf '`)
+		for _, c := range []byte(string(f.R)) {
+			fmt.Fprintf(&b, "\\%03o", c)
+		}
+		fmt.Fprintf(&b, `')/%c/g"`, f.ASCII)
+	}
+	return b.String()
+}
+
 func constitutionGuardBody() string {
 	// One member per line, and a leading newline so EVERY member is a whole
 	// line of the rendered hook whichever block it lands in — that is what
@@ -5710,15 +5728,45 @@ if [ -n "${` + EnvPersona + `:-}" ]; then
     posse_cls_ifs=$IFS
     IFS='
 '
-    for posse_cls_p in $posse_cls_staged; do
-      for posse_cls_m in $posse_cls; do
-        case "$posse_cls_p" in
-          "$posse_cls_m"|"$posse_cls_m"/*)
-            posse_cls_hit="$posse_cls_hit    $posse_cls_p    (class: $posse_cls_m)
+    # RESOLUTION-equivalence (ranger-base-g55ah): the wall defends what the
+    # filesystem resolves, and APFS folds names by Unicode case. Both sides
+    # are folded the same way before the match — the two non-ASCII runes
+    # whose fold reaches ASCII (promote.go constitutionFoldRunes, the closed
+    # set TestQAConstitutionFoldRunesAreTheClosedSet pins), then ASCII case.
+    # Never the staged spelling the refusal prints: that stays as typed.
+    posse_cls_fold() {
+      LC_ALL=C sed` + constitutionFoldSed() + ` | LC_ALL=C tr 'A-Z' 'a-z'
+    }
+    posse_cls_fc=$(printf '%s\n' "$posse_cls" | posse_cls_fold)
+    # The folded staged list rides in as the function's positional params, one
+    # word per staged path in the same order — the hook's own $@ is untouched.
+    posse_cls_scan() {
+      for posse_cls_p in $posse_cls_staged; do
+        if [ $# -eq 0 ]; then
+          posse_cls_hit="$posse_cls_hit    $posse_cls_p    (its folded name could not be read; refused rather than guessed)
+"
+          continue
+        fi
+        posse_cls_f=$1
+        shift
+        for posse_cls_m in $posse_cls_fc; do
+          case "$posse_cls_f" in
+            "$posse_cls_m"|"$posse_cls_m"/*)
+              posse_cls_hit="$posse_cls_hit    $posse_cls_p    (class: $posse_cls_m)
 " ;;
-        esac
+          esac
+          # A path ABOVE a member: a symlink, gitlink or file at .claude is
+          # what .claude/settings.json then resolves through. Not keyed on
+          # the mode — every one of those shapes is refused.
+          case "$posse_cls_m" in
+            "$posse_cls_f"/*)
+              posse_cls_hit="$posse_cls_hit    $posse_cls_p    (a path above class member $posse_cls_m (symlink, submodule or file))
+" ;;
+          esac
+        done
       done
-    done
+    }
+    posse_cls_scan $(printf '%s\n' "$posse_cls_staged" | posse_cls_fold)
     IFS=$posse_cls_ifs
     set +f
   fi

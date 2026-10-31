@@ -219,7 +219,10 @@ func TestQAConstitutionClassMatchesExactlyOrAsAPrefix(t *testing.T) {
 		{ConstitutionRepoMarker + "uary.md", ""},
 		{cfg + ".bak", ""},
 		{"docs/" + ConstitutionRepoMarker + "/x.md", ""},
-		{ConstitutionSourceDir, ""},
+		// A path ABOVE a member is in the class since ranger-base-g55ah: a
+		// symlink, gitlink or file at `posse` is what posse/agents resolves
+		// through. The first member it is above is the one named.
+		{ConstitutionSourceDir, ConstitutionRepoMarker},
 		{"", ""},
 	} {
 		if got := InConstitutionClass(class, c.path); got != c.want {
