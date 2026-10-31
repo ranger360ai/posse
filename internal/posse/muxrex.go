@@ -30,7 +30,6 @@ package posse
 // liveness check reads that dead seat as idle and settles a bead on it.
 
 import (
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -547,11 +546,30 @@ func rexShellCommand(env []EnvVar) []string {
 	return append(cmd, rexShell(), "-i")
 }
 
+// rexShell is the shell the block runs, and it is realShell's answer — the
+// same resolver the gate wrapper itself uses (gates.go), asked with no bin
+// dir of its own because a hired seat's shell must not be ANY gates dir's.
+//
+// WHY NOT $SHELL DIRECTLY (ADR 0077 D2, surface 4). In a gated launcher
+// $SHELL is that persona's gate shell: MEASURED 2026-10-31 in a crew seat,
+// `<state>/gates/<the launching persona>/shell/zsh`. Handing that to `rex
+// new` gave every Rex seat dispatched from a gated seat an interactive shell
+// inside the LAUNCHER persona's wrapper — another PID's rules in front of
+// every command the new seat would ever run, which is the same violation D2
+// strips out of the seat's PATH. realShell refuses exactly this candidate
+// (ranger-base-f0ay: a wrapper is installed under a shell's basename and
+// stats like one, so every test the old code could have made was true of
+// it), and nothing else in posse was asking the question twice.
+//
+// It costs the operator's own shell when that shell is neither bash nor zsh:
+// realShell takes $SHELL only at those two basenames and otherwise searches
+// zsh, bash, /bin/sh. That is a gain here rather than a loss — posse TYPES
+// shell lines into this block, and GatePrefix's leading `PATH=…:"$PATH" cmd`
+// is a POSIX prefix assignment that fish and friends do not parse, so a seat
+// whose block ran the operator's fish could not have been gated at all.
 func rexShell() string {
-	if sh := os.Getenv("SHELL"); sh != "" {
-		return sh
-	}
-	return "/bin/sh"
+	real, _ := realShell("")
+	return real
 }
 
 // rexRootRecord is the record posse reads: the ROOT one, whose id is empty —

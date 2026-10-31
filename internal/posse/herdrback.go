@@ -3007,6 +3007,34 @@ func (b *HerdrBackend) planLaunch(o NewSessionOpts) (*launchPlan, error) {
 	// mid-transition. Drop POSSE_HOME's sibling read once the window closes.
 	vars = append(vars, EnvVar{"RHQ_HOME", a.Home}, EnvVar{"POSSE_HOME", a.Home})
 
+	// The seat's BASE PATH is typed too (ADR 0077 D2): this launcher's PATH
+	// with every gates element stripped, so GatePrefix's `"$PATH"` expands
+	// over a base posse wrote. Without it the base is the multiplexer
+	// SERVER's — frozen whenever some process autostarted that server, hours
+	// earlier, from another seat whose gates dir it then donated to every
+	// session it would ever open (MEASURED 2026-10-31, ranger-base-c33j6).
+	// posse cannot read that layer, which is why it writes over it instead
+	// of detecting it; SeatBasePath's doc carries the rest.
+	//
+	// ONE LINE, BOTH OCCUPANTS: `vars` is the overlay, so this is herdr's
+	// `workspace create --env` and Rex's `/usr/bin/env K=V <shell> -i` at
+	// once (mux.go's Create row). It rides the overlay and not the typed
+	// line, unlike D1's pins — the line is re-rendered per relaunch but
+	// costs bytes on a line Rex cuts at 1,024, and PATH needs no `env -u`
+	// arm, which is the only thing the overlay cannot express.
+	//
+	// AFTER the env sets, for the reason RHQ_HOME is: the base has to be one
+	// posse wrote, or the parity assertion over it (SeatPathGatesElements)
+	// is asserting about a value the launch did not use. A set that names
+	// PATH is therefore overridden rather than merged — no shipped set does,
+	// and a seat's PATH is not a thing an env file gets to decide.
+	//
+	// NOT ACROSS THE CAGE BOUNDARY: CageEnvNames leaves PATH behind on
+	// purpose (see there). A host PATH forwarded into the image names
+	// directories the image does not have, and the inner wall renders its
+	// own (cageinner.go).
+	vars = append(vars, EnvVar{"PATH", SeatBasePath()})
+
 	// ADR 0052 D2, the other half of the render above: git's own
 	// config-in-env form, so every git in this session — including one
 	// invoked by absolute path (M2) — dispatches its hooks from the dir

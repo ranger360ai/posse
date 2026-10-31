@@ -927,6 +927,18 @@ func CageEnvNames(vars []EnvVar) []string {
 		"RHQ_TOOLS_ALLOW", "RHQ_TOOLS_DENY",
 	}
 	for _, v := range vars {
+		// PATH is the one name that must NOT cross, and it is in `vars` on
+		// every launch since ADR 0077 D2 typed the seat's base PATH onto the
+		// overlay (planLaunch). The engine forwards a name BY VALUE from the
+		// pane (`-e PATH`), and the pane's value is a host PATH: directories
+		// the image does not have, in front of the ones it does. The inner
+		// wall renders its own gates inside the image (cageinner.go,
+		// rangerhq-6so) over the image's own PATH, which is the base that
+		// has to survive here. D1's HOME argument, one layer down: the cage
+		// has its own (SeedCageHome) and the host's is out of scope.
+		if v.Key == "PATH" {
+			continue
+		}
 		if cageEnvName.MatchString(v.Key) {
 			names = append(names, v.Key)
 		}

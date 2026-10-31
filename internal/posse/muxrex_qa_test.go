@@ -152,14 +152,26 @@ func TestQARexCreateYieldsNoSeatWhenRexRefuses(t *testing.T) {
 
 // The shell posse names when the launcher has none. Not parallel: it sets a
 // process-wide variable (t.Setenv).
-func TestQARexShellFallsBackWhenSHELLIsUnset(t *testing.T) {
+//
+// Since ADR 0077 D2 (surface 4) the answer is realShell's, so an unset
+// $SHELL is realShell's SEARCH — zsh, then bash, then /bin/sh — and not a
+// bare /bin/sh. What this arm still pins is that the seat gets a shell posse
+// can name whatever the launcher carries, including nothing: the whole
+// reason rexShell exists rather than letting `rex new` pick. That the
+// refusal of a gate wrapper and the honest-$SHELL arm belong to the same
+// answer is pinned in seatbasepath_qa_test.go (ranger-base-zfljf), with the
+// wrapper fixture.
+func TestQARexShellIsNamedEvenWhenTheLauncherHasNone(t *testing.T) {
 	t.Setenv("SHELL", "")
-	if got := rexShell(); got != "/bin/sh" {
-		t.Errorf("rexShell() with no $SHELL = %q, want /bin/sh", got)
+	got := rexShell()
+	if got == "" {
+		t.Fatal("rexShell() named no shell with no $SHELL — the seat would be opened by whatever rex picks, which is not an answer posse can type into")
 	}
-	t.Setenv("SHELL", "/opt/bin/fish")
-	if got := rexShell(); got != "/opt/bin/fish" {
-		t.Errorf("rexShell() = %q, want the operator's own shell", got)
+	if real, _ := realShell(""); got != real {
+		t.Errorf("rexShell() = %q, want realShell(\"\")'s answer %q", got, real)
+	}
+	if st, err := os.Stat(got); err != nil || st.IsDir() {
+		t.Errorf("rexShell() = %q, which is not an executable file here: %v", got, err)
 	}
 }
 

@@ -118,13 +118,26 @@ func TestCheckParity(t *testing.T) {
 	}
 }
 
-// ranger-base-z51g: the PRE guard (and PathOutsideGates, which it copies)
-// drop a foreign gates dir by the SPELLING of the path, so a symlink alias
-// that never spells "/gates/" in its own name survives the rebuild and the
-// launched session inherits another persona's shims. Parity is the durable
-// check: it resolves symlinks, so it catches the property directly rather
-// than the spelling.
-func TestCheckParityFlagsAForeignGatesDirReachedThroughASymlink(t *testing.T) {
+// ranger-base-z51g's hazard, answered where it is now answered (ADR 0077
+// D2, ranger-base-zfljf). The PRE guard drops a foreign gates dir by the
+// SPELLING of the path, so a symlink alias that never spells "/gates/" in
+// its own name survives the rebuild — and the launched session used to
+// inherit another persona's shims through it.
+//
+// This test asserted that parity FLAGGED that launcher PATH. It no longer
+// does, and the inversion is the fix rather than a loss: the PATH parity was
+// reading is the LAUNCHER's, and a seat is a child of the multiplexer
+// server, not of the launcher. posse now types the seat's base PATH outside
+// every gates dir (SeatBasePath), so the alias never reaches the seat at all
+// — a removed hazard instead of a flagged one, and nothing left to degrade a
+// launch over. What parity asserts now is that the strip held
+// (SeatPathGatesElements), which is this file's companion arm below and
+// seatbasepath_qa_test.go's fourth test in arm 1.
+//
+// The fixture is kept exactly as it was, because the control is the point:
+// this PATH is the one that used to degrade, and the two readings below say
+// so in both directions.
+func TestCheckParityDoesNotDegradeOverASymlinkedForeignGatesDirOnTheLauncher(t *testing.T) {
 	home := t.TempDir()
 	a := &App{Home: home, StateDir: filepath.Join(home, "state"), AgentsDir: filepath.Join(home, "agents"), ConfigPath: filepath.Join(home, "config.yaml")}
 	claude, _ := a.LoadRuntime("claude")
@@ -145,15 +158,29 @@ func TestCheckParityFlagsAForeignGatesDirReachedThroughASymlink(t *testing.T) {
 	}
 	t.Setenv("PATH", betalink+string(os.PathListSeparator)+outside)
 
+	// CONTROL: the launcher's PATH really does reach beta's shims behind a
+	// name that spells nothing — the state this test was written for. Read
+	// through the same walk the product uses, so the fixture cannot quietly
+	// stop being dirty.
+	if got := ForeignGatesElements(alphaBin); len(got) != 1 || got[0] != betalink {
+		t.Fatalf("the fixture is not in the state this test is about: ForeignGatesElements = %v, want [%s]", got, betalink)
+	}
+	// The hazard is gone rather than reported: the alias is not in the base
+	// PATH the seat is given, so there is nothing for the launch to degrade
+	// over.
+	if left := SeatPathGatesElements(); len(left) > 0 {
+		t.Errorf("the typed base PATH still reaches a gates dir: %v — the seat would run behind rules that are not its own PID's (ranger-base-z51g, ADR 0077 D2)", left)
+	}
 	p := a.CheckParity(alpha, claude, CageShims, TierStrong)
 	joined := strings.Join(p.Degraded, "\n")
-	if !strings.Contains(joined, betalink) {
-		t.Errorf("CheckParity must flag the symlinked foreign gates dir on PATH: %+v", p)
+	if strings.Contains(joined, betalink) || strings.Contains(joined, "gates dir") || strings.Contains(joined, "gates element") {
+		t.Errorf("a dirty LAUNCHER PATH degrades the launch again: %+v — that row read a third process's environment, and its advice ('relaunch with a clean PATH') was addressed to a process that is not the seat's (ADR 0077 D2)", p)
 	}
 
-	// A clean PATH (own dir aside) must not be flagged.
+	// And a clean PATH is silent too, which is the arm that would catch a
+	// replacement row that fires unconditionally.
 	t.Setenv("PATH", outside)
-	if p := a.CheckParity(alpha, claude, CageShims, TierStrong); strings.Contains(strings.Join(p.Degraded, "\n"), "gates dir") {
+	if p := a.CheckParity(alpha, claude, CageShims, TierStrong); strings.Contains(strings.Join(p.Degraded, "\n"), "gates") {
 		t.Errorf("a clean PATH must not be flagged: %+v", p)
 	}
 }

@@ -255,20 +255,31 @@ func (a *App) CheckParity(ag *AgentFile, rt *Runtime, cage, tier string) Parity 
 	if seatbeltIncompatible {
 		p.DeclaredDifference = append(p.DeclaredDifference, fmt.Sprintf("cage seatbelt cannot wrap %s: its own child sandbox does not nest (sandbox_apply: Operation not permitted) — use cage: shims; %s's sandbox is OS-enforced there", rt.Name, rt.Name))
 	}
-	// ranger-base-z51g: the wall's own guard (the gate shell's PRE) drops a
-	// foreign gates dir by the SPELLING of the path, so a symlink alias that
-	// never spells "/gates/" in its own name survives the rebuild and
-	// shadows this session's shims with another persona's — a false refuse
-	// that names none of this PID's own rules, and a false pass just as
-	// easily the other way if the shapes were reversed. Parity cannot fix the guard's
-	// spelling (it runs inside a shell one-liner, before any Go code), but
-	// it CAN assert the property the guard is trying to approximate: no
-	// gates element on this PATH but ours, checked by resolving symlinks
-	// rather than by pattern (gatesPathSplit, the one test PathOutsideGates
-	// reads too since ADR 0077 D2). Unconditional — this is not about any
-	// one Bash(...) rule, it is about every command this session will run.
-	if foreign := ForeignGatesElements(filepath.Join(a.GatesDir(ag.Name), "bin")); len(foreign) > 0 {
-		p.Degraded = append(p.Degraded, fmt.Sprintf("PATH carries another persona's gates dir behind an alias the PRE guard's spelling test does not catch: %s — commands in this session may be refused (or passed) by rules that are not this PID's own; relaunch with a clean PATH", strings.Join(foreign, ", ")))
+	// The property the gate shell's PRE guard is trying to approximate: no
+	// gates element on the PATH this session runs on but its own. The guard
+	// drops a foreign gates dir by the SPELLING of the path, so a symlink
+	// alias that never spells "/gates/" in its own name survives the rebuild
+	// and shadows this session's shims with another persona's — a false
+	// refuse that names none of this PID's own rules, and a false pass just
+	// as easily the other way (ranger-base-z51g). Parity cannot fix the
+	// guard's spelling: it runs inside a shell one-liner, before any Go
+	// code, and has no filesystem to call.
+	//
+	// WHAT CHANGED AT ADR 0077 D2, and why this is now an assertion rather
+	// than a reading. The row used to ask ForeignGatesElements about the
+	// LAUNCHER's PATH — a third process's environment, which is not the
+	// seat's: a seat is a child of the multiplexer server, whose PATH posse
+	// cannot read at all. So the row's advice ("relaunch with a clean PATH")
+	// was about a process that is not the one it was advising for, and is
+	// deleted. posse now TYPES the seat's base PATH outside every gates dir
+	// (SeatBasePath, carried in the overlay), which satisfies the row by
+	// construction; what is left worth checking is that the strip did its
+	// job. This can therefore only fail on a bug in SeatBasePath — and if it
+	// ever does, the consequence is the old one, so the sentence still says
+	// it. Unconditional: this is not about any one Bash(...) rule, it is
+	// about every command this session will run.
+	if left := SeatPathGatesElements(); len(left) > 0 {
+		p.Degraded = append(p.Degraded, fmt.Sprintf("the base PATH posse types onto this seat still carries a gates element: %s — commands in this session may be refused (or passed) by rules that are not this PID's own; the strip (ADR 0077 D2, SeatBasePath) is not holding", strings.Join(left, ", ")))
 	}
 	shims := ParseShimRules(ag.Deny)
 	// The seatbelt is applied at its own tier and nowhere else: ADR 0002 §3

@@ -980,11 +980,44 @@ func PathOutsideGates(binDir string) string {
 
 // ForeignGatesElements names every $PATH element that reaches a posse gates
 // bin dir other than ownBinDir — the other half of gatesPathSplit's answer,
-// for a caller that has to NAME what it found rather than route around it
-// (parity.go).
+// for a caller that has to NAME what it found rather than route around it.
 func ForeignGatesElements(ownBinDir string) []string {
 	_, foreign := gatesPathSplit(ownBinDir)
 	return foreign
+}
+
+// SeatBasePath is the base PATH posse TYPES onto a seat it hires (ADR 0077
+// D2) — this process's PATH with every element that reaches any gates bin
+// dir removed, the launcher's OWN included.
+//
+// It is the overlay's value (`workspace create --env`, Rex's `/usr/bin/env
+// K=V`), so `GatePrefix`'s `"$PATH"` expands over a base posse wrote rather
+// than over the multiplexer SERVER's. A seat is a child of that server, not
+// of the posse process that asked for it, and the server's environment was
+// frozen whenever some process happened to autostart it — hours earlier,
+// from another seat, whose gates dir it then donated to every session it
+// would ever open (MEASURED 2026-10-31, ranger-base-c33j6: a gates dir
+// mid-PATH that the launching process did not put there). posse cannot read
+// that layer, so it writes over it.
+//
+// Every gates dir and not just the foreign ones: the launcher's own shims
+// are foreign to the seat it hires. A seat's walls are its own PID's (ADR
+// 0017), and the launcher's behind them were a parity violation the waiver
+// hid, not extra safety — which is why "" and not the launcher's own bin dir
+// is what goes to PathOutsideGates here.
+func SeatBasePath() string { return PathOutsideGates("") }
+
+// SeatPathGatesElements names every element of SeatBasePath that still
+// reaches a gates bin dir. It is EMPTY BY CONSTRUCTION — same walk, same
+// judgement, one of the two halves read back against the other — so a
+// non-empty answer is a bug in the strip and nothing else. That is exactly
+// what parity asserts since ADR 0077 D2 replaced its foreign-gates row: the
+// hazard the old row named (a launcher PATH carrying another persona's
+// shims) is the one the typed base removes, so what is left worth checking
+// is that the removal happened.
+func SeatPathGatesElements() []string {
+	_, left := gatesSplitPath(SeatBasePath(), "")
+	return left
 }
 
 // gatesPathSplit is the ONE test PathOutsideGates and ForeignGatesElements
@@ -1016,11 +1049,24 @@ func ForeignGatesElements(ownBinDir string) []string {
 // and cannot read this one: it runs as a shell one-liner before any Go code
 // and has no filesystem to call. That asymmetry is what parity's row is for.
 func gatesPathSplit(ownBinDir string) (outside, foreign []string) {
+	return gatesSplitPath(os.Getenv("PATH"), ownBinDir)
+}
+
+// gatesSplitPath is gatesPathSplit over a PATH that is named rather than
+// read from the environment — the one judgement, available to the caller
+// that has a PATH in hand instead of $PATH. SeatPathGatesElements is that
+// caller: it judges the PATH posse TYPED, which is not this process's.
+//
+// Parameterized rather than copied, and never by swapping $PATH around the
+// call: the process environment is one variable shared by every goroutine,
+// so that swap is a window in which any concurrent caller resolves against
+// a PATH it never asked for (resolveOutside's comment, ranger-base-i7fa).
+func gatesSplitPath(path, ownBinDir string) (outside, foreign []string) {
 	ownReal := ""
 	if ownBinDir != "" {
 		ownReal = resolveLinks(ownBinDir)
 	}
-	for _, p := range filepath.SplitList(os.Getenv("PATH")) {
+	for _, p := range filepath.SplitList(path) {
 		if p == "" || p == ownBinDir {
 			continue
 		}
