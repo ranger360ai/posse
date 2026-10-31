@@ -182,7 +182,9 @@ carve-out names `autoMode.allow` itself.
 **D3 — what is claimed and what is not.** D2 is claimed to REDUCE refusals of
 the named verbs in compound shapes, never to end them: the exception is prose
 read by a model, and the stability measured above is the classifier's, not
-ours. Until the work-box probe below reports, the reduction is ASSUMED. A
+ours. The reduction is UNMEASURED: the operator declined the work-box probe
+(Verification 3) on 2026-10-31 — the carve-out stays whatever the number
+would have read, so 20 runs bought no decision (ranger-base-5lgpw). A
 persona whose work hangs on one of these verbs still writes its command in the
 matching shape first — bare verb, prompt file written in a separate call —
 because the shape hole (D1 i) is the hole an allow rule DOES close.
@@ -263,7 +265,9 @@ splice `"$defaults"` into `environment` from the blob (rejected below).
    D2, run the compound shape that was refused (`cd <dir> && posse peek <s>`
    or the heredoc-prompted `herdr pane send-keys`) ten times with and ten
    without the carve-out; record refusals/10 for each arm on the operator
-   bead. That number replaces D3's ASSUMED.
+   bead. That number replaces D3's ASSUMED. NOT RUN: the operator declined it
+   on 2026-10-31 (ranger-base-5lgpw, "the carve-out stays either way"), so D3
+   reads UNMEASURED rather than ASSUMED (ranger-base-gmml6).
 4. `make fmt-check` and `make tree-check` after the filtered runs; `make
    crew-check` because `internal/` and a `*_test.go` change.
 
@@ -281,7 +285,10 @@ compound matching, stripped wrappers, scope combination and tier precedence
 (read 2026-10-09, not executed).
 **REPORTED (issue #11, work box)** the refusals, their instability and the
 shape dependence.
-**ASSUMED** that an `allow` exception reduces the named verbs' refusals in
-compound shapes (D3; Verification 3 replaces it) · that no supervisor PID
+**UNMEASURED (operator declined the measurement 2026-10-31,
+ranger-base-5lgpw)** that an `allow` exception reduces the named verbs'
+refusals in compound shapes (D3; Verification 3 was the probe and was not
+run). It is a claim nothing will test, not one awaiting a number.
+**ASSUMED** that no supervisor PID
 needs the verbs through a hand-written `command:` template (if one does,
 D2's last rule is its instruction).
