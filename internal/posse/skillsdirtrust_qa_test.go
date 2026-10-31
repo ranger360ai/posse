@@ -306,15 +306,35 @@ type trustTableWrite struct {
 	Names string // the string literal, or the package-level name, that spells the table
 }
 
-// trustTableWriteCalls is what "writes" means here: calls that put bytes on
-// disk, by the only spelling that cannot be renamed out of the census — the
-// standard library's, plus this package's own two write helpers.
+// trustTableWriteCalls is what "writes" means at the LEAF: calls that put
+// bytes on disk, by the only spelling that cannot be renamed out of the
+// census — the standard library's, and nothing else.
 //
 // NO SEEDER NAME IS IN THIS LIST, and that is ranger-base-0npto's second
 // correction. The pin this replaced carried the literal "SeedGrokTrust", and
 // the mutant its close reported as red was a func CALLED SeedGrokTrust — a
 // rig whose fixture came from the list under test. A writer only has to be
 // called something else.
+//
+// AND NO IN-PACKAGE HELPER IS IN IT EITHER, which is ranger-base-metqp's
+// correction (from ranger-base-grj2i). It used to carry WriteExecutable and
+// writeJSONInPlace, and keying on the CALL'S SPELLING is what made that a
+// list to maintain by hand: a seeder that plainly named the table and wrote
+// it through any OTHER in-package helper was invisible.
+//
+// MEASURED 2026-10-31 over this package's own sources (ranger-base-metqp,
+// re-taking ranger-base-grj2i's count and reconciling with it): 62 distinct
+// names here reach disk through one of the verbs above from their own body —
+// 26 package-level functions, 35 methods, and one name that is both. 24 of
+// the 26 are neither WriteExecutable nor writeJSONInPlace, which is
+// ranger-base-grj2i's figure exactly; the rest of the 62 are methods, which
+// that count did not include and which a call site spells the same way
+// (trustCallTargets). So there were two dozen existing spellings before
+// anyone wrote a new one — and writeJSONInPlace sits in trust.go beside
+// SeedClaudeTrust as the template for exactly the TOML sibling nobody would
+// think to come back here and add. Those two are resolved now rather than
+// listed (trustPackageWriters), so the list cannot go stale: every one of the
+// 62 is found by being READ, and adding a name here would widen nothing.
 var trustTableWriteCalls = map[string]bool{
 	"os.WriteFile":     true,
 	"os.Create":        true,
@@ -325,8 +345,6 @@ var trustTableWriteCalls = map[string]bool{
 	"os.Link":          true,
 	"os.Truncate":      true,
 	"ioutil.WriteFile": true,
-	"WriteExecutable":  true,
-	"writeJSONInPlace": true,
 }
 
 // trustTableSpellings are the two ways a writer can name the thing: the
@@ -360,6 +378,40 @@ var trustTableSpellings = []string{"trusted_folders", "[folders."}
 // whose own value names the table makes every scope that references it a
 // namer, which is what stops the hoisting of the path into a const from
 // being an evasion.
+//
+// AND IT RESOLVES THE PACKAGE'S OWN CALLEES, in both directions, which is
+// ranger-base-metqp's correction (from ranger-base-grj2i). A per-scope
+// reading that keys the write on the CALL'S SPELLING still asks the seeder to
+// spell a verb from a list, so a seeder naming the table and its body on the
+// call's own line was invisible when the write went through any in-package
+// helper not on it — and the mirror shape, os.WriteFile in the seeder with
+// the path and the body returned by helpers, was invisible because the
+// NAMER was in the callee. Both halves read this package's own functions
+// now: a scope that calls a function that writes is a writer, and a scope
+// that calls a function that names the table is a namer
+// (trustPackageWriters). Nothing about the LEAF changes — it is still a
+// standard-library verb — so what is gone is the hand-kept list of middles.
+//
+// ONE HOP, AND THE LINE IS THERE BECAUSE THE CLOSURE WAS MEASURED AND
+// REJECTED. A transitive closure is the obvious reading of "calls something
+// that writes", and it reds this package's own sources: MEASURED 2026-10-31
+// (ranger-base-metqp), skillsdirtrust.go's package scope — which names the
+// table, because GrokSkillsDirTrust's own literal is there — came back a
+// writer through `resolveOutside`, `PathOutsideGates` and `append`, none of
+// which has anything to do with grok's table and none of which writes
+// directly. In a package this size almost every function reaches disk down
+// SOME chain, so a closure turns "writes" into "calls anything" and leaves
+// the namer carrying the whole verdict alone. A census that reds the shipped
+// tree is not a tighter census, and a false red here fails internal/posse for
+// every seat on the box.
+//
+// So the hop is the seeder's OWN line: `writeTOMLInPlace(path, body)` is a
+// write because the scope under test wrote that call, and what its callee
+// calls in turn is somebody else's code. That line is a choice and not a
+// theorem — a seeder two wrappers deep is a real shape and this does not
+// catch it. The planted control carries that limit as a NAMED GREEN row
+// rather than leaving the next reader to infer the class was considered,
+// which is the defect ranger-base-grj2i filed against :589's row.
 func scanTrustTableWrites(sources map[string]string) ([]trustTableWrite, error) {
 	fset := token.NewFileSet()
 	names := make([]string, 0, len(sources))
@@ -401,7 +453,11 @@ func scanTrustTableWrites(sources map[string]string) ([]trustTableWrite, error) 
 		}
 	}
 
-	// Pass 2: every scope, its namers and its writes.
+	// Pass 2: this package's own functions, and which of them write and
+	// which name the table.
+	res := trustPackageWriters(parsed, tableIdents)
+
+	// Pass 3: every scope, its namers and its writes.
 	var found []trustTableWrite
 	for i, f := range parsed {
 		file := names[i]
@@ -415,18 +471,108 @@ func scanTrustTableWrites(sources map[string]string) ([]trustTableWrite, error) 
 			if fn.Body == nil {
 				continue
 			}
-			found = append(found, trustTableWritesIn(file+":func "+fn.Name.Name, tableIdents, fn.Body)...)
+			found = append(found, trustTableWritesIn(file+":func "+fn.Name.Name, res, fn.Body)...)
 		}
 		if len(pkgLevel) > 0 {
-			found = append(found, trustTableWritesIn(file+" (package scope)", tableIdents, pkgLevel...)...)
+			found = append(found, trustTableWritesIn(file+" (package scope)", res, pkgLevel...)...)
 		}
 	}
 	return found, nil
 }
 
+// trustResolved is what pass 3 asks of a name it sees called: does that name
+// write, and does it name the table. tableIdents is carried along because a
+// package-level string whose value spells the table makes every scope
+// referencing it a namer, which is a question about an IDENT and not a call.
+type trustResolved struct {
+	tableIdents map[string]bool
+	writes      map[string]bool // this package's functions that reach disk
+	names       map[string]bool // this package's functions that spell the table
+}
+
+// trustPackageWriters is this package's own functions, split two ways: the
+// ones whose own body reaches disk through a listed verb, and the ones whose
+// own body spells the table. ONE level and no closure — scanTrustTableWrites
+// carries the measurement that put the line there.
+//
+// KEYED BY THE DECLARED NAME, which is what a call site spells — a plain
+// `writeJSONInPlace(...)` for a function and `b.writeMeta(...)` for a method,
+// whose selector is that same name. A name is not a receiver, so two methods
+// that share one share an entry, and the entry is the OR of both: the
+// conservative direction, because it can only widen "writes", and a wider
+// "writes" reds nothing on its own (see scanTrustTableWrites' last two
+// paragraphs).
+func trustPackageWriters(parsed []*ast.File, tableIdents map[string]bool) trustResolved {
+	// EVERY decl of a name, not the last one: two methods of different
+	// receivers share a selector, so `store` is a writer if ANY `store` in
+	// this package writes. Keeping only the last would lose a write to
+	// whichever file the reader happened to parse second.
+	bodies := map[string][]*ast.FuncDecl{}
+	var order []string
+	for _, f := range parsed {
+		for _, d := range f.Decls {
+			fn, ok := d.(*ast.FuncDecl)
+			if !ok || fn.Body == nil {
+				continue
+			}
+			if _, seen := bodies[fn.Name.Name]; !seen {
+				order = append(order, fn.Name.Name)
+			}
+			bodies[fn.Name.Name] = append(bodies[fn.Name.Name], fn)
+		}
+	}
+	sort.Strings(order)
+
+	writes, namers := map[string]bool{}, map[string]bool{}
+	for _, n := range order {
+		for _, fn := range bodies[n] {
+			// The decl's own string literals, which with parser mode 0 is
+			// its body and its signature's own expressions and never its
+			// doc comment.
+			if _, hit := trustTableSpelling(joinStringLits(fn)); hit {
+				namers[n] = true
+			}
+			ast.Inspect(fn.Body, func(node ast.Node) bool {
+				switch x := node.(type) {
+				case *ast.Ident:
+					if tableIdents[x.Name] {
+						namers[n] = true
+					}
+				case *ast.CallExpr:
+					for _, c := range trustCallTargets(x) {
+						if trustTableWriteCalls[c] {
+							writes[n] = true
+						}
+					}
+				}
+				return true
+			})
+		}
+	}
+	return trustResolved{tableIdents: tableIdents, writes: writes, names: namers}
+}
+
+// trustCallTargets is every name one call site could be spelling: the
+// qualified one calledName reads, and — for a method or a package-qualified
+// call — the bare selector, which is how `b.writeMeta(...)` is matched
+// against this package's own `func (b *HerdrBackend) writeMeta`.
+func trustCallTargets(x *ast.CallExpr) []string {
+	c := calledName(x.Fun)
+	if c == "" {
+		return nil
+	}
+	if sel, ok := x.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name != c {
+		return []string{c, sel.Sel.Name}
+	}
+	return []string{c}
+}
+
 // trustTableWritesIn is the one decision, over one scope: does it name the
-// table at all, and does it write.
-func trustTableWritesIn(where string, tableIdents map[string]bool, scope ...ast.Node) []trustTableWrite {
+// table at all, and does it write. Either half may be reached through one of
+// this package's own functions (res), so the finding quotes which, because
+// "writeTOMLInPlace -> os.WriteFile" and a bare os.WriteFile are the same
+// verdict read off different lines.
+func trustTableWritesIn(where string, res trustResolved, scope ...ast.Node) []trustTableWrite {
 	var namer string
 	var writes []string
 	for _, n := range scope {
@@ -436,12 +582,20 @@ func trustTableWritesIn(where string, tableIdents map[string]bool, scope ...ast.
 		ast.Inspect(n, func(node ast.Node) bool {
 			switch x := node.(type) {
 			case *ast.Ident:
-				if tableIdents[x.Name] && namer == "" {
+				if res.tableIdents[x.Name] && namer == "" {
 					namer = "the package-level " + x.Name
 				}
 			case *ast.CallExpr:
-				if c := calledName(x.Fun); trustTableWriteCalls[c] {
-					writes = append(writes, c)
+				for _, c := range trustCallTargets(x) {
+					switch {
+					case trustTableWriteCalls[c]:
+						writes = append(writes, c)
+					case res.writes[c]:
+						writes = append(writes, c+" (which writes)")
+					}
+					if res.names[c] && namer == "" {
+						namer = "the table named by " + c
+					}
 				}
 			}
 			return true
@@ -586,10 +740,127 @@ func trustFile(string) string { return "t.toml" }
 `,
 		},
 		{
-			name: "the table named in one func and a write in another",
+			// RENAMED under ranger-base-metqp. It used to be called "the
+			// table named in one func and a write in another", which is a
+			// class — and the dangerous member of that class, where the
+			// write in the other func is OF THE TABLE, was green too. A row
+			// whose name claims a wider class than its fixture plants is how
+			// the next reader concludes the class was considered
+			// (ranger-base-grj2i). What it actually plants is an UNRELATED
+			// write, so that is what it is called, and the member it does
+			// not plant is the row below it.
+			name: "the table named in one func and an unrelated path written in another",
 			src: head + `func trustPath(home string) string { return home + "/.grok/trusted_folders.toml" }
 
 func writeNote(p string) error { return os.WriteFile(p+"/note", nil, 0o644) }
+`,
+		},
+		{
+			// The member the row above does not plant: the write in the
+			// other func is of the TABLE. Caught by resolving the NAMER one
+			// hop — the seeder's own line names nothing, and trustPath does.
+			name: "the table named in one func and THE TABLE written in another",
+			src: head + `func trustPath(home string) string { return home + "/.grok/trusted_folders.toml" }
+
+func seedTrust(home string) error { return os.WriteFile(trustPath(home), []byte("x"), 0o644) }
+`,
+			want: true,
+		},
+		{
+			// ranger-base-grj2i's first row, and the one that matters:
+			// writeJSONInPlace is in the list's ancestor and in trust.go
+			// beside SeedClaudeTrust, so its TOML sibling is what gets
+			// written next — and nothing would prompt its author to come
+			// back here. The table's path AND its real [folders."<dir>"]
+			// body are both spelled on the call's own line.
+			name: "a write-helper sibling of writeJSONInPlace, path and body on the call's line",
+			src: head + `func writeTOMLInPlace(p string, b []byte) error { return os.WriteFile(p, b, 0o644) }
+
+func seedGrokTrustFor(home, dir string) error {
+	return writeTOMLInPlace(home+"/.grok/trusted_folders.toml", []byte("[folders.\""+dir+"\"]\ntrusted = true\n"))
+}
+`,
+			want: true,
+		},
+		{
+			// The same shape through a helper that is nobody's write
+			// template — the census must not be keyed on which helper it is.
+			name: "the write through an unrelated in-package helper",
+			src: head + `func WriteWatchPid(p string, b []byte) error { return os.WriteFile(p, b, 0o644) }
+
+func seedByWatchPid(home string) error {
+	return WriteWatchPid(home+"/.grok/trusted_folders.toml", []byte("x"))
+}
+`,
+			want: true,
+		},
+		{
+			// The mirror: os.WriteFile IS in the seeder, and the path and
+			// the body both come back from helpers, so the seeder spells
+			// nothing the per-scope reading could match.
+			name: "the path and the body from helpers, the write in the seeder",
+			src: head + `func tablePath(home string) string { return home + "/.grok/trusted_folders.toml" }
+
+func tableBody(dir string) string { return "[folders.\"" + dir + "\"]\ntrusted = true\n" }
+
+func seedFromHelpers(home, dir string) error {
+	return os.WriteFile(tablePath(home), []byte(tableBody(dir)), 0o644)
+}
+`,
+			want: true,
+		},
+		{
+			// A METHOD, because a call site spells a method by the same
+			// selector a function uses and the resolution is keyed on that
+			// name (trustCallTargets).
+			name: "the write through a method of this package",
+			src: head + `type seeder struct{ home string }
+
+func (s *seeder) store(p string, b []byte) error { return os.WriteFile(p, b, 0o644) }
+
+func seedViaMethod(s *seeder) error {
+	return s.store(s.home+"/.grok/trusted_folders.toml", []byte("x"))
+}
+`,
+			want: true,
+		},
+		{
+			// THE LIMIT, GREEN AND NAMED. One hop is the seeder's own line,
+			// so a write two wrappers down is not found — see
+			// scanTrustTableWrites for the measurement that rejected the
+			// closure that would find it. This row exists so that the next
+			// reader is told, rather than inferring from a green that the
+			// shape was considered. If a seeder like this ever lands, the
+			// answer is a second arm over the WRITERS (every in-package
+			// function that reaches disk, directly or not), not a wider
+			// reading here that reds the shipped tree.
+			name: "KNOWN LIMIT: the write two hops down is not found, and this row is the record",
+			src: head + `func rawWrite(p string, b []byte) error { return os.WriteFile(p, b, 0o644) }
+
+func writeTOML(p string, b []byte) error { return rawWrite(p, b) }
+
+func seedTwoHops(home string) error {
+	return writeTOML(home+"/.grok/trusted_folders.toml", []byte("x"))
+}
+`,
+		},
+		{
+			// The negatives that keep the resolution from being "flag
+			// everything": a scope that calls a writer and names nothing.
+			name: "a helper that writes, called by a scope with nothing to do with the table",
+			src: head + `func writeAnything(p string, b []byte) error { return os.WriteFile(p, b, 0o644) }
+
+func noteSomething(p string) error { return writeAnything(p+"/note", nil) }
+`,
+		},
+		{
+			// And its mirror: a scope that names the table through a callee
+			// and writes nothing at all. This is the shipped shape one hop
+			// out — prose and a path, no bytes.
+			name: "the table named through a callee, and nothing written",
+			src: head + `func tableName() string { return ".grok/trusted_folders.toml" }
+
+func describeTrust() string { return "posse never writes " + tableName() }
 `,
 		},
 	} {

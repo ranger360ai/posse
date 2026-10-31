@@ -683,10 +683,12 @@ func TestCLIVersionFromIsUnknownPastTheDeadline(t *testing.T) {
 // grandchild explicit — `sleep & wait` cannot be exec'd away by the shell,
 // whatever that shell is.
 //
-// MEASURED 2026-10-31 on this box (darwin 25.6.0, /bin/sh), a 200ms limit,
-// five runs of each body, `cmd.WaitDelay` dropped: BOTH bodies waited the
-// full 25s — arm 1 at 25.01-25.03s and arm 2 at 25.01-25.04s — and with it
-// set both returned in 0.40s. The claim this comment used to carry,
+// MEASURED 2026-10-31 on this box (darwin 25.6.0, /bin/sh), a 3s limit, five
+// runs of each body, `cmd.WaitDelay` dropped: BOTH bodies waited the full
+// 25s — arm 1 at 25.33-25.59s and arm 2 at 25.18-25.98s — and with it set
+// both returned in 6.00-6.01s, which is limit+WaitDelay. Taken at loadavg 22
+// for the dropped half and 11.5 for the control, and THE LOAD IS PART OF THE
+// MEASUREMENT (see the next paragraph). The claim this comment used to carry,
 // that a ONE-command body is bounded either way "because `sh -c` execs a
 // lone command", does not reproduce and was never about this fixture: the
 // fixture is a script FILE, and darwin's /bin/sh forks the lone command
@@ -695,12 +697,42 @@ func TestCLIVersionFromIsUnknownPastTheDeadline(t *testing.T) {
 // internal/treepins/execwaitdelay_qa_test.go and
 // docs/notes.d/ranger-base-2cttm.md is corrected with it, because the next
 // WaitDelay fixture gets built from those notes.
+//
+// THE LIMIT IS 3s, AND THE WITNESS BELOW IS WHY IT HAS TO BE — which is
+// ranger-base-metqp's correction, from ranger-base-grj2i. This arm ran at a
+// 200ms limit, and on a loaded box the planted sleeper does not reach its
+// FIRST LINE before the context kills it: no echo, no grandchild, nothing on
+// the pipes, and so nothing for cmd.WaitDelay to bound. The arm then passed
+// over a tree with `cmd.WaitDelay = limit` DELETED — green 10 runs of 10 in
+// ranger-base-grj2i's hands, in two sessions, at loadavg 13-22 and again at
+// 57-61. The matrix re-taken here agrees, 3 runs per cell, "RAN" = the
+// sleeper's own witness file exists, loadavg 5.9/21.1 (1min/5min):
+//
+//	limit    arm 1 RAN   arm 2 RAN   wall
+//	200ms    0/3         0/3         0.20s — the limit, so nothing leaked
+//	800ms    1/3         2/3         0.80s or 1.60s, split by whether it RAN
+//	1600ms   3/3         3/3         3.20s = limit+WaitDelay
+//	3s       3/3         3/3         6.00s = limit+WaitDelay
+//
+// 1600ms started 3/3 here and 1/3 in ranger-base-grj2i's own matrix at
+// loadavg 22, so the limit is the cell with two independent 3/3 readings and
+// not the cheapest one that worked once. THE COST IS 6s of this arm's wall, both bodies in
+// parallel, against 0.4s before — paid because the 0.4s version decided its
+// verdict by whether the scheduler let a /bin/sh start inside 200ms.
+//
+// AND THE WITNESS IS THE PART THAT LASTS. A limit is a number that goes
+// stale when the box or the OS changes; the positive control fails LOUDLY
+// instead of passing, so the next reader is told to raise the limit rather
+// than inheriting a green that measured nothing.
 func TestReadCLIVersionGivesUpOnACLIThatWillNotAnswer(t *testing.T) {
 	t.Parallel()
-	const limit = 200 * time.Millisecond
-	// Far enough past limit+WaitDelay that a leaked wait cannot be read as
-	// a loaded box, and far short of the sleeps below.
-	const bound = 10 * time.Second
+	// Above process startup under load — the matrix above is the reason, and
+	// the witness below is what reds if this is ever too low again.
+	const limit = 3 * time.Second
+	// Past limit+WaitDelay (6.0s) with room for a loaded box, and far short
+	// of the 25s sleeps: a leak reads ~25s and a bound reads ~6s, so there
+	// is nothing between them for a loaded box to be mistaken for.
+	const bound = 12 * time.Second
 	for _, tc := range []struct{ name, body string }{
 		{"says nothing and never exits", "sleep 25\n"},
 		{"prints a line, then leaves a grandchild on its pipes", "echo 'sleepycli 9.9.9'\nsleep 25 &\nwait\n"},
@@ -708,13 +740,25 @@ func TestReadCLIVersionGivesUpOnACLIThatWillNotAnswer(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			sleeper := filepath.Join(t.TempDir(), "sleepycli")
-			if err := WriteExecutable(sleeper, []byte("#!/bin/sh\n"+tc.body), 0o755); err != nil {
+			// THE POSITIVE CONTROL: the sleeper's first act, before it
+			// forks anything. `$0` and not an interpolated path, so the
+			// fixture carries no quoting of a t.TempDir() name into a shell.
+			witness := sleeper + ".ran"
+			if err := WriteExecutable(sleeper, []byte("#!/bin/sh\n: > \"$0.ran\"\n"+tc.body), 0o755); err != nil {
 				t.Fatal(err)
 			}
 			started := time.Now()
 			got := readCLIVersionWithin(sleeper, limit)
 			waited := time.Since(started)
 
+			// FIRST, because every assertion below it is about what the
+			// sleeper did and means nothing if it never ran. A box that
+			// cannot start a /bin/sh inside the limit makes this arm's
+			// verdict a coin toss, and the answer to that is a bigger limit
+			// — never a green (ranger-base-metqp).
+			if _, err := os.Stat(witness); err != nil {
+				t.Fatalf("the planted sleeper never reached its first line under a %s deadline (%v), so nothing forked, nothing held the pipes, and cmd.WaitDelay had nothing to bound — this arm measured the scheduler and not the code. Raise limit (keeping bound under the 25s sleep) and re-take the matrix in this test's doc", limit, err)
+			}
 			if waited > bound {
 				t.Fatalf("the read waited %s under a %s deadline — this call has no upper bound on wall time, and its first unattended reader runs under launchd", waited, limit)
 			}

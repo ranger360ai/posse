@@ -31,6 +31,21 @@ package treepins
 // that forks NO shell is (the `ps` ruling below), and that is a different
 // claim about a different fixture.
 //
+// THE 200ms IN BOTH PARAGRAPHS ABOVE NEEDS A QUIET BOX, and this is the one
+// sentence to carry forward into the next WaitDelay fixture built from these
+// notes (ranger-base-metqp, from ranger-base-grj2i). Those readings are
+// sound — a 25s wait is proof the sleeper ran — but they were taken where a
+// /bin/sh starts inside 200ms, and on a loaded one it does not: MEASURED
+// 2026-10-31 at loadavg 5.9/21.1, with the sleeper touching a witness file
+// as its first act, a 200ms limit started it 0 times in 6 and 800ms 3 times
+// in 6, while 1600ms and 3s started it 6/6. A fixture at 200ms on a loaded
+// box therefore measures NOTHING about WaitDelay — the child dies before it
+// forks, so there is no grandchild to hold the pipes — and it passes either
+// way. internal/posse's own arm ran at 200ms for that reason and was green
+// over a tree with the assignment deleted; it is at 3s now and asserts the
+// witness. Build the next one the same way: a positive control the fixture
+// writes before it forks, and a limit above process startup under load.
+//
 // WHY A PIN AND NOT PROSE. The rule was written out in three doc comments and
 // honoured at five of fifteen call sites. ranger-base-2cttm censused the tree
 // by hand and found nine sites with a deadline and no WaitDelay — four of

@@ -37,6 +37,23 @@ should build it as `echo <line>; sleep N & wait`, which is what
 cannot be exec'd away by any shell, so the grandchild is there by
 construction rather than by the shell's choice.
 
+**AND NOT AT 200ms (ranger-base-metqp, from ranger-base-grj2i).** Every
+reading above needs a box quiet enough to start a `/bin/sh` inside the
+limit, which the boxes they were taken on were — a 25s wait is proof the
+sleeper ran. A loaded one does not: MEASURED 2026-10-31 at loadavg 5.9/21.1,
+with the sleeper touching a witness file as its FIRST act, a 200ms limit
+started it 0 times in 6 and 800ms 3 times in 6, while 1600ms and 3s started
+it 6/6. Below that floor the child is killed before it forks, so there is no
+grandchild, nothing holds the pipes, and the fixture returns at the limit
+whether `WaitDelay` is set or not — it measures the scheduler. That is
+exactly how `TestReadCLIVersionGivesUpOnACLIThatWillNotAnswer` came to pass
+10 runs of 10 over a tree with `cmd.WaitDelay = limit` DELETED. It runs at a
+3s limit now and `t.Fatalf`s on the missing witness. So the next fixture
+built from this note wants both: the `& wait` body above, AND a positive
+control the script writes before it forks, under a limit above process
+startup under load. The limit is the part that goes stale; the control is
+what reds instead of passing when it does.
+
 Not observed in the wild. Nothing here is a filed hang; the whole bead is
 read off the code path, the same way fnn1o was.
 

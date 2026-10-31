@@ -421,6 +421,18 @@ const cliVersionTimeout = 5 * time.Second
 // four. So an arm that drove the "" judgement through a real child was green
 // over a tree with that judgement DELETED in 3 runs of 5 — the pin existed
 // and held nothing.
+//
+// AND THE SPREAD IS THE DEADLINE'S PLACEMENT, not a property of the call,
+// which is the reason the split holds rather than a caveat on it
+// (ranger-base-metqp). RE-MEASURED 2026-10-31 at loadavg 8.5 over the same
+// body at the 3s limit the live arm uses now: the buffer held the FULL
+// 16-byte line on all five runs. At 200ms the kill lands while the echo is
+// in flight and the bytes are a coin toss; at 3s the echo is long done and
+// they are not. Neither number is the call's behaviour — both are where the
+// deadline happened to fall — so a test must not read this judgement off a
+// live child at any limit. The 200ms paragraph above also needs a box quiet
+// enough to START the fixture, which is the live arm's own correction
+// (TestReadCLIVersionGivesUpOnACLIThatWillNotAnswer's doc has the matrix).
 func readCLIVersionWithin(path string, limit time.Duration) string {
 	if path == "" {
 		return ""

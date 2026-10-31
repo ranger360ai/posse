@@ -338,6 +338,123 @@ func TestQAHerdrLaunchReachesTheFirstReportGateAtAll(t *testing.T) {
 	}
 }
 
+// ─── the WIRE, which no pin above holds (ranger-base-metqp, finding 3) ───────
+
+// rexLaunchBackend is a `multiplexer: rex` instance with a persona and a
+// claude overlay, ready for a real planLaunch/startPlanned pass.
+//
+// THE OVERLAY IS `startup_wait:` AND NOTHING ELSE, for two reasons. It is
+// what makes a pin of the refusal cost 0.5s instead of the 45s default
+// (DefaultStartupWait) that the direct-call pins above each pay. And it
+// leaves the ADMISSION untouched: an overlay onto a built-in keeps that
+// built-in's measured ReportsOnRex, which is pinned next door in
+// TestQANoRuntimeYamlCanClaimItReportsOnRex — so claude is still admitted
+// here, and the gate under test is D2's and not D1's.
+func rexLaunchBackend(t *testing.T, wait string) *HerdrBackend {
+	t.Helper()
+	b, _ := newTestBackend(t)
+	if err := os.WriteFile(b.App.ConfigPath, []byte(MultiplexerKey+": "+MuxRex+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	b.Slot, _ = newTestRexMux(t)
+	writePersona(t, b.App, "ranger", "[go]")
+	if err := os.MkdirAll(b.App.RuntimesDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeRuntime(t, b.App, "claude", "startup_wait: "+wait+"\n")
+	return b
+}
+
+// Every pin above calls b.confirmReports DIRECTLY, so all fifteen of them
+// stay green over a tree whose ONE call site (herdrback.go, startPlanned) has
+// been deleted. MEASURED by ranger-base-grj2i, 2026-10-31: with the call
+// replaced by `if err := error(nil); err != nil {`, the fifteen muxslot pins
+// and the whole of internal/posse arm 1 both came back green, in 493.2s. A
+// Rex launch would then never wait for a first report and never refuse a seat
+// that wrote none, which is the entire defect ADR 0076 D2 exists for.
+// RE-MEASURED under ranger-base-metqp with that same mutant: this pin's
+// first arm reds.
+//
+// So this one drives a LAUNCH: plan it, start it, and read the verdict off
+// startPlanned. It is the only pin in this file that creates a Rex session.
+//
+// IT ALSO PINS THE ORDER, which the direct calls cannot see: the gate's
+// program_status read has to come after the launch line was typed, because
+// the record is written by a process that does not exist until then
+// (confirmReports' own doc). A gate hoisted above the Start would read the
+// seat before the runtime could possibly have reported and refuse every
+// launch on this instance.
+func TestQARexFirstReportGateIsWiredIntoStartPlanned(t *testing.T) {
+	t.Parallel()
+	t.Run("a seat that never reports refuses the launch it just opened", func(t *testing.T) {
+		t.Parallel()
+		b := rexLaunchBackend(t, "50ms")
+		// Nothing seeded: the fake's program_status answers `{"records":[]}`
+		// for a block with no queue, which is a seat that wrote nothing.
+		o := NewSessionOpts{Name: "s-wire", Dir: t.TempDir(), Agent: "ranger", Runtime: "claude", Bead: "ranger-base-x"}
+		p, err := b.planLaunch(o)
+		if err != nil {
+			t.Fatalf("planLaunch refused an ADMITTED runtime on Rex — this pin is D2's and D1 has already said yes: %v", err)
+		}
+		if p.Cmd == "" {
+			t.Fatal("the plan carries no command, so startPlanned types nothing and the gate is behind a branch this fixture never takes")
+		}
+		ws, err := b.startPlanned(o, p)
+		if err == nil {
+			t.Fatal("startPlanned opened a Rex seat for a runtime that never reported and returned no error — confirmReports is not on this path, so ADR 0076 D2's gate is disconnected and every pin of it above is passing over a dead wire")
+		}
+		for _, want := range []string{"claude", "s-wire", "NOTHING WAS TYPED", "herdr", "posse peek"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("the refusal startPlanned returned does not name %q — it may be some other launch failure standing in for the gate:\n%v", want, err)
+			}
+		}
+		// rangerhq-v52t's contract: the workspace is handed back WITH the
+		// error, because "a seat is up and the gate refused it" is not the
+		// same state as "nothing exists" and must not be written over.
+		if ws == "" {
+			t.Error("startPlanned refused and returned no workspace id — a caller cleaning up cannot then tell a refused launch from one that never opened a seat")
+		}
+		// The order. `send` is the typed line, and every program_status read
+		// must follow it.
+		calls := rexCalls(t)
+		typed, read := -1, -1
+		for i, c := range calls {
+			if strings.Contains(c, " send ") && typed < 0 {
+				typed = i
+			}
+			if strings.Contains(c, "program_status") && read < 0 {
+				read = i
+			}
+		}
+		if typed < 0 || read < 0 || read < typed {
+			t.Errorf("the first program_status read is at %d and the typed line at %d — the gate CONFIRMS a launch and so reads after it (ADR 0076 §3); above the Start there is nothing that could have reported yet:\n%s", read, typed, strings.Join(calls, "\n"))
+		}
+	})
+
+	t.Run("a seat that reports is launched", func(t *testing.T) {
+		t.Parallel()
+		b := rexLaunchBackend(t, "5s")
+		// The block the fake's `new` will mint for the first session of this
+		// home, seeded before the create so the record is already there when
+		// the gate reads it. This is the two-way half: without it a gate
+		// wired to refuse EVERYTHING would pass the arm above.
+		rexSeedProcess(t, rexTestBlock, rexRuntimeProc())
+		rexSeedStatus(t, rexTestBlock, []RexStatusRecord{rexRuntimeRec(MuxIdle)})
+		o := NewSessionOpts{Name: "s-ok", Dir: t.TempDir(), Agent: "ranger", Runtime: "claude", Bead: "ranger-base-x"}
+		p, err := b.planLaunch(o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ws, err := b.startPlanned(o, p)
+		if err != nil {
+			t.Fatalf("a Rex launch whose runtime DID report was refused — the gate is a confirmation and a seat that answered is a launch: %v", err)
+		}
+		if ws != rexTestSession {
+			t.Errorf("the launch opened %q, want the fake's first session %q — the arm above seeds %q, so a different id means the two halves are not reading the same seat", ws, rexTestSession, rexTestBlock)
+		}
+	})
+}
+
 // ─── the launch's own refusal of a malformed key ─────────────────────────────
 
 func TestQAPlanLaunchRefusesAMalformedMultiplexerKey(t *testing.T) {
@@ -445,5 +562,93 @@ func TestQADispatchRefusesANonReportingRuntimeOnRexBeforeTheClaim(t *testing.T) 
 	// the multiplexer alone.
 	if rt := builtinRuntime(t, "claude"); !RexAdmits(rt) {
 		t.Fatal("claude must be admitted on the same instance, or this gate is refusing the multiplexer rather than the runtime")
+	}
+}
+
+// The D1 BACKSTOP, which the dispatch pin above does not reach
+// (ranger-base-metqp, finding 4). planLaunch carries the same refusal for
+// every bead-carrying path that is not the dispatch loop — a cockpit `d` on a
+// session it must create, a recipe, a recreate — and nothing held it:
+// MEASURED by ranger-base-grj2i, 2026-10-31: with the condition at
+// herdrback.go disabled as `if false && ...`, the fifteen muxslot pins and
+// the whole of internal/posse arm 1 both came back green, in 493.2s.
+// RE-MEASURED under ranger-base-metqp over three mutants — that one, a
+// RexAdmits that admits everything, and a RexAdmits that admits nothing —
+// each of which reds an arm below.
+// TestQAPlanLaunchRefusesAMalformedMultiplexerKey is next to that line and
+// covers the malformed KEY, not the admission, which is why the gap read as
+// covered.
+//
+// grok is the subject for the dispatch pin's reason: `prompt: argv`, so a
+// refusal that arrived any later would be a billed turn nobody observes.
+//
+// FOUR ARMS, because the condition has two halves and each can fail open.
+// Dispatched and recreate refuse; interactive warns and proceeds (ADR 0013 §1
+// rule 5); and an ADMITTED runtime is not refused, which is what a
+// `RexAdmits` that admitted nothing — or a refusal moved above the
+// admission read — would red.
+func TestQAPlanLaunchIsTheRexAdmissionBackstopForEveryBeadCarryingPath(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name    string
+		o       NewSessionOpts
+		refused bool
+	}{
+		{"a recipe or cockpit launch carrying a bead", NewSessionOpts{Runtime: "grok", Bead: "ranger-base-x"}, true},
+		{"a recreate, which plans before it kills", NewSessionOpts{Runtime: "grok", Recreate: true}, true},
+		{"the operator's own, at the keyboard", NewSessionOpts{Runtime: "grok"}, false},
+		{"the runtime Rex admits", NewSessionOpts{Runtime: "claude", Bead: "ranger-base-x"}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			b, _ := newTestBackend(t)
+			if err := os.WriteFile(b.App.ConfigPath, []byte(MultiplexerKey+": "+MuxRex+"\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			// The slot is the FAKE rex, so that the zero-rex-calls
+			// assertion below is a real reading and not a backend with no
+			// occupant to call. planLaunch reads the admission off
+			// a.MultiplexerName() and the runtime table, so it never needs
+			// it — which is the property being asserted.
+			b.Slot, _ = newTestRexMux(t)
+			writePersona(t, b.App, "ranger", "[go]")
+			o := tc.o
+			o.Name, o.Dir, o.Agent = "s1", t.TempDir(), "ranger"
+			_, err := b.planLaunch(o)
+			warn := warnBuf(t, b).String()
+
+			// ADR 0013 §1 rule 3, the half the dispatch pin next door calls
+			// its strongest: the verdict is read off the runtime table, so
+			// no seat is opened and no occupant is asked, on any of these
+			// arms. A try-and-see rebuild would show up here as a call.
+			if calls := rexCalls(t); len(calls) != 0 {
+				t.Errorf("planLaunch made %d rex call(s) — the admission is a DECLARATION read before the claim, and a plan that asks the occupant has already spent the thing refusing was meant to save:\n%s", len(calls), strings.Join(calls, "\n"))
+			}
+
+			if !tc.refused {
+				if err != nil {
+					t.Fatalf("planLaunch refused this launch: %v", err)
+				}
+				// The interactive grok arm still has to SAY it, or the
+				// escape hatch is a silent one.
+				if tc.o.Runtime == "grok" && (!strings.Contains(warn, "DEGRADED") || !strings.Contains(warn, "grok")) {
+					t.Errorf("an interactive launch on a runtime Rex cannot read proceeded without saying so:\n%s", warn)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("planLaunch planned a grok launch on a `multiplexer: rex` instance — this is D1's backstop for every bead-carrying path that is not the dispatch loop, and without it a cockpit `d`, a recipe or a recreate opens a seat whose every state is unknown (ADR 0076 D1)")
+			}
+			// It is THIS refusal and not another of planLaunch's: the same
+			// four facts the pre-claim refusal next door is pinned on.
+			for _, want := range []string{"grok", "herdr", MultiplexerKey + ": " + MuxRex, "ADR 0076"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("the refusal does not name %q, so it may be some other planLaunch gate standing in for the admission:\n%v", want, err)
+				}
+			}
+			if warn != "" {
+				t.Errorf("a refused launch also printed a line — the asymmetry is refuse OR warn, never both:\n%s", warn)
+			}
+		})
 	}
 }
