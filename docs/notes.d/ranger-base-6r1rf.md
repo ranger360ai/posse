@@ -139,8 +139,25 @@ degraded in the first place.
 
 ### Verified
 
-`make fmt-check`, `make tree-check` (adr-check, notes-check and doc-check
-are the doors this change goes through) and the three pins over the changed
-declaration — the bob grid row, the UNPROVEN/verified parity branches, and
-the YAML loader's `skills_verified` rules — named in the bead's closing
-comment with their timings.
+MEASURED 2026-10-31, this box, all green:
+
+- `go build ./...`, `make fmt-check` (exit 0), `python3
+  scripts/notes-index.py --check`.
+- Focused pins, each confirmed to have actually RUN under `-v` rather than
+  passed as a filter matching nothing: `TestQABobGridDeclaresEveryRow`
+  (0.88s — the grid now says both `symlinked at launch and ADDITIVE` and
+  `the LINKS are the binding (verified 2.0.5)`),
+  `TestQASkillsTreeAtASessionDirThatIsTheHomeRefusesUnderADeclaredGlobalRoot`,
+  `TestQABobsSkillsTreeAtTheHomeRefusesUnderItsOwnGlobalRoot`,
+  `TestSkillsCwdIsDeclarable`, `TestSkillsCwdPathFormAndVerification`,
+  `TestSkillsVerifiedDriftIsReportedNotRefused`,
+  `TestSkillsFlagTakesAPrintfForm`.
+- The full `make test`: all thirteen `tree-check` doors, then arm 1
+  (`./...`: internal/posse 325.0s, internal/treepins 341.1s, cmd/posse
+  170.7s, cmd/testparallel 1.8s, plus the silent-revert audit — 2,125
+  commits, 0 untriaged), arm 2 (260.9s) and arm 3 (279.4s). Exit 0.
+- `go run ./cmd/checkorphans` — clean, after the suite ran backgrounded
+  under a declared `POSSE_KEEP=ranger-base-6r1rf`.
+
+What is NOT verified here, and cannot be from this seat: bob's live
+discovery on the installed 2.0.7. That is ranger-base-bs49e.
