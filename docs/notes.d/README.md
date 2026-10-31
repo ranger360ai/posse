@@ -21,6 +21,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-csnzn](ranger-base-csnzn.md) — Extracting the multiplexer slot: four places the interface is not ADR 0076 §2's table (ranger-base-csnzn) — 2026-10-31
 - [ranger-base-9f2o6](ranger-base-9f2o6.md) — grok 1.0.52 re-measured: the cwd root is still read, and it has a precondition nobody declared (ranger-base-9f2o6) — 2026-10-31
 - [ranger-base-8u8n8](ranger-base-8u8n8.md) — Two pinned spellings of one seam, and the gate between them (ranger-base-8u8n8) — 2026-10-31
+- [ranger-base-80zqb](ranger-base-80zqb.md) — The two brackets were backwards, and the reader was never going to close the class (ranger-base-80zqb) — 2026-10-31
 - [ranger-base-6r1rf](ranger-base-6r1rf.md) — bob reads the posse namespace, symlinks and all — and is in drift the day it ships (ranger-base-6r1rf) — 2026-10-31
 - [ranger-base-4dhcw](ranger-base-4dhcw.md) — The verdict file has one subject, and not every run can speak for it (ranger-base-4dhcw) — 2026-10-31
 - [ranger-base-3a5z7](ranger-base-3a5z7.md) — The channel suffix is grok's update-check cache, so §6c compares the release (ranger-base-3a5z7) — 2026-10-31

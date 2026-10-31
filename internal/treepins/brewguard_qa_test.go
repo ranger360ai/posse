@@ -51,14 +51,17 @@ package treepins
 // (docs/notes.d/ranger-base-et7bs.md) stays readable.
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // bgBrewWord matches a lowercase `brew` as a word. It cannot match inside
@@ -117,12 +120,12 @@ var bgHeredoc = regexp.MustCompile(`<<(-?)\s*['"]?([A-Za-z_][A-Za-z0-9_]*)['"]?`
 // in a function nothing calls left all five arms green — over a gate that
 // exports nothing at runtime and so POSTs a command_run event to Homebrew's
 // InfluxDB on every brew read it makes. An export is therefore recognized only
-// where it is reached unconditionally — column 0, block depth 0, outside any
-// heredoc — and anything this reader cannot place there is not counted. A
-// guard it fails to see can only make the pin stricter; one it imagines makes
-// the pin a lie.
+// where it is reached unconditionally — column 0, block depth 0, above the
+// first parenthesis, outside any heredoc — and anything this reader cannot
+// place there is not counted. A guard it fails to see can only make the pin
+// stricter; one it imagines makes the pin a lie.
 //
-// Depth is a COUNT of block words and not a parse, so it drifts upward on a
+// Depth is a COUNT of block words and braces and not a parse, so it drifts upward on a
 // keyword inside a string (`echo "for the record"`), which costs a false FAIL
 // naming the line and never a false pass. Drift DOWNWARD is the unsafe
 // direction, so a negative depth does not quietly become zero: from that line
@@ -134,6 +137,49 @@ var bgHeredoc = regexp.MustCompile(`<<(-?)\s*['"]?([A-Za-z_][A-Za-z0-9_]*)['"]?`
 // scripts/ never asks about exports at all. Three of this tree's scripts trip
 // the count today and none of them reads brew (MEASURED 2026-10-31:
 // queue-cutover.sh, verify-herdr-bob-rules.sh, responsibility-census.py).
+//
+// A PARENTHESIS IS NOT COUNTED, IT STOPS THE PLACING (ranger-base-80zqb). The
+// brace-and-block-word count had no notion of `(` at all, so an export in a
+// top-level subshell, or in a function whose body is a subshell, sat at column
+// 0 with depth 0 and was recorded as a top-level guard — the ranger-base-f5lu1
+// survivor re-spelled with the other bracket, against the fix that was filed
+// to close it. MEASURED 2026-10-31 over verify-grok-pin.sh:80 with a stub brew
+// recording its own environment: `(\nexport …\n)` and
+// `never_called() (\nexport …\n)` each left HOMEBREW_NO_ANALYTICS and
+// HOMEBREW_NO_AUTO_UPDATE UNSET in the brew child, while a plain top-level
+// export and even a top-level `{ … }` group set both. The two brackets were
+// treated exactly backwards from what they do, and the permissive one was the
+// one that exports nothing.
+//
+// Counting `(` and `)` beside the braces is the obvious repair and it is the
+// wrong one. A `case` pattern ends in a bare `)`, so the count goes negative on
+// the first pattern of every argument parser in the tree: MEASURED 2026-10-31,
+// counting parens took the files under scripts/ that LOSE the count from 3 of
+// 56 to 38 of 56, and all four of bgRoster's callers were among the 38. The
+// count would still be lost rather than wrong — the strict direction — but a
+// reader that can place nothing below line ~120 of every gate is a reader whose
+// strictness has stopped meaning anything.
+//
+// So a line carrying `(` or `)` is recorded as a structure this reader cannot
+// place, and nothing from that line on is placed — that line included, because
+// `( export X=1 )` and `export X=$(date)` are the same text to a line-based
+// reader and only one of them runs. In effect the export has to sit in the run
+// of lines above the first bracket of any kind, which is where all four of
+// bgRoster's callers put it (MEASURED 2026-10-31: exports at :80, :62, :75 and
+// :87; first parenthesis at :82, :64, :77 and :100). It costs the
+// refused-though-reachable shapes TestQATheBrewGuardReaderCanStillSayNo now
+// documents, and it buys a rule with no next uncounted construct, which the
+// counting repair does not have.
+//
+// AND THE STATIC READING IS NO LONGER THE ONLY ONE. The repair above is still a
+// parser learning one more bracket, so TestQABrewGuardsReachTheBrewChild below
+// proves the same claim BY CONSTRUCTION for every gate that can be run: it runs
+// the gate against a stub brew that records its own environment and reads the
+// guards out of the CHILD, where an export the shell never executed simply is
+// not there. That is option (b) of ranger-base-mk6gw's own finding 1, which its
+// close did not take and did not say why. One rostered caller cannot be reached
+// that way — bgNoDynamic names it and says why — and that caller is the reason
+// this static reader is repaired rather than deleted.
 //
 // It is a plain function and not the assertion so that the control below can
 // run it over fixtures and read its answer. An assertion that only ever ran
@@ -168,6 +214,15 @@ func bgRead(script string) (exports, shadowed map[string]int, mentions []string,
 		}
 		if code == "" || strings.HasPrefix(code, "#") {
 			continue
+		}
+		// A parenthesis is a structure this reader cannot place — a subshell,
+		// a function body, a `case` pattern and a command substitution are
+		// one character to it — so it stops the placing here instead of being
+		// counted. Set BEFORE atTop, so the line carrying it is refused too.
+		// The head comment carries the measurement for why `(` is not counted
+		// the way `{` is (ranger-base-80zqb).
+		if lost == "" && strings.ContainsAny(code, "()") {
+			lost = fmt.Sprintf("%s:%d: %q", script, i+1, code)
 		}
 		// Read before this line's own openers are counted: a line that OPENS
 		// a block does not put its own head inside one, and the `export` in
@@ -259,7 +314,7 @@ func bgAssertBrewReadsAreGuarded(t *testing.T, script string) {
 			if n, seen := shadowed[g.assign]; seen {
 				where = fmt.Sprintf(" It IS written at line %d, and that line does not run unconditionally — it is indented, inside a block, or inside a heredoc, so the brew reads below it are unguarded at runtime whatever the text says.", n)
 			} else if lost != "" {
-				where = fmt.Sprintf(" This reader also lost its block count at %s and placed nothing below that line, so if the export is down there, that is why it was not seen: balance the block words on that line, or move the export above it.", lost)
+				where = fmt.Sprintf(" This reader also stopped placing lines at %s — an unbalanced block word or brace, or a parenthesis of any kind — and placed nothing from there on, so if the export is down there, that is why it was not seen: move the export above that line.", lost)
 			}
 			t.Errorf("%s must `export %s` at top level — %s.%s First read is %s",
 				script, g.assign, fmt.Sprintf(g.cost, len(mentions)), where, mentions[0])
@@ -298,14 +353,17 @@ func TestQATheBrewGuardReaderCanStillSayNo(t *testing.T) {
 			map[string]int{analytics: 2, autoUpd: 2}, nil, 3},
 		{"no export at all", "#!/bin/bash\nv=$(brew info --cask codex)\n",
 			map[string]int{}, nil, 2},
-		{"both exported below the call", "#!/bin/bash\nv=$(brew info --cask codex)\n" + guard + "\n",
+		// Spelled without a command substitution on purpose: a `$( )` above
+		// the export would stop the reader placing it at all (ranger-base-80zqb),
+		// and this row's subject is the ORDERING check below a call it CAN place.
+		{"both exported below the call", "#!/bin/bash\nbrew info --cask codex >/dev/null\n" + guard + "\n",
 			map[string]int{analytics: 3, autoUpd: 3}, nil, 2},
 		{"auto-update only — the pre-esz16 tree", "#!/bin/bash\n" + autoOnly + "\nv=$(brew list --pinned)\n",
 			map[string]int{autoUpd: 2}, nil, 3},
 		{"analytics only", "#!/bin/bash\nexport " + analytics + "\nv=$(brew list --pinned)\n",
 			map[string]int{analytics: 2}, nil, 3},
 		{"the two on separate lines, one of them below the call",
-			"#!/bin/bash\nexport " + analytics + "\nv=$(brew --prefix)\nexport " + autoUpd + "\n",
+			"#!/bin/bash\nexport " + analytics + "\nbrew --prefix >/dev/null\nexport " + autoUpd + "\n",
 			map[string]int{analytics: 2, autoUpd: 4}, nil, 3},
 		{"a commented export is not a setting", "#!/bin/bash\n# " + guard + "\nv=$(brew list --pinned)\n",
 			map[string]int{}, nil, 3},
@@ -344,6 +402,31 @@ func TestQATheBrewGuardReaderCanStillSayNo(t *testing.T) {
 		{"an export below a block that CLOSED is top level again",
 			"#!/bin/bash\nif false; then\n\t: nothing\nfi\n" + guard + "\nv=$(brew --prefix)\n",
 			map[string]int{analytics: 5, autoUpd: 5}, map[string]int{}, 6},
+
+		// ranger-base-80zqb: the same two shapes spelled with PARENTHESES,
+		// which the brace-counting reader placed at column 0 with depth 0 and
+		// recorded as top-level guards. Both were MEASURED 2026-10-31 to leave
+		// both settings unset in the brew child while all eight brew-guard arms
+		// stayed green, so these two rows are the pin and the brace rows above
+		// are no longer the whole of it. Mutation-check this reader with these
+		// spellings, not the brace one.
+		{"an export inside a top-level subshell is not a setting",
+			"#!/bin/bash\n(\n" + guard + "\n)\nv=$(brew info --cask codex)\n",
+			map[string]int{}, map[string]int{analytics: 3, autoUpd: 3}, 5},
+		{"an export inside a function whose body is a subshell is not a setting",
+			"#!/bin/bash\nnever_called() (\n" + guard + "\n)\nv=$(brew --prefix)\n",
+			map[string]int{}, map[string]int{analytics: 3, autoUpd: 3}, 5},
+
+		// And what the rule COSTS, written down rather than discovered: this
+		// export DOES run and DOES set both settings, and the reader refuses
+		// it, because `( … )` opening a subshell and `$( … )` substituting a
+		// command are the same character to a line-based scan. A false FAIL
+		// naming its line is the safe direction and the diagnostic says to
+		// move the export above that line; a guard this reader imagined would
+		// be the pin lying.
+		{"an export whose own line carries a command substitution is refused — strict, and the line is named",
+			"#!/bin/bash\n" + guard + " NOW=$(date)\nv=$(brew --prefix)\n",
+			map[string]int{}, map[string]int{analytics: 2, autoUpd: 2}, 3},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -485,21 +568,48 @@ var bgExempt = map[string]string{
 // the two lists above. Two-way, like boxcheck's: nothing claimed by a list is
 // absent from the census either, so neither list can go stale while staying
 // green.
+//
+// IT WALKS, and until ranger-base-80zqb it did not. An os.ReadDir of scripts/
+// reads one level, so "every file under scripts/" was a claim about the top of
+// the directory only: a brew-calling script one directory down was on neither
+// list and red nothing. MEASURED 2026-10-31 — an unguarded caller planted at
+// scripts/zzprobe/newgate.sh, which bgRead reports as one runnable brew
+// mention with no exports, left this arm green. scripts/ is flat today (56
+// entries, 0 of them directories, MEASURED the same day), so nothing was
+// escaping: the fix is the claim being made good rather than a file being
+// caught, and it is what makes a roster row's path meaningful below the top
+// level. Walking rather than asserting flatness is deliberate — an assertion
+// that scripts/ must stay flat is a layout ruling this pin has no business
+// making, and it would red on the first legitimate scripts/lib/.
 func TestQAEveryBrewNamingScriptIsRosteredOrExempt(t *testing.T) {
-	ents, err := os.ReadDir("scripts")
-	if err != nil {
-		t.Fatalf("read scripts/: %v", err)
+	var files []string
+	if err := filepath.WalkDir("scripts", func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || !d.Type().IsRegular() {
+			return nil
+		}
+		files = append(files, path)
+		return nil
+	}); err != nil {
+		t.Fatalf("walk scripts/: %v", err)
+	}
+	sort.Strings(files)
+	// Reader sanity before the arms trust it. An assertion that every
+	// brew-naming file is classified is satisfied by a walk that read none,
+	// and a walk that read none is silent about it. The floor sits well under
+	// the live count (56, MEASURED 2026-10-31) so an ordinary landing does not
+	// move it. bgRoster's four rows are the other half of the same witness.
+	if len(files) < 40 {
+		t.Fatalf("the walk of scripts/ found only %d file(s) — the walk is broken, not the tree: %v", len(files), files)
 	}
 	rostered := map[string]bool{}
 	for _, p := range bgRoster {
 		rostered[p] = true
 	}
 	seen := map[string][]string{}
-	for _, e := range ents {
-		if e.IsDir() {
-			continue
-		}
-		path := filepath.Join("scripts", e.Name())
+	for _, path := range files {
 		_, _, mentions, _, err := bgRead(path)
 		if err != nil {
 			t.Errorf("read %s: %v", path, err)
@@ -546,6 +656,207 @@ func TestQAEveryRosteredBrewCallerGuardsItsReads(t *testing.T) {
 	for _, script := range bgRoster {
 		t.Run(filepath.Base(script), func(t *testing.T) {
 			bgAssertBrewReadsAreGuarded(t, script)
+		})
+	}
+}
+
+// bgUnset is what the stub brew prints for a setting it does not have, so that
+// "the child had no such variable" and "the child had it set to empty" are two
+// different readings rather than one empty string.
+const bgUnset = "<unset>"
+
+// bgGate — one gate the dynamic arm can RUN, with the minimum fixture that
+// gets it as far as its first brew call.
+type bgGate struct {
+	script  string // run in place from the repo root; it cd's to its own ..
+	subject string // the binary it refuses to start without, stubbed on PATH
+	cfgDir  string // a $HOME-relative dir it wants a config.toml in; "" for none
+}
+
+// bgDynamic — the BY-CONSTRUCTION half of the reachability claim, and the half
+// no reader of text can be (ranger-base-80zqb; option (b) of
+// ranger-base-mk6gw's own finding 1, which that bead's close did not take).
+//
+// bgRead approximates "this export is reached before that brew call" and will
+// always be an approximation: it got braces and block words, missed
+// parentheses, and the repair is a rule about brackets rather than a parse.
+// Running the gate measures the thing itself. An export the shell never
+// executed — in a subshell, in a function nothing calls, in a branch not
+// taken, below an `exit` — is simply not in the child's environment, whatever
+// it is spelled like, so the two shapes MEASURED to survive the brace counter
+// fail here by construction and so does the next spelling nobody has thought
+// of.
+//
+// The fixtures are minimal on purpose and each row's two fields are the whole
+// of what one gate needs to REACH brew: all three refuse to start without
+// their subject binary on PATH, and two of them without a config.toml
+// (MEASURED 2026-10-31: with neither, all three died at exit 2 having called
+// brew zero times — a green arm over a gate that was never measured, which is
+// what the "called brew zero times" fatal below exists to refuse). Each gate's
+// own rows FAIL against a fixture this thin; its exit code is not this arm's
+// subject and is not asserted.
+var bgDynamic = []bgGate{
+	{"scripts/verify-bd-pin.sh", "bd", ""},
+	{"scripts/verify-codex-pin.sh", "codex", ".codex"},
+	{"scripts/verify-grok-pin.sh", "grok", ".grok"},
+}
+
+// bgNoDynamic — a bgRoster caller this arm cannot run, with the reason, in the
+// same two-list shape bgRoster/bgExempt already uses. A rostered caller on
+// neither list reds: that is what stops the dynamic half covering three of
+// four while reading as though it covered the roster.
+var bgNoDynamic = map[string]string{
+	"scripts/macos-install-probe.sh": "reads brew at an ABSOLUTE path — `/opt/homebrew/bin/brew --prefix`, falling back to /usr/local/bin/brew (:206) — because `paths` mode's whole subject is the OPERATOR's own brew and whether its prefix is on the default PATH. An absolute path consults neither $PATH nor the shell's functions, so nothing can stand in for that child and its environment cannot be observed hermetically; the alternative is running the real brew from the suite, which is the footprint this file exists to refuse (MEASURED 2026-10-31). This caller's guard is held by bgRead and by nothing else, and it is the reason that reader is repaired rather than deleted.",
+}
+
+// The guards, measured where they have to be true: inside brew's own
+// environment. This is the pin bgRead can only approximate.
+func TestQABrewGuardsReachTheBrewChild(t *testing.T) {
+	// Two-way against bgRoster first, so neither list can go stale while the
+	// arms below stay green.
+	dyn := map[string]bool{}
+	for _, d := range bgDynamic {
+		dyn[d.script] = true
+	}
+	rostered := map[string]bool{}
+	for _, p := range bgRoster {
+		rostered[p] = true
+		_, excused := bgNoDynamic[p]
+		if dyn[p] && excused {
+			t.Errorf("%s is both run by this arm and excused from it in bgNoDynamic — one place, one answer", p)
+			continue
+		}
+		if !dyn[p] && !excused {
+			t.Errorf("%s is on bgRoster and is neither run by this arm nor named in bgNoDynamic.\n"+
+				"Add it to bgDynamic with the fixture that gets it to its first brew call, or to bgNoDynamic with the reason its brew child cannot be observed. The static reader alone passed two MEASURED subshell spellings of a guard that sets nothing (ranger-base-80zqb), so a caller held by text only is a caller whose guard is a claim.", p)
+		}
+	}
+	for _, d := range bgDynamic {
+		if !rostered[d.script] {
+			t.Errorf("bgDynamic runs %s, which is not on bgRoster — this arm's subject is the roster, so a row outside it is a pin over nothing", d.script)
+		}
+	}
+	for p := range bgNoDynamic {
+		if !rostered[p] {
+			t.Errorf("bgNoDynamic excuses %s, which is not on bgRoster — delete the row rather than leave a reason nobody will check again", p)
+		}
+	}
+
+	for _, d := range bgDynamic {
+		t.Run(filepath.Base(d.script), func(t *testing.T) {
+			home, bin := t.TempDir(), t.TempDir()
+			rec := filepath.Join(t.TempDir(), "brew-calls")
+
+			if d.cfgDir != "" {
+				dir := filepath.Join(home, d.cfgDir)
+				if err := os.MkdirAll(dir, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, "config.toml"), nil, 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			// The subject binary. Without it every one of these gates exits 2
+			// with "<subject> not on PATH" before it reads brew.
+			subj := "#!/bin/bash\necho '" + d.subject + " 0.0.0'\nexit 0\n"
+			if err := WriteExecutable(filepath.Join(bin, d.subject), []byte(subj), 0o755); err != nil {
+				t.Fatal(err)
+			}
+
+			// The instrument: a brew that records one block per call, naming
+			// the argv it was given and then every bgGuards setting as THIS
+			// CHILD has it. The names are derived from bgGuards, so a row added
+			// there is demanded here too and cannot be half-applied.
+			body := "#!/bin/bash\n{\n\tprintf 'call %s\\n' \"$*\"\n"
+			for _, g := range bgGuards {
+				name, _, _ := strings.Cut(g.assign, "=")
+				body += fmt.Sprintf("\tprintf '%s=%%s\\n' \"${%s-%s}\"\n", name, name, bgUnset)
+			}
+			body += "} >>\"$BG_BREW_REC\"\nexit 0\n"
+			if err := WriteExecutable(filepath.Join(bin, "brew"), []byte(body), 0o755); err != nil {
+				t.Fatal(err)
+			}
+
+			// Built from this literal list and deliberately NOT from
+			// os.Environ(), which is the whole validity of the arm: a guard
+			// the parent `go test` already carried would arrive in the child
+			// and read as the script's own export. It is also why the
+			// CLAUDE_CONFIG_DIR fence in TestMain is not needed here — these
+			// children are handed no path to the operator's home at all, HOME
+			// included. Asserted rather than assumed, two lines down.
+			env := []string{
+				"PATH=" + bin + string(os.PathListSeparator) + "/usr/bin:/bin",
+				"HOME=" + home,
+				"TMPDIR=" + t.TempDir(),
+				"BG_BREW_REC=" + rec,
+			}
+			for _, kv := range env {
+				for _, g := range bgGuards {
+					name, _, _ := strings.Cut(g.assign, "=")
+					if strings.HasPrefix(kv, name+"=") {
+						t.Fatalf("this arm's own child environment carries %q — then a child that HAS the setting proves nothing about %s", kv, d.script)
+					}
+				}
+			}
+
+			// Bounded, and the grace named with it: a context deadline alone
+			// kills the process and still blocks on the pipes its children
+			// hold (ranger-base-2cttm).
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			defer cancel()
+			cmd := exec.CommandContext(ctx, d.script)
+			cmd.Env = env
+			cmd.WaitDelay = 5 * time.Second
+			out, _ := cmd.CombinedOutput()
+
+			b, err := os.ReadFile(rec)
+			if err != nil {
+				t.Fatalf("%s called brew zero times, so this arm measured nothing and a green result here is not evidence (%v).\n"+
+					"The minimum fixture in bgDynamic has gone stale — this gate now refuses to run before it reads brew. Its output was:\n%s", d.script, err, out)
+			}
+			type call struct {
+				argv string
+				env  map[string]string
+			}
+			var calls []call
+			for _, line := range strings.Split(strings.TrimRight(string(b), "\n"), "\n") {
+				if argv, ok := strings.CutPrefix(line, "call "); ok {
+					calls = append(calls, call{argv: argv, env: map[string]string{}})
+					continue
+				}
+				if len(calls) == 0 {
+					t.Fatalf("%s: the recording opens with %q, before any `call` line — the stub's own format changed, so this arm is reading something else", d.script, line)
+				}
+				k, v, ok := strings.Cut(line, "=")
+				if !ok {
+					t.Fatalf("%s: recording line %q is not name=value — the stub's own format changed", d.script, line)
+				}
+				calls[len(calls)-1].env[k] = v
+			}
+			if len(calls) == 0 {
+				t.Fatalf("%s: the recording at %s is empty — the stub ran and wrote nothing, so this arm measured nothing.\n%s", d.script, rec, out)
+			}
+
+			// Every call, not the first: a gate that exported the guards, read
+			// brew, and then unset or shadowed them before a later read would
+			// pass a first-call-only check over a footprint it still leaves.
+			for _, c := range calls {
+				for _, g := range bgGuards {
+					name, want, _ := strings.Cut(g.assign, "=")
+					got, ok := c.env[name]
+					if !ok {
+						t.Errorf("%s: the stub recorded no %s line for `brew %s` — the stub's own format changed", d.script, name, c.argv)
+						continue
+					}
+					if got == want {
+						continue
+					}
+					t.Errorf("%s ran `brew %s` with %s=%s in its environment, want %s=%s.\n"+
+						"  %s\n"+
+						"  The export is in the text and it did not reach the child. A subshell, a function body, a branch not taken and anything below an `exit` each read as a top-level guard to a line-based scan and set nothing at runtime; bgRead is repaired for the two bracket spellings and this arm is what closes the class (ranger-base-80zqb).",
+						d.script, c.argv, name, got, name, want, fmt.Sprintf(g.cost, len(calls)))
+				}
+			}
 		})
 	}
 }
