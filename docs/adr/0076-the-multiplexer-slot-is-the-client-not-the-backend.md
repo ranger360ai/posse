@@ -57,6 +57,18 @@ revision 8), part 2 of the probe and by hand:
   `command`, `cwd` and `shell`, but no env. Blocks also push
   `program_status_changed`, `program_status_removed` and `child_exited`
   events.
+- **Env in argv costs no more on Rex than on herdr** (ranger-base-ytxy0,
+  same binary). The crew's `default` env set carries the runtime's OAuth
+  token, so this was checked before the Rex `Create` was built. I launched
+  `rex new --keep-open -- /usr/bin/env PROBE_SECRET=<dummy> /bin/sh`. The
+  dummy value was absent from `session.list`, `session.view`,
+  `session.describe_block` and Rex's support and cache directories on disk.
+  The block's `process` reading showed plain `sh`, because `env` execs
+  away. The value is visible only in the `rex` CLI's own argv for the
+  length of the call, which is the exposure herdr's `--env` already has.
+  The meta file keeps env-set names and never values (`HerdrMeta.Envs`).
+  The Rex `Mux` must keep it that way: no argv in meta, logs or
+  `Evidence`.
 
 ## Decision
 
@@ -139,6 +151,17 @@ reason to diverge from that.
   That is a capability gap posse names at launch, not a bug it hides.
 - Rex's CLI is not on `PATH`. The Rex `Mux` takes the binary from config,
   the way `RHQ_HERDR_BIN` works for herdr.
+- Scheduled dispatch is started by herdr's cockpit plugin (its
+  `[[startup]]` hook runs `posse dispatch --watch`). Rex has no such hook,
+  so on a Rex instance the operator starts the loop from any shell. The
+  loop is a plain CLI and needs nothing from the multiplexer it runs in.
+  The cockpit stays herdr's. A Rex cockpit gets a bead when someone asks
+  for one.
+- Every crew PID on this instance is `runtime: claude` (MEASURED
+  2026-10-31, `grep '^runtime:'` over the instance's `agents/`). So the
+  §3 refusals (grok, codex and bob, as the ranger-base-zkeik amendment
+  below settles them) do not stop the crew running on Rex. They stop only
+  a seat whose runtime is overridden to one of those three.
 - `Wait` polls. The rates are ASSUMED low enough (one seat at a time,
   deadlines in seconds) that an event subscriber would cost more than it
   saves.
