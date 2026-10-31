@@ -41,9 +41,12 @@ Install these first. Versions matter; two of them are pinned on purpose.
 | **git** | any current | bd stores the queue in a git repo | — |
 | an **agent CLI** | at least one | the labor. `claude`, `codex`, `grok`, or `bob` — bob launches by hand today and dispatches only once step 8's detection authority is installed. | vendor |
 
-If you install `grok`, pin it: the fleet runs **1.0.5** and grok
+If you install `grok`, pin it: the fleet runs **1.0.52** and grok
 self-updates by default (`etc/grok/version-pin.toml`, `make
 verify-grok-pin`). An upgrade is a security re-audit, not a version bump.
+Here it is the Homebrew cask `grok-build`, so the pin is two gates — grok's
+own `maximum_version`/`required_maximum_version` plus `brew pin --cask
+grok-build` — and `make verify-grok-pin` reds if either moves.
 
 `codex` is pinned too, at **0.153.4**, but by a different mechanism, because
 codex has no version-ceiling config key at all: the lever is

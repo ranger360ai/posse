@@ -2,10 +2,22 @@
 # Verify the fleet's grok version pin (rangerhq-y7jr) against the live install,
 # and report when upstream has moved past it.
 #
+# THE PIN GOVERNS THE HOMEBREW CASK `grok-build` (operator ruling 2026-10-31,
+# ranger-base-yq1ar, applied under ranger-base-7qey3). It used to govern the
+# `~/.grok` managed install, and this script used to read only grok itself; the
+# box moved to the cask on 2026-10-12 and the ruling is to keep it. So there are
+# now two halves to assert, and neither can stand in for the other:
+#
+#   grok's own config  — ~/.grok/config.toml's two ceilings, which is where grok
+#                        reads its policy from whatever installed the binary.
+#   brew               — the installed cask version, the cask pin, and the
+#                        Caskroom directory, because `brew upgrade` is not
+#                        grok's updater and obeys none of grok's config.
+#
 # The pin exists because grok's `[cli] auto_update = true` default lets the
 # binary — and the long-lived leader process, mid-life — roll forward with no
 # review. Several things the fleet depends on are version-VERIFIED, not
-# contractual (see the re-audit list below and NOTES.md "grok substrate"), so an
+# contractual (see the re-audit list below and docs/notes.d/notes-grok.md), so an
 # unreviewed roll-forward silently retires those findings.
 #
 # Two ceilings, and they are not the same gate. maximum_version is soft: the
@@ -17,10 +29,36 @@
 # ceiling reads empty and FAILs, because that is the state this pin exists to
 # make impossible.
 #
+# UPSTREAM IS READ FROM THE CASK TAP, NOT FROM GROK. This used to read grok's
+# own `latestVersion`, and that made the re-audit gate unreachable by
+# construction. MEASURED 2026-10-31 (ranger-base-7qey3), four `grok update
+# --check --json` runs against a scratch $GROK_HOME differing only in
+# maximum_version: with no ceiling grok answered `"latestVersion":"1.0.70"`;
+# with the ceiling at 1.0.52 it answered `"1.0.52"`; with it at 1.0.5 it
+# answered `"1.0.5"` — BELOW the installed binary. `latestVersion` is clamped to
+# the soft ceiling, which the pin always sets to the pinned version, so
+# `latestVersion == want_ver` whenever the pin is intact and "UPSTREAM MOVED"
+# could never fire. It only ever fired on this box because the live config and
+# the pin file disagreed. `brew info --cask` names the tap version whatever is
+# installed and no grok config can clamp it, so that is the gate's input now —
+# and `latestVersion` is kept as a CHECKED row against the soft ceiling, a
+# positive control that the updater is obeying it.
+#
 # This script is also the gate: when upstream stable moves past the pinned
 # version it prints the re-audit list. Lifting the pin is an operator action and
 # is gated on the security lane re-running that list against the new build.
+#
+# Exit 2 = nothing measured (grok or brew absent, pin or config unreadable).
+# Exit 1 = a check failed. Exit 0 = the pin is intact.
 set -uo pipefail
+
+# A gate must not change the box it is reading. `brew info` and `brew list` are
+# auto-update-able commands, so an unguarded run can pull a new Homebrew and
+# re-fetch every tap as a side effect of a read — MEASURED 2026-10-31, a `brew`
+# call in this bead's session moved Homebrew 7.0.10 → 7.0.11 and updated three
+# taps before answering. HOMEBREW_NO_AUTO_UPDATE makes the read a read. The
+# ENV_HINTS kill is cosmetic: it keeps brew's advice block out of the rows.
+export HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_ENV_HINTS=1
 
 cd "$(dirname "$0")/.."
 pin=etc/grok/version-pin.toml
@@ -29,6 +67,7 @@ cfg=$grok_home/config.toml
 fail=0
 
 command -v grok >/dev/null || { echo "verify-grok-pin: grok not on PATH"; exit 2; }
+command -v brew >/dev/null || { echo "verify-grok-pin: brew not on PATH"; exit 2; }
 [ -r "$pin" ] || { echo "verify-grok-pin: missing $pin"; exit 2; }
 [ -r "$cfg" ] || { echo "verify-grok-pin: missing $cfg"; exit 2; }
 
@@ -67,7 +106,9 @@ val() {
 # replacing `| awk '{print $2}'`. Deliberately stricter than the awk it
 # replaces, which printed field 2 of EVERY line: the version answer is one
 # line, and a second line is a surprise the row should show rather than
-# silently concatenate.
+# silently concatenate. Both `grok --version` ("grok 1.0.52 (sha) [stable]")
+# and `brew list --cask --versions grok-build` ("grok-build 1.0.52") put their
+# version in field 2.
 field2() {
   local s=${1%%$'\n'*} rest
   s=${s#"${s%%[![:space:]]*}"}
@@ -77,18 +118,70 @@ field2() {
   printf '%s' "${rest%%[[:space:]]*}"
 }
 
+# lastver <text> — the LAST whitespace-separated token of the first line
+# that starts with a digit, and nothing at all if the line carries no such
+# token. This reads the TAP version out of `brew info --cask`, whose header
+# comes in three shapes, all measured (Homebrew 7.0.11):
+#
+#   installed == tap     ==> codex (Codex): 0.153.4
+#   installed <  tap     ==> grok-build (Grok Build): 1.0.52 → 1.0.70
+#   auto_updates cask    ==> thaw (Thaw): 1.2.0 → 2.0.1 (auto_updates)
+#
+# The TAP version is the last one on the line in all three, so reading it as
+# "last digit-initial token" is blind both to how the arrow is encoded and to
+# any trailing parenthesised flag. A header with no version-shaped token
+# (a `version :latest` cask) yields nothing and the caller fails the row.
+# The split is written out rather than `for tok in $s`, whose word splitting
+# also globs. Shared with verify-codex-pin.sh, same reasoning.
+lastver() {
+  local s=${1%%$'\n'*} tok out=
+  while [ -n "$s" ]; do
+    s=${s#"${s%%[![:space:]]*}"}
+    [ -n "$s" ] || break
+    tok=${s%%[[:space:]]*}
+    s=${s#"$tok"}
+    case $tok in [0-9]*) out=$tok ;; esac
+  done
+  printf '%s' "$out"
+}
+
 want_ver=$(val posse_pinned_version "$pin")
 want_max=$(val maximum_version "$pin")
 want_req=$(val required_maximum_version "$pin")
+want_cask=$(val formula "$pin")
+want_pin=$(val pin_state "$pin")
+want_room=$(val caskroom_dir "$pin")
+
+# The REACHED binary, not the one a path says should be there: grok is also
+# installable by its own internal installer into $GROK_HOME/bin (which is what
+# a rollback recreates — see the runbook), and either one linked ahead of the
+# other leaves the pin asserting a binary nothing runs.
 live_ver=$(field2 "$(grok --version 2>/dev/null)")
 cfg_auto=$(val auto_update "$cfg")
 cfg_max=$(val maximum_version "$cfg")
 cfg_req=$(val required_maximum_version "$cfg")
 
+# What brew RECORDS as installed. This is the row the operator's lift-gate asks
+# for: it reds the moment a `brew upgrade` moves the cask, whether or not the
+# binary on PATH is the one that moved. Nonzero brew, or an answer with no
+# version in it, both read empty and fail the row rather than passing.
+cask_installed=$(field2 "$(brew list --cask --versions "$want_cask" 2>/dev/null)")
+
+# `grep -qx` without the fork (ranger-base-s8b4g): a dying grep would report
+# the cask unpinned — a FAIL row against a box where the pin is holding.
+pinned=unpinned
+pinned_list=$(brew list --pinned 2>/dev/null)
+while IFS= read -r line || [ -n "$line" ]; do
+  if [ "$line" = "$want_cask" ]; then
+    pinned=pinned
+    break
+  fi
+done <<<"$pinned_list"
+
 # The authority on what the updater will actually do — grok's own answer, not
 # our reading of the config file. Network call; empty when offline.
 #
-# Parse tolerantly: live 1.0.5 emits compact JSON, but a space after the colon
+# Parse tolerantly: live grok emits compact JSON, but a space after the colon
 # or a pretty-printed payload is the same answer and must read the same
 # (ranger-base-ocfh — the old extractor required the value to sit immediately
 # after the colon, so `"autoUpdate": true` captured nothing and fell into the
@@ -96,8 +189,10 @@ cfg_req=$(val required_maximum_version "$cfg")
 # payload is offline. A payload we cannot parse is a FAIL, not silence — if the
 # field is ever renamed or restyled this script says so instead of passing.
 # That rule is BOTH fields' (ranger-base-phxj): `latestVersion` gets the same
-# three arms below, because losing it is the worse of the two — it turns the
-# re-audit gate off without a word.
+# three arms below. What CHANGED under ranger-base-7qey3 is what the readable
+# answer is compared against, not whether an unreadable one fails — see the
+# header: latestVersion is clamped to the soft ceiling, so it is a control on
+# that ceiling and no longer the upstream read.
 #
 # jsplit puts every `"key": value` pair at the start of its own line, and both
 # extractors then anchor to `^`. Two things follow. The FIRST occurrence wins
@@ -113,12 +208,6 @@ cfg_req=$(val required_maximum_version "$cfg")
 # The captures require at least one character on purpose, so an unreadable
 # shape (`"true"`, `null`, `1.9`, `""`) yields NOTHING rather than an empty
 # match that would both look like an answer and hide any later line.
-# POSIX BRE only, no alternation: BSD sed has no `\|`.
-# jsplit is a `${...//}` over a bracket class rather than `| tr`, and the two
-# extractors walk the split lines with `case` and `${...}` instead of
-# `sed | head -1`. Every rule the BREs encoded is kept: anchored at the start
-# of the line, the FIRST answering line wins, and a capture that would be
-# empty is no answer at all.
 JSPLIT=
 jsplit() { JSPLIT=${1//[],\{\}[]/$'\n'}; }
 jstr() {
@@ -161,15 +250,17 @@ jword() {
 
 chk=$(grok update --check --json 2>/dev/null)
 live_auto=$(jword autoUpdate "$chk")
-upstream=$(jstr latestVersion "$chk")
+clamped=$(jstr latestVersion "$chk")
 
 chk_row() { # label want got
-  if [ "$2" = "$3" ]; then printf '  %-28s %-10s ok\n' "$1" "$3"
-  else printf '  %-28s %-10s <-- FAIL (want %s)\n' "$1" "${3:-?}" "$2"; fail=$((fail + 1)); fi
+  if [ "$2" = "$3" ]; then printf '  %-30s %-12s ok\n' "$1" "$3"
+  else printf '  %-30s %-12s <-- FAIL (want %s)\n' "$1" "${3:-?}" "$2"; fail=$((fail + 1)); fi
 }
 
 echo "grok version pin — $pin"
 chk_row "grok --version"            "$want_ver"  "$live_ver"
+chk_row "installed cask version"    "$want_ver"  "$cask_installed"
+chk_row "brew cask pin"             "$want_pin"  "$pinned"
 chk_row "config auto_update"        "false"      "$cfg_auto"
 chk_row "config maximum_version"    "$want_max"  "$cfg_max"
 chk_row "config required_max_ver"   "$want_req"  "$cfg_req"
@@ -178,27 +269,97 @@ case "$live_auto" in
     chk_row "grok update: autoUpdate"  "false"     "$live_auto" ;;
   *)
     if [ -n "$chk" ]; then
-      printf '  %-28s %-10s <-- FAIL (grok answered; no autoUpdate boolean in it)\n' "grok update: autoUpdate" "${live_auto:-?}"
+      printf '  %-30s %-12s <-- FAIL (grok answered; no autoUpdate boolean in it)\n' "grok update: autoUpdate" "${live_auto:-?}"
       fail=$((fail + 1))
     else
-      printf '  %-28s %-10s (offline? `grok update --check --json` returned nothing)\n' "grok update: autoUpdate" "—"
+      printf '  %-30s %-12s (offline? `grok update --check --json` returned nothing)\n' "grok update: autoUpdate" "—"
     fi ;;
 esac
 
-# latestVersion, same three arms (ranger-base-phxj). Its readability is not a
-# detail of the block below: an empty `$upstream` skips UPSTREAM MOVED in
-# silence, so `null`, an unquoted number and a rename all read as "nothing to
-# re-audit" and the gate on lifting the pin is simply off. The row says out
-# loud whether the gate is live. `read` rather than `ok` because reading the
-# field is all this row claims — whether upstream MOVED is the block below, and
-# a move is not a failure.
-if [ -n "$upstream" ]; then
-  printf '  %-28s %-10s read\n' "grok update: latestVersion" "$upstream"
+# latestVersion, same three arms (ranger-base-phxj), against a different
+# subject (ranger-base-7qey3). It is NOT the upstream read — it is clamped to
+# maximum_version, measured, see the header — so what it proves is that the
+# soft ceiling is being obeyed by the updater itself, which is the one thing
+# no amount of reading config.toml can establish. A readable value that is not
+# the soft ceiling means the clamp is not holding: either the updater stopped
+# honouring the key, or it is reading a different config than the one checked
+# above. Both are the pin failing, loudly, which is the point.
+#
+# The field still has to be READABLE for any of that. An empty `$clamped` on a
+# non-empty payload is a rename or a restyle, and before ranger-base-phxj it
+# passed in silence; it fails here for the same reason it did then.
+if [ -n "$clamped" ]; then
+  chk_row "grok update: latestVersion" "$want_max" "$clamped"
 elif [ -n "$chk" ]; then
-  printf '  %-28s %-10s <-- FAIL (grok answered; no latestVersion in it)\n' "grok update: latestVersion" "?"
+  printf '  %-30s %-12s <-- FAIL (grok answered; no latestVersion in it)\n' "grok update: latestVersion" "?"
   fail=$((fail + 1))
 else
-  printf '  %-28s %-10s (offline? `grok update --check --json` returned nothing)\n' "grok update: latestVersion" "—"
+  printf '  %-30s %-12s (offline? `grok update --check --json` returned nothing)\n' "grok update: latestVersion" "—"
+fi
+
+# The rollback target, and the identity of the running binary in one reading.
+# `command -v` names a path; only resolving it says which tree answers. A
+# Caskroom directory that is present but is NOT what grok runs from is a
+# rollback target for a binary nobody uses, so both halves are one row each.
+# Shape and reasoning taken from verify-codex-pin.sh, including why
+# `caskroom_dir` is asserted to NAME the pinned version rather than merely to
+# exist: Homebrew never removes the parent `Caskroom/grok-build`, and any
+# installed version's binary sits underneath it, so a prefix compare against
+# that parent reads "grok resolves into the pin" ok whatever is running
+# (ranger-base-g29az finding 3).
+room="$(brew --prefix 2>/dev/null)/$want_room"
+room_state=gone
+if [ -d "$room" ] && [ "${want_room##*/}" = "$want_ver" ]; then
+  room_state=present
+  # Both sides get resolved before they are compared. `readlink -f` follows
+  # the cask's symlink to a REAL path, so an unresolved prefix on the other
+  # side fails a box that is in fact correct — /var vs /private/var is enough,
+  # and any Homebrew prefix reached through a symlink is the same bug.
+  # `cd && pwd -P` is the portable resolver; there is no `realpath` on stock
+  # macOS.
+  room=$(cd "$room" && pwd -P)
+  printf '  %-30s %-12s ok\n' "rollback target on disk" "present"
+  real=$(readlink -f "$(command -v grok)" 2>/dev/null || command -v grok)
+  realdir=$(cd "$(dirname "$real")" 2>/dev/null && pwd -P)
+  case "$realdir/" in
+    "$room"/*) printf '  %-30s %-12s ok\n' "grok resolves into the pin" "yes" ;;
+    *)         printf '  %-30s %-12s <-- FAIL (%s)\n' "grok resolves into the pin" "no" "${real:-?}"; fail=$((fail + 1)) ;;
+  esac
+elif [ -d "$room" ]; then
+  printf '  %-30s %-12s <-- FAIL (%s)\n' "rollback target on disk" "unversioned" "$want_room names no version ($want_ver)"
+  fail=$((fail + 1))
+  # Not measured, and said so rather than counted: a declared path that names
+  # no version is not a rollback target for THIS pin, whatever happens to be
+  # sitting under it.
+  printf '  %-30s %-12s (declared path names no version; nothing to resolve into)\n' "grok resolves into the pin" "—"
+else
+  printf '  %-30s %-12s <-- FAIL (%s)\n' "rollback target on disk" "GONE" "$room"; fail=$((fail + 1))
+  # Not measured, and said so rather than counted: "does grok resolve into a
+  # directory that does not exist" has no answer, and a second red row for one
+  # broken thing is how a reader learns to skim the list.
+  printf '  %-30s %-12s (rollback target gone; nothing to resolve into)\n' "grok resolves into the pin" "—"
+fi
+
+# Upstream, read from the TAP and not from grok and not from what happens to be
+# installed. Three arms, the same three the JSON fields get, and for the same
+# reason: a reader that answers nothing must not be indistinguishable from
+# "nothing to re-audit". `brew info --cask` names the tap version whatever is
+# installed, so there is nothing to fall back TO, and both ways of not getting
+# an answer fail the row: a non-zero brew, and a header with no version in it.
+# Unlike the per-package `brew outdated --cask grok-build` form (which exits 1
+# when that cask IS outdated), `brew info --cask grok-build` exits 0 on success
+# and 1 on an unknown cask, so this one requires 0.
+info=$(brew info --cask "$want_cask" 2>/dev/null); brc=$?
+upstream=""
+[ "$brc" -eq 0 ] && upstream=$(lastver "$info")
+if [ -n "$upstream" ]; then
+  printf '  %-30s %-12s read\n' "tap version" "$upstream"
+elif [ "$brc" -ne 0 ]; then
+  printf '  %-30s %-12s <-- FAIL (brew info --cask %s exited %s)\n' "tap version" "?" "$want_cask" "$brc"
+  fail=$((fail + 1))
+else
+  printf '  %-30s %-12s <-- FAIL (no version in: %s)\n' "tap version" "?" "${info%%$'\n'*}"
+  fail=$((fail + 1))
 fi
 
 # ver_gt <a> <b> — true when <a> sorts after <b>, replacing
@@ -207,7 +368,9 @@ fi
 # non-numeric is 0), and the whole string as the last resort where all three
 # tie — which is `sort`'s own last-resort comparison, and the only reason
 # `ver_gt 1.0.0 1.0` is true. Measured against the pipeline it replaces over
-# 12 pairs (ranger-base-s8b4g).
+# 12 pairs (ranger-base-s8b4g). Numeric per field is not cosmetic here: grok's
+# own versions went 1.0.5 → 1.0.52 → 1.0.70, and a string compare puts 1.0.6
+# above 1.0.52.
 ver_gt() {
   local a=$1 b=$2 i ax bx
   [ "$a" = "$b" ] && return 1
@@ -247,34 +410,34 @@ echo
 # is a fleet outage the operator is standing in right now. The ceiling that
 # actually gates startup is the one in the operator's CONFIG, so that is what
 # is read here — its row above says whether it matches the declaration.
-# There IS a rollback-artifact arm, and it is measured rather than promised
-# (ranger-base-bttb1). This block used to tell the operator flatly that putting
-# the pin back "needs no re-fetch: grok keeps the old binaries in
-# ~/.grok/downloads/, one file per version, so there is no single artifact to
-# have lost and no sha to re-verify" — a statement about a directory the script
-# had never looked at. It is false on this box: MEASURED 2026-10-15, the live
-# grok is the Homebrew cask (`which grok` -> /opt/homebrew/bin/grok ->
-# /opt/homebrew/Caskroom/grok-build/1.0.52/...), `$GROK_HOME/downloads/` and
-# `$GROK_HOME/bin/` do not exist at all, and the Caskroom holds 1.0.52 ONLY.
-# The one rollback route the script named is gone, and this block fires on this
-# box right now (3 FAIL rows, the pin says 1.0.5), so the operator was being
-# told there was nothing to have lost at exactly the moment it was all lost.
-# `brew cleanup` has no grok equivalent, but the cask route caches no
-# per-version binary to begin with, so neither does the box — which is why
-# verify-codex-pin.sh asserts a Caskroom directory and this one COUNTS
-# downloads/ instead of assuming it. Which install route the pin should govern
-# is an open operator question (ranger-base-yq1ar); until that is answered this
-# script only reports what it can see. The rollback COMMANDS are still not
-# restated here: NOTES.md carries them beside the lift, and one copy of a
-# command that must be right is enough.
 #
-# rb_n — how many `grok-*` rollback binaries $grok_home/downloads/ actually
-# holds. A glob and a `[ -f ]`, no fork: this decides an arm, and per the
-# extractor note at the top of this file a matcher that is signalled or cannot
-# be exec'd must not read as "the directory is empty". An unmatched glob stays
-# literal under bash's default nullglob and fails `[ -f ]`, so a missing
-# directory and an empty one both land on 0 — the same answer for the operator
-# either way.
+# The rollback arm is MEASURED, twice over, and it changed direction between
+# those measurements. ranger-base-bttb1 replaced a flat promise that putting
+# the pin back "needs no re-fetch: grok keeps the old binaries in
+# ~/.grok/downloads/" — a statement about a directory the script had never
+# looked at, and false on this box — with a count of that directory. What
+# ranger-base-7qey3 adds is the half bttb1 could only call unverified: the
+# re-fetch route is real. MEASURED 2026-10-31, from this cask-run binary,
+# into a scratch $GROK_HOME: `grok update --version 1.0.5` fetched and
+# installed, 134,349,648 bytes matching x.ai's content-length exactly, and
+# `https://x.ai/cli/grok-<v>-macos-aarch64` answers 200 for 1.0.5, 1.0.52 and
+# 1.0.70 alike. The catch, and it is why this is not simply good news: the
+# fetch lands in `$GROK_HOME/downloads/` and recreates `$GROK_HOME/bin/grok`,
+# i.e. the MANAGED install — a second install the cask does not know about,
+# which the PATH does not prefer, and which can self-update again. The
+# rollback COMMANDS are not restated here: docs/notes.d/notes-grok.md carries
+# them beside the lift, and one copy of a command that must be right is
+# enough.
+#
+# rb_n — how many `grok-*` binaries $grok_home/downloads/ holds. On the cask
+# route that is 0 and the directory does not exist; it becomes non-zero only
+# after someone runs the re-fetch above, which is exactly when the operator
+# needs to be told that a managed install now exists beside the cask. A glob
+# and a `[ -f ]`, no fork: this decides an arm, and per the extractor note at
+# the top of this file a matcher that is signalled or cannot be exec'd must
+# not read as "the directory is empty". An unmatched glob stays literal under
+# bash's default nullglob and fails `[ -f ]`, so a missing directory and an
+# empty one both land on 0 — the same answer for the operator either way.
 rb_n=0
 for rb_f in "$grok_home"/downloads/grok-*; do
   [ -f "$rb_f" ] && rb_n=$((rb_n + 1))
@@ -283,7 +446,7 @@ if [ -n "$upstream" ] && ver_gt "$upstream" "$want_ver"; then
   cat <<EOF
 UPSTREAM MOVED: grok stable is $upstream; the fleet is pinned at $want_ver.
 EOF
-  if [ "$live_ver" = "$want_ver" ]; then
+  if [ "$live_ver" = "$want_ver" ] && [ "$cask_installed" = "$want_ver" ]; then
     cat <<EOF
 
 The pin is holding — nothing has changed on this machine. Lifting it is the
@@ -305,24 +468,31 @@ EOF
       [ "$rb_n" -eq 1 ] && rb_word=binary
       cat <<EOF
 
-Putting it back is local and needs no re-fetch: $grok_home/downloads/ holds
-$rb_n grok $rb_word, one file per version, so there is no single artifact to
-have lost and no sha to re-verify. The rollback line sits beside the lift
-runbook cited at the end of this list, under the same heading.
+A MANAGED INSTALL EXISTS BESIDE THE CASK: $grok_home/downloads/ holds
+$rb_n grok $rb_word, one file per version, so a rollback target is already on
+disk and needs no re-fetch. Two cautions the cask route did not have. That
+tree is what grok's own updater is allowed to replace, so whatever runs out of
+it can self-update again — the pin's [cli] ceilings are the only thing holding
+it. And \`which grok\` may still resolve to the cask, in which case swapping
+the managed symlink changes nothing about what the fleet runs; the rows above
+say which tree answers. The commands sit beside the lift runbook cited at the
+end of this list, under the same heading.
 EOF
     else
       cat <<EOF
 
-THERE IS NO LOCAL ROLLBACK ARTIFACT: $grok_home/downloads/ holds no grok binary
-(on the Homebrew-cask route it does not exist at all, and the Caskroom keeps
-only the version that is installed). Putting $want_ver back is therefore a
-RE-FETCH over the network, not a symlink swap, and nothing here has verified
-that $want_ver is still fetchable or what sha it would arrive with. Do not read
-the rollback line beside the lift runbook as a two-minute undo on this box:
-which install route the pin governs, and whether \`grok update --version
-$want_ver\` works at all from a cask-run binary, are open operator questions
-(ranger-base-yq1ar). Re-auditing what is installed and moving the pin
-deliberately may be the only route that exists.
+THERE IS NO LOCAL ROLLBACK ARTIFACT: $grok_home/downloads/ holds no grok
+binary, and on the cask route it does not exist at all — the Caskroom keeps
+only the version that is installed, old cask versions are not installable
+(there is no \`$want_cask@<version>\` cask and homebrew-cask is not cloned on
+this box), so there is nothing here to swap to. Putting $want_ver back is a
+RE-FETCH over the network, and that route is MEASURED rather than hoped for:
+\`grok update --version $want_ver\` works from a cask-run binary, and
+https://x.ai/cli/grok-$want_ver-macos-aarch64 still serves. What it does NOT
+do is restore the cask — it fetches into $grok_home and recreates the managed
+install, a second install brew does not track and which can self-update again.
+Read the rollback section beside the lift runbook cited at the end of this
+list before running it; the sha to verify against is in $pin.
 EOF
     fi
     if [ -n "$live_ver" ] && [ -n "$cfg_req" ] && ver_gt "$live_ver" "$cfg_req"; then
@@ -331,9 +501,9 @@ EOF
 AND THE FLEET IS STOPPED RIGHT NOW: $live_ver is above the hard ceiling this
 box declares (config required_maximum_version = $cfg_req), and grok refuses to
 START above it — not just to update. Every dispatched grok pane and the
-operator's own interactive grok is failing to launch until $want_ver is back
-(~2 minutes, rangerhq-iy3y). That is the pin working as designed: the
-loud stop it was chosen over a silent run of an un-re-audited build.
+operator's own interactive grok is failing to launch until $want_ver is back.
+That is the pin working as designed: the loud stop it was chosen over a silent
+run of an un-re-audited build (rangerhq-iy3y).
 EOF
     fi
     cat <<EOF
@@ -351,11 +521,13 @@ EOF
      ("/privacy/coding-data-retention", field codingDataRetentionOptOut).
      Re-audit $upstream by grepping for those strings, not for the 1.0.5
      "not sent" message. Splash detection is now the ONLY layer between a
-     dispatched Enter and [Opt in]. LIFT GATE for any pin at or above 1.0.52:
-     prove that a dispatched Enter cannot select [Opt in]. That means
-     detection holds AND the splash's default focus is not [Opt in], read
-     from a pane capture with no key sent, on an account the operator
-     designates. Until that is proven, no grok seat is declared.
+     dispatched Enter and [Opt in]. SEAT GATE at or above 1.0.52, and it is
+     not met today: prove that a dispatched Enter cannot select [Opt in].
+     That means detection holds AND the splash's default focus is not [Opt in],
+     read from a pane capture with no key sent, on an account the operator
+     designates. Until that is proven, no grok seat is declared —
+     and no PID declares \`runtime: grok\` today, which is why moving this
+     pin carries no live exposure either way.
   2. Permission-mode precedence (rangerhq-vjl, ranger-base-ejd, security). CLI
      --permission-mode beats [ui] permission_mode in config.toml
      (runtime.go:361-369). This is the ONLY thing keeping fleet grok launches
@@ -368,10 +540,10 @@ EOF
   4. The startup-splash detection override (etc/herdr/agent-detection/grok.toml,
      rangerhq-37c/1xsj) — re-run \`make verify-detection\` against the new splash.
 
-  Runbook to lift the pin: NOTES.md, "grok substrate: pinned at $want_ver".
+  Runbook to lift the pin: docs/notes.d/notes-grok.md, "grok substrate".
 EOF
 elif [ -n "$upstream" ]; then
-  echo "upstream stable: $upstream (== the pin; nothing to re-audit)"
+  echo "tap version: $upstream (== the pin; nothing to re-audit)"
 fi
 
 echo

@@ -1,26 +1,45 @@
-# The fleet's grok version pin — rangerhq-y7jr.
+# The fleet's grok version pin — rangerhq-y7jr. Re-pointed at the Homebrew
+# cask and raised to 1.0.52 by OPERATOR RULING 2026-10-31 (ranger-base-yq1ar,
+# applied under ranger-base-7qey3).
 #
-# These keys, and only these keys, are what posse requires in the operator's
+# WHAT THIS PIN GOVERNS: the Homebrew cask `grok-build`. It used to govern the
+# `~/.grok` managed install — `~/.grok/bin/grok` → a symlink into
+# `~/.grok/downloads/` — and that is what the file said until today. The box
+# changed under it on 2026-10-12 23:22 (`brew install --cask grok-build`), and
+# the ruling is to keep the cask: `which grok` → /opt/homebrew/bin/grok →
+# /opt/homebrew/Caskroom/grok-build/<version>/grok-<version>-macos-aarch64.
+# `~/.grok/bin/` and `~/.grok/downloads/` do not exist on this box. The
+# operator's `~/.grok/config.toml` is still where the two ceilings live — grok
+# reads its config from $GROK_HOME whatever installed the binary — so this file
+# declares BOTH halves: the config keys, and the brew facts.
+#
+# These [cli] keys, and only these, are what posse requires in the operator's
 # ~/.grok/config.toml. This file is NOT installed over that config: config.toml
 # also carries the operator's own preferences AND is rewritten by grok itself
 # (dismissed_version, marketplace.*), so copying it would clobber both.
-# `make verify-grok-pin` asserts the live config still matches what is here.
+# `make verify-grok-pin` asserts the live config, the installed cask and the
+# brew pin all still match what is here.
 #
 # WHY. grok shipped with `[cli] auto_update = true` + `installer = "internal"`,
-# so ~/.grok/bin/grok (a symlink into ~/.grok/downloads/) can roll forward with
-# no review — including the long-lived leader process, which downloads a new
-# binary and relaunches itself mid-life ("Leader auto-update: v<x> installed
-# successfully", xai-grok-update/src/auto_update.rs). Several fleet-critical
-# grok behaviours are version-verified, not contractual; see the re-audit list
-# in NOTES.md "grok substrate". An unreviewed roll-forward silently retires
-# those findings.
+# so the managed install could roll forward with no review — including the
+# long-lived leader process, which downloads a new binary and relaunches itself
+# mid-life ("Leader auto-update: v<x> installed successfully",
+# xai-grok-update/src/auto_update.rs). Several fleet-critical grok behaviours
+# are version-verified, not contractual; see the re-audit list in
+# docs/notes.d/notes-grok.md. An unreviewed roll-forward silently retires those
+# findings.
 #
-# LIFTING THE PIN is an operator action, and it is gated on the security
-# lane re-running
-# that list against the new build. Runbook: NOTES.md, "grok substrate: pinned
-# at 1.0.5".
+# The cask route weakens the ORIGINAL vector and adds a new one. Weaker: grok's
+# updater skips self-update when it is not running from `$GROK_HOME/bin/grok`
+# ("stdio auto-update skipped: not the managed install"), so a cask-run leader
+# does not replace itself. New: `brew upgrade` does, and brew is not grok —
+# none of the [cli] keys below can refuse it. That is what the [install]
+# section is for.
+#
+# LIFTING THE PIN is an operator action, gated on re-running the re-audit list
+# against the new build. Runbook: docs/notes.d/notes-grok.md, "grok substrate".
 
-posse_pinned_version = "1.0.5"   # grok --version at the time of the pin
+posse_pinned_version = "1.0.52"   # `grok --version` → `grok 1.0.52 (0920c8169e27) [stable]`
 
 [cli]
 # Persistent kill for the update check and the leader's self-update.
@@ -30,33 +49,131 @@ auto_update = false
 # above it, even if auto_update is flipped back on by /settings, a managed-config
 # push, or a hand edit. Soft bounds NEVER block startup, so this cannot strand a
 # pane — it only refuses to move. Raise it deliberately, with the re-audit done.
-maximum_version = "1.0.5"
+#
+# IT ALSO CLAMPS WHAT GROK WILL TELL YOU ABOUT UPSTREAM, which is not obvious
+# and cost this pin its re-audit gate for two months. MEASURED 2026-10-31
+# (ranger-base-7qey3), this box, four runs of `grok update --check --json`
+# against a scratch $GROK_HOME differing only in this key:
+#
+#   no maximum_version        → "latestVersion":"1.0.70","updateAvailable":true
+#   maximum_version = "1.0.52" → "latestVersion":"1.0.52","updateAvailable":false
+#   maximum_version = "1.0.5"  → "latestVersion":"1.0.5","updateAvailable":false
+#
+# `latestVersion` is grok's answer about what IT would install, clamped to this
+# ceiling — not what upstream published. Since this key is always set to the
+# pinned version, `latestVersion` equals the pin whenever the pin is intact, so
+# verify-grok-pin.sh's "UPSTREAM MOVED" block was unreachable by construction:
+# it only ever fired because the live config and this file disagreed. The
+# script reads upstream from the CASK TAP now (`brew info --cask grok-build`,
+# which no grok config can clamp), and asserts `latestVersion == this key` as a
+# positive control that the soft ceiling is being obeyed by the updater itself.
+maximum_version = "1.0.52"
 
 # The braces. A HARD bound: grok refuses to START above it, so a binary that
-# ends up past the pin anyway — a hand-run `grok update`, a managed-config push
-# from xAI, auto_update flipped back on in /settings — stops the fleet loudly
-# instead of quietly running an un-re-audited build. maximum_version alone only
-# refuses to INSTALL; that is a gate with a hinge on it.
+# ends up past the pin anyway — a `brew upgrade`, a hand-run `grok update`, a
+# managed-config push from xAI, auto_update flipped back on in /settings — stops
+# the fleet loudly instead of quietly running an un-re-audited build.
+# maximum_version alone only refuses to INSTALL; that is a gate with a hinge on
+# it.
 #
 # The cost is real and was measured before it was accepted: every dispatched
 # grok pane AND the operator's own interactive grok stop starting at once, the
 # moment the binary is out of range. The failure is self-describing — grok names
 # the ceiling in the refusal, and --version, update, inspect, doctor and models
-# all keep working above it, so `grok update --version 1.0.5` undoes it.
-# RECOVERY IS NO LONGER ~2 MINUTES, and that number was load-bearing when this
-# risk was accepted: it assumed the old binary was still cached in
-# ~/.grok/downloads/, a local symlink swap. MEASURED 2026-10-15
-# (ranger-base-bttb1): this box runs the Homebrew cask grok-build 1.0.52,
-# ~/.grok/downloads/ and ~/.grok/bin/ do not exist, and the Caskroom holds
-# 1.0.52 only — so the undo is a network re-fetch of unverified availability,
-# not a swap. Which route this pin should govern is the operator's open call,
-# ranger-base-yq1ar.
+# all keep working above it.
+#
+# RECOVERY IS NOT A SYMLINK SWAP ON THIS BOX, and the ~2-minute figure that was
+# load-bearing when this risk was accepted assumed one: it assumed the old
+# binary was still cached in ~/.grok/downloads/. There is no such cache on the
+# cask route. What there IS, MEASURED 2026-10-31 (ranger-base-7qey3): the
+# upstream artifact is still fetchable and `grok update --version <old>` still
+# works from a cask-run binary. It fetches into $GROK_HOME and RECREATES the
+# managed install, which is a second install the cask does not know about and
+# which can self-update again. Read the runbook before using it.
 #
 # OPERATOR RULING 2026-08-28, rangerhq-iy3y: set it — same philosophy as the bd
 # pin, an unreviewed upgrade must refuse to start rather than run silently.
-# Raise it only with the re-audit done.
-required_maximum_version = "1.0.5"
+# Raise it only with the re-audit done. Raise it FIRST when raising all three,
+# or grok will not start on the new build.
+required_maximum_version = "1.0.52"
 
 # Deliberately NOT set: minimum_version / required_minimum_version. Those are
 # anti-downgrade floors; a floor is the wrong direction for a pin and would
 # block rolling back to a known-good build.
+
+[install]
+# The brew half of the pin — the half the [cli] keys above cannot reach, since
+# `brew upgrade` is not grok's updater and obeys none of grok's config.
+#
+# `brew pin --cask grok-build` DOES WORK, and the ruling that commissioned this
+# file said it would not ("`brew pin` does not apply to casks (formulae only)").
+# That was true of older Homebrew and is not true here. MEASURED 2026-10-31 on
+# Homebrew 7.0.10/7.0.11, this box:
+#   brew pin --cask grok-build           → exit 0
+#   brew list --pinned                   → beads, codex, grok-build
+#   brew info --cask --json=v2           → "pinned": true, "pinned_version": "1.0.52"
+#   brew upgrade --cask --greedy grok-build → "Error: Not upgrading 1 pinned package:"
+#   brew outdated --cask --verbose       → "grok-build (1.0.52) != 1.0.70 [pinned at 1.0.52]"
+# So the belt-and-braces shape the grok pin always had now extends to brew: the
+# cask pin refuses to MOVE the binary, and required_maximum_version above
+# refuses to RUN one that moved anyway. It is still the second of those that is
+# load-bearing — `brew pin` has a documented hole for casks declaring
+# `auto_updates true` (they can update themselves outside Homebrew), and while
+# grok-build declares no such stanza at 1.0.52 (`auto_updates` is absent from
+# its JSON), a cask that gained one would slip the pin silently.
+#
+# THE LOUD LIFT-GATE the ruling asked for is the verify script's own rows, not
+# brew's: `make verify-grok-pin` FAILs whenever the installed cask version, the
+# binary `grok --version` answers, or the brew pin state differs from what is
+# declared here. That fires whether the move came through brew, through grok's
+# own updater, or by hand.
+route = "homebrew-cask"
+formula = "grok-build"   # a cask; the key name is verify-codex-pin.sh's spelling, kept parallel
+pin_state = "pinned"
+
+# The rollback target, asserted rather than assumed. A cask keeps exactly ONE
+# version — there is no `grok-build@1.0.52` cask, and homebrew-cask is not even
+# cloned on this box (brew reads the JSON API), so there is no local tap history
+# to extract an old cask definition from. MEASURED 2026-10-31:
+#   brew info --cask grok-build@1.0.52 → "Error: Cask 'grok-build@1.0.52' is
+#                                         unavailable: No Cask with this name exists."
+#   ls /opt/homebrew/Library/Taps/homebrew/homebrew-cask → No such file or directory
+# So OLD CASK VERSIONS ARE NOT INSTALLABLE, and the Caskroom directory below is
+# the only on-disk copy of the pinned build. Do not `brew cleanup` it away.
+caskroom_dir = "Caskroom/grok-build/1.0.52"
+
+# And the off-disk copy, for when the Caskroom one is gone. FETCH IT BEFORE
+# LIFTING THE PIN, not after: an upgrade replaces the Caskroom directory and
+# this URL is then all there is.
+#
+# MEASURED 2026-10-31 (ranger-base-7qey3), HTTP HEAD plus one full fetch:
+#   https://x.ai/cli/grok-1.0.5-macos-aarch64   → 200, 134,349,648 bytes
+#   https://x.ai/cli/grok-1.0.52-macos-aarch64  → 200, 172,237,072 bytes
+#   https://x.ai/cli/grok-1.0.70-macos-aarch64  → 200, 179,063,008 bytes
+# x.ai serves the superseded releases by version-templated URL, which is the
+# route homebrew-cask itself uses. 1.0.52's content-length is exactly the size
+# of the installed Caskroom binary. The sha256 below is of that installed
+# binary; the 1.0.5 artifact fetched fresh today is
+# 3dfa7f04fbb5427a8fbead286591543aaecb478b3a0ab222c4329eca1a3b2f86, recorded
+# here because the previous pin had no sha for it at all.
+url = "https://x.ai/cli/grok-1.0.52-macos-aarch64"
+sha256 = "c2caa9895dd763297a75e8fb6077e175d9c5304c53903e52cff8891a1384bbb9"
+
+[seat]
+# NOT a version fact, and the reason no amount of pinning declares a grok seat.
+#
+# The rangerhq-sz7u defense for coding-data consent is VOID from 1.0.52
+# (ranger-base-ppzty, ranger-base-g4294): consent is server-persisted now, so
+# splash detection is the ONLY layer between a dispatched Enter and [Opt in].
+# Re-confirmed on the installed binary 2026-10-31 — `strings -a` counts
+# "/consent/accept" 2, "/privacy/coding-data-retention" 2,
+# "codingDataRetentionOptOut" 10, and the 1.0.5 "no server handler" message 0.
+#
+# This pin moves to 1.0.52 anyway, because the pin's job is to make the
+# installed build a reviewed one and 1.0.52 is what is installed. The SEAT gate
+# is separate and is not met: before any PID declares `runtime: grok`, prove
+# that a dispatched Enter cannot select [Opt in] — `make verify-detection`
+# holding AND the splash's default focus read from a pane capture with no key
+# sent, on an account the operator designates. No PID declares `runtime: grok`
+# today, which is why lifting the version pin carries no live exposure.
+grok_seat_declared = false

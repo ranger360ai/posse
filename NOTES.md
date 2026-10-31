@@ -174,7 +174,7 @@ private citations identify where its unchanged text and bead IDs are retained.
 | Cage engine re-evaluation: still Docker (rangerhq-rli) | [cage-engine](docs/notes.d/notes-cage-engine.md) |
 | Privacy model | `privacy-model`: instance notes (private tree), not in this repo |
 | beads (bd) substrate: pinned at 0.50.3, 0.51+ is a migration (rangerhq-f49) | `beads`: instance notes (private tree), not in this repo |
-| grok substrate: pinned at 1.0.5, upgrades are a security re-audit (rangerhq-y7jr) | [grok](docs/notes.d/notes-grok.md) |
+| grok substrate: pinned at 1.0.52 (Homebrew cask `grok-build`), upgrades are a security re-audit (rangerhq-y7jr) | [grok](docs/notes.d/notes-grok.md) |
 | Instance interstitials: the keys posse names, and the one it writes (ADR 0013 §2) | [interstitials](docs/notes.d/notes-interstitials.md) |
 | herdr substrate: upgrading the fleet's herdr | [herdr](docs/notes.d/notes-herdr.md) |
 | Workspace ids recycle across a server process boundary (rangerhq-6bg7) | [workspace-identity](docs/notes.d/notes-workspace-identity.md) |

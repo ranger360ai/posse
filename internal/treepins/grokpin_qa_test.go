@@ -2,15 +2,34 @@ package treepins
 
 // QA pins for rangerhq-y7jr (verified under rangerhq-n0bu).
 //
-// Claim: grok is pinned at 1.0.5 via [cli] auto_update = false and
+// Claim: grok is pinned at 1.0.52 via [cli] auto_update = false and
 // maximum_version, declared in etc/grok/version-pin.toml and asserted by
 // scripts/verify-grok-pin.sh. The script is also the re-audit gate: when
 // upstream stable moves past the pin it prints security's list and still
 // exits 0 (the pin is holding; lifting it is the operator's).
 //
+// THE PIN GOVERNS THE HOMEBREW CASK `grok-build` from 2026-10-31 (operator
+// ruling on ranger-base-yq1ar, applied under ranger-base-7qey3). It governed
+// the `~/.grok` managed install before that; the box moved to the cask on
+// 2026-10-12 and the ruling is to keep it. So the script now reads two
+// sources that cannot stand in for each other — grok's own config, and brew —
+// and the fixtures stub BOTH. `brew upgrade` is not grok's updater and obeys
+// none of grok's config, which is the whole reason the brew rows exist.
+//
+// AND UPSTREAM IS READ FROM THE TAP, NOT FROM GROK. The arms below used to
+// move upstream by moving grok's own `latestVersion`; that field is clamped to
+// maximum_version, so it equals the pin whenever the pin is intact and could
+// never have tripped the gate on a healthy box. MEASURED 2026-10-31
+// (ranger-base-7qey3), one scratch $GROK_HOME, three `grok update --check
+// --json` runs differing only in that key: no ceiling → "1.0.70"; ceiling
+// 1.0.52 → "1.0.52"; ceiling 1.0.5 → "1.0.5", below the installed binary.
+// So `latestVersion` is a CONTROL ON THE SOFT CEILING here — the one thing no
+// reading of config.toml can establish, namely that the updater obeys it —
+// and the tap version from `brew info --cask` drives UPSTREAM MOVED.
+//
 // Live grok 1.0.5 emits compact update JSON (`"autoUpdate":false` with no
-// space). The hermetic cases below stub grok so make test does not need
-// the operator's ~/.grok or a network.
+// space). The hermetic cases below stub grok and brew so make test does not
+// need the operator's ~/.grok, a Homebrew prefix, or a network.
 //
 // ranger-base-ocfh: a space after the colon, or a pretty-printed payload, is
 // the SAME answer and must read the same. The old extractor captured nothing
@@ -26,13 +45,13 @@ import (
 	"testing"
 )
 
-const gpCompactOK = `{"currentVersion":"1.0.5","latestVersion":"1.0.5","updateAvailable":false,"autoUpdate":false,"error":null}`
+const gpCompactOK = `{"currentVersion":"1.0.52","latestVersion":"1.0.52","updateAvailable":false,"autoUpdate":false,"error":null}`
 
 const gpGoodCfg = `[cli]
 installer = "internal"
 auto_update = false
-maximum_version = "1.0.5"
-required_maximum_version = "1.0.5"
+maximum_version = "1.0.52"
+required_maximum_version = "1.0.52"
 `
 
 func gpRoot(t *testing.T) string {
@@ -85,6 +104,136 @@ func gpStubGrok(t *testing.T, binDir, version, checkJSON string) {
 	}
 }
 
+// gpPinnedVer is what etc/grok/version-pin.toml declares. It is a literal
+// here rather than a read of the pin file on purpose: a literal that disagrees
+// with the declaration reds the arms below, which is how a half-done version
+// move gets caught instead of absorbed.
+const gpPinnedVer = "1.0.52"
+
+// gpCask is the cask the pin governs, and gpBrewMarkerNoBrew is how an arm
+// says "leave brew OFF this PATH" — see gpRun, which otherwise plants a
+// healthy brew stub for every call site that does not ask for a sick one.
+const (
+	gpCask             = "grok-build"
+	gpBrewMarkerNoBrew = ".gp-no-brew"
+)
+
+// gpBrew is what the brew stub answers. Every field's zero value is the
+// HEALTHY answer except where noted, so an arm names only the one thing it is
+// breaking and cannot accidentally depend on a second difference.
+type gpBrew struct {
+	installed string // `brew list --cask --versions`; default gpPinnedVer, "none" = not installed (exit 1, silent)
+	tap       string // the version in the `brew info --cask` header; default gpPinnedVer, "none" = a header with no version in it
+	unpinned  bool   // leave the cask out of `brew list --pinned`
+	infoExit  int    // `brew info --cask` exit code; default 0
+	noRoom    bool   // do not create Caskroom/<cask>/<roomVer> at all
+	roomVer   string // the Caskroom version segment; default gpPinnedVer
+	roomElse  bool   // create that directory EMPTY instead of pointing it at binDir
+}
+
+// gpStubBrew plants a brew on binDir that answers the four calls
+// verify-grok-pin.sh makes — `--prefix`, `list --pinned`,
+// `list --cask --versions <cask>` and `info --cask <cask>` — and builds the
+// Caskroom tree under a scratch prefix to match.
+//
+// The healthy shape points Caskroom/<cask>/<ver> AT binDir, which is where the
+// grok stub lives, so "rollback target on disk" and "grok resolves into the
+// pin" both read ok for the same reason they do on a real box: the binary that
+// answers is the one under the declared directory. roomElse creates that
+// directory empty instead, which is the drifted-but-present shape — a rollback
+// target for a binary nobody runs.
+func gpStubBrew(t *testing.T, binDir string, b gpBrew) {
+	t.Helper()
+	if b.installed == "" {
+		b.installed = gpPinnedVer
+	}
+	if b.tap == "" {
+		b.tap = gpPinnedVer
+	}
+	if b.roomVer == "" {
+		b.roomVer = gpPinnedVer
+	}
+
+	prefix := t.TempDir()
+	parent := filepath.Join(prefix, "Caskroom", gpCask)
+	if err := os.MkdirAll(parent, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	room := filepath.Join(parent, b.roomVer)
+	switch {
+	case b.noRoom:
+		// nothing: the declared directory is gone
+	case b.roomElse:
+		if err := os.MkdirAll(room, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	default:
+		if err := os.Symlink(binDir, room); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	pinned := gpCask
+	if b.unpinned {
+		pinned = ""
+	}
+	versions := "echo \"" + gpCask + " " + b.installed + "\"; exit 0"
+	if b.installed == "none" {
+		versions = "exit 1"
+	}
+	header := "==> " + gpCask + " (Grok Build): " + b.tap
+	if b.tap == "none" {
+		// A `version :latest` cask: a header with no version-shaped token in
+		// it at all. The row must FAIL rather than read empty and skip the
+		// gate — the same rule latestVersion got under ranger-base-phxj.
+		header = "==> " + gpCask + " (Grok Build): latest"
+	}
+	info := "cat <<'HDR'\n" + header + "\nHDR\nexit " + itoa(b.infoExit)
+	if b.infoExit != 0 {
+		info = "exit " + itoa(b.infoExit)
+	}
+
+	body := "#!/bin/bash\n" +
+		"if [ \"$1\" = \"--prefix\" ]; then echo \"" + prefix + "\"; exit 0; fi\n" +
+		"if [ \"$1\" = \"list\" ] && [ \"$2\" = \"--pinned\" ]; then printf '%s\\n' \"" + pinned + "\"; exit 0; fi\n" +
+		"if [ \"$1\" = \"list\" ] && [ \"$2\" = \"--cask\" ]; then " + versions + "; fi\n" +
+		"if [ \"$1\" = \"info\" ] && [ \"$2\" = \"--cask\" ]; then " + info + "; fi\n" +
+		"echo \"stub brew: $*\" >&2; exit 99\n"
+	if err := WriteExecutable(filepath.Join(binDir, "brew"), []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// itoa without strconv, which nothing else in this file needs.
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	neg := n < 0
+	if neg {
+		n = -n
+	}
+	var d []byte
+	for n > 0 {
+		d = append([]byte{byte('0' + n%10)}, d...)
+		n /= 10
+	}
+	if neg {
+		return "-" + string(d)
+	}
+	return string(d)
+}
+
+// gpNoBrew: this arm wants brew ABSENT from the stub PATH. Without the marker
+// gpRun plants a healthy one, which is what keeps every other call site from
+// having to name brew at all.
+func gpNoBrew(t *testing.T, binDir string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(binDir, gpBrewMarkerNoBrew), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func gpCfg(t *testing.T, body string) string {
 	t.Helper()
 	home := t.TempDir()
@@ -113,8 +262,26 @@ func gpDownloads(t *testing.T, grokHome string, names ...string) {
 	}
 }
 
+// gpRun runs the script with ONLY the stubs on PATH, and plants a healthy
+// brew for any arm that did not plant its own.
+//
+// Defaulting rather than requiring every call site to name brew is deliberate.
+// The script grew its brew rows under ranger-base-7qey3, and the ~28 arms that
+// predate them are each about something else — a JSON shape, a ceiling, a
+// prose line. Making them all name a cask would put a second subject into
+// every one of them and invite exactly the drift gpRowFailed exists to stop,
+// where an arm goes green because a DIFFERENT row failed. An arm that wants a
+// sick brew calls gpStubBrew first and this leaves it alone; an arm that wants
+// no brew at all calls gpNoBrew.
 func gpRun(t *testing.T, root, grokHome, binDir string) (string, int) {
 	t.Helper()
+	if binDir != "" {
+		_, planted := os.Stat(filepath.Join(binDir, "brew"))
+		_, suppressed := os.Stat(filepath.Join(binDir, gpBrewMarkerNoBrew))
+		if planted != nil && suppressed != nil {
+			gpStubBrew(t, binDir, gpBrew{})
+		}
+	}
 	cmd := exec.Command(filepath.Join(root, "scripts", "verify-grok-pin.sh"))
 	var env []string
 	for _, kv := range os.Environ() {
@@ -215,18 +382,35 @@ func TestQAGrokPinDeclarationAndMakefile(t *testing.T) {
 	}
 	body := string(pin)
 	// The soft ceiling is asserted with a leading newline ON PURPOSE.
-	// `maximum_version = "1.0.5"` is a SUFFIX of `required_maximum_version =
-	// "1.0.5"`, so a bare Contains for it is satisfied by the hard-ceiling line
+	// `maximum_version = "1.0.52"` is a SUFFIX of `required_maximum_version =
+	// "1.0.52"`, so a bare Contains for it is satisfied by the hard-ceiling line
 	// alone — delete the soft ceiling and the assertion stays green over its own
 	// bug. Anchoring to line start is what makes the two rows independent.
 	for _, want := range []string{
-		"\nposse_pinned_version = \"1.0.5\"",
+		"\nposse_pinned_version = \"1.0.52\"",
 		"\nauto_update = false",
-		"\nmaximum_version = \"1.0.5\"",
+		"\nmaximum_version = \"1.0.52\"",
 		// OPERATOR RULING 2026-08-28 (rangerhq-iy3y): the hard bound is SET.
 		// grok refuses to start above it, so an unreviewed upgrade is a loud
 		// fleet-wide stop instead of a silent un-re-audited run.
-		"\nrequired_maximum_version = \"1.0.5\"",
+		"\nrequired_maximum_version = \"1.0.52\"",
+		// OPERATOR RULING 2026-10-31 (ranger-base-yq1ar, applied under
+		// ranger-base-7qey3): the pin governs the Homebrew cask. These four
+		// are the brew half, and each is READ by the script — a declaration
+		// that loses one of them does not make the row lenient, it makes it
+		// compare against the empty string and FAIL, so the pin here is about
+		// the file staying self-describing rather than about the gate.
+		"\nroute = \"homebrew-cask\"",
+		"\nformula = \"grok-build\"",
+		"\npin_state = \"pinned\"",
+		"\ncaskroom_dir = \"Caskroom/grok-build/1.0.52\"",
+		// The off-disk rollback target, and the reason it is here at all: old
+		// cask versions are NOT installable (no `grok-build@<v>` cask,
+		// homebrew-cask not cloned), so when the Caskroom copy goes this URL
+		// and this sha are the whole of what is left. MEASURED 2026-10-31 —
+		// x.ai still serves the superseded releases by templated URL.
+		"\nurl = \"https://x.ai/cli/grok-1.0.52-macos-aarch64\"",
+		"\nsha256 = \"",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("etc/grok/version-pin.toml missing %q", want)
@@ -260,24 +444,24 @@ func TestQAGrokPinDeclarationAndMakefile(t *testing.T) {
 func TestQAGrokPinScriptHappyCompactJSON(t *testing.T) {
 	root := gpRoot(t)
 	bin := t.TempDir()
-	gpStubGrok(t, bin, "1.0.5", gpCompactOK)
+	gpStubGrok(t, bin, "1.0.52", gpCompactOK)
 	out, code := gpRun(t, root, gpCfg(t, gpGoodCfg), bin)
 	if code != 0 {
 		t.Fatalf("exit %d, want 0\n%s", code, out)
 	}
-	if !strings.Contains(out, "pin intact at 1.0.5") {
+	if !strings.Contains(out, "pin intact at 1.0.52") {
 		t.Errorf("missing intact line:\n%s", out)
 	}
 	if strings.Contains(out, "UPSTREAM MOVED") {
-		t.Errorf("1.0.5==1.0.5 must not print the re-audit list:\n%s", out)
+		t.Errorf("1.0.52==1.0.52 must not print the re-audit list:\n%s", out)
 	}
 }
 
 func TestQAGrokPinScriptFailsWhenAutoUpdateIsOn(t *testing.T) {
 	root := gpRoot(t)
 	bin := t.TempDir()
-	gpStubGrok(t, bin, "1.0.5", gpCompactOK)
-	cfg := gpCfg(t, "[cli]\nauto_update = true\nmaximum_version = \"1.0.5\"\nrequired_maximum_version = \"1.0.5\"\n")
+	gpStubGrok(t, bin, "1.0.52", gpCompactOK)
+	cfg := gpCfg(t, "[cli]\nauto_update = true\nmaximum_version = \"1.0.52\"\nrequired_maximum_version = \"1.0.52\"\n")
 	out, code := gpRun(t, root, cfg, bin)
 	if code != 1 {
 		t.Fatalf("exit %d, want 1\n%s", code, out)
@@ -290,8 +474,8 @@ func TestQAGrokPinScriptFailsWhenAutoUpdateIsOn(t *testing.T) {
 func TestQAGrokPinScriptFailsWhenMaximumVersionDrifts(t *testing.T) {
 	root := gpRoot(t)
 	bin := t.TempDir()
-	gpStubGrok(t, bin, "1.0.5", gpCompactOK)
-	cfg := gpCfg(t, "[cli]\nauto_update = false\nmaximum_version = \"1.0.6\"\nrequired_maximum_version = \"1.0.5\"\n")
+	gpStubGrok(t, bin, "1.0.52", gpCompactOK)
+	cfg := gpCfg(t, "[cli]\nauto_update = false\nmaximum_version = \"1.0.70\"\nrequired_maximum_version = \"1.0.52\"\n")
 	out, code := gpRun(t, root, cfg, bin)
 	if code != 1 {
 		t.Fatalf("exit %d, want 1\n%s", code, out)
@@ -304,20 +488,20 @@ func TestQAGrokPinScriptFailsWhenMaximumVersionDrifts(t *testing.T) {
 func TestQAGrokPinScriptFailsWhenBinaryDrifts(t *testing.T) {
 	root := gpRoot(t)
 	bin := t.TempDir()
-	gpStubGrok(t, bin, "1.0.6", gpCompactOK)
+	gpStubGrok(t, bin, "1.0.70", gpCompactOK)
 	out, code := gpRun(t, root, gpCfg(t, gpGoodCfg), bin)
 	if code != 1 {
 		t.Fatalf("exit %d, want 1\n%s", code, out)
 	}
-	if !strings.Contains(out, "grok --version") || !strings.Contains(out, "1.0.6") || !strings.Contains(out, "FAIL") {
-		t.Errorf("must FAIL grok --version 1.0.6 vs pin 1.0.5:\n%s", out)
+	if !strings.Contains(out, "grok --version") || !strings.Contains(out, "1.0.70") || !strings.Contains(out, "FAIL") {
+		t.Errorf("must FAIL grok --version 1.0.70 vs pin 1.0.52:\n%s", out)
 	}
 }
 
 func TestQAGrokPinScriptFailsWhenGrokReportsAutoUpdateTrue(t *testing.T) {
 	root := gpRoot(t)
 	bin := t.TempDir()
-	gpStubGrok(t, bin, "1.0.5", `{"currentVersion":"1.0.5","latestVersion":"1.0.5","updateAvailable":false,"autoUpdate":true,"error":null}`)
+	gpStubGrok(t, bin, "1.0.52", `{"currentVersion":"1.0.52","latestVersion":"1.0.52","updateAvailable":false,"autoUpdate":true,"error":null}`)
 	out, code := gpRun(t, root, gpCfg(t, gpGoodCfg), bin)
 	if code != 1 {
 		t.Fatalf("exit %d, want 1\n%s", code, out)
@@ -327,10 +511,19 @@ func TestQAGrokPinScriptFailsWhenGrokReportsAutoUpdateTrue(t *testing.T) {
 	}
 }
 
+// The re-audit gate, driven by the TAP (ranger-base-7qey3). It used to be
+// driven by grok's `latestVersion`, and that is why it had never fired on a
+// healthy box: that field is clamped to maximum_version, which the pin always
+// sets to the pinned version, so it equalled the pin exactly when the pin was
+// intact. This arm keeps latestVersion AT the ceiling — the shape a real
+// pinned box answers — and moves the tap instead, so a regression back to the
+// clamped field reds here with "nothing to re-audit" over a tap three
+// releases ahead.
 func TestQAGrokPinScriptPrintsReauditWhenUpstreamMoves(t *testing.T) {
 	root := gpRoot(t)
 	bin := t.TempDir()
-	gpStubGrok(t, bin, "1.0.5", `{"currentVersion":"1.0.5","latestVersion":"1.1.0","updateAvailable":true,"autoUpdate":false,"error":null}`)
+	gpStubGrok(t, bin, "1.0.52", gpCompactOK)
+	gpStubBrew(t, bin, gpBrew{tap: "1.1.0"})
 	out, code := gpRun(t, root, gpCfg(t, gpGoodCfg), bin)
 	if code != 0 {
 		t.Fatalf("pin holding with upstream moved must exit 0, got %d\n%s", code, out)
@@ -345,7 +538,7 @@ func TestQAGrokPinScriptPrintsReauditWhenUpstreamMoves(t *testing.T) {
 		"rangerhq-vjl",
 		"--permission-mode",
 		"make verify-detection",
-		"pin intact at 1.0.5",
+		"pin intact at 1.0.52",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("re-audit list missing %q:\n%s", want, out)
@@ -396,7 +589,12 @@ func gpStubGrokNoVersion(t *testing.T, binDir, checkJSON string) {
 // arm 3 holds the arm to.
 func TestQAGrokPinReAuditTextSaysWhetherTheBoxItselfHasMoved(t *testing.T) {
 	const past = "1.1.0"
-	const moved = `{"currentVersion":"1.0.5","latestVersion":"1.1.0","updateAvailable":true,"autoUpdate":false,"error":null}`
+	// `moved` is the payload a HEALTHY pinned box answers — latestVersion at
+	// the soft ceiling, because grok clamps it there (ranger-base-7qey3). The
+	// move is the TAP's now, planted per-arm with gpStubBrew, so the name
+	// still says what varies: upstream has moved, and each arm differs only in
+	// what the BOX is doing about it.
+	const moved = gpCompactOK
 
 	// The re-audit list is the same work on every box: a branch that dropped
 	// it on a moved box would leave the operator with a verdict and no list.
@@ -423,7 +621,8 @@ func TestQAGrokPinReAuditTextSaysWhetherTheBoxItselfHasMoved(t *testing.T) {
 	t.Run("the box is still at the pin", func(t *testing.T) {
 		root := gpRoot(t)
 		bin := t.TempDir()
-		gpStubGrok(t, bin, "1.0.5", moved) // only the TAP moved
+		gpStubGrok(t, bin, "1.0.52", moved)
+		gpStubBrew(t, bin, gpBrew{tap: past}) // only the TAP moved
 		out, code := gpRun(t, root, gpCfg(t, gpGoodCfg), bin)
 		if code != 0 {
 			t.Fatalf("exit %d, want 0 — a tap above a holding pin is not a failure\n%s", code, out)
@@ -434,12 +633,12 @@ func TestQAGrokPinReAuditTextSaysWhetherTheBoxItselfHasMoved(t *testing.T) {
 			"nothing has changed on this machine",
 		}, reaudit...) {
 			if !strings.Contains(out, want) {
-				t.Errorf("a box still at 1.0.5 must be told %q:\n%s", want, out)
+				t.Errorf("a box still at 1.0.52 must be told %q:\n%s", want, out)
 			}
 		}
 		for _, no := range []string{"THE PIN IS NOT HOLDING", "AND THE FLEET IS STOPPED RIGHT NOW"} {
 			if strings.Contains(out, no) {
-				t.Errorf("a box whose binary is still 1.0.5 was told %q:\n%s", no, out)
+				t.Errorf("a box whose binary is still 1.0.52 was told %q:\n%s", no, out)
 			}
 		}
 	})
@@ -451,6 +650,7 @@ func TestQAGrokPinReAuditTextSaysWhetherTheBoxItselfHasMoved(t *testing.T) {
 		root := gpRoot(t)
 		bin := t.TempDir()
 		gpStubGrok(t, bin, past, moved)
+		gpStubBrew(t, bin, gpBrew{tap: past})
 		out, code := gpRun(t, root, gpCfg(t, gpGoodCfg), bin)
 		if code != 1 {
 			t.Fatalf("exit %d, want 1\n%s", code, out)
@@ -461,7 +661,7 @@ func TestQAGrokPinReAuditTextSaysWhetherTheBoxItselfHasMoved(t *testing.T) {
 			}
 		}
 		for _, want := range append([]string{
-			"THE PIN IS NOT HOLDING: this box runs " + past + ", not 1.0.5.",
+			"THE PIN IS NOT HOLDING: this box runs " + past + ", not 1.0.52.",
 			// ranger-base-bttb1: the rollback sentence is MEASURED now, and
 			// this fixture's GROK_HOME holds no downloads/ — which is this
 			// box's own shape (the Homebrew-cask route: ~/.grok/downloads/
@@ -469,11 +669,20 @@ func TestQAGrokPinReAuditTextSaysWhetherTheBoxItselfHasMoved(t *testing.T) {
 			// installed version). What used to print here was a flat promise
 			// that putting the pin back "needs no re-fetch", naming a
 			// directory that is gone, at the one moment this block fires.
+			//
+			// ranger-base-7qey3 measured the half bttb1 could only call
+			// unverified, and the text has to carry BOTH halves of what it
+			// found: the re-fetch works, AND it does not restore the cask —
+			// it recreates the managed install, which can self-update again.
+			// A paragraph that promised the first without the second would
+			// send an operator into a rollback that quietly un-pins the box.
 			"THERE IS NO LOCAL ROLLBACK ARTIFACT",
-			"is therefore a\nRE-FETCH over the network, not a symlink swap",
-			"ranger-base-yq1ar",
+			"old cask versions are not installable",
+			"RE-FETCH over the network",
+			"recreates the managed\ninstall",
+			"can self-update again",
 			"AND THE FLEET IS STOPPED RIGHT NOW: " + past + " is above the hard ceiling",
-			"config required_maximum_version = 1.0.5",
+			"config required_maximum_version = 1.0.52",
 		}, reaudit...) {
 			if !strings.Contains(out, want) {
 				t.Errorf("a box already running %s must be told %q:\n%s", past, want, out)
@@ -493,6 +702,7 @@ func TestQAGrokPinReAuditTextSaysWhetherTheBoxItselfHasMoved(t *testing.T) {
 		root := gpRoot(t)
 		bin := t.TempDir()
 		gpStubGrok(t, bin, past, moved)
+		gpStubBrew(t, bin, gpBrew{tap: past})
 		home := gpCfg(t, gpGoodCfg)
 		gpDownloads(t, home, "grok-1.0.5-macos-aarch64", "grok-1.0.0-macos-aarch64")
 		out, code := gpRun(t, root, home, bin)
@@ -500,11 +710,22 @@ func TestQAGrokPinReAuditTextSaysWhetherTheBoxItselfHasMoved(t *testing.T) {
 			t.Fatalf("exit %d, want 1\n%s", code, out)
 		}
 		for _, want := range []string{
-			"THE PIN IS NOT HOLDING: this box runs " + past + ", not 1.0.5.",
+			"THE PIN IS NOT HOLDING: this box runs " + past + ", not 1.0.52.",
 			"needs no re-fetch",
 			"2 grok binaries, one file per version",
-			"no sha to re-verify",
+			// The two cautions this arm gained under ranger-base-7qey3. A
+			// downloads/ tree on THIS box is not the old managed install the
+			// promise was written for — it is what a rollback re-fetch just
+			// created beside the cask, so it is both self-updatable and
+			// possibly not what PATH resolves to. The sentence that used to
+			// sit here, "no sha to re-verify", is gone on purpose: the pin
+			// file carries a sha256 now, so there is one.
+			"can self-update again",
+			"which tree answers",
 		} {
+			if strings.Contains(out, "no sha to re-verify") {
+				t.Errorf("the pin declares a sha256 now — nothing may say there is none:\n%s", out)
+			}
 			if !strings.Contains(out, want) {
 				t.Errorf("a box with 2 cached binaries must be told %q:\n%s", want, out)
 			}
@@ -520,6 +741,7 @@ func TestQAGrokPinReAuditTextSaysWhetherTheBoxItselfHasMoved(t *testing.T) {
 		root := gpRoot(t)
 		bin := t.TempDir()
 		gpStubGrok(t, bin, past, moved)
+		gpStubBrew(t, bin, gpBrew{tap: past})
 		home := gpCfg(t, gpGoodCfg)
 		gpDownloads(t, home, "grok-1.0.5-macos-aarch64")
 		out, code := gpRun(t, root, home, bin)
@@ -539,11 +761,12 @@ func TestQAGrokPinReAuditTextSaysWhetherTheBoxItselfHasMoved(t *testing.T) {
 		root := gpRoot(t)
 		bin := t.TempDir()
 		gpStubGrok(t, bin, "1.0.4", moved)
+		gpStubBrew(t, bin, gpBrew{tap: past})
 		out, code := gpRun(t, root, gpCfg(t, gpGoodCfg), bin)
 		if code != 1 {
 			t.Fatalf("exit %d, want 1\n%s", code, out)
 		}
-		if !strings.Contains(out, "THE PIN IS NOT HOLDING: this box runs 1.0.4, not 1.0.5.") {
+		if !strings.Contains(out, "THE PIN IS NOT HOLDING: this box runs 1.0.4, not 1.0.52.") {
 			t.Errorf("a box running 1.0.4 must be told the pin is not holding:\n%s", out)
 		}
 		if strings.Contains(out, "The pin is holding") {
@@ -562,11 +785,12 @@ func TestQAGrokPinReAuditTextSaysWhetherTheBoxItselfHasMoved(t *testing.T) {
 		root := gpRoot(t)
 		bin := t.TempDir()
 		gpStubGrokNoVersion(t, bin, moved)
+		gpStubBrew(t, bin, gpBrew{tap: past})
 		out, code := gpRun(t, root, gpCfg(t, gpGoodCfg), bin)
 		if code != 1 {
 			t.Fatalf("exit %d, want 1\n%s", code, out)
 		}
-		if !strings.Contains(out, "THE PIN IS NOT HOLDING: this box runs an unreadable grok, not 1.0.5.") {
+		if !strings.Contains(out, "THE PIN IS NOT HOLDING: this box runs an unreadable grok, not 1.0.52.") {
 			t.Errorf("an unreadable binary must be named as one, not left blank:\n%s", out)
 		}
 		if strings.Contains(out, "The pin is holding") {
@@ -589,7 +813,7 @@ func TestQAGrokPinScriptMissingGrokOrConfigExits2(t *testing.T) {
 	}
 
 	bin := t.TempDir()
-	gpStubGrok(t, bin, "1.0.5", gpCompactOK)
+	gpStubGrok(t, bin, "1.0.52", gpCompactOK)
 	empty := t.TempDir()
 	out, code = gpRun(t, root, empty, bin)
 	if code != 2 {
@@ -619,7 +843,7 @@ func TestQAGrokPinScriptMissingGrokOrConfigExits2(t *testing.T) {
 func TestQAGrokPinScriptMissingPinFileExits2RatherThanReportingDrift(t *testing.T) {
 	root := gpRoot(t)
 	bin := t.TempDir()
-	gpStubGrok(t, bin, "1.0.5", gpCompactOK)
+	gpStubGrok(t, bin, "1.0.52", gpCompactOK)
 	if err := os.Remove(filepath.Join(root, "etc", "grok", "version-pin.toml")); err != nil {
 		t.Fatal(err)
 	}
@@ -645,8 +869,8 @@ func TestQAGrokPinScriptMissingPinFileExits2RatherThanReportingDrift(t *testing.
 }
 
 const gpPrettyFalse = `{
-  "currentVersion": "1.0.5",
-  "latestVersion": "1.0.5",
+  "currentVersion": "1.0.52",
+  "latestVersion": "1.0.52",
   "updateAvailable": false,
   "autoUpdate": false,
   "error": null
@@ -656,13 +880,13 @@ func TestQAGrokPinPrettyJSONAutoUpdateIsNotTreatedAsOffline(t *testing.T) {
 	root := gpRoot(t)
 	bin := t.TempDir()
 	pretty := `{
-  "currentVersion": "1.0.5",
-  "latestVersion": "1.0.5",
+  "currentVersion": "1.0.52",
+  "latestVersion": "1.0.52",
   "updateAvailable": false,
   "autoUpdate": true,
   "error": null
 }`
-	gpStubGrok(t, bin, "1.0.5", pretty)
+	gpStubGrok(t, bin, "1.0.52", pretty)
 	out, code := gpRun(t, root, gpCfg(t, gpGoodCfg), bin)
 	if code != 1 {
 		t.Fatalf("pretty autoUpdate:true: exit %d, want 1 (got treated as offline?)\n%s", code, out)
@@ -677,7 +901,7 @@ func TestQAGrokPinPrettyJSONAutoUpdateIsNotTreatedAsOffline(t *testing.T) {
 func TestQAGrokPinPrettyJSONAutoUpdateFalseIsRead(t *testing.T) {
 	root := gpRoot(t)
 	bin := t.TempDir()
-	gpStubGrok(t, bin, "1.0.5", gpPrettyFalse)
+	gpStubGrok(t, bin, "1.0.52", gpPrettyFalse)
 	out, code := gpRun(t, root, gpCfg(t, gpGoodCfg), bin)
 	if code != 0 {
 		t.Fatalf("pretty autoUpdate:false: exit %d, want 0\n%s", code, out)
@@ -685,29 +909,85 @@ func TestQAGrokPinPrettyJSONAutoUpdateFalseIsRead(t *testing.T) {
 	if strings.Contains(out, "offline") {
 		t.Errorf("pretty autoUpdate:false is an answer, not silence:\n%s", out)
 	}
-	if !strings.Contains(out, "grok update: autoUpdate") || !strings.Contains(out, "pin intact at 1.0.5") {
+	if !strings.Contains(out, "grok update: autoUpdate") || !strings.Contains(out, "pin intact at 1.0.52") {
 		t.Errorf("want the autoUpdate row read ok and the pin intact:\n%s", out)
 	}
 }
 
-// latestVersion has the same colon-spacing hazard, and losing it loses the
-// re-audit gate silently: upstream moves, the list never prints.
-func TestQAGrokPinPrettyJSONUpstreamMovePrintsReaudit(t *testing.T) {
+// latestVersion has the same colon-spacing hazard as autoUpdate, and both
+// directions of misreading it are a silent pass.
+//
+// Its SUBJECT moved under ranger-base-7qey3 — it is the clamp control now, not
+// the upstream read — but the hazard did not: a pretty payload must be READ.
+// Read as empty it lands on the "grok answered; no latestVersion in it" arm,
+// which is at least loud; read as empty on an EMPTY payload it would land on
+// offline and pass. This arm pins the pretty shape at the ceiling reading ok,
+// and the one below it pins a pretty shape ABOVE the ceiling failing — same
+// payload style, opposite verdict, so neither can be satisfied by a script
+// that simply cannot parse pretty JSON.
+func TestQAGrokPinPrettyJSONLatestVersionAtTheCeilingIsRead(t *testing.T) {
 	root := gpRoot(t)
 	bin := t.TempDir()
-	gpStubGrok(t, bin, "1.0.5", `{
-  "currentVersion": "1.0.5",
+	gpStubGrok(t, bin, "1.0.52", `{
+  "currentVersion": "1.0.52",
+  "latestVersion": "1.0.52",
+  "updateAvailable": false,
+  "autoUpdate": false,
+  "error": null
+}`)
+	gpStubBrew(t, bin, gpBrew{tap: "1.1.0"})
+	out, code := gpRun(t, root, gpCfg(t, gpGoodCfg), bin)
+	if code != 0 {
+		t.Fatalf("pin holding with the tap moved must exit 0, got %d\n%s", code, out)
+	}
+	if gpRowFailed(out, "grok update: latestVersion") {
+		t.Errorf("a pretty latestVersion AT the ceiling is not a failure:\n%s", out)
+	}
+	if strings.Contains(out, "no latestVersion in it") {
+		t.Errorf("a pretty payload was read as having no latestVersion:\n%s", out)
+	}
+	// And the gate itself still fires, from the tap.
+	if !strings.Contains(out, "UPSTREAM MOVED") || !strings.Contains(out, "1.1.0") {
+		t.Errorf("the tap moved — the re-audit list must print:\n%s", out)
+	}
+}
+
+// The soft ceiling, verified by EXECUTION rather than by reading config.toml
+// (ranger-base-7qey3). `latestVersion` is grok's own answer about what it would
+// install, clamped to maximum_version — MEASURED: no ceiling → 1.0.70, ceiling
+// 1.0.52 → 1.0.52, ceiling 1.0.5 → 1.0.5. So a value ABOVE the declared soft
+// ceiling means the clamp is not holding: the updater has stopped honouring
+// the key, or it is reading a config that is not the one the rows above
+// checked. Either is the pin failing, and before this arm existed it read as
+// an upstream move and exited 0.
+//
+// Both shapes, because the extractor is the same one the arm above exercises.
+func TestQAGrokPinLatestVersionAboveTheSoftCeilingFails(t *testing.T) {
+	for _, tc := range []struct{ name, json string }{
+		{"compact", `{"currentVersion":"1.0.52","latestVersion":"1.1.0","updateAvailable":true,"autoUpdate":false,"error":null}`},
+		{"pretty", `{
+  "currentVersion": "1.0.52",
   "latestVersion": "1.1.0",
   "updateAvailable": true,
   "autoUpdate": false,
   "error": null
-}`)
-	out, code := gpRun(t, root, gpCfg(t, gpGoodCfg), bin)
-	if code != 0 {
-		t.Fatalf("pin holding with upstream moved must exit 0, got %d\n%s", code, out)
-	}
-	if !strings.Contains(out, "UPSTREAM MOVED") || !strings.Contains(out, "1.1.0") {
-		t.Errorf("pretty latestVersion must still trip the re-audit gate:\n%s", out)
+}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := gpRoot(t)
+			bin := t.TempDir()
+			gpStubGrok(t, bin, "1.0.52", tc.json)
+			out, code := gpRun(t, root, gpCfg(t, gpGoodCfg), bin)
+			if code != 1 {
+				t.Fatalf("exit %d, want 1 — the clamp is not holding and nothing said so\n%s", code, out)
+			}
+			if !gpRowFailed(out, "grok update: latestVersion") {
+				t.Errorf("want the latestVersion row FAILing on its own line:\n%s", out)
+			}
+			if strings.Contains(out, "pin intact") {
+				t.Errorf("an unclamped updater is not an intact pin:\n%s", out)
+			}
+		})
 	}
 }
 
@@ -716,12 +996,12 @@ func TestQAGrokPinPrettyJSONUpstreamMovePrintsReaudit(t *testing.T) {
 func TestQAGrokPinEmptyCheckOutputIsStillOffline(t *testing.T) {
 	root := gpRoot(t)
 	bin := t.TempDir()
-	gpStubGrok(t, bin, "1.0.5", "")
+	gpStubGrok(t, bin, "1.0.52", "")
 	out, code := gpRun(t, root, gpCfg(t, gpGoodCfg), bin)
 	if code != 0 {
 		t.Fatalf("no update output: exit %d, want 0\n%s", code, out)
 	}
-	if !strings.Contains(out, "offline?") || !strings.Contains(out, "pin intact at 1.0.5") {
+	if !strings.Contains(out, "offline?") || !strings.Contains(out, "pin intact at 1.0.52") {
 		t.Errorf("empty payload is the offline arm:\n%s", out)
 	}
 }
@@ -730,13 +1010,13 @@ func TestQAGrokPinEmptyCheckOutputIsStillOffline(t *testing.T) {
 // it is exactly the ocfh failure one rename away — FAIL instead.
 func TestQAGrokPinUnreadableAnswerFailsInsteadOfPassing(t *testing.T) {
 	for _, tc := range []struct{ name, json string }{
-		{"no autoUpdate field", `{"currentVersion":"1.0.5","error":"network unreachable"}`},
-		{"autoUpdate as a string", `{"autoUpdate": "true", "latestVersion": "1.0.5"}`},
+		{"no autoUpdate field", `{"currentVersion":"1.0.52","error":"network unreachable"}`},
+		{"autoUpdate as a string", `{"autoUpdate": "true", "latestVersion": "1.0.52"}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := gpRoot(t)
 			bin := t.TempDir()
-			gpStubGrok(t, bin, "1.0.5", tc.json)
+			gpStubGrok(t, bin, "1.0.52", tc.json)
 			out, code := gpRun(t, root, gpCfg(t, gpGoodCfg), bin)
 			if code != 1 {
 				t.Fatalf("exit %d, want 1\n%s", code, out)
@@ -769,8 +1049,8 @@ func TestQAGrokPinUnreadableAnswerFailsInsteadOfPassing(t *testing.T) {
 func TestQAGrokPinFailsWhenRequiredMaximumVersionIsUnset(t *testing.T) {
 	root := gpRoot(t)
 	bin := t.TempDir()
-	gpStubGrok(t, bin, "1.0.5", gpCompactOK)
-	cfg := gpCfg(t, "[cli]\nauto_update = false\nmaximum_version = \"1.0.5\"\n")
+	gpStubGrok(t, bin, "1.0.52", gpCompactOK)
+	cfg := gpCfg(t, "[cli]\nauto_update = false\nmaximum_version = \"1.0.52\"\n")
 	out, code := gpRun(t, root, cfg, bin)
 	if code != 1 {
 		t.Fatalf("unset hard ceiling: exit %d, want 1\n%s", code, out)
@@ -786,13 +1066,13 @@ func TestQAGrokPinFailsWhenRequiredMaximumVersionIsUnset(t *testing.T) {
 func TestQAGrokPinFailsWhenRequiredMaximumVersionDrifts(t *testing.T) {
 	root := gpRoot(t)
 	bin := t.TempDir()
-	gpStubGrok(t, bin, "1.0.5", gpCompactOK)
-	cfg := gpCfg(t, "[cli]\nauto_update = false\nmaximum_version = \"1.0.5\"\nrequired_maximum_version = \"1.0.6\"\n")
+	gpStubGrok(t, bin, "1.0.52", gpCompactOK)
+	cfg := gpCfg(t, "[cli]\nauto_update = false\nmaximum_version = \"1.0.52\"\nrequired_maximum_version = \"1.0.70\"\n")
 	out, code := gpRun(t, root, cfg, bin)
 	if code != 1 {
 		t.Fatalf("drifted hard ceiling: exit %d, want 1\n%s", code, out)
 	}
-	if !gpRowFailed(out, "config required_max_ver") || !strings.Contains(out, "1.0.6") {
+	if !gpRowFailed(out, "config required_max_ver") || !strings.Contains(out, "1.0.70") {
 		t.Errorf("must FAIL the required_max_ver row naming the drift:\n%s", out)
 	}
 }
@@ -813,13 +1093,13 @@ func TestQAGrokPinReadsTheTwoCeilingsIndependently(t *testing.T) {
 	}{
 		{
 			name:     "soft drifts, hard holds",
-			cfg:      "[cli]\nauto_update = false\nmaximum_version = \"1.0.6\"\nrequired_maximum_version = \"1.0.5\"\n",
+			cfg:      "[cli]\nauto_update = false\nmaximum_version = \"1.0.70\"\nrequired_maximum_version = \"1.0.52\"\n",
 			wantFail: "config maximum_version",
 			wantOK:   "config required_max_ver",
 		},
 		{
 			name:     "hard drifts, soft holds, hard listed first",
-			cfg:      "[cli]\nauto_update = false\nrequired_maximum_version = \"1.0.6\"\nmaximum_version = \"1.0.5\"\n",
+			cfg:      "[cli]\nauto_update = false\nrequired_maximum_version = \"1.0.70\"\nmaximum_version = \"1.0.52\"\n",
 			wantFail: "config required_max_ver",
 			wantOK:   "config maximum_version",
 		},
@@ -827,7 +1107,7 @@ func TestQAGrokPinReadsTheTwoCeilingsIndependently(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			root := gpRoot(t)
 			bin := t.TempDir()
-			gpStubGrok(t, bin, "1.0.5", gpCompactOK)
+			gpStubGrok(t, bin, "1.0.52", gpCompactOK)
 			out, code := gpRun(t, root, gpCfg(t, tc.cfg), bin)
 			if code != 1 {
 				t.Fatalf("exit %d, want 1\n%s", code, out)
@@ -865,22 +1145,24 @@ func TestQAGrokPinReadsTheTwoCeilingsIndependently(t *testing.T) {
 // Every row differs from the control ONLY in the shape of latestVersion, so a
 // green row cannot be some other check failing.
 func TestQAGrokPinUnreadableLatestVersionFailsInsteadOfSilence(t *testing.T) {
-	// The control: identical but for a quoted version, and it must MOVE.
-	// Without it the rows below would be satisfied by a script that failed
-	// every payload, including the one the gate is supposed to fire on.
-	t.Run("control: quoted version still trips the gate", func(t *testing.T) {
+	// The control: identical but for a readable, quoted version AT the soft
+	// ceiling. Without it the rows below would be satisfied by a script that
+	// failed every payload, including the healthy one — and since
+	// ranger-base-7qey3 that is the easier bug to write, because the readable
+	// value is now CHECKED rather than merely printed.
+	t.Run("control: a quoted version at the ceiling reads ok", func(t *testing.T) {
 		root := gpRoot(t)
 		bin := t.TempDir()
-		gpStubGrok(t, bin, "1.0.5", `{"autoUpdate":false,"latestVersion":"1.9.9"}`)
+		gpStubGrok(t, bin, "1.0.52", `{"autoUpdate":false,"latestVersion":"1.0.52"}`)
 		out, code := gpRun(t, root, gpCfg(t, gpGoodCfg), bin)
 		if code != 0 {
-			t.Fatalf("readable upstream: exit %d, want 0\n%s", code, out)
-		}
-		if !strings.Contains(out, "UPSTREAM MOVED") || !strings.Contains(out, "1.9.9") {
-			t.Errorf("control must print the re-audit list:\n%s", out)
+			t.Fatalf("readable clamped version: exit %d, want 0\n%s", code, out)
 		}
 		if gpRowFailed(out, "grok update: latestVersion") {
-			t.Errorf("a readable version is not a failure:\n%s", out)
+			t.Errorf("a readable version at the ceiling is not a failure:\n%s", out)
+		}
+		if !strings.Contains(out, "pin intact at 1.0.52") {
+			t.Errorf("control must be an intact pin:\n%s", out)
 		}
 	})
 
@@ -893,7 +1175,7 @@ func TestQAGrokPinUnreadableLatestVersionFailsInsteadOfSilence(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			root := gpRoot(t)
 			bin := t.TempDir()
-			gpStubGrok(t, bin, "1.0.5", tc.json)
+			gpStubGrok(t, bin, "1.0.52", tc.json)
 			out, code := gpRun(t, root, gpCfg(t, gpGoodCfg), bin)
 			if code != 1 {
 				t.Fatalf("exit %d, want 1 — an unreadable version passed in silence\n%s", code, out)
@@ -915,7 +1197,7 @@ func TestQAGrokPinUnreadableLatestVersionFailsInsteadOfSilence(t *testing.T) {
 func TestQAGrokPinEmptyPayloadIsOfflineForLatestVersionToo(t *testing.T) {
 	root := gpRoot(t)
 	bin := t.TempDir()
-	gpStubGrok(t, bin, "1.0.5", "")
+	gpStubGrok(t, bin, "1.0.52", "")
 	out, code := gpRun(t, root, gpCfg(t, gpGoodCfg), bin)
 	if code != 0 {
 		t.Fatalf("empty payload: exit %d, want 0\n%s", code, out)
@@ -932,7 +1214,7 @@ func TestQAGrokPinEmptyPayloadIsOfflineForLatestVersionToo(t *testing.T) {
 	if offline != 2 {
 		t.Errorf("want BOTH fields on the offline arm, got %d row(s):\n%s", offline, out)
 	}
-	if !strings.Contains(out, "pin intact at 1.0.5") {
+	if !strings.Contains(out, "pin intact at 1.0.52") {
 		t.Errorf("offline is not a failure:\n%s", out)
 	}
 }
@@ -959,18 +1241,23 @@ func TestQAGrokPinFirstOccurrenceWinsInBothShapes(t *testing.T) {
 		{
 			// The masked true. This is the one that passed.
 			name:         "nested autoUpdate false must not mask the outer true",
-			compact:      `{"autoUpdate":true,"nested":{"autoUpdate":false},"latestVersion":"1.0.5"}`,
+			compact:      `{"autoUpdate":true,"nested":{"autoUpdate":false},"latestVersion":"1.0.52"}`,
 			wantCode:     1,
 			wantSubstr:   "true",
 			refuseSubstr: "pin intact",
 		},
 		{
-			// The mirror: the outer version is the one to re-audit against.
+			// The mirror, and since ranger-base-7qey3 a sharper discriminator
+			// than it was. The OUTER latestVersion is 1.9.9, above the soft
+			// ceiling, so the row must FAIL naming it; the nested one is the
+			// ceiling exactly, so a script that let the nested value win would
+			// read ok and pass. Before the clamp check the two answers differed
+			// only in which version got printed beside "UPSTREAM MOVED".
 			name:         "nested latestVersion must not mask the outer one",
-			compact:      `{"autoUpdate":false,"latestVersion":"1.9.9","nested":{"latestVersion":"1.0.5"}}`,
-			wantCode:     0,
-			wantSubstr:   "UPSTREAM MOVED",
-			refuseSubstr: "nothing to re-audit",
+			compact:      `{"autoUpdate":false,"latestVersion":"1.9.9","nested":{"latestVersion":"1.0.52"}}`,
+			wantCode:     1,
+			wantSubstr:   "1.9.9",
+			refuseSubstr: "pin intact",
 		},
 	} {
 		for _, shape := range []struct{ label, json string }{
@@ -980,7 +1267,7 @@ func TestQAGrokPinFirstOccurrenceWinsInBothShapes(t *testing.T) {
 			t.Run(tc.name+"/"+shape.label, func(t *testing.T) {
 				root := gpRoot(t)
 				bin := t.TempDir()
-				gpStubGrok(t, bin, "1.0.5", shape.json)
+				gpStubGrok(t, bin, "1.0.52", shape.json)
 				out, code := gpRun(t, root, gpCfg(t, gpGoodCfg), bin)
 				if code != tc.wantCode {
 					t.Fatalf("exit %d, want %d\npayload: %s\n%s", code, tc.wantCode, shape.json, out)
@@ -1009,7 +1296,7 @@ func TestQAGrokPinFirstOccurrenceWinsInBothShapes(t *testing.T) {
 // alone is green over the bug it exists to catch. Both are asserted; the first
 // is the one that discriminates.
 func TestQAGrokPinProseLineIsNotAnAutoUpdateAnswer(t *testing.T) {
-	const jsonLine = `{"autoUpdate":true,"latestVersion":"1.0.5"}`
+	const jsonLine = `{"autoUpdate":true,"latestVersion":"1.0.52"}`
 	const prose = `warning: config key "autoUpdate": false ignored`
 	for _, tc := range []struct{ name, json string }{
 		{"prose line first", prose + "\n" + jsonLine},
@@ -1018,7 +1305,7 @@ func TestQAGrokPinProseLineIsNotAnAutoUpdateAnswer(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			root := gpRoot(t)
 			bin := t.TempDir()
-			gpStubGrok(t, bin, "1.0.5", tc.json)
+			gpStubGrok(t, bin, "1.0.52", tc.json)
 			out, code := gpRun(t, root, gpCfg(t, gpGoodCfg), bin)
 			if code != 1 {
 				t.Fatalf("exit %d, want 1 — a warning line was read as the answer\n%s", code, out)
@@ -1034,9 +1321,17 @@ func TestQAGrokPinProseLineIsNotAnAutoUpdateAnswer(t *testing.T) {
 }
 
 // The mirror, and the worse one: a version named in a plain line is not the
-// version to re-audit against. Reading it means the operator re-audits the
-// wrong build — security's list printed against a release that does not exist.
-func TestQAGrokPinProseLineIsNotTheUpstreamVersion(t *testing.T) {
+// version grok answered. Reading it means the clamp is checked against a
+// number grok never reported — a row that says ok, or FAILs, for a reason
+// that has nothing to do with the updater.
+//
+// Under ranger-base-7qey3 the verdict flipped and that makes the arm stronger
+// rather than weaker. grok's own answer here is 1.1.0, ABOVE the soft ceiling,
+// so the row must FAIL naming 1.1.0; the prose line says 9.9.9, which is also
+// above the ceiling, so a script reading the prose would ALSO fail — and the
+// `9.9.9` negative is what tells the two apart. Before, both readings printed
+// UPSTREAM MOVED and only the printed number differed.
+func TestQAGrokPinProseLineIsNotTheVersionGrokAnswered(t *testing.T) {
 	const jsonLine = `{"latestVersion":"1.1.0","autoUpdate":false}`
 	const prose = `note: "latestVersion": "9.9.9" is not a stable release`
 	for _, tc := range []struct{ name, json string }{
@@ -1046,17 +1341,286 @@ func TestQAGrokPinProseLineIsNotTheUpstreamVersion(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			root := gpRoot(t)
 			bin := t.TempDir()
-			gpStubGrok(t, bin, "1.0.5", tc.json)
+			gpStubGrok(t, bin, "1.0.52", tc.json)
 			out, code := gpRun(t, root, gpCfg(t, gpGoodCfg), bin)
-			if code != 0 {
-				t.Fatalf("exit %d, want 0\n%s", code, out)
+			if code != 1 {
+				t.Fatalf("exit %d, want 1 — 1.1.0 is above the soft ceiling\n%s", code, out)
 			}
-			if !strings.Contains(out, "UPSTREAM MOVED") || !strings.Contains(out, "1.1.0") {
-				t.Errorf("must re-audit against grok's own 1.1.0:\n%s", out)
+			if !gpRowFailed(out, "grok update: latestVersion") || !strings.Contains(out, "1.1.0") {
+				t.Errorf("must read grok's own 1.1.0 and FAIL on it:\n%s", out)
 			}
 			if strings.Contains(out, "9.9.9") {
 				t.Errorf("9.9.9 came from a prose line, not from latestVersion:\n%s", out)
 			}
 		})
+	}
+}
+
+// --- the brew half of the pin (ranger-base-7qey3) --------------------------
+//
+// OPERATOR RULING 2026-10-31 (ranger-base-yq1ar): the pin governs the Homebrew
+// cask `grok-build`. `brew upgrade` is not grok's updater and obeys none of
+// grok's config, so the [cli] ceilings above cannot see it coming — these rows
+// are the half that can. The ruling asked for a lift-gate that "fails loud",
+// and this is it: the script FAILs whenever what brew records differs from
+// what the pin declares, whichever route moved it.
+//
+// The ruling also said `brew pin` does not apply to casks. It does on this
+// Homebrew, which is why the pin_state row exists at all. MEASURED 2026-10-31
+// on Homebrew 7.0.10/7.0.11: `brew pin --cask grok-build` exits 0,
+// `brew list --pinned` then names it, and `brew upgrade --cask --greedy
+// grok-build` answers "Error: Not upgrading 1 pinned package:". It is still
+// the SECOND gate that is load-bearing — a cask declaring `auto_updates true`
+// can update itself outside Homebrew, and `brew pin` has that documented hole
+// — so the row asserts the belt while required_maximum_version keeps the
+// braces.
+
+// The lift-gate the ruling asked for. A `brew upgrade` that moves the cask is
+// the one route the old script could not see: it read `grok --version` only,
+// so a cask upgraded while a managed install stayed first on PATH reported an
+// intact pin over a box whose next relink would move it.
+func TestQAGrokPinFailsWhenInstalledCaskVersionDrifts(t *testing.T) {
+	root := gpRoot(t)
+	bin := t.TempDir()
+	gpStubGrok(t, bin, gpPinnedVer, gpCompactOK)
+	gpStubBrew(t, bin, gpBrew{installed: "1.1.0"})
+	out, code := gpRun(t, root, gpCfg(t, gpGoodCfg), bin)
+	if code != 1 {
+		t.Fatalf("drifted cask: exit %d, want 1\n%s", code, out)
+	}
+	if !gpRowFailed(out, "installed cask version") {
+		t.Errorf("must FAIL the installed-cask row:\n%s", out)
+	}
+	// And it must not be absorbed by the binary row, which is green here: the
+	// two readings are different questions and this fixture is exactly the
+	// box where they disagree.
+	if gpRowFailed(out, "grok --version") {
+		t.Errorf("the binary is at the pin — that row must stay ok:\n%s", out)
+	}
+	if strings.Contains(out, "pin intact") {
+		t.Errorf("a drifted cask is not an intact pin:\n%s", out)
+	}
+}
+
+// A cask brew does not record as installed at all. The row must FAIL rather
+// than read empty and pass — the same rule every extractor in the script
+// follows (ranger-base-s8b4g): a reader that answers nothing must never be
+// indistinguishable from an answer.
+func TestQAGrokPinFailsWhenCaskIsNotInstalled(t *testing.T) {
+	root := gpRoot(t)
+	bin := t.TempDir()
+	gpStubGrok(t, bin, gpPinnedVer, gpCompactOK)
+	gpStubBrew(t, bin, gpBrew{installed: "none"})
+	out, code := gpRun(t, root, gpCfg(t, gpGoodCfg), bin)
+	if code != 1 {
+		t.Fatalf("cask not installed: exit %d, want 1\n%s", code, out)
+	}
+	if !gpRowFailed(out, "installed cask version") {
+		t.Errorf("must FAIL the installed-cask row:\n%s", out)
+	}
+}
+
+// The cask pin lifted. Nothing breaks the moment it happens — this is the
+// silent un-gate the pin_state row exists to make loud, exactly as an unset
+// required_maximum_version is.
+func TestQAGrokPinFailsWhenTheCaskIsUnpinned(t *testing.T) {
+	root := gpRoot(t)
+	bin := t.TempDir()
+	gpStubGrok(t, bin, gpPinnedVer, gpCompactOK)
+	gpStubBrew(t, bin, gpBrew{unpinned: true})
+	out, code := gpRun(t, root, gpCfg(t, gpGoodCfg), bin)
+	if code != 1 {
+		t.Fatalf("unpinned cask: exit %d, want 1\n%s", code, out)
+	}
+	if !gpRowFailed(out, "brew cask pin") {
+		t.Errorf("must FAIL the brew-pin row:\n%s", out)
+	}
+	if strings.Contains(out, "pin intact") {
+		t.Errorf("an unpinned cask is not an intact pin:\n%s", out)
+	}
+}
+
+// brew absent is exit 2 — "nothing measured" — and not exit 1, which would
+// tell the caller the pin is broken. verify-box routes on that distinction.
+// The grok guard fires FIRST, which is why this arm plants a grok: otherwise
+// it would be asserting the wrong diagnostic.
+func TestQAGrokPinMissingBrewExits2(t *testing.T) {
+	root := gpRoot(t)
+	bin := t.TempDir()
+	gpStubGrok(t, bin, gpPinnedVer, gpCompactOK)
+	gpNoBrew(t, bin)
+	out, code := gpRun(t, root, gpCfg(t, gpGoodCfg), bin)
+	if code != 2 {
+		t.Fatalf("no brew on PATH: exit %d, want 2\n%s", code, out)
+	}
+	if !strings.Contains(out, "brew not on PATH") {
+		t.Errorf("want a brew-missing diagnostic:\n%s", out)
+	}
+	for _, refuse := range []string{"UPSTREAM MOVED", "THE PIN IS NOT HOLDING", "pin intact"} {
+		if strings.Contains(out, refuse) {
+			t.Errorf("nothing was measured — must not report %q:\n%s", refuse, out)
+		}
+	}
+}
+
+// The rollback target, and the two ways of losing it. A cask keeps exactly one
+// version and old cask versions are not installable (MEASURED 2026-10-31: no
+// `grok-build@<v>` cask exists and homebrew-cask is not cloned on this box), so
+// the Caskroom directory is the only on-disk copy of the pinned build and
+// `brew cleanup` is what takes it.
+//
+// Both arms are needed and neither implies the other: GONE is the directory
+// absent, and "present but not what grok runs" is a rollback target for a
+// binary nobody uses — the shape verify-codex-pin.sh learned to tell apart
+// under ranger-base-g29az finding 3.
+func TestQAGrokPinFailsWhenTheRollbackTargetIsGone(t *testing.T) {
+	root := gpRoot(t)
+	bin := t.TempDir()
+	gpStubGrok(t, bin, gpPinnedVer, gpCompactOK)
+	gpStubBrew(t, bin, gpBrew{noRoom: true})
+	out, code := gpRun(t, root, gpCfg(t, gpGoodCfg), bin)
+	if code != 1 {
+		t.Fatalf("Caskroom gone: exit %d, want 1\n%s", code, out)
+	}
+	if !gpRowFailed(out, "rollback target on disk") {
+		t.Errorf("must FAIL the rollback-target row:\n%s", out)
+	}
+	// One broken thing, one red row: "does grok resolve into a directory that
+	// does not exist" has no answer, and a second FAIL for it is how a reader
+	// learns to skim the list.
+	if gpRowFailed(out, "grok resolves into the pin") {
+		t.Errorf("nothing to resolve into is not a second failure:\n%s", out)
+	}
+	if !strings.Contains(out, "nothing to resolve into") {
+		t.Errorf("want the row said to be unmeasured rather than counted:\n%s", out)
+	}
+}
+
+func TestQAGrokPinFailsWhenGrokDoesNotResolveIntoThePin(t *testing.T) {
+	root := gpRoot(t)
+	bin := t.TempDir()
+	gpStubGrok(t, bin, gpPinnedVer, gpCompactOK)
+	// The declared directory exists but is empty: grok answers from somewhere
+	// else entirely. On a real box that is the managed install a rollback
+	// re-fetch creates — `$GROK_HOME/bin/grok` ahead of the cask on PATH —
+	// which is precisely the state the runbook warns about, and every other
+	// row reads green in it.
+	gpStubBrew(t, bin, gpBrew{roomElse: true})
+	out, code := gpRun(t, root, gpCfg(t, gpGoodCfg), bin)
+	if code != 1 {
+		t.Fatalf("grok outside the pin: exit %d, want 1\n%s", code, out)
+	}
+	if !gpRowFailed(out, "grok resolves into the pin") {
+		t.Errorf("must FAIL the resolves-into-the-pin row:\n%s", out)
+	}
+	if gpRowFailed(out, "rollback target on disk") {
+		t.Errorf("the declared directory is present — that row must stay ok:\n%s", out)
+	}
+}
+
+// A declared caskroom_dir that names no version is always "present", because
+// Homebrew never removes the parent and any installed version sits under it.
+// So a prefix compare against the parent reads "grok resolves into the pin" ok
+// whatever is running — ranger-base-g29az finding 3, pinned here for grok
+// because the declaration is hand-written and this is the way to get it wrong
+// that still looks right.
+func TestQAGrokPinFailsWhenCaskroomDirNamesNoVersion(t *testing.T) {
+	root := gpRoot(t)
+	bin := t.TempDir()
+	gpStubGrok(t, bin, gpPinnedVer, gpCompactOK)
+	gpStubBrew(t, bin, gpBrew{})
+	pin := filepath.Join(root, "etc", "grok", "version-pin.toml")
+	body, err := os.ReadFile(pin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unversioned := strings.Replace(string(body),
+		"caskroom_dir = \"Caskroom/grok-build/"+gpPinnedVer+"\"",
+		"caskroom_dir = \"Caskroom/grok-build\"", 1)
+	if unversioned == string(body) {
+		t.Fatalf("fixture did not find the caskroom_dir line to blunt")
+	}
+	if err := os.WriteFile(pin, []byte(unversioned), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, code := gpRun(t, root, gpCfg(t, gpGoodCfg), bin)
+	if code != 1 {
+		t.Fatalf("unversioned caskroom_dir: exit %d, want 1\n%s", code, out)
+	}
+	if !gpRowFailed(out, "rollback target on disk") || !strings.Contains(out, "unversioned") {
+		t.Errorf("must FAIL naming the declaration as unversioned:\n%s", out)
+	}
+	if !strings.Contains(out, "names no version") {
+		t.Errorf("the resolve row must say why it has no answer:\n%s", out)
+	}
+}
+
+// The tap read gets the same three arms the JSON fields do, and for the same
+// reason (ranger-base-phxj, ranger-base-7qey3): it is the ONLY input to the
+// re-audit gate now, so a reader that answers nothing is a gate that is
+// silently off. `brew info --cask` exits 0 on success and 1 on an unknown
+// cask, so a non-zero exit and a header with no version are both failures
+// rather than silence.
+func TestQAGrokPinUnreadableTapVersionFailsInsteadOfSilence(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		brew gpBrew
+	}{
+		{"brew info exits non-zero", gpBrew{infoExit: 1}},
+		{"header carries no version", gpBrew{tap: "none"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := gpRoot(t)
+			bin := t.TempDir()
+			gpStubGrok(t, bin, gpPinnedVer, gpCompactOK)
+			gpStubBrew(t, bin, tc.brew)
+			out, code := gpRun(t, root, gpCfg(t, gpGoodCfg), bin)
+			if code != 1 {
+				t.Fatalf("exit %d, want 1 — an unreadable tap passed in silence\n%s", code, out)
+			}
+			if !gpRowFailed(out, "tap version") {
+				t.Errorf("want the tap row FAILing on its own line:\n%s", out)
+			}
+			if strings.Contains(out, "pin intact") {
+				t.Errorf("a gate that cannot read upstream is not an intact pin:\n%s", out)
+			}
+		})
+	}
+}
+
+// And the control on all of it: a tap AT the pin is not a move, and the
+// script must say so in the one line that distinguishes "read it, nothing to
+// do" from "did not read it". Without this arm every tap assertion above
+// would be satisfied by a script that failed or skipped the read outright.
+func TestQAGrokPinTapAtThePinIsNotAMove(t *testing.T) {
+	root := gpRoot(t)
+	bin := t.TempDir()
+	gpStubGrok(t, bin, gpPinnedVer, gpCompactOK)
+	gpStubBrew(t, bin, gpBrew{tap: gpPinnedVer})
+	out, code := gpRun(t, root, gpCfg(t, gpGoodCfg), bin)
+	if code != 0 {
+		t.Fatalf("tap at the pin: exit %d, want 0\n%s", code, out)
+	}
+	if !strings.Contains(out, "nothing to re-audit") {
+		t.Errorf("want the tap read and named as no move:\n%s", out)
+	}
+	if strings.Contains(out, "UPSTREAM MOVED") {
+		t.Errorf("the tap equals the pin — nothing moved:\n%s", out)
+	}
+}
+
+// A gate must not change the box it reads. `brew info` and `brew list` are
+// auto-update-able commands: MEASURED 2026-10-31, a `brew` call in this bead's
+// session pulled Homebrew 7.0.10 → 7.0.11 and re-fetched three taps before
+// answering the question asked of it. A verify run that upgrades Homebrew as a
+// side effect is a gate with a footprint, and on a box where the next thing
+// read is another pin it is a gate that can change that pin's answer.
+func TestQAGrokPinScriptDoesNotLetBrewAutoUpdate(t *testing.T) {
+	body, err := os.ReadFile("scripts/verify-grok-pin.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), "export HOMEBREW_NO_AUTO_UPDATE=1") {
+		t.Error("verify-grok-pin.sh must export HOMEBREW_NO_AUTO_UPDATE=1 — a read must not upgrade Homebrew")
 	}
 }
