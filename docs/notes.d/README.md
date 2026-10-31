@@ -54,6 +54,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-8wxbn](ranger-base-8wxbn.md) — Twelve tree-wide pins behind four spellings of a walk root, and the one spelling still refused (ranger-base-8wxbn) — 2026-10-31
 - [ranger-base-8u8n8](ranger-base-8u8n8.md) — Two pinned spellings of one seam, and the gate between them (ranger-base-8u8n8) — 2026-10-31
 - [ranger-base-80zqb](ranger-base-80zqb.md) — The two brackets were backwards, and the reader was never going to close the class (ranger-base-80zqb) — 2026-10-31
+- [ranger-base-7qnag](ranger-base-7qnag.md) — The installed wall is two paths wide, and the other fourteen land (ranger-base-7qnag) — 2026-10-31
 - [ranger-base-6r1rf](ranger-base-6r1rf.md) — bob reads the posse namespace, symlinks and all — and is in drift the day it ships (ranger-base-6r1rf) — 2026-10-31
 - [ranger-base-4dhcw](ranger-base-4dhcw.md) — The verdict file has one subject, and not every run can speak for it (ranger-base-4dhcw) — 2026-10-31
 - [ranger-base-49v2h](ranger-base-49v2h.md) — The typed line pins the runtime-home var, and the refused write was never the lock (ranger-base-49v2h) — 2026-10-31
