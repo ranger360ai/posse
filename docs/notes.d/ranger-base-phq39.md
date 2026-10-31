@@ -104,19 +104,78 @@ decide which rows of the parity table can launch at all. `posse new` says
 `rex session` instead of `herdr workspace`. Every herdr-home line is
 unchanged to the byte, which is the rule §6 sets for all of this.
 
-## 5. The live verify (MEASURED)
+## 5. The live verify: what was MEASURED, and the one half that needs another seat
 
-See the bead's closing comment for the transcript. In summary, on a scratch
-`multiplexer: rex` instance on this box:
+2026-10-31, on a scratch `multiplexer: rex` instance (`instance: phq39`) with
+a throwaway repo, two beads and a `worktrees:` under `$HOME`. Rex CLI
+0.0.1793377904, claude 2.1.314.
 
-- a `claude` seat launched, its first `program_status` record read `idle`
-  with `owner={pid,"claude"}` and `app=claude-code`, it took the dispatch
-  prompt, read `working` and then settled;
-- the bead was closed by the seat and `posse` landed the branch
-  (fast-forward) and retired the tree;
-- the Rex session was gone from `List()` after the kill;
-- a `grok` dispatch on the same instance was refused with the herdr message,
-  with no bead claimed, no worktree cut and no Rex session created.
+**MEASURED, and each of these is a done-when of this bead:**
+
+1. **The occupant is selected by the key alone.** `posse list` printed
+   `REX SESSIONS` with the sentence under it and tagged the one foreign row
+   `(rex)`; `posse gates builder` printed the same sentence, `launches here:
+   claude`, and `REFUSED here … codex grok bob`. The identical home with the
+   key removed reads `HERDR SESSIONS`.
+2. **A grok dispatch is refused before the claim, with the herdr message.**
+   `✗ rexrepo-2 grok launch refused: grok does not report its own state on
+   Rex, and this instance runs `multiplexer: rex`` … `the way to run grok is
+   herdr`. The busy-key arm fired beside it (`grokker-rexrepo skipped for the
+   rest of this pass`). **Nothing was spent**: the bead read back `OPEN` with
+   no owner, no worktree was cut, no meta file was written, and `rex ls` still
+   held only the one pre-existing foreign session.
+3. **A Rex seat is created and the runtime's line is typed into it.** Two
+   launches: `rex new` opened a session with one shell block, the launch
+   script was sourced in it, and `posse peek` read the seat's screen back
+   through `rex capture`. So Create, Start and Read all work against a real
+   server from the dispatch path.
+4. **The first-report gate refuses with nothing typed.** Both launches ended
+   `claude launch refused in builder-rexrepo-rexrepo-1: no program_status
+   record from the runtime within 45s (saw: no program_status record)` …
+   `NOTHING WAS TYPED into it: this runtime is `typed``. The bead stayed
+   untouched, and the session was left running — which is the clause that
+   made the cause findable at all.
+5. **`posse kill` destroys the Rex session.** After each kill the session was
+   gone from `rex ls` and the worktree and branch were retired
+   (`had no commits — worktree and posse/… removed`).
+
+**The half that is NOT measured, and why it needs a different seat.** claude
+reading `idle`, taking the prompt, reading `working` then settling, closing
+the bead and posse landing the branch. Filed as ranger-base-c33j6 with the
+recipe.
+
+The cause is not Rex and it is not new. It is ranger-base-eupf's finding,
+already MEASURED and already written down in gates.go: **the launching
+persona's gates dir leads its PATH and the child inherits it**, so a claude
+hired from inside a gated seat reads its own OAuth credential through that
+seat's `Bash(security:*)` refusal shim. MEASURED here, in a shell carrying
+exactly the PATH the seat inherits: `claude config list` answers `Not logged
+in · Please run /login`, and the shim it hit says so in its own words — "this
+shell is dinesh's pane … a persona has no way past that. operator: run
+security in a terminal outside posse."
+
+posse **refused that launch**, by name, before anything was created:
+`refused: claude at cage shims, tier standard does not realize every gate —
+PATH carries another persona's gates dir … relaunch with a clean PATH`.
+`--allow-degraded` overrode it, and the override is what produced the
+unreadable seat the first-report gate then correctly refused. Stripping the
+gates dir out of PATH would be one seat removing its own L1 wall, so it was
+not done. That is the whole of the gap: **this feature's own gates all fired
+correctly, and the box's wall is what the positive pass needs a seat outside
+of.**
+
+**One narrow defect found and not fixed** (on ranger-base-c33j6, to be
+promoted to its own bug bead if it reproduces from a clean shell): posse
+seeds claude directory trust into `ClaudeConfigFile()`, which honours the
+LAUNCHER's `CLAUDE_CONFIG_DIR`, while the seat's claude — started from a
+multiplexer server's own environment — reads the default `~/.claude.json`.
+MEASURED: `projects["<repo root>"].hasTrustDialogAccepted` landed in
+`$CLAUDE_CONFIG_DIR/.claude.json` and was absent from `~/.claude.json`, which
+is the file the seat read, and the seat opened on the trust dialog with
+nothing saying why. The key itself was right — `scripts/claude-trust-key.sh`
+over that worktree answers the repo root, which is what posse wrote — so this
+is the FILE and not the key. Not Rex-specific: a herdr pane is a child of the
+herdr server the same way.
 
 ## Pins
 
