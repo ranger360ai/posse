@@ -12,6 +12,8 @@ package posse
 // measures nothing, and this is a file full of probes.
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -607,27 +609,92 @@ func TestReadCLIVersionAtDoesNotReResolveTheName(t *testing.T) {
 	}
 }
 
+// readCLIVersionWithin's JUDGEMENT, pinned without a child
+// (ranger-base-0npto). The wall-time arms below run the same decision
+// through a real sleeper, and that is all they can hold: whether the killed
+// child's bytes are in the buffer when cmd.Output() returns is a race (see
+// readCLIVersionWithin's doc for the measurement), so an arm that read the
+// "" off a live run was green over a tree with the `ctx.Err()` guard DELETED
+// in 3 runs of 5. The split is what makes this one deterministic — the
+// deadline arms pin the BOUND, this pins the DECISION.
+//
+// Row 2 is the whole of it, and row 3 is its two-way half: the "" comes from
+// the DEADLINE and not from the kill, so a child that died for some other
+// reason after printing its line is still read.
+func TestCLIVersionFromIsUnknownPastTheDeadline(t *testing.T) {
+	t.Parallel()
+	// What cmd.Output() hands back in each case. DeadlineExceeded is what
+	// ctx.Err() reads once CommandContext has killed the child; the two
+	// errors stand in for the *exec.ExitError a kill and a nonzero exit
+	// produce, by their Error() text, because the decision reads only
+	// whether there IS one.
+	killed := errors.New("signal: killed")
+	nonzero := errors.New("exit status 1")
+	for _, tc := range []struct {
+		name   string
+		out    string
+		err    error
+		ctxErr error
+		want   string
+	}{
+		{"answered inside the deadline", "promptcli 3.1.4\n", nil, nil, "promptcli 3.1.4"},
+		{
+			// THE judgement. A truncated version line is not unknown to
+			// §6c — it is a release move, because skillsVersionRelease
+			// compares what it is given — so returning it would file a
+			// false drift finding beside the real ones.
+			name: "the deadline blew and the buffer holds a truncated line",
+			out:  "sleepycli 9.9", err: killed, ctxErr: context.DeadlineExceeded, want: "",
+		},
+		{
+			name: "killed for some other reason, with its line already out",
+			out:  "sleepycli 9.9.9\n", err: killed, ctxErr: nil, want: "sleepycli 9.9.9",
+		},
+		{"the deadline blew and nothing arrived", "", killed, context.DeadlineExceeded, ""},
+		{"nonzero but it named itself", "bobv 1.0.0\n", nonzero, nil, "bobv 1.0.0"},
+		{"nonzero and silent", "", nonzero, nil, ""},
+		{"blank lines ahead of the line", "\n\n  grok 1.0.52  \n", nil, nil, "grok 1.0.52"},
+		{"it printed nothing at all", "\n \n", nil, nil, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := cliVersionFrom([]byte(tc.out), tc.err, tc.ctxErr); got != tc.want {
+				t.Errorf("cliVersionFrom(%q, %v, %v) = %q, want %q", tc.out, tc.err, tc.ctxErr, got, tc.want)
+			}
+		})
+	}
+}
+
 // A `--version` with no upper bound on its own wall time (ranger-base-fnn1o).
 // Every reader of §6c drift blocks for as long as the CLI wants to, and the
 // reader that makes that a defect is unattended: `posse runtime drift` on
 // scripts/verify-box.sh's ROSTER runs under launchd, so a wedged `--version`
 // wedges the whole daily run rather than one person's launch.
 //
-// Two bodies, because two different things hold this call open and the
-// deadline alone ends only the first. `sh -c` with ONE command execs it, so
-// the process the context kills IS the sleeper and its pipes close with it;
-// put anything ahead of the sleep and the shell forks it instead, which is
-// the self-updater shape — the shell dies on the kill and the GRANDCHILD
-// still holds stdout, which os/exec's Wait does not return from at all
-// (herdrWaitDelay's block). MEASURED 2026-10-31, with these bodies' sleep at
-// 120s and `cmd.WaitDelay` dropped: arm 1 still passed in 0.20s and arm 2
-// waited the whole 120.16s. The sleep is 25s here — still far past `bound`,
-// and cheap to re-measure.
+// THIS IS THE WALL-TIME BOUND AND NOTHING ELSE. The judgement it makes about
+// the bytes is pinned above, deterministically, because reading it off a
+// live kill is a race.
 //
-// Arm 2 is also the truncation arm: bytes DID arrive before the deadline,
-// and the read must still be "" — a truncated version line is not unknown to
-// §6c, it is a release move, so returning it would file a false drift
-// finding beside the real ones.
+// Two bodies, because two different things hold this call open and the
+// context ends only the first. The context kills the child; a GRANDCHILD
+// that inherited stdout keeps the pipe open, and os/exec's Wait does not
+// return while the copy goroutines are reading it (herdrWaitDelay's block).
+// cmd.WaitDelay is the second half of the kill, and arm 2 makes the
+// grandchild explicit — `sleep & wait` cannot be exec'd away by the shell,
+// whatever that shell is.
+//
+// MEASURED 2026-10-31 on this box (darwin 25.6.0, /bin/sh), a 200ms limit,
+// five runs of each body, `cmd.WaitDelay` dropped: BOTH bodies waited the
+// full 25s — arm 1 at 25.01-25.03s and arm 2 at 25.01-25.04s — and with it
+// set both returned in 0.40s. The claim this comment used to carry,
+// that a ONE-command body is bounded either way "because `sh -c` execs a
+// lone command", does not reproduce and was never about this fixture: the
+// fixture is a script FILE, and darwin's /bin/sh forks the lone command
+// rather than exec'ing it, so arm 1 leaks a grandchild too. Corrected under
+// ranger-base-0npto; the same sentence in
+// internal/treepins/execwaitdelay_qa_test.go and
+// docs/notes.d/ranger-base-2cttm.md is corrected with it, because the next
+// WaitDelay fixture gets built from those notes.
 func TestReadCLIVersionGivesUpOnACLIThatWillNotAnswer(t *testing.T) {
 	t.Parallel()
 	const limit = 200 * time.Millisecond
@@ -636,7 +703,7 @@ func TestReadCLIVersionGivesUpOnACLIThatWillNotAnswer(t *testing.T) {
 	const bound = 10 * time.Second
 	for _, tc := range []struct{ name, body string }{
 		{"says nothing and never exits", "sleep 25\n"},
-		{"prints a line, then leaves a grandchild on its pipes", "echo 'sleepycli 9.9.9'\nsleep 25\n"},
+		{"prints a line, then leaves a grandchild on its pipes", "echo 'sleepycli 9.9.9'\nsleep 25 &\nwait\n"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -651,6 +718,11 @@ func TestReadCLIVersionGivesUpOnACLIThatWillNotAnswer(t *testing.T) {
 			if waited > bound {
 				t.Fatalf("the read waited %s under a %s deadline — this call has no upper bound on wall time, and its first unattended reader runs under launchd", waited, limit)
 			}
+			// Deterministic whatever the buffer holds: ctx.Err() is set by
+			// the time Output returns here, and that is the judgement row 2
+			// above pins. It is asserted anyway because a bound that
+			// returned a truncated line would be the §6c defect with the
+			// wall time fixed.
 			if got != "" {
 				t.Errorf("a `--version` that blew its deadline read %q; past the deadline the version is UNKNOWN, and a truncated line is drift", got)
 			}

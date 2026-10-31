@@ -17,9 +17,25 @@ since herdr's own hang bead.
 MEASURED 2026-10-31, ranger-base-fnn1o's fixture, darwin 25.6.0, inside
 internal/posse's test binary: a 200ms context over `#!/bin/sh` + `echo
 <line>` + `sleep 120` returned from `cmd.Output()` after **120.16s** with
-`WaitDelay` dropped, and after **~0.4s** with it set. A ONE-command body
-(`sleep 120` alone) is bounded either way, because `sh -c` execs a lone
-command and the process the context kills IS the sleeper.
+`WaitDelay` dropped, and after **~0.4s** with it set.
+
+**CORRECTED 2026-10-31 (ranger-base-0npto).** This paragraph used to end "A
+ONE-command body (`sleep 120` alone) is bounded either way, because `sh -c`
+execs a lone command and the process the context kills IS the sleeper." That
+does not reproduce, and it was never about this fixture — the fixture is a
+script FILE, not `sh -c`, and darwin's /bin/sh forks the lone command rather
+than exec'ing it, so that body leaks a grandchild on the pipes like any
+other. RE-MEASURED on this box (darwin 25.6.0), a 200ms limit over a 25s
+sleep, five runs each of five bodies — `sleep` alone, echo-then-sleep,
+echo-then-background-sleep-then-sleep, background-sleep-then-wait,
+echo-then-background-sleep-then-wait — **all 25 runs with `WaitDelay`
+dropped waited the full 25s** (25.01-25.12s), and all 25 with it set
+returned in 0.20-0.41s. Read it as: no body behind a SHELL is bounded by the
+context alone. Whoever builds the next WaitDelay fixture from this note
+should build it as `echo <line>; sleep N & wait`, which is what
+`TestReadCLIVersionGivesUpOnACLIThatWillNotAnswer`'s arm 2 is now — the `&`
+cannot be exec'd away by any shell, so the grandchild is there by
+construction rather than by the shell's choice.
 
 Not observed in the wild. Nothing here is a filed hang; the whole bead is
 read off the code path, the same way fnn1o was.
@@ -68,8 +84,9 @@ The three `ps` sites — the load guard's CPU census and its argv read
 need no WaitDelay, and that is a ruling rather than an omission. `ps` reads
 the kernel's process table and exits. It forks nothing, so the process the
 context kills IS the only holder of the pipe, and the deadline bounds the
-whole call on its own. This is the same shape as the fixture's passing arm:
-one command, no grandchild, bounded either way.
+whole call on its own. The ruling rests on `ps` itself and on there being no
+SHELL between posse and it — not on the fixture, whose "passing arm" the
+correction above withdraws.
 
 All three are also CHAINED — `exec.CommandContext(...).Output()` — so they
 have no variable to set a WaitDelay on. That is fine for the same reason, and

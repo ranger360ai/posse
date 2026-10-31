@@ -14,9 +14,22 @@ package treepins
 // internal/posse): a 200ms context over `#!/bin/sh` + `echo <line>` +
 // `sleep 120` — the shell forks the sleep and waits on it — returned from
 // cmd.Output() after 120.16s with WaitDelay dropped, and after ~0.4s with it
-// set. A ONE-command body (`sleep 120` alone) is bounded either way, because
-// `sh -c` execs a lone command and the process the context kills IS the
-// sleeper.
+// set.
+//
+// CORRECTED 2026-10-31 under ranger-base-0npto. This note used to add that a
+// ONE-command body (`sleep 120` alone) is bounded either way, "because `sh
+// -c` execs a lone command and the process the context kills IS the
+// sleeper". It does not reproduce, and it was never about this fixture: the
+// fixture is a script FILE, not `sh -c`, and darwin's /bin/sh forks the lone
+// command rather than exec'ing it, so that body leaks a grandchild too.
+// RE-MEASURED on this box (darwin 25.6.0), a 200ms limit and a 25s sleep,
+// five runs of each of five bodies — `sleep` alone, echo-then-sleep,
+// echo-then-background-sleep-then-sleep, background-sleep-then-wait,
+// echo-then-background-sleep-then-wait: with WaitDelay dropped all 25 runs
+// waited the full 25s (25.01-25.12s), and with it set all 25 returned in
+// 0.20-0.41s. No body on this box is bounded by the context alone. A child
+// that forks NO shell is (the `ps` ruling below), and that is a different
+// claim about a different fixture.
 //
 // WHY A PIN AND NOT PROSE. The rule was written out in three doc comments and
 // honoured at five of fifteen call sites. ranger-base-2cttm censused the tree

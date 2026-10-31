@@ -404,19 +404,23 @@ const cliVersionTimeout = 5 * time.Second
 // so the deadline arm is testable with a planted sleeper instead of a
 // five-second test (probeSessionExe's rule).
 //
-// PAST THE DEADLINE IT IS "" EVEN WHEN BYTES ARRIVED, which is the one
-// judgement in here. A killed child's stdout can hold a TRUNCATED first
-// line, and a truncated version line is not unknown to §6c — it is a
-// release move, because skillsVersionRelease compares what it is given. So
-// returning the bytes would file a false drift finding beside the real ones,
-// which is worse than the Skip "" already produces ("an unknown version is
-// unknown, never unchanged", skillsdrift.go).
-//
 // WaitDelay as well as the context, for herdrWaitDelay's reason: os/exec's
 // Wait does not return while a grandchild still holds the child's pipes, so
 // killing the child does not on its own bound this call — and a `--version`
 // that forks a self-updater is exactly that shape. One duration for both,
 // which bounds the whole call at twice it.
+//
+// THE RUN IS HERE AND THE JUDGEMENT IS IN cliVersionFrom, which is pure, so
+// the judgement is pinned without a child. The split is ranger-base-0npto's,
+// and the reason is that what a killed child left in the buffer is a RACE:
+// os/exec documents that when WaitDelay elapses, a Stdout that is not an
+// *os.File "may be written to concurrently with the return from Wait", and
+// cmd.Output() captures into a bytes.Buffer. MEASURED 2026-10-31 on this
+// box, a 200ms limit over `#!/bin/sh` + `echo <line>` + `sleep 25`, five
+// runs: out was empty on the first and held the truncated line on the other
+// four. So an arm that drove the "" judgement through a real child was green
+// over a tree with that judgement DELETED in 3 runs of 5 — the pin existed
+// and held nothing.
 func readCLIVersionWithin(path string, limit time.Duration) string {
 	if path == "" {
 		return ""
@@ -427,7 +431,25 @@ func readCLIVersionWithin(path string, limit time.Duration) string {
 	cmd.WaitDelay = limit
 	cmd.Env = append(os.Environ(), "PATH="+PathOutsideGates(""))
 	out, err := cmd.Output()
-	if ctx.Err() != nil {
+	return cliVersionFrom(out, err, ctx.Err())
+}
+
+// cliVersionFrom is the whole of that read's judgement, as a function of the
+// three things one run produces: what the child wrote, what Wait returned,
+// and whether the deadline had expired by then.
+//
+// PAST THE DEADLINE IT IS "" EVEN WHEN BYTES ARRIVED, which is the one
+// judgement in here. A killed child's stdout can hold a TRUNCATED first
+// line, and a truncated version line is not unknown to §6c — it is a
+// release move, because skillsVersionRelease compares what it is given. So
+// returning the bytes would file a false drift finding beside the real ones,
+// which is worse than the Skip "" already produces ("an unknown version is
+// unknown, never unchanged", skillsdrift.go).
+//
+// An error with bytes is NOT "": a CLI that prints its version and exits
+// nonzero has still named itself, and §6c compares what it is given.
+func cliVersionFrom(out []byte, err error, ctxErr error) string {
+	if ctxErr != nil {
 		return ""
 	}
 	if err != nil && len(out) == 0 {

@@ -4,8 +4,14 @@ package posse
 
 import (
 	"errors"
+	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -267,13 +273,7 @@ func TestQAPosseNeverWritesGroksTrustTable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// os.WriteFile / os.Create / os.OpenFile reaching a path built from the
-	// table's name. Matched on the two spellings a writer must use — the
-	// basename, or grok's own key syntax — in a line that also names a
-	// write, so the prose above (which says the name repeatedly) does not
-	// red it.
-	writes := []string{"os.WriteFile", "os.Create", "os.OpenFile", "SeedGrokTrust", "ioutil.WriteFile"}
-	checked := 0
+	sources := map[string]string{}
 	for _, e := range ents {
 		n := e.Name()
 		if e.IsDir() || !strings.HasSuffix(n, ".go") || strings.HasSuffix(n, "_test.go") {
@@ -283,21 +283,331 @@ func TestQAPosseNeverWritesGroksTrustTable(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		checked++
-		for i, ln := range strings.Split(string(b), "\n") {
-			code := strings.TrimSpace(ln)
-			if strings.HasPrefix(code, "//") || !strings.Contains(code, "trusted_folders") {
+		sources[n] = string(b)
+	}
+	if len(sources) == 0 {
+		t.Fatal("the census read no production sources — a green here would mean nothing")
+	}
+	found, err := scanTrustTableWrites(sources)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, w := range found {
+		t.Errorf("%s writes grok's trust table (%s) — ADR 0007 §6f rules that grant the OPERATOR's, once per checkout, because it is box-wide, outlives the session, and opens an undeclared repo→box permissions channel (ranger-base-1g8gf). If that is now the decision, amend §6f and this test together.\n  names the table at: %s", w.Where, w.Call, w.Names)
+	}
+}
+
+// trustTableWrite is one finding: a scope that both NAMES grok's trust table
+// and WRITES, with the two halves quoted so the reader can see which line
+// the census read as which.
+type trustTableWrite struct {
+	Where string // "file.go:func seedTrust" or "file.go (package scope)"
+	Call  string // the write it makes
+	Names string // the string literal, or the package-level name, that spells the table
+}
+
+// trustTableWriteCalls is what "writes" means here: calls that put bytes on
+// disk, by the only spelling that cannot be renamed out of the census — the
+// standard library's, plus this package's own two write helpers.
+//
+// NO SEEDER NAME IS IN THIS LIST, and that is ranger-base-0npto's second
+// correction. The pin this replaced carried the literal "SeedGrokTrust", and
+// the mutant its close reported as red was a func CALLED SeedGrokTrust — a
+// rig whose fixture came from the list under test. A writer only has to be
+// called something else.
+var trustTableWriteCalls = map[string]bool{
+	"os.WriteFile":     true,
+	"os.Create":        true,
+	"os.CreateTemp":    true,
+	"os.OpenFile":      true,
+	"os.Rename":        true,
+	"os.Symlink":       true,
+	"os.Link":          true,
+	"os.Truncate":      true,
+	"ioutil.WriteFile": true,
+	"WriteExecutable":  true,
+	"writeJSONInPlace": true,
+}
+
+// trustTableSpellings are the two ways a writer can name the thing: the
+// file's basename, and the key syntax of its CONTENT (`[folders."<path>"]`,
+// which is what grok writes when the operator accepts the prompt —
+// qmTrustedGrokHome has the capture). The second is here so that building
+// the path out of variables does not hide a func that plainly writes the
+// table's body.
+var trustTableSpellings = []string{"trusted_folders", "[folders."}
+
+// scanTrustTableWrites decides per SCOPE — one function, or a file's
+// package-level declarations taken together — rather than per line.
+//
+// The per-line census this replaced required the table's name and a write
+// verb on the SAME source line, so a seeder written the ordinary way (path
+// into a variable, write on the next line) was invisible to it; so was a
+// path assembled from two literals. MEASURED 2026-10-31 (ranger-base-0npto):
+// of three seeders appended to skillsdirtrust.go one at a time, the per-line
+// census killed one — the one named after a literal in its own list — and
+// the two ordinary ones survived. The fixtures are planted in
+// TestQATheTrustTableCensusCanStillSayNo, so the measurement is a test and
+// not a transcript.
+//
+// Comments are not parsed (parser mode 0), so the prose in this file and in
+// skillsdirtrust.go — which names the table repeatedly, as it must — is
+// invisible to the census rather than filtered out of it by a `//` prefix
+// test that an indented or trailing comment would walk past.
+//
+// All the string literals in a scope are joined before matching, which is
+// what catches `"trusted_" + "folders.toml"`, and a package-level string
+// whose own value names the table makes every scope that references it a
+// namer, which is what stops the hoisting of the path into a const from
+// being an evasion.
+func scanTrustTableWrites(sources map[string]string) ([]trustTableWrite, error) {
+	fset := token.NewFileSet()
+	names := make([]string, 0, len(sources))
+	for n := range sources {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+
+	parsed := make([]*ast.File, 0, len(names))
+	for _, n := range names {
+		f, err := parser.ParseFile(fset, n, sources[n], 0)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", n, err)
+		}
+		parsed = append(parsed, f)
+	}
+
+	// Pass 1: package-level identifiers whose own value spells the table.
+	tableIdents := map[string]bool{}
+	for _, f := range parsed {
+		for _, d := range f.Decls {
+			gd, ok := d.(*ast.GenDecl)
+			if !ok || (gd.Tok != token.CONST && gd.Tok != token.VAR) {
 				continue
 			}
-			for _, w := range writes {
-				if strings.Contains(code, w) {
-					t.Errorf("%s:%d writes grok's trust table (%s) — ADR 0007 §6f rules that grant the OPERATOR's, once per checkout, because it is box-wide, outlives the session, and opens an undeclared repo→box permissions channel (ranger-base-1g8gf). If that is now the decision, amend §6f and this test together:\n  %s", n, i+1, w, code)
+			for _, sp := range gd.Specs {
+				vs, ok := sp.(*ast.ValueSpec)
+				if !ok {
+					continue
+				}
+				for _, v := range vs.Values {
+					if _, hit := trustTableSpelling(joinStringLits(v)); hit {
+						for _, id := range vs.Names {
+							tableIdents[id.Name] = true
+						}
+					}
 				}
 			}
 		}
 	}
-	if checked == 0 {
-		t.Fatal("the census read no production sources — a green here would mean nothing")
+
+	// Pass 2: every scope, its namers and its writes.
+	var found []trustTableWrite
+	for i, f := range parsed {
+		file := names[i]
+		var pkgLevel []ast.Node
+		for _, d := range f.Decls {
+			fn, ok := d.(*ast.FuncDecl)
+			if !ok {
+				pkgLevel = append(pkgLevel, d)
+				continue
+			}
+			if fn.Body == nil {
+				continue
+			}
+			found = append(found, trustTableWritesIn(file+":func "+fn.Name.Name, tableIdents, fn.Body)...)
+		}
+		if len(pkgLevel) > 0 {
+			found = append(found, trustTableWritesIn(file+" (package scope)", tableIdents, pkgLevel...)...)
+		}
+	}
+	return found, nil
+}
+
+// trustTableWritesIn is the one decision, over one scope: does it name the
+// table at all, and does it write.
+func trustTableWritesIn(where string, tableIdents map[string]bool, scope ...ast.Node) []trustTableWrite {
+	var namer string
+	var writes []string
+	for _, n := range scope {
+		if lit, hit := trustTableSpelling(joinStringLits(n)); hit && namer == "" {
+			namer = strconv.Quote(lit)
+		}
+		ast.Inspect(n, func(node ast.Node) bool {
+			switch x := node.(type) {
+			case *ast.Ident:
+				if tableIdents[x.Name] && namer == "" {
+					namer = "the package-level " + x.Name
+				}
+			case *ast.CallExpr:
+				if c := calledName(x.Fun); trustTableWriteCalls[c] {
+					writes = append(writes, c)
+				}
+			}
+			return true
+		})
+	}
+	if namer == "" || len(writes) == 0 {
+		return nil
+	}
+	return []trustTableWrite{{Where: where, Call: strings.Join(writes, ", "), Names: namer}}
+}
+
+// trustTableSpelling reports whether text names the table, and returns the
+// joined text so the finding can quote what it read.
+func trustTableSpelling(text string) (string, bool) {
+	for _, sp := range trustTableSpellings {
+		if strings.Contains(text, sp) {
+			return text, true
+		}
+	}
+	return "", false
+}
+
+// joinStringLits concatenates every string literal under n, in source order
+// and with nothing between them, so a path split across a `+` chain reads as
+// the path it builds.
+func joinStringLits(n ast.Node) string {
+	var b strings.Builder
+	ast.Inspect(n, func(node ast.Node) bool {
+		if l, ok := node.(*ast.BasicLit); ok && l.Kind == token.STRING {
+			if s, err := strconv.Unquote(l.Value); err == nil {
+				b.WriteString(s)
+			} else {
+				b.WriteString(l.Value)
+			}
+		}
+		return true
+	})
+	return b.String()
+}
+
+// calledName is "os.WriteFile" or "WriteExecutable" — the spelling the
+// census keys on. A call through a value (a field, an element, a func
+// returned by a call) answers "", which the list would not match anyway.
+func calledName(fun ast.Expr) string {
+	switch x := fun.(type) {
+	case *ast.Ident:
+		return x.Name
+	case *ast.SelectorExpr:
+		if id, ok := x.X.(*ast.Ident); ok {
+			return id.Name + "." + x.Sel.Name
+		}
+		return x.Sel.Name
+	}
+	return ""
+}
+
+// The two-way half of the census above, and the permanent record of the
+// mutation run that condemned its predecessor (ranger-base-0npto). It reads
+// PLANTED sources rather than the tree, so no unrelated landing can red it
+// and nothing derives it — it reds only when the reader itself changes, and
+// whoever changes the reader is in this file.
+//
+// Rows 2-4 are the three seeders the per-line census let through, in the
+// spellings MEASURED against it on 2026-10-31. Rows 5-7 are the other half:
+// a census that answered YES to every file mentioning the table would pass
+// rows 1-4 and hold nothing, so the reads and the unrelated writer are here
+// too.
+func TestQATheTrustTableCensusCanStillSayNo(t *testing.T) {
+	t.Parallel()
+	const head = "package posse\n\nimport \"os\"\n\n"
+	for _, tc := range []struct {
+		name string
+		src  string
+		want bool
+	}{
+		{
+			name: "the shipped shape: it names the table in prose and writes nothing",
+			src: head + `// Where: "~/.grok/trusted_folders.toml — OPERATOR-owned, and posse never
+// writes it", and os.WriteFile is named in this comment too.
+func trustWhere() string { return "the operator's own table" }
+`,
+		},
+		{
+			name: "a seeder on one line, which is all the per-line census ever caught",
+			src: head + `func seedOnOneLine(home string) error {
+	return os.WriteFile(home+"/.grok/trusted_folders.toml", []byte("x"), 0o644)
+}
+`,
+			want: true,
+		},
+		{
+			name: "the path on one line and the write on the next",
+			src: head + `func seedTrustForDir(home string) error {
+	p := home + "/.grok/trusted_folders.toml"
+	body := "[folders]\ntrusted = true\n"
+	return os.WriteFile(p, []byte(body), 0o644)
+}
+`,
+			want: true,
+		},
+		{
+			name: "the name split across a + chain",
+			src: head + `func seedTrustSplit(home string) error {
+	p := home + "/.grok/" + "trusted_" + "folders.toml"
+	return os.WriteFile(p, []byte("x"), 0o644)
+}
+`,
+			want: true,
+		},
+		{
+			name: "the path hoisted into a package-level const",
+			src: head + `const groksFolderTable = ".grok/trusted_folders.toml"
+
+func seedHoisted(home string) error {
+	return os.WriteFile(home+"/"+groksFolderTable, []byte("x"), 0o644)
+}
+`,
+			want: true,
+		},
+		{
+			name: "the table's CONTENT, written to a path built from variables",
+			src: head + `func seedByContent(dir, key string) error {
+	return os.WriteFile(dir+"/"+trustFile(key), []byte("[folders.\""+key+"\"]\ntrusted = true\n"), 0o644)
+}
+
+func trustFile(string) string { return "t.toml" }
+`,
+			want: true,
+		},
+		{
+			name: "READING the table is the whole mechanism and must stay green",
+			src: head + `func readTrust(home string) ([]byte, error) {
+	return os.ReadFile(home + "/.grok/trusted_folders.toml")
+}
+`,
+		},
+		{
+			name: "a writer that has nothing to do with the table",
+			src: head + `func writeSomethingElse(p string) error {
+	return os.WriteFile(p+"/.grok/lsp.json", []byte("{}"), 0o644)
+}
+`,
+		},
+		{
+			name: "the table named in one func and a write in another",
+			src: head + `func trustPath(home string) string { return home + "/.grok/trusted_folders.toml" }
+
+func writeNote(p string) error { return os.WriteFile(p+"/note", nil, 0o644) }
+`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			found, err := scanTrustTableWrites(map[string]string{"planted.go": tc.src})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := len(found) > 0; got != tc.want {
+				t.Errorf("the census found %v, want %v: %+v", got, tc.want, found)
+			}
+			for _, w := range found {
+				if !strings.Contains(w.Where, "planted.go") || w.Call == "" || w.Names == "" {
+					t.Errorf("a finding has to say where and what it read: %+v", w)
+				}
+			}
+		})
 	}
 }
 
