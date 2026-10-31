@@ -351,19 +351,26 @@ bd sync               # Sync with git
   make ops-check       ~2s     ops residue and live instance paths in tracked files
   make execwrite-check ~0.2s   executable writes routed through WriteExecutable
   make notes-check     ~0.3s   docs/notes.d/README.md lists every fragment (a TOOL)
-  make adr-check       ~1.5s   ADR citations resolve, exemptions name real files
-  make corpus-check      ~4s   censuses over this repo's own .go, test and script sources
-  make register-check   ~20s   the register itself: every tree-wide pin has a door
+  make adr-check       ~1.6s   ADR citations resolve, exemptions name real files
+  make corpus-check      ~5s   censuses over this repo's own .go, test and script sources
+  make register-check   ~22s   the register itself: every tree-wide pin has a door
   make scripts-check   ~0.9s   censuses over scripts/, and verify-* targets vs the box roster
   make pid-check        ~10s   the shipped PIDs under examples/agents/
   ```
 
-  **`make tree-check` is all of them, 46.5-77.2s warm over three runs and
-  92.6s cold** (MEASURED 2026-10-04, ranger-base-g6sb1; the spread is the box,
-  not the cache — the load average went 8.9 to 23.8 across the three with a
-  sibling seat holding a suite slot. It was 14.9-16.5s before
-  internal/treepins joined, and 5.1s over a small fraction of today's class
-  when ranger-base-ik44f wrote this line) — that is the one
+  **`make tree-check` is all of them, 57.0-57.7s warm over three runs and
+  92.6s cold** (MEASURED 2026-10-31, ranger-base-v3tt4: 57.6s, 57.0s and
+  57.7s in that order, at a one-minute load average of 31.41, 13.93 and 10.10
+  with one suite slot held by a sibling seat throughout — a 0.7s spread read
+  across a threefold move in the load average, which is as plainly as these
+  readings have ever said that the spread, when there is one, is not that
+  number. The cold reading is
+  ranger-base-g6sb1's, 2026-10-04, when the same command read 46.5-77.2s
+  warm; it was 14.9-16.5s before internal/treepins joined, and 5.1s over a
+  small fraction of today's class when ranger-base-ik44f wrote this line.
+  Every reading of this command, and what the class was when it was taken,
+  is in treewidedoor_qa_test.go's head comment, which is also the one place
+  that may say how many pins there are) — that is the one
   command to type after a filtered run, and it is a prerequisite of `make
   test` for the same reason `fmt-check` is. Two of them are worth typing on
   their own: `make crew-check` when your change touched `cmd/`, `internal/`,
