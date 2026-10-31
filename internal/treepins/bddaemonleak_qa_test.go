@@ -97,12 +97,46 @@ package treepins
 // subject is this repo's own test corpus, which is corpus-check's subject,
 // so it is a row in $(QA_CORPUS_PINS) rather than a door of its own.
 //
-// The four control arms below are NOT in that filter, and must not be: a
+// The five control arms below are NOT in that filter, and must not be: a
 // door variable may only name a test the register derives as tree-wide
 // (TestQAEveryTreeWidePinHasADoor is two-way), and the arms read no tree —
 // they drive the same rule over planted fixtures, which is what makes them
 // arms. They run in arm 1's `./...` like every other test here; what the
 // door buys is the PIN, which is the part an unrelated bead can red.
+//
+// THE FIFTH ARM AND ONE PLANTED SOURCE ARE ranger-base-36nyh, and what they
+// buy is two branches of this parse that nothing reached. Both arrived with
+// the fix that made the census parse, which is the shape to watch for: a
+// branch the AST made FREE is also free to be wrong. MEASURED 2026-10-31
+// while ranger-base-9ojr5 was being verified under ranger-base-nqy1h, and
+// again here before each was closed, every mutant md5-checked changed before
+// its run and the golden restored after. "Every arm then in the file" below is the pin and the four
+// controls that preceded this bead.
+//
+//   - `case "CommandContext": arg = 1` in bdRealBdCallName. Mutated to
+//     `arg = 0` — which reads the CONTEXT as the binary name, so it can
+//     never match a thing — every arm then in the file PASSED, "scanned 9
+//     real-bd call sites in 7 files". Nothing reached the case: 0
+//     `exec.CommandContext` calls naming bd anywhere in the corpus, and both
+//     leaky controls plant `exec.Command` only. The remedy is one more
+//     planted source in TestQABdDaemonGuardReadsCallsNotProse, which now
+//     reds that mutant naming the spelling it could not see.
+//   - `return err` on the parse, in bdScanVisitor. Mutated to `return nil`,
+//     every arm then in the file PASSED, same 9 sites in 7 files. It
+//     survived because no file in this tree fails to parse, so the invariant
+//     stated at bdScanVisitor — a file that does not parse must not look
+//     like a file with no calls in it — was an absence asserted with no
+//     positive control. The live pin DOES red correctly on a tree that has
+//     one: with `etc/zzz_unparseable_test.go` planted (etc/ because nothing
+//     compiles a stray _test.go there, so the probe reds the pin and not the
+//     build) it fails naming the parse error, while under the swallowing
+//     mutant that same tree reads 9 sites in 7 files and every arm passes —
+//     a file the census could not read indistinguishable from a file with no
+//     bd in it, which is the pre-fix byte census's shape and the one this
+//     bead's family removed everywhere else.
+//     TestQABdDaemonGuardCannotSwallowAnUnreadableFile is the control, in a
+//     planted root like every other arm, and it is also the first the walk's
+//     OWN error return has ever had.
 //
 // This is the prevention half of the bead. The detection half — naming a
 // daemon whose working directory is gone or throwaway, on the live box — is
@@ -146,7 +180,9 @@ func bdRealBdCallName(call *ast.CallExpr) bool {
 		return false
 	}
 	// The binary is the first argument of Command and the second of
-	// CommandContext, whose first is the context.
+	// CommandContext, whose first is the context. Nothing in the corpus
+	// spells CommandContext, so the arm that reaches that case is
+	// TestQABdDaemonGuardReadsCallsNotProse's planted one (ranger-base-36nyh).
 	var arg int
 	switch sel.Sel.Name {
 	case "Command":
@@ -175,6 +211,8 @@ func bdRealBdCallName(call *ast.CallExpr) bool {
 // (ranger-base-q82lc). Errors are returned rather than swallowed: a walk
 // that reads nothing must not look like a tree with nothing in it, and a
 // file that does not parse must not look like a file with no calls in it.
+// Both of those returns are controlled by
+// TestQABdDaemonGuardCannotSwallowAnUnreadableFile (ranger-base-36nyh).
 func bdScanVisitor(root string, fset *token.FileSet, sites *[]bdCallSite, files map[string][]string) filepath.WalkFunc {
 	return func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -463,6 +501,53 @@ func TestQABdDaemonGuardReadsCallsNotProse(t *testing.T) {
 	}
 	if bad := leakyBdTestFiles(files); len(bad) != 1 || bad[0] != "caller_test.go" {
 		t.Fatalf("the real caller must still be judged, got %v", bad)
+	}
+
+	// …and the OTHER call spelling, or the matcher's CommandContext arm is
+	// free to be wrong: its binary is the SECOND argument, after the context,
+	// and nothing in the corpus reaches that case (ranger-base-36nyh).
+	ctxCaller := "package x\n\nfunc h(ctx context.Context) { _ = exec.CommandContext(ctx, \"bd\", \"list\") }\n"
+	if err := os.WriteFile(filepath.Join(root, "ctxcaller_test.go"), []byte(ctxCaller), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sites, files, err = scanBdCallSitesUnder(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sites) != 2 || len(files) != 2 {
+		t.Fatalf("`exec.CommandContext(ctx, \"bd\", …)` is a call site too, and its binary is the "+
+			"argument AFTER the context: %v in %d files (ranger-base-36nyh)", sites, len(files))
+	}
+	if bad := leakyBdTestFiles(files); len(bad) != 2 || bad[0] != "caller_test.go" || bad[1] != "ctxcaller_test.go" {
+		t.Fatalf("both call spellings must be judged, got %v", bad)
+	}
+}
+
+// A file the census cannot READ must not read as a file with nothing in it
+// (ranger-base-36nyh). This is the positive control bdScanVisitor's two error
+// returns never had: with the parse's `return err` read as `return nil`, a
+// tree holding an unparseable _test.go scanned to "9 real-bd call sites in 7
+// files" and every other arm passed. The walk's own error return is the same
+// swallow one step earlier — a root that does not exist, which without it
+// scans to nothing with a nil error, and is one of the two ways the
+// zero-witness above was written to catch ("a walk that hit the wrong root").
+func TestQABdDaemonGuardCannotSwallowAnUnreadableFile(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "unparseable_test.go"), []byte("package x\n\nfunc f( {\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sites, files, err := scanBdCallSitesUnder(root)
+	if err == nil {
+		t.Fatalf("a _test.go that does not parse must be an error, not a file with no calls in it: "+
+			"%d sites in %d files (ranger-base-36nyh)", len(sites), len(files))
+	}
+	if !strings.Contains(err.Error(), "unparseable_test.go") {
+		t.Errorf("the error must name the file the census could not read, got %v", err)
+	}
+
+	// The walk's own error return, which is the same swallow one step earlier.
+	if _, _, err := scanBdCallSitesUnder(filepath.Join(root, "no-such-dir")); err == nil {
+		t.Error("a root that does not exist must be an error, not a tree with nothing in it")
 	}
 }
 

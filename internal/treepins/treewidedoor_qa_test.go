@@ -243,7 +243,7 @@ package treepins
 // call site in the test body, so the enumeration the derivation looks for was
 // one hop from where it looks, the pin was never derived, and arm 2 never
 // asked. The root is spelled at the walk now, which is the whole of what
-// makes it derivable. Its four control arms are deliberately not doored,
+// makes it derivable. Its five control arms are deliberately not doored,
 // for the reason the row above gives — they drive the rule over planted
 // fixtures, so nothing derives them and no unrelated bead can red them:
 //

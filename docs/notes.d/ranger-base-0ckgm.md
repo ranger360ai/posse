@@ -30,7 +30,7 @@ The scan takes no root at all now: `scanRealBdCallSites()` spells `"."` at the
 parameter, correctly — nothing hands it a tree path), and both share one walk
 function so there is still one rule. The pin is derived, and
 `$(QA_CORPUS_PINS)` doors it — its subject is this repo's own test corpus,
-which is `make corpus-check`'s subject. Its four control arms are
+which is `make corpus-check`'s subject. Its five control arms are
 deliberately NOT doored: they drive the rule over planted fixtures, so nothing
 derives them and no unrelated bead can red them, and arm 2 is two-way.
 
