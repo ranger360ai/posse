@@ -33,6 +33,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-2zkcy](ranger-base-2zkcy.md) — Two more grok project-config channels, and the one entry no key can describe (ranger-base-2zkcy) — 2026-10-31
 - [ranger-base-2cttm](ranger-base-2cttm.md) — A context deadline is half a bound: the WaitDelay census, the ruling, and the pin (ranger-base-2cttm) — 2026-10-31
 - [ranger-base-0npto](ranger-base-0npto.md) — Two pins that were green over the code they named, and what made each one green (ranger-base-0npto) — 2026-10-31
+- [ranger-base-0ckgm](ranger-base-0ckgm.md) — A walk whose root is not spelled is a pin with no door: the census of every root spelling in internal/treepins (ranger-base-0ckgm) — 2026-10-31
 - [notes-grok](notes-grok.md) — grok substrate: pinned at 1.0.52 (Homebrew cask `grok-build`), upgrades are a security re-audit (rangerhq-y7jr) — 2026-10-31
 - [ranger-base-99a7u](ranger-base-99a7u.md) — The meta-harness landscape, 2026-10-24, and where posse sits in it (ranger-base-99a7u) — 2026-10-24
 - [ranger-base-bdias](ranger-base-bdias.md) — codex 0.153.4 re-measured: cwd root and symlinks hold, and it now reads `~/.agents/skills` as a global root (ranger-base-bdias) — 2026-10-12

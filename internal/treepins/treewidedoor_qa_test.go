@@ -234,16 +234,55 @@ package treepins
 //	TestQAEveryBoundedChildNamesItsWaitDelay      make corpus-check
 //	                                              (ranger-base-2cttm)
 //
-// and `make tree-check` is all of them — 76-82s on this box over three warm
-// runs at sixty-two pins and fourteen doors (MEASURED 2026-10-31,
-// ranger-base-2cttm: 82s, 81s and 76s in that order, with a one-minute load
+// and one more into corpus-check's door for that same reason, and the one
+// whose absence is the best evidence this arm is not decoration — a census
+// over this repo's own TEST corpus, the real-bd daemon-leak guard
+// (ranger-base-42mv). It walks the repo root and reads every _test.go in the
+// tree, and for the two months it existed it had no door at all: its scan
+// took the walk root as a PARAMETER and the one literal was spelled at the
+// call site in the test body, so the enumeration the derivation looks for was
+// one hop from where it looks, the pin was never derived, and arm 2 never
+// asked. The root is spelled at the walk now, which is the whole of what
+// makes it derivable. Its four control arms are deliberately not doored,
+// for the reason the row above gives — they drive the rule over planted
+// fixtures, so nothing derives them and no unrelated bead can red them:
+//
+//	TestQANoTestShellsRealBdWithoutStoppingItsDaemon
+//	                                              make corpus-check
+//	                                              (ranger-base-0ckgm)
+//
+// and one more into register-check's door, because what it holds is THIS
+// FILE's derivation rather than the tree: a walk in internal/treepins must
+// spell its root, so the escape above cannot be written back in by a
+// refactor. Its rule is the pair — a walk rooted at one of its own
+// function's parameters, and a call site handing that parameter a tree path
+// — and its live answer is zero, with the two helpers still spelled that way
+// recorded in rpWaived beside the bead that widens the derivation to reach
+// them. Its fixture arm is undoored for the same reason the three above are:
+//
+//	TestQANoTreeWalkingHelperIsHandedATreePathThroughAParameter
+//	                                              make register-check
+//	                                              (ranger-base-0ckgm)
+//
+// and `make tree-check` is all of them — 73-132s on this box over three warm
+// runs at sixty-four pins and fourteen doors (MEASURED 2026-10-31,
+// ranger-base-0ckgm: 73.4s, 105.8s and 131.9s in that order, with a
+// one-minute load average of 45.88, 19.41 and 31.54 before the three and
+// BOTH suite slots held by sibling seats throughout — a 58s spread read
+// with the load average never below 19, and ordered by nothing in it: the
+// fastest run is the one at the HIGHEST load and the slowest the one in the
+// middle, which is the same conclusion the two other wide readings below
+// reached from the other side. The two pins this bead added report
+// 0.03s and 0.27s, so none of that spread is theirs) — which is the
+// command a
+// seat types after a filtered run. (It was 76-82s at sixty-two pins
+// (ranger-base-2cttm: 82s, 81s and 76s in that order, with a one-minute load
 // average of 15.86, 10.32 and 11.91 before the three and no sibling suite
 // slot held — the tightest spread any reading of this command has produced,
 // and the run at the top of that load was the slowest by six seconds, which
 // is as close as these readings come to being ordered by the box at all. The
-// pin it added reports 0.17s, so none of this is its cost) — which is the
-// command a
-// seat types after a filtered run. (It was 66-139s at sixty-one pins
+// pin it added reports 0.17s, so none of that was its cost);
+// 66-139s at sixty-one pins
 // (ranger-base-c768n: 115.3s, 139.0s and 66.3s in that order, with a
 // one-minute load average of 9.3, 54.2 and 63.1 before the three and one
 // suite slot held by a sibling seat throughout — so the FASTEST run was the

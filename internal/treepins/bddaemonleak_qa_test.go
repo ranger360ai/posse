@@ -89,6 +89,21 @@ package treepins
 // two honest answers above are legible. What the parse does buy is that PROSE
 // is no longer an alibi, which is the half that could be bought.
 //
+// THE DOOR IS `make corpus-check` (ranger-base-0ckgm). This pin walks the
+// repo root and reads every _test.go in the tree, so it is squarely in
+// ranger-base-rulbl's class — a QA test whose subject is the TREE, living
+// inside a package nobody runs whole — and for its first two months it had
+// no door at all, for the reason given at scanRealBdCallSites below. Its
+// subject is this repo's own test corpus, which is corpus-check's subject,
+// so it is a row in $(QA_CORPUS_PINS) rather than a door of its own.
+//
+// The four control arms below are NOT in that filter, and must not be: a
+// door variable may only name a test the register derives as tree-wide
+// (TestQAEveryTreeWidePinHasADoor is two-way), and the arms read no tree —
+// they drive the same rule over planted fixtures, which is what makes them
+// arms. They run in arm 1's `./...` like every other test here; what the
+// door buys is the PIN, which is the part an unrelated bead can red.
+//
 // This is the prevention half of the bead. The detection half — naming a
 // daemon whose working directory is gone or throwaway, on the live box — is
 // scripts/verify-bd-pin.sh's cwd layer, pinned in bdpin_qa_test.go.
@@ -152,16 +167,16 @@ func bdRealBdCallName(call *ast.CallExpr) bool {
 	return err == nil && v == "bd"
 }
 
-// scanRealBdCallSites returns every real-bd call site under root, and for
-// each file that holds one, the string LITERALS parsed out of that file —
-// which is what the clearing half judges, in place of the file's bytes
+// bdScanVisitor is the walk function both scans below share: which files it
+// opens, the parse, the AST match, and the collection. Only the ROOT differs
+// between the two, and each says why it spells its root the way it does.
+// What it collects per carrying file is that file's parsed string LITERALS,
+// which is what the clearing half judges in place of the file's bytes
 // (ranger-base-q82lc). Errors are returned rather than swallowed: a walk
-// that reads nothing must not look like a tree with nothing in it, and a file
-// that does not parse must not look like a file with no calls in it.
-func scanRealBdCallSites(root string) (sites []bdCallSite, files map[string][]string, err error) {
-	files = map[string][]string{}
-	fset := token.NewFileSet()
-	err = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+// that reads nothing must not look like a tree with nothing in it, and a
+// file that does not parse must not look like a file with no calls in it.
+func bdScanVisitor(root string, fset *token.FileSet, sites *[]bdCallSite, files map[string][]string) filepath.WalkFunc {
+	return func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -206,10 +221,45 @@ func scanRealBdCallSites(root string) (sites []bdCallSite, files map[string][]st
 		if len(found) == 0 {
 			return nil
 		}
-		sites = append(sites, found...)
+		*sites = append(*sites, found...)
 		files[rel] = lits
 		return nil
-	})
+	}
+}
+
+// scanRealBdCallSites returns every real-bd call site in THIS tree, and the
+// files that hold them.
+//
+// The root is spelled as a literal AT THE WALK, and this function takes no
+// root at all, because that spelling is the whole of what makes the pin
+// below a MEMBER of the tree-wide class the Makefile doors
+// (ranger-base-0ckgm). The register derives the internal/treepins half of
+// that class from an enumeration rooted at a relative literal
+// (twdRelTreePath over twdWalkers, treewidedoor_qa_test.go), and
+// twdRelTreePath cannot read a variable. This scan took `root string` and
+// the test body called `scanRealBdCallSites(".")`, so the one literal was
+// spelled one hop away from where the register looks: the pin was not
+// derived, TestQAEveryTreeWidePinHasADoor never asked for a door, and none
+// existed — a reading of every _test.go in the tree whose only route was an
+// unfiltered 589.965s package run. Spelling it here is the same fix
+// twdTestFiles' own head comment prescribes for the same mistake made
+// inside the register itself.
+func scanRealBdCallSites() (sites []bdCallSite, files map[string][]string, err error) {
+	files = map[string][]string{}
+	err = filepath.Walk(".", bdScanVisitor(".", token.NewFileSet(), &sites, files))
+	return sites, files, err
+}
+
+// scanBdCallSitesUnder is the same scan over a planted FIXTURE tree, for the
+// control arms below. Its root IS a parameter — the spelling the register
+// cannot read — which is correct here and only here: nothing hands it a tree
+// path, so it is not a reading of the tree hiding from the doors. That
+// distinction is held over this whole package, mechanically, by
+// TestQANoTreeWalkingHelperIsHandedATreePathThroughAParameter
+// (rootparam_qa_test.go).
+func scanBdCallSitesUnder(root string) (sites []bdCallSite, files map[string][]string, err error) {
+	files = map[string][]string{}
+	err = filepath.Walk(root, bdScanVisitor(root, token.NewFileSet(), &sites, files))
 	return sites, files, err
 }
 
@@ -237,7 +287,7 @@ func leakyBdTestFiles(files map[string][]string) []string {
 }
 
 func TestQANoTestShellsRealBdWithoutStoppingItsDaemon(t *testing.T) {
-	sites, files, err := scanRealBdCallSites(".")
+	sites, files, err := scanRealBdCallSites()
 	if err != nil {
 		t.Fatalf("walking the tree: %v", err)
 	}
@@ -268,7 +318,7 @@ func TestQABdDaemonGuardCatchesALeakyFile(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "leaky_test.go"), []byte(leaky), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	sites, files, err := scanRealBdCallSites(root)
+	sites, files, err := scanBdCallSitesUnder(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -285,7 +335,7 @@ func TestQABdDaemonGuardCatchesALeakyFile(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "leaky_test.go"), []byte(fixed), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, files, err = scanRealBdCallSites(root)
+	_, files, err = scanBdCallSitesUnder(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -299,7 +349,7 @@ func TestQABdDaemonGuardCatchesALeakyFile(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "leaky_test.go"), []byte(stopped), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, files, err = scanRealBdCallSites(root)
+	_, files, err = scanBdCallSitesUnder(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -354,7 +404,7 @@ func TestQABdDaemonGuardProseDoesNotClearALeakyFile(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(root, "leaky_test.go"), []byte(body), 0o644); err != nil {
 				t.Fatal(err)
 			}
-			sites, files, err := scanRealBdCallSites(root)
+			sites, files, err := scanBdCallSitesUnder(root)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -382,7 +432,7 @@ func TestQABdDaemonGuardReadsCallsNotProse(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "prose_test.go"), []byte(prose), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	sites, files, err := scanRealBdCallSites(root)
+	sites, files, err := scanBdCallSitesUnder(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -404,7 +454,7 @@ func TestQABdDaemonGuardReadsCallsNotProse(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "caller_test.go"), []byte(caller), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	sites, files, err = scanRealBdCallSites(root)
+	sites, files, err = scanBdCallSitesUnder(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -438,7 +488,7 @@ func TestQABdDaemonGuardZeroWitnessCanFire(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, guardFile), b, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	sites, files, err := scanRealBdCallSites(root)
+	sites, files, err := scanBdCallSitesUnder(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -454,7 +504,7 @@ func TestQABdDaemonGuardZeroWitnessCanFire(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "other_test.go"), []byte(caller), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	sites, files, err = scanRealBdCallSites(root)
+	sites, files, err = scanBdCallSitesUnder(root)
 	if err != nil {
 		t.Fatal(err)
 	}
