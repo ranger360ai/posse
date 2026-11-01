@@ -55,10 +55,36 @@ func NewHerdr() Herdr {
 	return Herdr{Bin: bin}
 }
 
-func (h Herdr) Available() bool {
-	_, err := exec.LookPath(h.Bin)
-	return err == nil
-}
+// Available reports whether the herdr this would RUN is there — asked the way
+// capture resolves it (ADR 0077 D3, protocolBin) and not on THIS process's
+// $PATH.
+//
+// The two are different questions on a gated seat, which is the whole of
+// ranger-base-d0nyb. A posse process that dispatches, checks parity or renders
+// a wall routinely has another persona's gates bin dir leading its PATH —
+// donated by the seat it was dispatched from, and on herdr homes by a server
+// autostarted hours earlier (MEASURED 2026-10-31, ranger-base-c33j6) — and a
+// PID that denies a herdr verb has a `herdr` shim rendered in that dir.
+// exec.LookPath found that shim and answered TRUE, while every call it let
+// through then died at protocolBin with "executable file not found outside
+// posse's gates dirs".
+//
+// AND THE SOFT DEGRADE WAS THE CASUALTY, which is why this is worth a
+// one-liner rather than left to fail per call. The three callers below read
+// "not available" as UNKNOWN and never as "no" — that rule is written out on
+// each of them. A protocolBin refusal reaching capture() is NOT a hang, so
+// HasReportAgent's `if _, hung := err.(*HerdrHangError)` misses it and the
+// verb reads as absent: a hard, wrong "no" on exactly the diagnostic whose
+// doc says a launch must not be refused for it. Answering false up front
+// gives the UNKNOWN those callers were written for.
+//
+// A Bin that NAMES a path keeps precedence and is still only an answer if it
+// is there: resolveOutside hands a path to absLookPath, so an RHQ_HERDR_BIN
+// pointing at nothing is unavailable, exactly as LookPath said. (protocolBin
+// hands such a path straight back unchecked — an explicit binary is an answer,
+// not a search — so the two agree on every bare name and this one is the
+// stricter of the two, never the looser.)
+func (h Herdr) Available() bool { return resolveOutside(h.Bin, "") != "" }
 
 // KnownAgentKinds is the set of agent kinds this herdr recognizes — the
 // `launch` stage's first observable (ADR 0013 §1): a runtime whose argv0

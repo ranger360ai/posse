@@ -720,7 +720,12 @@ func (a *App) RuntimeProbe(rt *Runtime, mux HerdrMux, o ProbeOpts) (*ProbeRecord
 		return nil, Die("a persona named %s exists in %s — the probe renders gates under that name and would overwrite its wall; rename the PID", persona, AbbrevHome(a.AgentsDir))
 	}
 	if !mux.Available() {
-		return nil, Die("herdr is not on PATH — observable 4 (detection) cannot be read, and the probe would pass three of four on a runtime dispatch is blind on")
+		// "outside posse's gates dirs", because that is the PATH
+		// Herdr.Available now reads and the one posse's own children are
+		// resolved against (ADR 0077 D3): on a seat whose PID denies a herdr
+		// verb, a bare "not on PATH" would be false to a reader who can see
+		// the shim sitting there (ranger-base-d0nyb).
+		return nil, Die("herdr is not on PATH outside posse's gates dirs — observable 4 (detection) cannot be read, and the probe would pass three of four on a runtime dispatch is blind on")
 	}
 	// The preflight's blocking gaps are the ones that make a launch
 	// impossible rather than degraded; there is nothing to measure past one.

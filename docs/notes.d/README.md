@@ -10,6 +10,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-rq986](ranger-base-rq986.md) — ranger-base-rq986 — a merge-back that was overtaken while its own suite ran — 2026-11-01
 - [ranger-base-qu8wn](ranger-base-qu8wn.md) — The commit wall's fold model was two runes short of what APFS resolves (ranger-base-qu8wn) — 2026-11-01
 - [ranger-base-npqem](ranger-base-npqem.md) — The apply probe resolved its own binary twice, and the second answer was a permission (ranger-base-npqem) — 2026-11-01
+- [ranger-base-d0nyb](ranger-base-d0nyb.md) — A probe answers on the PATH the exec it predicts resolves on (ranger-base-d0nyb) — 2026-11-01
 
 ## 2026-10
 

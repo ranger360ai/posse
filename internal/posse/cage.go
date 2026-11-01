@@ -247,6 +247,29 @@ func (e *Engine) Binary() string {
 	return ""
 }
 
+// engineOnPath reports whether an engine's binary is where the launch will
+// look for it: resolved OUTSIDE every gates dir (ADR 0077 D3), never on THIS
+// process's $PATH.
+//
+// It exists because three probes used to ask exec.LookPath while WrapInCage
+// asked protocolBin, and on a gated seat those are different questions
+// (ranger-base-d0nyb). A posse process that launches or checks parity can have
+// another persona's gates bin dir leading its PATH (MEASURED 2026-10-31,
+// ranger-base-c33j6), and a PID that denies a container engine has a shim
+// under that engine's own name rendered there — so all three probes answered
+// true on that shim and WrapInCage then refused the launch they had just
+// cleared. The three callers below are the whole class; a fourth probe added
+// later belongs here too, so that the engine question cannot drift from the
+// engine answer.
+//
+// STILL A FACT ABOUT A FILE and not about whether the engine answers, which
+// is the distinction ranger-base-1mu9r drew and ContainerAvailable's doc
+// keeps: resolveOutside is a PATH search over a narrower PATH, and nothing
+// here runs the engine. CageEngineLive is the other question.
+func engineOnPath(e *Engine) bool {
+	return e != nil && resolveOutside(e.Binary(), "") != ""
+}
+
 // ContainerAvailable reports whether this host can provide `cage:
 // container` — the resolved engine loads and its binary is on PATH. It
 // does NOT ask whether the image is built: a missing image is a refusal
@@ -258,13 +281,17 @@ func (e *Engine) Binary() string {
 // about a file, and an installed CLI whose daemon is not running satisfies
 // it (ranger-base-1mu9r). That is CageEngineLive's question, and no caller
 // should read this one as an answer to it.
+//
+// The PATH it looks up on is the gates-free one (engineOnPath), because the
+// file this is a fact about has to be the file WrapInCage will exec — asking
+// about a different one answered true for a launch the render then refused
+// (ranger-base-d0nyb). Still a file and not an answer: only the PATH narrowed.
 func (a *App) ContainerAvailable() bool {
 	e, err := a.LoadEngine(a.ResolveEngine())
 	if err != nil {
 		return false
 	}
-	_, err = exec.LookPath(e.Binary())
-	return err == nil
+	return engineOnPath(e)
 }
 
 // cageAvailable is AvailableCages plus the engine probe for container,
@@ -1274,8 +1301,12 @@ func (a *App) cageNoBinary(e *Engine) string {
 	if e == nil {
 		return "no cage engine resolves — `cage: container` is unavailable on this host"
 	}
-	if _, err := exec.LookPath(e.Binary()); err != nil {
-		return fmt.Sprintf("engine binary %s not on PATH — cage: container is unavailable on this host", e.Binary())
+	if !engineOnPath(e) {
+		// "outside posse's gates dirs", because that is the PATH the probe
+		// now reads and WrapInCage's own sentence already says so: on a seat
+		// whose PID denies the engine, "not on PATH" would be false to an
+		// operator who can see the shim sitting there (ranger-base-d0nyb).
+		return fmt.Sprintf("engine binary %s not on PATH outside posse's gates dirs — cage: container is unavailable on this host", e.Binary())
 	}
 	return ""
 }
@@ -1427,8 +1458,12 @@ func (a *App) BuildCageImage(src, runtimes string, out *os.File) error {
 	if err != nil {
 		return err
 	}
-	if _, err := exec.LookPath(e.Binary()); err != nil {
-		return Die("cage engine %s needs %q on PATH", e.Name, e.Binary())
+	// Gates-free, like every other engine probe: this one guards a
+	// cross-build of two Linux binaries, so a yes here that WrapInCage's
+	// sibling refusal would have caught is minutes spent before the engine
+	// exec at the bottom of this function fails (ranger-base-d0nyb).
+	if !engineOnPath(e) {
+		return Die("cage engine %s needs %q on PATH outside posse's gates dirs", e.Name, e.Binary())
 	}
 	dockerfile := filepath.Join(src, CageDockerfile)
 	if _, err := os.Stat(dockerfile); err != nil {
