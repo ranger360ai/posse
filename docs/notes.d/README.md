@@ -7,6 +7,7 @@ references), not inferred publication dates. Undated fragments sort last.
 ## 2026-10
 
 - [ranger-base-zf8pf](ranger-base-zf8pf.md) — `brew info --cask` has a third exit arm, and a caged seat can land in it (ranger-base-zf8pf) — 2026-10-31
+- [ranger-base-wq349](ranger-base-wq349.md) — The sweep's one unopt-outable directory, and the spelling that is still outside the fence (ranger-base-wq349) — 2026-10-31
 - [ranger-base-v3tt4](ranger-base-v3tt4.md) — ranger-base-v3tt4 — a merge-back whose conflict was a pinned COUNT — 2026-10-31
 - [ranger-base-uz4cs](ranger-base-uz4cs.md) — The in-force BIT, spelled by hand beside the one read (ranger-base-uz4cs) — 2026-10-31
 - [ranger-base-tpy6q](ranger-base-tpy6q.md) — The WaitDelay census resolved per name per function, and its corpus stopped at the package directories (ranger-base-tpy6q) — 2026-10-31

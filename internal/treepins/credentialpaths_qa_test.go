@@ -447,3 +447,106 @@ func TestQACredentialRotationRunbookCarriesTheCheck(t *testing.T) {
 		t.Error("runbook must say how to read the exit codes, including that 2 is not a pass")
 	}
 }
+
+// A LIVE-DEFECT PIN (ranger-base-wq349, the verify of ranger-base-l5v9k).
+//
+// l5v9k closed the two config-dir variables: a relative CLAUDE_CONFIG_DIR or
+// CLAUDE_SECURESTORAGE_CONFIG_DIR is refused with exit 2 and the sweep says it
+// measured nothing. MEASURED here: 24 cases (two variables x `rel`, `./rel`,
+// `rel/`, `../A/rel` x a cwd holding a planted file and one that does not) all
+// exit 2, and six mutants of that refusal all die. That half is closed.
+//
+// $HOME is not. It is the ONE directory this sweep always scans (the dirs
+// array is seeded with it before add_dir is ever called), it is the arm the
+// script's own head comment says covers a present-but-empty
+// CLAUDE_SECURESTORAGE_CONFIG_DIR, and line 54 asks only whether it is
+// NON-EMPTY — not whether it is absolute. So the defect ranger-base-57045
+// filed survives one variable over, on the directory that cannot be opted out
+// of: MEASURED 2026-10-31 (darwin 25.6.0, bash 3.2), with HOME=relhome and a
+// credential file planted in A/relhome/.claude,
+//
+//	cwd=A -> "FINDING  relhome/.claude/.credentials.json", exit 1
+//	cwd=B -> "clean    relhome/.claude", exit 0
+//
+// the same box, the same environment, the same store of record, and a
+// detective control that says clean about a directory it never looked in.
+// Both of 57045's readings come with it: the false clean, and a FINDING line
+// naming a relative path that means nothing to whoever reads the report.
+//
+// THIS PIN ASSERTS THE HOLE and is green while it is open, because a t.Skip
+// dies with the fix and takes the witness with it. The fix is line 54's
+// sibling of what add_dir now does — refuse a relative HOME with exit 2 and
+// "nothing measured, not a pass" — and when it lands THIS TEST GOES RED. That
+// red means: the hole is closed; replace the body with the refusal arm
+// (exit 2 from both cwds, naming HOME, printing no "clean" and no "FINDING")
+// and delete this comment.
+func TestQACredentialPathsRelativeHomeIsStillCwdDependent(t *testing.T) {
+	cpRelHome := func(cwd, home string) (string, int) {
+		t.Helper()
+		abs, err := filepath.Abs(cpScript)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cmd := exec.Command(abs)
+		cmd.Dir = cwd
+		// HOME last so no earlier entry can win the dedup, and both config-dir
+		// variables set-and-empty so this arm is HOME's alone: empty is what
+		// add_dir skips, which keeps the refusal l5v9k added out of the way.
+		cmd.Env = []string{
+			"PATH=" + os.Getenv("PATH"),
+			"CLAUDE_CONFIG_DIR=",
+			"CLAUDE_SECURESTORAGE_CONFIG_DIR=",
+			"HOME=" + home,
+		}
+		out, err := cmd.CombinedOutput()
+		code := 0
+		if ee, ok := err.(*exec.ExitError); ok {
+			code = ee.ExitCode()
+		} else if err != nil {
+			t.Fatalf("%s: %v\n%s", cpScript, err, out)
+		}
+		return string(out), code
+	}
+
+	const rel = "relhome"
+	planted := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(planted, rel, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(planted, rel, ".claude", ".credentials.json"), []byte(cpMarker), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	empty := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(empty, rel, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	const inversion = "verify-credential-paths no longer resolves a relative HOME against its own cwd — " +
+		"the hole ranger-base-wq349 recorded is CLOSED. Rewrite this pin as the refusal arm: exit 2 from " +
+		"both cwds, the message naming HOME, and no \"clean\" and no \"FINDING\" in the output."
+
+	hit, hitCode := cpRelHome(planted, rel)
+	miss, missCode := cpRelHome(empty, rel)
+
+	// The hole, both halves. Either assertion flipping is the fix arriving.
+	if hitCode != 1 || !strings.Contains(hit, "FINDING  "+filepath.Join(rel, ".claude", ".credentials.json")) {
+		t.Errorf("from the cwd that HOLDS the file: exit %d, want 1 with a FINDING naming the relative path.\n%s\n%s",
+			hitCode, inversion, hit)
+	}
+	if missCode != 0 || !strings.Contains(miss, "clean") {
+		t.Errorf("from the cwd that does NOT hold it: exit %d, want 0 and \"clean\".\n%s\n%s",
+			missCode, inversion, miss)
+	}
+	// And the two disagree, which is the defect in one line: same value, same
+	// store of record, opposite verdicts. This is the assertion that cannot be
+	// satisfied by any fix, whichever shape it takes.
+	if hitCode == missCode {
+		t.Errorf("both cwds now answer %d — a relative HOME no longer decides the verdict.\n%s", hitCode, inversion)
+	}
+	// Whatever the verdict, no run of this script ever prints a credential.
+	for _, out := range []string{hit, miss} {
+		if strings.Contains(out, cpMarker) {
+			t.Errorf("credential content printed:\n%s", out)
+		}
+	}
+}
