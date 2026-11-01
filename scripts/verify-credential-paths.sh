@@ -67,17 +67,32 @@ esac
 # is always scanned — which also covers the one arm of the resolution nobody
 # guesses, a PRESENT-BUT-EMPTY $CLAUDE_SECURESTORAGE_CONFIG_DIR, where the
 # runtime falls to ~/.claude and shadows $CLAUDE_CONFIG_DIR entirely.
+#
+# A RELATIVE value is refused, not resolved (ranger-base-l5v9k). posse makes
+# both variables absolute against the LAUNCHER's cwd (credentialDirNamed,
+# runtimeHomeOverride), and that cwd cannot be recovered after the fact.
+# Taking the value verbatim resolves it against THIS sweep's cwd instead, so
+# the same value read "FINDING" from one directory and "clean" from another
+# (MEASURED 2026-10-31, ranger-base-57045). Resolving it here would only swap
+# one wrong guess for another, so the sweep says it measured nothing.
 dirs=("$HOME/.claude")
 add_dir() {
-  local cand=$1 d
+  local name=$1 cand=$2 d
   [ -n "$cand" ] || return 0
+  case "$cand" in
+    /*) ;;
+    *)
+      echo "verify-credential-paths: $name=$cand is relative; posse resolved it against the launcher cwd, which this sweep cannot know; export an absolute path — nothing measured, not a pass"
+      exit 2
+      ;;
+  esac
   for d in "${dirs[@]}"; do
     [ "$d" = "$cand" ] && return 0
   done
   dirs+=("$cand")
 }
-add_dir "${CLAUDE_CONFIG_DIR:-}"
-add_dir "${CLAUDE_SECURESTORAGE_CONFIG_DIR:-}"
+add_dir CLAUDE_CONFIG_DIR "${CLAUDE_CONFIG_DIR:-}"
+add_dir CLAUDE_SECURESTORAGE_CONFIG_DIR "${CLAUDE_SECURESTORAGE_CONFIG_DIR:-}"
 
 present=0
 findings=0

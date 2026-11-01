@@ -33,11 +33,19 @@ const cpScript = "scripts/verify-credential-paths.sh"
 // cleared unless a case sets it, so no case can read the operator's live box.
 func cpRun(t *testing.T, home string, extraEnv ...string) (string, int) {
 	t.Helper()
+	return cpRunIn(t, "", home, extraEnv...)
+}
+
+// cpRunIn is cpRun from a chosen cwd ("" is the test's own), for the arms
+// whose subject is what the sweep's cwd does to a value (ranger-base-l5v9k).
+func cpRunIn(t *testing.T, cwd, home string, extraEnv ...string) (string, int) {
+	t.Helper()
 	abs, err := filepath.Abs(cpScript)
 	if err != nil {
 		t.Fatal(err)
 	}
 	cmd := exec.Command(abs)
+	cmd.Dir = cwd
 	cmd.Env = append([]string{"HOME=" + home, "PATH=" + os.Getenv("PATH")}, extraEnv...)
 	out, err := cmd.CombinedOutput()
 	code := 0
@@ -210,6 +218,61 @@ func TestQACredentialPathsEmptySecureStorageAddsNoDirectory(t *testing.T) {
 	// witness — with the home present, a well-behaved run has none.
 	if strings.Contains(out, "absent") {
 		t.Errorf("an empty value was added to the scan list as a directory:\n%s", out)
+	}
+}
+
+// ranger-base-l5v9k: a RELATIVE value is refused, for either variable. posse
+// resolves both against the launcher's cwd, which the sweep cannot know, and
+// taken verbatim the same value read FINDING from one cwd and clean from
+// another (MEASURED 2026-10-31, ranger-base-57045). Both cwds are run here:
+// the one holding a planted file and the one that does not. Each must exit 2
+// and say nothing that reads as clean, so the answer no longer depends on
+// where the sweep was typed.
+func TestQACredentialPathsRefusesARelativeConfigDir(t *testing.T) {
+	for _, name := range []string{"CLAUDE_CONFIG_DIR", "CLAUDE_SECURESTORAGE_CONFIG_DIR"} {
+		for _, val := range []string{"rel", "./rel", "rel/"} {
+			planted := t.TempDir()
+			if err := os.MkdirAll(filepath.Join(planted, "rel"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(planted, "rel", ".credentials.json"), []byte(cpMarker), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			for _, cwd := range []string{planted, t.TempDir()} {
+				out, code := cpRunIn(t, cwd, cpHome(t), name+"="+val)
+				if code != 2 {
+					t.Errorf("%s=%s from %s: exit %d, want 2\n%s", name, val, cwd, code, out)
+				}
+				if strings.Contains(out, "clean") || strings.Contains(out, "FINDING") {
+					t.Errorf("%s=%s from %s: a refused run measured something:\n%s", name, val, cwd, out)
+				}
+				if !strings.Contains(out, name+"="+val+" is relative") || !strings.Contains(out, "nothing measured, not a pass") {
+					t.Errorf("%s=%s: the refusal must name the variable and say it is not a pass:\n%s", name, val, out)
+				}
+				if strings.Contains(out, cpMarker) {
+					t.Errorf("credential content printed:\n%s", out)
+				}
+			}
+		}
+	}
+}
+
+// The other side of the refusal: an absolute value, for either variable, is
+// still scanned, and set-and-empty still means ~/.claude alone.
+func TestQACredentialPathsStillScansAnAbsoluteConfigDir(t *testing.T) {
+	for _, name := range []string{"CLAUDE_CONFIG_DIR", "CLAUDE_SECURESTORAGE_CONFIG_DIR"} {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, ".credentials.json"), []byte(cpMarker), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		out, code := cpRun(t, cpHome(t), name+"="+dir)
+		if code != 1 || !strings.Contains(out, "FINDING  "+filepath.Join(dir, ".credentials.json")) {
+			t.Errorf("%s=<absolute>: exit %d, want 1 naming the file\n%s", name, code, out)
+		}
+		out, code = cpRun(t, cpHome(t), name+"=")
+		if code != 0 || !strings.Contains(out, "0 findings in 1 scanned") {
+			t.Errorf("%s=<empty>: exit %d, want 0 over ~/.claude alone\n%s", name, code, out)
+		}
 	}
 }
 
