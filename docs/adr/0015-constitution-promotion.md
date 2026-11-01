@@ -526,16 +526,14 @@ the same way twice:
   `constitutionGuardBody`). **Ancestor:** a staged path some member lies
   under is in the class — a symlink, gitlink or file at `.claude`, not
   keyed on the mode, since refusing all three costs nothing. **Fold:**
-  names are compared component by component under `strings.EqualFold`
-  (never a byte-length prefix, never `ToLower`, which leaves ſ alone);
-  the sh arm folds exactly the two non-ASCII runes whose
-  `unicode.SimpleFold` orbit reaches ASCII — U+017F and U+212A, a closed
-  set pinned over every rune (`constitutionFoldRunes`) — then ASCII
-  case, which suffices because every member is ASCII and its own fold
-  (pinned). NFD resolves to NFC and APFS ignores no zero-width or
-  format character (MEASURED), so the HFS+ class behind CVE-2014-9390
-  does not apply. Over a TRACKED member git's own ignorecase stages
-  nothing for a fold spelling, and that control is pinned too.
+  names are compared component by component (never a byte-length prefix,
+  never `ToLower`, which leaves ſ alone) after both sides are resolved
+  the way the volume resolves them. NFD resolves to NFC and APFS ignores
+  no zero-width or format character (MEASURED), so the HFS+ class behind
+  CVE-2014-9390 does not apply. Over a TRACKED member git's own
+  ignorecase stages nothing for a fold spelling, and that control is
+  pinned too.
+
   **ProjectConfigTrust is the belt behind it** (ADR 0002, "Project
   configuration is a launch input"), and the residual is named: a
   class-ancestor symlink that is ALREADY on `main` — operator-landed —
@@ -543,6 +541,34 @@ the same way twice:
   by name. That is out of the wall's reach by design (the wall reads
   names, not the tree's resolution) and inside the launch check's,
   which reads what the session directory resolves at launch.
+
+  *Amended 2026-11-01 (ranger-base-qu8wn, from ranger-base-hrx86's
+  verification of g55ah, measured).* **The fold is APFS's equivalence,
+  not Go's case fold.** APFS is normalization-insensitive as well as
+  case-insensitive, and g55ah's model was `strings.EqualFold` plus the
+  two non-ASCII runes whose `unicode.SimpleFold` orbit reaches ASCII
+  (U+017F, U+212A). MEASURED, Darwin 25.6, case-insensitive APFS, over
+  every rune 0x80..0x10FFFF against one file per ASCII graphic
+  character: **four** single runes open an ASCII-named file, not two —
+  U+037E GREEK QUESTION MARK resolves to `;` and U+1FEF GREEK VARIA to
+  the backtick, both through NFC rather than case, so `EqualFold`
+  answered false for both and neither arm folded them. Nothing was
+  exploitable: every one of the live 22 class members is ASCII lower
+  case with neither byte in its name, so no spelling reachable through
+  the gap named a member — but that was an accident of the class, and
+  the fold's own pin could not see it, because it enumerated
+  `unicode.SimpleFold` and so could only ever red on a bump to GO's
+  table. Both arms now fold the measured four
+  (`constitutionResolveRunes`, read by `constitutionFold` and by the sh
+  arm's rendered sed) and then ASCII case. Sufficiency is the TABLE's
+  property now and no longer the class's: it is closed over single runes
+  because no ASCII character has a canonical decomposition, so nothing
+  longer than a single rune is equivalent to one (pinned), and
+  `TestQAConstitutionResolveRunesAreTheClosedSet` re-derives the set
+  from Go's case-fold AND normalization tables so either bump reds. What
+  the class still owes the fold is the refusal's wording — every member
+  is ASCII and its own fold (pinned), so the folded member the sh arm
+  prints is the member's true spelling.
 
   *Fourth — the launcher's land-path belt*
   (`MergeSessionWork`, `internal/posse/worktree.go`). The launcher

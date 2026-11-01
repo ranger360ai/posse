@@ -7,6 +7,7 @@ references), not inferred publication dates. Undated fragments sort last.
 ## 2026-11
 
 - [ranger-base-rq986](ranger-base-rq986.md) — ranger-base-rq986 — a merge-back that was overtaken while its own suite ran — 2026-11-01
+- [ranger-base-qu8wn](ranger-base-qu8wn.md) — The commit wall's fold model was two runes short of what APFS resolves (ranger-base-qu8wn) — 2026-11-01
 
 ## 2026-10
 

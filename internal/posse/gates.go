@@ -5696,7 +5696,8 @@ $posse_bad"
 // one rule covers `posse/config.yaml` (a file) and `posse/agents` (a tree).
 // Since ranger-base-g55ah it also matches a staged path ABOVE a member (a
 // symlink at `.claude`), and both sides are compared under APFS's Unicode
-// case fold — see constitutionClassMatch (promote.go) for the rules.
+// equivalence — case AND normalization — see constitutionClassMatch
+// (promote.go) for the rules.
 //
 // WHAT IT DOES NOT DO: it does not reset, unstage or otherwise touch the
 // tree. The shared-index arm below already says why in its own words — a hook
@@ -5732,17 +5733,37 @@ $posse_bad"
 // operator-lane. A nested `.claude/settings.json` — `sub/.claude/…` rather
 // than the repo root's — is outside the class as written, and outside what
 // any runtime reads for a session dispatched at a repo root.
-// constitutionFoldSed renders the sh arm's fold of constitutionFoldRunes as
-// sed -e arguments, each rune's UTF-8 bytes spelled through printf octal so
-// the hook source stays ASCII and LC_ALL=C matches them as bytes.
+// constitutionFoldSed renders the sh arm's fold of constitutionResolveRunes
+// as sed -e arguments, BOTH sides of every s/// spelled through printf octal
+// so the hook source stays ASCII and LC_ALL=C matches the rune's bytes as
+// bytes.
+//
+// The replacement goes through printf too, and that is not symmetry for its
+// own sake: these expressions sit inside double quotes, where a literal
+// backtick opens a command substitution — and U+1FEF resolves to one
+// (ranger-base-qu8wn). MEASURED: rendered literally, the hook stops being
+// shell at all — `sh -n` over it is exit 2, "unexpected EOF while looking
+// for matching `", because the substitution swallows the rest of the file.
+// That half is loud and already pinned (TestQAInstalledCommitHookParses);
+// octal-escaping every replacement keeps the rule "whatever the table says"
+// rather than one re-reasoned for each new ASCII byte, and
+// TestQAConstitutionShFoldResolvesEveryTableRune runs the line to say it
+// resolves, which parsing cannot. Nothing here is special to sed itself: "&"
+// is a replacement's only metacharacter and no row's byte is one, which
+// TestQAConstitutionResolveRunesAreTheClosedSet pins.
 func constitutionFoldSed() string {
-	var b strings.Builder
-	for _, f := range constitutionFoldRunes {
-		b.WriteString(` -e "s/$(printf '`)
-		for _, c := range []byte(string(f.R)) {
-			fmt.Fprintf(&b, "\\%03o", c)
+	octal := func(b *strings.Builder, s string) {
+		for _, c := range []byte(s) {
+			fmt.Fprintf(b, "\\%03o", c)
 		}
-		fmt.Fprintf(&b, `')/%c/g"`, f.ASCII)
+	}
+	var b strings.Builder
+	for _, f := range constitutionResolveRunes {
+		b.WriteString(` -e "s/$(printf '`)
+		octal(&b, string(f.R))
+		b.WriteString(`')/$(printf '`)
+		octal(&b, string(f.ASCII))
+		b.WriteString(`')/g"`)
 	}
 	return b.String()
 }
@@ -5820,11 +5841,13 @@ if [ -n "${` + EnvPersona + `:-}" ]; then
     posse_cls_ifs=$IFS
     IFS='
 '
-    # RESOLUTION-equivalence (ranger-base-g55ah): the wall defends what the
-    # filesystem resolves, and APFS folds names by Unicode case. Both sides
-    # are folded the same way before the match — the two non-ASCII runes
-    # whose fold reaches ASCII (promote.go constitutionFoldRunes, the closed
-    # set TestQAConstitutionFoldRunesAreTheClosedSet pins), then ASCII case.
+    # RESOLUTION-equivalence (ranger-base-g55ah, widened by
+    # ranger-base-qu8wn): the wall defends what the filesystem resolves, and
+    # APFS folds names by Unicode case AND by normalization. Both sides are
+    # folded the same way before the match — the four non-ASCII runes APFS
+    # was measured to resolve to an ASCII byte (promote.go
+    # constitutionResolveRunes, the closed set
+    # TestQAConstitutionResolveRunesAreTheClosedSet pins), then ASCII case.
     # Never the staged spelling the refusal prints: that stays as typed.
     posse_cls_fold() {
       LC_ALL=C sed` + constitutionFoldSed() + ` | LC_ALL=C tr 'A-Z' 'a-z'
