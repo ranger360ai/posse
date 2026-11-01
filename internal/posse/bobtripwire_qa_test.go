@@ -50,12 +50,19 @@ func TestQABobFixturesAreStillUnknownToHerdr(t *testing.T) {
 	if _, err := exec.LookPath("herdr"); err != nil {
 		t.Skip("herdr not on PATH")
 	}
-	root, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	// go test ./internal/posse runs with cwd = this package.
-	dir := filepath.Join(root, "..", "..", "etc", "herdr", "agent-detection", "upstream", "bob")
+	// The root comes from qibRepoRoot, not from a climb spelled here
+	// (ranger-base-zm6yw, FINDING 1 of the ranger-base-wq349 verify). This
+	// directory's population is the point of the comment above — a herdr
+	// release or a detection bead changes what is in it — so the pin's
+	// subject is the tree, and internal/posse's half of the tree-wide class
+	// is derived from that one helper. Spelled as `filepath.Join(os.Getwd(),
+	// "..", "..", …)` the reading was invisible to EVERY rule in
+	// internal/treepins/treewidedoor_qa_test.go: the climb fence reads a
+	// Join's first element, which was the cwd, and the hidden-walker arm
+	// wants the two `..` at the END of the list. So the pin was never asked
+	// for a Makefile door ($(QA_SEED_PINS)) and its only route was the ~950s
+	// package run.
+	dir := filepath.Join(qibRepoRoot(t), "etc", "herdr", "agent-detection", "upstream", "bob")
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		t.Fatal(err)
