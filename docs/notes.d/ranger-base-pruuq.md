@@ -120,7 +120,19 @@ helper and one pin, not a class with a tail". MEASURED false at 9465b3d7:
 walking helper rather than as a function whose name ends in `RepoRoot`, which
 is presumably what the census keyed on. The tail was one long.
 
-`make tree-check`: 62s then 65s warm, at a one-minute load average of 3.78 and
-4.11, no suite slot held by anyone; 72s on the run before those two with two
-test binaries cold. 121 pins, 17 doors. The two pins this bead doors report
-0.21s between them measured alone.
+`make tree-check`, as it LANDED — 122 pins, 17 doors, this bead's two onto a
+main that had meanwhile landed `ranger-base-m8kfv`'s one: **63s, 65s then 63s**
+warm, at a one-minute load average of 3.42, 11.52 and 6.90 over a five-minute
+3.11, 5.05 and 4.96, both suite slots free throughout, one warm-up run
+discarded. A 2.0s spread across a one-minute load that more than tripled
+between the first run and the second — the tightest spread this command has
+produced, and it cuts against the chain's "the spread tracks how much the load
+MOVES". What the readings do agree on is a floor: 63-73s at this size whatever
+the load does under about twelve. `register-check` is 27.7s of it, `pid-check`
+8.8s. The two pins this bead doors report 0.21s between them measured alone, so
+none of any spread is theirs.
+
+On its own branch, at 121 pins — neither side of the merge, and so not the
+reading of record (`docs/notes.d/ranger-base-v3tt4.md` is the rule): 62s then
+65s at a one-minute load of 3.78 and 4.11, and 72s on the run before those with
+two test binaries cold.

@@ -891,26 +891,30 @@ package treepins
 // nowhere in either package (MEASURED 2026-11-01).
 //
 // and `make tree-check` is all of them — one hundred and twenty-two pins and
-// seventeen doors, 62-65s over two warm runs at one hundred and twenty-one of
-// them (MEASURED 2026-11-01, ranger-base-pruuq: 62s then 65s, at a one-minute
-// load average of 3.78 and 4.11 over a five-minute 3.15 and 3.39, with no
-// suite slot held by anyone — and 72s on the run before those two, with two
-// of the test binaries cold. Read on the QUIETEST box this command has been
-// taken on, which is what makes the pair worth keeping: a 3.0s spread at a
-// one-minute load under five. Set against the entry below it, that is the
-// cleanest separation the chain has of its two variables — a 26s spread at a
-// load of 15-28 over a class two pins smaller — and it says the standing
-// advice is right about the band and about ten seconds light at this size,
-// which is the same correction the entry above it made from the other
-// direction. `register-check` is 27s of this one. These two readings are at
-// one hundred and twenty-one, which is NEITHER side of this bead's
-// merge-back: ranger-base-m8kfv landed its pin at one hundred and twenty while
-// this bead's two were on their own branch, so one hundred and twenty-two is
-// what landed and the reading of it is the entry above — quoted this way
-// round deliberately, because the rule the entry above cites
-// (docs/notes.d/ranger-base-v3tt4.md) is that a reading names the class it was
-// taken over and never the class that landed. The two pins this bead adds
-// report 0.21s between them measured alone, so none of any spread is theirs),
+// seventeen doors, 63-65s over three warm runs at one hundred and twenty-two
+// of them (MEASURED 2026-11-01, ranger-base-pruuq: 63s, 65s then 63s in that
+// order, at a one-minute load average of 3.42, 11.52 and 6.90 over a
+// five-minute 3.11, 5.05 and 4.96, with both suite slots free throughout and
+// one warm-up run discarded. This is the merge-back that landed this bead's
+// two pins onto a main that had meanwhile landed ranger-base-m8kfv's one, so
+// it is the first reading of the class at one hundred and twenty-two and of
+// neither side of that merge — the entry below was taken at one hundred and
+// twenty, and this bead's own pre-merge pair, 62s and 65s on its branch at one
+// hundred and twenty-one, is not quoted as the reading for exactly that reason
+// (docs/notes.d/ranger-base-v3tt4.md is the rule and
+// docs/notes.d/ranger-base-xea2y.md the procedure). A 2.0s spread — the
+// tightest this command has produced — across a one-minute load that more
+// than TRIPLED between the first run and the second, which is the sharpest
+// thing this entry has to say and it cuts against the chain: the paragraph
+// below reads a 38s spread at a load that never left 9-11, and here the load
+// moves by a factor of three and the wall moves by two seconds. So "the spread
+// tracks how much the load MOVES" is not what this box did; what the three
+// readings agree on, with the entry below them, is a FLOOR of 63-73s at this
+// size whatever the load does under about twelve — so read the quiet-box price
+// as seventy seconds and keep the room above it for a box that is genuinely
+// loaded, not merely moving. `register-check` is 27.7s of this one and
+// `pid-check` 8.8s; the two pins this bead adds report 0.21s between them
+// measured alone, so none of any spread is theirs),
 // 68-73s over three warm runs at one hundred and twenty of
 // them (MEASURED 2026-11-01, ranger-base-m8kfv: 67.7s, 69.0s then 72.8s, at a
 // one-minute load average of 4.46, 7.08 and 7.90 over a five-minute 4.11, 5.01
