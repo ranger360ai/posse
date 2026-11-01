@@ -105,4 +105,11 @@ caught the second-claim trap above); `make notes-check` after this fragment;
 `make tree-check` four times (one of them the cold run above); the xea2y
 both-directions reading over the conflicted file — the merged
 `treewidedoor_qa_test.go` against the work commit's and against main's, so
-nothing of either side was dropped; and `make test` whole.
+nothing of either side was dropped (every line of main's that the merge drops
+is one `ranger-base-na4rm` deliberately rewrote: the `twdDoors` table, which
+gains an `arm` field and three rows, `twdSpelled`'s ceiling of 99,
+`twdCountClaim`'s one-word numeral, `twdProseCount`'s 101 alternatives and
+the renamed pin); and `make test` whole, green at MAKE_EXIT=0 over the three
+arms — 401.8s/487.7s arm 1 (internal/posse, internal/treepins), 435.8s arm 2,
+371.6s arm 3, silent-revert audit 2195 commits 0 untriaged, and
+`go run ./cmd/checkorphans` clean after it.
