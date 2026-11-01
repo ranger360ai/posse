@@ -8,12 +8,23 @@ package posse
 // so a bead that adds, retires or edits a reference PID or a shipped skill
 // reds it, and no seat's `-run` filter has ever named it. That makes it a
 // tree-wide pin, which needs a Makefile door ($(QA_SEED_PINS),
-// `make seed-check`), and a door's `-run` runs with NO `-tags`
-// (TestQAEveryMakefileDoorPinIsReachableInTheDefaultArm). In pidcheck_test.go
+// `make seed-check`), and that door's `-run` runs with NO `-tags`
+// (TestQAEveryMakefileDoorPinIsReachableInItsDoorsArm). In pidcheck_test.go
 // it was behind `//go:build posse_arm2`, where a door could not reach it at
 // all: the filter would have matched nothing and `go test -run` exits 0 over
-// nothing. So the pin moves to arm 1 — the default build — rather than the
-// door mechanism learning to pass a tag, which no door does today.
+// nothing. So the pin moves to arm 1 — the default build — rather than
+// seed-check learning to pass a tag.
+//
+// A TAGGED DOOR EXISTS NOW (ranger-base-na4rm), and this file still stands.
+// The mechanism arrived for a different reason than this pin had: fifteen
+// one-package censuses were admitted to the class at once and seven of them
+// carry an arm tag, so the alternative there was moving seven files to suit
+// their doors. Here it was one file, and the door it belongs behind —
+// seed-check, whose subject is the published seed surface, which is this
+// pin's subject — runs the default build for the other seven pins in it.
+// Moving the file was the smaller change then and is the smaller change now;
+// teaching seed-check a tag would split its membership across two arms to
+// save one `git mv`.
 //
 // Nothing else in pidcheck_test.go moved: the rest of that file is the
 // checker's own unit tests, which read a planted home and are nobody's

@@ -42,7 +42,7 @@ FMT_ROOTS := cmd internal *.go
 BUILD_STAMP := $(shell $(GOBIN) run ./cmd/buildstamp)
 LDFLAGS     := -X github.com/ranger360ai/posse/internal/posse.Build=$(BUILD_STAMP)
 
-.PHONY: build release install deploy test test-arm1 test-arm2 test-arm3 test-race test-reuse treepins fmt-check crew-check seed-check history-check doc-check identity-check ops-check execwrite-check notes-check adr-check corpus-check register-check scripts-check pid-check tree-check verify-test-times verify-suite-lock verify-pattern-kill-census verify-silent-reverts verify-shell-syntax verify-python-syntax verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-herdr-bob install-herdr-bob verify-herdr-bob-rules install-herdr-bob-rules verify-prune-guard verify-id-recycle verify-self-close verify-govern-honesty verify-grok-pin verify-codex-pin verify-skills-drift verify-credential-paths verify-policy-pins verify-hook-freshness verify-bd-pin verify-nodb-defer verify-nodb-defer-capability verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk verify-box verify-box-self-test prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
+.PHONY: build release install deploy test test-arm1 test-arm2 test-arm3 test-race test-reuse treepins fmt-check crew-check seed-check history-check doc-check identity-check ops-check execwrite-check pkgcensus-check pkgcensus-arm2-check pkgcensus-arm3-check notes-check adr-check corpus-check register-check scripts-check pid-check tree-check verify-test-times verify-suite-lock verify-pattern-kill-census verify-silent-reverts verify-shell-syntax verify-python-syntax verify-parallel verify-gotest test-linux vet fmt link-plugin install-detection verify-detection verify-herdr-bob install-herdr-bob verify-herdr-bob-rules install-herdr-bob-rules verify-prune-guard verify-id-recycle verify-self-close verify-govern-honesty verify-grok-pin verify-codex-pin verify-skills-drift verify-credential-paths verify-policy-pins verify-hook-freshness verify-bd-pin verify-nodb-defer verify-nodb-defer-capability verify-bd-argv-gate verify-gate-freshness verify-pid-deny-set verify-bd-dep-safety verify-bd-no-relate-pairs verify-runtime-walk verify-box verify-box-self-test prune-bd-relates-to audit-silent-reverts release-artifacts tap-formula release-notes macos-install-probe cleanroom cleanroom-verify cleanroom-verify-all cleanroom-shell cleanroom-reset cleanroom-distros cleanroom-hook-deps
 
 build:
 	$(GOBIN) build -ldflags '$(LDFLAGS)' -o bin/posse-go ./cmd/posse
@@ -571,6 +571,39 @@ QA_IDENTITY_PINS  := TestQAIdentityLiteralsNeverAppearInATrackedPath|TestIdentit
 QA_OPS_PINS       := TestQAEveryOpsHitInTrackedMarkdownIsRuled|TestQAOpsShapeTableCanStillSayNo|TestInstancePathFormNeverAppearsInTrackedContentUndispositioned|TestQAInstancePathCensusCanStillSayNo
 QA_EXECWRITE_PINS := TestQATreeGoFilesWriteExecutablesUnderTheForkLock
 
+# THE ONE-PACKAGE CENSUSES (ranger-base-m94g2 decided, ranger-base-na4rm
+# doored). A pin in internal/posse that ENUMERATES its own package directory
+# — `os.ReadDir(".")`, `filepath.Glob("*.go")` — reads a file set it does not
+# spell, so a bead that adds a file to that package reds it without ever
+# having read it, and the ~950s arm run is its only route. That is the class
+# in all three parts, and the name ("a pin whose subject is the TREE") is not
+# its operative key: whether the reading enumerates is, which is the same key
+# the internal/treepins half has been derived on since ranger-base-g6sb1.
+# The decision, both sides of it: docs/notes.d/ranger-base-m94g2.md.
+#
+# THREE DOORS FOR ONE SUBJECT, split by BUILD TAG and by nothing else. Seven
+# of the fifteen live in posse_arm2 or posse_arm3, and a `go test -run` over a
+# name that is not in the build exits 0 — so one untagged door would stand
+# green in front of seven pins it cannot select (armtags_qa_test.go arm 4,
+# which now checks each door pin against the arm ITS door names). The tagged
+# doors are the first in the register to pass `-tags`; the precedent for the
+# line is test-arm2/test-arm3, which carry a `-run` door before their tagged
+# internal/posse line (ranger-base-p1r17).
+#
+# COST, MEASURED 2026-10-31 (ranger-base-na4rm, `make` itself included):
+# 14.6s/11.0s/13.4s cold and 2.9s/3.3s/2.8s warm — 39.1s and 9.1s over the
+# three — at a one-minute load average of 35.5 to 43.0. Almost all of it is
+# linking each arm's test binary: the fifteen pins report 2.7s between them.
+# ranger-base-m94g2 read ~40s and ~5.7s over fourteen of them without `make`,
+# which is the same answer. A seat that ran only arm 1 pays about 26s more on
+# a `make tree-check` because the two tagged binaries are cold; a seat that
+# ran `make test` pays the linking once either way.
+# Type the untagged one when you add or edit a .go file in internal/posse;
+# type the tagged one for the arm your file carries.
+QA_PKGCENSUS_PINS      := TestNoSecondReadOfARuntimeHomeVariable|TestQAEverySandboxProbeFileIsGated|TestQANoEventSubscriptionRemainsInInternalPosse|TestQANoInferredIntentMechanismRemainsInInternalPosse|TestQANoLaunchPathSpellsTheSeatbeltWallPredicateItself|TestQANoProductGitDiffReaderIsBare|TestQAOneThrottleOnlyWatchArmsTheRefill|TestQAProcessNoticesResolveThroughTheDeclaredSeams
+QA_PKGCENSUS_ARM2_PINS := TestQAEveryCountedSkipReasonHasAReportingSite|TestQAEveryTestBinaryReExecKeepsTheChildATestBinary|TestQAOnlyWorktreeGoWritesAMergeRefusal
+QA_PKGCENSUS_ARM3_PINS := TestBackupHasNoOverride|TestQAOneDoorForTheReportedReadingAndItNamesNoRuntime|TestQAPosseNeverWritesGroksTrustTable|TestQAWatchStreamWritesGoThroughTheDispatcher
+
 # The SECOND package in the class (ranger-base-g6sb1). internal/treepins is
 # 589.965s whole — the same wall internal/posse is, one package over — so a
 # tree-wide pin living there is just as unreachable, and until this bead
@@ -598,7 +631,7 @@ QA_EXECWRITE_PINS := TestQATreeGoFilesWriteExecutablesUnderTheForkLock
 # door re-runs the TOOL the way fmt-check does, and the two cannot disagree.
 QA_NOTES_PINS     := TestNotesFragmentIndexIsCurrent
 QA_ADR_PINS       := TestADRRecordsNameTheLivePackageDirectory|TestADRSweptRecordsStillCiteTheLiveDirectory|TestADRCitedGoFilesResolveOrAreDeclared|TestADRCitationCheckCanFail|TestADRCitationDeclarationsExemptOnlyWhatTheyDeclare|TestADRCitationCorpusReadsTheExecutableSupplements|TestADR0015NamesTheHookCommitPinAndItDoesWhatItSays
-QA_CORPUS_PINS    := TestOneCredentialAcquirerAndNoOther|TestNoNewShadowPredicate|TestNoBdCloseVerbReachableFromDispatch|TestPaneModeReadingDecidesNothing|TestNoShippedScriptAcquiresACredential|TestQANoTestShellsRealBdWithoutStoppingItsDaemon|TestQAEveryBoundedChildNamesItsWaitDelay|TestQATheMultiplexerSlotIsTheOnlyRouteToTheHerdrClient|TestQAEveryHerdrClientHolderStillHoldsIt|TestQAFixtureRuntimeExesResolveToNothingOnThisBox|TestQATheGofmtDoorReachesEveryGoFile|TestQAEveryGitInitInThePosseTestsSitsOnATolerantRoot|TestQATheTolerantTempDirWrapperCompilesInEveryArm|TestQANoMakefilePrereqLineReadAsBytesOutsideMkPrereqs|TestQAParallelClearanceDoesNotWaiveAReasonNobodyCleared|TestNoUnswappedInternalRhqCommentsOutsideFrozenRecords|TestRhqLeftoverExemptionsStillNameRealLines|TestQANoShippedPosseCallHandsBdAStoreSelectingFlag|TestKeychainReadIsExecdFromExactlyOneFile|TestWallRenderSourcesNameEveryRenderedDoNotEditSite|TestEveryRenderedDoNotEditSiteNamesItsRenderer|TestLaunchCheckSourcesNameEveryParityDeciderAndRuntimeDeclarer|TestLaunchCheckSourcesHoldNothingTheDerivationCannotSee|TestQAEveryPosseTestFileIsSharedOrInANamedArm|TestQAEveryMakefileDoorPinIsReachableInTheDefaultArm|TestQAEverySuiteArmTypeChecks|TestQAEveryProtocolChildRunsOutsideTheGates|TestQATheEnvBinderDerivationFindsThisTreesBinders
+QA_CORPUS_PINS    := TestOneCredentialAcquirerAndNoOther|TestNoNewShadowPredicate|TestNoBdCloseVerbReachableFromDispatch|TestPaneModeReadingDecidesNothing|TestNoShippedScriptAcquiresACredential|TestQANoTestShellsRealBdWithoutStoppingItsDaemon|TestQAEveryBoundedChildNamesItsWaitDelay|TestQATheMultiplexerSlotIsTheOnlyRouteToTheHerdrClient|TestQAEveryHerdrClientHolderStillHoldsIt|TestQAFixtureRuntimeExesResolveToNothingOnThisBox|TestQATheGofmtDoorReachesEveryGoFile|TestQAEveryGitInitInThePosseTestsSitsOnATolerantRoot|TestQATheTolerantTempDirWrapperCompilesInEveryArm|TestQANoMakefilePrereqLineReadAsBytesOutsideMkPrereqs|TestQAParallelClearanceDoesNotWaiveAReasonNobodyCleared|TestNoUnswappedInternalRhqCommentsOutsideFrozenRecords|TestRhqLeftoverExemptionsStillNameRealLines|TestQANoShippedPosseCallHandsBdAStoreSelectingFlag|TestKeychainReadIsExecdFromExactlyOneFile|TestWallRenderSourcesNameEveryRenderedDoNotEditSite|TestEveryRenderedDoNotEditSiteNamesItsRenderer|TestLaunchCheckSourcesNameEveryParityDeciderAndRuntimeDeclarer|TestLaunchCheckSourcesHoldNothingTheDerivationCannotSee|TestQAEveryPosseTestFileIsSharedOrInANamedArm|TestQAEveryMakefileDoorPinIsReachableInItsDoorsArm|TestQAEverySuiteArmTypeChecks|TestQAEveryProtocolChildRunsOutsideTheGates|TestQATheEnvBinderDerivationFindsThisTreesBinders
 QA_REGISTER_PINS  := TestTreePinsRunFromModuleRoot|TestQAEveryTreeWidePinHasADoor|TestQAEveryTreePathHandedThroughAParameterIsDerived|TestQAOneRepoRootHelperInTheTestPackage|TestQATheTreeWideDoorsReportRealDrift|TestQAMakeTestOpensTheTreeWideDoors|TestQAEveryTrackedProgramATreePinRunsIsDispositioned|TestQATheTreepinsEnumerationRuleMatchesWhatItClaims|TestQAEveryTreepinsDoorFilterNamesItsPins|TestQATheHeadCommentsPinAndDoorCountsAreTheMakefiles
 QA_SCRIPTS_PINS   := TestQANoEntryPointRunsGoTestOnTheDefaultTimeout|TestQABoxCheckCensusCoversEveryVerifyTarget|TestQABoxCheckCensusCoversEveryVerifyScript|TestQANoAssertionArmDecidesThroughAForkedMatcher|TestQAEveryBrewNamingScriptIsRosteredOrExempt
 QA_PID_PINS       := TestShippedPIDsCarryTheNarrowedHookRows|TestShippedPIDsLetBeadsOwnHooksRun
@@ -737,10 +770,24 @@ execwrite-check:
 ops-check:
 	$(GOBIN) test ./internal/posse -timeout 15m -count=1 -run '^($(QA_OPS_PINS))$$'
 
+# The one-package censuses over internal/posse's own sources, one door per
+# build arm. The variables above say why there are three and what they cost.
+# The two tagged lines are the only doors in the register that pass `-tags`,
+# and they have to: their pins are compiled out of the default build, so an
+# untagged `-run` over them selects nothing and prints `ok`.
+pkgcensus-check:
+	$(GOBIN) test ./internal/posse -timeout 15m -count=1 -run '^($(QA_PKGCENSUS_PINS))$$'
+
+pkgcensus-arm2-check:
+	$(GOBIN) test -tags posse_arm2 ./internal/posse -timeout 15m -count=1 -run '^($(QA_PKGCENSUS_ARM2_PINS))$$'
+
+pkgcensus-arm3-check:
+	$(GOBIN) test -tags posse_arm3 ./internal/posse -timeout 15m -count=1 -run '^($(QA_PKGCENSUS_ARM3_PINS))$$'
+
 # The six doors into internal/treepins (ranger-base-g6sb1). Same class, same
 # reason, one package over: internal/treepins is 589.965s whole, so a seat
 # runs a `-run` filter there too and a tree-wide pin in it is nobody's
-# subject. These run ./internal/treepins; the eight above run ./internal/posse.
+# subject. These run ./internal/treepins; the doors above run ./internal/posse.
 
 # The notes-fragment index. The ONE door here that is a tool rather than a
 # filter, and it earns that the way fmt-check does: the pin's entire body is
@@ -844,7 +891,7 @@ pid-check:
 # treewidedoor_qa_test.go's head comment says it once, derived from this
 # file by its arm 4, and a second copy here would be the second place to
 # drift.
-tree-check: fmt-check crew-check seed-check history-check doc-check identity-check ops-check execwrite-check notes-check adr-check corpus-check register-check scripts-check pid-check
+tree-check: fmt-check crew-check seed-check history-check doc-check identity-check ops-check execwrite-check pkgcensus-check pkgcensus-arm2-check pkgcensus-arm3-check notes-check adr-check corpus-check register-check scripts-check pid-check
 
 # THE UNFILTERED TREE-PIN RUN, THROUGH THE WRAPPER SO IT QUEUES
 # (ranger-base-1a0hi). `tree-check` above is the doors a seat types after a

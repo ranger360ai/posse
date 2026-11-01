@@ -28,17 +28,25 @@ package posse
 // AND IT IS THE PACKAGE'S OWN SOURCES, which ranger-base-m94g2 decided is in
 // the tree-wide class the Makefile doors: a census discovers its file set, so
 // a bead that adds a re-exec site here reds this pin without having read it,
-// and the ~950s arm run is its only route. This pin is one of fourteen in
-// internal/posse, MEASURED 2026-10-31.
+// and the ~950s arm run is its only route. This pin is one of fifteen in
+// internal/posse — fourteen when the decision was written, and the fifteenth
+// (TestNoSecondReadOfARuntimeHomeVariable) landed hours later the same day,
+// which is why ranger-base-na4rm derives the membership instead of listing
+// it.
 //
-// It is not doored yet, and the two reasons are mechanism rather than doubt. A
-// door variable may only name a test treewidedoor_qa_test.go DERIVES, and the
-// posse half of that derivation keys on a test COMPUTING the repo root, which
-// a census does not; and a door's `-run` carries no `-tags`, which this file's
-// `posse_arm2` build line puts it outside of. Both changes are
-// ranger-base-na4rm. The decision and the measured cost:
+// IT IS DOORED NOW: `make pkgcensus-arm2-check`, under
+// $(QA_PKGCENSUS_ARM2_PINS) (ranger-base-na4rm). Both reasons it was not
+// were mechanism rather than doubt, and both are gone. A door variable may
+// only name a test treewidedoor_qa_test.go DERIVES, and the posse half of
+// that derivation now carries the enumeration seed its internal/treepins
+// half has had since ranger-base-g6sb1 — the same code, a second caller. And
+// a door's `-run` carried no `-tags`, which this file's `posse_arm2` build
+// line put it outside of; two doors carry one now, because seven of the
+// fifteen are in this position and moving seven files to suit their doors is
+// the larger change. The decision and the measured cost:
 // docs/notes.d/ranger-base-m94g2.md. The census and the population:
-// docs/notes.d/ranger-base-kkneb.md.
+// docs/notes.d/ranger-base-kkneb.md. The landing:
+// docs/notes.d/ranger-base-na4rm.md.
 
 import (
 	"os"

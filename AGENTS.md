@@ -350,6 +350,9 @@ bd sync               # Sync with git
   make identity-check  ~0.5s   this box's identity literals, in paths and content
   make ops-check       ~2s     ops residue and live instance paths in tracked files
   make execwrite-check ~0.2s   executable writes routed through WriteExecutable
+  make pkgcensus-check ~2.9s   censuses over internal/posse's own sources (arm 1)
+  make pkgcensus-arm2-check    the same, for what only -tags posse_arm2 builds
+  make pkgcensus-arm3-check    the same, for what only -tags posse_arm3 builds
   make notes-check     ~0.3s   docs/notes.d/README.md lists every fragment (a TOOL)
   make adr-check       ~1.6s   ADR citations resolve, exemptions name real files
   make corpus-check      ~5s   censuses over this repo's own .go, test and script sources
@@ -358,19 +361,33 @@ bd sync               # Sync with git
   make pid-check        ~10s   the shipped PIDs under examples/agents/
   ```
 
-  **`make tree-check` is all of them, 81-89s warm over three runs and
-  92.6s cold** (MEASURED 2026-10-31, ranger-base-3e68k: 87s, 81s and 89s in
+  **`make tree-check` is all of them, 55-56s warm over three runs on a quiet
+  box and 92.6s cold** (MEASURED 2026-10-31, ranger-base-h1q5o: 56s, 55s and
+  55s in that order, at a one-minute load average of 4.56, 3.70 and 3.25 with
+  no suite slot held by anyone, and 72s on the run before those three with
+  two of the test binaries cold — the merge-back that landed
+  ranger-base-na4rm's work onto a main that had meanwhile landed
+  ranger-base-8yv7z's, so the first reading of the class as it LANDS rather
+  than as either side of that merge had it. A 1s spread, the tightest this
+  command has produced, on the quietest box it has been read on and over the
+  largest class it has run — the class is the one thing the wall does not
+  track. An hour earlier the same command read 68-106s at a load of 9-11
+  (ranger-base-8yv7z) and 60-62s at a load of 6-15 (ranger-base-na4rm), over
+  that merge's two sides. It read 81-89s warm at a load of 25-28
+  (MEASURED 2026-10-31, ranger-base-3e68k: 87s, 81s and 89s in
   that order, at a one-minute load average of 25.12, 27.90 and 26.08 with
   both suite slots held by sibling seats for the first two runs and one for
-  the third — the merge-back that landed ranger-base-pyl22's new pins onto a
-  main that had meanwhile landed ranger-base-bm6j8's, so the first reading of
-  the class at its real size. The same command, same code, an hour earlier
+  the third — the merge-back that landed ranger-base-pyl22's new work onto a
+  main that had meanwhile landed ranger-base-bm6j8's, the first reading of
+  that class at its real size. The same command, same code, an hour earlier
   read 62s, 127s and 146s at a load of 23.45, 13.98 and 91.60 — an 84s
   spread against this 8s one, so what the spread tracks is how much the load
-  MOVES and not how high it is. Price it at ninety seconds when the box is
-  steady, whatever level it is steady at, and expect two and a half minutes
-  when it is not; the pins those two beads added cost under a second between
-  them, so neither spread is theirs. Earlier the same day the command read
+  MOVES and not how high it is. Where the LEVEL shows is the floor it moves
+  around: every reading taken under a load of 16 is 55-62s and the steady
+  25-28 one is 81-89s, so price the command at a minute on a quiet box and at
+  ninety seconds on a busy but steady one, and expect two and a half minutes
+  when the load is moving. The work those two beads added cost under a second
+  between them, so neither spread is theirs. Earlier the same day the command read
   74.5-172.1s at a load of 57-95 (ranger-base-pyl22) and 57.0-57.7s at a load
   of 10-31 (ranger-base-v3tt4), over classes smaller by what those two beads
   added. The cold reading is

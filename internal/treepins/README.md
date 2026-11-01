@@ -44,6 +44,9 @@ pin.
 | `make identity-check` | this box's identity literals, in paths and content |
 | `make ops-check` | ops residue and live instance paths in tracked files |
 | `make execwrite-check` | executable writes routed through `WriteExecutable` |
+| `make pkgcensus-check` | censuses over `internal/posse`'s own sources (arm 1 and shared) |
+| `make pkgcensus-arm2-check` | the same, for the pins built only under `posse_arm2` |
+| `make pkgcensus-arm3-check` | the same, for the pins built only under `posse_arm3` |
 | `make notes-check` | `docs/notes.d/README.md` lists every fragment (a tool) |
 | `make adr-check` | ADR citations resolve, exemptions name real files |
 | `make corpus-check` | censuses over this repository's own Go, test and shipped-runnable sources |

@@ -291,7 +291,7 @@ package treepins
 //	                                              []string{"internal","cmd"},
 //	                                              in the test body)
 //	TestQAEveryPosseTestFileIsSharedOrInANamedArm make corpus-check
-//	TestQAEveryMakefileDoorPinIsReachableInTheDefaultArm
+//	TestQAEveryMakefileDoorPinIsReachableInItsDoorsArm
 //	                                              make corpus-check
 //	TestQAEverySuiteArmTypeChecks                 make corpus-check
 //	                                              (all three read every test
@@ -414,11 +414,13 @@ package treepins
 //
 // 1.26s between the three (0.00s, 1.21s and 0.05s, at a one-minute load
 // average of 97.58). The shelf pin also MOVED ARM to get its door: it was in
-// posse_arm2, a door's `-run` takes no `-tags`, and a filter that matches
+// posse_arm2, a door's `-run` took no `-tags`, and a filter that matches
 // nothing exits 0 — so it is in internal/posse/shelfpidlint_qa_test.go, arm
-// 1, rather than teaching one door to pass a tag. That tag question is open
-// for seven other pins and is ranger-base-m94g2's to answer; nothing here
-// prejudges it, because one test moving files is not a mechanism.
+// 1, rather than teaching one door to pass a tag. That tag question was open
+// for seven other pins and was ranger-base-m94g2's to answer; it is answered
+// in the paragraph below, the other way, and the file stays where nt0pi put
+// it. Both readings are right at their own size: seven pins across two arms
+// is a mechanism, one pin is a `git mv`.
 //
 // and EIGHT more, which are the same defect ONE HOP OUT (ranger-base-8yv7z).
 // nt0pi fixed the climb spelled AT the walker and fenced that spelling, and
@@ -531,23 +533,167 @@ package treepins
 // named path JOINED onto a bare-root identifier, which is the hidden arm's
 // shape and is scored by its dataflow.)
 //
-// and `make tree-check` is all of them — ninety-four pins and fourteen doors,
-// 68-106s over three warm runs at the full ninety-four (MEASURED 2026-10-31,
-// ranger-base-8yv7z: 81s, 68s and 106s in that order, with a one-minute load
-// average of 11.15, 9.45 and 10.76 before the three and BOTH suite slots held
-// by sibling seats throughout. A 38s spread read at a load that never left
-// 9-11 and barely moved across the three — so this reading says the spread is
-// not the load's LEVEL and not its MOVEMENT either, which is as far as the
-// pair of readings one entry below could take it; what it is remains
-// unmeasured, and the honest advice is still the quiet end of the range plus
-// room for half as much again. The eight pins this bead adds report
-// 0.464-0.514s measured alone, over three runs, so none of a 38s spread is
-// theirs), 59s warm at eighty-six of
+// and FIFTEEN more, which are the ONE-PACKAGE CENSUSES — and the first
+// members admitted by a DECISION rather than by a defect
+// (ranger-base-m94g2 decided, ranger-base-na4rm doored). A pin in
+// internal/posse that enumerates its OWN package directory —
+// `os.ReadDir(".")`, `filepath.Glob("*.go")` — computes no root and climbs
+// nowhere, so it is outside every rule above for a reason none of them
+// states: not how it spells the root, but that it does not need one. The
+// class's NAME argues them out ("a pin whose subject is the TREE": a package
+// directory is one directory) and the class's operative KEY argues them in,
+// which is the key this file already adopted in as many words for its
+// internal/treepins half — whether the file set is SPELLED in the test or
+// DISCOVERED. Discovered: a bead that adds a file to internal/posse, having
+// never read the census, reds it, and the ~950s arm run is its only route.
+// Both sides of that argument, and why the narrower blast radius is not a
+// reason to decide the other way, are in docs/notes.d/ranger-base-m94g2.md.
+//
+// THE RULE IS THE TREEPINS RULE WITH A SECOND CALLER, and no new code:
+// twdAnalyze has computed relEnum for both packages since
+// ranger-base-g6sb1, and this half carried it unused — the only thing that
+// differs between the packages is what a relative literal MEANS, the repo
+// root over there (that TestMain chdirs) and the package directory here.
+// Which is also why these compose with ranger-base-nt0pi's three climbs
+// rather than subsuming them: twdRelTreePath refuses a `../` prefix on
+// purpose, those three derive from f.ascent, and the seed reaches none of
+// them (MEASURED 2026-10-31, over all three).
+//
+//	TestNoSecondReadOfARuntimeHomeVariable        make pkgcensus-check
+//	TestQAEverySandboxProbeFileIsGated            make pkgcensus-check
+//	TestQANoEventSubscriptionRemainsInInternalPosse
+//	                                              make pkgcensus-check
+//	TestQANoInferredIntentMechanismRemainsInInternalPosse
+//	                                              make pkgcensus-check
+//	TestQANoLaunchPathSpellsTheSeatbeltWallPredicateItself
+//	                                              make pkgcensus-check
+//	TestQANoProductGitDiffReaderIsBare            make pkgcensus-check
+//	TestQAOneThrottleOnlyWatchArmsTheRefill       make pkgcensus-check
+//	TestQAProcessNoticesResolveThroughTheDeclaredSeams
+//	                                              make pkgcensus-check
+//	TestQAEveryCountedSkipReasonHasAReportingSite make pkgcensus-arm2-check
+//	TestQAEveryTestBinaryReExecKeepsTheChildATestBinary
+//	                                              make pkgcensus-arm2-check
+//	TestQAOnlyWorktreeGoWritesAMergeRefusal       make pkgcensus-arm2-check
+//	TestBackupHasNoOverride                       make pkgcensus-arm3-check
+//	TestQAOneDoorForTheReportedReadingAndItNamesNoRuntime
+//	                                              make pkgcensus-arm3-check
+//	TestQAPosseNeverWritesGroksTrustTable         make pkgcensus-arm3-check
+//	TestQAWatchStreamWritesGoThroughTheDispatcher make pkgcensus-arm3-check
+//	                                              (all fifteen
+//	                                              ranger-base-na4rm)
+//
+// THREE DOORS FOR ONE SUBJECT, split by BUILD TAG and by nothing else — and
+// they are the first doors in this register to carry `-tags`. Seven of the
+// fifteen are compiled out of arm 1, a door's `-run` ran with no tag, and a
+// `go test -run` over a name that is not in the build exits 0: an untagged
+// door would have stood green in front of seven pins it could not select,
+// which is rot class 4 of armtags_qa_test.go doored INTO existence. That arm
+// asks each door pin for the arm its own door names now, from this file's
+// twdDoors rows, and arm 1 above holds each recipe's `-tags` to that same
+// number — two halves, because this one alone would pass a tagged door that
+// quietly lost its tag. The precedent for the line is test-arm2/test-arm3,
+// which carry a `-run` door before their tagged internal/posse line
+// (ranger-base-p1r17).
+//
+// AND IT IS A DERIVED MEMBERSHIP, not fifteen rows in twdDoorHolders. That
+// map is the one way into a door variable that does not go through the
+// derivation, its own comment calls it the parking spot this file keeps
+// warning about, and all three of its rows are there for one cause — a pin
+// that reads named files and enumerates nothing. A census that enumerates is
+// the opposite case, and fifteen rows there would have been the register
+// conceding the class it exists to derive.
+//
+// THE SEED ALSO FOUND ONE THE DECISION DID NOT: fifteen, against the
+// fourteen the record lists. The fifteenth is
+// TestNoSecondReadOfARuntimeHomeVariable (ranger-base-uz4cs, landed the same
+// day), whose own head comment had just written the OLD answer down — "this
+// one reads its own directory and stays out of it" — which is the fourth
+// carrier of that scoping and the reason the decision needed a derivation
+// rather than a list. It says the new answer now. And the thing the decision
+// told this bead to look for and not waive — a census globbing package-local
+// FIXTURES rather than sources, a member by the key and perhaps not by
+// intent — is not there: MEASURED 2026-10-31, none of the fifteen chdirs, so
+// every `.`, `*.go` and `*_test.go` among them is the package's own sources
+// read from the cwd `go test` installs. Zero to disposition.
+//
+// 39.1s cold and 9.1s warm over the three doors (MEASURED 2026-10-31, this
+// bead, `make` itself included: 14.6s/11.0s/13.4s cold and 2.9s/3.3s/2.8s
+// warm, at a one-minute load average of 35.5 rising to 43.0). Almost all of
+// it is linking each arm's test binary — the fifteen pins report 2.7s
+// between them — which agrees with ranger-base-m94g2's own ~40s/~5.7s over
+// fourteen of them, and says the thing that decides how to read these three
+// numbers: a seat that runs `make test` pays the linking once either way,
+// and a seat that ran only arm 1 pays about 26s more for the two tagged
+// doors because their binaries are cold.
+//
+// MUTATION-CHECKED, five of them, because what this bead added is two RULES
+// and a FLOOR and all three are assertions about absence (MEASURED
+// 2026-10-31, on an isolated copy of the tree so a sibling suite was not
+// reddened by the planting):
+//
+//  1. a posse_arm2 pin moved into the UNTAGGED door variable reds arm 4
+//     alone — the door now names a pin its own build cannot select.
+//  2. pkgcensus-arm2-check losing its `-tags` reds arm 1 alone, and arm 4
+//     stays green: arm 4 reads the door's `arm` and the pin is still in
+//     arm 2, so it has nothing to object to. That pair is why the tag is
+//     checked in two places and not one.
+//  3. the arm-3 door relabelled `arm: 1` in twdDoors reds arm 1 AND arm 4 —
+//     the register and the recipe disagreeing, read from both ends.
+//  4. the union's relEnum seed going quiet reds arm 2, on fifteen doors it
+//     can no longer justify. The mutation is the seed's PREDICATE and not
+//     the line, because deleting the line is a compile error rather than a
+//     red — and a predicate that stops matching is what the two earlier
+//     widenings of this half actually looked like.
+//  5. twdPosseEnumOnlyTests going quiet, with the union untouched, reds arm
+//     2 through the new floor alone and with the floor's own message. That
+//     is the case the floor exists for and the one no other arm can see.
+//
+// and `make tree-check` is all of them — one hundred and nine pins and
+// seventeen doors, 55-56s over three warm runs at the full one hundred and
+// nine (MEASURED 2026-10-31, ranger-base-h1q5o: 56s, 55s and 55s in that
+// order, at a one-minute load average of 4.56, 3.70 and 3.25 before the
+// three and no suite slot held by anyone; 72s on the run before them, with
+// the two tagged binaries cold. This is the merge-back that landed
+// ranger-base-na4rm's fifteen onto a main that had meanwhile landed
+// ranger-base-8yv7z's eight, so it is the first reading of the class as it
+// LANDS rather than as either side of the merge had it. The largest class
+// this command has ever run and the FASTEST range ever read over it: a 1s
+// spread, on the quietest box it has been read on. Which is the "ordered by
+// nothing in it" finding at the end of its argument — three doors and
+// twenty-six pins have joined the class since the 81-89s below and the
+// command got twenty-five seconds FASTER, so nothing in the range is the
+// class, and a seat pricing this command reads the BOX and not this
+// sentence's number), 60-62s over three warm runs at one hundred and one of
+// those pins — na4rm's own branch, which is this class without 8yv7z's eight
+// and never was main (MEASURED 2026-10-31, ranger-base-na4rm: 61.8s, 60.2s
+// and 62.0s in that order, at a one-minute
+// load average of 15.28, 9.49 and 6.90 before the three and no suite slot
+// held by anyone. The first reading over a class with a tagged door in it,
+// and at the QUIET END of every range below, two seconds apart across a load
+// average that halved. The class grew by fifteen pins and three `go test`
+// starts and the command came in twenty seconds FASTER than the 81-89s read
+// at eighty-three of them, which is the "ordered by nothing in it" finding
+// arriving once more and from the quiet end: what the spread tracks is how
+// much the box MOVES, and this box was steady. The three new doors cost 9.1s
+// warm between them, measured alone, and the two tagged ones are 26s of that
+// cold), 68-106s over three warm runs at ninety-four of them (MEASURED
+// 2026-10-31, ranger-base-8yv7z: 81s, 68s and 106s in that order, with a
+// one-minute load average of 11.15, 9.45 and 10.76 before the three and BOTH
+// suite slots held by sibling seats throughout. A 38s spread read at a load
+// that never left 9-11 and barely moved across the three — so that reading
+// says the spread is not the load's LEVEL and not its MOVEMENT either, which
+// is as far as the pair of readings two entries below could take it; what it
+// is remains unmeasured, and the honest advice is still the quiet end of the
+// range plus room for half as much again. The eight pins that bead adds
+// report 0.464-0.514s measured alone, over three runs, so none of a 38s
+// spread is theirs), 59s warm at eighty-six of
 // those pins (MEASURED 2026-10-31, ranger-base-nt0pi:
 // one warm run at a one-minute load average of 5.62, the quietest box this
-// command has been read on, and the first reading taken over that whole
-// class), and 81-89s over three warm runs taken at eighty-three of those
-// pins (MEASURED 2026-10-31, ranger-base-3e68k: 87s, 81s and 89s in that
+// command had been read on until the entry above, and the first reading taken
+// over that whole class), and 81-89s over three warm runs taken at
+// eighty-three of those pins (MEASURED 2026-10-31, ranger-base-3e68k: 87s,
+// 81s and 89s in that
 // order, with a one-minute load average of 25.12, 27.90 and 26.08 before the
 // three, both suite slots held by sibling seats for the first two and one
 // for the third. This is the
@@ -813,27 +959,44 @@ type twdDoor struct {
 	// would be a second implementation that can go narrower than the pin
 	// while both look green.
 	tool bool
+	// arm: the internal/posse build arm this door's `-tags` selects, and 1
+	// for a door that passes no tag at all — which every door did until
+	// ranger-base-na4rm. It is here rather than in armtags_qa_test.go
+	// because it is one fact about a door and this is the door table: arm 4
+	// over there derives its (variable, arm) pairs from these rows, so the
+	// hand-kept list that went a door short until ranger-base-6cznr cannot
+	// drift again, and arm 1 below holds the Makefile recipe to the same
+	// number. internal/treepins is one binary with no arm tags, so every
+	// door into it is 1 by construction.
+	arm int
 }
 
 // The Makefile variables that hold the class. One per door, plus the pins
 // whose door is a tool rather than a filter — the union is what arm 2
 // measures against the two packages.
 var twdDoors = []twdDoor{
-	{"QA_CREW_PINS", "crew-check", twdPossePkg, false},
-	{"QA_TOOL_PINS", "fmt-check", twdPossePkg, true},
-	{"QA_SEED_PINS", "seed-check", twdPossePkg, false},
-	{"QA_HISTORY_PINS", "history-check", twdPossePkg, false},
-	{"QA_DOC_PINS", "doc-check", twdPossePkg, false},
-	{"QA_IDENTITY_PINS", "identity-check", twdPossePkg, false},
-	{"QA_OPS_PINS", "ops-check", twdPossePkg, false},
-	{"QA_EXECWRITE_PINS", "execwrite-check", twdPossePkg, false},
+	{"QA_CREW_PINS", "crew-check", twdPossePkg, false, 1},
+	{"QA_TOOL_PINS", "fmt-check", twdPossePkg, true, 1},
+	{"QA_SEED_PINS", "seed-check", twdPossePkg, false, 1},
+	{"QA_HISTORY_PINS", "history-check", twdPossePkg, false, 1},
+	{"QA_DOC_PINS", "doc-check", twdPossePkg, false, 1},
+	{"QA_IDENTITY_PINS", "identity-check", twdPossePkg, false, 1},
+	{"QA_OPS_PINS", "ops-check", twdPossePkg, false, 1},
+	{"QA_EXECWRITE_PINS", "execwrite-check", twdPossePkg, false, 1},
+	// The one-package censuses (ranger-base-na4rm). One subject, three
+	// doors, split by BUILD TAG and by nothing else: seven of the fifteen
+	// are compiled out of the default build, and a `go test -run` over a
+	// name that is not in the build exits 0.
+	{"QA_PKGCENSUS_PINS", "pkgcensus-check", twdPossePkg, false, 1},
+	{"QA_PKGCENSUS_ARM2_PINS", "pkgcensus-arm2-check", twdPossePkg, false, 2},
+	{"QA_PKGCENSUS_ARM3_PINS", "pkgcensus-arm3-check", twdPossePkg, false, 3},
 	// internal/treepins (ranger-base-g6sb1).
-	{"QA_NOTES_PINS", "notes-check", twdTreepinsPkg, true},
-	{"QA_ADR_PINS", "adr-check", twdTreepinsPkg, false},
-	{"QA_CORPUS_PINS", "corpus-check", twdTreepinsPkg, false},
-	{"QA_REGISTER_PINS", "register-check", twdTreepinsPkg, false},
-	{"QA_SCRIPTS_PINS", "scripts-check", twdTreepinsPkg, false},
-	{"QA_PID_PINS", "pid-check", twdTreepinsPkg, false},
+	{"QA_NOTES_PINS", "notes-check", twdTreepinsPkg, true, 1},
+	{"QA_ADR_PINS", "adr-check", twdTreepinsPkg, false, 1},
+	{"QA_CORPUS_PINS", "corpus-check", twdTreepinsPkg, false, 1},
+	{"QA_REGISTER_PINS", "register-check", twdTreepinsPkg, false, 1},
+	{"QA_SCRIPTS_PINS", "scripts-check", twdTreepinsPkg, false, 1},
+	{"QA_PID_PINS", "pid-check", twdTreepinsPkg, false, 1},
 }
 
 // twdPinVars is the variable names alone, derived so the two lists cannot
@@ -990,6 +1153,20 @@ func TestQAMakeTestOpensTheTreeWideDoors(t *testing.T) {
 		}
 		if !strings.Contains(recipe, "./"+door.pkg) {
 			t.Errorf("`make %s` no longer names ./%s — a package-tree run of it is the wall this door exists to avoid:\n%s", door.target, door.pkg, recipe)
+		}
+		// And the door's `-tags`, both ways (ranger-base-na4rm). A door
+		// that passes no tag runs the DEFAULT build, so a pin of its own
+		// that is compiled out of it is selected by nothing and the door
+		// exits 0 — which is what armtags_qa_test.go's arm 4 holds, against
+		// this same `arm` number. Here is the other half of that pair: the
+		// recipe has to ASK for the arm the register says it runs, or arm 4
+		// is checking its pins against a build the Makefile never selects.
+		if door.arm == 1 {
+			if strings.Contains(recipe, "-tags ") {
+				t.Errorf("`make %s` passes `-tags` and twdDoors says it runs arm 1, the default build — so arm 4 is checking this door's pins against a build this recipe does not run:\n%s", door.target, recipe)
+			}
+		} else if tag := armTagFor(door.arm); !strings.Contains(recipe, "-tags "+tag+" ") {
+			t.Errorf("`make %s` does not pass `-tags %s`, and twdDoors says its pins live in arm %d — a `go test -run` over a name that is not in the build exits 0, so this door stands green in front of every pin it names:\n%s", door.target, tag, door.arm, recipe)
 		}
 		if strings.Contains(recipe, "./...") {
 			t.Errorf("`make %s` runs the package tree, which is the wall it is a door through:\n%s", door.target, recipe)
@@ -2279,7 +2456,7 @@ func twdAnalyze(fn *ast.FuncDecl, where string, pkg *twdPkgEnv) *twdFunc {
 	return f
 }
 
-// twdTreeWideTests returns the tests whose subject is the TREE. Two rules,
+// twdTreeWideTests returns the tests whose subject is the TREE. Three rules,
 // unioned, and the union is deliberate — ranger-base-sx2dq is what a single
 // rule cost:
 //
@@ -2292,6 +2469,18 @@ func twdAnalyze(fn *ast.FuncDecl, where string, pkg *twdPkgEnv) *twdFunc {
 //     root of its own — it calls coxnGoSources, which walks every shipped
 //     .go file — and any file added anywhere can red it. The direct rule
 //     never saw it.
+//   - ENUMERATING (ranger-base-na4rm): the test reaches a body that
+//     enumerates through a relative tree path — relEnum, which is the
+//     internal/treepins rule below with a second caller and no new code.
+//     This is the one rule here with no root in it, and it had to be,
+//     because the members it finds compute none: a one-package census reads
+//     `os.ReadDir(".")` and climbs nowhere. Both root rules were blind to
+//     fifteen pins by construction, and the thing that makes a census a
+//     member is the same thing that makes any of these one — its file set is
+//     DISCOVERED, so a bead that adds a file to the package reds it without
+//     having read it. ranger-base-m94g2 decided that; the floor on this half
+//     alone is in arm 2 (twdPosseEnumOnlyTests), because three rules fail
+//     three ways and a union floor hides any one of them.
 //
 // The reach is only propagated from a ROOTED WALK, not from any function
 // that touches the root: qspSeedScript looks up one path at the root and its
@@ -2309,14 +2498,42 @@ func twdTreeWideTests(t *testing.T) (names []string, funcs int) {
 
 	// Seed the reach with the rooted walkers, then close it over callers.
 	reaches := twdReach(all, func(f *twdFunc) bool { return f.rootedWalk })
+	// And the third seed, which is the SECOND package's rule with a second
+	// caller and no new code (ranger-base-na4rm): a body that enumerates
+	// through a relative tree path. twdAnalyze has computed relEnum for both
+	// packages since ranger-base-g6sb1 and this half carried it unused.
+	enum := twdReach(all, func(f *twdFunc) bool { return len(f.relEnum) > 0 })
 
 	for name, f := range all {
-		if f.test && (f.root || reaches[name]) {
+		if f.test && (f.root || reaches[name] || enum[name]) {
 			names = append(names, name)
 		}
 	}
 	sort.Strings(names)
 	return names, funcs
+}
+
+// twdPosseEnumOnlyTests is the third seed's members alone — the tests in
+// internal/posse that are in the class ONLY because they enumerate, naming no
+// root and reaching no rooted walk.
+//
+// It exists for the reason twdWalkReachingTests and twdTreepinsRootOnlyTests
+// do: the rules fail apart. A relEnum seed that silently stopped matching
+// would leave arm 2's union floor green on the two root rules alone, and
+// fifteen pins would go quiet with no numeral moving anywhere a seat reads.
+func twdPosseEnumOnlyTests(t *testing.T) []string {
+	t.Helper()
+	all, _ := twdParse(t)
+	reaches := twdReach(all, func(f *twdFunc) bool { return f.rootedWalk })
+	enum := twdReach(all, func(f *twdFunc) bool { return len(f.relEnum) > 0 })
+	var out []string
+	for name, f := range all {
+		if f.test && enum[name] && !f.root && !reaches[name] {
+			out = append(out, name)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // ---------------------------------------------------------------------------
@@ -3004,6 +3221,16 @@ func TestQAEveryTreeWidePinHasADoor(t *testing.T) {
 	if reach := twdWalkReachingTests(t); len(reach) < 1 {
 		t.Errorf("no test reaches a rooted walk through a helper (at least TestQANoCodeStringCallsTheDarwinCredentialsFileAStaleLeftover did on 2026-09-04) — half the class rule is matching nothing")
 	}
+	// And the enumeration rule, which is the THIRD seed on this half and the
+	// one with no root in it at all (ranger-base-na4rm): fifteen pins are in
+	// the class only by enumerating their own package directory, so a seed
+	// that stopped matching takes a seventh of the class out while the two
+	// root rules keep the union floor green. Ten rather than fifteen,
+	// because a bead that deletes a census should not have to come here —
+	// what this catches is the SEED going quiet, not the population moving.
+	if enumOnly := twdPosseEnumOnlyTests(t); len(enumOnly) < 10 {
+		t.Errorf("only %d tests in %s are members by enumeration alone (15 on 2026-10-31) — the third seed has stopped matching, and the one-package censuses are back behind the ~950s arm run: %v", len(enumOnly), twdPossePkg, enumOnly)
+	}
 	t.Logf("parsed %d test functions under internal/posse, %d of them tree-wide", funcs, len(names))
 
 	// The second package (ranger-base-g6sb1). Its own floors, because the
@@ -3639,14 +3866,25 @@ func twdSpelled(n int) string {
 		"eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen"}
 	tens := []string{"", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"}
 	switch {
-	case n < 0 || n > 99:
+	case n < 0 || n > 999:
 		return strconv.Itoa(n) // out of the prose range; the pin will name the mismatch
 	case n < 20:
 		return ones[n]
-	case n%10 == 0:
+	case n < 100 && n%10 == 0:
 		return tens[n/10]
-	default:
+	case n < 100:
 		return tens[n/10] + "-" + ones[n%10]
+	// A HUNDRED AND UP (ranger-base-na4rm, which took the class past
+	// ninety-nine). This used to answer with the digits, and the digits are
+	// not a spelling: twdCountClaim's numeral group matches words, so the
+	// one live count sentence would have stopped matching ALTOGETHER and
+	// arm 4 would have failed on "the head comment carries 0 claims" — a
+	// red that names the rule and not the class. The spelling is house
+	// prose: `one hundred and one`, `two hundred`.
+	case n%100 == 0:
+		return ones[n/100] + " hundred"
+	default:
+		return ones[n/100] + " hundred and " + twdSpelled(n%100)
 	}
 }
 
@@ -3683,7 +3921,52 @@ func twdHead(t *testing.T) string {
 // frozen history ("five pins took their root from ...", "five members became
 // thirteen"), and a rule that read those as live claims would red on prose
 // that is true.
-var twdCountClaim = regexp.MustCompile(`([a-z]+(?:-[a-z]+)?) pins and ([a-z]+(?:-[a-z]+)?) doors`)
+//
+// THE NUMERAL IS A PHRASE NOW, not a word (ranger-base-na4rm): past
+// ninety-nine the spelling is `one hundred and one`, three words and an
+// `and`, and the one-word rule this replaced would have matched nothing at
+// all — a count that stopped being held, reported as a comment with no claim
+// in it. What keeps the widening honest is the VOCABULARY: the numeral group
+// is built from twdSpelled's own words rather than from `[a-z]+`, so no run
+// of ordinary prose can be read as a count, and the two cannot disagree
+// about what a numeral looks like. The `pins and ... doors` skeleton is
+// unchanged and is what keeps the frozen history out: "those twelve pins and
+// the rest was the box" has no `doors` after it, and never did.
+var twdCountClaim = regexp.MustCompile(twdNumPhrase + ` pins and ` + twdNumPhrase + ` doors`)
+
+// twdNumPhrase is one spelled numeral, captured: a number word, or several
+// joined by a hyphen or by ` and ` the way twdSpelled joins them. Built from
+// the same words twdSpelled writes, descending so that `one hundred and one`
+// is preferred over the `one` inside it.
+var twdNumPhrase = func() string {
+	var words []string
+	for n := 0; n <= 999; n++ {
+		w := twdSpelled(n)
+		if strings.ContainsAny(w, "0123456789") {
+			continue
+		}
+		for _, part := range strings.FieldsFunc(w, func(r rune) bool { return r == ' ' || r == '-' }) {
+			// `and` is a JOINER in `one hundred and one`, not a number
+			// word: left in the vocabulary it would let the group match a
+			// bare conjunction, and the joiner below spells it anyway.
+			if part == "and" || slices.Contains(words, part) {
+				continue
+			}
+			words = append(words, part)
+		}
+	}
+	// Longest first. Go's regexp picks the match a backtracking search would
+	// have found, so an alternation offering `nine` before `nineteen` reads
+	// the first four letters of `nineteen` and then fails the phrase.
+	sort.Slice(words, func(i, j int) bool {
+		if len(words[i]) != len(words[j]) {
+			return len(words[i]) > len(words[j])
+		}
+		return words[i] < words[j]
+	})
+	word := `(?:` + strings.Join(words, "|") + `)`
+	return `(` + word + `(?:(?:[- ]|\s+and\s+)` + word + `)*)`
+}()
 
 // Arm 4: the head comment's count is the Makefile's count (ranger-base-4jogv).
 //
@@ -4009,8 +4292,12 @@ func twdADRParagraphs(t *testing.T) []string {
 // have reddened a gap rule that took the singular. A count of a class with
 // one member is not a sentence this class has ever written.
 func twdProseCount() *regexp.Regexp {
-	alts := make([]string, 0, 101)
-	for n := 99; n >= 0; n-- { // descending, so `forty-nine` is tried before `forty`
+	// Up past a hundred since ranger-base-na4rm: the class is over
+	// ninety-nine, so `one hundred and one pins` is a count these pages can
+	// now write and a ceiling of 99 would have let it through the one rule
+	// that exists to keep a second copy of the number off them.
+	alts := make([]string, 0, 201)
+	for n := 199; n >= 0; n-- { // descending, so `forty-nine` is tried before `forty`
 		alts = append(alts, regexp.QuoteMeta(twdSpelled(n)))
 	}
 	alts = append(alts, `\d+`)

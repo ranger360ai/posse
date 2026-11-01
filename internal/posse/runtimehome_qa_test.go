@@ -885,9 +885,20 @@ func hvEnvReadsIn(fset *token.FileSet, file *ast.File) []string {
 // derived here instead. SCOPE, stated rather than implied: this package's
 // own non-test .go files, which is where every posse-side reader of these
 // variables lives (cmd/ carries none, measured by the same grep this
-// replaces). Reaching cmd/ would mean climbing to the repo root, which puts
-// a pin in the tree-wide class and wants a Makefile door (AGENTS.md's
-// register); this one reads its own directory and stays out of it.
+// replaces). Reaching cmd/ would mean climbing to the repo root.
+//
+// THAT CLIMB IS NOT WHAT PUTS A PIN IN THE TREE-WIDE CLASS, which the
+// sentence here used to say the other way round — "this one reads its own
+// directory and stays out of it", written the same day ranger-base-m94g2
+// decided it does not. The class's operative key is whether the reading
+// ENUMERATES: `os.ReadDir(".")` discovers its file set, so a bead that adds
+// a .go file to this package reds this pin without ever having read it, and
+// the ~950s arm run is its only route. So it is a tree-wide pin and it has a
+// Makefile door — `make pkgcensus-check`, under $(QA_PKGCENSUS_PINS)
+// (ranger-base-na4rm, which derived it rather than listing it, and found
+// this pin BECAUSE it derived it: the decision's own population was fourteen
+// and this one landed hours later). Both sides of the argument:
+// docs/notes.d/ranger-base-m94g2.md.
 func TestNoSecondReadOfARuntimeHomeVariable(t *testing.T) {
 	t.Parallel() // a parse of this directory's sources: no env, no cwd move
 	ents, err := os.ReadDir(".")

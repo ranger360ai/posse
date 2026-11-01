@@ -29,13 +29,18 @@ package posse
 // one is discovered, so a bead that adds a file to this package, having never
 // read this pin, reds it, and the ~950s arm run is its only route.
 //
-// It is not doored yet, and the reason is mechanism, not doubt: the posse half
-// of the derivation keys on a test COMPUTING the repo root and a census
-// computes none, and seven of the fourteen carry an arm tag that a door's
-// `-run` does not. Both changes are ranger-base-na4rm. The decision, both
-// sides of it and the measured cost of the three doors:
+// IT IS DOORED NOW: `make pkgcensus-check`, under $(QA_PKGCENSUS_PINS)
+// (ranger-base-na4rm). The two mechanism changes that took were the posse
+// half of the derivation gaining the enumeration seed the internal/treepins
+// half already had — the same code, a second caller — and a door learning to
+// pass `-tags`, which seven of the fifteen needed because they are compiled
+// out of arm 1 and a `go test -run` over a name not in the build exits 0.
+// FIFTEEN, not the fourteen measured here: the seed found
+// TestNoSecondReadOfARuntimeHomeVariable as well, landed the same day. The
+// decision, both sides of it and the measured cost:
 // docs/notes.d/ranger-base-m94g2.md. The census and the population:
-// docs/notes.d/ranger-base-kkneb.md.
+// docs/notes.d/ranger-base-kkneb.md. The landing:
+// docs/notes.d/ranger-base-na4rm.md.
 //
 // MUTATION, each restored: name any banned symbol in a non-test file here
 // and the census arm reds naming path, line and symbol; delete the

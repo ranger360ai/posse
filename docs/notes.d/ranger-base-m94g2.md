@@ -207,3 +207,34 @@ comments that posed the question — `herdrhintsgone_qa_test.go` and
 answer and point at ranger-base-na4rm, which is open, rather than at a decision
 bead that closed. That is the defect ranger-base-49iga filed, fixed where it was
 found.
+
+## IT LANDED, the same day (ranger-base-na4rm)
+
+Both mechanism changes shipped, three doors exist (`make pkgcensus-check`,
+`make pkgcensus-arm2-check`, `make pkgcensus-arm3-check`), and the two head
+comments above now name a door rather than an open bead. The implementation's
+own record, with everything it MEASURED rather than assumed, is
+docs/notes.d/ranger-base-na4rm.md. Three things in the decision above read
+differently after it, and none of them is the decision:
+
+- **FIFTEEN, not fourteen.** The seed derives one member the population below
+  does not list: `TestNoSecondReadOfARuntimeHomeVariable`
+  (internal/posse/runtimehome_qa_test.go, arm 1), landed as e59a3dc1 under
+  ranger-base-uz4cs hours after that population was read — and carrying a
+  head comment that had just written the OLD answer down. A fourth carrier,
+  written by a bead with no reason to read the other three, which is the
+  clearest possible argument for the "deliberately NOT pinned as a register"
+  paragraph above.
+- **The fixture question has an answer: zero.** None of the fifteen chdirs, so
+  every relative literal among them is the package's own sources. Nothing to
+  disposition, and the asking is recorded rather than the passing.
+- **The class crossed a hundred**, which broke a rule nothing here predicted:
+  `twdSpelled` answered in digits above ninety-nine and `twdCountClaim`
+  matched a single word, so the one live count sentence would have stopped
+  matching at all. Both are widened, bounded by the number vocabulary itself.
+
+And one thing landed smaller than costed: `armDoorVars` is DERIVED from the
+door table rather than becoming a hand-kept list of (variable, arm) pairs, so
+the drift class that lost `QA_EXECWRITE_PINS` until ranger-base-6cznr is closed
+rather than widened. The pin was renamed with its subject:
+`TestQAEveryMakefileDoorPinIsReachableInTheDefaultArm` → `...InItsDoorsArm`.

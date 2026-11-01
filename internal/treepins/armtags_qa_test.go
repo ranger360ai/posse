@@ -37,10 +37,21 @@ package treepins
 //     symmetry — and then a bare `go test ./internal/posse`, which is what
 //     78% of measured suite entries actually were (ranger-base-uvzjk's
 //     census), runs NO tests and says `ok`. Arm 3.
-//  4. a pin named by a Makefile `-run` door drifts into arm 2 or 3. The door
-//     takes no tag, so its filter selects nothing — and a `go test -run` that
-//     matches no test exits 0. The door stays green over a pin that no longer
-//     runs in it. Arm 4, and it is the one that would have been found last.
+//  4. a pin named by a Makefile `-run` door drifts out of the arm its door
+//     runs, so its filter selects nothing — and a `go test -run` that matches
+//     no test exits 0. The door stays green over a pin that no longer runs in
+//     it. Arm 4, and it is the one that would have been found last.
+//
+//     "OUT OF THE ARM ITS DOOR RUNS" was "into arm 2 or 3" until
+//     ranger-base-na4rm, when the first two doors to pass `-tags` landed —
+//     fifteen one-package censuses were admitted to the tree-wide class at
+//     once and seven of them are compiled out of arm 1, so the alternative
+//     was moving seven test files between arms to suit their doors. The rot
+//     is the same shape and now has two directions: a pin leaving arm 1
+//     under an untagged door, and a pin leaving `posse_arm2` under the door
+//     that asks for it. Each door's arm is one field in the door table
+//     (twdDoors.arm, treewidedoor_qa_test.go), which arm 1 of that file
+//     holds to the recipe's own `-tags`.
 //
 // Arm 5 is this file's own: the classifier has to be able to say no, over a
 // planted file of each wrong shape, or the four arms above are a spelling
@@ -385,21 +396,49 @@ func TestQAArmOneIsTheDefaultBuild(t *testing.T) {
 	}
 }
 
-// armDoorVars are the Makefile variables holding the `-run` door filters. A
-// door runs `go test -run` with NO tag, so every name in one has to be
-// reachable in the default build.
-var armDoorVars = []string{
-	"QA_CREW_PINS", "QA_SEED_PINS", "QA_HISTORY_PINS",
-	"QA_DOC_PINS", "QA_IDENTITY_PINS", "QA_OPS_PINS",
-	// Missing until ranger-base-6cznr, which renamed this door's pin — the
-	// exact drift this arm exists to catch, on the one door it could not see.
-	"QA_EXECWRITE_PINS",
-}
+// armDoorVars are the Makefile variables holding the `-run` door filters,
+// each with the internal/posse build arm its door asks for — 1 for a door
+// that passes no `-tags`, which is what every door did until
+// ranger-base-na4rm.
+//
+// DERIVED, not hand-kept (ranger-base-na4rm). It was a list of names typed
+// here, and it went a door short for as long as QA_EXECWRITE_PINS existed:
+// ranger-base-6cznr found it by renaming that door's pin, which is the exact
+// drift this arm exists to catch, on the one door it could not see. The door
+// table one file over already holds the variable, the target, the package and
+// now the arm, and arm 1 of treewidedoor_qa_test.go holds each recipe to that
+// same `arm` number — so a door added there arrives here with its arm
+// attached and cannot be forgotten into the default one. A tool door is
+// skipped because it names no test at all (its pin is appended by name
+// below), and a door into internal/treepins because that package is one
+// binary with no arm tags.
+var armDoorVars = func() []twdDoor {
+	var out []twdDoor
+	for _, d := range twdDoors {
+		if d.pkg == armPkgDir && !d.tool {
+			out = append(out, d)
+		}
+	}
+	return out
+}()
 
-// ARM 4 — every pin a Makefile door names is in arm 1 or shared. This is the
-// silent one: `go test -run` over a name that is not in the build exits 0, so
-// a pin that drifts into arm 2 takes its door with it and both stay green.
-func TestQAEveryMakefileDoorPinIsReachableInTheDefaultArm(t *testing.T) {
+// ARM 4 — every pin a Makefile door names is reachable in the arm ITS DOOR
+// asks for. This is the silent one: `go test -run` over a name that is not in
+// the build exits 0, so a pin that drifts out of its door's arm takes the
+// door with it and both stay green.
+//
+// IT WAS "THE DEFAULT ARM" UNTIL ranger-base-na4rm, and for as long as every
+// door ran the default build that was the same sentence. It is not any more:
+// two doors carry `-tags`, because the fifteen one-package censuses
+// ranger-base-m94g2 admitted to the tree-wide class include seven that are
+// compiled out of arm 1, and the alternative to a tagged door was moving
+// seven test files between arms to suit their doors. So the question each pin
+// is asked is the arm its own door selects — and the complement is held one
+// file over, where arm 1 of treewidedoor_qa_test.go reds a recipe whose
+// `-tags` and whose `arm` disagree. Neither half is sufficient alone: this
+// one would pass a tagged pin whose door quietly lost its tag, and that one
+// would pass a door whose tag is right and whose pin has moved.
+func TestQAEveryMakefileDoorPinIsReachableInItsDoorsArm(t *testing.T) {
 	t.Parallel()
 	mk := makefileText(t)
 	files := armFiles(t)
@@ -411,40 +450,54 @@ func TestQAEveryMakefileDoorPinIsReachableInTheDefaultArm(t *testing.T) {
 		}
 	}
 
-	var names []string
-	for _, v := range armDoorVars {
-		m := regexp.MustCompile(`(?m)^` + v + `\s*:?=\s*(.*)$`).FindStringSubmatch(mk)
+	// Each pin carries the arm its own door asks for, so the check below is
+	// per door rather than per name.
+	type doorPin struct {
+		name string
+		door twdDoor
+	}
+	var pins []doorPin
+	for _, d := range armDoorVars {
+		m := regexp.MustCompile(`(?m)^` + d.variable + `\s*:?=\s*(.*)$`).FindStringSubmatch(mk)
 		if m == nil {
-			t.Errorf("Makefile has no %s — the door census reads a variable that is gone", v)
+			t.Errorf("Makefile has no %s — the door census reads a variable that is gone", d.variable)
 			continue
 		}
-		names = append(names, strings.Split(strings.TrimSpace(m[1]), "|")...)
+		for _, n := range strings.Split(strings.TrimSpace(m[1]), "|") {
+			pins = append(pins, doorPin{strings.TrimSpace(n), d})
+		}
 	}
-	// the two doors whose filter is written inline rather than in a variable
-	names = append(names, "TestTreeIsGofmtClean", "TestLiveRuntimeContractWalk")
-	sort.Strings(names)
+	// the two doors whose filter is written inline rather than in a variable;
+	// both are bare `go test -run`, so both ask for arm 1.
+	for _, n := range []string{"TestTreeIsGofmtClean", "TestLiveRuntimeContractWalk"} {
+		pins = append(pins, doorPin{n, twdDoor{target: "an inline `-run` filter", arm: 1}})
+	}
+	sort.Slice(pins, func(i, j int) bool { return pins[i].name < pins[j].name })
 
 	seen := 0
-	for _, n := range names {
-		n = strings.TrimSpace(n)
-		if n == "" {
+	for _, p := range pins {
+		if p.name == "" {
 			continue
 		}
-		f, ok := home[n]
+		f, ok := home[p.name]
 		if !ok {
 			continue // the pin lives in another package; not this arm's subject
 		}
 		seen++
-		// The door is a bare `go test -run`: no tag and no mode flag. A pin
-		// it names has to be in arm 1 AND built by the default mode, or the
-		// filter selects nothing.
-		if in, built := armPlaces(f.build, 1); !in || !built {
-			t.Errorf("door pin %s lives in %s (%q): the door runs `go test -run` with no tag and no mode flag, "+
-				"so it selects nothing and exits 0", n, f.name, f.build)
+		// A pin has to be in the arm its door selects AND built by the
+		// default mode — a door passes no mode flag whatever its tag — or
+		// the filter selects nothing and the door exits 0.
+		if in, built := armPlaces(f.build, p.door.arm); !in || !built {
+			t.Errorf("door pin %s lives in %s (%q) and `make %s` runs arm %d: the door's `-run` filter selects nothing there, "+
+				"so it exits 0 over a pin it never ran", p.name, f.name, f.build, p.door.target, p.door.arm)
 		}
 	}
-	if seen < 15 {
-		t.Fatalf("only %d door pins resolved to a file in %s — the census is reading the wrong names", seen, armPkgDir)
+	// A floor, because every check above is over names read off the
+	// Makefile: a census that resolved none of them would be silent. Raised
+	// with the class by ranger-base-na4rm, which took the door pins living
+	// in this package from 34 to 49.
+	if seen < 40 {
+		t.Fatalf("only %d door pins resolved to a file in %s (49 on 2026-10-31) — the census is reading the wrong names", seen, armPkgDir)
 	}
 }
 
