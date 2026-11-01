@@ -38,12 +38,15 @@ and `runtimeHomeOverride` (runtimehome.go:107) for the config one, which
 — re-measured in this seat: `CLAUDE_CONFIG_DIR` absolute (a path under the operator's home),
 `CLAUDE_SECURESTORAGE_CONFIG_DIR` set-and-EMPTY, `HOME` absolute.
 
-MEASURED, the fix, at `5b8e5e01`: 24 relative cases — two variables ×
+MEASURED, the fix, at `5b8e5e01`: 24 runs with a relative value all exit 2,
+all print the variable name and `nothing measured, not a pass`, and none
+prints `clean` or `FINDING`. Sixteen of them are the grid — two variables ×
 `rel`, `./rel`, `rel/`, `../A/rel` × a cwd holding the planted file and one
-that does not — all exit 2, all print the variable name and `nothing measured,
-not a pass`, none prints `clean` or `FINDING`. A literal `~/.claude`, a single
-space and a value with an embedded newline are refused too; `//abs` is
-accepted as absolute; an absolute value still scans (exit 1 naming the file,
+that does not. The other eight are two mixed runs (one variable absolute, the
+other relative, in both orders), a literal `~/.claude`, a single space, a
+value with an embedded newline, and two `--quiet` runs, which refuse on
+stdout like every other arm of this script. `//abs` is accepted as
+absolute; an absolute value still scans (exit 1 naming the file,
 exit 0 over an empty dir); set-and-empty is unchanged (`clean — 0 findings in
 1 scanned`); a relative value beside an absolute one still refuses, in either
 order. Six aimed mutants of the refusal all die, each for its own reason — no
