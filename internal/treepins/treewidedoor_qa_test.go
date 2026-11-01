@@ -365,9 +365,11 @@ package treepins
 // 2026-10-31). Their subject is this repo's own sources too: the census
 // that every binary posse execs from a LAUNCHER process
 // is resolved and run outside every gates dir (ADR 0077 D3), and the
-// derivation of the env binders its second arm reads. Both walk cmd/ and
-// internal/ through ewdGoFiles, a relative literal, which is the first rule
-// above and not the widened one. The census's own fixture arm is undoored
+// derivation of the env binders its second arm reads. Both walk the tree
+// through ewdGoFiles, a relative literal, which is the first rule above and
+// not the widened one. (That walk was rooted at cmd/ and internal/ when this
+// paragraph was written; ranger-base-tpy6q rooted it at the repository root,
+// which changes neither the spelling rule nor the door.) The census's own fixture arm is undoored
 // for the reason the rows above give — it drives the rule over planted
 // sources, so nothing derives it:
 //

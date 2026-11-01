@@ -149,12 +149,25 @@ read one function's grace as another's. The scan accepts a satisfier inside
 the site's own function or in a function that encloses it (the `grok inspect`
 site lives in a `FuncLit` assigned to a package var).
 
+(SUPERSEDED by `ranger-base-tpy6q`, from the verify bead `ranger-base-rc63f`:
+"inside the site's own function or in a function that encloses it" resolved
+per NAME per FUNCTION, and three shapes read as satisfied with no grace at the
+site — two children on one identifier, a site in a closure that shadows the
+name, and a cmd handed to a binder in the parameter it never touches. The scan
+resolves per SITE now: same identifier, the same innermost function exactly,
+and after the site but before the next child on that identifier. No shipped
+site's reading changed, the `FuncLit` one included.)
+
 The walk spells `"cmd"` and `"internal"` as literals at the two `WalkDir`
 calls rather than ranging over a slice. That is not style: the tree-wide
 class is DERIVED from a `WalkDir` whose root is a literal relative path
 (`treewidedoor_qa_test.go`, `twdFunc.relEnum`), so a root arriving as a
 variable would be a pin whose membership nothing can see and whose door
 nothing would demand.
+
+(SUPERSEDED by `ranger-base-tpy6q`: the reason stands and the roots do not.
+Two literal roots left a repository-root `.go` file outside a census whose
+sentence is "every bounded child", so the walk is one literal `"."` now.)
 
 Its two-way control, `TestQATheWaitDelayCensusCanStillSayNo`, is deliberately
 NOT doored. It reads planted fixtures rather than the tree, so nothing

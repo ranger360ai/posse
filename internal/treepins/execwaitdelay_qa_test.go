@@ -87,14 +87,14 @@ import (
 	"testing"
 )
 
-// ewdRootNames is the roots holding posse's shipped Go, for the sentences
-// this pin prints. The WALKS below spell them as literals at the call rather
-// than ranging over this slice, which is not a style choice: the tree-wide
+// ewdCorpusRoot is the root holding posse's shipped Go, for the sentences
+// this pin prints. The WALK below spells it as a literal at the call rather
+// than reading this variable, which is not a style choice: the tree-wide
 // class is DERIVED from a WalkDir whose root is a literal relative path
 // (treewidedoor_qa_test.go, twdFunc.relEnum), so a root arriving as a
 // variable is a pin whose membership nothing can see and whose door nothing
 // would demand.
-var ewdRootNames = []string{"cmd", "internal"}
+var ewdCorpusRoot = "the repository root"
 
 // ewdExemptBinaries is the ruling half of ranger-base-2cttm, keyed by the
 // BINARY rather than by file and line. The question WaitDelay answers is
@@ -138,18 +138,35 @@ type ewdSat struct {
 	what  string
 }
 
-// ewdGoFiles is the corpus: every non-test .go file under cmd/ and
-// internal/. This package's TestMain chdirs the binary to the repo root, so
-// the relative literals below are tree paths.
+// ewdGoFiles is the corpus: every non-test .go file in the shipped tree.
+// This package's TestMain chdirs the binary to the repo root, so the "."
+// below is a tree path.
+//
+// WIDENED 2026-10-31 under ranger-base-tpy6q (ranger-base-rc63f FINDING 2).
+// It walked cmd/ and internal/ and nothing else, so a .go file at the
+// REPOSITORY ROOT sat outside a census whose sentence is "every bounded
+// child" — and the roots were spelled as literals for a reason that says
+// nothing about which roots they are. The reading did not change: the tree
+// has exactly one non-test .go at the root (embed.go), it runs no child,
+// and the count went 159 -> 160 with the site list identical (MEASURED
+// 2026-10-31, this bead). What changed is that the next root file, and the
+// next top-level package directory, are inside the census rather than
+// outside it. One literal relative root is still what the tree-wide class
+// is derived from, so the walk still spells it at the call.
+//
+// Dot-directories are skipped along with node_modules and testdata: no
+// shipped Go lives in one, and a seat's scratch checkout under .posse/ is
+// not this tree's bounded children.
 func ewdGoFiles(t *testing.T) []string {
 	t.Helper()
 	var out []string
-	collect := func(path string, d fs.DirEntry, err error) error {
+	err := filepath.WalkDir(".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if d.IsDir() {
-			if n := d.Name(); n == ".git" || n == "node_modules" || n == "testdata" {
+			n := d.Name()
+			if path != "." && (strings.HasPrefix(n, ".") || n == "node_modules" || n == "testdata") {
 				return filepath.SkipDir
 			}
 			return nil
@@ -159,12 +176,9 @@ func ewdGoFiles(t *testing.T) []string {
 			out = append(out, rel)
 		}
 		return nil
-	}
-	if err := filepath.WalkDir("cmd", collect); err != nil {
-		t.Fatalf("walking cmd/ for shipped Go: %v", err)
-	}
-	if err := filepath.WalkDir("internal", collect); err != nil {
-		t.Fatalf("walking internal/ for shipped Go: %v", err)
+	})
+	if err != nil {
+		t.Fatalf("walking the tree for shipped Go: %v", err)
 	}
 	sort.Strings(out)
 	return out
@@ -220,23 +234,54 @@ func ewdEnclosing(ranges [][2]token.Pos, p token.Pos, file [2]token.Pos) [2]toke
 // forget the clock"), and a roster of them here would be the second place
 // that fact is written and the one that goes stale. A function qualifies
 // when it takes an *exec.Cmd parameter and assigns WaitDelay on it.
-func ewdBinders(files map[string]*ast.File) map[string]bool {
-	out := map[string]bool{}
+//
+// The value is WHICH PARAMETER POSITIONS it assigns on, not a bool
+// (ranger-base-tpy6q, ranger-base-rc63f FINDING 1c). A bool said "this
+// function binds a child", and ewdScan then read every identifier argument
+// of a call to it as bound — so `bindIt(nil, cmd)`, where bindIt touches
+// only its first parameter, satisfied cmd. The position is the whole of what
+// makes a binder call a satisfier of THIS child, and it is derived from the
+// same body read.
+//
+// Positions are flat and count unnamed parameters, because a call's argument
+// list is flat: `func f(ctx context.Context, cmd *exec.Cmd)` binds position
+// 1, and `func f(a, b *exec.Cmd)` has positions 0 and 1 in one field.
+//
+// Methods are skipped: a call to one is a SelectorExpr (`x.bind(cmd)`), which
+// ewdScan does not read as a binder call at all, so registering one could
+// only ever mark a same-named plain function's call satisfied.
+//
+// Still keyed by NAME across the whole corpus, deliberately — an unqualified
+// call resolves in its own package, so the tight key would be the package
+// directory, and that is a type question this pin does not ask. It is reached
+// only by a non-binder sharing a binder's name in another package; the tree
+// has one binder and no such twin (MEASURED 2026-10-31).
+func ewdBinders(files map[string]*ast.File) map[string]map[int]bool {
+	out := map[string]map[int]bool{}
 	for _, f := range files {
 		for _, d := range f.Decls {
 			fn, ok := d.(*ast.FuncDecl)
-			if !ok || fn.Body == nil || fn.Type.Params == nil {
+			if !ok || fn.Body == nil || fn.Recv != nil || fn.Type.Params == nil {
 				continue
 			}
+			pos := 0
 			for _, p := range fn.Type.Params.List {
-				star, ok := p.Type.(*ast.StarExpr)
-				if !ok || !ewdIsSel(star.X, "exec", "Cmd") {
+				isCmd := false
+				if star, ok := p.Type.(*ast.StarExpr); ok && ewdIsSel(star.X, "exec", "Cmd") {
+					isCmd = true
+				}
+				if len(p.Names) == 0 {
+					pos++ // an unnamed parameter holds a position and can be assigned nothing
 					continue
 				}
 				for _, nm := range p.Names {
-					if ewdAssignsWaitDelay(fn.Body, nm.Name) {
-						out[fn.Name.Name] = true
+					if isCmd && ewdAssignsWaitDelay(fn.Body, nm.Name) {
+						if out[fn.Name.Name] == nil {
+							out[fn.Name.Name] = map[int]bool{}
+						}
+						out[fn.Name.Name][pos] = true
 					}
+					pos++
 				}
 			}
 		}
@@ -309,7 +354,7 @@ func ewdAssignsWaitDelay(body ast.Node, ident string) bool {
 }
 
 // ewdScan reads one parsed file for sites and satisfiers.
-func ewdScan(fset *token.FileSet, rel string, f *ast.File, binders, through map[string]bool) ([]ewdSite, []ewdSat) {
+func ewdScan(fset *token.FileSet, rel string, f *ast.File, binders map[string]map[int]bool, through map[string]bool) ([]ewdSite, []ewdSat) {
 	ranges := ewdFuncRanges(f)
 	whole := [2]token.Pos{f.Pos(), f.End()}
 
@@ -364,12 +409,22 @@ func ewdScan(fset *token.FileSet, rel string, f *ast.File, binders, through map[
 				sites = append(sites, s)
 				return true
 			}
-			// A binder call: `bindGitDeadline(ctx, cmd)`.
+			// A binder call: `bindGitDeadline(ctx, cmd)`. Only the
+			// ARGUMENTS in the positions the binder assigns on are
+			// satisfied — a cmd handed to a parameter it never touches is
+			// not bound by it.
 			id, ok := node.Fun.(*ast.Ident)
-			if !ok || !binders[id.Name] {
+			if !ok {
 				return true
 			}
-			for _, a := range node.Args {
+			at, ok := binders[id.Name]
+			if !ok {
+				return true
+			}
+			for i, a := range node.Args {
+				if !at[i] {
+					continue
+				}
 				if arg, ok := a.(*ast.Ident); ok {
 					sats = append(sats, ewdSat{
 						ident: arg.Name,
@@ -400,24 +455,62 @@ func ewdScan(fset *token.FileSet, rel string, f *ast.File, binders, through map[
 		return true
 	})
 
-	// Resolve each site against the satisfiers, by identifier and by
-	// function. Two functions in one file routinely both call their child
-	// `cmd` — internal/posse/ciwatch.go has three — so a file-wide match
-	// would read one function's grace as another's.
+	// Resolve each site against the satisfiers PER SITE: the grace has to
+	// reach THIS child. Three conditions, and each of the three is a hole
+	// the per-name-per-function rule this replaces had
+	// (ranger-base-tpy6q, from ranger-base-rc63f FINDING 1 — the holes are
+	// still planted, flipped, in execwaitdelayholes_qa_test.go):
+	//
+	//  1. SAME IDENTIFIER. Unchanged, and the reason is unchanged: a `cmd`
+	//     is one child only within one scope.
+	//  2. THE SAME INNERMOST FUNCTION, exactly — not "in a function that
+	//     encloses the site", and not "anywhere inside the site's own
+	//     function" either. Two functions in one file routinely both call
+	//     their child `cmd` (internal/posse/ciwatch.go has three), and a
+	//     CLOSURE is a function: an inner `cmd := …` shadows the outer name
+	//     and is a different child, so an outer grace does not reach it and
+	//     a grace inside a closure does not reach a site outside it. Both
+	//     directions fail CLOSED — a shape this rule cannot see is reported,
+	//     never excused.
+	//  3. AFTER THE SITE, AND BEFORE THE NEXT CHILD on that identifier. A
+	//     grace is written after the child it binds, so the next event on
+	//     the name after the site has to be one: the `cmd = exec.…` below it
+	//     is a SECOND child, and a grace past that point is the second
+	//     child's and not this one's. This is the shape an ordinary landing
+	//     reaches — a second bounded child added to a function that has one,
+	//     assigned to the same `cmd` — and the old rule read both sites as
+	//     satisfied whichever side of the one assignment they sat.
+	//
+	// Source order is the whole of the reaching analysis, which is why 3
+	// fails closed rather than open: a grace that sits textually BEFORE its
+	// site (a loop body that assigns the child at the bottom) is reported
+	// although it has one. No shipped site is that shape, and reporting a
+	// bound child costs a reader one look while excusing an unbound one
+	// costs a wedged dispatch pass.
+	siteFn := make([][2]token.Pos, len(sites))
+	for i := range sites {
+		siteFn[i] = ewdEnclosing(ranges, sites[i].pos, whole)
+	}
 	for i := range sites {
 		if sites[i].cmdVar == "" {
 			continue // chained: nothing to set it on, so nothing can satisfy it
 		}
-		fn := ewdEnclosing(ranges, sites[i].pos, whole)
-		for _, s := range sats {
-			if s.ident != sites[i].cmdVar {
+		// Where this site's reach ends: the next child bound to the same
+		// identifier in the same function, or the end of the file.
+		limit := whole[1]
+		for j := range sites {
+			if j == i || sites[j].cmdVar != sites[i].cmdVar || siteFn[j] != siteFn[i] {
 				continue
 			}
-			// Satisfier inside the site's own function, or in a function
-			// that encloses the site.
-			inside := s.pos >= fn[0] && s.pos < fn[1]
-			encloses := fn[0] >= s.scope[0] && fn[1] <= s.scope[1]
-			if inside || encloses {
+			if sites[j].pos > sites[i].pos && sites[j].pos < limit {
+				limit = sites[j].pos
+			}
+		}
+		for _, s := range sats {
+			if s.ident != sites[i].cmdVar || s.scope != siteFn[i] {
+				continue
+			}
+			if s.pos > sites[i].pos && s.pos < limit {
 				sites[i].satBy = s.what
 				break
 			}
@@ -444,13 +537,41 @@ func TestQAEveryBoundedChildNamesItsWaitDelay(t *testing.T) {
 	// that read nothing — a renamed root, a suffix list that stopped
 	// matching — and "no bounded child is missing its grace" is exactly
 	// what a walk over zero files says. The floors sit well under the live
-	// counts (MEASURED 2026-10-31 at this bead's commit: 156 non-test .go
-	// files under cmd/ and internal/, 15 exec.CommandContext sites — 12
-	// naming a grace, 3 ruled exempt, 0 bare — and 1 derived binder) so an
-	// ordinary landing does not move them.
+	// counts (MEASURED 2026-10-31 at ranger-base-tpy6q's commit: 160
+	// non-test .go files in the tree, 15 exec.CommandContext sites — 12
+	// naming a grace, 3 ruled exempt, 0 bare — and 1 derived binder,
+	// bindGitDeadline, on parameter 1) so an ordinary landing does not move
+	// them.
 	if len(files) < 100 {
-		t.Fatalf("the walk read %d non-test .go files under %v — the corpus this pin censuses is not there",
-			len(files), ewdRootNames)
+		t.Fatalf("the walk read %d non-test .go files under %s — the corpus this pin censuses is not there",
+			len(files), ewdCorpusRoot)
+	}
+
+	// And the corpus has to reach the tree ROOT, not only its package
+	// directories (ranger-base-tpy6q, ranger-base-rc63f FINDING 2). This
+	// arm exists because NOTHING ELSE in this file reds when the walk
+	// narrows back: the tree's one root .go is embed.go, it runs no child,
+	// so the census's reading is identical with the root in or out — which
+	// is what let a census titled "every bounded child" walk cmd/ and
+	// internal/ only. The arm is a second enumeration rather than a literal
+	// "embed.go", so a root file added tomorrow is covered by it.
+	root, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatalf("reading the repository root: %v", err)
+	}
+	inCorpus := map[string]bool{}
+	for _, rel := range rels {
+		inCorpus[rel] = true
+	}
+	for _, e := range root {
+		n := e.Name()
+		if e.IsDir() || !strings.HasSuffix(n, ".go") || strings.HasSuffix(n, "_test.go") {
+			continue
+		}
+		if !inCorpus[n] {
+			t.Errorf("%s is a non-test .go file at the tree root and the corpus this pin censuses does not hold it.\n"+
+				"  The walk is rooted at the repository root for that reason: a child run from a root file is as bounded-or-not as one run from internal/, and the pin's sentence is \"every bounded child\". If the walk was narrowed back to package directories, widen it again rather than narrowing the sentence.", n)
+		}
 	}
 
 	binders := ewdBinders(files)

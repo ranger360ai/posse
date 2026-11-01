@@ -310,14 +310,14 @@ func TestQAEveryProtocolChildRunsOutsideTheGates(t *testing.T) {
 
 	// The positive witness. Every arm below is an assertion of absence, and
 	// a walk that read nothing says exactly what a clean tree says. The
-	// floors sit under the live counts (MEASURED 2026-10-31 at this bead's
-	// commit: 158 non-test .go files under cmd/ and internal/, 46
+	// floors sit under the live counts (MEASURED 2026-10-31 at
+	// ranger-base-tpy6q's commit: 160 non-test .go files in the tree, 46
 	// exec.Command/CommandContext sites — 44 through protocolCmd and 2 ruled
 	// exempt — 5 `.Env` assignments on a child one of them exec'd, all five
 	// through a binder, and 2 binders derived).
 	if len(files) < 100 {
-		t.Fatalf("the walk read %d non-test .go files under %v — the corpus this pin censuses is not there",
-			len(files), ewdRootNames)
+		t.Fatalf("the walk read %d non-test .go files under %s — the corpus this pin censuses is not there",
+			len(files), ewdCorpusRoot)
 	}
 
 	binders := pcEnvBinders(files)
