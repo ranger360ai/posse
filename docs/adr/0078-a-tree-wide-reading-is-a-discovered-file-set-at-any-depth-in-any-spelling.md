@@ -80,6 +80,20 @@ and enumerates nothing, so it is out under either ruling.
   nothing and prints `ok`.
 - The rule is spelling-independent at last, so any later climb spelling is a
   fence GAP to close, never a jurisdiction question to escalate.
+  - AMENDED 2026-11-01 (`ranger-base-pruuq`), the first time that bullet was
+    exercised, and it held: the gap was closed without a ruling. It was not a
+    climb spelling, though — it was a SECOND HELPER, and the fence that holds
+    each package to one had two bodies, each reading only the route its own
+    package's helper is written in (`runtime.Caller` plus a two-level climb in
+    internal/posse, a climb from `os.Getwd()` to a `go.mod` in
+    internal/treepins). internal/posse carried two helpers written in
+    internal/treepins' spelling, and both of them ask the filesystem for the
+    marker rather than computing a climb, so every climb-reading rule here was
+    structurally blind and MEASURED false. Two tree-wide pins stood undoored
+    for 52 days. The lesson for this bullet: spelling-independence has to hold
+    for the ONE-HELPER fence too, or the derivation it guarantees is bounded by
+    a spelling again one level up. `twdTwinRoutes` is one function both halves
+    now call. See `docs/notes.d/ranger-base-pruuq.md`.
 - Exit hatch: the rule is a predicate in one file. If the class proves
   over-inclusive, the remedy is a dispositioned exemption row naming the pin
   and why, not a depth limit.

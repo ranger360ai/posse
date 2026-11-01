@@ -614,9 +614,14 @@ QA_EXECWRITE_PINS := TestQATreeGoFilesWriteExecutablesUnderTheForkLock
 # held a climb (ranger-base-tw3t7's two findings; the rules read both now,
 # and the visibility pin takes its root from qibRepoRoot because every
 # element of ITS list climbs).
-# Type the untagged one when you add or edit a .go file in internal/posse or
-# under cmd/; type the tagged one for the arm your file carries.
-QA_PKGCENSUS_PINS      := TestExactModelHasNoDeclarationSurface|TestNoSecondReadOfARuntimeHomeVariable|TestQAEverySandboxProbeFileIsGated|TestQAKeychainStoreIsWiredToTheAbsoluteBinary|TestQANoEventSubscriptionRemainsInInternalPosse|TestQANoInferredIntentMechanismRemainsInInternalPosse|TestQANoLaunchPathSpellsTheSeatbeltWallPredicateItself|TestQANoProductGitDiffReaderIsBare|TestQAOneThrottleOnlyWatchArmsTheRefill|TestQAProcessNoticesResolveThroughTheDeclaredSeams|TestVisibilityOverrideIsNeverDispatched
+# And two more (ranger-base-pruuq) whose radius is the widest in this
+# variable: every shipped .go under cmd/ and internal/, and every non-test .go
+# in the MODULE. Same never-question and the same discovered file set, so the
+# same door — but the advice above widens with them, because a .go file added
+# ANYWHERE in this module is now in one of their censuses.
+# Type the untagged one when you add or edit a .go file anywhere in this
+# module; type the tagged one for the arm your file carries.
+QA_PKGCENSUS_PINS      := TestExactModelHasNoDeclarationSurface|TestNoSecondReadOfARuntimeHomeVariable|TestQAEveryLaunchPathThatRendersASeatbeltRefusesACredentialDirEnvSet|TestQAEverySandboxProbeFileIsGated|TestQAKeychainStoreIsWiredToTheAbsoluteBinary|TestQANoEventSubscriptionRemainsInInternalPosse|TestQANoInferredIntentMechanismRemainsInInternalPosse|TestQANoLaunchPathSpellsTheSeatbeltWallPredicateItself|TestQANoProductGitDiffReaderIsBare|TestQANoShippedFileSetsAStoreVarBdStoreEnvDoesNotShed|TestQAOneThrottleOnlyWatchArmsTheRefill|TestQAProcessNoticesResolveThroughTheDeclaredSeams|TestVisibilityOverrideIsNeverDispatched
 QA_PKGCENSUS_ARM2_PINS := TestQAEveryCountedSkipReasonHasAReportingSite|TestQAEveryTestBinaryReExecKeepsTheChildATestBinary|TestQAOnlyWorktreeGoWritesAMergeRefusal
 QA_PKGCENSUS_ARM3_PINS := TestBackupHasNoOverride|TestQAOneDoorForTheReportedReadingAndItNamesNoRuntime|TestQAPosseNeverWritesGroksTrustTable|TestQAWatchStreamWritesGoThroughTheDispatcher
 

@@ -9,6 +9,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-zm6yw](ranger-base-zm6yw.md) — The climb spelled past a Join's first element, and the HOME nobody can opt out of (ranger-base-zm6yw) — 2026-11-01
 - [ranger-base-rq986](ranger-base-rq986.md) — ranger-base-rq986 — a merge-back that was overtaken while its own suite ran — 2026-11-01
 - [ranger-base-qu8wn](ranger-base-qu8wn.md) — The commit wall's fold model was two runes short of what APFS resolves (ranger-base-qu8wn) — 2026-11-01
+- [ranger-base-pruuq](ranger-base-pruuq.md) — The one-helper fence read only its own half (ranger-base-pruuq) — 2026-11-01
 - [ranger-base-npqem](ranger-base-npqem.md) — The apply probe resolved its own binary twice, and the second answer was a permission (ranger-base-npqem) — 2026-11-01
 - [ranger-base-m8kfv](ranger-base-m8kfv.md) — ranger-base-m8kfv — a merge-back whose whole conflict was one spelled number, replayed three times — 2026-11-01
 - [ranger-base-d0nyb](ranger-base-d0nyb.md) — A probe answers on the PATH the exec it predicts resolves on (ranger-base-d0nyb) — 2026-11-01

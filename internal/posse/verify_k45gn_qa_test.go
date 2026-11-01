@@ -354,7 +354,19 @@ func k45gnBodyStringLits(body *ast.BlockStmt) []*ast.BasicLit {
 
 func TestQANoShippedFileSetsAStoreVarBdStoreEnvDoesNotShed(t *testing.T) {
 	t.Parallel()
-	root := k45gnRepoRoot(t)
+	// qibRepoRoot, and not a climb of this pin's own, because the root is
+	// what puts this pin in the tree-wide class (ranger-base-pruuq). It
+	// WalkDirs cmd/ and internal/ and censuses every shipped .go file it
+	// finds, so a bead that adds such a file anywhere under those two trees
+	// reds this pin without having read it — a discovered file set at a
+	// depth below the root, which ADR 0078 D1 makes the criterion. The
+	// derivation in internal/treepins/treewidedoor_qa_test.go keys on the
+	// call to this ONE helper, so the climb this line used to hold
+	// (k45gnRepoRoot, os.Getwd() up to a go.mod) left the pin outside the
+	// class and with no Makefile door for 52 days: its only route was the
+	// ~950s arm-1 run. Its door is $(QA_PKGCENSUS_PINS), where the sibling
+	// censuses of this repo's own Go sources live.
+	root := qibRepoRoot(t)
 	fset := token.NewFileSet()
 	var hits []string
 	for _, dir := range []string{"cmd", "internal"} {
@@ -637,24 +649,6 @@ it in their OWN env set, which is input and is not censused.`, strings.Join(hits
 	}
 	if rows < 2 {
 		t.Errorf("the census read %d KEY=VALUE rows across the seeded env sets, want at least 2 — the reader is parseEnvLines (envs.go) and it is yielding nothing, so a BEADS_DB= line would read as no row at all", rows)
-	}
-}
-
-func k45gnRepoRoot(t *testing.T) string {
-	t.Helper()
-	dir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for {
-		if fi, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil && !fi.IsDir() {
-			return dir
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			t.Fatal("no go.mod above the test working directory")
-		}
-		dir = parent
 	}
 }
 

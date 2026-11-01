@@ -607,24 +607,27 @@ type cdmSource struct{ abs, rel string }
 // The matcher itself was already scope-free — it keys on the call names, so
 // `a.RenderSeatbelt` reads the same from any package — which is what makes
 // the widening a walk and not a second sweep.
+//
+// THE ROOT COMES FROM qibRepoRoot (ranger-base-pruuq), and that is not a
+// detail of taste. This body walks every non-test .go in the module, so a
+// bead that adds one anywhere reds its caller without having read it — which
+// makes TestQAEveryLaunchPathThatRendersASeatbeltRefusesACredentialDirEnvSet
+// a tree-wide pin, and the class in
+// internal/treepins/treewidedoor_qa_test.go is derived from the call to that
+// ONE helper. The climb this function used to spell for itself — os.Getwd()
+// up to a go.mod, which is internal/treepins' repoRoot written again — was a
+// second repo-root helper no rule over this package could see, so the pin was
+// outside the class and had no Makefile door at all: its only route was the
+// ~950s arm-1 run. Its door is $(QA_PKGCENSUS_PINS) now.
+//
+// What the old climb was FOR is kept, and said where it is now true:
+// qibRepoRoot stats go.mod at the root it computes and t.Fatals if it is not
+// there, so a package that moves still fails loudly instead of silently
+// sweeping whatever subtree the walk started in. The two counts at the bottom
+// of this function are the second half of that same guarantee.
 func cdmModuleSources(t *testing.T) []cdmSource {
 	t.Helper()
-	root, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Asked of go.mod rather than derived as "../..", so a package that
-	// moves retargets the walk instead of silently sweeping a subtree.
-	for {
-		if _, err := os.Stat(filepath.Join(root, "go.mod")); err == nil {
-			break
-		}
-		parent := filepath.Dir(root)
-		if parent == root {
-			t.Fatal("no go.mod above this package — the module root the sweep walks cannot be found, so the sweep would measure whatever subtree it happened to start in")
-		}
-		root = parent
-	}
+	root := qibRepoRoot(t)
 	var out []cdmSource
 	if err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {

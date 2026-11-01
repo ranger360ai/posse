@@ -829,8 +829,89 @@ package treepins
 // one thing seed-check's drift arm is checking when it refuses a green with
 // "no tests to run".
 //
-// and `make tree-check` is all of them — one hundred and twenty pins and
-// seventeen doors, 68-73s over three warm runs at one hundred and twenty of
+// and TWO more, which are the first members this register admitted because
+// the FENCE was reading its own half only (ranger-base-pruuq, finding 1 of
+// the ranger-base-2l21z verify). Every arm above fences a spelling of the
+// root; TestQAOneRepoRootHelperInTheTestPackage is the one that fences a
+// SECOND HELPER, and it had two bodies — one per package — that each read
+// the route its own package's helper is written in. internal/posse's read
+// `runtime.Caller` plus a two-level climb, which is qibRepoRoot's shape;
+// internal/treepins' read a climb from os.Getwd() to a go.mod, which is
+// repoRoot's. So a helper in internal/posse written in internal/treepins'
+// spelling was invisible to the pin whose NAME says there is one helper, and
+// the tree carried TWO of them: k45gnRepoRoot (verify_k45gn_qa_test.go,
+// landed 2026-09-10 and the escape ranger-base-k45gn's own close left behind)
+// and cdmModuleSources (credentialdenymove_qa_test.go, 2026-09-05). MEASURED
+// 2026-11-01 through twdAnalyze, both bodies read root, rootedWalk, ascent,
+// caller, handRolledTreeWalk, climbEnum and relEnum ALL FALSE — they ask the
+// filesystem for the marker rather than computing a climb a rule can read —
+// so the twin arm was the only arm that could ever have seen either, and
+// every derived arm and the door arm were green over them for 52 days:
+//
+//	TestQANoShippedFileSetsAStoreVarBdStoreEnvDoesNotShed
+//	                                              make pkgcensus-check
+//	                                              (WalkDirs cmd/ and
+//	                                              internal/ and censuses
+//	                                              every shipped non-test .go
+//	                                              for a literal that
+//	                                              repoints bd's store — the
+//	                                              same subject as
+//	                                              TestQANoShippedPosseCallHandsBdAStoreSelectingFlag
+//	                                              one door over, which was
+//	                                              doored all along)
+//	TestQAEveryLaunchPathThatRendersASeatbeltRefusesACredentialDirEnvSet
+//	                                              make pkgcensus-check
+//	                                              (walks every non-test .go
+//	                                              in the MODULE — the widest
+//	                                              radius in that variable —
+//	                                              and its sibling
+//	                                              TestQANoLaunchPathSpellsTheSeatbeltWallPredicateItself,
+//	                                              in the same file and in the
+//	                                              same door, was in the class
+//	                                              the whole time)
+//	                                              (both ranger-base-pruuq)
+//
+// NO NEW DOOR, for the reason the three g31e0 rows above give in as many
+// words: QA_PKGCENSUS_PINS' subject is a reading of this repo's own Go
+// sources whose file SET is discovered, and these two ask that same
+// never-question at a wider radius. What the radius DID earn is an edit to
+// the Makefile's own advice beside that variable, which told a seat to type
+// the door when they touch a .go file in internal/posse or under cmd/ and now
+// says anywhere in the module.
+//
+// THE FIX IS THE ROOT AGAIN, the house fix a sixth time — both bodies take it
+// from qibRepoRoot, which is what puts them in the class — and the FENCE's
+// fix is the one worth reading: twdTwinRoutes is now ONE function that both
+// halves of the pin call, so neither half can fence a spelling the other does
+// not. The asymmetry WAS the defect, not a gap in either rule. Both routes
+// carry a fixture control, positive and negative, because the live answer on
+// both is zero once the twins are folded and this bead is what a wrong flag
+// read behind a confident name costs. The remaining route is said out loud at
+// twdTwinRoutes: a Getwd climb to a marker that is not `go.mod`, which is
+// nowhere in either package (MEASURED 2026-11-01).
+//
+// and `make tree-check` is all of them — one hundred and twenty-two pins and
+// seventeen doors, 62-65s over two warm runs at one hundred and twenty-one of
+// them (MEASURED 2026-11-01, ranger-base-pruuq: 62s then 65s, at a one-minute
+// load average of 3.78 and 4.11 over a five-minute 3.15 and 3.39, with no
+// suite slot held by anyone — and 72s on the run before those two, with two
+// of the test binaries cold. Read on the QUIETEST box this command has been
+// taken on, which is what makes the pair worth keeping: a 3.0s spread at a
+// one-minute load under five. Set against the entry below it, that is the
+// cleanest separation the chain has of its two variables — a 26s spread at a
+// load of 15-28 over a class two pins smaller — and it says the standing
+// advice is right about the band and about ten seconds light at this size,
+// which is the same correction the entry above it made from the other
+// direction. `register-check` is 27s of this one. These two readings are at
+// one hundred and twenty-one, which is NEITHER side of this bead's
+// merge-back: ranger-base-m8kfv landed its pin at one hundred and twenty while
+// this bead's two were on their own branch, so one hundred and twenty-two is
+// what landed and the reading of it is the entry above — quoted this way
+// round deliberately, because the rule the entry above cites
+// (docs/notes.d/ranger-base-v3tt4.md) is that a reading names the class it was
+// taken over and never the class that landed. The two pins this bead adds
+// report 0.21s between them measured alone, so none of any spread is theirs),
+// 68-73s over three warm runs at one hundred and twenty of
 // them (MEASURED 2026-11-01, ranger-base-m8kfv: 67.7s, 69.0s then 72.8s, at a
 // one-minute load average of 4.46, 7.08 and 7.90 over a five-minute 4.11, 5.01
 // and 5.84 and a FIFTEEN-minute 8.80, 8.77 and 8.82, with both suite slots
@@ -3916,6 +3997,73 @@ func twdWalkReachingTests(t *testing.T) []string {
 	return out
 }
 
+// twdTwinRoutes names the routes to THIS REPO'S ROOT that a body spells for
+// itself, other than calling its own package's one helper. One function, read
+// by both halves of the pin below, and that symmetry is the whole of
+// ranger-base-pruuq's fix.
+//
+// Each half used to fence only the spelling ITS OWN helper is written in:
+// `runtime.Caller` plus a two-level climb in internal/posse, where
+// qibRepoRoot is written that way, and a climb from os.Getwd() to a go.mod in
+// internal/treepins, where repoRoot is. So a body in one package written in
+// the OTHER package's spelling was a second repo-root helper that the pin
+// whose NAME says there is one could not see — and internal/posse carried two
+// of them, k45gnRepoRoot (verify_k45gn_qa_test.go, 2026-09-10) and
+// cdmModuleSources (credentialdenymove_qa_test.go, 2026-09-05), both of them
+// internal/treepins' repoRoot written again. Two tree-wide pins stood behind
+// them with no door for 52 days, each one a WalkDir over a file set a bead
+// that never read it can add to: TestQANoShippedFileSetsAStoreVarBdStoreEnvDoesNotShed
+// over every shipped .go under cmd/ and internal/, and
+// TestQAEveryLaunchPathThatRendersASeatbeltRefusesACredentialDirEnvSet over
+// every non-test .go in the module.
+//
+// The twin arms are the only ones that could have seen either: neither body
+// computes a climb a rule can read (both ask the filesystem for the marker
+// instead), so handRolledTreeWalk, climbEnum and relEnum were all false and
+// MEASURED false — which is the register's own lesson a fourth time, that the
+// class is bounded not by how a test spells its root but by there being ONE.
+//
+// RESIDUAL, said out loud. The Getwd route keys on the literal `go.mod`,
+// because that is the marker both twins climbed to and the marker repoRoot
+// itself names. A climb to some OTHER marker file — `AGENTS.md`, `.git` — is
+// a third route and is unread, by this and by every other rule here. Nothing
+// over Go source can enumerate every way to name this repo; what bounds the
+// class is that there is one helper per package, and these arms fence the
+// routes that have actually appeared.
+func twdTwinRoutes(f *twdFunc) []string {
+	var out []string
+	if f.caller && f.ascent {
+		out = append(out, "asks runtime.Caller and climbs two levels")
+	}
+	if f.getwdClimb {
+		out = append(out, "climbs from os.Getwd() looking for go.mod")
+	}
+	return out
+}
+
+// twdFixtureTwinRoutes runs the twin rule over one snippet of source and
+// returns the routes its TestX spells. Like twdFixtureEnumerates and
+// twdFixtureClimbs it goes through twdAnalyze, so a fixture cannot pass
+// against a second, friendlier copy of the rule.
+func twdFixtureTwinRoutes(t *testing.T, src string) []string {
+	t.Helper()
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "fixture_test.go", "package posse\n"+src+"\n", 0)
+	if err != nil {
+		t.Fatalf("parse fixture: %v\n%s", err, src)
+	}
+	env := twdNewPkgEnv(fset, map[string]*ast.File{"fixture_test.go": file})
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || fn.Body == nil || fn.Name.Name != "TestX" {
+			continue
+		}
+		return twdTwinRoutes(twdAnalyze(fn, "fixture", env))
+	}
+	t.Fatalf("fixture declares no TestX:\n%s", src)
+	return nil
+}
+
 // The pin ranger-base-sx2dq was filed for. The class above is DERIVED, and a
 // derivation is only as wide as the thing it keys on: internal/posse carried
 // two byte-identical repo-root helpers, qibRepoRoot and qspRepoRoot, and a
@@ -3956,13 +4104,74 @@ func TestQAOneRepoRootHelperInTheTestPackage(t *testing.T) {
 		t.Fatalf("internal/posse's tests no longer declare %s — the class in this file is derived from it, so every derived arm above is now deriving nothing", twdRootHelper)
 	}
 
+	// THE TWIN CONTROL, for the reason the climb arm states one screen down
+	// and one this bead measured the hard way: both routes' live answer is
+	// zero once the two twins are folded, and a prohibition nothing violates
+	// cannot be told from a detector that reads the wrong flag. BOTH routes
+	// are typed, because the defect ranger-base-pruuq fixed was an arm that
+	// read one of them and said "a second repo-root helper" in its name.
+	for _, c := range []struct {
+		name string
+		src  string
+		want []string
+	}{
+		// qibRepoRoot's own spelling, which is the one this arm has always
+		// read.
+		{"runtime.Caller and a two-level climb", `func TestX(t *testing.T) {
+	_, file, _, _ := runtime.Caller(0)
+	root := filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
+	os.Stat(filepath.Join(root, "go.mod"))
+}`, []string{"asks runtime.Caller and climbs two levels"}},
+		// repoRoot's spelling, one package over, and the one that carried
+		// both live twins. This row read EMPTY until ranger-base-pruuq.
+		{"a climb from os.Getwd() to a go.mod", `func TestX(t *testing.T) {
+	dir, _ := os.Getwd()
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			break
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			t.Fatal("no go.mod")
+		}
+		dir = parent
+	}
+}`, []string{"climbs from os.Getwd() looking for go.mod"}},
+		// And the negative halves, each of which is a live shape in this
+		// tree. A Getwd with no marker is the PACKAGE directory, which is
+		// relEnum's business and already read (bobtripwire_qa_test.go:58
+		// documents exactly that class); runtime.Caller without the climb
+		// locates one file; the climb without either is the hidden and
+		// climb arms'.
+		{"os.Getwd() with no marker is the package directory", `func TestX(t *testing.T) { dir, _ := os.Getwd(); os.ReadDir(dir) }`, nil},
+		{"os.Getwd() and a Dir with no go.mod is not a climb to the root", `func TestX(t *testing.T) { dir, _ := os.Getwd(); os.ReadDir(filepath.Dir(dir)) }`, nil},
+		{"runtime.Caller without the climb locates one file", `func TestX(t *testing.T) { _, file, _, _ := runtime.Caller(0); os.ReadFile(file) }`, nil},
+		{"the climb without runtime.Caller is the hidden arm's", `func TestX(t *testing.T) { os.ReadDir(filepath.Join("..", "..")) }`, nil},
+		// THE RESIDUAL, typed so the next reader does not have to census it:
+		// the Getwd route keys on `go.mod`, so a climb to another marker is
+		// unread. It is nowhere in either package (MEASURED 2026-11-01).
+		{"a Getwd climb to a marker that is not go.mod is unread", `func TestX(t *testing.T) {
+	dir, _ := os.Getwd()
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "AGENTS.md")); err == nil {
+			break
+		}
+		dir = filepath.Dir(dir)
+	}
+}`, nil},
+	} {
+		if got := twdFixtureTwinRoutes(t, c.src); !slices.Equal(got, c.want) {
+			t.Errorf("the twin rule says %v for this source, want %v (%s) — the arm below is then measuring something other than what its name says, and its zero is not evidence:\n%s", got, c.want, c.name, c.src)
+		}
+	}
+
 	var twins, hidden []string
 	for name, f := range all {
 		if name == twdRootHelper || f.root {
 			continue
 		}
-		if f.caller && f.ascent {
-			twins = append(twins, f.where+" "+name)
+		for _, route := range twdTwinRoutes(f) {
+			twins = append(twins, f.where+" "+name+" "+route)
 		}
 		if f.handRolledTreeWalk {
 			hidden = append(hidden, f.where+" "+name)
@@ -3971,7 +4180,7 @@ func TestQAOneRepoRootHelperInTheTestPackage(t *testing.T) {
 	sort.Strings(twins)
 	sort.Strings(hidden)
 	for _, w := range twins {
-		t.Errorf("%s asks runtime.Caller and climbs two levels — that is a second %s under another name, and every pin spelled with it is outside the tree-wide class this file derives, so it gets no door and nothing says so. Call %s instead. (ranger-base-sx2dq: the tree carried exactly this, byte for byte.)", w, twdRootHelper, twdRootHelper)
+		t.Errorf("%s — that is a second %s under another name, and every pin spelled with it is outside the tree-wide class this file derives, so it gets no door and nothing says so. Call %s instead. (ranger-base-sx2dq: the tree carried a byte-identical twin. ranger-base-pruuq: it then carried two written in internal/treepins' spelling, k45gnRepoRoot and cdmModuleSources, and the two pins behind them had no door for 52 days.)", w, twdRootHelper, twdRootHelper)
 	}
 	for _, h := range hidden {
 		t.Errorf("%s walks a tree from a hand-rolled climb to the repo root — a tree-wide pin no identifier match can reach, which is how TestSeedConfigLiveKeysAreRead went undoored. Take the root from %s.", h, twdRootHelper)
@@ -4176,8 +4385,8 @@ func TestX(t *testing.T) { read("../../AGENTS.md") }`, false},
 		if name == twdTreepinsRootHelper {
 			continue
 		}
-		if f.getwdClimb {
-			tpTwins = append(tpTwins, f.where+" "+name)
+		for _, route := range twdTwinRoutes(f) {
+			tpTwins = append(tpTwins, f.where+" "+name+" "+route)
 		}
 		if f.handRolledTreeWalk {
 			tpHidden = append(tpHidden, f.where+" "+name)
@@ -4190,7 +4399,7 @@ func TestX(t *testing.T) { read("../../AGENTS.md") }`, false},
 	sort.Strings(tpHidden)
 	sort.Strings(tpShelled)
 	for _, w := range tpTwins {
-		t.Errorf("%s climbs from os.Getwd() looking for go.mod — that is a second %s under another name, and every pin in %s spelled with it is outside the tree-wide class, so it gets no door and nothing says so. Call %s instead.", w, twdTreepinsRootHelper, twdTreepinsPkg, twdTreepinsRootHelper)
+		t.Errorf("%s — that is a second %s under another name, and every pin in %s spelled with it is outside the tree-wide class, so it gets no door and nothing says so. Call %s instead. (ranger-base-pruuq: this arm and the posse one read the SAME two routes, because each reading only its own helper's spelling is what let two of internal/treepins' spelling live next door undetected.)", w, twdTreepinsRootHelper, twdTreepinsPkg, twdTreepinsRootHelper)
 	}
 	for _, h := range tpHidden {
 		t.Errorf("%s walks a tree from a hand-rolled climb to the repo root. In %s that is never needed — TestMain chdirs the binary to the root, so a relative literal IS a tree path — and a pin spelled that way is outside both rules of that package's class. Walk the relative path, or take the root from %s.", h, twdTreepinsPkg, twdTreepinsRootHelper)
