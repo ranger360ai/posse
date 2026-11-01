@@ -51,10 +51,11 @@ import (
 // skip a suite the code under test would still be wrong in.
 const sbApplyProbeProfile = sandboxApplyProbeProfile
 
-// sbSandboxApplyRefusal is "" when this process may apply a seatbelt profile
-// and the kernel's own words when it may not. Production's reader, cached
-// there once per binary: the carve-out table alone would otherwise pay for
-// it 23 times.
+// sbSandboxApplyRefusal is "" when this process was measured able to apply a
+// seatbelt profile and a reason when it was not — the kernel's own words when
+// it may not, and posse's when the probe could not be run at all
+// (ranger-base-npqem). Production's reader, cached there once per binary: the
+// carve-out table alone would otherwise pay for it 23 times.
 func sbSandboxApplyRefusal() string {
 	return sandboxApplyRefusal()
 }
@@ -69,7 +70,7 @@ func sbSkipUnlessSandboxable(t *testing.T) {
 		t.Skip("no sandbox-exec on this host")
 	}
 	if why := sbSandboxApplyRefusal(); why != "" {
-		t.Skipf("NOTHING MEASURED: this session may not apply a seatbelt profile (%s) — every probe here is a sandbox-exec, so it can neither pass nor fail (ranger-base-xjw9)", why)
+		t.Skipf("NOTHING MEASURED: this session is not known to be able to apply a seatbelt profile (%s) — every probe here is a sandbox-exec, so it can neither pass nor fail (ranger-base-xjw9)", why)
 	}
 }
 

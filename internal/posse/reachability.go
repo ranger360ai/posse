@@ -151,8 +151,14 @@ func (a *App) applyRecordReach(p *Parity, ag *AgentFile, rt *Runtime, dir string
 // check that did not run. It is not a pass either, and does not read like
 // one — a check that measured nothing and a check that measured a pass must
 // not print the same line (ranger-base-fm4p).
+//
+// The clause is "is not known to be able to", not "may not" (ranger-base-
+// npqem): since that bead the third answer covers a probe that could not be
+// RUN as well as one the kernel refused, and only the second of those is a
+// may-not. `why` carries the kernel's own words when they exist, so the
+// stronger fact is still in the row where it is true.
 func recordReachUnmeasured(why string) string {
-	return "NOT MEASURED — this posse process may not apply a seatbelt profile (" + why +
+	return "NOT MEASURED — this posse process is not known to be able to apply a seatbelt profile (" + why +
 		") and the probe that judges the store of record IS one, so the store is neither reachable nor unreachable here. " +
 		"The launch this row judges is unaffected: its sandbox-exec is typed into a herdr pane, outside this process's sandbox. " +
 		"Re-run `posse gates` outside the cage for a verdict (ADR 0013 §4, ranger-base-heur)"

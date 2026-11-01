@@ -38,6 +38,22 @@ import (
 // caged persona session may not apply a profile itself and can still launch
 // a caged session — those are two different questions, and the second one
 // is sandboxApplyRefusal below (ranger-base-heur).
+//
+// SO THE LOOKUP STAYS THIS PROCESS'S GATED $PATH, and this is the one member
+// of its class that keeps it (ranger-base-npqem). A probe for a name a
+// shipped protocolCmd/protocolBin site execs otherwise has to read ADR 0077
+// D3's gates-free PATH, or it answers true where the resolution refuses
+// (ranger-base-g1xnt filed Bd.Available, ranger-base-d0nyb the rest). The
+// binary THIS answer is about is not one of posse's own children: it is the
+// `sandbox-exec` startPlanned types into a herdr pane, which runs in herdr's
+// process tree carrying the seat's PATH, so the gated lookup is the one that
+// matches how it will be resolved. A gates-free probe here would answer a
+// question neither AvailableCages[CageSeatbelt] nor the launch gate asked.
+//
+// What DID need the other PATH is sandboxApplyProbe below, which execs
+// sandbox-exec in THIS process through protocolCmd — and since
+// ranger-base-npqem it resolves its own binary rather than reading this
+// answer as a licence.
 func SeatbeltAvailable() bool {
 	if runtime.GOOS != "darwin" {
 		return false
@@ -69,8 +85,9 @@ const sandboxApplyProbeProfile = `(version 1)
 (deny file-write* (subpath "/nonexistent-rhq-sandbox-apply-probe"))
 `
 
-// sandboxApplyRefusal is "" when THIS PROCESS may apply a seatbelt profile,
-// and the kernel's own words when it may not:
+// sandboxApplyRefusal is "" when THIS PROCESS was MEASURED able to apply a
+// seatbelt profile, and otherwise a sentence saying why that was not
+// established. Usually the kernel's own words, because usually it may not:
 //
 //	$ sandbox-exec -p '(version 1)(allow default)' /usr/bin/true
 //	sandbox-exec: sandbox_apply: Operation not permitted
@@ -84,6 +101,11 @@ const sandboxApplyProbeProfile = `(version 1)
 // drawn from a measurement that never happened, and it degraded the launch
 // (ranger-base-heur).
 //
+// "" IS A PERMISSION — every caller reads it as "go ahead and believe what
+// you are about to measure" — so only a measurement may produce it, and
+// anything that stops the probe short answers with a reason instead
+// (ranger-base-npqem). "Could not ask" is not "may apply".
+//
 // A variable so a test can drive both answers on a kernel that only gives
 // one; liveSandboxApplyRefusal is what production runs.
 var sandboxApplyRefusal = liveSandboxApplyRefusal
@@ -96,24 +118,68 @@ var (
 // liveSandboxApplyRefusal asks the kernel, once per process: the answer can
 // only change by this process gaining a sandbox, which posse never does to
 // itself, and the reach probe would otherwise pay for a fork per target.
+//
+// The memo and the asking are two functions so that a pin can drive the ask
+// on a fixture PATH: by the time any test calls THIS one, whatever called it
+// first in the binary has already cached the box's own answer, and a
+// sync.Once cannot be re-armed (ranger-base-npqem).
 func liveSandboxApplyRefusal() string {
-	sandboxApplyOnce.Do(func() {
-		if !SeatbeltAvailable() {
-			return
-		}
-		out, err := protocolCmd(exec.Command("sandbox-exec", "-p", sandboxApplyProbeProfile, "/usr/bin/true")).CombinedOutput()
-		if err == nil {
-			return
-		}
-		// Only an apply refusal is ours to abstain on. Anything else — no
-		// /usr/bin/true, a profile this OS version rejects — is a real
-		// problem with this host, and the check that meets it should report
-		// it as itself rather than disappear into an abstention.
-		if s := strings.TrimSpace(string(out)); isSandboxApplyRefusal(s) {
-			sandboxApplyWhy = s
-		}
-	})
+	sandboxApplyOnce.Do(func() { sandboxApplyWhy = sandboxApplyProbe() })
 	return sandboxApplyWhy
+}
+
+// sandboxApplyProbe is that ask, unmemoized — and it resolves its own binary
+// before it runs it, against the same gates-free PATH the run uses (ADR 0077
+// D3).
+//
+// It has to, because the exec below is one of posse's own children and the
+// probe above it is not. protocolCmd puts a protocolBin refusal on cmd.Err,
+// so CombinedOutput comes back `out ""`, `err "sandbox-exec: executable file
+// not found outside posse's gates dirs …"` having forked nothing — and at
+// this call site a non-apply error is DROPPED by design (see below). What
+// came out the other end was the one answer no caller may be handed on a
+// guess: "", which reads as "this process may apply a profile".
+//
+// MEASURED 2026-11-01 (darwin 25.6.0, the filing seat's ranger-base-d0nyb
+// worktree at main 0861d88d) with PATH = one gates bin dir holding a
+// `sandbox-exec` shim plus one ordinary dir holding none:
+// SeatbeltAvailable() true (it found the shim), protocolCmd out "" and that
+// error, isSandboxApplyRefusal("") false, sandboxApplyWhy "". So the
+// abstention ranger-base-heur added
+// did not fire and reachability.go believed a measurement that never
+// happened — heur's own failure, one layer further out, and this time silent
+// and PERMISSIVE (ranger-base-npqem).
+//
+// NOT the question SeatbeltAvailable answers, which is why the fix is here
+// and not one line up there: that one is about the sandbox-exec a herdr pane
+// will type, and reads this process's gated PATH on purpose. Two probes, two
+// different binaries, each now resolved the way the thing it predicts is
+// run.
+//
+// The early "" on a host with no sandbox-exec at all is a don't-care rather
+// than a permission: every caller asks SeatbeltAvailable first and the
+// seatbelt tier is unavailable there, so nothing reads this answer.
+func sandboxApplyProbe() string {
+	if !SeatbeltAvailable() {
+		return ""
+	}
+	if _, err := protocolBin("sandbox-exec"); err != nil {
+		return "could not ask: " + err.Error()
+	}
+	out, err := protocolCmd(exec.Command("sandbox-exec", "-p", sandboxApplyProbeProfile, "/usr/bin/true")).CombinedOutput()
+	if err == nil {
+		return ""
+	}
+	// Only an apply refusal is ours to abstain on. Anything else — no
+	// /usr/bin/true, a profile this OS version rejects — is a real problem
+	// with this host, and the check that meets it should report it as itself
+	// rather than disappear into an abstention. (A missing sandbox-exec is no
+	// longer in that set: it is answered above, where it can be told apart
+	// from a host problem.)
+	if s := strings.TrimSpace(string(out)); isSandboxApplyRefusal(s) {
+		return s
+	}
+	return ""
 }
 
 // isSandboxApplyRefusal separates the kernel refusing the APPLY from the
