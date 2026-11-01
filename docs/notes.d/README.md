@@ -27,6 +27,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-f5jbs](ranger-base-f5jbs.md) — `posse runtime drift` — giving skillsVerifiedDrift an exit code — 2026-10-31
 - [ranger-base-et7bs](ranger-base-et7bs.md) — The read verb that did not auto-update, and the one footprint it does leave (ranger-base-et7bs) — 2026-10-31
 - [ranger-base-esz16](ranger-base-esz16.md) — The second footprint, and the one that leaves the box (ranger-base-esz16) — 2026-10-31
+- [ranger-base-dkda2](ranger-base-dkda2.md) — One window reporting nothing voids the whole reading, including the window that still reads (ranger-base-dkda2) — 2026-10-31
 - [ranger-base-csnzn](ranger-base-csnzn.md) — Extracting the multiplexer slot: four places the interface is not ADR 0076 §2's table (ranger-base-csnzn) — 2026-10-31
 - [ranger-base-c33j6](ranger-base-c33j6.md) — The Rex positive pass, and the three readings that take the launcher's environment for the seat's (ranger-base-c33j6) — 2026-10-31
 - [ranger-base-bs49e](ranger-base-bs49e.md) — The re-measurement did not clear the clock, and that is the honest outcome (ranger-base-bs49e) — 2026-10-31
