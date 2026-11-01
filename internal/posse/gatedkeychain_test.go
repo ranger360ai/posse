@@ -440,14 +440,34 @@ func TestQAKeychainStoreIsWiredToTheAbsoluteBinary(t *testing.T) {
 		t.Errorf("keychainStore must hand the adapter securityBin — it is the only wiring between the constant and the read (ranger-base-ypf5)")
 	}
 	// And nothing anywhere execs the bare word a persona's shim answers to.
+	//
+	// The roots stay RELATIVE, which is ranger-base-g31e0's decision and
+	// measured: this census reads internal/posse's own sources, so it is a
+	// member of the one-package class AS a relative read, and demanding a
+	// root of the mixed spelling alone would treat it more harshly than the
+	// `"."`-only sibling the house blessed, for the same door.
+	//
+	// WHAT IS CHECKED NOW is the walk itself (ranger-base-56eln, landed by
+	// ranger-base-rq986). The `filepath.Walk` return value was discarded and
+	// the callback answered nil on its own werr, so a root that was not
+	// there — `../../cmd` after any bead that renames that directory — passed
+	// in 0.01s over zero files and said so to nobody. MEASURED 2026-10-31,
+	// with `../../cmd` renamed: PASS in 0.01s. The floor is the shape
+	// TestKeychainReadIsExecdFromExactlyOneFile has carried all along, and
+	// 159 non-test .go files are in range on 2026-11-01.
+	goFiles := 0
 	for _, root := range []string{".", "../../cmd"} {
-		filepath.Walk(root, func(p string, fi os.FileInfo, werr error) error {
-			if werr != nil || fi.IsDir() || !strings.HasSuffix(p, ".go") || strings.HasSuffix(p, "_test.go") {
+		if err := filepath.Walk(root, func(p string, fi os.FileInfo, werr error) error {
+			if werr != nil {
+				return werr
+			}
+			if fi.IsDir() || !strings.HasSuffix(p, ".go") || strings.HasSuffix(p, "_test.go") {
 				return nil
 			}
+			goFiles++
 			b, rerr := os.ReadFile(p)
 			if rerr != nil {
-				return nil
+				return rerr
 			}
 			for _, form := range []string{`exec.Command("security"`, `keychainStoreAt("security")`, `keychainCmd("security")`} {
 				if strings.Contains(string(b), form) {
@@ -455,6 +475,11 @@ func TestQAKeychainStoreIsWiredToTheAbsoluteBinary(t *testing.T) {
 				}
 			}
 			return nil
-		})
+		}); err != nil {
+			t.Fatalf("walk %s: %v — this census is green over whatever it fails to read", root, err)
+		}
+	}
+	if goFiles < 50 {
+		t.Fatalf("scanned only %d non-test .go files — the walk measured nothing, and a census that reads nothing says nothing about what the tree execs", goFiles)
 	}
 }

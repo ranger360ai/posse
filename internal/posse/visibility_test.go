@@ -170,15 +170,27 @@ func TestVisibilityOverrideIsNeverDispatched(t *testing.T) {
 	// QA_PKGCENSUS_PINS now, by the direct rule, for the reason
 	// ranger-base-nt0pi's three and ranger-base-xndgk's five are: the class
 	// is bounded by there being ONE root helper.
+	//
+	// AND THE WALK IS CHECKED (ranger-base-56eln, landed by
+	// ranger-base-rq986). The `filepath.Walk` return value was discarded and
+	// the callback answered nil on its own error, so a root that is not
+	// there passed over zero files in silence — green over nothing, which is
+	// the half of 56eln's finding the root fix above does not cover. 159
+	// non-test .go files are in range on 2026-11-01.
 	root := qibRepoRoot(t)
+	goFiles := 0
 	for _, dir := range []string{filepath.Join(root, "internal"), filepath.Join(root, "cmd")} {
-		filepath.Walk(dir, func(p string, fi os.FileInfo, err error) error {
-			if err != nil || fi.IsDir() || !strings.HasSuffix(p, ".go") || strings.HasSuffix(p, "_test.go") {
+		if werr := filepath.Walk(dir, func(p string, fi os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			if fi.IsDir() || !strings.HasSuffix(p, ".go") || strings.HasSuffix(p, "_test.go") {
 				return nil
 			}
+			goFiles++
 			b, rerr := os.ReadFile(p)
 			if rerr != nil {
-				return nil
+				return rerr
 			}
 			// Reported relative to the root, which is what the climbing
 			// spelling printed and what a reader can paste.
@@ -197,7 +209,12 @@ func TestVisibilityOverrideIsNeverDispatched(t *testing.T) {
 				}
 			}
 			return nil
-		})
+		}); werr != nil {
+			t.Fatalf("walk %s: %v — this census is green over whatever it fails to read", dir, werr)
+		}
+	}
+	if goFiles < 50 {
+		t.Fatalf("scanned only %d non-test .go files — the walk measured nothing, and a census that reads nothing says nothing about what dispatch puts in an environment", goFiles)
 	}
 }
 
