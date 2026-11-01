@@ -564,7 +564,7 @@ fmt-check:
 # new tree-wide pin fails that check until it is given a door here.
 QA_CREW_PINS      := TestShippedTreeNamesRolesNotThisCrew|TestShippedStringsNameRolesNotThisCrew|TestTestCorpusHidesNoCrewNameBehindAnEscape
 QA_TOOL_PINS      := TestTreeIsGofmtClean
-QA_SEED_PINS      := TestShelfPIDsLintCleanAsASet|TestExampleAgentsArePIDs|TestExampleAgentsHandoffsAreShapes|TestShelfPIDsGuardFailsRatherThanSkipsWhenShort|TestShippedPIDsDenyPromote|TestShippedPIDsDenyRefresh|TestEmbeddedSeedMatchesExamplesDir|TestQAThePolicyDropInsDoNotSetTheSameKeyTwice|TestQAKnownScreenReaderNamesEveryFixtureExactly|TestSeedSurfaceNameCountIsZero|TestSeedConfigLiveKeysAreRead|TestQAExampleConfigConstitutionBlockNamesTheWholePromotedSet|TestSeedConfigDocumentedDurationDefaultsAreTheConstants|TestSeedConfigDocumentedDefaultRegisterIsNotStale|TestSeedConfigDocumentedNumberDefaultsAreTheConstants|TestSeedConfigDocumentedNumberRegisterIsNotStale|TestQABobFixturesAreStillUnknownToHerdr
+QA_SEED_PINS      := TestShelfPIDsLintCleanAsASet|TestExampleAgentsArePIDs|TestExampleAgentsHandoffsAreShapes|TestShelfPIDsGuardFailsRatherThanSkipsWhenShort|TestShippedPIDsDenyPromote|TestShippedPIDsDenyRefresh|TestEmbeddedSeedMatchesExamplesDir|TestQAThePolicyDropInsDoNotSetTheSameKeyTwice|TestQAKnownScreenReaderNamesEveryFixtureExactly|TestSeedSurfaceNameCountIsZero|TestSeedConfigLiveKeysAreRead|TestQAExampleConfigConstitutionBlockNamesTheWholePromotedSet|TestSeedConfigDocumentedDurationDefaultsAreTheConstants|TestSeedConfigDocumentedDefaultRegisterIsNotStale|TestSeedConfigDocumentedNumberDefaultsAreTheConstants|TestSeedConfigDocumentedNumberRegisterIsNotStale|TestQABobFixturesAreStillUnknownToHerdr|TestQAVerifyDetectionFailsACommittedRuleDeletion|TestQAVerifyDetectionCheckInstallFailsAStaleInstall|TestQAVerifyDetectionReplaysEveryFixtureItShips|TestQAVerifyDetectionFailsAnOverrideDeletion|TestQAVerifyDetectionNamesTheManifestThatAnswered
 QA_HISTORY_PINS   := TestPublicationRootCommitOmitsExcludedPaths|TestPublicationRootCommitADRsCarryProvenance|TestPublicationHistoryNeverCarriesTheSeedScript|TestShippedExampleTableCoversEveryVersionInGitHistory
 QA_DOC_PINS       := TestQANoCodeStringCallsTheDarwinCredentialsFileAStaleLeftover|TestQACageCredDocDoesNotCallTheOnDiskCredentialStale|TestQAADR0035PaneModeSurfaceClaimIsBuilt|TestQAShippedLaunchLinesParseAsThePersonaLaunch|TestQADetectionDoorCitesAFilingThatExists|TestQAEveryNotesFragmentCitationResolves|TestQAPublicDocBaseIsTheSpellingTheSiteShips|TestQAClaudeAutoModeCarveOutIsADR0070D2Verbatim|TestQAPrescribedGitDiffChecksStateTheirFormat|TestQAPrescribedGitDiffChecksRunUnderADiffDriver
 QA_IDENTITY_PINS  := TestQAIdentityLiteralsNeverAppearInATrackedPath|TestIdentityLiteralsNeverAppearInTheHarnessRepoUndispositioned
@@ -718,8 +718,28 @@ crew-check:
 # the known-screen reader for the same reason: both enumerate a directory
 # under etc/herdr/agent-detection that a release or a detection bead changes.
 #
+# AND FIVE MORE READERS OF etc/, which are the first members this door took
+# by a RULING rather than by a defect (ADR 0078, ranger-base-er0gn decided,
+# ranger-base-00fyg doored). All five reach detectionRig, which copies every
+# manifest and every fixture under etc/herdr/agent-detection into a throwaway
+# root: three ReadDirs, whose population is that directory and its testdata —
+# the two directories the known-screen reader and the bob tripwire above
+# already put in this door. It was out of the class by SPELLING alone. The
+# root was `filepath.Join("..", "..")` held in a local and the ReadDirs joined
+# onto it, which the fence read as naming the root (a climb must NAME a path,
+# and `../..` names the root) and the hidden-walker arm read as a walk of one
+# subdirectory, so no rule scored it at all — while the pin that enumerates
+# its testdata was derived and doored, because its root is qibRepoRoot and
+# that arm ignores depth. ADR 0078 D1 makes a DISCOVERED file set the
+# criterion at any depth below the root and in any spelling of it; the rig
+# takes its root from qibRepoRoot now, and these are its callers.
+# They were in posse_arm3, where a door's untagged `-run` selects nothing and
+# prints `ok`, so the two files moved to the arm-1 build line — the precedent
+# policydropins_qa_test.go and shippedpidsdenyrefresh_qa_test.go set above.
+# They SKIP without herdr on PATH; with it they are about four seconds.
+#
 # Type this door when you add or edit a reference PID, anything else under
-# examples/, a policy drop-in, or a detection fixture.
+# examples/, a policy drop-in, or a detection manifest or fixture.
 seed-check:
 	$(GOBIN) test ./internal/posse -timeout 15m -count=1 -run '^($(QA_SEED_PINS))$$'
 

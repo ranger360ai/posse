@@ -79,26 +79,10 @@ func TestQACodexUpdateMenuIsBlockedByItsOwnRule(t *testing.T) {
 	}
 }
 
-// cutRule removes one `[[rules]]` block by id, with the comment block that
-// introduces it — the manifest's own layout, one blank-line-separated stanza
-// per rule.
-func cutRule(t *testing.T, toml, id string) string {
-	t.Helper()
-	stanzas := strings.Split(toml, "\n\n")
-	kept := make([]string, 0, len(stanzas))
-	cut := 0
-	for _, s := range stanzas {
-		if strings.Contains(s, "[[rules]]") && strings.Contains(s, `id = "`+id+`"`) {
-			cut++
-			continue
-		}
-		kept = append(kept, s)
-	}
-	if cut != 1 {
-		t.Fatalf("cutRule(%q): removed %d stanzas, want exactly 1 — the manifest's layout moved under this test", id, cut)
-	}
-	return strings.Join(kept, "\n\n")
-}
+// cutRule, which both tests in this file use, is in
+// detectionmanifest_qa_helpers_test.go: it is untagged, because the
+// verify-detection pins that also read it are in arm 1 (ADR 0078 D3,
+// ranger-base-00fyg).
 
 // codexExplain runs herdr's detection over one capture with `toml` staged as
 // the codex override, and reports what it decided. Package-level so both

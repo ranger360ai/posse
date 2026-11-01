@@ -499,15 +499,19 @@ package treepins
 //
 // AND IT HAS A JURISDICTION LINE, measured rather than assumed. The first
 // fence that read identifiers also fenced detectionRig
-// (verifydetection_qa_test.go), which holds `filepath.Join("..", "..")` in a
-// local and ReadDirs a subdirectory of it — a shape the posse half scores as
-// NOT tree-wide on purpose (twdRootExprs' head comment), and whose nine
-// callers would have joined the class the moment the fence's own remediation
-// was applied. So an identifier binds here only when the climb it holds NAMES
-// a path below the root: the climb arm owns a climb that names a path, the
-// twin/hidden arms own the climb that names the ROOT, and the two do not
-// overlap. That is the only live answer this bead changed by argument rather
-// than by measurement, and the fixture table below types both sides of it.
+// (verifydetection_qa_test.go), which held `filepath.Join("..", "..")` in a
+// local and ReadDir'd a subdirectory of it — a shape the posse half scored as
+// NOT tree-wide on purpose, so its callers would have joined the class the
+// moment the fence's own remediation was applied. That reading of the shape
+// is REVERSED (ADR 0078 D1, below): a discovered file set is the criterion at
+// any depth below the root, so those callers are members and the rig takes
+// its root from qibRepoRoot. The LINE still stands, and is still what keeps
+// the arms from overlapping: an identifier binds here only when the climb it
+// holds NAMES a path below the root, so the climb arm owns a climb that names
+// a path, the twin/hidden arms own the climb that names the ROOT, and a Join
+// of a named segment onto that root is the climb arm's (ADR 0078 D2). That
+// was the only live answer this bead changed by argument rather than by
+// measurement, and the fixture table below types every side of it.
 //
 // AND THE SPELLING IS FENCED, not merely fixed: a climbing literal at a
 // WalkDir/Walk/ReadDir/Glob is the fourth arm of
@@ -531,9 +535,15 @@ package treepins
 // one was filed rather than fenced there, because closing it adds a class
 // member and that bead's three were a defect, not a decision. It is fenced
 // now, with the parameter hop beside it and with eight more members
-// (ranger-base-8yv7z, below); what is still unread in internal/posse is a
-// named path JOINED onto a bare-root identifier, which is the hidden arm's
-// shape and is scored by its dataflow.)
+// (ranger-base-8yv7z, below). What this parenthesis said next was that a
+// named path JOINED onto a bare-root identifier "is the hidden arm's shape
+// and is scored by its dataflow" — which was measured false
+// (ranger-base-zm6yw) and then closed as an arm, with five more members
+// (ADR 0078 D2, ranger-base-00fyg, below). What is unread THERE now is a
+// subpath whose segment arrives through an identifier —
+// `sub := "etc"; os.ReadDir(filepath.Join(repo, sub))` — which is
+// joinsOntoBareRoot's own residual and is nowhere in the package
+// (MEASURED 2026-11-01).)
 //
 // and FIFTEEN more, which are the ONE-PACKAGE CENSUSES — and the first
 // members admitted by a DECISION rather than by a defect
@@ -744,20 +754,89 @@ package treepins
 //	                                              (ranger-base-zm6yw)
 //
 // and one more beside it, in this file and in this register's own door: the
-// live-defect pin that holds the half of the same finding which is a
-// JURISDICTION decision rather than a rule gap — a subpath joined onto a
-// bare-root IDENTIFIER, which detectionRig spells three times and which
+// pin that holds the half of the same finding which was a JURISDICTION
+// decision rather than a rule gap — a subpath joined onto a bare-root
+// IDENTIFIER, which detectionRig spelled three times and which
 // ranger-base-sx2dq ruled out of the class by name while the knownscreen pin
-// one door over reads the sibling directory and was ruled in. It ships GREEN
-// asserting the hole, with the live census beside it so the hole cannot be
-// confused with a broken detector, and ranger-base-er0gn decides it:
+// one door over reads the sibling directory and was ruled in. It shipped
+// GREEN asserting the hole, with the live census beside it so the hole could
+// not be confused with a broken detector; ADR 0078 closed it, and the pin is
+// the closure now — the three fixtures as positive rows, the census as the
+// floor under the remediation:
 //
 //	TestQATheClimbFenceStillHasItsBareRootJoinHole
 //	                                              make register-check
-//	                                              (ranger-base-zm6yw)
+//	                                              (ranger-base-zm6yw, turned
+//	                                              into the closure by
+//	                                              ranger-base-00fyg)
 //
-// and `make tree-check` is all of them — one hundred and fourteen pins and
-// seventeen doors, 55-56s over three warm runs at one hundred and nine of
+// and FIVE more, which are the first members this register admitted by
+// REVERSING a ruling rather than by closing a gap (ADR 0078,
+// ranger-base-er0gn decided, ranger-base-00fyg built). Two rulings about one
+// reading disagreed: twdRootExprs' head comment said "only a walk rooted AT
+// the root is tree-wide" and ruled detectionRig out by name
+// (ranger-base-sx2dq), while the known-screen reader and the bob tripwire
+// enumerate directories under the SAME etc/herdr/agent-detection and were
+// ruled in (ranger-base-8yv7z, ranger-base-zm6yw) — and
+// ranger-base-m94g2 / -na4rm had meanwhile made a DISCOVERED file set the
+// criterion outright. What separated the two was SPELLING: the qibRepoRoot
+// arm ignores depth, so a subdirectory walk spelled with the helper is in,
+// and the same walk spelled through a hand-rolled bare-root identifier was
+// scored by nothing. ADR 0078 D1 reverses sx2dq's sentence; D2 is the arm;
+// D3 is these five:
+//
+//	TestQAVerifyDetectionFailsACommittedRuleDeletion
+//	                                              make seed-check
+//	TestQAVerifyDetectionCheckInstallFailsAStaleInstall
+//	                                              make seed-check
+//	TestQAVerifyDetectionReplaysEveryFixtureItShips
+//	                                              make seed-check
+//	TestQAVerifyDetectionFailsAnOverrideDeletion  make seed-check
+//	TestQAVerifyDetectionNamesTheManifestThatAnswered
+//	                                              make seed-check
+//	                                              (all five reach
+//	                                              detectionRig, which copies
+//	                                              every manifest and every
+//	                                              fixture under
+//	                                              etc/herdr/agent-detection
+//	                                              into a throwaway root —
+//	                                              three ReadDirs whose
+//	                                              population is what a
+//	                                              detection bead writes)
+//	                                              (all five
+//	                                              ranger-base-00fyg)
+//
+// NO NEW DOOR, and the same door as the two readers of that directory
+// already in it: seed-check's own comment says to type it when you add a
+// detection fixture, which is exactly what reds these. THE FIX IS THE ROOT
+// AGAIN, the house fix a fifth time — detectionRig takes it from qibRepoRoot,
+// so `root && walk` is true in that body and the reach carries it to the
+// five. And both files MOVED ARM to get the door, out of posse_arm3 into the
+// arm-1 build line, for the reason policydropins_qa_test.go and
+// shippedpidsdenyrefresh_qa_test.go did: a door takes no `-tags`, and a
+// filter that matches nothing exits 0 and prints `ok`. cutRule went with
+// them, into an untagged helper file, because codexupdatemenu_qa_test.go
+// still reads it from arm 3. They SKIP without herdr on PATH, which is the
+// one thing seed-check's drift arm is checking when it refuses a green with
+// "no tests to run".
+//
+// and `make tree-check` is all of them — one hundred and nineteen pins and
+// seventeen doors, 90-117s over two warm runs at one hundred and nineteen of
+// them (MEASURED 2026-11-01, ranger-base-00fyg: 116.6s then 90.4s, the first
+// at a one-minute load average of 15.57 over a five-minute 16.22 and a
+// FIFTEEN-minute 21.43 with both suite slots held by sibling seats, the second
+// at a one-minute 27.64 over a five-minute 15.49 — so the SLOWER run was the
+// one at the lower load, by a factor the level cannot explain, and the chain's
+// "what the spread tracks is how much the load MOVES" arrives once more from
+// the other side: both of these boxes were moving, one down and one up, and
+// neither reading is the quiet-box number. The first reading at this size;
+// register-check is 44-49s of it, its own arm 3 running four doors against a
+// scratch copy of the tree with five more pins inside seed-check there, and
+// seed-check itself went 0.9s -> 4.8s, which is the four seconds ADR 0078's
+// consequences priced, measured. Price this command at a minute on a quiet
+// box, ninety seconds on a busy steady one, and two and a half minutes when
+// the load is moving — the advice four entries of this chain now agree on),
+// 55-56s over three warm runs at one hundred and nine of
 // them (MEASURED 2026-10-31, ranger-base-h1q5o: 56s, 55s and 55s in that
 // order, at a one-minute load average of 4.56, 3.70 and 3.25 before the
 // three and no suite slot held by anyone; 72s on the run before them, with
@@ -1439,11 +1518,19 @@ func TestQARecipeLinesStopAtAnUnquotedShellComment(t *testing.T) {
 // literals — `filepath.Join(dir, "..", "..")`, the climb from internal/posse
 // to the repo root written out by hand.
 //
-// It must be the end of the list, and that is the whole distinction between
-// this class and its neighbours: `filepath.Join("..", "..", "examples",
-// "agents")` climbs to the root and then goes back DOWN into one directory,
-// so a walk from it reads examples/agents and reds only when that directory
-// changes. Nine tests do that, none of them tree-wide.
+// It must be the end of the list, and that is what divides this predicate's
+// arms from their neighbours — which arm scores a reading, never whether the
+// reading is in the class (ADR 0078 D1). `filepath.Join("..", "..",
+// "examples", "agents")` climbs to the root and then goes back DOWN into one
+// directory, so a walk from it reads examples/agents and reds when that
+// directory changes: that is twdJoinClimbsToASubpath's, and the shape with an
+// identifier holding the root is twdClimbSet.joinsOntoBareRoot's.
+//
+// WHAT THIS PARAGRAPH USED TO SAY, AND WHY IT IS GONE. It ended "Nine tests
+// do that, none of them tree-wide" — sx2dq's exclusion, with a count that was
+// five (MEASURED 2026-11-01, ranger-base-er0gn). Both halves are reversed:
+// such a walk reads a directory other beads write into, which is the whole of
+// what puts a pin in this class, and the five are doored in $(QA_SEED_PINS).
 func twdJoinsTwoDotDots(args []ast.Expr) bool {
 	if len(args) < 2 {
 		return false
@@ -1616,12 +1703,26 @@ type twdClimbSet struct {
 	// from something this rule knows is a slice of paths. One map would bind
 	// `r` in `dir := "../../etc"; for _, r := range dir`, where r is a rune.
 	list map[string]bool
+	// root: a name bound to the BARE repo root reached by hand —
+	// `repo := filepath.Join("..", "..")` (ADR 0078 D2).
+	//
+	// A THIRD HALF AND NOT A MEMBER OF val, which is the jurisdiction line
+	// expressed as a data structure. A walk OF this value is the `hidden`
+	// arm's and must not be fenced, so nothing in this map makes climbs()
+	// answer true on its own. What it is for is the BASE: a Join of a named
+	// segment onto it is a path that names something below the root, which
+	// is the climb arm's by the same rule that gives it
+	// twdJoinClimbsToASubpath. Until ADR 0078 the bare-root identifier
+	// entered no map at all, so nothing built from it could be read, and
+	// detectionRig's reading of etc/herdr/agent-detection was scored by
+	// nothing while the known-screen reader one door over was a member.
+	root map[string]bool
 }
 
-// twdNewClimbSet is the empty set, by one function so the two maps cannot be
-// half-built anywhere.
+// twdNewClimbSet is the empty set, by one function so the three maps cannot
+// be half-built anywhere.
 func twdNewClimbSet() twdClimbSet {
-	return twdClimbSet{val: map[string]bool{}, list: map[string]bool{}}
+	return twdClimbSet{val: map[string]bool{}, list: map[string]bool{}, root: map[string]bool{}}
 }
 
 // climbs reports whether an expression spells a climb out of the package,
@@ -1646,6 +1747,12 @@ func (c twdClimbSet) climbs(e ast.Expr) bool {
 			if c.climbs(v.Args[0]) {
 				return true
 			}
+			// A named segment joined onto the BARE root held in the first
+			// element (ADR 0078 D2) — the arm zm6yw measured as a hole and
+			// left open, because closing it was a jurisdiction decision.
+			if c.joinsOntoBareRoot(v.Args) {
+				return true
+			}
 			// Not a return: a Join whose FIRST element is not a climb may
 			// still spell one past it, and twdClimbRoot below reads that
 			// (ranger-base-zm6yw).
@@ -1656,68 +1763,111 @@ func (c twdClimbSet) climbs(e ast.Expr) bool {
 	return twdClimbRoot(e)
 }
 
+// bareRoot reports whether an expression evaluates to the bare repo root,
+// reading identifiers through the ROOT half of the set. One predicate with
+// twdRootExprs' own — see twdBareRootExpr.
+func (c twdClimbSet) bareRoot(e ast.Expr) bool {
+	return twdBareRootExpr(e, func(n string) bool { return c.root[n] })
+}
+
+// joinsOntoBareRoot reports whether a filepath.Join's argument list joins at
+// least one NAMED segment onto a first element that evaluates to the bare
+// repo root — `filepath.Join(repo, "etc", "herdr")` where `repo` holds
+// `filepath.Join("..", "..")`.
+//
+// THE ARM ADR 0078 D2 ADDS, and it is twdJoinClimbsToASubpath's shape with
+// the climb one hop back: there the climb and the subpath are in ONE argument
+// list and no identifier holds the root, so the root arms never claimed it;
+// here an identifier does, and until ADR 0078 that was the whole difference
+// between a scored reading and an unscored one. MEASURED 2026-11-01 at main
+// 5620d3b9 (ranger-base-zm6yw): for a body of this shape climbEnum,
+// handRolledTreeWalk, root and relEnum were all false.
+//
+// THE SEGMENT TEST IS twdClimbNamesASubpath AGAINST AN EMPTY SET, exactly as
+// twdJoinClimbsToASubpath asks it, so the two Join arms and bind's
+// jurisdiction line are one matcher and cannot drift. The empty set is what
+// makes it literal-only.
+//
+// RESIDUAL, said out loud: a segment held in an IDENTIFIER —
+// `sub := "etc"; os.ReadDir(filepath.Join(repo, sub))` — is unread, because
+// the empty set resolves no name and the val half holds only climbs. The
+// same residual twdJoinClimbsToASubpath has carried since zm6yw, in the same
+// matcher, and nothing in internal/posse is spelled that way (MEASURED
+// 2026-11-01 by the census in
+// TestQATheClimbFenceStillHasItsBareRootJoinHole, which reads the shape
+// independently of twdAnalyze).
+func (c twdClimbSet) joinsOntoBareRoot(args []ast.Expr) bool {
+	if len(args) < 2 || !c.bareRoot(args[0]) {
+		return false
+	}
+	empty := twdNewClimbSet()
+	for _, a := range args[1:] {
+		if twdClimbNamesASubpath(a, empty) {
+			return true
+		}
+	}
+	return false
+}
+
 // bind adds name if its right-hand side climbs AND the path it spells names
 // something BELOW the repo root — or if it spells a `[]string` with such an
 // element, in which case the name goes in the LIST half (ranger-base-g31e0),
 // because what a range over it yields is the element and not the slice. `_`
 // is never a name.
 //
-// THE SECOND CONDITION IS THE JURISDICTION LINE, and it is what keeps this
-// arm off nine tests it would be wrong about. A climb made of nothing but
-// `..` segments evaluates to the repo root itself, and a hand-rolled climb to
-// the root is already the business of twdRootExprs and the `hidden` arm
-// below — which carries the dataflow precision the posse half needs:
-// detectionRig (verifydetection_qa_test.go) holds `filepath.Join("..", "..")`
-// in a local and then ReadDirs `filepath.Join(repo, "etc", "herdr",
-// "agent-detection")`, and the posse half scores that as a SUBDIRECTORY walk
-// on purpose — it reds when that one directory changes, which that rule says
-// is not this class (twdRootExprs' head comment, ranger-base-sx2dq). Binding
-// the bare root here would have fenced it, and the fence's remediation —
-// take the root from qibRepoRoot — would then have made `root && walk` true
-// in that body and put its nine callers in the class.
+// THE SECOND CONDITION IS THE JURISDICTION LINE between this arm and the
+// root arms, and it decides which arm scores a reading — never whether the
+// reading is in the class (ADR 0078 D1). A climb made of nothing but `..`
+// segments evaluates to the repo root itself, and a walk whose root IS that
+// value is twdRootExprs' and the `hidden` arm's below. So: the climb arm owns
+// a climb that NAMES a path, the root arms own the climb that names the ROOT,
+// and the two do not overlap. A literal bare `../..` written AT the walker is
+// the one place both can fire, because twdClimbRoot below reads it directly
+// and ranger-base-nt0pi's fixture says it must; nothing is lost either way,
+// since the `hidden` arm reads that spelling too.
 //
-// So: the climb arm owns a climb that NAMES a path, the root arms own the
-// climb that names the ROOT, and the two do not overlap. A literal bare
-// `../..` written AT the walker is the one place both can fire, because
-// twdClimbRoot below reads it directly and ranger-base-nt0pi's fixture says
-// it must; nothing is lost either way, since the `hidden` arm reads that
-// spelling too.
+// AND THE BARE ROOT HELD IN A NAME IS NOW THE BASE A SUBPATH JOINS ONTO
+// (ADR 0078 D2, ranger-base-00fyg). `repo := filepath.Join("..", "..");
+// os.ReadDir(filepath.Join(repo, "etc"))` is read by the root half of this
+// set and joinsOntoBareRoot: the NAME goes in `root` and never in `val`, so a
+// walk of the bare root still belongs to the hidden arm and nothing
+// double-fires, while a Join of a named segment onto it is a path that names
+// something below the root — which is this arm's by the same rule that gives
+// it twdJoinClimbsToASubpath.
 //
-// RESIDUAL, said out loud and MEASURED this time: a named path built by
-// JOINING onto a bare-root identifier — `repo := filepath.Join("..", "..");
-// os.ReadDir(filepath.Join(repo, "etc"))` — is unread here, because the
-// bare-root identifier never enters this set and nothing built from it does.
-//
-// WHAT THIS PARAGRAPH USED TO SAY, AND WHY IT IS GONE (ranger-base-zm6yw,
-// FINDING 1 of the ranger-base-wq349 verify). It said that shape "is the
-// hidden arm's and is scored by its dataflow". It is not, and that was the
-// sentence a later reader trusted instead of re-censusing. MEASURED
-// 2026-11-01 at main 5620d3b9 through twdAnalyze itself: the hidden arm fires
-// only when the walk's root IS the bare root — twdRootExprs scores
-// `filepath.Join(repo, "etc")` false because twdJoinsTwoDotDots wants the two
-// `..` at the END of the list — so for that body climbEnum, handRolledTreeWalk,
-// root and relEnum are ALL false and the reading is scored by nothing.
-// TestQATheClimbFenceStillHasItsBareRootJoinHole holds the hole open, with the
-// live census beside it, so it cannot go quiet a second time.
-//
-// It is left open DELIBERATELY and not fenced, because fencing it is a
-// jurisdiction decision and not a rule gap: detectionRig
-// (verifydetection_qa_test.go) is exactly this shape, twdRootExprs' head
-// comment rules it out of the class BY NAME (ranger-base-sx2dq), and the
-// knownscreen pin one door over reads the sibling directory under
+// WHAT THIS PARAGRAPH USED TO SAY, TWICE, AND WHY BOTH ARE GONE. First
+// (through ranger-base-8yv7z) that the shape "is the hidden arm's and is
+// scored by its dataflow" — the sentence a later reader trusts instead of
+// re-censusing, and false: MEASURED 2026-11-01 at main 5620d3b9 through
+// twdAnalyze itself, the hidden arm fires only when the walk's root IS the
+// bare root (twdJoinsTwoDotDots wants the two `..` at the END of the list),
+// so for that body climbEnum, handRolledTreeWalk, root and relEnum were ALL
+// false and the reading was scored by nothing. Then (ranger-base-zm6yw) that
+// the hole was left open DELIBERATELY, because closing it was a jurisdiction
+// decision: detectionRig was exactly this shape, twdRootExprs' head comment
+// ruled it out of the class BY NAME (ranger-base-sx2dq), and the knownscreen
+// pin one door over read the sibling directory under
 // etc/herdr/agent-detection and was ruled IN (ranger-base-8yv7z, doored in
-// $(QA_SEED_PINS)). Those two rulings cannot both stand, and whichever wins
-// moves detectionRig's callers into or out of the class — so it is filed as
-// ranger-base-er0gn (-l architecture) rather than decided here.
+// $(QA_SEED_PINS)). Those rulings could not both stand; ADR 0078 reversed
+// sx2dq's and detectionRig's five callers joined the class.
+// TestQATheClimbFenceStillHasItsBareRootJoinHole is the closure pin, and it
+// keeps the three fixtures as positive rows so the arm cannot go quiet the
+// way the sentence did.
 //
-// What IS closed is the same reading spelled in ONE Join —
+// What was closed FIRST is the same reading spelled in ONE Join —
 // `filepath.Join(os.Getwd(), "..", "..", "etc", "herdr")`, where the climb
 // and the subpath are in the same argument list and no identifier holds the
-// root. That needs no jurisdiction call, because the value NAMES a path and
+// root. That needed no jurisdiction call, because the value NAMES a path and
 // the root arms never claimed it: twdJoinClimbsToASubpath above.
 func (c twdClimbSet) bind(name string, rhs ast.Expr) {
 	if name == "_" {
 		return
+	}
+	// The BARE repo root held in a name (ADR 0078 D2). Not val: a walk of
+	// this value is the `hidden` arm's. It is the base a named subpath can
+	// be joined onto, which is this arm's — see joinsOntoBareRoot.
+	if c.bareRoot(rhs) {
+		c.root[name] = true
 	}
 	// A LIST of paths, one of which climbs: the name holds the slice, and a
 	// range over it binds its value variable in extend below.
@@ -1752,9 +1902,10 @@ func (c twdClimbSet) bind(name string, rhs ast.Expr) {
 // THE JURISDICTION LINE IS THE ELEMENT'S, not the list's: an element is
 // tested by exactly the pair of conditions bind applies to a scalar, so a
 // range over bare roots only — `[]string{"..", "../.."}` — stays
-// twdRootExprs' and the hidden arm's, and widening the fence to lists cannot
-// take detectionRig's nine callers with it (ranger-base-sx2dq). The fixture
-// table below types both sides of that.
+// twdRootExprs' and the hidden arm's. It stayed there when ADR 0078 D2 gave
+// the set its root half, too: what that arm reads is a named segment JOINED
+// onto the bare root, and a range yields the root itself. The fixture table
+// below types both sides of that.
 func (c twdClimbSet) climbingList(e ast.Expr) bool {
 	switch v := e.(type) {
 	case *ast.Ident:
@@ -1868,6 +2019,9 @@ func (c twdClimbSet) extend(body *ast.BlockStmt) twdClimbSet {
 	}
 	for k := range c.list {
 		out.list[k] = true
+	}
+	for k := range c.root {
+		out.root[k] = true
 	}
 	for i := 0; i < 2; i++ {
 		ast.Inspect(body, func(n ast.Node) bool {
@@ -2157,6 +2311,54 @@ func twdAsksGitForTheRoot(call *ast.CallExpr) bool {
 	return false
 }
 
+// twdBareRootExpr reports whether an expression evaluates to the repo root
+// reached BY HAND: a `"../.."` literal, a filepath.Join whose argument list
+// ENDS in the two `..`, or either of those wrapped in
+// Abs/Clean/EvalSymlinks/ToSlash — with identifiers resolved through `named`.
+//
+// ONE implementation and TWO readers, which is the whole reason it is a free
+// function (ADR 0078 D2). twdRootExprs below reads it for the twin and
+// `hidden` arms: a walk whose root IS this value is a hand-rolled tree walk.
+// twdClimbSet.bareRoot reads it for the FENCE, where the same value is the
+// BASE a named subpath can be joined onto — the shape detectionRig was
+// spelled with, which no rule in this file scored until ADR 0078. Written
+// twice they would drift, and the drift would be invisible in exactly the
+// way this register exists to prevent: the fence's jurisdiction line is
+// "the root arms own the bare root, the climb arm owns a path that NAMES
+// something", and a line read from two different definitions of "the bare
+// root" leaves a gap or an overlap with both sides green.
+func twdBareRootExpr(e ast.Expr, named func(string) bool) bool {
+	switch v := e.(type) {
+	case *ast.Ident:
+		return named(v.Name)
+	case *ast.BasicLit:
+		if v.Kind != token.STRING {
+			return false
+		}
+		s, err := strconv.Unquote(v.Value)
+		if err != nil {
+			return false
+		}
+		return filepath.ToSlash(s) == "../.." || filepath.ToSlash(s) == "../../"
+	case *ast.CallExpr:
+		sel, ok := v.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return false
+		}
+		x, ok := sel.X.(*ast.Ident)
+		if !ok || x.Name != "filepath" {
+			return false
+		}
+		switch sel.Sel.Name {
+		case "Join":
+			return twdJoinsTwoDotDots(v.Args)
+		case "Abs", "Clean", "EvalSymlinks", "ToSlash":
+			return len(v.Args) == 1 && twdBareRootExpr(v.Args[0], named)
+		}
+	}
+	return false
+}
+
 // twdRootExprs finds, inside one function body, every expression that
 // evaluates to the repo root reached by hand: a bare `"../.."`, a
 // `filepath.Join(..., "..", "..")`, those wrapped in Abs/Clean/EvalSymlinks,
@@ -2164,43 +2366,29 @@ func twdAsksGitForTheRoot(call *ast.CallExpr) bool {
 // expressions.
 //
 // This is a small dataflow rather than "the body mentions `..` and walks
-// something" on purpose, and the difference is nine tests: detectionRig
-// climbs to the root and then ReadDirs `<root>/etc/herdr/agent-detection`,
-// which reds when that one directory changes. Only a walk rooted AT the root
-// is tree-wide.
+// something" on purpose: the arms are divided by what the walk's root IS, and
+// a body that mentions `..` anywhere would put every reading in every arm at
+// once.
+//
+// WHAT THIS COMMENT USED TO SAY, AND WHY IT IS GONE (ADR 0078 D1,
+// ranger-base-er0gn). It said "only a walk rooted AT the root is tree-wide",
+// and ruled detectionRig — which climbs to the root and then ReadDirs
+// `<root>/etc/herdr/agent-detection` — out of the class by name. That is
+// reversed. Depth is not what lets an unrelated bead red a pin; a directory
+// that other beads WRITE INTO is, and etc/herdr/agent-detection is written by
+// every detection bead while docs/notes.d (depth 2) is the escape the
+// treepins half of this register was built for. The criterion is a DISCOVERED
+// file set — `WalkDir`/`Walk`/`ReadDir`/`Glob`, or a registered indirect
+// program — at any depth below the root and in any spelling of the root
+// (ranger-base-m94g2 / -na4rm's rule, read a fourth time). So this predicate
+// decides which ARM scores a reading and never whether the reading is in the
+// class: a walk whose root IS this value is the hidden arm's, a named subpath
+// joined onto it is the climb arm's (twdClimbSet.joinsOntoBareRoot), and both
+// are members.
 func twdRootExprs(body *ast.BlockStmt) func(ast.Expr) bool {
 	roots := map[string]bool{}
-	var isRoot func(ast.Expr) bool
-	isRoot = func(e ast.Expr) bool {
-		switch v := e.(type) {
-		case *ast.Ident:
-			return roots[v.Name]
-		case *ast.BasicLit:
-			if v.Kind != token.STRING {
-				return false
-			}
-			s, err := strconv.Unquote(v.Value)
-			if err != nil {
-				return false
-			}
-			return filepath.ToSlash(s) == "../.." || filepath.ToSlash(s) == "../../"
-		case *ast.CallExpr:
-			sel, ok := v.Fun.(*ast.SelectorExpr)
-			if !ok {
-				return false
-			}
-			x, ok := sel.X.(*ast.Ident)
-			if !ok || x.Name != "filepath" {
-				return false
-			}
-			switch sel.Sel.Name {
-			case "Join":
-				return twdJoinsTwoDotDots(v.Args)
-			case "Abs", "Clean", "EvalSymlinks", "ToSlash":
-				return len(v.Args) == 1 && isRoot(v.Args[0])
-			}
-		}
-		return false
+	isRoot := func(e ast.Expr) bool {
+		return twdBareRootExpr(e, func(n string) bool { return roots[n] })
 	}
 	// Two passes, so `root := ...` before the walk and after both bind.
 	for i := 0; i < 2; i++ {
@@ -2901,14 +3089,20 @@ func twdPosseEnumOnlyTests(t *testing.T) []string {
 // is frozen prose, like every other count in this comment: the live one is
 // in the `make tree-check` sentence above, which arm 4 derives.
 //
-// THAT IS WIDER THAN THE POSSE RULE, deliberately. Over there a walk rooted
-// at a SUBDIRECTORY is excluded — detectionRig ReadDirs
-// `<root>/etc/herdr/agent-detection` and reds only when that one directory
-// changes, and nine tests do that shape. The exclusion is defensible there
-// and would be the bug here: docs/notes.d is a subdirectory, and it is the
-// subdirectory every bead on this box writes into. Drawing the line at the
-// repo root would have reproduced exactly the blind spot this bead was filed
-// for — it finds nine of those twenty, and not the one that escaped.
+// IT WAS WIDER THAN THE POSSE RULE, and that is the disagreement ADR 0078
+// settled by widening the other half. Over there a walk rooted at a
+// SUBDIRECTORY used to be excluded — detectionRig ReadDirs
+// `<root>/etc/herdr/agent-detection` and reds when that one directory
+// changes. This half has always said such an exclusion "would be the bug
+// here": docs/notes.d is a subdirectory, and it is the subdirectory every
+// bead on this box writes into, so drawing the line at the repo root would
+// have reproduced exactly the blind spot this bead was filed for — it finds
+// nine of those twenty, and not the one that escaped. ADR 0078 D1 read the
+// two halves against each other and found the exclusion was not defensible
+// next door either, for the same reason in different words: what lets an
+// unrelated bead red a pin is a directory with other writers, not a depth.
+// Both halves key on a discovered file set now, and the posse half scores a
+// named subpath joined onto a hand-rolled root rather than dropping it.
 //
 // AND IT STILL DOES NOT FIND THE ONE THAT ESCAPED. TestNotesFragmentIndexIsCurrent
 // enumerates nothing in Go: it runs `python3 scripts/notes-index.py --check`
@@ -3790,13 +3984,14 @@ func TestQAOneRepoRootHelperInTheTestPackage(t *testing.T) {
 func TestX(t *testing.T) { os.ReadDir(dropIns) }`, true},
 		{"a climb through a local assigned a Join", `func TestX(t *testing.T) { dir := filepath.Join("..", "..", "examples"); filepath.WalkDir(dir, nil) }`, true},
 		{"a climb through a local, joined at the walker", `func TestX(t *testing.T) { dir := "../../examples"; os.ReadDir(filepath.Join(dir, "agents")) }`, true},
-		// AND THE JURISDICTION LINE. A climb made only of `..` evaluates to
-		// the repo root, and a hand-rolled climb to the ROOT is the `hidden`
-		// arm's — which scores a walk of a SUBDIRECTORY of it as not
-		// tree-wide. detectionRig is that shape and nine tests reach it, so
-		// binding the bare root here would have fenced it and the fence's own
-		// remediation would then have put all nine in the class.
+		// AND THE JURISDICTION LINE, which ADR 0078 D2 left exactly where it
+		// was. A climb made only of `..` evaluates to the repo root, and a
+		// walk whose root IS that value is the `hidden` arm's, so the bare
+		// root entering this set's ROOT half makes nothing fire on its own
+		// and the two arms still do not overlap.
 		{"a bare-root local walked directly is the hidden arm's", `func TestX(t *testing.T) { repo := filepath.Join("..", ".."); os.ReadDir(repo) }`, false},
+		{"a bare-root local walked through a Clean is the hidden arm's too", `func TestX(t *testing.T) { repo := filepath.Join("..", ".."); filepath.WalkDir(filepath.Clean(repo), nil) }`, false},
+		{"a Join onto the bare root that names no further segment is still the root", `func TestX(t *testing.T) { repo := filepath.Join("..", ".."); os.ReadDir(filepath.Join(repo, "..")) }`, false},
 		// AND THE CLIMB SPELLED PAST A JOIN'S FIRST ELEMENT
 		// (ranger-base-zm6yw). These three rows read false until this bead,
 		// and the row above them used to claim the shape was "the hidden
@@ -3813,14 +4008,26 @@ func TestX(t *testing.T) { os.ReadDir(dropIns) }`, true},
 		// the root arms already score it (both MEASURED on the five probes).
 		{"the same Join ending at the root is the hidden arm's, not the fence's", `func TestX(t *testing.T) { wd, _ := os.Getwd(); filepath.WalkDir(filepath.Join(wd, "..", ".."), nil) }`, false},
 		{"one level is not the climb out of internal/posse", `func TestX(t *testing.T) { wd, _ := os.Getwd(); os.ReadDir(filepath.Join(wd, "..", "posse")) }`, false},
-		// AND THE RESIDUAL, which is a jurisdiction decision and not a gap:
-		// a subpath joined onto a bare-root IDENTIFIER. detectionRig is this
-		// shape and ranger-base-sx2dq ruled it out of the class by name, so
-		// widening to it would reverse that ruling — ranger-base-er0gn.
-		// These rows record what the rule ANSWERS, and
-		// TestQATheClimbFenceStillHasItsBareRootJoinHole says out loud that
-		// nothing else answers either.
-		{"a subpath joined onto a bare-root local is scored by NOTHING (ranger-base-er0gn)", `func TestX(t *testing.T) { repo := filepath.Join("..", ".."); os.ReadDir(filepath.Join(repo, "etc", "herdr")) }`, false},
+		// AND THE SUBPATH JOINED ONTO A BARE-ROOT IDENTIFIER (ADR 0078 D2,
+		// ranger-base-00fyg). These five rows read false until this bead,
+		// and the reading was scored by NOTHING at all — not the fence, whose
+		// first-element read answers false for an identifier the val half
+		// does not hold, and not the hidden arm, whose walk root is the Join
+		// and not the bare root (MEASURED 2026-11-01 at main 5620d3b9
+		// through twdAnalyze: climbEnum, handRolledTreeWalk, root and relEnum
+		// all false). It was live — detectionRig, three ReadDirs over
+		// etc/herdr/agent-detection and its testdata, with five callers —
+		// and it was out of the class by SPELLING alone while the
+		// known-screen reader one door over enumerated the sibling directory
+		// and was in. ADR 0078 D1 makes a discovered file set the criterion
+		// at any depth and in any spelling, so this is an arm now.
+		{"a subpath joined onto a bare-root local, at the walker", `func TestX(t *testing.T) { repo := filepath.Join("..", ".."); os.ReadDir(filepath.Join(repo, "etc", "herdr")) }`, true},
+		{"the same subpath held in a local first", `func TestX(t *testing.T) { repo := filepath.Join("..", ".."); dir := filepath.Join(repo, "etc", "herdr"); os.ReadDir(dir) }`, true},
+		{"and through a Clean around the Join", `func TestX(t *testing.T) { repo := filepath.Join("..", ".."); filepath.WalkDir(filepath.Clean(filepath.Join(repo, "internal")), nil) }`, true},
+		{"the bare root reached past a Getwd, then joined", `func TestX(t *testing.T) { wd, _ := os.Getwd(); repo := filepath.Join(wd, "..", ".."); os.ReadDir(filepath.Join(repo, "etc")) }`, true},
+		{"a subpath joined onto a PACKAGE-level bare root", `var repoRel = filepath.Join("..", "..")
+func TestX(t *testing.T) { os.ReadDir(filepath.Join(repoRel, "etc")) }`, true},
+		{"reading one named file joined onto the bare root is not an enumeration", `func TestX(t *testing.T) { repo := filepath.Join("..", ".."); os.ReadFile(filepath.Join(repo, "AGENTS.md")) }`, false},
 		{"an identifier holding a scratch directory is not a climb", `func TestX(t *testing.T) { dir := t.TempDir(); os.ReadDir(dir) }`, false},
 		{"an identifier holding the package's own directory is not a climb", `func TestX(t *testing.T) { dir := "testdata"; os.ReadDir(dir) }`, false},
 		// THE PARAMETER HOP, and the CHAIN (ranger-base-8yv7z). The shelf was
@@ -3857,8 +4064,10 @@ func TestX(t *testing.T) { read("../../AGENTS.md") }`, false},
 	for _, r := range roots { filepath.Walk(r, nil) } }`, true},
 		{"a climb beside the package's own directory in ONE list", `func TestX(t *testing.T) { for _, d := range []string{".", "../../cmd/posse"} { os.ReadDir(d) } }`, true},
 		// AND THE JURISDICTION LINE AGAIN, held per ELEMENT: a list of bare
-		// roots is twdRootExprs' and the hidden arm's, so widening to lists
-		// cannot take detectionRig's nine callers with it.
+		// roots is twdRootExprs' and the hidden arm's, so a range over one
+		// is not this arm's, and the root half ADR 0078 D2 added does not
+		// change that — what a Join onto the bare root names is the subpath,
+		// and a range yields the root itself.
 		{"a range over bare roots only is the hidden arm's shape", `func TestX(t *testing.T) { for _, r := range []string{"..", "../.."} { os.ReadDir(r) } }`, false},
 		{"a range over scratch directories is not a climb", `func TestX(t *testing.T) { for _, r := range []string{t.TempDir()} { os.ReadDir(r) } }`, false},
 		{"a range variable that roots no walker is not a climb", `func TestX(t *testing.T) { for _, p := range []string{"../../AGENTS.md"} { os.ReadFile(p) } }`, false},
@@ -3959,20 +4168,28 @@ func TestX(t *testing.T) { read("../../AGENTS.md") }`, false},
 	}
 }
 
-// twdBareRootJoinReadings is the detector for the one shape FINDING 1 of
-// ranger-base-wq349 leaves open: a walker rooted at a path built by JOINING a
-// subpath onto an identifier that holds the bare repo root.
+// twdBareRootJoinReadings censuses internal/posse for a walker rooted at a
+// path built by JOINING a subpath onto an identifier that holds the bare repo
+// root. It was the live-defect detector ranger-base-zm6yw wrote for a shape
+// no rule scored; since ADR 0078 D2 the fence scores it, and this is the
+// SECOND reading that says so.
 //
-// It lives in the pin below rather than in the fence on purpose. Promoting it
-// is the whole of the fix, and the fix is a jurisdiction decision filed as
-// ranger-base-er0gn — so the measurement is written once, here, where it says
-// what the hole IS and what the tree carries, and the bead that decides moves
-// these twenty lines into twdClimbSet rather than inventing them.
+// WHY IT SURVIVED THE PROMOTION, when the arm it measured is now
+// twdClimbSet.joinsOntoBareRoot. It reads the shape WITHOUT twdAnalyze — the
+// bare root through twdRootExprs, the subpath through twdClimbNamesASubpath,
+// the walker through twdWalkers — so it is independent of the two answers the
+// fence arm reads before it speaks (`!f.root`, `len(f.relEnum) == 0`). A
+// body that takes its root from qibRepoRoot AND still holds a bare-root join
+// is invisible to the fence by construction and visible here, and that is
+// exactly the half-remediation a seat lands when it fixes one of several
+// climbs in one body. The pin below asserts this list is EMPTY, which is the
+// remediation holding; the fence's own fixture rows assert the ARM is live.
+// Neither can tell the other's failure, which is why there are two.
 //
-// It reads the bare root through twdRootExprs, which is the dataflow the
-// corrected residual paragraph names, and the subpath through
-// twdClimbNamesASubpath, which is the fence's own jurisdiction test — so the
-// detector cannot be wider or narrower than the two rules it sits between.
+// It reads the bare root through twdRootExprs and the subpath through
+// twdClimbNamesASubpath — the same two rules twdClimbSet now sits between —
+// so this census cannot be wider or narrower than the arm it is the control
+// for.
 func twdBareRootJoinReadings(t *testing.T) []string {
 	t.Helper()
 	fset := token.NewFileSet()
@@ -4074,57 +4291,72 @@ func twdBareRootJoinReadings(t *testing.T) []string {
 	return out
 }
 
-// A LIVE-DEFECT PIN (ranger-base-zm6yw, FINDING 1 of the ranger-base-wq349
-// verify). It ships GREEN asserting a hole, and the FIX makes it RED.
+// THE BARE-ROOT-JOIN HOLE IS CLOSED (ADR 0078 D2, ranger-base-00fyg), and
+// this pin is the closure rather than one of the numbered arms above.
+// It shipped GREEN asserting the hole under ranger-base-zm6yw; the name is
+// kept, because the ADR that decided the hole cites it and because a reader
+// grepping for the hole should land on the pin that says what happened to it.
 //
-// THE HOLE. A walker rooted at a subpath JOINED onto an identifier holding the
-// bare repo root is in neither half of the tree-wide class:
+// THE HOLE IT USED TO ASSERT. A walker rooted at a subpath JOINED onto an
+// identifier holding the bare repo root was in neither half of the class:
 //
 //	repo := filepath.Join("..", "..")
 //	os.ReadDir(filepath.Join(repo, "etc", "herdr", "agent-detection"))
 //
 // MEASURED 2026-11-01 at main 5620d3b9 (darwin 25.6.0, go 1.26.10), through
 // twdAnalyze itself: climbEnum=false, handRolledTreeWalk=false, root=false,
-// relEnum=false. The fence scores it false by its declared jurisdiction line —
-// a climb must NAME a path, and `../..` names the root — and the hidden arm
-// fires only when the walk's root IS the bare root. So the reading gets no
-// door, no census names it, and until this bead nothing said so: twdClimbSet's
-// residual paragraph asserted the shape "is the hidden arm's and is scored by
-// its dataflow", which is the sentence a later reader trusts instead of
-// re-censusing, and it was wrong.
+// relEnum=false. The fence scored it false by its declared jurisdiction line
+// — a climb must NAME a path, and `../..` names the root — and the hidden arm
+// fires only when the walk's root IS the bare root. detectionRig
+// (verifydetection_qa_test.go) was that body, three ReadDirs over
+// etc/herdr/agent-detection and its testdata, with five callers; the
+// known-screen reader one door over enumerated the SIBLING directory and was
+// a member, doored in $(QA_SEED_PINS). Spelling was the whole difference.
 //
-// WHY IT IS A PIN AND NOT A FENCE ARM. Closing it is a jurisdiction decision,
-// not a rule gap. detectionRig (verifydetection_qa_test.go) is exactly this
-// shape and twdRootExprs' head comment rules it OUT of the class by name
-// (ranger-base-sx2dq, "only a walk rooted AT the root is tree-wide"), while
-// TestQAKnownScreenReaderNamesEveryFixtureExactly reads the SIBLING directory
-// under etc/herdr/agent-detection and was ruled IN (ranger-base-8yv7z, doored
-// in $(QA_SEED_PINS)) — and ranger-base-m94g2/na4rm then made a DISCOVERED
-// file set the criterion outright, which makes detectionRig's callers members.
-// Those rulings cannot all stand, and whichever wins moves five call sites'
-// worth of tests into or out of the class. Filed as ranger-base-er0gn
-// (-l architecture).
+// WHAT DECIDED IT. ADR 0078 (ranger-base-er0gn): the criterion is a
+// DISCOVERED file set, at any depth below the root and in any spelling of the
+// root — ranger-base-m94g2 / -na4rm's rule, which ranger-base-sx2dq's "only a
+// walk rooted AT the root is tree-wide" contradicted. So D2 promoted the
+// detector below into an arm (twdClimbSet.joinsOntoBareRoot), D3 took
+// detectionRig's root from qibRepoRoot and moved its five callers out of
+// posse_arm3 into $(QA_SEED_PINS), and this pin became the closure.
 //
-// WHEN THE FIX LANDS THIS TEST GOES RED, and that red is the instruction:
-// twdBareRootJoinReadings above is the arm — move it into twdClimbSet beside
-// twdJoinClimbsToASubpath, remediate what it names, and replace this body with
-// the fence's own census (the live list must then be EMPTY).
+// TWO ARMS, AND NEITHER CAN SEE THE OTHER'S FAILURE.
 //
-// THE LIVE CENSUS IS NOT DECORATION: a live-defect pin with no instance is a
-// pin that cannot tell "the hole is open" from "the detector broke", which is
-// the negative-control trap this file names everywhere else. It is asserted
-// non-empty, and it prints what it found so the bead that decides has the
-// list without re-deriving it.
+//  1. THE THREE FIXTURES, which are the live-defect rows kept as POSITIVE
+//     rows: each must now score climbEnum. Without this the arm could be
+//     deleted from twdClimbSet and nothing would red, because the fence's
+//     live answer over the tree is zero by construction once the remediation
+//     has landed — the negative-control trap this file names everywhere
+//     else. (The fence's own fixture table holds the same three rows and the
+//     jurisdiction rows beside them; these are here because this pin is what
+//     a reader lands on, and because `make register-check` runs both.)
+//  2. THE CENSUS, which must be EMPTY: no body in internal/posse reads a
+//     subpath joined onto a bare-root identifier. That is the remediation
+//     holding, read independently of twdAnalyze — see
+//     twdBareRootJoinReadings for why the independence is the point.
+//
+// MUTATION-CHECKED, both of them (MEASURED 2026-11-01, this bead). Restoring
+// `repo := filepath.Join("..", "..")` in detectionRig reds THREE arms, each
+// naming its own remedy: arm 2 here (three bodies, with file and line), the
+// fence arm in TestQAOneRepoRootHelperInTheTestPackage ("take the root from
+// qibRepoRoot"), and TestQAEveryTreeWidePinHasADoor on five $(QA_SEED_PINS)
+// names "no longer derived as tree-wide" — which is the one that matters,
+// because without the DOOR half a mutant that un-remediates the rig takes
+// five pins out of the class and the door still prints `ok`. Disabling
+// joinsOntoBareRoot reds arm 1 here on all three fixtures with the inversion
+// message, and the fence's own fixture table beside it: the same rows are in
+// both, so either reds on its own.
 func TestQATheClimbFenceStillHasItsBareRootJoinHole(t *testing.T) {
 	t.Parallel()
 
-	const inversion = "the bare-root-join hole is CLOSED — some rule in this file now scores a walker rooted at " +
-		"filepath.Join(<bare root>, \"sub\"). Promote twdBareRootJoinReadings into twdClimbSet beside " +
-		"twdJoinClimbsToASubpath, and rewrite this pin as the fence's census, which must then be empty " +
-		"(ranger-base-er0gn decides which bodies that takes with it)."
+	const inversion = "the bare-root-join hole is OPEN again — nothing in this file scores a walker rooted at " +
+		"filepath.Join(<bare root>, \"sub\"), so a reading of a directory every detection bead writes into " +
+		"gets no door and nothing says so. Restore twdClimbSet.joinsOntoBareRoot, the root half of " +
+		"twdClimbSet that feeds it, and twdBareRootExpr (ADR 0078 D2)."
 
-	// The shape, scored by every rule this file has. All four false IS the
-	// defect; any one of them flipping is the fix arriving.
+	// Arm 1: the shape, scored by the fence. Any of these reading false is
+	// the arm gone, and the tree would not say so — see the head comment.
 	for _, c := range []struct {
 		name string
 		src  string
@@ -4150,23 +4382,23 @@ func TestQATheClimbFenceStillHasItsBareRootJoinHole(t *testing.T) {
 		if f == nil {
 			t.Fatalf("fixture declares no TestX:\n%s", c.src)
 		}
-		if f.climbEnum || f.handRolledTreeWalk || f.root || len(f.relEnum) > 0 {
-			t.Errorf("%s: climbEnum=%v handRolledTreeWalk=%v root=%v relEnum=%v — %s\n%s",
-				c.name, f.climbEnum, f.handRolledTreeWalk, f.root, len(f.relEnum) > 0, inversion, c.src)
+		if !f.climbEnum {
+			t.Errorf("%s: climbEnum=false (handRolledTreeWalk=%v root=%v relEnum=%v) — %s\n%s",
+				c.name, f.handRolledTreeWalk, f.root, len(f.relEnum) > 0, inversion, c.src)
 		}
 	}
 
-	// And the tree, so the hole is not asserted over nothing. detectionRig
-	// and its ReadDirs are the live instances; the floor is 1 rather than
-	// their exact count, because a bead that rewrites one of them should not
-	// have to come here — what this catches is the DETECTOR going quiet.
-	live := twdBareRootJoinReadings(t)
-	if len(live) == 0 {
-		t.Errorf("no body in %s reads a subpath joined onto a bare-root identifier — either %s",
-			twdPossePkg, inversion)
+	// Arm 2: and the tree, which is the remediation rather than the rule.
+	// detectionRig's three ReadDirs were the live instances and it takes its
+	// root from qibRepoRoot now (ADR 0078 D3), so this list is empty.
+	if live := twdBareRootJoinReadings(t); len(live) > 0 {
+		t.Errorf("%d body/bodies in %s still read a subpath joined onto a bare-root identifier:\n  %s\n"+
+			"Take the root from %s and join onto it. The fence scores this shape now, so a body that reaches "+
+			"a walker this way is fenced by TestQAOneRepoRootHelperInTheTestPackage as well — unless it ALSO "+
+			"names the root helper or enumerates a readable relative path, which is the half-remediation this "+
+			"census exists to catch (ADR 0078 D2/D4).",
+			len(live), twdPossePkg, strings.Join(live, "\n  "), twdRootHelper)
 	}
-	t.Logf("%d live reading(s) of a subpath joined onto a bare-root identifier, scored by no rule in this file:\n  %s",
-		len(live), strings.Join(live, "\n  "))
 }
 
 // twdSourceFiles lists what to copy: git's idea of the working tree, which

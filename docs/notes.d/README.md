@@ -11,6 +11,7 @@ references), not inferred publication dates. Undated fragments sort last.
 - [ranger-base-qu8wn](ranger-base-qu8wn.md) — The commit wall's fold model was two runes short of what APFS resolves (ranger-base-qu8wn) — 2026-11-01
 - [ranger-base-npqem](ranger-base-npqem.md) — The apply probe resolved its own binary twice, and the second answer was a permission (ranger-base-npqem) — 2026-11-01
 - [ranger-base-d0nyb](ranger-base-d0nyb.md) — A probe answers on the PATH the exec it predicts resolves on (ranger-base-d0nyb) — 2026-11-01
+- [ranger-base-00fyg](ranger-base-00fyg.md) — ADR 0078 built: the tree-wide class stops depending on how a test spells its root (ranger-base-00fyg) — 2026-11-01
 
 ## 2026-10
 

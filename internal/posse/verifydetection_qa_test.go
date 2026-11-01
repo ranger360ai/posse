@@ -1,4 +1,4 @@
-//go:build posse_arm3
+//go:build !posse_arm2 && !posse_arm3
 
 package posse
 
@@ -29,9 +29,20 @@ import (
 // throwaway repo root, so an arm can cut a rule without touching the checkout.
 // Returns the rig root; the script lives at <root>/scripts/verify-detection.sh
 // and finds its manifests via its own `cd "$(dirname "$0")/.."`.
+//
+// THE ROOT COMES FROM qibRepoRoot (ADR 0078 D3, ranger-base-00fyg). It was
+// `filepath.Join("..", "..")` held in this local, and the three ReadDirs
+// below then read directories joined onto a bare-root identifier — a reading that
+// enumerates etc/herdr/agent-detection and its testdata, which every detection
+// bead writes into, and which no rule in
+// internal/treepins/treewidedoor_qa_test.go could score. So this rig and its
+// five callers were outside the tree-wide class by SPELLING alone, while the
+// known-screen reader one door over enumerates the sibling directory and was
+// in it. Taking the root from the package's one helper is what puts them in:
+// `root && walk` here, propagated to the callers, doored in $(QA_SEED_PINS).
 func detectionRig(t *testing.T) string {
 	t.Helper()
-	repo := filepath.Join("..", "..")
+	repo := qibRepoRoot(t)
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, "scripts"), 0o755); err != nil {
 		t.Fatal(err)
